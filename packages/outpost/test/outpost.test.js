@@ -453,6 +453,57 @@ describe('what the machine is asked to do', () => {
       expect(res.status).toBe(500)
     })
 
+    // The clone follows the App (FJS-3560): an App patched from one repository
+    // to another released the old one's HEAD twice, green, because the clone
+    // kept the origin it was first made with.
+    describe('a clone on this machine follows source.repo', () => {
+      const dir = `${CONFIG.workDir}/app-1`
+      const cloneWith = (origin) => {
+        const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'test -d': { exitCode: 0 }, 'git -C': { stdout: 'c0ffee\n' } })
+        const run = (argv, opts) => argv[3] === 'remote' && argv[4] === 'get-url'
+          ? Promise.resolve(origin === null ? { exitCode: 2, stdout: '', stderr: 'error: No such remote' } : { exitCode: 0, stdout: `${origin}\n`, stderr: '' })
+          : fake.run(argv, opts)
+        const server = createOutpostServer(CONFIG, {
+          docker: createDocker({ run, workDir: CONFIG.workDir, deployKeyDir: CONFIG.deployKeyDir }), inspector: createInspector({ run }),
+          log: { warn() {}, error() {} },
+        })
+        return { server, argv: () => fake.calls.map(c => c.join(' ')) }
+      }
+
+      test('the same origin is fetched, reset and cleaned, never recloned', async () => {
+        const { server, argv } = cloneWith(GIT.repo)
+        const res = await send(server, 'POST', '/build', { app_id: 'app-1', source: GIT, image: 'x' })
+
+        expect(res.status).toBe(200)
+        expect(argv()).toContain(`git -C ${dir} fetch --depth 1 origin main`)
+        expect(argv()).toContain(`git -C ${dir} reset --hard FETCH_HEAD`)
+        // A file the last checkout left behind would join the build context.
+        expect(argv()).toContain(`git -C ${dir} clean -fdx`)
+        expect(argv().some(c => c.startsWith('git clone') || c.startsWith('rm -rf'))).toBe(false)
+      })
+
+      test('a different origin is removed and cloned from source.repo', async () => {
+        const { server, argv } = cloneWith('/tmp/stand-in/web')
+        const res = await send(server, 'POST', '/build', { app_id: 'app-1', source: GIT, image: 'x' })
+
+        expect(res.status).toBe(200)
+        const at = (c) => argv().indexOf(c)
+        expect(at(`rm -rf -- ${dir}`)).toBeGreaterThan(-1)
+        expect(at(`git clone --depth 1 --branch main -- ${GIT.repo} ${dir}`)).toBeGreaterThan(at(`rm -rf -- ${dir}`))
+        expect(argv().some(c => c.startsWith('git -C') && c.includes('fetch'))).toBe(false)
+        expect(argv().some(c => c.startsWith('docker build -t x'))).toBe(true)
+      })
+
+      test('a clone with no origin is remade too', async () => {
+        const { server, argv } = cloneWith(null)
+        const res = await send(server, 'POST', '/build', { app_id: 'app-1', source: GIT, image: 'x' })
+
+        expect(res.status).toBe(200)
+        expect(argv()).toContain(`rm -rf -- ${dir}`)
+        expect(argv().some(c => c.startsWith(`git clone --depth 1 --branch main -- ${GIT.repo}`))).toBe(true)
+      })
+    })
+
     test('/deploy given the digest of a build starts those bytes and builds nothing', async () => {
       const { server, argv } = serverFor({ 'docker run': { stdout: 'container-1\n' } })
       const res = await send(server, 'POST', '/deploy', {
@@ -2384,11 +2435,13 @@ describe('a deploy key per app (FJS-D1555)', () => {
   })
 
   describe('a build clones with the key and builds with the App\'s Dockerfile', () => {
-    const buildWith = async (source, { layout = [] } = {}) => {
+    // What fli make:deploy writes: a file that installs from deploy/generated/.
+    const SCAFFOLDED = 'FROM oven/bun\n# deploy/generated/ is written by a laptop\nCOPY deploy/generated/ ./deploy/generated/\n'
+    const buildWith = async (source, { layout = [], deployDockerfile = SCAFFOLDED } = {}) => {
       const workDir = mkdtempSync(join(tmpdir(), 'outpost-build-'))
       const keyDir  = freshDir()
       for (const path of layout) mkdirSync(join(workDir, 'app-1', path), { recursive: true })
-      if (layout.includes('deploy')) writeFileSync(join(workDir, 'app-1', 'deploy', 'Dockerfile'), 'FROM oven/bun\n')
+      if (layout.includes('deploy')) writeFileSync(join(workDir, 'app-1', 'deploy', 'Dockerfile'), deployDockerfile)
       mkdirSync(join(workDir, 'app-1', source.path ?? ''), { recursive: true })
       const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'test -d': { exitCode: 1 }, 'git -C': { stdout: 'c0ffee\n' } })
       const server = createOutpostServer(CONFIG, {
@@ -2440,20 +2493,44 @@ describe('a deploy key per app (FJS-D1555)', () => {
       expect(build).toBe(`docker build -t x ${workDir}/app-1`)
     })
 
-    test('deploy/Dockerfile with no deploy/generated/ is refused before docker build, naming the two ways out', async () => {
+    test('a Dockerfile installing from deploy/generated/ with none in the clone is refused before docker build, naming the two ways out', async () => {
       // FJS-D942: its dependencies are link:, and nothing on this machine holds them.
       const { res, body, build } = await buildWith(GIT, { layout: ['deploy'] })
 
       expect(res.status).toBe(500)
-      expect(body.error).toContain('fli deploy:vendor')
+      expect(body.error).toContain('deploy/Dockerfile installs from deploy/generated/')
       expect(body.error).toContain('fli basecamp:deploy --app')
+      expect(body.error).toContain('store a Dockerfile on the App')
+      expect(body.error).not.toContain('commit')
       expect(build).toBeUndefined()
     })
 
-    test('a stored Dockerfile is built even where deploy/generated/ is missing', async () => {
-      const { res, body } = await buildWith({ ...GIT, dockerfile: 'FROM oven/bun\n' }, { layout: ['deploy'] })
+    test('a deploy/Dockerfile that installs from the repository builds with no deploy/generated/', async () => {
+      // A plain repository's own file for the folder it sits in (FJS-D1560).
+      const { res, body, build } = await buildWith(GIT, { layout: ['deploy'], deployDockerfile: 'FROM oven/bun\nCOPY . .\n' })
       expect(res.status).toBe(200)
-      expect(body.dockerfile).toBe('Dockerfile.basecamp')
+      expect(body.dockerfile).toBe('deploy/Dockerfile')
+      expect(build).toContain('-f ')
+    })
+
+    test('a stored Dockerfile is read by the same rule: refused when it installs from deploy/generated/, built when it does not', async () => {
+      const own = await buildWith({ ...GIT, dockerfile: 'FROM oven/bun\n' }, { layout: ['deploy'] })
+      expect(own.res.status).toBe(200)
+      expect(own.body.dockerfile).toBe('Dockerfile.basecamp')
+
+      const imported = await buildWith({ ...GIT, dockerfile: SCAFFOLDED }, { layout: ['deploy'] })
+      expect(imported.res.status).toBe(500)
+      expect(imported.body.error).toContain('Dockerfile.basecamp installs from deploy/generated/')
+      expect(imported.build).toBeUndefined()
+    })
+
+    test('needsGenerated reads the Dockerfile, and a comment does not count', async () => {
+      const { needsGenerated } = await import('../src/dockerfile.js')
+      expect(needsGenerated(SCAFFOLDED)).toBe(true)
+      expect(needsGenerated('RUN cp deploy/generated/app-manifest.json package.json\n')).toBe(true)
+      expect(needsGenerated('FROM oven/bun\n# deploy/generated/ is not used here\nCOPY . .\n')).toBe(false)
+      expect(needsGenerated('')).toBe(false)
+      expect(needsGenerated(null)).toBe(false)
     })
 
     test('an app_id that is not a plain name builds nothing', async () => {

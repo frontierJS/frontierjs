@@ -5,8 +5,7 @@
 ```json
 {
   "routesDir":        "cli/src/routes",
-  "defaultNamespace": "hello",
-  "editor":           "code"
+  "defaultNamespace": "hello"
 }
 ```
 

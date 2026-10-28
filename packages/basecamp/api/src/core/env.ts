@@ -86,6 +86,18 @@ export const env = defineEnv({
   ENCRYPTION_KEY: { required: true, minLength: 64,
                     default: DEV_ENCRYPTION_KEY },
 
+  // ── Restoring a hub ─────────────────────────────────────────
+  // What `/setup`'s *Restore a hub* form starts filled with, for a box nobody
+  // has opened a browser on before (`IDEAS/backups.md` 4.4). No row exists
+  // yet to hold a destination, so these stand in for one. The key never
+  // reaches the page: the form says it is set, and the route reads it here.
+  // Same shape as a destination's: `<accessKeyId>:<secretAccessKey>`.
+  HUB_RESTORE_ENDPOINT: {},
+  HUB_RESTORE_REGION:   {},
+  HUB_RESTORE_BUCKET:   {},
+  HUB_RESTORE_PREFIX:   {},
+  HUB_RESTORE_KEY:      {},
+
   // ── Outpost communication ───────────────────────────────────
   // There is no fleet-wide outpost secret any more, and its absence is the
   // point. Every machine holds a credential of its own, minted at enrollment

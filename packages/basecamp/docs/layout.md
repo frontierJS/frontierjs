@@ -104,6 +104,8 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           domain/release/runtime.ts is the ONE reader of how a container starts —
           App's port, volume, health path and limits, each a `docker run` flag;
           a column added there and not applied by outpost is `FJS-1605` again
+          domain/release/host-port.ts is which host ports a machine's Apps
+          publish; patch, place and fromRepo refuse a taken one (`FJS-3563`)
           domain/release/variables.ts is what a container's environment IS — the
           environment's `Variable` rows with the app's own on top, snapshotted
           when a release is made and a secret read only when it is sent
@@ -220,6 +222,20 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           delete (retention's and backups.remove's, FJS-D1494), the prune
           backup-run calls after a success, and the rescan that writes
           `found` rows (FJS-D1493); not a job, so caravan loads nothing from it
+          domain/backup/archive-manifest.ts is an archive's `manifest.json` —
+          the key fingerprint and each file's sha256 — and `archiveRefusals`, the
+          check a restore runs on the staged directory, schema graded by litestone's
+          `status()` over each staged database's own migration history
+          domain/backup/hub-restore.ts is `/setup`'s *Restore a hub*: the bucket
+          listed and fetched over pre-signed URLs (no row exists to be a target),
+          an upload received, `restore-staged/` written only after `archiveRefusals`
+          passes, and `restoreStaged`, which app.ts runs before `openSqlite` — the
+          swap is `litestone restore --from-backup --force`, refused beside an Account
+          domain/backup/found-replicas.ts is what the bucket still holds after a hub
+          restore: `reconcileFound` sets `replicaFoundAt`/`replicaSyncedAt` on each
+          App (and HubConfig) whose replica lists, and sends one `ReplicaFound` per
+          workspace; jobs/restore-reconcile.job.ts runs it once, queued by app.ts
+          when `restoreStaged` answered `done`
           jobs/app-backup-run.job.ts is the one `/backup` caller (Invariant 4) —
           the schedule's `app-backup:run`, `app-backups.take` and a release's
           `Back up volume` step all take through `takeAppBackup`; `destinationFor`

@@ -67,7 +67,10 @@
   async function add() {
     error = null; busyId = 'new'
     try {
-      await variables.service.create({ ...(appId ? { appId } : { environmentId }), key: newKey, value: newValue, secret: newSecret })
+      // `environmentId` on an app's too: the resource checks the schema's
+      // required list before sending, so a create naming only the app is
+      // refused here before the server can fill it from the app.
+      await variables.service.create({ environmentId, ...(appId ? { appId } : {}), key: newKey, value: newValue, secret: newSecret })
       newKey = ''; newValue = ''; newSecret = false
       await load()
     } catch (e) {

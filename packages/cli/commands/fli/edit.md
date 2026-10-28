@@ -16,7 +16,7 @@ flags:
   editor:
     char: e
     type: string
-    description: Editor to use (overrides $EDITOR)
+    description: Editor to use (overrides $VISUAL and $EDITOR)
     defaultValue: ''
 ---
 
@@ -27,7 +27,7 @@ import { existsSync } from 'fs'
 </script>
 
 Open a command's `.md` source file in your editor.
-Uses `$EDITOR`, falling back to `vi` if not set.
+Uses `$VISUAL`, then `$EDITOR`, falling back to `vi` if neither is set.
 Pass `--editor` to override for a single run.
 
 ```js
@@ -45,9 +45,7 @@ if (!entry) {
 const filePath = entry.filePath
 
 // ─── Resolve editor ───────────────────────────────────────────────────────────
-const { getConfig } = await import(resolve(global.fliRoot, 'core/config.js'))
-const { editor: configEditor } = getConfig()
-const editor = flag.editor || configEditor || process.env.EDITOR || process.env.VISUAL || 'vi'
+const editor = flag.editor || process.env.VISUAL || process.env.EDITOR || 'vi'
 
 log.info(`Opening ${filePath}`)
 log.info(`Editor:  ${editor}`)

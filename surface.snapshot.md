@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 3913 source file(s) read
-240 entry point(s), 35 imported by nothing outside their package, 15 emitted
-1629 value export(s), 624 reached by nothing outside, 166 emitted
+26 package(s) · 3921 source file(s) read
+241 entry point(s), 35 imported by nothing outside their package, 15 emitted
+1631 value export(s), 624 reached by nothing outside, 165 emitted
 451 type export(s), 343 reached by nothing outside
 ```
 
@@ -37,14 +37,14 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `litestone` | 28 | 5 | 265 | 135 | 35 | 1 | 1 |
 | `junction` | 26 | 4 | 265 | 121 | 12 | 267 | 211 |
 | `mesa` | 18 | 4 | 290 | 100 | 70 | 0 | 0 |
-| `sierra` | 25 | 6 | 197 | 81 | 22 | 0 | 0 |
+| `sierra` | 25 | 6 | 197 | 81 | 21 | 0 | 0 |
 | `auth` | 6 | 1 | 52 | 37 | 3 | 15 | 13 |
 | `ui` | 9 | 0 | 53 | 34 | 3 | 0 | 0 |
 | `jetty` | 7 | 4 | 43 | 29 | 3 | 0 | 0 |
 | `toolbelt` | 62 | 0 | 295 | 28 | 11 | 0 | 0 |
 | `conduit` | 4 | 2 | 26 | 15 | 1 | 59 | 40 |
 | `site-kit` | 9 | 4 | 38 | 12 | 1 | 0 | 0 |
-| `outpost` | 7 | 1 | 18 | 10 | 0 | 0 | 0 |
+| `outpost` | 8 | 1 | 20 | 10 | 0 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 7 | 0 | 36 | 21 |
 | `notifications` | 2 | 0 | 11 | 5 | 0 | 25 | 20 |
 | `email-kit` | 3 | 0 | 10 | 4 | 1 | 0 | 0 |
@@ -247,7 +247,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/outpost`
 
-`packages/outpost` · 7 entry point(s) · 18 value, 0 type export(s)
+`packages/outpost` · 8 entry point(s) · 20 value, 0 type export(s)
 
 **Entries imported by nothing outside (1):** `.`
 
@@ -275,7 +275,7 @@ Every entry is imported and every name reached.
 
 **Unreached values (81):** `_deepMerge` `_findCatchAll` `_resetInternals` `_resetMcpApp` `_resetPage` `_resetPresenceHolders` `_scrollMemoryHas` `_scrollMemorySize` `afterNavigate` `allSchemas` `appFailed` `applyHostContext` `buildCommitments` `buildGate` `buildLayoutMap` `buildRelations` `buildTransitions` `buildVersion` `ChainRenderer` `columnList` `commitmentsAt` `COMMITTED_MESSAGE` `COMPATIBILITY_DATE` `configureFetch` `createMemoryHistory` `defaultControlFor` `defaultDisplayFor` `followLink` `fromFor` `generatedFor` `generateRouteTable` `getComponents` `getDirection` `getLayoutChainForNode` `hasFileComponent` `hasSchemas` `hmrInvalidate` `isLegalTag` `isPublicRoute` `isSameDocumentOrigin` `isStaleWrite` `labelFieldInfo` `linkHrefOf` `loadLayoutChain` `mountIsland` `mountView` `normalizeBlanks` `oauthErrorMessage` `offlineStatus` `PAGE_RESERVED` `pathAliases` `pickFilter` `readFrontmatter` `refusedFor` `registeredDisplays` `registerFileComponent` `registerModule` `renderRouteTable` `resolveHtmlClass` `ResourceHookError` `runPostBuild` `scanAndWrite` `seedDetermined` `setScheme` `sierraFetch` `siteEntry` `STALE_WRITE_MESSAGE` `stampedPage` `stripReadOnly` `submitInPlace` `suggestModel` `toConflict` `toolAnswer` `toolCall` `transitionsAt` `unregisterDisplay` `updateParams` `whenReady` `WORKER_ENTRY` `workerName` `WRANGLER_CONFIG`
 
-**Emitted (22):** `_setStaticPage` `buildThemeScript` `columnLabel` `configureAnalytics` `configureLocalDb` `connectApp` `CSS_MARK` `generateSchemas` `hmrReload` `hydrateIslands` `initAnalytics` `initRouter` `INTERACTION_TASKS` `mcpApp` `modelNameFor` `paletteSource` `pendingQueue` `registerSchemas` `remountKey` `resolveChain` `resourceIn` `startView`
+**Emitted (21):** `_setStaticPage` `buildThemeScript` `columnLabel` `configureAnalytics` `configureLocalDb` `CSS_MARK` `generateSchemas` `hmrReload` `hydrateIslands` `initAnalytics` `initRouter` `INTERACTION_TASKS` `mcpApp` `modelNameFor` `paletteSource` `pendingQueue` `registerSchemas` `remountKey` `resolveChain` `resourceIn` `startView`
 
 ## `@frontierjs/site-kit`
 

@@ -7,6 +7,7 @@ title: Deployment
   import { session }      from '../../../lib/session.js'
   import { deployments, DEPLOY_TONE } from '../../../resources/Deployment.mesa'
   import { ago, clock, at, day } from '../../../lib/datetime.js'
+  import { shortSha } from '../../../lib/displays.js'
   import { toasts }       from '@frontierjs/ui/stores/toastStore'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
@@ -282,7 +283,7 @@ title: Deployment
         <dl class="facts" style="--fact-label-max: 45%">
           {#if deployment.commitSha}
             <dt>Commit</dt>
-            <dd><code title={deployment.commitSha}>{deployment.commitSha.slice(0, 7)}</code> {deployment.commitMessage ?? ''}</dd>
+            <dd><code title={deployment.commitSha}>{shortSha(deployment.commitSha)}</code> {deployment.commitMessage ?? ''}</dd>
           {/if}
           {#if deployment.branch}<dt>Branch</dt> <dd><code>{deployment.branch}</code></dd>{/if}
           {#if deployment.author}<dt>Author</dt> <dd>{deployment.author}</dd>{/if}

@@ -13,6 +13,8 @@ title: New project
   import Select from '@frontierjs/ui/components/forms/Select.mesa'
   import Switch from '@frontierjs/ui/components/forms/Switch.mesa'
   import Textarea from '@frontierjs/ui/components/forms/Textarea.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
 
   // make() builds the record from the SCHEMA's defaults — status 'active',
   // tags [], metadata {} — so this file does not restate them. What it adds is
@@ -53,6 +55,12 @@ title: New project
   let dockerfile = ''
   let seedSays   = ''
   let seeding    = false
+  // On by default once a server is picked (FJS-D1558); `false` is sent only
+  // when somebody turned it off, so the server's own default stays the rule.
+  let deployOnPush = true
+  // The answer's credentials are shown here once and read back as nothing, so
+  // the form gives way to the panel rather than leaving for the App page.
+  let connect = null
 
   // Online machines only. The select is a convenience; the server grades the choice.
   const fleetList = servers.tethered({ state: 'local', all: true })
@@ -93,10 +101,12 @@ title: New project
       ...(serverId ? { serverId } : {}),
       ...(hostname.trim() ? { hostname: hostname.trim() } : {}),
       ...(dockerfile.trim() ? { dockerfile } : {}),
+      ...(serverId && !deployOnPush ? { deployOnPush: false } : {}),
     }
     const r = await fromRepo(input)
     // The app's toasts are the flash store, and it outlives the navigation.
     if (r.note) toasts.warning(r.note, 20000)
+    if (r.push || r.app.deployPublicKey) { connect = r; return }
     goto(`/apps/${r.app.id}/`)
   }
 
@@ -135,7 +145,47 @@ title: New project
 </div>
 
 <div class="container narrow">
-  <form class="card stack" onsubmit={save}>
+  {#if connect}
+    <section class="card stack" id="connect-repo" aria-labelledby="connect-repo-title">
+      <h2 class="h4" id="connect-repo-title">Connect your repository</h2>
+      <p class="text-sm text-muted">
+        {connect.app.name} is placed and ready to build. Two things go to your git host: the deploy key that
+        lets the machine clone, and the webhook that turns a push into a release.
+      </p>
+      <Callout tone="warning" id="connect-once">
+        Copy these now. The secret and the token are shown once; the App page can rotate them, not show them.
+      </Callout>
+
+      <h3 class="h5">Deploy key</h3>
+      {#if connect.app.deployPublicKey}
+        <pre class="text-sm" style:white-space="pre-wrap" style:overflow-wrap="anywhere"><code id="connect-deploy-key">{connect.app.deployPublicKey}</code></pre>
+        <div class="cluster">
+          <CopyButton text={connect.app.deployPublicKey} label="Copy key" treatment="outlined" id="connect-deploy-key-copy" />
+        </div>
+        <p class="text-sm text-muted">Add it as a read-only deploy key on the repository.</p>
+      {:else}
+        <p class="text-sm text-muted" id="connect-deploy-key-note">{connect.note ?? 'No deploy key yet — the App page can ask the machine again.'}</p>
+      {/if}
+
+      {#if connect.push}
+        <h3 class="h5">Deploy on push</h3>
+        <dl class="facts">
+          <dt>Webhook URL</dt><dd><code id="connect-push-url">{connect.push.url}</code></dd>
+          <dt>Secret</dt><dd><code id="connect-push-secret">{connect.push.secret}</code></dd>
+          <dt>Or, for a sender that signs nothing</dt><dd><code id="connect-push-token-url">{connect.push.tokenUrl}</code></dd>
+        </dl>
+        <p class="text-sm text-muted">
+          GitHub, Forgejo and Gitea: content type <code>application/json</code>, the secret above, the push event.
+          A push to {connect.app.source?.branch ?? 'the default branch'} then releases the app, as you.
+        </p>
+      {/if}
+
+      <div class="cluster">
+        <Button tone="primary" id="connect-done" href={`/apps/${connect.app.id}/`}>Open the app</Button>
+      </div>
+    </section>
+  {:else}
+  <form class="card stack" novalidate onsubmit={save}>
     {#if failed}
       <article class="alert danger">
         <div class="alert-content">{failed}</div>
@@ -175,6 +225,11 @@ title: New project
                 options={online.map(s => ({ value: s.id, label: s.name }))}
                 oninput={(e) => serverId = e.target.value}
                 onchange={(e) => serverId = e.target.value} />
+        {#if serverId}
+          <Switch id="deploy-on-push" label="Deploy on push"
+                  description="A push to the branch releases the app. The webhook address and secret are shown once, after Create."
+                  checked={deployOnPush} onchange={(on) => deployOnPush = on} />
+        {/if}
         <Input label="Hostname" name="hostname" id="hostname" value={hostname}
                hint="Optional. Needs an administrator and a server with Caddy. Left blank on this laptop, the app answers on localhost:<port>."
                oninput={(e) => hostname = e.target.value} />
@@ -202,4 +257,5 @@ title: New project
       <Button treatment="ghost" href="/projects/">Cancel</Button>
     </div>
   </form>
+  {/if}
 </div>

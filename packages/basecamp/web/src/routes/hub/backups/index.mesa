@@ -93,6 +93,16 @@ title: Hub backups
       replica = config?.replicaDestinationId ? host.controls.find(c => c.id === 'backup.replica-lag') ?? null : null
     } catch { escrow = null; replica = null }
   }
+  // Set by the reconcile after a hub restore (`IDEAS/backups.md` 4.5): this
+  // hub's own replica is in the bucket and may be newer than the archive.
+  async function dismissFound() {
+    error = null
+    try {
+      config = await hubConfig.service.invoke('dismissFound', null, {})
+    } catch (e) {
+      error = e.message
+    }
+  }
   async function attest() {
     error = null; attesting = true
     try {
@@ -260,6 +270,24 @@ title: Hub backups
         {attesting ? 'Recording…' : 'I keep a copy off this box'}
       </Button>
     {/if}
+  </Card>
+{/if}
+
+{#if config?.replicaFoundAt}
+  <Card id="hub-found">
+    <h3 class="h5">Replica found</h3>
+    <p class="text-sm">
+      This hub was restored from an archive, and its bucket holds Basecamp's own replica, last synced
+      {config.replicaSyncedAt ? ago(config.replicaSyncedAt) : 'at an unknown time'}. When that is newer
+      than the archive, the minutes between are in the replica.
+    </p>
+    <p class="text-sm text-muted">
+      A hub cannot replace itself while it serves, so that restore is the runbook:
+      <code>docs/BACKUPS.md</code> § 7, with Basecamp stopped.
+    </p>
+    <div class="cluster">
+      <Button treatment="ghost" id="hub-found-dismiss" onclick={dismissFound}>Dismiss</Button>
+    </div>
   </Card>
 {/if}
 

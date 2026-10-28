@@ -40,6 +40,7 @@ import { BACKUP_SCHEDULE, appBackupSchedule, appDrillSchedule, fireBackup, resto
 import { mintDownload } from '../src/jobs/app-backup-run.job.ts'
 import { mintArchiveUrl } from '../src/plugins/backup-archive.ts'
 import { replicasFor, syncReplicas, hostReplicaFor } from '../src/jobs/replicate-sync.job.ts'
+import { reconcileFound } from '../src/domain/backup/found-replicas.ts'
 import { HOST_SLUG, useHost, publicIp } from '../src/domain/host/host-machine.ts'
 import { startS3Sink }            from '../src/providers/storage/s3-sink.ts'
 
@@ -4755,6 +4756,67 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       expect((await here(developer)).drill).toBeNull()
       await expect(env.as(owner).service('appDrills').create({ appId: app.id, serverId: server.id, status: 'success' })).rejects.toThrow()
       await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: null })
+    })
+
+    // IDEAS/backups.md 4.5: after a hub restore, a replica the bucket still
+    // holds is recorded on the app and its workspace is told; the offer is
+    // answered by a restore that lands or by dismissing it.
+    test('a reconcile after a hub restore records the replica the bucket holds, and the offer is answered', async () => {
+      const sys = env.system as any
+      let objects: { key: string; at: string }[] = []
+      const bucket = Bun.serve({ port: 0, fetch(req) {
+        const url    = new URL(req.url)
+        const prefix = url.searchParams.get('prefix') ?? '', delim = url.searchParams.get('delimiter')
+        const under  = objects.filter(o => o.key.startsWith(prefix))
+        const body   = delim
+          ? [...new Set(under.map(o => `${prefix}${o.key.slice(prefix.length).split(delim)[0]}${delim}`))]
+              .map(p => `<CommonPrefixes><Prefix>${p}</Prefix></CommonPrefixes>`).join('')
+          : under.map(o => `<Contents><Key>${o.key}</Key><Size>1</Size><LastModified>${o.at}</LastModified></Contents>`).join('')
+        return new Response(`<ListBucketResult><IsTruncated>false</IsTruncated>${body}</ListBucketResult>`,
+          { headers: { 'content-type': 'application/xml' } })
+      } })
+      const found = () => sys.app.findFirst({ where: { id: app.id } }).then((a: any) => [a.replicaFoundAt, a.replicaSyncedAt])
+      let wasStatus: string | undefined
+      try {
+        const dest = await env.as(owner).service('backupDestinations').create({
+          name: `Found ${tag()}`, endpoint: `http://127.0.0.1:${bucket.port}`, region: 'auto',
+          bucket: `found-${tag()}`, prefix: 'apps', secret: 'AKID:secret',
+        }) as any
+        await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: dest.id })
+        await sys.notification.deleteMany({ where: { type: 'ReplicaFound' } })
+        // notifyPeople pages only an active account, and run alone this fixture's never verified.
+        wasStatus = (await sys.user.findFirst({ where: { id: ws.ownerId } })).status
+        await sys.user.update({ where: { id: ws.ownerId }, data: { status: 'active' } })
+
+        // A replica with no database in it is not found.
+        expect(await reconcileFound(env.app)).toContainEqual({ appId: app.id, databases: [], syncedAt: null })
+        expect(await found()).toEqual([null, null])
+
+        objects = [
+          { key: `apps/${app.id}/main.db/0000/a.ltx`, at: '2026-10-27T01:00:00.000Z' },
+          { key: `apps/${app.id}/main.db/0001/b.ltx`, at: '2026-10-27T02:00:00.000Z' },
+        ]
+        expect(await reconcileFound(env.app)).toContainEqual({ appId: app.id, databases: ['main.db'], syncedAt: '2026-10-27T02:00:00.000Z' })
+        const [at, synced] = await found()
+        expect(at).toBeTruthy()
+        expect(synced).toBe('2026-10-27T02:00:00.000Z')
+        const told = await sys.notification.findMany({ where: { type: 'ReplicaFound' } }) as any[]
+        expect(told.map(n => n.userId)).toContain(ws.ownerId)
+        expect(told.every(n => n.subjectType === 'Workspace' && n.subjectId === ws.id && n.data.apps[0].id === app.id)).toBe(true)
+        expect((await env.as(owner).service('apps').get(app.id) as any).replicaSyncedAt).toBe('2026-10-27T02:00:00.000Z')
+
+        // Declining is an administrator's; a restore that lands answers it too.
+        await expect(env.as(developer).service('apps').call('dismissFound', app.id, {})).rejects.toThrow()
+        await env.as(owner).service('apps').call('dismissFound', app.id, {})
+        expect(await found()).toEqual([null, null])
+        await reconcileFound(env.app)
+        await env.as(owner).service('apps').call('restoreReplica', app.id, { serverId: server.id })
+        expect(await found()).toEqual([null, null])
+      } finally {
+        bucket.stop(true)
+        if (wasStatus) await sys.user.update({ where: { id: ws.ownerId }, data: { status: wasStatus } })
+        await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: null })
+      }
     })
 
     test('drillCron puts the app on the clock, a restart restores it, and null or a delete takes it off', async () => {

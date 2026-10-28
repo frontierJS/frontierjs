@@ -168,6 +168,30 @@ export async function completeSetup({ workspace_name, name, email, password }) {
   return result
 }
 
+// ─── Restoring a hub ──────────────────────────────────────────────────────────
+// The other way through first run (`IDEAS/backups.md` 4.4): the API stages an
+// archive and the next boot swaps it in, so the page's last word is "restart"
+// and `/setup/probe`'s `restore` is how it learns the restart happened.
+
+export function setupProbe() {
+  return rawJson('/setup/probe')
+}
+
+export function listHubArchives(bucket) {
+  return rawJson('/setup/restore/archives', { method: 'POST', body: bucket })
+}
+
+/** `{ ...bucket, archive }` from the bucket, or a File the operator chose. */
+export async function stageHubRestore(from) {
+  if (from instanceof Blob) {
+    const res = await getClient().fetch('/setup/restore', {
+      method: 'POST', body: from, headers: { accept: 'application/json', 'content-type': 'application/gzip' },
+    })
+    return res.json()
+  }
+  return rawJson('/setup/restore', { method: 'POST', body: from })
+}
+
 // ─── Invitations ──────────────────────────────────────────────────────────────
 //
 // Both of these run with no session — that is the whole point of an invitation

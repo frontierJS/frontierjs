@@ -39,6 +39,7 @@ export const RULES = {
   'state-off-volume': 'a database written inside the container, which the next release replaces',
   'no-port':          'an App that publishes no port, so nothing reaches the API',
   'port-mismatch':    'the App sends traffic to a port the app does not listen on',
+  'port-taken':       'a host port another App on the same machine already publishes',
   'health-unchecked': 'a health route the App never asks, so a crash after start is a success',
   'unrouted':         'an App with no Domain and no exposed port',
   'external-default': 'a URL left on its default, which is a real outside service',
@@ -50,6 +51,17 @@ export const RULES = {
 }
 
 const LOCAL_HOST = /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\])$/i
+
+/** The first host port from `wanted` up that no other App on the machine
+ *  publishes. Every scaffolded API listens on 8100, so taking the listen port
+ *  as the host port gave the second App on a machine a release docker refuses
+ *  (`FJS-3563`); the container port stays the app's own. */
+export function freeHostPort(wanted, taken = []) {
+  const held = new Set(taken.map(Number))
+  let port = Number(wanted)
+  while (held.has(port) && port < 65535) port++
+  return port
+}
 
 /** The variables the App's container starts with, as a release merges them:
  *  the environment's, then the App's own on top. */
@@ -170,12 +182,20 @@ export function releaseFindings({
   // ── it is reached ─────────────────────────────────────────────────────────
   const target = app.containerPort ?? app.port ?? null
   const listen = spec?.PORT ? resolve('PORT') : null
+  const taken  = (app.portsTaken ?? []).map(Number)
   if (!app.port) {
     add('no-port', 'error', 'the App publishes no port',
       `Nothing reaches the container, and no health check can be asked of it${listen?.value ? ` — the app listens on ${listen.value}` : ''}.`,
-      `Set the App's port${listen?.value ? ` and container port to ${listen.value}` : ''}.`,
-      listen?.value ? { app: { port: Number(listen.value), containerPort: Number(listen.value) } } : null)
-  } else if (listen?.value && Number(listen.value) !== Number(target)) {
+      listen?.value ? `Set the App's container port to ${listen.value} and its port to ${freeHostPort(listen.value, taken)}.` : "Set the App's port.",
+      listen?.value ? { app: { port: freeHostPort(listen.value, taken), containerPort: Number(listen.value) } } : null)
+  } else if (taken.includes(Number(app.port))) {
+    add('port-taken', 'error', `another App on the machine already publishes port ${app.port}`,
+      'docker refuses the second container that binds it, after the release has built and shipped.',
+      `Set the App's port to ${freeHostPort(app.port, taken)} and its container port to ${target}.`,
+      // Pinned, because a null container port is the host port at `docker run`.
+      { app: { port: freeHostPort(app.port, taken), containerPort: Number(target) } })
+  }
+  if (app.port && listen?.value && Number(listen.value) !== Number(target)) {
     add('port-mismatch', 'error', `the App sends traffic to ${target}, and the app listens on ${listen.value}`,
       `PORT resolves to ${listen.value} (${listen.from}); the App's container port is ${target}.`,
       `Set PORT=${target} in the App's Variables, or the container port to ${listen.value}.`,

@@ -13,6 +13,7 @@
 //   fromBlueprint  — an app made out of a catalog entry and its parameters
 //   publish        — a static build handed in, sent to the machine and released
 //   mintDeployKey · importDockerfile — the machine's deploy key, and its clone's Dockerfile (FJS-D1555)
+//   enablePushOn — deploy on push turned on, the one mint `enablePush` and `projects.fromRepo` share (FJS-D1558)
 //   readRepoDockerfile · dockerfileTemplate — the two seeds the create form offers
 //
 // The table is `app`, not `service`. The old header here said "table name in
@@ -46,6 +47,7 @@ import { resolveExecutor, executorOn, isExecutor } from '../../providers/executo
 import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit, isInline } from '../../domain/release/app-source.ts'
 import { fjsDockerfileTemplate, readRepoDockerfile, DOCKERFILE_PATHS } from '../../domain/release/dockerfile-template.ts'
 import { runtimeOf } from '../../domain/release/runtime.ts'
+import { portHolders, serversOf, assertPortFree } from '../../domain/release/host-port.ts'
 import { mintDownload } from '../../jobs/app-backup-run.job.ts'
 import { cronProblem, syncAppBackupSchedule, syncAppDrillSchedule } from '../../domain/job/job-schedule.ts'
 import { syncReplicasOn, syncReplicasOf, replicaHolder, replicaOf, replicaDatabases } from '../../jobs/replicate-sync.job.ts'
@@ -126,6 +128,24 @@ export function asPublicKey(raw: unknown): string | null {
   const key = raw.trim()
   if (key.length > 4096 || /PRIVATE/i.test(key)) return null
   return /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/=]+( [^\n]*)?$/.test(key) ? key : null
+}
+
+/**
+ * Turn deploy-on-push on for an App and mint both credentials (FJS-D884):
+ * what `enablePush` does and what `projects.fromRepo` does for an App born
+ * with a server (FJS-D1558). The one mint, so a second door never reaches a
+ * row the first one cannot rotate. The caller has already read the App as
+ * the actor, so the row is written as the system here.
+ */
+export async function enablePushOn(appId: string): Promise<{ url: string, tokenUrl: string, secret: string, token: string }> {
+  const { secret, token, tokenHash } = mintPush()
+  await $.db.asSystem().app.update({
+    where: { id: appId },
+    data:  { deployOnPush: true, pushSecret: secret, pushTokenHash: tokenHash, pushActorId: actor() },
+    system: ['deployOnPush', 'pushSecret', 'pushTokenHash', 'pushActorId'],
+  })
+  const base = `${env.FRONTIER_API_URL.replace(/\/$/, '')}/hooks/git/${appId}`
+  return { url: base, tokenUrl: `${base}/${token}`, secret, token }
 }
 
 /**
@@ -270,6 +290,14 @@ async function backupSource(appId: string, backupId: string): Promise<{ url: str
   return { url: await mintDownload($.app, dest, backup.location), sha256: backup.sha256 }
 }
 
+/** The post-restore offer (`domain/backup/found-replicas.ts`) is answered. */
+async function clearFound(id: string) {
+  await $.db.asSystem().app.update({
+    where: { id }, data: { replicaFoundAt: null, replicaSyncedAt: null },
+    system: ['replicaFoundAt', 'replicaSyncedAt'],
+  })
+}
+
 async function assertEnvironmentInWorkspace(environmentId: string) {
   const env = await db().environment.findFirst({ where: { id: environmentId, workspaceId: ws() } })
   if (!env) throw new NotFound(`Environment '${environmentId}' not found in this workspace`)
@@ -308,6 +336,8 @@ async function detail(id: string) {
     db().job.findMany({ where: { appId: row.id }, orderBy: { createdAt: 'desc' }, limit: 10 }),
   ])
   const drills = await lastDrills(row.id)
+  // What `fli basecamp:deploy`'s preflight picks this App's host port around.
+  const holders = await portHolders([...new Set<string>(placement.map((p: any) => p.serverId))], row.id)
 
   return {
     ...row,
@@ -323,6 +353,7 @@ async function detail(id: string) {
     }),
     recent_deployments: deployments,
     jobs,
+    portsTaken: [...new Set(holders.map(h => h.port))].sort((a, b) => a - b),
   }
 }
 
@@ -390,6 +421,8 @@ export default createService({
     // Replaces what a database holds, so the level that may prune a volume.
     { method: 'restoreVolume', gate: LEVELS.ADMINISTRATOR, input: 'AppVolumeRestore' },
     { method: 'restoreReplica', gate: LEVELS.ADMINISTRATOR, input: 'AppReplicaRestore' },
+    // Writes @system columns as the app; the level that may restore is the one that may decline.
+    { method: 'dismissFound', gate: LEVELS.ADMINISTRATOR },
     // A Deployment's create level, asked before the bytes reach the machine.
     { method: 'publish', gate: LEVELS.USER, input: 'AppPublish' },
     // Both write @system columns as the app; the level is stated for that.
@@ -463,6 +496,7 @@ export default createService({
     const patch = narrowPatch($.data as Record<string, unknown>)
     checkSource(patch, current as Record<string, unknown>)
     checkRuntime(patch, current as Record<string, unknown>)
+    if ('port' in patch) await assertPortFree(patch.port as number | null, await serversOf(current.id as string), current.id as string)
     await checkBackup(patch, current.id as string)
     if (!changesNothing(patch)) {
       const updated = await db().app.update({ where: { id: $.id as string }, data: patch })
@@ -616,7 +650,9 @@ export default createService({
     const serverId = data.serverId as string
 
     const target = await getScoped('app', 'App')
-    await placeApp($.app, target, await placeableServer(serverId), data.replicaIndex as number | undefined)
+    const server = await placeableServer(serverId)
+    await assertPortFree(target.port as number | null, [server.id], target.id as string)
+    await placeApp($.app, target, server, data.replicaIndex as number | undefined)
     return detail(target.id)
   },
 
@@ -700,7 +736,18 @@ export default createService({
       overwrite: data.overwrite === true,
     }, { timeoutMs: VOLUME_RESTORE_TIMEOUT_MS })
     if (reply.error) throw new BadRequest(`The replica was not restored: ${reply.error.message}`)
+    if (target.replicaFoundAt) await clearFound(target.id)
     return { serverId: placed.serverId, ...(reply.data ?? {}) }
+  },
+
+  // ── dismissFound — POST /apps/:id  X-Service-Method: dismissFound ──
+  //
+  // The app screen's *replica found* card declined: the app came back some
+  // other way, or the replica is not wanted.
+  async dismissFound() {
+    const target = await getScoped('app', 'App')
+    await clearFound(target.id)
+    return detail(target.id)
   },
 
   // ── publish — POST /apps/:id  X-Service-Method: publish ──────────
@@ -741,17 +788,11 @@ export default createService({
     const target = await getScoped('app', 'App')
     if (!isGit(target.source))
       throw new BadRequest(`App '${target.name}' is not built from a git repository — only a git source has a push to release`)
-    const { secret, token, tokenHash } = mintPush()
-    await $.db.asSystem().app.update({
-      where: { id: target.id },
-      data:  { deployOnPush: true, pushSecret: secret, pushTokenHash: tokenHash, pushActorId: actor() },
-      system: ['deployOnPush', 'pushSecret', 'pushTokenHash', 'pushActorId'],
-    })
+    const on = await enablePushOn(target.id)
     // The answer holds the credentials, so the announcement states the row
     // instead and the workspace's other tabs never see them.
     $.dispatch = await db().app.findFirst({ where: { id: target.id, workspaceId: ws() } })
-    const base = `${env.FRONTIER_API_URL.replace(/\/$/, '')}/hooks/git/${target.id}`
-    return { url: base, tokenUrl: `${base}/${token}`, secret, token }
+    return on
   },
 
   async disablePush() {

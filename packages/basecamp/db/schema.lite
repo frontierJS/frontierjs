@@ -351,16 +351,18 @@ type AppFromBlueprint {
 /// What `projects.fromRepo` accepts: a project, its production environment
 /// and one App built from a repository, made together (`FJS-D1555`). `port` is
 /// the host port the App is published on; `dockerfile` is the App's own copy,
-/// blank for the repository's.
+/// blank for the repository's. `deployOnPush` is on when a server is named and
+/// `false` turns it off (`FJS-D1558`); without a server it is never on.
 type ProjectFromRepo {
-  name       String
-  slug       String?
-  repo       String
-  branch     String?
-  dockerfile String?
-  serverId   String?
-  hostname   String?
-  port       Int
+  name         String
+  slug         String?
+  repo         String
+  branch       String?
+  dockerfile   String?
+  serverId     String?
+  hostname     String?
+  port         Int
+  deployOnPush Boolean?
 }
 
 /// What `apps.readRepoDockerfile` accepts: a public repository and the branch
@@ -652,6 +654,7 @@ enum NotificationKind {
   MemberJoined
   JobFailed
   WeeklyDigest
+  ReplicaFound
 }
 
 // ============================================================
@@ -1783,6 +1786,14 @@ model App {
   // app and proven by its live release image, the result an `AppDrill` row.
   // Null is no schedule; the clock follows the row as `backupCron`'s does.
   drillCron            String?  @trim @length(1, 100)
+
+  // Set by the reconcile after a hub restore (`IDEAS/backups.md` 4.5) when the
+  // bucket holds this app's replica, so the app screen offers its restore
+  // without listing the bucket on every read. `replicaSyncedAt` is the
+  // replica's newest object. Cleared by a `restoreReplica` that lands or by
+  // `dismissFound`.
+  replicaFoundAt       DateTime? @system
+  replicaSyncedAt      DateTime? @system
 
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @default(now()) @updatedAt
@@ -3491,6 +3502,10 @@ model HubConfig {
   // is refused here.
   replicaDestinationId      String?  @unique
   replicaDestination        BackupDestination? @relation("HubReplica", fields: [replicaDestinationId], references: [id], onDelete: SetNull)
+  // `App.replicaFoundAt`'s pair for Basecamp's own replica. Its restore is the
+  // runbook, never a button: the hub cannot replace itself while serving.
+  replicaFoundAt            DateTime? @system
+  replicaSyncedAt           DateTime? @system
 
   // Retention, local and remote apart. An archive goes when it is outside the
   // newest `Count` of its kind OR older than `Days`; null days is no age limit.

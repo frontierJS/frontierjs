@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-154 definitions · 73 models · 1 view · 36 types · 44 enums · 0 other
+155 definitions · 73 models · 1 view · 36 types · 45 enums · 0 other
 ```
 
 ## Definitions
@@ -121,6 +121,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `AppType` | enum |
 | `AppStatus` | enum |
 | `DeployStatus` | enum |
+| `DeployTrigger` | enum |
 | `StepStatus` | enum |
 | `JobKind` | enum |
 | `JobStatus` | enum |
@@ -207,6 +208,7 @@ validates, and a select that silently drops an option.
 - `AppType` — `container`, `worker`, `database`, `daemon`, `cron`, `static`, `function`
 - `AppStatus` — `unknown`, `stopped`, `starting`, `running`, `stopping`, `deploying`, `error`
 - `DeployStatus` — `pending`, `building`, `success`, `failed`, `cancelled`, `rolled_back`
+- `DeployTrigger` — `button`, `push`, `laptop`, `rollback`, `rebind`, `publish`, `freeze`
 - `StepStatus` — `pending`, `running`, `success`, `failed`, `skipped`
 - `JobKind` — `one_shot`, `scheduled`, `triggered`, `workflow`
 - `JobStatus` — `pending`, `running`, `failed`, `cancelled`
@@ -226,7 +228,7 @@ validates, and a select that silently drops an option.
 - `DrillKind` — `manual`, `scheduled`
 - `DependencyKind` — `dependency`, `dev`, `peer`, `optional`
 - `NotificationContext` — `Deployment`, `AlertEvent`, `JobRun`, `Server`, `Workspace`, `Monitor`
-- `NotificationKind` — `DeploySuccess`, `DeployFailed`, `AlertFiring`, `AlertResolved`, `ServerUnreachable`, `MonitorDown`, `MonitorUp`, `PostureFailed`, `DependencyVulnerable`, `MemberJoined`, `JobFailed`, `WeeklyDigest`
+- `NotificationKind` — `DeploySuccess`, `DeployFailed`, `AlertFiring`, `AlertResolved`, `ServerUnreachable`, `MonitorDown`, `MonitorUp`, `PostureFailed`, `DependencyVulnerable`, `MemberJoined`, `JobFailed`, `WeeklyDigest`, `ReplicaFound`
 - `EditorRole` — `edit`, `publish`
 - `Capability` — `Environment.create`, `Environment.delete`, `Environment.update`, `Server.create`, `Server.delete`, `Server.destroy`, `Server.drain`, `Server.provision`, `Server.reboot`, `Server.undrain`, `Server.update`, `Variable.create`, `Variable.delete`, `Variable.update`
 
@@ -910,6 +912,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `backupDestinationId` | `string`? | — | — | — | — |
 | `replicaDestinationId` | `string`? | — | — | — | — |
 | `drillCron` | `string`? | — | — | `minLength: 1` `maxLength: 100` `x-transforms` | — |
+| `replicaFoundAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `replicaSyncedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 
 **On create**: required — `environmentId`, `name`, `slug` · not accepted — `id`
 
@@ -1100,7 +1104,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `environmentId` | `string`? | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `status` | `DeployStatus` = `"pending"` | — | — | — | — |
-| `trigger` | `string` = `"manual"` | — | — | — | — |
+| `trigger` | `DeployTrigger` = `"button"` | — | — | — | — |
 | `fromImage` | `string`? | — | — | — | — |
 | `toImage` | `string`? | — | — | — | — |
 | `commitSha` | `string`? | — | — | — | — |
@@ -1740,6 +1744,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `backupCron` | `string` = `"0 2 * * *"` | — | — | `minLength: 1` `maxLength: 100` `x-transforms` | — |
 | `backupDestinationId` | `string`? | — | — | — | — |
 | `replicaDestinationId` | `string`? | — | — | — | — |
+| `replicaFoundAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `replicaSyncedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `backupKeepLocalCount` | `integer` = `7` | — | — | `minimum: 1` `maximum: 1000` | — |
 | `backupKeepLocalDays` | `integer`? | — | — | `minimum: 1` `maximum: 3650` | — |
 | `backupKeepRemoteCount` | `integer` = `7` | — | — | `minimum: 1` `maximum: 1000` | — |
@@ -2066,6 +2072,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `serverId` | `string`? | — | — | — | — |
 | `hostname` | `string`? | — | — | — | — |
 | `port` | `integer` | yes | — | — | — |
+| `deployOnPush` | `boolean`? | — | — | — | — |
 
 **On create**: required — `name`, `repo`, `port`
 

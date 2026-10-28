@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-57 services · 43 routes · 22 plugins · prefix (none)
+57 services · 45 routes · 22 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -24,12 +24,12 @@ text, so a body that elevates through a helper is not listed.
 | --- | --- |
 | `apiKeys.owners` | standing 5 or above — declared `gate: 5` |
 | `apps.unplace` | standing 4 or above — declared `gate: 4` |
-| `apps.enablePush` | standing 5 or above — declared `gate: 5` |
 | `apps.disablePush` | standing 5 or above — declared `gate: 5` |
 | `backups.download` | standing 7 or above — declared `gate: 7` |
 | `channels.test` | standing 5 or above — declared `gate: 5` |
 | `edge.syncStep` | anyone, a stranger included — declared `gate: 0` |
 | `hubConfig.save` | **any signed-in caller** — floor, read gate 7; standing not graded |
+| `hubConfig.dismissFound` | **any signed-in caller** — floor, read gate 7; standing not graded |
 | `infra.onboarding` | standing 2 or above — declared `gate: 2` |
 | `servers.metrics` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `servers.provision` | **any signed-in caller** — floor, read gate 2; standing not graded |
@@ -58,7 +58,7 @@ and what it does.
 | `notificationPreferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notificationPreferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (90)
+### A service hook runs in front of the body (91)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -109,6 +109,7 @@ name, and is as unread as the body.
 | `hubConfig.current` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
 | `hubConfig.save` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
 | `hubConfig.attestEscrow` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
+| `hubConfig.dismissFound` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
 | `jobs.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `jobs.cancel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `jobs.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
@@ -331,8 +332,8 @@ name when it declares none.
 
 ### `apps` · model `App`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`
-- **custom methods** — `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`
+- **custom methods** — `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`
 - **input** — `fromBlueprint` takes `AppFromBlueprint`
 - **input** — `place` takes `AppPlace`
 - **input** — `publish` takes `AppPublish`
@@ -348,8 +349,9 @@ name when it declares none.
   - `unplace` — standing 4 or above — declared `gate: 4`; body writes as the app
   - `restoreVolume` — standing 5 or above — declared `gate: 5`
   - `restoreReplica` — standing 5 or above — declared `gate: 5`
+  - `dismissFound` — standing 5 or above — declared `gate: 5`
   - `publish` — standing 4 or above — declared `gate: 4`
-  - `enablePush` — standing 5 or above — declared `gate: 5`; body writes as the app
+  - `enablePush` — standing 5 or above — declared `gate: 5`
   - `disablePush` — standing 5 or above — declared `gate: 5`; body writes as the app
   - `mintDeployKey` — standing 4 or above — declared `gate: 4`
   - `importDockerfile` — standing 4 or above — declared `gate: 4`
@@ -867,13 +869,14 @@ name when it declares none.
 
 ### `hubConfig` · model `HubConfig`
 
-- **methods** — `current`, `save`, `attestEscrow`
-- **custom methods** — `current`, `save`, `attestEscrow`
+- **methods** — `current`, `save`, `attestEscrow`, `dismissFound`
+- **custom methods** — `current`, `save`, `attestEscrow`, `dismissFound`
 - **also answers to** — `hub-config`
 - **who may call** —
   - `current` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`
   - `save` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`; body writes as the app
   - `attestEscrow` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`
+  - `dismissFound` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`; body writes as the app
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -1545,6 +1548,8 @@ once; everything else was registered by hand or by a plugin.
 | DELETE | `/setup` | raw |
 | POST | `/setup` | raw |
 | GET | `/setup/probe` | raw |
+| POST | `/setup/restore` | raw |
+| POST | `/setup/restore/archives` | raw |
 
 ## Plugins
 

@@ -19,7 +19,8 @@ import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, slugify }
   from '../../core/resource.ts'
-import { retireAppsIn, placeableServer, placeApp, mintDeployKey } from '../apps/apps.service.ts'
+import { retireAppsIn, placeableServer, placeApp, mintDeployKey, enablePushOn } from '../apps/apps.service.ts'
+import { assertPortFree }       from '../../domain/release/host-port.ts'
 import { toZone }               from '../domains/domains.service.ts'
 import { syncReplicasOf }       from '../../jobs/replicate-sync.job.ts'
 import { parseAppSource }       from '../../domain/release/app-source.ts'
@@ -34,7 +35,7 @@ const SCAFFOLD_API_PORT = 3000
 
 type FromRepo = {
   name: string, slug?: string, repo: string, branch?: string, dockerfile?: string,
-  serverId?: string, hostname?: string, port: number,
+  serverId?: string, hostname?: string, port: number, deployOnPush?: boolean,
 }
 
 export default createService({
@@ -105,6 +106,7 @@ export default createService({
     if (!slug) throw new BadRequest(`'${name}' makes no slug — name one`)
 
     const server = data.serverId ? await placeableServer(data.serverId) : null
+    if (server) await assertPortFree(data.port, [server.id])
     const hostname = data.hostname?.trim().toLowerCase() || null
     if (hostname && await db().domain.exists({ where: { hostname } }))
       throw new Conflict(`'${hostname}' is already an App's hostname in this workspace`)
@@ -155,11 +157,17 @@ export default createService({
     $.dispatch = made.project
     if (made.domain) await toZone(made.domain.id, made.domain.version)
 
+    // Deploy on push is on when a server is named and nobody said no
+    // (FJS-D1558): a push to an App no machine holds would queue a release
+    // that fails at its first step. The credentials are in this answer and
+    // nowhere else, beside the deploy key, so one panel shows both once.
     const notes: string[] = []
+    let push: Awaited<ReturnType<typeof enablePushOn>> | null = null
     if (server) {
       await placeApp($.app, made.app, server)
       const minted = await mintDeployKey($.app, made.app.id, server.id)
       if (minted.note) notes.push(minted.note)
+      if (data.deployOnPush !== false) push = await enablePushOn(made.app.id)
     }
 
     const app = await db().app.findFirst({ where: { id: made.app.id }, include: { domains: true, environment: true } })
@@ -167,7 +175,7 @@ export default createService({
       // The project's id, so the trail files this call under the project.
       id: made.project.id,
       project: made.project, environment: made.environment, app,
-      dockerfile: { seeded },
+      dockerfile: { seeded }, push,
       ...(notes.length ? { note: notes.join('; ') } : {}),
     }
   },

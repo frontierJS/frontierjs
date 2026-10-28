@@ -16,6 +16,8 @@
 
   /** One call that makes the project, its environment and a git app (FJS-D1555).
    *  `dockerfile` is sent only when a person filled it; absent lets the server seed.
-   *  Answers `{ id, project, environment, app, dockerfile: { seeded }, note? }`. */
+   *  Answers `{ id, project, environment, app, dockerfile: { seeded }, push, note? }`:
+   *  `push` is `{ url, tokenUrl, secret, token }` when a server was named and
+   *  deploy on push stayed on (FJS-D1558), shown once and never read back. */
   export const fromRepo = (input) => projects.service.invoke('fromRepo', null, input)
 </script>

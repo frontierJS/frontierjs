@@ -281,7 +281,7 @@ describe('email is a capability, not a preference', () => {
   })
 })
 
-/** A payload wide enough for all seven formatters. Every field any of them
+/** A payload wide enough for every formatter. Every field any of them
  *  reads, so this test is about the TRANSPORTS rather than about the shapes. */
 const BOTH_PAYLOAD = {
   deploymentId: 'd1', appName: 'api', environment: 'production', release: 'v2', reason: 'boom',
@@ -292,6 +292,7 @@ const BOTH_PAYLOAD = {
   deploysOk: 3, deploysFailed: 1, alertsFired: 2, jobsFailed: 0,
   failed: ['ssh.password-off: PasswordAuthentication is yes'],
   found: [{ name: 'lodash', version: '4.17.15', advisories: ['GHSA-p6mc-m468-83gw'] }],
+  apps: [{ id: 'a1', name: 'api', syncedAt: '2026-10-27T02:00:00.000Z' }],
 }
 
 describe('who a workspace tells', () => {

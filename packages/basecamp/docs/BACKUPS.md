@@ -120,8 +120,9 @@ cd packages/basecamp && bunx litestone restore --from-backup=../../basecamp-<sta
 
 `litestone restore` is all or nothing across every database the schema
 declares, and without `--force` it refuses to replace a file that is there and
-names each one. The queue (`jobs.db`) is in the archive and is restored by the
-same command. Do not add `--verify=<dir>`: it proves a Litestream replica, and
+names each one. The queue (`jobs.db`) is in the archive and is NOT restored:
+no schema names it, so a restored hub starts with an empty queue and boot
+re-registers every scheduled Job from its row. Do not add `--verify=<dir>`: it proves a Litestream replica, and
 beside `--from-backup` the SQLite files come from the replica, not the archive.
 
 **An app.** Fetch the archive onto the machine that holds the volume, into

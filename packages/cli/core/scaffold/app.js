@@ -216,7 +216,6 @@ export function makeFliJson(name) {
   return JSON.stringify({
     routesDir:        'cli/src/routes',
     defaultNamespace: name,
-    editor:           'code',
   }, null, 2) + '\n'
 }
 

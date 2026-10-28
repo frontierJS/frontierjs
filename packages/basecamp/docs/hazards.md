@@ -442,7 +442,16 @@ The full hazard catalog for `@frontierjs/basecamp`, moved out of `CLAUDE.md`. Th
   incident an outage just opened. `forMinutes` also needs the window to be
   COVERED — every point breaching is not the same claim as *it has been bad for
   five minutes*, and one reading after a restart satisfies the first.
-- **Zero raw SQL, on purpose** — everything goes through accessors, which is what
-  keeps policies enforceable. `db.asSystem().sql` is the only bypass and it
-  enforces nothing.
+- **Zero raw SQL against the live data, on purpose** — everything the app reads
+  or writes goes through accessors, which is what keeps policies enforceable.
+  `db.asSystem().sql` is the only bypass and it enforces nothing. The backup
+  domain reads FILES no client holds — a queue copied by `VACUUM INTO`, a
+  staged archive's history, the boot check before a restore — with its own
+  `bun:sqlite` handle; that is the exception, and it never sits beside a client.
 
+- **A *replica found* offer is not an alert** — `App.replicaFoundAt` and
+  `HubConfig.replicaFoundAt` are set by the reconcile after a hub restore
+  (`domain/backup/found-replicas.ts`), and `dismissFound` CLEARS them, keeping
+  no who or when; an alert's `acknowledge` keeps both. The audit trail is the
+  history. The app card also hides itself while a placement's heartbeat reads
+  the app replicating, so a set column with no card is an app still alive.

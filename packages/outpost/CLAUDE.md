@@ -19,6 +19,7 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
 | `src/replicate.js` | **Litestream's config** — `/replicate`'s list becomes `/etc/basecamp/litestream.yml` and a restart; `status()` reads `/list` off the control socket. A `host` entry is Basecamp's own database, at `OUTPOST_HOST_DB_PATH`, and every other machine skips it with a reason. `stage()` is `/replica/restore`'s download half |
 | `src/cert.js` | the command port's self-signed certificate — made once, kept, and the argv the install script builds its own openssl line from |
 | `src/deploy-key.js` | each app's deploy key (`FJS-D1555`) — `cert.js`'s rule: made once, kept, never sent; `build` clones with it via `GIT_SSH_COMMAND` |
+| `src/dockerfile.js` | **which Dockerfile a build uses, and whether it installs from `deploy/generated/`** — the App's stored copy, `deploy/Dockerfile`, the root's; `fli basecamp:deploy` imports the same two functions (`FJS-D1560`), so the laptop and the push choose alike. No `Bun` global at import: the cli loads it under node too |
 | `src/index.js` | the process: serve, start the timers, stop them on a signal |
 
 ## What bites here

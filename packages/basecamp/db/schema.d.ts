@@ -110,7 +110,7 @@ export type DependencyKind = 'dependency' | 'dev' | 'peer' | 'optional'
 
 export type NotificationContext = 'Deployment' | 'AlertEvent' | 'JobRun' | 'Server' | 'Workspace' | 'Monitor'
 
-export type NotificationKind = 'DeploySuccess' | 'DeployFailed' | 'AlertFiring' | 'AlertResolved' | 'ServerUnreachable' | 'MonitorDown' | 'MonitorUp' | 'PostureFailed' | 'DependencyVulnerable' | 'MemberJoined' | 'JobFailed' | 'WeeklyDigest'
+export type NotificationKind = 'DeploySuccess' | 'DeployFailed' | 'AlertFiring' | 'AlertResolved' | 'ServerUnreachable' | 'MonitorDown' | 'MonitorUp' | 'PostureFailed' | 'DependencyVulnerable' | 'MemberJoined' | 'JobFailed' | 'WeeklyDigest' | 'ReplicaFound'
 
 export type EditorRole = 'edit' | 'publish'
 
@@ -292,7 +292,8 @@ export interface AppFromBlueprint {
  * What `projects.fromRepo` accepts: a project, its production environment
  * and one App built from a repository, made together (`FJS-D1555`). `port` is
  * the host port the App is published on; `dockerfile` is the App's own copy,
- * blank for the repository's.
+ * blank for the repository's. `deployOnPush` is on when a server is named and
+ * `false` turns it off (`FJS-D1558`); without a server it is never on.
  */
 export interface ProjectFromRepo {
   name: string
@@ -303,6 +304,7 @@ export interface ProjectFromRepo {
   serverId?: string | null
   hostname?: string | null
   port: number
+  deployOnPush?: boolean | null
 }
 
 /**
@@ -2939,6 +2941,8 @@ export interface App {
   backupDestinationId?: string | null
   replicaDestinationId?: string | null
   drillCron?: string | null
+  replicaFoundAt?: string | null
+  replicaSyncedAt?: string | null
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -2994,6 +2998,8 @@ export interface AppSystem {
   pushActorId?: string | null
   deployPublicKey?: string | null
   blueprintId?: string | null
+  replicaFoundAt?: string | Date | null
+  replicaSyncedAt?: string | Date | null
 }
 
 export interface AppWhere extends WhereBase {
@@ -3022,6 +3028,8 @@ export interface AppWhere extends WhereBase {
   backupDestinationId?: string | WhereOp<string> | null
   replicaDestinationId?: string | WhereOp<string> | null
   drillCron?: string | WhereOp<string> | null
+  replicaFoundAt?: string | Date | WhereOp<string | Date> | null
+  replicaSyncedAt?: string | Date | WhereOp<string | Date> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
@@ -5715,6 +5723,8 @@ export interface HubConfig {
   backupCron: string
   backupDestinationId?: string | null
   replicaDestinationId?: string | null
+  replicaFoundAt?: string | null
+  replicaSyncedAt?: string | null
   backupKeepLocalCount: number
   backupKeepLocalDays?: number | null
   backupKeepRemoteCount: number
@@ -5775,6 +5785,8 @@ export interface HubConfigUpdate {
 }
 
 export interface HubConfigSystem {
+  replicaFoundAt?: string | Date | null
+  replicaSyncedAt?: string | Date | null
   encryptionKeyEscrowedAt?: string | Date | null
   encryptionKeyFingerprint?: string | null
   hostServerId?: string | null
@@ -5794,6 +5806,8 @@ export interface HubConfigWhere extends WhereBase {
   backupCron?: string | WhereOp<string> | null
   backupDestinationId?: string | WhereOp<string> | null
   replicaDestinationId?: string | WhereOp<string> | null
+  replicaFoundAt?: string | Date | WhereOp<string | Date> | null
+  replicaSyncedAt?: string | Date | WhereOp<string | Date> | null
   backupKeepLocalCount?: number | WhereOp<number> | null
   backupKeepLocalDays?: number | WhereOp<number> | null
   backupKeepRemoteCount?: number | WhereOp<number> | null
@@ -6287,7 +6301,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly serverNetwork: TableClient<ServerNetwork, ServerNetworkCreate, ServerNetworkUpdate, ServerNetworkWhere, ServerNetworkRelations, never, '@@gate'>
   readonly project: TableClient<Project, ProjectCreate, ProjectUpdate, ProjectWhere, ProjectRelations, never, '@@gate'>
   readonly environment: TableClient<Environment, EnvironmentCreate, EnvironmentUpdate, EnvironmentWhere, EnvironmentRelations, never, '@@gate'>
-  readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations, never, 'status' | 'deployOnPush' | 'pushSecret' | 'pushTokenHash' | 'pushActorId' | 'deployPublicKey' | 'blueprintId' | '@@gate', AppSystem>
+  readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations, never, 'status' | 'deployOnPush' | 'pushSecret' | 'pushTokenHash' | 'pushActorId' | 'deployPublicKey' | 'blueprintId' | 'replicaFoundAt' | 'replicaSyncedAt' | '@@gate', AppSystem>
   readonly variable: TableClient<Variable, VariableCreate, VariableUpdate, VariableWhere, VariableRelations, never, '@@gate'>
   readonly domain: TableClient<Domain, DomainCreate, DomainUpdate, DomainWhere, DomainRelations, never, 'certSecretId' | 'certKind' | 'certIssuedAt' | 'certExpiresAt' | '@@gate', DomainSystem>
   readonly domainRoute: TableClient<DomainRoute, DomainRouteCreate, DomainRouteUpdate, DomainRouteWhere, DomainRouteRelations, never, '@@gate'>
@@ -6325,7 +6339,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly dependency: TableClient<Dependency, DependencyCreate, DependencyUpdate, DependencyWhere, DependencyRelations, never, 'latest' | 'deprecated' | 'advisories' | 'checkedAt' | 'checkError' | '@@gate', DependencySystem>
   readonly dependencyUse: TableClient<DependencyUse, DependencyUseCreate, DependencyUseUpdate, DependencyUseWhere, DependencyUseRelations, never, '@@gate'>
   readonly backup: TableClient<Backup, BackupCreate, BackupUpdate, BackupWhere, BackupRelations, never, '@@gate'>
-  readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere, HubConfigRelations, never, 'encryptionKeyEscrowedAt' | 'encryptionKeyFingerprint' | 'hostServerId' | '@@gate', HubConfigSystem>
+  readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere, HubConfigRelations, never, 'replicaFoundAt' | 'replicaSyncedAt' | 'encryptionKeyEscrowedAt' | 'encryptionKeyFingerprint' | 'hostServerId' | '@@gate', HubConfigSystem>
   readonly notification: TableClient<Notification, NotificationCreate, NotificationUpdate, NotificationWhere, NotificationRelations, never, '@@gate'>
   readonly notificationPreference: TableClient<NotificationPreference, NotificationPreferenceCreate, NotificationPreferenceUpdate, NotificationPreferenceWhere, NotificationPreferenceRelations, never, '@@gate'>
   readonly fleetByProvider: ViewClient<FleetByProvider, FleetByProviderWhere>

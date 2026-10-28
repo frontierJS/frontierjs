@@ -104,6 +104,25 @@ describe('projects.fromRepo makes the five rows', () => {
     expect(made.note).toMatch(/stub/)
   })
 
+  test('with a server, deploy on push is on and the answer carries the credentials once', async () => {
+    expect(made.app.deployOnPush).toBe(true)
+    expect(made.push.url).toContain(`/hooks/git/${made.app.id}`)
+    expect(made.push.tokenUrl).toBe(`${made.push.url}/${made.push.token}`)
+    expect(made.push.secret).toBeTruthy()
+    const row: any = await env.as(admin).service('apps').get(made.app.id)
+    expect(JSON.stringify(row)).not.toContain(made.push.secret)
+    expect(JSON.stringify(row)).not.toContain(made.push.token)
+  })
+
+  test('`deployOnPush: false` leaves it off, with a server', async () => {
+    const off = await fromRepo(admin, {
+      name: `Quiet ${uniq()}`, repo: 'git@github.com:acme/quiet.git', dockerfile: 'FROM oven/bun:1',
+      serverId: box.id, port: 4102, deployOnPush: false,
+    })
+    expect(off.app.deployOnPush).toBe(false)
+    expect(off.push).toBeNull()
+  })
+
   test('no dockerfile and a forge nothing reads seeds the template', async () => {
     const r = await fromRepo(developer, { name: `Lab ${uniq()}`, repo: 'https://gitlab.com/acme/lab.git', port: 4101 })
     expect(r.dockerfile).toEqual({ seeded: 'template' })
@@ -152,6 +171,39 @@ describe('source.dockerfile', () => {
 
   test('a list carries its size, not its text', () => {
     expect(summarizeSource({ kind: 'git', repo: 'r', dockerfile: 'FROM x' })).toEqual({ kind: 'git', repo: 'r', dockerfileBytes: 6 })
+  })
+})
+
+// FJS-3563: docker refuses the second container on a host port, after the
+// first release's container has stopped; Basecamp refuses it at the row.
+describe('a host port is one App\'s on a machine', () => {
+  let first: any, second: any
+  beforeAll(async () => {
+    first  = await fromRepo(admin, { name: `Port ${uniq()}`, repo: 'https://gitlab.com/acme/p.git', serverId: box.id, port: 4200 })
+    second = await fromRepo(admin, { name: `Port ${uniq()}`, repo: 'https://gitlab.com/acme/q.git', serverId: box.id, port: 4201 })
+  })
+
+  test('fromRepo onto a machine where another App publishes the port is refused, naming it', async () => {
+    await expect(fromRepo(admin, { name: `Port ${uniq()}`, repo: 'https://gitlab.com/acme/r.git', serverId: box.id, port: 4200 }))
+      .rejects.toThrow(new RegExp(`Port 4200 .*${first.app.name}`))
+  })
+
+  test('a patch onto a taken port is refused, and the container port may repeat', async () => {
+    const apps = env.as(admin).service('apps')
+    await expect(apps.patch(second.app.id, { port: 4200 })).rejects.toThrow(/Port 4200/)
+    expect((await apps.patch(second.app.id, { containerPort: 3000, port: 4202 })).port).toBe(4202)
+  })
+
+  test('placing an App on a machine where its port is taken is refused', async () => {
+    const apps = env.as(admin).service('apps')
+    const loose = await fromRepo(admin, { name: `Port ${uniq()}`, repo: 'https://gitlab.com/acme/s.git', port: 4200 })
+    await expect(apps.call('place', loose.app.id, { serverId: box.id })).rejects.toThrow(/Port 4200/)
+  })
+
+  test('the detail names the host ports the App\'s machines already hold, not its own', async () => {
+    const detail = await env.as(admin).service('apps').get(second.app.id)
+    expect(detail.portsTaken).toContain(4200)
+    expect(detail.portsTaken).not.toContain(4202)
   })
 })
 

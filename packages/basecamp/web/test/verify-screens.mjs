@@ -2181,6 +2181,64 @@ try {
     'turning push off never cleared the keys')
   check('turning it off clears the row', (await apiGet(`/apps/${gitApp.id}`)).body?.deployOnPush === false)
 
+  // ─── Creation ends in Connect your repository (FJS-D1558) ──────────────
+  // The credentials are in the create's answer and nowhere else, so the form
+  // gives way to one panel that shows the deploy key and the webhook once.
+  console.log('\n  /projects/create/ — connect your repository')
+  const onlineBox = ((await apiGet('/servers?$limit=200')).body?.data ?? []).find(s => s.status === 'online')
+  check('the seed holds an online server to place the app on', !!onlineBox)
+  await goto('/projects/create/')
+  await until(`document.getElementById('from-repo') !== null`, v => v, 'the create page never offered From a repository')
+  await click('#from-repo')
+  await until(`document.getElementById('serverId') !== null`, v => v, 'the repository fields never showed')
+  const connectPort = String(4900 + Math.floor(Math.random() * 90))
+  await fill({ name: `Connect ${connectPort}`, repo: 'git@github.com:acme/connect.git', port: connectPort,
+               dockerfile: 'FROM oven/bun:1\n', serverId: onlineBox.id })
+  check('Deploy on push appears once a server is picked, and starts on',
+    await until(`document.getElementById('deploy-on-push')?.checked ?? null`, v => v !== null, 'the switch never appeared'))
+  await click('#create-submit')
+  const connectSecret = await until(`document.getElementById('connect-push-secret')?.textContent ?? ''`,
+    t => t.length >= 32, 'creating never showed the Connect your repository panel')
+  const connectUrl = await text('#connect-push-url')
+  const connectApp = ((await apiGet('/apps?$limit=200')).body?.data ?? []).find(a => a.name === `Connect ${connectPort}`)
+  check('the panel shows the webhook URL for the new app, and a secret',
+    !!connectApp && connectUrl.includes(`/hooks/git/${connectApp.id}`) && /^[0-9a-f]{64}$/.test(connectSecret.trim()), connectUrl)
+  check('the token URL carries the minted token', (await text('#connect-push-token-url')).includes('bcpt_'))
+  check('the deploy key is on the same panel, or the machine\'s reason is',
+    (await evaluate(`!!(document.getElementById('connect-deploy-key') || document.getElementById('connect-deploy-key-note'))`)))
+  check('the form is gone and the panel says it is shown once',
+    (await evaluate(`!document.getElementById('create-submit') && !!document.getElementById('connect-once')`)))
+  const connectRow = (await apiGet(`/apps/${connectApp?.id}`)).body
+  check('the row says push is on and no read carries the secret',
+    connectRow?.deployOnPush === true && !JSON.stringify(connectRow).includes(connectSecret.trim()), String(connectRow?.deployOnPush))
+  await click('#connect-done')
+  await until(`location.pathname`, p => p === `/apps/${connectApp?.id}/`, 'Open the app never reached the App page')
+  await until(`document.getElementById('app-status') !== null`, v => v, 'the App page never rendered')
+  check('Open the app lands on the App page, and nothing there shows the secret',
+    !(await body()).includes(connectSecret.trim()))
+
+  // ─── The door each release came through ────────────────────────────────
+  // Nothing else on a row tells a laptop build from a push, so the overview's
+  // notice and the Releases tab both read the trigger; the seed draws it.
+  console.log('\n  app detail — the door on each release')
+  let laptopApp = null
+  for (const a of (await apiGet('/apps?$limit=200')).body?.data ?? []) {
+    const full = (await apiGet(`/apps/${a.id}`)).body
+    if (full?.recent_deployments?.find(d => d.status === 'success')?.trigger === 'laptop') { laptopApp = full; break }
+  }
+  check('the seed has an app whose live release is a laptop build', !!laptopApp)
+  await goto(`/apps/${laptopApp?.id}/`)
+  await until(`!!document.getElementById('app-live-build')`, v => v, 'the overview never said a laptop build is live')
+  const liveNote = await text('#app-live-build')
+  check('the overview says a laptop build is live, and what replaces it',
+    /laptop build is live/.test(liveNote) && (laptopApp?.source?.kind !== 'git' || /next push/.test(liveNote)), liveNote)
+  await evaluate(`[...document.querySelectorAll('#app-tabs [role=tab]')].find(b => b.textContent.trim() === 'releases').click()`)
+  const doors = await until(`[...document.querySelectorAll('#app-releases tbody tr')].map(tr => tr.children[4]?.textContent.trim() ?? '')`,
+    v => v.length > 0, 'the Releases tab never listed rows')
+  const expectedDoors = (laptopApp?.recent_deployments ?? []).map(d => d.trigger)
+  check('the Releases tab names each row\'s door',
+    doors.length === expectedDoors.length && doors.every((t, i) => t.startsWith(expectedDoors[i])), JSON.stringify(doors))
+
   // ─── Home's fleet summary ──────────────────────────────────────────────
   console.log('\n  home — the fleet summary')
   await goto('/')

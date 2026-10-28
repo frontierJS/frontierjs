@@ -112,6 +112,18 @@ describe('ports', () => {
   test('containerPort is what the image listens on when the App sets it', () => {
     expect(run({ app: { ...BARE, port: 443, containerPort: 8100 } }).some(f => f.rule === 'port-mismatch')).toBe(false)
   })
+
+  test('a never-ported App takes the first host port its machine leaves free, and keeps the listen port inside', () => {
+    const f = run({ app: { ...BARE, portsTaken: [8100, 8101] } }).find(f => f.rule === 'no-port')
+    expect(f.fix).toEqual({ app: { port: 8102, containerPort: 8100 } })
+  })
+
+  test('a host port another App on the machine publishes is an error whose fix keeps the container port', () => {
+    const f = run({ app: { ...BARE, port: 8100, containerPort: 8100, portsTaken: [8100, 8120] } }).find(f => f.rule === 'port-taken')
+    expect(f.level).toBe('error')
+    expect(f.fix).toEqual({ app: { port: 8101, containerPort: 8100 } })
+    expect(run({ app: { ...BARE, port: 8101, containerPort: 8100, portsTaken: [8100] } }).some(f => f.rule === 'port-taken')).toBe(false)
+  })
 })
 
 test('health: a check on a path the app does not serve', () => {

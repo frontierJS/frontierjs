@@ -23,6 +23,7 @@ title: App
   import { deployments, DEPLOY_TONE } from '../../../resources/Deployment.mesa'
   import { session } from '../../../lib/session.js'
   import { at, ago } from '../../../lib/datetime.js'
+  import { shortSha } from '../../../lib/displays.js'
 
   import NavIcon from '../../../components/NavIcon.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
@@ -291,6 +292,29 @@ title: App
     try {
       app = await apps.service.invoke('place', app.id, { serverId: placeOn })
       placeOn = ''
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function restoreFound(p) {
+    error = null; busy = `found:${p.serverId}`
+    try {
+      await apps.service.invoke('restoreReplica', app.id, { serverId: p.serverId })
+      app = await apps.service.get(app.id)
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function dismissFound() {
+    error = null; busy = 'found'
+    try {
+      app = await apps.service.invoke('dismissFound', app.id)
     } catch (e) {
       error = e.message
     } finally {
@@ -588,6 +612,10 @@ title: App
   // what that tab names. The live row's trigger says which door it came
   // through; nothing else on the row tells a laptop build from a push.
   $: live        = app?.recent_deployments?.find(d => d.status === 'success') ?? null
+  // After a hub restore the bucket held this app's replica (`IDEAS/backups.md`
+  // 4.5). Hidden while a placement reads it replicating inside the lag window:
+  // that app is alive, and Outpost refuses a volume its container holds.
+  $: foundShown  = !!app?.replicaFoundAt && !(app.placement ?? []).some(p => p.replication && !p.replication.late)
   $: overBuild   = live?.trigger === 'laptop'
     ? (app?.source?.kind === 'git'
         ? 'A laptop build is live — fli basecamp:deploy sent it. Deploy, and the next push, replaces it with a build of the branch on the Source tab.'
@@ -700,6 +728,39 @@ title: App
   {#if tab === 'overview'}
     <div class="split" style:align-items="start" style:flex-wrap="wrap" style:gap="1.5rem" id="app-overview">
     <div class="stack" style:flex="1 1 32rem" style:min-width="0">
+      {#if foundShown}
+        <Card id="app-found">
+          <h2 class="h4">Replica found</h2>
+          <p class="text-sm">
+            Basecamp was restored, and the bucket holds this app's replica, last synced
+            {app.replicaSyncedAt ? at(app.replicaSyncedAt) : 'at an unknown time'}.
+          </p>
+          {#if app.placement?.length}
+            <ul class="stack" id="app-found-targets">
+              {#each app.placement as p}
+                <li class="cluster">
+                  {#if p.server?.status === 'online'}
+                    <Button tone="primary" disabled={!!busy} onclick={() => restoreFound(p)}
+                            data-confirm={`The databases in this app's volume on ${p.server?.name ?? 'that server'} are replaced by the replica. Stop the app there first.`}
+                            data-confirm-title="Restore the replica?" data-confirm-label="Restore">
+                      Restore onto {p.server?.name ?? p.serverId}
+                    </Button>
+                  {:else}
+                    <!-- A machine that stopped checking in cannot be sent a restore. -->
+                    <span class="text-sm">{p.server?.name ?? p.serverId} is {p.server?.status ?? 'gone'}:</span>
+                    <a href={`/servers/${p.serverId}/`}>re-enroll it first</a>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="text-sm text-muted">It is placed nowhere. Place it on a machine below, then restore onto it.</p>
+          {/if}
+          <div class="cluster">
+            <Button treatment="ghost" id="app-found-dismiss" disabled={!!busy} onclick={dismissFound}>Dismiss</Button>
+          </div>
+        </Card>
+      {/if}
       <Card>
         <div class="section-header">
           <h2 class="h4">Deployments</h2>
@@ -711,7 +772,7 @@ title: App
           <div class="split" style:flex-wrap="wrap" id="app-latest">
             <span class="cluster">
               <a href={`/deployments/${latest.id}/`}><Pill tone={DEPLOY_TONE[latest.status] ?? 'info'}>{latest.status}</Pill></a>
-              <code>{latest.commitSha?.slice(0, 7) ?? latest.toImage ?? '—'}</code>
+              <code>{shortSha(latest.commitSha) ?? latest.toImage ?? '—'}</code>
               {#if latest.commitMessage}<span class="text-sm">{latest.commitMessage}</span>{/if}
             </span>
             <span class="cluster text-sm text-muted">
@@ -1108,7 +1169,7 @@ title: App
         This app's own. It also starts with <a href={`/environments/${app.environmentId}/`}>its environment's</a>,
         and one set here wins over the environment's of the same key.
       </p>
-      <VariablesEditor appId={app.id} idPrefix="app-var" />
+      <VariablesEditor appId={app.id} environmentId={app.environmentId} idPrefix="app-var" />
     </Card>
   {/if}
 
@@ -1125,7 +1186,7 @@ title: App
           <tr>
             <td class="text-sm text-muted">{at(d.queuedAt)}</td>
             <td><a href={`/deployments/${d.id}/`}><Pill tone={DEPLOY_TONE[d.status] ?? 'info'}>{d.status}</Pill></a></td>
-            <td><code>{d.commitSha?.slice(0, 7) ?? '—'}</code>
+            <td><code>{shortSha(d.commitSha) ?? '—'}</code>
               {#if d.commitMessage}<span class="text-sm"> {d.commitMessage}</span>{/if}</td>
             <td class="text-sm text-muted">{d.branch ?? '—'}</td>
             <td class="text-sm text-muted">{d.trigger}{whoShipped(d)}</td>

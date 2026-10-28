@@ -4,9 +4,11 @@
 // .fli.json shape (all fields optional):
 // {
 //   "routesDir":        "cli/src/routes",   // where project commands live
-//   "defaultNamespace": "hello",            // default ns for make:command / fli init
-//   "editor":          "code"              // preferred editor for fli edit
+//   "defaultNamespace": "hello"             // default ns for make:command / fli init
 // }
+//
+// No editor key: this file is committed, and the editor is the person's —
+// fli edit / fli config read $VISUAL, then $EDITOR.
 //
 // Loaded once at bootstrap. Safe to read from anywhere via global.fliConfig.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -17,7 +19,6 @@ import { resolve } from 'path'
 const DEFAULTS = {
   routesDir:        'cli/src/routes',
   defaultNamespace: 'hello',
-  editor:           '',                // falls back to $EDITOR env var
 }
 
 export function loadConfig() {

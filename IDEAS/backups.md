@@ -271,12 +271,24 @@ boot restores.
     `tar -tzf` lists its `.db` files) and `verify:caddy`. `verify:build` was not
     run: it insists on 8120, which a dev server held. `verify:sso` fails one
     check whether or not this change is applied (`FJS-3562`).
-- [ ] 4.3 A `manifest.json` in the archive directory, written by `backup:run`:
-      basecamp version, schema hash, `encryptionKeyFingerprint`, `baseUrl`, the
-      database list with each file's sha256. `litestone restore --from-backup`
-      ignores it; `/setup` reads it to refuse a wrong-key or wrong-schema
-      archive BEFORE a file is replaced.
-- [ ] 4.4 The `/setup` restore path. The wizard's first screen gains *Restore a
+- [x] 4.3 A `manifest.json` in the archive directory, written by `backup:run`:
+      basecamp version, `encryptionKeyFingerprint`, every other file with its
+      bytes and sha256. `litestone restore --from-backup` ignores it; `/setup`
+      reads it to refuse a wrong-key, damaged or wrong-schema archive BEFORE a
+      file is replaced.
+  - Done 2026-10-27. `domain/backup/archive-manifest.ts`: `writeManifest`
+    (last thing `archiveAll` writes) and `archiveRefusals(dir,
+    { migrationsRoot })`, one sentence per reason, for 4.4 to call on the
+    staged directory. The plan's *schema hash* and `baseUrl` were dropped
+    (`decision-rules`, assessment tier): a hash of `schema.lite` refuses a
+    restore whose pending migrations would apply, and both are already in the
+    staged files. The schema half is litestone's `status()` over each staged
+    `<name>.db` with a `db/migrations/<name>/`: `orphaned` (archive newer) and
+    `modified` (a migration rewritten in place, which pre-alpha
+    `initial_schema.sql` is) refuse, `pending` passes to boot. Boot's
+    `apply()` looks at neither, so nothing else catches them. Proved by seven
+    rows in `backup-run.test.ts`, each on a copy of a real archive.
+- [x] 4.4 The `/setup` restore path. The wizard's first screen gains *Restore a
       hub*: a bucket form (endpoint, bucket, prefix, key — the
       `BackupDestination` shape, prefilled from `HUB_RESTORE_*` env for a
       headless box, since no row exists yet) that lists `basecamp-*.tar.gz` by
@@ -289,7 +301,44 @@ boot restores.
       in place. One owner of the file swap, and a live hub is never overwritten.
       `GET /setup/probe` answers `restore: 'staged' | 'done' | null` so the
       wizard can say what happened.
-- [ ] 4.5 Found replicas and archives. The first boot after a restore runs a
+  - Done 2026-10-27. `domain/backup/hub-restore.ts`; the wizard's *Restore a
+    hub* tab lists the bucket or takes a file. Five departures, graded by
+    `decision-rules` (assessment + map tier, after the build):
+    the bucket is reached over pre-signed URLs, because no `Secret` row exists
+    for a conduit target to name; the swap runs from `app.ts` before
+    `openSqlite`, because that and not `core/db.ts` is where a database first
+    opens; the Account check is a raw read of a file no client holds yet (the
+    *Zero raw SQL* map line in basecamp's `CLAUDE.md` and `docs/hazards.md`
+    now names that exception, which `backup-run` and the manifest already
+    took), and it fails CLOSED: only a missing file or table is "no hub",
+    because the step it guards is `--force`; both doors ask the same
+    question, an `Account` row; the probe also answers `refused`/`failed` with
+    `restore_message`, so a swap that did not happen is on the screen and not
+    only in the log; and "checks sha256" is the manifest's per-file sha256
+    (4.3), since a fresh box holds no row that records the tarball's.
+    `POST /setup/restore` is `{ body: 'stream' }`: JSON names an archive
+    in the bucket, `application/gzip` is the file itself, capped at
+    `MAX_UPLOAD_BYTES`. Bun refuses a declared length over 128 MB first
+    (`FJS-3090`), so a larger archive comes from the bucket.
+    `HUB_RESTORE_{ENDPOINT,REGION,BUCKET,PREFIX,KEY}` prefill the form, and the
+    key is only reported as set. Found: `jobs.db` is NOT restored by
+    `litestone restore --from-backup` because no schema names it, and
+    `BACKUPS.md` § 7 said it was; that sentence was corrected.
+    Proved by six rows in `backup-run.test.ts` (stage, swap with the real CLI,
+    refused beside an account, refused beside an unreadable file,
+    junk/wrong-top/symlink/damaged refused, and
+    bucket list+fetch over a stand-in), plus a scratch two-boot drive, 14/14:
+    hub A backs up and downloads, fresh hub B takes the upload (202 staged),
+    restarts, answers `done`, A's user signs in, `/setup/restore` is then
+    409, and a different key is refused with nothing staged. Not driven: the
+    bucket path through the route, and the tab in a browser (4.8's drive).
+    Not done (`decision-rules` optional): a pre-signed `Send` adapter so
+    `listObjects`/`translate` run unchanged; the listing loop and the error
+    line are written again in `hub-restore.ts`, and an adapter would have to
+    forge conduit's result and error shapes.
+    Open: `restore-done-*/` stays beside the database. Under `db/` in a dev
+    tree, `litestone backup`'s layout sweep would carry it into later backups.
+- [x] 4.5 Found replicas and archives. The first boot after a restore runs a
       reconcile: every App with `replicaDestinationId` whose credential
       decrypts is listed at its destination (3.1's listing); a replica there
       makes a `Notification` and a card on the app — *replica found, last sync
@@ -300,14 +349,47 @@ boot restores.
       hub cannot replace itself while serving. App-level rescan arrives here:
       `<prefix>/<appId>-*` to `found` `AppBackup` rows, the hub-only rescan
       generalized.
+  - Done 2026-10-27. The owner ruled three questions first: the finding is
+    two `@system` App columns, `replicaFoundAt` and `replicaSyncedAt` (not
+    derived on read, not a `FoundReplica` model); the card shows only for an
+    app not alive, hidden while a placement's heartbeat reads it inside
+    `REPLICA_MAX_LAG_MS`; and the app-archive rescan moved to 4.9.
+    `domain/backup/found-replicas.ts` (`reconcileFound`) runs in
+    `jobs/restore-reconcile.job.ts`, which `app.ts` queues once when
+    `restoreStaged` answered `done`, so boot never waits on a bucket. Per App,
+    `replicaDatabases` names the databases and the newest object under the
+    path is the last sync. Graded by `decision-rules` after the build (late;
+    all five departures hold): the hub's replica takes the same two columns
+    on `HubConfig`, and `/hub/backups/` names the runbook; one `ReplicaFound`
+    notification per workspace lists its apps (new `NotificationKind`,
+    subject `Workspace`), and an app already found is not told again, so a
+    retried job does not page twice; the card offers *Restore onto <server>*
+    per placement on an `online` machine and *re-enroll it first* (the server
+    screen issues the enrollment) for any other; `apps.dismissFound`
+    (administrator) and `hubConfig.dismissFound` clear it, as does a
+    `restoreReplica` that lands. `dismiss` clears and keeps no who/when,
+    unlike an alert's `acknowledge` (`docs/hazards.md`).
+    Proved by one row in `services.test.ts` over a bucket stand-in: an empty
+    replica is not found, a found one records the newest LTX time, the
+    workspace is told, a developer's dismiss is refused, and dismiss and a
+    stub restore both clear. Unenforced until 4.8's drive: the boot dispatch,
+    the card hiding while the app is alive, and the hub half of
+    `reconcileFound`; neither card has been seen in a browser.
 - [ ] 4.6 3.4's runbook, rewritten around 4.4: `BACKUPS.md` § 7 becomes
       "download it, or point `/setup` at the bucket", and the terminal recipe
       stays for a box whose `/setup` cannot be reached. Closes 3.4.
+      `/hub/backups/`'s *Replica found* card (4.5) points at § 7, so it also
+      gains the recipe for restoring the hub from its own Litestream replica
+      when that is newer than the archive.
 - [ ] 4.7 `litestone rekey <new>` over the client's `$rotateKey`, for the hub
       restored with a key that has leaked. Q9 ruled A (`FJS-D1556`).
 - [ ] 4.8 `verify:hub-restore`: a scratch hub, an archive from a real
       `backup:run` into SeaweedFS, `/setup` restore across a restart, and one
       App with a real replica shown as found. Row in `DRIVES.md`.
+- [ ] 4.9 App-archive rescan, moved out of 4.5 by the owner:
+      `<prefix>/<appId>-*.tar.gz` to `found` `AppBackup` rows. Open: a listing
+      carries no sha256 and `restoreVolume` refuses a row without one, and
+      `AppBackup.serverId` is required while the key names no machine.
 
 ## After this (not in this plan)
 

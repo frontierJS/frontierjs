@@ -3,9 +3,15 @@ title: First run
 ---
 <script>
   import { goto } from '@frontierjs/sierra/router'
-  import { completeSetup } from '../../lib/session.js'
-  import Button from '@frontierjs/ui/components/forms/Button.mesa'
-  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
+  import { completeSetup, listHubArchives, setupProbe, stageHubRestore } from '../../lib/session.js'
+  import { formatBytes } from '@frontierjs/toolbelt/units'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import FileUpload from '@frontierjs/ui/components/forms/FileUpload.mesa'
+  import Tabs       from '@frontierjs/ui/components/layout/Tabs.mesa'
+  import TabList    from '@frontierjs/ui/components/layout/TabList.mesa'
+  import Tab        from '@frontierjs/ui/components/layout/Tab.mesa'
+  import TabPanel   from '@frontierjs/ui/components/layout/TabPanel.mesa'
 
   let workspace_name = ''
   let name           = ''
@@ -31,6 +37,74 @@ title: First run
       busy = false
     }
   }
+
+  // ─── Restore a hub ─────────────────────────────────────────────────────
+  //
+  // The API stages the archive and the NEXT BOOT swaps it in, so this screen
+  // cannot finish the restore; it says what to restart and then asks the
+  // probe until the restart has happened. `restore_bucket` is the env's
+  // prefill for a headless box — the key arrives only as "is set".
+  let tab       = 'create'
+  let endpoint  = ''
+  let region    = ''
+  let bucketName = ''
+  let prefix    = ''
+  let key       = ''
+  let envKey    = false
+  let archives  = null
+  let files     = []
+  let restoring = null     // the probe's `restore`: staged | done | refused | failed
+  let restoreMessage = null
+  let takenAt   = null
+  let reasons   = []
+
+  function readProbe(p) {
+    restoring      = p?.restore ?? null
+    restoreMessage = p?.restore_message ?? null
+    takenAt        = p?.restore_taken_at ?? takenAt
+  }
+
+  $.onMount(async () => {
+    const p = await setupProbe().catch(() => null)
+    const b = p?.restore_bucket
+    if (b) {
+      endpoint = b.endpoint; region = b.region; bucketName = b.bucket; prefix = b.prefix
+      envKey   = b.key
+    }
+    readProbe(p)
+    if (restoring) tab = 'restore'
+  })
+
+  let poll = null
+  function watch() {
+    clearTimeout(poll)
+    if (restoring !== 'staged') return
+    poll = setTimeout(async () => { readProbe(await setupProbe().catch(() => null)); watch() }, 3000)
+  }
+  $: restoring, () => watch()
+  $.onDestroy(() => clearTimeout(poll))
+
+  const bucket = () => ({ endpoint, region, bucket: bucketName, prefix, key })
+
+  async function list(e) {
+    e.preventDefault()
+    error = null; busy = true; archives = null
+    try { archives = (await listHubArchives(bucket())).archives }
+    catch (err) { error = err.message }
+    finally { busy = false }
+  }
+
+  async function stage(from) {
+    error = null; reasons = []; busy = true
+    try {
+      const r = await stageHubRestore(from)
+      restoring = r.restore
+      takenAt   = r.taken_at
+    } catch (err) {
+      error   = err.code === 413 ? 'Too large to upload; restore it from the bucket instead.' : err.message
+      reasons = err.data?.reasons?.slice(1) ?? []
+    } finally { busy = false }
+  }
 </script>
 
 <div class="section-header">
@@ -39,13 +113,20 @@ title: First run
 </div>
 
 <p class="text-body">
-  This creates the account, the first workspace and its owner in one transaction. It is the only unauthenticated write in the app, and it closes behind itself — once an active user exists, <code>/setup</code> answers 409.
+  A new hub creates the account, the first workspace and its owner in one transaction; a restored one is the old hub's, brought back from an archive. These are the only unauthenticated writes in the app, and they close behind themselves — once an active user exists, <code>/setup</code> answers 409.
 </p>
 
 <!-- .container.narrow caps at --container-narrow: a form stretched to a
      1280px screen is a wall, not a form. The width is a vocabulary term,
      not a number chosen here. -->
 <div class="container narrow">
+  <Tabs activeId={tab} onchange={(id) => tab = id}>
+  <TabList>
+    <Tab id="create">New hub</Tab>
+    <Tab id="restore">Restore a hub</Tab>
+  </TabList>
+
+  <TabPanel id="create">
   <form class="card stack" onsubmit={submit}>
   {#if error}
     <article class="alert danger">
@@ -74,4 +155,85 @@ title: First run
     </Button>
   </div>
   </form>
+  </TabPanel>
+
+  <TabPanel id="restore">
+  <div class="stack" id="setup-restore">
+    {#if restoring === 'staged'}
+      <article class="alert info">
+        <div class="alert-content">
+          The archive taken {takenAt} is staged. Restart Basecamp to finish: the next boot puts it in place
+          before anything opens the databases. This page notices the restart by itself.
+        </div>
+      </article>
+    {:else if restoring === 'done'}
+      <article class="alert success">
+        <div class="alert-content">
+          Restored from the archive taken {takenAt}. <a href="/login/">Sign in</a> with an account the old hub had.
+        </div>
+      </article>
+    {:else if restoring === 'refused' || restoring === 'failed'}
+      <article class="alert danger">
+        <div class="alert-content">The staged archive was not restored: {restoreMessage}</div>
+      </article>
+    {/if}
+
+    {#if error}
+      <article class="alert danger">
+        <div class="alert-content">
+          {error}
+          {#if reasons.length}<ul>{#each reasons as r}<li>{r}</li>{/each}</ul>{/if}
+        </div>
+      </article>
+    {/if}
+
+    <p class="text-body">
+      Bring back a hub from one of its archives. This box must run with the old hub's
+      <code>ENCRYPTION_KEY</code>; an archive taken under another key is refused before anything is replaced.
+    </p>
+
+    <form class="card stack" onsubmit={list}>
+      <Input label="Endpoint" name="endpoint" id="restore-endpoint" required
+             hint="The bucket's host, no bucket in it: https://s3.us-west-004.backblazeb2.com"
+             bind:value={endpoint} />
+      <Input label="Region" name="region" id="restore-region" bind:value={region} />
+      <Input label="Bucket" name="bucket" id="restore-bucket" required bind:value={bucketName} />
+      <Input label="Prefix" name="prefix" id="restore-prefix" bind:value={prefix} />
+      <Input label="Key" name="key" id="restore-key" type="password" autocomplete="off"
+             required={!envKey}
+             hint={envKey ? 'Set by HUB_RESTORE_KEY on this box; leave blank to use it.' : '<accessKeyId>:<secretAccessKey>'}
+             bind:value={key} />
+      <div class="cluster">
+        <Button type="submit" disabled={busy}>{busy && !archives ? 'Listing…' : 'List archives'}</Button>
+      </div>
+
+      {#if archives}
+        {#if archives.length === 0}
+          <p class="text-muted">No hub archives under that prefix.</p>
+        {:else}
+          <ul class="rows divided" id="restore-archives">
+            {#each archives as a (a.key)}
+              <li class="list-row cluster">
+                <span>{a.takenAt} <span class="text-muted">· {formatBytes(a.size)}</span></span>
+                <Button tone="primary" disabled={busy} onclick={() => stage({ ...bucket(), archive: a.key })}>Restore this</Button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      {/if}
+    </form>
+
+    <div class="card stack">
+      <FileUpload label="Or upload an archive" name="archive" accept=".gz,application/gzip"
+                  hint="A basecamp-<stamp>.tar.gz from Download on /hub/backups/."
+                  bind:files={files} />
+      <div class="cluster">
+        <Button tone="primary" disabled={busy || !files.length} onclick={() => stage(files[0])}>
+          {busy ? 'Checking…' : 'Restore from file'}
+        </Button>
+      </div>
+    </div>
+  </div>
+  </TabPanel>
+  </Tabs>
 </div>

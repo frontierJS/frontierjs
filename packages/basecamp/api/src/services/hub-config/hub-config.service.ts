@@ -56,7 +56,7 @@ export default createService({
   scope: keyScope('hubConfig'),
   model: 'HubConfig',
 
-  methods: ['current', 'save', 'attestEscrow'],
+  methods: ['current', 'save', 'attestEscrow', 'dismissFound'],
 
   /**
    * The settings, or a 404 saying they have never been written.
@@ -159,6 +159,15 @@ export default createService({
       where:  { id: HUB },
       data:   { encryptionKeyEscrowedAt: new Date().toISOString(), encryptionKeyFingerprint: fingerprint, version: existing.version },
       system: ['encryptionKeyEscrowedAt', 'encryptionKeyFingerprint'],
+    })
+  },
+
+  /** `/hub/backups/`'s *replica found* card declined (`domain/backup/found-replicas.ts`). */
+  async dismissFound() {
+    return db().asSystem().hubConfig.update({
+      where:  { id: HUB },
+      data:   { replicaFoundAt: null, replicaSyncedAt: null },
+      system: ['replicaFoundAt', 'replicaSyncedAt'],
     })
   },
 

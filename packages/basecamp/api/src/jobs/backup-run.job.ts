@@ -14,7 +14,8 @@
 // The declared set is read from the client's own `$databases`, so a database
 // added to the schema is archived without an edit here. The same set is what
 // `litestone backup` copies in a deploy's pre-swap step. An archive of main
-// alone restores every row and none of the trail nobody may lose.
+// alone restores every row and none of the trail nobody may lose. Last comes
+// `manifest.json`, what a restore checks first (`domain/backup/archive-manifest.ts`).
 //
 // ─── Why VACUUM INTO and not a file copy ──────────────────────────────────
 //
@@ -53,6 +54,7 @@ import { jobsDatabasePath } from '../core/db.ts'
 import { keyUnder, sendFor } from '../providers/storage/index.ts'
 import { backupDir, dropWarmCopies, pruneBackups } from '../domain/backup/backup-archives.ts'
 import { putObject }        from '../providers/storage/s3.ts'
+import { writeManifest }    from '../domain/backup/archive-manifest.ts'
 import type { App }         from '@frontierjs/junction'
 import type { Backup, RunStatus } from '../../../db/schema.d.ts'
 
@@ -80,7 +82,7 @@ function treeSize(dir: string): number {
  *  directory that does not exist yet is an app that has not written to it, and
  *  is left out; a SQLite file that fails to copy throws, because an archive
  *  missing one of them is not an archive. */
-async function archiveAll(app: App, dest: string): Promise<void> {
+async function archiveAll(app: App, dest: string, takenAt: string): Promise<void> {
   mkdirSync(dest, { recursive: true })
 
   const declared = (app.db as unknown as {
@@ -99,6 +101,8 @@ async function archiveAll(app: App, dest: string): Promise<void> {
 
   const jobs = jobsDatabasePath(app.sqlite.filename)
   if (existsSync(jobs)) vacuumInto(jobs, join(dest, 'jobs.db'))
+
+  await writeManifest(dest, takenAt)
 }
 
 /** `<dir>.tar.gz` beside `dir`, with `dir`'s own name as its one top entry. */
@@ -174,7 +178,7 @@ export async function takeBackup(app: App, backupId: string): Promise<void> {
   const path  = join(dir, `basecamp-${stamp}`)
 
   try {
-    await archiveAll(app, path)
+    await archiveAll(app, path, startedAt)
 
     if (row.destinationId) {
       const sent = await upload(app, row.destinationId, path)

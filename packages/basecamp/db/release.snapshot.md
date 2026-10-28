@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-73 model(s) · 44 enum(s) · 2 database(s)
+73 model(s) · 45 enum(s) · 2 database(s)
 audit → sqlite · main → sqlite
 ```
 
@@ -33,6 +33,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `ComparisonOp` | `gt` · `gte` · `lt` · `lte` |
 | `DependencyKind` | `dependency` · `dev` · `optional` · `peer` |
 | `DeployStatus` | `building` · `cancelled` · `failed` · `pending` · `rolled_back` · `success` |
+| `DeployTrigger` | `button` · `freeze` · `laptop` · `publish` · `push` · `rebind` · `rollback` |
 | `DrillKind` | `manual` · `scheduled` |
 | `EditorRole` | `edit` · `publish` |
 | `EnvironmentTier` | `development` · `preview` · `production` · `staging` · `test` |
@@ -47,7 +48,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `MetricType` | `counter` · `gauge` · `histogram` |
 | `MonitorStatus` | `down` · `paused` · `pending` · `up` |
 | `NotificationContext` | `AlertEvent` · `Deployment` · `JobRun` · `Monitor` · `Server` · `Workspace` |
-| `NotificationKind` | `AlertFiring` · `AlertResolved` · `DependencyVulnerable` · `DeployFailed` · `DeploySuccess` · `JobFailed` · `MemberJoined` · `MonitorDown` · `MonitorUp` · `PostureFailed` · `ServerUnreachable` · `WeeklyDigest` |
+| `NotificationKind` | `AlertFiring` · `AlertResolved` · `DependencyVulnerable` · `DeployFailed` · `DeploySuccess` · `JobFailed` · `MemberJoined` · `MonitorDown` · `MonitorUp` · `PostureFailed` · `ReplicaFound` · `ServerUnreachable` · `WeeklyDigest` |
 | `ParamGenerator` | `random_hex_16` · `random_hex_32` · `random_hex_64` |
 | `ProviderKind` | `cloudflare` · `custom` · `digitalocean` · `hetzner` |
 | `ProvisionStepName` | `create` · `poll` · `start` · `timeout` |
@@ -252,6 +253,8 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `pushTokenHash` | `String` | yes | — | @guarded @system |
 | `replicaDestination` | `BackupDestination` | — | — | relation |
 | `replicaDestinationId` | `String` | yes | — | unique |
+| `replicaFoundAt` | `DateTime` | yes | — | @system |
+| `replicaSyncedAt` | `DateTime` | yes | — | @system |
 | `slug` | `String` | no | — | **required on write** |
 | `source` | `Json` | no | `'{}'` | — |
 | `status` | `AppStatus` | no | `'unknown'` | @system |
@@ -863,7 +866,7 @@ table `deployment` · db `main` · gate `2.4.4.4`
 | `status` | `DeployStatus` | no | `'pending'` | — |
 | `steps` | `DeploymentStep[]` | — | — | relation |
 | `toImage` | `String` | yes | — | — |
-| `trigger` | `String` | no | `'manual'` | — |
+| `trigger` | `DeployTrigger` | no | `'button'` | — |
 | `triggeredBy` | `String` | yes | — | — |
 | `triggeredByUser` | `User` | — | — | relation |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
@@ -1250,6 +1253,8 @@ table `hub_config` · db `main` · gate `7`
 | `name` | `String` | no | `'Basecamp'` | — |
 | `replicaDestination` | `BackupDestination` | — | — | relation |
 | `replicaDestinationId` | `String` | yes | — | unique |
+| `replicaFoundAt` | `DateTime` | yes | — | @system |
+| `replicaSyncedAt` | `DateTime` | yes | — | @system |
 | `requireTwoFactorForOwners` | `Boolean` | no | `0` | — |
 | `sessionTtlHours` | `Int` | no | `168` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |

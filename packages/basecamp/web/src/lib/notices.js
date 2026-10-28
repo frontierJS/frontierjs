@@ -14,6 +14,7 @@
 // never epoch-ms (CLAUDE.md § Live hazards).
 
 import { relative } from '@frontierjs/toolbelt/datetime'
+import { shortSha } from './displays.js'
 
 export const PRIORITY_ORDER = { critical: 0, warning: 1, info: 2 }
 
@@ -110,7 +111,7 @@ export function computeNotices({ servers = [], deployments = [], jobs = [] } = {
     if (d.status === 'failed') {
       add({
         id: `deploy-failed-${d.id}`, priority: 'critical', category: 'deploy',
-        title: `Deploy failed${d.commitSha ? ` at ${d.commitSha.slice(0, 7)}` : ''}`,
+        title: `Deploy failed${d.commitSha ? ` at ${shortSha(d.commitSha)}` : ''}`,
         detail: d.commitMessage ?? 'The release did not reach the environment.',
         href: `/deployments/${d.id}/`, action: 'View deploy',
       })

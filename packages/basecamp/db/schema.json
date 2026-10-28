@@ -3302,6 +3302,14 @@
           "readOnly": true,
           "x-litestone-kind": "system"
         },
+        "deployPublicKey": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
         "blueprintId": {
           "type": [
             "string",
@@ -4416,8 +4424,8 @@
           "default": "pending"
         },
         "trigger": {
-          "type": "string",
-          "default": "manual"
+          "$ref": "#/$defs/DeployTrigger",
+          "default": "button"
         },
         "fromImage": {
           "type": [
@@ -8328,6 +8336,19 @@
       ],
       "title": "DeployStatus"
     },
+    "DeployTrigger": {
+      "type": "string",
+      "enum": [
+        "button",
+        "push",
+        "laptop",
+        "rollback",
+        "rebind",
+        "publish",
+        "freeze"
+      ],
+      "title": "DeployTrigger"
+    },
     "StepStatus": {
       "type": "string",
       "enum": [
@@ -9064,6 +9085,78 @@
       "required": [
         "blueprintId",
         "environmentId"
+      ]
+    },
+    "ProjectFromRepo": {
+      "type": "object",
+      "title": "ProjectFromRepo",
+      "x-litestone-kind": "type",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "slug": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "type": "string"
+        },
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dockerfile": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "serverId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hostname": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "port": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "repo",
+        "port"
+      ]
+    },
+    "AppRepoDockerfile": {
+      "type": "object",
+      "title": "AppRepoDockerfile",
+      "x-litestone-kind": "type",
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "repo"
       ]
     },
     "AppPlace": {

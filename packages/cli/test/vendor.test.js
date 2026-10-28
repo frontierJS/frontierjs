@@ -6,12 +6,14 @@
 // app's own build context, so the tests build a real miniature workspace and run
 // a real `bun pm pack` over it — a fake packer would agree with anything.
 
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach,
+         beforeAll, afterAll }                            from 'bun:test'
+import { spawnSync }                                     from 'child_process'
 import { resolve, dirname, join }                        from 'path'
 import { fileURLToPath }                                 from 'url'
 import { tmpdir }                                        from 'os'
 import { writeFileSync, readFileSync, existsSync,
-         readdirSync, rmSync, mkdirSync }                 from 'fs'
+         readdirSync, rmSync, mkdirSync, mkdtempSync }    from 'fs'
 
 import { vendorWorkspacePackages, linkedDeps,
          resolvePackagesDir, GENERATED_DIR }              from '../core/vendor.js'
@@ -293,4 +295,81 @@ describe('resolvePackagesDir', () => {
       rmSync(outside, { recursive: true, force: true })
     }
   })
+})
+
+// ─── basecamp:deploy --dry: vendoring is the Dockerfile's word (FJS-D1560) ──
+//
+// The laptop release runs the Outpost's own lookup and vendors deploy/generated/
+// only when the file it chose installs from it, so a plain repository with no
+// package.json builds as it is; a tree with uncommitted changes is marked on
+// the tag (FJS-3561). Driven as a process against a stub Basecamp answering one
+// git App on one online server, because the choice is made inside the command.
+describe('basecamp:deploy --dry on a plain repository', () => {
+  let stub, stored = null, repo
+
+  const app = () => ({
+    id: 'app-1', name: 'plain', slug: 'plain', environmentId: 'e1', port: 8080, containerPort: 8080,
+    source: { kind: 'git', repo: 'https://git.example.test/acme/plain.git', branch: 'main', ...(stored ? { dockerfile: stored } : {}) },
+    placement: [{ serverId: 's1', server: { id: 's1', name: 'dev', status: 'online', ipAddress: '127.0.0.1', sshUser: 'deploy' } }],
+  })
+
+  beforeAll(() => {
+    stub = Bun.serve({ port: 0, fetch(req) {
+      const u = new URL(req.url)
+      if (u.pathname === '/apps/app-1') return Response.json(app())
+      if (u.pathname === '/apps' || u.pathname === '/variables') return Response.json([])
+      return new Response('not found', { status: 404 })
+    } })
+  })
+  afterAll(() => stub.stop())
+  afterEach(() => { if (repo) rmSync(repo, { recursive: true, force: true }); repo = null })
+
+  const git = (...args) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t.test', ...args], { cwd: repo, encoding: 'utf8' })
+
+  /** A repository holding only a Dockerfile and what it copies, one commit in.
+   *  Outside this tree: fli takes the nearest frontier.config.js above as the
+   *  project root, and under packages/cli that is the workspace's own. */
+  const plainRepo = () => {
+    repo = mkdtempSync(join(tmpdir(), 'fjs-plain-'))
+    mkdirSync(join(repo, 'www'), { recursive: true })
+    writeFileSync(join(repo, 'Dockerfile'), 'FROM busybox:1.36\nCOPY www /www\nEXPOSE 3000\n')
+    writeFileSync(join(repo, 'www', 'index.html'), '<p>hi</p>\n')
+    git('init', '-q', '-b', 'main'); git('add', '.'); git('commit', '-q', '-m', 'v1')
+  }
+
+  // Spawned asynchronously: a spawnSync would block the loop the stub answers on.
+  const dry = async () => {
+    const proc = Bun.spawn([process.execPath, resolve(ROOT, 'bin/fli.js'), 'basecamp:deploy', '--dry', '--app', 'app-1'], {
+      cwd: repo, stdout: 'pipe', stderr: 'pipe', stdin: 'ignore',
+      env: { ...process.env, BASECAMP_URL: `http://localhost:${stub.port}`, BASECAMP_API_KEY: 'x', NO_COLOR: '1' },
+    })
+    const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
+    return (out + err).replace(/\x1b\[[0-9;]*m/g, '')
+  }
+
+  test('its own root Dockerfile builds with nothing vendored, and a stored copy as Dockerfile.basecamp', async () => {
+    plainRepo()
+    const own = await dry()
+    expect(own).toContain('from Dockerfile, which installs from the repository')
+    expect(own).toContain('Would load')
+    expect(own).not.toContain('Would vendor')
+    expect(own).not.toContain('dirty')
+
+    stored = 'FROM busybox:1.36\nCOPY www /www\n'
+    expect(await dry()).toContain('from Dockerfile.basecamp, which installs from the repository')
+    expect(existsSync(join(repo, 'Dockerfile.basecamp'))).toBe(false)
+
+    stored = 'FROM oven/bun\nCOPY deploy/generated/ ./deploy/generated/\n'
+    expect(await dry()).toContain('Would vendor deploy/generated/')
+    stored = null
+  }, 90_000)
+
+  test('a tree with uncommitted changes is marked -dirty and told so', async () => {
+    plainRepo()
+    writeFileSync(join(repo, 'www', 'scratch.txt'), 'x\n')
+    const out = await dry()
+    expect(out).toContain('uncommitted changes')
+    expect(out).toContain('rebuilds a different tree')
+    expect(out).toMatch(/Would build fjs-app-1:[0-9a-f]{12}-dirty/)
+  }, 60_000)
 })

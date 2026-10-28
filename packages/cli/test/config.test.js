@@ -32,17 +32,14 @@ describe('loadConfig', () => {
     const cfg = loadConfig()
     expect(cfg.routesDir).toBe('cli/src/routes')
     expect(cfg.defaultNamespace).toBe('hello')
-    expect(cfg.editor).toBe('')
   })
 
   test('merges user values with defaults', () => {
     writeFileSync(resolve(TMP, '.fli.json'), JSON.stringify({
       routesDir: 'src/commands',
-      editor:    'code',
     }))
     const cfg = loadConfig()
     expect(cfg.routesDir).toBe('src/commands')
-    expect(cfg.editor).toBe('code')
     // defaultNamespace not overridden — should still be default
     expect(cfg.defaultNamespace).toBe('hello')
   })
@@ -54,7 +51,6 @@ describe('loadConfig', () => {
     const cfg = loadConfig()
     expect(cfg.defaultNamespace).toBe('myapp')
     expect(cfg.routesDir).toBe('cli/src/routes')
-    expect(cfg.editor).toBe('')
   })
 
   test('malformed .fli.json — warns and uses defaults (does not throw)', () => {
@@ -84,7 +80,7 @@ describe('loadConfig', () => {
 describe('getConfig', () => {
 
   test('returns global.fliConfig when available', () => {
-    global.fliConfig = { routesDir: 'custom/path', defaultNamespace: 'ns', editor: 'vim' }
+    global.fliConfig = { routesDir: 'custom/path', defaultNamespace: 'ns' }
     expect(getConfig().routesDir).toBe('custom/path')
   })
 

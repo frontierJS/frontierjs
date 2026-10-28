@@ -30,10 +30,11 @@ on the definition is what holds it still.
 | `MonitorDown` | `inApp` · `email` |
 | `MonitorUp` | `inApp` · `email` |
 | `PostureFailed` | `inApp` · `email` |
+| `ReplicaFound` | `inApp` · `email` |
 | `ServerUnreachable` | `inApp` · `email` |
 | `WeeklyDigest` | `inApp` · `email` |
 
-12 notification(s).
+13 notification(s).
 
 Which transports a given send *uses* is not here: `via` is a function of the
 payload and the recipient, so it is a runtime answer. This is the set each

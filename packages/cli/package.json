@@ -1,7 +1,7 @@
 {
   "name": "@frontierjs/cli",
   "version": "0.1.9",
-  "description": "fli — the FrontierJS command line: scaffold, develop, check, deploy and release an app",
+  "description": "fli \u2014 the FrontierJS command line: scaffold, develop, check, deploy and release an app",
   "engines": {
     "bun": ">=1.4.0"
   },
@@ -13,6 +13,7 @@
     "@frontierjs/css": "workspace:*",
     "@frontierjs/litestone": "workspace:*",
     "@frontierjs/mesa": "workspace:*",
+    "@frontierjs/outpost": "workspace:*",
     "@frontierjs/toolbelt": "workspace:*",
     "@frontierjs/ui": "workspace:*"
   },

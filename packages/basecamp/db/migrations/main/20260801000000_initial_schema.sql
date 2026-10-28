@@ -384,7 +384,7 @@ CREATE TABLE IF NOT EXISTS "notification_preference" (
   "email" INTEGER NOT NULL DEFAULT 0,
   "inApp" INTEGER NOT NULL DEFAULT 1,
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("kind" IN ('DeploySuccess', 'DeployFailed', 'AlertFiring', 'AlertResolved', 'ServerUnreachable', 'MonitorDown', 'MonitorUp', 'PostureFailed', 'DependencyVulnerable', 'MemberJoined', 'JobFailed', 'WeeklyDigest')),
+  CHECK ("kind" IN ('DeploySuccess', 'DeployFailed', 'AlertFiring', 'AlertResolved', 'ServerUnreachable', 'MonitorDown', 'MonitorUp', 'PostureFailed', 'DependencyVulnerable', 'MemberJoined', 'JobFailed', 'WeeklyDigest', 'ReplicaFound')),
   UNIQUE ("userId", "kind"),
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;
@@ -936,6 +936,8 @@ CREATE TABLE IF NOT EXISTS "hub_config" (
   "backupCron" TEXT NOT NULL DEFAULT '0 2 * * *',
   "backupDestinationId" TEXT,
   "replicaDestinationId" TEXT UNIQUE,
+  "replicaFoundAt" TEXT,
+  "replicaSyncedAt" TEXT,
   "backupKeepLocalCount" INTEGER NOT NULL DEFAULT 7,
   "backupKeepLocalDays" INTEGER,
   "backupKeepRemoteCount" INTEGER NOT NULL DEFAULT 7,
@@ -1067,6 +1069,8 @@ CREATE TABLE IF NOT EXISTS "app" (
   "backupDestinationId" TEXT,
   "replicaDestinationId" TEXT UNIQUE,
   "drillCron" TEXT,
+  "replicaFoundAt" TEXT,
+  "replicaSyncedAt" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,

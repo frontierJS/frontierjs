@@ -22,6 +22,7 @@ import { Readable }                from 'node:stream'
 import { pipeline }                from 'node:stream/promises'
 import { validRelativePath, validName } from './static.js'
 import { ensureDeployKey }         from './deploy-key.js'
+import { chooseDockerfile, needsGenerated } from './dockerfile.js'
 
 // Each app's container runs as a host uid of its own (`FJS-D1484`), handed out
 // from here up and never reused: a retired app's volume keeps its files, and a
@@ -353,26 +354,6 @@ export function createDocker({
     }
   }
 
-  /** Which Dockerfile a build uses, relative to the context. The App's stored
-   *  copy wins (`FJS-D1555`); without one, `deploy/Dockerfile`, else the root's.
-   *  A workspace's `deploy/Dockerfile` with no `deploy/generated/` beside it
-   *  names `link:` packages nothing on this machine holds (`FJS-D942`), and
-   *  its build fails deep inside `bun install` with no hint why. */
-  function chooseDockerfile(context, stored) {
-    if (typeof stored === 'string' && stored.trim()) {
-      try { writeFileSync(`${context}/Dockerfile.basecamp`, stored) } catch (err) {
-        throw new Error(`could not write the App's Dockerfile into ${context}: ${err.message}`)
-      }
-      return 'Dockerfile.basecamp'
-    }
-    if (!existsSync(`${context}/deploy/Dockerfile`)) return 'Dockerfile'
-    if (!existsSync(`${context}/deploy/generated`))
-      throw new Error('deploy/Dockerfile is here but deploy/generated/ is not, so its link: dependencies cannot build on this machine. '
-        + 'Run fli deploy:vendor and commit deploy/generated/, deploy from the workspace with fli basecamp:deploy --app <slug>, '
-        + 'or store a Dockerfile on the App')
-    return 'deploy/Dockerfile'
-  }
-
   /** How to name the bytes on the command line.
    *
    *  `name@sha256:…` is a REPO digest — what a registry answered when the image
@@ -656,19 +637,35 @@ export function createDocker({
       await run(['mkdir', '-p', dir])
 
       // Clone or update. `git -C` rather than a cd, so nothing depends on this
-      // process's working directory.
+      // process's working directory. The clone follows the App (`FJS-3560`):
+      // one whose origin is not `source.repo` is remade, because a fetch from
+      // the old remote released the old repository's HEAD and reported green.
+      // `clean -fdx` after the reset, or a file the last checkout left behind
+      // joins the build context.
+      const branch = source.branch ?? 'main'
       const exists = await run(['test', '-d', `${dir}/.git`])
-      if (exists.exitCode === 0) {
-        await git(['-C', dir, 'fetch', '--depth', '1', 'origin', source.branch ?? 'main'], { env })
+      const origin = exists.exitCode === 0 ? await run(['git', '-C', dir, 'remote', 'get-url', 'origin']) : null
+      if (origin?.exitCode === 0 && origin.stdout.trim() === source.repo) {
+        await git(['-C', dir, 'fetch', '--depth', '1', 'origin', branch], { env })
         await git(['-C', dir, 'reset', '--hard', 'FETCH_HEAD'], { env })
+        await git(['-C', dir, 'clean', '-fdx'], { env })
       } else {
+        if (exists.exitCode === 0) await run(['rm', '-rf', '--', dir])
         // `--` so a repo that begins with a dash is a repository and never an option.
-        await git(['clone', '--depth', '1', '--branch', source.branch ?? 'main', '--', source.repo, dir], { env })
+        await git(['clone', '--depth', '1', '--branch', branch, '--', source.repo, dir], { env })
       }
 
       const sha     = (await git(['-C', dir, 'rev-parse', 'HEAD'], { env })).trim()
       const context = source.path != null ? `${dir}/${source.path}` : dir
       const dockerfile = chooseDockerfile(context, source.dockerfile)
+      // A Dockerfile that installs from deploy/generated/ names link: packages
+      // nothing in a clone holds (`FJS-D942`): the folder is a laptop's, git
+      // ignores it, and the build otherwise fails deep inside bun install.
+      if (existsSync(`${context}/${dockerfile}`) && needsGenerated(readFileSync(`${context}/${dockerfile}`, 'utf8'))
+          && !existsSync(`${context}/deploy/generated`))
+        throw new Error(`${dockerfile} installs from deploy/generated/, which this clone does not hold. `
+          + 'Release from the workspace with fli basecamp:deploy --app <slug>, '
+          + 'or store a Dockerfile on the App that installs from the repository')
       await docker(['build', '-t', image, ...(dockerfile === 'Dockerfile' ? [] : ['-f', `${context}/${dockerfile}`]), context],
         { timeoutMs: 1_800_000 })
       return { digest: await digestOf(image), commitSha: sha, dockerfile }

@@ -2,6 +2,7 @@
 title: frontier:who
 description: A member's signed row and chain root as eight words, to read aloud and compare away from the post
 effects: pins the member's chain the first time it meets it, and the post's key the first time it reads a row
+alias: who
 examples:
   - fli frontier:who
   - fli frontier:who sam

@@ -44,6 +44,13 @@ git checkout on the machine (`FJS-D942`). An app `fli new` scaffolded depends on
 the framework by `link:` or `workspace:`, and a build can resolve those only
 where the workspace is — so this builds HERE, exactly as `fli deploy:local`
 does: `deploy/generated/` vendored, then `docker build -f` the app's Dockerfile.
+The Dockerfile is the one a push would build (`FJS-D1560`): `deploy.api.dockerfile`
+in `frontier.config.js` when set, else the Outpost's order — the copy stored on
+the App, `deploy/Dockerfile`, the root's — and `deploy/generated/` is vendored
+only when that file installs from it, so a plain repository with its own
+Dockerfile and no `package.json` builds as it is. A tree with uncommitted
+changes releases as `<sha>-dirty` on the tag and the row (`FJS-3561`): the
+command says so, since a rollback to that row rebuilds a different tree.
 
 The image goes to each machine by `docker save | ssh <machine> docker load` —
 no registry. The release names the id the MACHINE's daemon gives the tag after
@@ -84,8 +91,9 @@ would carry are warnings. `--dry` prints the whole report and builds nothing.
 **An App that has never been released is set up here, from those same
 declarations** (`FJS-3525`). No release, no port and no Variables of its own
 is the sign, detected rather than flagged. Each finding that is a setting
-carries its fix, and the command merges them into one plan: the App's port
-and container port from the app's `PORT`, its volume at `/db` with every
+carries its fix, and the command merges them into one plan: the App's
+container port from the app's `PORT` and its host port the first from there
+that no other App on its machines publishes (`FJS-3563`), its volume at `/db` with every
 database path moved onto it, its health check, `NODE_ENV=production`, each
 external URL recorded at its default, and `ENCRYPTION_KEY` minted as a secret
 and never printed. One question is asked, the hostname — `--domain` answers
@@ -117,7 +125,7 @@ the scope the key lacks.
 
 <script>
 const { loadFrontierConfig }         = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
-const { vendorApp, GENERATED_DIR }   = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
+const { vendorApp, GENERATED_DIR, chooseDockerfile, needsGenerated } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
 const { createMachine }              = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
 const { releaseFindings, gatherReleaseInputs, releasePlan, neverReleased } = await import(new URL('file://' + global.fliRoot + '/core/release-preflight.js'))
 const { routePrefixes, apiPaths }    = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
@@ -261,7 +269,7 @@ async function filesUnder(out) {
 </script>
 
 ```js
-const { existsSync, mkdtempSync, rmSync } = await import('fs')
+const { existsSync, mkdtempSync, readFileSync, rmSync } = await import('fs')
 const { tmpdir }           = await import('os')
 const { join, resolve }    = await import('path')
 
@@ -279,10 +287,16 @@ if (flag.dist && !inline)
 if (flag.server && inline)
   throw new Error(`--server names an ssh destination, and App '${app.name}' is inline — its files go through Basecamp, not over ssh`)
 
-const git    = (args) => { try { return String($.exec({ command: `git -C ${root} ${args}`, stdio: ['ignore', 'pipe', 'ignore'] }) ?? '').trim() } catch { return '' } }
+// A read, so it runs under --dry too: a dry run names the commit it would release.
+const git    = (args) => { try { return String($.exec({ command: `git -C ${root} ${args}`, dry: false, stdio: ['ignore', 'pipe', 'ignore'] }) ?? '').trim() } catch { return '' } }
 const sha    = git('rev-parse HEAD')
 const branch = git('rev-parse --abbrev-ref HEAD')
-const commit = { trigger: 'laptop', ...(sha ? { commitSha: sha } : {}), ...(branch && branch !== 'HEAD' ? { branch } : {}) }
+// Read before anything is written into the tree. A row naming HEAD for a build
+// of uncommitted changes is a rollback that rebuilds another tree (`FJS-3561`);
+// the mark is git describe's.
+const dirty  = !!sha && git('status --porcelain') !== ''
+const commit = { trigger: 'laptop', ...(sha ? { commitSha: dirty ? `${sha}-dirty` : sha } : {}), ...(branch && branch !== 'HEAD' ? { branch } : {}) }
+if (dirty) log.warn(`The tree has uncommitted changes — this release is marked ${sha.slice(0, 7)}-dirty, and a rollback to it rebuilds a different tree`)
 
 let release, named
 if (inline) {
@@ -326,125 +340,137 @@ if (inline) {
     ? [{ name: placed[0].server.name, host: flag.server }]
     : placed.map(p => ({ name: p.server.name, host: sshDestination(p.server) }))
 
-  const deployConf     = (await loadFrontierConfig(root))?.deploy
-  const dockerfile     = deployConf?.api?.dockerfile ?? 'deploy/Dockerfile'
+  // Told by frontier.config.js, else the Outpost's own order (`FJS-D1560`): the
+  // App's stored copy, deploy/Dockerfile, the root's. A stored copy is written
+  // into the tree for the build and removed after, so the next run's
+  // status --porcelain does not read it as the person's change.
+  const told           = (await loadFrontierConfig(root))?.deploy?.api?.dockerfile
+  const dockerfile     = told ?? chooseDockerfile(root, app.source?.dockerfile)
   const dockerfilePath = resolve(root, dockerfile)
-  if (!existsSync(dockerfilePath)) {
-    log.info('Run fli make:deploy to scaffold one, or set deploy.api.dockerfile in frontier.config.js')
-    throw new Error(`Dockerfile not found: ${dockerfile}`)
-  }
+  const borrowed       = !told && dockerfile === 'Dockerfile.basecamp'
+  try {
+    if (!existsSync(dockerfilePath)) {
+      log.info('fli make:deploy writes one for a scaffolded app; deploy.api.dockerfile in frontier.config.js names one elsewhere')
+      throw new Error(`no Dockerfile: looked for deploy/Dockerfile, then Dockerfile, as the Outpost does`)
+    }
+    const vendors = needsGenerated(readFileSync(dockerfilePath, 'utf8'))
 
-  // Named for the release rather than reused: a tag two builds share is a tag
-  // the older one loses on a machine still running it.
-  const tag = `fjs-${app.id}:${sha ? sha.slice(0, 12) : Date.now()}`.toLowerCase()
+    // Named for the release rather than reused: a tag two builds share is a tag
+    // the older one loses on a machine still running it.
+    const tag = `fjs-${app.id}:${sha ? sha.slice(0, 12) + (dirty ? '-dirty' : '') : Date.now()}`.toLowerCase()
 
-  const mark   = { error: chalk.red('✗'), warn: chalk.yellow('!'), info: chalk.dim('·') }
-  const report = (findings) => {
-  const count = (l) => findings.filter(f => f.level === l).length
-  echo('')
-  echo(`  Preflight — ${count('error')} error(s), ${count('warn')} warning(s)`)
-  // One group per level, each under its own header, so where the errors end
-  // and the warnings begin is read off the page rather than counted.
-  const groups = [['error', 'Errors', chalk.red], ['warn', 'Warnings', chalk.yellow], ['info', 'Notes', chalk.dim]]
-  for (const [level, label, color] of groups) {
-    const these = findings.filter(f => f.level === level)
-    if (!these.length) continue
+    const mark   = { error: chalk.red('✗'), warn: chalk.yellow('!'), info: chalk.dim('·') }
+    const report = (findings) => {
+    const count = (l) => findings.filter(f => f.level === l).length
     echo('')
-    echo(`  ${color(`${label}:`)}`)
-    echo(`  ${color('─'.repeat(label.length + 1))}`)
-    for (const [i, f] of these.entries()) {
-      if (i) echo('')
-      echo(`  ${mark[f.level]} ${f.title}${f.line ? chalk.dim(`  (${dockerfile}:${f.line})`) : ''}`)
-      if (f.detail) echo(chalk.dim(`      ${f.detail}`))
-      if (f.hint)   echo(`      ${chalk.bold(chalk.cyan('fix:'))} ${f.hint}`)
-    }
-  }
-  echo('')
-  return count
-  }
-
-  let { findings, variables } = await preflight({ origin, key, app, root, dockerfile })
-  let count = report(findings)
-
-  // ─── A never-released App: its settings, from what the app declares ───────
-  if (neverReleased(app, variables)) {
-    const prefixes = routePrefixes(apiPaths(readAppSnapshot(root)))
-    const asking   = process.stdin.isTTY && !flag.yes
-    const ask      = async (q, hint) => (await tty.line(`  ${q} ${chalk.dim(hint)}\n  ${chalk.cyan('›')}`)).trim()
-    let hostname = flag.domain
-    if (!hostname && asking && releasePlan(findings, { prefixes }).asked.length) {
-      echo(`  App '${app.name}' has never been released. One question shapes it:`)
-      hostname = await ask('Its hostname', 'e.g. app.example.com — Enter: none yet, the URLs and the Domain stay unset')
-    }
-    const plan    = releasePlan(findings, { hostname, prefixes })
-    if (plan.web && app.name !== API_NAME) plan.app = { name: API_NAME, ...plan.app }
-    const servers = (app.placement ?? []).map(p => p.server?.name).filter(Boolean)
-    const lines   = planLines(plan, app, servers)
-    if (lines.length) {
-      const apply = !flag.dry && (flag.yes || process.stdin.isTTY)
-      echo(`  ${chalk.bold(apply ? 'Setting up' : 'Would set up')} App '${app.name}' from what the app declares:`)
-      for (const l of lines) echo(`    ${chalk.cyan('+')} ${l}`)
-      if (plan.asked.length) echo(chalk.dim(`    ${plan.asked.join(', ')} wait on a hostname — pass --domain <hostname>.`))
+    echo(`  Preflight — ${count('error')} error(s), ${count('warn')} warning(s)`)
+    // One group per level, each under its own header, so where the errors end
+    // and the warnings begin is read off the page rather than counted.
+    const groups = [['error', 'Errors', chalk.red], ['warn', 'Warnings', chalk.yellow], ['info', 'Notes', chalk.dim]]
+    for (const [level, label, color] of groups) {
+      const these = findings.filter(f => f.level === level)
+      if (!these.length) continue
       echo('')
-      if (!apply) {
-        if (!flag.dry) log.info('No terminal — pass --yes (and --domain <hostname>) to apply this, or set the App in Basecamp')
-      } else {
-        if (!flag.yes && (await ask('Apply it?', '[Y/n]')).toLowerCase().startsWith('n')) throw new Error('left as it is — nothing was written')
-        const { web } = await applyPlan({ origin, key, app, plan })
-        log.success(`Set up App '${app.name}'${web ? ` and its static App '${web.name}' (${web.id})` : ''}`)
-        app = await basecamp(origin, key, `/apps/${encodeURIComponent(appId)}`)
-        ;({ findings } = await preflight({ origin, key, app, root, dockerfile }))
-        log.info('Preflight again, on what Basecamp now holds:')
-        count = report(findings)
+      echo(`  ${color(`${label}:`)}`)
+      echo(`  ${color('─'.repeat(label.length + 1))}`)
+      for (const [i, f] of these.entries()) {
+        if (i) echo('')
+        echo(`  ${mark[f.level]} ${f.title}${f.line ? chalk.dim(`  (${dockerfile}:${f.line})`) : ''}`)
+        if (f.detail) echo(chalk.dim(`      ${f.detail}`))
+        if (f.hint)   echo(`      ${chalk.bold(chalk.cyan('fix:'))} ${f.hint}`)
       }
     }
+    echo('')
+    return count
+    }
+
+    let { findings, variables } = await preflight({ origin, key, app, root, dockerfile })
+    let count = report(findings)
+
+    // ─── A never-released App: its settings, from what the app declares ───────
+    if (neverReleased(app, variables)) {
+      const prefixes = routePrefixes(apiPaths(readAppSnapshot(root)))
+      const asking   = process.stdin.isTTY && !flag.yes
+      const ask      = async (q, hint) => (await tty.line(`  ${q} ${chalk.dim(hint)}\n  ${chalk.cyan('›')}`)).trim()
+      let hostname = flag.domain
+      if (!hostname && asking && releasePlan(findings, { prefixes }).asked.length) {
+        echo(`  App '${app.name}' has never been released. One question shapes it:`)
+        hostname = await ask('Its hostname', 'e.g. app.example.com — Enter: none yet, the URLs and the Domain stay unset')
+      }
+      const plan    = releasePlan(findings, { hostname, prefixes })
+      if (plan.web && app.name !== API_NAME) plan.app = { name: API_NAME, ...plan.app }
+      const servers = (app.placement ?? []).map(p => p.server?.name).filter(Boolean)
+      const lines   = planLines(plan, app, servers)
+      if (lines.length) {
+        const apply = !flag.dry && (flag.yes || process.stdin.isTTY)
+        echo(`  ${chalk.bold(apply ? 'Setting up' : 'Would set up')} App '${app.name}' from what the app declares:`)
+        for (const l of lines) echo(`    ${chalk.cyan('+')} ${l}`)
+        if (plan.asked.length) echo(chalk.dim(`    ${plan.asked.join(', ')} wait on a hostname — pass --domain <hostname>.`))
+        echo('')
+        if (!apply) {
+          if (!flag.dry) log.info('No terminal — pass --yes (and --domain <hostname>) to apply this, or set the App in Basecamp')
+        } else {
+          if (!flag.yes && (await ask('Apply it?', '[Y/n]')).toLowerCase().startsWith('n')) throw new Error('left as it is — nothing was written')
+          const { web } = await applyPlan({ origin, key, app, plan })
+          log.success(`Set up App '${app.name}'${web ? ` and its static App '${web.name}' (${web.id})` : ''}`)
+          app = await basecamp(origin, key, `/apps/${encodeURIComponent(appId)}`)
+          ;({ findings } = await preflight({ origin, key, app, root, dockerfile }))
+          log.info('Preflight again, on what Basecamp now holds:')
+          count = report(findings)
+        }
+      }
+    }
+
+    if (count('error') && !flag.dry) {
+      if (!flag.force) throw new Error(`the preflight found ${count('error')} error(s) — fix them, or pass --force to release anyway`)
+      log.warn(`Releasing with ${count('error')} preflight error(s) — --force`)
+    }
+
+    if (flag.dry) {
+      log.dry(vendors ? `Would vendor ${GENERATED_DIR}/ and build ${tag} from ${dockerfile}` : `Would build ${tag} from ${dockerfile}, which installs from the repository`)
+      for (const d of destinations) log.dry(`Would load ${tag} onto ${d.name} over ${d.host}`)
+      log.dry(`Would release ${tag} on ${origin} as App '${app.name}'`)
+      return
+    }
+
+    if (vendors) {
+      log.info('Vendoring dependencies into the build context...')
+      vendorApp(root, log)
+    }
+    log.info(`Building ${tag} from ${dockerfile}...`)
+    $.exec({ command: `docker build -t ${tag} -f ${dockerfilePath} ${root}` })
+    const imageId = String($.exec({ command: `docker image inspect --format '{{.Id}}' ${tag}`, stdio: ['ignore', 'pipe', 'inherit'] }) ?? '').trim()
+    if (!/^sha256:[0-9a-f]{64}$/.test(imageId)) throw new Error(`docker named no image id for ${tag} — got '${imageId}'`)
+    log.success(`Built ${tag} → ${imageId.slice(0, 19)}`)
+
+    const machineFor = (host, transport = null) => createMachine({ host, exec: $.exec, transport })
+    const here = machineFor('localhost', 'local')
+    // A daemon on the containerd image store names an image by its manifest
+    // digest and the classic store by its config digest, so the same bytes
+    // loaded there carry another id. Released under this daemon's id, Outpost
+    // holds no such image and pulls the tag, which no registry has.
+    const landed = new Map()
+    for (const d of destinations) {
+      log.info(`Loading ${tag} onto ${d.name} (${d.host})...`)
+      const there = machineFor(d.host)
+      const shipped = here.shipTo(there, tag)
+      if (!shipped) log.info(`${d.name} is this machine's daemon — the image is already there`)
+      landed.set(d.name, shipped ? there.capture(`docker image inspect --format '{{.Id}}' ${tag}`) : imageId)
+    }
+    const ids = new Set(landed.values())
+    if (ids.size > 1)
+      throw new Error(`the machines name ${tag} by different ids (${[...landed].map(([n, id]) => `${n}: ${id.slice(0, 19)}`).join(', ')}) — one release names one digest, so give them one Docker image store`)
+    const releasedId = ids.size ? [...ids][0] : imageId
+    if (!/^sha256:[0-9a-f]{64}$/.test(releasedId)) throw new Error(`the machine named no image id for ${tag} — got '${releasedId}'`)
+
+    release = await basecamp(origin, key, '/deployments', {
+      method: 'POST',
+      body:   { appId: app.id, toImage: tag, builtImage: releasedId, ...commit },
+    })
+    named = `${tag} — ${releasedId.slice(0, 19)}`
+  } finally {
+    if (borrowed) rmSync(dockerfilePath, { force: true })
   }
-
-  if (count('error') && !flag.dry) {
-    if (!flag.force) throw new Error(`the preflight found ${count('error')} error(s) — fix them, or pass --force to release anyway`)
-    log.warn(`Releasing with ${count('error')} preflight error(s) — --force`)
-  }
-
-  if (flag.dry) {
-    log.dry(`Would vendor ${GENERATED_DIR}/ and build ${tag} from ${dockerfile}`)
-    for (const d of destinations) log.dry(`Would load ${tag} onto ${d.name} over ${d.host}`)
-    log.dry(`Would release ${tag} on ${origin} as App '${app.name}'`)
-    return
-  }
-
-  log.info('Vendoring dependencies into the build context...')
-  vendorApp(root, log)
-  log.info(`Building ${tag} from ${dockerfile}...`)
-  $.exec({ command: `docker build -t ${tag} -f ${dockerfilePath} ${root}` })
-  const imageId = String($.exec({ command: `docker image inspect --format '{{.Id}}' ${tag}`, stdio: ['ignore', 'pipe', 'inherit'] }) ?? '').trim()
-  if (!/^sha256:[0-9a-f]{64}$/.test(imageId)) throw new Error(`docker named no image id for ${tag} — got '${imageId}'`)
-  log.success(`Built ${tag} → ${imageId.slice(0, 19)}`)
-
-  const machineFor = (host, transport = null) => createMachine({ host, exec: $.exec, transport })
-  const here = machineFor('localhost', 'local')
-  // A daemon on the containerd image store names an image by its manifest
-  // digest and the classic store by its config digest, so the same bytes
-  // loaded there carry another id. Released under this daemon's id, Outpost
-  // holds no such image and pulls the tag, which no registry has.
-  const landed = new Map()
-  for (const d of destinations) {
-    log.info(`Loading ${tag} onto ${d.name} (${d.host})...`)
-    const there = machineFor(d.host)
-    const shipped = here.shipTo(there, tag)
-    if (!shipped) log.info(`${d.name} is this machine's daemon — the image is already there`)
-    landed.set(d.name, shipped ? there.capture(`docker image inspect --format '{{.Id}}' ${tag}`) : imageId)
-  }
-  const ids = new Set(landed.values())
-  if (ids.size > 1)
-    throw new Error(`the machines name ${tag} by different ids (${[...landed].map(([n, id]) => `${n}: ${id.slice(0, 19)}`).join(', ')}) — one release names one digest, so give them one Docker image store`)
-  const releasedId = ids.size ? [...ids][0] : imageId
-  if (!/^sha256:[0-9a-f]{64}$/.test(releasedId)) throw new Error(`the machine named no image id for ${tag} — got '${releasedId}'`)
-
-  release = await basecamp(origin, key, '/deployments', {
-    method: 'POST',
-    body:   { appId: app.id, toImage: tag, builtImage: releasedId, ...commit },
-  })
-  named = `${tag} — ${releasedId.slice(0, 19)}`
 }
 
 // ─── The release ──────────────────────────────────────────────────────────────

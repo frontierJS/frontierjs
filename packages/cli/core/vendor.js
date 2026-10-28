@@ -47,6 +47,10 @@ import { join, resolve, dirname }                                 from 'node:pat
 // Dockerfile `fli make:deploy` writes names the same path, and the `file:` specs
 // are written relative to the manifest — which sits at the image's /app — so the
 // tarballs must be copied to the path they are named at.
+// The Dockerfile a build uses, and whether it installs from here: one order
+// for the laptop and the Outpost, owned by the Outpost (`FJS-D1560`).
+export { chooseDockerfile, needsGenerated } from '@frontierjs/outpost/dockerfile'
+
 export const GENERATED_DIR = 'deploy/generated'
 export const VENDOR_DIR    = 'deploy/generated/vendor'
 export const MANIFEST_FILE = 'deploy/generated/app-manifest.json'
@@ -262,10 +266,12 @@ function writeManifest(path, manifest) {
 // a manifest and — for an app depending on the framework by `link:` or
 // `workspace:` — a packed copy of every one of those packages beside it.
 //
-// Runs on EVERY build, not only a linked one. With nothing linked it copies the
-// manifest and the lockfile, which is what lets one Dockerfile serve both source
-// modes; making it conditional here would move the condition into a template
-// nobody regenerates when the source mode changes.
+// Runs on every build whose Dockerfile installs from deploy/generated/ —
+// `needsGenerated` is the test, and the Outpost's build asks the same one
+// (`FJS-D1560`). With nothing linked it copies the manifest and the lockfile,
+// which is what lets one Dockerfile serve both source modes; a condition on
+// what package.json links would break the npm-source scaffold, whose template
+// still copies the folder.
 //
 // It throws on anything it cannot finish. A half-vendored context installs the
 // rest from npm and produces an image running two trees at once, which does not

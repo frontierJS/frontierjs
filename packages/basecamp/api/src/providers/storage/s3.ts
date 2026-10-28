@@ -190,7 +190,12 @@ export async function listObjects(send: Send, bucket: string, opts: { prefix?: s
   } })
   if (r.error) return { error: translate(r.error) }
   // `application/xml` is neither JSON nor text/*, so conduit hands it over as bytes.
-  const xml = r.data === null ? '' : typeof r.data === 'string' ? r.data : new TextDecoder().decode(r.data)
+  return parseListing(r.data === null ? '' : typeof r.data === 'string' ? r.data : new TextDecoder().decode(r.data))
+}
+
+/** A ListObjectsV2 answer's XML, read. Apart from `listObjects` because
+ *  `/setup`'s restore lists over a pre-signed URL: no row, so no target. */
+export function parseListing(xml: string): { objects: ListedObject[]; prefixes: string[]; nextToken: string | null } {
   const objects = [...xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)].map(([, c]) => ({
     key:          tag(c, 'Key') ?? '',
     size:         Number(tag(c, 'Size') ?? 0),

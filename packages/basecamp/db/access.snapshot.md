@@ -666,6 +666,8 @@ rather than refusing the row.
 | `App` | `pushActorId` | `@system` |
 | `App` | `deployPublicKey` | `@system` |
 | `App` | `blueprintId` | `@system` |
+| `App` | `replicaFoundAt` | `@system` |
+| `App` | `replicaSyncedAt` | `@system` |
 | `BackupDestination` | `secretId` | `@system` |
 | `BackupDestination` | `lastTestAt` | `@system` |
 | `Credential` | `value` | `@guarded` |
@@ -682,6 +684,8 @@ rather than refusing the row.
 | `Domain` | `certExpiresAt` | `@system` |
 | `Flow` | `currentVersion` | `@allow(write, status == null || status != 'active')` |
 | `FlowCredential` | `secret` | `@encrypted` |
+| `HubConfig` | `replicaFoundAt` | `@system` |
+| `HubConfig` | `replicaSyncedAt` | `@system` |
 | `HubConfig` | `encryptionKeyEscrowedAt` | `@system` |
 | `HubConfig` | `encryptionKeyFingerprint` | `@system` |
 | `HubConfig` | `hostServerId` | `@system` |

@@ -20,9 +20,7 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs'
 </script>
 
 ```js
-const { getConfig } = await import(resolve(global.fliRoot, 'core/config.js'))
-const { editor: configEditor } = getConfig()
-const editor     = configEditor || process.env.EDITOR || process.env.VISUAL || 'vi'
+const editor     = process.env.VISUAL || process.env.EDITOR || 'vi'
 const { globalEnvPath, GLOBAL_ENV_HEADER } = await import(resolve(global.fliRoot, 'core/global-env.js'))
 const configFile = globalEnvPath()
 

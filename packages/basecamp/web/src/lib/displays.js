@@ -16,3 +16,8 @@ import { registerDisplayComponent } from '@frontierjs/ui/controls'
 import RelationCell from '../components/RelationCell.mesa'
 
 registerDisplayComponent('relation', RelationCell)
+
+/** A commit as the console shows it: seven characters, and the `-dirty` mark a
+ *  laptop release carries (`FJS-3561`) kept past the cut, or the one row that
+ *  says its tree was never committed reads like every other. */
+export const shortSha = (sha) => sha == null ? sha : String(sha).replace(/^([0-9a-f]{7})[0-9a-f]*/, '$1')

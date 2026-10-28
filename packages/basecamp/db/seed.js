@@ -689,6 +689,23 @@ export class BasecampSeeder extends Seeder {
                 })
 
               for (const deployment of deployments) await seedSteps(sys, deployment)
+
+              // The newest release of a production environment's first app came
+              // off a laptop (`fli basecamp:deploy`): nothing but the row's
+              // trigger tells it from a push, and the overview's notice reads
+              // that. Created last, so it is the newest by queuedAt.
+              if (environment.tier === 'production' && app === apps[0]) {
+                const sha = 'c0ffee5e1ec7ed0c0ffee5e1ec7ed0c0ffee5e1e'
+                const at  = new Date(Date.now() - 1_800_000)
+                const [laptop] = await new DeploymentFactory(sys).create(1, {
+                  appId: app.id, environmentId: environment.id, workspaceId: ws.id, triggeredBy: owner.id,
+                  status: 'success', trigger: 'laptop', commitSha: sha, branch: 'main', author: 'sam@example.com',
+                  commitMessage: 'Try the new checkout flow', toImage: `fjs-${app.id}:${sha.slice(0, 12)}`,
+                  builtImage: `sha256:${(sha + sha).slice(0, 64)}`, durationMs: 40_000,
+                  startedAt: at.toISOString(), finishedAt: new Date(at.getTime() + 40_000).toISOString(),
+                })
+                await seedSteps(sys, laptop)
+              }
             }
 
             // Jobs hang off the environment, and each one has run before —

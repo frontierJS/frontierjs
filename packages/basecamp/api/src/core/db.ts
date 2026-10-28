@@ -73,7 +73,7 @@ export function jobsDatabasePath(dbPath: string): string {
   return dbPath.replace('.db', '-jobs.db')
 }
 
-const SCHEMA_PATH = new URL('../../../db/schema.lite', import.meta.url).pathname
+export const SCHEMA_PATH = new URL('../../../db/schema.lite', import.meta.url).pathname
 
 /**
  * The sha256 of the key in use, hex — what an escrow attestation names, so a

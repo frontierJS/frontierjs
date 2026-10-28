@@ -16,6 +16,7 @@ import { GatePlugin }             from '@frontierjs/litestone'
 import { basecampGateLevel }      from '../src/core/gate.ts'
 import { buildBasecampApp }       from '../src/app.ts'
 import { grantsFor }              from '../src/core/capabilities.ts'
+import { recordStep }             from '../src/domain/release/release-record.ts'
 
 process.env.BASECAMP_STUB_OUTPOST = '1'
 
@@ -158,5 +159,69 @@ describe('a push releases the App', () => {
     expect(JSON.stringify(row)).not.toContain(on.secret)
     expect(JSON.stringify(row)).not.toContain(on.token)
     expect(row.deployOnPush).toBe(true)
+  })
+
+  // Creation's door (FJS-D1558): the same mint as enablePush, so what it
+  // answers verifies at the forge and releases; and an App with no machine is
+  // never deployOnPush, because the release it would queue fails at step one.
+  test('a project made from a repository with a server answers a secret the forge can use', async () => {
+    const made: any = await env.as(admin).service('projects').call('fromRepo', null, {
+      name: `Made ${uniq()}`, repo: 'https://git.example.test/acme/made.git', branch: 'main', dockerfile: 'FROM oven/bun:1',
+      serverId: box.id, port: 4100 + Math.floor(Math.random() * 400),
+    })
+    expect(made.app.deployOnPush).toBe(true)
+    const sha = uniq().padEnd(40, '3')
+    const res = await forge(made.app.id, made.push.secret, push('refs/heads/main', sha))
+    expect(res.status).toBe(200)
+    const rows = await releases(made.app.id)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ trigger: 'push', commitSha: sha, triggeredBy: userId })
+    expect((await env.http.post(`/hooks/git/${made.app.id}/${made.push.token}`).send({})).status).toBe(200)
+  })
+
+  test('a project made from a repository with no server is never deployOnPush', async () => {
+    const made: any = await env.as(admin).service('projects').call('fromRepo', null, {
+      name: `Alone ${uniq()}`, repo: 'https://git.example.test/acme/alone.git', dockerfile: 'FROM oven/bun:1', port: 4500,
+    })
+    expect(made.app.deployOnPush).toBe(false)
+    expect(made.push).toBeNull()
+    expect((await forge(made.app.id, 'anything', push())).status).toBe(401)
+  })
+})
+
+// The other two doors, as the API records them: the button has no payload, so
+// its row takes the branch off the App and its commit from the build step; the
+// laptop names its own commit, `-dirty` included, and the digest it loaded, so
+// nothing is built (`FJS-3561`).
+describe('the button and the laptop say which door they are', () => {
+
+  const deployments = () => env.as(admin).service('deployments')
+
+  test('the button row is `button` on the App\'s branch, as whoever pressed it', async () => {
+    const app: any  = await aGitApp('release')
+    const made: any = await deployments().create({ appId: app.id })
+    expect(made).toMatchObject({ trigger: 'button', branch: 'release', triggeredBy: userId })
+    expect(made.commitSha).toBeNull()
+  })
+
+  test('the build step hands the row the commit it built', async () => {
+    const app: any  = await aGitApp()
+    const made: any = await deployments().create({ appId: app.id })
+    const sha  = uniq().padEnd(40, '1')
+    const step = await (env.system as any).deploymentStep.findFirst({ where: { deploymentId: made.id, name: 'Build image' } })
+    await recordStep(env.app, made, { stepId: step.id, status: 'success', commit: sha })
+    expect((await (env.system as any).deployment.findUnique({ where: { id: made.id } })).commitSha).toBe(sha)
+  })
+
+  test('the laptop row keeps `laptop` and a `-dirty` commit, and builds nothing', async () => {
+    const app: any = await aGitApp()
+    const sha = uniq().padEnd(40, '2')
+    const made: any = await deployments().create({
+      appId: app.id, trigger: 'laptop', commitSha: `${sha}-dirty`, branch: 'main',
+      toImage: `fjs-${app.id}:${sha.slice(0, 12)}-dirty`, builtImage: `sha256:${'a'.repeat(64)}`,
+    })
+    expect(made).toMatchObject({ trigger: 'laptop', commitSha: `${sha}-dirty`, branch: 'main' })
+    const steps = await (env.system as any).deploymentStep.findMany({ where: { deploymentId: made.id } })
+    expect(steps.map((s: any) => s.name)).not.toContain('Build image')
   })
 })

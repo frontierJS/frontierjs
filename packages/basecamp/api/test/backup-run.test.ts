@@ -9,7 +9,8 @@
 
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { Database }          from 'bun:sqlite'
-import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir }          from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { createTestEnv }     from '@frontierjs/testing'
 import { GatePlugin }        from '@frontierjs/litestone'
@@ -18,6 +19,9 @@ import { buildBasecampApp }  from '../src/app.ts'
 import { takeBackup }        from '../src/jobs/backup-run.job.ts'
 import { registerDestination } from '../src/providers/storage/index.ts'
 import { pruneBackups, rescanDestination } from '../src/domain/backup/backup-archives.ts'
+import { archiveRefusals, MANIFEST_FILE } from '../src/domain/backup/archive-manifest.ts'
+import { encryptionKeyFingerprint } from '../src/core/db.ts'
+import { fetchHubArchive, listHubArchives, readBucket, restoreStaged, stageHubArchive, stagedDir } from '../src/domain/backup/hub-restore.ts'
 
 let env: any
 
@@ -81,6 +85,243 @@ describe('the archive is the framework\'s backup', () => {
     try {
       expect(copy.query('SELECT value FROM "_litestone_meta" WHERE key LIKE ?').get('%taken%')).toBeTruthy()
     } finally { copy.close() }
+  })
+})
+
+// ─── The manifest a restore checks first (IDEAS/backups.md 4.3) ────────────
+// Each refusal is made on a copy of a real archive, because the check reads
+// the staged databases' own migration history and a hand-built one would
+// grade what the test assumed rather than what `backup:run` wrote.
+
+describe('an archive carries a manifest, and a restore refuses what it cannot continue', () => {
+  const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
+  let archive: string
+
+  beforeAll(async () => {
+    const sys = env.system as any
+    const row = await sys.backup.create({ data: {} })
+    await takeBackup(env.app, row.id)
+    archive = (await sys.backup.findUnique({ where: { id: row.id } })).location
+  })
+
+  const staged = () => {
+    const dir = join(mkdtempSync(join(tmpdir(), 'bc-manifest-')), 'staged')
+    cpSync(archive, dir, { recursive: true })
+    return dir
+  }
+
+  test('it lists every other file with its sha256, and the archive as written passes', async () => {
+    const manifest = JSON.parse(readFileSync(join(archive, MANIFEST_FILE), 'utf8'))
+    const onDisk   = readdirSync(archive, { recursive: true, withFileTypes: true })
+      .filter(e => e.isFile() && e.name !== MANIFEST_FILE).length
+    expect(manifest.files.map((f: any) => f.path)).toEqual(expect.arrayContaining(['main.db', 'jobs.db', 'audit.db']))
+    expect(manifest.files.length).toBe(onDisk)
+    for (const f of manifest.files) expect(f.sha256).toMatch(/^[0-9a-f]{64}$/)
+    expect(manifest.encryptionKeyFingerprint).toBe(encryptionKeyFingerprint())
+    expect(manifest.basecamp).toMatch(/^\d+\.\d+\.\d+/)
+
+    expect(await archiveRefusals(staged(), { migrationsRoot: MIGRATIONS })).toEqual([])
+  })
+
+  test('a different key is refused by name', async () => {
+    const [reason] = await archiveRefusals(staged(), { migrationsRoot: MIGRATIONS, keyFingerprint: 'ab'.repeat(32) })
+    expect(reason).toContain('set ENCRYPTION_KEY')
+  })
+
+  test('a file changed since it was listed is damage, and nothing else is graded', async () => {
+    const dir = staged()
+    appendFileSync(join(dir, 'jobs.db'), 'x')
+    expect(await archiveRefusals(dir, { migrationsRoot: MIGRATIONS })).toEqual(['jobs.db does not match its sha256; the archive is damaged.'])
+  })
+
+  test('no manifest, or one naming a path outside the archive, is refused', async () => {
+    const bare = staged()
+    Bun.spawnSync(['rm', join(bare, MANIFEST_FILE)])
+    expect((await archiveRefusals(bare, { migrationsRoot: MIGRATIONS }))[0]).toContain(`no ${MANIFEST_FILE}`)
+
+    const out = staged()
+    const m   = JSON.parse(readFileSync(join(out, MANIFEST_FILE), 'utf8'))
+    m.files.push({ path: '../../etc/passwd', bytes: 0, sha256: '' })
+    writeFileSync(join(out, MANIFEST_FILE), JSON.stringify(m))
+    expect(await archiveRefusals(out, { migrationsRoot: MIGRATIONS })).toEqual([`${MANIFEST_FILE} names ../../etc/passwd, outside the archive.`])
+  })
+
+  // The history is edited and the manifest re-hashed to match, so the
+  // migration grade is reached and is the only thing refusing.
+  const rewrite = async (dir: string, sql: string) => {
+    const db = new Database(join(dir, 'main.db'))
+    try { db.run(sql) } finally { db.close() }
+    const m = JSON.parse(readFileSync(join(dir, MANIFEST_FILE), 'utf8'))
+    const f = m.files.find((x: any) => x.path === 'main.db')
+    f.bytes  = statSync(join(dir, 'main.db')).size
+    f.sha256 = new Bun.CryptoHasher('sha256').update(readFileSync(join(dir, 'main.db'))).digest('hex')
+    writeFileSync(join(dir, MANIFEST_FILE), JSON.stringify(m))
+  }
+
+  test('an archive from a newer Basecamp, one migration this code lacks, is refused', async () => {
+    const dir = staged()
+    await rewrite(dir, `INSERT INTO "_litestone_migrations" (name, applied_at, checksum) VALUES ('29990101000000_later.sql', '2999-01-01', 'f')`)
+    const reasons = await archiveRefusals(dir, { migrationsRoot: MIGRATIONS })
+    expect(reasons).toEqual(['main.db applied 29990101000000_later.sql, which this Basecamp does not have; the archive is from a newer version.'])
+  })
+
+  test('a migration rewritten in place since the archive was taken is refused', async () => {
+    const dir = staged()
+    await rewrite(dir, `UPDATE "_litestone_migrations" SET checksum = 'stale' WHERE name LIKE '%initial_schema%'`)
+    const [reason] = await archiveRefusals(dir, { migrationsRoot: MIGRATIONS })
+    expect(reason).toContain('before it was rewritten')
+  })
+
+  test('a migration this code has and the archive has not is left to boot', async () => {
+    const dir = staged()
+    await rewrite(dir, `DELETE FROM "_litestone_migrations"`)
+    expect(await archiveRefusals(dir, { migrationsRoot: MIGRATIONS })).toEqual([])
+  })
+})
+
+// ─── Restoring a hub at /setup (IDEAS/backups.md 4.4) ───────────────────────
+// A real archive, tarred the way backup:run uploads it, staged into a scratch
+// database directory and swapped in by the real litestone CLI. The live file
+// is a fresh migrated database with no account, as a new box's is.
+
+describe('a hub archive is staged at /setup and swapped in at the next boot', () => {
+  const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
+  let archive: string, tarball: string
+  const log = { info() {}, error() {} }
+
+  beforeAll(async () => {
+    const sys = env.system as any
+    const row = await sys.backup.create({ data: {} })
+    await takeBackup(env.app, row.id)
+    archive = (await sys.backup.findUnique({ where: { id: row.id } })).location
+    tarball = join(mkdtempSync(join(tmpdir(), 'bc-hubtar-')), `${basename(archive)}.tar.gz`)
+    Bun.spawnSync(['tar', '-czf', tarball, '-C', dirname(archive), basename(archive)])
+  })
+
+  /** A box that has booted once: a migrated main.db, no account, its own audit path. */
+  const freshBox = () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bc-hubbox-'))
+    const db  = new Database(join(dir, 'basecamp.db'))
+    db.run('CREATE TABLE account (id TEXT)')
+    db.close()
+    return { dbPath: join(dir, 'basecamp.db'), audit: join(dir, 'audit.db') }
+  }
+  const withAudit = async <T>(path: string, fn: () => Promise<T>): Promise<T> => {
+    const was = process.env.AUDIT_PATH
+    process.env.AUDIT_PATH = path
+    try { return await fn() } finally { if (was === undefined) delete process.env.AUDIT_PATH; else process.env.AUDIT_PATH = was }
+  }
+
+  test('a good archive is staged beside the live database, and boot swaps it in once', async () => {
+    const box = freshBox()
+    const staged = await stageHubArchive(tarball, box.dbPath, { migrationsRoot: MIGRATIONS })
+    expect(staged).toEqual({ takenAt: expect.stringMatching(/^\d{4}-/) })
+    expect(existsSync(join(stagedDir(box.dbPath), 'main.db'))).toBe(true)
+    expect(readdirSync(dirname(box.dbPath)).filter(f => f.startsWith('.restore'))).toEqual([])
+
+    const done = await withAudit(box.audit, () => restoreStaged(box.dbPath, log))
+    expect(done).toEqual({ state: 'done', takenAt: (staged as any).takenAt })
+    expect(existsSync(stagedDir(box.dbPath))).toBe(false)
+    expect(readdirSync(dirname(box.dbPath)).some(f => f.startsWith('restore-done-'))).toBe(true)
+    // The restored file is the archive's: it carries the backup row this suite wrote.
+    const raw = new Database(box.dbPath, { readonly: true })
+    try { expect((raw.query('SELECT count(*) AS n FROM backup').get() as any).n).toBeGreaterThan(0) } finally { raw.close() }
+    expect(existsSync(box.audit)).toBe(true)
+    // No schema names the queue, so the swap leaves it: a restored hub starts with none.
+    expect(readdirSync(dirname(box.dbPath)).filter(f => f.includes('jobs'))).toEqual([])
+
+    expect(await withAudit(box.audit, () => restoreStaged(box.dbPath, log))).toBeNull()
+  })
+
+  test('a staged archive beside a hub with an account is refused and left in place', async () => {
+    const box = freshBox()
+    await stageHubArchive(tarball, box.dbPath, { migrationsRoot: MIGRATIONS })
+    const db = new Database(box.dbPath)
+    db.run(`INSERT INTO account (id) VALUES ('live')`)
+    db.close()
+
+    const r = await withAudit(box.audit, () => restoreStaged(box.dbPath, log))
+    expect(r?.state).toBe('refused')
+    expect(existsSync(join(stagedDir(box.dbPath), 'main.db'))).toBe(true)
+    const raw = new Database(box.dbPath, { readonly: true })
+    try { expect(raw.query('SELECT id FROM account').all()).toEqual([{ id: 'live' }]) } finally { raw.close() }
+  })
+
+  test('a live file that cannot be read counts as a hub, so --force never runs over it', async () => {
+    const box = freshBox()
+    await stageHubArchive(tarball, box.dbPath, { migrationsRoot: MIGRATIONS })
+    writeFileSync(box.dbPath, 'not a database, and not nothing')
+    const r = await withAudit(box.audit, () => restoreStaged(box.dbPath, log))
+    expect(r?.state).toBe('refused')
+    expect(readFileSync(box.dbPath, 'utf8')).toBe('not a database, and not nothing')
+    expect(existsSync(stagedDir(box.dbPath))).toBe(true)
+  })
+
+  test('what is not an archive, or does not pass its manifest, is refused with nothing staged', async () => {
+    const box = freshBox()
+    const junk = join(dirname(box.dbPath), 'junk.tar.gz')
+    writeFileSync(junk, 'not a tarball')
+    expect((await stageHubArchive(junk, box.dbPath, { migrationsRoot: MIGRATIONS }) as any).refused[0]).toContain('not a gzipped tar')
+
+    const src = mkdtempSync(join(tmpdir(), 'bc-hubodd-'))
+    mkdirSync(join(src, 'elsewhere'))
+    const wrongTop = join(src, 'wrong.tar.gz')
+    Bun.spawnSync(['tar', '-czf', wrongTop, '-C', src, 'elsewhere'])
+    expect((await stageHubArchive(wrongTop, box.dbPath, { migrationsRoot: MIGRATIONS }) as any).refused[0]).toContain('holds elsewhere')
+
+    const linked = join(src, basename(archive))
+    cpSync(archive, linked, { recursive: true })
+    Bun.spawnSync(['ln', '-s', '/etc/passwd', join(linked, 'main.db-extra')])
+    const linkedTar = join(src, 'linked.tar.gz')
+    Bun.spawnSync(['tar', '-czf', linkedTar, '-C', src, basename(archive)])
+    expect((await stageHubArchive(linkedTar, box.dbPath, { migrationsRoot: MIGRATIONS }) as any).refused[0]).toContain('not a plain file')
+
+    appendFileSync(join(linked, 'jobs.db'), 'x')
+    Bun.spawnSync(['rm', join(linked, 'main.db-extra')])
+    const damagedTar = join(src, 'damaged.tar.gz')
+    Bun.spawnSync(['tar', '-czf', damagedTar, '-C', src, basename(archive)])
+    expect((await stageHubArchive(damagedTar, box.dbPath, { migrationsRoot: MIGRATIONS }) as any).refused)
+      .toEqual(['jobs.db does not match its sha256; the archive is damaged.'])
+
+    expect(existsSync(stagedDir(box.dbPath))).toBe(false)
+    expect(readdirSync(dirname(box.dbPath)).filter(f => f.startsWith('.restore'))).toEqual([])
+  })
+
+  test('the bucket is listed and fetched over pre-signed URLs, keeping only hub archive names', async () => {
+    const asked: string[] = []
+    const server = Bun.serve({ port: 0, async fetch(req) {
+      const url = new URL(req.url)
+      asked.push(url.pathname + url.search)
+      if (!url.searchParams.get('X-Amz-Signature')) return new Response('<Error><Code>AccessDenied</Code></Error>', { status: 403 })
+      if (url.searchParams.get('list-type') === '2') return new Response(
+        `<ListBucketResult><IsTruncated>false</IsTruncated>` +
+        `<Contents><Key>hub/${basename(archive)}.tar.gz</Key><Size>${statSync(tarball).size}</Size></Contents>` +
+        `<Contents><Key>hub/basecamp-2020-01-01T00-00-00-000Z.tar.gz</Key><Size>1</Size></Contents>` +
+        `<Contents><Key>hub/someone-else.tar.gz</Key><Size>1</Size></Contents>` +
+        `</ListBucketResult>`, { headers: { 'content-type': 'application/xml' } })
+      return new Response(Bun.file(tarball))
+    } })
+    try {
+      const bucket = readBucket({ endpoint: `http://127.0.0.1:${server.port}`, region: 'us-west-000', bucket: 'b', prefix: 'hub', key: 'id:secret' }) as any
+      const listed = await listHubArchives(bucket) as any
+      expect(listed.archives.map((a: any) => a.name)).toEqual([basename(archive), 'basecamp-2020-01-01T00-00-00-000Z'])
+      expect(asked[0]).toContain('prefix=hub%2Fbasecamp-')
+
+      const to = join(mkdtempSync(join(tmpdir(), 'bc-hubget-')), 'a.tar.gz')
+      expect(await fetchHubArchive(bucket, listed.archives[0].key, to)).toBeNull()
+      expect(statSync(to).size).toBe(statSync(tarball).size)
+
+      expect(readBucket({ endpoint: 'ftp://x', bucket: 'b', key: 'a:b' })).toEqual({ error: expect.stringContaining('endpoint') })
+      expect(readBucket({ endpoint: 'http://x', bucket: 'b', key: 'nocolon' })).toEqual({ error: expect.stringContaining('accessKeyId') })
+    } finally { server.stop(true) }
+  })
+
+  test('POST /setup/restore is closed once an account exists', async () => {
+    const sys = env.system as any
+    if (!await sys.account.count())
+      await sys.account.create({ data: { slug: `restore-${Date.now()}`, displayName: 'Live' } })
+    const res = await env.http.post('/setup/restore/archives').send({})
+    expect(res.status).toBe(409)
   })
 })
 

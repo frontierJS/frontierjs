@@ -18,6 +18,7 @@ import {
 import { metrics } from '@frontierjs/junction/metrics'
 import { devtools } from '@frontierjs/junction/devtools'
 import { mail as mailPlugin } from '@frontierjs/junction/mail'
+import { rmSync } from 'node:fs'
 
 import { conduit }           from '@frontierjs/conduit'
 import { createSQLiteStore } from '@frontierjs/conduit/stores/sqlite'
@@ -31,6 +32,7 @@ import { createWorkbench }           from './domain/workbench/workbench.ts'
 import { workbenchTerminal }         from './plugins/workbench-terminal.ts'
 import { machineStream }             from './plugins/machine-stream.ts'
 import { backupArchive }             from './plugins/backup-archive.ts'
+import { bucketFromEnv, fetchHubArchive, listHubArchives, readBucket, receiveUpload, restoreStaged, restoreState, scratchTarball, stageHubArchive } from './domain/backup/hub-restore.ts'
 import { LEVELS }                                from '@frontierjs/litestone'
 import { apply }                                 from '@frontierjs/litestone/migrations'
 import type { WriteEvent }                       from '@frontierjs/litestone'
@@ -57,6 +59,7 @@ import { slugify }                        from './core/resource.ts'
 import { basecampGateLevel, roleForLevel, SYSTEM, workspaceClaim } from './core/gate.ts'
 import { basecampNodes }                  from './plugins/automations.ts'
 import { restoreSchedules }          from './domain/job/job-schedule.ts'
+import restoreReconcile              from './jobs/restore-reconcile.job.ts'
 import { pushAppsOn }                from './jobs/domain-dns.job.ts'
 import { syncReplicasOn }            from './jobs/replicate-sync.job.ts'
 import { workspaceChannelName, workspaceIdFromChannel, notificationChannelName } from './core/channels.ts'
@@ -130,6 +133,9 @@ export async function buildBasecampApp(
   // is derived from it, so a test that redirects the main database and leaves
   // the queue behind would write jobs into the developer's own.
   const dbPath        = opts.dbPath ?? env.DATABASE_URL
+  // An archive `/setup` staged is swapped in before anything opens the files it
+  // replaces. An injected client already holds them, so it is never swapped under.
+  const restored      = opts.db ? null : await restoreStaged(dbPath, logger)
   const rawDb         = openSqlite(dbPath)
   const migrated      = await apply(rawDb, migrationsDir)
   if (migrated.unmatched)
@@ -648,6 +654,12 @@ export async function buildBasecampApp(
     .then(n => logger.info('schedules restored', { count: n }))
     .catch(err => logger.error('could not restore schedules', { error: (err as Error).message }))
 
+  // The restored rows are as old as the archive; which replicas the bucket
+  // still holds is asked once, off the boot path (`IDEAS/backups.md` 4.5).
+  if (restored?.state === 'done')
+    app.jobs.dispatch(restoreReconcile, {}, { unique: 'restore:reconcile', actor: null, tenant: null })
+      .catch(err => logger.error('could not queue the replica reconcile', { error: (err as Error).message }))
+
   // ── Custom routes — wrapped in configure() ────────────────────────────
   // Must be inside configure() so they register during start() Phase 1,
   // after CORS has patched the router. Direct app.post() calls made outside
@@ -732,8 +744,63 @@ export async function buildBasecampApp(
       // `mail` is whether a Forgot password link can reach anybody. The reset
       // route answers ok either way, against enumeration, so this is the only
       // place the sign-in screen can learn it before promising a message.
-      return ctx.json({ workspaces, users, needs_setup: workspaces === 0 || users === 0, mail: mailProvider() != null })
+      const needsSetup = workspaces === 0 || users === 0
+      const restore    = restoreState(dbPath)
+      return ctx.json({ workspaces, users, needs_setup: needsSetup, mail: mailProvider() != null,
+        restore: restore?.state ?? null, restore_message: restore && 'message' in restore ? restore.message : null,
+        restore_taken_at: restore && 'takenAt' in restore ? restore.takenAt : null,
+        ...(needsSetup ? { restore_bucket: bucketFromEnv() } : {}) })
     })
+
+    // ── Restore a hub ───────────────────────────────────────────────────
+    // The other way through first run: the old hub's archive, staged here and
+    // swapped in by the next boot (domain/backup/hub-restore.ts). Closed once an
+    // Account exists, the row boot's own check refuses beside.
+    const claimed = async () => await sys.account.count() > 0
+    const migrationsRoot = new URL('../../db/migrations', import.meta.url).pathname
+    let staging = false
+
+    // POST /setup/restore/archives — the hub archives in a bucket the form names.
+    a.post('/setup/restore/archives', async (ctx) => {
+      if (await claimed()) return ctx.json({ message: 'Basecamp already set up — use /auth/login' }, 409)
+      const bucket = readBucket((ctx.body ?? {}) as Record<string, unknown>)
+      if ('error' in bucket) return ctx.json({ message: bucket.error }, 400)
+      const listed = await listHubArchives(bucket)
+      if ('error' in listed) return ctx.json({ message: listed.error }, 502)
+      return ctx.json(listed)
+    })
+
+    // POST /setup/restore — JSON `{ ...bucket, archive: <key> }` fetches one
+    // from the bucket; an `application/gzip` body is the archive itself.
+    // Either is checked against its manifest and staged; nothing live moves.
+    a.post('/setup/restore', async (ctx) => {
+      if (await claimed()) return ctx.json({ message: 'Basecamp already set up — use /auth/login' }, 409)
+      if (staging) return ctx.json({ message: 'An archive is being staged already' }, 409)
+      staging = true
+      const tarball = scratchTarball(dbPath)
+      try {
+        const type = String(ctx.headers['content-type'] ?? '')
+        if (type.startsWith('application/json')) {
+          const body   = await new Response(ctx.body as ReadableStream | null).json().catch(() => ({})) as Record<string, unknown>
+          const bucket = readBucket(body)
+          if ('error' in bucket) return ctx.json({ message: bucket.error }, 400)
+          if (typeof body.archive !== 'string' || !body.archive) return ctx.json({ message: 'archive is the key of the one to restore' }, 400)
+          const failed = await fetchHubArchive(bucket, body.archive, tarball)
+          if (failed) return ctx.json({ message: failed.error }, 502)
+        } else {
+          const failed = await receiveUpload(ctx.body as ReadableStream<Uint8Array> | null, tarball)
+          if (failed) return ctx.json({ message: failed.error }, 400)
+        }
+        const staged = await stageHubArchive(tarball, dbPath, { migrationsRoot })
+        if ('refused' in staged)
+          return ctx.json({ message: staged.refused[0], reasons: staged.refused }, 422)
+        logger.warn('hub archive staged; restart to restore it', { taken_at: staged.takenAt })
+        return ctx.json({ restore: 'staged', taken_at: staged.takenAt }, 202)
+      } finally {
+        rmSync(tarball, { force: true })
+        staging = false
+      }
+    }, { body: 'stream' })
 
     // POST /setup — first-run bootstrap: account + user + workspace + membership.
     a.post('/setup', async (ctx) => {

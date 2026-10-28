@@ -44,8 +44,8 @@ What exists, and where (checked against the tree on 2026-10-27):
 next push replaces it: a release is a release, the newest is live, and nothing
 here makes a laptop build sticky. That is the owner's stated intent and this
 plan keeps it; what it adds is that the Releases tab says which door each one
-came through, because today a push, the button and the laptop all record
-`trigger: manual`.
+came through (1.5: `Deployment.trigger` is an enum of the seven doors, where
+Phase 0's five rows all read `manual`).
 
 Out of scope here: how a `link:` app builds on a machine (the template
 Dockerfile's framework clone, a published `dev` tag, split repositories). That
@@ -162,7 +162,7 @@ Done when: `bun run test` (`from-repo.test.ts`, `push.test.ts`, `servers.test.ts
 and `bun run verify:screens` are green with the steps below covered, and a
 repository wired by hand releases on push, on the button and from a laptop.
 
-- [ ] 1.5 **A release names its door, and its commit.** `Deployment.trigger`
+- [x] 1.5 **A release names its door, and its commit.** `Deployment.trigger`
       takes `push`, `button` and `laptop` beside `rollback` and `rebind`: the
       push Receiver and `fli basecamp:deploy` each state theirs, and the
       Releases tab shows it. The build step hands the row the commit it built
@@ -172,23 +172,85 @@ repository wired by hand releases on push, on the button and from a laptop.
       reads `false` for every git release.
   - Every one of Phase 0's five rows said `manual` and `—`; the history of
     one App through three doors could not be read back.
-- [ ] 1.8 **The clone follows the App** (`FJS-3560`). The Outpost's `build`
+  - Built 2026-10-27. The column was a free String with seven spellings in
+    the tree (`manual`, the seed's `webhook`, `rollback`, `rebind`, and
+    `publish` and `freeze` the owner-editing and workbench paths had added);
+    it is `enum DeployTrigger { button push laptop rollback rebind publish
+    freeze }`, default `button`, so a misspelled door is refused at the Data
+    boundary, and `manual`/`webhook` are renamed in every caller (the seed,
+    four tests, the fleet tutor's release step). `Job.trigger` is another
+    noun and stays a String; the enum comment says so.
+  - `liveBuild` is gone from `apps.get` with the second `configSnapshot` read
+    it cost; the page derives the notice from the first `success` row's
+    trigger, which `recent_deployments` already carried, and shows it as a
+    Callout (`#app-live-build`) on the overview and the Releases tab, not only
+    in Deploy's confirm. A git App's sentence says the next push replaces it.
+  - The button path fills `branch` from `source.branch` at create, so a
+    button row reads `main` rather than `—` before the build step reports.
+    The dev database's 85 seeded rows were re-spelled by `UPDATE`; the
+    `CHECK` lives in the regenerated migration only, since the dev database
+    is one initial migration edited in place (`db:reset` wipes fleet data).
+  - `db/schema.json` was already stale against `schema.lite` (`deployPublicKey`,
+    `ProjectFromRepo`) before this step; regenerated with it.
+  - Drives: `push.test.ts` asserts the door and the payload's four fields on
+    the push row; 1.7 still owes the button and laptop rows.
+- [x] 1.8 **The clone follows the App** (`FJS-3560`). The Outpost's `build`
       reads the clone's `origin` and re-points or re-clones when it is not
       `source.repo`, so a repository changed after the first release is the
       one built. Refuse or follow, never a warning: Phase 0 shipped the old
       tree green twice.
-- [ ] 1.6 **The laptop door takes a plain repository.** `fli basecamp:deploy`
+  - Built 2026-10-27. `build` reads `git remote get-url origin` off
+    `work/<appId>`; an origin that is not `source.repo`, or no origin, removes
+    the directory and clones fresh. Remade rather than re-pointed
+    (`decision-rules`, question 8): `remote set-url` keeps the old repository's
+    objects and untracked files in the build context, which is the silent
+    class `FJS-3560` is about, and `siteBuild` in the same file already
+    remakes its checkout every run. A matching origin is fetched, reset and
+    `clean -fdx`, since `reset --hard` alone leaves a file the last checkout
+    had in the context `docker build` ships.
+  - Drives: three cases under *a clone on this machine follows source.repo*
+    in `outpost.test.js` assert the argv (same origin fetched, never recloned;
+    different origin `rm -rf` then `clone`; no origin remade). The live
+    re-run of 0.3's trip, a `git-deploy-test` App patched from the stand-in
+    path to GitHub, is owed to 1.7's drive pass; `verify:docker` did not run
+    here (`/var/run/docker.sock` refused this user).
+- [x] 1.6 **The laptop door takes a plain repository.** `fli basecamp:deploy`
       finds the Dockerfile where the Outpost does, by asking the Outpost's
-      lookup order (`chooseDockerfile`, `packages/outpost/src/docker.js`)
+      lookup order (`chooseDockerfile`, `packages/outpost/src/dockerfile.js`)
       rather than holding a second `deploy/Dockerfile` default beside it;
-      vendors only when a `link:` dependency exists, so a repository with no
+      vendors when the chosen Dockerfile names `deploy/generated/`
+      (`needsGenerated`, the same file), so a repository with no
       `package.json` builds; marks a dirty tree on the tag and the row
       (`FJS-3561`); and the Outpost refusal about `deploy/generated/` drops
       its commit sentence and names the two paths that work, the laptop
       release or a Dockerfile stored on the App. Paved road, not a flag:
       Phase 0 needed a `frontier.config.js` and a stub `package.json` to run
       at all.
-- [ ] 1.4 **Creation ends in *Connect your repository*.** `fromRepo` takes
+  - Built 2026-10-27, `FJS-D1560`. The order and the predicate moved out of
+    `createDocker` into `src/dockerfile.js`, a new `./dockerfile` entry of
+    outpost with no `Bun` global at import, and `@frontierjs/cli` depends on
+    outpost (`core/vendor.js` re-exports the two). The plan's *when a `link:`
+    dependency exists* was a proxy that broke the `--source npm` scaffold, whose
+    template still `COPY`s the folder; the Dockerfile's text is the authority
+    (`decision-rules`, question 5), and `vendor.js`'s header says so now.
+  - The Outpost's refusal is on the same predicate, stored copy included: an
+    `apps.importDockerfile` of the template into a private App would have
+    failed deep inside `bun install`; `deploy/Dockerfile` with no
+    `deploy/generated/` beside it builds when the file installs from the
+    repository.
+  - The laptop honors a Dockerfile stored on the App, as the push does, writing
+    it as `Dockerfile.basecamp` for the build and removing it in `finally`; a
+    `frontier.config.js` `deploy.api.dockerfile` is *told* and still wins.
+  - Dirty: `git status --porcelain` before anything is written; the tag is
+    `fjs-<app>:<sha12>-dirty`, the row's `commitSha` is `<sha>-dirty`, the
+    command warns, and `shortSha` in the console keeps the suffix after the
+    seven-char cut on the App page, the Releases tab, the release page and the
+    failure notice.
+  - Drives: four cases in `outpost.test.js` (the refusal's words, a
+    repository's own `deploy/Dockerfile` with no folder, a stored copy read by
+    the same rule, `needsGenerated` on the template and a comment); the laptop
+    `--dry` on a plain repository and a dirty tag are 1.7's.
+- [x] 1.4 **Creation ends in *Connect your repository*.** `fromRepo` takes
       `deployOnPush` (on when a server is picked, `FJS-D1558`); its answer carries
       the deploy public key and the push URL, secret and token URL together, and
       the create page shows them once on one panel: add these two at GitHub,
@@ -196,6 +258,18 @@ repository wired by hand releases on push, on the button and from a laptop.
   - Phase 0 made the trip twice: the key came with `fromRepo`, the webhook
     pair from `enablePush` on another tab; and the URL is the API's own
     origin, which a person behind a tunnel rewrites by hand.
+  - Built 2026-10-27. `ProjectFromRepo.deployOnPush Boolean?`; the mint is
+    `enablePushOn(appId)` in `apps.service.ts`, which `enablePush` and
+    `fromRepo` both call, so there is one and it is the rotation. `fromRepo`
+    answers `push: { url, tokenUrl, secret, token } | null` beside
+    `dockerfile`; with a server and nobody saying `false` it is on, without a
+    server it is never on. The create page shows a *Deploy on push* switch once
+    a server is picked (on; `false` is sent only when turned off) and, when the
+    answer carries a key or a push, replaces the form with the `#connect-repo`
+    panel: the key with Copy (or the machine's reason), the three push values,
+    the shown-once callout, *Open the app*. Without a server it leaves for the
+    App page as before. The form is now `novalidate`, as the other create forms
+    are: the kit warns on a native constraint in a form that is not.
 - [ ] 1.1 **The host port is Basecamp's to pick** (`FJS-D1557`). `fromRepo` and
       `apps.create` take no port; `placeApp` (`apps.service.ts`), the one place
       a replica lands on a server, allocates the next free one from the Apps
@@ -227,6 +301,35 @@ repository wired by hand releases on push, on the button and from a laptop.
       tree marks the tag), 1.4 (the panel's four values) and 1.1 (port refused
       per server). No new files: the cases go in the suites that already own
       these screens.
+  - Run 2026-10-27 for the steps built so far; 1.4's and 1.1's halves follow
+    their steps. Live, on the dev stack (`dev:outpost` restarted, since the
+    daemon up predated 1.8's code and its `.outpost/` home was gone): two
+    button releases of `git-deploy-test`, the second after the clone's origin
+    was re-pointed at a path that does not exist — both green, both rows
+    `button`/`main`/GitHub's HEAD, the clone back at `source.repo`; `fli
+    basecamp:deploy --dry` on the plain checkout (the 0.3 stubs moved aside)
+    built the stored copy as `Dockerfile.basecamp`, vendored nothing, left no
+    file, and a scratch file in `www/` marked the tag `-dirty` with the warning.
+  - In the suites: `push.test.ts` gains the button row (`button`, the App's
+    branch, the presser), `recordStep` handing a row the commit the build
+    reported, and the laptop row (`laptop`, a `-dirty` commit, no build step);
+    `cli/test/vendor.test.js` drives `basecamp:deploy --dry` as a process
+    against a stub Basecamp on a repository made outside the tree (fli takes
+    the nearest `frontier.config.js` above as root, and under `packages/cli`
+    that is the workspace's), spawned asynchronously since the stub answers on
+    the loop a `spawnSync` would block; the seed now draws `laptop` and
+    `verify-screens.mjs` reads the overview's `#app-live-build` and each door
+    on the Releases tab.
+  - 1.4's half, 2026-10-27. Live on the dev stack with the real Outpost:
+    `fromRepo` onto `dev-outpost` answered an `ssh-ed25519` key and the three
+    push values together, the row read back with neither credential, and
+    `deployOnPush: false` answered no push. In the suites: `from-repo.test.ts`
+    (the credentials on the answer, the row carrying neither, `false` leaves
+    it off), `push.test.ts` (creation's secret verifies at the forge and
+    releases; token URL too; an App with no server is never `deployOnPush`
+    and its door is 401), and `verify-screens.mjs` drives `/projects/create/`
+    through the switch to the panel's four values and *Open the app*. 1.1's
+    half is left.
 
 ### Phase 2 — Basecamp makes the GitHub trip
 
