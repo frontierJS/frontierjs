@@ -63,6 +63,7 @@ const { scaffoldSiteSurface, siteScripts, siteDevDeps } =
   await import(resolve(global.fliRoot, 'core/site-surface.js'))
 const { port: portFor, projectIdFor } =
   await import(resolve(global.fliRoot, 'core/ports.js'))
+const { addSurfaceToTsconfig } = await import(resolve(global.fliRoot, 'core/scaffold/surface.js'))
 
 const dir  = flag.dir || 'site'
 const root = $.paths.root
@@ -146,6 +147,8 @@ if (fresh) {
   }
 }
 
+const tsconfig = addSurfaceToTsconfig(root, dir)
+if (tsconfig.message) log[tsconfig.ok ? 'success' : 'warn'](tsconfig.message)
 log.info('')
 log.info(`  bun run dev:site      write it, live at :${devPort}`)
 log.info(`  bun run build:site    → ${dir}/dist/, one index.html per route`)

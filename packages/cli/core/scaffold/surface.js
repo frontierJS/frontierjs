@@ -9,8 +9,8 @@
 // literal — plain words or -- quoting.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { resolve, dirname }                     from 'node:path'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { resolve, dirname }                                   from 'node:path'
 import { port, PROJECTS, surfacePort }          from '../ports.js'
 
 // ─── ports ────────────────────────────────────────────────────────────────────
@@ -50,6 +50,44 @@ export function writeAbsent(root, dir, { dirs = [], files = [] }) {
     written.push(name)
   }
   return { written, skipped }
+}
+
+// ─── tsconfig.json ────────────────────────────────────────────────────────────
+
+/**
+ * `config` with surface `dir` in it: `dir/**` in `include` and, when the surface
+ * has screens of its own, `./dir/src/*` appended to the `@/*` paths. `fli new`
+ * and every `make:*` go through this, so a surface added later is in the one
+ * tsc program the same way a scaffolded one is.
+ */
+export function tsconfigWithSurface(config, dir, { src = true } = {}) {
+  const glob    = `${dir}/**/*`
+  const include = config.include ?? []
+  const out     = { ...config, include: include.includes(glob) ? include : [...include, glob] }
+  const at      = config.compilerOptions?.paths?.['@/*'] ?? []
+  if (!src || at.includes(`./${dir}/src/*`)) return out
+  const paths = { ...config.compilerOptions?.paths, '@/*': [...at, `./${dir}/src/*`] }
+  return { ...out, compilerOptions: { ...config.compilerOptions, paths } }
+}
+
+/**
+ * Add surface `dir` to the app's tsconfig.json. A tsconfig with comments is
+ * left alone rather than rewritten without them.
+ *
+ * @returns {{ ok: boolean, message: string|null }} null when there is nothing to say
+ */
+export function addSurfaceToTsconfig(root, dir, opts) {
+  const file = resolve(root, 'tsconfig.json')
+  if (!existsSync(file)) return { ok: true, message: null }
+  let config
+  try { config = JSON.parse(readFileSync(file, 'utf8')) } catch {
+    const paths = opts?.src === false ? '' : ` and "./${dir}/src/*" to compilerOptions.paths["@/*"]`
+    return { ok: false, message: `tsconfig.json is not plain JSON, so ${dir}/ was not added: add "${dir}/**/*" to include${paths}` }
+  }
+  const next = tsconfigWithSurface(config, dir, opts)
+  if (JSON.stringify(next) === JSON.stringify(config)) return { ok: true, message: null }
+  writeFileSync(file, JSON.stringify(next, null, 2) + '\n')
+  return { ok: true, message: `Added ${dir}/ to tsconfig.json` }
 }
 
 // ─── running vite ─────────────────────────────────────────────────────────────

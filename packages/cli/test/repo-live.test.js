@@ -12,7 +12,7 @@
 
 import { describe, test, expect } from 'bun:test'
 
-import { compareVersions } from '../core/repo-live.js'
+import { compareVersions } from '../core/doctor.js'
 import { renderAtlas }     from '../core/repo-atlas.js'
 
 const model = () => ({
@@ -58,6 +58,11 @@ describe('version comparison', () => {
   test('a missing segment is zero, and a prerelease suffix does not decide it', () => {
     expect(compareVersions('1.1', '1.1.0')).toBe(0)
     expect(compareVersions('0.1.1', '0.0.0-beta.0')).toBe(1)
+  })
+
+  test('a non-numeric segment reads as zero, never NaN', () => {
+    expect(compareVersions('1.2.x', '1.2.0')).toBe(0)
+    expect(compareVersions('1.2.x', '1.1.9')).toBe(1)
   })
 })
 

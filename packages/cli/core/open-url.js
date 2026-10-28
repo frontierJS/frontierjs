@@ -9,12 +9,21 @@ const OPENERS = {
   win32:  url => ['cmd', ['/c', 'start', '', url]],
 }
 
-/** Open `url`; a machine with no opener says nothing, as a click on nothing would. */
+/**
+ * Open `url`, which may be a file path. Resolves false when this machine has no
+ * opener: a missing `xdg-open` is an async `'error'` event, not a throw, so a
+ * try/catch alone reports success and then dies on the unhandled event.
+ *
+ * @returns {Promise<boolean>} never rejects
+ */
 export function openUrl(url) {
   const [cmd, args] = (OPENERS[process.platform] ?? (u => ['xdg-open', [u]]))(url)
-  try {
-    const child = spawn(cmd, args, { detached: true, stdio: 'ignore' })
-    child.on('error', () => {})
-    child.unref()
-  } catch { /* no opener on this machine */ }
+  return new Promise(done => {
+    try {
+      const child = spawn(cmd, args, { detached: true, stdio: 'ignore' })
+      child.on('error', () => done(false))
+      child.on('spawn', () => done(true))
+      child.unref()
+    } catch { done(false) }
+  })
 }

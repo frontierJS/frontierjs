@@ -48,10 +48,14 @@ export const embedJson = value => JSON.stringify(value).replace(/</g, '\\u003c')
 
 /** The `theme` control. The page's script finds it by `#theme`. */
 export function themePicker(themes) {
-  return `<label class="cluster gap-2xs"><span class="text-xs text-muted">theme</span>
+  return `<label class="page-theme"><span class="text-xs text-muted">theme</span>
         <select class="field" id="theme" aria-label="Theme">${themes.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select>
       </label>`
 }
+
+// A `.field` fills its row, so a picker in a wrapping topbar takes a line of its own;
+// `select` outranks a page's own `.x .field` width, which the page's later block would win.
+const FRAME_STYLE = '.page-theme{display:flex;align-items:center;gap:var(--space-2xs)}.page-theme select.field{inline-size:10rem}'
 
 // Runs in <head>, before the body is parsed: a theme applied after the first
 // paint is a white flash on a page somebody opened to read in the dark. A saved
@@ -101,6 +105,7 @@ export function htmlPage({ banner, title, css, styles = {}, theme, body, data, s
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<title>${esc(title)}</title>`,
     css ? `<style id="fjs-css">${css}</style>` : `<link rel="stylesheet" href="${CDN_STYLESHEET}">`,
+    `<style id="page">${FRAME_STYLE}</style>`,
     ...Object.entries(styles).map(([id, text]) => `<style id="${id}">${text}</style>`),
     `<script>${headScript(themes, pair)}</script>`,
     '</head><body class="app">',

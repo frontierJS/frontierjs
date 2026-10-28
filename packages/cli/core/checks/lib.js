@@ -149,20 +149,9 @@ export function readCode(path, { strings = false } = {}) {
   return out.join('')
 }
 
-/**
- * Source with its comments blanked, for a rule that matches on CODE.
- *
- * A rule reading a file with a regex reads the prose too, and a file that
- * explains its own convention quotes the thing being explained — which is how
- * `resource-file-name` came to report a resource as naming the model its doc
- * comment mentioned. Blanked rather than deleted so nothing else shifts: the
- * only rules here that care about a comment's CONTENT ask for the raw text.
- */
-export function stripComments(src) {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
-}
+// Blanked to spaces, not deleted, so `lineOf` still lands on the right line; and
+// string-aware, because a regex also eats the `//` inside 'http://…' and '//'.
+export { stripComments } from '../codegraph.js'
 
 export function schemaFile(root) {
   const path = join(root, 'db', 'schema.lite')

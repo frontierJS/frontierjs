@@ -533,7 +533,8 @@ core/
                 vite + sierra configs, App.mesa, nav, controls, every route),
                 `surface.js` what every UI surface's scaffold shares — the vite
                 config and runner, index.html, serve.js + Dockerfile, the
-                write-if-absent loop, the port defaults (`FJS-D1577`).
+                write-if-absent loop, the port defaults, and the surface's
+                tsconfig.json entry, which every `make:*` adds (`FJS-D1577`).
                 `project/new.md` keeps the questions, the spec and the file list;
                 the text of what is written lives here so a test can import a
                 builder instead of slicing the command with a regex
@@ -769,6 +770,11 @@ core/
                 litestone's parser/catalog. A Bash command counts only where
                 the path is a write target (redirect, `tee`, `sed -i`, mv/rm,
                 a git verb, an inline `writeFile`), never where it is read
+  html-page.js  the frame of every static page about a tree — atlas, report,
+                rings, work, registers, vocabulary, codegraph (`FJS-D1582`):
+                head, `esc` and its client twin, `embedJson`, the theme picker,
+                and one `fli.theme` key read in <head> so nothing flashes. The
+                GUI and the console are served pages with their own heads
   codegraph-page.js the codegraph model as one page; reads no files. `gilbert`,
                 `gridFor` and `coreLayout` are serialized into its script with
                 `toString()` and every band and score is graded in node, so the

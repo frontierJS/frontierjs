@@ -67,6 +67,7 @@ const { scaffoldWidgetSurface, isWidgetName, widgetTag, widgetScripts } =
   await import(resolve(global.fliRoot, 'core/widget-surface.js'))
 const { port: portFor, projectIdFor } =
   await import(resolve(global.fliRoot, 'core/ports.js'))
+const { addSurfaceToTsconfig } = await import(resolve(global.fliRoot, 'core/scaffold/surface.js'))
 
 const name = arg.name.replace(/\.mesa$/, '').replace(/^.*\//, '')
 const dir  = flag.dir || 'widgets'
@@ -156,6 +157,8 @@ if (fresh) {
   }
 }
 
+const tsconfig = addSurfaceToTsconfig(root, dir)
+if (tsconfig.message) log[tsconfig.ok ? 'success' : 'warn'](tsconfig.message)
 log.info('')
 log.info(`  <${widgetTag(name, prefix)}></${widgetTag(name, prefix)}>  — the tag a host page writes`)
 log.info('')

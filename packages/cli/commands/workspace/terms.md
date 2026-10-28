@@ -92,29 +92,15 @@ still being refined and a gated artifact would fail the build on every tuning
 pass. `FJS-1211` is where this is going.
 
 <script>
-import { spawn } from 'child_process'
 import { writeFileSync } from 'fs'
 import { resolve } from 'path'
-
-// Detached and ignored: an opener holding the pipe keeps the terminal after the
-// command has finished, which reads as a hang.
-const openInBrowser = (path) => {
-  const cmd = process.platform === 'darwin' ? 'open'
-            : process.platform === 'win32'  ? 'explorer'
-            : 'xdg-open'
-  try {
-    spawn(cmd, [path], { stdio: 'ignore', detached: true }).unref()
-    return true
-  } catch {
-    return false
-  }
-}
 </script>
 
 ```js
 const { collectTerms, renderList, renderJson, renderPage, KINDS } =
   await import(resolve(global.fliRoot, 'core/terms.js'))
 const { styleBundle } = await import(resolve(global.fliRoot, 'core/assets.js'))
+const { openUrl } = await import(resolve(global.fliRoot, 'core/open-url.js'))
 
 if (flag.json && flag.as !== 'list') {
   log.error(`--json prints the model; --as=${flag.as} writes a page. Drop one of the two flags.`)
@@ -155,6 +141,6 @@ echo('')
 echo(`  ✓  ${file.replace(`${root}/`, '')}`)
 echo(`  ${model.counts.concept} concept(s) · ${model.counts.language} language word(s) · ${model.counts.api} identifier(s)`)
 echo(`  audit — ${model.audit.blessedUnused.length} blessed and unused · ${model.audit.unnamedCommon.length} widespread and unnamed · ${model.audit.undecidedButDefined.length} open here and answered by a package · ${model.audit.forbiddenUsed.length} forbidden word(s) in prose`)
-if (flag.open && !openInBrowser(file)) echo('  ⚠  could not open a browser')
+if (flag.open && !(await openUrl(file))) echo('  ⚠  could not open a browser')
 echo('')
 ```

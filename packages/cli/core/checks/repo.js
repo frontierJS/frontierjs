@@ -23,7 +23,7 @@ import { runnables }                                                            
 import { invariantCoverage }                                                                                                                                  from '../invariants.js'
 import { hazardCoverage }                                                                                                                                     from '../hazards.js'
 import { seamOwnership, SKILL as SEAM_SKILL, keyLiteral, unlisted }                                                                                           from '../seams.js'
-import { readRegisters }                                                                                                                                      from '../registers.js'
+import { readRegisters, splitRow }                                                                                                                            from '../registers.js'
 import { kindOf }                                                                                                                                             from '../file-kind.js'
 import { safeRead, walk }                                                                                                                                     from '../fs.js'
 
@@ -749,7 +749,7 @@ function skillTableNames(text, named = new Map()) {
   let col = -1
   text.split('\n').forEach((line, i) => {
     if (!line.startsWith('|')) { col = -1; return }
-    const cells = line.split('|').slice(1, -1).map(c => c.trim())
+    const cells = splitRow(line)
     if (col === -1) { col = cells.findIndex(c => /^skill$/i.test(c)); return }
     if (/^-+$/.test(cells[col] ?? '')) return
     const m = /^`([a-z][a-z0-9-]*)`$/.exec(cells[col] ?? '')
@@ -1003,7 +1003,7 @@ function threatRow({ root }) {
   let col = -1, asvs = -1, open = -1, rows = 0
   readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
     if (!line.startsWith('|')) { col = -1; return }
-    const cells = line.split('|').slice(1, -1).map(c => c.trim())
+    const cells = splitRow(line)
     if (col === -1) {
       col  = cells.findIndex(c => /^proved by$/i.test(c))
       asvs = cells.findIndex(c => /^asvs$/i.test(c))

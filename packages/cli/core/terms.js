@@ -1911,7 +1911,7 @@ document.getElementById('f-clear').addEventListener('click', () => {
   filter()
 })
 document.addEventListener('keydown', (e) => {
-  if (e.key === '/' && document.activeElement !== q) { e.preventDefault(); q.focus() }
+  if (e.key === '/' && !/^(input|textarea|select)$/i.test(e.target.tagName)) { e.preventDefault(); q.focus() }
   if (e.key === 'Escape') { q.value = ''; filter() }
 })
 

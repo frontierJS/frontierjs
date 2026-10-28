@@ -375,7 +375,8 @@ function place(r) {
 // give, and it was the answer: an `ACME-1` table graded `0 open · ✓`.
 const ISSUE_ROW_SHAPE = /^\|\s*(?:<a\s[^>]*>\s*<\/a>\s*)?`?[A-Z][A-Z0-9]*-D?\d+/
 
-function readIssues({ root, dir, ids }) {
+/** Every issue row in `ISSUES.md` and its archive, read off `registerLayout(root)`. */
+export function readIssues({ root, dir, ids }) {
   const out = []
 
   for (const name of ['ISSUES.md', 'ISSUES_ARCHIVE.md']) {

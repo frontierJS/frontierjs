@@ -42,11 +42,12 @@
 //
 // Zero dependencies beyond `@frontierjs/toolbelt/inflect`, plain ESM, node or bun.
 
-import { existsSync, readdirSync }               from 'node:fs'
+import { existsSync, readdirSync, statSync }     from 'node:fs'
 import { join }                                  from 'node:path'
 import { read }                                  from './fs.js'
 
 import { terms }                                 from './intent.js'
+import { readIssues, registerLayout }            from './registers.js'
 
 const bytes = s => Buffer.byteLength(s ?? '', 'utf8')
 
@@ -219,7 +220,6 @@ function best(rows, tk) {
 
 const SEAMS    = 'seams.snapshot.md'
 const DECISION = 'DECISIONS.md'
-const ISSUES   = 'ISSUES.md'
 const DRIVES   = 'DRIVES.md'
 
 function rowsOf(text, re, make) {
@@ -296,14 +296,20 @@ const WALKS = {
     return { ...best(rows, tk), scanned: bytes(text) }
   },
 
+  // The register's own reader, not a regex of this one's: the prefix is the
+  // project's, a row needs no `<a id>`, and a defect closed and archived is
+  // still the answer to *is X broken*.
   status: (root, tk) => {
-    const text = read(join(root, ISSUES))
-    if (text === null) return { status: 'missing', hits: [], scanned: 0 }
-    const rows = rowsOf(text, /^\| <a id="fjs-\d+"><\/a>(FJS-\d+) \| ([^|]*) \| ([^|]{0,400})/gm,
-      m => ({ hay: `${m[2]} ${m[3]}`, cite: m[1],
-              line: `${m[1]} — ${m[3].trim().slice(0, 160)}`, payload: m[0] }))
-    return { ...best(rows, tk), scanned: bytes(text) }
+    const layout = registerLayout(root)
+    const files  = ['ISSUES.md', 'ISSUES_ARCHIVE.md'].map(f => join(layout.dir, f)).filter(existsSync)
+    if (!files.length) return { status: 'missing', hits: [], scanned: 0 }
+    const rows = readIssues(layout).map(r => ({
+      hay: `${r.pkg.join(' ')} ${r.title} ${r.body}`.slice(0, 600), cite: r.id,
+      line: `${r.id} — ${r.title.slice(0, 160)}`, payload: r.raw,
+    }))
+    return { ...best(rows, tk), scanned: files.reduce((n, f) => n + statSync(f).size, 0) }
   },
+
 
   // BOTH of DRIVES.md's tables, and the second one is the one being asked.
   //

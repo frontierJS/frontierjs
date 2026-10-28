@@ -16,6 +16,7 @@ import {
 import { RULES }                             from '../core/checks.js'
 import { extensionDevDeps }                  from '../core/extension-surface.js'
 import { siteDevDeps }                       from '../core/site-surface.js'
+import { addSurfaceToTsconfig }              from '../core/scaffold/surface.js'
 import { checkDocCommands, builtinCommands } from '../core/doc-commands.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -65,6 +66,36 @@ describe('the config is a dependency, not a copy', () => {
     const ts = JSON.parse(appTsconfig({ useWeb: false, useWidgets: true, useApi: false }))
     expect(ts.compilerOptions.paths['@/*']).toEqual(['./widgets/src/*'])
     expect(ts.include).toEqual(['widgets/**/*'])
+  })
+
+  // make:site, make:widget, make:extension and make:desktop run after fli new,
+  // so each adds its own surface or tsc never sees it.
+  test('a surface added later lands where fli new would have put it, once', () => {
+    const app  = mkdtempSync(join(tmpdir(), 'fli-tsconfig-'))
+    const file = join(app, 'tsconfig.json')
+    writeFileSync(file, appTsconfig({ useWeb: true }))
+
+    expect(addSurfaceToTsconfig(app, 'site').message).toBe('Added site/ to tsconfig.json')
+    expect(readFileSync(file, 'utf8')).toBe(appTsconfig({ useWeb: true, useSite: true }))
+    expect(addSurfaceToTsconfig(app, 'site').message).toBeNull()
+
+    // A desktop that wraps web has no src/ of its own for @ to mean.
+    addSurfaceToTsconfig(app, 'desktop', { src: false })
+    const ts = JSON.parse(readFileSync(file, 'utf8'))
+    expect(ts.include).toContain('desktop/**/*')
+    expect(ts.compilerOptions.paths['@/*']).not.toContain('./desktop/src/*')
+    rmSync(app, { recursive: true, force: true })
+  })
+
+  test('a tsconfig with comments is left alone and the command says what to add', () => {
+    const app  = mkdtempSync(join(tmpdir(), 'fli-tsconfig-'))
+    const text = '{\n  // mine\n  "include": ["api/**/*"]\n}\n'
+    writeFileSync(join(app, 'tsconfig.json'), text)
+    const r = addSurfaceToTsconfig(app, 'widgets')
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('"widgets/**/*"')
+    expect(readFileSync(join(app, 'tsconfig.json'), 'utf8')).toBe(text)
+    rmSync(app, { recursive: true, force: true })
   })
 
   test('biome.json is extends and nothing else', () => {

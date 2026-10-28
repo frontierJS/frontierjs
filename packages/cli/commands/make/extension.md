@@ -57,6 +57,7 @@ const { port: portFor, projectIdFor } =
   await import(resolve(global.fliRoot, 'core/ports.js'))
 const { FJS_PACKAGES } =
   await import(resolve(global.fliRoot, 'core/app-config.js'))
+const { addSurfaceToTsconfig } = await import(resolve(global.fliRoot, 'core/scaffold/surface.js'))
 
 const dir  = flag.dir || 'extension'
 const root = $.paths.root
@@ -120,6 +121,8 @@ if (existsSync(pkgPath)) {
   }
 }
 
+const tsconfig = addSurfaceToTsconfig(root, dir)
+if (tsconfig.message) log[tsconfig.ok ? 'success' : 'warn'](tsconfig.message)
 log.info('')
 log.info('  fli extension:build     → extension/dist/chrome/')
 log.info(`  fli dev:extension       watch + reload, dev port ${devPort}`)

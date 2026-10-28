@@ -47,6 +47,7 @@ const { scaffoldDesktopSurface, desktopScripts, desktopNames } =
   await import(resolve(global.fliRoot, 'core/desktop-surface.js'))
 const { port: portFor, projectIdFor } =
   await import(resolve(global.fliRoot, 'core/ports.js'))
+const { addSurfaceToTsconfig } = await import(resolve(global.fliRoot, 'core/scaffold/surface.js'))
 
 const root    = $.paths.root
 const surface = resolve(root, 'desktop')
@@ -97,6 +98,8 @@ if (appPkg) {
   }
 }
 
+const tsconfig = addSurfaceToTsconfig(root, 'desktop', { src: !wraps })
+if (tsconfig.message) log[tsconfig.ok ? 'success' : 'warn'](tsconfig.message)
 const { identifier } = desktopNames(appName)
 
 log.info('')

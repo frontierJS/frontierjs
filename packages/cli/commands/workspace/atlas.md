@@ -62,7 +62,6 @@ pages:
 ---
 
 <script>
-import { spawn } from 'child_process'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { basename, dirname, resolve } from 'path'
 
@@ -77,20 +76,6 @@ const diffLines = (was, now) => {
   }
   return out.join('\n')
 }
-
-// Detached and ignored: an opener holding the pipe keeps the terminal after the
-// command has finished, which reads as a hang.
-const openInBrowser = (path) => {
-  const cmd = process.platform === 'darwin' ? 'open'
-            : process.platform === 'win32'  ? 'explorer'
-            : 'xdg-open'
-  try {
-    spawn(cmd, [path], { stdio: 'ignore', detached: true }).unref()
-    return true
-  } catch {
-    return false
-  }
-}
 </script>
 
 ```js
@@ -100,6 +85,7 @@ const { collect, structureOf, renderHtml, renderJson } = await import(resolve(gl
 const { renderAtlas, cards }              = await import(resolve(global.fliRoot, 'core/repo-atlas.js'))
 const { renderRings, placement, docsOf }  = await import(resolve(global.fliRoot, 'core/repo-rings.js'))
 const { renderWork, workOf, WORK_FILE }   = await import(resolve(global.fliRoot, 'core/repo-work.js'))
+const { openUrl }                         = await import(resolve(global.fliRoot, 'core/open-url.js'))
 
 // `--as` picks the page a person reads and `--json` is the model a program
 // reads (`FJS-D401`), so the two together are two answers to one run.
@@ -249,7 +235,7 @@ if (live) {
   echo('  Not a snapshot — nothing checks this file. Do not commit it.')
 }
 
-if (flag.open && !openInBrowser(outPath)) log.warn('Could not open a browser — the file is written')
+if (flag.open && !(await openUrl(outPath))) log.warn('Could not open a browser — the file is written')
 ```
 
 ## What it writes

@@ -137,6 +137,22 @@ describe('matching', () => {
     expect(a.hits[0].cite).toBe('FJS-D32')
   })
 
+  test('an issue is read under the project prefix, with or without an anchor', () => {
+    const root = tree('ask-acme', {
+      'package.json': JSON.stringify({ registers: { prefix: 'ACME' } }),
+      'ISSUES.md': [
+        '## S3',
+        '',
+        '| Id | Area | Title | Status | Verified | Detail |',
+        '| --- | --- | --- | --- | --- | --- |',
+        '| ACME-7 | billing | **The invoice total drops the tax line** | open | 2026-10-28 | — |',
+      ].join('\n') + '\n',
+    })
+    const a = ask({ root, text: 'is the invoice tax line broken' })
+    expect(a.status).toBe('resolved')
+    expect(a.hits[0].cite).toBe('ACME-7')
+  })
+
   test('nothing matching is missing, not a guess', () => {
     const root = tree('ask-miss', { ...SEAMS('| `wsSend()` | `packages/junction/src/x.ts` | yes | — |') })
     expect(ask({ root, text: 'who owns the quantum flux capacitor' }).status).toBe('missing')
@@ -153,7 +169,8 @@ describe('the graded set', () => {
     // is the tree having moved — and the score would go on reporting a number
     // for a question nothing could answer.
     const dec = readFileSync(join(root, 'DECISIONS.md'), 'utf8')
-    const iss = readFileSync(join(root, 'ISSUES.md'), 'utf8')
+    // A closed row ages out to the archive and stays citable — the router reads both.
+    const iss = ['ISSUES.md', 'ISSUES_ARCHIVE.md'].map(f => readFileSync(join(root, f), 'utf8')).join('\n')
     const drv = readFileSync(join(root, 'DRIVES.md'), 'utf8')
 
     for (const { intent, cite } of QUESTIONS) {

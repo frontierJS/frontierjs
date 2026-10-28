@@ -23,6 +23,7 @@
 
 import { spawnSync } from 'node:child_process'
 import { gitOut }    from './git.js'
+import { compareVersions } from './doctor.js'
 
 const GIT_TIMEOUT = 10_000
 const NPM_TIMEOUT = 20_000
@@ -123,14 +124,3 @@ function publishedSize(name) {
   } catch { return null }
 }
 
-/** Numeric-segment compare; a prerelease suffix is ignored, which is enough to say ahead. */
-export function compareVersions(a, b) {
-  const pa = String(a).split('-')[0].split('.').map(Number)
-  const pb = String(b).split('-')[0].split('.').map(Number)
-
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const x = pa[i] ?? 0, y = pb[i] ?? 0
-    if (x !== y) return x > y ? 1 : -1
-  }
-  return 0
-}

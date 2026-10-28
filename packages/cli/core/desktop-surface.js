@@ -139,6 +139,13 @@ export default {
   target:        'spa',
   routesDir:     'src/routes',
   trailingSlash: 'always',
+
+  // Sierra writes the theme class on <html> before first paint; one baked into
+  // index.html would pin the window to theme-default whatever the OS says.
+  theme: {
+    themes:  ['theme-default', 'theme-dark'],
+    default: 'system',
+  },
 ${junction}}
 `
 }
@@ -151,7 +158,7 @@ builds them with this file into desktop/dist and compiles that INTO the shell.
 }
 
 export function desktopIndexHtml({ productName = 'app' } = {}) {
-  return surfaceIndexHtml({ title: productName, bodyClass: 'app theme-default', body: `    <div id="app"></div>
+  return surfaceIndexHtml({ title: productName, bodyClass: 'app', body: `    <div id="app"></div>
     <script type="module" src="virtual:sierra"></script>
 ` })
 }

@@ -86,10 +86,8 @@ const appEntryModule = () =>
 // The service name is the FIRST POSITIONAL ARGUMENT — it is not a `service:`
 // key: `createResource('children', { model: 'Child' })`. The file name is the
 // model where a model exists (Invariant 19), so a stated `model:` means the two
-// disagree and is worth showing.
-
-const stripComments = (src) =>
-  src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+// disagree and is worth showing. The source arrives with its comments already
+// blanked, by codegraph's string-aware pass: a regex also eats `'//'` in a string.
 
 // The balanced argument list of the first createResource( … ) call, or null.
 // Counted rather than matched: a nested `{ hooks: { before: { … } } }` ends three
@@ -106,9 +104,9 @@ const createResourceArgs = (src) => {
   return null   // unbalanced — an unparseable file says nothing rather than half
 }
 
-const extractResourceMeta = (src, filename) => {
+const extractResourceMeta = (code, filename) => {
   const name = basename(filename).replace(/\.(mesa|js)$/, '')
-  const args = createResourceArgs(stripComments(src))
+  const args = createResourceArgs(code)
   if (!args) return { name, model: null, service: null, hooks: [] }
 
   const serviceM = args.match(/^\s*['"]([\w-]+)['"]/)
@@ -311,8 +309,9 @@ const buildProjectMap = async ($, { layer = '', atlas = true, log } = {}) => {
 
   let resources = []
   if (want('ui')) {
+    const { stripComments } = await import(new URL('file://' + global.fliRoot + '/core/codegraph.js'))
     resources = scanFiles(resourcesDir, '.js', '.mesa')
-      .map(f => extractResourceMeta(readFileSync(f, 'utf8'), f))
+      .map(f => extractResourceMeta(stripComments(readFileSync(f, 'utf8')), f))
   }
 
   let migrations = []

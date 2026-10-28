@@ -61,14 +61,14 @@ export const BINARIES = [
  * (`1.4.0-canary.3`) is TRUNCATED rather than ordered, because ordering it right
  * is semver's hardest corner and being wrong here refuses a machine that works.
  *
- * @returns {number} negative when `a` is older than `b`
+ * @returns {-1|0|1} -1 when `a` is older than `b`
  */
 export function compareVersions(a, b) {
   const parts = (v) => String(v).split('-')[0].split('.').map(s => parseInt(s, 10) || 0)
   const [x, y] = [parts(a), parts(b)]
   for (let i = 0; i < Math.max(x.length, y.length); i++) {
     const d = (x[i] ?? 0) - (y[i] ?? 0)
-    if (d) return d
+    if (d) return Math.sign(d)
   }
   return 0
 }

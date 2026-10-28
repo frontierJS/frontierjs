@@ -21,7 +21,7 @@
 // a hand copy of `packages/config/editorconfig`, and `packages/config/test`
 // asserts the two are byte-identical rather than trusting anyone to remember.
 
-import { viteScript } from './scaffold/surface.js'
+import { viteScript, tsconfigWithSurface } from './scaffold/surface.js'
 
 // ─── config/api-origin.js ─────────────────────────────────────────────────────
 // Byte-identical to example/config/api-origin.js, which make:desktop's test
@@ -168,16 +168,10 @@ export function appTsconfig({
     useExtension && 'extension',
   ].filter(Boolean)
 
-  const config = {
-    extends: '@frontierjs/config/tsconfig',
-    ...(surfaces.length
-      ? { compilerOptions: { paths: { '@/*': surfaces.map((s) => `./${s}/src/*`) } } }
-      : {}),
-    include: [
-      ...(useApi ? ['api/**/*'] : []),
-      ...surfaces.map((s) => `${s}/**/*`),
-    ],
-  }
+  // compilerOptions holds its place so the file reads extends, options, include;
+  // JSON.stringify drops it while it is still undefined.
+  const base   = { extends: '@frontierjs/config/tsconfig', compilerOptions: undefined, include: useApi ? ['api/**/*'] : [] }
+  const config = surfaces.reduce((c, s) => tsconfigWithSurface(c, s), base)
   return JSON.stringify(config, null, 2) + '\n'
 }
 
