@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 3921 source file(s) read
+26 package(s) · 3922 source file(s) read
 241 entry point(s), 35 imported by nothing outside their package, 15 emitted
-1631 value export(s), 624 reached by nothing outside, 165 emitted
+1632 value export(s), 624 reached by nothing outside, 165 emitted
 451 type export(s), 343 reached by nothing outside
 ```
 
@@ -44,7 +44,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `toolbelt` | 62 | 0 | 295 | 28 | 11 | 0 | 0 |
 | `conduit` | 4 | 2 | 26 | 15 | 1 | 59 | 40 |
 | `site-kit` | 9 | 4 | 38 | 12 | 1 | 0 | 0 |
-| `outpost` | 8 | 1 | 20 | 10 | 0 | 0 | 0 |
+| `outpost` | 8 | 1 | 21 | 10 | 0 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 7 | 0 | 36 | 21 |
 | `notifications` | 2 | 0 | 11 | 5 | 0 | 25 | 20 |
 | `email-kit` | 3 | 0 | 10 | 4 | 1 | 0 | 0 |
@@ -247,7 +247,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/outpost`
 
-`packages/outpost` · 8 entry point(s) · 20 value, 0 type export(s)
+`packages/outpost` · 8 entry point(s) · 21 value, 0 type export(s)
 
 **Entries imported by nothing outside (1):** `.`
 

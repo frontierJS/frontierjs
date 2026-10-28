@@ -37,7 +37,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@id` | Identify a row |  | on a model's field |  |  |
 | `@unique` | Identify a row |  | on a model's field · on a trait's field |  |  |
 | `@map` | Identify a row | ("column_name") | on a model's field · on a trait's field |  |  |
-| `@default` | Identify a row | (value \| [value, …] \| now() \| uuid() \| ulid() \| cuid() \| nanoid() \| auth().<claim> \| autoincrement()) |  |  |  |
+| `@default` | Identify a row | (value \| [value, …] \| now() \| uuid() \| ulid() \| cuid() \| nanoid() \| auth().<claim> \| <sibling> \| <relation>.<column> \| autoincrement()) |  |  |  |
 | `@sequence` | Identify a row | (scope: <field> \| [<field>, …]) |  |  |  |
 | `@rank` | Identify a row | (scope: <field> \| [<field>, …]) |  |  |  |
 | `@relation` | Reach another row | (["name",] fields: [...], references: [...][, onDelete][, onUpdate][, enforced: false]) | on a model's field · on a trait's field | onDelete: Cascade · SetNull · Restrict · NoAction |  |

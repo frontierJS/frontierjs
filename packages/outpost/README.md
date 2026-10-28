@@ -80,7 +80,7 @@ process's user, so the default is refuse and a route opts out rather than in.
 | --- | --- |
 | `POST /pull` | `{ image }` → `{ digest }` |
 | `POST /deploy` | `{ deployment_id, app_id, image, digest, source, config }` → `{ containerId, digest, commit_sha }`; `config` is `port`, `containerPort`, `volumePath`, `cpuLimit` (`--cpus`), `memLimitMb` (`--memory`), `env` and `logs` |
-| `POST /build` | `{ app_id, source, image }` → `{ digest, commit_sha, dockerfile }`; cloned with the app's deploy key, built with `source.dockerfile` (the App's stored copy) when given, else `deploy/Dockerfile`, else `Dockerfile`; a `deploy/Dockerfile` with no `deploy/generated/` is refused naming `fli deploy:vendor` (`FJS-D942`) |
+| `POST /build` | `{ app_id, source, image }` → `{ digest, commit_sha, dockerfile, exposed_port }`; cloned with the app's deploy key, built with `source.dockerfile` (the App's stored copy) when given, else `deploy/Dockerfile`, else `Dockerfile`; `exposed_port` is that file's last `EXPOSE`, null when none says; a `deploy/Dockerfile` with no `deploy/generated/` is refused naming `fli deploy:vendor` (`FJS-D942`) |
 | `POST /deploy-key` | `{ app_id }` → `{ app_id, public_key }`; the app's ed25519 key made on the first ask and kept. Every heartbeat carries all of them as `deploy_keys: [{ app_id, public_key }]` |
 | `POST /source/file` | `{ app_id, path }` → `{ path, content }`; one file (64 KB at most) off the app's last clone, `content: null` when the clone has no such file; refused for an app never built here and for a path or symlink leading outside the clone |
 | `POST /stop` | `{ app_id }` → `{ stopped, unrouted }` |

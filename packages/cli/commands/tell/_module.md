@@ -1,6 +1,6 @@
 ---
 namespace: tell
-description: Letters between members of the Frontier network, left at the project's post
+description: Letters between members of the Frontier network, and sealed files for anyone, left at the project's post
 ---
 
 <script>
@@ -58,6 +58,27 @@ const openLetter = async (keys, sealed) => {
   if (!signed) return { forged: true }
   try { return { inside: JSON.parse(opened.body), key: opened.key, seq: opened.seq, head: opened.head } } catch { return null }
 }
+
+/**
+ * What every letter does before it is sealed: this member's chain published
+ * and read fresh — another machine may have linked or revoked one — and the
+ * recipient met and pinned. `{ own, met, notes }`, or `{ refused, notes }`;
+ * `notes` are `[level, line]` for the caller's log, which a module has not.
+ */
+const meetForLetter = async (member, to) => {
+  const notes = []
+  const published = await publishOwn(member.api, member.keys)
+  if (published) notes.push(['warn', `The post did not take ${published} — the next \`fli tell\` verb tries again.`])
+  const own = await syncChain(member)
+  if (own.refused) return { refused: `Not sent: ${own.refused}.`, notes }
+  if (own.unsealed) notes.push(['warn', `A revoke rotated this member's sealing key and it did not reach this machine: ${own.unsealed}. Letters to you are sealed to it.`])
+  const met = await meetMember(member, to)
+  if (met.missing) return { refused: `No member is called '${to}'.`, notes }
+  if (met.failed) return { refused: `The post refused (${met.failed})`, notes }
+  if (met.refused) return { refused: `Not sent: ${met.refused}`, notes }
+  if (met.met) notes.push(['info', `First letter to ${to}: pinned their chain ${met.met}.`])
+  return { own, met, notes }
+}
 </script>
 
 Mail between members of the Frontier network (`FJS-D1392`). Who a
@@ -66,6 +87,8 @@ member is — the key, the chain, the nick — is `frontier:` (`commands/frontie
 
 - `tell:send <nick> <words>`, alias `tell` — a letter left at the post for a member, signed, and sealed to them once they have a sealing key. `--env KEY...` sends env values instead, and only sealed.
 - `tell:inbox`, alias `inbox` — the letters waiting, oldest first, opened; reading deletes them. `-f` stays open and prints each as it arrives.
+- `tell:upload <path>` — a file sealed on this machine and left at the post; prints a link anyone can download it from, with its limits. `--to <nick>` sends the link as a sealed letter.
+- `tell:download <link>` — a link's file fetched, opened and written under its own name. No membership needed; a browser opens the same link.
 
 What a machine keeps for mail, beside the member's files `commands/frontier/_module.md` lists:
 

@@ -20,22 +20,16 @@ import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '
 import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, slugify }
   from '../../core/resource.ts'
 import { retireAppsIn, placeableServer, placeApp, mintDeployKey, enablePushOn } from '../apps/apps.service.ts'
-import { assertPortFree }       from '../../domain/release/host-port.ts'
 import { toZone }               from '../domains/domains.service.ts'
 import { syncReplicasOf }       from '../../jobs/replicate-sync.job.ts'
 import { parseAppSource }       from '../../domain/release/app-source.ts'
-import { readRepoDockerfile, fjsDockerfileTemplate } from '../../domain/release/dockerfile-template.ts'
+import { readRepoDockerfile } from '../../domain/release/dockerfile-template.ts'
 import { keyScope }             from '../../domain/api-key/scopes.ts'
-
-/** What a scaffolded API listens on inside its container: `fli make:deploy`'s
- *  Dockerfile EXPOSEs it and `fli deploy` starts it with FRONTIER_PORT_BE=3000
- *  (`packages/cli/commands/deploy/_module.md`), because junction otherwise
- *  binds its development slot and nothing forwards there. */
-const SCAFFOLD_API_PORT = 3000
+import { exposedPort }          from '@frontierjs/outpost/dockerfile'
 
 type FromRepo = {
   name: string, slug?: string, repo: string, branch?: string, dockerfile?: string,
-  serverId?: string, hostname?: string, port: number, deployOnPush?: boolean,
+  serverId?: string, hostname?: string, deployOnPush?: boolean,
 }
 
 export default createService({
@@ -106,22 +100,29 @@ export default createService({
     if (!slug) throw new BadRequest(`'${name}' makes no slug — name one`)
 
     const server = data.serverId ? await placeableServer(data.serverId) : null
-    if (server) await assertPortFree(data.port, [server.id])
     const hostname = data.hostname?.trim().toLowerCase() || null
     if (hostname && await db().domain.exists({ where: { hostname } }))
       throw new Conflict(`'${hostname}' is already an App's hostname in this workspace`)
 
     // Absent is "seed it"; blank is the repository's own file, said by the
     // App carrying none. A file the caller sends is theirs and seeded nothing.
+    // A forge that shows no file seeds blank too (`FJS-D1570`): a private
+    // repository and a public one with no Dockerfile read the same over HTTP,
+    // so the template, right for a link: app alone, is never guessed here —
+    // the form's button is how a person asks for it.
     let dockerfile: string | undefined
-    let seeded: 'repo' | 'template' | 'none' = 'none'
+    let seeded: 'repo' | 'none' = 'none'
     if (typeof data.dockerfile === 'string') dockerfile = data.dockerfile
     else {
       const found = await readRepoDockerfile({ repo: data.repo, branch: data.branch })
-      dockerfile = found?.content ?? fjsDockerfileTemplate()
-      seeded     = found ? 'repo' : 'template'
+      dockerfile = found?.content ?? ''
+      seeded     = found ? 'repo' : 'none'
     }
     const source = parseAppSource({ kind: 'git', repo: data.repo, branch: data.branch, dockerfile })
+    // What the image listens on is the seed's last EXPOSE, the same read the
+    // machine's build makes of the file it builds with; an App whose seed says
+    // nothing stores none and takes the build's answer (`recordStep`).
+    const containerPort = exposedPort(dockerfile)
 
     const made = await db().$transaction(async (tx: any) => {
       const project     = await tx.project.create({ data: { name, slug } })
@@ -130,15 +131,18 @@ export default createService({
       } })
       const app = await tx.app.create({ data: {
         environmentId: environment.id, name, slug, type: 'container', source,
-        port: data.port, containerPort: SCAFFOLD_API_PORT, volumePath: '/db', healthCheck: '/health',
+        containerPort, volumePath: '/db', healthCheck: '/health',
       } })
       // The /db layout `fli make:deploy`'s Dockerfile mounts and `fli deploy`
-      // binds (`packages/cli/commands/make/deploy.md`).
+      // binds (`packages/cli/commands/make/deploy.md`). junction binds
+      // FRONTIER_PORT_BE before anything else, so the variable follows the
+      // exposed port and is not written for a port nobody has read yet: a
+      // guessed number here would override the image's own ENV.
       const plain: Record<string, string> = {
         DATABASE_URL:     '/db/app.db',
         AUDIT_PATH:       '/db/audit.db',
         NODE_ENV:         'production',
-        FRONTIER_PORT_BE: String(SCAFFOLD_API_PORT),
+        ...(containerPort != null ? { FRONTIER_PORT_BE: String(containerPort) } : {}),
       }
       for (const [key, value] of Object.entries(plain))
         await tx.variable.create({ data: { environmentId: environment.id, appId: app.id, key, value } })
@@ -157,10 +161,12 @@ export default createService({
     $.dispatch = made.project
     if (made.domain) await toZone(made.domain.id, made.domain.version)
 
-    // Deploy on push is on when a server is named and nobody said no
-    // (FJS-D1558): a push to an App no machine holds would queue a release
-    // that fails at its first step. The credentials are in this answer and
-    // nowhere else, beside the deploy key, so one panel shows both once.
+    // The host port is `placeApp`'s to pick (FJS-D1557); an App no machine
+    // holds publishes nothing until it is placed. Deploy on push is on when a
+    // server is named and nobody said no (FJS-D1558): a push to an App no
+    // machine holds would queue a release that fails at its first step. The
+    // credentials are in this answer and nowhere else, beside the deploy key,
+    // so one panel shows both once.
     const notes: string[] = []
     let push: Awaited<ReturnType<typeof enablePushOn>> | null = null
     if (server) {

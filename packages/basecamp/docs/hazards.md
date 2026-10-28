@@ -237,17 +237,16 @@ The full hazard catalog for `@frontierjs/basecamp`, moved out of `CLAUDE.md`. Th
   such write left, because `Invitation.token` is `@guarded`; a column that is
   only `@encrypted` is written on the caller's own client, as a channel
   credential's Secret is.
-- **A model whose required columns are server-written cannot be created from the
-  browser.** `createResource` validates by default, and `ApiKey`'s create-mode
-  `required` used to be `["userId","name","tokenHint"]`, two of three
-  server-side. `workspaceId` stopped being a fourth once the tenancy stamp
-  defaulted it from the principal, and `tokenHint` is `@system` now
-  (`FJS-095`, ruling `FJS-D22`) — out of `required` entirely, not just
-  `readOnly`. What is left is `userId`: genuinely caller-supplied (a key may go
-  to a bot rather than the asker), so it stays required with no owner control
-  on the form, and `web/src/resources/ApiKey.mesa` still sets
-  `validate: false` for that one column — `autoValidate` on the server is what
-  actually enforces the schema.
+- **A required column a hook fills is refused in the browser before the hook
+  runs.** `createResource` validates against the create-mode schema before the
+  call, and a before/create hook on the server cannot be seen from there
+  (`FJS-3564`). The schema says who fills a blank, and that is the only place
+  it is read: `@system` for a column the caller never sends (`tokenHint`), the
+  tenancy stamp for `workspaceId`, `@default(auth().id)` for a column the
+  caller MAY send (`ApiKey.userId` — a bot's key), and `@default(app.environmentId)`
+  for one the named parent holds (`Variable.environmentId`). A hook that fills
+  one is a hook restating the schema, and `validate: false` on a resource is a
+  schema that has not said it yet (`FJS-D1562`).
 - **The audit trail must cover custom methods.** It recorded `create`/`patch`/
   `remove` only, so drain, deploy, cancel and trigger were in no trail at all. It
   now runs on `all` minus reads, with `servers.heartbeat` excluded by name.

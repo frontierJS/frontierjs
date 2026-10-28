@@ -60,7 +60,7 @@ export type ServerRole = 'general' | 'build' | 'database' | 'gateway' | 'worker'
 
 export type ServerEventKind = 'created' | 'removed' | 'reboot_requested' | 'drain_started' | 'drain_cancelled' | 'provision_requested' | 'provision_created' | 'provision_ready' | 'provision_timeout' | 'destroy_requested' | 'destroy_finished' | 'enrollment_issued' | 'sync_requested' | 'status_synced' | 'status_sync_ignored' | 'sync_failed' | 'sync_no_account' | 'sync_unsupported' | 'sync_unrecognized' | 'came_online' | 'unreachable' | 'recipe_ran' | 'recipe_failed' | 'cleanup_queued' | 'cleanup_ran' | 'cleanup_failed' | 'volume_removed' | 'volumes_pruned' | 'posture_failed' | 'posture_restored'
 
-export type ProviderKind = 'custom' | 'hetzner' | 'digitalocean' | 'cloudflare'
+export type ProviderKind = 'custom' | 'hetzner' | 'digitalocean' | 'cloudflare' | 'github'
 
 export type EnvironmentTier = 'development' | 'test' | 'preview' | 'staging' | 'production'
 
@@ -290,10 +290,11 @@ export interface AppFromBlueprint {
 
 /**
  * What `projects.fromRepo` accepts: a project, its production environment
- * and one App built from a repository, made together (`FJS-D1555`). `port` is
- * the host port the App is published on; `dockerfile` is the App's own copy,
- * blank for the repository's. `deployOnPush` is on when a server is named and
- * `false` turns it off (`FJS-D1558`); without a server it is never on.
+ * and one App built from a repository, made together (`FJS-D1555`). No host
+ * port: placing on `serverId` picks one (`FJS-D1557`). `dockerfile` is the
+ * App's own copy, blank for the repository's. `deployOnPush` is on when a
+ * server is named and `false` turns it off (`FJS-D1558`); without a server it
+ * is never on.
  */
 export interface ProjectFromRepo {
   name: string
@@ -303,7 +304,6 @@ export interface ProjectFromRepo {
   dockerfile?: string | null
   serverId?: string | null
   hostname?: string | null
-  port: number
   deployOnPush?: boolean | null
 }
 
@@ -387,6 +387,14 @@ export interface AppBackupTake {
  */
 export interface BackupRescan {
   destinationId: string
+}
+
+/**
+ * What `app-backups.rescan` accepts: the app whose archives under its own
+ * backup destination are listed for ones no row names (`FJS-D1572`).
+ */
+export interface AppBackupRescan {
+  appId: string
 }
 
 /**
@@ -2123,7 +2131,8 @@ export interface Secret {
   isVerified: boolean
   createdBy?: string | null
   /**
-   * WHICH cloud a `provider_key` opens. Null for every other kind.
+   * WHICH vendor a `provider_key` opens — a cloud, an edge or a forge. Null
+   * for every other kind.
    * 
    * It is a column rather than a field inside `data` because a vendor name is
    * not a secret: `data` is `@encrypted`, so the key is absent from every read,
@@ -2152,7 +2161,8 @@ export interface SecretCreate {
   isVerified?: boolean
   createdBy?: string | null
   /**
-   * WHICH cloud a `provider_key` opens. Null for every other kind.
+   * WHICH vendor a `provider_key` opens — a cloud, an edge or a forge. Null
+   * for every other kind.
    * 
    * It is a column rather than a field inside `data` because a vendor name is
    * not a secret: `data` is `@encrypted`, so the key is absent from every read,
@@ -3081,7 +3091,7 @@ export interface Variable {
 export interface VariableCreate {
   id?: string
   workspaceId: string
-  environmentId: string
+  environmentId?: string
   appId?: string | null
   key: string
   secret?: boolean
@@ -3378,7 +3388,7 @@ export interface AppServerRelations {
 export interface AppBackup {
   id: string
   appId: string
-  serverId: string
+  serverId?: string | null
   destinationId?: string | null
   kind: BackupKind
   deploymentId?: string | null
@@ -3398,7 +3408,7 @@ export interface AppBackup {
 export interface AppBackupCreate {
   id?: string
   appId: string
-  serverId: string
+  serverId?: string | null
   destinationId?: string | null
   kind?: BackupKind
   deploymentId?: string | null
@@ -3417,7 +3427,7 @@ export interface AppBackupCreate {
 export interface AppBackupUpdate {
   id?: string
   appId?: string
-  serverId?: string
+  serverId?: string | null
   destinationId?: string | null
   kind?: BackupKind
   deploymentId?: string | null
@@ -6108,6 +6118,7 @@ export interface SeedTypes {
   AppPublish: AppPublish
   AppBackupTake: AppBackupTake
   BackupRescan: BackupRescan
+  AppBackupRescan: AppBackupRescan
   FlagOverrideSet: FlagOverrideSet
   FlagOverrideClear: FlagOverrideClear
   ServerProvision: ServerProvision

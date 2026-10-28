@@ -1621,6 +1621,14 @@ class Parser {
         // now(), uuid(), cuid(), ulid()
         return { kind: 'call', fn: name }
       }
+      // `relation.column` — a column the row's named parent holds, copied at
+      // write time through the caller's own client, so a parent she may not
+      // read fills nothing.
+      if (this.check(TK.DOT)) {
+        this.advance()
+        const field = this.eat(TK.IDENT).value
+        return { kind: 'fieldRef', field, through: name }
+      }
       // Bare IDENT — could be an enum value OR a field reference.
       // Stored as 'fieldRef' and resolved at client build time:
       // if it matches a sibling field name → fieldRef default
@@ -5474,7 +5482,20 @@ function validate(schema) {
       // If it matches a sibling field name → keep as 'fieldRef'
       // Otherwise → validation error
       const defAttr = field.attributes.find(a => a.kind === 'default')
-      if (defAttr?.value?.kind === 'fieldRef') {
+      if (defAttr?.value?.kind === 'fieldRef' && defAttr.value.through) {
+        // `@default(rel.col)` names a belongsTo on this model and a stored
+        // column on its target. Anything else is refused here, since SQLite
+        // would otherwise see nothing and the gap lands as a raw NOT NULL.
+        const { through, field: refName } = defAttr.value
+        const relField = model.fields.find(f => f.name === through)
+        const relAttr  = relField?.attributes.find(a => a.kind === 'relation' && a.fields?.length)
+        const target   = relAttr && schema.models.find(m => m.name === relField.type.name)
+        const source   = target?.fields.find(f => f.name === refName)
+        if (!relAttr)
+          errors.push(`Model '${model.name}', field '${field.name}': @default(${through}.${refName}) — '${through}' is not a relation of this model holding a foreign key`)
+        else if (!source || source.attributes.some(a => a.kind === 'relation') || source.type.kind === 'relation')
+          errors.push(`Model '${model.name}', field '${field.name}': @default(${through}.${refName}) — '${refName}' is not a column of ${relField.type.name}`)
+      } else if (defAttr?.value?.kind === 'fieldRef') {
         const refName = defAttr.value.field
         // Check if it's an enum value on this field's type
         const fieldEnum = schema.enums.find(e => e.name === field.type.name)

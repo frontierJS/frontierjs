@@ -1,0 +1,158 @@
+/*
+ * survey.css — Survey: a precision instrument panel in black, gray and white.
+ *
+ * Black for space, gray for structure, white for information. The surfaces
+ * sit close together and each has one job — canvas, sidebar, panel, raised —
+ * so the page reads as one machined face rather than a stack of cards in
+ * slightly different grays. The look is borrowed from surveyor's field
+ * instruments and drafting sheets: hairline rules instead of shadows, square
+ * corners, stamped uppercase legends, a dashed focus ring like a construction
+ * line.
+ *
+ * Tokens only, no selector of its own.
+ */
+
+.theme-survey {
+  /*
+   * Native form controls, scrollbars and the <select> dropdown render dark.
+   * Without it the theme only looks dark until you focus an input.
+   */
+  color-scheme: dark;
+
+  /*
+   * The tone-as-text lightness window, inverted — required by any theme
+   * that sets `color-scheme: dark`. See tokens.css and tones.css.
+   */
+  --tone-l-min: 0.74;
+  --tone-l-max: 1;
+
+  /* ── Grounds ────────────────────────────────────────────────────────
+   * Four neutral blacks, no hue, each a role:
+   *
+   *   canvas    #0a0a0a   the page, and anything recessed into it
+   *   sidebar   #101010   navigation, the topbar, a table's head
+   *   panel     #151515   cards, widgets, dialogs
+   *   elevated  #1c1c1c   hover, a raised region
+   */
+  --app-bg:          #0a0a0a;
+  --surface-sunken:  #0a0a0a;
+  --surface:         #151515;
+  --surface-raised:  #1c1c1c;
+
+  --topbar-bg:       #101010;
+  --sidebar-bg:      #101010;
+  --dialog-bg:       #151515;
+  --table-head-bg:   #101010;
+
+  /* A field is a well cut into the panel, not a box set on top of it. */
+  --field-bg:        #0e0e0e;
+
+  /* ── Ink ────────────────────────────────────────────────────────────
+   * The brief's muted gray, #707070, is 3.44:1 on --surface-raised and under
+   * AA on every ground here, and --ink-mute is placeholder text, table
+   * headers and field hints at 11–13px. Lifted until it clears the tightest
+   * ground:
+   *
+   *   --ink        #f2f2f2   15.22:1 on raised
+   *   --ink-soft   #a0a0a0    6.52:1
+   *   --ink-mute   #858585    4.62:1   (was #707070, 3.44:1)
+   */
+  --ink:             #f2f2f2;
+  --ink-soft:        #a0a0a0;
+  --ink-mute:        #858585;
+
+  /* Gray for structure: the rule is what draws the instrument's face. */
+  --rule:            #303030;
+  --rule-strong:     #4a4a4a;
+
+  /* ── Tones ──────────────────────────────────────────────────────────
+   * Primary is the white accent, so a primary button is a white slab with
+   * black type — chip.css derives the ink from the fill. The status tones
+   * are indicator lamps behind smoked glass: present because a status must
+   * still be told apart, desaturated so they never compete with white.
+   */
+  --color-primary:   #e8e8e8;
+  --color-secondary: #9a9a9a;
+  --color-muted:     #707070;
+  --color-info:      #8fb0c4;
+  --color-success:   #93b98a;
+  --color-warning:   #d9b060;
+  --color-danger:    #e06a5e;
+
+  /*
+   * The current nav link is a raised slab with white ink. The default is a
+   * 12% mix of primary, which here is a gray indistinguishable from hover.
+   */
+  --navlink-current-bg:  #1c1c1c;
+  --navlink-current-ink: #f2f2f2;
+
+  --check-accent: #e8e8e8;
+  --step-accent:  #e8e8e8;
+  --tab-accent:   #f2f2f2;
+
+  /* ── Set type ───────────────────────────────────────────────────────
+   * A neo-grotesk for data, the same face tightened for headings, and a
+   * monospace for code. Platform faces only (FJS-D879): the package ships no
+   * @font-face, so a web face renders only where someone installed it.
+   */
+  --font-primary: 'Helvetica Neue', Arial, 'Noto Sans', system-ui, sans-serif;
+  --font-display: 'Helvetica Neue', Arial, 'Noto Sans', system-ui, sans-serif;
+  --font-mono:    ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  --heading-font-weight:    600;
+  --heading-letter-spacing: -0.015em;
+
+  /*
+   * Legends, not labels: every small caption is stamped like the scale on a
+   * theodolite — uppercase, widely tracked, medium weight.
+   */
+  --label-font-weight:    500;
+  --label-letter-spacing: 0.12em;
+
+  --btn-font-weight:      600;
+  --btn-text-transform:   uppercase;
+  --btn-letter-spacing:   0.08em;
+  --badge-font-weight:    600;
+  --badge-text-transform: uppercase;
+  --badge-letter-spacing: 0.1em;
+  --pill-font-weight:     600;
+  --tab-font-weight:      500;
+
+  /* ── Shape ──────────────────────────────────────────────────────────
+   * Machined, not molded: square corners everywhere a reading is taken.
+   */
+  --btn-radius:   0;
+  --card-radius:  0;
+  --field-radius: 0;
+  --badge-radius: 0;
+  --pill-radius:  2px;
+  --toast-radius: 0;
+
+  /* A construction line, not a glow. */
+  --ring-style: dashed;
+  --ring-color: #e8e8e8;
+
+  /* ── Elevation ──────────────────────────────────────────────────────
+   * Nothing at rest casts a shadow; a panel is told apart by its rule. What
+   * floats — a menu, a dialog, a toast — gets a hairline edge and a deep,
+   * soft drop, because a near-black shadow is invisible on this ground
+   * without one.
+   */
+  --surface-shadow: none;
+  --shadow-sm: 0 0 0 1px #303030;
+  --shadow-md: 0 0 0 1px #303030, 0 8px 20px -8px rgba(0, 0, 0, 0.8);
+  --shadow-lg: 0 0 0 1px #3a3a3a, 0 24px 48px -16px rgba(0, 0, 0, 0.9);
+  --scrim:     rgba(0, 0, 0, 0.72);
+
+  /* ── Code ───────────────────────────────────────────────────────────
+   * The derived palette steps the hue off primary, and primary has no hue,
+   * so names and keywords would both render white. Grays carry structure
+   * and the two lamps carry values and specials.
+   */
+  --code-name:    #f2f2f2;
+  --code-keyword: #bdbdbd;
+  --code-value:   #a9c79f;
+  --code-special: #e88a80;
+  --code-comment: #858585;
+  --code-punct:   #a0a0a0;
+}

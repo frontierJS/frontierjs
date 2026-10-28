@@ -182,7 +182,7 @@ src/
   a11y/            a11y.css · focus.css
   themes/          default · dark · midnight · forest · sunset · elite · basecamp
                    · notebook · press · field · dracula · twilight · expedition
-                   · catppuccin. press.css is the token-surface
+                   · catppuccin · survey. press.css is the token-surface
                    probe — it changes face, scale, leading, density, rules, ring
                    and shadow shape and ships no selector of its own. field.css
                    is its dark counterpart, written for the pages a project

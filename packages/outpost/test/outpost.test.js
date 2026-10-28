@@ -141,6 +141,12 @@ describe('every route but /health takes a signature', () => {
 })
 
 describe('what the machine is asked to do', () => {
+  // The clone is faked, so the file a build reads has to be planted: a context
+  // with no Dockerfile is refused by name before docker build (FJS-D1570).
+  for (const context of ['', 'services/web']) {
+    mkdirSync(`${CONFIG.workDir}/app-1/${context}`, { recursive: true })
+    writeFileSync(`${CONFIG.workDir}/app-1/${context}/Dockerfile`.replace('//', '/'), 'FROM oven/bun\n')
+  }
 
   test('a git deploy builds here, then runs what it built', async () => {
     // V1: the Outpost is co-resident with Basecamp, so building on the target
@@ -2437,12 +2443,13 @@ describe('a deploy key per app (FJS-D1555)', () => {
   describe('a build clones with the key and builds with the App\'s Dockerfile', () => {
     // What fli make:deploy writes: a file that installs from deploy/generated/.
     const SCAFFOLDED = 'FROM oven/bun\n# deploy/generated/ is written by a laptop\nCOPY deploy/generated/ ./deploy/generated/\n'
-    const buildWith = async (source, { layout = [], deployDockerfile = SCAFFOLDED } = {}) => {
+    const buildWith = async (source, { layout = [], deployDockerfile = SCAFFOLDED, rootDockerfile = null } = {}) => {
       const workDir = mkdtempSync(join(tmpdir(), 'outpost-build-'))
       const keyDir  = freshDir()
       for (const path of layout) mkdirSync(join(workDir, 'app-1', path), { recursive: true })
       if (layout.includes('deploy')) writeFileSync(join(workDir, 'app-1', 'deploy', 'Dockerfile'), deployDockerfile)
       mkdirSync(join(workDir, 'app-1', source.path ?? ''), { recursive: true })
+      if (rootDockerfile) writeFileSync(join(workDir, 'app-1', 'Dockerfile'), rootDockerfile)
       const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'test -d': { exitCode: 1 }, 'git -C': { stdout: 'c0ffee\n' } })
       const server = createOutpostServer(CONFIG, {
         docker: createDocker({ run: fake.run, workDir, deployKeyDir: keyDir }), inspector: createInspector({ run: fake.run }),
@@ -2455,7 +2462,7 @@ describe('a deploy key per app (FJS-D1555)', () => {
     }
 
     test('every git names the app\'s key and cannot prompt', async () => {
-      const { res, fake, keyDir } = await buildWith(GIT)
+      const { res, fake, keyDir } = await buildWith(GIT, { rootDockerfile: 'FROM oven/bun\n' })
       expect(res.status).toBe(200)
 
       const gits = fake.calls.map((c, i) => [c, fake.calls.opts[i]]).filter(([c]) => c[0] === 'git')
@@ -2488,9 +2495,21 @@ describe('a deploy key per app (FJS-D1555)', () => {
     })
 
     test('with neither, the root Dockerfile, named by no -f', async () => {
-      const { body, build, workDir } = await buildWith(GIT)
+      const { body, build, workDir } = await buildWith(GIT, { rootDockerfile: 'FROM oven/bun\n' })
       expect(body.dockerfile).toBe('Dockerfile')
       expect(build).toBe(`docker build -t x ${workDir}/app-1`)
+    })
+
+    test('with none stored and none committed, the build is refused by name before docker build', async () => {
+      // A blank seed from a repository Basecamp could not read (FJS-D1570).
+      const { res, body, build } = await buildWith(GIT)
+      expect(res.status).toBe(500)
+      expect(body.error).toContain('the clone has no deploy/Dockerfile or Dockerfile')
+      expect(body.error).toContain('store a Dockerfile on the App')
+      expect(build).toBeUndefined()
+
+      const sub = await buildWith({ ...GIT, path: 'web' }, { layout: ['web'] })
+      expect(sub.body.error).toContain('under web')
     })
 
     test('a Dockerfile installing from deploy/generated/ with none in the clone is refused before docker build, naming the two ways out', async () => {
@@ -2531,6 +2550,29 @@ describe('a deploy key per app (FJS-D1555)', () => {
       expect(needsGenerated('FROM oven/bun\n# deploy/generated/ is not used here\nCOPY . .\n')).toBe(false)
       expect(needsGenerated('')).toBe(false)
       expect(needsGenerated(null)).toBe(false)
+    })
+
+    test('exposedPort is the last EXPOSE, its first port, and null when none says', async () => {
+      const { exposedPort } = await import('../src/dockerfile.js')
+      expect(exposedPort('FROM oven/bun\nEXPOSE 3000\n')).toBe(3000)
+      expect(exposedPort('EXPOSE 3000\n  expose 8080/tcp 8443\n')).toBe(8080)
+      expect(exposedPort('EXPOSE 80 443\n')).toBe(80)
+      expect(exposedPort('# EXPOSE 3000\nFROM busybox\n')).toBeNull()
+      expect(exposedPort('EXPOSE 3000\nEXPOSE $PORT\n')).toBeNull()
+      expect(exposedPort('EXPOSE 70000\n')).toBeNull()
+      expect(exposedPort('')).toBeNull()
+      expect(exposedPort(null)).toBeNull()
+    })
+
+    test('the build answers the port the file it built with exposes', async () => {
+      const own = await buildWith({ ...GIT, dockerfile: 'FROM busybox\nEXPOSE 8080\n' }, { layout: ['deploy'] })
+      expect(own.res.status).toBe(200)
+      expect(own.body).toMatchObject({ dockerfile: 'Dockerfile.basecamp', exposed_port: 8080 })
+      // No stored copy: the clone's deploy/Dockerfile, read by the same rule.
+      const clone = await buildWith(GIT, { layout: ['deploy'], deployDockerfile: 'FROM busybox\nEXPOSE 80 443\n' })
+      expect(clone.body).toMatchObject({ dockerfile: 'deploy/Dockerfile', exposed_port: 80 })
+      const silent = await buildWith(GIT, { layout: ['deploy'], deployDockerfile: 'FROM busybox\n' })
+      expect(silent.body.exposed_port).toBeNull()
     })
 
     test('an app_id that is not a plain name builds nothing', async () => {

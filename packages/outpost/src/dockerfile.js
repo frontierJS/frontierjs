@@ -29,3 +29,19 @@ export function chooseDockerfile(context, stored) {
 export function needsGenerated(text) {
   return String(text ?? '').split('\n').some(l => !/^\s*#/.test(l) && l.includes('deploy/generated'))
 }
+
+/** The port the image listens on, read off its last `EXPOSE` — the first
+ *  number when the line names several, `8080/tcp` read as 8080 — or null when
+ *  no `EXPOSE` says, or the last one is a variable docker would expand. EXPOSE
+ *  binds nothing; the number is what `-p` is pointed at when the App stores
+ *  none, so a wrong read fails the health check and not silently. */
+export function exposedPort(text) {
+  let port = null
+  for (const raw of String(text ?? '').split('\n')) {
+    const m = /^\s*EXPOSE\s+(\S+)/i.exec(raw)
+    if (!m) continue
+    const n = Number(m[1].split('/')[0])
+    port = Number.isInteger(n) && n >= 1 && n <= 65535 ? n : null
+  }
+  return port
+}

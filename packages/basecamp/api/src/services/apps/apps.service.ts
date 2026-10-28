@@ -46,8 +46,8 @@ import { resolveExecutor, executorOn, isExecutor } from '../../providers/executo
 // be the second, and the two would disagree the first time a kind was added.
 import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit, isInline } from '../../domain/release/app-source.ts'
 import { fjsDockerfileTemplate, readRepoDockerfile, DOCKERFILE_PATHS } from '../../domain/release/dockerfile-template.ts'
-import { runtimeOf } from '../../domain/release/runtime.ts'
-import { portHolders, serversOf, assertPortFree } from '../../domain/release/host-port.ts'
+import { runtimeOf, CONTAINER_TYPES } from '../../domain/release/runtime.ts'
+import { portHolders, serversOf, assertPortFree, allocatePort } from '../../domain/release/host-port.ts'
 import { mintDownload } from '../../jobs/app-backup-run.job.ts'
 import { cronProblem, syncAppBackupSchedule, syncAppDrillSchedule } from '../../domain/job/job-schedule.ts'
 import { syncReplicasOn, syncReplicasOf, replicaHolder, replicaOf, replicaDatabases } from '../../jobs/replicate-sync.job.ts'
@@ -103,10 +103,16 @@ export async function placeableServer(serverId: string) {
  * already proved it may see the App and the server; the replica stated wins,
  * otherwise the next free index, so placing twice adds a replica rather than
  * failing on the @@unique.
+ *
+ * The host port is picked here (`FJS-D1557`): a container App landing on its
+ * first machine with none takes the lowest the machine publishes nothing on.
+ * The number is plumbing between Caddy and the container that a person has no
+ * way to know, and a typed one was graded by `docker run`, after the old
+ * container was gone. A port the App already holds is checked, never moved.
  */
 export async function placeApp(
   app: App,
-  target: { id: string, replicaDestinationId?: string | null },
+  target: { id: string, type: string, port?: number | null, replicaDestinationId?: string | null },
   server: { id: string, name: string },
   stated?: number,
 ): Promise<void> {
@@ -114,6 +120,9 @@ export async function placeApp(
   const replicaIndex = stated ?? existing.reduce((n: number, p: any) => Math.max(n, p.replicaIndex + 1), 0)
   if (existing.some((p: any) => p.replicaIndex === replicaIndex))
     throw new BadRequest(`Replica ${replicaIndex} of this app is already on '${server.name}'`)
+
+  if (target.port == null && CONTAINER_TYPES.has(target.type))
+    await db().app.update({ where: { id: target.id }, data: { port: await allocatePort(server.id, target.id) } })
 
   await $.db.asSystem().appServer.create({
     data: { appId: target.id, serverId: server.id, replicaIndex, status: 'unknown' },

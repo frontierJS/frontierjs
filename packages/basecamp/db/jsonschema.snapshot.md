@@ -681,7 +681,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
-| `userId` | `string` | yes | — | — | — |
+| `userId` | `string` | — | — | `x-litestone-kind` | — |
 | `credentialId` | `string`? | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `tokenHint` | `string` | — | — | `x-litestone-kind` | — |
@@ -694,7 +694,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `usesOnDate` | `integer` = `0` | — | — | `x-litestone-kind` | — |
 | `createdBy` | `string`? | — | — | — | — |
 
-**On create**: required — `userId`, `name` · not accepted — `id`
+**On create**: required — `name` · not accepted — `id`
 
 ### `Server`
 
@@ -928,7 +928,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
-| `environmentId` | `string` | yes | — | — | — |
+| `environmentId` | `string` | — | — | — | — |
 | `appId` | `string`? | — | — | — | — |
 | `key` | `string` | yes | — | `pattern: "^[A-Za-z_][A-Za-z0-9_]{0,99}$"` `x-transforms` | `pattern` `regex` |
 | `secret` | `boolean` = `false` | — | — | — | — |
@@ -936,7 +936,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `secretValue` | `string`? | — | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `environmentId`, `key` · not accepted — `id`, `version`
+**On create**: required — `key` · not accepted — `id`, `version`
 
 ### `Domain`
 
@@ -2071,10 +2071,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `dockerfile` | `string`? | — | — | — | — |
 | `serverId` | `string`? | — | — | — | — |
 | `hostname` | `string`? | — | — | — | — |
-| `port` | `integer` | yes | — | — | — |
 | `deployOnPush` | `boolean`? | — | — | — | — |
 
-**On create**: required — `name`, `repo`, `port`
+**On create**: required — `name`, `repo`
 
 ### `AppRepoDockerfile`
 

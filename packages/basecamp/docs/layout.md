@@ -105,7 +105,9 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           App's port, volume, health path and limits, each a `docker run` flag;
           a column added there and not applied by outpost is `FJS-1605` again
           domain/release/host-port.ts is which host ports a machine's Apps
-          publish; patch, place and fromRepo refuse a taken one (`FJS-3563`)
+          publish, and `allocatePort`, the one allocator: `placeApp` picks the
+          port when a container App lands on a machine (`FJS-D1557`); patch
+          and place refuse a taken one (`FJS-3563`)
           domain/release/variables.ts is what a container's environment IS — the
           environment's `Variable` rows with the app's own on top, snapshotted
           when a release is made and a secret read only when it is sent

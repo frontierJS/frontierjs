@@ -44,12 +44,12 @@ title: New project
   // One call makes the project, its environment and a git app. The Dockerfile
   // box starts EMPTY on purpose: `dockerfile` is sent only when a person filled
   // or seeded it, because an absent key is what lets the server seed from the
-  // repository's own file, then the template. A blank string would instead mean
-  // "build the repository's file as it is, keep no copy".
+  // repository's own file when a public forge shows one. A blank string, and a
+  // forge that shows nothing, both mean "build the repository's file as it is,
+  // keep no copy"; the template is only ever the button (`FJS-D1570`).
   let fromRepoOn = false
   let repo       = ''
   let branch     = 'main'
-  let port       = ''
   let serverId   = ''
   let hostname   = ''
   let dockerfile = ''
@@ -97,7 +97,6 @@ title: New project
     const input = {
       name: draft.name, slug: draft.slug || undefined,
       repo: repo.trim(), branch: branch.trim() || undefined,
-      port: Number(port),
       ...(serverId ? { serverId } : {}),
       ...(hostname.trim() ? { hostname: hostname.trim() } : {}),
       ...(dockerfile.trim() ? { dockerfile } : {}),
@@ -213,15 +212,10 @@ title: New project
         <Input label="Repository" name="repo" id="repo" required value={repo}
                placeholder="git@github.com:org/app.git"
                oninput={(e) => repo = e.target.value} />
-        <div class="field-row">
-          <Input label="Branch" name="branch" id="branch" value={branch}
-                 oninput={(e) => branch = e.target.value} />
-          <Input label="Port" name="port" id="port" type="number" required min="1" max="65535" value={port}
-                 hint="The host port the app publishes on."
-                 oninput={(e) => port = e.target.value} />
-        </div>
+        <Input label="Branch" name="branch" id="branch" value={branch}
+               oninput={(e) => branch = e.target.value} />
         <Select label="Server" name="serverId" id="serverId" value={serverId}
-                placeholder="No server yet"
+                placeholder="No server yet" hint="The server picks the host port the app is published on."
                 options={online.map(s => ({ value: s.id, label: s.name }))}
                 oninput={(e) => serverId = e.target.value}
                 onchange={(e) => serverId = e.target.value} />
@@ -231,7 +225,7 @@ title: New project
                   checked={deployOnPush} onchange={(on) => deployOnPush = on} />
         {/if}
         <Input label="Hostname" name="hostname" id="hostname" value={hostname}
-               hint="Optional. Needs an administrator and a server with Caddy. Left blank on this laptop, the app answers on localhost:<port>."
+               hint="Optional. Needs an administrator and a server with Caddy. Left blank, the app answers on the port the server picks."
                oninput={(e) => hostname = e.target.value} />
 
         <div class="stack">

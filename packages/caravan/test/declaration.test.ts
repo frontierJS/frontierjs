@@ -195,6 +195,18 @@ describe('dispatch by definition', () => {
     expect(q.find(id)!.max_attempts).toBe(7)
   })
 
+  // FJS-3567: a dispatch while the app is still being built precedes the
+  // autoload, and a row on `default` for a handler on another queue is never claimed.
+  it('a dispatch before handle() takes the queue and retries the definition states', async () => {
+    const q = makeQueue()
+    const reconcile = defineJob({ name: 'reconcile', queue: 'fleet', maxAttempts: 5, retryDelay: [30_000], handler: () => {} })
+
+    const row = q.find(await q.dispatch(reconcile, {}))!
+    expect(row.queue).toBe('fleet')
+    expect(row.max_attempts).toBe(5)
+    expect(row.retry_delay).toBe('[30000]')
+  })
+
   it('runs the handler the definition holds', async () => {
     const seen: Array<{ to: string }> = []
     const q = makeQueue()

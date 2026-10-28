@@ -95,18 +95,10 @@ const refused = (answer) => {
 
 let answer, sealed = false
 try {
-  const published = await publishOwn(member.api, member.keys)
-  if (published) log.warn(`The post did not take ${published} — the next \`fli tell\` verb tries again.`)
-  // The letter carries this member's head, which is read fresh: another machine may have linked or revoked one.
-  const own = await syncChain(member)
-  if (own.refused) { log.error(`Not sent: ${own.refused}.`); process.exitCode = 1; return }
-  if (own.unsealed) log.warn(`A revoke rotated this member's sealing key and it did not reach this machine: ${own.unsealed}. Letters to you are sealed to it.`)
-
-  const met = await meetMember(member, to)
-  if (met.missing) { log.error(`No member is called '${to}'.`); process.exitCode = 1; return }
-  if (met.failed) { log.error(`The post refused (${met.failed})`); process.exitCode = 1; return }
-  if (met.refused) { log.error(`Not sent: ${met.refused}`); process.exitCode = 1; return }
-  if (met.met) log.info(`First letter to ${to}: pinned their chain ${met.met}.`)
+  const ready = await meetForLetter(member, to)
+  for (const [level, line] of ready.notes) log[level](line)
+  if (ready.refused) { log.error(ready.refused); process.exitCode = 1; return }
+  const { own, met } = ready
 
   if (met.chain) {
     sealed = true

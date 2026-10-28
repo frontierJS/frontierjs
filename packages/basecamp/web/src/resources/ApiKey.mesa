@@ -6,27 +6,12 @@
   // everything is module scope, which is what <script module> means.
   import { createResource } from '@frontierjs/sierra/resource'
 
-  // `validate: false` is not a shortcut, and the reason left is ONE column.
-  //
-  // Create-mode required was `["userId", "name", "tokenHint"]`. Two of those
-  // have since been answered in the schema: `workspaceId` stopped being a
-  // fourth when the tenancy declaration started defaulting it from the
-  // principal (`FJS-387`), and `tokenHint` is now `@system` (`FJS-D22`,
-  // `FJS-095`) — derived from a token that does not exist until auth mints it,
-  // so it is out of `required`, `readOnly` on this side, and not offered by a
-  // generated form. `credentialId` went with it for the same reason.
-  //
-  // What is left is `userId`. It is genuinely caller-supplied — a key may be
-  // issued to a bot rather than to the person asking, which is what
-  // `assertBotOwner` in the service is about — so it cannot be `@system`, and
-  // it is `required`. The owner control on the create form offers the
-  // workspace's bots and leaves the column EMPTY for "you", which the before
-  // hook fills with the caller: an empty required column, so browser
-  // validation on would refuse the commonest create. The server is where this
-  // model is validated — `autoValidate` against the same schema, after the
-  // hook has filled the column in.
+  // Validated here like every resource. Every create-mode column the server
+  // fills is said so in the schema — `tokenHint` and `credentialId` are
+  // `@system`, `workspaceId` is the tenancy stamp, and `userId` is
+  // `@default(auth().id)`: the owner control leaves it OUT for "you" (never a
+  // null, which is a value and beats the default) and names a bot otherwise.
   export const apiKeys = createResource('apiKeys', {
     model: 'ApiKey',
-    validate: false,
   })
 </script>

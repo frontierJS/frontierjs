@@ -305,11 +305,40 @@ export function buildFieldRefDefaultMap(schema) {
     const fieldNames = new Set(model.fields.map(f => f.name))
     for (const field of model.fields) {
       const def = field.attributes.find(a => a.kind === 'default')
-      if (def?.value?.kind !== 'fieldRef') continue
+      if (def?.value?.kind !== 'fieldRef' || def.value.through) continue
       const sourceField = def.value.field
       if (!fieldNames.has(sourceField)) continue
       if (!map[model.name]) map[model.name] = []
       map[model.name].push({ field: field.name, sourceField })
+    }
+  }
+  return map
+}
+
+// ─── @default(relation.column) — one-hop defaults ────────────────────────────
+// { modelName: [{ field, relation, target, foreignKeys, references, sourceField }] }
+// On create, if `field` is absent, read the parent the row names through the
+// caller's own accessor and copy `sourceField`. Async, unlike a sibling copy,
+// so it has its own applier (`write-data.js` applyPathDefaults).
+
+export function buildPathDefaultMap(schema) {
+  const map = {}
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      const def = field.attributes.find(a => a.kind === 'default')
+      if (def?.value?.kind !== 'fieldRef' || !def.value.through) continue
+      const relField = model.fields.find(f => f.name === def.value.through)
+      const rel      = relField?.attributes.find(a => a.kind === 'relation' && a.fields?.length)
+      if (!rel) continue
+      if (!map[model.name]) map[model.name] = []
+      map[model.name].push({
+        field:       field.name,
+        relation:    relField.name,
+        target:      relField.type.name,
+        foreignKeys: [...rel.fields],
+        references:  [...(rel.references ?? ['id'])],
+        sourceField: def.value.field,
+      })
     }
   }
   return map

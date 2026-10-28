@@ -22,7 +22,7 @@ import { Readable }                from 'node:stream'
 import { pipeline }                from 'node:stream/promises'
 import { validRelativePath, validName } from './static.js'
 import { ensureDeployKey }         from './deploy-key.js'
-import { chooseDockerfile, needsGenerated } from './dockerfile.js'
+import { chooseDockerfile, needsGenerated, exposedPort } from './dockerfile.js'
 
 // Each app's container runs as a host uid of its own (`FJS-D1484`), handed out
 // from here up and never reused: a retired app's volume keeps its files, and a
@@ -658,17 +658,25 @@ export function createDocker({
       const sha     = (await git(['-C', dir, 'rev-parse', 'HEAD'], { env })).trim()
       const context = source.path != null ? `${dir}/${source.path}` : dir
       const dockerfile = chooseDockerfile(context, source.dockerfile)
+      // An App seeded blank from a repository Basecamp could not read
+      // (`FJS-D1570`) arrives here with no file of its own; docker's own words
+      // for that name no way out.
+      if (!existsSync(`${context}/${dockerfile}`))
+        throw new Error(`the clone has no deploy/Dockerfile or Dockerfile${source.path != null ? ` under ${source.path}` : ''}. `
+          + 'Commit one to the repository, or store a Dockerfile on the App (the FrontierJS template is for a link: app)')
+      const text = readFileSync(`${context}/${dockerfile}`, 'utf8')
       // A Dockerfile that installs from deploy/generated/ names link: packages
       // nothing in a clone holds (`FJS-D942`): the folder is a laptop's, git
       // ignores it, and the build otherwise fails deep inside bun install.
-      if (existsSync(`${context}/${dockerfile}`) && needsGenerated(readFileSync(`${context}/${dockerfile}`, 'utf8'))
-          && !existsSync(`${context}/deploy/generated`))
+      if (needsGenerated(text) && !existsSync(`${context}/deploy/generated`))
         throw new Error(`${dockerfile} installs from deploy/generated/, which this clone does not hold. `
           + 'Release from the workspace with fli basecamp:deploy --app <slug>, '
           + 'or store a Dockerfile on the App that installs from the repository')
       await docker(['build', '-t', image, ...(dockerfile === 'Dockerfile' ? [] : ['-f', `${context}/${dockerfile}`]), context],
         { timeoutMs: 1_800_000 })
-      return { digest: await digestOf(image), commitSha: sha, dockerfile }
+      // The port the file says the image listens on, for an App that stores
+      // none: Basecamp cannot read a private repository's file before this clone.
+      return { digest: await digestOf(image), commitSha: sha, dockerfile, exposedPort: exposedPort(text) }
     },
 
     /**

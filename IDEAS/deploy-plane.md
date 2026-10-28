@@ -370,6 +370,7 @@ whose argv the Outpost owns, the way `/pull` and `/deploy` already work:
 | **b** | **Move the build off the target** — build on a `build`-role server or in CI, ship by `docker save`/registry/CAS, deploy becomes pull → swap → health | M | Requires **a**; retires the toolchain-on-prod requirement and the lock-held-during-build window |
 | **c** | **Ring 1 — Outpost install over SSH** — `pending → installing → ready`, `ServerEvent` trail, `RecipeRun` cardinality, SSH retained as the degrade path | M | Answers VISION's resident-process question by implementing what the schema already declares |
 | **d** | **Ring 2 — Outpost-driven `Deployment`** — the Outpost pulls a digest and runs the swap; the pivot classifier (2.3a) grades it first | L | Requires **b** and **c**. Partly built ahead of both, and it owes the five safeguards in § Ring 2 as built |
+| **e** | **Ring 0 — the framework at a URL** — every published tarball on its GitHub Release, reached as `packages.frontierjs.com/<stem>/<version>.tgz`, so a build box installs with no workspace, no clone and no registry (`FJS-D1568`, `IDEAS/package-host.md`) | S | Independent of **a**–**d**; deletes the clone-and-link Dockerfile template |
 
 **a** is worth doing whether or not the rest happens, which is the test this file
 was written to apply.

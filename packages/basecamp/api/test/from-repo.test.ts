@@ -8,7 +8,7 @@
  * with the reveal in the trail.
  *
  * The forge is never reached: a repository on a forge `rawDockerfileUrls`
- * does not read seeds the template with no request, and the raw-URL tests
+ * does not read seeds blank with no request (FJS-D1570), and the raw-URL tests
  * hand `readRepoDockerfile` a fetch of their own. The machine is the stub
  * executor, which is also the "no deploy key yet" answer.
  */
@@ -21,7 +21,7 @@ import { basecampGateLevel }      from '../src/core/gate.ts'
 import { buildBasecampApp }       from '../src/app.ts'
 import { grantsFor }              from '../src/core/capabilities.ts'
 import { parseAppSource, summarizeSource, DOCKERFILE_BYTES } from '../src/domain/release/app-source.ts'
-import { readRepoDockerfile, rawDockerfileUrls, fjsDockerfileTemplate } from '../src/domain/release/dockerfile-template.ts'
+import { readRepoDockerfile, rawDockerfileUrls } from '../src/domain/release/dockerfile-template.ts'
 
 process.env.BASECAMP_STUB_OUTPOST = '1'
 
@@ -61,18 +61,19 @@ describe('projects.fromRepo makes the five rows', () => {
   beforeAll(async () => {
     made = await fromRepo(admin, {
       name: 'Shop Front', repo: 'git@github.com:acme/shop.git', branch: 'main',
-      dockerfile: '  FROM oven/bun:1\n', serverId: box.id, hostname: `Shop-${uniq()}.example.com`, port: 4100,
+      dockerfile: '  FROM oven/bun:1\nEXPOSE 3000\nEXPOSE 4100/tcp\n', serverId: box.id, hostname: `Shop-${uniq()}.example.com`,
     })
   })
 
   test('a project, its production environment, and the App a machine builds', async () => {
     expect(made.project.slug).toBe('shop-front')
     expect(made.environment).toMatchObject({ name: 'production', slug: 'production', tier: 'production', isProtected: false })
+    // The container port is the seed's last EXPOSE.
     expect(made.app).toMatchObject({
       name: 'Shop Front', slug: 'shop-front', type: 'container', environmentId: made.environment.id,
-      volumePath: '/db', healthCheck: '/health', containerPort: 3000, port: 4100,
+      volumePath: '/db', healthCheck: '/health', containerPort: 4100, port: 10000,
     })
-    expect(made.app.source).toEqual({ kind: 'git', repo: 'git@github.com:acme/shop.git', branch: 'main', dockerfile: 'FROM oven/bun:1' })
+    expect(made.app.source).toEqual({ kind: 'git', repo: 'git@github.com:acme/shop.git', branch: 'main', dockerfile: 'FROM oven/bun:1\nEXPOSE 3000\nEXPOSE 4100/tcp' })
     // The caller's file is theirs; nothing was seeded.
     expect(made.dockerfile).toEqual({ seeded: 'none' })
   })
@@ -83,7 +84,7 @@ describe('projects.fromRepo makes the five rows', () => {
     expect(by.DATABASE_URL.value).toBe('/db/app.db')
     expect(by.AUDIT_PATH.value).toBe('/db/audit.db')
     expect(by.NODE_ENV.value).toBe('production')
-    expect(by.FRONTIER_PORT_BE.value).toBe('3000')
+    expect(by.FRONTIER_PORT_BE.value).toBe('4100')
     expect(by.ENCRYPTION_KEY.secret).toBe(true)
     expect(by.ENCRYPTION_KEY.value).toBeNull()
     expect(by.ENCRYPTION_KEY.secretValue).toMatch(/^[0-9a-f]{64}$/)
@@ -117,21 +118,36 @@ describe('projects.fromRepo makes the five rows', () => {
   test('`deployOnPush: false` leaves it off, with a server', async () => {
     const off = await fromRepo(admin, {
       name: `Quiet ${uniq()}`, repo: 'git@github.com:acme/quiet.git', dockerfile: 'FROM oven/bun:1',
-      serverId: box.id, port: 4102, deployOnPush: false,
+      serverId: box.id, deployOnPush: false,
     })
     expect(off.app.deployOnPush).toBe(false)
     expect(off.push).toBeNull()
   })
 
-  test('no dockerfile and a forge nothing reads seeds the template', async () => {
-    const r = await fromRepo(developer, { name: `Lab ${uniq()}`, repo: 'https://gitlab.com/acme/lab.git', port: 4101 })
-    expect(r.dockerfile).toEqual({ seeded: 'template' })
-    expect(r.app.source.dockerfile).toBe(fjsDockerfileTemplate().trim())
+  test('no dockerfile and a forge nothing reads seeds blank, never the template', async () => {
+    // A private repository and a public one with no file read the same, so the
+    // App carries none and the machine builds the repository's own.
+    const r = await fromRepo(developer, { name: `Lab ${uniq()}`, repo: 'https://gitlab.com/acme/lab.git' })
+    expect(r.dockerfile).toEqual({ seeded: 'none' })
+    expect(r.app.source.dockerfile ?? null).toBeNull()
+    expect(r.app.containerPort).toBeNull()
+    const keys = (await (env.system as any).variable.findMany({ where: { appId: r.app.id } })).map((v: any) => v.key)
+    expect(keys).not.toContain('FRONTIER_PORT_BE')
+  })
+
+  test('a seed that exposes nothing stores no container port and no FRONTIER_PORT_BE', async () => {
+    for (const dockerfile of ['', 'FROM busybox:1.36\nCOPY www /www\n']) {
+      const r = await fromRepo(admin, { name: `Mute ${uniq()}`, repo: 'git@github.com:acme/mute.git', dockerfile })
+      expect(r.app.containerPort).toBeNull()
+      const keys = (await (env.system as any).variable.findMany({ where: { appId: r.app.id } })).map((v: any) => v.key)
+      expect(keys).not.toContain('FRONTIER_PORT_BE')
+      expect(keys).toContain('DATABASE_URL')
+    }
   })
 
   test('a server outside the workspace is refused before any row is written', async () => {
     const name = `Nope ${uniq()}`
-    await expect(fromRepo(admin, { name, repo: 'git@github.com:a/b.git', dockerfile: '', serverId: 'nope', port: 4102 }))
+    await expect(fromRepo(admin, { name, repo: 'git@github.com:a/b.git', dockerfile: '', serverId: 'nope' }))
       .rejects.toThrow(/not found/)
     expect(await (env.system as any).project.count({ where: { name } })).toBe(0)
   })
@@ -140,7 +156,7 @@ describe('projects.fromRepo makes the five rows', () => {
 describe('variables.reveal', () => {
   let keyVar: any
   beforeAll(async () => {
-    const r = await fromRepo(admin, { name: `Vault ${uniq()}`, repo: 'git@github.com:a/vault.git', dockerfile: '', port: 4103 })
+    const r = await fromRepo(admin, { name: `Vault ${uniq()}`, repo: 'git@github.com:a/vault.git', dockerfile: '' })
     keyVar = await (env.system as any).variable.findFirst({ where: { appId: r.app.id, key: 'ENCRYPTION_KEY' } })
   })
 
@@ -175,34 +191,61 @@ describe('source.dockerfile', () => {
 })
 
 // FJS-3563: docker refuses the second container on a host port, after the
-// first release's container has stopped; Basecamp refuses it at the row.
+// first release's container has stopped. Basecamp picks the port when an App
+// lands on a machine (FJS-D1557), from 10000 up past what is held, and
+// refuses one stated that another App there publishes.
 describe('a host port is one App\'s on a machine', () => {
   let first: any, second: any
   beforeAll(async () => {
-    first  = await fromRepo(admin, { name: `Port ${uniq()}`, repo: 'https://gitlab.com/acme/p.git', serverId: box.id, port: 4200 })
-    second = await fromRepo(admin, { name: `Port ${uniq()}`, repo: 'https://gitlab.com/acme/q.git', serverId: box.id, port: 4201 })
+    first  = await fromRepo(admin, { name: `Port ${uniq()}`, repo: 'https://gitlab.com/acme/p.git', serverId: box.id })
+    second = await fromRepo(admin, { name: `Port ${uniq()}`, repo: 'https://gitlab.com/acme/q.git', serverId: box.id })
   })
 
-  test('fromRepo onto a machine where another App publishes the port is refused, naming it', async () => {
-    await expect(fromRepo(admin, { name: `Port ${uniq()}`, repo: 'https://gitlab.com/acme/r.git', serverId: box.id, port: 4200 }))
-      .rejects.toThrow(new RegExp(`Port 4200 .*${first.app.name}`))
+  test('placing picks the lowest port the machine publishes nothing on, and no two Apps share one', async () => {
+    expect(first.app.port).toBeGreaterThanOrEqual(10000)
+    expect(second.app.port).toBeGreaterThan(first.app.port)
+    const held = (await env.system.appServer.findMany({ where: { serverId: box.id }, include: { app: true } }))
+      .map((r: any) => r.app.port).filter((p: any) => p != null)
+    expect(new Set(held).size).toBe(held.length)
   })
 
-  test('a patch onto a taken port is refused, and the container port may repeat', async () => {
+  test('an App no machine holds publishes nothing until it is placed, then takes a port it keeps', async () => {
+    const apps  = env.as(admin).service('apps')
+    const loose = await fromRepo(admin, { name: `Port ${uniq()}`, repo: 'https://gitlab.com/acme/s.git' })
+    expect(loose.app.port).toBeNull()
+    const placed: any = await apps.call('place', loose.app.id, { serverId: box.id })
+    expect(placed.port).toBeGreaterThan(second.app.port)
+    const again: any = await apps.call('place', loose.app.id, { serverId: box.id })
+    expect(again.port).toBe(placed.port)
+  })
+
+  test('every type the release starts as a container is given a port; a static App is not', async () => {
     const apps = env.as(admin).service('apps')
-    await expect(apps.patch(second.app.id, { port: 4200 })).rejects.toThrow(/Port 4200/)
+    const made: Record<string, any> = {}
+    for (const type of ['database', 'static']) {
+      const row: any = await apps.create({ environmentId: first.environment.id, name: `${type} ${uniq()}`, slug: `${type}-${uniq()}`, type })
+      made[type] = await apps.call('place', row.id, { serverId: box.id })
+    }
+    expect(made.database.port).toBeGreaterThanOrEqual(10000)
+    expect(made.static.port).toBeNull()
+  })
+
+  test('a patch onto a taken port is refused naming the App, and the container port may repeat', async () => {
+    const apps = env.as(admin).service('apps')
+    await expect(apps.patch(second.app.id, { port: first.app.port })).rejects.toThrow(new RegExp(`Port ${first.app.port} .*${first.app.name}`))
     expect((await apps.patch(second.app.id, { containerPort: 3000, port: 4202 })).port).toBe(4202)
   })
 
-  test('placing an App on a machine where its port is taken is refused', async () => {
-    const apps = env.as(admin).service('apps')
-    const loose = await fromRepo(admin, { name: `Port ${uniq()}`, repo: 'https://gitlab.com/acme/s.git', port: 4200 })
-    await expect(apps.call('place', loose.app.id, { serverId: box.id })).rejects.toThrow(/Port 4200/)
+  test('placing an App on a machine where its stated port is taken is refused', async () => {
+    const apps  = env.as(admin).service('apps')
+    const stated = await fromRepo(admin, { name: `Port ${uniq()}`, repo: 'https://gitlab.com/acme/r.git' })
+    await apps.patch(stated.app.id, { port: first.app.port })
+    await expect(apps.call('place', stated.app.id, { serverId: box.id })).rejects.toThrow(new RegExp(`Port ${first.app.port}`))
   })
 
   test('the detail names the host ports the App\'s machines already hold, not its own', async () => {
     const detail = await env.as(admin).service('apps').get(second.app.id)
-    expect(detail.portsTaken).toContain(4200)
+    expect(detail.portsTaken).toContain(first.app.port)
     expect(detail.portsTaken).not.toContain(4202)
   })
 })

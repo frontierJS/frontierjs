@@ -50,6 +50,7 @@ litestone mutate                                         # mutate the schema, re
 litestone mutate --suite "bun test api/test"           # ...and run the app's own tests on each survivor
 litestone replicate [config.js] [--url=<url>] [--interval=<s>] [--retention=<d>] [--db=<name>]
 litestone restore [config.js] [--at=<instant>] [--from-backup=<dir>] [--force | --verify=<dir> [--without-key]]
+litestone rekey [--orphan=Model.field,…]                 # every encrypted column from ENCRYPTION_KEY to NEW_ENCRYPTION_KEY
 litestone rsync <dest>                                   # every SQLite db to a destination via sqlite3_rsync
 litestone backup [dest] [--vacuum] [--zip] [--db=<name>]
 litestone optimize [table]
@@ -297,6 +298,11 @@ Start Litestream WAL replication. Runs as a managed subprocess — signal-forwar
 litestone restore [config.js] [--url=<url>] [--at=<instant>] [--from-backup=<dir>] [--force | --verify=<dir> [--without-key]] [--json]
 ```
 Bring every database `replicate` streams back from its replica — all or nothing. `--from-backup` with no `--url`, `--at` or `--verify` restores every database from a `litestone backup` directory instead, with no litestream (§ From a local backup). `--verify` restores into `<dir>` instead and grades the copy. See `docs/replication.md` § Restoring and § Proving a copy.
+
+```bash
+litestone rekey [--orphan=Model.field,…]
+```
+Re-encrypt every encrypted column from `ENCRYPTION_KEY` to `NEW_ENCRYPTION_KEY` (or the file `NEW_ENCRYPTION_KEY_FILE` names), through `$rotateKey`: one transaction per database, the app stopped first. The new key is never an argument, because `ps`, shell history and `docker exec` all show one; a positional is refused. `--orphan` is `$rotateKey`'s `{ orphan }`, the `@hashed` and `@secret(rotate: false)` columns it otherwise refuses to leave behind. A run that died between two databases is finished by running it again with the same two keys. Then set `ENCRYPTION_KEY` to the new key; a backup taken before is still under the old one. `strategy database` is refused: the tenants' files are not reached. See `docs/encryption.md` § Key rotation.
 
 ```bash
 litestone transform [config.js] [--preview] [--dry-run] [--out=<path>] [--only=A,B] [--concurrency=8]

@@ -1,6 +1,7 @@
 // src/domain/release/host-port.ts
 // Which host ports a machine's Apps already publish — the one reader of that
-// question, asked before an App takes a port and by the CLI's preflight.
+// question, asked before an App takes a port and by the CLI's preflight — and
+// the one allocator, `placeApp`'s (`FJS-D1557`).
 //
 // Two Apps placed on one Server with one `port` both pass every row check, and
 // the second release fails at `docker run` with *port is already allocated*
@@ -24,6 +25,21 @@ export async function portHolders(serverIds: string[], exceptAppId?: string): Pr
   return rows
     .filter((r: any) => r.app && !r.app.deletedAt && r.app.id !== exceptAppId && r.app.port != null)
     .map((r: any) => ({ port: r.app.port, appId: r.app.id, appName: r.app.name, serverId: r.serverId, serverName: r.server?.name ?? r.serverId }))
+}
+
+/** The lowest host port a machine publishes nothing on, from `HOST_PORT_BASE`
+ *  up. The base sits above every dev slot in `docs/PORTS.md` and above the
+ *  port any scaffolded app listens on, so an allocated port never collides
+ *  with the Basecamp or Outpost a machine also runs, which are not Apps and
+ *  which this reader cannot see. */
+export const HOST_PORT_BASE = 10000
+
+export async function allocatePort(serverId: string, exceptAppId?: string): Promise<number> {
+  const held = new Set((await portHolders([serverId], exceptAppId)).map(h => h.port))
+  let port = HOST_PORT_BASE
+  while (held.has(port)) port++
+  if (port > 65535) throw new Conflict(`Every host port from ${HOST_PORT_BASE} up is published on this machine`)
+  return port
 }
 
 /** The Servers an App is placed on. */

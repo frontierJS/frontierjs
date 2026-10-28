@@ -818,7 +818,13 @@ core/
                 use (`FJS-D1467`) and signs a member's row on asking — the
                 join's answer and `GET /row` — never storing one.
                 `GET /badge/<number>.svg` is the one route nobody signs, for a
-                README.
+                README. A file is an R2 object (`FILES`) with its row in
+                `files`; the Worker streams `PUT /file/<id>` and
+                `GET /file/<id>/bytes` itself and asks the object each step on
+                a `/file/<id>/<step>` path it never forwards, and the alarm
+                sweeps a row at its `sweepAt`. `GET /file/<id>` is the
+                download page, its script `openFile`'s own source inlined.
+                `test/post-files.mjs` drives it on `wrangler dev`
                 Never imported: wrangler bundles it from a config `ws:post`
                 writes, so it runs in workerd and imports toolbelt and nothing
                 Bun-only. `cloudflare:workers` is not imported either, since

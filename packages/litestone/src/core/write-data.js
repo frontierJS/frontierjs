@@ -133,6 +133,7 @@ export function makeWriteData(shape, ctx, {
           _sequenceWriteKeys, _capabilityWriteKeys, _grantColumns, _edgeNamespaces } = keys
   const { modelName, fieldPolicy, enumFields, jsonFields, generatedFields, computedFields, boolFields, fromFields } = shape
   const _hasFrom = Object.keys(fromFields).length > 0
+  const _pathDefaultOf = new Map((shape.pathDefaults ?? []).map(p => [p.field, p]))
 
 
   // A MINTED column is spelt `@guarded @system` (`FJS-D1133`): naming it in
@@ -262,6 +263,30 @@ export function makeWriteData(shape, ctx, {
     return last
   }
 
+  // `@default(relation.column)`: copy a column of the parent the row names,
+  // read through the caller's own accessor so a parent she cannot read fills
+  // nothing — the parent refusal, not a leaked value, is then the answer. A
+  // stated value wins, as with every default.
+  async function applyPathDefaults(data, stamped) {
+    const paths = shape.pathDefaults
+    if (!paths?.length) return data
+    let out = data
+    for (const p of paths) {
+      if (out?.[p.field] != null) continue
+      if (p.foreignKeys.some(k => out?.[k] == null)) continue
+      const tbl = ctx.tables?.[modelToAccessor(p.target)]
+      if (!tbl) continue
+      const where = Object.fromEntries(p.references.map((r, i) => [r, out[p.foreignKeys[i]]]))
+      let parent
+      try { parent = await tbl.findFirst({ where, select: { [p.sourceField]: true } }) }
+      catch (e) { if (e instanceof AccessDeniedError) continue; throw e }
+      if (parent?.[p.sourceField] == null) continue
+      noteStamp(stamped, out, p.field)
+      out = { ...(out ?? {}), [p.field]: parent[p.sourceField] }
+    }
+    return out
+  }
+
   // `@default(sibling)`: copy the sibling's value when the column is unnamed.
   // Runs before writeData so @slug and the other transforms see the copy; every
   // create-shaped verb calls it, since a bulk row that skipped it hit NOT NULL.
@@ -352,6 +377,18 @@ export function makeWriteData(shape, ctx, {
       // carrying x: the stamp ran before this, so a gap here is a create no
       // principal could fill, and it reached the INSERT as SQLite's raw
       // NOT NULL — a 500 for what an anonymous caller asked (FJS-1793).
+      // A one-hop default with its parent named is the parent's to answer: a
+      // hidden or missing one is refused by the relation's name, and naming
+      // the column here would blame the caller for a value she never chose.
+      const via = _pathDefaultOf.get(f.name)
+      if (via && data?.[f.name] == null) {
+        if (via.foreignKeys.every(k => data?.[k] != null)) continue
+        missing.push({
+          path: [f.name],
+          message: `${f.name} is required unless ${via.relation} is named — it is taken from ${via.relation}.${via.sourceField}`,
+        })
+        continue
+      }
       const authField = _authDefaultOf.get(f.name)
       if (authField && data?.[f.name] === null && !_authFillsNull.has(f.name)) {
         missing.push({ path: [f.name], message: `${f.name} is required — a null beats its auth().${authField} default; omit ${f.name} to take the principal's` })
@@ -881,7 +918,7 @@ export function makeWriteData(shape, ctx, {
   }
 
   return {
-    writeData, refuseSystemEntries, applyFieldRefDefaults, applyRanks, rankOnScopeChange,
+    writeData, refuseSystemEntries, applyFieldRefDefaults, applyPathDefaults, applyRanks, rankOnScopeChange,
     rankScopeTouched, refuseRankBulkMove, _ranks, _rankFields, _rankBind,
   }
 }

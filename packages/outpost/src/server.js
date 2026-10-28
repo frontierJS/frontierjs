@@ -99,7 +99,7 @@ export function createOutpostServer(config, {
       const built = await docker.build({
         appId: body.app_id, source: body.source, image: body.image ?? `fjs-${body.app_id}`,
       })
-      return { digest: built.digest, commit_sha: built.commitSha, dockerfile: built.dockerfile }
+      return { digest: built.digest, commit_sha: built.commitSha, dockerfile: built.dockerfile, exposed_port: built.exposedPort ?? null }
     },
     // Asked when the App is made, so its public half is on screen to add at the
     // forge before the first build needs it. The id names a key file.

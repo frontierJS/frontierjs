@@ -66,6 +66,7 @@ fs.writeFileSync(wranglerConfig, JSON.stringify({
   routes: [{ pattern: host, custom_domain: true }],
   vars: { OWNER_KEY: keys.publicKey, OWNER_NICK: nick },
   durable_objects: { bindings: [{ name: 'POST', class_name: 'TellPost' }] },
+  r2_buckets: [{ binding: 'FILES', bucket_name: 'frontier-files' }],
   migrations: [{ tag: 'v1', new_sqlite_classes: ['TellPost'] }],
 }, null, 2) + '\n')
 

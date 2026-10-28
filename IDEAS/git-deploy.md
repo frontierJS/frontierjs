@@ -270,7 +270,7 @@ repository wired by hand releases on push, on the button and from a laptop.
     the shown-once callout, *Open the app*. Without a server it leaves for the
     App page as before. The form is now `novalidate`, as the other create forms
     are: the kit warns on a native constraint in a form that is not.
-- [ ] 1.1 **The host port is Basecamp's to pick** (`FJS-D1557`). `fromRepo` and
+- [x] 1.1 **The host port is Basecamp's to pick** (`FJS-D1557`). `fromRepo` and
       `apps.create` take no port; `placeApp` (`apps.service.ts`), the one place
       a replica lands on a server, allocates the next free one from the Apps
       already placed there and refuses a duplicate per server the way `fromRepo`
@@ -282,19 +282,83 @@ repository wired by hand releases on push, on the button and from a laptop.
   - Today the form demands a number a person cannot know. Two Apps on one
     server with the same port fail at `docker run`, after the old container is
     gone (`db/schema.lite` § App, the runtime columns).
-- [ ] 1.3 **`containerPort` comes from the Dockerfile.** `fromRepo` parses the
+  - Built 2026-10-27. The refusal half was already in the tree under
+    `FJS-3563` (`domain/release/host-port.ts`: patch, place and fromRepo
+    refuse a taken port naming the App; the detail carries `portsTaken`). The
+    allocation half: `allocatePort(serverId)` in the same file hands out the
+    lowest port from `HOST_PORT_BASE` (10000, above every `docs/PORTS.md`
+    slot and any scaffold's listen port, since a Basecamp or Outpost on the
+    same box is not an App and the reader cannot see it); `placeApp` calls it
+    when the App publishes nothing and its type is one the release starts as
+    a container — `CONTAINER_TYPES` in `domain/release/runtime.ts`, the one
+    list the release's no-image refusal reads too (`decision-rules`, question
+    9: the gate had spelled one type where the release spelled three). A port
+    the App holds is checked, never moved, so a second placement keeps it.
+    `ProjectFromRepo` drops `port` outright; the create form asks for none
+    and the Server picker says the server picks it. The App page's edit
+    drawer withholds `port` once a hostname exists (`FJS-D930`), and the
+    Runtime card says which case the App is in. The CLI preflight's `no-port`
+    fix stays for a placed App that predates this, and its patch is graded
+    by the same refusal.
+  - Drives: `from-repo.test.ts` (two Apps placed take 10000 and up with no
+    sharing; an unplaced App publishes nothing until placed, then keeps its
+    port across a second placement; a `database` App is given one and a
+    `static` App is not; a stated port taken on the machine refuses the
+    place and the patch by name); `push.test.ts` posts no port; the screens
+    drive asserts the create form has no port field and the made App's port
+    is the machine's pick. Basecamp suite 1050 pass, typecheck 7 = baseline.
+- [x] 1.3 **`containerPort` comes from the Dockerfile.** `fromRepo` parses the
       last `EXPOSE` of the seed it holds, and the Outpost reports the clone's
-      when the App stored none; `3000` only when neither says.
+      when the App stored none; `3000` is the template's own `EXPOSE` and is
+      held nowhere else.
   - `SCAFFOLD_API_PORT` is right for `fli make:deploy`'s file and wrong for
     every other; Phase 0's `EXPOSE 3000` matched it by luck.
-- [ ] 1.2 **A private repository seeds a blank Dockerfile, not the template.**
+  - Built 2026-10-27, `FJS-D1567`. One parser, `exposedPort` in
+    `@frontierjs/outpost/dockerfile` beside `chooseDockerfile`: the last
+    `EXPOSE`, its first port, `8080/tcp` read as 8080, null for none or a
+    variable. `fromRepo` stores what the seed says (null for a blank or silent
+    one) and writes `FRONTIER_PORT_BE` only then, since a guessed number
+    overrides the image's own `ENV`; `SCAFFOLD_API_PORT` is gone. `/build`
+    answers `exposed_port` off the file it built with; the runner's build step
+    adopts it onto an App that stores none (`adoptContainerPort`,
+    `domain/release/runtime.ts`, through `recordStep`) and uses it for the
+    start step of the same run, and names the disagreement in the step's
+    output when the App states another number — the health check is what
+    fails. `configSnapshot` is `@immutable`, so the adopted port is not
+    written back into the release; `runtimeFor` reads the App's for a
+    snapshot that holds none, which is what a rollback to that release needs.
+    `fli make:deploy`'s Dockerfile sets `ENV FRONTIER_PORT_BE=3000` beside its
+    `EXPOSE`, so a blank-seeded scaffold app binds what its file exposes. The
+    Runtime card says the first build fills a git App's empty container port.
+  - Drives: outpost suite (`exposedPort`'s cases; `/build` answers the stored
+    copy's, the clone's `deploy/Dockerfile`'s, null); `from-repo.test.ts`
+    (the seed's last `EXPOSE` on the App and the variable; the template's
+    3000; a blank or silent seed stores none and no variable);
+    `push.test.ts` (the build step adopts onto an App with none and never
+    moves a stated one). Live on the dev stack, `dev:outpost` restarted for
+    the new route: `fromRepo` of the test repository with a blank Dockerfile
+    stored no container port and no `FRONTIER_PORT_BE`; the button release
+    went green with `built b4b6b25 with Dockerfile, EXPOSE 3000` on the build
+    step, the App read `10000 → 3000` after, busybox answered on 10000, and
+    the scratch project was removed.
+- [x] 1.2 **A private repository seeds a blank Dockerfile, not the template.**
       Blank already means the repository's own: the Outpost's `chooseDockerfile`
       takes `deploy/Dockerfile`, else `Dockerfile`, off the clone. The form says
       so, and *Use the repository's* after the first build is how a person gets
       a copy to edit (`apps.importDockerfile`).
   - The template is for a `link:` app and builds the wrong image for any other.
     Untested in Phase 0, which used a public repository only.
-- [ ] 1.7 **Drives.** The three test files, the outpost suite and
+  - Built 2026-10-27, `FJS-D1570`. Wider than the box: a private repository
+    and a public one with no file read the same off a forge (404 both), so the
+    server never seeds the template at all — `seeded` is `repo` or `none`, and
+    the template is the create form's button. The Outpost's `build` refuses a
+    context holding no Dockerfile by name before `docker build` (commit one, or
+    store one on the App), where docker's own words named no way out. Drives:
+    `from-repo.test.ts` (a forge nothing reads stores no file, no port, no
+    `FRONTIER_PORT_BE`), `outpost.test.js` (the refusal, and under a
+    `source.path`); the six older build cases plant the file the faked clone
+    never had.
+- [x] 1.7 **Drives.** The three test files, the outpost suite and
       `verify-screens.mjs` cover 1.5 (the trigger and commit on each row, a
       push row with `commitSha` set), 1.8 (a clone re-pointed when
       `source.repo` changes), 1.6 (a plain repository passes `--dry`; a dirty
@@ -320,6 +384,9 @@ repository wired by hand releases on push, on the button and from a laptop.
     the loop a `spawnSync` would block; the seed now draws `laptop` and
     `verify-screens.mjs` reads the overview's `#app-live-build` and each door
     on the Releases tab.
+  - 1.1's half, 2026-10-27: the cases above in `from-repo.test.ts`, and
+    `verify-screens.mjs`'s *connect your repository* pass fills no port and
+    reads the allocated one back off the row. The box closes.
   - 1.4's half, 2026-10-27. Live on the dev stack with the real Outpost:
     `fromRepo` onto `dev-outpost` answered an `ssh-ed25519` key and the three
     push values together, the row read back with neither credential, and
@@ -341,12 +408,21 @@ by hand.
 Deferred until Phase 1 has been used once for real; Forge's automation is what
 the connection buys, and the hand-run flow has to be right first.
 
-- [ ] 2.1 Rule Q2, the shape of the connection.
+- [x] 2.1 Rule Q2, the shape of the connection.
+    *Ruled* `FJS-D1571`: **C** — a fine-grained token as a `Secret` with
+    `kind: provider_key, providerKind: github`. Its permissions are
+    Administration write, Webhooks write and Contents read. Phase 1's live
+    private-repository drive is still owed (the deferral above); the ruling
+    is paper and does not wait for it.
 - [ ] 2.2 A `conduit-github` connector in the sibling repository
       (`FJS-D1185`): `POST /repos/{o}/{r}/keys` and `POST /repos/{o}/{r}/hooks`,
-      the credential a `Secret` with `provider: github`, which already says
-      which connection it is (no second ref on the Workspace). A revoked token
-      refuses `connect: true` by name.
+      the credential a `Secret` with `kind: provider_key, providerKind: github`
+      (`FJS-D1571`), which already says which connection it is (no second ref
+      on the Workspace). `github` joins `ProviderKind`, `Server` gains
+      `@@check("providerKind != 'github'")` as it has for `cloudflare`
+      (`FJS-D559`), `Secret.providerKind`'s comment says vendor rather than
+      cloud, and `accountConnectorFor` names the source connector beside
+      compute and edge. A revoked token refuses `connect: true` by name.
 - [ ] 2.3 `fromRepo` gains `connect: true`: after the App exists it writes both
       at GitHub and the panel from 1.4 says *done* instead of *add these*.
 - [ ] 2.4 `apps.importDockerfile` reads a private repository through the
@@ -366,13 +442,15 @@ Each is ruled through `decision-rules` and the answer is cited by its `Q`.
   container that a person has no way to know; Dokku assigns it and Coolify
   has none. B is the one-level-simpler cut if A's allocator turns out to need
   a machine read.
-- **Q2 — How Basecamp authenticates to GitHub for Phase 2.** **A** — a GitHub
+- **Q2 — How Basecamp authenticates to GitHub for Phase 2.** Ruled `FJS-D1571`: **C**.
+  **A** — a GitHub
   App installed on the organization, short-lived installation tokens, scoped
   to the repositories chosen. **B** — an OAuth App acting as the person, Forge's
-  shape. **C** — a token pasted as a `Secret` with `provider: github`, the
-  shape DigitalOcean, Hetzner and Cloudflare already take here (`FJS-D1478`).
+  shape. **C** — a token pasted as a `Secret` with `kind: provider_key,
+  providerKind: github`, the
+  shape DigitalOcean, Hetzner and Cloudflare already take here (`FJS-D559`).
   **Recommend C** — the own-domain sibling, one row and no new noun; A is the
-  reopen once a departed person's token has cost something. Ruled at 2.1.
+  reopen once a departed person's token has cost something.
 - **Q3 — Is deploy-on-push on by default at creation.** Ruled `FJS-D1558`: **A**.
   **A** — on when a
   server is picked, off otherwise. **B** — off, a switch on the create form,

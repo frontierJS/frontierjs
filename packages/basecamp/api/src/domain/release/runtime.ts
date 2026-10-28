@@ -7,6 +7,12 @@
 // nothing. `api/test/services.test.ts` and outpost's own suite hold each name to
 // a flag.
 
+/** The App types a release starts as a container, so each needs an image to
+ *  run and a host port to be reached on — the one list, read by the release's
+ *  refusal and by `placeApp`'s allocation (`FJS-D1557`). A `static`, `worker`,
+ *  `daemon` or `cron` App publishes nothing. */
+export const CONTAINER_TYPES: ReadonlySet<string> = new Set(['container', 'function', 'database'])
+
 /** The columns, in `App`'s and `Blueprint`'s shared spelling. */
 export const RUNTIME_COLUMNS = ['port', 'containerPort', 'volumePath', 'healthCheck', 'cpuLimit', 'memLimitMb'] as const
 
@@ -99,6 +105,18 @@ export async function servingAddresses(db: any, appId: string): Promise<string[]
     .filter((p: any) => p.server?.status === 'online' && p.server.ipAddress)
     .map((p: any) => String(p.server.ipAddress))
   return [...new Set<string>(ips)].sort()
+}
+
+/**
+ * The container port a build read off the Dockerfile it shipped, taken by an
+ * App that stores none (`FJS-D1567`): Basecamp cannot read a private
+ * repository's file before the machine clones it. A number a person typed, or
+ * the seed named, is never moved by a build; the build step names the
+ * disagreement instead, and the health check is what fails.
+ */
+export async function adoptContainerPort(db: any, appId: string, containerPort: number): Promise<boolean> {
+  const { count } = await db.asSystem().app.updateMany({ where: { id: appId, containerPort: null }, data: { containerPort } })
+  return count > 0
 }
 
 /** Mark the placements a release landed on as `running`. Every replica row on

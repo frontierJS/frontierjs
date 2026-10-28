@@ -103,8 +103,9 @@ export function rawDockerfileUrls(repo: string, branch?: string | null): string[
 /**
  * The repository's Dockerfile, `deploy/Dockerfile` before `Dockerfile`, or
  * null when neither is readable. A private repository is null too: the forge
- * answers it as missing or as a sign-in page, and that App starts from the
- * template and imports its file off the machine after the first clone.
+ * answers it as missing or as a sign-in page, the same as a public one with no
+ * file, so a null seeds blank — the machine builds the repository's own — and
+ * never the template (`FJS-D1570`).
  */
 export async function readRepoDockerfile(
   { repo, branch }: { repo: string; branch?: string | null },

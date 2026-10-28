@@ -758,6 +758,7 @@ const NOT_ANATOMY = {
   'theme-press': 'A theme', 'theme-field': 'A theme',
   'theme-dracula': 'A theme', 'theme-twilight': 'A theme',
   'theme-expedition': 'A theme', 'theme-catppuccin': 'A theme',
+  'theme-survey': 'A theme',
 };
 
 /*

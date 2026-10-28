@@ -25,6 +25,7 @@ import { sessionScope, getPagination, WORKSPACE_QUERY }       from '../../core/h
 import { db, getScoped, actor, callerOrder, callerSelect }   from '../../core/resource.ts'
 import { executorOn, isExecutor }                            from '../../providers/executor.ts'
 import { takeAppBackup }                                     from '../../jobs/app-backup-run.job.ts'
+import { queueAppArchiveRescan }                             from '../../jobs/app-archive-rescan.job.ts'
 import { keyScope }                                          from '../../domain/api-key/scopes.ts'
 
 export default createService({
@@ -37,7 +38,9 @@ export default createService({
   // machine reported, and the base would otherwise answer all three with
   // whatever the caller wrote. `take` writes at SYSTEM, so a model gate on
   // `create` could never grade it and the method states its own.
-  methods: ['find', 'get', { method: 'take', gate: LEVELS.ADMINISTRATOR, input: 'AppBackupTake' }],
+  methods: ['find', 'get',
+    { method: 'take',   gate: LEVELS.ADMINISTRATOR, input: 'AppBackupTake' },
+    { method: 'rescan', gate: LEVELS.ADMINISTRATOR, input: 'AppBackupRescan' }],
 
   async find() {
     const { limit, offset } = getPagination({ limit: 50, max: 200 })
@@ -79,6 +82,16 @@ export default createService({
     if (!isExecutor(executor)) throw new BadRequest(executor.reason)
 
     return takeAppBackup($.app, { target: app, executor, destination, kind: 'manual', requestedBy: actor() })
+  },
+
+  // ── rescan — POST /app-backups  X-Service-Method: rescan ──
+  /** Queue the listing of the app's bucket for archives no row names; each
+   *  found one is restorable once the hub has read its sha256 (`FJS-D1572`). */
+  async rescan() {
+    const app = await getScoped('app', 'App', (($.data ?? {}) as Record<string, unknown>).appId as string)
+    if (!app.backupDestinationId) throw new BadRequest(`App '${app.name}' names no backup destination`)
+    await queueAppArchiveRescan($.app, app.id)
+    return { queued: true }
   },
 
   hooks: {

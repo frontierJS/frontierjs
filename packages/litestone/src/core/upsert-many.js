@@ -22,7 +22,7 @@ export function makeUpsertMany(shape, ctx, deps) {
   const {
     _bulkTransitionField, refuseSoftDeleteWrite, refuseOffEntry, refuseBulkNested,
     refuseSystemEntries, extractWriteOps, idField, plugins, tx, writeDb, col, stampSets, _ranks,
-    applyFieldRefDefaults, applyRanks, writeData, hasTemplatesField, hiddenParents, checkCreate,
+    applyFieldRefDefaults, applyPathDefaults, applyRanks, writeData, hasTemplatesField, hiddenParents, checkCreate,
     firstRefusal, _sealInsertSql, sealInsertGuard, sealRefusal, asBatchRowError, asConstraintError,
     noteExclusion, needsTiming, fireQuery, tableHasLogWork, emitLogs, read, announceFor,
     announceBulk,
@@ -102,7 +102,15 @@ export function makeUpsertMany(shape, ctx, deps) {
     }
     await enforceValueSets(modelName, data, ctx)
     data = refuseOffEntry(data)
-    const _usHidden = await hiddenParents(data, [], system)
+    // A one-hop default reads another row, so it is stamped before the unit
+    // rather than inside it with the other stamps — see createMany.
+    const _usPathStamped = data.map(() => new Set())
+    if (shape.pathDefaults.length) {
+      const out = []
+      for (const [i, row] of data.entries()) out.push(await applyPathDefaults(row, _usPathStamped[i]))
+      data = out
+    }
+    const _usHidden = await hiddenParents(data, _usPathStamped, system)
 
     const autoId       = shape.autoId
     const genDefaults  = shape.generatedDefaults

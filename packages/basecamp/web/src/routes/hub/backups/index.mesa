@@ -283,7 +283,7 @@ title: Hub backups
     </p>
     <p class="text-sm text-muted">
       A hub cannot replace itself while it serves, so that restore is the runbook:
-      <code>docs/BACKUPS.md</code> § 7, with Basecamp stopped.
+      <code>docs/BACKUPS.md</code> § 7, <em>The hub, from its own replica</em>, before this box's Outpost is enrolled.
     </p>
     <div class="cluster">
       <Button treatment="ghost" id="hub-found-dismiss" onclick={dismissFound}>Dismiss</Button>

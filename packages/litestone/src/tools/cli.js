@@ -35,7 +35,7 @@ import { modelToAccessor }           from '../core/ddl.js'
 import { findPrincipal }                               from './principal.js'
 import { c, bold, dim, green, yellow, red, cyan, args, positional, flag, getFlag, getFlags,
          KNOWN_FLAGS, unknownFlags,
-         fatal, rel, header, loadSchema, getEncKey, resolveDbPath,
+         fatal, rel, header, loadSchema, getEncKey, envKey, resolveDbPath,
          declaresDatabases, clientDb, loadGateResolver,
          loadBaselineSchema, parseBaseline }        from './cli-helpers.js'
 
@@ -208,6 +208,8 @@ const HELP = `
     ${dim('  --verify=<dir>')}                          restore into <dir> instead and prove the copy is good
     ${dim('  --verify-only=<dir>')}                     prove a copy already in <dir> is good, and leave it
     ${dim('  --without-key')}                           verify with no ENCRYPTION_KEY, encrypted columns unchecked
+    ${cyan('litestone rekey')}                      re-encrypt every column from ENCRYPTION_KEY to NEW_ENCRYPTION_KEY (stop the app)
+    ${dim('  --orphan=Model.field,…')}                  leave these on the old key — @hashed or @secret(rotate: false)
     ${cyan('litestone rsync')} <dest>              sync all SQLite DBs to a destination via sqlite3_rsync
     ${cyan('litestone transform')} [config.js]      run a transform pipeline (DSL)
     ${cyan('litestone tenant list')}                list all tenants
@@ -4858,6 +4860,72 @@ async function verifyRestored({ parseResult, cfg, jobs, other, files, dir, binar
   process.exitCode = report.ok ? 0 : 1
 }
 
+// ─── rekey ────────────────────────────────────────────────────────────────────
+// Every encrypted column moved from ENCRYPTION_KEY to NEW_ENCRYPTION_KEY by
+// `$rotateKey`, one transaction per database. The new key is never an argument:
+// ps, shell history and docker exec all show one (`FJS-D1556`).
+//
+// The new key is on the client's ring beside the old, so a run that died
+// between two databases' commits is finished by running it again; a value
+// already under the new key reads, and is written back under it.
+
+async function cmdRekey(cfg) {
+  const { createClient } = await import('../core/client.js')
+
+  const oldKey = getEncKey()
+  const newKey = envKey('NEW_ENCRYPTION_KEY')
+  if (!oldKey) fatal(`${cyan('ENCRYPTION_KEY')} is unset — it is the key the columns are under now.`)
+  if (!newKey) fatal(`Set ${cyan('NEW_ENCRYPTION_KEY')} (or ${cyan('NEW_ENCRYPTION_KEY_FILE')}) to the key they move to.\n` +
+                     `     ${dim(`openssl rand -hex 32 makes one.`)}`)
+  if (!/^[0-9a-f]{64}$/i.test(newKey)) fatal(`${cyan('NEW_ENCRYPTION_KEY')} must be 64 hex characters, got ${newKey.length} characters.`)
+  if (newKey.toLowerCase() === oldKey.toLowerCase()) fatal(`${cyan('NEW_ENCRYPTION_KEY')} is the key the columns are already under.`)
+
+  const parseResult = loadSchema(cfg.schema)
+  // The client opens main, and a tenant's file holds its own ciphertext.
+  if (parseResult.schema.tenancy?.strategy === 'database')
+    fatal(`This schema is ${cyan('strategy database')}, and rekey reaches main's databases and no tenant's — nothing was rekeyed.`)
+
+  const orphan = getFlag('orphan')?.split(',').map(k => k.trim()).filter(Boolean) ?? []
+
+  header('litestone rekey')
+  console.log(`  ${dim('Stop the app first: a process still on the old key writes under it, and those rows')}`)
+  console.log(`  ${dim('read as nothing once ENCRYPTION_KEY is the new one.')}\n`)
+
+  const db = await createClient({
+    parsed: parseResult, path: cfg.schema, resolveFrom: 'schema', db: clientDb(parseResult, cfg),
+    encryptionKey: oldKey, previousEncryptionKeys: [newKey],
+  })
+
+  let stats
+  try { stats = await db.$rotateKey(newKey, { orphan }) }
+  catch (e) {
+    if (e.orphaned) fatal(`${e.message.split('\nPass {')[0]}\n` +
+      `     Pass ${cyan(`--orphan=${e.orphaned.join(',')}`)} to accept that deliberately.`)
+    fatal(`Nothing in the database that failed was rekeyed; one that committed before it is on the new key,\n` +
+          `     and running this again with the same two keys finishes it.\n     ${e.message}`)
+  }
+
+  const files = Object.entries(db.$databases).filter(([, d]) => d.path).map(([name, d]) => `${name}: ${rel(d.path)}`)
+  for (const f of files) console.log(`  ${dim(f)}`)
+  console.log()
+
+  const models = Object.entries(stats)
+  if (!models.length) {
+    console.log(`  ${dim('No encrypted column — nothing to rekey.')}\n`)
+    return
+  }
+  for (const [model, { rows, fields }] of models)
+    console.log(`  ${green('✓')}  ${cyan(model)}  ${dim(`${rows} row${rows !== 1 ? 's' : ''}, ${fields} column${fields !== 1 ? 's' : ''}`)}`)
+
+  console.log(`\n  ${green(bold('✓  rekey complete'))}\n`)
+  console.log(`  ${bold('Next')}`)
+  console.log(`  ${dim('·')} Set ${cyan('ENCRYPTION_KEY')} to the new key before the app starts, and unset ${cyan('NEW_ENCRYPTION_KEY')}.`)
+  console.log(`  ${dim('·')} A backup or replica generation taken before now is under the old key: keep the old key as long as one is kept.`)
+  if (orphan.length)
+    console.log(`  ${dim('·')} ${orphan.map(k => cyan(k)).join(', ')} ${orphan.length > 1 ? 'were' : 'was'} left under the old key, as ${cyan('--orphan')} said.`)
+  console.log()
+}
+
 // ─── db push ─────────────────────────────────────────────────────────────────
 // Dev equivalent of prisma db push — diffs schema against live DB and applies
 // changes directly without writing migration files. Safe to run on every boot.
@@ -5191,6 +5259,13 @@ async function main() {
       process.exit(1)
     })
     return   // intentionally no await — replicate() runs until Ctrl+C
+  }
+
+  if (cmd === 'rekey') {
+    if (sub) fatal(`litestone rekey takes no argument — an argument shows in ps and shell history.\n` +
+                   `     Set ${cyan('NEW_ENCRYPTION_KEY')} (or ${cyan('NEW_ENCRYPTION_KEY_FILE')}) to the new key.`)
+    await cmdRekey(await loadConfig())
+    return
   }
 
   if (cmd === 'restore') {

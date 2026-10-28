@@ -26,7 +26,8 @@
     "test:browser:codegraph": "bun test/browser/codegraph.mjs",
     "test:browser:registers": "node test/browser/register-atlas.mjs",
     "test:browser": "bun test/browser/run.mjs",
-    "test:browser:console": "bun test/browser/console.mjs"
+    "test:browser:console": "bun test/browser/console.mjs",
+    "test:post-files": "bun test/post-files.mjs"
   },
   "_built": "2026-04-13",
   "files": [

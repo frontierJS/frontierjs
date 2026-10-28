@@ -78,7 +78,7 @@ export const KNOWN_FLAGS = new Set([
   'from-backup', 'gate', 'help', 'host', 'include-deleted-at',
   'include-protected', 'include-timestamps', 'insecure', 'interval', 'json',
   'kinds', 'l0', 'level', 'meta', 'migrations', 'mode', 'no-camel', 'no-env',
-  'no-open', 'only', 'operations', 'out', 'params', 'pluralize', 'port',
+  'no-open', 'only', 'operations', 'orphan', 'out', 'params', 'pluralize', 'port',
   'preview', 'purpose', 'readonly', 'reference', 'registry', 'rename', 'report',
   'retention', 'schema', 'since', 'skip-existing', 'snapshot', 'stdout',
   'strict', 'suite', 'system', 'tenant', 'token', 'url', 'v', 'vacuum', 'verbose',
@@ -140,9 +140,14 @@ export function loadSchema(schemaPath) {
 // ENCRYPTION_KEY_FILE is read as junction's defineEnv reads it, since a
 // container's entrypoint migrates through this CLI before the app boots.
 export function getEncKey() {
-  const src = envSource('ENCRYPTION_KEY', process.env)
+  return envKey('ENCRYPTION_KEY') ?? process.env.LITESTONE_KEY ?? undefined
+}
+
+/** A key from `<name>` or the file `<name>_FILE` names, never both. */
+export function envKey(name) {
+  const src = envSource(name, process.env)
   if ('error' in src) fatal(src.error)
-  if ('value' in src) return src.value ?? process.env.LITESTONE_KEY ?? undefined
+  if ('value' in src) return src.value || undefined
   try { return fileValue(readFileSync(src.file, 'utf8')) }
   catch (e) { fatal(`${src.fileKey}: cannot read ${src.file} (${e.code ?? e.message})`) }
 }

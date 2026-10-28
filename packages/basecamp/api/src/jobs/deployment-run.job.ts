@@ -11,7 +11,7 @@
 // Outpost protocol (Conduit → outpost:<server-id>). Every reply may carry a
 // `digest`, and that is the whole of what makes a release addressable:
 //   POST /pull         { image }                          → { digest }
-//   POST /build        { app_id, source, image }          → { digest, commit_sha }; a git source, built on the machine that runs it
+//   POST /build        { app_id, source, image }          → { digest, commit_sha, exposed_port }; a git source, built on the machine that runs it
 //   POST /deploy      { deployment_id, image, digest, hosts, paths, … } → { digest }, once healthy;
 //                      a release that fails puts the previous container back (FJS-1765)
 //   POST /stop         { app_id }                          → container and route gone (sent by apps.remove, never by a release)
@@ -75,7 +75,13 @@ type ServiceRow    = any
 /** How the release's container starts — the snapshot's, falling back to the
  *  app's columns only for a release that recorded none. */
 function runtimeFor(snapshot: Record<string, unknown>, service: Record<string, unknown>): Runtime {
-  return (snapshot.runtime as Runtime | undefined) ?? runtimeOf(service)
+  const runtime = (snapshot.runtime as Runtime | undefined) ?? runtimeOf(service)
+  // A snapshot taken before the App's first build holds no container port;
+  // the build adopted the Dockerfile's onto the App (`adoptContainerPort`),
+  // and a rollback to that release, which builds nothing, reads it there
+  // rather than mapping the host port to itself.
+  return runtime.containerPort == null && service.containerPort != null
+    ? { ...runtime, containerPort: service.containerPort as number } : runtime
 }
 
 function runner(app: App) {
@@ -98,13 +104,14 @@ function runner(app: App) {
   // refusal at the call.
   async function step(
     deploymentId: string, stepId: string, status: StepStatus,
-    extra: { output?: string; digest?: string | null; commit?: string } = {},
+    extra: { output?: string; digest?: string | null; commit?: string; containerPort?: number } = {},
   ): Promise<void> {
     await deployments.call('stepStatus', deploymentId, {
       stepId, status,
       ...(extra.output !== undefined ? { output: extra.output } : {}),
       ...(extra.digest ? { digest: extra.digest } : {}),
       ...(extra.commit ? { commit: extra.commit } : {}),
+      ...(extra.containerPort != null ? { containerPort: extra.containerPort } : {}),
     })
   }
 
@@ -234,7 +241,7 @@ function runner(app: App) {
         // what RAN. It travels with the step write rather than as a second one.
         if (result.digest && result.digest !== digest) digest = result.digest
 
-        await step(deploymentId, s.id, 'success', { output: result.output, digest, commit: result.commit })
+        await step(deploymentId, s.id, 'success', { output: result.output, digest, commit: result.commit, containerPort: result.containerPort })
         current = undefined
       }
 
@@ -273,7 +280,7 @@ function runner(app: App) {
       executor: Executor
       digest:   string | null
     }
-  ): Promise<{ output?: string; digest: string | null; commit?: string }> {
+  ): Promise<{ output?: string; digest: string | null; commit?: string; containerPort?: number }> {
     const { deploy, service, executor, digest } = ctx
     const name  = step.name.toLowerCase()
 
@@ -312,7 +319,23 @@ function runner(app: App) {
       // Which file it built with, since the App's own copy and the repository's
       // are both candidates and a release is read back to say which shipped.
       const file = typeof reply.data?.dockerfile === 'string' && reply.data.dockerfile ? ` with ${reply.data.dockerfile}` : ''
-      return { output: note(reply) ?? (sha ? `built ${sha}${file}` : file ? `built${file}` : undefined), digest: built ?? digest, commit }
+      // The file's last EXPOSE. An App that stores no container port takes it,
+      // for this release's snapshot (read by the start step below) and the row
+      // (`FJS-D1567`); one that states a number keeps it and the line says
+      // where the two disagree, since the health check is about to.
+      const exposed = typeof reply.data?.exposed_port === 'number' ? reply.data.exposed_port : null
+      const runtime = runtimeFor(ctx.config, service)
+      let ports = ''
+      let containerPort: number | undefined
+      if (exposed != null && runtime.containerPort == null) {
+        ctx.config.runtime = { ...runtime, containerPort: exposed }
+        containerPort = exposed
+        ports = `, EXPOSE ${exposed}`
+      } else if (exposed != null && Number(runtime.containerPort) !== exposed) {
+        ports = `, EXPOSE ${exposed} where the App says ${runtime.containerPort}`
+      }
+      const output = note(reply) ?? (sha || file ? `built${sha ? ` ${sha}` : ''}${file}${ports}` : undefined)
+      return { output, digest: built ?? digest, commit, containerPort }
 
     } else if (name.includes('pull')) {
       const reply = await executor.call('/pull', { image, digest }, { timeoutMs: PULL_TIMEOUT_MS })

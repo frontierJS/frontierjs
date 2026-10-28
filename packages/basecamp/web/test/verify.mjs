@@ -3185,7 +3185,7 @@ check('the from-repository section opens with the Dockerfile box empty',
   await evaluate(`document.getElementById('dockerfile')?.value`), '')
 const repoFormIssues = await evaluate(AUDIT)
 check('a11y: the from-repository form', Array.isArray(repoFormIssues) ? repoFormIssues.join(' | ') : String(repoFormIssues), '')
-await fill({ repo: 'git@github.com:acme/repo-app.git', port: '18080' })
+await fill({ repo: 'git@github.com:acme/repo-app.git' })
 await click('Use the FrontierJS template')
 check('the template seeds the box',
   await waitFor(`document.getElementById('dockerfile')?.value ?? ''`, t => t.length > 0),

@@ -758,9 +758,11 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
 
     const { stmts } = rt()
 
-    // If a handler is registered with a specific queue for this name,
-    // respect that over the dispatch-time queue
+    // The registration's queue and retries, else the definition's own: a
+    // dispatch made while the app is still being built precedes the autoload,
+    // and a row on `default` for a handler on another queue is never claimed.
     const registered  = handlers.get(name)
+      ?? (typeof job === 'string' ? undefined : job as Partial<JobDefinition>)
     const targetQueue = dispatchOpts.queue ?? registered?.queue ?? 'default'
 
     ensureQueue(targetQueue)

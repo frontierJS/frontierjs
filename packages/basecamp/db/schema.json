@@ -3359,6 +3359,32 @@
               "type": "null"
             }
           ]
+        },
+        "replicaFoundAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "replicaSyncedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         }
       },
       "additionalProperties": false,
@@ -7752,6 +7778,32 @@
             "null"
           ]
         },
+        "replicaFoundAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "replicaSyncedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
         "backupKeepLocalCount": {
           "type": "integer",
           "minimum": 1,
@@ -8556,7 +8608,8 @@
         "DependencyVulnerable",
         "MemberJoined",
         "JobFailed",
-        "WeeklyDigest"
+        "WeeklyDigest",
+        "ReplicaFound"
       ],
       "title": "NotificationKind"
     },
@@ -9128,15 +9181,17 @@
             "null"
           ]
         },
-        "port": {
-          "type": "integer"
+        "deployOnPush": {
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       },
       "additionalProperties": false,
       "required": [
         "name",
-        "repo",
-        "port"
+        "repo"
       ]
     },
     "AppRepoDockerfile": {

@@ -24,6 +24,8 @@ bun run verify:sso   # provider sign-in in a browser, against an OIDC stand-in;
 bun run verify:caddy   # the image's Caddyfile run by caddy:2 (docker) over a stub API:
                        # /auth/oauth/* as a document reaches the API, other pages get the shell
 bun run verify:outpost # the launcher + API + Outpost as processes, no browser
+bun run verify:hub-restore # a hub backed up to SeaweedFS, restored at /setup across a
+                           # restart, its replicas found; docker + Chrome + litestream 0.5
 bun run verify:mcp     # /mcp at four roles over a real MCP client, no browser
 bun run cli servers status   # the app on a command line — login --api-key - first
 bun run verify:cli     # that program as a process against a real /mcp, no browser

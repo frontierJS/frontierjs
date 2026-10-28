@@ -133,6 +133,10 @@ RUN mkdir -p /db && chown ${IMAGE_USER.name}:${IMAGE_USER.name} /db
 # After every RUN above, which needs root.
 USER ${IMAGE_USER.name}
 
+# What the API binds, said by the file that exposes it: a machine that reads
+# the EXPOSE maps traffic there, and junction otherwise binds its development
+# slot. The deploy's own --env repeats it, and a Variable on the App wins.
+ENV FRONTIER_PORT_BE=3000
 EXPOSE 3000
 
 # Migrate, then serve. A failed migration exits non-zero, the health check fails

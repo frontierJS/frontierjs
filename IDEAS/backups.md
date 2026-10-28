@@ -224,11 +224,12 @@ stopped app back to a chosen timestamp, both through Basecamp on a stand-in.
 - [x] 3.3 The drill: on a schedule, restore into a scratch volume, verify, record
       the result per App.
   - Built 2026-10-25; the record moved to [`docs/plan-done.md`](../docs/plan-done.md#ideasbackupsmd).
-- [ ] 3.4 Basecamp's own restore is a runbook (`litestone restore`) in
+- [x] 3.4 Basecamp's own restore is a runbook (`litestone restore`) in
       `packages/basecamp/docs/`, never a button.
       Amended 2026-10-27 by Phase 4: the runbook stays and is rewritten in
       4.6; `/setup` gets a stage-then-restart restore (4.4), which keeps the
       reason behind "never a button" — the serving process replaces nothing.
+  - Closed by 4.6 on 2026-10-27.
 
 ### Phase 4 — The hub comes back from a file
 
@@ -330,8 +331,7 @@ boot restores.
     bucket list+fetch over a stand-in), plus a scratch two-boot drive, 14/14:
     hub A backs up and downloads, fresh hub B takes the upload (202 staged),
     restarts, answers `done`, A's user signs in, `/setup/restore` is then
-    409, and a different key is refused with nothing staged. Not driven: the
-    bucket path through the route, and the tab in a browser (4.8's drive).
+    409, and a different key is refused with nothing staged.
     Not done (`decision-rules` optional): a pre-signed `Send` adapter so
     `listObjects`/`translate` run unchanged; the listing loop and the error
     line are written again in `hub-restore.ts`, and an adapter would have to
@@ -372,20 +372,36 @@ boot restores.
     Proved by one row in `services.test.ts` over a bucket stand-in: an empty
     replica is not found, a found one records the newest LTX time, the
     workspace is told, a developer's dismiss is refused, and dismiss and a
-    stub restore both clear. Unenforced until 4.8's drive: the boot dispatch,
-    the card hiding while the app is alive, and the hub half of
-    `reconcileFound`; neither card has been seen in a browser.
-- [ ] 4.6 3.4's runbook, rewritten around 4.4: `BACKUPS.md` § 7 becomes
+    stub restore both clear. Unenforced: the card hiding while the app is
+    alive.
+- [x] 4.6 3.4's runbook, rewritten around 4.4: `BACKUPS.md` § 7 becomes
       "download it, or point `/setup` at the bucket", and the terminal recipe
       stays for a box whose `/setup` cannot be reached. Closes 3.4.
       `/hub/backups/`'s *Replica found* card (4.5) points at § 7, so it also
       gains the recipe for restoring the hub from its own Litestream replica
       when that is newer than the archive.
-- [ ] 4.7 `litestone rekey <new>` over the client's `$rotateKey`, for the hub
+  - Done 2026-10-27. § 7 is four parts: `/setup`, the hub's own replica, by
+    hand, an app. The replica recipe is `litestream restore` per file, not
+    `litestone restore --url`: Outpost lays the hub out as
+    `<prefix>/basecamp/<file>.db`, and litestone names a replica by schema
+    database (`main`). Proved with the pinned 0.5.17 over a `file://` replica:
+    archive-old files restored to the replica's latest. Also proved, so the
+    runbook says to restore BEFORE the box's Outpost enrolls: streaming the
+    archive's older file to the same path made the replica's latest the
+    archive's history, the found rows gone. The card names that heading.
+    The file list is read off the bucket: a hub run before `FJS-3566` (closed
+    the same day) has no `audit.db` in its replica. Graded late by
+    `decision-rules`: the loop holds. Not proved: `aws s3 ls`.
+- [x] 4.7 `litestone rekey` over the client's `$rotateKey`, for the hub
       restored with a key that has leaked. Q9 ruled A (`FJS-D1556`).
-- [ ] 4.8 `verify:hub-restore`: a scratch hub, an archive from a real
+  - Done 2026-10-27: new key from `NEW_ENCRYPTION_KEY[_FILE]` (D1556 amended);
+    a copy of the dev hub db rekeyed, read under the new key alone, rerun
+    clean. Runbook `BACKUPS.md` § 7. No CLI test (experimenting).
+- [x] 4.8 `verify:hub-restore`: a scratch hub, an archive from a real
       `backup:run` into SeaweedFS, `/setup` restore across a restart, and one
       App with a real replica shown as found. Row in `DRIVES.md`.
+  - Done 2026-10-27, 22 rows: both cards, Dismiss, § 7's `s3://` restore.
+    Found `FJS-3567` (the boot's reconcile never ran) and `FJS-3568`.
 - [ ] 4.9 App-archive rescan, moved out of 4.5 by the owner:
       `<prefix>/<appId>-*.tar.gz` to `found` `AppBackup` rows. Open: a listing
       carries no sha256 and `restoreVolume` refuses a row without one, and
@@ -409,7 +425,7 @@ ship, could serve the drill without a restore.
 
 - ~~**Q7 — Where an app's Litestream key comes from.**~~ **Answered 2026-10-24 (`FJS-D1505`): A — `App.replicaDestinationId`, `@unique`, points at a `BackupDestination` the operator made with a key for that app alone. The replica path is `<prefix>/<appId>`. `BACKUPS.md` gets a recipe per vendor, and 1.8's probe adds a PUT outside the prefix that must be refused, where the vendor scopes by prefix. Snapshots keep `backupDestinationId`, whose key never leaves Basecamp.** `FJS-D1486` rules a
 
-- ~~**Q8 — The shape of "the file you reinstall from".**~~ **Answered 2026-10-27 (`FJS-D1555`): A — The archive is the file: downloaded from `/hub/backups/`, imported at `/setup` across a restart, a manifest refusing the wrong one. One key, one origin.**
+- ~~**Q8 — The shape of "the file you reinstall from".**~~ **Answered 2026-10-27 (`FJS-D1561`): A — The archive is the file: downloaded from `/hub/backups/`, imported at `/setup` across a restart, a manifest refusing the wrong one. One key, one origin.**
   - **A** — The archive is the file: download it, import it at `/setup`, a
     manifest to refuse the wrong one. One key, one origin, no second format.
   - **B** — A config-only JSON export — the declarative tables, ids kept,

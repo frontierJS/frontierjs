@@ -34,6 +34,7 @@
     "test-port-literal:api/test/reachability.test.ts": "baseUrl on a HubConfig row; the sweep under test reads heartbeats and never connects to it.",
     "test-port-literal:api/test/edge.test.ts": "8443 is a Domain.port patched on a row; nothing binds it.",
     "test-port-literal:api/test/rollback.test.ts": "8080 is the App.port snapshotted into a Release and compared back; nothing binds it.",
+    "test-port-literal:web/test/verify-hub-restore.mjs": "8333 is the port INSIDE the SeaweedFS container, mapped from the drive's own S3_PORT; nothing on the host binds it.",
     "test-port-literal:api/test/posture.test.ts": "8180 and 8090 are a fleet machine's listening sockets and a container's published port in a posture report the pure grader reads; nothing binds or reaches either."
   }
 }

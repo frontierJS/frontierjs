@@ -19,7 +19,7 @@ import deploymentRun from '../../jobs/deployment-run.job.ts'
 import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow } from '../../domain/release/release-record.ts'
 import { isInline, isGit, imageOf, inlineFilesFor } from '../../domain/release/app-source.ts'
 import { snapshotVariables } from '../../domain/release/variables.ts'
-import { runtimeOf, type Runtime } from '../../domain/release/runtime.ts'
+import { runtimeOf, type Runtime, CONTAINER_TYPES } from '../../domain/release/runtime.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 
 // `environment` is the DEPLOYMENT's own, which is not the app's: an app has a
@@ -216,7 +216,7 @@ export default createService({
     // one; the button has no payload, so the row would otherwise say nothing.
     if (isGit(target.source) && data.branch == null && (target.source as { branch?: string }).branch)
       data.branch = (target.source as { branch?: string }).branch
-    if ((target.type === 'container' || target.type === 'function' || target.type === 'database')
+    if (CONTAINER_TYPES.has(target.type as string)
         && !isInline(target.source) && !builds && !imageOf(target.source) && !data.toImage)
       throw new BadRequest(
         `App '${target.name}' names no image — ` +

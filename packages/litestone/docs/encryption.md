@@ -320,6 +320,8 @@ await db.$rotateKey(newKey, { orphan: ['User.pw', 'User.legacy'] })   // proceed
 
 The client that rotated keeps working — the key lives in one cell every derived client reads through, so `asSystem()`, `$setAuth()` and `$scopedBy()` all see the new key immediately.
 
+From a shell, with the app stopped, `litestone rekey` is the same call: the old key from `ENCRYPTION_KEY`, the new from `NEW_ENCRYPTION_KEY` or `NEW_ENCRYPTION_KEY_FILE`, and `--orphan=User.pw,User.legacy` for `{ orphan }`. It holds the new key on its ring as well, so a run that died between two databases' commits is finished by running it again (`docs/cli.md` § Infrastructure).
+
 ## Multi-tenant key-per-tenant
 
 The tenant registry accepts a function for per-tenant keys:

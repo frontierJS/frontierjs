@@ -211,3 +211,66 @@ export const rowBindsChain = (row, chain) =>
   row.root !== chain.root ? 'the row names another chain root than the chain read beside it'
     : !chain.hashes.includes(row.head) ? 'the row names a head the chain does not hold'
     : null
+
+// ─── files ─────────────────────────────────────────────────────────────────
+// A file left at the post (cli's IDEAS/frontier-files.md) is sealed on the
+// sender's machine under a key that travels only in the link's fragment
+// (FJS-D1564), so the post holds neither the content nor the name. Sealed is
+// a 12-byte IV, then AES-256-GCM over a 2-byte header length, the header
+// `{ name, type }` as JSON, and the bytes. The Worker inlines `openFile`'s
+// source into its download page, so the page and the cli read with one function.
+
+const MiB = 1024 * 1024
+/** Room for the IV, the GCM tag, the header's length and the header. */
+const FILE_ENVELOPE = 1024
+const FILE_HEADER_MAX = FILE_ENVELOPE - 12 - 16 - 2
+/** The owner's 24 MiB (FJS-D1565), as the sender reads its file. */
+export const FILE_PLAIN_MAX = 24 * MiB
+/** The most the post takes as put: a full file once sealed. */
+export const FILE_MAX = FILE_PLAIN_MAX + FILE_ENVELOPE
+
+/** `{ sealed, key }` — the bytes to put and the base64url key for the link's fragment. Throws on a file or a name past its room. */
+export async function sealFile({ name, type = '', bytes }) {
+  const header = new TextEncoder().encode(JSON.stringify({ name: String(name), type: String(type) }))
+  if (header.length > FILE_HEADER_MAX) throw new Error(`A file's name and type are sealed in ${FILE_HEADER_MAX} bytes, and ${name} takes ${header.length}. Rename it shorter.`)
+  if (bytes.length > FILE_PLAIN_MAX) throw new Error(`A file is at most ${FILE_PLAIN_MAX} bytes, and this one is ${bytes.length}.`)
+  const plain = new Uint8Array(2 + header.length + bytes.length)
+  new DataView(plain.buffer).setUint16(0, header.length)
+  plain.set(header, 2)
+  plain.set(bytes, 2 + header.length)
+  const raw = crypto.getRandomValues(new Uint8Array(32))
+  const iv  = crypto.getRandomValues(new Uint8Array(12))
+  const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt'])
+  const sealed = new Uint8Array(12 + plain.length + 16)
+  sealed.set(iv)
+  sealed.set(new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plain)), 12)
+  return { sealed, key: btoa(String.fromCharCode(...raw)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') }
+}
+
+/**
+ * `{ name, type, bytes }`, or null for anything the key does not open — a
+ * failed GCM tag most of all. Uses nothing outside its own body: the Worker
+ * inlines its source into a page, where a free identifier throws at the first
+ * download and nothing short of a browser sees it.
+ */
+export async function openFile(sealed, key) {
+  try {
+    const raw = Uint8Array.from(atob(String(key).replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0))
+    const k = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt'])
+    const plain = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: sealed.subarray(0, 12) }, k, sealed.subarray(12)))
+    const length = (plain[0] << 8) | plain[1]
+    const header = JSON.parse(new TextDecoder().decode(plain.subarray(2, 2 + length)))
+    return { name: String(header.name ?? ''), type: String(header.type ?? ''), bytes: plain.subarray(2 + length) }
+  } catch {
+    return null
+  }
+}
+
+/** `1 download, expires in 24 h` — the line beside every link, since one that dies after a use surprises whoever forwards it. */
+export const fileLimits = ({ downloads, expires }, now) => {
+  const left = Math.max(0, expires - now)
+  const when = left < 3600 ? `${Math.max(1, Math.round(left / 60))} min`
+    : left < 2 * 86400 ? `${Math.round(left / 3600)} h`
+    : `${Math.round(left / 86400)} days`
+  return `${downloads} download${downloads === 1 ? '' : 's'}, expires in ${when}`
+}

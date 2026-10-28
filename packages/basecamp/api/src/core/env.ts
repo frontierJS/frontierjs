@@ -6,7 +6,8 @@
 // Generate .env.example:
 //   bun run -e "import { printEnvExample } from '@frontierjs/junction'; import { spec } from './src/env.ts'; printEnvExample(spec)"
 
-import { defineEnv } from '@frontierjs/junction'
+import { dirname, join } from 'node:path'
+import { defineEnv }     from '@frontierjs/junction'
 
 /** Publicly-known placeholder. Rejected in production — see core/db.ts. */
 export const DEV_ENCRYPTION_KEY = '0'.repeat(64)
@@ -168,6 +169,7 @@ export const env = defineEnv({
   DIGITALOCEAN_URL: {},
   HETZNER_URL:      {},
   CLOUDFLARE_URL:   {},
+  GITHUB_URL:       {},
 
   // Saying, once, that this process may create and destroy machines somebody
   // pays for. Unset is REFUSE, and `NODE_ENV=production` is the other way
@@ -204,6 +206,16 @@ export const env = defineEnv({
   WORKBENCH_DIR: {},
   CLAUDE_BIN:    { default: 'claude' },
 })
+
+// The audit trail sits beside the main database unless AUDIT_PATH says
+// otherwise, as the queue does (`jobsDatabasePath`). Set here, in the process
+// environment, because the schema's `env("AUDIT_PATH")` is read there, and so
+// is every litestone CLI a boot spawns before a client exists. Without it a
+// deployment that moves DATABASE_URL onto its volume opens the trail in the
+// image's own layer, empty after every swap (`FJS-3566`).
+const DB_URL = process.env.DATABASE_URL
+if (DB_URL && DB_URL !== ':memory:' && !process.env.AUDIT_PATH)
+  process.env.AUDIT_PATH = join(dirname(DB_URL), 'audit.db')
 
 /** Why reading the operator's own machine is not offered, or null when it is. */
 export function localMachineRefusal(e: { NODE_ENV?: string, LOCAL_MACHINE?: string } = env): string | null {

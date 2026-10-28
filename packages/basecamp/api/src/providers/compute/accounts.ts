@@ -23,6 +23,7 @@ import { secretRef }                 from '../../core/credentials.ts'
 import { env }                       from '../../core/env.ts'
 import { connectorFor, targetFor }   from './index.ts'
 import { edgeConnectorFor }          from '../edge/index.ts'
+import { sourceConnectorFor }        from '../source/index.ts'
 import type { AccountSend, ComputeConnector } from './index.ts'
 import type { App }                  from '@frontierjs/junction'
 import type { ProviderKind }         from '../../../../db/schema.d.ts'
@@ -46,20 +47,20 @@ type SecretRow = { id: string; providerKind?: ProviderKind | null; kind?: string
 
 /** What every account's connector has, whichever realm of the vendor it opens:
  *  a name, a descriptor to register and a cheapest read to verify with. A
- *  compute connector and an edge connector are both one. */
+ *  compute, an edge and a source connector are each one. */
 export type AccountConnector = Pick<ComputeConnector, 'kind' | 'label' | 'descriptor' | 'verify'>
 
 /**
  * The connector an ACCOUNT registers through, or null where this app speaks to
  * nothing at that vendor. The one lookup `secrets` and this file ask, so a
- * vendor with a connector in either realm is a key a workspace may hold.
+ * vendor with a connector in any realm is a key a workspace may hold.
  *
- * A vendor with connectors in both realms would register once, as compute.
+ * A vendor with connectors in two realms would register once, as the first.
  * None has both yet; the day one does, its account needs one descriptor that
  * serves both, which is a question for that day.
  */
 export function accountConnectorFor(kind: ProviderKind | null | undefined): AccountConnector | null {
-  return connectorFor(kind) ?? edgeConnectorFor(kind)
+  return connectorFor(kind) ?? edgeConnectorFor(kind) ?? sourceConnectorFor(kind)
 }
 
 /**

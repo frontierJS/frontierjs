@@ -167,7 +167,7 @@ describe('a push releases the App', () => {
   test('a project made from a repository with a server answers a secret the forge can use', async () => {
     const made: any = await env.as(admin).service('projects').call('fromRepo', null, {
       name: `Made ${uniq()}`, repo: 'https://git.example.test/acme/made.git', branch: 'main', dockerfile: 'FROM oven/bun:1',
-      serverId: box.id, port: 4100 + Math.floor(Math.random() * 400),
+      serverId: box.id,
     })
     expect(made.app.deployOnPush).toBe(true)
     const sha = uniq().padEnd(40, '3')
@@ -181,7 +181,7 @@ describe('a push releases the App', () => {
 
   test('a project made from a repository with no server is never deployOnPush', async () => {
     const made: any = await env.as(admin).service('projects').call('fromRepo', null, {
-      name: `Alone ${uniq()}`, repo: 'https://git.example.test/acme/alone.git', dockerfile: 'FROM oven/bun:1', port: 4500,
+      name: `Alone ${uniq()}`, repo: 'https://git.example.test/acme/alone.git', dockerfile: 'FROM oven/bun:1',
     })
     expect(made.app.deployOnPush).toBe(false)
     expect(made.push).toBeNull()
@@ -211,6 +211,27 @@ describe('the button and the laptop say which door they are', () => {
     const step = await (env.system as any).deploymentStep.findFirst({ where: { deploymentId: made.id, name: 'Build image' } })
     await recordStep(env.app, made, { stepId: step.id, status: 'success', commit: sha })
     expect((await (env.system as any).deployment.findUnique({ where: { id: made.id } })).commitSha).toBe(sha)
+  })
+
+  test('the build step hands an App that stores no container port the one its Dockerfile exposes', async () => {
+    const app: any  = await aGitApp()
+    expect(app.containerPort).toBeNull()
+    const made: any = await deployments().create({ appId: app.id })
+    const step = await (env.system as any).deploymentStep.findFirst({ where: { deploymentId: made.id, name: 'Build image' } })
+    await recordStep(env.app, made, { stepId: step.id, status: 'success', containerPort: 4100 })
+    expect((await (env.system as any).app.findUnique({ where: { id: app.id } })).containerPort).toBe(4100)
+    // The snapshot is @immutable and keeps none; the runner reads the App's for it.
+    const row = await (env.system as any).deployment.findUnique({ where: { id: made.id } })
+    expect(row.configSnapshot.runtime.containerPort).toBeUndefined()
+  })
+
+  test('a container port the App states is never moved by a build', async () => {
+    const app: any  = await aGitApp()
+    await apps().patch(app.id, { containerPort: 3000 })
+    const made: any = await deployments().create({ appId: app.id })
+    const step = await (env.system as any).deploymentStep.findFirst({ where: { deploymentId: made.id, name: 'Build image' } })
+    await recordStep(env.app, made, { stepId: step.id, status: 'success', containerPort: 4100 })
+    expect((await (env.system as any).app.findUnique({ where: { id: app.id } })).containerPort).toBe(3000)
   })
 
   test('the laptop row keeps `laptop` and a `-dirty` commit, and builds nothing', async () => {

@@ -709,7 +709,7 @@ title: App
        the Source tab, which knows the three kinds and the paste box's limits. -->
   <Drawer open={editing} title={`Edit ${app.name}`} onclose={() => editing = false}>
     {#if editing}
-      <App record={app} except={['source']} oncancel={() => editing = false}
+      <App record={app} except={['source', ...(app.domains?.length ? ['port'] : [])]} oncancel={() => editing = false}
            ondone={saved} submitId="app-edit-save" />
     {/if}
   </Drawer>
@@ -1152,9 +1152,10 @@ title: App
 
     <Card>
       <h2 class="h4">Runtime</h2>
-      <p class="text-sm text-muted">How the machine starts the container. A release keeps the settings it shipped with.</p>
+      <p class="text-sm text-muted">How the machine starts the container. A release keeps the settings it shipped with.
+        {#if app.domains?.length}The port is the machine's pick; a hostname is the address.{:else}The port is picked when the app is placed, and with no hostname it is the address.{/if}</p>
       <dl class="facts" id="app-runtime">
-        <dt>Port</dt><dd><code>{app.port ?? 'none published'}</code>{#if app.port && app.containerPort && app.containerPort !== app.port} → <code>{app.containerPort}</code> in the container{/if}</dd>
+        <dt>Port</dt><dd><code>{app.port ?? 'none published'}</code>{#if app.port && app.containerPort && app.containerPort !== app.port} → <code>{app.containerPort}</code> in the container{:else if app.port && !app.containerPort && app.source?.kind === 'git'} → the port the first build reads off the Dockerfile{/if}</dd>
         <dt>Volume</dt><dd><code>{app.volumePath ?? 'none — stateless'}</code></dd>
         <dt>Health check</dt><dd><code>{app.healthCheck ?? 'running is healthy'}</code></dd>
         <dt>CPU</dt><dd>{app.cpuLimit ?? 'no limit'}</dd>

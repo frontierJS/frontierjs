@@ -315,14 +315,15 @@ one, the four identity models and `Secret` would leak.
 `auditTrail.findMany()` in the same tick returns 0 rows. **Nothing is lost** —
 this is visibility lag, not data loss.
 
-**3. A database here is TWO paths, and stating one of them looks complete.**
-`database main` and `database audit` are separate declarations with separate env
-vars, so a run that redirects `DATABASE_URL` and says nothing about
-`AUDIT_PATH` gets an isolated database and the developer's own audit trail —
-which is what `web/test/verify-screens.mjs` did for its whole life, with nothing
-failing on either side (`FJS-633`). Both are anchored to the schema now, so the
-CWD no longer isolates anything by accident, and `db/test/db-paths.test.ts`
-asserts that every caller redirecting one names the other.
+**3. A database here is TWO paths, and the trail follows the main one only
+inside the app.** `database main` and `database audit` are separate
+declarations with separate env vars. A process that loads `api/src/core/env.ts`
+and states `DATABASE_URL` alone gets `audit.db` beside it, because env.ts
+derives `AUDIT_PATH` (`FJS-3566`). A bare `litestone` command loads no env.ts,
+so it opens the schema's `./db/audit.db` — the developer's own trail, which is
+where `web/test/verify-screens.mjs` wrote for its whole life with nothing
+failing (`FJS-633`). So a command run by hand names both, and
+`db/test/db-paths.test.ts` asserts that every drive does.
 
 The `AuditEvent` model is a different thing and both are wanted: `@@trail(audit)`
 is automatic row-level change capture, `AuditEvent` is the application-level

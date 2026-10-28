@@ -65,9 +65,21 @@
 // embeds it, so its reader is a browser with no key. It answers what
 // `GET /members` already tells any member, the number and nick (FJS-D1449),
 // drawn beside the crest of the member's chain root (core/crest.js).
+//
+// A file (IDEAS/frontier-files.md) is an R2 object keyed by its id, and its
+// size, expiry, downloads left and put-token hash are one `files` row here, so
+// nothing about it is held twice (FJS-D1563, FJS-D1565). A member asks
+// (`POST /file`, signed) and is answered an id and a put token; the bytes are
+// ciphertext sealed on the sender's machine with the key in the link's
+// fragment (FJS-D1564), so the post never holds the content or the name. The
+// object's `fetch` reads every body as text, so the Worker streams the bytes
+// itself and asks the object one step at a time on `/file/<id>/<step>`, a
+// path the Worker never forwards. The alarm sweeps a row at its `sweepAt`:
+// an ask never put, an expiry, or a last download whose stream never said it
+// finished.
 
 import { generateSigningKeys, verifyMessage, verifyRequest } from '@frontierjs/toolbelt/signature'
-import { FLI_VERSION, NICK, askCode, extendsSeen, linkMessage, memberNumber, readChain, signRow, verifyBox } from '@frontierjs/toolbelt/frontier'
+import { FILE_MAX, FLI_VERSION, NICK, askCode, extendsSeen, fileLimits, linkMessage, memberNumber, openFile, readChain, signRow, verifyBox } from '@frontierjs/toolbelt/frontier'
 import { crestSvg } from './crest.js'
 
 // ─── limits ────────────────────────────────────────────────────────────────
@@ -112,6 +124,26 @@ const ASK_SECONDS  = 600
 /** Asks open at once: anyone may ask, so the table is bounded rather than the askers. */
 const ASKS_MAX     = 64
 
+const MiB = 1024 * 1024
+/** Live bytes the post holds for everyone, asks counted: under R2's 10 GB free tier, so the bill cannot move (FJS-D1563). */
+const FILE_BUDGET = 5 * 1024 * MiB
+/** A link lasts a day unless asked otherwise, a week at most, and a minute at least. */
+const FILE_SECONDS     = 86400
+const FILE_SECONDS_MAX = 7 * 86400
+const FILE_SECONDS_MIN = 60
+const FILE_DOWNLOADS_MAX = 10
+/** A member's allowance; the owner has none (FJS-D1565). Ten full files, so the tenth is not refused by its envelope. */
+const FILES_A_DAY = 10
+const FILES_HELD  = 10 * FILE_MAX
+/** An ask not put by then is swept, so a member cannot hold the budget with asks. */
+const PUT_SECONDS = 600
+/** The sweep after a last download whose stream never said it finished — long enough for 24 MiB on a slow line. */
+const DRAIN_SECONDS = 600
+/** 16 random bytes of base64url: the link is the capability, so an id is never guessed. */
+const FILE_ID = '[A-Za-z0-9_-]{22}'
+const FILE_STEP = new RegExp(`^/file/(${FILE_ID})(?:/(put|held|take|drained|peek))?$`)
+const FILE_TOKEN = 'x-file-token'
+
 const KEY_HEADER = 'x-tell-key'
 
 /** A number, a row key and never a pattern; nine digits is past any network this post holds. */
@@ -129,10 +161,10 @@ const now = () => Math.floor(Date.now() / 1000)
 const answer = (body, status = 200) => Response.json(body, { status })
 const refuse = (status, message) => answer({ message }, status)
 
-function inviteCode() {
-  const bytes = crypto.getRandomValues(new Uint8Array(16))
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
+const base64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+const randomCode = n => base64url(crypto.getRandomValues(new Uint8Array(n)))
+const inviteCode = () => randomCode(16)
+const sha256 = async text => base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))))
 
 // ─── the object ────────────────────────────────────────────────────────────
 
@@ -161,6 +193,9 @@ export class TellPost {
       CREATE TABLE IF NOT EXISTS boxes (machine TEXT PRIMARY KEY, box TEXT NOT NULL, sig TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS rekeys (machine TEXT PRIMARY KEY, sealKey TEXT NOT NULL, sealed TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS post (id INTEGER PRIMARY KEY CHECK (id = 1), publicKey TEXT NOT NULL, privateKey TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, nick TEXT NOT NULL, size INTEGER NOT NULL, created INTEGER NOT NULL, expires INTEGER NOT NULL, downloadsLeft INTEGER NOT NULL, tokenHash TEXT NOT NULL, state TEXT NOT NULL, sweepAt INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS files_sweep ON files (sweepAt);
+      CREATE TABLE IF NOT EXISTS uploads (nick TEXT NOT NULL, at INTEGER NOT NULL);
     `)
     // A post deployed before the seal or the chain keeps its members, so its
     // tables gain the columns; a column already there throws and is left.
@@ -203,6 +238,12 @@ export class TellPost {
     if (route === 'GET /follow') return this.follow(req, await this.member(req, url, body))
     const badge = req.method === 'GET' && url.pathname.match(BADGE)
     if (badge) return this.badge(Number(badge[1]))
+    const file = url.pathname.match(FILE_STEP)
+    if (file?.[2] && req.method === 'POST') return this.fileStep(file[2], file[1], body)
+    if (file && !file[2] && req.method === 'DELETE') {
+      const who = await this.member(req, url, body)
+      return who.refused ? refuse(who.status, who.refused) : this.removeFile(who.nick, file[1])
+    }
 
     const handler = {
       'POST /send':   this.send,
@@ -218,6 +259,7 @@ export class TellPost {
       'POST /box':    this.putBox,
       'GET /boxes':   this.boxes,
       'GET /rekey':   this.rekey,
+      'POST /file':   this.askFile,
     }[route]
     if (!handler) return refuse(404, `No route ${route}.`)
 
@@ -619,6 +661,127 @@ export class TellPost {
     this.storeChain(nick, links, graded.chain, 0)
     return answer({ number, nick, invitedBy: spent.byNick, root: graded.chain.root, ...await this.signedRow(nick) }, 201)
   }
+
+  // ─── files ───────────────────────────────────────────────────────────────
+
+  // An ask holds its size against the allowance and the budget from the
+  // moment it is answered, so a hundred asks racing cannot each see room.
+  async askFile(nick, body) {
+    const { size, seconds = FILE_SECONDS, downloads = 1 } = parse(body)
+    if (!Number.isSafeInteger(size) || size < 1) return refuse(400, 'A file is { size, seconds, downloads }, its size the bytes it will be put as.')
+    if (size > FILE_MAX) return refuse(413, `A file is at most ${FILE_MAX} bytes as put; this one is ${size}.`)
+    if (!Number.isSafeInteger(seconds) || seconds < FILE_SECONDS_MIN || seconds > FILE_SECONDS_MAX) return refuse(400, `A link lasts ${FILE_SECONDS_MIN} to ${FILE_SECONDS_MAX} seconds.`)
+    if (!Number.isSafeInteger(downloads) || downloads < 1 || downloads > FILE_DOWNLOADS_MAX) return refuse(400, `A link allows 1 to ${FILE_DOWNLOADS_MAX} downloads.`)
+    const id = randomCode(16)
+    const token = randomCode(32)
+    const tokenHash = await sha256(token)
+
+    // From here to the insert is one synchronous run, as the join's is.
+    const t = now()
+    this.sql.exec('DELETE FROM uploads WHERE at <= ?', t - 86400)
+    if (nick !== this.owner) {
+      if (this.sql.exec('SELECT COUNT(*) AS n FROM uploads WHERE nick = ?', nick).one().n >= FILES_A_DAY) return refuse(429, `A member uploads ${FILES_A_DAY} files a day.`)
+      const held = this.sql.exec('SELECT COALESCE(SUM(size), 0) AS n FROM files WHERE nick = ?', nick).one().n
+      if (held + size > FILES_HELD) return refuse(429, `A member holds ${FILES_HELD} bytes at a time, and you hold ${held}. A file gives its bytes back after its last download or when it expires.`)
+    }
+    const total = this.sql.exec('SELECT COALESCE(SUM(size), 0) AS n FROM files').one().n
+    if (total + size > FILE_BUDGET) return refuse(507, `The post holds all the bytes it may (${FILE_BUDGET}). Try again when a file expires.`)
+    const expires = t + seconds
+    this.sql.exec('INSERT INTO files (id, nick, size, created, expires, downloadsLeft, tokenHash, state, sweepAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      id, nick, size, t, expires, downloads, tokenHash, 'asked', Math.min(t + PUT_SECONDS, expires))
+    this.sql.exec('INSERT INTO uploads (nick, at) VALUES (?, ?)', nick, t)
+    await this.schedule()
+    return answer({ id, putToken: token, size, expires, downloads }, 201)
+  }
+
+  /** The Worker's steps, unsigned: only the Worker reaches a `/file/<id>/<step>` path. */
+  fileStep(step, id, body) {
+    return { put: this.putFile, held: this.holdFile, take: this.takeFile, drained: this.drainFile, peek: this.peekFile }[step].call(this, id, body)
+  }
+
+  // The token is spent once, by the upload whose length is the size asked
+  // for; a wrong length leaves it unspent to try again.
+  async putFile(id, body) {
+    const { token, length } = parse(body)
+    const tokenHash = await sha256(String(token ?? ''))
+    const row = this.sql.exec('SELECT size, state, tokenHash, sweepAt FROM files WHERE id = ?', id).toArray()[0]
+    if (!row || row.tokenHash !== tokenHash) return refuse(403, 'No upload waits under that id and token.')
+    if (row.state !== 'asked') return refuse(409, 'That file was already put. Ask for a new one.')
+    if (row.sweepAt <= now()) return refuse(410, `An ask is put within ${PUT_SECONDS} seconds. Ask for a new one.`)
+    if (length !== row.size) return refuse(400, `That file was asked for as ${row.size} bytes, and this upload is ${length}.`)
+    this.sql.exec('UPDATE files SET state = ? WHERE id = ?', 'putting', id)
+    return answer({ size: row.size })
+  }
+
+  // Refused once the ask's time is past, because the sweep may already have
+  // deleted the object, and a row held over no object would serve a 404.
+  async holdFile(id) {
+    const row = this.sql.exec('UPDATE files SET state = ?, sweepAt = expires WHERE id = ? AND state = ? AND sweepAt > ? RETURNING expires, downloadsLeft', 'held', id, 'putting', now()).toArray()[0]
+    if (!row) return refuse(410, `An ask is put within ${PUT_SECONDS} seconds, and this one was swept. Ask for a new one.`)
+    await this.schedule()
+    return answer({ id, expires: row.expires, downloads: row.downloadsLeft }, 201)
+  }
+
+  async takeFile(id) {
+    const t = now()
+    const row = this.sql.exec(`UPDATE files SET downloadsLeft = downloadsLeft - 1, sweepAt = CASE WHEN downloadsLeft = 1 THEN MIN(expires, ?) ELSE sweepAt END
+      WHERE id = ? AND state = ? AND downloadsLeft > 0 AND expires > ? RETURNING downloadsLeft`, t + DRAIN_SECONDS, id, 'held', t).toArray()[0]
+    if (row) {
+      if (row.downloadsLeft === 0) await this.schedule()
+      return answer({ left: row.downloadsLeft })
+    }
+    const held = this.sql.exec('SELECT state, downloadsLeft FROM files WHERE id = ?', id).toArray()[0]
+    if (!held) return refuse(404, 'No file is held under that link: it was downloaded as often as it allowed, it expired, or it never was.')
+    if (held.state !== 'held') return refuse(409, 'That file is still being uploaded.')
+    if (held.downloadsLeft === 0) return refuse(410, 'That link was downloaded as often as it allows.')
+    return refuse(410, 'That link has expired.')
+  }
+
+  /** What the download page says before a click spends a download. */
+  peekFile(id) {
+    const row = this.sql.exec('SELECT state, expires, downloadsLeft FROM files WHERE id = ?', id).toArray()[0]
+    if (!row || row.downloadsLeft === 0 || row.expires <= now()) return refuse(404, 'No file is held under that link: it was downloaded as often as it allowed, it expired, or it never was.')
+    if (row.state !== 'held') return refuse(409, 'That file is still being uploaded.')
+    return answer({ expires: row.expires, downloads: row.downloadsLeft })
+  }
+
+  async drainFile(id) {
+    if (!this.sql.exec('SELECT 1 FROM files WHERE id = ? AND downloadsLeft = 0', id).toArray().length) return answer({ id })
+    return this.dropFile(id)
+  }
+
+  // The kill switch (6.6): the uploader's own file, or any file for the owner.
+  async removeFile(nick, id) {
+    const row = this.sql.exec('SELECT nick FROM files WHERE id = ?', id).toArray()[0]
+    if (!row) return refuse(404, 'No file is held under that id.')
+    if (row.nick !== nick && nick !== this.owner) return refuse(403, 'A file is deleted by the member who uploaded it, or by the owner.')
+    return this.dropFile(id)
+  }
+
+  // The object goes first: a row deleted over an object left behind would
+  // free its budget while R2 still bills for it.
+  async dropFile(id) {
+    await this.env.FILES.delete(id)
+    this.sql.exec('DELETE FROM files WHERE id = ?', id)
+    await this.schedule()
+    return answer({ id })
+  }
+
+  async schedule() {
+    const { at } = this.sql.exec('SELECT MIN(sweepAt) AS at FROM files').one()
+    if (at === null) await this.state.storage.deleteAlarm()
+    else await this.state.storage.setAlarm(at * 1000)
+  }
+
+  // Only a row still due after the delete returns goes: a step that landed
+  // during the await moved its sweepAt, or refused because it was due.
+  async alarm() {
+    const t = now()
+    const ids = this.sql.exec('SELECT id FROM files WHERE sweepAt <= ?', t).toArray().map(row => row.id)
+    if (ids.length) await this.env.FILES.delete(ids)
+    for (const id of ids) this.sql.exec('DELETE FROM files WHERE id = ? AND sweepAt <= ?', id, t)
+    await this.schedule()
+  }
 }
 
 function parse(body) {
@@ -632,8 +795,136 @@ function parse(body) {
 
 // ─── the Worker ────────────────────────────────────────────────────────────
 
+const thePost = env => env.POST.get(env.POST.idFromName('post'))
+
+/** One file step asked of the object; its Response, refusal or not. */
+const step = (env, id, name, body = {}) =>
+  thePost(env).fetch(new Request(`https://post/file/${id}/${name}`, { method: 'POST', body: JSON.stringify(body) }))
+
+const FILE_ONE   = new RegExp(`^/file/(${FILE_ID})$`)
+const FILE_BYTES = new RegExp(`^/file/(${FILE_ID})/bytes$`)
+
+async function putBytes(req, env, id) {
+  const token  = req.headers.get(FILE_TOKEN)
+  const length = Number(req.headers.get('content-length'))
+  if (!token) return refuse(401, `A file is put with the token its ask answered, in ${FILE_TOKEN}.`)
+  if (!req.body || !Number.isSafeInteger(length)) return refuse(411, 'A file is put with its Content-Length.')
+  const spent = await step(env, id, 'put', { token, length })
+  if (!spent.ok) return spent
+  let stored
+  try { stored = await env.FILES.put(id, req.body) } catch {}
+  if (stored?.size !== length) {
+    await env.FILES.delete(id)
+    return refuse(400, 'The upload stopped short of its length. Ask for a new one.')
+  }
+  const held = await step(env, id, 'held')
+  if (!held.ok) await env.FILES.delete(id)
+  return held
+}
+
+// The last download tells the object when its stream ends, so the sweep
+// need not wait out DRAIN_SECONDS; a client that hangs up ends it too.
+async function getBytes(env, ctx, id) {
+  const taken = await step(env, id, 'take')
+  if (!taken.ok) return taken
+  const { left } = await taken.json()
+  const object = await env.FILES.get(id)
+  if (!object) return refuse(404, 'No file is held under that link.')
+  const { readable, writable } = new FixedLengthStream(object.size)
+  const piped = object.body.pipeTo(writable).catch(() => {})
+  ctx.waitUntil(left === 0 ? piped.then(() => step(env, id, 'drained')) : piped)
+  return new Response(readable, { headers: {
+    'content-type': 'application/octet-stream',
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+    'x-downloads-left': String(left),
+  } })
+}
+
+// A link's page fetches nothing until the click, so a chat app's preview of
+// the link spends no download. It loads no script but its own, and CSP pins
+// that script by hash.
+const PAGE_STYLE = 'body{font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 16px;color:#1b1b1f;background:#fff}'
+  + 'button{font:inherit;padding:.5rem 1.25rem;cursor:pointer}'
+  + '@media (prefers-color-scheme:dark){body{color:#e8e8ec;background:#151518}}'
+
+const PAGE_SCRIPT = `${openFile}
+const said = document.getElementById('said')
+const button = document.getElementById('get')
+// A key pasted onto the open page is a fragment change, which reloads nothing.
+const keyed = () => {
+  button.disabled = !location.hash.slice(1)
+  said.textContent = button.disabled ? 'This link has no key after its #, so the file cannot be opened. Ask for the link again, whole.' : ''
+}
+keyed()
+addEventListener('hashchange', keyed)
+button.addEventListener('click', async () => {
+  const key = location.hash.slice(1)
+  removeEventListener('hashchange', keyed)
+  button.disabled = true
+  said.textContent = 'Downloading...'
+  const res = await fetch(location.pathname + '/bytes')
+  if (!res.ok) {
+    said.textContent = (await res.json().catch(() => null))?.message ?? 'The post refused (' + res.status + ').'
+    return
+  }
+  const left = res.headers.get('x-downloads-left')
+  const file = await openFile(new Uint8Array(await res.arrayBuffer()), key)
+  if (!file) {
+    said.textContent = 'The key in this link does not open the file: the link was cut short, or the file is not the one that was put. Nothing was saved.'
+    return
+  }
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(new Blob([file.bytes], { type: file.type || 'application/octet-stream' }))
+  a.download = file.name || 'download'
+  document.body.append(a)
+  a.click()
+  said.textContent = 'Saved ' + a.download + '. ' + (left === '0' ? 'The link is spent.' : left + ' download' + (left === '1' ? '' : 's') + ' left on the link.')
+})
+`
+
+const hashSource = async text =>
+  `'sha256-${btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))))}'`
+
+async function pageResponse(status, main, script = '') {
+  const csp = [
+    "default-src 'none'", `style-src ${await hashSource(PAGE_STYLE)}`,
+    ...script ? [`script-src ${await hashSource(script)}`, "connect-src 'self'"] : [],
+    "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'",
+  ].join('; ')
+  return new Response('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+    + `<title>A file at the Frontier post</title><style>${PAGE_STYLE}</style><main><h1>A file for you</h1>${main}</main>`
+    + (script ? `<script>${script}</script>` : ''), { status, headers: {
+    'content-type': 'text/html; charset=utf-8',
+    'content-security-policy': csp,
+    'cache-control': 'no-store',
+    'referrer-policy': 'no-referrer',
+    'x-content-type-options': 'nosniff',
+  } })
+}
+
+async function filePage(env, id) {
+  const peeked = await step(env, id, 'peek')
+  const { message, ...held } = await peeked.json()
+  if (!peeked.ok) return pageResponse(peeked.status, `<p>${message}</p>`)
+  return pageResponse(200, `<p>A sealed file: ${fileLimits(held, now())}.</p><button id="get" type="button">Download</button><p id="said" role="status"></p>`, PAGE_SCRIPT)
+}
+
+// The Worker handles the bytes of `/file/` and forwards only the routes a
+// member signs; every other `/file/` path stops here, so the object's steps
+// are the Worker's alone.
 export default {
-  fetch(req, env) {
-    return env.POST.get(env.POST.idFromName('post')).fetch(req)
+  fetch(req, env, ctx) {
+    const { pathname } = new URL(req.url)
+    if (pathname.startsWith('/file/')) {
+      const put   = req.method === 'PUT' && pathname.match(FILE_ONE)
+      const bytes = req.method === 'GET' && pathname.match(FILE_BYTES)
+      const page  = req.method === 'GET' && pathname.match(FILE_ONE)
+      if (put) return putBytes(req, env, put[1])
+      if (bytes) return getBytes(env, ctx, bytes[1])
+      if (page) return filePage(env, page[1])
+      if (!(req.method === 'DELETE' && FILE_ONE.test(pathname))) return refuse(404, `No route ${req.method} ${pathname}.`)
+    }
+    return thePost(env).fetch(req)
   },
 }

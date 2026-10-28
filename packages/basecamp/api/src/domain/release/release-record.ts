@@ -12,6 +12,7 @@
 
 import type { App } from '@frontierjs/junction'
 import { announce } from '../../core/channels.ts'
+import { adoptContainerPort } from './runtime.ts'
 
 /**
  * The step that replaces what is serving. A release that stopped at or before
@@ -48,9 +49,11 @@ export async function startRelease(app: App, deploy: Row) {
   return { runnable: true as const, deploy, steps, app: target, startedAt }
 }
 
-/** One step's status. `digest` and `commit` are what the machine reported running. */
-export async function recordStep(app: App, deploy: Row, { stepId, status, output, digest, commit }:
-  { stepId: string, status: string, output?: string, digest?: string, commit?: string }) {
+/** One step's status. `digest` and `commit` are what the machine reported
+ *  running; `containerPort` is what its Dockerfile said, for an App that
+ *  stores none. */
+export async function recordStep(app: App, deploy: Row, { stepId, status, output, digest, commit, containerPort }:
+  { stepId: string, status: string, output?: string, digest?: string, commit?: string, containerPort?: number }) {
   // Addressed by the deployment as well as the step, so a step id from
   // another release cannot be moved through here.
   await sys(app).deploymentStep.updateMany({
@@ -71,6 +74,9 @@ export async function recordStep(app: App, deploy: Row, { stepId, status, output
   if (digest && digest !== deploy.builtImage) ran.builtImage = digest
   if (commit && commit !== deploy.commitSha)  ran.commitSha  = commit
   if (Object.keys(ran).length) await sys(app).deployment.update({ where: { id: deploy.id }, data: ran })
+  // On the App, never the snapshot, which is @immutable: a rollback to this
+  // release reads the App's for a snapshot that holds none (`runtimeFor`).
+  if (containerPort != null) await adoptContainerPort(app.db, deploy.appId, containerPort)
 
   await pushRow(app, deploy.id)
   return { stepId, status }

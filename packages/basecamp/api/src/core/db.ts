@@ -47,8 +47,9 @@
 // back to the shared db/audit.db and the suite locking on it — and it cannot
 // happen to a caller that names AUDIT_PATH.
 //
-// A deployment is unaffected — it binds both absolutely (/db/basecamp.db,
-// /db/audit.db) and an absolute path has no anchor.
+// A caller that states DATABASE_URL alone gets the trail beside it: env.ts
+// derives AUDIT_PATH, which is how a deployment's /db/basecamp.db brings
+// /db/audit.db with it. An absolute path has no anchor.
 
 import { createHash } from 'node:crypto'
 import { createClient, GatePlugin } from '@frontierjs/litestone'

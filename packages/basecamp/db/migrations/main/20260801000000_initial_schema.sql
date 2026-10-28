@@ -438,7 +438,7 @@ CREATE TABLE IF NOT EXISTS "secret" (
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
   CHECK ("kind" IN ('ssh_key', 'provider_key', 'registry_auth', 'tls_cert', 'notification', 'backup', 'generic')),
-  CHECK ("providerKind" IN ('custom', 'hetzner', 'digitalocean', 'cloudflare')),
+  CHECK ("providerKind" IN ('custom', 'hetzner', 'digitalocean', 'cloudflare', 'github')),
   UNIQUE ("workspaceId", "name"),
   CHECK (kind != 'provider_key' OR providerKind IS NOT NULL),
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
@@ -504,9 +504,10 @@ CREATE TABLE IF NOT EXISTS "server" (
   "deletedAt" TEXT,
   CHECK ("status" IN ('pending', 'provisioning', 'installing', 'online', 'unreachable', 'draining', 'stopped', 'destroying', 'destroyed')),
   CHECK ("role" IN ('general', 'build', 'database', 'gateway', 'worker')),
-  CHECK ("providerKind" IN ('custom', 'hetzner', 'digitalocean', 'cloudflare')),
+  CHECK ("providerKind" IN ('custom', 'hetzner', 'digitalocean', 'cloudflare', 'github')),
   UNIQUE ("workspaceId", "slug"),
   CHECK (providerKind != 'cloudflare'),
+  CHECK (providerKind != 'github'),
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_server_workspaceId" ON "server" ("workspaceId") WHERE "deletedAt" IS NULL;
@@ -1294,7 +1295,7 @@ CREATE INDEX IF NOT EXISTS "idx_domain_route_appId" ON "domain_route" ("appId");
 CREATE TABLE IF NOT EXISTS "app_backup" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "appId" TEXT NOT NULL,
-  "serverId" TEXT NOT NULL,
+  "serverId" TEXT,
   "destinationId" TEXT,
   "kind" TEXT NOT NULL DEFAULT 'manual',
   "deploymentId" TEXT,

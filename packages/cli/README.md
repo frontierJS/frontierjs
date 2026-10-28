@@ -636,6 +636,32 @@ and one chain of machines, staked with an invite at the project's post,
   post's owner may take back a squatted nick (`FJS-D1450`, `FJS-D1475`).
   No verb does that yet; it is built when the first case comes.
 
+### Files
+
+A member leaves a file at the post and gets a link; anyone holding the link
+downloads it, member or not (`FJS-D1566`).
+
+```bash
+fli tell:upload report.pdf                      # prints the link and its limits
+fli tell:upload build.zip --downloads 3 --hours 72 --to sam
+fli tell:download 'https://network.frontierjs.com/file/<id>#<key>'
+```
+
+- **Sealed before it leaves.** The file, its name and its type are encrypted
+  on the sender's machine. The key is the part of the link after `#`, which a
+  browser never sends, so the post holds neither the content nor the name
+  (`FJS-D1564`). Quote the link in a shell, which reads `#` as a comment.
+- **The link is the file.** Whoever holds it can download it, so `--to`
+  sends it only sealed, to a member with a sealing key. The same link opens in
+  a browser, where a page decrypts it; opening the page spends nothing until
+  its Download button is pressed.
+- **Limits** (`FJS-D1565`): 24 MiB a file. A link allows 1 download unless
+  `--downloads` asks for up to 10, and lasts 24 hours unless `--hours` asks
+  for up to a week. The post deletes the file after its last download or when
+  it expires. A member uploads 10 files a day and holds 10 full files at
+  once; the owner has no allowance. The uploader or the owner can delete a
+  file early with a signed `DELETE /file/<id>`.
+
 ---
 
 ## Traps

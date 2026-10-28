@@ -2744,7 +2744,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
   </tr></tbody></table></div>
 </section>
 <section id="proofs">
-  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">174 rows · 288 targets · 0 not found</span></div>
+  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">175 rows · 289 targets · 0 not found</span></div>
   <p class="note">Parsed from <code>DRIVES.md</code>, never restated. The third column is each target resolved against the tree — <code>not found</code> is a row naming a drive that has been renamed, which in the markdown reads exactly like a row that is right. Half these rows are not import edges: <em>a gate on a model a screen reads</em> is a statement about what a drive can SEE, so this is a parse and not a build graph.</p><div class="panel scroll"><table><thead><tr><th>Changed</th><th>Run</th><th>Resolved</th></tr></thead><tbody><tr data-row>
       <td>the app prompt — junction/tools/call.ts, litestone/src/tools/repl.js, fli app:repl / deploy:repl, runAs(null, { operator }), or what an app declares as createApp({ system })</td>
       <td>example: verify:repl — the only thing that runs the prompt over a real app's gate; junction's call-tool.test.ts asks a fixture</td>
@@ -3441,6 +3441,10 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td>the ask panel — core/vite-ask.js (its admission and Submit included), core/vite-ask-client.js, toolbelt's src/textedit/ (its text edit), ask-claude.js's edit mode, mesa-vite/inspect-client.js's onPick and pick mode</td>
       <td>website: verify:ask — and verify:ask --real once when the argv or the prompt moves, because the fake makes the edit itself and so agrees with any argv</td>
       <td><span class="tally"><b>website</b>verify:ask</span></td>
+    </tr><tr data-row>
+      <td>the post's files — core/tell-worker.js's /file routes, TellPost's files table or its alarm, or ws:post's r2buckets</td>
+      <td>packages/cli: test:post-files — the only thing that runs the store in workerd, over R2 and the object's alarm, which a fake would stand in for</td>
+      <td><span class="tally"><b>packages/cli</b>test:post-files</span></td>
     </tr></tbody></table></div>
 </section>
 <section id="ports">

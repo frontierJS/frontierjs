@@ -1,7 +1,8 @@
 // src/domain/backup/backup-archives.ts
 // An archive once it exists: where its local copy is, the one way it is
 // deleted, which ones retention lets go, and the rescan that gives a row to
-// one found in the bucket with none (`FJS-D1493`).
+// one found in the bucket with none — the hub's (`FJS-D1493`) and an app's
+// (`FJS-D1572`).
 //
 // ─── One delete, derived from the name ────────────────────────────────────
 //
@@ -26,14 +27,20 @@ import { existsSync, rmSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { keyUnder, sendFor }  from '../../providers/storage/index.ts'
 import { deleteObject, listObjects } from '../../providers/storage/s3.ts'
+import type { ListedObject }  from '../../providers/storage/s3.ts'
+import { destinationFor, mintDownload } from '../../jobs/app-backup-run.job.ts'
 import type { App }           from '@frontierjs/junction'
 
-/** `basecamp-` and the start time with `:` and `.` flattened to `-`. */
-export const ARCHIVE_NAME = /^basecamp-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/
+/** The start time with `:` and `.` flattened to `-`, as both archive names carry it. */
+const STAMP = String.raw`(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z`
 
-/** The start time an archive's name carries, or null for a name this file did not mint. */
-export function stampOf(name: string): string | null {
-  const m = name.match(ARCHIVE_NAME)
+/** `basecamp-` and the stamp: the hub's own archive. */
+export const ARCHIVE_NAME = new RegExp(`^basecamp-${STAMP}$`)
+
+/** The start time an archive's name carries, or null for a name this file did
+ *  not mint. `owner` is `basecamp`, or an app's id for one of its archives. */
+export function stampOf(name: string, owner = 'basecamp'): string | null {
+  const m = name.startsWith(`${owner}-`) ? name.slice(owner.length + 1).match(new RegExp(`^${STAMP}$`)) : null
   return m ? `${m[1]}T${m[2]}:${m[3]}:${m[4]}.${m[5]}Z` : null
 }
 
@@ -164,29 +171,105 @@ export async function rescanDestination(app: App, destinationId: string): Promis
   if (!dest) return { error: `No backup destination '${destinationId}'` }
   if (!dest.secretId) return { error: `Destination '${dest.name}' holds no credential` }
 
-  const send = sendFor(app, dest.id)
   const known = new Set((await sys.backup.findMany({
     where: { destinationId: dest.id }, select: { location: true },
   }) as { location: string | null }[]).map(r => r.location))
 
+  return eachUnknown(app, dest, 'basecamp', known, (o, stamp) => sys.backup.create({ data: {
+    kind: 'found', status: 'success', destinationId: dest.id, location: o.key,
+    sizeBytes: o.size, startedAt: stamp, finishedAt: o.lastModified ? new Date(o.lastModified).toISOString() : null,
+    requestedBy: null,
+  } }))
+}
+
+/** Every `<prefix>/<owner>-<stamp>.tar.gz` no `known` key names, handed to
+ *  `add` once each. Any other key under the prefix is a neighbor's. */
+async function eachUnknown(
+  app: App, dest: { id: string; name: string; bucket: string; prefix?: string | null }, owner: string,
+  known: Set<string | null>, add: (o: ListedObject, stamp: string) => Promise<unknown>,
+): Promise<{ listed: number; found: number } | { error: string }> {
+  const send = sendFor(app, dest.id)
   let token: string | undefined, listed = 0, found = 0
   do {
-    const page = await listObjects(send, dest.bucket, { prefix: keyUnder(dest, 'basecamp-'), continuationToken: token })
+    const page = await listObjects(send, dest.bucket, { prefix: keyUnder(dest, `${owner}-`), continuationToken: token })
     if (page.error) return { error: `'${dest.name}' refused the listing (${page.error.kind}${page.error.code ? `, ${page.error.code}` : ''}): ${page.error.message}` }
     for (const o of page.objects!) {
       listed++
-      const name    = basename(o.key, '.tar.gz')
-      const stamp   = stampOf(name)
+      const name  = basename(o.key, '.tar.gz')
+      const stamp = stampOf(name, owner)
       if (!stamp || o.key !== keyUnder(dest, `${name}.tar.gz`) || known.has(o.key)) continue
-      await sys.backup.create({ data: {
-        kind: 'found', status: 'success', destinationId: dest.id, location: o.key,
-        sizeBytes: o.size, startedAt: stamp, finishedAt: o.lastModified ? new Date(o.lastModified).toISOString() : null,
-        requestedBy: null,
-      } })
+      await add(o, stamp)
       known.add(o.key)
       found++
     }
     token = page.nextToken ?? undefined
   } while (token)
   return { listed, found }
+}
+
+// ─── An app's archives ────────────────────────────────────────────────────
+//
+// `<prefix>/<appId>-<stamp>.tar.gz` under the app's own backup destination,
+// the key `takeAppBackup` mints. A listing carries no digest and a restore
+// refuses a row without one (`FJS-D1521`), so a found row is `pending` until
+// the hub has read the object through once and recorded its sha256; only
+// then is it `success` and restorable (`FJS-D1572`). That digest pins the
+// object as first seen — a machine holding a key to the prefix could have
+// written it — and no machine is named, because the key names none.
+
+/** Give a `pending` found row to each of the app's archives no row names. */
+export async function rescanAppArchives(app: App, appId: string): Promise<{ listed: number; found: number } | { error: string }> {
+  const sys    = app.db!.asSystem()
+  const target = await sys.app.findFirst({ where: { id: appId } })
+  if (!target) return { error: `No app '${appId}'` }
+  const dest = await destinationFor(app, target).catch((err: Error) => ({ error: err.message }))
+  if (!dest) return { error: `App '${target.name}' names no backup destination` }
+  if ('error' in dest) return dest
+  if (!dest.secretId) return { error: `Destination '${dest.name}' holds no credential` }
+
+  const known = new Set((await sys.appBackup.findMany({
+    where: { appId, destinationId: dest.id }, select: { location: true },
+  }) as { location: string | null }[]).map(r => r.location))
+
+  return eachUnknown(app, dest, appId, known, (o, stamp) => sys.appBackup.create({ data: {
+    appId, serverId: null, destinationId: dest.id, kind: 'found', status: 'pending',
+    location: o.key, sizeBytes: o.size, startedAt: stamp, requestedBy: null,
+  } }))
+}
+
+/**
+ * Read each of the app's found rows not yet hashed — `pending`, or `failed`
+ * by an earlier read — and record its sha256. A read that fails says why on
+ * the row and is tried again at the next rescan.
+ */
+export async function hashFoundArchives(app: App, appId: string): Promise<{ hashed: number; failed: number }> {
+  const sys  = app.db!.asSystem()
+  const rows = await sys.appBackup.findMany({
+    where: { appId, kind: 'found', status: { in: ['pending', 'failed'] } },
+  }) as { id: string; destinationId: string | null; location: string | null }[]
+  let hashed = 0, failed = 0
+  for (const row of rows) {
+    const done = await hashObject(app, row).catch((err: Error) => ({ error: err.message }))
+    const finishedAt = new Date().toISOString()
+    if ('error' in done) {
+      await sys.appBackup.update({ where: { id: row.id }, data: { status: 'failed', error: done.error.slice(0, 2000), finishedAt } })
+      failed++
+    } else {
+      await sys.appBackup.update({ where: { id: row.id }, data: { status: 'success', sha256: done.sha256, sizeBytes: done.bytes, error: null, finishedAt } })
+      hashed++
+    }
+  }
+  return { hashed, failed }
+}
+
+async function hashObject(app: App, row: { destinationId: string | null; location: string | null }): Promise<{ sha256: string; bytes: number } | { error: string }> {
+  if (!row.destinationId || !row.location) return { error: 'The row names no object' }
+  const dest = await app.db!.asSystem().backupDestination.findFirst({ where: { id: row.destinationId } })
+  if (!dest) return { error: `No backup destination '${row.destinationId}'` }
+  const res = await fetch(await mintDownload(app, dest, row.location))
+  if (!res.ok || !res.body) return { error: `'${dest.name}' answered ${res.status} for ${row.location}` }
+  const hasher = new Bun.CryptoHasher('sha256')
+  let bytes = 0
+  for await (const chunk of res.body) { hasher.update(chunk); bytes += chunk.byteLength }
+  return { sha256: hasher.digest('hex'), bytes }
 }

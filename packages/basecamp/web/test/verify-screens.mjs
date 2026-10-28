@@ -1162,13 +1162,17 @@ try {
   check('and the status the machine reports is not offered at all',
     !(await present('dialog[open] [name=status]')))
   await typeIn('dialog[open] [name=name]', 'web-edited')
-  await typeIn('dialog[open] [name=port]', '3100')
+  // The host port is the machine's pick, and with a hostname it is not the
+  // address, so the form withholds it (FJS-D1557, FJS-D930); the container
+  // port is the app's own and stays offered.
+  check('and the host port is withheld from an app that has a hostname', !(await present('dialog[open] [name=port]')))
+  await typeIn('dialog[open] [name=containerPort]', '3100')
   await click('#app-edit-save')
   await until(`document.querySelector('h1')?.textContent.includes('web-edited')`, v => v,
     'the app heading never took the new name')
   const appAfter = (await apiGet(`/apps/${realId}`)).body
-  check('and the save reached the row', appAfter?.name === 'web-edited' && appAfter?.port === 3100,
-    JSON.stringify({ name: appAfter?.name, port: appAfter?.port }))
+  check('and the save reached the row', appAfter?.name === 'web-edited' && appAfter?.containerPort === 3100,
+    JSON.stringify({ name: appAfter?.name, containerPort: appAfter?.containerPort }))
 
   // Environment — rename, and a variable edited where it stands.
   const envId = appAfter?.environmentId
@@ -2191,8 +2195,9 @@ try {
   await until(`document.getElementById('from-repo') !== null`, v => v, 'the create page never offered From a repository')
   await click('#from-repo')
   await until(`document.getElementById('serverId') !== null`, v => v, 'the repository fields never showed')
-  const connectPort = String(4900 + Math.floor(Math.random() * 90))
-  await fill({ name: `Connect ${connectPort}`, repo: 'git@github.com:acme/connect.git', port: connectPort,
+  const connectTag = String(Math.floor(Math.random() * 9000) + 1000)
+  check('the form asks for no host port — the server picks it (FJS-D1557)', !(await present('#from-repo-fields [name=port]')))
+  await fill({ name: `Connect ${connectTag}`, repo: 'git@github.com:acme/connect.git',
                dockerfile: 'FROM oven/bun:1\n', serverId: onlineBox.id })
   check('Deploy on push appears once a server is picked, and starts on',
     await until(`document.getElementById('deploy-on-push')?.checked ?? null`, v => v !== null, 'the switch never appeared'))
@@ -2200,7 +2205,7 @@ try {
   const connectSecret = await until(`document.getElementById('connect-push-secret')?.textContent ?? ''`,
     t => t.length >= 32, 'creating never showed the Connect your repository panel')
   const connectUrl = await text('#connect-push-url')
-  const connectApp = ((await apiGet('/apps?$limit=200')).body?.data ?? []).find(a => a.name === `Connect ${connectPort}`)
+  const connectApp = ((await apiGet('/apps?$limit=200')).body?.data ?? []).find(a => a.name === `Connect ${connectTag}`)
   check('the panel shows the webhook URL for the new app, and a secret',
     !!connectApp && connectUrl.includes(`/hooks/git/${connectApp.id}`) && /^[0-9a-f]{64}$/.test(connectSecret.trim()), connectUrl)
   check('the token URL carries the minted token', (await text('#connect-push-token-url')).includes('bcpt_'))
@@ -2211,6 +2216,8 @@ try {
   const connectRow = (await apiGet(`/apps/${connectApp?.id}`)).body
   check('the row says push is on and no read carries the secret',
     connectRow?.deployOnPush === true && !JSON.stringify(connectRow).includes(connectSecret.trim()), String(connectRow?.deployOnPush))
+  check('and the machine picked its host port, which no other App there publishes',
+    Number.isInteger(connectRow?.port) && connectRow.port >= 10000 && !(connectRow.portsTaken ?? []).includes(connectRow.port), String(connectRow?.port))
   await click('#connect-done')
   await until(`location.pathname`, p => p === `/apps/${connectApp?.id}/`, 'Open the app never reached the App page')
   await until(`document.getElementById('app-status') !== null`, v => v, 'the App page never rendered')

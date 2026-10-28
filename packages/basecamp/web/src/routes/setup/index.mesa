@@ -127,7 +127,7 @@ title: First run
   </TabList>
 
   <TabPanel id="create">
-  <form class="card stack" onsubmit={submit}>
+  <form class="card stack" novalidate onsubmit={submit}>
   {#if error}
     <article class="alert danger">
       <div class="alert-content">{error}</div>
@@ -192,7 +192,7 @@ title: First run
       <code>ENCRYPTION_KEY</code>; an archive taken under another key is refused before anything is replaced.
     </p>
 
-    <form class="card stack" onsubmit={list}>
+    <form class="card stack" novalidate onsubmit={list}>
       <Input label="Endpoint" name="endpoint" id="restore-endpoint" required
              hint="The bucket's host, no bucket in it: https://s3.us-west-004.backblazeb2.com"
              bind:value={endpoint} />

@@ -19,24 +19,22 @@ import type { ServiceContext } from '@frontierjs/junction'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /**
- * before/create hook: the environment a write lands in, found through the
- * caller's own client. An app's variable takes its app's environment, so the
- * two columns cannot disagree whatever the payload said.
- *
- * A HOOK because `environmentId` is required and autoValidate runs after the
- * user hooks — a caller naming only the app would be refused by the schema
- * before `create()` could fill it in.
+ * before/create hook: an app's variable takes its app's environment, which the
+ * schema states (`environmentId @default(app.environmentId)`) and litestone
+ * fills as the caller — so an app she cannot see is refused by its name, and
+ * a create naming neither is refused by the schema. What is left to check is
+ * the two columns agreeing when a payload names both.
  */
 async function scopeFromPayload() {
   const data = ($.data ?? {}) as Record<string, unknown>
   if (data.appId) {
     const target = await db().app.findFirst({ where: { id: data.appId, workspaceId: ws() } })
     if (!target) throw new NotFound(`App '${data.appId}' not found in this workspace`)
-    data.environmentId = target.environmentId
+    if (data.environmentId && data.environmentId !== target.environmentId)
+      throw new BadRequest(`An app's variable lives in the app's environment, '${target.environmentId}' — leave environmentId out`)
     return
   }
-  if (!data.environmentId) throw new BadRequest('A variable is set on an environment or an app — name one')
-  if (!await db().environment.exists({ where: { id: data.environmentId, workspaceId: ws() } }))
+  if (data.environmentId && !await db().environment.exists({ where: { id: data.environmentId, workspaceId: ws() } }))
     throw new NotFound(`Environment '${data.environmentId}' not found in this workspace`)
   data.appId = null
 }

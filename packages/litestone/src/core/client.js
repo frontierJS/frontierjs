@@ -50,7 +50,7 @@ import { dueAt, } from '@frontierjs/toolbelt/datetime'
 import { spread as rankSpread } from '@frontierjs/toolbelt/rank'
 import {
   buildAutoIdMap, buildGeneratedDefaultMap, buildAuthDefaultMap, buildLiteralDefaultMap, buildSelfRelationMap,
-  buildFieldRefDefaultMap, buildUpdatedByMap, buildVersionMap, buildCreatedByMap, buildSyncMap,
+  buildFieldRefDefaultMap, buildPathDefaultMap, buildUpdatedByMap, buildVersionMap, buildCreatedByMap, buildSyncMap,
   buildSequenceMap, buildRankMap, schemaDeclaresAccessRules, buildFieldPolicyMap, shapesRead, buildSecretMap, viewProtectedRead,
   buildJsonMap, buildGeneratedMap, buildFromMap, buildCardinalityMap, buildExclusionMap, buildComputedSet, buildBoolMap, buildBigMap,
   buildAffinityMap,
@@ -315,6 +315,7 @@ export const SEARCH_RESOLVE = Symbol.for('litestone.searchResolve')
  * @property {{ field: string, authField: string, fillsNull: boolean }[]} authDefaults
  * @property {{ field: string, value: unknown }[]} literalDefaults
  * @property {{ field: string, sourceField: string }[]} fieldRefDefaults
+ * @property {{ field: string, relation: string, target: string, foreignKeys: string[], references: string[], sourceField: string }[]} pathDefaults
  * @property {{ field: string, authField: string }[]} createdBy
  * @property {{ field: string, authField: string }[]} updatedBy
  * @property {string | null} version           the `@version` column
@@ -1563,7 +1564,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
 
   const {
-    writeData, refuseSystemEntries, applyFieldRefDefaults, applyRanks, rankOnScopeChange,
+    writeData, refuseSystemEntries, applyFieldRefDefaults, applyPathDefaults, applyRanks, rankOnScopeChange,
     rankScopeTouched, refuseRankBulkMove, _ranks, _rankFields, _rankBind,
   } = makeWriteData(shape, ctx, {
     writeDb, T, col, plugins, computedFns, hasFieldPolicy, _hasEnumFields,
@@ -3219,8 +3220,16 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, system }, ctx)
     await enforceValueSets(modelName, data, ctx)
     data = refuseOffEntry(data)
-    // The rows as the caller wrote them: every stamp lands later, inside the unit.
-    const hidden = await hiddenParents(data, [], system)
+    // The rows as the caller wrote them: every stamp lands later, inside the
+    // unit — but a one-hop default, which reads another row, cannot run there
+    // and is stamped here, excused from the parent check as any stamp is.
+    const pathStamped = data.map(() => new Set())
+    if (shape.pathDefaults.length) {
+      const out = []
+      for (const [i, row] of data.entries()) out.push(await applyPathDefaults(row, pathStamped[i]))
+      data = out
+    }
+    const hidden = await hiddenParents(data, pathStamped, system)
     const parent = ctx.hasPolicies ? data.map((row, i) => checkCreate(authStamped(row, modelName, ctx), hidden[i])) : []
     for (const [i, r] of parent.entries()) hidden[i] = firstRefusal(r, hidden[i])
     // A logged model already takes RETURNING, so opting in costs it nothing.
@@ -3336,6 +3345,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     data = applyGeneratedDefaults(data, shape.generatedDefaults, stamped)
     data = applyAuthDefaults(data, shape.authDefaults, ctx.auth, stamped)
     data = stampFromAuth(data, shape.createdBy, ctx.auth, stamped)
+    data = await applyPathDefaults(data, stamped)
     const [_crHid] = await hiddenParents([data], [stamped], system)
     // After the auth stamps, never before — see authStamped (FJS-1402).
     const _crParent = ctx.hasPolicies ? checkCreate(data, _crHid) : undefined
@@ -3820,6 +3830,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       cData = applyGeneratedDefaults(cData, shape.generatedDefaults, _fpStamped)
       cData = applyAuthDefaults(cData, shape.authDefaults, ctx.auth, _fpStamped)
       cData = stampFromAuth(cData, shape.createdBy, ctx.auth, _fpStamped)
+      cData = await applyPathDefaults(cData, _fpStamped)
       cData = applyFieldRefDefaults(cData, _fpStamped)
 
       // A field write predicate has to read the STORED row, and this branch is
@@ -3887,7 +3898,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   const { upsertMany } = makeUpsertMany(shape, ctx, {
     _bulkTransitionField, refuseSoftDeleteWrite, refuseOffEntry, refuseBulkNested,
     refuseSystemEntries, extractWriteOps, idField, plugins, tx, writeDb, col, stampSets, _ranks,
-    applyFieldRefDefaults, applyRanks, writeData, hasTemplatesField, hiddenParents, checkCreate,
+    applyFieldRefDefaults, applyPathDefaults, applyRanks, writeData, hasTemplatesField, hiddenParents, checkCreate,
     firstRefusal, _sealInsertSql, sealInsertGuard, sealRefusal, asBatchRowError, asConstraintError,
     noteExclusion, needsTiming, fireQuery, tableHasLogWork, emitLogs, read, announceFor,
     announceBulk,
@@ -5670,6 +5681,7 @@ export async function createClient({
   const authDefaultMap     = buildAuthDefaultMap(schema)
   const literalDefaultMap  = buildLiteralDefaultMap(schema)
   const fieldRefDefaultMap = buildFieldRefDefaultMap(schema)
+  const pathDefaultMap     = buildPathDefaultMap(schema)
   const updatedByMap       = buildUpdatedByMap(schema)
   const createdByMap       = buildCreatedByMap(schema)
   const versionMap         = buildVersionMap(schema)
@@ -5830,6 +5842,7 @@ export async function createClient({
       authDefaults:      declared(authDefaultMap, name, []),
       literalDefaults:   declared(literalDefaultMap, name, []),
       fieldRefDefaults:  declared(fieldRefDefaultMap, name, []),
+      pathDefaults:      declared(pathDefaultMap, name, []),
       createdBy:         declared(createdByMap, name, []),
       updatedBy:         declared(updatedByMap, name, []),
       version:           declared(versionMap, name, null),
@@ -7452,14 +7465,14 @@ export async function createClient({
     const acknowledged = new Set(orphan)
     const unacked      = orphaned.filter(o => !acknowledged.has(o.key))
     if (unacked.length) {
-      throw new Error(
+      throw Object.assign(new Error(
         `$rotateKey would leave ${unacked.length} column(s) unreadable and has rotated nothing:\n` +
         unacked.map(o => `  ${o.key} — ${o.reason}`).join('\n') +
         `\nThe key swap is global, so a column this cannot re-encrypt is not carried forward.\n` +
         `This client keeps reading it — the old key stays on its ring — but the next process to\n` +
         `start does not, unless it is given previousEncryptionKeys: ['<the old key>'].\n` +
         `Pass { orphan: [${unacked.map(o => `'${o.key}'`).join(', ')}] } to accept that deliberately.`
-      )
+      ), { orphaned: unacked.map(o => o.key) })
     }
 
     if (!ctx.enc.key)

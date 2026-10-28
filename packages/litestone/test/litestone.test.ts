@@ -23024,6 +23024,106 @@ describe('@default(fieldName)', () => {
   })
 })
 
+// ─── @default(relation.column) — one-hop defaults ─────────────────────────────
+//
+// A required column the payload's named parent already holds. The copy is read
+// through the caller's own accessor, so a parent she cannot read fills nothing
+// and the parent refusal is the answer, not a leaked column.
+
+describe('@default(relation.column)', () => {
+  const SCHEMA = `
+    model Env { id String @id @default(uuid()); name String; apps App[]; vars Var[] }
+    model App { id String @id @default(uuid()); envId String; env Env @relation(fields: [envId], references: [id]); vars Var[] }
+    model Var {
+      id    String  @id @default(uuid())
+      envId String  @default(app.envId)
+      env   Env     @relation(fields: [envId], references: [id])
+      appId String?
+      app   App?    @relation(fields: [appId], references: [id])
+      key   String
+    }
+  `
+
+  test('parses as a fieldRef through a relation', () => {
+    const r = parse(SCHEMA)
+    expect(r.valid).toBe(true)
+    const v = r.schema.models.find((m: any) => m.name === 'Var')
+    const def = v.fields.find((f: any) => f.name === 'envId').attributes.find((a: any) => a.kind === 'default')
+    expect(def.value).toEqual({ kind: 'fieldRef', field: 'envId', through: 'app' })
+  })
+
+  test('refuses a name that is not a foreign-key relation, and a column the target lacks', () => {
+    const base = `model App { id String @id; envId String; vars Var[] }`
+    const one = parse(`${base}\nmodel Var { id String @id; envId String @default(nope.envId); appId String?; app App? @relation(fields: [appId], references: [id]) }`)
+    expect(one.valid).toBe(false)
+    expect(one.errors.join('\n')).toContain("'nope' is not a relation of this model holding a foreign key")
+    const two = parse(`${base}\nmodel Var { id String @id; envId String @default(app.nothing); appId String?; app App? @relation(fields: [appId], references: [id]) }`)
+    expect(two.valid).toBe(false)
+    expect(two.errors.join('\n')).toContain("'nothing' is not a column of App")
+  })
+
+  test('leaves create-mode required and stays writable', async () => {
+    const { generateJsonSchema } = await import('../src/jsonschema.js')
+    const v: any = generateJsonSchema(parse(SCHEMA).schema, { mode: 'create' }).$defs.Var
+    expect(v.required).not.toContain('envId')
+    expect(v.properties.envId.readOnly).toBeFalsy()
+  })
+
+  test('copies the parent column on create, createMany and upsertMany; a stated value wins', async () => {
+    const db = await makeDb(SCHEMA, 'pathdef')
+    const prod = await db.env.create({ data: { name: 'prod' } })
+    const dev  = await db.env.create({ data: { name: 'dev' } })
+    const app  = await db.app.create({ data: { envId: prod.id } })
+    const one  = await db.var.create({ data: { appId: app.id, key: 'A' } })
+    expect(one.envId).toBe(prod.id)
+    const stated = await db.var.create({ data: { appId: app.id, envId: dev.id, key: 'B' } })
+    expect(stated.envId).toBe(dev.id)
+    await db.var.createMany({ data: [{ appId: app.id, key: 'C' }, { envId: dev.id, key: 'D' }] })
+    expect((await db.var.findFirst({ where: { key: 'C' } })).envId).toBe(prod.id)
+    expect((await db.var.findFirst({ where: { key: 'D' } })).envId).toBe(dev.id)
+    await db.var.upsertMany({ data: [{ id: 'v-e', appId: app.id, key: 'E' }], conflictTarget: ['id'] })
+    expect((await db.var.findFirst({ where: { key: 'E' } })).envId).toBe(prod.id)
+    db.$close()
+  })
+
+  test('with no parent named, the pre-flight names the relation the column is taken from', async () => {
+    const db = await makeDb(SCHEMA, 'pathdef-missing')
+    let err: any
+    try { await db.var.create({ data: { key: 'A' } }) } catch (e) { err = e }
+    expect(err).toBeInstanceOf(ValidationError)
+    expect(err.errors[0].message).toBe('envId is required unless app is named — it is taken from app.envId')
+    db.$close()
+  })
+
+  test('a parent the caller cannot read fills nothing, and the create is refused by its name', async () => {
+    const db = await makeDb(`
+      model Env { id String @id @default(uuid()); name String; apps App[]; vars Var[] }
+      model App {
+        id String @id @default(uuid()); ownerId Int
+        envId String; env Env @relation(fields: [envId], references: [id]); vars Var[]
+        @@allow(all, ownerId == auth().id)
+      }
+      model Var {
+        id String @id @default(uuid()); envId String @default(app.envId)
+        env Env @relation(fields: [envId], references: [id])
+        appId String?; app App? @relation(fields: [appId], references: [id]); key String
+        @@allow(all, true)
+      }
+    `, 'pathdef-hidden')
+    const sys = db.asSystem()
+    const env = await sys.env.create({ data: { name: 'prod' } })
+    const app = await sys.app.create({ data: { envId: env.id, ownerId: 1 } })
+    const owner = await db.$setAuth({ id: 1 }).var.create({ data: { appId: app.id, key: 'A' } })
+    expect(owner.envId).toBe(env.id)
+    let err: any
+    try { await db.$setAuth({ id: 2 }).var.create({ data: { appId: app.id, key: 'B' } }) } catch (e) { err = e }
+    expect(err).toBeDefined()
+    expect(err.message).toContain('app')
+    expect(err.message).not.toContain(env.id)
+    db.$close()
+  })
+})
+
 
 // ─── recursive findMany ───────────────────────────────────────────────────────
 

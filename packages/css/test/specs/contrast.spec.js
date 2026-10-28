@@ -21,7 +21,7 @@
  */
 
 var TONES = ['primary', 'secondary', 'muted', 'info', 'success', 'warning', 'danger'];
-var THEMES = ['default', 'sunset', 'forest', 'midnight', 'dark', 'elite', 'basecamp', 'notebook', 'press', 'field', 'dracula', 'twilight', 'expedition', 'catppuccin'];
+var THEMES = ['default', 'sunset', 'forest', 'midnight', 'dark', 'elite', 'basecamp', 'notebook', 'press', 'field', 'dracula', 'twilight', 'expedition', 'catppuccin', 'survey'];
 
 /* The chip lineage — everything that renders a tone as a solid fill. */
 var FILLED = [

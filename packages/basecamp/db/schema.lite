@@ -349,10 +349,11 @@ type AppFromBlueprint {
 }
 
 /// What `projects.fromRepo` accepts: a project, its production environment
-/// and one App built from a repository, made together (`FJS-D1555`). `port` is
-/// the host port the App is published on; `dockerfile` is the App's own copy,
-/// blank for the repository's. `deployOnPush` is on when a server is named and
-/// `false` turns it off (`FJS-D1558`); without a server it is never on.
+/// and one App built from a repository, made together (`FJS-D1555`). No host
+/// port: placing on `serverId` picks one (`FJS-D1557`). `dockerfile` is the
+/// App's own copy, blank for the repository's. `deployOnPush` is on when a
+/// server is named and `false` turns it off (`FJS-D1558`); without a server it
+/// is never on.
 type ProjectFromRepo {
   name         String
   slug         String?
@@ -361,7 +362,6 @@ type ProjectFromRepo {
   dockerfile   String?
   serverId     String?
   hostname     String?
-  port         Int
   deployOnPush Boolean?
 }
 
@@ -433,6 +433,12 @@ type AppBackupTake {
 /// archives no row names (`FJS-D1493`).
 type BackupRescan {
   destinationId String
+}
+
+/// What `app-backups.rescan` accepts: the app whose archives under its own
+/// backup destination are listed for ones no row names (`FJS-D1572`).
+type AppBackupRescan {
+  appId String
 }
 
 /// What `flags.setOverride` and `flags.clearOverride` accept. A rollout outside
@@ -507,7 +513,7 @@ enum ServerEventKind {
   // A posture control moving between passing and failing (`domain/host/posture.ts`).
   posture_failed posture_restored
 }
-enum ProviderKind   { custom hetzner digitalocean cloudflare }
+enum ProviderKind   { custom hetzner digitalocean cloudflare github }
 enum EnvironmentTier { development test preview staging production }
 enum AppType        { container worker database daemon cron static function }
 enum AppStatus      { unknown stopped starting running stopping deploying error }
@@ -1127,7 +1133,8 @@ model Secret {
   isVerified  Boolean    @default(false)
   createdBy   String? @immutable
 
-  /// WHICH cloud a `provider_key` opens. Null for every other kind.
+  /// WHICH vendor a `provider_key` opens — a cloud, an edge or a forge. Null
+  /// for every other kind.
   ///
   /// It is a column rather than a field inside `data` because a vendor name is
   /// not a secret: `data` is `@encrypted`, so the key is absent from every read,
@@ -1156,7 +1163,7 @@ model Secret {
   /// reported *no rows could be built* on this model, which trades five
   /// executed checks for one tidy rule.
   @@check("kind != 'provider_key' OR providerKind IS NOT NULL",
-          "a provider key names the cloud it opens")
+          "a provider key names the vendor it opens")
 
   @@gate(5)
   @@softDelete
@@ -1186,7 +1193,9 @@ model ApiKey {
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   // Whose permissions the key carries. A key is never more than its owner.
-  userId       String @immutable
+  // The caller's own key unless a bot is named; `assertBotOwner` in the
+  // service is what limits the somebody else.
+  userId       String @immutable @default(auth().id)
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // The auth Credential holding the HMAC. A bare id, no @relation — the same
@@ -1460,6 +1469,7 @@ model Server {
   // no machines. A vendor that joins the enum without making servers joins this
   // list too, or a Server can claim to run somewhere nothing runs (FJS-D559).
   @@check("providerKind != 'cloudflare'", "Cloudflare sells no machines")
+  @@check("providerKind != 'github'",     "GitHub sells no machines")
   @@softDelete
   @@trail(audit)
   @@unique([workspaceId, slug])
@@ -1837,8 +1847,10 @@ model Variable {
   id            String       @id @default(uuid())
   workspaceId   String
   // Set on every row, the app's own environment for an app's variable, so
-  // "what does this environment's container get" is one read.
-  environmentId String       @immutable
+  // "what does this environment's container get" is one read. Taken from the
+  // app when a create names only the app, read as the caller, so an app she
+  // cannot see fills nothing and the create is refused by the app's name.
+  environmentId String       @immutable @default(app.environmentId)
   environment   Environment  @relation(fields: [environmentId], references: [id], onDelete: Cascade)
   // Null is environment-wide.
   appId         String?      @immutable
@@ -2021,8 +2033,10 @@ model AppBackup {
   id          String    @id @default(uuid())
   appId       String
   app         App       @relation(fields: [appId], references: [id], onDelete: Cascade)
-  serverId    String
-  server      Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  // The machine that took it; null on a `found` row, whose object key names
+  // none (`FJS-D1572`).
+  serverId    String?
+  server      Server?   @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
   // Where the machine sent the archive, by a pre-signed PUT Basecamp minted
   // (`FJS-D1485`); null is the machine's own disk. `Restrict` as on `Backup`:
@@ -2045,8 +2059,10 @@ model AppBackup {
   // says why in `error`, with `status` still `success`: the archive exists.
   location    String?   @trim @length(0, 500)
   error       String?   @length(0, 2000)
-  // The archive's sha256 as the machine wrote it; a restore from the bucket
-  // refuses an object that does not match (`FJS-D1521`).
+  // The archive's sha256 as the machine wrote it, or as the hub read a
+  // `found` object, which pins it as first seen and proves nothing about who
+  // wrote it (`FJS-D1572`); a restore from the bucket refuses an object that
+  // does not match (`FJS-D1521`).
   sha256      String?   @length(64, 64)
 
   requestedBy String?
