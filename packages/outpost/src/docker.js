@@ -23,6 +23,7 @@ import { pipeline }                from 'node:stream/promises'
 import { validRelativePath, validName } from './static.js'
 import { ensureDeployKey }         from './deploy-key.js'
 import { chooseDockerfile, needsGenerated, exposedPort } from './dockerfile.js'
+import { layout }                  from './layout.js'
 
 // Each app's container runs as a host uid of its own (`FJS-D1484`), handed out
 // from here up and never reused: a retired app's volume keeps its files, and a
@@ -1141,6 +1142,7 @@ export function createDocker({
 // mtime reads a box that has never upgraded as one that did today.
 const UPGRADE_STAMP = '/var/lib/apt/periodic/upgrade-stamp'
 
+const BOX = layout()
 const POSTURE = {
   os:              ['cat', '/etc/os-release'],
   kernelRunning:   ['uname', '-r'],
@@ -1169,8 +1171,8 @@ const POSTURE = {
   timeTracking:    ['chronyc', '-c', 'tracking'],
   unitJson:        ['systemd-analyze', 'security', 'outpost', '--json=short'],
   containerIds:    ['docker', 'ps', '-q'],
-  files:           ['stat', '-c', '%a %U %G %n', '/etc/basecamp', '/etc/basecamp/outpost.key', '/etc/basecamp/outpost.env'],
-  cert:            ['openssl', 'x509', '-enddate', '-noout', '-in', '/etc/basecamp/outpost.crt'],
+  files:           ['stat', '-c', '%a %U %G %n', BOX.config, BOX.tlsKey, BOX.envFile],
+  cert:            ['openssl', 'x509', '-enddate', '-noout', '-in', BOX.tlsCert],
 }
 const STAT = ['stat', '-c', '%a %U %G %n']
 // systemd 249 refuses `--json`, and the text form's last line carries the

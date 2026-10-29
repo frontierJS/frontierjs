@@ -115,7 +115,7 @@ if (ls.running) {
   try {
     both = String(apiMachine.capture([
       `n=$(pgrep -x litestream | wc -l)`,
-      `[ "$n" -ge 2 ] && sudo -n grep -qF -- '${dbDir.replace(/'/g, `'\\''`)}' /etc/basecamp/litestream.yml 2>/dev/null && echo both || true`,
+      `[ "$n" -ge 2 ] && sudo -n grep -qF -- '${dbDir.replace(/'/g, `'\\''`)}' /etc/outpost/litestream.yml 2>/dev/null && echo both || true`,
     ].join('\n')) ?? '').trim()
   } catch {}
   if (both === 'both') {

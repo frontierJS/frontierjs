@@ -301,11 +301,11 @@ describe('each reading, from what the command prints', () => {
     const readings = await postureOf({
       'grep -rh NOPASSWD': { exitCode: 1 },
       'openssl x509':      { exitCode: 0, stdout: 'notAfter=Oct  3 08:00:00 2036 GMT\n' },
-      'stat -c %a %U %G':  { exitCode: 0, stdout: '700 root root /etc/basecamp\n600 root root /etc/basecamp/outpost.key\n600 root root /etc/basecamp/outpost.env\n' },
+      'stat -c %a %U %G':  { exitCode: 0, stdout: '700 root root /etc/outpost\n600 root root /etc/outpost/outpost.key\n600 root root /etc/outpost/outpost.env\n' },
     })
     expect(readings.nopasswd).toEqual([])
     expect(readings.cert).toEqual({ expires_at: '2036-10-03T08:00:00.000Z' })
-    expect(readings.files).toContainEqual({ path: '/etc/basecamp/outpost.key', mode: '600', owner: 'root', group: 'root' })
+    expect(readings.files).toContainEqual({ path: '/etc/outpost/outpost.key', mode: '600', owner: 'root', group: 'root' })
   })
 
   test('the docker group: listed members and primary-gid users, no group is nobody', async () => {
@@ -395,7 +395,7 @@ describe('posture reaches basecamp', () => {
 describe('the host files on a fleet Outpost', () => {
   const FLEET_ENV = {
     OUTPOST_SERVER_ID: 'srv-host', OUTPOST_SECRET: 's'.repeat(64), BASECAMP_URL: 'https://basecamp.test/',
-    OUTPOST_TLS_CERT: '/etc/basecamp/outpost.crt', OUTPOST_TLS_KEY: '/etc/basecamp/outpost.key',
+    OUTPOST_TLS_CERT: '/etc/outpost/outpost.crt', OUTPOST_TLS_KEY: '/etc/outpost/outpost.key',
     OUTPOST_PUBLIC_URL: 'https://host.test:8180',
   }
 

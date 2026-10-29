@@ -171,7 +171,7 @@ const enrollOutpost = (machine, { appId, deployConf, path, host, log }) => {
   // written in this order, so the grep is compared as one string.
   const script = [
     SUDO,
-    'F=/etc/basecamp/outpost.env',
+    'F=/etc/outpost/outpost.env',
     'sudo test -f "$F" || { echo no-env; exit 0; }',
     'D=/etc/systemd/system/basecamp-litestream.service.d',
     'if sudo test -f /etc/systemd/system/basecamp-litestream.service; then',
@@ -198,7 +198,7 @@ const enrollOutpost = (machine, { appId, deployConf, path, host, log }) => {
     const said = out.at(-1)
     if (out.includes('litestream-written')) log.info(`Litestream: may now replicate ${files.dbDir}, and restarted`)
     if (said === 'written')     log.info('Outpost: told where the database and env file are, and restarted')
-    else if (said === 'no-env') log.warn('Outpost: no /etc/basecamp/outpost.env on this box — /hub/security/ cannot grade its database or env file')
+    else if (said === 'no-env') log.warn('Outpost: no /etc/outpost/outpost.env on this box — /hub/security/ cannot grade its database or env file')
   } catch (err) {
     log.warn(`Outpost: the database and env file paths were not written — ${err.message.split('\n')[0]}`)
   }

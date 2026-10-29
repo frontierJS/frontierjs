@@ -2327,7 +2327,7 @@ describe('it refuses to start half-configured', () => {
 
   const required = {
     OUTPOST_SERVER_ID: 'srv-9', OUTPOST_SECRET: 's', BASECAMP_URL: 'https://bc.test/',
-    OUTPOST_TLS_CERT: '/etc/basecamp/outpost.crt', OUTPOST_TLS_KEY: '/etc/basecamp/outpost.key',
+    OUTPOST_TLS_CERT: '/etc/outpost/outpost.crt', OUTPOST_TLS_KEY: '/etc/outpost/outpost.key',
   }
 
   test('a stated port and URL win over the defaults', () => {

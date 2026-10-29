@@ -279,13 +279,13 @@
         "stat",
         "-c",
         "%a %U %G %n",
-        "/etc/basecamp",
-        "/etc/basecamp/outpost.key",
-        "/etc/basecamp/outpost.env"
+        "/etc/outpost",
+        "/etc/outpost/outpost.key",
+        "/etc/outpost/outpost.env"
       ],
       "exitCode": 1,
       "stdout": "",
-      "stderr": "stat: cannot statx '/etc/basecamp': No such file or directory\nstat: cannot statx '/etc/basecamp/outpost.key': No such file or directory\nstat: cannot statx '/etc/basecamp/outpost.env': No such file or directory\n"
+      "stderr": "stat: cannot statx '/etc/outpost': No such file or directory\nstat: cannot statx '/etc/outpost/outpost.key': No such file or directory\nstat: cannot statx '/etc/outpost/outpost.env': No such file or directory\n"
     },
     "files.certExpiry": {
       "argv": [
@@ -294,11 +294,11 @@
         "-enddate",
         "-noout",
         "-in",
-        "/etc/basecamp/outpost.crt"
+        "/etc/outpost/outpost.crt"
       ],
       "exitCode": 1,
       "stdout": "",
-      "stderr": "Could not open file or uri for loading certificate from /etc/basecamp/outpost.crt\n40770E01BA7A0000:error:16000069:STORE routines:ossl_store_get0_loader_int:unregistered scheme:../crypto/store/store_register.c:237:scheme=file\n40770E01BA7A0000:error:80000002:system library:file_open:No such file or directory:../providers/implementations/storemgmt/file_store.c:267:calling stat(/etc/basecamp/outpost.crt)\nUnable to load certificate\n"
+      "stderr": "Could not open file or uri for loading certificate from /etc/outpost/outpost.crt\n40770E01BA7A0000:error:16000069:STORE routines:ossl_store_get0_loader_int:unregistered scheme:../crypto/store/store_register.c:237:scheme=file\n40770E01BA7A0000:error:80000002:system library:file_open:No such file or directory:../providers/implementations/storemgmt/file_store.c:267:calling stat(/etc/outpost/outpost.crt)\nUnable to load certificate\n"
     },
     "runtime.inspect": {
       "argv": [

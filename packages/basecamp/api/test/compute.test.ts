@@ -670,7 +670,9 @@ describe('a machine claims its own credential', () => {
     expect(unit).toContain('ProtectSystem=strict')
     expect(unit).toContain('PrivateTmp=yes')
     expect(unit).toMatch(/^ReadWritePaths=.*\/var\/lib\/outpost/m)
-    expect(unit).toMatch(/^ReadWritePaths=.*\/etc\/basecamp/m)
+    expect(unit).toMatch(/^ReadWritePaths=.*\/etc\/outpost/m)
+    expect(unit).toContain('ConfigurationDirectory=outpost')
+    expect(unit).toContain('ConfigurationDirectoryMode=0700')
     expect(unit).toMatch(/^ReadWritePaths=.*\$BUN_INSTALL/m)
     // These carried bct's systemd-analyze score from 7.9 to 5.3, under SANDBOX_MAX.
     for (const directive of ['ProtectKernelLogs=yes', 'ProtectClock=yes', 'PrivateDevices=yes', 'RestrictNamespaces=yes', 'SystemCallArchitectures=native'])
@@ -776,13 +778,32 @@ describe('a machine claims its own credential', () => {
     const script = installScript()
     expect(script).toContain(litestreamInstall())
     const unit = /cat > \/etc\/systemd\/system\/basecamp-litestream\.service <<UNITEOF\n([\s\S]*?)\nUNITEOF/.exec(script)?.[1] ?? ''
-    expect(unit).toContain('ExecStart=/usr/local/bin/litestream replicate -config /etc/basecamp/litestream.yml')
+    expect(unit).toContain('ExecStart=/usr/local/bin/litestream replicate -config /etc/outpost/litestream.yml')
     expect(unit).toContain('ProtectSystem=strict')
+    expect(unit).toMatch(/^ReadWritePaths=.*\/var\/lib\/outpost\/apps/m)
     expect(unit).toMatch(/^ReadWritePaths=.*\/var\/lib\/docker\/volumes/m)
     expect(unit).toContain('StateDirectory=litestream')
     expect(unit).toContain('RuntimeDirectory=litestream')
     expect(script).toContain('systemctl enable --now basecamp-litestream.service')
-    expect(script).toMatch(/if \[ ! -f \/etc\/basecamp\/litestream\.yml \]/)
+    expect(script).toMatch(/if \[ ! -f \/etc\/outpost\/litestream\.yml \]/)
+  })
+
+  // The install restated the Outpost's paths and nothing failed when the two
+  // drifted; a write outside the unit's sandbox then fails only on a machine
+  // (FJS-D1544).
+  test('every Outpost path the install names is under a layout root', async () => {
+    const { installScript } = await import('../src/providers/compute/enrollment.ts')
+    const { layout }        = await import('@frontierjs/outpost/layout')
+    const box     = layout()
+    const roots   = [box.config, box.state, box.links, box.logs]
+    const UNITS   = ['/etc/systemd/system/outpost.service', '/usr/local/sbin/outpost-uninstall']
+    const named   = [...installScript().matchAll(/(?<=^|[\s='"])\/[\w./-]*(?:outpost|litestream\.yml|firewall\.nft)[\w./-]*/gm)]
+      .map(m => m[0])
+    expect(named.length).toBeGreaterThan(10)
+    expect(named.filter(p => !UNITS.includes(p) && !roots.some(r => p === r || p.startsWith(`${r}/`)))).toEqual([])
+    const links = { config: box.config, data: box.state, logs: box.logs }
+    for (const [name, target] of Object.entries(links))
+      expect(installScript()).toContain(`ln -sfn ${target} ${box.links}/${name}`)
   })
 
   // A moving `oven/bun:1` tag put the control plane on 1.4.4 while every

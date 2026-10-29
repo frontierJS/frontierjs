@@ -29,6 +29,7 @@
 
 import { randomBytes, createHash, timingSafeEqual, X509Certificate } from 'node:crypto'
 import { OPENSSL_CERT_ARGS } from '@frontierjs/outpost/cert'
+import { layout }            from '@frontierjs/outpost/layout'
 import { litestreamInstall } from '@frontierjs/litestone/replicate'
 
 /** What the install runs on a machine, held here so two machines provisioned a
@@ -37,6 +38,10 @@ import { litestreamInstall } from '@frontierjs/litestone/replicate'
  *  from signed apt repositories. */
 export const BUN_VERSION     = '1.4.4'
 export const OUTPOST_VERSION = '0.1.7'
+
+/** The box's paths, from the module the Outpost reads its own from, so the
+ *  unit's sandbox and the process cannot name two places (`FJS-D1544`). */
+const box = layout()
 
 const onNpm = new Map<string, boolean>()
 
@@ -334,8 +339,8 @@ fi
 # posture: net.firewall-default-deny
 SSH_PORTS=$(sshd -T 2>/dev/null | awk '$1 == "port" { print $2 }' | paste -sd, -) || true
 [ -n "$SSH_PORTS" ] || SSH_PORTS=22
-install -d -m 0700 /etc/basecamp
-cat > /etc/basecamp/firewall.nft <<NFTEOF
+install -d -m 0700 ${box.config}
+cat > ${box.firewall} <<NFTEOF
 table inet basecamp
 delete table inet basecamp
 table inet basecamp {
@@ -372,7 +377,7 @@ Wants=network-pre.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/sbin/nft -f /etc/basecamp/firewall.nft
+ExecStart=/usr/sbin/nft -f ${box.firewall}
 
 [Install]
 WantedBy=multi-user.target
@@ -429,21 +434,25 @@ systemctl enable --now caddy-api.service
 # volume. The Outpost rewrites the config from Basecamp's list and restarts the
 # unit; until then it names no database, which 0.5 logs and runs on through.
 # It holds every app's bucket key and reads every app's database, so it is
-# sandboxed like the Outpost: it writes the volumes and /var/lib/litestream,
-# where each database's meta-dir goes so a /backup tar does not carry it. Its
+# sandboxed like the Outpost: it writes each app's data directory, the named
+# volumes an app still on one keeps, and /var/lib/litestream, where each
+# database's meta-dir goes so a /backup tar does not carry it. The data root is
+# made here because the Outpost's StateDirectory does not exist yet, and a
+# ReadWritePaths entry that does not exist fails the start. Its
 # control socket is under /run/litestream, which the Outpost reads each
 # heartbeat for every app's last sync.
 ${litestreamInstall()}
+install -d -m 0755 ${box.state} ${box.apps}
 # A second install keeps the Outpost's entries: the file holds every app's key.
-if [ ! -f /etc/basecamp/litestream.yml ]; then
-  cat > /etc/basecamp/litestream.yml <<'LSEOF'
+if [ ! -f ${box.litestreamConfig} ]; then
+  cat > ${box.litestreamConfig} <<'LSEOF'
 socket:
   enabled: true
   path: "/run/litestream/litestream.sock"
 dbs: []
 LSEOF
 fi
-chmod 0600 /etc/basecamp/litestream.yml
+chmod 0600 ${box.litestreamConfig}
 cat > /etc/systemd/system/basecamp-litestream.service <<UNITEOF
 [Unit]
 Description=Basecamp Litestream replication
@@ -451,14 +460,14 @@ After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/litestream replicate -config /etc/basecamp/litestream.yml
+ExecStart=/usr/local/bin/litestream replicate -config ${box.litestreamConfig}
 Restart=always
 RestartSec=5
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-ReadWritePaths=-/var/lib/docker/volumes
+ReadWritePaths=${box.apps} -/var/lib/docker/volumes
 StateDirectory=litestream
 RuntimeDirectory=litestream
 RuntimeDirectoryMode=0700
@@ -490,13 +499,13 @@ export PATH="$BUN_INSTALL/bin:$PATH"
 
 # The command port's certificate. Made before the exchange because it rides in
 # it: Basecamp pins this one, and a command reaches no port holding any other.
-install -d -m 0700 /etc/basecamp
+install -d -m 0700 ${box.config}
 openssl ${OPENSSL_CERT_ARGS.join(' ')} \\
-  -keyout /etc/basecamp/outpost.key -out /etc/basecamp/outpost.crt 2>/dev/null
-chmod 0600 /etc/basecamp/outpost.key
+  -keyout ${box.tlsKey} -out ${box.tlsCert} 2>/dev/null
+chmod 0600 ${box.tlsKey}
 # One JSON string: every line ends in a literal backslash-n. PEM holds no quote
 # and no backslash, so nothing else needs escaping.
-CERT=$(awk '{printf "%s\\\\n", $0}' /etc/basecamp/outpost.crt)
+CERT=$(awk '{printf "%s\\\\n", $0}' ${box.tlsCert})
 
 # The exchange. This is the only moment the enrollment token is used, and the
 # only moment this machine has no credential of its own.
@@ -528,16 +537,16 @@ if [ -z "$OUTPOST_PUBLIC_URL" ]; then
   OUTPOST_PUBLIC_URL="https://$SELF_IP:$OUTPOST_PORT"
 fi
 
-cat > /etc/basecamp/outpost.env <<ENVEOF
+cat > ${box.envFile} <<ENVEOF
 OUTPOST_SERVER_ID=$SERVER_ID
 OUTPOST_SECRET=$OUTPOST_SECRET
 OUTPOST_PUBLIC_URL=$OUTPOST_PUBLIC_URL
 OUTPOST_PORT=$OUTPOST_PORT
-OUTPOST_TLS_CERT=/etc/basecamp/outpost.crt
-OUTPOST_TLS_KEY=/etc/basecamp/outpost.key
+OUTPOST_TLS_CERT=${box.tlsCert}
+OUTPOST_TLS_KEY=${box.tlsKey}
 BASECAMP_URL=$BASECAMP_URL
 ENVEOF
-chmod 0600 /etc/basecamp/outpost.env
+chmod 0600 ${box.envFile}
 
 # The sandbox bounds what a flaw in any route can write to the Outpost's own
 # directories (its apps and static origin, the cert, bun's cache) and keeps it
@@ -548,8 +557,9 @@ chmod 0600 /etc/basecamp/outpost.env
 # directive dropped here fails outpost.sandbox on every box. AF_NETLINK stays:
 # posture reads ss and nft over it. No MemoryDenyWriteExecute: bun's JIT
 # needs writable executable pages.
-# StateDirectory creates /var/lib/outpost before the namespace is built: a
-# ReadWritePaths entry that does not exist yet fails the start on a fresh box.
+# StateDirectory and ConfigurationDirectory make their directories before the
+# namespace is built: a ReadWritePaths entry that does not exist yet fails the
+# start on a fresh box. systemd keeps the mode of one the install already made.
 # ExecStart is bun x, never bunx: bun's installer writes the bun binary alone,
 # and a unit naming a file that is not there exits 203/EXEC on every restart.
 # posture: outpost.sandbox
@@ -560,7 +570,7 @@ After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]
-EnvironmentFile=/etc/basecamp/outpost.env
+EnvironmentFile=${box.envFile}
 ExecStart=$BUN_INSTALL/bin/bun x --bun @frontierjs/outpost@${OUTPOST_VERSION}
 Restart=always
 RestartSec=5
@@ -568,8 +578,10 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=yes
-ReadWritePaths=/var/lib/outpost /etc/basecamp $BUN_INSTALL -$HOME/.docker
+ReadWritePaths=${box.state} ${box.config} $BUN_INSTALL -$HOME/.docker
 StateDirectory=outpost
+ConfigurationDirectory=outpost
+ConfigurationDirectoryMode=0700
 ProtectKernelModules=yes
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
@@ -593,6 +605,15 @@ UNITEOF
 cat > /usr/local/sbin/outpost-uninstall <<'UNINSTALLEOF'
 ${uninstallScript()}UNINSTALLEOF
 chmod 0755 /usr/local/sbin/outpost-uninstall
+
+# One folder a person at a shell opens to find everything (FJS-D1544). Links
+# only, and nothing on the box reads through them: du and tar stop at a link.
+# -n replaces a link to a directory; without it a second install puts a new
+# link inside the target.
+install -d -m 0755 ${box.links}
+ln -sfn ${box.config} ${box.links}/config
+ln -sfn ${box.state} ${box.links}/data
+ln -sfn ${box.logs} ${box.links}/logs
 
 systemctl daemon-reload
 systemctl enable --now outpost.service
@@ -646,7 +667,7 @@ BUN_DIR=
 if [ $PURGE = 1 ] && [ $YES = 0 ]; then
   HELD=$(docker ps -a --format '{{.Names}}' 2>/dev/null | paste -sd' ' - || true)
   echo "--purge removes every container on this machine ($HELD), every Docker volume,"
-  echo "Caddy with every route and certificate, and /var/lib/outpost with its backups."
+  echo "Caddy with every route and certificate, and ${box.state} with its backups."
   if [ -t 0 ]; then
     read -r -p "Type purge to go on: " ANSWER
     [ "$ANSWER" = purge ] || { echo "nothing removed" >&2; exit 1; }
@@ -663,7 +684,7 @@ systemctl disable --now basecamp-firewall.service 2>/dev/null || true
 nft delete table inet basecamp 2>/dev/null || true
 rm -f $UNIT /etc/systemd/system/basecamp-litestream.service /etc/systemd/system/basecamp-firewall.service
 rm -rf /etc/systemd/system/basecamp-litestream.service.d
-rm -rf /etc/basecamp
+rm -rf ${box.config} ${box.links}
 systemctl daemon-reload
 echo "Outpost removed: its unit, its credential, its firewall and its Litestream, so no app here replicates."
 
@@ -679,7 +700,7 @@ left() {
 }
 
 if [ $PURGE = 0 ]; then
-  echo "Its apps, their data, Docker, Caddy and /var/lib/outpost are left: outpost-uninstall --purge removes them."
+  echo "Its apps, their data, Docker, Caddy and ${box.state} are left: outpost-uninstall --purge removes them."
   left
   exit 0
 fi
@@ -688,7 +709,7 @@ if command -v docker >/dev/null 2>&1; then
   docker ps -aq | xargs -r docker rm -f >/dev/null || true
   docker volume ls -q | xargs -r docker volume rm >/dev/null || true
 fi
-rm -rf /var/lib/outpost
+rm -rf ${box.state}
 
 systemctl disable --now caddy-api.service 2>/dev/null || true
 export DEBIAN_FRONTEND=noninteractive
@@ -701,7 +722,7 @@ rm -rf /usr/local/bin/litestream /var/lib/litestream
 
 [ -n "$BUN_DIR" ] && [ "$BUN_DIR" != /usr/local ] && rm -rf "$BUN_DIR"
 rm -f /usr/local/sbin/outpost-uninstall
-echo "Purged: apps, volumes, Docker, Caddy, Litestream, /var/lib/outpost and the Outpost's bun."
+echo "Purged: apps, volumes, Docker, Caddy, Litestream, ${box.state} and the Outpost's bun."
 left
 `
 }

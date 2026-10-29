@@ -57,8 +57,8 @@ const READINGS = {
   // overall score on every version.
   'runtime.outpostUnitText': ['systemd-analyze', 'security', '--no-pager', 'outpost'],
   'runtime.containers':  ['docker', 'ps', '-q'],
-  'files.etc':           ['stat', '-c', '%a %U %G %n', '/etc/basecamp', '/etc/basecamp/outpost.key', '/etc/basecamp/outpost.env'],
-  'files.certExpiry':    ['openssl', 'x509', '-enddate', '-noout', '-in', '/etc/basecamp/outpost.crt'],
+  'files.etc':           ['stat', '-c', '%a %U %G %n', '/etc/outpost', '/etc/outpost/outpost.key', '/etc/outpost/outpost.env'],
+  'files.certExpiry':    ['openssl', 'x509', '-enddate', '-noout', '-in', '/etc/outpost/outpost.crt'],
 }
 
 async function run(argv) {
