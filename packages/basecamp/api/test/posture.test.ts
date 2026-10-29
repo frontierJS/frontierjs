@@ -15,7 +15,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir }      from 'node:os'
 import { ensureCert }  from '@frontierjs/outpost/cert'
 import { createTestEnv, session } from '@frontierjs/testing'
-import { signRequest } from '@frontierjs/toolbelt/signature'
+import { generateSigningKeys, signRequest } from '@frontierjs/toolbelt/signature'
 import { GatePlugin }  from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
@@ -174,7 +174,7 @@ const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
 const CERT       = ensureCert(mkdtempSync(join(tmpdir(), 'basecamp-posture-cert-'))).cert
 
-let env: any, ws: any, owner: any, machine: any, SECRET: string
+let env: any, ws: any, owner: any, machine: any, KEY: string
 
 beforeAll(async () => {
   env = await createTestEnv({
@@ -198,7 +198,9 @@ beforeAll(async () => {
   const token = mintEnrollToken().token
   await sys.server.update({ where: { id: machine.id },
     data: { enrollTokenHash: hashEnrollToken(token), enrollExpiresAt: new Date(Date.now() + 60_000) } })
-  SECRET = (await env.http.post(`/servers/${machine.id}/enroll`).send({ token, cert: CERT })).body.secret
+  const keys = await generateSigningKeys()
+  await env.http.post(`/servers/${machine.id}/enroll`).send({ token, cert: CERT, publicKey: keys.publicKey })
+  KEY = keys.privateKey
 }, 120_000)
 
 afterAll(async () => { await env?.close() })
@@ -207,7 +209,7 @@ async function report(readings: PostureReadings, at = new Date().toISOString()) 
   const body = { server_id: machine.id, at, readings }
   const req  = env.http.post('/posture').set('x-service-method', 'report')
   const head = await signRequest({
-    secret: SECRET, method: 'POST', path: '/posture', serviceMethod: 'report', body: JSON.stringify(body),
+    privateKey: KEY, method: 'POST', path: '/posture', serviceMethod: 'report', body: JSON.stringify(body),
     timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
   })
   for (const [k, v] of Object.entries(head)) req.set(k, v)
@@ -430,7 +432,7 @@ describe('the host row on /hub/security/', () => {
   test('the host row\'s own report carries the hub controls beside its fleet grade, for the hub alone', async () => {
     // A slug is set once, so the host is a machine enrolled under that slug and
     // not the fixture renamed.
-    const drifted = { machine, SECRET }
+    const drifted = { machine, KEY }
     machine = await env.system.server.create({ data: { workspaceId: ws.id, name: 'hub-host', slug: HOST_SLUG, status: 'pending' } })
     // The slug is any administrator's to choose, so it names nothing until the hub points at the row.
     expect((await env.as(admin).service('posture').call('host', undefined, {})).enrolled).toBe(false)
@@ -442,7 +444,9 @@ describe('the host row on /hub/security/', () => {
     const token = mintEnrollToken().token
     await env.system.server.update({ where: { id: machine.id },
       data: { enrollTokenHash: hashEnrollToken(token), enrollExpiresAt: new Date(Date.now() + 60_000) } })
-    SECRET = (await env.http.post(`/servers/${machine.id}/enroll`).send({ token, cert: CERT })).body.secret
+    const keys = await generateSigningKeys()
+    await env.http.post(`/servers/${machine.id}/enroll`).send({ token, cert: CERT, publicKey: keys.publicKey })
+    KEY = keys.privateKey
     const files = { db: { path: '/srv/db', mode: '700', owner: 'root', group: 'root' },
                     env: { path: '/srv/.env', mode: '644', owner: 'root', group: 'root' } }
     expect((await report({ ...CLEAN, host_files: files })).status).toBe(200)
@@ -458,14 +462,14 @@ describe('the host row on /hub/security/', () => {
     // A workspace owner reaches the row through `latest`, never the hub's view.
     expect((await env.as(owner).service('posture').call('host', undefined, {}).catch((e: any) => e)).code ?? 404).toBe(404)
     await sys.hubConfig.update({ where: { id: 'hub' }, data: { appId: null } })
-    ;({ machine, SECRET } = drifted)
+    ;({ machine, KEY } = drifted)
   })
 
   test('a report naming no machine is refused, whatever signs it', async () => {
     const body = { readings: CLEAN }
     const req  = env.http.post('/posture').set('x-service-method', 'report')
     const head = await signRequest({
-      secret: SECRET, method: 'POST', path: '/posture', serviceMethod: 'report', body: JSON.stringify(body),
+      privateKey: KEY, method: 'POST', path: '/posture', serviceMethod: 'report', body: JSON.stringify(body),
       timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     })
     for (const [k, v] of Object.entries(head)) req.set(k, v)

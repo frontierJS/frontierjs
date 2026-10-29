@@ -45,7 +45,7 @@ import { normalizeOrderBy, type SortParam } from '@frontierjs/toolbelt/query'
 import { LEVELS }                from '@frontierjs/litestone'
 import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor, findScoped, getScoped, deriveSlug, narrowPatch, changesNothing, slugify } from '../../core/resource.ts'
-import { secretRef }             from '../../core/credentials.ts'
+import { HUB_SIGNING_REF }       from '../../core/credentials.ts'
 import { recordHealth, SERVER_SERIES, SERVER_READINGS } from '../../domain/host/server-metrics.ts'
 import { connectorFor, targetFor, computeProviders, markFor, fleetMark, priceIn, sizeRegions } from '../../providers/compute/index.ts'
 import { sendVia }               from '../../providers/compute/accounts.ts'
@@ -1158,22 +1158,9 @@ export default createService({
     const target = `outpost:${id}`
     const known  = await conduit.resolve(target).catch(() => null)
 
-    // WHICH key this app signs TO the machine with, and it is the same
-    // question `core/hooks.ts` answers for the inbound half. A machine that
-    // enrolled verifies with the secret it was handed — its own — so a target
-    // signed with anything else is refused by the machine it names.
-    //
-    // There is no fleet-key branch, and the reason is that it could not be
-    // reached: a target is registered HERE and nowhere else, this method is
-    // behind the signature guard, and that guard now refuses a machine with
-    // no `outpostSecretId`. A machine that has not enrolled cannot heartbeat,
-    // so it can never have a target — an `envRef('OUTPOST_SECRET')` here would
-    // be a branch nothing can take, and a reader would have to prove that
-    // before believing the fleet key is out of the picture.
-    //
-    // A REF, never the material: the registry hands descriptors back over
-    // `GET /conduit-targets`.
-    const outboundRef = secretRef(server.outpostSecretId as string, 'secret')
+    // This app signs TO a machine with its own pair, whose public half the
+    // machine pinned at enrollment (`FJS-D1604`). A REF, never the material:
+    // the registry hands descriptors back over `GET /conduit-targets`.
 
     // No target without a pin, and no pin over plain http. That port takes
     // every deploy's decrypted env, and an Outpost's heartbeat names its own
@@ -1188,6 +1175,7 @@ export default createService({
       $.app.logger.warn('conduit: outpost not registered — no https URL or no enrolled certificate', {
         server_id: id, url: data.outpost_url, has_cert: !!server.outpostCert })
     } else if (pinnable && (known?.address !== data.outpost_url || known?.pinned_cert !== server.outpostCert
+                            || known?.auth?.type !== 'signed'
                             || known?.resilience?.deadline_ms !== DEPLOY_TIMEOUT_MS)) {
       await conduit.register({
         id:            target,
@@ -1195,13 +1183,7 @@ export default createService({
         protocol:      'http',
         address:       data.outpost_url,
         pinned_cert:   server.outpostCert,
-        // A REF, resolved at send time. This carried the secret itself
-        // (`{ secret: … }`) until 2026-08-09, which was wrong twice: conduit's
-        // hmac signer reads `ref` and nothing else, so every outbound call to
-        // an outpost failed `auth_failed` naming credential `undefined`; and the
-        // material was written into the registry, where `GET /conduit-targets`
-        // hands it back. Nothing had ever sent to an outpost, so neither showed.
-        auth:          { type: 'hmac', ref: outboundRef },
+        auth:          { type: 'signed', signer: 'ed25519', ref: HUB_SIGNING_REF },
         // Conduit's 45s whole-call deadline caps every send's own timeout,
         // so a deploy, a job's `timeout_s` and a cleanup sweep were all cut
         // at 45s whatever they asked for. The longest command is the bound;

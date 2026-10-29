@@ -13,7 +13,7 @@
  */
 
 import { test, expect, describe } from 'bun:test'
-import { signRequest }            from '@frontierjs/toolbelt/signature'
+import { signRequest, generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { createInspector }        from '../src/docker.js'
 import { createReporter }         from '../src/report.js'
 import { createOutpostServer }    from '../src/server.js'
@@ -21,8 +21,13 @@ import { readConfig }             from '../src/config.js'
 
 const FIXTURE = JSON.parse(await Bun.file(new URL('./fixtures/posture/dev-host.json', import.meta.url)).text())
 
+// Basecamp signs every command and this machine every report, each with its
+// own pair (FJS-D1604).
+const HUB     = await generateSigningKeys()
+const MACHINE = await generateSigningKeys()
+
 const CONFIG = {
-  serverId: 'srv-1', secret: 'fleet-secret', basecampUrl: 'http://basecamp.test',
+  serverId: 'srv-1', signingKey: MACHINE.privateKey, hubKey: HUB.publicKey, basecampUrl: 'http://basecamp.test',
   port: 7180, version: '0.1.0', publicUrl: 'https://outpost.test:7180',
   heartbeatMs: 30_000, reportMs: 300_000, postureMs: 21_600_000, workDir: '/tmp/outpost-test',
   caddyAdmin: 'http://127.0.0.1:1',
@@ -356,19 +361,19 @@ describe('posture reaches basecamp', () => {
 
     expect(sent[0].url).toBe('http://basecamp.test/posture')
     expect(sent[0].init.headers['x-service-method']).toBe('report')
-    expect(sent[0].init.headers['X-Fjs-Signature']).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
+    expect(sent[0].init.headers['X-Fjs-Signature']).toMatch(/^v1-ed25519=[A-Za-z0-9_-]{86}$/)
     expect(sent[0].body.server_id).toBe('srv-1')
     expect(sent[0].body.readings.os.codename).toBe('jammy')
     expect(typeof sent[0].body.at).toBe('string')
   })
 
   let nonces = 0
-  async function send(server, path, { secret = CONFIG.secret } = {}) {
+  async function send(server, path, { key = HUB.privateKey } = {}) {
     const payload = '{}'
     const headers = new Headers({ 'content-type': 'application/json' })
-    if (secret) {
+    if (key) {
       for (const [k, v] of Object.entries(await signRequest({
-        secret, method: 'POST', path, body: payload,
+        privateKey: key, method: 'POST', path, body: payload,
         timestamp: Math.floor(Date.now() / 1000), nonce: `posture-${++nonces}`,
       }))) headers.set(k, v)
     }
@@ -380,7 +385,7 @@ describe('posture reaches basecamp', () => {
       inspector: createInspector({ run: replay().run }),
       log: { warn() {}, error() {} },
     })
-    expect((await send(server, '/posture', { secret: null })).status).toBe(401)
+    expect((await send(server, '/posture', { key: null })).status).toBe(401)
 
     const res = await send(server, '/posture')
     expect(res.status).toBe(200)
@@ -394,7 +399,7 @@ describe('posture reaches basecamp', () => {
 
 describe('the host files on a fleet Outpost', () => {
   const FLEET_ENV = {
-    OUTPOST_SERVER_ID: 'srv-host', OUTPOST_SECRET: 's'.repeat(64), BASECAMP_URL: 'https://basecamp.test/',
+    OUTPOST_SERVER_ID: 'srv-host', OUTPOST_SIGNING_KEY: MACHINE.privateKey, OUTPOST_HUB_KEY: HUB.publicKey, BASECAMP_URL: 'https://basecamp.test/',
     OUTPOST_TLS_CERT: '/etc/outpost/outpost.crt', OUTPOST_TLS_KEY: '/etc/outpost/outpost.key',
     OUTPOST_PUBLIC_URL: 'https://host.test:8180',
   }

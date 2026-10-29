@@ -9,6 +9,9 @@ examples:
   - fli dev --debug
   - fli dev --verbose
   - fli dev --host
+  - fli dev --api production
+  - fli dev --api stage
+  - fli dev --api my-box:3001
 flags:
   check:
     type: boolean
@@ -18,6 +21,10 @@ flags:
     type: boolean
     description: Serve the web surface on every interface, so a phone on the LAN can open it
     defaultValue: false
+  api:
+    type: string
+    description: "Run the other surfaces against a deployed API over an ssh tunnel: production, stage, or an ssh destination[:port]"
+    defaultValue: ''
 ---
 
 Runs the project's own `dev` script with the right runner, on this app's own
@@ -113,6 +120,17 @@ proxies `/api` and `/ws` to the API on localhost. An app config that replaces
 `server` rather than spreading `base.server` drops the setting, and vite's banner
 then shows no Network line.
 
+**`--api <target>` runs every surface but the API, against a deployed one**
+(`core/api-tunnel.js`). A deployed API listens on its box's loopback only, so
+fli opens `ssh -L` from this app's own API port to it and starts the rest: the
+proxies already point at that port, so nothing else changes. `production` and
+`stage` resolve off the deploy block the way `fli deploy` does, and the box's
+port is `deploy.api.port`; anything else is an ssh destination, with `:port` to
+name another. The surfaces start only once the health path answers through the
+tunnel, and the summary names the target, because every write goes to that
+API's database. The key and database preflights are skipped: neither is the
+one being used.
+
 **The runner is decided by a lockfile found by walking UP.** A package inside a
 workspace has no lockfile of its own — the one lockfile is at the workspace root
 — so looking only beside `package.json` reported *npm detected* for every
@@ -151,6 +169,23 @@ try {
 } catch (err) {
   log.error(err.message)
   process.exit(1)
+}
+
+// `--api`: where the tunnel goes, and the local port it takes from the API surface.
+let remote = null
+if (flag.api) {
+  const { resolveApiTarget } = await import(resolve(global.fliRoot, 'core/api-tunnel.js'))
+  const { loadFrontierConfig } = await import(resolve(global.fliRoot, 'core/utils.js'))
+  const { PLACEHOLDER_SERVER } = await import(resolve(global.fliRoot, 'core/deploy-target.js'))
+  const resolved = resolveApiTarget(flag.api, (await loadFrontierConfig(root))?.deploy ?? null)
+  if (!resolved.ok) { log.error(resolved.reason); process.exit(1) }
+  if (resolved.host.endsWith(PLACEHOLDER_SERVER)) {
+    log.error(`deploy.server is still the placeholder '${PLACEHOLDER_SERVER}' — set it, or pass --api <ssh alias>`)
+    process.exit(1)
+  }
+  const apiRow = session.rows.find(r => r.surface === 'api')
+  if (!apiRow) { log.error('--api replaces the API surface, and this app\'s dev starts none'); process.exit(1) }
+  remote = { ...resolved, localPort: apiRow.port, label: resolved.target ?? `${resolved.host}:${resolved.port}` }
 }
 
 const verbose = flag.verbose === true
@@ -226,7 +261,7 @@ if (flag.check) {
     }
   }
 
-  const keyState = encryptionKeyState(root)
+  const keyState = remote ? 'remote' : encryptionKeyState(root)
   if ((keyState === 'no-env' || keyState === 'blank') && !flag.dry) {
     const keygen = `fli keygen aes --format hex --name ${KEY} --env`
     log.warn(keyState === 'no-env'
@@ -246,7 +281,7 @@ if (flag.check) {
   }
 
   try {
-    warnIfDatabaseEmpty($)
+    if (!remote) warnIfDatabaseEmpty($)
   } catch (err) {
     // A preflight that throws must not stop a dev server. It is a courtesy.
     log.detail(`database preflight skipped: ${err.message}`)
@@ -263,17 +298,51 @@ const env = {
   ...(generatedKey && { [KEY]: generatedKey }),
 }
 
-const composed = composedSurfaces(manifest.scripts, session.rows)
+let composed = composedSurfaces(manifest.scripts, session.rows)
+if (remote) {
+  // A `dev` fli does not compose cannot be run without its API.
+  composed = composed?.filter(r => r.surface !== 'api')
+  if (!composed?.length) {
+    log.error('--api needs a dev script that runs its surfaces side by side, e.g. `bun run --parallel api web`')
+    process.exit(1)
+  }
+}
 if (!composed) {
   log.info(`${runner} run dev`)
   $.exec({ command: `cd ${root} && ${runner} run dev`, dry: flag.dry, env })
   return
 }
 
+let tunnel = null
+if (remote) {
+  const { openTunnel, sshArgs } = await import(resolve(global.fliRoot, 'core/api-tunnel.js'))
+  const via = `ssh ${sshArgs(remote).join(' ')}`
+  if (flag.dry) log.dry(`Would run:   ${via}`)
+  else {
+    log.info(`tunnel ${chalk.bold(remote.label)} — localhost:${remote.localPort} → ${remote.host}:${remote.port}`)
+    log[verbose ? 'info' : 'detail'](via)
+    try {
+      tunnel = await openTunnel(remote)
+    } catch (err) {
+      log.error(`tunnel to ${remote.host} did not open: ${err.message}`)
+      process.exit(1)
+    }
+    if (tunnel.status >= 400) log.warn(`${remote.health} answered ${tunnel.status} through the tunnel`)
+    if (remote.target === 'production') log.warn(`every write goes to the ${chalk.bold('production')} database`)
+    // ssh shares the terminal's process group so a passphrase prompt can reach
+    // the person, and so Ctrl-C signals it directly: a signal is a quit, not a drop.
+    let quitting = false
+    tty.onExit(() => { quitting = true; tunnel.child.kill() })
+    tunnel.child.on('close', (code, signal) => {
+      if (!quitting && !signal) log.error(`tunnel to ${remote.host} closed — the surfaces have no API until fli dev restarts`)
+    })
+  }
+}
+
 log[verbose ? 'info' : 'detail'](composed.map(r => `${runner} run ${r.script}`).join(chalk.dim('  ·  ')))
 if (flag.dry) return
 
-const title = [(manifest.name ?? '').replace(/^@[^/]+\//, ''), at].filter(Boolean).join(chalk.dim(' · '))
+const title = [(manifest.name ?? '').replace(/^@[^/]+\//, ''), at, remote && chalk.yellow(`API → ${remote.label}`)].filter(Boolean).join(chalk.dim(' · '))
 let footer = null
 const run = runSurfaces({
   root, runner, rows: composed, env, echo, onExit: tty.onExit, compact: !verbose, title,

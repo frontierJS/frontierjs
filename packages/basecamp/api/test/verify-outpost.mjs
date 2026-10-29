@@ -299,7 +299,7 @@ try {
   const rows = ((await call('/servers?$limit=200', auth))?.data ?? []).filter(s => s.slug === 'dev-outpost')
   check('…and the fleet has exactly one of it', rows.length === 1)
 
-  // ── A lost identity file finds the row it left, and rotates its key ──
+  // ── A lost identity file finds the row it left, under a new key pair ──
   process.kill(dev.pid, 'SIGTERM')
   await until(async () => !(await answers(OUTPOST)), 10_000)
   rmSync(MACHINE)
@@ -308,10 +308,10 @@ try {
   check('a lost identity file re-enrolls the row it left behind', back)
   if (!back) throw new Error(`re-enrollment did not come online:\n${dev.out}`)
   check('…which is the same row', machine().serverId === first.serverId)
-  check('…under a ROTATED key', machine().secret !== first.secret)
+  check('…under a NEW key pair', machine().signingKey !== first.signingKey)
 
-  // The rotation has to reach the SENDER, or every release after a
-  // re-enrollment is signed with a key the machine no longer holds.
+  // The row has to hold the new public half and the machine the hub's, or a
+  // re-enrolled machine is one whose heartbeats or commands are all refused.
   const after = await released(app.id, auth)
   check('a release after re-enrolling still reaches the machine', after?.status === 'success')
 

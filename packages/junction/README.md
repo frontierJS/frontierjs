@@ -2400,7 +2400,7 @@ await app.conduit.register({
   kind:     'outpost',
   protocol: 'websocket',
   address:  'ws://10.0.0.5:7700',
-  auth:     { type: 'hmac', ref: 'OUTPOST_SECRET' },   // a REF, resolved at send time — never the material
+  auth:     { type: 'hmac', ref: 'env:FLEET_KEY' },    // a REF, resolved at send time — never the material
 })
 ```
 

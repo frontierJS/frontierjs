@@ -8,7 +8,7 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
 
 | File | What it owns |
 | --- | --- |
-| `src/config.js` | every environment variable, and the three that have no safe default |
+| `src/config.js` | every environment variable, and the six that have no safe default |
 | `src/layout.js` | **every path on a box** (`FJS-D1544`) — `/etc/outpost`, `/var/lib/outpost` and the `/frontier-outpost` links, from systemd's `$CONFIGURATION_DIRECTORY`/`$STATE_DIRECTORY` when set. Basecamp's `installScript()` imports it, so the unit's sandbox and this process name one place; `compute.test.ts` fails a path the install names outside its roots |
 | `src/docker.js` | **the one place a command runs on the machine** — `createDocker` for containers, `createInspector` for volumes, disk and `posture()`: the box's defenses as facts, a failed or missing command `null` (unknown) per key, never a verdict. Its argv table is `test/fixtures/posture/capture.mjs`'s, and the replay test refuses one the capture lacks |
 | `src/server.js` | the inbound half: the route table, and the signature every route but `/health` requires. `/deploy-key` mints an app's key when Basecamp makes the App |

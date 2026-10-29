@@ -52,7 +52,7 @@ export function createReporter(config, {
         // joined (`FJS-678`).
         // `serviceMethod` is signed because the header it names is what
         // junction dispatches on (`FJS-1858`).
-        secret: config.secret, method: 'POST', path, serviceMethod, body: payload,
+        privateKey: config.signingKey, method: 'POST', path, serviceMethod, body: payload,
         timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
       })),
       },

@@ -70,7 +70,8 @@ export type TargetAuth =
   // A vendor's own scheme (a secret in the body, a minted JWT, SigV4),
   // supplied as a function by the connector: `signer` names one of
   // `ConduitOptions.signers`, `ref` is the secret handed to it (`FJS-D891`).
-  // HTTP Basic is the built-in `signer: 'basic'`.
+  // HTTP Basic is the built-in `signer: 'basic'`, and FrontierJS's own
+  // signature under a key pair is `signer: 'ed25519'`.
   // A name and not the function, because a descriptor round-trips through the
   // registry as JSON. `params` is the per-target fact a scheme signs under —
   // SigV4's region and service — handed to the signer as `SignInput.params`.
@@ -787,8 +788,9 @@ export interface ConduitOptions {
   // The functions a `{ type: 'signed', signer }` target names, by name. A
   // connector exports its own to spread in here (`FJS-D891`). A target naming
   // one that is not here is refused at put(). `basic` (RFC 7617, the ref
-  // resolving to `user:password`) is always installed, and a name it holds is
-  // refused here (`src/signers.ts`).
+  // resolving to `user:password`) and `ed25519` (this framework's signature
+  // under a key pair, the ref resolving to the private key) are always
+  // installed, and a name they hold is refused here (`src/signers.ts`).
   signers?:     Record<string, Signer>
 
   // Targets to register immediately on init.

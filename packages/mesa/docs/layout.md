@@ -74,15 +74,19 @@ src/
                          `$.measure`/`$.viewport`/`$.focus` answer a Promise
                          here, in runtime.js and in runtime-terminal.js alike
   runtime-server.js    — the server runtime, @frontierjs/mesa/runtime/server:
-                         `esc`, `attrs`, `island`, `dynamicTag`, `VOID` and
-                         `head`: the one escaper, the one attribute serializer,
+                         `esc`, `attrs`, `island`, `dynamicTag`, `VOID`,
+                         `head`, `html` and `isAnchorComment`: the one escaper,
+                         the one attribute serializer,
                          the one island marker (runtime.js imports the payload
                          from here), the one refused-tag list a `<mesa:element>`
                          is checked against on either path, and the buffer a
                          `<mesa:head>` writes beside the body, which the
-                         emitter's string mode calls (`FJS-D1634`). Nothing else: the mode writes
+                         emitter's string mode calls (`FJS-D1634`), and the
+                         `{@html}` parse, through the document `initRenderer`
+                         installs and the one anchor test render.js reads too
+                         (`FJS-D1642`). Nothing else: the mode writes
                          `$$out.push` lines, not `$$host` calls, so there is
-                         no node tree here and no engine. Every rule in it
+                         no node tree here and no engine of its own. Every rule in it
                          is a happy-dom serialization behavior the DOM path
                          shows, since parity is byte for byte against it
   entities.js          — htmlEntitiesToText(): character references as text,

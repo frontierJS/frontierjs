@@ -7,7 +7,7 @@
  * assembled here so `server.js` and `report.js` stay testable without a port or
  * a network.
  *
- * It refuses to start without a server id, a secret and a control-plane URL —
+ * It refuses to start without a server id, its keys and a control-plane URL —
  * see `config.js` for why each of the three has no safe default.
  */
 

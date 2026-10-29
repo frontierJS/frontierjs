@@ -231,8 +231,16 @@ function inputOffenses(t, n, add) {
   }
 }
 
+// What the DOM path binds to a property — `bindInput`, `bindGroup`,
+// `bindMask` — and so serializes nothing; the string mode drops these rather
+// than refusing them, and refuses the rest by name as the DOM path does.
+const PROPERTY_BIND = /^(?:bind:|:)(?:value|checked|files|group)(?:\||$)/
+
 const elementOffenses = (t, n, add) => {
-  for (const d of n.directives) add(d.name, directiveShape(d.name), d.loc)
+  for (const d of n.directives) {
+    if (t.mode === 'string' && PROPERTY_BIND.test(d.name)) continue
+    add(d.name, directiveShape(d.name), d.loc)
+  }
   for (const h of n.handlers) if (!t.events[h.event]) add(`on${h.event}`, `on${h.event}`, h.loc)
 }
 
@@ -268,7 +276,9 @@ export function hostOffenses(ir, t) {
           if (a.name === 'multiple' && typeof a.value === 'object') continue
           add(`${a.name} on <${n.tag}>`, `${a.name} on <${n.tag}>`, n.loc)
         }
-        if (!CONTROLS.includes(t.tags[n.tag]?.role)) {
+        // A bind is dropped whole in the string mode (`emitElementString`),
+        // so which control carries it is not graded there.
+        if (t.mode === 'string') {} else if (!CONTROLS.includes(t.tags[n.tag]?.role)) {
           for (const b of n.binds) add(`bind:${b.name} on <${n.tag}>`, 'bind: on a non-control', b.loc)
         } else if (n.tag === 'input') inputOffenses(t, n, add)
         if (isField(t, n) && !hasValue(n) && liveText(n)) {
@@ -301,17 +311,13 @@ export function hostOffenses(ir, t) {
       case 'text':
         for (const p of n.parts) if (p.kind === 'unlowered') add(spelling(p), spelling(p), p.loc)
         return
-      // What the string mode does not write yet is an offense of its own,
-      // so the tally counts it and the emitter refuses it by name
-      // (`IDEAS/server-render-without-dom.md` Phase 2).
-      case 'html':
-        return t.mode === 'string' ? add(kindSpelling(n), kindSpelling(n), n.loc) : undefined
       // A head and a boundary are the string mode's; a node target paints
       // one surface and has no document head.
       case 'boundary':
       case 'head':
         return t.mode === 'string' ? undefined : add(kindSpelling(n), kindSpelling(n), n.loc)
       case 'portal':
+      case 'html':
       case 'component':
       case 'comment':
       case 'if':
@@ -447,10 +453,14 @@ export function buildHost(ctx, t) {
 
   // The open tag is written at compile time when every attribute is static,
   // and by `$$host.attrs` when one is live; both are the one serializer in
-  // `runtime-server.js`, handed the entries in source order. Handlers,
-  // attachments and `bind:this` have no server half and are dropped. `dyn`
-  // names the variable holding a `<mesa:element>`'s tag: every attribute is
-  // then live, since the serializer's rules read the tag.
+  // `runtime-server.js`, handed the entries in source order. Handlers and
+  // attachments have no server half and are dropped, and so is every
+  // `bind:`: the DOM path writes a bound value to a PROPERTY, which no
+  // serializer reads, so `<input bind:value={v}>` is `<input>` on both paths
+  // (`FJS-D1643`). `bind:this` is handed null, so a script that guards on the
+  // node skips its write as it does before mount. `dyn` names the variable
+  // holding a `<mesa:element>`'s tag: every attribute is then live, since
+  // the serializer's rules read the tag.
   const emitElementString = (n, ind, dyn = null) => {
     // The DOM path's order, which decides where happy-dom serializes each
     // attribute: the template's static attributes with `class` last, then
@@ -502,6 +512,7 @@ export function buildHost(ctx, t) {
       push(ind + 1, '</'); hole(ind + 1, dyn); push(ind + 1, '>')
       line(ind, '}')
     } else if (!VOID.has(n.tag)) { emitChildren(n.children, '$$out', ind); push(ind, `</${n.tag}>`) }
+    if (n.ref) line(ind, `${n.ref}(null);`)
     for (const h of n.handlers) dep(h.expr)
     for (const a of n.attachments) dep(a.expr)
   }
@@ -671,11 +682,12 @@ export function buildHost(ctx, t) {
     line(ind, "}, { a: '' });")
   }
 
-  // Markup is painted as the text a browser's `innerText` reads from it,
+  // The string mode writes the parse `$$host.html` makes of the markup; a
+  // node target paints the text a browser's `innerText` reads from it,
   // since a terminal has text and no markup.
   const emitHtml = (n, parent, ind) => {
-    if (string) unwritten(n)
     dep(n.value)
+    if (string) return hole(ind, `$$host.html(${n.value.code})`)
     let value = `$$host.markupText((${n.value.code}), ${inPre > 0})`
     if (endsPre.has(n)) value += `.replace(${TRAILING_NEWLINE}, '')`
     liveText(parent, ind, value, '$$host.markup()')
@@ -818,10 +830,11 @@ export function buildHost(ctx, t) {
       const meta = { component: n.name, directive: n.island.directive }
       if (n.island.media) meta.media = n.island.media
       line(ind, `$$host.island(${m}, ${n.call}, ${obj}, ${JSON.stringify(meta)});`)
+    } else line(ind, `${n.call}(${m}, ${obj});`)
+    if (string) {
+      if (n.ref) line(ind, `${n.ref}(null);`)
       return
     }
-    line(ind, `${n.call}(${m}, ${obj});`)
-    if (string) return
     // The child's registry is found by its anchor, so every call below needs
     // it registered first; the order is the DOM path's.
     const live = n.spreads.length || n.props.some((p) => typeof p.value === 'object')

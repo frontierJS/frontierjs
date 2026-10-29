@@ -4,7 +4,7 @@
 
 import { BadRequest, Forbidden, NotFound, Unauthorized, applyClaims, MEMBERSHIP, signedRequest, $ } from '@frontierjs/junction'
 import { authenticate } from '@frontierjs/junction/hooks'
-import type { App, Hook, ILogger, ServiceContext, CredentialVerifier, InboundRequest }  from '@frontierjs/junction'
+import type { Hook, ILogger, ServiceContext, CredentialVerifier, InboundRequest }  from '@frontierjs/junction'
 import { actsAsApp } from './gate.ts'
 import { workspaceChannelName }       from './channels.ts'
 import type { BasecampDb }                 from './db.ts'
@@ -488,32 +488,17 @@ export const workspaceChannel: import('@frontierjs/junction').ChannelFn = (data,
 // `ctx.raw.rawBody`: re-serializing `ctx.data` to hash it would mean both sides
 // agreeing on key order and spacing forever.
 //
-// ─── Which secret ────────────────────────────────────────────────────────
+// ─── Which key ───────────────────────────────────────────────────────────
 //
-// Every machine signs with a credential of its OWN, and there is no second key
-// that also works. A provisioned machine exchanges a one-time enrollment token
-// for one during cloud-init; an imported machine gets the same exchange from
-// `servers.issueEnrollment`, which prints the one command that runs it.
-// `Server.outpostSecretId` names the row either way, and a machine that has not
-// enrolled is REFUSED — see `outpostSecretFor` below.
-//
-// The fleet-wide `OUTPOST_SECRET` is not an authentication input here. It was
-// one string every machine held, so while it was accepted any compromised box
-// could forge any other machine's check-in, and two accepted keys means the
-// weaker one is the one an attacker uses. It survived only while an imported
-// machine had no way to get a credential of its own. The variable still signs
-// OUTBOUND to a machine that has not enrolled.
-//
-// Dropping it also closed a hole rather than only narrowing one. Enrollment
-// minted a secret, wrote it to the machine through cloud-init, and nothing on
-// this side ever read it: the outpost signed with what it had been given and
-// the verifier compared against the fleet key, so **a provisioned machine could
-// never come online**. Measured — own secret 401, fleet secret 200, row stuck at
-// `installing` forever.
+// Every machine signs with an Ed25519 pair of its OWN, made at enrollment, and
+// this app holds only the public half (`Server.outpostPublicKey`, `FJS-D1604`).
+// A provisioned machine enrolls during cloud-init; an imported one runs the
+// command `servers.issueEnrollment` prints. A machine that has not enrolled is
+// REFUSED — see `outpostKeyFor` below. There is no fleet-wide key: one string
+// every machine held let any compromised box forge any other's check-in.
 //
 // Replay protection is the app's own database and therefore survives a restart
-// and is shared between replicas (`OutpostNonce`, `FJS-376`). It used to be a
-// module-level Map, which was neither.
+// and is shared between replicas (`OutpostNonce`, `FJS-376`).
 
 /**
  * What the credential reads. It is built BEFORE `createApp` returns — the
@@ -629,45 +614,17 @@ function serverIdInBody(body: string | Uint8Array): string | null {
 }
 
 /**
- * The secret this machine signs with, and whether it is its own.
- *
- * `null` is a refusal and never a fall-through to the fleet key: a request that
- * names no machine, or names one that does not exist, is not a request the
- * fleet secret should be able to rescue.
+ * The public key this machine signs with. `null` is a refusal: a request that
+ * names no machine, names one that does not exist, or names one that has not
+ * enrolled.
  */
-async function outpostSecretFor(
+async function outpostKeyFor(
   app: OutpostDeps, serverId: string | null,
-): Promise<{ secret: string; own: boolean; workspaceId: string } | null> {
+): Promise<{ publicKey: string; workspaceId: string } | null> {
   if (!serverId) return null
-
-  const sys    = app.db.asSystem() as any
-  const server = await sys.server.findFirst({ where: { id: serverId } })
-  if (!server) return null
-
-  // No fleet-wide fallback, and that is the point of the phase rather than a
-  // tightening. `OUTPOST_SECRET` is one string every machine would hold, so
-  // while it was accepted here any compromised box could forge any other
-  // machine's check-in — and two accepted keys means the weaker one is the one
-  // an attacker uses. It survived only while an imported machine had no way to
-  // get a credential of its own; `servers.issueEnrollment` is that way, so it
-  // goes. The variable still signs OUTBOUND to a machine that has not enrolled,
-  // and is no longer an authentication input.
-  //
-  // A machine with no credential is REFUSED, and the screen for it says so and
-  // prints the one command that fixes it. That is a machine an operator has not
-  // finished installing, which is a different thing from one that is broken.
-  if (!server.outpostSecretId) return null
-
-  const row = await sys.secret.findFirst({ where: { id: server.outpostSecretId } })
-  // The row is named and gone. Refuse: falling back to the fleet key here would
-  // silently re-open the hole for exactly the machine that had been closed.
-  if (!row?.data) return null
-  try {
-    const value = JSON.parse(row.data as string)?.secret
-    return typeof value === 'string' && value ? { secret: value, own: true, workspaceId: server.workspaceId as string } : null
-  } catch {
-    return null
-  }
+  const server = await (app.db.asSystem() as any).server.findFirst({ where: { id: serverId } })
+  if (!server?.outpostPublicKey) return null
+  return { publicKey: server.outpostPublicKey as string, workspaceId: server.workspaceId as string }
 }
 
 /**
@@ -687,22 +644,20 @@ export function outpostCredential(app: OutpostDeps): CredentialVerifier {
 
   return signedRequest({
     window: TOLERANCE_S,
-    // WHICH machine, then WHICH key — see `outpostSecretFor` above. A null is a
-    // refusal and never a fall-through: a request naming no machine, naming one
-    // that does not exist, or addressing something that is not an outpost
-    // endpoint is not something the fleet key should rescue.
+    // WHICH machine, then WHICH key — see `outpostKeyFor` above. A null is a
+    // refusal and never a fall-through.
     keyFor: async (req) => {
       const serverId = Object.values(OUTPOST_ENDPOINTS).map(e => e.fromRequest(req)).find(Boolean) ?? null
-      const keyed    = await outpostSecretFor(app, serverId)
+      const keyed    = await outpostKeyFor(app, serverId)
       if (!serverId || !keyed) {
         app.logger.warn('outpost signature refused', {
           path: req.path,
-          reason: serverId ? 'no usable secret for that machine' : 'the request names no machine',
+          reason: serverId ? 'that machine is unknown or has not enrolled' : 'the request names no machine',
         })
         return null
       }
       return {
-        secret:  keyed.secret,
+        publicKey: keyed.publicKey,
         // The machine's own workspace rides on the principal: every service is
         // row-scoped and `tenantClaimGuard` refuses a signed-in caller who
         // holds no claim, and nothing here may let it name another one.

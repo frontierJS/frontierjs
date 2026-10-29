@@ -6,7 +6,7 @@
 // anonymous, which is the fail-open `FJS-349` was.
 
 import { describe, it, expect } from 'bun:test'
-import { signRequest } from '@frontierjs/toolbelt/signature'
+import { generateSigningKeys, signRequest } from '@frontierjs/toolbelt/signature'
 import { createApp, defaultConfig, signedRequest } from '../index.ts'
 import { REFUSE } from '../src/auth/credentials.ts'
 import type { SessionContext } from '../src/auth/types.ts'
@@ -72,6 +72,46 @@ describe('credentials: a signed request', () => {
       method: 'POST', headers: { authorization: 'Bearer tok' }, body: '{}',
     }))
     expect((await res.json()).userId).toBe('alice')
+    await app.stop()
+  })
+})
+
+// FJS-D1604 — a caller enrolled under a key pair: this side holds the public
+// half only, and a shared-secret signature does not answer for it.
+describe('credentials: a key-pair caller', () => {
+  async function pairApp() {
+    const keys = await generateSigningKeys()
+    const app  = createApp({
+      config: { ...defaultConfig, port: 0 },
+      credentials: [signedRequest({
+        now: () => NOW,
+        keyFor: () => ({ publicKey: keys.publicKey, session: { id: 'outpost:op-1' } as SessionContext }),
+      })],
+    })
+    app.post('/whoami', (ctx: any) =>
+      ctx.user ? ctx.json({ userId: ctx.user.id }) : ctx.json({ anon: true }, 401))
+    await app.start()
+    return { app, keys }
+  }
+  const send = async (app: any, sig: Record<string, string>) => app.http.fetch(new Request('http://localhost/whoami', {
+    method: 'POST', headers: { ...sig, 'content-type': 'application/json' }, body: '{"n":1}',
+  }))
+  const sign = (key: { privateKey: string } | { secret: string }, nonce: string) =>
+    signRequest({ ...key, method: 'POST', path: '/whoami', body: '{"n":1}', timestamp: NOW, nonce })
+
+  it('becomes the principal when its private half signed', async () => {
+    const { app, keys } = await pairApp()
+    const res = await send(app, await sign({ privateKey: keys.privateKey }, 'k1'))
+    expect(res.status).toBe(200)
+    expect((await res.json()).userId).toBe('outpost:op-1')
+    await app.stop()
+  })
+
+  it('is refused under another pair, and under a shared secret', async () => {
+    const { app } = await pairApp()
+    const other = await generateSigningKeys()
+    expect((await send(app, await sign({ privateKey: other.privateKey }, 'k2'))).status).toBe(401)
+    expect((await send(app, await sign({ secret: SECRET }, 'k3'))).status).toBe(401)
     await app.stop()
   })
 })

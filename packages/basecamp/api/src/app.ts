@@ -40,7 +40,7 @@ import { createLitestoneAuth, auth as authPlugin, defineProvider } from '@fronti
 import { ssoFromEnv }                            from './core/sso-env.ts'
 import { createBasecampDb, jobsDatabasePath } from './core/db.ts'
 import { openSqlite }                    from './core/sqlite.ts'
-import { createSecretResolver }          from './core/credentials.ts'
+import { createSecretResolver, hubSigningKeys } from './core/credentials.ts'
 import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts'
 import { registerPushReceivers } from './plugins/push.ts'
 import { dependencyTargets }  from './core/dependencies.ts'
@@ -49,7 +49,7 @@ import { isPreviewOrigin }      from './domain/site/site-preview.ts'
 import { registerAllAccounts } from './providers/compute/accounts.ts'
 import { registerAllDestinations } from './providers/storage/index.ts'
 import { S3_SIGNER, s3Signer }    from './providers/storage/s3.ts'
-import { enrollTokenMatches, mintOutpostSecret, installScript, isCertificate } from './providers/compute/enrollment.ts'
+import { enrollTokenMatches, installScript, isCertificate, isSigningPublicKey } from './providers/compute/enrollment.ts'
 import { notifications, ntfy } from '@frontierjs/notifications'
 import { resolvePush, PUBLIC_NTFY } from './push.ts'
 import { outpostCredential, outpostScope, workspaceOrKeys } from './core/hooks.ts'
@@ -925,7 +925,7 @@ export async function buildBasecampApp(
       // where the parsed body is `body` — `data` is the service pipeline's name
       // for it and is undefined here, which reads as a caller who sent no
       // token and refuses every request identically.
-      const { token, cert } = (ctx.body ?? {}) as { token?: string; cert?: string }
+      const { token, cert, publicKey } = (ctx.body ?? {}) as { token?: string; cert?: string; publicKey?: string }
 
       // The certificate the machine's command port answers with, pinned on its
       // Conduit target: no other certificate reaches it, and a machine that
@@ -934,6 +934,10 @@ export async function buildBasecampApp(
       // before the burn so a malformed one does not spend the token.
       if (!isCertificate(cert))
         return ctx.json({ error: 'enrollment needs the command port certificate, as PEM, in `cert`' }, 400)
+      // The public half of the pair the machine made, which every report it
+      // signs is verified against (`FJS-D1604`).
+      if (!isSigningPublicKey(publicKey))
+        return ctx.json({ error: 'enrollment needs the machine\'s Ed25519 public key, base64url, in `publicKey`' }, 400)
 
       // asSystem(): there is no principal — the caller is a machine that has
       // never authenticated and is asking for the credential that would let it.
@@ -959,44 +963,18 @@ export async function buildBasecampApp(
       })
       if (!claimed?.count) return refuse()
 
-      const secret = mintOutpostSecret()
-      const data   = JSON.stringify({ secret })
+      // A machine enrolling AGAIN, reinstalled or its key lost, replaces the
+      // key it had: the burned token is the proof of authority, and whoever
+      // held the previous pair does not hold this one.
+      await sys.server.update({ where: { id }, data: { outpostCert: cert, outpostPublicKey: publicKey } })
 
-      // A machine enrolling AGAIN — reinstalled, or its key lost — ROTATES the
-      // key it had rather than minting a second one. `issueEnrollment` may be
-      // run again by design, and a second `outpost:<slug>` beside the first
-      // hits the [workspaceId, name] unique — a machine that had enrolled once
-      // could never enroll again. The old key stops verifying here, which is the point: a burned token
-      // is the proof of authority, and whoever held the previous key does not
-      // hold this one.
-      const held = server.outpostSecretId
-        ? await sys.secret.findFirst({ where: { id: server.outpostSecretId } })
-        : null
-      const row  = held
-        ? await sys.secret.update({ where: { id: held.id }, data: { data, version: held.version } })
-        : await sys.secret.create({ data: {
-            workspaceId: server.workspaceId,
-            // The unique is [workspaceId, name] and a slug is already unique in
-            // the workspace, so a FIRST enrollment cannot collide.
-            name:        `outpost:${server.slug}`,
-            kind:        'generic',
-            data,
-          }})
-      // An update that matched nothing — the row deleted, or its version moved
-      // between the read and the write — is a key this machine will be handed
-      // and nothing will verify. The token is already burned, so the answer is
-      // the same refusal as everything above; the machine asks for another.
-      if (!row) return refuse()
-      await sys.server.update({ where: { id }, data: { outpostCert: cert, ...(held ? {} : { outpostSecretId: row.id }) } })
+      logger.info('outpost enrolled', { server_id: id })
 
-      logger.info('outpost enrolled', { server_id: id, secret_id: row.id })
-
-      // The response is the only place this secret exists outside the database,
-      // and `publicUrl` is the second unknown the exchange answers: the Outpost
-      // cannot see the address the world reaches it at, and this app knows it
-      // because the vendor said so when the machine came up.
+      // `hubKey` is the half the machine pins to verify every command it is
+      // sent, and `publicUrl` the address the world reaches it at, which the
+      // Outpost cannot see and the vendor told this app.
       return ctx.json({
-        secret,
+        hubKey:    (await hubSigningKeys()).publicKey,
         publicUrl: server.ipAddress ? `https://${server.ipAddress}:8180` : null,
         serverId:  id,
       })

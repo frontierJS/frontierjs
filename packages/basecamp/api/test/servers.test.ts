@@ -2,7 +2,7 @@
  * servers.test.ts — what a machine's heartbeat may write (FJS-D1555).
  *
  * `App.deployPublicKey` is `@system`, and the heartbeat is one of its two
- * writers. The machine is signed in by its own enrolled secret and trusted to
+ * writers. The machine is signed in by its own enrolled key and trusted to
  * name its OWN keys: an App placed on another machine, or none, is never
  * written from this one's report, and a value carrying a private block is
  * never shown.
@@ -14,7 +14,7 @@ import { mkdtempSync }            from 'node:fs'
 import { tmpdir }                 from 'node:os'
 import { ensureCert }             from '@frontierjs/outpost/cert'
 import { createTestEnv, session } from '@frontierjs/testing'
-import { signRequest }            from '@frontierjs/toolbelt/signature'
+import { generateSigningKeys, signRequest }            from '@frontierjs/toolbelt/signature'
 import { GatePlugin }             from '@frontierjs/litestone'
 import { basecampGateLevel }      from '../src/core/gate.ts'
 import { buildBasecampApp }       from '../src/app.ts'
@@ -54,13 +54,14 @@ beforeAll(async () => {
   await sys.appServer.create({ data: { appId: placed.id,    serverId: machine.id, replicaIndex: 0 } })
   await sys.appServer.create({ data: { appId: elsewhere.id, serverId: other.id,   replicaIndex: 0 } })
 
-  // Enrolled the way a real machine is, so the heartbeat is signed with its own secret.
+  // Enrolled the way a real machine is, so the heartbeat is signed with its own key.
   const { mintEnrollToken, hashEnrollToken } = await import('../src/providers/compute/enrollment.ts')
   const token = mintEnrollToken().token
   await sys.server.update({ where: { id: machine.id },
     data: { enrollTokenHash: hashEnrollToken(token), enrollExpiresAt: new Date(Date.now() + 60_000) } })
-  const res = await env.http.post(`/servers/${machine.id}/enroll`).send({ token, cert: CERT })
-  secret = (res.body as { secret: string }).secret
+  const keys = await generateSigningKeys()
+  await env.http.post(`/servers/${machine.id}/enroll`).send({ token, cert: CERT, publicKey: keys.publicKey })
+  secret = keys.privateKey
 }, 120_000)
 
 afterAll(async () => { await env?.close() })
@@ -69,7 +70,7 @@ async function heartbeat(body: Record<string, unknown>) {
   const path = `/servers/${machine.id}`
   const req  = env.http.post(path).set('x-service-method', 'heartbeat')
   const headers = await signRequest({
-    secret, method: 'POST', path, serviceMethod: 'heartbeat', body: JSON.stringify(body),
+    privateKey: secret, method: 'POST', path, serviceMethod: 'heartbeat', body: JSON.stringify(body),
     timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
   })
   for (const [k, v] of Object.entries(headers)) req.set(k, v)

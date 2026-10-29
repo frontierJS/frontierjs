@@ -532,7 +532,7 @@ CREATE TABLE IF NOT EXISTS "server" (
   "lastHeartbeatAt" TEXT,
   "enrollTokenHash" TEXT,
   "enrollExpiresAt" TEXT,
-  "outpostSecretId" TEXT,
+  "outpostPublicKey" TEXT,
   "outpostCert" TEXT,
   "plan" TEXT NOT NULL DEFAULT '{}',
   "actualSpecs" TEXT,

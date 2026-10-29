@@ -530,23 +530,23 @@ describe('renderToHTML — target: server (FJS-D1634)', () => {
   export const kind = 'rich'
 </script>
 <script>
-  let raw = '<i>x</i>'
+  let p = Promise.resolve(1)
 </script>
-<div>{@html raw}</div>`)
+<div>{#await p}<i>x</i>{:then v}{v}{/await}</div>`)
     const r = await renderFile(f, { target: 'fragment', compileOptions: { target: 'server' } })
     expect(r.html).toBe('<div><i>x</i></div>')
     expect(r.exports.kind).toBe('rich')
     expect(r.unlowered).toHaveLength(1)
     expect(r.unlowered[0].file).toBe(f)
-    expect(r.unlowered[0].refused).toMatch(/\{@html\}/)
+    expect(r.unlowered[0].refused).toMatch(/\{#await\}/)
   })
 
   it('a refused file without one falls back the same way', async () => {
-    const f = file('Raw.mesa', `<script>let m = '<p>out</p>'</script>{@html m}<span>in</span>`)
+    const f = file('Raw.mesa', `<script>let p = Promise.resolve(1)</script>{#await p}<p>out</p>{:then v}{v}{/await}<span>in</span>`)
     const r = await renderFile(f, { target: 'fragment', compileOptions: { target: 'server' } })
     expect(r.html).toContain('<span>in</span>')
     expect(r.unlowered.map((u) => u.file)).toEqual([f])
-    expect(r.unlowered[0].refused).toMatch(/\{@html\}/)
+    expect(r.unlowered[0].refused).toMatch(/\{#await\}/)
   })
 
   it('a tree of components lowers whole: unlowered is empty and the bytes are the DOM path\'s', async () => {
@@ -571,9 +571,9 @@ describe('renderToHTML — target: server (FJS-D1634)', () => {
   // refuses takes the whole tree to the DOM path; the child alone is named.
   it('a server-mode entry importing a refused file falls back with it, naming only the child', async () => {
     file('Rich.mesa', `<script>
-  let raw = '<i>x</i>'
+  let p = Promise.resolve(1)
 </script>
-<div>{@html raw}</div>`)
+<div>{#await p}<i>x</i>{:then v}{v}{/await}</div>`)
     const f = file('Page.mesa', `<script>
   import Rich from './Rich.mesa'
   let n = 1
@@ -582,7 +582,7 @@ describe('renderToHTML — target: server (FJS-D1634)', () => {
     const r = await renderFile(f, { target: 'fragment', compileOptions: { target: 'server' } })
     expect(r.html).toBe('<main><h1>1</h1><div><i>x</i></div></main>')
     expect(r.unlowered.map((u) => path.basename(u.file))).toEqual(['Rich.mesa'])
-    expect(r.unlowered[0].refused).toMatch(/\{@html\}/)
+    expect(r.unlowered[0].refused).toMatch(/\{#await\}/)
   })
 
   it('a compile error under the string mode is still a compile error', async () => {

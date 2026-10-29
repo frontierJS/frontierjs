@@ -1022,7 +1022,7 @@ const { conduit } = await createTestConduit(
 
 **Not a service mesh.** It does not proxy application traffic between services.
 
-**Not a generic WebSocket client.** A `websocket` target speaks Conduit's own frame envelope and the far side has to implement it; `@frontierjs/outpost` is not reached this way — it is an `http` target with `hmac` auth. A third-party socket is reachable only to be LISTENED to: a `broker` target whose connector supplies the framing. Nothing is sent over it but the handshake, the acks and the keepalive's ping.
+**Not a generic WebSocket client.** A `websocket` target speaks Conduit's own frame envelope and the far side has to implement it; `@frontierjs/outpost` is not reached this way — it is an `http` target with `signed` auth and the built-in `ed25519` signer. A third-party socket is reachable only to be LISTENED to: a `broker` target whose connector supplies the framing. Nothing is sent over it but the handshake, the acks and the keepalive's ping.
 
 **Not a boundary anything enforces.** Declaring a target is how you get the ring around a call, not a rule the framework applies to every outbound byte.
 

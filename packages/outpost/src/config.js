@@ -5,7 +5,7 @@
  * machine by something else (ring 1 in `IDEAS/deploy-plane.md`) and has no
  * config file of its own to edit. Five of them have no safe default and the
  * process exits rather than starting half-configured: an Outpost that cannot
- * name its server reports as nobody, one with no secret would either refuse
+ * name its server reports as nobody, one with no hub key would either refuse
  * every command or — far worse — accept every one, and one with no certificate
  * would take commands in the clear.
  */
@@ -34,10 +34,13 @@ export function readConfig(env = process.env) {
   const config = {
     /** Which `Server` row this machine IS. Every report names it. */
     serverId:   need('OUTPOST_SERVER_ID'),
-    /** THIS machine's own key, handed over at enrollment. Signs what this
-     *  sends, verifies what arrives. Basecamp holds no key that opens every
-     *  machine, so another machine's key is refused here too. */
-    secret:     need('OUTPOST_SECRET'),
+    /** THIS machine's Ed25519 private key, base64url PKCS#8, made at
+     *  enrollment and never sent. Signs every report (`FJS-D1604`). */
+    signingKey: need('OUTPOST_SIGNING_KEY'),
+    /** The public half of Basecamp's own pair, answered at enrollment. The
+     *  only key a command is verified against, so nothing this machine holds
+     *  can sign as Basecamp. */
+    hubKey:     need('OUTPOST_HUB_KEY'),
     /** Where Basecamp answers. No default — a wrong guess reports into a void. */
     basecampUrl: need('BASECAMP_URL')?.replace(/\/$/, ''),
     /** The command port's certificate and key — `cert.js`. No default and no
@@ -132,7 +135,8 @@ export function readConfig(env = process.env) {
     throw new Error(
       `outpost: ${missing.join(', ')} must be set.\n` +
       `  OUTPOST_SERVER_ID  the id of this machine's Server row in Basecamp\n` +
-      `  OUTPOST_SECRET     this machine's own key, from enrolling\n` +
+      `  OUTPOST_SIGNING_KEY  this machine's private key, made when enrolling\n` +
+      `  OUTPOST_HUB_KEY    Basecamp's public key, from enrolling\n` +
       `  BASECAMP_URL       where Basecamp answers, e.g. https://basecamp.internal\n` +
       `  OUTPOST_TLS_CERT   the command port's certificate, from enrolling\n` +
       `  OUTPOST_TLS_KEY    its private key`

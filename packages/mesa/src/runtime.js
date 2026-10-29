@@ -495,7 +495,7 @@ export function createEffect(fn, opts) {
  * anchors it finds and cannot otherwise tell one from a comment an author put
  * through `{@html}` — both are Comment nodes and an empty one is what a caller
  * gets from rendering a component to a string and splicing it in (`FJS-906`).
- * Read by `render.js`'s `_isAnchorComment` and by nothing else.
+ * Read by `runtime-server.js`'s `isAnchorComment` and by nothing else.
  */
 export const ANCHOR_DATA = '$'
 

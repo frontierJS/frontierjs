@@ -388,13 +388,13 @@ export function createOutpostServer(config, {
       // Recomputed from the RAW request URL: the query is part of the canonical
       // string since `FJS-678`, and reading a path the router already stripped
       // would sign a different request than the one that arrived.
-      secret: config.secret, method: req.method, path, query: url.search, body, headers: req.headers,
+      publicKey: config.hubKey, method: req.method, path, query: url.search, body, headers: req.headers,
       // This machine's clock, stated: the kit takes no ambient state.
       toleranceSeconds: TOLERANCE_S, now: Math.floor(Date.now() / 1000), seenNonce,
     })
     if (!checked.ok) {
       // Logged with the reason, answered without it: a caller learns it was
-      // refused, not whether the clock or the secret was wrong.
+      // refused, not whether the clock or the key was wrong.
       log.warn?.(`outpost: refused ${req.method} ${path} — ${checked.reason}`)
       return json({ error: 'signature required' }, 401)
     }

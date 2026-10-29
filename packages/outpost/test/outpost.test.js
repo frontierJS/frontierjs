@@ -12,7 +12,7 @@
  */
 
 import { test, expect, describe } from 'bun:test'
-import { signRequest }            from '@frontierjs/toolbelt/signature'
+import { signRequest, generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { createOutpostServer }    from '../src/server.js'
 import { createDocker, createInspector, isDigest, BACKUP_SCRIPT } from '../src/docker.js'
 import { createReporter }         from '../src/report.js'
@@ -35,8 +35,13 @@ import { gzipSync }               from 'node:zlib'
 // Each app's data directory, `<APPS>/<app_id>/data`, which a deploy makes.
 const APPS = mkdtempSync(join(tmpdir(), 'outpost-apps-'))
 
+// Basecamp signs every command and this machine every report, each with its
+// own pair (FJS-D1604).
+const HUB     = await generateSigningKeys()
+const MACHINE = await generateSigningKeys()
+
 const CONFIG = {
-  serverId: 'srv-1', secret: 'fleet-secret', basecampUrl: 'http://basecamp.test',
+  serverId: 'srv-1', signingKey: MACHINE.privateKey, hubKey: HUB.publicKey, basecampUrl: 'http://basecamp.test',
   port: 7180, version: '0.1.0', publicUrl: 'https://outpost.test:7180',
   heartbeatMs: 30_000, reportMs: 300_000, postureMs: 21_600_000, workDir: '/tmp/outpost-test',
   // Nothing listens on port 1: a machine with no Caddy, refused at once.
@@ -83,12 +88,12 @@ const sign = (opts) => signRequest({
   timestamp: Math.floor(Date.now() / 1000), nonce: `test-${++nonces}`, ...opts,
 })
 
-async function send(server, method, path, body, { secret = CONFIG.secret, signPath } = {}) {
+async function send(server, method, path, body, { key = HUB.privateKey, signPath } = {}) {
   const payload = body === undefined ? '' : JSON.stringify(body)
   const headers = new Headers({ 'content-type': 'application/json' })
-  if (secret) {
+  if (key) {
     for (const [k, v] of Object.entries(await sign({
-      secret, method, path: signPath ?? path, body: payload,
+      privateKey: key, method, path: signPath ?? path, body: payload,
     }))) headers.set(k, v)
   }
   return server.handle(new Request(`http://outpost.test${path}`, {
@@ -103,7 +108,7 @@ describe('every route but /health takes a signature', () => {
   })
 
   test('/health answers unsigned — and says nothing about the machine', async () => {
-    const res  = await send(server, 'GET', '/health', undefined, { secret: null })
+    const res  = await send(server, 'GET', '/health', undefined, { key: null })
     const body = await res.json()
     expect(res.status).toBe(200)
     expect(body).toEqual({ ok: true, version: '0.1.0', server_id: 'srv-1' })
@@ -114,13 +119,13 @@ describe('every route but /health takes a signature', () => {
     // reaching it is remote code execution with extra steps, which is why the
     // default is refuse and a route opts out rather than in.
     for (const path of ['/exec', '/deploy', '/pull', '/stop', '/health-check', '/system/prune']) {
-      const res = await send(server, 'POST', path, { command: 'id' }, { secret: null })
+      const res = await send(server, 'POST', path, { command: 'id' }, { key: null })
       expect(res.status).toBe(401)
     }
   })
 
-  test('a signature from the wrong secret is refused', async () => {
-    const res = await send(server, 'POST', '/exec', { command: 'id' }, { secret: 'not-the-fleet-secret' })
+  test('a signature from another key pair is refused', async () => {
+    const res = await send(server, 'POST', '/exec', { command: 'id' }, { key: (await generateSigningKeys()).privateKey })
     expect(res.status).toBe(401)
   })
 
@@ -132,7 +137,7 @@ describe('every route but /health takes a signature', () => {
   test('a replayed signature is refused the second time', async () => {
     const body    = { command: 'id' }
     const payload = JSON.stringify(body)
-    const headers = await sign({ secret: CONFIG.secret, method: 'POST', path: '/exec', body: payload })
+    const headers = await sign({ privateKey: HUB.privateKey, method: 'POST', path: '/exec', body: payload })
     const hit = () => server.handle(new Request('http://outpost.test/exec', {
       method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: payload,
     }))
@@ -141,7 +146,7 @@ describe('every route but /health takes a signature', () => {
   })
 
   test('an unknown path is a 404, and only once it is signed', async () => {
-    expect((await send(server, 'POST', '/rm-rf', {}, { secret: null })).status).toBe(401)
+    expect((await send(server, 'POST', '/rm-rf', {}, { key: null })).status).toBe(401)
     expect((await send(server, 'POST', '/rm-rf', {})).status).toBe(404)
   })
 })
@@ -2079,7 +2084,7 @@ describe('counting a route\'s traffic off its access log', () => {
   })
 
   test('it is signed like every other route', async () => {
-    expect((await send(serverAt(), 'POST', '/analytics', { route_id: 'fjs-shop' }, { secret: null })).status).toBe(401)
+    expect((await send(serverAt(), 'POST', '/analytics', { route_id: 'fjs-shop' }, { key: null })).status).toBe(401)
   })
 })
 
@@ -2209,7 +2214,7 @@ describe('reading a container log', () => {
 
   test('/logs/follow is signed like every other route', async () => {
     const fs  = fakeStream()
-    const res = await send(followServer(fs), 'POST', '/logs/follow', { app_id: 'app-1' }, { secret: null })
+    const res = await send(followServer(fs), 'POST', '/logs/follow', { app_id: 'app-1' }, { key: null })
     expect(res.status).toBe(401)
     expect(fs.proc.argv).toBe(null)
   })
@@ -2225,7 +2230,7 @@ describe('reading a container log', () => {
 
   test('it takes a signature like every other route', async () => {
     const fake = fakeRunner({ 'docker logs': { stdout: '' } })
-    const res  = await send(serverWith(fake), 'POST', '/logs', { app_id: 'app-1' }, { secret: null })
+    const res  = await send(serverWith(fake), 'POST', '/logs', { app_id: 'app-1' }, { key: null })
     expect(res.status).toBe(401)
     // Nothing reached the machine.
     expect(fake.calls.find(c => c[1] === 'logs')).toBeUndefined()
@@ -2254,7 +2259,7 @@ describe('reading a container log', () => {
     const fake    = fakeRunner({ 'docker logs': { stdout: '' } })
     const payload = JSON.stringify({ app_id: 'app-1' })
     const headers = new Headers({ 'content-type': 'application/json' })
-    for (const [k, v] of Object.entries(await sign({ secret: CONFIG.secret, method: 'POST', path: '/logs', body: payload })))
+    for (const [k, v] of Object.entries(await sign({ privateKey: HUB.privateKey, method: 'POST', path: '/logs', body: payload })))
       headers.set(k, k.toLowerCase() === 'x-fjs-signature' ? v.replace(/^v1-/, 'v2-') : v)
 
     const res = await serverWith(fake).handle(new Request('http://outpost.test/logs', {
@@ -2286,7 +2291,7 @@ describe('what this machine tells basecamp', () => {
     // Until this lands, basecamp has no address for the machine and refuses
     // every release for it.
     expect(call.body.outpost_url).toBe('https://outpost.test:7180')
-    expect(call.init.headers['X-Fjs-Signature']).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
+    expect(call.init.headers['X-Fjs-Signature']).toMatch(/^v1-ed25519=[A-Za-z0-9_-]{86}$/)
   })
 
   test('the signature is over the bytes actually sent', async () => {
@@ -2297,7 +2302,7 @@ describe('what this machine tells basecamp', () => {
 
     const { verifyRequest } = await import('@frontierjs/toolbelt/signature')
     const result = await verifyRequest({
-      secret: CONFIG.secret, method: 'POST', path: '/servers/srv-1',
+      publicKey: MACHINE.publicKey, method: 'POST', path: '/servers/srv-1',
       body: sent[0].init.body, headers: sent[0].init.headers,
       now: Math.floor(Date.now() / 1000),
     })
@@ -2553,11 +2558,11 @@ describe('what the machine feels like', () => {
 
 describe('it refuses to start half-configured', () => {
   test('the three values with no safe default are named together', () => {
-    expect(() => readConfig({})).toThrow(/OUTPOST_SERVER_ID, OUTPOST_SECRET, BASECAMP_URL, OUTPOST_TLS_CERT, OUTPOST_TLS_KEY/)
+    expect(() => readConfig({})).toThrow(/OUTPOST_SERVER_ID, OUTPOST_SIGNING_KEY, OUTPOST_HUB_KEY, BASECAMP_URL, OUTPOST_TLS_CERT, OUTPOST_TLS_KEY/)
   })
 
   const required = {
-    OUTPOST_SERVER_ID: 'srv-9', OUTPOST_SECRET: 's', BASECAMP_URL: 'https://bc.test/',
+    OUTPOST_SERVER_ID: 'srv-9', OUTPOST_SIGNING_KEY: 'k', OUTPOST_HUB_KEY: 'h', BASECAMP_URL: 'https://bc.test/',
     OUTPOST_TLS_CERT: '/etc/outpost/outpost.crt', OUTPOST_TLS_KEY: '/etc/outpost/outpost.key',
   }
 
@@ -2670,7 +2675,7 @@ describe('a deploy key per app (FJS-D1555)', () => {
 
     test('is signed like every other route', async () => {
       const { server } = serverFor()
-      expect((await send(server, 'POST', '/deploy-key', { app_id: 'app-9' }, { secret: null })).status).toBe(401)
+      expect((await send(server, 'POST', '/deploy-key', { app_id: 'app-9' }, { key: null })).status).toBe(401)
     })
   })
 

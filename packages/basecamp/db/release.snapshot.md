@@ -1978,7 +1978,7 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 | `lastHeartbeatAt` | `DateTime` | yes | — | — |
 | `name` | `String` | no | — | **required on write** |
 | `outpostCert` | `String` | yes | — | — |
-| `outpostSecretId` | `String` | yes | — | — |
+| `outpostPublicKey` | `String` | yes | — | — |
 | `outpostVersion` | `String` | yes | — | — |
 | `plan` | `Json` | no | `'{}'` | — |
 | `providerId` | `String` | yes | — | — |

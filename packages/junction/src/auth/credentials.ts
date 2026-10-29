@@ -36,9 +36,11 @@ export type CredentialVerifier = (req: InboundRequest) => CredentialAnswer | Pro
 
 export interface SignedRequestOptions {
   /**
-   * Which caller, then which key. Answers the secret to verify against and the
+   * Which caller, then which key. Answers the key to verify against and the
    * principal a good signature becomes; `null` is a caller this app does not
-   * know, and is refused rather than passed on.
+   * know, and is refused rather than passed on. A `publicKey` accepts only a
+   * `v1-ed25519` signature and a `secret` only a `v1-sha256` one, so a caller
+   * enrolled under a key pair cannot be answered with a shared secret.
    *
    * What the key was issued with goes on that session: the tenant claim the
    * schema names (`agencyId`) scopes rows under `strategy row`, and a standing
@@ -46,9 +48,7 @@ export interface SignedRequestOptions {
    * resolver that answers nothing for the key leaves both standing
    * (`test/credentials-claims.test.ts`).
    */
-  keyFor: (req: InboundRequest) =>
-    { secret: string | undefined; session: SessionContext } | null |
-    Promise<{ secret: string | undefined; session: SessionContext } | null>
+  keyFor: (req: InboundRequest) => CallerKey | null | Promise<CallerKey | null>
   /** Seconds a signature stays fresh. Default 300. */
   window?:    number
   /** Header prefix — `X-Fjs` reads `X-Fjs-Signature`. */
@@ -62,6 +62,12 @@ export interface SignedRequestOptions {
   /** Seconds, the receiver's clock. Injectable for tests. */
   now?:       () => number
 }
+
+/** The key a caller verifies against: a shared secret, or the public half of
+ *  a key pair the caller holds alone (`FJS-D1604`). */
+export type CallerKey =
+  | { secret: string | undefined; publicKey?: never; session: SessionContext }
+  | { publicKey: string; secret?: never; session: SessionContext }
 
 /** A request signed with `@frontierjs/toolbelt/signature`'s `signRequest`. */
 export function signedRequest(opts: SignedRequestOptions): CredentialVerifier {
@@ -88,7 +94,8 @@ export function signedRequest(opts: SignedRequestOptions): CredentialVerifier {
     const key = await opts.keyFor(req)
     if (!key) return REFUSE
     const verdict = await verifyRequest({
-      secret: key.secret, method: req.method, path: req.path, query: req.query,
+      ...('publicKey' in key && key.publicKey ? { publicKey: key.publicKey } : { secret: key.secret }),
+      method: req.method, path: req.path, query: req.query,
       body: req.body, headers: req.headers, prefix,
       toleranceSeconds: window, now: now(),
       seenNonce: opts.seenNonce ?? remember(String(key.session.id)),

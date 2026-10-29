@@ -528,6 +528,13 @@ that could take a fleet-key branch cannot reach the code that would offer one.
 it declared, and required at that, would be a variable an operator sets, a
 deploy writes, and nothing reads.
 
+**Then the per-machine secret became a key pair** (`FJS-D1604`). Enrollment
+takes the Ed25519 public half the install script makes on the box and answers
+the hub's own, derived from `ENCRYPTION_KEY` (`hub:signing` in
+`core/credentials.ts`). `Server.outpostPublicKey` replaced `outpostSecretId`
+and its `Secret` row; `outpostKeyFor` in `core/hooks.ts` refuses a null one.
+Nothing either side stores can sign as the other. Rotating is re-enrolling.
+
 **Adopting this means re-enrolling.** Every existing machine is refused until it
 runs the command. That is the cost, it is paid once, and nothing is deployed —
 the alternative is one string that opens every machine, kept for convenience.

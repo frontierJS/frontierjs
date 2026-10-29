@@ -281,3 +281,49 @@ export function dynamicTag(tag) {
 export function head(out) {
   return (out.head ??= [])
 }
+
+/**
+ * The comment data Mesa owns: the root marker and every `$`-prefixed anchor
+ * (`ANCHOR_DATA`). The static renderer strips these and nothing else, so an
+ * `<!--[if mso]>` conditional and a comment an author wrote through `{@html}`
+ * survive (`FJS-906`). One test, read by `render.js` for the DOM path and by
+ * `html()` for the string one.
+ */
+export function isAnchorComment(data) {
+  return data === 'mesa-root' || data.startsWith('$')
+}
+
+/**
+ * `{@html expr}`: the DOM path parses the string through a `<template>`
+ * (`setInnerHTML`) and the page is serialized from the parsed nodes, so a
+ * malformed string comes out repaired and a `$`-anchor in it stripped.
+ * Pushed verbatim the two paths would disagree on exactly those strings, so
+ * the string mode parses it the same way and writes the parse — through the
+ * document `initRenderer` installs, since the mode owns no window
+ * (`IDEAS/server-render-without-dom.md` Q2 B, Q1 A).
+ */
+export function html(value) {
+  if (value == null || value === '') return ''
+  const doc = globalThis.document
+  if (!doc) {
+    throw new Error(
+      '[Mesa] {@html} in string mode parses its markup through the document initRenderer() ' +
+      'installs, and none is installed. Call initRenderer() before rendering, as renderToHTML does.'
+    )
+  }
+  const tpl = doc.createElement('template')
+  tpl.innerHTML = '' + value
+  const box = doc.createElement('div')
+  box.appendChild(tpl.content)
+  dropAnchors(box)
+  return box.innerHTML
+}
+// A hand walk, as `render.js` walks: happy-dom's TreeWalker changed what
+// `SHOW_COMMENT` matches between the versions this package has pinned.
+function dropAnchors(node) {
+  for (let n = node.firstChild, next; n; n = next) {
+    next = n.nextSibling
+    if (n.nodeType === 8) { if (isAnchorComment(n.data)) n.remove() }
+    else if (n.nodeType === 1) dropAnchors(n)
+  }
+}

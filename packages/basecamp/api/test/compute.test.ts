@@ -36,6 +36,7 @@
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { join } from 'node:path'
 import { ensureCert }  from '@frontierjs/outpost/cert'
+import { generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir }      from 'node:os'
 import { createTestEnv, session } from '@frontierjs/testing'
@@ -51,6 +52,8 @@ import type { ComputeProvider }    from '../../db/schema.d.ts'
 // The certificate a machine's command port answers with, which enrollment pins
 // on its Conduit target (FJS-1603). Every enrollment below presents it.
 const CERT = ensureCert(mkdtempSync(join(tmpdir(), 'basecamp-outpost-cert-'))).cert
+// The pair a machine makes at enrollment; every enrollment below sends its public half.
+const MACHINE = await generateSigningKeys()
 
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
@@ -566,10 +569,10 @@ describe('a machine claims its own credential', () => {
     expect(ci).toContain('SERVER_ID="s1"')
     expect(ci).toContain('BASECAMP_URL="https://basecamp"')
     expect(ci).toContain('"$BASECAMP_URL/servers/$SERVER_ID/enroll"')
-    // What must NOT be: the fleet secret. Metadata is readable by anything on
-    // the box, so baking it in hands every machine the key to forge every
-    // other machine's check-in.
-    expect(ci).not.toContain(process.env.OUTPOST_SECRET ?? 'outpost-dev-secret')
+    // What must NOT be: a credential. Metadata is readable by anything on the
+    // box; the machine makes its key pair in the script instead.
+    expect(ci).toContain('openssl genpkey -algorithm ed25519')
+    expect(ci).not.toContain('OUTPOST_SECRET')
     // And the hash is not in there either — it is what the DATABASE keeps.
     expect(ci).not.toContain(t.hash)
   })
@@ -1054,15 +1057,16 @@ describe('a machine enrolls itself, over HTTP, holding nothing else', () => {
     expect(JSON.stringify(target)).not.toContain(minted)
   })
 
-  test('the exchange answers a secret and the address the world reaches it at', async () => {
-    const res = await env.http.post(`/servers/${target.id}/enroll`).send({ token: minted, cert: CERT })
+  test('the exchange answers the hub key and the address the world reaches it at', async () => {
+    const res = await env.http.post(`/servers/${target.id}/enroll`).send({ token: minted, cert: CERT, publicKey: MACHINE.publicKey })
 
     expect(res.status).toBe(200)
     const body = res.body as any
-    expect(body.secret).toMatch(/^[0-9a-f]{64}$/)
-    // Not the token back. A route that echoed what it was given would satisfy
-    // every other assertion here.
-    expect(body.secret).not.toBe(minted)
+    const { hubSigningKeys } = await import('../src/core/credentials.ts')
+    expect(body.hubKey).toBe((await hubSigningKeys()).publicKey)
+    // Nothing that can sign: the machine's credential is the pair it made.
+    expect(body.secret).toBeUndefined()
+    expect(JSON.stringify(body)).not.toContain((await hubSigningKeys()).privateKey)
     expect(body.publicUrl).toBe('https://203.0.113.7:8180')
     expect(body.serverId).toBe(target.id)
   })
@@ -1072,19 +1076,16 @@ describe('a machine enrolls itself, over HTTP, holding nothing else', () => {
     expect(row.outpostCert).toBe(CERT)
   })
 
-  test('the secret is kept as a Secret row, and the machine points at it', async () => {
+  test('the public key it presented is kept on the row, and no Secret row is made', async () => {
     const row = await (env.system as any).server.findFirst({ where: { id: target.id } })
-    expect(row.outpostSecretId).toBeTruthy()
-
-    const kept = await (env.system as any).secret.findFirst({ where: { id: row.outpostSecretId } })
-    expect(kept.workspaceId).toBe(target.workspaceId)
-    expect(kept.name).toBe(`outpost:${target.slug}`)
+    expect(row.outpostPublicKey).toBe(MACHINE.publicKey)
+    expect(await (env.system as any).secret.findFirst({ where: { name: `outpost:${target.slug}` } })).toBeNull()
   })
 
   test('the token is BURNED — the same request a second time is refused', async () => {
     // The claim the conditional update exists for. Paired with the 200 above:
     // a route that refused everybody would pass this row alone.
-    const res = await env.http.post(`/servers/${target.id}/enroll`).send({ token: minted, cert: CERT })
+    const res = await env.http.post(`/servers/${target.id}/enroll`).send({ token: minted, cert: CERT, publicKey: MACHINE.publicKey })
     expect(res.status).toBe(401)
   })
 
@@ -1102,21 +1103,19 @@ describe('a machine enrolls itself, over HTTP, holding nothing else', () => {
       data:  { enrollTokenHash: hashEnrollToken(token), enrollExpiresAt: new Date(Date.now() + 60_000) },
     })
 
+    const other = await generateSigningKeys()
     const both = await Promise.all([
-      env.http.post(`/servers/${server.id}/enroll`).send({ token, cert: CERT }),
-      env.http.post(`/servers/${server.id}/enroll`).send({ token, cert: CERT }),
+      env.http.post(`/servers/${server.id}/enroll`).send({ token, cert: CERT, publicKey: MACHINE.publicKey }),
+      env.http.post(`/servers/${server.id}/enroll`).send({ token, cert: CERT, publicKey: other.publicKey }),
     ])
     const ok = both.filter(r => r.status === 200)
     expect(ok).toHaveLength(1)
     expect(both.filter(r => r.status === 401)).toHaveLength(1)
 
-    // And one credential, not two. A second Secret row would mean the loser
-    // also minted before losing, which is a machine holding a key nothing
-    // recognizes.
-    const kept = await (env.system as any).secret.findMany({
-      where: { name: `outpost:${server.slug}` },
-    })
-    expect(kept).toHaveLength(1)
+    // And the winner's key on the row: a loser that wrote after losing would
+    // leave a machine holding a key nothing recognizes.
+    const row = await (env.system as any).server.findFirst({ where: { id: server.id } })
+    expect(row.outpostPublicKey).toBe(both[0].status === 200 ? MACHINE.publicKey : other.publicKey)
   })
 
   test('a wrong token, an unknown id and an expired window are ONE answer', async () => {
@@ -1137,10 +1136,10 @@ describe('a machine enrolls itself, over HTTP, holding nothing else', () => {
     })
 
     const answers = await Promise.all([
-      env.http.post(`/servers/${target.id}/enroll`).send({ token: 'bcen_wrong', cert: CERT }),
-      env.http.post('/servers/00000000-0000-0000-0000-000000000000/enroll').send({ token: 'bcen_wrong', cert: CERT }),
-      env.http.post(`/servers/${expired.id}/enroll`).send({ token: stale, cert: CERT }),
-      env.http.post(`/servers/${target.id}/enroll`).send({ cert: CERT }),
+      env.http.post(`/servers/${target.id}/enroll`).send({ token: 'bcen_wrong', cert: CERT, publicKey: MACHINE.publicKey }),
+      env.http.post('/servers/00000000-0000-0000-0000-000000000000/enroll').send({ token: 'bcen_wrong', cert: CERT, publicKey: MACHINE.publicKey }),
+      env.http.post(`/servers/${expired.id}/enroll`).send({ token: stale, cert: CERT, publicKey: MACHINE.publicKey }),
+      env.http.post(`/servers/${target.id}/enroll`).send({ cert: CERT, publicKey: MACHINE.publicKey }),
     ])
 
     const shapes = new Set(answers.map(r => `${r.status} ${JSON.stringify(r.body)}`))
@@ -1154,13 +1153,13 @@ describe('a machine enrolls itself, over HTTP, holding nothing else', () => {
     // whether the expired one was actually refused: its hash is still there.
     const row = await (env.system as any).server.findFirst({ where: { name: 'too-late' } })
     expect(row.enrollTokenHash).toBeTruthy()
-    expect(row.outpostSecretId).toBeNull()
+    expect(row.outpostPublicKey).toBeNull()
   })
 
   // A machine with no certificate could never be sent a command, and one that
   // is not a certificate would be refused by conduit at the first heartbeat —
   // either way after the token was spent. So neither spends it.
-  test('no certificate, or not a certificate, is refused before the token is spent', async () => {
+  test('no certificate or public key, or a malformed one, is refused before the token is spent', async () => {
     const { mintEnrollToken, hashEnrollToken } = await import('../src/providers/compute/enrollment.ts')
     const sys   = env.system as any
     const token = mintEnrollToken().token
@@ -1171,41 +1170,38 @@ describe('a machine enrolls itself, over HTTP, holding nothing else', () => {
     }})
 
     expect((await env.http.post(`/servers/${row.id}/enroll`).send({ token })).status).toBe(400)
-    expect((await env.http.post(`/servers/${row.id}/enroll`).send({ token, cert: 'not a cert' })).status).toBe(400)
+    expect((await env.http.post(`/servers/${row.id}/enroll`).send({ token, cert: 'not a cert', publicKey: MACHINE.publicKey })).status).toBe(400)
+    expect((await env.http.post(`/servers/${row.id}/enroll`).send({ token, cert: CERT })).status).toBe(400)
+    expect((await env.http.post(`/servers/${row.id}/enroll`).send({ token, cert: CERT, publicKey: 'not-a-key' })).status).toBe(400)
     expect((await sys.server.findFirst({ where: { id: row.id } })).enrollTokenHash).toBeTruthy()
 
     // Paired: the same token still works once a certificate comes with it.
-    expect((await env.http.post(`/servers/${row.id}/enroll`).send({ token, cert: CERT })).status).toBe(200)
+    expect((await env.http.post(`/servers/${row.id}/enroll`).send({ token, cert: CERT, publicKey: MACHINE.publicKey })).status).toBe(200)
   })
 })
 
 // ─── Which key a machine signs with ──────────────────────────────────────
 
 /**
- * The half enrollment was missing.
- *
- * A secret was minted, written into cloud-init, handed to the machine — and
- * read by nothing: `requireOutpostSignature` compared every check-in against
- * the fleet-wide `OUTPOST_SECRET`. Measured before the fix: a provisioned
- * machine signing with its own key answered 401, the fleet key answered 200,
- * and the row sat at `installing` forever. **A machine Basecamp bought could
- * never come online.**
- *
- * Every row here is a PAIR and none of them is provable alone. A fix that
- * refused everybody passes *the fleet key is refused*; a fix that changed
- * nothing passes *an imported machine still works*. Only the three together
- * say the key is chosen per machine.
+ * A machine is verified against the public half of the pair it made, and
+ * nothing else answers for it (`FJS-D1604`). Every row here is a PAIR and none
+ * of them is provable alone: a fix that refused everybody passes *a shared
+ * secret is refused*; one that changed nothing passes *the machine works*.
  */
 describe('a machine signs with its OWN key, and only its own', () => {
-  const FLEET = 'outpost-dev-secret'   // core/env.ts's default, which the test env runs on
+  // A shared secret, which no machine holds any more: a signature under one
+  // must not answer for a machine enrolled under a key pair.
+  const FLEET = { secret: 'outpost-dev-secret' }
+
+  type Key = { privateKey: string } | { secret: string }
 
   /** A heartbeat, signed the way an outpost signs one. */
-  async function heartbeat(serverId: string, secret: string) {
+  async function heartbeat(serverId: string, key: Key) {
     const { signRequest } = await import('@frontierjs/toolbelt/signature')
     const body = JSON.stringify({ outpost_version: '0.4.1', health: { cpu: 3, memory: 10 } })
     const path = `/servers/${serverId}`
     const headers = await signRequest({
-      secret, method: 'POST', path, serviceMethod: 'heartbeat', query: '', body,
+      ...key, method: 'POST', path, serviceMethod: 'heartbeat', query: '', body,
       // The kit is pure — the clock and the nonce belong to the caller. A fresh
       // nonce per call, or the second heartbeat in a row is refused as a replay
       // and every assertion below reads as a key that did not work.
@@ -1216,7 +1212,7 @@ describe('a machine signs with its OWN key, and only its own', () => {
     return req.send(JSON.parse(body))
   }
 
-  /** A machine that enrolled, and the secret it went away holding. */
+  /** A machine that enrolled, and the private key it went away holding. */
   async function enrolled(name: string) {
     const { mintEnrollToken, hashEnrollToken } =
       await import('../src/providers/compute/enrollment.ts')
@@ -1232,13 +1228,14 @@ describe('a machine signs with its OWN key, and only its own', () => {
     await sys.server.update({ where: { id: row.id }, data: {
       enrollTokenHash: hashEnrollToken(token), enrollExpiresAt: new Date(Date.now() + 60_000),
     }})
-    const res = await env.http.post(`/servers/${row.id}/enroll`).send({ token, cert: CERT })
-    return { id: row.id as string, secret: (res.body as any).secret as string }
+    const keys = await generateSigningKeys()
+    await env.http.post(`/servers/${row.id}/enroll`).send({ token, cert: CERT, publicKey: keys.publicKey })
+    return { id: row.id as string, key: { privateKey: keys.privateKey } }
   }
 
-  test('an enrolled machine is accepted on the secret it was handed', async () => {
+  test('an enrolled machine is accepted on the key it made', async () => {
     const m = await enrolled('own-key')
-    const res = await heartbeat(m.id, m.secret)
+    const res = await heartbeat(m.id, m.key)
     expect(res.status).toBe(200)
 
     // And it MOVES. The point of the key is the machine coming online; a 200
@@ -1247,33 +1244,27 @@ describe('a machine signs with its OWN key, and only its own', () => {
     expect(after.status).toBe('online')
   })
 
-  test('a machine that enrolls AGAIN is handed a new key, and the old one stops working', async () => {
+  test('a machine that enrolls AGAIN replaces its key, and the old one stops working', async () => {
     // A reinstalled box, or one that lost its key. `issueEnrollment` may be run
-    // again by design, so the exchange has to accept a second enrollment of the
-    // same row — and minting a second `outpost:<slug>` Secret beside the first
-    // collides on the [workspaceId, name] unique, which refused every one.
+    // again by design, so the exchange accepts a second enrollment of the row.
     const { mintEnrollToken, hashEnrollToken } =
       await import('../src/providers/compute/enrollment.ts')
     const sys = env.system as any
     const m   = await enrolled('re-enrolled')
-    const was = (await sys.server.findFirst({ where: { id: m.id } })).outpostSecretId
 
     const token = mintEnrollToken().token
     await sys.server.update({ where: { id: m.id }, data: {
       enrollTokenHash: hashEnrollToken(token), enrollExpiresAt: new Date(Date.now() + 60_000),
     }})
-    const res = await env.http.post(`/servers/${m.id}/enroll`).send({ token, cert: CERT })
+    const fresh = await generateSigningKeys()
+    const res = await env.http.post(`/servers/${m.id}/enroll`).send({ token, cert: CERT, publicKey: fresh.publicKey })
     expect(res.status).toBe(200)
-    const fresh = (res.body as any).secret as string
-    expect(fresh).not.toBe(m.secret)
-
-    // ROTATED in place, not a second row: one machine, one key.
-    expect((await sys.server.findFirst({ where: { id: m.id } })).outpostSecretId).toBe(was)
+    expect((await sys.server.findFirst({ where: { id: m.id } })).outpostPublicKey).toBe(fresh.publicKey)
 
     // Paired, because either alone passes against the wrong fix — a route that
     // kept the old key would satisfy the first, one that broke both the second.
-    expect((await heartbeat(m.id, fresh)).status).toBe(200)
-    expect((await heartbeat(m.id, m.secret)).status).toBe(401)
+    expect((await heartbeat(m.id, { privateKey: fresh.privateKey })).status).toBe(200)
+    expect((await heartbeat(m.id, m.key)).status).toBe(401)
   })
 
   test('…and REFUSED on the fleet key, which is the whole security property', async () => {
@@ -1305,7 +1296,7 @@ describe('a machine signs with its OWN key, and only its own', () => {
       status: 'pending', role: 'general', providerKind: 'custom',
       registerMethod: 'imported', ipAddress: '10.0.1.9',
     }})
-    expect(row.outpostSecretId ?? null).toBeNull()
+    expect(row.outpostPublicKey ?? null).toBeNull()
     expect((await heartbeat(row.id as string, FLEET)).status).toBe(401)
   })
 
@@ -1314,27 +1305,19 @@ describe('a machine signs with its OWN key, and only its own', () => {
     expect(res.status).toBe(401)
   })
 
-  test("a machine whose secret row is GONE is refused rather than falling back", async () => {
-    // The branch that would silently re-open the hole for exactly the machine
-    // that had been closed.
-    const m = await enrolled('secret-deleted')
-    const sys = env.system as any
-    const row = await sys.server.findFirst({ where: { id: m.id } })
-    await sys.secret.delete({ where: { id: row.outpostSecretId } })
+  test('a machine whose public key is cleared is refused, its old key and a shared secret alike', async () => {
+    const m = await enrolled('key-cleared')
+    await (env.system as any).server.update({ where: { id: m.id }, data: { outpostPublicKey: null } })
 
-    expect((await heartbeat(m.id, m.secret)).status).toBe(401)
+    expect((await heartbeat(m.id, m.key)).status).toBe(401)
     expect((await heartbeat(m.id, FLEET)).status).toBe(401)
   })
 
-  test('and the OUTBOUND target is keyed to that machine too, not to the fleet', async () => {
-    // The same defect in the other direction. Basecamp signs its calls TO a
-    // machine — `/exec`, `/deploy`, `/system/prune` — and the outpost on the far
-    // side verifies with the secret cloud-init wrote, which is the machine's
-    // own. A target signed with the fleet key is refused by every machine that
-    // enrolled, so fixing the inbound half alone leaves the app able to hear a
-    // machine and unable to speak to it.
+  test('and the OUTBOUND target signs with the hub key the machine pinned', async () => {
+    // Basecamp signs its calls TO a machine — `/exec`, `/deploy`,
+    // `/system/prune` — and the Outpost verifies with the hub key it was
+    // answered at enrollment (`FJS-D1604`).
     const m = await enrolled('outbound-key')
-    const row = await (env.system as any).server.findFirst({ where: { id: m.id } })
 
     // The heartbeat is what registers the target, and it carries the URL.
     const { signRequest } = await import('@frontierjs/toolbelt/signature')
@@ -1344,7 +1327,7 @@ describe('a machine signs with its OWN key, and only its own', () => {
     })
     const path = `/servers/${m.id}`
     const headers = await signRequest({
-      secret: m.secret, method: 'POST', path, serviceMethod: 'heartbeat', query: '', body,
+      ...m.key, method: 'POST', path, serviceMethod: 'heartbeat', query: '', body,
       timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     })
     const req = env.http.post(path).set('x-service-method', 'heartbeat')
@@ -1352,9 +1335,8 @@ describe('a machine signs with its OWN key, and only its own', () => {
     expect((await req.send(JSON.parse(body))).status).toBe(200)
 
     const target = await app.conduit.resolve(`outpost:${m.id}`)
-    // A REF, never the material — and the ref names this machine's Secret row.
-    expect(target.auth.ref).toBe(`secret:${row.outpostSecretId}#secret`)
-    expect(target.auth.ref).not.toContain('env:')
+    // A REF, never the material.
+    expect(target.auth).toEqual({ type: 'signed', signer: 'ed25519', ref: 'hub:signing' })
     // And pinned to the certificate it enrolled with (FJS-1603).
     expect(target.pinned_cert).toBe(CERT)
 
@@ -1364,7 +1346,7 @@ describe('a machine signs with its OWN key, and only its own', () => {
       outpost_url: 'http://203.0.113.5:8180' })
     const again = env.http.post(path).set('x-service-method', 'heartbeat')
     for (const [k, v] of Object.entries(await signRequest({
-      secret: m.secret, method: 'POST', path, serviceMethod: 'heartbeat', query: '', body: plain,
+      ...m.key, method: 'POST', path, serviceMethod: 'heartbeat', query: '', body: plain,
       timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     }))) again.set(k, v as string)
     expect((await again.send(JSON.parse(plain))).status).toBe(200)
@@ -1400,7 +1382,7 @@ describe('a machine signs with its OWN key, and only its own', () => {
     const answers = await Promise.all([
       heartbeat('00000000-0000-0000-0000-000000000000', FLEET),
       heartbeat(m.id, FLEET),
-      heartbeat(m.id, 'not-the-right-secret-at-all'),
+      heartbeat(m.id, { privateKey: MACHINE.privateKey }),
     ])
     const shapes = new Set(answers.map(r => `${r.status} ${JSON.stringify(r.body)}`))
     expect(shapes.size).toBe(1)

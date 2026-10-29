@@ -723,7 +723,7 @@ try {
   //
   // This drive stands in for the machine. Every step below is one cloud-init
   // takes: read the token the vendor's metadata service handed it, exchange it
-  // once for a credential of its own, then sign with THAT.
+  // once with a key pair of its own (FJS-D1604), then sign with THAT.
   //
   // The token is the REAL one — read out of the dispatched job's payload, which
   // is where `servers.provision` put it and the only place it exists outside
@@ -742,23 +742,26 @@ try {
   check('the token cloud-init carries is the one the app dispatched',
     /^bcen_[0-9a-f]{64}$/.test(enrollToken), enrollToken ? 'shaped wrong' : '(none found)')
 
+  const machineKeys = await (await import('@frontierjs/toolbelt/signature')).generateSigningKeys()
   const enrolled = await fetch(`${API}/servers/${serverId}/enroll`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     // The certificate the machine's command port would answer with. Nothing
     // here sends it a command; enrollment refuses a machine that has none.
     body: JSON.stringify({ token: enrollToken, cert: (await import('@frontierjs/outpost/cert'))
-      .ensureCert(join(tmpdir(), `basecamp-provision-tls-${process.pid}`)).cert }),
+      .ensureCert(join(tmpdir(), `basecamp-provision-tls-${process.pid}`)).cert,
+      publicKey: machineKeys.publicKey }),
   })
-  const credential = (await enrolled.json()).secret
-  check('the exchange hands back a credential of its own', enrolled.status === 200 && !!credential)
+  const credential = machineKeys.privateKey
+  const hubKey     = (await enrolled.json()).hubKey
+  check('the exchange takes a key of its own and answers the hub\'s', enrolled.status === 200 && !!hubKey)
 
   /** A heartbeat, signed the way the outpost on that machine signs one. */
-  async function heartbeat(secret, extra = {}) {
+  async function heartbeat(key, extra = {}) {
     const { signRequest } = await import('@frontierjs/toolbelt/signature')
     const body = JSON.stringify({ outpost_version: '0.4.1', health: { cpu: 4, memory: 12 }, ...extra })
     const path = `/servers/${serverId}`
     const headers = await signRequest({
-      secret, method: 'POST', path, serviceMethod: 'heartbeat', query: '', body,
+      ...key, method: 'POST', path, serviceMethod: 'heartbeat', query: '', body,
       timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     })
     return fetch(API + path, {
@@ -772,12 +775,12 @@ try {
   // per-machine credential exists for: one string every machine holds must not
   // open this machine's door. Asserted BEFORE the acceptance, so a run that
   // stopped here could not be read as a pass.
-  const fleet = await heartbeat('outpost-dev-secret')
+  const fleet = await heartbeat({ secret: 'outpost-dev-secret' })
   check('the fleet-wide key is REFUSED for a machine that has its own',
     fleet.status === 401, `${fleet.status}`)
 
-  const own = await heartbeat(credential)
-  check('and its own credential is accepted', own.status === 200, `${own.status}`)
+  const own = await heartbeat({ privateKey: credential })
+  check('and its own key is accepted', own.status === 200, `${own.status}`)
 
   // The half only a browser can ask. The page has been open since before the
   // machine existed; nothing here reloads it.
@@ -801,7 +804,7 @@ try {
   const wrong = await fetch(`${API}/servers/${serverId}/enroll`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ token: 'bcen_not_the_one', cert: (await import('@frontierjs/outpost/cert'))
-      .ensureCert(join(tmpdir(), `basecamp-provision-tls-${process.pid}`)).cert }),
+      .ensureCert(join(tmpdir(), `basecamp-provision-tls-${process.pid}`)).cert, publicKey: machineKeys.publicKey }),
   })
   check('a wrong token is refused by the route — which is REACHED, not 405',
     wrong.status === 401, `${wrong.status}`)
@@ -1671,7 +1674,7 @@ try {
   const { createDocker }        = await import('@frontierjs/outpost/docker')
   const STATIC_DIR = join(SCRATCH, 'outpost-static'), STATIC_PORT = await portFor(import.meta.url, 'be', { service: 7 })
   const routes = new Map()
-  const outpost = createOutpostServer({ serverId, secret: credential, version: '0.1.0', staticPort: STATIC_PORT }, {
+  const outpost = createOutpostServer({ serverId, signingKey: credential, hubKey, version: '0.1.0', staticPort: STATIC_PORT }, {
     statics: createStatic({ staticDir: STATIC_DIR }),
     docker:  createDocker({ run: async () => ({ exitCode: 1, stdout: '', stderr: 'Error: No such object' }) }),
     ingress: {
@@ -1697,7 +1700,7 @@ try {
       return outpost.handle(req)
     },
   })
-  const registered = await heartbeat(credential, { outpost_url: `https://localhost:${MACHINE_PORT}` })
+  const registered = await heartbeat({ privateKey: credential }, { outpost_url: `https://localhost:${MACHINE_PORT}` })
   check('the machine reports its command port', registered.status === 200, `${registered.status}`)
 
   const alphaPin = (await call('POST', '/workbench', 'pins')).body?.pins?.find(p => !p.from)

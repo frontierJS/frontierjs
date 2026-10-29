@@ -6,12 +6,17 @@
  */
 
 import { test, expect, describe, setSystemTime, afterEach } from 'bun:test'
-import { signRequest, verifyRequest } from '@frontierjs/toolbelt/signature'
+import { signRequest, verifyRequest, generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { createOutpostServer }        from '../src/server.js'
 import { createReporter }             from '../src/report.js'
 
+// Basecamp signs every command and this machine every report, each with its
+// own pair (FJS-D1604).
+const HUB     = await generateSigningKeys()
+const MACHINE = await generateSigningKeys()
+
 const CONFIG = {
-  serverId: 'srv-1', secret: 'fleet-secret', basecampUrl: 'http://basecamp.test',
+  serverId: 'srv-1', signingKey: MACHINE.privateKey, hubKey: HUB.publicKey, basecampUrl: 'http://basecamp.test',
   port: 7180, version: '0.1.0', publicUrl: 'https://outpost.test:7180',
   heartbeatMs: 30_000, reportMs: 300_000, workDir: '/tmp/outpost-audit',
   caddyAdmin: 'http://127.0.0.1:1',
@@ -38,7 +43,7 @@ describe('FINDING — replay after the nonce is forgotten', () => {
     // The sender's clock is 300s ahead — inside the ±300s tolerance, so this
     // is a legitimate request as the verifier grades it.
     const signed = await signRequest({
-      secret: CONFIG.secret, method: 'POST', path: '/exec', body: payload,
+      privateKey: HUB.privateKey, method: 'POST', path: '/exec', body: payload,
       timestamp: T0 + 300, nonce: 'audit-nonce-1',
     })
     const hit = () => handle(new Request('http://outpost.test/exec', {
@@ -70,7 +75,7 @@ describe('FINDING — what the outbound signature leaves uncovered', () => {
 
     const headers = { ...sent.init.headers, 'x-service-method': 'somethingElse' }
     const verdict = await verifyRequest({
-      secret: CONFIG.secret, method: 'POST', path: new URL(sent.url).pathname, query: '',
+      publicKey: MACHINE.publicKey, method: 'POST', path: new URL(sent.url).pathname, query: '',
       body: sent.init.body, headers, now: Math.floor(Date.now() / 1000),
     })
     // The header that selects the service method can be rewritten under a
@@ -88,7 +93,7 @@ describe('FINDING — /exec timeout_s: 0 disables the bound', () => {
     const { handle } = createOutpostServer(CONFIG, { docker, log: quiet })
     const payload = JSON.stringify({ command: 'sleep 1', timeout_s: 0 })
     const signed  = await signRequest({
-      secret: CONFIG.secret, method: 'POST', path: '/exec', body: payload,
+      privateKey: HUB.privateKey, method: 'POST', path: '/exec', body: payload,
       timestamp: Math.floor(Date.now() / 1000), nonce: 'audit-timeout-0',
     })
     await handle(new Request('http://outpost.test/exec', {
@@ -121,7 +126,7 @@ describe('HOLDS — what a page on 8181 can do to the command port (FJS-D345)', 
     expect(calls.length).toBe(0)
   })
 
-  test('a "simple" cross-origin POST (text/plain, no preflight) still needs the secret', async () => {
+  test('a "simple" cross-origin POST (text/plain, no preflight) still needs a signature', async () => {
     const { handle, calls } = server()
     const res = await handle(new Request('http://outpost.test/exec', {
       method: 'POST', headers: { origin: 'http://shop.fleet.test:8181', 'content-type': 'text/plain' },
@@ -134,7 +139,7 @@ describe('HOLDS — what a page on 8181 can do to the command port (FJS-D345)', 
   test('a signature over the same path and body, but for another method, does not verify', async () => {
     const payload = JSON.stringify({ command: 'id' })
     const signed  = await signRequest({
-      secret: CONFIG.secret, method: 'PUT', path: '/exec', body: payload,
+      privateKey: HUB.privateKey, method: 'PUT', path: '/exec', body: payload,
       timestamp: Math.floor(Date.now() / 1000), nonce: 'audit-method',
     })
     const { handle } = server()
@@ -147,7 +152,7 @@ describe('HOLDS — what a page on 8181 can do to the command port (FJS-D345)', 
   test('a signed body that arrives one byte different is refused', async () => {
     const payload = JSON.stringify({ command: 'id' })
     const signed  = await signRequest({
-      secret: CONFIG.secret, method: 'POST', path: '/exec', body: payload,
+      privateKey: HUB.privateKey, method: 'POST', path: '/exec', body: payload,
       timestamp: Math.floor(Date.now() / 1000), nonce: 'audit-body',
     })
     const { handle } = server()
@@ -163,7 +168,7 @@ describe('HOLDS — what a page on 8181 can do to the command port (FJS-D345)', 
     const { handle } = server()
     for (const ts of [now - 301, now + 301]) {
       const payload = JSON.stringify({ command: 'id' })
-      const signed  = await signRequest({ secret: CONFIG.secret, method: 'POST', path: '/exec', body: payload, timestamp: ts, nonce: `audit-skew-${ts}` })
+      const signed  = await signRequest({ privateKey: HUB.privateKey, method: 'POST', path: '/exec', body: payload, timestamp: ts, nonce: `audit-skew-${ts}` })
       const res = await handle(new Request('http://outpost.test/exec', {
         method: 'POST', headers: { 'content-type': 'application/json', ...signed }, body: payload,
       }))

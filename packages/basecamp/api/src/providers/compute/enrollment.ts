@@ -1,20 +1,21 @@
 // src/providers/compute/enrollment.ts
 // How a machine Basecamp MADE proves it is that machine.
 //
-// The problem this exists for is stated in `core/hooks.ts` at the signature
-// check: there is one `OUTPOST_SECRET` for the whole fleet, so a machine that
-// is compromised can forge any other machine's check-in. Per-server secrets
-// need a mint and a hand-over at install time, and until a machine could be
-// created there was no install time to hand anything over at.
+// A short-lived shared token enrolls a machine, and a key pair the machine
+// makes is its lasting identity (`FJS-D1604`; Kubernetes' bootstrap token then
+// kubelet certificate, Tailscale's auth key then node key). The machine keeps
+// its private half and sends the public one; this app answers with the public
+// half of its own pair (`hubSigningKeys`, core/credentials.ts), which the
+// machine pins to verify every command. Neither side holds anything that can
+// sign as the other.
 //
 // ─── Why the token is not the secret ─────────────────────────────────────
 //
 // A provisioned machine is handed its install through cloud-init `user_data`,
 // which is readable by ANYTHING running on that box — the metadata service
 // hands it back on request, unauthenticated, forever. So `user_data` carries a
-// one-time enrollment token and never the credential: the box exchanges it,
-// once, inside a short window, for a secret of its own. Baking `OUTPOST_SECRET`
-// in would hand every machine the key to forge every other machine.
+// one-time enrollment token and never the credential: the box spends it, once,
+// inside a short window, to register a key of its own.
 //
 // What is stored here is the token's HASH. `Server` is readable by every member
 // of the workspace, so a column holding the live token would let any of them
@@ -145,11 +146,12 @@ export function enrollTokenMatches(
   return timingSafeEqual(a, b)
 }
 
-/** The per-machine credential minted at enrollment. Long enough that it is not
- *  guessable and shaped like the fleet secret it replaces, so
- *  `@frontierjs/toolbelt/signature` signs with it unchanged. */
-export function mintOutpostSecret(): string {
-  return randomBytes(32).toString('hex')
+/** An Ed25519 public key as `generateSigningKeys` writes it: 32 bytes,
+ *  base64url. Checked at the door, because a malformed one burns the token and
+ *  leaves a machine every report of which is refused. */
+export function isSigningPublicKey(key: unknown): key is string {
+  return typeof key === 'string' && /^[A-Za-z0-9_-]{43}$/.test(key)
+    && Buffer.from(key, 'base64url').length === 32
 }
 
 /** A certificate's PEM, or anything else. The one a machine enrolls with is
@@ -166,8 +168,8 @@ export function isCertificate(pem: unknown): pem is string {
 }
 
 /**
- * The enrollment answer carries the machine's own key, so the address it is
- * asked of must be https. Loopback is the exception: nothing crosses a network,
+ * The enrollment answer carries the key the machine will obey, so the address
+ * it is asked of must be https: a key swapped on the path commands the machine. Loopback is the exception: nothing crosses a network,
  * and it is where a dev API and its Outpost live.
  */
 export function assertEnrollsOverTls(basecampUrl: string): void {
@@ -175,7 +177,7 @@ export function assertEnrollsOverTls(basecampUrl: string): void {
   if (url.protocol === 'https:') return
   if (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return
   throw new Error(
-    `A machine cannot enroll with ${basecampUrl}: the answer carries its key, so FRONTIER_API_URL must be https (FJS-1603)`)
+    `A machine cannot enroll with ${basecampUrl}: the answer carries the key it obeys, so FRONTIER_API_URL must be https (FJS-1603)`)
 }
 
 /**
@@ -189,8 +191,8 @@ export function assertEnrollsOverTls(basecampUrl: string): void {
  * is exactly what happened to the `site/` surface (`FJS-758`).
  *
  * It carries NO credential. The enrollment token is an input, and it is the only
- * secret involved: the box exchanges it, once, inside a short window, for a
- * credential of its own. That is why this can be served unauthenticated at
+ * secret involved: the box spends it, once, inside a short window, to register
+ * a key pair it makes itself. That is why this can be served unauthenticated at
  * `GET /install.sh` — there is nothing in it worth having.
  *
  * `set -eu` and a failing curl is deliberate: a machine whose enrollment did not
@@ -230,11 +232,11 @@ export -f systemctl
 : "$ENROLL_TOKEN"   # single-use, short-lived, and the only secret here
 OUTPOST_PORT="$OUTPOST_PORT"
 
-# The enrollment answer is this machine's key. Over plain http it crosses the
-# network readable by anybody on the path.
+# The enrollment answer is the key this machine obeys. Over plain http anybody
+# on the path can swap it for their own.
 case "$BASECAMP_URL" in
   https://*|http://localhost|http://localhost:*|http://127.0.0.1|http://127.0.0.1:*) ;;
-  *) echo "BASECAMP_URL must be https: the enrollment answer carries this machine's key" >&2; exit 1 ;;
+  *) echo "BASECAMP_URL must be https: the enrollment answer carries the key this machine obeys" >&2; exit 1 ;;
 esac
 
 export DEBIAN_FRONTEND=noninteractive
@@ -507,17 +509,25 @@ chmod 0600 ${box.tlsKey}
 # and no backslash, so nothing else needs escaping.
 CERT=$(awk '{printf "%s\\\\n", $0}' ${box.tlsCert})
 
-# The exchange. This is the only moment the enrollment token is used, and the
-# only moment this machine has no credential of its own.
+# This machine's signing pair (FJS-D1604), made here and never sent: the public
+# half rides in the exchange and the private half goes to the env file as
+# base64url PKCS#8, the form the signature kit imports. Made again on every
+# install, so a reinstalled machine replaces the key Basecamp held.
+KEY_PEM=$(openssl genpkey -algorithm ed25519)
+OUTPOST_SIGNING_KEY=$(echo "$KEY_PEM" | openssl pkey -outform DER | base64 -w0 | tr '+/' '-_' | tr -d '=')
+PUBLIC_KEY=$(echo "$KEY_PEM" | openssl pkey -pubout -outform DER | tail -c 32 | base64 -w0 | tr '+/' '-_' | tr -d '=')
+unset KEY_PEM
+
+# The exchange. This is the only moment the enrollment token is used.
 ENROLL=$(curl -fsSL -X POST "$BASECAMP_URL/servers/$SERVER_ID/enroll" \\
   -H 'content-type: application/json' \\
-  -d "{\\"token\\":\\"$ENROLL_TOKEN\\",\\"cert\\":\\"$CERT\\"}")
+  -d "{\\"token\\":\\"$ENROLL_TOKEN\\",\\"cert\\":\\"$CERT\\",\\"publicKey\\":\\"$PUBLIC_KEY\\"}")
 
-OUTPOST_SECRET=$(echo "$ENROLL" | grep -o '"secret":"[^"]*"' | cut -d'"' -f4 || true)
+OUTPOST_HUB_KEY=$(echo "$ENROLL" | grep -o '"hubKey":"[^"]*"' | cut -d'"' -f4 || true)
 OUTPOST_PUBLIC_URL=$(echo "$ENROLL" | grep -o '"publicUrl":"[^"]*"' | cut -d'"' -f4 || true)
 
-if [ -z "$OUTPOST_SECRET" ]; then
-  echo "enrollment did not return a secret" >&2
+if [ -z "$OUTPOST_HUB_KEY" ]; then
+  echo "enrollment did not return the hub's key" >&2
   exit 1
 fi
 
@@ -539,7 +549,8 @@ fi
 
 cat > ${box.envFile} <<ENVEOF
 OUTPOST_SERVER_ID=$SERVER_ID
-OUTPOST_SECRET=$OUTPOST_SECRET
+OUTPOST_SIGNING_KEY=$OUTPOST_SIGNING_KEY
+OUTPOST_HUB_KEY=$OUTPOST_HUB_KEY
 OUTPOST_PUBLIC_URL=$OUTPOST_PUBLIC_URL
 OUTPOST_PORT=$OUTPOST_PORT
 OUTPOST_TLS_CERT=${box.tlsCert}

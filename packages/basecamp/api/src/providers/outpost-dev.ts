@@ -1,9 +1,9 @@
 // src/providers/outpost-dev.ts — this laptop, enrolled as a machine in the fleet.
 //
 // Stands the REAL Outpost up beside a running dev API, so a release has somewhere
-// to go: log in, find or make the Server row, enroll it, start the Outpost with
-// the secret the exchange handed back, and wait until its heartbeat brings the
-// row online.
+// to go: log in, find or make the Server row, enroll it under a key pair made
+// here, start the Outpost with that key and the hub's, and wait until its
+// heartbeat brings the row online.
 //
 //   bun run dev             # the API and the SPA, first
 //   bun run dev:outpost     # then this
@@ -17,7 +17,7 @@
 // The identity is REMEMBERED in `.outpost/machine.json`, so a restart reuses the
 // same Server row rather than adding one to the fleet per run. It is thrown away
 // when the row it names has gone, which is what `bun run db:reset` does to it —
-// and `db:reset` removes the directory too, since a secret for a database that
+// and `db:reset` removes the directory too, since a key for a database that
 // no longer exists is a credential for nothing.
 //
 // Signs in as the seed's owner unless told otherwise. Enrolling a machine is an
@@ -41,6 +41,7 @@ import { dirname, join }                            from 'node:path'
 import { fileURLToPath }                            from 'node:url'
 import { portFor }                                  from '@frontierjs/cli/core/ports.js'
 import { createJunctionClient }                     from '@frontierjs/junction/client'
+import { generateSigningKeys }                      from '@frontierjs/toolbelt/signature'
 import { ensureCert }                               from '@frontierjs/outpost/cert'
 
 const API          = (process.env.BASECAMP_URL ?? 'http://localhost:8120').replace(/\/$/, '')
@@ -125,7 +126,7 @@ const servers = client.service('servers')
 
 // ─── The machine ─────────────────────────────────────────────────────────
 
-interface Machine { api: string; workspaceId: string; serverId: string; secret: string; cert?: string }
+interface Machine { api: string; workspaceId: string; serverId: string; signingKey: string; hubKey: string; cert?: string }
 
 // The command port's certificate. Kept across runs, because the enrolled row
 // pins exactly this one — the same TLS a fleet machine speaks, not a loopback
@@ -160,15 +161,17 @@ async function enroll(): Promise<Machine> {
   // the install script reaches with curl. Not a service call, so not the client's.
   // `token` beside the command, not scraped out of it: this is an installer,
   // and the command is written for a person pasting into a shell.
+  const keys = await generateSigningKeys()
   const res = await fetch(`${API}/servers/${server.id}/enroll`, {
     method:  'POST',
     headers: { 'content-type': 'application/json' },
-    body:    JSON.stringify({ token: issued.token, cert: tls.cert }),
+    body:    JSON.stringify({ token: issued.token, cert: tls.cert, publicKey: keys.publicKey }),
   })
   const exchanged: any = await res.json().catch(() => null)
   if (!res.ok) fail(`the enrollment was refused: ${exchanged?.message ?? `HTTP ${res.status}`}`)
 
-  const machine = { api: API, workspaceId: workspace.id, serverId: server.id, secret: exchanged.secret, cert: tls.cert }
+  const machine = { api: API, workspaceId: workspace.id, serverId: server.id,
+                    signingKey: keys.privateKey, hubKey: exchanged.hubKey, cert: tls.cert }
   mkdirSync(HOME, { recursive: true })
   // This machine's own key: whoever reads it can sign as it.
   writeFileSync(MACHINE_FILE, JSON.stringify(machine, null, 2) + '\n', { mode: 0o600 })
@@ -177,8 +180,10 @@ async function enroll(): Promise<Machine> {
 
 let machine = remembered()
 // A different certificate is a different machine as far as the pin is
-// concerned, and one remembered from before the pin existed holds none.
+// concerned, and one remembered from before the pin existed holds none; a
+// file holding no key pair predates FJS-D1604, and the row refuses its signature.
 if (!machine || machine.api !== API || machine.workspaceId !== workspace.id || machine.cert !== tls.cert
+    || !machine.signingKey || !machine.hubKey
     || !(await stillThere(machine.serverId)))
   machine = await enroll()
 
@@ -194,7 +199,8 @@ const child = spawn(process.execPath, [entry], {
   env: {
     ...process.env,
     OUTPOST_SERVER_ID:   machine.serverId,
-    OUTPOST_SECRET:      machine.secret,
+    OUTPOST_SIGNING_KEY: machine.signingKey,
+    OUTPOST_HUB_KEY:     machine.hubKey,
     BASECAMP_URL:        API,
     OUTPOST_PORT:        String(PORT),
     OUTPOST_PUBLIC_URL:  `https://localhost:${PORT}`,

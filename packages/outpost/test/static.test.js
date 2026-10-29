@@ -19,7 +19,7 @@ import { join }                   from 'node:path'
 import { createStatic, digestOfFiles, validRelativePath, LIMITS } from '../src/static.js'
 import { createStaticServer }     from '../src/serve.js'
 import { createOutpostServer }    from '../src/server.js'
-import { signRequest }            from '@frontierjs/toolbelt/signature'
+import { signRequest, generateSigningKeys } from '@frontierjs/toolbelt/signature'
 
 let dir
 let statics
@@ -312,10 +312,15 @@ describe('the origin an inline app answers on', () => {
   })
 })
 
+// Basecamp signs every command and this machine every report, each with its
+// own pair (FJS-D1604).
+const HUB     = await generateSigningKeys()
+const MACHINE = await generateSigningKeys()
+
 describe('the routes basecamp reaches these through', () => {
 
   const CONFIG = {
-    serverId: 'srv-1', secret: 'fleet-secret', basecampUrl: 'http://basecamp.test',
+    serverId: 'srv-1', signingKey: MACHINE.privateKey, hubKey: HUB.publicKey, basecampUrl: 'http://basecamp.test',
     port: 7180, version: '0.1.0', publicUrl: 'https://outpost.test:7180',
     heartbeatMs: 30_000, reportMs: 300_000, workDir: '/tmp/outpost-test',
   }
@@ -323,12 +328,12 @@ describe('the routes basecamp reaches these through', () => {
 
   const server = () => createOutpostServer(CONFIG, { statics, log: { warn() {}, error() {} } })
 
-  async function post(path, body, { secret = CONFIG.secret } = {}) {
+  async function post(path, body, { key = HUB.privateKey } = {}) {
     const payload = JSON.stringify(body)
     const headers = new Headers({ 'content-type': 'application/json' })
-    if (secret) {
+    if (key) {
       const signed = await signRequest({
-        secret, method: 'POST', path, body: payload,
+        privateKey: key, method: 'POST', path, body: payload,
         timestamp: Math.floor(Date.now() / 1000), nonce: `static-${++nonce}`,
       })
       for (const [k, v] of Object.entries(signed)) headers.set(k, v)
@@ -338,7 +343,7 @@ describe('the routes basecamp reaches these through', () => {
   }
 
   test('a publish takes a signature like every other command', async () => {
-    const out = await post('/static/publish', { app_id: 'app-1', slug: 'shop', files: page() }, { secret: null })
+    const out = await post('/static/publish', { app_id: 'app-1', slug: 'shop', files: page() }, { key: null })
     expect(out.status).toBe(401)
   })
 

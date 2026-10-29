@@ -18,7 +18,7 @@
  *
  * ─── Reading it ───────────────────────────────────────────────────────────
  *
- *   `signature.*` — an unsigned command and one under another secret are both
+ *   `signature.*` — an unsigned command and one under another key pair are both
  *   refused; `/health` is the one route that answers without.
  *
  *   `deploy.*` — the headline. A pulled image started by digest, answering
@@ -71,7 +71,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { connect }      from 'node:net'
 import { networkInterfaces } from 'node:os'
-import { signRequest, verifyRequest } from '@frontierjs/toolbelt/signature'
+import { signRequest, verifyRequest, generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { ensureCert }   from '../src/cert.js'
 
 const ROOT     = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -91,7 +91,8 @@ const IMAGE    = 'traefik/whoami:v1.10.3'
 const BUSYBOX  = 'busybox:1.36'
 const APP      = 'verify-docker'
 const NAME     = `fjs-${APP}`
-const SECRET   = crypto.randomUUID()
+const HUB      = await generateSigningKeys()
+const MACHINE  = await generateSigningKeys()
 const OUTPOST  = `https://127.0.0.1:${PORT}`
 
 const fail  = (msg) => { console.error(`verify-docker: ${msg}`); process.exit(1) }
@@ -122,10 +123,10 @@ if (!offLoopback) fail('needs a non-loopback IPv4 address to prove the app port 
 const got = {}
 const t   = (label, value) => { got[label] = value }
 
-const call = async (path, body = {}, { secret = SECRET, signed = true } = {}) => {
+const call = async (path, body = {}, { key = HUB.privateKey, signed = true } = {}) => {
   const payload = JSON.stringify(body)
   const headers = { 'content-type': 'application/json', ...(signed ? await signRequest({
-    secret, method: 'POST', path, body: payload,
+    privateKey: key, method: 'POST', path, body: payload,
     timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
   }) : {}) }
   const res = await fetch(`${OUTPOST}${path}`, { method: 'POST', headers, body: payload, tls: pinned })
@@ -160,7 +161,7 @@ const sink = Bun.serve({
     const url  = new URL(req.url)
     const body = await req.text()
     const checked = await verifyRequest({
-      secret: SECRET, method: req.method, path: url.pathname, query: url.search, body, headers: req.headers,
+      publicKey: MACHINE.publicKey, method: req.method, path: url.pathname, query: url.search, body, headers: req.headers,
       toleranceSeconds: 300, now: Math.floor(Date.now() / 1000),
     })
     received.push({ path: url.pathname, method: req.headers.get('x-service-method'), signed: checked.ok, body: JSON.parse(body || '{}') })
@@ -213,7 +214,8 @@ try {
     env: {
       ...process.env,
       OUTPOST_SERVER_ID:    'verify-docker',
-      OUTPOST_SECRET:       SECRET,
+      OUTPOST_SIGNING_KEY:  MACHINE.privateKey,
+      OUTPOST_HUB_KEY:      HUB.publicKey,
       BASECAMP_URL:         `http://127.0.0.1:${SINK}`,
       OUTPOST_PORT:         String(PORT),
       OUTPOST_STATIC_PORT:  String(STATIC),
@@ -246,7 +248,7 @@ try {
   t('tls.plainHttpGetsNoAnswer',
     await fetch(`http://127.0.0.1:${PORT}/health`).then(r => r.ok, () => false) === false)
   t('signature.refusesAnUnsignedCommand', (await call('/pull', { image: IMAGE }, { signed: false })).status === 401)
-  t('signature.refusesAnotherSecret',     (await call('/pull', { image: IMAGE }, { secret: 'not-the-fleet' })).status === 401)
+  t('signature.refusesAnotherKey',        (await call('/pull', { image: IMAGE }, { key: (await generateSigningKeys()).privateKey })).status === 401)
 
   // ─── pull ───────────────────────────────────────────────────────────────
 
@@ -481,7 +483,7 @@ try {
 // ─── Report ───────────────────────────────────────────────────────────────
 
 const expected = [
-  'signature.healthAnswersUnsigned', 'signature.refusesAnUnsignedCommand', 'signature.refusesAnotherSecret',
+  'signature.healthAnswersUnsigned', 'signature.refusesAnUnsignedCommand', 'signature.refusesAnotherKey',
   'tls.plainHttpGetsNoAnswer',
   'pull.answersTheDaemonsDigest',
   'deploy.startsAContainer', 'deploy.runsTheDigestItWasGiven', 'deploy.passesTheEnv', 'deploy.capsTheLog',

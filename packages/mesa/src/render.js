@@ -39,6 +39,7 @@
 
 import { setRenderEnvironment, createRoot, flushSync } from './runtime.js'
 import { missingPeer } from './optional-peer.js'
+import { isAnchorComment } from './runtime-server.js'
 
 const { Window } = await import('happy-dom').catch(missingPeer('happy-dom', 'renderToHTML'))
 
@@ -128,20 +129,11 @@ export function resetRenderer() {
 // they were safe, which is what made the server and the client disagree about
 // the same data.
 
-// An anchor by its comment data. `mesa-island` markers and `[if mso]`
-// conditionals are not `$`-prefixed and survive — the first is read by a
-// loader, the second is what an email template emitted `{@html}` for.
-//
-// Every form is `$`-prefixed — `<!--$-->` for a block anchor, `<!--$ name -->`
-// for a named one — and the prefix is the whole of how it is recognized. It used to be recognized by being space-padded, which is also
-// what an ordinary hand-written comment looks like: a comment an author put
-// through `{@html}` becomes a real Comment node with exactly that shape, so
-// their markup lost it on every static render (`FJS-906`). Nothing marks a
-// parsed node, and the named anchors come out of template STRINGS rather than
-// `createComment`, so a property on the node cannot carry this.
-function _isAnchorComment(data) {
-  return data === 'mesa-root' || data.startsWith('$')
-}
+// What is an anchor is `isAnchorComment` in `runtime-server.js`, which the
+// string mode's `{@html}` reads too: `mesa-island` markers and `[if mso]`
+// conditionals are not `$`-prefixed and survive. Nothing marks a parsed
+// node, and the named anchors come out of template STRINGS rather than
+// `createComment`, so the data is the whole of how one is recognized.
 
 // A hand walk rather than a TreeWalker: happy-dom changed what `SHOW_COMMENT`
 // filters to between the versions this package has pinned, and a walker that
@@ -149,7 +141,7 @@ function _isAnchorComment(data) {
 function _collectAnchors(node, out) {
   for (let n = node.firstChild; n; n = n.nextSibling) {
     if (n.nodeType === 8) {
-      if (_isAnchorComment(n.data)) out.push([n, n.parentNode, n.nextSibling])
+      if (isAnchorComment(n.data)) out.push([n, n.parentNode, n.nextSibling])
     } else if (n.nodeType === 1) {
       _collectAnchors(n, out)
     }

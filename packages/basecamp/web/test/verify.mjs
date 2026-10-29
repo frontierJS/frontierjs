@@ -35,7 +35,7 @@
 // What `fli prove` queues on: this checkout's ports. The database is the run's own.
 export const holds = ['ports']
 
-import { signRequest } from '@frontierjs/toolbelt/signature'
+import { generateSigningKeys, signRequest } from '@frontierjs/toolbelt/signature'
 import { createOutpostServer } from '@frontierjs/outpost/server'
 import { createStaticServer }  from '@frontierjs/outpost/serve'
 import { createDocker } from '@frontierjs/outpost/docker'
@@ -65,18 +65,20 @@ const OUTPOST_PORT = 3011
 // port formula — env 8, category 1 (backend), project 2, service 1 — beside the
 // API on 8120, the same shape `example` uses for its sink on 8111.
 const MAIL_PORT = await portFor(import.meta.url, 'be', { env: 'dev', service: 1 })
-// One credential PER MACHINE, learned by enrolling. There is no fleet-wide
-// outpost secret any more: a machine that has not enrolled is refused whatever
-// it signs with, and a machine that has is refused anything but its own key.
-// This drive is the machines as well as the operator, so it does what a machine
-// does — exchange a one-time token, once, for a key nothing else holds.
+// One key pair PER MACHINE, made at enrollment (FJS-D1604): a machine that has
+// not enrolled is refused whatever it signs with, and a machine that has is
+// refused anything but its own key. This drive is the machines as well as the
+// operator, so it does what a machine does — make a pair and present the
+// public half with a one-time token, once. The answer is the hub's public key,
+// the one a machine verifies commands with.
 //
 // Keyed by server id and looked up per call, which is the same rule the app
 // answers on its side (`OUTPOST_ENDPOINTS` in core/hooks.ts): the machine is named
 // in the path for a heartbeat and in `server_id` for the two reports. A single
-// shared secret here would be this drive disagreeing with the app about what a
+// shared key here would be this drive disagreeing with the app about what a
 // machine is.
 const machineKeys = new Map()
+let hubKey = null
 
 /** Which machine is this outpost call about? Path id, else the body says. */
 function machineOf(path, body) {
@@ -261,11 +263,10 @@ const SINK_DIGEST = 'sha256:' + 'a1'.repeat(32)
 // shipped ones, so a change to either side of the protocol shows up here.
 let realOutpost = null
 
-/** Build the real Outpost around the credential this machine was handed. It
- *  verifies Basecamp's calls with the same key it signs its own with, so it
- *  cannot exist before the exchange. */
-const buildOutpost = (secret) => createOutpostServer(
-  { serverId: 'drive', secret, version: '0.4.1',
+/** Build the real Outpost around the key this machine made and the hub's key
+ *  the exchange answered, so it cannot exist before the exchange. */
+const buildOutpost = (signingKey) => createOutpostServer(
+  { serverId: 'drive', signingKey, hubKey, version: '0.4.1',
     publicUrl: `https://localhost:${OUTPOST_PORT}`, workDir: '/tmp/outpost-drive',
     // An inline release writes real files. The store is the shipped one over a
     // real directory — faking it would assert this drive's idea of a symlink.
@@ -373,7 +374,7 @@ const buildOutpost = (secret) => createOutpostServer(
         outpostSaw.deploy.push({ path: req.url, body: JSON.parse(body || '{}') })
         // Nothing should reach here before the machine enrolled: Basecamp only
         // learns this address from a heartbeat, and a heartbeat needs the
-        // credential the exchange hands over. Said out loud so a request that
+        // key the exchange recorded. Said out loud so a request that
         // arrives early is a named failure rather than a null dereference.
         if (!realOutpost) {
           res.statusCode = 503
@@ -612,19 +613,19 @@ async function apiCall(path, { method = 'GET', body, workspace, header, outpost 
   // The three endpoints a MACHINE calls carry no session — an outpost has none
   // — and until FJS-349 they carried nothing else either, so an unsigned POST
   // could bring a server online and point every later fleet command at an
-  // address it chose. Signed with the fleet secret, over the exact bytes sent:
+  // address it chose. Signed with the machine's own key, over the exact bytes sent:
   // the hash is of the body, so signing a re-serialization would not match.
   const payload = body ? JSON.stringify(body) : undefined
   if (outpost) {
     const machine = machineOf(path, body)
-    const secret  = machineKeys.get(machine)
+    const privateKey = machineKeys.get(machine)
     // Named rather than answered 401. A drive that signed with the wrong key
     // would report the app refusing a machine, which is the assertion working —
     // and the fixture, not the app, would be wrong.
-    if (!secret) throw new Error(
+    if (!privateKey) throw new Error(
       `no enrolled key for machine ${machine ?? '(none named)'} — call enrollAs() before signing as it`)
     Object.assign(headers, await signRequest({
-      secret, method, path, serviceMethod: headers['x-service-method'], body: payload ?? '',
+      privateKey, method, path, serviceMethod: headers['x-service-method'], body: payload ?? '',
       // The kit is pure — the clock and the nonce belong to whoever is calling.
       timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     }))
@@ -1011,8 +1012,8 @@ const serverId = serverPath.split('/').filter(Boolean)[1]
 // ─── The machine gets a credential of its own ────────────────────────────
 // The two steps a real imported machine takes, and the only two: an operator
 // issues an enrollment token, and the machine exchanges it — once, inside a
-// short window — for a key nothing else holds. There is no fleet-wide secret to
-// fall back on, so everything a machine does below this line depends on it.
+// short window — presenting a key pair it made, whose private half nothing else
+// holds. There is no fleet-wide key to fall back on, so everything a machine does below this line depends on it.
 async function enrollAs(id, workspaceId, { announce = false } = {}) {
   // `issueEnrollment` reads the machine through the CALLER's scoped client, so
   // the workspace here MUST be the one the machine is in — a wrong one is a 404
@@ -1025,22 +1026,24 @@ async function enrollAs(id, workspaceId, { announce = false } = {}) {
   // it in an access log, a proxy's, and the shell history of whoever pasted it.
   const enrollToken = issued.command.match(/ENROLL_TOKEN=(bcen_[0-9a-f]+)/)?.[1]
 
+  const keys = await generateSigningKeys()
   const exchanged = await fetch(`http://localhost:${API_PORT}/servers/${id}/enroll`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ token: enrollToken, cert: OUTPOST_TLS.cert }),
+    body: JSON.stringify({ token: enrollToken, cert: OUTPOST_TLS.cert, publicKey: keys.publicKey }),
   })
   const enrolled = await exchanged.json()
-  if (!enrolled.secret) throw new Error(`enrollAs(${id}): ${exchanged.status} ${JSON.stringify(enrolled)}`)
+  if (!enrolled.hubKey) throw new Error(`enrollAs(${id}): ${exchanged.status} ${JSON.stringify(enrolled)}`)
 
-  machineKeys.set(id, enrolled.secret)
+  machineKeys.set(id, keys.privateKey)
+  hubKey = enrolled.hubKey
 
   if (announce) {
     check('an operator can issue an enrollment token', !!issued?.command, true)
     check('…carrying a single-use token, in the command rather than a URL',
       !!enrollToken && !issued.command.includes(`install.sh?`), true)
-    check('the machine exchanges it for a key of its own', exchanged.status === 200, true)
+    check('the machine enrolls a key of its own', exchanged.status === 200, true)
   }
-  return enrolled.secret
+  return keys.privateKey
 }
 
 // The browser switched to Skunkworks in §8 and every row since belongs to it.

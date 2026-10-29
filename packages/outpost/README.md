@@ -17,16 +17,20 @@ every fleet server to do that.
 
 ```sh
 OUTPOST_SERVER_ID=<the Server row's id> \
-OUTPOST_SECRET=<this server's secret> \
+OUTPOST_SIGNING_KEY=<this machine's private key> \
+OUTPOST_HUB_KEY=<Basecamp's public key> \
 BASECAMP_URL=https://basecamp.internal \
 OUTPOST_TLS_CERT=/etc/outpost/outpost.crt \
 OUTPOST_TLS_KEY=/etc/outpost/outpost.key \
 bunx --bun @frontierjs/outpost
 ```
 
-Those five have no default and the process refuses to start without them. An
-Outpost that cannot name its server reports as nobody. One with no secret
-would either refuse every command or accept every one. The command port serves
+Those six have no default and the process refuses to start without them. An
+Outpost that cannot name its server reports as nobody. One with no hub key
+would either refuse every command or accept every one. Both keys come from
+enrolling: the machine makes its own Ed25519 pair and Basecamp records the
+public half, then answers its own, which every command is verified against
+(`FJS-D1604`). The command port serves
 TLS only. Its certificate is self-signed (`ensureCert` in
 `@frontierjs/outpost/cert`), sent to Basecamp in the enrollment exchange and
 pinned there, so a command reaches no port holding any other (`FJS-D557`).

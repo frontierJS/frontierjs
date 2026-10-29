@@ -288,11 +288,33 @@ count at zero, and `verify:site` passes.
   happy-dom (DropdownMenu's `aria-expanded` from a `$:`), which the string
   mode cannot hand it (2.5). Corpus: 645 lowering, 496 same, 0 differ, 4
   `boundNode`, 26 `childRefused` (every one `{@html}` in CodeInput, 2.4).
-- [ ] 2.4 `{@html}`, per Q2.
-- [ ] 2.5 `bind:` writes the initial value; `on:`, `use:`, `{@attach}` and
-  transitions are dropped, `bind:this` is null. 1.1 drops all of them
-  (a `dep` line keeps the expression evaluated); the initial value is what
-  remains.
+- [x] 2.4 `{@html}`, per Q2 (B). Built 2026-10-29: `$$host.html(value)` in
+  `runtime-server.js` parses the string through a `<template>` on the document
+  `initRenderer` installs, as `setInnerHTML` does, drops the `$`-anchors
+  `isAnchorComment` names (moved there from `render.js`, one owner for both
+  paths) and returns the serialization; the emitter writes it as a hole. No
+  document throws by name (`FJS-D1642`: the global over a lazy own window).
+  The three `render-ssr.test.js` fallback cases that used `{@html}` as the
+  refused kind now use `{#await}` (2.6). Corpus: 679 lowering, 533 same,
+  0 differ, 5 `boundNode`, 0 `childRefused`.
+- [x] 2.5 `bind:` on an element is dropped, `bind:this` is null; handlers
+  and `{@attach}` are dropped (1.1), and a name Mesa has no directive for
+  (`use:`, `transition:`) stays refused by name, as every target refuses it.
+  Built 2026-10-29 (`FJS-D1643`): this step first said "writes the initial
+  value", and the DOM path does not — `bindInput`, `bindGroup` and `bindMask`
+  write a PROPERTY, which happy-dom never serializes, so `<input
+  bind:value={v}>` is `<input>` on the parity reference and the string mode
+  writes the same. The drop covers what the DOM path binds to a property
+  (`bind:value`, `bind:checked`, `bind:files`, `bind:group`, a `|mask`, the
+  `:` shorthands); `hostOffenses` no longer grades a bind against its control
+  in the string mode, and `:checked` lowers as `bind:checked` does on every
+  target. `bind:this` on an element, a `<mesa:element>` and a component is
+  `setter(null)`, so a script that guards on the node skips its write as it
+  does before mount; one that does not is the `boundNode` set-aside, which
+  stays at 5. A no-JS form rendered this way shows its bound fields blank —
+  stated, not caught, and the reopen path in the ruling. `server-emit.test.js`:
+  the emitted-text pin, a 19-control parity row, the null pin on both paths.
+  Corpus: 679 lowering, 533 same, 0 differ, 5 `boundNode`, 0 `childRefused`.
 - [ ] 2.6 `{#await}`, per Q3.
 
 ### Phase 3 — The default

@@ -66,6 +66,7 @@ reactivity pass split them.
 | `<mesa:mounted>` | renders its pending branch, for the same reason |
 | `{#virtual each}` | **runs** — renders the first window plus its spacers. No viewport can be measured, so the window comes from the declared or fallback row height |
 | Event handlers | attached to DOM that is then discarded; never fire |
+| `bind:` on an element | writes a property, which the serializer never reads — a bound field renders as authored, blank unless a `value=` sits beside it; `target: 'server'` writes the same and hands `bind:this` null (`FJS-D1643`) |
 
 Everything that does run is disposed before `renderToHTML` returns. See
 *Lifetimes* below.
@@ -127,12 +128,14 @@ await renderToHTML(Comp, {}, { keepAnchors: true }) // <div><!----><b>yes</b></d
 
 When hydration lands (v1.1) it will need those anchors to locate blocks, and
 `keepAnchors` is the switch. The rule for what is an anchor lives in one place —
-`_isAnchorComment` in `render.js` — and is narrow (`mesa-root` and a `$`
+`isAnchorComment` in `runtime-server.js` — and is narrow (`mesa-root` and a `$`
 prefix): `<!--[if mso]>` conditional comments survive, because email templates
 emit them through `{@html}` on purpose, and island markers survive because a
-loader reads them. The string mode (`target: 'server'`) writes no anchors at
-all and refuses `keepAnchors` by name; it writes island markers as every render
-does.
+loader reads them. The string mode (`target: 'server'`) writes no anchors of
+its own and refuses `keepAnchors` by name; it writes island markers as every
+render does, and its `{@html}` parses the string through the same `<template>`
+the client uses and strips the same anchors from it, so a malformed string
+serializes alike on both paths.
 
 ---
 

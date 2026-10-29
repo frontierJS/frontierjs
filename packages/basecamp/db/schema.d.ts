@@ -2385,15 +2385,16 @@ export interface Server {
   enrollTokenHash?: string | null
   enrollExpiresAt?: string | null
   /**
-   * The `Secret` holding THIS machine's own Outpost credential, minted at
-   * enrollment. A bare id for `Domain.certSecretId`'s reason.
+   * The public half of the Ed25519 pair THIS machine made at enrollment,
+   * base64url (`FJS-D1604`). The private half never leaves the machine, so
+   * the column is public by nature: nothing here can sign as it.
    * 
    * Null means the machine has not enrolled, and every signed request about
-   * it is refused (`outpostSecretFor` in `core/hooks.ts`) — there is no fleet
-   * key to fall back to. Nullable because the row exists before the machine
-   * does: provisioned or imported, it is created first and enrolls after.
+   * it is refused (`outpostKeyFor` in `core/hooks.ts`). Nullable because the
+   * row exists before the machine does: provisioned or imported, it is
+   * created first and enrolls after.
    */
-  outpostSecretId?: string | null
+  outpostPublicKey?: string | null
   /**
    * The certificate this machine's command port answers with, PEM, handed
    * over in the enrollment exchange and pinned on its Conduit target — the
@@ -2457,15 +2458,16 @@ export interface ServerCreate {
   enrollTokenHash?: string | null
   enrollExpiresAt?: string | Date | null
   /**
-   * The `Secret` holding THIS machine's own Outpost credential, minted at
-   * enrollment. A bare id for `Domain.certSecretId`'s reason.
+   * The public half of the Ed25519 pair THIS machine made at enrollment,
+   * base64url (`FJS-D1604`). The private half never leaves the machine, so
+   * the column is public by nature: nothing here can sign as it.
    * 
    * Null means the machine has not enrolled, and every signed request about
-   * it is refused (`outpostSecretFor` in `core/hooks.ts`) — there is no fleet
-   * key to fall back to. Nullable because the row exists before the machine
-   * does: provisioned or imported, it is created first and enrolls after.
+   * it is refused (`outpostKeyFor` in `core/hooks.ts`). Nullable because the
+   * row exists before the machine does: provisioned or imported, it is
+   * created first and enrolls after.
    */
-  outpostSecretId?: string | null
+  outpostPublicKey?: string | null
   /**
    * The certificate this machine's command port answers with, PEM, handed
    * over in the enrollment exchange and pinned on its Conduit target — the
@@ -2504,7 +2506,7 @@ export interface ServerUpdate {
   lastHeartbeatAt?: string | Date | null
   enrollTokenHash?: string | null
   enrollExpiresAt?: string | Date | null
-  outpostSecretId?: string | null
+  outpostPublicKey?: string | null
   outpostCert?: string | null
   plan?: unknown
   actualSpecs?: unknown | null
@@ -2535,7 +2537,7 @@ export interface ServerWhere extends WhereBase {
   lastHeartbeatAt?: string | Date | WhereOp<string | Date> | null
   enrollTokenHash?: string | WhereOp<string> | null
   enrollExpiresAt?: string | Date | WhereOp<string | Date> | null
-  outpostSecretId?: string | WhereOp<string> | null
+  outpostPublicKey?: string | WhereOp<string> | null
   outpostCert?: string | WhereOp<string> | null
   plan?: unknown | WhereOp<unknown> | null
   actualSpecs?: unknown | WhereOp<unknown> | null

@@ -313,3 +313,35 @@ describe('registering a signed target', () => {
       .rejects.toThrow(/stored credential/)
   })
 })
+
+describe('the built-in ed25519 signer', () => {
+  it('signs what the receiver reads with the public half alone, and another key does not verify', async () => {
+    const { generateSigningKeys, verifyRequest } = await import('@frontierjs/toolbelt/signature')
+    const keys     = await generateSigningKeys()
+    const stranger = await generateSigningKeys()
+    const verdicts: boolean[] = []
+    const v = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        const url  = new URL(req.url)
+        const body = await req.text()
+        const headers = Object.fromEntries(req.headers)
+        for (const publicKey of [keys.publicKey, stranger.publicKey]) {
+          const out = await verifyRequest({
+            publicKey, method: req.method, path: url.pathname, query: url.search, body, headers,
+            now: Math.floor(Date.now() / 1000),
+          })
+          verdicts.push(out.ok)
+        }
+        return Response.json({ ok: true })
+      },
+    })
+    try {
+      const c = createConduit({ credentials: createStaticResolver({ HUB: keys.privateKey }) })
+      await c.register(target({ type: 'signed', ref: 'HUB', signer: 'ed25519' }, { address: `http://127.0.0.1:${v.port}` }))
+      const r = await c.send({ target: 'provider:vendor', method: 'POST', path: '/deploy', query: { app: 'a 1' }, body: { image: 'x' } })
+      expect(r.error).toBeNull()
+      expect(verdicts).toEqual([true, false])
+    } finally { v.stop() }
+  })
+})

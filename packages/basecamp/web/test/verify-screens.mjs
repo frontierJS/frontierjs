@@ -2107,13 +2107,15 @@ try {
       shown === hosted.map(x => `/apps/${x.id}/`).sort().join(), shown)
   }
 
-  const shipped = ((await apiGet('/deployments?$limit=100')).body?.data ?? []).find(d => d.environmentId)
+  // A release's environment is its App's; the Deployment row carries none.
+  const shipped = ((await apiGet('/deployments?$limit=100')).body?.data ?? []).find(d => d.app?.environmentId)
   check('the seed has a release that names its environment', !!shipped)
   if (shipped) {
-    const here    = (await apiGet(`/deployments?environmentId=${shipped.environmentId}&$limit=10`)).body?.data ?? []
+    const envId   = shipped.app.environmentId
+    const here    = (await apiGet(`/deployments?environmentId=${envId}&$limit=10`)).body?.data ?? []
     check('?environmentId= answers only that environment\'s releases',
-      here.length > 0 && here.every(d => d.environmentId === shipped.environmentId))
-    await goto(`/environments/${shipped.environmentId}/`)
+      here.length > 0 && here.every(d => d.app?.environmentId === envId))
+    await goto(`/environments/${envId}/`)
     const rows = await until(`[...document.querySelectorAll('#env-releases a[href^="/deployments/"]')].map(a => a.getAttribute('href')).join()`,
       v => !!v, 'the environment screen never listed its releases')
     check('the environment screen lists its releases, newest first',

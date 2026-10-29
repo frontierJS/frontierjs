@@ -36,6 +36,7 @@ import { perShopAuth }                          from './core/auth.ts'
 import { shopGateLevel, SYSTEM }                from './core/gate.ts'
 import { joinChannels }                         from './core/channels.ts'
 import { vapid }                                from './core/push.ts'
+import { deliverToSink }                        from './providers/push/sink.ts'
 import { cartClaim, CART_HEADER }              from './domain/shop'
 import { IDP_URL }                              from './providers/idp/sink.ts'
 import { createConduitMailer, MAIL_TARGET }     from './providers/mail/mailer.ts'
@@ -610,13 +611,15 @@ process.env.STRIPE_WEBHOOK_SECRET    ??= 'whsec_dev'
 //
 // `push` is registered only when core/push.ts found a VAPID pair, and the
 // notifications that name it read the same answer.
+// PUSH_SINK_URL sends every push to providers/push/sink.ts instead of the
+// browser's push service; `verify:push` sets it, a dev run does not.
 
 app.configure(mail({ mailer: createConduitMailer(app, { from: 'shop@example.test' }) }))
 app.configure(notifications({
   db,
   transports: {
     email: { mailer: 'default' },
-    ...(vapid ? { push: webPush({ vapid }) } : {}),
+    ...(vapid ? { push: webPush({ vapid, ...(process.env.PUSH_SINK_URL && { deliver: deliverToSink(process.env.PUSH_SINK_URL) }) }) } : {}),
   },
 }))
 

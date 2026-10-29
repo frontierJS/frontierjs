@@ -22,7 +22,7 @@ import { ensureCert }  from '@frontierjs/outpost/cert'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir }      from 'node:os'
 import { createTestEnv, session } from '@frontierjs/testing'
-import { signRequest } from '@frontierjs/toolbelt/signature'
+import { generateSigningKeys, signRequest } from '@frontierjs/toolbelt/signature'
 import { seriesKey }   from '@frontierjs/junction'
 import { GatePlugin }  from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
@@ -771,13 +771,9 @@ describe('the audit trail records what changed', () => {
 
 
 /**
- * Enroll a machine and hand back the credential it went away with.
- *
- * There is no fleet-wide outpost secret any more: every machine holds one of
- * its own, minted at enrollment, and a machine that has not enrolled is refused
- * whatever it signs with. So a test that wants to be an outpost has to become
- * one first — which is the same two steps a real machine takes, cloud-init or a
- * pasted command.
+ * Enroll a machine and hand back the private key it signs with. A machine that
+ * has not enrolled is refused whatever it signs with, so a test that wants to
+ * be an outpost becomes one first, the way a real machine does.
  *
  * The token is written straight onto the row rather than issued through the
  * service, because these fixtures are not testing the issuing path — that is
@@ -791,10 +787,10 @@ async function enrollMachine(serverId: string): Promise<string> {
     where: { id: serverId },
     data:  { enrollTokenHash: hashEnrollToken(token), enrollExpiresAt: new Date(Date.now() + 60_000) },
   })
-  const res = await env.http.post(`/servers/${serverId}/enroll`).send({ token, cert: CERT })
-  const secret = (res.body as { secret?: string }).secret
-  if (!secret) throw new Error(`enrollMachine(${serverId}): ${res.status} ${res.text}`)
-  return secret
+  const keys = await generateSigningKeys()
+  const res  = await env.http.post(`/servers/${serverId}/enroll`).send({ token, cert: CERT, publicKey: keys.publicKey })
+  if (res.status !== 200) throw new Error(`enrollMachine(${serverId}): ${res.status} ${res.text}`)
+  return keys.privateKey
 }
 
 // ─── The endpoints a MACHINE calls ───────────────────────────────────────────
@@ -810,13 +806,13 @@ describe('an outpost endpoint takes a signature or nothing', () => {
   // The machine's OWN credential. There is no fleet key to borrow: a machine
   // that has not enrolled is refused whatever it signs with, so this fixture
   // enrolls first, exactly as a real one does.
-  let SECRET: string
-  beforeAll(async () => { SECRET = await enrollMachine(machine.id as string) })
+  let KEY: string
+  beforeAll(async () => { KEY = await enrollMachine(machine.id as string) })
 
   /** The same headers conduit sends, from the same module it signs with. */
   async function signed(path: string, body: unknown, serviceMethod = 'heartbeat') {
     return signRequest({
-      secret: SECRET, method: 'POST', path, serviceMethod, body: JSON.stringify(body),
+      privateKey: KEY, method: 'POST', path, serviceMethod, body: JSON.stringify(body),
       // Stated, because the kit is pure and takes neither.
       timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     })
@@ -970,7 +966,7 @@ describe('an outpost endpoint takes a signature or nothing', () => {
     const path = `/servers/${machine.id}`
     const req  = env.http.post(path).set('x-service-method', 'heartbeat')
     const hs   = await signRequest({
-      secret: SECRET, serviceMethod: 'heartbeat', method: 'POST', path, body: JSON.stringify(body),
+      privateKey: KEY, serviceMethod: 'heartbeat', method: 'POST', path, body: JSON.stringify(body),
       timestamp: Math.floor(Date.now() / 1000), nonce,
     })
     for (const [k, v] of Object.entries(hs)) req.set(k, v)
@@ -992,7 +988,7 @@ describe('an outpost endpoint takes a signature or nothing', () => {
     const path = `/servers/${machine.id}`
     const req  = env.http.post(path).set('x-service-method', 'heartbeat')
     const hs   = await signRequest({
-      secret: SECRET, serviceMethod: 'heartbeat', method: 'POST', path, body: JSON.stringify(body),
+      privateKey: KEY, serviceMethod: 'heartbeat', method: 'POST', path, body: JSON.stringify(body),
       timestamp: Math.floor(Date.now() / 1000), nonce,
     })
     for (const [k, v] of Object.entries(hs)) req.set(k, v)
@@ -3128,15 +3124,15 @@ describe('a server keeps its readings, and only its own workspace may read them'
    *  method is exempt from `authenticate` and refuses a service call by name,
    *  so driving it any other way would drive something the outpost does not. */
   // Enrolled, because there is no fleet key. Same two steps a real machine takes.
-  let SECRET: string
-  beforeAll(async () => { SECRET = await enrollMachine(box.id as string) })
+  let KEY: string
+  beforeAll(async () => { KEY = await enrollMachine(box.id as string) })
 
   async function checkIn(health: Record<string, unknown>) {
     const body = { outpost_version: '1.0.0', health }
     const path = `/servers/${box.id}`
     const req  = env.http.post(path).set('x-service-method', 'heartbeat')
     for (const [k, v] of Object.entries(await signRequest({
-      secret: SECRET, serviceMethod: 'heartbeat', method: 'POST', path, body: JSON.stringify(body),
+      privateKey: KEY, serviceMethod: 'heartbeat', method: 'POST', path, body: JSON.stringify(body),
       timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     }))) req.set(k, v)
     const res = await req.send(body)
@@ -3300,8 +3296,8 @@ describe('a machine\'s disk is kept over time, folded', () => {
     })
   })
 
-  let SECRET: string
-  beforeAll(async () => { SECRET = await enrollMachine(box.id as string) })
+  let KEY: string
+  beforeAll(async () => { KEY = await enrollMachine(box.id as string) })
 
   /** A disk report the way an outpost makes one: over HTTP, HMAC-signed, at the
    *  COLLECTION with the server named in the body. Driving `applyDiskReport`
@@ -3311,7 +3307,7 @@ describe('a machine\'s disk is kept over time, folded', () => {
     const path = '/cleanup'
     const req  = env.http.post(path).set('x-service-method', 'report')
     for (const [k, v] of Object.entries(await signRequest({
-      secret: SECRET, serviceMethod: 'report', method: 'POST', path, body: JSON.stringify(payload),
+      privateKey: KEY, serviceMethod: 'report', method: 'POST', path, body: JSON.stringify(payload),
       timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     }))) req.set(k, v)
     const res = await req.send(payload)
@@ -5256,12 +5252,13 @@ describe('apps.analytics: an app\'s traffic, or why there is none', () => {
   test('the Outpost\'s two refusals are read as names', async () => {
     const { createOutpostServer } = await import('@frontierjs/outpost/server')
     const { createAnalytics }     = await import('../../../outpost/src/analytics.js')
-    const outpost = createOutpostServer({ secret: 's', version: 't', serverId: 'srv' } as any, {
+    const hub     = await generateSigningKeys()
+    const outpost = createOutpostServer({ hubKey: hub.publicKey, version: 't', serverId: 'srv' } as any, {
       analytics: createAnalytics({ dir: mkdtempSync(join(tmpdir(), 'bc-caddy-')) }), log: { warn() {}, error() {} },
     } as any)
     const said = async (path: string, body: unknown) => {
       const payload = JSON.stringify(body)
-      const headers = await signRequest({ secret: 's', method: 'POST', path, body: payload, timestamp: Math.floor(Date.now() / 1000), nonce: `tr-${tag()}` })
+      const headers = await signRequest({ privateKey: hub.privateKey, method: 'POST', path, body: payload, timestamp: Math.floor(Date.now() / 1000), nonce: `tr-${tag()}` })
       const res = await outpost.handle(new Request(`http://outpost.test${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: payload }))
       return (await res.json()).error as string
     }

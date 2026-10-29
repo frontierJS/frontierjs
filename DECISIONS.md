@@ -8393,6 +8393,32 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1646"></a>2026-10-29 · `FJS-D1646` — Basecamp's own signing pair is derived from `ENCRYPTION_KEY` and never stored: HKDF-SHA256 over it with the label `basecamp hub signing key v1` seeds `generateSigningKeys({ seed })`, and a conduit target names it by the ref `hub:signing`.
+
+Asked building `IDEAS/basecamp-dogfood.md` 2.4, which needed a home for the private half of [`FJS-D1645`](#fjs-d1645)'s pair. As recommended: **derive** over **a `Secret` row** (a second encrypted record to back up, and a database restored without it is a fleet that obeys nobody) and **an env var** (a second required secret an operator sets and a deploy writes, beside the one that already must exist). Prior art: Rails `secret_key_base` through `KeyGenerator`, one root secret with a label per purpose. What it costs: rotating `ENCRYPTION_KEY` re-enrolls every machine, which [`FJS-D1644`](#fjs-d1644) already makes the rotation path. The label carries a version so a second derivation can sit beside it.
+
+Owner: `packages/basecamp/api/src/core/credentials.ts` (`hubSigningKeys`, `HUB_SIGNING_REF`); `api/test/compute.test.ts` asserts the enroll answer is that public half.
+
+### <a id="fjs-d1645"></a>2026-10-29 · `FJS-D1645` — A command from Basecamp to an Outpost is signed with ONE hub Ed25519 pair; the enrollment answer carries its public half (`hubKey`), the Outpost pins it as `OUTPOST_HUB_KEY`, and conduit signs with a built-in `ed25519` signer under `signed` auth. `outpostSecretId` and its `Secret` row are gone.
+
+[`FJS-D1604`](#fjs-d1604) ruled the inbound half (each machine its own pair, Basecamp records `Server.outpostPublicKey`) and left the outbound direction unstated: the HMAC secret had been both. `decision-rules` graded three:
+
+As recommended, **A**:
+
+- **A — one hub pair.** Tailscale's control key against its node keys: one identity for the control plane, one per node. A breached machine holds nothing that signs as Basecamp or as another machine.
+- **B — a pair per machine for commands too.** Rejected: n private keys on the hub side to store and back up, buying nothing A does not, since every command already names its target.
+- **C — keep an HMAC secret outbound only.** Rejected: the machine would again hold a value that signs as Basecamp, the property D1604 exists to remove.
+
+`signed` + `ed25519` rather than a new auth type: `FJS-D891`'s seam, one function in `packages/conduit/src/signers.ts` beside `basic`.
+
+Owner: `packages/conduit/src/signers.ts` (`ed25519`), `packages/basecamp/api/src/services/servers/servers.service.ts` (the target), `packages/outpost/src/config.js` (`hubKey`, `signingKey`).
+
+### <a id="fjs-d1644"></a>2026-10-29 · `FJS-D1644` — An Outpost's key, and the hub's, rotate by re-enrolling: one key on each side and no overlap window.
+
+Asked with [`FJS-D1645`](#fjs-d1645). As recommended: **re-enroll** over **a current + next key** accepted together for a window (what JWKS rotation and SSH `RevokedKeys` do): no Outpost is in the field, so the window's code, its expiry and its tests buy nothing yet. Left stated: rotating the hub key, or the `ENCRYPTION_KEY` it derives from ([`FJS-D1646`](#fjs-d1646)), is a re-enrollment of every machine. Overlap is the reopen path once a fleet exists to rotate under load.
+
+Owner: `packages/basecamp/api/src/app.ts` (the enroll route replaces `outpostPublicKey`); `api/test/compute.test.ts` (the re-enroll case) and `bun run verify:outpost` (*a lost identity file re-enrolls … under a NEW key pair*).
+
 ### <a id="fjs-d1639"></a>2026-10-29 · `FJS-D1639` — `fli <cmd> -h` prints the card and `--help` prints the guide — `-h` is title, usage, arguments, flags and examples, with one line naming the prose's length and `--help`; `--help`, `fli help <cmd>` and `fli ? <cmd>` add the command file's prose.
 
 The owner's call. The prose under `project:codegraph` runs to 124 lines and pushed the flags off the screen on every lookup. Precedent is git and clap (`cargo`, `rg`): `-h` short, `--help` long. A `--full` flag and the `help` verb alone were set aside; overloading the global `--verbose` would give one flag two meanings. The guide is taller than most terminals, so on a TTY it goes through `$PAGER` (default `less` with `LESS=FRX`, git's defaults); `PAGER=cat` or a pipe prints it plain. Owner: `packages/cli/core/bootstrap.js` `printHelp`.
@@ -12975,6 +13001,39 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 `core/errors.ts`.
 
 ## UI substrate (Mesa)
+
+### <a id="fjs-d1643"></a>2026-10-29 · `FJS-D1643` — A `bind:` on an element writes nothing in the string mode (`target: 'server'`), because the DOM path writes a bound value to a property and no serializer reads one; `bind:this` is handed null.
+
+Plan 2.5 in [`IDEAS/server-render-without-dom.md`](IDEAS/server-render-without-dom.md) said "`bind:` writes the initial value". Probed before building: `renderToHTML` through happy-dom emits `<input>` for `<input bind:value={v}>` with `v = 'hi'`, `<input type="checkbox">` for a bound `checked`, no `selected` for a bound `<select>`, since `bindInput`, `bindGroup` and `bindMask` in `runtime.js` set `el.value`, `el.checked` and `el.selectedIndex` — properties, which happy-dom keeps off the attribute list. The document and the code disagreed; `decision-rules` graded three answers:
+
+- **A — drop, as the DOM path serializes (taken).** One origin: the DOM path stays the parity reference and `bun run corpus -- --portability server` fails on any byte that differs. `bindInput` stays the one owner of what a bind does to an element. The string mode's rule is one sentence, "it serializes what happy-dom serializes".
+- **B — write the initial value as an attribute on BOTH paths** (`value="hi"`, `checked=""`, `selected=""`), what Svelte's SSR does. Rejected here: it moves the origin to an SSR-fidelity rule nobody has asked for, makes `bindInput` write attributes under a server render, needs an option-level `selected` write, and changes every existing SSR output. The reopen path, as its own ruling on both paths together, if a form must be usable with no script.
+- **C — write it on the string path only, a ruled non-parity.** Rejected: two owners, and an exception in the one-sentence rule.
+
+What A leaves stated and uncaught: a page rendered this way and served without its script shows a bound field blank; nothing fails on it because nothing has required it. `bind:this` is `setter(null)` on an element, a `<mesa:element>` and a component, so a script that guards on the node agrees on both paths; one that writes on it unguarded is the corpus's `boundNode` set-aside (`FJS-D1640`). A name Mesa has no directive for (`use:`, `transition:`) stays refused by name on every target rather than dropped, since the DOM path writes it as an attribute and neither answer is the one a person meant.
+
+Owner: `packages/mesa/test/server-emit.test.js` (the emitted-text pin, the 19-control parity row, the null pin) and `bun run corpus -- --portability server`.
+
+### <a id="fjs-d1642"></a>2026-10-29 · `FJS-D1642` — `{@html}` in the string mode (`target: 'server'`) parses its string through the document `initRenderer` installs and pushes the parse; with no document installed it throws by name. What is an anchor comment is `isAnchorComment` in `runtime-server.js`, read by both paths.
+
+Plan 2.4 in [`IDEAS/server-render-without-dom.md`](IDEAS/server-render-without-dom.md); the owner ruled its Q2 **B** (parse once, as the client's `setInnerHTML` parses through a `<template>`, so a malformed string serializes alike on the two paths and `{@html}` stops being a bypass of the escaper). Two sub-choices graded by `decision-rules`:
+
+- **Where the parser comes from — A, the global `document`.** Rejected **B** (the global when installed, else a lazy `createRequire('happy-dom')` window kept module-level — a sync require was proved under Bun, 159 ms on first use) and **C** (always an own window): the parse source stays the one window Q1-A and `FJS-D214` settle; "the string mode needs `initRenderer`" then holds everywhere, where B works or fails on whether a global happens to exist; and happy-dom is an optional peer, so a lazy require would surface a missing peer from inside a render rather than at `renderToHTML`. Reopen path: a DOM-free caller that needs `{@html}` is Q1-B (a stub of the globals that are read), not a window hidden inside `$$host.html`.
+- **One owner for the anchor test** (Invariant 4): `render.js`'s `_isAnchorComment` becomes `runtime-server.js`'s exported `isAnchorComment`, imported by `render.js`; the string mode strips the same `$`-anchors from a parsed `{@html}` string that the DOM path strips from the page, and `<!--[if mso]>` and an authored comment survive on both (`FJS-906`).
+
+Owner: `packages/mesa/test/server-emit.test.js` (`{@html}` parity cases, the no-document throw) and `bun run corpus -- --portability server`, whose `childRefused` bucket went from 26 to 0.
+
+### <a id="fjs-d1641"></a>2026-10-29 · `FJS-D1641` — A notification click is driven for real: a stand-in notification daemon on a private D-Bus sends Chrome the click signal, so `verify:push` runs on any machine with Xvfb rather than only on the owner's display. Example's push sink is opt-in, behind `PUSH_SINK_URL`.
+
+Ruled by the owner on 2026-10-29 while building [`IDEAS/web-push.md`](IDEAS/web-push.md) 4.2, which said no CDP call clicks an OS notification and asked for the question to be reopened here if nothing could. Something can. A headed Chrome on Linux hands a notification to `org.freedesktop.Notifications` and learns of a click from that daemon's `ActionInvoked(id, "default")` signal. A daemon of the drive's own (`example/web/test/lib/notification-daemon.py`) owning that name on a private bus sends the signal, and Chrome grants the worker the activation `focus()` and `openWindow()` require. Probed: the open tab was focused and navigated, and with no tab of the app open a window was created at the url.
+
+- **Where it runs** — any machine with `xvfb-run`, `dbus-daemon` and python3 with dbus-python and PyGObject; the drive names whichever is missing. Rejected: owner-run on a real display with a person's click, since the scripted click is the same signal.
+- **The bus has no service directory.** Under `dbus-run-session` Chrome waits on the desktop portal and never opens its DevTools port.
+- **`openChrome({ headed })`** in `packages/mesa/src/drive.js`. A headed first run blocks on its welcome dialog before the port is announced, so `headed` adds `--no-first-run`.
+- **The push sink is opt-in** (`example/api/src/providers/push/sink.ts`, reached through webPush's `deliver`). Rejected: on by default in dev like the mail sink, which would keep a browser subscribed to example from ever receiving a real push. The driver's SSRF check refuses a localhost endpoint, so `deliver` is the only seam.
+- **What still stands in** — the browser's own decrypt. The drive decrypts from the device key it holds and hands the plaintext to `ServiceWorker.deliverPushMessage`.
+
+Owner: `example/web/test/verify-push.mjs`.
 
 ### <a id="fjs-d1640"></a>2026-10-29 · `FJS-D1640` — The corpus parity pass (`bun run corpus -- --portability server`) sets aside three classes and never fails them: a file that throws on both paths, a file whose two DOM renders differ from each other (a minted id), and a file that differs only in a `style` attribute's CSS text (the attribute is kept, its text masked).
 

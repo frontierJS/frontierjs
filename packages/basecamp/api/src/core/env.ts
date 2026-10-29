@@ -102,16 +102,10 @@ export const spec = {
   HUB_RESTORE_KEY:      {},
 
   // ── Outpost communication ───────────────────────────────────
-  // There is no fleet-wide outpost secret any more, and its absence is the
-  // point. Every machine holds a credential of its own, minted at enrollment
-  // and stored as a `Secret` row: `Server.outpostSecretId` names it, and it is
-  // what this app verifies inbound and signs with outbound. One string that
-  // opened every machine was the thing per-machine credentials existed to
-  // replace, so leaving it declared — required, at that — would be a variable
-  // an operator sets, a deploy writes, and nothing reads.
-  //
-  // A machine that has not enrolled is refused and its screen prints the one
-  // command that fixes it. `providers/compute/enrollment.ts` holds the design.
+  // No variable. A machine signs with a key pair it made at enrollment, and
+  // this app signs to it with a pair derived from ENCRYPTION_KEY
+  // (`hubSigningKeys`, core/credentials.ts), so there is no fleet secret to
+  // declare (`FJS-D1604`). `providers/compute/enrollment.ts` holds the design.
 
   // ── Mail ──────────────────────────────────────────────────
   // Unset MAIL_URL and unset RESEND_API_KEY means this app cannot send mail,

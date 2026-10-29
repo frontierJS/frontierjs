@@ -102,10 +102,25 @@ describe('server target — the emitted module', () => {
   })
 
   it('refuses a kind it does not write yet, naming the construct and its line', async () => {
-    await expect(server(`<mesa:portal><p>x</p></mesa:portal>\n<p>{@html h}</p>\n`))
-      .rejects.toThrow('{@html} at Counter.mesa:2:4 has no server lowering')
-    await expect(server(`<script>let h = ''</script>\n<p>{@html h}</p>\n`))
-      .rejects.toThrow('{@html} at Counter.mesa:2:4 has no server lowering')
+    await expect(server(`<mesa:portal><p>x</p></mesa:portal>\n<p>{#await p}{:then v}{v}{/await}</p>\n`))
+      .rejects.toThrow('{#await} at Counter.mesa:2:4 has no server lowering')
+    await expect(server(`<script>let p = Promise.resolve(1)</script>\n<p>{#await p}{:then v}{v}{/await}</p>\n`))
+      .rejects.toThrow('{#await} at Counter.mesa:2:4 has no server lowering')
+  })
+
+  it('drops every bind: on an element and hands bind:this null', async () => {
+    const { result } = await server(`<script>let v = 'hi'; let on = true; let g = ['b']; let m = '12'; let f = null; let el; let c</script>
+<input bind:value={v}><input type="checkbox" bind:checked={on}><input type="checkbox" value="b" bind:group={g}>
+<input bind:value|mask("99-99")={m}><input type="checkbox" :checked={on}><input type="file" bind:files={f}>
+<div bind:this={el}>a</div><mesa:element this="b" bind:this={el}>q</mesa:element>`)
+    expect(result).toContain(`'<input><input type="checkbox"><input type="checkbox" value="b"><input><input type="checkbox"><input type="file"><div>a</div>'`)
+    for (const dom of ['bindInput', 'bindGroup', 'bindMask', '$$host.bind']) expect(result).not.toContain(dom)
+    expect(result.match(/\$\$set_el\(null\);/g)).toHaveLength(2)
+  })
+
+  it('writes {@html} as a hole the runtime parses', async () => {
+    const { result } = await server(`<script>let h = '<b>x</b>'</script>\n<div>{@html h}</div>\n`)
+    expect(result).toContain('$$out.push(`<div>${$$host.html($$runtime.get($$sig_h))}</div>`);')
   })
 
   it('writes a dynamic element through the runtime\'s tag, a head into its buffer, a portal into nothing and a boundary as branches', async () => {
@@ -378,8 +393,70 @@ line1
     await expect(renderToHTML(await build(plain), { throws: true })).rejects.toThrow('content threw')
   })
 
+  // The DOM path writes a bound value to a property — `bindInput`,
+  // `bindGroup`, `bindMask` — and happy-dom serializes no property, so the
+  // string mode writes nothing for a bind (`FJS-D1643`); what an authored
+  // `value=`, `checked` or `selected` beside it says is kept on both paths.
+  it('bind: on a control writes nothing on either path, whatever the control holds', async () => {
+    const S = `<script>let v = 'hi'; let n = 3; let u; let on = true; let off = false; let t = 'multi\\nline'; let s = 'b'; let many = ['a', 'c']; let none = 'zz'; let g = ['b']; let m = '1234'; let f = null</script>\n`
+    const src = [
+      '<input bind:value={v}><input value="zz" bind:value={v}><input type="number" bind:value={n}><input bind:value={u}>',
+      '<input type="checkbox" bind:checked={on}><input type="checkbox" checked bind:checked={off}><input type="checkbox" :checked={on}>',
+      '<textarea bind:value={t}></textarea><textarea bind:value={v}>seed</textarea>',
+      '<select bind:value={s}><option value="a">A</option><option value="b">B</option></select>',
+      '<select multiple bind:value={many}><option value="a">A</option><option value="b">B</option><option value="c">C</option></select>',
+      '<select bind:value={none}><option value="a">A</option><option value="b" selected>B</option></select>',
+      '<input type="checkbox" value="a" bind:group={g}><input type="checkbox" value="b" bind:group={g}><input type="radio" value="a" bind:group={s}><input type="radio" value="b" bind:group={s}>',
+      '<input bind:value|mask("99-99")={m}><input type="file" bind:files={f}>',
+    ].join('')
+    const { dom, str } = await both(S + src)
+    expect(str).toBe(dom)
+    expect(str).toBe('<input><input value="zz"><input type="number"><input><input type="checkbox"><input type="checkbox" checked=""><input type="checkbox"><textarea></textarea><textarea>seed</textarea><select><option value="a">A</option><option value="b">B</option></select><select multiple=""><option value="a">A</option><option value="b">B</option><option value="c">C</option></select><select><option value="a">A</option><option value="b" selected="">B</option></select><input type="checkbox" value="a"><input type="checkbox" value="b"><input type="radio" value="a"><input type="radio" value="b"><input><input type="file">')
+  })
+
+  // The DOM path hands the node, so a script that writes on it lands an
+  // attribute the string mode cannot: the corpus sets such a tree aside as
+  // `boundNode` (`FJS-D1640`). A script that guards on the node agrees.
+  it('bind:this is null on the string path and a node on the DOM path; a guarded write agrees, an unguarded one is the boundNode set-aside', async () => {
+    const guarded = `<script>let el; let c; $: el && el.setAttribute('x', '1')</script><div bind:this={el}>a</div><p>{el === null ? 'null' : 'node'}</p>`
+    const { dom, str } = await both(guarded)
+    expect(str).toBe('<div>a</div><p>null</p>')
+    expect(dom).toBe('<div x="1">a</div><p>node</p>')
+    const comp = await bothTree(`<script>import C from '__CHILD__'; let c</script><C /><p>{c === null ? 'null' : typeof c}</p>`.replace('<C />', '<C bind:this={c} />'), '<i>k</i>')
+    expect(comp.str).toBe('<i>k</i><p>null</p>')
+    expect(comp.dom).toBe('<i>k</i><p>object</p>')
+  })
+
   it('a preserved comment is written', async () => {
     const { result } = await server('<p>a<!-- hi -->b</p>', 'C.mesa', { preserveComments: true })
     expect(result).toContain("$$out.push('<p>a<!-- hi -->b</p>');")
+  })
+  it('{@html}: parsed as the client parses it — repaired, anchors stripped, authored comments kept — on both paths', async () => {
+    const src = (h) => `<script>let h = ${JSON.stringify(h)}; let n = 0</script>
+<div>{@html h}</div><pre>{@html h}</pre><table><tbody>{#each [1, 2] as i}{@html h}{/each}</tbody></table><p>{@html n}</p><p>{@html null}</p><p>{@html undefined}</p>`
+    const cases = [
+      '<b>bold</b> & <i>open',
+      '<p>a<p>b',
+      '<!--$--><!--$ name --><!-- keep --><!--[if mso]>x<![endif]--><!--mesa-root-->',
+      '<tr><td>cell &amp; more</td></tr>',
+      'a & b < c > d',
+      '<script>1<2</script><style>a > b {}</style>',
+      '<svg><path d="M0"/></svg>',
+      '',
+    ]
+    for (const h of cases) {
+      const { dom, str } = await both(src(h))
+      expect(str, h).toBe(dom)
+    }
+    const { str } = await both(src('<p>a<p>b<!--$--><!-- keep -->'))
+    expect(str).toContain('<div><p>a</p><p>b<!-- keep --></p></div>')
+    expect(str).toContain('<p>0</p><p></p><p></p>')
+  })
+
+  it('{@html} with no document installed throws by name', async () => {
+    const Comp = await build(`<script>let h = '<b>x</b>'</script>\n<div>{@html h}</div>\n`, 'server')
+    const doc = globalThis.document
+    delete globalThis.document
+    try { expect(() => renderString(Comp)).toThrow('initRenderer()') } finally { globalThis.document = doc }
   })
 })

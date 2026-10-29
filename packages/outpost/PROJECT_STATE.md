@@ -26,10 +26,10 @@ resolved no executor and every step passed having issued nothing.
   `verify:outpost` releases an inline app, which touches no container.
 - **Ring 1 — installing it.** Built now: basecamp's `Server` model carries the
   `pending → provisioning → installing → ready` walk and an enrollment token,
-  and a minted `outpostSecretId` is a per-server credential. What remains is
-  phase 3 — deleting the fleet-wide `OUTPOST_SECRET` fallback a `null`
-  `outpostSecretId` still signs with, which can only happen once every machine
-  in a fleet has enrolled with its own.
+  and each machine enrolls an Ed25519 pair of its own: Basecamp keeps
+  `outpostPublicKey` and answers the hub's public key, so neither side holds
+  anything that signs as the other (`FJS-D1604`). There is no fleet-wide
+  credential. Rotating a key is re-enrolling.
 - **Build-once-promote-a-digest.** V1 builds on the target. The digest plumbing
   is done, so what remains is a builder and somewhere to put the artefact —
   `IDEAS/deploy-plane.md` §b.

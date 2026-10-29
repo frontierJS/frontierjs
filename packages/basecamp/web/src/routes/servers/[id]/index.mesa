@@ -399,7 +399,7 @@ title: Server
     </article>
   {/if}
 
-  {#if server.outpostSecretId === null}
+  {#if server.outpostPublicKey === null}
     <!-- A machine with no credential of its own. Provisioned machines get one
          from cloud-init, which nobody types; an imported machine has no install
          to be handed anything at, so this is that moment.

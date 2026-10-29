@@ -313,8 +313,8 @@ async function reportParity(target, lowering) {
     // imitate (plan 1.2's known non-parity); the markup around it is graded.
     if (sansStyle(a.value) === sansStyle(html)) { buckets.styleText.push({ file, why }); continue }
     // A script handed a node by `bind:this` writes on it under happy-dom —
-    // an `aria-expanded` from a `$:` — and the string mode has no node to
-    // hand (plan 2.5: `bind:this` is null), so the write has nowhere to land.
+    // an `aria-expanded` from a `$:` — and the string mode hands null
+    // (`FJS-D1643`), so the write has nowhere to land.
     if (bindsThis(file)) { buckets.boundNode.push({ file, why }); continue }
     buckets.differs.push({ file, why })
   }

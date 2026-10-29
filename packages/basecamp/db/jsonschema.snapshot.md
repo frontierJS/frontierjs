@@ -755,7 +755,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `outpostVersion` | `string`? | — | — | — | — |
 | `lastHeartbeatAt` | `string`? | — | — | `format: "date-time"` | — |
 | `enrollExpiresAt` | `string`? | — | — | `format: "date-time"` | — |
-| `outpostSecretId` | `string`? | — | — | — | — |
+| `outpostPublicKey` | `string`? | — | — | — | — |
 | `outpostCert` | `string`? | — | — | — | — |
 | `plan` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `actualSpecs` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |

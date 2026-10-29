@@ -123,8 +123,8 @@ function lowerAttributes(ctx, n) {
       classes.push({ name: cls, expr: read(ctx, classSource(p, cls)), loc, at })
       continue
     }
-    if (name === 'bind:value' || name === ':value' || name === 'bind:checked') {
-      const prop = name === 'bind:checked' ? 'checked' : 'value'
+    if (name === 'bind:value' || name === ':value' || name === 'bind:checked' || name === ':checked') {
+      const prop = name.endsWith('checked') ? 'checked' : 'value'
       const target = elementBindTarget(ctx, prop, p.value ? unwrapExp(p.value) : prop)
       if (target) binds.push({ name: prop, ...target, loc })
       continue
