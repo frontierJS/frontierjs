@@ -12,10 +12,10 @@
 // auth error raised from a SERVICE surfacing as a 500.
 
 import type { IAuth, SessionContext, ServiceContext, App, Plugin, TransportContext } from '@frontierjs/junction'
-import { parseTtl, normalizePrefix, Unauthorized, BadRequest, Forbidden, NotFound } from '@frontierjs/junction'
+import { parseTtl, normalizePrefix, Unauthorized, BadRequest, Forbidden, NotFound, refuseDelegated } from '@frontierjs/junction'
 import { rateLimitHook } from '@frontierjs/junction/hooks'
 import type { AuthPluginOptions }                                  from './types.ts'
-import { createAuthServices, gradeForWire, asPrincipal, refuseDelegated, DEFAULT_SERVICE_NAMES } from './services.ts'
+import { createAuthServices, gradeForWire, asPrincipal, DEFAULT_SERVICE_NAMES } from './services.ts'
 import { SupportEpisodeError }                                     from './errors.ts'
 import { OAUTH_STATE_COOKIE }                                      from './oauth.ts'
 import type { AuthCleanupHandle }                                 from './cleanup.ts'

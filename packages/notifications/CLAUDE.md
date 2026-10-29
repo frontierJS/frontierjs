@@ -19,7 +19,8 @@ loader.ts         where *.notification.ts live, and the file-name-is-the-type ru
 notification.ts   the Notification base class (the older shape; still supported)
 builders.ts       message builders (an email body may also be a rendered template)
 types.ts          Transport, Recipient, driver and payload types
-plugin.ts         the Junction plugin — register / boot / shutdown
+plugin.ts         the Junction plugin — register / boot / shutdown; registers push-subscriptions at boot
+services.ts       `push-subscriptions` — the subscribe door, own rows only, upsert by endpoint
 state.ts          the plugin's state on the app, under one Symbol.for key
 errors.ts
 drivers/

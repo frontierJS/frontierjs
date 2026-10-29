@@ -1,14 +1,15 @@
-// ─── @frontierjs/notifications — the model an app owns ───────────────────────
+// ─── @frontierjs/notifications — the models an app owns ──────────────────────
 //
-// One model, and the app's rather than this package's — the same split
+// Two models, and the app's rather than this package's — the same split
 // @frontierjs/auth makes between user.lite and auth.lite. It is APPENDED to the
 // app's own db/schema.lite rather than imported, because everything an app does
 // next happens here: a relation back to its own User, a tenant key under row
 // tenancy, @@trail(audit), a column its own bell menu wants, and the constraint
 // on subjectType that only the app can know.
 //
-// What this package does with it is narrower than what the app does: it writes
-// rows through asSystem() and reads none. So the file ships to be COPIED, and
+// What this package does with them is narrower than what the app does: it
+// writes Notification rows and reads PushSubscription rows, both through
+// asSystem(). So the file ships to be COPIED, and
 // `fli check`'s `package-model-drift` grades the copy against it — a column
 // this package starts writing that an app's copy does not have is named there
 // rather than discovered at the first send.
@@ -90,4 +91,46 @@ model Notification {
   @@unique([userId, type, deliveryKey], nullsDistinct: true)
   @@allow(read,   userId == auth().id)
   @@allow(update, userId == auth().id)
+}
+
+// ─── PushSubscription — one browser's handle for Web Push ───────────────────
+//
+// A writable handle to somebody's device: whoever holds the endpoint and both
+// keys can put a notification on that screen. So the keys are @encrypted, which
+// means an app installing this fragment passes `encryptionKey` to createClient
+// whether or not it sends push (FJS-D1442), and the gate is the owner's alone.
+// The webPush() driver reads them through asSystem() to encrypt a payload.
+//
+// The column names are the ones `subscription.toJSON()` and the driver's
+// PushSubscription interface use, so a row is handed to the driver as it is.
+
+model PushSubscription {
+  id         Int       @id
+  // String to match Notification.userId; the same deliberate-deviation note
+  // applies to an app whose User.id is an Int.
+  userId     String
+  // The push service's URL for this one browser profile. Not secret on its
+  // own -- a send to it must be signed by the app's VAPID key -- and unique
+  // because the subscribe route upserts by it.
+  endpoint   String    @unique
+  // The device's P-256 public key (65 bytes) and auth secret (16 bytes), both
+  // base64url as the browser hands them over.
+  p256dh     String    @encrypted
+  auth       String    @encrypted
+  userAgent  String?
+  // Stamped on each re-subscribe, so a device nobody has opened in months can
+  // be told from one in use.
+  lastSeenAt DateTime?
+  createdAt  DateTime  @default(now())
+  // A 404 or 410 from the push service retires the row here. A retired row
+  // keeps its endpoint (FJS-D65), so a browser that hands the same endpoint
+  // back is restored by the subscribe route rather than refused as a duplicate.
+  deletedAt  DateTime?
+
+  @@db(main)
+  @@softDelete
+  // R.C.U.D all USER, and the policy below makes every one own-rows-only. No
+  // admin read: a list of other people's devices is nobody's screen.
+  @@gate(4.4.4.4)
+  @@allow(all, userId == auth().id)
 }

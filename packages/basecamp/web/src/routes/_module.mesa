@@ -279,12 +279,21 @@ siteName: Basecamp
      cannot re-close what the person opened. -->
 {#snippet navlists()}
   {#each navGroups() as group}
+    {#if group.direct}
+      <!-- A group of one screen that is not a Basecamp screen: no fold, the
+           label is the link, and the warning tone sets it apart from the rest. -->
+      <a class="navlink warning nav-direct" href={group.entries[0].href} prefetch="hover"
+         aria-current={(page.route, current(group.entries[0])) ? 'page' : null}
+         title={rail ? group.label : null}
+      ><NavIcon name={group.icon} /><span class="navlink-text">{group.label}</span></a>
+    {:else}
     <details class="nav-group" open={group.open || group.entries.some(current) ? true : null}>
       <summary class="navlist-label" title={rail ? group.label : null}>
         <NavIcon name={group.icon} /><span class="navlink-text">{group.label}</span>
       </summary>
       {@render navlinks(group.entries)}
     </details>
+    {/if}
   {/each}
 {/snippet}
 
@@ -525,6 +534,9 @@ siteName: Basecamp
     .topbar .cluster { flex-wrap: nowrap; gap: var(--space-xs); }
   }
   .drawer-switch { margin-block-end: var(--space-lg); }
+
+  /* The tone only sets --bg-mix; a navlink reads it just when current. */
+  .nav-direct { color: var(--bg-mix); }
 
   /* Focus mode has no header. A thin strip along the top edge is the hover
      target; the toggle waits above the viewport and slides down when the

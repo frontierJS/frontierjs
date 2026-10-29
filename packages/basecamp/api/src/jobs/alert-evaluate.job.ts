@@ -44,6 +44,7 @@ import { defineJob }        from '@frontierjs/caravan'
 import { isStale }          from '@frontierjs/junction'
 import { runsAsApp }        from './context.ts'
 import { evaluateWindow, describeBreach, isSnoozed } from '../domain/alert/alerting.ts'
+import { watchedSeries }    from '../domain/alert/watched-series.ts'
 import { fanOutToChannels } from '../domain/notification/delivery.ts'
 import { notifyPeople, workspaceMembers } from '../domain/notification/notify.ts'
 import type { Message }     from '../domain/notification/delivery.ts'
@@ -75,9 +76,7 @@ export default defineJob({
 
     // Every workspace's rules in one pass. `asSystem()` is what crosses them —
     // the row tenancy this app declares scopes to one workspace, and a cron has
-    // none. What that costs is stated rather than assumed: nothing below reads
-    // a rule's workspace to decide anything, because a rule already carries
-    // everything the evaluation needs.
+    // none — so the series a rule may read is confined by `watchedSeries`.
     const rules = await db.alertRule.findMany({ where: { isActive: true } })
 
     let fired = 0, resolved = 0
@@ -89,7 +88,7 @@ export default defineJob({
       // legitimately names one that does not exist yet. What it must not do is
       // be silent about it: a rule watching a metric nobody writes can never
       // fire, and looks exactly like a rule whose threshold is never crossed.
-      const series = await db.metricSeries.findFirst({ where: { labelsKey: rule.metricName } })
+      const series = await watchedSeries(db, rule.metricName, rule.workspaceId)
       if (!series) { missing.push(`${rule.name} → ${rule.metricName}`); continue }
       if (isStale(series.lastSeenAt, now)) stale.push(`${rule.name} → ${rule.metricName}`)
 

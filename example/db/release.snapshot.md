@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-56 model(s) · 26 enum(s) · 2 database(s) · 2 value set(s)
+57 model(s) · 26 enum(s) · 2 database(s) · 2 value set(s)
 audit → trail · main → sqlite
 ```
 
@@ -1050,6 +1050,30 @@ table `product_variant` · db `main` · gate `0.4.4.5` · @@softDelete(cascade)
 ```
 @@unique(color, productId, size)
 @@index(productId)
+```
+
+### `PushSubscription`
+
+table `push_subscription` · db `main` · gate `4.4.4.4` · @@softDelete
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `auth` | `String` | no | — | @encrypted · **required on write** |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `deletedAt` | `DateTime` | yes | — | — |
+| `endpoint` | `String` | no | — | unique · **required on write** |
+| `id` | `Int` | no | — | id |
+| `lastSeenAt` | `DateTime` | yes | — | — |
+| `p256dh` | `String` | no | — | @encrypted · **required on write** |
+| `userAgent` | `String` | yes | — | — |
+| `userId` | `String` | no | — | **required on write** |
+
+```
+@@allow(create, userId == auth().id)
+@@allow(delete, userId == auth().id)
+@@allow(postUpdate, userId == auth().id)
+@@allow(read, userId == auth().id)
+@@allow(update, userId == auth().id)
 ```
 
 ### `Run`

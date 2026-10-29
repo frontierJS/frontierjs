@@ -7,7 +7,7 @@
 
 import { currentEngine } from './engine.js'
 import { validateBusyTimeout } from './pragmas.js'
-import { resolve, join, dirname, mkdirSync, rmSync, AsyncLocalStorage, processId, hasFilesystem } from '#host'
+import { resolve, join, dirname, mkdirSync, rmSync, AsyncLocalStorage, processId, defaultFileStorage } from '#host'
 import { resolveAnchor } from './db-path.js'
 import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField, pointColumns, 
          SEARCH_TABLE, searchModels, searchRankExpr } from './ddl.js'
@@ -6323,9 +6323,8 @@ export async function createClient({
   // database (`FJS-D1549`). A browser has no disk: it installs nothing, and the
   // notice below is still what it says.
   const _anyFiles = schema.models.some(m => m.fields.some(f => f.type?.name === 'File'))
-  if (_anyFiles && hasFilesystem && !effectivePlugins.some(p => p?.fieldType === 'File')) {
-    const { FileStorage } = await import('../storage/file-storage.js')
-    effectivePlugins = [...effectivePlugins, FileStorage()]
+  if (_anyFiles && defaultFileStorage && !effectivePlugins.some(p => p?.fieldType === 'File')) {
+    effectivePlugins = [...effectivePlugins, await defaultFileStorage()]
   }
 
   // Plugin runner — orchestrates all installed plugins

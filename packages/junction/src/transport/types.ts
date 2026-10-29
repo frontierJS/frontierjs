@@ -198,7 +198,6 @@ export interface TransportContext {
   // internal to the transport: an application does not write them, which is
   // what the `__` says, and a handler is free to read them.
   __cors?:                Record<string, string>
-  __securityHeaders?:     Record<string, string>
   __rateLimit?:           Record<string, string>
   __correlationHeaders?:  Record<string, string>
   __pendingCookies?:      Array<[string, string, Record<string, unknown>]>

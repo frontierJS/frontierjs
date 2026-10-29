@@ -21,6 +21,7 @@ import { join } from 'node:path'
 import { GatePlugin }    from '../../../litestone/src/index.js'
 import { createTestEnv } from '../../../litestone/src/testing.js'
 import { createConduit } from '@frontierjs/conduit'
+import { seriesKey }     from '@frontierjs/junction'
 
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { evaluateWindow, breaches, describeBreach } from '../src/domain/alert/alerting.ts'
@@ -335,6 +336,42 @@ describe('alert-evaluate — the job between a rule and an event', () => {
     await run(app)
     expect(await db.alertEvent.count({ where: { ruleId: ghost.id } })).toBe(0)
     expect(await db.alertEvent.count({ where: { ruleId: rule.id } })).toBe(1)
+  })
+
+  it('a rule cannot watch another workspace\'s machine — paired with its own (FJS-3594)', async () => {
+    // Series are `@@tenant(none)` and named by a string the rule's author types,
+    // so a lookup by that string alone read any workspace's CPU.
+    const { app, db } = await makeApp()
+    const { rule: mine }   = await fixture(db, { values: [1], metricName: 'mine.idle' })
+    const { rule: theirs } = await fixture(db, { values: [1], metricName: 'theirs.idle' })
+
+    const at = Date.now()
+    const boxSeries = async (workspaceId: string, labels: Record<string, string>) => {
+      const box = await db.server.create({
+        data: { workspaceId, name: 'box', slug: `box-${Math.random().toString(36).slice(2, 8)}` },
+      })
+      const key = seriesKey('server.cpuPercent', { ...labels, serverId: box.id })
+      const s   = await db.metricSeries.create({
+        data: { name: 'server.cpuPercent', labelsKey: key, labels: { ...labels, serverId: box.id },
+                type: 'gauge', lastSeenAt: new Date(at).toISOString() },
+      })
+      await db.metricPoint.create({ data: { seriesId: s.id, at, value: 99 } })
+      return key
+    }
+    const watch = (workspaceId: string, metricName: string) => db.alertRule.create({
+      data: { workspaceId, name: metricName, metricName, severity: 'warning',
+              operator: 'gt', threshold: 80 },
+    })
+
+    const foreign = await watch(mine.workspaceId, await boxSeries(theirs.workspaceId, {}))
+    const own     = await watch(mine.workspaceId, await boxSeries(mine.workspaceId, {}))
+    // A label nothing confines is refused, not waved through.
+    const unknown = await watch(mine.workspaceId, await boxSeries(mine.workspaceId, { tenantKey: 'x' }))
+
+    await run(app)
+    expect(await db.alertEvent.count({ where: { ruleId: foreign.id } })).toBe(0)
+    expect(await db.alertEvent.count({ where: { ruleId: unknown.id } })).toBe(0)
+    expect(await db.alertEvent.count({ where: { ruleId: own.id } })).toBe(1)
   })
 
   it('a paused rule is not evaluated — paired with the identical active one', async () => {

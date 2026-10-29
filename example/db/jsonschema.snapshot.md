@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-95 definitions · 56 models · 1 view · 12 types · 26 enums · 0 other
+96 definitions · 57 models · 1 view · 12 types · 26 enums · 0 other
 ```
 
 ## Definitions
@@ -80,6 +80,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Payslip` | model |
 | `PayslipLine` | model |
 | `Notification` | model |
+| `PushSubscription` | model |
 | `User` | model |
 | `revenueByStatus` | view |
 | `VerificationPurpose` | enum |
@@ -1172,6 +1173,22 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `readAt` | `string`? | — | — | `format: "date-time"` | — |
 
 **On create**: required — `userId`, `type`, `data` · not accepted — `id`
+
+### `PushSubscription`
+
+- gate `read:4 create:4 update:4 delete:4` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `userId` | `string` | yes | — | — | — |
+| `endpoint` | `string` | yes | — | — | — |
+| `p256dh` | `string` | yes | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
+| `auth` | `string` | yes | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
+| `userAgent` | `string`? | — | — | — | — |
+| `lastSeenAt` | `string`? | — | — | `format: "date-time"` | — |
+
+**On create**: required — `userId`, `endpoint`, `p256dh`, `auth` · not accepted — `id`
 
 ### `User`
 

@@ -353,7 +353,10 @@ src/
                            the one answer both servers and `_headers` share,
                            here because the build may not import `serve/`,
                            offline-shell.js: sw.js + a precache list derived
-                           from what this build emitted (`offline: true`).
+                           from what this build emitted (`offline: true`);
+                           `push: true` adds the push + notificationclick
+                           handlers, and alone writes it with no precache and
+                           no fetch handler (`FJS-D1442`).
                            Sierra writes that one because only the build knows
                            its own hashes; the app writes its manifest because
                            a manifest is a declaration

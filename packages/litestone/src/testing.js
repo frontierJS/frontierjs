@@ -1985,8 +1985,7 @@ export function generateFactory(schema, modelName, options = {}) {
     const out = {}
     for (const field of model.fields) {
       // A required File left out is a row the client refuses, so every model
-      // carrying one could not be built at all. The value is a stored ref, not
-      // bytes: a JSON string is what FileStorage reads back and never uploads.
+      // carrying one could not be built at all.
       if (field.type.name === 'File' && !field.type.optional && !field.type.array) {
         out[field.name] = _fileRef(modelName, field, seq)
         continue
@@ -3858,9 +3857,14 @@ function _settable(n, { model, fkFields }) {
   return f
 }
 
+// Bytes, not a stored ref: FileStorage refuses a ref from any caller but the
+// system (FJS-3114), and the client installs it on every File column
+// (FJS-D1549), so a ref fails the ladder at every level. The bytes carry no
+// magic number, so the claimed type stands and @accept passes.
 function _fileRef(modelName, field, seq) {
-  const mime = field.attributes.find(a => a.kind === 'accept')?.types?.[0] ?? 'application/octet-stream'
-  return JSON.stringify({ key: `${modelName}/${seq}/${field.name}`, provider: 'local', size: 0, mime })
+  const accept = field.attributes.find(a => a.kind === 'accept')?.types
+  const mime   = [].concat(accept ?? []).join(',').split(',')[0]?.trim() || 'application/octet-stream'
+  return `data:${mime};base64,${btoa(`${modelName}/${seq}/${field.name}`)}`
 }
 
 function _fillValue(f, { schema, model, seq }) {

@@ -36,21 +36,21 @@ Goal: every Phase 0 ruling lands in `db/schema.lite` and the one rewritten `init
 Done when: `fli db:check`, `fli db:types`, the seed and `packages/basecamp/db/test` are green on a fresh database, and `app.snapshot.md` is regenerated.
 
 - [x] 1.1 `User` per `FJS-D1198`: `UserKind { user bot peer }`, `kind @system @immutable`, drop `role` and `scopes`; `/hub/users` count loses its `ai` bucket
-- [ ] 1.2 Hub as App (`FJS-D1603`): `HubConfig.appId` relation, drop `hostServerId`; `App.isHub`-free — the pointer is the flag
-- [ ] 1.3 `Backup` → `AppBackup` (`FJS-D1606`): drop `Backup`, drop the five restated columns on `HubConfig`, align `BackupKind`/`DrillKind`
+- [x] 1.2 Hub as App (`FJS-D1603`): `HubConfig.appId` relation, drop `hostServerId`; `App.isHub`-free — the pointer is the flag
+- [x] 1.3 `Backup` → `AppBackup` (`FJS-D1606`): drop `Backup`, drop the five restated columns on `HubConfig` and `backupEnabled` with them (the App's null `backupCron` is the flag), align `BackupKind`/`DrillKind` (`DrillKind` stays the subset its comment names)
 - [x] 1.4 `ProviderKind` split (`FJS-D1607`): `ComputeProvider` on `Server`, the two `@@check`s go, `fleetByProvider.providerKind` typed `ComputeProvider`
 - [x] 1.5 The ruled-and-unbuilt six, as one pass (Q9): demo workspace `FJS-D1537`, `MaintenanceRun` `FJS-D825`, ~~`readAt @scoped` `FJS-D1238`~~ (no column: notice acknowledgements stay in `web/src/lib/dismissals.js`, localStorage), `Secret.verifiedAt` + `verifyError` (`IDEAS/workspace-onboarding.md` 1.1, schema half; the refusal-clears rule and its test row stay there), `Domain.certKind` enum (landed in 1.6), `DashboardTile` `FJS-1896`
 - [x] 1.6 Q10: `Invitation.token @hashed`; drop `Deployment.environmentId` and `Job.environmentId`; `Workspace.ownerId` relation; the Strings → enums list in `FJS-D1611` (values under it; `Account.status` moves to 1.7)
 - [x] 1.7 Q1's answer (`FJS-D1618`): `Account` finished — `AccountStatus { active suspended }`, default `active`; the false *auth owns this* comment goes
-- [ ] 1.8 Rewrite `initial_schema.sql` in place for the last time; `db:check`, `db:types`, seed, `db/test` green; `app.snapshot.md` regenerated
+- [x] 1.8 Rewrite `initial_schema.sql` in place for the last time; `db:check`, `db:types`, seed, `db/test` green; `app.snapshot.md` regenerated — green 2026-10-29 with 1.2/1.3, 72 models, 116/116, snapshot unchanged
 
 ### Phase 2 — The code halves
 
 Goal: every service reads the new shapes; nothing reads a dropped column.
 Done when: `packages/basecamp/api/test` and the web build are green, and `fli ws:surface` names no dropped export.
 
-- [ ] 2.1 `useHost` creates the hub App row in the installer's workspace and points `HubConfig.appId` at it; posture `hub.app-row-drift`; Release on the hub refused; `/hub/` settings read the row and the app lists hide it — closes `FJS-3515`
-- [ ] 2.2 Backup services over `AppBackup`: hub archive, restore (`IDEAS/backups.md` 4.3) and `archive-manifest.ts` — closes `FJS-3563`
+- [ ] 2.1 `useHost` creates the hub App row in the installer's workspace and points `HubConfig.appId` at it; posture `hub.app-row-drift`; Release on the hub refused; `/hub/` settings read the row and the app lists hide it; the seed makes the hub App row and its schedule — closes `FJS-3515`
+- [ ] 2.2 Backup services over `AppBackup`: hub archive, restore (`IDEAS/backups.md` 4.3) and `archive-manifest.ts`; the seed's hub archive returns as an `AppBackup` on the hub App; `backups` names a model again (until then `/mcp` reports its four tools graded by nothing) — closes `FJS-3563`
 - [ ] 2.3 Audit writer moves to a junction plugin handed `AuditEvent` (`FJS-D873`); `hooks.ts` `recordable()` shrinks to the call
 - [ ] 2.4 Outpost enrollment: `Server.enrollTokenHash` then per-app Ed25519 (`FJS-D1604`); `keyFor` returns `{ publicKey }` through junction's `credentials.ts` owner
 - [ ] 2.5 `RUNTIME_COLUMNS` test pins the list against the schema (`FJS-D1438`); `ComputeProvider ⊂ ProviderKind` test (`FJS-D1607`)

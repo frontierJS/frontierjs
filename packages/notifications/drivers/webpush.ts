@@ -1,7 +1,9 @@
 import {
   createCipheriv, createECDH, createPrivateKey, hkdfSync, randomBytes, sign,
 } from 'node:crypto'
+import { gradePublicUrl, pinTo } from '@frontierjs/junction/public-url'
 import type { App, NotificationDriver, Recipient } from '../types.ts'
+import { stateOf } from '../state.ts'
 
 /**
  * Web Push transport driver: RFC 8291 (aes128gcm over ECDH-ES), RFC 8188 (the
@@ -18,9 +20,12 @@ import type { App, NotificationDriver, Recipient } from '../types.ts'
  * ── What the driver does not own ────────────────────────────────────────
  * The SUBSCRIPTION. It is the app's row (`PushSubscription` in its own
  * `db/schema.lite`, keys `@encrypted`, gate stated there) and arrives through
- * `subscriptions`, a two-method store. The driver reads the keys through
- * whatever the store answers, which for an `@encrypted` column means the store
- * holds `asSystem()` -- so the driver has full visibility BY CONSTRUCTION and
+ * `subscriptions`, a two-method store. Its TEXT is this package's
+ * (`FJS-D1442`): it ships in `db/notification.lite` beside `Notification`,
+ * appended by `notifications:install` and graded by `package-model-drift`.
+ * With no store given, the driver reads that model off the plugin's `db`; an
+ * app whose row lives elsewhere passes its own. Either way the keys are read
+ * through `asSystem()` -- so the driver has full visibility BY CONSTRUCTION and
  * cannot be where `@guarded` columns are kept out of a payload. That check
  * belongs where the payload is built: the notification's `push:` formatter.
  *
@@ -55,7 +60,8 @@ export interface PushMessage {
   /** Seconds the service may hold it for an offline device. Default one day. */
   ttl?:     number
   urgency?: 'very-low' | 'low' | 'normal' | 'high'
-  /** A later message with the same topic replaces one still queued. */
+  /** A later message with the same topic replaces one still queued or still on screen -- the
+   *  header for the push service, the payload for the worker's `tag`. */
   topic?:   string
 }
 
@@ -84,10 +90,11 @@ export interface VapidKeys {
 }
 
 export interface WebPushOptions {
-  vapid:         VapidKeys
-  subscriptions: PushSubscriptions
+  vapid:          VapidKeys
+  /** Default: the installed `PushSubscription` model on the plugin's `db`. */
+  subscriptions?: PushSubscriptions
   /** Sends a built request. Default `fetch`; a test or a proxy substitutes. */
-  deliver?:      (req: PushRequest) => Promise<{ status: number }>
+  deliver?:       (req: PushRequest) => Promise<{ status: number }>
 }
 
 // ─── Encoding helpers ───────────────────────────────────────────────────────
@@ -144,6 +151,20 @@ export function vapidAuthorization(endpoint: string, vapid: VapidKeys, now = Dat
 // ─── The encrypted body ─────────────────────────────────────────────────────
 
 /**
+ * Why these keys cannot be encrypted to, or null. One check for the subscribe
+ * route and the send, so a bad row is refused at the door rather than found by
+ * the first notification.
+ */
+export function subscriptionKeyProblem(sub: { p256dh?: unknown, auth?: unknown }): string | null {
+  if (typeof sub.p256dh !== 'string') return 'push subscription p256dh is missing.'
+  if (typeof sub.auth !== 'string')   return 'push subscription auth is missing.'
+  const uaPublic = unb64u(sub.p256dh)
+  if (uaPublic.length !== 65 || uaPublic[0] !== 4) return 'push subscription p256dh is not an uncompressed P-256 point.'
+  if (unb64u(sub.auth).length !== 16) return 'push subscription auth is not 16 bytes.'
+  return null
+}
+
+/**
  * RFC 8291 + RFC 8188: the aes128gcm body for one device.
  *
  * `hkdfSync` is extract-then-expand, so each call below is the RFC's
@@ -162,10 +183,10 @@ export function encryptPayload(
       'after the encryption header. Send an id the service worker fetches the rest by.'
     )
   }
+  const problem = subscriptionKeyProblem(sub)
+  if (problem) throw new Error(`[notifications] ${problem}`)
   const uaPublic = unb64u(sub.p256dh)
   const authSecret = unb64u(sub.auth)
-  if (uaPublic.length !== 65 || uaPublic[0] !== 4) throw new Error('[notifications] push subscription p256dh is not an uncompressed P-256 point.')
-  if (authSecret.length !== 16) throw new Error('[notifications] push subscription auth is not 16 bytes.')
 
   const asPublic = ephemeral.getPublicKey()
   const shared = ephemeral.computeSecret(uaPublic)
@@ -190,15 +211,15 @@ export function encryptPayload(
 export function buildPushRequest(
   sub: PushSubscription, message: PushMessage, vapid: VapidKeys, now = Date.now(),
 ): PushRequest {
-  const { ttl, urgency, topic, ...payload } = message
+  const { ttl, urgency, ...payload } = message
   const headers: Record<string, string> = {
     'Authorization':    vapidAuthorization(sub.endpoint, vapid, now),
     'Content-Encoding': 'aes128gcm',
     'Content-Type':     'application/octet-stream',
     'TTL':              String(ttl ?? 86400),
   }
-  if (urgency) headers.Urgency = urgency
-  if (topic)   headers.Topic = topic
+  if (urgency)       headers.Urgency = urgency
+  if (payload.topic) headers.Topic = payload.topic
   return { url: sub.endpoint, method: 'POST', headers, body: encryptPayload(sub, utf8(JSON.stringify(payload))) }
 }
 
@@ -206,24 +227,75 @@ export function buildPushRequest(
 
 const GONE = new Set([404, 410])
 
+// The endpoint is a URL the browser chose, fetched from inside the network, so
+// it is graded before every send as a webhook is (`FJS-681`): a name public at
+// subscribe time can resolve to loopback later. The connect goes to the graded
+// address, and a redirect is a destination nobody graded.
 const viaFetch = async (req: PushRequest) => {
-  const res = await fetch(req.url, { method: req.method, headers: req.headers, body: req.body as BodyInit })
+  const graded = await gradePublicUrl(req.url)
+  const pin = graded.address ? pinTo(graded.url, graded.address) : null
+  const res = await fetch(pin?.url ?? req.url, {
+    method:   req.method,
+    headers:  { ...req.headers, ...pin?.headers },
+    body:     req.body as BodyInit,
+    redirect: 'manual',
+    ...(pin?.tls && { tls: pin.tls }),
+  } as RequestInit)
   return { status: res.status }
+}
+
+type SubscriptionRows = {
+  findMany(opts: { where: Record<string, unknown>, select: Record<string, true> }): Promise<PushSubscription[]>
+  removeMany(opts: { where: Record<string, unknown> }): Promise<{ count: number }>
+}
+
+/**
+ * The store over the installed fragment. `removeMany`, not `remove`: two sends
+ * in flight both see the 410, and the second finds the row already retired.
+ */
+function installedSubscriptions(db: unknown): PushSubscriptions {
+  const client = db as { $softDelete: Record<string, boolean>, asSystem(): { pushSubscription: SubscriptionRows } }
+  const rows = () => {
+    // The client throws on an accessor it has no table for, naming the table
+    // and not the command that adds it.
+    if (!('PushSubscription' in client.$softDelete)) {
+      throw new Error(
+        '[notifications] webPush() has no subscriptions store and the db has no PushSubscription model. ' +
+        'Run `fli notifications:install` to append it, or pass `subscriptions` for a row that lives elsewhere.'
+      )
+    }
+    return client.asSystem().pushSubscription
+  }
+  return {
+    async list(recipient) {
+      if (recipient.id == null) {
+        throw new Error('[notifications] push recipient has no id, so it has no PushSubscription rows to find.')
+      }
+      return rows().findMany({
+        where:  { userId: String(recipient.id) },
+        select: { endpoint: true, p256dh: true, auth: true },
+      })
+    },
+    async remove(sub) {
+      await rows().removeMany({ where: { endpoint: sub.endpoint } })
+    },
+  }
 }
 
 export function webPush(opts: WebPushOptions): NotificationDriver {
   const deliver = opts.deliver ?? viaFetch
   return {
     transport: 'push',
-    async send(recipient: Recipient, message: unknown, _app: App): Promise<void> {
+    async send(recipient: Recipient, message: unknown, app: App): Promise<void> {
       const msg = message as PushMessage
-      const subs = await opts.subscriptions.list(recipient)
+      const store = opts.subscriptions ?? installedSubscriptions(stateOf(app).db)
+      const subs = await store.list(recipient)
       const failures: string[] = []
 
       await Promise.all(subs.map(async sub => {
         try {
           const { status } = await deliver(buildPushRequest(sub, msg, opts.vapid))
-          if (GONE.has(status)) await opts.subscriptions.remove(sub, recipient)
+          if (GONE.has(status)) await store.remove(sub, recipient)
           else if (status < 200 || status >= 300) failures.push(`${sub.endpoint} answered ${status}`)
         } catch (err) {
           failures.push(`${sub.endpoint}: ${(err as Error).message}`)

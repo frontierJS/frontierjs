@@ -1,6 +1,6 @@
 ---
 id: traffic-analysis
-status: proposed
+status: shipped
 dated: 2026-08-31
 ---
 
@@ -11,6 +11,7 @@ precondition shipped with it — [`FJS-622`](../ISSUES_ARCHIVE.md#fjs-622) — b
 gap it names made every option here impossible rather than merely unbuilt.
 **GoAccess dropped 2026-10-28 ([`FJS-D1621`](../DECISIONS.md#fjs-d1621))**: the
 edge is Caddy and its access log is JSON, so the Outpost counts it in JS.
+**Closed at Phase 2 ([`FJS-D1622`](../DECISIONS.md#fjs-d1622))**: Phase 3 is struck.
 
 Prompted by CapRover's GoAccess integration (`caprover-frontend#167`), which is
 the shape of the thing a fleet operator asks for and does not have here.
@@ -218,6 +219,11 @@ The Outpost reads the app's Caddy JSON access log and counts it in JS
 - Retention is Caddy's roll, not ours, so the deepest history is whatever the
   roll keeps. Say so on the screen rather than implying more.
 
+**Done 2026-10-28.** `POST /analytics` in `packages/outpost/src/analytics.js`.
+A read is capped at 100,000 lines, newest first — the owner's pick — and says
+where it was cut. The test reads two lines a real `caddy:2` wrote
+(`test/fixtures/caddy/capture.mjs`).
+
 ### Phase 2 — a screen that is not an iframe (S/M)
 
 A basecamp panel on the app detail — the `log-analysis` tab the mock has and the
@@ -236,31 +242,33 @@ comment declines to build, now buildable.
   refresh button, with the roll's depth stated on the tab. No real-time and no
   snapshot-plus-catch-up: `FJS-D764` re-parses per request, so a refresh is the
   catch-up.
-- [ ] 2.4 Proved in a real browser (`drive-browser`) against a dev basecamp
+- [x] 2.4 Proved in a real browser (`drive-browser`) against a dev basecamp
   whose Outpost reads a canned Caddy log: every panel draws, an app with no log
   says so. A throwaway probe; no drive kept.
 
-### Phase 3 — the app's own view (L, and blocked)
+**Done 2026-10-28.** `apps.analytics()` and the `log-analysis` tab. The depth
+is a reading, not a claim: the Outpost answers `kept_since`, the first line of
+the oldest file the roll keeps. The probe found the router mounts the page
+fresh on every navigation, so a report never carries from one app to the next.
 
-Junction's request log as a queryable thing, per the table above.
+### Phase 3 — the app's own view (struck, `FJS-D1622`)
 
-Blocked on `logbook` phase 4's neighbourhood — a store for request-scoped lines.
-Worth noting that `@@log` naming a SQLite model (shipped, phase 2) is most of the
-mechanism: a request summary is a row, and the same window, gate and replication
-story applies. What it is **not** is the audit trail — a read makes no write, and
-the trail must not grow a row per GET.
+Junction's request log as a queryable thing, per the table above. Struck: it is
+a different product, and nobody has asked its question. A reopen is its own plan
+and starts from a store that is not the audit trail (`@@trail`) — a read makes
+no write there, and the trail must not grow a row per GET. Where a request log
+lands is still `logbook` phase 4's open question.
 
 **Do not start this to get traffic numbers.** Start it when the question is *which
 service call is expensive for which tenant*, which is a different question with a
 different audience.
 
-- [ ] 3.1 **Ask first:** start Phase 3 now, or close the plan at Phase 2? If
-  started, where a request summary lands — a `@@log`-named SQLite model per app
-  (the plan's lean), stdout only, or Phase 3 struck. Blocked by the owner.
-- [ ] 3.2 A request summary row per service call — service, method, principal,
+- [x] 3.1 **Ask first:** start Phase 3 now, or close the plan at Phase 2?
+  Answered: close at Phase 2 (`FJS-D1622`).
+- [~] 3.2 — dropped: Phase 3 struck (`FJS-D1622`). A request summary row per service call — service, method, principal,
   tenant, duration, status, correlation id — written by junction's request
   logger into 3.1's store. Not the audit trail: a read writes no audit row.
-- [ ] 3.3 A read with a shape over it (window, service, tenant) and a basecamp
+- [~] 3.3 — dropped: Phase 3 struck (`FJS-D1622`). A read with a shape over it (window, service, tenant) and a basecamp
   panel: slowest service calls by tenant, joined to the audit trail by
   correlation id.
 

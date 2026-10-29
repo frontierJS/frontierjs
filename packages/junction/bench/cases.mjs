@@ -52,13 +52,13 @@ async function call(handler, req) {
 
 export const cases = [
   {
-    name: 'route-raw', ceiling: 15, ops: 8_000,
+    name: 'route-raw', ceiling: 14, ops: 8_000,
     open: served,
     run:   ({ app }) => call(r => app.http.fetch(r), new Request(`${BASE}/ping`)),
     floor: ()        => call(() => Response.json({ ok: true }), new Request(`${BASE}/ping`)),
   },
   {
-    name: 'get-1', ceiling: 30, ops: 3_000,
+    name: 'get-1', ceiling: 25, ops: 3_000,
     async open() {
       const s = await served()
       const one = s.sql.query('SELECT id, name, qty FROM item WHERE id = ?')
@@ -73,7 +73,7 @@ export const cases = [
     floor: ({ handler }, i) => call(handler, new Request(`${BASE}/items/${(i % ROWS) + 1}`)),
   },
   {
-    name: 'find-100', ceiling: 10, ops: 800,
+    name: 'find-100', ceiling: 9, ops: 800,
     async open() {
       const s = await served()
       const page = s.sql.query('SELECT id, name, qty FROM item WHERE qty >= ? LIMIT ?')
@@ -87,7 +87,7 @@ export const cases = [
     floor: ({ handler }) => call(handler, new Request(`${BASE}/items?qty=25&limit=100`)),
   },
   {
-    name: 'create-1', ceiling: 35, ops: 2_000,
+    name: 'create-1', ceiling: 24, ops: 2_000,
     async open() {
       const s = await served()
       const insert = s.sql.query('INSERT INTO item (name, qty) VALUES (?, ?) RETURNING id, name, qty')

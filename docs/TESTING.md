@@ -10,6 +10,8 @@ Reference for running a suite or a drive in this workspace. The root `CLAUDE.md`
 
 **A deadline bounds failure; it does not establish completion.** A test that waits a fixed time and then asserts has proved only that the time passed: on a loaded machine the thing it waited for has not happened yet and the assertion fails naming nothing, and on a fast one it passes by luck. Poll for the condition and let the deadline be the failure, worded as what was waited for — `example/web/test/lib/preflight.mjs` is the shape.
 
+**`bun test` runs in UTC whatever the host is set to.** A test that means local time sets `TZ` itself and builds every `Date` after setting it. Everything STORED is UTC.
+
 | Where                                                     | Test                                         | Runner                                                | Needs                                               |
 | --------------------------------------------------------- | -------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------- |
 | litestone                                                 | `bun run test` (`test:smoke` = CLI only)     | bun                                                   | —                                                   |

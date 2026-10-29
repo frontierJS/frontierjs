@@ -191,7 +191,9 @@ object, the same shape a `File[]` item has; `storage.download` and
 ```js
 import { FileStorage, useStorage } from '@frontierjs/litestone/storage'
 const db = await createClient({ path: './schema.lite', db: './app.db', plugins: [FileStorage({ provider: 'local', publicBase: 'http://localhost:3001/storage' })] })
-const storage = useStorage({ provider: 'local' })
+// Unconfigured, a local store keeps bytes in `files/` beside the database,
+// so a separate reader names the same directory.
+const storage = useStorage({ provider: 'local', localPath: './files' })
 
 const file = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])], 'me.png', { type: 'image/png' })
 await db.user.create({ data: { id: 1, email: 'ada@example.com', avatar: file } })

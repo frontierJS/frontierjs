@@ -280,14 +280,10 @@ export function helmet(opts: HelmetOptions = {}) {
     securityHeaders['strict-transport-security'] = `max-age=${maxAge}${incl}`
   }
 
-  const middleware: MiddlewareFn = async (ctx, next) => {
-    await next()
-    // Headers injected via __securityHeaders on ctx
-    ;(ctx).__securityHeaders = securityHeaders
-  }
-
+  // No middleware: the transport stamps these on every answer it finalizes,
+  // routed or not, and a middleware that only stashed them on the context cost
+  // every request a promise hop and a Headers copy.
   return function helmetPlugin(app: App): void {
-    patchRouterWithMiddleware(app, middleware)
     app.http.setSecurityHeaders(securityHeaders)
   }
 }

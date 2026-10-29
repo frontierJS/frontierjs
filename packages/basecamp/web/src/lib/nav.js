@@ -68,7 +68,8 @@ export const groups = [
   // The hub tier is not a workspace role, so it is offered only to people who
   // hold it. The service answers 404 to anyone else regardless, which is where
   // the refusal is.
-  { label: 'System', icon: 'system', show: ({ user }) => !!user?.isSystemAdmin, entries: [
+  // `direct`: one screen, so the sidebar draws it as a link, not a fold.
+  { label: 'System', icon: 'system', direct: true, show: ({ user }) => !!user?.isSystemAdmin, entries: [
     { href: '/hub/',                label: 'Hub',             icon: 'hub',           sub: 'every workspace' },
   ] },
 ]

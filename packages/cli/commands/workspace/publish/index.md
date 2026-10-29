@@ -200,7 +200,7 @@ if (flag['changed-only']) {
 // Where each tarball goes. Unset is the release host alone (`FJS-D1613`): a
 // public release is `--to npm`, said on purpose, because every npm publish is a
 // browser 2FA round trip and a version promised to the world.
-const { hosts, DEFAULT_TO } = await import(new URL('file://' + global.fliRoot + '/core/publish-hosts.js'))
+const { hosts, DEFAULT_TO, packageHostUrl } = await import(new URL('file://' + global.fliRoot + '/core/publish-hosts.js'))
 const to   = flag.to ? [...new Set([flag.to].flat())] : DEFAULT_TO
 const repo = $.wsRepo(all)
 
@@ -315,6 +315,7 @@ $.config.startTime  = Date.now()
 
 // Steps are compiled without the namespace module, so the helpers travel here.
 $.config.releaseTag     = releaseTag
+$.config.packageHostUrl = packageHostUrl
 $.config.releaseSubject = releaseSubject
 
 // The pacing the later steps read. `prompts` is null on a --dry run, which is

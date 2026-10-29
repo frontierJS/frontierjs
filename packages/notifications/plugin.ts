@@ -3,7 +3,13 @@ import type { Notification } from './notification.ts'
 import { setState } from './state.ts'
 import { notify } from './notify.ts'
 import { loadNotifications, sealRegistry } from './loader.ts'
+import { createPushSubscriptionsService, DEFAULT_SERVICE_NAMES } from './services.ts'
 import type { NotificationRegistry } from './loader.ts'
+
+// `'x' in db` is how a Litestone client is probed; `$softDelete` names every
+// model, and PushSubscription declares @@softDelete.
+const hasModel = (db: unknown, model: string) =>
+  !!db && model in ((db as { $softDelete?: Record<string, boolean> }).$softDelete ?? {})
 
 const isDriver = (v: unknown): v is NotificationDriver =>
   typeof (v as NotificationDriver | null)?.send === 'function'
@@ -120,6 +126,21 @@ export function notifications(opts: NotificationsPluginOptions) {
       // what this app can send WITHOUT sending one. That is the whole reason a
       // definition holds `via` rather than closing over a payload.
       if (typeof app.own === 'function') app.own('notifications', registry)
+
+      // In boot() so the app's own services all exist and a collision is seen
+      // whichever order the two were written in. The registry is a Map: without
+      // the check one silently replaces the other.
+      const pushName = opts.services === false ? false : opts.services?.pushSubscriptions ?? DEFAULT_SERVICE_NAMES.pushSubscriptions
+      const services = (app as { services?: { has?(n: string): boolean, register(s: unknown): void } }).services
+      if (pushName && services && hasModel(opts.db, 'PushSubscription')) {
+        if (services.has?.(pushName)) {
+          throw new Error(
+            `[notifications] service '${pushName}' is already registered by this app. Rename or drop ` +
+            `this package's — notifications({ services: { pushSubscriptions: 'other-name' | false } }).`
+          )
+        }
+        services.register(createPushSubscriptionsService(opts.db, pushName))
+      }
 
       if (emailUsesMailer && !('mail' in app)) {
         throw new Error(

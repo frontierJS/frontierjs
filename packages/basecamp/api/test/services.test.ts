@@ -2623,6 +2623,32 @@ describe('an alert rule says whether anything writes the metric it watches', () 
     const r = await env.as(owner).service('alerts').get(typo.id) as any
     expect(r.series).toBe(null)
   })
+
+  test('another workspace\'s machine answers null — paired with this one\'s (FJS-3594)', async () => {
+    // Answering it would hand over that machine's unit and last-seen time.
+    const sys   = env.system as any
+    const wsRow = await sys.workspace.findUnique({ where: { id: ws.id } })
+    const wsB   = await sys.workspace.create({
+      data: { accountId: wsRow.accountId, name: 'B', slug: `b-${tag()}`, ownerId: wsRow.ownerId },
+    })
+    const watch = async (workspaceId: string) => {
+      const box = await sys.server.create({ data: { workspaceId, name: 'box', slug: `box-${tag()}` } })
+      const key = seriesKey('server.cpuPercent', { serverId: box.id })
+      await sys.metricSeries.create({
+        data: { name: 'server.cpuPercent', labelsKey: key, labels: { serverId: box.id },
+                type: 'gauge', lastSeenAt: new Date().toISOString() },
+      })
+      return sys.alertRule.create({
+        data: { workspaceId: ws.id, name: `cpu-${tag()}`, metricName: key,
+                severity: 'warning', operator: 'gt', threshold: 80 },
+      })
+    }
+    const theirs = await watch(wsB.id)
+    const mine   = await watch(ws.id)
+
+    expect((await env.as(owner).service('alerts').get(theirs.id) as any).series).toBe(null)
+    expect((await env.as(owner).service('alerts').get(mine.id) as any).series?.name).toBe('server.cpuPercent')
+  })
 })
 
 describe('snoozing a rule silences it for a while, and the server keeps the clock', () => {

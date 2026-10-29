@@ -19,7 +19,7 @@ import { REFUSE, resolvePrincipal, resolveCaller, bearerPrincipal, type Credenti
 // --experimental-strip-types fails with "does not provide an export named
 // 'StaticOptions'". Bun transpiles fully so it never noticed.
 import type { StaticOptions }             from './static.ts'
-import { BAKED_CACHE_CONTROL, errorResponse } from './bridge.ts'
+import { BAKED_CACHE_CONTROL, errorResponse, own, isOwned } from './bridge.ts'
 import { enterRequest }                  from '../core/context.ts'
 import { BadRequest, TooManyRequests, isDevelopmentEnv, type ErrorMapper } from '../core/errors.ts'
 import { createStats, SESSION_SOCKET }    from './types.ts'
@@ -358,15 +358,15 @@ export class HttpTransport {
     this._sharedHelpers = {
       json: (data, status = 200) => {
         stats.response.json++
-        return new Response(JSON.stringify(data), { status, headers: H_JSON })
+        return own(new Response(JSON.stringify(data), { status, headers: H_JSON }))
       },
       text: (data, status = 200) => {
         stats.response.text++
-        return new Response(data, { status, headers: H_TEXT })
+        return own(new Response(data, { status, headers: H_TEXT }))
       },
       html: (data, status = 200) => {
         stats.response.html++
-        return new Response(data, { status, headers: H_HTML })
+        return own(new Response(data, { status, headers: H_HTML }))
       },
       redirect: (location, status = 302) => {
         stats.response.redirect++
@@ -1055,7 +1055,7 @@ export class HttpTransport {
 
     const cookieHeaders = ctx.__pendingCookies
     const cors          = ctx.__cors
-    const security      = ctx.__securityHeaders
+    const security      = this._securityHeaders
     const rateLimit     = ctx.__rateLimit
     const correlation   = ctx.__correlationHeaders
 
@@ -1086,9 +1086,11 @@ export class HttpTransport {
       return response
     }
 
-    // ONE Headers copy for everything below — cookies included (previously
-    // the cookie path built its own intermediate Headers + Response clone).
-    const headers = new Headers(response.headers)
+    // A Response junction built this request is written in place; any other
+    // is copied once, since a handler's or a cache's Response may be answered
+    // again and a header set on it would be set for every later caller.
+    const inPlace = !willCompress && isOwned(response)
+    const headers = inPlace ? response.headers : new Headers(response.headers)
 
     if (cookieHeaders?.length) {
       for (const [name, value, opts] of cookieHeaders) {
@@ -1150,7 +1152,7 @@ export class HttpTransport {
     // ── Compression ─────────────────────────────────────────────────────────
     // Decision was made up top (willCompress) from the original headers.
     if (!willCompress) {
-      return new Response(response.body, { status: response.status, headers })
+      return inPlace ? response : new Response(response.body, { status: response.status, headers })
     }
 
     const readStart = performance.now()

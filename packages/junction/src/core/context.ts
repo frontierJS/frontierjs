@@ -738,6 +738,10 @@ export function mintCorrelationId(): string {
   return crypto.randomUUID().replace(/-/g, '')
 }
 
+/** The signal of a call nobody can cancel: one object, so a call that was
+ *  handed none does not allocate a controller it will never reach. */
+export const NEVER_ABORTED: AbortSignal = new AbortController().signal
+
 export function enterRequest<T>(src: RequestSource, fn: () => T): T {
   const h = src.headers
   const madeAt = resolveMadeAt(src.madeAt ?? h?.[MADE_AT_HEADER], src.sentAt ?? h?.[SENT_AT_HEADER])

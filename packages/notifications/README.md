@@ -448,17 +448,17 @@ app.configure(notifications({
   transports: {
     push: webPush({
       vapid: { publicKey, privateKey, subject: 'mailto:ops@acme.test' },
-      subscriptions: {
-        // the app's own PushSubscription model; keys @encrypted, read through asSystem()
-        list:   (recipient) => subscriptionsOf(recipient.id),
-        remove: (sub)       => forget(sub.endpoint),   // called on a 404/410 and nowhere else
-      },
+      // devices are the recipient's PushSubscription rows, read off `db`
     }),
   },
 }))
 ```
 
-A formatter named `push:` answers `{ title, body, url, data, ttl, urgency, topic }`. One recipient is every device the store lists, each sent independently: a retired endpoint is removed, any other refusal is thrown after every device was tried. **The driver holds the decrypted keys, so it cannot keep `@guarded` columns out of a payload — the `push:` formatter is where the payload is built and the only place that can.** A body over ~3.9 KB is refused; send an id and let the service worker fetch the rest.
+**The subscription row is the app's; its text is this package's** (`FJS-D1442`). `PushSubscription` ships in `db/notification.lite`, so `fli notifications:install` appends it beside `Notification` and `package-model-drift` grades your copy the same way. Its keys are `@encrypted`, so an app installing this package passes `encryptionKey` to `createClient` whether or not it sends push — a scaffolded app already does. The driver lists a recipient's rows by `userId` through `asSystem()` and soft-deletes one by `endpoint` when its push service answers 404 or 410. An app whose devices live in another table passes `subscriptions: { list(recipient), remove(sub) }` instead.
+
+**A browser subscribes through `push-subscriptions`**, a service the plugin registers at boot when the schema installs `PushSubscription`. `POST` takes `subscription.toJSON()` and upserts by endpoint under the signed-in caller — a retired row is restored, and a browser profile that signs in as somebody else moves its one subscription to them. `GET` lists the caller's own devices without their keys, and `DELETE /push-subscriptions/{id}` retires one. The door refuses keys the driver could not encrypt to, an endpoint that is not public HTTPS, and a support operator or an agent over `/mcp`, since a subscription outlives the session that made it. The driver grades the endpoint again before every send. An app already serving that name renames ours with `notifications({ services: { pushSubscriptions: 'devices' } })`, or drops it with `false`.
+
+A formatter named `push:` answers `{ title, body, url, data, ttl, urgency, topic }`. `ttl` and `urgency` go only in headers; `topic` goes in both, so a later message with the same topic replaces one still queued at the push service and, through the worker's `tag`, one already on screen. One recipient is every device the store lists, each sent independently: a retired endpoint is removed, any other refusal is thrown after every device was tried. **The driver holds the decrypted keys, so it cannot keep `@guarded` columns out of a payload — the `push:` formatter is where the payload is built and the only place that can.** A body over ~3.9 KB is refused; send an id and let the service worker fetch the rest.
 
 ---
 

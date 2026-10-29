@@ -21,3 +21,11 @@
 | `tutor` | a command renamed out from under a lesson, a scaffold whose default gate moved, an answer the framework changed. It **executes the tutorial** — thirteen lessons, `--tmp --yes`, on test-tier ports, each lesson a command whose every step ends in a probe against the running world rather than an exit code: a port that answers, a table in `sqlite_master`, a row read back out of the file the app wrote, the same POST answered 201 with a token and 401 without. It is the phase for the one document that had no compiler behind it. A port already held is a SKIP rather than a finding, because the lessons refuse a busy port rather than moving to the next one; `knownTutorFailures` is the ratcheting allowance |
 | `perf` | a timing case that THREW, one declaring no ceiling, fewer run than its package declares, or a case file the base ref has and this tree lost — never a time. **It reports like `access`**: each `packages/*/bench/cases.mjs` runs on this tree and on the base ref in a worktree, alternated round by round, and prints each case's ratio to its in-process floor against the ceiling it declares and its min against the base's, `~` where the two spreads overlap. Over a ceiling or slower outside both spreads is a `!` line. `node scripts/bench-ab.mjs --from <ref>` is the same run by hand |
 | `tests` | a suite. A suite known to fail is named, so a NEW failure is loud |
+
+## Repo hazards
+
+Hazards that belong to no realm, so no realm skill fires on them. The root `CLAUDE.md` § Live hazards points here.
+
+- **Publishing a package silences every loose peer range that names it**, and below 1.0 a caret pins the MINOR. `fli ws:exports` commits the published surface to `exports.snapshot.md`, and the `snapshots` phase fails a stale one. **What SHIPS is not what is REACHED**: `surface.snapshot.md` (`fli ws:surface`) lists every entry and export no file outside its package imports or names, and `--also ../fjs-prototypes` asks the linked prototypes — a removal here breaks them at boot.
+- **Check a new `.gitignore` rule against `git status --porcelain`** before committing it; the `hygiene` phase fails a source file the rule hides.
+- **`bun test` runs in UTC whatever the host is set to** — `docs/TESTING.md` has the rule.

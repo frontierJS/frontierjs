@@ -19,7 +19,6 @@ title: Getting started
   import { infra } from '../../resources/Infra.mesa'
 
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
-  import Callout  from '@frontierjs/ui/components/display/Callout.mesa'
   import Card     from '@frontierjs/ui/components/layout/Card.mesa'
   import Skeleton from '@frontierjs/ui/components/feedback/Skeleton.mesa'
 
@@ -89,15 +88,4 @@ title: Getting started
       </li>
     {/each}
   </ol>
-
-  <Callout title="Nothing here is stored">
-    <p class="text-body">
-      Each step is a count taken when this screen loaded —
-      {state.counts.servers} servers, {state.counts.sshKeys} SSH keys,
-      {state.counts.projects} projects, {state.counts.deploys} deployments,
-      {state.counts.members} members, {state.counts.invites} invitations.
-      Delete the thing a step recorded and the step goes back to undone, which is
-      what it means.
-    </p>
-  </Callout>
 {/if}

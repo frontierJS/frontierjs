@@ -9,7 +9,7 @@ import { accessorCandidates } from '../core/litestone.ts'
 import { omitBy } from '@frontierjs/toolbelt/redact'
 import { hookContext } from '@frontierjs/toolbelt/hooks'
 import {
-  CRUD_METHODS, RESERVED_PARAMS, requestMeta, freezeUser, withCallEffects, callDb,
+  CRUD_METHODS, RESERVED_PARAMS, requestMeta, freezeUser, withCallEffects, callDb, NEVER_ABORTED,
   type ServiceContext, type ServiceMethod, type AnyMethod,
   type CallOptions, type QueryDirectives,
 } from '../core/context.ts'
@@ -310,7 +310,7 @@ export const bridge = {
       error:     null,
       statusCode: undefined,
       dispatch:   undefined,
-      signal:    opts.signal ?? new AbortController().signal,
+      signal:    opts.signal ?? NEVER_ABORTED,
       raw:       null
     }))
   }
@@ -397,6 +397,10 @@ export function errorBody(err: unknown, ctx?: ServiceContext): ReturnType<Framew
   return sanitizeError(toFrameworkError(err, ctx?.app), boundaryOptions(ctx)).toJSON()
 }
 
+// A schema fact, fixed for the client's life: every flavor of a client answers
+// `$protectedFields` with the same function, so the function is the key.
+const _protectedCache = new WeakMap<object, Map<string, Record<string, string>>>()
+
 function protectedFieldsFor(ctx?: ServiceContext): Record<string, string> {
   const db = callDb(ctx) as { $protectedFields?: (a: string) => Record<string, string> } | undefined
   // A client that throws on a name it does not know answers the probe itself,
@@ -404,15 +408,22 @@ function protectedFieldsFor(ctx?: ServiceContext): Record<string, string> {
   let lookup: unknown
   try { lookup = db?.$protectedFields } catch { return {} }
   if (typeof lookup !== 'function') return {}
-  const fieldsOf = (lookup as (a: string) => Record<string, string>).bind(db)
+  const fieldsOf = lookup as (a: string) => Record<string, string>
+
+  const key = `${ctx?.model ?? ''}\0${ctx?.service ?? ''}`
+  let byName = _protectedCache.get(fieldsOf)
+  if (!byName) { byName = new Map(); _protectedCache.set(fieldsOf, byName) }
+  const hit = byName.get(key)
+  if (hit) return hit
 
   const out: Record<string, string> = {}
   for (const name of [ctx?.model, ctx?.service]) {
     if (!name) continue
     for (const accessor of accessorCandidates(name)) {
-      try { Object.assign(out, fieldsOf(accessor)) } catch { /* an unknown accessor is not a failure */ }
+      try { Object.assign(out, fieldsOf.call(db, accessor)) } catch { /* an unknown accessor is not a failure */ }
     }
   }
+  byName.set(key, out)
   return out
 }
 
@@ -547,11 +558,21 @@ const JSON_HEADERS = {
   'vary':          'Accept-Encoding'
 }
 
+/*
+ * The Responses junction built this request, so the transport may write its
+ * headers on them in place. A Response the handler made, or one a cache hands
+ * out again, is still copied: a header set on a shared Response is set for
+ * every later caller of it.
+ */
+const OWNED = new WeakSet<Response>()
+export function own(res: Response): Response { OWNED.add(res); return res }
+export function isOwned(res: Response): boolean { return OWNED.has(res) }
+
 export function jsonResponse(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
+  return own(new Response(JSON.stringify(data), {
     status,
     headers: JSON_HEADERS
-  })
+  }))
 }
 
 // `host` is for a failure before any service context exists (a bad query, a raw
@@ -560,10 +581,10 @@ export function errorResponse(err: unknown, ctx?: ServiceContext, host?: ErrorMa
   const fe     = sanitizeError(toFrameworkError(err, host ?? ctx?.app), boundaryOptions(ctx))
   const status = fe.code ?? 500
 
-  return new Response(JSON.stringify(fe.toJSON()), {
+  return own(new Response(JSON.stringify(fe.toJSON()), {
     status,
     headers: JSON_HEADERS
-  })
+  }))
 }
 
 export function redirectResponse(url: string, status = 302): Response {

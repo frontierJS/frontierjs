@@ -202,4 +202,4 @@ export function sleepSync(ms) {
 export const processId = () => 'browser'
 
 // No disk, so nothing that keeps bytes on one is installed here.
-export const hasFilesystem = false
+export const defaultFileStorage = null

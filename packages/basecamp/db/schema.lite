@@ -52,7 +52,7 @@
 /// A gate is per MODEL and never per row. WHICH rows is TENANCY, declared once
 /// in the `tenancy { }` block below rather than as a rule per model: every model
 /// carrying `workspaceId` is scoped on it, the 14 that reach one through a
-/// relation are scoped through that parent, and the FIFTEEN that legitimately
+/// relation are scoped through that parent, and the FOURTEEN that legitimately
 /// span workspaces say so by name with `@@tenant(none)`. They are three kinds
 /// of thing and the kind is the argument:
 ///
@@ -61,7 +61,7 @@
 ///   the tenant itself Workspace, and WorkspaceMember, which is what the claim
 ///                     is READ from; AppEditor, a grant on one site held by a
 ///                     person who is no member at all
-///   the installation  HubConfig and Backup describe the whole install,
+///   the installation  HubConfig describes the whole install,
 ///                     Blueprint/BlueprintParam are one curated catalog
 ///                     every workspace sees, NotificationPreference has no
 ///                     workspace column at all, and OutpostNonce is a machine's
@@ -650,7 +650,8 @@ enum ParamGenerator { random_hex_16 random_hex_32 random_hex_64 }
 
 // How an archive came to have a row: by hand, by the schedule, or `found` — a
 // rescan met it in the bucket with no row naming it (`FJS-D1493`), so nobody
-// here asked for it. The schedule's own settings live on `HubConfig`.
+// here asked for it. The schedule is the App's `backupCron`, the hub's own
+// included (`FJS-D1606`).
 enum BackupKind        { manual scheduled found release }
 
 // How a drill was asked for; a drill is never found on a machine or run by a release.
@@ -1381,7 +1382,6 @@ model Server {
   volumes          Volume[]
   appServers       AppServer[]
   serverNetworks   ServerNetwork[]
-  hostHub          HubConfig?   @relation("HubHost")
 
   @@gate(2.4.4.5)
 
@@ -1803,7 +1803,7 @@ model App {
   // schedule, as `Job.cronExpression` reads; the clock follows the row through
   // `job-schedule.ts`, so a patch replaces the registration and a soft delete
   // ends it. The service refuses an expression the clock cannot hold BEFORE
-  // the write. `SetNull` as on `HubConfig`, not `AppBackup`'s `Restrict`: a
+  // the write. `SetNull`, not `AppBackup`'s `Restrict`: a
   // schedule pointer holds no object key, so losing the bucket drops the next
   // archive to the machine's disk rather than refusing the bucket's removal.
   backupCron          String?  @trim @length(1, 100)
@@ -1846,6 +1846,9 @@ model App {
   domainRoutes  DomainRoute[]
   variables     Variable[]
   editors       AppEditor[]
+  // Set on the one App that is this Basecamp (`FJS-D1603`): the pointer is the
+  // flag, so no column here says it.
+  hub           HubConfig?  @relation("HubApp") @keep
 
   @@gate(2.4.4.5)
   // The deploy job writes App.status through asSystem(), which is how it
@@ -2049,13 +2052,14 @@ model AppServer {
 }
 
 // One archive of an app's data volume, taken on the machine that holds it
-// (`FJS-D679`, `FJS-1782`). `Backup` is the installation's own and stays
-// `@@tenant(none)`; this is the app's, scoped through App and Server by the
-// ordinary desugar (`FJS-D965`).
+// (`FJS-D679`, `FJS-1782`), scoped through App and Server by the ordinary
+// desugar (`FJS-D965`). The hub's own archive is a row here on the hub App
+// (`FJS-D1606`), so it is read by the installer's workspace and not hub-wide.
 //
 // `location` is a path ON THAT MACHINE: the archive never crosses the command
 // port, and a lost machine takes it along. The outcome columns are written at
-// SYSTEM, as `Backup`'s are.
+// SYSTEM: a person asks and a machine reports, and a status a caller can write
+// is evidence of nothing.
 model AppBackup {
   id          String    @id @default(uuid())
   appId       String
@@ -2066,8 +2070,10 @@ model AppBackup {
   server      Server?   @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
   // Where the machine sent the archive, by a pre-signed PUT Basecamp minted
-  // (`FJS-D1485`); null is the machine's own disk. `Restrict` as on `Backup`:
-  // a row whose `location` is an object key must keep the bucket it names.
+  // (`FJS-D1485`); null is the machine's own disk. `Restrict`: a row whose
+  // `location` is an object key must keep the bucket it names. The destination
+  // is @@softDelete, so its service also answers 409 on `remove` while an
+  // archive names it — an UPDATE the FK never sees.
   destinationId String?
   destination   BackupDestination? @relation(fields: [destinationId], references: [id], onDelete: Restrict)
 
@@ -2704,9 +2710,7 @@ model NotificationChannel {
 // A bucket an archive is sent to — S3's protocol at any vendor (`FJS-D1488`).
 //
 // Workspace-owned like `NotificationChannel`, because the credential is a
-// `Secret` and a `Secret` has a workspace (`FJS-D1491`); the hub's own schedule
-// points at one from above through `HubConfig.backupDestinationId`. A
-// Litestream replica is a continuous backup, so a replica's bucket is this same
+// `Secret` and a `Secret` has a workspace (`FJS-D1491`). A Litestream replica is a continuous backup, so a replica's bucket is this same
 // row and not a second noun.
 //
 // `endpoint` carries no bucket: the connector addresses path-style
@@ -2746,16 +2750,13 @@ model BackupDestination {
   updatedAt   DateTime  @default(now()) @updatedAt
   deletedAt   DateTime?
 
-  backups     Backup[]
   appBackups  AppBackup[]
   // `@keep`: an app outlives its bucket — the pointer is `SetNull`, the
   // schedule drops to the machine's disk, and nothing about the app is retired.
   apps        App[] @relation("AppBackups") @keep
-  // The one app, or the hub, replicating with this key — never both
-  // (`FJS-D1505`); `replicaHolder` in its service is the one reader.
+  // The one app replicating with this key (`FJS-D1505`), the hub's App
+  // included; `replicaHolder` in its service is the one reader.
   replicaApp  App?  @relation("AppReplica") @keep
-  replicaHub  HubConfig? @relation("HubReplica") @keep
-  hubs        HubConfig[] @relation("HubBackups")
 
   @@gate(2.5)
   @@softDelete
@@ -3421,62 +3422,9 @@ model DependencyUse {
 // ============================================================
 // HUB OPERATIONS
 // ============================================================
-// The tier above every tenant — what `/hub/` reads and writes. Both models here
-// are `@@tenant(none)` because they describe the INSTALLATION, which no
+// The tier above every tenant — what `/hub/` reads and writes. `HubConfig`
+// is `@@tenant(none)` because it describes the INSTALLATION, which no
 // workspace owns.
-
-// One archive of the application database and its configuration.
-//
-// The outcome columns are written at SYSTEM, exactly as `RecipeRun` and
-// `MaintenanceRun` are: a person asks for a backup and a machine reports what it
-// managed, and a status a caller can write is not evidence of anything.
-// `RunStatus` is reused rather than restated — its own comment says why three
-// models share five states, and this is the fourth.
-model Backup {
-  id           String            @id @default(uuid())
-
-  kind         BackupKind        @default(manual)
-  status       RunStatus         @default(pending)
-
-  // Where the archive was sent. Null is `local`: the machine basecamp runs on,
-  // which is a backup of a disk onto the same disk — honest, and the reason the
-  // screen nudges towards a destination (`FJS-D1488`). `Restrict`, because a
-  // row that turned `local` while its `location` is an object key would claim
-  // a file this disk never held. Two paths, two owners: the FK blocks a hard
-  // delete, and the destination is @@softDelete, so its service answers 409
-  // on `remove` while an archive names it — an UPDATE the FK never sees.
-  destinationId String?
-  destination   BackupDestination? @relation(fields: [destinationId], references: [id], onDelete: Restrict)
-
-  // Absent until it finishes. Bytes.
-  sizeBytes    Int?
-
-  // Where the archive landed — a path when `destinationId` is null, an object
-  // key under the destination's `prefix` otherwise. Never a URL with a
-  // credential in it.
-  location     String?           @trim @length(0, 500)
-  error        String?           @length(0, 2000)
-
-  // Who asked. Null for the scheduled one, which is the app acting on its own
-  // behalf and has no actor by construction.
-  requestedBy  String?
-
-  startedAt    DateTime?
-  finishedAt   DateTime?
-  durationMs   Int?
-  createdAt    DateTime          @default(now())
-
-  // A sysadmin reads them and asks for one; the job writes the outcome;
-  // pruning an old archive is a sysadmin's again.
-  @@gate(7.7.8.7)
-  @@trail(audit)
-  @@index([status])
-  @@index([createdAt])
-  @@index([destinationId])
-
-  // @@tenant(none) — a backup is of the whole installation, every workspace in it
-  @@tenant(none)
-}
 
 // The installation's own settings. ONE ROW, keyed by a constant.
 //
@@ -3524,32 +3472,6 @@ model HubConfig {
   allowApiKeyAuth           Boolean  @default(true)
   allowBotUsers             Boolean  @default(true)
 
-  // The scheduled backup. The cron lives here rather than on `Backup` because
-  // it describes the schedule, and a `Backup` row is one thing that already
-  // happened. A schedule that comes from a ROW has to be re-registered at boot
-  // and unregistered when it stops being true — `app.jobs.unschedule`.
-  backupEnabled             Boolean  @default(false)
-  backupCron                String   @default("0 2 * * *") @trim @length(1, 100)
-
-  // Where the scheduled archive goes; null is the local disk. A workspace's
-  // row, pointed at from the hub tier (`FJS-D1491`): deleting that workspace
-  // drops the schedule to local, which is what posture grades red rather than
-  // a schedule that fails at 02:00.
-  backupDestinationId       String?
-  backupDestination         BackupDestination? @relation("HubBackups", fields: [backupDestinationId], references: [id], onDelete: SetNull)
-
-  // Where Litestream replicates Basecamp's own database, from the Outpost on
-  // its box (`IDEAS/backups.md` 2.4, `FJS-D1486`): the same path an app's
-  // takes, so this key sits on that box. Unique for the reason
-  // `App.replicaDestinationId` is, and a destination an app replicates with
-  // is refused here.
-  replicaDestinationId      String?  @unique
-  replicaDestination        BackupDestination? @relation("HubReplica", fields: [replicaDestinationId], references: [id], onDelete: SetNull)
-  // `App.replicaFoundAt`'s pair for Basecamp's own replica. Its restore is the
-  // runbook, never a button: the hub cannot replace itself while serving.
-  replicaFoundAt            DateTime? @system
-  replicaSyncedAt           DateTime? @system
-
   // Retention, local and remote apart. An archive goes when it is outside the
   // newest `Count` of its kind OR older than `Days`; null days is no age limit.
   // The newest successful archive is never pruned, so a count of 0 would mean
@@ -3571,12 +3493,13 @@ model HubConfig {
   encryptionKeyEscrowedAt   DateTime? @system
   encryptionKeyFingerprint  String?   @system
 
-  // The Server row that is the box this Basecamp runs on — what /hub/security/
-  // grades and what Basecamp's own replica key is sent to. A slug is a
-  // tenant's to choose, so it cannot say which row this is (`FJS-3488`).
-  // Written by `domain/host/host-machine.ts` alone, never by `save`.
-  hostServerId              String?   @unique @system
-  hostServer                Server?   @relation("HubHost", fields: [hostServerId], references: [id], onDelete: SetNull)
+  // The App row that is this Basecamp (`FJS-D1603`), in the installer's
+  // workspace. Its schedule, replica and archives are an App's like any other
+  // (`FJS-D1606`), and the box it runs on is its server through `AppServer`.
+  // A slug is a tenant's to choose, so it cannot say which row this is
+  // (`FJS-3488`). Written by `useHost` alone, never by `save`.
+  appId                     String?   @unique @system
+  app                       App?      @relation("HubApp", fields: [appId], references: [id], onDelete: SetNull)
 
   updatedAt                DateTime @default(now()) @updatedAt
   version                   Int      @version

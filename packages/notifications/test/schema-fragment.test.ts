@@ -65,6 +65,23 @@ describe('the schema fragment', () => {
     expect(field!.type.name).toBe('String')
   })
 
+  test('PushSubscription carries the driver\'s columns, keys encrypted', () => {
+    // webPush() is handed rows as the store lists them, so a column named other
+    // than `PushSubscription` in drivers/webpush.ts is a key the driver reads
+    // as undefined -- and a push service answers 201 to what that encrypts.
+    const out    = parse('database main { path "./x.db" }\n' + readFileSync(join(root, FRAGMENT), 'utf8'))
+    type Field   = { name: string, attributes: Array<{ kind: string }> }
+    const models = out.schema!.models as Array<{ name: string, fields: Field[] }>
+    const model  = models.find(m => m.name === 'PushSubscription')
+    expect(model, 'the fragment declares model PushSubscription').toBeDefined()
+    const field  = (name: string) => model!.fields.find(f => f.name === name)
+
+    for (const column of ['userId', 'endpoint', 'p256dh', 'auth'])
+      expect(field(column), column).toBeDefined()
+    for (const key of ['p256dh', 'auth'])
+      expect(field(key)!.attributes.map(a => a.kind), key).toContain('encrypted')
+  })
+
   test('create is SYSTEM and not LOCKED — 9 would stop notify() writing a row', () => {
     const text = readFileSync(join(root, FRAGMENT), 'utf8')
     const gate = text.match(/@@gate\(([\d.]+)\)/)?.[1]

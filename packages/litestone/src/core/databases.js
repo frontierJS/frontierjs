@@ -114,14 +114,17 @@ function wrapDb(rawDb, { maxCacheSize = 500, label = 'sqlite' } = {}) {
   /** @param {string} sql */
   function stmt(sql) {
     if (closed) throw new ClientClosedError(label)
-    if (SINGLE_USE.test(sql)) return singleUse(sql)
     let s = cache.get(sql)
     if (s) {
-      // LRU: move to end on hit. Cheap — Map.delete + Map.set is O(1).
-      cache.delete(sql)
-      cache.set(sql, s)
+      // LRU order only decides what the NEXT insert evicts, so a hit before
+      // the cache is full has nothing to reorder for; the delete+set on every
+      // hit was a measurable share of a one-row read.
+      if (cache.size >= maxCacheSize) { cache.delete(sql); cache.set(sql, s) }
       return s
     }
+    // After the cache, which never holds a single-use statement: the regex ran
+    // on every hit for a verdict the hit already answered.
+    if (SINGLE_USE.test(sql)) return singleUse(sql)
     s = rawDb.prepare(sql)
     cache.set(sql, s)
     if (cache.size > maxCacheSize) {

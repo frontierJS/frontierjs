@@ -238,11 +238,16 @@ Dockerfile that existed only because of `link:` is gone.
 Done when: CI's `deploy` phase is green for `--source url`, and
 `dockerfile-template.ts` holds no `git clone`.
 
-- [ ] 3.1 `fli new --source url` — `scaffold/app.js` `specFor` writes the
+- [x] 3.1 `fli new --source url` — `scaffold/app.js` `specFor` writes the
   derived URL at the package's current version, and the `overrides` block
   `vendor.js` already writes, so sierra's own `^mesa` range resolves to the
   mesa tarball and not to npm's. The `--source` description says which path
   each is for: `url` installs, `npm` upgrades (`FJS-D988`).
+  **Done:** `packageHostUrl` in `publish-hosts.js` is the one spelling of the
+  URL (the postflight reads it too); `overrides` names every framework package.
+  A scaffold installed 10 packages from the host. Its `auth:install` failed on
+  `FJS-3592`, the same as `--source npm`; litestone's 1.1.10 pin has no asset
+  until that closes.
 - [ ] 3.2 The Outpost's `chooseDockerfile` (`FJS-D1560`) learns that URL specs
   need neither `deploy/generated/` nor a clone, and Basecamp's
   `fjsDockerfileTemplate` becomes `COPY . . && bun install`. The clone branch is

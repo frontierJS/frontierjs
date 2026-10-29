@@ -5,7 +5,7 @@
 // installs FileStorage itself, and one configured by nothing keeps the bytes
 // beside the main database, under the directory a deploy keeps (`FJS-D493`). A
 // browser has no disk and still refuses — `refuseFileWithoutStorage` and the
-// `FJS-2908` notice are its path now, and `#host`'s `hasFilesystem` is the switch.
+// `FJS-2908` notice are its path now, and `#host`'s `defaultFileStorage` is the switch.
 
 import { describe, test, expect, afterEach } from 'bun:test'
 import { existsSync, readdirSync } from 'fs'

@@ -35,7 +35,7 @@
 // each method answers 400 by name, the way the /auth routes already do for
 // password reset.
 
-import { createService, BadRequest, Unauthorized, Forbidden, NotFound, LEVELS, toDataPrincipal } from '@frontierjs/junction'
+import { createService, BadRequest, Unauthorized, Forbidden, NotFound, LEVELS, toDataPrincipal, refuseDelegated } from '@frontierjs/junction'
 import { rateLimitHook } from '@frontierjs/junction/hooks'
 import type { IAuth, SessionContext, ServiceContext, ServiceDefinition } from '@frontierjs/junction'
 import type { AuthServicesOptions } from './types.ts'
@@ -70,41 +70,6 @@ export const DEFAULT_SERVICE_NAMES = {
  */
 export function asPrincipal(grade: ((session: SessionContext) => number) | undefined) {
   return grade && ((session: SessionContext) => grade(toDataPrincipal(session) as SessionContext))
-}
-
-/**
- * DELEGATION — the refusals, and they are what makes a delegated caller
- * bounded.
- *
- * Two callers act for somebody without being them. An operator inside a
- * support episode resolves as the subject, and an agent over `/mcp` holds the
- * person's session (`FJS-D258`). Reading through either is the point —
- * seeing what somebody sees is what an episode is for, and an agent reading
- * its person's sessions is the person reading them. What is NOT the point is
- * the door out: a password changed, an API key minted, a session revoked —
- * each outlives the episode or the session that produced it. Mint a key from
- * either and the ceiling has been escaped permanently, with the trail showing
- * an ordinary key issue (`FJS-1795`).
- *
- * Module-level, because a raw route owes the same refusal (`POST
- * /auth/email/verify/request`, `FJS-1854`) and a route holds no service.
- *
- * A caller who is neither is unaffected, which is what every test of this
- * asserts beside the refusal: a guard that refused everybody would look
- * identical from the refused side (`FJS-351`).
- *
- * The operator is told whose account they are kept out of, and the agent is
- * told where the person can do it themselves.
- */
-export function refuseDelegated(ctx: { transport?: string; user?: unknown }, user: SessionContext, what: string): void {
-  if (user.support) throw new Forbidden(
-    `Cannot ${what} while acting as another user. End the support session first ` +
-    `(POST /auth/support/end) — this account's credentials are not yours to change.`
-  )
-  if (ctx.transport === 'mcp') throw new Forbidden(
-    `Cannot ${what} from an agent's tool call — it would outlive the session the agent ` +
-    `was handed. The person signed in to the app can do it there.`
-  )
 }
 
 /**

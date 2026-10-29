@@ -7,11 +7,10 @@ skip: "flag.dry"
 <script>
 import { createHash }   from 'crypto'
 import { readFileSync } from 'fs'
-import { basename }     from 'path'
 </script>
 
 ```js
-const { released, uploaded, releaseTag } = $.config
+const { released, uploaded, packageHostUrl } = $.config
 if (!uploaded?.length) return
 
 // The derived URL is the release path under the package host (`FJS-D1620`):
@@ -25,7 +24,7 @@ const bad = []
 
 for (const { name, newVersion, tarball } of released) {
   if (!shipped.has(`${name}@${newVersion}`)) continue
-  const url = `https://packages.frontierjs.com/${releaseTag(name, newVersion)}/${basename(tarball)}`
+  const url = packageHostUrl(name, newVersion)
   try {
     const res = await fetch(url, { redirect: 'follow' })
     if (!res.ok) throw new Error(`${res.status} from ${res.url}`)

@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-46 services · 51 routes · 15 plugins · prefix /api
+47 services · 51 routes · 15 plugins · prefix /api
 ```
 
 ## Custom methods whose body writes as the app
@@ -757,6 +757,19 @@ name when it declares none.
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
+
+### `pushSubscriptions`
+
+- **methods** — `find`, `create`, `remove`
+- **also answers to** — `push-subscriptions`
+- **who may call** —
+  - `find` — standing 1 or above — declared `gate: 1`
+  - `create` — standing 1 or above — declared `gate: 1`
+  - `remove` — standing 1 or above — declared `gate: 1`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
 
 ### `revenue` · model `revenueByStatus`
 

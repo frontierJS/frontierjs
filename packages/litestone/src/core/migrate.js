@@ -943,18 +943,19 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
   const newMatViews = dbMatViews
     .filter(v => pristineNames.has(v.name) && !liveNames.has(v.name))
 
-  // Regular views for this database
+  // Regular views for this database. Asked of `pristine`, not the declaration:
+  // the drift check passes the applied-only shadow here, and a fresh database
+  // read every declared view as drift with nothing in the summary to say so.
   const dbRegViews = (parseResult.schema.views ?? [])
     .filter(v => !v.materialized && (v.db ?? 'main') === dbName)
-  const liveViews = live.__views ?? {}
+  const pristineViews = pristine.__views ?? {}
+  const liveViews     = live.__views ?? {}
 
-  const newViews = dbRegViews.filter(v => !liveViews[v.name])
+  const newViews = dbRegViews.filter(v => pristineViews[v.name] && !liveViews[v.name])
   const changedViews = dbRegViews.filter(v => {
-    if (!liveViews[v.name]) return false
-    // Normalize whitespace and compare SQL bodies
+    if (!pristineViews[v.name] || !liveViews[v.name]) return false
     const norm = s => s.replace(/\s+/g, ' ').trim().replace(/;$/, '')
-    const expected = norm(`CREATE VIEW "${v.name}" AS\n${v.sql}`)
-    return norm(liveViews[v.name].sql) !== expected
+    return norm(liveViews[v.name].sql) !== norm(pristineViews[v.name].sql)
   })
 
   // External table names — never drop these even if not in pristine.

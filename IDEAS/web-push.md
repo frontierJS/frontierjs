@@ -112,28 +112,28 @@ session cookie and a bearer-only app cannot use that pattern.
 Goal: one owner per piece before any file moves.
 Done when: `FJS-D1442` is closed in `DECISIONS.md` and the driver header, the README and § 16 say the same thing about the row.
 
-- [ ] 0.1 Rule `FJS-D1442` (recommend A; see `IDEAS/owed-rulings.md`), amended with the fragment finding above: the subscription is the app's row from text the package ships, as `Notification` already is. Decide with it whether `push: true` writes a worker without `offline` (Q1).
-- [ ] 0.2 One line in `drivers/webpush.ts`'s header and the README's Web Push section: the row is the app's, its text is `db/notification.lite`'s, installed and drift-graded; and one line in `ecosystem-gaps.md` § 16 saying the Model it asked for is the installed fragment.
-- [ ] 0.3 Fix `browser-kit.md` 5.1's wording: push is a TRANSPORT, not a channel (`FJS-D06`). Browser-kit Phase 5 then points here rather than carrying its own steps.
+- [x] 0.1 Ruled [`FJS-D1442`](../DECISIONS.md#fjs-d1442) A, with Q1 A, amended with the fragment finding above: the subscription is the app's row from text the package ships, as `Notification` already is. Decide with it whether `push: true` writes a worker without `offline` (Q1).
+- [x] 0.2 One line in `drivers/webpush.ts`'s header and the README's Web Push section: the row is the app's, its text is `db/notification.lite`'s, installed and drift-graded; and one line in `ecosystem-gaps.md` § 16 saying the Model it asked for is the installed fragment.
+- [x] 0.3 Fix `browser-kit.md` 5.1's wording: push is a TRANSPORT, not a channel (`FJS-D06`). Browser-kit Phase 5 then points here rather than carrying its own steps.
 
 ### Phase 1 — the row and the route
 
 Goal: a subscription arrives at the API and lands as a gated, encrypted row with no app code.
 Done when: `bun run test` in notifications covers the fragment and the route, and `example`'s schema gains the model by `fli new --with notifications` alone.
 
-- [ ] 1.1 `PushSubscription` joins `db/notification.lite` (or a sibling the same install appends): `endpoint @unique`, `p256dh @encrypted`, `auth @encrypted`, `userId`, `userAgent`, `lastSeenAt`, `@@gate` own-rows-only, `@@softDelete`. `package-model-drift` extends to it. Mind Invariant 2 (PascalCase singular) and Invariant 7 (keys redact).
-- [ ] 1.2 The `subscriptions` store defaults from the fragment: `list` reads through `asSystem()` (the driver header already says why), `remove` soft-deletes by endpoint. The `webPush({ subscriptions })` option stays for an app whose row lives elsewhere.
-- [ ] 1.3 A `push-subscriptions` service: `create` upserts by endpoint under the principal, `delete` retires. No `list` beyond own rows. Refuse a subscription whose `p256dh` is not 65 bytes or `auth` not 16, the same checks the driver makes, so a bad row is refused at the door rather than at send time.
-- [ ] 1.4 Register-and-snapshot: the fragment appears in `notifications.snapshot.md`'s neighbor or its own line, and the `snapshots` CI phase rechecks it.
+- [x] 1.1 `PushSubscription` joins `db/notification.lite` (or a sibling the same install appends): `endpoint @unique`, `p256dh @encrypted`, `auth @encrypted`, `userId`, `userAgent`, `lastSeenAt`, `@@gate` own-rows-only, `@@softDelete`. `package-model-drift` extends to it. Mind Invariant 2 (PascalCase singular) and Invariant 7 (keys redact).
+- [x] 1.2 The `subscriptions` store defaults from the fragment: `list` reads through `asSystem()` (the driver header already says why), `remove` soft-deletes by endpoint. The `webPush({ subscriptions })` option stays for an app whose row lives elsewhere.
+- [x] 1.3 A `push-subscriptions` service: `create` upserts by endpoint under the principal, `delete` retires. No `list` beyond own rows. Refuse a subscription whose `p256dh` is not 65 bytes or `auth` not 16, the same checks the driver makes, so a bad row is refused at the door rather than at send time. Built in `packages/notifications/services.ts`. It also refuses a delegated caller (`FJS-D1623`) and an endpoint that is not public HTTPS, and the driver grades the endpoint again before every send. The opt-out and rename are `FJS-D1624`.
+- [x] 1.4 Register-and-snapshot: the fragment appears in `notifications.snapshot.md`'s neighbor or its own line, and the `snapshots` CI phase rechecks it. `example`'s schema carries the copy with its migration, so its `app`, `access`, `ddl`, `jsonschema` and `release` snapshots name the service, the gate, the encrypted keys and the table; no generator changed.
 
 ### Phase 2 — the worker
 
 Goal: a build that asks for push emits the handlers, with or without an offline shell.
 Done when: a Sierra build with `push: true` writes `sw.js` whose `push` handler shows `{ title, body, url }` and whose `notificationclick` focuses or opens `url`; the compiler test parses the output (Invariant 15).
 
-- [ ] 2.1 `sierra.config.js` `push: true`. `offline-shell.js` writes a worker when either key is on; with `push` alone the precache list is empty and the fetch handler is omitted, so a push-only app's worker intercepts nothing.
-- [ ] 2.2 The two handlers, from the wire contract: `push` parses JSON, `waitUntil(showNotification(title, { body, data: { url }, tag: topic }))`; `notificationclick` closes, then `matchAll({ type: 'window' })` → focus the first same-origin client and `navigate(url)`, else `openWindow(url)`.
-- [ ] 2.3 The payload shape has one owner: `PushMessage` in notifications' `types.ts`, plus one JSON fixture that the driver test and the worker test both read. The two READMEs point at it and copy nothing, so a change to `PushMessage` breaks a test in Sierra rather than a sentence.
+- [x] 2.1 `sierra.config.js` `push: true`. `offline-shell.js` writes a worker when either key is on; with `push` alone the precache list is empty and the fetch handler is omitted, so a push-only app's worker intercepts nothing. Built: `writeOfflineShell(offline, outDir, root, push)`; anything but a boolean is refused; push alone writes no budget baseline and its `activate` still sweeps a left-over `fjs-shell-` cache. `test/offline-shell.test.js` § push: true runs the emitted source.
+- [x] 2.2 The two handlers, from the wire contract: `push` parses JSON, `waitUntil(showNotification(title, { body, data: { url }, tag: topic }))`; `notificationclick` closes, then `matchAll({ type: 'window' })` → focus the first same-origin client and `navigate(url)`, else `openWindow(url)`. Built: `pushSource(scope)` in `offline-shell.js`, appended to either worker. The driver kept `topic` out of the payload, so `buildPushRequest` now sends it in both the `Topic` header and the payload (decision-rules: A); the app's `data` is spread under `url`; a non-JSON body is shown as text; a click with no url opens the scope. `test/offline-shell.test.js` runs both handlers against stand-ins — 2.4's real worker context is still owed.
+- [ ] 2.3 The payload shape has one owner: `PushMessage` in `drivers/webpush.ts`, plus one JSON fixture that the driver test and the worker test both read. The two READMEs point at it and copy nothing, so a change to `PushMessage` breaks a test in Sierra rather than a sentence.
 - [ ] 2.4 Worker test: load the emitted source in a worker context, dispatch a synthetic `PushEvent`, assert the `showNotification` call; same for the click. This is the "decrypt what you encrypt" test's browser-side twin.
 
 ### Phase 3 — the helper and the keys
@@ -143,9 +143,11 @@ Done when: `example` subscribes from a settings toggle and a `notify()` with a `
 
 - [ ] 3.1 `@frontierjs/notifications/client` `subscribeToPush({ vapidPublicKey })`: waits for `serviceWorker.ready`, converts the key to a `Uint8Array` (a bare string fails on Safari), `subscribe({ userVisibleOnly: true, applicationServerKey })`, posts `toJSON()` to the Phase 1 service. Plus `unsubscribeFromPush()`. Registers no worker itself. Where it lives relative to browser-kit's signal shape is Q2.
 - [ ] 3.2 `fli crypto:keygen vapid --env`: a third `type` beside `secret` and `aes` on the command that exists (`packages/cli/commands/crypto/keygen.md`), writing both halves and the subject, printing the public key, refusing to overwrite without `--rotate`. Rotating invalidates every subscription; the command says so. `notifications:install` prints the command.
-- [ ] 3.3 The public key reaches the browser: a config value Sierra inlines at build, or the API answers it on a `GET`. Q4.
+- [ ] 3.3 The public key reaches the browser as a signed-in `GET` on the `push-subscriptions` service ([`FJS-D1626`](../DECISIONS.md#fjs-d1626)). `subscribeToPush` reads it when no `vapidPublicKey` is passed.
 - [ ] 3.4 A `PushToggle` in `examples/` beside `Notification.mesa` — the gesture the permission prompt needs, showing granted / denied / unsupported. Copy-in, not kit, until a third app wants it.
 - [ ] 3.5 `example`: toggle on the account page, `OrderPaid` gains a `push:` formatter, README's Web Push section rewritten to the one-formatter shape.
+- [ ] 3.6 No double ([`FJS-D1627`](../DECISIONS.md#fjs-d1627)). The browser client's socket sends one frame on `visibilitychange`, and junction keeps the latest value on that `Connection`. The webPush driver skips a recipient with any visible connection. Test: two sockets for one user, one hidden and one visible, gets no push; both hidden gets one.
+- [ ] 3.7 `push: { always: true }` on a definition sends whether a tab is visible or not. Name the one-process limit in the README's Web Push section.
 
 ### Phase 4 — the drive
 
@@ -160,11 +162,11 @@ Done when: `fli proves` names the layered tests for a change here, and the heade
 
 ## Open questions
 
-- **Q1 — Does `push: true` write a worker when `offline` is off?** A: yes, with an empty precache and no fetch handler. B: no, push requires `offline`. Recommend **A** — a push-only app is the common case and must not be made to adopt an offline shell to get it. This coins an option, so it runs `decision-rules` with `FJS-D1442`.
-- **Q2 — Is `subscribeToPush` a plain async function or a browser-kit signal?** A function first: it is called once from a gesture and the state a page wants (`granted` / `denied` / `subscribed`) is `Notification.permission` plus one row, which the browser kit can wrap later as `pushSubscription()` reading this. Recommend the function; the signal is browser-kit 5.1's to add over it.
+- ~~**Q1 — Does `push: true` write a worker when `offline` is off?**~~ Answered **A** in [`FJS-D1442`](../DECISIONS.md#fjs-d1442), 2026-10-29. A: yes, with an empty precache and no fetch handler. B: no, push requires `offline`. Recommend **A** — a push-only app is the common case and must not be made to adopt an offline shell to get it. This coins an option, so it runs `decision-rules` with `FJS-D1442`.
+- ~~**Q2 — Is `subscribeToPush` a plain async function or a browser-kit signal?**~~ Answered **function** in [`FJS-D1625`](../DECISIONS.md#fjs-d1625), 2026-10-29. A function first: it is called once from a gesture and the state a page wants (`granted` / `denied` / `subscribed`) is `Notification.permission` plus one row, which the browser kit can wrap later as `pushSubscription()` reading this. Recommend the function; the signal is browser-kit 5.1's to add over it.
 - **Q3 — Command name.** Answered by `decision-rules` on 2026-10-28 before anyone built: `encryptionKey` has no command of its own, `fli crypto:keygen` is the key-making owner (`type` is `secret|aes`), so `vapid` is a third type there and no new noun (confidence 3). Stays listed so the number resolves.
-- **Q4 — How the public key reaches the browser.** A: Sierra inlines `PUSH_PUBLIC_KEY` at build. B: the API answers `GET /push-subscriptions/key`. Recommend **B** — the key is the API's secret's public half and a build should not need to know it; one unauthenticated read is cheap and rotation needs no rebuild.
-- **Q5 — Does the in-app driver's `notifications created` broadcast and a push to the same person double up?** A phone with the tab open gets a WebSocket frame and a push. Recommend: the formatter decides (`via()` already returns the transport list per recipient), and the README shows `push` only when no live connection is joined, which `channels()` knows.
+- ~~**Q4 — How the public key reaches the browser.**~~ Answered **B** in [`FJS-D1626`](../DECISIONS.md#fjs-d1626), 2026-10-29. A: Sierra inlines `PUSH_PUBLIC_KEY` at build. B: the API answers `GET /push-subscriptions/key`. Recommend **B** — the key is the API's secret's public half and a build should not need to know it; one unauthenticated read is cheap and rotation needs no rebuild.
+- ~~**Q5 — Does the in-app driver's `notifications created` broadcast and a push to the same person double up?**~~ Answered in [`FJS-D1627`](../DECISIONS.md#fjs-d1627), 2026-10-29: never. The driver skips a user with a visible tab, and `push: { always: true }` overrides it. The recommendation below was turned down. Steps 3.6–3.7. A phone with the tab open gets a WebSocket frame and a push. Recommend: the formatter decides (`via()` already returns the transport list per recipient), and the README shows `push` only when no live connection is joined, which `channels()` knows.
 
 ---
 

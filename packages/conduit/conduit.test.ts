@@ -5566,18 +5566,23 @@ describe('a target whose address comes per send (FJS-1667)', () => {
 // `raw: err` on `connection_failed` is Bun's own error, whose `path` is the full
 // request URL. A target registered as `https://user:pass@host` put its password
 // into `JSON.stringify(result)` — a log line, a job's stored result, a response.
+// The error is thrown by hand: Bun 1.4.4 stopped echoing the userinfo, so a
+// real refused socket passes this whether or not anything redacts.
 
 describe('a connection failure and the URL it carries', () => {
   it('does not carry a password from the address into the result', async () => {
-    const probe = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } })
-    const port = probe.port
-    probe.stop(true)
-    const target = providerTarget({ address: `http://admin:hunter2@127.0.0.1:${port}`, auth: { type: 'none' } })
-    const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
-    const r = await t.send({ target: target.id, method: 'GET', path: '/a' })
-    expect(r.error!.kind).toBe('connection_failed')
-    expect(JSON.stringify(r)).not.toContain('hunter2')
-    expect(JSON.stringify(r)).toContain('admin')
+    const real = globalThis.fetch
+    globalThis.fetch = (async (url: string | URL) => {
+      throw Object.assign(new Error(`Unable to connect to ${url}`), { code: 'ECONNREFUSED', path: String(url) })
+    }) as unknown as typeof fetch
+    try {
+      const target = providerTarget({ address: 'http://admin:hunter2@127.0.0.1:9', auth: { type: 'none' } })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+      const r = await t.send({ target: target.id, method: 'GET', path: '/a' })
+      expect(r.error!.kind).toBe('connection_failed')
+      expect(JSON.stringify(r)).not.toContain('hunter2')
+      expect(JSON.stringify(r)).toContain('admin')
+    } finally { globalThis.fetch = real }
   })
 })
 

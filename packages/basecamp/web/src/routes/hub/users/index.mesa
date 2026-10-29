@@ -342,6 +342,6 @@ title: Hub users
   <div class="alert-content">
     <strong>A person joins by invitation.</strong> An administrator of a workspace invites them from
     that workspace's <a href="/admin/">Members</a> screen; the link makes their account, with a
-    password only they know (<code>FJS-032</code>).
+    password only they know.
   </div>
 </article>

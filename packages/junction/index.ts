@@ -149,6 +149,7 @@ export type { EnvSpec, EnvFieldSpec, EnvOutput }                    from './src/
 // ─── Auth credentials ─────────────────────────────────────────────────────
 export { signedRequest, REFUSE }                                  from './src/auth/credentials.ts'
 export type { CredentialVerifier, CredentialAnswer, InboundRequest, SignedRequestOptions } from './src/auth/credentials.ts'
+export { refuseDelegated }                                        from './src/auth/delegation.ts'
 
 // ─── Loader ───────────────────────────────────────────────────────────────
 export { autoloadServices, loadServiceFile }                      from './src/core/loader.ts'

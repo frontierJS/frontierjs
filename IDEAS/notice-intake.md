@@ -34,15 +34,58 @@ What it covers today, against the failure states the schema has:
 | Machine lost, CPU/mem high, draining | `Server` · `unreachable`, `draining` | yes · `fleet` |
 | Deploy failed or stuck | `Deployment` · `failed`, `building` > 15 min | yes · `deploy` |
 | Job failed | `Job` · `failed`, `lastRunStatus` `failed` | yes · `job` |
-| Threshold breached | `AlertEvent` · `firing` | **no** |
+| Threshold breached | `AlertEvent` · `firing` | **no** — readable via `alerts`, evaluated by `jobs/alert-evaluate.job.ts` (re-probed 2026-10-29) |
 | Recipe failed | `RecipeRun` · `failed`, `timeout` | **no** |
 | App down | `App` · `error` | **no** |
 | Deploy rolled back | `Deployment` · `rolled_back` | **no** |
 | Backup failed | `Backup` | **no** |
+| App erroring or gone quiet | no model — traffic is counted on demand, never kept | **no** · see § App traffic |
 
-**What is absent:** four of the eight sources, a screen that shows only the
+**What is absent:** five of the nine sources, a screen that shows only the
 queue, a way for an item to stay acknowledged (ActionQueue's `dismissed` is
 component state and clears on reload), and any export shaped for an AI to read.
+
+## App traffic — the source with nothing to read
+
+Added 2026-10-29. A server under pressure reaches a notice two ways: the
+heartbeat's `Server.health`, and the `server.cpuPercent{serverId}` series that
+`domain/host/server-metrics.ts` keeps for alert rules. An app has neither.
+`apps.analytics()` asks the Outpost to count the route's Caddy access log when a
+person presses *Count traffic* on `/apps/:id/` (`IDEAS/traffic-analysis.md`), and
+the answer is drawn and dropped. Nothing can say *this app's 5xx rate tripled*
+or *this app took no requests since noon*.
+
+**Proposed shape: route it through the alert path, not a new notice rule.**
+
+- A caravan job pulls `/analytics` for each placed app on a schedule and writes
+  `app.requests{appId}` and `app.errors5xx{appId}` into `MetricSeries`, named
+  in one module beside `server-metrics.ts` for the same reason that one
+  exists: one place decides which readings are kept and what they are called.
+  An `unavailable` answer (`domain/host/traffic.ts`) writes no point, because a
+  0 there would read as an app nobody visits.
+- Latency is out until the Outpost computes a percentile: `TrafficDuration`
+  carries `meanMs` and `maxMs` only. Up/down and response time are already a
+  `Monitor`'s, so this series justifies itself on volume and 5xx rate alone.
+- An `AlertRule` then watches an app series like any other, the evaluator fires
+  it, and the firing reaches `computeNotices` through the threshold-breached row
+  above. App trouble arrives as an `AlertEvent`, so it needs no notice rule of
+  its own. This depends on V1 step 1 landing that row first.
+
+**Open:**
+
+- **Q1** — tenancy of the series. `FJS-3594` closed: both readers go through
+  `domain/alert/watched-series.ts`, where a label must name a row in
+  `rule.workspaceId` and a label it does not list refuses. A per-app series is
+  readable by no rule until `appId → app` joins its `OWNERS`; what is left to
+  ask is whether the label is `appId` alone or `appId` plus `serverId`.
+- **Q2** — cadence against cost. Each pull reads the access log on the machine
+  up to the Outpost's line cap. A five-minute pull per app is N reads per
+  machine per interval. The window per pull should be the interval itself, not
+  the day the screen asks for.
+- **Q3** — a default rule. Does an app get a *5xx above X% for 10 minutes* rule
+  when it is placed, or does an operator write each one? **Recommend:**
+  operator-written, like every other `AlertRule`, with a *recommended rules*
+  action on `/apps/:id/` as the way back if that proves too bare.
 
 ---
 

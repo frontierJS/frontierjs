@@ -14,6 +14,8 @@ export async function askDesk() { return null }
 
 export async function deskReport() { return null }
 
+export async function reportNames() { return [] }
+
 export function readSnoozes() { return {} }
 
 export function setSnooze() { return null }

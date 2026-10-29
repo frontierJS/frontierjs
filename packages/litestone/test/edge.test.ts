@@ -64,6 +64,15 @@ function specifiers(src: string): string[] {
   return out
 }
 
+/**
+ * The ruled exceptions, by importing file and imported directory. A row here is
+ * a ruling, not a convenience: adding one means a battery became part of what
+ * the core is, which is FJS-D635's question to answer again.
+ */
+const ALLOWED: Array<{ from: string; to: string; why: string }> = [
+  { from: 'host/node.js', to: 'storage', why: 'FJS-D1549 — a client with a disk installs FileStorage itself' },
+]
+
 function isBattery(target: string): boolean {
   const top = relative(SRC, target).split('/')[0]
   return top in BATTERIES || top in TOOLS
@@ -81,10 +90,18 @@ describe('litestone edge (FJS-D635)', () => {
     for (const file of Object.keys(AXES).flatMap(d => walk(join(SRC, d)))) {
       for (const spec of specifiers(readFileSync(file, 'utf8'))) {
         const target = resolve(dirname(file), spec)
-        if (isBattery(target)) breaks.push(`${relative(SRC, file)} → ${relative(SRC, target)}`)
+        if (!isBattery(target)) continue
+        const from = relative(SRC, file), to = relative(SRC, target)
+        if (!ALLOWED.some(a => a.from === from && (to === a.to || to.startsWith(a.to + '/')))) breaks.push(`${from} → ${to}`)
       }
     }
     expect(breaks).toEqual([])
+  })
+
+  it('every allow-list row is still used — a stale exception is a hole', () => {
+    const used = ALLOWED.filter(a => specifiers(readFileSync(join(SRC, a.from), 'utf8'))
+      .some(spec => relative(SRC, resolve(dirname(join(SRC, a.from)), spec)).startsWith(a.to)))
+    expect(used.map(a => `${a.from} → ${a.to}`)).toEqual(ALLOWED.map(a => `${a.from} → ${a.to}`))
   })
 
   it('the main entry re-exports no battery', () => {

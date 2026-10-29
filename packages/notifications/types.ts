@@ -199,6 +199,14 @@ export interface NotificationsPluginOptions {
     email?:    NotificationDriver | { mailer?: string }
     [key: string]: NotificationDriver | { mailer?: string } | undefined
   }
+
+  /**
+   * The services this package registers at boot, by the name each is served
+   * under. `false` registers none; a name set to `false` drops that one, and a
+   * string renames it — the way out when the app already serves that name.
+   * `pushSubscriptions` registers only when the schema installs `PushSubscription`.
+   */
+  services?: false | { pushSubscriptions?: string | false }
 }
 
 // ─── Delivery error detail ────────────────────────────────────────────────────

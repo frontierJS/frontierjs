@@ -2,21 +2,13 @@
 
 Bun-workspace monorepo: a schema-seeded fullstack framework. One mental model — three realms, three nouns:
 **Data (Model) → API (Service) → UI (Resource)**, plus Deployment (Release) and Testing (Suite).
-Everything derives from `db/schema.lite`; growth happens outward and traces back.
-
-`ARCHITECT.md` §2 is the default vocabulary for design discussion. Depart from it when a different word is materially clearer — then fold the clearer word back in rather than keeping two.
+Everything derives from `db/schema.lite`. `ARCHITECT.md` §2 is the vocabulary for design discussion.
 
 ## Evolution policy
 
-FrontierJS is pre-alpha. **Prefer evolving existing designs over preserving them.** Existing behavior is evidence, not a constraint.
+Pre-alpha and nothing has shipped: **prefer evolving existing designs over preserving them**. Existing behavior is evidence, not a constraint. A rename moves every caller in the same change and keeps no alias, deprecation window or compatibility flag; `PHILOSOPHY.md` § IV's *familiarity vs. precision* is about the ecosystem's habits, never this framework's own past. Only the **Invariants** below and rulings in `DECISIONS.md` are binding. **Preserve the mental model, not the mechanism**; where docs disagree, reconcile.
 
-**Nothing here has shipped, so there is no back-compat to keep.** A rename is a rename: one name for one thing, with every caller moved in the same change and nothing kept for the old spelling — no alias, deprecation window, migration path or compatibility flag. `PHILOSOPHY.md` § IV's *familiarity vs. precision* is about the ECOSYSTEM's habits and never about this framework's own past; reading it as a reason an existing spelling should survive is the way this policy is most often lost.
-
-Only two things are binding: the **Invariants** below, and rulings in `DECISIONS.md`. **Preserve the mental model, not the mechanism.** Where docs disagree, assume different stages of a pre-alpha design and reconcile.
-
-**A change that turns on a judgment call runs `decision-rules`** (`.claude/skills/`). It fires on the ACT rather than on the doubt: adding an option, coining a noun, choosing between two designs, or finding the code and a document disagree.
-
-**This file is only what is live**, and a line here earns its place by changing what someone does in the next hour. History is git, open defects in `ISSUES.md`, settled arguments in `DECISIONS.md`.
+**A change that turns on a judgment call runs `decision-rules`** (`.claude/skills/`): adding an option, coining a noun, choosing between two designs, or finding the code and a document disagree. **This file is only what is live.** History is git, open defects `ISSUES.md`, settled arguments `DECISIONS.md`.
 
 ---
 
@@ -26,41 +18,33 @@ Don't violate without an explicit decision; record it in `DECISIONS.md` if you d
 
 1. **Dependency direction** — `Litestone ← Junction ← Sierra`, never reverse.
 2. **Model names are PascalCase singular** (`model Lead` → `db.lead`); `@@external` exempt. Three resolvers depend on this agreeing.
-3. **App layout** — `db/` at the root and each SURFACE a directory beside it: `api/`, `web/`, `site/`, `widgets/`, `extension/`, `desktop/`, `mobile/` and `cli/`. `test/` belongs to a surface and `tests/` to the app. A surface folded inside another inherits its build, port and release, and a `site/` inside `web/` is emptied by the next SPA build (`FJS-D127`). One directory may build for more than one target — Haven's `web/` is a terminal and a browser (`FJS-D985`). Never *derive* a config path from where `vite.config.js` sits — probe, or be told. Canonical: `README.md` § Project Structure.
+3. **App layout** — `db/` at the root and each SURFACE a directory beside it: `api/`, `web/`, `site/`, `widgets/`, `extension/`, `desktop/`, `mobile/` and `cli/`; `test/` belongs to a surface and `tests/` to the app. A surface folded inside another inherits its build, port and release (`FJS-D127`, `FJS-D985`). Never *derive* a config path from where `vite.config.js` sits — probe, or be told. Canonical: `README.md` § Project Structure.
 4. **One owner per translation.** Exactly one place turns a thrown value into an HTTP status, one wraps/unwraps the result envelope, one parses `$`-params into `ctx.directives`, one announces a write, one startup phase list every caller runs. Add to the owner, never beside it; the owners are § Bridge index.
-5. **One owner per `app.<thing>`.** Take it with `app.own(name, value)`; type it by augmenting an exported interface, never by redeclaring the property — declaration merging requires identical types, so a redeclaration silently loses. The verb is not `provide`, because a Provider is a third party the app speaks to (`FJS-D06`), nor `claim`, which is what a principal carries (`FJS-D1255`).
+5. **One owner per `app.<thing>`.** Take it with `app.own(name, value)` (`FJS-D06`, `FJS-D1255`); type it by augmenting an exported interface, never by redeclaring the property — declaration merging requires identical types, so a redeclaration silently loses.
 6. **Access is declared in the schema, not in hooks.** Gates, `@encrypted`, `@guarded`, `@@transitions` are enforced at the Data boundary. `x-gate` on the client is a UI affordance only — unknown answers are permissive and the server enforces regardless. No exceptions.
 7. **Protected fields are redacted in the audit trail.** `@encrypted`/`@guarded`/`@secret`/`@hashed` log as `[redacted]`, `@personal` as `[personal]` and `@opaque` as `[opaque:<digest>]`, in field entries and in `before`/`after` images.
 8. **Caller-supplied names never enter a SQL pattern.**
 9. **Patch semantics: an explicit `null` clears.** Test key presence (`key in updates`), not `??`.
-10. **A `$`-PREFIXED KEY is transport syntax only.** `ctx.query` is filters, `ctx.directives` is `{limit, offset, orderBy, select}`, and no `$`-prefixed key survives the bridge but the combinators `$or`/`$and`/`$not`, which are filters written with a `$` (`FJS-D910`) — one the table does not name is REFUSED there by name (`FJS-D237`). The table is `@frontierjs/toolbelt/directives`; what the values mean is `@frontierjs/toolbelt/query` (`FJS-D125`). Junction's ambient `$`, the call in progress, is a different thing sharing a character (`VOCABULARY.md` § The sign `$`).
+10. **A `$`-PREFIXED KEY is transport syntax only.** `ctx.query` is filters, `ctx.directives` is `{limit, offset, orderBy, select}`, and no `$`-prefixed key survives the bridge but the combinators `$or`/`$and`/`$not` (`FJS-D910`); one the table (`@frontierjs/toolbelt/directives`) does not name is REFUSED by name (`FJS-D237`, `FJS-D125`). Junction's ambient `$` is a different thing (`VOCABULARY.md` § The sign `$`).
 11. **The nearest delegation root owns an event.** Roots nest; a handler must fire once.
 12. **Mesa compiler output is reproducible** — scope ids are content-addressed, which is what makes CSS dedupe work across the two compilers a static build runs.
 13. **`@frontierjs/css` is the styling language.** Style with a tone (`danger`) and a treatment (`outlined`), never a color. UnoCSS is an opt-in layer an app configures, so a package in this repo ships no utility classes.
 14. **Typecheck baselines ratchet down only.** `scripts/typecheck-baselines.json`, one number per package; absent means 0. `bun run typecheck -- --update` writes an improvement back.
 15. **A clean compile is not proof of valid JS.** Compiler tests parse their output.
 16. **Runnable examples are verified, not sketches.** A broken one is a bug.
-17. **Three markdown files at a package root is the standard** — `README.md`, `CLAUDE.md`, `PROJECT_STATE.md`; everything else in `<pkg>/docs/`. `AGENTS.md` is a permitted fourth, for a package's consumers (`FJS-D163`). A fifth is a `package-root-md` warning to answer — move the file or record why it stays. Generated `*.snapshot.md` is exempt.
-18. **In a Sierra app, `src/resources/` holds `.mesa` files, and a resource file carries its model's default form.** A Resource is a UI-realm noun, written in the UI-realm language. The `<script module>` data half is required and the markup half is optional; a file with no `<script module>` is a component in the wrong folder (`FJS-D112`).
+17. **Three markdown files at a package root is the standard** — `README.md`, `CLAUDE.md`, `PROJECT_STATE.md`; everything else in `<pkg>/docs/`. `AGENTS.md` is a permitted fourth (`FJS-D163`). A fifth is a `package-root-md` warning to answer. Generated `*.snapshot.md` is exempt.
+18. **In a Sierra app, `src/resources/` holds `.mesa` files, and a resource file carries its model's default form.** The `<script module>` data half is required and the markup half is optional; a file with no `<script module>` is a component in the wrong folder (`FJS-D112`).
 19. **A resource file is named for its noun — PascalCase, singular — one Resource per file.** `App.mesa` exporting `export const apps`; where a model exists the filename IS the model name, so an irregular is visible.
 
 ---
 
 ## Running things
 
-**Always `cd` into the package and run its own script.** Runners differ per package and a wrong runner produces failures that belong to nothing. `bun run --filter '*' test` from the root runs them all, one each. `bun test` instead of `bun run test` runs bun's own runner over whatever it finds — in mesa that is dozens of failures that are runner artifacts. Which runner each package uses and what it needs (Chrome, network, Docker) is `docs/TESTING.md`.
-
-**A package's suite is `test/`; `*.test.*` is COLLECTED and `*.spec.*` is DRIVEN** — a `.spec` exports `run`, sits in `specs/`, and is imported by the `run.mjs` beside it.
-
-**`bun run ci` is the whole of CI** — `ci:fast` skips the suites, `--only <pkg>` narrows, `--phase <name>` runs one. `fli ci` is the same call from anywhere in the workspace. What fails each phase, and every allowance, is `docs/CI.md`.
-
-**Which drive proves a change is `fli proves`** (`--from main` on a branch): it reads the diff against `DRIVES.md` and names each drive the change needs and what to start first. A change is not proved until those drives have run; **`fli prove` runs them**, each after its *Start first* steps. **`fli done` says whether it is finished** — run it before calling a change complete and clear what it lists, or say in a sentence why an item stays.
-
-**A dev server serves the code it started with** (`FJS-740`): start the one the run will test, refuse a port that already answers, and drive it from a script that spawns, polls, asserts and kills — `docs/TESTING.md` § Dev servers.
-
-**Search a tree with `rg`** — it skips `node_modules` and gitignored build output. A `PreToolUse` hook in `.claude/settings.json` refuses a recursive `grep`; `grep` on a named file or a pipe is fine.
-
-**Every vite config sets `strictPort`** — vite otherwise hops ports in silence and one app's drive tests another app. The port formula, the table and its exceptions: `docs/PORTS.md`.
+- **Always `cd` into the package and run its own script.** Runners differ per package and a wrong runner produces failures that belong to nothing; `bun test` in place of `bun run test` is one. `bun run --filter '*' test` from the root runs them all. Which runner each package uses and what it needs: `docs/TESTING.md`.
+- **`bun run ci` is the whole of CI**, `fli ci` from anywhere in the workspace. What fails each phase, and every allowance: `docs/CI.md`.
+- **`fli proves --from main` names the drives a change needs, `fli prove` runs them, and `fli done` says whether it is finished.** Run `fli done` before calling a change complete and clear what it lists, or say in a sentence why an item stays.
+- **A dev server serves the code it started with** (`FJS-740`): start the one the run will test and refuse a port that already answers — `docs/TESTING.md` § Dev servers. Every vite config sets `strictPort`; the port table is `docs/PORTS.md`.
+- **Search a tree with `rg`** — a `PreToolUse` hook refuses a recursive `grep`; `grep` on a named file or a pipe is fine.
 
 ---
 
@@ -69,18 +53,16 @@ Don't violate without an explicit decision; record it in `DECISIONS.md` if you d
 Match the file you are in first. The code rules load from `.claude/rules/code-style.md` when a source file is read; these are the ones a new file needs before any read.
 
 - **No semicolons**, single quotes, 2-space indent. TypeScript in junction, auth, caravan, conduit and every `conduit-*` connector (`FJS-D890`), notifications, mcp and testing; plain ESM JavaScript in every other package.
-- **A comment explains the failure, not the mechanism, and must be load-bearing.** Edit history, dates and narration of your own change belong in `DECISIONS.md` and git (`FJS-D675`).
-- **A comment inside a template literal uses plain words or `--` quoting** — a backtick there closes the literal and the file fails to parse.
+- **A comment explains the failure, not the mechanism, and must be load-bearing.** Edit history and narration of your own change belong in `DECISIONS.md` and git (`FJS-D675`). Inside a template literal a comment uses plain words or `--` quoting — a backtick there closes the literal.
 - **American spelling** in prose and identifiers (`FJS-D192`); `cancelled`, a persisted enum value, is the one exception.
-- **A document an agent reads is written by `doc-hygiene`** (`.claude/skills/`). **A section a parser reads moves only with its parser** — modules read this file's Invariants, Packages table and Bridge index by path.
-- **A plan is Phases of Steps**: Phase 0 comes first, a step is cited `2.3` and its number is never reused, and the next step is the first open box. This holds in a `PLAN.md`, in `IDEAS/` and in chat; the shape is `doc-hygiene` § A plan's shape (`FJS-D927`).
-- **A new defect gets an `FJS-###` in `ISSUES.md`**; a ruling closes an `FJS-D##` in `DECISIONS.md`. Check a new `.gitignore` rule against `git status --porcelain`.
+- **A document an agent reads is written by `doc-hygiene`** (`.claude/skills/`), and **a plan is Phases of Steps** in that skill's § A plan's shape (`FJS-D927`). A section a parser reads moves only with its parser — modules read this file's Invariants and Bridge index by path.
+- **A new defect gets an `FJS-###` in `ISSUES.md`**; a ruling closes an `FJS-D##` in `DECISIONS.md`.
 
 ---
 
 ## Live hazards
 
-**The realm catalogs are skills** (`.claude/skills/`) — each fires on its own realm; reach for one by name where the trigger has not fired, and add a new hazard to its realm's skill. **`/which-skill` is the order across all of them**, user-invoked.
+**The realm catalogs are skills** (`.claude/skills/`) — each fires on its own realm; reach for one by name where the trigger has not fired, and add a new hazard to its realm's skill. **`/which-skill` is the order across all of them**, user-invoked. Hazards belonging to no realm are `docs/CI.md` § Repo hazards.
 
 | Realm | Skill | Fires on |
 | ----- | ----- | -------- |
@@ -88,16 +70,11 @@ Match the file you are in first. The code rules load from `.claude/rules/code-st
 | API | `api-hazards` | junction · a service · the hook pipeline · HTTP/WS transport · a raw route · a plugin · a job or cron |
 | UI | `ui-hazards` | mesa · sierra · a `.mesa` file · a resource · a form · a tether · prerender · islands · `@frontierjs/css` |
 
-**Repo** hazards belong to no realm:
-
-- **`bun test` runs in UTC whatever the host is set to.** A test that means local time sets `TZ` itself and builds every `Date` after setting it. Everything STORED is UTC.
-- **Publishing a package silences every loose peer range that names it**, and below 1.0 a caret pins the MINOR. `fli ws:exports` commits the published surface to `exports.snapshot.md`, and the `snapshots` phase fails a stale one. **What SHIPS is not what is REACHED**: `surface.snapshot.md` (`fli ws:surface`) lists every entry and export no file outside its package imports or names, and `--also ../fjs-prototypes` asks the linked prototypes — a removal here breaks them at boot.
-
 ---
 
 ## Packages
 
-**Every package has its own `CLAUDE.md`, loaded when you read a file in that package** — what it owns, a file-by-file layout map, its traps, and which drive proves a change. History is git, state its `PROJECT_STATE.md`, open items `ISSUES.md`. `fli ws:atlas --as=rings` draws every package with its realm, state and ring, center out.
+**Every package has its own `CLAUDE.md`, loaded when you read a file in that package** — what it owns, its traps, and which drive proves a change. `fli ws:atlas --as=rings` draws every package with its realm, state and ring.
 
 <!-- Packages table. repo-map.js and repo-rings.js parse it by path, so it moves only with them; a block comment costs no context. No separator row: a comment holds no double dash.
 | Package | Realm/Domain | What it is | State | Ring |
@@ -148,21 +125,17 @@ Match the file you are in first. The code rules load from `.claude/rules/code-st
 
 **UI** — `*.mount.js` · `page.query` / `page.directives` · `watchProxy()` / `createSignal()` / `createRoot(fn)` · `mount(label, Component, {props, root})` · `renderComponent(src, opts)` · `appSrcDir(root)` / `appAliasPlugin()` · `swapInstances(entries, newFn, newSetMark, label)` · `island(anchor, Comp, props, block, meta)` · **The theme is a class on `<html>` and Sierra owns the switch** · **There is no cross-package reactivity registry.**
 -->
+
 ---
 
 ## Where to look
 
-- **Starting cold** → `HANDOFF.md`, the two most recent sessions.
-- **Working beside the owner, not on their branch** → `ALONGSIDE.md` — lanes, where findings go, the rebase routine.
-- **What is wrong** → `ISSUES.md` (closed rows age out to `ISSUES_ARCHIVE.md`; search both). **What to work on next** → `fli next`.
-- **What is settled** → `DECISIONS.md`; check it before relitigating. **What is waiting on the owner** → `fli decisions`; write the options into the question's bullet (`**A** — …`, `**Recommend X** — why`) rather than answering in chat.
+- **Starting cold** → `HANDOFF.md`. **Beside the owner, not on their branch** → `ALONGSIDE.md`.
+- **What is wrong** → `ISSUES.md` (closed rows age out to `ISSUES_ARCHIVE.md`). **What to work on next** → `fli next`.
+- **What is settled** → `DECISIONS.md`; check it before relitigating. **What waits on the owner** → `fli decisions`; write the options into the question's bullet (`**A** — …`, `**Recommend X** — why`) rather than answering in chat.
 - **What is not started** → `IDEAS/`, never cited as behavior; `IDEAS/overview.md` ranks it.
-- **Mental model and vocabulary** → `ARCHITECT.md`; the axioms above it → `PHILOSOPHY.md`; the defined words → `VOCABULARY.md`.
-- **How to know something is true** → `VERIFYING.md`.
-- **The workspace, read rather than described** → `fli ws:atlas` (`--as=report` is the runbook: what to run, from where, every snapshot and its generator).
-- **Testing, CI and ports reference** → `docs/TESTING.md`, `docs/CI.md`, `docs/PORTS.md`.
-- **What a write guarantees after it returns** → `docs/CONSISTENCY.md`.
-- **What each attacker may do, and which test proves it** → `THREATS.md`.
+- **Mental model, axioms, defined words** → `ARCHITECT.md`, `PHILOSOPHY.md`, `VOCABULARY.md`. **How to know something is true** → `VERIFYING.md`.
+- **Testing, CI, ports, consistency, threats** → `docs/TESTING.md`, `docs/CI.md`, `docs/PORTS.md`, `docs/CONSISTENCY.md`, `THREATS.md`. **The workspace, read rather than described** → `fli ws:atlas` (`--as=report` is the runbook).
 - **Trying a change end to end** → `example/`, the kitchen sink across every surface; start at its `PROJECT_STATE.md`.
 
 ## Communication style

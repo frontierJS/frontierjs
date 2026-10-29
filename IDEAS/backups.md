@@ -336,6 +336,12 @@ Phases 1–4 are proved here only: Litestream and Outpost's replicator never ran
 under systemd, and B2 has only answered 0.7's probe, never a full backup and
 restore.
 
+Ordering, 2026-10-29: `verify:hub-restore` passed 23/23 at `a77d8c56`, after
+Outpost's layout moved (`FJS-D1544`). The working tree is red, because
+`basecamp-dogfood.md` Phase 1 merged `Backup` into `AppBackup` on a hub App
+(`FJS-D1603`, `D1606`) and its Phase 2 has not moved the code yet. Steps here
+that touch the hub's archives (5.3, 5.5) come after that Phase 2.
+
 - [ ] 5.1 The key-scope probe owed by `FJS-D1572`. An app's replica key is
       scoped to the name prefix `<prefix>/<appId>/`, and its archives are
       `<prefix>/<appId>-<stamp>.tar.gz`. A key scoped without the trailing

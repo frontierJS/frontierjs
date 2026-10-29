@@ -457,11 +457,13 @@ Done when: serpgrid's three title copies are one `title()` call, and `fli check`
 
 ### Phase 5 — The push half
 
-Goal: #10's subscription, the token handed to notifications.
-Done when: a browser subscribes and a `notify()` reaches it as a push; the service worker itself is homestead's per Q4.
+Goal: a signal over the push subscription, for a page that wants one.
+Done when: `pushSubscription()` reports granted / denied / subscribed by reading `subscribeToPush()`.
 
-- [ ] 5.1 `pushSubscription()` → the notifications package's channel list
-- [ ] 5.2 The drive: a notification delivered with the tab closed
+Moved to [`web-push.md`](web-push.md), ruled by `FJS-D1442`. Push is a TRANSPORT on `notify()`, not a channel (`FJS-D06`): the subscribe call is a notifications helper (web-push 3.1) and the drive is web-push Phase 4. What stays here is a `pushSubscription()` signal over that helper, if a page wants one (web-push Q2).
+
+- [ ] 5.1 `pushSubscription()` → a browser-kit signal reading `subscribeToPush()`'s state; waits on web-push 3.1
+- ~~5.2 The drive: a notification delivered with the tab closed~~ — web-push Phase 4
 
 ---
 

@@ -276,3 +276,136 @@ describe('what the worker will not do', () => {
     expect(src).toContain("if (url.origin !== self.location.origin) return")
   })
 })
+
+describe('push: true', () => {
+  // `FJS-D1442`: push is the same worker's second duty, and a push-only app
+  // adopts no offline shell to get it.
+
+  // Run, not grepped: a clean string is not proof of valid JS (Invariant 15),
+  // and the listeners a worker registers are what the browser will dispatch to.
+  const listenersOf = (src) => {
+    const on = {}
+    const self = { addEventListener: (type, fn) => { on[type] = fn }, skipWaiting() {}, clients: { claim() {} } }
+    new Function('self', 'caches', src)(self, {})
+    return Object.keys(on).sort()
+  }
+
+  test('alone, it writes a worker that precaches nothing and intercepts nothing', async () => {
+    const dir = await build({ 'index.html': PAGE, 'assets/app.js': 'export {}' })
+    const line = await writeOfflineShell(undefined, dir, dir, true)
+    expect(line).toMatch(/push only, nothing precached/)
+    const src = await sw(dir)
+    expect(src).not.toMatch(/const SHELL/)
+    expect(listenersOf(src)).toEqual(['activate', 'install', 'notificationclick', 'push'])
+  })
+
+  test('alone, it is not graded against the shell budget', async () => {
+    // There is no shell to weigh, and a baseline file written for one would
+    // be a number an app that never asked for offline has to keep.
+    const dir = await build({ 'index.html': PAGE })
+    await writeOfflineShell(undefined, dir, dir, true)
+    await expect(readFile(join(dir, 'offline-baseline.json'), 'utf8')).rejects.toThrow()
+  })
+
+  test('alone, it still sweeps a shell an earlier build left', async () => {
+    // An app that turned offline off keeps the last shell on every device
+    // that installed it, unless the next worker deletes it.
+    const dir = await build({ 'index.html': PAGE })
+    await writeOfflineShell(undefined, dir, dir, true)
+    const deleted = []
+    let activate
+    const self = { addEventListener: (t, fn) => { if (t === 'activate') activate = fn }, clients: { claim() {} } }
+    const caches = { keys: async () => ['fjs-shell-abc', 'app-own'], delete: async (n) => { deleted.push(n) } }
+    new Function('self', 'caches', await sw(dir))(self, caches)
+    let done
+    activate({ waitUntil: (p) => { done = p } })
+    await done
+    expect(deleted).toEqual(['fjs-shell-abc'])
+  })
+
+  test('alone, every page registers it once', async () => {
+    const dir = await build({ 'index.html': PAGE, 'about/index.html': PAGE })
+    await writeOfflineShell(undefined, dir, dir, true)
+    await writeOfflineShell(undefined, dir, dir, true)
+    for (const p of ['index.html', 'about/index.html']) {
+      const html = await readFile(join(dir, p), 'utf8')
+      expect(html.match(/serviceWorker\.register/g)?.length).toBe(1)
+    }
+  })
+
+  test('beside offline, the shell is unchanged', async () => {
+    const dir = await build({ 'index.html': PAGE, 'assets/app.js': 'export {}' })
+    await writeOfflineShell(true, dir, dir, true)
+    const src = await sw(dir)
+    expect(shellOf(src)).toContain('/assets/app.js')
+    expect(listenersOf(src)).toEqual(['activate', 'fetch', 'install', 'notificationclick', 'push'])
+  })
+
+  // The worker run against stand-ins for the two browser calls it makes.
+  const pushWorker = async (clients = []) => {
+    const dir = await build({ 'index.html': PAGE })
+    await writeOfflineShell(undefined, dir, dir, true)
+    const on = {}, shown = [], opened = []
+    const self = {
+      addEventListener: (t, fn) => { on[t] = fn },
+      location: { origin: 'https://app.test' },
+      registration: { showNotification: async (title, opts) => { shown.push({ title, ...opts }) } },
+      clients: { matchAll: async () => clients, openWindow: async (u) => { opened.push(u) } },
+    }
+    new Function('self', 'caches', await sw(dir))(self, {})
+    const fire = async (type, event) => {
+      let done
+      on[type]({ ...event, waitUntil: (p) => { done = p } })
+      await done
+    }
+    return { fire, shown, opened }
+  }
+
+  test('a push shows the payload, with its topic as the tag', async () => {
+    const { fire, shown } = await pushWorker()
+    const msg = { title: 'Paid', body: 'Order 7', url: '/orders/7', topic: 'order-7', data: { id: 7 } }
+    await fire('push', { data: { json: () => msg } })
+    expect(shown).toEqual([{ title: 'Paid', body: 'Order 7', data: { id: 7, url: '/orders/7' }, tag: 'order-7' }])
+  })
+
+  test('a push that is not JSON is still shown', async () => {
+    const { fire, shown } = await pushWorker()
+    await fire('push', { data: { json: () => { throw new SyntaxError('x') }, text: () => 'hello' } })
+    expect(shown).toEqual([{ title: '', body: 'hello', data: { url: undefined }, tag: undefined }])
+  })
+
+  test('a click focuses an open tab and navigates it', async () => {
+    const calls = []
+    const tab = { focus: async () => { calls.push('focus') }, navigate: async (u) => { calls.push(u) } }
+    const { fire, opened } = await pushWorker([tab])
+    let closed = false
+    await fire('notificationclick', { notification: { close: () => { closed = true }, data: { url: '/orders/7' } } })
+    expect(closed).toBe(true)
+    expect(calls).toEqual(['focus', 'https://app.test/orders/7'])
+    expect(opened).toEqual([])
+  })
+
+  test('a click with no tab open opens one, at the scope when the payload named no url', async () => {
+    const { fire, opened } = await pushWorker()
+    await fire('notificationclick', { notification: { close() {}, data: {} } })
+    expect(opened).toEqual(['https://app.test/'])
+  })
+
+  test('offline alone carries no push handler', async () => {
+    const dir = await build({ 'index.html': PAGE })
+    await writeOfflineShell(true, dir, dir)
+    expect(listenersOf(await sw(dir))).toEqual(['activate', 'fetch', 'install'])
+  })
+
+  test('anything but a boolean is refused', async () => {
+    const dir = await build({ 'index.html': PAGE })
+    await expect(writeOfflineShell(undefined, dir, dir, { always: true }))
+      .rejects.toThrow(/`push` takes true or false/)
+    await expect(readFile(join(dir, 'sw.js'), 'utf8')).rejects.toThrow()
+  })
+
+  test('false writes nothing', async () => {
+    const dir = await build({ 'index.html': PAGE })
+    expect(await writeOfflineShell(undefined, dir, dir, false)).toBe(null)
+  })
+})

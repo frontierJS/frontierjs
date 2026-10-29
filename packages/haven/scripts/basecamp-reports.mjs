@@ -13,6 +13,7 @@
 // overdue  the team's past-due to-dos: how late, who holds them, which can still be saved
 // week     what falls due in the next seven days, by day, and what nobody is on
 // mine     this account's own last fourteen days of activity
+// leaders  who checked off the most to-dos in fourteen days, against the fourteen before
 // team     each teammate's open to-dos: how many, how many late, what falls due this week
 // daily    the newest daily check posted in the Kobami chat, each item a link
 // plans    open to-dos per client plan (the Daily Checklist doc's table), project by project
@@ -159,6 +160,10 @@ function planTable(html) {
   return plans
 }
 
+// The leaderboard's team, by Basecamp id: a name search for Vlad answers
+// "Ambiguous person", and the account itself is read as `me`.
+const BOARD = [['Jordan', 'me'], ['Vlad', '--person', '41640225'], ['Colin', '--person', '52968940']]
+
 const REPORTS = {
   plans: {
     help: 'open to-dos per client plan, each plan its projects with the most open first',
@@ -301,6 +306,63 @@ const REPORTS = {
           ...(done.length
             ? [{ kind: 'heading', text: 'Checked off' }, { kind: 'list', items: done.map((e) => ({ text: `${oneLine(e.summary_excerpt)} -- ${e.bucket?.name ?? ''}`, note: ago(e.created_at), tone: 'ok' })) }]
             : [{ kind: 'callout', tone: 'warn', text: 'Nothing checked off in fourteen days.' }]),
+        ],
+      }
+    },
+  },
+
+  leaders: {
+    help: 'who checked off the most to-dos in fourteen days, against the fourteen before',
+    async run() {
+      // Fourteen calendar days with today the last, as `mine` counts them, and the fourteen before for the arrows.
+      const start = today.getTime() - 13 * DAY, prior = start - 14 * DAY
+      const timelines = await Promise.all(BOARD.map(([, ...args]) => basecamp('timeline', ...args, '--limit', '1000')))
+      const rows = BOARD.map(([name], i) => {
+        const events = timelines[i]
+        const todos = events.filter((e) => e.kind === 'todo_completed' || e.kind === 'todo_created')
+        const now = todos.filter((e) => Date.parse(e.created_at) >= start)
+        const closed = now.filter((e) => e.kind === 'todo_completed')
+        const perDay = Array.from({ length: 14 }, (_, d) => closed.filter((e) => Math.floor((Date.parse(e.created_at) - start) / DAY) === d).length)
+        let streak = 0, run = 0
+        for (const n of perDay) { run = n ? run + 1 : 0; streak = Math.max(streak, run) }
+        const best = perDay.indexOf(Math.max(...perDay))
+        return {
+          name, perDay, streak,
+          closed: closed.length,
+          opened: now.length - closed.length,
+          projects: new Set(now.map((e) => e.bucket?.id)).size,
+          best: { n: perDay[best], on: new Date(start + best * DAY) },
+          before: todos.filter((e) => e.kind === 'todo_completed' && Date.parse(e.created_at) >= prior && Date.parse(e.created_at) < start).length,
+          // A thousand events that end inside the earlier fortnight have cut it short, and its count with it.
+          cut: events.length >= 1000 && Date.parse(events.at(-1).created_at) > prior,
+        }
+      })
+      const rank = (key) => [...rows].sort((a, b) => b[key] - a[key] || a.name.localeCompare(b.name))
+      const was = rank('before')
+      const board = rank('closed')
+      const moved = (r) => { const n = was.indexOf(r) - board.indexOf(r); return n > 0 ? `${r.name} ▲${n}` : n < 0 ? `${r.name} ▼${-n}` : r.name }
+      const signed = (n) => (n > 0 ? `+${n}` : String(n))
+      const day = (d) => `${WEEKDAY[d.getDay()]} ${d.getDate()}`
+      const cut = rows.filter((r) => r.cut)
+      const width = Math.max(...rows.map((r) => r.name.length))
+      return {
+        title: `Leaderboard · ${board[0].name} leads with ${board[0].closed} checked off`,
+        blocks: [
+          { kind: 'stats', items: board.map((r, i) => ({
+            label: `${i + 1}. ${moved(r)}`, value: r.closed, tone: i === 0 ? 'ok' : undefined,
+            note: `${r.opened} added`, foot: `${r.before} the 14 before`,
+          })) },
+          ...(cut.length ? [{ kind: 'callout', tone: 'warn', text: `${cut.map((r) => r.name).join(', ')}: a thousand events do not reach back 28 days, so the arrows undercount the fortnight before.` }] : []),
+          { kind: 'heading', text: 'Checked off, last 14 days' },
+          { kind: 'bars', items: board.map((r, i) => ({ label: r.name, value: r.closed, tone: i === 0 ? 'ok' : 'info' })) },
+          // Net is checked off less added: above zero shrank the pile, below grew it.
+          { kind: 'table', columns: ['Who', 'Checked off', 'Added', 'Net', 'Projects'],
+            rows: board.map((r) => [moved(r), r.closed, r.opened, signed(r.closed - r.opened), r.projects]) },
+          { kind: 'heading', text: 'Streaks' },
+          { kind: 'table', columns: ['Who', 'Longest streak', 'Best day'],
+            rows: rank('streak').map((r) => [r.name, `${r.streak}d`, r.best.n ? `${r.best.n} on ${day(r.best.on)}` : '--']) },
+          // A spark starts where its label ends, so the names are padded to one width to line the days up.
+          ...board.map((r) => ({ kind: 'spark', label: r.name.padEnd(width), values: r.perDay, note: `today ${r.perDay.at(-1)}, peak ${r.best.n}` })),
         ],
       }
     },

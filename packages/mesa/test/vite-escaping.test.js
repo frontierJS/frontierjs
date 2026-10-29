@@ -155,7 +155,7 @@ function runInspector(root = '/app') {
     }
   }
   const node = () => ({ style: { cssText: '' }, appendChild: () => {}, textContent: '', getBoundingClientRect: () => ({ top: 0, left: 0, width: 0, height: 0 }) })
-  const document = { documentElement: { style: {} }, activeElement: null, body: { appendChild: () => {} }, createElement: node }
+  const document = { documentElement: { style: {} }, activeElement: null, body: { appendChild: () => {} }, createElement: node, querySelectorAll: () => [] }
   const fetch = (url) => { fetched.push(url); return Promise.resolve() }
   const console = { log: () => {}, warn: (...a) => warned.push(a.join(' ')) }
   new Function('window', 'document', 'fetch', 'console',

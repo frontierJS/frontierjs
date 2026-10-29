@@ -2552,7 +2552,6 @@ export interface ServerRelations {
   volumes: Volume[]
   appServers: AppServer[]
   serverNetworks: ServerNetwork[]
-  hostHub: HubConfig | null
 }
 
 // ─── ServerEvent ─────────────────────────────────────────────────
@@ -3106,6 +3105,7 @@ export interface AppRelations {
   domainRoutes: DomainRoute[]
   variables: Variable[]
   editors: AppEditor[]
+  hub: HubConfig | null
 }
 
 // ─── Variable ────────────────────────────────────────────────────
@@ -4634,12 +4634,9 @@ export type BackupDestinationOrderBy =
 
 export interface BackupDestinationRelations {
   workspace: Workspace | null
-  backups: Backup[]
   appBackups: AppBackup[]
   apps: App[]
   replicaApp: App | null
-  replicaHub: HubConfig | null
-  hubs: HubConfig[]
 }
 
 // ─── AlertRule ───────────────────────────────────────────────────
@@ -5687,77 +5684,6 @@ export interface DependencyUseRelations {
   dependency: Dependency | null
 }
 
-// ─── Backup ──────────────────────────────────────────────────────
-
-export interface Backup {
-  id: string
-  kind: BackupKind
-  status: RunStatus
-  destinationId?: string | null
-  sizeBytes?: number | null
-  location?: string | null
-  error?: string | null
-  requestedBy?: string | null
-  startedAt?: string | null
-  finishedAt?: string | null
-  durationMs?: number | null
-  createdAt: string
-}
-
-export interface BackupCreate {
-  id?: string
-  kind?: BackupKind
-  status?: RunStatus
-  destinationId?: string | null
-  sizeBytes?: number | null
-  location?: string | null
-  error?: string | null
-  requestedBy?: string | null
-  startedAt?: string | Date | null
-  finishedAt?: string | Date | null
-  durationMs?: number | null
-}
-
-export interface BackupUpdate {
-  id?: string
-  kind?: BackupKind
-  status?: RunStatus
-  destinationId?: string | null
-  sizeBytes?: number | null
-  location?: string | null
-  error?: string | null
-  requestedBy?: string | null
-  startedAt?: string | Date | null
-  finishedAt?: string | Date | null
-  durationMs?: number | null
-}
-
-export interface BackupWhere extends WhereBase {
-  id?: string | WhereOp<string> | null
-  kind?: BackupKind | WhereOp<BackupKind> | null
-  status?: RunStatus | WhereOp<RunStatus> | null
-  destinationId?: string | WhereOp<string> | null
-  sizeBytes?: number | WhereOp<number> | null
-  location?: string | WhereOp<string> | null
-  error?: string | WhereOp<string> | null
-  requestedBy?: string | WhereOp<string> | null
-  startedAt?: string | Date | WhereOp<string | Date> | null
-  finishedAt?: string | Date | WhereOp<string | Date> | null
-  durationMs?: number | WhereOp<number> | null
-  createdAt?: string | Date | WhereOp<string | Date> | null
-  AND?: BackupWhere[]
-  OR?:  BackupWhere[]
-  NOT?: BackupWhere
-}
-
-export type BackupOrderBy =
-  | { [K in keyof Omit<Backup, never>]?: OrderDir }
-  | Array<{ [K in keyof Omit<Backup, never>]?: OrderDir }>
-
-export interface BackupRelations {
-  destination: BackupDestination | null
-}
-
 // ─── HubConfig ───────────────────────────────────────────────────
 
 export interface HubConfig {
@@ -5766,19 +5692,13 @@ export interface HubConfig {
   requireTwoFactorForOwners: boolean
   allowApiKeyAuth: boolean
   allowBotUsers: boolean
-  backupEnabled: boolean
-  backupCron: string
-  backupDestinationId?: string | null
-  replicaDestinationId?: string | null
-  replicaFoundAt?: string | null
-  replicaSyncedAt?: string | null
   backupKeepLocalCount: number
   backupKeepLocalDays?: number | null
   backupKeepRemoteCount: number
   backupKeepRemoteDays?: number | null
   encryptionKeyEscrowedAt?: string | null
   encryptionKeyFingerprint?: string | null
-  hostServerId?: string | null
+  appId?: string | null
   updatedAt: string
   /** @version */
   version: number
@@ -5790,10 +5710,6 @@ export interface HubConfigCreate {
   requireTwoFactorForOwners?: boolean
   allowApiKeyAuth?: boolean
   allowBotUsers?: boolean
-  backupEnabled?: boolean
-  backupCron?: string
-  backupDestinationId?: string | null
-  replicaDestinationId?: string | null
   backupKeepLocalCount?: number
   backupKeepLocalDays?: number | null
   backupKeepRemoteCount?: number
@@ -5806,10 +5722,6 @@ export interface HubConfigUpdate {
   requireTwoFactorForOwners?: boolean
   allowApiKeyAuth?: boolean
   allowBotUsers?: boolean
-  backupEnabled?: boolean
-  backupCron?: string
-  backupDestinationId?: string | null
-  replicaDestinationId?: string | null
   backupKeepLocalCount?: number
   backupKeepLocalDays?: number | null
   backupKeepRemoteCount?: number
@@ -5818,11 +5730,9 @@ export interface HubConfigUpdate {
 }
 
 export interface HubConfigSystem {
-  replicaFoundAt?: string | Date | null
-  replicaSyncedAt?: string | Date | null
   encryptionKeyEscrowedAt?: string | Date | null
   encryptionKeyFingerprint?: string | null
-  hostServerId?: string | null
+  appId?: string | null
 }
 
 export interface HubConfigWhere extends WhereBase {
@@ -5831,19 +5741,13 @@ export interface HubConfigWhere extends WhereBase {
   requireTwoFactorForOwners?: boolean | WhereOp<boolean> | null
   allowApiKeyAuth?: boolean | WhereOp<boolean> | null
   allowBotUsers?: boolean | WhereOp<boolean> | null
-  backupEnabled?: boolean | WhereOp<boolean> | null
-  backupCron?: string | WhereOp<string> | null
-  backupDestinationId?: string | WhereOp<string> | null
-  replicaDestinationId?: string | WhereOp<string> | null
-  replicaFoundAt?: string | Date | WhereOp<string | Date> | null
-  replicaSyncedAt?: string | Date | WhereOp<string | Date> | null
   backupKeepLocalCount?: number | WhereOp<number> | null
   backupKeepLocalDays?: number | WhereOp<number> | null
   backupKeepRemoteCount?: number | WhereOp<number> | null
   backupKeepRemoteDays?: number | WhereOp<number> | null
   encryptionKeyEscrowedAt?: string | Date | WhereOp<string | Date> | null
   encryptionKeyFingerprint?: string | WhereOp<string> | null
-  hostServerId?: string | WhereOp<string> | null
+  appId?: string | WhereOp<string> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   version?: number | WhereOp<number> | null
   AND?: HubConfigWhere[]
@@ -5856,9 +5760,7 @@ export type HubConfigOrderBy =
   | Array<{ [K in keyof Omit<HubConfig, never>]?: OrderDir }>
 
 export interface HubConfigRelations {
-  backupDestination: BackupDestination | null
-  replicaDestination: BackupDestination | null
-  hostServer: Server | null
+  app: App | null
 }
 
 // ─── Notification ────────────────────────────────────────────────
@@ -6091,7 +5993,6 @@ export interface ServiceTypes {
   registryImages: RegistryImage
   dependencies: Dependency
   dependencyUses: DependencyUse
-  backups: Backup
   hubConfigs: HubConfig
   notifications: Notification
   notificationPreferences: NotificationPreference
@@ -6297,7 +6198,7 @@ type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient
 type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
-  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'domainRoute' | 'appEditor' | 'appServer' | 'appBackup' | 'appDrill' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'maintenanceRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'backupDestination' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'monitor' | 'monitorCheck' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardTile' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'backup' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
+  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'domainRoute' | 'appEditor' | 'appServer' | 'appBackup' | 'appDrill' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'maintenanceRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'backupDestination' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'monitor' | 'monitorCheck' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardTile' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
   readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere, CredentialRelations, never, 'value' | 'accessToken' | 'refreshToken' | '@@gate'>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'token' | '@@gate'>
   readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere, VerificationRelations, never, 'value' | 'secret' | 'code' | '@@gate'>
@@ -6367,8 +6268,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly registryImage: TableClient<RegistryImage, RegistryImageCreate, RegistryImageUpdate, RegistryImageWhere, RegistryImageRelations, never, '@@gate'>
   readonly dependency: TableClient<Dependency, DependencyCreate, DependencyUpdate, DependencyWhere, DependencyRelations, never, 'latest' | 'deprecated' | 'advisories' | 'checkedAt' | 'checkError' | '@@gate', DependencySystem>
   readonly dependencyUse: TableClient<DependencyUse, DependencyUseCreate, DependencyUseUpdate, DependencyUseWhere, DependencyUseRelations, never, '@@gate'>
-  readonly backup: TableClient<Backup, BackupCreate, BackupUpdate, BackupWhere, BackupRelations, never, '@@gate'>
-  readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere, HubConfigRelations, never, 'replicaFoundAt' | 'replicaSyncedAt' | 'encryptionKeyEscrowedAt' | 'encryptionKeyFingerprint' | 'hostServerId' | '@@gate', HubConfigSystem>
+  readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere, HubConfigRelations, never, 'encryptionKeyEscrowedAt' | 'encryptionKeyFingerprint' | 'appId' | '@@gate', HubConfigSystem>
   readonly notification: TableClient<Notification, NotificationCreate, NotificationUpdate, NotificationWhere, NotificationRelations, never, '@@gate'>
   readonly notificationPreference: TableClient<NotificationPreference, NotificationPreferenceCreate, NotificationPreferenceUpdate, NotificationPreferenceWhere, NotificationPreferenceRelations, never, '@@gate'>
   readonly fleetByProvider: ViewClient<FleetByProvider, FleetByProviderWhere>

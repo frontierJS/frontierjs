@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 56 models · 2 databases
+-- 57 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -579,6 +579,24 @@ CREATE TABLE IF NOT EXISTS "notification" (
   CHECK ("subjectType" IN ('Order')),
   UNIQUE ("userId", "type", "deliveryKey")
 ) STRICT;
+
+-- One browser's Web Push handle, copied from `notification.lite` as
+-- Notification is. Its presence is what makes the notifications plugin serve
+-- `push-subscriptions`; whoever holds the endpoint and both keys can put a
+-- notification on that screen, so the keys are encrypted and every operation
+-- is the owner's alone.
+CREATE TABLE IF NOT EXISTS "push_subscription" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "userId" TEXT NOT NULL,
+  "endpoint" TEXT NOT NULL UNIQUE,
+  "p256dh" TEXT NOT NULL,
+  "auth" TEXT NOT NULL,
+  "userAgent" TEXT,
+  "lastSeenAt" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "deletedAt" TEXT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_push_subscription_deletedAt" ON "push_subscription" ("deletedAt") WHERE "deletedAt" IS NULL;
 
 CREATE TABLE IF NOT EXISTS "user" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),

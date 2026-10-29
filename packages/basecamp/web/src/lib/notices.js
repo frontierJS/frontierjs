@@ -183,7 +183,10 @@ export function noticeCounts(notices) {
 //   SSL certificates expiring / expired — needs a Domain model with a cert
 //   status. `App.domain` is one nullable string.
 //
-//   Firing alert rules — `AlertRule` and `AlertEvent` are in the schema with
-//   no service over them, so nothing can read them from the browser.
+//   Firing alert rules — readable through the `alerts` service, not yet an
+//   input here (IDEAS/notice-intake.md V1 step 1).
+//
+//   An app erroring or gone quiet — traffic is counted on demand and never
+//   kept, so there is no series to read (IDEAS/notice-intake.md § App traffic).
 //
 //   Disk pressure / cleanup — no model at all.

@@ -3525,6 +3525,27 @@ model Notification {
   @@allow(update, userId == auth().id)
 }
 
+/// One browser's Web Push handle, copied from `notification.lite` as
+/// Notification is. Its presence is what makes the notifications plugin serve
+/// `push-subscriptions`; whoever holds the endpoint and both keys can put a
+/// notification on that screen, so the keys are encrypted and every operation
+/// is the owner's alone.
+model PushSubscription {
+  id          Int        @id
+  userId      String
+  endpoint    String     @unique
+  p256dh      String     @encrypted
+  auth        String     @encrypted
+  userAgent   String?
+  lastSeenAt  DateTime?
+  createdAt   DateTime   @default(now())
+  deletedAt   DateTime?
+
+  @@softDelete
+  @@gate(4.4.4.4)
+  @@allow(all, userId == auth().id)
+}
+
 // ─── What is NOT in this file ─────────────────────────────────────────────
 //
 // `extend model User { isStaff … }` lives in db/user.lite and is assembled by

@@ -489,6 +489,10 @@ leaving it to an app. It inherits `@@gate` (a subscription is one of the more se
 rows an app holds — it is a writable handle to someone's device), `@encrypted` on the
 keys, invariant 7's redaction in the audit trail, and `@@softDelete` semantics on
 expiry. Every hand-rolled version is a plain table with none of that.
+**The Model this asks for is an installed fragment** (`FJS-D1442`): `PushSubscription`
+ships in `packages/notifications/db/notification.lite`, `fli notifications:install`
+appends it to the app's schema and `package-model-drift` grades the copy — the row is
+the app's, the words are the package's. Plan: `IDEAS/web-push.md`.
 
 **The trap to state before anything is built**: a push payload is a read that leaves the
 building, and it leaves via a third party. The push service sees the body. That is the

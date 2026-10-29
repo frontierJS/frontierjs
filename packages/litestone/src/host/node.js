@@ -65,5 +65,7 @@ export const sleepSync = (ms) => { Atomics.wait(SLEEP, 0, 0, ms) }
 // row says whose it is. The random suffix stays with the caller.
 export const processId = () => String(process.pid)
 
-// A disk, so a File column's bytes can be kept on it (FJS-D1549).
-export const hasFilesystem = true
+// A disk, so a File column's bytes can be kept on it (FJS-D1549). The host
+// builds the default rather than the client, because a core import of the
+// battery puts node's streams in the browser graph (FJS-D635).
+export const defaultFileStorage = async () => (await import('../storage/file-storage.js')).FileStorage()

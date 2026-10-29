@@ -113,8 +113,8 @@ flags:
     defaultValue: ''
   source:
     type: string
-    choices: [local, npm]
-    description: "Where @frontierjs packages install from: npm (published) or local (symlink to <root>/packages, live edits; a build packs them into the image). Default: $FRONTIER_SOURCE, else local from a framework checkout and npm from an install"
+    choices: [local, url, npm]
+    description: "Where @frontierjs packages install from: local develops (symlink to <root>/packages, live edits; a build packs them into the image), url installs (tarballs from packages.frontierjs.com, no registry), npm upgrades (published ranges a package manager can move, FJS-D988). Default: $FRONTIER_SOURCE, else local from a framework checkout and npm from an install"
     defaultValue: ''
 ---
 
@@ -407,11 +407,11 @@ if (useWorkspace) {
 const { isFrameworkCheckout } = await import(resolve(global.fliRoot, 'core/utils.js'))
 const fjsSource = (flag.source || process.env.FRONTIER_SOURCE || (isFrameworkCheckout(global.fliRoot) ? 'local' : 'npm')).toLowerCase()
 
-if (fjsSource !== 'local' && fjsSource !== 'npm') {
+if (!['local', 'url', 'npm'].includes(fjsSource)) {
   const hint = fjsSource === 'github'
     ? '--source github is not supported yet.'
     : `Unknown --source "${fjsSource}".`
-  log.error(`${hint} Use local (symlink to your packages) or npm (published).`)
+  log.error(`${hint} Use local (symlink to your packages), url (packages.frontierjs.com) or npm (published).`)
   $.config.abort = true
   return
 }
@@ -464,7 +464,7 @@ echo('')
 log.info(`Creating ${appName} at ${finalTarget}`)
 echo('')
 echo(`  Template:  ${template}`)
-echo(`  FJS pkgs:  ${fjsSource === 'local' ? `local — symlink to ${packagesDir} (live edits; a build packs them)` : 'npm (published)'}`)
+echo(`  FJS pkgs:  ${fjsSource === 'local' ? `local — symlink to ${packagesDir} (live edits; a build packs them)` : fjsSource === 'url' ? 'url (packages.frontierjs.com tarballs)' : 'npm (published)'}`)
 echo(`  Auth:      ${useAuth ? 'yes' : 'no'}`)
 echo(`  Web:       ${useWeb ? 'yes (Sierra + Mesa + Vite)' : 'no'}`)
 echo(`  Deploy:    ${useDeploy && useApi ? (flag.server || flag.domain ? 'yes (deploy/Dockerfile + frontier.config.js)' : 'yes (deploy/Dockerfile; pass --server to write frontier.config.js)') : 'no'}`)

@@ -17,13 +17,13 @@ import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import { MAX_SNOOZE_MINUTES } from '../../domain/alert/alerting.ts'
+import { watchedSeries }      from '../../domain/alert/watched-series.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 
-/** The metric models are `@@gate(8)` and `@@tenant(none)` — a reading is
- *  about this process and belongs to nobody's workspace. So a scoped client
- *  has nothing to say to them, and the bypass is written out rather than
- *  assumed. Nothing from a series reaches the response but its name, type and
- *  freshness; the rows themselves are `metrics-store`'s, behind the hub gate. */
+/** The metric models are `@@gate(8)` and `@@tenant(none)`, so a scoped client
+ *  has nothing to say to them and the bypass is written out. Which series a
+ *  rule may see is `watchedSeries`'s; nothing from one reaches the response
+ *  but its name, type and freshness. */
 const sys = (): any => $.db.asSystem()
 
 /** An event belongs to a rule, and the rule carries the workspace — so the
@@ -64,7 +64,7 @@ async function ruleWithDelivery(rule: Record<string, unknown>) {
   // names — and the cost of that is a rule watching a typo, which never fires
   // and looks exactly like a threshold nobody crossed. `null` here means the
   // evaluator has nothing to read; `stale` means it has nothing NEW to read.
-  const found = await sys().metricSeries.findFirst({ where: { labelsKey: rule.metricName } })
+  const found = await watchedSeries(sys(), rule.metricName as string, rule.workspaceId as string)
   const series = found
     ? { name: found.name, type: found.type, unit: found.unit,
         lastSeenAt: found.lastSeenAt, stale: isStale(found.lastSeenAt) }

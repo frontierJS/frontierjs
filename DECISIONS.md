@@ -8396,9 +8396,18 @@ Asked in session, against [`IDEAS/traffic-analysis.md`](IDEAS/traffic-analysis.m
 - **`client_ip`, not `remote_ip`.** `packages/cli/core/edge.js` trusts Cloudflare's ranges and `CF-Connecting-IP`, so behind a proxied zone `remote_ip` is a Cloudflare edge address.
 - **B's reopen path is not GoAccess.** User-agent and bot panels derive from `request.headers["User-Agent"]` in the same reader; geo needs a GeoIP database and is its own decision.
 
+### <a id="fjs-d1622"></a>2026-10-28 · `FJS-D1622` — Traffic analysis closes at Phase 2 — Junction's per-call request log is struck from the plan, not deferred inside it.
+
+Asked in session, against [`IDEAS/traffic-analysis.md`](IDEAS/traffic-analysis.md) § Phase 3, box 3.1. **Close at Phase 2** over **start Phase 3** (a request-summary row per service call in a per-app store), **stdout only**, or **park**. As recommended.
+
+- **Phase 2 answers the question the plan was opened for.** The Outpost counts an app's Caddy access log (`POST /analytics`) and the app page's `log-analysis` tab draws it, windowed, with the roll's depth stated.
+- **Phase 3 is a different product with a different audience** — *which service call is expensive for which tenant* — and nobody has asked it. The plan's own rule was not to start it for traffic numbers.
+- **What it would have settled in passing:** where a request log lands (`logbook` phase 4's open question), and that every read writes a row. Both belong to whoever reopens it, as its own plan.
+- **The plan's lean was stale.** It named a `@@log` model, which is `@@trail` now — the audit trail, the one thing a request log must not be. A reopen starts from a store that is not the trail.
+
 ### <a id="fjs-d1606"></a>2026-10-28 · `FJS-D1606` — `Backup` merges into `AppBackup` — a hub archive is an `AppBackup` row on the hub App (`FJS-D1603`); `HubConfig` keeps only retention.
 
-Asked in session (`IDEAS/basecamp-dogfood.md` Q4 and Q5). **A** over **B** (two models kept, their eleven shared columns aligned) and **C** (merge after dogfood). `Backup`, `AppBackup` and `AppDrill` shared eleven columns with drift (`BackupKind` has `release`, `DrillKind` not; `onDelete` differs; `Backup` carried no workspace), and `HubConfig` restated `App`'s `backupCron`, `backupDestinationId`, `replicaDestinationId`, `replicaFoundAt` and `replicaSyncedAt` only because the hub was not an App. Those five go; the keep-counts stay on `HubConfig` as hub-wide retention policy.
+Asked in session (`IDEAS/basecamp-dogfood.md` Q4 and Q5). **A** over **B** (two models kept, their eleven shared columns aligned) and **C** (merge after dogfood). `Backup`, `AppBackup` and `AppDrill` shared eleven columns with drift (`BackupKind` has `release`, `DrillKind` not; `onDelete` differs; `Backup` carried no workspace), and `HubConfig` restated `App`'s `backupCron`, `backupDestinationId`, `replicaDestinationId`, `replicaFoundAt` and `replicaSyncedAt` only because the hub was not an App. Those five go; the keep-counts stay on `HubConfig` as hub-wide retention policy. `backupEnabled` goes with them: an App's null `backupCron` is no schedule, as `Job.cronExpression` and `App.drillCron` read, so a flag beside it would be a second answer.
 
 The gate consequence, stated on purpose: a hub archive moves from `@@tenant(none)` at `7.7.8.7` to `AppBackup`'s `5.8.8.8`, scoped to the installer's workspace — the one `useHost` already creates the hub Server in — whose members are the operator team. The people who installed the hub read its archives the way they read any app's. The schema header sentence that `HubConfig` and `Backup` describe the whole install changes with it. *Enforced by:* `bench/statements` on the join, and the restore drive (`IDEAS/backups.md` 4.3) over an `AppBackup` row.
 
@@ -9472,7 +9481,7 @@ The paper's recommendation, taken as written: it is A with the slot pattern made
 
 **The refusals that bound a support episode bound an agent too.** `refuseInSupport` became `refuseDelegated(ctx, user, what)` and refuses the same eleven writes when `ctx.transport === 'mcp'` (`FJS-D609`): a password, a second factor, a session revoked, a key minted or revoked, a connection removed, a reset. The reason is the episode's — each outlives the session it was made from. Reads stay open to both. The tools are still LISTED to an agent and refused when called; withholding them would need a declaration the projection can read, and none exists.
 
-Picked by the owner in session over amending `FJS-D408` so a CRUD verb a service implements itself is graded by its declared gate even where its name reaches a model (behavior turning on whether a body was written), and over declaring levels on custom methods only (the boot warning keeps naming eight tools). Graded on § V before the first edit: one origin per verb (the `methods:` entry), no new noun (`null` on an existing option), one owner (`serviceAccessor` beside `createService`; `refuseDelegated` where `refuseInSupport` was), the refusal is a 403 because a minted key is durable, and `packages/auth/test/agent-refusals.test.ts` and `packages/junction/test/custom-method-gate.test.ts` red when either half is removed.
+Picked by the owner in session over amending `FJS-D408` so a CRUD verb a service implements itself is graded by its declared gate even where its name reaches a model (behavior turning on whether a body was written), and over declaring levels on custom methods only (the boot warning keeps naming eight tools). Graded on § V before the first edit: one origin per verb (the `methods:` entry), no new noun (`null` on an existing option), one owner (`serviceAccessor` beside `createService`; `refuseDelegated` where `refuseInSupport` was, moved to junction by `FJS-D1623`), the refusal is a 403 because a minted key is durable, and `packages/auth/test/agent-refusals.test.ts` and `packages/junction/test/custom-method-gate.test.ts` red when either half is removed.
 
 ### <a id="fjs-d610"></a>2026-10-06 · `FJS-D610` — Does cookie mode bring its own CSRF defense, and how does it know the app's origin with no list — Cookie mode installs `csrf()`, which gains a same-origin default that needs no list: `Sec-Fetch-Site` of `same-origin` or `none` passes, `cross-site` or `same-site` is refused unless `Origin` is in `cors.origins`, a request without it compares `Origin` with the host, and a request with no `Origin` at all passes, since the attack needs a browser. Every mutating route is covered, including a POST from a sibling subdomain, which `SameSite` counts as the same site.
 
@@ -12906,6 +12915,65 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 `core/errors.ts`.
 
 ## UI substrate (Mesa)
+
+### <a id="fjs-d1442"></a>2026-10-29 · `FJS-D1442` — Who owns Web Push's browser half: Sierra's generated `sw.js` plus a notifications subscribe helper, a worker `@frontierjs/notifications` generates itself, or the app — A (confidence 2).
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked as the recommendation qualifies it (*A (confidence 2)*) over **B** (Notifications owns both halves: `@frontierjs/notifications/sw` exports a `pushHandlers()` source string and `/client` exports the subscribe helper; an app that wants push writes a two-line `sw.js` importing it, or Sierra's `offline-shell` composes it in via an `extraWorkerSource` option. Keeps the payload shape in one package. Cost: Sierra still needs the composition seam, or the app hand-merges two workers, which is the problem the row names), **C** (The app owns it, the framework documents the 20 lines: close the row as designed and put the worker snippet and the subscribe call in the README's Web Push section. Cost: the cryptography is shared and the other half, equally easy to get silently wrong (a `userVisibleOnly` omission, a missing `waitUntil`, a click that never focuses the tab), is rewritten per app).
+
+A whole, as recommended, with web-push Q1 folded in as A: push: true writes a worker without offline, empty precache and no fetch handler, so a push-only app adopts no offline shell.
+
+Plan: [`IDEAS/web-push.md`](IDEAS/web-push.md). Amends A as written in the owed-rulings entry, from `decision-rules` on 2026-10-28:
+
+- **The subscription row is the app's, from text the package ships.** A's `subscribeToPush({ save })` handing the row to app code is replaced: `PushSubscription` joins `packages/notifications/db/notification.lite`, `fli notifications:install` appends it, `package-model-drift` grades the copy, and a `push-subscriptions` service upserts by endpoint. The driver's `subscriptions` option stays for an app whose row lives elsewhere.
+- **The VAPID key is a third `type` on `fli crypto:keygen`**, beside `secret` and `aes`. No new command noun.
+- **`push` takes `true` only**, beside `offline` in `sierra.config.js`. The worker is still the one `packages/sierra/src/postbuild/offline-shell.js` writes. Registration stays where it is today, with no second path added.
+- **The wire shape has one origin:** `PushMessage` in `packages/notifications/drivers/webpush.ts`, plus one JSON fixture that the driver test and Sierra's worker test both read. Until that fixture and the Phase 2 compiler test land, nothing fails if Sierra's handler and `PushMessage` drift apart, and nothing refuses a misspelled `push` key.
+- **Reopen:** if `PushSubscription` moves to its own push-only fragment, `push` could be derived from the model being in the schema instead of being configured.
+- **Same file, not a sibling `push.lite`** — confirmed 2026-10-28 through the question tool at web-push 1.1, over a sibling fragment behind `notifications:install --push` and over plain (unencrypted) keys. The cost taken: `p256dh` and `auth` are `@encrypted`, so every app installing notifications must pass `encryptionKey` to `createClient`, push or not. A scaffolded app already does (`packages/cli/core/scaffold/api.js`). `package-model-drift` grades `PushSubscription` with no rule change, since it walks every model in the fragment.
+
+### <a id="fjs-d1623"></a>2026-10-29 · `FJS-D1623` — `refuseDelegated(ctx, user, what)` lives in junction, beside the two fields it reads — `SessionContext.support` and `transport: 'mcp'` — and every write that outlives a session imports it from `@frontierjs/junction`
+
+Asked at [`IDEAS/web-push.md`](IDEAS/web-push.md) step 1.3 through the question tool, after `decision-rules`. **C** was picked over **A** (copy the two checks into notifications) and **B** (export it from `@frontierjs/auth` and make auth a peer of notifications). The `push-subscriptions` create needed the refusal because a subscription is a handle on somebody's screen that outlives the episode. Auth held the function and basecamp's `drafts.handoff` already held a hand copy, so A would have been the third copy.
+
+- **One owner.** `packages/junction/src/auth/delegation.ts`, exported from the package entry. Auth, notifications and basecamp's drafts import it; nothing else tests `transport === 'mcp'` for this reason.
+- **The message drops `POST /auth/support/end`**, because the route's prefix is auth's to configure and junction cannot know it. The agent's sentence is unchanged; `auth/test/agent-refusals.test.ts` asserts it.
+- **Silence.** *A support operator or an agent over `/mcp` cannot make a write that outlives the session.* Fails today: auth's `agent-refusals.test.ts` and notifications' `webpush.test.ts` § the push-subscriptions service, each paired with the plain caller passing. A fourth hand copy is caught by nothing.
+
+Amends `FJS-D628`, which put `refuseDelegated` in auth where `refuseInSupport` was.
+
+*Lives in:* `packages/junction/src/auth/delegation.ts`.
+
+### <a id="fjs-d1624"></a>2026-10-29 · `FJS-D1624` — `notifications({ services })` names what the package registers at boot, in auth's shape: `false` registers none, `{ pushSubscriptions: false }` drops one, `{ pushSubscriptions: 'devices' }` renames it
+
+Asked at [`IDEAS/web-push.md`](IDEAS/web-push.md) step 1.3 through the question tool, after `decision-rules`. **C** was picked over **A** (no option: a collision throws and the app must rename its own) and **B** (`services: false` only). `push-subscriptions` registers in `boot()` only when the db has the `PushSubscription` model, so whether to serve it is derived from the schema. The option exists only for a name collision.
+
+- **Familiar inside the framework.** `auth({ services })` already takes `false | { name: false | 'other' }`, so knowing one means knowing the other.
+- **Rename over drop.** An app that drops ours writes its own and loses the door's checks: the delegated refusal, the key check, the endpoint grade.
+- **Silence.** *An app's own `push-subscriptions` is never replaced in silence.* Fails today: the boot throw, tested in `webpush.test.ts` beside the rename.
+
+*Lives in:* `packages/notifications/plugin.ts` (`boot`), `types.ts` (`NotificationsPluginOptions.services`).
+
+### <a id="fjs-d1625"></a>2026-10-29 · `FJS-D1625` — `subscribeToPush({ vapidPublicKey })` and `unsubscribeFromPush()` are plain async functions in `@frontierjs/notifications/client`; a browser-kit signal is later work layered over them
+
+Asked at [`IDEAS/web-push.md`](IDEAS/web-push.md) Q2 through the question tool. **A** (function) was picked over **B** (ship `pushSubscription()` as a browser-kit signal in Phase 3). A subscription is made once, from a click. The state a page shows is `Notification.permission` plus one row, which a signal can read later without the function changing. B would have tied Phase 3 to browser-kit's Phase 5.
+
+*Lives in:* `IDEAS/web-push.md` step 3.1 until it is built. The signal is `IDEAS/browser-kit.md` 5.1's.
+
+### <a id="fjs-d1626"></a>2026-10-29 · `FJS-D1626` — The VAPID public key reaches the browser from the API: `GET` on the `push-subscriptions` service, signed-in. Sierra never inlines it.
+
+Asked at [`IDEAS/web-push.md`](IDEAS/web-push.md) Q4 through the question tool. **B** (API answers) was picked over **A** (Sierra inlines `PUSH_PUBLIC_KEY` at build). The key is the public half of a secret only the API holds. With B the web build never needs it, and rotating the key needs no rebuild. Subscribing already needs a signed-in user, so a signed-in read costs no one anything. Mastodon serves its VAPID key in its instance API the same way.
+
+*Lives in:* `packages/notifications/services.ts` (step 3.3).
+
+### <a id="fjs-d1627"></a>2026-10-29 · `FJS-D1627` — The webPush driver skips a recipient who has a visible tab of the app open, by default; a notification declaring `push: { always: true }` is sent regardless
+
+Asked at [`IDEAS/web-push.md`](IDEAS/web-push.md) Q5 through the question tool, in two rounds. The owner ruled out a duplicate: a phone must not buzz for a message the open page has just shown. Keeping it per notification (`via()` in each definition) was turned down because every app would write the same check. Of the built-in rules, **visible tab plus a per-notification override** was picked over **any open socket**: a desktop tab forgotten in the background would otherwise silence every phone push. Slack works the same way.
+
+- **What counts as open.** A tab's socket reports `visibilitychange`, and the driver reads the user's connections from junction's channel manager, not from presence, which is opt-in (`FJS-703`).
+- **The override is the notification's**, because whether something must buzz (a security alert) depends on what it is, not on who receives it.
+- **Limit.** The connection list is one process's. A multi-instance deploy sees only its own sockets, so a user connected to a different node is pushed to as well.
+
+*Lives in:* `packages/notifications/drivers/webpush.ts`, junction's channel connections, the client socket's visibility frame. Steps are owed in `IDEAS/web-push.md`.
 
 ### <a id="fjs-d1583"></a>2026-10-28 · `FJS-D1583` — A declared enum of 6 members or fewer filters as a row of toggles; 7 or more stays a `MultiSelect`. The cutoff is `CHIP_LIMIT` in `FilterBar.mesa`.
 

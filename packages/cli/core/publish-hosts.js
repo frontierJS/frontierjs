@@ -27,6 +27,11 @@ export const DEFAULT_TO = ['tarballs']
 // only the first one gets it.
 export const releaseTag = (name, version) => `${name}@${version}`
 
+// The path mirrors the release path, so the host is one redirect rule and no
+// code (`FJS-D1620`, core/package-host-rule.json).
+export const packageHostUrl = (name, version) =>
+  `https://packages.frontierjs.com/${releaseTag(name, version)}/${tarballStem(name)}-${version}.tgz`
+
 const run = (cmd, args, cwd) => new Promise(done =>
   execFile(cmd, args, { cwd }, (err, stdout, stderr) => done({ err, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') })))
 

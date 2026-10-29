@@ -231,7 +231,7 @@ title: Recipes
 {#if creating}
   <Card>
     <Form resource={recipes} bind:record={draft} onsubmit={create}>
-      <Input name="name" id="name" hint="Restart nginx"
+      <Input name="name" id="name" hint="Restart Caddy"
              value={draft.name} oninput={(e) => write('name', e.target.value)} />
       <Input name="description" id="description" hint="Briefly what this script does"
              value={draft.description} oninput={(e) => write('description', e.target.value)} />

@@ -1,6 +1,6 @@
 ---
 title: notifications:install
-description: Install @frontierjs/notifications — appends the Notification model and prints the wiring
+description: Install @frontierjs/notifications — appends the Notification and PushSubscription models and prints the wiring
 alias: notifications-install
 examples:
   - fli notifications:install
@@ -73,7 +73,8 @@ const wiringHint = `
 `
 </script>
 
-Installs the one model `@frontierjs/notifications` requires.
+Installs the two models `@frontierjs/notifications` requires: `Notification`,
+which the in-app driver writes, and `PushSubscription`, which `webPush()` reads.
 
 It is **appended** rather than imported: `Notification` is the app's model, not
 the package's. The package writes rows to it through `asSystem()` and reads
@@ -140,13 +141,13 @@ const block = [
 ].join('\n')
 
 if (flag.dry) {
-  log.dry(`Would append model Notification (${shipped.file}) to ${schemaPath}`)
+  log.dry(`Would append models Notification and PushSubscription (${shipped.file}) to ${schemaPath}`)
   echo(wiringHint)
   return
 }
 
 writeFileSync(schemaPath, schemaContents.replace(/\s*$/, '\n') + block, 'utf8')
-log.success('Appended model Notification to schema.lite')
+log.success('Appended models Notification and PushSubscription to schema.lite')
 
 if (flag.push) {
   // No announcement here: `db:push` opens with the same line, and the two

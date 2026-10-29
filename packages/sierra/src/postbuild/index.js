@@ -18,7 +18,7 @@
  *   8. theme         — the pre-paint theme script (if config.theme)
  *   8b. analytics    — the vendor tag on every prerendered page (static, if config.analytics)
  *   9. manifest      — can a browser install this build (if it links a manifest)
- *  10. offlineShell   — sw.js + a precached shell (if config.offline)
+ *  10. offlineShell   — sw.js: a precached shell (if config.offline), push (if config.push)
  *  11. plugins       — run user-supplied post-build plugin functions
  */
 
@@ -174,7 +174,7 @@ export async function runPostBuild(config, routeTable, outDir, root, prerendered
   // 11. The offline shell. AFTER the manifest and after every step that
   // rewrites a page, because the precache list is a digest of what is on disk
   // and a later rewrite would leave the shell holding a page nobody serves.
-  const rShell = await writeOfflineShell(config.offline, outDir, root)
+  const rShell = await writeOfflineShell(config.offline, outDir, root, config.push)
   if (rShell) results.push(rShell)
 
   // 12. User plugins

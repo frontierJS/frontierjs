@@ -54,7 +54,8 @@
   // one made in `$.onMount` has no owner and its leave never runs.
   //
   // In NORMAL a `/` enters INSERT with the slash typed (Shell.mesa), and Tab
-  // completes the command word of a line that is only `/` and a partial word;
+  // completes the command word of a line that is only `/` and a partial word,
+  // or the argument of a verb that names its `args` (`commands.choices`);
   // the matches are listed under the input as they narrow, and Enter on a
   // partial word with one match runs that match. A word that is itself a
   // command is never stretched: `/ledge` beside `/ledger` is said as typed.
@@ -177,7 +178,8 @@
   let emote  = null
   let pet    = worn.pet
   let nicks = {}
-  $: hints = matches(draft, commands.words({ x, y }))
+  $: choice = commands.choices(draft, { x, y })
+  $: hints = choice ? matches(draft, choice.words, choice.head) : []
 
   // A pane sits inside the frame's walls; its last row is the footer.
   const PANE = { x: 1, y: 1, w: 94, h: 24 }
@@ -463,9 +465,9 @@
       copyBox(art).then((ok) => { note = ok ? 'screen copied' : 'this terminal takes no copy' })
       return
     }
-    if (room && e.key === 'Tab' && partial(draft) !== null) {
+    if (room && e.key === 'Tab' && choice) {
       e.preventDefault()
-      draft = complete(draft, commands.words({ x, y }))
+      draft = complete(draft, choice.words, choice.head)
       return
     }
     if (commands.mode && commands.modeKey(e)) {
@@ -513,8 +515,11 @@
   async function say() {
     let body = draft.trim()
     if (!body) return
-    const lone = partial(body) && !commands.find(body.slice(1), { x, y }) ? matches(body, commands.words({ x, y })) : []
-    if (lone.length === 1) body = `/${lone[0]}`
+    const pick  = commands.choices(body, { x, y })
+    const typed = pick ? partial(body, pick.head) : null
+    const exact = pick?.head === '/' ? commands.find(typed, { x, y }) : pick?.words.includes(typed)
+    const lone  = typed && !exact ? matches(body, pick.words, pick.head) : []
+    if (lone.length === 1) body = `${pick.head}${lone[0]}`
     const slash = body.startsWith('/')
     if (slash) said.push(body)
     draft = ''
@@ -565,7 +570,7 @@
   <div {@attach fill((rows) => { slack = rows })}></div>
   <p>{room.name} · {here.get().count} here{#each here.get().others as m (m.connectionId)} · {nicks[m.userId] ?? '…'}{/each}</p>
   {#if note}<p>{note}</p>{/if}
-  {#if hints.length && partial(draft) !== null}<p>{hints.map((c) => `/${c}`).join('  ')} · {hints.length === 1 ? 'Tab completes, Enter runs' : 'Tab completes'}</p>{/if}
+  {#if hints.length}<p>{hints.map((c) => choice.head === '/' ? `/${c}` : c).join('  ')} · {hints.length === 1 ? 'Tab completes, Enter runs' : 'Tab completes'}</p>{/if}
   <form {@attach keys(() => homeKeys?.() ?? NO_KEYS)}>
     <Textbox bind:this={line} bind:value={draft} idle={!draft} keys={LINE_KEYS} placeholder="arrows walk, type and Enter says, PageUp reads back" />
   </form>

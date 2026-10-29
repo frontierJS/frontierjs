@@ -913,53 +913,6 @@ CREATE TABLE IF NOT EXISTS "recipe_run" (
 CREATE INDEX IF NOT EXISTS "idx_recipe_run_recipeId" ON "recipe_run" ("recipeId");
 CREATE INDEX IF NOT EXISTS "idx_recipe_run_serverId" ON "recipe_run" ("serverId");
 
-CREATE TABLE IF NOT EXISTS "backup" (
-  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
-  "kind" TEXT NOT NULL DEFAULT 'manual',
-  "status" TEXT NOT NULL DEFAULT 'pending',
-  "destinationId" TEXT,
-  "sizeBytes" INTEGER,
-  "location" TEXT,
-  "error" TEXT,
-  "requestedBy" TEXT,
-  "startedAt" TEXT,
-  "finishedAt" TEXT,
-  "durationMs" INTEGER,
-  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("kind" IN ('manual', 'scheduled', 'found', 'release')),
-  CHECK ("status" IN ('pending', 'running', 'success', 'failed', 'timeout')),
-  FOREIGN KEY ("destinationId") REFERENCES "backup_destination" ("id") ON DELETE RESTRICT
-) STRICT;
-CREATE INDEX IF NOT EXISTS "idx_backup_status" ON "backup" ("status");
-CREATE INDEX IF NOT EXISTS "idx_backup_createdAt" ON "backup" ("createdAt");
-CREATE INDEX IF NOT EXISTS "idx_backup_destinationId" ON "backup" ("destinationId");
-
-CREATE TABLE IF NOT EXISTS "hub_config" (
-  "id" TEXT NOT NULL PRIMARY KEY DEFAULT 'hub',
-  "heartbeatTimeoutSeconds" INTEGER NOT NULL DEFAULT 120,
-  "requireTwoFactorForOwners" INTEGER NOT NULL DEFAULT 0,
-  "allowApiKeyAuth" INTEGER NOT NULL DEFAULT 1,
-  "allowBotUsers" INTEGER NOT NULL DEFAULT 1,
-  "backupEnabled" INTEGER NOT NULL DEFAULT 0,
-  "backupCron" TEXT NOT NULL DEFAULT '0 2 * * *',
-  "backupDestinationId" TEXT,
-  "replicaDestinationId" TEXT UNIQUE,
-  "replicaFoundAt" TEXT,
-  "replicaSyncedAt" TEXT,
-  "backupKeepLocalCount" INTEGER NOT NULL DEFAULT 7,
-  "backupKeepLocalDays" INTEGER,
-  "backupKeepRemoteCount" INTEGER NOT NULL DEFAULT 7,
-  "backupKeepRemoteDays" INTEGER,
-  "encryptionKeyEscrowedAt" TEXT,
-  "encryptionKeyFingerprint" TEXT,
-  "hostServerId" TEXT UNIQUE,
-  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "version" INTEGER NOT NULL DEFAULT 1,
-  FOREIGN KEY ("backupDestinationId") REFERENCES "backup_destination" ("id") ON DELETE SET NULL,
-  FOREIGN KEY ("replicaDestinationId") REFERENCES "backup_destination" ("id") ON DELETE SET NULL,
-  FOREIGN KEY ("hostServerId") REFERENCES "server" ("id") ON DELETE SET NULL
-) STRICT;
-
 CREATE TABLE IF NOT EXISTS "alert_rule_channel" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "ruleId" TEXT NOT NULL,
@@ -1280,6 +1233,24 @@ CREATE TABLE IF NOT EXISTS "dashboard_tile" (
 CREATE INDEX IF NOT EXISTS "idx_dashboard_tile_dashboardId" ON "dashboard_tile" ("dashboardId");
 CREATE INDEX IF NOT EXISTS "idx_dashboard_tile_serverId" ON "dashboard_tile" ("serverId");
 CREATE INDEX IF NOT EXISTS "idx_dashboard_tile_appId" ON "dashboard_tile" ("appId");
+
+CREATE TABLE IF NOT EXISTS "hub_config" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT 'hub',
+  "heartbeatTimeoutSeconds" INTEGER NOT NULL DEFAULT 120,
+  "requireTwoFactorForOwners" INTEGER NOT NULL DEFAULT 0,
+  "allowApiKeyAuth" INTEGER NOT NULL DEFAULT 1,
+  "allowBotUsers" INTEGER NOT NULL DEFAULT 1,
+  "backupKeepLocalCount" INTEGER NOT NULL DEFAULT 7,
+  "backupKeepLocalDays" INTEGER,
+  "backupKeepRemoteCount" INTEGER NOT NULL DEFAULT 7,
+  "backupKeepRemoteDays" INTEGER,
+  "encryptionKeyEscrowedAt" TEXT,
+  "encryptionKeyFingerprint" TEXT,
+  "appId" TEXT UNIQUE,
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "version" INTEGER NOT NULL DEFAULT 1,
+  FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE SET NULL
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS "domain_route" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),

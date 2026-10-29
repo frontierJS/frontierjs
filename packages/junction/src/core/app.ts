@@ -7,7 +7,7 @@ import { HttpTransport }            from '../transport/http.ts'
 import type { WsRouteOptions }       from '../transport/http.ts'
 import { resolveTrustProxy }        from '../transport/forwarded.ts'
 import { bridge, errorResponse, readTransportFlags, refuseBadDirectives } from '../transport/bridge.ts'
-import { freezeUser, enterRequest, requestMeta, currentCall, enterCall, callDb, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions, type Attester, type RequestMeta } from './context.ts'
+import { freezeUser, enterRequest, reenterAs, requestMeta, NEVER_ABORTED, currentCall, enterCall, callDb, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions, type Attester, type RequestMeta } from './context.ts'
 import { hookContext } from '@frontierjs/toolbelt/hooks'
 import { DEV_ENV, formatDevLine } from '@frontierjs/toolbelt/devline'
 import { ServiceRegistry, callService } from './service.ts'
@@ -1281,7 +1281,7 @@ export function createApp(opts: AppOptions = {}): App {
           error:     null,
           statusCode: undefined,
           dispatch:   undefined,
-          signal:     opts.signal ?? new AbortController().signal,
+          signal:     opts.signal ?? NEVER_ABORTED,
           raw:        null,
         }))
       }
@@ -2664,25 +2664,27 @@ export function registerServiceRoutes(app: App): void {
     const { wrap } = readTransportFlags(ctx.query)
     const svcCtx = bridge.toContext(ctx, serviceName, model, 'http', app)
 
-    // Open the request scope once, around the whole pipeline run, so
-    // requestMeta() works at any depth — including across internal
-    // app.service() calls — without threading it. The three header-derived
-    // fields are read by enterRequest(), which owns which headers they are.
+    // The transport opened the request scope around this handler. Opening a
+    // second one here minted a second correlation id, so an audit row written
+    // from a raw route and one from a service in the same request never
+    // matched. Re-entered as the bridge's frozen principal, which is the one
+    // the store must hold for `reenterAs` to recognize every nested call as
+    // the same principal and open nothing. A handler called with no scope at
+    // all, a test driving it by hand, still gets one.
+    const run = async (): Promise<Response> => {
+      await callService(service, svcCtx, app._appHooks, app.events, app.telemetry)
+      return bridge.toResponse(svcCtx, wrap)
+    }
     try {
-      return await enterRequest({
-        origin:  'http',
-        headers: ctx.headers,
-        // The `correlationId()` middleware's id where it is installed, which
-        // read the headers by the same rule; otherwise enterRequest reads them.
-        correlationId: (ctx as unknown as { requestId?: string }).requestId,
-        // WHO, request-wide. This is what makes `ctx.user` propagate: an
-        // internal call naming no principal reads it back out of the store.
-        user:   svcCtx.user,
-        caller: svcCtx.caller,
-      }, async () => {
-        await callService(service, svcCtx, app._appHooks, app.events, app.telemetry)
-        return bridge.toResponse(svcCtx, wrap)
-      })
+      return await (requestMeta()
+        ? reenterAs(svcCtx.user, run)
+        : enterRequest({
+            origin:  'http',
+            headers: ctx.headers,
+            correlationId: (ctx as unknown as { requestId?: string }).requestId,
+            user:   svcCtx.user,
+            caller: svcCtx.caller,
+          }, run))
     } catch (err) {
       // Through `errorResponse` with the service context, so a 500 is graded by
       // the same rule the other exit is: a generic sentence plus the

@@ -16,8 +16,9 @@ import { Database } from 'bun:sqlite'
 // COPY under node_modules/.bun, so the package spec tests a stale reaper.
 import { tempDir } from '../../litestone/src/tmp-dirs.js'
 import { join } from 'path'
+import { readFileSync } from 'fs'
 import { notifications } from '../plugin.ts'
-import type { NotificationRecord, OutgoingMail } from '../types.ts'
+import type { NotificationRecord, NotificationsPluginOptions, OutgoingMail } from '../types.ts'
 
 // The schema exactly as README.md and examples/wiring.ts document it.
 // userId is String because @frontierjs/auth issues uuid ids.
@@ -39,6 +40,15 @@ model Notification {
 `
 
 
+// PushSubscription is read off the shipped fragment, so the default webPush()
+// store is tested against the text an app installs. Its keys are @encrypted,
+// which is what the fixed key below is for.
+const PUSH_MODEL = (() => {
+  const text = readFileSync(join(import.meta.dir, '../db/notification.lite'), 'utf8')
+  return text.slice(text.indexOf('model PushSubscription'))
+})()
+const ENCRYPTION_KEY = '0'.repeat(63) + '1'
+
 export interface Harness {
   app:      any
   db:       any
@@ -58,11 +68,16 @@ export async function makeApp(opts: {
   noMailer?: boolean
   /** The app's root; `*.notification.ts` load from `notifications/` under it. */
   root?: string
+  /** Install the fragment's PushSubscription beside Notification. */
+  push?: boolean
+  services?: NotificationsPluginOptions['services']
+  /** Runs after configure and before boot, where an app's own services exist. */
+  beforeBoot?: (app: any) => void
 } = {}): Promise<Harness> {
   const dir = tempDir('fjs-notif-')
   const dbPath = join(dir, 'n.db')
 
-  const parsed = parse(`database main { path "${dbPath}" }\n${MODEL}`)
+  const parsed = parse(`database main { path "${dbPath}" }\n${MODEL}${opts.push ? PUSH_MODEL : ''}`)
   if (!parsed.valid) throw new Error(`schema failed to parse: ${parsed.errors.join(', ')}`)
 
   const raw = new Database(dbPath)
@@ -72,7 +87,7 @@ export async function makeApp(opts: {
   raw.close()
 
   process.env.MAIN_DB_PATH = dbPath
-  const db = await createClient({ parsed })
+  const db = await createClient({ parsed, ...(opts.push && { encryptionKey: ENCRYPTION_KEY }) })
 
   const sent: OutgoingMail[] = []
   const app: any = await createTestApp({ root: opts.root })
@@ -91,7 +106,9 @@ export async function makeApp(opts: {
   app.configure(notifications({
     db,
     transports:    opts.transports as never,
+    services:      opts.services,
   }))
+  opts.beforeBoot?.(app)
 
   // The harness stopped at configure() for its whole life, so no plugin's
   // boot() had ever run here — an app that is configured and never started.

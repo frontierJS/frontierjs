@@ -767,8 +767,8 @@ export class BasecampSeeder extends Seeder {
         for (const [name, description, script] of [
           ['Update system packages', 'apt-get update && apt-get upgrade on the target.',
            '#!/bin/bash\nset -e\napt-get update\napt-get upgrade -y\necho "Done."'],
-          ['Restart nginx', 'Reloads the nginx config and restarts the service.',
-           '#!/bin/bash\nnginx -t && systemctl reload nginx\necho "nginx reloaded."'],
+          ['Restart Caddy', "Restarts the ingress; routes come back from Caddy's autosave.",
+           '#!/bin/bash\nset -e\nsystemctl restart caddy-api\nsystemctl is-active caddy-api'],
           ['Check disk usage', 'df and du for / and /var.',
            '#!/bin/bash\ndf -h /\ndu -sh /var/* 2>/dev/null | sort -rh | head -10'],
         ]) {
@@ -996,7 +996,7 @@ async function seedInstallation(sys, owner, users) {
   const offBoxKey = await sys.secret.create({
     data: { workspaceId: acme.id, name: 'backup:Backblaze B2', kind: 'backup', data: 'seeded-key-id:seeded-application-key', createdBy: owner.id },
   })
-  const offBox = await sys.backupDestination.create({
+  await sys.backupDestination.create({
     data: {
       workspaceId: acme.id,
       name:     'Backblaze B2',
@@ -1010,32 +1010,10 @@ async function seedInstallation(sys, owner, users) {
 
   // ── The settings ────────────────────────────────────────────────────
   // The id is the constant the model defaults to, stated so the row this
-  // writes is the row `hubConfig.current` reads.
-  await sys.hubConfig.create({
-    data: {
-      id:         'hub',
-      backupEnabled:   true,
-      backupCron:      '0 2 * * *',
-      backupDestinationId: offBox.id,
-    },
-  })
-
-  // ── One archive that already happened ───────────────────────────────
-  // Scheduled rather than manual, and with no `requestedBy`, because that is
-  // what the cron leaves behind: nobody asked, so the app owns it.
-  const took = new Date(Date.now() - 9 * 3_600_000)
-  await sys.backup.create({
-    data: {
-      kind: 'scheduled', status: 'success', destinationId: null,
-      sizeBytes: 14_900_000,
-      // Named the way the job names one, or the screen's Delete refuses it as
-      // a path this installation never wrote (`FJS-D1494`).
-      location:  `./db/backups/basecamp-${took.toISOString().replace(/[:.]/g, '-')}`,
-      startedAt:  took.toISOString(),
-      finishedAt: new Date(took.getTime() + 3_100).toISOString(),
-      durationMs: 3_100,
-    },
-  })
+  // writes is the row `hubConfig.current` reads. No `appId`: the hub App row
+  // is `useHost`'s to create (`FJS-D1603`), and a seeded one would be a hub
+  // no install made.
+  await sys.hubConfig.create({ data: { id: 'hub' } })
 
   // ── One person who has chosen ───────────────────────────────────────
   // Two rows, not fourteen. A preference exists only where somebody has said
@@ -1211,7 +1189,7 @@ if (import.meta.main) {
                        'alertRuleChannel', 'dashboard', 'dashboardTile',
                        'recipe', 'recipeRun', 'diskUsage', 'serverPosture', 'maintenanceRun',
                        'blueprint', 'blueprintParam', 'registryImage',
-                       'dependency', 'dependencyUse', 'backupDestination', 'backup', 'hubConfig', 'notificationPreference',
+                       'dependency', 'dependencyUse', 'backupDestination', 'appBackup', 'hubConfig', 'notificationPreference',
                        'auditEvent']) {
     counts[model] = await sys[model].count()
   }

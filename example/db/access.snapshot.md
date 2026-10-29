@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-56 models · 1 view · 57 gated · 0 unrestricted
-19 with row policies · 26 with protected fields · 28 declared moves · 11 @system · 1 @seals
+57 models · 1 view · 58 gated · 0 unrestricted
+20 with row policies · 27 with protected fields · 28 declared moves · 11 @system · 1 @seals
 ```
 
 ## Gates
@@ -64,6 +64,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `Product` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `ProductImage` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `ProductVariant` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `PushSubscription` | 4 USER | 4 USER | 4 USER | 4 USER |
 | `revenueByStatus` *(view)* | 5 ADMINISTRATOR | — *no writes* | — *no writes* | — *no writes* |
 | `Run` | 4 USER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `RunStep` | 4 USER | 8 SYSTEM | 9 LOCKED | 8 SYSTEM |
@@ -177,6 +178,14 @@ An operation with no `@@allow` is unrestricted at this layer.
 - allow **read** — `auth().isStaff`
 - allow **read** — `userId == auth().id`
 
+### `PushSubscription`
+
+- allow **read** — `userId == auth().id`
+- allow **create** — `userId == auth().id`
+- allow **update** — `userId == auth().id`
+- allow **postUpdate** — `userId == auth().id`
+- allow **delete** — `userId == auth().id`
+
 ### `Run`
 
 - allow **read** — `actorId == auth().id || auth().level >= 5`
@@ -266,6 +275,8 @@ rather than refusing the row.
 | `Payslip` | `net` | `@system` |
 | `Payslip` | `employerCost` | `@system` |
 | `Payslip` | `sentAt` | `@system` |
+| `PushSubscription` | `p256dh` | `@encrypted` |
+| `PushSubscription` | `auth` | `@encrypted` |
 | `Run` | `context` | `@encrypted` |
 | `Session` | `token` | `@guarded` |
 | `Subscription` | `cancelledAt` | `@system` |

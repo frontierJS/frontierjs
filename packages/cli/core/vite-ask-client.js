@@ -82,7 +82,7 @@
   const saved = keep('fli:ask:log')
   const foldKeep = keep('fli:ask:fold')
   const miniKeep = keep('fli:ask:mini')
-  const wideKeep = keep('fli:ask:wide')
+  const dockKeep = keep('fli:ask:dock')
   // How hard Claude thinks follows the Change chip unless one is pressed; a
   // pressed one is a preference rather than part of one ask, so it outlives
   // the tab where the rest of the panel's state does not, until the kind's own
@@ -95,18 +95,19 @@
   const pressedEffort = () => { try { const v = localStorage.getItem(EFFORT_KEY); return EFFORTS.includes(v) ? v : null } catch { return null } }
   const setEffort = v => { try { v === kindEffort() ? localStorage.removeItem(EFFORT_KEY) : localStorage.setItem(EFFORT_KEY, v) } catch {} }
 
-  let panel, tab, list, hint, chips, effortBox, tray, input, send, stop, submit, fresh, log, rail, folds, latch, planner, stretch
+  let panel, tab, list, chips, effortBox, tray, input, send, stop, submit, fresh, log, rail, folds, latch, planner, stretch, sider, grip
   let picks = [], sent = false, busy = false, planning = false
   // The reply entry still streaming, and what the run said it is doing.
   let draft = null, doing = 'working'
   // Closed hides the panel and its tab; shrunk hides the panel behind the tab.
-  let closed = false, shrunk = !!miniKeep.get(), wide = !!wideKeep.get()
+  let closed = false, shrunk = !!miniKeep.get()
+  // Where the open panel sits: null floats it in the corner, 'wide' stretches
+  // it across the page, 'side' splits the window with it down the right.
+  let dock = ['wide', 'side'].includes(dockKeep.get()) ? dockKeep.get() : null
   // Pasted images waiting for the next send: `{ type, data, thumb }`.
   let shots = []
   // The chips' answers, keys of the server's EDIT_KINDS and EDIT_SCOPES.
   let kind = null, scope = null
-  // The inspector's modifier, as the last pick named it.
-  let pickKey = 'alt'
   // What the log holds, as data, so a reload can draw it again.
   let entries = []
   // Whether the rows "Clear" hid are drawn again, until the next Clear.
@@ -151,9 +152,11 @@
     fresh: ['M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', 'M12 7v6', 'M9 10h6'],
     shrink: ['M5 12h14'],
     wide:  ['m18 8 4 4-4 4', 'm6 8-4 4 4 4', 'M2 12h20'],
+    side:  ['M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z', 'M15 3v18'],
     close: ['M18 6 6 18', 'm6 6 12 12'],
     edit:  ['M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z', 'm15 5 4 4'],
     open:  ['M15 3h6v6', 'M10 14 21 3', 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'],
+    fold:  ['m7 20 5-5 5 5', 'm7 4 5 5 5-5'],
     plan:  ['m3 17 2 2 4-4', 'm3 7 2 2 4-4', 'M13 6h8', 'M13 12h8', 'M13 18h8'],
   }
   const SVG = 'http://www.w3.org/2000/svg'
@@ -173,8 +176,6 @@
     b.appendChild(svg)
     return b
   }
-  const CHIP = 'font:12px/1 ui-sans-serif,system-ui;padding:4px 9px;border-radius:999px;border:1px solid #334155;background:transparent;color:#94a3b8;cursor:pointer'
-  const CHIP_ON = ';background:#0369a1;border-color:#0369a1;color:#f8fafc'
   // The kind, scope and effort groups are segmented controls: one tray per
   // group, so a row reads as a label and a single choice rather than a pile of pills.
   const SEG = 'font:12px/1 ui-sans-serif,system-ui;padding:5px 10px;border-radius:5px;border:0;background:transparent;color:#cbd5e1;cursor:pointer'
@@ -269,7 +270,8 @@
   // and the log would stay empty until somebody looked.
 
   const SHOW_TOOLS = 4
-  const FOLDS = [['none', 'None'], ['you', 'Mine'], ['ai', 'Claude'], ['both', 'Both']]
+  // The Collapse button steps through these in order.
+  const FOLDS = [['none', 'None'], ['ai', 'Claude'], ['you', 'Mine'], ['both', 'Both']]
   let flips = new WeakSet()
   // Whether the reader is at the end of the log, kept from the last scroll:
   // a row above it growing shrinks the log, and only this says to follow.
@@ -419,12 +421,7 @@
     log.scrollTop = stuck || toBottom ? log.scrollHeight : top
     toBottom = false
     drawTab()
-    folds.style.display = entries.length ? 'flex' : 'none'
-    for (const b of folds.querySelectorAll('button')) {
-      const on = (foldKeep.get() || 'none') === b.dataset.fold
-      b.style.cssText = CHIP + (on ? CHIP_ON : '')
-      b.setAttribute('aria-pressed', String(on))
-    }
+    drawFold()
     drawRail()
   }
 
@@ -498,25 +495,22 @@
     shrink.onclick = () => fit(true)
     const close = iconButton('close', 'Close', 'Close (the conversation is kept)')
     close.onclick = () => { closed = true; shown.set(null); layout() }
-    stretch = iconButton('wide', 'Full width', 'Full width: stretch the panel across the page')
-    stretch.onclick = () => { wide = !wide; wideKeep.set(wide ? '1' : null); drawWide() }
-    drawWide()
-    head.append(latch, planner, term, wipe, fresh, make('span', 'flex:1'), stretch, shrink, close)
+    stretch = iconButton('wide', 'Full width', '')
+    stretch.onclick = () => docked('wide')
+    sider = iconButton('side', 'Dock right', '')
+    sider.onclick = () => docked('side')
+    folds = iconButton('fold', 'Collapse', '')
+    folds.appendChild(make('span', 'font-size:12px;line-height:1'))
+    folds.onclick = () => {
+      const i = FOLDS.findIndex(([k]) => k === (foldKeep.get() || 'none'))
+      const next = FOLDS[(i + 1) % FOLDS.length][0]
+      foldKeep.set(next === 'none' ? null : next)
+      flips = new WeakSet()
+      drawSoon()
+    }
+    head.append(latch, planner, term, wipe, fresh, folds, make('span', 'flex:1'), sider, stretch, shrink, close)
 
     list = make('div', 'display:flex;flex-direction:column;gap:6px;max-height:24vh;overflow:auto')
-    hint = make('div', 'margin-top:-6px;color:#94a3b8;font-size:12.5px')
-
-    folds = make('div', 'display:none;flex-wrap:wrap;align-items:center;gap:4px 6px;font-size:12px;color:#94a3b8')
-    folds.setAttribute('role', 'group')
-    folds.setAttribute('aria-label', 'Collapse messages')
-    folds.appendChild(make('span', 'margin-right:2px', 'Collapse'))
-    for (const [key, text] of FOLDS) {
-      const b = make('button', CHIP, text)
-      b.type = 'button'
-      b.dataset.fold = key
-      b.onclick = () => { foldKeep.set(key === 'none' ? null : key); flips = new WeakSet(); drawSoon() }
-      folds.appendChild(b)
-    }
 
     const chat = make('div', 'display:flex;gap:8px;flex:1;min-height:96px')
     // The rail is its scrollbar.
@@ -546,7 +540,23 @@
     effortBox = make('div', 'display:flex;align-items:center;gap:6px;margin-right:auto;font-size:11px;color:#64748b')
     row.append(effortBox, submit, stop, send)
 
-    panel.append(head, list, hint, folds, chat, tray, input, chips, row)
+    // Docked right, the panel's left edge drags its width; a double-click puts
+    // the default back.
+    grip = make('div', 'position:absolute;left:-4px;top:0;bottom:0;width:8px;cursor:ew-resize;touch-action:none;display:none')
+    grip.title = 'Drag to resize · double-click resets'
+    grip.onpointerdown = (e) => {
+      e.preventDefault()
+      grip.setPointerCapture(e.pointerId)
+      grip.onpointermove = (m) => { sidePx = Math.max(SIDE_MIN, Math.round(innerWidth - 12 - m.clientX)); drawDock(); layout() }
+      grip.onpointerup = () => {
+        grip.onpointermove = grip.onpointerup = null
+        try { localStorage.setItem(SIDE_KEY, String(sidePx)) } catch {}
+      }
+    }
+    grip.ondblclick = () => { sidePx = null; try { localStorage.removeItem(SIDE_KEY) } catch {}; drawDock(); layout() }
+
+    panel.append(grip, head, list, chat, tray, input, chips, row)
+    drawDock()
     panel.addEventListener('keydown', (e) => {
       if (!e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
       const k = e.key.toLowerCase()
@@ -608,23 +618,53 @@
     const on = !!(i && i.pickMode())
     latch.style.cssText = ICON + (on ? ';background:#0369a1;border-color:#0369a1' : '') + (i ? '' : ';display:none')
     latch.setAttribute('aria-pressed', String(on))
-    drawHint()
   }
 
-  function drawHint() {
-    if (!hint) return
-    const i = inspector()
-    hint.textContent = i && i.pickMode()
-      ? `Pick mode: a click adds an element · ${pickKey}-click opens its source · Esc leaves`
-      : `${pickKey}-click opens the source in your editor · shift+${pickKey}-click asks here, and adds another element before you send`
+  // The button names the collapse in force once there is one, and is hidden
+  // while the log has nothing to collapse.
+  function drawFold() {
+    const mode = foldKeep.get() || 'none'
+    const i = FOLDS.findIndex(([k]) => k === mode)
+    const [, word] = FOLDS[i]
+    const [, next] = FOLDS[(i + 1) % FOLDS.length]
+    const on = mode !== 'none'
+    folds.style.cssText = ICON + ';gap:5px' + (on ? ';background:#0369a1;border-color:#0369a1' : '') + (entries.length ? '' : ';display:none')
+    folds.lastChild.textContent = on ? word : ''
+    folds.lastChild.style.display = on ? '' : 'none'
+    folds.title = `Collapse messages: ${word} · click for ${next}`
+    folds.setAttribute('aria-label', `Collapse: ${word}`)
   }
 
-  function drawWide() {
-    panel.style.width = wide ? 'calc(100vw - 24px)' : 'min(680px,calc(100vw - 24px))'
-    stretch.title = wide ? 'Narrow: back to the usual width' : 'Full width: stretch the panel across the page'
-    stretch.setAttribute('aria-label', wide ? 'Narrow' : 'Full width')
-    stretch.style.cssText = ICON + (wide ? ';background:#0369a1;border-color:#0369a1' : '')
-    stretch.setAttribute('aria-pressed', String(wide))
+  // The dragged width is a preference, so it outlives the tab. The page keeps
+  // at least 200px however wide the drag or the window shrinks after it.
+  const SIDE_KEY = 'fli:ask:side-width'
+  const SIDE_MIN = 320
+  let sidePx = (() => { try { return Number(localStorage.getItem(SIDE_KEY)) || null } catch { return null } })()
+  const sideWidth = () => sidePx ? `max(${SIDE_MIN}px,min(${sidePx}px,calc(100vw - 224px)))` : 'clamp(380px,38vw,720px)'
+
+  function docked(to) {
+    dock = dock === to ? null : to
+    dockKeep.set(dock)
+    drawDock()
+    layout()
+  }
+
+  function drawDock() {
+    const side = dock === 'side'
+    panel.style.width = side ? sideWidth() : dock === 'wide' ? 'calc(100vw - 24px)' : 'min(680px,calc(100vw - 24px))'
+    panel.style.top = side ? '12px' : ''
+    panel.style.maxHeight = side ? 'none' : '85vh'
+    grip.style.display = side ? '' : 'none'
+    const press = (b, on, label, title) => {
+      b.title = title
+      b.setAttribute('aria-label', label)
+      b.style.cssText = ICON + (on ? ';background:#0369a1;border-color:#0369a1' : '')
+      b.setAttribute('aria-pressed', String(on))
+    }
+    press(stretch, dock === 'wide', dock === 'wide' ? 'Narrow' : 'Full width',
+      dock === 'wide' ? 'Narrow: back to the usual width' : 'Full width: stretch the panel across the page')
+    press(sider, side, side ? 'Undock' : 'Dock right',
+      side ? 'Undock: float the panel in the corner again' : 'Dock right: split the window, with the panel full height down the right')
   }
 
   function show() {
@@ -637,8 +677,12 @@
     const h = host()
     // A move drops the log's scroll position.
     if (panel.parentNode !== h) { const top = log.scrollTop; h.append(panel, tab); log.scrollTop = top }
-    panel.style.display = closed || shrunk ? 'none' : 'flex'
+    const open = !closed && !shrunk
+    panel.style.display = open ? 'flex' : 'none'
     tab.style.display = !closed && shrunk ? 'flex' : 'none'
+    // Docked right, the page gives up the panel's width rather than sitting
+    // under it; a page sized in vw still runs beneath.
+    document.documentElement.style.marginRight = open && dock === 'side' ? `calc(${sideWidth()} + 24px)` : ''
   }
 
   function fit(small) {
@@ -773,8 +817,6 @@
       if (picks.length >= MAX_PICKS) line(`${MAX_PICKS} elements is the most one ask takes`, 'error')
       else picks.push({ el: p.el, loc: p.loc, via: p.via || null, html: outline(p.el), inner: innerLocs(p.el), repeats: drawnFrom(p.loc), open: p.open })
     }
-    pickKey = p.key || 'alt'
-    drawHint()
     render()
     show()
     fit(false)

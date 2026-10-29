@@ -27,7 +27,7 @@
   // rule), so a visitor's `/ask` runs nothing, and the answer is drawn on this
   // screen only and never sent. A route places it, never the scene file.
   import { at, copyText, linked, tint } from '#cell'
-  import { askDesk, deskReport, homeBoard, openLink, peekItem, readSnoozes, setSnooze } from '#errand'
+  import { askDesk, deskReport, homeBoard, openLink, peekItem, readSnoozes, reportNames, setSnooze } from '#errand'
   import { spotsOf } from '@/pieces/index.js'
   import { clip } from '@/lib/scene/cells.js'
   import { TONES, answerRows, filterAnswer, filtersOf, linksOf, readAnswer, wrap } from '@/lib/home/answer.js'
@@ -66,6 +66,7 @@
   var peeked = new Map()   // url → a peek read on this pane, so a second Space asks Basecamp nothing
   var peekStop = null
   var undone = null   // the last snoozes or wakes, `[{ item, was }]`, what `z` puts back
+  var names  = []     // the report names Tab completes, read once from the menu; a menu that fails leaves none
   var close  = null
   var stop   = null
   var pane   = null   // the pane's box, whose renderer `y` copies through
@@ -417,7 +418,8 @@
   if (chair) {
     const reach = { x: chair.x, y: chair.y, within: REACH }
     $.onDestroy(verbs.add({ word: 'ask', help: '/ask <question>', reach, run: ask }))
-    $.onDestroy(verbs.add({ word: 'report', help: '/report [name]', reach, run: report }))
+    reportNames().then((n) => { names = n }, () => {})
+    $.onDestroy(verbs.add({ word: 'report', help: '/report [name]', reach, run: report, args: () => mine ? names : [] }))
     $.onDestroy(verbs.add({ word: 'rerun', help: '/rerun', reach, run: rerun }))
     $.onDestroy(verbs.add({ word: 'snooze', help: '/snooze [n] [when]', reach, run: snooze }))
     $.onDestroy(verbs.add({ word: 'unsnooze', help: '/unsnooze <n>', reach, run: unsnooze }))

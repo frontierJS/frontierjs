@@ -4,7 +4,7 @@
 //
 // An actor — `Whisper.mesa`, `Taskmaster.mesa`, a booth's `Sitting.mesa` —
 // adds verbs to `$context.commands`: `{ word?, aliases?, key?, help, run,
-// reach? }`. What a member can say is the merge of the verbs with no `reach`
+// reach?, args? }`. What a member can say is the merge of the verbs with no `reach`
 // (their own, the room's) and those whose `reach` holds for where they stand
 // now, `reach: { x, y, within }` being a cell and how many cells round it. A
 // word and a key are looked up the same way: the nearest verb in reach first,
@@ -21,8 +21,9 @@
 // room's bubbles step aside while it is open: a pane is narrower than the
 // view, and a bubble under it shows its last column past the pane's edge.
 //
-// Only the command word completes. Once a space is typed the line is on its
-// arguments, and a Tab there would rewrite a nick.
+// The command word completes, and an argument only where its verb names the
+// words it takes (`args: () => [word]`, `/report`'s report names): a Tab on
+// any other argument would rewrite a nick.
 //
 // A stop (`IDEAS/haven.md` Phase 19) is a place Tab reaches, derived and never
 // declared: the verbs whose reaches overlap, merged into one, and each door of
@@ -91,6 +92,19 @@ export function createCommands() {
 
     /** The command words a figure at `at` can say, sorted; an alias is left out. */
     words,
+
+    /**
+     * What Tab completes on `line` for a figure at `at`: `{ head, words }`, the
+     * line up to the word being typed and the words it may become, or null
+     * when the line is past what completes.
+     */
+    choices(line, at) {
+      if (partial(line) !== null) return { head: '/', words: words(at) }
+      const [, word] = line.match(/^\/(\S+) \S*$/) ?? []
+      const verb = word && find(word, at)
+      if (!verb?.reached || !verb.verb.args) return null
+      return { head: `/${word} `, words: [...verb.verb.args()].sort() }
+    },
 
     /**
      * The scene's stops in mount order: the doors among `marks` (the stage's,
@@ -184,24 +198,25 @@ export function createCommands() {
   }
 }
 
-// A line is completable while it is `/` and a partial word and nothing more.
-export const partial = (line) => /^\/\S*$/.test(line) ? line.slice(1) : null
+// A line is completable while it is `head` and a partial word and nothing
+// more; `head` is `/` for the command word, `/report ` for its argument.
+export const partial = (line, head = '/') => line.startsWith(head) && !/\s/.test(line.slice(head.length)) ? line.slice(head.length) : null
 
-/** The words (`commands.words(at)`) the line's partial word starts. */
-export function matches(line, words) {
-  const word = partial(line)
+/** The words (`commands.words(at)`, or a `choices` answer's) the line's partial word starts. */
+export function matches(line, words, head = '/') {
+  const word = partial(line, head)
   return word === null ? [] : words.filter((c) => c.startsWith(word))
 }
 
 // What Tab makes of the line: the longest prefix the matches share, and a
 // space after a lone match so its argument can be typed at once.
-export function complete(line, words) {
-  const found = matches(line, words)
+export function complete(line, words, head = '/') {
+  const found = matches(line, words, head)
   if (!found.length) return line
-  if (found.length === 1) return `/${found[0]} `
+  if (found.length === 1) return `${head}${found[0]} `
   let prefix = found[0]
   for (const c of found) while (!c.startsWith(prefix)) prefix = prefix.slice(0, -1)
-  return `/${prefix}`
+  return `${head}${prefix}`
 }
 
 /**

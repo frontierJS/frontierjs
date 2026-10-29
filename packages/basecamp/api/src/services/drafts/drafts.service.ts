@@ -75,7 +75,7 @@
 // opens a draft and Publish is still the publish grant's; it undoes an owner's
 // publish and never a developer's deploy, whose files are the developer's.
 
-import { createService, BadRequest, Conflict, Forbidden, NotFound, Unauthorized, $ } from '@frontierjs/junction'
+import { createService, BadRequest, Conflict, Forbidden, NotFound, Unauthorized, refuseDelegated, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { ACTS, applyEdit, applyPhoto, arrangeCollection, collectionOf, formOf, pathRefusal, photoName } from '@frontierjs/site-kit/editable'
 import { byOrder } from '@frontierjs/site-kit/collection'
@@ -332,7 +332,7 @@ export default createService({
     // used, and a support episode or an agent would mint past its own end.
     const user = $.user as { authMethod?: string, support?: unknown } | null
     if (user?.authMethod === 'apiKey') throw new Forbidden('A preview signs in from basecamp itself, not with a key')
-    if (user?.support || $.transport === 'mcp') throw new Forbidden('A preview signs in as the person at the screen, not for somebody else')
+    refuseDelegated($, user, 'open an edit session on a preview')
     const site = await grantedSite()
     let back: URL
     try { back = new URL(arg('returnTo')) } catch { throw new BadRequest('returnTo is not an address') }

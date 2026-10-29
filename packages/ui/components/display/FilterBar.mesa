@@ -530,10 +530,7 @@
 
 <style>
   .filter-range { display: inline-flex; gap: var(--space-xs); align-items: center; }
-  .filter-chip  {
-    display: inline-flex; gap: var(--space-xs); align-items: center;
-    padding-inline-start: var(--space-xs);
-    border: var(--border-width) solid var(--rule);
-    border-radius: var(--btn-radius);
-  }
+  /* No frame of its own: every control inside already draws one, and a second
+     around it reads as a box in a box. */
+  .filter-chip  { display: inline-flex; gap: var(--space-xs); align-items: center; }
 </style>

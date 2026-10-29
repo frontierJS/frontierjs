@@ -12,6 +12,7 @@ import { APP_DEV_DEPS, FJS_PACKAGES, appCheckScripts, appSurfaceScripts } from '
 import { widgetScripts }                      from '../widget-surface.js'
 import { siteScripts, siteDevDeps }           from '../site-surface.js'
 import { extensionScripts, extensionDevDeps } from '../extension-surface.js'
+import { packageHostUrl }                     from '../publish-hosts.js'
 
 const VITE_VERSION = '^8.0.0'
 
@@ -29,10 +30,12 @@ export function makePackageJson(spec) {
   const useUI   = useWeb || useWidgets || useSite
 
   // local source → `link:@frontierjs/x` (resolves to a live symlink via bun link);
-  // npm source → the exact version FJS_PACKAGES or APP_DEV_DEPS pins.
-  const specFor = (key) => source === 'local'
-    ? `link:${key}`
-    : (FJS_PACKAGES[key] ?? APP_DEV_DEPS[key])
+  // npm source → the exact version FJS_PACKAGES or APP_DEV_DEPS pins;
+  // url source → the package host's tarball at that same version.
+  const pinned  = (key) => FJS_PACKAGES[key] ?? APP_DEV_DEPS[key]
+  const specFor = (key) => source === 'local' ? `link:${key}`
+    : source === 'url' ? packageHostUrl(key, pinned(key))
+    : pinned(key)
 
   const deps = {}
   if (useDb)   deps['@frontierjs/litestone'] = specFor('@frontierjs/litestone')
@@ -134,6 +137,16 @@ export function makePackageJson(spec) {
   // writes api/test/access.test.ts.
   Object.assign(scripts, appCheckScripts({ tests: useApi && useAuth }))
 
+  // A URL spec reaches the app's own dependencies only. Sierra's `^mesa` and
+  // junction's toolbelt are ranges inside the packages, and without this each
+  // resolves from npm beside the hosted copy. Every framework package, named
+  // or not, so a transitive one has the one source too (as vendor.js does).
+  const overrides = source === 'url'
+    ? Object.fromEntries(Object.keys({ ...FJS_PACKAGES, ...APP_DEV_DEPS })
+        .filter(key => key.startsWith('@frontierjs/'))
+        .map(key => [key, specFor(key)]))
+    : undefined
+
   return JSON.stringify({
     name:    pkgName,
     version: '0.1.0',
@@ -142,6 +155,7 @@ export function makePackageJson(spec) {
     scripts,
     dependencies:    deps,
     devDependencies: devDeps,
+    overrides,
   }, null, 2) + '\n'
 }
 

@@ -16,6 +16,7 @@ import {
   buildPushRequest, encryptPayload, generateVapidKeys, vapidAuthorization, webPush,
   type PushRequest, type PushSubscription, type PushSubscriptions,
 } from '../drivers/webpush.ts'
+import { createService } from '@frontierjs/junction'
 import { makeApp, type Harness } from './harness.ts'
 
 const b64u = (b: Buffer) => b.toString('base64url')
@@ -110,14 +111,14 @@ describe('vapidAuthorization — RFC 8292', () => {
     expect(verify('sha256', Buffer.from(`${h}.${c}`), { key, dsaEncoding: 'ieee-p1363' }, unb64u(s))).toBe(true)
   })
 
-  test('buildPushRequest states the delivery options as headers and keeps them out of the payload', () => {
+  test('buildPushRequest states the delivery options as headers, and topic in the payload too', () => {
     const vapid = generateVapidKeys('mailto:ops@example.test')
     const ua = device('https://push.example/a')
     const req = buildPushRequest(ua.sub, { title: 'T', ttl: 60, urgency: 'high', topic: 'shift' }, vapid)
     expect(req.headers).toMatchObject({
       'Content-Encoding': 'aes128gcm', 'TTL': '60', 'Urgency': 'high', 'Topic': 'shift',
     })
-    expect(JSON.parse(decrypt(Buffer.from(req.body), ua).toString())).toEqual({ title: 'T' })
+    expect(JSON.parse(decrypt(Buffer.from(req.body), ua).toString())).toEqual({ title: 'T', topic: 'shift' })
   })
 })
 
@@ -223,5 +224,164 @@ describe('through app.notify', () => {
     expect(requests.length).toBe(1)
     expect(JSON.parse(decrypt(Buffer.from(requests[0].body), ua).toString()))
       .toEqual({ title: 'Reminder', body: 'Starts 9:00' })
+  })
+})
+
+describe('the default store — the installed PushSubscription', () => {
+  let h: Harness
+  const phone = device('https://push.example/phone'), laptop = device('https://push.example/laptop')
+  const stranger = device('https://push.example/stranger')
+  const status = new Map<string, number>()
+  const requests: PushRequest[] = []
+
+  const Reminder = defineNotification<{ at: string }>({
+    type: 'Reminder',
+    via: () => ['push'],
+    push: ({ at }: { at: string }) => ({ title: 'Reminder', body: `Starts ${at}` }),
+  } as never)
+
+  beforeAll(async () => {
+    h = await makeApp({
+      push: true,
+      transports: {
+        push: webPush({
+          vapid: generateVapidKeys('mailto:ops@example.test'),
+          deliver: async r => { requests.push(r); return { status: status.get(r.url) ?? 201 } },
+        }),
+      },
+    })
+    const rows = h.db.asSystem().pushSubscription
+    for (const [userId, d] of [['u1', phone], ['u1', laptop], ['u2', stranger]] as const)
+      await rows.create({ data: { userId, ...d.sub } })
+  })
+
+  test('sends to the recipient\'s own rows, decrypting the @encrypted keys on the way', async () => {
+    // A key read back still encrypted is a valid-looking base64url string the
+    // driver refuses on length -- or, at the right length, encrypts to garbage.
+    requests.length = 0
+    await h.app.notify({ id: 'u1' }, Reminder({ at: '9:00' }))
+    expect(requests.map(r => r.url).sort()).toEqual([laptop.sub.endpoint, phone.sub.endpoint])
+    const body = requests.find(r => r.url === phone.sub.endpoint)!.body
+    expect(JSON.parse(decrypt(Buffer.from(body), phone).toString())).toEqual({ title: 'Reminder', body: 'Starts 9:00' })
+  })
+
+  test('a 410 soft-deletes that row, and the next send lists one fewer', async () => {
+    status.set(laptop.sub.endpoint, 410)
+    await h.app.notify({ id: 'u1' }, Reminder({ at: '10:00' }))
+
+    const rows = h.db.asSystem().pushSubscription
+    const retired = await rows.findFirst({ where: { endpoint: laptop.sub.endpoint }, withDeleted: true })
+    expect(retired.deletedAt).not.toBeNull()
+
+    requests.length = 0
+    await h.app.notify({ id: 'u1' }, Reminder({ at: '11:00' }))
+    expect(requests.map(r => r.url)).toEqual([phone.sub.endpoint])
+  })
+
+  test('an app without the model is told to install it, not sent nothing', async () => {
+    const bare = await makeApp({
+      transports: { push: webPush({ vapid: generateVapidKeys('mailto:ops@example.test'), deliver: async () => ({ status: 201 }) }) },
+    })
+    await expect(bare.app.notify({ id: 'u1' }, Reminder({ at: '9:00' }))).rejects.toThrow(/notifications:install/)
+  })
+})
+
+describe('the push-subscriptions service', () => {
+  let h: Harness
+  const svc = () => h.app.service('push-subscriptions')
+  const as = (id: string, extra: Record<string, unknown> = {}) => ({ user: { id, ...extra } as never })
+  // A public address literal: the endpoint is graded as a URL a stranger chose,
+  // and a name would need DNS. Nothing is sent to it -- no notify runs here.
+  const at = (path: string) => device(`https://8.8.8.8/${path}`)
+  const toJSON = (d: ReturnType<typeof device>) => ({ endpoint: d.sub.endpoint, expirationTime: null, keys: { p256dh: d.sub.p256dh, auth: d.sub.auth } })
+  const rows = () => h.db.asSystem().pushSubscription
+  const status = async (p: Promise<unknown>) => { try { await p; return 200 } catch (err) { return (err as { status?: number, code?: number }).status ?? (err as { code?: number }).code } }
+
+  beforeAll(async () => { h = await makeApp({ push: true }) })
+
+  test('a subscription lands bound to the caller, and the answer carries no key', async () => {
+    const phone = at('own')
+    const answer = await svc().create(toJSON(phone), as('u1')) as Record<string, unknown>
+    expect(JSON.stringify(answer)).not.toContain(phone.sub.auth)
+    expect(answer).not.toHaveProperty('p256dh')
+    const row = await rows().findFirst({ where: { endpoint: phone.sub.endpoint } })
+    expect(row).toMatchObject({ userId: 'u1', p256dh: phone.sub.p256dh, auth: phone.sub.auth })
+  })
+
+  test('the same endpoint again is the same row: refreshed, and restored once retired', async () => {
+    const phone = at('again')
+    const first = await svc().create(toJSON(phone), as('u1')) as { id: number }
+    await rows().removeMany({ where: { id: first.id } })
+    const second = await svc().create(toJSON(phone), as('u1')) as { id: number }
+    expect(second.id).toBe(first.id)
+    const live = await rows().findMany({ where: { endpoint: phone.sub.endpoint }, withDeleted: true })
+    expect(live).toHaveLength(1)
+    expect(live[0].deletedAt).toBeNull()
+  })
+
+  test('a browser that signs in as somebody else moves its subscription to them', async () => {
+    const shared = at('shared')
+    await svc().create(toJSON(shared), as('u1'))
+    await svc().create(toJSON(shared), as('u2'))
+    expect((await rows().findFirst({ where: { endpoint: shared.sub.endpoint } })).userId).toBe('u2')
+    const u1 = await svc().find({}, as('u1')) as { data: { endpoint: string }[] }
+    expect(u1.data.map(r => r.endpoint)).not.toContain(shared.sub.endpoint)
+  })
+
+  test('find answers the caller\'s own devices and never a key', async () => {
+    await svc().create(toJSON(at('mine')), as('u3'))
+    await svc().create(toJSON(at('theirs')), as('u4'))
+    const list = await svc().find({}, as('u3')) as { data: Record<string, unknown>[] }
+    expect(list.data.map(r => r.endpoint)).toEqual(['https://8.8.8.8/mine'])
+    expect(Object.keys(list.data[0])).not.toContain('auth')
+  })
+
+  test('a key the driver could not encrypt to, or an endpoint inside the network, is refused at the door', async () => {
+    const d = toJSON(at('bad'))
+    expect(await status(svc().create({ ...d, keys: { ...d.keys, auth: 'AAAA' } }, as('u1')))).toBe(400)
+    expect(await status(svc().create({ ...d, keys: { ...d.keys, p256dh: 'AAAA' } }, as('u1')))).toBe(400)
+    expect(await status(svc().create({ keys: d.keys }, as('u1')))).toBe(400)
+    expect(await status(svc().create({ ...d, endpoint: 'https://127.0.0.1/push' }, as('u1')))).toBe(400)
+    expect(await status(svc().create({ ...d, endpoint: 'http://8.8.8.8/push' }, as('u1')))).toBe(400)
+    expect(await rows().findFirst({ where: { endpoint: d.endpoint }, withDeleted: true })).toBeNull()
+  })
+
+  test('remove retires the caller\'s own row and answers 404 for anybody else\'s', async () => {
+    const own = await svc().create(toJSON(at('retire')), as('u5')) as { id: number }
+    expect(await status(svc().remove(own.id, as('u6')))).toBe(404)
+    await svc().remove(own.id, as('u5'))
+    expect((await rows().findFirst({ where: { id: own.id }, withDeleted: true })).deletedAt).not.toBeNull()
+  })
+
+  test('a support operator and an agent are refused; the person is not', async () => {
+    const d = toJSON(at('delegated'))
+    const support = { operatorId: 'op', episodeId: 's1', reason: 'ticket', endsAt: new Date(Date.now() + 60_000) }
+    expect(await status(svc().create(d, as('u7', { support })))).toBe(403)
+    expect(await status(svc().create(d, { ...as('u7'), transport: 'mcp' }))).toBe(403)
+    expect(await status(svc().create(d, as('u7')))).toBe(200)
+  })
+
+  test('an app already serving the name is refused at boot, and renaming ours is the way out', async () => {
+    const own = (app: any) => app.services.register(createService({ name: 'push-subscriptions', model: null, async find() { return [] } }))
+    await expect(makeApp({ push: true, beforeBoot: own })).rejects.toThrow(/already registered/)
+    const renamed = await makeApp({ push: true, beforeBoot: own, services: { pushSubscriptions: 'devices' } })
+    expect(renamed.app.services.has('devices')).toBe(true)
+  })
+
+  test('the default deliver grades a stored endpoint again before it sends', async () => {
+    // A row written before the door graded, or a name that now resolves inside.
+    const inside = device('https://127.0.0.1/push')
+    const removed: string[] = []
+    const driver = webPush({
+      vapid: generateVapidKeys('mailto:ops@example.test'),
+      subscriptions: { list: async () => [inside.sub], remove: async s => { removed.push(s.endpoint) } },
+    })
+    await expect(driver.send({ id: 'u1' }, { title: 'x' }, h.app)).rejects.toThrow(/private address/)
+    expect(removed).toEqual([])
+  })
+
+  test('nothing registers without the model', async () => {
+    const bare = await makeApp()
+    expect(bare.app.services.has('push-subscriptions')).toBe(false)
   })
 })

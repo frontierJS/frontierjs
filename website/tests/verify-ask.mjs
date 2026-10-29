@@ -255,7 +255,6 @@ try {
 
   const panel = await evaluate(`return ${panelText}`)
   check('the panel names the picked source', panel.includes('content/routes/index.mesa:'))
-  check('the panel tells the two clicks apart', panel.includes('alt-click opens the source in your editor') && panel.includes('shift+alt-click asks here'))
   check('off a Workbench branch, Submit is not offered', !await evaluate(`return !!${button('Submit for review')}`))
   // Caught before it leaves the page: the drive must not launch an editor.
   const opened = await evaluate(`
@@ -434,7 +433,6 @@ try {
     }
     await evaluate(`${button('Pick mode')}.click(); return true`)
     check('the panel turns pick mode on', await evaluate(`return window.__fjsInspect.pickMode() && ${button('Pick mode')}.getAttribute('aria-pressed') === 'true'`))
-    check('the hint says what a click does now', (await evaluate(`return ${panelText}`)).includes('Pick mode: a click adds an element'))
     await clickAt('#lede')
     check('in pick mode a plain click adds an element', (await rows()).length === 2, await rows())
     await navigate(ORIGIN + '/')

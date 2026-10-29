@@ -257,13 +257,23 @@ export async function deskReport(name, { signal, cmd = reportsCommand() } = {}) 
     throw e.said ? new Error(e.said.split('\n').at(-1)) : e
   })).trim()
   if (name) return { answer: readAnswer(JSON.parse(out)), ms: Date.now() - at }
-  const menu = JSON.parse(out || '[]')
-  if (!Array.isArray(menu)) throw new Error(`HAVEN_REPORTS printed no menu of { name, help }: ${out.slice(0, 80)}`)
-  const rows = menu.filter((m) => m?.name).map((m) => [`/report ${m.name}`, String(m.help ?? '')])
+  const rows = menuOf(out).map((m) => [`/report ${m.name}`, String(m.help ?? '')])
   return {
     answer: readAnswer({ title: `${rows.length} reports`, blocks: [{ kind: 'table', columns: ['ask', 'what it draws'], rows }] }),
     ms: Date.now() - at,
   }
+}
+
+function menuOf(out) {
+  const menu = JSON.parse(out || '[]')
+  if (!Array.isArray(menu)) throw new Error(`HAVEN_REPORTS printed no menu of { name, help }: ${out.slice(0, 80)}`)
+  return menu.filter((m) => m?.name)
+}
+
+/** The names `/report` takes, for Tab; none when this machine opted into no reports. */
+export async function reportNames({ signal, cmd = reportsCommand() } = {}) {
+  if (!cmd) return []
+  return menuOf(String(await run(cmd, signal)).trim()).map((m) => String(m.name))
 }
 
 // ─── the desk's snoozes ─────────────────────────────────────────────────────

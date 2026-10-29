@@ -938,16 +938,26 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
    * wrong* — so the probe is safe and a client that predates it is a miss
    * rather than a throw.
    */
+  // A schema fact, fixed for the client's life, and every flavor of a client
+  // answers `$primaryKey` with the same function, so the function is the key.
+  const _pkCache = new WeakMap<object, Map<string, string[]>>()
   function primaryKeyOf(ctx: ServiceContext): string[] {
     const db = callDb(ctx) as { $primaryKey?: (a: string) => string[] } | undefined
     if (typeof db?.$primaryKey !== 'function') return []
-    for (const candidate of accessorCandidates(model ?? ctx.service)) {
+    const name = model ?? ctx.service
+    let byName = _pkCache.get(db.$primaryKey)
+    if (!byName) { byName = new Map(); _pkCache.set(db.$primaryKey, byName) }
+    const hit = byName.get(name)
+    if (hit) return hit
+    let key: string[] = []
+    for (const candidate of accessorCandidates(name)) {
       try {
-        const key = db.$primaryKey(candidate)
-        if (key.length) return key
+        const found = db.$primaryKey(candidate)
+        if (found.length) { key = found; break }
       } catch { /* not this spelling */ }
     }
-    return []
+    byName.set(name, key)
+    return key
   }
 
   /**
