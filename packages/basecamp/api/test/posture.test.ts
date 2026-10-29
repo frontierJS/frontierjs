@@ -21,7 +21,7 @@ import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor }         from '../src/core/capabilities.ts'
 import { declaredFor, gradeHub, gradePosture, gradeReplication, HUB_CONTROL_IDS, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/domain/host/posture.ts'
-import { HOST_SLUG } from '../src/domain/host/host-machine.ts'
+import { HOST_SLUG, placeHub } from '../src/domain/host/host-machine.ts'
 import type { HostDeclared, PostureReadings } from '../src/domain/host/posture.ts'
 import { componentById, matchGithub, rangeOf, versionOf } from '../src/domain/host/components.ts'
 import { prunePosture } from '../src/jobs/retention.job.ts'
@@ -431,7 +431,7 @@ describe('the host row on /hub/security/', () => {
     const sys = env.system as any
     if (!await sys.hubConfig.exists({ where: { id: 'hub' } }))
       await sys.hubConfig.create({ data: { id: 'hub' } })
-    await sys.hubConfig.update({ where: { id: 'hub' }, data: { hostServerId: machine.id } })
+    await placeHub(sys, machine)
     const { mintEnrollToken, hashEnrollToken } = await import('../src/providers/compute/enrollment.ts')
     const token = mintEnrollToken().token
     await env.system.server.update({ where: { id: machine.id },
@@ -451,7 +451,7 @@ describe('the host row on /hub/security/', () => {
 
     // A workspace owner reaches the row through `latest`, never the hub's view.
     expect((await env.as(owner).service('posture').call('host', undefined, {}).catch((e: any) => e)).code ?? 404).toBe(404)
-    await sys.hubConfig.update({ where: { id: 'hub' }, data: { hostServerId: null } })
+    await sys.hubConfig.update({ where: { id: 'hub' }, data: { appId: null } })
     ;({ machine, SECRET } = drifted)
   })
 

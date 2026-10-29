@@ -17,6 +17,7 @@ import { describe, test, expect, beforeEach, afterAll } from 'vitest'
 import { mkdir, writeFile, readFile, rm } from 'fs/promises'
 import { join } from 'path'
 import { inspect } from 'node:util'
+import wire from '../../notifications/test/fixtures/push-message.json'
 
 import { tmpDir } from './tmp.js'
 import { writeOfflineShell } from '../src/postbuild/offline-shell.js'
@@ -361,11 +362,12 @@ describe('push: true', () => {
     return { fire, shown, opened }
   }
 
+  // The notifications driver test decrypts its own output to this `payload`, so
+  // the two ends of the wire cannot drift apart without one of them failing.
   test('a push shows the payload, with its topic as the tag', async () => {
     const { fire, shown } = await pushWorker()
-    const msg = { title: 'Paid', body: 'Order 7', url: '/orders/7', topic: 'order-7', data: { id: 7 } }
-    await fire('push', { data: { json: () => msg } })
-    expect(shown).toEqual([{ title: 'Paid', body: 'Order 7', data: { id: 7, url: '/orders/7' }, tag: 'order-7' }])
+    await fire('push', { data: { json: () => wire.payload } })
+    expect(shown).toEqual([wire.shown])
   })
 
   test('a push that is not JSON is still shown', async () => {

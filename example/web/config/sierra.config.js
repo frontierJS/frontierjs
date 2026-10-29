@@ -37,6 +37,11 @@ export default {
   // query rather than a replay of the exact list that was asked for last.
   offline: { db: true },
 
+  // The same `sw.js` also shows a push and opens its url on a click. The
+  // account page's PushToggle subscribes; the API sends only when core/push.ts
+  // found a VAPID pair. A build writes the worker, so `vite dev` has none.
+  push: true,
+
   // The toolbar in the corner, dev server only — routes, tethers, the call
   // feed and the N+1 warning. Its only source of data is junction's own
   // `devtools()` plugin on 5503, which `bun run api` turns on here, so the

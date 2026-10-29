@@ -256,11 +256,12 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/notifications`
 
-`packages/notifications` · ships `LICENSE` `README.md` `builders.ts` `db/` `define.ts` `drivers/` `errors.ts` `index.ts` `loader.ts` `notification.ts` `notify.ts` `package.json` `plugin.ts` `services.ts` `state.ts` `types.ts`
+`packages/notifications` · ships `LICENSE` `README.md` `builders.ts` `client.ts` `db/` `define.ts` `drivers/` `errors.ts` `index.ts` `loader.ts` `notification.ts` `notify.ts` `package.json` `plugin.ts` `services.ts` `state.ts` `types.ts`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
 | exports | `.` | `index.ts` | yes |
+| exports | `./client` | `client.ts` | yes |
 | exports | `./schema.lite` | `db/notification.lite` | yes |
 | main | `main` | `index.ts` | yes |
 

@@ -51,6 +51,9 @@ title: Hub settings
   import { toasts } from '@frontierjs/ui/stores/toastStore'
 
   let config    = null
+  let hubApp    = null
+  // What the draft was filled from, so a save sends only what changed.
+  let base      = {}
   let draft     = {}
   let error     = null
   let fieldErrs = {}
@@ -83,16 +86,30 @@ title: Hub settings
   // `verify:screens` found on this screen and on /settings/.
   function write(name, value) { draft = { ...draft, [name]: value } }
 
+  // The schedule, its destination and the replica are the hub App's
+  // (`FJS-D1606`), answered under `app` and saved through the same call. The
+  // switch is the draft's alone: off saves no cron.
+  const HUB_APP_KEYS = ['backupEnabled', 'backupCron', 'backupDestinationId', 'replicaDestinationId']
+  function adopt({ app, ...row }) {
+    config = row
+    hubApp = app
+    base   = { ...row, ...(app ? {
+      backupEnabled: !!app.backupCron, backupCron: app.backupCron ?? '0 2 * * *',
+      backupDestinationId: app.backupDestinationId, replicaDestinationId: app.replicaDestinationId,
+    } : {}) }
+    draft  = { ...base }
+  }
+
   async function load() {
     error = null; loading = true; fieldErrs = {}
     try {
-      config = await hubConfig.service.invoke('current', null)
-      draft  = { ...config }
+      adopt(await hubConfig.service.invoke('current', null))
       unset  = false
     } catch (e) {
       if (e?.data?.code === 404 || /no settings yet/.test(e.message ?? '')) {
         unset  = true
         config = null
+        base   = {}
         draft  = {
           heartbeatTimeoutSeconds: 120,
           requireTwoFactorForOwners: false, allowApiKeyAuth: true, allowBotUsers: true,
@@ -199,13 +216,15 @@ title: Hub settings
       // columns (the key escrow), which litestone refuses by name rather than
       // dropping — so an untouched save would be a 403 about a column no
       // control here shows.
-      const payload = unset ? { ...draft }
-        : Object.fromEntries(Object.entries(draft).filter(([k, v]) => v !== config[k]))
+      const { backupEnabled, ...payload } = unset ? { ...draft }
+        : Object.fromEntries(Object.entries(draft).filter(([k, v]) => v !== base[k]))
+      if (backupEnabled !== undefined || 'backupCron' in payload)
+        payload.backupCron = draft.backupEnabled ? draft.backupCron : null
+      // Before the hub App exists there is no row to hold them.
+      if (!hubApp) for (const k of HUB_APP_KEYS) delete payload[k]
       if (!unset) payload.version = config.version
 
-      const saved = await hubConfig.service.invoke('save', null, payload)
-      config = saved
-      draft  = { ...saved }
+      adopt(await hubConfig.service.invoke('save', null, payload))
       unset  = false
       toasts.success('Settings saved')
     } catch (e) {
@@ -243,6 +262,21 @@ title: Hub settings
     </Callout>
   {/if}
 
+  <Card id="hub-settings-app">
+    <h3 class="h5">This Basecamp</h3>
+    {#if hubApp?.server}
+      <p class="text-sm">
+        {hubApp.name} runs on <a href={`/servers/${hubApp.server.id}/`}>{hubApp.server.name}</a>
+        {#if hubApp.server.ipAddress}at {hubApp.server.ipAddress}{:else}, which has no address yet{/if}
+        — {hubApp.server.status}.
+      </p>
+    {:else if hubApp}
+      <p class="text-sm">{hubApp.name} is placed on no server. Press <a href="/servers/">Use this Basecamp server</a> to place it again.</p>
+    {:else}
+      <p class="text-sm text-muted">Not enrolled yet. <a href="/servers/">Use this Basecamp server</a> makes it an App on its own box.</p>
+    {/if}
+  </Card>
+
   <Card id="hub-settings-limits">
     <h3 class="h5">Timings</h3>
     <Input name="heartbeatTimeoutSeconds" id="cfg-heartbeat" type="number"
@@ -267,6 +301,12 @@ title: Hub settings
 
   <Card id="hub-settings-backup">
     <h3 class="h5">Scheduled backup</h3>
+    {#if !hubApp}
+      <p class="text-sm text-muted" id="backup-no-hub-app">
+        The schedule is this Basecamp's App row's, made when its box is enrolled — press
+        <a href="/servers/">Use this Basecamp server</a> first.
+      </p>
+    {/if}
     <Switch id="cfg-backup" label="Take a scheduled backup" checked={draft.backupEnabled}
             onchange={(checked) => write('backupEnabled', checked)} />
     <Input name="backupCron" id="cfg-backup-cron" label="Cron expression" value={draft.backupCron}

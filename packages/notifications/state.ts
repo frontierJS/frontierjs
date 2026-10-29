@@ -37,3 +37,10 @@ export function stateOf(app: App): NotificationsState {
   }
   return state
 }
+
+/** Whether a driver is registered under `transport` -- for an app deciding
+ *  WHO to address before it sends. `false` on an app the plugin never ran on:
+ *  the question is "can this leave on push", and on that app nothing can. */
+export function hasTransport(app: App, transport: string): boolean {
+  return (app as NotifyingApp)[STATE]?.drivers.has(transport) ?? false
+}

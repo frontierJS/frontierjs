@@ -49,7 +49,7 @@ import { executorOn, isExecutor }            from '../providers/executor.ts'
 import { createSecretResolver, secretRef }   from '../core/credentials.ts'
 import { keyUnder, sendFor }                 from '../providers/storage/index.ts'
 import { splitCredential, listObjects }      from '../providers/storage/s3.ts'
-import { hostServer }                        from '../domain/host/host-machine.ts'
+import { hostServer, hubApp }                from '../domain/host/host-machine.ts'
 import type { App }                          from '@frontierjs/junction'
 
 /** The wire entry `POST /replicate` takes — Outpost's `replicate.js` refuses any other. */
@@ -149,7 +149,7 @@ export async function replicaDatabases(app: App, dest: { id: string; name: strin
  */
 export async function hostReplicaDestination(sys: any, server: { id: string; workspaceId: string }): Promise<any | null> {
   if ((await hostServer(sys))?.id !== server.id) return null
-  const hub = await sys.hubConfig.findFirst({ where: { id: 'hub' }, select: { replicaDestinationId: true } })
+  const hub = await hubApp(sys)
   if (!hub?.replicaDestinationId) return null
   const dest = await sys.backupDestination.findFirst({ where: { id: hub.replicaDestinationId } })
   return dest && dest.workspaceId === server.workspaceId ? dest : null
@@ -205,8 +205,8 @@ export async function syncReplicas(app: App, serverId: string): Promise<{ replic
 export async function replicaHolder(app: App, destinationId: string): Promise<{ app: { id: string; slug: string } } | { hub: true } | null> {
   const sys = (app.db as any).asSystem()
   const held = await sys.app.findFirst({ where: { replicaDestinationId: destinationId }, select: { id: true, slug: true } })
-  if (held) return { app: held }
-  return await sys.hubConfig.exists({ where: { replicaDestinationId: destinationId } }) ? { hub: true } : null
+  if (!held) return null
+  return held.id === (await hubApp(sys))?.id ? { hub: true } : { app: held }
 }
 
 /** Queue a send to every machine holding this destination's key. */

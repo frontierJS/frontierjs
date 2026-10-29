@@ -16,7 +16,9 @@
 // many seconds so a well-signed request is `RequestTimeTooSkewed`. A key under
 // `private/` is `AccessDenied` for every credential, which is what separates a
 // policy refusal from a bad key — and is how a drive makes `test` answer
-// `forbidden` without a second credential.
+// `forbidden` without a second credential. `{ scope }` makes the credential a
+// prefix-scoped key: an object key not starting with it is `AccessDenied`, as
+// B2's *File name prefix* answers.
 //
 //   bun api/src/providers/storage/s3-sink.ts
 //   endpoint http://127.0.0.1:8125 · region us-east-1 · credential AKIADEV:devsecret
@@ -54,7 +56,7 @@ export function startS3Sink(opts: S3SinkOptions = {}) {
   const AK = opts.accessKeyId ?? 'AKIADEV', SK = opts.secretAccessKey ?? 'devsecret', REGION = opts.region ?? 'us-east-1'
   const objects = new Map<string, { bytes: Uint8Array<ArrayBuffer>; contentType: string; etag: string; lastModified: string }>()
   const seen: { method: string; path: string; status: number }[] = []
-  const armed = { lost: false, slowDown: null as null | { retryAfter: number }, skew: 0 }
+  const armed = { lost: false, slowDown: null as null | { retryAfter: number }, skew: 0, scope: null as null | string }
   const hanging: Array<() => void> = []
 
   function signingKey(dateStamp: string, region: string, service: string) {
@@ -125,7 +127,7 @@ export function startS3Sink(opts: S3SinkOptions = {}) {
     async fetch(req) {
       const url = new URL(req.url), path = url.pathname
       if (path === '/_sink/seen')  return Response.json({ requests: seen, keys: [...objects.keys()] })
-      if (path === '/_sink/reset') { seen.length = 0; Object.assign(armed, { lost: false, slowDown: null, skew: 0 }); return Response.json({ ok: true }) }
+      if (path === '/_sink/reset') { seen.length = 0; Object.assign(armed, { lost: false, slowDown: null, skew: 0, scope: null }); return Response.json({ ok: true }) }
       if (path === '/_sink/arm')   { Object.assign(armed, await req.json()); return Response.json({ ok: true }) }
 
       const body = new Uint8Array(await req.arrayBuffer())
@@ -148,6 +150,7 @@ export function startS3Sink(opts: S3SinkOptions = {}) {
       const bucket = decodeURIComponent(m[1]), key = m[2].split('/').map(decodeURIComponent).join('/')
       const id = `${bucket}/${key}`
       if (key.startsWith('private/')) return record(xml('AccessDenied', 'Access Denied', 403))
+      if (armed.scope != null && !key.startsWith(armed.scope)) return record(xml('AccessDenied', 'Access Denied', 403))
 
       let answer: Response
       const obj = objects.get(id)

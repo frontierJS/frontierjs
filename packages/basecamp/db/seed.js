@@ -35,6 +35,7 @@ import { openSqlite }       from '../api/src/core/sqlite.ts'
 import { BLUEPRINTS }        from './blueprints.js'
 import { env } from '../api/src/core/env.ts'
 import { grantsFor } from '../api/src/core/capabilities.ts'
+import { placeHub, HOST_SLUG } from '../api/src/domain/host/host-machine.ts'
 
 const PASSWORD = 'test1234'
 const RNG_SEED = 42
@@ -996,7 +997,7 @@ async function seedInstallation(sys, owner, users) {
   const offBoxKey = await sys.secret.create({
     data: { workspaceId: acme.id, name: 'backup:Backblaze B2', kind: 'backup', data: 'seeded-key-id:seeded-application-key', createdBy: owner.id },
   })
-  await sys.backupDestination.create({
+  const offBox = await sys.backupDestination.create({
     data: {
       workspaceId: acme.id,
       name:     'Backblaze B2',
@@ -1008,12 +1009,37 @@ async function seedInstallation(sys, owner, users) {
     },
   })
 
-  // ── The settings ────────────────────────────────────────────────────
+  // ── The settings, and the hub as an App ─────────────────────────────
   // The id is the constant the model defaults to, stated so the row this
-  // writes is the row `hubConfig.current` reads. No `appId`: the hub App row
-  // is `useHost`'s to create (`FJS-D1603`), and a seeded one would be a hub
-  // no install made.
+  // writes is the row `hubConfig.current` reads. The hub App, its Project and
+  // its Environment are `placeHub`'s, the function `useHost` calls
+  // (`FJS-D1603`, `FJS-D1628`), so the seeded hub is the shape an install makes.
   await sys.hubConfig.create({ data: { id: 'hub' } })
+  const hostBox = await sys.server.create({ data: {
+    workspaceId: acme.id, name: 'Basecamp host', slug: HOST_SLUG, role: 'general', region: 'self',
+  } })
+  const hubApp = await placeHub(sys, hostBox)
+  // Its schedule and destination are the hub App's (`FJS-D1606`); the fire
+  // takes the hub archive, never the app-volume one.
+  await sys.app.update({ where: { id: hubApp.id }, data: { backupCron: '0 2 * * *', backupDestinationId: offBox.id } })
+
+  // ── One archive that already happened ───────────────────────────────
+  // Scheduled rather than manual, and with no `requestedBy`, because that is
+  // what the cron leaves behind: nobody asked, so the app owns it.
+  const took = new Date(Date.now() - 9 * 3_600_000)
+  await sys.appBackup.create({
+    data: {
+      appId: hubApp.id, serverId: hostBox.id,
+      kind: 'scheduled', status: 'success', destinationId: null,
+      sizeBytes: 14_900_000, fileCount: 4,
+      // Named the way the job names one, or the screen's Delete refuses it as
+      // a path this installation never wrote (`FJS-D1494`).
+      location:  `./db/backups/basecamp-${took.toISOString().replace(/[:.]/g, '-')}`,
+      startedAt:  took.toISOString(),
+      finishedAt: new Date(took.getTime() + 3_100).toISOString(),
+      durationMs: 3_100,
+    },
+  })
 
   // ── One person who has chosen ───────────────────────────────────────
   // Two rows, not fourteen. A preference exists only where somebody has said

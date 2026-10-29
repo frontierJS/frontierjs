@@ -133,6 +133,13 @@ export const spec = {
   // from a request's Host header — that is a value the caller chooses.
   FRONTIER_APP_URL: { default: 'http://localhost:8020' },
 
+  // ── Phone pings ───────────────────────────────────────────
+  // The top rung of the ladder in `push.ts` (`FJS-D1589`): an operator's own
+  // ntfy server, set by hand. Unset, the hub looks for its ntfy App, then falls
+  // to public ntfy.sh. There is no NTFY_MODE -- the rung is derived.
+  NTFY_BASE_URL:  {},
+  NTFY_TOKEN:     {},
+
   // Where a MACHINE reaches this API. Not `FRONTIER_APP_URL`, which is the
   // SPA — a provisioned box enrolls against the API and has no browser. Stated
   // rather than derived from a request Host for `FRONTIER_APP_URL`'s reason: it

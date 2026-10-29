@@ -53,7 +53,9 @@ export function backupArchive(app: App) {
     if (!signed(id, String(ctx.query.expires ?? ''), String(ctx.query.sig ?? '')))
       return plain(403, 'This download link has expired. Press Download again.')
 
-    const row = await (app.db as any).asSystem().backup.findFirst({ where: { id } })
+    const sys = (app.db as any).asSystem()
+    const hub = await sys.hubConfig.findFirst({ where: { id: 'hub' }, select: { appId: true } })
+    const row = hub?.appId && await sys.appBackup.findFirst({ where: { id, appId: hub.appId } })
     const dir = row && localArchive(app, row)
     if (!dir) return plain(404, `Backup '${id}' has no archive on this disk`)
 

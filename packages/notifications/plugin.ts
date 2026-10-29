@@ -139,7 +139,8 @@ export function notifications(opts: NotificationsPluginOptions) {
             `this package's — notifications({ services: { pushSubscriptions: 'other-name' | false } }).`
           )
         }
-        services.register(createPushSubscriptionsService(opts.db, pushName))
+        const vapidPublicKey = (drivers.get('push') as { vapidPublicKey?: string } | undefined)?.vapidPublicKey
+        services.register(createPushSubscriptionsService(opts.db, pushName, { vapidPublicKey }))
       }
 
       if (emailUsesMailer && !('mail' in app)) {

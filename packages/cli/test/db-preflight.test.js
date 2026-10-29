@@ -141,7 +141,7 @@ describe('detectRunner — the lockfile is at the WORKSPACE root', () => {
 
 // FJS-1733: `db:reset` removed `development.db` whatever the app's database was
 // called, so an app declaring db/app.db was never reset.
-describe('databaseFilesToReset — the file db:reset removes is the one the app opens', () => {
+describe('databaseFilesToReset — the files db:reset removes are the ones the app opens', () => {
 
   test('the declared main database, not the development.db convention', () => {
     const root = app('reset-declared', {
@@ -151,11 +151,13 @@ describe('databaseFilesToReset — the file db:reset removes is the one the app 
       .toEqual([join(root, 'db', 'app.db')])
   })
 
-  test('`main` wins over a database declared before it', () => {
+  // The rebuild migrates every database, so one left behind reads as drift.
+  test('every declared database, not main alone', () => {
     const root = app('reset-main', {
       schema: 'database jobs { path "./db/jobs.db" }\n\ndatabase main { path "./db/app.db" }\n',
     })
-    expect(databaseFilesToReset(root, join(root, 'db'), { fallback: 'x' })).toEqual([join(root, 'db', 'app.db')])
+    expect(databaseFilesToReset(root, join(root, 'db'), { fallback: 'x' }))
+      .toEqual([join(root, 'db', 'jobs.db'), join(root, 'db', 'app.db')])
   })
 
   test('an app declaring none keeps the convention', () => {

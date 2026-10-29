@@ -34,7 +34,8 @@ import { registerDestination, unregisterDestination, keyUnder, sendFor } from '.
 import { splitCredential, putObject, deleteObject } from '../../providers/storage/s3.ts'
 import type { S3Failure } from '../../providers/storage/s3.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
-import { syncReplicasHeldBy } from '../../jobs/replicate-sync.job.ts'
+import { syncReplicasHeldBy, replicaHolder } from '../../jobs/replicate-sync.job.ts'
+import { destinationFor } from '../../jobs/app-backup-run.job.ts'
 import type { App } from '@frontierjs/junction'
 
 type Row = Record<string, unknown> & { id: string; endpoint: string; region: string; bucket: string; prefix: string; secretId?: string | null; version: number }
@@ -59,6 +60,29 @@ export function explainFailure(step: 'write' | 'delete', f: S3Failure): string {
   return `${f.kind}: the probe ${step} failed — ${why}${left}`
 }
 
+// ─── The slash ───────────────────────────────────────────────────────────
+//
+// An app's replica key is scoped to `<prefix>/<appId>/` and its archives are
+// `<prefix>/<appId>-<stamp>.tar.gz`. A scope written without the slash reaches
+// both, so a compromised app plants an archive that the next rescan records
+// (`FJS-D1572`). Asked only where a rescan reads: the App's backup destination
+// is this bucket and prefix.
+
+async function refusesArchiveWrite(app: App, send: ReturnType<typeof sendFor>, row: Row, appId: string): Promise<void> {
+  const target   = await (app.db as any).asSystem().app.findFirst({ where: { id: appId } })
+  const archives = target && await destinationFor(app, target).catch(() => null)
+  if (!archives || archives.endpoint !== row.endpoint || archives.bucket !== row.bucket
+    || keyUnder(archives, '') !== keyUnder(row, '')) return
+
+  const key = keyUnder(row, `${appId}-probe.tar.gz`)
+  const put = await putObject(send, row.bucket, key, `basecamp scope probe ${new Date().toISOString()}\n`, { contentType: 'application/gzip' })
+  if (put.error?.kind === 'forbidden') return
+  if (put.error) throw new BadRequest(`${put.error.kind}: the scope probe could not tell whether this key reaches the app's archives — ${put.error.message}`)
+  const del  = await deleteObject(send, row.bucket, key)
+  const left = del.error ? `; ${key} is still in the bucket, delete it there` : ''
+  throw new BadRequest(`scope: this key wrote ${key}, so it reaches the app's archives — scope it to '${keyUnder(row, `${appId}/`)}', with the trailing slash${left}`)
+}
+
 /** A destination plus how many archives name it — what `remove` refuses on,
  *  and what makes a row legible on the list. */
 async function withBackupCount(row: Record<string, unknown>) {
@@ -66,15 +90,10 @@ async function withBackupCount(row: Record<string, unknown>) {
   return { ...row, backup_count }
 }
 
-/** The hub's archives and every app's, since both kinds of row hold a key in
- *  this bucket and `Restrict` on either FK blocks the hard delete. */
+/** Every archive naming it, the hub's among them (`FJS-D1606`): each holds a
+ *  key in this bucket and `Restrict` on the FK blocks the hard delete. */
 async function archivesNaming(destinationId: string): Promise<number> {
-  const sys = db().asSystem()
-  const [hub, apps] = await Promise.all([
-    sys.backup.count({ where: { destinationId } }),
-    sys.appBackup.count({ where: { destinationId } }),
-  ])
-  return hub + apps
+  return db().asSystem().appBackup.count({ where: { destinationId } })
 }
 
 /** The shape is checked here and not only at send: a credential that cannot
@@ -219,17 +238,21 @@ export default createService({
     const row = await getScoped('backupDestination', 'Backup destination') as Row
     if (!row.secretId) throw new BadRequest('This destination holds no credential — patch it with one as `secret` first')
 
-    const app  = $.app as App
-    const send = sendFor(app, row.id)
+    const app    = $.app as App
+    const send   = sendFor(app, row.id)
+    const holder = await replicaHolder(app, row.id)
+    const appId  = holder && 'app' in holder ? holder.app.id : null
     // Stamped and random: two administrators testing at once must not delete
     // each other's probe, and a key a vendor's lifecycle rule has already seen
-    // is not reused.
-    const key  = keyUnder(row, `basecamp-probe-${new Date().toISOString().replace(/[:.]/g, '-')}-${Math.random().toString(36).slice(2, 8)}`)
+    // is not reused. An app's key reaches its own replica path and no further,
+    // so the probe goes there.
+    const key  = keyUnder(row, `${appId ? `${appId}/` : ''}basecamp-probe-${new Date().toISOString().replace(/[:.]/g, '-')}-${Math.random().toString(36).slice(2, 8)}`)
 
     const put = await putObject(send, row.bucket, key, `basecamp probe ${new Date().toISOString()}\n`, { contentType: 'text/plain' })
     if (put.error) throw new BadRequest(explainFailure('write', put.error))
     const del = await deleteObject(send, row.bucket, key)
     if (del.error) throw new BadRequest(explainFailure('delete', del.error))
+    if (appId) await refusesArchiveWrite(app, send, row, appId)
 
     // Not stamped on a failure — the stamp means the key wrote and deleted
     // here, and nothing else. The Secret's flag follows, since a rotation

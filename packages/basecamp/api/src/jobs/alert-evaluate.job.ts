@@ -133,7 +133,7 @@ export default defineJob({
         await notifyPeople(app, 'AlertFiring',
           await workspaceMembers(app, rule.workspaceId), {
             eventId: event.id, ruleName: rule.name, severity: rule.severity, message,
-          })
+          }, rule.workspaceId)
         await fanOut(app, db, rule, event, {
           title:    `[${rule.severity}] ${rule.name}`,
           text:     message,

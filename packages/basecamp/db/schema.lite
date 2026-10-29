@@ -954,6 +954,15 @@ model Workspace {
   ingressAccountId String?
   ingressZoneId    String?
 
+  // The ntfy topic every critical kind is published to, once per event
+  // (`FJS-D1586`): `<slug>-critical-<12 random chars>`, minted on first use by
+  // `domain/notification/push-topic.ts`. The suffix IS the secret on a public
+  // server (rung 3 of the ladder, `IDEAS/phone-ping.md`) -- anyone who knows
+  // it reads every outage and can publish fake ones -- so @secret: encrypted,
+  // asSystem-only, a digest in the trail. Not @unique: a random IV makes two
+  // sealings of one value differ, and 12 random chars make a collision moot.
+  pushTopic String? @secret
+
   version   Int           @version
   createdAt DateTime      @default(now())
   updatedAt DateTime      @default(now()) @updatedAt

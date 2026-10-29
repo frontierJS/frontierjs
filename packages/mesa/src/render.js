@@ -287,36 +287,32 @@ export async function renderToHTML(ComponentFactory, props = {}, options = {}) {
   // container shares a document with the component's nodes: the compiled
   // templates were cloned from whatever `global.document` was at module load,
   // and happy-dom 20 adopts across documents without complaining, so a
-  // mismatch here is a wrong page rather than a throw. The container is
-  // attached to the body because block directives read `anchor.parentNode` and
-  // bail when it is null.
+  // mismatch here is a wrong page rather than a throw. The container stays
+  // DETACHED: block directives need `anchor.parentNode`, which the container
+  // is, and attaching it to the body makes happy-dom walk `connectedToNode`
+  // for every insert the render does, a third of a 100-row page.
   const doc       = global.document
   const container = doc.createElement('div')
   const anchor    = doc.createComment('mesa-root')
   container.appendChild(anchor)
-  doc.body.appendChild(container)
 
   let html = ''
-  try {
-    createRoot((dispose) => {
-      // Settle the graph before serializing. Derivations and render effects run
-      // eagerly on creation, but anything a block queued during setup is still
-      // pending, and an unflushed queue would also outlive the dispose below.
-      // Inside the try: a throw under a `<mesa:boundary>` leaves the flush
-      // rather than rendering `failed` into the page (`FJS-D377`).
-      try {
-        ComponentFactory(anchor, props ?? {})
-        flushSync()
-      } catch (e) {
-        dispose()
-        throw renderFailure(e, options.label)
-      }
-      html = options.keepAnchors ? container.innerHTML : _serializeWithoutAnchors(container)
+  createRoot((dispose) => {
+    // Settle the graph before serializing. Derivations and render effects run
+    // eagerly on creation, but anything a block queued during setup is still
+    // pending, and an unflushed queue would also outlive the dispose below.
+    // Inside the try: a throw under a `<mesa:boundary>` leaves the flush
+    // rather than rendering `failed` into the page (`FJS-D377`).
+    try {
+      ComponentFactory(anchor, props ?? {})
+      flushSync()
+    } catch (e) {
       dispose()
-    })
-  } finally {
-    try { doc.body.removeChild(container) } catch (_) {}
-  }
+      throw renderFailure(e, options.label)
+    }
+    html = options.keepAnchors ? container.innerHTML : _serializeWithoutAnchors(container)
+    dispose()
+  })
 
   return options.full ? wrapPage(html, options) : html
 }

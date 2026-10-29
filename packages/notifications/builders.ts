@@ -1,5 +1,5 @@
 import type { MailAttachment } from '@frontierjs/junction/mail'
-import type { InAppAction, InAppMessage, MailLine, MailMessage } from './types.ts'
+import type { InAppAction, InAppMessage, MailLine, MailMessage, PushAction, PushMessage } from './types.ts'
 
 // ─── InApp builder ────────────────────────────────────────────────────────────
 
@@ -202,6 +202,111 @@ export function mail(): MailBuilder {
   return new MailBuilder()
 }
 
+// ─── Push builder ─────────────────────────────────────────────────────────────
+
+class PushBuilder {
+  private _title?:    string
+  private _body?:     string
+  private _url?:      string
+  private _data?:     Record<string, unknown>
+  private _ttl?:      number
+  private _urgency?:  PushMessage['urgency']
+  private _topic?:    string
+  private _priority?: PushMessage['priority']
+  private _tags:      string[] = []
+  private _actions:   PushAction[] = []
+
+  title(text: string): this {
+    this._title = text
+    return this
+  }
+
+  body(text: string): this {
+    this._body = text
+    return this
+  }
+
+  /** Where a tap goes -- a full URL for ntfy, a path is enough for the service worker. */
+  url(destination: string): this {
+    this._url = destination
+    return this
+  }
+
+  /** Payload the service worker reads. webPush only. */
+  data(payload: Record<string, unknown>): this {
+    this._data = { ...this._data, ...payload }
+    return this
+  }
+
+  /** Seconds the push service holds it for an offline device. webPush only. */
+  ttl(seconds: number): this {
+    this._ttl = seconds
+    return this
+  }
+
+  /** The push service's queueing hint. webPush only -- the phone's loudness is `priority()`. */
+  urgency(level: NonNullable<PushMessage['urgency']>): this {
+    this._urgency = level
+    return this
+  }
+
+  /** A later message with the same topic replaces the one before it. webPush only. */
+  topic(name: string): this {
+    this._topic = name
+    return this
+  }
+
+  /** 5 rings through do-not-disturb, 4 is a resend, 3 the default. ntfy only. */
+  priority(level: NonNullable<PushMessage['priority']>): this {
+    this._priority = level
+    return this
+  }
+
+  /** Emoji shortcodes shown before the title -- `rotating_light`, `warning`. ntfy only. */
+  tags(...names: string[]): this {
+    this._tags.push(...names)
+    return this
+  }
+
+  /** One `view` button -- call again for each. ntfy only. */
+  action(label: string, url: string): this {
+    this._actions.push({ label, url })
+    return this
+  }
+
+  build(): PushMessage {
+    return {
+      title: this._title,
+      body:  this._body,
+      ...(this._url      !== undefined ? { url: this._url }           : {}),
+      ...(this._data     !== undefined ? { data: this._data }         : {}),
+      ...(this._ttl      !== undefined ? { ttl: this._ttl }           : {}),
+      ...(this._urgency  !== undefined ? { urgency: this._urgency }   : {}),
+      ...(this._topic    !== undefined ? { topic: this._topic }       : {}),
+      ...(this._priority !== undefined ? { priority: this._priority } : {}),
+      ...(this._tags.length            ? { tags: this._tags }         : {}),
+      ...(this._actions.length         ? { actions: this._actions }   : {}),
+    }
+  }
+}
+
+/**
+ * Builder entry point for push notifications -- one message, read by whichever
+ * `push` driver the app registered.
+ *
+ * @example
+ * return push()
+ *   .title('Monitor down')
+ *   .body('api.acme.test stopped answering')
+ *   .priority(5)
+ *   .tags('rotating_light')
+ *   .url('https://hub.acme.test/monitors/7')
+ *   .build()
+ */
+export function push(): PushBuilder {
+  return new PushBuilder()
+}
+
 // ─── Re-export build types alongside builders ─────────────────────────────────
 
-export type { InAppMessage, MailMessage } from './types.ts'
+export type { InAppMessage, MailMessage, PushMessage } from './types.ts'

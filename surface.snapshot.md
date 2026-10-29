@@ -26,16 +26,16 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 3952 source file(s) read
-242 entry point(s), 35 imported by nothing outside their package, 15 emitted
-1645 value export(s), 624 reached by nothing outside, 166 emitted
-451 type export(s), 342 reached by nothing outside
+26 package(s) · 3962 source file(s) read
+243 entry point(s), 36 imported by nothing outside their package, 15 emitted
+1651 value export(s), 623 reached by nothing outside, 168 emitted
+456 type export(s), 347 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `litestone` | 28 | 5 | 266 | 136 | 35 | 1 | 1 |
-| `junction` | 26 | 4 | 265 | 121 | 12 | 267 | 210 |
+| `junction` | 26 | 4 | 266 | 120 | 12 | 267 | 210 |
 | `mesa` | 18 | 4 | 290 | 100 | 70 | 0 | 0 |
 | `sierra` | 25 | 6 | 197 | 80 | 21 | 0 | 0 |
 | `auth` | 6 | 1 | 52 | 37 | 3 | 15 | 13 |
@@ -44,9 +44,9 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `toolbelt` | 62 | 0 | 305 | 28 | 12 | 0 | 0 |
 | `conduit` | 4 | 2 | 26 | 15 | 1 | 59 | 40 |
 | `site-kit` | 9 | 4 | 38 | 12 | 1 | 0 | 0 |
-| `outpost` | 9 | 1 | 23 | 11 | 0 | 0 | 0 |
+| `outpost` | 9 | 1 | 23 | 10 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 7 | 0 | 36 | 21 |
-| `notifications` | 2 | 0 | 11 | 5 | 0 | 25 | 20 |
+| `notifications` | 3 | 1 | 16 | 6 | 1 | 30 | 25 |
 | `email-kit` | 3 | 0 | 10 | 4 | 1 | 0 | 0 |
 | `oracle` | 1 | 0 | 19 | 3 | 2 | 0 | 0 |
 | `print-kit` | 4 | 1 | 6 | 1 | 1 | 0 | 0 |
@@ -167,13 +167,13 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/junction`
 
-`packages/junction` · 26 entry point(s) · 265 value, 267 type export(s)
+`packages/junction` · 26 entry point(s) · 266 value, 267 type export(s)
 
 **Entries imported by nothing outside (4):** `./cache` `./openapi` `./otlp` `./webhooks`
 
 **Entries not source (3, not graded):** `./outbox.lite` `./backfill.lite` `./metrics.lite`
 
-**Unreached values (121):** `accessorIfModel` `AIBuilder` `announcementPayload` `assertBackfillField` `assertPublicUrl` `AuthClient` `autoloadServices` `autoSort` `backfillSchemaFragment` `bearerOf` `bodyLimit` `BULK_FAILURES` `CacheValueError` `checkPrincipalSetting` `checkUnknownKeys` `circuitBreaker` `collectMethodInputs` `collectMethodOutputs` `collectMetrics` `combineOrigins` `COMMITMENT_SWEEP_JOB` `consoleWriter` `createChannelManager` `createEventBus` `createLitestoneBase` `createMemoryCache` `createMessage` `createSchema` `createSmtpMailer` `createSqliteCache` `createStats` `cronMatcher` `currentCall` `customMethodNames` `dataRealmFacts` `declaredCallHeaders` `declaredTransitionMethods` `declaresNoSoftDelete` `decodeValue` `deriveModelName` `describeDataRealm` `describedOf` `describePrincipalRealm` `encodeValue` `errorResponse` `extractIP` `fieldError` `fromStatusCode` `generateEnvExample` `inAfterCommitDrain` `installLogContext` `installMadeAt` `installQueryTelemetry` `isCrudGatedMethod` `isCustomMethod` `isDeclaredTransition` `isDerivedHook` `isMethodAllowed` `isServiceResult` `jsonResponse` `jsonSchemaToJunctionSchema` `JunctionClient` `liftReservedQuery` `loadServiceFile` `logTiming` `markDerived` `mergeHookMaps` `methodEntryName` `methodGateBasis` `mirrorClaimFor` `multiWriter` `nextDelayMs` `noopLogger` `NotImplemented` `outboxSchemaFragment` `parseAggregate` `parseBody` `parseCookies` `parseLitestoneQuery` `parseQuery` `partitionBulk` `PaymentRequired` `printEnvExample` `PublicUrlError` `READ_ONLY_METHODS` `readGateLevel` `readReplyTag` `redirectResponse` `REFUSE` `refuseStream` `registerAuditMetrics` `renderPrometheus` `replyAddress` `requiredScope` `resetAnnouncementWarnings` `resetReservedQueryChecks` `resolveAccessor` `resolveDefsKey` `resolveMethodSelection` `resolvePipelines` `ResultShapeError` `runPipeline` `serializeHookMap` `serveStatic` `SERVICE_OPTION_KEYS` `SERVICE_RUNTIME_KEYS` `ServiceProxy` `ServiceRegistry` `splitAddress` `TENANT_CLIENT_OBSERVERS` `TENANT_REGISTRY` `tenantClaimGuard` `toBulkFailure` `toMime` `traceIdOf` `unknownKeys` `unwrapResult` `validateInput` `watchFilterReads` `withTenantDb` `WRITE_VERBS`
+**Unreached values (120):** `accessorIfModel` `AIBuilder` `announcementPayload` `assertBackfillField` `AuthClient` `autoloadServices` `autoSort` `backfillSchemaFragment` `bearerOf` `bodyLimit` `BULK_FAILURES` `CacheValueError` `checkPrincipalSetting` `checkUnknownKeys` `circuitBreaker` `collectMethodInputs` `collectMethodOutputs` `collectMetrics` `combineOrigins` `COMMITMENT_SWEEP_JOB` `consoleWriter` `createChannelManager` `createEventBus` `createLitestoneBase` `createMemoryCache` `createMessage` `createSchema` `createSmtpMailer` `createSqliteCache` `createStats` `cronMatcher` `currentCall` `customMethodNames` `dataRealmFacts` `declaredCallHeaders` `declaredTransitionMethods` `declaresNoSoftDelete` `decodeValue` `deriveModelName` `describeDataRealm` `describedOf` `describePrincipalRealm` `encodeValue` `errorResponse` `extractIP` `fieldError` `fromStatusCode` `generateEnvExample` `inAfterCommitDrain` `installLogContext` `installMadeAt` `installQueryTelemetry` `isCrudGatedMethod` `isCustomMethod` `isDeclaredTransition` `isDerivedHook` `isMethodAllowed` `isServiceResult` `jsonResponse` `jsonSchemaToJunctionSchema` `JunctionClient` `liftReservedQuery` `loadServiceFile` `logTiming` `markDerived` `mergeHookMaps` `methodEntryName` `methodGateBasis` `mirrorClaimFor` `multiWriter` `nextDelayMs` `noopLogger` `NotImplemented` `outboxSchemaFragment` `parseAggregate` `parseBody` `parseCookies` `parseLitestoneQuery` `parseQuery` `partitionBulk` `PaymentRequired` `printEnvExample` `PublicUrlError` `READ_ONLY_METHODS` `readGateLevel` `readReplyTag` `redirectResponse` `REFUSE` `refuseStream` `registerAuditMetrics` `renderPrometheus` `replyAddress` `requiredScope` `resetAnnouncementWarnings` `resetReservedQueryChecks` `resolveAccessor` `resolveDefsKey` `resolveMethodSelection` `resolvePipelines` `ResultShapeError` `runPipeline` `serializeHookMap` `serveStatic` `SERVICE_OPTION_KEYS` `SERVICE_RUNTIME_KEYS` `ServiceProxy` `ServiceRegistry` `splitAddress` `TENANT_CLIENT_OBSERVERS` `TENANT_REGISTRY` `tenantClaimGuard` `toBulkFailure` `toMime` `traceIdOf` `unknownKeys` `unwrapResult` `validateInput` `watchFilterReads` `withTenantDb` `WRITE_VERBS`
 
 **Emitted (12):** `allowedMethodNames` `appJsonSchema` `assertContentId` `assertMailbox` `createSqliteWebhookStore` `describeShape` `fireDue` `generateOpenAPI` `LOCAL_PART_MAX` `otlp` `serviceMethodNames` `SUBSCRIPTION_PATH`
 
@@ -219,13 +219,17 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/notifications`
 
-`packages/notifications` · 2 entry point(s) · 11 value, 25 type export(s)
+`packages/notifications` · 3 entry point(s) · 16 value, 30 type export(s)
+
+**Entries imported by nothing outside (1):** `./client`
 
 **Entries not source (1, not graded):** `./schema.lite`
 
-**Unreached values (5):** `generateVapidKeys` `NotificationDeliveryError` `NotificationDriverNotFoundError` `NotificationRecipientError` `webPush`
+**Unreached values (6):** `generateVapidKeys` `NotificationDeliveryError` `NotificationDriverNotFoundError` `NotificationRecipientError` `subscribeToPush` `unsubscribeFromPush`
 
-**Unreached types (20):** `BuiltInTransport` `Formatter` `InAppAction` `InAppMessage` `MailLine` `NotificationDefinition` `NotificationDriver` `NotificationFactory` `NotificationReceipts` `NotificationRecord` `NotificationsPluginOptions` `OutgoingMail` `PushMessage` `PushRequest` `PushSubscription` `PushSubscriptions` `SendableNotification` `TransportError` `VapidKeys` `WebPushOptions`
+**Emitted (1):** `webPush`
+
+**Unreached types (25):** `BuiltInTransport` `Formatter` `InAppAction` `InAppMessage` `MailLine` `NotificationDefinition` `NotificationDriver` `NotificationFactory` `NotificationReceipts` `NotificationRecord` `NotificationsPluginOptions` `NtfyOptions` `OutgoingMail` `PushAction` `PushMessage` `PushRequest` `PushSubscription` `PushSubscriptions` `PushSubscriptionsService` `SendableNotification` `SubscribeToPushOptions` `TransportError` `UnsubscribeFromPushOptions` `VapidKeys` `WebPushOptions`
 
 ## `@frontierjs/oracle`
 
@@ -251,7 +255,9 @@ Every entry is imported and every name reached.
 
 **Entries imported by nothing outside (1):** `.`
 
-**Unreached values (11):** `BACKUP_SCRIPT` `checkRunConfig` `createInspector` `digestOfFiles` `followLines` `isDigest` `ROOTS` `spawnRun` `spawnStream` `validName` `validRelativePath`
+**Unreached values (10):** `BACKUP_SCRIPT` `checkRunConfig` `createInspector` `digestOfFiles` `followLines` `isDigest` `spawnRun` `spawnStream` `validName` `validRelativePath`
+
+**Emitted (1):** `ROOTS`
 
 ## `@frontierjs/print-kit`
 

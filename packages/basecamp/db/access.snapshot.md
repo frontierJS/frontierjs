@@ -10,7 +10,7 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-73 models · 1 view · 74 gated · 0 unrestricted
+72 models · 1 view · 73 gated · 0 unrestricted
 58 with row policies · 26 with protected fields · 35 declared moves · 15 @system · 0 @seals
 ```
 
@@ -34,7 +34,6 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `AppServer` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `AuditEvent` | 5 ADMINISTRATOR | 8 SYSTEM | 9 LOCKED | 9 LOCKED |
 | `AuditTrail` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
-| `Backup` | 7 SYSADMIN | 7 SYSADMIN | 8 SYSTEM | 7 SYSADMIN |
 | `BackupDestination` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Blueprint` | 1 VISITOR | 7 SYSADMIN | 7 SYSADMIN | 7 SYSADMIN |
 | `BlueprintParam` | 1 VISITOR | 7 SYSADMIN | 7 SYSADMIN | 7 SYSADMIN |
@@ -684,11 +683,9 @@ rather than refusing the row.
 | `Domain` | `certExpiresAt` | `@system` |
 | `Flow` | `currentVersion` | `@allow(write, status == null || status != 'active')` |
 | `FlowCredential` | `secret` | `@encrypted` |
-| `HubConfig` | `replicaFoundAt` | `@system` |
-| `HubConfig` | `replicaSyncedAt` | `@system` |
 | `HubConfig` | `encryptionKeyEscrowedAt` | `@system` |
 | `HubConfig` | `encryptionKeyFingerprint` | `@system` |
-| `HubConfig` | `hostServerId` | `@system` |
+| `HubConfig` | `appId` | `@system` |
 | `Invitation` | `token` | `@secret` |
 | `Job` | `retryCount` | `@system` |
 | `Job` | `lastRunAt` | `@system` |

@@ -1,6 +1,6 @@
 // src/notifications/DeployFailed.notification.ts
 
-import { defineNotification, inApp, mail } from '@frontierjs/notifications'
+import { defineNotification, inApp, mail, push } from '@frontierjs/notifications'
 import { declaredTransports, appUrl }      from './_shared.ts'
 
 export interface DeployFailedPayload {
@@ -24,6 +24,14 @@ export default defineNotification<DeployFailedPayload>({
     .action('View deployment', `/deployments/${p.deploymentId}/`)
     .context('Deployment', p.deploymentId)
     .data({ appName: p.appName, environment: p.environment, step: p.step, reason: p.reason }),
+
+  push: (p) => push()
+    .title('Deploy failed')
+    .body(`${where(p)}${p.step ? ` — stopped at ${p.step}` : ''}`)
+    .priority(5)
+    .tags('rotating_light')
+    .url(appUrl(`/deployments/${p.deploymentId}/`))
+    .build(),
 
   email: (p) => mail()
     .subject(`Deploy FAILED — ${where(p)}`)

@@ -50,7 +50,8 @@ import { registerAllAccounts } from './providers/compute/accounts.ts'
 import { registerAllDestinations } from './providers/storage/index.ts'
 import { S3_SIGNER, s3Signer }    from './providers/storage/s3.ts'
 import { enrollTokenMatches, mintOutpostSecret, installScript, isCertificate } from './providers/compute/enrollment.ts'
-import { notifications }  from '@frontierjs/notifications'
+import { notifications, ntfy } from '@frontierjs/notifications'
+import { resolvePush, PUBLIC_NTFY } from './push.ts'
 import { basecampAuditLog, basecampAuditPreImage, outpostCredential, outpostScope, workspaceOrKeys } from './core/hooks.ts'
 import { grantsFor } from './core/capabilities.ts'
 import { basecampSessionFields, ownerOwesSecondFactor, refuseSuspendedLogin, refuseSuspended } from './core/session-auth.ts'
@@ -433,9 +434,20 @@ export async function buildBasecampApp(
   // and `domain/notification/notify.ts` drops `email` per recipient — a person who asked for it
   // on an app that cannot mail must still get their in-app copy, and `notify()`
   // throws on an undeliverable transport before delivering any of them.
+  //
+  // `push` is ALWAYS registered: the ladder in `push.ts` always answers a
+  // server, public ntfy.sh at worst, and whether a kind pings is `kinds.ts`'s
+  // `push` column, read in `domain/notification/notify.ts`. When the hub's own
+  // ntfy App is the primary, ntfy.sh is the one retry -- the ping that says the
+  // box is down must not die with the box.
+  const push = await resolvePush(db)
+  app.own('push', push)
   app.configure(notifications({
     db,
-    transports:    mail ? { email: { mailer: 'default' } } : {},
+    transports: {
+      ...(mail ? { email: { mailer: 'default' } } : {}),
+      push: ntfy({ url: push.url, token: push.token, fallback: push.rung === 2 ? { url: PUBLIC_NTFY } : undefined }),
+    },
   }))
 
   // ── Standard middleware ────────────────────────────────────────────────

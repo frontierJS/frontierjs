@@ -6,7 +6,11 @@
 //
 // ─── One delete, derived from the name ────────────────────────────────────
 //
-// Retention, the warm-copy drop and `backups.remove` all delete through
+// The hub's archives are `AppBackup` rows on the hub App (`FJS-D1606`), so
+// every read of them here names its `appId` — a row of any other App is an
+// app volume's, which has none of this file's local directories.
+//
+// Retention, the warm-copy drop and `backups.discard` all delete through
 // `deleteArchive` (`FJS-D1494`). A local directory is `backups/<name>` with
 // `<name>` taken from the row's `location` and refused unless it is an archive
 // name this file mints — never the stored path, because `location` is a
@@ -29,6 +33,7 @@ import { keyUnder, sendFor }  from '../../providers/storage/index.ts'
 import { deleteObject, listObjects } from '../../providers/storage/s3.ts'
 import type { ListedObject }  from '../../providers/storage/s3.ts'
 import { destinationFor, mintDownload } from '../../jobs/app-backup-run.job.ts'
+import { requireHubAppId } from '../host/host-machine.ts'
 import type { App }           from '@frontierjs/junction'
 import type { BackupDestination } from '../../../../db/schema.d.ts'
 
@@ -95,7 +100,7 @@ export async function deleteArchive(app: App, row: ArchiveRow): Promise<{ delete
     if (!dir && !isRemote(row)) return { kept: `${row.location} is not an archive this installation names; left in place` }
     if (dir) rmSync(dir, { recursive: true, force: true })
   }
-  await sys.backup.delete({ where: { id: row.id } })
+  await sys.appBackup.delete({ where: { id: row.id } })
   return { deleted: true }
 }
 
@@ -105,8 +110,10 @@ export async function deleteArchive(app: App, row: ArchiveRow): Promise<{ delete
  * A local-only archive is the only copy and goes by retention, not here.
  */
 export async function dropWarmCopies(app: App, keepId: string): Promise<void> {
-  const uploaded = await app.db!.asSystem().backup.findMany({
-    where:  { id: { not: keepId }, status: 'success', destinationId: { not: null }, error: null },
+  const sys   = app.db!.asSystem()
+  const appId = await requireHubAppId(sys)
+  const uploaded = await sys.appBackup.findMany({
+    where:  { appId, id: { not: keepId }, status: 'success', destinationId: { not: null }, error: null },
     select: { location: true },
   })
   for (const { location } of uploaded as { location: string | null }[]) {
@@ -130,8 +137,8 @@ export async function pruneBackups(app: App, now = Date.now()): Promise<{ pruned
   const out = { pruned: [] as string[], kept: [] as { id: string; why: string }[] }
   if (!cfg) return out
 
-  const rows = (await sys.backup.findMany({
-    where:  { status: 'success' },
+  const rows = (await sys.appBackup.findMany({
+    where:  { appId: await requireHubAppId(sys), status: 'success' },
     select: { id: true, status: true, destinationId: true, location: true, error: true, startedAt: true, createdAt: true },
   }) as ArchiveRow[])
     .map(r => ({ ...r, at: Date.parse(r.startedAt ?? r.createdAt!) }))
@@ -172,12 +179,13 @@ export async function rescanDestination(app: App, destinationId: string): Promis
   if (!dest) return { error: `No backup destination '${destinationId}'` }
   if (!dest.secretId) return { error: `Destination '${dest.name}' holds no credential` }
 
-  const known = new Set((await sys.backup.findMany({
-    where: { destinationId: dest.id }, select: { location: true },
+  const appId = await requireHubAppId(sys)
+  const known = new Set((await sys.appBackup.findMany({
+    where: { appId, destinationId: dest.id }, select: { location: true },
   }) as { location: string | null }[]).map(r => r.location))
 
-  return eachUnknown(app, dest, 'basecamp', known, (o, stamp) => sys.backup.create({ data: {
-    kind: 'found', status: 'success', destinationId: dest.id, location: o.key,
+  return eachUnknown(app, dest, 'basecamp', known, (o, stamp) => sys.appBackup.create({ data: {
+    appId, serverId: null, kind: 'found', status: 'success', destinationId: dest.id, location: o.key,
     sizeBytes: o.size, startedAt: stamp, finishedAt: o.lastModified ? new Date(o.lastModified).toISOString() : null,
     requestedBy: null,
   } }))

@@ -155,5 +155,5 @@ async function tell(app: App, kind: string, deploy: any, row: { name?: string, e
   const env = row?.environmentId ? await sys(app).environment.findFirst({ where: { id: row.environmentId } }) : null
   await notifyPeople(app, kind, await workspaceMembers(app, deploy.workspaceId), {
     deploymentId: deploy.id, appName: row?.name ?? 'a site', environment: env?.name ?? 'an environment', ...extra,
-  })
+  }, deploy.workspaceId)
 }

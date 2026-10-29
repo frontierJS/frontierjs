@@ -19,36 +19,80 @@
 // `autoValidate` derives from the model for `create`/`patch`, and neither is
 // mounted. Litestone validates the same rules on the write itself and throws
 // with an `errors` array, which junction's error boundary adopts ahead of its
-// `data` — so a bad `backupCron` still lands under the right box in a form. One
-// validator, reached by a different door.
+// `data` — so a bad retention count still lands under the right box in a form.
+// One validator, reached by a different door.
+//
+// ─── Three keys that are the hub App's ────────────────────────────────────
+//
+// The hub's schedule, archive destination and replica are its App row's
+// (`FJS-D1606`). `save` takes `backupCron`, `backupDestinationId` and
+// `replicaDestinationId` and writes them there, at system, because /hub/settings/
+// is the one screen that sets them; `current` answers them under `app`.
 
 import { createService, BadRequest, Conflict, NotFound, $ } from '@frontierjs/junction'
 import { requireSystemAdmin }         from '../../core/hooks.ts'
 import { db, narrowPatch, changesNothing } from '../../core/resource.ts'
 import { encryptionKeyFingerprint }   from '../../core/db.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
-import { cronProblem, syncBackupSchedule } from '../../domain/job/job-schedule.ts'
+import { cronProblem, syncAppBackupSchedule } from '../../domain/job/job-schedule.ts'
 import { replicaHolder, syncHostReplica } from '../../jobs/replicate-sync.job.ts'
+import { hubSummary, requireHubAppId } from '../../domain/host/host-machine.ts'
 
 /** The primary key, which is a constant. `HubConfig.id` defaults to it, so this
  *  is the same string the schema writes and not a second opinion about it. */
 const HUB = 'hub'
 
-/** The clock follows the row it was saved as (`job-schedule.ts`). */
-function synced<T extends { backupEnabled: boolean; backupCron: string }>(row: T): T {
-  syncBackupSchedule($.app, row)
-  return row
+/** The keys `save` writes on the hub App rather than on this row. */
+const HUB_APP_KEYS = ['backupCron', 'backupDestinationId', 'replicaDestinationId'] as const
+
+/**
+ * Check and write the hub App's keys, then put the clock and Basecamp's
+ * replica list in line with the row. A moved replica pointer is a new list on
+ * Basecamp's box. Refused before the settings row is written, so a save that
+ * fails here changes nothing.
+ */
+async function checkHubApp(keys: Record<string, unknown>): Promise<void> {
+  if (changesNothing(keys)) return
+  const sys = db().asSystem()
+  const hub = await sys.app.findFirst({ where: { id: await requireHubAppId(sys) } })
+
+  // Both destinations are a workspace's row pointed at from the hub tier
+  // (`FJS-D1491`), so the lookup is at system; the FK would refuse an unknown
+  // id too, but as a constraint sentence and not a field.
+  for (const key of ['backupDestinationId', 'replicaDestinationId']) {
+    const id = keys[key]
+    if (id === undefined || id === null) continue
+    const found = await sys.backupDestination.findFirst({ where: { id } })
+    if (!found) throw new BadRequest(`No backup destination '${id}'`)
+    // Basecamp's box is sent only a replica of its own workspace's bucket
+    // (`hostReplicaDestination`), so another's would be saved and never run.
+    if (key === 'replicaDestinationId' && found.workspaceId !== hub.workspaceId)
+      throw new BadRequest(`replicaDestinationId: '${found.name}' is in another workspace; Basecamp replicates to a destination of the workspace its App is in`)
+  }
+  // One destination is one replica's (`FJS-D1505`).
+  if (typeof keys.replicaDestinationId === 'string') {
+    const holder = await replicaHolder($.app, keys.replicaDestinationId)
+    if (holder && 'app' in holder)
+      throw new Conflict(`That destination replicates the app '${holder.app.slug}'; give Basecamp a destination of its own`)
+  }
+  if (typeof keys.backupCron === 'string') {
+    const problem = cronProblem(keys.backupCron)
+    if (problem) throw new BadRequest(`backupCron: ${problem}`)
+  }
 }
 
-/** Write the destination pointers at system, then put the clock and the
- *  replica list in line with the row. A moved replica pointer is a new list
- *  on Basecamp's box. */
-async function pointed(pointers: Record<string, unknown>, row: any): Promise<any> {
-  if (!changesNothing(pointers))
-    row = await db().asSystem().hubConfig.update({ where: { id: HUB }, data: pointers })
-  synced(row)
-  if ('replicaDestinationId' in pointers) await syncHostReplica($.app)
-  return row
+async function writeHubApp(keys: Record<string, unknown>): Promise<void> {
+  if (changesNothing(keys)) return
+  const sys   = db().asSystem()
+  const appId = await requireHubAppId(sys)
+  const row   = await sys.app.update({ where: { id: appId }, data: keys })
+  syncAppBackupSchedule($.app, row)
+  if ('replicaDestinationId' in keys) await syncHostReplica($.app)
+}
+
+/** The row as `current` answers it: the settings and the hub App beside them. */
+async function answered(row: any) {
+  return { ...row, app: await hubSummary(db().asSystem()) }
 }
 
 export default createService({
@@ -70,7 +114,9 @@ export default createService({
     if (!row) throw new NotFound(
       'This installation has no settings yet. Save them once to create them.'
     )
-    return row
+    // `app` is the hub App (`FJS-D1603`): a save that sent it back would name
+    // no column, so the screen takes it off the draft.
+    return answered(row)
   },
 
   /**
@@ -85,54 +131,31 @@ export default createService({
     // `id` would let a caller mint a SECOND settings row, the one failure a
     // singleton has; the schema withholds it with the stamps, and `version` is
     // the precondition and not a column to write.
-    const { version, ...data } = narrowPatch($.data as Record<string, unknown>)
-
-    // Both destinations are a workspace's row pointed at from the hub tier
-    // (`FJS-D1491`), so the lookup is at system; the FK would refuse an
-    // unknown id too, but as a constraint sentence and not a field.
-    for (const key of ['backupDestinationId', 'replicaDestinationId']) {
-      const id = data[key]
-      if (id === undefined || id === null) continue
-      const found = await db().asSystem().backupDestination.findFirst({ where: { id } })
-      if (!found) throw new BadRequest(`No backup destination '${id}'`)
-    }
-    // One destination is one replica's (`FJS-D1505`).
-    if (typeof data.replicaDestinationId === 'string') {
-      const holder = await replicaHolder($.app, data.replicaDestinationId)
-      if (holder && 'app' in holder)
-        throw new Conflict(`That destination replicates the app '${holder.app.slug}'; give Basecamp a destination of its own`)
-    }
-
-    if (typeof data.backupCron === 'string') {
-      const problem = cronProblem(data.backupCron)
-      if (problem) throw new BadRequest(`backupCron: ${problem}`)
-    }
-
-    // The pointers name a tenant's row from a row of no tenant's, which
-    // Litestone's hidden-parent check refuses unless written at system — and
-    // a whole-row system write would also lift `@system` and let this method
-    // forge the key escrow. So they are written alone, after the rest.
-    const pointers: Record<string, unknown> = {}
-    for (const key of ['backupDestinationId', 'replicaDestinationId'])
-      if (key in data) { pointers[key] = data[key]; delete data[key] }
+    const sent = { ...($.data as Record<string, unknown>) }
+    const keys: Record<string, unknown> = {}
+    for (const key of HUB_APP_KEYS) if (key in sent) { keys[key] = sent[key]; delete sent[key] }
+    const { version, ...data } = narrowPatch(sent)
+    await checkHubApp(keys)
 
     const existing = await db().hubConfig.findFirst({ where: { id: HUB } })
-    if (!existing) return pointed(pointers, await db().hubConfig.create({ data: { ...data, id: HUB } }))
-
-    // `@version` on this model means a second administrator saving over a form
-    // the first one had open is a 409 rather than a silent overwrite — so an
-    // update MUST carry the revision it read, and litestone refuses one that
-    // does not. Refused here instead, naming the field, because litestone's
-    // own sentence explains the column and this one explains the call.
-    if (version === undefined) throw new BadRequest(
-      'Send `version` — the revision of the settings you are editing. It comes back ' +
-      'with `current`, and it is what makes a second administrator saving over your ' +
-      'form a conflict rather than a silent overwrite.')
-
-    // A save of the pointers alone still carries the revision it read, so a
-    // stale form is a 409 here too.
-    if (changesNothing(data)) return pointed({ ...pointers, version }, existing)
-    return pointed(pointers, await db().hubConfig.update({ where: { id: HUB }, data: { ...data, version } }))
+    let row = existing
+    if (!existing) row = await db().hubConfig.create({ data: { ...data, id: HUB } })
+    else {
+      // `@version` on this model means a second administrator saving over a
+      // form the first one had open is a 409 rather than a silent overwrite —
+      // so an update MUST carry the revision it read, and litestone refuses
+      // one that does not. Refused here instead, naming the field, because
+      // litestone's own sentence explains the column and this one the call.
+      if (version === undefined) throw new BadRequest(
+        'Send `version` — the revision of the settings you are editing. It comes back ' +
+        'with `current`, and it is what makes a second administrator saving over your ' +
+        'form a conflict rather than a silent overwrite.')
+      // A save of the hub App's keys alone still carries the revision it
+      // read, so a stale form is a 409 here too.
+      row = await db().hubConfig.update({ where: { id: HUB }, data: { ...data, version } })
+    }
+    await writeHubApp(keys)
+    return answered(row)
   },
 
   /**
@@ -162,11 +185,13 @@ export default createService({
 
   /** `/hub/backups/`'s *replica found* card declined (`domain/backup/found-replicas.ts`). */
   async dismissFound() {
-    return db().asSystem().hubConfig.update({
-      where:  { id: HUB },
+    const sys = db().asSystem()
+    await sys.app.update({
+      where:  { id: await requireHubAppId(sys) },
       data:   { replicaFoundAt: null, replicaSyncedAt: null },
       system: ['replicaFoundAt', 'replicaSyncedAt'],
     })
+    return answered(await db().hubConfig.findFirst({ where: { id: HUB } }))
   },
 
   hooks: {

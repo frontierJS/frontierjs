@@ -165,5 +165,7 @@ log.info('Wire it — the mailer first, then the plugin. `--verbose` for the sni
 log.detail(wiringHint)
 log.info('A notification is a FILE, and the file names it:')
 log.info('  api/src/notifications/OrderPaid.notification.ts  →  type "OrderPaid"')
+log.info('Web Push signs with a VAPID pair kept in .env:')
+log.info('  fli crypto:keygen vapid --env --subject mailto:ops@your.domain')
 echo('')
 ```

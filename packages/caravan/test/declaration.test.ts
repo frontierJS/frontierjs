@@ -207,6 +207,37 @@ describe('dispatch by definition', () => {
     expect(row.retry_delay).toBe('[30000]')
   })
 
+  // FJS-3569: a bare name carries no queue, so the row is moved when the
+  // handler arrives — and runs.
+  it('a dispatch by name before handle() moves to the handler queue and runs', async () => {
+    const seen: string[] = []
+    const q = makeQueue()
+    const id = await q.dispatch('reconcile', {})
+    const stated = await q.dispatch('reconcile', {}, { queue: 'default' })
+    expect(q.stats().queues.default.stranded).toBe(2)
+
+    q.handle(defineJob({ name: 'reconcile', queue: 'fleet', maxAttempts: 5, retryDelay: [30_000], handler: (job) => { seen.push(job.id) } }))
+    const row = q.find(id)!
+    expect([row.queue, row.max_attempts, row.retry_delay]).toEqual(['fleet', 5, '[30000]'])
+    // A queue the caller named is the caller's statement and is not moved.
+    expect(q.find(stated)!.queue).toBe('default')
+    expect(q.stats().queues.default.stranded).toBe(1)
+
+    await q.start()
+    const deadline = Date.now() + 2_000
+    while (seen.length === 0 && Date.now() < deadline) await Bun.sleep(10)
+    expect(seen).toEqual([id])
+  })
+
+  it('a name dispatched after the registry loaded is not remembered, only counted', async () => {
+    const q = makeQueue()
+    await q.start()
+    const id = await q.dispatch('nobody', {})
+    q.handle('nobody', () => {}, { queue: 'elsewhere' })
+    expect(q.find(id)!.queue).toBe('default')
+    expect(q.stats().queues.default.stranded).toBe(1)
+  })
+
   it('runs the handler the definition holds', async () => {
     const seen: Array<{ to: string }> = []
     const q = makeQueue()

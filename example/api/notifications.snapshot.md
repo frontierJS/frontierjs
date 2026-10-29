@@ -22,7 +22,7 @@ on the definition is what holds it still.
 | --- | --- |
 | `InvoiceDue` | `email` |
 | `OrderConfirmation` | `email` |
-| `OrderPaid` | `inApp` |
+| `OrderPaid` | `inApp` · `push` |
 
 3 notification(s).
 

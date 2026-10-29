@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-167 definitions · 73 models · 1 view · 38 types · 55 enums · 0 other
+166 definitions · 72 models · 1 view · 38 types · 55 enums · 0 other
 ```
 
 ## Definitions
@@ -94,7 +94,6 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `RegistryImage` | model |
 | `Dependency` | model |
 | `DependencyUse` | model |
-| `Backup` | model |
 | `HubConfig` | model |
 | `Notification` | model |
 | `NotificationPreference` | model |
@@ -727,7 +726,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `volumes` — hasMany `Volume`
 - relation `appServers` — hasMany `AppServer`
 - relation `serverNetworks` — hasMany `ServerNetwork`
-- relation `hostHub` — hasMany `HubConfig` · optional
 - transitions on `status` — `reboot`: online|unreachable → pending · `drain`: online → draining @5 · `undrain`: draining → online @5 · `provision`: pending → provisioning @5 · `destroy`: pending|provisioning|installing|online|unreachable|draining|stopped → destroying @5 · `checkIn`: pending|installing|unreachable → online @system · `loseContact`: online → unreachable @system · `reportProvisioned`: provisioning → installing @system @5 · `reportRunning`: pending|provisioning|installing|unreachable|stopped → online @system @5 · `reportStopped`: pending|provisioning|installing|online|unreachable|draining → stopped @system @5 · `reportRebuilding`: pending|installing|online|unreachable|draining|stopped → provisioning @system @5 · `reportDestroyed`: destroying → destroyed @system @5
 - capabilities — `Server.create` · `Server.update` · `Server.delete` · `Server.reboot` · `Server.drain` · `Server.undrain` · `Server.provision` · `Server.destroy` · read is not graded
 
@@ -907,6 +905,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `domainRoutes` — hasMany `DomainRoute`
 - relation `variables` — hasMany `Variable`
 - relation `editors` — hasMany `AppEditor`
+- relation `hub` — hasMany `HubConfig` · optional
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -1385,12 +1384,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 - gate `read:2 create:5 update:5 delete:5` · version field `version` · closed (`additionalProperties: false`)
 - relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
-- relation `backups` — hasMany `Backup`
 - relation `appBackups` — hasMany `AppBackup`
 - relation `apps` — hasMany `App`
 - relation `replicaApp` — hasMany `App` · optional
-- relation `replicaHub` — hasMany `HubConfig` · optional
-- relation `hubs` — hasMany `HubConfig`
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -1723,33 +1719,10 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 **On create**: required — `projectId`, `dependencyId`, `member`, `kind`, `declared` · not accepted — `id`
 
-### `Backup`
-
-- gate `read:7 create:7 update:8 delete:7` · closed (`additionalProperties: false`)
-- relation `destination` — belongsTo `BackupDestination` via `destinationId` · on delete Restrict · optional
-
-| Field | Type | Required | Label | Rules | Messages |
-| --- | --- | --- | --- | --- | --- |
-| `id` | `string` | — | — | — | — |
-| `kind` | `BackupKind` = `"manual"` | — | — | — | — |
-| `status` | `RunStatus` = `"pending"` | — | — | — | — |
-| `destinationId` | `string`? | — | — | — | — |
-| `sizeBytes` | `integer`? | — | — | — | — |
-| `location` | `string`? | — | — | `minLength: 0` `maxLength: 500` `x-transforms` | — |
-| `error` | `string`? | — | — | `minLength: 0` `maxLength: 2000` | — |
-| `requestedBy` | `string`? | — | — | — | — |
-| `startedAt` | `string`? | — | — | `format: "date-time"` | — |
-| `finishedAt` | `string`? | — | — | `format: "date-time"` | — |
-| `durationMs` | `integer`? | — | — | — | — |
-
-**On create**: required — nothing · not accepted — `id`
-
 ### `HubConfig`
 
 - gate `read:7 create:7 update:7 delete:7` · version field `version` · closed (`additionalProperties: false`)
-- relation `backupDestination` — belongsTo `BackupDestination` via `backupDestinationId` · on delete SetNull · optional
-- relation `replicaDestination` — belongsTo `BackupDestination` via `replicaDestinationId` · on delete SetNull · optional
-- relation `hostServer` — belongsTo `Server` via `hostServerId` · on delete SetNull · optional
+- relation `app` — belongsTo `App` via `appId` · on delete SetNull · optional
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -1758,19 +1731,13 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `requireTwoFactorForOwners` | `boolean` = `false` | — | — | — | — |
 | `allowApiKeyAuth` | `boolean` = `true` | — | — | — | — |
 | `allowBotUsers` | `boolean` = `true` | — | — | — | — |
-| `backupEnabled` | `boolean` = `false` | — | — | — | — |
-| `backupCron` | `string` = `"0 2 * * *"` | — | — | `minLength: 1` `maxLength: 100` `x-transforms` | — |
-| `backupDestinationId` | `string`? | — | — | — | — |
-| `replicaDestinationId` | `string`? | — | — | — | — |
-| `replicaFoundAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
-| `replicaSyncedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `backupKeepLocalCount` | `integer` = `7` | — | — | `minimum: 1` `maximum: 1000` | — |
 | `backupKeepLocalDays` | `integer`? | — | — | `minimum: 1` `maximum: 3650` | — |
 | `backupKeepRemoteCount` | `integer` = `7` | — | — | `minimum: 1` `maximum: 1000` | — |
 | `backupKeepRemoteDays` | `integer`? | — | — | `minimum: 1` `maximum: 3650` | — |
 | `encryptionKeyEscrowedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `encryptionKeyFingerprint` | `string`? | — | — | `x-litestone-kind` | — |
-| `hostServerId` | `string`? | — | — | `x-litestone-kind` | — |
+| `appId` | `string`? | — | — | `x-litestone-kind` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — nothing · not accepted — `id`, `version`

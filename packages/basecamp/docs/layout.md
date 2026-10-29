@@ -221,7 +221,7 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           jobs/{recipe,cleanup}-run are both ways this app acts on a MACHINE —
           one shape, opposite safeguards; jobs/outpost-run.ts is their half
           domain/backup/backup-archives.ts is an archive once it exists — the one
-          delete (retention's and backups.remove's, FJS-D1494), the prune
+          delete (retention's and backups.discard's, FJS-D1494), the prune
           backup-run calls after a success, and the rescans that write
           `found` rows — the hub's (FJS-D1493) and an app's, hashed before it
           restores (FJS-D1572, jobs/app-archive-rescan.job.ts); not a job, so

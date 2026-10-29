@@ -24,7 +24,7 @@ import { createLitestoneAuth, auth as authPlugin, defineProvider } from '@fronti
 import type { CredentialChange }                 from '@frontierjs/auth'
 import { caravan }                        from '@frontierjs/caravan'
 import { conduit }                              from '@frontierjs/conduit'
-import { notifications }                  from '@frontierjs/notifications'
+import { notifications, webPush }         from '@frontierjs/notifications'
 import { orion }                                from '@frontierjs/orion'
 import { mcp }                            from '@frontierjs/mcp'
 import { mail } from '@frontierjs/junction/mail'
@@ -35,6 +35,7 @@ import { db, shops, DEFAULT_SHOP, DEV_KEY, STORAGE_ROOT, TIME_ZONE_FLOOR } from 
 import { perShopAuth }                          from './core/auth.ts'
 import { shopGateLevel, SYSTEM }                from './core/gate.ts'
 import { joinChannels }                         from './core/channels.ts'
+import { vapid }                                from './core/push.ts'
 import { cartClaim, CART_HEADER }              from './domain/shop'
 import { IDP_URL }                              from './providers/idp/sink.ts'
 import { createConduitMailer, MAIL_TARGET }     from './providers/mail/mailer.ts'
@@ -606,11 +607,17 @@ process.env.STRIPE_WEBHOOK_SECRET    ??= 'whsec_dev'
 // plugin declares `requires: ['mailer']` when the email channel is on, and
 // Junction checks that at startup against presence *and* configure order, so
 // getting it wrong is a boot failure rather than a send failure an hour later.
+//
+// `push` is registered only when core/push.ts found a VAPID pair, and the
+// notifications that name it read the same answer.
 
 app.configure(mail({ mailer: createConduitMailer(app, { from: 'shop@example.test' }) }))
 app.configure(notifications({
   db,
-  transports:    { email: { mailer: 'default' } },
+  transports: {
+    email: { mailer: 'default' },
+    ...(vapid ? { push: webPush({ vapid }) } : {}),
+  },
 }))
 
 // GET /api/manifest — what this app IS, read off live runtime state: services,

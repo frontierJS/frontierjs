@@ -130,7 +130,7 @@ function runner(app: App) {
       if (lastAttempt && job.workspaceId)
         await notifyPeople(app, 'JobFailed', await workspaceMembers(app, job.workspaceId as string), {
           runId, jobId, jobName: job.name, reason: msg,
-        })
+        }, job.workspaceId as string)
 
       // Re-throw so Caravan can apply its retry backoff
       throw err

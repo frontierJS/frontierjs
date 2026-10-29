@@ -38,6 +38,7 @@ import { db, getScoped, removeScoped, restoreScoped, deriveSlug, narrowPatch, ch
          slugify, }
   from '../../core/resource.ts'
 import { env }      from '../../core/env.ts'
+import { notHub }   from '../../domain/host/host-machine.ts'
 import { mintPush } from '../../plugins/push.ts'
 // The ONE definition of a certificate's condition, imported rather than
 // recomputed: an include returns raw Domain rows, so without this the app
@@ -588,6 +589,7 @@ export default createService({
         ...parseWhere($.query),
         workspaceId: ws(),
         ...(serverId ? { appServers: { some: { serverId } } } : {}),
+        ...await notHub(db().asSystem(), 'app'),
       },
       include: WITH_DETAIL,
       orderBy: sort ? normalizeOrderBy(sort as SortParam) : { createdAt: 'desc' },

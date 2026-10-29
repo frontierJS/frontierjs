@@ -331,6 +331,7 @@ app.jobs.queue('mail').resume({ actor: 'ops' })
 
 app.jobs.pause({ actor: 'ops' })     // every queue, including one first named later
 app.jobs.stats().queues.mail.pausedMs  // how long it has been paused, or null
+app.jobs.stats().queues.mail.stranded  // pending rows no handler here serves on this queue
 ```
 
 These are operator verbs (`FJS-D198`): over HTTP they need ADMINISTRATOR, and

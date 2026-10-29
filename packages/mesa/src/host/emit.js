@@ -16,6 +16,16 @@
  * `<script module>` is not refused at compile: the compiler keeps that half
  * and moves the throw into the default export (`targetRefusal`, `FJS-2182`).
  *
+ * A profile with `mode: 'string'` (the server, `FJS-D1634`) takes the same
+ * walk and a different line body: the template is written as pushes onto
+ * `$$out`, the array `__anchor` names on that path, with `{#if}` a JS `if`,
+ * `{#each}` a `for` and a snippet a function pushing to its own anchor. No
+ * render effects and no blocks: a server render runs the graph once. Static
+ * text and attributes are escaped here at compile time by the functions the
+ * runtime (`runtime-server.js`) applies to live values, so the two cannot
+ * drift. A kind the string mode does not lower yet throws the same refusal
+ * as a missing tag.
+ *
  * The lines are built EAGERLY and the xNode only writes them. The head
  * declarations (`$$props`, `$$emit`, …) are emitted only when
  * `ctx.inuse` says a template expression reached for them, and the head
@@ -23,11 +33,14 @@
  * come too late, which is why the DOM builder makes its own at build time.
  */
 
-import { xNode, Q, PRESERVE_WHITESPACE, contentFallback } from '../compiler.js'
+import { xNode, Q, PRESERVE_WHITESPACE, contentFallback, writtenOnce } from '../compiler.js'
 import { htmlEntitiesToText } from '../entities.js'
 import { eachNode } from '../ir.js'
+import { esc, attrs as attrString } from '../runtime-server.js'
 
 const IDENT = /^[A-Za-z_$][\w$]*$/
+// HTML's void elements: no close tag, and nothing a child could be.
+const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'])
 
 /** A single-quoted JS string literal. */
 function q1(s) {
@@ -35,6 +48,8 @@ function q1(s) {
     .replace(/\\/g, '\\\\').replace(/'/g, "\\'")
     .replace(/\n/g, '\\n').replace(/\r/g, '\\r') + "'"
 }
+/** The static part of a template literal: `Q` leaves `${` open, which here is text. */
+const tq = (s) => Q(s, true).replace(/\$\{/g, '\\${')
 
 const refusalText = (t, what, loc) => `${what}${loc ? ` at ${loc}` : ''} has no ${t.name} lowering`
 
@@ -55,6 +70,17 @@ function spelling(u) {
     case 'js-text':      return '{*…}'
     case 'systag':       return `{${n.value.match(/^@[\w-]*/)?.[0] ?? '@'}}`
     default:             return `{${u.what}}`
+  }
+}
+
+/** The source spelling of a lowered node the string mode does not write yet. */
+function kindSpelling(n) {
+  switch (n.kind) {
+    case 'component':       return `<${n.name}>`
+    case 'dynamic-element': return '<mesa:element>'
+    case 'portal':          return '<mesa:portal>'
+    case 'html':            return '{@html}'
+    default:                return `{${n.kind}}`
   }
 }
 
@@ -122,9 +148,10 @@ export function hostDropped(ir, t) {
  * does in a browser, less the one newline HTML drops after the open tag. Live
  * text without a `value=` is refused, since a browser moves a field's text
  * into it only until someone types, and a terminal writing it would overwrite
- * what was typed.
+ * what was typed. A string mode writes markup, where a field's text is its
+ * content, so none of this applies there.
  */
-const isField = (t, n) => ['input', 'textarea'].includes(t.tags[n.tag]?.role)
+const isField = (t, n) => t.mode !== 'string' && ['input', 'textarea'].includes(t.tags[n.tag]?.role)
 // A `<progress>`'s children are the fallback a browser shows only when it
 // cannot draw the bar, and an `<svg>`'s are drawing, which a terminal shows
 // as the image's text; nothing in either is built or refused.
@@ -301,12 +328,33 @@ export function buildHost(ctx, t) {
   const refused = hostRefusal(ir, t)
   if (refused) throw new Error(refused)
   const dropped = hostDropped(ir, t)
-  const scope = t.paintsCss ? ir.styles?.scope : null
+  const string = t.mode === 'string'
+  // The DOM path stamps the component's css id on any element with a class,
+  // styled or not; a host target carries a scope only for its stylesheet.
+  const scope = !t.paintsCss ? null : string ? ctx.css?.id : ir.styles?.scope
+  const styled = !!ctx.css?.active?.()
 
-  const seq = { el: 0, t: 0, m: 0, s: 0 }
+  const seq = { el: 0, t: 0, m: 0, s: 0, arr: 0 }
   const lines = []
-  const line = (ind, text) => lines.push([ind, text])
+  // The string mode gathers a run of static text and holes and writes it as
+  // ONE push — a template literal, or a plain string when nothing is live.
+  // Any other line ends the run, so a `for` or an `if` never splits one.
+  const run = []
+  let runInd = 0
+  const flush = () => {
+    if (!run.length) return
+    const live = run.some((c) => typeof c !== 'string')
+    const body = live
+      ? '`' + run.map((c) => (typeof c === 'string' ? tq(c) : '${' + c.code + '}')).join('') + '`'
+      : q1(run.join(''))
+    lines.push([runInd, `$$out.push(${body});`])
+    run.length = 0
+  }
+  const line = (ind, text) => { flush(); lines.push([ind, text]) }
+  const push = (ind, text) => { if (run.length && runInd !== ind) flush(); runInd = ind; if (text) run.push(text) }
+  const hole = (ind, code) => { push(ind, ''); run.push({ code }) }
   const dep = (e) => ctx.detectDependency(e.raw)
+  const unwritten = (n) => { throw new Error(refusalText(t, kindSpelling(n), n.loc)) }
 
   const emitFragment = (children, ind) => {
     line(ind, 'const $$b = $$host.fragment();')
@@ -315,7 +363,8 @@ export function buildHost(ctx, t) {
   }
 
   // How many `<pre>`s the node being emitted sits in, and the texts at a
-  // `<pre>`'s two edges (`preEdges`).
+  // `<pre>`'s two edges (`preEdges`). The DOM path writes a `<pre>`'s text
+  // whole, so the string mode reads neither set.
   let inPre = 0
   const startsPre = new Set()
   const endsPre = new Set()
@@ -336,14 +385,20 @@ export function buildHost(ctx, t) {
   const emitSnippet = (n, name, ind, content = false) => {
     const fn = `(${['__anchor', ...n.params].join(', ')}) => {`
     line(ind, `const ${name} = ${content ? `$$runtime.content(${fn}` : fn}`)
-    line(ind + 1, 'const $$b = $$host.fragment();')
-    emitChildren(n.children, '$$b', ind + 1)
-    line(ind + 1, '$$host.append(__anchor, $$b);')
+    if (string) {
+      line(ind + 1, 'const $$out = __anchor;')
+      emitChildren(n.children, '$$out', ind + 1)
+      flush()
+    } else {
+      line(ind + 1, 'const $$b = $$host.fragment();')
+      emitChildren(n.children, '$$b', ind + 1)
+      line(ind + 1, '$$host.append(__anchor, $$b);')
+    }
     line(ind, content ? '});' : '};')
   }
 
   const emitRender = (n, parent, ind) => {
-    const m = marker(parent, ind)
+    const m = string ? '$$out' : marker(parent, ind)
     dep(n.callee)
     const args = [m, ...n.args.map((a) => { dep(a); return `() => (${a.code})` })].join(', ')
     if (n.guard) line(ind, `{ const $$sf = ${n.callee.code}; if ($$sf) $$sf(${args}); }`)
@@ -353,6 +408,7 @@ export function buildHost(ctx, t) {
   // A changed tag is a different node, so the element is rebuilt under a
   // key, as the DOM path's keyBlock rebuilds it.
   const emitDynamicElement = (n, parent, ind) => {
+    if (string) unwritten(n)
     const m = marker(parent, ind)
     dep(n.tag)
     line(ind, `$$host.keyBlock(${m}, () => (${n.tag.code}), ($$tag) => {`)
@@ -362,7 +418,48 @@ export function buildHost(ctx, t) {
     line(ind, '});')
   }
 
+  // The open tag is written at compile time when every attribute is static,
+  // and by `$$host.attrs` when one is live; both are the one serializer in
+  // `runtime-server.js`, handed the entries in source order. Handlers,
+  // attachments and `bind:this` have no server half and are dropped.
+  const emitElementString = (n, ind) => {
+    // The DOM path's order: the template's static attributes with `class`
+    // last, then each live one as its effect first runs; the scope class is
+    // on an element with a static class, or on every one of a styled component.
+    const statics = [], lives = []
+    let cls = null
+    for (const a of n.attrs) {
+      if (typeof a.value === 'object') {
+        dep(a.value.expr)
+        lives.push([a.value.kind === 'spread' ? '...' : a.name, { code: a.value.expr.code }])
+      } else if (a.name === 'class') cls = [a.name, htmlEntitiesToText(a.value)]
+      else statics.push([a.name, a.value === true ? true : htmlEntitiesToText(a.value)])
+    }
+    if (cls) statics.push(cls)
+    // A live attribute the DOM path writes once lands before the ones its
+    // effects write.
+    const once = (e) => e[0] !== '...' && writtenOnce(e[1].code, ctx.analysis?.opaqueValues)
+    lives.sort((a, b) => once(b) - once(a))
+    for (const st of n.styles) { dep(st.expr); lives.push([`style:${st.prop}`, { code: st.expr.code }]) }
+    for (const c of n.classes) { dep(c.expr); lives.push([`class:${c.name}`, { code: `!!(${c.expr.code})` }]) }
+    const sc = cls || styled ? scope : null
+    if (!lives.length) push(ind, `<${n.tag}${attrString(n.tag, statics, sc)}>`)
+    else {
+      const list = [
+        ...statics.map(([k, v]) => `[${q1(k)}, ${v === true ? 'true' : q1(v)}]`),
+        ...lives.map(([k, v]) => `[${q1(k)}, (${v.code}), 1]`),
+      ]
+      push(ind, `<${n.tag}`)
+      hole(ind, `$$host.attrs(${q1(n.tag)}, [${list.join(', ')}]${sc ? `, ${q1(sc)}` : ''})`)
+      push(ind, '>')
+    }
+    if (!VOID.has(n.tag)) { emitChildren(n.children, '$$out', ind); push(ind, `</${n.tag}>`) }
+    for (const h of n.handlers) dep(h.expr)
+    for (const a of n.attachments) dep(a.expr)
+  }
+
   const emitElement = (n, parent, ind, tag = q1(n.tag)) => {
+    if (string) return emitElementString(n, ind)
     const el = `$$el${seq.el++}`
     const attrs = n.attrs.filter((a) => typeof a.value !== 'object').map((a) => {
       const key = IDENT.test(a.name) ? a.name : q1(a.name)
@@ -441,6 +538,13 @@ export function buildHost(ctx, t) {
       if (i === n.parts.length - 1 && endsPre.has(n)) value = value.replace(TRAILING_NEWLINE, '')
       return { ...p, value }
     })
+    if (string) {
+      for (const p of parts) {
+        if (p.kind !== 'static') { dep(p.expr); hole(ind, `$$host.esc(${p.expr.code})`); continue }
+        push(ind, esc(htmlEntitiesToText(p.value)))
+      }
+      return
+    }
     if (n.static) {
       const value = parts.map((p) => p.value).join('')
       if (!value.trim()) {
@@ -474,6 +578,7 @@ export function buildHost(ctx, t) {
   // Markup is painted as the text a browser's `innerText` reads from it,
   // since a terminal has text and no markup.
   const emitHtml = (n, parent, ind) => {
+    if (string) unwritten(n)
     dep(n.value)
     let value = `$$host.markupText((${n.value.code}), ${inPre > 0})`
     if (endsPre.has(n)) value += `.replace(${TRAILING_NEWLINE}, '')`
@@ -488,8 +593,17 @@ export function buildHost(ctx, t) {
   }
 
   const emitIf = (n, parent, ind) => {
-    const m = marker(parent, ind)
     n.branches.forEach((b) => dep(b.test))
+    if (string) {
+      n.branches.forEach((b, i) => {
+        line(ind, `${i ? '} else if' : 'if'} (${b.test.code}) {`)
+        emitChildren(b.children, '$$out', ind + 1)
+      })
+      if (n.else) { line(ind, '} else {'); emitChildren(n.else, '$$out', ind + 1) }
+      line(ind, '}')
+      return
+    }
+    const m = marker(parent, ind)
     let select
     if (n.branches.length === 1) {
       select = `() => (${n.branches[0].test.code}) ? 0 : ${n.else ? 1 : 'null'}`
@@ -510,15 +624,21 @@ export function buildHost(ctx, t) {
   }
 
   const emitKey = (n, parent, ind) => {
-    const m = marker(parent, ind)
     dep(n.key)
+    if (string) {
+      line(ind, '{')
+      emitChildren(n.children, '$$out', ind + 1)
+      line(ind, '}')
+      return
+    }
+    const m = marker(parent, ind)
     line(ind, `$$host.keyBlock(${m}, () => (${n.key.code}), () => {`)
     emitFragment(n.children, ind + 1)
     line(ind, '});')
   }
 
   const emitEach = (n, parent, ind) => {
-    const m = marker(parent, ind)
+    const m = string ? null : marker(parent, ind)
     dep(n.items)
     const itemParam = n.item.name ?? '$$item'
     const params = [itemParam, n.index].filter(Boolean).join(', ')
@@ -530,6 +650,25 @@ export function buildHost(ctx, t) {
         : `(${params}) => (${n.key.code})`
     }
     for (const [outer, name] of n.lifts) line(ind, `const ${name} = $$runtime.createKeyedEquals(() => ${outer});`)
+    // The item and index are getters here too, since the expressions under
+    // them were compiled to call them.
+    if (string) {
+      const arr = `$$arr${seq.arr}`, i = `$$i${seq.arr++}`
+      line(ind, `{ const ${arr} = $$runtime.eachItems(${n.items.code});`)
+      line(ind + 1, `${n.else ? `if (${arr}.length) ` : ''}for (let ${i} = 0; ${i} < ${arr}.length; ${i}++) {`)
+      line(ind + 2, `const ${itemParam} = () => ${arr}[${i}]${n.index ? `, ${n.index} = () => ${i}` : ''};`)
+      if (n.item.pattern) {
+        line(ind + 2, `const ${n.item.fn} = () => { const ${n.item.pattern} = ${itemParam}(); return { ${n.item.names.join(', ')} }; };`)
+      }
+      emitChildren(n.children, '$$out', ind + 2)
+      if (n.else) {
+        line(ind + 1, '} else {')
+        emitChildren(n.else, '$$out', ind + 2)
+      }
+      line(ind + 1, '}')
+      line(ind, '}')
+      return
+    }
     line(ind, `$$host.eachBlock(${m}, () => (${n.items.code}), ${keyFn}, (${params}) => {`)
     if (n.item.pattern) {
       line(ind + 1, `const ${n.item.fn} = () => { const ${n.item.pattern} = ${itemParam}(); return { ${n.item.names.join(', ')} }; };`)
@@ -546,6 +685,7 @@ export function buildHost(ctx, t) {
   // its nodes before it — the DOM path's anchor comment, as a cell. The
   // registry is keyed by that marker, so each call gets one of its own.
   const emitComponent = (n, parent, ind) => {
+    if (string) unwritten(n)
     const m = marker(parent, ind)
     const keyOf = (name) => (IDENT.test(name) ? name : q1(name))
     const values = n.props.map((p) => {
@@ -589,7 +729,7 @@ export function buildHost(ctx, t) {
   const emitGlobal = (n, ind) => {
     for (const h of n.handlers) {
       dep(h.expr)
-      line(ind, `$$host.onWindow('${h.event}', ${h.expr.code}${listenerOptions(h)});`)
+      if (!string) line(ind, `$$host.onWindow('${h.event}', ${h.expr.code}${listenerOptions(h)});`)
     }
   }
 
@@ -597,7 +737,7 @@ export function buildHost(ctx, t) {
     switch (n.kind) {
       case 'element':   return emitElement(n, parent, ind)
       case 'text':      return emitText(n, parent, ind)
-      case 'comment':   return
+      case 'comment':   return string && ctx.config.preserveComments ? push(ind, n.value) : undefined
       case 'if':        return emitIf(n, parent, ind)
       case 'each':      return emitEach(n, parent, ind)
       case 'key':       return emitKey(n, parent, ind)
@@ -610,14 +750,20 @@ export function buildHost(ctx, t) {
       // `to` names a DOM node and is never read: a terminal has one surface,
       // so the children paint where the portal is written, beside the
       // element it was opened from in every kit use.
-      case 'portal':    return emitChildren(n.children, parent, ind)
+      case 'portal':    return string ? unwritten(n) : emitChildren(n.children, parent, ind)
       default:          throw new Error(`${t.name} emitter reached a ${n.kind} node that hostOffenses passed`)
     }
   }
 
-  line(0, 'const $$parentElement = $$host.fragment();')
-  emitChildren(ir.children, '$$parentElement', 0)
-  line(0, '$$host.append(__anchor, $$parentElement);')
+  if (string) {
+    line(0, 'const $$out = __anchor;')
+    emitChildren(ir.children, '$$out', 0)
+    flush()
+  } else {
+    line(0, 'const $$parentElement = $$host.fragment();')
+    emitChildren(ir.children, '$$parentElement', 0)
+    line(0, '$$host.append(__anchor, $$parentElement);')
+  }
 
   // The scoped rules are handed back rather than emitted, whatever `css`
   // says: an engine that paints them reads its stylesheet from the bundle,

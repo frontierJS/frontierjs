@@ -1,6 +1,6 @@
 // src/notifications/PostureFailed.notification.ts
 
-import { defineNotification, inApp, mail } from '@frontierjs/notifications'
+import { defineNotification, inApp, mail, push } from '@frontierjs/notifications'
 import { declaredTransports, appUrl }      from './_shared.ts'
 
 export interface PostureFailedPayload {
@@ -19,6 +19,16 @@ export default defineNotification<PostureFailedPayload>({
     .action('View server', `/servers/${p.serverId}/`)
     .context('Server', p.serverId)
     .data({ serverName: p.serverName, failed: p.failed }),
+
+  // A finding, not an outage: loud enough to ring, not loud enough to break
+  // through do-not-disturb.
+  push: (p) => push()
+    .title('Server posture failing')
+    .body(`${p.serverName}: ${p.failed.join('; ')}`)
+    .priority(4)
+    .tags('warning')
+    .url(appUrl(`/servers/${p.serverId}/`))
+    .build(),
 
   email: (p) => mail()
     .subject(`Server posture failing — ${p.serverName}`)

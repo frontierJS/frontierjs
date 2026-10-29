@@ -10,7 +10,7 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 184**.
+Graded: **13 of 185**.
 
 ## data — 3 of 63
 
@@ -242,7 +242,7 @@ Graded: **13 of 184**.
 | Nothing here mocks a module, and the reason is a design rule. | **none** |
 | A test may not name a port, and the reason is the runner. | `test-port-literal` |
 
-## ui — 4 of 53
+## ui — 4 of 54
 
 ### Routes, prerender and static
 
@@ -264,6 +264,7 @@ Graded: **13 of 184**.
 | A comparison between two independent `record()` views has THREE states, and drawing two of them is a screen that lies. | **none** |
 | A `@from` column moves when a CHILD row is written, and nothing announces the parent. | **none** |
 | A tether holds what its last `load(query)` asked for, so a patch can take a row OUT of it. | **none** |
+| A relative day filter is the days it meant at the list's last read, so midnight does not move it. | **none** |
 | `@version` is the revision a screen READ, and a push does not move it. | **none** |
 | A watched record empties itself on its own delete, before the handler's next line. | **none** |
 

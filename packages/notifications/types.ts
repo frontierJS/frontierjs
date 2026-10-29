@@ -67,6 +67,40 @@ export interface MailMessage {
   attachments?: MailAttachment[]
 }
 
+// ─── Push message ─────────────────────────────────────────────────────────────
+
+export interface PushAction {
+  label: string
+  url:   string
+}
+
+/**
+ * What a `push:` formatter answers. ONE shape for both `push` drivers, so a
+ * definition formats once whichever one the app registered -- `webPush()` reads
+ * the payload fields and the delivery options, `ntfy()` reads the phone fields.
+ * A driver drops what it cannot carry rather than refusing it.
+ */
+export interface PushMessage {
+  title?:    string
+  body?:     string
+  /** Where a click goes -- the service worker reads it from the payload; ntfy sends it as `Click`. */
+  url?:      string
+  data?:     Record<string, unknown>
+  /** Seconds the push service may hold it for an offline device. Default one day. webPush only. */
+  ttl?:      number
+  /** webPush only -- the service's queueing hint, not the phone's. */
+  urgency?:  'very-low' | 'low' | 'normal' | 'high'
+  /** A later message with the same topic replaces one still queued or still on screen -- the
+   *  header for the push service, the payload for the worker's `tag`. webPush only. */
+  topic?:    string
+  /** ntfy only. 5 breaks through do-not-disturb; a resend is 4; default 3. */
+  priority?: 1 | 2 | 3 | 4 | 5
+  /** ntfy only -- emoji shortcodes (`rotating_light`) shown before the title. */
+  tags?:     string[]
+  /** ntfy only -- one `view` button each. */
+  actions?:  PushAction[]
+}
+
 // ─── Stored notification record (mirrors schema.lite model) ──────────────────
 
 export interface NotificationRecord {
@@ -131,6 +165,8 @@ export interface Recipient {
   /** A list is ONE mail addressed to all of them, not one mail each. */
   email?:  string | string[]
   phone?:  string
+  /** The ntfy topic a `push` ping is published to -- an address, not a device. */
+  pushTopic?: string
   [key: string]: unknown
 }
 

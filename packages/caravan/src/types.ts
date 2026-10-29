@@ -524,6 +524,14 @@ export interface QueueStats {
    * pause somebody forgot. Who paused it and why is `queue(name).state()`.
    */
   pausedMs: number | null
+
+  /**
+   * Pending rows on this queue whose name THIS process holds no handler for on
+   * it — work no worker here will claim, which otherwise waits with nothing
+   * logged (`FJS-3569`). Counted against this process's registry, so a
+   * producer with no handlers reads all of its work as stranded.
+   */
+  stranded: number
 }
 
 /**

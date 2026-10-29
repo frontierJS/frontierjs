@@ -14,8 +14,9 @@
 // ─── The hub's own ────────────────────────────────────────────────────────
 //
 // Basecamp's replica can be newer than the archive just restored, which is the
-// one case where the runbook beats the archive. It is recorded on `HubConfig`
-// the same way, and `/hub/backups/` names the runbook, because the hub cannot
+// one case where the runbook beats the archive. It is recorded on the hub
+// App's row the same way, under `<prefix>/basecamp` rather than its id, and
+// nobody is told: `/hub/backups/` names the runbook, because the hub cannot
 // replace itself while serving.
 //
 // A credential that will not decrypt, or a bucket that refuses the listing,
@@ -25,6 +26,7 @@ import { replicaOf, replicaDatabases } from '../../jobs/replicate-sync.job.ts'
 import { keyUnder, sendFor }           from '../../providers/storage/index.ts'
 import { listObjects }                 from '../../providers/storage/s3.ts'
 import { notifyPeople, workspaceMembers } from '../notification/notify.ts'
+import { hubApp }                      from '../host/host-machine.ts'
 import type { App }                    from '@frontierjs/junction'
 
 export type Finding =
@@ -65,8 +67,9 @@ export async function reconcileFound(app: App): Promise<Finding[]> {
   const now = new Date().toISOString()
   const out: Finding[] = []
 
+  const hub = await hubApp(sys)
   const apps = await sys.app.findMany({
-    where:  { replicaDestinationId: { not: null } },
+    where:  { replicaDestinationId: { not: null }, ...(hub ? { NOT: { id: hub.id } } : {}) },
     select: { id: true, slug: true, name: true, workspaceId: true, replicaDestinationId: true, replicaFoundAt: true },
     orderBy: { id: 'asc' },
   }) as { id: string; slug: string; name: string; workspaceId: string; replicaDestinationId: string; replicaFoundAt: string | null }[]
@@ -89,7 +92,6 @@ export async function reconcileFound(app: App): Promise<Finding[]> {
     if (!a.replicaFoundAt) told.set(a.workspaceId, [...(told.get(a.workspaceId) ?? []), { id: a.id, name: a.name, syncedAt: f.syncedAt }])
   }
 
-  const hub = await sys.hubConfig.findFirst({ where: { id: 'hub' }, select: { replicaDestinationId: true } })
   const dest = hub?.replicaDestinationId
     ? await sys.backupDestination.findFirst({ where: { id: hub.replicaDestinationId } })
     : null
@@ -99,8 +101,8 @@ export async function reconcileFound(app: App): Promise<Finding[]> {
       : { appId: null, error: `destination '${dest.name}' holds no credential` }
     out.push(f)
     if (!('error' in f) && f.databases.length)
-      await sys.hubConfig.update({
-        where:  { id: 'hub' },
+      await sys.app.update({
+        where:  { id: hub.id },
         data:   { replicaFoundAt: now, replicaSyncedAt: f.syncedAt },
         system: ['replicaFoundAt', 'replicaSyncedAt'],
       })

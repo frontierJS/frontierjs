@@ -28,13 +28,18 @@
 // the screen already says the app has no mailer.
 
 import { NOTIFICATION_KINDS, notificationKind } from './kinds.ts'
+import { pushTopicFor }     from './push-topic.ts'
+import { hasTransport }     from '@frontierjs/notifications'
 import type { App }         from '@frontierjs/junction'
 
 /** The transports this app can actually deliver on. `inApp` always; `email`
- *  only where a provider is configured, which `app.mail` is the one answer to. */
+ *  only where a provider is configured, which `app.mail` is the one answer to;
+ *  `push` where a driver is registered -- read off the app, never a second
+ *  config flag, so the ladder in `api/src/push.ts` stays the one owner. */
 function available(app: App): Set<string> {
   const set = new Set(['inApp'])
   if ('mail' in app) set.add('email')
+  if (hasTransport(app, 'push')) set.add('push')
   return set
 }
 
@@ -94,6 +99,9 @@ export async function notifyPeople(
   kind:    string,
   userIds: string[],
   payload: unknown,
+  /** The workspace whose critical topic a `push` kind is published to. A kind
+   *  with `push: true` and no workspace -- a hub-level event -- pings nobody. */
+  workspaceId?: string,
 ): Promise<number> {
   const factory = (app as any).notifications?.get(kind)
   if (!factory) {
@@ -132,6 +140,23 @@ export async function notifyPeople(
       sent++
     } catch (err) {
       console.error(`[notify] ${kind} → ${userId}: ${(err as Error).message}`)
+    }
+  }
+
+  // ─── The topic recipient: one ping per event, not one per person ──────
+  // Built here because this module owns WHO gets told. `FJS-096` says a
+  // Recipient is not a User; a topic is the mailing-list case. Counted in
+  // `sent` as one delivery, which is what it is.
+  const def = notificationKind(kind)
+  if (def?.push && workspaceId && available(app).has('push')) {
+    try {
+      const pushTopic = await pushTopicFor(app, workspaceId)
+      if (pushTopic) {
+        await (app as any).notify({ pushTopic, transports: ['push'] }, factory(payload))
+        sent++
+      }
+    } catch (err) {
+      console.error(`[notify] ${kind} → push topic of ${workspaceId}: ${(err as Error).message}`)
     }
   }
   return sent

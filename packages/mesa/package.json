@@ -19,6 +19,9 @@
     "./runtime/native": {
       "import": "./src/runtime-native.js"
     },
+    "./runtime/server": {
+      "import": "./src/runtime-server.js"
+    },
     "./compiler": {
       "import": "./src/compiler.js"
     },

@@ -1372,6 +1372,7 @@ export class JunctionClient extends EventEmitter {
     // be sent again. Before `connect` fires, so a listener that reads a
     // roster is not reading the previous socket's.
     this._presenceSend()
+    this._visibilitySend()
     this.emit('connect')
 
     if (this._everConnected) {
@@ -1492,6 +1493,7 @@ export class JunctionClient extends EventEmitter {
    */
   private _presenceMeta: Map<string, Record<string, unknown>> = new Map()
   private _presenceApi: PresenceClient | null = null
+  private _visibilityBound = false
 
   /**
    * One entry per row, keyed by model — the synced truth every view points at.
@@ -1594,6 +1596,17 @@ export class JunctionClient extends EventEmitter {
         type: 'subscribe', channel: id, meta: this._presenceMeta.get(id),
       }))
     }
+  }
+
+  /**
+   * Whether this tab is on screen, for the server's `visible` on the
+   * connection: a push driver skips a user who has one (`FJS-D1627`). Sent on
+   * every `connected`, since a reconnect is a connection that has reported
+   * nothing, and the server takes one that never reported as hidden.
+   */
+  _visibilitySend(): void {
+    if (typeof document === 'undefined' || !this._wsReady || !this._ws) return
+    this._ws.send(JSON.stringify({ type: 'visibility', visible: document.visibilityState === 'visible' }))
   }
 
   _presenceSet(channelId: string, meta: Record<string, unknown>): void {
@@ -2598,6 +2611,10 @@ export class JunctionClient extends EventEmitter {
     const search = new URLSearchParams(this._socketQuery).toString()
     const ws = new WebSocket(`${proto}${host}/ws${search ? `?${search}` : ''}`, token ? [WS_PROTOCOL, WS_BEARER + token] : [WS_PROTOCOL])
     this._ws = ws
+    if (!this._visibilityBound && typeof document !== 'undefined') {
+      this._visibilityBound = true
+      document.addEventListener('visibilitychange', () => this._visibilitySend())
+    }
 
     ws.onopen = () => {
       // TCP/WS handshake complete, but the server's open handler is still running

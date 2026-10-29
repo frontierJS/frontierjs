@@ -792,6 +792,25 @@ export function buildStatements(db: Database) {
     GROUP  BY queue
   `)
 
+  // Pending work by name, for `stranded`: a row whose name no handler serves on
+  // its queue waits with nothing logged (`FJS-3569`).
+  const pendingByName = db.prepare<
+    { queue: string; name: string; count: number }, []
+  >(`
+    SELECT queue, name, COUNT(*) AS count
+    FROM   jobs
+    WHERE  status = 'pending'
+    GROUP  BY queue, name
+  `)
+
+  // A row dispatched by name before its handler registered took the defaults;
+  // the registration is the one statement of all three. Pending only, since a
+  // claimed row already ran under what it had.
+  const rehome = wrap<never, { id: string; queue: string; max_attempts: number; retry_delay: string | null }>(db.prepare(`
+    UPDATE jobs SET queue = $queue, max_attempts = $max_attempts, retry_delay = $retry_delay
+    WHERE  id = $id AND status = 'pending'
+  `))
+
   // ── Get by ID ───────────────────────────────────────────────────────────────
 
   const getById = wrap<JobRecord, { id: string }>(db.prepare(`
@@ -911,6 +930,8 @@ export function buildStatements(db: Database) {
     retryTerminal,
     statsByQueue,
     oldestRunning,
+    pendingByName,
+    rehome,
     getById,
     findByUniqueKey,
     listJobs,
@@ -944,9 +965,10 @@ export function aggregateStats(
   oldest:  { queue: string; started_at: number }[] = [],
   now:     number = Date.now(),
   pauses:  { queue: string; paused_at: number }[] = [],
+  stranded: { queue: string; count: number }[] = [],
 ): CaravanStats {
   const zero = (): QueueStats => ({
-    pending: 0, running: 0, done: 0, dead: 0, cancelled: 0, oldestRunningMs: null, pausedMs: null,
+    pending: 0, running: 0, done: 0, dead: 0, cancelled: 0, oldestRunningMs: null, pausedMs: null, stranded: 0,
   })
 
   const result: CaravanStats = {
@@ -1005,6 +1027,12 @@ export function aggregateStats(
     const age = Math.max(0, now - every.paused_at)
     for (const q of Object.values(result.queues)) q.pausedMs = longer(q.pausedMs, age)
     result.total.pausedMs = longer(result.total.pausedMs, age)
+  }
+
+  for (const row of stranded) {
+    if (!result.queues[row.queue]) result.queues[row.queue] = zero()
+    result.queues[row.queue].stranded += row.count
+    result.total.stranded             += row.count
   }
 
   return result

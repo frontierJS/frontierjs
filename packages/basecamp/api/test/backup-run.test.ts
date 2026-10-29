@@ -17,6 +17,7 @@ import { GatePlugin }        from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { takeBackup }        from '../src/jobs/backup-run.job.ts'
+import { placeHub }          from '../src/domain/host/host-machine.ts'
 import { registerDestination } from '../src/providers/storage/index.ts'
 import { pruneBackups, rescanDestination } from '../src/domain/backup/backup-archives.ts'
 import { archiveRefusals, MANIFEST_FILE } from '../src/domain/backup/archive-manifest.ts'
@@ -24,6 +25,7 @@ import { encryptionKeyFingerprint } from '../src/core/db.ts'
 import { fetchHubArchive, listHubArchives, readBucket, restoreStaged, stageHubArchive, stagedDir } from '../src/domain/backup/hub-restore.ts'
 
 let env: any
+let hubId: string
 
 beforeAll(async () => {
   env = await createTestEnv({
@@ -33,12 +35,20 @@ beforeAll(async () => {
     plugins:       [new GatePlugin({ getLevel: basecampGateLevel })],
     api: ({ db, path }: any) => buildBasecampApp({ db, dbPath: path }),
   })
+  // A hub archive is an AppBackup on the hub App (`FJS-D1606`).
+  const sys  = env.system as any
+  const own  = await sys.user.create({ data: { email: 'hub-owner@example.com' } })
+  const acct = await sys.account.create({ data: { slug: 'hub-acct', displayName: 'Hub' } })
+  const ws   = await sys.workspace.create({ data: { accountId: acct.id, name: 'Hub', slug: 'hub-ws', ownerId: own.id } })
+  const box  = await sys.server.create({ data: { workspaceId: ws.id, name: 'Basecamp host', slug: 'basecamp-host' } })
+  await sys.hubConfig.create({ data: { id: 'hub' } })
+  hubId = (await placeHub(sys, box)).id
 })
 
 describe('a backup archives every database the app keeps', () => {
   test('main, the audit trail and the jobs queue are all in the archive', async () => {
     const sys = env.system as any
-    const row = await sys.backup.create({ data: {} })
+    const row = await sys.appBackup.create({ data: { appId: hubId } })
 
     // The trail's directory is made by its first write, which lands after the
     // create returns. An archive taken before then has no trail to hold.
@@ -48,7 +58,7 @@ describe('a backup archives every database the app keeps', () => {
 
     await takeBackup(env.app, row.id)
 
-    const done = await sys.backup.findUnique({ where: { id: row.id } })
+    const done = await sys.appBackup.findUnique({ where: { id: row.id } })
     expect(done.error).toBeNull()
     expect(done.status).toBe('success')
 
@@ -61,7 +71,7 @@ describe('a backup archives every database the app keeps', () => {
     // The archive opens and carries the row it was asked about.
     const copy = new Database(join(dir, 'main.db'), { readonly: true })
     try {
-      expect(copy.query('SELECT id FROM backup WHERE id = ?').get(row.id)).toBeTruthy()
+      expect(copy.query('SELECT id FROM app_backup WHERE id = ?').get(row.id)).toBeTruthy()
     } finally { copy.close() }
 
     // sizeBytes is the whole archive, not the largest file.
@@ -76,9 +86,9 @@ describe('a backup archives every database the app keeps', () => {
 describe('the archive is the framework\'s backup', () => {
   test('main.db carries the backup stamp', async () => {
     const sys = env.system as any
-    const row = await sys.backup.create({ data: {} })
+    const row = await sys.appBackup.create({ data: { appId: hubId } })
     await takeBackup(env.app, row.id)
-    const done = await sys.backup.findUnique({ where: { id: row.id } })
+    const done = await sys.appBackup.findUnique({ where: { id: row.id } })
     expect(done.status).toBe('success')
 
     const copy = new Database(join(done.location as string, 'main.db'), { readonly: true })
@@ -99,9 +109,9 @@ describe('an archive carries a manifest, and a restore refuses what it cannot co
 
   beforeAll(async () => {
     const sys = env.system as any
-    const row = await sys.backup.create({ data: {} })
+    const row = await sys.appBackup.create({ data: { appId: hubId } })
     await takeBackup(env.app, row.id)
-    archive = (await sys.backup.findUnique({ where: { id: row.id } })).location
+    archive = (await sys.appBackup.findUnique({ where: { id: row.id } })).location
   })
 
   const staged = () => {
@@ -191,9 +201,9 @@ describe('a hub archive is staged at /setup and swapped in at the next boot', ()
 
   beforeAll(async () => {
     const sys = env.system as any
-    const row = await sys.backup.create({ data: {} })
+    const row = await sys.appBackup.create({ data: { appId: hubId } })
     await takeBackup(env.app, row.id)
-    archive = (await sys.backup.findUnique({ where: { id: row.id } })).location
+    archive = (await sys.appBackup.findUnique({ where: { id: row.id } })).location
     tarball = join(mkdtempSync(join(tmpdir(), 'bc-hubtar-')), `${basename(archive)}.tar.gz`)
     Bun.spawnSync(['tar', '-czf', tarball, '-C', dirname(archive), basename(archive)])
   })
@@ -225,7 +235,7 @@ describe('a hub archive is staged at /setup and swapped in at the next boot', ()
     expect(readdirSync(dirname(box.dbPath)).some(f => f.startsWith('restore-done-'))).toBe(true)
     // The restored file is the archive's: it carries the backup row this suite wrote.
     const raw = new Database(box.dbPath, { readonly: true })
-    try { expect((raw.query('SELECT count(*) AS n FROM backup').get() as any).n).toBeGreaterThan(0) } finally { raw.close() }
+    try { expect((raw.query('SELECT count(*) AS n FROM app_backup').get() as any).n).toBeGreaterThan(0) } finally { raw.close() }
     expect(existsSync(box.audit)).toBe(true)
     // No schema names the queue, so the swap leaves it: a restored hub starts with none.
     expect(readdirSync(dirname(box.dbPath)).filter(f => f.includes('jobs'))).toEqual([])
@@ -364,9 +374,9 @@ describe('a backup naming a destination is uploaded, and a failed upload keeps t
   const localOf = (key: string) => join(dirname(env.app.sqlite.filename), 'backups', basename(key, '.tar.gz'))
   const run = async () => {
     const sys = env.system as any
-    const row = await sys.backup.create({ data: { destinationId } })
+    const row = await sys.appBackup.create({ data: { appId: hubId, destinationId } })
     await takeBackup(env.app, row.id)
-    return sys.backup.findUnique({ where: { id: row.id } })
+    return sys.appBackup.findUnique({ where: { id: row.id } })
   }
 
   test('one signed PUT of a tarball under the prefix; the row names the key and the newest stays on disk', async () => {
@@ -384,7 +394,7 @@ describe('a backup naming a destination is uploaded, and a failed upload keeps t
   })
 
   test('the next backup replaces the local copy of an uploaded one', async () => {
-    const first  = await (env.system as any).backup.findFirst({ where: { destinationId, error: null }, orderBy: { createdAt: 'desc' } })
+    const first  = await (env.system as any).appBackup.findFirst({ where: { destinationId, error: null }, orderBy: { createdAt: 'desc' } })
     const second = await run()
     expect(second.error).toBeNull()
     expect(existsSync(localOf(first.location))).toBe(false)
@@ -392,7 +402,7 @@ describe('a backup naming a destination is uploaded, and a failed upload keeps t
   })
 
   test('a refused PUT finishes success with the reason in error, and the archive stays on this disk', async () => {
-    const uploaded = await (env.system as any).backup.findFirst({ where: { destinationId, error: null }, orderBy: { createdAt: 'desc' } })
+    const uploaded = await (env.system as any).appBackup.findFirst({ where: { destinationId, error: null }, orderBy: { createdAt: 'desc' } })
     refuse = true
     const done = await run()
     refuse = false
@@ -429,11 +439,11 @@ describe('retention prunes by count and age, local and remote apart, and a resca
     const name = nameAt(daysAgo)
     mkdirSync(dirOf(name), { recursive: true })
     writeFileSync(join(dirOf(name), 'main.db'), 'x')
-    return (env.system as any).backup.create({ data: {
+    return (env.system as any).appBackup.create({ data: { appId: hubId,
       status: 'success', location: dirOf(name), startedAt: new Date(NOW - daysAgo * DAY).toISOString(),
     } })
   }
-  const plantRemote = (daysAgo: number) => (env.system as any).backup.create({ data: {
+  const plantRemote = (daysAgo: number) => (env.system as any).appBackup.create({ data: { appId: hubId,
     status: 'success', destinationId: dest.id, location: `basecamp-/${nameAt(daysAgo)}.tar.gz`,
     startedAt: new Date(NOW - daysAgo * DAY).toISOString(),
   } })
@@ -470,12 +480,12 @@ describe('retention prunes by count and age, local and remote apart, and a resca
 
   test('a keep-count of two leaves the newest two on disk; a file outside backups/ is never reached', async () => {
     const sys = env.system as any
-    await sys.backup.deleteMany({ where: {} })
+    await sys.appBackup.deleteMany({ where: {} })
     await keep({ backupKeepLocalCount: 2, backupKeepLocalDays: null })
     const rows = [await plantLocal(1), await plantLocal(2), await plantLocal(3), await plantLocal(4)]
     const outside = join(dirname(env.app.sqlite.filename), 'basecamp-2026-01-01T00-00-00-000Z')
     writeFileSync(outside, 'not an archive')
-    const odd = await sys.backup.create({ data: { status: 'success', location: outside, startedAt: new Date(NOW - 9 * DAY).toISOString() } })
+    const odd = await sys.appBackup.create({ data: { appId: hubId, status: 'success', location: outside, startedAt: new Date(NOW - 9 * DAY).toISOString() } })
 
     const { pruned, kept } = await pruneBackups(env.app, NOW)
     expect(pruned.sort()).toEqual([rows[2].id, rows[3].id, odd.id].sort())
@@ -490,13 +500,13 @@ describe('retention prunes by count and age, local and remote apart, and a resca
 
   test('an age limit prunes inside the count, and never the newest archive', async () => {
     const sys = env.system as any
-    await sys.backup.deleteMany({ where: {} })
+    await sys.appBackup.deleteMany({ where: {} })
     await keep({ backupKeepLocalCount: 10, backupKeepLocalDays: 30 })
     const fresh = await plantLocal(5), stale = await plantLocal(40)
     expect((await pruneBackups(env.app, NOW)).pruned).toEqual([stale.id])
     expect(existsSync(fresh.location)).toBe(true)
 
-    await sys.backup.deleteMany({ where: { id: fresh.id } })
+    await sys.appBackup.deleteMany({ where: { id: fresh.id } })
     const only = await plantLocal(90)
     expect((await pruneBackups(env.app, NOW)).pruned).toEqual([])
     expect(existsSync(only.location)).toBe(true)
@@ -504,7 +514,7 @@ describe('retention prunes by count and age, local and remote apart, and a resca
 
   test('remote archives are counted per destination and deleted object first, then row', async () => {
     const sys = env.system as any
-    await sys.backup.deleteMany({ where: {} })
+    await sys.appBackup.deleteMany({ where: {} })
     await keep({ backupKeepLocalCount: 10, backupKeepLocalDays: null, backupKeepRemoteCount: 1, backupKeepRemoteDays: null })
     const local = await plantLocal(9)
     const newest = await plantRemote(1), older = await plantRemote(2)
@@ -512,13 +522,13 @@ describe('retention prunes by count and age, local and remote apart, and a resca
 
     expect((await pruneBackups(env.app, NOW)).pruned).toEqual([older.id])
     expect(deletes).toEqual([`/frontier-basecamp/${older.location}`])
-    expect(await sys.backup.findFirst({ where: { id: newest.id } })).toBeTruthy()
-    expect(await sys.backup.findFirst({ where: { id: local.id } })).toBeTruthy()
+    expect(await sys.appBackup.findFirst({ where: { id: newest.id } })).toBeTruthy()
+    expect(await sys.appBackup.findFirst({ where: { id: local.id } })).toBeTruthy()
   })
 
   test('a rescan gives a found row to an archive no row names, and nothing else', async () => {
     const sys = env.system as any
-    await sys.backup.deleteMany({ where: {} })
+    await sys.appBackup.deleteMany({ where: {} })
     const known = await plantRemote(1)
     const lost  = `basecamp-/${nameAt(3)}.tar.gz`
     listing = [
@@ -529,7 +539,7 @@ describe('retention prunes by count and age, local and remote apart, and a resca
     ]
 
     expect(await rescanDestination(env.app, dest.id)).toEqual({ listed: 4, found: 1 })
-    const found = await sys.backup.findFirst({ where: { location: lost } })
+    const found = await sys.appBackup.findFirst({ where: { location: lost } })
     expect(found).toMatchObject({ kind: 'found', status: 'success', destinationId: dest.id, sizeBytes: 42, requestedBy: null })
     expect(Date.parse(found.startedAt)).toBe(NOW - 3 * DAY)
 

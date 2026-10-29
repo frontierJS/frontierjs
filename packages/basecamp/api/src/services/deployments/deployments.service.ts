@@ -21,6 +21,7 @@ import { isInline, isGit, imageOf, inlineFilesFor } from '../../domain/release/a
 import { snapshotVariables } from '../../domain/release/variables.ts'
 import { runtimeOf, type Runtime, CONTAINER_TYPES } from '../../domain/release/runtime.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
+import { refuseHubRelease } from '../../domain/host/host-machine.ts'
 
 // A release went to its app's environment, which is `@immutable`, so the app
 // is where a row reads it (`FJS-D1609`).
@@ -201,6 +202,7 @@ export default createService({
 
     const target = await db().app.findFirst({ where: { id: appId, workspaceId: ws() } })
     if (!target) throw new NotFound(`App '${appId}' not found in this workspace`)
+    await refuseHubRelease(db().asSystem(), target.id)
 
     // Refused here, where the person who pressed the button is still looking.
     // The job asks the same question again when it runs — this is not
@@ -257,6 +259,7 @@ export default createService({
     const appId  = String($.id)
     const target = await db().app.findFirst({ where: { id: appId, workspaceId: ws() } })
     if (!target) throw new NotFound(`App '${appId}' not found in this workspace`)
+    await refuseHubRelease(db().asSystem(), target.id)
 
     const inFlight = await db().deployment.findFirst({ where: { appId, status: { in: ['pending', 'building'] } } })
     if (inFlight) return { skipped: `release ${inFlight.id} is already ${inFlight.status}, and binds from the live hostnames when it starts` }
@@ -381,6 +384,7 @@ export default createService({
 
     const into = await db().app.findFirst({ where: { id: being.appId, workspaceId: ws() } })
     if (!into) throw new NotFound(`App '${being.appId}' not found in this workspace`)
+    await refuseHubRelease(db().asSystem(), into.id)
 
     // Asked here for `create`'s reason: the person who pressed the button is
     // still looking, and a release that fails a second later tells them their

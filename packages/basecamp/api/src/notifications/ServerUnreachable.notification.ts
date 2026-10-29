@@ -1,6 +1,6 @@
 // src/notifications/ServerUnreachable.notification.ts
 
-import { defineNotification, inApp, mail } from '@frontierjs/notifications'
+import { defineNotification, inApp, mail, push } from '@frontierjs/notifications'
 import { declaredTransports, appUrl }      from './_shared.ts'
 
 export interface ServerUnreachablePayload {
@@ -21,6 +21,14 @@ export default defineNotification<ServerUnreachablePayload>({
     .action('View server', `/servers/${p.serverId}/`)
     .context('Server', p.serverId)
     .data({ serverName: p.serverName, lastSeenAt: p.lastSeenAt }),
+
+  push: (p) => push()
+    .title('Server unreachable')
+    .body(`${p.serverName} has stopped checking in. Its apps may still be running.`)
+    .priority(5)
+    .tags('rotating_light')
+    .url(appUrl(`/servers/${p.serverId}/`))
+    .build(),
 
   email: (p) => mail()
     .subject(`Server unreachable — ${p.serverName}`)

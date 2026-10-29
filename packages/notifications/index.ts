@@ -3,6 +3,7 @@
 export { Notification }          from './notification.ts'
 export { defineNotification }    from './define.ts'
 export { notifications }   from './plugin.ts'
+export { hasTransport }    from './state.ts'
 
 import type { Notification as NotificationBase } from './notification.ts'
 import type { SendableNotification } from './define.ts'
@@ -35,14 +36,16 @@ declare module '@frontierjs/junction' {
 
 // ─── Builders ─────────────────────────────────────────────────────────────────
 
-export { inApp, mail }           from './builders.ts'
+export { inApp, mail, push }     from './builders.ts'
 
 // ─── Drivers an app registers under `transports` ─────────────────────────────
 
 export { webPush, generateVapidKeys } from './drivers/webpush.ts'
 export type {
-  PushMessage, PushRequest, PushSubscription, PushSubscriptions, VapidKeys, WebPushOptions,
+  PushRequest, PushSubscription, PushSubscriptions, VapidKeys, WebPushOptions,
 } from './drivers/webpush.ts'
+export { ntfy }                       from './drivers/ntfy.ts'
+export type { NtfyOptions }           from './drivers/ntfy.ts'
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
@@ -73,6 +76,8 @@ export type {
   InAppAction,
   MailMessage,
   MailLine,
+  PushMessage,
+  PushAction,
   NotificationRecord,
   NotificationDriver,
   NotificationReceipts,

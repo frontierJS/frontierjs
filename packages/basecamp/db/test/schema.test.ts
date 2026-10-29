@@ -34,7 +34,7 @@ import { RECLAIM_TARGET_NAMES } from '../../api/src/services/cleanup/targets.ts'
 // The hub's copy of the two status vocabularies. It exists so a bad value is
 // refused by name at the API rather than by a CHECK constraint message; this
 // import is what keeps it a copy of the schema rather than a second opinion.
-import { NOTIFICATION_KIND_NAMES } from '../../api/src/domain/notification/kinds.ts'
+import { NOTIFICATION_KINDS, NOTIFICATION_KIND_NAMES } from '../../api/src/domain/notification/kinds.ts'
 import { grantsFor } from '../../api/src/core/capabilities.ts'
 
 const SCHEMA     = join(import.meta.dir, '..', 'schema.lite')
@@ -2061,6 +2061,15 @@ describe('the hub tier — suspension, and who may grant it', () => {
     // added to the enum and forgotten there resolves to nothing rather than to
     // a default. Both directions, so neither list can grow alone.
     expect([...values('NotificationKind')].sort()).toEqual([...NOTIFICATION_KIND_NAMES].sort())
+
+    // The third column. `push` is not a preference a row can override, so the
+    // table is its only word; a kind added without one would read `undefined`
+    // as "no ping" and the first outage of that kind would ring nobody.
+    for (const k of NOTIFICATION_KINDS) expect(typeof k.push, k.kind).toBe('boolean')
+    // Q2 (`FJS-D1587`): the failures only -- a once-a-day state or a recovery
+    // is a morning email, not a 3am ring.
+    expect(NOTIFICATION_KINDS.filter(k => k.push).map(k => k.kind).sort()).toEqual(
+      ['AlertFiring', 'DeployFailed', 'JobFailed', 'MonitorDown', 'PostureFailed', 'ServerUnreachable'])
   })
 
   test('a status outside the vocabulary is refused by the column', async () => {

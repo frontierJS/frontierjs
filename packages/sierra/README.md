@@ -1016,6 +1016,8 @@ Everything in `sierra.config.js`:
 | `siteUrl` | `''` | absolute origin for the sitemap |
 | `llms` | `false` | `true` emits `llms.txt` unless `public/llms.txt` exists · `'auto'` always regenerates it |
 | `functions` | — | directory of host functions, relative to the root. A file answers its own path (`functions/api/event.js` is `/api/event`, `index.js` its directory) and is `export default (request, env) => Response`; `env` carries strings only, and a module importing `cloudflare:` or a `[param]` file name is refused. The build writes `.sierra/functions.js`; `sierra site --serve` and a `--compile` binary mount it before the static answers (the binary reads `env` from its own process), and `vite dev` on a `static` target answers the directory per request, so an edit needs no restart |
+| `offline` | `false` | `true` writes `sw.js` with a precache list of what this build emitted, so a visited app opens with no network |
+| `push` | `false` | `true` adds Web Push handlers to `sw.js`, with or without `offline`: a push shows the notification, a click focuses or opens its `url`. The payload is `PushMessage` in `@frontierjs/notifications`, and `notifications/test/fixtures/push-message.json` is the shape both ends are tested against |
 | `markdownPages` | `false` | `true` \| `'auto'` — emit `index.md` beside each page |
 | `speculationRules` | `true` | static build: prerender a same-origin link on hover (Speculation Rules, `moderate`); `rel="nofollow"` opts a link out |
 | `build.deferJS` | `false` | defer script tags in `index.html` |

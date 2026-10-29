@@ -21,13 +21,15 @@ builders.ts       message builders (an email body may also be a rendered templat
 types.ts          Transport, Recipient, driver and payload types
 plugin.ts         the Junction plugin — register / boot / shutdown; registers push-subscriptions at boot
 services.ts       `push-subscriptions` — the subscribe door, own rows only, upsert by endpoint
+client.ts         `./client` — subscribeToPush / unsubscribeFromPush; BROWSER code, never imports the root
 state.ts          the plugin's state on the app, under one Symbol.for key
 errors.ts
 drivers/
   inapp.ts        writes the record, publishes on app.channel()
   email.ts        renders lines → text/html, hands off to the mailer
   webpush.ts      `webPush()` — a driver the app REGISTERS (RFC 8291/8188/8292); the subscription is the app's row
-examples/         wiring.ts + two notifications + Notification.mesa
+  ntfy.ts         `ntfy()` — the other `push` driver; POSTs to `recipient.pushTopic`, refuses an absent one
+examples/         wiring.ts + two notifications + Notification.mesa + PushToggle.mesa (copy-in)
 test/            harness.ts, fanout.test.ts, hook.test.ts, email-render.test.ts,
                   define.test.ts, schema-fragment.test.ts + fixtures/notifications/
 ```
@@ -101,6 +103,8 @@ the transport that needs no account.
   why a plain object satisfying those three has always worked.
 
 - **A wrong `webPush` build answers `201`.** The push service cannot read the body, so no status or length check can fail; `test/webpush.test.ts` holds RFC 8291 Appendix A byte for byte and decrypts from the device's private key. A change to `drivers/webpush.ts` keeps both. The driver prunes on 404/410 only and collects every other refusal until each device was tried.
+
+- **One `PushMessage` for two `push` drivers** (`types.ts`). `webPush()` strips `priority`/`tags`/`actions` before the payload and `ntfy()` drops `data`/`ttl`/`urgency`/`topic`; a field added to the shape is placed in one of those two lists or it leaks onto the other wire.
 
 ## Proving a change
 

@@ -35,6 +35,12 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1629"></a>2026-10-29 · `FJS-D1629` — Q5 — What is the noun — *Platform*.
+
+Asked in [`IDEAS/app-platforms.md`](IDEAS/app-platforms.md) § Open questions. **A** was picked over **B** (*Destination*, already `BackupDestination`'s word), **C** (*Target*, already Conduit's).
+
+The paper's recommendation, taken as written: Waypoint's word, and how Vercel, Netlify and Heroku describe themselves; it takes a `VOCABULARY.md` row once ruled.
+
 ### <a id="fjs-d1619"></a>2026-10-28 · `FJS-D1619` — The machine noun stays `Server`, *Hub* names the install, and `Workspace` stays `Workspace`.
 
 Asked through the question tool (`IDEAS/basecamp-dogfood.md` Q3). *As recommended* (**A**) over **B** (`Machine` + `Hub`, a rename across `Server`, `AppServer`, `HostServer`, `/servers` and the Outpost protocol). The hub is an App (`FJS-D1603`), so *Hub* is the install's name and no row's. Asked beside it, *As recommended*: `Workspace` is not renamed `Space`. DigitalOcean's object storage is *Spaces* and Basecamp deploys there and backs up to S3-compatible buckets; ClickUp nests a Space inside a Workspace, Confluence and Contentful use it for a content area, and Slack, Notion, Linear and Railway say *workspace* for the tenant a person pays under; and the word is junction's too (`X-Workspace-Id` in `PROTOCOL_CALL_HEADERS`). Either rename after the first dogfood database is a `--rename` migration (`FJS-D603`).
@@ -8387,6 +8393,44 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1635"></a>2026-10-29 · `FJS-D1635` — A job dispatched by name before its handler registers is moved to the handler's queue when it registers, and a row no handler serves is counted as `stranded`.
+
+Asked through the question tool ([`FJS-3569`](ISSUES.md#fjs-3569), `IDEAS/backups.md` 5.2). *As recommended*: scoped re-home plus a report. It was picked over refusing an early name dispatch, over only reporting, and over re-homing every pending row of the name.
+
+- **Refusing failed two ways.** Caravan's "job files loaded" flag is set when the load starts, not when it ends, so it is not a boundary. It also leaves the same gap open after the load.
+- **Awaiting the load inside `dispatch` cannot work.** `insertJob` has to stay synchronous, because `dispatchMany` runs every insert in one transaction.
+- **The handler is where the queue is stated.** A row copies its queue, attempts and retry delay at insert time, so a row written before the handler existed holds a copy of nothing.
+- **Re-homing every pending row would also move one the caller sent to `default` on purpose.** No column records whether a queue was stated or defaulted. So the ids are kept in memory, only while the job files have not loaded, which also keeps the map from growing with every dispatch.
+- **Not covered: early dispatch from another process.** `stats().stranded` reports those rows. If a real caller needs them moved, add a `queue_explicit` column and re-home every pending row of the name.
+
+### <a id="fjs-d1633"></a>2026-10-29 · `FJS-D1633` — Q3 — Is a release across several destinations one row or many — One `Deployment` with a step per destination.
+
+Asked in [`IDEAS/app-platforms.md`](IDEAS/app-platforms.md) § Open questions. **A** was picked over **B** (a `Deployment` per destination).
+
+The paper's recommendation, taken as written: one row still answers *what shipped*; a partial success is a failed step, and a retry targets that step's destination.
+
+### <a id="fjs-d1632"></a>2026-10-29 · `FJS-D1632` — Q4 — How is a release Basecamp did not start recorded — Stored as an `observed` `Deployment`.
+
+Asked in [`IDEAS/app-platforms.md`](IDEAS/app-platforms.md) § Open questions. **A** was picked over **B** (read live from the platform and never stored).
+
+The paper's recommendation, taken as written: rollback, notifications and the trail all read `Deployment`, and under B a laptop deploy is invisible to each of them.
+
+### <a id="fjs-d1631"></a>2026-10-29 · `FJS-D1631` — Q2 — Who uploads an Outpost build to the platform — The Outpost runs the platform's CLI with the credential sent per call, as `/site/publish` does today.
+
+Asked in [`IDEAS/app-platforms.md`](IDEAS/app-platforms.md) § Open questions. **A** was picked over **B** (the Outpost hands the built directory back through a bucket, and Basecamp uploads it through the API).
+
+The paper's recommendation, taken as written: all three vendors' CLIs take a prebuilt directory; B is a multipart upload client per vendor, and its gain is only that the token never leaves Basecamp.
+
+### <a id="fjs-d1630"></a>2026-10-29 · `FJS-D1630` — Q1 — How are the rows shaped — `AppPlatform` beside `AppServer`, listed together on the App screen.
+
+Asked in [`IDEAS/app-platforms.md`](IDEAS/app-platforms.md) § Open questions. **A** was picked over **B** (one destination table with a kind, `AppServer` folded in).
+
+The paper's recommendation, taken as written: B is the widening `decision-rules` refused: a nullable `serverId` breaks the relator and guards five readers (§ The shape).
+
+### <a id="fjs-d1628"></a>2026-10-29 · `FJS-D1628` — The hub App lives in a `basecamp` Project and a protected `production` Environment that `useHost` creates in the installer's workspace, and the lists hide all three.
+
+Asked through the question tool (`IDEAS/basecamp-dogfood.md` 2.1). *As recommended* (**A**) over **B** (same rows, the Project and Environment shown — a project that reads empty because its one App is filtered), **C** (`App.environmentId` nullable for the hub alone — every reader of `app.environment` learns a null) and **D** (`useHost` takes an existing Environment — the hub shares a project with tenant apps, and `fli deploy` runs headless with nobody to ask). `App.environmentId` and `Environment.projectId` are both required and `@immutable`, so the hub App (`FJS-D1603`) needs a parent pair of its own. The filter that hides it is the one D1603 already asks for, by `HubConfig.appId`, reaching up to its Environment and Project. No schema change. *Enforced by:* `services.test.ts` on `useHost`, and the seed making the hub App through `useHost`.
+
 ### <a id="fjs-d1621"></a>2026-10-28 · `FJS-D1621` — Traffic analysis drops GoAccess — the Outpost reads an app's Caddy JSON access log and counts it in JS; no binary on the target.
 
 Asked in session, against [`IDEAS/traffic-analysis.md`](IDEAS/traffic-analysis.md) § Phase 1. **A** (no GoAccess) over **B** (keep GoAccess for the user-agent, bot and geo panels). As recommended (A). Amends the plan, not a ruling: [`FJS-D764`](#fjs-d764) and [`FJS-D765`](#fjs-d765) keep their outcomes.
@@ -12916,6 +12960,18 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d1634"></a>2026-10-29 · `FJS-D1634` — A server render is `target: 'server'`, an output mode of the one host emitter that writes the template as string pushes, with no happy-dom and no `$$host`.
+
+Asked in [`IDEAS/server-render-without-dom.md`](IDEAS/server-render-without-dom.md) § 2. *Against the recommendation* (A): **B** was picked over **A** (a `server` profile whose `$$host` runtime builds a plain node tree, serialized once) and **C** (keep happy-dom and tune it). Why: A keeps one render effect per binding and one block per `{#if}` and `{#each}` on a render that runs the graph once, so its floor is the signal graph (~0.6 µs per node run, `signal-fanout`), and B is the shape Svelte 5 (`$$payload.out +=`), Solid (`ssr` strings), Vue (`compiler-ssr` `_push`) and Marko all use on the server; A's tree would be measured only to be rewritten. The paper's condition — revisit B only once A's tree is measured as the cost — is overridden here without that measurement, on the owner's call through the question tool.
+
+The three conditions `decision-rules` set, which the plan's phases carry:
+
+- **One walker.** The mode lives in `packages/mesa/src/host/emit.js`, reading the same `ctx.ir` walk, `spacesIn`, `preEdges`, `hostOffenses` and `hostDropped`; a line body says `$$out` where the host mode says `$$host`. A second file walking the IR is a second builder beside `compiler.js`'s, against Invariant 4 and the sibling precedent `FJS-D1074` (one emitter, many targets).
+- **The name is `server`.** `target: 'html'` in `render-component.js` already names the output wrapper (`'html' | 'email' | 'fragment' | 'js'`).
+- **Parity before default.** The corpus parity check in `packages/mesa/scripts/corpus.mjs`, `render-ssr.test.js` § *no attribute the author did not write* on both paths, and a parse of the emitter's output (Invariant 15) exist before `renderToHTML` takes the mode. Escaping has one owner function in `runtime-server.js`. A kind the mode cannot lower falls back to happy-dom for that component and is named in the result (`unlowered`).
+
+Where it lives: the paper's § 4 (plan), `host/emit.js`, `host/targets.js`, `render.js`.
+
 ### <a id="fjs-d1442"></a>2026-10-29 · `FJS-D1442` — Who owns Web Push's browser half: Sierra's generated `sw.js` plus a notifications subscribe helper, a worker `@frontierjs/notifications` generates itself, or the app — A (confidence 2).
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked as the recommendation qualifies it (*A (confidence 2)*) over **B** (Notifications owns both halves: `@frontierjs/notifications/sw` exports a `pushHandlers()` source string and `/client` exports the subscribe helper; an app that wants push writes a two-line `sw.js` importing it, or Sierra's `offline-shell` composes it in via an `extraWorkerSource` option. Keeps the payload shape in one package. Cost: Sierra still needs the composition seam, or the app hand-merges two workers, which is the problem the row names), **C** (The app owns it, the framework documents the 20 lines: close the row as designed and put the worker snippet and the subscribe call in the README's Web Push section. Cost: the cryptography is shared and the other half, equally easy to get silently wrong (a `userVisibleOnly` omission, a missing `waitUntil`, a click that never focuses the tab), is rewritten per app).
@@ -12957,7 +13013,7 @@ Asked at [`IDEAS/web-push.md`](IDEAS/web-push.md) step 1.3 through the question 
 
 Asked at [`IDEAS/web-push.md`](IDEAS/web-push.md) Q2 through the question tool. **A** (function) was picked over **B** (ship `pushSubscription()` as a browser-kit signal in Phase 3). A subscription is made once, from a click. The state a page shows is `Notification.permission` plus one row, which a signal can read later without the function changing. B would have tied Phase 3 to browser-kit's Phase 5.
 
-*Lives in:* `IDEAS/web-push.md` step 3.1 until it is built. The signal is `IDEAS/browser-kit.md` 5.1's.
+*Lives in:* `packages/notifications/client.ts`, which takes `{ service }` (a service proxy). The signal is `IDEAS/browser-kit.md` 5.1's.
 
 ### <a id="fjs-d1626"></a>2026-10-29 · `FJS-D1626` — The VAPID public key reaches the browser from the API: `GET` on the `push-subscriptions` service, signed-in. Sierra never inlines it.
 
@@ -12974,6 +13030,15 @@ Asked at [`IDEAS/web-push.md`](IDEAS/web-push.md) Q5 through the question tool, 
 - **Limit.** The connection list is one process's. A multi-instance deploy sees only its own sockets, so a user connected to a different node is pushed to as well.
 
 *Lives in:* `packages/notifications/drivers/webpush.ts`, junction's channel connections, the client socket's visibility frame. Steps are owed in `IDEAS/web-push.md`.
+
+### <a id="fjs-d1636"></a>2026-10-29 · `FJS-D1636` — An app whose VAPID pair may be absent decides "is push on" in one module, which the driver registration and every `via` naming `push` both read.
+
+Ran `decision-rules` on [`IDEAS/web-push.md`](IDEAS/web-push.md) 3.5, after the code was built. *A*: `api/src/core/push.ts` exports `vapid` as the pair or `null`. `app.ts` registers `webPush({ vapid })` only when it is set, and `OrderPaid`'s `via` adds `push` on the same answer. It was picked over three other options: `notify()` skipping an unregistered `push` in silence, refusing to boot without `VAPID_*`, and a dev pair minted on every boot.
+
+- **Skipping in silence leaves no trace of a misconfiguration.** The sibling case already throws: email with no `app.mail` raises `NotificationDriverNotFoundError` (`notify.ts`), and push now raises the same error.
+- **Refusing to boot makes every dev, CI and test run hold keys for an optional feature.**
+- **A per-boot pair rotates the key on every restart**, and every subscribed browser's `applicationServerKey` goes stale. `DEV_KEY` is a fixed value, not a minted one, so it is no precedent.
+- **The weak point is that a forgotten guard throws at `notify()`, not at boot.** For `OrderPaid` that is inside payment-announce's retry loop. No test boots example without `VAPID_*` yet. Reopen if a second app forgets the guard: add a boot check that refuses a definition whose `via` can name an unregistered transport.
 
 ### <a id="fjs-d1583"></a>2026-10-28 · `FJS-D1583` — A declared enum of 6 members or fewer filters as a row of toggles; 7 or more stays a `MultiSelect`. The cutoff is `CHIP_LIMIT` in `FilterBar.mesa`.
 

@@ -437,28 +437,73 @@ export default defineNotification<Order>({
 
 ### Web Push
 
+An app that sends push writes one formatter. The rest is five lines, each an owner's:
+
+1. `fli crypto:keygen vapid --env --subject mailto:ops@acme.test` — the pair, in `.env`.
+2. `push: true` in `web/config/sierra.config.js` — `sw.js` shows a push and opens its `url` on a click. A build writes it; `vite dev` has no worker.
+3. `push: webPush({ vapid })` under `transports` — below.
+4. `examples/PushToggle.mesa` copied into `web/src/components/` and put on a page — the click the permission prompt needs, showing on, off, blocked or not available.
+5. `'push'` in a definition's `via`, and a `push:` formatter.
+
+`via` naming `push` with no driver registered throws at `notify()`, so an app whose pair may be absent decides "is push on" in one module that both the driver registration and every such `via` read: `example/api/src/core/push.ts`, where `OrderPaid` is the formatter.
+
 `webPush()` is the one driver this package ships beyond the two built-ins, because the part worth sharing is not the vendor (there is none: a push service is plain HTTPS) but the RFC 8291/8188/8292 cryptography, which fails identically whether right or wrong — the push service answers `201` to a body it cannot read.
 
 ```typescript
-import { webPush, generateVapidKeys } from '@frontierjs/notifications'
+import { webPush } from '@frontierjs/notifications'
 
-// once, kept beside the app's other secrets: generateVapidKeys('mailto:ops@acme.test')
+// once: fli crypto:keygen vapid --env --subject mailto:ops@acme.test
 app.configure(notifications({
   db,
   transports: {
     push: webPush({
-      vapid: { publicKey, privateKey, subject: 'mailto:ops@acme.test' },
+      vapid: {
+        publicKey:  process.env.VAPID_PUBLIC_KEY!,
+        privateKey: process.env.VAPID_PRIVATE_KEY!,
+        subject:    process.env.VAPID_SUBJECT!,
+      },
       // devices are the recipient's PushSubscription rows, read off `db`
     }),
   },
 }))
 ```
 
+`fli crypto:keygen vapid` makes the pair with `generateVapidKeys()` from the app's installed copy of this package, and writes the three names. It refuses to replace a pair already in the `.env` without `--rotate`, because every browser subscribed under the old public key stops receiving pushes until it subscribes again.
+
 **The subscription row is the app's; its text is this package's** (`FJS-D1442`). `PushSubscription` ships in `db/notification.lite`, so `fli notifications:install` appends it beside `Notification` and `package-model-drift` grades your copy the same way. Its keys are `@encrypted`, so an app installing this package passes `encryptionKey` to `createClient` whether or not it sends push — a scaffolded app already does. The driver lists a recipient's rows by `userId` through `asSystem()` and soft-deletes one by `endpoint` when its push service answers 404 or 410. An app whose devices live in another table passes `subscriptions: { list(recipient), remove(sub) }` instead.
 
-**A browser subscribes through `push-subscriptions`**, a service the plugin registers at boot when the schema installs `PushSubscription`. `POST` takes `subscription.toJSON()` and upserts by endpoint under the signed-in caller — a retired row is restored, and a browser profile that signs in as somebody else moves its one subscription to them. `GET` lists the caller's own devices without their keys, and `DELETE /push-subscriptions/{id}` retires one. The door refuses keys the driver could not encrypt to, an endpoint that is not public HTTPS, and a support operator or an agent over `/mcp`, since a subscription outlives the session that made it. The driver grades the endpoint again before every send. An app already serving that name renames ours with `notifications({ services: { pushSubscriptions: 'devices' } })`, or drops it with `false`.
+**A browser subscribes through `push-subscriptions`**, a service the plugin registers at boot when the schema installs `PushSubscription`. `POST` takes `subscription.toJSON()` and upserts by endpoint under the signed-in caller — a retired row is restored, and a browser profile that signs in as somebody else moves its one subscription to them. `GET` lists the caller's own devices without their keys, `GET /push-subscriptions/key` answers `{ publicKey }` from the `webPush()` driver registered under `transports.push`, and `DELETE /push-subscriptions/{id}` retires one. The key is served rather than built into the page, so a rotated pair reaches the next page load with no rebuild (`FJS-D1626`); an app with no `webPush()` driver gets a 404 naming it. The door refuses keys the driver could not encrypt to, an endpoint that is not public HTTPS, and a support operator or an agent over `/mcp`, since a subscription outlives the session that made it. The driver grades the endpoint again before every send. An app already serving that name renames ours with `notifications({ services: { pushSubscriptions: 'devices' } })`, or drops it with `false`.
 
-A formatter named `push:` answers `{ title, body, url, data, ttl, urgency, topic }`. `ttl` and `urgency` go only in headers; `topic` goes in both, so a later message with the same topic replaces one still queued at the push service and, through the worker's `tag`, one already on screen. One recipient is every device the store lists, each sent independently: a retired endpoint is removed, any other refusal is thrown after every device was tried. **The driver holds the decrypted keys, so it cannot keep `@guarded` columns out of a payload — the `push:` formatter is where the payload is built and the only place that can.** A body over ~3.9 KB is refused; send an id and let the service worker fetch the rest.
+**The page calls `subscribeToPush` from `@frontierjs/notifications/client`** in a click handler, as `subscribeToPush({ service: getClient().service('push-subscriptions') })`. The page passes the service proxy, not its name, so a renamed door is named once, by the app. It asks permission, then reads the key from `GET /key` unless `vapidPublicKey` was passed, and subscribes with the key as bytes, since Safari refuses a string. If the browser already holds a subscription made under another key, its row is retired and the browser re-subscribes. Then it posts `toJSON()`. `unsubscribeFromPush({ service })` retires the row first and then the browser's subscription. Neither function registers a worker; `push: true` in `sierra.config.js` writes it, and without one both throw rather than wait on `serviceWorker.ready` forever.
+
+A formatter named `push:` answers a `PushMessage` (`types.ts`), built with `push()`; the same message feeds `ntfy()` below, so a definition formats once whichever driver the app registered. `ttl` and `urgency` go only in headers; `topic` goes in both, so a later message with the same topic replaces one still queued at the push service and, through the worker's `tag`, one already on screen. What the formatter answers, what the worker receives and what it shows are `test/fixtures/push-message.json`, which this package's driver test and Sierra's worker test both read. One recipient is every device the store lists, each sent independently: a retired endpoint is removed, any other refusal is thrown after every device was tried. **The driver holds the decrypted keys, so it cannot keep `@guarded` columns out of a payload — the `push:` formatter is where the payload is built and the only place that can.** A body over ~3.9 KB is refused; send an id and let the service worker fetch the rest.
+
+
+### ntfy
+
+`ntfy()` is the other `push` driver — a phone one HTTP request away. ntfy (`ntfy.sh`, or your own from the Basecamp `ntfy` blueprint) is topic pub/sub with a phone app: the app subscribes to a NAME, and publishing is an authenticated POST with the text as the body and the metadata as headers. No service worker, no device rows, and a 4xx is a 4xx.
+
+```typescript
+import { ntfy, push } from '@frontierjs/notifications'
+
+app.configure(notifications({
+  db,
+  transports: {
+    push: ntfy({ url: process.env.NTFY_BASE_URL, token: process.env.NTFY_TOKEN }),
+  },
+}))
+
+// the formatter
+push: (monitor) => push()
+  .title('Monitor down')
+  .body(`${monitor.host} stopped answering`)
+  .priority(5)                       // rings through do-not-disturb; a resend is 4
+  .tags('rotating_light')
+  .url(`https://hub.acme.test/monitors/${monitor.id}`)
+  .build()
+```
+
+**The topic is the recipient's address**, `recipient.pushTopic`, and a recipient without one is refused by name: on a public server a guessable name is readable by anyone, so an app mints `<slug>-critical-<random>` once and shows it as a subscribe link. `title`, `body`, `priority`, `tags`, `url` (sent as `Click`) and `actions` go on the wire; `data`, `ttl`, `urgency` and `topic` are web push's and are dropped. A payload carries titles and links, never a secret — the `push:` formatter is where `@guarded` columns stay out, for both drivers.
 
 ---
 

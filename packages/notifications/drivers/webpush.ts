@@ -2,7 +2,7 @@ import {
   createCipheriv, createECDH, createPrivateKey, hkdfSync, randomBytes, sign,
 } from 'node:crypto'
 import { gradePublicUrl, pinTo } from '@frontierjs/junction/public-url'
-import type { App, NotificationDriver, Recipient } from '../types.ts'
+import type { App, NotificationDriver, PushMessage, Recipient } from '../types.ts'
 import { stateOf } from '../state.ts'
 
 /**
@@ -48,21 +48,6 @@ export interface PushSubscription {
   p256dh:   string
   /** The device's 16-byte auth secret, base64url. */
   auth:     string
-}
-
-/** What a `push:` formatter answers. Everything but the delivery options is the payload. */
-export interface PushMessage {
-  title?:   string
-  body?:    string
-  /** Where a click goes -- the service worker reads it from the payload. */
-  url?:     string
-  data?:    Record<string, unknown>
-  /** Seconds the service may hold it for an offline device. Default one day. */
-  ttl?:     number
-  urgency?: 'very-low' | 'low' | 'normal' | 'high'
-  /** A later message with the same topic replaces one still queued or still on screen -- the
-   *  header for the push service, the payload for the worker's `tag`. */
-  topic?:   string
 }
 
 export interface PushSubscriptions {
@@ -211,7 +196,8 @@ export function encryptPayload(
 export function buildPushRequest(
   sub: PushSubscription, message: PushMessage, vapid: VapidKeys, now = Date.now(),
 ): PushRequest {
-  const { ttl, urgency, ...payload } = message
+  // priority, tags and actions are ntfy's; the worker never reads them and the body has a 3.9 KB ceiling.
+  const { ttl, urgency, priority: _p, tags: _t, actions: _a, ...payload } = message
   const headers: Record<string, string> = {
     'Authorization':    vapidAuthorization(sub.endpoint, vapid, now),
     'Content-Encoding': 'aes128gcm',
@@ -282,10 +268,12 @@ function installedSubscriptions(db: unknown): PushSubscriptions {
   }
 }
 
-export function webPush(opts: WebPushOptions): NotificationDriver {
+export function webPush(opts: WebPushOptions): NotificationDriver & { vapidPublicKey: string } {
   const deliver = opts.deliver ?? viaFetch
   return {
     transport: 'push',
+    // Read by the plugin, which serves it at GET /push-subscriptions/key.
+    vapidPublicKey: opts.vapid.publicKey,
     async send(recipient: Recipient, message: unknown, app: App): Promise<void> {
       const msg = message as PushMessage
       const store = opts.subscriptions ?? installedSubscriptions(stateOf(app).db)

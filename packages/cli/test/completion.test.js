@@ -148,7 +148,7 @@ describe('completion:query', () => {
   })
 
   test('an argument with choices offers them', () => {
-    expect(values('fli crypto:keygen ')).toEqual(['secret', 'aes'])
+    expect(values('fli crypto:keygen ')).toEqual(['secret', 'aes', 'vapid'])
   })
 
   test('a flag waiting for its value offers that value, by either spelling', () => {

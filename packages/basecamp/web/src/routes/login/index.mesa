@@ -104,7 +104,7 @@ title: Sign in
 <!-- .container.narrow caps at --container-narrow: a form stretched to a
      1280px screen is a wall, not a form. The width is a vocabulary term,
      not a number chosen here. -->
-<div class="container narrow">
+<div class="container narrow" style="max-width:36rem">
   {#if session.error && !attempted}
     <Alert tone="warning" id="session-error" title="Could not reach the server">
       {session.error}

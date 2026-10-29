@@ -31,6 +31,7 @@ title: Account
   import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
   import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
   import { toasts }    from '@frontierjs/ui/stores/toastStore'
+  import PushToggle    from '../../components/PushToggle.mesa'
 
   $: session.user
 
@@ -100,7 +101,7 @@ title: Account
   const abandon = () => { enrollment = null; code = ''; error = null }
 </script>
 
-<SectionHeader title="Account" level={1} sub="how you sign in, and the way back if you lose your phone" />
+<SectionHeader title="Account" level={1} sub="how you sign in, the way back if you lose your phone, and where you are notified" />
 
 {#if !session.user}
   <Callout tone="info" id="account-signed-out">
@@ -181,5 +182,11 @@ title: Account
         </div>
       </form>
     {/if}
+  </section>
+
+  <section class="card stack" style="max-width: 40rem" id="push">
+    <h2 class="h4">Notifications on this device</h2>
+    <p>What the shop tells you in the app also reaches this device with the tab closed. Each browser is turned on separately.</p>
+    <PushToggle />
   </section>
 {/if}

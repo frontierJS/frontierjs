@@ -760,10 +760,11 @@ name when it declares none.
 
 ### `pushSubscriptions`
 
-- **methods** — `find`, `create`, `remove`
+- **methods** — `find`, `get`, `create`, `remove`
 - **also answers to** — `push-subscriptions`
 - **who may call** —
   - `find` — standing 1 or above — declared `gate: 1`
+  - `get` — standing 1 or above — declared `gate: 1`
   - `create` — standing 1 or above — declared `gate: 1`
   - `remove` — standing 1 or above — declared `gate: 1`
 

@@ -27,6 +27,7 @@ import { executorOn, isExecutor }                            from '../../provide
 import { takeAppBackup }                                     from '../../jobs/app-backup-run.job.ts'
 import { queueAppArchiveRescan }                             from '../../jobs/app-archive-rescan.job.ts'
 import { keyScope }                                          from '../../domain/api-key/scopes.ts'
+import { hubIds, refuseHubVolume }                           from '../../domain/host/host-machine.ts'
 
 export default createService({
   name:  'appBackups',
@@ -44,7 +45,11 @@ export default createService({
 
   async find() {
     const { limit, offset } = getPagination({ limit: 50, max: 200 })
-    const where: Record<string, unknown> = {}
+    // The hub App's archives are `/backups`' (`FJS-D1606`), and its row is
+    // left out of every list (`FJS-D1628`).
+    const hub = (await hubIds(db().asSystem())).app
+    if (hub && $.query.appId === hub) return { total: 0, limit, offset, data: [] }
+    const where: Record<string, unknown> = hub ? { appId: { not: hub } } : {}
     for (const key of ['appId', 'serverId', 'status'])
       if ($.query[key]) where[key] = $.query[key]
     const { rows, total } = await db().appBackup.findManyAndCount({
@@ -69,6 +74,8 @@ export default createService({
     const destinationId = (data.destinationId as string | null | undefined) ?? null
 
     const app    = await getScoped('app', 'App', appId)
+    // Before the machine is asked for, so this is the sentence a person sees.
+    await refuseHubVolume(db().asSystem(), app.id)
     const placed = await db().appServer.findFirst({ where: { appId: app.id, serverId }, include: { server: true } })
     if (!placed) throw new NotFound('This app is not placed on that server')
     // A destination of another workspace is `NotFound` here, before any

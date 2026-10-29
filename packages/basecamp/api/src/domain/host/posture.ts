@@ -453,7 +453,7 @@ function fileControl(what: string, stat: FileStat | null | undefined): Grade {
 export const shortFingerprint = (hex: string) => hex.slice(0, 12)
 
 const HUB_CONTROLS: { id: string; group: string; severity: Severity; fix: string; grade: (r: PostureReadings | null, host: HostDeclared, now: number) => Grade }[] = [
-  // Graded in process from the Backup rows, so a stale report does not hide it.
+  // Graded in process from the hub App's AppBackup rows, so a stale report does not hide it.
   { id: 'hub.backup-recent', group: 'hub', severity: 'high', fix: 'Take one now on /hub/backups/, and turn on the scheduled backup in /hub/settings/', grade: (_r, host, now) => {
     if (!host.lastBackupAt) return { ok: false, message: 'No backup has ever finished' }
     const age = days(now - Date.parse(host.lastBackupAt))
@@ -499,6 +499,22 @@ const HUB_CONTROLS: { id: string; group: string; severity: Severity; fix: string
       ? { ok: true,  message: `Machines enroll with ${apiUrl}` }
       : { ok: false, message: `FRONTIER_API_URL is ${apiUrl} — enrollment carries a machine's key and refuses anything but https` }
   } },
+  // The hub App row (`FJS-D1603`) starts nothing, so a wrong one is wrong in
+  // silence: its server is where FJS-3515's address and every hub archive hang,
+  // and its port is a record of what the box publishes, not an instruction.
+  { id: 'hub.app-row-drift', group: 'hub', severity: 'medium', fix: 'Press Use this Basecamp server on /servers/ to place the hub App again, and set its port to what the box publishes', grade: (r, host) => {
+    const row = host.hubApp
+    if (!row)          return unknown('No hub App yet — Use this Basecamp server on /servers/ makes it')
+    if (row === 'gone') return { ok: false, message: 'The hub settings name an App that no longer exists' }
+    if (!row.placed)   return { ok: false, message: 'The hub App is placed on no server' }
+    if (row.port == null || !r?.containers) return { ok: true, message: 'The hub App is placed on this box' }
+    const published = r.containers.flatMap(c => c.published).filter(p => p.host_port === row.port)
+    if (!published.length) return { ok: false, message: `The hub App says port ${row.port}, which no container on this box publishes` }
+    const inner = row.containerPort ?? row.port
+    return published.some(p => p.container_port === inner)
+      ? { ok: true,  message: `The hub App is placed on this box and port ${row.port} is published` }
+      : { ok: false, message: `Port ${row.port} is published to ${published[0].container_port}, not the ${inner} the hub App says` }
+  } },
   // No mailer is a supported state (core/mailer.ts), and the one place an
   // operator learned of it was a log line per unsent invitation.
   { id: 'hub.mailer', group: 'hub', severity: 'medium', fix: 'Set RESEND_API_KEY, or MAIL_URL and MAIL_API_KEY for a relay, and MAIL_FROM on a domain you send from, then restart the API', grade: (_r, host) => {
@@ -532,16 +548,18 @@ function envControl(files: PostureReadings['host_files']): Grade {
 export const HUB_CONTROL_IDS = HUB_CONTROLS.map(c => c.id)
 
 /** Graded from Basecamp's own rows, so a missing or stale report does not hide them. */
-const IN_PROCESS = new Set(['hub.backup-recent', 'hub.key-escrowed', 'hub.app-url', 'hub.api-url', 'hub.mailer'])
+const IN_PROCESS = new Set(['hub.backup-recent', 'hub.key-escrowed', 'hub.app-url', 'hub.api-url', 'hub.mailer', 'hub.app-row-drift'])
 
 /** What the box a Basecamp runs on should look like, beyond any fleet machine. */
 export interface HostDeclared {
-  /** `finishedAt` of the newest successful Backup; null when none has. */
+  /** `finishedAt` of the hub App's newest successful AppBackup; null when none has. */
   lastBackupAt:   string | null
   /** sha256 hex of the key in use; null on the development placeholder. */
   keyFingerprint: string | null
   /** The standing attestation — when, and the sha256 of the key it was made for; null when none. */
   keyEscrow:      { at: string; fingerprint: string } | null
+  /** The hub App row: null before `useHost` made it, `gone` when the pointer names no live row. */
+  hubApp:         null | 'gone' | { placed: boolean; port: number | null; containerPort: number | null }
   /** What the env says this installation is reached at and mails through. */
   install: {
     production: boolean

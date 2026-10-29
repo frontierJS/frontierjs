@@ -177,5 +177,7 @@ declare module '@frontierjs/junction' {
     sqlite:    import('bun:sqlite').Database
     providers: BasecampProviders
     workbench: Workbench
+    /** Which ntfy server a ping leaves through, resolved once at boot by `push.ts`. */
+    push:      import('./push.ts').PushServer
   }
 }

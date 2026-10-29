@@ -40,6 +40,8 @@ title: Hub backups
 
   let rows     = []
   let config   = null
+  // The hub App (`FJS-D1606`): its schedule, destination and replica.
+  $: hub = config?.app ?? null
   // The schedule's destination, by name. Null is the local disk; a row this
   // workspace cannot see shows as its id rather than as local.
   let destination = null
@@ -60,8 +62,8 @@ title: Hub backups
         config = null
       }
       destination = null
-      if (config?.backupDestinationId) {
-        try { destination = await backupDestinations.service.get(config.backupDestinationId) } catch {}
+      if (config?.app?.backupDestinationId) {
+        try { destination = await backupDestinations.service.get(config.app.backupDestinationId) } catch {}
       }
       await loadEscrow()
     } catch (e) {
@@ -90,7 +92,7 @@ title: Hub backups
       escrow  = host.controls.find(c => c.id === 'hub.key-escrowed') ?? null
       // The box's own `backup.replica-lag`, which grades Basecamp's database
       // beside its apps' once a replica is set.
-      replica = config?.replicaDestinationId ? host.controls.find(c => c.id === 'backup.replica-lag') ?? null : null
+      replica = config?.app?.replicaDestinationId ? host.controls.find(c => c.id === 'backup.replica-lag') ?? null : null
     } catch { escrow = null; replica = null }
   }
   // Set by the reconcile after a hub restore (`IDEAS/backups.md` 4.5): this
@@ -140,7 +142,7 @@ title: Hub backups
   async function takeOne() {
     error = null; asking = true
     try {
-      await backups.service.create({ destinationId: config?.backupDestinationId ?? null })
+      await backups.service.invoke('take', null, { destinationId: hub?.backupDestinationId ?? null })
       toasts.success('Backup queued. The row fills in as the job runs.')
       await load()
       // `inFlight` is derived from the rows `load()` just fetched, so the watch
@@ -179,7 +181,7 @@ title: Hub backups
   async function drop(b) {
     error = null; busy = b.id
     try {
-      await backups.service.remove(b.id)
+      await backups.service.invoke('discard', b.id, {})
       toasts.success('Backup deleted')
       await load()
     } catch (e) {
@@ -195,7 +197,7 @@ title: Hub backups
   async function rescan() {
     error = null; rescanning = true
     try {
-      const { listed, found } = await backups.service.invoke('rescan', null, { destinationId: config.backupDestinationId })
+      const { listed, found } = await backups.service.invoke('rescan', null, { destinationId: hub.backupDestinationId })
       toasts.success(found ? `${found} archive${found === 1 ? '' : 's'} found in the bucket` : `Nothing new — ${listed} listed`)
       await load()
     } catch (e) {
@@ -273,12 +275,12 @@ title: Hub backups
   </Card>
 {/if}
 
-{#if config?.replicaFoundAt}
+{#if hub?.replicaFoundAt}
   <Card id="hub-found">
     <h3 class="h5">Replica found</h3>
     <p class="text-sm">
       This hub was restored from an archive, and its bucket holds Basecamp's own replica, last synced
-      {config.replicaSyncedAt ? ago(config.replicaSyncedAt) : 'at an unknown time'}. When that is newer
+      {hub.replicaSyncedAt ? ago(hub.replicaSyncedAt) : 'at an unknown time'}. When that is newer
       than the archive, the minutes between are in the replica.
     </p>
     <p class="text-sm text-muted">
@@ -307,17 +309,17 @@ title: Hub backups
   </Card>
 {/if}
 
-{#if config}
+{#if hub}
   <Card id="backup-schedule">
     <div class="section-header">
       <h3 class="h5">Schedule</h3>
       <span class="cluster">
-        <Pill tone={config.backupEnabled ? 'success' : 'muted'}>
-          {config.backupEnabled ? 'enabled' : 'off'}
+        <Pill tone={hub.backupCron ? 'success' : 'muted'}>
+          {hub.backupCron ? 'enabled' : 'off'}
         </Pill>
-        <Badge tone="muted"><code>{config.backupCron}</code></Badge>
+        {#if hub.backupCron}<Badge tone="muted"><code>{hub.backupCron}</code></Badge>{/if}
         <Badge tone="muted">
-          {config.backupDestinationId ? (destination ? `${destination.name} — ${destination.bucket}` : config.backupDestinationId) : 'local'}
+          {hub.backupDestinationId ? (destination ? `${destination.name} — ${destination.bucket}` : hub.backupDestinationId) : 'local'}
         </Badge>
       </span>
     </div>
@@ -327,7 +329,7 @@ title: Hub backups
       After each one finishes, archives past the keep limits are deleted, the newest always kept.
       Edit both in <a href="/hub/settings/">settings</a>.
     </p>
-    {#if config.backupDestinationId}
+    {#if hub.backupDestinationId}
       <Button treatment="outlined" id="rescan-bucket" disabled={rescanning} onclick={rescan}>
         {rescanning ? 'Listing…' : 'Rescan the bucket'}
       </Button>

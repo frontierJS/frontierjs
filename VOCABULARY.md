@@ -168,6 +168,7 @@ before you meet it.
 | Layout | blessed | UI | Component | a `_module.mesa` that wraps every page beneath it; layouts nest | [`FJS-D693`](DECISIONS.md#fjs-d693). Not css's Layout tier (Stack, Cluster), which keeps its qualifier |
 | Select | open | UI | Select task | | |
 | Server | blessed | Operations | | one machine, at a cloud or made by hand — Basecamp's `Server` row, every `--server` flag, `fli server:*`'s noun. Host and Machine are its sub-words, never a second name for the box | [`FJS-D1612`](DECISIONS.md#fjs-d1612) |
+| Platform | blessed | Operations | | a vendor that runs an App with no machine Basecamp owns — a Cloudflare Worker, later a Vercel project or a Netlify site; Basecamp's `AppPlatform` row, beside `AppServer`, both listed as where an App runs | [`FJS-D1629`](DECISIONS.md#fjs-d1629), [`FJS-D1630`](DECISIONS.md#fjs-d1630) |
 | CommandPalette | open | UI | Overlay tier | | |
 | Pagination | open | UI | | | |
 | RadioGroup | open | UI | Select task | | |

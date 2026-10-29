@@ -351,6 +351,7 @@ CREATE TABLE IF NOT EXISTS "workspace" (
   "expiresAt" TEXT,
   "ingressAccountId" TEXT,
   "ingressZoneId" TEXT,
+  "pushTopic" TEXT,
   "version" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),

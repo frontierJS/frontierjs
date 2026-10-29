@@ -1,7 +1,8 @@
 // services.ts
-// createPushSubscriptionsService(db, name): the door a browser subscribes by.
+// createPushSubscriptionsService(db, name, opts): the door a browser subscribes by.
 //
 //   push-subscriptions  GET  /push-subscriptions        this person's devices, no keys
+//                       GET  /push-subscriptions/key    the VAPID public key (`FJS-D1626`)
 //                       POST /push-subscriptions        subscription.toJSON(), upserted by endpoint
 //                       DEL  /push-subscriptions/{id}   retire one
 //
@@ -39,7 +40,16 @@ type Rows = {
 // notification on that screen.
 const PUBLIC = { id: true, endpoint: true, userAgent: true, lastSeenAt: true, createdAt: true } as const
 
-export function createPushSubscriptionsService(db: unknown, name: string = DEFAULT_SERVICE_NAMES.pushSubscriptions): ServiceDefinition {
+export interface PushSubscriptionsServiceOptions {
+  /** The registered `webPush()` driver's public key; absent when the app pushes through ntfy or nothing. */
+  vapidPublicKey?: string
+}
+
+export function createPushSubscriptionsService(
+  db: unknown,
+  name: string = DEFAULT_SERVICE_NAMES.pushSubscriptions,
+  { vapidPublicKey }: PushSubscriptionsServiceOptions = {},
+): ServiceDefinition {
   const rows = () => (db as { asSystem(): { pushSubscription: Rows } }).asSystem().pushSubscription
 
   const me = (ctx: ServiceContext): string => {
@@ -51,7 +61,7 @@ export function createPushSubscriptionsService(db: unknown, name: string = DEFAU
   return createService({
     name,
     model: null,
-    methods: ['find', 'create', 'remove'].map(method => ({ method, gate: LEVELS.VISITOR })),
+    methods: ['find', 'get', 'create', 'remove'].map(method => ({ method, gate: LEVELS.VISITOR })),
 
     async find(ctx: ServiceContext) {
       const userId = me(ctx)
@@ -61,6 +71,18 @@ export function createPushSubscriptionsService(db: unknown, name: string = DEFAU
         select:  PUBLIC,
         orderBy: { createdAt: 'asc' },
       })
+    },
+
+    // Served by the API rather than inlined by the web build, so a rotated key
+    // reaches the next page load with no rebuild. `key` is the only id: a row
+    // is read through find, which already scopes to the caller.
+    async get(ctx: ServiceContext) {
+      me(ctx)
+      if (String(ctx.id) !== 'key') throw new NotFound(`No push subscription ${String(ctx.id)} — list your own with GET /${name}`)
+      if (!vapidPublicKey) {
+        throw new NotFound('This app has no VAPID key: register webPush({ vapid }) under transports.push in notifications(...)')
+      }
+      return { publicKey: vapidPublicKey }
     },
 
     async create(ctx: ServiceContext) {

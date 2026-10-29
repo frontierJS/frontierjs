@@ -16,6 +16,8 @@ import {
   buildPushRequest, encryptPayload, generateVapidKeys, vapidAuthorization, webPush,
   type PushRequest, type PushSubscription, type PushSubscriptions,
 } from '../drivers/webpush.ts'
+import type { PushMessage } from '../types.ts'
+import wire from './fixtures/push-message.json'
 import { createService } from '@frontierjs/junction'
 import { makeApp, type Harness } from './harness.ts'
 
@@ -111,14 +113,19 @@ describe('vapidAuthorization — RFC 8292', () => {
     expect(verify('sha256', Buffer.from(`${h}.${c}`), { key, dsaEncoding: 'ieee-p1363' }, unb64u(s))).toBe(true)
   })
 
-  test('buildPushRequest states the delivery options as headers, and topic in the payload too', () => {
+  // Sierra's worker test reads the same fixture's `payload`, so a field this
+  // driver renames or drops fails there rather than on a phone.
+  test('buildPushRequest states the delivery options as headers, and the rest is the worker\'s payload', () => {
     const vapid = generateVapidKeys('mailto:ops@example.test')
     const ua = device('https://push.example/a')
-    const req = buildPushRequest(ua.sub, { title: 'T', ttl: 60, urgency: 'high', topic: 'shift' }, vapid)
+    const message = {
+      ...wire.message, urgency: wire.message.urgency as NonNullable<PushMessage['urgency']>,
+    } satisfies Required<Omit<PushMessage, 'priority' | 'tags' | 'actions'>>
+    const req = buildPushRequest(ua.sub, message, vapid)
     expect(req.headers).toMatchObject({
-      'Content-Encoding': 'aes128gcm', 'TTL': '60', 'Urgency': 'high', 'Topic': 'shift',
+      'Content-Encoding': 'aes128gcm', 'TTL': '60', 'Urgency': 'high', 'Topic': 'order-7',
     })
-    expect(JSON.parse(decrypt(Buffer.from(req.body), ua).toString())).toEqual({ title: 'T', topic: 'shift' })
+    expect(JSON.parse(decrypt(Buffer.from(req.body), ua).toString())).toEqual(wire.payload)
   })
 })
 
@@ -359,6 +366,16 @@ describe('the push-subscriptions service', () => {
     expect(await status(svc().create(d, as('u7', { support })))).toBe(403)
     expect(await status(svc().create(d, { ...as('u7'), transport: 'mcp' }))).toBe(403)
     expect(await status(svc().create(d, as('u7')))).toBe(200)
+  })
+
+  test('GET /key answers the registered driver\'s public key to a signed-in caller, and says why when there is none', async () => {
+    const vapid = generateVapidKeys('mailto:ops@example.test')
+    const keyed = await makeApp({ push: true, transports: { push: webPush({ vapid, deliver: async () => ({ status: 201 }) }) } })
+    const keySvc = keyed.app.service('push-subscriptions')
+    expect(await keySvc.get('key', as('u1'))).toEqual({ publicKey: vapid.publicKey })
+    expect(await status(keySvc.get('key', {}))).toBe(401)
+    expect(await status(keySvc.get(1, as('u1')))).toBe(404)
+    await expect(svc().get('key', as('u1'))).rejects.toThrow(/webPush\(\{ vapid \}\)/)
   })
 
   test('an app already serving the name is refused at boot, and renaming ours is the way out', async () => {

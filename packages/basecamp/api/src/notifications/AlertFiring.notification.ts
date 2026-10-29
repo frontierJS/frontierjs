@@ -6,7 +6,7 @@
 // the WORKSPACE is paged. This tells one PERSON, in the app they are already
 // looking at, and it is the thing they can switch off for themselves.
 
-import { defineNotification, inApp, mail } from '@frontierjs/notifications'
+import { defineNotification, inApp, mail, push } from '@frontierjs/notifications'
 import { declaredTransports, appUrl }      from './_shared.ts'
 
 export interface AlertPayload {
@@ -25,6 +25,14 @@ export default defineNotification<AlertPayload>({
     .action('View alerts', '/alerts/')
     .context('AlertEvent', p.eventId)
     .data({ ruleName: p.ruleName, severity: p.severity, message: p.message }),
+
+  push: (p) => push()
+    .title(`${p.ruleName} is firing`)
+    .body(p.message)
+    .priority(p.severity === 'critical' ? 5 : 4)
+    .tags(p.severity === 'critical' ? 'rotating_light' : 'warning')
+    .url(appUrl('/alerts/'))
+    .build(),
 
   email: (p) => mail()
     .subject(`[${p.severity}] ${p.ruleName}`)

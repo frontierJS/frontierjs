@@ -9846,17 +9846,28 @@ function _isCompleteBindLine(line) {
   return ticks % 2 === 0
 }
 
+// One regex for the whole set — this runs per binding run, per file.
+// Reached THROUGH — a member, an index or a call — and never the bare name.
+// What the analysis knows is that the VALUE came out of a call and so may
+// hold getters over signals; the binding itself is a const and cannot move,
+// so `{titleId}` over `const titleId = uniqueId()` stays the one-time write
+// it should be. Twelve kit components take that shape and the bare form
+// would have put every one of them in a render block for nothing.
+const _opaqueRe = (opaqueValues) => opaqueValues?.length
+  ? new RegExp(`(?<![.$\\w])(?:${opaqueValues.join('|')})\\s*(?=[.?[(])`)
+  : null
+
+/**
+ * Whether the DOM path writes a binding once, ahead of the render effects,
+ * rather than from one. An emitter that must match the DOM's attribute
+ * order (the server's string mode) asks this rather than guessing.
+ */
+export function writtenOnce(expr, opaqueValues) {
+  return !_isReactive(expr, _opaqueRe(opaqueValues))
+}
+
 function _renderGroup(code, opaqueValues) {
-  // One regex for the whole set — this runs per binding run, per file.
-  // Reached THROUGH — a member, an index or a call — and never the bare name.
-  // What the analysis knows is that the VALUE came out of a call and so may
-  // hold getters over signals; the binding itself is a const and cannot move,
-  // so `{titleId}` over `const titleId = uniqueId()` stays the one-time write
-  // it should be. Twelve kit components take that shape and the bare form
-  // would have put every one of them in a render block for nothing.
-  const opaqueRe = opaqueValues?.length
-    ? new RegExp(`(?<![.$\\w])(?:${opaqueValues.join('|')})\\s*(?=[.?[(])`)
-    : null
+  const opaqueRe = _opaqueRe(opaqueValues)
   // Collect consecutive runs of complete bindText / bindAttribute statements at
   // the same indent, and fold each run into one render() block.
   //

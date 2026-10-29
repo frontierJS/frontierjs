@@ -11,7 +11,7 @@ the diff: a URL that changed without a change you meant to make is a link
 somebody else already published.
 
 ```
-66 routes · 3 layouts · target spa · trailing slash always
+69 routes · 3 layouts · target spa · trailing slash always
 ```
 
 ## Routes
@@ -47,8 +47,11 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/git-activity/` | `src/routes/git-activity/index.mesa` | `src/routes/_module.mesa` | — |
 | `/git-activity/local/` | `src/routes/git-activity/local.mesa` | `src/routes/_module.mesa` | — |
 | `/hub/` | `src/routes/hub/index.mesa` | `src/routes/hub/_module.mesa` | — |
+| `/hub/accounts/` | `src/routes/hub/accounts/index.mesa` | `src/routes/hub/_module.mesa` | — |
+| `/hub/audit/` | `src/routes/hub/audit/index.mesa` | `src/routes/hub/_module.mesa` | — |
 | `/hub/backups/` | `src/routes/hub/backups/index.mesa` | `src/routes/hub/_module.mesa` | — |
 | `/hub/flags/` | `src/routes/hub/flags/index.mesa` | `src/routes/hub/_module.mesa` | — |
+| `/hub/fleet/` | `src/routes/hub/fleet/index.mesa` | `src/routes/hub/_module.mesa` | — |
 | `/hub/security/` | `src/routes/hub/security/index.mesa` | `src/routes/hub/_module.mesa` | — |
 | `/hub/settings/` | `src/routes/hub/settings/index.mesa` | `src/routes/hub/_module.mesa` | — |
 | `/hub/users/` | `src/routes/hub/users/index.mesa` | `src/routes/hub/_module.mesa` | — |
@@ -121,8 +124,11 @@ this section exists to show.
 - `/git-activity/` — siteName: `Basecamp` · title: `Git activity`
 - `/git-activity/local/` — siteName: `Basecamp` · title: `Local repositories`
 - `/hub/` — siteName: `Basecamp` · title: `Hub overview`
+- `/hub/accounts/` — siteName: `Basecamp` · title: `Hub accounts`
+- `/hub/audit/` — siteName: `Basecamp` · title: `Hub audit`
 - `/hub/backups/` — siteName: `Basecamp` · title: `Hub backups`
 - `/hub/flags/` — siteName: `Basecamp` · title: `Hub flags`
+- `/hub/fleet/` — siteName: `Basecamp` · title: `Hub fleet`
 - `/hub/security/` — siteName: `Basecamp` · title: `Host security`
 - `/hub/settings/` — siteName: `Basecamp` · title: `Hub settings`
 - `/hub/users/` — siteName: `Basecamp` · title: `Hub users`
@@ -170,4 +176,4 @@ you expected is a directory boundary in the wrong place.
 
 - `src/routes/_module.mesa` — 55 routes: `/`, `/activity/`, `/alerts/`, `/api-keys/`, `/apps/`, `/apps/:id/`, `/blueprints/`, `/channels/`, `/cleanup/`, `/cloud-spend/`, `/dashboards/`, `/dashboards/:id/`, `/dependencies/`, `/deployments/`, `/deployments/:id/`, `/dns/`, `/environments/:id/`, `/flags/`, `/git-activity/`, `/git-activity/local/`, `/infra-graph/`, `/invite/:token/`, `/jobs/`, `/jobs/:id/`, `/login/`, `/networks/`, `/notifications/`, `/observability/`, `/onboarding/`, `/pages/`, `/portal/`, `/portal/:id/`, `/projects/`, `/projects/:id/`, `/projects/create/`, `/recipes/`, `/registers/`, `/registers/decide/`, `/registry/`, `/reset-password/`, `/secrets/`, `/security/`, `/servers/`, `/servers/:id/`, `/servers/import/`, `/servers/provision/`, `/settings/`, `/setup/`, `/sites/`, `/sites/:id/`, `/sites/:id/edit/`, `/trash/`, `/verify-email/`, `/volumes/`, `/workbench/`
 - `src/routes/admin/_module.mesa` — 4 routes: `/admin/`, `/admin/adapters/`, `/admin/audit/`, `/admin/workspace/`
-- `src/routes/hub/_module.mesa` — 7 routes: `/hub/`, `/hub/backups/`, `/hub/flags/`, `/hub/security/`, `/hub/settings/`, `/hub/users/`, `/hub/workspaces/`
+- `src/routes/hub/_module.mesa` — 10 routes: `/hub/`, `/hub/accounts/`, `/hub/audit/`, `/hub/backups/`, `/hub/flags/`, `/hub/fleet/`, `/hub/security/`, `/hub/settings/`, `/hub/users/`, `/hub/workspaces/`

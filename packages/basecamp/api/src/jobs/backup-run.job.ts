@@ -1,6 +1,7 @@
 // src/jobs/backup-run.job.ts
 // Takes one archive of everything the application keeps. Dispatched as
-// `backup:run`.
+// `backup:run`. The row is an `AppBackup` on the hub App (`FJS-D1606`), its
+// `serverId` the box the hub is placed on.
 //
 // The handler takes a backup id and nothing else — the row is the queue's
 // payload, so a retry acts on the current state rather than on a snapshot taken
@@ -55,8 +56,9 @@ import { keyUnder, sendFor } from '../providers/storage/index.ts'
 import { backupDir, dropWarmCopies, pruneBackups } from '../domain/backup/backup-archives.ts'
 import { putObject }        from '../providers/storage/s3.ts'
 import { writeManifest }    from '../domain/backup/archive-manifest.ts'
+import { hostServer, requireHubAppId } from '../domain/host/host-machine.ts'
 import type { App }         from '@frontierjs/junction'
-import type { Backup, RunStatus } from '../../../db/schema.d.ts'
+import type { AppBackup, RunStatus } from '../../../db/schema.d.ts'
 
 /** One PUT, held in memory. B2 and S3 cap a single PUT at 5 GB; this is lower
  *  because the whole body is a buffer in the API process. */
@@ -76,6 +78,11 @@ function treeSize(dir: string): number {
   return readdirSync(dir, { recursive: true, withFileTypes: true })
     .filter(e => e.isFile())
     .reduce((n, e) => n + statSync(join(e.parentPath, e.name)).size, 0)
+}
+
+/** Files under `dir`. */
+function treeFiles(dir: string): number {
+  return readdirSync(dir, { recursive: true, withFileTypes: true }).filter(e => e.isFile()).length
 }
 
 /** Writes every database the app keeps into `dest`, a new directory. A declared
@@ -148,7 +155,7 @@ export async function takeBackup(app: App, backupId: string): Promise<void> {
   const log = app.logger.child('backup-run')
   const sys = app.db!.asSystem()
 
-  const row = await sys.backup.findFirst({ where: { id: backupId } })
+  const row = await sys.appBackup.findFirst({ where: { id: backupId } })
   if (!row) {
     // Pruned between the dispatch and the run. Nothing to do and nothing wrong.
     log.warn('backup row is gone', { id: backupId })
@@ -156,11 +163,11 @@ export async function takeBackup(app: App, backupId: string): Promise<void> {
   }
 
   const startedAt = new Date().toISOString()
-  await sys.backup.update({ where: { id: backupId }, data: { status: 'running', startedAt } })
+  await sys.appBackup.update({ where: { id: backupId }, data: { status: 'running', startedAt } })
 
   const finish = async (data: Record<string, unknown>) => {
     const finishedAt = new Date().toISOString()
-    await sys.backup.update({
+    await sys.appBackup.update({
       where: { id: backupId },
       data:  { ...data, finishedAt, durationMs: Date.parse(finishedAt) - Date.parse(startedAt) },
     })
@@ -179,19 +186,20 @@ export async function takeBackup(app: App, backupId: string): Promise<void> {
 
   try {
     await archiveAll(app, path, startedAt)
+    const fileCount = treeFiles(path)
 
     if (row.destinationId) {
       const sent = await upload(app, row.destinationId, path)
       if ('key' in sent) {
-        await finish({ status: 'success', sizeBytes: sent.bytes, location: sent.key, error: null })
+        await finish({ status: 'success', sizeBytes: sent.bytes, fileCount, location: sent.key, error: null })
         log.info('backup uploaded', { id: backupId, destination_id: row.destinationId, key: sent.key, bytes: sent.bytes })
       } else {
-        await finish({ status: 'success', sizeBytes: treeSize(path), location: path, error: sent.warning })
+        await finish({ status: 'success', sizeBytes: treeSize(path), fileCount, location: path, error: sent.warning })
         log.warn('backup kept local', { id: backupId, destination_id: row.destinationId, warning: sent.warning })
       }
     } else {
       const size = treeSize(path)
-      await finish({ status: 'success', sizeBytes: size, location: path, error: null })
+      await finish({ status: 'success', sizeBytes: size, fileCount, location: path, error: null })
       log.info('backup complete', { id: backupId, path, bytes: size })
     }
   } catch (err) {
@@ -230,7 +238,7 @@ const backupRun = defineJob<{ backupId: string }>({
   timeout:     600_000,
   handler: async (ctx) => {
     // Nobody's work but the app's — a hub action has no workspace, so there is
-    // no standing to run as. `backups.create` states `actor: null` to match.
+    // no standing to run as. `backups.take` states `actor: null` to match.
     const { app } = runsAsApp(ctx, 'backup:run')
     await takeBackup(app, ctx.data.backupId)
   },
@@ -244,8 +252,10 @@ export default backupRun
 export const SETTLED: RunStatus[] = ['success', 'failed', 'timeout']
 
 /**
- * Write a `pending` row and dispatch the run — the one door a person
- * (`backups.create`) and the schedule (`job-schedule.ts`) both come through.
+ * Write a `pending` row on the hub App and dispatch the run — the one door a
+ * person (`backups.take`) and the hub App's `backupCron` (`job-schedule.ts`)
+ * both come through. Throws `requireHubAppId`'s refusal before `useHost` made
+ * the row.
  *
  * Answers the archive still in flight instead, when there is one. Two
  * concurrent `VACUUM INTO`s are not a corruption risk, but they are two
@@ -255,18 +265,20 @@ export const SETTLED: RunStatus[] = ['success', 'failed', 'timeout']
 export async function queueBackup(
   app:  App,
   data: { kind: 'manual' | 'scheduled'; destinationId: string | null; requestedBy: string | null },
-): Promise<{ backup: Backup } | { inFlight: Backup }> {
-  const sys = app.db!.asSystem()
+): Promise<{ backup: AppBackup } | { inFlight: AppBackup }> {
+  const sys   = app.db!.asSystem()
+  const appId = await requireHubAppId(sys)
 
-  const inFlight = await sys.backup.findFirst({
-    where: { status: { notIn: SETTLED } }, orderBy: { createdAt: 'desc' },
+  const inFlight = await sys.appBackup.findFirst({
+    where: { appId, status: { notIn: SETTLED } }, orderBy: { createdAt: 'desc' },
   })
   if (inFlight) return { inFlight }
 
-  // At system: `Backup` has no tenant and `BackupDestination` has one, so a
-  // caller-context write cannot see the parent it names and litestone refuses
-  // the FK as hidden. Who asked is the column.
-  const backup = await sys.backup.create({ data: { ...data, status: 'pending' } })
+  // At system: a hub action has no workspace, and the hub App and the
+  // destination are rows of one a sysadmin may not belong to. Who asked is
+  // the column.
+  const serverId = (await hostServer(sys))?.id ?? null
+  const backup = await sys.appBackup.create({ data: { ...data, appId, serverId, status: 'pending' } })
 
   // `actor: null` — the handler declares `runsAsApp` (see the header), and an
   // inherited principal is one it would then refuse.

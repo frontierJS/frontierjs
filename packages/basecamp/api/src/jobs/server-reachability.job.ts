@@ -106,7 +106,7 @@ export async function sweepUnreachable(
         serverId:   server.id,
         serverName: server.name,
         lastSeenAt: server.lastHeartbeatAt ?? null,
-      })
+      }, server.workspaceId as string)
   }
 
   return result

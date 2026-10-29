@@ -230,7 +230,7 @@
         -->
         <button
           type="button"
-          class="btn ghost square"
+          class="btn outlined square"
           aria-label="Show password"
           aria-pressed={revealed}
           aria-controls={inputId}

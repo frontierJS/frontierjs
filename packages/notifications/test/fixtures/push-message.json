@@ -1,0 +1,24 @@
+{
+  "message": {
+    "title": "Paid",
+    "body": "Order 7",
+    "url": "/orders/7",
+    "data": { "id": 7 },
+    "ttl": 60,
+    "urgency": "high",
+    "topic": "order-7"
+  },
+  "payload": {
+    "title": "Paid",
+    "body": "Order 7",
+    "url": "/orders/7",
+    "data": { "id": 7 },
+    "topic": "order-7"
+  },
+  "shown": {
+    "title": "Paid",
+    "body": "Order 7",
+    "data": { "id": 7, "url": "/orders/7" },
+    "tag": "order-7"
+  }
+}

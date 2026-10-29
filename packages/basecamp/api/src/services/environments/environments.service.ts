@@ -17,6 +17,7 @@ import { retireAppsIn }         from '../apps/apps.service.ts'
 import { syncReplicasOf }       from '../../jobs/replicate-sync.job.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 import { keyScope } from '../../domain/api-key/scopes.ts'
+import { notHub }   from '../../domain/host/host-machine.ts'
 
 /**
  * An environment's project must be in the caller's workspace.
@@ -44,7 +45,7 @@ export default createService({
     const { limit, offset } = getPagination()
     const projectId = ($.query.projectId ?? $.query.project_id) as string | undefined
     return findScoped('environment', {
-      where:   projectId ? { projectId } : {},
+      where:   { ...(projectId ? { projectId } : {}), ...await notHub(db().asSystem(), 'environment') },
       orderBy: { name: 'asc' },
       limit, offset,
     })

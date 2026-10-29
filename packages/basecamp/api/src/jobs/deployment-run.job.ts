@@ -146,7 +146,7 @@ function runner(app: App) {
       environment:  env?.name ?? 'an environment',
       release:      deploy.version ?? undefined,
       ...extra,
-    })
+    }, workspaceId)
   }
 
   // A release can land somewhere the App's ingress record does not name, and

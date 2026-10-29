@@ -350,9 +350,10 @@ that touch the hub's archives (5.3, 5.5) come after that Phase 2.
       1.8's `test` also PUTs `<prefix>/<appId>-probe.tar.gz`. A refusal passes;
       an accepted write is red and names the slash. Run it once against the
       B2 fixture key from 0.7.
-- [ ] 5.2 Close `FJS-3569` in caravan: a job dispatched by NAME before its
+- [x] 5.2 Close `FJS-3569` in caravan: a job dispatched by NAME before its
       handler registers still lands on `default`. 4.8 found the same gap for
-      dispatch by definition (`FJS-3567`), which is fixed.
+      dispatch by definition (`FJS-3567`), which is fixed. Done 2026-10-29,
+      [`FJS-D1635`](../DECISIONS.md#fjs-d1635): moved on registration, else `stats().stranded`.
 - [ ] 5.3 An app-backups screen on `/apps/[id]/`: the `AppBackup` rows (found
       ones marked `pending` until hashed), *Back up now*, *Restore* and
       *Rescan bucket*, over `appBackups.take`/`rescan` and

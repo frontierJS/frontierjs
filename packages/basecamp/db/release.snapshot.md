@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-73 model(s) · 55 enum(s) · 2 database(s)
+72 model(s) · 55 enum(s) · 2 database(s)
 audit → sqlite · main → sqlite
 ```
 
@@ -254,6 +254,7 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `environmentId` | `String` | no | — | **required on write** |
 | `exposesPort` | `Boolean` | no | `0` | — |
 | `healthCheck` | `String` | yes | — | — |
+| `hub` | `HubConfig` | — | — | relation |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `jobs` | `Job[]` | — | — | relation |
 | `memLimitMb` | `Int` | yes | — | — |
@@ -537,32 +538,6 @@ table `audit_trail` · db `audit` · gate `8`
 @@index(model)
 ```
 
-### `Backup`
-
-table `backup` · db `main` · gate `7.7.8.7`
-
-| Field | Type | Null | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
-| `destination` | `BackupDestination` | — | — | relation |
-| `destinationId` | `String` | yes | — | — |
-| `durationMs` | `Int` | yes | — | — |
-| `error` | `String` | yes | — | — |
-| `finishedAt` | `DateTime` | yes | — | — |
-| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
-| `kind` | `BackupKind` | no | `'manual'` | — |
-| `location` | `String` | yes | — | — |
-| `requestedBy` | `String` | yes | — | — |
-| `sizeBytes` | `Int` | yes | — | — |
-| `startedAt` | `DateTime` | yes | — | — |
-| `status` | `RunStatus` | no | `'pending'` | — |
-
-```
-@@index(createdAt)
-@@index(destinationId)
-@@index(status)
-```
-
 ### `BackupDestination`
 
 table `backup_destination` · db `main` · gate `2.5` · @@softDelete
@@ -571,20 +546,17 @@ table `backup_destination` · db `main` · gate `2.5` · @@softDelete
 | --- | --- | --- | --- | --- |
 | `appBackups` | `AppBackup[]` | — | — | relation |
 | `apps` | `App[]` | — | — | relation |
-| `backups` | `Backup[]` | — | — | relation |
 | `bucket` | `String` | no | — | **required on write** |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `createdBy` | `String` | yes | — | — |
 | `deletedAt` | `DateTime` | yes | — | — |
 | `endpoint` | `String` | no | — | **required on write** |
-| `hubs` | `HubConfig[]` | — | — | relation |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `lastTestAt` | `DateTime` | yes | — | @system |
 | `name` | `String` | no | — | **required on write** |
 | `prefix` | `String` | no | `''` | — |
 | `region` | `String` | no | — | **required on write** |
 | `replicaApp` | `App` | — | — | relation |
-| `replicaHub` | `HubConfig` | — | — | relation |
 | `secret` | `String` | — | — | transient |
 | `secretId` | `String` | yes | — | @system |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
@@ -1209,10 +1181,8 @@ table `hub_config` · db `main` · gate `7`
 | --- | --- | --- | --- | --- |
 | `allowApiKeyAuth` | `Boolean` | no | `1` | — |
 | `allowBotUsers` | `Boolean` | no | `1` | — |
-| `backupCron` | `String` | no | `'0 2 * * *'` | — |
-| `backupDestination` | `BackupDestination` | — | — | relation |
-| `backupDestinationId` | `String` | yes | — | — |
-| `backupEnabled` | `Boolean` | no | `0` | — |
+| `app` | `App` | — | — | relation |
+| `appId` | `String` | yes | — | unique · @system |
 | `backupKeepLocalCount` | `Int` | no | `7` | — |
 | `backupKeepLocalDays` | `Int` | yes | — | — |
 | `backupKeepRemoteCount` | `Int` | no | `7` | — |
@@ -1220,13 +1190,7 @@ table `hub_config` · db `main` · gate `7`
 | `encryptionKeyEscrowedAt` | `DateTime` | yes | — | @system |
 | `encryptionKeyFingerprint` | `String` | yes | — | @system |
 | `heartbeatTimeoutSeconds` | `Int` | no | `120` | — |
-| `hostServer` | `Server` | — | — | relation |
-| `hostServerId` | `String` | yes | — | unique · @system |
 | `id` | `String` | no | `'hub'` | id |
-| `replicaDestination` | `BackupDestination` | — | — | relation |
-| `replicaDestinationId` | `String` | yes | — | unique |
-| `replicaFoundAt` | `DateTime` | yes | — | @system |
-| `replicaSyncedAt` | `DateTime` | yes | — | @system |
 | `requireTwoFactorForOwners` | `Boolean` | no | `0` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `version` | `Int` | no | `1` | — |
@@ -1968,7 +1932,6 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 | `enrollTokenHash` | `String` | yes | — | @guarded |
 | `events` | `ServerEvent[]` | — | — | relation |
 | `health` | `Json` | yes | — | — |
-| `hostHub` | `HubConfig` | — | — | relation |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `ipAddress` | `String` | yes | — | — |
 | `ipv6Address` | `String` | yes | — | — |

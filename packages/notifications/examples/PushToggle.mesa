@@ -1,0 +1,77 @@
+<script>
+  // PushToggle.mesa — this browser's push subscription, on or off. Copy it into
+  // web/src/components/; it is not kit until a third app wants it.
+  //
+  // A button, never a toggle that acts on mount: the permission prompt needs a
+  // click's user activation, and Safari and Firefox refuse to ask without one.
+  //
+  // What it shows is the BROWSER's answer, read fresh at mount: whether Web Push
+  // exists here, `Notification.permission`, and whether this origin's worker
+  // holds a subscription. The server's row is not consulted — a browser that
+  // dropped its subscription shows off, and the next click retires the row.
+  //
+  // `denied` has no button. A page cannot re-ask once the person said no; only
+  // the site settings in the browser can undo it, so the pill says where.
+  import { getClient } from '@frontierjs/sierra/resource'
+  import { subscribeToPush, unsubscribeFromPush } from '@frontierjs/notifications/client'
+
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Pill   from '@frontierjs/ui/components/display/Pill.mesa'
+
+  export let service = 'push-subscriptions'   // the name the API serves it under
+
+  let state = 'checking'   // checking | unsupported | denied | off | on
+  let error = null
+  let busy  = false
+
+  const proxy = () => getClient().service(service)
+
+  async function read() {
+    if (!('serviceWorker' in navigator) || typeof PushManager === 'undefined' || typeof Notification === 'undefined') {
+      state = 'unsupported'
+      return
+    }
+    if (Notification.permission === 'denied') { state = 'denied'; return }
+    // No registration means no `push: true` in sierra.config.js, which
+    // subscribeToPush would refuse by name; say so before the click instead.
+    const registration = await navigator.serviceWorker.getRegistration()
+    if (!registration) { state = 'unsupported'; error = 'No service worker is registered — set push: true in sierra.config.js'; return }
+    state = (await registration.pushManager.getSubscription()) ? 'on' : 'off'
+  }
+
+  async function flip() {
+    busy  = true
+    error = null
+    try {
+      if (state === 'on') await unsubscribeFromPush({ service: proxy() })
+      else await subscribeToPush({ service: proxy() })
+    } catch (e) {
+      error = e?.message ?? String(e)
+    } finally {
+      busy = false
+      await read()
+    }
+  }
+
+  $.onMount(() => { read() })
+
+  const LABEL = { checking: 'checking', unsupported: 'not available', denied: 'blocked', off: 'off', on: 'on' }
+  const TONE  = { checking: 'muted', unsupported: 'muted', denied: 'danger', off: 'muted', on: 'success' }
+</script>
+
+<div class="stack" data-push-state={state}>
+  <div class="cluster">
+    <Pill tone={TONE[state]}>{LABEL[state]}</Pill>
+    {#if state === 'on' || state === 'off'}
+      <Button treatment={state === 'on' ? 'outlined' : ''} disabled={busy} onclick={flip} data-push-toggle>
+        {state === 'on' ? 'Turn off on this device' : 'Notify this device'}
+      </Button>
+    {/if}
+  </div>
+  {#if state === 'denied'}
+    <p class="text-muted">Notifications are blocked for this site. Allow them in the browser's site settings, then reload.</p>
+  {:else if state === 'unsupported' && !error}
+    <p class="text-muted">This browser cannot receive push. On an iPhone, add the app to the home screen first.</p>
+  {/if}
+  {#if error}<p class="text-danger" data-push-error>{error}</p>{/if}
+</div>

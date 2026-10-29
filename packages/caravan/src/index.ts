@@ -137,6 +137,14 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
   const ownerId  = crypto.randomUUID()
 
   const handlers = new Map<string, RegisteredHandler>()
+  // Rows dispatched by a bare name before its handler registered and with no
+  // queue stated: they took `default` and its retries, and a worker claims only
+  // names whose handler is on its own queue, so registration moves them
+  // (`FJS-3569`). Kept only until the job files have loaded — after that a
+  // name with no handler is one this process never serves, and remembering it
+  // would grow per dispatch. A row nothing moves is `stats().stranded`.
+  const unresolved = new Map<string, string[]>()
+  let   registryLoaded = false
   const pool     = new WorkerPool()
   const cron     = new CronScheduler({ now: opts.cronClock })
   let   started  = false
@@ -345,6 +353,8 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
     if (jobFilesLoaded || !jobsDir) return
     jobFilesLoaded = true
     const loaded = await autoloadJobs(jobsDir, caravan)
+    registryLoaded = true
+    unresolved.clear()
     // Under `fli dev` the count is boot noise between the summary and the
     // first request; a verbose run starts without the variable and prints it.
     if (loaded.length > 0 && !process.env[DEV_ENV]) {
@@ -687,6 +697,14 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
     const maxAttempts = o.maxAttempts ?? 3
     const retryDelay  = o.retryDelay  ?? []
 
+    const early = unresolved.get(name)
+    if (early) {
+      unresolved.delete(name)
+      const { stmts } = rt()
+      const retry_delay = JSON.stringify(retryDelay)
+      for (const id of early) stmts.rehome.run({ id, queue, max_attempts: maxAttempts, retry_delay })
+    }
+
     handlers.set(name, {
       name,
       handler:  fn,
@@ -832,6 +850,7 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
     // collide with and the throw is a real failure.
     try {
       stmts.insert.run(row)
+      if (!registered && !dispatchOpts.queue && !registryLoaded) unresolved.set(name, [...(unresolved.get(name) ?? []), id])
     } catch (err) {
       if (dispatchOpts.id && isPrimaryKeyCollision(err)) return id
       // The index decided the race this dispatch lost. Ask it who won: the
@@ -1023,7 +1042,9 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
       const oldest = stmts.oldestRunning.all() as {
         queue: string; started_at: number
       }[]
-      return aggregateStats(rows, Object.keys(queueConf), oldest, Date.now(), stmts.allPauses.all())
+      const stranded = stmts.pendingByName.all()
+        .filter(r => handlers.get(r.name)?.queue !== r.queue)
+      return aggregateStats(rows, Object.keys(queueConf), oldest, Date.now(), stmts.allPauses.all(), stranded)
     },
 
     // ── queue ────────────────────────────────────────────────────────────────
@@ -1045,6 +1066,8 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
       // own cron, and both have to be known before the workers are built and
       // the scheduler starts.
       await loadJobFiles()
+      registryLoaded = true
+      unresolved.clear()
 
       // Say this instance is alive BEFORE anything sweeps, so a second instance
       // starting at the same moment cannot read this one as dead.

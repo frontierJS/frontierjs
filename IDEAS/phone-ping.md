@@ -270,15 +270,17 @@ push: (p) => push()
 Goal: a ping reaches the owner's phone from `curl` through the blueprint's ntfy, on a named topic the phone was granted.
 Done when: the phone rings on `curl -H 'Priority: 5' -H 'Title: test' -d hi https://<ntfy>/acme-critical` with a sender token from `NTFY_AUTH_TOKENS` and a reader granted by `ntfy access`, and once more with the iOS relay blank to record what iOS loses.
 
-- [ ] 0.1 Install the `ntfy` blueprint on a box, grant one phone `read` on `acme-critical`, send the curl above; record Android and iOS behavior in this section.
+- [x] 0.1 Install the `ntfy` blueprint on a box, grant one phone `read` on `acme-critical`, send the curl above; record Android and iOS behavior in this section.
   - 2026-10-28: the wire works. A `Priority: 5` POST to public `ntfy.sh/basecamp-alerts` (id `3iBKpA0TinR4`, HTTP 200) rang the owner's phone. Left: the same through the blueprint's own server with `deny-all` and a reader grant, and the iOS-relay-blank run.
+  - 2026-10-29: the blueprint's own server, by hand on `thod` (`https://push.awe.dev`, DNS-only A record in the `awe.dev` zone, Caddy route `fli-push` added through the admin API because that box's Caddy is fli's and runs `--resume`). `deny-all`; `jordan` admin, `basecamp` user with the `tk_` sender token; topic `acme-critical-ufafhm7kt1rg`, `basecamp` granted `write`. Anonymous POST 403, token POST 200 (id `4EF9bhJOfDDz`, priority 5), reader poll returns it. Two blueprint traps found: a token's user must ALSO be in `NTFY_AUTH_TOKENS`'s sibling `NTFY_AUTH_USERS` or the server loops on *user is not provisioned*, and the hint's `tk_<29>` is exact — 28 is refused at boot. iOS, app in background: relay on, a priority-5 ping (`iJKQvrLQOoCz`) rang; relay blank (`9N1CLGJwLmE0`), nothing rang and the message appeared only on opening the app — the blueprint's note holds, so the hub posture row of 2.4 should warn when the hub's own `ntfy` App has a blank relay. Relay restored.
 
 ### Phase 1 — The driver and the builder
 
 Goal: `@frontierjs/notifications` delivers on `push` through `ntfy()`.
 Done when: `bun run test` in the package has a `push` row proving the request headers through a `deliver` stub, and `verify:notify` in `example/` sends one to a topic recipient.
 
-- [ ] 1.1 `drivers/ntfy.ts` as sketched; `push()` builder in `builders.ts`; `PushMessage` in `types.ts`; export both.
+- [x] 1.1 `drivers/ntfy.ts` as sketched; `push()` builder in `builders.ts`; `PushMessage` in `types.ts`; export both.
+  - 2026-10-29: built. `PushMessage` already existed in `drivers/webpush.ts` and both drivers are `transport: 'push'`, so the one shape moved to `types.ts` and widened (`priority`, `tags`, `actions`); the sketch's `click` is the existing `url`, sent as `Click`. `webPush()` strips the ntfy fields from its payload. `token` optional (rung 3 has none). Typecheck + 122 tests green; headers, encoded topic, missing topic and 403 proved through a `deliver` stub in a scratch run, not a test file (1.2).
 - [ ] 1.2 Test through the `deliver` stub: headers, encoded topic, a missing topic refused by name, a 4xx thrown. (Lifted once the owner says the shape is settled — no new test files while experimenting.)
 
 ### Phase 2 — Basecamp's toggle
@@ -286,11 +288,14 @@ Done when: `bun run test` in the package has a `push` row proving the request he
 Goal: a monitor going down rings every phone subscribed to the workspace's topic, on whichever rung of the ladder is live.
 Done when: on a fresh hub with no env and no `ntfy` App (rung 3), pausing a monitor's target rings a phone subscribed to the suffixed topic on ntfy.sh within one interval; the same with the blueprint's ntfy installed (rung 2) and with `NTFY_BASE_URL` set (rung 1); `db/test/schema.test.ts` holds the `push` column against the enum.
 
-- [ ] 2.1 `kinds.ts` gains `push` with Q2's defaults; `Workspace.pushTopic String? @unique @opaque` and `pushTopicFor()` that mints `<slug>-critical-<12 random chars>` once; `notify.ts` builds the topic recipient when the kind says so; the schema test grows to the third column.
-- [ ] 2.2 `api/src/push.ts` resolves the ladder once at boot and `app.own('push', …)` holds it; `app.ts` always registers `ntfy()`, with the rung-3 fallback when rung 2 is live; every critical definition gains a `push:` formatter (Q3 A).
+- [x] 2.1 `kinds.ts` gains `push` with Q2's defaults; `Workspace.pushTopic String? @unique @opaque` and `pushTopicFor()` that mints `<slug>-critical-<12 random chars>` once; `notify.ts` builds the topic recipient when the kind says so; the schema test grows to the third column.
+  - 2026-10-29: built. Two departures from the sketch, both because litestone refused it: `@opaque` cannot be `@unique` (two sealings of one value differ), and `@opaque` means bytes the SERVER cannot read -- Basecamp reads the topic to POST, so the word was wrong. The column is `pushTopic String? @secret` (encrypted, asSystem-only, digest in the trail); not `@unique`, the 12 random chars make a collision moot. `pushTopicFor()` lives in `domain/notification/push-topic.ts`; `notifyPeople()` took a fifth argument, `workspaceId`, and the seven callers that fire a push kind pass it. `@frontierjs/notifications` exports `hasTransport(app, 'push')`, which is how `available()` reads the driver off the app. Migration + `schema.d.ts` regenerated; the dev db needs `db:reset` (owner approves). Nothing pings yet: no driver is registered until 2.2.
+- [x] 2.2 `api/src/push.ts` resolves the ladder once at boot and `app.own('push', …)` holds it; `app.ts` always registers `ntfy()`, with the rung-3 fallback when rung 2 is live; every critical definition gains a `push:` formatter (Q3 A).
+  - 2026-10-29: built. `api/src/push.ts` owns the ladder: rung 1 from `NTFY_BASE_URL`/`NTFY_TOKEN` (declared in `core/env.ts`), rung 2 the running App whose blueprint is `ntfy`, its `NTFY_BASE_URL` Variable and the first `tk_` entry of `NTFY_AUTH_TOKENS` read through `asSystem()`, rung 3 `https://ntfy.sh`. `app.own('push', …)` holds it, typed on junction's `App` in `basecamp.types.ts`; `app.ts` registers `ntfy()` on every boot with ntfy.sh as the fallback when rung 2 is live. Six `push:` formatters: the outage kinds send priority 5 + `rotating_light` (`DeployFailed`, `ServerUnreachable`, `MonitorDown` first send, `AlertFiring` critical), the findings 4 + `warning` (`PostureFailed`, `JobFailed`, a `MonitorDown` resend, a non-critical alert). Proved with a `deliver` stub: a 503 from the primary retries once on ntfy.sh without the token. 2.5 was pulled forward because this step passes `fallback`.
 - [ ] 2.3 Workspace settings card: the suffixed topic as a subscribe link and QR, the server URL and rung, how to subscribe in the ntfy app, and a **Test ping** button through `app.notify`.
 - [ ] 2.4 Hub posture row names the live rung — *phone pings via your ntfy* / *via the ntfy App* / *via ntfy.sh (public server; topic is the secret)* — beside *no mailer*.
-- [ ] 2.5 `drivers/ntfy.ts` grows `fallback?: { url, token? }`: on a 4xx/5xx or thrown fetch from the primary, one retry there, the failure logged with both answers.
+- [x] 2.5 `drivers/ntfy.ts` grows `fallback?: { url, token? }`: on a 4xx/5xx or thrown fetch from the primary, one retry there, the failure logged with both answers.
+  - 2026-10-29: built with 2.2. `ntfy()` tries each server in order and throws once with both answers joined (`… answered 503 … -- then …`), so a ping that reached nobody says which server refused and why.
 
 ### Phase 3 — Access and the second door
 

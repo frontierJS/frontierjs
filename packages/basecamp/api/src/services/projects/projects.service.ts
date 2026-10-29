@@ -28,6 +28,7 @@ import { parseAppSource }       from '../../domain/release/app-source.ts'
 import { forgeRepo }            from '../../domain/release/dockerfile-template.ts'
 import { keyScope }             from '../../domain/api-key/scopes.ts'
 import { exposedPort }          from '@frontierjs/outpost/dockerfile'
+import { notHub }               from '../../domain/host/host-machine.ts'
 
 type FromRepo = {
   name: string, slug?: string, repo: string, branch?: string, dockerfile?: string,
@@ -55,7 +56,7 @@ export default createService({
   async find() {
     const { limit, offset } = getPagination()
     const status = $.query.status as string | undefined
-    return findScoped('project', { where: status ? { status } : {}, limit, offset })
+    return findScoped('project', { where: { ...(status ? { status } : {}), ...await notHub(db().asSystem(), 'project') }, limit, offset })
   },
 
   get: () => getScoped('project', 'Project'),

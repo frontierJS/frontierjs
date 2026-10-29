@@ -40,6 +40,7 @@ import type { Executor }                             from '../providers/executor
 import { createSecretResolver, secretRef }           from '../core/credentials.ts'
 import { keyUnder }                                  from '../providers/storage/index.ts'
 import { objectPath, presign }                       from '../providers/storage/s3.ts'
+import { refuseHubVolume }                           from '../domain/host/host-machine.ts'
 import type { App }                                  from '@frontierjs/junction'
 import type { App as AppRow, AppBackup, BackupDestination, BackupKind } from '../../../db/schema.d.ts'
 
@@ -117,6 +118,8 @@ export async function takeAppBackup(app: App, opts: {
   const { target, executor, destination, kind, requestedBy } = opts
   const serverId = executor.serverId
   const sys      = app.db!.asSystem() as any
+
+  await refuseHubVolume(sys, target.id)
 
   const inFlight = await sys.appBackup.findFirst({
     where: {

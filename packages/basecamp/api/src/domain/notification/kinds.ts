@@ -26,6 +26,10 @@ export interface NotificationKindDef {
   /** What a person who has never opened the screen gets. */
   email:       boolean
   inApp:       boolean
+  /** Published once to the workspace's critical topic (`Workspace.pushTopic`),
+   *  so every phone subscribed to it rings. Not a preference: a person opts
+   *  out in the ntfy app by unsubscribing (`FJS-D1586`). */
+  push:        boolean
 }
 
 /**
@@ -34,66 +38,71 @@ export interface NotificationKindDef {
  * The rule they follow: **in-app is cheap and email is an interruption**, so a
  * kind is emailed only where not knowing costs something — a failure, or
  * somebody joining who can now see the fleet. A success is in-app only.
+ *
+ * **A ping is an interruption louder than email**, so `push` is the failures
+ * only (`FJS-D1587`): something is down NOW and a morning email is too late.
+ * Once-a-day states (`HubPostureFailed`, `ReplicaFound`) and every recovery
+ * stay off it.
  */
 export const NOTIFICATION_KINDS: NotificationKindDef[] = [
   { kind: 'DeploySuccess', label: 'Deploy succeeded',
     description: 'A deployment reached its last step.',
-    email: false, inApp: true },
+    email: false, inApp: true, push: false },
 
   { kind: 'DeployFailed',  label: 'Deploy failed',
     description: 'A deployment stopped at a step that failed.',
-    email: true,  inApp: true },
+    email: true,  inApp: true, push: true },
 
   { kind: 'ServerUnreachable', label: 'Server unreachable',
     description: 'A machine stopped checking in. Its apps may still be running — nobody here can tell.',
-    email: true,  inApp: true },
+    email: true,  inApp: true, push: true },
 
   { kind: 'MonitorDown', label: 'Monitor down',
     description: 'A URL Basecamp probes stopped answering, past its retries.',
-    email: true,  inApp: true },
+    email: true,  inApp: true, push: true },
 
   { kind: 'MonitorUp',   label: 'Monitor recovered',
     description: 'A monitor that was down is answering again.',
-    email: false, inApp: true },
+    email: false, inApp: true, push: false },
 
   { kind: 'PostureFailed', label: 'Server posture failing',
     description: 'A security control on a machine stopped holding — password SSH, an unexpected listener, updates pending.',
-    email: true,  inApp: true },
+    email: true,  inApp: true, push: true },
 
   { kind: 'HubPostureFailed', label: 'Installation needs attention',
     description: 'Once a day while a check on the box Basecamp runs on is failing — no backup, an unattested key, a localhost URL, no mailer. Sent to system admins.',
-    email: true,  inApp: true },
+    email: true,  inApp: true, push: false },
 
   { kind: 'DependencyVulnerable', label: 'Dependency vulnerable',
     description: 'An installed version of a package gained a published advisory.',
-    email: true,  inApp: true },
+    email: true,  inApp: true, push: false },
 
   { kind: 'AlertFiring',   label: 'Alert firing',
     description: 'An alert rule crossed its threshold.',
-    email: true,  inApp: true },
+    email: true,  inApp: true, push: true },
 
   { kind: 'AlertResolved', label: 'Alert resolved',
     description: 'A firing alert came back inside its threshold.',
-    email: false, inApp: true },
+    email: false, inApp: true, push: false },
 
   { kind: 'MemberJoined',  label: 'Member joined',
     description: 'Somebody accepted an invitation to a workspace you are in.',
-    email: true,  inApp: false },
+    email: true,  inApp: false, push: false },
 
   { kind: 'JobFailed',     label: 'Job failed',
     description: 'A scheduled or triggered job ended in failure.',
-    email: true,  inApp: true },
+    email: true,  inApp: true, push: true },
 
   { kind: 'ReplicaFound',  label: 'Replica found',
     description: 'After Basecamp was restored, an app\'s replica was found in its bucket and can be restored.',
-    email: true,  inApp: true },
+    email: true,  inApp: true, push: false },
 
   // Spend is NOT in it. `cloudSpend` is a declared adapter with nothing behind
   // it (docs/ADAPTERS.md), and a digest reporting a figure it cannot source is
   // a number somebody would act on. The description says what is counted.
   { kind: 'WeeklyDigest',  label: 'Weekly digest',
     description: 'A summary of the week — deploys, alerts and job failures.',
-    email: true,  inApp: false },
+    email: true,  inApp: false, push: false },
 ]
 
 /** The enum's words, for validating what a caller sent. */

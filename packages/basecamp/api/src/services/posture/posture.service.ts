@@ -8,7 +8,7 @@
 //   fleet  — every machine in the workspace, worst first, and the vulnerable
 //            dependency count; what /security/ draws
 //   host   — the box this Basecamp runs on, hub only; what /hub/security/ draws.
-//            It is the hub's host row (`HubConfig.hostServerId`), graded with the `hub.*`
+//            It is the server the hub App is placed on (`FJS-D1603`), graded with the `hub.*`
 //            controls beside its own (FJS-D1241)
 //
 // The Outpost reports facts and `domain/host/posture.ts` grades them (IDEAS/server-posture.md
@@ -94,7 +94,7 @@ async function ingest(server: any, data: ReportData) {
       serverId:   server.id,
       serverName: server.name,
       failed:     failed.map(c => `${c.id}: ${c.message}`),
-    })
+    }, server.workspaceId)
 
   // A signal naming the machine, not a row to merge: the server page re-reads
   // `latest` on it.

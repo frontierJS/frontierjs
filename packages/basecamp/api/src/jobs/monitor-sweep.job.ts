@@ -155,7 +155,7 @@ async function checkOne(
       monitorName: monitor.name,
       message:     grade.message,
       resend:      state.page === 'resend',
-    })
+    }, monitor.workspaceId)
 
   const links = await db.monitorChannel.findMany({
     where:   { monitorId: monitor.id },

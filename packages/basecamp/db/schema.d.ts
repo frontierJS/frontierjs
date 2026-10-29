@@ -1923,6 +1923,8 @@ export interface Workspace {
   expiresAt?: string | null
   ingressAccountId?: string | null
   ingressZoneId?: string | null
+  /** @guarded @encrypted @secret */
+  pushTopic?: string | null
   /** @version */
   version: number
   createdAt: string
@@ -1940,6 +1942,7 @@ export interface WorkspaceCreate {
   status?: WorkspaceStatus
   ingressAccountId?: string | null
   ingressZoneId?: string | null
+  pushTopic?: string | null
 }
 
 export interface WorkspaceUpdate {
@@ -1952,6 +1955,7 @@ export interface WorkspaceUpdate {
   status?: WorkspaceStatus
   ingressAccountId?: string | null
   ingressZoneId?: string | null
+  pushTopic?: string | null
   version: number
 }
 
@@ -1972,6 +1976,7 @@ export interface WorkspaceWhere extends WhereBase {
   expiresAt?: string | Date | WhereOp<string | Date> | null
   ingressAccountId?: string | WhereOp<string> | null
   ingressZoneId?: string | WhereOp<string> | null
+  pushTopic?: string | WhereOp<string> | null
   version?: number | WhereOp<number> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
@@ -6218,7 +6223,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly auditTrail: TableClient<AuditTrail, AuditTrailCreate, AuditTrailUpdate, AuditTrailWhere, AuditTrailRelations, never, '@@gate'>
   readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere, UserRelations, never, 'kind' | '@@gate', UserSystem>
   readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere, AccountRelations, never, '@@gate'>
-  readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere, WorkspaceRelations, never, 'ownerId' | 'expiresAt' | '@@gate', WorkspaceSystem>
+  readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere, WorkspaceRelations, never, 'ownerId' | 'expiresAt' | 'pushTopic' | '@@gate', WorkspaceSystem>
   readonly workspaceMember: TableClient<WorkspaceMember, WorkspaceMemberCreate, WorkspaceMemberUpdate, WorkspaceMemberWhere, WorkspaceMemberRelations, never, 'userId' | '@@gate', WorkspaceMemberSystem>
   readonly invitation: TableClient<Invitation, InvitationCreate, InvitationUpdate, InvitationWhere, InvitationRelations, never, 'token' | '@@gate'>
   readonly secret: TableClient<Secret, SecretCreate, SecretUpdate, SecretWhere, SecretRelations, never, 'verifiedAt' | 'verifyError' | '@@gate', SecretSystem>

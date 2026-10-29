@@ -74,6 +74,11 @@ export interface Connection {
   // Every call this socket makes carries its signal as `ctx.signal`; it aborts
   // when the connection goes, however it went.
   __gone?: AbortController
+
+  // The tab's latest `visibility` frame. Absent until one arrives, and absent
+  // reads as hidden: a socket that never reports (a script, a server-side
+  // client) must not silence a push (`FJS-D1627`).
+  visible?: boolean
 }
 
 // Minimal interface used by Channel.send() broadcast loop.
@@ -1134,6 +1139,18 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
       return connections
     },
 
+    /**
+     * Does this user have a tab on screen? This process's sockets only: a
+     * user connected to another instance reads as not visible.
+     */
+    hasVisibleConnection(userId: string | number): boolean {
+      const id = String(userId)
+      for (const conn of connections.values()) {
+        if (conn.visible && conn.user?.id != null && String(conn.user.id) === id) return true
+      }
+      return false
+    },
+
     // Called by the WS handler in _wsOpen (after auth resolves)
     async handleConnection(
       socket:  BunWS,
@@ -1735,6 +1752,12 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
             return
           }
           if (parsed.type === 'pong') return
+
+          if (parsed.type === 'visibility') {
+            const conn = manager.connections.get(connId)
+            if (conn) conn.visible = parsed.visible === true
+            return
+          }
 
           // ── Service call ─────────────────────────────────────────
           // Clients can call any registered service method over the socket.
