@@ -205,12 +205,12 @@ describe('a GitHub account', () => {
 })
 
 describe('the schema', () => {
-  test('a Server cannot claim to run at GitHub (FJS-D559)', async () => {
+  test('a Server cannot claim to run at GitHub (FJS-D1607)', async () => {
     await expect((env.system as any).server.create({ data: {
       workspaceId: ws.id, name: 'nope', slug: 'nope', providerKind: 'github',
     }})).rejects.toThrow()
     // The control: the same row at a cloud that makes machines is accepted, so
-    // the refusal above is the check and not a missing enum value.
+    // the refusal above is `ComputeProvider` and not a missing column.
     const ok = await (env.system as any).server.create({ data: {
       workspaceId: ws.id, name: 'fine', slug: 'fine', providerKind: 'hetzner',
     }})

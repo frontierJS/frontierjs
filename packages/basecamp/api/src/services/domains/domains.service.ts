@@ -21,7 +21,7 @@
 // that silently goes stale overnight — a certificate does not expire when
 // somebody remembers to run an update.
 
-import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict, parseWhere, $ } from '@frontierjs/junction'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
@@ -106,10 +106,10 @@ export default createService({
 
   async find() {
     const { limit, offset } = getPagination()
-    const appId = $.query.appId as string | undefined
-
+    // Every filter the caller sent: a column autoFilter admitted and this body
+    // skipped answered every row, so ?hostname= came back as the workspace.
     const result = await findScoped('domain', {
-      where:   { ...(appId ? { appId } : {}) },
+      where:   parseWhere($.query),
       orderBy: { hostname: 'asc' },
       limit, offset,
     })

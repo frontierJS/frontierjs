@@ -1,7 +1,7 @@
 /*
  * outpost.test.js
  *
- * The Outpost with no Docker and no network: `createDocker({ run })` takes the
+ * The Outpost with no Docker and no network: `createDocker({ appsDir: APPS, run })` takes the
  * runner and `createReporter({ fetch })` takes the client, so what is asserted
  * here is the two things that cannot be tested against a real machine without
  * being wrong first — that every route refuses an unsigned request, and that
@@ -24,11 +24,16 @@ import { readConfig }             from '../src/config.js'
 import { ensureCert }             from '../src/cert.js'
 import { ensureDeployKey, listDeployKeys } from '../src/deploy-key.js'
 import { createReplicator }       from '../src/replicate.js'
+import { createAnalytics, MAX_LINES, TOP } from '../src/analytics.js'
 import pkg                        from '../package.json' with { type: 'json' }
 import { existsSync, mkdtempSync, statSync, writeFileSync, mkdirSync, symlinkSync, realpathSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir }                 from 'node:os'
 import { createHash }             from 'node:crypto'
 import { join }                   from 'node:path'
+import { gzipSync }               from 'node:zlib'
+
+// Each app's data directory, `<APPS>/<app_id>/data`, which a deploy makes.
+const APPS = mkdtempSync(join(tmpdir(), 'outpost-apps-'))
 
 const CONFIG = {
   serverId: 'srv-1', secret: 'fleet-secret', basecampUrl: 'http://basecamp.test',
@@ -37,6 +42,7 @@ const CONFIG = {
   // Nothing listens on port 1: a machine with no Caddy, refused at once.
   caddyAdmin: 'http://127.0.0.1:1',
   deployKeyDir: mkdtempSync(join(tmpdir(), 'outpost-keys-')),
+  appsDir: APPS,
 }
 
 const DIGEST = 'sha256:' + 'ab'.repeat(32)
@@ -92,7 +98,7 @@ async function send(server, method, path, body, { secret = CONFIG.secret, signPa
 
 describe('every route but /health takes a signature', () => {
   const server = createOutpostServer(CONFIG, {
-    docker: createDocker({ run: fakeRunner().run }), inspector: createInspector({ run: fakeRunner().run }),
+    docker: createDocker({ appsDir: APPS, run: fakeRunner().run }), inspector: createInspector({ run: fakeRunner().run }),
     log: { warn() {}, error() {} },
   })
 
@@ -158,7 +164,7 @@ describe('what the machine is asked to do', () => {
       'test -d':              { exitCode: 1 },
     })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ run: fake.run, workDir: CONFIG.workDir, deployKeyDir: CONFIG.deployKeyDir }),
+      docker: createDocker({ appsDir: APPS, run: fake.run, workDir: CONFIG.workDir, deployKeyDir: CONFIG.deployKeyDir }),
       inspector: createInspector({ run: fake.run }),
     })
 
@@ -207,19 +213,19 @@ describe('what the machine is asked to do', () => {
     const machine = (user = '"bun"\n') => {
       const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'docker run': { stdout: 'c-1\n' }, user: { stdout: user } })
       const uidFile = join(mkdtempSync(join(tmpdir(), 'outpost-uids-')), 'uids.json')
-      return { fake, uidFile, docker: createDocker({ run: fake.run, workDir: CONFIG.workDir, uidFile }) }
+      return { fake, uidFile, docker: createDocker({ appsDir: APPS, run: fake.run, workDir: CONFIG.workDir, uidFile }) }
     }
     const runs = (fake) => fake.calls.map(c => c.join(' ')).filter(c => c.startsWith('docker run'))
 
-    test('the volume is handed to the uid after the old container stops, and the run keeps the copy from undoing it', async () => {
+    test('the data directory is handed to the uid after the old container stops', async () => {
       const m = machine()
       expect((await release(m.docker, 'app-1')).status).toBe(200)
       const argv = m.fake.calls.map(c => c.join(' '))
       const [chown, app] = runs(m.fake)
-      expect(chown).toBe(`docker run --rm --user 0:0 --entrypoint chown --mount type=volume,src=fjs-app-1-data,dst=/db ${DIGEST} -R 400000:400000 /db`)
+      expect(chown).toBe(`docker run --rm --user 0:0 --entrypoint chown --mount type=bind,src=${APPS}/app-1/data,dst=/db ${DIGEST} -R 400000:400000 /db`)
       expect(argv.indexOf(chown)).toBeGreaterThan(argv.indexOf('docker stop -t 10 fjs-app-1_replaced'))
       expect(app).toContain('--user 400000:400000')
-      expect(app).toContain('--mount type=volume,src=fjs-app-1-data,dst=/db,volume-nocopy')
+      expect(app).toContain(`--mount type=bind,src=${APPS}/app-1/data,dst=/db`)
     })
 
     test('a uid is recorded once per app and never shared', async () => {
@@ -258,7 +264,7 @@ describe('what the machine is asked to do', () => {
       }
       const workDir = mkdtempSync(join(tmpdir(), 'outpost-preview-'))
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ run, workDir }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
+        docker: createDocker({ appsDir: APPS, run, workDir }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
       })
       return { server, workDir, envs, argv: () => fake.calls.map(c => c.join(' ')) }
     }
@@ -317,7 +323,7 @@ describe('what the machine is asked to do', () => {
         + '  Authentication failed (status: 400) [code: 9106]\n\nIf you think this is a bug, please open an issue\n🪵  Logs were written\n'
       const fake = fakeRunner({ 'git -C': { stdout: 'c0ffee\n' } })
       const run = async (argv) => argv.includes('deploy') ? { exitCode: 1, stdout: '', stderr: said } : fake.run(argv)
-      const docker = createDocker({ run, workDir: mkdtempSync(join(tmpdir(), 'outpost-preview-')) })
+      const docker = createDocker({ appsDir: APPS, run, workDir: mkdtempSync(join(tmpdir(), 'outpost-preview-')) })
       const server = createOutpostServer(CONFIG, { docker, inspector: createInspector({ run }), log: { warn() {}, error() {} } })
 
       const res = await send(server, 'POST', '/site/preview', BODY)
@@ -365,7 +371,7 @@ describe('what the machine is asked to do', () => {
       }
       const workDir = mkdtempSync(join(tmpdir(), 'outpost-publish-'))
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ run, workDir }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
+        docker: createDocker({ appsDir: APPS, run, workDir }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
       })
       return { server, workDir, envs, argv: () => fake.calls.map(c => c.join(' ')) }
     }
@@ -410,7 +416,7 @@ describe('what the machine is asked to do', () => {
     const serverFor = (answers, { workDir = CONFIG.workDir } = {}) => {
       const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'test -d': { exitCode: 1 }, ...answers })
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ run: fake.run, workDir, deployKeyDir: CONFIG.deployKeyDir }), inspector: createInspector({ run: fake.run }),
+        docker: createDocker({ appsDir: APPS, run: fake.run, workDir, deployKeyDir: CONFIG.deployKeyDir }), inspector: createInspector({ run: fake.run }),
         log: { warn() {}, error() {} },
       })
       return { fake, server, argv: () => fake.calls.map(c => c.join(' ')) }
@@ -470,7 +476,7 @@ describe('what the machine is asked to do', () => {
           ? Promise.resolve(origin === null ? { exitCode: 2, stdout: '', stderr: 'error: No such remote' } : { exitCode: 0, stdout: `${origin}\n`, stderr: '' })
           : fake.run(argv, opts)
         const server = createOutpostServer(CONFIG, {
-          docker: createDocker({ run, workDir: CONFIG.workDir, deployKeyDir: CONFIG.deployKeyDir }), inspector: createInspector({ run }),
+          docker: createDocker({ appsDir: APPS, run, workDir: CONFIG.workDir, deployKeyDir: CONFIG.deployKeyDir }), inspector: createInspector({ run }),
           log: { warn() {}, error() {} },
         })
         return { server, argv: () => fake.calls.map(c => c.join(' ')) }
@@ -529,7 +535,7 @@ describe('what the machine is asked to do', () => {
     const deployWith = (answers, { fetch, body = {} } = {}) => {
       const fake   = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, ...answers })
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ run: fake.run, fetch, health: HEALTH }), inspector: createInspector({ run: fake.run }),
+        docker: createDocker({ appsDir: APPS, run: fake.run, fetch, health: HEALTH }), inspector: createInspector({ run: fake.run }),
         log: { warn() {}, error() {} },
       })
       const sent = send(server, 'POST', '/deploy', {
@@ -611,7 +617,7 @@ describe('what the machine is asked to do', () => {
         ? (fake.calls.push(argv), { exitCode: 1, stdout: '', stderr: 'Error: No such container\n' })
         : inner(argv)
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ run, health: HEALTH }), inspector: createInspector({ run }),
+        docker: createDocker({ appsDir: APPS, run, health: HEALTH }), inspector: createInspector({ run }),
         log: { warn() {}, error() {} },
       })
       const res = await send(server, 'POST', '/deploy', {
@@ -635,7 +641,7 @@ describe('what the machine is asked to do', () => {
       'docker run':           { stdout: 'container-2\n' },
     })
     const server = createOutpostServer(CONFIG, {
-      docker:    createDocker({ run: fake.run, workDir: CONFIG.workDir }),
+      docker:    createDocker({ appsDir: APPS, run: fake.run, workDir: CONFIG.workDir }),
       inspector: createInspector({ run: fake.run }),
     })
 
@@ -648,13 +654,13 @@ describe('what the machine is asked to do', () => {
     expect(argv.find(c => c.startsWith('docker run'))).toContain(`acme-web@${DIGEST}`)
   })
 
-  test('a volumePath is a named volume that outlives the container, and a bad one removes nothing', async () => {
+  test('a volumePath is the app\'s host directory, made before the run, and a bad one removes nothing', async () => {
     // Every deploy removes the old container first, so a database started
     // without a volume is empty after its next release. Paired with a refused
     // path, which must be refused BEFORE the running container is taken away.
     const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'docker run': { stdout: 'c\n' } })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
       log: { warn() {}, error() {} },
     })
     const ok = await send(server, 'POST', '/deploy', {
@@ -662,7 +668,9 @@ describe('what the machine is asked to do', () => {
     })
     expect(ok.status).toBe(200)
     expect(fake.calls.map(c => c.join(' ')).find(c => c.startsWith('docker run')))
-      .toContain('-v fjs-pg-data:/var/lib/postgresql/data')
+      .toContain(`--mount type=bind,src=${APPS}/pg/data,dst=/var/lib/postgresql/data`)
+    // Docker refuses a bind source that is not there and makes nothing.
+    expect(statSync(join(APPS, 'pg', 'data')).isDirectory()).toBe(true)
 
     fake.calls.length = 0
     const bad = await send(server, 'POST', '/deploy', {
@@ -677,7 +685,7 @@ describe('what the machine is asked to do', () => {
     // nothing, so a container started with none and no one was told.
     const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'docker run': { stdout: 'c\n' } })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
       log: { warn() {}, error() {} },
     })
     const ok = await send(server, 'POST', '/deploy', {
@@ -705,7 +713,7 @@ describe('what the machine is asked to do', () => {
     let status  = 503
     const fetch = async (url) => { asked.push(url); return { ok: status < 300, status } }
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ run: fake.run, fetch }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, run: fake.run, fetch }), inspector: createInspector({ run: fake.run }),
     })
     const down = await (await send(server, 'POST', '/health-check', { app_id: 'app-1', port: 5678, path: '/healthz' })).json()
     expect(down).toMatchObject({ healthy: false })
@@ -719,7 +727,7 @@ describe('what the machine is asked to do', () => {
   test('a deploy of an image that exists elsewhere pulls it', async () => {
     const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' } })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
     })
     const body = await (await send(server, 'POST', '/pull', { image: 'acme-web:1.2.3' })).json()
     expect(body.digest).toBe(DIGEST)
@@ -732,7 +740,7 @@ describe('what the machine is asked to do', () => {
     // is what identifies bytes; a tag is a name and always pulls.
     const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' } })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
     })
     const body = await (await send(server, 'POST', '/pull', { image: 'acme-web:local', digest: DIGEST })).json()
     expect(body.digest).toBe(DIGEST)
@@ -742,7 +750,7 @@ describe('what the machine is asked to do', () => {
   test('a digest the machine does not hold still pulls the image by name', async () => {
     const fake = fakeRunner({ 'docker image inspect': { exitCode: 1, stderr: 'Error: No such image\n' } })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
       log: { warn() {}, error() {} },
     })
     await send(server, 'POST', '/pull', { image: 'acme-web:1.2.3', digest: DIGEST })
@@ -754,7 +762,7 @@ describe('what the machine is asked to do', () => {
     // shape this whole package exists to replace.
     const fake = fakeRunner({ 'docker pull': { exitCode: 1, stderr: 'manifest unknown\n' } })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
       log: { warn() {}, error() {} },
     })
     const res  = await send(server, 'POST', '/pull', { image: 'nope:1' })
@@ -766,7 +774,7 @@ describe('what the machine is asked to do', () => {
   test('health-check asks the daemon, rather than assuming a start worked', async () => {
     const fake = fakeRunner({ 'docker inspect': { stdout: 'true\n' } })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
     })
     const body = await (await send(server, 'POST', '/health-check', { app_id: 'app-1' })).json()
     expect(body.healthy).toBe(true)
@@ -778,7 +786,7 @@ describe('what the machine is asked to do', () => {
     // as generic steps. A machine with no work for one has not failed the
     // release, and answering non-zero would roll a good deploy back.
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ run: fakeRunner().run }), inspector: createInspector({ run: fakeRunner().run }),
+      docker: createDocker({ appsDir: APPS, run: fakeRunner().run }), inspector: createInspector({ run: fakeRunner().run }),
     })
     const body = await (await send(server, 'POST', '/exec', { step: 'Validate', deployment_id: 'dep-1' })).json()
     expect(body.exit_code).toBe(0)
@@ -790,7 +798,7 @@ describe('what the machine is asked to do', () => {
   test('/exec runs the command in a transient unit outside the sandbox', async () => {
     const fake = fakeRunner()
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
     })
     await send(server, 'POST', '/exec', { command: 'apt-get -y upgrade', timeout_s: 60 })
     const [argv] = fake.calls
@@ -814,7 +822,7 @@ describe('what the machine is asked to do', () => {
       return { exitCode: argv.includes('held') ? 1 : 0, stdout: '', stderr: 'volume is in use' }
     }
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ run }), inspector: createInspector({ run }),
+      docker: createDocker({ appsDir: APPS, run }), inspector: createInspector({ run }),
     })
     const body = await (await send(server, 'POST', '/volumes/prune', { names: ['free', 'held'] })).json()
     expect(body.removed).toEqual(['free'])
@@ -823,7 +831,7 @@ describe('what the machine is asked to do', () => {
   test('a volume a container holds is a 409 with the reason, not a 500', async () => {
     const run = async () => ({ exitCode: 1, stdout: '', stderr: 'volume is in use by container pg-1' })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ run }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
+      docker: createDocker({ appsDir: APPS, run }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
     })
     const res  = await send(server, 'DELETE', '/volumes/pg-data', undefined)
     const body = await res.json()
@@ -842,7 +850,7 @@ describe('what the machine is asked to do', () => {
     const restoring = (answers = {}) => {
       const runner = fakeRunner(answers)
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ run: runner.run, restoreDir }), inspector: createInspector({ run: runner.run }),
+        docker: createDocker({ appsDir: APPS, run: runner.run, restoreDir }), inspector: createInspector({ run: runner.run }),
         log: { warn() {}, error() {} },
       })
       return { server, calls: runner.calls }
@@ -856,9 +864,9 @@ describe('what the machine is asked to do', () => {
       const { server, calls } = restoring({ 'docker run --rm': { stdout: '3 4600000000\n' } })
       const { status, body } = await restore(server, { app_id: 'ela', path: 'ela.tar.gz' })
       expect(status).toBe(200)
-      expect(body).toMatchObject({ volume: 'fjs-ela-data', files: 3, bytes: 4_600_000_000, overwrite: false })
+      expect(body).toMatchObject({ data_dir: `${APPS}/ela/data`, files: 3, bytes: 4_600_000_000, overwrite: false })
       const argv = calls.find(a => a[1] === 'run')
-      expect(argv).toEqual(expect.arrayContaining(['--network', 'none', '-v', 'fjs-ela-data:/data', 'FJS_OVERWRITE=0']))
+      expect(argv).toEqual(expect.arrayContaining(['--network', 'none', '--mount', `type=bind,src=${APPS}/ela/data,dst=/data`, 'FJS_OVERWRITE=0']))
       // -v given a path the daemon cannot see mounts an empty directory and
       // extracts nothing; --mount refuses the missing source.
       expect(argv).toContain(`type=bind,src=${realpathSync(restoreDir)}/ela.tar.gz,dst=/restore,readonly`)
@@ -910,12 +918,12 @@ describe('what the machine is asked to do', () => {
       const seen   = []
       // What the extract was handed, read while it is still on disk.
       const run = async (argv) => {
-        const bind = argv.find(a => a.startsWith('type=bind,src='))
+        const bind = argv.find(a => a.startsWith('type=bind,src=') && a.endsWith(',dst=/restore,readonly'))
         if (bind) seen.push(readFileSync(bind.slice('type=bind,src='.length).split(',')[0], 'utf8'))
         return runner.run(argv)
       }
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ run, restoreDir, fetch }), inspector: createInspector({ run: runner.run }),
+        docker: createDocker({ appsDir: APPS, run, restoreDir, fetch }), inspector: createInspector({ run: runner.run }),
         log: { warn() {}, error() {} },
       })
       return { server, calls: runner.calls, seen }
@@ -930,7 +938,7 @@ describe('what the machine is asked to do', () => {
       const { server, calls, seen } = fetching({ 'docker run --rm': { stdout: '2 17\n' } }, async (u) => { gets.push(u); return new Response(archive) })
       const { status, body } = await restore(server, { app_id: 'ela', url, sha256: digest })
       expect(status).toBe(200)
-      expect(body).toMatchObject({ volume: 'fjs-ela-data', files: 2, bytes: 17, sha256: digest, overwrite: false })
+      expect(body).toMatchObject({ data_dir: `${APPS}/ela/data`, files: 2, bytes: 17, sha256: digest, overwrite: false })
       expect(gets).toEqual([url])
       expect(seen).toEqual([archive])
       expect(calls.find(a => a[1] === 'run')).toEqual(expect.arrayContaining(['--network', 'none', 'FJS_OVERWRITE=0']))
@@ -993,7 +1001,7 @@ describe('what the machine is asked to do', () => {
         return { exitCode: 0, stdout: '', stderr: '' }
       }
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ run }), inspector: createInspector({ run }),
+        docker: createDocker({ appsDir: APPS, run }), inspector: createInspector({ run }),
         replicator: createReplicator({ run, configPath: join(stageDir, 'litestream.yml'), stageDir }),
         log: { warn() {}, error() {} },
       })
@@ -1009,7 +1017,7 @@ describe('what the machine is asked to do', () => {
       const { server, calls, envs, stageDir } = restoring()
       const { status, body: said } = await restore(server, body())
       expect(status).toBe(200)
-      expect(said).toMatchObject({ volume: 'fjs-ela-data', files: 2, bytes: 8192, overwrite: false, replication: 'restarted' })
+      expect(said).toMatchObject({ data_dir: `${APPS}/ela/data`, files: 2, bytes: 8192, overwrite: false, replication: 'restarted' })
       expect(said.databases).toEqual([{ name: 'main.db', at: 'latest', bytes: 16 }, { name: 'jobs.db', at: 'latest', bytes: 16 }])
 
       const restores = calls.filter(a => a[1] === 'restore')
@@ -1023,8 +1031,8 @@ describe('what the machine is asked to do', () => {
       expect(envs[0]).toEqual({ LITESTREAM_ACCESS_KEY_ID: 'K-ela', LITESTREAM_SECRET_ACCESS_KEY: 'S-ela' })
 
       const copy = calls.find(a => a[1] === 'run')
-      expect(copy).toEqual(expect.arrayContaining(['--network', 'none', '-v', 'fjs-ela-data:/data', 'FJS_OVERWRITE=0']))
-      expect(copy.find(a => a.startsWith('type=bind'))).toMatch(new RegExp(`^type=bind,src=${realpathSync(stageDir)}/ela-[^,]+,dst=/restore,readonly$`))
+      expect(copy).toEqual(expect.arrayContaining(['--network', 'none', '--mount', `type=bind,src=${APPS}/ela/data,dst=/data`, 'FJS_OVERWRITE=0']))
+      expect(copy.find(a => a.includes(',dst=/restore'))).toMatch(new RegExp(`^type=bind,src=${realpathSync(stageDir)}/ela-[^,]+,dst=/restore,readonly$`))
       expect(calls.at(-1)).toEqual(['systemctl', 'restart', 'basecamp-litestream.service'])
       // The staging directory goes, success or not.
       expect(readdirSync(stageDir).filter(f => f.startsWith('ela-'))).toEqual([])
@@ -1063,7 +1071,7 @@ describe('what the machine is asked to do', () => {
       const { server } = restoring({ 'docker run --rm': { exitCode: 3, stderr: '/data/main.db already exists\n' } })
       const { status, body: said } = await restore(server, body())
       expect(status).toBe(500)
-      expect(said.error).toBe('fjs-ela-data already holds main.db — send overwrite: true to replace it')
+      expect(said.error).toBe(`${APPS}/ela/data already holds main.db — send overwrite: true to replace it`)
 
       const again = restoring()
       await restore(again.server, body({ overwrite: true }))
@@ -1116,7 +1124,7 @@ describe('what the machine is asked to do', () => {
         return { exitCode: 0, stdout: '', stderr: '' }
       }
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ run }), inspector: createInspector({ run }),
+        docker: createDocker({ appsDir: APPS, run }), inspector: createInspector({ run }),
         replicator: createReplicator({ run, configPath: join(stageDir, 'litestream.yml'), stageDir }),
         log: { warn() {}, error() {} },
       })
@@ -1138,8 +1146,8 @@ describe('what the machine is asked to do', () => {
       expect(argv).toEqual(expect.arrayContaining(['--network', 'none', '-e', 'ENCRYPTION_KEY', '-e', 'LOG_LEVEL', 'ghcr.io/x/ela:1', '--verify-only=/fjs-drill', '--json']))
       expect(argv).not.toContain('--without-key')
       expect(argv.find(a => a.startsWith('type=bind'))).toMatch(/,dst=\/fjs-drill$/)
-      // The app's own volume is never named.
-      expect(argv.join(' ')).not.toContain('fjs-ela-data')
+      // The app's own data is never mounted.
+      expect(argv.join(' ')).not.toContain(`${APPS}/ela`)
       expect(argv.join(' ')).not.toContain('k-secret')
       expect(envs.at(-1)).toEqual({ ENCRYPTION_KEY: 'k-secret', LOG_LEVEL: 'info' })
       expect(calls.some(a => a[0] === 'systemctl')).toBe(false)
@@ -1175,13 +1183,14 @@ describe('what the machine is asked to do', () => {
     })
   })
 
-  describe('/backup — an app\'s volume, tarred onto the machine (FJS-1782)', () => {
+  describe('/backup — an app\'s data, tarred onto the machine (FJS-1782)', () => {
     const backupDir = join(mkdtempSync(join(tmpdir(), 'outpost-backups-')), 'backups')
+    mkdirSync(join(APPS, 'ela', 'data'), { recursive: true })
 
     const backing = (answers = {}, fetch) => {
       const runner = fakeRunner(answers)
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ run: runner.run, backupDir, fetch }), inspector: createInspector({ run: runner.run }),
+        docker: createDocker({ appsDir: APPS, run: runner.run, backupDir, fetch }), inspector: createInspector({ run: runner.run }),
         log: { warn() {}, error() {} },
       })
       return { server, calls: runner.calls }
@@ -1191,29 +1200,29 @@ describe('what the machine is asked to do', () => {
       return { status: res.status, body: await res.json() }
     }
 
-    test('tars the volume read-only in a throwaway container, into the backup directory', async () => {
+    test('tars the data read-only in a throwaway container, into the backup directory', async () => {
       const { server, calls } = backing({ 'docker run --rm': { stdout: `4096 3 ${'f'.repeat(64)}\n` } })
       const { status, body } = await backup(server, { app_id: 'ela' })
       expect(status).toBe(200)
-      expect(body).toMatchObject({ volume: 'fjs-ela-data', bytes: 4096, files: 3 })
+      expect(body).toMatchObject({ data_dir: `${APPS}/ela/data`, bytes: 4096, files: 3 })
       // What a restore by URL checks the fetched copy against.
       expect(body.sha256).toBe('f'.repeat(64))
       expect(body.path.startsWith(`${realpathSync(backupDir)}/ela-`)).toBe(true)
       expect(body.path.endsWith('.tar.gz')).toBe(true)
       const argv = calls.find(a => a[1] === 'run')
-      expect(argv).toEqual(expect.arrayContaining(['--network', 'none', '-v', 'fjs-ela-data:/data:ro']))
+      expect(argv).toEqual(expect.arrayContaining(['--network', 'none', '--mount', `type=bind,src=${APPS}/ela/data,dst=/data,readonly`]))
       expect(argv).toContain(`type=bind,src=${realpathSync(backupDir)},dst=/out`)
     })
 
-    test('a volume this machine does not hold is refused before anything is written', async () => {
-      const { server, calls } = backing({ 'docker volume inspect': { exitCode: 1, stderr: 'no such volume' } })
-      const { status, body } = await backup(server, { app_id: 'ela' })
+    test('an app with no data on this machine is refused before anything is written', async () => {
+      const { server, calls } = backing()
+      const { status, body } = await backup(server, { app_id: 'gone' })
       expect(status).toBe(500)
-      expect(body.error).toContain('fjs-ela-data')
+      expect(body.error).toContain(`${APPS}/gone/data does not exist`)
       expect(calls.some(a => a[1] === 'run')).toBe(false)
     })
 
-    test('an app id that is not a plain name addresses no volume', async () => {
+    test('an app id that is not a plain name addresses no directory', async () => {
       const { server, calls } = backing()
       expect((await backup(server, { app_id: '../x' })).status).toBe(500)
       expect(calls).toEqual([])
@@ -1238,7 +1247,7 @@ describe('what the machine is asked to do', () => {
         const { server, calls } = backing(tarred, fetch)
         const { status, body } = await backup(server, { app_id: 'ela', upload_url: url })
         expect(status).toBe(200)
-        expect(body).toMatchObject({ volume: 'fjs-ela-data', bytes: 4096, files: 3, uploaded: true })
+        expect(body).toMatchObject({ data_dir: `${APPS}/ela/data`, bytes: 4096, files: 3, uploaded: true })
         expect(body.upload_error).toBeUndefined()
         expect(puts).toHaveLength(1)
         expect(puts[0].u).toBe(url)
@@ -1369,7 +1378,7 @@ describe('the ingress — Caddy, through its admin API', () => {
   const serverWith = (caddy, fake = fakeRunner({ 'docker run': { stdout: 'container-1\n' } })) => ({
     fake,
     server: createOutpostServer(CONFIG, {
-      docker: createDocker({ run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
       ingress: createIngress({ fetch: caddy.fetch }),
       log: { warn() {}, error() {} },
     }),
@@ -1439,11 +1448,11 @@ describe('the ingress — Caddy, through its admin API', () => {
 
   test('a machine with no basecamp firewall is reported unsynced, and a stop refills the set', async () => {
     const fake = fakeRunner({ 'nft': { exitCode: 1, stderr: 'Error: No such file or directory\nflush set inet basecamp exposed\n' } })
-    expect(await createDocker({ run: fake.run }).syncExposed())
+    expect(await createDocker({ appsDir: APPS, run: fake.run }).syncExposed())
       .toEqual({ synced: false, exposed: [], reason: 'no basecamp firewall on this machine' })
 
     const refused = fakeRunner({ 'nft': { exitCode: 1, stderr: 'Operation not permitted (you must be root)\n' } })
-    await expect(createDocker({ run: refused.run }).syncExposed()).rejects.toThrow('you must be root')
+    await expect(createDocker({ appsDir: APPS, run: refused.run }).syncExposed()).rejects.toThrow('you must be root')
 
     const { server, fake: stopped } = serverWith(fakeCaddy())
     await send(server, 'POST', '/stop', { app_id: 'app-1' })
@@ -1515,7 +1524,7 @@ describe('the ingress — Caddy, through its admin API', () => {
       'docker inspect': { stdout: '{"80/tcp":[{"HostIp":"127.0.0.1","HostPort":"7300"}]}\n' },
     })
     const failing = createOutpostServer(CONFIG, {
-      docker: createDocker({ run: fake.run, health: { attempts: 1, intervalMs: 0 } }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, run: fake.run, health: { attempts: 1, intervalMs: 0 } }), inspector: createInspector({ run: fake.run }),
       ingress: createIngress({ fetch: caddy.fetch }),
       log: { warn() {}, error() {} },
     })
@@ -1563,7 +1572,7 @@ describe('the ingress — Caddy, through its admin API', () => {
   test('with no Caddy on the machine, an app with hostnames fails and one without deploys as before', async () => {
     const fake   = fakeRunner({ 'docker run': { stdout: 'container-1\n' } })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
       log: { warn() {}, error() {} },
     })
     const refused = await deploy(server, { hosts: ['shop.example.com'] })
@@ -1660,7 +1669,7 @@ describe('the ingress — Caddy, through its admin API', () => {
       const caddy = fakeCaddy()
       const fake   = none()
       const server = createOutpostServer({ ...CONFIG, staticPort: 7181 }, {
-        docker: createDocker({ run: fake.run }), inspector: createInspector({ run: fake.run }),
+        docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
         ingress: createIngress({ fetch: caddy.fetch }), log: { warn() {}, error() {} },
       })
       const res = await routeWith(server, { static: true, hosts: ['shop.example.com'], redirects: [{ host: 'www.example.com', to: 'https://shop.example.com' }] })
@@ -1676,7 +1685,7 @@ describe('the ingress — Caddy, through its admin API', () => {
     const api = (server, extra = {}) => send(server, 'POST', '/route', { app_id: 'api', port: 7302, paths: [{ host: 'Shop.example.com', prefix: '/api/' }], ...extra })
     const none = () => fakeRunner({ 'docker inspect --format': { exitCode: 1, stderr: 'Error: No such object' } })
     const withStatic = (caddy) => createOutpostServer({ ...CONFIG, staticPort: 7181 }, {
-      docker: createDocker({ run: none().run }), inspector: createInspector({ run: none().run }),
+      docker: createDocker({ appsDir: APPS, run: none().run }), inspector: createInspector({ run: none().run }),
       ingress: createIngress({ fetch: caddy.fetch }), log: { warn() {}, error() {} },
     })
 
@@ -1827,7 +1836,7 @@ describe('the ingress — Caddy, through its admin API', () => {
         origin: createStaticServer({ staticDir: dir }, { log: { warn() {}, error() {} } }),
         server: createOutpostServer({ ...CONFIG, staticPort }, {
           statics, ingress: createIngress({ fetch: caddy.fetch }), log: { warn() {}, error() {} },
-          docker: createDocker({ run: fakeRunner({ 'docker inspect --format': { exitCode: 1, stderr: 'Error: No such object' } }).run }),
+          docker: createDocker({ appsDir: APPS, run: fakeRunner({ 'docker inspect --format': { exitCode: 1, stderr: 'Error: No such object' } }).run }),
         }),
       }
     }
@@ -1886,6 +1895,194 @@ describe('the ingress — Caddy, through its admin API', () => {
   })
 })
 
+describe('counting a route\'s traffic off its access log', () => {
+
+  // `/var/log/caddy` on a box. Each case writes its own route's files, so the
+  // cases share the directory and nothing else.
+  const LOGS = mkdtempSync(join(tmpdir(), 'outpost-caddy-'))
+  const serverAt = (dir = LOGS) => createOutpostServer(CONFIG, {
+    docker:    createDocker({ appsDir: APPS, run: fakeRunner().run }),
+    inspector: createInspector({ run: fakeRunner().run }),
+    analytics: createAnalytics({ dir }),
+    log: { warn() {}, error() {} },
+  })
+  const at   = (iso) => Date.parse(iso) / 1000
+  const line = (iso, host, uri = '/') => JSON.stringify({ level: 'info', ts: at(iso), logger: 'http.log.access.x', request: { host, uri }, status: 200 })
+
+  test('it keeps the lines in the window and counts them per host', async () => {
+    writeFileSync(join(LOGS, 'fjs-shop.access.log'), [
+      line('2026-10-01T00:00:00Z', 'shop.test'),
+      line('2026-10-02T00:00:00Z', 'shop.test'),
+      line('2026-10-02T06:00:00Z', 'Admin.Shop.test'),
+      line('2026-10-03T00:00:00Z', 'shop.test'),
+      line('2026-10-04T00:00:00Z', 'shop.test'),
+    ].join('\n') + '\n')
+    const res  = await send(serverAt(), 'POST', '/analytics', { route_id: 'fjs-shop', from: '2026-10-02T00:00:00Z', to: '2026-10-03T00:00:00Z' })
+    const body = await res.json()
+    expect(res.status).toBe(200)
+    expect(body).toMatchObject({ route_id: 'fjs-shop', files: 1, lines: 3, skipped: 0 })
+    expect(body.hosts.map(({ host, requests }) => ({ host, requests }))).toEqual([{ host: 'shop.test', requests: 2 }, { host: 'admin.shop.test', requests: 1 }])
+  })
+
+  test('the rolled files are read too, gzipped or not, and one rolled before the window is not opened', async () => {
+    writeFileSync(join(LOGS, 'fli-blog.access.log'), line('2026-10-10T00:00:00Z', 'blog.test') + '\n')
+    writeFileSync(join(LOGS, 'fli-blog.access-2026-10-09T00-00-00.000.log.gz'), gzipSync(line('2026-10-08T12:00:00Z', 'blog.test') + '\n'))
+    writeFileSync(join(LOGS, 'fli-blog.access-2026-10-07T00-00-00.000.log'), line('2026-10-06T12:00:00Z', 'blog.test') + '\n')
+    // Rolled before `from`, so every line in it is older than the window; a
+    // body that is not gzip fails the read if it is opened at all.
+    writeFileSync(join(LOGS, 'fli-blog.access-2026-10-01T00-00-00.000.log.gz'), 'not gzip')
+    // Another route whose id starts with this one's is not this route's log.
+    writeFileSync(join(LOGS, 'fli-blog-api.access.log'), line('2026-10-10T00:00:00Z', 'api.blog.test') + '\n')
+
+    const all = await (await send(serverAt(), 'POST', '/analytics', { route_id: 'fli-blog', from: '2026-10-05T00:00:00Z' })).json()
+    expect(all).toMatchObject({ files: 3, lines: 3 })
+    expect(all.hosts.map(({ host, requests }) => ({ host, requests }))).toEqual([{ host: 'blog.test', requests: 3 }])
+  })
+
+  test('how far back the roll reaches is answered whatever the window', async () => {
+    writeFileSync(join(LOGS, 'fjs-deep.access.log'), line('2026-10-20T00:00:00Z', 'deep.test') + '\n')
+    writeFileSync(join(LOGS, 'fjs-deep.access-2026-10-15T00-00-00.000.log.gz'), gzipSync([
+      'not json',
+      line('2026-10-12T08:00:00Z', 'deep.test'),
+      line('2026-10-14T00:00:00Z', 'deep.test'),
+    ].join('\n') + '\n'))
+    writeFileSync(join(LOGS, 'fjs-deep.access-2026-10-18T00-00-00.000.log'), line('2026-10-16T00:00:00Z', 'deep.test') + '\n')
+
+    const day = await (await send(serverAt(), 'POST', '/analytics', { route_id: 'fjs-deep', from: '2026-10-19T00:00:00Z' })).json()
+    expect(day).toMatchObject({ files: 1, lines: 1, kept_since: '2026-10-12T08:00:00.000Z' })
+
+    // A log that is only its live file reaches back to that file's first line.
+    writeFileSync(join(LOGS, 'fjs-shallow.access.log'), line('2026-10-20T00:00:00Z', 'shallow.test') + '\n')
+    expect(await (await send(serverAt(), 'POST', '/analytics', { route_id: 'fjs-shallow' })).json())
+      .toMatchObject({ kept_since: '2026-10-20T00:00:00.000Z' })
+
+    // An oldest roll that cannot be read leaves the depth unknown, not the report.
+    writeFileSync(join(LOGS, 'fjs-torn.access.log'), line('2026-10-20T00:00:00Z', 'torn.test') + '\n')
+    writeFileSync(join(LOGS, 'fjs-torn.access-2026-10-01T00-00-00.000.log.gz'), 'not gzip')
+    expect(await (await send(serverAt(), 'POST', '/analytics', { route_id: 'fjs-torn', from: '2026-10-19T00:00:00Z' })).json())
+      .toMatchObject({ lines: 1, kept_since: null })
+  })
+
+  test('each host answers its panels', async () => {
+    const hit = (uri, status, size, duration, client_ip, remote_ip = '172.70.0.1') => JSON.stringify({
+      ts: at('2026-10-01T00:00:00Z'), status, size, duration,
+      request: { host: 'pay.test', uri, client_ip, remote_ip },
+    })
+    writeFileSync(join(LOGS, 'fjs-pay.access.log'), [
+      hit('/', 200, 1000, 0.010, '203.0.113.1'),
+      hit('/?ref=x', 200, 1000, 0.030, '203.0.113.2'),
+      hit('/reset?token=s3cret', 404, 100, 0.002, '203.0.113.1'),
+      hit('/reset?token=other', 404, 100, 0.004, '203.0.113.3'),
+      hit('/api/pay', 500, 50, 1.500, '203.0.113.3'),
+    ].join('\n'))
+    const [pay] = (await (await send(serverAt(), 'POST', '/analytics', { route_id: 'fjs-pay' })).json()).hosts
+    expect(pay).toMatchObject({ host: 'pay.test', requests: 5, bytes: 2250 })
+    // Three addresses behind one Cloudflare edge: `remote_ip` would say one.
+    expect(pay.client_ips).toBe(3)
+    expect(pay.status).toEqual([{ status: 200, requests: 2 }, { status: 404, requests: 2 }, { status: 500, requests: 1 }])
+    expect(pay.paths).toEqual([
+      { path: '/', requests: 2, bytes: 2000 }, { path: '/reset', requests: 2, bytes: 200 }, { path: '/api/pay', requests: 1, bytes: 50 },
+    ])
+    expect(pay.errors).toEqual([{ path: '/reset', status: 404, requests: 2 }, { path: '/api/pay', status: 500, requests: 1 }])
+    expect(pay.durations).toEqual([
+      { path: '/api/pay', requests: 1, mean_ms: 1500, max_ms: 1500 },
+      { path: '/', requests: 2, mean_ms: 20, max_ms: 30 },
+      { path: '/reset', requests: 2, mean_ms: 3, max_ms: 4 },
+    ])
+    // A query is where a token rides, and no panel repeats one.
+    expect(JSON.stringify(pay)).not.toContain('s3cret')
+  })
+
+  test('a read stops at MAX_LINES, newest first, and says what it covers', async () => {
+    const start = at('2026-09-01T00:00:00Z')
+    const lines = Array.from({ length: MAX_LINES + 10 }, (_, i) =>
+      JSON.stringify({ ts: start + i, status: 200, request: { host: 'busy.test', uri: `/p${i % (TOP + 5)}` } }))
+    writeFileSync(join(LOGS, 'fjs-busy.access.log'), lines.join('\n') + '\n')
+    const body = await (await send(serverAt(), 'POST', '/analytics', { route_id: 'fjs-busy' })).json()
+    expect(body).toMatchObject({ lines: MAX_LINES, truncated: true })
+    // The ten oldest lines are the ones dropped.
+    expect(body.oldest).toBe(new Date((start + 10) * 1000).toISOString())
+    const [busy] = body.hosts
+    expect(busy.paths).toHaveLength(TOP)
+    expect(busy.durations).toHaveLength(TOP)
+  })
+
+  test('a window that ends the read early is not a cut, and an empty one is not a missing log', async () => {
+    writeFileSync(join(LOGS, 'fjs-calm.access.log'), [
+      line('2026-10-01T00:00:00Z', 'calm.test'), line('2026-10-02T00:00:00Z', 'calm.test'), line('2026-10-03T00:00:00Z', 'calm.test'),
+    ].join('\n'))
+    const recent = await (await send(serverAt(), 'POST', '/analytics', { route_id: 'fjs-calm', from: '2026-10-02T00:00:00Z' })).json()
+    expect(recent).toMatchObject({ lines: 2, truncated: false, oldest: '2026-10-02T00:00:00.000Z' })
+
+    const later = await send(serverAt(), 'POST', '/analytics', { route_id: 'fjs-calm', from: '2026-11-01T00:00:00Z' })
+    expect(later.status).toBe(200)
+    expect(await later.json()).toMatchObject({ lines: 0, hosts: [], oldest: null })
+  })
+
+  test('a rolled file wholly after `to` is not opened', async () => {
+    writeFileSync(join(LOGS, 'fjs-old.access.log'), 'not json, and not read')
+    writeFileSync(join(LOGS, 'fjs-old.access-2026-10-10T00-00-00.000.log'), 'nor this')
+    writeFileSync(join(LOGS, 'fjs-old.access-2026-10-05T00-00-00.000.log'), line('2026-10-04T00:00:00Z', 'old.test') + '\n')
+    const body = await (await send(serverAt(), 'POST', '/analytics', { route_id: 'fjs-old', to: '2026-10-04T12:00:00Z' })).json()
+    expect(body).toMatchObject({ files: 1, lines: 1, skipped: 0 })
+  })
+
+  test('lines a real Caddy wrote are read by the fields it names', async () => {
+    // `test/fixtures/caddy/capture.mjs` wrote these through ingress.js's own
+    // logging config. A field Caddy renames reads as zero here, not as green.
+    const real = readFileSync(join(import.meta.dir, 'fixtures/caddy/access.jsonl'), 'utf8')
+    writeFileSync(join(LOGS, 'fjs-shop.access.log'), real)
+    const body = await (await send(serverAt(), 'POST', '/analytics', { route_id: 'fjs-shop' })).json()
+    const first = JSON.parse(real.split('\n')[0])
+    expect(body).toMatchObject({ lines: 2, skipped: 0, truncated: false, oldest: new Date(first.ts * 1000).toISOString() })
+    expect(body.hosts).toHaveLength(1)
+    const [shop] = body.hosts
+    expect(shop).toMatchObject({ host: 'shop.test', requests: 2, bytes: 21, client_ips: 1 })
+    expect(shop.status).toEqual([{ status: 200, requests: 1 }, { status: 404, requests: 1 }])
+    expect(shop.paths.map(p => p.path)).toEqual(['/', '/missing'])
+    expect(shop.errors).toEqual([{ path: '/missing', status: 404, requests: 1 }])
+    for (const d of shop.durations) expect(d.mean_ms).toBeGreaterThan(0)
+  })
+
+  test('a line that is not an access line is skipped and counted as skipped', async () => {
+    writeFileSync(join(LOGS, 'fjs-odd.access.log'), [
+      line('2026-10-01T00:00:00Z', 'odd.test'), '{not json', JSON.stringify({ ts: 1, msg: 'no request' }),
+    ].join('\n'))
+    const body = await (await send(serverAt(), 'POST', '/analytics', { route_id: 'fjs-odd' })).json()
+    expect(body).toMatchObject({ lines: 1, skipped: 2, from: null, to: null })
+  })
+
+  test('the route id is refused before it becomes a path', async () => {
+    for (const route_id of ['../../etc/passwd', 'fjs-../x', 'fjs-a/b', 'shop', '', null, 'fjs-']) {
+      const res = await send(serverAt(), 'POST', '/analytics', { route_id })
+      expect(res.status).toBe(500)
+      expect((await res.json()).error).toMatch(/route_id/)
+    }
+  })
+
+  test('a window that is not a time, or runs backwards, is refused by name', async () => {
+    // A zoneless time would be read in the box's own zone and shift the window
+    // by it with nothing saying so.
+    for (const from of ['yesterday', '2026-10-28T10:00:00', '2026-10-28', 'Oct 28 2026', 1761609600]) {
+      const bad = await send(serverAt(), 'POST', '/analytics', { route_id: 'fjs-shop', from })
+      expect((await bad.json()).error).toMatch(/^from must be a UTC instant/)
+    }
+    const back = await send(serverAt(), 'POST', '/analytics', { route_id: 'fjs-shop', from: '2026-10-03T00:00:00Z', to: '2026-10-02T00:00:00Z' })
+    expect((await back.json()).error).toMatch(/is after to/)
+  })
+
+  test('a route with no log, or a machine with no log directory, says so', async () => {
+    const none = await send(serverAt(), 'POST', '/analytics', { route_id: 'fjs-quiet' })
+    expect((await none.json()).error).toBe("no access log for route 'fjs-quiet' on this machine")
+    const nodir = await send(serverAt(join(LOGS, 'absent')), 'POST', '/analytics', { route_id: 'fjs-quiet' })
+    expect((await nodir.json()).error).toBe("no access log for route 'fjs-quiet' on this machine")
+  })
+
+  test('it is signed like every other route', async () => {
+    expect((await send(serverAt(), 'POST', '/analytics', { route_id: 'fjs-shop' }, { secret: null })).status).toBe(401)
+  })
+})
+
 describe('reading a container log', () => {
 
   // The gap this closes is basecamp's own screen, which says its logs tab is
@@ -1893,7 +2090,7 @@ describe('reading a container log', () => {
   // answers this over ssh for one app; this answers it for a fleet.
 
   const serverWith = (fake) => createOutpostServer(CONFIG, {
-    docker:    createDocker({ run: fake.run, workDir: CONFIG.workDir }),
+    docker:    createDocker({ appsDir: APPS, run: fake.run, workDir: CONFIG.workDir }),
     inspector: createInspector({ run: fake.run }),
   })
 
@@ -1969,7 +2166,7 @@ describe('reading a container log', () => {
     }
   }
   const followServer = (fs) => createOutpostServer(CONFIG, {
-    docker: createDocker({ run: fakeRunner({}).run, stream: fs.spawn, workDir: CONFIG.workDir }),
+    docker: createDocker({ appsDir: APPS, run: fakeRunner({}).run, stream: fs.spawn, workDir: CONFIG.workDir }),
   })
   async function readEvents(res, until) {
     const reader = res.body.getReader(), dec = new TextDecoder()
@@ -2075,7 +2272,7 @@ describe('what this machine tells basecamp', () => {
       sent.push({ url, init, body: JSON.parse(init.body) })
       return new Response(JSON.stringify({ ok: true }), { status: 200 })
     }
-    const inspector = createInspector({ run: fakeRunner(answers).run })
+    const inspector = createInspector({ run: fakeRunner(answers).run, appsDir: mkdtempSync(join(tmpdir(), 'outpost-noapps-')) })
     return { reporter: createReporter(CONFIG, { inspector, fetch: doFetch, log: { warn() {} } }), sent }
   }
 
@@ -2160,9 +2357,43 @@ describe('what this machine tells basecamp', () => {
     await reporter.reportVolumes()
 
     expect(sent[0].body.volumes).toEqual([{
-      name: 'tacc_vesselredis', driver: 'local', mountpoint: mount, size_bytes: 612_400_000,
+      name: 'tacc_vesselredis', kind: 'volume', driver: 'local', mountpoint: mount, size_bytes: 612_400_000,
       in_use: true, containers: ['tacc_redis_1'], created_at: '2026-09-27T11:54:43-07:00',
     }])
+  })
+
+  // FJS-D1615: app data is a directory Docker never lists, and most of a disk.
+  test('each app\'s data directory is a `bind` row, sized by du and held by the containers mounting it', async () => {
+    const apps = mkdtempSync(join(tmpdir(), 'outpost-binds-'))
+    mkdirSync(join(apps, 'ela', 'data'), { recursive: true })
+    mkdirSync(join(apps, 'crm'))
+    const run = async (argv) => {
+      if (argv[0] === 'du') return { exitCode: 0, stdout: `8192\t${argv[2]}\n`, stderr: '' }
+      if (argv[1] === 'ps') return { exitCode: 0, stdout: argv.includes(`volume=${apps}/ela/data`) ? 'fjs-ela\n' : '', stderr: '' }
+      return { exitCode: 0, stdout: '', stderr: '' }
+    }
+    const [row, ...rest] = await createInspector({ run, appsDir: apps }).volumes()
+    expect(rest).toEqual([])
+    expect(row).toMatchObject({
+      name: `${apps}/ela/data`, kind: 'bind', mountpoint: `${apps}/ela/data`, size_bytes: 8192, in_use: true, containers: ['fjs-ela'],
+    })
+  })
+
+  test('a data directory is removed only by its exact path, and never while a container holds it', async () => {
+    const apps = mkdtempSync(join(tmpdir(), 'outpost-binds-'))
+    for (const app of ['ela', 'crm']) mkdirSync(join(apps, app, 'data'), { recursive: true })
+    const run = async (argv) => ({ exitCode: 0, stdout: argv[1] === 'ps' && argv.includes(`volume=${apps}/crm/data`) ? 'fjs-crm\n' : '', stderr: '' })
+    const inspector = createInspector({ run, appsDir: apps })
+    expect(await inspector.pruneVolumes([`${apps}/ela/data`, `${apps}/crm/data`])).toEqual({ removed: [`${apps}/ela/data`] })
+    expect(existsSync(join(apps, 'ela', 'data'))).toBe(false)
+    await expect(inspector.removeVolume(`${apps}/crm/data`)).rejects.toThrow('held by fjs-crm')
+    expect(existsSync(join(apps, 'crm', 'data'))).toBe(true)
+    // Anything else is a docker volume name, which `docker volume rm` refuses.
+    const seen = []
+    const docker = createInspector({ run: async (argv) => { seen.push(argv); return { exitCode: 1, stdout: '', stderr: 'no such volume' } }, appsDir: apps })
+    await expect(docker.removeVolume(`${apps}/crm/../crm/data`)).rejects.toThrow('no such volume')
+    expect(seen).toEqual([['docker', 'volume', 'rm', `${apps}/crm/../crm/data`]])
+    expect(existsSync(join(apps, 'crm', 'data'))).toBe(true)
   })
 
   test('a volume sweep names what the daemon deleted', async () => {
@@ -2413,7 +2644,7 @@ describe('a deploy key per app (FJS-D1555)', () => {
     const serverFor = () => {
       const fake   = fakeRunner()
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ run: fake.run, deployKeyDir: freshDir() }), inspector: createInspector({ run: fake.run }),
+        docker: createDocker({ appsDir: APPS, run: fake.run, deployKeyDir: freshDir() }), inspector: createInspector({ run: fake.run }),
         log: { warn() {}, error() {} },
       })
       return { fake, server }
@@ -2455,7 +2686,7 @@ describe('a deploy key per app (FJS-D1555)', () => {
       if (rootDockerfile) writeFileSync(join(workDir, 'app-1', 'Dockerfile'), rootDockerfile)
       const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'test -d': { exitCode: 1 }, 'git -C': { stdout: 'c0ffee\n' } })
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ run: fake.run, workDir, deployKeyDir: keyDir }), inspector: createInspector({ run: fake.run }),
+        docker: createDocker({ appsDir: APPS, run: fake.run, workDir, deployKeyDir: keyDir }), inspector: createInspector({ run: fake.run }),
         log: { warn() {}, error() {} },
       })
       const res = await send(server, 'POST', '/build', { app_id: 'app-1', source, image: 'x' })
@@ -2581,7 +2812,7 @@ describe('a deploy key per app (FJS-D1555)', () => {
     test('an app_id that is not a plain name builds nothing', async () => {
       const fake   = fakeRunner()
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ run: fake.run, deployKeyDir: freshDir() }), inspector: createInspector({ run: fake.run }),
+        docker: createDocker({ appsDir: APPS, run: fake.run, deployKeyDir: freshDir() }), inspector: createInspector({ run: fake.run }),
         log: { warn() {}, error() {} },
       })
       const res = await send(server, 'POST', '/build', { app_id: '../x', source: GIT, image: 'x' })
@@ -2597,7 +2828,7 @@ describe('a deploy key per app (FJS-D1555)', () => {
       writeFileSync(join(workDir, 'app-1', 'deploy', 'Dockerfile'), 'FROM oven/bun\n')
       const fake   = fakeRunner()
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ run: fake.run, workDir, deployKeyDir: freshDir() }), inspector: createInspector({ run: fake.run }),
+        docker: createDocker({ appsDir: APPS, run: fake.run, workDir, deployKeyDir: freshDir() }), inspector: createInspector({ run: fake.run }),
         log: { warn() {}, error() {} },
       })
       return { workDir, server, fake }
@@ -2669,32 +2900,31 @@ describe('/replicate — every app this machine replicates, each with its own ke
     app_id, bucket: 'frontier', path: `apps/${app_id}`, endpoint: 'https://s3.us-west-000.backblazeb2.com',
     region: 'us-west-000', access_key_id: `K-${app_id}`, secret_access_key: `S-${app_id}`, ...over,
   })
-  const replicating = (answers = {}, { hostDb = null } = {}) => {
+  const replicating = (answers = {}, { hostDb = null, present = ['ela', 'crm'] } = {}) => {
     const dir        = mkdtempSync(join(tmpdir(), 'outpost-replicate-'))
     const configPath = join(dir, 'basecamp', 'litestream.yml')
-    const runner     = fakeRunner({
-      'docker volume inspect': { stdout: '/var/lib/docker/volumes/fjs-ela-data/_data\n' },
-      ...answers,
-    })
+    const appsDir    = join(dir, 'apps')
+    for (const app of present) mkdirSync(join(appsDir, app, 'data'), { recursive: true })
+    const runner     = fakeRunner(answers)
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ run: runner.run }), inspector: createInspector({ run: runner.run }),
-      replicator: createReplicator({ run: runner.run, configPath, metaDir: '/var/lib/litestream', hostDb }),
+      docker: createDocker({ appsDir, run: runner.run }), inspector: createInspector({ run: runner.run }),
+      replicator: createReplicator({ run: runner.run, configPath, appsDir, metaDir: '/var/lib/litestream', hostDb }),
       log: { warn() {}, error() {} },
     })
-    return { server, calls: runner.calls, configPath }
+    return { server, calls: runner.calls, configPath, appsDir }
   }
   const replicate = async (server, body) => {
     const res = await send(server, 'POST', '/replicate', body)
     return { status: res.status, body: await res.json() }
   }
 
-  test('writes each app\'s volume with its own key and meta-dir outside it, 0600, and restarts the unit', async () => {
-    const { server, calls, configPath } = replicating()
+  test('writes each app\'s data directory with its own key and meta-dir outside it, 0600, and restarts the unit', async () => {
+    const { server, calls, configPath, appsDir } = replicating()
     const { status, body } = await replicate(server, { replicas: [entry('ela')] })
     expect(status).toBe(200)
     expect(body).toEqual({ replicating: ['ela'], skipped: [] })
     const yml = readFileSync(configPath, 'utf8')
-    expect(yml).toContain('  - dir: /var/lib/docker/volumes/fjs-ela-data/_data\n')
+    expect(yml).toContain(`  - dir: ${appsDir}/ela/data\n`)
     expect(yml).toContain('    meta-dir: "/var/lib/litestream/ela"\n')
     expect(yml).toContain('        access-key-id: "K-ela"\n')
     expect(yml).toContain('        path: "apps/ela"\n')
@@ -2713,8 +2943,8 @@ describe('/replicate — every app this machine replicates, each with its own ke
     expect(readFileSync(configPath, 'utf8')).toContain('dbs: []')
   })
 
-  test('an app with no volume here is skipped, and the others are still written', async () => {
-    const { server, configPath } = replicating({ 'docker volume inspect': { exitCode: 1, stderr: 'no such volume' } })
+  test('an app with no data here is skipped, and the others are still written', async () => {
+    const { server, configPath } = replicating({}, { present: [] })
     const { status, body } = await replicate(server, { replicas: [entry('ela')] })
     expect(status).toBe(200)
     expect(body.replicating).toEqual([])
@@ -2774,7 +3004,7 @@ describe('/replicate — every app this machine replicates, each with its own ke
     const answering = (body, init = { status: 200 }) => createReplicator({
       fetch: async (url, opts) => { expect(opts.unix).toBe('/run/litestream/litestream.sock'); return new Response(JSON.stringify(body), init) },
     })
-    const vol = (app, db) => `/var/lib/docker/volumes/fjs-${app}-data/_data/${db}`
+    const vol = (app, db) => `/var/lib/outpost/apps/${app}/data/${db}`
 
     test('an app is as far behind as its furthest database, and one never synced is further', async () => {
       const r = answering({ databases: [

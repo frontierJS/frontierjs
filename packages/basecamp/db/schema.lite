@@ -252,6 +252,13 @@ type WorkspaceMemberRole {
   role   WorkspaceRole
 }
 
+/// One package a patch `MaintenanceRun` moved.
+type PackageUpgrade {
+  package String
+  from    String
+  to      String
+}
+
 /// What the dashboards service's tile verbs accept. Which subject a kind takes
 /// is `kinds.ts`'s, so the pairing stays the method's; the shape is stated here.
 type TileAdd {
@@ -518,7 +525,11 @@ enum ServerEventKind {
   // A posture control moving between passing and failing (`domain/host/posture.ts`).
   posture_failed posture_restored
 }
+// Every vendor a `provider_key` Secret can open, whatever role it plays.
 enum ProviderKind   { custom hetzner digitalocean cloudflare github }
+// The vendors that sell machines — what a Server can run on. Every member is a
+// `ProviderKind` member too (FJS-D1607); an edge or a forge is not one.
+enum ComputeProvider { custom hetzner digitalocean }
 // How a Server row came to be: bought through a ComputeProvider, or an
 // existing machine registered by hand.
 enum RegisterMethod { imported provisioned }
@@ -1156,9 +1167,9 @@ model Secret {
   /// decrypting every secret in the workspace to answer. Here it filters, it
   /// indexes, and it reaches a picker as a set.
   ///
-  /// It reuses `ProviderKind` rather than growing a second vendor vocabulary on
-  /// `SecretKind`. Two enums listing clouds is two lists to keep in step, and
-  /// the one that drifts is the one nothing reads.
+  /// It is `ProviderKind`, the whole vendor catalogue, rather than a second
+  /// vendor vocabulary on `SecretKind`: a key names a vendor whatever role it
+  /// plays. `Server.providerKind` narrows it to `ComputeProvider` (FJS-D1607).
   providerKind ProviderKind? @immutable
 
   version     Int        @version
@@ -1282,9 +1293,9 @@ model Server {
 
   // Which cloud, WHICH ACCOUNT of it, and which machine there.
   //
-  // `providerKind` can be told which clouds this app knows, and a value outside
-  // the set is refused by a table CHECK rather than sitting there naming an
-  // integration nobody wrote. Add a member when a provider is added.
+  // `providerKind` is a vendor that sells machines (`ComputeProvider`), so a
+  // Server cannot claim to run at an edge or a forge (FJS-D1607). Add a member
+  // when a compute provider is added.
   //
   // `providerId` is the `Secret` holding this workspace's token for that cloud —
   // a bare id, no @relation, the same shape as `Domain.certSecretId`, because
@@ -1296,7 +1307,7 @@ model Server {
   //
   // `providerServerId` is the machine's id at the vendor, which means something
   // only THERE: no key to point at and nothing to cascade.
-  providerKind     ProviderKind @default(custom)
+  providerKind     ComputeProvider @default(custom)
   providerId       String?
   providerServerId String?
   registerMethod   RegisterMethod @default(imported)
@@ -1479,11 +1490,6 @@ model Server {
     reportStopped:    [pending, provisioning, installing, online, unreachable, draining]         -> stopped      @system @gate(5),
     reportRebuilding: [pending, installing, online, unreachable, draining, stopped]              -> provisioning @system @gate(5),
     reportDestroyed:  [destroying]                                                               -> destroyed    @system @gate(5))
-  // `ProviderKind` is also what an ACCOUNT opens, and some of those vendors sell
-  // no machines. A vendor that joins the enum without making servers joins this
-  // list too, or a Server can claim to run somewhere nothing runs (FJS-D559).
-  @@check("providerKind != 'cloudflare'", "Cloudflare sells no machines")
-  @@check("providerKind != 'github'",     "GitHub sells no machines")
   @@softDelete
   @@trail(audit)
   @@unique([workspaceId, slug])
@@ -1552,12 +1558,17 @@ model OutpostNonce {
 // meaningless without its server, and denormalizing the tenancy fact onto it
 // would make two owners of one answer. Scope is the join — the same two
 // indexed queries `servers.feed` runs.
+enum VolumeKind { volume bind }
+
 model Volume {
   id           String    @id @default(uuid())
   serverId     String
   server       Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
   name         String    @trim @length(1, 255)
+  // `bind` is an app's data directory, named by its host path (`FJS-D1615`);
+  // remove and prune refuse one an App placed on that server still names.
+  kind         VolumeKind @default(volume)
   driver       String    @default("local")
   mountPoint   String?
 
@@ -2534,9 +2545,9 @@ model MaintenanceRun {
   // What the outpost said it freed, never what was estimated before it ran. The
   // screen shows an estimate; only this is what happened.
   freedBytes  Int       @default(0)
-  // A patch: what was upgraded, from what version to what —
-  // `[{ package, from, to }]`, as the outpost reported it.
-  upgrades    Json      @default("[]")
+  // A patch: what was upgraded, from what version to what, as the outpost
+  // reported it.
+  upgrades    Json      @type(PackageUpgrade[]) @default("[]")
   detail      Json      @default("{}")
   error       String?
 
@@ -3736,7 +3747,7 @@ model NotificationPreference {
 /// is the difference between rolling up a projection and re-deriving one.
 view fleetByProvider {
   workspaceId  String
-  providerKind String
+  providerKind ComputeProvider
   region       String
   servers      Int
   vcpu         Int

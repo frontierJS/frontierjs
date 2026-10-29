@@ -192,7 +192,7 @@ Done when: the table carries readings from `dev:outpost`, and Q1–Q6 cite rulin
 Goal: a Workspace that expires, refuses what a demo must, and sweeps itself.
 Done when: `services.test.ts` has a scoped call on an expired demo answering `Gone`, a `retention.job` test counting swept demos, and a demo calling `servers.provision` refused by type.
 
-- [ ] 1.1 `demo` in `WorkspaceType`; `expiresAt` on `Workspace` with its `@@check`
+- [x] 1.1 `demo` in `WorkspaceType`; `expiresAt` on `Workspace` with its `@@check`
 - [ ] 1.2 `Gone` at `scopeToWorkspace` when `expiresAt` is past, beside the suspended refusal
 - [ ] 1.3 `retention.job.ts` sweeps expired demos: soft-delete cascade, containers stopped through the App path, a count row
 - [ ] 1.4 The gate: `demo` refuses provision, secrets, ingress zones, backup destinations and outbound mail, each at its owner

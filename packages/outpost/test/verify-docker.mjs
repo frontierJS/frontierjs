@@ -39,12 +39,13 @@
  *   back off the daemon.
  *
  *   `volume.*` — `/volume/restore` extracts an archive from the restore
- *   directory into the stopped app's data volume, refuses a second one into a
- *   volume with files unless told to overwrite, refuses a path off that
- *   directory, and refuses while a container holds the volume (`FJS-D943`).
- *   `backup.*` — `/backup` tars the volume into the backup directory and
- *   refuses a volume the machine does not hold (`FJS-1782`).
- *   The directory is under `$HOME`, because a snap-packaged docker cannot
+ *   directory into the stopped app's data directory, read back as plain files
+ *   on the host (`FJS-D1544`), refuses a second one into a directory with
+ *   files unless told to overwrite, refuses a path off that directory, and
+ *   refuses while a container holds it (`FJS-D943`).
+ *   `backup.*` — `/backup` tars that directory into the backup directory and
+ *   refuses an app the machine holds no data for (`FJS-1782`).
+ *   The directories are under `$HOME`, because a snap-packaged docker cannot
  *   bind-mount the host's `/tmp`.
  *
  *   `reports.*` — the heartbeat, the volume report and the disk report as the
@@ -64,7 +65,7 @@
  */
 
 import { spawnSync }    from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -110,7 +111,6 @@ for (const p of [PORT, STATIC, SINK, APP_PORT, CADDY_HTTP, CADDY_HTTPS, CADDY_AD
   if (await answers(p)) fail(`port ${p} already answers — refusing to test whatever holds it`)
 for (const n of [NAME, CADDY])
   if (sh('docker', 'inspect', n).status === 0) fail(`a container named ${n} already exists`)
-if (sh('docker', 'volume', 'inspect', `${NAME}-data`).status === 0) fail(`a volume named ${NAME}-data already exists`)
 // "Off the machine" is any address of this host that is not loopback: a port
 // published on every interface answers on each of them.
 const offLoopback = Object.values(networkInterfaces()).flat()
@@ -181,6 +181,8 @@ const hadBusybox = sh('docker', 'image', 'inspect', BUSYBOX).status === 0
 mkdirSync(join(homedir(), '.cache'), { recursive: true })
 const restoreDir = mkdtempSync(join(homedir(), '.cache', 'fjs-verify-restore-'))
 const backupDir  = mkdtempSync(join(homedir(), '.cache', 'fjs-verify-backup-'))
+const appsDir    = mkdtempSync(join(homedir(), '.cache', 'fjs-verify-apps-'))
+const dataDir    = join(appsDir, APP, 'data')
 const rootPath = join(scratch, 'caddy-root.pem')
 let outpost    = null
 let stoppedEarly = null
@@ -224,6 +226,7 @@ try {
       OUTPOST_STATIC_DIR:   join(scratch, 'static'),
       OUTPOST_RESTORE_DIR:  restoreDir,
       OUTPOST_BACKUP_DIR:   backupDir,
+      OUTPOST_APPS_DIR:     appsDir,
       OUTPOST_UID_FILE:     join(scratch, 'uids.json'),
       OUTPOST_DEPLOY_KEY_DIR: join(scratch, 'deploy-keys'),
       OUTPOST_CADDY_ADMIN:  ADMIN,
@@ -400,24 +403,25 @@ try {
     for (const [path, text] of Object.entries(files)) writeFileSync(join(src, path), text)
     if (sh('tar', '-czf', join(restoreDir, `${name}.tar.gz`), '-C', src, '.').status !== 0) throw new Error(`could not tar ${name}`)
   }
-  const inVolume = (...argv) => sh('docker', 'run', '--rm', '-v', `${NAME}-data:/data`, BUSYBOX, ...argv).stdout.trim()
+  // Read on the host, not through a container: plain files are the point.
+  const onHost = (path) => { try { return readFileSync(join(dataDir, path), 'utf8') } catch { return null } }
   archive('adopt', { 'app.db': 'adopted', 'sub/notes': '12345' })
   archive('again', { 'fresh.db': 'replaced' })
 
   const restored = await call('/volume/restore', { app_id: APP, path: 'adopt.tar.gz' })
   if (restored.status !== 200) console.log(restored.body)
   t('volume.restoresIntoTheVolume',
-    restored.status === 200 && restored.body?.files === 2 && restored.body?.bytes === 12 && inVolume('cat', '/data/app.db') === 'adopted')
+    restored.status === 200 && restored.body?.files === 2 && restored.body?.bytes === 12 && onHost('app.db') === 'adopted')
   const twice = await call('/volume/restore', { app_id: APP, path: 'again.tar.gz' })
-  t('volume.refusesANonEmptyOne',      twice.status === 500 && /overwrite: true/.test(twice.body?.error) && inVolume('ls', '/data') === 'app.db\nsub')
+  t('volume.refusesANonEmptyOne',      twice.status === 500 && /overwrite: true/.test(twice.body?.error) && readdirSync(dataDir).sort().join(' ') === 'app.db sub')
   const off = await call('/volume/restore', { app_id: APP, path: '/etc/passwd' })
   t('volume.refusesAPathOffTheRoot',   off.status === 500 && /under/.test(off.body?.error))
-  sh('docker', 'create', '--name', NAME, '-v', `${NAME}-data:/data`, BUSYBOX)
+  sh('docker', 'create', '--name', NAME, '--mount', `type=bind,src=${dataDir},dst=/data`, BUSYBOX)
   const held = await call('/volume/restore', { app_id: APP, path: 'again.tar.gz', overwrite: true })
   sh('docker', 'rm', '-f', NAME)
   t('volume.refusesWhileHeld',         held.status === 500 && held.body?.error?.includes(`held by ${NAME}`))
   const over = await call('/volume/restore', { app_id: APP, path: 'again.tar.gz', overwrite: true })
-  t('volume.overwriteReplacesTheFiles', over.status === 200 && inVolume('find', '/data', '-type', 'f') === '/data/fresh.db')
+  t('volume.overwriteReplacesTheFiles', over.status === 200 && readdirSync(dataDir, { recursive: true }).filter(f => statSync(join(dataDir, f)).isFile()).join(' ') === 'fresh.db' && onHost('fresh.db') === 'replaced')
   const saved = await call('/backup', { app_id: APP })
   if (saved.status !== 200) console.log(saved.body)
   // The archive is the daemon's (root, mode 0600), so it is read back through the daemon.
@@ -427,18 +431,17 @@ try {
     : ''
   t('backup.tarsTheVolumeToTheMachine',
     saved.status === 200 && saved.body.files === 1 && saved.body.path.startsWith(`${backupDir}/${APP}-`) && /fresh\.db/.test(listing))
-  t('backup.refusesAVolumeItDoesNotHold', (await call('/backup', { app_id: `${APP}-absent` })).status === 500)
-  // The report below counts the daemon's volumes against one sent before this
-  // one existed.
-  sh('docker', 'volume', 'rm', '-f', `${NAME}-data`)
+  t('backup.refusesAnAppWithNoData', (await call('/backup', { app_id: `${APP}-absent` })).status === 500)
 
   // ─── reports ────────────────────────────────────────────────────────────
   //
-  // The volume report walks every volume, which takes seconds on a busy
-  // daemon — so this waits for all three rather than assuming a timer.
+  // The volume report walks every volume, two docker calls each: 35s on a
+  // workstation holding a hundred — so this waits for all three rather than
+  // assuming a timer.
 
   const report = (m) => received.find(r => r.method === m)
-  for (let i = 0; i < 120 && !(report('heartbeat') && received.filter(r => r.method === 'report').length >= 2); i++) await sleep(250)
+  const arrived = (path) => received.some(r => r.path === path)
+  for (let i = 0; i < 360 && !(report('heartbeat') && arrived('/volumes') && arrived('/cleanup')); i++) await sleep(250)
   const beat    = report('heartbeat')
   const volumes = received.find(r => r.path === '/volumes')
   const disk    = received.find(r => r.path === '/cleanup')
@@ -447,7 +450,7 @@ try {
   t('reports.heartbeatRegistersTheUrl', beat?.path === '/servers/verify-docker' && beat?.body?.outpost_url === OUTPOST)
   t('reports.heartbeatCarriesVitals',  typeof beat?.body?.health === 'object' && beat.body.health !== null)
   const volumeCount = sh('docker', 'volume', 'ls', '-q').stdout.trim().split('\n').filter(Boolean).length
-  t('reports.volumesAreEveryVolume',   volumes?.body?.volumes?.length === volumeCount)
+  t('reports.volumesAreEveryVolume',   volumes?.body?.volumes?.filter(v => v.kind === 'volume').length === volumeCount)
   t('reports.volumesHaveMountpoints',  (volumes?.body?.volumes ?? []).every(v => v.mountpoint))
   // The daemon's own count, from its API: `docker images -a` lists every
   // intermediate layer and answers a number no report should match.
@@ -466,11 +469,13 @@ try {
   sh('docker', 'rm', '-f', CADDY)
   if (!hadImage) sh('docker', 'rmi', IMAGE)
   if (!hadCaddy) sh('docker', 'rmi', CADDY_IMAGE)
-  sh('docker', 'volume', 'rm', '-f', `${NAME}-data`)
+  // The restore wrote as root, so root removes it.
+  sh('docker', 'run', '--rm', '--mount', `type=bind,src=${appsDir},dst=/apps`, BUSYBOX, 'rm', '-rf', `/apps/${APP}`)
   if (!hadBusybox) sh('docker', 'rmi', BUSYBOX)
   rmSync(scratch, { recursive: true, force: true })
   rmSync(restoreDir, { recursive: true, force: true })
   rmSync(backupDir, { recursive: true, force: true })
+  rmSync(appsDir, { recursive: true, force: true })
 }
 
 // ─── Report ───────────────────────────────────────────────────────────────
@@ -494,7 +499,7 @@ const expected = [
   'route.unknownIs404',
   'volume.restoresIntoTheVolume', 'volume.refusesANonEmptyOne', 'volume.refusesAPathOffTheRoot',
   'volume.refusesWhileHeld', 'volume.overwriteReplacesTheFiles',
-  'backup.tarsTheVolumeToTheMachine', 'backup.refusesAVolumeItDoesNotHold',
+  'backup.tarsTheVolumeToTheMachine', 'backup.refusesAnAppWithNoData',
   'reports.areSigned', 'reports.heartbeatRegistersTheUrl', 'reports.heartbeatCarriesVitals',
   'reports.volumesAreEveryVolume', 'reports.volumesHaveMountpoints', 'reports.diskCountsTheImages', 'reports.diskIsInBytes',
 ]

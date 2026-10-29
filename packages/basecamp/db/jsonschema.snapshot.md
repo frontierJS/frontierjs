@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-164 definitions · 73 models · 1 view · 37 types · 53 enums · 0 other
+167 definitions · 73 models · 1 view · 38 types · 55 enums · 0 other
 ```
 
 ## Definitions
@@ -118,6 +118,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `ServerRole` | enum |
 | `ServerEventKind` | enum |
 | `ProviderKind` | enum |
+| `ComputeProvider` | enum |
 | `RegisterMethod` | enum |
 | `CertKind` | enum |
 | `SslMode` | enum |
@@ -150,6 +151,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `DependencyKind` | enum |
 | `NotificationContext` | enum |
 | `NotificationKind` | enum |
+| `VolumeKind` | enum |
 | `EditorRole` | enum |
 | `Capability` | enum |
 | `WorkspaceStatusChange` | type |
@@ -159,6 +161,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `FlagChange` | type |
 | `WorkspaceMemberAdd` | type |
 | `WorkspaceMemberRole` | type |
+| `PackageUpgrade` | type |
 | `TileAdd` | type |
 | `TileUpdate` | type |
 | `TileRemove` | type |
@@ -214,6 +217,7 @@ validates, and a select that silently drops an option.
 - `ServerRole` — `general`, `build`, `database`, `gateway`, `worker`
 - `ServerEventKind` — `created`, `removed`, `reboot_requested`, `drain_started`, `drain_cancelled`, `provision_requested`, `provision_created`, `provision_ready`, `provision_timeout`, `destroy_requested`, `destroy_finished`, `enrollment_issued`, `sync_requested`, `status_synced`, `status_sync_ignored`, `sync_failed`, `sync_no_account`, `sync_unsupported`, `sync_unrecognized`, `came_online`, `unreachable`, `recipe_ran`, `recipe_failed`, `cleanup_queued`, `cleanup_ran`, `cleanup_failed`, `volume_removed`, `volumes_pruned`, `posture_failed`, `posture_restored`
 - `ProviderKind` — `custom`, `hetzner`, `digitalocean`, `cloudflare`, `github`
+- `ComputeProvider` — `custom`, `hetzner`, `digitalocean`
 - `RegisterMethod` — `imported`, `provisioned`
 - `CertKind` — `acme`, `origin_ca`, `uploaded`
 - `SslMode` — `off`, `flexible`, `full`, `full_strict`
@@ -246,6 +250,7 @@ validates, and a select that silently drops an option.
 - `DependencyKind` — `dependency`, `dev`, `peer`, `optional`
 - `NotificationContext` — `Deployment`, `AlertEvent`, `JobRun`, `Server`, `Workspace`, `Monitor`
 - `NotificationKind` — `DeploySuccess`, `DeployFailed`, `AlertFiring`, `AlertResolved`, `ServerUnreachable`, `MonitorDown`, `MonitorUp`, `PostureFailed`, `HubPostureFailed`, `DependencyVulnerable`, `MemberJoined`, `JobFailed`, `WeeklyDigest`, `ReplicaFound`
+- `VolumeKind` — `volume`, `bind`
 - `EditorRole` — `edit`, `publish`
 - `Capability` — `Environment.create`, `Environment.delete`, `Environment.update`, `Server.create`, `Server.delete`, `Server.destroy`, `Server.drain`, `Server.provision`, `Server.reboot`, `Server.undrain`, `Server.update`, `Variable.create`, `Variable.delete`, `Variable.update`
 
@@ -734,7 +739,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `slug` | `string` | yes | — | `x-transforms` | — |
 | `status` | `ServerStatus` = `"pending"` | — | — | — | — |
 | `role` | `ServerRole` = `"general"` | — | — | — | — |
-| `providerKind` | `ProviderKind` = `"custom"` | — | — | — | — |
+| `providerKind` | `ComputeProvider` = `"custom"` | — | — | — | — |
 | `providerId` | `string`? | — | — | — | — |
 | `providerServerId` | `string`? | — | — | — | — |
 | `registerMethod` | `RegisterMethod` = `"imported"` | — | — | — | — |
@@ -794,6 +799,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `serverId` | `string` | yes | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 255` `x-transforms` | — |
+| `kind` | `VolumeKind` = `"volume"` | — | — | — | — |
 | `driver` | `string` = `"local"` | — | — | — | — |
 | `mountPoint` | `string`? | — | — | — | — |
 | `sizeBytes` | `integer` = `0` | — | — | — | — |
@@ -1304,7 +1310,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `keepImages` | `integer` = `3` | — | — | `minimum: 0` `maximum: 50` | — |
 | `requestedBy` | `string`? | — | — | — | — |
 | `freedBytes` | `integer` = `0` | — | — | — | — |
-| `upgrades` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `upgrades` | `PackageUpgrade[]` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `detail` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `error` | `string`? | — | — | — | — |
 | `startedAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -1809,7 +1815,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `workspaceId` | `string` | — | — | — | — |
-| `providerKind` | `string` | — | — | — | — |
+| `providerKind` | `ComputeProvider` | — | — | — | — |
 | `region` | `string` | — | — | — | — |
 | `servers` | `integer` | — | — | — | — |
 | `vcpu` | `integer` | — | — | — | — |
@@ -1897,6 +1903,18 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `role` | `WorkspaceRole` | yes | — | — | — |
 
 **On create**: required — `userId`, `role`
+
+### `PackageUpgrade`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `package` | `string` | yes | — | — | — |
+| `from` | `string` | yes | — | — | — |
+| `to` | `string` | yes | — | — | — |
+
+**On create**: required — `package`, `from`, `to`
 
 ### `TileAdd`
 

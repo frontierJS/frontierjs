@@ -2040,7 +2040,9 @@ function _fieldValue(schema, ownerName, field, seq, rng, { fkFields = new Set(),
   const defAttr = attrs.find(a => a.kind === 'default')
   if (defAttr) {
     const v = defAttr.value
-    if (v.kind === 'string')  return v.value
+    // A Json default is JSON TEXT: handed over as the string, a `@type`d
+    // column refuses it ("must be an array of T") and the model never seeds.
+    if (v.kind === 'string')  return type.name === 'Json' ? JSON.parse(v.value) : v.value
     if (v.kind === 'number')  return v.value
     if (v.kind === 'boolean') return v.value
     if (v.kind === 'enum')    return v.value
@@ -3257,11 +3259,15 @@ async function _seedForTenant(schema, modelName, tenant, chain, parents = new Ma
   // crossing is asserted FROM, which reports `unreachable` and makes every
   // refusal below it prove nothing about tenancy (`FJS-1200`). The stamp is
   // derived rather than stated: the declaration already says whose row this is.
+  // Where the stamped column is also a foreign key, the actor's id has to name
+  // a parent row or the insert fails before any crossing is tried (`FJS-3585`).
   for (const f of (actor ? model?.fields ?? [] : [])) {
     const d = f.attributes?.find(a => a.kind === 'default')?.value
     if (d?.kind !== 'call' || d.fn !== 'auth' || f.name === column) continue
     const v = actor[d.field ?? 'id']
-    if (v !== undefined && v !== null) overrides[f.name] = v
+    if (v === undefined || v === null) continue
+    overrides[f.name] = v
+    await _ensureParent(schema, model, f.name, v, chain)
   }
 
   for (const field of model?.fields ?? []) {

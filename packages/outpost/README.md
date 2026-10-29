@@ -90,6 +90,7 @@ process's user, so the default is refuse and a route opts out rather than in.
 | `POST /health-check` | `{ app_id, port, path }` → `{ healthy }`, plus `reason` when it is not; with a `path`, running is not enough — `127.0.0.1:<port><path>` must answer 2xx |
 | `POST /exec` | `{ command, timeout_s }` or `{ step }` → `{ exit_code, stdout, stderr }` |
 | `POST /logs` | `{ app_id, tail, since }` → `{ running, tail, since, stdout, stderr }`, plus `error` when there is no such container |
+| `POST /analytics` | `{ route_id, from, to }` (UTC instants ending `Z`, each optional) → `{ route_id, from, to, files, lines, skipped, truncated, oldest, kept_since, hosts: [{ host, requests, bytes, client_ips, status, paths, errors, durations }] }` — `client_ips` is distinct `request.client_ip`s, never people; paths drop the query; each panel answers its top 20, and a read parses at most 100,000 lines newest first (`truncated`, `oldest` say where it was cut); `kept_since` is the first line of the oldest file the roll keeps, whatever the window; counted off the route's Caddy access log and its rolled files; a route with no log is refused by name |
 | `POST /static/publish` | `{ app_id, files }` → `{ digest, files, bytes }` — written, not yet live |
 | `POST /static/activate` | `{ app_id, slug, digest }` → `{ digest, host, url }` |
 | `POST /static/health` | `{ app_id, digest }` → `{ healthy, digest }`, plus `reason` when it is not |

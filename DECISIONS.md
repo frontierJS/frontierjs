@@ -8387,6 +8387,15 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1621"></a>2026-10-28 · `FJS-D1621` — Traffic analysis drops GoAccess — the Outpost reads an app's Caddy JSON access log and counts it in JS; no binary on the target.
+
+Asked in session, against [`IDEAS/traffic-analysis.md`](IDEAS/traffic-analysis.md) § Phase 1. **A** (no GoAccess) over **B** (keep GoAccess for the user-agent, bot and geo panels). As recommended (A). Amends the plan, not a ruling: [`FJS-D764`](#fjs-d764) and [`FJS-D765`](#fjs-d765) keep their outcomes.
+
+- **The parse GoAccess was for is gone.** The plan was written against nginx `combined` text; the edge is Caddy now ([`FJS-D598`](#fjs-d598)) and every line is JSON carrying `status`, `size`, `duration`, `request.uri`, `request.host` and `request.client_ip`. The six first panels — status mix, top paths, bandwidth, distinct client IPs, 4xx/5xx by path, duration by path — are a group-by over fields every line carries.
+- **What it removes:** a binary per target, the `deploy:doctor` precondition, the *not installed* state, and a C binary's escaping between caller-controlled text and a console holding fleet credentials.
+- **`client_ip`, not `remote_ip`.** `packages/cli/core/edge.js` trusts Cloudflare's ranges and `CF-Connecting-IP`, so behind a proxied zone `remote_ip` is a Cloudflare edge address.
+- **B's reopen path is not GoAccess.** User-agent and bot panels derive from `request.headers["User-Agent"]` in the same reader; geo needs a GeoIP database and is its own decision.
+
 ### <a id="fjs-d1606"></a>2026-10-28 · `FJS-D1606` — `Backup` merges into `AppBackup` — a hub archive is an `AppBackup` row on the hub App (`FJS-D1603`); `HubConfig` keeps only retention.
 
 Asked in session (`IDEAS/basecamp-dogfood.md` Q4 and Q5). **A** over **B** (two models kept, their eleven shared columns aligned) and **C** (merge after dogfood). `Backup`, `AppBackup` and `AppDrill` shared eleven columns with drift (`BackupKind` has `release`, `DrillKind` not; `onDelete` differs; `Backup` carried no workspace), and `HubConfig` restated `App`'s `backupCron`, `backupDestinationId`, `replicaDestinationId`, `replicaFoundAt` and `replicaSyncedAt` only because the hub was not an App. Those five go; the keep-counts stay on `HubConfig` as hub-wide retention policy.
@@ -8431,11 +8440,13 @@ Closes `FJS-3575` with `FJS-D1590` and `FJS-D1591`. **A** (wire all three) was p
 
 **A** (env) was picked over **B** (the row, read at each sign-in); the owner chose the recommended option. Auth is built once at boot with its `sessionTtl`, so the value is fixed at boot like the base URL and mail sender in `FJS-D1581`. A row changing under a running process would apply to some sessions and not others. `SESSION_TTL_HOURS` defaults to 168, which equals the `'7 days'` auth was given before, so an unset env behaves as before. `envReport()` lists it in /hub/settings/'s Environment table. This is a contract change for a live hub's database.
 
-### <a id="fjs-d1589"></a>2026-10-28 · `FJS-D1589` — Q4 — Does the ntfy server come from the blueprint or from env — `NTFY_BASE_URL` + `NTFY_TOKEN` env on the Basecamp API, set by hand after installing the blueprint.
+### <a id="fjs-d1589"></a>2026-10-28 · `FJS-D1589` — Q4 — Does the ntfy server come from the blueprint or from env — ~~`NTFY_BASE_URL` + `NTFY_TOKEN` env on the Basecamp API, set by hand after installing the blueprint.~~ A ladder resolved once at boot: env, else the hub's own `ntfy` App, else `ntfy.sh`; the topic always carries a random suffix; a rung-2 failure falls to rung 3.
 
 Asked in [`IDEAS/phone-ping.md`](IDEAS/phone-ping.md) § Open questions. **A** was picked over **B** (Basecamp finds its own `ntfy` App row and reads the token from its Variables).
 
 The paper's recommendation, taken as written: it works with ntfy.sh and with a server Basecamp did not install; B is Phase 3's zero-config step.
+
+**Amended 2026-10-28, by the owner: A and B are rungs of one ladder, not rivals.** One owner resolves the server at boot: (1) `NTFY_BASE_URL` + `NTFY_TOKEN` set → that server, own or ntfy.sh typed in; (2) else the hub's own `ntfy` App row from the blueprint, healthy → that one, token from its Variables; (3) else `https://ntfy.sh`, no token. No `NTFY_MODE` flag — the rung is derived, and the hub posture row names which is live. Two hazards shape the rest. *Rung 3 is public*: anyone who guesses `acme-critical` reads every outage and can publish fake ones, so the topic is `<slug>-critical-<12 random chars>`, minted once and stored on the Workspace (`pushTopic`, `@opaque` so the trail holds a digest), and a payload carries titles and links only. One rule for every rung rather than a plain name on rungs 1–2. *Rung 2 depends on an App the hub deploys*: with Outpost down, the ping about Outpost down never leaves, so a rung-2 4xx/5xx or network failure retries once at rung 3. Rung 2 pulls Phase 3.1's lookup forward (~30 lines); rung 3 costs nothing. Q1's *no new columns* is narrowed to *no per-person column*: the suffix is the one addition.
 
 ### <a id="fjs-d1588"></a>2026-10-28 · `FJS-D1588` — Q3 — Priority per kind or per send — The formatter sets it (`MonitorDown` resend is 4, the outage 5).
 
@@ -11638,7 +11649,7 @@ so two `createResource('orders')` in two route files are two stores holding two
 copies of one row (`client/index.ts`, `const store = new Store<T>()`), and a
 record fetched with `service.get(id)` is a plain object no announcement can
 reach. Both were measured: `example/web/src/routes/products/[id].mesa` and
-`packages/basecamp/web/src/components/widgets/ServiceHealthBody.mesa` each hold
+`packages/basecamp/web/src/components/tiles/ServiceHealthBody.mesa` each hold
 a detail row that a channel push updates nowhere ([FJS-518](ISSUES_ARCHIVE.md#fjs-518)).
 
 **The fourth row is the ruling's center, and it exists because of `FJS-341`.**
@@ -16552,7 +16563,7 @@ The paper's recommendation, taken as written: the audience is outside the projec
 
 Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions. **B** was picked over **A** (Its own `PatchRun` model, shaped like `CleanupRun` and recording package, from-version and to-version). Against the recommendation (**A**).
 
-Owner wants one maintenance table so a run of any kind is one history; the discriminator is a column named type (the paper says kind), and a later kind adds a value rather than a model.
+Owner wants one maintenance table so a run of any kind is one history; the discriminator is a column, `kind` (confirmed 2026-10-29 through the question tool, matching the schema's other `*Kind` enums), and a later kind adds a value rather than a model. Built as `kind MaintenanceKind { cleanup patch }` with no default (`IDEAS/basecamp-dogfood.md` 1.5).
 
 ### <a id="fjs-d824"></a>2026-10-09 · `FJS-D824` — Deployment (Release) is unrepresented above — A, plus an external service the rig needs is declared as an `attachments` entry (`FJS-D158`) the installer adds to `junction.config.js`.
 
@@ -19090,6 +19101,20 @@ the file puts the judgement where judgement lives.
 
 ## Dependencies & the ecosystem
 
+### <a id="fjs-d1620"></a>2026-10-28 · `FJS-D1620` — The package host URL mirrors the GitHub release path — `packages.frontierjs.com/<tag>/<stem>-<version>.tgz` 302s to `github.com/frontierJS/frontierjs/releases/download/<tag>/<stem>-<version>.tgz`; one `concat()` rule, no regex, no second grammar.
+
+Asked at [`IDEAS/package-host.md`](IDEAS/package-host.md) § Phase 2 step 2.1, through `decision-rules`. **A** was picked over **B**, the plan's own `<stem>/<version>.tgz`, after the rule came to be written: B needs `regex_replace`, which Cloudflare sells on Business and Enterprise only, plus a second rule for the unscoped `create-frontier`, whose tag has no `@frontierjs/` to restore. A is one dynamic redirect on `http.host eq "packages.frontierjs.com"` with target `concat("https://github.com/frontierJS/frontierjs/releases/download", http.request.uri.path)`, and it carries the tag's `@` and `/` literally, which `FJS-D1568`'s 0.3 probe already showed the download path accepts.
+
+- **One origin.** The tag and the asset filename are `ws:publish`'s, and the host adds no spelling of its own: anyone holding a release URL predicts the hosted one by swapping the host. B's stem-without-prefix was the same fact spelled a second time, translated by a regex.
+- **The dev channel rides for free.** `FJS-D1602`'s `dev/<stem>-<version>-dev.<sha>.tgz` mirrors through the same rule, so the plan's 4.3 (a second redirect branch) is struck.
+- **Set by hand.** The `cf` profile on this machine has no access to the `frontierjs.com` zone, so the rule and the proxied `AAAA 100::` record for `packages` were made in the dashboard. Plan 2.2 stays open: the rule's text must be copied into the tree or it lives in one head.
+- **Probed 2026-10-28:** scoped and unscoped both answer 302 to GitHub, and the body's sha256 equals the release asset's.
+- **Silence.** *Every `packages.frontierjs.com/<tag>/<file>` returns the bytes of that tag's release asset.* Fails today: **none** — 1.3's postflight is the artefact, on every publish, naming the package.
+
+Amends `FJS-D1568`, whose heading spelled the URL `<stem>/<version>.tgz`; nothing cited that spelling yet, so it is a rename with no alias.
+
+*Lives in:* the `frontierjs.com` zone's redirect rule; `packages/cli/core/publish-hosts.js` (the tag) and `packages/cli/core/vendor.js` (the stem) derive the path.
+
 ### <a id="fjs-d1613"></a>2026-10-28 · `FJS-D1613` — Q1 — Where `fli ws:publish` ships when `--to` is not given — the GitHub Release alone; `--to npm` is said on purpose, and `--to npm --to tarballs` ships both from one pack.
 
 Asked in [`IDEAS/package-host.md`](IDEAS/package-host.md) § Open questions, through `decision-rules`. **C** was picked over **A** (both by default, the paper's recommendation and the first build of 1.2) and **B** (npm by default, releases opt-in), after the owner asked what npm is still for once a release installs.
@@ -19126,6 +19151,8 @@ Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C
 C whole, as recommended: A catches the silent skip, B is the only half that would have stopped the crash loop, and the enrollment pin check is where a skipped publish lands on a customer's box. A runs in fli done, not the snapshots phase, so CI does not depend on npm; Basecamp boot never asks npm.
 
 ### <a id="fjs-d1568"></a>2026-10-27 · `FJS-D1568` — Where a published tarball lives so `bun install` can fetch it with no registry — The asset on the GitHub Release for the tag `ws:publish` already cuts, reached as `https://packages.frontierjs.com/<stem>/<version>.tgz` through one Cloudflare redirect rule; `fli ws:publish --to <npm|tarballs>` ships it from the same pack; URL specs are the INSTALL path and npm stays the UPGRADE path (`FJS-D988`).
+
+**Status:** amended-by [`FJS-D1620`](#fjs-d1620) — the URL is `<tag>/<stem>-<version>.tgz`, a mirror of the release path, not `<stem>/<version>.tgz`.
 
 Asked in chat from a pasted note on Bun's remote-tarball dependencies, through `decision-rules`; the plan is [`IDEAS/package-host.md`](IDEAS/package-host.md). Three picks:
 

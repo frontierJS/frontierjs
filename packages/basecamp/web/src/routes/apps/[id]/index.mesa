@@ -8,7 +8,7 @@ title: App
   //
   // The mock has seven tabs (http, configs, deploy, build, logs, log-analysis,
   // advanced). Five of them are backed by something real and are here. The
-  // other three are named at the bottom of this file as gaps rather than
+  // other two are named at the bottom of this file as gaps rather than
   // rendered as empty boxes — a tab that always says "no data" reads as a
   // broken screen, not as an honest one.
   //
@@ -24,6 +24,7 @@ title: App
   import { session } from '../../../lib/session.js'
   import { at, ago } from '../../../lib/datetime.js'
   import { shortSha } from '../../../lib/displays.js'
+  import { formatBytes } from '@frontierjs/toolbelt/units'
 
   import NavIcon from '../../../components/NavIcon.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
@@ -215,6 +216,60 @@ title: App
       logsBusy = false
     }
   }
+
+  // ─── Traffic ────────────────────────────────────────────────────────────
+  // The machine counts its Caddy access log for this app when asked, the same
+  // on-demand read as the log above (IDEAS/traffic-analysis.md). An answer with
+  // `unavailable` is a reason, never an empty report.
+  let traffic       = null
+  let trafficBusy   = false
+  let trafficWindow = 'day'
+
+  // No real-time: the machine re-parses on every read (FJS-D764), so a
+  // refresh is the catch-up. `all` is as deep as Caddy's roll, never deeper.
+  const TRAFFIC_WINDOWS = [
+    { id: 'day',  label: '24 hours',        ms: 86_400_000 },
+    { id: 'week', label: '7 days',          ms: 7 * 86_400_000 },
+    { id: 'all',  label: 'Everything kept', ms: null },
+  ]
+
+  async function loadTraffic(windowId = trafficWindow) {
+    error = null; trafficBusy = true; trafficWindow = windowId
+    const { ms } = TRAFFIC_WINDOWS.find(w => w.id === windowId)
+    try {
+      traffic = await apps.service.invoke('analytics', app.id,
+        ms == null ? {} : { from: new Date(Date.now() - ms).toISOString() })
+    } catch (e) {
+      error   = e.message
+      traffic = null
+    } finally {
+      trafficBusy = false
+    }
+  }
+
+  const TRAFFIC_NONE = {
+    'unplaced':        'Not on a machine',
+    'stub':            'No machine was asked',
+    'no-access-log':   'No access log',
+    'outpost-too-old': 'Outpost too old',
+  }
+  const statusTone = (code) => code >= 500 ? 'danger' : code >= 400 ? 'warning' : code >= 300 ? 'info' : 'success'
+  const TRAFFIC_ERROR_COLUMNS = [
+    { name: 'path',     label: 'Path' },
+    { name: 'status',   label: 'Status' },
+    { name: 'requests', label: 'Requests' },
+  ]
+  const TRAFFIC_PATH_COLUMNS = [
+    { name: 'path',     label: 'Path' },
+    { name: 'requests', label: 'Requests' },
+    { name: 'bytes',    label: 'Sent' },
+  ]
+  const TRAFFIC_DURATION_COLUMNS = [
+    { name: 'path',     label: 'Path' },
+    { name: 'meanMs',   label: 'Mean' },
+    { name: 'maxMs',    label: 'Slowest' },
+    { name: 'requests', label: 'Requests' },
+  ]
 
   // A followed log keeps its newest lines; an afternoon of a chatty container
   // would otherwise be re-parsed whole on every flush.
@@ -641,7 +696,7 @@ title: App
   }
 
   // Only the tabs with something behind them. See the note at the foot.
-  const TABS = ['overview', 'domains', 'source', 'config', 'releases', 'logs']
+  const TABS = ['overview', 'domains', 'source', 'config', 'releases', 'logs', 'log-analysis']
   if (!TABS.includes(tab)) tab = 'overview'
   const APP_RELEASES_COLUMNS = [
     { name: 'queued',  label: 'Queued' },
@@ -1268,18 +1323,113 @@ title: App
       </EmptyState>
     {/if}
   {/if}
+
+  {#if tab === 'log-analysis'}
+    <Card>
+      <h2 class="h4">Traffic</h2>
+      <p class="text-sm text-muted">
+        Counted on the machine from Caddy's access log for this app's hostnames, when you ask.
+        Nothing is stored here. A client IP is an address, not a person.
+      </p>
+      <div class="cluster" id="app-traffic-controls">
+        {#each TRAFFIC_WINDOWS as w (w.id)}
+          <Button treatment={trafficWindow === w.id ? 'outlined' : 'ghost'} aria-pressed={trafficWindow === w.id ? 'true' : 'false'}
+                  disabled={trafficBusy} onclick={() => loadTraffic(w.id)} id={`app-traffic-window-${w.id}`}>{w.label}</Button>
+        {/each}
+        <Button onclick={() => loadTraffic()} disabled={trafficBusy} id="app-traffic-load">
+          {trafficBusy ? 'Counting…' : traffic ? 'Refresh' : 'Count traffic'}
+        </Button>
+      </div>
+      {#if traffic && !traffic.unavailable}
+        <!-- Caddy's roll is the retention: a window wider than this reads as
+             history the machine never had. -->
+        <p class="text-sm text-muted" id="app-traffic-depth">
+          {#if traffic.keptSince}
+            The log on this machine reaches back to {at(traffic.keptSince)} ({ago(traffic.keptSince)}); Caddy's roll drops anything older, and nothing else keeps it.
+          {:else}
+            How far back the log reaches is unknown: its oldest file could not be read.
+          {/if}
+        </p>
+      {/if}
+    </Card>
+
+    {#if traffic && traffic.unavailable}
+      <EmptyState title={TRAFFIC_NONE[traffic.unavailable] ?? 'No traffic to count'} id="app-traffic-none">{traffic.reason}</EmptyState>
+    {:else if traffic && !traffic.hosts.length}
+      <EmptyState title="No requests in the window" id="app-traffic-empty">
+        The access log is there and holds no request in the range asked for.
+      </EmptyState>
+    {:else if traffic}
+      {#if traffic.truncated}
+        <Callout tone="warning" id="app-traffic-truncated">
+          The machine stopped at its line limit, so this covers {at(traffic.oldest)} onward rather than the whole window.
+        </Callout>
+      {/if}
+      {#each traffic.hosts as h (h.host)}
+        <Card id={`app-traffic-${h.host}`}>
+          <h3 class="h5">{h.host}</h3>
+          <p class="text-sm" id={`app-traffic-${h.host}-totals`}>
+            {h.requests} requests · {formatBytes(h.bytes)} sent · Distinct client IPs: {h.clientIps}
+          </p>
+          <div class="cluster">
+            {#each h.status as s (s.status)}
+              <Pill tone={statusTone(s.status)}>{s.status} × {s.requests}</Pill>
+            {/each}
+          </div>
+
+          <!-- First, because it is the panel that turns into a ticket. -->
+          <h4 class="h6">4xx and 5xx by path</h4>
+          {#if h.errors.length}
+            <Table columns={TRAFFIC_ERROR_COLUMNS} rows={h.errors} striped>
+              {#snippet row(e)}
+                <tr>
+                  <td><code>{e.path}</code></td>
+                  <td><Pill tone={statusTone(e.status)}>{e.status}</Pill></td>
+                  <td>{e.requests}</td>
+                </tr>
+              {/snippet}
+            </Table>
+          {:else}
+            <p class="text-sm text-muted">No 4xx or 5xx answers.</p>
+          {/if}
+
+          <h4 class="h6">Top paths</h4>
+          <Table columns={TRAFFIC_PATH_COLUMNS} rows={h.paths} striped>
+            {#snippet row(p)}
+              <tr>
+                <td><code>{p.path}</code></td>
+                <td>{p.requests}</td>
+                <td class="text-sm text-muted">{formatBytes(p.bytes)}</td>
+              </tr>
+            {/snippet}
+          </Table>
+
+          <h4 class="h6">Slowest paths</h4>
+          <Table columns={TRAFFIC_DURATION_COLUMNS} rows={h.durations} striped>
+            {#snippet row(d)}
+              <tr>
+                <td><code>{d.path}</code></td>
+                <td>{d.meanMs} ms</td>
+                <td class="text-sm text-muted">{d.maxMs} ms</td>
+                <td class="text-sm text-muted">{d.requests}</td>
+              </tr>
+            {/snippet}
+          </Table>
+        </Card>
+      {/each}
+      {#if traffic.skipped}
+        <p class="text-sm text-muted" id="app-traffic-skipped">{traffic.skipped} lines in the log were not requests and were not counted.</p>
+      {/if}
+    {/if}
+  {/if}
 {:else}
   <NoRecord error={loadError} noun="App" onretry={load}
             backHref="/projects/" backLabel="Back to projects" />
 {/if}
 
 <!--
-  The mock's other three tabs, and why they are not here:
+  The mock's other two tabs, and why they are not here:
 
-    log-analysis — nothing STORES a log line, so there is nothing to analyze.
-      The `logs` tab reads the container's own log on demand through the
-      Outpost; retention, search across apps and anything resembling a query
-      are an observability adapter (docs/SCREENS.md § D), not a screen.
     build — build output and history need a build record; `Deployment` carries
       `builtImage` and no log, so "Build history" would be the releases table
       under a second name.

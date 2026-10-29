@@ -212,6 +212,9 @@ const child = spawn(process.execPath, [entry], {
     // Each App's clone key; the machine's default is under /var/lib, which a
     // laptop's user cannot write.
     OUTPOST_DEPLOY_KEY_DIR: join(HOME, 'deploy-keys'),
+    // Each App's data, bind-mounted at its volumePath; the machine's default
+    // is under /var/lib, which a laptop's user cannot write.
+    OUTPOST_APPS_DIR:    join(HOME, 'apps'),
   },
 })
 

@@ -64,6 +64,8 @@ export type ServerEventKind = 'created' | 'removed' | 'reboot_requested' | 'drai
 
 export type ProviderKind = 'custom' | 'hetzner' | 'digitalocean' | 'cloudflare' | 'github'
 
+export type ComputeProvider = 'custom' | 'hetzner' | 'digitalocean'
+
 export type RegisterMethod = 'imported' | 'provisioned'
 
 export type CertKind = 'acme' | 'origin_ca' | 'uploaded'
@@ -128,6 +130,8 @@ export type NotificationContext = 'Deployment' | 'AlertEvent' | 'JobRun' | 'Serv
 
 export type NotificationKind = 'DeploySuccess' | 'DeployFailed' | 'AlertFiring' | 'AlertResolved' | 'ServerUnreachable' | 'MonitorDown' | 'MonitorUp' | 'PostureFailed' | 'HubPostureFailed' | 'DependencyVulnerable' | 'MemberJoined' | 'JobFailed' | 'WeeklyDigest' | 'ReplicaFound'
 
+export type VolumeKind = 'volume' | 'bind'
+
 export type EditorRole = 'edit' | 'publish'
 
 export type Capability = 'Environment.create' | 'Environment.delete' | 'Environment.update' | 'Server.create' | 'Server.delete' | 'Server.destroy' | 'Server.drain' | 'Server.provision' | 'Server.reboot' | 'Server.undrain' | 'Server.update' | 'Variable.create' | 'Variable.delete' | 'Variable.update'
@@ -182,6 +186,15 @@ export interface WorkspaceMemberAdd {
 export interface WorkspaceMemberRole {
   userId: string
   role: WorkspaceRole
+}
+
+/**
+ * One package a patch `MaintenanceRun` moved.
+ */
+export interface PackageUpgrade {
+  package: string
+  from: string
+  to: string
 }
 
 /**
@@ -2156,9 +2169,9 @@ export interface Secret {
    * decrypting every secret in the workspace to answer. Here it filters, it
    * indexes, and it reaches a picker as a set.
    * 
-   * It reuses `ProviderKind` rather than growing a second vendor vocabulary on
-   * `SecretKind`. Two enums listing clouds is two lists to keep in step, and
-   * the one that drifts is the one nothing reads.
+   * It is `ProviderKind`, the whole vendor catalogue, rather than a second
+   * vendor vocabulary on `SecretKind`: a key names a vendor whatever role it
+   * plays. `Server.providerKind` narrows it to `ComputeProvider` (FJS-D1607).
    */
   providerKind?: ProviderKind | null
   /** @version */
@@ -2185,9 +2198,9 @@ export interface SecretCreate {
    * decrypting every secret in the workspace to answer. Here it filters, it
    * indexes, and it reaches a picker as a set.
    * 
-   * It reuses `ProviderKind` rather than growing a second vendor vocabulary on
-   * `SecretKind`. Two enums listing clouds is two lists to keep in step, and
-   * the one that drifts is the one nothing reads.
+   * It is `ProviderKind`, the whole vendor catalogue, rather than a second
+   * vendor vocabulary on `SecretKind`: a key names a vendor whatever role it
+   * plays. `Server.providerKind` narrows it to `ComputeProvider` (FJS-D1607).
    */
   providerKind?: ProviderKind | null
 }
@@ -2326,7 +2339,7 @@ export interface Server {
   slug: string
   status: ServerStatus
   role: ServerRole
-  providerKind: ProviderKind
+  providerKind: ComputeProvider
   providerId?: string | null
   providerServerId?: string | null
   registerMethod: RegisterMethod
@@ -2399,7 +2412,7 @@ export interface ServerCreate {
   slug: string
   status?: ServerStatus
   role?: ServerRole
-  providerKind?: ProviderKind
+  providerKind?: ComputeProvider
   providerId?: string | null
   providerServerId?: string | null
   registerMethod?: RegisterMethod
@@ -2468,7 +2481,7 @@ export interface ServerUpdate {
   slug?: string
   status?: ServerStatus
   role?: ServerRole
-  providerKind?: ProviderKind
+  providerKind?: ComputeProvider
   providerId?: string | null
   providerServerId?: string | null
   registerMethod?: RegisterMethod
@@ -2499,7 +2512,7 @@ export interface ServerWhere extends WhereBase {
   slug?: string | WhereOp<string> | null
   status?: ServerStatus | WhereOp<ServerStatus> | null
   role?: ServerRole | WhereOp<ServerRole> | null
-  providerKind?: ProviderKind | WhereOp<ProviderKind> | null
+  providerKind?: ComputeProvider | WhereOp<ComputeProvider> | null
   providerId?: string | WhereOp<string> | null
   providerServerId?: string | WhereOp<string> | null
   registerMethod?: RegisterMethod | WhereOp<RegisterMethod> | null
@@ -2627,6 +2640,7 @@ export interface Volume {
   id: string
   serverId: string
   name: string
+  kind: VolumeKind
   driver: string
   mountPoint?: string | null
   sizeBytes: number
@@ -2641,6 +2655,7 @@ export interface VolumeCreate {
   id?: string
   serverId: string
   name: string
+  kind?: VolumeKind
   driver?: string
   mountPoint?: string | null
   sizeBytes?: number
@@ -2655,6 +2670,7 @@ export interface VolumeUpdate {
   id?: string
   serverId?: string
   name?: string
+  kind?: VolumeKind
   driver?: string
   mountPoint?: string | null
   sizeBytes?: number
@@ -2669,6 +2685,7 @@ export interface VolumeWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   serverId?: string | WhereOp<string> | null
   name?: string | WhereOp<string> | null
+  kind?: VolumeKind | WhereOp<VolumeKind> | null
   driver?: string | WhereOp<string> | null
   mountPoint?: string | WhereOp<string> | null
   sizeBytes?: number | WhereOp<number> | null
@@ -4260,7 +4277,7 @@ export interface MaintenanceRun {
   keepImages: number
   requestedBy?: string | null
   freedBytes: number
-  upgrades: unknown
+  upgrades: PackageUpgrade[]
   detail: unknown
   error?: string | null
   startedAt?: string | null
@@ -4278,7 +4295,7 @@ export interface MaintenanceRunCreate {
   keepImages?: number
   requestedBy?: string | null
   freedBytes?: number
-  upgrades?: unknown
+  upgrades?: PackageUpgrade[]
   detail?: unknown
   error?: string | null
   startedAt?: string | Date | null
@@ -4295,7 +4312,7 @@ export interface MaintenanceRunUpdate {
   keepImages?: number
   requestedBy?: string | null
   freedBytes?: number
-  upgrades?: unknown
+  upgrades?: PackageUpgrade[]
   detail?: unknown
   error?: string | null
   startedAt?: string | Date | null
@@ -4312,7 +4329,7 @@ export interface MaintenanceRunWhere extends WhereBase {
   keepImages?: number | WhereOp<number> | null
   requestedBy?: string | WhereOp<string> | null
   freedBytes?: number | WhereOp<number> | null
-  upgrades?: unknown | WhereOp<unknown> | null
+  upgrades?: PackageUpgrade[] | WhereOp<PackageUpgrade[]> | null
   detail?: unknown | WhereOp<unknown> | null
   error?: string | WhereOp<string> | null
   startedAt?: string | Date | WhereOp<string | Date> | null
@@ -5979,7 +5996,7 @@ export interface NotificationPreferenceRelations {
  */
 export interface FleetByProvider {
   workspaceId: string
-  providerKind: string
+  providerKind: ComputeProvider
   region: string
   servers: number
   vcpu: number
@@ -5988,7 +6005,7 @@ export interface FleetByProvider {
 
 export interface FleetByProviderWhere extends WhereBase {
   workspaceId?: string | WhereOp<string> | null
-  providerKind?: string | WhereOp<string> | null
+  providerKind?: ComputeProvider | WhereOp<ComputeProvider> | null
   region?: string | WhereOp<string> | null
   servers?: number | WhereOp<number> | null
   vcpu?: number | WhereOp<number> | null
@@ -6093,6 +6110,7 @@ export interface SeedTypes {
   FlagChange: FlagChange
   WorkspaceMemberAdd: WorkspaceMemberAdd
   WorkspaceMemberRole: WorkspaceMemberRole
+  PackageUpgrade: PackageUpgrade
   TileAdd: TileAdd
   TileUpdate: TileUpdate
   TileRemove: TileRemove

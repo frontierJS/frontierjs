@@ -233,8 +233,18 @@ async function applyPlan({ origin, key, app, plan }) {
     if (found && found.appId !== owner.id)
       throw new Error(`${plan.domain.hostname} is already a Domain of another App (${found.appId}) — move it in Basecamp, or pass a different --domain`)
     const domain = found ?? await basecamp(origin, key, '/domains', { method: 'POST', body: { appId: owner.id, hostname: plan.domain.hostname } })
-    for (const pathPrefix of plan.domain.routes)
-      await basecamp(origin, key, '/domainRoutes', { method: 'POST', body: { domainId: domain.id, pathPrefix, appId: app.id } })
+    // A prefix already routed elsewhere is a hand edit, and a reconcile never
+    // overwrites one (`FJS-D1599`). Basecamp stores a prefix lowercased with
+    // no trailing slash, so the plan's is compared in that form.
+    const norm   = (p) => String(p).trim().toLowerCase().replace(/\/+$/, '')
+    const routed = new Map((await basecamp(origin, key, `/domainRoutes?domainId=${encodeURIComponent(domain.id)}&$limit=200`))
+      .filter(r => r.domainId === domain.id).map(r => [norm(r.pathPrefix), r]))
+    for (const pathPrefix of plan.domain.routes) {
+      const have = routed.get(norm(pathPrefix))
+      if (have && have.appId !== app.id)
+        throw new Error(`${plan.domain.hostname}${pathPrefix} already routes to another App (${have.appId}) — change it in Basecamp, or remove the route`)
+      if (!have) await basecamp(origin, key, '/domainRoutes', { method: 'POST', body: { domainId: domain.id, pathPrefix, appId: app.id } })
+    }
   }
   return { web }
 }

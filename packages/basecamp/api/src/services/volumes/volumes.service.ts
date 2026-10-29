@@ -51,6 +51,7 @@ import { keyScope } from '../../domain/api-key/scopes.ts'
 
 interface ReportedVolume {
   name:        string
+  kind?:       'volume' | 'bind'
   driver?:     string
   mountpoint?: string
   size_bytes?: number
@@ -83,6 +84,30 @@ async function serversOf(): Promise<Map<string, string>> {
     limit:  500,
   })
   return new Map(rows.map((s: { id: string; name: string }) => [s.id, s.name]))
+}
+
+/** The App a `bind` row holds the data of: its name is `<apps>/<app id>/data`. */
+const appOfBind = (name: string) => /\/([^/]+)\/data$/.exec(name)?.[1] ?? null
+
+/**
+ * The ids of `bind` rows whose App is still placed on that server (`FJS-D1615`).
+ *
+ * A stopped App mounts nothing, so `inUse` is false — and removing its
+ * directory is deleting its database before the next start.
+ */
+async function placedData(volumes: Record<string, unknown>[]): Promise<Set<string>> {
+  const binds = volumes.filter(v => v.kind === 'bind' && appOfBind(v.name as string))
+  if (!binds.length) return new Set()
+  const placements = await sys().appServer.findMany({
+    where:  { serverId: { in: [...new Set(binds.map(v => v.serverId))] },
+              appId:    { in: binds.map(v => appOfBind(v.name as string)) } },
+    select: { appId: true, serverId: true },
+    limit:  1_000,
+  })
+  const placed = new Set(placements.map((p: { appId: string; serverId: string }) => `${p.serverId}:${p.appId}`))
+  return new Set(binds
+    .filter(v => placed.has(`${v.serverId}:${appOfBind(v.name as string)}`))
+    .map(v => v.id as string))
 }
 
 /** One volume inside the caller's fleet, or 404. */
@@ -273,6 +298,7 @@ export default createService({
     for (const reported of data.volumes) {
       if (!reported?.name) continue
       const row = {
+        kind:       reported.kind === 'bind' ? 'bind' : 'volume',
         driver:     reported.driver     ?? 'local',
         mountPoint: reported.mountpoint ?? null,
         sizeBytes:  Math.max(0, Math.round(reported.size_bytes ?? 0)),
@@ -324,6 +350,8 @@ export default createService({
         ' — stop the container first'
       )
     }
+    if ((await placedData([volume])).size)
+      throw new Conflict(`'${name}' is the data of an App still placed on '${server}' — remove the App first`)
 
     const target = await outpostFor(volume.serverId as string, server)
     const res    = await $.app.conduit.send({
@@ -357,14 +385,16 @@ export default createService({
     const serverId = ($.data as { serverId?: string } | null)?.serverId
     if (serverId && !fleet.has(serverId)) throw new NotFound(`Server '${serverId}' not found`)
 
-    const unused = await db().volume.findMany({
+    const idle = await db().volume.findMany({
       where: { serverId: { in: serverId ? [serverId] : [...fleet.keys()] }, inUse: false },
       limit: 1_000,
-    })
-    if (!unused.length) throw new BadRequest('Nothing to prune — every volume is in use')
+    }) as Record<string, unknown>[]
+    const placed = await placedData(idle)
+    const unused = idle.filter(v => !placed.has(v.id as string))
+    if (!unused.length) throw new BadRequest('Nothing to prune — every volume is in use or the data of a placed App')
 
     const byServer = new Map<string, Record<string, unknown>[]>()
-    for (const v of unused as Record<string, unknown>[]) {
+    for (const v of unused) {
       const key = v.serverId as string
       byServer.set(key, [...(byServer.get(key) ?? []), v])
     }

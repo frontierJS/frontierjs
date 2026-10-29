@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-73 model(s) · 53 enum(s) · 2 database(s)
+73 model(s) · 55 enum(s) · 2 database(s)
 audit → sqlite · main → sqlite
 ```
 
@@ -33,6 +33,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `CertKind` | `acme` · `origin_ca` · `uploaded` |
 | `ChannelKind` | `chat` · `email` · `pagerduty` · `slack` · `webhook` |
 | `ComparisonOp` | `gt` · `gte` · `lt` · `lte` |
+| `ComputeProvider` | `custom` · `digitalocean` · `hetzner` |
 | `DependencyKind` | `dependency` · `dev` · `optional` · `peer` |
 | `DeployStatus` | `building` · `cancelled` · `failed` · `pending` · `rolled_back` · `success` |
 | `DeployTrigger` | `button` · `freeze` · `laptop` · `publish` · `push` · `rebind` · `rollback` |
@@ -70,6 +71,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `UserKind` | `bot` · `peer` · `user` |
 | `UserStatus` | `active` · `pending_verification` · `suspended` |
 | `VerificationPurpose` | `emailChange` · `emailVerify` · `magicLink` · `oauthLink` · `passwordReset` · `registration` |
+| `VolumeKind` | `bind` · `volume` |
 | `WorkspaceRole` | `admin` · `billing` · `developer` · `owner` · `viewer` |
 | `WorkspaceStatus` | `active` · `suspended` |
 | `WorkspaceType` | `demo` · `enterprise` · `personal` · `team` |
@@ -1978,7 +1980,7 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 | `outpostVersion` | `String` | yes | — | — |
 | `plan` | `Json` | no | `'{}'` | — |
 | `providerId` | `String` | yes | — | — |
-| `providerKind` | `ProviderKind` | no | `'custom'` | — |
+| `providerKind` | `ComputeProvider` | no | `'custom'` | — |
 | `providerServerId` | `String` | yes | — | — |
 | `region` | `String` | no | `'custom'` | — |
 | `registerMethod` | `RegisterMethod` | no | `'imported'` | — |
@@ -2000,8 +2002,6 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 @@index(lastHeartbeatAt)
 @@index(status)
 @@index(workspaceId)
-@@check(providerKind != 'cloudflare')
-@@check(providerKind != 'github')
 @@deny(create, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
 @@deny(delete, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
 @@deny(postUpdate, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
@@ -2231,6 +2231,7 @@ table `volume` · db `main` · gate `2.5.5.5`
 | `driver` | `String` | no | `'local'` | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `inUse` | `Boolean` | no | `0` | — |
+| `kind` | `VolumeKind` | no | `'volume'` | — |
 | `lastSeenAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `mountPoint` | `String` | yes | — | — |
 | `name` | `String` | no | — | **required on write** |

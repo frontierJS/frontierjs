@@ -150,8 +150,33 @@ boolean, and nobody checks a pasted token's scopes.
     one hour and can be narrowed to named repositories
     ([docs](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app-installation)).
     `FJS-D1571` ruled a fine-grained token over an App for git-deploy, so
-    this is the road not taken there, not a contradiction.
-  - **Hetzner, DigitalOcean, Backblaze B2** are unchecked (0.4).
+    this is the road not taken there, not a contradiction. A fine-grained
+    PAT lives up to a year or forever and is revoked by hand
+    ([credential types](https://docs.github.com/en/organizations/managing-programmatic-access-to-your-organization/github-credential-types)),
+    so the App is the only GitHub shape that leases.
+  - **fnox `exec`** is the dev-CLI shape: `fnox exec -- cmd` mints the child
+    and sets `CLOUDFLARE_API_TOKEN` in the child process only; the parent
+    never enters the command's environment
+    ([leases guide](https://fnox.jdx.dev/guide/leases.html)). Its docs say a
+    lease does not remove the need to guard the identity that mints, which
+    here is the parent Secret. A second read of the same page gave the
+    default TTL as 15 minutes rather than the 24-hour maximum; 0.4 reads the
+    default off the backend rather than trusting either.
+  - **1Password `op run`** resolves `op://vault/item/field` references from
+    an env file into the child process only, and warns that same-user
+    processes can still read that environment
+    ([secret references](https://developer.1password.com/docs/cli/secret-references)).
+    This is the shape for `~/.config/fli/env` (4.3): references on disk,
+    values only in the running step.
+  - **Pulumi ESC and Tailscale** exchange a platform's OIDC identity for a
+    short-lived vendor token with no stored secret at all
+    ([ESC](https://pulumi.com/docs/esc/get-started/use-short-term-credentials),
+    [Tailscale](https://tailscale.com/docs/features/workload-identity-federation)).
+    Out of reach here: none of the five vendors accepts a Basecamp
+    identity, and it is noted so nobody re-researches it.
+  - **Hetzner, DigitalOcean, Backblaze B2** are unchecked (0.4). Assumed
+    unable to mint until probed.
+  - **Not read:** Doppler, Infisical, `aws-vault`.
 
 **What the rulings make of it.**
 
@@ -187,6 +212,17 @@ boolean, and nobody checks a pasted token's scopes.
   parent per vendor, held as a Secret, with a lease minting the
   verify-and-work token. Whether that earns a noun is Q5; until then the
   screen asks for the token it asks for today.
+- **fnox is three parts, and two already have a home.** Its vault is
+  `Secret` (`@encrypted data`, `kind`, `verifiedAt`). Its `exec` is `fli`
+  running a deploy step as a child process with `~/.config/fli/env` in its
+  environment, which today holds long-lived values in plaintext, and a stale
+  `GITHUB_TOKEN` there has already broken `gh` under `fli`. Its lease is the
+  gap, and FJS can place it better than fnox does: fnox mints on the dev
+  box, which has to hold the parent, where Basecamp can mint server-side and
+  hand the child down, so the dev box never sees the parent. The binary is
+  not adopted; `fli` is the exec wrapper already, and only two of five
+  vendors overlap fnox's backends. The pattern lands as Phase 4 once Q5 is
+  ruled.
 - **A failed re-probe keeps its reason.** Stripe's re-due item carries a
   reason, and ours should too: a re-probe that fails clears `verifiedAt` and
   keeps the vendor's refusal as evidence (1.1, 2.1). There is no fourth
@@ -287,6 +323,47 @@ against stand-ins for each vendor.
 - [ ] 3.3 A workspace that is not ready shows a banner on the dashboard
   linking here; a ready one does not.
 
+## Phase 4 — A short-lived child does the work
+
+Goal: for a vendor that can mint, the pasted token is held once and never
+used directly; every probe, drive and deploy step takes a child that expires.
+Waits on Q5 and on 0.4's per-vendor answer; nothing here starts before both.
+Done when: a Cloudflare deploy step runs with a child token that
+`/user/tokens/verify` later refuses, and the parent appears in no process
+environment and no log.
+
+- [ ] 4.1 The Cloudflare account connector grows `mint` — the word Basecamp
+  already uses for a short-lived child derived from a held parent
+  (`mintDeployKey`, `mintUpload`, `mintDownload`): `({ ttl, scopes }) →
+  child`,
+  with `ttl` capped at the vendor maximum and defaulting to 15 minutes, and
+  `scopes` defaulting to the connector's own list from 1.3 minus token
+  management. The child is returned, never stored; the mint is one audit
+  entry with the value `[redacted]` (Invariant 7). The parent Secret carries
+  *Account API Tokens Write* and nothing a child needs, so a leaked child
+  cannot mint. A connector that cannot mint has no verb, and a caller asks
+  `connector.leases` before reaching for it, so a vendor that cannot is
+  never silently handed the parent. `AccountConnector`'s pick grows to
+  `'verify' | 'mint'`; no `/secrets/mint` route beside `verify`.
+- [ ] 4.2 `secrets.verify` and 0.2's scope read take a child where the
+  connector leases, and the parent is probed only for *can it mint*. The
+  probe that 0.2 wanted throwaway tokens for becomes mint, read, expire.
+- [ ] 4.3 `~/.config/fli/env` holds references, not values: a line such as
+  `CLOUDFLARE_API_TOKEN=basecamp://<workspace>/secret/<name>` that `fli`
+  resolves at step start by asking Basecamp for a child, which enters the
+  step's environment only. A plain value still works and is reported by
+  `fli doctor` as long-lived. One resolver, in `fli`, beside the env loader;
+  the scheme name runs `decision-rules`. Fixes the stale-token class of
+  failure as a side effect, since a reference cannot go stale. A reference
+  that fails to resolve REFUSES the step with the vendor's or Basecamp's
+  reason; it never falls through to an empty variable.
+- [ ] 4.4 GitHub via an installation token is the second vendor only if
+  `FJS-D1571` (fine-grained PAT over an App for git-deploy) is reopened; a
+  PAT cannot lease. Filed as the question it is rather than built around.
+- [ ] 4.5 Hetzner, DigitalOcean and B2 stay long-lived keys: encrypted,
+  verified on 2.2's schedule, scope-checked per 1.2. The screen says
+  *long-lived* beside them so the difference is visible, not hidden.
+
 ## Open questions
 
 - ~~**Q1 — The shape of the experience.**~~ **Answered 2026-10-28 (`FJS-D1578`): A — one checklist page; each step expands in place to why, link, scopes, paste and Verify; the next open step opens itself. Evolves `/onboarding` and keeps its no-done-column ruling.**
@@ -329,8 +406,21 @@ against stand-ins for each vendor.
     verify, drives and the dev workflow take a child that expires.
   - **C** — a lease for development and drives only (the throwaway tokens
     0.2 wants); production keeps the pasted token.
-  - **No recommendation yet** — it hangs on how many of the five vendors
-    can mint; two of five makes a noun for a minority.
+  - **D** — a verb, not a noun: the account connector of a vendor that can
+    mint exposes it, the child is returned and never stored, and the audit
+    trail is the only record. Phase 4 is written to D. A row would outlive
+    its value by months and would be a lie for the three vendors that
+    cannot mint; a verb on two connectors is honest about the minority and
+    cheap to retract. A *Lease* row is coined later only if someone needs
+    *which children are live now*, which the vendor can also answer.
+  - **Recommend D, as `mint`** — agreed in chat 2026-10-28 as the
+    direction; `decision-rules` the same day chose the word: Basecamp
+    already mints three such children, `lease` half-fits (no renew or
+    revoke on our side) and is a fourth house sense. The ruling itself
+    waits on 0.4 saying Cloudflare can, so a verb is not named for a vendor
+    that refuses; when it lands, `mint` enters `VOCABULARY.md` and the
+    open `Secret` row closes in the same edit. The homonym paragraph below
+    is then moot for D and stands only against B.
   - **Homonym to answer first.** *Lease* already means a job row's
     ownership (`packages/caravan/CLAUDE.md`), a hold inside `runInline`
     (`packages/orion/CLAUDE.md`) and the per-request tenant-pool hold, which

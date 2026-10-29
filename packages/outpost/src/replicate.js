@@ -24,14 +24,15 @@ import { spawnRun } from './docker.js'
 import { layout } from './layout.js'
 
 const APP_ID = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
-// A directory target's `*.db` is flat, so a name is a file in the volume's top.
+// A directory target's `*.db` is flat, so a name is a file in the data's top.
 const DB_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\.db$/
-const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/
+/** A UTC instant, `Z` only: a zoneless time would be read in the box's own zone. */
+export const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/
 // A database is minutes of bucket reads at a few GB.
 const RESTORE_TIMEOUT_MS = 3_600_000
-// A database's path names its app: `apply` points every entry at the
-// `fjs-<app>-data` volume's mountpoint.
-const VOLUME_DB = /\/fjs-([a-zA-Z0-9][a-zA-Z0-9._-]*)-data\/_data\//
+// A database's path names its app: `apply` points every entry at
+// `<appsDir>/<app>/data/`.
+const APP_DB = /^([a-zA-Z0-9][a-zA-Z0-9._-]*)\/data\//
 const FIELDS = ['bucket', 'path', 'endpoint', 'region', 'access_key_id', 'secret_access_key']
 
 const toReplica = (r) => ({
@@ -42,7 +43,8 @@ const toReplica = (r) => ({
 export function createReplicator({
   run        = spawnRun,
   configPath = layout().litestreamConfig,
-  // Outside every volume, so a `/backup` tar does not carry `.<db>-litestream`
+  appsDir    = layout().apps,
+  // Outside every app's data, so a `/backup` tar does not carry `.<db>-litestream`
   // and a restore does not hand Litestream a stale position. The unit's
   // StateDirectory, so it exists and is writable under its sandbox.
   metaDir    = layout().litestreamState,
@@ -54,7 +56,7 @@ export function createReplicator({
   statusTimeoutMs = 3_000,
   // `litestreamInstall`'s directory.
   litestream = '/usr/local/bin/litestream',
-  // Where `stage` restores to before the volume is touched. Under the
+  // Where `stage` restores to before the app's data is touched. Under the
   // Outpost's own StateDirectory, which the sandbox lets it write and a snap
   // docker can mount.
   stageDir   = layout().replicaRestore,
@@ -109,7 +111,7 @@ export function createReplicator({
 
   return {
     /** Replace this machine's replica list with `replicas` and restart the
-     *  unit. An app with no volume here yet is answered in `skipped`, not
+     *  unit. An app with no data here yet is answered in `skipped`, not
      *  refused: Litestream will not watch a directory that is not there, and
      *  the other apps' entries are still owed. */
     async apply({ replicas, host = null }) {
@@ -118,10 +120,8 @@ export function createReplicator({
       const targets = []
       const skipped = []
       for (const r of replicas) {
-        const volume = `fjs-${r.app_id}-data`
-        const found  = await run(['docker', 'volume', 'inspect', '--format', '{{.Mountpoint}}', volume])
-        const dir    = found.exitCode === 0 ? found.stdout.trim() : ''
-        if (!dir) { skipped.push({ app_id: r.app_id, reason: `${volume} does not exist on this machine` }); continue }
+        const dir = `${appsDir}/${r.app_id}/data`
+        if (!await stat(dir).then(s => s.isDirectory(), () => false)) { skipped.push({ app_id: r.app_id, reason: `${dir} does not exist on this machine` }); continue }
         targets.push({ dir, pattern: '*.db', metaDir: `${metaDir}/${r.app_id}`, replica: toReplica(r) })
       }
       // `_host` cannot be an app's: APP_ID starts alphanumeric.
@@ -182,9 +182,11 @@ export function createReplicator({
 
       const apps = new Map()
       const hostDir = hostDb ? `${hostDb.replace(/\/+$/, '')}/` : null
+      const appsAt  = `${appsDir.replace(/\/+$/, '')}/`
       for (const d of Array.isArray(body?.databases) ? body.databases : []) {
         const path = String(d?.path ?? '')
-        const key  = hostDir && path.startsWith(hostDir) ? '' : VOLUME_DB.exec(path)?.[1]
+        const key  = hostDir && path.startsWith(hostDir) ? ''
+                   : path.startsWith(appsAt) ? APP_DB.exec(path.slice(appsAt.length))?.[1] : undefined
         if (key === undefined) continue
         const at   = typeof d.last_sync_at === 'string' && Number.isFinite(Date.parse(d.last_sync_at)) ? d.last_sync_at : null
         const prev = apps.get(key)
@@ -204,7 +206,7 @@ export function createReplicator({
 
     /** Each named database restored out of `replica` into a directory of its
      *  own under `stageDir`, at `at` or its latest, each passing Litestream's
-     *  integrity check. Nothing in a volume is touched: `docker.restoreFiles`
+     *  integrity check. No app's data is touched: `docker.restoreFiles`
      *  moves them in, and `unstage` removes the directory either way. The
      *  names are the caller's, read off the bucket: Litestream cannot list a
      *  replica's databases. */
@@ -245,11 +247,11 @@ export function createReplicator({
       if (typeof dir === 'string' && dir.startsWith(`${stageDir}/`)) await rm(dir, { recursive: true, force: true })
     },
 
-    /** After a restore into a replicated volume. Litestream drops a database
+    /** After a restore into a replicated app's data. Litestream drops a database
      *  whose file is replaced under it (`ensure wal exists: disk I/O error`)
      *  and never picks up the new one, so the app would read healthy and
      *  replicate nothing; a restart registers it and snapshots it as the next
-     *  txid. Answered, never thrown: the volume is already restored. */
+     *  txid. Answered, never thrown: the data is already restored. */
     async reregister() {
       if ((await run(['systemctl', 'is-active', '--quiet', unit])).exitCode !== 0) return { replication: 'not running' }
       const restarted = await run(['systemctl', 'restart', unit], { timeoutMs: 60_000 })

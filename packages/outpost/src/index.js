@@ -21,15 +21,19 @@ import { createReplicator }           from './replicate.js'
 const config    = readConfig()
 
 function serveMachine(config) {
-  const docker    = createDocker({ workDir: config.workDir, restoreDir: config.restoreDir, backupDir: config.backupDir, uidFile: config.uidFile, deployKeyDir: config.deployKeyDir })
-  const inspector = createInspector({ hostFiles: config.hostFiles })
-  const replicator = createReplicator({ configPath: config.litestreamConfig, metaDir: config.litestreamMetaDir, litestream: config.litestreamBin, stageDir: config.replicaStageDir, socketPath: config.litestreamSocket, hostDb: config.hostFiles?.db ?? null })
+  const docker    = createDocker({ workDir: config.workDir, appsDir: config.appsDir, restoreDir: config.restoreDir, backupDir: config.backupDir, uidFile: config.uidFile, deployKeyDir: config.deployKeyDir })
+  const inspector = createInspector({ hostFiles: config.hostFiles, appsDir: config.appsDir })
+  const replicator = createReplicator({ configPath: config.litestreamConfig, appsDir: config.appsDir, metaDir: config.litestreamMetaDir, litestream: config.litestreamBin, stageDir: config.replicaStageDir, socketPath: config.litestreamSocket, hostDb: config.hostFiles?.db ?? null })
   const outpost   = createOutpostServer(config, { docker, inspector, replicator })
   const reporter  = createReporter(config, { inspector, replicator })
 
   const server = Bun.serve({
     port:  config.port,
     tls:   { cert: Bun.file(config.tlsCert), key: Bun.file(config.tlsKey) },
+    // Bun resets a request pending 10s by default, and `/deploy` waits up to
+    // 30s for health, `/backup` and a restore up to an hour. Each route bounds
+    // its own wait.
+    idleTimeout: 0,
     fetch: req => outpost.handle(req),
   })
 

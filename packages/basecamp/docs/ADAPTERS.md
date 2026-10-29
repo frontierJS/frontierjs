@@ -111,9 +111,10 @@ row of ours in their billing, so any other join is invented.
 is already the seam a service sends through, so a compute interface here would be a
 second owner of *talk to a vendor*. The plan is `docs/PROVISIONING.md`.
 
-`ProviderKind` is `custom | hetzner` today. A vendor with an adapter should be a
-member of that enum: the column emits a table CHECK, so a value outside the set
-is refused by a migration, a seed and `asSystem()` alike.
+A vendor with a compute adapter is a member of `ComputeProvider` (`Server.providerKind`)
+and of `ProviderKind` (`Secret.providerKind`, every vendor a key opens), `FJS-D1607`.
+Each column emits a table CHECK, so a value outside its set is refused by a
+migration, a seed and `asSystem()` alike.
 
 ### `git` — `IGit`, behind `/git-activity/`
 

@@ -49,7 +49,7 @@ const KINDS: Kind[] = [
     note: 'Comes back stopped. Deploy it to serve it again.' },
   { service: 'domains',      accessor: 'domain',      kind: 'Hostname',    href: r => `/apps/${r.appId}/?tab=domains`, parents: ['app'],
     name: r => r.hostname },
-  { service: 'jobs',         accessor: 'job',         kind: 'Job',         href: r => `/jobs/${r.id}/`, parents: ['app', 'environment'],
+  { service: 'jobs',         accessor: 'job',         kind: 'Job',         href: r => `/jobs/${r.id}/`, parents: ['app'],
     note: 'Comes back cancelled.' },
   { service: 'servers',      accessor: 'server',      kind: 'Server',      href: r => `/servers/${r.id}/` },
   { service: 'networks',     accessor: 'network',     kind: 'Network',     href: () => '/networks/' },

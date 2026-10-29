@@ -529,3 +529,16 @@ test('an ordering against a @default(now()) column is read with the env clock, n
     expect(ms(made.clockOutAt)).toBeGreaterThan(ms(made.clockInAt))
   } finally { await env.cleanup?.() }
 })
+
+// ─── a Json @default ───────────────────────────────────────────────────
+
+describe('generateFactory reads a Json @default as JSON, not as its text', () => {
+  test('a typed list defaulting to [] gets a list, which its @type accepts', () => {
+    const r = row(`type U { name String }\nmodel T { id Int @id; items Json @type(U[]) @default("[]") }`)
+    expect(r.items).toEqual([])
+  })
+
+  test('an untyped object default is the object', () => {
+    expect(row(`model T { id Int @id; meta Json @default("{}") }`).meta).toEqual({})
+  })
+})

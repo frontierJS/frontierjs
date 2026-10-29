@@ -10,7 +10,7 @@
 // matcher expands: a wildcard or a brace in a prefix would match more than the
 // person who wrote it meant.
 
-import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws } from '../../core/resource.ts'
 import domainDns from '../../jobs/domain-dns.job.ts'
@@ -51,9 +51,8 @@ export default createService({
 
   async find() {
     const { limit, offset } = getPagination()
-    const domainId = $.query.domainId as string | undefined
     return findScoped('domainRoute', {
-      where:   { ...(domainId ? { domainId } : {}) },
+      where:   parseWhere($.query),
       orderBy: { pathPrefix: 'asc' },
       limit, offset,
     })

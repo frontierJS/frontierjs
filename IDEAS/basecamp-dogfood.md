@@ -38,8 +38,8 @@ Done when: `fli db:check`, `fli db:types`, the seed and `packages/basecamp/db/te
 - [x] 1.1 `User` per `FJS-D1198`: `UserKind { user bot peer }`, `kind @system @immutable`, drop `role` and `scopes`; `/hub/users` count loses its `ai` bucket
 - [ ] 1.2 Hub as App (`FJS-D1603`): `HubConfig.appId` relation, drop `hostServerId`; `App.isHub`-free — the pointer is the flag
 - [ ] 1.3 `Backup` → `AppBackup` (`FJS-D1606`): drop `Backup`, drop the five restated columns on `HubConfig`, align `BackupKind`/`DrillKind`
-- [ ] 1.4 `ProviderKind` split (`FJS-D1607`): `ComputeProvider` on `Server`, the two `@@check`s go, `fleetByProvider` view re-reads
-- [ ] 1.5 The ruled-and-unbuilt six, as one pass (Q9): demo workspace `FJS-D1537`, `MaintenanceRun` `FJS-D825`, `readAt @scoped` `FJS-D1238`, `Secret.verifiedAt`, `Domain.certKind` enum, `DashboardTile` `FJS-1896`
+- [x] 1.4 `ProviderKind` split (`FJS-D1607`): `ComputeProvider` on `Server`, the two `@@check`s go, `fleetByProvider.providerKind` typed `ComputeProvider`
+- [x] 1.5 The ruled-and-unbuilt six, as one pass (Q9): demo workspace `FJS-D1537`, `MaintenanceRun` `FJS-D825`, ~~`readAt @scoped` `FJS-D1238`~~ (no column: notice acknowledgements stay in `web/src/lib/dismissals.js`, localStorage), `Secret.verifiedAt` + `verifyError` (`IDEAS/workspace-onboarding.md` 1.1, schema half; the refusal-clears rule and its test row stay there), `Domain.certKind` enum (landed in 1.6), `DashboardTile` `FJS-1896`
 - [x] 1.6 Q10: `Invitation.token @hashed`; drop `Deployment.environmentId` and `Job.environmentId`; `Workspace.ownerId` relation; the Strings → enums list in `FJS-D1611` (values under it; `Account.status` moves to 1.7)
 - [x] 1.7 Q1's answer (`FJS-D1618`): `Account` finished — `AccountStatus { active suspended }`, default `active`; the false *auth owns this* comment goes
 - [ ] 1.8 Rewrite `initial_schema.sql` in place for the last time; `db:check`, `db:types`, seed, `db/test` green; `app.snapshot.md` regenerated

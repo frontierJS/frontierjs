@@ -56,8 +56,31 @@ including the iOS relay).
 
 ## The design — known topics, an `ntfy()` driver under `push`
 
-**One POST per critical event to `<workspace-slug>-critical`. The toggle is the
-env pair that registers the driver.** Ruled Q1–Q4 on 2026-10-28.
+**One POST per critical event to `<workspace-slug>-critical-<suffix>`. The
+driver is always registered; which server it speaks to is a ladder resolved
+once at boot.** Ruled Q1–Q4 on 2026-10-28; Q4 amended the same day to the
+ladder.
+
+The ladder, one owner (`api/src/push.ts`), read at boot and named by the hub
+posture row:
+
+1. `NTFY_BASE_URL` (+ `NTFY_TOKEN`) set → that server — the operator's own,
+   or `https://ntfy.sh` typed in.
+2. Else the hub's own `ntfy` App row from the blueprint, healthy → its
+   `NTFY_BASE_URL` Variable, token from `NTFY_AUTH_TOKENS`.
+3. Else `https://ntfy.sh`, no token.
+
+No `NTFY_MODE` flag: the rung is derived. Two hazards follow from the rungs:
+
+- **Rung 3 is public.** Anyone who guesses `acme-critical` reads every outage
+  and can publish fake ones. So the topic is
+  `<slug>-critical-<12 random chars>`, minted once into `Workspace.pushTopic`
+  (`@opaque` — the trail holds a digest) and shown on the card as a subscribe
+  link and QR. One rule for every rung; a payload carries titles and links,
+  never a secret. Q1's *no new columns* narrows to *no per-person column*.
+- **Rung 2 depends on an App the hub deploys.** With Outpost down, the ping
+  about Outpost down never leaves. A rung-2 4xx/5xx or network failure
+  retries once at rung 3 — that is the case pings exist for.
 
 - `packages/notifications/drivers/ntfy.ts` — `ntfy({ url, token, deliver? })`
   answers a `NotificationDriver` under `transport: 'push'`. It reads
@@ -80,9 +103,9 @@ env pair that registers the driver.** Ruled Q1–Q4 on 2026-10-28.
   workspace's critical topic* — and `db/test/schema.test.ts` already holds the
   enum and that table together. `NotificationPreference` is untouched: a
   person's choice is made in the ntfy app, by subscribing or not.
-- **The topic name is `<workspace-slug>-critical`.** One topic in Phase 2 (Q2
-  rules failures only). Two Basecamps on one ntfy server would collide on a
-  shared slug; that is the hub-name prefix of Phase 3, not Phase 2.
+- **The topic name is `<workspace-slug>-critical-<suffix>`.** One topic in
+  Phase 2 (Q2 rules failures only). The random suffix also ends the two
+  Basecamps-one-server collision, so Phase 3's hub-name prefix is struck.
 - **Access is ntfy's.** Phase 0 grants `read` by hand (`ntfy access <user>
   <topic> read`); Phase 3 has Basecamp mint a reader token per person through
   the admin API and show it on the Workspace card.
@@ -150,20 +173,31 @@ export function ntfy(options: NtfyOptions): NotificationDriver {
 ### Basecamp wiring, sketched
 
 ```ts
-// api/src/app.ts — the env pair is the toggle
+// api/src/push.ts — the one owner of which server a ping leaves through
+export async function resolvePush(db): Promise<{ rung: 1 | 2 | 3, url: string, token?: string }> {
+  if (process.env.NTFY_BASE_URL) return { rung: 1, url: process.env.NTFY_BASE_URL, token: process.env.NTFY_TOKEN }
+  const own = await ownNtfyApp(db)             // the blueprint row, healthy, Variables read
+  if (own) return { rung: 2, url: own.url, token: own.token }
+  return { rung: 3, url: 'https://ntfy.sh' }
+}
+
+// api/src/app.ts — always registered; a rung-2 failure retries once at rung 3
+const push = await resolvePush(db)
+app.own('push', push)
 app.configure(notifications({
   db,
   transports: {
     ...(mail ? { email: { mailer: 'default' } } : {}),
-    ...(process.env.NTFY_BASE_URL ? { push: ntfy({ url: process.env.NTFY_BASE_URL, token: process.env.NTFY_TOKEN }) } : {}),
+    push: ntfy({ url: push.url, token: push.token, fallback: push.rung === 2 ? { url: 'https://ntfy.sh' } : undefined }),
   },
 }))
 ```
 
 ```ts
 // api/src/domain/notification/notify.ts — one more recipient, built once
-if (kind.push && available(app).has('push'))
-  recipients.push({ pushTopic: `${workspace.slug}-critical`, transports: ['push'] })
+if (kind.push)
+  recipients.push({ pushTopic: await pushTopicFor(workspace), transports: ['push'] })
+// pushTopicFor mints `${slug}-critical-${12 random chars}` into Workspace.pushTopic on first use
 ```
 
 ```ts
@@ -221,7 +255,7 @@ push: (p) => push()
   - **B** — one priority per kind in `kinds.ts`.
   - **Recommend A** — the sender knows whether this is the outage or the
     reminder; a table cannot.
-- ~~**Q4 — Does the ntfy server come from the blueprint or from env?**~~ **Answered 2026-10-28 (`FJS-D1589`): A — `NTFY_BASE_URL` + `NTFY_TOKEN` env on the Basecamp API, set by hand after installing the blueprint.**
+- ~~**Q4 — Does the ntfy server come from the blueprint or from env?**~~ **Answered 2026-10-28 (`FJS-D1589`): A — `NTFY_BASE_URL` + `NTFY_TOKEN` env on the Basecamp API, set by hand after installing the blueprint. Amended the same day: a ladder — env, else the hub's own `ntfy` App, else `ntfy.sh`; topic always random-suffixed; rung 2 falls to rung 3 on failure.**
   - **A** — `NTFY_BASE_URL` + `NTFY_TOKEN` env on the Basecamp API, set by hand
     after installing the blueprint.
   - **B** — Basecamp finds its own `ntfy` App row and reads the token from its
@@ -237,6 +271,7 @@ Goal: a ping reaches the owner's phone from `curl` through the blueprint's ntfy,
 Done when: the phone rings on `curl -H 'Priority: 5' -H 'Title: test' -d hi https://<ntfy>/acme-critical` with a sender token from `NTFY_AUTH_TOKENS` and a reader granted by `ntfy access`, and once more with the iOS relay blank to record what iOS loses.
 
 - [ ] 0.1 Install the `ntfy` blueprint on a box, grant one phone `read` on `acme-critical`, send the curl above; record Android and iOS behavior in this section.
+  - 2026-10-28: the wire works. A `Priority: 5` POST to public `ntfy.sh/basecamp-alerts` (id `3iBKpA0TinR4`, HTTP 200) rang the owner's phone. Left: the same through the blueprint's own server with `deny-all` and a reader grant, and the iOS-relay-blank run.
 
 ### Phase 1 — The driver and the builder
 
@@ -248,18 +283,19 @@ Done when: `bun run test` in the package has a `push` row proving the request he
 
 ### Phase 2 — Basecamp's toggle
 
-Goal: with `NTFY_BASE_URL` and `NTFY_TOKEN` set, a monitor going down rings every phone subscribed to the workspace's topic.
-Done when: with the blueprint's ntfy and one subscribed phone, pausing a monitor's target rings within one interval; `db/test/schema.test.ts` holds the `push` column against the enum.
+Goal: a monitor going down rings every phone subscribed to the workspace's topic, on whichever rung of the ladder is live.
+Done when: on a fresh hub with no env and no `ntfy` App (rung 3), pausing a monitor's target rings a phone subscribed to the suffixed topic on ntfy.sh within one interval; the same with the blueprint's ntfy installed (rung 2) and with `NTFY_BASE_URL` set (rung 1); `db/test/schema.test.ts` holds the `push` column against the enum.
 
-- [ ] 2.1 `kinds.ts` gains `push` with Q2's defaults; `notify.ts` builds the topic recipient when the kind says so and a driver is registered; the schema test grows to the third column.
-- [ ] 2.2 `app.ts` registers `ntfy()` from env (Q4 A); every critical definition gains a `push:` formatter (Q3 A).
-- [ ] 2.3 Workspace settings card: the topic name, the server URL, how to subscribe in the ntfy app, and a **Test ping** button through `app.notify`.
-- [ ] 2.4 Hub posture row: *phone pings off* when no driver is registered, beside *no mailer*.
+- [ ] 2.1 `kinds.ts` gains `push` with Q2's defaults; `Workspace.pushTopic String? @unique @opaque` and `pushTopicFor()` that mints `<slug>-critical-<12 random chars>` once; `notify.ts` builds the topic recipient when the kind says so; the schema test grows to the third column.
+- [ ] 2.2 `api/src/push.ts` resolves the ladder once at boot and `app.own('push', …)` holds it; `app.ts` always registers `ntfy()`, with the rung-3 fallback when rung 2 is live; every critical definition gains a `push:` formatter (Q3 A).
+- [ ] 2.3 Workspace settings card: the suffixed topic as a subscribe link and QR, the server URL and rung, how to subscribe in the ntfy app, and a **Test ping** button through `app.notify`.
+- [ ] 2.4 Hub posture row names the live rung — *phone pings via your ntfy* / *via the ntfy App* / *via ntfy.sh (public server; topic is the secret)* — beside *no mailer*.
+- [ ] 2.5 `drivers/ntfy.ts` grows `fallback?: { url, token? }`: on a 4xx/5xx or thrown fetch from the primary, one retry there, the failure logged with both answers.
 
 ### Phase 3 — Access and the second door
 
 Goal: nobody runs `ntfy access` by hand, and a person who wants their own filter can have one.
 Done when: the Workspace card mints a reader token through ntfy's admin API, and a per-person topic receives only that person's `push` kinds.
 
-- [ ] 3.1 Basecamp provisions a reader token per person through `/v1/users` + `/v1/users/access` and shows it once on the card; the hub-name prefix on the topic if two Basecamps share a server.
+- [ ] 3.1 Basecamp provisions a reader token per person through `/v1/users` + `/v1/users/access` and shows it once on the card (rungs 1–2 only; rung 3 has no ACL and the suffix is the secret). ~~The hub-name prefix on the topic if two Basecamps share a server~~ — struck 2026-10-28, the suffix covers it.
 - [ ] 3.2 The second door: `User.pushTopic @secret` + `NotificationPreference.push`, the per-person recipient beside the topic one — only if someone asks for it.

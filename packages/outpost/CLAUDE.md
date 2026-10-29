@@ -17,6 +17,7 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
 | `src/vitals.js` | what the machine feels like — cpu, memory, disk, load, read from `/proc` and `statfs`. It REMEMBERS: cpu is a delta |
 | `src/report.js` | the outbound half: heartbeat, volume report, disk report — one signed POST, three callers. The heartbeat carries `replication`, Litestream's `/list` read off its control socket, and `deploy_keys`, the public halves |
 | `src/ingress.js` | **the machine's front door** — Caddy's admin API: a route per app (`@id` `fjs-<app>`) PATCHed on deploy, on `/route` (`static: true` for an inline app) and on `/static/activate` (to the static origin, Host set to `<app_id>.localhost`), DELETEd on stop and `/static/retire`, the ingress server made on the first one. `routes()` reads it back (`POST /ingress`) for basecamp's Routes card, every writer's routes and every other http server. A `redirects: [{host, to}]` list is a SECOND route, `fjs-<app>-redirects`, a Caddy-answered 308 that needs no container; a target is an http(s) URL with no braces, because Caddy expands `{…}` in a header, and an origin-only target keeps the request's path. `paths: [{host, prefix}]` is how two apps share a hostname (`FJS-D1040`): one route per prefix, `fjs-<app>-path-<n>`, kept longest prefix first AHEAD of every whole-host route by a PATCH of the routes array after each write — Caddy answers the first match, so an appended path route would never be reached. Only the same host and prefix is refused; the prefix is kept, never stripped. A whole-host route also gets its access log (`FJS-1928`): the server's `logger_names` maps each host to the route's `@id`, and Caddy's `logging` writes `/var/log/caddy/<id>.access.log`, excluded from the default log — `edge.js`'s shape under `fjs-`. A path route's hosts are not mapped (one host, one logger), so a shared hostname logs under the app that owns the whole host |
+| `src/analytics.js` | `POST /analytics` — a route's traffic in a window, counted off its Caddy access log and the rolled files beside it (`FJS-D1621`). The caller names the route id (`fjs-<app>` or `fli-<app>…`), checked as a name before it becomes a path; nothing is stored, every read re-parses |
 | `src/replicate.js` | **Litestream's config** — `/replicate`'s list becomes `/etc/outpost/litestream.yml` and a restart; `status()` reads `/list` off the control socket. A `host` entry is Basecamp's own database, at `OUTPOST_HOST_DB_PATH`, and every other machine skips it with a reason. `stage()` is `/replica/restore`'s download half |
 | `src/cert.js` | the command port's self-signed certificate — made once, kept, and the argv the install script builds its own openssl line from |
 | `src/deploy-key.js` | each app's deploy key (`FJS-D1555`) — `cert.js`'s rule: made once, kept, never sent; `build` clones with it via `GIT_SSH_COMMAND` |
@@ -131,11 +132,11 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
 - **`/volume/restore` reads from ONE directory and extracts in a throwaway
   container** (`FJS-D943`). `path` is an allow-listed name under
   `OUTPOST_RESTORE_DIR`, then `realpath`'d, because a symlink in there points
-  anywhere and a signed caller would read `/etc/shadow` into a volume. The
+  anywhere and a signed caller would read `/etc/shadow` into an app's data. The
   archive is bound with `--mount`, never `-v`: `-v` given a source the daemon
   cannot see (a snap docker and the host's `/tmp`) mounts an empty directory,
   and the restore extracts nothing and answers success. Overwrite EMPTIES the
-  volume first — a `-wal` left beside a new database is replayed into it.
+  directory first — a `-wal` left beside a new database is replayed into it.
   With `url` (`FJS-D1521`) the archive is fetched INTO that directory and its
   sha256 checked before `tar`. The digest comes from the capture container,
   because the archive is root's 0600 and a non-root Outpost cannot read it.
@@ -144,22 +145,26 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   `dir:` target, so each is `s3://<bucket>/<path>/<file>?endpoint=…`, the key in
   `LITESTREAM_*` env, never argv; Litestream cannot list a replica, so Basecamp
   names the files off a bucket listing. A replica carries databases alone, so
-  the copy keeps everything else in the volume and removes only each file's
+  the copy keeps everything else in the directory and removes only each file's
   own `-wal`/`-shm`. A running Litestream drops a database whose file is
   replaced (`ensure wal exists: disk I/O error`) and never picks up the new
   one, so the route restarts the unit after; the restored file is then
   snapshotted as the next txid.
-- **`/replica/drill` mounts the staged copy at `/fjs-drill`, not the volume
-  path** — a mount there would hide the image's own `db/schema.lite`, the
+- **`/replica/drill` mounts the staged copy at `/fjs-drill`, not the app's
+  volumePath** — a mount there would hide the image's own `db/schema.lite`, the
   schema the verify grades by. The image must ship the litestone CLI
   (`bun x litestone`, offline); one that does not answers no report.
 - **An image with a non-root `USER` runs as the app's own uid** (`FJS-D1484`),
-  handed out from `APP_UID_BASE` and recorded in `uids.json`, never reused. A
-  chown of the volume does not stick by itself: docker copies the image's
-  directory, and its OWNER, into an empty named volume at every mount. So a
-  root one-shot chowns after the old container stops, and the run mounts
-  `volume-nocopy`. A root image is left as it is.
-- **`/backup` is a tar of the live volume, not a checkpointed copy**
+  handed out from `APP_UID_BASE` and recorded in `uids.json`, never reused. The
+  data directory is made root's 0700, so a root one-shot chowns it after the
+  old container stops (`FJS-D1616`). A root image is left as it is.
+- **An app's data is a bind mount of `<OUTPOST_APPS_DIR>/<app_id>/data`**
+  (`FJS-D1544`). Docker refuses a bind source that does not exist rather than
+  making it, so every writer makes it first. A held directory is found with
+  `docker ps -a --filter volume=<that path>`; filtering by the volumePath
+  (`/db`) matches every app on the box. Snap docker cannot bind from `/tmp`
+  or a dotdir, so a drive keeps it under `~/.cache`.
+- **`/backup` is a tar of the live data directory, not a checkpointed copy**
   (`FJS-D679`). The container keeps running, so the SQLite file is archived
   with its `-wal` beside it and a restore replays that. The script lists every
   file's size and mtime before and after the tar and retakes it when they

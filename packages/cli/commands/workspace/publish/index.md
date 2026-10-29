@@ -112,7 +112,7 @@ and a failed publish aborts the run before anything is pushed.
 **One pack, each destination asked for.** Each package is packed ONCE and that
 file goes wherever `--to` names: `tarballs` is a GitHub Release named for the
 package's tag (`gh release create <name>@<version> <tgz>`), the bytes
-`packages.frontierjs.com/<stem>/<version>.tgz` redirects to (`FJS-D1568`); `npm`
+`packages.frontierjs.com/<tag>/<stem>-<version>.tgz` redirects to (`FJS-D1620`); `npm`
 is `bun publish <tgz>`. **Unset is the release alone** (`FJS-D1613`): a release
 is what a build box installs from, and an npm publish is a browser 2FA round trip
 per package and a version promised to the public — so going public is said, `--to

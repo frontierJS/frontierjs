@@ -672,7 +672,7 @@ export default createService({
     const step   = (($.data ?? {}) as Record<string, string>).step
     const server = await getScoped('server', 'Server', id)
 
-    const connector = connectorFor(server.providerKind as ProviderKind | null)
+    const connector = connectorFor(server.providerKind)
     if (!connector) throw new BadRequest('This machine names no cloud Basecamp can speak to')
     const send = sendVia($.app, targetFor(connector.kind, String(server.providerId)))
 
@@ -762,7 +762,7 @@ export default createService({
         `Type the machine's name to destroy it — '${server.name}'. `
         + 'This asks the provider to delete it and cannot be undone.')
 
-    const connector = connectorFor(server.providerKind as ProviderKind | null)
+    const connector = connectorFor(server.providerKind)
     if (!connector)
       throw new BadRequest('This machine was imported, not provisioned — remove it instead')
 
@@ -781,7 +781,7 @@ export default createService({
     const id     = $.id as string
     const server = await getScoped('server', 'Server', id)
 
-    const connector = connectorFor(server.providerKind as ProviderKind | null)
+    const connector = connectorFor(server.providerKind)
     if (!connector) throw new BadRequest('This machine names no cloud Basecamp can speak to')
 
     // Nothing to ask the vendor about. A machine that never got an id is one

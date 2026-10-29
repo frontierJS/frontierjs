@@ -20,6 +20,7 @@ import { createDocker, createInspector, checkRunConfig } from './docker.js'
 import { createStatic, validName } from './static.js'
 import { createIngress, hostsOf, pathsOf, redirectsOf } from './ingress.js'
 import { createReplicator } from './replicate.js'
+import { createAnalytics } from './analytics.js'
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
@@ -62,11 +63,12 @@ function eventStream(events, abort, done) {
 }
 
 export function createOutpostServer(config, {
-  docker    = createDocker({ workDir: config.workDir, restoreDir: config.restoreDir, backupDir: config.backupDir, deployKeyDir: config.deployKeyDir }),
-  inspector = createInspector(),
+  docker    = createDocker({ workDir: config.workDir, appsDir: config.appsDir, restoreDir: config.restoreDir, backupDir: config.backupDir, deployKeyDir: config.deployKeyDir }),
+  inspector = createInspector({ appsDir: config.appsDir }),
   statics   = createStatic({ staticDir: config.staticDir, staticUrl: config.staticUrl }),
   ingress   = createIngress({ admin: config.caddyAdmin }),
-  replicator = createReplicator({ configPath: config.litestreamConfig, metaDir: config.litestreamMetaDir, litestream: config.litestreamBin, stageDir: config.replicaStageDir, hostDb: config.hostFiles?.db ?? null }),
+  analytics = createAnalytics(),
+  replicator = createReplicator({ configPath: config.litestreamConfig, appsDir: config.appsDir, metaDir: config.litestreamMetaDir, litestream: config.litestreamBin, stageDir: config.replicaStageDir, hostDb: config.hostFiles?.db ?? null }),
   log       = console,
 } = {}) {
 
@@ -278,6 +280,10 @@ export function createOutpostServer(config, {
       tail:  body.tail,
       since: body.since,
     }),
+    // A route's traffic in a window, counted off its Caddy access log. The
+    // caller names the route — `fjs-<app>` or `fli-<app>…` — and no prefix is
+    // added here, because `fli deploy` writes routes this process never made.
+    'POST /analytics': (body) => analytics.report({ routeId: body.route_id, from: body.from, to: body.to }),
 
     // ── Static releases ───────────────────────────────────────────────
     //

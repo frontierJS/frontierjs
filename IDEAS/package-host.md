@@ -26,7 +26,7 @@ The URL is on the project's own domain and is derived from two facts a
 developer already knows, the package name and its version:
 
 ```
-https://packages.frontierjs.com/<stem>/<version>.tgz
+https://packages.frontierjs.com/<tag>/<stem>-<version>.tgz
   → 302 → https://github.com/frontierJS/frontierjs/releases/download/<tag>/<stem>-<version>.tgz
 ```
 
@@ -189,7 +189,7 @@ upload beside the npm line, and a real run leaves an asset the postflight verifi
   per destination, asked by `ws:pub` before a bump and by the page beside the
   registry column; a destination's login gate is drawn only while it is in
   the run; the default is left unsaid in argv, like `latest`.
-- [ ] 1.5 Backfill: every version already on npm has no release, and under the
+- [x] 1.5 Backfill: every version already on npm has no release, and under the
   new default the next `ws:pub` reads each as in flight — `in-flight-moved`
   where the tree has moved since its tag, which is all of them. One owner-run
   pass, 0.3's procedure per package: fetch npm's own tarball (`npm pack
@@ -198,35 +198,38 @@ upload beside the npm line, and a real run leaves an asset the postflight verifi
   `gh release create` is refused to a session. Until it runs, `--to npm` is
   the only clean default run. The pass is `scripts/backfill-releases.mjs`:
   dry by default, `--run` does it; dry run 2026-10-28 names 20 to release and
-  skips litestone, which 0.3 already shipped.
-- [ ] 1.3 `04-verify-assets` — the postflight: GET the derived
+  skips litestone, which 0.3 already shipped. Owner ran it 2026-10-28: 20 released, 21 releases on GitHub, `ws:pub --dry` passes the in-flight gate.
+- [x] 1.3 `04-verify-assets` — the postflight: GET the derived
   `packages.frontierjs.com` URL for every released package, follow the redirect,
   sha256 the body against the tarball 1.1 uploaded — never against a fresh
   pack, which 0.1 showed differs once the tree moves. This is the only artefact
   for § What must stay true, so it fails loudly and names the package.
+  **Built:** `_steps/04-verify-assets.md`, skipped on `--dry`, over
+  `$.config.uploaded` only. Each failure names its package; the step throws
+  after it has checked every one. Proved 2026-10-28 against the live domain
+  with npm's litestone 1.1.11 tarball: the derived URL gives 200 and the
+  sha256 matches, and a wrong asset name gives 404 and is reported.
 
 ### Phase 2 — The domain
 
-Goal: `packages.frontierjs.com/<stem>/<version>.tgz` answers for every asset.
+Goal: `packages.frontierjs.com/<tag>/<stem>-<version>.tgz` answers for every asset (`FJS-D1620`: the path mirrors the release path).
 Done when: 1.3 passes against the live domain.
 
-- [ ] 2.1 One Cloudflare redirect rule on the `frontierjs.com` zone, written with
-  the `cf` CLI: `packages.frontierjs.com/<stem>/<version>.tgz` →
-  `github.com/frontierJS/frontierjs/releases/download/@frontierjs/<stem-without-prefix>@<version>/<stem>-<version>.tgz`.
-  The stem's `frontierjs-` prefix and the tag's `@frontierjs/` are the same
-  fact spelled twice; 0.3 says whether the tag's `/` needs encoding. A
-  proxied DNS record for the host exists only so the rule has something to fire
-  on. The zone has no entry-point ruleset in `http_request_dynamic_redirect`
-  yet, so the first write is `cf rulesets account-rulesets phases update
-  http_request_dynamic_redirect -z <zone> --rules @rule.json`, which creates
-  it. **Hazard:** `frontierjs.com` is not among the zones the `cf` profile on
-  this machine lists (`awe.dev` and the client zones are, under account
-  `0a207b…`); find which account or profile holds it before 2.1, or the step
-  is a dashboard click and 2.2 has nothing to copy.
-- [ ] 2.2 The rule's text lives in the tree beside `core/tell-worker.js`'s
+- [x] 2.1 One Cloudflare redirect rule on the `frontierjs.com` zone (`FJS-D1620`):
+  `http.host eq "packages.frontierjs.com"` → dynamic 302 to
+  `concat("https://github.com/frontierJS/frontierjs/releases/download", http.request.uri.path)`,
+  with a proxied `AAAA 100::` record for `packages` so the rule has something
+  to fire on. The plan's `<stem>/<version>.tgz` shape was dropped: it needs
+  `regex_replace` (Business/Enterprise) and a second rule for the unscoped
+  `create-frontier`. Set by hand in the dashboard 2026-10-28 — the `cf`
+  profile on this machine has no access to the zone. Probed: scoped and
+  unscoped 302, body sha256 equals the release asset.
+- [x] 2.2 The rule's text lives in the tree beside `core/tell-worker.js`'s
   wrangler config, so a second zone (`FLI_FRONTIER_POST`'s drive against
   `wrangler dev`) can carry the same rule. No command: a redirect rule is set
-  once and the postflight proves it on every publish.
+  once and the postflight proves it on every publish. Built:
+  `packages/cli/core/package-host-rule.json`, the rule in the Rulesets API's
+  shape with its DNS record — data only, nothing reads it.
 
 ### Phase 3 — Consumers
 
@@ -257,7 +260,7 @@ Done when: CI's `deploy` phase is green for `--source url`, and
 Goal: a build machine pins the working tree at a commit without spending a
 version and without touching npm (`FJS-D1602`).
 Done when: Basecamp deploys an app against
-`packages.frontierjs.com/frontierjs-litestone/1.1.11-dev.<sha>.tgz`.
+`packages.frontierjs.com/dev/frontierjs-litestone-1.1.11-dev.<sha>.tgz`.
 Needs 1.2's upload step and 2.1's rule; runs before Phase 3 if the owner wants
 the dev road first.
 
@@ -272,8 +275,9 @@ the dev road first.
   upload dev <tgz>`, created once with `--prerelease --latest=false`); the
   release's tag is never cited, the filename is. Same name twice is refused
   by GitHub (0.3), which is write-once per sha for free.
-- [ ] 4.3 2.1's redirect rule gains its second branch: a version containing
-  `-dev.` resolves to release `dev`. Two branches, never a list.
+- [x] 4.3 ~~2.1's redirect rule gains its second branch~~ Struck by `FJS-D1620`:
+  the path mirrors the release path, so `dev/<stem>-<version>-dev.<sha>.tgz`
+  rides the one rule. Nothing to build.
 - [ ] 4.4 1.3's postflight runs over the `dev` release too, against the
   tarball 4.1 packed. This is the only artefact for the ruling's silence.
 - [ ] 4.5 `fli new --source url` accepts a dev version string in place of the

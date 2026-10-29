@@ -26,6 +26,7 @@ import { signRequest } from '@frontierjs/toolbelt/signature'
 import { seriesKey }   from '@frontierjs/junction'
 import { GatePlugin }  from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
+import { trafficOf, unavailableOf } from '../src/domain/host/traffic.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor, grantsWithin } from '../src/core/capabilities.ts'
 import { refuseGrantAboveOwn }    from '../src/core/hooks.ts'
@@ -4171,6 +4172,23 @@ describe('a list honors every filter it admits', () => {
     expect(got).toEqual([job.id])
   })
 
+  test('domains by hostname — the read fli deploy makes before it creates one', async () => {
+    const sys  = env.system as any
+    const mine = await sys.domain.create({ data: { workspaceId: ws.id, appId: placed.id,    hostname: `a-${placed.name}.test` } })
+    await sys.domain.create({ data: { workspaceId: ws.id, appId: elsewhere.id, hostname: `b-${elsewhere.name}.test` } })
+    const got = ids(await env.as(owner).service('domains').find({ hostname: mine.hostname }))
+    expect(got).toEqual([mine.id])
+  })
+
+  test('domain routes by prefix, and not the Domain\'s other one', async () => {
+    const sys    = env.system as any
+    const domain = await sys.domain.create({ data: { workspaceId: ws.id, appId: placed.id, hostname: `routes-${placed.name}.test` } })
+    const api    = await sys.domainRoute.create({ data: { workspaceId: ws.id, domainId: domain.id, appId: elsewhere.id, pathPrefix: '/api' } })
+    await sys.domainRoute.create({ data: { workspaceId: ws.id, domainId: domain.id, appId: elsewhere.id, pathPrefix: '/ws' } })
+    const got = ids(await env.as(owner).service('domainRoutes').find({ domainId: domain.id, pathPrefix: '/api' }))
+    expect(got).toEqual([api.id])
+  })
+
   test('a key that is not a column is still refused by name', async () => {
     await expect(env.as(owner).service('deployments').find({ bogusColumn: 1 })).rejects.toThrow(/bogusColumn/)
     await expect(env.as(owner).service('apps').find({ service_id: placed.id })).rejects.toThrow(/service_id/)
@@ -5089,5 +5107,73 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       expect(await replicasFor(env.app, server.id)).toEqual([])
       await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: null })
     })
+  })
+})
+
+// IDEAS/traffic-analysis.md 2.1. The real Outpost counts the log; here the stub
+// executor stands in for the call, and the Outpost's own server answers the two
+// refusals, so the sentences matched are the ones a machine sends.
+describe('apps.analytics: an app\'s traffic, or why there is none', () => {
+  const tag = () => Math.random().toString(36).slice(2, 8)
+  let placed: any, unplaced: any, server: any, previous: string | undefined
+
+  beforeAll(async () => {
+    previous = process.env.BASECAMP_STUB_OUTPOST
+    process.env.BASECAMP_STUB_OUTPOST = '1'
+    const sys     = env.system as any
+    const project = await sys.project.create({ data: { workspaceId: ws.id, name: 'Tr', slug: `tr-${tag()}` } })
+    const e       = await sys.environment.create({ data: { workspaceId: ws.id, projectId: project.id, name: 'E', slug: `e-${tag()}` } })
+    placed   = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'tr', slug: `tr-${tag()}` } })
+    unplaced = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'tr2', slug: `tr2-${tag()}` } })
+    server   = await serverAt('online', { workspaceId: ws.id, name: 'tr-host', slug: `tr-host-${tag()}` })
+    await sys.appServer.create({ data: { appId: placed.id, serverId: server.id, replicaIndex: 0, status: 'running' } })
+  })
+  afterAll(() => {
+    if (previous === undefined) delete process.env.BASECAMP_STUB_OUTPOST
+    else process.env.BASECAMP_STUB_OUTPOST = previous
+  })
+
+  const analytics = (who: any, id: string, body: Record<string, unknown> = {}) => env.as(who).service('apps').call('analytics', id, body)
+
+  test('a stub counted nothing and says so, rather than drawing an app nobody visits', async () => {
+    expect(await analytics(viewer, placed.id, { from: '2026-10-01T00:00:00Z' })).toEqual({
+      serverId: server.id, routeId: `fjs-${placed.id}`, unavailable: 'stub', reason: expect.stringMatching(/stub executor/),
+    })
+  })
+
+  test('an app placed nowhere names that, and another workspace cannot ask', async () => {
+    expect(await analytics(owner, unplaced.id)).toMatchObject({ serverId: null, unavailable: 'unplaced', reason: expect.stringMatching(/not placed/) })
+    await expect(analytics(outsider, placed.id)).rejects.toThrow()
+  })
+
+  test('the Outpost\'s two refusals are read as names', async () => {
+    const { createOutpostServer } = await import('@frontierjs/outpost/server')
+    const { createAnalytics }     = await import('../../../outpost/src/analytics.js')
+    const outpost = createOutpostServer({ secret: 's', version: 't', serverId: 'srv' } as any, {
+      analytics: createAnalytics({ dir: mkdtempSync(join(tmpdir(), 'bc-caddy-')) }), log: { warn() {}, error() {} },
+    } as any)
+    const said = async (path: string, body: unknown) => {
+      const payload = JSON.stringify(body)
+      const headers = await signRequest({ secret: 's', method: 'POST', path, body: payload, timestamp: Math.floor(Date.now() / 1000), nonce: `tr-${tag()}` })
+      const res = await outpost.handle(new Request(`http://outpost.test${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: payload }))
+      return (await res.json()).error as string
+    }
+    expect(unavailableOf(await said('/analytics', { route_id: `fjs-${placed.id}` }))).toBe('no-access-log')
+    // An Outpost from before the route answers its 404 sentence for the path.
+    const missing = await said('/no-such-route', {})
+    expect(unavailableOf(missing.replace('/no-such-route', '/analytics'))).toBe('outpost-too-old')
+    expect(unavailableOf(missing)).toBeNull()
+    expect(unavailableOf('from must be a UTC instant (2026-10-28T00:00:00Z) — got "x"')).toBeNull()
+  })
+
+  test('a report is camelCased and keeps what the Outpost counted', () => {
+    const out = trafficOf('srv', 'fjs-a', {
+      from: null, to: null, files: 2, lines: 3, skipped: 1, truncated: true, oldest: '2026-10-01T00:00:00.000Z', kept_since: '2026-09-20T00:00:00.000Z',
+      hosts: [{ host: 'a.test', requests: 3, bytes: 30, client_ips: 2,
+        status: [{ status: 404, requests: 3 }], paths: [{ path: '/x', requests: 3, bytes: 30 }],
+        errors: [{ path: '/x', status: 404, requests: 3 }], durations: [{ path: '/x', requests: 3, mean_ms: 1.25, max_ms: 2 }] }],
+    })
+    expect(out).toMatchObject({ serverId: 'srv', lines: 3, truncated: true, oldest: '2026-10-01T00:00:00.000Z', keptSince: '2026-09-20T00:00:00.000Z' })
+    expect((out as any).hosts[0]).toMatchObject({ clientIps: 2, durations: [{ path: '/x', requests: 3, meanMs: 1.25, maxMs: 2 }] })
   })
 })

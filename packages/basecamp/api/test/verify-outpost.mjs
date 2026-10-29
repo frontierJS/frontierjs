@@ -32,8 +32,8 @@
  *   - The container release runs on the developer's REAL daemon. It removes
  *     only the container it started and the image only if it pulled it, and
  *     never calls a prune route: on a workstation those delete somebody
- *     else's images. The one volume it touches is the restore's, named for an
- *     app this run made, and removed by that name.
+ *     else's images. The one app data directory it fills is the restore's,
+ *     under this run's own `.outpost`, and goes with it.
  */
 
 // What `fli prove` queues on: this checkout's ports.
@@ -63,7 +63,6 @@ const IMAGE    = 'traefik/whoami:v1.10.3'
 const sh       = (...argv) => spawnSync(argv[0], argv.slice(1), { encoding: 'utf8' })
 const hadImage = sh('docker', 'image', 'inspect', IMAGE).status === 0
 let container  = null
-let volume     = null
 let built      = []
 
 const ENV = {
@@ -192,7 +191,6 @@ async function cleanup() {
   await sleep(3000)
   for (const c of children) { try { process.kill(-c.pid, 'SIGKILL') } catch {} }
   if (container) sh('docker', 'rm', '-f', container)
-  if (volume)    sh('docker', 'volume', 'rm', '-f', volume)
   for (const [name, tag] of built) { sh('docker', 'rm', '-f', name); sh('docker', 'rmi', tag) }
   if (!hadImage) sh('docker', 'rmi', IMAGE)
   rmSync(OWN, { recursive: true, force: true })
@@ -414,14 +412,15 @@ try {
     unbound?.find(d => d.id !== rebound?.id)?.status === 'success'
       && !sh('docker', 'inspect', '--format', '{{json .HostConfig.PortBindings}}', container).stdout.includes('127.0.0.1'))
 
-  // ── Adopting an app's data: an archive on the machine, into its volume ──
+  // ── Adopting an app's data: an archive on the machine, into its directory ──
   // Placed and never released, the order an adoption takes: the files land
-  // before a container holds the volume (`FJS-D943`).
+  // before a container holds them (`FJS-D943`), as plain files on the host
+  // (`FJS-D1544`).
   const adopt = await call('/apps', { ...auth, body: {
     environmentId: environment?.id, name: `adopt-${process.pid}`, slug: `adopt-${process.pid}`, type: 'container',
     source: { kind: 'image', image: IMAGE }, volumePath: '/data',
   } })
-  volume = `fjs-${adopt?.id}-data`
+  const dataDir = join(OWN, 'apps', String(adopt?.id), 'data')
   await call(`/apps/${adopt?.id}`, { ...auth, serviceMethod: 'place', body: { serverId: first.serverId, replicaIndex: 0 } })
   const tree = join(OWN, 'restore', 'tree')
   mkdirSync(tree, { recursive: true })
@@ -429,19 +428,19 @@ try {
   sh('tar', '-czf', join(OWN, 'restore', 'adopt.tar.gz'), '-C', tree, 'app.db')
   const restore = (body) => call(`/apps/${adopt?.id}`, { ...auth, serviceMethod: 'restoreVolume', body: { serverId: first.serverId, ...body } })
   const restored = await restore({ path: 'adopt.tar.gz' })
-  check('an archive on the machine restores into the app\'s volume', restored?.volume === volume && restored?.files === 1)
-  check('…holding the bytes the archive did',
-    sh('docker', 'run', '--rm', '-v', `${volume}:/data`, 'busybox:1.36', 'cat', '/data/app.db').stdout === 'the adopted database')
+  check('an archive on the machine restores into the app\'s data directory', restored?.data_dir === dataDir && restored?.files === 1)
+  check('…a plain file on the host holding the bytes the archive did',
+    existsSync(join(dataDir, 'app.db')) && readFileSync(join(dataDir, 'app.db'), 'utf8') === 'the adopted database')
   const again2 = await restore({ path: 'adopt.tar.gz' })
-  check('a second restore into a volume with files is refused in the machine\'s words', /overwrite: true/.test(again2?.message ?? ''))
+  check('a second restore into a directory with files is refused in the machine\'s words', /overwrite: true/.test(again2?.message ?? ''))
   const off = await restore({ path: '/etc/passwd' })
   check('…and a path off the restore directory is refused', /under/.test(off?.message ?? ''))
 
-  // ── Backing it up: the volume tarred on the machine, the path recorded (`FJS-1782`) ──
+  // ── Backing it up: the data tarred on the machine, the path recorded (`FJS-1782`) ──
   const taken = await call('/app-backups', { ...auth, serviceMethod: 'take', body: { appId: adopt?.id, serverId: first.serverId } })
-  check('an app\'s volume is archived on its machine and the row says where',
+  check('an app\'s data is archived on its machine and the row says where',
     taken?.status === 'success' && taken?.fileCount === 1 && taken?.location?.startsWith(`${join(OWN, 'backups')}/`))
-  check('…and the archive holds the file the volume did',
+  check('…and the archive holds the file the directory did',
     taken?.location && sh('docker', 'run', '--rm', '--mount', `type=bind,src=${join(OWN, 'backups')},dst=/out,readonly`, 'busybox:1.36',
       'tar', '-tzf', `/out/${taken.location.split('/').pop()}`).stdout.includes('app.db'))
 

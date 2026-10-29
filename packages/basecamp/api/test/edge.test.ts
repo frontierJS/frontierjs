@@ -180,12 +180,12 @@ describe('a Cloudflare account', () => {
 })
 
 describe('the schema', () => {
-  test('a Server cannot claim to run at Cloudflare (FJS-D559)', async () => {
+  test('a Server cannot claim to run at Cloudflare (FJS-D1607)', async () => {
     await expect((env.system as any).server.create({ data: {
       workspaceId: ws.id, name: 'nope', slug: 'nope', providerKind: 'cloudflare',
     }})).rejects.toThrow()
     // The control: the same row at a cloud that makes machines is accepted, so
-    // the refusal above is the check and not a missing column.
+    // the refusal above is `ComputeProvider` and not a missing column.
     const ok = await (env.system as any).server.create({ data: {
       workspaceId: ws.id, name: 'fine', slug: 'fine', providerKind: 'hetzner',
     }})

@@ -46,7 +46,7 @@ import { startDoSink }             from '../src/providers/compute/digitalocean-s
 import { startHzSink }             from '../src/providers/compute/hetzner-sink.ts'
 import { connectorFor, targetFor, markFor, fleetMark, priceIn } from '../src/providers/compute/index.ts'
 import { registerAccount, sendVia } from '../src/providers/compute/accounts.ts'
-import type { ProviderKind }       from '../../db/schema.d.ts'
+import type { ComputeProvider }    from '../../db/schema.d.ts'
 
 // The certificate a machine's command port answers with, which enrollment pins
 // on its Conduit target (FJS-1603). Every enrollment below presents it.
@@ -1786,10 +1786,10 @@ describe('two clouds, one vocabulary', () => {
   // The accounts are read through a FUNCTION: the table is built when the
   // describe is defined, which is before `beforeAll` has created either row.
   const clouds = () => [
-    { kind: 'digitalocean' as ProviderKind, connector: digitalOcean, account: () => account, address: SINK,
+    { kind: 'digitalocean' as ComputeProvider, connector: digitalOcean, account: () => account, address: SINK,
       region: 'nyc3', size: 's-1vcpu-1gb', image: 'ubuntu-24-04-x64', currency: 'USD',
       reset: async () => (await import('../src/providers/compute/digitalocean-sink.ts')).resetSink() },
-    { kind: 'hetzner' as ProviderKind, connector: hetzner, account: () => hzAccount, address: HZ_SINK,
+    { kind: 'hetzner' as ComputeProvider, connector: hetzner, account: () => hzAccount, address: HZ_SINK,
       region: 'nbg1', size: 'cpx11', image: 'ubuntu-24.04', currency: 'EUR',
       reset: async () => (await import('../src/providers/compute/hetzner-sink.ts')).resetHzSink() },
   ]

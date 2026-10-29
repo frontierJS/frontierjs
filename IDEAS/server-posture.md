@@ -467,7 +467,7 @@ Goal: anything that restarts is applied by a person and recorded.
 Done when: a box with `reboot-required` is drained, upgraded, rebooted, back online,
 undrained, and the run row lists the packages.
 
-- [ ] 5.1 Widen `CleanupRun` into `MaintenanceRun` with a `kind` (`FJS-D825`).
+- [x] 5.1 Widen `CleanupRun` into `MaintenanceRun` with a `kind` (`FJS-D825`); a patch run's payload is `upgrades`, `[{ package, from, to }]`.
 - [ ] 5.2 The Outpost's signed `POST /system/upgrade`, its argv the Outpost's own.
 - [ ] 5.3 `server-patch.job.ts`: drain, upgrade, reboot if required, wait for the
   heartbeat, re-read posture, undrain, record each package from and to.

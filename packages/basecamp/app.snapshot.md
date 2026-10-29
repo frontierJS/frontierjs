@@ -58,7 +58,7 @@ and what it does.
 | `notificationPreferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notificationPreferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (91)
+### A service hook runs in front of the body (92)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -77,6 +77,7 @@ name, and is as unread as the body.
 | `apiKeys.scopes` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` |
 | `apps.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `apps.logs` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `apps.analytics` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `apps.fromBlueprint` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `backupDestinations.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `blueprints.setParams` | **any signed-in caller** — floor, read gate 1; standing not graded | `requireSystemAdmin` |
@@ -335,8 +336,8 @@ name when it declares none.
 
 ### `apps` · model `App`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`
-- **custom methods** — `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `analytics`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`
+- **custom methods** — `logs`, `analytics`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`
 - **input** — `fromBlueprint` takes `AppFromBlueprint`
 - **input** — `place` takes `AppPlace`
 - **input** — `publish` takes `AppPublish`
@@ -347,6 +348,7 @@ name when it declares none.
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `logs` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `analytics` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `fromBlueprint` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `place` — standing 4 or above — declared `gate: 4`
   - `unplace` — standing 4 or above — declared `gate: 4`; body writes as the app

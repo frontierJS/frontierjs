@@ -8,7 +8,8 @@
 // with `X-Service-Method`, never a path segment:
 //   place · unplace — which machines the app runs on
 //   logs           — what the container is saying, read through the executor
-//   restoreVolume  — an archive on the machine or a backup in a bucket, extracted into the app's data volume
+//   analytics      — what traffic its route took, counted off the machine's access log
+//   restoreVolume  — an archive on the machine or a backup in a bucket, extracted into the app's data directory
 //   restoreReplica — the app's databases out of its Litestream replica, at an instant
 //   fromBlueprint  — an app made out of a catalog entry and its parameters
 //   publish        — a static build handed in, sent to the machine and released
@@ -62,6 +63,7 @@ import { syncReplicasOn, syncReplicasOf, replicaHolder, replicaOf, replicaDataba
 import type { App }            from '@frontierjs/junction'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 import { replicaLag } from '../../domain/host/posture.ts'
+import { outpostRouteId, trafficOf, unavailable, unavailableOf } from '../../domain/host/traffic.ts'
 
 const _WITH_ENV = { environment: true }
 
@@ -537,6 +539,8 @@ export default createService({
   methods: [
     'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
     'logs',
+    // A read that names a window; a keyed retry asks the machine again.
+    { method: 'analytics', read: true },
     { method: 'fromBlueprint', input: 'AppFromBlueprint' },
     { method: 'place',   gate: LEVELS.USER, input: 'AppPlace' },
     { method: 'unplace', gate: LEVELS.USER, input: 'AppUnplace' },
@@ -713,6 +717,34 @@ export default createService({
     }
   },
 
+  // ─── analytics ────────────────────────────────────────────────────────
+  // What traffic the app's route took in a window, counted by the Outpost off
+  // the machine's Caddy access log (`IDEAS/traffic-analysis.md`). `logs()`'s
+  // shape: scoped read, the executor, no audit event. Each way the answer can
+  // be empty comes back as `unavailable` with a reason, never as a report
+  // with no hosts in it.
+  async analytics() {
+    const target  = await getScoped('app', 'App')
+    const data    = ($.data ?? {}) as Record<string, unknown>
+    const routeId = outpostRouteId(target.id)
+
+    const executor = await resolveExecutor($.app, target.id)
+    if (!isExecutor(executor)) return unavailable(null, routeId, 'unplaced', executor.reason)
+
+    const reply = await executor.call('/analytics', {
+      route_id: routeId,
+      from:     data.from,
+      to:       data.to,
+    }, { timeoutMs: 30_000 })
+
+    if (reply.error) {
+      const why = unavailableOf(reply.error.message)
+      if (why) return unavailable(executor.serverId, routeId, why)
+      throw new BadRequest(`Could not read traffic: ${reply.error.message}`)
+    }
+    return trafficOf(executor.serverId, routeId, (reply.data ?? {}) as Record<string, unknown>)
+  },
+
   // ── fromBlueprint — POST /apps  X-Service-Method: fromBlueprint ───
   //
   // The catalog entry is COPIED, column for column, into the app it becomes
@@ -804,14 +836,14 @@ export default createService({
   // ── restoreVolume — POST /apps/:id  X-Service-Method: restoreVolume ──
   //
   // Adopting a running app: its SQLite files, tarred, copied onto the machine
-  // by scp, extracted into `fjs-<app>-data` before the first release starts a
-  // container on it (`FJS-D943`). Or one of the app's backups in a bucket:
+  // by scp, extracted into `apps/<app id>/data` on the machine before the first
+  // release mounts it (`FJS-D943`, `FJS-D1544`). Or one of the app's backups in a bucket:
   // the machine fetches it by a pre-signed GET minted here, and refuses an
   // object whose sha256 is not the one recorded when it was taken
-  // (`FJS-D1521`). The SERVER is named because the volume is per machine, and
+  // (`FJS-D1521`). The SERVER is named because the data is per machine, and
   // a replica elsewhere is handed nothing. Outpost refuses a path off its
-  // restore directory, a volume a container holds, and one with files in it
-  // unless `overwrite` is stated, each in its own words.
+  // restore directory, a data directory a container holds, and one with files
+  // in it unless `overwrite` is stated, each in its own words.
   async restoreVolume() {
     const data   = $.data as Record<string, unknown>
     const target = await getScoped('app', 'App')
@@ -825,7 +857,7 @@ export default createService({
     const reply = await executor.call('/volume/restore', {
       app_id: target.id, ...from, overwrite: data.overwrite === true,
     }, { timeoutMs: VOLUME_RESTORE_TIMEOUT_MS })
-    if (reply.error) throw new BadRequest(`The volume was not restored: ${reply.error.message}`)
+    if (reply.error) throw new BadRequest(`The data was not restored: ${reply.error.message}`)
     return { serverId: placed.serverId, ...(reply.data ?? {}) }
   },
 
@@ -833,10 +865,10 @@ export default createService({
   //
   // A stopped app brought back to an instant out of its own replica: every
   // database the bucket lists under the app's path, restored on the named
-  // machine into `fjs-<app>-data`. The key goes in the body the way
+  // machine into `apps/<app id>/data`. The key goes in the body the way
   // `/replicate` already sends it to that machine. Only the `.db` files are
   // replaced — a replica carries nothing else — and Outpost refuses a held
-  // volume, and a database already there unless `overwrite`.
+  // directory, and a database already there unless `overwrite`.
   async restoreReplica() {
     const data   = $.data as Record<string, unknown>
     const target = await getScoped('app', 'App')

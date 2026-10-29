@@ -68,6 +68,10 @@ export function readConfig(env = process.env) {
     /** Where a git build is checked out. One directory per app, rebuilt on
      *  every build, so it is not `apps/`, which holds each app's data. */
     workDir:     env.OUTPOST_WORK_DIR ?? box.builds,
+    /** Each app's data, `<appsDir>/<app_id>/data`, bind-mounted at its
+     *  volumePath (`FJS-D1544`). Litestream's unit may write here and nowhere
+     *  else an app keeps files, so a different directory replicates nothing. */
+    appsDir:     (env.OUTPOST_APPS_DIR ?? box.apps).replace(/\/$/, ''),
     /** The one directory `/volume/restore` reads an archive from. Inside the
      *  unit's StateDirectory, so it exists on a box the install built. */
     restoreDir:  (env.OUTPOST_RESTORE_DIR ?? box.restore).replace(/\/$/, ''),

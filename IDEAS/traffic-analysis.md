@@ -9,6 +9,8 @@ dated: 2026-08-31
 **Status: IDEA.** Probed against the tree 2026-08-31 (`VERIFYING.md`). One
 precondition shipped with it — [`FJS-622`](../ISSUES_ARCHIVE.md#fjs-622) — because the
 gap it names made every option here impossible rather than merely unbuilt.
+**GoAccess dropped 2026-10-28 ([`FJS-D1621`](../DECISIONS.md#fjs-d1621))**: the
+edge is Caddy and its access log is JSON, so the Outpost counts it in JS.
 
 Prompted by CapRover's GoAccess integration (`caprover-frontend#167`), which is
 the shape of the thing a fleet operator asks for and does not have here.
@@ -114,8 +116,9 @@ them. Correct at scale and wrong here: it is a second system to run, and the
 whole premise of this tree is a machine with SQLite on it.
 
 **GoAccess itself** — one C binary, no daemon, reads `combined` with no
-arguments, and emits HTML **or `--json`**. That last point matters more than
-CapRover's design suggests.
+arguments, and emits HTML or `--json`. Its value is the parse of a text log
+format, and Caddy's JSON lines need none — so it is not used here
+([`FJS-D1621`](../DECISIONS.md#fjs-d1621)).
 
 ---
 
@@ -127,20 +130,19 @@ request paths. GoAccess escapes it; trusting a C binary's escaping inside an
 admin console that holds fleet credentials is a bet with no upside, and a
 sandboxed iframe is a mitigation for a problem we can simply not have.
 
-`goaccess --json` answers the same numbers as data. Parse it, ship it as a
-service result, render it with `@frontierjs/ui`. That buys theming, the dark
+The Outpost counts the lines itself and answers the numbers as data; ship them
+as a service result, render them with `@frontierjs/ui`. That buys theming, the dark
 mode switch, `.dense`, the vocabulary — and the numbers arrive somewhere a
 service can gate them, which an iframe of bytes cannot be.
 
-The cost is a renderer for panels GoAccess already draws. That is the trade and
+The cost is a renderer for panels GoAccess would have drawn. That is the trade and
 it is worth taking once; it is not worth taking twice, which is the argument for
 one component rather than a screen per panel.
 
 **The topology differs and it changes the unit.** CapRover owns one Swarm nginx
 and every app is a route inside it, so one GoAccess run over one log set covers
-the fleet. FJS writes a **vhost per app**, on machines basecamp reaches through
-the Outpost. So the unit is a report per app per machine, the binary has to exist
-on each target, and *the fleet's traffic* is a sum somebody has to compute rather
+the fleet. FJS writes a **Caddy route per app**, on machines basecamp reaches
+through the Outpost. So the unit is a report per app per machine, and *the fleet's traffic* is a sum somebody has to compute rather
 than a file somebody can read.
 
 ---
@@ -182,32 +184,61 @@ where it goes today, and stdout is not queryable.
 
 Phases 1 and 2 are independent of 3. Do not start 3 to get 1.
 
+**Working this plan.** One step per turn: take the first open box (`fli plan
+IDEAS/traffic-analysis.md`), build it, run the package's own suite (`cd
+packages/outpost && bun run test`, `cd packages/basecamp && bun run test`),
+tick the box, run `fli done`, and stop with what landed and what is next. A box
+that says **Ask first** is an owner question through `AskUserQuestion` before
+any code. The owner commits; a step lands uncommitted.
+
 ### Phase 1 — the report exists (S)
 
-`goaccess --json` on the target, run through the Outpost, parsed here.
+The Outpost reads the app's Caddy JSON access log and counts it in JS
+([`FJS-D1621`](../DECISIONS.md#fjs-d1621)). Nothing to install on the target.
 
-- An Outpost route — `POST /analytics`, signed like every other route but
-  `GET /health`, taking an app id and a window. It runs GoAccess over that app's
-  own access log and answers parsed JSON. **Not `/exec`**: that runs an arbitrary
-  command and this is a named capability with a bounded answer.
-- The binary is a **precondition, reported rather than assumed** — a missing
-  GoAccess must answer *not installed* by name. `fli deploy:doctor` already
-  checks a tool list on the target and is where that belongs.
-- Retention is nginx's, not ours: the logrotate rule bounds the window, so the
-  deepest history available is whatever `rotate` is set to. Say so on the screen
-  rather than implying more.
+- [x] 1.1 An Outpost route — `POST /analytics`, signed like every other route
+  but `GET /health`, taking a route id and a window. It reads
+  `accessLogPath(id)` (`/var/log/caddy/<id>.access.log`, plus Caddy's rolled
+  files), keeps lines whose `ts` falls in the window (`FJS-D764`), and groups by
+  `request.host` (`FJS-D763`). **Not `/exec`**: that runs an arbitrary command
+  and this is a named capability with a bounded answer.
+- [x] 1.2 The panels: status mix, top paths (`request.uri`), bandwidth
+  (`size`), distinct client IPs (`request.client_ip`, never `remote_ip` — behind
+  a proxied Cloudflare zone that is the edge's address), 4xx/5xx by path, and
+  duration by path.
+- [x] 1.3 Bounds and refusals: the id is checked against the route-id shape
+  before it becomes a path; each panel answers its top 20; a read parses at
+  most 100,000 lines, newest first, and says so (`truncated`, `oldest`) — the
+  owner's pick over `/logs`' 5,000, which is minutes of a busy app. A missing
+  log answers *no access log* by name; a window with no lines is an empty report.
+  Routes are `fjs-<app>` (Outpost) or `fli-<app>[-api][-http]` (`fli deploy`) —
+  the caller names the route, the reader adds no prefix.
+- [x] 1.4 A test over a captured real Caddy line, so a renamed field fails
+  red rather than drawing zeros.
+- Retention is Caddy's roll, not ours, so the deepest history is whatever the
+  roll keeps. Say so on the screen rather than implying more.
 
 ### Phase 2 — a screen that is not an iframe (S/M)
 
 A basecamp panel on the app detail — the `log-analysis` tab the mock has and the
 comment declines to build, now buildable.
 
-- One `apps.analytics()` custom method, shaped like `logs()`, degrading the same
-  way when no executor resolves.
-- Rendered from the parsed numbers with the kit. The panels worth having first
-  are the ones an operator acts on: status mix, top paths, bandwidth, unique
-  visitors, and **4xx/5xx by path**, which is the one that turns into a ticket.
-- Snapshot plus catch-up, per CapRover's own conclusion. No real-time.
+- [x] 2.1 `apps.analytics()` in `packages/basecamp/api/src/services/apps/apps.service.ts`,
+  beside `logs()` and shaped like it: resolves the executor, calls
+  `/analytics` with the app's route id and a window, and degrades the same way
+  when no executor resolves. *No access log* and *Outpost too old for
+  `/analytics`* each reach the caller by name, not as an empty report.
+- [x] 2.2 The `log-analysis` tab on `packages/basecamp/web/src/routes/apps/[id]/index.mesa`,
+  replacing the comment that declines it. Drawn with the kit from 1.2's panels;
+  **4xx/5xx by path** first, since it is the one that turns into a ticket.
+  *Distinct client IPs* is labeled as that, never *visitors*.
+- [x] 2.3 A window picker (24 hours, 7 days, everything the roll keeps) and a
+  refresh button, with the roll's depth stated on the tab. No real-time and no
+  snapshot-plus-catch-up: `FJS-D764` re-parses per request, so a refresh is the
+  catch-up.
+- [ ] 2.4 Proved in a real browser (`drive-browser`) against a dev basecamp
+  whose Outpost reads a canned Caddy log: every panel draws, an app with no log
+  says so. A throwaway probe; no drive kept.
 
 ### Phase 3 — the app's own view (L, and blocked)
 
@@ -223,6 +254,16 @@ the trail must not grow a row per GET.
 service call is expensive for which tenant*, which is a different question with a
 different audience.
 
+- [ ] 3.1 **Ask first:** start Phase 3 now, or close the plan at Phase 2? If
+  started, where a request summary lands — a `@@log`-named SQLite model per app
+  (the plan's lean), stdout only, or Phase 3 struck. Blocked by the owner.
+- [ ] 3.2 A request summary row per service call — service, method, principal,
+  tenant, duration, status, correlation id — written by junction's request
+  logger into 3.1's store. Not the audit trail: a read writes no audit row.
+- [ ] 3.3 A read with a shape over it (window, service, tenant) and a basecamp
+  panel: slowest service calls by tenant, joined to the audit trail by
+  correlation id.
+
 ---
 
 ## What this owes the repo's own conventions
@@ -230,14 +271,14 @@ different audience.
 - **The Outpost route is signed** — every route but `GET /health` is, and an
   analytics read names an app and a window, which is enough to enumerate the
   fleet.
-- **A report is not a row.** Nothing here belongs in the schema: GoAccess owns
-  the aggregation and the log file is the source. Storing a parsed report would
+- **A report is not a row.** Nothing here belongs in the schema: the Outpost
+  counts on each read and the log file is the source. Storing a parsed report would
   make it a cache with a staleness question and no way to answer it.
 - **Degrade by name.** The three near-misses above all answer *nothing* where
   they mean *not wired*, and `resource.options()`'s `error` field is the settled
-  shape for the difference. An app with no GoAccess must say so.
-- **No product analytics by accident.** *Unique visitors* is GoAccess counting
-  IPs and must be labeled as that. The moment a design reaches for a cookie or a
+  shape for the difference. An app with no access log must say so.
+- **No product analytics by accident.** *Unique visitors* is a count of distinct
+  client IPs and must be labeled as that. The moment a design reaches for a cookie or a
   first-party script it has become a different feature with a consent story, and
   that is a decision, not a phase.
 

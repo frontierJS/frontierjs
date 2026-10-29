@@ -48,7 +48,7 @@ type SecretRow = { id: string; providerKind?: ProviderKind | null; kind?: string
 /** What every account's connector has, whichever realm of the vendor it opens:
  *  a name, a descriptor to register and a cheapest read to verify with. A
  *  compute, an edge and a source connector are each one. */
-export type AccountConnector = Pick<ComputeConnector, 'kind' | 'label' | 'descriptor' | 'verify'>
+export type AccountConnector = Pick<ComputeConnector, 'label' | 'descriptor' | 'verify'> & { kind: ProviderKind }
 
 /**
  * The connector an ACCOUNT registers through, or null where this app speaks to

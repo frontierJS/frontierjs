@@ -18,7 +18,7 @@
 // built and every caller goes through it.
 
 import type { TargetDescriptor } from '@frontierjs/conduit'
-import type { ProviderKind }     from '../../../../db/schema.d.ts'
+import type { ComputeProvider, ProviderKind } from '../../../../db/schema.d.ts'
 import { digitalOcean }          from './digitalocean.ts'
 import { hetzner }               from './hetzner.ts'
 
@@ -220,7 +220,7 @@ export type AccountSend = (req: {
  * else in the app names a vendor's URL, header or JSON shape.
  */
 export interface ComputeConnector {
-  kind:    ProviderKind
+  kind:    ComputeProvider
   label:   string
   /** Where the vendor is, when nothing overrides it. */
   address: string
@@ -292,7 +292,7 @@ export interface ComputeConnector {
 
 // ─── The registry ────────────────────────────────────────────────────────
 
-const CONNECTORS: Partial<Record<ProviderKind, ComputeConnector>> = {
+const CONNECTORS: Partial<Record<ComputeProvider, ComputeConnector>> = {
   digitalocean: digitalOcean,
   hetzner,
 }
@@ -301,11 +301,11 @@ const CONNECTORS: Partial<Record<ProviderKind, ComputeConnector>> = {
  *  `custom` is a machine somebody else made and is null by construction. */
 export function connectorFor(kind: ProviderKind | null | undefined): ComputeConnector | null {
   if (!kind || kind === 'custom') return null
-  return CONNECTORS[kind] ?? null
+  return CONNECTORS[kind as ComputeProvider] ?? null
 }
 
 /** Every cloud this app can speak to, for a picker. */
-export function computeProviders(): { kind: ProviderKind; label: string }[] {
+export function computeProviders(): { kind: ComputeProvider; label: string }[] {
   return Object.values(CONNECTORS)
     .filter((c): c is ComputeConnector => Boolean(c))
     .map(c => ({ kind: c.kind, label: c.label }))

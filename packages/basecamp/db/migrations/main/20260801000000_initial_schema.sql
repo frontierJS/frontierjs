@@ -538,11 +538,9 @@ CREATE TABLE IF NOT EXISTS "server" (
   "deletedAt" TEXT,
   CHECK ("status" IN ('pending', 'provisioning', 'installing', 'online', 'unreachable', 'draining', 'stopped', 'destroying', 'destroyed')),
   CHECK ("role" IN ('general', 'build', 'database', 'gateway', 'worker')),
-  CHECK ("providerKind" IN ('custom', 'hetzner', 'digitalocean', 'cloudflare', 'github')),
+  CHECK ("providerKind" IN ('custom', 'hetzner', 'digitalocean')),
   CHECK ("registerMethod" IN ('imported', 'provisioned')),
   UNIQUE ("workspaceId", "slug"),
-  CHECK (providerKind != 'cloudflare'),
-  CHECK (providerKind != 'github'),
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_server_workspaceId" ON "server" ("workspaceId") WHERE "deletedAt" IS NULL;
@@ -794,6 +792,7 @@ CREATE TABLE IF NOT EXISTS "volume" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "serverId" TEXT NOT NULL,
   "name" TEXT NOT NULL,
+  "kind" TEXT NOT NULL DEFAULT 'volume',
   "driver" TEXT NOT NULL DEFAULT 'local',
   "mountPoint" TEXT,
   "sizeBytes" INTEGER NOT NULL DEFAULT 0,
@@ -802,6 +801,7 @@ CREATE TABLE IF NOT EXISTS "volume" (
   "createdOnServer" TEXT,
   "discoveredAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "lastSeenAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("kind" IN ('volume', 'bind')),
   UNIQUE ("serverId", "name"),
   FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE
 ) STRICT;

@@ -20,6 +20,8 @@
  * process's.
  */
 
+import { ROOTS } from './layout.js'
+
 const SERVER = 'ingress'
 /** A DNS name, lowercased. No wildcard: a wildcard certificate is DNS-01, which
  *  would put a DNS vendor's token on every machine (`IDEAS/fleet-ingress.md` D6). */
@@ -30,7 +32,7 @@ export const routeId = (appId) => `fjs-${appId}`
 
 /** Where a route's access log is written; Caddy rolls it. `fli deploy` names
  *  its own routes' the same way under `fli-`, so the two never share a file. */
-export const accessLogPath = (id) => `/var/log/caddy/${id}.access.log`
+export const accessLogPath = (id) => `${ROOTS.logs}/${id}.access.log`
 
 /**
  * The ingress server's `logs` and Caddy's `logging` with `hosts` logged to the

@@ -100,11 +100,11 @@ Done when: `compute.test.ts` and the cli suite are green, with 2.5's assertion a
 Goal: an app's SQLite files are plain files at `/var/lib/outpost/apps/<app>/data/`, and every reader finds them there.
 Done when: `bun run test` and `bun run verify:docker` in outpost are green, and basecamp's `verify:outpost` reads a database back from that path.
 
-- [ ] 3.1 `docker.js` § deploy mounts `type=bind,src=<state>/apps/<app>/data,dst=<volumePath>`, making the source if absent; ownership per Q4
-- [ ] 3.2 § backup, § restore, § `refuseHeld` and `/replica/drill` take the directory
-- [ ] 3.3 `replicate.js` finds databases under `apps/<app>/data/`; the `docker volume inspect` call and `VOLUME_DB` go
-- [ ] 3.4 The volume report and prune follow Q3, and so does Basecamp's `volumes.service.ts`
-- [ ] 3.5 Basecamp's `apps.service.ts` import and restore paths name the directory, not the volume
+- [x] 3.1 `docker.js` § deploy mounts `type=bind,src=<state>/apps/<app>/data,dst=<volumePath>`, making the source if absent; ownership per Q4 — `OUTPOST_APPS_DIR` overrides the directory (`dev:outpost` sets `.outpost/apps`); the source is made root's 0700 and the chown one-shot stays. Running the drive found FJS-3591, Bun resetting a request at 10s
+- [x] 3.2 § backup, § restore, § `refuseHeld` and `/replica/drill` take the directory — answers carry `data_dir`, not `volume`; a held directory is found by its host path
+- [x] 3.3 `replicate.js` finds databases under `apps/<app>/data/`; the `docker volume inspect` call and `VOLUME_DB` go
+- [x] 3.4 The volume report and prune follow Q3, and so does Basecamp's `volumes.service.ts` — `Volume.kind` (`volume` | `bind`); remove and prune refuse a `bind` row whose App is placed on that server. The report takes ~35s on a box holding 101 Docker volumes
+- [x] 3.5 Basecamp's `apps.service.ts` import and restore paths name the directory, not the volume — the comments and refusal; the method `restoreVolume` and route `/volume/restore` keep their names
 
 ## Phase 4 — On a real box
 
