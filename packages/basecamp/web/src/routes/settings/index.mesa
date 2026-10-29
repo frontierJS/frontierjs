@@ -45,7 +45,7 @@ title: Your settings
   // resetting a kind has to be able to see that it went back to a default
   // rather than to off.
   import { getClient } from '@frontierjs/sierra/resource'
-  import { session, currentWorkspace, reloadWorkspaces } from '../../lib/session.js'
+  import { session, currentWorkspace, reloadWorkspaces, endEnrollmentHold } from '../../lib/session.js'
   import { ago }       from '../../lib/datetime.js'
   import { notificationPreferences as prefs } from '../../resources/NotificationPreference.mesa'
   import User, { users } from '../../resources/User.mesa'
@@ -100,10 +100,18 @@ title: Your settings
   let totpError     = null
   let sudoCode      = ''     // the second factor, beside whichever password confirms
 
+  // A session held to enrollment (`FJS-D1008`) may ask only the authenticator's
+  // questions, and the guard keeps it on this screen until it has one.
+  const held = () => Boolean(session.user?.enrollmentOnly)
+
   async function load() {
     error = null; loading = true
     try {
       const client = getClient()
+      if (held()) {
+        totp = await client.auth.totpStatus()
+        return
+      }
       me       = await client.auth.me()
       profile  = await users.service.get('me')
       sessions = await client.auth.sessions()
@@ -271,6 +279,7 @@ title: Your settings
     totpCode      = ''
     totp          = await a.totpStatus()
     toasts.success('Two-step sign-in is on')
+    if (held()) { await endEnrollmentHold(); await load() }
   })
 
   const regenerateCodes = () => totpStep(async a => {
@@ -313,6 +322,12 @@ title: Your settings
   <p class="text-sm text-muted">Loading…</p>
 {:else}
 
+  {#if session.user?.enrollmentOnly}
+  <Callout tone="warning" title="Set up an authenticator to continue" id="enrollment-required">
+    This Basecamp requires every workspace owner to sign in with a code from an authenticator app.
+    Nothing else opens until two-step sign-in is on.
+  </Callout>
+  {:else}
   <Card id="settings-profile">
     <h2 class="h5">Profile</h2>
     <User record={profile} submitId="profile-save"
@@ -497,6 +512,7 @@ title: Your settings
       {/snippet}
     </Table>
   </Card>
+  {/if}
 
   <Card id="settings-totp" data-totp-state={totp ? (totp.enabled ? 'on' : 'off') : 'loading'}>
     <div class="cluster">

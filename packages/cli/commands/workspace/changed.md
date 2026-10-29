@@ -24,6 +24,7 @@ tag (`<name>@<version>`, the scheme `ws:version` and `ws:pub` write).
 Run this before `fli ws:pub` to confirm what will be published.
 
 ```js
+const { plural } = await import(new URL('file://' + global.fliRoot + '/core/text.js'))
 const { wsRoot, packages } = await $.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
 
@@ -56,7 +57,7 @@ echo(`  ${changed.length} changed  ·  ${clean.length} clean\n`)
 for (const r of changed) {
   const tag = r.lastTag ? `since ${r.lastTag}` : 'never released'
   const n   = [
-    r.commits.length ? `${r.commits.length} commit${r.commits.length === 1 ? '' : 's'}` : '',
+    r.commits.length ? plural(r.commits.length, 'commit') : '',
     r.files.length   ? `${r.files.length} uncommitted` : '',
   ].filter(Boolean).join(', ')
   echo(`  ${r.name}@${r.version}  (${tag}${n ? ` — ${n}` : ''})`)

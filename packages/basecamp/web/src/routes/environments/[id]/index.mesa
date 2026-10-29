@@ -82,9 +82,7 @@ title: Environment
   const appList = apps.tethered({ state: 'local', composed: true, where: { environmentId: page.params.id } })
   $: appRows = appList.rows
 
-  // What shipped HERE, whichever app it was. A release records the environment
-  // it went to, so an app moved since still shows where its old releases landed.
-  // Not fatal: the environment is the screen, this is a section of it.
+  // What shipped HERE, whichever app it was. Not fatal: the environment is the screen, this is a section of it.
   // Composed, because a release row includes its app. `releases` is null when
   // the read failed; [] is "never released".
   const RELEASE_LIMIT = 10

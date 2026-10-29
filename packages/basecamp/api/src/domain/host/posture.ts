@@ -59,6 +59,8 @@ export interface Control {
   ok:       ControlState
   severity: Severity
   message:  string
+  /** What a person does about it; a failing hub control carries one. */
+  fix?:     string
 }
 
 /** What this machine should look like, from Basecamp's rows. */
@@ -450,9 +452,9 @@ function fileControl(what: string, stat: FileStat | null | undefined): Grade {
 /** How much of a key's sha256 a sentence shows: enough to tell two keys apart, never the key. */
 export const shortFingerprint = (hex: string) => hex.slice(0, 12)
 
-const HUB_CONTROLS: { id: string; group: string; severity: Severity; grade: (r: PostureReadings | null, host: HostDeclared, now: number) => Grade }[] = [
+const HUB_CONTROLS: { id: string; group: string; severity: Severity; fix: string; grade: (r: PostureReadings | null, host: HostDeclared, now: number) => Grade }[] = [
   // Graded in process from the Backup rows, so a stale report does not hide it.
-  { id: 'hub.backup-recent', group: 'hub', severity: 'high', grade: (_r, host, now) => {
+  { id: 'hub.backup-recent', group: 'hub', severity: 'high', fix: 'Take one now on /hub/backups/, and turn on the scheduled backup in /hub/settings/', grade: (_r, host, now) => {
     if (!host.lastBackupAt) return { ok: false, message: 'No backup has ever finished' }
     const age = days(now - Date.parse(host.lastBackupAt))
     return age <= BACKUP_MAX_AGE_DAYS
@@ -465,7 +467,7 @@ const HUB_CONTROLS: { id: string; group: string; severity: Severity; grade: (r: 
   // can see that copy; a person attests it (`hubConfig.attestEscrow`), and the
   // attestation names the key by digest so a regenerated key voids it rather
   // than a stale "kept" standing. In process, like the backup control.
-  { id: 'hub.key-escrowed', group: 'hub', severity: 'high', grade: (_r, host) => {
+  { id: 'hub.key-escrowed', group: 'hub', severity: 'high', fix: 'On the placeholder, set ENCRYPTION_KEY to the output of openssl rand -hex 32 before any secret is stored. Then copy it off this box and attest the copy on /hub/backups/', grade: (_r, host) => {
     if (!host.keyFingerprint) return { ok: false, message: 'ENCRYPTION_KEY is the development placeholder — a copy of it protects nothing' }
     const live = shortFingerprint(host.keyFingerprint)
     if (!host.keyEscrow) return { ok: false, message: `No copy of ENCRYPTION_KEY ${live} is attested off this box — every archive is unreadable without it` }
@@ -474,12 +476,12 @@ const HUB_CONTROLS: { id: string; group: string; severity: Severity; grade: (r: 
       ? { ok: true,  message: `A copy of ENCRYPTION_KEY ${live} was attested off this box on ${host.keyEscrow.at.slice(0, 10)}` }
       : { ok: false, message: `The attested copy is of key ${kept}, not the key in use ${live} — the key changed since ${host.keyEscrow.at.slice(0, 10)}` }
   } },
-  { id: 'hub.db-mode',  group: 'hub', severity: 'high', grade: (r) => fileControl('database volume', r?.host_files?.db) },
-  { id: 'hub.env-mode', group: 'hub', severity: 'high', grade: (r) => envControl(r?.host_files) },
+  { id: 'hub.db-mode',  group: 'hub', severity: 'high', fix: 'As root on this box, chmod o-rwx the path named', grade: (r) => fileControl('database volume', r?.host_files?.db) },
+  { id: 'hub.env-mode', group: 'hub', severity: 'high', fix: 'As root on this box, chmod o-rwx the path named', grade: (r) => envControl(r?.host_files) },
   // The two URLs boot on their localhost defaults and nothing refuses that in
   // production: every invitation, reset link and sign-in redirect points at the
   // reader's own machine, and a provisioned box is told to enroll with itself.
-  { id: 'hub.app-url', group: 'hub', severity: 'high', grade: (_r, host) => {
+  { id: 'hub.app-url', group: 'hub', severity: 'high', fix: 'Set FRONTIER_APP_URL to the address people open Basecamp at, then restart the API', grade: (_r, host) => {
     const { production, appUrl } = host.install
     if (!loopback(appUrl)) return { ok: true, message: `Emailed links point at ${appUrl}` }
     return production
@@ -488,7 +490,7 @@ const HUB_CONTROLS: { id: string; group: string; severity: Severity; grade: (r: 
   } },
   // Enrollment refuses plain http off loopback (FJS-1603), so that one fails in
   // any environment: no machine can join until it changes.
-  { id: 'hub.api-url', group: 'hub', severity: 'high', grade: (_r, host) => {
+  { id: 'hub.api-url', group: 'hub', severity: 'high', fix: 'Set FRONTIER_API_URL to the https address machines reach the API at, then restart the API', grade: (_r, host) => {
     const { production, apiUrl } = host.install
     if (loopback(apiUrl)) return production
       ? { ok: false, message: `FRONTIER_API_URL is ${apiUrl} — a provisioned machine is told to enroll with itself` }
@@ -499,7 +501,7 @@ const HUB_CONTROLS: { id: string; group: string; severity: Severity; grade: (r: 
   } },
   // No mailer is a supported state (core/mailer.ts), and the one place an
   // operator learned of it was a log line per unsent invitation.
-  { id: 'hub.mailer', group: 'hub', severity: 'medium', grade: (_r, host) => {
+  { id: 'hub.mailer', group: 'hub', severity: 'medium', fix: 'Set RESEND_API_KEY, or MAIL_URL and MAIL_API_KEY for a relay, and MAIL_FROM on a domain you send from, then restart the API', grade: (_r, host) => {
     const { mailer, mailFrom } = host.install
     if (!mailer) return { ok: false, message: 'No mailer — MAIL_URL and RESEND_API_KEY are both unset, so invitations and password resets are never sent' }
     return mailFrom.endsWith('@localhost')
@@ -564,13 +566,13 @@ export function gradeHub(
 ): Control[] {
   const taken = typeof at === 'number' ? at : Date.parse(at)
   const stale = !Number.isFinite(taken) || now - taken > 2 * intervalMs
-  return HUB_CONTROLS.map(({ id, group, severity, grade }) => {
+  return HUB_CONTROLS.map(({ id, group, severity, fix, grade }) => {
     if (!IN_PROCESS.has(id) && (stale || !readings))
       return { id, group, severity, ok: 'unknown' as const, message: stale ? 'The last report is stale' : 'No report' }
     let g: Grade
     try { g = grade(readings ?? null, host, now) }
     catch { g = unknown('The reading was not in the shape the grader expects') }
-    return { id, group, severity, ...g }
+    return { id, group, severity, ...g, ...(g.ok === false ? { fix } : {}) }
   })
 }
 

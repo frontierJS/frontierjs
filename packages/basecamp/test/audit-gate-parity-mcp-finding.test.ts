@@ -13,7 +13,7 @@ async function release() {
   const sys = fx.env.system as any
   const envRow = await sys.environment.findFirst({ where: { workspaceId: fx.ws.id } })
   const app = await sys.app.create({ data: { workspaceId: fx.ws.id, environmentId: envRow.id, name: 'A', slug: 'a-' + Math.random().toString(36).slice(2, 6) } })
-  const dep = await sys.deployment.create({ data: { workspaceId: fx.ws.id, appId: app.id, environmentId: envRow.id, status: 'pending' } })
+  const dep = await sys.deployment.create({ data: { workspaceId: fx.ws.id, appId: app.id, status: 'pending' } })
   return { sys, app, dep }
 }
 const viaWire = (w: 'viewer' | 'developer', svc: string, id: string, method: string, body: unknown) =>

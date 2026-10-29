@@ -1,7 +1,7 @@
 // src/services/domain-routes/domain-routes.service.ts
 // The prefixes of a Domain that another App answers (`FJS-D1040`).
 //
-// Mounted at /domain-routes. `shop.example.com` belongs to its Domain's App,
+// Mounted at /domainRoutes. `shop.example.com` belongs to its Domain's App,
 // and a route sends `/api` of it to a second App — the pair `fli deploy`'s
 // Caddy serves as one origin, so the SPA and the API it calls share cookies
 // and need no CORS.

@@ -1,7 +1,7 @@
 <script>
-  // kind → renderer. The one place a widget kind becomes a picture.
+  // kind → renderer. The one place a tile kind becomes a picture.
   //
-  // `enum WidgetKind` in db/schema.lite is the vocabulary and the service says
+  // `enum TileKind` in db/schema.lite is the vocabulary and the service says
   // what each kind needs; this file says what each one LOOKS like, and it is
   // the only file that knows. A kind with no branch here falls through to a
   // card that says so — which is what a board looks like when the schema has
@@ -10,7 +10,7 @@
   //
   // The title and the `needs` sentence come from the fetched vocabulary, not
   // from a copy: a kind renamed or a gap closed changes them in one place.
-  import WidgetCard        from './WidgetCard.mesa'
+  import TileCard        from './TileCard.mesa'
   import FleetBody         from './FleetBody.mesa'
   import ServerHealthBody  from './ServerHealthBody.mesa'
   import AppStatusBody     from './AppStatusBody.mesa'
@@ -21,8 +21,8 @@
   import ServiceHealthBody from './ServiceHealthBody.mesa'
   import CounterBody       from './CounterBody.mesa'
 
-  export let widget   = null
-  export let spec     = null      // the kinds entry for widget.kind, or null
+  export let tile   = null
+  export let spec     = null      // the kinds entry for tile.kind, or null
   export let editing  = false
   export let onremove = null
   export let onresize = null
@@ -31,35 +31,35 @@
   // What the card is pointed at, said in the header rather than inside each
   // body: a board with four `app_status` cards is unreadable if only the body
   // knows which app it is.
-  $: subtitle = widget?.subjectMissing
+  $: subtitle = tile?.subjectMissing
     ? 'subject removed'
-    : (widget?.subjectName ?? widget?.config?.serviceId ?? '')
+    : (tile?.subjectName ?? tile?.config?.serviceId ?? '')
 </script>
 
-<WidgetCard title={spec?.label ?? widget?.kind} subtitle={subtitle} needs={spec?.needs ?? ''}
-            editing={editing} cols={widget?.cols ?? 1}
+<TileCard title={spec?.label ?? tile?.kind} subtitle={subtitle} needs={spec?.needs ?? ''}
+            editing={editing} cols={tile?.cols ?? 1}
             onremove={onremove} onresize={onresize} onmove={onmove}>
-  {#if widget?.kind === 'server_fleet'}
+  {#if tile?.kind === 'server_fleet'}
     <FleetBody />
-  {:else if widget?.kind === 'server_health'}
-    <ServerHealthBody widget={widget} />
-  {:else if widget?.kind === 'app_status'}
-    <AppStatusBody widget={widget} />
-  {:else if widget?.kind === 'deploy_feed'}
-    <DeployFeedBody widget={widget} />
-  {:else if widget?.kind === 'job_history'}
+  {:else if tile?.kind === 'server_health'}
+    <ServerHealthBody tile={tile} />
+  {:else if tile?.kind === 'app_status'}
+    <AppStatusBody tile={tile} />
+  {:else if tile?.kind === 'deploy_feed'}
+    <DeployFeedBody tile={tile} />
+  {:else if tile?.kind === 'job_history'}
     <JobHistoryBody />
-  {:else if widget?.kind === 'activity_feed'}
+  {:else if tile?.kind === 'activity_feed'}
     <ActivityBody />
-  {:else if widget?.kind === 'alert_status'}
+  {:else if tile?.kind === 'alert_status'}
     <AlertsBody />
-  {:else if widget?.kind === 'service_health'}
-    <ServiceHealthBody widget={widget} />
-  {:else if widget?.kind === 'stat_counter'}
-    <CounterBody widget={widget} />
+  {:else if tile?.kind === 'service_health'}
+    <ServiceHealthBody tile={tile} />
+  {:else if tile?.kind === 'stat_counter'}
+    <CounterBody tile={tile} />
   {:else}
     <p class="text-sm text-muted">
-      This build has no renderer for a <code>{widget?.kind}</code> widget.
+      This build has no renderer for a <code>{tile?.kind}</code> tile.
     </p>
   {/if}
-</WidgetCard>
+</TileCard>

@@ -3268,6 +3268,15 @@
             }
           ]
         },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "x-aggregatable": "array",
+          "x-sortable": "array"
+        },
         "exposesPort": {
           "type": "boolean",
           "default": false
@@ -7094,6 +7103,15 @@
             }
           ]
         },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "x-aggregatable": "array",
+          "x-sortable": "array"
+        },
         "notes": {
           "anyOf": [
             {
@@ -7707,40 +7725,11 @@
       "title": "HubConfig",
       "x-litestone-kind": "model",
       "properties": {
-        "name": {
-          "type": "string",
-          "x-transforms": [
-            "trim"
-          ],
-          "minLength": 1,
-          "maxLength": 80,
-          "default": "Basecamp"
-        },
-        "baseUrl": {
-          "type": "string",
-          "x-transforms": [
-            "trim"
-          ],
-          "format": "uri"
-        },
-        "adminEmail": {
-          "type": "string",
-          "x-transforms": [
-            "lower"
-          ],
-          "format": "email"
-        },
         "heartbeatTimeoutSeconds": {
           "type": "integer",
           "minimum": 30,
           "maximum": 3600,
           "default": 120
-        },
-        "sessionTtlHours": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 8760,
-          "default": 168
         },
         "requireTwoFactorForOwners": {
           "type": "boolean",
@@ -7869,42 +7858,9 @@
           ],
           "readOnly": true,
           "x-litestone-kind": "system"
-        },
-        "mailFromAddress": {
-          "anyOf": [
-            {
-              "type": "string",
-              "x-transforms": [
-                "lower"
-              ],
-              "format": "email"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "mailFromName": {
-          "anyOf": [
-            {
-              "type": "string",
-              "x-transforms": [
-                "trim"
-              ],
-              "minLength": 0,
-              "maxLength": 80
-            },
-            {
-              "type": "null"
-            }
-          ]
         }
       },
       "additionalProperties": false,
-      "required": [
-        "baseUrl",
-        "adminEmail"
-      ],
       "x-version": "version",
       "x-gate": {
         "read": 7,
@@ -8607,6 +8563,7 @@
         "MonitorDown",
         "MonitorUp",
         "PostureFailed",
+        "HubPostureFailed",
         "DependencyVulnerable",
         "MemberJoined",
         "JobFailed",
@@ -9184,6 +9141,12 @@
           ]
         },
         "deployOnPush": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "connect": {
           "type": [
             "boolean",
             "null"

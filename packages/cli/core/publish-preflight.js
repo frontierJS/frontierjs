@@ -127,6 +127,43 @@ export function peerDrift(members = [], planned = []) {
 }
 
 /**
+ * `workspace:` dependencies of the release set that are not in it and whose
+ * tree has moved past their own tag.
+ *
+ * bun rewrites `workspace:*` to the sibling's version number as it stands, and a
+ * version number says nothing about the commits made under it since it was
+ * tagged. So the package published here imports code no published copy of the
+ * sibling holds, and it fails at its first import on an installed machine
+ * (`FJS-3534`: outpost 0.1.6 against litestone 1.1.10, 62 files later). The
+ * dependency has to go first, as a new version. devDependencies are dropped by
+ * the packer and never reach an install.
+ *
+ * @param planned  [{ name, pkg }]
+ * @param members  [{ name, dir, pkg }]  every workspace member
+ * @param stateOf  (name, dir) => { lastTag, commits, files }   — `context.git.pkgState`
+ */
+export function movedDependencies(planned = [], members = [], stateOf = () => ({})) {
+  const releasing = new Set(planned.map(p => p.name))
+  const byName    = new Map(members.map(m => [m.name, m]))
+  const states    = new Map()
+  const out       = []
+
+  for (const p of planned) {
+    const deps = { ...p.pkg?.optionalDependencies, ...p.pkg?.dependencies, ...p.pkg?.peerDependencies }
+    for (const [dep, spec] of Object.entries(deps)) {
+      const m = byName.get(dep)
+      if (!m || releasing.has(dep) || !String(spec).startsWith('workspace:')) continue
+      if (!states.has(dep)) states.set(dep, stateOf(dep, m.dir) ?? {})
+      const s = states.get(dep)
+      const commits = s.commits?.length ?? 0, files = s.files?.length ?? 0
+      if (s.lastTag && !commits && !files) continue
+      out.push({ by: p.name, dep, version: m.pkg?.version ?? null, tag: s.lastTag || null, commits, files })
+    }
+  }
+  return out
+}
+
+/**
  * The release set, ordered so a package is published after everything it
  * depends on.
  *
@@ -167,8 +204,24 @@ export function publishOrder(planned = []) {
  * an operator should usually do, and the override is what is available when
  * they know better. Printing only the override teaches everyone to reach for it.
  */
-export function publishRefusals({ dirty = [], drift = [], cycles = [], heldBack = [], force = {} } = {}) {
+export function publishRefusals({ dirty = [], drift = [], moved = [], cycles = [], heldBack = [], force = {} } = {}) {
   const out = []
+
+  if (moved.length) {
+    // No override: what it would ship is a package that fails at its first
+    // import, and the fix costs one more name on the command line.
+    const deps = [...new Set(moved.map(m => m.dep))]
+    out.push({
+      check:   'workspace-dep-moved',
+      message: `${deps.length} workspace dependenc${deps.length === 1 ? 'y has' : 'ies have'} moved past ${deps.length === 1 ? 'its' : 'their'} published tag and ${deps.length === 1 ? 'is' : 'are'} not in this release: ${deps.join(', ')}`,
+      because: 'bun pins workspace:* to the version number as it stands, so the package published here imports code no published copy of that dependency holds',
+      fix:     'publish the dependency first, as a new version — add it to --filter, or run without one',
+      override: null,
+      detail:  moved.map(m => `${m.by} → ${m.dep} ${m.version ?? '?'}: ${m.tag
+        ? `${m.commits} commit(s) since ${m.tag}${m.files ? `, ${m.files} uncommitted file(s)` : ''}`
+        : 'never tagged'}`),
+    })
+  }
 
   if (dirty.length && !force.dirty) {
     const total = dirty.reduce((n, d) => n + d.files.length, 0)

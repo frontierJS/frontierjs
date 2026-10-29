@@ -292,6 +292,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./serve` | `src/serve.js` | yes |
 | exports | `./vitals` | `src/vitals.js` | yes |
 | exports | `./cert` | `src/cert.js` | yes |
+| exports | `./layout` | `src/layout.js` | yes |
 | bin | `outpost` | `src/index.js` | yes |
 
 ## `@frontierjs/print-kit`
@@ -436,7 +437,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./rowlist` | `rowlist.js` | yes |
 | exports | `./controls` | `controls.js` | yes |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 92 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 94 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

@@ -62,10 +62,10 @@ later `--source npm`.
 
 ## What must stay true
 
-Every published version has an asset at the derived URL, byte-equal to the npm
-tarball. **What fails when it stops: none today.** Phase 1.3 builds the check,
-and CI's `deploy` phase gains the third source run in 3.3; until then this is
-recorded `none`, not assumed.
+Every version `ws:publish` ships has an asset at the derived URL, and where it
+also went to npm the two are byte-equal. **What fails when it stops: none
+today.** Phase 1.3 builds the check, and CI's `deploy` phase gains the third
+source run in 3.3; until then this is recorded `none`, not assumed.
 
 ## Phases
 
@@ -138,15 +138,67 @@ Goal: one pack, two destinations, from the pipeline that already owns a release.
 Done when: `fli ws:pub patch --filter litestone --dry` prints the asset it would
 upload beside the npm line, and a real run leaves an asset the postflight verifies.
 
-- [ ] 1.1 `02-publish-all` packs once with `core/vendor.js`'s pack and publishes
+- [x] 1.1 `02-publish-all` packs once with `core/vendor.js`'s pack and publishes
   THAT file to npm (`npm publish <tgz>`), so the asset and the registry copy are
   the same bytes by construction rather than by two packs agreeing.
-- [ ] 1.2 `--to <npm|tarballs>`, multiple, default both. `--to npm` or `--to
+  **Built:** `packPackage({ name, dir, destination })` and `tarballStem` are
+  `core/vendor.js` exports, and `vendorWorkspacePackages` runs the same
+  function. Step 02 packs every released package into
+  `<fliTmpRoot>/publish/<startTime>/` before its first prompt, keeps the path
+  as `released[i].tarball` for 1.2 and 1.3, and runs `bun publish "<tgz>"`
+  (`bun publish [dist]` takes a tarball; proved with `--dry-run` on toolbelt).
+  Not the workspace's `.cache/`: the *spends nothing* test in
+  `publish-view.test.js` asserts a dry run leaves a fixture repo clean. On
+  `--dry` the bump is not written, so the pack carries the tree's version and
+  the line says so. `fli ws:pub patch --filter toolbelt --dry --allow-dirty`
+  prints the pack beside the publish line; `vendor.test.js` gains two tests
+  (`packPackage` returns its own file beside a prefix sibling; a failed pack
+  is named).
+- [x] 1.2 `--to <npm|tarballs>`, multiple, default both. `--to npm` or `--to
   tarballs` narrows. The tarball destination runs `gh release create <tag>
   <tgz> --latest=false --notes <subject>`; a release that already exists for
   the tag is refused the way a spent npm version is, unless 0.3 shows GitHub
   refuses it first. `00-preflight` gains the `gh auth status` check beside
   `npm whoami`.
+  **Built:** `--to` is a repeatable `choices: [npm, tarballs]` flag on
+  `ws:publish`; **unset is `tarballs` alone** (Q1 ruled C, `FJS-D1613`). Step
+  02 runs, per package and after any npm publish, `gh release create <tag>
+  <tgz> --latest=false --target <full sha> --title <tag> --notes <subject>` in
+  the repo — `--target` because 0.3 showed gh writes the tag on GitHub and
+  step 03 has not pushed yet; without it the tag lands on the default branch's
+  head. No `--clobber`, so GitHub's own refusal is the write-once. The resume
+  rule asks EVERY destination in the run (`npm view`; `gh release view <tag>
+  --json assets`, the asset by its packed name) and a half-shipped version is
+  shipped only where it is missing, so a failed release after a good npm
+  publish is finished by the next run rather than by hand. `00-preflight`
+  asks `gh auth status --active` only when `tarballs` is in the run, and `npm
+  login`/`whoami` only when `npm` is. **Hazard found:** gh takes
+  `GH_TOKEN`/`GITHUB_TOKEN` from the environment over its keyring login, and
+  fli loads `~/.config/fli/env` into that environment — the token there was
+  stale and every gh call under fli answered 401 while a bare shell was green;
+  both refusals now name the variable. Proof: dry runs print one line per
+  destination for each `--to` shape and `--to bogus` is refused by name; with
+  the variable blanked, litestone 1.1.11 (released in 0.3) reads as shipped
+  and toolbelt 0.1.6 (npm only) as `in-flight-moved`, which is 1.5's point;
+  cli suite 4025 pass.
+- [x] 1.4 The GUI's publish walk (`core/publish-view.js`, `PUBLISH_STEPS`)
+  still gates on `npm whoami` and reads `ws:npm` for *what is out*: it learns
+  the default destination — `gh auth status` as the ready gate, the release
+  list beside the registry — and a *to* option that passes the same
+  `choices` gate as `--tag`. Built: `core/publish-hosts.js` is the one reader
+  per destination, asked by `ws:pub` before a bump and by the page beside the
+  registry column; a destination's login gate is drawn only while it is in
+  the run; the default is left unsaid in argv, like `latest`.
+- [ ] 1.5 Backfill: every version already on npm has no release, and under the
+  new default the next `ws:pub` reads each as in flight — `in-flight-moved`
+  where the tree has moved since its tag, which is all of them. One owner-run
+  pass, 0.3's procedure per package: fetch npm's own tarball (`npm pack
+  <name>@<version>` — the registry's bytes, never a fresh pack), `gh release
+  create <tag> <tgz> --latest=false --target <tag's sha>`. Owner-run because
+  `gh release create` is refused to a session. Until it runs, `--to npm` is
+  the only clean default run. The pass is `scripts/backfill-releases.mjs`:
+  dry by default, `--run` does it; dry run 2026-10-28 names 20 to release and
+  skips litestone, which 0.3 already shipped.
 - [ ] 1.3 `04-verify-assets` — the postflight: GET the derived
   `packages.frontierjs.com` URL for every released package, follow the redirect,
   sha256 the body against the tarball 1.1 uploaded — never against a fresh
@@ -200,31 +252,49 @@ Done when: CI's `deploy` phase is green for `--source url`, and
 - [ ] 3.4 `docs/` and the root `README.md` § Project Structure say the three
   sources in one table: `local` develops, `url` installs, `npm` upgrades.
 
-### Phase 4 — A dev channel (deferred)
+### Phase 4 — A dev channel
 
 Goal: a build machine pins the working tree at a commit without spending a
-version.
-Done when: Basecamp deploys an app against `litestone/1.1.12-dev.<sha>.tgz`.
+version and without touching npm (`FJS-D1602`).
+Done when: Basecamp deploys an app against
+`packages.frontierjs.com/frontierjs-litestone/1.1.11-dev.<sha>.tgz`.
+Needs 1.2's upload step and 2.1's rule; runs before Phase 3 if the owner wants
+the dev road first.
 
-- [ ] 4.1 Decide Q2 first. Until then the dev channel is `--source local` plus
-  `deploy:vendor`, which already ships the working tree into a build context.
+- [ ] 4.1 `fli ws:publish --channel dev`: a closed set (`dev` only), refused
+  with `--to npm` by name. The dev version string is
+  `<manifest version>-dev.<short sha>` of HEAD; no manifest is written, no
+  commit, no git tag. `00-preflight` refuses a dirty tree on this channel
+  regardless of `--allow-dirty` — the sha in the filename is the one origin
+  and a dirty tree makes it a lie. The pack is 1.1's `packPackage` over a
+  manifest copy with the dev version, so the tarball's own name carries it.
+- [ ] 4.2 Upload to ONE rolling GitHub Release named `dev` (`gh release
+  upload dev <tgz>`, created once with `--prerelease --latest=false`); the
+  release's tag is never cited, the filename is. Same name twice is refused
+  by GitHub (0.3), which is write-once per sha for free.
+- [ ] 4.3 2.1's redirect rule gains its second branch: a version containing
+  `-dev.` resolves to release `dev`. Two branches, never a list.
+- [ ] 4.4 1.3's postflight runs over the `dev` release too, against the
+  tarball 4.1 packed. This is the only artefact for the ruling's silence.
+- [ ] 4.5 `fli new --source url` accepts a dev version string in place of the
+  current one (`--source url@1.1.11-dev.ab12cd3` or an env the scaffold
+  reads; decide in the step), writing the same `overrides` block as 3.1 so a
+  dev litestone's `^toolbelt` does not resolve from npm.
 
 ## Open questions
 
-- **Q1 — Default destinations.**
-  - **A** — `--to` defaults to both npm and tarballs, so § What must stay true
-    holds by default and a flag only narrows.
-  - **B** — defaults to npm; tarballs are opt-in.
-  - **Recommend A** — B makes the asset's absence the common case and the
-    postflight a check that usually has nothing to check.
-- **Q2 — The dev channel.**
-  - **A** — `ws:publish --channel dev` writes `x.y.z-dev.<sha>` assets to one
-    rolling GitHub Release (`dev`), no git tag, no npm; the URL is derived from
-    the sha.
-  - **B** — no dev channel; a build machine that wants the tree uses
-    `deploy:vendor`, which already ships the working tree into a build context.
-  - **Recommend B until Phase 3 is green** — A is a second version list, which
-    `decision-rules` Q1 refused, and the need it serves is already met.
+- **Q1 — Default destinations.** Ruled `FJS-D1613`, 2026-10-28: **C**,
+  tarballs alone; `--to npm` is said on purpose. A was recommended; the owner
+  asked what npm is still for, and the honest answer was ranges for
+  `bun update` and outsiders — neither in play pre-alpha — against a browser
+  2FA round trip per package per release. The repo is public, so a release
+  asset is as open as an npm tarball; nothing new leaks.
+- **Q2 — The dev channel.** Ruled `FJS-D1602`, 2026-10-28: **A**, against
+  the recommendation. `--channel dev`, `<current>-dev.<sha>`, dirty tree
+  refused, `--to npm` refused, one rolling release `dev`. The paper's *B until
+  Phase 3* served one laptop; the owner's need is a second machine testing
+  the latest tree with no npm, and 3.2 deletes that machine's only other road.
+  Phase 4 is the build.
 
 ## See also
 

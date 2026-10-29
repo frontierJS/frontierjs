@@ -185,8 +185,8 @@ The full hazard catalog for `@frontierjs/basecamp`, moved out of `CLAUDE.md`. Th
   It used to be shape alone — any `{ data, total }` was rebuilt as a paginated
   list from `total`/`limit`/`offset`/`data`/`errors` and every sibling key was
   dropped with a 200 and no warning, whatever method produced it.
-  `dashboards.kinds` shipped nine widget kinds and neither of the vocabularies
-  needed to configure them, so the picker offered widgets it could not fill in
+  `dashboards.kinds` shipped nine tile kinds and neither of the vocabularies
+  needed to configure them, so the picker offered tiles it could not fill in
   (`FJS-140`). An action answering rows keeps everything
   it sends, and a `find` that answers anything but a list throws rather than
   guessing. NAMED keys and no `data` is still the clearest shape for an action

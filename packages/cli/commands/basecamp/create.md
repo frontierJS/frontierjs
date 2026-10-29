@@ -124,26 +124,13 @@ token is still asked for, since it has no default.
 A second run refuses while a box made by an earlier one is still at the
 account with nothing installed on it, so a retry never buys two. Once Basecamp
 answers, the install marks the box as Basecamp's host, which a later create
-passes over. `fli basecamp` shows it, and `fli basecamp:stop <id>` then `fli basecamp:destroy <id>` removes it.
+passes over. `fli server` shows it, and `fli server:stop <id>` then `fli server:destroy <id>` removes it. The box half alone is `fli server:create`; this is that and `fli basecamp:install` in one run.
 
 ```js
-const { existsSync, readFileSync } = await import('node:fs')
-const { homedir }                  = await import('node:os')
-
-const home = homedir()
-const expand = p => p.replace(/^~(?=\/|$)/, home)
-const keyPath = flag.key
-  ? expand(flag.key)
-  : [`${home}/.ssh/id_ed25519.pub`, `${home}/.ssh/id_rsa.pub`].find(p => existsSync(p))
-
-if (!keyPath || !existsSync(keyPath)) {
-  log.error(flag.key ? `No public key at ${keyPath}` : 'No ~/.ssh/id_ed25519.pub or id_rsa.pub: pass --key <file.pub>')
-  return
-}
-if (!keyPath.endsWith('.pub')) {
-  log.error(`${keyPath} is not a .pub file: pass the PUBLIC key`)
-  return
-}
+const key = await publicKey(flag.key)
+if (key.error) { log.error(key.error); return }
+const keyPath = key.keyPath
+const home    = process.env.HOME
 
 if (flag.admin && flag.json) {
   log.error('--json prints the box and stops, so it never installs: drop one of --json and --admin')
@@ -244,9 +231,7 @@ if (admin && !EMAIL.test(admin)) {
   return
 }
 
-// The name is a hostname at the cloud and a Host pattern in ~/.ssh/config: a
-// space or a `*` would buy the box and then write a Host line matching others.
-if (!/^[a-z0-9][a-z0-9.-]*$/i.test(name)) {
+if (!boxName(name)) {
   log.error(`"${name}" is not a hostname: letters, digits, dots and dashes`)
   process.exitCode = 1
   return
@@ -268,75 +253,14 @@ if (asking) {
   echo('')
 }
 
-log.info(`Creating ${name} at ${vendor} (${[flag.size, flag.region].filter(Boolean).join(', ')}) — about a minute`)
-const made = await runProvision({
-  cloud, action: 'create', name, region: flag.region, image: flag.image, size: flag.size,
-  publicKey: readFileSync(keyPath, 'utf8'),
-  reservedIp: flag['reserved-ip'], reuse: points ?? undefined,
+const bought = await buyBox({
+  cloud, name, size: flag.size, region: flag.region, image: flag.image, keyPath,
+  reservedIp: flag['reserved-ip'], reuse: points, sole: true, addHost, json: flag.json, log, echo, chalk,
 })
-
-if (made.error) { log.error(made.error); process.exitCode = 1; return }
-if (flag.json)  { echo(JSON.stringify(made, null, 2)); return }
-
-const monthly = made.monthly == null ? '' : ` · ${(made.monthly / 100).toFixed(2)} ${made.currency}/mo`
-echo('')
-row('box', `${chalk.bold(made.name)}  ${made.id}  ${chalk.dim(`${made.size} · ${made.region} · ${made.image}${monthly}`)}`)
-
-if (made.pending) {
-  log.warn(`  It has no address yet. fli basecamp reads it later, or destroy it: fli basecamp:stop ${made.id}, then fli basecamp:destroy ${made.id}`)
-  return
-}
-
-const identity = keyPath.replace(/\.pub$/, '')
-const block = `Host ${made.name}
-  HostName ${made.ip}
-  User root
-  IdentityFile ${identity.replace(home, '~')}
-`
-row('ip', made.reserved?.ip
-  ? `${chalk.bold(made.ip)} ${chalk.dim(`reserved${made.reserved.reused ? ', reused' : ''}${made.boxIp !== made.ip ? ` · box ${made.boxIp}` : ''}`)}`
-  : chalk.bold(made.ip))
-if (made.reserved?.error) log.warn(`  No reserved IP: ${made.reserved.error}. The box answers on its own address`)
-echo('')
-
-// The box is minutes old, so a known_hosts line for its address is an older
-// box's — a reused reserved IP always has one — and accept-new refuses a
-// changed key, which reads as ssh never answering.
-const { spawnSync } = await import('node:child_process')
-if (spawnSync('ssh-keygen', ['-F', made.ip], { stdio: 'ignore' }).status === 0) {
-  spawnSync('ssh-keygen', ['-R', made.ip], { stdio: 'ignore' })
-  log.info(`  Dropped the old known_hosts line for ${made.ip}`)
-}
-
-// A Host of the same name is somebody's existing machine: ssh takes the FIRST
-// match, so appending a second would be silently ignored, and replacing it would
-// point that alias at a stranger's box.
-const sshConfig = `${home}/.ssh/config`
-let added = false
-if (addHost) {
-  const { appendFileSync, mkdirSync, writeFileSync } = await import('node:fs')
-  const had = existsSync(sshConfig) ? readFileSync(sshConfig, 'utf8') : null
-  const taken = had != null && had.split('\n').some(line => {
-    const [word, ...patterns] = line.trim().split(/\s+/)
-    return word?.toLowerCase() === 'host' && patterns.includes(made.name)
-  })
-  if (taken) log.warn(`  ~/.ssh/config already has a Host ${made.name}: left alone`)
-  else {
-    if (had == null) { mkdirSync(`${home}/.ssh`, { recursive: true, mode: 0o700 }); writeFileSync(sshConfig, '', { mode: 0o600 }) }
-    appendFileSync(sshConfig, (had && !had.endsWith('\n') ? '\n' : '') + (had ? '\n' : '') + block)
-    added = true
-    log.success(`  Added Host ${made.name} to ~/.ssh/config — ssh ${made.name}`)
-  }
-}
-if (!added) echo`  Add to ~/.ssh/config:
-
-${block.replace(/^(?=.)/gm, '  ')}`
-
-// Basecamp's frontier.config.js leaves `deploy.server` empty on purpose, so the
-// box travels as `--server` on every line this run prints, never as an edit to
-// that file. The Host alias when this run wrote it, the address otherwise.
-const dest = `root@${made.ip}`
-const box = added ? made.name : dest
+if (bought.error) { log.error(bought.error); process.exitCode = 1; return }
+if (flag.json)    { echo(JSON.stringify(bought.made, null, 2)); return }
+if (!bought.dest) return
+const { made, dest, box, identity } = bought
 const named = domain && domain !== configured ? ` --domain ${domain}` : ''
 const later = ` --server ${box}${named}`
 const installLine = `fli basecamp:install ${box}${named}`

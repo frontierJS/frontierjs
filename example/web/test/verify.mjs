@@ -1277,8 +1277,9 @@ try {
     const read  = Number(shown.replace(/[^0-9.]/g, ''));
     return {
       // Humanized from the column names and the relation, or taken from
-      // @label. No list of headers exists in the page.
-      heads:      [...document.querySelectorAll('thead th')].map(th => th.textContent.trim()),
+      // @label. No list of headers exists in the page. Read off the rows' own
+      // table: a day filter's calendar is a table too, mounted while closed.
+      heads:      [...tr.closest('table').querySelectorAll('thead th')].map(th => th.textContent.trim()),
       integer:    Number.isInteger(cents) && cents > 0,
       formatted:  /^\\$[\\d,]+\\.\\d\\d$/.test(shown),
       agree:      Math.round(read * 100) === cents,

@@ -23,15 +23,12 @@ import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { requireSystemAdmin, sessionScope, workspaceChannel } from '../../core/hooks.ts'
 import { db, ws }   from '../../core/resource.ts'
-import { declaredFor, gradeHub, gradePosture, gradeReplication, postureChanges, postureRank, POSTURE_INTERVAL_MS } from '../../domain/host/posture.ts'
-import type { Control, HostDeclared, PostureReadings } from '../../domain/host/posture.ts'
-import { encryptionKeyFingerprint } from '../../core/db.ts'
-import { env }          from '../../core/env.ts'
-import { mailProvider } from '../../core/mailer.ts'
+import { declaredFor, gradePosture, gradeReplication, postureChanges, postureRank, POSTURE_INTERVAL_MS } from '../../domain/host/posture.ts'
+import type { Control, PostureReadings } from '../../domain/host/posture.ts'
 import { notifyPeople, workspaceMembers } from '../../domain/notification/notify.ts'
 import { statusOf } from '../../core/dependencies.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
-import { hostServer } from '../../domain/host/host-machine.ts'
+import { gradeHubNow } from '../../domain/host/host-machine.ts'
 import { hostReplicaDestination } from '../../jobs/replicate-sync.job.ts'
 
 // ─── The outpost's wire contract ───────────────────────────────────────────
@@ -110,7 +107,7 @@ async function ingest(server: any, data: ReportData) {
  * a report stops being true by sitting in the table, and a box whose Outpost
  * died would otherwise keep its last clean answer forever.
  */
-async function view(server: any, row: any, { readings = false } = {}) {
+export async function postureView(server: any, row: any, { readings = false } = {}) {
   const host    = !!await hostReplicaDestination(sys(), server)
   const replica = gradeReplication(server.replication, await replicatingOn(server.id), Date.now(), host)
   if (!row) return {
@@ -140,33 +137,6 @@ async function replicatingOn(serverId: string): Promise<{ id: string; slug: stri
     where:  { id: { in: [...new Set(placed.map(p => p.appId))] }, replicaDestinationId: { not: null } },
     select: { id: true, slug: true }, orderBy: { slug: 'asc' },
   })
-}
-
-/** `finishedAt` of the newest backup that succeeded — what `hub.backup-recent` grades. */
-async function lastBackupAt(): Promise<string | null> {
-  const row = await sys().backup.findFirst({
-    where: { status: 'success', finishedAt: { not: null } }, orderBy: { finishedAt: 'desc' },
-  })
-  return row?.finishedAt ?? null
-}
-
-/** The rows the `hub.*` controls grade in process: the newest archive and the key's escrow. */
-async function hostDeclared(): Promise<HostDeclared> {
-  const config = await sys().hubConfig.findFirst({ where: { id: 'hub' } })
-  return {
-    lastBackupAt:   await lastBackupAt(),
-    keyFingerprint: encryptionKeyFingerprint(),
-    keyEscrow:      config?.encryptionKeyEscrowedAt && config.encryptionKeyFingerprint
-      ? { at: config.encryptionKeyEscrowedAt, fingerprint: config.encryptionKeyFingerprint }
-      : null,
-    install: {
-      production: env.NODE_ENV === 'production',
-      appUrl:     env.FRONTIER_APP_URL,
-      apiUrl:     env.FRONTIER_API_URL,
-      mailer:     mailProvider()?.address ?? null,
-      mailFrom:   env.MAIL_FROM,
-    },
-  }
 }
 
 async function scopedServer(id: string) {
@@ -216,7 +186,7 @@ export default createService({
     if (res.error) throw new BadRequest(`The outpost on '${server.name}' did not answer (${res.error.kind})`)
 
     await ingest(server, res.data as ReportData)
-    return await view(server, await sys().serverPosture.findFirst({ where: { serverId: server.id }, orderBy: { at: 'desc' } }), { readings: true })
+    return await postureView(server, await sys().serverPosture.findFirst({ where: { serverId: server.id }, orderBy: { at: 'desc' } }), { readings: true })
   },
 
   // ── latest — POST /posture/:serverId  X-Service-Method: latest ────
@@ -224,7 +194,7 @@ export default createService({
     $.dispatch = false   // read-shaped
     const server = await scopedServer($.id as string)
     const row    = await db().serverPosture.findFirst({ where: { serverId: server.id }, orderBy: { at: 'desc' } })
-    return await view(server, row, { readings: true })
+    return await postureView(server, row, { readings: true })
   },
 
   // ── fleet — POST /posture  X-Service-Method: fleet ────────────────
@@ -233,7 +203,7 @@ export default createService({
     const servers = await db().server.findMany({ where: { workspaceId: ws() }, limit: 500 })
     const rows = []
     for (const server of servers)
-      rows.push(await view(server, await db().serverPosture.findFirst({
+      rows.push(await postureView(server, await db().serverPosture.findFirst({
         where: { serverId: server.id }, orderBy: { at: 'desc' },
       })))
     rows.sort((a, b) => b.rank - a.rank || a.serverName.localeCompare(b.serverName))
@@ -258,12 +228,8 @@ export default createService({
   async host() {
     $.dispatch = false   // read-shaped
     const now    = Date.now()
-    const server = await hostServer(sys())
-    const row    = server
-      ? await sys().serverPosture.findFirst({ where: { serverId: server.id }, orderBy: { at: 'desc' } })
-      : null
-    const hub = gradeHub(row?.readings ?? null, await hostDeclared(), { at: row?.at ?? now, now })
-    const machine  = server ? await view(server, row) : null
+    const { server, row, hub } = await gradeHubNow(sys(), now)
+    const machine  = server ? await postureView(server, row) : null
     const controls = [...hub, ...(machine?.controls ?? [])]
     return {
       enrolled: !!server,

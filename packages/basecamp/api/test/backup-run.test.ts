@@ -346,7 +346,8 @@ describe('a backup naming a destination is uploaded, and a failed upload keeps t
     const sys  = env.system as any
     const uniq = Math.random().toString(36).slice(2, 8)
     const acct = await sys.account.create({ data: { slug: `bk-${uniq}`, displayName: 'Backups' } })
-    const ws   = await sys.workspace.create({ data: { accountId: acct.id, name: 'Backups', slug: `bk-${uniq}`, ownerId: 'nobody' } })
+    const own  = await sys.user.create({ data: { email: `bk-${uniq}@example.com` } })
+    const ws   = await sys.workspace.create({ data: { accountId: acct.id, name: 'Backups', slug: `bk-${uniq}`, ownerId: own.id } })
     const key  = await sys.secret.create({ data: {
       workspaceId: ws.id, name: 'backup:Stand-in', kind: 'backup', data: 'keyid:applicationkey',
     } })
@@ -453,7 +454,8 @@ describe('retention prunes by count and age, local and remote apart, and a resca
     const sys  = env.system as any
     const uniq = Math.random().toString(36).slice(2, 8)
     const acct = await sys.account.create({ data: { slug: `rt-${uniq}`, displayName: 'Retention' } })
-    const ws   = await sys.workspace.create({ data: { accountId: acct.id, name: 'Retention', slug: `rt-${uniq}`, ownerId: 'nobody' } })
+    const own  = await sys.user.create({ data: { email: `rt-${uniq}@example.com` } })
+    const ws   = await sys.workspace.create({ data: { accountId: acct.id, name: 'Retention', slug: `rt-${uniq}`, ownerId: own.id } })
     const key  = await sys.secret.create({ data: { workspaceId: ws.id, name: 'backup:Retention', kind: 'backup', data: 'keyid:applicationkey' } })
     dest = await sys.backupDestination.create({ data: {
       workspaceId: ws.id, name: 'Retention', endpoint: `http://127.0.0.1:${server.port}`,

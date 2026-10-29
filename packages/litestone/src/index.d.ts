@@ -1024,8 +1024,10 @@ export interface ApplyResult {
   skipped:  string[]
   /** True when the directory held candidate files and NONE matched: a refusal, not an empty directory. */
   unmatched?: boolean
-  /** True when nothing ran: the history holds a `.js` file (`FJS-D518`), or a pending file's DESTRUCTIVE box still says `Accept data loss: no` (`FJS-1784`). `message` names it. */
+  /** True when nothing ran: the history holds a `.js` file (`FJS-D518`), a pending file's DESTRUCTIVE box still says `Accept data loss: no` (`FJS-1784`), or an applied file was edited after it ran (`FJS-3578`). `message` names it. */
   refused?: boolean
+  /** The applied files whose text no longer matches the checksum the history recorded. */
+  modified?: string[]
   /** The pending files whose loss nobody has accepted in the file. */
   held?:    string[]
   failed?:  string

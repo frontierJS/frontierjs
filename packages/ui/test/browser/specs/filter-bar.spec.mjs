@@ -80,6 +80,19 @@ export async function run(t) {
   //
   // Four kinds, three components, three different callback shapes. A branch
   // that forwards the wrong prop renders identically to one that works.
+  //
+  // The bar draws three inline and holds the rest behind `+ Filter`, so every
+  // other branch is added first and driven as a chip.
+  const addFilter = `[...document.querySelectorAll('${BAR} button')].find(b => b.textContent.trim() === '+ Filter')`
+  t.is(await t.evaluate(`return document.querySelectorAll('${BAR} .filter-chip').length`), 0,
+    'nothing is a chip before it is added or held')
+  for (let i = 0; i < 8; i++) {
+    await t.evaluate(`${addFilter}.click(); return true`)
+    await t.evaluate(`return await waitVisible('[role=menu] [role=menuitem]');`)
+    await t.clickAt('[role=menu] [role=menuitem]')
+    await t.eventually(`document.querySelectorAll('${BAR} .filter-chip').length`, i + 1, `+ Filter adds filter ${4 + i} as a chip`)
+  }
+  t.is(await t.evaluate(`return !!${addFilter}`), false, 'and is gone once nothing is left to add')
 
   await t.clickAt(`${BAR} input[placeholder="Title"]`)
   await t.type('ab')
@@ -128,6 +141,26 @@ export async function run(t) {
   await t.eventually(held(`JSON.stringify(q.tags ?? null)`), '{"some":{"tagId":{"in":[1]}}}',
     'a to-many writes its set under some and the join key')
 
+  // A relation past the cap is searched: row 250 is on no page the seed holds,
+  // so only the server's answer to what was typed can offer it.
+  const ownerRows = `[...document.querySelectorAll('${BAR} .fjs-multiselect-panel .fjs-multiselect-option')].map(o => o.textContent.trim()).join()`
+  await t.clickAt(`${BAR} input[placeholder="Owner"]`)
+  await t.eventually(ownerRows, 'Ada,Bo', 'a relation opens on the first page its entry fetched')
+  await t.type('ze')
+  await t.eventually(`JSON.stringify(window.ownerAsks.at(-1))`, '{"search":"ze","held":null}',
+    'typing asks the entry\'s optionsFor with the term')
+  await t.eventually(ownerRows, 'Zed', 'and offers the row only the search found')
+  await t.evaluate(`
+    const opt = document.querySelector('${BAR} .fjs-multiselect-panel .fjs-multiselect-option');
+    opt.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    opt.click();
+    await waitSettled('body');
+  `)
+  await t.eventually(held(`JSON.stringify(q.ownerId ?? null)`), '{"in":[250]}',
+    'a searched pick is written as the value the column holds, not as text')
+  await t.eventually(`document.querySelector('#held .pill')?.textContent.trim() ?? null`, 'Zed',
+    'a pick held in the query is labeled by the seed, not shown as its id')
+
   // A plain number commits on change too, so a bound typed is one navigation.
   await t.clickAt(`${BAR} input[aria-label="Rate from"]`)
   await t.type('5')
@@ -151,16 +184,37 @@ export async function run(t) {
     'clearing a range\'s last bound deletes the key rather than writing an empty range')
 
   // FJS-2610: the choice, once made, is shown. The query holds the boolean and
-  // the option holds its text, so a strict compare found no option selected.
-  await t.evaluate(`
-    const el = document.querySelector('${BAR} select[aria-label="Active"]');
-    el.value = 'true';
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    return true;
-  `)
-  await t.eventually(held(`q.active?.equals ?? null`), 'true', 'a boolean filter writes true')
-  await t.eventually(`document.querySelector('${BAR} select[aria-label="Active"]').selectedIndex`, '1',
-    'and the select shows Yes once it is chosen')
+  // the segment holds its text, so a strict compare found none checked.
+  const BOOL = `${BAR} [role="radiogroup"][aria-label="Active"]`
+  const checked = `document.querySelector('${BOOL} input:checked')?.closest('label')?.textContent?.trim() ?? null`
+  t.is(await t.evaluate(`return document.querySelectorAll('${BOOL} input[type="radio"]').length`), 3,
+    'a boolean is one segmented control of three: Any, Yes, No')
+  await t.eventually(checked, 'Any', 'and reads Any while the column is unfiltered')
+  await t.clickAt(`${BOOL} label:nth-child(2)`)
+  await t.eventually(held(`String(q.active?.equals ?? null)`), 'true', 'one click on Yes writes true')
+  await t.eventually(checked, 'Yes', 'and Yes shows checked once it is chosen')
+  await t.clickAt(`${BOOL} label:nth-child(3)`)
+  await t.eventually(held(`String(q.active?.equals ?? null)`), 'false', 'No writes false, not a cleared key')
+  await t.clickAt(`${BOOL} label:nth-child(1)`)
+  await t.eventually(held(`'active' in q`), 'false', 'and Any deletes the key')
+
+  // A declared enum this short is a row of toggles, several on at once; one
+  // with seven members is still a MultiSelect (FJS-D1583).
+  const CHIPS = `${BAR} [role="group"][aria-label="Status"]`
+  const pressed = `[...document.querySelectorAll('${CHIPS} button[aria-pressed="true"]')].map(b => b.textContent.trim()).join()`
+  t.is(await t.evaluate(`return document.querySelectorAll('${CHIPS} button[aria-pressed]').length`), 2,
+    'a two-member enum is one toggle per member')
+  t.is(await t.evaluate(`return !!document.querySelector('${BAR} input[placeholder="Stage"]') && !document.querySelector('${BAR} [role="group"][aria-label="Stage"]')`),
+    true, 'and a seven-member enum stays a MultiSelect')
+  await t.clickAt(`${CHIPS} button:nth-of-type(1)`)
+  await t.eventually(held(`JSON.stringify(q.status ?? null)`), '{"in":["open"]}', 'one click on a toggle writes its member')
+  await t.eventually(pressed, 'open', 'and shows it pressed')
+  await t.clickAt(`${CHIPS} button:nth-of-type(2)`)
+  await t.eventually(held(`JSON.stringify(q.status ?? null)`), '{"in":["open","paid"]}', 'a second toggle adds to the set')
+  await t.clickAt(`${CHIPS} button:nth-of-type(1)`)
+  await t.eventually(held(`JSON.stringify(q.status ?? null)`), '{"in":["paid"]}', 'clicking a pressed toggle removes its member')
+  await t.clickAt(`${CHIPS} button:nth-of-type(2)`)
+  await t.eventually(held(`'status' in q`), 'false', 'and releasing the last one deletes the key')
 
   /* ── a day range over an instant ──────────────────────────────────────── */
   //
@@ -212,6 +266,22 @@ export async function run(t) {
     '-|' + await t.evaluate(`const n = new Date(); return [n.getFullYear(), String(n.getMonth() + 1).padStart(2, '0'), '07'].join('-')`),
     'before is an upper bound alone, and a Date column is a day that goes across as it is')
 
+  // FJS-D1601: a preset writes relative days, even over an instant, and a query
+  // holding them reads back as the preset rather than two dates.
+  await pickOp('Seen', 'last7')
+  await t.eventually(held(`[q.seenAt?.gte ?? '-', q.seenAt?.lte ?? '-'].join('|')`), '@today-6|@today',
+    'a preset writes tokens, left for tethered() to resolve')
+  t.match(await t.evaluate(`const s = ${daysOf('Seen')}.querySelector('select'); return s.options[s.selectedIndex].text`),
+    /^Seen in the last 7 days$/, 'and reads back as its name')
+  t.is(await t.evaluate(`return !!${daysOf('Seen')}.querySelector('button.filter-day')`), false,
+    'and draws no picker')
+  await pickOp('Seen', 'between')
+  await t.eventually(held(`'seenAt' in q`), 'false', 'leaving a preset drops its tokens')
+
+  // FJS-1978: an app whose day belongs to an account reads a bound in its zone.
+  t.match(await t.evaluate(`return document.querySelector('#zoned .filter-days button.filter-day').textContent`),
+    /Oct 22, 2026/, 'a bound over an instant shows its day in the timeZone prop, not the host\'s')
+
   t.is(await t.evaluate(`return document.querySelector('${BAR} input[aria-label="Opens from"]').type`), 'time',
     'an @time column is a wall clock and gets a time box, not a date')
 
@@ -220,17 +290,9 @@ export async function run(t) {
   t.match(await t.evaluate(`const s = ${daysOf('Seen')}.querySelector('select'); return s.options[s.selectedIndex].text`),
     /^Seen /, 'a day range shows its column name beside the picker')
 
-  // A `<select>` cannot be typed into, so this one is set and told to report —
-  // the value has to move through the element's own change path or the adapter
-  // is not what is under test.
-  await t.evaluate(`
-    const sel = document.querySelector('${BAR} select');
-    sel.value = 'true';
-    sel.dispatchEvent(new Event('input', { bubbles: true }));
-    return true;
-  `)
-  await t.eventually(held(`String(q.active?.equals ?? null)`), 'true',
-    'a boolean column writes through Select')
+  // Clear is lit only by a filter it can drop.
+  await t.clickAt(`${BOOL} label:nth-child(2)`)
+  await t.eventually(held(`String(q.active?.equals ?? null)`), 'true', 'Yes again, for Clear to drop')
 
   /* ── Clear ───────────────────────────────────────────────────────────── */
   //

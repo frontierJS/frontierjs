@@ -127,7 +127,9 @@ deploy something different from what the file says.
 1. **Read and write the file for single-service blueprints.** `Blueprint` rows ⇄ file,
    which gives export and import at the current shape. Add a `validRegex` column on
    `BlueprintParam` (CapRover and Dokploy both validate). The params are already
-   interpolation-shaped once image and env can carry `${…}`.
+   interpolation-shaped once image and env can carry `${…}`. Compose's `command:` maps
+   onto the `command String[]` column `App` and `Blueprint` already carry (ntfy's row
+   needs `serve`); the string form is split, never run through a shell.
 2. **Importers for the single-service subset.** Coolify (170), Dokploy (275) and
    CapRover (110 after the image-tag fix), curated by hand rather than bulk-loaded.
 3. **Several volumes.** `volumePath` becomes a list on `App` as well as `Blueprint`,

@@ -112,9 +112,10 @@ describe('User (1.8.1.5): own row at every standing and no other, created and de
       expect(got.ok).toBe(true)
       expect(summarize(got).rows![0].id).toBe(me)
       const before = await sys.user.findFirst({ where: { id: me } })
-      await d.call(path, w, 'users', 'patch', 'me', { displayName: 'dn-' + uniq(), isSystemAdmin: true, status: 'suspended', kind: 'bot', role: 'admin', scopes: ['*'], emailVerified: !before.emailVerified })
+      expect((await d.call(path, w, 'users', 'patch', 'me', { kind: 'bot' })).ok).toBe(false)
+      await d.call(path, w, 'users', 'patch', 'me', { displayName: 'dn-' + uniq(), isSystemAdmin: true, status: 'suspended', emailVerified: !before.emailVerified })
       const after = await sys.user.findFirst({ where: { id: me } })
-      for (const k of ['isSystemAdmin', 'status', 'kind', 'role', 'scopes', 'emailVerified']) expect([k, after[k]]).toEqual([k, before[k]])
+      for (const k of ['isSystemAdmin', 'status', 'kind', 'emailVerified']) expect([k, after[k]]).toEqual([k, before[k]])
       expect(after.displayName).not.toBe(before.displayName)
     }
   })

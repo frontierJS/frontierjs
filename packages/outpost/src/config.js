@@ -11,6 +11,7 @@
  */
 
 import { version as PKG_VERSION } from '../package.json' with { type: 'json' }
+import { layout } from './layout.js'
 
 /** Ports are derived, not chosen: `packages/cli/core/ports.js`, project id 8,
  *  category `be`. dev 8180, test 7180. */
@@ -22,6 +23,7 @@ const DEFAULT_PORT = 8180
 const DEFAULT_STATIC_PORT = 8181
 
 export function readConfig(env = process.env) {
+  const box = layout(env)
   const missing = []
   const need = name => {
     const value = env[name]
@@ -63,21 +65,22 @@ export function readConfig(env = process.env) {
     /** The URL Basecamp should send commands to. Stated rather than derived:
      *  this process cannot see the address the world reaches it at. */
     publicUrl:   env.OUTPOST_PUBLIC_URL ?? `https://localhost:${env.OUTPOST_PORT ?? DEFAULT_PORT}`,
-    /** Where a git build is checked out. One directory per app. */
-    workDir:     env.OUTPOST_WORK_DIR ?? '/var/lib/outpost/apps',
+    /** Where a git build is checked out. One directory per app, rebuilt on
+     *  every build, so it is not `apps/`, which holds each app's data. */
+    workDir:     env.OUTPOST_WORK_DIR ?? box.builds,
     /** The one directory `/volume/restore` reads an archive from. Inside the
      *  unit's StateDirectory, so it exists on a box the install built. */
-    restoreDir:  (env.OUTPOST_RESTORE_DIR ?? '/var/lib/outpost/restore').replace(/\/$/, ''),
+    restoreDir:  (env.OUTPOST_RESTORE_DIR ?? box.restore).replace(/\/$/, ''),
     /** Where `/backup` writes an app's archive. Inside the unit's
      *  StateDirectory, so the sandbox lets it and it exists on a box the
      *  install built. */
-    backupDir:   (env.OUTPOST_BACKUP_DIR ?? '/var/lib/outpost/backups').replace(/\/$/, ''),
+    backupDir:   (env.OUTPOST_BACKUP_DIR ?? box.backups).replace(/\/$/, ''),
     /** The Litestream unit's config, which `/replicate` rewrites whole. The
      *  install writes it `dbs: []` and the unit reads it at start. */
-    litestreamConfig:  env.OUTPOST_LITESTREAM_CONFIG ?? '/etc/basecamp/litestream.yml',
+    litestreamConfig:  env.OUTPOST_LITESTREAM_CONFIG ?? box.litestreamConfig,
     /** Where each database's Litestream position is kept, outside its volume.
      *  The unit's StateDirectory. */
-    litestreamMetaDir: (env.OUTPOST_LITESTREAM_META_DIR ?? '/var/lib/litestream').replace(/\/$/, ''),
+    litestreamMetaDir: (env.OUTPOST_LITESTREAM_META_DIR ?? box.litestreamState).replace(/\/$/, ''),
     /** The unit's control socket, which `/replicate` turns on and the
      *  heartbeat reads. Under its RuntimeDirectory. */
     litestreamSocket:  env.OUTPOST_LITESTREAM_SOCKET ?? '/run/litestream/litestream.sock',
@@ -86,17 +89,17 @@ export function readConfig(env = process.env) {
     litestreamBin:     env.OUTPOST_LITESTREAM_BIN ?? '/usr/local/bin/litestream',
     /** Where `/replica/restore` writes each database before it moves into a
      *  volume. Inside the unit's StateDirectory, which a snap docker can mount. */
-    replicaStageDir:   (env.OUTPOST_REPLICA_STAGE_DIR ?? '/var/lib/outpost/replica-restore').replace(/\/$/, ''),
+    replicaStageDir:   (env.OUTPOST_REPLICA_STAGE_DIR ?? box.replicaRestore).replace(/\/$/, ''),
     /** Each app's host uid, recorded once and never reused (`FJS-D1484`).
      *  Inside the unit's StateDirectory, where the sandbox lets it write. */
-    uidFile:     env.OUTPOST_UID_FILE ?? '/var/lib/outpost/uids.json',
+    uidFile:     env.OUTPOST_UID_FILE ?? box.uids,
     /** Each app's deploy key, `<app_id>` and `<app_id>.pub` (`FJS-D1555`).
      *  Inside the unit's StateDirectory, where the sandbox lets it write. A
      *  key lost here is a key re-added at every forge that trusted it. */
-    deployKeyDir: (env.OUTPOST_DEPLOY_KEY_DIR ?? '/var/lib/outpost/deploy-keys').replace(/\/$/, ''),
+    deployKeyDir: (env.OUTPOST_DEPLOY_KEY_DIR ?? box.deployKeys).replace(/\/$/, ''),
     /** Where published static releases live. One directory per app, one
      *  subdirectory per digest, plus the `hosts/` links the server resolves. */
-    staticDir:   env.OUTPOST_STATIC_DIR ?? '/var/lib/outpost/static',
+    staticDir:   env.OUTPOST_STATIC_DIR ?? box.static,
     /** 0 turns the static origin off entirely — a machine that runs containers
      *  and nothing else has no reason to hold a public port open. */
     staticPort:  Number(env.OUTPOST_STATIC_PORT ?? DEFAULT_STATIC_PORT),

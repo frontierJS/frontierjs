@@ -6,46 +6,32 @@
   // @frontierjs/ui, so there is no color in this file and none in the rules
   // that produced the notice (repo invariant 13).
   //
-  // Dismissal is remembered per browser, keyed by notice id, and an id is
-  // forgotten once its condition has cleared -- so a notice comes back when the
-  // condition does, but not on every refresh while it is still true.
+  // Acknowledgements are src/dismissals.js, shared with the home screen's
+  // ActionQueue. Pruning them is this component's, because the shell is the
+  // one place that is told when the rows behind the notices finished loading.
 
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import { goto } from '@frontierjs/sierra/router'
   import { PRIORITY_TONE } from '../lib/notices.js'
+  import { dismissals, dismiss, prune } from '../lib/dismissals.js'
 
   export let notices  = []
   export let max      = 3     // the shell shows the top few; the full list is the queue
   export let heading  = ''    // '' renders no landmark label
   export let loading  = false  // the rows behind `notices` are being read
 
-  const KEY = 'basecamp.notices.dismissed'
+  $: dismissals.ids
 
-  function recall() {
-    try {
-      const v = JSON.parse(localStorage.getItem(KEY) ?? '[]')
-      return Array.isArray(v) ? v : []
-    } catch { return [] }
-  }
-  function remember(ids) { try { localStorage.setItem(KEY, JSON.stringify(ids)) } catch {} }
-
-  let dismissed = recall()
-
-  // Pruning on an empty or half-loaded list would forget every dismissal, so
-  // it waits for a load that has started and finished.
+  // Waits for a load that has started and finished.
   let sawLoading = false
   $: loading, () => { if (loading) sawLoading = true }
   $: settled = sawLoading && !loading
-  $: settled, notices, () => {
-    if (!settled) return
-    const kept = dismissed.filter(id => notices.some(n => n.id === id))
-    if (kept.length !== dismissed.length) { dismissed = kept; remember(kept) }
-  }
+  $: settled, notices, () => { if (settled) prune(notices) }
 
   // Derived, so a new notice arriving over the WebSocket re-renders the bar
   // without anything here being told about it.
-  $: live    = notices.filter(n => !dismissed.includes(n.id))
+  $: live    = notices.filter(n => !dismissals.ids.includes(n.id))
   $: visible = live.slice(0, max)
   $: summary = ['critical', 'warning', 'info']
     .map(p => ({ p, n: live.filter(x => x.priority === p).length }))
@@ -53,17 +39,8 @@
 
   let collapsed = false
 
-  function dismiss(id) {
-    // A new array, not a push: Mesa re-derives from the assignment.
-    dismissed = [...dismissed, id]
-    remember(dismissed)
-  }
-
   // Every live notice, not just the few shown: "all" means all.
-  function dismissAll() {
-    dismissed = [...dismissed, ...live.map(n => n.id)]
-    remember(dismissed)
-  }
+  function dismissAll() { dismiss(live.map(n => n.id)) }
 </script>
 
 {#if live.length}
@@ -80,7 +57,7 @@
       <Button treatment="ghost" onclick={dismissAll}>Mark all</Button>
     </div>
     {#each collapsed ? [] : visible as n}
-      <Alert tone={PRIORITY_TONE[n.priority]} title={n.title} dismissible onclose={() => dismiss(n.id)}>
+      <Alert tone={PRIORITY_TONE[n.priority]} title={n.title} dismissible onclose={() => dismiss([n.id])}>
         {n.detail}
         {#if n.href}
           <!-- An anchor, not a button: it goes somewhere, so it is a link and

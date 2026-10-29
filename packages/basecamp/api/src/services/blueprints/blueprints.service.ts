@@ -13,7 +13,7 @@
 // ─── Params are set by setParams, and only by setParams ───────────────────
 //
 // `BlueprintParam` is ORDERED, and a partial update of an ordered list is the
-// problem `DashboardWidget.reorder` already documents: sending one row's
+// problem `DashboardTile.reorder` already documents: sending one row's
 // position races every other row's. `setParams` takes the whole sequence and
 // rewrites it in one call, so the order that arrives is the order that lands.
 //

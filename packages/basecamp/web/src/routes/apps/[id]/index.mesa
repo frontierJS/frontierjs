@@ -1162,6 +1162,7 @@ title: App
         <dt>Port</dt><dd><code>{app.port ?? 'none published'}</code>{#if app.port && app.containerPort && app.containerPort !== app.port} → <code>{app.containerPort}</code> in the container{:else if app.port && !app.containerPort && app.source?.kind === 'git'} → the port the first build reads off the Dockerfile{/if}</dd>
         <dt>Volume</dt><dd><code>{app.volumePath ?? 'none — stateless'}</code></dd>
         <dt>Health check</dt><dd><code>{app.healthCheck ?? 'running is healthy'}</code></dd>
+        <dt>Command</dt><dd><code>{app.command?.length ? app.command.join(' ') : "the image's own"}</code></dd>
         <dt>CPU</dt><dd>{app.cpuLimit ?? 'no limit'}</dd>
         <dt>Memory</dt><dd>{app.memLimitMb != null ? `${app.memLimitMb} MiB` : 'no limit'}</dd>
       </dl>

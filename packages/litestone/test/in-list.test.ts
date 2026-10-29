@@ -10,8 +10,12 @@
 
 import { describe, test, expect } from 'bun:test'
 import { Database } from 'bun:sqlite'
+import { mkdtempSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { createClient } from '../src/index.js'
 import { inList } from '../src/core/query.js'
+import { matchesQuery } from '@frontierjs/toolbelt/match'
 
 // Six values, so every list here takes the JSON form.
 const LISTS: unknown[][] = [
@@ -138,4 +142,55 @@ describe('through the client', () => {
     expect(await sys.post.count({ withDeleted: true } as any)).toBe(90)
     db.$close()
   })
+})
+
+// `IN (NULL)` is never true and `NOT IN` drops every NULL row, so a null member
+// read as SQL matched nothing under `in` and only the nulls under `notIn` —
+// while the JSONL driver and the live-list matcher read it as *is null*.
+// Expected ids are written by hand (`FJS-597`), and every store is asked:
+// a column, a key inside a typed Json column, a jsonl file and the matcher
+// (`FJS-3580`).
+describe('a null member is the IS NULL test', () => {
+  const CASES: [string, unknown, string][] = [
+    ['in [null]',                  { in: [null] },                          '3'],
+    ["in [null, '']",              { in: [null, ''] },                      '3,4'],
+    ["in [null, 'a']",             { in: [null, 'a'] },                     '1,3'],
+    ["in [null, ''] past four",    { in: [null, '', 'x', 'y', 'z', 'w'] },  '3,4'],
+    ['bare [null]',                [null],                                  '3'],
+    ["bare [null, 'b']",           [null, 'b'],                             '2,3'],
+    ['notIn [null]',               { notIn: [null] },                       '1,2,4'],
+    ["notIn [null, '']",           { notIn: [null, ''] },                   '1,2'],
+    ["notIn [null, ''] past four", { notIn: [null, '', 'x', 'y', 'z', 'w'] }, '1,2'],
+    ["notIn ['a']",                { notIn: ['a'] },                        '2,3,4'],
+  ]
+  const BODIES = ['a', 'b', null, '']
+  const ids = (rows: any[]) => rows.map((r: any) => r.n).sort().join()
+
+  for (const [name, where, want] of CASES) {
+    test(name, async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'lite-null-member-'))
+      const db: any = await createClient({ schema: `
+        database main { path ":memory:" }
+        database logs { path "${join(dir, 'logs')}"  driver jsonl }
+        type Box { body String? }
+        model Note { n Int @id  body String?  box Json @type(Box) }
+        model Line { n Int  body String?  @@db(logs) }
+      ` })
+      const sys = db.asSystem()
+      const rows = BODIES.map((body, i) => ({ n: i + 1, body }))
+      await sys.note.createMany({ data: rows.map(r => ({ ...r, box: { body: r.body } })) })
+      for (const r of rows) await sys.line.create({ data: r })
+
+      const got = {
+        column: ids(await sys.note.findMany({ where: { body: where } })),
+        typed:  ids(await sys.note.findMany({ where: { box: { body: where } } })),
+        // The jsonl driver refuses the bare-array shorthand (`FJS-3581`).
+        jsonl:  Array.isArray(where) ? want : ids(await sys.line.findMany({ where: { body: where } })),
+        live:   ids(rows.filter(r => matchesQuery({}, r, { body: where }))),
+      }
+      expect(got).toEqual({ column: want, typed: want, jsonl: want, live: want })
+      db.$close()
+      rmSync(dir, { recursive: true, force: true })
+    })
+  }
 })

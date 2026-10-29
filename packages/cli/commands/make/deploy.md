@@ -51,6 +51,17 @@ import { resolve, dirname } from 'path'
 // With nothing linked it writes a verbatim copy and the lockfile beside it, so
 // ONE template serves both source modes — which it has to, because the source
 // mode can change long after `fli make:deploy` ran once.
+// What the image takes from the build context, as [source, destination]. The
+// Dockerfile's source COPY lines and .dockerignore's ! lines are both written
+// from it: a .dockerignore that listed what to leave out let in every surface
+// and every kind of file nobody had named yet (FJS-3524, FJS-D1600).
+const imageSources = (needs = {}) => [
+  ['tsconfig*.json', './'],
+  ['api',            './api'],
+  ['db',             './db'],
+  ...(needs.webSrc ? [['web/src', './web/src']] : []),
+]
+
 const makeDockerfile = (appId, needs = {}) => `# FrontierJS API — ${appId}
 # Built on the server via: docker build -t ${appId}:latest -f deploy/Dockerfile .
 # No registry required — image lives on the server.
@@ -88,16 +99,13 @@ RUN cp deploy/generated/app-manifest.json package.json \\
     else bun install --production; fi \\
  && rm -rf deploy/generated
 
-# Source. db/ carries schema.lite and migrations/ — the entrypoint and the
-# deploy's backup both read the schema to find the databases.
-COPY tsconfig*.json ./
-COPY api ./api
-COPY db  ./db
-${needs.webSrc ? `
-# The API renders a template out of web/src -- the same .mesa file the browser
-# draws -- so the image needs that source, and .dockerignore lets it through.
-COPY web/src ./web/src
-` : ''}
+# Source. db/ carries schema.lite and migrations/ -- the entrypoint and the
+# deploy's backup both read the schema to find the databases.${needs.webSrc ? `
+# web/src is the template the API renders, the same .mesa file the browser draws.` : ''}
+# .dockerignore lets in only what a COPY names: one added here needs its ! line
+# there, or the build stops on a path it cannot find.
+${imageSources(needs).map(([from, to]) => `COPY ${from} ${to}`).join('\n')}
+
 # Runtime image
 FROM oven/bun:${Bun.version}-slim
 WORKDIR /app
@@ -264,27 +272,27 @@ if (existsSync(dockerignorePath)) {
   log.info(`.dockerignore already exists — skipping`)
 } else {
   const dockerignore = [
-    '# FrontierJS .dockerignore',
-    '.git',
-    '.env*',
-    '!.env.example',
-    'node_modules',
-    // The web app is built and served apart. An API that reads a template out
-    // of web/src gets that directory back and nothing else of web/.
-    ...(needs.webSrc ? ['web/*', '!web/src'] : ['web/']),
+    '# FrontierJS .dockerignore: everything is out, then each path deploy/Dockerfile',
+    '# copies is let back in. A COPY added there needs its ! line here.',
+    '*',
+    '!deploy/generated/',
+    ...imageSources(needs).map(([from]) => `!${from}`),
+    '',
+    '# Inside what is let in.',
+    '**/node_modules',
     // `**/` and every SQLite sidecar, and both halves are measured. A plain `*`
-    // does not cross a separator (`FJS-555`), so `db/*.db` protects one directory
-    // and nothing under it — and `*.db` alone never matched `app.db-wal`, so the
-    // running app's write-ahead log was copied into every image after the first.
-    // That is one deployment's live data in the artefact, and it moved the image
-    // digest on every deploy, which made an unchanged redeploy a new Release.
+    // does not cross a separator (`FJS-555`), and `*.db` alone never matched
+    // `app.db-wal`, so the running app's write-ahead log reached every image and
+    // moved its digest, which made an unchanged redeploy a new Release.
     '**/*.db',
     '**/*.db-wal',
     '**/*.db-shm',
     '**/*.sqlite',
     '**/*.sqlite3',
     'db/backups/',
-    'dist/',
+    // A logger-driver database is a directory of JSONL, and `**/*.db` catches
+    // only its index.
+    '**/*.jsonl',
     // Same `**/` reason: `*.test.ts` matched the root only, so api/test/ shipped.
     '**/*.test.ts',
     '**/*.test.js',

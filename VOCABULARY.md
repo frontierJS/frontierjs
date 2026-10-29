@@ -61,6 +61,10 @@ from css's, as Switch does by sitting under its task.
 
 **`$` is a character the house uses five ways, and only one is on the wire.** A `$`-PREFIXED KEY in a query or a frame is a directive (`$limit`, `$offset`, `$after`, `$orderBy`, `$select`, `$populate`, `$search`, the `$with*`/`$only*` flags, `$asOf`, `$scope`, `$recursive`) or a transport flag (`$first`, `$wrap`), and the table in `@frontierjs/toolbelt/directives` is the whole list — a `$` key it does not name is refused by name (Invariant 10), and `$or`/`$and`/`$not` are the filters written with a `$`. The other four are not that and never travel: litestone's system verbs on a client (`db.$setAuth`, `db.$checkWhere`), Junction's ambient Call `$` (the Call row below), Mesa's `$:` effects and `$context`, and JSON Schema's `$ref`/`$defs`. A name that starts with `$` and is not in the directives table is one of these four or a typo, and the first place to ask is which side of the bridge it is on.
 
+## The sign `@`
+
+**`@` is a character the house uses four ways, and only one is a VALUE.** The day token `@today`, `@today-6`, `@today+7` is a filter value a relative preset writes into the URL (`FJS-D1601`): days only, `readDayToken`/`dayToken` in `@frontierjs/toolbelt/query` are the spelling's one owner, and `resolveDayTokens` turns it into days or instants on the client before the request, against date and instant columns only — so a text filter on the literal `@today` is text. The server never sees a token; one that leaks to a date column is refused by name in litestone (`FJS-3583`). The other three are names, never values: a `.lite` attribute (`@date`, `@encrypted`, `@@allow`), the npm scope (`@frontierjs/…`), and Mesa's template blocks (`{@html}`, `{@render}`, `{@const}`, `{@attach}`).
+
 ## Terms
 
 Seeded from `fli ws:terms` at spread ≥ 4 — a term used in four or more
@@ -113,7 +117,7 @@ before you meet it.
 | Tab | open | UI | | | |
 | Homestead | open | | | | |
 | Field | open | Data | Model | | |
-| Host | open | Operations | | | |
+| Host | blessed | Operations | Server | the Server Basecamp itself runs on (`basecamp-host`, `domain/host/`); a sub-word of Server, as Machine is for the vendor's spec (`MachineSpec`) | [`FJS-D1612`](DECISIONS.md#fjs-d1612) |
 | Pill | open | UI | | | |
 | ServiceContext | alias | API | Context | Context — a Call's | `FJS-D391`. The type's name; in prose it is the Call's Context |
 | Cancel | open | | | | |
@@ -163,7 +167,7 @@ before you meet it.
 | Progress | open | UI | | | |
 | Layout | blessed | UI | Component | a `_module.mesa` that wraps every page beneath it; layouts nest | [`FJS-D693`](DECISIONS.md#fjs-d693). Not css's Layout tier (Stack, Cluster), which keeps its qualifier |
 | Select | open | UI | Select task | | |
-| Server | open | Operations | | | |
+| Server | blessed | Operations | | one machine, at a cloud or made by hand — Basecamp's `Server` row, every `--server` flag, `fli server:*`'s noun. Host and Machine are its sub-words, never a second name for the box | [`FJS-D1612`](DECISIONS.md#fjs-d1612) |
 | CommandPalette | open | UI | Overlay tier | | |
 | Pagination | open | UI | | | |
 | RadioGroup | open | UI | Select task | | |

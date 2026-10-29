@@ -1242,7 +1242,7 @@ async function trailEntry(model: string, operation: string, id: string): Promise
 // membership is re-read when the job runs.
 //
 // What that CANNOT change is which rows may be written — `RecipeRun`,
-// `DeploymentStep`, `CleanupRun` and `JobRun` are gated at SYSTEM for update,
+// `DeploymentStep`, `MaintenanceRun` and `JobRun` are gated at SYSTEM for update,
 // the schema saying an outcome belongs to the machine, and no standing a
 // workspace grants reaches them (`owner` is 6). So what the conversion buys is
 // the CONFINEMENT, and that is what these cases are about: the engine methods
@@ -1599,10 +1599,10 @@ describe('the installation settings are one row, behind the hub tier', () => {
     await expect(hub.call('attestEscrow', null, {})).rejects.toThrow(/no settings yet/)
     // `@system`: a save naming either column is refused by name, never dropped in silence.
     await expect(hub.call('save', null, {
-      name: 'Keyed',
+      heartbeatTimeoutSeconds: 120,
       encryptionKeyEscrowedAt: '2026-01-01T00:00:00.000Z', encryptionKeyFingerprint: 'f'.repeat(64),
     })).rejects.toThrow(/@system/)
-    const made = await hub.call('save', null, { name: 'Keyed' })
+    const made = await hub.call('save', null, { heartbeatTimeoutSeconds: 120 })
     expect([made.encryptionKeyEscrowedAt, made.encryptionKeyFingerprint]).toEqual([null, null])
     const grade = async () => (await env.as(sysadmin).service('posture').call('host', undefined, {}))
       .controls.find((c: any) => c.id === 'hub.key-escrowed')
@@ -1613,7 +1613,7 @@ describe('the installation settings are one row, behind the hub tier', () => {
     expect(attested.encryptionKeyEscrowedAt).toBeTruthy()
     expect((await grade()).ok).toBe(true)
 
-    const saved = await hub.call('save', null, { version: attested.version, name: 'Keyed' })
+    const saved = await hub.call('save', null, { version: attested.version, heartbeatTimeoutSeconds: 180 })
     expect(saved.encryptionKeyFingerprint).toBe(attested.encryptionKeyFingerprint)
     // The attestation names the key: a different key in use voids it.
     await (env.system as any).hubConfig.update({ where: { id: 'hub' },
@@ -1622,26 +1622,96 @@ describe('the installation settings are one row, behind the hub tier', () => {
     await (env.system as any).hubConfig.delete({ where: { id: 'hub' } })
   })
 
+  test('the environment lists every variable this API reads, and a secret by state alone', async () => {
+    const { variables } = await env.as(sysadmin).service('hub').call('environment')
+    const by = Object.fromEntries(variables.map((v: any) => [v.name, v]))
+    expect(by.ENCRYPTION_KEY).toMatchObject({ required: true, secret: true, value: null })
+    expect(by.FRONTIER_APP_URL).toMatchObject({ secret: false, value: expect.any(String) })
+    expect(['set', 'default', 'unset']).toContain(by.MAIL_URL.state)
+    // Nothing a secret holds reaches the answer, whatever its name.
+    for (const v of variables.filter((v: any) => v.secret)) expect(v.value).toBeNull()
+  })
+
   test('save creates it, then updates it', async () => {
     const made = await env.as(sysadmin).service('hubConfig').call('save', null, {
-      name: 'Acme Fleet',
+      heartbeatTimeoutSeconds: 300,
     })
     expect(made.id).toBe('hub')
-    expect(made.name).toBe('Acme Fleet')
+    expect(made.heartbeatTimeoutSeconds).toBe(300)
 
     // The version is required on an update — `@version` on a settings row is
     // exactly the two-administrators case, and litestone refuses a write that
     // does not carry the revision it read.
-    await expect(env.as(sysadmin).service('hubConfig').call('save', null, { sessionTtlHours: 24 }))
+    await expect(env.as(sysadmin).service('hubConfig').call('save', null, { heartbeatTimeoutSeconds: 600 }))
       .rejects.toThrow(/Send `version`/)
 
     await env.as(sysadmin).service('hubConfig')
-      .call('save', null, { sessionTtlHours: 24, version: made.version })
+      .call('save', null, { heartbeatTimeoutSeconds: 600, version: made.version })
     const now = await env.as(sysadmin).service('hubConfig').call('current')
-    expect(now.sessionTtlHours).toBe(24)
+    expect(now.heartbeatTimeoutSeconds).toBe(600)
     // Still one row — the failure a singleton has is a second one.
-    expect(now.name).toBe('Acme Fleet')
+    expect(now.backupCron).toBe('0 2 * * *')
     expect(await (env.system as any).hubConfig.count()).toBe(1)
+  })
+
+  // FJS-D1592: each switch is one refusal at one door. Written at system and put
+  // back, so the tests after these see the defaults.
+  const uniq   = () => Math.random().toString(36).slice(2, 8)
+  const policy = async (data: Record<string, boolean>, fn: () => Promise<void>) => {
+    const sys = env.system as any
+    if (!await sys.hubConfig.findFirst({ where: { id: 'hub' } })) await sys.hubConfig.create({ data: { id: 'hub' } })
+    await sys.hubConfig.update({ where: { id: 'hub' }, data })
+    try { await fn() } finally {
+      await sys.hubConfig.update({ where: { id: 'hub' },
+        data: { requireTwoFactorForOwners: false, allowApiKeyAuth: true, allowBotUsers: true } })
+    }
+  }
+
+  test('allowBotUsers off refuses a new bot, naming the setting', async () => {
+    await policy({ allowBotUsers: false }, async () => {
+      await expect(env.as(sysadmin).service('hub').call('createBot', null, { workspaceId: ws.id, name: `bot-${uniq()}` }))
+        .rejects.toThrow(/allowBotUsers/)
+    })
+  })
+
+  test('allowApiKeyAuth off refuses a request made with a key, and a session is unaffected', async () => {
+    const made: any = await env.as(owner).service('apiKeys').create({
+      name: `policy-${uniq()}`, scopes: ['servers:read'], expiresIn: '30d',
+    })
+    const get = () => env.http.get('/servers').set('Authorization', `Bearer ${made.token}`).set('X-Workspace-Id', ws.id)
+    expect((await get()).status).toBe(200)
+    await policy({ allowApiKeyAuth: false }, async () => {
+      const res = await get()
+      expect(res.status).toBe(403)
+      expect(JSON.stringify(res.body)).toMatch(/allowApiKeyAuth/)
+      expect((await env.as(owner).service('servers').find()).data).toBeDefined()
+    })
+  })
+
+  test('requireTwoFactorForOwners holds an owner with no authenticator to enrollment, and off lets them in', async () => {
+    const sys   = env.system as any
+    const email = `owner2fa-${uniq()}@x.co`
+    const made  = await (env as any).app.auth.createUser({ email, password: 'hunter2hunter2', name: 'Owner' })
+    const uid   = made.id ?? made.userId
+    await sys.user.update({ where: { id: uid }, data: { accountId: ws.accountId, status: 'active' } })
+    await sys.workspaceMember.create({ data: {
+      workspaceId: ws.id, userId: uid, role: 'owner',
+      capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString(),
+    } })
+    const servers = (token: string) =>
+      env.http.get('/servers').set('Authorization', `Bearer ${token}`).set('X-Workspace-Id', ws.id)
+
+    const open = await (env as any).app.auth.login(email, 'hunter2hunter2')
+    expect(open.user.enrollmentOnly).toBeFalsy()
+    expect((await servers(open.token)).status).toBe(200)
+
+    await policy({ requireTwoFactorForOwners: true }, async () => {
+      const held = await (env as any).app.auth.login(email, 'hunter2hunter2')
+      expect(held.user.enrollmentOnly).toBe(true)
+      const res = await servers(held.token)
+      expect(res.status).toBe(403)
+      expect(JSON.stringify(res.body)).toMatch(/second_factor_required|second factor is required/)
+    })
   })
 
   test('the backup cron is on the clock exactly while it is enabled', async () => {
@@ -1881,7 +1951,7 @@ describe('a backup destination is an address, and its key is a Secret', () => {
     await env.as(owner).service('backupDestinations').patch(row.id, { secret: 'newid:newkey', region: 'eu-central-003', version: row.version })
     const secret = await (env.system as any).secret.findFirst({ where: { id: row.secretId } })
     expect(secret.id).toBe(row.secretId)
-    expect(secret.isVerified).toBe(false)
+    expect(secret.verifiedAt).toBeNull()
     const after = await env.as(owner).service('backupDestinations').get(row.id)
     expect(after.region).toBe('eu-central-003')
     expect(after.secretId).toBe(row.secretId)
@@ -1907,7 +1977,7 @@ describe('a backup destination is an address, and its key is a Secret', () => {
 
   test('the hub schedule may point only at a destination that exists', async () => {
     await expect(env.as(sysadmin).service('hubConfig').call('save', null, {
-      name: 'Hub', backupDestinationId: 'nope',
+      backupDestinationId: 'nope',
     })).rejects.toThrow(/No backup destination 'nope'/)
   })
 
@@ -1939,7 +2009,7 @@ describe('a backup destination is an address, and its key is a Secret', () => {
       expect(keys).toEqual([])
 
       const secret = await (env.system as any).secret.findFirst({ where: { id: row.secretId } })
-      expect(secret.isVerified).toBe(true)
+      expect(secret.verifiedAt).toBeTruthy()
     })
 
     test('a key the policy refuses answers forbidden, and the row is not stamped', async () => {
@@ -1974,7 +2044,7 @@ describe('a backup destination is an address, and its key is a Secret', () => {
       await expect(env.as(owner).service('secrets').call('verify', row.secretId))
         .rejects.toThrow(/testing its destination/)
       const secret = await (env.system as any).secret.findFirst({ where: { id: row.secretId } })
-      expect(secret.isVerified).toBe(false)
+      expect(secret.verifiedAt).toBeNull()
     })
 
     test('a destination with no credential is refused before anything is sent', async () => {
@@ -2617,6 +2687,7 @@ describe('an app made from a blueprint', () => {
       slug: `kv-${tag()}`, name: 'KV', category: 'Data', description: 'A store', version: '7',
       image: 'redis:7.2-alpine', appType: 'database', port: 6379,
       volumePath: '/data', healthCheck: '/ping', cpuLimit: 0.5, memLimitMb: 256,
+      command: ['redis-server', '--save', '60 1'],
     } })
     for (const [i, p] of [
       { key: 'KV_PASSWORD', label: 'Password',      required: true,  secret: true },
@@ -2650,6 +2721,7 @@ describe('an app made from a blueprint', () => {
     // Every setting the blueprint states lands on the column `domain/release/runtime.ts`
     // reads, which is what makes it reach `docker run` (`FJS-1605`).
     expect([r.volumePath, r.healthCheck, r.cpuLimit, r.memLimitMb]).toEqual(['/data', '/ping', 0.5, 256])
+    expect(r.command).toEqual(['redis-server', '--save', '60 1'])
 
     // Every parameter is a variable on the app. A default stands in for a
     // blank field; a blank optional one is absent.
@@ -2935,7 +3007,7 @@ describe('accepting an invitation puts somebody in the workspace', () => {
 //
 // `Server.health` is a snapshot — one Json column overwritten every check-in —
 // so *what was this box doing on Tuesday* was gone rather than stale, and three
-// widget kinds said so on their own cards (`FJS-956`).
+// tile kinds said so on their own cards (`FJS-956`).
 //
 // The heartbeat records into the metric store now. What makes that worth its own
 // block is the READ: `MetricSeries` is `@@gate(8)` and `@@tenant(none)`,
@@ -3514,7 +3586,7 @@ describe('a bad appliance id names itself, and a refusal is not logged as a faul
 
   test('the string forms are the ones a template writes, and `!id` misses them', async () => {
     // 'undefined' and '' are the same mistake at two spellings, and only one of
-    // them is falsy — which is why the widget's own guard had to widen too.
+    // them is falsy — which is why the tile's own guard had to widen too.
     for (const id of ['undefined', '']) {
       const e = await portalAs(owner).get(id).catch((err: any) => err)
       expect(e.code ?? e.status).toBe(400)
@@ -3826,7 +3898,7 @@ describe('infra.launch walks to the screen each step happens on', () => {
     expect(half.steps.find((s: any) => s.id === 'place')).toMatchObject({ done: false, href: `/apps/${a.id}/` })
 
     await sys.appServer.create({ data: { appId: a.id, serverId: srv.id } })
-    const d = await sys.deployment.create({ data: { workspaceId: w.id, appId: a.id, environmentId: e.id, trigger: 'button' } })
+    const d = await sys.deployment.create({ data: { workspaceId: w.id, appId: a.id, trigger: 'button' } })
     await sys.deployment.transition(d.id, 'build')
     await sys.deployment.transition(d.id, 'succeed')
 
@@ -3933,9 +4005,12 @@ describe('users — a person edits their own profile, at any standing', () => {
     const before = await sys().user.findUnique({ where: { id: developer.id } })
     await env.as(developer).service('users').patch('me', {
       email: 'taken@x.co', accountId: null, emailVerified: true,
-      isSystemAdmin: true, status: 'suspended', kind: 'bot', displayName: 'Dev',
+      isSystemAdmin: true, status: 'suspended', displayName: 'Dev',
       deletedAt: new Date().toISOString(), id: 'hijack', createdAt: '2000-01-01T00:00:00.000Z',
     })
+    // `kind` is @system: named by a caller it is refused, not dropped.
+    await expect(env.as(developer).service('users').patch('me', { kind: 'bot' }))
+      .rejects.toThrow(/@system/)
     const row = await sys().user.findUnique({ where: { id: developer.id } })
     expect(row.email).toBe(before.email)
     expect(row.accountId).toBe(before.accountId)
@@ -4058,8 +4133,8 @@ describe('a list honors every filter it admits', () => {
     elsewhere = await sys.app.create({ data: { workspaceId: ws.id, environmentId: env2.id, name: `elsewhere-${uniq}`, slug: 'elsewhere', type: 'static' } })
     box = await serverAt('online', { workspaceId: ws.id, name: `box-${uniq}`, slug: `box-${uniq}` })
     await sys.appServer.create({ data: { appId: placed.id, serverId: box.id } })
-    d1 = await sys.deployment.create({ data: { workspaceId: ws.id, appId: placed.id,    environmentId: env1.id, trigger: 'button', branch: `main-${uniq}` } })
-    d2 = await sys.deployment.create({ data: { workspaceId: ws.id, appId: elsewhere.id, environmentId: env2.id, trigger: 'button', branch: `feat-${uniq}` } })
+    d1 = await sys.deployment.create({ data: { workspaceId: ws.id, appId: placed.id,    trigger: 'button', branch: `main-${uniq}` } })
+    d2 = await sys.deployment.create({ data: { workspaceId: ws.id, appId: elsewhere.id, trigger: 'button', branch: `feat-${uniq}` } })
     job = await sys.job.create({ data: { workspaceId: ws.id, appId: placed.id, name: `nightly-${uniq}`, kind: 'one_shot', command: 'true' } })
     await sys.job.create({ data: { workspaceId: ws.id, appId: placed.id, name: `weekly-${uniq}`, kind: 'one_shot', command: 'true' } })
   })
@@ -4102,17 +4177,17 @@ describe('a list honors every filter it admits', () => {
   })
 })
 
-// `FJS-1706`: the drive removes a server that is not online and a widget on a
+// `FJS-1706`: the drive removes a server that is not online and a tile on a
 // dashboard points at it. The removal answered 422 where the drive expects a
 // soft delete.
 describe('removing a server that is not online', () => {
   for (const status of ['pending', 'draining', 'stopped'] as const) {
-    test(`a ${status} server is removed, widget and all`, async () => {
+    test(`a ${status} server is removed, tile and all`, async () => {
       const sys = env.system as any
       const server = await serverAt(status,
         { workspaceId: ws.id, name: `rm-${status}`, slug: `rm-${status}-${Math.random().toString(36).slice(2, 8)}` })
       const board = await sys.dashboard.create({ data: { workspaceId: ws.id, name: `board-${status}`, slug: `board-${status}` } })
-      await sys.dashboardWidget.create({ data: { dashboardId: board.id, kind: 'server_health', serverId: server.id, cols: 1 } })
+      await sys.dashboardTile.create({ data: { dashboardId: board.id, kind: 'server_health', serverId: server.id, cols: 1 } })
 
       await env.as(owner).service('servers').remove(server.id)
 
@@ -4315,12 +4390,12 @@ describe('flag override verbs declare their input', () => {
   })
 })
 
-describe('dashboard widget verbs and app placement declare their input', () => {
+describe('dashboard tile verbs and app placement declare their input', () => {
   test('each names a type in the seed', () => {
     const dash = (env.app.services.get('dashboards') as any).describe().inputs
-    expect(dash.addWidget).toBe('WidgetAdd')
-    expect(dash.updateWidget).toBe('WidgetUpdate')
-    expect(dash.removeWidget).toBe('WidgetRemove')
+    expect(dash.addTile).toBe('TileAdd')
+    expect(dash.updateTile).toBe('TileUpdate')
+    expect(dash.removeTile).toBe('TileRemove')
     expect(dash.reorder).toBe('DashboardReorder')
     const apps = (env.app.services.get('apps') as any).describe().inputs
     expect(apps.fromBlueprint).toBe('AppFromBlueprint')
@@ -4328,11 +4403,11 @@ describe('dashboard widget verbs and app placement declare their input', () => {
     expect(apps.unplace).toBe('AppUnplace')
   })
 
-  test('a kind outside WidgetKind and a missing id are refused naming the field', async () => {
-    await expect(env.as(owner).service('dashboards').call('addWidget', 'nope', { kind: 'confetti' }))
+  test('a kind outside TileKind and a missing id are refused naming the field', async () => {
+    await expect(env.as(owner).service('dashboards').call('addTile', 'nope', { kind: 'confetti' }))
       .rejects.toThrow(/kind/)
-    await expect(env.as(owner).service('dashboards').call('removeWidget', 'nope', {}))
-      .rejects.toThrow(/widgetId/)
+    await expect(env.as(owner).service('dashboards').call('removeTile', 'nope', {}))
+      .rejects.toThrow(/tileId/)
     await expect(env.as(owner).service('dashboards').call('reorder', 'nope', { ids: 'a', extra: 1 }))
       .rejects.toThrow(/ids|extra/)
     await expect(env.as(owner).service('apps').call('place', 'nope', {}))
@@ -4907,7 +4982,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
     const hubRow = async () => {
       const sys = env.system as any
       return await sys.hubConfig.findFirst({ where: { id: 'hub' } })
-        ?? await sys.hubConfig.create({ data: { id: 'hub', name: 'Hub' } })
+        ?? await sys.hubConfig.create({ data: { id: 'hub' } })
     }
     const pointHub = async (replicaDestinationId: string | null) =>
       env.as(sysadmin).service('hubConfig').call('save', null, { replicaDestinationId, version: (await hubRow()).version })

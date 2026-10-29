@@ -229,7 +229,7 @@ validates, and a select that silently drops an option.
 - `DrillKind` — `manual`, `scheduled`
 - `DependencyKind` — `dependency`, `dev`, `peer`, `optional`
 - `NotificationContext` — `Deployment`, `AlertEvent`, `JobRun`, `Server`, `Workspace`, `Monitor`
-- `NotificationKind` — `DeploySuccess`, `DeployFailed`, `AlertFiring`, `AlertResolved`, `ServerUnreachable`, `MonitorDown`, `MonitorUp`, `PostureFailed`, `DependencyVulnerable`, `MemberJoined`, `JobFailed`, `WeeklyDigest`, `ReplicaFound`
+- `NotificationKind` — `DeploySuccess`, `DeployFailed`, `AlertFiring`, `AlertResolved`, `ServerUnreachable`, `MonitorDown`, `MonitorUp`, `PostureFailed`, `HubPostureFailed`, `DependencyVulnerable`, `MemberJoined`, `JobFailed`, `WeeklyDigest`, `ReplicaFound`
 - `EditorRole` — `edit`, `publish`
 - `Capability` — `Environment.create`, `Environment.delete`, `Environment.update`, `Server.create`, `Server.delete`, `Server.destroy`, `Server.drain`, `Server.provision`, `Server.reboot`, `Server.undrain`, `Server.update`, `Variable.create`, `Variable.delete`, `Variable.update`
 
@@ -903,6 +903,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `healthCheck` | `string`? | — | — | `pattern: "^/[^ ]*$"` `x-transforms` | `pattern` `regex` |
 | `cpuLimit` | `number`? | — | — | `maximum: 256` `exclusiveMinimum: 0` | — |
 | `memLimitMb` | `integer`? | — | — | `minimum: 6` | — |
+| `command` | `string[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
 | `exposesPort` | `boolean` = `false` | — | — | — | — |
 | `deployOnPush` | `boolean` = `false` | — | — | `x-litestone-kind` | — |
 | `pushSecret` | `string`? | — | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` `x-litestone-kind` | — |
@@ -1614,6 +1615,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `healthCheck` | `string`? | — | — | `pattern: "^/[^ ]*$"` `x-transforms` | `pattern` `regex` |
 | `cpuLimit` | `number`? | — | — | `maximum: 256` `exclusiveMinimum: 0` | — |
 | `memLimitMb` | `integer`? | — | — | `minimum: 6` | — |
+| `command` | `string[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
 | `notes` | `string`? | — | — | `minLength: 0` `maxLength: 1000` | — |
 | `links` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `deprecatedAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -1733,11 +1735,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` = `"hub"` | — | — | — | — |
-| `name` | `string` = `"Basecamp"` | — | — | `minLength: 1` `maxLength: 80` `x-transforms` | — |
-| `baseUrl` | `string` | yes | — | `format: "uri"` `x-transforms` | — |
-| `adminEmail` | `string` | yes | — | `format: "email"` `x-transforms` | — |
 | `heartbeatTimeoutSeconds` | `integer` = `120` | — | — | `minimum: 30` `maximum: 3600` | — |
-| `sessionTtlHours` | `integer` = `168` | — | — | `minimum: 1` `maximum: 8760` | — |
 | `requireTwoFactorForOwners` | `boolean` = `false` | — | — | — | — |
 | `allowApiKeyAuth` | `boolean` = `true` | — | — | — | — |
 | `allowBotUsers` | `boolean` = `true` | — | — | — | — |
@@ -1754,11 +1752,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `encryptionKeyEscrowedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `encryptionKeyFingerprint` | `string`? | — | — | `x-litestone-kind` | — |
 | `hostServerId` | `string`? | — | — | `x-litestone-kind` | — |
-| `mailFromAddress` | `string`? | — | — | `format: "email"` `x-transforms` | — |
-| `mailFromName` | `string`? | — | — | `minLength: 0` `maxLength: 80` `x-transforms` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `baseUrl`, `adminEmail` · not accepted — `id`, `version`
+**On create**: required — nothing · not accepted — `id`, `version`
 
 ### `Notification`
 

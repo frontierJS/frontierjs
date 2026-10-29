@@ -98,7 +98,7 @@ title: Hub overview
       <Callout tone="danger" title={`${owed.length} need${owed.length === 1 ? 's' : ''} attention`} id="hub-owed">
         <ul class="stack">
           {#each owed as c}
-            <li data-control={c.id}><code>{c.id}</code> {c.message}</li>
+            <li data-control={c.id}><code>{c.id}</code> {c.message}{#if c.fix} — {c.fix}{/if}</li>
           {/each}
         </ul>
         <p class="text-sm">Graded on <a href="/hub/security/">Host security</a>.</p>

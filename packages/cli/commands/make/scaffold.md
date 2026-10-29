@@ -170,6 +170,8 @@ export default createService({
 // `fli make:resource` (Invariant 4).
 const { resourceFile, servicePlural, existingServiceFile } =
   await import(resolve(global.fliRoot, 'core/resource-template.js'))
+// `plural` below is the service's name, so the count helper goes by another.
+const { plural: counted } = await import(resolve(global.fliRoot, 'core/text.js'))
 
 // ─── Templates: routes ────────────────────────────────────────────────────────
 // The pages themselves are `core/crud-templates.js`, shared with
@@ -351,7 +353,7 @@ if (!skipRoutes) {
 
 if (!flag.dry && created.length) {
   echo('')
-  echo(`  ${created.length} file${created.length === 1 ? '' : 's'} created for ${modelName}`)
+  echo(`  ${counted(created.length, 'file')} created for ${modelName}`)
   echo('')
   if (created.some(f => f.endsWith('schema.lite'))) {
     echo(`  Next: ${schemaApplyStep($.paths.db, modelName).command} to apply the schema change`)

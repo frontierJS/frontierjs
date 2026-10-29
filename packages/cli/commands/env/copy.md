@@ -39,6 +39,7 @@ Generates a `.env.example` from your real `.env` — keys preserved,
 values stripped. Safe to commit to git.
 
 ```js
+const { plural } = await import(resolve(global.fliRoot, 'core/text.js'))
 const srcPath  = resolve($.paths.root, flag.from)
 const destPath = resolve($.paths.root, flag.to)
 
@@ -57,5 +58,5 @@ if (flag.dry) {
 }
 
 writeFileSync(destPath, output, 'utf8')
-log.success(`Created ${flag.to} with ${varCount} variable${varCount === 1 ? '' : 's'} (values ${flag['keep-values'] ? 'kept' : 'stripped'})`)
+log.success(`Created ${flag.to} with ${plural(varCount, 'variable')} (values ${flag['keep-values'] ? 'kept' : 'stripped'})`)
 ```

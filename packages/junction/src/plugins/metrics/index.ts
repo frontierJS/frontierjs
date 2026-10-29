@@ -96,6 +96,7 @@ export function metrics(opts: MetricsPluginOptions = {}) {
 
   let scrapeTimer: ReturnType<typeof setInterval> | null = null
   let rollupTimer: ReturnType<typeof setInterval> | null = null
+  let firstScrape: Promise<void> | null = null
   let scraping = false, folding = false
   let startedAt = Date.now()
 
@@ -129,8 +130,9 @@ export function metrics(opts: MetricsPluginOptions = {}) {
     // reading for a process nobody was serving from.
     async work(app: App): Promise<void> {
       // One reading before the first tick, so a short-lived process still
-      // leaves a row rather than nothing.
-      await scrape(app)
+      // leaves a row rather than nothing. Not awaited: work() runs before
+      // `listen`, and a first scrape costs basecamp ~100ms. shutdown() waits.
+      firstScrape = scrape(app)
       scrapeTimer = setInterval(() => { void scrape(app) }, scrapeMs)
       rollupTimer = setInterval(() => { void rollup(app) }, rollupMs)
       // Neither is a reason for the process to stay alive.
@@ -141,6 +143,7 @@ export function metrics(opts: MetricsPluginOptions = {}) {
     async shutdown(): Promise<void> {
       if (scrapeTimer) { clearInterval(scrapeTimer); scrapeTimer = null }
       if (rollupTimer) { clearInterval(rollupTimer); rollupTimer = null }
+      await firstScrape
     },
   }
 

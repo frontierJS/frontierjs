@@ -209,8 +209,8 @@ export function orion(options: OrionOptions = {}): Plugin {
         queue:    options.queue,
         catalog:  {
           models: modelCatalog({
-            create: generateJsonSchema(schema as never, { mode: "create" }),
-            update: generateJsonSchema(schema as never, { mode: "update" }),
+            create: () => generateJsonSchema(schema as never, { mode: "create" }),
+            update: () => generateJsonSchema(schema as never, { mode: "update" }),
             models: names,
           }),
           // Asked when a flow compiles, which is after boot, so a job file or a

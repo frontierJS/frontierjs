@@ -26,7 +26,7 @@ second cloud to ring 0 and proves both rings on it.
 | --- | --- |
 | Ring 1 on Hetzner | `providers/compute/hetzner.ts` implements every method of `ComputeConnector`: `catalog`, `create` (with `user_data`, `ssh_keys` and `labels`), `sshKey`, `powerOff`, `destroy`, `marked` and `verify`. The provision wizard already offers Hetzner, and `verify:provision` drives the Hetzner stand-in on 8124. **It has never run against the real Hetzner API.** |
 | Ring 0 | **Works with DigitalOcean only.** `api/src/domain/host/provision-host.ts` reads `DIGITALOCEAN_TOKEN`, calls `connectorFor('digitalocean')`, imports `reservedIps` and `RESERVED_EGRESS` from `digitalocean.ts`, and has DigitalOcean's name in its progress lines (`BOOTING`). |
-| fli commands | `basecamp:create`, bare `basecamp`, `basecamp:stop` and `basecamp:destroy` each declare `requires: DIGITALOCEAN_TOKEN` in their frontmatter. `create` defaults to `--region nyc3` and `--image ubuntu-24-04-x64`, and its `--size` help names a DigitalOcean slug. `_module.md` describes them as working on "droplets". |
+| fli commands | `basecamp:create`, bare `server`, `server:stop` and `server:destroy` each declare `requires: DIGITALOCEAN_TOKEN` in their frontmatter. `create` defaults to `--region nyc3` and `--image ubuntu-24-04-x64`, and its `--size` help names a DigitalOcean slug. `_module.md` describes them as working on "droplets". |
 | Enrollment cloud-init | Reads the distro from `$ID`, but the unattended-upgrades origin is hard-coded to `origin=Ubuntu`, so it supports Ubuntu only. Hetzner's `ubuntu-24.04` image is enough for it. |
 | Tests | No test runs `provision-host.ts`. It was checked by hand against the 8122 stand-in. |
 
@@ -50,7 +50,7 @@ second cloud to ring 0 and proves both rings on it.
 ```
 fli basecamp:create --cloud hetzner --domain ops.acme.com --admin me@acme.com
 fli basecamp            # lists the boxes at every cloud that has a token
-fli basecamp:stop <id> && fli basecamp:destroy <id>
+fli server:stop <id> && fli server:destroy <id>
 ```
 
 With Q1 as ruled, a person who has stored only `HETZNER_TOKEN` never
@@ -84,7 +84,7 @@ stand-ins (8122 and 8124), and `rg -i 'digitalocean|droplet'` finds nothing in
 - [x] 1.3 Move the held address behind the connector: optional `address` methods (`hold`, `reuse`, `list`, `release`, and `userData` for any egress script). DigitalOcean's methods are today's `reservedIps` and `RESERVED_EGRESS`, and Hetzner's are Q3's answer. After this, `provision-host.ts` imports no vendor file
 - [x] 1.4 Add a `defaults: { region, image }` field to each connector. DigitalOcean's is `nyc3` and `ubuntu-24-04-x64`. Hetzner's is `ash` and `ubuntu-24.04`: Ashburn keeps the box in the US like `nyc3`. `--region` and `--image` default to empty, which falls through to the connector's defaults
 - [x] 1.5 Make `provision-host.ts` take `cloud` in its input. It reads the token from that cloud's key (Q2), calls `connectorFor(cloud)`, and takes its progress lines from `connector.label`
-- [x] 1.6 Add `--cloud` to `basecamp:create`, bare `basecamp`, `basecamp:stop` and `basecamp:destroy`, resolved as Q1 rules. Drop the token from their frontmatter `requires:`. `_module.md` fetches the token for the chosen cloud, the way `cloudflareToken` already does: a `requires:` list is static and cannot depend on a flag. Rewrite the help and docs text to say "box" where it now says "droplet"
+- [x] 1.6 Add `--cloud` to `basecamp:create`, bare `server`, `server:stop` and `server:destroy`, resolved as Q1 rules. Drop the token from their frontmatter `requires:`. `_module.md` fetches the token for the chosen cloud, the way `cloudflareToken` already does: a `requires:` list is static and cannot depend on a flag. Rewrite the help and docs text to say "box" where it now says "droplet"
 
 **Done 2026-10-23.** Each command ran by hand through `fli` against both
 stand-ins, and the `rg` check finds vendor names only in `_module.md`'s
@@ -97,7 +97,7 @@ page. Four departures from the steps:
 - The address is held BEFORE the box is bought. Hetzner assigns a Primary IP
   only at create or while the box is off, and holding it first means a refusal
   leaves nothing billing.
-- On Hetzner the box's own address IS the held one, so `basecamp:destroy`
+- On Hetzner the box's own address IS the held one, so `server:destroy`
   dedupes the two before listing what is left over.
 - Under `--yes` the cloud is never asked: Enter's answer would buy at whichever
   cloud is listed first, the shape that makes `--yes` refuse without `--name`.

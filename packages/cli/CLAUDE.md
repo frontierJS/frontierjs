@@ -21,7 +21,7 @@ fli.
 this list does not name. The owners that matter on most turns:
 
 - `bin/fli.js` entry · `core/compiler.js` compiles a `.md` command · `core/registry.js` finds commands (project source overrides package in silence) · `core/runtime.js` runs steps, builds `$` and owns the journal hook.
-- `core/checks.js` is `fli check`; the rules sit in `core/checks/*.js` (`app.js`, `repo.js`, `api.js`, `data.js`, `ui.js`, `lib.js`) and `core/register-check.js`, `core/invariants.js` enforces the root Invariants, `core/hazards.js` the realm skills, `core/done.js` is `fli done`, `core/proofs.js` reads `DRIVES.md`.
+- `core/checks.js` is `fli check`; the rules sit in `core/checks/*.js` (`app.js`, `repo.js`, `api.js`, `data.js`, `ui.js`, `lib.js`) and `core/register-check.js`, `core/invariants.js` enforces the root Invariants, `core/hazards.js` the realm skills, `core/done.js` is `fli done` (`core/tags-on-npm.js` asks npm for it), `core/proofs.js` reads `DRIVES.md`.
 - `core/ports.js` is the port schema · `core/app-config.js` is what a scaffolded app is GIVEN; `core/scaffold/{app,api,web}.js` write it and `core/scaffold/surface.js` is what every UI surface's scaffold shares (`FJS-D1577`) · `core/crud-templates.js` is the one generated CRUD page.
 - Deploy: `commands/deploy/` with its `_steps-*` directories (a step file's prefix is `\d+[a-z]*`), `core/deploy-plan.js`, `core/deploy-image.js`, `core/vendor.js`, `core/release.js`, `core/journal.js`.
 - Workspace snapshots: `core/snapshots.js`, `core/export-pairs.js` (`ws:exports`), `core/surface.js` (what is REACHED), `core/repo-map.js` + `core/repo-atlas.js`, `core/app-entry.js` (the committed API surface). `core/html-page.js` frames every generated page (`FJS-D1582`).
@@ -100,9 +100,9 @@ and puts a stand-in `claude` first on the PATH for `:ask`. A change to
 
 <!-- layout-named: the file names fli done grades a new module against, kept here because done.js reads this file by path. The map itself is docs/layout.md.
 advisories.js AGENTS.md amend.js api.js app-config.js app.js App.mesa app-schema.js archive.js 
-argv.js ask-claude.js ask-context.js ask.js ask-plugin.js assets.js bench.baseline.json bench.js 
+argv.js ask-claude.js ask-context.js ask.js ask-plugin.js assets.js basecamp.js bench.baseline.json bench.js 
 blast.js bootstrap.js build-check.js bun-fence.js cat.js chain.json checks.js check-worker.js 
-children.js ci-log.js ci.mjs CLAUDE.md claude-usage.js clipboard.js close.js cloudflare-dns.md 
+children.js ci-log.js ci.mjs CLAUDE.md claude-usage.js clipboard.js close.js cloud.js cloudflare-dns.md 
 cloudflare.js cloudflare.test.js codegraph.js codegraph-page.js color.js command-parse.js 
 compiler.js config.js config.json console.js Console.mesa crest.js crud-templates.js data.js 
 ddl.snapshot.sql decide.js decide-walk.js decisions.js DECISIONS.md deploy-image.js deploy.lite 
@@ -115,7 +115,7 @@ install-preflight.js intent.js intent-recognizer.md ISSUES_ARCHIVE.md ISSUES.md 
 journal-runner.mjs junction.config.js latency.js lib.js live-view.js lock.js machine.js 
 map-model.js map-reference.js map-view.js _module.md new.md next.js one-console.md open-url.js 
 outline-hint.mjs outline.js package.json parser.js pause.js pgp-words.js plan.js PLAN.md png.js 
-ports.js preflight.js preview.js proofs.js prose.js prove.js proxy.js publish-view.js qr.js 
+ports.js preflight.js preview.js proofs.js prose.js prove.js proxy.js publish-hosts.js publish-view.js qr.js 
 register-atlas.js register-check.js registers.js registry.js release.js release-preflight.js release-view.js repo.js 
 repo-map.js repo-rings.js repo-terms.html repo-work.js repro.js requires.js revert.js runnables.js 
 runtime.js scaffold-build.mjs schema-apply.js schema.lite scope.js scope.test.js seams.js server.js 

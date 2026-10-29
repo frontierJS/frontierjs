@@ -149,12 +149,12 @@ None of these exists in `db/schema.lite`.
 | `AppDetailView` | **820** | **Built** — `/apps/[id]/`, four of the mock's seven tabs, with a `Domain` model replacing `App.domain`. The three left out (logs, build, advanced) are named in the screen itself rather than rendered empty. See § Phase 4 |
 | `ApiKeysView` + `CreateApiKeyModal` | 185 + 144 | **Built** — `/api-keys/`, over `ApiKey`. The token lives only as an HMAC in an auth `Credential`, so the mock's `reveal` cannot be built; the scope vocabulary is derived from the service registry rather than declared. See § Phase 6 |
 | `NotificationChannelsView` + `ChannelModal` | 102 + 84 | **Built** — `/channels/`, over `NotificationChannel` + an `AlertRuleChannel` join. `AlertRule.channels` was a Json array pointing at rows no model declared; the credential lives in a `Secret` and `test` really sends, through conduit. See § Phase 5 |
-| `DashboardsView` / `DashboardDetailView` / `AddWidgetModal` | 97 + 91 + 141 | **Built** — `/dashboards/` + `/dashboards/[id]/`, over `Dashboard` + `DashboardWidget`. A widget names a KIND from a declared vocabulary and never carries a query; every card reads through the service that owns its data, with the reader's own session. See § Phase 8 |
+| `DashboardsView` / `DashboardDetailView` / `AddTileModal` | 97 + 91 + 141 | **Built** — `/dashboards/` + `/dashboards/[id]/`, over `Dashboard` + `DashboardTile`. A tile names a KIND from a declared vocabulary and never carries a query; every card reads through the service that owns its data, with the reader's own session. See § Phase 8 |
 | `WorkspaceFlagsView` + 2 modals | 505 + 152 + 71 | **Built** — `/flags/`, over `FeatureFlag` + `FlagOverride`. The mock keyed per-environment state by TIER NAME; an override points at a real `Environment` row. See § Phase 5 |
 | `FlagsView` (sys) | 59 | **Built** — `/hub/flags/`, the same models read across every tenant and grouped by the prefix convention in the key. Toggling changes the flag's own default, never an override — a hub screen has no environment in hand. See § Phase 10 |
 | `RegistryView` | 112 | **Model built 2026-08-25** — `RegistryImage`, one row per TAG, OBSERVED like `Volume`. That commits to MIRRORING a registry rather than querying it live, which is what makes `inUse` answerable at all: it is a join against this workspace's deployments and a registry API knows nothing about who deployed what. `observedAt` is what keeps the staleness visible. No `RegistryRepo` — a repository is `distinct(repository)` plus a `SUM`, and a stored total is a second answer. Needs a service and a sync |
 | `VolumesView` | 120 | **Built** — `/volumes/`, over `Volume`. The first OBSERVED model here: no `create`, a row appears because an outpost reported it, and deleting one asks that outpost to delete the disk before the record is forgotten. See § Phase 7 |
-| `DiskCleanupView` | 431 | **Built** — `/cleanup/`, over `DiskUsage` (observed, one row per server) + `CleanupRun` (what a sweep actually freed). A sweep names targets from a list the service owns and never carries a command. See § Phase 9 |
+| `DiskCleanupView` | 431 | **Built** — `/cleanup/`, over `DiskUsage` (observed, one row per server) + `MaintenanceRun` (what a sweep actually freed). A sweep names targets from a list the service owns and never carries a command. See § Phase 9 |
 | `BlueprintMarketplaceView` + `BlueprintDeployModal` | 216 + 147 | **Models built 2026-08-25** — `Blueprint` + `BlueprintParam`. Hub-curated, so `@@tenant(none)` and no workspace column: every entry in the mock is third-party software, and a per-workspace copy of the same nine rows is not a marketplace. Params are a CHILD model, not a Json array, because the deploy form is generated from them and they are ordered. **Built** — `/blueprints/`, with the deploy modal as its drawer over `apps.fromBlueprint` |
 | `RecipesView` | 191 | **Built** — `/recipes/`, over `Recipe` + `RecipeRun`. Arbitrary code on a machine, so authoring is admin and every run keeps the script it ran, one row per server. See § Phase 9 |
 | `HubBackupView` | 179 | **Model built 2026-08-25** — `Backup`, `@@tenant(none)`, reusing `RunStatus` rather than restating five words. Outcome columns are SYSTEM-write, like every other *Run here. The schedule lives on `HubConfig`, not here: a cron describes the schedule and a `Backup` row is one thing that already happened. Needs a service, a job and the screen |
@@ -703,23 +703,23 @@ the FILESYSTEM rather than about volumes, which is `vitals.js`'s `statfs('/')`.
 ## Phase 8 — a saved view names a kind ✅ done 2026-08-10
 
 Two screens and one modal — `DashboardsView`, `DashboardDetailView`,
-`AddWidgetModal` — over two new models. The phase existed to answer one
-question, recorded when the inventory was written: **is a widget's data source a
+`AddTileModal` — over two new models. The phase existed to answer one
+question, recorded when the inventory was written: **is a tile's data source a
 declared vocabulary or a free-form query?**
 
 ### It is declared. The ruling is in `DECISIONS.md`
 
-A widget carrying `{ accessor, where }` is a read stored in a row. The row
+A tile carrying `{ accessor, where }` is a read stored in a row. The row
 travels — seeded, copied, opened by everyone in the workspace — and the policy
 does not travel with it: `@@gate` and `@@allow` grade a caller against a model,
 and neither can say anything about a string. The server would end up running one
 person's query at another person's privilege with nothing in the schema able to
 see it.
 
-So `enum WidgetKind` is the vocabulary, and it does three jobs from one
+So `enum TileKind` is the vocabulary, and it does three jobs from one
 declaration: the column's CHECK constraint, `autoValidate`'s answer at the API,
 and — because it reaches the browser as a `$def` on the model's JSON Schema, the
-same path every other enum takes — the Add-widget picker. What the schema cannot
+same path every other enum takes — the Add-tile picker. What the schema cannot
 say (which kinds take a server, which take an app, which config keys each reads)
 is one table in `api/src/services/dashboards/kinds.ts`, fetched by the screen
 through a collection-level `kinds` action rather than copied into the bundle. A
@@ -731,7 +731,7 @@ enum member is a button the column refuses.
 that owns its data, with the reader's own session — so a dashboard shows exactly
 what its reader could have opened for themselves. The activity card renders *the
 trail is readable by admins and owners* for a developer, which is the correct
-answer and the one that does not read as a broken widget.
+answer and the one that does not read as a broken tile.
 
 ### What that decided about the rest of the shape
 
@@ -739,11 +739,11 @@ answer and the one that does not read as a broken widget.
   real foreign keys with `onDelete: SetNull`, so a card whose machine was really
   deleted keeps its place and loses its subject rather than vanishing with the
   machine. Same ruling `AlertRule.channels` got in Phase 5.
-- **`config` is knobs, and an unknown key is refused by name.** A widget cannot
+- **`config` is knobs, and an unknown key is refused by name.** A tile cannot
   be given `where` even by a caller that skipped the UI — checked in the browser
   suite by asking the API directly.
 - **A counter counts.** The mock's `stat-counter` holds a number typed in when
-  the widget is added, which is a dashboard displaying whatever it was told. This
+  the tile is added, which is a dashboard displaying whatever it was told. This
   one names a source from a declared list and reads that service's own `total`,
   so a viewer who cannot read servers gets a refusal instead of a fleet size.
 - **The pin is the WORKSPACE's.** One boolean on a shared row cannot be
@@ -760,7 +760,7 @@ answer and the one that does not read as a broken widget.
   board half-ordered when the second write fails, and two people dragging at once
   produce an order neither chose.
 
-All nine of the mock's widget types ship. Three of them state what they cannot
+All nine of the mock's tile types ship. Three of them state what they cannot
 show, on the card, from the same vocabulary the picker is built from: nothing
 here stores a time series, so `server_health` is the last heartbeat rather than a
 trend, `service_health` is a live ping with no latency behind it, and
@@ -771,7 +771,7 @@ trend, `service_health` is a live ping with no latency behind it, and
 **A custom action that answers `data` plus anything else loses the anything
 else** (`FJS-140`). `kinds` returned `{ total, data, statSources, portalServices }`;
 `wrapResult` recognized the first two keys as a paginated list and rebuilt the
-envelope from those alone, so the browser got nine widget kinds and neither of
+envelope from those alone, so the browser got nine tile kinds and neither of
 the vocabularies needed to configure them — 200, no warning, no error. Answering
 three named keys instead makes it a `single`, which unwraps whole.
 `volumes.usage` documents the same trap from the other side, which is what makes
@@ -779,7 +779,7 @@ this the second phase it has cost.
 
 ### Still open
 
-**A widget cannot be sized per breakpoint.** Width is thirds of a row and the
+**A tile cannot be sized per breakpoint.** Width is thirds of a row and the
 browser wraps them; the mock's `defaultRows` is not modeled at all, because a
 card's height here is its content's.
 
@@ -880,7 +880,7 @@ name, the screen fetches it through a `targets` action, and a data test asserts
 the schema declares no competing enum.
 
 **One vocabulary for a run, not three.** `enum JobRunStatus` became
-`enum RunStatus`, shared by `JobRun`, `RecipeRun` and `CleanupRun`. Three copies
+`enum RunStatus`, shared by `JobRun`, `RecipeRun` and `MaintenanceRun`. Three copies
 of the same five words drift apart one value at a time, and the screens then
 disagree about what "finished" looks like — a data test names all three models.
 
@@ -1255,9 +1255,15 @@ copy on the page explains why rather than leaving somebody hunting: they are
 read at boot before any database, rotating one is a deploy, and `Secret` already
 models credential material.
 
-**Three switches say they are stored and read by nothing yet** — the two-factor
-requirement, API-key auth and bot accounts. A switch that changes a column and
-no behavior is worth saying out loud rather than leaving to be discovered.
+**Each of the three policy switches is one refusal at one door, and says which**
+(`FJS-D1592`). Bot accounts off refuses creating a bot (existing bots keep their
+keys); API-key auth off refuses every key-signed request, and logins and Outpost
+calls are untouched. Two-factor for owners does not refuse a login: an owner
+with no authenticator signs in to a session held to enrollment (`FJS-D1008`),
+the navigation guard keeps it on `/settings/` with only the two-step card shown,
+and confirming a code releases it in place. A refusal would have locked out
+every such owner with no way to enroll. Session lifetime is `SESSION_TTL_HOURS`
+(`FJS-D1590`) and the hub name is gone (`FJS-D1591`), so neither is on the form.
 
 **The notification screen renders *chosen* against *default*.** A row exists
 only where somebody has said something, so *defaulted to on* and *turned on* are

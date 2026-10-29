@@ -5,7 +5,7 @@
   // now: `alert-evaluate` runs every minute and writes `AlertEvent` rows
   // (`FJS-123`). Until it did, this card showed the RULES and said so on its
   // frame — a permanently empty "what is firing" reads as *all clear*, which is
-  // the one wrong answer a monitoring widget can give.
+  // the one wrong answer a monitoring tile can give.
   //
   // The firing count comes from `get`, one call per rule and six rules at most:
   // `find` answers the rows and only `get` pays for the event history, which is

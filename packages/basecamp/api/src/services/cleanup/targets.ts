@@ -27,7 +27,7 @@
 export type ReclaimEstimate = 'images' | 'containers' | 'volumes' | 'build_cache'
 
 export interface ReclaimTargetSpec {
-  /** The wire name — stored on `CleanupRun.targets` and sent to the outpost. */
+  /** The wire name — stored on `MaintenanceRun.targets` and sent to the outpost. */
   target:      string
   label:       string
   description: string

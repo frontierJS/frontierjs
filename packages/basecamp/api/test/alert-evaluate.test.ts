@@ -223,8 +223,9 @@ async function fixture(db: any, opts: {
 }) {
   const stamp   = `${Date.now()}-${Math.round(performance.now() * 1000)}`
   const account = await db.account.create({ data: { displayName: 'Acme', slug: `acme-${stamp}` } })
+  const owner   = await db.user.create({ data: { email: `owner-${stamp}@example.com` } })
   const ws      = await db.workspace.create({
-    data: { name: 'Ops', slug: `ops-${stamp}`, accountId: account.id, ownerId: account.id },
+    data: { name: 'Ops', slug: `ops-${stamp}`, accountId: account.id, ownerId: owner.id },
   })
 
   const name = opts.metricName ?? 'process.memoryMb'

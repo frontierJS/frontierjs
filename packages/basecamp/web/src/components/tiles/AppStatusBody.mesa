@@ -9,7 +9,7 @@
   import { at } from '../../lib/datetime.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
-  export let widget = null
+  export let tile = null
 
   let app     = null
   let error   = null
@@ -29,10 +29,10 @@
 
   async function load() {
     error = null
-    if (!widget?.appId) { loading = false; return }
+    if (!tile?.appId) { loading = false; return }
     try {
       unwatch?.(); row?.release()
-      row = apps.record(widget.appId, { composed: true })
+      row = apps.record(tile.appId, { composed: true })
       unwatch = row.subscribe(v => { app = v })
       await row.ready
     } catch (e) {
@@ -53,7 +53,7 @@
 {:else if error}
   <p class="text-sm">{error}</p>
 {:else if !app}
-  <p class="text-sm text-muted">This widget points at an app that is no longer here.</p>
+  <p class="text-sm text-muted">This tile points at an app that is no longer here.</p>
 {:else}
   <div class="cluster">
     <Badge tone={TONE[app.status] ?? 'muted'}>{app.status}</Badge>

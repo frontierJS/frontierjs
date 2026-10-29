@@ -16,8 +16,12 @@
 
 import { randomUUID }         from 'node:crypto'
 import { Conflict, NotFound } from '@frontierjs/junction'
-import { mintEnrollToken, installCommand, ENROLL_WINDOW_MS, OUTPOST_PORT } from '../../providers/compute/enrollment.ts'
+import { mintEnrollToken, installCommand, outpostUnpublished, ENROLL_WINDOW_MS, OUTPOST_PORT } from '../../providers/compute/enrollment.ts'
 import { env } from '../../core/env.ts'
+import { encryptionKeyFingerprint } from '../../core/db.ts'
+import { mailProvider } from '../../core/mailer.ts'
+import { gradeHub } from './posture.ts'
+import type { HostDeclared } from './posture.ts'
 
 export const HOST_SLUG = 'basecamp-host'
 const HUB = 'hub'
@@ -31,6 +35,8 @@ export interface Issued { command: string; token: string; expiresAt: string; win
  * moment the hash is overwritten — which is also the revoke.
  */
 export async function issueEnrollmentFor(client: any, serverId: string, actor: string): Promise<Issued> {
+  const unpublished = await outpostUnpublished()
+  if (unpublished) throw new Conflict(unpublished)
   const enroll = mintEnrollToken()
   await client.asSystem().server.update({
     where: { id: serverId },
@@ -116,4 +122,47 @@ export async function useHost(client: any, { workspaceId, actor, ipAddress }: { 
     serverId: server.id, kind: 'created', message: 'Server registered', metadata: { created_by: actor },
   } })
   return { server, enrolled: false as const, ...(await issueEnrollmentFor(client, server.id, actor)) }
+}
+
+// ─── the hub's own grade ──────────────────────────────────────────────────
+
+/** `finishedAt` of the newest backup that succeeded — what `hub.backup-recent` grades. */
+async function lastBackupAt(sys: any): Promise<string | null> {
+  const row = await sys.backup.findFirst({
+    where: { status: 'success', finishedAt: { not: null } }, orderBy: { finishedAt: 'desc' },
+  })
+  return row?.finishedAt ?? null
+}
+
+/** What the `hub.*` controls grade in process: the newest archive, the key's escrow and the env. */
+async function hostDeclared(sys: any): Promise<HostDeclared> {
+  const config = await sys.hubConfig.findFirst({ where: { id: 'hub' } })
+  return {
+    lastBackupAt:   await lastBackupAt(sys),
+    keyFingerprint: encryptionKeyFingerprint(),
+    keyEscrow:      config?.encryptionKeyEscrowedAt && config.encryptionKeyFingerprint
+      ? { at: config.encryptionKeyEscrowedAt, fingerprint: config.encryptionKeyFingerprint }
+      : null,
+    install: {
+      production: env.NODE_ENV === 'production',
+      appUrl:     env.FRONTIER_APP_URL,
+      apiUrl:     env.FRONTIER_API_URL,
+      mailer:     mailProvider()?.address ?? null,
+      mailFrom:   env.MAIL_FROM,
+    },
+  }
+}
+
+/**
+ * The `hub.*` controls graded now, with the host row and its newest report
+ * they were graded from. One reading for `/hub/security/` and the daily
+ * `hub-posture` job, so the screen and the mail cannot disagree.
+ */
+export async function gradeHubNow(sys: any, now = Date.now()) {
+  const server = await hostServer(sys)
+  const row    = server
+    ? await sys.serverPosture.findFirst({ where: { serverId: server.id }, orderBy: { at: 'desc' } })
+    : null
+  const hub = gradeHub(row?.readings ?? null, await hostDeclared(sys), { at: row?.at ?? now, now })
+  return { server, row, hub }
 }

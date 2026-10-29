@@ -10,7 +10,9 @@
 // while nothing has been spent, and answers the address Basecamp's record there
 // holds now, which create reuses when it is a reserved IP. `{"find":"<ip>"}` writes nothing either: every
 // A record in every zone the token opens that still holds the address, which
-// `fli basecamp:destroy` names once the box it pointed at is gone.
+// `fli server:destroy` names once the box it pointed at is gone. `find` takes
+// a list too, so `fli basecamp` reads every box's hostname in one sweep of the
+// zones rather than one sweep per box.
 //
 // The record is written by providers/edge/cloudflare.ts and carries the fleet's
 // mark, so Basecamp's own edge reads it as its own: a run that finds one moves
@@ -25,7 +27,7 @@
 // The last line of stdout is one JSON object, which is fli's whole contract:
 //   { host, ip, zone, record, proxied }
 //   { host, zone, points }              under check; points is null with no record
-//   { records: [{ zone, name, id, proxied, marked }] }  under find
+//   { records: [{ zone, ip, name, id, proxied, marked }] }  under find
 //   { error: '<what>' }                 and the exit is non-zero
 
 import { cloudflare }  from '../../providers/edge/cloudflare.ts'
@@ -43,15 +45,15 @@ const input = (() => {
 const token = process.env.CLOUDFLARE_TOKEN
 if (!token) fail('CLOUDFLARE_TOKEN is not set')
 
-if (typeof input.find === 'string') {
+if (typeof input.find === 'string' || Array.isArray(input.find)) {
   try {
     const send  = bearerSend(cloudflare.address, token!)
-    const found = []
-    for (const zone of await cloudflare.zones(send))
-      for (const r of await cloudflare.records(send, zone.id))
-        if (r.type === 'A' && r.content === input.find)
-          found.push({ zone: zone.name, name: r.name, id: r.id, proxied: !!r.proxied, marked: !!r.mark })
-    answer({ records: found })
+    const wanted = new Set([input.find].flat().map(String))
+    const swept = await Promise.all((await cloudflare.zones(send)).map(async zone =>
+      (await cloudflare.records(send, zone.id))
+        .filter(r => r.type === 'A' && wanted.has(r.content))
+        .map(r => ({ zone: zone.name, ip: r.content, name: r.name, id: r.id, proxied: !!r.proxied, marked: !!r.mark }))))
+    answer({ records: swept.flat() })
     process.exit(0)
   } catch (e) {
     fail((e as Error).message)

@@ -61,6 +61,7 @@ import { gitOut }        from './git.js'
 import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { basename } from 'path'
 import { resolve, dirname, relative } from 'path'
+import { rel } from './fs.js'
 import { fileURLToPath } from 'url'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
@@ -1313,8 +1314,8 @@ async function handleReleaseStep(req, res) {
 // ─── GET /api/publish · POST /api/publish/registry ───────────────────────────
 //
 // The local half loads with the page — the members and `ws:changed`, which is
-// git. What npm holds is a request to somebody else's server and waits for a
-// press, the same split as the release target.
+// git. What npm and the release host hold is a request to somebody else's
+// server and waits for a press, the same split as the release target.
 
 async function handlePublish(req, res) {
   try {
@@ -1330,7 +1331,7 @@ async function handlePublishRegistry(req, res) {
   try { body = await readBody(req) } catch { return json(res, 400, { error: 'Invalid JSON body' }) }
   try {
     const { publishRegistry } = await import('./publish-view.js')
-    const out = publishRegistry({ root: global.projectRoot, fliRoot: global.fliRoot, tag: String(body?.tag ?? 'latest') })
+    const out = await publishRegistry({ root: global.projectRoot, fliRoot: global.fliRoot, tag: String(body?.tag ?? 'latest'), to: body?.to })
     json(res, out.ok ? 200 : 400, out)
   } catch (err) {
     json(res, 500, { error: err.message })
@@ -1375,8 +1376,7 @@ function commandSource(title) {
   try {
     const entry = getRegistry().get(String(title))
     if (!entry?.filePath) return null
-    const rel = relative(global.projectRoot, entry.filePath)
-    return rel.startsWith('..') ? entry.filePath : rel
+    return rel(global.projectRoot, entry.filePath)
   } catch { return null }
 }
 

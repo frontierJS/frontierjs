@@ -38,6 +38,33 @@ import { litestreamInstall } from '@frontierjs/litestone/replicate'
 export const BUN_VERSION     = '1.4.4'
 export const OUTPOST_VERSION = '0.1.7'
 
+const onNpm = new Map<string, boolean>()
+
+/**
+ * Why an enrollment must not start, when npm does not hold the Outpost the
+ * install runs; null otherwise.
+ *
+ * The pin follows the tree's bump, and the bump is not the publish: with
+ * `0.1.6` tagged and never published, every unit's `bun x` failed its first
+ * start and the machine never enrolled, with nothing naming why (`FJS-3534`).
+ * Asked here and not at boot, so an npm outage takes no Basecamp down, and a
+ * registry it could not ask lets the enrollment through: the machine's own
+ * install is then the check.
+ */
+export async function outpostUnpublished(version = OUTPOST_VERSION, fetcher: typeof fetch = fetch): Promise<string | null> {
+  if (onNpm.get(version)) return null
+  let status = 0
+  try {
+    status = (await fetcher(`https://registry.npmjs.org/@frontierjs%2Foutpost/${version}`,
+      { signal: AbortSignal.timeout(5_000) })).status
+  } catch { return null }
+  if (status >= 200 && status < 300) onNpm.set(version, true)
+  return status === 404
+    ? `A machine cannot enroll: its install runs @frontierjs/outpost@${version} and npm does not have that version. ` +
+      'Publish it (fli ws:pub), or move OUTPOST_VERSION back to a published one (FJS-3534)'
+    : null
+}
+
 /** How long a machine has to enroll. A cloud-init run is seconds; fifteen
  *  minutes is room for a slow image pull and nothing like room for a leaked
  *  metadata blob to be useful tomorrow. */

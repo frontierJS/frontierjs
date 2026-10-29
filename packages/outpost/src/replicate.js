@@ -21,6 +21,7 @@ import { mkdir, mkdtemp, readFile, writeFile, rename, rm, stat } from 'node:fs/p
 import { dirname } from 'node:path'
 import { buildYaml, replicaUrl, lastWriteArgs, parseLastWrite, restoreArgs, restoreError } from '@frontierjs/litestone/replicate'
 import { spawnRun } from './docker.js'
+import { layout } from './layout.js'
 
 const APP_ID = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
 // A directory target's `*.db` is flat, so a name is a file in the volume's top.
@@ -40,11 +41,11 @@ const toReplica = (r) => ({
 
 export function createReplicator({
   run        = spawnRun,
-  configPath = '/etc/basecamp/litestream.yml',
+  configPath = layout().litestreamConfig,
   // Outside every volume, so a `/backup` tar does not carry `.<db>-litestream`
   // and a restore does not hand Litestream a stale position. The unit's
   // StateDirectory, so it exists and is writable under its sandbox.
-  metaDir    = '/var/lib/litestream',
+  metaDir    = layout().litestreamState,
   unit       = 'basecamp-litestream.service',
   socketPath = '/run/litestream/litestream.sock',
   // `config.hostFiles.db`: Basecamp's database directory, on its own box only.
@@ -56,7 +57,7 @@ export function createReplicator({
   // Where `stage` restores to before the volume is touched. Under the
   // Outpost's own StateDirectory, which the sandbox lets it write and a snap
   // docker can mount.
-  stageDir   = '/var/lib/outpost/replica-restore',
+  stageDir   = layout().replicaRestore,
 } = {}) {
 
   function checkFields(r, name) {

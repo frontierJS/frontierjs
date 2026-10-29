@@ -1,12 +1,12 @@
 // src/services/dashboards/kinds.ts
-// The widget vocabulary — what each kind of widget needs to be placed.
+// The tile vocabulary — what each kind of tile needs to be placed.
 //
-// `enum WidgetKind` in db/schema.lite is the seed: it gives the column its
+// `enum TileKind` in db/schema.lite is the seed: it gives the column its
 // CHECK constraint and reaches the browser as a `$def`, so a picker cannot
 // offer a kind the column would refuse. What the schema cannot say is that
 // `app_status` is meaningless without an App and `server_fleet` takes no
 // subject at all — that rule lives here, once, and both the service and the
-// Add-widget screen read it from this file rather than restating it.
+// Add-tile screen read it from this file rather than restating it.
 //
 // db/test/schema.test.ts holds the two together in both directions: every enum
 // member has an entry here, and every entry names a member. A kind added to
@@ -18,16 +18,16 @@
 // difference between what the mock draws and what this app can actually
 // answer, said on the card instead of drawn as a plausible line.
 
-/** Which model a widget's subject points at. `null` = the whole workspace. */
-export type WidgetSubject = 'server' | 'app' | null
+/** Which model a tile's subject points at. `null` = the whole workspace. */
+export type TileSubject = 'server' | 'app' | null
 
-export interface WidgetKindSpec {
-  /** Matches a member of `enum WidgetKind`. */
+export interface TileKindSpec {
+  /** Matches a member of `enum TileKind`. */
   kind:        string
   label:       string
   description: string
-  subject:     WidgetSubject
-  /** A subject the widget cannot be placed without. `deploy_feed` reads the
+  subject:     TileSubject
+  /** A subject the tile cannot be placed without. `deploy_feed` reads the
    *  whole workspace when no app is named, so its subject is optional. */
   required:    boolean
   /** Config keys this kind accepts. Anything else is refused at the boundary —
@@ -51,7 +51,7 @@ export interface WidgetKindSpec {
  */
 export const STAT_SOURCES = ['servers', 'apps', 'deployments', 'jobs', 'volumes', 'alerts'] as const
 
-export const WIDGET_KINDS: WidgetKindSpec[] = [
+export const TILE_KINDS: TileKindSpec[] = [
   {
     kind:        'server_fleet',
     label:       'Server fleet',
@@ -164,5 +164,5 @@ export const WIDGET_KINDS: WidgetKindSpec[] = [
   },
 ]
 
-export const WIDGET_KIND_BY_NAME: Record<string, WidgetKindSpec> =
-  Object.fromEntries(WIDGET_KINDS.map(k => [k.kind, k]))
+export const TILE_KIND_BY_NAME: Record<string, TileKindSpec> =
+  Object.fromEntries(TILE_KINDS.map(k => [k.kind, k]))

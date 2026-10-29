@@ -21,7 +21,7 @@
   import Bar       from '@frontierjs/ui/components/display/Bar.mesa'
   import Sparkline from '@frontierjs/ui/components/display/Sparkline.mesa'
 
-  export let widget = null
+  export let tile = null
 
   let server  = null
   let error   = null
@@ -38,17 +38,17 @@
 
   async function load() {
     error = null
-    if (!widget?.serverId) { loading = false; return }
+    if (!tile?.serverId) { loading = false; return }
     try {
       unwatch?.(); row?.release()
-      row = servers.record(widget.serverId)
+      row = servers.record(tile.serverId)
       unwatch = row.subscribe(v => { server = v })
       await row.ready
 
       // A day, which is inside the raw window the store keeps at minute
       // resolution — so this is a range scan and never the fold.
       const to  = Date.now()
-      const res = await servers.service.invoke('metrics', widget.serverId,
+      const res = await servers.service.invoke('metrics', tile.serverId,
                                                { from: to - 24 * 3600 * 1000, to })
       // `null` for a series nothing has ever written, which is not the same as
       // an empty one and must not draw a flat line at zero.
@@ -99,7 +99,7 @@
 {:else if error}
   <p class="text-sm">{error}</p>
 {:else if !server}
-  <p class="text-sm text-muted">This widget points at a server that is no longer here.</p>
+  <p class="text-sm text-muted">This tile points at a server that is no longer here.</p>
 {:else if !bars.length}
   <p class="text-sm text-muted">
     No outpost reading for {server.name} — last heartbeat {at(server.lastHeartbeatAt, 'never')}.

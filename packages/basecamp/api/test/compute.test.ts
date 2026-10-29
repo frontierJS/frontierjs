@@ -755,6 +755,18 @@ describe('a machine claims its own credential', () => {
     expect(OUTPOST_VERSION).toBe(pkg.version)
   })
 
+  // …and a version the workspace carries can still be one npm never got
+  // (FJS-3534), so an enrollment asks before a machine is billed for.
+  test('an enrollment is refused by name when npm lacks the pinned Outpost, and let through when npm cannot be asked', async () => {
+    const { outpostUnpublished } = await import('../src/providers/compute/enrollment.ts')
+    const answering = (status: number) => (async () => new Response('', { status })) as unknown as typeof fetch
+    expect(await outpostUnpublished('0.0.0-missing', answering(404))).toContain('@frontierjs/outpost@0.0.0-missing and npm does not have')
+    expect(await outpostUnpublished('0.0.0-present', answering(200))).toBe(null)
+    expect(await outpostUnpublished('0.0.0-down', answering(503))).toBe(null)
+    const offline = (async () => { throw new Error('ENOTFOUND') }) as unknown as typeof fetch
+    expect(await outpostUnpublished('0.0.0-offline', offline)).toBe(null)
+  })
+
   // It writes into every app's volume, which outpost.service cannot reach, and
   // the config it reads is the file the Outpost rewrites. The build is the one
   // deploy:setup installs, so Basecamp's own box and its fleet run one binary.
@@ -1133,7 +1145,7 @@ describe('a machine enrolls itself, over HTTP, holding nothing else', () => {
     const token = mintEnrollToken().token
     const row   = await sys.server.create({ data: {
       workspaceId: target.workspaceId, name: 'no-cert', slug: `no-cert-${Math.random().toString(36).slice(2, 7)}`,
-      role: 'general', providerKind: 'custom', registerMethod: 'manual',
+      role: 'general', providerKind: 'custom', registerMethod: 'imported',
       enrollTokenHash: hashEnrollToken(token), enrollExpiresAt: new Date(Date.now() + 60_000),
     }})
 
@@ -1270,7 +1282,7 @@ describe('a machine signs with its OWN key, and only its own', () => {
     const row = await sys.server.create({ data: {
       workspaceId: ws.id, name: 'imported', slug: `imported-${Math.random().toString(36).slice(2, 7)}`,
       status: 'pending', role: 'general', providerKind: 'custom',
-      registerMethod: 'manual', ipAddress: '10.0.1.9',
+      registerMethod: 'imported', ipAddress: '10.0.1.9',
     }})
     expect(row.outpostSecretId ?? null).toBeNull()
     expect((await heartbeat(row.id as string, FLEET)).status).toBe(401)
@@ -1353,7 +1365,7 @@ describe('a machine signs with its OWN key, and only its own', () => {
       workspaceId: ws.id, name: 'no-target',
       slug: `no-target-${Math.random().toString(36).slice(2, 7)}`,
       status: 'pending', role: 'general', providerKind: 'custom',
-      registerMethod: 'manual', ipAddress: '10.0.1.11',
+      registerMethod: 'imported', ipAddress: '10.0.1.11',
     }})
     expect((await heartbeat(row.id as string, FLEET)).status).toBe(401)
     expect(await app.conduit.resolve(`outpost:${row.id}`).catch(() => null)).toBeNull()

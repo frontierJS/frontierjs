@@ -107,16 +107,16 @@ for (const key of shadowed)
   log.warn(`Env check: ${key} is set in ${envFile} and in deploy.configuration — the declared value wins`)
 
 // ─── A database the swap would not keep ───────────────────────────────────────
-// The file is read whole by the container, so an absolute DATABASE_URL or *_PATH
-// outside the mount is found today only by 07-health, after the image is built
-// and the container started, and then rolled back (FJS-3175).
+// The file is read whole by the container, so a DATABASE_URL or *_PATH outside
+// the mount -- a relative one too, which lands under the WORKDIR -- is otherwise
+// found only by 07-health, after the build, and then rolled back (FJS-3175).
 const { strayDatabasePaths } = await import(new URL('file://' + global.fliRoot + '/core/local-env.js'))
 const strays = strayDatabasePaths(serverEnv, CONTAINER_DB_DIR)
 if (strays.length) {
   log.error(`Env check: ${envFile} on ${host} names a database outside ${CONTAINER_DB_DIR}, the one directory a swap keeps:`)
   for (const { key, value } of strays) log.warn(`  ${key.padEnd(28)} ${value}`)
   log.info(`Point each under ${CONTAINER_DB_DIR} (e.g. ${CONTAINER_DB_DIR}/app.db), then redeploy:`)
-  log.info(`  ssh ${host} nano ${envFile}`)
+  log.info(`  ssh -t ${host} vi ${envFile}`)
   $.config.abort = true
 }
 
@@ -136,7 +136,7 @@ for (const key of missing) {
 }
 log.info('')
 log.info(`Add the missing keys to ${envFile} on the server, or a secret as its own file in ${secretsDir}/, then redeploy:`)
-log.info(`  ssh ${host} nano ${envFile}`)
+log.info(`  ssh -t ${host} vi ${envFile}`)
 log.info(`Or pull them from local: fli env:pull --from ssh --server ${target} --path ${envFile}`)
 
 $.config.abort = true

@@ -38,6 +38,7 @@
 
 import { stripVTControlCharacters } from 'node:util'
 import { createInterface } from 'node:readline'
+import { spawnSync } from 'node:child_process'
 import { chalk } from './color.js'
 
 const ERASE    = '\r\x1b[2K'
@@ -85,6 +86,26 @@ export function fit(parts, sep, cols) {
   const kept = parts.filter(p => p != null && p !== false && p !== '')
   while (kept.length > 1 && width(kept.join(sep)) > cols) kept.pop()
   return truncate(kept.join(sep), cols)
+}
+
+// ─── paging ───────────────────────────────────────────────────────────────────
+
+/**
+ * Writes doc, through $PAGER when it is taller than the terminal and `pager` is
+ * on; straight to stdout for a pipe, a short doc, or a pager that will not start.
+ * LESS is set on the call: an assignment to process.env never reaches a child under bun.
+ */
+export function page(doc, { pager = true } = {}) {
+  const tall = doc.split('\n').length > (process.stdout.rows || Infinity)
+  if (!(pager && process.stdout.isTTY && tall)) return process.stdout.write(doc)
+  const cmd   = process.env.PAGER || 'less'
+  const paged = spawnSync('sh', ['-c', cmd === 'less' ? 'less -R' : cmd], {
+    input: doc,
+    stdio: ['pipe', 'inherit', 'inherit'],
+    env:   { ...process.env, LESS: process.env.LESS ?? 'FRX' },
+  })
+  // sh itself starts, so a $PAGER that is not installed is exit 127, not an error.
+  if (paged.error || paged.status === 127) process.stdout.write(doc)
 }
 
 // ─── every open tty, for the paths that end the process ──────────────────────

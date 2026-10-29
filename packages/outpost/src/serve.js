@@ -21,6 +21,7 @@
 import fsp                from 'node:fs/promises'
 import { basename, join, resolve, extname } from 'node:path'
 import { contentTypeFor } from '@frontierjs/toolbelt/mime'
+import { layout }         from './layout.js'
 
 const NOT_FOUND = (message) => new Response(`${message}\n`, {
   status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' },
@@ -40,7 +41,7 @@ function labelFromHost(host) {
   return /^[a-z0-9][a-z0-9-]*$/.test(label) ? label : null
 }
 
-export function createStaticServer({ staticDir = '/var/lib/outpost/static' } = {}, { log = console } = {}) {
+export function createStaticServer({ staticDir = layout().static } = {}, { log = console } = {}) {
 
   const root     = resolve(staticDir)
   const hostsDir = join(root, 'hosts')

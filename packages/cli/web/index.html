@@ -576,6 +576,13 @@ button[data-health] {
             <label class="field-check text-xs"><input type="checkbox" id="publish-push" checked onchange="onPublishOptions()"> push when done</label>
             <label class="field-check text-xs" title="--all: publish packages with no commits since their tag"><input type="checkbox" id="publish-all" onchange="onPublishOptions()"> include unchanged</label>
           </div>
+          <!-- Where the one pack goes. The release is the default and npm is
+               said on purpose, the same as --to on the command line. -->
+          <div class="bar dense">
+            <span class="text-xs text-muted">ship to</span>
+            <label class="field-check text-xs" title="--to tarballs: a GitHub Release per tag, the bytes the package host serves"><input type="checkbox" id="publish-to-tarballs" data-to="tarballs" checked onchange="onPublishDestinations()"> GitHub Release</label>
+            <label class="field-check text-xs" title="--to npm: the public registry, a browser 2FA round trip per package"><input type="checkbox" id="publish-to-npm" data-to="npm" onchange="onPublishDestinations()"> npm</label>
+          </div>
 
           <details class="disclosure">
             <summary class="text-xs" id="publish-summary">packages</summary>
@@ -3304,8 +3311,11 @@ function updateFlow(name) {
   for (const s of flow.steps) {
     const li = flowLi(name, s.id)
     if (!li) continue
-    // No ci script, no ci step: a gate nobody can pass is not a step.
+    // No ci script, no ci step: a gate nobody can pass is not a step. A
+    // destination's login gate is only a step while that destination is in
+    // the run — an npm login nobody needs would hold "next" forever.
     if (s.gate === 'ci') li.hidden = !ciBody
+    if (s.to)            li.hidden = !publishTo().includes(s.to)
     if (li.hidden) continue
     const [tone, word, note] = stepStatus(name, s)
     const badge = li.querySelector('[data-step-badge]')
@@ -3378,10 +3388,10 @@ async function stopStep() {
 // ─── publishing the packages ─────────────────────────────────────────────────
 //
 // `/api/publish` is the members and `ws:changed` — local, so it loads with the
-// page. The registry is npm's answer and waits for a press. Which packages go
-// out is `ws:pub`'s own choice until somebody unticks one: an untouched
-// selection sends no `--filter`, so the page never narrows a release by
-// accident of having drawn a list.
+// page. What the destinations hold is npm's and GitHub's answer and waits for a
+// press. Which packages go out is `ws:pub`'s own choice until somebody unticks
+// one: an untouched selection sends no `--filter`, so the page never narrows a
+// release by accident of having drawn a list.
 
 let publishBody     = null
 let registryBody    = null
@@ -3412,6 +3422,8 @@ async function loadPublish() {
 const publishable = () => (publishBody?.packages ?? []).filter(p => !p.private)
 const defaultPicks = () => publishable().filter(p => p.affected || document.getElementById('publish-all').checked).map(p => p.name)
 
+const publishTo = () => [...document.querySelectorAll('#publish [data-to]:checked')].map(b => b.dataset.to)
+
 function publishOpts() {
   return {
     bump:     document.getElementById('publish-bump').value,
@@ -3419,8 +3431,16 @@ function publishOpts() {
     otp:      document.getElementById('publish-otp').value.trim(),
     push:     document.getElementById('publish-push').checked,
     all:      document.getElementById('publish-all').checked,
+    to:       publishTo(),
     packages: narrowedByHand() ? [...publishPicked] : [],
   }
+}
+
+// A reading answers the destinations it asked, so changing them drops it — a
+// release column kept beside an npm-only run would be read as current.
+function onPublishDestinations() {
+  registryBody = null
+  onPublishOptions()
 }
 
 // Ticked back to what ws:pub would pick anyway is no narrowing: sending the
@@ -3438,9 +3458,12 @@ function goingOut() {
   return publishable().filter(p => publishPicked.has(p.name) && (all || p.affected))
 }
 
+const TO_WORD = { tarballs: 'GitHub Release', npm: 'npm' }
+
 function publishSummary() {
   const o = publishOpts()
-  return `${plural(goingOut().length, 'package')} · ${o.bump} · ${o.tag}${o.push ? '' : ' · not pushed'}`
+  const to = o.to.length ? o.to.map(d => TO_WORD[d] ?? d).join(' + ') : 'nowhere'
+  return `${plural(goingOut().length, 'package')} · ${o.bump} · ${o.tag} · ${to}${o.push ? '' : ' · not pushed'}`
 }
 
 function onPublishOptions() {
@@ -3487,7 +3510,8 @@ function renderPublishPackages() {
             : p.affected ? `<span class="badge info text-xs">${plural(p.commits ?? 0, 'commit')} since ${esc(p.lastTag || 'never released')}</span>`
             : '<span class="badge muted text-xs" title="no commits since its tag — include unchanged to publish it">unchanged</span>'}
           ${p.dirty ? '<span class="badge danger text-xs" title="ws:pub refuses a package with uncommitted files">uncommitted</span>' : ''}
-          ${r ? `<span class="text-xs text-muted" data-registry>npm ${esc(r.remote ?? '—')} · ${esc(r.status)}</span>` : ''}
+          ${r && r.status ? `<span class="text-xs text-muted" data-registry>npm ${esc(r.remote ?? '—')} · ${esc(r.status)}</span>` : ''}
+          ${r && 'release' in r ? `<span class="text-xs text-muted" data-release>release ${r.release === true ? 'shipped' : r.release === false ? 'missing' : 'could not say'}</span>` : ''}
         </div>
       </li>`
   }).join('')
@@ -3496,37 +3520,47 @@ function renderPublishPackages() {
 async function readRegistry() {
   const note = document.getElementById('publish-note')
   const was  = note.textContent
-  note.textContent = 'asking npm…'
+  const { tag, to } = publishOpts()
+  note.textContent = `asking ${to.map(d => TO_WORD[d] ?? d).join(' and ') || 'nobody'}…`
   try {
     const r = await fetch(`${API}/api/publish/registry`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tag: publishOpts().tag }),
+      body: JSON.stringify({ tag, to }),
     }).then(x => x.json())
     if (!r.ok) throw new Error(r.error)
     registryBody = r
     note.textContent = was
   } catch (err) {
-    note.textContent = `could not read the registry: ${err.message}`
+    note.textContent = `could not read the destinations: ${err.message}`
   }
   renderPublishPackages()
   updateFlows()
 }
 
+// One word per destination: npm's is `ws:npm`'s status, the release's is
+// whether the asset at the package's own tag is there.
 function registryStatus(s) {
-  if (!registryBody) return ['muted', 'not read', 'reads npm when you press it']
-  const rows  = registryBody.packages.filter(p => publishable().some(m => m.name === p.name))
-  const count = st => rows.filter(p => p.status === st).length
-  const read  = `read ${ago(registryBody.at)}`
+  if (!registryBody) return ['muted', 'not read', 'asks the destinations when you press it']
+  const rows   = registryBody.packages.filter(p => publishable().some(m => m.name === p.name))
+  const npm    = registryBody.to.includes('npm'), rel = registryBody.to.includes('tarballs')
+  const count  = st => rows.filter(p => p.status === st).length
+  const read   = `read ${ago(registryBody.at)}`
+  const unsure = rows.filter(p => (npm && p.status === 'error') || (rel && p.release === null))
   if (s.id === 'verify') {
     const pub = stepResults['publish:publish']
     if (!pub || pub.code !== 0) return ['muted', 'after publishing', '']
     if (registryBody.at < pub.at) return ['warning', 'read again', 'the reading is from before the publish']
-    const behind = rows.filter(p => p.status !== 'level')
-    return behind.length
-      ? ['warning', `${behind.length} not level`, `${behind.map(p => `${p.name} ${p.status}`).join(' · ')} · ${read}`]
-      : ['success', 'level', `every package matches npm · ${read}`]
+    const short = rows.filter(p => (npm && p.status !== 'level') || (rel && p.release !== true))
+    return short.length
+      ? ['warning', `${short.length} short`, `${short.map(p => `${p.name}${npm && p.status !== 'level' ? ` npm ${p.status}` : ''}${rel && p.release !== true ? ` release ${p.release === false ? 'missing' : '?'}` : ''}`).join(' · ')} · ${read}`]
+      : ['success', 'level', `every package is on ${registryBody.to.map(d => TO_WORD[d]).join(' and ')} · ${read}`]
   }
-  return ['success', 'read', `${count('level')} level · ${count('ahead')} unreleased · ${count('behind')} behind · ${count('unpublished')} never published · ${read}`]
+  const parts = []
+  if (npm) parts.push(`npm: ${count('level')} level · ${count('ahead')} unreleased · ${count('behind')} behind · ${count('unpublished')} never published`)
+  if (rel) parts.push(`release: ${rows.filter(p => p.release === true).length} shipped · ${rows.filter(p => p.release === false).length} missing`)
+  return unsure.length
+    ? ['warning', `${unsure.length} could not say`, `${unsure.map(p => p.name).join(', ')} — a host did not answer; a stale GH_TOKEN in ~/.config/fli/env is the usual reason · ${read}`]
+    : ['success', 'read', `${parts.join(' · ')} · ${read}`]
 }
 
 async function loadChecks() {

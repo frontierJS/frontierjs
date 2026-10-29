@@ -39,7 +39,7 @@ const db  = await createBasecampDb()
 const sys = db.asSystem()
 
 // The workspace the drive signs into: the seeded owner's first membership.
-const owner = await sys.user.findFirst({ where: { email: 'sam@example.com' } })
+const owner = await sys.user.findFirst({ where: { email: 'dev@knight.works' } })
 if (!owner) { console.error('no seeded owner — run db/seed.js first'); process.exit(1) }
 const member = await sys.workspaceMember.findFirst({
   where: { userId: owner.id }, orderBy: { acceptedAt: 'asc' },

@@ -4,15 +4,17 @@
 // through app code. Missing required vars throw at startup with a clear message.
 //
 // Generate .env.example:
-//   bun run -e "import { printEnvExample } from '@frontierjs/junction'; import { spec } from './src/env.ts'; printEnvExample(spec)"
+//   bun run -e "import { printEnvExample } from '@frontierjs/junction'; import { spec } from './src/core/env.ts'; printEnvExample(spec)"
 
 import { dirname, join } from 'node:path'
 import { defineEnv }     from '@frontierjs/junction'
+import type { EnvSpec }  from '@frontierjs/junction'
+import { isSecretEnvName, redactUrl } from '@frontierjs/toolbelt/redact'
 
 /** Publicly-known placeholder. Rejected in production — see core/db.ts. */
 export const DEV_ENCRYPTION_KEY = '0'.repeat(64)
 
-export const env = defineEnv({
+export const spec = {
   // ── Core ──────────────────────────────────────────────────
   NODE_ENV:     { default: 'development' },
   // No PORT: junction reads FRONTIER_PORT_BE (what `fli dev` hands a second
@@ -138,6 +140,11 @@ export const env = defineEnv({
   // chose would point a fleet at whatever host the last provisioner used.
   FRONTIER_API_URL: { default: 'http://localhost:8120' },
 
+  // How long a sign-in lasts. Read once, when auth is built: a lifetime that
+  // changed under a running process would apply to some sessions and not
+  // others, and nothing would say which (`FJS-D1590`).
+  SESSION_TTL_HOURS: { type: 'number', default: 168 },
+
   // ── Providers ─────────────────────────────────────────────
   // Each one activates the real adapter when set; stubs otherwise.
   INFISICAL_URL:   {},
@@ -205,7 +212,37 @@ export const env = defineEnv({
   // this block; the directory is outside db/ so `db:reset` keeps every chat.
   WORKBENCH_DIR: {},
   CLAUDE_BIN:    { default: 'claude' },
-})
+} satisfies EnvSpec
+
+export const env = defineEnv(spec)
+
+/** One variable as /hub/settings/ shows it. */
+export interface EnvRow {
+  name:     string
+  required: boolean
+  secret:   boolean
+  /** `set` by the operator, left at its `default`, or `unset` with none. */
+  state:    'set' | 'default' | 'unset'
+  /** What the process runs with; null for a secret, whose value never leaves this file. */
+  value:    string | null
+}
+
+/** Every variable this API reads, with what it runs on — the answer to "what have I not set". */
+export function envReport(): EnvRow[] {
+  return Object.entries(spec as EnvSpec).map(([name, field]) => {
+    // Junction reads NAME_FILE when NAME is absent, so a key mounted as a file is set.
+    const given  = !!process.env[name] || !!process.env[`${name}_FILE`]
+    const secret = field.secret ?? isSecretEnvName(name)
+    const value  = (env as Record<string, unknown>)[name]
+    return {
+      name,
+      required: field.required === true,
+      secret,
+      state:    given ? 'set' : field.default !== undefined ? 'default' : 'unset',
+      value:    secret || value === undefined ? null : redactUrl(String(value)),
+    }
+  })
+}
 
 // The audit trail sits beside the main database unless AUDIT_PATH says
 // otherwise, as the queue does (`jobsDatabasePath`). Set here, in the process

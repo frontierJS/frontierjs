@@ -5,7 +5,7 @@ title: Recipes
   // The mock's RecipesView — saved shell scripts, run on real machines.
   //
   // This is the screen where the app does something it cannot make safe by
-  // declaring a vocabulary. A dashboard widget names a KIND and a cleanup names
+  // declaring a vocabulary. A dashboard tile names a KIND and a cleanup names
   // TARGETS; a recipe is a script, and once an outpost has it there is no model
   // to grade and no policy to apply. So this screen states the two things that
   // do hold — authoring is an admin act, and every run keeps the script it ran

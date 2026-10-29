@@ -65,3 +65,21 @@ export function comparatorFor(
   sort: SortParam | undefined | null,
   collations?: Record<string, string>,
 ): ((a: Record<string, unknown>, b: Record<string, unknown>) => number) | null
+
+/** The filter value asking whether a column holds anything; `blank` counts `''` as empty too. */
+export function emptyTest(asks: 'empty' | 'filled', opts?: { blank?: boolean }): Record<string, unknown>
+
+/** Which empty test a filter value is, or `undefined`. A bare `null` is `'empty'`. */
+export function emptyTestOf(v: unknown): 'empty' | 'filled' | undefined
+
+/** A relative day's offset from today — `'@today-7'` → -7 — or `undefined`. */
+export function readDayToken(v: unknown): number | undefined
+
+/** The token for a day `offset` days from today — `-7` → `'@today-7'`. */
+export function dayToken(offset: number): string
+
+/** The query with every `@today±N` resolved on the columns `kinds` names; `timeZone` is asked for by an instant column. */
+export function resolveDayTokens(
+  query: Record<string, unknown>,
+  at: { today: string; timeZone?: string; kinds: Record<string, 'date' | 'instant'> },
+): Record<string, unknown>

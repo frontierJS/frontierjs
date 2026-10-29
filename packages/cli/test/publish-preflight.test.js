@@ -8,7 +8,7 @@
 
 import { describe, test, expect } from 'bun:test'
 
-import { satisfiesRange, dirtyPackages, peerDrift, publishOrder, writePins,
+import { satisfiesRange, dirtyPackages, peerDrift, movedDependencies, publishOrder, writePins,
          publishRefusals, formatRefusals, matchesSelector, unpublished } from '../core/publish-preflight.js'
 
 describe('a version against a range', () => {
@@ -106,6 +106,42 @@ describe('sibling ranges this release would step outside of', () => {
 
   test('a member declaring no peers at all is not a crash', () => {
     expect(peerDrift([{ name: 'x', pkg: {} }], [{ name: 'mesa', newVersion: '0.2.0' }])).toEqual([])
+  })
+})
+
+describe('a workspace dependency that moved past its tag', () => {
+  const outpost   = { name: '@frontierjs/outpost', pkg: { dependencies: { '@frontierjs/litestone': 'workspace:*' } } }
+  const members   = [
+    { name: '@frontierjs/litestone', dir: 'packages/litestone', pkg: { version: '1.1.10' } },
+    { name: '@frontierjs/outpost',   dir: 'packages/outpost',   pkg: { version: '0.1.6' } },
+  ]
+  const state = (s) => () => ({ lastTag: '@frontierjs/litestone@1.1.10', commits: [], files: [], ...s })
+
+  test('commits since its tag, and not in the release, is refused with no override', () => {
+    const moved = movedDependencies([outpost], members, state({ commits: [{}, {}] }))
+    expect(moved).toEqual([{ by: '@frontierjs/outpost', dep: '@frontierjs/litestone', version: '1.1.10',
+      tag: '@frontierjs/litestone@1.1.10', commits: 2, files: 0 }])
+    const [r] = publishRefusals({ moved })
+    expect(r).toMatchObject({ check: 'workspace-dep-moved', override: null })
+    expect(r.detail[0]).toContain('2 commit(s) since @frontierjs/litestone@1.1.10')
+  })
+
+  test('uncommitted files and a dependency never tagged are refused too', () => {
+    expect(movedDependencies([outpost], members, state({ files: ['x'] }))).toHaveLength(1)
+    expect(movedDependencies([outpost], members, state({ lastTag: '' }))[0].tag).toBe(null)
+  })
+
+  test('at its tag, in the release, or a devDependency, is allowed', () => {
+    expect(movedDependencies([outpost], members, state())).toEqual([])
+    const both = [outpost, { name: '@frontierjs/litestone', pkg: {} }]
+    expect(movedDependencies(both, members, state({ commits: [{}] }))).toEqual([])
+    const dev = { name: '@frontierjs/outpost', pkg: { devDependencies: { '@frontierjs/litestone': 'workspace:*' } } }
+    expect(movedDependencies([dev], members, state({ commits: [{}] }))).toEqual([])
+  })
+
+  test('a registry range is not a workspace dependency', () => {
+    const pinned = { name: '@frontierjs/outpost', pkg: { dependencies: { '@frontierjs/litestone': '^1.1.10' } } }
+    expect(movedDependencies([pinned], members, state({ commits: [{}] }))).toEqual([])
   })
 })
 

@@ -1275,8 +1275,9 @@ export function buildBoolMap(schema) {
 // answer plausibly and wrongly rather than failing (`FJS-210`). And whether a
 // long IN list may cast its values, which a column with no affinity may not.
 //
-// Anything absent is a plain scalar. DateTime is deliberately absent — it is ISO
-// text, and a string operator asks it a real question.
+// Anything absent is a plain scalar. A DateTime (`instant`) or `@date` (`day`)
+// is ISO text a string operator asks a real question of; the kind is there so a
+// comparison against a string that is not ISO is refused (FJS-3583).
 export function buildFilterKindMap(schema) {
   const map = {}
   for (const model of schema.models) {
@@ -1288,6 +1289,8 @@ export function buildFilterKindMap(schema) {
       else if (f.type.name === 'File')    kinds.set(f.name, 'file')
       else if (f.type.name === 'Boolean') kinds.set(f.name, 'boolean')
       else if (f.type.name === 'Int' || f.type.name === 'Float') kinds.set(f.name, 'number')
+      else if (f.type.name === 'DateTime') kinds.set(f.name, 'instant')
+      else if (f.attributes?.some(a => a.kind === 'date')) kinds.set(f.name, 'day')
       // Only the synthesized trail model declares one.
       else if (f.type.name === 'Any')     kinds.set(f.name, 'any')
     }

@@ -367,8 +367,8 @@ createLitestoneAuth(db, {
 An account it names that has a factor is unchanged: it owes its code. One with
 none **signs in to a session held to enrollment** (`FJS-D1008`): the login answers
 a token like any other, with `user.enrollmentOnly: true`, and the plugin refuses
-every service call but `account.totpStatus`, `setupTotp` and `confirmTotp` with a
-403 whose `data.reason` is `second_factor_required`. `confirmTotp` releases the
+every service call but `account.get('me')`, `totpStatus`, `reauthenticate`,
+`setupTotp` and `confirmTotp` with a 403 whose `data.reason` is `second_factor_required`. `confirmTotp` releases the
 account's held sessions, so the same token carries on without a second sign-in.
 
 A held session cannot start a support episode, and an API key is not held. It

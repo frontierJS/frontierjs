@@ -500,6 +500,33 @@ describe('columns: in the resource file', () => {
   })
 })
 
+describe('a relative day: the URL keeps the token, the request carries the day', () => {
+  test('a date and an instant column resolve in the stated zone, and a text column is left alone', async () => {
+    const dir  = mkdtempSync(join(tmpdir(), 'sierra-list-'))
+    const file = join(dir, 'schema.lite')
+    writeFileSync(file, `
+      model Invoice {
+        id       Int       @id
+        number   String
+        issuedAt DateTime
+        dueOn    String @date
+      }
+    `)
+    const g = await generateSchemas(file, () => {}, SIERRA_ROOT)
+    registerSchemas(g.defs, g.models, g.updatePatch, g.readPatch)
+
+    await boot('/invoices/?issuedAt[gte]=@today-7&dueOn=@today&number=@today')
+    const list = track(createResource('invoices', { model: 'Invoice' }).tethered({ timeZone: 'UTC' }))
+    await settle()
+
+    const day = (offset) => new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10)
+    expect(list.query).toEqual({ issuedAt: { gte: '@today-7' }, dueOn: '@today', number: '@today' })
+    expect(last().get('issuedAt[gte]')).toBe(`${day(-7)}T00:00:00.000Z`)
+    expect(last().get('dueOn')).toBe(day(0))
+    expect(last().get('number')).toBe('@today')
+  })
+})
+
 // ─── The window, and what can go wrong ──────────────────────────────────────
 
 describe('loading, error, the window, teardown', () => {

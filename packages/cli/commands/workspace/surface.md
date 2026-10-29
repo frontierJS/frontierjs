@@ -34,18 +34,6 @@ repo — not a verdict to act on.
 <script>
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { resolve } from 'path'
-
-const diffLines = (was, now) => {
-  const a = was.split('\n'), b = now.split('\n')
-  const out = []
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    if (a[i] === b[i]) continue
-    out.push(`    - ${a[i] ?? '(absent)'}`)
-    out.push(`    + ${b[i] ?? '(absent)'}`)
-    if (out.length >= 20) { out.push('    …'); break }
-  }
-  return out.join('\n')
-}
 </script>
 
 ```js

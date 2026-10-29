@@ -19,7 +19,11 @@ components/
               (real radios over swatches; sierra's setTheme is the caller's) ·
               FilterBar, and the two range controls it draws: DayRangeFilter
               (an operator beside one DatePicker, FJS-D1576) and RangeInput
-              (min – max in one .field-row, committing on change) · …
+              (min – max in one .field-row, committing on change); a boolean
+              is RadioGroup's segmented layout, Any | Yes | No; a declared
+              enum of CHIP_LIMIT (6) or fewer a row of aria-pressed .btn
+              toggles, FJS-D1583; a fetched column (relation, @values) a
+              MultiSelect seeded and searched through the entry's optionsFor · …
   layout/     Card · Tabs (Tabs/TabList/Tab/TabPanel) · Accordion(+Item) ·
               Shell (the app frame, drawn from a nav.js table; Sierra's
               page, session and isActive arrive as props)

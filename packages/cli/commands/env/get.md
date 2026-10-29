@@ -6,6 +6,7 @@ examples:
   - fli eget DATABASE_URL
   - fli eget API_KEY
   - fli env:get NODE_ENV
+  - fli eget DIGITALOCEAN_TOKEN --global
 args:
   -
     name: key
@@ -17,6 +18,11 @@ flags:
     type: string
     description: Env file to read from (default .env in project root)
     defaultValue: '.env'
+  global:
+    char: g
+    type: boolean
+    description: Read from the global FLI env (~/.config/fli/.env) instead of the project .env
+    defaultValue: false
 ---
 
 <script>
@@ -42,14 +48,15 @@ const parseEnv = (content) => {
   return result
 }
 
-const findEnvFile = (root, file) => {
-  const p = resolve(root, file)
+const findEnvFile = (root, file, globalPath) => {
+  const p = globalPath ?? resolve(root, file)
   return existsSync(p) ? p : null
 }
 </script>
 
 ```js
-const envFile = findEnvFile($.paths.root, flag.file)
+const { globalEnvPath } = await import(resolve(global.fliRoot, 'core/global-env.js'))
+const envFile = findEnvFile($.paths.root, flag.file, flag.global ? globalEnvPath() : null)
 if (!envFile) {
   // Fall back to process.env
   const val = process.env[arg.key]

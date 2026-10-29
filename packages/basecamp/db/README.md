@@ -239,7 +239,7 @@ recorded before they landed, both because a path reads what it needs:
   developer's — but running one means reading its script, so a read gate above
   `developer` refuses the person the service is written to allow.
 - **The machine-written models read at 2 and take 8 only on the writes the
-  JOB makes.** `ServerEvent`, `DeploymentStep`, `RecipeRun` and `CleanupRun`
+  JOB makes.** `ServerEvent`, `DeploymentStep`, `RecipeRun` and `MaintenanceRun`
   are created as a side effect of a person's action, through that person's own
   client; it is the later advance-the-run updates that no caller may make.
 

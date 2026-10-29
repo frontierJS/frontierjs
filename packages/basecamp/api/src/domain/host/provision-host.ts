@@ -1,6 +1,6 @@
 // api/src/domain/host/provision-host.ts — the machine Basecamp itself will run on, made at a cloud.
 //
-// `fli basecamp:create` runs it from this checkout (`FJS-D1253`), with the
+// `fli server:create` and `fli basecamp:create` run it from this checkout (`FJS-D1253`), with the
 // cloud's token in the environment so it never sits in a process listing. The
 // key is the cloud's kind upper-cased, then _TOKEN:
 //
@@ -9,6 +9,7 @@
 //   <KIND>_TOKEN=… bun api/src/domain/host/provision-host.ts '{"cloud":"<kind>","action":"destroy","id":"123"}'
 //   <KIND>_TOKEN=… bun api/src/domain/host/provision-host.ts '{"cloud":"<kind>","action":"list"}'
 //   <KIND>_TOKEN=… bun api/src/domain/host/provision-host.ts '{"cloud":"<kind>","action":"host","id":"123"}'
+//   <KIND>_TOKEN=… bun api/src/domain/host/provision-host.ts '{"cloud":"<kind>","action":"server","id":"123","serverId":"…"}'
 //   <KIND>_TOKEN=… bun api/src/domain/host/provision-host.ts '{"cloud":"<kind>","action":"release","ip":"203.0.113.9"}'
 //
 // Each vendor's dialect is its connector under providers/compute/ and nothing
@@ -38,13 +39,14 @@
 //   { destroyed: '<id>', reservedIp }                 the address it held, unassigned now
 //   { machines: [{ id, name, status, ip, region, serverId, basecampHost, reservedIp }] }   every fleet-marked box
 //   { host: '<id>' }                                  carries the host mark now
+//   { server: '<id>', serverId }                      carries its Server row's mark now
 //   { released: '<ip>' }
 //   { error: '<what>' }                               and the exit is non-zero
 //
 // stderr is what the minute is spent on, for the person watching: fli lets it
 // through to the terminal untouched.
 
-import { connectorFor, fleetMark, hostMark, priceIn, sizeRegions } from '../../providers/compute/index.ts'
+import { connectorFor, fleetMark, hostMark, markFor, priceIn, sizeRegions } from '../../providers/compute/index.ts'
 import type { ComputeSize, ReservedIp } from '../../providers/compute/index.ts'
 import type { ProviderKind }  from '../../../../db/schema.d.ts'
 import { bearerSend }         from './bearer-send.ts'
@@ -143,15 +145,18 @@ async function create() {
   const picked = pickSize(catalog.sizes, size, region)
   const price  = priceIn(picked, region)
 
-  // A second run must not buy a second box. A fleet-marked box with no
-  // server id and no host mark is one this script made that nothing installed
-  // on or claimed.
-  step('Checking the account for a box an earlier run left behind')
-  const prior = (await connector.marked(send, fleetMark())).filter(m => !m.serverId && !m.basecampHost)
-  if (prior.length)
-    fail(`a machine provisioned earlier is still at this account: `
-      + prior.map(m => `${m.providerServerId} (${m.ipAddress ?? 'no address yet'})`).join(', ')
-      + ` — fli basecamp:stop <id> then fli basecamp:destroy <id> removes it, or fli basecamp:install installs on it`)
+  // One Basecamp has one box, so a second `fli basecamp:create` must not buy a
+  // second: a fleet-marked box with no server id and no host mark is bare —
+  // this script made it and nothing was installed on it or claimed it. A fleet
+  // takes many, so `fli server:create` buys beside one.
+  if (input.sole) {
+    step('Checking the account for a box an earlier run left behind')
+    const prior = (await connector.marked(send, fleetMark())).filter(m => !m.serverId && !m.basecampHost)
+    if (prior.length)
+      fail(`a bare box is still at this account: `
+        + prior.map(m => `${m.providerServerId} (${m.ipAddress ?? 'no address yet'})`).join(', ')
+        + ` — fli server:stop <id> then fli server:destroy <id> removes it, or fli basecamp:install installs on it`)
+  }
 
   const held = holdIp ? await holdAddress(region, reuse) : null
 
@@ -232,7 +237,7 @@ async function ownBox(doIt: string) {
   const id = input.id
   if (!id) fail(`${input.action} needs id`)
   const ours = (await connector.marked(send, fleetMark())).find(m => m.providerServerId === id)
-  if (!ours) fail(`${id} is not a box fli basecamp:create made (no fleet mark at this ${vendor} account)`)
+  if (!ours) fail(`${id} is not a box fli server:create made (no fleet mark at this ${vendor} account)`)
   if (ours!.serverId) fail(`${id} is a fleet machine Basecamp made (server ${ours!.serverId}): ${doIt} in Basecamp`)
   return ours!
 }
@@ -241,7 +246,7 @@ async function destroy() {
   const ours = await ownBox('destroy it')
   // Powering it off first is the second hand on the destroy: a box still
   // serving cannot be removed by one mistyped id or one wrong pick.
-  if (ours.status !== 'off') fail(`${ours.providerServerId} is ${ours.status}: fli basecamp:stop ${ours.providerServerId} first, then destroy it`)
+  if (ours.status !== 'off') fail(`${ours.providerServerId} is ${ours.status}: fli server:stop ${ours.providerServerId} first, then destroy it`)
 
   // Read before the destroy: the cloud unassigns the address with it.
   const reservedIp = (await heldBy()).get(ours.providerServerId) ?? null
@@ -285,6 +290,17 @@ async function host() {
   answer({ host: ours.providerServerId })
 }
 
+// The mark a box Basecamp bought carries from birth, put on one it did not buy
+// once `fli outpost:install` enrolled it: destroy then refuses it here and
+// sends the person to Basecamp, which retires the row too.
+async function server() {
+  const serverId = input.serverId
+  if (!serverId) fail('server needs serverId')
+  const ours = await ownBox('it is a fleet machine already; manage it')
+  await connector.addMark(send, ours.providerServerId, markFor(serverId))
+  answer({ server: ours.providerServerId, serverId })
+}
+
 /** Box id → the reserved IP it holds. */
 async function heldBy() {
   if (!connector.reservedIps) return new Map<string, string>()
@@ -309,6 +325,7 @@ try {
   else if (input.action === 'off')     await powerOff()
   else if (input.action === 'list')    await list()
   else if (input.action === 'host')    await host()
+  else if (input.action === 'server')  await server()
   else if (input.action === 'release') await release()
   else fail(`unknown action '${input.action}'`)
   process.exit(0)

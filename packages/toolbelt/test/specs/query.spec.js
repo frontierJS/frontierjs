@@ -15,6 +15,7 @@
 import {
   LIMITS, QueryLimitError, isNumericLiteral, parseValue, parseParams,
   parseQueryString, encodePairs, encodeQueryString, normalizeOrderBy,
+  readDayToken, dayToken, resolveDayTokens,
 } from '../../src/query/query.js'
 
 /* ── The number rule ───────────────────────────────────────────────── */
@@ -318,4 +319,49 @@ test('query: normalizeOrderBy reads asc/desc/1/-1 and refuses any other scalar d
     assert.throws(() => normalizeOrderBy({ name: dir }), /'name' must be asc/)
   })
   assert.deepEqual(normalizeOrderBy({ author: { name: 'asc' } }), [{ author: { name: 'asc' } }])
+})
+
+/* ── A relative day ────────────────────────────────────────────────── */
+
+const AT = { today: '2026-10-28', timeZone: 'America/Denver', kinds: { due: 'date', at: 'instant' } }
+
+test('query: a day token reads and writes its offset, and nothing else is one', function () {
+  assert.equal(readDayToken('@today'), 0)
+  assert.equal(readDayToken('@today-7'), -7)
+  assert.equal(readDayToken('@today+30'), 30)
+  ;['@today-', '@today7', '@yesterday', 'today', '@today-1w', -7, null].forEach(v => {
+    assert.equal(readDayToken(v), undefined, String(v))
+  })
+  ;[0, -7, 30].forEach(n => assert.equal(readDayToken(dayToken(n)), n))
+  assert.throws(() => dayToken(1.5), /whole number/)
+})
+
+test('query: a date column resolves to the day in every operator', function () {
+  assert.deepEqual(resolveDayTokens({ due: { gte: '@today-7', lte: '@today' } }, AT),
+    { due: { gte: '2026-10-21', lte: '2026-10-28' } })
+  assert.deepEqual(resolveDayTokens({ due: '@today+4' }, AT), { due: '2026-11-01' })
+  assert.deepEqual(resolveDayTokens({ due: { in: ['@today', '2026-01-01'] } }, AT),
+    { due: { in: ['2026-10-28', '2026-01-01'] } })
+})
+
+test('query: an instant column resolves to the day\'s first or last moment in the zone', function () {
+  // Denver is UTC-6 on the 21st and UTC-7 on the 28th; the fall-back is Nov 1.
+  assert.deepEqual(resolveDayTokens({ at: { gte: '@today-7', lte: '@today' } }, AT),
+    { at: { gte: '2026-10-21T06:00:00.000Z', lte: '2026-10-29T05:59:59.999Z' } })
+  assert.deepEqual(resolveDayTokens({ at: { gt: '@today', lt: '@today' } }, AT),
+    { at: { gt: '2026-10-29T05:59:59.999Z', lt: '2026-10-28T06:00:00.000Z' } })
+  // across the transition the day is 25 hours, not start + 24h
+  assert.deepEqual(resolveDayTokens({ at: '@today+4' }, AT),
+    { at: { gte: '2026-11-01T06:00:00.000Z', lte: '2026-11-02T06:59:59.999Z' } })
+  assert.deepEqual(resolveDayTokens({ at: { equals: '@today' } }, { ...AT, timeZone: 'UTC' }),
+    { at: { gte: '2026-10-28T00:00:00.000Z', lte: '2026-10-28T23:59:59.999Z' } })
+})
+
+test('query: only a named date column is rewritten, through the combinators, and the argument is untouched', function () {
+  const q = { name: '@today', at: { in: ['@today'] }, $or: [{ due: '@today' }, { name: { contains: '@today' } }] }
+  const before = JSON.stringify(q)
+  assert.deepEqual(resolveDayTokens(q, AT),
+    { name: '@today', at: { in: ['@today'] }, $or: [{ due: '2026-10-28' }, { name: { contains: '@today' } }] })
+  assert.equal(JSON.stringify(q), before)
+  assert.deepEqual(parseQueryString(encodeQueryString({ due: { gte: '@today-7' } })), { due: { gte: '@today-7' } })
 })

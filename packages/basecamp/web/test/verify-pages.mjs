@@ -47,8 +47,8 @@ const API_PORT = Number(process.env.API_PORT ?? await portFor(import.meta.url, '
 const WEB_PORT = Number(process.env.UI_PORT ?? await portFor(import.meta.url, 'fe', { env: 'dev' }))
 const BASE     = `http://localhost:${WEB_PORT}`
 const API      = `http://localhost:${API_PORT}`
-const EMAIL    = 'sam@example.com'
-const PASSWORD = 'hunter2hunter2'
+const EMAIL    = 'dev@knight.works'
+const PASSWORD = 'test1234'
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const children = []

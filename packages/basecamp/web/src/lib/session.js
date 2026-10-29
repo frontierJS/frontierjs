@@ -90,6 +90,10 @@ async function restore() {
 }
 
 async function loadWorkspace() {
+  // A session held to enrollment (`FJS-D1008`) is refused every call but the
+  // authenticator's, so `/workspaces` would answer 403 and fail the sign-in.
+  if (session.user?.enrollmentOnly) return
+
   // Read the remembered choice FIRST. adoptWorkspace() writes it, so adopting
   // the server default before reading overwrote the very value being restored
   // — the switch persisted, then undid itself on the next load, silently.
@@ -252,6 +256,15 @@ export async function verifyEmail(token) {
   const result = await authVerifyEmail(token)
   if (result?.user) await loadWorkspace()
   return result
+}
+
+/**
+ * The authenticator was confirmed, which ends the hold on the server; the
+ * session the browser holds still says `enrollmentOnly` until it is asked again.
+ */
+export async function endEnrollmentHold() {
+  await refresh()
+  await loadWorkspace()
 }
 
 export async function signOut() {

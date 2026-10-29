@@ -63,8 +63,8 @@ const S3_SINK  = `http://127.0.0.1:${S3_PORT}`
 // `verify:outpost` releases, and 8126 is the dev stand-in this runs beside.
 const GH_PORT  = API_PORT + 3
 const GH_SINK  = `http://localhost:${GH_PORT}`
-const EMAIL    = 'sam@example.com'      // the seeded owner, and a sysadmin
-const PASSWORD = 'hunter2hunter2'
+const EMAIL    = 'dev@knight.works'      // the seeded owner, and a sysadmin
+const PASSWORD = 'test1234'
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const children = []
@@ -275,9 +275,9 @@ try {
     'the catalog never rendered a card')
 
   const cards = await evaluate(`document.querySelectorAll('#blueprint-grid .card').length`)
-  // Seven of eight: Ghost is seeded withdrawn, and a withdrawn blueprint is off
+  // Eight of nine: Ghost is seeded withdrawn, and a withdrawn blueprint is off
   // the list while still readable by id.
-  check('seven blueprints offered, the withdrawn one hidden', cards === 7, `saw ${cards}`)
+  check('eight blueprints offered, the withdrawn one hidden', cards === 8, `saw ${cards}`)
 
   const chips = await evaluate(`[...document.querySelectorAll('#blueprint-filters .pill')].map(e => e.textContent.trim())`)
   check('category chips are derived from the rows', chips.some(c => c.startsWith('Analytics (2)')),
@@ -378,17 +378,16 @@ try {
   // ─── Hub settings ──────────────────────────────────────────────────────
   console.log('\n  /hub/settings/ — the installation')
   await goto('/hub/settings/')
-  await until(`!!document.getElementById('cfg-base-url')`, v => v, 'the settings form never rendered')
-  const seededUrl = await evaluate(`document.getElementById('cfg-base-url').value`)
-  check('the seeded settings load', seededUrl === 'https://hub.acme.example', seededUrl)
+  await until(`!!document.getElementById('cfg-backup-cron')`, v => v, 'the settings form never rendered')
+  const seededCron = await evaluate(`document.getElementById('cfg-backup-cron').value`)
+  check('the seeded settings load', seededCron === '0 2 * * *', seededCron)
 
-  await fill({ 'cfg-name': 'Renamed Hub' })
+  await fill({ 'cfg-heartbeat': '300' })
   await click('#save-settings')
-  await until(`document.body.textContent`, t => t.includes('Settings saved') || t.includes('Renamed Hub'),
-    'the save never reported')
+  await until(`document.body.textContent`, t => t.includes('Settings saved'), 'the save never reported')
   await goto('/hub/settings/')
-  await until(`document.getElementById('cfg-name')?.value ?? ''`, v => v === 'Renamed Hub',
-    'the rename did not survive a reload')
+  await until(`document.getElementById('cfg-heartbeat')?.value ?? ''`, v => v === '300',
+    'the heartbeat timeout did not survive a reload')
   ok('a save round-trips through the singleton')
 
   // Retention is four numbers on the same form; an empty days field is no age limit.
@@ -667,6 +666,9 @@ try {
   await goto('/settings/')
   await until(rootClass, c => /\btheme-default\b/.test(c), 'the theme did not survive a reload')
   ok('picking a theme applies it, and it survives a reload')
+  // The class is restored before the screen's reads finish, and the card waits on them.
+  await until(`!!document.querySelector('#settings-theme input[value="theme-basecamp"]')`, v => v,
+    'the theme picker never rendered after the reload')
   await click('#settings-theme input[value="theme-basecamp"]')
 
   // ─── The audit trail ───────────────────────────────────────────────────
@@ -1297,6 +1299,71 @@ try {
     'turning it off never came back off')
   ok('and turning it off, with the password and a code, puts it back')
 
+  // ─── The hub requires an authenticator of owners ───────────────────────
+  // The seeded owner has none again, so with the switch on the next sign-in is
+  // a session held to enrollment (`FJS-D1008`), and every screen but this one
+  // would be a wall of 403s.
+  console.log('\n  /hub/settings/ — an authenticator required of owners')
+  await goto('/hub/settings/')
+  await until(`!!document.getElementById('cfg-2fa')`, v => v, 'the 2FA switch never rendered')
+  await click('#cfg-2fa')
+  await click('#save-settings')
+  await until(`document.body.textContent`, t => t.includes('Settings saved'), 'switching 2FA on never saved')
+  await evaluate(`localStorage.removeItem('basecamp_token')`)
+  await goto('/login/')
+  await until(`!!document.getElementById('email')`, v => v, 'the sign-in form never rendered')
+  await fill({ email: EMAIL, password: PASSWORD })
+  await evaluate(`document.querySelector('button[type=submit]').click()`)
+  await until(`location.pathname`, p => p === '/settings/', 'a held sign-in never landed on /settings/')
+  await until(`!!document.getElementById('enrollment-required')`, v => v, 'the screen never said why')
+  check('a held sign-in lands on the authenticator card alone',
+    !(await present('#settings-profile')) && await present('#settings-totp'))
+  const followLink = href => evaluate(`(() => { const a = document.createElement('a'); a.href = ${JSON.stringify(href)}; document.body.append(a); a.click(); a.remove() })()`)
+  await followLink('/servers/')
+  await sleep(800)
+  check('and a link elsewhere is sent back to it', await evaluate(`location.pathname`) === '/settings/',
+    await evaluate(`location.pathname`))
+  await goto('/')
+  await until(`location.pathname`, p => p !== '/', 'a reload while held never settled')
+  await until(`!!document.getElementById('enrollment-required')`, v => v,
+    `a reload while held did not stay held, at ${await evaluate('location.pathname')}`)
+  ok('and a reload while held stays held, on /settings/')
+
+  await until(`document.getElementById('settings-totp')?.dataset.totpState`, v => v === 'off',
+    'the held two-step card never said off')
+  await fill({ 'totp-password': PASSWORD })
+  await click('#totp-enable')
+  const heldSecret = await until(`document.getElementById('totp-secret')?.textContent.trim()`, v => v,
+    'a held session never got a secret')
+  await fill({ 'totp-code': totp(heldSecret, new Date()) })
+  await click('#totp-confirm')
+  await until(`document.querySelectorAll('#recovery-codes [data-recovery-code]').length`, n => n > 0,
+    'confirming while held never showed the recovery codes')
+  await until(`!!document.getElementById('settings-profile')`, v => v, 'confirming never released the screen')
+  check('confirming ends the hold: the rest of the screen opens, the codes still on it',
+    !(await present('#enrollment-required')) && await present('#recovery-codes'))
+  await click('#recovery-done')
+  await followLink('/servers/')
+  await until(`location.pathname`, p => p === '/servers/', 'the released session still could not leave')
+  check('and the workspace was loaded behind it',
+    !!(await evaluate(`localStorage.getItem('basecamp_workspace')`)))
+
+  // Off again, in the order the hub allows: the switch, then the factor.
+  await goto('/hub/settings/')
+  await until(`document.getElementById('cfg-2fa')?.checked`, v => v === true, 'the 2FA switch did not stay on')
+  await click('#cfg-2fa')
+  await click('#save-settings')
+  await until(`document.body.textContent`, t => t.includes('Settings saved'), 'switching 2FA off never saved')
+  await goto('/settings/')
+  await until(`document.getElementById('settings-totp')?.dataset.totpState`, v => v === 'on',
+    'the two-step card never said on')
+  await fill({ 'totp-password': PASSWORD, 'totp-sudo-code': totp(heldSecret, new Date()) })
+  await click('#totp-disable')
+  await confirmIt()
+  await until(`document.getElementById('settings-totp')?.dataset.totpState`, v => v === 'off',
+    'turning the held enrollment off never came back off')
+  ok('and with the switch off the factor comes off again')
+
   // Forgot password. Open while signed in, as the mail's link must be.
   await goto('/reset-password/')
   await until(`!!document.getElementById('reset-email')`, v => v, 'the reset request form never rendered')
@@ -1484,7 +1551,7 @@ try {
   await goto('/secrets/')
   await until(`!!document.querySelector('[aria-label^="Rotate "]')`, v => v, 'no secret offers a rotation')
   const secretsBefore = (await apiGet('/secrets')).body?.data ?? []
-  const verifiedOne = secretsBefore.find(x => x.isVerified && x.kind === 'notification')
+  const verifiedOne = secretsBefore.find(x => x.verifiedAt && x.kind === 'notification')
   await byLabel(`Rotate ${verifiedOne?.name}`)
   await until(`!!document.getElementById('rotate-value')`, v => v, 'the rotate drawer never opened')
   await typeIn('#rotate-value', JSON.stringify({ url: 'https://hooks.example.com/rotated' }))
@@ -1492,8 +1559,8 @@ try {
   await until(`!document.getElementById('rotate-save')`, v => v, 'the rotation never closed')
   const rotated = (await apiGet(`/secrets/${verifiedOne?.id}`)).body
   check('a secret is rotated in place, and is unverified until tested',
-    rotated?.id === verifiedOne?.id && rotated?.isVerified === false && rotated?.version > verifiedOne?.version,
-    JSON.stringify({ v: rotated?.isVerified, before: verifiedOne?.version, after: rotated?.version }))
+    rotated?.id === verifiedOne?.id && rotated?.verifiedAt === null && rotated?.version > verifiedOne?.version,
+    JSON.stringify({ v: rotated?.verifiedAt, before: verifiedOne?.version, after: rotated?.version }))
 
   // Recipes — the author's four columns and none of the run job's.
   await goto('/recipes/')
@@ -1533,8 +1600,8 @@ try {
   check('a channel is renamed from its drawer', chAfter?.name === `${slackCh?.name} ops`, chAfter?.name)
   if (slackCh?.secretId) {
     const chSecret = (await apiGet(`/secrets/${slackCh.secretId}`)).body
-    check('and its credential is rotated behind the same secret', chAfter?.secretId === slackCh.secretId && chSecret?.isVerified === false,
-      JSON.stringify({ same: chAfter?.secretId === slackCh.secretId, verified: chSecret?.isVerified }))
+    check('and its credential is rotated behind the same secret', chAfter?.secretId === slackCh.secretId && chSecret?.verifiedAt === null,
+      JSON.stringify({ same: chAfter?.secretId === slackCh.secretId, verified: chSecret?.verifiedAt }))
   } else {
     check('and a channel that held no credential is given one', !!chAfter?.secretId, JSON.stringify(chAfter?.secretId))
   }
@@ -1812,23 +1879,23 @@ try {
     'the address given on attach never showed')
   ok('a server attached with an address shows it')
 
-  // Dashboards — a widget whose server is gone is re-pointed; rename, pin, delete.
+  // Dashboards — a tile whose server is gone is re-pointed; rename, pin, delete.
   const board = (await apiPost('/dashboards', { name: 'Drive board' })).body
   const fleetNow = (await apiGet('/servers')).body?.data ?? []
   const doomed = fleetNow.find(x => x.status !== 'online')
   const keeper = fleetNow.find(x => x.id !== doomed?.id)
-  await apiCall('POST', `/dashboards/${board?.id}`, { kind: 'server_health', serverId: doomed?.id, cols: 1 }, 'addWidget')
+  await apiCall('POST', `/dashboards/${board?.id}`, { kind: 'server_health', serverId: doomed?.id, cols: 1 }, 'addTile')
   const gone = await apiCall('DELETE', `/servers/${doomed?.id}`)
-  check('the widget\'s server is removed', gone.status < 300, `${gone.status}`)
+  check('the tile\'s server is removed', gone.status < 300, `${gone.status}`)
   await goto(`/dashboards/${board?.id}/`)
   const wid = await until(`document.querySelector('[data-repoint]')?.dataset.repoint`, v => v,
-    'a widget whose server is gone offers no re-point')
+    'a tile whose server is gone offers no re-point')
   await until(`document.querySelectorAll('#repoint-${wid} option').length`, n => n > 1, 'the re-point list never filled')
   await pickIn(`#repoint-${wid}`, keeper?.id)
   await clickText(`[data-repoint="${wid}"]`, 'Re-point')
   const repointed = await eventually(async () => (await apiGet(`/dashboards/${board?.id}`)).body,
-    b => b?.widgets?.[0]?.serverId === keeper?.id)
-  check('an orphaned widget is re-pointed at another server', repointed?.widgets?.[0]?.serverId === keeper?.id)
+    b => b?.tiles?.[0]?.serverId === keeper?.id)
+  check('an orphaned tile is re-pointed at another server', repointed?.tiles?.[0]?.serverId === keeper?.id)
 
   await click('#rename-board')
   await until(`!!document.querySelector('#board-save')`, v => v, 'the rename drawer never opened')

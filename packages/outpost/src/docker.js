@@ -153,6 +153,8 @@ export function checkRunConfig(config = {}) {
     throw new Error(`cpuLimit must be a number of CPUs above 0 — got '${config.cpuLimit}'`)
   if (config.memLimitMb != null && !(Number.isInteger(Number(config.memLimitMb)) && Number(config.memLimitMb) >= 6))
     throw new Error(`memLimitMb must be a whole number of MiB, at least 6 — got '${config.memLimitMb}'`)
+  if (config.command != null && !(Array.isArray(config.command) && config.command.every(arg => typeof arg === 'string')))
+    throw new Error(`command must be a list of arguments, each a string — got '${JSON.stringify(config.command)}'`)
 }
 
 function logArgs(logs) {
@@ -775,7 +777,9 @@ export function createDocker({
         : ['-v', `${volume}:${config.volumePath}`])
       if (config.cpuLimit   != null) argv.push('--cpus', String(config.cpuLimit))
       if (config.memLimitMb != null) argv.push('--memory', `${config.memLimitMb}m`)
-      argv.push(ref)
+      // The arguments after the image replace its CMD, as compose's `command:`
+      // does; ntfy's image does nothing without `serve`.
+      argv.push(ref, ...config.command ?? [])
 
       const held = await setAside(name, replaced)
       const path = config.healthCheck ?? null

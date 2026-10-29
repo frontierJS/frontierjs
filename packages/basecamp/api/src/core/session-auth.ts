@@ -2,9 +2,8 @@
 // Basecamp's own User columns, projected onto the session — and the one place
 // a suspended principal is refused.
 //
-// @frontierjs/auth owns `model User`; this app adds four columns to it
-// (`kind`, `status`, `isSystemAdmin`, `scopes`) and two of them decide what a
-// request may do. Getting them onto the SessionContext is what
+// @frontierjs/auth owns `model User`; this app adds `status` and
+// `isSystemAdmin` to it, and both decide what a request may do. Getting them onto the SessionContext is what
 // `sessionFields` is for: auth calls it with the user row it already fetched,
 // so this costs no query on the hot path. The alternative — wrapping
 // verifySession and re-reading the user — is a third round trip on every
@@ -119,6 +118,42 @@ export function refuseSuspendedLogin(auth: IAuth & { _sessionTtl: string }, db: 
       },
     } : {}),
   } as IAuth & { _sessionTtl: string }
+}
+
+/**
+ * The installation's three policy switches, as the row says or as its defaults
+ * say when no row was ever saved. Takes a SYSTEM client: the answer decides what
+ * the caller may do, so it cannot be read through a client that caller scoped.
+ */
+export async function hubPolicy(sys: any): Promise<{ requireTwoFactorForOwners: boolean; allowApiKeyAuth: boolean; allowBotUsers: boolean }> {
+  const row = await sys.hubConfig.findFirst({
+    where:  { id: 'hub' },
+    select: { requireTwoFactorForOwners: true, allowApiKeyAuth: true, allowBotUsers: true },
+  })
+  return {
+    requireTwoFactorForOwners: row?.requireTwoFactorForOwners ?? false,
+    allowApiKeyAuth:           row?.allowApiKeyAuth ?? true,
+    allowBotUsers:             row?.allowBotUsers ?? true,
+  }
+}
+
+/**
+ * auth's `requireSecondFactor` predicate: an owner of any workspace owes a
+ * second factor while `HubConfig.requireTwoFactorForOwners` is on.
+ *
+ * Auth asks only about an account with no confirmed factor, and what it does
+ * with a yes is HOLD the session to enrollment, not refuse it. A refusal at
+ * login would lock out every owner without an authenticator the moment a
+ * sysadmin flipped the switch, with no way left to set one up.
+ */
+export function ownerOwesSecondFactor(db: any) {
+  return async function ownerOwesSecondFactor(user: Record<string, any>): Promise<boolean> {
+    const sys = db.asSystem()
+    if (!(await hubPolicy(sys)).requireTwoFactorForOwners) return false
+    return sys.workspaceMember.exists({
+      where: { userId: user.id, role: 'owner', acceptedAt: { not: null } },
+    })
+  }
 }
 
 /**

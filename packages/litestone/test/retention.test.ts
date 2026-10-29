@@ -310,6 +310,48 @@ describe('a swept row takes its files with it', () => {
   })
 })
 
+// A plugin that hears deletes makes the sweep read its doomed rows, and that
+// read goes through the shared tables, which refuse outside any flavor. The
+// batch catch turned the refusal into a warning and the sweep reported 0 on
+// every retention table of an app with a File column anywhere (FJS-3552).
+describe('a sweep a plugin hears runs as the system', () => {
+  const SCHEMA = (dir: string) => `
+    database main { path "${join(dir, 'app.db')}" }
+    database sync { path "${join(dir, 'sync.db')}"  retention 30d }
+    model Doc   { id Int @id @default(autoincrement())  body File }
+    model Batch { id Int @id @default(autoincrement())  source String @system  createdAt DateTime @default(now())  @@db(sync) }
+  `
+  async function open(dir: string) {
+    const { FileStorage } = await import('../src/storage/file-storage.js')
+    return createClient({ schema: SCHEMA(dir), plugins: [FileStorage({ provider: 'local', localPath: join(dir, 'objects') })] })
+  }
+
+  test('$retain() off asSystem() removes the rows', async () => {
+    const dir = tmp()
+    const db: any = await open(dir)
+    const sys = db.asSystem()
+    await sys.batch.create({ data: { source: 'old',   createdAt: ago(31) } })
+    await sys.batch.create({ data: { source: 'fresh', createdAt: ago(1) } })
+
+    const swept = await sys.$retain()
+    expect(swept.find((r: { model: string }) => r.model === 'Batch')).toMatchObject({ removed: 1 })
+    expect(swept.some((r: { error?: string }) => r.error)).toBe(false)
+    expect((await sys.batch.findMany()).map((b: { source: string }) => b.source)).toEqual(['fresh'])
+    db.$close()
+  })
+
+  test('the startup pass removes them too', async () => {
+    const dir = tmp()
+    const first: any = await open(dir)
+    await first.asSystem().batch.create({ data: { source: 'old', createdAt: ago(31) } })
+    first.$close()
+
+    const db: any = await open(dir)
+    expect(await db.asSystem().batch.count()).toBe(0)
+    db.$close()
+  })
+})
+
 // The rows a foreign key's `onDelete: Cascade` takes are removed by SQLite inside
 // the parent's own DELETE, so the sweep's RETURNING named the parent and nothing
 // under it, and the child's object stayed in the store (FJS-2097). The ORM path

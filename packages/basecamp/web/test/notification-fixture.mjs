@@ -19,7 +19,7 @@ const tag = process.argv[2] ?? 'drive'
 const db  = await createBasecampDb()
 const sys = db.asSystem()
 
-const owner = await sys.user.findFirst({ where: { email: 'sam@example.com' } })
+const owner = await sys.user.findFirst({ where: { email: 'dev@knight.works' } })
 if (!owner) { console.error('no seeded owner — run db/seed.js first'); process.exit(1) }
 
 const base = Date.now() + 60_000

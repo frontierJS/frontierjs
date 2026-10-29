@@ -1,15 +1,15 @@
 ---
-title: basecamp:destroy
-description: Destroy a box fli basecamp:create made
+title: server:destroy
+description: Destroy a box fli server:create made
 effects: destroys a box at its cloud and everything on its disk
 confirm: human
 examples:
-  - fli basecamp:destroy 512345678
-  - fli basecamp:destroy
+  - fli server:destroy 512345678
+  - fli server:destroy
 args:
   -
     name: id
-    description: The box id fli basecamp:create printed; with none, pick from the list
+    description: The box id fli server:create printed; with none, pick from the list
 flags:
   cloud:
     type: string
@@ -21,32 +21,31 @@ flags:
     defaultValue: false
 ---
 
-Refuses any box `fli basecamp:create` did not make: the token reaches every
-box at the account, and a fleet machine Basecamp made is destroyed in
-Basecamp, which also retires its row. Refuses one that is not powered off,
-too — `fli basecamp:stop` first, so a box still serving is never one mistyped
-id away from gone.
+Refuses any box `fli server:create` did not make: the token reaches every
+box at the account, and a fleet machine is destroyed in Basecamp, which also
+retires its row. Refuses one that is not powered off, too — `fli server:stop`
+first, so a box still serving is never one mistyped id away from gone.
 
-With no id it lists the Basecamp hosts that are off, at every cloud whose
-token is stored, and asks which. The pick still goes through the same refusal,
-so a list read a moment ago cannot widen it. A typed id is looked up the same
-way, and one at two clouds needs `--cloud`.
+With no id it lists the boxes that are off, at every cloud whose token is
+stored, and asks which. The pick still goes through the same refusal, so a
+list read a moment ago cannot widen it. A typed id is looked up the same way,
+and one at two clouds needs `--cloud`.
 
-Then it names what `fli basecamp:create` left beside the box, none of it the
+Then it names what `fli server:create` left beside the box, none of it the
 cloud's to remove: the `Host` block in `~/.ssh/config` and the `known_hosts`
-line for its address, and Basecamp's A record at Cloudflare. A cloud hands a
-released address to its next customer, so a record still pointing at it serves
-a stranger's box under Basecamp's name, and the next box given that address
-fails ssh on a changed host key.
+line for its address, and any A record at Cloudflare. A cloud hands a released
+address to its next customer, so a record still pointing at it serves a
+stranger's box under the old name, and the next box given that address fails
+ssh on a changed host key.
 
 A reserved IP in front of the box outlives it. At a terminal the run asks
-whether to keep it — Enter keeps it, for the next `fli basecamp:create`, which
-reuses the address the hostname's record holds — or release it; with no
-terminal it is kept, and `--release-ip` releases it without asking. A kept
-one is still Basecamp's, so the `Host` block and the record naming it are left
+whether to keep it — Enter keeps it, for a next box, which `fli
+basecamp:create` reuses when the hostname's record holds it — or release it;
+with no terminal it is kept, and `--release-ip` releases it without asking. A
+kept one is still yours, so the `Host` block and the record naming it are left
 as they are and not listed, and it bills at the cloud's rate until it is
-released — `fli basecamp:create`'s Setup names each. With nothing left, it says
-so, rather than ending on the destroy.
+released — Setup names each. With nothing left, it says so, rather than ending
+on the destroy.
 
 ```js
 let id = String(arg.id ?? '').trim()
@@ -61,14 +60,14 @@ let cloud = ''
 if (!id) {
   const hosts = found.machines.filter(m => !m.serverId)
   const ours  = hosts.filter(m => m.status === 'off')
-  if (!hosts.length) { echo(`No Basecamp host fli basecamp:create made is at ${read.clouds.map(cloudLabel).join(' or ')}`); return }
+  if (!hosts.length) { echo(`No box fli server:create made is at ${read.clouds.map(cloudLabel).join(' or ')}`); return }
   if (!ours.length) {
-    echo('None is powered off. fli basecamp:stop <id> first:')
+    echo('None is powered off. fli server:stop <id> first:')
     echo.lines(hosts.map(m => machineLine(m, chalk)), { indent: 2 })
     return
   }
   if (!process.stdin.isTTY) {
-    log.error('Which box? fli basecamp:destroy <id>')
+    log.error('Which box? fli server:destroy <id>')
     echo.lines(ours.map(m => machineLine(m, chalk)), { indent: 2 })
     process.exitCode = 1; return
   }
@@ -106,7 +105,7 @@ if (reserved && (flag['release-ip'] || process.stdin.isTTY)) {
     else { kept = false; log.success(`Released ${reserved}`) }
   }
 }
-if (kept) log.info(`  Kept ${reserved} — the next fli basecamp:create reuses it, so the A record and Host block naming it stay. Releasing it later: ${page}, or --release-ip on the next destroy`)
+if (kept) log.info(`  Kept ${reserved} — the next fli basecamp:create reuses it when the hostname's record holds it, so the A record and Host block naming it stay. Releasing it later: ${page}, or --release-ip on the next destroy`)
 // At a cloud that puts the held address on the box itself, the box's own
 // address IS the reserved one, and a kept one leaves nothing stale.
 const addresses = [...new Set([boxIp, reserved])].filter(ip => ip && !(kept && ip === reserved))
@@ -135,7 +134,7 @@ for (const ip of addresses) {
     left.push(['known_hosts', ip, `ssh-keygen -R ${ip}`])
 }
 if (!boxIp) {
-  left.push(['~/.ssh/config', 'the Host block basecamp:create added', 'delete it; the address was not readable'])
+  left.push(['~/.ssh/config', 'the Host block server:create added', 'delete it; the address was not readable'])
   left.push(['known_hosts', 'the box\'s address', 'ssh-keygen -R <ip>'])
 }
 

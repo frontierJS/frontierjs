@@ -33,12 +33,23 @@ const BURST_MS = 300
 // reports is one whose output the person is waiting to read.
 const SETTLE_MS = 15000
 
+// A boot past this with nothing on screen reads as a hang, though basecamp
+// takes ~1.5s. A boot faster than this prints no line it would then bury.
+const BOOTING_MS = 400
+
+// `bun --watch` keeps a process that threw at boot alive, so no exit ends the
+// hold and the error waited out SETTLE_MS. A surface that writes an error line
+// before its ready line, then nothing for this long, counts as down; the hold
+// ends once every surface is ready or down.
+const CRASH_QUIET_MS = 1000
+const CRASH_LINE = /^error\b/i
+
 /**
  * Run each row's script from `root` until every one has exited.
  *
  * @param {{root: string, runner: string, rows: {surface: string, script: string}[],
  *          env: object, echo: Function, onExit: Function,
- *          compact?: boolean, title?: string, settleMs?: number,
+ *          compact?: boolean, title?: string, settleMs?: number, bootingMs?: number,
  *          columns?: number, onSummary?: Function}} opts
  * @returns {{ done: Promise<number>, restart: (opts?: {compact?: boolean}) => Promise<void>,
  *             readonly compact: boolean, readonly summarized: boolean,
@@ -48,7 +59,7 @@ const SETTLE_MS = 15000
  */
 export function runSurfaces({
   root, runner, rows, env, echo, onExit,
-  compact = true, title = '', settleMs = SETTLE_MS, columns = process.stdout.columns,
+  compact = true, title = '', settleMs = SETTLE_MS, bootingMs = BOOTING_MS, columns = process.stdout.columns,
   onSummary = () => {},
 }) {
   const width = Math.max(...rows.map(r => r.surface.length))
@@ -98,6 +109,7 @@ export function runSurfaces({
     if (g.summarized) return
     g.summarized = true
     clearTimeout(g.timer)
+    clearTimeout(g.booting)
     const urls = rows.map(r => g.ready.get(r.surface)?.url ?? '')
     const urlWidth = Math.max(0, ...urls.map(u => u.length))
     const lead = 2 + width + 3 + urlWidth + 3
@@ -140,7 +152,7 @@ export function runSurfaces({
   // ─── one generation of children ─────────────────────────────────────────────
 
   const start = (isCompact) => {
-    const g = { compact: isCompact, started: Date.now(), ready: new Map(), summarized: !isCompact, printed: !isCompact, held: [], children: [], stopping: false, timer: null }
+    const g = { compact: isCompact, started: Date.now(), ready: new Map(), down: new Set(), summarized: !isCompact, printed: !isCompact, held: [], children: [], stopping: false, timer: null }
     gen = g
     const childEnv = { ...baseEnv }
     if (isCompact) childEnv[DEV_ENV] = '1'
@@ -151,6 +163,7 @@ export function runSurfaces({
     g.children = rows.map((row, i) => {
       const tone  = TONES[i % TONES.length]
       const label = row.surface.padEnd(width)
+      let quiet   = null
       const say   = (line) => {
         if (g.stopping) return
         const text = plain(line)
@@ -159,11 +172,20 @@ export function runSurfaces({
         if (text.startsWith('$ ')) return
         const message = parseDevLine(text)
         if (message?.ready) {
+          clearTimeout(quiet)
+          g.down.delete(row.surface)
           g.ready.set(row.surface, message.ready)
-          if (rows.every(r => g.ready.has(r.surface))) summarize(g)
+          if (rows.every(r => g.ready.has(r.surface) || g.down.has(r.surface))) summarize(g)
           return
         }
         if (message?.warn) return emit(() => printWarn(label, message.warn))
+        if (!g.summarized && !g.ready.has(row.surface) && (quiet || CRASH_LINE.test(text.trim()))) {
+          clearTimeout(quiet)
+          quiet = setTimeout(() => {
+            g.down.add(row.surface)
+            if (rows.every(r => g.ready.has(r.surface) || g.down.has(r.surface))) summarize(g)
+          }, CRASH_QUIET_MS)
+        }
         emit(() => print(tone, label, line))
       }
       const child = spawn(runner, ['run', row.script], {
@@ -186,6 +208,11 @@ export function runSurfaces({
     })
 
     if (!g.summarized) g.timer = setTimeout(() => summarize(g), settleMs)
+    if (!g.summarized) g.booting = setTimeout(() => {
+      if (g.summarized || g.stopping) return
+      echo('')
+      echo(`  ${[title && chalk.bold(title), chalk.dim('gearing up…')].filter(Boolean).join('  ')}`)
+    }, bootingMs)
 
     Promise.all(g.children.map(c => c.exited)).then(codes => {
       if (!g.stopping) resolveDone(codes.find(c => c) ?? 0)
@@ -195,6 +222,7 @@ export function runSurfaces({
   const stop = (g) => {
     g.stopping = true
     clearTimeout(g.timer)
+    clearTimeout(g.booting)
     for (const { child } of g.children) {
       if (child.exitCode === null) try { process.kill(-child.pid, 'SIGTERM') } catch { /* already gone */ }
     }

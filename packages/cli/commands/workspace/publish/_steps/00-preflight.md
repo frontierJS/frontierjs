@@ -13,12 +13,14 @@ import { existsSync } from 'fs'
 const { planned, members } = $.config
 if (!planned?.length) return
 
-const { dirtyPackages, peerDrift, publishOrder, publishRefusals, formatRefusals } =
+const { dirtyPackages, peerDrift, movedDependencies, publishOrder, publishRefusals, formatRefusals } =
   await import(new URL('file://' + global.fliRoot + '/core/publish-preflight.js'))
 
-const dirty  = dirtyPackages(planned.map(p => ({ name: p.pkg.name, dir: p.dir })),
-                             (name, dir) => $.git.pkgState(name, dir))
+const stateOf = (name, dir) => $.git.pkgState(name, dir)
+const dirty  = dirtyPackages(planned.map(p => ({ name: p.pkg.name, dir: p.dir })), stateOf)
 const drift  = peerDrift((members ?? []).map(m => ({ name: m.pkg.name, pkg: m.pkg })), planned.map(p => ({ name: p.pkg.name, newVersion: p.newVersion })))
+const moved  = movedDependencies(planned.map(p => ({ name: p.pkg.name, pkg: p.pkg })),
+                                 (members ?? []).map(m => ({ name: m.pkg.name, dir: m.dir, pkg: m.pkg })), stateOf)
 const sorted = publishOrder(planned.map(p => ({ ...p, name: p.pkg.name })))
 
 // The website's list of packages it holds back, read where it lives. Absent
@@ -31,7 +33,7 @@ if (existsSync(siteData)) {
 }
 
 const refusals = publishRefusals({
-  dirty, drift, cycles: sorted.cycles, heldBack,
+  dirty, drift, moved, cycles: sorted.cycles, heldBack,
   force: { dirty: flag['allow-dirty'], peers: flag['allow-peer-drift'] },
 })
 
@@ -55,7 +57,7 @@ if (refusals.some(r => !r.note)) {
 // and it lapses between the first publish and the twentieth; logging in here
 // starts the full window before the first 2FA prompt. A piped run cannot open
 // a browser, so it keeps the refusal.
-if (!flag.dry) {
+if (!flag.dry && $.config.to?.includes('npm')) {
   const whoami = () => {
     try { return String(execSync('npm whoami', { stdio: ['ignore', 'pipe', 'ignore'] })).trim() }
     catch { return '' }
@@ -75,6 +77,27 @@ if (!flag.dry) {
     return
   }
   log.info(`  npm: ${who}`)
+}
+
+// Whether GitHub knows who you are, for the same reason and at the same moment:
+// `gh release create` refused after the commit and tags are written leaves a
+// release half shipped, and the npm half cannot be taken back. Asked only when
+// a tarball destination is in the run.
+if (!flag.dry && $.config.to?.includes('tarballs')) {
+  let gh = ''
+  try { gh = String(execSync('gh auth status --active 2>&1', { stdio: ['ignore', 'pipe', 'ignore'] })).match(/account (\S+)/)?.[1] ?? '' }
+  catch { gh = '' }
+  if (!gh) {
+    log.error('  ✗  gh-auth')
+    log.error('      GitHub does not know who you are — `gh release create` uploads the tarballs')
+    if (process.env.GH_TOKEN || process.env.GITHUB_TOKEN)
+      log.error('      `GH_TOKEN`/`GITHUB_TOKEN` is set — fli loads `~/.config/fli/env` — and gh uses it over `gh auth login`; a stale one answers 401')
+    log.error('      Run `gh auth login`, or `--to npm` to leave the release host out of this run')
+    $.config.abort = true
+    $.config.prompts?.close()
+    return
+  }
+  log.info(`  gh:  ${gh}`)
 }
 
 // The order is the product of this step even when nothing refused. A dependency

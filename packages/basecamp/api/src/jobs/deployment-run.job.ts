@@ -137,8 +137,8 @@ function runner(app: App) {
   async function tellThem(kind: string, deploy: any, service: any, extra: Record<string, unknown> = {}) {
     const workspaceId = deploy.workspaceId as string | undefined
     if (!workspaceId) return
-    const env = deploy.environmentId
-      ? await (app.db as any).asSystem().environment.findFirst({ where: { id: deploy.environmentId } })
+    const env = service?.environmentId
+      ? await (app.db as any).asSystem().environment.findFirst({ where: { id: service.environmentId } })
       : null
     await notifyPeople(app, kind, await workspaceMembers(app, workspaceId), {
       deploymentId: deploy.id,

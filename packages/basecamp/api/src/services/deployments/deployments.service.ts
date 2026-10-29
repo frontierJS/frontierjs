@@ -22,11 +22,9 @@ import { snapshotVariables } from '../../domain/release/variables.ts'
 import { runtimeOf, type Runtime, CONTAINER_TYPES } from '../../domain/release/runtime.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 
-// `environment` is the DEPLOYMENT's own, which is not the app's: an app has a
-// current environment and a deployment records the one it went to, and those
-// differ the moment either is changed. Both are included because a list shows
-// where this release went, not where the app points now.
-const WITH_APP = { app: { include: { environment: true } }, environment: true }
+// A release went to its app's environment, which is `@immutable`, so the app
+// is where a row reads it (`FJS-D1609`).
+const WITH_APP = { app: { include: { environment: true } } }
 
 /**
  * The step list a deployment starts with.
@@ -122,7 +120,6 @@ async function queueRelease(target: { id: string; environmentId: string; type: s
     ...await snapshotVariables(db(), target),
   }
   data.toImage      ??= imageOf(target.source)
-  data.environmentId  = target.environmentId
   data.triggeredBy    = actor() === 'system' ? null : actor()
 
   // Chain to the last successful release so a rollback knows where to go.
@@ -166,16 +163,22 @@ export default createService({
   // where an `after: { all: [...] }` hook broadcast every read to every browser
   // in the workspace (FJS-031). Declaring both is refused at construction.
   channel: workspaceChannel,
-  reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
+  // `?environmentId=` is the app's column, not this model's, so it is reserved
+  // rather than graded as a filter, and read below.
+  reservedQuery: [...WORKSPACE_QUERY, 'environmentId'],
 
   async find() {
     const { limit, offset } = getPagination()
+    const environmentId = $.reserved.environmentId as string | undefined
     // Every filter the caller sent, not a chosen few. autoFilter has already
     // refused a key that is not a column, so a key it admitted and this body
     // skipped answered every row as a match — the /deployments/ filter bar
     // offers a dozen columns and filtered on two.
     const { rows, total } = await db().deployment.findManyAndCount({
-      where:   { ...parseWhere($.query), workspaceId: ws() },
+      where:   {
+        ...parseWhere($.query), workspaceId: ws(),
+        ...(environmentId ? { app: { is: { environmentId } } } : {}),
+      },
       include: WITH_APP,
       orderBy: callerOrder({ queuedAt: 'desc' }),
       limit, offset,
@@ -391,7 +394,6 @@ export default createService({
 
     const replacement = await db().deployment.create({ data: {
       appId:         being.appId,
-      environmentId: being.environmentId,
       workspaceId:   ws(),
       trigger:       'rollback',
       // What was running, and what is going back on.

@@ -24,7 +24,7 @@
 // admin's act (`issueEnrollment` is admin/owner), so the credentials must be a
 // person who holds that in the workspace named:
 //
-//   BASECAMP_EMAIL · BASECAMP_PASSWORD   default: the seed's sam@example.com
+//   BASECAMP_EMAIL · BASECAMP_PASSWORD   default: the seed's dev@knight.works
 //   BASECAMP_WORKSPACE                   a slug or a name; default: the first
 //   BASECAMP_URL                         default: http://localhost:8120
 //
@@ -44,8 +44,8 @@ import { createJunctionClient }                     from '@frontierjs/junction/c
 import { ensureCert }                               from '@frontierjs/outpost/cert'
 
 const API          = (process.env.BASECAMP_URL ?? 'http://localhost:8120').replace(/\/$/, '')
-const EMAIL        = process.env.BASECAMP_EMAIL    ?? 'sam@example.com'
-const PASSWORD     = process.env.BASECAMP_PASSWORD ?? 'hunter2hunter2'
+const EMAIL        = process.env.BASECAMP_EMAIL    ?? 'dev@knight.works'
+const PASSWORD     = process.env.BASECAMP_PASSWORD ?? 'test1234'
 const WORKSPACE    = process.env.BASECAMP_WORKSPACE
 // From the formula, not a literal: in a branch the offset moves both, and the
 // drive that reaches them asks the same function (`FJS-2497`).

@@ -301,6 +301,12 @@ describe('every entry point opens the request scope', () => {
     await expect(app.runAs('u-ghost', async () => {})).rejects.toThrow(/no such principal/)
   })
 
+  // FJS-3538: an id-less principal booted clean, and a getLevel grading by id
+  // read it as STRANGER(0), so every job run as the app failed at level 0.
+  test('a system principal with no id is refused at createApp, by name', () => {
+    expect(() => createApp({ system: { role: 'system' } as never })).toThrow(/createApp\(\{ system \}\).*no id/)
+  })
+
   test('a call arriving with no store IS the entry point', async () => {
     seen = undefined
     await app.service('probe').find()

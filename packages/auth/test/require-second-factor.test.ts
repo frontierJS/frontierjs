@@ -53,7 +53,10 @@ describe('requireSecondFactor: true', () => {
     const refused = await request(app).get('/sessions').auth(login.token)
     expect(refused.status).toBe(403)
     expect((refused.body as any).data?.reason).toBe('second_factor_required')
-    expect((await request(app).get('/account/me').auth(login.token)).status).toBe(403)
+    // `me` answers, and says the session is held: it is how a reload learns it.
+    const me = await request(app).get('/account/me').auth(login.token)
+    expect(me.status).toBe(200)
+    expect((me.body as any).enrollmentOnly).toBe(true)
 
     // The three it may call.
     expect((await call(app, login.token, 'totpStatus')).status).toBe(200)

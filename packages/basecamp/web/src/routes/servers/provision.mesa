@@ -176,13 +176,13 @@ title: Provision a machine
               placeholder="Choose an account"
               options={accounts.map(a => ({
                 value: a.id,
-                label: `${a.name} (${a.providerKind})${a.isVerified ? '' : ' — unverified'}`,
+                label: `${a.name} (${a.providerKind})${a.verifiedAt ? '' : ' — unverified'}`,
               }))}
               value={accountId}
               onchange={(e) => chooseAccount(e.target.value)}
               hint="A provider key in Secrets. Choosing one reads that cloud's regions and sizes." />
 
-      {#if account && !account.isVerified}
+      {#if account && !account.verifiedAt}
         <article class="alert warning" id="account-unverified">
           <div class="alert-content">
             This token has not been checked against {account.providerKind}. Verify it in

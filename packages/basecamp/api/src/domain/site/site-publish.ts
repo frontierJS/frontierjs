@@ -87,7 +87,7 @@ export async function runPublish(app: App, deploymentId: string): Promise<{ stat
   const snap  = deploy.configSnapshot as PublishSnapshot
   const site: GitSite = { id: deploy.appId, source: snap.source }
   const steps = new Map((opened.steps as { id: string, name: string }[]).map(s => [s.name, s.id]))
-  const row   = opened.app as { name?: string, type?: string, source?: unknown } | null
+  const row   = opened.app as { name?: string, type?: string, source?: unknown, environmentId?: string } | null
   let current: string | undefined
 
   const run = async (name: string, fn: () => Promise<{ output: string, commit?: string }>) => {
@@ -151,8 +151,8 @@ export async function runPublish(app: App, deploymentId: string): Promise<{ stat
  * who may be a member of nothing and whose notice would link a screen they
  * cannot open; /sites/ shows them the outcome.
  */
-async function tell(app: App, kind: string, deploy: any, row: { name?: string } | null, extra: Record<string, unknown> = {}) {
-  const env = deploy.environmentId ? await sys(app).environment.findFirst({ where: { id: deploy.environmentId } }) : null
+async function tell(app: App, kind: string, deploy: any, row: { name?: string, environmentId?: string } | null, extra: Record<string, unknown> = {}) {
+  const env = row?.environmentId ? await sys(app).environment.findFirst({ where: { id: row.environmentId } }) : null
   await notifyPeople(app, kind, await workspaceMembers(app, deploy.workspaceId), {
     deploymentId: deploy.id, appName: row?.name ?? 'a site', environment: env?.name ?? 'an environment', ...extra,
   })

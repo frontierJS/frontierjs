@@ -111,4 +111,36 @@ describe('the .dockerignore make:deploy writes', () => {
       rmSync(app, { recursive: true, force: true })
     }
   })
+
+  // FJS-3524: a denylist let in every surface and every kind of file it did not
+  // name. An allowlist is checked against the Dockerfile written beside it, so a
+  // path one COPYs is never one the other drops.
+  test('lets in what the Dockerfile copies and nothing else', async () => {
+    const { parseDockerignore, ignoreDecision } = await import('../core/build-check.js')
+    const app = mkdtempSync(join(tmpdir(), 'fli-mkdeploy-allow-'))
+    try {
+      writeFileSync(join(app, 'package.json'), '{"name":"t","scripts":{}}')
+      const r = spawnSync(process.execPath, [resolve(ROOT, 'bin/fli.js'), 'make:deploy'], {
+        encoding: 'utf8', cwd: app, env: { ...process.env, NO_COLOR: '1' },
+      })
+      expect(r.status).toBe(0)
+      const ignore = readFileSync(join(app, '.dockerignore'), 'utf8')
+      const pats = parseDockerignore(ignore)
+      for (const p of ['api/src/app.ts', 'db/schema.lite', 'db/migrations/main/1_x.sql',
+        'deploy/generated/app-manifest.json', 'tsconfig.json']) {
+        expect([p, ignoreDecision(p, pats)]).toEqual([p, 'included'])
+      }
+      for (const p of ['desktop/shell/target/x', 'widgets/a.mesa', 'cli/x.js', 'web/src/x.mesa',
+        '.env.production', '.git/HEAD', 'api/node_modules/x/index.js', 'db/audit/auditTrail.jsonl',
+        'db/app.db-wal', 'db/backups/x.db', 'move-report.json']) {
+        expect([p, ignoreDecision(p, pats)]).toEqual([p, 'ignored'])
+      }
+      const dockerfile = readFileSync(join(app, 'deploy', 'Dockerfile'), 'utf8')
+      for (const [, from] of dockerfile.matchAll(/^COPY (?!--from)(\S+)/gm)) {
+        expect(ignore).toContain(`!${from}`)
+      }
+    } finally {
+      rmSync(app, { recursive: true, force: true })
+    }
+  })
 })

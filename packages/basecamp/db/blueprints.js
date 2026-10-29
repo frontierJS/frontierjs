@@ -1,8 +1,8 @@
 // db/blueprints.js
-// The starter catalog — eight third-party applications, as `Blueprint` rows.
+// The starter catalog — nine third-party applications, as `Blueprint` rows.
 //
-// Read out of the UI prototype's own `BLUEPRINTS` constant rather than
-// invented, and converted column for column: the mock's nested `app` block is
+// The first eight were read out of the UI prototype's own `BLUEPRINTS` constant
+// rather than invented, and converted column for column: the mock's nested `app` block is
 // flat here because `Blueprint`'s columns are `App`'s where they overlap, and
 // its `params` array is `BlueprintParam` rows because that list is an ordered
 // form rather than a document.
@@ -126,6 +126,29 @@ export const BLUEPRINTS = [
     params: [
       { key: 'AWS_ACCESS_KEY_ID',     label: 'Access key', required: true, generate: 'random_hex_16' },
       { key: 'AWS_SECRET_ACCESS_KEY', label: 'Secret key', required: true, secret: true, generate: 'random_hex_32' },
+    ],
+  },
+  {
+    // A phone notification for the Frontier post, kept on the operator's own
+    // box (IDEAS/frontier-files.md). Without `serve` the image prints its help
+    // and exits. ntfy's own default lets anyone publish, so this one denies
+    // all and provisions its users and tokens from env.
+    slug: 'ntfy', name: 'ntfy', category: 'Notifications', icon: '🔔', brandColor: '#338574',
+    description: 'Push notifications to your phone or desktop with one HTTP request.',
+    version: 'v2.14.0', image: 'binwiederhier/ntfy:v2.14.0',
+    appType: 'container', port: 2586,
+    command: ['serve', '--listen-http', ':2586', '--cache-file', '/var/lib/ntfy/cache.db', '--auth-file', '/var/lib/ntfy/user.db', '--behind-proxy'],
+    volumePath: '/var/lib/ntfy', healthCheck: '/v1/health',
+    cpuLimit: 0.25, memLimitMb: 128,
+    notes: 'Install the ntfy app on your phone and subscribe it to your server. A password hash comes from `docker run --rm -i binwiederhier/ntfy user hash`. iOS delivers through Apple, so a self-hosted server forwards a content-free poll request to the upstream URL and the phone fetches the message from you; leave it blank and iOS hears nothing in the background.',
+    links: [{ label: 'Docs', url: 'https://docs.ntfy.sh/config/' },
+            { label: 'Docker Hub', url: 'https://hub.docker.com/r/binwiederhier/ntfy' }],
+    params: [
+      { key: 'NTFY_BASE_URL',            label: 'Public URL', required: true, hint: 'https://ntfy.acme.com — the address phones subscribe to' },
+      { key: 'NTFY_AUTH_USERS',          label: 'Users', required: true, secret: true, hint: 'name:hash:admin, comma-separated; hash from `ntfy user hash`' },
+      { key: 'NTFY_AUTH_TOKENS',         label: 'Access tokens', secret: true, hint: 'name:tk_<29 letters or digits>:label — what a sender such as the Frontier post publishes with' },
+      { key: 'NTFY_AUTH_DEFAULT_ACCESS', label: 'Access without a login', defaultValue: 'deny-all', hint: 'deny-all, read-only, write-only or read-write' },
+      { key: 'NTFY_UPSTREAM_BASE_URL',   label: 'iOS relay', defaultValue: 'https://ntfy.sh', hint: 'Where iOS poll requests go; blank keeps everything on this box' },
     ],
   },
   {

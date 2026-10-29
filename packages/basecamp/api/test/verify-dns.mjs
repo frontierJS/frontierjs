@@ -164,7 +164,7 @@ try {
   check('the API and the Cloudflare stand-in come up on their own ports', up)
   if (!up) throw new Error(`did not come up:\n${api.out.slice(-2000)}`)
 
-  const login = await call('/auth/login', { body: { email: 'sam@example.com', password: 'hunter2hunter2' } })
+  const login = await call('/auth/login', { body: { email: 'dev@knight.works', password: 'test1234' } })
   auth.token  = login.body?.token
   const workspaces = (await call('/workspaces')).body?.data ?? []
   // Two machines that can take a release. The seed's statuses are its own:

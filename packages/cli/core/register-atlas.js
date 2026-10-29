@@ -52,13 +52,13 @@ export function collectRegisterAtlas(root, { outDir = null, touched = null } = {
 
   const where = (file, line) => {
     const abs = resolve(root, file)
-    return { file, line: line ?? null, href: rel(out, abs), edit: editUrl(abs, line) }
+    return { file, line: line ?? null, href: hrefFrom(out, abs), edit: editUrl(abs, line) }
   }
 
   // A record's links are relative to the file that holds it.
   const links = (record) => (record.files ?? []).map(link => {
     const abs = resolve(dirname(resolve(root, record.file)), link.replace(/\/$/, ''))
-    return { label: relative(root, abs) || '.', href: rel(out, abs), edit: editUrl(abs, null) }
+    return { label: relative(root, abs) || '.', href: hrefFrom(out, abs), edit: editUrl(abs, null) }
   })
 
   const ranking = rankNext(root, { touched })
@@ -195,8 +195,9 @@ function withoutLead(body, title) {
   return title && body.startsWith(title) ? body.slice(title.length).replace(/^\s*·/, '').trim() : body
 }
 
-function rel(from, abs) {
-  return relative(from, abs) || '.'
+// From the page's own folder, so `../` is part of the answer; slashes, since it is a URL.
+function hrefFrom(from, abs) {
+  return relative(from, abs).split('\\').join('/') || '.'
 }
 
 function editUrl(abs, line) {

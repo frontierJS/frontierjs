@@ -727,6 +727,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `demo-box.md` — the demo box: one shared Basecamp + Outpost, a 24-hour demo Workspace per visitor, the site streams `fli basecamp:demo <name>`
 - `agent-client-ui.md` — a Resource rendered inside the agent's client: MCP Apps and A2UI as Mesa targets
 - `api-ontology.md` — the API realm's primitives: the words Junction spells and no register defines
+- `basecamp-dogfood.md` — the last in-place schema rewrite, then append-only migrations (D1605); D1603–D1611 ruled; Q1 Account tier with the team, Phase 1 schema pass next
 - `browser-kit.md` — the ten browser APIs every app wraps by hand, wrapped once as signals; pure halves to toolbelt, signals to mesa
 - `bun-1.4-upgrade.md` — moving the workspace to Bun 1.4
 - `bun-natives.md` — what Bun 1.4's natives can replace here
@@ -782,6 +783,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `workbench-branches.md` — a branch per chat in the Workbench: a linked worktree pinned beside its parent, Land and Archive
 - `workspace-onboarding.md` — Basecamp's `/onboarding` grades each connection missing → present → proven, with vendor links, scopes and Verify; D1578–D1580 ruled, Q4 open, Phase 0 prior art next
 - `zero-to-live.md` — a DigitalOcean account to an FJS app on a Cloudflare domain; Phase 1 ruled, Phase 0's real-droplet run next
+- `box-layout.md` — a fleet box's files under Outpost's name (`/etc/outpost`, `/var/lib/outpost`), app data as bind mounts, `/frontier-outpost` as a folder of links; FJS-D1544 ruled E, Q1–Q4 open, 0.2 real-box probe next
 
 ### assessment
 
@@ -795,6 +797,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `pico-borrowings.md` — Six things worth taking from pico: ssh as the front door, dry run until `--write`, redirects as files, a public service's tables, runbooks, a tunnel
 - `bubbletea-borrowings.md` — Four things worth taking from bubbletea, read beside pico: a refusable quit, the tty handed to an editor, terminal state as view fields, international keyboards; six confirmations
 - `intent-recognizer-examples.md` — synthetic support requests for the intent recognizer
+- `kamal-parity.md` — Kamal parity: ring 0 is already Kamal's model, the three rings and the journal are not; `deploy:config` and a load-vs-registry measurement worth taking
 - `prompt-to-app.md` — Prompt-to-app: what the Base44 space is, and what it would take here
 - `rebuilt-in-the-stressors.md` — what the stressors rebuilt that the framework should own
 - `rig-catalog.md` — the rig catalog: which features the apps keep rebuilding, counted, and the order they depend in

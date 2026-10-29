@@ -235,7 +235,7 @@ each side approves.
     the app's write is filed as a person, which breaks the property § The nine
     q9 holds, and nothing reports it. B fails loudly: a model that needs an
     author refuses the write, or leaves the author null.
-- **Q4 — What Basecamp issues.** A shared secret per pair (n² secrets, simple),
+- ~~**Q4 — What Basecamp issues.**~~ **Answered 2026-10-28 (`FJS-D1604`): B — a keypair per app. Each app generates its Ed25519 key and keeps the private half; Basecamp records the public half at enrollment and pushes it to every receiver, which stores it on the peer's account. The toolbelt kit already signs and verifies `v1-ed25519` (`packages/toolbelt/src/signature/signature.js:356`), but the door does not yet carry it: `keyFor` answers only `{ secret, session }` (`credentials.ts:44`), so it widens to `{ publicKey }` too. It costs that widening; it buys n keys, a rotation that is one key pushed outward, and receivers that hold nothing able to sign.** A shared secret per pair (n² secrets, simple),
   or a keypair per app with public keys distributed (n keys, Nebula's shape).
   The signature kit signs either way already, so this is a question of
   distribution, not of crypto. Waits for Phase 1.

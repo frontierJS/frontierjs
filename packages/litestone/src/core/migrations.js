@@ -511,6 +511,13 @@ export function jsRefusal(files) {
          `data change to an app script run after \`migrate apply\`, idempotent by the rows it expects`
 }
 
+export function modifiedRefusal(files) {
+  return `${files.join(', ')} ${files.length > 1 ? 'were' : 'was'} edited after being applied, so ` +
+         `nothing was applied: the database ran the old text and lacks what the new one declares. ` +
+         `Restore the applied text and put the change in a new migration ` +
+         `(\`litestone migrate create\`), or rebuild a database nothing has shipped from`
+}
+
 // One sentence for every caller that could not build a shadow, so create, the
 // guard and the doctor say the same thing about the same directory.
 export function shadowRefusal(shadow) {
@@ -551,6 +558,12 @@ function loadMigrationSql(filePath) {
   const entry = { sql, stmts }
   _sqlFileCache.set(filePath, entry)
   return entry
+}
+
+// What recordMigration stored for this text, so an unchanged file compares equal.
+function migrationChecksum(filePath) {
+  const entry = loadMigrationSql(filePath)
+  return entry.checksum ??= entry.sql ? checksum(entry.sql) : 'js-migration'
 }
 
 // ─── Statement execution ─────────────────────────────────────────────────────
@@ -699,8 +712,18 @@ export async function apply(db, dir = './migrations') {
     return { applied: [], pending: 0, skipped, refused: true, failed: js[0], error: message, message }
   }
 
-  const appliedSet = new Set(appliedMigrations(db).map(m => m.name))
-  const pending    = files.filter(f => !appliedSet.has(f))
+  // The history matches files by name, so an applied file rewritten in place
+  // reads as applied and the app boots against tables the database never
+  // created. Refused whether or not anything is pending (`FJS-3578`).
+  const applied  = appliedMigrations(db)
+  const recorded = new Map(applied.map(m => [m.name, m.checksum]))
+  const modified = files.filter(f => recorded.has(f) && migrationChecksum(join(absDir, f)) !== recorded.get(f))
+  if (modified.length) {
+    const message = modifiedRefusal(modified)
+    return { applied: [], pending: 0, skipped, refused: true, failed: modified[0], error: message, message, modified }
+  }
+
+  const pending = files.filter(f => !recorded.has(f))
 
   if (pending.length === 0) {
     return { applied: [], pending: 0, skipped, message: '✓ all migrations already applied' }

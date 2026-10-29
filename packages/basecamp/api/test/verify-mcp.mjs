@@ -48,8 +48,8 @@ const SCRATCH  = mkdtempSync(join(tmpdir(), 'basecamp-mcp-'))
 const DB_PATH  = join(SCRATCH, 'basecamp.db')
 
 // The seed's people and their roles in the workspaces they share (`db/seed.js`).
-const PASSWORD = 'hunter2hunter2'
-const OWNER = 'sam@example.com', ADMIN = 'kim@example.com', DEVELOPER = 'remy@example.com', VIEWER = 'jo@example.com'
+const PASSWORD = 'test1234'
+const OWNER = 'dev@knight.works', ADMIN = 'kim@example.com', DEVELOPER = 'remy@example.com', VIEWER = 'jo@example.com'
 
 const ENV = {
   ...process.env,

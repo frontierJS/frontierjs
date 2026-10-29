@@ -53,7 +53,7 @@ import { enrollTokenMatches, mintOutpostSecret, installScript, isCertificate } f
 import { notifications }  from '@frontierjs/notifications'
 import { basecampAuditLog, basecampAuditPreImage, outpostCredential, outpostScope, workspaceOrKeys } from './core/hooks.ts'
 import { grantsFor } from './core/capabilities.ts'
-import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './core/session-auth.ts'
+import { basecampSessionFields, ownerOwesSecondFactor, refuseSuspendedLogin, refuseSuspended } from './core/session-auth.ts'
 import { agentGuard, apiKeyGuard, apiKeyUsage, narrowForAgent } from './domain/api-key/scopes.ts'
 import { slugify }                        from './core/resource.ts'
 import { basecampGateLevel, roleForLevel, SYSTEM, workspaceClaim } from './core/gate.ts'
@@ -138,8 +138,8 @@ export async function buildBasecampApp(
   const restored      = opts.db ? null : await restoreStaged(dbPath, logger)
   const rawDb         = openSqlite(dbPath)
   const migrated      = await apply(rawDb, migrationsDir)
-  if (migrated.unmatched)
-    throw new Error(`[basecamp] ${migrated.message} — db/migrations/main`)
+  if (migrated.unmatched || migrated.error)
+    throw new Error(`[basecamp] ${migrated.message ?? migrated.error} — db/migrations/main`)
 
   // eslint-disable-next-line -- the injected client is the env's, already typed there
   const db    = (opts.db as Awaited<ReturnType<typeof createBasecampDb>>) ?? await createBasecampDb()
@@ -171,7 +171,10 @@ export async function buildBasecampApp(
     // screen already confines itself to.
     oauthReturnToAllow: ['/'],
     encryptionKey: env.ENCRYPTION_KEY,
-    sessionTtl:    '7 days',
+    sessionTtl:    `${env.SESSION_TTL_HOURS} hours`,
+    // An owner with no authenticator signs in to a session held to enrollment
+    // rather than being refused: a refusal would leave them no way to set one up.
+    requireSecondFactor: ownerOwesSecondFactor(db),
     sessionFields: basecampSessionFields,
     totpIssuer:    'Basecamp',
     ...accountMail(() => built, logger),

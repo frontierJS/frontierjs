@@ -1096,9 +1096,18 @@ export class AuthClient {
     return this._c.service(this._names.account).invoke('setupTotp', 'me', {}) as Promise<{ secret: string; qr: string }>
   }
 
-  /** Prove the device, switch the factor on. The recovery codes are shown ONCE, here. */
+  /**
+   * Prove the device, switch the factor on. The recovery codes are shown ONCE, here.
+   *
+   * On a session held to enrollment this releases the hold, so the token
+   * resolves to a different principal and the server closes the socket on the
+   * next frame, rejecting whatever call rode it (`FJS-2651`'s shape). Cycled
+   * here, before the answer is handed back, as `startSupport` cycles it.
+   */
   async confirmTotp(code: string): Promise<{ recoveryCodes: string[] }> {
-    return this._c.service(this._names.account).invoke('confirmTotp', 'me', { code }) as Promise<{ recoveryCodes: string[] }>
+    const res = await this._c.service(this._names.account).invoke('confirmTotp', 'me', { code }) as { recoveryCodes: string[] }
+    this._c._principalChanged()
+    return res
   }
 
   async disableTotp(): Promise<void> {
@@ -1412,7 +1421,7 @@ export class JunctionClient extends EventEmitter {
 
   /**
    * The token is the same and who it resolves to is not: a support episode
-   * began or ended. Cycled as a changed cookie is, before the call that
+   * began or ended, or a hold to enrollment was released. Cycled as a changed cookie is, before the call that
    * crossed the edge resolves, so nothing after it rides the socket that
    * resolved the old principal (`FJS-2651`).
    */

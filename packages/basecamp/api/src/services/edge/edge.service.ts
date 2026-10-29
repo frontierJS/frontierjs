@@ -51,7 +51,7 @@ export interface EdgeAccount {
   id:           string
   name:         string
   providerKind: ProviderKind
-  isVerified:   boolean
+  verifiedAt:   string | null
 }
 
 /** Record types that SERVE a hostname. An MX or a TXT at the same name answers
@@ -79,7 +79,7 @@ export async function edgeAccounts(): Promise<EdgeAccount[]> {
   // tenant, where the app client's bypass would read every tenant.
   const rows  = await db().asSystem().secret.findMany({
     where:   { workspaceId: ws(), kind: 'provider_key', providerKind: { in: kinds } },
-    select:  { id: true, name: true, providerKind: true, isVerified: true },
+    select:  { id: true, name: true, providerKind: true, verifiedAt: true },
     orderBy: { name: 'asc' },
   })
   return rows as EdgeAccount[]

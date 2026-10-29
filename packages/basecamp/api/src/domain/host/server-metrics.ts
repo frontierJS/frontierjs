@@ -2,7 +2,7 @@
 //
 // `Server.health` is a snapshot: one Json column, one row per machine,
 // overwritten on every check-in. So *what was this box doing on Tuesday* was
-// not stale, it was gone — and three widget kinds said so on their own cards
+// not stale, it was gone — and three tile kinds said so on their own cards
 // rather than drawing a line they could not draw (`FJS-956`).
 //
 // ─── Why this is a module and not four lines in the heartbeat ────────────
@@ -121,7 +121,7 @@ export async function recordHealth(
 // `DiskUsage` is the same shape `Server.health` is and has the same hole in it:
 // `@@unique([serverId])`, one row per machine, overwritten by every report. So
 // *how full was this box before Tuesday's sweep* was not stale, it was gone —
-// which is the question `CleanupRun`'s own schema comment says a disk filling up
+// which is the question `MaintenanceRun`'s own schema comment says a disk filling up
 // again asks (`FJS-956` named this and deferred it).
 //
 // **The row stays a snapshot and that is settled.** A second table of

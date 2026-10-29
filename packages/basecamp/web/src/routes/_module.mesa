@@ -75,7 +75,7 @@ siteName: Basecamp
   const bell  = notifications.tethered({ state: 'local', directives: INBOX })
   const inbox = () => bell.rows
 
-  $: session.user, () => { if (session.user) bell.reload() }
+  $: session.user, () => { if (session.user && !session.user.enrollmentOnly) bell.reload() }
 
   // The menu shows the newest few unread; /notifications/ is the whole list.
   const BELL_MAX = 6

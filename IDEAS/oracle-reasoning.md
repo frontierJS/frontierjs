@@ -18,6 +18,15 @@ way about the answers it gives as it does about the nouns it names.
 
 ---
 
+## The main goal
+
+**Oracle reads a person's words, discerns the models and the relationships between them, and
+translates what is needed into a `.lite` file** (owner, 2026-10-28). Every rule below serves that.
+The catalog, the ladder, the access derivation and `emit` are there to get the models and their
+links right. Behavior, screens and patterns come after, and each earns its place by helping that.
+
+---
+
 ## The one test
 
 Every Oracle answer reduces to `PHILOSOPHY.md` §V, restated for a recognizer:
@@ -253,6 +262,12 @@ cost and escape · what it costs to be wrong.
 - **The catalog is stated twice** — as data and inside the prompt — and this file is a third
   place. Whoever rebuilds Oracle owns collapsing all three into one origin, which is the framework's
   own first axiom pointed at its own tool.
+- **A small local model that does only this job.** A general "FJS expert" fine-tuned to run on a
+  Raspberry Pi loses to Claude plus skills. It is weak at multi-file agent work, and every rename
+  leaves its weights stale, where a doc is fixed the same day. Oracle's job is the exception: one
+  narrow task, graded by `checkAnswer` and the litestone parser with no person in the loop, and
+  Charter's corpus run is graded training data already. A 1.5–3B model LoRA-tuned on prose →
+  answer pairs fits a Pi. Revisit at 1.0, when the schema language stops moving (2026-10-28).
 
 ---
 

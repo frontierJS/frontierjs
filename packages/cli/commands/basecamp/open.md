@@ -7,7 +7,7 @@ examples:
 args:
   -
     name: id
-    description: A box id fli basecamp printed; with none, the Basecamp host
+    description: A box id fli server printed; with none, the Basecamp host
 flags:
   cloud:
     type: string
@@ -15,7 +15,7 @@ flags:
     defaultValue: ''
 ---
 
-The hostname is found the way `fli basecamp` finds it: the A record at
+The hostname is found the way `fli server` finds it: the A record at
 Cloudflare pointing at the box's address, its reserved IP first. Nothing else
 holds it — Basecamp's config names no domain. A first run at a terminal with no
 `CLOUDFLARE_TOKEN` asks for one, as `fli basecamp:dns` does.
@@ -29,7 +29,7 @@ if (found.error) { log.error(found.error); process.exitCode = 1; return }
 const id = String(arg.id ?? '').trim()
 const at = read.clouds.map(cloudLabel).join(' or ')
 const target = id ? found.machines.find(m => String(m.id) === id) : found.machines.find(m => !m.serverId)
-if (!target) { log.error(id ? `No box ${id} fli basecamp:create made is at ${at}` : `No Basecamp host fli basecamp:create made is at ${at}`); process.exitCode = 1; return }
+if (!target) { log.error(id ? `No box ${id} fli server:create made is at ${at}` : `No Basecamp host fli server:create made is at ${at}`); process.exitCode = 1; return }
 
 if (!await cloudflareToken({ interactive: !!process.stdin.isTTY, write: !flag.dry, say: (t) => log.warn(t) })) {
   log.error('The hostname is read off its Cloudflare record: set CLOUDFLARE_TOKEN'); process.exitCode = 1; return

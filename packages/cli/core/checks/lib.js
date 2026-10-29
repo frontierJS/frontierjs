@@ -7,7 +7,7 @@
 // ESM on node, `@frontierjs/toolbelt` and this package only.
 
 import { existsSync, statSync, readFileSync }             from 'fs'
-import { join, relative, extname, basename }               from 'path'
+import { join, extname, basename }                         from 'path'
 import { singularize, camel }                              from '@frontierjs/toolbelt/inflect'
 import { safeRead, walk }                                  from '../fs.js'
 import { appSchemaModels, appSchemaViews }                 from '../app-schema.js'
@@ -35,8 +35,6 @@ export function isAppRoot(root) {
   const manifest = ['package.json', '.fli.json'].some(f => existsSync(join(root, f)))
   return manifest && SURFACES.some(d => existsSync(join(root, d)))
 }
-
-export const rel = (root, p) => relative(root, p).split('\\').join('/')
 
 export const stem = p => p.replace(/\.(d\.)?(ts|js|mjs|mts|cjs|cts|mesa)$/, '')
 

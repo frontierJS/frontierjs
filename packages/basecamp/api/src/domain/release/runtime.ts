@@ -14,12 +14,12 @@
 export const CONTAINER_TYPES: ReadonlySet<string> = new Set(['container', 'function', 'database'])
 
 /** The columns, in `App`'s and `Blueprint`'s shared spelling. */
-export const RUNTIME_COLUMNS = ['port', 'containerPort', 'volumePath', 'healthCheck', 'cpuLimit', 'memLimitMb'] as const
+export const RUNTIME_COLUMNS = ['port', 'containerPort', 'volumePath', 'healthCheck', 'cpuLimit', 'memLimitMb', 'command'] as const
 
-export type Runtime = Partial<Record<(typeof RUNTIME_COLUMNS)[number], string | number>>
+export type Runtime = Partial<Record<(typeof RUNTIME_COLUMNS)[number], string | number | string[]>>
 
 /**
- * The settings a row states, nulls left out. Read off an `App` when a release
+ * The settings a row states, nulls and an empty `command` left out. Read off an `App` when a release
  * is made, and off a `Blueprint` when an app is made from one — the names are
  * the same on both, which is what makes that a copy.
  */
@@ -27,7 +27,7 @@ export function runtimeOf(row: Record<string, unknown>): Runtime {
   const out: Runtime = {}
   for (const key of RUNTIME_COLUMNS) {
     const value = row[key]
-    if (value != null) out[key] = value as string | number
+    if (value != null && !(Array.isArray(value) && !value.length)) out[key] = value as string | number | string[]
   }
   return out
 }

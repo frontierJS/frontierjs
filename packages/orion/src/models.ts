@@ -29,12 +29,16 @@ interface SchemaDocument {
 }
 
 /**
- * `create` and `update` are `generateJsonSchema(schema, { mode })` for each
- * mode; `models` is the schema's model names, since `$defs` also holds enums
- * and declared types.
+ * `create` and `update` each return `generateJsonSchema(schema, { mode })`,
+ * called on the first `fields()` that needs it: generating both at boot costs
+ * basecamp 30–100ms before `listen`, and only a flow compile reads them.
+ * `models` is the schema's model names, since `$defs` also holds enums and
+ * declared types.
  */
-export function modelCatalog(docs: { create: object; update: object; models: string[] }): IModelCatalog {
+export function modelCatalog(docs: { create: () => object; update: () => object; models: string[] }): IModelCatalog {
   const known = new Set(docs.models)
+  const built: { create?: object; update?: object } = {}
+  const doc = (mode: "create" | "update") => (built[mode] ??= docs[mode]()) as SchemaDocument
   // The `@version` column is readOnly and is the one an update must send back:
   // the Data boundary refuses a patch without it, so a catalog that dropped it
   // made every versioned model unpatchable from a flow.
@@ -50,7 +54,7 @@ export function modelCatalog(docs: { create: object; update: object; models: str
     fields(model, mode) {
       if (!known.has(model)) return undefined
       const key = `${mode}:${model}`
-      if (!cache.has(key)) cache.set(key, writable((mode === "create" ? docs.create : docs.update) as SchemaDocument, model, mode))
+      if (!cache.has(key)) cache.set(key, writable(doc(mode), model, mode))
       return cache.get(key)
     },
   }

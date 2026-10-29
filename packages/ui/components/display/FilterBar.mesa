@@ -30,9 +30,9 @@
   // ── A control's callback is TRANSLATED, never forwarded ──────────────────
   //
   // `onvalue(v)` is this file's own vocabulary and no kit control has that
-  // prop. The three used here disagree: `Input` and `Select` fire `oninput`
-  // with the EVENT, `MultiSelect` fires `onchange` with the VALUE. So each
-  // branch adapts, exactly as `FormField.mesa`'s table does one surface along.
+  // prop. The three used here disagree: `Input` fires `oninput` with the
+  // EVENT, `MultiSelect` and `RadioGroup` fire `onchange` with the VALUE. So
+  // each branch adapts, exactly as `FormField.mesa`'s table does one surface along.
   // Forwarding `onvalue` straight through is silent — the prop lands as an
   // attribute, every control renders, and none of them writes anything.
   //
@@ -52,13 +52,18 @@
 
   import { filterComponent, defaultFilterProps } from '../../controls.js'
   import Input       from '../forms/Input.mesa'
-  import Select      from '../forms/Select.mesa'
   import MultiSelect from '../forms/MultiSelect.mesa'
+  import RadioGroup  from '../forms/RadioGroup.mesa'
   import Button      from '../forms/Button.mesa'
+  import Select      from '../forms/Select.mesa'
+  import DropdownMenu from '../overlay/DropdownMenu.mesa'
+  import DropdownItem from '../overlay/DropdownItem.mesa'
   import DayRangeFilter from './DayRangeFilter.mesa'
   import RangeInput     from './RangeInput.mesa'
   import { readMoney, showMoney } from '../forms/MoneyInput.mesa'
   import { directiveParams, splitParams } from '@frontierjs/toolbelt/directives'
+  import { emptyTest, emptyTestOf, readDayToken } from '@frontierjs/toolbelt/query'
+  import { addToDate, plainDateIn, startOfDay } from '@frontierjs/toolbelt/datetime'
 
   // `resource.filters().filters` — the ranked columns, each with `op` and
   // `kind`, or `op: null` and a reason.
@@ -79,13 +84,18 @@
   // `$` name in either direction. The second argument is split back out here
   // with `splitParams`, which is `directiveParams`' own inverse.
   export let onchange = undefined
-  // A bound column's rows, by column name, once they arrive.
+  // A column's rows, by column name, stated by the page. They win over what
+  // the entry's own `optionsFor` fetches.
   export let options  = {}
   // `resource.filters().search` — `{ fields, labels }` where the model declares
   // `@@fts`, `{ fields: null, reason }` where it does not. A box is drawn only
   // for the first, because `$search` below `@@fts` is refused by the Data
   // boundary, and a box that answers 400 on every word is worse than none.
   export let search   = undefined
+  // The zone a day bound over an instant is read in, `<Cell>`'s prop: an app
+  // whose day belongs to an account passes the account's. Hand the same one
+  // to `tethered({ timeZone })`, which resolves a relative day in it.
+  export let timeZone = undefined
 
   // A const is derived when something it reads is reactive (`FJS-D212`), so
   // this re-evaluates when the caller hands over a new list.
@@ -103,7 +113,7 @@
   /** What this column currently filters by, unwrapped from its operator. */
   function current(f) {
     const at = held?.[keyOf(f)]
-    if (at === undefined || at === null) return undefined
+    if (at === undefined || emptyTestOf(at)) return undefined
     if (f.kind === 'range') return { gte: at.gte, lte: at.lte }
     const op = Array.isArray(f.op) ? f.op[0] : f.op
     // Through a to-many the operator sits under `some` and the join's key.
@@ -138,47 +148,92 @@
   // across as it is, `lte: '2026-10-07'` is midnight at the START of that day
   // in UTC, so *to the 7th* excluded the whole of the 7th, and *from the 7th*
   // began at a UTC midnight that is the evening of the 6th west of Greenwich.
-  // So a bound is the viewer's day turned into its first and last instant, and
-  // read back the same way. A `Date` column is a day on both sides and is not
-  // converted; an `@time` column is a wall clock, not a day, and gets a time box.
+  // So a bound is the day in `timeZone` (the viewer's by default) turned into
+  // its first and last instant, and read back the same way. A `Date` column is
+  // a day on both sides and is not converted; an `@time` column is a wall
+  // clock, not a day, and gets a time box.
   const isInstant = (f) => f.display === 'time' && f.time?.kind === 'instant'
   const isClock   = (f) => f.display === 'time' && !f.time?.kind && !!f.time
   const rangeType = (f) => f.display !== 'time' ? 'number' : isClock(f) ? 'time' : 'date'
 
-  const pad = (n) => String(n).padStart(2, '0')
+  const zone = timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
 
   /** The box's day → the bound's instant: the day's first moment, or its last. */
   function dayToInstant(day, key) {
-    const [y, m, d] = String(day ?? '').split('-').map(Number)
-    if (!y || !m || !d) return undefined
-    const at = key === 'gte' ? new Date(y, m - 1, d) : new Date(new Date(y, m - 1, d + 1).getTime() - 1)
-    return at.toISOString()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day ?? ''))) return undefined
+    const ms = key === 'gte' ? startOfDay(day, zone) : startOfDay(addToDate(day, { days: 1 }), zone) - 1
+    return new Date(ms).toISOString()
   }
 
   /** …and back, for showing it. A bare day (a URL typed by hand) shows as is. */
   function instantToDay(at) {
     if (at === undefined || at === null || at === '') return ''
     if (!String(at).includes('T')) return String(at)
-    const d = new Date(at)
-    return Number.isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    const ms = Date.parse(at)
+    return Number.isNaN(ms) ? '' : plainDateIn(ms, zone)
   }
 
   const showBound  = (f, key) => isInstant(f) ? instantToDay(current(f)?.[key]) : (current(f)?.[key] ?? '')
   const writeBound = (f, key, text) =>
     write(f, { ...current(f), [key]: isInstant(f) ? dayToInstant(text, key) : text })
 
-  /** A day range's bounds as `DayRangeFilter` holds them — days, or nothing. */
+  /** A day range's bounds as `DayRangeFilter` holds them — days, an empty test, or nothing. */
   function days(f) {
+    if (askedOf(f)) return emptyTest(askedOf(f))
     const gte = showBound(f, 'gte') || undefined
     const lte = showBound(f, 'lte') || undefined
     return gte || lte ? { gte, lte } : undefined
   }
-  const toBound   = (f, key, day) => day === undefined || !isInstant(f) ? day : dayToInstant(day, key)
+  // A relative day stays a token until `tethered()` builds the request (`FJS-D1601`).
+  const toBound   = (f, key, day) =>
+    day === undefined || !isInstant(f) || readDayToken(day) !== undefined ? day : dayToInstant(day, key)
   const writeDays = (f, next) =>
-    write(f, next && { gte: toBound(f, 'gte', next.gte), lte: toBound(f, 'lte', next.lte) })
+    write(f, isEmptyTest(next) ? next : next && { gte: toBound(f, 'gte', next.gte), lte: toBound(f, 'lte', next.lte) })
+
+  // ── Asking for the empty ─────────────────────────────────────────────────
+  //
+  // The test's spelling is `@frontierjs/toolbelt/query`'s. A bare `null` handed
+  // to `write()` is *clear*; a hand-typed `?dueAt=null` in the query reads as
+  // *Empty* all the same.
+  const isEmptyTest = (v) => v !== null && !!emptyTestOf(v)
+  const askedOf     = (f) => emptyTestOf(held?.[keyOf(f)])
+
+  // A text, number or set control on an optional column carries an operator
+  // menu asking *is empty* and *has value* (`FJS-D1595`). Through a to-many
+  // the question is whether any row joins, which is not this test; a list
+  // column holds an array, whose empty is `[]`.
+  const ASKED    = { text: 'contains', range: 'between', set: 'is any of' }
+  const askable  = (f) => !!f.rule?.nullable && !f.through && !entryFor(f)
+    && (f.kind === 'text' || (f.kind === 'set' && f.op === 'in') || (f.kind === 'range' && rangeType(f) === 'number'))
+  const opsFor   = (f) => [
+    { value: 'value',  label: f.label + ' ' + ASKED[f.kind] },
+    { value: 'empty',  label: f.label + ' is empty' },
+    { value: 'filled', label: f.label + ' has value' },
+  ]
+  // On an optional string `''` is no value (`FJS-D1593`), whichever control
+  // asks — a set over a `String?` too.
+  const writeAsked = (f, op) =>
+    write(f, op === 'value' ? undefined : emptyTest(op, { blank: f.kind === 'text' || f.rule?.type === 'string' }))
 
   /** Is anything filtered at all? Drives the clear-all affordance. */
-  const active = searching !== '' || offered.some(f => current(f) !== undefined)
+  const isSet  = (f) => !!askedOf(f) || current(f) !== undefined
+  const active = searching !== '' || offered.some(isSet)
+
+  // ── The bar holds a few, the rest are added ──────────────────────────────
+  //
+  // The first ranked draw inline; the rest wait behind `+ Filter` and draw as
+  // a removable chip once added. One the query already holds is a chip whether
+  // or not it was added here, or a bookmark filters by something not on screen.
+  const INLINE  = 3
+  let added     = []
+  const inline  = offered.slice(0, INLINE)
+  const chips   = offered.slice(INLINE).filter(f => added.includes(f.name) || isSet(f))
+  const addable = offered.slice(INLINE).filter(f => !added.includes(f.name) && !isSet(f))
+
+  function remove(f) {
+    added = added.filter(n => n !== f.name)
+    if (isSet(f)) write(f, undefined)
+  }
 
   /**
    * `$search` is a DIRECTIVE, not a column filter, so it is written by name and
@@ -212,11 +267,12 @@
       if (next?.lte !== undefined && next.lte !== '') range.lte = next.lte
     }
 
-    const empty = next === undefined || next === null || next === ''
+    const empty = isEmptyTest(next) ? false : next === undefined || next === null || next === ''
       || (Array.isArray(next) && !next.length)
       || (f.kind === 'range' && !Object.keys(range).length)
 
     if (empty) delete query[keyOf(f)]
+    else if (isEmptyTest(next)) query[keyOf(f)] = next
     else if (f.kind === 'range') {
       query[keyOf(f)] = range
     } else {
@@ -237,13 +293,44 @@
   // because a different question has no page 3.
   function clearAll() {
     const { directives: { search, offset, after, ...kept } } = splitParams(held)
+    added = []
     onchange?.({}, kept)
   }
 
-  /** A bound column's rows, or the enum's own members. */
-  function optionsFor(f) {
+  // ── A relation is searched, not listed ───────────────────────────────────
+  //
+  // A related table outgrows one answer, and a list of its first page leaves
+  // the row a person wants absent. So an entry carrying `optionsFor` (sierra's
+  // `filters()` adds it to a fetched column) seeds the list with that page,
+  // held picks labeled, and typing asks the server. Every row an answer brings
+  // is kept: a pick is handed back by matching what was offered, and a row
+  // only a search found would travel as the string the control reports.
+  let fetched = {}
+
+  function learn(f, rows) {
+    const known = new Map((fetched[f.name] ?? []).map(o => [String(o.value), o]))
+    for (const o of rows ?? []) known.set(String(o.value), o)
+    fetched = { ...fetched, [f.name]: [...known.values()] }
+  }
+
+  function seed() {
+    for (const f of filters) {
+      if (!f.op || !f.optionsFor || options?.[f.name]?.length) continue
+      f.optionsFor({ record: { [f.name]: current(f) } }).then(r => learn(f, r?.options))
+    }
+  }
+  seed()
+  $: filters, () => seed()
+
+  const askFor = (f) => f.optionsFor && {
+    delay: 200,
+    trigger: (q) => f.optionsFor({ search: q }).then(r => (learn(f, r?.options), r?.options ?? [])),
+  }
+
+  /** The page's rows, a fetched column's, or the enum's own members. */
+  function choicesFor(f) {
     if (options?.[f.name]?.length) return options[f.name]
-    return f.rule?.options ?? f.rule?.enum ?? []
+    return fetched[f.name] ?? f.rule?.options ?? f.rule?.enum ?? []
   }
 
   /**
@@ -252,12 +339,158 @@
    * `"1"`, which the Data boundary may refuse where it takes `1`.
    */
   function backToValues(f, picked) {
-    const offered = optionsFor(f)
+    const offered = choicesFor(f)
     return (picked ?? []).map(p => offered.find(o => String(o.value) === String(p))?.value ?? p)
   }
 
   const entryFor = (f) => (f.display ? filterComponent(f.display) : null)
+
+  // A declared enum this short is a row of toggles; longer, a MultiSelect
+  // (`FJS-D1583`). Gated on DECLARED members: a `@values` binding is also
+  // `display: 'enum'`, but its rows arrive later and their count moves with the
+  // data, so it would draw empty and then swap controls.
+  const CHIP_LIMIT = 6
+  const chipped = (f) => f.kind === 'set' && !f.rule?.values
+    && Array.isArray(f.rule?.enum) && f.rule.enum.length <= CHIP_LIMIT
+
+  /** The members as `{ value, label }` — `rule.options` once labels are normalized, bare strings before. */
+  const chipsFor = (f) => choicesFor(f).map(o => (o && typeof o === 'object' ? o : { value: o, label: o }))
+
+  /** A hand-typed URL may hold one member as a string rather than a list. */
+  const picked = (f) => [].concat(current(f) ?? []).map(String)
+
+  function toggle(f, v) {
+    const on = picked(f).includes(String(v))
+    write(f, backToValues(f, on ? picked(f).filter(p => p !== String(v)) : [...picked(f), v]))
+  }
+
+  // The query holds a boolean, or a string off a hand-typed URL, so each
+  // segment's value is the string both compare equal to.
+  const EITHER = [
+    { value: 'any',   label: 'Any' },
+    { value: 'true',  label: 'Yes' },
+    { value: 'false', label: 'No' },
+  ]
+
+  const EMPTINESS = [
+    { value: 'any',    label: 'Any' },
+    { value: 'filled', label: 'Has value' },
+    { value: 'empty',  label: 'Empty' },
+  ]
 </script>
+
+{#snippet control(f)}
+  {#if entryFor(f)}
+    {@const Custom = entryFor(f).component}
+    <Custom {...(entryFor(f).props ?? defaultFilterProps)({
+      value: current(f), onvalue: (v) => write(f, v), column: f, options: choicesFor(f),
+    })} />
+  {:else if chipped(f)}
+    <span class="filter-range" role="group" aria-label={f.label}>
+      <span class="text-muted" aria-hidden="true">{f.label}</span>
+      {#each chipsFor(f) as c}
+        <Button
+          treatment="outlined"
+          size="sm"
+          aria-pressed={String(picked(f).includes(String(c.value)))}
+          onclick={() => toggle(f, c.value)}
+        >{c.label}</Button>
+      {/each}
+    </span>
+  {:else if f.kind === 'set'}
+    <MultiSelect
+      multiple
+      value={current(f) ?? []}
+      options={choicesFor(f)}
+      asyncOptions={askFor(f) || undefined}
+      placeholder={f.label}
+      aria-label={f.label}
+      onchange={(next) => write(f, backToValues(f, next))}
+    />
+  {:else if f.kind === 'exact'}
+    <span class="filter-range">
+      <span class="text-muted" aria-hidden="true">{f.label}</span>
+      <!-- No `label` prop: one wraps the group in a Field, a caption over a toolbar. -->
+      <RadioGroup
+        layout="segmented"
+        items={EITHER}
+        value={current(f) === undefined || current(f) === null ? 'any' : String(current(f))}
+        aria-label={f.label}
+        onchange={(v) => write(f, v === 'any' ? undefined : v === 'true')}
+      />
+    </span>
+  {:else if f.kind === 'empty'}
+    <span class="filter-range">
+      <span class="text-muted" aria-hidden="true">{f.label}</span>
+      <RadioGroup
+        layout="segmented"
+        items={EMPTINESS}
+        value={askedOf(f) ?? 'any'}
+        aria-label={f.label}
+        onchange={(v) => write(f, v === 'any' ? undefined : emptyTest(v))}
+      />
+    </span>
+  {:else if f.kind === 'range' && f.display === 'money'}
+    <RangeInput
+      label={f.label}
+      value={current(f)}
+      show={showMinor(f)}
+      read={readMinor(f)}
+      data-currency={moneyCode(f)}
+      onvalue={(next) => write(f, next)}
+    />
+  {:else if f.kind === 'range' && rangeType(f) === 'number'}
+    <RangeInput label={f.label} value={current(f)} onvalue={(next) => write(f, next)} />
+  {:else if f.kind === 'range' && rangeType(f) === 'date'}
+    <DayRangeFilter label={f.label} nullable={!!f.rule?.nullable} value={days(f)} onvalue={(next) => writeDays(f, next)} />
+  {:else if f.kind === 'range'}
+    <span class="filter-range">
+      <!-- A time box draws its own format where a placeholder would be, so
+           the column's name has to be on screen beside it. Hidden from a
+           reader, which has the aria-label on each box already. -->
+      <span class="text-muted" aria-hidden="true">{f.label}</span>
+      <Input
+        type="time"
+        value={showBound(f, 'gte')}
+        placeholder={f.label + ' from'}
+        aria-label={f.label + ' from'}
+        oninput={(e) => writeBound(f, 'gte', e.target.value)}
+      />
+      <Input
+        type="time"
+        value={showBound(f, 'lte')}
+        placeholder={f.label + ' to'}
+        aria-label={f.label + ' to'}
+        oninput={(e) => writeBound(f, 'lte', e.target.value)}
+      />
+    </span>
+  {:else}
+    <Input
+      value={current(f) ?? ''}
+      placeholder={f.label}
+      aria-label={f.label}
+      oninput={(e) => write(f, e.target.value)}
+    />
+  {/if}
+{/snippet}
+
+{#snippet asking(f)}
+  {#if askable(f)}
+    <span class="filter-range">
+      <Select
+        value={askedOf(f) ?? 'value'}
+        options={opsFor(f)}
+        placeholder=""
+        aria-label={f.label + ': ' + ASKED[f.kind] + ', is empty or has value'}
+        style="--field-inline-size: auto"
+        oninput={(e) => writeAsked(f, e.target.value)}
+      />
+      {#if !askedOf(f)}{@render control(f)}{/if}
+    </span>
+  {:else}
+    {@render control(f)}
+  {/if}
+{/snippet}
 
 <div class="filter-bar cluster" {...$attributes}>
   {#if searchable}
@@ -270,72 +503,25 @@
     />
   {/if}
 
-  {#each offered as f}
-    {#if entryFor(f)}
-      {@const Custom = entryFor(f).component}
-      <Custom {...(entryFor(f).props ?? defaultFilterProps)({
-        value: current(f), onvalue: (v) => write(f, v), column: f, options: optionsFor(f),
-      })} />
-    {:else if f.kind === 'set'}
-      <MultiSelect
-        multiple
-        value={current(f) ?? []}
-        options={optionsFor(f)}
-        placeholder={f.label}
-        aria-label={f.label}
-        onchange={(next) => write(f, backToValues(f, next))}
-      />
-    {:else if f.kind === 'exact'}
-      <Select
-        value={current(f) === undefined || current(f) === null ? '' : String(current(f))}
-        options={[{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }]}
-        placeholder={f.label}
-        aria-label={f.label}
-        oninput={(e) => write(f, e.target.value === '' ? undefined : e.target.value === 'true')}
-      />
-    {:else if f.kind === 'range' && f.display === 'money'}
-      <RangeInput
-        label={f.label}
-        value={current(f)}
-        show={showMinor(f)}
-        read={readMinor(f)}
-        data-currency={moneyCode(f)}
-        onvalue={(next) => write(f, next)}
-      />
-    {:else if f.kind === 'range' && rangeType(f) === 'number'}
-      <RangeInput label={f.label} value={current(f)} onvalue={(next) => write(f, next)} />
-    {:else if f.kind === 'range' && rangeType(f) === 'date'}
-      <DayRangeFilter label={f.label} value={days(f)} onvalue={(next) => writeDays(f, next)} />
-    {:else if f.kind === 'range'}
-      <span class="filter-range">
-        <!-- A time box draws its own format where a placeholder would be, so
-             the column's name has to be on screen beside it. Hidden from a
-             reader, which has the aria-label on each box already. -->
-        <span class="text-muted" aria-hidden="true">{f.label}</span>
-        <Input
-          type="time"
-          value={showBound(f, 'gte')}
-          placeholder={f.label + ' from'}
-          aria-label={f.label + ' from'}
-          oninput={(e) => writeBound(f, 'gte', e.target.value)}
-        />
-        <Input
-          type="time"
-          value={showBound(f, 'lte')}
-          placeholder={f.label + ' to'}
-          aria-label={f.label + ' to'}
-          oninput={(e) => writeBound(f, 'lte', e.target.value)}
-        />
-      </span>
-    {:else}
-      <Input
-        value={current(f) ?? ''}
-        placeholder={f.label}
-        aria-label={f.label}
-        oninput={(e) => write(f, e.target.value)}
-      />
-    {/if}
+  {#each inline as f}
+    {@render asking(f)}
   {/each}
+
+  {#each chips as f}
+    <span class="filter-chip" role="group" aria-label={f.label}>
+      {@render asking(f)}
+      <Button treatment="ghost" size="sm" aria-label={'Remove ' + f.label} onclick={() => remove(f)}>×</Button>
+    </span>
+  {/each}
+
+  {#if addable.length}
+    <DropdownMenu>
+      {#snippet trigger()}<Button treatment="ghost" size="sm">+ Filter</Button>{/snippet}
+      {#each addable as f}
+        <DropdownItem onclick={() => added = [...added, f.name]}>{f.label}</DropdownItem>
+      {/each}
+    </DropdownMenu>
+  {/if}
 
   {#if active}
     <Button treatment="ghost" size="sm" onclick={clearAll}>Clear</Button>
@@ -344,4 +530,10 @@
 
 <style>
   .filter-range { display: inline-flex; gap: var(--space-xs); align-items: center; }
+  .filter-chip  {
+    display: inline-flex; gap: var(--space-xs); align-items: center;
+    padding-inline-start: var(--space-xs);
+    border: var(--border-width) solid var(--rule);
+    border-radius: var(--btn-radius);
+  }
 </style>

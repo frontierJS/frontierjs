@@ -413,6 +413,38 @@ describe('apply — failure atomicity', () => {
   })
 })
 
+describe('apply — an applied file edited in place is refused (FJS-3578)', () => {
+  it('refuses by name with nothing pending, and runs nothing after it', async () => {
+    const { dir, db } = freshLab()
+    await seedV1(db, dir)
+    const [initial] = listMigrationFiles(dir)
+    const path = join(dir, initial)
+    writeFileSync(path, readFileSync(path, 'utf8') + '\nCREATE TABLE late (id INTEGER);\n')
+
+    const res = await apply(db, dir)
+    expect(res.refused).toBe(true)
+    expect(res.modified).toEqual([initial])
+    expect(res.error).toContain(initial)
+    expect(status(db, dir).find(r => r.file === initial)?.state).toBe('modified')
+
+    writeFileSync(join(dir, '20990101000002_next.sql'), `CREATE TABLE next (id INTEGER);`)
+    const later = await apply(db, dir)
+    expect(later.failed).toBe(initial)
+    const tables = db.query(`SELECT name FROM sqlite_master WHERE type='table'`).all()
+      .map((r: { name: string }) => r.name)
+    expect(tables).not.toContain('late')
+    expect(tables).not.toContain('next')
+  })
+
+  it('an unchanged history still answers already applied', async () => {
+    const { dir, db } = freshLab()
+    await seedV1(db, dir)
+    const res = await apply(db, dir)
+    expect(res.refused).toBeUndefined()
+    expect(res.message).toContain('already applied')
+  })
+})
+
 describe('autoMigrate — same guarantees', () => {
   it('rebuild via autoMigrate preserves data', async () => {
     const { dir, db } = freshLab()

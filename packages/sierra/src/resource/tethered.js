@@ -77,6 +77,8 @@
 import { createSignal, createEffect, watchPath, untrack, onCleanup } from '@frontierjs/mesa/runtime'
 import { page, goto } from '../router/index.js'
 import { unreachable } from './pending.js'
+import { resolveDayTokens } from '@frontierjs/toolbelt/query'
+import { plainDateIn } from '@frontierjs/toolbelt/datetime'
 
 const SEARCH_DEBOUNCE_MS = 300
 
@@ -107,7 +109,7 @@ function overlay(base, top) {
 /**
  * @param {object} resource  the machinery these rows are read through — `load`, `more`, `hasMore`, `tether`,
  *                           `dispose` for rows of its own, and for a composed list `find`, `on`
- *                           and `onReconnected`
+ *                           and `onReconnected`; `dayKinds` names each date and instant column
  * @param {{ query?: object, directives?: object } | undefined} tetheredQuery  the resource file's defaults
  * @param {object} [opts]
  * @param {'url'|'local'} [opts.state='url']
@@ -117,6 +119,7 @@ function overlay(base, top) {
  * @param {number} [opts.debounce=300] milliseconds a `search` change waits
  * @param {boolean} [opts.composed=false] the service's `find()` answers more than the rows
  * @param {boolean} [opts.all=false] every load grows the window to the query's end
+ * @param {string} [opts.timeZone]   the zone a relative day resolves in; the viewer's by default
  */
 export function createTethered(resource, tetheredQuery, opts = {}) {
   const {
@@ -183,6 +186,14 @@ export function createTethered(resource, tetheredQuery, opts = {}) {
     return isEmpty(page.query) ? startQuery : page.query
   }
 
+  // The state keeps `@today-7` so a bar reads its preset back by name; the
+  // request carries the days it means today (`FJS-D1601`).
+  function requested() {
+    const timeZone = opts.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+    const today    = plainDateIn(Date.now(), timeZone)
+    return resolveDayTokens({ ...currentQuery(), ...where }, { today, timeZone, kinds: resource.dayKinds ?? {} })
+  }
+
   function currentDirectives() {
     if (state === 'local') return localD()
     return overlay(startDirectives, page.directives)
@@ -210,7 +221,7 @@ export function createTethered(resource, tetheredQuery, opts = {}) {
     setLoading(true)
     setError(null)
     try {
-      const query = { ...currentQuery(), ...where }
+      const query = requested()
       if (composed) {
         const directives = extent == null ? currentDirectives() : { ...currentDirectives(), limit: extent }
         // Silence falls to `load()`, the one owner of the device and the list

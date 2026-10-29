@@ -39,7 +39,7 @@
 // mode can change long after `fli make:deploy` ran once.
 
 import { spawnSync }                                             from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync, copyFileSync,
+import { existsSync, readFileSync, writeFileSync, copyFileSync, statSync,
          readdirSync, mkdirSync, rmSync, realpathSync }           from 'node:fs'
 import { join, resolve, dirname }                                 from 'node:path'
 
@@ -147,6 +147,36 @@ function namesIn(dir) {
 const scopeOf  = (name) => (name.startsWith('@') ? name.slice(0, name.indexOf('/')) : null)
 const escapeRe = (s)    => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
+/** `@scope/x` → `scope-x`: the tarball's name, and the path segment a hosted
+ *  copy is fetched by. */
+export const tarballStem = (name) => name.replace('@', '').replace('/', '-')
+
+// ─── packPackage ──────────────────────────────────────────────────────────────
+// One pack for every destination — the build context here, npm and the release
+// asset in `ws:publish`. Two packs of one package agree only while the tree
+// holds still, so a copy that must be byte-equal to another is the same file.
+//
+// bun, not npm: npm ships a `workspace:*` spec verbatim and no registry resolves
+// it; bun's packer rewrites it to the sibling's version.
+//
+// The tarball name is READ off the directory rather than predicted from the
+// version: a package whose version moved mid-run still resolves. The digit is
+// load-bearing — `frontierjs-css-` is a prefix of `frontierjs-css-kit-1.0.0`,
+// so a plain prefix test hands one package another's tarball in readdir order.
+export function packPackage({ name, dir, destination }) {
+  mkdirSync(destination, { recursive: true })
+  const r = spawnSync('bun', ['pm', 'pack', '--destination', destination], {
+    cwd: dir, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: 'pipe',
+  })
+  if (r.status !== 0)
+    throw new Error(`bun pm pack failed for ${name}\n${[r.stdout, r.stderr].filter(Boolean).join('\n')}`)
+  const match = new RegExp(`^${escapeRe(tarballStem(name))}-\\d.*\\.tgz$`)
+  const file  = readdirSync(destination).filter(f => match.test(f))
+    .sort((a, b) => statSync(join(destination, b)).mtimeMs - statSync(join(destination, a)).mtimeMs)[0]
+  if (!file) throw new Error(`packed ${name} but no tarball landed in ${destination}`)
+  return { file, path: join(destination, file) }
+}
+
 // ─── vendorWorkspacePackages ──────────────────────────────────────────────────
 // Pack, rewrite, and leave both under <app>/deploy/generated/.
 //
@@ -217,26 +247,10 @@ export function vendorWorkspacePackages({ appRoot, include = [], packagesDir: gi
   if (unfound.length)
     throw new Error(`no package named ${unfound.join(', ')} in ${packagesDir} — the image would install it from nowhere`)
 
-  for (const { name, dir } of targets) {
-    const r = spawnSync('bun', ['pm', 'pack', '--destination', vendor], {
-      cwd: dir, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: 'pipe',
-    })
-    if (r.status !== 0)
-      throw new Error(`bun pm pack failed for ${name}\n${[r.stdout, r.stderr].filter(Boolean).join('\n')}`)
-    out.packed.push(name)
-  }
-
-  // The tarball name is READ off the directory rather than predicted from the
-  // version: a package whose version moved mid-run still resolves. The digit is
-  // load-bearing — `frontierjs-css-` is a prefix of `frontierjs-css-kit-1.0.0`,
-  // so a plain prefix test hands one package another's tarball in readdir order.
-  const files  = readdirSync(vendor)
   const packed = {}
-  for (const { name } of targets) {
-    const stem  = name.replace('@', '').replace('/', '-')   // @scope/x → scope-x
-    const match = new RegExp(`^${escapeRe(stem)}-\\d.*\\.tgz$`)
-    const file  = files.find(f => match.test(f))
-    if (!file) throw new Error(`packed ${name} but no tarball landed in ${VENDOR_DIR}`)
+  for (const { name, dir } of targets) {
+    const { file } = packPackage({ name, dir, destination: vendor })
+    out.packed.push(name)
     packed[name] = `file:./${VENDOR_DIR}/${file}`
   }
 

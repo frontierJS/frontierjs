@@ -30,8 +30,9 @@ const CHALLENGE_COOKIE = 'login_challenge'
 
 /** The calls a session held to enrollment may make; `confirmTotp` ends the hold. A
  *  held session past the reauthentication window reaches `setupTotp` again
- *  through `reauthenticate`. */
-const ENROLLMENT_METHODS = new Set(['totpStatus', 'reauthenticate', 'setupTotp', 'confirmTotp'])
+ *  through `reauthenticate`. `get` is `me`, which a page restoring the session
+ *  asks: refused, the held person reads as signed out on every reload. */
+const ENROLLMENT_METHODS = new Set(['get', 'totpStatus', 'reauthenticate', 'setupTotp', 'confirmTotp'])
 import type { AuthOAuth }                                          from './oauth.ts'
 
 // Rate limiting is junction's `rateLimitHook`, not a copy of it.
@@ -211,8 +212,8 @@ export function auth(opts: AuthPluginOptions): Plugin {
       // ── A session held to enrollment (`FJS-D1008`) ───────────────────
       //
       // `requireSecondFactor` issues a real session to an account with no
-      // factor, flagged on its row. Everything but the three calls that END the
-      // flag is refused here, in the hook rather than at the data boundary,
+      // factor, flagged on its row. Everything but `me` and the calls that END
+      // the flag is refused here, in the hook rather than at the data boundary,
       // because it is a fact about the session and no row's gate can see it.
       // A service the plugin does not know is refused as well: the allowance is
       // a list of what may be reached, never of what may not.

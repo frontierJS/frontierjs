@@ -65,7 +65,7 @@ title: Host security
         <tr data-control={c.id}>
           <td><code>{c.id}</code></td>
           <td><Badge tone={tone(c.ok)}>{state(c.ok)}</Badge></td>
-          <td class="text-sm">{c.message}</td>
+          <td class="text-sm">{c.message}{#if c.fix}<br><strong>Fix:</strong> {c.fix}{/if}</td>
         </tr>
       {/each}
     </tbody>

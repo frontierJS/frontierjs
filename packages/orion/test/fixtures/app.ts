@@ -87,8 +87,8 @@ export async function appHost(opts: { start?: boolean } = {}): Promise<AppHost> 
     registry: registryFor(dir, { models: litestoneModelActions(names) }),
     catalog:  {
       models: modelCatalog({
-        create: generateJsonSchema(env.schema, { mode: "create" }),
-        update: generateJsonSchema(env.schema, { mode: "update" }),
+        create: () => generateJsonSchema(env.schema, { mode: "create" }),
+        update: () => generateJsonSchema(env.schema, { mode: "update" }),
         models: names,
       }),
     },

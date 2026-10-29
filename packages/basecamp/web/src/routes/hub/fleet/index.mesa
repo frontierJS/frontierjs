@@ -1,0 +1,164 @@
+---
+title: Hub fleet
+---
+<script>
+  // Every workspace's machines on one screen, worst first.
+  //
+  // The posture column is graded by the same `postureView` a workspace's
+  // /security/ draws, so a box whose Outpost went quiet reads stale here too
+  // and never as clean. Rows are not links: /servers/:id/ is scoped to the
+  // caller's workspace, and a system admin is usually not a member of the one
+  // a machine is in.
+  import { hub } from '../../../resources/Hub.mesa'
+  import { ago } from '../../../lib/datetime.js'
+
+  import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
+  import Pill   from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select from '@frontierjs/ui/components/forms/Select.mesa'
+  import Table  from '@frontierjs/ui/components/display/Table.mesa'
+
+  const TONE = {
+    online:      'success',
+    draining:    'warning',
+    unreachable: 'danger',
+    stopped:     'muted',
+    destroyed:   'muted',
+  }
+
+  let rows       = []
+  let total      = 0
+  let error      = null
+  let loading    = true
+  let scope      = 'all'
+  let status     = ''
+  let workspaces = []
+
+  async function load() {
+    error = null; loading = true
+    try {
+      const page = await hub.service.invoke('fleet', null, {}, {
+        ...(scope !== 'all' ? { scope } : {}),
+        ...(status ? { status } : {}),
+      })
+      rows  = page.data ?? []
+      total = page.total ?? rows.length
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  async function loadWorkspaces() {
+    try {
+      const page = await hub.service.invoke('workspaces', null, {}, { $limit: 200 })
+      workspaces = page.data ?? []
+    } catch {}
+  }
+
+  load()
+  loadWorkspaces()
+
+  function setScope(value)  { scope = value;  load() }
+  function setStatus(value) { status = value; load() }
+
+  $: scopeOptions = [
+    { value: 'all', label: 'Every workspace' },
+    ...workspaces.map(w => ({ value: w.id, label: w.name })),
+  ]
+
+  const STATUS_OPTIONS = [
+    { value: '', label: 'Every status but destroyed' },
+    ...['online', 'unreachable', 'draining', 'pending', 'provisioning', 'installing', 'stopped', 'destroyed']
+      .map(s => ({ value: s, label: s })),
+  ]
+
+  $: online      = rows.filter(s => s.status === 'online').length
+  $: unreachable = rows.filter(s => s.status === 'unreachable').length
+  $: failing     = rows.filter(s => s.posture.failing > 0).length
+  $: quiet       = rows.filter(s => !s.posture.reported || s.posture.stale).length
+
+  const HUB_FLEET_COLUMNS = [
+    { name: 'machine',   label: 'Machine' },
+    { name: 'workspace', label: 'Workspace' },
+    { name: 'status',    label: 'Status' },
+    { name: 'posture',   label: 'Posture' },
+    { name: 'where',     label: 'Provider' },
+    { name: 'address',   label: 'Address' },
+    { name: 'apps',      label: 'Apps' },
+    { name: 'heartbeat', label: 'Last heartbeat' },
+  ]
+</script>
+
+{#if error}
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+<p class="text-body">
+  Every machine on this hub, across every workspace, worst posture first. Read only — a machine
+  is acted on from its own workspace's Servers page.
+</p>
+
+<div class="cluster" id="hub-fleet-stats">
+  <Badge tone="muted">{rows.length} machines</Badge>
+  <Badge tone="success">{online} online</Badge>
+  <Badge tone={unreachable ? 'danger' : 'muted'}>{unreachable} unreachable</Badge>
+  <Badge tone={failing ? 'danger' : 'muted'}>{failing} failing posture</Badge>
+  <Badge tone={quiet ? 'warning' : 'muted'}>{quiet} stale or never reported</Badge>
+</div>
+
+<div class="cluster">
+  <label class="visually-hidden" for="hub-fleet-scope">Workspace</label>
+  <Select id="hub-fleet-scope" style="--field-inline-size: 16rem" value={scope} placeholder="" options={scopeOptions}
+          onchange={(e) => setScope(e.target.value)} />
+  <label class="visually-hidden" for="hub-fleet-status">Status</label>
+  <Select id="hub-fleet-status" style="--field-inline-size: 14rem" value={status} placeholder="" options={STATUS_OPTIONS}
+          onchange={(e) => setStatus(e.target.value)} />
+</div>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <article class="alert info">
+    <div class="alert-content">No machines match. A machine is provisioned or imported from a workspace's Servers page.</div>
+  </article>
+{:else}
+  <Table id="hub-fleet-rows" columns={HUB_FLEET_COLUMNS} rows={rows} striped hover={false}>
+    {#snippet row(server)}
+      <tr>
+        <td>
+          {server.name}
+          <span class="text-sm text-muted">{server.role}</span>
+        </td>
+        <td>{server.workspace ?? server.workspaceId.slice(0, 8)}</td>
+        <td><Pill tone={TONE[server.status] ?? 'muted'}>{server.status}</Pill></td>
+        <td>
+          {#if !server.posture.reported}
+            <Badge tone="muted">never reported</Badge>
+          {:else if server.posture.stale}
+            <Badge tone="warning">stale</Badge>
+          {:else if server.posture.failing}
+            <Badge tone="danger">{server.posture.failing} failing</Badge>
+          {:else}
+            <Badge tone="success">passing</Badge>
+          {/if}
+          {#if server.posture.unknown}
+            <span class="text-sm text-muted">{server.posture.unknown} unknown</span>
+          {/if}
+        </td>
+        <td class="text-sm">{server.providerKind} <span class="text-muted">{server.region}</span></td>
+        <td><code>{server.ipAddress ?? '—'}</code></td>
+        <td>{server.apps}</td>
+        <td class="text-sm text-muted">{ago(server.lastHeartbeatAt)}</td>
+      </tr>
+    {/snippet}
+  </Table>
+
+  {#if total > rows.length}
+    <p class="text-sm text-muted" id="hub-fleet-truncated">
+      Showing the first {rows.length} of {total}. Narrow by workspace or status to see the rest.
+    </p>
+  {/if}
+{/if}

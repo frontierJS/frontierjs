@@ -30,7 +30,7 @@ bun run verify:screens # blueprints · registry · backups · hub settings · yo
 bun run verify       # drive the whole thing in a browser (add --reset)
 ```
 
-Sign in as `sam@example.com` / `hunter2hunter2` after seeding, or use the setup
+Sign in as `dev@knight.works` / `test1234` after seeding, or use the setup
 wizard on an empty database.
 
 ## Open
@@ -90,7 +90,7 @@ there is no upgrade step pre-alpha.
 
 | | |
 |---|---|
-| `bun run test` | the data layer (schema, gates, who may write the columns the gate is graded from, encryption, auth compatibility) and the API tier through `@frontierjs/testing`, which is where the standing rules are graded: schema, gates, who may write the columns the gate is graded from, encryption, auth compatibility, the alert-delivery join, what an API key's table may not contain, where a volume's tenancy comes from, that the widget vocabulary is one list rather than two, and that a recipe run keeps the script it ran while the reclaim vocabulary has exactly one home |
+| `bun run test` | the data layer (schema, gates, who may write the columns the gate is graded from, encryption, auth compatibility) and the API tier through `@frontierjs/testing`, which is where the standing rules are graded: schema, gates, who may write the columns the gate is graded from, encryption, auth compatibility, the alert-delivery join, what an API key's table may not contain, where a volume's tenancy comes from, that the tile vocabulary is one list rather than two, and that a recipe run keeps the script it ran while the reclaim vocabulary has exactly one home |
 | `bun run verify` | browser checks across all three realms, incl. an a11y pass on every screen |
 | `bun run verify:build` | the PRODUCTION build — the tags survive comment-stripping, and the page comes up in a real browser |
 | `bun run verify:screens` | browser checks on a database it seeds in a temp directory — the Phase 13 and 14 screens, the audit window, and the adapter states `/admin/adapters/` reports |

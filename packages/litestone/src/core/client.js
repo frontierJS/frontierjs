@@ -297,7 +297,7 @@ export const SEARCH_RESOLVE = Symbol.for('litestone.searchResolve')
  * @property {Set<string>} boolFields
  * @property {Set<string>} bigFields
  * @property {Record<string, { values: Set<string>, enumName: string, optional: boolean, array: boolean }>} enumFields
- * @property {Map<string, 'array' | 'json' | 'file' | 'boolean' | 'number' | 'any'>} fieldKinds
+ * @property {Map<string, 'array' | 'json' | 'file' | 'boolean' | 'number' | 'instant' | 'day' | 'any'>} fieldKinds
  * @property {Record<string, 'NUMERIC' | 'TEXT' | 'BLOB'>} affinity
  * @property {boolean} softDelete
  * @property {boolean} softDeleteCascade
@@ -6754,9 +6754,16 @@ export async function createClient({
   // since the first boot after a window is declared over a year of rows took
   // 22.8 minutes to listen, and a health-checked deploy rolls back long before
   // (FJS-2288).
-  const _booted = await _runRetention({ jsonl: false, batches: 1 })
+  //
+  // It runs as the system with no actor, the way `$retain()` off `asSystem()`
+  // does: the doomed rows are read through the shared tables, and a read
+  // outside any flavor throws, which the sweep reports as removing nothing
+  // (FJS-3552). `makeSystemProxy`'s memo is not initialized yet here.
+  const _retentionFlavor = { auth: null, isSystem: true, scopedBy: undefined, tables: null }
+  _retentionFlavor.tables = makeAllFlavorTables(_retentionFlavor)
+  const _booted = await _flavor.run(_retentionFlavor, () => _runRetention({ jsonl: false, batches: 1 }))
   if (_booted.some(r => r.removed >= RETENTION_BATCH))
-    _retentionDrain = _runRetention({ jsonl: false })
+    _retentionDrain = _flavor.run(_retentionFlavor, () => _runRetention({ jsonl: false }))
       .catch(err => console.warn(`[litestone] retention: the sweep after startup stopped — ${err?.message ?? err}`))
       .finally(() => { _retentionDrain = null })
 
@@ -7807,7 +7814,7 @@ export async function createClient({
         if (prop === '$close')  return () => _closeAll()
         if (prop === '$inTransaction') return txState.depth > 0
         if (prop === '$schema') return schema
-        if (prop === '$retain')     return $retain
+        if (prop === '$retain')     return () => _flavor.run(sysFlavor, $retain)
         if (prop === '$checkWhere') return $checkWhere
         if (prop === '$protectedFields') return $protectedFields
         if (prop === '$primaryKey') return $primaryKey

@@ -154,6 +154,10 @@ core/
                 `--otp` into a shell string, so a value is refused, never
                 escaped, and `--filter` matches by SUBSTRING, so a package
                 whose name would select a second one is refused too
+  publish-hosts.js where a version is held, asked — one reader per
+                destination (npm, the GitHub Release at the package's tag),
+                each answering true, false or null; `ws:pub` asks it before a
+                bump and the publish walk asks it beside the registry column
   latency.js    request latency as a tail at a constant arrival rate, counted from the
                 scheduled instant so a stall lengthens it. A case with a failed request
                 or no samples is an error, never a fast p99. Reported, never gated;
@@ -234,9 +238,12 @@ core/
   done.js       is the change in the working tree FINISHED — a new module or command named where its
                 siblings are, a new `.gitignore` rule that hides a file on
                 disk, then `fli check`'s error rules (changed files only),
-                test-files-run, register:check and the snapshots asked about
+                test-files-run, register:check, the snapshots and npm asked about
                 this tree. Grades the close-out, never the change. `stopVerdict` is the Stop hook's whole policy:
                 block only on an item not shown since HEAD moved
+  tags-on-npm.js  a `<name>@<version>` tag, or an install pin (`INSTALL_PINS`:
+                Basecamp's `OUTPOST_VERSION`), that npm does not hold — `fli
+                done` asks it, never CI, so CI never depends on the registry
   decisions.js  what is waiting on the owner — the open questions in ISSUES
                 § Needs a decision and every IDEAS paper's `## Open questions`,
                 each ruled · decidable (lettered options) · open. A READ of
@@ -588,6 +595,16 @@ core/
                 whichever is newest — which is the one serving (measured: a
                 revert restored the bytes it was reverting from and said it
                 worked)
+  cloud.js      a box at a cloud from this side — which cloud and its token, the
+                buy (`buyBox`: create, the stale known_hosts line, the ssh Host
+                block), the host and server marks, and the list's rows. `fli
+                server:*` and `basecamp:create` share it, so the two cannot buy
+                differently; the vendor's dialect stays Basecamp's connector, run
+                in place (`FJS-D1253`, `FJS-D1612`)
+  basecamp.js   talking to a Basecamp — its API as a key's owner (`basecamp()`),
+                and the one enrollment paste a box runs to join its fleet
+                (`installOutpost`), shared by `deploy`'s `08b-outpost` step and
+                `outpost:install` so a box is never enrolled two ways
   machine.js    running a command on the machine being deployed to, and moving an
                 IMAGE between two of them (`shipTo` — `docker save | docker load`,
                 which preserves the id, so the digest a Release names is the

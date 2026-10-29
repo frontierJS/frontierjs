@@ -139,7 +139,7 @@ export function carriesWebSrc(dockerfile, dockerignore) {
     /^COPY\b/i.test(l) && /\s(\.\/?|\/?web(\/src)?(\/[^\s]*)?)\s/.test(l + ' '))
   if (!copies) return false
   const ignore = instructions(dockerignore)
-  const dropped = ignore.some(l => /^\/?web(\/\*?)?$/.test(l))
+  const dropped = ignore.some(l => l === '*' || /^\/?web(\/\*?)?$/.test(l))
   const restored = ignore.some(l => /^!\/?web\/src\b/.test(l))
   return !dropped || restored
 }

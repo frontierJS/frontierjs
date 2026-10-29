@@ -461,6 +461,7 @@ title: Blueprints
       <div><dt>Port</dt><dd>{selected.port ?? 'none'}</dd></div>
       <div><dt>Storage</dt><dd>{storage(selected)}</dd></div>
       <div><dt>Health check</dt><dd>{selected.healthCheck ?? 'none'}</dd></div>
+      <div><dt>Command</dt><dd>{selected.command?.length ? selected.command.join(' ') : "the image's own"}</dd></div>
       <div><dt>Limits</dt><dd>{selected.cpuLimit ?? '—'} CPU · {selected.memLimitMb != null ? `${selected.memLimitMb} MiB` : '—'} memory</dd></div>
     </dl>
 

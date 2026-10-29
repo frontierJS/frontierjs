@@ -65,6 +65,8 @@
  * knows, and the alternative is this module guessing on the schema's behalf.
  */
 
+import { addToDate, startOfDay } from '../datetime/datetime.js'
+
 /* ── Guards ────────────────────────────────────────────────────────────────
  *
  * A query string is caller-supplied and bracket notation is recursive, so the
@@ -623,4 +625,141 @@ export function comparatorFor(sort, collations) {
     }
     return 0
   }
+}
+
+// ─── Asking for the empty ─────────────────────────────────────────────────
+//
+// A filter bar reads a bare `null` as *clear*, so the empty test it writes is
+// an operator the URL keeps. On an optional string `''` is no value either
+// (`FJS-D1593`), so the test there is a membership over both, which holds one
+// key per column where an `$or` would share one across every column asking.
+
+/**
+ * The filter value asking whether a column holds anything.
+ *
+ * @param {'empty' | 'filled'} asks
+ * @param {{ blank?: boolean }} [opts]  `blank`: `''` counts as empty too
+ * @returns {Record<string, unknown>}
+ */
+export function emptyTest(asks, { blank = false } = {}) {
+  if (asks === 'empty')  return blank ? { in: [null, ''] } : { equals: null }
+  if (asks === 'filled') return blank ? { notIn: [null, ''] } : { not: null }
+  throw new RangeError(`emptyTest asks 'empty' or 'filled', got: ${asks}`)
+}
+
+const _onlyKey = (v, key) => v !== null && typeof v === 'object' && !Array.isArray(v)
+  && Object.keys(v).length === 1 && key in v
+
+const _nullOrBlank = (list) => Array.isArray(list) && list.includes(null) && list.every(m => m === null || m === '')
+
+/**
+ * Which empty test a filter value is, or `undefined` for none. A bare `null`
+ * — a hand-typed `?x=null` — is *empty*.
+ *
+ * @param {unknown} v
+ * @returns {'empty' | 'filled' | undefined}
+ */
+export function emptyTestOf(v) {
+  if (v === null) return 'empty'
+  if (_onlyKey(v, 'equals') && v.equals === null) return 'empty'
+  if (_onlyKey(v, 'not') && v.not === null) return 'filled'
+  if (_onlyKey(v, 'in') && _nullOrBlank(v.in)) return 'empty'
+  if (_onlyKey(v, 'notIn') && _nullOrBlank(v.notIn)) return 'filled'
+  return undefined
+}
+
+// ─── A relative day ───────────────────────────────────────────────────────
+//
+// A preset (*last 7 days*) is kept in the URL as `@today-6` so a bookmark
+// stays fresh (`FJS-D1601`), and the client resolves it before the request.
+// The server never resolves one: a token that reaches the Data boundary
+// compares as text against the column and answers wrong rows (`FJS-3583`).
+//
+// Only a column the caller names as a date or an instant is rewritten, so a
+// text filter for the literal `@today` passes untouched. A `Date` column holds
+// the day; an instant column holds the day's first or last moment in the zone,
+// the bound a day picker writes. On an instant `not`, `in` and `notIn` have no
+// one moment to stand for a day, and the token is left for the boundary to
+// refuse.
+
+const DAY_TOKEN = /^@today(?:([+-])(\d{1,5}))?$/
+
+/** A relative day's offset from today — `'@today-7'` → -7 — or `undefined` for anything else. */
+export function readDayToken(v) {
+  const m = typeof v === 'string' ? DAY_TOKEN.exec(v) : null
+  if (!m) return undefined
+  return m[1] === '-' ? -Number(m[2]) : Number(m[2] ?? 0)
+}
+
+/** The token for a day `offset` days from today — `-7` → `'@today-7'`. */
+export function dayToken(offset) {
+  if (!Number.isInteger(offset)) throw new TypeError(`dayToken takes a whole number of days, got: ${offset}`)
+  return offset === 0 ? '@today' : `@today${offset > 0 ? '+' : ''}${offset}`
+}
+
+const DAY_OPS     = ['equals', 'not', 'gt', 'gte', 'lt', 'lte', 'in', 'notIn']
+const COMBINATORS = ['$or', '$and', '$not']
+
+/**
+ * The query with every relative day resolved, on the columns `kinds` names.
+ *
+ *   resolveDayTokens({ dueAt: { gte: '@today-7' } }, {
+ *     today: '2026-10-28', timeZone: 'America/Denver', kinds: { dueAt: 'instant' },
+ *   })  // { dueAt: { gte: '2026-10-21T06:00:00.000Z' } }
+ *
+ * @param {Record<string, unknown>} query
+ * @param {{ today: string, timeZone?: string, kinds: Record<string, 'date' | 'instant'> }} at
+ *   `today` is the viewer's day, `'YYYY-MM-DD'`; `timeZone` is asked for only by an instant column
+ * @returns {Record<string, unknown>}  a new query; the argument is not touched
+ */
+export function resolveDayTokens(query, { today, timeZone, kinds }) {
+  if (!query || typeof query !== 'object') return query
+  const dayOf = (v) => {
+    const offset = readDayToken(v)
+    return offset === undefined ? undefined : addToDate(today, { days: offset })
+  }
+  const first = (day) => new Date(startOfDay(day, timeZone)).toISOString()
+  const last  = (day) => new Date(startOfDay(addToDate(day, { days: 1 }), timeZone) - 1).toISOString()
+
+  const onDate = (v) => {
+    if (dayOf(v) !== undefined) return dayOf(v)
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return v
+    const out = { ...v }
+    for (const op of DAY_OPS) {
+      if (!(op in out)) continue
+      out[op] = Array.isArray(out[op]) ? out[op].map(m => dayOf(m) ?? m) : (dayOf(out[op]) ?? out[op])
+    }
+    return out
+  }
+
+  // A bare day on an instant is the whole day, so `equals` becomes the window.
+  const onInstant = (v) => {
+    const bare = dayOf(v)
+    if (bare !== undefined) return { gte: first(bare), lte: last(bare) }
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return v
+    const { equals, ...rest } = v
+    const out = { ...rest }
+    const eq  = dayOf(equals)
+    if (eq !== undefined) Object.assign(out, { gte: first(eq), lte: last(eq) })
+    else if ('equals' in v) out.equals = equals
+    for (const [op, edge] of [['gte', first], ['lt', first], ['lte', last], ['gt', last]]) {
+      const day = dayOf(out[op])
+      if (day !== undefined) out[op] = edge(day)
+    }
+    return out
+  }
+
+  const walk = (q) => {
+    if (Array.isArray(q)) return q.map(walk)
+    if (!q || typeof q !== 'object') return q
+    const out = {}
+    for (const [key, v] of Object.entries(q)) {
+      if (COMBINATORS.includes(key)) out[key] = walk(v)
+      else if (kinds?.[key] === 'date') out[key] = onDate(v)
+      else if (kinds?.[key] === 'instant') out[key] = onInstant(v)
+      else out[key] = v
+    }
+    return out
+  }
+  return walk(query)
 }

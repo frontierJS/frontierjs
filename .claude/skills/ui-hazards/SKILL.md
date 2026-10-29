@@ -27,6 +27,7 @@ Detail: `references/tethers-and-records.md`
 - **A comparison between two independent `record()` views has THREE states, and drawing two of them is a screen that lies.**
 - **A `@from` column moves when a CHILD row is written, and nothing announces the parent.**
 - **A tether holds what its last `load(query)` asked for, so a patch can take a row OUT of it.**
+- **A relative day filter is the days it meant at the list's last read, so midnight does not move it.**
 - **`@version` is the revision a screen READ, and a push does not move it.**
 - **A watched record empties itself on its own delete, before the handler's next line.**
 

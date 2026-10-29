@@ -16,8 +16,8 @@
 //
 // **Two of these methods run with no session, and that is the feature.** The
 // person accepting is by definition not yet a member, and may not yet exist.
-// The token IS the credential: 32 random bytes, `@guarded` so no scoped
-// read can answer it, looked up through `asSystem()` because there is no
+// The token IS the credential: 32 random bytes, `@secret @hashed` so no
+// read answers it, matched through `asSystem()` because there is no
 // principal to scope by. Everything a token cannot decide — is the workspace
 // still there, is it suspended, has the invitation expired — is decided here,
 // explicitly, because none of the hooks that normally decide it are running.
@@ -66,7 +66,7 @@ function expiryFrom(now = Date.now()): string {
 }
 
 /** The system client. Everything about an invitation is a system act: the
- *  token is `@guarded`, and the accept path has no principal to scope by. */
+ *  token is `@secret`, and the accept path has no principal to scope by. */
 const sys = () => $.db.asSystem() as any
 
 /** Lower-cased on the way in, so `Ada@Example.test` and `ada@example.test`
@@ -181,8 +181,7 @@ export default createService({
    * silently drops what has lapsed answers "no" to a question it was not
    * asked. `expiresAt` is on every row, so the screen says which are dead.
    *
-   * The token is not here: `db()` is the CALLER's client and `@guarded`
-   * means the column is absent from a scoped read entirely, not redacted.
+   * The token is not here: it is `@hashed`, absent from every read.
    */
   async find() {
     const { limit, offset } = getPagination()
@@ -202,9 +201,8 @@ export default createService({
     }))
       throw new Conflict(`${email} is already a member of this workspace`)
 
-    // asSystem: `token` is `@guarded`, a system-context lock in both
-    // directions with no `ctx.system` hatch, so the caller's own client is
-    // refused the write. A system client carries no principal, which is why
+    // asSystem: `token` is `@secret`, so the caller's own client is refused
+    // the write. A system client carries no principal, which is why
     // stampInvitation states the tenant.
     const token = mintToken()
     const row   = await sys().invitation.create({ data: { ...data, token } })

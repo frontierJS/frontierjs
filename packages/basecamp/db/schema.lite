@@ -106,7 +106,7 @@
 ///
 ///   Server · ApiKey · Volume        an outpost heartbeat / a usage counter
 ///   Deployment · Job · Recipe · App a job drives status through a run
-///   DashboardWidget                 reorder writes position, updateWidget
+///   DashboardTile                 reorder writes position, updateTile
 ///                                   writes config, and neither cares about
 ///                                   the other. Sending the whole sequence is
 ///                                   what makes reorder safe, not a version
@@ -189,11 +189,11 @@ tenancy { strategy row  column workspaceId  claim workspaceId }
 // ============================================================
 
 enum AccountType    { individual organization }
-enum WorkspaceType  { personal team enterprise }
+enum WorkspaceType  { personal team enterprise demo }
 enum WorkspaceRole  { viewer billing developer admin owner }
-enum UserKind       { user bot peer ai }
+enum UserKind       { user bot peer }
 
-// Whether a principal or a tenant may act at all. Two enums rather than one
+// Whether a principal or a tenant may act at all. One enum per model rather than one
 // shared word, following the ServerStatus / AppStatus / JobStatus convention
 // already in this file: a status is a fact about ONE model, and the sets are
 // genuinely different — a workspace is never `pending_verification`.
@@ -204,8 +204,10 @@ enum UserKind       { user bot peer ai }
 // severity its own API refused. Enforcement is core/session-auth.ts (a
 // suspended user cannot sign in and their live tokens stop resolving) and
 // scopeToWorkspace (a suspended workspace refuses every scoped service).
+// An Account's `suspended` is enforced nowhere yet (`FJS-D1618`).
 enum UserStatus      { pending_verification active suspended }
 enum WorkspaceStatus { active suspended }
+enum AccountStatus   { active suspended }
 /// What the hub's custom methods accept (`hub.service.ts` declares each as
 /// `input:`). The status vocabularies are the enums above, so a status outside
 /// them is refused by the schema's own JSON Schema, naming the field.
@@ -250,27 +252,27 @@ type WorkspaceMemberRole {
   role   WorkspaceRole
 }
 
-/// What the dashboards service's widget verbs accept. Which subject a kind takes
+/// What the dashboards service's tile verbs accept. Which subject a kind takes
 /// is `kinds.ts`'s, so the pairing stays the method's; the shape is stated here.
-type WidgetAdd {
-  kind     WidgetKind
+type TileAdd {
+  kind     TileKind
   serverId String?
   appId    String?
   config   Json?
   cols     Int?
 }
 
-type WidgetUpdate {
-  widgetId String
-  kind     WidgetKind?
+type TileUpdate {
+  tileId String
+  kind     TileKind?
   serverId String?
   appId    String?
   config   Json?
   cols     Int?
 }
 
-type WidgetRemove {
-  widgetId String
+type TileRemove {
+  tileId String
 }
 
 type DashboardReorder {
@@ -517,6 +519,18 @@ enum ServerEventKind {
   posture_failed posture_restored
 }
 enum ProviderKind   { custom hetzner digitalocean cloudflare github }
+// How a Server row came to be: bought through a ComputeProvider, or an
+// existing machine registered by hand.
+enum RegisterMethod { imported provisioned }
+// Where a Domain's certificate comes from (`IDEAS/fleet-ingress.md` D5):
+// Caddy's own ACME, a Cloudflare Origin CA cert Basecamp mints, or one an
+// operator uploads.
+enum CertKind       { acme origin_ca uploaded }
+// Cloudflare's four modes, in the dashboard's spelling; its API says `strict`.
+enum SslMode        { off flexible full full_strict }
+enum ProjectStatus  { active archived }
+enum NetworkType    { mesh vpc }
+enum NetworkProvider { netbird tailscale wireguard }
 enum EnvironmentTier { development test preview staging production }
 enum AppType        { container worker database daemon cron static function }
 enum AppStatus      { unknown stopped starting running stopping deploying error }
@@ -536,6 +550,7 @@ enum JobStatus      { pending running failed cancelled }
 // three copies of the same five words drift apart one value at a time and the
 // screens then disagree about what "finished" looks like.
 enum RunStatus      { pending running success failed timeout }
+enum MaintenanceKind { cleanup patch }
 
 // Alert severity. Was `String @default("medium")` on both models — a default
 // the alerts service refused, because the vocabulary lived in the service and
@@ -584,18 +599,18 @@ enum ChannelKind    { slack pagerduty email webhook chat }
 // declared vocabulary rather than a boolean called `isExperiment`.
 enum FlagType       { boolean variant }
 
-// What a dashboard widget shows. A DECLARED VOCABULARY, not a stored query —
+// What a dashboard tile shows. A DECLARED VOCABULARY, not a stored query —
 // ruled 2026-08-10, `DECISIONS.md`.
 //
-// A widget kind names one read this app already answers, through the service
+// A tile kind names one read this app already answers, through the service
 // that owns it, so nothing is readable on a dashboard that was not readable on
-// its own screen. The alternative — a widget holding `{ accessor, where }` —
+// its own screen. The alternative — a tile holding `{ accessor, where }` —
 // puts a read in a row and asks the server to run it for whoever opens the
 // page; a row travels and a policy does not.
 //
 // Being an enum is what makes the picker honest: the vocabulary reaches the
 // browser as a `$def` on the model's JSON Schema, the same path every other
-// enum here takes, so the Add-widget list cannot offer a kind the column would
+// enum here takes, so the Add-tile list cannot offer a kind the column would
 // refuse. Adding a kind is a migration, which is the cost of that.
 //
 // All nine read something real. What none of them can draw is a TREND:
@@ -603,7 +618,7 @@ enum FlagType       { boolean variant }
 // rather than a line, and `service_health` is a live ping with no latency
 // behind it. `alert_status` has rules and events but nothing evaluating a
 // threshold (`FJS-123`). Each of those three says so on the card.
-enum WidgetKind {
+enum TileKind {
   server_fleet
   server_health
   app_status
@@ -659,6 +674,7 @@ enum NotificationKind {
   MonitorDown
   MonitorUp
   PostureFailed
+  HubPostureFailed
   DependencyVulnerable
   MemberJoined
   JobFailed
@@ -683,8 +699,8 @@ enum NotificationKind {
 // workspaceId, through a membership, so auth neither writes nor reads it.
 //
 // Everything Basecamp adds to User is nullable or defaulted ON PURPOSE:
-// auth's createUser() writes only { email, name, role }, so a required
-// Basecamp column would make account creation throw.
+// auth's createUser() writes only { email, name }, so a required Basecamp
+// column would make account creation throw.
 
 model User {
   id             String    @id @default(uuid())
@@ -696,44 +712,28 @@ model User {
   // moves a person between organizations, which is the hub's act.
   email          String    @email @unique @lower @allow(write, auth().isSystemAdmin) @personal(contact)
   name           String?   @trim @personal(contact)
-  // Both carry auth's own field policy, and they carry it because this model
-  // lets a person update their own row (`users.patch`, the profile form).
-  // Without it the field policy is the only thing between a caller and their
-  // own `emailVerified`, and marking your own address verified is skipping the
-  // verification (`FJS-483`).
-  //
-  // `role` is auth's and is read nowhere in this app — the privileged bit is
-  // `isSystemAdmin` below. It keeps the policy anyway: a column nobody reads is
-  // one somebody will.
+  // Auth's field policy, carried because this model lets a person update their
+  // own row (`users.patch`, the profile form): marking your own address
+  // verified is skipping the verification (`FJS-483`).
   emailVerified  Boolean   @default(false) @allow(write, auth().isAdmin)
-  role           String    @default("user") @allow(write, auth().isAdmin)
   accountId      String?   @allow(write, auth().isSystemAdmin)
   account        Account?  @relation(fields: [accountId], references: [id])
 
   // ── Basecamp additions ──
   //
-  // `kind` and `status` are the hub's to write, so they are system-write like
-  // `isSystemAdmin` below and for the same reason: basecampGateLevel() grades
-  // `status == 'suspended'` STRANGER, and api-keys refuses an owner whose
-  // `kind` is not `bot`. A column a caller can write is not a column a level
-  // can be graded from.
-  kind           UserKind   @default(user)  @allow(write, auth().isSystemAdmin)
+  // `kind` is auth's (`FJS-D1198`): written once, by the app. A later change
+  // would make every past entry's actorType disagree with the row. `status` is
+  // the hub's to write, like `isSystemAdmin` below and for the same reason:
+  // basecampGateLevel() grades `status == 'suspended'` STRANGER, and api-keys
+  // refuses an owner whose `kind` is not `bot`. A column a caller can write is
+  // not a column a level can be graded from.
+  kind           UserKind   @default(user) @system @immutable
   status         UserStatus @default(pending_verification) @allow(write, auth().isSystemAdmin)
   username       String?    @trim
   displayName    String?    @trim
   avatarUrl      String?
-  // Read by nothing here: a key's scopes are its Credential's. It is named
-  // like a grant, so it is written like one, for `role`'s reason above.
-  scopes         Json       @default([]) @allow(write, auth().isSystemAdmin)
 
   // The hub tier — who may read across workspaces and suspend a tenant.
-  //
-  // NOT `role` above. That column is auth's, it defaults to "user", and
-  // nothing in this app has ever read it; leaving the privileged bit there
-  // would mean the word that grants the hub and the word auth writes are the
-  // same column with two owners. The cost of a second column, accepted, is
-  // that two fields next to each other look like they mean privilege — this
-  // is the one this app enforces on, `role` is enforced nowhere.
   //
   // The NAME is load-bearing beyond this app: `isSystemAdmin` is what
   // sessionGateLevel() grades SYSADMIN(7) on (junction core/litestone.ts), and
@@ -884,7 +884,7 @@ extend model LoginChallenge {
 model Account {
   id          String      @id @default(uuid())
   type        AccountType @default(organization)
-  status      String      @default("pending_verification")
+  status      AccountStatus @default(active)
   slug        String      @unique @trim @length(1, 64)
   displayName String      @trim @length(1, 200)
   avatarUrl   String?
@@ -900,8 +900,8 @@ model Account {
   @@softDelete(cascade)
   @@trail(audit)
 
-  // @@tenant(none) — identity spans workspaces — a person is one person in all of
-  // them, and `@frontierjs/auth` owns this model
+  // The billing and identity holder its workspaces belong to (`FJS-D1618`), so
+  // it spans them.
   @@tenant(none)
 }
 
@@ -917,7 +917,10 @@ model Workspace {
   name      String        @trim @length(1, 80)
   slug      String        @unique @trim @length(1, 64)
   type      WorkspaceType @default(team)
+  // Restrict: a workspace with no owner is the state the hub cannot act on
+  // (`FJS-D1610`).
   ownerId   String @system
+  owner     User          @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   settings  Json          @default("{}")
 
   // Suspension, which is NOT deletion. `deletedAt` means the tenant is gone
@@ -926,6 +929,11 @@ model Workspace {
   // the API. Only the hub sets it, and scopeToWorkspace is where it bites — the
   // one hook every workspace-scoped service already runs.
   status    WorkspaceStatus @default(active)
+
+  // A demo visitor's workspace ends on this date (`FJS-D1537`). System-written:
+  // the visitor owns the workspace, and an owner who could move it would never
+  // expire.
+  expiresAt DateTime? @system
 
   // Where every App's INGRESS RECORD is written (`FJS-D561`): an edge account
   // — a `provider_key` Secret — and a zone it opens. A pair, because a zone id
@@ -958,6 +966,7 @@ model Workspace {
   @@trail(audit)
   @@index([accountId])
   @@check("(ingressAccountId IS NULL) = (ingressZoneId IS NULL)", "an ingress zone names its account and its zone together")
+  @@check("(type = 'demo') = (expiresAt IS NOT NULL)", "a demo workspace has an end date and no other kind does")
 
   // @@tenant(none) — the tenant itself. Scoping a workspace by the workspace claim
   // would make the switcher, /hub and the create-a-workspace path answer nothing
@@ -1066,11 +1075,9 @@ model WorkspaceMember {
 // one of them is never read. `@@trail(audit)` is what survives either way.
 //
 // The token is the credential — whoever holds it may join. So it is
-// `@guarded`: written and read through `asSystem()` only, absent from
-// every scoped read the way `Session.token` is, which means the invitations
-// list a screen renders cannot leak the one thing that matters. It is stored
-// verbatim rather than hashed because it must be looked up BY, and a 32-byte
-// random value has nothing a digest would protect it from.
+// `@secret @hashed` (`FJS-D1608`): issued by the system only, matched in a
+// where and never read back, `asSystem()` included, so neither the
+// invitations list nor a copy of the database hands one out.
 model Invitation {
   id           String        @id @default(uuid())
   workspaceId  String
@@ -1097,7 +1104,7 @@ model Invitation {
   // it has to be unique across the installation rather than within a tenant.
   // The other 22 uniques on scoped models here are per-tenant and say so by
   // carrying `workspaceId` or a key that reaches it.
-  token        String        @unique(global) @guarded
+  token        String        @unique(global) @secret @hashed
   expiresAt    DateTime
 
   invitedBy    String?
@@ -1133,7 +1140,11 @@ model Secret {
   name        String     @trim @length(1, 200)
   kind        SecretKind @default(generic) @immutable
   data        String     @default("{}") @encrypted
-  isVerified  Boolean    @default(false)
+  // When a probe last proved this credential opens what it claims, and what
+  // the vendor said the last time it refused. A rotation clears both; an
+  // unreachable vendor touches neither, since not knowing is not a refusal.
+  verifiedAt  DateTime?  @system
+  verifyError String?    @system
   createdBy   String? @immutable
 
   /// WHICH vendor a `provider_key` opens — a cloud, an edge or a forge. Null
@@ -1288,7 +1299,7 @@ model Server {
   providerKind     ProviderKind @default(custom)
   providerId       String?
   providerServerId String?
-  registerMethod   String       @default("imported")
+  registerMethod   RegisterMethod @default(imported)
 
   region           String       @default("custom")
   ipAddress        String?
@@ -1586,9 +1597,9 @@ model Network {
 
   name        String   @trim
   slug        String   @trim @immutable
-  type        String   @default("mesh")
+  type        NetworkType @default(mesh)
   cidr        String   @default("10.0.0.0/16")
-  provider    String   @default("netbird") @immutable
+  provider    NetworkProvider @default(netbird) @immutable
   config      Json     @default("{}")
 
   version     Int      @version
@@ -1630,7 +1641,7 @@ model Project {
   name        String    @trim @length(1, 80)
   slug        String    @trim @length(1, 64) @immutable
   description String?
-  status      String    @default("active")
+  status      ProjectStatus @default(active)
   tags        Json      @default([])
   metadata    Json      @default("{}")
 
@@ -1676,8 +1687,6 @@ model Environment {
   deletedAt   DateTime?
 
   apps        App[]
-  deployments Deployment[]
-  jobs        Job[]
   flagOverrides FlagOverride[]
   variables   Variable[]
 
@@ -1743,6 +1752,10 @@ model App {
   healthCheck   String?     @trim @regex("^/[^ ]*$", "a path beginning with '/'")
   cpuLimit      Float?      @gt(0) @lte(256)
   memLimitMb    Int?        @gte(6)
+  // The arguments after the image, replacing its CMD as compose's `command:`
+  // does; empty runs the image's own (`FJS-D1585`). Argv, not `Job.command`'s
+  // shell line.
+  command       String[]    @default([])
   // `port` is meant to be reached directly on the machine's public address, not
   // only through Caddy by hostname (`FJS-D930`). The posture grader reads it:
   // a public listener no app declares is `net.unexpected-listener`.
@@ -1920,10 +1933,10 @@ model Domain {
   redirectTo    String?
   port          Int       @default(443)
   proxied       Boolean   @default(false)
-  sslMode       String    @default("full_strict")
+  sslMode       SslMode   @default(full_strict)
 
   certSecretId  String? @system
-  certKind      String? @system
+  certKind      CertKind? @system
   certIssuedAt  DateTime? @system
   certExpiresAt DateTime? @system
 
@@ -2010,7 +2023,7 @@ model AppServer {
   serverId     String
   server       Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
   replicaIndex Int      @default(0)
-  status       String   @default("unknown")
+  status       AppStatus @default(unknown)
   containerId  String?
   assignedAt   DateTime @default(now())
   startedAt    DateTime?
@@ -2152,8 +2165,6 @@ model Deployment {
   id                   String       @id @default(uuid())
   appId                String       @immutable
   app                  App          @relation(fields: [appId], references: [id], onDelete: Cascade)
-  environmentId        String?      @immutable
-  environment          Environment? @relation(fields: [environmentId], references: [id])
   workspaceId          String
 
   status               DeployStatus @default(pending)
@@ -2211,7 +2222,6 @@ model Deployment {
   @@index([appId])
   @@index([workspaceId])
   @@index([status])
-  @@index([environmentId])
   @@index([triggeredBy])
 }
 
@@ -2244,8 +2254,6 @@ model Job {
   workspace      Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   appId          String?      @immutable
   app            App?         @relation(fields: [appId], references: [id])
-  environmentId  String?
-  environment    Environment? @relation(fields: [environmentId], references: [id])
 
   name           String       @trim @length(1, 200)
   // What a job IS — a one-shot or a schedule, and for which app — is fixed at
@@ -2292,7 +2300,6 @@ model Job {
   @@trail(audit)
   @@index([workspaceId])
   @@index([appId])
-  @@index([environmentId])
 }
 
 model JobRun {
@@ -2431,7 +2438,7 @@ model RecipeRun {
 //   it, so a count here would be a second answer to a question already
 //   answered, and the two would disagree the first time a report was missed.
 //
-//   The last cleanup. `CleanupRun` records when a sweep ran and what it freed;
+//   The last cleanup. A cleanup `MaintenanceRun` records when a sweep ran and what it freed;
 //   a stamp here would go stale the first time one failed.
 // The columns are `docker system df`'s own: a size and a RECLAIMABLE figure per
 // category, because how much of an image store can go is a question about
@@ -2498,16 +2505,20 @@ model ServerPosture {
   @@index([serverId, at])
 }
 
-// A reclaim sweep on ONE server — queued, then carried out by an outpost.
+// Maintenance on ONE server — queued, then carried out by an outpost. A
+// `cleanup` is a reclaim sweep and a `patch` is a package upgrade (`FJS-D825`);
+// one table, so *what was done to this box* is one history.
 //
-// It is a record of what was actually freed, which is why it is a row rather
+// It is a record of what was actually done, which is why it is a row rather
 // than a toast: "we cleaned the fleet last Tuesday" is the question a disk
 // filling up again asks, and nothing else here can answer it.
-model CleanupRun {
+model MaintenanceRun {
   id          String    @id @default(uuid())
   serverId    String
   server      Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
+  // No default: a writer that forgot to say which kind would file a sweep.
+  kind        MaintenanceKind @immutable
   status      RunStatus @default(pending)
 
   // The vocabulary is owned by api/src/services/cleanup/targets.ts — see the
@@ -2523,6 +2534,9 @@ model CleanupRun {
   // What the outpost said it freed, never what was estimated before it ran. The
   // screen shows an estimate; only this is what happened.
   freedBytes  Int       @default(0)
+  // A patch: what was upgraded, from what version to what —
+  // `[{ package, from, to }]`, as the outpost reported it.
+  upgrades    Json      @default("[]")
   detail      Json      @default("{}")
   error       String?
 
@@ -2971,11 +2985,11 @@ model MonitorChannel {
 // ============================================================
 // DASHBOARDS
 // ============================================================
-// A dashboard is a saved arrangement of widgets over data this app already
+// A dashboard is a saved arrangement of tiles over data this app already
 // has. Two things are deliberately NOT here:
 //
-//   A query. A widget names a KIND, and the kind decides what is read — see
-//   WidgetKind above. Storing a query would put the read in a row: the row
+//   A query. A tile names a KIND, and the kind decides what is read — see
+//   TileKind above. Storing a query would put the read in a row: the row
 //   travels (it is seeded, exported, shared across a workspace) and the policy
 //   does not, so whoever opened the dashboard would run a query nobody graded.
 //   @@gate and @@allow grade a caller against a model, never against a string.
@@ -3010,7 +3024,7 @@ model Dashboard {
   updatedAt   DateTime  @default(now()) @updatedAt
   deletedAt   DateTime?
 
-  widgets     DashboardWidget[]
+  tiles     DashboardTile[]
 
   @@gate(2.4.4.4)
   @@softDelete
@@ -3019,12 +3033,12 @@ model Dashboard {
   @@index([workspaceId])
 }
 
-model DashboardWidget {
+model DashboardTile {
   id          String     @id @default(uuid())
   dashboardId String
   dashboard   Dashboard  @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
 
-  kind        WidgetKind
+  kind        TileKind
 
   // The subject, as a real relation rather than an id inside `config`. Same
   // ruling AlertRule.channels got: a Json array pointing at rows no model
@@ -3033,8 +3047,8 @@ model DashboardWidget {
   // in api/src/services/dashboards/kinds.ts, and a data test holds the two
   // together.
   //
-  // SetNull rather than Cascade: a widget whose server is gone is a widget
-  // that says so, not a widget that disappears with the machine. It is only
+  // SetNull rather than Cascade: a tile whose server is gone is a tile
+  // that says so, not a tile that disappears with the machine. It is only
   // the hard-delete path — Server and App are @@softDelete, so the common case
   // is a row still present and excluded from every read, which the screen
   // resolves the same way.
@@ -3143,7 +3157,7 @@ model Blueprint {
   name           String     @trim @length(1, 80)
 
   // A FREE STRING, and deliberately not an enum, which is a departure from
-  // `WidgetKind` and `ChannelKind` beside it. Those are enums because each
+  // `TileKind` and `ChannelKind` beside it. Those are enums because each
   // value names a read or a delivery the server implements, so a value the
   // column would refuse is a feature that does not exist. A category names
   // nothing: it is a filter chip, and the list of them is `distinct(category)`
@@ -3172,6 +3186,7 @@ model Blueprint {
   healthCheck    String?    @trim @regex("^/[^ ]*$", "a path beginning with '/'")
   cpuLimit       Float?     @gt(0) @lte(256)
   memLimitMb     Int?       @gte(6)
+  command        String[]   @default([])
 
   // Operator-facing prose shown once, on the deploy modal.
   notes          String?    @length(0, 1000)
@@ -3402,7 +3417,7 @@ model DependencyUse {
 // One archive of the application database and its configuration.
 //
 // The outcome columns are written at SYSTEM, exactly as `RecipeRun` and
-// `CleanupRun` are: a person asks for a backup and a machine reports what it
+// `MaintenanceRun` are: a person asks for a backup and a machine reports what it
 // managed, and a status a caller can write is not evidence of anything.
 // `RunStatus` is reused rather than restated — its own comment says why three
 // models share five states, and this is the fourth.
@@ -3470,11 +3485,12 @@ model Backup {
 model HubConfig {
   // Not a uuid. There is one row and its id is the constant every reader asks
   // for, so a second row is a mistake with an obvious symptom rather than a
-  // silent fork where two screens disagree about what the installation is
-  // called.
+  // silent fork where two screens disagree about the installation.
   id                        String   @id @default("hub")
 
-  name                      String   @trim @length(1, 80) @default("Basecamp")
+  // No name: the one place it would show is the sign-in screen, which is read
+  // before anyone is signed in, and that is a public endpoint for a label
+  // (`FJS-D1591`).
 
   // No base URL and no mail sender: FRONTIER_APP_URL, FRONTIER_API_URL and
   // MAIL_FROM are read at boot, before any row is, and a column beside them
@@ -3486,9 +3502,13 @@ model HubConfig {
   // every healthy machine unreachable between beats.
   heartbeatTimeoutSeconds   Int      @default(120) @gte(30) @lte(3600)
 
-  // Hours. The default is seven days, which is what the mock showed as 168.
-  sessionTtlHours           Int      @default(168) @gte(1) @lte(8760)
+  // No session lifetime: auth is built at boot, so it is SESSION_TTL_HOURS in
+  // the env (`FJS-D1590`).
 
+  // Each is one refusal at one door (`FJS-D1592`): an owner of any workspace
+  // with no authenticator signs in to a session held to enrollment
+  // (core/session-auth.ts), an API key is refused by apiKeyGuard, and
+  // hub.createBot refuses a new bot. Already-made bots are left as they are.
   requireTwoFactorForOwners Boolean  @default(false)
   allowApiKeyAuth           Boolean  @default(true)
   allowBotUsers             Boolean  @default(true)

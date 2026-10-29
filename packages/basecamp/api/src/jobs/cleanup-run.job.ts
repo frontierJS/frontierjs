@@ -23,7 +23,7 @@ async function runCleanup(app: App, runId: string): Promise<void> {
   // No client here (`FJS-384`). The sweep runs as whoever asked for it, so the
   // service call below resolves their membership in the workspace the queue
   // recorded — and a run in another one answers nothing rather than being
-  // written by id. The row writes stay system, because `CleanupRun` is
+  // written by id. The row writes stay system, because `MaintenanceRun` is
   // update-at-SYSTEM and a `Volume` delete is ADMINISTRATOR.
   const cleanup = app.service('cleanup')
 

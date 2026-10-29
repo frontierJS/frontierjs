@@ -11,6 +11,7 @@
 import { Forbidden, $ } from '@frontierjs/junction'
 import type { App, Hook, ServiceContext } from '@frontierjs/junction'
 import { resolveWorkspaceId } from '../../core/hooks.ts'
+import { hubPolicy } from '../../core/session-auth.ts'
 
 // ─── The vocabulary ──────────────────────────────────────────────────────
 // A scope is `<service>:<read|write>`, declared on each workspace service by
@@ -138,6 +139,9 @@ export function apiKeyGuard(): Hook {
       throw new Forbidden('This API key has no record in Basecamp and cannot be used')
 
     if (key.revokedAt) throw new Forbidden('This API key has been revoked')
+
+    if (!(await hubPolicy(sys)).allowApiKeyAuth)
+      throw new Forbidden('API key authentication is turned off for this installation (HubConfig.allowApiKeyAuth)')
 
     // The key belongs to a workspace and may not be pointed at another one.
     // The user behind it may well be a member of both — that is exactly the

@@ -34,7 +34,7 @@
 //                 is the system client, said out loud.
 //
 // What NEITHER mode changes is which rows may be written at all. `RecipeRun`,
-// `DeploymentStep`, `CleanupRun` and `JobRun` are gated at SYSTEM for update —
+// `DeploymentStep`, `MaintenanceRun` and `JobRun` are gated at SYSTEM for update —
 // the schema saying a run's OUTCOME belongs to the machine and not to whoever
 // asked — and no standing a workspace grants reaches them (`owner` is 6). So a
 // caller-mode handler does its gated writes through an `internalOnly()` service

@@ -17,23 +17,29 @@ echo('─── Next steps ─────────────────�
 echo('')
 // The instructions name the machine they would run on — on a local target an
 // `ssh` line is advice that fails when taken.
-const there = (cmd) => (machineFor($, host, serverPath).local ? cmd : `ssh ${host} "${cmd}"`)
+const there = (cmd) => (machineFor($, host, serverPath).local ? cmd : `ssh -t ${host} "${cmd}"`)
 
 const { envFile } = apiFiles($.config.deployConf, serverPath)
 echo($.config.envSeeded
   ? `1. Your local .env.production was copied up — the server's copy is the one that counts now:`
   : `1. Populate production env vars on the server (or put them in a local .env.production and set up a fresh box):`)
-echo(`   ${there(`nano ${envFile}`)}`)
+echo(`   ${there(`vi ${envFile}`)}`)
 echo('')
-echo(`2. Point DNS for each domain at this server — Caddy fetches the certificate`)
-echo(`   on the first request, and cannot before the name resolves here`)
-echo('')
+let n = 1
 
-if (!edgeWritten) {
-  echo(`3. Write the routes: fli deploy:setup again, and answer y at step 5`)
+// 06-dns pointed these at Cloudflare; a domain it could not point stays here.
+const unpointed = [edge.web.domain, edge.api.domain].filter(d => d && !($.config.dnsPointed ?? []).includes(d))
+if (unpointed.length) {
+  echo(`${++n}. Point DNS for ${unpointed.join(' and ')} at this server — Caddy fetches the certificate`)
+  echo(`   on the first request, and cannot before the name resolves here`)
   echo('')
 }
-echo(`${edgeWritten ? 3 : 4}. Run your first deploy:`)
+
+if (!edgeWritten) {
+  echo(`${++n}. Write the routes: fli deploy:setup again, and answer y at step 5`)
+  echo('')
+}
+echo(`${++n}. Run your first deploy:`)
 
 echo(`   fli deploy${$.config.target !== 'dev' ? ` --${$.config.target}` : ''}`)
 echo('')

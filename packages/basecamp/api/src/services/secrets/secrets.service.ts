@@ -131,7 +131,8 @@ export default createService({
     // is the whole reason the target is keyed on the row rather than on the
     // material.
     if ('data' in patch) {
-      patch.isVerified = false
+      patch.verifiedAt  = null
+      patch.verifyError = null
 
       // The row says what KIND it is — `kind` cannot be patched — so the
       // shape a rotated value must take is read off the existing row rather
@@ -145,7 +146,7 @@ export default createService({
     }
 
     if (changesNothing(patch)) return getScoped('secret', 'Secret')
-    return db().secret.update({ where: { id: $.id as string }, data: patch })
+    return db().secret.update({ where: { id: $.id as string }, data: patch, system: ['verifiedAt', 'verifyError'] })
   },
 
   async remove() {
@@ -216,7 +217,10 @@ export default createService({
 
     const updated = await db().secret.update({
       where: { id: secret.id },
-      data:  { isVerified: ok, version: secret.version },
+      data:  ok
+        ? { verifiedAt: new Date().toISOString(), verifyError: null, version: secret.version }
+        : { verifiedAt: null, verifyError: `${connector?.label} refused this token`, version: secret.version },
+      system: ['verifiedAt', 'verifyError'],
     })
     return { ...updated, tested }
   },

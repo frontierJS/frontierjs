@@ -141,7 +141,7 @@ const runsOf = () => (env.system as any).run.findMany({
 })
 
 const release = (appId: string, image: string) =>
-  env.as(developer).service('deployments').create({ appId, environmentId: environment.id, toImage: image })
+  env.as(developer).service('deployments').create({ appId, toImage: image })
 
 // ─── the automation ──────────────────────────────────────────────────────────
 

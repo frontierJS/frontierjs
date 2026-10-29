@@ -2007,6 +2007,15 @@ export function createResource(serviceName, opts = {}, ...extra) {
         }
       : { fields: null, reason: 'the model declares no @@fts, so the Data boundary refuses $search by name' }
 
+    // A bar cannot list a table past the cap, and the kit never calls a service,
+    // so a column whose options are FETCHED carries the asking, bound to its
+    // name: `Form.mesa`'s `optionsFor` one surface along. An enum carries none.
+    // `record` is `{ [name]: picks }`, so a pick beyond the first page still
+    // arrives labeled.
+    const asking = (f) => f.rule?.references || f.rule?.values
+      ? { ...f, optionsFor: (opts = {}) => options(f.name, opts) }
+      : f
+
     return {
       search,
       filters: cols.map((c) => {
@@ -2023,10 +2032,14 @@ export function createResource(serviceName, opts = {}, ...extra) {
 
         const f = filterOpFor(c.display)
         if (!f) return { ...c, op: null, kind: null, reason: `no filter for a ${c.display ?? 'column of unknown kind'}` }
+        // A Json or file column compares nothing by value, but an optional one
+        // can still be asked whether it holds anything — `IS NULL` is not a
+        // match against the serialized document.
+        if (!f.op && c.rule?.nullable) return { ...c, op: ['equals', 'not'], kind: 'empty' }
         // A declared key is filtered through the column its slot generated,
         // since the boundary takes no where on a key inside a Json blob.
-        return { ...c, ...f, ...(c.rule?.['x-slot'] ? { queryKey: c.rule['x-slot'] } : {}) }
-      }).concat(joined),
+        return asking({ ...c, ...f, ...(c.rule?.['x-slot'] ? { queryKey: c.rule['x-slot'] } : {}) })
+      }).concat(joined.map(asking)),
       omitted,
     }
   }
@@ -2470,10 +2483,11 @@ export function createResource(serviceName, opts = {}, ...extra) {
    * an id falls through to the id, because `17 (unavailable)` is worse than the
    * bug being fixed.
    */
-  function withUnavailable(answer, { fieldName, record, service, valueField, labelField: shown, labelAlt: alt = [], labelParts: parts = null, isArray, strength = 'required', within = null, scope }) {
+  function withUnavailable(answer, { fieldName, record, service, valueField, labelField: shown, labelAlt: alt = [], labelParts: parts = null, strength = 'required', within = null, scope }) {
     const held = record?.[fieldName]
     if (held == null) return answer
-    const wanted = (isArray ? (Array.isArray(held) ? held : [held]) : [held]).filter(v => v != null)
+    // A list held under a scalar column is a filter's picks, one value each.
+    const wanted = [].concat(held).filter(v => v != null)
     if (!wanted.length) return answer
 
     const have    = new Set((answer.options ?? []).map(o => o.value))
@@ -2676,7 +2690,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
             // the page beneath drops it rather than the total growing.
             { options: opts, total, truncated: total == null ? null : total > rows.length },
             { fieldName, record, service: setService.service, valueField: vs.value, labelField: shown,
-              isArray: rule?.type === 'array', strength: vs.strength, within: narrowed, scope },
+              strength: vs.strength, within: narrowed, scope },
           )
         })
         .catch(err => {
@@ -2761,7 +2775,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
         return withUnavailable(
           { options: opts, total, truncated: total == null ? null : total > opts.length },
           { fieldName, record, service: related.service, valueField: ref.field, labelField: shown, labelAlt: alt, labelParts: parts,
-            isArray: rule?.type === 'array', within: query ?? null },
+            within: query ?? null },
         )
       })
       .catch(err => {
@@ -3118,6 +3132,15 @@ export function createResource(serviceName, opts = {}, ...extra) {
    * tethers with nothing saying so — where `detailQuery` may reach `get(id)`,
    * since a directive over one row cannot hide a record.
    */
+  // Which filters hold a day and which an instant, for the `@today±N` a
+  // preset keeps in the URL (`FJS-D1601`). A declared key is filtered through
+  // its slot's column, so the slot is named too.
+  const dayKinds = Object.fromEntries(Object.entries(readFields).flatMap(([name, rule]) => {
+    const kind = rule.format === 'date' ? 'date' : rule.format === 'date-time' ? 'instant' : null
+    if (!kind) return []
+    return rule['x-slot'] ? [[name, kind], [rule['x-slot'], kind]] : [[name, kind]]
+  }))
+
   function tethered(opts) {
     const own = ownsRows(opts)
     const live = own ? client.resource(serviceName, { idField, ...liveOptions }) : junctionResource
@@ -3130,6 +3153,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
       loaded:   (rows) => warnComposed('list', rows),
       on:       service.on,
       onReconnected: (fn) => client.on('reconnected', fn),
+      dayKinds,
     }, tetheredQuery, opts)
   }
 

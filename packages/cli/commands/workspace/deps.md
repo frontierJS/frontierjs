@@ -48,19 +48,6 @@ flags:
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { resolve } from 'path'
 
-// The same first-20-differing-lines form the other snapshot commands print.
-const diffLines = (was, now) => {
-  const a = was.split('\n'), b = now.split('\n')
-  const out = []
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    if (a[i] === b[i]) continue
-    out.push(`    - ${a[i] ?? '(absent)'}`)
-    out.push(`    + ${b[i] ?? '(absent)'}`)
-    if (out.length >= 20) { out.push('    …'); break }
-  }
-  return out.join('\n')
-}
-
 // The dev API's port in basecamp's own CLAUDE.md. A hosted Basecamp is named
 // by BASECAMP_URL or --url.
 const LOCAL_BASECAMP = 'http://localhost:8120'

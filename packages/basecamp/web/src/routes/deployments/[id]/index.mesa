@@ -138,9 +138,7 @@ title: Deployment
   $: running  = !!cancelIt
   $: canRetry = deployment && (deployment.status === 'failed' || deployment.status === 'cancelled')
 
-  // The environment this release went TO, which is not the app's current one
-  // once either has moved.
-  $: env = deployment?.environment ?? deployment?.app?.environment ?? null
+  $: env = deployment?.app?.environment ?? null
 </script>
 
 {#if loading}

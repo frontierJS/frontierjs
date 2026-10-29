@@ -244,7 +244,7 @@ try {
   check('…and the first is still the machine answering', health.server_id === first.serverId)
 
   // ── A release reaches it, and the page comes back off the disk ──
-  const { token } = await call('/auth/login', { body: { email: 'sam@example.com', password: 'hunter2hunter2' } })
+  const { token } = await call('/auth/login', { body: { email: 'dev@knight.works', password: 'test1234' } })
   const auth = { token, workspace: first.workspaceId }
 
   // The Outpost posts its posture once at start: signed, accepted, graded, kept

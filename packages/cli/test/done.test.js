@@ -13,6 +13,7 @@ import { tmpdir }        from 'os'
 import { execFileSync }  from 'child_process'
 
 import { layoutNamed, moduleNamed, collectChanges, runDone, stopVerdict, itemKey, editedIn, checkItems, ignoreHides } from '../core/done.js'
+import { tagsNpmLacks } from '../core/tags-on-npm.js'
 
 function tree(files) {
   const root = mkdtempSync(join(tmpdir(), 'fli-done-'))
@@ -223,5 +224,38 @@ describe('editedIn', () => {
   test('no transcript is no edits', () => {
     expect(editedIn('', root)).toEqual([])
     expect(editedIn(undefined, root)).toEqual([])
+  })
+})
+
+// FJS-3534: a version tagged and never published, and Basecamp's install pin
+// moved onto it. The registry is a stand-in here; the real one is asked by the
+// check's own default and costs a fli done half a second.
+describe('a tagged version npm does not hold', () => {
+  const pin = 'packages/basecamp/api/src/providers/compute/enrollment.ts'
+
+  test('names a tagged version and an install pin npm lacks, and stays quiet where it could not ask', async () => {
+    const { root, cleanup } = tree({
+      'packages/a/package.json': '{"name":"@x/a","version":"1.0.0"}',
+      'packages/b/package.json': '{"name":"@x/b","version":"2.0.0"}',
+      'packages/c/package.json': '{"name":"@x/c","version":"3.0.0"}',
+      'packages/p/package.json': '{"name":"@x/p","version":"9.0.0","private":true}',
+      [pin]: "export const OUTPOST_VERSION = '0.1.6'\n",
+    })
+    try {
+      const git = (...a) => execFileSync('git', a, { cwd: root, stdio: 'ignore' })
+      git('init', '-q'); git('add', '.')
+      git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'x')
+      for (const t of ['@x/a@1.0.0', '@x/b@2.0.0', '@x/p@9.0.0']) git('tag', t)
+
+      const npm = { '@x/a@1.0.0': true, '@x/b@2.0.0': false, '@frontierjs/outpost@0.1.6': false }
+      const r = await tagsNpmLacks(root, { ask: async (n, v) => npm[`${n}@${v}`] ?? null })
+      expect(r.lacking.map(w => [`${w.name}@${w.version}`, w.from])).toEqual([
+        ['@x/b@2.0.0', 'tag'], ['@frontierjs/outpost@0.1.6', pin],
+      ])
+      expect(r.asked).toBe(3)
+
+      const offline = await tagsNpmLacks(root, { ask: async () => null })
+      expect([offline.lacking.length, offline.unknown.length]).toEqual([0, 3])
+    } finally { cleanup() }
   })
 })

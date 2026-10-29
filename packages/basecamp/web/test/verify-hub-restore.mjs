@@ -55,8 +55,8 @@ const BUCKET    = 'hub-restore'
 const S3_KEY    = 'drive:drive'
 const SCRATCH   = tempDir('basecamp-hub-restore-')
 const KEY       = randomBytes(32).toString('hex')
-const EMAIL     = 'sam@example.com'
-const PASSWORD  = 'hunter2hunter2'
+const EMAIL     = 'dev@knight.works'
+const PASSWORD  = 'test1234'
 
 const hubEnv = (dir, extra = {}) => ({
   ...process.env,

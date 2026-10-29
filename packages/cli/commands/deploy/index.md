@@ -90,6 +90,7 @@ const deployConf     = await deployConfFor($, flag, log)
 // so does a block that names only per-target servers.
 if (deployConf && !deployConf.server) {
   log.error(`deploy.server is not set. Set it, or pass --server <ssh alias>`)
+  for (const line of noServerHint(deployConf)) log.info(line)
   $.config.abort = true
   return
 }

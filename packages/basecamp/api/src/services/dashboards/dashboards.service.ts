@@ -1,25 +1,25 @@
 // src/services/dashboards/dashboards.service.ts
-// Saved arrangements of widgets over data this app already answers.
+// Saved arrangements of tiles over data this app already answers.
 //
 // Mounted at /dashboards. Custom methods dispatch on X-Service-Method:
-//   kinds        — the widget vocabulary, addressing the COLLECTION
-//   addWidget · updateWidget · removeWidget · reorder — one dashboard's layout
+//   kinds        — the tile vocabulary, addressing the COLLECTION
+//   addTile · updateTile · removeTile · reorder — one dashboard's layout
 //
-// **A widget names a kind, never a query.** `enum WidgetKind` in the schema is
-// the whole vocabulary and `kinds.ts` says what each kind needs; a widget holds
+// **A tile names a kind, never a query.** `enum TileKind` in the schema is
+// the whole vocabulary and `kinds.ts` says what each kind needs; a tile holds
 // a subject and a few knobs. Nothing here reads a row on the browser's behalf:
-// the SCREEN renders a widget by asking the service that owns that data, with
+// the SCREEN renders a tile by asking the service that owns that data, with
 // the caller's own session, so a dashboard can show exactly what its reader
 // could have opened for themselves. A stored `{ accessor, where }` would have
 // been the opposite — a read in a row, run by the server for whoever opened the
 // page, graded against nothing. Ruled 2026-08-10, `DECISIONS.md`.
 //
-// **Widgets are managed through this service, not their own.** Same shape as
-// FlagOverride and the alert-channel join: a widget has no meaning outside its
+// **Tiles are managed through this service, not their own.** Same shape as
+// FlagOverride and the alert-channel join: a tile has no meaning outside its
 // dashboard, and putting the layout behind one owner is what keeps "is this
 // kind placeable with this subject" a single answer.
 //
-// **A widget's subject is a relation.** `serverId` / `appId` are real foreign
+// **A tile's subject is a relation.** `serverId` / `appId` are real foreign
 // keys, so a hard delete nulls them and this service can say the machine is
 // gone rather than rendering a card that 404s forever. Both models are
 // @@softDelete, so the ordinary case is a row that still exists and is excluded
@@ -29,12 +29,12 @@ import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/ju
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, slugify, ws, actor }
   from '../../core/resource.ts'
-import { WIDGET_KINDS, WIDGET_KIND_BY_NAME, STAT_SOURCES } from './kinds.ts'
+import { TILE_KINDS, TILE_KIND_BY_NAME, STAT_SOURCES } from './kinds.ts'
 import { PORTAL_SERVICE_IDS } from '../portal/portal.service.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 
-interface WidgetInput {
-  widgetId?: string
+interface TileInput {
+  tileId?: string
   kind?:     string
   serverId?: string | null
   appId?:    string | null
@@ -43,28 +43,28 @@ interface WidgetInput {
 }
 
 /**
- * A dashboard with its widgets, in order, each carrying the name of what it
+ * A dashboard with its tiles, in order, each carrying the name of what it
  * points at.
  *
  * The name is resolved HERE rather than by the browser, the same call
- * `volumes.find` makes for its server: a widget carrying only `serverId`
+ * `volumes.find` makes for its server: a tile carrying only `serverId`
  * forces every screen that renders one to fan out a request per card before
  * it can draw a title. A subject that no longer resolves comes back as
  * `subjectMissing`, which is a state the card renders — never an empty
- * string that reads as a widget with no subject at all.
+ * string that reads as a tile with no subject at all.
  */
-async function withWidgets(dashboard: Record<string, unknown>) {
-  const widgets = await db().dashboardWidget.findMany({
+async function withTiles(dashboard: Record<string, unknown>) {
+  const tiles = await db().dashboardTile.findMany({
     where:   { dashboardId: dashboard.id },
     orderBy: { position: 'asc' },
     limit:   200,
   })
 
-  const serverIds = [...new Set(widgets.map((w: any) => w.serverId).filter(Boolean))] as string[]
-  const appIds    = [...new Set(widgets.map((w: any) => w.appId).filter(Boolean))] as string[]
+  const serverIds = [...new Set(tiles.map((w: any) => w.serverId).filter(Boolean))] as string[]
+  const appIds    = [...new Set(tiles.map((w: any) => w.appId).filter(Boolean))] as string[]
 
   // Two queries for the whole board rather than two per card. Scoped, so a
-  // widget pointing at another workspace's server resolves to nothing here
+  // tile pointing at another workspace's server resolves to nothing here
   // and renders as missing — which is also the refusal, one layer down.
   const servers = serverIds.length
     ? await db().server.findMany({
@@ -80,8 +80,8 @@ async function withWidgets(dashboard: Record<string, unknown>) {
 
   return {
     ...dashboard,
-    widgets: widgets.map((w: any) => {
-      const spec = WIDGET_KIND_BY_NAME[w.kind]
+    tiles: tiles.map((w: any) => {
+      const spec = TILE_KIND_BY_NAME[w.kind]
       const name = w.serverId ? serverName.get(w.serverId)
                  : w.appId    ? appName.get(w.appId)
                  : null
@@ -89,7 +89,7 @@ async function withWidgets(dashboard: Record<string, unknown>) {
         ...w,
         subjectType: spec?.subject ?? null,
         subjectName: name ?? null,
-        // A widget that names a subject the caller can no longer see. Told
+        // A tile that names a subject the caller can no longer see. Told
         // apart from "this kind takes no subject", which is the null above.
         subjectMissing: !!(w.serverId || w.appId) && !name,
       }
@@ -98,18 +98,18 @@ async function withWidgets(dashboard: Record<string, unknown>) {
 }
 
 /**
- * Validate a widget against the vocabulary, and answer the columns to write.
+ * Validate a tile against the vocabulary, and answer the columns to write.
  *
- * The one owner of "may this widget be placed": both `addWidget` and
- * `updateWidget` go through it, so a rule enforced on creation cannot be
+ * The one owner of "may this tile be placed": both `addTile` and
+ * `updateTile` go through it, so a rule enforced on creation cannot be
  * walked around by editing afterwards.
  */
-async function resolveWidget(
-  kind: string, input: WidgetInput,
+async function resolveTile(
+  kind: string, input: TileInput,
 ): Promise<Record<string, unknown>> {
-  const spec = WIDGET_KIND_BY_NAME[kind]
+  const spec = TILE_KIND_BY_NAME[kind]
   if (!spec)
-    throw new BadRequest(`Unknown widget kind '${kind}' — one of: ${WIDGET_KINDS.map(k => k.kind).join(', ')}`)
+    throw new BadRequest(`Unknown tile kind '${kind}' — one of: ${TILE_KINDS.map(k => k.kind).join(', ')}`)
 
   const serverId = input.serverId ?? null
   const appId    = input.appId    ?? null
@@ -117,17 +117,17 @@ async function resolveWidget(
   // A subject the kind does not take is refused rather than ignored. Storing
   // it would be a column nothing reads that looks like it works.
   if (spec.subject !== 'server' && serverId)
-    throw new BadRequest(`A ${spec.label} widget takes no server`)
+    throw new BadRequest(`A ${spec.label} tile takes no server`)
   if (spec.subject !== 'app' && appId)
-    throw new BadRequest(`A ${spec.label} widget takes no app`)
+    throw new BadRequest(`A ${spec.label} tile takes no app`)
 
   if (spec.subject === 'server') {
-    if (!serverId && spec.required) throw new BadRequest(`A ${spec.label} widget needs a server`)
+    if (!serverId && spec.required) throw new BadRequest(`A ${spec.label} tile needs a server`)
     if (serverId && !await db().server.exists({ where: { id: serverId, workspaceId: ws() } }))
       throw new NotFound(`Server '${serverId}' not found in this workspace`)
   }
   if (spec.subject === 'app') {
-    if (!appId && spec.required) throw new BadRequest(`A ${spec.label} widget needs an app`)
+    if (!appId && spec.required) throw new BadRequest(`A ${spec.label} tile needs an app`)
     if (appId && !await db().app.exists({ where: { id: appId, workspaceId: ws() } }))
       throw new NotFound(`App '${appId}' not found in this workspace`)
   }
@@ -148,7 +148,7 @@ function validateConfig(kind: string, allowed: string[], config: Record<string, 
   const unknown = Object.keys(config).filter(k => !allowed.includes(k))
   if (unknown.length)
     throw new BadRequest(
-      `A ${kind} widget does not read ${unknown.join(', ')}` +
+      `A ${kind} tile does not read ${unknown.join(', ')}` +
       (allowed.length ? ` — it takes ${allowed.join(', ')}` : ' — it takes no configuration'))
 
   if (kind === 'stat_counter') {
@@ -160,7 +160,7 @@ function validateConfig(kind: string, allowed: string[], config: Record<string, 
 
   if (kind === 'service_health') {
     const serviceId = config.serviceId as string | undefined
-    if (!serviceId) throw new BadRequest(`A service health widget needs a serviceId — one of: ${PORTAL_SERVICE_IDS.join(', ')}`)
+    if (!serviceId) throw new BadRequest(`A service health tile needs a serviceId — one of: ${PORTAL_SERVICE_IDS.join(', ')}`)
     if (!PORTAL_SERVICE_IDS.includes(serviceId))
       throw new NotFound(`Portal service '${serviceId}' not found — one of: ${PORTAL_SERVICE_IDS.join(', ')}`)
   }
@@ -168,14 +168,14 @@ function validateConfig(kind: string, allowed: string[], config: Record<string, 
   return config
 }
 
-/** One widget on one of the caller's dashboards, or 404. Reached only
+/** One tile on one of the caller's dashboards, or 404. Reached only
  *  through a dashboard that `getScoped` has already put inside the
- *  workspace, so a widget id from another tenant answers the same 404 as one
+ *  workspace, so a tile id from another tenant answers the same 404 as one
  *  that never existed. */
-async function widgetOf(dashboardId: string, widgetId: string) {
-  const widget = await db().dashboardWidget.findFirst({ where: { id: widgetId, dashboardId } })
-  if (!widget) throw new NotFound(`Widget '${widgetId}' not found on this dashboard`)
-  return widget
+async function tileOf(dashboardId: string, tileId: string) {
+  const tile = await db().dashboardTile.findFirst({ where: { id: tileId, dashboardId } })
+  if (!tile) throw new NotFound(`Tile '${tileId}' not found on this dashboard`)
+  return tile
 }
 
 export default createService({
@@ -196,9 +196,9 @@ export default createService({
   // construction on a method this service does not have.
   methods: ['find', 'get', 'create', 'patch', 'remove', 'restore',
             'kinds',
-            { method: 'addWidget',    input: 'WidgetAdd' },
-            { method: 'updateWidget', input: 'WidgetUpdate' },
-            { method: 'removeWidget', input: 'WidgetRemove' },
+            { method: 'addTile',    input: 'TileAdd' },
+            { method: 'updateTile', input: 'TileUpdate' },
+            { method: 'removeTile', input: 'TileRemove' },
             { method: 'reorder',      input: 'DashboardReorder' }],
 
   async find() {
@@ -211,24 +211,24 @@ export default createService({
       orderBy: { isPinned: 'desc', createdAt: 'desc' },
     })
 
-    // A count per row rather than the widgets themselves: the list says how
+    // A count per row rather than the tiles themselves: the list says how
     // full a board is, and `get` is the read that pays for the layout.
     const counts = await Promise.all(page.data.map((d: any) =>
-      db().dashboardWidget.count({ where: { dashboardId: d.id } })))
+      db().dashboardTile.count({ where: { dashboardId: d.id } })))
 
-    return { ...page, data: page.data.map((d: any, i: number) => ({ ...d, widget_count: counts[i] })) }
+    return { ...page, data: page.data.map((d: any, i: number) => ({ ...d, tile_count: counts[i] })) }
   },
 
   async get() {
-    return withWidgets(await getScoped('dashboard', 'Dashboard'))
+    return withTiles(await getScoped('dashboard', 'Dashboard'))
   },
 
   async create() {
     const data = $.data as Record<string, unknown>
     const created = await db().dashboard.create({ data })
     // The same shape `get` answers, so a screen that navigates straight to
-    // the new board renders it rather than a record with no widgets key.
-    return withWidgets(created)
+    // the new board renders it rather than a record with no tiles key.
+    return withTiles(created)
   },
 
   async patch() {
@@ -243,8 +243,8 @@ export default createService({
       patch.slug = slugify(patch.name as string)
     }
 
-    if (changesNothing(patch)) return withWidgets(dashboard)
-    return withWidgets(await db().dashboard.update({ where: { id: dashboard.id }, data: patch }))
+    if (changesNothing(patch)) return withTiles(dashboard)
+    return withTiles(await db().dashboard.update({ where: { id: dashboard.id }, data: patch }))
   },
 
   async remove() {
@@ -252,7 +252,7 @@ export default createService({
   },
 
   // ── kinds — POST /dashboards  X-Service-Method: kinds ─────────────
-  // The widget vocabulary, fetched rather than shipped in the bundle.
+  // The tile vocabulary, fetched rather than shipped in the bundle.
   //
   // Addresses the COLLECTION: there is no subject dashboard, which neither
   // client could express until `FJS-122`. The screen builds its picker from
@@ -269,76 +269,76 @@ export default createService({
   async kinds() {
     $.dispatch = false   // read-shaped
     return {
-      kinds:          WIDGET_KINDS,
+      kinds:          TILE_KINDS,
       statSources:    [...STAT_SOURCES],
       portalServices: PORTAL_SERVICE_IDS,
     }
   },
 
-  // ── addWidget — POST /dashboards/:id  X-Service-Method: addWidget ─
-  async addWidget() {
+  // ── addTile — POST /dashboards/:id  X-Service-Method: addTile ─
+  async addTile() {
     const dashboard = await getScoped('dashboard', 'Dashboard')
-    const input     = ($.data ?? {}) as WidgetInput
+    const input     = ($.data ?? {}) as TileInput
 
-    const columns = await resolveWidget(input.kind as string, input)
+    const columns = await resolveTile(input.kind as string, input)
 
     // Appended. Position is dense only by convention — `reorder` rewrites the
     // whole set — so the next one goes after the last, not at count+1, which
     // collides the moment anything was removed from the middle.
-    const last = await db().dashboardWidget.findMany({
+    const last = await db().dashboardTile.findMany({
       where: { dashboardId: dashboard.id }, orderBy: { position: 'desc' }, limit: 1,
     })
     const position = last.length ? (last[0].position as number) + 1 : 0
 
     // A board nothing can lay out is worse than a refusal: 200 cards is a
     // page that never finishes rendering, and the layout is thirds of a row.
-    const count = await db().dashboardWidget.count({ where: { dashboardId: dashboard.id } })
-    if (count >= 60) throw new Conflict('A dashboard holds at most 60 widgets')
+    const count = await db().dashboardTile.count({ where: { dashboardId: dashboard.id } })
+    if (count >= 60) throw new Conflict('A dashboard holds at most 60 tiles')
 
-    await db().dashboardWidget.create({ data: { dashboardId: dashboard.id, position, ...columns } })
+    await db().dashboardTile.create({ data: { dashboardId: dashboard.id, position, ...columns } })
 
-    // The DASHBOARD, not the widget. A custom method's return shape is
+    // The DASHBOARD, not the tile. A custom method's return shape is
     // load-bearing (junction FJS-020): the screen assigns this over the
-    // record it is rendering, and a widget row has neither the board's id nor
+    // record it is rendering, and a tile row has neither the board's id nor
     // its other cards.
-    return withWidgets(dashboard)
+    return withTiles(dashboard)
   },
 
-  // ── updateWidget ─────────────────────────────────────────────────
-  async updateWidget() {
+  // ── updateTile ─────────────────────────────────────────────────
+  async updateTile() {
     const dashboard = await getScoped('dashboard', 'Dashboard')
-    const input     = ($.data ?? {}) as WidgetInput
-    const widget    = await widgetOf(dashboard.id as string, input.widgetId as string)
+    const input     = ($.data ?? {}) as TileInput
+    const tile    = await tileOf(dashboard.id as string, input.tileId as string)
 
     // The kind is immutable. Changing it changes what the card is, and every
-    // subject and config key it validated against — that is a new widget, and
+    // subject and config key it validated against — that is a new tile, and
     // saying so is cheaper than a half-migrated one.
-    if (input.kind && input.kind !== widget.kind)
-      throw new BadRequest('A widget cannot change kind — remove it and add the one you want')
+    if (input.kind && input.kind !== tile.kind)
+      throw new BadRequest('A tile cannot change kind — remove it and add the one you want')
 
     // Key presence, not `??` (Invariant 9): an explicit null clears the
     // subject, which is how a deploy feed goes back to the whole workspace.
-    const columns = await resolveWidget(widget.kind as string, {
-      serverId: 'serverId' in input ? input.serverId : (widget.serverId as string | null),
-      appId:    'appId'    in input ? input.appId    : (widget.appId    as string | null),
-      config:   'config'   in input ? input.config   : (widget.config as Record<string, unknown>),
-      cols:     'cols'     in input ? input.cols     : (widget.cols as number),
+    const columns = await resolveTile(tile.kind as string, {
+      serverId: 'serverId' in input ? input.serverId : (tile.serverId as string | null),
+      appId:    'appId'    in input ? input.appId    : (tile.appId    as string | null),
+      config:   'config'   in input ? input.config   : (tile.config as Record<string, unknown>),
+      cols:     'cols'     in input ? input.cols     : (tile.cols as number),
     })
 
-    await db().dashboardWidget.update({ where: { id: widget.id }, data: columns })
-    return withWidgets(dashboard)
+    await db().dashboardTile.update({ where: { id: tile.id }, data: columns })
+    return withTiles(dashboard)
   },
 
-  // ── removeWidget ─────────────────────────────────────────────────
-  async removeWidget() {
+  // ── removeTile ─────────────────────────────────────────────────
+  async removeTile() {
     const dashboard = await getScoped('dashboard', 'Dashboard')
-    const widget    = await widgetOf(dashboard.id as string, ($.data as WidgetInput).widgetId as string)
+    const tile    = await tileOf(dashboard.id as string, ($.data as TileInput).tileId as string)
 
-    // Hard delete: DashboardWidget declares no @@softDelete. A card taken off
+    // Hard delete: DashboardTile declares no @@softDelete. A card taken off
     // a board is not history — it is a layout decision, and the audit trail
     // already records that it was taken off.
-    await db().dashboardWidget.delete({ where: { id: widget.id } })
-    return withWidgets(dashboard)
+    await db().dashboardTile.delete({ where: { id: tile.id } })
+    return withTiles(dashboard)
   },
 
   // ── reorder ──────────────────────────────────────────────────────
@@ -349,25 +349,25 @@ export default createService({
   async reorder() {
     const dashboard = await getScoped('dashboard', 'Dashboard')
     const ids       = ($.data as { ids?: string[] }).ids
-    if (!Array.isArray(ids) || !ids.length) throw new BadRequest('ids must be a non-empty array of widget ids')
+    if (!Array.isArray(ids) || !ids.length) throw new BadRequest('ids must be a non-empty array of tile ids')
 
-    const widgets = await db().dashboardWidget.findMany({
+    const tiles = await db().dashboardTile.findMany({
       where: { dashboardId: dashboard.id }, select: { id: true }, limit: 200,
     })
-    const known = new Set(widgets.map((w: any) => w.id))
+    const known = new Set(tiles.map((w: any) => w.id))
 
-    // Every widget, exactly once. A partial list would silently leave the
+    // Every tile, exactly once. A partial list would silently leave the
     // rest wherever they were, which reads as a reorder that half worked.
     const unknown = ids.filter(id => !known.has(id))
-    if (unknown.length)    throw new NotFound(`Not a widget on this dashboard: ${unknown.join(', ')}`)
-    if (new Set(ids).size !== ids.length) throw new BadRequest('ids contains the same widget twice')
+    if (unknown.length)    throw new NotFound(`Not a tile on this dashboard: ${unknown.join(', ')}`)
+    if (new Set(ids).size !== ids.length) throw new BadRequest('ids contains the same tile twice')
     if (ids.length !== known.size)
-      throw new BadRequest(`ids must name every widget on this dashboard — ${known.size} of them, got ${ids.length}`)
+      throw new BadRequest(`ids must name every tile on this dashboard — ${known.size} of them, got ${ids.length}`)
 
     for (const [position, id] of ids.entries())
-      await db().dashboardWidget.update({ where: { id }, data: { position } })
+      await db().dashboardTile.update({ where: { id }, data: { position } })
 
-    return withWidgets(dashboard)
+    return withTiles(dashboard)
   },
 
   hooks: {
@@ -378,7 +378,7 @@ export default createService({
       // board is the person doing the work, and holding it higher means
       // asking an owner to arrange somebody else's screen.
       create:       [stampDashboard],
-      // The widget methods write `DashboardWidget` through the caller's
+      // The tile methods write `DashboardTile` through the caller's
       // client, whose gate is the same developer bar.
     },
   },

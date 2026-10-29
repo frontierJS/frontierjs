@@ -195,7 +195,6 @@ export default createService({
         // let a rotation replace one and not the other.
         data:        JSON.stringify({ certPem, keyPem }),
         createdBy:   actor(),
-        isVerified:  false,
       },
     })
 

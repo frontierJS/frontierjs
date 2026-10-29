@@ -13,7 +13,7 @@ title: Server
   import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
   import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import NoRecord   from '../../../components/NoRecord.mesa'
-  import ServerHealthBody from '../../../components/widgets/ServerHealthBody.mesa'
+  import ServerHealthBody from '../../../components/tiles/ServerHealthBody.mesa'
   import { offerUndo } from '../../../resources/Trash.mesa'
   import { postures }  from '../../../resources/ServerPosture.mesa'
 
@@ -505,7 +505,7 @@ title: Server
          the rest of what the outpost sent is listed under it, in its own words. -->
     <article class="card stack" id="server-health">
       <h2 class="h4">Health</h2>
-      <ServerHealthBody widget={{ serverId: server.id }} />
+      <ServerHealthBody tile={{ serverId: server.id }} />
       {#if entries(server.health).length}
         <details>
           <summary class="text-sm">Everything it reported</summary>

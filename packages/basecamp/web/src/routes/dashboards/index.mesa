@@ -8,7 +8,7 @@ title: Dashboards
   // nothing here that a member could not have opened for themselves; what a
   // board saves is the arrangement. The list is deliberately thin — name, what
   // it is for, how many cards — because the answer to "which board do I want"
-  // is the name, and rendering sixty widgets nine times over would be the
+  // is the name, and rendering sixty tiles nine times over would be the
   // slowest screen in the app.
   //
   // The pin is the WORKSPACE's, not the reader's: one boolean on a shared row
@@ -46,7 +46,7 @@ title: Dashboards
   // let and a member expression is not one.
   function write(name, value) { draft = { ...draft, [name]: value } }
 
-  // Composed: the service adds each board's `widget_count`, which a pushed row
+  // Composed: the service adds each board's `tile_count`, which a pushed row
   // does not carry, so an announcement re-reads the window.
   const list = dashboards.tethered({ state: 'local', composed: true, directives: { limit: 100 } })
   $: { rows = list.rows; loading = list.loading }
@@ -61,7 +61,7 @@ title: Dashboards
       toasts.success(`${created.name} created`)
       creating = false
       draft = dashboards.make()
-      // Straight to the board: a dashboard with no widgets is not a thing to
+      // Straight to the board: a dashboard with no tiles is not a thing to
       // look at in a list, it is a thing to fill in.
       goto(`/dashboards/${created.id}/`)
     } catch (e) {
@@ -104,7 +104,7 @@ title: Dashboards
 </div>
 
 <p class="text-body">
-  A board is an arrangement of widgets over what this workspace already has — the fleet,
+  A board is an arrangement of tiles over what this workspace already has — the fleet,
   releases, jobs, the trail. Every card is read with your own session, so a dashboard
   shows exactly what you could have opened yourself.
 </p>
@@ -154,7 +154,7 @@ title: Dashboards
           <p class="text-sm text-muted">{dashboard.description}</p>
         {/if}
 
-        <p class="text-sm text-muted">{dashboard.widget_count} widget(s)</p>
+        <p class="text-sm text-muted">{dashboard.tile_count} tile(s)</p>
 
         <div class="cluster">
           <Button treatment="ghost" disabled={busy === dashboard.id}

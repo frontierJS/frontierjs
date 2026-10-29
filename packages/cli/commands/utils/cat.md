@@ -39,7 +39,7 @@ import { resolve } from 'node:path'
 
 ```js
 const { existsSync, statSync, readFileSync } = await import('node:fs')
-const { spawnSync }                          = await import('node:child_process')
+const { page }                               = await import(resolve(global.fliRoot, 'core/tty.js'))
 const { prettify, section, folderIndex }     = await import(resolve(global.fliRoot, 'core/cat.js'))
 const { colorEnabled }                       = await import(resolve(global.fliRoot, 'core/color.js'))
 
@@ -107,19 +107,7 @@ for (const p of paths) {
 }
 
 const doc = out.join('')
-const tall = doc.split('\n').length > (process.stdout.rows || Infinity)
-if (!(flag.pager && process.stdout.isTTY && tall)) {
-  process.stdout.write(doc)
-  return
-}
-// LESS is set on the call: an assignment to process.env never reaches a child under bun
-const pager = process.env.PAGER || 'less'
-const paged = spawnSync('sh', ['-c', pager === 'less' ? 'less -R' : pager], {
-  input: doc,
-  stdio: ['pipe', 'inherit', 'inherit'],
-  env:   { ...process.env, LESS: process.env.LESS ?? 'FRX' },
-})
-if (paged.error) process.stdout.write(doc)
+page(doc, { pager: flag.pager })
 ```
 
 ## What it renders

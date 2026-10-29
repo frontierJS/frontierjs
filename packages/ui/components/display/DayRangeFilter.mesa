@@ -2,9 +2,16 @@
   // DayRangeFilter.mesa
   // One filter over a day range: an operator — after, before, between — and
   // one DatePicker. A click-start, click-end picker has no spelling for *until
-  // the 7th*, so the open end is asked as an operator (`FJS-D1576`).
+  // the 7th*, so the open end is asked as an operator (`FJS-D1576`). An
+  // optional column's menu also asks *is empty* and *has value*, which draw no
+  // picker (`FJS-D1594`).
   //
-  // It works in DAYS, `YYYY-MM-DD`, in both directions. What a day means as a
+  // A preset (*in the last 7 days*) is an operator too, and writes relative
+  // days — `@today-6` — that `tethered()` resolves on the request
+  // (`FJS-D1601`). A query holding exactly a preset's tokens is read back as
+  // that preset, so a bookmark says *in the last 7 days*, not two dates.
+  //
+  // It works in DAYS, `YYYY-MM-DD` or a `@today±N` token, in both directions. What a day means as a
   // bound — a `Date` column's day, or an instant's first or last moment — is
   // `FilterBar`'s to convert, where the column is known.
   //
@@ -15,14 +22,32 @@
   import DatePicker from '../forms/DatePicker.mesa'
   import Select     from '../forms/Select.mesa'
   import Button     from '../forms/Button.mesa'
+  import { emptyTest, emptyTestOf, readDayToken, dayToken } from '@frontierjs/toolbelt/query'
 
-  export let label   = ''
-  // `{ gte?, lte? }` in days, or undefined.
-  export let value   = undefined
-  // (next) => void — `{ gte?, lte? }` in days, or undefined when cleared.
-  export let onvalue = undefined
+  export let label    = ''
+  // `{ gte?, lte? }` in days, `{ equals: null }`, `{ not: null }`, or undefined.
+  export let value    = undefined
+  // (next) => void — the same shapes, or undefined when cleared.
+  export let onvalue  = undefined
+  // The column holds `null`, so the two empty tests are offered.
+  export let nullable = false
 
-  const OPS = ['after', 'before', 'between']
+  // Each end counts today, so *the last 7 days* is seven days ending today.
+  const PRESETS = {
+    today:  { name: 'today',               gte: 0,   lte: 0 },
+    last7:  { name: 'in the last 7 days',  gte: -6,  lte: 0 },
+    last30: { name: 'in the last 30 days', gte: -29, lte: 0 },
+    next7:  { name: 'in the next 7 days',  gte: 0,   lte: 6 },
+  }
+  const NAMES = {
+    after: 'after', before: 'before', between: 'between',
+    ...Object.fromEntries(Object.entries(PRESETS).map(([k, p]) => [k, p.name])),
+    empty: 'is empty', filled: 'has value',
+  }
+  const OPS = Object.keys(NAMES).filter(o => nullable || (o !== 'empty' && o !== 'filled'))
+
+  const presetOf = (v) => Object.keys(PRESETS).find(k =>
+    readDayToken(v?.gte) === PRESETS[k].gte && readDayToken(v?.lte) === PRESETS[k].lte)
 
   // The operator is read off the bounds the query holds. One chosen before a
   // day is picked has nothing in the query to be read from, so it is held
@@ -31,18 +56,26 @@
   let open   = false
 
   function opFor(v, pick) {
+    if (v && emptyTestOf(v)) return emptyTestOf(v)
+    if (presetOf(v)) return presetOf(v)
     if (v?.gte && v?.lte) return 'between'
     if (pick === 'between') return 'between'
     if (v?.lte) return 'before'
     if (v?.gte) return 'after'
-    return pick ?? 'between'
+    // An empty test or a preset cleared by its × leaves nothing to ask with.
+    return pick && !(pick in PRESETS) && pick !== 'empty' && pick !== 'filled' ? pick : 'between'
   }
 
-  const op = opFor(value, chosen)
+  const op     = opFor(value, chosen)
+  const asking = op === 'empty' || op === 'filled' || op in PRESETS
 
   /** A switch keeps the day already picked, moved to the bound the new operator asks. */
   function setOp(next) {
     chosen = next
+    if (next === 'empty' || next === 'filled') return onvalue?.(emptyTest(next))
+    if (next in PRESETS) return onvalue?.({ gte: dayToken(PRESETS[next].gte), lte: dayToken(PRESETS[next].lte) })
+    // A token has no day for the picker to start from.
+    if (asking) return onvalue?.(undefined)
     if (next === 'after'  && (value?.gte || value?.lte)) onvalue?.({ gte: value.gte ?? value.lte })
     if (next === 'before' && (value?.gte || value?.lte)) onvalue?.({ lte: value.lte ?? value.gte })
   }
@@ -61,13 +94,17 @@
     else onvalue?.({ [op === 'after' ? 'gte' : 'lte']: toDay(startDate) })
   }
 
+  const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+  const pickable = (day) => readDayToken(day) === undefined ? day : undefined
+
   const show = (day) => {
+    if (readDayToken(day) !== undefined) return relative.format(readDayToken(day), 'day')
     const [y, m, d] = String(day ?? '').split('-').map(Number)
     if (!y || !m || !d) return '…'
     return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
   }
 
-  const shown = !value ? 'Any day'
+  const shown = !value || asking ? 'Any day'
     : op === 'between' ? `${show(value.gte)} – ${show(value.lte)}`
     : show(op === 'after' ? value.gte : value.lte)
 </script>
@@ -75,29 +112,31 @@
 <span class="filter-days" {...$attributes}>
   <Select
     value={op}
-    options={OPS.map(o => ({ value: o, label: label + ' ' + o }))}
+    options={OPS.map(o => ({ value: o, label: label + ' ' + NAMES[o] }))}
     placeholder=""
-    aria-label={label + ': after, before or between'}
+    aria-label={label + ': ' + OPS.map(o => NAMES[o]).join(', ')}
     style="--field-inline-size: auto"
     oninput={(e) => setOp(e.target.value)}
   />
-  <DatePicker
-    isRange={op === 'between'}
-    enableFutureDates
-    bind:isOpen={open}
-    startDate={op === 'before' ? value?.lte : value?.gte}
-    endDate={op === 'between' ? value?.lte : undefined}
-    onDateChange={picked}
-  >
-    <button
-      type="button"
-      class="field filter-day"
-      aria-haspopup="dialog"
-      aria-expanded={open ? 'true' : 'false'}
-      aria-label={label + ' ' + op + ': ' + shown}
-      onclick={() => open = !open}
-    >{shown}</button>
-  </DatePicker>
+  {#if !asking}
+    <DatePicker
+      isRange={op === 'between'}
+      enableFutureDates
+      bind:isOpen={open}
+      startDate={pickable(op === 'before' ? value?.lte : value?.gte)}
+      endDate={op === 'between' ? pickable(value?.lte) : undefined}
+      onDateChange={picked}
+    >
+      <button
+        type="button"
+        class="field filter-day"
+        aria-haspopup="dialog"
+        aria-expanded={open ? 'true' : 'false'}
+        aria-label={label + ' ' + op + ': ' + shown}
+        onclick={() => open = !open}
+      >{shown}</button>
+    </DatePicker>
+  {/if}
   {#if value}
     <Button treatment="ghost" size="sm" aria-label={'Clear ' + label} onclick={() => onvalue?.(undefined)}>×</Button>
   {/if}

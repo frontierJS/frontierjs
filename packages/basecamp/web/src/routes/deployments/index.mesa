@@ -51,9 +51,8 @@ title: Deployments
   // box is drawn — a box the Data boundary answers 400 to is worse than none.
   const { filters, search } = deployments.filters()
 
-  // The service includes app → environment and the deployment's own
-  // environment, so a row names what it deployed and where without a second
-  // request per row. `RelationCell` is what reads them back
+  // The service includes app → environment, so a row names what it deployed
+  // and where without a second request per row. `RelationCell` is what reads them back
   // (`web/src/lib/displays.js`).
   //
   // That is why this list is COMPOSED. The job pushes `deployments patched` on

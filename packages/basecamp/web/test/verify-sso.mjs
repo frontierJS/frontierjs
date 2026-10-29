@@ -47,8 +47,8 @@ const IDP_PORT = await portFor(import.meta.url, 'be', { env: 'dev', service: 2 }
 const BASE     = `http://localhost:${WEB_PORT}`
 const API      = `http://localhost:${API_PORT}`
 const IDP      = `http://localhost:${IDP_PORT}`
-const EMAIL    = 'sam@example.com'
-const PASSWORD = 'hunter2hunter2'
+const EMAIL    = 'dev@knight.works'
+const PASSWORD = 'test1234'
 const TOKEN_KEY = 'basecamp_token'
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))

@@ -120,7 +120,7 @@ would put it in shell history. The key needs `apps:read`,
 `deployments:write` and `deployments:read` (to watch the release) — and
 `apps:write` for a static App — and a standing that may release in its
 workspace. Setting up a never-released App writes through `apps:write`,
-`variables:write`, `domains:write` and `domain-routes:write`; a 403 names
+`variables:write`, `domains:write` and `domainRoutes:write`; a 403 names
 the scope the key lacks.
 
 <script>
@@ -227,7 +227,7 @@ async function applyPlan({ origin, key, app, plan }) {
     const owner  = plan.domain.on === 'web' ? web : app
     const domain = await basecamp(origin, key, '/domains', { method: 'POST', body: { appId: owner.id, hostname: plan.domain.hostname } })
     for (const pathPrefix of plan.domain.routes)
-      await basecamp(origin, key, '/domain-routes', { method: 'POST', body: { domainId: domain.id, pathPrefix, appId: app.id } })
+      await basecamp(origin, key, '/domainRoutes', { method: 'POST', body: { domainId: domain.id, pathPrefix, appId: app.id } })
   }
   return { web }
 }

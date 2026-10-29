@@ -2280,9 +2280,9 @@ check('…and once it has, the bar is drawn at what the machine measured',
   t => t.includes('Disk in use') && t.includes('63%'))
 
 // ── 13c-quater. Dashboards — a vocabulary, not a stored query ────────
-// The phase's whole question was whether a widget's data source is declared or
+// The phase's whole question was whether a tile's data source is declared or
 // free-form. It is declared, so what is worth checking is the two halves of
-// that: the picker cannot offer a kind the service would refuse, and a widget
+// that: the picker cannot offer a kind the service would refuse, and a tile
 // cannot be made to carry a query even by a caller that does not use the UI.
 //
 // The browser is in Skunkworks here — the workspace the volumes checks left it
@@ -2302,48 +2302,48 @@ check('creating a board opens it',
 const boardPath = await path()
 check('and the board is named on its own screen', await heading(), t => t.includes('Ops overview'))
 
-await click('Add widget')
+await click('Add tile')
 await sleep(800)
 // Nine, and from the SERVICE: the picker is built from the `kinds` action, so a
 // kind that exists in the schema and not in the service — or the other way
 // round — cannot be offered. A hardcoded list in the bundle would pass this
 // check while being exactly the drift it is here to catch.
 check('the picker is the service\'s own vocabulary',
-  await evaluate(`document.querySelectorAll('#widget-kinds button').length`), 9)
+  await evaluate(`document.querySelectorAll('#tile-kinds button').length`), 9)
 
 const pick = label => evaluate(`
-  [...document.querySelectorAll('#widget-kinds > *')]
+  [...document.querySelectorAll('#tile-kinds > *')]
     .find(c => c.textContent.includes(${JSON.stringify(label)})).querySelector('button').click()`)
 
 await pick('Server fleet')
 await sleep(500)
 await click('Add to dashboard')
-check('a widget is added and renders its own data',
-  await waitFor(`document.getElementById('widget-grid')?.textContent ?? ''`, t => t.includes('Server fleet')),
+check('a tile is added and renders its own data',
+  await waitFor(`document.getElementById('tile-grid')?.textContent ?? ''`, t => t.includes('Server fleet')),
   t => t.includes('Server fleet') && t.includes('gateway-01'))
 
 // A kind with a required subject, added with none. The refusal is the
 // service's, in words — the screen does not pre-empt it, because which kinds
 // need a subject is not a fact the browser owns.
-await click('Add widget')
+await click('Add tile')
 await sleep(600)
 await pick('Server health')
 await sleep(500)
 await click('Add to dashboard')
-check('a widget that needs a subject says so rather than being placed',
+check('a tile that needs a subject says so rather than being placed',
   await waitFor(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.includes('needs a server')),
   t => t.includes('needs a server'))
 
 await evaluate(`
   (() => {
-    const sel = document.getElementById('widget-subject')
+    const sel = document.getElementById('tile-subject')
     sel.value = [...sel.options].find(o => o.value)?.value
     sel.dispatchEvent(new Event('change', { bubbles: true }))
   })()`)
 await sleep(400)
 await click('Add to dashboard')
 check('…and placed once it has one, with the subject named on the card',
-  await waitFor(`document.getElementById('widget-grid')?.textContent ?? ''`, t => t.includes('Server health')),
+  await waitFor(`document.getElementById('tile-grid')?.textContent ?? ''`, t => t.includes('Server health')),
   t => t.includes('Server health') && t.includes('gateway-01'))
 
 // The bars are the readings the ANSWER declares, filtered by what this machine
@@ -2354,7 +2354,7 @@ check('…and placed once it has one, with the subject named on the card',
 // bar at 0% is the failure this separates — *never reported* and *empty* are
 // different facts and only the first is worth telling somebody.
 const healthCard = `(() => {
-  const card = [...document.querySelectorAll('#widget-grid article.card')]
+  const card = [...document.querySelectorAll('#tile-grid article.card')]
     .find(c => c.querySelector('h2')?.textContent.trim() === 'Server health')
   return card?.textContent ?? ''
 })()`
@@ -2370,7 +2370,7 @@ check('…and nothing at all for the one it never has',
 // legitimately cannot — `service_health` needs latency history and nothing
 // records a ping — because a `needs` sentence nobody prints any more is a
 // mechanism that has quietly stopped, and the card that needs it looks fine.
-await click('Add widget')
+await click('Add tile')
 await sleep(600)
 await pick('Service health')
 await sleep(500)
@@ -2383,44 +2383,44 @@ check('the chooser says what the card will not be able to draw',
 // selection is part of placing it, not a nicety.
 await evaluate(`
   (() => {
-    const sel = document.getElementById('widget-service')
+    const sel = document.getElementById('tile-service')
     sel.value = [...sel.options].find(o => o.value)?.value
     sel.dispatchEvent(new Event('change', { bubbles: true }))
   })()`)
 await sleep(400)
 await click('Add to dashboard')
 check('…and the placed card says it too, rather than drawing a plausible line',
-  await waitFor(`document.getElementById('widget-grid')?.textContent ?? ''`,
+  await waitFor(`document.getElementById('tile-grid')?.textContent ?? ''`,
                 t => t.includes('Not shown')),
   t => t.includes('Not shown') && t.includes('latency history'))
 // …and the two that were answered do NOT, which is the pair: a frame that
 // printed the sentence unconditionally would satisfy the row above on its own.
 check('…and the server-health card, which can now, does not',
-  await evaluate(`document.getElementById('widget-grid')?.textContent ?? ''`),
+  await evaluate(`document.getElementById('tile-grid')?.textContent ?? ''`),
   t => !t.includes('metric store'))
 
-// A counter counts. The mock's version is a number typed in when the widget is
+// A counter counts. The mock's version is a number typed in when the tile is
 // added, which is a dashboard displaying whatever it was told.
-await click('Add widget')
+await click('Add tile')
 await sleep(600)
 await pick('Counter')
 await sleep(500)
 await click('Add to dashboard')
 const fleetSize = (await apiCall('/servers', { workspace: secondWs.id })).total
-check('a counter reads a real total, not a value typed into the widget',
-  await waitFor(`document.getElementById('widget-grid')?.textContent ?? ''`, t => t.includes('Servers')),
+check('a counter reads a real total, not a value typed into the tile',
+  await waitFor(`document.getElementById('tile-grid')?.textContent ?? ''`, t => t.includes('Servers')),
   t => t.includes(String(fleetSize)))
 
 // The picker cannot express a query — so this is asked of the API directly,
 // the way a caller who skipped the UI would. Both halves matter: an unknown
-// kind, and a config key nothing reads. A widget accepting either is a stored
+// kind, and a config key nothing reads. A tile accepting either is a stored
 // read that no policy graded.
 const boardId = boardPath.split('/').filter(Boolean)[1]
 const refuse = (body) => fetch(`http://localhost:${API_PORT}/dashboards/${boardId}`, {
   method: 'POST',
   headers: { 'content-type': 'application/json', accept: 'application/json',
              authorization: `Bearer ${token}`, 'x-workspace-id': secondWs.id,
-             'x-service-method': 'addWidget' },
+             'x-service-method': 'addTile' },
   body: JSON.stringify(body),
 }).then(async r => ({ status: r.status, body: await r.text() }))
 
@@ -2429,7 +2429,7 @@ check('a kind outside the vocabulary is refused, and named', badKind.status, 400
 check('…with the vocabulary in the message', badKind.body, t => t.includes('server_fleet'))
 
 const badConfig = await refuse({ kind: 'stat_counter', config: { source: 'servers', where: '1=1' } })
-check('a widget cannot be given a query to run', badConfig.status, 400)
+check('a tile cannot be given a query to run', badConfig.status, 400)
 check('…and the key it refused is named', badConfig.body, t => t.includes('where'))
 
 // Layout is the board's, and reordering rewrites every position rather than
@@ -2438,11 +2438,11 @@ check('…and the key it refused is named', badConfig.body, t => t.includes('whe
 await goto(boardPath)
 await click('Edit layout')
 await sleep(500)
-const firstBefore = await evaluate(`document.querySelector('#widget-grid h2')?.textContent.trim() ?? ''`)
-await evaluate(`[...document.querySelectorAll('#widget-grid button')]
+const firstBefore = await evaluate(`document.querySelector('#tile-grid h2')?.textContent.trim() ?? ''`)
+await evaluate(`[...document.querySelectorAll('#tile-grid button')]
   .find(b => (b.getAttribute('aria-label') ?? '').startsWith('Move') && b.textContent.trim() === '→').click()`)
 check('reordering moves the card',
-  await waitFor(`document.querySelector('#widget-grid h2')?.textContent.trim() ?? ''`, t => t && t !== firstBefore),
+  await waitFor(`document.querySelector('#tile-grid h2')?.textContent.trim() ?? ''`, t => t && t !== firstBefore),
   t => t !== firstBefore)
 
 // ── 13d. Activity — the trail as a narrative ─────────────────────────

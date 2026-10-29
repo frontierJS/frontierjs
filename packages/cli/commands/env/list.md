@@ -55,6 +55,7 @@ const mask = (val) => {
 </script>
 
 ```js
+const { plural } = await import(resolve(global.fliRoot, 'core/text.js'))
 const envPath = resolve($.paths.root, flag.file)
 
 if (!existsSync(envPath)) {
@@ -77,7 +78,7 @@ if (flag.json) {
   return
 }
 
-echo(`\n${flag.file}  (${vars.length} variable${vars.length === 1 ? '' : 's'})\n`)
+echo(`\n${flag.file}  (${plural(vars.length, 'variable')})\n`)
 
 // Print with comments preserved for context
 for (const entry of entries) {

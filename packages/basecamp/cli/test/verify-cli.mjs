@@ -45,8 +45,8 @@ const SCRATCH     = mkdtempSync(join(tmpdir(), 'basecamp-cli-'))
 const DB_PATH     = join(SCRATCH, 'basecamp.db')
 const CONFIG_HOME = join(SCRATCH, 'config')
 
-const PASSWORD = 'hunter2hunter2'
-const OWNER = 'sam@example.com', ADMIN = 'kim@example.com', DEVELOPER = 'remy@example.com', VIEWER = 'jo@example.com'
+const PASSWORD = 'test1234'
+const OWNER = 'dev@knight.works', ADMIN = 'kim@example.com', DEVELOPER = 'remy@example.com', VIEWER = 'jo@example.com'
 
 const ENV = {
   ...process.env,

@@ -1,0 +1,33 @@
+<script>
+  // ArgvInput.mesa — a container's `command`, one argument per line.
+  //
+  // The kit answers a `String[]` with a tag input, which is a SET: a repeated
+  // argument collapses, and typing one already present removes the earlier
+  // copy, so `-e A -e B` cannot be written. Argv is an ordered list with
+  // repeats, and no shell split (`FJS-D1585`), so each line is one argument.
+  //
+  // The text is held here rather than derived from `value`: a line just
+  // started parses to nothing, and re-joining the parsed list on every
+  // keystroke would delete the newline as it was typed.
+  import Textarea from '@frontierjs/ui/components/forms/Textarea.mesa'
+
+  export let name    = ''
+  export let value   = []
+  export let onvalue = undefined   // (string[]) => void
+
+  const parse = (text) => text.split('\n').map(s => s.trim()).filter(Boolean)
+  const same  = (a, b) => a.length === b.length && a.every((s, i) => s === b[i])
+
+  let text = (value ?? []).join('\n')
+
+  // A reset or a reopened row is a value this box did not type.
+  $: value, () => { if (!same(value ?? [], parse(text))) text = (value ?? []).join('\n') }
+
+  function input(e) {
+    text = e.target.value
+    onvalue?.(parse(text))
+  }
+</script>
+
+<Textarea {name} value={text} rows={3} autogrow oninput={input}
+  hint="One argument per line, replacing the image's CMD. Empty runs the image's own." />

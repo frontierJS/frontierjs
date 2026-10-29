@@ -18,7 +18,7 @@
  *   is `ws:pub` itself and the versions it states are its own.
  */
 import { test, expect, beforeAll, afterAll } from 'bun:test'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir }                                        from 'node:os'
 import { join, resolve }                                 from 'node:path'
 import { fileURLToPath }                                 from 'node:url'
@@ -28,8 +28,19 @@ import {
   PUBLISH_STEPS, PUBLISH_STAGES, describePublish, pubArgv, runPublishStep,
   publishLocal, workspaceMembers, displayArgv,
 } from '../core/publish-view.js'
+import { DESTINATIONS, DEFAULT_TO } from '../core/publish-hosts.js'
 
 const CLI = resolve(fileURLToPath(new URL('.', import.meta.url)), '..')
+
+// `ws:pub`'s frontmatter cannot import, so its `choices` for `--to` is a third
+// spelling of the destinations; the page refuses by the module's list and the
+// command by this one, and they must be the same list.
+test('the destinations ws:pub accepts are the ones the page knows', () => {
+  const front   = readFileSync(join(CLI, 'commands/workspace/publish/index.md'), 'utf8')
+  const choices = /\n  to:\n(?:.*\n)*?    choices: \[([^\]]+)\]/.exec(front)?.[1].split(',').map(s => s.trim())
+  expect(choices).toEqual(DESTINATIONS)
+  for (const d of DEFAULT_TO) expect(DESTINATIONS).toContain(d)
+})
 
 let root
 beforeAll(() => {
@@ -76,6 +87,13 @@ test('the page is shown commands as typed, never an argv to send back', () => {
   expect(steps.every(s => !('argv' in s) && !('fix' in s))).toBe(true)
   expect(steps.find(s => s.id === 'plan').command).toBe('fli ws:pub --dry')
   expect(steps.find(s => s.id === 'whoami').command).toBe('npm whoami')
+  expect(steps.find(s => s.id === 'gh').command).toBe('gh auth status --active')
+})
+
+test('each destination has its own login gate, named for it', () => {
+  expect(PUBLISH_STEPS.find(s => s.id === 'whoami').to).toBe('npm')
+  expect(PUBLISH_STEPS.find(s => s.id === 'gh').to).toBe('tarballs')
+  for (const s of PUBLISH_STEPS) if (s.to) expect(['npm', 'tarballs']).toContain(s.to)
 })
 
 // ─── the options gate ────────────────────────────────────────────────────────
@@ -91,6 +109,14 @@ test('an untouched selection sends no --filter, so ws:pub picks', () => {
   expect(pubArgv({}, members()).argv).toEqual(['ws:pub', 'patch'])
   expect(pubArgv({ bump: 'minor', tag: 'beta', all: true, push: false }, members()).argv)
     .toEqual(['ws:pub', 'minor', '--tag', 'beta', '--all', '--no-push'])
+})
+
+test('the default destination is left unsaid; anything else is said per destination', () => {
+  expect(pubArgv({ to: ['tarballs'] }, members()).argv).toEqual(['ws:pub', 'patch'])
+  expect(pubArgv({ to: ['npm'] }, members()).argv).toEqual(['ws:pub', 'patch', '--to', 'npm'])
+  expect(pubArgv({ to: ['npm', 'tarballs', 'npm'] }, members()).argv).toEqual(['ws:pub', 'patch', '--to', 'npm', '--to', 'tarballs'])
+  expect(pubArgv({ to: [] }, members()).error).toMatch(/no destination/)
+  expect(pubArgv({ to: ['s3; id'] }, members()).error).toMatch(/not a destination/)
 })
 
 test('a value ws:pub would paste into a shell is refused, not escaped', () => {

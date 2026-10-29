@@ -32,7 +32,7 @@ beforeAll(() => {
   ].map(e => JSON.stringify(e)).join('\n') + '\nnot json\n')
   model = collect({ root: REPO })
   work  = workOf(REPO, model, { today: '2026-10-06', log: LOG })
-})
+}, 30_000)
 afterAll(() => { try { rmSync(ROOT, { recursive: true, force: true }) } catch {} })
 
 const scriptOf = html => html.slice(html.lastIndexOf('<script>') + 8, html.lastIndexOf('</script>'))

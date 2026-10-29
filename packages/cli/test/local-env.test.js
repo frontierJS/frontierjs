@@ -50,8 +50,17 @@ describe('strayDatabasePaths', () => {
     ])
   })
 
-  test('a path under the mount, a relative one and a non-path are not', () => {
-    const text = 'DATABASE_URL=/db/app.db\nAUDIT_PATH=/db/audit/\nX_PATH=db/x.db\nDATABASE_URL_2=postgres://h/x\nNAME=/data/app.db\n'
+  test('a relative path is stray: the server passes the file whole, so it lands under the WORKDIR', () => {
+    const text = 'DATABASE_URL=./db/app.db\nAUDIT_PATH=./db/audit.db\nX_PATH=db/x.db\n'
+    expect(strayDatabasePaths(text, '/db')).toEqual([
+      { key: 'DATABASE_URL', value: './db/app.db' },
+      { key: 'AUDIT_PATH', value: './db/audit.db' },
+      { key: 'X_PATH', value: 'db/x.db' },
+    ])
+  })
+
+  test('a path under the mount, a URL, :memory: and a non-path are not', () => {
+    const text = 'DATABASE_URL=/db/app.db\nAUDIT_PATH=/db/audit/\nDATABASE_URL_2=postgres://h/x\nX_PATH=:memory:\nNAME=/data/app.db\n'
     expect(strayDatabasePaths(text, '/db')).toEqual([])
   })
 

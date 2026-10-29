@@ -190,7 +190,6 @@ title: Hub users
   $: counts = {
     user:  rows.filter(u => u.kind === 'user').length,
     bot:   rows.filter(u => u.kind === 'bot').length,
-    ai:    rows.filter(u => u.kind === 'ai').length,
   }
   $: suspended = rows.filter(u => u.status === 'suspended').length
   $: session.user.id
@@ -221,12 +220,11 @@ title: Hub users
   <Badge tone="muted">{rows.length} shown</Badge>
   <Badge tone="info">{counts.user} human</Badge>
   <Badge tone="muted">{counts.bot} bot</Badge>
-  <Badge tone="muted">{counts.ai} ai</Badge>
   <Badge tone={suspended ? 'danger' : 'muted'}>{suspended} suspended</Badge>
 </div>
 
 <div class="cluster" id="hub-user-filters">
-  {#each ['all', 'user', 'bot', 'ai'] as k}
+  {#each ['all', 'user', 'bot'] as k}
     <Button treatment={kind === k ? '' : 'ghost'} onclick={() => setKind(k)}>{k}</Button>
   {/each}
   <Button treatment="outlined" id="new-bot" onclick={() => (creating = !creating)}>

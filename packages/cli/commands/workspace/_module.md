@@ -20,10 +20,9 @@ const bumpVersion = (version, bump) => {
 }
 
 // ─── releaseTag ───────────────────────────────────────────────────────────────
-// `<name>@<version>`. A monorepo shares one tag namespace, so a tag has to name
-// the package: nine members sitting at 0.1.0 all want `v0.1.1` otherwise, and
-// only the first one gets it.
-const releaseTag = (name, version) => `${name}@${version}`
+// `<name>@<version>`, spelled once in `core/publish-hosts.js` because the GUI's
+// publish walk asks the release host by the same tag.
+const { releaseTag } = await import(new URL('file://' + global.fliRoot + '/core/publish-hosts.js'))
 
 // ─── releaseSubject ───────────────────────────────────────────────────────────
 // Commit subject for a release. Names the packages while that stays readable,
@@ -32,6 +31,21 @@ const releaseTag = (name, version) => `${name}@${version}`
 const releaseSubject = (released) => released.length <= 3
   ? `chore(release): ${released.map(r => releaseTag(r.name, r.newVersion)).join(', ')}`
   : `chore(release): ${released.length} packages`
+
+// ─── diffLines ────────────────────────────────────────────────────────────────
+// The first 20 differing lines between a committed snapshot and a fresh one,
+// the form every ws: snapshot command prints on a stale --check.
+const diffLines = (was, now) => {
+  const a = was.split('\n'), b = now.split('\n')
+  const out = []
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if (a[i] === b[i]) continue
+    out.push(`    - ${a[i] ?? '(absent)'}`)
+    out.push(`    + ${b[i] ?? '(absent)'}`)
+    if (out.length >= 20) { out.push('    …'); break }
+  }
+  return out.join('\n')
+}
 
 </script>
 

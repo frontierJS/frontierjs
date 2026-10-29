@@ -60,6 +60,10 @@ export const NOTIFICATION_KINDS: NotificationKindDef[] = [
     description: 'A security control on a machine stopped holding — password SSH, an unexpected listener, updates pending.',
     email: true,  inApp: true },
 
+  { kind: 'HubPostureFailed', label: 'Installation needs attention',
+    description: 'Once a day while a check on the box Basecamp runs on is failing — no backup, an unattested key, a localhost URL, no mailer. Sent to system admins.',
+    email: true,  inApp: true },
+
   { kind: 'DependencyVulnerable', label: 'Dependency vulnerable',
     description: 'An installed version of a package gained a published advisory.',
     email: true,  inApp: true },

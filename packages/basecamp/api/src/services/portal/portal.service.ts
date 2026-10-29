@@ -75,7 +75,7 @@ const SERVICES: Array<{
 /**
  * The adapters a caller may name, for anything that stores one.
  *
- * A `service_health` widget holds a portal id in its config, and a widget
+ * A `service_health` tile holds a portal id in its config, and a tile
  * pointing at an adapter that does not exist is a card that can only ever say
  * "not found". The dashboards service validates against this rather than
  * keeping a second list, which is the same reason an API key's scopes are

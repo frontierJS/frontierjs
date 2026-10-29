@@ -36,7 +36,7 @@ import { BLUEPRINTS }        from './blueprints.js'
 import { env } from '../api/src/core/env.ts'
 import { grantsFor } from '../api/src/core/capabilities.ts'
 
-const PASSWORD = 'hunter2hunter2'
+const PASSWORD = 'test1234'
 const RNG_SEED = 42
 
 // Identity that has to be UNIQUE comes from here, never from the factory's
@@ -186,7 +186,7 @@ class DeploymentFactory extends Factory {
       commitMessage: ['Bump dependencies', 'Fix null check on login', 'Add health endpoint',
                       'Cache the manifest', 'Revert "Cache the manifest"'][seq % 5],
       branch:        'main',
-      author:        'sam@example.com',
+      author:        'dev@knight.works',
       toImage:       `zot.local/acme/app:${sha}`,
       durationMs:    rng ? rng.int(20_000, 240_000) : 60_000,
       startedAt:     new Date(Date.now() - seq * 3_600_000).toISOString(),
@@ -239,7 +239,7 @@ class SecretFactory extends Factory {
       data:       kind === 'provider_key'
                     ? JSON.stringify({ token: 'seeded-example-not-a-real-token' })
                     : JSON.stringify({ note: 'seeded example — not a real credential', kind }),
-      isVerified: kind !== 'provider_key',
+      verifiedAt: kind === 'provider_key' ? null : new Date().toISOString(),
     }
   }
 }
@@ -339,7 +339,7 @@ export class BasecampSeeder extends Seeder {
       // patched after — every one of them is nullable or defaulted precisely
       // so this two-step works.
       const people = [
-        { email: 'sam@example.com',  name: 'Sam Okonkwo',  role: 'owner'     },
+        { email: 'dev@knight.works', name: 'Dev Admin',     role: 'owner'     },
         { email: 'kim@example.com',  name: 'Kim Alvarez',  role: 'admin'     },
         { email: 'remy@example.com', name: 'Remy Fontaine', role: 'developer' },
         { email: 'jo@example.com',   name: 'Jo Barrett',   role: 'viewer'    },
@@ -481,7 +481,7 @@ export class BasecampSeeder extends Seeder {
             name:        `slack-webhook-${index}`,
             kind:        'notification',
             data:        JSON.stringify({ url: 'https://hooks.example.com/seeded/not-a-real-webhook' }),
-            isVerified:  true,
+            verifiedAt:  new Date().toISOString(),
             createdBy:   owner.id,
           },
         })
@@ -682,10 +682,9 @@ export class BasecampSeeder extends Seeder {
               const deployments = await new DeploymentFactory(sys)
                 .seed(RNG_SEED + apps.indexOf(app))
                 .create(count, {
-                  appId:         app.id,
-                  environmentId: environment.id,
-                  workspaceId:   ws.id,
-                  triggeredBy:   owner.id,
+                  appId:       app.id,
+                  workspaceId: ws.id,
+                  triggeredBy: owner.id,
                 })
 
               for (const deployment of deployments) await seedSteps(sys, deployment)
@@ -698,8 +697,8 @@ export class BasecampSeeder extends Seeder {
                 const sha = 'c0ffee5e1ec7ed0c0ffee5e1ec7ed0c0ffee5e1e'
                 const at  = new Date(Date.now() - 1_800_000)
                 const [laptop] = await new DeploymentFactory(sys).create(1, {
-                  appId: app.id, environmentId: environment.id, workspaceId: ws.id, triggeredBy: owner.id,
-                  status: 'success', trigger: 'laptop', commitSha: sha, branch: 'main', author: 'sam@example.com',
+                  appId: app.id, workspaceId: ws.id, triggeredBy: owner.id,
+                  status: 'success', trigger: 'laptop', commitSha: sha, branch: 'main', author: 'dev@knight.works',
                   commitMessage: 'Try the new checkout flow', toImage: `fjs-${app.id}:${sha.slice(0, 12)}`,
                   builtImage: `sha256:${(sha + sha).slice(0, 64)}`, durationMs: 40_000,
                   startedAt: at.toISOString(), finishedAt: new Date(at.getTime() + 40_000).toISOString(),
@@ -708,14 +707,13 @@ export class BasecampSeeder extends Seeder {
               }
             }
 
-            // Jobs hang off the environment, and each one has run before —
-            // a job with no history cannot show whether it is healthy.
+            // Jobs hang off the environment's first app, and each one has run
+            // before — a job with no history cannot show whether it is healthy.
             const jobs = await new JobFactory(sys)
               .seed(RNG_SEED + environments.indexOf(environment))
               .create(2, {
-                workspaceId:   ws.id,
-                environmentId: environment.id,
-                appId:         apps[0].id,
+                workspaceId: ws.id,
+                appId:       apps[0].id,
               })
 
             for (const job of jobs) await seedRuns(sys, job)
@@ -726,7 +724,7 @@ export class BasecampSeeder extends Seeder {
         // One board per workspace, holding a card of each SHAPE — a fleet grid
         // with no subject, a counter with a config source, and two cards
         // pointing at a real server and a real app. A seeded board of six
-        // identical widgets would prove nothing about the subject rules.
+        // identical tiles would prove nothing about the subject rules.
         //
         // The app is read back rather than threaded down from the loop above:
         // it is created three environments deep, and carrying it out would mean
@@ -758,7 +756,7 @@ export class BasecampSeeder extends Seeder {
           // that writes rows the API would not is a seed that hides a bug.
           if (card.kind === 'server_health' && !card.serverId) continue
           if (card.kind === 'app_status'    && !card.appId)    continue
-          await sys.dashboardWidget.create({ data: { dashboardId: board.id, position, ...card } })
+          await sys.dashboardTile.create({ data: { dashboardId: board.id, position, ...card } })
         }
 
         // ── Recipes, and what they did ────────────────────────────────
@@ -875,9 +873,10 @@ export class BasecampSeeder extends Seeder {
 
         // One sweep that already happened, so the history table and the
         // per-server "last swept" line have something true behind them.
-        await sys.cleanupRun.create({
+        await sys.maintenanceRun.create({
           data: {
             serverId:    servers[0].id,
+            kind:        'cleanup',
             status:      'success',
             targets:     ['dangling_images', 'stopped_containers', 'build_cache'],
             keepImages:  3,
@@ -1015,7 +1014,6 @@ async function seedInstallation(sys, owner, users) {
   await sys.hubConfig.create({
     data: {
       id:         'hub',
-      name:       'Acme Platform Hub',
       backupEnabled:   true,
       backupCron:      '0 2 * * *',
       backupDestinationId: offBox.id,
@@ -1193,7 +1191,7 @@ if (import.meta.main) {
 
   const raw = openSqlite(env.DATABASE_URL)
   const migrated = await apply(raw, migrationsDir)
-  if (migrated.unmatched) throw new Error(`[seed] ${migrated.message} — db/migrations/main`)
+  if (migrated.unmatched || migrated.error) throw new Error(`[seed] ${migrated.message ?? migrated.error} — db/migrations/main`)
   raw.close()
 
   const db = await createBasecampDb()
@@ -1210,8 +1208,8 @@ if (import.meta.main) {
   for (const model of ['user', 'workspace', 'project', 'environment', 'app',
                        'server', 'volume', 'deployment', 'deploymentStep', 'job', 'jobRun',
                        'secret', 'apiKey', 'alertRule', 'notificationChannel',
-                       'alertRuleChannel', 'dashboard', 'dashboardWidget',
-                       'recipe', 'recipeRun', 'diskUsage', 'serverPosture', 'cleanupRun',
+                       'alertRuleChannel', 'dashboard', 'dashboardTile',
+                       'recipe', 'recipeRun', 'diskUsage', 'serverPosture', 'maintenanceRun',
                        'blueprint', 'blueprintParam', 'registryImage',
                        'dependency', 'dependencyUse', 'backupDestination', 'backup', 'hubConfig', 'notificationPreference',
                        'auditEvent']) {
@@ -1220,7 +1218,7 @@ if (import.meta.main) {
 
   console.log('\nseeded:')
   for (const [model, n] of Object.entries(counts)) console.log(`  ${String(n).padStart(4)}  ${model}`)
-  console.log(`\nsign in as any of sam@ kim@ remy@ jo@example.com — password ${PASSWORD}\n`)
+  console.log(`\nsign in as dev@knight.works, or kim@ remy@ jo@example.com — password ${PASSWORD}\n`)
 
   db.$close()
 }

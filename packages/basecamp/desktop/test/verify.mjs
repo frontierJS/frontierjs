@@ -42,8 +42,8 @@ const DESKTOP  = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const PKG      = resolve(DESKTOP, '..')
 const API_PORT = await portFor(import.meta.url, 'be')
 const API      = `http://localhost:${API_PORT}`
-const EMAIL    = 'sam@example.com'
-const PASSWORD = 'hunter2hunter2'
+const EMAIL    = 'dev@knight.works'
+const PASSWORD = 'test1234'
 const LINUX    = process.platform === 'linux'
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))

@@ -13,3 +13,6 @@ import '@frontierjs/css'
 
 // How this console renders a column, where it differs from the kit's default.
 import './lib/displays.js'
+
+// The form controls this console swaps in for the kit's.
+import './lib/controls.js'

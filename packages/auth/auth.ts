@@ -433,7 +433,7 @@ export function createLitestoneAuth(
       // holds it to enrollment. A bot or a peer is refused in issueSession, so
       // the predicate is only asked about a person.
       const owed = (user.kind ?? 'user') === 'user' && typeof requireSecondFactor === 'function'
-        ? requireSecondFactor(user) : requireSecondFactor === true
+        ? await requireSecondFactor(user) : requireSecondFactor === true
       return issueSession(user, 'session', meta, owed)
     }
 
@@ -1960,7 +1960,8 @@ export function createLitestoneAuth(
           data: {
             email: data.email,
             name:  data.name  ?? null,
-            role:  data.role  ?? 'user',
+            // An app's User may drop `role`; the column's default stands in.
+            ...(data.role != null && { role: data.role }),
             ...placed,
           }
         })

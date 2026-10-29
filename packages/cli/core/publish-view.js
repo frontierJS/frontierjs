@@ -8,7 +8,8 @@
 //
 // **Nothing here re-derives the release.** Which packages are affected, the
 // version each moves to, the publish order and every refusal are `ws:pub`'s,
-// reached by running it with `--dry`; the registry is `ws:npm --json`. A
+// reached by running it with `--dry`; the registry is `ws:npm --json` and the
+// release host is `publish-hosts.js`, the reader `ws:pub` itself asks. A
 // second implementation is how the page would come to promise a version the
 // command then does not publish.
 //
@@ -23,7 +24,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { spawnSync }                             from 'node:child_process'
 import { join, resolve }                         from 'node:path'
 
-import { spawnStep } from './release-view.js'
+import { spawnStep }                       from './release-view.js'
+import { DESTINATIONS, DEFAULT_TO, hosts } from './publish-hosts.js'
 
 export const BUMPS = ['patch', 'minor', 'major', 'prerelease']
 
@@ -42,17 +44,22 @@ export const PUBLISH_STAGES = [
 // `run: 'pub'` steps are `ws:pub` with the options on the page; `bin` names a
 // binary other than `fli`. A `gate` reads something the page already holds,
 // and `note` is a step that runs nothing because the right move is a person's.
+// A step with `to` is a gate for one destination and is drawn only while that
+// destination is in the run.
 export const PUBLISH_STEPS = [
   { id: 'commit',   stage: 'ready',   gate: 'tree',
     title: 'commit what you mean to publish',
-    why:   'npm packs the working directory, not the commit — ws:pub refuses a package with uncommitted files' },
+    why:   'the pack reads the working directory, not the commit — ws:pub refuses a package with uncommitted files' },
   { id: 'ci',       stage: 'ready',   gate: 'ci',
     title: 'a full CI run passes',
-    why:   'the release commit is pushed through the pre-push hook, after the packages are already on npm' },
+    why:   'the release commit is pushed through the pre-push hook, after the packages are already shipped' },
   { id: 'snapshots', stage: 'ready',  argv: ['test:snapshots'], fix: ['test:snapshots', '--fix'],
     title: 'every committed snapshot matches its source',
-    why:   'exports.snapshot.md is what the registry will be holding — fix reruns each generator; read the diff, then commit' },
-  { id: 'whoami',   stage: 'ready',   bin: 'npm', argv: ['whoami'],
+    why:   'exports.snapshot.md is what the hosts will be holding — fix reruns each generator; read the diff, then commit' },
+  { id: 'gh',       stage: 'ready',   bin: 'gh', argv: ['auth', 'status', '--active'], to: 'tarballs',
+    title: 'GitHub knows who you are',
+    why:   'gh release create uploads each tarball — log in with `gh auth login`; a GH_TOKEN or GITHUB_TOKEN in the environment wins over the login, and a stale one answers 401' },
+  { id: 'whoami',   stage: 'ready',   bin: 'npm', argv: ['whoami'], to: 'npm',
     title: 'npm knows who you are',
     why:   'bun publish reads npm\'s credentials — log in with `npm login` before a version is spent' },
 
@@ -60,20 +67,20 @@ export const PUBLISH_STEPS = [
     title: 'what changed since each release tag',
     why:   'only a package with commits since its own tag goes out unless you include the unchanged' },
   { id: 'registry', stage: 'choose',  gate: 'registry',
-    title: 'what the registry holds now',
-    why:   'each package\'s local version against npm — read from the registry when you press it' },
+    title: 'what each destination holds now',
+    why:   'each package\'s local version against npm and the GitHub Release at its tag — read from the hosts when you press it' },
   { id: 'plan',     stage: 'choose',  run: 'pub', dry: true,
     title: 'the dry run — versions, order, refusals',
     why:   'ws:pub --dry: every version it would write and every reason it would refuse, spending nothing' },
 
   { id: 'publish',  stage: 'publish', run: 'pub',
-    confirm: 'writes the versions, commits and tags them, publishes each to npm and pushes',
+    confirm: 'writes the versions, commits and tags them, ships each where the destinations say and pushes',
     title: 'publish',
-    why:   'one bump, one release commit with a tag per package, bun publish in dependency order — a 2FA prompt per package prints its link in the console' },
+    why:   'one bump, one release commit with a tag per package, one pack shipped in dependency order — an npm 2FA prompt per package prints its link in the console' },
 
   { id: 'verify',   stage: 'after',   gate: 'registry',
-    title: 'the registry has the new versions',
-    why:   'read the registry again — every package that went out should read level' },
+    title: 'the destinations have the new versions',
+    why:   'read the hosts again — every package that went out should read level on npm and shipped on the release' },
   { id: 'push',     stage: 'after',   bin: 'git', argv: ['push', 'origin', 'HEAD', '--tags'],
     confirm: 'pushes the release commit and its tags', button: 'push',
     title: 'push, if you held it back',
@@ -81,7 +88,7 @@ export const PUBLISH_STEPS = [
 
   { id: 'partial',  stage: 'recover', gate: 'note',
     title: 'a run that published some and not others',
-    why:   'the console names what DID publish — those versions are on npm for good. Re-running bumps again and skips a version; reset the release commit and its tags, then publish again with "finish a partial run" on' },
+    why:   'the console names what DID ship — a version on npm is there for good, and a release asset is write-once. Re-running asks every destination and ships only where the version is missing' },
 ]
 
 // ─── the workspace ───────────────────────────────────────────────────────────
@@ -141,13 +148,43 @@ export function publishLocal({ root, fliRoot }) {
   }
 }
 
-/** The registry, read — `ws:npm --json`. A press, because it asks npm. */
-export function publishRegistry({ root, fliRoot, tag = 'latest' }) {
+/**
+ * The destinations in the run, or `{ error }`. Unset is `ws:pub`'s own default;
+ * an empty list is a person who unticked both, and a run that ships nowhere is
+ * refused rather than defaulted back.
+ */
+export function destinations(to) {
+  if (to === undefined || to === null) return { to: DEFAULT_TO }
+  const list = [...new Set((Array.isArray(to) ? to : [to]).map(String))]
+  const bad  = list.find(d => !DESTINATIONS.includes(d))
+  if (bad !== undefined) return { error: `not a destination: ${JSON.stringify(bad.slice(0, 20))}` }
+  if (!list.length)      return { error: 'no destination — tick npm, the GitHub Release, or both' }
+  return { to: list }
+}
+
+/**
+ * What the destinations hold, read — `ws:npm --json` for the registry and
+ * `publish-hosts.js` for the release at each package's own tag. A press,
+ * because it asks somebody else's server. `release` is true, false, or null
+ * where GitHub could not say; it is absent when the run does not ship there.
+ */
+export async function publishRegistry({ root, fliRoot, tag = 'latest', to }) {
   if (!TAG_SHAPE.test(String(tag))) return { ok: false, error: `not a dist-tag: ${JSON.stringify(String(tag).slice(0, 40))}` }
-  const r = fli(fliRoot, root, ['ws:npm', '--json', '--tag', tag], 90_000)
-  const rows = jsonArray(r.stdout)
-  if (!rows) return { ok: false, error: (r.stdout + '\n' + r.stderr).trim().split('\n').filter(Boolean).pop() ?? 'ws:npm answered nothing' }
-  return { ok: true, at: Date.now(), packages: rows.map(p => ({ name: p.name, local: p.local, remote: p.remote ?? null, status: p.status, error: p.error ?? null })) }
+  const dest = destinations(to)
+  if (dest.error) return { ok: false, error: dest.error }
+
+  let rows = workspaceMembers(root).filter(m => !m.private).map(m => ({ name: m.name, local: m.version, remote: null, status: null, error: null }))
+  if (dest.to.includes('npm')) {
+    const r = fli(fliRoot, root, ['ws:npm', '--json', '--tag', tag], 90_000)
+    const out = jsonArray(r.stdout)
+    if (!out) return { ok: false, error: (r.stdout + '\n' + r.stderr).trim().split('\n').filter(Boolean).pop() ?? 'ws:npm answered nothing' }
+    rows = out.map(p => ({ name: p.name, local: p.local, remote: p.remote ?? null, status: p.status, error: p.error ?? null }))
+  }
+  if (dest.to.includes('tarballs')) {
+    const held = hosts(root)
+    rows = await Promise.all(rows.map(async p => ({ ...p, release: await held.tarballs(p.name, p.local) })))
+  }
+  return { ok: true, at: Date.now(), to: dest.to, packages: rows }
 }
 
 // ─── the steps ───────────────────────────────────────────────────────────────
@@ -176,6 +213,8 @@ export function pubArgv(opts = {}, members = [], { dry = false } = {}) {
   if (!TAG_SHAPE.test(tag)) return { error: `not a dist-tag: ${JSON.stringify(tag.slice(0, 40))}` }
   const otp = String(opts.otp ?? '')
   if (otp && !OTP_SHAPE.test(otp)) return { error: 'a one-time password is 6 to 8 digits' }
+  const dest = destinations(opts.to)
+  if (dest.error) return dest
 
   const argv = ['ws:pub', bump]
   for (const name of Array.isArray(opts.packages) ? opts.packages : []) {
@@ -186,6 +225,9 @@ export function pubArgv(opts = {}, members = [], { dry = false } = {}) {
     argv.push('--filter', name)
   }
   if (tag !== 'latest')      argv.push('--tag', tag)
+  // The default is left unsaid, like `latest`, so the console reads as a person
+  // would type it; anything else is said per destination.
+  if (dest.to.join() !== DEFAULT_TO.join()) for (const d of dest.to) argv.push('--to', d)
   if (opts.all)              argv.push('--all')
   if (opts.push === false)   argv.push('--no-push')
   if (dry)                   argv.push('--dry')

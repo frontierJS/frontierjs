@@ -22,6 +22,7 @@ const { apiContainerName } = await import(new URL('file://' + global.fliRoot + '
 const { appUser, appUserIds } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
 const { EDGE_HOPS, edgeNames: edgeNamesOf } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
 const { crossOrigins } = await import(new URL('file://' + global.fliRoot + '/core/shell-origins.js'))
+const { installOutpost, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 
 // The origins the API admits besides its own, for `swapContainer`'s
 // `corsOrigins`. Asked by the forward swap and the revert alike, so a revert
@@ -116,10 +117,6 @@ const machineFor = ($, host, path = null, transport = null) => createMachine({
 // Every failure warns: a release is live by now. Answers
 // `{ outcome: 'installed' | 'enrolled' | 'skip' | 'failed', reason? }`.
 const enrollOutpost = (machine, { appId, deployConf, path, host, log }) => {
-  // A root login on a box with no sudo installed runs the same scripts through a
-  // function of that name.
-  const SUDO = 'command -v sudo >/dev/null 2>&1 || sudo() { "$@"; }'
-
   // The script's last stdout line is its whole answer. A failed exec carries it
   // in the error's stdout, and an image older than the script answers nothing.
   const lastJson = (out) => {
@@ -152,20 +149,8 @@ const enrollOutpost = (machine, { appId, deployConf, path, host, log }) => {
     log.info('Outpost: this box is in the fleet already')
     result = { outcome: 'enrolled' }
   } else {
-    // The command is written for a person with sudo. Its output is held, and
-    // a fresh image's first security pass is minutes of silence after this.
-    log.info('Installing the Outpost — on a fresh box its security updates take several minutes')
-    try {
-      machine.run(`${SUDO}\n${answer.command}`)
-      log.success('Outpost installed — the box joins the fleet at its first heartbeat')
-      result = { outcome: 'installed' }
-    } catch (err) {
-      // The attributed message quotes the script, and the script holds a live
-      // single-use token; the journal records what is logged here.
-      const said = String(err.stdout ?? '').trim().split('\n').slice(-3).join(' · ')
-      log.warn(`Outpost install failed on ${host}${said ? `: ${said}` : ''} — the Servers page issues a fresh command`)
-      return { outcome: 'failed', reason: said || 'the install command failed' }
-    }
+    result = installOutpost(machine, answer.command, { host, log })
+    if (result.outcome === 'failed') return result
   }
 
   const files = apiFiles(deployConf, path)
@@ -247,6 +232,19 @@ const resolveTarget = (flag, git) => {
 // a real domain, and `ssh your-server.com` is a connection to somebody's box.
 const PLACEHOLDER_SERVER = 'your-server.com'
 const ADDRESS_KEYS = ['server', 'user']
+
+// What an unset server is told. The buy stays in `server:create` (FJS-D1612) —
+// a command without `confirm: human` may not bill a cloud account on a `y` —
+// so the refusal names the two commands and, with no cloud token stored, where
+// one comes from.
+const { CLOUDS, storedClouds } = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
+const noServerHint = (deployConf) => {
+  const name  = appIdOf(deployConf) ?? '<name>'
+  const lines = [`No box yet? fli server:create --name ${name} buys one, then fli deploy:setup --server ${name} --auto-install readies it`]
+  if (!storedClouds().length)
+    lines.push(`A cloud token first: ${Object.values(CLOUDS).map(c => `${c.key} (${c.url})`).join(' or ')}, via fli eset ME <KEY> <token>`)
+  return lines
+}
 
 const deployConfFor = async ($, flag, log) => {
   const file = await loadFrontierConfig($.paths.root)
@@ -363,8 +361,12 @@ const deployTargetFor = async ($, flag, log, { side = null, why = '' } = {}) => 
 
   const target     = resolveTarget(flag, $.git)
   const deployConf = await deployConfFor($, flag, log)
-  if (!deployConf?.server)
+  if (!deployConf)
     return refuse(`No deploy block in frontier.config.js${why ? ` — ${why}` : ''}`)
+  if (!deployConf.server) {
+    for (const line of noServerHint(deployConf)) log.info(line)
+    return refuse('deploy.server is not set. Set it, or pass --server <ssh alias>')
+  }
 
   const appId = appIdOf(deployConf)
   if (!appId) return refuse('deploy.app_id is not set in frontier.config.js')
@@ -814,7 +816,8 @@ const showContainerTail = (machine, container, log, lines = 40) => {
 // A container that answers but holds a database outside CONTAINER_DB_DIR is
 // put back too: it works until the next swap, which starts that database empty.
 //
-// Answers `{ healthy, restored, unbound }` and throws nothing — the caller decides
+// Answers `{ healthy, restored, none, unbound }` and throws nothing — `none` is a
+// first deploy, with no `_replaced` to put back. The caller decides
 // what a failure means, because for a deploy it is a rollback and for a revert it
 // is a revert that could not land.
 const pauseCore = () => import(new URL('file://' + global.fliRoot + '/core/pause.js'))
@@ -887,11 +890,19 @@ else
   echo "no previous container to restore"
 fi`
 
+  let restoreOut
   try {
-    machine.run(restoreCmd)
+    restoreOut = machine.capture(restoreCmd)
   } catch (err) {
     log.error('Restore also failed: ' + err.message)
-    return { healthy: false, restored: false, unbound }
+    return { healthy: false, restored: false, none: false, unbound }
+  }
+
+  // Polled, a first deploy reports a put-back that never happened and shows
+  // "No such container" as that container's logs (FJS-3586).
+  if (restoreOut.includes('no previous container to restore')) {
+    log.info(`${container} removed — this was its first deploy here, so there was no previous release to put back`)
+    return { healthy: false, restored: false, none: true, unbound }
   }
 
   // `docker start` returns while the app is still migrating, so a put-back
@@ -900,10 +911,10 @@ fi`
   if (!answers()) {
     log.error(`The previous container was put back and does not answer ${healthPath} either`)
     showContainerTail(machine, container, log)
-    return { healthy: false, restored: false, unbound }
+    return { healthy: false, restored: false, none: false, unbound }
   }
   log.warn('Restored the previous container, and it answers')
-  return { healthy: false, restored: true, unbound }
+  return { healthy: false, restored: true, none: false, unbound }
 }
 
 // ─── edgeRoutesFor / writeEdge ────────────────────────────────────────────────

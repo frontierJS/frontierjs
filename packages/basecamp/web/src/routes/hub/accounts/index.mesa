@@ -1,0 +1,97 @@
+---
+title: Hub accounts
+---
+<script>
+  // Every Account on the hub — the organization a workspace is created under
+  // and a person signs up into. Read-only: what an Account may do beyond
+  // grouping workspaces is the open Account-tier question (IDEAS/basecamp-dogfood.md
+  // Q1), so no action here should get ahead of that ruling.
+  import { hub } from '../../../resources/Hub.mesa'
+  import { day } from '../../../lib/datetime.js'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Table      from '@frontierjs/ui/components/display/Table.mesa'
+
+  let rows    = []
+  let error   = null
+  let loading = true
+  let q       = ''
+
+  async function load() {
+    error = null; loading = true
+    try {
+      const page = await hub.service.invoke('accounts', null, {}, q ? { q } : {})
+      rows = page.data ?? []
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+
+  function search(value) { q = value; load() }
+
+  $: organizations = rows.filter(a => a.type === 'organization').length
+  $: individuals   = rows.length - organizations
+  const HUB_ACCOUNT_COLUMNS = [
+    { name: 'account',    label: 'Account' },
+    { name: 'type',       label: 'Type' },
+    { name: 'status',     label: 'Status' },
+    { name: 'users',      label: 'Users' },
+    { name: 'workspaces', label: 'Workspaces' },
+    { name: 'created',    label: 'Created' },
+  ]
+</script>
+
+{#if error}
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+<p class="text-body">
+  Every account on this hub. An account is what a person signs up into and what each
+  workspace is created under; a person belongs to one, and may be a member of workspaces
+  under any.
+</p>
+
+<div class="cluster" id="hub-account-stats">
+  <Badge tone="muted">{rows.length} accounts</Badge>
+  <Badge tone="muted">{organizations} organizations</Badge>
+  <Badge tone="muted">{individuals} individual</Badge>
+</div>
+
+<div class="cluster">
+  <label class="visually-hidden" for="account-search">Filter accounts</label>
+  <Input id="account-search" type="search" placeholder="Filter accounts…"
+         value={q} oninput={(e) => search(e.target.value)} />
+</div>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <EmptyState title="No accounts">
+    Nothing matched. An account is created at sign-up — the hub reads them, it does not mint them.
+  </EmptyState>
+{:else}
+  <Table id="hub-account-rows" columns={HUB_ACCOUNT_COLUMNS} rows={rows} striped hover={false}>
+    {#snippet row(a)}
+      <tr>
+        <td>
+          {a.displayName}
+          <span class="text-sm text-muted"><code>{a.slug}</code></span>
+        </td>
+        <td><Badge tone="muted">{a.type}</Badge></td>
+        <td><Pill tone={a.status === 'active' ? 'success' : 'warning'}>{a.status}</Pill></td>
+        <td>{a.users}</td>
+        <td>{a.workspaces}</td>
+        <td class="text-sm text-muted">{day(a.createdAt)}</td>
+      </tr>
+    {/snippet}
+  </Table>
+{/if}

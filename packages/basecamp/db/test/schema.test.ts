@@ -23,10 +23,10 @@ import { introspect }     from '../../../litestone/src/core/migrate.js'
 // getLevel proves the levels in this file, not the ones the API runs — and the
 // two disagreeing is exactly the failure @@gate exists to prevent.
 import { basecampGateLevel, WORKSPACE_ROLE_LEVEL } from '../../api/src/core/gate.ts'
-// The API realm's half of the widget vocabulary. Imported rather than restated:
+// The API realm's half of the tile vocabulary. Imported rather than restated:
 // the whole point of the first Dashboard test is that these two lists are one
 // list, and a copy here would be a third.
-import { WIDGET_KINDS } from '../../api/src/services/dashboards/kinds.ts'
+import { TILE_KINDS } from '../../api/src/services/dashboards/kinds.ts'
 // The reclaim vocabulary, for the same reason: the schema cannot hold it (an
 // enum array does not parse), so the test that keeps it a single home has to
 // read the one home rather than restate it.
@@ -322,9 +322,9 @@ describe('generated migration', () => {
     // an override now points at a real Environment row. 30 since `ApiKey`, the
     // token Basecamp issues rather than presents. 31 since `Volume` — the first
     // model here that is OBSERVED rather than declared. 33 since `Dashboard`
-    // and `DashboardWidget` — a widget names a kind from a declared vocabulary,
+    // and `DashboardTile` — a tile names a kind from a declared vocabulary,
     // so a saved view is an arrangement rather than a stored query. 37 since
-    // `Recipe`, `RecipeRun`, `DiskUsage` and `CleanupRun` — the two ways this
+    // `Recipe`, `RecipeRun`, `DiskUsage` and `MaintenanceRun` — the two ways this
     // app acts on a machine, one arbitrary and one declared. 38 since
     // `Invitation` — the only door into this app for a human who is not the
     // first one, because `addMember` needs a userId and nothing made users. 39
@@ -631,19 +631,18 @@ describe('the gate ladder', () => {
   // address changed here is an account taken over by whoever holds the
   // session, still marked verified. A field write policy DROPS, so the write
   // lands with the rest and the row read back is the assertion.
-  test('a person cannot change their own address, organization or scopes', async () => {
+  test('a person cannot change their own address or organization', async () => {
     const db  = await client()
     const sys = db.asSystem()
     const acct = await sys.account.create({ data: { type: 'organization', status: 'active', slug: 'x', displayName: 'X' } })
     await sys.user.create({ data: { id: 'u1', email: 'u1@example.com', name: 'Me' } })
 
     await db.$setAuth(as('owner')).user.update({ where: { id: 'u1' }, data: {
-      email: 'taken@example.com', accountId: acct.id, scopes: ['admin'], username: 'me',
+      email: 'taken@example.com', accountId: acct.id, username: 'me',
     } })
     const row = await sys.user.findUnique({ where: { id: 'u1' } })
     expect(row.email).toBe('u1@example.com')
     expect(row.accountId).toBeNull()
-    expect(row.scopes).toEqual([])
     expect(row.username).toBe('me')
     db.$close()
   })
@@ -656,10 +655,13 @@ describe('the gate ladder', () => {
     // Every column basecampGateLevel() reads is a column the caller must not
     // write: isSystemAdmin IS the hub tier, and `suspended` is the status that
     // grades STRANGER — a caller who can lift their own suspension is not
-    // suspended. `kind` decides who may own an API key.
+    // suspended. `kind` decides who may own an API key, and is @system, so a
+    // caller naming it is refused rather than dropped.
     const dev = db.$setAuth(as('developer'))
+    await expect(dev.user.update({ where: { id: 'u1' }, data: { kind: 'bot' } }))
+      .rejects.toThrow(/"kind" is @system/)
     await dev.user.update({ where: { id: 'u1' }, data: {
-      isSystemAdmin: true, status: 'active', kind: 'bot', displayName: 'ok',
+      isSystemAdmin: true, status: 'active', displayName: 'ok',
     } })
     const row = await sys.user.findUnique({ where: { id: 'u1' } })
     expect(row.isSystemAdmin).toBe(false)
@@ -1800,20 +1802,20 @@ describe('Volume — observed, not declared', () => {
 })
 
 // ─── Dashboards ──────────────────────────────────────────────────────────────
-// A widget names a KIND from a declared vocabulary; it never carries a query.
+// A tile names a KIND from a declared vocabulary; it never carries a query.
 // What that decision costs is a second place the vocabulary lives — the enum in
 // the schema and the spec table the service validates against — so the first
 // test here holds them together in BOTH directions. The rest pin the part of a
-// widget's subject that is a schema decision rather than a service rule.
+// tile's subject that is a schema decision rather than a service rule.
 
 describe('Dashboard — a declared vocabulary, not a stored query', () => {
-  test('every widget kind is declared once, in both places', () => {
+  test('every tile kind is declared once, in both places', () => {
     const schema = parseFile(SCHEMA).schema
     // A parsed enum value is a record, not a string — it carries the comments
     // written above it.
-    const declared = (schema.enums.find((e: any) => e.name === 'WidgetKind')?.values ?? [])
+    const declared = (schema.enums.find((e: any) => e.name === 'TileKind')?.values ?? [])
       .map((v: any) => v.name ?? v)
-    const specced  = WIDGET_KINDS.map(k => k.kind)
+    const specced  = TILE_KINDS.map(k => k.kind)
 
     // Both directions. A kind in the schema with no spec is placeable and
     // unconfigurable; a spec with no enum member is offered by the picker and
@@ -1821,12 +1823,12 @@ describe('Dashboard — a declared vocabulary, not a stored query', () => {
     expect([...declared].sort()).toEqual([...specced].sort())
   })
 
-  test('a widget carries no query — the columns are a kind, a subject and knobs', () => {
+  test('a tile carries no query — the columns are a kind, a subject and knobs', () => {
     // Against the DDL, because the point is what CANNOT be stored. A `query`
     // or `accessor` column added later would still make every read work, and
     // the policy it walks around would fail silently.
     const ddl   = readFileSync(MIGRATION, 'utf8')
-    const start = ddl.indexOf('CREATE TABLE IF NOT EXISTS "dashboard_widget"')
+    const start = ddl.indexOf('CREATE TABLE IF NOT EXISTS "dashboard_tile"')
     const table = ddl.slice(start, start + ddl.slice(start).indexOf(') STRICT;'))
 
     expect(table).toContain('"kind"')
@@ -1839,7 +1841,7 @@ describe('Dashboard — a declared vocabulary, not a stored query', () => {
     // The enum reaches SQLite as a CHECK, which is what makes the vocabulary
     // enforceable below the API as well as at it.
     expect(table).toContain(`CHECK ("kind" IN (`)
-    for (const spec of WIDGET_KINDS) expect(table).toContain(`'${spec.kind}'`)
+    for (const spec of TILE_KINDS) expect(table).toContain(`'${spec.kind}'`)
   })
 
   test('a kind outside the vocabulary is refused by the column', async () => {
@@ -1850,13 +1852,13 @@ describe('Dashboard — a declared vocabulary, not a stored query', () => {
       data: { workspaceId: ws.id, name: 'Ops', slug: `ops-${Math.random().toString(36).slice(2, 8)}` },
     })
 
-    await expect(sys.dashboardWidget.create({
+    await expect(sys.dashboardTile.create({
       data: { dashboardId: board.id, kind: 'sql_query' },
     })).rejects.toThrow()
     db.$close()
   })
 
-  test('a widget whose server is really deleted keeps its place and loses its subject', async () => {
+  test('a tile whose server is really deleted keeps its place and loses its subject', async () => {
     const db  = await client()
     const sys = db.asSystem() as any
     const ws  = await seedWorkspace(sys)
@@ -1866,7 +1868,7 @@ describe('Dashboard — a declared vocabulary, not a stored query', () => {
     const board = await sys.dashboard.create({
       data: { workspaceId: ws.id, name: 'Ops', slug: `ops-${Math.random().toString(36).slice(2, 8)}` },
     })
-    const widget = await sys.dashboardWidget.create({
+    const tile = await sys.dashboardTile.create({
       data: { dashboardId: board.id, kind: 'server_health', serverId: server.id },
     })
 
@@ -1875,26 +1877,26 @@ describe('Dashboard — a declared vocabulary, not a stored query', () => {
     // server is gone is the thing an operator needs to see.
     await sys.server.delete({ where: { id: server.id } })
 
-    const after = await sys.dashboardWidget.findUnique({ where: { id: widget.id } })
+    const after = await sys.dashboardTile.findUnique({ where: { id: tile.id } })
     expect(after).not.toBeNull()
     expect(after.serverId).toBeNull()
     db.$close()
   })
 
-  test('widgets go when their dashboard does', async () => {
+  test('tiles go when their dashboard does', async () => {
     const db  = await client()
     const sys = db.asSystem() as any
     const ws  = await seedWorkspace(sys)
     const board = await sys.dashboard.create({
       data: { workspaceId: ws.id, name: 'Ops', slug: `ops-${Math.random().toString(36).slice(2, 8)}` },
     })
-    await sys.dashboardWidget.create({ data: { dashboardId: board.id, kind: 'server_fleet' } })
+    await sys.dashboardTile.create({ data: { dashboardId: board.id, kind: 'server_fleet' } })
 
-    // Hard delete: Dashboard is @@softDelete, so `remove` leaves the widgets
+    // Hard delete: Dashboard is @@softDelete, so `remove` leaves the tiles
     // pointing at a row that still exists — which is right, since restoring a
     // board with no cards would be restoring a different board.
     await sys.dashboard.delete({ where: { id: board.id } })
-    expect(await sys.dashboardWidget.count({ where: { dashboardId: board.id } })).toBe(0)
+    expect(await sys.dashboardTile.count({ where: { dashboardId: board.id } })).toBe(0)
     db.$close()
   })
 
@@ -1918,18 +1920,18 @@ describe('Dashboard — a declared vocabulary, not a stored query', () => {
 // can bound it, so what these pin is the RECORD: the script a run actually ran,
 // and where the reclaim vocabulary lives now that it cannot be an enum.
 
-describe('Recipe and CleanupRun — the arbitrary act and the declared one', () => {
+describe('Recipe and MaintenanceRun — the arbitrary act and the declared one', () => {
   async function seedServer(sys: any, ws: any, name = 'runner-01') {
     return sys.server.create({
       data: { workspaceId: ws.id, name, slug: `${name}-${Math.random().toString(36).slice(2, 8)}` },
     })
   }
 
-  test('one run vocabulary, not three — JobRun, RecipeRun and CleanupRun share RunStatus', () => {
+  test('one run vocabulary, not three — JobRun, RecipeRun and MaintenanceRun share RunStatus', () => {
     const schema = parseFile(SCHEMA).schema
     const byName = Object.fromEntries(schema.models.map((m: any) => [m.name, m]))
 
-    for (const model of ['JobRun', 'RecipeRun', 'CleanupRun']) {
+    for (const model of ['JobRun', 'RecipeRun', 'MaintenanceRun']) {
       const status = byName[model].fields.find((f: any) => f.name === 'status')
       // Three copies of the same five words drift apart one value at a time,
       // and the screens then disagree about what "finished" looks like.
@@ -1997,7 +1999,7 @@ describe('Recipe and CleanupRun — the arbitrary act and the declared one', () 
     expect(declaredElsewhere.map((e: any) => e.name)).toEqual([])
 
     const ddl   = readFileSync(MIGRATION, 'utf8')
-    const start = ddl.indexOf('CREATE TABLE IF NOT EXISTS "cleanup_run"')
+    const start = ddl.indexOf('CREATE TABLE IF NOT EXISTS "maintenance_run"')
     const table = ddl.slice(start, start + ddl.slice(start).indexOf(') STRICT;'))
 
     // A sweep names targets and never carries a command. A `command` or
@@ -2023,7 +2025,7 @@ describe('Recipe and CleanupRun — the arbitrary act and the declared one', () 
     // a report was missed.
     expect(table).not.toContain('"volumes')
     expect(table).not.toContain('"unusedVolume')
-    // Nor a last-cleanup stamp: CleanupRun records when a sweep ran and what it
+    // Nor a last-cleanup stamp: MaintenanceRun records when a sweep ran and what it
     // freed, and a stamp here would go stale the first time one failed.
     expect(table).not.toContain('"lastCleanup')
   })
@@ -2098,12 +2100,11 @@ describe('the hub tier — suspension, and who may grant it', () => {
     const sys = db.asSystem() as any
     const user = await sys.user.create({ data: { email: `y${Math.random().toString(36).slice(2, 8)}@x.co` } })
 
-    // NOT auth's `role`, which defaults to "user" and which nothing in this app
-    // reads. The name is load-bearing beyond this app: `isSystemAdmin` is what
+    // The name is load-bearing beyond this app: `isSystemAdmin` is what
     // sessionGateLevel() grades SYSADMIN(7) on, so this is the column @@gate
     // will read when FJS-007 lands.
     expect(user.isSystemAdmin).toBe(false)
-    expect(user.role).toBe('user')
+    expect('role' in user).toBe(false)
     expect(user.status).toBe('pending_verification')
     db.$close()
   })
@@ -2156,7 +2157,7 @@ describe('Deployment and Job declare their own state machines', () => {
       data: { environmentId: env.id, workspaceId: ws.id, name: 'web', slug: `web-${uniq()}`, type: 'container' },
     })
     // A Deployment is born `pending`, even for the system, so any other state is walked to.
-    let d = await sys.deployment.create({ data: { appId: app.id, environmentId: env.id, workspaceId: ws.id } })
+    let d = await sys.deployment.create({ data: { appId: app.id, workspaceId: ws.id } })
     const moves = { pending: [], building: ['build'], success: ['build', 'succeed'] }[status]
     for (const move of moves) d = await sys.deployment.transition(d.id, move)
     return d

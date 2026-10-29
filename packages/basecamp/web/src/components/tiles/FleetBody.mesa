@@ -2,7 +2,7 @@
   // server_fleet — every server in the workspace, by status.
   //
   // Reads the servers service with the reader's own session, which is the whole
-  // shape of a widget here: a card can show exactly what the person could have
+  // shape of a tile here: a card can show exactly what the person could have
   // opened for themselves, and a refusal arrives as a refusal rather than as an
   // empty grid.
   import { servers } from '../../resources/Server.mesa'

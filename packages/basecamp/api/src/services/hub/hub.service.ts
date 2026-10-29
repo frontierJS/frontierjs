@@ -3,7 +3,7 @@
 //
 // Mounted at /hub. GET /hub is the runtime overview; everything else dispatches
 // on X-Service-Method, all collection-level:
-//   workspaces · users · flags            reads across every tenant
+//   workspaces · accounts · users · flags · audit · fleet   reads across every tenant
 //   setWorkspaceStatus · setUserStatus    suspend and restore
 //   setSystemAdmin                        who else may be here
 //   createBot · setFlag
@@ -46,12 +46,15 @@
 // (FJS-032). A bot is different and is built: it has no password and no way to
 // sign in, so nothing is being handed to anyone.
 
-import { createService, BadRequest, Conflict, Forbidden, NotFound, $ } from '@frontierjs/junction'
+import { createService, findWindow, BadRequest, Conflict, Forbidden, NotFound, $ } from '@frontierjs/junction'
 import { LEVELS }                  from '@frontierjs/litestone'
 import { getPagination }           from '../../core/hooks.ts'
 import { grantsFor } from '../../core/capabilities.ts'
 import { slugify } from '../../core/resource.ts'
+import { envReport } from '../../core/env.ts'
+import { hubPolicy } from '../../core/session-auth.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
+import { postureView } from '../posture/posture.service.ts'
 
 /** A bot's address. `.invalid` is reserved by RFC 2606 and resolves nowhere,
  *  which is the point: `User.email` is required and unique, a bot has no
@@ -118,7 +121,7 @@ export default createService({
   // A payload is a `type` in db/schema.lite, so a status outside its enum is a
   // 400 naming the field from the schema's own vocabulary.
   methods: [
-    'overview', 'workspaces', 'users', 'flags',
+    'overview', 'environment', 'workspaces', 'accounts', 'users', 'flags', 'audit', 'fleet',
     ['setWorkspaceStatus', 'WorkspaceStatusChange'],
     ['setUserStatus',      'UserStatusChange'],
     ['setSystemAdmin',     'SystemAdminChange'],
@@ -189,6 +192,14 @@ export default createService({
     }
   },
 
+  // ── environment — every variable this API reads ───────────────────
+  // What /hub/settings/ draws so an operator can see what they have not set.
+  // A secret answers set or not and never its value (`core/env.ts`).
+  async environment() {
+    $.dispatch = false
+    return { variables: envReport() }
+  },
+
   // ── workspaces — every tenant ─────────────────────────────────────
   // A pure list envelope: total/limit/offset/data and nothing beside it.
   async workspaces() {
@@ -219,6 +230,32 @@ export default createService({
         ...w, members, servers, projects,
         owner: owner ? { id: owner.id, email: owner.email, name: owner.displayName ?? owner.name } : null,
       }
+    }))
+
+    return { total: q ? data.length : total, limit, offset, data }
+  },
+
+  // ── accounts — every organization a workspace is created under ────
+  async accounts() {
+    $.dispatch = false
+    const { limit, offset } = getPagination({ limit: 50, max: 200 })
+    const q = ($.query.q as string | undefined)?.trim().toLowerCase()
+
+    const { rows, total } = await sys().account.findManyAndCount({
+      orderBy: { createdAt: 'desc' }, limit, offset,
+    })
+
+    // In memory for the reason `workspaces` gives.
+    const page = q
+      ? rows.filter((a: any) => `${a.displayName} ${a.slug}`.toLowerCase().includes(q))
+      : rows
+
+    const data = await Promise.all(page.map(async (a: any) => {
+      const [users, workspaces] = await Promise.all([
+        sys().user.count({ where: { accountId: a.id } }),
+        sys().workspace.count({ where: { accountId: a.id } }),
+      ])
+      return { ...a, users, workspaces }
     }))
 
     return { total: q ? data.length : total, limit, offset, data }
@@ -276,6 +313,96 @@ export default createService({
     }))
 
     return { total, limit, offset, data }
+  },
+
+  // ── audit — every tenant's trail, and the hub's own ───────────────
+  // A row with no workspace is the hub's alone (`FJS-D141`): a hub act on a
+  // person files under nobody, and `/admin/audit` scopes on the workspace, so
+  // this is the only screen that can show it. `scope` is `all`, `hub` for
+  // those rows, or a workspace id. A window, not a page, for the reason the
+  // audit service gives (`FJS-D145`).
+  async audit() {
+    $.dispatch = false
+    const { limit, offset, after } = getPagination({ limit: 50, max: 200 })
+    const scope       = ($.query.scope as string | undefined) || 'all'
+    const subjectType = $.query.subjectType as string | undefined
+    const actorId     = $.query.actorId     as string | undefined
+
+    const page = await findWindow(sys().auditEvent, {
+      where: {
+        ...(scope === 'hub' ? { workspaceId: null } : scope !== 'all' ? { workspaceId: scope } : {}),
+        ...(subjectType ? { subjectType } : {}),
+        ...(actorId     ? { actorId }     : {}),
+      },
+      orderBy: { createdAt: 'desc' }, limit, offset,
+    }, after, 'The hub audit trail')
+
+    // Ids are what the row holds; a person reads names. One lookup per kind
+    // rather than per row, since a burst of hub acts is one actor many times.
+    const rows   = page.data as any[]
+    const people = [...new Set(rows.flatMap(r => [r.actorId, r.onBehalfOfId]).filter(Boolean))]
+    const spaces = [...new Set(rows.map(r => r.workspaceId).filter(Boolean))]
+    const [users, workspaces] = await Promise.all([
+      people.length ? sys().user.findMany({ where: { id: { in: people } } })      : [],
+      spaces.length ? sys().workspace.findMany({ where: { id: { in: spaces } } }) : [],
+    ])
+    const who   = new Map(users.map((u: any) => [u.id, u.email]))
+    const where = new Map(workspaces.map((w: any) => [w.id, w.name]))
+
+    return {
+      ...page,
+      data: rows.map(r => ({
+        ...r,
+        actor:      r.actorId      ? who.get(r.actorId)      ?? null : null,
+        onBehalfOf: r.onBehalfOfId ? who.get(r.onBehalfOfId) ?? null : null,
+        workspace:  r.workspaceId  ? where.get(r.workspaceId) ?? null : null,
+      })),
+    }
+  },
+
+  // ── fleet — every tenant's machines, worst first ──────────────────
+  // Graded by posture's own `postureView`, so a box whose Outpost went quiet
+  // reads stale here exactly as it does on its workspace's /security/. One
+  // window of up to 500 and no pager, the bound `posture.fleet` takes: worst
+  // first only means anything across the whole answer, and a page of it would
+  // put a failing box on page three. `destroyed` is left out unless asked
+  // for — a row kept for its history is not a machine to watch.
+  async fleet() {
+    $.dispatch = false
+    const scope  = ($.query.scope  as string | undefined) || 'all'
+    const status = ($.query.status as string | undefined) || ''
+
+    const { rows, total } = await sys().server.findManyAndCount({
+      where: {
+        ...(scope !== 'all' ? { workspaceId: scope } : {}),
+        status: status ? status : { not: 'destroyed' },
+      },
+      orderBy: { name: 'asc' }, limit: 500,
+    })
+
+    const spaces = [...new Set(rows.map((s: any) => s.workspaceId))]
+    const workspaces = spaces.length ? await sys().workspace.findMany({ where: { id: { in: spaces } } }) : []
+    const where = new Map(workspaces.map((w: any) => [w.id, w.name]))
+
+    const data = await Promise.all(rows.map(async (s: any) => {
+      const [posture, apps] = await Promise.all([
+        postureView(s, await sys().serverPosture.findFirst({ where: { serverId: s.id }, orderBy: { at: 'desc' } })),
+        sys().appServer.count({ where: { serverId: s.id } }),
+      ])
+      return {
+        id: s.id, name: s.name, slug: s.slug, status: s.status, role: s.role,
+        providerKind: s.providerKind, region: s.region, ipAddress: s.ipAddress,
+        outpostVersion: s.outpostVersion, lastHeartbeatAt: s.lastHeartbeatAt,
+        workspaceId: s.workspaceId, workspace: where.get(s.workspaceId) ?? null,
+        apps,
+        posture: { reported: posture.reported, stale: posture.stale, at: posture.at,
+                   failing: posture.failing, unknown: posture.unknown },
+        rank: posture.rank,
+      }
+    }))
+    data.sort((a: any, b: any) => b.rank - a.rank || a.name.localeCompare(b.name))
+
+    return { total, limit: 500, offset: 0, data }
   },
 
   // ── setWorkspaceStatus ────────────────────────────────────────────
@@ -347,6 +474,9 @@ export default createService({
     const { workspaceId, name, role } = ($.data ?? {}) as Record<string, unknown>
     const label = typeof name === 'string' ? name.trim() : ''
     if (!label) throw new BadRequest('name is required')
+
+    if (!(await hubPolicy(sys())).allowBotUsers)
+      throw new Forbidden('Bot accounts are turned off for this installation (HubConfig.allowBotUsers)')
 
     const wsRole = (role as string) ?? 'developer'
     if (!BOT_ROLES.includes(wsRole))

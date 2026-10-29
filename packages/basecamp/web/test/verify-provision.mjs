@@ -67,8 +67,8 @@ const BASE      = `http://localhost:${WEB_PORT}`
 const API       = `http://localhost:${API_PORT}`
 const SINK      = `http://localhost:${SINK_PORT}`
 const HZ_SINK   = `http://localhost:${HZ_PORT}`
-const EMAIL     = 'sam@example.com'
-const PASSWORD  = 'hunter2hunter2'
+const EMAIL     = 'dev@knight.works'
+const PASSWORD  = 'test1234'
 const DO_TOKEN  = 'dop_v1_devtoken'
 // 64 characters and no prefix, which is Hetzner's shape and not DigitalOcean's.
 const HZ_TOKEN  = 'hz'.padEnd(64, '0')

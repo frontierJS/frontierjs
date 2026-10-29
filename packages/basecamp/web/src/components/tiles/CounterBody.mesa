@@ -1,7 +1,7 @@
 <script>
   // stat_counter — one number: how many of a thing this workspace has.
   //
-  // The mock's counter is a value TYPED IN when the widget is added, which is a
+  // The mock's counter is a value TYPED IN when the tile is added, which is a
   // dashboard displaying whatever it was told — the one thing a dashboard must
   // not do. This one counts: `source` names a service, and the number is that
   // service's own `total` for the reader's session, so a viewer who cannot read
@@ -20,7 +20,7 @@
   import { onWrite } from './live.js'
   import Stat from '@frontierjs/ui/components/display/Stat.mesa'
 
-  export let widget = null
+  export let tile = null
 
   // The browser's half of STAT_SOURCES. The service refuses anything not in its
   // own list, so a source arriving here that this map does not know is a
@@ -41,8 +41,8 @@
 
   // `const`, not `$:` — the subscription below is registered once at init, and
   // a derived read that has not run yet at that point subscribes to nothing.
-  // A widget whose source changes is re-rendered by the page, not mutated here.
-  const source = SOURCES[widget?.config?.source]
+  // A tile whose source changes is re-rendered by the page, not mutated here.
+  const source = SOURCES[tile?.config?.source]
 
   async function load() {
     error = null
@@ -67,7 +67,7 @@
 {:else if error}
   <p class="text-sm">{error}</p>
 {:else}
-  <Stat label={widget?.config?.label || source.label} value={String(total)} />
+  <Stat label={tile?.config?.label || source.label} value={String(total)} />
   {#if source.href}
     <p class="text-xs"><a href={source.href}>Open {source.label.toLowerCase()}</a></p>
   {/if}

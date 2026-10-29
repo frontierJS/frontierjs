@@ -173,16 +173,17 @@ export interface LitestoneAuthOptions {
   sessionFields?: (user: Record<string, any>) => Record<string, unknown>
 
   // Which accounts must have a second factor (`FJS-D1008`). `true` is every
-  // person; a function is asked with the User row (`u => u.role === 'admin'`).
+  // person; a function is asked with the User row (`u => u.role === 'admin'`),
+  // and may answer a promise when the answer is a read of its own.
   // An account it names that has no confirmed factor signs in to a session held
-  // to enrollment: the plugin refuses every service call but
-  // `account.totpStatus` / `setupTotp` / `confirmTotp` with a 403 whose
+  // to enrollment: the plugin refuses every service call but `account.get('me')`
+  // / `totpStatus` / `reauthenticate` / `setupTotp` / `confirmTotp` with a 403 whose
   // `data.reason` is `second_factor_required`, until `confirmTotp` clears it.
   // An account that has a factor is unchanged -- it owes its code.
   //
   // Sessions only: an API key is a credential its holder minted on purpose and
   // is not held. Needs `encryptionKey`, which enrollment itself needs.
-  requireSecondFactor?: boolean | ((user: Record<string, any>) => boolean)
+  requireSecondFactor?: boolean | ((user: Record<string, any>) => boolean | Promise<boolean>)
 
   // ─── Acting on an auth event ────────────────────────────────────────────
   //

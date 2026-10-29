@@ -837,8 +837,8 @@ name when it declares none.
 
 ### `hub` · model `hub`
 
-- **methods** — `overview`, `workspaces`, `users`, `flags`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
-- **custom methods** — `overview`, `workspaces`, `users`, `flags`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
+- **methods** — `overview`, `environment`, `workspaces`, `accounts`, `users`, `flags`, `audit`, `fleet`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
+- **custom methods** — `overview`, `environment`, `workspaces`, `accounts`, `users`, `flags`, `audit`, `fleet`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
 - **input** — `createBot` takes `NewBot`
 - **input** — `setFlag` takes `FlagChange`
 - **input** — `setSystemAdmin` takes `SystemAdminChange`
@@ -846,9 +846,13 @@ name when it declares none.
 - **input** — `setWorkspaceStatus` takes `WorkspaceStatusChange`
 - **who may call** —
   - `overview` — standing 7 or above — declared `gate: 7`
+  - `environment` — standing 7 or above — declared `gate: 7`
   - `workspaces` — standing 7 or above — declared `gate: 7`
+  - `accounts` — standing 7 or above — declared `gate: 7`
   - `users` — standing 7 or above — declared `gate: 7`
   - `flags` — standing 7 or above — declared `gate: 7`
+  - `audit` — standing 7 or above — declared `gate: 7`
+  - `fleet` — standing 7 or above — declared `gate: 7`
   - `setWorkspaceStatus` — standing 7 or above — declared `gate: 7`
   - `setUserStatus` — standing 7 or above — declared `gate: 7`
   - `setSystemAdmin` — standing 7 or above — declared `gate: 7`

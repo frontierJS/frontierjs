@@ -1,5 +1,5 @@
 <script>
-  // The frame every widget is drawn in — title, edit controls, and the one
+  // The frame every tile is drawn in — title, edit controls, and the one
   // sentence saying what this card cannot show.
   //
   // The frame is separate from the nine bodies because it is the part that must
@@ -8,7 +8,7 @@
   // broken layout rather than as a style drift.
   //
   // `needs` comes from the service's `kinds` vocabulary, not from this file.
-  // What a widget cannot show changes when the app grows a metric store, and
+  // What a tile cannot show changes when the app grows a metric store, and
   // the sentence should change with it in one place.
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
 

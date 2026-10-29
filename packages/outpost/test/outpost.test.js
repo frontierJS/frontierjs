@@ -681,14 +681,17 @@ describe('what the machine is asked to do', () => {
       log: { warn() {}, error() {} },
     })
     const ok = await send(server, 'POST', '/deploy', {
-      deployment_id: 'dep-5', app_id: 'n8n', image: 'n8n:1', config: { cpuLimit: 0.5, memLimitMb: 512 },
+      deployment_id: 'dep-5', app_id: 'n8n', image: 'n8n:1', config: { cpuLimit: 0.5, memLimitMb: 512, command: ['serve', '--listen-http', ':2586'] },
     })
     expect(ok.status).toBe(200)
-    const argv = fake.calls.map(c => c.join(' ')).find(c => c.startsWith('docker run'))
+    const run = fake.calls.find(c => c.join(' ').startsWith('docker run'))
+    const argv = run.join(' ')
     expect(argv).toContain('--cpus 0.5')
     expect(argv).toContain('--memory 512m')
+    // Each argument its own argv entry, after the image, so docker reads them as the CMD.
+    expect(run.slice(-4)).toEqual(['n8n:1', 'serve', '--listen-http', ':2586'])
 
-    for (const config of [{ cpuLimit: '500m' }, { memLimitMb: '512Mi' }]) {
+    for (const config of [{ cpuLimit: '500m' }, { memLimitMb: '512Mi' }, { command: 'serve --listen-http :2586' }]) {
       fake.calls.length = 0
       const bad = await send(server, 'POST', '/deploy', { deployment_id: 'dep-6', app_id: 'n8n', image: 'n8n:1', config })
       expect(bad.status).toBe(500)

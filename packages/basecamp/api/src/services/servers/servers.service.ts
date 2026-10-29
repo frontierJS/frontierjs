@@ -40,7 +40,7 @@
 // The old parseServer()/parseEvent() JSON.parse helpers are gone — parsing an
 // already-parsed object is how you get "[object Object]" in a column.
 
-import { createService, NotFound, BadRequest, seriesKey, isStale, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict, seriesKey, isStale, $ } from '@frontierjs/junction'
 import { normalizeOrderBy, type SortParam } from '@frontierjs/toolbelt/query'
 import { LEVELS }                from '@frontierjs/litestone'
 import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
@@ -50,7 +50,7 @@ import { recordHealth, SERVER_SERIES, SERVER_READINGS } from '../../domain/host/
 import { connectorFor, targetFor, computeProviders, markFor, fleetMark, priceIn, sizeRegions } from '../../providers/compute/index.ts'
 import { sendVia }               from '../../providers/compute/accounts.ts'
 import { DEPLOY_TIMEOUT_MS }     from '../../providers/executor.ts'
-import { mintEnrollToken, cloudInit, OUTPOST_PORT } from '../../providers/compute/enrollment.ts'
+import { mintEnrollToken, cloudInit, outpostUnpublished, OUTPOST_PORT } from '../../providers/compute/enrollment.ts'
 import { issueEnrollmentFor, useHost, findHost } from '../../domain/host/host-machine.ts'
 import { env, localMachineRefusal } from '../../core/env.ts'
 import { listSshHosts, probeSshHost } from '../../domain/local/local-ssh.ts'
@@ -592,6 +592,11 @@ export default createService({
         `${connector.label} does not offer '${size}' in ${region}`
         + `${sizeRegions(chosen).length ? ` — it has ${sizeRegions(chosen).join(', ')}` : ''}`)
 
+    // Before the vendor is asked for a machine, which is billed from its first
+    // minute and would never enroll.
+    const unpublished = await outpostUnpublished()
+    if (unpublished) throw new Conflict(unpublished)
+
     // The token exists for as long as it takes cloud-init to run. Its HASH is
     // what the row keeps; the token itself goes into the machine's user_data
     // and is never stored (`providers/compute/enrollment.ts`).
@@ -951,7 +956,7 @@ export default createService({
       // `data` is @encrypted and absent from the row, so nothing here can
       // leak a token: what a picker needs is an id, a name and a vendor.
       accounts: (accounts as Record<string, unknown>[]).map(a => ({
-        id: a.id, name: a.name, providerKind: a.providerKind, isVerified: a.isVerified,
+        id: a.id, name: a.name, providerKind: a.providerKind, verifiedAt: a.verifiedAt,
       })),
     }
   },
@@ -1118,7 +1123,7 @@ export default createService({
 
     // KEEP THE READINGS. `Server.health` is a SNAPSHOT — one column, one row,
     // overwritten every check-in — so until now the answer to *what was this
-    // machine doing on Tuesday* was gone rather than stale, and three widget
+    // machine doing on Tuesday* was gone rather than stale, and three tile
     // kinds said so on their own cards (`FJS-956`).
     //
     // Through `app.metrics.record()` and not by writing the tables: a series

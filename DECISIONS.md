@@ -35,6 +35,36 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1619"></a>2026-10-28 · `FJS-D1619` — The machine noun stays `Server`, *Hub* names the install, and `Workspace` stays `Workspace`.
+
+Asked through the question tool (`IDEAS/basecamp-dogfood.md` Q3). *As recommended* (**A**) over **B** (`Machine` + `Hub`, a rename across `Server`, `AppServer`, `HostServer`, `/servers` and the Outpost protocol). The hub is an App (`FJS-D1603`), so *Hub* is the install's name and no row's. Asked beside it, *As recommended*: `Workspace` is not renamed `Space`. DigitalOcean's object storage is *Spaces* and Basecamp deploys there and backs up to S3-compatible buckets; ClickUp nests a Space inside a Workspace, Confluence and Contentful use it for a content area, and Slack, Notion, Linear and Railway say *workspace* for the tenant a person pays under; and the word is junction's too (`X-Workspace-Id` in `PROTOCOL_CALL_HEADERS`). Either rename after the first dogfood database is a `--rename` migration (`FJS-D603`).
+
+### <a id="fjs-d1618"></a>2026-10-28 · `FJS-D1618` — An `Account` is the billing and identity holder a Workspace belongs to; its `status` is `AccountStatus { active suspended }`, default `active`.
+
+Asked through the question tool (`IDEAS/basecamp-dogfood.md` Q1, team chart https://claude.ai/artifact/623oHhLiA18fY4tGNtH4he). *As recommended* (**A**) over **B** (rename to `Organization`, which a `--rename` migration does later for free) and **C** (fold into `Workspace`, the only option that moves data). `Workspace.accountId @immutable` and `User.accountId` stay. The values, *Against the recommendation* (drop the column until billing can suspend an account): `pending_verification` goes because nothing verifies an account, and `suspended` is held but enforced nowhere — no door reads `Account.status` until a hub verb and `membershipClaim` do. The schema comment saying `@frontierjs/auth` owns `Account` was false and goes. *Lives in:* `packages/basecamp/db/schema.lite`.
+
+### <a id="fjs-d1607"></a>2026-10-28 · `FJS-D1607` — `Server.providerKind` is `ComputeProvider { custom hetzner digitalocean }`; `Secret.providerKind` keeps `ProviderKind` as the vendor catalogue; the two `@@check`s refusing `cloudflare` and `github` on `Server` go.
+
+Asked in session (`IDEAS/basecamp-dogfood.md` Q7). **A** (split by role) over **B** (one list, checks kept). Only `Server` and `Secret` type a column by `ProviderKind`, so the split is one new enum, not three: a `provider_key` Secret names a vendor, whatever role it plays, and its conduit target address is `provider:<vendor>:<id>`; a Server names a vendor that sells machines. A `@@check` saying *this vendor is not valid here* per model was the type restating what it should say. An edge or source role enum is coined the day a column needs one, not before. *Enforced by:* a `db/test` row that every `ComputeProvider` member is a `ProviderKind` member.
+
+### <a id="fjs-d1611"></a>2026-10-28 · `FJS-D1611` — A status, kind or mode column is an enum — `Project.status`, `AppServer.status` (`AppStatus`), `Server.registerMethod`, `Domain.sslMode`, `Domain.certKind`, `Network.type`, `Network.provider` and `Account.status` leave `String`.
+
+Asked in session (`IDEAS/basecamp-dogfood.md` Q10), answering fleet-ingress D5 for `certKind` on the way. The file's own `UserStatus` note is the reason: a free `String` is a value nothing holds, and after the first dogfood database each becomes a CHECK plus a backfill of whatever strings landed. Three stay `String` by their own comments and are not in this ruling: `Job.trigger` and `JobRun.trigger`, `Notification.type` (package-written) and `AuditEvent.subjectType` (grows per service).
+
+**Values, 2026-10-28** (through the question tool, at step 1.6): `ProjectStatus { active archived }` and `SslMode { off flexible full full_strict }` as recommended; `NetworkType { mesh vpc }` and `NetworkProvider { netbird tailscale wireguard }` over the recommended *only what is built* (`{ mesh }`, `{ netbird }`). From the code, unasked: `AppServer.status` takes `AppStatus` (its writers say `unknown` and `running`), `RegisterMethod { imported provisioned }` (the two the code writes), `CertKind { acme origin_ca uploaded }` (fleet-ingress D5). `Account.status` waits on Q1, step 1.7.
+
+### <a id="fjs-d1612"></a>2026-10-28 · `FJS-D1612` — A box is a Server: `fli server:create` buys one with nothing on it, `fli outpost:install <server> --url` makes it a fleet machine, and `fli basecamp:create` is `server:create` + `basecamp:install`.
+
+Asked through AskUserQuestion, from *do we have a way in fli to create an outpost, kinda like basecamp:install*. `server` was picked over `host` (`domain/host/`, `IDEAS/hetzner-host.md`) and `machine` (`cli/core/machine.js`): it is Basecamp's model (`FJS-D29`), every `--server` flag's word, and the word Forge (`server:create`), Kamal (`server bootstrap`), Coolify (*Add server*) and `hcloud server create` already use. Host and Machine stay as its sub-words — Basecamp's own box, and the vendor's spec — in `VOCABULARY.md`.
+
+- **The split.** Ring 0 (`fli deploy`) already puts any app on a box; the buy step was reachable only inside `basecamp:create`. It moves to `core/cloud.js` and `commands/server/` (`create`, `stop`, `destroy`, bare = list), `basecamp:create` calls the same `buyBox`, and `basecamp:*` keeps what is Basecamp's: the hostname, its zone, the admin, the install. No `project:*` — the noun is App, and no Basecamp is needed to deploy one.
+- **`server:create` buys and nothing more.** Docker, caddy and bun are each installer's to put there (`deploy:setup --auto-install`, `install.sh`), idempotently, so a bare box carries nothing it did not need. The one-bare-box refusal is Basecamp's (`sole: true` on the create); a fleet takes many.
+- **`outpost:install` is the paste, done over ssh** — the Server row found by address or made, `issueEnrollment`, the command on bash's stdin, then the first heartbeat waited for. `--url`, the spelling `basecamp:deploy` and `BASECAMP_URL` already use, never `--basecamp`. `deploy:outpost` and `outpost:install` share one paste, `installOutpost` in `core/basecamp.js`, and differ only in how the row is reached: `enroll-host.ts` inside the serving container, or an API key.
+- **An enrolled box is marked at its cloud** with its server id (`provision-host.ts` `server`), so `fli server` names it a fleet machine and `server:destroy` refuses it, the same as a box Basecamp bought itself.
+- **`deploy:setup` does not buy** (amended 2026-10-28, `decision-rules` twice: a `--setup` on `server:create`, then an ask inside `deploy:setup`). `effects:`/`confirm: human` are static frontmatter, so a command that bills a cloud account on a `y` must say so on every run; `deploy:setup` says nothing, and a wrong `y` is a billed box. An unset or placeholder `deploy.server` instead names the pair — `fli server:create --name <app_id>` then `fli deploy:setup --server <app_id> --auto-install` — and the token page when no cloud token is stored (`noServerHint`, `deploy/_module.md`). Reopen path: a NAMED composite (`fli deploy:new`, `confirm: human`), never a flag on the buyer or a question in the installer.
+
+Artifact: none — the cli suite compiles every command, and the live drive is the owner's real box (`FJS-1397`).
+
 ### <a id="fjs-d1470"></a>2026-10-23 · `FJS-D1470` — Q3 — The pane's name — `:dns`.
 
 Asked in [`IDEAS/cloudflare-dns.md`](IDEAS/cloudflare-dns.md) § Open questions. **A** was picked over **B** (`:cloudflare`), **C** (`:edge`, basecamp's word for the adapter kind).
@@ -1692,6 +1722,10 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1608"></a>2026-10-28 · `FJS-D1608` — `Invitation.token` is `@hashed`.
+
+Asked in session (`IDEAS/basecamp-dogfood.md` Q10). A bearer token stored raw under `@guarded`, where its siblings hash — `Server.enrollTokenHash`, `App.pushTokenHash`, `ApiKey` keeps a hint and the credential. Invariant 7 names `@hashed`; it is WHERE-matchable, so the `@unique(global)` lookup survives. Later it is a reissue of every outstanding invite, which is why it is in the pre-dogfood pass.
+
 ### <a id="fjs-d1575"></a>2026-10-28 · `FJS-D1575` — `deploy.app_id` is required and is the one reading of a deploy's app id; nothing derives it from `path`
 
 The code and `packages/cli/docs/deploy.md` disagreed, and `decision-rules` ruled for the code. There were four readings: `app_id`, a second spelling `appId` (the journal writer, `deploy:journal`, `release:mint`), `basename` of the top-level `path` (`01-preflight`, `pause`, `unpause`, `revert`, `retire`, `doctor`), and `basename` of the per-TARGET `path` (`logs`, `run`, `status`, `rollback`, `repl`, `setup`, `outpost`). The last one named a different container from the one the deploy made once a target overrode `path`. `core/release.js` already refused to mint without `app_id`, so no deploy ever reached the fallback, and every `frontier.config.js` with a deploy block in this repo and in `fjs-prototypes` names it. **A** (required, one reader, refused by name) was taken over **B** (keep the path default and feed it to `mintRelease`), because B keeps two sources and has to pick which path. `appId` goes with no alias. The reopen path is a derived default inside `appIdOf` alone.
@@ -2056,6 +2090,8 @@ The nine, answered before the edit (Basecamp's half after it, when the clash was
 
 *Lives in:* `packages/auth/db/user.lite` (`UserKind`, `User.kind`) · `packages/auth/auth.ts` `toContext`, `issueSession` · `packages/junction/src/core/litestone.ts` `toDataPrincipal` · `packages/basecamp/db/schema.lite` `UserKind`.
 
+**Amended 2026-10-28** (`IDEAS/basecamp-dogfood.md` Q2): Basecamp aligns fully in the pre-dogfood schema pass. Its `UserKind` drops `ai` (no row carries it; the one reader is a count on `/hub/users`), `User.kind` takes `@system @immutable` as auth's fragment has it, and `User.role` and `User.scopes` go — `role` is read nowhere and `scopes` was `ApiKey`'s job. Auth's `user.lite` owns the enum; Basecamp's copy is checked against it by `db/test/schema.test.ts`.
+
 ### <a id="fjs-d1196"></a>2026-10-17 · `FJS-D1196` — Q3 — What a peer is, as a row, on the app it calls — A **user that owns an API key**, the Phase 0 shape. No principal kind of its own in auth and no `Peer` model: *Peer* stays the word for the relationship (`FJS-D1188`). Phase 1 builds on that account, and 1.2's signed call resolves to it.
 
 Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) Q3, through the question tool. **A** was picked over the paper's recommendation **B** (a principal minted by the credential door with no User row, the shape `signedRequest` already gives Outpost on Basecamp, `FJS-D475`) and **A with a side table** (Mattermost's `Bots` row beside a User row, which adds a model to auth). The precedent for A is the chat tools: Mattermost bots, Discord's `bot: true`, GitHub machine users. B's precedent is infrastructure: Kubernetes `ServiceAccount`, GCP service accounts, GitHub Apps. A keeps authorship. A row the peer writes has its author, and chat's `Post` → `Profile` needs no peer-to-author map. B's cost was exactly that map, since a `service` principal is never stamped into a User-typed column (`litestone/src/core/stamps.js`). Against the recommendation (**B**).
@@ -2123,6 +2159,8 @@ The paper's recommendation, taken as written: Invariant 6 says access is declare
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (an enrollment ticket: `firstFactorProven` answers `{ enroll: ticket, expiresAt }` beside `{ challenge }`, no session issued. `setupTotp`/`confirmTotp` get a ticket-taking twin (a raw route like `/auth/login/challenge`, since it cannot be gated by a session), and `confirmTotp` on a ticket ends in the session. Nothing is signed in until the factor exists, and Sierra's `session` gains one more state beside `awaitingCode`; the cost is a second ticket kind and four more wire answers (password, magic link, OAuth, confirmOAuthLink)), **C** (refuse and leave enrollment to the operator: login answers 403 `second_factor_required` and an admin enrolls the account out of band (`resetTotp`'s mirror). Smallest build, no new ticket or session kind; an app that turns the switch on locks out every existing unenrolled account until someone acts).
 
 The paper's recommendation, taken as written: A needs a second ticket kind and a new route plus a client state across four entry doors, and C locks a live app out by flipping a setting. B keeps one session path and one service owner for enrollment, and the refusal lives in auth's plugin beside the `totp` credential it reads.
+
+**Amended 2026-10-28, by the owner: `account.get('me')` is allowed too.** Refused, a held session that reloads reads as signed out — Sierra restores a session through `me` — and lands on sign-in. `me` answers only the session context, flag included, which the login body already handed over. `reauthenticate` was already allowed beside the three, for a held session past the window. Met by Basecamp's held owner (`FJS-D1592`); `test/require-second-factor.test.ts` asserts `me` answers with `enrollmentOnly: true`.
 
 ### <a id="fjs-d1011"></a>2026-10-16 · `FJS-D1011` — How does `providerOnly()` tell an account a provider made from one the mailbox made and later linked a provider to — Record the origin on the credential: § 4 writes the linked `oauth:*` row with a marker (a nullable `Credential.linked` flag in `auth.lite`), and `providerOnly` and `confirmPasswordReset` count only an unmarked `oauth:*` credential, so the account § 3 made stays refused and the account the mailbox already vouched for keeps both doors. One schema column, one helper both callers share.
 
@@ -7876,6 +7914,14 @@ this flag existed to escalate, so there is nothing left for it to do.
 
 ## Migrations (Litestone)
 
+### <a id="fjs-d1605"></a>2026-10-28 · `FJS-D1605` — Basecamp's migrations are append-only from the first dogfood database — the pre-dogfood schema pass (`IDEAS/basecamp-dogfood.md` Phase 1) rewrites `initial_schema.sql` in place for the last time, and after Phase 3 a committed migration file never changes.
+
+Asked in session (`IDEAS/basecamp-dogfood.md` Phase 0), when the owner asked how to dogfood Basecamp while still breaking it. **A** (append-only migration files) over **B** (keep squash-and-wipe and carry data across a rewrite by `db:export` and a hand-written reload). Backup-and-reimport does not survive a rewrite by design: `archive-manifest.ts` refuses an archive whose applied migration reads `modified`. B's reload is a migration written in JS, unrecorded and unrepeatable.
+
+What it is not: release versioning. No semver, no compat flags, no deprecation window — code and API churn stay free under the evolution policy. The one rule is that a file a dogfood database has applied never changes. A schema change is `fli db:migrate <label>`, a rename by `--rename`, a data move by `--operations`; `fli db:push` stays free on a dev database while a feature is in flight, and the dogfood deploy runs `migrate apply` before boot. A squash is allowed only when the dogfood database is wiped on purpose.
+
+Which stage the project stands in is a fact about the project, recorded in `packages/basecamp/PROJECT_STATE.md` with the date (Phase 3 writes it), never argued from here. *Enforced by:* nothing today — `autoMigrate`'s DDL hash reads the schema, not the files, so a silent in-place edit is data loss nothing sees; Phase 3 adds a `snapshots`-phase check hashing `db/migrations/**` against a committed snapshot.
+
 ### <a id="fjs-d1335"></a>2026-10-19 · `FJS-D1335` — How does `migrate create` see a `@scale` change, which leaves the DDL unchanged — The scale is in the DDL: the column's CHECK constraint is named with it (`units_scale_6`), the replayed history carries it, and the differ sees the change. A table with rows is refused with the `UPDATE` to write by hand; an empty one rebuilds.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (A, and a widening (lossless) emits the multiply itself; only a narrowing is refused), **C** (a `_litestone_columns` table the migrator writes and compares).
@@ -8340,6 +8386,87 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d1606"></a>2026-10-28 · `FJS-D1606` — `Backup` merges into `AppBackup` — a hub archive is an `AppBackup` row on the hub App (`FJS-D1603`); `HubConfig` keeps only retention.
+
+Asked in session (`IDEAS/basecamp-dogfood.md` Q4 and Q5). **A** over **B** (two models kept, their eleven shared columns aligned) and **C** (merge after dogfood). `Backup`, `AppBackup` and `AppDrill` shared eleven columns with drift (`BackupKind` has `release`, `DrillKind` not; `onDelete` differs; `Backup` carried no workspace), and `HubConfig` restated `App`'s `backupCron`, `backupDestinationId`, `replicaDestinationId`, `replicaFoundAt` and `replicaSyncedAt` only because the hub was not an App. Those five go; the keep-counts stay on `HubConfig` as hub-wide retention policy.
+
+The gate consequence, stated on purpose: a hub archive moves from `@@tenant(none)` at `7.7.8.7` to `AppBackup`'s `5.8.8.8`, scoped to the installer's workspace — the one `useHost` already creates the hub Server in — whose members are the operator team. The people who installed the hub read its archives the way they read any app's. The schema header sentence that `HubConfig` and `Backup` describe the whole install changes with it. *Enforced by:* `bench/statements` on the join, and the restore drive (`IDEAS/backups.md` 4.3) over an `AppBackup` row.
+
+### <a id="fjs-d1609"></a>2026-10-28 · `FJS-D1609` — A child row does not restate its parent's environment — `Deployment.environmentId` and `Job.environmentId` go; the environment is `app.environmentId`.
+
+Asked in session (`IDEAS/basecamp-dogfood.md` Q10). Both were nullable copies of a required column on `App`, and `Variable` already derives the same fact with `@default(app.environmentId)`. A nullable copy lets a row slip an environment filter, and two columns for one fact drift; readers filter through the app. `workspaceId` on both stays: it is the tenancy scope, not a restatement.
+
+### <a id="fjs-d1610"></a>2026-10-28 · `FJS-D1610` — `Workspace.ownerId` is a relation to `User`, `onDelete: Restrict`, still `@system`.
+
+Asked in session (`IDEAS/basecamp-dogfood.md` Q10). A bare id today; `transferOwnership` reads it and a soft-deleted owner is the failure nothing refuses. `Restrict` because a workspace with no owner is the state the hub cannot act on.
+
+### <a id="fjs-d873"></a>2026-10-28 · `FJS-D873` — Where does a service-level (per-call) audit trail write, and what owns the declaration — The app declares a model and hands it to the plugin: `auditPlugin({ model: 'AuditEvent' })`, junction validating the shape at boot. Keeps basecamp's typed columns and per-workspace feed; the plugin owns the capture (`recordable()` from `callService`'s own predicate, the registry-read model, `$protectedFields` redaction, system-client re-read of both sides) and the app owns the table. Costs: a column contract junction must name and refuse on, and a second audit table beside `@@trail`.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (litestone's own trail: the plugin calls `db.$audit({ operation: '<service>.<method>', model, records, actorId, meta: { diff } })` into the schema's `driver trail` database. No new model, no new option; redaction, `[personal]`, actor kinds and the retention sweep are already litestone's (Invariant 7). Costs: `$audit` carries one `operation` string and a `meta` blob, so basecamp's typed `AuditEvent` columns (`onBehalfOfId`, `workspaceId`, the admin feed's filters) are not first-class and its feed would read the trail table instead), **C** (the plugin ships a schema fragment, as `@frontierjs/auth` does (`schema.ts`): a `CallAudit` model the app imports. Zero declaration for the app; the table is not the app's to shape, so a workspace column or a feed filter needs an escape hatch — an option, then a second option).
+
+Against the recommendation (**A**): Two trails answer two questions and have two audiences, which is what the code already does: litestone's @@trail(audit) records every WRITE, system-only (gate 8), 90 days, forensic; Basecamp's AuditEvent records every CALL (deploy, drain, invite), per workspace, member-readable, kept, with who acted as whom (support mode). A over B would have litestone's trail grow workspace scoping, call-level rows and member reads, which is the system-only 90-day model stopping being one. What B rules is the WRITER: a junction plugin replaces the 220 lines in basecamp core/hooks.ts and is handed the app's model (auditPlugin({ model: 'AuditEvent' })), validating its shape at boot. FJS-369 stays open until that plugin exists; Basecamp's table does not wait for it. Retention is stated by each model: the trail's 90d on the audit database, AuditEvent kept until a ruling says otherwise.
+
+### <a id="fjs-d1604"></a>2026-10-28 · `FJS-D1604` — Q4 — What Basecamp issues — A keypair per app. Each app generates its Ed25519 key and keeps the private half; Basecamp records the public half at enrollment and pushes it to every receiver, which stores it on the peer's account. The toolbelt kit already signs and verifies `v1-ed25519` (`packages/toolbelt/src/signature/signature.js:356`), but the door does not yet carry it: `keyFor` answers only `{ secret, session }` (`credentials.ts:44`), so it widens to `{ publicKey }` too. It costs that widening; it buys n keys, a rotation that is one key pushed outward, and receivers that hold nothing able to sign.
+
+Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) § Open questions. **B** was picked over **A** (a shared secret per pair. Basecamp mints one HMAC secret for each dialer → receiver pair and writes it to both ends: the dialer's conduit `hmac` target, and the peer account's credential on the receiver (`FJS-D1196`). It is the shape Outpost → Basecamp uses today (`packages/basecamp/api/src/core/hooks.ts:703`), and junction's door takes it as is (`packages/junction/src/auth/credentials.ts:44` returns a `secret`). It costs n² secrets: rotating one app touches every pair it is in, on both ends, and a breached receiver holds a secret that can sign as its dialer).
+
+As recommended: Prior art is one pattern: a short-lived shared secret enrolls a node and a keypair the node generates is its lasting identity (Kubernetes bootstrap token then kubelet client cert; Tailscale auth key then node key; SPIRE join token then SVID; Docker Swarm join token then node certificate). So the door widens to { publicKey } for peers AND for Outpost: a machine enrolls by Server.enrollTokenHash as today, then generates its keypair and Basecamp records the public half, replacing the HMAC secret it keeps for life today (core/hooks.ts keyFor). No Outpost is in the field, so this is a hard switch with no transitional shape. junction/src/auth/credentials.ts keyFor is the owner of the widening; FJS-D1196 (the peer account holds the credential) stands.
+
+### <a id="fjs-d1603"></a>2026-10-28 · `FJS-D1603` — Q2 — Who writes Basecamp's own host record, given `edge.sync` cannot — Basecamp as an App: an `image` App placed on the `basecamp-host` Server with a Domain on it, and `servingAddresses` counting the host Server's address while it is still `pending`. Keeps the ruling's words; puts a release no fleet step can act on into the App model.
+
+Asked in [`IDEAS/zero-to-live.md`](IDEAS/zero-to-live.md) § Open questions. **B** was picked over **A** (an installation record: the script stores both tokens as Secrets and writes `A <host> → <ip>` through Basecamp's Cloudflare connector under a new `installMark()`, DNS-only, and sets the workspace's ingress zone to that zone when none is set. No App, no Domain; 3.6's flip to proxied rewrites the same marked record. Cloudron's shape: setup writes the `my.` record from the DNS token, apart from app records, and *Sync DNS* re-adds it ([docs](https://docs.cloudron.io/domains/))).
+
+Against the recommendation (**A**): Data-wise the hub is one more App: an App row for Basecamp itself, placed on the hub Server (useHost's row) in the installer's workspace, with a DNS-only Domain row (FJS-D1380). Which row is the hub is HubConfig.appId, a nullable unique pointer; HubConfig.hostServerId goes, because the hub's machine is that App's server through AppServer. No column of that App row starts the hub (the hub is not released by itself: a Release on the hub App is refused by name), so its image, port and command are the posture grader's subject, graded by a hub.app-row-drift check against what the process reports, never read to start anything. Lists filter the hub App out by id and the /hub/ screens read it. Fixes FJS-3515 (the hub box's ipAddress is the App's server's), and is what lets Backup merge into AppBackup. Against the recommendation (A) at its own confidence 2: A kept the hub a special case every screen must know about, and HubConfig restating App's five backup columns was the price already being paid.
+
+### <a id="fjs-d1592"></a>2026-10-28 · `FJS-D1592` — Do Basecamp's three policy switches get read, or go — Read: each is one refusal at one door.
+
+Closes `FJS-3575` with `FJS-D1590` and `FJS-D1591`. **A** (wire all three) was picked over **B** (drop them until something reads them); the owner chose the recommended option. Each switch is one refusal at one door, so wiring costs less than a second ruling later. `allowBotUsers` off refuses `hub.createBot` and leaves existing bots their keys; `allowApiKeyAuth` off refuses every API-key request in `apiKeyGuard` (`domain/api-key/scopes.ts`) and leaves sessions and outpost-signed requests alone; `requireTwoFactorForOwners` is auth's `requireSecondFactor` predicate (`core/session-auth.ts`): an accepted owner of any workspace with no authenticator signs in to a session held to enrollment (`FJS-D1008`) instead of being refused. A refusal at login would lock out every such owner when the switch flipped, with no way to enroll. `requireSecondFactor` now accepts a predicate that answers a promise, because whether someone is an owner is a read. A missing row reads as the defaults: 2FA off, keys on, bots on.
+
+### <a id="fjs-d1591"></a>2026-10-28 · `FJS-D1591` — Does a Basecamp install keep a hub name — No: `HubConfig.name` goes.
+
+**A** (drop it) was picked over **B** (show it on the sign-in screen and in mail); the owner chose the recommended option. Nothing read it. The one place it would mean something is the sign-in screen, which renders before anyone is signed in, so showing it needs a public endpoint for a label. The column, the "Hub name" input, the seed's value and every fixture naming it are gone. This is a contract change for a live hub's database.
+
+### <a id="fjs-d1590"></a>2026-10-28 · `FJS-D1590` — Where does a Basecamp session's lifetime live — The env: `SESSION_TTL_HOURS`, and `HubConfig.sessionTtlHours` goes.
+
+**A** (env) was picked over **B** (the row, read at each sign-in); the owner chose the recommended option. Auth is built once at boot with its `sessionTtl`, so the value is fixed at boot like the base URL and mail sender in `FJS-D1581`. A row changing under a running process would apply to some sessions and not others. `SESSION_TTL_HOURS` defaults to 168, which equals the `'7 days'` auth was given before, so an unset env behaves as before. `envReport()` lists it in /hub/settings/'s Environment table. This is a contract change for a live hub's database.
+
+### <a id="fjs-d1589"></a>2026-10-28 · `FJS-D1589` — Q4 — Does the ntfy server come from the blueprint or from env — `NTFY_BASE_URL` + `NTFY_TOKEN` env on the Basecamp API, set by hand after installing the blueprint.
+
+Asked in [`IDEAS/phone-ping.md`](IDEAS/phone-ping.md) § Open questions. **A** was picked over **B** (Basecamp finds its own `ntfy` App row and reads the token from its Variables).
+
+The paper's recommendation, taken as written: it works with ntfy.sh and with a server Basecamp did not install; B is Phase 3's zero-config step.
+
+### <a id="fjs-d1588"></a>2026-10-28 · `FJS-D1588` — Q3 — Priority per kind or per send — The formatter sets it (`MonitorDown` resend is 4, the outage 5).
+
+Asked in [`IDEAS/phone-ping.md`](IDEAS/phone-ping.md) § Open questions. **A** was picked over **B** (one priority per kind in `kinds.ts`).
+
+The paper's recommendation, taken as written: the sender knows whether this is the outage or the reminder; a table cannot.
+
+### <a id="fjs-d1587"></a>2026-10-28 · `FJS-D1587` — Q2 — Which kinds default `push: true` — The failures only: `DeployFailed`, `ServerUnreachable`, `MonitorDown`, `AlertFiring`, `PostureFailed`, `JobFailed`.
+
+Asked in [`IDEAS/phone-ping.md`](IDEAS/phone-ping.md) § Open questions. **A** was picked over **B** (A plus `ReplicaFound` and `HubPostureFailed`).
+
+The paper's recommendation, taken as written: a ping is an interruption; the two in B are once-a-day states a morning email serves. Resolved/succeeded kinds stay off, as `email` does.
+
+### <a id="fjs-d1586"></a>2026-10-28 · `FJS-D1586` — Q1 — Which topic model first — Known topics per workspace: Basecamp publishes each critical event once to `<slug>-critical`; people subscribe phones in the ntfy app; access by ntfy ACL; no new columns.
+
+Asked in [`IDEAS/phone-ping.md`](IDEAS/phone-ping.md) § Open questions. **A** was picked over **B** (a secret topic per person, `User.pushTopic @secret` + `NotificationPreference.push`, one POST per recipient), **C** (both, A first).
+
+The paper's recommendation, taken as written: one level simpler, and the person's filter already exists where the phone is.
+
+### <a id="fjs-d1585"></a>2026-10-28 · `FJS-D1585` — What a container starts with past its image — `command String[] @default([])` on `App` and `Blueprint`, the arguments after the image that replace its CMD, as compose's `command:` does.
+
+**A** was picked over:
+- **`args`**, the Kubernetes word: this domain imports compose (Coolify, Dokploy).
+- **One string split by a shell**: the machine runs argv, and a split needs a shell.
+- **No column, a wrapper image per app**: one image to build and keep current for every app that needs a command.
+
+ntfy's image has no CMD and starts nothing without `serve`, so its blueprint row is the first to carry one. An empty list runs the image's own CMD and is left out of the `/deploy` config. `command` in Kubernetes replaces the ENTRYPOINT instead; a row written that way fails its start or its health check rather than deploying something else. `Job.command` keeps its name and its shape, one line run through `sh -c` inside a container: a different thing from what the container starts with. Reopen if Jobs move to argument lists. Lives in `packages/basecamp/db/schema.lite`, `api/src/domain/release/runtime.ts` (`RUNTIME_COLUMNS`), `packages/outpost/src/docker.js` (`checkRunConfig`, `deploy`). Enforced by `packages/outpost/test/outpost.test.js` *limits reach docker run* (the argv tail exact, a string refused) and `packages/basecamp/api/test/services.test.ts` *an app made from a blueprint* (the list copied across).
+
+### <a id="fjs-d1581"></a>2026-10-28 · `FJS-D1581` — Where does a Basecamp install's base URL and mail sender live — The env, alone: `HubConfig` loses `baseUrl`, `adminEmail`, `mailFromAddress` and `mailFromName`.
+
+Closes `FJS-3573`. **A** was picked over **B** (the row wins and the env only seeds it). Every sender read `FRONTIER_APP_URL`, `FRONTIER_API_URL` and `MAIL_FROM`; the four columns were saved from `/hub/settings/` and read by nothing, while the screen said they built every emailed link. The env is read at boot, before any row: cloud-init bakes in the API URL and the mailer is configured when the app is built, so **B** would have meant reading the database earlier than either can. `/hub/settings/` names the variables, and `hub.app-url`, `hub.api-url` and `hub.mailer` (`domain/host/posture.ts`) grade them on `/hub/security/`, with the failing ones repeated on `/hub`. Dropping the columns is a contract change for a live hub's database.
 
 ### <a id="fjs-d1580"></a>2026-10-28 · `FJS-D1580` — Q3 — Whether Verify checks scopes — Per vendor: each account connector checks the scopes this app uses, where the vendor lets a token read them.
 
@@ -12769,6 +12896,49 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d1583"></a>2026-10-28 · `FJS-D1583` — A declared enum of 6 members or fewer filters as a row of toggles; 7 or more stays a `MultiSelect`. The cutoff is `CHIP_LIMIT` in `FilterBar.mesa`.
+
+Asked in chat, through the question tool, for [`IDEAS/filter-controls.md`](IDEAS/filter-controls.md) 3.2. **6** (recommended) was picked over **4**, **5** and **8**. 6 is where the count drops in this workspace's 199 enums (12 have 6 members, 5 have 7; 58% have 6 or fewer), and Alberta's design system switches from radios to a dropdown at 7.
+
+- **The constant lives in the bar, not beside `filterOpFor`** as the plan said. `@frontierjs/ui` cannot import sierra, and the cutoff only changes what the bar draws: `in` is asked either way. `decision-rules` ran on the placement.
+- **Only DECLARED members.** A `@values` binding is also `display: 'enum'`, but its rows load later and their count changes with the data, so it would draw empty and then swap controls. It stays a `MultiSelect`, as does a relation (Phase 4 makes that a combobox).
+- **A toggle is a `.btn` with `aria-pressed`**, not a `Tag` or `Pill` as the plan said. `@frontierjs/css` already draws a pressed `.btn`; `.pill` has no pressed state, so using it would mean new css vocabulary.
+- **No prop for the cutoff.** An app that wants a different control registers one with `registerFilterComponent('enum', …)`.
+
+*Lives in:* `packages/ui/components/display/FilterBar.mesa`. *Enforced by:* `packages/ui/test/browser/specs/filter-bar.spec.mjs`.
+
+### <a id="fjs-d1594"></a>2026-10-28 · `FJS-D1594` — Where a filter's *Any / Has value / Empty* lives — split by control: a segment where it is the only question, an operator where the control has a menu, Phase 6 for the rest.
+
+Asked at `IDEAS/filter-controls.md` 5.2, through the question tool. **Split by control** (recommended) was picked over **a segment beside every optional column** (the plan's literal reading; most non-required columns are nullable, so the bar roughly doubles) and **json and file only** (the date range waits too). An optional Json or file column — which `filterOpFor` offers nothing — is `kind: 'empty'` in sierra's `filters()` and draws `Any | Has value | Empty`; `DayRangeFilter`'s operator menu gains *is empty* and *has value* on a nullable column; text, number and set columns get theirs from Phase 6's `+ Filter` operator menu. Notion and Airtable ask the empty test in each property's operator menu; Linear and GitHub put a *No assignee* member in the value list, which over `in` is `FJS-3580`'s ground. *Empty* writes `{ equals: null }` and *Has value* `{ not: null }`. **Narrows** [`FJS-D1593`](#fjs-d1593) to Phase 6, since no `String?` column is offered the test before it.
+
+### <a id="fjs-d1595"></a>2026-10-28 · `FJS-D1595` — A filter's operator menu sits on every nullable text, number or set control, inline or added; an added chip differs only by its ×.
+
+Asked at `IDEAS/filter-controls.md` 6.1, through the question tool. **Every nullable control** (recommended) was picked over **only on added chips** (+ Filter lists every column and picking an inline one moves it into chip form) and **Notion popover chips** (every filter a `Label: value ▾` chip opening a popover, which undoes Phase 3's one click). `DayRangeFilter` already carried its menu inline, so this is one shape everywhere, and the inline count (`FJS-D1596`) bounds the width. Excluded: a filter through a to-many (its empty is *no row joins*, not this test), a `list` column (its empty is `[]`), a time-of-day range and a registered filter control. **Amends** [`FJS-D1594`](#fjs-d1594), which put the text, number and set menu on a `+ Filter` chip alone.
+
+*Lives in:* `packages/ui/components/display/FilterBar.mesa` (`askable`).
+
+### <a id="fjs-d1596"></a>2026-10-28 · `FJS-D1596` — A filter bar draws its first 3 ranked filters inline; the rest are behind `+ Filter`, and one the query holds is a chip without being added.
+
+Asked at `IDEAS/filter-controls.md` 6.1, through the question tool. **3** (recommended) was picked over **4** and **all of a default bar** (`columns()`' limit of 6). Linear and Notion show two to four before an add button, and half of the default 6 leaves something behind `+ Filter` on a default bar. A held filter past the three is drawn as a chip whether or not it was added, or a bookmark filters by something not on screen. No prop, for `FJS-D1583`'s reason.
+
+*Lives in:* `packages/ui/components/display/FilterBar.mesa` (`INLINE`). *Enforced by:* `packages/ui/test/browser/specs/filter-bar.spec.mjs`.
+
+### <a id="fjs-d1601"></a>2026-10-28 · `FJS-D1601` — A relative date preset stays in the URL as itself (`@today-7`), and the client resolves it before the request.
+
+Asked at `IDEAS/filter-controls.md` 2.4 (Q2), through the question tool. **B** was picked over **A** (absolute only: a preset writes today's days and the bookmark goes stale) and **C** (the token is part of the filter grammar from end to end and the server resolves it in an app or account zone). The page URL is `page.query`. The request sierra's `tethered.js` builds is the one place that resolves a token (not `currentQuery()`, whose `list.query` a bar reads the token back from), through a pure `toolbelt/query` resolver that is passed `today` and the zone (the viewer's, or `FJS-1978`'s prop). It rewrites only date and instant fields. The spelling is GitHub Projects' `@today±N`, in days only. A token that reaches the server is refused by name (`FJS-3583`). Reopen for C when a second caller needs a relative range: an export (`FJS-2835`), an API client or a digest. `FJS-D71` (a saved view is a URL) removes C's other gain. This amends 2.1's line "Presets write absolute days".
+
+*Lives in:* `packages/toolbelt/src/query/query.js` (`resolveDayTokens`), `packages/sierra/src/resource/tethered.js`, `packages/ui/components/display/DayRangeFilter.mesa`. *Enforced by:* `packages/toolbelt/test/specs/query.spec.js` § *A relative day*, `packages/sierra/test/resource-tethered.test.js` § *a relative day*, `packages/ui/test/browser/specs/filter-bar.spec.mjs` § *a preset writes tokens*.
+
+### <a id="fjs-d1597"></a>2026-10-28 · `FJS-D1597` — *Empty* on an optional string is `{ in: [null, ''] }` and *Has value* `{ notIn: [null, ''] }`, one key per column; the pair has one owner, `@frontierjs/toolbelt/query`.
+
+Asked at `IDEAS/filter-controls.md` 6.1, through the question tool. **Fix `FJS-3580`, one key** (recommended) was picked over **`$or` under `$and`** (`FJS-D1593`'s literal spelling; two string columns share one `$and` and reading back scans it) and **Has value as `gt ''`** (one key, but *Empty* still needed the fix or an `$or`). `FJS-3580` closed with its Fix A: a null member of `in` is `OR col IS NULL`, of `notIn` drops the `OR col IS NULL`, which is how the JSONL driver and toolbelt's matcher already read it. `emptyTest(asks, { blank })` writes the test and `emptyTestOf(v)` reads it back, a bare `null` included; `FilterBar` and `DayRangeFilter` both call them. Which columns count `''` is read off the column's type, not the control: a set over a `String?` asks it too. **Amends** [`FJS-D1593`](#fjs-d1593): what *Empty* matches is unchanged, its spelling is not an `$or`; and [`FJS-D1594`](#fjs-d1594), whose `{ equals: null }` now holds for every column but a string.
+
+*Lives in:* `packages/toolbelt/src/query/query.js`, `packages/litestone/src/core/query.js`. *Enforced by:* `packages/litestone/test/in-list.test.ts` § *a null member is the IS NULL test*.
+
+### <a id="fjs-d1593"></a>2026-10-28 · `FJS-D1593` — What a filter's *Empty* matches on an optional `String` column — `null` or `''`, and *Has value* is neither.
+
+Asked at `IDEAS/filter-controls.md` 5.2, after the 5.1 probe showed litestone holds `''` and `null` as two answers. **A** (`null` or `''`) was picked over **B** (`null` only, one plain `?x=null` test). Sierra's `blankToNull` (`packages/sierra/src/resource/resource.js`) already writes `''` as `null` on a nullable field, so the UI realm has said a blank string is no value; a row that arrived through import, the API or a seed with `''` would otherwise answer *Has value* and draw blank. The cost is that *Empty* is an `$or` in the URL rather than one key. Other column kinds have no `''`, so *Empty* there stays `{ equals: null }`.
+
 ### <a id="fjs-d1576"></a>2026-10-28 · `FJS-D1576` — Q1 — How a day range asks for an open end — An operator beside the picker: *after* and *before* draw a single picker, *between* an `isRange` one. Notion, Airtable and Linear filter dates this way, and `DatePicker` does not change.
 
 Asked in [`IDEAS/filter-controls.md`](IDEAS/filter-controls.md) § Open questions. **A** was picked over **B** (an `openEnded` prop on `DatePicker`: the first click is applied as *from*, a second closes the range. *Until* is reachable only by a preset), **C** (two single pickers, from and to: today's layout with the kit's picker. No span is highlighted and it is still two controls).
@@ -15410,6 +15580,54 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1617"></a>2026-10-29 · `FJS-D1617` — Q2 — Outpost logs to journald, so nothing writes `/var/log/outpost`. What does the `logs` link point at — A (confidence 2).
+
+Asked in [`IDEAS/box-layout.md`](IDEAS/box-layout.md) § Open questions. **A** was picked as the recommendation qualifies it (*A (confidence 2)*) over **B** (`LogsDirectory=outpost`, and `ingress.js` points each app's Caddy access log at `/var/log/outpost/access/`. One folder for logs, but Caddy writes as its own user into Outpost's directory, and `edge.js` (the cli's non-Outpost Caddy) keeps `/var/log/caddy`, so two places hold the same kind of file), **C** (as ruled: `LogsDirectory=outpost` and a link to a directory that stays empty until something writes there).
+
+all of A: the logs link points at /var/log/caddy, no LogsDirectory=, amending FJS-D1544's link target; Outpost's own log stays journalctl -u outpost.
+
+### <a id="fjs-d1616"></a>2026-10-29 · `FJS-D1616` — Q4 — A non-root image needs its data directory owned by its uid. Who chowns it — Keep the throwaway root container, now mounting the directory. It works whether or not Outpost runs as root, which `dev:outpost` on a laptop does not.
+
+Asked in [`IDEAS/box-layout.md`](IDEAS/box-layout.md) § Open questions. **A** was picked over **B** (Outpost chowns on the host. Simpler, but only when Outpost is root, so the laptop case needs the container anyway).
+
+The paper's recommendation, taken as written: one way that works everywhere. `FJS-D1544`'s note that the container "becomes a host-side `chown`" assumed B.
+
+### <a id="fjs-d1615"></a>2026-10-29 · `FJS-D1615` — Q3 — Basecamp's Volumes screen is Docker's named volumes, observed. Once app data is a bind mount, what does it list — Outpost reports each `apps/<app>/data/` directory as a Volume row with its size and a `kind` of `bind`, alongside any named volumes a third-party image still makes. Remove and prune refuse a directory an App still names.
+
+Asked in [`IDEAS/box-layout.md`](IDEAS/box-layout.md) § Open questions. **A** was picked over **B** (the screen stays Docker-only and an App's data size shows on the App instead. App data disappears from the screen people use to find what fills a disk).
+
+The paper's recommendation, taken as written: the screen exists to answer what is using the disk, and app databases are most of that answer.
+
+### <a id="fjs-d1614"></a>2026-10-29 · `FJS-D1614` — Q1 — Outpost's build checkouts already live at `/var/lib/outpost/apps`, the path `FJS-D1544` gives app data. Which moves — The checkouts move to `/var/lib/outpost/builds/` and app data takes `apps/<app>/data/` as ruled. Checkouts and caches are rebuilt on every build, so nothing is lost by the move.
+
+Asked in [`IDEAS/box-layout.md`](IDEAS/box-layout.md) § Open questions. **A** was picked over **B** (app data goes to `/var/lib/outpost/data/<app>/`. Nothing moves, but the person's path becomes `/frontier-outpost/data/data/<app>`).
+
+The paper's recommendation, taken as written: it keeps the ruled path and the link folder readable, and moves only throwaway files.
+
+### <a id="fjs-d1544"></a>2026-10-29 · `FJS-D1544` — Where does a fleet box keep its files — one name under the FHS split, one root folder, or as it is — and does app data move from Docker volumes to bind mounts — A, plus `/frontier-outpost/`, a directory holding only symlinks: `config -> /etc/outpost`, `data -> /var/lib/outpost`, `logs -> /var/log/outpost`. The real directories stay where systemd's `*Directory=` keys make and own them, and no code reads the link folder; it is the one place a person on the box looks (`cd /frontier-outpost/data/apps/<app>/data && sqlite3 app.db`). The links point out from the real directories, not into them, because systemd's sandbox and `StateDirectory=` would otherwise have to resolve a symlinked state directory, which nobody here has proved. Cost: `tar` and `du` do not follow a link without `-h`/`-L` (Outpost's own backup reads the real path), `rm -rf /frontier-outpost` removes only links so uninstalling stays `outpost-uninstall`, and one top-level directory is added, holding nothing but links. A bind-mounted front folder was weighed and left out: `tar` would work unflagged, but `rm -rf` on it deletes the data.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **E** was picked over **A** (the FHS split under the name the box's agent already has: `/etc/outpost`, `/var/lib/outpost`, `/var/log/outpost`, created by the unit's `ConfigurationDirectory=`/`StateDirectory=`/`LogsDirectory=outpost` and read from `$STATE_DIRECTORY` and friends. App data becomes a bind mount at `/var/lib/outpost/apps/<app>/data/`, so `ls` finds the SQLite files and Litestream, backup and restore point at a directory. Outpost exports the layout and `enrollment.ts` imports it rather than restating it. Cost: the `/etc/basecamp` lines move, the `volume-nocopy` plus throwaway-`chown` container becomes a host-side `chown`, and Docker no longer copies an image's files into an empty volume (the code already works against that copy)), **B** (A under the product name, `/etc/frontier`, `/var/lib/frontier`, `/var/log/frontier`. Reads as the platform's rather than the agent's, but coins a second name for the same owner while the agent is called Outpost, and every path moves, `config.js` included), **C** (one root folder, `/frontier/{config,apps,static,backups,logs}`, the CapRover and Coolify shape. One path to remember, back up and remove. Cost: a top-level directory FHS reserves, and every path hand-added to the unit's `ReadWritePaths` under `ProtectSystem=strict` instead of derived from the `*Directory=` keys), **D** (as it is: two names, named volumes. Costs nothing now and keeps a database findable only through Docker).
+
+Against the recommendation (**A**): one folder a person on the box can find everything from, as CapRover's /captain and Coolify's /data/coolify give, without giving up the systemd-owned FHS directories A keeps; the owner named it /frontier-outpost.
+
+### <a id="fjs-d1438"></a>2026-10-28 · `FJS-D1438` — Where is the set of `App` columns that start a container stated: in the schema, or in `domain/release/runtime.ts` as the one reader — C (confidence 2).
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked as the recommendation qualifies it (*C (confidence 2)*) over **A** (A schema statement: a model-level attribute naming the group (for example `@@group(runtime, [port, containerPort, …])`) that `runtimeOf` reads off `db.$schema`. One declaration, and a column added to the group reaches the snapshot with no edit in `domain/release/runtime.ts`; but it coins a noun and an attribute for one reader), **B** (A shared fragment: `App` and `Blueprint` both `extend` a `Runtime` fragment holding the shared columns, and `runtimeOf` reads the fragment's names. The `containerPort` gap between the two models becomes visible in the schema; but it restructures two models and their migration for a list of six).
+
+Litestone has no marker attribute (its annotations are @syntax, @hardDelete, @trail), so A coins a .lite word with its catalog row, tier, axis and test for one reader in one app. The list stays in domain/release/runtime.ts as the declared residual, pinned by a test that every name is a column of both App and Blueprint and that a new App column is either listed or named exempt. Reopen when a second app needs the mark.
+
+### <a id="fjs-d1600"></a>2026-10-28 · `FJS-D1600` — Does the generated `.dockerignore` name what the API image takes (ignore everything, then un-ignore what the Dockerfile copies) instead of listing what it leaves out — A (confidence 3).
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked as the recommendation qualifies it (*A (confidence 3)*) over **B** (a wider denylist: add `**/node_modules`, every surface directory the API image does not build (`desktop/`, `widgets/`, `cli/`, `extension/`, `mobile/`, `site/`), and the logger paths. Cost: each new surface or new kind of file leaks until someone adds its line, which is the history so far), **C** (as it is, with build-check's warning. Cost: the template keeps writing the gap, and the warning is the only guard).
+
+A whole, as recommended: the .dockerignore is an allowlist, * then a ! line per path the Dockerfile copies, generated from the same list as its COPY lines; the inner excludes stay.
+
+### <a id="fjs-d1599"></a>2026-10-28 · `FJS-D1599` — Does `fli deploy`'s first-release setup become a reconcile — every write idempotent and gated on what is missing — or keep its never-released gate and report how far a failed run got — A (confidence 2).
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked as the recommendation qualifies it (*A (confidence 2)*) over **B** (keep the gate; on a failed write, print what was written, what was not, and the command that finishes it. Cost: a rerun still skips in silence, and the person finishes by hand), **C** (one server call: Basecamp grows an endpoint that applies the whole first-release plan in one transaction. Cost: a new endpoint and a cli–server version pair to keep agreeing, and a Domain/route write that touches the proxy may not roll back cleanly).
+
+A whole, as recommended: setup becomes a reconcile that writes only what is missing; a field that differs from the plan is a finding, never a write, so a hand edit on Basecamp is never overwritten. neverReleased goes and preflight and setup share releasePlan.
 
 ### <a id="fjs-d1582"></a>2026-10-28 · `FJS-D1582` — the frame of every static page fli writes about a tree lives in `packages/cli/core/html-page.js`, and every such page follows the reader's light/dark preference under one saved theme key
 
@@ -18871,6 +19089,41 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d1613"></a>2026-10-28 · `FJS-D1613` — Q1 — Where `fli ws:publish` ships when `--to` is not given — the GitHub Release alone; `--to npm` is said on purpose, and `--to npm --to tarballs` ships both from one pack.
+
+Asked in [`IDEAS/package-host.md`](IDEAS/package-host.md) § Open questions, through `decision-rules`. **C** was picked over **A** (both by default, the paper's recommendation and the first build of 1.2) and **B** (npm by default, releases opt-in), after the owner asked what npm is still for once a release installs.
+
+The honest answer: two things, neither in play. A range — `^1.1` and `bun update` — which a URL spec cannot carry (`FJS-D988`), and outsiders, who expect `bun add @frontierjs/litestone`. Pre-alpha there are no outsiders, and the cli already owns every pin it scaffolds, so an upgrade of the owner's own apps is a rewrite of URLs the cli can do. Against that, every npm publish is a browser 2FA round trip per package, a two-hour session that lapses mid-run, and a version promised to the public for good. A default that pays that on every release to serve a consumer who does not exist yet is the wrong default; A made it so. B kept the pain and made the host's asset the optional one.
+
+- **Default — `tarballs`.** The release host is what a build box installs from (`FJS-D1568`), so it is what a release means. `--to npm` is a public release and is said.
+- **Resume reads every destination in the run**, not npm alone: `npm view` and `gh release view <tag> --json assets` (the asset by its packed name, because a release whose upload failed exists with nothing in it). A version that reached one and not the other is finished where it is missing — which is what makes a destination left out today addable tomorrow, and what closes the half-shipped gap A's first build left to a hand command.
+- **Privacy.** The owner asked whether releases are locked down. The repo is PUBLIC, read from `gh repo view`, so a release asset is as open as an npm tarball and nothing new leaks. SSH keys play no part: an asset is HTTPS, a private one needs a token header that `bun install <url>` cannot send and a redirect rule cannot add. Should the repo ever go private, Phase 2's redirect becomes a token-holding Worker — a different design, not a flag on this one.
+- **Cost.** Every version already on npm has no release and reads as in flight under the new default; the plan's 1.5 is the owner-run backfill from npm's own bytes. `core/publish-view.js`'s walk still gates on npm (1.4).
+- **Silence.** *Every version `ws:publish` ships has an asset at the derived URL, and where it also went to npm the two are byte-equal.* Fails today: **none**; 1.3 is the artefact.
+
+*Lives in:* `packages/cli/commands/workspace/publish/index.md` (`--to`, the per-destination probe), `packages/cli/commands/workspace/publish/_steps/00-preflight.md`, `packages/cli/commands/workspace/publish/_steps/02-publish-all.md`.
+
+### <a id="fjs-d1602"></a>2026-10-28 · `FJS-D1602` — Q2 — A dev channel for the package host — `fli ws:publish --channel dev` packs a CLEAN tree and uploads `<stem>-<version>-dev.<sha>.tgz` to one rolling GitHub Release named `dev`; no npm, no git tag, no version spent; the sha in the filename is the one origin and the release's own tag is never cited.
+
+Asked in [`IDEAS/package-host.md`](IDEAS/package-host.md) § Open questions, through `decision-rules`. **A** was picked over **B** (no dev channel; `deploy:vendor` ships the working tree from a laptop), **C** (`--to tarballs` with a real version, skipping npm by flag) and **D** (a rolling `latest` URL per package, bytes replaced each push) — against the paper's *defer until Phase 3 is green*.
+
+The need the paper deferred is the one the owner named: deploy and test an app against the latest build of the packages from a machine with no workspace, without touching npm. B serves one laptop only, and the plan's 3.2 deletes the clone-and-link Dockerfile that was the second machine's only road to the tree. C spends a version per test build, and a version is a promise. D fails on a fact 0.1 read from a run: `bun.lock` pins a URL spec by hash, so bytes swapped at one URL stop every install that keeps its lock.
+
+- **Noun — `--channel dev`**, beside `--tag` (the npm dist-tag) and `--to` (the destination). Rust's `nightly` is the shape; the value stays open for `beta`. Picked over a boolean `--dev` and over `--canary`.
+- **Version string — `<current>-dev.<sha>`**, `1.1.11-dev.ab12cd3`: the tree past 1.1.11, no bump arithmetic. Picked over Go's pseudo-version shape `<next patch>-dev.<sha>`; order is meaningless for a URL spec (`FJS-D988`).
+- **Origin.** The sha names the tree, so a dirty tree is REFUSED — `publish-preflight.js`'s `dirtyPackages` already owns the check and `--allow-dirty` does not lift it on this channel. The rolling release's tag `dev` points at a stale commit by construction; nothing reads it.
+- **Boundary.** `--channel` is a closed set; `--channel dev --to npm` is refused by name. A dev litestone's `^toolbelt` range resolves from npm, so a dev install is coherent only through the `overrides` block `core/vendor.js` already writes; the scaffold writes it with the URL.
+- **Cost.** The Cloudflare rule of 2.1 gains one second branch (`-dev.` in the version → release `dev`). Two patterns, not a list; a third branch is the design failing `decision-rules` Q5.
+- **Silence.** *Every dev asset is named for the clean commit it was packed from and installs with the hash the pack produced.* Fails today: **none**. The 1.3 postflight extended over the `dev` release is the artefact; CI's `deploy` phase does not run `dev`, which is not a published surface.
+
+*Lives in:* the plan's Phase 4, un-deferred — `commands/workspace/publish/` (`--channel`, the refusals, the upload), `core/vendor.js` (`packPackage`, `tarballStem`), `core/scaffold/app.js` (`specFor`).
+
+### <a id="fjs-d1598"></a>2026-10-28 · `FJS-D1598` — How does a publish keep the tree, the tags and npm agreeing — a check that names a tag npm lacks, a publish that refuses while a workspace dependency has moved past its published tag, or both — C (confidence 2).
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked as the recommendation qualifies it (*C (confidence 2)*) over **A** (a check only: a `done`- or `snapshots`-phase check names every `<name>@<version>` tag npm does not have. Cost: it reports the first failure and does nothing about the second, the one that crash-looped a box), **B** (the publish refuses: `ws:pub`, and any publish fli runs, refuses while a `workspace:` dependency's tree differs from its published tag, and names the fix, publishing that dependency first as a new version. Cost: an outpost-only change can force a litestone release, and a hand-run `bun publish` bypasses it).
+
+C whole, as recommended: A catches the silent skip, B is the only half that would have stopped the crash loop, and the enrollment pin check is where a skipped publish lands on a customer's box. A runs in fli done, not the snapshots phase, so CI does not depend on npm; Basecamp boot never asks npm.
 
 ### <a id="fjs-d1568"></a>2026-10-27 · `FJS-D1568` — Where a published tarball lives so `bun install` can fetch it with no registry — The asset on the GitHub Release for the tag `ws:publish` already cuts, reached as `https://packages.frontierjs.com/<stem>/<version>.tgz` through one Cloudflare redirect rule; `fli ws:publish --to <npm|tarballs>` ships it from the same pack; URL specs are the INSTALL path and npm stays the UPGRADE path (`FJS-D988`).
 

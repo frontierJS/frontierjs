@@ -4,7 +4,9 @@
   // NoticeBar is the shell's condensed view; this is the list the home screen
   // shows: every notice, counted by priority, with the "show N more" fold the
   // mock has. Same rules, same notices — one definition of "needs attention"
-  // (src/notices.js), two presentations.
+  // (src/notices.js), two presentations, and one memory of what was
+  // acknowledged (src/dismissals.js) — "Got it" here survives a reload and
+  // hides the notice from the bar too.
   //
   // The empty state is not an absence: "All clear" is the answer to a question
   // the operator asked, so it renders as a result rather than as nothing.
@@ -16,21 +18,21 @@
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import { goto } from '@frontierjs/sierra/router'
   import { PRIORITY_TONE, noticeCounts } from '../lib/notices.js'
+  import { dismissals, dismiss, restore } from '../lib/dismissals.js'
 
   export let notices = []
   export let fold    = 6      // how many before the fold
 
-  let showAll   = false
-  let dismissed = []
+  let showAll = false
 
-  $: live    = notices.filter(n => !dismissed.includes(n.id))
+  $: dismissals.ids
+
+  $: live    = notices.filter(n => !dismissals.ids.includes(n.id))
   $: counts  = noticeCounts(live)
   $: visible = showAll ? live : live.slice(0, fold)
   $: hidden  = live.length - visible.length
 
-  function dismiss(id) { dismissed = [...dismissed, id] }
-  function dismissAll() { dismissed = [...dismissed, ...live.map(n => n.id)] }
-  function restore()    { dismissed = [] }
+  function dismissAll() { dismiss(live.map(n => n.id)) }
 </script>
 
 <Card>
@@ -68,7 +70,7 @@
           {#if n.href}
             <Button treatment="ghost" onclick={() => goto(n.href)}>{n.action} →</Button>
           {/if}
-          <Button treatment="ghost" aria-label={`Dismiss: ${n.title}`} onclick={() => dismiss(n.id)}>Got it</Button>
+          <Button treatment="ghost" aria-label={`Dismiss: ${n.title}`} onclick={() => dismiss([n.id])}>Got it</Button>
         </li>
       {/each}
     </ul>

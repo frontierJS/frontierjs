@@ -207,8 +207,8 @@ Two more that will move:
   the failure so a slow or throwing ping cannot take the app's own rows down with
   it. Keep that `.catch()`.
 - **`PORTAL_SERVICE_IDS` is read by the dashboards service.** A `service_health`
-  widget stores a portal id, and it is validated against this list rather than a
-  second copy. Adding a provider widens what a widget may point at — which is
+  tile stores a portal id, and it is validated against this list rather than a
+  second copy. Adding a provider widens what a tile may point at — which is
   right, and worth knowing.
 - **A hosted provider has no `url` and no `ui_port`.** Its config key is a token,
   so `entry.url` reads null even once it is wired; `/admin/adapters/` shows

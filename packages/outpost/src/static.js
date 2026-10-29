@@ -31,6 +31,7 @@
 import { createHash }    from 'node:crypto'
 import fsp               from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
+import { layout }         from './layout.js'
 
 // ─── Limits ──────────────────────────────────────────────────────────────────
 //
@@ -157,7 +158,7 @@ function readFiles(files) {
 
 // ─── The store ───────────────────────────────────────────────────────────────
 
-export function createStatic({ staticDir = '/var/lib/outpost/static', staticUrl = '' } = {}) {
+export function createStatic({ staticDir = layout().static, staticUrl = '' } = {}) {
 
   const root     = resolve(staticDir)
   const appsDir  = join(root, 'apps')

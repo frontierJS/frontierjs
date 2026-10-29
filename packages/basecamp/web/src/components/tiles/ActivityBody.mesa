@@ -3,7 +3,7 @@
   //
   // The trail is admin/owner. A developer with this card on their board gets
   // told so rather than an empty feed: "you cannot read this" is a correct
-  // answer, and the one that does not read as a broken widget. Same posture the
+  // answer, and the one that does not read as a broken tile. Same posture the
   // /activity/ screen takes.
   //
   // Actor ids are not resolved to names here. That costs a second request per

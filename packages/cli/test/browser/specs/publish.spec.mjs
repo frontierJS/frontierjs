@@ -66,6 +66,27 @@ export async function run(t) {
   t.is(cleared.kept, false, 'changing the bump clears the plan made with the old one')
   t.is(cleared.word, 'not run', 'and the step says so')
 
+  /* ── a destination's login gate is a step only while it is in the run ── */
+
+  const dest = await t.evaluate(`
+    const shown = () => ({
+      gh:  !document.querySelector('#publish-steps [data-step="gh"]').hidden,
+      npm: !document.querySelector('#publish-steps [data-step="whoami"]').hidden,
+    });
+    const start = { to: publishOpts().to, ...shown() };
+    document.getElementById('publish-to-npm').checked = true;
+    onPublishDestinations();
+    const both = { to: publishOpts().to, summary: document.getElementById('publish-summary').textContent, ...shown() };
+    document.getElementById('publish-to-npm').checked = false;
+    onPublishDestinations();
+    return { start, both, back: shown() };
+  `)
+  t.is(dest.start.to.join(), 'tarballs', 'the release is the default destination')
+  t.ok(dest.start.gh && !dest.start.npm, 'so the gh gate is a step and the npm one is not')
+  t.ok(dest.both.gh && dest.both.npm, 'ticking npm puts its login gate back in')
+  t.ok(/GitHub Release \+ npm/.test(dest.both.summary), `and the summary says both — "${dest.both.summary}"`)
+  t.ok(dest.back.gh && !dest.back.npm, 'and unticking it takes the gate out again')
+
   /* ── unticking a package is what narrows ─────────────────────────────── */
 
   const picked = await t.evaluate(`

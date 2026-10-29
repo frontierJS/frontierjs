@@ -7,13 +7,13 @@
   // answer is thrown away. The frame says so.
   //
   // The id is in `config.serviceId`, validated against the portal registry when
-  // the widget was placed. It can still 404 later — an adapter removed from the
+  // the tile was placed. It can still 404 later — an adapter removed from the
   // registry — which is a state, not an error.
   import { portal } from '../../resources/Portal.mesa'
   import { onWrite } from './live.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
-  export let widget = null
+  export let tile = null
 
   let entry   = null
   let error   = null
@@ -28,9 +28,9 @@
     // it interpolated was not set: the STRINGS 'null' and 'undefined' are both
     // truthy, and the service could not tell one from an appliance that is
     // genuinely gone (`FJS-1018`). Checked here as well as at the boundary,
-    // because a widget with no service chosen is a STATE this screen draws and
+    // because a tile with no service chosen is a STATE this screen draws and
     // not a call worth making.
-    const id = widget?.config?.serviceId
+    const id = tile?.config?.serviceId
     if (!id || id === 'null' || id === 'undefined') { loading = false; missing = true; return }
     try {
       entry = await portal.service.get(id)
@@ -49,7 +49,7 @@
 {#if loading}
   <p class="text-sm text-muted">Pinging…</p>
 {:else if missing}
-  <p class="text-sm text-muted">This widget points at an adapter this hub no longer offers.</p>
+  <p class="text-sm text-muted">This tile points at an adapter this hub no longer offers.</p>
 {:else if error}
   <p class="text-sm">{error}</p>
 {:else}

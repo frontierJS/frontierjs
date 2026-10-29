@@ -335,6 +335,9 @@ describe('the hub grader', () => {
     expect(grade({ production: false, apiUrl: 'http://hub.lan:8120' })['hub.api-url'].ok).toBe(false)
     expect(grade({ mailer: null })['hub.mailer']).toMatchObject({ ok: false, message: expect.stringContaining('No mailer') })
     expect(grade({ mailFrom: 'basecamp@localhost' })['hub.mailer']).toMatchObject({ ok: false, message: expect.stringContaining('MAIL_FROM') })
+    // A failing control says what to do; a passing one carries nothing to do.
+    expect(grade({ mailer: null })['hub.mailer'].fix).toContain('RESEND_API_KEY')
+    expect(grade({})['hub.mailer'].fix).toBeUndefined()
   })
 
   test('no backup ever is failing, and a recent one passes', () => {
@@ -404,6 +407,18 @@ describe('the host row on /hub/security/', () => {
     expect(c['hub.backup-recent'].ok).toBe(false)
     expect(c['hub.key-escrowed']).toMatchObject({ ok: false, message: expect.stringContaining('No copy of ENCRYPTION_KEY') })
     expect(c['hub.db-mode'].ok).toBe('unknown')
+  })
+
+  test('a failing hub control is sent to the system admins and nobody else', async () => {
+    const { notifyHubPosture } = await import('../src/jobs/hub-posture.job.ts')
+    // No backup has ever finished in this database, so hub.backup-recent fails.
+    // A suspended or unverified account is not paged, so the fixture admin is made a working one.
+    const sys = env.system as any
+    await sys.user.update({ where: { id: admin.id }, data: { status: 'active' } })
+    expect(await notifyHubPosture(env.app, sys)).toBe(1)
+    await sys.user.update({ where: { id: admin.id }, data: { isSystemAdmin: false } })
+    expect(await notifyHubPosture(env.app, sys)).toBe(0)
+    await sys.user.update({ where: { id: admin.id }, data: { isSystemAdmin: true } })
   })
 
   test('the host row\'s own report carries the hub controls beside its fleet grade, for the hub alone', async () => {

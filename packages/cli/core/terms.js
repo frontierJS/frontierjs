@@ -39,6 +39,7 @@
 // thing this becomes once `ARCHITECT.md` § 2 settles ([FJS-1211](ISSUES.md)).
 
 import { readdirSync, readFileSync, existsSync } from 'fs'
+import { spawnSync }                             from 'child_process'
 import { join, relative, sep }                   from 'path'
 import { singularize }                           from '@frontierjs/toolbelt/inflect'
 import { splitFrontmatter }                      from '@frontierjs/toolbelt/frontmatter'
@@ -121,6 +122,23 @@ function walk(dir, out = []) {
     out.push(path)
   }
   return out
+}
+
+// What git ignores is not corpus: a gitignored incubator, audit reports and db
+// backups exist only in the checkout that made them, so a walk of the disk read
+// 89 unlabelled in the shared tree and 24 in a clean worktree of the same HEAD
+// (FJS-3261). Outside a repo — a test fixture — nothing is ignored.
+function corpusFiles(dir) {
+  const git = spawnSync('git', ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory'],
+    { cwd: dir, encoding: 'utf8' })
+  const ignored = git.status === 0 ? git.stdout.split('\0').filter(Boolean) : []
+  if (!ignored.length) return walk(dir)
+  const files = new Set(ignored.filter(p => !p.endsWith('/')))
+  const dirs  = ignored.filter(p => p.endsWith('/'))
+  return walk(dir).filter(path => {
+    const rel = relative(dir, path)
+    return !files.has(rel) && !dirs.some(d => rel.startsWith(d))
+  })
 }
 
 // Which package a file belongs to. The bucket is what `spread` counts, so a
@@ -805,7 +823,7 @@ function mesaWords(root) {
   // holds its own counter-example is worse than one that is short.
   const seen = new Map()
   for (const dir of dirs) {
-    for (const path of walk(dir)) {
+    for (const path of corpusFiles(dir)) {
       const dot = path.lastIndexOf('.')
       if (!SOURCE_EXT.has(path.slice(dot))) continue
       for (const hit of readFileSync(path, 'utf8').matchAll(/\bmesa:([a-zA-Z][a-zA-Z0-9]*)/g)) {
@@ -874,7 +892,7 @@ function apiTerms(root, packages) {
 
     // `@frontierjs/ui` has no `src/` at all — its components ARE the package —
     // so the walk below must not be what decides whether the package is read.
-    for (const path of existsSync(dir) ? walk(dir) : []) {
+    for (const path of existsSync(dir) ? corpusFiles(dir) : []) {
       const dot = path.lastIndexOf('.')
       if (!SOURCE_EXT.has(path.slice(dot))) continue
       if (/\.(test|spec)\./.test(path)) continue
@@ -898,7 +916,7 @@ function apiTerms(root, packages) {
     // pass `EmptyState`, `StatCard` and `FilterBar` reach the prose scan with
     // nothing to say they are code, and land in the concepts table as though
     // somebody had coined them.
-    for (const path of walk(join(root, 'packages', pkg))) {
+    for (const path of corpusFiles(join(root, 'packages', pkg))) {
       if (!path.endsWith('.mesa')) continue
       if (/[\\/](test|tests|fixtures|example)[\\/]/.test(path)) continue
       const name = path.slice(path.lastIndexOf('/') + 1, -'.mesa'.length)
@@ -1014,7 +1032,7 @@ export function collectTerms({ root }) {
 
   const byKind = Object.fromEntries(KINDS.map(k => [k, 0]))
 
-  for (const path of walk(root)) {
+  for (const path of corpusFiles(root)) {
     const dot  = path.lastIndexOf('.')
     const kind = KIND_BY_EXT.get(path.slice(dot))
     if (!kind) continue
@@ -1355,13 +1373,16 @@ export function collectTerms({ root }) {
         .filter((r) => r.owners.size >= 3 && r.count >= 8 && !phrases.has(r.term))
         // What is left after the shape filters is a sentence wearing a term's
         // clothes: a participle in front (`Verified state`) or a verb behind
-        // (`Litestone emits`). A trailing s is only a plural if the singular is
-        // a word this repo also uses on its own.
+        // (`Litestone emits`). A trailing s is only a plural if the prose also
+        // writes the singular after the same head, which a noun gets and a
+        // verb's subject does not. Asking whether the singular is a word
+        // anywhere let one stray capitalized verb pass (FJS-3481). This file is
+        // corpus too, so a comment here spelling a singular pair adds it.
         .filter((r) => {
           const [head, tail] = r.term.split(' ')
           if (/(?:ed|ing)$/.test(head) && !byTerm.has(head.toLowerCase())) return false
           const singular = singularize(tail.toLowerCase())
-          return singular === tail.toLowerCase() || byTerm.has(singular)
+          return singular === tail.toLowerCase() || pairs.has(`${head} ${tail[0]}${singular.slice(1)}`)
         })
         .map((r) => ({ term: r.term, count: r.count, spread: r.owners.size }))
         .sort((a, b) => b.spread - a.spread || b.count - a.count)

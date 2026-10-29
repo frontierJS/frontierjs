@@ -152,14 +152,15 @@ export default createService({
     if (credential) {
       checkCredential(credential)
       if (row.secretId) {
-        // Rotate in place — the target's ref keeps resolving, and `isVerified`
-        // goes false the way the secrets service does it. `Secret` is
+        // Rotate in place — the target's ref keeps resolving, and `verifiedAt`
+        // clears the way the secrets service does it. `Secret` is
         // @version, so the write carries the revision it just read.
         const held = await db().secret.findFirst({ where: { id: row.secretId as string } })
         if (!held) throw new BadRequest('The credential this destination points at is gone — remove and recreate the destination')
         await db().secret.update({
           where: { id: held.id as string },
-          data:  { data: credential, isVerified: false, version: held.version },
+          data:  { data: credential, verifiedAt: null, verifyError: null, version: held.version },
+          system: ['verifiedAt', 'verifyError'],
         })
       } else {
         patch.secretId = await storeCredential(row.name as string, credential)
@@ -239,8 +240,12 @@ export default createService({
       system: ['lastTestAt'],
     }) as Row
     const held = await db().secret.findFirst({ where: { id: row.secretId } })
-    if (held && !held.isVerified)
-      await db().secret.update({ where: { id: held.id as string }, data: { isVerified: true, version: held.version } })
+    if (held && !held.verifiedAt)
+      await db().secret.update({
+        where:  { id: held.id as string },
+        data:   { verifiedAt: new Date().toISOString(), verifyError: null, version: held.version },
+        system: ['verifiedAt', 'verifyError'],
+      })
     return withBackupCount(updated)
   },
 

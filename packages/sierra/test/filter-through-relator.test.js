@@ -20,7 +20,8 @@ vi.mock('@frontierjs/sierra/resource', () => ({
       on: () => {},
       invoke: async () => OPTIONS,
       find: async () => OPTIONS,
-      getOptions: async () => OPTIONS,
+      // A page of two, as a capped picker answers; a lookup by id reaches past it.
+      getOptions: async (q) => q?.id?.in ? OPTIONS.filter(r => q.id.in.includes(r.id)) : OPTIONS.slice(0, 2),
     }),
     resource: () => ({
       tether: { get: () => [], subscribe: (fn) => { fn([]); return () => {} }, set: () => {} },
@@ -100,5 +101,24 @@ describe('filters() through a to-many', () => {
     const { options } = await contacts.options('tags')
 
     expect(options).toEqual([{ value: 1, label: 'vip' }, { value: 2, label: 'lapsed' }])
+  })
+
+  test('the entry carries optionsFor where options are fetched, and a plain column none', () => {
+    const contacts = createResource('contacts', { model: 'Contact' })
+    const all = contacts.filters({ limit: 99 }).filters
+
+    expect(typeof all.find(x => x.name === 'tags').optionsFor).toBe('function')
+    expect(all.find(x => x.name === 'name').optionsFor).toBeUndefined()
+  })
+
+  test('optionsFor labels a held pick the first page does not reach', async () => {
+    OPTIONS.length = 0
+    OPTIONS.push({ id: 1, name: 'vip' }, { id: 2, name: 'lapsed' }, { id: 3, name: 'dormant' })
+
+    const contacts = createResource('contacts', { model: 'Contact' })
+    const f = contacts.filters({ limit: 99 }).filters.find(x => x.name === 'tags')
+    const { options } = await f.optionsFor({ record: { tags: [3] } })
+
+    expect(options.find(o => o.value === 3)).toEqual({ value: 3, label: 'dormant' })
   })
 })

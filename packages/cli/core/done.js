@@ -4,7 +4,7 @@
 // module named where its package lists
 // its siblings, a new command named where its namespace lists its siblings, a
 // new test file in the script that runs tests, snapshots regenerated, registers
-// agreeing with themselves. Most of those already have an engine; nothing asked
+// agreeing with themselves, every tagged version on npm. Most of those already have an engine; nothing asked
 // them together about the diff in hand, so each was remembered or not.
 //
 // It grades the finishing steps and never the change. Whether the feature works
@@ -23,7 +23,7 @@
 import { gitOut }                                         from './git.js'
 import { existsSync, readFileSync, statSync }             from 'node:fs'
 import { basename, dirname, extname, join, resolve, sep }  from 'node:path'
-import { safeRead }                         from './fs.js'
+import { safeRead, rel }                    from './fs.js'
 
 import { runChecks, findApps, readBaseline } from './checks.js'
 import { checkSnapshots }                   from './snapshots.js'
@@ -31,6 +31,7 @@ import { runRegisterCheck }                 from './register-check.js'
 import { registerSources }                  from './registers.js'
 import { provesFor, changedTree }           from './proofs.js'
 import { runnables }                        from './runnables.js'
+import { tagsNpmLacks }                     from './tags-on-npm.js'
 
 const CODE        = new Set(['.js', '.mjs', '.ts', '.mesa'])
 const SIBLING_MIN = 3
@@ -192,6 +193,18 @@ export async function engineItems(root) {
     for (const e of errors) out.push({ check: 'registers', subject: `${e.rule}:${e.id ?? e.file}`, ok: false, message: `${e.file ?? ''}${e.line ? `:${e.line}` : ''} ${e.message}` })
   }
 
+  if (existsSync(join(root, 'packages'))) {
+    const { lacking, unknown, asked } = await tagsNpmLacks(root)
+    if (asked && !lacking.length) out.push({ check: 'npm', subject: 'npm', ok: true, message: unknown.length
+      ? `npm could not be asked about ${unknown.length} of ${asked} tagged version(s)`
+      : `npm holds all ${asked} tagged version(s)` })
+    for (const w of lacking) out.push({
+      check: 'npm', subject: `${w.name}@${w.version}`, ok: false, message: w.from === 'tag'
+        ? `${w.name}@${w.version} is tagged and npm does not have it — fli ws:pub finishes the release`
+        : `${w.from} pins ${w.constant} = ${w.version} and npm has no ${w.name}@${w.version}, so every machine installed from it fails — publish it, or move the pin back`,
+    })
+  }
+
   const snaps = await checkSnapshots({ root })
   if (snaps.checked && !snaps.failed) out.push({ check: 'snapshots', subject: 'snapshots', ok: true, message: `${snaps.checked} snapshot(s) current` })
   for (const r of snaps.results.filter(r => !r.ok)) {
@@ -333,4 +346,3 @@ function titleOf(path) {
 }
 
 function isFile(path)  { try { return statSync(path).isFile() } catch { return false } }
-function rel(root, file) { return file?.startsWith(root) ? file.slice(root.length + 1) : file }

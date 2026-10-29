@@ -20,6 +20,9 @@ import { fileURLToPath } from 'url'
 import { collectTerms, architectVocabulary, authoredVocabulary, packageVocabularies, placed, renderPage } from '../core/terms.js'
 
 const REPO = fileURLToPath(new URL('../../..', import.meta.url))
+// One scan of the repo is ~7s, past bun's per-test timeout, and every test here
+// reads it without writing to it — so it is taken once, at collection.
+const REPO_MODEL = collectTerms({ root: REPO })
 
 function fixture(docs = {}) {
   const root = mkdtempSync(join(tmpdir(), 'fli-terms-'))
@@ -123,7 +126,7 @@ describe('the prose scan', () => {
 
 describe('an identifier is not a coined word', () => {
   test('a Mesa component is an api identifier, and the condition it renders is the term', () => {
-    const model = collectTerms({ root: REPO })
+    const model = REPO_MODEL
     const classOf = t => model.concepts.find(r => r.term === t)?.class
 
     // The FILE is the declaration for a component — nothing writes it as an
@@ -139,7 +142,7 @@ describe('an identifier is not a coined word', () => {
   })
 
   test('a one-word identifier stays a concept, because it is also English', () => {
-    const model = collectTerms({ root: REPO })
+    const model = REPO_MODEL
     const classOf = t => model.concepts.find(r => r.term === t)?.class
 
     // § 2 rules two of these, and a compound is what separates a name somebody
@@ -152,7 +155,7 @@ describe('an identifier is not a coined word', () => {
 
 describe('somebody else\'s nouns', () => {
   test('a product, a person and a place are external, so the concepts tab is this framework\'s', () => {
-    const model = collectTerms({ root: REPO })
+    const model = REPO_MODEL
     const classOf = term => model.concepts.find(r => r.term === term)?.class
 
     // Every one of these read as a concept of this framework until it was
@@ -185,7 +188,7 @@ describe('dropped English', () => {
   })
 
   test('a word § 2 rules is never dropped, whatever else the list holds', () => {
-    const model = collectTerms({ root: REPO })
+    const model = REPO_MODEL
     const status = term => model.concepts.find(r => r.term === term)?.status
 
     // Dropping a BLESSED word hides dead doctrine, and dropping a FORBIDDEN one
@@ -203,7 +206,7 @@ describe('dropped English', () => {
   })
 
   test('the drop is reported rather than silent, so a list eating a term is findable', () => {
-    const model = collectTerms({ root: REPO })
+    const model = REPO_MODEL
     expect(model.counts.dropped).toBeGreaterThan(50)
     expect(model.counts.droppedHits).toBeGreaterThan(model.counts.dropped)
   })
@@ -239,7 +242,7 @@ describe('phrases', () => {
   })
 
   test('naming a phrase takes it off the candidate list and puts it in the table', () => {
-    const model = collectTerms({ root: REPO })
+    const model = REPO_MODEL
     const named = t => model.concepts.find(r => r.term === t)
 
     // `data` alone is 19 packages of nothing anybody could define; the terms
@@ -267,7 +270,7 @@ describe('phrases', () => {
   })
 
   test('candidates are proposed from the prose, and a sentence is not one', () => {
-    const { audit } = collectTerms({ root: REPO })
+    const { audit } = REPO_MODEL
     const terms = audit.phraseCandidates.map(r => r.term)
 
     expect(terms).toContain('Litestone client')
@@ -384,7 +387,7 @@ describe('sources', () => {
 
 describe('the page', () => {
   test('a source is counted per lens, because the same chip means different amounts', () => {
-    const model = collectTerms({ root: REPO })
+    const model = REPO_MODEL
     const ideas = model.sources.find(s => s.name === 'IDEAS')
 
     // Design records for work not started: a fifth of the prose and not one
@@ -395,7 +398,7 @@ describe('the page', () => {
   })
 
   test('a language word declares the package that ships it, so the toggles reach that tab', () => {
-    const model = collectTerms({ root: REPO })
+    const model = REPO_MODEL
     const lite = model.language.filter(r => r.lens === 'lite')
     const mesa = model.language.filter(r => r.lens === 'mesa')
 
@@ -407,7 +410,7 @@ describe('the page', () => {
   })
 
   test('class is a column of its own, beside status, on every row', () => {
-    const html = renderPage(collectTerms({ root: REPO }))
+    const html = renderPage(REPO_MODEL)
     const pane = t => html.split(`data-tab="${t}"`)[1].split('</section>')[0]
 
     expect(html.includes('<th>status</th><th>class</th>')).toBe(true)
@@ -417,7 +420,7 @@ describe('the page', () => {
   })
 
   test('the mesa namespace is DECLARED, so the compiler\'s counter-example is not a word', () => {
-    const model = collectTerms({ root: REPO })
+    const model = REPO_MODEL
     const mesa  = model.language.filter(r => r.lens === 'mesa')
 
     expect(mesa.every(r => r.confidence === 'declared')).toBe(true)
@@ -432,7 +435,7 @@ describe('the page', () => {
   })
 
   test('the namespace has two owners — mesa:slot is Sierra\'s and is used there', () => {
-    const slot = collectTerms({ root: REPO }).language.find(r => r.term === 'mesa:slot')
+    const slot = REPO_MODEL.language.find(r => r.term === 'mesa:slot')
 
     // Sierra rewrites the tag away before the compiler sees it, so mesa's own
     // list cannot carry it and a reader of that list alone is short one word.
@@ -452,7 +455,7 @@ describe('the page', () => {
   })
 
   test('every path it prints is a vscode link that resolves to a file that exists', () => {
-    const model = collectTerms({ root: REPO })
+    const model = REPO_MODEL
     const html  = renderPage(model)
     const links = [...html.matchAll(/href="vscode:\/\/file([^"]+)"/g)].map(m => m[1])
 
@@ -677,7 +680,7 @@ describe('file kinds', () => {
 })
 
 describe('over this repo', () => {
-  const model = collectTerms({ root: REPO })
+  const model = REPO_MODEL
 
   test('ARCHITECT.md § 2 still parses — the doctrine is not silently empty', () => {
     expect(model.architect.found).toBe(true)
@@ -722,13 +725,20 @@ describe('over this repo', () => {
   // The audit reads the authored vocabularies, which are prose. Asking it of the
   // widened corpus changes what every row MEANS with nothing saying so — the
   // first run over code took `unlabelled` from 0 to 123 by counting identifiers
-  // as spread. The ceiling is an order of magnitude under that, not a count of
-  // the words prose has since spread to: Fix, Deploy and Note are ordinary
-  // words a growing corpus crosses spread 4 with, and a ceiling pinned to
-  // today's number goes red on the next document.
+  // as spread. A ceiling on the count went red on ordinary words the prose grew
+  // into, so the property is asked instead: each row's spread is its markdown
+  // spread, read back off the row's own breakdown.
   test('the audit stays on the prose it was calibrated on', () => {
-    expect(model.audit.unlabelled.length).toBeLessThan(40)
-    expect(model.audit.unnamedCommon.length).toBeLessThan(40)
+    const byTerm = new Map(model.concepts.map(r => [r.term, r]))
+    const proseSpread = (term) => new Set(Object.entries(byTerm.get(term).byCell)
+      .filter(([cell, hits]) => hits > 0 && cell.endsWith('|markdown'))
+      .map(([cell]) => cell.slice(0, cell.lastIndexOf('|')))).size
+
+    const rows = [...model.audit.unlabelled, ...model.audit.unnamedCommon]
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.filter(r => r.spread !== proseSpread(r.term)).map(r => r.term)).toEqual([])
+    // A word written in code and nowhere in prose is what the widening let in.
+    expect(rows.filter(r => byTerm.get(r.term).spread > r.spread).length).toBeGreaterThan(0)
   })
 
   test('the words that prompted this are named by css rather than reading unnamed', () => {

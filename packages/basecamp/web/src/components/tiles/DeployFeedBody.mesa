@@ -9,12 +9,12 @@
   import { at } from '../../lib/datetime.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
-  export let widget = null
+  export let tile = null
 
-  // Composed, because a deployment row includes its app. `const`: a widget
+  // Composed, because a deployment row includes its app. `const`: a tile
   // whose subject changes is re-rendered by the page, not mutated here.
   const list = deployments.tethered({
-    state: 'local', composed: true, where: widget?.appId ? { appId: widget.appId } : {}, directives: { limit: 6 },
+    state: 'local', composed: true, where: tile?.appId ? { appId: tile.appId } : {}, directives: { limit: 6 },
   })
   $: rows    = list.rows
   $: error   = list.error?.message ?? null

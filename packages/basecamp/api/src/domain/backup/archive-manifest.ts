@@ -11,9 +11,9 @@
 // not from a hash recorded here — a hash of `schema.lite` refuses a restore
 // whose pending migrations would apply, and a copy of the history is a second
 // record of it. Pre-alpha `initial_schema.sql` is rewritten in place, so an
-// archive taken before such a rewrite reads `modified` and is refused by name:
-// boot's `apply()` does not look at `modified` or `orphaned`, and would open
-// the database against tables it never created.
+// archive taken before such a rewrite reads `modified` and is refused by name
+// here, before the swap, rather than by boot's `apply()` after it; boot does
+// not look at `orphaned` at all.
 //
 // `litestone restore --from-backup` reads only the files it knows by name, so
 // a `manifest.json` beside them is never restored as data.

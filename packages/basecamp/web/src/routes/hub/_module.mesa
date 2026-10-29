@@ -35,12 +35,18 @@ title: Hub
      aria-current={(page.route, isActive('/hub/', { exact: true })) ? 'page' : null}>Overview</a>
   <a class="navlink" href="/hub/workspaces/"
      aria-current={(page.route, isActive('/hub/workspaces/')) ? 'page' : null}>Workspaces</a>
+  <a class="navlink" href="/hub/accounts/"
+     aria-current={(page.route, isActive('/hub/accounts/')) ? 'page' : null}>Accounts</a>
+  <a class="navlink" href="/hub/fleet/"
+     aria-current={(page.route, isActive('/hub/fleet/')) ? 'page' : null}>Fleet</a>
   <a class="navlink" href="/hub/users/"
      aria-current={(page.route, isActive('/hub/users/')) ? 'page' : null}>Users &amp; bots</a>
   <a class="navlink" href="/hub/flags/"
      aria-current={(page.route, isActive('/hub/flags/')) ? 'page' : null}>Flags</a>
   <a class="navlink" href="/hub/backups/"
      aria-current={(page.route, isActive('/hub/backups/')) ? 'page' : null}>Backups</a>
+  <a class="navlink" href="/hub/audit/"
+     aria-current={(page.route, isActive('/hub/audit/')) ? 'page' : null}>Audit</a>
   <a class="navlink" href="/hub/security/"
      aria-current={(page.route, isActive('/hub/security/')) ? 'page' : null}>Security</a>
   <a class="navlink" href="/hub/settings/"

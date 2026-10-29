@@ -35,6 +35,7 @@ title: Hub settings
   // typed once as `<accessKeyId>:<secretAccessKey>`, sent beside the record
   // and never shown again; the row that comes back carries an address only.
   import { hubConfig }          from '../../../resources/HubConfig.mesa'
+  import { hub }                from '../../../resources/Hub.mesa'
   import { backupDestinations } from '../../../resources/BackupDestination.mesa'
   import { session }            from '../../../lib/session.js'
   import { at }                 from '../../../lib/datetime.js'
@@ -46,6 +47,7 @@ title: Hub settings
   import Input    from '@frontierjs/ui/components/forms/Input.mesa'
   import Select   from '@frontierjs/ui/components/forms/Select.mesa'
   import Switch   from '@frontierjs/ui/components/forms/Switch.mesa'
+  import Badge    from '@frontierjs/ui/components/display/Badge.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore'
 
   let config    = null
@@ -92,8 +94,7 @@ title: Hub settings
         unset  = true
         config = null
         draft  = {
-          name: 'Basecamp',
-          heartbeatTimeoutSeconds: 120, sessionTtlHours: 168,
+          heartbeatTimeoutSeconds: 120,
           requireTwoFactorForOwners: false, allowApiKeyAuth: true, allowBotUsers: true,
           backupEnabled: false, backupCron: '0 2 * * *', backupDestinationId: null, replicaDestinationId: null,
           backupKeepLocalCount: 7, backupKeepLocalDays: null, backupKeepRemoteCount: 7, backupKeepRemoteDays: null,
@@ -107,6 +108,13 @@ title: Hub settings
   }
 
   load()
+
+  // Read-only, and a failed read costs only this card: the form above is the row.
+  let variables = []
+  hub.service.invoke('environment', null)
+    .then(r => { variables = r.variables })
+    .catch(() => {})
+  const STATE_TONE = { set: 'success', default: 'muted', unset: 'warning' }
 
   // The workspace's destinations, re-read when the header switches workspace:
   // a destination the schedule names in another workspace still shows by id
@@ -235,14 +243,6 @@ title: Hub settings
     </Callout>
   {/if}
 
-  <Card id="hub-settings-general">
-    <h3 class="h5">General</h3>
-    <Input name="name" id="cfg-name" label="Hub name" value={draft.name}
-           error={fieldErrs.name}
-           hint="Shown in the browser tab and in email"
-           oninput={(e) => write('name', e.target.value)} />
-  </Card>
-
   <Card id="hub-settings-limits">
     <h3 class="h5">Timings</h3>
     <Input name="heartbeatTimeoutSeconds" id="cfg-heartbeat" type="number"
@@ -250,26 +250,19 @@ title: Hub settings
            error={fieldErrs.heartbeatTimeoutSeconds}
            hint="A server goes unreachable after this long without checking in. Below the outpost's own interval, every healthy machine reads unreachable between beats."
            oninput={(e) => write('heartbeatTimeoutSeconds', Number(e.target.value))} />
-    <Input name="sessionTtlHours" id="cfg-session-ttl" type="number"
-           label="Session lifetime (hours)" value={draft.sessionTtlHours}
-           error={fieldErrs.sessionTtlHours}
-           hint="168 is seven days"
-           oninput={(e) => write('sessionTtlHours', Number(e.target.value))} />
   </Card>
 
   <Card id="hub-settings-policy">
     <h3 class="h5">Policy</h3>
     <Switch id="cfg-2fa" label="Require 2FA for owners" checked={draft.requireTwoFactorForOwners}
+            description="A workspace owner with no authenticator can sign in only to set one up; every other call is refused until they do."
             onchange={(checked) => write('requireTwoFactorForOwners', checked)} />
     <Switch id="cfg-api-keys" label="Allow API key authentication" checked={draft.allowApiKeyAuth}
+            description="Off refuses every request made with an API key, the CLI and MCP clients included. Sign-in sessions and outposts are unaffected."
             onchange={(checked) => write('allowApiKeyAuth', checked)} />
     <Switch id="cfg-bots" label="Allow bot accounts" checked={draft.allowBotUsers}
+            description="Off refuses creating a bot. Bots that exist keep their keys."
             onchange={(checked) => write('allowBotUsers', checked)} />
-    <p class="text-sm text-muted">
-      Stored, and <strong>read by nothing yet</strong>. Each of these is a rule the sign-in path
-      or the key issuer would have to consult, and none of them does — a switch that changes a
-      column and no behavior is worth saying out loud rather than leaving to be discovered.
-    </p>
   </Card>
 
   <Card id="hub-settings-backup">
@@ -371,15 +364,30 @@ title: Hub settings
             oninput={(e) => write('replicaDestinationId', e.target.value || null)} />
   </Card>
 
-  <Card id="hub-settings-mail">
-    <h3 class="h5">Addresses and mail</h3>
+  <Card id="hub-settings-environment">
+    <h3 class="h5">Environment</h3>
     <p class="text-sm text-muted">
-      Where this installation is reached and how it mails are environment settings, read at boot
-      before any database: <code>FRONTIER_APP_URL</code> (every emailed link),
-      <code>FRONTIER_API_URL</code> (what a machine enrolls with), <code>MAIL_URL</code> or
-      <code>RESEND_API_KEY</code>, and <code>MAIL_FROM</code>. A row here would never reach the
-      process that uses them, so their state is graded on <a href="/hub/security/">Host security</a>.
+      Read at boot, before any database, so none of these is set from this screen: change one in
+      the env file and restart the API. <code>FRONTIER_APP_URL</code>, <code>FRONTIER_API_URL</code>
+      and the mailer are graded on <a href="/hub/security/">Host security</a>. A secret shows
+      whether it is set and never its value.
     </p>
+    {#if variables.length}
+      <table class="table" id="hub-environment">
+        <thead>
+          <tr><th>Variable</th><th>State</th><th>Value</th></tr>
+        </thead>
+        <tbody>
+          {#each variables as v}
+            <tr data-variable={v.name}>
+              <td><code>{v.name}</code>{#if v.required} <span class="text-sm text-muted">required</span>{/if}</td>
+              <td><Badge tone={STATE_TONE[v.state]}>{v.state}</Badge></td>
+              <td class="text-sm">{#if v.secret}<span class="text-muted">secret</span>{:else if v.value !== null}<code>{v.value}</code>{/if}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
   </Card>
 
   <div class="cluster">

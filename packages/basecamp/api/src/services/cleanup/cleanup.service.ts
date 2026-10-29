@@ -38,7 +38,7 @@ import type { ReclaimFigures } from './targets.ts'
 import { applyDiskReport } from '../../domain/cleanup/disk-report.ts'
 import { DISK_READINGS, readingOf } from '../../domain/host/server-metrics.ts'
 import type { DiskReport } from '../../domain/cleanup/disk-report.ts'
-import cleanupRun from '../../jobs/cleanup-run.job.ts'
+import cleanupRunJob from '../../jobs/cleanup-run.job.ts'
 import { announce } from '../../core/channels.ts'
 import type { ServerEventKind } from '../../../../db/schema.d.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
@@ -90,18 +90,18 @@ async function recordEvent(
 /**
  * The run this call is about, read through the CALLER's client.
  *
- * The refusal `asSystem()` cannot make: `CleanupRun` reaches its tenant
+ * The refusal `asSystem()` cannot make: `MaintenanceRun` reaches its tenant
  * through its Server, so a run in another workspace answers nothing here and
  * the system write below it never happens (`FJS-384`).
  */
 async function runInScope(runId: string) {
-  const run = await db().cleanupRun.findUnique({ where: { id: runId } })
+  const run = await db().maintenanceRun.findUnique({ where: { id: runId } })
   if (!run) throw new NotFound(`Cleanup run '${runId}' not found`)
   return run as Record<string, any>
 }
 
 /** How far back the sweep graph looks. Seven days, because the question this
- *  answers is *did last Tuesday's sweep help* and a `CleanupRun` is the thing
+ *  answers is *did last Tuesday's sweep help* and a `MaintenanceRun` is the thing
  *  it is read against. */
 const TREND_DAYS = 7
 
@@ -164,7 +164,7 @@ async function diskTrend(ids: string[]): Promise<Map<string, Record<string, numb
   return out
 }
 
-// The gated half is the file's own `sys()` above: `CleanupRun` is
+// The gated half is the file's own `sys()` above: `MaintenanceRun` is
 // update-at-SYSTEM, `DiskUsage` is write-at-SYSTEM and a `Volume` delete is
 // ADMINISTRATOR — a developer may sweep a disk and none of the three is
 // theirs to write.
@@ -172,7 +172,7 @@ async function diskTrend(ids: string[]): Promise<Map<string, Record<string, numb
 export default createService({
   name:  'cleanup',
   scope: keyScope('cleanup'),
-  model: 'CleanupRun',
+  model: 'MaintenanceRun',
   // Announced by the service DEFINITION, not by an after hook: `callService`
   // is junction's one announcement point and it excludes `find`/`get` by name,
   // where an `after: { all: [...] }` hook broadcast every read to every browser
@@ -206,11 +206,11 @@ export default createService({
     const run = await runInScope(String($.id))
 
     const startedAt = new Date().toISOString()
-    const updated = await sys().cleanupRun.update({
+    const updated = await sys().maintenanceRun.update({
       where: { id: run.id },
       data:  { status: 'running', startedAt },
     })
-    await announce($.app, ws(), 'CleanupRun', 'cleanup patched', updated)
+    await announce($.app, ws(), 'MaintenanceRun', 'cleanup patched', updated)
 
     return {
       runId:       run.id,
@@ -250,7 +250,7 @@ export default createService({
     const finishedAt = Date.now()
     const startedMs  = run.startedAt ? Date.parse(String(run.startedAt)) : finishedAt
 
-    const updated = await sys().cleanupRun.update({
+    const updated = await sys().maintenanceRun.update({
       where: { id: run.id },
       data:  {
         ...runPatch,
@@ -258,7 +258,7 @@ export default createService({
         durationMs: finishedAt - startedMs,
       },
     })
-    await announce($.app, ws(), 'CleanupRun', 'cleanup patched', updated)
+    await announce($.app, ws(), 'MaintenanceRun', 'cleanup patched', updated)
 
     return updated
   },
@@ -272,8 +272,8 @@ export default createService({
     if (!fleet.size) return { total: 0, limit, offset, data: [] }
     if (serverId && !fleet.has(serverId)) throw new NotFound(`Server '${serverId}' not found`)
 
-    const { rows, total } = await db().cleanupRun.findManyAndCount({
-      where:   { serverId: { in: serverId ? [serverId] : [...fleet.keys()] } },
+    const { rows, total } = await db().maintenanceRun.findManyAndCount({
+      where:   { kind: 'cleanup', serverId: { in: serverId ? [serverId] : [...fleet.keys()] } },
       orderBy: callerOrder({ createdAt: 'desc' }),
       limit, offset,
     })
@@ -288,7 +288,7 @@ export default createService({
 
   async get() {
     const fleet = await fleetOf()
-    const row   = await db().cleanupRun.findFirst({ where: { id: $.id as string } })
+    const row   = await db().maintenanceRun.findFirst({ where: { id: $.id as string, kind: 'cleanup' } })
     if (!row || !fleet.has(row.serverId as string)) throw new NotFound(`Cleanup run '${$.id}' not found`)
     return { ...row, serverName: fleet.get(row.serverId as string)?.name ?? null }
   },
@@ -328,8 +328,8 @@ export default createService({
         limit: 5_000,
       }),
       // Newest first, so the first row seen for a server is its last sweep.
-      db().cleanupRun.findMany({
-        where: { serverId: { in: ids } }, orderBy: { createdAt: 'desc' }, limit: 500,
+      db().maintenanceRun.findMany({
+        where: { kind: 'cleanup', serverId: { in: ids } }, orderBy: { createdAt: 'desc' }, limit: 500,
       }),
       diskTrend(ids),
     ])
@@ -479,14 +479,14 @@ export default createService({
 
     const runs  = []
     for (const id of reachable) {
-      const run = await db().cleanupRun.create({
-        data: { serverId: id, targets, keepImages, requestedBy: actor(), status: 'pending' },
+      const run = await db().maintenanceRun.create({
+        data: { serverId: id, kind: 'cleanup', targets, keepImages, requestedBy: actor(), status: 'pending' },
       })
       // The actor and the tenant are carried by the dispatch: caravan reads
       // both off the request in scope, and the handler declares
       // `runsAsCaller` — so this work runs as the person who asked for it,
       // in the workspace they asked in (`FJS-384`).
-      await $.app.jobs.dispatch(cleanupRun,
+      await $.app.jobs.dispatch(cleanupRunJob,
         { runId: run.id, workspaceId: ws() },
         { queue: 'fleet', priority: 5 })
       await recordEvent(id, 'cleanup_queued',
@@ -504,7 +504,7 @@ export default createService({
       // A sweep deletes data on a machine, but it deletes only what the
       // vocabulary allows, which is why it sits at the developer bar rather
       // than at the admin one `recipes.create` needs. Unused volumes are the
-      // sharp edge and they are off by default. `run` creates a `CleanupRun`
+      // sharp edge and they are off by default. `run` creates a `MaintenanceRun`
       // through the caller's client, so that gate is the bar.
       // The engine's two. The standing that matters was graded when `run`
       // queued the work; the queue runs as that same actor.

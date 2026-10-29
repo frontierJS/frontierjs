@@ -2,14 +2,14 @@
 title: Dashboard
 ---
 <script>
-  // The mock's DashboardDetailView + AddWidgetModal — one board, its widgets,
+  // The mock's DashboardDetailView + AddTileModal — one board, its tiles,
   // and the picker that adds one.
   //
   // **Nothing on this page reads on the board's behalf.** Each card asks the
   // service that owns its data, with the reader's own session — so a dashboard
   // can show exactly what its reader could have opened, and a card they may not
   // read says so instead of quietly appearing for everyone. That is the whole
-  // reason a widget names a KIND rather than carrying a query: a stored query
+  // reason a tile names a KIND rather than carrying a query: a stored query
   // would be run by the server for whoever opened the page, graded against
   // nothing.
   //
@@ -34,7 +34,7 @@ title: Dashboard
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore'
-  import Widget   from '../../../components/widgets/Widget.mesa'
+  import Tile   from '../../../components/tiles/Tile.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
   import { offerUndo } from '../../../resources/Trash.mesa'
 
@@ -43,7 +43,7 @@ title: Dashboard
   let board     = null
   let kinds     = []
   let sources   = []          // what a counter may count
-  let adapters  = []         // portal ids a service_health widget may name
+  let adapters  = []         // portal ids a service_health tile may name
   let error     = null
   let loadError = null
   let loading   = true
@@ -51,7 +51,7 @@ title: Dashboard
   let editing   = false
   let renaming  = false
 
-  // The add-widget panel. `chosen` is the kind spec, not just its name — the
+  // The add-tile panel. `chosen` is the kind spec, not just its name — the
   // second step is built from what that kind needs.
   let adding  = false
   let chosen  = null
@@ -66,9 +66,9 @@ title: Dashboard
   let appOptions    = []
 
   // The board, watched rather than read (`FJS-518`). `dashboards.get()` answers
-  // the board WITH its widgets, so this is a COMPOSED view: the node says the
+  // the board WITH its tiles, so this is a COMPOSED view: the node says the
   // row moved and the composed answer is read again. Watching the node's own
-  // value would empty the widget list at the first push (`FJS-533`).
+  // value would empty the tile list at the first push (`FJS-533`).
   let row     = null
   let unwatch = null
 
@@ -101,7 +101,7 @@ title: Dashboard
       sources  = answer.statSources ?? []
       adapters = answer.portalServices ?? []
     } catch (e) {
-      // Not fatal: the board still renders. What breaks is adding a widget,
+      // Not fatal: the board still renders. What breaks is adding a tile,
       // and the panel says so rather than offering an empty picker.
       kinds = []
     }
@@ -126,7 +126,7 @@ title: Dashboard
   // needed depends on the kind chosen next, and fetching then would put a
   // spinner between two clicks. Made under a root on first use, so the `$:`
   // that may ask for them does not dispose them on its next run. A member who
-  // cannot list servers can still add the widgets that take no subject; the
+  // cannot list servers can still add the tiles that take no subject; the
   // picker below shows an empty select and says why.
   let subjects = null
   function loadSubjects() {
@@ -158,7 +158,7 @@ title: Dashboard
   async function add() {
     error = null; busy = 'add'
     try {
-      board = await dashboards.service.invoke('addWidget', board.id, {
+      board = await dashboards.service.invoke('addTile', board.id, {
         kind: chosen.kind,
         ...(chosen.subject === 'server' ? { serverId: subject || null } : {}),
         ...(chosen.subject === 'app'    ? { appId:    subject || null } : {}),
@@ -169,7 +169,7 @@ title: Dashboard
       adding = false
       chosen = null
     } catch (e) {
-      // 'A Server health widget needs a server', 'not countable here' — both
+      // 'A Server health tile needs a server', 'not countable here' — both
       // arrive here, and neither is guessable from the form.
       error = e.message
     } finally {
@@ -177,10 +177,10 @@ title: Dashboard
     }
   }
 
-  async function removeWidget(widget) {
-    error = null; busy = widget.id
+  async function removeTile(tile) {
+    error = null; busy = tile.id
     try {
-      board = await dashboards.service.invoke('removeWidget', board.id, { widgetId: widget.id })
+      board = await dashboards.service.invoke('removeTile', board.id, { tileId: tile.id })
     } catch (e) {
       error = e.message
     } finally {
@@ -188,10 +188,10 @@ title: Dashboard
     }
   }
 
-  async function resizeWidget(widget, next) {
-    error = null; busy = widget.id
+  async function resizeTile(tile, next) {
+    error = null; busy = tile.id
     try {
-      board = await dashboards.service.invoke('updateWidget', board.id, { widgetId: widget.id, cols: next })
+      board = await dashboards.service.invoke('updateTile', board.id, { tileId: tile.id, cols: next })
     } catch (e) {
       error = e.message
     } finally {
@@ -202,14 +202,14 @@ title: Dashboard
   // The whole order, not one move: the service rewrites every position, which
   // is what makes two people rearranging at once end up with one board rather
   // than an interleaving neither chose.
-  async function moveWidget(widget, direction) {
-    const ids = board.widgets.map(w => w.id)
-    const at  = ids.indexOf(widget.id)
+  async function moveTile(tile, direction) {
+    const ids = board.tiles.map(w => w.id)
+    const at  = ids.indexOf(tile.id)
     const to  = at + direction
     if (at < 0 || to < 0 || to >= ids.length) return
 
     ids.splice(to, 0, ...ids.splice(at, 1))
-    error = null; busy = widget.id
+    error = null; busy = tile.id
     try {
       board = await dashboards.service.invoke('reorder', board.id, { ids })
     } catch (e) {
@@ -254,21 +254,21 @@ title: Dashboard
     }
   }
 
-  // ─── A widget whose server or app is gone ────────────────────────────
+  // ─── A tile whose server or app is gone ────────────────────────────
   // The card says `subject removed`; this points it at another one, or — for
   // a kind whose subject is optional — back at the whole workspace.
-  let repoint = {}      // widgetId → the chosen subject id
+  let repoint = {}      // tileId → the chosen subject id
 
-  async function repointWidget(widget) {
-    const spec = specFor(widget.kind)
-    const to   = repoint[widget.id] || null
-    error = null; busy = widget.id
+  async function repointTile(tile) {
+    const spec = specFor(tile.kind)
+    const to   = repoint[tile.id] || null
+    error = null; busy = tile.id
     try {
-      board = await dashboards.service.invoke('updateWidget', board.id, {
-        widgetId: widget.id,
+      board = await dashboards.service.invoke('updateTile', board.id, {
+        tileId: tile.id,
         ...(spec?.subject === 'server' ? { serverId: to } : { appId: to }),
       })
-      toasts.success(`${spec?.label ?? widget.kind} re-pointed`)
+      toasts.success(`${spec?.label ?? tile.kind} re-pointed`)
     } catch (e) {
       error = e.message
     } finally {
@@ -276,7 +276,7 @@ title: Dashboard
     }
   }
 
-  $: orphaned = board ? board.widgets.filter(w => w.subjectMissing).length : 0
+  $: orphaned = board ? board.tiles.filter(w => w.subjectMissing).length : 0
   $: (orphaned, () => { if (orphaned) loadSubjects() })
 
   $: subjectOptions = chosen?.subject === 'server' ? serverOptions
@@ -299,13 +299,13 @@ title: Dashboard
       </Button>
       <Button treatment="ghost" id="rename-board" onclick={() => renaming = true}>Rename</Button>
       <Button treatment="ghost" tone="danger" id="delete-board" disabled={busy === 'remove'}
-              data-confirm={`${board.name} and its widgets are deleted. What they showed is not.`}
+              data-confirm={`${board.name} and its tiles are deleted. What they showed is not.`}
               data-confirm-title="Delete this dashboard?" data-confirm-label="Delete"
               onclick={removeBoard}>Delete</Button>
       <Button treatment={editing ? 'outlined' : 'ghost'} id="edit-board"
               onclick={() => editing = !editing}>{editing ? 'Done' : 'Edit layout'}</Button>
-      <Button tone="primary" id="add-widget" onclick={openPicker}>
-        {adding ? 'Cancel' : 'Add widget'}
+      <Button tone="primary" id="add-tile" onclick={openPicker}>
+        {adding ? 'Cancel' : 'Add tile'}
       </Button>
     </span>
   </div>
@@ -332,11 +332,11 @@ title: Dashboard
     <Card>
       {#if !kinds.length}
         <p class="text-sm text-muted">
-          The widget vocabulary could not be read, so nothing can be added right now.
+          The tile vocabulary could not be read, so nothing can be added right now.
         </p>
       {:else if !chosen}
-        <h2 class="h4">Choose a widget</h2>
-        <div class="tiles" style="--tile-min: 15rem" id="widget-kinds">
+        <h2 class="h4">Choose a tile</h2>
+        <div class="tiles" style="--tile-min: 15rem" id="tile-kinds">
           {#each kinds as spec}
             <Card>
               <h3 class="h5">{spec.label}</h3>
@@ -353,7 +353,7 @@ title: Dashboard
         {/if}
 
         {#if chosen.subject}
-          <Select id="widget-subject"
+          <Select id="tile-subject"
                   label={chosen.subject === 'server' ? 'Server' : 'App'}
                   value={subject} options={subjectOptions}
                   placeholder={chosen.required ? 'Pick one' : 'Everything in this workspace'}
@@ -361,9 +361,9 @@ title: Dashboard
         {/if}
 
         {#if chosen.kind === 'stat_counter'}
-          <Select id="widget-source" label="Count" value={config.source} options={sources}
+          <Select id="tile-source" label="Count" value={config.source} options={sources}
                   onchange={(e) => config = { ...config, source: e.target.value }} />
-          <Input id="widget-label" label="Label" value={config.label}
+          <Input id="tile-label" label="Label" value={config.label}
                  hint="What this number is called on the card"
                  oninput={(e) => config = { ...config, label: e.target.value }} />
         {/if}
@@ -371,7 +371,7 @@ title: Dashboard
         {#if chosen.kind === 'service_health'}
           <!-- The adapter ids come from the same answer as the kinds, so this
                cannot offer one the service would refuse. -->
-          <Select id="widget-service" label="Service" value={config.serviceId} options={adapters}
+          <Select id="tile-service" label="Service" value={config.serviceId} options={adapters}
                   placeholder="Pick one"
                   onchange={(e) => config = { ...config, serviceId: e.target.value }} />
         {/if}
@@ -383,7 +383,7 @@ title: Dashboard
         </div>
 
         <div class="cluster">
-          <Button tone="primary" id="confirm-widget" disabled={busy === 'add'} onclick={add}>
+          <Button tone="primary" id="confirm-tile" disabled={busy === 'add'} onclick={add}>
             Add to dashboard
           </Button>
           <Button treatment="ghost" onclick={() => chosen = null}>Back</Button>
@@ -392,31 +392,31 @@ title: Dashboard
     </Card>
   {/if}
 
-  {#if !board.widgets.length}
-    <EmptyState title="No widgets yet">
+  {#if !board.tiles.length}
+    <EmptyState title="No tiles yet">
       Add cards to build the view you actually check in the morning.
     </EmptyState>
   {:else}
     <!-- Thirds of a row, and the browser handles the wrapping. The mock packs
-         widgets into rows in JavaScript, which decides the layout at a width
+         tiles into rows in JavaScript, which decides the layout at a width
          nobody is looking at. -->
-    <div id="widget-grid"
+    <div id="tile-grid"
          style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-md, 1rem)">
-      {#each board.widgets as widget}
-        <div style={`grid-column: span ${Math.min(widget.cols ?? 1, 3)}`}>
-          <Widget widget={widget} spec={specFor(widget.kind)} editing={editing}
-                  onremove={() => removeWidget(widget)}
-                  onresize={(n) => resizeWidget(widget, n)}
-                  onmove={(d) => moveWidget(widget, d)} />
-          {#if widget.subjectMissing}
-            <div class="cluster" data-repoint={widget.id}>
-              <Select id={`repoint-${widget.id}`} label="" aria-label="Point this widget at"
-                      value={repoint[widget.id] ?? ''}
-                      placeholder={specFor(widget.kind)?.required ? 'Pick one' : 'Everything in this workspace'}
-                      options={specFor(widget.kind)?.subject === 'server' ? serverOptions : appOptions}
-                      onchange={(e) => repoint = { ...repoint, [widget.id]: e.target.value }} />
-              <Button treatment="outlined" disabled={busy === widget.id || (specFor(widget.kind)?.required && !repoint[widget.id])}
-                      onclick={() => repointWidget(widget)}>Re-point</Button>
+      {#each board.tiles as tile}
+        <div style={`grid-column: span ${Math.min(tile.cols ?? 1, 3)}`}>
+          <Tile tile={tile} spec={specFor(tile.kind)} editing={editing}
+                  onremove={() => removeTile(tile)}
+                  onresize={(n) => resizeTile(tile, n)}
+                  onmove={(d) => moveTile(tile, d)} />
+          {#if tile.subjectMissing}
+            <div class="cluster" data-repoint={tile.id}>
+              <Select id={`repoint-${tile.id}`} label="" aria-label="Point this tile at"
+                      value={repoint[tile.id] ?? ''}
+                      placeholder={specFor(tile.kind)?.required ? 'Pick one' : 'Everything in this workspace'}
+                      options={specFor(tile.kind)?.subject === 'server' ? serverOptions : appOptions}
+                      onchange={(e) => repoint = { ...repoint, [tile.id]: e.target.value }} />
+              <Button treatment="outlined" disabled={busy === tile.id || (specFor(tile.kind)?.required && !repoint[tile.id])}
+                      onclick={() => repointTile(tile)}>Re-point</Button>
             </div>
           {/if}
         </div>

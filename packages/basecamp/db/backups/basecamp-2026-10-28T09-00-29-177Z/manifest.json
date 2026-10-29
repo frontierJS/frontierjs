@@ -1,0 +1,22 @@
+{
+  "basecamp": "0.1.0",
+  "takenAt": "2026-10-28T09:00:29.177Z",
+  "encryptionKeyFingerprint": "726fbf0d20ec56d526f781c97d55002159c31f3b1b715a3a985615aac799461b",
+  "files": [
+    {
+      "path": "audit.db",
+      "bytes": 33431552,
+      "sha256": "e3da34b0d2552f24bc62df156102e62f8f487e417eff9798d8e960603dbb197b"
+    },
+    {
+      "path": "jobs.db",
+      "bytes": 491520,
+      "sha256": "7c8e6f35b4d1afc1c36daf7d7a10087abbfc32447b5b63a9c77576c8b3633d94"
+    },
+    {
+      "path": "main.db",
+      "bytes": 8167424,
+      "sha256": "9a02c100627b82a68ce1fbbac051d2e6a61d5921102ad44ac567e878d3a41d77"
+    }
+  ]
+}

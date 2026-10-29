@@ -55,7 +55,7 @@ import { resolve } from 'node:path'
 </script>
 
 ```js
-const { spawnSync } = await import('node:child_process')
+const { page } = await import(resolve(global.fliRoot, 'core/tty.js'))
 const { listPaths, buildTree, compactTree, renderTree, treeDepth, rootRow, isDir, buildLanes, layoutLanes, drawLanes } =
   await import(resolve(global.fliRoot, 'core/file-tree.js'))
 const { colorEnabled } = await import(resolve(global.fliRoot, 'core/color.js'))
@@ -111,19 +111,7 @@ const summary = [
 
 const doc = [rootRow(root, { icons }), ...body, '', chalk.dim(summary), ''].join('\n')
 
-const tall = doc.split('\n').length > (process.stdout.rows || Infinity)
-if (!(flag.pager && process.stdout.isTTY && tall)) {
-  process.stdout.write(doc)
-  return
-}
-// LESS is set on the call: an assignment to process.env never reaches a child under bun
-const pager = process.env.PAGER || 'less'
-const paged = spawnSync('sh', ['-c', pager === 'less' ? 'less -R' : pager], {
-  input: doc,
-  stdio: ['pipe', 'inherit', 'inherit'],
-  env:   { ...process.env, LESS: process.env.LESS ?? 'FRX' },
-})
-if (paged.error) process.stdout.write(doc)
+page(doc, { pager: flag.pager })
 ```
 
 ## What it lists

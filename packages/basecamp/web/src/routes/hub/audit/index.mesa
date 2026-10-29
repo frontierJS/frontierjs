@@ -1,0 +1,153 @@
+---
+title: Hub audit
+---
+<script>
+  // Every workspace's trail and the hub's own, newest first.
+  //
+  // A hub act on a person — suspend, grant the tier, create a bot — files
+  // under NO workspace (`FJS-D141`), and `/admin/audit` scopes on the caller's
+  // workspace, so this is the only screen those rows reach. A hub act on a
+  // workspace files under that workspace and shows in both.
+  //
+  // A window that grows from its far edge, not a page (`FJS-D145`): `more()`
+  // asks for what is past the last row's cursor. A new filter starts a new
+  // window, since a cursor minted under one query names no position in another.
+  import { hub } from '../../../resources/Hub.mesa'
+  import { at } from '../../../lib/datetime.js'
+
+  import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
+  import Select from '@frontierjs/ui/components/forms/Select.mesa'
+  import Table  from '@frontierjs/ui/components/display/Table.mesa'
+
+  const PAGE = 50
+
+  let rows       = []
+  let endCursor  = null
+  let hasMore    = false
+  let error      = null
+  let loading    = true
+  let growing    = false
+  let scope      = 'all'
+  let subject    = ''
+  let workspaces = []
+
+  const filters = () => ({
+    ...(scope !== 'all' ? { scope } : {}),
+    ...(subject.trim() ? { subjectType: subject.trim() } : {}),
+  })
+
+  async function fetchWindow(after) {
+    const page = await hub.service.invoke('audit', null, {},
+      { ...filters(), $limit: PAGE, ...(after ? { $after: after } : {}) })
+    endCursor = page.endCursor ?? null
+    hasMore   = !!page.hasMore
+    return page.data ?? []
+  }
+
+  async function load() {
+    error = null; loading = true
+    try { rows = await fetchWindow() }
+    catch (e) { error = e.message }
+    finally { loading = false }
+  }
+
+  async function grow() {
+    growing = true
+    try { rows = [...rows, ...await fetchWindow(endCursor)] }
+    catch (e) { error = e.message }
+    finally { growing = false }
+  }
+
+  async function loadWorkspaces() {
+    try {
+      const page = await hub.service.invoke('workspaces', null, {}, { $limit: 200 })
+      workspaces = page.data ?? []
+    } catch {}
+  }
+
+  load()
+  loadWorkspaces()
+
+  function setScope(value) { scope = value; load() }
+
+  $: scopeOptions = [
+    { value: 'all', label: 'Every workspace' },
+    { value: 'hub', label: 'Hub only — no workspace' },
+    ...workspaces.map(w => ({ value: w.id, label: w.name })),
+  ]
+
+  const HUB_AUDIT_COLUMNS = [
+    { name: 'when',      label: 'When' },
+    { name: 'workspace', label: 'Workspace' },
+    { name: 'action',    label: 'Action' },
+    { name: 'subject',   label: 'Subject' },
+    { name: 'actor',     label: 'Actor' },
+  ]
+</script>
+
+{#if error}
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+<p class="text-body">
+  Who did what, across every workspace and on the hub itself. A hub act on a person belongs
+  to no workspace, so this is the one place it shows. Append-only — nothing here edits it.
+</p>
+
+<form class="cluster" onsubmit|preventDefault={load}>
+  <label class="visually-hidden" for="hub-audit-scope">Workspace</label>
+  <Select id="hub-audit-scope" style="--field-inline-size: 16rem" value={scope} placeholder="" options={scopeOptions}
+          onchange={(e) => setScope(e.target.value)} />
+  <label class="visually-hidden" for="hub-audit-subject">Subject type</label>
+  <Input id="hub-audit-subject" style="--field-inline-size: 14rem"
+         placeholder="subject type, e.g. servers" value={subject}
+         oninput={(e) => (subject = e.target.value)} />
+  <Button treatment="outlined" type="submit">Filter</Button>
+</form>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <article class="alert info">
+    <div class="alert-content">Nothing recorded for this filter.</div>
+  </article>
+{:else}
+  <Table id="hub-audit-rows" columns={HUB_AUDIT_COLUMNS} rows={rows} striped hover={false}>
+    {#snippet row(event)}
+      <tr>
+        <td class="text-sm text-muted">{at(event.createdAt)}</td>
+        <td>
+          {#if event.workspaceId}
+            {event.workspace ?? event.workspaceId.slice(0, 8)}
+          {:else}
+            <Badge tone="info">hub</Badge>
+          {/if}
+        </td>
+        <td><code>{event.action}</code></td>
+        <td>{event.subjectType} <span class="text-sm text-muted">{event.subjectId?.slice(0, 8)}</span></td>
+        <td class="text-sm">
+          {event.actor ?? event.actorId?.slice(0, 8) ?? event.actorType}
+          {#if event.onBehalfOfId}
+            <span class="text-muted">as {event.onBehalfOf ?? event.onBehalfOfId.slice(0, 8)}</span>
+          {/if}
+        </td>
+      </tr>
+    {/snippet}
+  </Table>
+
+  <!-- What this window holds, never a total: the keyset path runs no COUNT. -->
+  <div class="cluster" id="hub-audit-window">
+    <span class="text-sm text-muted">{rows.length} events</span>
+    {#if hasMore}
+      <Button id="hub-audit-more" treatment="outlined" disabled={growing} onclick={grow}>
+        {growing ? 'Loading…' : 'Load more'}
+      </Button>
+    {:else}
+      <span class="text-sm text-muted" id="hub-audit-end">— end of trail</span>
+    {/if}
+  </div>
+{/if}

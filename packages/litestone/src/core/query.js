@@ -568,6 +568,29 @@ const TEXT_OP_REFUSALS = {
                       'use "equals", or "gte"/"lte" for a range',
 }
 
+// A DateTime or `@date` column is ISO text, and SQLite compares any string
+// against it as text: `{ gte: '@today-6' }` sorts above every stored date and
+// answers nothing, `{ lte: '@today-6' }` answers every row (FJS-3583). The
+// relative day token is the client's to resolve, so one that leaks this far is
+// refused by name. An ISO prefix stays a valid bound — `{ gte: '2024-01' }`
+// asks from January. `contains` is not checked: a month is a real substring.
+const DATE_COMPARE_OPS = new Set(['equals', 'not', 'gt', 'gte', 'lt', 'lte', 'in', 'notIn'])
+const ISO_DATE_PREFIX  = /^\d{4}(-\d{2}(-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?)?)?)?$/
+
+/** @param {string} key @param {'instant' | 'day'} kind @param {any} val @param {string} op */
+function refuseNonDate(key, kind, val, op) {
+  if (typeof val === 'string') {
+    if (ISO_DATE_PREFIX.test(val)) return
+    throw new ValidationError([{ path: ['where', key], message:
+      `'${key}' is ${kind === 'day' ? 'a @date day' : 'a DateTime'} and ${JSON.stringify(val.slice(0, 40))} is not an ISO date or instant, ` +
+      `so '${op}' would compare it as text and answer the wrong rows — a relative day such as @today-6 is resolved ` +
+      `before the query (resolveDayTokens, @frontierjs/toolbelt/query)` }])
+  }
+  if (Array.isArray(val)) { for (const v of val) refuseNonDate(key, kind, v, op === 'equals' ? 'in' : op); return }
+  if (val !== null && typeof val === 'object' && !(val instanceof Date))
+    for (const [o, operand] of Object.entries(val)) if (DATE_COMPARE_OPS.has(o)) refuseNonDate(key, kind, operand, o)
+}
+
 /**
  * The great-circle distance between a point column pair and a literal center,
  * as a SQL expression in metres.
@@ -734,12 +757,20 @@ function jsonLeafClauses(at, val, params, label) {
 
   if (val === null) return [`${at()} IS NULL`]
 
+  // A null member is IS NULL beside the rest, as on a column (FJS-3580).
+  /** @param {any[]} list @param {boolean} not */
+  const membership = (list, not) => {
+    const rest = list.filter(v => v !== null)
+    if (!rest.length) return `${at()} IS ${not ? 'NOT ' : ''}NULL`
+    const sql = inList(at(), rest.map(coerce), params, { not, affinity: false })
+    return (rest.length < list.length) === not ? sql : `(${sql} OR ${at()} IS NULL)`
+  }
+
   if (typeof val !== 'object' || Array.isArray(val)) {
     // Direct equality. Boolean fields stored as 0/1 by Litestone — coerce.
     if (Array.isArray(val)) {
-      // Implicit IN
       if (!val.length) return ['0 = 1']
-      return [inList(at(), val.map(coerce), params, { affinity: false })]
+      return [membership(val, false)]
     }
     const lhs = at()
     params.push(coerce(val))
@@ -757,15 +788,11 @@ function jsonLeafClauses(at, val, params, label) {
       case 'startsWith':
       case 'endsWith':   { const c = text(); params.push(likePattern(op, operand)); clauses.push(`${c} ${LIKE_SQL}`); break }
       case 'in':
-        if (!operand?.length) { clauses.push('0 = 1'); break }
-        clauses.push(inList(at(), operand.map(coerce), params, { affinity: false }))
+        clauses.push(operand?.length ? membership(operand, false) : '0 = 1')
         break
-      case 'notIn': {
-        if (!operand?.length) break
-        const list = inList(at(), operand.map(coerce), params, { not: true, affinity: false })
-        clauses.push(`(${list} OR ${at()} IS NULL)`)
+      case 'notIn':
+        if (operand?.length) clauses.push(membership(operand, true))
         break
-      }
       case 'not': {
         if (operand === null) { clauses.push(`${at()} IS NOT NULL`); break }
         const c = at()
@@ -1110,6 +1137,9 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
 
     const isArrayCol = fieldKinds?.get(key) === 'array'
 
+    const dateKind = fieldKinds?.get(key)
+    if (dateKind === 'instant' || dateKind === 'day') refuseNonDate(key, dateKind, val, 'equals')
+
     // A long list binds as one JSON array (`inList`). Only where the column is
     // known: the cast it needs is wrong for an `Any` column and for a @from
     // expression, and a caller with no `fieldKinds` cannot say which it has.
@@ -1123,6 +1153,19 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
         : inList(col, values, params, { not, affinity: fieldKinds.get(key) !== 'any' })
     }
 
+    // A scalar's membership. `IN (NULL)` is never true and `NOT IN` drops every
+    // NULL row, so a null member is asked as IS NULL beside the rest; a list
+    // without one keeps NOT IN's NULL rows, which it excluded no value from
+    // (FJS-3580).
+    /** @param {any[]} list @param {boolean} not */
+    const membership = (list, not) => {
+      const rest = list.filter(v => v !== null)
+      if (!rest.length) return `${col} IS ${not ? 'NOT ' : ''}NULL`
+      const sql = longList(rest, not) ?? `${col} ${not ? 'NOT IN' : 'IN'} (${rest.map(v => operandSql(v, push)).join(', ')})`
+      const named = rest.length < list.length
+      return named === not ? sql : `(${sql} OR ${col} IS NULL)`
+    }
+
     if (typeof val !== 'object' || Array.isArray(val) || val instanceof Date) {
       if (Array.isArray(val)) {
         if (!val.length) { clauses.push('0 = 1'); continue }
@@ -1130,11 +1173,10 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
         // in this list. A scalar has one value; an array column supplies its
         // elements, so the IN moves inside json_each. For an exact, ordered
         // match, say `equals`.
+        if (!isArrayCol) { clauses.push(membership(val, false)); continue }
         const long = longList(val)
         const list = long ? null : val.map(v => operandSql(v, push)).join(', ')
-        clauses.push(isArrayCol
-          ? `EXISTS (SELECT 1 FROM json_each(${col}) WHERE ${long ?? `value IN (${list})`})`
-          : long ?? `${col} IN (${list})`)
+        clauses.push(`EXISTS (SELECT 1 FROM json_each(${col}) WHERE ${long ?? `value IN (${list})`})`)
       } else if (typeof val === 'boolean' && isFromExpr && col.includes('EXISTS')) {
         // EXISTS subquery — already returns 0/1; emit directly or negate
         clauses.push(val ? col : `NOT ${col}`)
@@ -1181,22 +1223,19 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
         // this the shorthand answered and its own explicit spelling did not.
         case 'in': {
           if (!operand?.length) { clauses.push('0 = 1'); break }
+          if (!isArrayCol) { clauses.push(membership(operand, false)); break }
           const long = longList(operand)
           const list = long ? null : operand.map(v => operandSql(v, push)).join(', ')
-          clauses.push(isArrayCol
-            ? `EXISTS (SELECT 1 FROM json_each(${col}) WHERE ${long ?? `value IN (${list})`})`
-            : long ?? `${col} IN (${list})`)
+          clauses.push(`EXISTS (SELECT 1 FROM json_each(${col}) WHERE ${long ?? `value IN (${list})`})`)
           break
         }
         case 'notIn': {
           if (!operand?.length) break
+          if (!isArrayCol) { clauses.push(membership(operand, true)); break }
           // The array form negates an EXISTS, so its inner list stays an IN.
-          const long = longList(operand, !isArrayCol)
+          const long = longList(operand)
           const list = long ? null : operand.map(v => operandSql(v, push)).join(', ')
-          // Include NULL rows — NOT IN silently excludes them in SQLite
-          clauses.push(isArrayCol
-            ? `NOT EXISTS (SELECT 1 FROM json_each(${col}) WHERE ${long ?? `value IN (${list})`})`
-            : `(${long ?? `${col} NOT IN (${list})`} OR ${col} IS NULL)`)
+          clauses.push(`NOT EXISTS (SELECT 1 FROM json_each(${col}) WHERE ${long ?? `value IN (${list})`})`)
           break
         }
         case 'has':

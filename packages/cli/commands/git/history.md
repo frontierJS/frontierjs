@@ -114,6 +114,7 @@ A headless session is a `claude -p` run — a fix loop, not a person.
 ```js
 const root = $.git.repoRoot($.paths.root) ?? $.paths.root
 const { parseLog, buildSeries, renderChart, summarize } = await import(joinPath(global.fliRoot, 'core/git-history.js'))
+const { plural } = await import(joinPath(global.fliRoot, 'core/text.js'))
 
 const today = new Date()
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -164,7 +165,7 @@ if (flag.json) {
 }
 
 const n = (v) => v.toLocaleString('en-US')
-const scope = chalk.dim(` · last ${flag.days} day${flag.days === 1 ? '' : 's'}${flag.author ? ` · ${flag.author}` : ''}${flag.path ? ` · ${flag.path}` : ''}${flag.code ? ' · code only' : ''}`)
+const scope = chalk.dim(` · last ${plural(flag.days, 'day')}${flag.author ? ` · ${flag.author}` : ''}${flag.path ? ` · ${flag.path}` : ''}${flag.code ? ' · code only' : ''}`)
 const chart = (unit, value, bar) => {
   console.log('')
   console.log(`  ${chalk.bold(`${unit} per ${by}`)}${scope}`)

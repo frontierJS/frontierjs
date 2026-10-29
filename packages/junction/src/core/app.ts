@@ -1019,6 +1019,16 @@ export function createApp(opts: AppOptions = {}): App {
       'configuration safe rather than the half that makes it work.'
     )
 
+  // A getLevel that grades `id == null` as STRANGER(0), the scaffold's among
+  // them, refuses every job run as the app, each with a level-0 error that
+  // names the job's model and not this option (FJS-3538).
+  if (opts.system && (opts.system as { id?: unknown }).id == null)
+    throw new Error(
+      '[Junction] createApp({ system }) — the principal has no id. Background work ' +
+      "runs as it, and a getLevel that grades a principal by id reads this one as " +
+      "STRANGER(0) and refuses every job. Give it one: system: { id: 'system', … }."
+    )
+
   const tenantConfigStore: TenantConfigStore | null = opts.tenantConfig
     ? createTenantConfigStore(() => config, opts.tenantConfig)
     : null

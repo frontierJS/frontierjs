@@ -26523,11 +26523,12 @@ describe('a string operator on a column that is not text', () => {
     addr  Json?   @type(Addr)
     num   Int
     when  DateTime
+    day   String? @date
   }`
   let db: any
   beforeAll(async () => {
     db = await makeDb(S, 'text-ops')
-    await db.doc.create({ data: { title: 'alpha', flag: true,  meta: { z: 1 }, addr: { city: 'Boston', zip: '02101' }, num: 7,  when: new Date('2024-01-15') } })
+    await db.doc.create({ data: { title: 'alpha', flag: true,  meta: { z: 1 }, addr: { city: 'Boston', zip: '02101' }, num: 7,  when: new Date('2024-01-15'), day: '2024-01-15' } })
     await db.doc.create({ data: { title: 'beta',  flag: false, meta: { a: 2 }, addr: { city: 'Austin', zip: '73301' }, num: 42, when: new Date('2025-06-01') } })
   })
 
@@ -26557,6 +26558,23 @@ describe('a string operator on a column that is not text', () => {
   test('DateTime and String keep the answers they already gave', async () => {
     expect((await db.doc.findMany({ where: { when: { contains: '2024-01' } } })).map((r: any) => r.id)).toEqual([1])
     expect((await db.doc.findMany({ where: { title: { contains: 'lph' } } })).map((r: any) => r.id)).toEqual([1])
+  })
+
+  test('a string that is not ISO, compared against a date, is refused by name (FJS-3583)', async () => {
+    // Unrefused, gte answered [] and lte every row: '@' sorts above every digit.
+    for (const where of [
+      { when: { gte: '@today-6' } }, { when: { lte: '@today' } }, { when: '@today' },
+      { when: { in: ['2024-01-15', '@today'] } }, { when: { not: { gte: '@today-6' } } },
+      { when: { gte: '2024-01-15 09:30' } }, { day: { gte: '@today-6' } },
+    ]) await expect(db.doc.findMany({ where }), JSON.stringify(where)).rejects.toThrow(/is not an ISO date or instant/)
+    await expect(db.doc.findMany({ where: { day: { lte: 'yesterday' } } })).rejects.toThrow(/'day' is a @date day/)
+
+    const ids = async (where: any) => (await db.doc.findMany({ where })).map((r: any) => r.id)
+    expect(await ids({ when: { gte: '2025' } })).toEqual([2])
+    expect(await ids({ when: { gte: '2024-01', lt: '2024-02' } })).toEqual([1])
+    expect(await ids({ when: { lt: '2025-06-01T00:00:00.000Z' } })).toEqual([1])
+    expect(await ids({ when: { gte: new Date('2025-01-01') } })).toEqual([2])
+    expect(await ids({ day: { equals: '2024-01-15' } })).toEqual([1])
   })
 })
 

@@ -48,7 +48,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `MetricType` | `counter` · `gauge` · `histogram` |
 | `MonitorStatus` | `down` · `paused` · `pending` · `up` |
 | `NotificationContext` | `AlertEvent` · `Deployment` · `JobRun` · `Monitor` · `Server` · `Workspace` |
-| `NotificationKind` | `AlertFiring` · `AlertResolved` · `DependencyVulnerable` · `DeployFailed` · `DeploySuccess` · `JobFailed` · `MemberJoined` · `MonitorDown` · `MonitorUp` · `PostureFailed` · `ReplicaFound` · `ServerUnreachable` · `WeeklyDigest` |
+| `NotificationKind` | `AlertFiring` · `AlertResolved` · `DependencyVulnerable` · `DeployFailed` · `DeploySuccess` · `HubPostureFailed` · `JobFailed` · `MemberJoined` · `MonitorDown` · `MonitorUp` · `PostureFailed` · `ReplicaFound` · `ServerUnreachable` · `WeeklyDigest` |
 | `ParamGenerator` | `random_hex_16` · `random_hex_32` · `random_hex_64` |
 | `ProviderKind` | `cloudflare` · `custom` · `digitalocean` · `github` · `hetzner` |
 | `ProvisionStepName` | `create` · `poll` · `start` · `timeout` |
@@ -228,6 +228,7 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `backupDestinationId` | `String` | yes | — | — |
 | `blueprint` | `Blueprint` | — | — | relation |
 | `blueprintId` | `String` | yes | — | @system |
+| `command` | `String[]` | no | `'[]'` | — |
 | `containerPort` | `Int` | yes | — | — |
 | `cpuLimit` | `Float` | yes | — | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
@@ -601,6 +602,7 @@ table `blueprint` · db `main` · gate `1.7`
 | `appType` | `AppType` | no | `'container'` | — |
 | `brandColor` | `String` | yes | — | — |
 | `category` | `String` | no | — | **required on write** |
+| `command` | `String[]` | no | `'[]'` | — |
 | `cpuLimit` | `Float` | yes | — | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deprecatedAt` | `DateTime` | yes | — | — |
@@ -1230,7 +1232,6 @@ table `hub_config` · db `main` · gate `7`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `adminEmail` | `String` | no | — | **required on write** |
 | `allowApiKeyAuth` | `Boolean` | no | `1` | — |
 | `allowBotUsers` | `Boolean` | no | `1` | — |
 | `backupCron` | `String` | no | `'0 2 * * *'` | — |
@@ -1241,22 +1242,17 @@ table `hub_config` · db `main` · gate `7`
 | `backupKeepLocalDays` | `Int` | yes | — | — |
 | `backupKeepRemoteCount` | `Int` | no | `7` | — |
 | `backupKeepRemoteDays` | `Int` | yes | — | — |
-| `baseUrl` | `String` | no | — | **required on write** |
 | `encryptionKeyEscrowedAt` | `DateTime` | yes | — | @system |
 | `encryptionKeyFingerprint` | `String` | yes | — | @system |
 | `heartbeatTimeoutSeconds` | `Int` | no | `120` | — |
 | `hostServer` | `Server` | — | — | relation |
 | `hostServerId` | `String` | yes | — | unique · @system |
 | `id` | `String` | no | `'hub'` | id |
-| `mailFromAddress` | `String` | yes | — | — |
-| `mailFromName` | `String` | yes | — | — |
-| `name` | `String` | no | `'Basecamp'` | — |
 | `replicaDestination` | `BackupDestination` | — | — | relation |
 | `replicaDestinationId` | `String` | yes | — | unique |
 | `replicaFoundAt` | `DateTime` | yes | — | @system |
 | `replicaSyncedAt` | `DateTime` | yes | — | @system |
 | `requireTwoFactorForOwners` | `Boolean` | no | `0` | — |
-| `sessionTtlHours` | `Int` | no | `168` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `version` | `Int` | no | `1` | — |
 

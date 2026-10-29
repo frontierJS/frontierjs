@@ -377,7 +377,7 @@ export function refuseGrantAboveOwn(): Hook {
 // A method the ENGINE calls and a person does not.
 //
 // A job handler has to reach the rows its run is about, and the four models it
-// writes — `DeploymentStep`, `JobRun`, `RecipeRun`, `CleanupRun` — are gated at
+// writes — `DeploymentStep`, `JobRun`, `RecipeRun`, `MaintenanceRun` — are gated at
 // SYSTEM for update (`@@gate(2.4.8.8)`, `2.8`). That is the schema saying a
 // run's OUTCOME is written by the machine and not by the person who asked for
 // it, so no standing a workspace can grant reaches them: `owner` is 6.

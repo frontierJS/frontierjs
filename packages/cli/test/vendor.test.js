@@ -15,7 +15,7 @@ import { tmpdir }                                        from 'os'
 import { writeFileSync, readFileSync, existsSync,
          readdirSync, rmSync, mkdirSync, mkdtempSync }    from 'fs'
 
-import { vendorWorkspacePackages, linkedDeps,
+import { vendorWorkspacePackages, linkedDeps, packPackage,
          resolvePackagesDir, GENERATED_DIR }              from '../core/vendor.js'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
@@ -58,6 +58,30 @@ function makeWorkspace({ appSpec = 'workspace:*' } = {}) {
   })
   return app
 }
+
+// ─── packPackage ──────────────────────────────────────────────────────────────
+
+describe('packPackage', () => {
+  // `ws:publish` publishes the file this returns, so a wrong file here ships a
+  // sibling's tarball under this package's version.
+  test('returns the tarball it just packed, not a prefix sibling already there', () => {
+    makeWorkspace()
+    const dest = join(TMP, 'packed')
+    writeJson(join(TMP, 'packages', 'alpha-kit', 'package.json'), {
+      name: '@fixture/alpha-kit', version: '2.0.0', type: 'module', main: 'index.js',
+    })
+    writeFileSync(join(TMP, 'packages', 'alpha-kit', 'index.js'), 'export const kit = true\n')
+    packPackage({ name: '@fixture/alpha-kit', dir: join(TMP, 'packages', 'alpha-kit'), destination: dest })
+    const { file, path } = packPackage({ name: '@fixture/alpha', dir: join(TMP, 'packages', 'alpha'), destination: dest })
+    expect(file).toBe('fixture-alpha-1.0.0.tgz')
+    expect(existsSync(path)).toBe(true)
+  })
+
+  test('a package that does not pack is named', () => {
+    expect(() => packPackage({ name: '@fixture/nope', dir: join(TMP, 'nowhere'), destination: join(TMP, 'packed') }))
+      .toThrow(/bun pm pack failed for @fixture\/nope/)
+  })
+})
 
 // ─── linkedDeps ───────────────────────────────────────────────────────────────
 

@@ -1153,6 +1153,9 @@ export function columnLabel(name, rule) {
  *   list                        → hasSome           several values
  *   json · file                 → null, with a reason
  *
+ * An optional json or file column is offered `kind: 'empty'` by `filters()`, which
+ * sees the rule; this table sees only the display name.
+ *
  * **The `null` rows are the ones the Data boundary would refuse**, and they are
  * here rather than left out so a caller can say why a column offers no filter.
  * `$checkWhere` throws BY NAME for a text operator on a column holding a JSON
