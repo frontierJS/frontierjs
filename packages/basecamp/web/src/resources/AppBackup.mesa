@@ -1,0 +1,10 @@
+<script module>
+  // src/resources/AppBackup.mesa — the Resource layer.
+  //
+  // No `model:` — `appBackups` is the regular plural of `AppBackup`. The hub
+  // App's archives are the same model behind `/backups` (`Backup.mesa`), and
+  // this service leaves them out of every list (`FJS-D1606`).
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const appBackups = createResource('appBackups')
+</script>

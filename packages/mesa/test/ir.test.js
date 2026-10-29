@@ -140,6 +140,34 @@ describe('lower()', () => {
     expect(bare.to).toBe(null)
   })
 
+  it('lowers <mesa:boundary> with the awaits its body reads and the snippet each branch calls', async () => {
+    const tree = await ir(`<script>
+  const a = await Promise.resolve(1)
+  const b = await Promise.resolve(2)
+</script>
+<mesa:boundary>
+  {#snippet pending()}<p>wait</p>{/snippet}
+  <p>{a}</p>
+</mesa:boundary>
+<mesa:boundary><i>{b}</i></mesa:boundary>
+<mesa:boundary><i>none</i></mesa:boundary>
+{#snippet failed(error, reset)}<em>{error.message}</em>{/snippet}
+`, 'B.mesa')
+    const [one, two, three] = tree.children.filter((c) => c.kind === 'boundary')
+    expect(one).toMatchObject({ kind: 'boundary', loc: 'B.mesa:5:1', states: ['$$async_a'], pending: '$$snippet_pending', failed: '$$snippet_failed' })
+    expect(one.children.map((c) => c.kind)).toContain('snippet')
+    expect(two).toMatchObject({ states: ['$$async_b'], pending: null, failed: '$$snippet_failed' })
+    expect(three).toMatchObject({ states: [], pending: null, failed: '$$snippet_failed' })
+    expect(three.children.map((c) => c.tag)).toEqual(['i'])
+  })
+
+  it('lowers <mesa:head> to its markup and the raw text of each <style> child', async () => {
+    const tree = await ir(`<mesa:head><title>T</title><style>b { color: red }</style></mesa:head>\n`, 'H.mesa')
+    const [head] = tree.children.filter((c) => c.kind === 'head')
+    expect(head).toMatchObject({ kind: 'head', loc: 'H.mesa:1:1', styles: ['b { color: red }'] })
+    expect(head.children.map((c) => c.tag)).toEqual(['title'])
+  })
+
   it('lowers {@html} to an html node reading its expression', async () => {
     const tree = await ir(`<script>
   let markup = '<b>x</b>'

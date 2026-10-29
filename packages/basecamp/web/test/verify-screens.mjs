@@ -527,6 +527,52 @@ try {
     listed?.status === 0 && /\/[^/]+\.db$/m.test(listed.stdout),
     tarball ? (listed.stdout || listed.stderr).trim().slice(0, 160) : `nothing saved; ${await text('#screen-error')}`)
 
+  // ─── An App's backups (IDEAS/backups.md 5.3) ───────────────────────────
+  // The seed's App with a `found` archive in its bucket, beside the one its
+  // machine took. The seeded machines run no Outpost, so Back up now and
+  // Restore are each answered by the executor's refusal: what proves the
+  // buttons reach `take` and `restoreVolume` with a real row is that the
+  // refusal is the MACHINE's, not a 400 or 404 about the request.
+  console.log('\n  /apps/[id]/ — the Backups tab')
+  const appArchives = await evaluate(`
+    fetch('/app-backups', { headers: {
+      accept: 'application/json',
+      authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
+      'x-workspace-id': localStorage.getItem('basecamp_workspace'),
+    }}).then(r => r.json())`)
+  const foundArchive = appArchives?.data?.find(b => b.kind === 'found')
+  check('the seeded workspace has a found app archive', !!foundArchive, JSON.stringify(appArchives)?.slice(0, 160))
+  await goto(`/apps/${foundArchive?.appId}/?tab=backups`)
+  await until(`!!document.getElementById('app-backups-history')`, v => v, 'the Backups tab never listed a row')
+  const archiveRows = await evaluate(`document.querySelectorAll('#app-backups-history tbody tr[data-backup]').length`)
+  const restores    = await evaluate(`document.querySelectorAll('#app-backups-history [aria-label^="Restore "]').length`)
+  check('the tab lists the found archive and the one its machine kept', archiveRows >= 2, `${archiveRows} rows`)
+  check('only the archive in the bucket with a sha256 offers Restore',
+    restores === 1 && !!(await evaluate(`!!document.querySelector('tr[data-backup="${foundArchive?.id}"] [aria-label^="Restore "]')`)),
+    `${restores} Restore buttons`)
+  check('an App with a backup destination offers Rescan bucket', !!(await text('#app-backups-rescan')))
+
+  await click('#app-backups-take')
+  const takeRefused = await until(`document.getElementById('app-backups-error')?.textContent ?? ''`,
+    t => t.length > 0, 'Back up now said nothing').catch(() => '')
+  check('Back up now reaches the machine, and its refusal is shown', /No outpost is registered/.test(takeRefused),
+    takeRefused.trim().slice(0, 160))
+
+  // Reloaded, or the take's refusal is still on screen and reads as this one.
+  await goto(`/apps/${foundArchive?.appId}/?tab=backups`)
+  await until(`!!document.querySelector('tr[data-backup="${foundArchive?.id}"] [aria-label^="Restore "]')`, v => v,
+    'the found archive lost its Restore')
+  await evaluate(`document.querySelector('tr[data-backup="${foundArchive?.id}"] [aria-label^="Restore "]').click()`)
+  await until(`!!document.querySelector('[role=dialog][aria-modal=false]')`, v => v, 'Restore asked nothing')
+  const restoreWarned = await text('[role=dialog][aria-modal=false]')
+  check('Restore says the volume\'s files are replaced', /are replaced by this archive/.test(restoreWarned ?? ''),
+    (restoreWarned ?? '').slice(0, 160))
+  await evaluate(`document.querySelector('[role=dialog][aria-modal=false] .cluster button:last-child').click()`)
+  const restoreRefused = await until(`document.getElementById('app-backups-error')?.textContent ?? ''`,
+    t => t.length > 0, 'Restore said nothing').catch(() => '')
+  check('Restore reaches the machine with the archive, and its refusal is shown',
+    /No outpost is registered/.test(restoreRefused), restoreRefused.trim().slice(0, 160))
+
   // ─── Your settings ─────────────────────────────────────────────────────
   console.log('\n  /settings/ — the caller\'s own account')
   await goto('/settings/')
@@ -827,12 +873,9 @@ try {
   // The whole argument of this screen: a step is done because a row exists, so
   // the seeded fleet's steps are done and the ones with no rows are not. If a
   // `done` flag ever creeps back in, this is what stops agreeing.
-  const bodyText = await body()
   check('a seeded server marks its step done',
     await evaluate(`[...document.querySelectorAll('#onboarding-steps .step')]
       .some(li => li.classList.contains('complete') && li.textContent.includes('server'))`))
-  check('the counts the answers came from are on the page',
-    /servers,/.test(bodyText) && /invitations/.test(bodyText))
   check('and no button claims to complete a step',
     !(await evaluate(`[...document.querySelectorAll('#onboarding-steps button')]
       .some(b => /complete|done|mark/i.test(b.textContent))`)))

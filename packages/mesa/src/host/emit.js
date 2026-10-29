@@ -38,12 +38,9 @@
 import { xNode, Q, PRESERVE_WHITESPACE, contentFallback, writtenOnce } from '../compiler.js'
 import { htmlEntitiesToText } from '../entities.js'
 import { eachNode } from '../ir.js'
-import { esc, attrs as attrString } from '../runtime-server.js'
+import { esc, attrs as attrString, VOID } from '../runtime-server.js'
 
 const IDENT = /^[A-Za-z_$][\w$]*$/
-// HTML's void elements: no close tag, and nothing a child could be.
-const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'])
-
 /** A single-quoted JS string literal. */
 function q1(s) {
   return "'" + String(s)
@@ -81,6 +78,8 @@ function kindSpelling(n) {
     case 'component':       return `<${n.name}>`
     case 'dynamic-element': return '<mesa:element>'
     case 'portal':          return '<mesa:portal>'
+    case 'boundary':        return '<mesa:boundary>'
+    case 'head':            return '<mesa:head>'
     case 'html':            return '{@html}'
     default:                return `{${n.kind}}`
   }
@@ -281,7 +280,6 @@ export function hostOffenses(ir, t) {
       // A tag that is a read is checked against the same table when it is
       // built, naming the tag; only a literal one can be refused here.
       case 'dynamic-element': {
-        if (t.mode === 'string') return add('<mesa:element>', '<mesa:element>', n.loc)
         if (!n.tag) add('<mesa:element> without this', '<mesa:element> without this', n.loc)
         else if (/^"[^"]*"$/.test(n.tag.code) && !t.tags[JSON.parse(n.tag.code)]) {
           add(`<${JSON.parse(n.tag.code)}>`, `<${JSON.parse(n.tag.code)}>`, n.loc)
@@ -306,13 +304,15 @@ export function hostOffenses(ir, t) {
       // What the string mode does not write yet is an offense of its own,
       // so the tally counts it and the emitter refuses it by name
       // (`IDEAS/server-render-without-dom.md` Phase 2).
-      case 'portal':
       case 'html':
         return t.mode === 'string' ? add(kindSpelling(n), kindSpelling(n), n.loc) : undefined
-      // An island needs the marker the loader reads, which the string mode
-      // does not write yet; without `islands` the DOM path renders it inline.
+      // A head and a boundary are the string mode's; a node target paints
+      // one surface and has no document head.
+      case 'boundary':
+      case 'head':
+        return t.mode === 'string' ? undefined : add(kindSpelling(n), kindSpelling(n), n.loc)
+      case 'portal':
       case 'component':
-        return t.mode === 'string' && n.island && ir.islands ? add(`${kindSpelling(n)} client:${n.island}`, 'island', n.loc) : undefined
       case 'comment':
       case 'if':
       case 'each':
@@ -428,7 +428,14 @@ export function buildHost(ctx, t) {
   // A changed tag is a different node, so the element is rebuilt under a
   // key, as the DOM path's keyBlock rebuilds it.
   const emitDynamicElement = (n, parent, ind) => {
-    if (string) unwritten(n)
+    if (string) {
+      dep(n.tag)
+      line(ind, '{')
+      line(ind + 1, `const $$tag = $$host.dynamicTag(${n.tag.code});`)
+      emitElementString(n, ind + 1, '$$tag')
+      line(ind, '}')
+      return
+    }
     const m = marker(parent, ind)
     dep(n.tag)
     line(ind, `$$host.keyBlock(${m}, () => (${n.tag.code}), ($$tag) => {`)
@@ -441,8 +448,10 @@ export function buildHost(ctx, t) {
   // The open tag is written at compile time when every attribute is static,
   // and by `$$host.attrs` when one is live; both are the one serializer in
   // `runtime-server.js`, handed the entries in source order. Handlers,
-  // attachments and `bind:this` have no server half and are dropped.
-  const emitElementString = (n, ind) => {
+  // attachments and `bind:this` have no server half and are dropped. `dyn`
+  // names the variable holding a `<mesa:element>`'s tag: every attribute is
+  // then live, since the serializer's rules read the tag.
+  const emitElementString = (n, ind, dyn = null) => {
     // The DOM path's order, which decides where happy-dom serializes each
     // attribute: the template's static attributes with `class` last, then
     // the live pieces in source order, where a run of consecutive live
@@ -477,19 +486,72 @@ export function buildHost(ctx, t) {
     }
     endRun()
     const sc = cls || styled ? scope : null
-    if (!lives.length) push(ind, `<${n.tag}${attrString(n.tag, statics, sc)}>`)
+    if (!lives.length && !dyn) push(ind, `<${n.tag}${attrString(n.tag, statics, sc)}>`)
     else {
       const list = [
         ...statics.map(([k, v]) => `[${q1(k)}, ${v === true ? 'true' : q1(v)}]`),
         ...lives.map(({ entry: [k, code] }) => `[${q1(k)}, (${code}), 1]`),
       ]
-      push(ind, `<${n.tag}`)
-      hole(ind, `$$host.attrs(${q1(n.tag)}, [${list.join(', ')}]${sc ? `, ${q1(sc)}` : ''})`)
+      if (dyn) { push(ind, '<'); hole(ind, dyn) } else push(ind, `<${n.tag}`)
+      hole(ind, `$$host.attrs(${dyn ?? q1(n.tag)}, [${list.join(', ')}]${sc ? `, ${q1(sc)}` : ''})`)
       push(ind, '>')
     }
-    if (!VOID.has(n.tag)) { emitChildren(n.children, '$$out', ind); push(ind, `</${n.tag}>`) }
+    if (dyn) {
+      line(ind, `if (!$$host.VOID.has(${dyn})) {`)
+      emitChildren(n.children, '$$out', ind + 1)
+      push(ind + 1, '</'); hole(ind + 1, dyn); push(ind + 1, '>')
+      line(ind, '}')
+    } else if (!VOID.has(n.tag)) { emitChildren(n.children, '$$out', ind); push(ind, `</${n.tag}>`) }
     for (const h of n.handlers) dep(h.expr)
     for (const a of n.attachments) dep(a.expr)
+  }
+
+  // A portal's children land in another node, which a detached server
+  // render never serializes: the DOM path builds them and writes none. The
+  // string mode builds them the same way, into a buffer nothing reads, so a
+  // throw or a component's side effect agrees on both paths.
+  const emitPortalString = (n, ind) => {
+    line(ind, '{')
+    line(ind + 1, 'const $$out = [];')
+    emitChildren(n.children, '$$out', ind + 1)
+    line(ind, '}')
+  }
+
+  // The DOM path appends to `document.head`, which no serializer reads; the
+  // string mode writes into the buffer `$$host.head` keeps on the render's
+  // array, and `wrapPage` splices it. `$$out` is shadowed one block deeper
+  // than the buffer is taken, since a `const` cannot read its own name.
+  const emitHead = (n, ind) => {
+    line(ind, '{')
+    line(ind + 1, 'const $$head = $$host.head($$out);')
+    line(ind + 1, '{')
+    line(ind + 2, 'const $$out = $$head;')
+    for (const css of n.styles) push(ind + 2, `<style>${css}</style>`)
+    emitChildren(n.children, '$$out', ind + 2)
+    line(ind + 1, '}')
+    line(ind, '}')
+  }
+
+  // The DOM path's `boundaryBlock` on a server: an error wins, a loading
+  // state shows `pending`, and content otherwise -- and nothing is caught
+  // (`FJS-D377`), so a throw from the content fails the render here as
+  // there. `reset` has nothing to rebuild and is a no-op.
+  const emitBoundary = (n, ind) => {
+    line(ind, '{')
+    for (const c of n.children) if (c.kind === 'snippet') emitSnippet(c, c.varName, ind + 1)
+    const content = n.children.filter((c) => c.kind !== 'snippet')
+    let bodyInd = ind + 1
+    if (n.states.length) {
+      line(ind + 1, `const $$states = [${n.states.join(', ')}];`)
+      line(ind + 1, 'const $$err = $$states.find((s) => s.error !== null);')
+      line(ind + 1, `if ($$err) {${n.failed ? ` ${n.failed}($$out, () => $$err.error, () => {});` : ''} }`)
+      line(ind + 1, `else if ($$states.some((s) => s.loading)) {${n.pending ? ` ${n.pending}($$out);` : ''} }`)
+      line(ind + 1, 'else {')
+      bodyInd = ind + 2
+    }
+    emitChildren(content, '$$out', bodyInd)
+    if (n.states.length) line(ind + 1, '}')
+    line(ind, '}')
   }
 
   const emitElement = (n, parent, ind, tag = q1(n.tag)) => {
@@ -720,7 +782,10 @@ export function buildHost(ctx, t) {
   // registry is keyed by that marker, so each call gets one of its own. The
   // string mode hands the child `$$out` and the props once: a server render
   // runs the graph once, so nothing is registered and nothing is pushed
-  // after the call, and `bind:` is its initial value flowing down.
+  // after the call, and `bind:` is its initial value flowing down. An island
+  // under `islands` goes through `$$host.island`, which writes the marker
+  // the loader reads around the child's pushes; the DOM path's `island()`
+  // takes the same meta.
   const emitComponent = (n, parent, ind) => {
     const m = string ? '$$out' : marker(parent, ind)
     const keyOf = (name) => (IDENT.test(name) ? name : q1(name))
@@ -749,6 +814,12 @@ export function buildHost(ctx, t) {
     const obj = n.spreads.length
       ? `Object.assign({}, ${n.spreads.map((e) => `(${e.code})`).join(', ')}, ${literal})`
       : literal
+    if (string && n.island && ir.islands) {
+      const meta = { component: n.name, directive: n.island.directive }
+      if (n.island.media) meta.media = n.island.media
+      line(ind, `$$host.island(${m}, ${n.call}, ${obj}, ${JSON.stringify(meta)});`)
+      return
+    }
     line(ind, `${n.call}(${m}, ${obj});`)
     if (string) return
     // The child's registry is found by its anchor, so every call below needs
@@ -787,7 +858,9 @@ export function buildHost(ctx, t) {
       // `to` names a DOM node and is never read: a terminal has one surface,
       // so the children paint where the portal is written, beside the
       // element it was opened from in every kit use.
-      case 'portal':    return string ? unwritten(n) : emitChildren(n.children, parent, ind)
+      case 'portal':    return string ? emitPortalString(n, ind) : emitChildren(n.children, parent, ind)
+      case 'boundary':  return string ? emitBoundary(n, ind) : unwritten(n)
+      case 'head':      return string ? emitHead(n, ind) : unwritten(n)
       default:          throw new Error(`${t.name} emitter reached a ${n.kind} node that hostOffenses passed`)
     }
   }

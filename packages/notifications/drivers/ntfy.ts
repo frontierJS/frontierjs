@@ -13,8 +13,8 @@ import type { App, NotificationDriver, PushMessage, Recipient } from '../types.t
  * is the app's ladder to resolve once at boot (Basecamp: `api/src/push.ts`).
  *
  * ── What is on the wire ─────────────────────────────────────────────────
- * Title, Priority, Tags, Click and Actions headers; `data`, `ttl`, `urgency`
- * and `topic` are web push's and are dropped here. A payload carries titles and
+ * Title, Priority, Tags, Click and Actions headers; `data`, `ttl`, `urgency`,
+ * `topic` and `always` are web push's and are dropped here. A payload carries titles and
  * links, never a secret -- the `push:` formatter is where `@guarded` columns are
  * kept out, as it is for `webPush()`.
  */

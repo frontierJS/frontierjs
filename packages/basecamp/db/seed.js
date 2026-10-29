@@ -1041,6 +1041,25 @@ async function seedInstallation(sys, owner, users) {
     },
   })
 
+  // ── An app archive the bucket held and no row named ─────────────────
+  // What a rescan leaves (`FJS-D1572`): no machine, and the sha256 the hub
+  // read, so the App screen's Backups tab has a row it can offer Restore on.
+  const onDisk = (await sys.appBackup.findMany({ include: { app: true } }))
+    .find(b => b.appId !== hubApp.id && b.app?.workspaceId === acme.id)
+  if (onDisk) {
+    await sys.app.update({ where: { id: onDisk.appId }, data: { backupDestinationId: offBox.id } })
+    const found = new Date(Date.now() - 30 * 3_600_000)
+    await sys.appBackup.create({
+      data: {
+        appId: onDisk.appId, serverId: null, destinationId: offBox.id,
+        kind: 'found', status: 'success', sizeBytes: 2_100_000,
+        location: `${offBox.prefix}/${onDisk.appId}-${found.toISOString().replace(/[:.]/g, '-')}.tar.gz`,
+        sha256:   'a'.repeat(64),
+        finishedAt: found.toISOString(),
+      },
+    })
+  }
+
   // ── One person who has chosen ───────────────────────────────────────
   // Two rows, not fourteen. A preference exists only where somebody has said
   // something, and `find` merges what is stored over the kind's default — so

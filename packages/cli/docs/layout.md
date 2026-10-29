@@ -72,8 +72,9 @@ core/
   global-env.js `~/.config/fli/.env` — the one spelling of the path, the line
                 writer `fli eset` uses, the placeholder and the header. `~/.fli/`
                 is machine state (locks, caches, a walk's defaults), never a key.
-                `pickEnv` is the keys a send carries, for `env:send` and
-                `tell --env`
+                `pickEnv` is the keys a send carries, for `env:send`, `env:push`
+                and `tell --env`; `pushEnvLines` is a push merged into the
+                server's file, answering keys and never values
   command-parse.js  does every command in a routes tree parse — each compiled
                 with the module the runtime pairs it with, checked by `node
                 --check`, reported at the `.md` line. The `command-parses` rule
@@ -668,6 +669,11 @@ core/
   journal-runner.mjs  copied to the target and run with bun. Imports
                 `bun:sqlite` and nothing else, because a deploy target has no
                 node_modules — the build is inside Docker
+  deploy-target.js  where a deploy target lives — the target off the flags and
+                branch, the ssh destination per side, the API's env file and
+                directories, the placeholder server. `deploy:*` reach it through
+                `_module.md` and `env:push` imports it, so a key pushed for a
+                target lands in the file its env check reads
   deploy-plan.js  the journal rows a transition WOULD write — `Transition` +
                 `TransitionStep`, built once and either printed (1d) or inserted
                 (1e). The step list is READ off `_steps-docker/` with the

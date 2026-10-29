@@ -93,6 +93,9 @@ export interface PushMessage {
   /** A later message with the same topic replaces one still queued or still on screen -- the
    *  header for the push service, the payload for the worker's `tag`. webPush only. */
   topic?:    string
+  /** Sent even to a recipient with a tab of the app on screen, which is otherwise skipped
+   *  (`FJS-D1627`). Read by the driver, never in the payload. webPush only. */
+  always?:   boolean
   /** ntfy only. 5 breaks through do-not-disturb; a resend is 4; default 3. */
   priority?: 1 | 2 | 3 | 4 | 5
   /** ntfy only -- emoji shortcodes (`rotating_light`) shown before the title. */

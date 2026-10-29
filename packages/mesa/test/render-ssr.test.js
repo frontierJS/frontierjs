@@ -506,6 +506,11 @@ describe('renderToHTML — target: server (FJS-D1634)', () => {
     await expect(renderToHTML(Comp, {}, { target: 'terminal' })).rejects.toThrow(/target: 'terminal' is not an HTML path/)
   })
 
+  it('refuses keepAnchors, which the string mode has nothing to keep', async () => {
+    const Comp = await buildServer(SRC)
+    await expect(renderToHTML(Comp, {}, { target: 'server', keepAnchors: true })).rejects.toThrow(/keepAnchors has no meaning/)
+  })
+
   // The fallback lives where the compile does. `renderComponent` compiles with
   // `compileOptions.target: 'server'`; a file the mode refuses is compiled
   // again for the DOM and named in `.unlowered`, and a clean tree says `[]`.
@@ -537,11 +542,11 @@ describe('renderToHTML — target: server (FJS-D1634)', () => {
   })
 
   it('a refused file without one falls back the same way', async () => {
-    const f = file('Portal.mesa', `<mesa:portal><p>out</p></mesa:portal><span>in</span>`)
+    const f = file('Raw.mesa', `<script>let m = '<p>out</p>'</script>{@html m}<span>in</span>`)
     const r = await renderFile(f, { target: 'fragment', compileOptions: { target: 'server' } })
     expect(r.html).toContain('<span>in</span>')
     expect(r.unlowered.map((u) => u.file)).toEqual([f])
-    expect(r.unlowered[0].refused).toMatch(/<mesa:portal>/)
+    expect(r.unlowered[0].refused).toMatch(/\{@html\}/)
   })
 
   it('a tree of components lowers whole: unlowered is empty and the bytes are the DOM path\'s', async () => {
@@ -822,11 +827,19 @@ describe('islands — client:* markers in SSR output', () => {
   })
   afterAll(() => { try { rmSync(dir, { recursive: true, force: true }) } catch {} })
 
-  /** Render `src` as a file in the fixture dir, with or without island markers. */
+  /**
+   * Render `src` as a file in the fixture dir, with or without island markers,
+   * on both paths: the string mode writes the same marker as text, and a
+   * loader parses one shape, so every case here is also a parity case.
+   */
   async function ssr(name, src, islands = true) {
     const file = path.join(dir, `${name}.mesa`)
     writeFileSync(file, src)
-    return renderFile(file, { target: 'fragment', islands })
+    const dom = await renderFile(file, { target: 'fragment', islands })
+    const str = await renderFile(file, { target: 'fragment', islands, compileOptions: { target: 'server' } })
+    expect(str.unlowered).toEqual([])
+    expect(str.html).toBe(dom.html)
+    return dom
   }
 
   /** Compile the tree by hand and mount the entry through the client runtime. */

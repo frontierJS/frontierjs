@@ -12984,6 +12984,7 @@ Found building plan 1.3 in [`IDEAS/server-render-without-dom.md`](IDEAS/server-r
 - **Unstable on the DOM path** — a second DOM render differs from the first, so a minted id is in the markup and no string path can match it.
 - **Style text only** — happy-dom's CSSOM re-serializes a style a directive touched (`margin: 0` as `margin: 0px`, `flex: 1` as three longhands), which the string path does not imitate (plan 1.2's known non-parity). `sansStyle` masks the text between the quotes; the attribute's presence, its position and all markup around it are still graded.
 - **Imports a component the mode refuses** (added with plan 2.1, once components lowered) — the file lowers and a child it imports does not, so the render path falls the whole tree back to the DOM and there is no string render to compare (`childRefused`). The tally still counts the file, and the child is named in its own row of the tally.
+- **Differs with a `bind:this` in the tree** (added with plan 2.3, once `<mesa:portal>` let the overlay kit lower) — a script handed a node by `bind:this` writes on it under happy-dom (`DropdownMenu.mesa`'s `aria-expanded` from a `$:`), and the string mode has no node to hand (plan 2.5: `bind:this` is null), so the write has nowhere to land (`boundNode`). Detected off the sources, the file's own and every `.mesa` its imports reach, since Bun keeps a loaded module's graph to itself; a file that binds a node and still matches is `same`.
 
 **Rejected: a set of CSS property names to normalize.** Shorthand expansion makes the set open-ended: every shorthand is a new entry, each one a second implementation of happy-dom's CSSOM beside happy-dom. Masking the text states the non-parity once and costs one regex.
 
@@ -13052,13 +13053,14 @@ Asked at [`IDEAS/web-push.md`](IDEAS/web-push.md) Q4 through the question tool. 
 
 *Lives in:* `packages/notifications/services.ts` (step 3.3).
 
-### <a id="fjs-d1627"></a>2026-10-29 · `FJS-D1627` — The webPush driver skips a recipient who has a visible tab of the app open, by default; a notification declaring `push: { always: true }` is sent regardless
+### <a id="fjs-d1627"></a>2026-10-29 · `FJS-D1627` — The webPush driver skips a recipient who has a visible tab of the app open, by default; a push message built with `push().always()` is sent regardless
 
 Asked at [`IDEAS/web-push.md`](IDEAS/web-push.md) Q5 through the question tool, in two rounds. The owner ruled out a duplicate: a phone must not buzz for a message the open page has just shown. Keeping it per notification (`via()` in each definition) was turned down because every app would write the same check. Of the built-in rules, **visible tab plus a per-notification override** was picked over **any open socket**: a desktop tab forgotten in the background would otherwise silence every phone push. Slack works the same way.
 
 - **What counts as open.** A tab's socket reports `visibilitychange`, and the driver reads the user's connections from junction's channel manager, not from presence, which is opt-in (`FJS-703`).
 - **A connection that never sent `visibility`, or sent anything but `true`, reads hidden.** A script, a server-side client or an older bundle then cannot silence a push; the worse failure is a lost push, not an extra buzz. The client resends on every `connected`, since a reconnect is a new connection. Recorded at 3.6 by `decision-rules`, confidence 3; reopen as a client marker only if a client must count as visible without sending the frame.
 - **The override is the notification's**, because whether something must buzz (a security alert) depends on what it is, not on who receives it.
+- **It is spelled on the message, `push().always()`, not `push: { always: true }` on the definition.** `push:` is the formatter, and the driver sees only the message it built; a definition key would need `notify()` to carry a flag beside the message to one driver. The flag rides `PushMessage.always`, which `webPush()` reads and strips and `ntfy()` drops. Owner's pick through the question tool at 3.7; `decision-rules` confidence 3.
 - **Limit.** The connection list is one process's. A multi-instance deploy sees only its own sockets, so a user connected to a different node is pushed to as well.
 
 *Lives in:* `packages/notifications/drivers/webpush.ts`, junction's channel connections, the client socket's visibility frame. Steps are owed in `IDEAS/web-push.md`.

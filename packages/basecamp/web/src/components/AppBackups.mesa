@@ -1,0 +1,204 @@
+<script>
+  // AppBackups.mesa — an App's archives of its data volume: the rows, Back up
+  // now, Restore and Rescan bucket (`IDEAS/backups.md` 5.3).
+  //
+  // Every action names a MACHINE, because the volume is per machine: *Back up
+  // now* archives that placement's copy, and *Restore* extracts onto it. One
+  // select serves both, defaulting to the first online placement.
+  //
+  // This list POLLS while a row is unsettled or a rescan is listing, as
+  // /hub/backups/ does: the job writes the outcome at system, and that write
+  // announces nothing, so a tether would show `running` after the machine had
+  // answered.
+  import { appBackups } from '../resources/AppBackup.mesa'
+  import { apps }       from '../resources/App.mesa'
+  import { ago }        from '../lib/datetime.js'
+  import { formatBytes as size } from '@frontierjs/toolbelt/units'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import Table      from '@frontierjs/ui/components/display/Table.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
+
+  export let app = null
+
+  let rows    = []
+  let loading = true
+  let error   = null
+  let busy    = null
+  let chosen  = ''
+  let listingUntil = 0
+
+  $: placements = app?.placement ?? []
+  $: machine = chosen || ((placements.find(p => p.server?.status === 'online') ?? placements[0])?.serverId ?? '')
+  $: machineName = placements.find(p => p.serverId === machine)?.server?.name ?? machine
+
+  async function load() {
+    try {
+      rows  = (await appBackups.service.find({ appId: app.id }, { limit: 50 })).data
+      error = null
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+
+  const SETTLED = new Set(['success', 'failed', 'timeout'])
+  $: inFlight = rows.some(b => !SETTLED.has(b.status))
+
+  let poll = null
+  function watch() {
+    clearTimeout(poll)
+    if (!inFlight && Date.now() > listingUntil) return
+    poll = setTimeout(async () => { await load(); watch() }, 1500)
+  }
+  $: inFlight, () => watch()
+  $.onDestroy(() => clearTimeout(poll))
+
+  async function takeOne() {
+    error = null; busy = 'take'
+    try {
+      await appBackups.service.invoke('take', null,
+        { appId: app.id, serverId: machine, destinationId: app.backupDestinationId ?? null })
+      toasts.success(`Backup asked of ${machineName}. The row fills in as it runs.`)
+      await load()
+      watch()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  // The machine fetches the archive by a link the hub signs and refuses one
+  // whose sha256 is not the recorded one (`FJS-D1521`), so only a row with
+  // both an object key and a hash offers Restore.
+  const restorable = (b) => b.status === 'success' && !!b.sha256 && !!b.destinationId
+    && !!b.location && !b.location.startsWith('/')
+
+  async function restore(b) {
+    error = null; busy = b.id
+    try {
+      await apps.service.invoke('restoreVolume', app.id, { serverId: machine, backupId: b.id, overwrite: true })
+      toasts.success(`Restored onto ${machineName}`)
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  // An archive in the bucket that no row names is invisible here until a
+  // rescan writes a `found` row, `pending` until the hub has read its sha256.
+  async function rescan() {
+    error = null; busy = 'rescan'
+    try {
+      await appBackups.service.invoke('rescan', null, { appId: app.id })
+      toasts.success('Listing the bucket. Archives no row names appear below.')
+      listingUntil = Date.now() + 15_000
+      watch()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  function tone(status) {
+    if (status === 'success') return 'success'
+    if (status === 'failed')  return 'danger'
+    if (status === 'timeout') return 'warning'
+    return 'info'
+  }
+  const when = (b) => ago(b.finishedAt ?? b.startedAt ?? b.createdAt)
+
+  const COLUMNS = [
+    { name: 'when',    label: 'Taken' },
+    { name: 'kind',    label: 'Kind' },
+    { name: 'status',  label: 'Status' },
+    { name: 'size',    label: 'Size' },
+    { name: 'where',   label: 'Where' },
+    { name: 'actions', label: 'Actions', hideLabel: true },
+  ]
+</script>
+
+<div class="stack" id="app-backups">
+  {#if error}
+    <article class="alert danger" id="app-backups-error">
+      <div class="alert-content">{error}</div>
+    </article>
+  {/if}
+
+  <Card>
+    <div class="section-header">
+      <h2 class="h4">Backups</h2>
+      <span class="cluster">
+        <Badge tone="muted" id="app-backups-destination">
+          {app.backupDestinationId ? 'to its backup destination' : 'kept on the machine'}
+        </Badge>
+        {#if app.backupCron}<Badge tone="muted"><code>{app.backupCron}</code></Badge>{/if}
+      </span>
+    </div>
+    <p class="text-sm text-muted">
+      An archive of this app's data volume, taken on the machine that holds it. Restore extracts one
+      onto the machine chosen here, replacing the files in its volume — stop the app there first.
+    </p>
+    {#if placements.length}
+      <div class="cluster">
+        <Select id="app-backups-machine" value={machine} label="Machine"
+                options={placements.map(p => ({ value: p.serverId, label: `${p.server?.name ?? p.serverId} · ${p.server?.status ?? 'gone'}` }))}
+                oninput={(e) => chosen = e.target.value}
+                onchange={(e) => chosen = e.target.value} />
+        <Button tone="primary" id="app-backups-take" disabled={!machine || !!busy} onclick={takeOne}>
+          {busy === 'take' ? 'Asking…' : 'Back up now'}
+        </Button>
+        {#if app.backupDestinationId}
+          <Button treatment="outlined" id="app-backups-rescan" disabled={!!busy} onclick={rescan}>
+            {busy === 'rescan' ? 'Listing…' : 'Rescan bucket'}
+          </Button>
+        {/if}
+      </div>
+    {:else}
+      <p class="text-sm text-muted" id="app-backups-unplaced">It is placed nowhere, so there is no volume to archive or restore onto.</p>
+    {/if}
+  </Card>
+
+  {#if loading}
+    <p class="text-sm text-muted">Loading…</p>
+  {:else if !rows.length}
+    <EmptyState title="No backups">Nothing of this app has been archived yet.</EmptyState>
+  {:else}
+    <Table id="app-backups-history" columns={COLUMNS} rows={rows} striped hover={false}>
+      {#snippet row(b)}
+        <tr data-backup={b.id}>
+          <td class="text-sm">{when(b)}</td>
+          <td><Pill tone="muted">{b.kind}</Pill></td>
+          <td>
+            <Pill tone={tone(b.status)}>{b.status}</Pill>
+            {#if b.kind === 'found' && !b.sha256}<span class="text-sm text-muted"> until the hub reads its sha256</span>{/if}
+          </td>
+          <td class="text-sm">{b.sizeBytes ? size(b.sizeBytes) : '—'}</td>
+          <td class="text-sm text-muted"><code>{b.location ?? '—'}</code></td>
+          <td>
+            {#if restorable(b)}
+              <Button treatment="ghost" disabled={!machine || !!busy} aria-label={`Restore the backup taken ${when(b)}`}
+                      data-confirm={`The files in this app's volume on ${machineName} are replaced by this archive. Stop the app there first.`}
+                      data-confirm-title="Restore this backup?" data-confirm-label="Restore" data-confirm-tone="danger"
+                      onclick={() => restore(b)}>Restore</Button>
+            {/if}
+          </td>
+        </tr>
+        {#if b.error}
+          <tr><td colspan="6"><pre class="code"><code>{b.error}</code></pre></td></tr>
+        {/if}
+      {/snippet}
+    </Table>
+  {/if}
+</div>

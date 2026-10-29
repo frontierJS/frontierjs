@@ -137,7 +137,7 @@ for (const key of missing) {
 log.info('')
 log.info(`Add the missing keys to ${envFile} on the server, or a secret as its own file in ${secretsDir}/, then redeploy:`)
 log.info(`  ssh -t ${host} vi ${envFile}`)
-log.info(`Or pull them from local: fli env:pull --from ssh --server ${target} --path ${envFile}`)
+log.info(`Or push them from the local .env.production: fli env:push ${missing.join(' ')}${target === 'dev' ? '' : ` --${target}`}`)
 
 $.config.abort = true
 ```

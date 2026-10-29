@@ -23,6 +23,7 @@ const { appUser, appUserIds } = await import(new URL('file://' + global.fliRoot 
 const { EDGE_HOPS, edgeNames: edgeNamesOf } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
 const { crossOrigins } = await import(new URL('file://' + global.fliRoot + '/core/shell-origins.js'))
 const { installOutpost, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
+const { PLACEHOLDER_SERVER, resolveTarget, sshHost, resolveDeployConf, resolveSide, apiFiles } = await import(new URL('file://' + global.fliRoot + '/core/deploy-target.js'))
 
 // The origins the API admits besides its own, for `swapContainer`'s
 // `corsOrigins`. Asked by the forward swap and the revert alike, so a revert
@@ -34,16 +35,6 @@ const derivedOrigins = ($, deployConf) => crossOrigins(edgeNamesOf(deployConf), 
 // `deploy:logs`, `deploy:status`, `deploy:run`, the revert and the rollback.
 // Nine hand-written copies is how the name came to ignore the port tier.
 const apiContainer = (appId, deployConf) => apiContainerName(appId, deployConf?.api?.port)
-
-// The API's database directory, env file and secrets directory on the target.
-// The swap mounts them, setup creates them, and the box's Outpost grades their
-// modes, so a default restated in one step would grade a different path from the
-// one mounted.
-const apiFiles = (deployConf, serverPath) => ({
-  dbDir:      deployConf?.db?.path ?? `${serverPath}/db`,
-  envFile:    deployConf?.api?.env ?? `${serverPath}/.env.production`,
-  secretsDir: `${serverPath}/secrets`,
-})
 
 // The `--user` an app's container starts with: its own user on a box
 // (`FJS-D1484`), made by `deploy:setup`, and nothing on localhost, where the
@@ -205,19 +196,6 @@ const enrollOutpost = (machine, { appId, deployConf, path, host, log }) => {
   return result
 }
 
-// ─── resolveTarget ────────────────────────────────────────────────────────────
-// Resolves the deploy target from flags and git branch.
-// Priority: --production > --stage > branch name > dev
-//
-// Usage in any deploy command:
-//   const target = resolveTarget(flag, $.git)
-const resolveTarget = (flag, git) => {
-  if (flag.production) return 'production'
-  const branch = git?.branch?.() ?? ''
-  if (flag.stage || ['stage', 'staging'].includes(branch)) return 'stage'
-  return 'dev'
-}
-
 // ─── deployConfFor ────────────────────────────────────────────────────────────
 // The deploy block as this run sees it: `frontier.config.js` § deploy, with
 // `--server` and `--domain` applied. Every deploy command reads the block
@@ -228,9 +206,9 @@ const resolveTarget = (flag, git) => {
 // configured `user` left in place would be prefixed onto the alias, and
 // `deploy@myvps` overrides the `User` line of the alias it names.
 //
-// The scaffold's placeholder is refused here, because nothing else would: it is
-// a real domain, and `ssh your-server.com` is a connection to somebody's box.
-const PLACEHOLDER_SERVER = 'your-server.com'
+// The scaffold's placeholder (`PLACEHOLDER_SERVER`) is refused here, because
+// nothing else would: it is a real domain, and `ssh your-server.com` is a
+// connection to somebody's box.
 const ADDRESS_KEYS = ['server', 'user']
 
 // What an unset server is told. The buy stays in `server:create` (FJS-D1612) —
@@ -275,67 +253,6 @@ const withServer = (deployConf, server) => {
   const out = strip(deployConf)
   for (const target of ['dev', 'stage', 'production']) if (out[target]) out[target] = strip(out[target])
   return { ...out, server }
-}
-
-// ─── sshHost ──────────────────────────────────────────────────────────────────
-// What `ssh` is handed. With no user stated it is the bare server, so an alias in
-// ~/.ssh/config supplies User, Port, IdentityFile and ProxyJump; a stated user
-// is prefixed, and wins over the alias's own.
-const sshHost = (user, server) => user ? `${user}@${server}` : server
-
-// ─── resolveDeployConf ────────────────────────────────────────────────────────
-// Extracts the resolved server/user/path for a given target from the deploy
-// block, applying per-target overrides over the top-level values.
-//
-// Returns null if the required fields are missing — callers should check and
-// set $.config.abort = true before returning.
-//
-// `abort` is a REFUSAL and fails the command: the runtime exits non-zero on it
-// even when nothing threw, which is what stops a refusal reading as success
-// (`FJS-589`). A deliberate early exit that SUCCEEDED — `--plan` prints a plan
-// and stops — sets `$.config.stop` instead. Both skip every later step;
-// they differ only in the outcome, and `abort` is the fail-closed default.
-//
-// Usage:
-//   const conf = resolveDeployConf(deployConf, target)
-//   if (!conf) { log.error('...'); $.config.abort = true; return }
-const resolveDeployConf = (deployConf, target) => {
-  if (!deployConf?.server) return null
-  const targetConf = deployConf[target] ?? {}
-  const server = targetConf.server ?? deployConf.server
-  const user   = targetConf.user   ?? deployConf.user ?? null
-  const path   = targetConf.path   ?? deployConf.path
-  if (!server || !path) return null
-  return { server, user, path, host: sshHost(user, server) }
-}
-
-// ─── resolveSide ──────────────────────────────────────────────────────────────
-// The same resolution, per SIDE — 'api' or 'web' — so the two halves of an app
-// can live on different machines. A split is the ordinary shape once the API is
-// its own origin (api.myapp.com), and the transport already assumes nothing
-// about co-location: the browser client takes an absolute url and /ws is
-// registered beneath the router, so it never carries apiPrefix either.
-//
-// Most specific wins, and a side that says nothing inherits the shared value —
-// so an unsplit config keeps behaving exactly as it did:
-//
-//   deploy[target][side]  →  deploy[side]  →  deploy[target]  →  deploy
-//
-// `deploy.web` already carries domain/keep_releases/ssl and `deploy.api` carries
-// port/health/dockerfile, so server/user/path join blocks that exist rather than
-// introducing a shape.
-//
-// Returns null when the side cannot be resolved; callers abort by name.
-const resolveSide = (deployConf, target, side) => {
-  if (!deployConf) return null
-  const t     = deployConf[target] ?? {}
-  const ts    = t[side] ?? {}
-  const s     = deployConf[side] ?? {}
-  const server = ts.server ?? s.server ?? t.server ?? deployConf.server
-  const user   = ts.user   ?? s.user   ?? t.user   ?? deployConf.user ?? null
-  const path   = ts.path   ?? s.path   ?? t.path   ?? deployConf.path
-  if (!server || !path) return null
-  return { server, user, path, host: sshHost(user, server) }
 }
 
 // ─── appIdOf ──────────────────────────────────────────────────────────────────

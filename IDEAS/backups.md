@@ -336,11 +336,10 @@ Phases 1–4 are proved here only: Litestream and Outpost's replicator never ran
 under systemd, and B2 has only answered 0.7's probe, never a full backup and
 restore.
 
-Ordering, 2026-10-29: `verify:hub-restore` passed 23/23 at `a77d8c56`, after
-Outpost's layout moved (`FJS-D1544`). The working tree is red, because
-`basecamp-dogfood.md` Phase 1 merged `Backup` into `AppBackup` on a hub App
-(`FJS-D1603`, `D1606`) and its Phase 2 has not moved the code yet. Steps here
-that touch the hub's archives (5.3, 5.5) come after that Phase 2.
+Ordering, 2026-10-29: `verify:hub-restore` passed 23/23 on the working tree
+over `6e553964`, after `basecamp-dogfood.md` 2.2 moved the hub's archives onto
+`AppBackup` rows on the hub App (`FJS-D1606`). The one red it found was
+`Backup.mesa` still resolving the model `Backup`. 5.3 is unblocked.
 
 - [x] 5.1 The key-scope probe owed by `FJS-D1572`. An app's replica key is
       scoped to the name prefix `<prefix>/<appId>/`, and its archives are
@@ -365,12 +364,20 @@ that touch the hub's archives (5.3, 5.5) come after that Phase 2.
       handler registers still lands on `default`. 4.8 found the same gap for
       dispatch by definition (`FJS-3567`), which is fixed. Done 2026-10-29,
       [`FJS-D1635`](../DECISIONS.md#fjs-d1635): moved on registration, else `stats().stranded`.
-- [ ] 5.3 An app-backups screen on `/apps/[id]/`: the `AppBackup` rows (found
+- [x] 5.3 An app-backups screen on `/apps/[id]/`: the `AppBackup` rows (found
       ones marked `pending` until hashed), *Back up now*, *Restore* and
       *Rescan bucket*, over `appBackups.take`/`rescan` and
       `apps.restoreVolume`.
       Today a tester would need the CLI or MCP for all of it. The row in
       `verify:screens`.
+      Done 2026-10-29, uncommitted: the App screen's `backups` tab,
+      `components/AppBackups.mesa` over `resources/AppBackup.mesa`. One
+      machine select serves both actions, and Restore is offered only on a row
+      in a bucket with a sha256. It polls while a row is unsettled, as
+      `/hub/backups/` does. The seed adds a hashed `found` row. Seven
+      `verify:screens` checks are green; the seeded machines run no Outpost,
+      so take and restore are proved only as far as the executor's refusal.
+      Not driven: a rescan, which would list the seed's B2 endpoint.
 - [ ] 5.4 A real box. Blocked by zero-to-live 0.3: a droplet created through
       `/servers/provision/`, Outpost enrolled. Then, by `fli deploy`,
       Basecamp with `basecamp-litestream.service` running under systemd, one

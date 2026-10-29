@@ -41,8 +41,9 @@ import { stateOf } from '../state.ts'
  * ── A tab on screen ─────────────────────────────────────────────────────
  * A recipient with a visible tab of the app is skipped: the page has just
  * shown the in-app frame, and a phone buzzing for it is a duplicate
- * (`FJS-D1627`). The answer is junction's channel manager, so it covers this
- * process's sockets only; with no `channels()` configured nobody is visible.
+ * (`FJS-D1627`), unless the message says `always`. The answer is junction's
+ * channel manager, so it covers this process's sockets only; with no
+ * `channels()` configured nobody is visible.
  */
 
 // ─── Public shapes ──────────────────────────────────────────────────────────
@@ -202,8 +203,8 @@ export function encryptPayload(
 export function buildPushRequest(
   sub: PushSubscription, message: PushMessage, vapid: VapidKeys, now = Date.now(),
 ): PushRequest {
-  // priority, tags and actions are ntfy's; the worker never reads them and the body has a 3.9 KB ceiling.
-  const { ttl, urgency, priority: _p, tags: _t, actions: _a, ...payload } = message
+  // priority, tags and actions are ntfy's and always is the driver's; the worker never reads them and the body has a 3.9 KB ceiling.
+  const { ttl, urgency, always: _w, priority: _p, tags: _t, actions: _a, ...payload } = message
   const headers: Record<string, string> = {
     'Authorization':    vapidAuthorization(sub.endpoint, vapid, now),
     'Content-Encoding': 'aes128gcm',
@@ -282,7 +283,7 @@ export function webPush(opts: WebPushOptions): NotificationDriver & { vapidPubli
     vapidPublicKey: opts.vapid.publicKey,
     async send(recipient: Recipient, message: unknown, app: App): Promise<void> {
       const msg = message as PushMessage
-      if (recipient.id != null && 'channels' in app && app.channels?.hasVisibleConnection(recipient.id)) return
+      if (!msg.always && recipient.id != null && 'channels' in app && app.channels?.hasVisibleConnection(recipient.id)) return
       const store = opts.subscriptions ?? installedSubscriptions(stateOf(app).db)
       const subs = await store.list(recipient)
       const failures: string[] = []

@@ -2769,7 +2769,7 @@ export function templateSource(node, out = []) {
 // One fallback to the whole-component union, because under-watching shows
 // content before its data arrived: a body that renders a snippet defined
 // elsewhere (`@render`), whose reads are not in this subtree.
-function boundaryWatchSet(asyncVars, body) {
+export function boundaryWatchSet(asyncVars, body) {
   if (!asyncVars.length) return asyncVars
   const scanned = (body || []).filter(
     nd => !(nd.type === 'snippet' && (nd.name === 'pending' || nd.name === 'failed'))
@@ -5585,7 +5585,11 @@ export function buildBlock(data, option = {}) {
               attributes: n.attributes.filter(a => a !== thisProp)
             }
             const block = ctx.buildBlock({ body: [elNode] }, { inline: true })
-            const label = requireLabel(true, true)
+            // Its own anchor, as a block's: with the placeholder gone the
+            // whitespace on either side parses as ONE text node, and a label
+            // satisfied by that node put the element ahead of the whitespace
+            // that preceded it.
+            const label = ownAnchor('element')
             binds.push(xNode('dynamic-element', { label, tagExp, block }, (w, nd) => {
               w.write(true, `$$runtime.keyBlock(${nd.label.name}, () => (${nd.tagExp}), `)
               w.write(`$$runtime.makeBlock($$runtime.dynamicElement(() => (${nd.tagExp}), `)

@@ -66,7 +66,7 @@
 
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync, rmSync } from 'node:fs'
-import { dirname, extname, join, relative, resolve } from 'node:path'
+import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import * as acorn from 'acorn'
@@ -268,7 +268,7 @@ async function reportParity(target, lowering) {
   mkdirSync(PARITY, { recursive: true })
   writeFileSync(STUB, STUB_SOURCE)
 
-  const buckets = { same: [], styleText: [], unstable: [], differs: [], threwBoth: [], threwDom: [], threwStr: [], childRefused: [], unimportable: [] }
+  const buckets = { same: [], styleText: [], unstable: [], boundNode: [], differs: [], threwBoth: [], threwDom: [], threwStr: [], childRefused: [], unimportable: [] }
   for (const file of lowering) {
     const source = readFileSync(join(ROOT, file), 'utf8')
     let Dom, Str
@@ -312,6 +312,10 @@ async function reportParity(target, lowering) {
     // `0px`, a shorthand as its longhands — which the string path does not
     // imitate (plan 1.2's known non-parity); the markup around it is graded.
     if (sansStyle(a.value) === sansStyle(html)) { buckets.styleText.push({ file, why }); continue }
+    // A script handed a node by `bind:this` writes on it under happy-dom —
+    // an `aria-expanded` from a `$:` — and the string mode has no node to
+    // hand (plan 2.5: `bind:this` is null), so the write has nowhere to land.
+    if (bindsThis(file)) { buckets.boundNode.push({ file, why }); continue }
     buckets.differs.push({ file, why })
   }
 
@@ -321,12 +325,13 @@ async function reportParity(target, lowering) {
   console.log(`  ${n('differs')} differ`)
   console.log(`  ${n('styleText')} differ only in a style attribute's CSS text (set aside — happy-dom's CSSOM re-serialization)`)
   console.log(`  ${n('unstable')} render differently each time on the DOM path too (set aside — a minted id)`)
+  console.log(`  ${n('boundNode')} differ with a bind:this in the tree (set aside — a script wrote on a node the string mode cannot hand it)`)
   console.log(`  ${n('threwBoth')} threw on both paths (set aside — a page that reads a prop it was not given)`)
   console.log(`  ${n('threwDom')} threw on the DOM path only`)
   console.log(`  ${n('threwStr')} threw on the string path only`)
   console.log(`  ${n('childRefused')} import a component the mode refuses (set aside — the tree falls back)`)
   console.log(`  ${n('unimportable')} could not be imported (a transitive import the workspace cannot resolve)`)
-  for (const [k, label] of [['differs', 'differs'], ['threwDom', 'dom threw'], ['threwStr', 'str threw'], ['styleText', 'style'], ['unstable', 'unstable'], ['childRefused', 'child'], ['unimportable', 'import']]) {
+  for (const [k, label] of [['differs', 'differs'], ['threwDom', 'dom threw'], ['threwStr', 'str threw'], ['styleText', 'style'], ['unstable', 'unstable'], ['boundNode', 'bound'], ['childRefused', 'child'], ['unimportable', 'import']]) {
     for (const r of buckets[k]) console.log(`  ${label.padEnd(10)} ${r.file}  ${r.why}`)
   }
   if (buckets.differs.length) {
@@ -400,6 +405,27 @@ function rebindImports(js, from) {
   let out = js
   for (const [start, end, text] of edits.sort((x, y) => y[0] - x[0])) out = out.slice(0, start) + text + out.slice(end)
   return `import { stub as $$stub } from ${JSON.stringify(STUB)};\n${out}`
+}
+
+/**
+ * Whether `file` or any `.mesa` its imports reach writes `bind:this`. Read
+ * off the sources, since Bun keeps a loaded module's graph to itself; an
+ * import the workspace cannot resolve is the stub and reaches nothing. Not
+ * memoized across files: a cycle is cut with `false`, which is only true of
+ * that walk.
+ */
+function bindsThis(file, seen = new Set()) {
+  const abs = isAbsolute(file) ? file : join(ROOT, file)
+  if (seen.has(abs)) return false
+  seen.add(abs)
+  let source = ''
+  try { source = readFileSync(abs, 'utf8') } catch { return false }
+  if (/\bbind:this\b/.test(source)) return true
+  for (const m of source.matchAll(/\bfrom\s+['"]([^'"]+\.mesa)['"]/g)) {
+    const resolved = resolveFrom(m[1], dirname(abs))
+    if (resolved && resolved.endsWith('.mesa') && bindsThis(resolved, seen)) return true
+  }
+  return false
 }
 
 function resolveFrom(spec, from) {

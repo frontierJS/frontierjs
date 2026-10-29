@@ -29,6 +29,7 @@ title: App
   import NavIcon from '../../../components/NavIcon.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
   import LaptopRelease from '../../../components/LaptopRelease.mesa'
+  import AppBackups from '../../../components/AppBackups.mesa'
   import LogView from '../../../components/LogView.mesa'
   import VariablesEditor from '../../../components/VariablesEditor.mesa'
 
@@ -696,7 +697,7 @@ title: App
   }
 
   // Only the tabs with something behind them. See the note at the foot.
-  const TABS = ['overview', 'domains', 'source', 'config', 'releases', 'logs', 'log-analysis']
+  const TABS = ['overview', 'domains', 'source', 'config', 'releases', 'backups', 'logs', 'log-analysis']
   if (!TABS.includes(tab)) tab = 'overview'
   const APP_RELEASES_COLUMNS = [
     { name: 'queued',  label: 'Queued' },
@@ -1265,6 +1266,10 @@ title: App
         {/snippet}
       </Table>
     {/if}
+  {/if}
+
+  {#if tab === 'backups'}
+    <AppBackups app={app} />
   {/if}
 
   {#if tab === 'logs'}

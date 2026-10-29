@@ -26,8 +26,8 @@ const server = (source, filename = 'Counter.mesa', extra = {}) =>
 
 let n = 0
 /** Compile and import as a build tool would; the module is written to the package root so its runtime imports resolve. */
-async function build(src, target) {
-  const { result } = await compile(src, { target, filename: `S${n}.mesa`, dev: false, css: false, warning: quiet })
+async function build(src, target, extra = {}) {
+  const { result } = await compile(src, { target, filename: `S${n}.mesa`, dev: false, css: false, warning: quiet, ...extra })
   const js = result
     .replace(/'@frontierjs\/mesa\/runtime\/server'/g, `'./src/runtime-server.js'`)
     .replace(/'@frontierjs\/mesa\/runtime'/g, `'./src/runtime.js'`)
@@ -37,8 +37,8 @@ async function build(src, target) {
 }
 // A child a parent imports by path, kept on disk until the suite ends.
 const kept = []
-async function buildKept(src, target) {
-  const { result } = await compile(src, { target, filename: `S${n}.mesa`, dev: false, css: false, warning: quiet })
+async function buildKept(src, target, extra = {}) {
+  const { result } = await compile(src, { target, filename: `S${n}.mesa`, dev: false, css: false, warning: quiet, ...extra })
   const js = result
     .replace(/'@frontierjs\/mesa\/runtime\/server'/g, `'./src/runtime-server.js'`)
     .replace(/'@frontierjs\/mesa\/runtime'/g, `'./src/runtime.js'`)
@@ -59,9 +59,9 @@ async function both(src, props = {}) {
   return { dom, str }
 }
 /** `parent` names its child `__CHILD__`; each path imports the child built for it. */
-async function bothTree(parent, child, props = {}) {
-  const dom = await renderToHTML(await build(parent.replace('__CHILD__', await buildKept(child))), props)
-  const str = renderString(await build(parent.replace('__CHILD__', await buildKept(child, 'server')), 'server'), props)
+async function bothTree(parent, child, props = {}, extra = {}) {
+  const dom = await renderToHTML(await build(parent.replace('__CHILD__', await buildKept(child, undefined, extra)), undefined, extra), props)
+  const str = renderString(await build(parent.replace('__CHILD__', await buildKept(child, 'server', extra)), 'server', extra), props)
   return { dom, str }
 }
 
@@ -102,12 +102,37 @@ describe('server target — the emitted module', () => {
   })
 
   it('refuses a kind it does not write yet, naming the construct and its line', async () => {
-    await expect(server(`<script>import Row from './Row.mesa'</script>\n<Row a="1" client:load />\n`, 'Counter.mesa', { islands: true }))
-      .rejects.toThrow('<Row> client:load at Counter.mesa:2:1 has no server lowering')
     await expect(server(`<mesa:portal><p>x</p></mesa:portal>\n<p>{@html h}</p>\n`))
-      .rejects.toThrow('<mesa:portal> at Counter.mesa:1:1 has no server lowering')
+      .rejects.toThrow('{@html} at Counter.mesa:2:4 has no server lowering')
     await expect(server(`<script>let h = ''</script>\n<p>{@html h}</p>\n`))
       .rejects.toThrow('{@html} at Counter.mesa:2:4 has no server lowering')
+  })
+
+  it('writes a dynamic element through the runtime\'s tag, a head into its buffer, a portal into nothing and a boundary as branches', async () => {
+    const { result } = await server(`<script>
+  let tag = 'h2'
+  const user = await Promise.resolve({ name: 'a' })
+</script>
+<mesa:element this={tag} class="t">Hi</mesa:element>
+<mesa:head><title>T</title><style>b { color: red }</style></mesa:head>
+<mesa:portal><p>gone</p></mesa:portal>
+<mesa:boundary>
+  {#snippet pending()}<p>wait</p>{/snippet}
+  <p>{user.name}</p>
+</mesa:boundary>
+{#snippet failed(error, reset)}<em>{error.message}</em>{/snippet}
+`)
+    expect(() => acorn.parse(result, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
+    expect(result).toContain('const $$tag = $$host.dynamicTag($$runtime.get($$sig_tag));')
+    expect(result).toContain("$$out.push(`<${$$tag}${$$host.attrs($$tag, [['class', 't']], ")
+    expect(result).toContain('if (!$$host.VOID.has($$tag)) {')
+    expect(result).toContain('const $$head = $$host.head($$out);')
+    expect(result).toContain("$$out.push('<style>b { color: red }</style><title>T</title>');")
+    expect(result).toContain("const $$out = [];\n      $$out.push('<p>gone</p>');")
+    expect(result).toContain('const $$states = [$$async_user];')
+    expect(result).toContain('if ($$err) { $$snippet_failed($$out, () => $$err.error, () => {}); }')
+    expect(result).toContain('else if ($$states.some((s) => s.loading)) { $$snippet_pending($$out); }')
+    for (const dom of ['keyBlock', 'boundaryBlock', 'addToHead', 'addHeadStyle', 'portal(']) expect(result).not.toContain(dom)
   })
 
   it('calls a child with $$out and the props once, and renders an island inline without islands', async () => {
@@ -116,10 +141,31 @@ describe('server target — the emitted module', () => {
     expect(result).toMatch(/Row\(\$\$out, \{a: '1', n: \$\$runtime\.get\(\$\$sig_n\), n: \$\$runtime\.get\(\$\$sig_n\), cell: \$\$snip0_cell, children: \$\$snip1_children\}\);/)
     for (const dom of ['registerComponentAnchor', 'pushProps', 'bindProp', 'island(']) expect(result).not.toContain(dom)
   })
+
+  it('wraps an island in $$host.island under islands, with the DOM path\'s meta', async () => {
+    const src = `<script>import Row from './Row.mesa'; let n = 1</script>\n<Row a="1" n={n} client:media="(max-width: 600px)" />\n`
+    const { result } = await server(src, 'Counter.mesa', { islands: true })
+    expect(result).toContain(`$$host.island($$out, Row, {a: '1', n: $$runtime.get($$sig_n)}, {"component":"Row","directive":"media","media":"(max-width: 600px)"});`)
+  })
 })
 
 describe('server target — the same HTML as the DOM path', () => {
   beforeAll(async () => { await initRenderer() })
+
+  it('an island: the marker, its payload and the child inside it, nested and in a table', async () => {
+    const child = `<script>export let start = 0; export let rows = []</script>\n<button>{start}</button>{#each rows as r}<tr><td>{r}</td></tr>{/each}`
+    const parent = `<script>import C from '__CHILD__'; let k = 2</script>\n` +
+      `<article><p>s</p><C client:load start={k + 1} /><C start={9} /></article>` +
+      `<table><tbody><C client:media="(min-width: 600px)" rows={['a']} /></tbody></table>`
+    const { dom, str } = await bothTree(parent, child, {}, { islands: true })
+    expect(str).toBe(dom)
+    expect(str).toContain('<!--mesa-island {"component":"C","directive":"load","props":{"start":3}}--><button>3</button><!--/mesa-island--><button>9</button></article>')
+    expect(str).toContain('<tbody><!--mesa-island {"component":"C","directive":"media","media":"(min-width: 600px)","props":{"rows":["a"]}}--><button>0</button><tr><td>a</td></tr><!--/mesa-island--></tbody>')
+    // Without the flag neither path writes a marker.
+    const off = await bothTree(parent, child)
+    expect(off.str).toBe(off.dom)
+    expect(off.str).not.toContain('mesa-island')
+  })
 
   it('a component of elements, text, blocks, a const and a snippet', async () => {
     const { dom, str } = await both(`<script>
@@ -247,6 +293,90 @@ line1
       expect(str).toBe(dom)
     })
   }
+
+  it('a dynamic element: its tag, attributes, children, a void tag, and the refusals both paths share', async () => {
+    const src = `<script>
+  export let tag = 'h2'
+  export let id = 'x'
+  export let on = true
+</script>
+<mesa:element this={tag} class="t" id={id} class:on={on} style:color="red" data-k>Hi <b>{id}</b></mesa:element><p>after</p>`
+    for (const props of [{ tag: 'h2' }, { tag: 'SECTION', id: null, on: false }, { tag: 'br' }, { tag: 'input', id: 'q' }]) {
+      const { dom, str } = await both(src, props)
+      expect(str).toBe(dom)
+    }
+    const h2 = await both(src, { tag: 'h2' })
+    expect(h2.str).toBe('<h2 data-k="" class="t mztntfp9zlo on" id="x" style="color: red;">Hi <b>x</b></h2><p>after</p>')
+    expect((await both(src, { tag: 'br' })).str).toBe('<br data-k="" class="t mztntfp9zlo on" id="x" style="color: red;"><p>after</p>')
+    // A void tag writes no children on either path, as a parser would place none inside it.
+    for (const bad of ['script', 'style', 'meta']) {
+      const Str = await build(src, 'server')
+      expect(() => renderString(Str, { tag: bad })).toThrow(`<${bad}> refused`)
+      await expect(renderToHTML(await build(src), { tag: bad })).rejects.toThrow(`<${bad}> refused`)
+    }
+    const Str = await build(src, 'server')
+    expect(() => renderString(Str, { tag: '' })).toThrow('expected a tag name')
+    await expect(renderToHTML(await build(src), { tag: null })).rejects.toThrow('expected a tag name')
+  })
+
+  it('a head and a portal: neither path writes them into the body; the string mode keeps the head for the page', async () => {
+    const src = `<script>
+  export let title = 'T'
+  export let throws = false
+  const boom = () => { throw new Error('portal content') }
+</script>
+<mesa:head><title>{title}</title><meta name="k" content="v"><style>b { color: red }</style></mesa:head>
+<main>body</main>
+<mesa:portal><p>{throws ? boom() : 'in the body'}</p></mesa:portal>`
+    const { dom, str } = await both(src)
+    expect(str).toBe(dom)
+    expect(str).toBe('<main>body</main>')
+    // The DOM path builds the portal's content into a detached body, so a
+    // throw inside it fails the render; the string mode builds it too.
+    const Str = await build(src, 'server')
+    expect(() => renderString(Str, { throws: true })).toThrow('portal content')
+    await expect(renderToHTML(await build(src), { throws: true })).rejects.toThrow('portal content')
+    // The head lands in the page, once, as written; the DOM path has nowhere to put it.
+    const page = await renderToHTML(Str, { title: 'A & B' }, { target: 'server', full: true, title: 'Page' })
+    expect(page).toContain('<title>Page</title>\n<style>b { color: red }</style><title>A &amp; B</title><meta name="k" content="v">\n</head>')
+    expect(page).toContain('<body>\n<main>body</main>\n</body>')
+    expect(page.match(/<meta name="k"/g)).toHaveLength(1)
+    expect(await renderToHTML(Str, {}, { target: 'server' })).toBe('<main>body</main>')
+  })
+
+  it('a boundary: content, pending while an await is open, failed on its error, and a throw that fails both renders', async () => {
+    const src = `<script>
+  export let mode = 'content'
+  export let throws = false
+  const user = await (mode === 'pending' ? new Promise(() => {}) : mode === 'error' ? Promise.reject(new Error('nope')) : Promise.resolve({ name: 'ann' }))
+  const boom = () => { throw new Error('content threw') }
+</script>
+<mesa:boundary>
+  {#snippet pending()}<p class="p">wait</p>{/snippet}
+  <p>{throws ? boom() : user?.name ?? 'none'}</p>
+</mesa:boundary>
+<mesa:boundary><i>plain</i></mesa:boundary>
+{#snippet failed(error, reset)}<em>{error.message}</em>{/snippet}`
+    for (const mode of ['content', 'pending', 'error']) {
+      const { dom, str } = await both(src, { mode })
+      expect(str).toBe(dom)
+    }
+    // Serialization runs before the promise settles on both paths: a resolved
+    // await is still pending at the time of the write (plan Q3).
+    expect((await both(src, { mode: 'content' })).str).toBe('<p class="p mztntfp9zlo">wait</p><i>plain</i>')
+    expect((await both(src, { mode: 'pending' })).str).toBe('<p class="p mztntfp9zlo">wait</p><i>plain</i>')
+    const Str = await build(src, 'server')
+    expect(() => renderString(Str, { throws: true, mode: 'content' })).not.toThrow()
+    // A boundary reading no await writes its content now, and a throw there
+    // is caught on neither path (FJS-D377).
+    const plain = `<script>export let throws = false; const boom = () => { throw new Error('content threw') }</script>
+<mesa:boundary><p>{throws ? boom() : 'ok'}</p></mesa:boundary>{#snippet failed(e)}<em>{e.message}</em>{/snippet}`
+    expect((await both(plain)).str).toBe('<p>ok</p>')
+    expect((await both(plain)).dom).toBe('<p>ok</p>')
+    const Plain = await build(plain, 'server')
+    expect(() => renderString(Plain, { throws: true })).toThrow('content threw')
+    await expect(renderToHTML(await build(plain), { throws: true })).rejects.toThrow('content threw')
+  })
 
   it('a preserved comment is written', async () => {
     const { result } = await server('<p>a<!-- hi -->b</p>', 'C.mesa', { preserveComments: true })

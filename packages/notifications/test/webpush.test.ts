@@ -10,12 +10,17 @@
 // A tab on screen (FJS-D1627) is graded over real sockets on a real channel
 // manager: the frame and the manager's answer are junction's, and a stub of
 // either would agree with the driver by construction.
+//
+// subscribeToPush runs against the real service with only the browser faked:
+// headless Chromium cannot pushManager.subscribe, so the fake records what the
+// helper asked of it and the row is read back from the database.
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import {
   createDecipheriv, createECDH, createPublicKey, hkdfSync, verify,
 } from 'node:crypto'
 import { defineNotification } from '../define.ts'
+import { push } from '../builders.ts'
 import {
   buildPushRequest, encryptPayload, generateVapidKeys, vapidAuthorization, webPush,
   type PushRequest, type PushSubscription, type PushSubscriptions,
@@ -24,6 +29,7 @@ import type { PushMessage } from '../types.ts'
 import wire from './fixtures/push-message.json'
 import { createApp, createService, channels, defaultConfig } from '@frontierjs/junction'
 import { makeApp, type Harness } from './harness.ts'
+import { subscribeToPush, unsubscribeFromPush, type PushSubscriptionsService } from '../client.ts'
 
 const b64u = (b: Buffer) => b.toString('base64url')
 const unb64u = (s: string) => Buffer.from(s, 'base64url')
@@ -237,16 +243,17 @@ describe('a tab on screen', () => {
     return ws
   }
 
-  async function pushesTo(user: string) {
-    const sent: string[] = []
+  async function sendTo(user: string, message: PushMessage = { title: 'Hi' }) {
+    const sent: PushRequest[] = []
     const driver = webPush({
       vapid,
       subscriptions: { list: async () => [phone.sub], remove: async () => {} },
-      deliver: async r => { sent.push(r.url); return { status: 201 } },
+      deliver: async r => { sent.push(r); return { status: 201 } },
     })
-    await driver.send({ id: user }, { title: 'Hi' }, app)
-    return sent.length
+    await driver.send({ id: user }, message, app)
+    return sent
   }
+  const pushesTo = async (user: string) => (await sendTo(user)).length
 
   test('one visible tab beside a hidden one: no push', async () => {
     const tabs = [await tab('u-both', false), await tab('u-both', true)]
@@ -258,6 +265,14 @@ describe('a tab on screen', () => {
     const tabs = [await tab('u-hidden', false), await tab('u-hidden', false)]
     expect(await pushesTo('u-hidden')).toBe(1)
     tabs.forEach(t => t.close())
+  })
+
+  test('`always()` is pushed beside a visible tab, and is not in what the phone decrypts', async () => {
+    const shown = await tab('u-always', true)
+    const sent = await sendTo('u-always', push().title('New sign-in').always().build())
+    expect(sent.length).toBe(1)
+    expect(JSON.parse(decrypt(Buffer.from(sent[0].body), phone).toString())).toEqual({ title: 'New sign-in' })
+    shown.close()
   })
 
   test("another user's visible tab does not silence this one", async () => {
@@ -465,5 +480,137 @@ describe('the push-subscriptions service', () => {
   test('nothing registers without the model', async () => {
     const bare = await makeApp()
     expect(bare.app.services.has('push-subscriptions')).toBe(false)
+  })
+})
+
+describe('subscribeToPush — the browser faked, the service real', () => {
+  let h: Harness
+  const vapid = generateVapidKeys('mailto:ops@example.test')
+  const realNavigator = globalThis.navigator
+  const as = (id: string) => ({ user: { id } as never })
+  const rows = () => h.db.asSystem().pushSubscription
+
+  // One browser profile: what the helper asked of it, in order.
+  let calls: string[], subscribeOptions: PushSubscriptionOptionsInit[], posted: Record<string, unknown>[]
+  let permission: NotificationPermission, held: ReturnType<typeof fakeSubscription> | null, registered: boolean
+  let nextDevice: ReturnType<typeof device>
+
+  function fakeSubscription(d: ReturnType<typeof device>, key: Uint8Array) {
+    const sub = {
+      endpoint: d.sub.endpoint,
+      options:  { userVisibleOnly: true, applicationServerKey: key.slice().buffer },
+      toJSON:   () => ({ endpoint: d.sub.endpoint, expirationTime: null, keys: { p256dh: d.sub.p256dh, auth: d.sub.auth } }),
+      unsubscribe: async () => { calls.push(`unsubscribe ${d.sub.endpoint}`); if (held === sub) held = null; return true },
+    }
+    return sub
+  }
+
+  /** The service as getClient().service() hands it over, signed in as `user`, recording each call. */
+  const service = (user: string): PushSubscriptionsService => {
+    const svc = h.app.service('push-subscriptions')
+    return {
+      find:   async q => { calls.push('find'); return svc.find(q ?? {}, as(user)) },
+      get:    async id => { calls.push('get key'); return svc.get(id, as(user)) },
+      create: async data => { calls.push('create'); posted.push(data); return svc.create(data, as(user)) },
+      remove: async id => { calls.push('remove'); return svc.remove(id, as(user)) },
+    }
+  }
+
+  beforeAll(async () => {
+    h = await makeApp({ push: true, transports: { push: webPush({ vapid, deliver: async () => ({ status: 201 }) }) } })
+    const registration = {
+      pushManager: {
+        getSubscription: async () => held,
+        subscribe: async (o: PushSubscriptionOptionsInit) => {
+          calls.push('subscribe'); subscribeOptions.push(o)
+          return (held = fakeSubscription(nextDevice, o.applicationServerKey as Uint8Array))
+        },
+      },
+    }
+    globalThis.navigator = {
+      serviceWorker: { getRegistration: async () => registered ? registration : undefined, ready: Promise.resolve(registration) },
+    } as never
+    Object.assign(globalThis, {
+      PushManager:  class {},
+      Notification: {
+        get permission() { return permission },
+        requestPermission: async () => { calls.push('prompt'); return (permission = 'granted') },
+      },
+    })
+  })
+
+  afterAll(() => {
+    globalThis.navigator = realNavigator
+    delete (globalThis as Record<string, unknown>).PushManager
+    delete (globalThis as Record<string, unknown>).Notification
+  })
+
+  const fresh = (path: string, perm: NotificationPermission = 'granted') => {
+    calls = []; subscribeOptions = []; posted = []
+    permission = perm; held = null; registered = true
+    nextDevice = device(`https://8.8.8.8/${path}`)
+  }
+
+  test('prompts, then reads the key, subscribes with its bytes, and posts toJSON() as the caller\'s row', async () => {
+    fresh('first', 'default')
+    await subscribeToPush({ service: service('u1') })
+
+    // The key read is a round trip; before the prompt it can outlast the click's user activation.
+    expect(calls).toEqual(['prompt', 'get key', 'subscribe', 'create'])
+    expect(subscribeOptions[0].userVisibleOnly).toBe(true)
+    // Bytes, not the string: Chrome accepts a string and Safari refuses one.
+    expect(subscribeOptions[0].applicationServerKey).toBeInstanceOf(Uint8Array)
+    expect(Buffer.from(subscribeOptions[0].applicationServerKey as Uint8Array)).toEqual(unb64u(vapid.publicKey))
+    expect(posted).toEqual([held!.toJSON()])
+    expect(await rows().findFirst({ where: { endpoint: nextDevice.sub.endpoint } }))
+      .toMatchObject({ userId: 'u1', p256dh: nextDevice.sub.p256dh, auth: nextDevice.sub.auth })
+  })
+
+  test('a passed key is graded before the prompt, and used without a read', async () => {
+    fresh('passed', 'default')
+    await expect(subscribeToPush({ service: service('u1'), vapidPublicKey: b64u(Buffer.alloc(32, 4)) })).rejects.toThrow(/65 bytes/)
+    expect(calls).toEqual([])
+
+    await subscribeToPush({ service: service('u1'), vapidPublicKey: vapid.publicKey })
+    expect(calls).toEqual(['prompt', 'subscribe', 'create'])
+  })
+
+  test('denied, or no worker, throws before anything is subscribed or posted', async () => {
+    fresh('denied', 'denied')
+    await expect(subscribeToPush({ service: service('u1') })).rejects.toThrow(/blocked/)
+    fresh('noworker')
+    registered = false
+    // serviceWorker.ready never settles without a worker; this must not hang the click.
+    await expect(subscribeToPush({ service: service('u1') })).rejects.toThrow(/push: true/)
+    expect(calls).toEqual([])
+  })
+
+  test('a subscription held under a rotated key is retired, row first, then made again under the new one', async () => {
+    fresh('rotated')
+    const old = device('https://8.8.8.8/rotated-old')
+    held = fakeSubscription(old, unb64u(generateVapidKeys('mailto:ops@example.test').publicKey))
+    await service('u1').create(held.toJSON())
+    calls = []; posted = []
+
+    await subscribeToPush({ service: service('u1') })
+    expect(calls).toEqual(['get key', 'find', 'remove', `unsubscribe ${old.sub.endpoint}`, 'subscribe', 'create'])
+    expect((await rows().findFirst({ where: { endpoint: old.sub.endpoint }, withDeleted: true })).deletedAt).not.toBeNull()
+    expect(held!.endpoint).toBe(nextDevice.sub.endpoint)
+  })
+
+  test('unsubscribeFromPush retires the row before the browser\'s subscription, and answers false when there was none', async () => {
+    fresh('leaving')
+    await subscribeToPush({ service: service('u1') })
+    calls = []
+
+    expect(await unsubscribeFromPush({ service: service('u1') })).toBe(true)
+    expect(calls).toEqual(['find', 'remove', `unsubscribe ${nextDevice.sub.endpoint}`])
+    expect(await rows().findFirst({ where: { endpoint: nextDevice.sub.endpoint } })).toBeNull()
+    expect(await unsubscribeFromPush({ service: service('u1') })).toBe(false)
+  })
+
+  test('the client itself, in place of a service proxy, is refused by name', async () => {
+    fresh('client')
+    await expect(subscribeToPush({ service: { service() {} } as never })).rejects.toThrow(/getClient\(\)\.service/)
   })
 })

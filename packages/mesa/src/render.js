@@ -334,6 +334,16 @@ export async function renderToHTML(ComponentFactory, props = {}, options = {}) {
 // the DOM half: the reactive core is process-global. Trimmed as the DOM
 // serializer trims, so the two paths answer the same bytes for one source.
 function _renderString(ComponentFactory, props, options) {
+  // The string mode writes no anchor comments — a block is a `for` or an `if`
+  // over pushes — so there is nothing to keep, and honoring the flag by
+  // writing nothing would read as the anchors being there. Island markers
+  // are not anchors: both paths always write them.
+  if (options.keepAnchors) {
+    throw new Error(
+      "[Mesa renderToHTML] keepAnchors has no meaning with target: 'server': the string " +
+      'mode writes no anchor comments. Drop the option, or render on the DOM path.'
+    )
+  }
   let html = ''
   createRoot((dispose) => {
     const out = []
@@ -344,6 +354,9 @@ function _renderString(ComponentFactory, props, options) {
       throw renderFailure(e, options.label)
     }
     html = out.join('').trim()
+    // `<mesa:head>` wrote beside the body (`runtime-server.js` `head`); the
+    // page is the one place it has somewhere to go.
+    if (out.head) options = { ...options, head: (options.head ?? '') + out.head.join('') }
     dispose()
   })
   return options.full ? wrapPage(html, options) : html
@@ -358,6 +371,7 @@ export function wrapPage(bodyHTML, options = {}) {
     scripts      = [],
     islandLoader = '',
     meta         = {},
+    head         = '',
   } = options
 
   // Every attribute sink here escapes. `title` and `meta` did and the three URL
@@ -375,7 +389,9 @@ export function wrapPage(bodyHTML, options = {}) {
     ? `  <script type="module" src="${escapeHTML(islandLoader)}"></script>`
     : ''
 
-  const headExtras  = [metaTags, cssTag].filter(Boolean).join('\n')
+  // `head` is markup already rendered -- a string-mode `<mesa:head>` -- and
+  // is spliced as written.
+  const headExtras  = [metaTags, cssTag, head].filter(Boolean).join('\n')
   const bodyClosing = [scriptTags, loaderTag].filter(Boolean).join('\n')
 
   return `<!DOCTYPE html>

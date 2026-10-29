@@ -368,7 +368,14 @@ On the server, `$.onMount` and path watches are inert while effects and block
 directives run and are then disposed; `{#await}` renders its `{:pending}`
 branch; `{#virtual each}` renders its first window, since there is no viewport to
 measure. Comment anchors are stripped unless
-you pass `{ keepAnchors: true }`.
+you pass `{ keepAnchors: true }`; the string mode (`target: 'server'`) writes
+none and refuses the option by name. On either path a `<mesa:boundary>` catches
+nothing (`FJS-D377`): an open `await` writes its `pending` snippet, an error its
+`failed`, and content otherwise. A `<mesa:portal>`'s children are built and not
+written, since their target is not in the page. A `<mesa:head>` reaches the
+page only on the string mode, which keeps it beside the body for `wrapPage`
+(`full: true`, or the `head` option by hand); the DOM path appends it to
+happy-dom's head, which no serializer reads.
 
 ### Islands — `{ islands: true }`
 
@@ -399,8 +406,9 @@ media?, props?, file }` per call site), which is what maps a component name onto
 a module to import.
 
 Markers are written in a **server render only** — `island()` calls the component
-directly on a live client — and omitting the flag produces byte-identical output
-to before. Mounting one needs no new protocol: remove the nodes between the
+directly on a live client, and the string mode (`target: 'server'`) pushes the
+same marker as text around the child's pushes — and omitting the flag produces
+byte-identical output to before. Mounting one needs no new protocol: remove the nodes between the
 markers, then `mount(openComment, Comp, { props })`. Use `mount`, not a bare
 `Comp(anchor, props, null)`, or the island renders correctly and responds to
 nothing — a direct call registers no delegation root.

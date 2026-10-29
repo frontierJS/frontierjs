@@ -1,9 +1,9 @@
 /**
  * The server target's runtime (`target: 'server'`, `FJS-D1634`): what a
- * module the host emitter's string mode writes imports as `$$host`. Two
- * functions and nothing else — the one escaper and the one attribute
- * serializer — because every byte the string mode cannot write at compile
- * time passes through one of them, and a second owner of either is a second
+ * module the host emitter's string mode writes imports as `$$host`. The one
+ * escaper, the one attribute serializer and the one island marker, and
+ * nothing else — because every byte the string mode cannot write at compile
+ * time passes through one of them, and a second owner of any is a second
  * place to get XSS wrong. The emitter imports both and calls them at compile
  * time on static text, so a static and a live value escape identically.
  *
@@ -124,4 +124,160 @@ export function attrs(tag, entries, scope) {
     s += ` ${name}="${ATTR.test(value) ? value.replace(ATTR, (c) => ATTR_MAP[c]) : value}"`
   }
   return s
+}
+
+// ── Islands — the marker a client loader reads ────────────────────────────────
+//
+// The payload lives here and not in runtime.js because both paths write it:
+// the DOM path's `island()` wraps a comment node around it and the string
+// mode pushes it as text, and a loader parses one shape. Why the marker is a
+// pair of comments and not an element, and what `mount` does with it, is
+// runtime.js § Islands.
+export const ISLAND_OPEN  = 'mesa-island '
+export const ISLAND_CLOSE = '/mesa-island'
+
+export function islandPayload(props, meta) {
+  const payload = {
+    component: meta?.component ?? null,
+    directive: meta?.directive ?? 'load',
+  }
+  if (meta?.media) payload.media = meta.media
+  if (props && typeof props === 'object' && Object.keys(props).length) payload.props = props
+
+  const dropped = []
+  const retyped = []
+  // Holder object -> the path that reached it, so a warning can name
+  // `nested.inner` rather than `inner`: the walk is depth-first over the whole
+  // payload and a bare key from it is indistinguishable from a top-level prop
+  // (an array index arrives as `0`).
+  const paths = new WeakMap()
+  let json
+  try {
+    // A `function`, not an arrow, and that is the whole mechanism: JSON.stringify
+    // calls a replacer with `this` bound to the HOLDER, so `this[key]` is the
+    // value before `toJSON` ran. `value` is what will be written. The two
+    // disagreeing is the class of bug JSON reports nothing about — a Date
+    // prerenders as a Date and mounts as a string, a Map and a Set arrive as
+    // `{}` — and the loader cannot recover it, because by then a Date IS a
+    // string and a Map IS `{}`.
+    json = JSON.stringify(payload, function (key, value) {
+      if (typeof value === 'function' || typeof value === 'symbol') { dropped.push(key); return undefined }
+      const raw = this?.[key]
+      const at = key === '' ? '' : Array.isArray(this) ? `${paths.get(this) ?? ''}[${key}]`
+        : paths.get(this) ? `${paths.get(this)}.${key}` : key
+      if (value && typeof value === 'object') paths.set(value, at)
+      // Map and Set are their own case: they carry no `toJSON`, so the replacer
+      // is handed the collection itself and the retype test below cannot see
+      // them — `raw === value` right up to the point JSON writes `{}`, because
+      // neither has an enumerable own property to write.
+      if (raw instanceof Map || raw instanceof Set) retyped.push(`${at} (${raw.constructor.name} -> {})`)
+      else if (raw && typeof raw === 'object' && raw !== value) retyped.push(`${at} (${raw.constructor?.name ?? 'object'} -> ${typeof value})`)
+      return value
+    })
+  } catch (e) {
+    // Circular reference, BigInt, or a throwing toJSON. The island is still
+    // worth marking — a loader can mount it with its own defaults — so degrade
+    // to identity only rather than losing the marker altogether.
+    console.warn(
+      `[Mesa island] <${payload.component}> props could not be serialized (${e.message}). ` +
+      `The marker is emitted without props; a client loader will mount this island with none.`
+    )
+    delete payload.props
+    json = JSON.stringify(payload)
+  }
+  if (dropped.length) {
+    console.warn(
+      `[Mesa island] <${payload.component}> — ${dropped.join(', ')} dropped from the island marker. ` +
+      `Functions and symbols do not survive JSON, so a client loader remounts this island without them. ` +
+      `Pass serializable props to an island, or mount it from the client instead.`
+    )
+  }
+  if (retyped.length) {
+    console.warn(
+      `[Mesa island] <${payload.component}> — ${retyped.join(', ')} changed type in the island marker. ` +
+      `The server render holds the original value and the client mounts the JSON one, so this island's ` +
+      `text changes when it wakes up — which reads as the component being wrong. ` +
+      `Convert at the call site (a Date to \`.toISOString()\`, a Map or Set to an array or object), ` +
+      `or mount this island from the client.`
+    )
+  }
+  // Escape every `-` and `>` out of the payload.
+  //
+  // Only `-->` (and `--!>`) actually terminates a comment per the HTML spec, so
+  // escaping `--` is enough for a conforming parser, and both parsers this
+  // marker crosses are conforming today — happy-dom ended a comment at the
+  // FIRST `>` in 14.12.3, which truncated a marker carrying one and made
+  // `JSON.parse` throw on the fragment, and 20 does not. The `>` escape stays
+  // anyway: the payload is written once for two parsers, only one of which this
+  // package pins, and six bytes per occurrence is cheaper than finding out
+  // again from a broken island.
+  //
+  // Both substitutions are inside JSON strings by construction — a number
+  // cannot contain `-` except a leading minus or an exponent, neither of which
+  // can produce `--`, and `>` occurs nowhere else in JSON — so `-` and
+  // `>` parse back to exactly the original characters.
+  return json.replace(/--/g, '\\u002d\\u002d').replace(/>/g, '\\u003e')
+}
+
+
+/**
+ * The string mode's `client:*` call: the markers around the child's pushes.
+ * A module compiled for the server never runs in a browser, so there is no
+ * client branch here, where the DOM path's `island()` has one.
+ */
+export function island(out, Comp, props, meta) {
+  out.push(`<!--${ISLAND_OPEN}${islandPayload(props, meta)}-->`)
+  const r = Comp(out, props)
+  out.push(`<!--${ISLAND_CLOSE}-->`)
+  return r
+}
+
+// ── What the emitter asks at run time ─────────────────────────────────────────
+
+/** HTML's void elements: no close tag, and nothing a child could be. */
+export const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'])
+
+/*
+ * Tag names `<mesa:element this={tag}>` may not take, on either path. Each of
+ * these ACTS on insertion rather than rendering: a `<script>` built with
+ * createElement is not parser-inserted, so appending the authored children and
+ * inserting it EXECUTES them -- with a `{code}` interpolation inside, the pair
+ * is eval with two data inputs, and it survives SSR into whatever public file
+ * `target: 'static'` writes. `<style>` runs the children as CSS, `<base>` and
+ * `<meta http-equiv>` redirect the whole page, and `<link>`, `<iframe>`,
+ * `<object>` and `<embed>` fetch and run something the copied attributes name.
+ */
+const DYNAMIC_TAG_REFUSED = new Set(['script', 'style', 'base', 'link', 'meta', 'iframe', 'object', 'embed'])
+
+/**
+ * The tag a dynamic element is built from: the DOM path hands it to
+ * `createElement`, the string mode writes it. Lowercased, as an HTML document
+ * serializes any element it creates.
+ */
+export function dynamicTag(tag) {
+  if (typeof tag === 'string' && DYNAMIC_TAG_REFUSED.has(tag.toLowerCase())) {
+    throw new Error(
+      `[Mesa] <mesa:element this={…}> — <${tag.toLowerCase()}> refused. A dynamic tag is ` +
+      `markup, not a script host: this element acts when it is inserted, and the tag came ` +
+      `from an expression. Write the element literally where it is the author's own.`
+    )
+  }
+  if (typeof tag !== 'string' || !tag) {
+    throw new Error(
+      `[Mesa] <mesa:element this={…}> — expected a tag name, got ${
+        typeof tag === 'string' ? "''" : String(tag)
+      }. A dynamic element always has a tag; render nothing with {#if} instead.`
+    )
+  }
+  return tag.toLowerCase()
+}
+
+/**
+ * `<mesa:head>`'s buffer: the DOM path appends to `document.head`, which no
+ * serializer reads, so the string mode keeps the head beside the body on
+ * the one array a render owns and `wrapPage` splices it (`renderToHTML`
+ * with `full`). Nested heads share the buffer.
+ */
+export function head(out) {
+  return (out.head ??= [])
 }

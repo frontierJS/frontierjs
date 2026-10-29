@@ -104,7 +104,7 @@ the transport that needs no account.
 
 - **A wrong `webPush` build answers `201`.** The push service cannot read the body, so no status or length check can fail; `test/webpush.test.ts` holds RFC 8291 Appendix A byte for byte and decrypts from the device's private key. A change to `drivers/webpush.ts` keeps both. The driver prunes on 404/410 only and collects every other refusal until each device was tried.
 
-- **One `PushMessage` for two `push` drivers** (`types.ts`). `webPush()` strips `priority`/`tags`/`actions` before the payload and `ntfy()` drops `data`/`ttl`/`urgency`/`topic`; a field added to the shape is placed in one of those two lists or it leaks onto the other wire.
+- **One `PushMessage` for two `push` drivers** (`types.ts`). `webPush()` strips `priority`/`tags`/`actions`/`always` before the payload and `ntfy()` drops `data`/`ttl`/`urgency`/`topic`/`always`; a field added to the shape is placed in one of those two lists or it leaks onto the other wire.
 
 ## Proving a change
 

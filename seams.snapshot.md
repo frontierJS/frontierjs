@@ -47,6 +47,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$protectedFields(accessor)` | `packages/litestone/src/core/client.js` | 3 |
 | `signRequest()` | `packages/toolbelt/src/signature/signature.js` | 3 |
+| `island(anchor, Comp, props, block, meta)` | `packages/mesa/src/runtime.js` | 3 |
 
 ## Data → API
 
@@ -169,4 +170,4 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `renderComponent(src, opts)` | `packages/mesa/src/render-component.js` | yes | — |
 | `appSrcDir(root)` / `appAliasPlugin()` | `packages/sierra/src/build/app-alias-plugin.js` | yes | — |
 | `swapInstances(entries, newFn, newSetMark, label)` | `packages/mesa/mesa-vite/swap.js` | yes | 1 |
-| `island(anchor, Comp, props, block, meta)` | `packages/mesa/src/runtime.js` | yes | 2 |
+| `island(anchor, Comp, props, block, meta)` | `packages/mesa/src/runtime.js` | yes | 3 |

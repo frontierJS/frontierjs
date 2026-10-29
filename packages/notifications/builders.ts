@@ -212,6 +212,7 @@ class PushBuilder {
   private _ttl?:      number
   private _urgency?:  PushMessage['urgency']
   private _topic?:    string
+  private _always?:   true
   private _priority?: PushMessage['priority']
   private _tags:      string[] = []
   private _actions:   PushAction[] = []
@@ -256,6 +257,13 @@ class PushBuilder {
     return this
   }
 
+  /** Push even when the recipient has a tab of the app on screen -- a sign-in alert,
+   *  not an order the open page has just shown. webPush only. */
+  always(): this {
+    this._always = true
+    return this
+  }
+
   /** 5 rings through do-not-disturb, 4 is a resend, 3 the default. ntfy only. */
   priority(level: NonNullable<PushMessage['priority']>): this {
     this._priority = level
@@ -283,6 +291,7 @@ class PushBuilder {
       ...(this._ttl      !== undefined ? { ttl: this._ttl }           : {}),
       ...(this._urgency  !== undefined ? { urgency: this._urgency }   : {}),
       ...(this._topic    !== undefined ? { topic: this._topic }       : {}),
+      ...(this._always                 ? { always: true }             : {}),
       ...(this._priority !== undefined ? { priority: this._priority } : {}),
       ...(this._tags.length            ? { tags: this._tags }         : {}),
       ...(this._actions.length         ? { actions: this._actions }   : {}),

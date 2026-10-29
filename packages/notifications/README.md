@@ -480,6 +480,8 @@ A formatter named `push:` answers a `PushMessage` (`types.ts`), built with `push
 
 **A recipient with a tab of the app on screen gets no push** (`FJS-D1627`): the page has just shown the in-app notification. The junction browser client reports `document.visibilityState` on its socket at every connect and on each `visibilitychange`, and the driver asks `app.channels.hasVisibleConnection(id)` before listing devices. A socket that never reports, and an app without `channels()`, count as hidden, so the push goes.
 
+A message that must buzz anyway -- a new sign-in, not an order the page just showed -- says so with `push().always()`. The check is one process's: `channels` holds only the sockets this instance accepted, so on a multi-instance deploy a user whose tab is connected to another node reads hidden and is pushed to as well.
+
 
 ### ntfy
 

@@ -120,3 +120,37 @@ export function pickEnv({ root, file = '.env', global = false, keys = [], home }
   }
   return { body, count: body.split('\n').filter(keyOf).length, source }
 }
+
+/**
+ * The server's env text with `body`'s lines pushed into it — `env:push`. A key
+ * the server lacks is appended; one it holds with another value is replaced in
+ * place under `overwrite` and left alone without it, since the server's value
+ * may be the one that is right there. Answers the text and the KEYS of each
+ * kind, never a value, so a caller can report what it did without printing a
+ * secret.
+ */
+export function pushEnvLines(serverText, body, { overwrite = false } = {}) {
+  const incoming = new Map()
+  for (const line of body.split('\n')) { const k = keyOf(line); if (k) incoming.set(k, line.trim()) }
+
+  const seen = new Set()
+  const replaced = [], same = [], differs = []
+  const lines = serverText.split('\n').map(line => {
+    const k = keyOf(line)
+    if (!k || !incoming.has(k) || seen.has(k)) return line
+    seen.add(k)
+    const next = incoming.get(k)
+    if (line.trim() === next) { same.push(k); return line }
+    if (!overwrite) { differs.push(k); return line }
+    replaced.push(k)
+    return next
+  })
+
+  const added = [...incoming.keys()].filter(k => !seen.has(k))
+  let text = lines.join('\n')
+  if (added.length) {
+    if (text && !text.endsWith('\n')) text += '\n'
+    text += added.map(k => incoming.get(k)).join('\n') + '\n'
+  }
+  return { text, added, replaced, same, differs }
+}

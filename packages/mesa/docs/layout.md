@@ -74,9 +74,13 @@ src/
                          `$.measure`/`$.viewport`/`$.focus` answer a Promise
                          here, in runtime.js and in runtime-terminal.js alike
   runtime-server.js    — the server runtime, @frontierjs/mesa/runtime/server:
-                         `esc` and `attrs`, the one escaper and the one
-                         attribute serializer the emitter's string mode
-                         calls (`FJS-D1634`). Nothing else: the mode writes
+                         `esc`, `attrs`, `island`, `dynamicTag`, `VOID` and
+                         `head`: the one escaper, the one attribute serializer,
+                         the one island marker (runtime.js imports the payload
+                         from here), the one refused-tag list a `<mesa:element>`
+                         is checked against on either path, and the buffer a
+                         `<mesa:head>` writes beside the body, which the
+                         emitter's string mode calls (`FJS-D1634`). Nothing else: the mode writes
                          `$$out.push` lines, not `$$host` calls, so there is
                          no node tree here and no engine. Every rule in it
                          is a happy-dom serialization behavior the DOM path

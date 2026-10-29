@@ -211,6 +211,9 @@ function reapOrphanedProfiles() {
  *    args       — further Chrome flags, appended. The port and the profile are
  *                 the driver's and refused here: the attach reads the port
  *                 Chrome picked, and the sweep finds its browsers by profile
+ *    headed     — a real window on $DISPLAY (Xvfb serves). Only a headed
+ *                 browser hands a notification to the desktop's daemon, so
+ *                 only it can be clicked (example `verify:push`)
  *
  *  The handle's `send(method, params, sessionId)` is the browser-level call,
  *  for a drive that attaches targets of its own — an extension's popup or its
@@ -220,8 +223,8 @@ function reapOrphanedProfiles() {
  *  the process: the caller may be a long-lived one (fli, a lesson) for which
  *  no Chrome is a skip.
  *
- *  @param {{ windowSize?: string, bootstrap?: string, profile?: string, args?: string[] }} [options] */
-export async function openChrome({ windowSize = '1280,900', bootstrap, profile: kept, args = [] } = {}) {
+ *  @param {{ windowSize?: string, bootstrap?: string, profile?: string, args?: string[], headed?: boolean }} [options] */
+export async function openChrome({ windowSize = '1280,900', bootstrap, profile: kept, args = [], headed = false } = {}) {
   const owned = args.find((a) => /^--(remote-debugging-port|user-data-dir)\b/.test(a))
   if (owned) throw new Error(`openChrome: ${owned.split('=')[0]} is the driver's own flag — the attach and the profile sweep depend on it`)
   const exe = findChrome()
@@ -246,7 +249,10 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
   // refused (`FJS-740` one layer over). The default profile carries a previous
   // run's `localStorage`, and with it that run's sign-in.
   const chrome  = spawn(exe, [
-    '--headless=new', '--disable-gpu', '--no-sandbox',
+    // A headed first run waits on its welcome dialog before it opens the
+    // DevTools port, which reads as a launch that never announced one.
+    ...(headed ? ['--no-first-run', '--no-default-browser-check', '--password-store=basic'] : ['--headless=new']),
+    '--disable-gpu', '--no-sandbox',
     '--remote-debugging-port=0', `--user-data-dir=${profile}`,
     `--window-size=${windowSize}`,
     // Specs read color and geometry; a non-sRGB profile or a scrollbar taking

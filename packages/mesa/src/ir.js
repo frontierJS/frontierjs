@@ -26,7 +26,7 @@
 import {
   rewriteExpr, rewriteTextResult, extractKeywords, eventAttribute, applyEventModifiers,
   unwrapExp, parseEachHeader, eachFrame, templateSource, componentAttributes, styleSource, classSource,
-  bindSetter, elementBindTarget, snippetParam, parseRenderTag, constScope, constDeclaration,
+  bindSetter, elementBindTarget, snippetParam, parseRenderTag, constScope, constDeclaration, boundaryWatchSet,
 } from './compiler.js'
 
 // ─── expressions ──────────────────────────────────────────────────────────────
@@ -170,8 +170,8 @@ function lowerAttributes(ctx, n) {
  * reported and dropped (`bindSetter`). An attribute
  * `componentAttributes` refuses is reported, as the DOM path reports it, and
  * passes nothing on either target. `client:` is a hint to a
- * server render: `island` names its directive, and a target reads it only
- * under `root.islands`, as the DOM path drops it without `islands`.
+ * server render: `island` is `{ directive, media? }`, and a target reads it
+ * only under `root.islands`, as the DOM path drops it without `islands`.
  *
  * `snippets` are its children: every child of a call is a snippet by now,
  * `slot=` and unslotted content included (`lowerSlots`, `FJS-D668`), which
@@ -187,9 +187,11 @@ function lowerComponent(ctx, n) {
       case 'refused':
         ctx.analysis?.errors.push(`${a.message} — ${at}`)
         break
-      case 'island':
-        island = a.name.slice('client:'.length)
+      case 'island': {
+        island = { directive: a.name.slice('client:'.length) }
+        if (island.directive === 'media' && p.value) island.media = String(p.value).replace(/^["']|["']$/g, '')
         break
+      }
       case 'spread':
         spreads.push(read(ctx, a.expr))
         break
@@ -427,6 +429,44 @@ function lowerPortal(ctx, n) {
   }
 }
 
+/**
+ * `<mesa:boundary>`: `states` are the `$$async_` state objects the body reads
+ * (`boundaryWatchSet`, `FJS-D378`), and `pending` / `failed` the snippet
+ * variable each branch calls, a local one first and the component's global
+ * one behind it (RULE 40), or null when neither is written. The local
+ * snippets stay in `children`, so a target emits them where it emits the
+ * body.
+ */
+function lowerBoundary(ctx, n) {
+  const body = n.body ?? []
+  const asyncVars = Object.values(ctx.analysis?.vars ?? {}).filter((v) => v.isAsync)
+  const has = (list, name) => (list ?? []).some((c) => c.type === 'snippet' && c.name === name)
+  const snippet = (name) => (has(body, name) || has(ctx.DOM?.body, name) ? `$$snippet_${name}` : null)
+  return {
+    kind: 'boundary',
+    loc: ctx.posOf(n.start),
+    states: boundaryWatchSet(asyncVars, body).map((v) => `$$async_${v.name}`),
+    pending: snippet('pending'),
+    failed: snippet('failed'),
+    children: lowerChildren(ctx, body),
+  }
+}
+
+/**
+ * `<mesa:head>`: children for the document's head. A `<style>` child is the
+ * sheet's text as written -- the DOM path injects it raw, past the scoper --
+ * and every other child lowers as markup.
+ */
+function lowerHead(ctx, n) {
+  const body = n.body ?? []
+  return {
+    kind: 'head',
+    loc: ctx.posOf(n.start),
+    styles: body.filter((c) => c.type === 'style').map((c) => (c.content ?? '').trim()).filter(Boolean),
+    children: lowerChildren(ctx, body.filter((c) => c.type !== 'style')),
+  }
+}
+
 function lowerNode(ctx, n) {
   switch (n.type) {
     case 'script':
@@ -446,6 +486,8 @@ function lowerNode(ctx, n) {
       if (n.name === 'mesa' && n.elArg === 'element') return lowerDynamicElement(ctx, n)
       if (n.name === 'mesa' && GLOBALS.includes(n.elArg)) return lowerGlobal(ctx, n)
       if (n.name === 'mesa' && n.elArg === 'portal') return lowerPortal(ctx, n)
+      if (n.name === 'mesa' && n.elArg === 'boundary') return lowerBoundary(ctx, n)
+      if (n.name === 'mesa' && n.elArg === 'head') return lowerHead(ctx, n)
       if (n.name === 'mesa') return unlowered(ctx, 'mesa-element', n)
       if (n.name === 'component') return unlowered(ctx, 'component', n)
       if (/^[A-Z]/.test(n.name)) return lowerComponent(ctx, n)
@@ -544,6 +586,8 @@ export function eachNode(children, visit) {
       case 'dynamic-element':
       case 'snippet':
       case 'portal':
+      case 'boundary':
+      case 'head':
       case 'key':
         eachNode(n.children, visit)
         break

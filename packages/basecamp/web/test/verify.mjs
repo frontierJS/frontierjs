@@ -2699,13 +2699,10 @@ check('a sweep that never happened cannot be recorded from the wire', inventedRu
 
 await goto('/hub/')
 check('the hub opens', await heading(), 'Platform hub')
-// `.navlist`, not `.topbar`: nineteen navlinks in a 56px row wrapped and spilled
-// out of the bar, so the shell moved the nav into the sidebar where `.navlink`
-// is documented to live. A selector naming the old home passes nothing and
-// reads as the link being absent.
+// By href: the hub is a `direct` group, a sidebar link labeled with the
+// group's name and drawn outside every `.navlist`.
 check('the shell offers it to a system administrator',
-  await evaluate(`[...document.querySelectorAll('.navlist .navlink')].map(a => a.textContent.trim()).join('|')`),
-  t => t.includes('Hub'))
+  await evaluate(`!!document.querySelector('.sidebar a.navlink[href="/hub/"]')`), true)
 
 // Read at request time from the things that own them — SQLite for its own
 // version, Caravan for the queues. Nothing here is stored, so there is nothing
@@ -3191,6 +3188,12 @@ check('the template seeds the box',
   await waitFor(`document.getElementById('dockerfile')?.value ?? ''`, t => t.length > 0),
   t => t.includes('FROM'))
 await evaluate(`document.getElementById('create-submit').click()`)
+// The form picks the one online server by itself, and a placed App turns on
+// deploy on push, whose secret is shown once on this panel before the App page.
+check('fromRepo with a server shows the webhook once',
+  await waitFor(`document.getElementById('connect-push-url')?.textContent ?? ''`, t => t.includes('/hooks/git/'), 20_000),
+  t => t.includes('/hooks/git/'))
+await evaluate(`document.getElementById('connect-done').click()`)
 await waitFor(`location.pathname`, p => p.startsWith('/apps/'), 20_000)
 await sleep(1500)
 check('fromRepo lands on the App page', await path(), p => p.startsWith('/apps/'))

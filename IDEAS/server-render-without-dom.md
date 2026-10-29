@@ -244,11 +244,50 @@ count at zero, and `verify:site` passes.
   it. Corpus at close: 594 lowering, 456 same, 0 differ, 0 threw on one path,
   37 `childRefused` (every one `<mesa:boundary>` in `ChainRenderer.mesa` or
   `{@html}` in `CodeInput.mesa`, 2.3 and 2.4).
-- [ ] 2.2 Island markers, the same comment payload the loader reads, and
+- [x] 2.2 Island markers, the same comment payload the loader reads, and
   `keepAnchors`.
-- [ ] 2.3 `<mesa:element>`, `<mesa:boundary>` (a try/catch writing the
-  fallback), `<mesa:head>` (a head buffer `wrapPage` splices) and
-  `<mesa:portal>`.
+  Built 2026-10-29: `islandPayload` and the marker names moved to
+  `runtime-server.js`, which `runtime.js` imports, so one owner writes the
+  payload for both paths; `$$host.island($$out, Comp, props, meta)` pushes
+  the open marker, calls the child, pushes the close. The IR's `island` is
+  `{ directive, media? }` and the emitter writes the DOM path's meta
+  (`component`, `directive`, `media`) under `islands`; without the flag the
+  call is inline, as before. `keepAnchors` with `target: 'server'` is refused
+  by name: the mode writes no anchor comments, and honoring the flag by
+  writing nothing would read as the anchors being there. Island markers are
+  not anchors and both paths always write them. Proof: every case of
+  `render-ssr.test.js` § islands now renders on both paths and asserts the
+  bytes agree (payload escapes, dropped and retyped props, nesting, a table
+  row), plus a `bothTree` parity case in `server-emit.test.js`. Corpus:
+  596 lowering, 457 same, 0 differ, 38 `childRefused` (boundary, `{@html}`).
+- [x] 2.3 `<mesa:element>`, `<mesa:boundary>`, `<mesa:head>` (a head buffer
+  `wrapPage` splices) and `<mesa:portal>`.
+  Built 2026-10-29: the IR gains `boundary` (`states`, the `$$async_` objects
+  the body reads per `boundaryWatchSet`; `pending` / `failed`, the snippet
+  each branch calls, local first then the component's global one) and `head`
+  (`styles`, each `<style>` child's raw text; `children`). A dynamic element
+  is `{ const $$tag = $$host.dynamicTag(expr); … }` with every attribute
+  live, children and the close tag under `!$$host.VOID.has($$tag)`; the
+  refused-tag list moved to `runtime-server.js` and the DOM path's
+  `dynamicElement` reads it there. A boundary is the DOM path's
+  `boundaryBlock` on a server, not the try/catch this step first named: an
+  error wins, a loading state writes `pending`, content otherwise, and
+  nothing is caught (`FJS-D377`) so a throw fails both renders alike. A head
+  writes into `$$host.head($$out)`, a buffer on the render's array, and
+  `_renderString` hands it to `wrapPage` as the new `head` option; the DOM
+  path appends to happy-dom's `document.head`, which nothing reads, so the
+  body bytes agree and only the page under `full` differs. A portal builds
+  its children into a buffer nothing reads, as the DOM path builds them into
+  a detached body: a throw or a child's side effect agrees, the markup is
+  absent on both. Found on the way: the DOM path put a `<mesa:element>` ahead
+  of the whitespace preceding it inside a block, because its label was
+  satisfied by the text node the two whitespace runs merged into once the
+  placeholder was gone (`FJS-512`'s shape); it now owns an anchor comment as
+  every block does. A new corpus set-aside, `boundNode` (`FJS-D1640`
+  amended): a tree with a `bind:this` whose script writes on the node under
+  happy-dom (DropdownMenu's `aria-expanded` from a `$:`), which the string
+  mode cannot hand it (2.5). Corpus: 645 lowering, 496 same, 0 differ, 4
+  `boundNode`, 26 `childRefused` (every one `{@html}` in CodeInput, 2.4).
 - [ ] 2.4 `{@html}`, per Q2.
 - [ ] 2.5 `bind:` writes the initial value; `on:`, `use:`, `{@attach}` and
   transitions are dropped, `bind:this` is null. 1.1 drops all of them

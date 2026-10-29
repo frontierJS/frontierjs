@@ -1,11 +1,14 @@
 <script module>
   // src/resources/Backup.mesa — the Resource layer.
   //
-  // `backups` is the regular plural of `Backup`, so no `model:`.
+  // `model:` is stated because the hub's archives are `AppBackup` rows on the
+  // hub App (`FJS-D1606`), so `backups` no longer pluralizes its model. Without
+  // it modelNameFor() looks for `Backup`, misses, warns, and degrades to a bare
+  // make().
   //
-  // Hub tier, like Hub.mesa: `Backup` is `@@tenant(none)` because an archive is
-  // of the whole installation, and the service is behind `requireSystemAdmin`.
+  // Hub tier, like Hub.mesa: an archive is of the whole installation, and the
+  // service is behind `requireSystemAdmin`.
   import { createResource } from '@frontierjs/sierra/resource'
 
-  export const backups = createResource('backups')
+  export const backups = createResource('backups', { model: 'AppBackup' })
 </script>

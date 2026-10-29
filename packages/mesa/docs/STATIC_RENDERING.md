@@ -126,17 +126,25 @@ await renderToHTML(Comp, {}, { keepAnchors: true }) // <div><!----><b>yes</b></d
 ```
 
 When hydration lands (v1.1) it will need those anchors to locate blocks, and
-`keepAnchors` is the switch. The stripping patterns live in one place —
-`_ANCHOR_PATTERNS` in `render.js` — and are deliberately narrow: `<!--[if mso]>`
-conditional comments survive, because email templates emit them through
-`{@html}` on purpose.
+`keepAnchors` is the switch. The rule for what is an anchor lives in one place —
+`_isAnchorComment` in `render.js` — and is narrow (`mesa-root` and a `$`
+prefix): `<!--[if mso]>` conditional comments survive, because email templates
+emit them through `{@html}` on purpose, and island markers survive because a
+loader reads them. The string mode (`target: 'server'`) writes no anchors at
+all and refuses `keepAnchors` by name; it writes island markers as every render
+does.
 
 ---
 
 ## The page shell
 
 `wrapPage(bodyHTML, options)` produces a complete document. `renderToHTML(...,
-{ full: true, ...options })` renders and wraps in one call.
+{ full: true, ...options })` renders and wraps in one call. `head` is markup
+spliced into `<head>` as written; the string mode fills it from every
+`<mesa:head>` the render wrote (a `<style>` child as its raw text), on top of
+whatever the caller passed. The DOM path has nowhere to keep one — its
+`<mesa:head>` lands in happy-dom's `document.head`, which no serializer reads —
+so a head a page depends on is a reason to render on `target: 'server'`.
 
 ```js
 const html = await renderToHTML(Page, props, {
