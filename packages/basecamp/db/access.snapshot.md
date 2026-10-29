@@ -38,10 +38,9 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `BackupDestination` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Blueprint` | 1 VISITOR | 7 SYSADMIN | 7 SYSADMIN | 7 SYSADMIN |
 | `BlueprintParam` | 1 VISITOR | 7 SYSADMIN | 7 SYSADMIN | 7 SYSADMIN |
-| `CleanupRun` | 2 READER | 4 USER | 8 SYSTEM | 8 SYSTEM |
 | `Credential` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Dashboard` | 2 READER | 4 USER | 4 USER | 4 USER |
-| `DashboardWidget` | 2 READER | 4 USER | 4 USER | 4 USER |
+| `DashboardTile` | 2 READER | 4 USER | 4 USER | 4 USER |
 | `Dependency` | 2 READER | 4 USER | 4 USER | 4 USER |
 | `DependencyUse` | 2 READER | 4 USER | 4 USER | 4 USER |
 | `Deployment` | 2 READER | 4 USER | 4 USER | 4 USER |
@@ -63,6 +62,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `JobRun` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `KvEntry` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `LoginChallenge` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `MaintenanceRun` | 2 READER | 4 USER | 8 SYSTEM | 8 SYSTEM |
 | `MetricHour` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `MetricPoint` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `MetricSeries` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
@@ -237,14 +237,6 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
-### `CleanupRun`
-
-- deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
-- deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
-- deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
-- deny **postUpdate** — `!check(server, tenancy)` — "Outside your workspaceId"
-- deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
-
 ### `Dashboard`
 
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
@@ -253,7 +245,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
-### `DashboardWidget`
+### `DashboardTile`
 
 - deny **read** — `!check(dashboard, tenancy)` — "Outside your workspaceId"
 - deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
@@ -435,6 +427,14 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+
+### `MaintenanceRun`
+
+- deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 
 ### `Monitor`
 
@@ -689,7 +689,7 @@ rather than refusing the row.
 | `HubConfig` | `encryptionKeyEscrowedAt` | `@system` |
 | `HubConfig` | `encryptionKeyFingerprint` | `@system` |
 | `HubConfig` | `hostServerId` | `@system` |
-| `Invitation` | `token` | `@guarded` |
+| `Invitation` | `token` | `@secret` |
 | `Job` | `retryCount` | `@system` |
 | `Job` | `lastRunAt` | `@system` |
 | `Job` | `lastRunStatus` | `@system` |
@@ -708,21 +708,22 @@ rather than refusing the row.
 | `Recipe` | `runCount` | `@system` |
 | `Run` | `context` | `@encrypted` |
 | `Secret` | `data` | `@encrypted` |
+| `Secret` | `verifiedAt` | `@system` |
+| `Secret` | `verifyError` | `@system` |
 | `Server` | `enrollTokenHash` | `@guarded` |
 | `Session` | `token` | `@guarded` |
 | `User` | `email` | `@allow(write, auth().isSystemAdmin)` |
 | `User` | `emailVerified` | `@allow(write, auth().isAdmin)` |
-| `User` | `role` | `@allow(write, auth().isAdmin)` |
 | `User` | `accountId` | `@allow(write, auth().isSystemAdmin)` |
-| `User` | `kind` | `@allow(write, auth().isSystemAdmin)` |
+| `User` | `kind` | `@system` |
 | `User` | `status` | `@allow(write, auth().isSystemAdmin)` |
-| `User` | `scopes` | `@allow(write, auth().isSystemAdmin)` |
 | `User` | `isSystemAdmin` | `@allow(write, auth().isSystemAdmin)` |
 | `Variable` | `secretValue` | `@encrypted` |
 | `Verification` | `value` | `@guarded` |
 | `Verification` | `secret` | `@guarded` |
 | `Verification` | `code` | `@guarded` |
 | `Workspace` | `ownerId` | `@system` |
+| `Workspace` | `expiresAt` | `@system` |
 | `WorkspaceMember` | `userId` | `@system` |
 
 ## State transitions

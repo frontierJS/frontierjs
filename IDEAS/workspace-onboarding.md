@@ -126,6 +126,33 @@ boolean, and nobody checks a pasted token's scopes.
     the repo on each service
     ([github-autodeploys](https://docs.railway.com/guides/github-autodeploys)).
 
+- **Leases** (the throwaway tokens 0.2 needs, and the long-lived ones
+  `/secrets` holds today). Read 2026-10-28 from docs; no vendor probed yet.
+  One guarded parent credential mints short-lived children, so the pasted
+  token is the exception and never the working one.
+  - **Vault** attaches a lease (a TTL and an id) to each dynamic secret;
+    the consumer renews or replaces it, and revoking the lease invalidates
+    the secret at once
+    ([lease, renew, revoke](https://developer.hashicorp.com/vault/docs/concepts/lease)).
+  - **fnox** has a Cloudflare lease backend: a parent token holding
+    *Account API Tokens: Edit* creates child tokens that expire on their
+    own. A child inherits the parent's policies unless the config names
+    narrower ones, and `duration` defaults to the backend maximum, 24 hours
+    ([fnox cloudflare lease](https://fnox.jdx.dev/leases/cloudflare.html)).
+    The parent is therefore the powerful secret and the children are cheap.
+  - **Cloudflare** exposes the two calls underneath: `POST
+    /accounts/{id}/tokens` and `DELETE /accounts/{id}/tokens/{token_id}`,
+    both needing *Account API Tokens Write*
+    ([delete](https://developers.cloudflare.com/api/operations/account-api-tokens-delete-token),
+    [create via API](https://developers.cloudflare.com/fundamentals/api/how-to/create-via-api/)).
+    Its own guidance is to limit the parent by client IP or TTL.
+  - **GitHub** installation access tokens, minted by an App, expire after
+    one hour and can be narrowed to named repositories
+    ([docs](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app-installation)).
+    `FJS-D1571` ruled a fine-grained token over an App for git-deploy, so
+    this is the road not taken there, not a contradiction.
+  - **Hetzner, DigitalOcean, Backblaze B2** are unchecked (0.4).
+
 **What the rulings make of it.**
 
 - **Q1 (`FJS-D1578`).** The two open-source peers chose a wizard, but theirs
@@ -156,6 +183,10 @@ boolean, and nobody checks a pasted token's scopes.
 - **The fine-grained token fits git-deploy.** `FJS-D1571` already ruled a
   fine-grained GitHub token kept as a Secret over an App, and the prefill
   URL suits that shape.
+- **A lease would shrink what 0.2 and the screen ask of a person.** One
+  parent per vendor, held as a Secret, with a lease minting the
+  verify-and-work token. Whether that earns a noun is Q5; until then the
+  screen asks for the token it asks for today.
 - **A failed re-probe keeps its reason.** Stripe's re-due item carries a
   reason, and ours should too: a re-probe that fails clears `verifiedAt` and
   keeps the vendor's refusal as evidence (1.1, 2.1). There is no fourth
@@ -179,10 +210,25 @@ probes a row per vendor naming the call that reads a token's scope, or *none*.
   (`/user/tokens/verify` and whether a token can read its own policies),
   Hetzner (read vs read-write tokens), DigitalOcean (custom-scoped tokens),
   Backblaze B2. Probed live against a throwaway token, not read off docs.
+  - GitHub classic and OAuth tokens report scopes in `X-OAuth-Scopes`
+    (probed 2026-10-28: the `gh` login returned `admin:public_key, gist,
+    read:org, repo`). Cloudflare: the `cf` login is OAuth, so
+    `/user/tokens/verify` answered 401, because that route takes API tokens
+    only. Fine-grained GitHub, Cloudflare API tokens, Hetzner, DigitalOcean
+    and B2 are not probed.
+  - Needs throwaway tokens. 0.4 may mint the Cloudflare ones.
 - [ ] 0.3 Per vendor, the URL of the key page and the exact boxes to tick,
   checked by opening each. For GitHub fine-grained and Cloudflare, the URL
   is a prefilled template (§ Prior art): open it and confirm every box
   arrives ticked.
+- [ ] 0.4 Lease probe. Per vendor, can a parent credential mint and revoke
+  a short-lived child token over the API: Cloudflare first (create, call
+  `/user/tokens/verify` and the policy read with the child, delete, confirm
+  the child is refused), then GitHub via an App, then Hetzner, DigitalOcean
+  and B2 from their API references. Uses one parent Cloudflare API token
+  carrying *Account API Tokens Write*, or `cf` OAuth minting two throwaway
+  tokens, which writes to the real account and so is the owner's call. Fills
+  Q5's evidence; nothing is built from it.
 
 ## Phase 1 — A proof that ages, and knows what it proved
 
@@ -274,3 +320,21 @@ against stand-ins for each vendor.
     that proves the scope by using it.
   - **Recommend A** — it is the false green Q3 was ruled to stop, and C is a
     side effect on a person's account for a grade.
+- **Q5 — Whether a lease earns a noun.** The prior art is a parent
+  credential minting short-lived children (§ Prior art, Leases). Waits on
+  0.4, which says which vendors can; run `decision-rules` before coining.
+  - **A** — no noun: the pasted token stays the only credential, and this
+    plan's verify, scopes and keyUrl work stands alone.
+  - **B** — a *Lease* for the vendors that can mint: one parent Secret, and
+    verify, drives and the dev workflow take a child that expires.
+  - **C** — a lease for development and drives only (the throwaway tokens
+    0.2 wants); production keeps the pasted token.
+  - **No recommendation yet** — it hangs on how many of the five vendors
+    can mint; two of five makes a noun for a minority.
+  - **Homonym to answer first.** *Lease* already means a job row's
+    ownership (`packages/caravan/CLAUDE.md`), a hold inside `runInline`
+    (`packages/orion/CLAUDE.md`) and the per-request tenant-pool hold, which
+    `FJS-D172` calls "not a public verb". B has to say why a fourth sense
+    does not collide, or pick another word, and register it in
+    `VOCABULARY.md`. Any owner lives in `/secrets` beside 0.2 and 1.1,
+    never a module beside them.

@@ -82,12 +82,18 @@ Done when: `cd packages/outpost && bun run test` is green and `config.js` holds 
 Goal: a fresh box gets `/etc/outpost`, `/var/lib/outpost` and `/frontier-outpost`, and nothing under `/etc/basecamp`.
 Done when: `compute.test.ts` and the cli suite are green, with 2.5's assertion among them.
 
-- [ ] 2.1 `enrollment.ts` imports the layout; `/etc/basecamp` becomes `/etc/outpost`; the unit gains `ConfigurationDirectory=outpost` and derives `ReadWritePaths`
-- [ ] 2.2 The Litestream unit writes `/var/lib/outpost/apps` instead of `/var/lib/docker/volumes`, and reads `/etc/outpost/litestream.yml`
-- [ ] 2.3 The install makes `/frontier-outpost` with `ln -sfn`, so a second run is a no-op; `outpost-uninstall` removes it and `/etc/outpost`
-- [ ] 2.4 The cli follows: `enrollOutpost` writes `/etc/outpost/outpost.env`, the preflight greps `/etc/outpost/litestream.yml`, posture fixtures re-captured
-- [ ] 2.5 A test renders `installScript()` and asserts every Outpost path in it starts with a layout root
+- [x] 2.1 `enrollment.ts` imports the layout; `/etc/basecamp` becomes `/etc/outpost`; the unit gains `ConfigurationDirectory=outpost` and derives `ReadWritePaths`
+  - Also `ConfigurationDirectoryMode=0700`: the default is `0755`, and posture grades the directory `700`. The firewall, the cert, the env file and the uninstall all follow.
+- [x] 2.2 The Litestream unit writes `/var/lib/outpost/apps` instead of `/var/lib/docker/volumes`, and reads `/etc/outpost/litestream.yml`
+  - Built as `ReadWritePaths=/var/lib/outpost/apps -/var/lib/docker/volumes`, so apps still on a named volume keep replicating. 3.3 drops the volumes entry. The install makes `apps/` before the Litestream unit starts, because the Outpost's StateDirectory does not exist yet at that point.
+- [x] 2.3 The install makes `/frontier-outpost` with `ln -sfn`, so a second run is a no-op; `outpost-uninstall` removes it and `/etc/outpost`
+- [x] 2.4 The cli follows: `enrollOutpost` writes `/etc/outpost/outpost.env`, the preflight greps `/etc/outpost/litestream.yml`, posture fixtures re-captured
+  - The cli has no Outpost dependency, so its two steps name `/etc/outpost` literally. The posture argv in `docker.js` reads the layout. `dev-host.json` had its paths rewritten instead of being re-captured: it is from a box with no Outpost, so each read already answered `No such file`. The outpost `CLAUDE.md` and `README.md` paths moved now, ahead of 4.3, since an agent acts on them.
+- [x] 2.5 A test renders `installScript()` and asserts every Outpost path in it starts with a layout root
   - The missing check `FJS-D1544` names: today `enrollment.ts` restates Outpost's paths and nothing fails when they drift.
+  - Built in `compute.test.ts` as *every Outpost path the install names is under a layout root*. It also checks the three `ln -sfn` links.
+
+**Done 2026-10-28.** `compute.test.ts` 115 pass, outpost 292 pass, and outpost and basecamp typecheck are within baseline. The cli suite has one failure, unrelated: `dead-path` flags `FJS-D138` citing a removed `ServiceHealthBody.mesa`. Not on a box yet: Phase 4 reinstalls.
 
 ## Phase 3 — App data is a bind mount
 
@@ -107,6 +113,7 @@ Done when: `ls -la /frontier-outpost` on yuma shows the three links, `sqlite3` o
 
 - [ ] 4.1 Publish Outpost (owner: npm needs their login) and bump `OUTPOST_VERSION`
   - `0.1.6` (the leading-underscore fix) and `0.1.7` are on npm and `OUTPOST_VERSION` is `0.1.7`. The layout ships in the next patch.
+  - **Basecamp and Outpost ship together.** Phase 2's install, pinned to the published `0.1.7`, would give a new box a sandbox without `/etc/basecamp` while that Outpost still writes `/etc/basecamp/litestream.yml`, so `/replicate` fails on it. Basecamp is not deployed from this tree until the bump to the published layout version is in the same deploy.
 - [ ] 4.2 Reinstall Outpost on yuma (owner runs it on the production box)
 - [ ] 4.3 Docs follow: outpost `README.md` and `CLAUDE.md` (the sandbox paragraph names `/etc/basecamp`), basecamp `docs/`, `cli/docs/deploy.md`
 

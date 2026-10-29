@@ -19,8 +19,8 @@ every fleet server to do that.
 OUTPOST_SERVER_ID=<the Server row's id> \
 OUTPOST_SECRET=<this server's secret> \
 BASECAMP_URL=https://basecamp.internal \
-OUTPOST_TLS_CERT=/etc/basecamp/outpost.crt \
-OUTPOST_TLS_KEY=/etc/basecamp/outpost.key \
+OUTPOST_TLS_CERT=/etc/outpost/outpost.crt \
+OUTPOST_TLS_KEY=/etc/outpost/outpost.key \
 bunx --bun @frontierjs/outpost
 ```
 

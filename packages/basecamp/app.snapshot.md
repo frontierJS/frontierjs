@@ -89,9 +89,9 @@ name, and is as unread as the body.
 | `cleanup.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `dashboards.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `dashboards.kinds` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `dashboards.addWidget` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `dashboards.updateWidget` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `dashboards.removeWidget` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `dashboards.addTile` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `dashboards.updateTile` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `dashboards.removeTile` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `dashboards.reorder` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `deployments.rollback` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `deployments.rebind` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
@@ -478,7 +478,7 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
-### `cleanup` · model `CleanupRun`
+### `cleanup` · model `MaintenanceRun`
 
 - **methods** — `find`, `get`, `usage`, `targets`, `run`, `startRun`, `finishRun`, `report`
 - **custom methods** — `usage`, `targets`, `run`, `startRun`, `finishRun`, `report`
@@ -536,18 +536,18 @@ name when it declares none.
 
 ### `dashboards` · model `Dashboard`
 
-- **methods** — `find`, `get`, `create`, `patch`, `remove`, `restore`, `kinds`, `addWidget`, `updateWidget`, `removeWidget`, `reorder`
-- **custom methods** — `kinds`, `addWidget`, `updateWidget`, `removeWidget`, `reorder`
-- **input** — `addWidget` takes `WidgetAdd`
-- **input** — `removeWidget` takes `WidgetRemove`
+- **methods** — `find`, `get`, `create`, `patch`, `remove`, `restore`, `kinds`, `addTile`, `updateTile`, `removeTile`, `reorder`
+- **custom methods** — `kinds`, `addTile`, `updateTile`, `removeTile`, `reorder`
+- **input** — `addTile` takes `TileAdd`
+- **input** — `removeTile` takes `TileRemove`
 - **input** — `reorder` takes `DashboardReorder`
-- **input** — `updateWidget` takes `WidgetUpdate`
+- **input** — `updateTile` takes `TileUpdate`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `kinds` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `addWidget` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `updateWidget` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `removeWidget` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `addTile` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `updateTile` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `removeTile` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `reorder` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
 - **broadcasts on** — `(computed)`
 
@@ -561,9 +561,9 @@ name when it declares none.
 | before | `aggregate` | `autoFilter` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
-| before | `addWidget` | `validateInput` |
-| before | `updateWidget` | `validateInput` |
-| before | `removeWidget` | `validateInput` |
+| before | `addTile` | `validateInput` |
+| before | `updateTile` | `validateInput` |
+| before | `removeTile` | `validateInput` |
 | before | `reorder` | `validateInput` |
 
 ### `dependencies` · model `Dependency`

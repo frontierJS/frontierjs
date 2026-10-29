@@ -19,11 +19,14 @@ const machine      = machineFor($, host, serverPath)
 // image: a `workspace:` or `link:` spec resolves to nothing on this machine,
 // and the tarballs beside the manifest are what it names instead.
 //
-// --frozen-lockfile whenever a lock travelled with it. A resolve on the server
-// would produce a tree the lockfile never described; a manifest vendor.js
-// rewrote has no lock that matches, so it installs as the image does.
+// --frozen-lockfile whenever a lock travelled in GENERATED_DIR. A resolve on the
+// server would produce a tree the lockfile never described; a manifest vendor.js
+// rewrote has no lock that matches, so it installs as the image does. The
+// shipped tree's own lock goes first: the image never copies it, and frozen
+// against the rewritten manifest it refuses, so vite is never installed (FJS-3587).
 log.info('Installing dependencies on server...')
-machine.run(`cp ${GENERATED_DIR}/app-manifest.json package.json &&
+machine.run(`rm -f bun.lock bun.lockb &&
+  cp ${GENERATED_DIR}/app-manifest.json package.json &&
   (cp ${GENERATED_DIR}/bun.lock* ./ 2>/dev/null || true) &&
   if [ -f bun.lock ] || [ -f bun.lockb ]; then bun install --frozen-lockfile; else bun install; fi`, { cwd: src })
 

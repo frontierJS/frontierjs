@@ -225,7 +225,14 @@ async function applyPlan({ origin, key, app, plan }) {
   }
   if (plan.domain) {
     const owner  = plan.domain.on === 'web' ? web : app
-    const domain = await basecamp(origin, key, '/domains', { method: 'POST', body: { appId: owner.id, hostname: plan.domain.hostname } })
+    // A run that stopped after this write finds its own row on the rerun, and
+    // a second POST is refused by the per-workspace unique hostname. Basecamp's
+    // find filters on appId only, so the hostname is matched here.
+    const host   = plan.domain.hostname.toLowerCase()
+    const found  = (await basecamp(origin, key, '/domains?$limit=200')).find(d => d.hostname.toLowerCase() === host)
+    if (found && found.appId !== owner.id)
+      throw new Error(`${plan.domain.hostname} is already a Domain of another App (${found.appId}) — move it in Basecamp, or pass a different --domain`)
+    const domain = found ?? await basecamp(origin, key, '/domains', { method: 'POST', body: { appId: owner.id, hostname: plan.domain.hostname } })
     for (const pathPrefix of plan.domain.routes)
       await basecamp(origin, key, '/domainRoutes', { method: 'POST', body: { domainId: domain.id, pathPrefix, appId: app.id } })
   }

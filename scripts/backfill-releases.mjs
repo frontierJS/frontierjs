@@ -29,7 +29,7 @@ import { tarballStem }                          from '../packages/cli/core/vendo
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const argv = process.argv.slice(2)
 const run  = argv.includes('--run')
-const only = argv[argv.indexOf('--only') + 1]
+const only = argv.includes('--only') ? argv[argv.indexOf('--only') + 1] : null
 const sh   = (cmd, args, opts = {}) => String(execFileSync(cmd, args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts })).trim()
 
 const held = hosts(root)

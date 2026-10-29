@@ -9,6 +9,7 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
 | File | What it owns |
 | --- | --- |
 | `src/config.js` | every environment variable, and the three that have no safe default |
+| `src/layout.js` | **every path on a box** (`FJS-D1544`) — `/etc/outpost`, `/var/lib/outpost` and the `/frontier-outpost` links, from systemd's `$CONFIGURATION_DIRECTORY`/`$STATE_DIRECTORY` when set. Basecamp's `installScript()` imports it, so the unit's sandbox and this process name one place; `compute.test.ts` fails a path the install names outside its roots |
 | `src/docker.js` | **the one place a command runs on the machine** — `createDocker` for containers, `createInspector` for volumes, disk and `posture()`: the box's defenses as facts, a failed or missing command `null` (unknown) per key, never a verdict. Its argv table is `test/fixtures/posture/capture.mjs`'s, and the replay test refuses one the capture lacks |
 | `src/server.js` | the inbound half: the route table, and the signature every route but `/health` requires. `/deploy-key` mints an app's key when Basecamp makes the App |
 | `src/static.js` | **the other kind of release** — an app whose source is the FILES. Writes them under their own digest, swaps one symlink, and computes the digest itself. `activate` links the app's ID as a host label as well as its slug: a routed hostname reaches the ID, because a slug is a label any app on the machine may take over |
@@ -16,7 +17,7 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
 | `src/vitals.js` | what the machine feels like — cpu, memory, disk, load, read from `/proc` and `statfs`. It REMEMBERS: cpu is a delta |
 | `src/report.js` | the outbound half: heartbeat, volume report, disk report — one signed POST, three callers. The heartbeat carries `replication`, Litestream's `/list` read off its control socket, and `deploy_keys`, the public halves |
 | `src/ingress.js` | **the machine's front door** — Caddy's admin API: a route per app (`@id` `fjs-<app>`) PATCHed on deploy, on `/route` (`static: true` for an inline app) and on `/static/activate` (to the static origin, Host set to `<app_id>.localhost`), DELETEd on stop and `/static/retire`, the ingress server made on the first one. `routes()` reads it back (`POST /ingress`) for basecamp's Routes card, every writer's routes and every other http server. A `redirects: [{host, to}]` list is a SECOND route, `fjs-<app>-redirects`, a Caddy-answered 308 that needs no container; a target is an http(s) URL with no braces, because Caddy expands `{…}` in a header, and an origin-only target keeps the request's path. `paths: [{host, prefix}]` is how two apps share a hostname (`FJS-D1040`): one route per prefix, `fjs-<app>-path-<n>`, kept longest prefix first AHEAD of every whole-host route by a PATCH of the routes array after each write — Caddy answers the first match, so an appended path route would never be reached. Only the same host and prefix is refused; the prefix is kept, never stripped. A whole-host route also gets its access log (`FJS-1928`): the server's `logger_names` maps each host to the route's `@id`, and Caddy's `logging` writes `/var/log/caddy/<id>.access.log`, excluded from the default log — `edge.js`'s shape under `fjs-`. A path route's hosts are not mapped (one host, one logger), so a shared hostname logs under the app that owns the whole host |
-| `src/replicate.js` | **Litestream's config** — `/replicate`'s list becomes `/etc/basecamp/litestream.yml` and a restart; `status()` reads `/list` off the control socket. A `host` entry is Basecamp's own database, at `OUTPOST_HOST_DB_PATH`, and every other machine skips it with a reason. `stage()` is `/replica/restore`'s download half |
+| `src/replicate.js` | **Litestream's config** — `/replicate`'s list becomes `/etc/outpost/litestream.yml` and a restart; `status()` reads `/list` off the control socket. A `host` entry is Basecamp's own database, at `OUTPOST_HOST_DB_PATH`, and every other machine skips it with a reason. `stage()` is `/replica/restore`'s download half |
 | `src/cert.js` | the command port's self-signed certificate — made once, kept, and the argv the install script builds its own openssl line from |
 | `src/deploy-key.js` | each app's deploy key (`FJS-D1555`) — `cert.js`'s rule: made once, kept, never sent; `build` clones with it via `GIT_SSH_COMMAND` |
 | `src/dockerfile.js` | **which Dockerfile a build uses, whether it installs from `deploy/generated/`, and which port its last `EXPOSE` names** — the App's stored copy, `deploy/Dockerfile`, the root's; `fli basecamp:deploy` imports the same functions (`FJS-D1560`), so the laptop and the push choose alike, and Basecamp's `fromRepo` reads the seed's port with the one `build` reports. No `Bun` global at import: the cli loads it under node too |
@@ -32,15 +33,15 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   would register no target for it and the machine would look healthy.
 
 - **The unit is sandboxed and `/exec` is not** (`FJS-1761`, `FJS-D602`).
-  `installScript()`'s unit writes only `/var/lib/outpost`, `/etc/basecamp` and
+  `installScript()`'s unit writes only `/var/lib/outpost`, `/etc/outpost` and
   bun's install dir, and `exec` runs its command as `systemd-run --pipe --wait`,
   a transient unit outside that namespace — `--user` when the Outpost is not
   root, since the system manager refuses that caller through polkit (`FJS-3353`). A new write path in this package
-  needs a `ReadWritePaths` entry there, or it fails on a machine and in no test.
+  goes in `layout.js` under one of its roots, or it fails on a machine and in no test.
   Killing the systemd-run client does not stop its unit, so the timeout is
   `RuntimeMaxSec` on the unit. Never run on a machine (`IDEAS/zero-to-live.md` 0.3).
   Litestream is the install's `basecamp-litestream.service`, outside the sandbox
-  because it writes into every app's volume, reading `/etc/basecamp/litestream.yml`,
+  because it writes into every app's volume, reading `/etc/outpost/litestream.yml`,
   which this process may write.
 - **The route bodies are basecamp's wire contract and they are snake_case.**
   `app_id`, `timeout_s`, `keep_images`, `server_id`. Inside is camelCase. A route

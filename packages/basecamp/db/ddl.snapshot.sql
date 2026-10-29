@@ -144,14 +144,15 @@ CREATE INDEX IF NOT EXISTS "idx_kv_entry_expiresAt" ON "kv_entry" ("expiresAt");
 CREATE TABLE IF NOT EXISTS "account" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "type" TEXT NOT NULL DEFAULT 'organization',
-  "status" TEXT NOT NULL DEFAULT 'pending_verification',
+  "status" TEXT NOT NULL DEFAULT 'active',
   "slug" TEXT NOT NULL UNIQUE,
   "displayName" TEXT NOT NULL,
   "avatarUrl" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
-  CHECK ("type" IN ('individual', 'organization'))
+  CHECK ("type" IN ('individual', 'organization')),
+  CHECK ("status" IN ('active', 'suspended'))
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_account_deletedAt" ON "account" ("deletedAt") WHERE "deletedAt" IS NULL;
 
@@ -174,6 +175,8 @@ CREATE TABLE IF NOT EXISTS "network" (
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
+  CHECK ("type" IN ('mesh', 'vpc')),
+  CHECK ("provider" IN ('netbird', 'tailscale', 'wireguard')),
   UNIQUE ("workspaceId", "slug")
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_network_deletedAt" ON "network" ("deletedAt") WHERE "deletedAt" IS NULL;
@@ -249,19 +252,17 @@ CREATE TABLE IF NOT EXISTS "user" (
   "email" TEXT NOT NULL UNIQUE,
   "name" TEXT,
   "emailVerified" INTEGER NOT NULL DEFAULT 0,
-  "role" TEXT NOT NULL DEFAULT 'user',
   "accountId" TEXT,
   "kind" TEXT NOT NULL DEFAULT 'user',
   "status" TEXT NOT NULL DEFAULT 'pending_verification',
   "username" TEXT,
   "displayName" TEXT,
   "avatarUrl" TEXT,
-  "scopes" TEXT NOT NULL DEFAULT '[]',
   "isSystemAdmin" INTEGER NOT NULL DEFAULT 0,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
-  CHECK ("kind" IN ('user', 'bot', 'peer', 'ai')),
+  CHECK ("kind" IN ('user', 'bot', 'peer')),
   CHECK ("status" IN ('pending_verification', 'active', 'suspended')),
   UNIQUE ("accountId", "username"),
   FOREIGN KEY ("accountId") REFERENCES "account" ("id")
@@ -269,29 +270,6 @@ CREATE TABLE IF NOT EXISTS "user" (
 CREATE INDEX IF NOT EXISTS "idx_user_accountId" ON "user" ("accountId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_user_email" ON "user" ("email") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_user_deletedAt" ON "user" ("deletedAt") WHERE "deletedAt" IS NULL;
-
-CREATE TABLE IF NOT EXISTS "workspace" (
-  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
-  "accountId" TEXT NOT NULL,
-  "name" TEXT NOT NULL,
-  "slug" TEXT NOT NULL UNIQUE,
-  "type" TEXT NOT NULL DEFAULT 'team',
-  "ownerId" TEXT NOT NULL,
-  "settings" TEXT NOT NULL DEFAULT '{}',
-  "status" TEXT NOT NULL DEFAULT 'active',
-  "ingressAccountId" TEXT,
-  "ingressZoneId" TEXT,
-  "version" INTEGER NOT NULL DEFAULT 1,
-  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "deletedAt" TEXT,
-  CHECK ("type" IN ('personal', 'team', 'enterprise')),
-  CHECK ("status" IN ('active', 'suspended')),
-  CHECK ((ingressAccountId IS NULL) = (ingressZoneId IS NULL)),
-  FOREIGN KEY ("accountId") REFERENCES "account" ("id")
-) STRICT;
-CREATE INDEX IF NOT EXISTS "idx_workspace_accountId" ON "workspace" ("accountId") WHERE "deletedAt" IS NULL;
-CREATE INDEX IF NOT EXISTS "idx_workspace_deletedAt" ON "workspace" ("deletedAt") WHERE "deletedAt" IS NULL;
 
 CREATE TABLE IF NOT EXISTS "blueprint_param" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -367,6 +345,32 @@ CREATE TABLE IF NOT EXISTS "session" (
 CREATE INDEX IF NOT EXISTS "idx_session_userId" ON "session" ("userId");
 CREATE INDEX IF NOT EXISTS "idx_session_expiresAt" ON "session" ("expiresAt");
 
+CREATE TABLE IF NOT EXISTS "workspace" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "accountId" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "slug" TEXT NOT NULL UNIQUE,
+  "type" TEXT NOT NULL DEFAULT 'team',
+  "ownerId" TEXT NOT NULL,
+  "settings" TEXT NOT NULL DEFAULT '{}',
+  "status" TEXT NOT NULL DEFAULT 'active',
+  "expiresAt" TEXT,
+  "ingressAccountId" TEXT,
+  "ingressZoneId" TEXT,
+  "version" INTEGER NOT NULL DEFAULT 1,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "deletedAt" TEXT,
+  CHECK ("type" IN ('personal', 'team', 'enterprise', 'demo')),
+  CHECK ("status" IN ('active', 'suspended')),
+  CHECK ((ingressAccountId IS NULL) = (ingressZoneId IS NULL)),
+  CHECK ((type = 'demo') = (expiresAt IS NOT NULL)),
+  FOREIGN KEY ("accountId") REFERENCES "account" ("id"),
+  FOREIGN KEY ("ownerId") REFERENCES "user" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_workspace_accountId" ON "workspace" ("accountId") WHERE "deletedAt" IS NULL;
+CREATE INDEX IF NOT EXISTS "idx_workspace_deletedAt" ON "workspace" ("deletedAt") WHERE "deletedAt" IS NULL;
+
 CREATE TABLE IF NOT EXISTS "notification" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "userId" TEXT NOT NULL,
@@ -396,6 +400,34 @@ CREATE TABLE IF NOT EXISTS "notification_preference" (
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_notification_preference_userId" ON "notification_preference" ("userId");
+
+CREATE TABLE IF NOT EXISTS "run_step" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "runId" TEXT NOT NULL,
+  "nodeId" TEXT NOT NULL,
+  "status" TEXT NOT NULL,
+  "attempts" INTEGER NOT NULL DEFAULT 0,
+  "fromCache" INTEGER NOT NULL DEFAULT 0,
+  "startedAt" TEXT,
+  "durationMs" INTEGER,
+  "output" TEXT,
+  "error" TEXT,
+  "logs" TEXT,
+  CHECK ("status" IN ('pending', 'running', 'completed', 'failed', 'skipped')),
+  UNIQUE ("runId", "nodeId"),
+  FOREIGN KEY ("runId") REFERENCES "run" ("id") ON DELETE CASCADE
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "wait" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "resumeKey" TEXT NOT NULL UNIQUE,
+  "runId" TEXT NOT NULL,
+  "nodeId" TEXT NOT NULL,
+  "timeoutAt" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  FOREIGN KEY ("runId") REFERENCES "run" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_wait_timeoutAt" ON "wait" ("timeoutAt");
 
 CREATE TABLE IF NOT EXISTS "workspace_member" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -437,7 +469,8 @@ CREATE TABLE IF NOT EXISTS "secret" (
   "name" TEXT NOT NULL,
   "kind" TEXT NOT NULL DEFAULT 'generic',
   "data" TEXT NOT NULL DEFAULT '{}',
-  "isVerified" INTEGER NOT NULL DEFAULT 0,
+  "verifiedAt" TEXT,
+  "verifyError" TEXT,
   "createdBy" TEXT,
   "providerKind" TEXT,
   "version" INTEGER NOT NULL DEFAULT 1,
@@ -512,6 +545,7 @@ CREATE TABLE IF NOT EXISTS "server" (
   CHECK ("status" IN ('pending', 'provisioning', 'installing', 'online', 'unreachable', 'draining', 'stopped', 'destroying', 'destroyed')),
   CHECK ("role" IN ('general', 'build', 'database', 'gateway', 'worker')),
   CHECK ("providerKind" IN ('custom', 'hetzner', 'digitalocean', 'cloudflare', 'github')),
+  CHECK ("registerMethod" IN ('imported', 'provisioned')),
   UNIQUE ("workspaceId", "slug"),
   CHECK (providerKind != 'cloudflare'),
   CHECK (providerKind != 'github'),
@@ -535,6 +569,7 @@ CREATE TABLE IF NOT EXISTS "project" (
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
+  CHECK ("status" IN ('active', 'archived')),
   UNIQUE ("workspaceId", "slug"),
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
 ) STRICT;
@@ -749,34 +784,6 @@ CREATE TABLE IF NOT EXISTS "dependency" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_dependency_workspaceId" ON "dependency" ("workspaceId");
 
-CREATE TABLE IF NOT EXISTS "run_step" (
-  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
-  "runId" TEXT NOT NULL,
-  "nodeId" TEXT NOT NULL,
-  "status" TEXT NOT NULL,
-  "attempts" INTEGER NOT NULL DEFAULT 0,
-  "fromCache" INTEGER NOT NULL DEFAULT 0,
-  "startedAt" TEXT,
-  "durationMs" INTEGER,
-  "output" TEXT,
-  "error" TEXT,
-  "logs" TEXT,
-  CHECK ("status" IN ('pending', 'running', 'completed', 'failed', 'skipped')),
-  UNIQUE ("runId", "nodeId"),
-  FOREIGN KEY ("runId") REFERENCES "run" ("id") ON DELETE CASCADE
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS "wait" (
-  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
-  "resumeKey" TEXT NOT NULL UNIQUE,
-  "runId" TEXT NOT NULL,
-  "nodeId" TEXT NOT NULL,
-  "timeoutAt" TEXT,
-  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  FOREIGN KEY ("runId") REFERENCES "run" ("id") ON DELETE CASCADE
-) STRICT;
-CREATE INDEX IF NOT EXISTS "idx_wait_timeoutAt" ON "wait" ("timeoutAt");
-
 CREATE TABLE IF NOT EXISTS "server_event" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "serverId" TEXT NOT NULL,
@@ -849,24 +856,27 @@ CREATE TABLE IF NOT EXISTS "server_posture" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_server_posture_serverId_at" ON "server_posture" ("serverId", "at");
 
-CREATE TABLE IF NOT EXISTS "cleanup_run" (
+CREATE TABLE IF NOT EXISTS "maintenance_run" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "serverId" TEXT NOT NULL,
+  "kind" TEXT NOT NULL,
   "status" TEXT NOT NULL DEFAULT 'pending',
   "targets" TEXT NOT NULL DEFAULT '[]' CHECK (json_valid("targets") AND json_type("targets") = 'array'),
   "keepImages" INTEGER NOT NULL DEFAULT 3,
   "requestedBy" TEXT,
   "freedBytes" INTEGER NOT NULL DEFAULT 0,
+  "upgrades" TEXT NOT NULL DEFAULT '[]',
   "detail" TEXT NOT NULL DEFAULT '{}',
   "error" TEXT,
   "startedAt" TEXT,
   "finishedAt" TEXT,
   "durationMs" INTEGER,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("kind" IN ('cleanup', 'patch')),
   CHECK ("status" IN ('pending', 'running', 'success', 'failed', 'timeout')),
   FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE
 ) STRICT;
-CREATE INDEX IF NOT EXISTS "idx_cleanup_run_serverId" ON "cleanup_run" ("serverId");
+CREATE INDEX IF NOT EXISTS "idx_maintenance_run_serverId" ON "maintenance_run" ("serverId");
 
 CREATE TABLE IF NOT EXISTS "environment" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -1145,6 +1155,8 @@ CREATE TABLE IF NOT EXISTS "domain" (
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
+  CHECK ("sslMode" IN ('off', 'flexible', 'full', 'full_strict')),
+  CHECK ("certKind" IN ('acme', 'origin_ca', 'uploaded')),
   UNIQUE ("workspaceId", "hostname"),
   FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE
 ) STRICT;
@@ -1175,6 +1187,7 @@ CREATE TABLE IF NOT EXISTS "app_server" (
   "assignedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "startedAt" TEXT,
   "stoppedAt" TEXT,
+  CHECK ("status" IN ('unknown', 'stopped', 'starting', 'running', 'stopping', 'deploying', 'error')),
   UNIQUE ("appId", "serverId", "replicaIndex"),
   FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE,
   FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE
@@ -1197,7 +1210,6 @@ CREATE INDEX IF NOT EXISTS "idx_app_network_networkId" ON "app_network" ("networ
 CREATE TABLE IF NOT EXISTS "deployment" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "appId" TEXT NOT NULL,
-  "environmentId" TEXT,
   "workspaceId" TEXT NOT NULL,
   "status" TEXT NOT NULL DEFAULT 'pending',
   "trigger" TEXT NOT NULL DEFAULT 'button',
@@ -1220,20 +1232,17 @@ CREATE TABLE IF NOT EXISTS "deployment" (
   CHECK ("status" IN ('pending', 'building', 'success', 'failed', 'cancelled', 'rolled_back')),
   CHECK ("trigger" IN ('button', 'push', 'laptop', 'rollback', 'rebind', 'publish', 'freeze')),
   FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE,
-  FOREIGN KEY ("environmentId") REFERENCES "environment" ("id"),
   FOREIGN KEY ("triggeredBy") REFERENCES "user" ("id")
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_deployment_appId" ON "deployment" ("appId");
 CREATE INDEX IF NOT EXISTS "idx_deployment_workspaceId" ON "deployment" ("workspaceId");
 CREATE INDEX IF NOT EXISTS "idx_deployment_status" ON "deployment" ("status");
-CREATE INDEX IF NOT EXISTS "idx_deployment_environmentId" ON "deployment" ("environmentId");
 CREATE INDEX IF NOT EXISTS "idx_deployment_triggeredBy" ON "deployment" ("triggeredBy");
 
 CREATE TABLE IF NOT EXISTS "job" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "workspaceId" TEXT NOT NULL,
   "appId" TEXT,
-  "environmentId" TEXT,
   "name" TEXT NOT NULL,
   "kind" TEXT NOT NULL DEFAULT 'one_shot',
   "status" TEXT NOT NULL DEFAULT 'pending',
@@ -1252,15 +1261,13 @@ CREATE TABLE IF NOT EXISTS "job" (
   CHECK ("kind" IN ('one_shot', 'scheduled', 'triggered', 'workflow')),
   CHECK ("status" IN ('pending', 'running', 'failed', 'cancelled')),
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE,
-  FOREIGN KEY ("appId") REFERENCES "app" ("id"),
-  FOREIGN KEY ("environmentId") REFERENCES "environment" ("id")
+  FOREIGN KEY ("appId") REFERENCES "app" ("id")
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_job_workspaceId" ON "job" ("workspaceId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_job_appId" ON "job" ("appId") WHERE "deletedAt" IS NULL;
-CREATE INDEX IF NOT EXISTS "idx_job_environmentId" ON "job" ("environmentId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_job_deletedAt" ON "job" ("deletedAt") WHERE "deletedAt" IS NULL;
 
-CREATE TABLE IF NOT EXISTS "dashboard_widget" (
+CREATE TABLE IF NOT EXISTS "dashboard_tile" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "dashboardId" TEXT NOT NULL,
   "kind" TEXT NOT NULL,
@@ -1276,9 +1283,9 @@ CREATE TABLE IF NOT EXISTS "dashboard_widget" (
   FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE SET NULL,
   FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE SET NULL
 ) STRICT;
-CREATE INDEX IF NOT EXISTS "idx_dashboard_widget_dashboardId" ON "dashboard_widget" ("dashboardId");
-CREATE INDEX IF NOT EXISTS "idx_dashboard_widget_serverId" ON "dashboard_widget" ("serverId");
-CREATE INDEX IF NOT EXISTS "idx_dashboard_widget_appId" ON "dashboard_widget" ("appId");
+CREATE INDEX IF NOT EXISTS "idx_dashboard_tile_dashboardId" ON "dashboard_tile" ("dashboardId");
+CREATE INDEX IF NOT EXISTS "idx_dashboard_tile_serverId" ON "dashboard_tile" ("serverId");
+CREATE INDEX IF NOT EXISTS "idx_dashboard_tile_appId" ON "dashboard_tile" ("appId");
 
 CREATE TABLE IF NOT EXISTS "domain_route" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),

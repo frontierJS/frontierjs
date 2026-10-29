@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-156 definitions · 73 models · 1 view · 37 types · 45 enums · 0 other
+164 definitions · 73 models · 1 view · 37 types · 53 enums · 0 other
 ```
 
 ## Definitions
@@ -74,7 +74,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `RecipeRun` | model |
 | `DiskUsage` | model |
 | `ServerPosture` | model |
-| `CleanupRun` | model |
+| `MaintenanceRun` | model |
 | `FeatureFlag` | model |
 | `FlagOverride` | model |
 | `NotificationChannel` | model |
@@ -87,7 +87,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `MonitorEvent` | model |
 | `MonitorChannel` | model |
 | `Dashboard` | model |
-| `DashboardWidget` | model |
+| `DashboardTile` | model |
 | `AuditEvent` | model |
 | `Blueprint` | model |
 | `BlueprintParam` | model |
@@ -111,12 +111,19 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `UserKind` | enum |
 | `UserStatus` | enum |
 | `WorkspaceStatus` | enum |
+| `AccountStatus` | enum |
 | `ProvisionStepName` | enum |
 | `SecretKind` | enum |
 | `ServerStatus` | enum |
 | `ServerRole` | enum |
 | `ServerEventKind` | enum |
 | `ProviderKind` | enum |
+| `RegisterMethod` | enum |
+| `CertKind` | enum |
+| `SslMode` | enum |
+| `ProjectStatus` | enum |
+| `NetworkType` | enum |
+| `NetworkProvider` | enum |
 | `EnvironmentTier` | enum |
 | `AppType` | enum |
 | `AppStatus` | enum |
@@ -126,6 +133,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `JobKind` | enum |
 | `JobStatus` | enum |
 | `RunStatus` | enum |
+| `MaintenanceKind` | enum |
 | `AlertSeverity` | enum |
 | `MonitorStatus` | enum |
 | `HttpMethod` | enum |
@@ -135,7 +143,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `ActorKind` | enum |
 | `ChannelKind` | enum |
 | `FlagType` | enum |
-| `WidgetKind` | enum |
+| `TileKind` | enum |
 | `ParamGenerator` | enum |
 | `BackupKind` | enum |
 | `DrillKind` | enum |
@@ -151,9 +159,9 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `FlagChange` | type |
 | `WorkspaceMemberAdd` | type |
 | `WorkspaceMemberRole` | type |
-| `WidgetAdd` | type |
-| `WidgetUpdate` | type |
-| `WidgetRemove` | type |
+| `TileAdd` | type |
+| `TileUpdate` | type |
+| `TileRemove` | type |
 | `DashboardReorder` | type |
 | `AlertChannelRef` | type |
 | `MonitorChannelRef` | type |
@@ -194,17 +202,24 @@ validates, and a select that silently drops an option.
 - `FlowStepStatus` — `pending`, `running`, `completed`, `failed`, `skipped`
 - `FlowCredentialAuth` — `none`, `bearer`, `api_key`, `hmac`
 - `AccountType` — `individual`, `organization`
-- `WorkspaceType` — `personal`, `team`, `enterprise`
+- `WorkspaceType` — `personal`, `team`, `enterprise`, `demo`
 - `WorkspaceRole` — `viewer`, `billing`, `developer`, `admin`, `owner`
-- `UserKind` — `user`, `bot`, `peer`, `ai`
+- `UserKind` — `user`, `bot`, `peer`
 - `UserStatus` — `pending_verification`, `active`, `suspended`
 - `WorkspaceStatus` — `active`, `suspended`
+- `AccountStatus` — `active`, `suspended`
 - `ProvisionStepName` — `start`, `create`, `poll`, `timeout`
 - `SecretKind` — `ssh_key`, `provider_key`, `registry_auth`, `tls_cert`, `notification`, `backup`, `generic`
 - `ServerStatus` — `pending`, `provisioning`, `installing`, `online`, `unreachable`, `draining`, `stopped`, `destroying`, `destroyed`
 - `ServerRole` — `general`, `build`, `database`, `gateway`, `worker`
 - `ServerEventKind` — `created`, `removed`, `reboot_requested`, `drain_started`, `drain_cancelled`, `provision_requested`, `provision_created`, `provision_ready`, `provision_timeout`, `destroy_requested`, `destroy_finished`, `enrollment_issued`, `sync_requested`, `status_synced`, `status_sync_ignored`, `sync_failed`, `sync_no_account`, `sync_unsupported`, `sync_unrecognized`, `came_online`, `unreachable`, `recipe_ran`, `recipe_failed`, `cleanup_queued`, `cleanup_ran`, `cleanup_failed`, `volume_removed`, `volumes_pruned`, `posture_failed`, `posture_restored`
 - `ProviderKind` — `custom`, `hetzner`, `digitalocean`, `cloudflare`, `github`
+- `RegisterMethod` — `imported`, `provisioned`
+- `CertKind` — `acme`, `origin_ca`, `uploaded`
+- `SslMode` — `off`, `flexible`, `full`, `full_strict`
+- `ProjectStatus` — `active`, `archived`
+- `NetworkType` — `mesh`, `vpc`
+- `NetworkProvider` — `netbird`, `tailscale`, `wireguard`
 - `EnvironmentTier` — `development`, `test`, `preview`, `staging`, `production`
 - `AppType` — `container`, `worker`, `database`, `daemon`, `cron`, `static`, `function`
 - `AppStatus` — `unknown`, `stopped`, `starting`, `running`, `stopping`, `deploying`, `error`
@@ -214,6 +229,7 @@ validates, and a select that silently drops an option.
 - `JobKind` — `one_shot`, `scheduled`, `triggered`, `workflow`
 - `JobStatus` — `pending`, `running`, `failed`, `cancelled`
 - `RunStatus` — `pending`, `running`, `success`, `failed`, `timeout`
+- `MaintenanceKind` — `cleanup`, `patch`
 - `AlertSeverity` — `info`, `warning`, `critical`
 - `MonitorStatus` — `pending`, `up`, `down`, `paused`
 - `HttpMethod` — `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`
@@ -223,7 +239,7 @@ validates, and a select that silently drops an option.
 - `ActorKind` — `user`, `api_key`, `system`, `support`
 - `ChannelKind` — `slack`, `pagerduty`, `email`, `webhook`, `chat`
 - `FlagType` — `boolean`, `variant`
-- `WidgetKind` — `server_fleet`, `server_health`, `app_status`, `deploy_feed`, `job_history`, `activity_feed`, `alert_status`, `service_health`, `stat_counter`
+- `TileKind` — `server_fleet`, `server_health`, `app_status`, `deploy_feed`, `job_history`, `activity_feed`, `alert_status`, `service_health`, `stat_counter`
 - `ParamGenerator` — `random_hex_16`, `random_hex_32`, `random_hex_64`
 - `BackupKind` — `manual`, `scheduled`, `found`, `release`
 - `DrillKind` — `manual`, `scheduled`
@@ -555,14 +571,12 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `email` | `string` | yes | — | `format: "email"` `x-litestone-write-claims` `x-litestone-write-policy` `x-transforms` | — |
 | `name` | `string`? | — | — | `x-transforms` | — |
 | `emailVerified` | `boolean` = `false` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
-| `role` | `string` = `"user"` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 | `accountId` | `string`? | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
-| `kind` | `UserKind` = `"user"` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
+| `kind` | `UserKind` = `"user"` | — | — | `x-litestone-kind` | — |
 | `status` | `UserStatus` = `"pending_verification"` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 | `username` | `string`? | — | — | `x-transforms` | — |
 | `displayName` | `string`? | — | — | `x-transforms` | — |
 | `avatarUrl` | `string`? | — | — | — | — |
-| `scopes` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-write-claims` `x-litestone-write-policy` | — |
 | `isSystemAdmin` | `boolean` = `false` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 
 **On create**: required — `email` · not accepted — `id`
@@ -577,7 +591,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `type` | `AccountType` = `"organization"` | — | — | — | — |
-| `status` | `string` = `"pending_verification"` | — | — | — | — |
+| `status` | `AccountStatus` = `"active"` | — | — | — | — |
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` `x-transforms` | — |
 | `displayName` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `avatarUrl` | `string`? | — | — | — | — |
@@ -588,6 +602,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 - gate `read:1 create:1 update:5 delete:6` · version field `version` · closed (`additionalProperties: false`)
 - relation `account` — belongsTo `Account` via `accountId`
+- relation `owner` — belongsTo `User` via `ownerId` · on delete Restrict
 - relation `members` — hasMany `WorkspaceMember`
 - relation `invitations` — hasMany `Invitation`
 - relation `projects` — hasMany `Project`
@@ -612,6 +627,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `ownerId` | `string` | — | — | `x-litestone-kind` | — |
 | `settings` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `status` | `WorkspaceStatus` = `"active"` | — | — | — | — |
+| `expiresAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `ingressAccountId` | `string`? | — | — | — | — |
 | `ingressZoneId` | `string`? | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
@@ -665,7 +681,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `kind` | `SecretKind` = `"generic"` | — | — | — | — |
 | `data` | `string` = `"{}"` | — | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
-| `isVerified` | `boolean` = `false` | — | — | — | — |
+| `verifiedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `verifyError` | `string`? | — | — | `x-litestone-kind` | — |
 | `createdBy` | `string`? | — | — | — | — |
 | `providerKind` | `ProviderKind`? | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
@@ -720,7 +737,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `providerKind` | `ProviderKind` = `"custom"` | — | — | — | — |
 | `providerId` | `string`? | — | — | — | — |
 | `providerServerId` | `string`? | — | — | — | — |
-| `registerMethod` | `string` = `"imported"` | — | — | — | — |
+| `registerMethod` | `RegisterMethod` = `"imported"` | — | — | — | — |
 | `region` | `string` = `"custom"` | — | — | — | — |
 | `ipAddress` | `string`? | — | — | — | — |
 | `ipv6Address` | `string`? | — | — | — | — |
@@ -800,9 +817,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `x-transforms` | — |
 | `slug` | `string` | yes | — | `x-transforms` | — |
-| `type` | `string` = `"mesh"` | — | — | — | — |
+| `type` | `NetworkType` = `"mesh"` | — | — | — | — |
 | `cidr` | `string` = `"10.0.0.0/16"` | — | — | — | — |
-| `provider` | `string` = `"netbird"` | — | — | — | — |
+| `provider` | `NetworkProvider` = `"netbird"` | — | — | — | — |
 | `config` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
@@ -838,7 +855,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` `x-transforms` | — |
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` `x-transforms` | — |
 | `description` | `string`? | — | — | — | — |
-| `status` | `string` = `"active"` | — | — | — | — |
+| `status` | `ProjectStatus` = `"active"` | — | — | — | — |
 | `tags` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `metadata` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
@@ -850,8 +867,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - gate `read:2 create:4 update:4 delete:5` · version field `version` · closed (`additionalProperties: false`)
 - relation `project` — belongsTo `Project` via `projectId` · on delete Cascade
 - relation `apps` — hasMany `App`
-- relation `deployments` — hasMany `Deployment`
-- relation `jobs` — hasMany `Job`
 - relation `flagOverrides` — hasMany `FlagOverride`
 - relation `variables` — hasMany `Variable`
 - capabilities — `Environment.create` · `Environment.update` · `Environment.delete` · read is not graded
@@ -956,9 +971,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `redirectTo` | `string`? | — | — | — | — |
 | `port` | `integer` = `443` | — | — | — | — |
 | `proxied` | `boolean` = `false` | — | — | — | — |
-| `sslMode` | `string` = `"full_strict"` | — | — | — | — |
+| `sslMode` | `SslMode` = `"full_strict"` | — | — | — | — |
 | `certSecretId` | `string`? | — | — | `x-litestone-kind` | — |
-| `certKind` | `string`? | — | — | `x-litestone-kind` | — |
+| `certKind` | `CertKind`? | — | — | `x-litestone-kind` | — |
 | `certIssuedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `certExpiresAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
@@ -1008,7 +1023,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `appId` | `string` | yes | — | — | — |
 | `serverId` | `string` | yes | — | — | — |
 | `replicaIndex` | `integer` = `0` | — | — | — | — |
-| `status` | `string` = `"unknown"` | — | — | — | — |
+| `status` | `AppStatus` = `"unknown"` | — | — | — | — |
 | `containerId` | `string`? | — | — | — | — |
 | `assignedAt` | `string` | — | — | `format: "date-time"` | — |
 | `startedAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -1092,7 +1107,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 - gate `read:2 create:4 update:4 delete:4` · closed (`additionalProperties: false`)
 - relation `app` — belongsTo `App` via `appId` · on delete Cascade
-- relation `environment` — belongsTo `Environment` via `environmentId` · optional
 - relation `triggeredByUser` — belongsTo `User` via `triggeredBy` · optional
 - relation `steps` — hasMany `DeploymentStep`
 - relation `appBackups` — hasMany `AppBackup`
@@ -1103,7 +1117,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `appId` | `string` | yes | — | — | — |
-| `environmentId` | `string`? | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `status` | `DeployStatus` = `"pending"` | — | — | — | — |
 | `trigger` | `DeployTrigger` = `"button"` | — | — | — | — |
@@ -1148,7 +1161,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - gate `read:2 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
 - relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
 - relation `app` — belongsTo `App` via `appId` · optional
-- relation `environment` — belongsTo `Environment` via `environmentId` · optional
 - relation `runs` — hasMany `JobRun`
 - transitions on `status` — `start`: pending|failed → running @system · `idle`: running → pending @system · `fail`: running → failed @system · `cancel`: pending|running|failed → cancelled
 
@@ -1157,7 +1169,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `appId` | `string`? | — | — | — | — |
-| `environmentId` | `string`? | — | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `kind` | `JobKind` = `"one_shot"` | — | — | — | — |
 | `status` | `JobStatus` = `"pending"` | — | — | — | — |
@@ -1278,7 +1289,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 **On create**: required — `serverId`, `at` · not accepted — `id`
 
-### `CleanupRun`
+### `MaintenanceRun`
 
 - gate `read:2 create:4 update:8 delete:8` · closed (`additionalProperties: false`)
 - relation `server` — belongsTo `Server` via `serverId` · on delete Cascade
@@ -1287,18 +1298,20 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `serverId` | `string` | yes | — | — | — |
+| `kind` | `MaintenanceKind` | yes | — | — | — |
 | `status` | `RunStatus` = `"pending"` | — | — | — | — |
 | `targets` | `string[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
 | `keepImages` | `integer` = `3` | — | — | `minimum: 0` `maximum: 50` | — |
 | `requestedBy` | `string`? | — | — | — | — |
 | `freedBytes` | `integer` = `0` | — | — | — | — |
+| `upgrades` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `detail` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `error` | `string`? | — | — | — | — |
 | `startedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `finishedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `durationMs` | `integer`? | — | — | — | — |
 
-**On create**: required — `serverId` · not accepted — `id`
+**On create**: required — `serverId`, `kind` · not accepted — `id`
 
 ### `FeatureFlag`
 
@@ -1537,7 +1550,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 - gate `read:2 create:4 update:4 delete:4` · version field `version` · closed (`additionalProperties: false`)
 - relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
-- relation `widgets` — hasMany `DashboardWidget`
+- relation `tiles` — hasMany `DashboardTile`
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -1553,7 +1566,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 **On create**: required — `name`, `slug` · not accepted — `id`, `version`
 
-### `DashboardWidget`
+### `DashboardTile`
 
 - gate `read:2 create:4 update:4 delete:4` · closed (`additionalProperties: false`)
 - relation `dashboard` — belongsTo `Dashboard` via `dashboardId` · on delete Cascade
@@ -1564,7 +1577,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `dashboardId` | `string` | yes | — | — | — |
-| `kind` | `WidgetKind` | yes | — | — | — |
+| `kind` | `TileKind` | yes | — | — | — |
 | `serverId` | `string`? | — | — | — | — |
 | `appId` | `string`? | — | — | — | — |
 | `config` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
@@ -1885,13 +1898,13 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 **On create**: required — `userId`, `role`
 
-### `WidgetAdd`
+### `TileAdd`
 
 - closed (`additionalProperties: false`)
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
-| `kind` | `WidgetKind` | yes | — | — | — |
+| `kind` | `TileKind` | yes | — | — | — |
 | `serverId` | `string`? | — | — | — | — |
 | `appId` | `string`? | — | — | — | — |
 | `config` | `json`? | — | — | — | — |
@@ -1899,30 +1912,30 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 **On create**: required — `kind`
 
-### `WidgetUpdate`
+### `TileUpdate`
 
 - closed (`additionalProperties: false`)
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
-| `widgetId` | `string` | yes | — | — | — |
-| `kind` | `WidgetKind`? | — | — | — | — |
+| `tileId` | `string` | yes | — | — | — |
+| `kind` | `TileKind`? | — | — | — | — |
 | `serverId` | `string`? | — | — | — | — |
 | `appId` | `string`? | — | — | — | — |
 | `config` | `json`? | — | — | — | — |
 | `cols` | `integer`? | — | — | — | — |
 
-**On create**: required — `widgetId`
+**On create**: required — `tileId`
 
-### `WidgetRemove`
+### `TileRemove`
 
 - closed (`additionalProperties: false`)
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
-| `widgetId` | `string` | yes | — | — | — |
+| `tileId` | `string` | yes | — | — | — |
 
-**On create**: required — `widgetId`
+**On create**: required — `tileId`
 
 ### `DashboardReorder`
 
