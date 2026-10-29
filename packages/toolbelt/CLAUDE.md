@@ -71,5 +71,5 @@ touching datetime, json, units, sigv4, inflect or glow.
 | `directives` | `packages/junction`: `bun run test` — the bridge strips by this table, and `live-order.test.ts` asserts both transports only emit names it holds. Then `packages/sierra`: `bun run test` (`page-query.test.js`), and `example`: `verify` for a real navigation. **The orderBy pair has a third caller and a browser is the only place it runs**: `packages/ui`: `test:browser`, whose `Table — the modes` pushes the object and bracket-indexed shapes through the prop, each paired with a header that must stay unmarked |
 
 <!-- layout-named: the file names fli done grades a new module against, kept here because done.js reads this file by path. The map itself is docs/layout.md.
-glow.js package.json parse.js seeded.js template.js tokenize.js values.js 
+glow.js package.json parse.js qr.js seeded.js template.js tokenize.js values.js 
 -->

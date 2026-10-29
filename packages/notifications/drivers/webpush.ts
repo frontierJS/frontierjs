@@ -37,6 +37,12 @@ import { stateOf } from '../state.ts'
  * rejected `fetch`) is collected and thrown AFTER every device was tried, so
  * one dead phone does not hold back the others and a retry is not a silent
  * success.
+ *
+ * ── A tab on screen ─────────────────────────────────────────────────────
+ * A recipient with a visible tab of the app is skipped: the page has just
+ * shown the in-app frame, and a phone buzzing for it is a duplicate
+ * (`FJS-D1627`). The answer is junction's channel manager, so it covers this
+ * process's sockets only; with no `channels()` configured nobody is visible.
  */
 
 // ─── Public shapes ──────────────────────────────────────────────────────────
@@ -276,6 +282,7 @@ export function webPush(opts: WebPushOptions): NotificationDriver & { vapidPubli
     vapidPublicKey: opts.vapid.publicKey,
     async send(recipient: Recipient, message: unknown, app: App): Promise<void> {
       const msg = message as PushMessage
+      if (recipient.id != null && 'channels' in app && app.channels?.hasVisibleConnection(recipient.id)) return
       const store = opts.subscriptions ?? installedSubscriptions(stateOf(app).db)
       const subs = await store.list(recipient)
       const failures: string[] = []

@@ -138,7 +138,7 @@ const link = `${new URL(`/file/${asked.json.id}`, member.api)}#${key}`
 const limits = fileLimits(asked.json, Math.floor(Date.now() / 1000))
 echo(link)
 if (flag.qr) {
-  const { qrTerminal } = await import(resolve(global.fliRoot, 'core/qr.js'))
+  const { qrTerminal } = await import('@frontierjs/toolbelt/qr')
   echo(qrTerminal(link))
 }
 log.info(limits)

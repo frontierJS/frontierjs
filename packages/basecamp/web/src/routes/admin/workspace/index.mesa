@@ -13,9 +13,12 @@ title: Workspace
   import { session, reloadWorkspaces, switchWorkspace } from '../../../lib/session.js'
   import { workspaces } from '../../../resources/Workspace.mesa'
   import { messageFor } from '../../../lib/errors.js'
+  import { qrSvg }     from '@frontierjs/toolbelt/qr'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
   import Card   from '@frontierjs/ui/components/layout/Card.mesa'
+  import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
+  import Mono   from '@frontierjs/ui/components/display/Mono.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore'
 
   $: session.workspaceId
@@ -31,12 +34,28 @@ title: Workspace
   let newName = ''
   let typed   = ''
 
+  // ─── Phone pings ─────────────────────────────────────────────────────
+  // `push` answers the workspace's critical topic, minting it on first view,
+  // and which ntfy server it leaves through — the ladder in the api's `push.ts`,
+  // restated nowhere here. Only an admin may read it (the topic is the secret on
+  // public ntfy.sh), so a developer sees the refusal in words and no card.
+  let ping      = null   // { topic, url, rung, subscribeUrl }
+  let pingError = null
+  let pinged    = null   // 'sent' | an error message
+
+  const RUNG = {
+    1: 'your own ntfy server, set by NTFY_BASE_URL',
+    2: 'the ntfy App on this Basecamp, with ntfy.sh as the retry',
+    3: 'ntfy.sh, the public server — the topic is the secret',
+  }
+
   async function load() {
     error = null; loading = true
     try {
       ws    = session.workspaceId ? await workspaces.service.get(session.workspaceId) : null
       draft = ws ? { name: ws.name, slug: ws.slug, version: ws.version } : draft
       typed = ''
+      await loadPing()
     } catch (e) {
       error = e.message
     } finally {
@@ -46,6 +65,30 @@ title: Workspace
 
   load()
   $: session.workspaceId, () => load()
+
+  async function loadPing() {
+    ping = null; pingError = null; pinged = null
+    if (!ws) return
+    try {
+      ping = await workspaces.service.invoke('push', ws.id)
+    } catch (e) {
+      // 403 is the ordinary answer for a developer; the card says so and stops.
+      pingError = messageFor(workspaces, e)
+    }
+  }
+
+  async function testPing() {
+    pinged = null; busy = 'ping'
+    try {
+      await workspaces.service.invoke('testPing', ws.id)
+      pinged = 'sent'
+      toasts.success('Test ping sent. A subscribed phone shows it within a few seconds.')
+    } catch (e) {
+      pinged = messageFor(workspaces, e)
+    } finally {
+      busy = null
+    }
+  }
 
   async function rename() {
     error = null; busy = 'rename'
@@ -120,6 +163,49 @@ title: Workspace
     </form>
   </Card>
 
+  <Card id="workspace-push">
+    <h2 class="h5">Phone pings</h2>
+    {#if ping}
+      <p class="text-sm text-muted">
+        A monitor down, a deploy failed, a server unreachable: each rings every phone subscribed
+        to this topic, through {RUNG[ping.rung]}. The topic's random tail is what keeps strangers
+        off it — share it like a password.
+      </p>
+      <div class="cluster items-start" style="gap: var(--space-4)">
+        <div class="ws-push-qr" aria-label="QR code of the subscribe link">{@html qrSvg(ping.subscribeUrl)}</div>
+        <div class="stack text-sm" style="flex: 1 1 16rem">
+          <div>
+            <div class="text-muted">Topic</div>
+            <Mono>{ping.topic}</Mono>
+          </div>
+          <div>
+            <div class="text-muted">Server</div>
+            <Mono>{ping.url}</Mono>
+          </div>
+          <ol class="stack-xs" style="padding-left: 1.25rem">
+            <li>Install the <strong>ntfy</strong> app (Android, iPhone or desktop).</li>
+            <li>Scan the code, or add a subscription by hand: topic above, and under
+                <em>Use another server</em> the server above.</li>
+            <li>Press <strong>Test ping</strong>. The phone shows it at normal priority; a real
+                outage rings through do-not-disturb.</li>
+          </ol>
+          <div class="cluster">
+            <Button id="ws-test-ping" treatment="outlined" onclick={testPing} disabled={busy === 'ping'}>Test ping</Button>
+            <CopyButton text={ping.subscribeUrl} label="Copy subscribe link" treatment="outlined" />
+            <a class="btn outlined" href={ping.subscribeUrl} target="_blank" rel="noopener">Open in ntfy</a>
+          </div>
+          {#if pinged && pinged !== 'sent'}
+            <p class="text-danger" id="ws-test-ping-error">{pinged}</p>
+          {/if}
+        </div>
+      </div>
+    {:else if pingError}
+      <p class="text-sm text-muted" id="ws-push-refused">{pingError}</p>
+    {:else}
+      <p class="text-sm text-muted">Loading…</p>
+    {/if}
+  </Card>
+
   <Card id="workspace-new">
     <h2 class="h5">Another workspace</h2>
     <p class="text-sm text-muted">A separate fleet with its own members, projects and secrets. You are its owner.</p>
@@ -149,3 +235,8 @@ title: Workspace
 {:else}
   <p class="text-sm text-muted">You are not in a workspace.</p>
 {/if}
+
+<style>
+  .ws-push-qr { inline-size: 11rem; max-inline-size: 100%; flex: 0 0 auto }
+  .ws-push-qr :global(svg) { display: block; inline-size: 100%; block-size: auto; border-radius: var(--radius-md, 6px) }
+</style>

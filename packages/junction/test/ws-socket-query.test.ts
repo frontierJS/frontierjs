@@ -6,6 +6,10 @@
 // or the server puts the person back wherever no query lands them while their
 // screen still shows the room they walked into. `setSocketQuery` is a door: it
 // cycles an open socket, the way `setToken` does.
+//
+// Visibility is the connection's too: the tab reports it on every `connected`
+// and on each `visibilitychange`, and a push driver skips a user with a tab on
+// screen (`FJS-D1627`). A reconnect that did not resend it would read hidden.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { createApp, channels, defaultConfig }                from '../index.ts'
@@ -139,5 +143,48 @@ describe('the socket query', () => {
   test('a relayed client has no socket to cycle, and says so', () => {
     const client = createJunctionClient({ url: URL_, relay: async () => null })
     expect(() => client.setSocketQuery({ room: 'tavern' })).toThrow(/relayed client has no socket/)
+  })
+})
+
+describe('the visibility frame', () => {
+  const settle = async (fn: () => boolean) => {
+    const deadline = Date.now() + 2000
+    while (!fn() && Date.now() < deadline) await new Promise(r => setTimeout(r, 10))
+    return fn()
+  }
+
+  test('a tab reports on connect and on each change, and a reconnect reports again', async () => {
+    const doc = Object.assign(new EventTarget(), { visibilityState: 'hidden' })
+    ;(globalThis as any).document = doc
+    try {
+      const client = createJunctionClient({ url: URL_, token: 'alice', reconnectDelay: 10 }) as any
+      let up = nextConnect(client)
+      client.connect()
+      await up
+      const conn = () => [...app.channels.connections.values()].find((c: any) => c.user?.id === ALICE.id)
+      expect(await settle(() => conn()?.visible === false)).toBe(true)
+      expect(app.channels.hasVisibleConnection(ALICE.id)).toBe(false)
+
+      doc.visibilityState = 'visible'
+      doc.dispatchEvent(new Event('visibilitychange'))
+      expect(await settle(() => app.channels.hasVisibleConnection(ALICE.id))).toBe(true)
+
+      const before = conn().id
+      up = nextConnect(client)
+      client._ws.close()
+      await up
+      expect(await settle(() => conn()?.id !== before && conn()?.visible === true)).toBe(true)
+      client.disconnect()
+      expect(await settle(() => !app.channels.hasVisibleConnection(ALICE.id))).toBe(true)
+    } finally { delete (globalThis as any).document }
+  })
+
+  test('a socket that never reports reads as hidden', async () => {
+    const client = createJunctionClient({ url: URL_, token: 'alice' })
+    const up = nextConnect(client)
+    client.connect()
+    await up
+    expect(app.channels.hasVisibleConnection(ALICE.id)).toBe(false)
+    client.disconnect()
   })
 })

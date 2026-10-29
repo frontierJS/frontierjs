@@ -63,14 +63,16 @@ const cssText = (s) => ('' + s).split(';').map((d) => d.trim()).filter(Boolean)
  */
 export function attrs(tag, entries, scope) {
   const out = new Map()
-  const toggles = []
+  // `class` and `style` are serialized where the FIRST write put them, and a
+  // `class:` or a live `class=` adds its tokens in the order they ran.
+  const classes = []
   const styles = []
-  let liveClass
+  const reserve = (name) => { if (!out.has(name)) out.set(name, '') }
   const set = (name, value, live) => {
     if (name === '...') { for (const k in value) set(k, value[k], true); return }
-    if (name.startsWith('class:')) { if (value) toggles.push(name.slice(6)); return }
-    if (name.startsWith('style:')) { if (value != null && value !== false) styles.push(`${name.slice(6)}: ${value};`); return }
-    if (live && name === 'class') { liveClass = value; return }
+    if (name.startsWith('class:')) { reserve('class'); if (value) classes.push(name.slice(6)); return }
+    if (name.startsWith('style:')) { reserve('style'); if (value != null && value !== false) styles.push(`${name.slice(6)}: ${value};`); return }
+    if (live && name === 'class') { reserve('class'); if (value != null && value !== false && value !== '') classes.push('' + value); return }
     if (live && refusedURL(name, value)) { out.delete(name); return }
     if (live && (PROPS.has(name) || (name === 'value' && tag !== 'input'))) return
     if (value === false && ARIA_FALSE.has(name)) { out.set(name, 'false'); return }
@@ -79,12 +81,11 @@ export function attrs(tag, entries, scope) {
     out.set(name, '' + value)
   }
   for (const [name, value, live] of entries) set(name, value, live)
-  const classes = [out.get('class'), scope, liveClass, ...toggles].filter((c) => c != null && c !== false && c !== '')
-  if (classes.length) out.set('class', classes.join(' '))
-  if (styles.length) {
-    const base = out.get('style')
-    out.set('style', [base && cssText(base), ...styles].filter(Boolean).join(' '))
-  }
+  const cls = [out.get('class'), scope, ...classes].filter((c) => c)
+  if (cls.length) out.set('class', cls.join(' '))
+  else out.delete('class')
+  if (styles.length) out.set('style', [out.get('style') && cssText(out.get('style')), ...styles].filter(Boolean).join(' '))
+  else if (out.get('style') === '') out.delete('style')
   let s = ''
   for (const [name, value] of out) {
     s += ` ${name}="${ATTR.test(value) ? value.replace(ATTR, (c) => ATTR_MAP[c]) : value}"`

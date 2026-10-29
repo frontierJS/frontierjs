@@ -6,8 +6,12 @@
 // the header alone. Every cheaper check (a length, a status) passes on garbage.
 //
 // The first test is RFC 8291 Appendix A's own vector, byte for byte.
+//
+// A tab on screen (FJS-D1627) is graded over real sockets on a real channel
+// manager: the frame and the manager's answer are junction's, and a stub of
+// either would agree with the driver by construction.
 
-import { describe, test, expect, beforeAll } from 'bun:test'
+import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import {
   createDecipheriv, createECDH, createPublicKey, hkdfSync, verify,
 } from 'node:crypto'
@@ -18,7 +22,7 @@ import {
 } from '../drivers/webpush.ts'
 import type { PushMessage } from '../types.ts'
 import wire from './fixtures/push-message.json'
-import { createService } from '@frontierjs/junction'
+import { createApp, createService, channels, defaultConfig } from '@frontierjs/junction'
 import { makeApp, type Harness } from './harness.ts'
 
 const b64u = (b: Buffer) => b.toString('base64url')
@@ -199,6 +203,67 @@ describe('the driver', () => {
     const { subscriptions } = store([])
     const driver = webPush({ vapid, subscriptions, deliver: async () => { throw new Error('unreachable') } })
     await driver.send({ id: 'u1' }, { title: 'Hi' }, {} as never)
+  })
+})
+
+describe('a tab on screen', () => {
+  const vapid = generateVapidKeys('mailto:ops@example.test')
+  const phone = device('https://push.example/phone')
+  let app: any
+  let WS: string
+
+  beforeAll(async () => {
+    app = createApp({ logLevel: 'silent', config: { port: 0, http: { ...defaultConfig.http, drainTimeout: 250 } } })
+    app.setAuth({ async verifySession(token: string) { return { id: token, userType: 'user', roles: [], scopes: [] } as never } })
+    app.configure(channels())
+    await app.start()
+    WS = `ws://localhost:${app.http.port}/ws`
+  })
+  afterAll(async () => { await app?.stop() })
+
+  /** A tab of `user`'s, opened and reporting `visible`. */
+  async function tab(user: string, visible: boolean) {
+    const ws = new WebSocket(WS, ['fjs', `fjs.bearer.${user}`])
+    await new Promise<void>((resolve, reject) => {
+      ws.onmessage = e => { if (JSON.parse(String(e.data)).type === 'connected') resolve() }
+      ws.onerror = () => reject(new Error('ws error'))
+    })
+    ws.send(JSON.stringify({ type: 'visibility', visible }))
+    // The frame is handled after it is read; a ping's pong comes back behind it.
+    await new Promise<void>(resolve => {
+      ws.onmessage = e => { if (JSON.parse(String(e.data)).type === 'pong') resolve() }
+      ws.send(JSON.stringify({ type: 'ping' }))
+    })
+    return ws
+  }
+
+  async function pushesTo(user: string) {
+    const sent: string[] = []
+    const driver = webPush({
+      vapid,
+      subscriptions: { list: async () => [phone.sub], remove: async () => {} },
+      deliver: async r => { sent.push(r.url); return { status: 201 } },
+    })
+    await driver.send({ id: user }, { title: 'Hi' }, app)
+    return sent.length
+  }
+
+  test('one visible tab beside a hidden one: no push', async () => {
+    const tabs = [await tab('u-both', false), await tab('u-both', true)]
+    expect(await pushesTo('u-both')).toBe(0)
+    tabs.forEach(t => t.close())
+  })
+
+  test('every tab hidden: the push goes', async () => {
+    const tabs = [await tab('u-hidden', false), await tab('u-hidden', false)]
+    expect(await pushesTo('u-hidden')).toBe(1)
+    tabs.forEach(t => t.close())
+  })
+
+  test("another user's visible tab does not silence this one", async () => {
+    const other = await tab('u-other', true)
+    expect(await pushesTo('u-alone')).toBe(1)
+    other.close()
   })
 })
 

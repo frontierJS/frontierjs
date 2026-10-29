@@ -290,6 +290,13 @@ vendor's:
 | DigitalOcean Spaces | a bucket | A bucket per app, and a *Read/Write/Delete* key on it; made in the control panel ([manage access](https://docs.digitalocean.com/products/spaces/how-to/manage-access/)) |
 | Hetzner | a bucket, by policy | A bucket per app with a bucket policy allowing only that key, `p<project>:<key>`; keys are made in the Console ([S3 credentials](https://docs.hetzner.com/storage/object-storage/faq/s3-credentials)) |
 
+**`test` on an app's replica destination checks the scope.** The probe
+writes inside `<prefix>/<app id>/`. Then, if the app's archives are in the same
+bucket and prefix, it also PUTs `<prefix>/<app id>-probe.tar.gz`, and that
+write must be refused. A key that writes it reaches the app's archives, so a
+compromised app could plant one that a rescan records. The answer starts
+`scope:` and names the trailing slash.
+
 Changing the destination's address or key, removing it, or clearing the
 pointer re-sends every machine the app is on its list, and the replica stops
 there. The key is not deleted at the vendor; revoke it there.

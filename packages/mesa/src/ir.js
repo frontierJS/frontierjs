@@ -88,13 +88,16 @@ function lowerAttributes(ctx, n) {
   for (const p of n.attributes) {
     const name = p.name
     const loc = ctx.posOf(p.start ?? n.start)
+    // The source offset, so a target can order attributes, `class:` and
+    // `style:` together as they were written.
+    const at = p.start ?? n.start
     const raw = p.content ?? p.raw ?? name
     if (p.type === 'attach' || name === '@attach') { attachments.push({ expr: write(ctx, p.value), loc }); continue }
     // `{...spread}`, `{*raw}` and `*{raw}` carry their whole text as the name.
     // A spread stays among the attributes because their order is the order
     // the DOM path applies them in, and a later one wins.
     if (name.startsWith('{...') && name.endsWith('}')) {
-      attrs.push({ name, value: { kind: 'spread', expr: read(ctx, name.slice(4, -1)) } })
+      attrs.push({ name, value: { kind: 'spread', expr: read(ctx, name.slice(4, -1)) }, at })
       continue
     }
     if (name[0] === '{' || name.startsWith('*{')) { directives.push({ name, raw, loc }); continue }
@@ -112,12 +115,12 @@ function lowerAttributes(ctx, n) {
     }
     if (name.startsWith('style:')) {
       const prop = name.slice(6)
-      styles.push({ prop, expr: styleValue(ctx, p, prop), loc })
+      styles.push({ prop, expr: styleValue(ctx, p, prop), loc, at })
       continue
     }
     if (name.startsWith('class:')) {
       const cls = name.slice(6)
-      classes.push({ name: cls, expr: read(ctx, classSource(p, cls)), loc })
+      classes.push({ name: cls, expr: read(ctx, classSource(p, cls)), loc, at })
       continue
     }
     if (name === 'bind:value' || name === ':value' || name === 'bind:checked') {
@@ -140,14 +143,14 @@ function lowerAttributes(ctx, n) {
       continue
     }
     if (p.type === 'exp') {
-      attrs.push({ name, value: { kind: 'binding', expr: read(ctx, unwrapExp(p.value)), to: 'attr' } })
+      attrs.push({ name, value: { kind: 'binding', expr: read(ctx, unwrapExp(p.value)), to: 'attr' }, at })
       continue
     }
     if (p.type === 'text' && p.value.includes('{')) {
-      attrs.push({ name, value: { kind: 'binding', expr: interpolated(ctx, p.value), to: 'attr' } })
+      attrs.push({ name, value: { kind: 'binding', expr: interpolated(ctx, p.value), to: 'attr' }, at })
       continue
     }
-    attrs.push({ name, value: p.type === 'attribute' ? true : p.value })
+    attrs.push({ name, value: p.type === 'attribute' ? true : p.value, at })
   }
   // A group bind reads its element's value each time, the DOM path's `getVal`.
   for (const b of binds) if (b.name === 'group') b.value = attrs.find((a) => a.name === 'value')?.value ?? null

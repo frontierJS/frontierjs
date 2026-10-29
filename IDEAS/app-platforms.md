@@ -123,8 +123,9 @@ export interface PlatformConnector {
   projects(send: AccountSend): Promise<PlatformProject[]>
   project(send: AccountSend, name: string): Promise<PlatformProject | null>
 
-  // Ship with build = platform. The hook needs no token; the poll does.
-  trigger(hookUrl: string, opts: { branch?: string }): Promise<{ buildId: string | null }>
+  // Ship with build = platform: the account token by default, the App's hook
+  // when it has one (FJS-D1637). Name the commit, or the build records none.
+  trigger(send: AccountSend, name: string, opts: { branch: string; commit?: string; hookUrl?: string }): Promise<{ buildId: string | null }>
   buildState(send: AccountSend, name: string, buildId: string): Promise<PlatformBuildState>
 
   // Record and roll back. A rollback is a promote: no rebuild, no Outpost.
@@ -157,7 +158,7 @@ per destination (Q3).
 | Door | Trigger | What runs |
 | --- | --- | --- |
 | Basecamp, built on an Outpost | `button` / `push` / `publish` | the Outpost checks out, builds, then `/platform/publish` |
-| Basecamp, built on the platform | `button` / `push` | `trigger(hookUrl)`, then `buildState` polled to an end |
+| Basecamp, built on the platform | `button` / `push` | `trigger()` with the token or the hook, then `buildState` polled to an end |
 | Somebody else (wrangler on a laptop, the platform's own git build) | `observed` | `platform:observe` reads `versions()`, or a signed Receiver hears it, and writes the row |
 
 **Domains move off the ingress path.** A Domain on a platform App is attached at
@@ -169,7 +170,7 @@ refuses by name rather than pushing nothing (`decision-rules` Q9).
 
 ### Phase 0 — probes and rulings
 
-- [ ] **0.1** Against the hand-run awe.dev account: which token scopes list
+- [ ] 0.1 Against the hand-run awe.dev account: which token scopes list
   Workers scripts, versions, deployments and builds. Write down what one
   account-owned (`cfat_`) token needs.
   *Read 2026-10-29 with `cf`'s OAuth login on the awe.dev account
@@ -180,7 +181,7 @@ refuses by name rather than pushing nothing (`decision-rules` Q9).
   `annotations["workers/triggered_by"]`. That login cannot list
   permission groups or create tokens (403, code 9109), so the account-owned
   token's scope list is still open.
-- [ ] **0.2** Create a deploy hook on a test Worker, POST it, and follow
+- [x] 0.2 Create a deploy hook on a test Worker, POST it, and follow
   `build_uuid` to `success` through List builds. Record the latency.
   *Read 2026-10-29, the half that needs no repository,* on the throwaway
   Worker `fjs-platform-probe` (awe.dev account), with the `cfut_` user token.
@@ -198,52 +199,66 @@ refuses by name rather than pushing nothing (`decision-rules` Q9).
   Cloudflare's GitHub App holds the repository. That grant is a person in a
   browser and no API makes it, so `build = platform` needs a one-time GitHub
   step, and Basecamp's adopt and create screens must name it.
-- [ ] **0.3** Find out whether the Builds API has a token-authenticated
+  *Built 2026-10-29,* once the owner granted the GitHub App the repository in
+  the dashboard. A deploy hook made with `cf builds deploy-hooks create`, then
+  POSTed with no auth header, answered `build_uuid`, `status: queued` and
+  `already_exists: false`. It reached `stopped / success` after 32 s, with
+  `build_trigger_source: deploy_hook`. A build's deployment reads exactly like
+  a laptop's (`source: wrangler`, the token owner's email, no message), so
+  `observe` tells them apart only through `GET …/builds/builds?version_ids=`,
+  which maps a version to the build that made it.
+- [x] 0.3 Find out whether the Builds API has a token-authenticated
   trigger. If it has, Q6 has an answer and no hook URL is stored.
   *Read 2026-10-29:* `cf builds create <trigger-uuid>` starts a build "for a
   branch or commit using the selected trigger", authenticated with the account
   token, so a hook URL looks unnecessary. None of the account's four Workers is
   connected to a repository (`builds list` is empty), so this is not yet run.
-- [x] **0.4** Rule Q1–Q5 (through the question tool, one at a time). Ruled 2026-10-29: `FJS-D1629`–`FJS-D1633`.
+  *Built 2026-10-29:* `cf builds create <trigger-uuid> --body
+  '{"branch":"main"}'`, authenticated with the account token, ran queued →
+  `success` in 59 s (8 s queued, 45 s running), with
+  `build_trigger_source: manual`. With no commit named, the build's
+  `commit_hash` is empty, so a release that records a commit has to name one.
+  **There is a token-authenticated trigger**, so no hook URL needs storing (Q6).
+- [x] 0.4 Rule Q1–Q5 (through the question tool, one at a time). Ruled 2026-10-29: `FJS-D1629`–`FJS-D1633`.
 
 ### Phase 1 — see what runs (read only)
 
-- [ ] **1.1** `PlatformProvider`, `PlatformBuild` and `AppPlatform`, plus
+- [ ] 1.1 `PlatformProvider`, `PlatformBuild` and `AppPlatform`, plus
   `Deployment.platformVersion` and `DeployTrigger.observed`. Add a test that
   `PlatformProvider` stays a subset of `ProviderKind`, as `FJS-D1607` has one.
-- [ ] **1.2** `providers/platform/cloudflare.ts`: `verify`, `projects`,
+- [ ] 1.2 `providers/platform/cloudflare.ts`: `verify`, `projects`,
   `project`, `versions`, `live`.
-- [ ] **1.3** Adopt: pick a Worker from the account, and Basecamp makes an App
+- [ ] 1.3 Adopt: pick a Worker from the account, and Basecamp makes an App
   (`static` or `worker`) and its `AppPlatform`.
-- [ ] **1.4** `platform:observe` writes `observed` releases and keeps
+- [ ] 1.4 `platform:observe` writes `observed` releases and keeps
   `liveVersion` current.
-- [ ] **1.5** The App screen lists machines and platforms together as *where it
+- [ ] 1.5 The App screen lists machines and platforms together as *where it
   runs*.
 
 ### Phase 2 — ship, built on the platform
 
-- [ ] **2.1** `trigger` + `buildState` as a release's steps.
-- [ ] **2.2** Rollback promotes `platformVersion` with no rebuild.
+- [ ] 2.1 `trigger` + `buildState` as a release's steps.
+- [ ] 2.2 Rollback promotes `platformVersion` with no rebuild.
 
 ### Phase 3 — ship, built on an Outpost
 
-- [ ] **3.1** `/platform/publish` on Outpost (wrangler first). `releaseSite`
+- [ ] 3.1 `/platform/publish` on Outpost (wrangler first). `releaseSite`
   reads `AppPlatform.builderServerId`, and a site needs no `AppServer` row.
   `resolveExecutor` answers `platform`.
 
 ### Phase 4 — manage
 
-- [ ] **4.1** Variables reach the platform as secrets on each release, inside
+- [ ] 4.1 Variables reach the platform as secrets on each release, inside
   the version upload. A separate secrets call is refused while a rolled-back
   version is live (0.2), so `setVariables` cannot be standalone.
-- [ ] **4.2** Domains: `attachDomain`, and `edge.sync` leaves the record alone.
-- [ ] **4.3** A Monitor HTTP check is made with the App, since a platform sends
+- [ ] 4.2 Domains: `attachDomain`, and `edge.sync` leaves the record alone.
+- [ ] 4.3 A Monitor HTTP check is made with the App, since a platform sends
   no heartbeat.
-- [ ] **4.4** `tail` behind the App's log pane.
+- [ ] 4.4 `tail` behind the App's log pane.
 
 ### Phase 5 — a second adapter proves the interface
 
-- [ ] **5.1** Netlify or Vercel, with its signed webhook as a conduit Receiver.
+- [ ] 5.1 Netlify or Vercel, with its signed webhook as a conduit Receiver.
   A method this adapter cannot fill is an interface defect, fixed before 5.1
   closes.
 
@@ -278,9 +293,12 @@ refuses by name rather than pushing nothing (`decision-rules` Q9).
   - **C** — *Target*, already Conduit's.
   - **Recommend A** — Waypoint's word, and how Vercel, Netlify and Heroku
     describe themselves; it takes a `VOCABULARY.md` row once ruled.
-- **Q6 — Is a platform build triggered by a deploy hook or by the account token?**
-  Waits on 0.3: if the Builds API has a token-authenticated trigger, `hookUrl`
-  goes and nothing more is stored.
+- ~~**Q6 — Is a platform build triggered by a deploy hook or by the account token?**~~ **Answered 2026-10-29 (`FJS-D1637`): B — both: the token by default, with `hookUrl` kept as an optional `@encrypted` column for a platform or a setup that offers only a hook.**
+  - **A** — the account token only (`cf builds create`, 0.3), and `hookUrl` is dropped.
+  - **B** — both: the token by default, with `hookUrl` kept as an optional
+    `@encrypted` column for a platform or a setup that offers only a hook.
+  - **Recommend A** — one credential to hold and rotate, and the release names
+    its commit; the column returns if the 5.1 adapter can only be hooked.
 
 ---
 

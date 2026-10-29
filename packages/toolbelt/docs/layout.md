@@ -118,6 +118,13 @@ src/frontmatter/     what a `---` block MEANS — a declared YAML subset
                      `frontmatterPositions` is where each value is written
                      (path, line, and a one-line value's offsets): Mesa
                      stamps a preview with it and site-kit writes one back
+src/qr/              a QR code for a link: `qrMatrix` encodes once — byte mode,
+                     level L, the smallest version, the lowest-penalty mask —
+                     and `qrSvg`/`qrTerminal` read it out. Moved here from
+                     cli's `core/qr.js` when Basecamp's Workspace card needed
+                     the SVG in a browser; `fli tell:upload --qr` is the other
+                     caller. No decoder in the tree, so the spec pins digests a
+                     phone has read
 src/cells/           one cell of a file somebody else wrote, read as the type
                      its column declares or a reason it cannot be — never a
                      guess, and a reason never quotes the cell, since the text

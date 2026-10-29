@@ -78,6 +78,10 @@
       "default": "./src/mime/mime.js"
     },
     "./predicate": "./src/predicate/predicate.js",
+    "./qr": {
+      "types": "./src/qr/qr.d.ts",
+      "default": "./src/qr/qr.js"
+    },
     "./query": {
       "types": "./src/query/query.d.ts",
       "default": "./src/query/query.js"

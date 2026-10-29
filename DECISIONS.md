@@ -8393,6 +8393,12 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1637"></a>2026-10-29 · `FJS-D1637` — Q6 — Is a platform build triggered by a deploy hook or by the account token — Both: the token by default, with `hookUrl` kept as an optional `@encrypted` column for a platform or a setup that offers only a hook.
+
+Asked in [`IDEAS/app-platforms.md`](IDEAS/app-platforms.md) § Open questions. **B** was picked over **A** (the account token only (`cf builds create`, 0.3), and `hookUrl` is dropped).
+
+Against the recommendation (**A**): a deploy hook is how a platform build is started by things Basecamp does not hold a token for, and a hook-only setup should still be adoptable.
+
 ### <a id="fjs-d1635"></a>2026-10-29 · `FJS-D1635` — A job dispatched by name before its handler registers is moved to the handler's queue when it registers, and a row no handler serves is counted as `stranded`.
 
 Asked through the question tool ([`FJS-3569`](ISSUES.md#fjs-3569), `IDEAS/backups.md` 5.2). *As recommended*: scoped re-home plus a report. It was picked over refusing an early name dispatch, over only reporting, and over re-homing every pending row of the name.

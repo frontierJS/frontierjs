@@ -1,16 +1,21 @@
-// ─── qr.js — a QR code for a link, drawn in the terminal ──────────────────────
+// ─── qr.js — a QR code for a link, as a matrix, an SVG or terminal text ───────
 //
-// `fli tell:upload --qr` prints its link as a QR code, so a phone opens the
-// file's page from the screen. Byte mode at error correction level L, the
-// smallest version the text fits, and the mask the spec's penalty rules score
-// lowest — the shape of Nayuki's generator, as unjs's uqr ports it. L because
-// a screen is never scuffed, and a lower level is a smaller code: a post link
-// fits version 5 at L and needs 6 at M. One mode and one level are all a link
-// needs; a second is a table to get wrong.
+// Byte mode at error correction level L, the smallest version the text fits,
+// and the mask the spec's penalty rules score lowest — the shape of Nayuki's
+// generator, as unjs's uqr ports it. L because a screen is never scuffed, and a
+// lower level is a smaller code: a post link fits version 5 at L and needs 6
+// at M. One mode and one level are all a link needs; a second is a table to
+// get wrong.
+//
+// One encoder, two projections. `fli tell:upload --qr` prints the terminal
+// one, and Basecamp's Workspace card draws the SVG one so a phone subscribes to
+// the push topic from the screen. Both are `qrMatrix` read out; neither
+// re-encodes.
 //
 // A phone reads it only when the dark modules are dark on a light field, and
 // a terminal's own background may be either, so `qrTerminal` paints both
-// colors itself rather than leaving the field to the theme.
+// colors itself rather than leaving the field to the theme; `qrSvg` paints
+// its own white field for the same reason.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Level L, indexed by version; 0 is unused. */
@@ -247,6 +252,23 @@ export const qrMatrix = (text) => {
 }
 
 const QUIET = 2
+
+/**
+ * The QR code for `text` as an SVG, one `<rect>` a dark module on a white field,
+ * sized by its viewBox so CSS decides how big. Two modules of quiet zone, as
+ * the terminal one: the field is painted, so the code never meets a dark page.
+ */
+export const qrSvg = (text) => {
+  const m = qrMatrix(text)
+  const size = m.length + QUIET * 2
+  const rects = []
+  m.forEach((row, y) => row.forEach((dark, x) => {
+    if (dark) rects.push(`<rect x="${x + QUIET}" y="${y + QUIET}" width="1" height="1"/>`)
+  }))
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges" role="img">`
+    + `<rect width="${size}" height="${size}" fill="#fff"/><g fill="#000">${rects.join('')}</g></svg>`
+}
+
 const PAINT = '\x1b[38;5;16;48;5;231m'
 const RESET = '\x1b[0m'
 

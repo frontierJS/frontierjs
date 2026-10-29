@@ -342,7 +342,7 @@ Outpost's layout moved (`FJS-D1544`). The working tree is red, because
 (`FJS-D1603`, `D1606`) and its Phase 2 has not moved the code yet. Steps here
 that touch the hub's archives (5.3, 5.5) come after that Phase 2.
 
-- [ ] 5.1 The key-scope probe owed by `FJS-D1572`. An app's replica key is
+- [x] 5.1 The key-scope probe owed by `FJS-D1572`. An app's replica key is
       scoped to the name prefix `<prefix>/<appId>/`, and its archives are
       `<prefix>/<appId>-<stamp>.tar.gz`. A key scoped without the trailing
       slash also reaches the archives, so a compromised app could plant one
@@ -350,6 +350,17 @@ that touch the hub's archives (5.3, 5.5) come after that Phase 2.
       1.8's `test` also PUTs `<prefix>/<appId>-probe.tar.gz`. A refusal passes;
       an accepted write is red and names the slash. Run it once against the
       B2 fixture key from 0.7.
+      Done 2026-10-29, uncommitted. The ordinary probe now goes inside
+      `<prefix>/<appId>/`, because a correctly scoped key was refused its old
+      probe path. The archive PUT is asked only when the App's backup
+      destination is the same endpoint, bucket and prefix, the only place a
+      rescan reads. It is proved on the stand-in (`_sink/arm {scope}`), by
+      two rows in `services.test.ts` that are red without the fix. Live B2:
+      the 0.7 fixture key is bucket-wide, so it read red as it should and
+      deleted its probe. A refusal from a B2 key with *File name prefix*
+      `<prefix>/<appId>/` is still unproved, and 5.5 makes that key. Not
+      probed: the hub's own replica key (`<prefix>/basecamp`), which sits on
+      the hub's box beside every key the hub holds.
 - [x] 5.2 Close `FJS-3569` in caravan: a job dispatched by NAME before its
       handler registers still lands on `default`. 4.8 found the same gap for
       dispatch by definition (`FJS-3567`), which is fixed. Done 2026-10-29,
@@ -368,7 +379,9 @@ that touch the hub's archives (5.3, 5.5) come after that Phase 2.
       step done by hand.
 - [ ] 5.5 The live drive on 5.4's box: 4.8's sequence end to end against B2,
       plus the two halves 4.8 left unproved — the found card hidden while the
-      app is alive, and § 7's `aws s3 ls` against B2's endpoint. Then
+      app is alive, and § 7's `aws s3 ls` against B2's endpoint. Mint the
+      app's B2 key with *File name prefix* `<prefix>/<appId>/`, and `test` on
+      its destination must pass, with the archive PUT refused (5.1). Then
       `BACKUPS.md` § 7 is corrected from what the run did.
 
 ## After this (not in this plan)

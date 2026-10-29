@@ -4,6 +4,7 @@ import { $ } from '@frontierjs/junction'
 //
 // Mounted at /workspaces. Custom methods dispatch on X-Service-Method:
 //   members · addMember · setMemberRole · removeMember · leave · transferOwnership
+//   push · testPing
 //
 // This service is the one exception to the workspace-scoped pattern: it does
 // not live INSIDE a workspace, it is the workspace. So it does not use
@@ -23,6 +24,9 @@ import type { WorkspaceRole }  from '../../../../db/schema.d.ts'
 // that cannot grade it.
 import { WORKSPACE_ROLE_LEVEL } from '../../core/gate.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
+import { pushTopicFor } from '../../domain/notification/push-topic.ts'
+import pushTest from '../../domain/notification/push-test.ts'
+import { appUrl } from '../../notifications/_shared.ts'
 
 /**
  * Point the role hooks at the workspace being addressed.
@@ -121,7 +125,8 @@ export default createService({
             { method: 'addMember',     input: 'WorkspaceMemberAdd' },
             { method: 'setMemberRole', input: 'WorkspaceMemberRole' },
             'removeMember', 'leave',
-            { method: 'transferOwnership', input: 'WorkspaceTransfer' }],
+            { method: 'transferOwnership', input: 'WorkspaceTransfer' },
+            'push', 'testPing'],
 
   // Only workspaces the caller belongs to. The old version did this with a
   // JOIN; `memberships: { some: { userId } }` is the relation the schema
@@ -377,6 +382,40 @@ export default createService({
     })
   },
 
+  // ── push · testPing ───────────────────────────────────────────────
+  // The workspace's phone-ping topic, for the Workspace card. The topic is the
+  // SECRET on public ntfy.sh (`domain/notification/push-topic.ts`), so it is an
+  // admin's to see, and reading it mints it: a phone has to subscribe BEFORE
+  // the first outage, so the first view is what creates the name. Which server,
+  // and on which rung, is `app.push`'s answer (`push.ts`); the card restates
+  // neither.
+  async push() {
+    $.dispatch = false
+    const wsId  = $.id as string
+    const topic = await pushTopicFor($.app, wsId)
+    if (!topic) throw new NotFound(`Workspace '${wsId}' not found`)
+    const { url, rung } = $.app.push
+    return { topic, url, rung, subscribeUrl: `${url.replace(/\/+$/, '')}/${encodeURIComponent(topic)}` }
+  },
+
+  /** One ping to the topic, at default priority, through the same recipient
+   *  shape `notifyPeople()` builds -- the real builder, driver and ladder, so a
+   *  phone that rings proves the whole path and a throw names which server
+   *  refused. Answers the ntfy message id when the server gives one. */
+  async testPing() {
+    const wsId  = $.id as string
+    const sys   = $.db.asSystem() as any
+    const ws    = await sys.workspace.findFirst({ where: { id: wsId } })
+    if (!ws) throw new NotFound(`Workspace '${wsId}' not found`)
+    const topic = await pushTopicFor($.app, wsId)
+    const user  = sessionOf() as { id?: string; name?: string; email?: string }
+    const receipts = await $.app.notify(
+      { pushTopic: topic, transports: ['push'] } as any,
+      pushTest({ workspaceName: ws.name, by: user.name || user.email || 'Somebody', url: appUrl('/admin/workspace/') }) as any,
+    )
+    return { topic, sent: true, receipts }
+  },
+
   hooks: {
     before: {
       // stampSelfAsWorkspace must run BEFORE the role hooks — they read the
@@ -392,6 +431,9 @@ export default createService({
       setMemberRole: [requireWorkspaceRole('admin', 'owner'), refuseGrantAboveOwn()],
       removeMember:  [requireWorkspaceRole('admin', 'owner')],
       transferOwnership: [requireWorkspaceRole('owner')],
+      // The topic is the secret on the public rung: an admin's to read and to ring.
+      push:          [requireWorkspaceRole('admin', 'owner')],
+      testPing:      [requireWorkspaceRole('admin', 'owner')],
     },
   },
 })

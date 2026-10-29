@@ -208,6 +208,8 @@ export interface App {
   mail?:    { send(msg: OutgoingMail): Promise<unknown> }
   /** Junction's broadcast channel — the other reading of the word, and the one it keeps. */
   channel?: (name: string) => { send(event: string, payload: unknown): void } | undefined
+  /** Junction's channel manager; the push driver asks it whether a tab is on screen. */
+  channels?: { hasVisibleConnection(userId: string | number): boolean }
   /** `createApp({ root })` — definitions load from `notifications/` beside it (`FJS-D1080`). */
   root?:    string | null
   notify?:  (recipient: Recipient, notification: Notification) => Promise<NotificationReceipts>

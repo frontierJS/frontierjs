@@ -423,31 +423,40 @@ export function buildHost(ctx, t) {
   // `runtime-server.js`, handed the entries in source order. Handlers,
   // attachments and `bind:this` have no server half and are dropped.
   const emitElementString = (n, ind) => {
-    // The DOM path's order: the template's static attributes with `class`
-    // last, then each live one as its effect first runs; the scope class is
-    // on an element with a static class, or on every one of a styled component.
-    const statics = [], lives = []
+    // The DOM path's order, which decides where happy-dom serializes each
+    // attribute: the template's static attributes with `class` last, then
+    // the live pieces in source order, where a run of consecutive live
+    // attributes writes its once-written members first (`writtenOnce`). The
+    // scope class is on an element with a static class, or on every one of a
+    // styled component.
+    const statics = [], pieces = []
     let cls = null
     for (const a of n.attrs) {
       if (typeof a.value === 'object') {
         dep(a.value.expr)
-        lives.push([a.value.kind === 'spread' ? '...' : a.name, { code: a.value.expr.code }])
+        pieces.push({ at: a.at, plain: a.value.kind !== 'spread', entry: [a.value.kind === 'spread' ? '...' : a.name, a.value.expr.code] })
       } else if (a.name === 'class') cls = [a.name, htmlEntitiesToText(a.value)]
       else statics.push([a.name, a.value === true ? true : htmlEntitiesToText(a.value)])
     }
     if (cls) statics.push(cls)
-    // A live attribute the DOM path writes once lands before the ones its
-    // effects write.
-    const once = (e) => e[0] !== '...' && writtenOnce(e[1].code, ctx.analysis?.opaqueValues)
-    lives.sort((a, b) => once(b) - once(a))
-    for (const st of n.styles) { dep(st.expr); lives.push([`style:${st.prop}`, { code: st.expr.code }]) }
-    for (const c of n.classes) { dep(c.expr); lives.push([`class:${c.name}`, { code: `!!(${c.expr.code})` }]) }
+    for (const st of n.styles) { dep(st.expr); pieces.push({ at: st.at, entry: [`style:${st.prop}`, st.expr.code] }) }
+    for (const c of n.classes) { dep(c.expr); pieces.push({ at: c.at, entry: [`class:${c.name}`, `!!(${c.expr.code})`] }) }
+    pieces.sort((a, b) => a.at - b.at)
+    const lives = []
+    let run = []
+    const once = (p) => writtenOnce(p.entry[1], ctx.analysis?.opaqueValues)
+    const endRun = () => { lives.push(...run.filter(once), ...run.filter((p) => !once(p))); run = [] }
+    for (const p of pieces) {
+      if (p.plain && p.entry[0] !== 'class') run.push(p)
+      else { endRun(); lives.push(p) }
+    }
+    endRun()
     const sc = cls || styled ? scope : null
     if (!lives.length) push(ind, `<${n.tag}${attrString(n.tag, statics, sc)}>`)
     else {
       const list = [
         ...statics.map(([k, v]) => `[${q1(k)}, ${v === true ? 'true' : q1(v)}]`),
-        ...lives.map(([k, v]) => `[${q1(k)}, (${v.code}), 1]`),
+        ...lives.map(({ entry: [k, code] }) => `[${q1(k)}, (${code}), 1]`),
       ]
       push(ind, `<${n.tag}`)
       hole(ind, `$$host.attrs(${q1(n.tag)}, [${list.join(', ')}]${sc ? `, ${q1(sc)}` : ''})`)
