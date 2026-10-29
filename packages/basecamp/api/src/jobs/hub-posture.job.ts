@@ -13,7 +13,7 @@ import { notifyPeople } from '../domain/notification/notify.ts'
 
 /** Notify every system admin of the failing `hub.*` controls; answers how many were told. */
 export async function notifyHubPosture(app: any, db: any, now = Date.now()): Promise<number> {
-  const { hub }  = await gradeHubNow(db, now)
+  const { hub }  = await gradeHubNow(db, app.push, now)
   const failing  = hub.filter(c => c.ok === false)
   if (!failing.length) return 0
 

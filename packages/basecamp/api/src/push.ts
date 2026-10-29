@@ -25,6 +25,9 @@ export interface PushServer {
   rung:   1 | 2 | 3
   url:    string
   token?: string
+  /** Rung 2 only: the ntfy App's `NTFY_UPSTREAM_BASE_URL`. Blank means an iOS
+   *  phone hears nothing in the background, which `hub.push` warns about. */
+  relay?: string | null
 }
 
 /** The first token of `name:tk_xxx:label, name2:tk_yyy:label2` -- the shape
@@ -45,13 +48,14 @@ async function ownNtfyApp(db: any): Promise<PushServer | undefined> {
   const app = await sys.app.findFirst({ where: { blueprintId: bp.id, status: 'running', deletedAt: null } })
   if (!app) return undefined
   const vars = await sys.variable.findMany({
-    where: { appId: app.id, key: { in: ['NTFY_BASE_URL', 'NTFY_AUTH_TOKENS'] }, deletedAt: null },
+    where: { appId: app.id, key: { in: ['NTFY_BASE_URL', 'NTFY_AUTH_TOKENS', 'NTFY_UPSTREAM_BASE_URL'] }, deletedAt: null },
   })
   const byKey = new Map<string, any>(vars.map((v: any) => [v.key, v]))
   const url   = byKey.get('NTFY_BASE_URL')?.value as string | undefined
   if (!url) return undefined
   const tokens = byKey.get('NTFY_AUTH_TOKENS')
-  return { rung: 2, url, token: firstSenderToken(tokens?.secretValue ?? tokens?.value) }
+  const relay  = ((byKey.get('NTFY_UPSTREAM_BASE_URL')?.value as string | undefined) ?? '').trim() || null
+  return { rung: 2, url, token: firstSenderToken(tokens?.secretValue ?? tokens?.value), relay }
 }
 
 export async function resolvePush(db: any): Promise<PushServer> {

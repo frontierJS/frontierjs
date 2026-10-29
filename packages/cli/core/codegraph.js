@@ -59,7 +59,7 @@ export const SWEEP_FLOOR = 50
 export const HEAT          = [0.25, 1, 3]
 export const BLAST         = [0, 3, 15]
 export const INDENT_SUM    = [100, 400, 1600]
-export const AGE_DAYS      = [7, 30, 90]
+export const AGE_DAYS      = [1, 3, 7]
 export const CHURN_COMMITS = [0, 3, 7]
 // How many files are in the import cycle. A pair is the mildest thing this can
 // say and still be true, so it is band 0 rather than absent.
@@ -926,7 +926,7 @@ export const TONES = {
   heat: 'info', blast: 'primary', complexity: 'warning', exposure: 'danger',
   age:  'success', churn: 'info', tested: 'danger', cycle: 'warning', cognitive: 'danger',
 }
-export const MIX   = [10, 40, 70, 100]
+export const MIX   = [3, 23, 62, 100]
 export const STRONG = MIX.length - 1
 
 // Tested has three answers, so it skips a step: partly sits next to quiet rather

@@ -295,7 +295,7 @@ export default createService({
     await sys().deploymentStep.createMany({
       data: PUBLISH_STEPS.map((name, position) => ({ deploymentId: release.id, position, name, status: 'pending' })),
     })
-    await dispatchPublish($.app, site.id, release.id)
+    await dispatchPublish($.app, release.id)
     return { draft: found.name, published: await lastPublish(site.id) }
   },
 

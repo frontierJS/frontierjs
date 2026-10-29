@@ -26,6 +26,7 @@
     "./devtools": "./src/plugins/devtools/index.ts",
     "./export": "./src/plugins/export/index.ts",
     "./search": "./src/plugins/search/index.ts",
+    "./audit": "./src/plugins/audit/index.ts",
     "./metrics": "./src/plugins/metrics/index.ts",
     "./client": "./src/client/index.ts",
     "./outbox.lite": "./db/outbox.lite",

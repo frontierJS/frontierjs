@@ -179,11 +179,17 @@ describe('the visibility frame', () => {
     } finally { delete (globalThis as any).document }
   })
 
-  test('a socket that never reports reads as hidden', async () => {
-    const client = createJunctionClient({ url: URL_, token: 'alice' })
+  test('a socket that never reports, or reports anything but true, reads as hidden', async () => {
+    const client = createJunctionClient({ url: URL_, token: 'alice' }) as any
     const up = nextConnect(client)
     client.connect()
     await up
+    expect(app.channels.hasVisibleConnection(ALICE.id)).toBe(false)
+    client._ws.send(JSON.stringify({ type: 'visibility', visible: 'true' }))
+    // Answered in order, so the pong says the frame before it was handled.
+    const pong = new Promise<void>(r => client._ws.addEventListener('message', (e: any) => { if (JSON.parse(e.data).type === 'pong') r() }))
+    client._ws.send(JSON.stringify({ type: 'ping' }))
+    await pong
     expect(app.channels.hasVisibleConnection(ALICE.id)).toBe(false)
     client.disconnect()
   })

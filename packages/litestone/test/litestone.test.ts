@@ -15232,7 +15232,7 @@ const POLICY_LADDER_SCHEMA = `
     ownerId String
     title   String
     @@gate(2.4.4.5)
-    @@allow(create, ownerId == auth().id)
+    @@allow(create, ownerId == auth().id || title == 'open')
   }
 `
 
@@ -15690,6 +15690,19 @@ describe('createTestEnv', () => {
     const stricter = parse(POLICY_LADDER_SCHEMA.replace('@@gate(2.4.4.5)', '@@gate(3.4.4.5)')).schema
     const caught = await env.verifyGateLadder({ against: stricter, ops: ['read'] })
     expect(caught.some((m: any) => m.got === 'allow' && m.expect === 'deny')).toBe(true)
+    env.close()
+  })
+
+  test('a create policy pinning a column to the caller is graded, not skipped', async () => {
+    // PushSubscription's `@@allow(all, userId == auth().id)` reported every
+    // admitted create level as skipped; the fixture is now owned by the caller.
+    const schema = POLICY_LADDER_SCHEMA.replace(" || title == 'open'", '')
+    const env    = await createTestEnv({ schema })
+    expect(await env.verifyGateLadder({ ops: ['create'] })).toEqual([])
+
+    const stricter = parse(schema.replace('@@gate(2.4.4.5)', '@@gate(2.5.4.5)')).schema
+    const caught   = await env.verifyGateLadder({ against: stricter, ops: ['create'] })
+    expect(caught.map((m: any) => [m.level, m.got])).toEqual([[4, 'allow']])
     env.close()
   })
 

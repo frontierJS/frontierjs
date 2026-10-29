@@ -258,7 +258,7 @@ describe('schema.lite', () => {
     // screen is empty for that person" rather than as a missing line.
     const r     = parseFile(SCHEMA)
     const roles = r.schema.enums
-      .find((e: any) => e.name === 'WorkspaceRole').values
+      .find((e: any) => e.name === 'WorkspaceRole')!.values
       .map((v: any) => v.name)
     expect(roles.filter((v: string) => WORKSPACE_ROLE_LEVEL[v] === undefined)).toEqual([])
     // …and nothing in the mapping that the enum does not declare.
@@ -308,7 +308,7 @@ describe('generated migration', () => {
     expect(readFileSync(join(dir, files[0]), 'utf8')).toContain(generateDDLForDatabase(r.schema, 'audit'))
   })
 
-  test('applies to a fresh database — 71 tables, FK-clean, all STRICT', () => {
+  test('applies to a fresh database — 72 tables, FK-clean, all STRICT', () => {
     const path = freshDb()
     const raw  = new Database(path)
     const tables = raw.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
@@ -355,8 +355,9 @@ describe('generated migration', () => {
     // `ServerPosture`. 67 with the four monitor tables (`FJS-1557`). 68 with
     // `AppBackup`. 69 with `AppEditor` (`FJS-D1230`). 70 with `DomainRoute` (`FJS-D1040`).
     // 71 with `BackupDestination` (`FJS-D1488`). 72 with `AppDrill` (`FJS-D1525`).
-    // 71 again with `Backup` merged into `AppBackup` (`FJS-D1606`).
-    expect(tables.length).toBe(71)
+    // 71 again with `Backup` merged into `AppBackup` (`FJS-D1606`). 72 with
+    // `AppPlatform` (`FJS-D1630`).
+    expect(tables.length).toBe(72)
     expect(raw.query('PRAGMA foreign_key_check').all()).toEqual([])
 
     const nonStrict = tables.filter((t: string) => {
@@ -450,8 +451,8 @@ describe('Secret.data protection', () => {
     // column round-trips as "[object Object]". Remove this guard only when
     // that is fixed upstream.
     const r     = parseFile(SCHEMA)
-    const model = r.schema.models.find((m: any) => m.name === 'Secret')
-    const field = model.fields.find((f: any) => f.name === 'data')
+    const model = r.schema.models.find((m: any) => m.name === 'Secret')!
+    const field = model.fields.find((f: any) => f.name === 'data')!
     expect(field.type.name).toBe('String')
     expect(field.attributes.some((a: any) => a.kind === 'encrypted')).toBe(true)
   })
@@ -2414,10 +2415,22 @@ describe('the access and constraints this schema declares are enforced', () => {
 // third boolean with no reader reads as a third idea.
 describe('App reachability', () => {
   test('exposesPort is the one declared exposure; there is no isPublic beside it', () => {
-    const app = parseFile(SCHEMA).schema.models.find((m: any) => m.name === 'App')
+    const app = parseFile(SCHEMA).schema.models.find((m: any) => m.name === 'App')!
     const names = app.fields.map((f: any) => f.name)
     expect(names).toContain('exposesPort')
     expect(names).not.toContain('isPublic')
+  })
+})
+
+// A vendor narrowed out of ProviderKind is one a provider_key Secret cannot
+// name, so an AppPlatform naming it could never find its account (FJS-D1607).
+describe('vendor subsets', () => {
+  test('every PlatformProvider and ComputeProvider is a ProviderKind', () => {
+    const enums  = parseFile(SCHEMA).schema.enums
+    const values = (name: string) => enums.find((e: any) => e.name === name)!.values.map((v: any) => v.name)
+    const kinds  = values('ProviderKind')
+    expect(values('PlatformProvider').filter((v: string) => !kinds.includes(v))).toEqual([])
+    expect(values('ComputeProvider').filter((v: string) => !kinds.includes(v))).toEqual([])
   })
 })
 

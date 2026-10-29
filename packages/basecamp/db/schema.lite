@@ -530,6 +530,13 @@ enum ProviderKind   { custom hetzner digitalocean cloudflare github }
 // The vendors that sell machines — what a Server can run on. Every member is a
 // `ProviderKind` member too (FJS-D1607); an edge or a forge is not one.
 enum ComputeProvider { custom hetzner digitalocean }
+// The vendors that run an App with no machine of ours — a subset of
+// ProviderKind, as ComputeProvider is; adopting from an account whose
+// `providerKind` is not here is refused by name.
+enum PlatformProvider { cloudflare }
+// Where a platform App is built: `outpost` builds on `builderServerId` and
+// uploads the result, `platform` asks the vendor to build from git.
+enum PlatformBuild    { outpost platform }
 // How a Server row came to be: bought through a ComputeProvider, or an
 // existing machine registered by hand.
 enum RegisterMethod { imported provisioned }
@@ -551,8 +558,9 @@ enum DeployStatus   { pending building success failed cancelled rolled_back }
 // `button` is `deployments.create` by hand (the App page, bcamp), `push` the
 // git Receiver, `laptop` `fli basecamp:deploy`, `rollback` and `rebind` the
 // service's own, `publish` an owner's draft, `freeze` a workbench preview.
+// `observed` is a release a platform ran that Basecamp did not start.
 // `Job.trigger` is another noun (manual/scheduled) and stays a String.
-enum DeployTrigger  { button push laptop rollback rebind publish freeze }
+enum DeployTrigger  { button push laptop rollback rebind publish freeze observed }
 enum StepStatus     { pending running success failed skipped }
 enum JobKind        { one_shot scheduled triggered workflow }
 enum JobStatus      { pending running failed cancelled }
@@ -1850,6 +1858,7 @@ model App {
   deployments   Deployment[]
   jobs          Job[]
   appServers    AppServer[]
+  appPlatforms  AppPlatform[]
   appNetworks   AppNetwork[]
   domains       Domain[]
   domainRoutes  DomainRoute[]
@@ -2060,6 +2069,47 @@ model AppServer {
   @@relator([appId, serverId], many, by: replicaIndex)
 }
 
+// Where an App runs at a vendor rather than on a machine (`IDEAS/app-platforms.md`,
+// `FJS-D1630`). Beside AppServer, not folded into it: a nullable `serverId`
+// breaks AppServer's relator and leaves `replicaIndex` and `containerId`
+// meaningless to every reader of a placement.
+model AppPlatform {
+  id                String           @id @default(uuid())
+  workspaceId       String
+  appId             String           @immutable
+  app               App              @relation(fields: [appId], references: [id], onDelete: Cascade)
+  // The `provider_key` Secret — a bare id, as `Server.providerId` is, so a
+  // retired key leaves the row saying so rather than vanishing with it.
+  accountId         String           @immutable
+  provider          PlatformProvider @immutable
+  // The account at the VENDOR, as `Server.providerServerId` is the machine
+  // there: one token can open several, and every project path is under one.
+  providerAccountId String           @immutable
+  // The vendor's own name for it: a Worker's script name, a Vercel project id.
+  // Two Apps cannot both be one Worker.
+  name              String           @trim @length(1, 200) @immutable
+  build             PlatformBuild    @default(outpost)
+  // Which Outpost builds; null with `build = platform`.
+  builderServerId   String?
+  hookUrl           String?          @encrypted
+  receiverSecret    String?          @encrypted @system
+  // What the vendor last said serves traffic. A person who could write these
+  // could claim a release is live.
+  status            AppStatus        @default(unknown) @system
+  liveVersion       String?          @system
+  observedAt        DateTime?        @system
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @default(now()) @updatedAt
+
+  // Binding an App to a vendor account spends that account's token, which is
+  // the Secret's own write level.
+  @@gate(2.5)
+  @@unique([provider, providerAccountId, name])
+  @@trail(audit)
+  @@index([appId])
+  @@index([workspaceId])
+}
+
 // One archive of an app's data volume, taken on the machine that holds it
 // (`FJS-D679`, `FJS-1782`), scoped through App and Server by the ordinary
 // desugar (`FJS-D965`). The hub's own archive is a row here on the hub App
@@ -2202,6 +2252,9 @@ model Deployment {
   branch               String?
   author               String?      @immutable
   builtImage           String?
+  // The vendor's version id on a platform release, as the vendor answered it.
+  // A rollback promotes it, so a caller who could write it picks what goes live.
+  platformVersion      String?      @system
   previousDeploymentId String?      @immutable
   configSnapshot       Json         @default("{}") @immutable
   triggeredBy          String?      @immutable

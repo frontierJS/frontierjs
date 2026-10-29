@@ -524,6 +524,20 @@ const HUB_CONTROLS: { id: string; group: string; severity: Severity; fix: string
       ? { ok: false, message: `Mail goes through ${mailer} from ${mailFrom}, which receivers reject — set MAIL_FROM` }
       : { ok: true,  message: `Mail goes through ${mailer} from ${mailFrom}` }
   } },
+  // A ping always has a server (`push.ts`), so this row NAMES the rung rather
+  // than failing on one: rung 3 is public and the topic's suffix is the whole
+  // secret, which an operator should read here and not discover. The one
+  // failure is the hub's own ntfy App with a blank iOS relay: iOS delivers
+  // through Apple, so such a phone hears nothing in the background and the
+  // ping that says the box is down arrives when the app is next opened.
+  { id: 'hub.push', group: 'hub', severity: 'low', fix: 'Set the iOS relay Variable on the ntfy App to https://ntfy.sh and redeploy it', grade: (_r, host) => {
+    const { rung, url, relay } = host.install.push
+    if (rung === 1) return { ok: true, message: `Phone pings via your ntfy at ${url}` }
+    if (rung === 3) return { ok: true, message: 'Phone pings via ntfy.sh (public server; the topic is the secret)' }
+    return relay
+      ? { ok: true,  message: `Phone pings via the ntfy App at ${url}, iOS relayed through ${relay}` }
+      : { ok: false, message: `Phone pings via the ntfy App at ${url}, whose iOS relay is blank — an iPhone hears nothing in the background` }
+  } },
 ]
 
 function loopback(url: string): boolean {
@@ -548,7 +562,7 @@ function envControl(files: PostureReadings['host_files']): Grade {
 export const HUB_CONTROL_IDS = HUB_CONTROLS.map(c => c.id)
 
 /** Graded from Basecamp's own rows, so a missing or stale report does not hide them. */
-const IN_PROCESS = new Set(['hub.backup-recent', 'hub.key-escrowed', 'hub.app-url', 'hub.api-url', 'hub.mailer', 'hub.app-row-drift'])
+const IN_PROCESS = new Set(['hub.backup-recent', 'hub.key-escrowed', 'hub.app-url', 'hub.api-url', 'hub.mailer', 'hub.push', 'hub.app-row-drift'])
 
 /** What the box a Basecamp runs on should look like, beyond any fleet machine. */
 export interface HostDeclared {
@@ -568,6 +582,8 @@ export interface HostDeclared {
     /** The address mail is posted to; null when no mailer is configured. */
     mailer:     string | null
     mailFrom:   string
+    /** Which ntfy server a ping leaves through -- `app.push`, resolved at boot. */
+    push:       { rung: 1 | 2 | 3; url: string; relay?: string | null }
   }
 }
 

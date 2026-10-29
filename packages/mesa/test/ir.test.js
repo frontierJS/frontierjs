@@ -45,6 +45,7 @@ describe('lower()', () => {
     expect(tree).toEqual({
       kind: 'root',
       diagnostics: [],
+      islands: false,
       children: [
         el('div', 'Counter.mesa:6:1', [
           el('h1', 'Counter.mesa:7:3', [text(stat('Counter'))]),

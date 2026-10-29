@@ -51,7 +51,7 @@ import { readProofs, resolveRun } from './proofs.js'
 // migrated to the `###` heading form and the hand reader here, keyed to the
 // legacy bold lead, went to zero and took the section with it.
 import { readRegisters, registerLayout, readOverviewRows,
-         plain, firstClaim, severityOf, splitRow } from './registers.js'
+         plain, firstClaim, splitRow } from './registers.js'
 import { RULES }                from './checks.js'
 import { styleBundle }          from './assets.js'    
 import { PROJECTS, GLOBAL, ENV, CAT } from './ports.js'

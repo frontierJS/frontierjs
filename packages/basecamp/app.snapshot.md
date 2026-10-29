@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-57 services · 45 routes · 22 plugins · prefix (none)
+58 services · 45 routes · 23 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -184,8 +184,8 @@ a method — it applies to each one.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `anonymous` → `anonymous` → `anonymous` |
-| before | `all` | `tenantClaimGuard` → `apiKeyGuard` → `agentGuard` → `refuseSuspended` → `outpostScope` → `basecampAuditPreImage` → `secondFactorRequired` |
-| after | `all` | `basecampAuditLog` → `apiKeyUsage` |
+| before | `all` | `tenantClaimGuard` → `apiKeyGuard` → `agentGuard` → `refuseSuspended` → `outpostScope` → `auditPreImage` → `secondFactorRequired` |
+| after | `all` | `apiKeyUsage` → `auditRecord` |
 | error | `all` | `anonymous` |
 
 ## Services
@@ -1126,6 +1126,25 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 
+### `platforms` · model `platforms`
+
+- **methods** — `projects`, `adopt`
+- **custom methods** — `projects`, `adopt`
+- **who may call** —
+  - `projects` — standing 2 or above — declared `gate: 2`
+  - `adopt` — standing 5 or above — declared `gate: 5`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
 ### `portal` · model `portal`
 
 - **methods** — `find`, `get`, `ping`
@@ -1586,17 +1605,18 @@ In configure order, which is what `requires:` is checked against.
 6. `metrics-store`
 7. `mcp`
 8. `channels`
-9. `@frontierjs/auth`
-10. `setupRoutes`
-11. `enrollmentRoutes`
-12. `installRoute`
-13. `terminalRoute`
-14. `machineStreamRoute`
-15. `backupArchiveRoute`
-16. `staticRoutes`
-17. `basecamp-cloud-accounts`
-18. `basecamp-backup-destinations`
-19. `basecamp-push`
-20. `basecamp-dns-follows-fleet`
-21. `basecamp-cleanup`
-22. `corsPlugin`
+9. `audit`
+10. `@frontierjs/auth`
+11. `setupRoutes`
+12. `enrollmentRoutes`
+13. `installRoute`
+14. `terminalRoute`
+15. `machineStreamRoute`
+16. `backupArchiveRoute`
+17. `staticRoutes`
+18. `basecamp-cloud-accounts`
+19. `basecamp-backup-destinations`
+20. `basecamp-push`
+21. `basecamp-dns-follows-fleet`
+22. `basecamp-cleanup`
+23. `corsPlugin`

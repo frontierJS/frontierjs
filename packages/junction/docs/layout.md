@@ -53,6 +53,7 @@ src/
     backfill/ — index.ts · engine.ts (the middle step of expand, backfill, contract, FJS-D157)
     export/index.ts (the governed extract, FJS-D228) ·
     metrics/index.ts (keeping what /metrics said) · commitments/index.ts (the sweep under @@commitment, FJS-D368)
+    audit/index.ts (the call trail into an app-declared model, its column contract checked at boot, FJS-D873)
   mail/ — index.ts · smtp.ts · received.ts (ReceivedMail, the reply-tag kit)
   cache/index.ts · events/index.ts · scheduler/index.ts · ai/index.ts
   testing/index.ts — createTestApp, request, withTestMeta

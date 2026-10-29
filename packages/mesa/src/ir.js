@@ -170,7 +170,8 @@ function lowerAttributes(ctx, n) {
  * reported and dropped (`bindSetter`). An attribute
  * `componentAttributes` refuses is reported, as the DOM path reports it, and
  * passes nothing on either target. `client:` is a hint to a
- * server render and is dropped, as the DOM path drops it without `islands`.
+ * server render: `island` names its directive, and a target reads it only
+ * under `root.islands`, as the DOM path drops it without `islands`.
  *
  * `snippets` are its children: every child of a call is a snippet by now,
  * `slot=` and unslotted content included (`lowerSlots`, `FJS-D668`), which
@@ -178,13 +179,16 @@ function lowerAttributes(ctx, n) {
  */
 function lowerComponent(ctx, n) {
   const props = [], spreads = [], binds = []
-  let ref = null
+  let ref = null, island = null
   const at = ctx.posOf(n.start)
   for (const a of componentAttributes(n)) {
     const p = a.attr
     switch (a.kind) {
       case 'refused':
         ctx.analysis?.errors.push(`${a.message} — ${at}`)
+        break
+      case 'island':
+        island = a.name.slice('client:'.length)
         break
       case 'spread':
         spreads.push(read(ctx, a.expr))
@@ -227,6 +231,7 @@ function lowerComponent(ctx, n) {
     spreads,
     binds,
     ref,
+    island,
     snippets,
   }
 }
@@ -565,7 +570,7 @@ export function lower(ctx) {
     delete ctx._irSnippets
   }
   const diagnostics = errors ? errors.splice(errorsBefore) : []
-  const root = { kind: 'root', children, diagnostics }
+  const root = { kind: 'root', children, diagnostics, islands: !!ctx.config?.islands }
   if (ctx.styleNodes?.length) root.styles = lowerStyles(ctx)
   return root
 }

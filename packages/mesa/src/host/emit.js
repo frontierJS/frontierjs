@@ -23,8 +23,10 @@
  * render effects and no blocks: a server render runs the graph once. Static
  * text and attributes are escaped here at compile time by the functions the
  * runtime (`runtime-server.js`) applies to live values, so the two cannot
- * drift. A kind the string mode does not lower yet throws the same refusal
- * as a missing tag.
+ * drift. A child component is called with `$$out` as its anchor, so a tree
+ * is string mode throughout or not at all (`render-component.js` falls the
+ * whole tree back). A kind the string mode does not lower yet throws the
+ * same refusal as a missing tag.
  *
  * The lines are built EAGERLY and the xNode only writes them. The head
  * declarations (`$$props`, `$$emit`, …) are emitted only when
@@ -82,6 +84,16 @@ function kindSpelling(n) {
     case 'html':            return '{@html}'
     default:                return `{${n.kind}}`
   }
+}
+
+// The DOM path builds an each body from `trimEmptyNodes(mainBlock)`: a
+// whitespace-only text at either edge of the body is not in the template.
+function edgeTrimmed(children) {
+  const blank = (c) => c?.kind === 'text' && c.static && !c.parts.map((p) => p.value).join('').trim()
+  let a = 0, b = children.length
+  while (a < b && blank(children[a])) a++
+  while (b > a && blank(children[b - 1])) b--
+  return children.slice(a, b)
 }
 
 /** Groups a directive's name for the report: `bind:value` and `bind:checked` are one gap. */
@@ -269,6 +281,7 @@ export function hostOffenses(ir, t) {
       // A tag that is a read is checked against the same table when it is
       // built, naming the tag; only a literal one can be refused here.
       case 'dynamic-element': {
+        if (t.mode === 'string') return add('<mesa:element>', '<mesa:element>', n.loc)
         if (!n.tag) add('<mesa:element> without this', '<mesa:element> without this', n.loc)
         else if (/^"[^"]*"$/.test(n.tag.code) && !t.tags[JSON.parse(n.tag.code)]) {
           add(`<${JSON.parse(n.tag.code)}>`, `<${JSON.parse(n.tag.code)}>`, n.loc)
@@ -290,16 +303,23 @@ export function hostOffenses(ir, t) {
       case 'text':
         for (const p of n.parts) if (p.kind === 'unlowered') add(spelling(p), spelling(p), p.loc)
         return
-      case 'comment':
+      // What the string mode does not write yet is an offense of its own,
+      // so the tally counts it and the emitter refuses it by name
+      // (`IDEAS/server-render-without-dom.md` Phase 2).
       case 'portal':
+      case 'html':
+        return t.mode === 'string' ? add(kindSpelling(n), kindSpelling(n), n.loc) : undefined
+      // An island needs the marker the loader reads, which the string mode
+      // does not write yet; without `islands` the DOM path renders it inline.
       case 'component':
+        return t.mode === 'string' && n.island && ir.islands ? add(`${kindSpelling(n)} client:${n.island}`, 'island', n.loc) : undefined
+      case 'comment':
       case 'if':
       case 'each':
       case 'key':
       case 'snippet':
       case 'render':
       case 'const':
-      case 'html':
         return
       case 'unlowered':
         return add(spelling(n), n.what === 'component' ? 'component' : spelling(n), n.loc)
@@ -436,6 +456,11 @@ export function buildHost(ctx, t) {
         dep(a.value.expr)
         pieces.push({ at: a.at, plain: a.value.kind !== 'spread', entry: [a.value.kind === 'spread' ? '...' : a.name, a.value.expr.code] })
       } else if (a.name === 'class') cls = [a.name, htmlEntitiesToText(a.value)]
+      // A literal style never reaches the DOM path's template (FJS-D1464): it
+      // is the first write after the template, so it serializes after every
+      // static and the scope class, and before any other live piece. An
+      // empty one stays in the template.
+      else if (a.name === 'style' && a.value) pieces.push({ at: -1, plain: true, entry: ['style', q1(htmlEntitiesToText(a.value))] })
       else statics.push([a.name, a.value === true ? true : htmlEntitiesToText(a.value)])
     }
     if (cls) statics.push(cls)
@@ -669,7 +694,7 @@ export function buildHost(ctx, t) {
       if (n.item.pattern) {
         line(ind + 2, `const ${n.item.fn} = () => { const ${n.item.pattern} = ${itemParam}(); return { ${n.item.names.join(', ')} }; };`)
       }
-      emitChildren(n.children, '$$out', ind + 2)
+      emitChildren(edgeTrimmed(n.children), '$$out', ind + 2)
       if (n.else) {
         line(ind + 1, '} else {')
         emitChildren(n.else, '$$out', ind + 2)
@@ -692,10 +717,12 @@ export function buildHost(ctx, t) {
 
   // The anchor is a marker, and the child's own `append(__anchor, …)` lands
   // its nodes before it — the DOM path's anchor comment, as a cell. The
-  // registry is keyed by that marker, so each call gets one of its own.
+  // registry is keyed by that marker, so each call gets one of its own. The
+  // string mode hands the child `$$out` and the props once: a server render
+  // runs the graph once, so nothing is registered and nothing is pushed
+  // after the call, and `bind:` is its initial value flowing down.
   const emitComponent = (n, parent, ind) => {
-    if (string) unwritten(n)
-    const m = marker(parent, ind)
+    const m = string ? '$$out' : marker(parent, ind)
     const keyOf = (name) => (IDENT.test(name) ? name : q1(name))
     const values = n.props.map((p) => {
       if (p.value === true) return 'true'
@@ -723,6 +750,7 @@ export function buildHost(ctx, t) {
       ? `Object.assign({}, ${n.spreads.map((e) => `(${e.code})`).join(', ')}, ${literal})`
       : literal
     line(ind, `${n.call}(${m}, ${obj});`)
+    if (string) return
     // The child's registry is found by its anchor, so every call below needs
     // it registered first; the order is the DOM path's.
     const live = n.spreads.length || n.props.some((p) => typeof p.value === 'object')

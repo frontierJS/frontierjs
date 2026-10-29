@@ -73,6 +73,14 @@ src/
                          touch, one finger, so an attachment's addEventListener runs.
                          `$.measure`/`$.viewport`/`$.focus` answer a Promise
                          here, in runtime.js and in runtime-terminal.js alike
+  runtime-server.js    — the server runtime, @frontierjs/mesa/runtime/server:
+                         `esc` and `attrs`, the one escaper and the one
+                         attribute serializer the emitter's string mode
+                         calls (`FJS-D1634`). Nothing else: the mode writes
+                         `$$out.push` lines, not `$$host` calls, so there is
+                         no node tree here and no engine. Every rule in it
+                         is a happy-dom serialization behavior the DOM path
+                         shows, since parity is byte for byte against it
   entities.js          — htmlEntitiesToText(): character references as text,
                          read by the compiler and the terminal runtime's {@html}
   render-component.js  — renderComponent(): a component → HTML, at build time
@@ -172,7 +180,9 @@ scripts/
   corpus.mjs           — bun run corpus: every .mesa in the workspace, compiled
                          prod and dev, acorn-parsed; --save NAME / --diff NAME
                          grade a change meant to move no byte; --portability
-                         terminal tallies every node the terminal would refuse
+                         terminal tallies every node the terminal would refuse;
+                         --portability server also renders each lowering file
+                         on both paths and compares the HTML byte for byte
   portability.js       — the report's counting, pure: a file lowers only when
                          every component it imports lowers. A tally change is
                          graded by test/portability.test.js, not by eye

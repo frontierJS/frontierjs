@@ -407,20 +407,30 @@ async function compileFile(canonical, source, opts) {
     if (typeof out === 'string') source = out
     else ({ code: source, locLines = null } = out)
   }
-  let ctx
-  try {
-    ctx = await compileSource(source, {
-      filename: canonical,
-      css:      false,    // css:false → CSS extracted as ctx.css.result string, not runtime injection
-      debug:    false,
-      dev:      false,
-      warning:  () => {},
-      ...(locLines ? { locLines } : {}),
-      ...opts.compileOptions,
-    })
-  } catch (err) {
+  const compileAs = (extra) => compileSource(source, {
+    filename: canonical,
+    css:      false,    // css:false → CSS extracted as ctx.css.result string, not runtime injection
+    debug:    false,
+    dev:      false,
+    warning:  () => {},
+    ...(locLines ? { locLines } : {}),
+    ...opts.compileOptions,
+    ...extra,
+  }).catch((err) => {
+    if (err.refused && opts.compileOptions?.target === 'server') return { refused: err.refused }
     throw new Error(`[Mesa renderComponent] Compile error in ${canonical}:\n${err.message}`)
-  }
+  })
+  // A kind the string mode cannot write yet falls back to the DOM path for
+  // this file and is named in the result (`FJS-D1634`, `unlowered`). The
+  // refusal arrives two ways from one site in the compiler: a throw, or
+  // `ctx.targetRefusal` on a file whose `<script module>` keeps its data half
+  // and whose default export would throw at mount — which a render never
+  // reaches, so without this the page would be the refusal text. Only the
+  // string mode falls back: a host target's module is not run through here.
+  let ctx = await compileAs({})
+  const refused = ctx.refused ?? (opts.compileOptions?.target === 'server' ? ctx.targetRefusal : null) ?? null
+  if (refused) ctx = await compileAs({ target: undefined })
+  const mode = opts.compileOptions?.target === 'server' && !refused ? 'server' : 'dom'
 
   // De-scope CSS — but only for the targets that INLINE it.
   //
@@ -450,6 +460,10 @@ async function compileFile(canonical, source, opts) {
     css,
     islands: ctx.islands ?? [],
     errors:  ctx.analysis?.errors?.length ? [...ctx.analysis.errors] : [],
+    // The mode this file was ACTUALLY compiled in, which after a fallback is
+    // not the one asked for; the executor runs it as it was compiled.
+    mode,
+    refused,
   }
 }
 
@@ -464,7 +478,7 @@ async function compileTree(filePath, visited = new Map(), opts = {}, sourceOverr
     const seen = visited.get(canonical)
     seen.tmpPath ??= makeTmpPath(canonical, opts.tmpDir, `${process.pid}:${Math.random()}`)
     seen.pinned = true
-    return { tmpPath: seen.tmpPath, css: '', modules: new Map(), islands: [], styles: [] }
+    return { tmpPath: seen.tmpPath, css: '', modules: new Map(), islands: [], styles: [], unlowered: [] }
   }
   const slot = { tmpPath: null, pinned: false }
   visited.set(canonical, slot)
@@ -542,6 +556,7 @@ async function compileTree(filePath, visited = new Map(), opts = {}, sourceOverr
   // declaring `<Counter client:load />` are indistinguishable in the flattened
   // list, and a loader cannot resolve `Counter` to a module to import.
   const islands = unit.islands.map((i) => ({ ...i, file: canonical }))
+  const unlowered = unit.refused ? [{ file: canonical, refused: unit.refused }] : []
 
   // Find + rewrite .mesa/.md imports
   const rewrites = []
@@ -597,6 +612,7 @@ async function compileTree(filePath, visited = new Map(), opts = {}, sourceOverr
     const child = await compileTree(depPath, visited, opts)
     for (const [k, v] of child.modules) modules.set(k, v)
     islands.push(...child.islands)
+    unlowered.push(...child.unlowered)
     for (const s of child.styles) {
       // A style with no id cannot be compared, so it is always kept.
       if (s.id && seen.has(s.id)) continue
@@ -643,7 +659,29 @@ async function compileTree(filePath, visited = new Map(), opts = {}, sourceOverr
     }
   }
 
-  return { tmpPath, css: styles.map((s) => s.css).join('\n'), modules, islands, styles }
+  return { tmpPath, css: styles.map((s) => s.css).join('\n'), modules, islands, styles, unlowered, mode: unit.mode }
+}
+
+/**
+ * A tree is string mode throughout or not at all: a parent compiled for the
+ * string mode hands its child `$$out` and a content snippet that pushes onto
+ * it, and a DOM-compiled child would call `before` on the array; the other
+ * way round fails the same. So a refusal anywhere in the tree falls the
+ * WHOLE tree back to the DOM path, and the result still names each file the
+ * string mode refused. The first pass is what finds them, and `compileFile`'s
+ * per-file fallback is what lets that pass reach a refused file's imports.
+ */
+async function compileTreeOnTarget(rootPath, opts, source) {
+  let visited = new Map()
+  let tree = await compileTree(rootPath, visited, opts, source)
+  if (opts.compileOptions?.target === 'server' && tree.unlowered.length) {
+    const unlowered = tree.unlowered
+    visited = new Map()
+    // The first pass reported every compile problem and every dependency.
+    tree = await compileTree(rootPath, visited, { ...opts, compileOptions: { ...opts.compileOptions, target: undefined }, problems: undefined, deps: undefined }, source)
+    tree = { ...tree, unlowered, mode: 'dom' }
+  }
+  return { tree, visited }
 }
 
 // ── HTML rendering ────────────────────────────────────────────────────────────
@@ -727,7 +765,7 @@ async function treeIsCurrent(entry) {
  * Execute a compiled component in the Mesa runtime and return its HTML.
  * Also extracts named module exports (e.g. `export const subject`).
  */
-async function executeComponent(mod, props, { label, sources } = {}) {
+async function executeComponent(mod, props, { label, sources, mode } = {}) {
   const fn  = mod.default
 
   if (typeof fn !== 'function') {
@@ -742,7 +780,7 @@ async function executeComponent(mod, props, { label, sources } = {}) {
   // subscribed to any module-scope signal they read.
   let html
   try {
-    html = await renderToHTML(fn, props, { label })
+    html = await renderToHTML(fn, props, mode === 'server' ? { label, target: 'server' } : { label })
   } catch (err) {
     throw attributeToSource(err, sources)
   }
@@ -955,7 +993,11 @@ async function generateUnoCSS(html, unoConfig) {
  * @param {string}  [options.filename]      — Source filename (used in error messages + import resolution)
  * @param {'html'|'email'|'fragment'|'js'} [options.target='html']
  * @param {object}  [options.unocss]        — UnoCSS config object (@unocss/core createGenerator options)
- * @param {object}  [options.compileOptions] — Extra options forwarded to compileSource()
+ * @param {object}  [options.compileOptions] — Extra options forwarded to compileSource().
+ *                                             `{ target: 'server' }` renders through
+ *                                             the string mode (`FJS-D1634`); a file
+ *                                             that mode refuses is rendered by the
+ *                                             DOM path and named in `.unlowered`.
  * @param {boolean} [options.islands=false]  — Wrap `client:*` components in island
  *                                             markers so a client loader can find them
  *                                             in the output. Off by default: RULE 26
@@ -1011,6 +1053,10 @@ async function generateUnoCSS(html, unoConfig) {
  *                           emit `<style id="mHASH">` per component; that id is
  *                           the scope hash, so the runtime's `addStyles` treats
  *                           an already-present block as done and injects nothing.
+ *     .unlowered {Array}  — under `compileOptions.target: 'server'`, each file the
+ *                           string mode refused and the DOM path rendered instead,
+ *                           `{ file, refused }` with the refusal's sentence; `[]`
+ *                           when every file lowered, and always `[]` otherwise.
  *     .islands  {Array}   — every `client:*` call site in the rendered tree, in
  *                           compile order, each `{ component, directive, media?,
  *                           props?, file }`. This is `ctx.islands` per module,
@@ -1038,6 +1084,14 @@ export async function renderComponent(source, options = {}) {
     styleTag             = true,
     preserveMediaQueries = true,
   } = options
+
+  // The same word names the compile target in `compileOptions` (`FJS-D1634`);
+  // here it is the output wrapper, and a string-mode request in this slot
+  // would silently render through happy-dom.
+  if (target === 'server') {
+    throw new Error("[Mesa renderComponent] target: 'server' is a compile target — pass compileOptions: { target: 'server' }. " +
+      "The target option is the output wrapper: 'html' | 'email' | 'fragment' | 'js'.")
+  }
 
   // `islands` is sugar over compileOptions — the compiler flag is what actually
   // switches emission, and it has to reach every module in the tree, not just
@@ -1074,8 +1128,8 @@ export async function renderComponent(source, options = {}) {
 
     const problems = []
     // Pass source directly — no temp .mesa file needed at entry point.
-    const result = await compileTree(
-      srcPath, new Map(), { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope, alias, transformSource, noEmit: true, problems }, source
+    const { tree: result } = await compileTreeOnTarget(
+      srcPath, { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope, alias, transformSource, noEmit: true, problems }, source
     )
     const { modules, css, islands: treeIslands } = result
     refuseCompileErrors(problems)
@@ -1117,9 +1171,8 @@ export async function renderComponent(source, options = {}) {
   let entry = await _treeCache.get(key)?.catch(() => null)
   if (!entry || !(await treeIsCurrent(entry))) {
     const build = (async () => {
-      const visited = new Map()
       const deps    = []
-      const tree = await compileTree(rootPath, visited, { ...treeOpts, problems, deps }, source)
+      const { tree, visited } = await compileTreeOnTarget(rootPath, { ...treeOpts, problems, deps }, source)
       refuseCompileErrors(problems)
 
       // Temp path back to the file it was compiled from, so a stack can name a
@@ -1127,7 +1180,7 @@ export async function renderComponent(source, options = {}) {
       const sources = new Map()
       for (const [canonical, { tmpPath }] of visited) sources.set(tmpPath, canonical)
       const mod = await import(tree.tmpPath)
-      return { mod, sources, deps, css: tree.css.trim(), islands: tree.islands, styles: tree.styles }
+      return { mod, sources, deps, css: tree.css.trim(), islands: tree.islands, styles: tree.styles, unlowered: tree.unlowered, mode: tree.mode }
     })()
     _treeCache.set(key, build)
     build.catch(() => { if (_treeCache.get(key) === build) _treeCache.delete(key) })
@@ -1138,7 +1191,7 @@ export async function renderComponent(source, options = {}) {
   treeStyles  = [...(entry.styles ?? [])]
 
   // 2. Execute the component
-  const rendered = await executeComponent(entry.mod, data, { label: path.basename(rootPath), sources: entry.sources })
+  const rendered = await executeComponent(entry.mod, data, { label: path.basename(rootPath), sources: entry.sources, mode: entry.mode })
   html         = rendered.html
   preWrapHTML  = rendered.html   // saved for plain-text generation after try block
   namedExports = rendered.namedExports
@@ -1209,6 +1262,7 @@ export async function renderComponent(source, options = {}) {
     subject: namedExports.subject,
     islands: treeIslands ?? [],
     styles:  treeStyles ?? [],
+    unlowered: [...(entry.unlowered ?? [])],
   }
 
   if (target === 'email') {

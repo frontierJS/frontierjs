@@ -17,6 +17,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { writeFileSync, unlinkSync, mkdirSync, rmSync } from 'node:fs'
 import path from 'node:path'
+import * as acorn from 'acorn'
 import { compileSource } from '../src/compiler.js'
 import { ANCHOR_DATA } from '../src/runtime.js'
 import * as runtime from '../src/runtime.js'
@@ -25,7 +26,7 @@ import {
 } from '../src/render.js'
 import { renderFile } from '../src/render-component.js'
 import {
-  createSignal, createEffect, flushSync, mount, setRenderEnvironment,
+  createRoot, createSignal, createEffect, flushSync, mount, setRenderEnvironment,
 } from '../src/runtime.js'
 
 let n = 0
@@ -41,6 +42,56 @@ async function build(src) {
   writeFileSync(file, js)
   try { return (await import('file://' + file)).default }
   finally { try { unlinkSync(file) } catch {} }
+}
+
+/**
+ * The same source on the string path (`target: 'server'`, `FJS-D1634`). The
+ * module is parsed before it is imported (Invariant 15): an import error on
+ * a module the compiler emitted names the wrong line, and a clean compile is
+ * not proof the text is JavaScript.
+ */
+async function buildServer(src) {
+  const ctx = await compileSource(src, { filename: `/S${n}.mesa`, dev: false, target: 'server' })
+  if (ctx.analysis?.errors?.length) throw new Error(ctx.analysis.errors[0])
+  acorn.parse(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' })
+  const js = ctx.result
+    .replace(/'@frontierjs\/mesa\/runtime\/server'/g, `'./src/runtime-server.js'`)
+    .replace(/'@frontierjs\/mesa\/runtime'/g, `'./src/runtime.js'`)
+  const file = path.join(process.cwd(), `_tmp_ssr_${n++}.mjs`)
+  writeFileSync(file, js)
+  try { return (await import('file://' + file)).default }
+  finally { try { unlinkSync(file) } catch {} }
+}
+
+/** A string-path component writes onto an array; the join is its page, trimmed as the DOM serializer trims. */
+function renderString(Comp, props = {}) {
+  let html = ''
+  createRoot((dispose) => {
+    const out = []
+    Comp(out, props)
+    html = out.join('').trim()
+    dispose()
+  })
+  return html
+}
+
+/**
+ * Every element's attribute names, as the parser reads the markup, outermost
+ * first. A substring check cannot tell an attribute from the same word in a
+ * value, and the question this answers is which NAMES are on each element.
+ */
+function attributesOf(html) {
+  const t = document.createElement('template')
+  t.innerHTML = html
+  const seen = []
+  const walk = (node) => {
+    for (const el of node.children) {
+      seen.push(`${el.localName}[${[...el.attributes].map((a) => a.name).join(' ')}]`)
+      walk(el)
+    }
+  }
+  walk(t.content)
+  return seen
 }
 
 /**
@@ -372,31 +423,170 @@ describe('renderToHTML — no attribute the author did not write', () => {
   // form posted to whatever machine built it — with that machine's localhost
   // URL shipped in a public file. template() parses per instance on the server
   // for this reason.
+  //
+  // Each case runs on both paths. The string path has no element to clone,
+  // so it cannot invent an attribute this way; what it is graded on is
+  // writing the same names as the DOM path and no other, parsed back out
+  // rather than matched as text.
+  async function onBoth(src, props = {}) {
+    const dom = unscope(await renderToHTML(await build(src), props))
+    const str = unscope(renderString(await buildServer(src), props))
+    return { dom, str, attrs: { dom: attributesOf(dom), str: attributesOf(str) } }
+  }
+
   it('does not invent formaction/formmethod on an input', async () => {
-    const Comp = await build(`<form action="/search"><input type="search" name="q" /></form>`)
-    const html = await renderToHTML(Comp)
-    expect(html).not.toMatch(/formaction/)
-    expect(html).not.toMatch(/formmethod/)
-    expect(unscope(html)).toBe('<form action="/search"><input type="search" name="q"></form>')
+    const { dom, str, attrs } = await onBoth(`<form action="/search"><input type="search" name="q" /></form>`)
+    expect(dom).toBe('<form action="/search"><input type="search" name="q"></form>')
+    expect(attrs.dom).toEqual(['form[action]', 'input[type name]'])
+    expect(attrs.str).toEqual(attrs.dom)
+    expect(str).toBe(dom)
   })
 
   it('leaves an authored relative formaction relative', async () => {
-    const Comp = await build(`<form action="/a"><input type="submit" formaction="/b" /></form>`)
-    const html = await renderToHTML(Comp)
-    expect(html).toMatch(/formaction="\/b"/)
-    expect(html).not.toMatch(/http:\/\//)
+    const { dom, str, attrs } = await onBoth(`<form action="/a"><input type="submit" formaction="/b" /></form>`)
+    for (const html of [dom, str]) {
+      expect(html).toMatch(/formaction="\/b"/)
+      expect(html).not.toMatch(/http:\/\//)
+    }
+    expect(attrs.dom).toEqual(['form[action]', 'input[type formaction]'])
+    expect(attrs.str).toEqual(attrs.dom)
+    expect(str).toBe(dom)
   })
 
   it('repeats a template without accumulating anything', async () => {
     // One template, three instances: the per-instance parse must produce the
-    // same markup each time, not diverge from the first.
-    const Comp = await build(`<script>
+    // same markup each time, not diverge from the first. A live `value` on a
+    // text input is the element's property and not in the markup, on either
+    // path, so the input carries no attribute at all.
+    const { dom, str, attrs } = await onBoth(`<script>
   let rows = [1, 2, 3]
 </script>
 <ul>{#each rows as r}<li><input value={r} /></li>{/each}</ul>`)
-    const html = unscope(await renderToHTML(Comp))
-    expect(html.match(/<input/g)).toHaveLength(3)
-    expect(html).not.toMatch(/formaction/)
+    expect(attrs.dom).toEqual(['ul[]', 'li[]', 'input[]', 'li[]', 'input[]', 'li[]', 'input[]'])
+    expect(attrs.str).toEqual(attrs.dom)
+    expect(str).toBe(dom)
+  })
+})
+
+describe('renderToHTML — target: server (FJS-D1634)', () => {
+  const SRC = `<script>
+  let items = ['a', 'b']
+  let n = 2
+</script>
+<section title={n}><h1>Hi &amp; bye</h1>{#each items as it}<p class="row">{it}</p>{/each}{#if n > 1}<b>many</b>{/if}</section>`
+
+  it('runs a string-mode component with no window and answers the DOM path\'s bytes', async () => {
+    const dom = await renderToHTML(await build(SRC))
+    const Comp = await buildServer(SRC)
+    resetRenderer()
+    try {
+      expect(await renderToHTML(Comp, {}, { target: 'server' })).toBe(dom)
+    } finally {
+      initRenderer()
+    }
+  })
+
+  it('wraps a full page the same way', async () => {
+    const Comp = await buildServer(SRC)
+    const page = await renderToHTML(Comp, {}, { target: 'server', full: true, title: 'T' })
+    expect(page).toMatch(/^<!DOCTYPE html>/)
+    expect(page).toContain('<title>T</title>')
+  })
+
+  it('names the component when the string path throws', async () => {
+    const Comp = await buildServer(`<script>
+  let x = null
+</script>
+<p>{x.y}</p>`)
+    await expect(renderToHTML(Comp, {}, { target: 'server', label: 'Boom' })).rejects.toThrow(/Boom/)
+  })
+
+  it('refuses a target that is not the string mode, by name', async () => {
+    const Comp = await build(SRC)
+    await expect(renderToHTML(Comp, {}, { target: 'terminal' })).rejects.toThrow(/target: 'terminal' is not an HTML path/)
+  })
+
+  // The fallback lives where the compile does. `renderComponent` compiles with
+  // `compileOptions.target: 'server'`; a file the mode refuses is compiled
+  // again for the DOM and named in `.unlowered`, and a clean tree says `[]`.
+  const DIR = path.join(process.cwd(), '_tmp_ssr_server')
+  const file = (name, src) => { mkdirSync(DIR, { recursive: true }); const f = path.join(DIR, name); writeFileSync(f, src); return f }
+  afterAll(() => rmSync(DIR, { recursive: true, force: true }))
+
+  it('renderComponent on the string mode: a clean file lowers and unlowered is empty', async () => {
+    const r = await renderFile(file('Clean.mesa', SRC), { target: 'fragment', compileOptions: { target: 'server' } })
+    const dom = await renderFile(file('Clean.mesa', SRC), { target: 'fragment' })
+    expect(r.unlowered).toEqual([])
+    expect(r.html).toBe(dom.html)
+  })
+
+  it('a refused file with a <script module> falls back to the DOM path and is named', async () => {
+    const f = file('Html.mesa', `<script module>
+  export const kind = 'rich'
+</script>
+<script>
+  let raw = '<i>x</i>'
+</script>
+<div>{@html raw}</div>`)
+    const r = await renderFile(f, { target: 'fragment', compileOptions: { target: 'server' } })
+    expect(r.html).toBe('<div><i>x</i></div>')
+    expect(r.exports.kind).toBe('rich')
+    expect(r.unlowered).toHaveLength(1)
+    expect(r.unlowered[0].file).toBe(f)
+    expect(r.unlowered[0].refused).toMatch(/\{@html\}/)
+  })
+
+  it('a refused file without one falls back the same way', async () => {
+    const f = file('Portal.mesa', `<mesa:portal><p>out</p></mesa:portal><span>in</span>`)
+    const r = await renderFile(f, { target: 'fragment', compileOptions: { target: 'server' } })
+    expect(r.html).toContain('<span>in</span>')
+    expect(r.unlowered.map((u) => u.file)).toEqual([f])
+    expect(r.unlowered[0].refused).toMatch(/<mesa:portal>/)
+  })
+
+  it('a tree of components lowers whole: unlowered is empty and the bytes are the DOM path\'s', async () => {
+    file('Kid.mesa', `<script>
+  export let n = 0
+  export let children = null
+</script>
+<p class="kid">{n}{#if children}{@render children()}{/if}</p>`)
+    const f = file('Parent.mesa', `<script>
+  import Kid from './Kid.mesa'
+  let items = [1, 2]
+</script>
+<div>{#each items as it}<Kid n={it}><b>{it}</b></Kid>{/each}<Kid /></div>`)
+    const r = await renderFile(f, { target: 'fragment', compileOptions: { target: 'server' } })
+    const dom = await renderFile(f, { target: 'fragment' })
+    expect(r.unlowered).toEqual([])
+    expect(r.html).toBe(dom.html)
+    expect(r.html.replace(/ m[0-9a-z]+"/g, '"')).toBe('<div><p class="kid">1<b>1</b></p><p class="kid">2<b>2</b></p><p class="kid">0</p></div>')
+  })
+
+  // A string-mode parent hands its child `$$out`, so a child the mode
+  // refuses takes the whole tree to the DOM path; the child alone is named.
+  it('a server-mode entry importing a refused file falls back with it, naming only the child', async () => {
+    file('Rich.mesa', `<script>
+  let raw = '<i>x</i>'
+</script>
+<div>{@html raw}</div>`)
+    const f = file('Page.mesa', `<script>
+  import Rich from './Rich.mesa'
+  let n = 1
+</script>
+<main><h1>{n}</h1><Rich /></main>`)
+    const r = await renderFile(f, { target: 'fragment', compileOptions: { target: 'server' } })
+    expect(r.html).toBe('<main><h1>1</h1><div><i>x</i></div></main>')
+    expect(r.unlowered.map((u) => path.basename(u.file))).toEqual(['Rich.mesa'])
+    expect(r.unlowered[0].refused).toMatch(/\{@html\}/)
+  })
+
+  it('a compile error under the string mode is still a compile error', async () => {
+    const f = file('Broken.mesa', `<div>{#if}</div>`)
+    await expect(renderFile(f, { target: 'fragment', compileOptions: { target: 'server' } })).rejects.toThrow(/Compile error|error/i)
+  })
+
+  it('a top-level target: server is refused by name', async () => {
+    await expect(renderFile(file('Clean.mesa', SRC), { target: 'server' })).rejects.toThrow(/compileOptions: \{ target: 'server' \}/)
   })
 })
 

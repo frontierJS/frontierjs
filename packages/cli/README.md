@@ -60,7 +60,7 @@ Commands are markdown files under `commands/`, one namespace per directory —
 | `fli ps` | What holds each port the scheme can name, and which dev slot each app has |
 | `fli project:map` | What this application IS — the terminal report, or `--json`; `fli gui`'s `:map` draws the same model |
 
-`fli list` prints all of them, `fli <command> --help` prints one, and
+`fli list` prints all of them, `fli <command> -h` prints one (`--help` adds its guide), and
 `fli list --json` is the machine-readable form.
 
 **The edges are aspirational and this is the honest warning.** Several

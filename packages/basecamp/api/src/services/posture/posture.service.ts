@@ -228,7 +228,7 @@ export default createService({
   async host() {
     $.dispatch = false   // read-shaped
     const now    = Date.now()
-    const { server, row, hub } = await gradeHubNow(sys(), now)
+    const { server, row, hub } = await gradeHubNow(sys(), $.app.push, now)
     const machine  = server ? await postureView(server, row) : null
     const controls = [...hub, ...(machine?.controls ?? [])]
     return {

@@ -10,6 +10,7 @@
 
 // A copy that lost its ESC still carries `[2m`, so a bare one matches too —
 // but only with digits, or the `[m` of `[main]` is read as a reset.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: ESC is what an SGR sequence starts with
 const SGR = /\x1b\[([\d;]*)m|\[(\d{1,3}(?:;\d{1,3})*)m/g
 
 const FG = {

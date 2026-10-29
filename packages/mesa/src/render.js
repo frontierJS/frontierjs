@@ -266,20 +266,33 @@ export function renderFailure(cause, label) {
  * @param {string}   [options.label] — what to call this component in a failure
  *                                     message. Diagnostic only; nothing reads it
  *                                     otherwise.
+ * @param {'server'} [options.target] — the component was compiled with
+ *                                     `target: 'server'` (`FJS-D1634`): it writes
+ *                                     string pushes, so it runs with no window
+ *                                     and `initRenderer()` is not asked for.
+ *                                     Pass what the compile was given; a DOM
+ *                                     module run this way fails on its anchor.
  * @returns {Promise<string>}
  */
 export async function renderToHTML(ComponentFactory, props = {}, options = {}) {
-  if (!_win) {
-    throw new Error(
-      '[Mesa renderToHTML] initRenderer() must be called before renderToHTML(). ' +
-      'See render.js usage docs.'
-    )
-  }
   if (typeof ComponentFactory !== 'function') {
     throw new Error(
       '[Mesa renderToHTML] Expected the default export of a compiled .mesa file, got ' +
       (ComponentFactory === null ? 'null' : typeof ComponentFactory) + '. ' +
       'Pass the component function itself, not a module namespace.'
+    )
+  }
+  if (options.target === 'server') return _renderString(ComponentFactory, props, options)
+  if (options.target) {
+    throw new Error(
+      `[Mesa renderToHTML] target: '${options.target}' is not an HTML path. ` +
+      "The string mode is target: 'server'; leave it out for the DOM path."
+    )
+  }
+  if (!_win) {
+    throw new Error(
+      '[Mesa renderToHTML] initRenderer() must be called before renderToHTML(). ' +
+      'See render.js usage docs.'
     )
   }
 
@@ -314,6 +327,25 @@ export async function renderToHTML(ComponentFactory, props = {}, options = {}) {
     dispose()
   })
 
+  return options.full ? wrapPage(html, options) : html
+}
+
+// The string mode's half of renderToHTML. Synchronous for the same reason as
+// the DOM half: the reactive core is process-global. Trimmed as the DOM
+// serializer trims, so the two paths answer the same bytes for one source.
+function _renderString(ComponentFactory, props, options) {
+  let html = ''
+  createRoot((dispose) => {
+    const out = []
+    try {
+      ComponentFactory(out, props ?? {})
+    } catch (e) {
+      dispose()
+      throw renderFailure(e, options.label)
+    }
+    html = out.join('').trim()
+    dispose()
+  })
   return options.full ? wrapPage(html, options) : html
 }
 

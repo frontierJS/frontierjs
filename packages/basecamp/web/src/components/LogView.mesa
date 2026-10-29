@@ -37,7 +37,7 @@
     max-height:    70vh;
     overflow-y:    auto;
   }
-  .log-line { padding-inline-start: 0.5rem; border-inline-start: 2px solid transparent; }
+  .log-line { padding-inline-start: var(--space-sm); border-inline-start: calc(var(--border-width) * 2) solid transparent; }
   .log-line:hover { background: var(--color-surface-2, rgb(127 127 127 / 0.08)); }
   .log-line[data-level='danger']  { border-inline-start-color: var(--color-danger); }
   .log-line[data-level='warning'] { border-inline-start-color: var(--color-warning); }

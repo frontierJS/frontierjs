@@ -3724,7 +3724,7 @@ with a green suite.
 `packages/litestone/src/core/parser.js` (`expandTenancy`); tests in
 `packages/litestone/test/tenancy.test.ts` and `test/tenancy-delegation.test.ts`;
 applied in `packages/basecamp/db/schema.lite` (`AuditEvent`) and
-`packages/basecamp/api/src/core/hooks.ts` (`basecampAuditLog`).
+`packages/basecamp/api/src/app.ts` (`auditPlugin`'s `columns.workspaceId`).
 
 ### <a id="fjs-d148"></a>2026-08-25 · `FJS-D148` — a derived reference set needs two things around it: a way to be ASKED, and a way to be MOVED. `$capabilitiesFor` is the first, a data migration is the second.
 
@@ -8393,6 +8393,16 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1639"></a>2026-10-29 · `FJS-D1639` — `fli <cmd> -h` prints the card and `--help` prints the guide — `-h` is title, usage, arguments, flags and examples, with one line naming the prose's length and `--help`; `--help`, `fli help <cmd>` and `fli ? <cmd>` add the command file's prose.
+
+The owner's call. The prose under `project:codegraph` runs to 124 lines and pushed the flags off the screen on every lookup. Precedent is git and clap (`cargo`, `rg`): `-h` short, `--help` long. A `--full` flag and the `help` verb alone were set aside; overloading the global `--verbose` would give one flag two meanings. The guide is taller than most terminals, so on a TTY it goes through `$PAGER` (default `less` with `LESS=FRX`, git's defaults); `PAGER=cat` or a pipe prints it plain. Owner: `packages/cli/core/bootstrap.js` `printHelp`.
+
+### <a id="fjs-d1638"></a>2026-10-29 · `FJS-D1638` — Q7 — How does Basecamp see a platform build when the account's token is account-owned — Connect takes an optional user token beside the account token, for `/builds/` alone. With it, Basecamp gets the token trigger, the status, the log and the version-to-build mapping. Without it, Basecamp behaves as A. The account screen says the user token ends with that person's seat.
+
+Asked in [`IDEAS/app-platforms.md`](IDEAS/app-platforms.md) § Open questions. **B** was picked over **A** (the account token only. The build starts through the App's hook, and success is read as a new deployment appearing. No deployment within the build bound fails the step by name and points at the dashboard; the build's log is not shown), **C** (`build = platform` is not offered on an account without a user token. Basecamp builds on an Outpost, which the account token covers end to end).
+
+The paper's recommendation, taken as written: the owner asked to see platform builds, and under A a failed build is only ever a timeout. B keeps the account token as the one that ships (`FJS-D558`), and the user token reads builds and nothing more.
+
 ### <a id="fjs-d1637"></a>2026-10-29 · `FJS-D1637` — Q6 — Is a platform build triggered by a deploy hook or by the account token — Both: the token by default, with `hookUrl` kept as an optional `@encrypted` column for a platform or a setup that offers only a hook.
 
 Asked in [`IDEAS/app-platforms.md`](IDEAS/app-platforms.md) § Open questions. **B** was picked over **A** (the account token only (`cf builds create`, 0.3), and `hookUrl` is dropped).
@@ -12966,6 +12976,21 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d1640"></a>2026-10-29 · `FJS-D1640` — The corpus parity pass (`bun run corpus -- --portability server`) sets aside three classes and never fails them: a file that throws on both paths, a file whose two DOM renders differ from each other (a minted id), and a file that differs only in a `style` attribute's CSS text (the attribute is kept, its text masked).
+
+Found building plan 1.3 in [`IDEAS/server-render-without-dom.md`](IDEAS/server-render-without-dom.md), under `FJS-D1634`'s "parity before default". The pass renders every lowering file with no props on the DOM path (`renderToHTML`) and the string path and compares the HTML. Each class is a case where the comparison cannot say anything about the emitter:
+
+- **Throws on both paths** — a page that reads a prop it was not given. Neither path produced HTML, so there is nothing to compare. A throw on one path only is still a failure (`threwDom`, `threwStr`).
+- **Unstable on the DOM path** — a second DOM render differs from the first, so a minted id is in the markup and no string path can match it.
+- **Style text only** — happy-dom's CSSOM re-serializes a style a directive touched (`margin: 0` as `margin: 0px`, `flex: 1` as three longhands), which the string path does not imitate (plan 1.2's known non-parity). `sansStyle` masks the text between the quotes; the attribute's presence, its position and all markup around it are still graded.
+- **Imports a component the mode refuses** (added with plan 2.1, once components lowered) — the file lowers and a child it imports does not, so the render path falls the whole tree back to the DOM and there is no string render to compare (`childRefused`). The tally still counts the file, and the child is named in its own row of the tally.
+
+**Rejected: a set of CSS property names to normalize.** Shorthand expansion makes the set open-ended: every shorthand is a new entry, each one a second implementation of happy-dom's CSSOM beside happy-dom. Masking the text states the non-parity once and costs one regex.
+
+Each class is printed with its file and first difference on every run, so none is silent; the exit code is 1 for `differs`, `threwDom` or `threwStr` only. There is no ceiling on the set-aside count: a new file falling into one is visible in the tally, not refused.
+
+Owner: `reportParity` in `packages/mesa/scripts/corpus.mjs`.
+
 ### <a id="fjs-d1634"></a>2026-10-29 · `FJS-D1634` — A server render is `target: 'server'`, an output mode of the one host emitter that writes the template as string pushes, with no happy-dom and no `$$host`.
 
 Asked in [`IDEAS/server-render-without-dom.md`](IDEAS/server-render-without-dom.md) § 2. *Against the recommendation* (A): **B** was picked over **A** (a `server` profile whose `$$host` runtime builds a plain node tree, serialized once) and **C** (keep happy-dom and tune it). Why: A keeps one render effect per binding and one block per `{#if}` and `{#each}` on a render that runs the graph once, so its floor is the signal graph (~0.6 µs per node run, `signal-fanout`), and B is the shape Svelte 5 (`$$payload.out +=`), Solid (`ssr` strings), Vue (`compiler-ssr` `_push`) and Marko all use on the server; A's tree would be measured only to be rewritten. The paper's condition — revisit B only once A's tree is measured as the cost — is overridden here without that measurement, on the owner's call through the question tool.
@@ -13032,6 +13057,7 @@ Asked at [`IDEAS/web-push.md`](IDEAS/web-push.md) Q4 through the question tool. 
 Asked at [`IDEAS/web-push.md`](IDEAS/web-push.md) Q5 through the question tool, in two rounds. The owner ruled out a duplicate: a phone must not buzz for a message the open page has just shown. Keeping it per notification (`via()` in each definition) was turned down because every app would write the same check. Of the built-in rules, **visible tab plus a per-notification override** was picked over **any open socket**: a desktop tab forgotten in the background would otherwise silence every phone push. Slack works the same way.
 
 - **What counts as open.** A tab's socket reports `visibilitychange`, and the driver reads the user's connections from junction's channel manager, not from presence, which is opt-in (`FJS-703`).
+- **A connection that never sent `visibility`, or sent anything but `true`, reads hidden.** A script, a server-side client or an older bundle then cannot silence a push; the worse failure is a lost push, not an extra buzz. The client resends on every `connected`, since a reconnect is a new connection. Recorded at 3.6 by `decision-rules`, confidence 3; reopen as a client marker only if a client must count as visible without sending the frame.
 - **The override is the notification's**, because whether something must buzz (a security alert) depends on what it is, not on who receives it.
 - **Limit.** The connection list is one process's. A multi-instance deploy sees only its own sockets, so a user connected to a different node is pushed to as well.
 

@@ -38,6 +38,30 @@ async function resolveToken(token: Token): Promise<string | undefined> {
   return typeof token === 'function' ? await token() : token
 }
 
+/** A header value is bytes: `fetch` refuses an em dash, so the ping never
+ *  leaves, and sends an accent as one Latin-1 byte ntfy reads as garbage. ntfy
+ *  decodes RFC 2047 on every header, which is how its own clients send one, so
+ *  every header built from message text goes through here. */
+export function headerValue(text: string): string {
+  return /^[\x20-\x7e]*$/.test(text) ? text : `=?UTF-8?B?${Buffer.from(text, 'utf8').toString('base64')}?=`
+}
+
+/** ntfy stores a body of 4096 bytes or more as a file attachment, and a server
+ *  with attachments off refuses it, so a long failure reason arrived as a .txt
+ *  on the fallback or not at all. Cut on a character boundary, under the limit. */
+const BODY_MAX = 4095
+
+export function fitBody(text: string): string {
+  const bytes = Buffer.from(text, 'utf8')
+  if (bytes.length <= BODY_MAX) return text
+  let cut = BODY_MAX - 3
+  while (cut > 0 && (bytes[cut] & 0xc0) === 0x80) cut--
+  return bytes.subarray(0, cut).toString('utf8') + '…'
+}
+
+/** ntfy refuses a publish with more than three buttons. */
+const ACTIONS_MAX = 3
+
 export function ntfy(options: NtfyOptions): NotificationDriver {
   const deliver = options.deliver ?? fetch
   const servers = [options, ...(options.fallback ? [options.fallback] : [])]
@@ -47,13 +71,17 @@ export function ntfy(options: NtfyOptions): NotificationDriver {
     const token = await resolveToken(server.token)
     const headers: Record<string, string> = { Priority: String(m.priority ?? 3) }
     if (token)             headers.Authorization = `Bearer ${token}`
-    if (m.title)           headers.Title   = m.title
-    if (m.tags?.length)    headers.Tags    = m.tags.join(',')
-    if (m.url)             headers.Click   = m.url
-    if (m.actions?.length) headers.Actions = m.actions.map(a => `view, ${a.label}, ${a.url}`).join('; ')
+    if (m.title)           headers.Title   = headerValue(m.title)
+    if (m.tags?.length)    headers.Tags    = headerValue(m.tags.join(','))
+    if (m.url)             headers.Click   = headerValue(m.url)
+    // JSON, not ntfy's comma-and-semicolon shorthand: a label with a comma or
+    // a quote in it mis-parsed there and the publish was refused.
+    if (m.actions?.length) headers.Actions = headerValue(JSON.stringify(
+      m.actions.slice(0, ACTIONS_MAX).map(a => ({ action: 'view', label: a.label, url: a.url })),
+    ))
 
     const res = await deliver(`${server.base}/${encodeURIComponent(topic)}`, {
-      method: 'POST', headers, body: m.body ?? '',
+      method: 'POST', headers, body: fitBody(m.body ?? ''),
     })
     if (!res.ok) throw new Error(`[notifications] push: ntfy at ${server.base} answered ${res.status} for topic ${topic}`)
     const answer = await res.json().catch(() => ({})) as { id?: string }

@@ -478,6 +478,8 @@ app.configure(notifications({
 
 A formatter named `push:` answers a `PushMessage` (`types.ts`), built with `push()`; the same message feeds `ntfy()` below, so a definition formats once whichever driver the app registered. `ttl` and `urgency` go only in headers; `topic` goes in both, so a later message with the same topic replaces one still queued at the push service and, through the worker's `tag`, one already on screen. What the formatter answers, what the worker receives and what it shows are `test/fixtures/push-message.json`, which this package's driver test and Sierra's worker test both read. One recipient is every device the store lists, each sent independently: a retired endpoint is removed, any other refusal is thrown after every device was tried. **The driver holds the decrypted keys, so it cannot keep `@guarded` columns out of a payload — the `push:` formatter is where the payload is built and the only place that can.** A body over ~3.9 KB is refused; send an id and let the service worker fetch the rest.
 
+**A recipient with a tab of the app on screen gets no push** (`FJS-D1627`): the page has just shown the in-app notification. The junction browser client reports `document.visibilityState` on its socket at every connect and on each `visibilitychange`, and the driver asks `app.channels.hasVisibleConnection(id)` before listing devices. A socket that never reports, and an app without `channels()`, count as hidden, so the push goes.
+
 
 ### ntfy
 
@@ -503,7 +505,7 @@ push: (monitor) => push()
   .build()
 ```
 
-**The topic is the recipient's address**, `recipient.pushTopic`, and a recipient without one is refused by name: on a public server a guessable name is readable by anyone, so an app mints `<slug>-critical-<random>` once and shows it as a subscribe link. `title`, `body`, `priority`, `tags`, `url` (sent as `Click`) and `actions` go on the wire; `data`, `ttl`, `urgency` and `topic` are web push's and are dropped. A payload carries titles and links, never a secret — the `push:` formatter is where `@guarded` columns stay out, for both drivers.
+**The topic is the recipient's address**, `recipient.pushTopic`, and a recipient without one is refused by name: on a public server a guessable name is readable by anyone, so an app mints `<slug>-critical-<random>` once and shows it as a subscribe link. `title`, `body`, `priority`, `tags`, `url` (sent as `Click`) and `actions` go on the wire; `data`, `ttl`, `urgency` and `topic` are web push's and are dropped. ntfy's own limits are applied rather than refused: a body is cut to 4095 bytes with an ellipsis, since 4096 makes it a file attachment, and only the first three actions are sent. A payload carries titles and links, never a secret — the `push:` formatter is where `@guarded` columns stay out, for both drivers.
 
 ---
 

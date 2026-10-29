@@ -358,7 +358,7 @@ title: App
     error = null; busy = `found:${p.serverId}`
     try {
       await apps.service.invoke('restoreReplica', app.id, { serverId: p.serverId })
-      app = await apps.service.get(app.id)
+      await appRow.refresh()
     } catch (e) {
       error = e.message
     } finally {

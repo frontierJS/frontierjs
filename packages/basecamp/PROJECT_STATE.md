@@ -65,9 +65,9 @@ target `storage:s3:<id>` by `api/src/providers/storage/` (`FJS-D1490`, basecamp'
 own lift of `conduit-s3`). `HubConfig.backupDestinationId` and `Backup.destinationId`
 point at one, null meaning the local disk, and `/hub/settings/` has the picker
 and the inline form. `backup:run` uploads one tarball per archive (1.2),
-`HubConfig.backupCron` is on the clock (1.3), and retention prunes after each
+the hub App's `backupCron` is on the clock (1.3, `FJS-D1606`), and retention prunes after each
 success, local and remote apart, through `domain/backup/backup-archives.ts` — the one
-delete `backups.remove` shares, and `backups.rescan`'s `found` rows (1.4).
+delete `backups.discard` shares, and `backups.rescan`'s `found` rows (1.4).
 An app's archive leaves its machine by a pre-signed PUT `app-backups.take`
 mints for a destination of the app's own workspace and Outpost streams to
 (1.5, `FJS-D1485`) — `AppBackup.destinationId` names the bucket, a refused

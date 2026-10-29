@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-72 models · 1 view · 73 gated · 0 unrestricted
-58 with row policies · 26 with protected fields · 35 declared moves · 15 @system · 0 @seals
+73 models · 1 view · 74 gated · 0 unrestricted
+59 with row policies · 28 with protected fields · 35 declared moves · 15 @system · 0 @seals
 ```
 
 ## Gates
@@ -31,6 +31,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `AppDrill` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `AppEditor` | 1 VISITOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `AppNetwork` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `AppPlatform` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `AppServer` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `AuditEvent` | 5 ADMINISTRATOR | 8 SYSTEM | 9 LOCKED | 9 LOCKED |
 | `AuditTrail` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
@@ -206,6 +207,14 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **postUpdate** — `!check(network, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(network, tenancy)` — "Outside your workspaceId"
+
+### `AppPlatform`
+
+- deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `AppServer`
 
@@ -667,6 +676,11 @@ rather than refusing the row.
 | `App` | `blueprintId` | `@system` |
 | `App` | `replicaFoundAt` | `@system` |
 | `App` | `replicaSyncedAt` | `@system` |
+| `AppPlatform` | `hookUrl` | `@encrypted` |
+| `AppPlatform` | `receiverSecret` | `@encrypted` |
+| `AppPlatform` | `status` | `@system` |
+| `AppPlatform` | `liveVersion` | `@system` |
+| `AppPlatform` | `observedAt` | `@system` |
 | `BackupDestination` | `secretId` | `@system` |
 | `BackupDestination` | `lastTestAt` | `@system` |
 | `Credential` | `value` | `@guarded` |
@@ -677,6 +691,7 @@ rather than refusing the row.
 | `Dependency` | `advisories` | `@system` |
 | `Dependency` | `checkedAt` | `@system` |
 | `Dependency` | `checkError` | `@system` |
+| `Deployment` | `platformVersion` | `@system` |
 | `Domain` | `certSecretId` | `@system` |
 | `Domain` | `certKind` | `@system` |
 | `Domain` | `certIssuedAt` | `@system` |
@@ -721,6 +736,7 @@ rather than refusing the row.
 | `Verification` | `code` | `@guarded` |
 | `Workspace` | `ownerId` | `@system` |
 | `Workspace` | `expiresAt` | `@system` |
+| `Workspace` | `pushTopic` | `@secret` |
 | `WorkspaceMember` | `userId` | `@system` |
 
 ## State transitions

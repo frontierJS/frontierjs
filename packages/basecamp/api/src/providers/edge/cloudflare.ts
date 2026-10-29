@@ -1,5 +1,7 @@
 // src/providers/edge/cloudflare.ts
-// Cloudflare's dialect, and the only file in this app that knows it.
+// Cloudflare's dialect. `platform/cloudflare.ts` speaks its Workers half and
+// reads every answer through `unwrap` and `walk` here, so the envelope has one
+// reader.
 //
 // Everything vendor-specific is here: the `/client/v4` base, the envelope every
 // answer arrives in, that a list is paged by `result_info.total_pages`, and
@@ -48,7 +50,7 @@ const str  = (v: unknown): string  => typeof v === 'string' ? v : ''
 const num  = (v: unknown): number  => typeof v === 'number' && Number.isFinite(v) ? v : 0
 
 /** The `result` of one answer, or a throw naming why there is none. */
-function unwrap(res: Awaited<ReturnType<AccountSend>>): { result: unknown; totalPages: number } {
+export function unwrap(res: Awaited<ReturnType<AccountSend>>): { result: unknown; totalPages: number } {
   const body  = (res.data ?? {}) as Row
   const first = Array.isArray(body.errors) ? (body.errors as Row[])[0] : undefined
 
@@ -65,7 +67,7 @@ function unwrap(res: Awaited<ReturnType<AccountSend>>): { result: unknown; total
 }
 
 /** Every page of one list. `path` carries its own query, so the page is appended. */
-async function walk(send: AccountSend, path: string): Promise<Row[]> {
+export async function walk(send: AccountSend, path: string): Promise<Row[]> {
   const out: Row[] = []
   for (let page = 1; page <= MAX_PAGES; page++) {
     const { result, totalPages } = unwrap(await send({ method: 'GET', path: `${path}&page=${page}` }))

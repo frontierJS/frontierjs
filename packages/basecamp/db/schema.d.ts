@@ -66,6 +66,10 @@ export type ProviderKind = 'custom' | 'hetzner' | 'digitalocean' | 'cloudflare' 
 
 export type ComputeProvider = 'custom' | 'hetzner' | 'digitalocean'
 
+export type PlatformProvider = 'cloudflare'
+
+export type PlatformBuild = 'outpost' | 'platform'
+
 export type RegisterMethod = 'imported' | 'provisioned'
 
 export type CertKind = 'acme' | 'origin_ca' | 'uploaded'
@@ -86,7 +90,7 @@ export type AppStatus = 'unknown' | 'stopped' | 'starting' | 'running' | 'stoppi
 
 export type DeployStatus = 'pending' | 'building' | 'success' | 'failed' | 'cancelled' | 'rolled_back'
 
-export type DeployTrigger = 'button' | 'push' | 'laptop' | 'rollback' | 'rebind' | 'publish' | 'freeze'
+export type DeployTrigger = 'button' | 'push' | 'laptop' | 'rollback' | 'rebind' | 'publish' | 'freeze' | 'observed'
 
 export type StepStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped'
 
@@ -3105,6 +3109,7 @@ export interface AppRelations {
   deployments: Deployment[]
   jobs: Job[]
   appServers: AppServer[]
+  appPlatforms: AppPlatform[]
   appNetworks: AppNetwork[]
   domains: Domain[]
   domainRoutes: DomainRoute[]
@@ -3427,6 +3432,92 @@ export interface AppServerRelations {
   server: Server | null
 }
 
+// ─── AppPlatform ─────────────────────────────────────────────────
+
+export interface AppPlatform {
+  id: string
+  workspaceId: string
+  appId: string
+  accountId: string
+  provider: PlatformProvider
+  providerAccountId: string
+  name: string
+  build: PlatformBuild
+  builderServerId?: string | null
+  /** @encrypted */
+  hookUrl?: string | null
+  /** @encrypted */
+  receiverSecret?: string | null
+  status: AppStatus
+  liveVersion?: string | null
+  observedAt?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AppPlatformCreate {
+  id?: string
+  workspaceId: string
+  appId: string
+  accountId: string
+  provider: PlatformProvider
+  providerAccountId: string
+  name: string
+  build?: PlatformBuild
+  builderServerId?: string | null
+  hookUrl?: string | null
+}
+
+export interface AppPlatformUpdate {
+  id?: string
+  workspaceId?: string
+  appId?: string
+  accountId?: string
+  provider?: PlatformProvider
+  providerAccountId?: string
+  name?: string
+  build?: PlatformBuild
+  builderServerId?: string | null
+  hookUrl?: string | null
+}
+
+export interface AppPlatformSystem {
+  receiverSecret?: string | null
+  status?: AppStatus
+  liveVersion?: string | null
+  observedAt?: string | Date | null
+}
+
+export interface AppPlatformWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  workspaceId?: string | WhereOp<string> | null
+  appId?: string | WhereOp<string> | null
+  accountId?: string | WhereOp<string> | null
+  provider?: PlatformProvider | WhereOp<PlatformProvider> | null
+  providerAccountId?: string | WhereOp<string> | null
+  name?: string | WhereOp<string> | null
+  build?: PlatformBuild | WhereOp<PlatformBuild> | null
+  builderServerId?: string | WhereOp<string> | null
+  hookUrl?: string | WhereOp<string> | null
+  receiverSecret?: string | WhereOp<string> | null
+  status?: AppStatus | WhereOp<AppStatus> | null
+  liveVersion?: string | WhereOp<string> | null
+  observedAt?: string | Date | WhereOp<string | Date> | null
+  createdAt?: string | Date | WhereOp<string | Date> | null
+  updatedAt?: string | Date | WhereOp<string | Date> | null
+  AND?: AppPlatformWhere[]
+  OR?:  AppPlatformWhere[]
+  NOT?: AppPlatformWhere
+}
+
+export type AppPlatformOrderBy =
+  | { [K in keyof Omit<AppPlatform, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<AppPlatform, never>]?: OrderDir }>
+
+export interface AppPlatformRelations {
+  app: App | null
+}
+
 // ─── AppBackup ───────────────────────────────────────────────────
 
 export interface AppBackup {
@@ -3671,6 +3762,7 @@ export interface Deployment {
   branch?: string | null
   author?: string | null
   builtImage?: string | null
+  platformVersion?: string | null
   previousDeploymentId?: string | null
   configSnapshot: unknown
   triggeredBy?: string | null
@@ -3726,6 +3818,10 @@ export interface DeploymentUpdate {
   durationMs?: number | null
 }
 
+export interface DeploymentSystem {
+  platformVersion?: string | null
+}
+
 export interface DeploymentWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   appId?: string | WhereOp<string> | null
@@ -3739,6 +3835,7 @@ export interface DeploymentWhere extends WhereBase {
   branch?: string | WhereOp<string> | null
   author?: string | WhereOp<string> | null
   builtImage?: string | WhereOp<string> | null
+  platformVersion?: string | WhereOp<string> | null
   previousDeploymentId?: string | WhereOp<string> | null
   configSnapshot?: unknown | WhereOp<unknown> | null
   triggeredBy?: string | WhereOp<string> | null
@@ -5967,6 +6064,7 @@ export interface ServiceTypes {
   domainRoutes: DomainRoute
   appEditors: AppEditor
   appServers: AppServer
+  appPlatforms: AppPlatform
   appBackups: AppBackup
   appDrills: AppDrill
   appNetworks: AppNetwork
@@ -6203,7 +6301,7 @@ type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient
 type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
-  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'domainRoute' | 'appEditor' | 'appServer' | 'appBackup' | 'appDrill' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'maintenanceRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'backupDestination' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'monitor' | 'monitorCheck' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardTile' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
+  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'domainRoute' | 'appEditor' | 'appServer' | 'appPlatform' | 'appBackup' | 'appDrill' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'maintenanceRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'backupDestination' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'monitor' | 'monitorCheck' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardTile' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
   readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere, CredentialRelations, never, 'value' | 'accessToken' | 'refreshToken' | '@@gate'>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'token' | '@@gate'>
   readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere, VerificationRelations, never, 'value' | 'secret' | 'code' | '@@gate'>
@@ -6242,10 +6340,11 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly domainRoute: TableClient<DomainRoute, DomainRouteCreate, DomainRouteUpdate, DomainRouteWhere, DomainRouteRelations, never, '@@gate'>
   readonly appEditor: TableClient<AppEditor, AppEditorCreate, AppEditorUpdate, AppEditorWhere, AppEditorRelations, never, '@@gate'>
   readonly appServer: TableClient<AppServer, AppServerCreate, AppServerUpdate, AppServerWhere, AppServerRelations, never, '@@gate'>
+  readonly appPlatform: TableClient<AppPlatform, AppPlatformCreate, AppPlatformUpdate, AppPlatformWhere, AppPlatformRelations, never, 'receiverSecret' | 'status' | 'liveVersion' | 'observedAt' | '@@gate', AppPlatformSystem>
   readonly appBackup: TableClient<AppBackup, AppBackupCreate, AppBackupUpdate, AppBackupWhere, AppBackupRelations, never, '@@gate'>
   readonly appDrill: TableClient<AppDrill, AppDrillCreate, AppDrillUpdate, AppDrillWhere, AppDrillRelations, never, '@@gate'>
   readonly appNetwork: TableClient<AppNetwork, AppNetworkCreate, AppNetworkUpdate, AppNetworkWhere, AppNetworkRelations, never, '@@gate'>
-  readonly deployment: TableClient<Deployment, DeploymentCreate, DeploymentUpdate, DeploymentWhere, DeploymentRelations, 'build' | 'succeed' | 'fail' | 'cancel' | 'rollback', 'status' | '@@gate'>
+  readonly deployment: TableClient<Deployment, DeploymentCreate, DeploymentUpdate, DeploymentWhere, DeploymentRelations, 'build' | 'succeed' | 'fail' | 'cancel' | 'rollback', 'platformVersion' | 'status' | '@@gate', DeploymentSystem>
   readonly deploymentStep: TableClient<DeploymentStep, DeploymentStepCreate, DeploymentStepUpdate, DeploymentStepWhere, DeploymentStepRelations, never, '@@gate'>
   readonly job: TableClient<Job, JobCreate, JobUpdate, JobWhere, JobRelations, 'start' | 'idle' | 'fail' | 'cancel', 'retryCount' | 'lastRunAt' | 'lastRunStatus' | 'status' | '@@gate', JobSystem>
   readonly jobRun: TableClient<JobRun, JobRunCreate, JobRunUpdate, JobRunWhere, JobRunRelations, never, '@@gate'>

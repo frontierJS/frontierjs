@@ -20,19 +20,19 @@ on the definition is what holds it still.
 
 | Type | Transports |
 | --- | --- |
-| `AlertFiring` | `inApp` · `email` |
+| `AlertFiring` | `inApp` · `push` · `email` |
 | `AlertResolved` | `inApp` · `email` |
 | `DependencyVulnerable` | `inApp` · `email` |
-| `DeployFailed` | `inApp` · `email` |
+| `DeployFailed` | `inApp` · `push` · `email` |
 | `DeploySuccess` | `inApp` · `email` |
 | `HubPostureFailed` | `inApp` · `email` |
-| `JobFailed` | `inApp` · `email` |
+| `JobFailed` | `inApp` · `push` · `email` |
 | `MemberJoined` | `inApp` · `email` |
-| `MonitorDown` | `inApp` · `email` |
+| `MonitorDown` | `inApp` · `push` · `email` |
 | `MonitorUp` | `inApp` · `email` |
-| `PostureFailed` | `inApp` · `email` |
+| `PostureFailed` | `inApp` · `push` · `email` |
 | `ReplicaFound` | `inApp` · `email` |
-| `ServerUnreachable` | `inApp` · `email` |
+| `ServerUnreachable` | `inApp` · `push` · `email` |
 | `WeeklyDigest` | `inApp` · `email` |
 
 14 notification(s).

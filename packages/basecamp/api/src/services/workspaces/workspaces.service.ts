@@ -26,7 +26,7 @@ import { WORKSPACE_ROLE_LEVEL } from '../../core/gate.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 import { pushTopicFor } from '../../domain/notification/push-topic.ts'
 import pushTest from '../../domain/notification/push-test.ts'
-import { appUrl } from '../../notifications/_shared.ts'
+import { env } from '../../core/env.ts'
 
 /**
  * Point the role hooks at the workspace being addressed.
@@ -411,7 +411,7 @@ export default createService({
     const user  = sessionOf() as { id?: string; name?: string; email?: string }
     const receipts = await $.app.notify(
       { pushTopic: topic, transports: ['push'] } as any,
-      pushTest({ workspaceName: ws.name, by: user.name || user.email || 'Somebody', url: appUrl('/admin/workspace/') }) as any,
+      pushTest({ workspaceName: ws.name, by: user.name || user.email || 'Somebody', url: `${env.FRONTIER_APP_URL.replace(/\/+$/, '')}/admin/workspace/` }) as any,
     )
     return { topic, sent: true, receipts }
   },

@@ -7,7 +7,10 @@
 // The app's own work, dispatched `actor: null`, as `site:preview` is: the
 // publisher holds a grant and need hold no membership. One attempt, because
 // a publish half done has already merged; the next press is a new release.
-// `unique` per App, so two publishes of one site never merge at once.
+// Named by the release, never `unique` per App: the job outlives the
+// release's terminal status by its notice, and a press inside that window
+// was handed the old job and left its own release pending for good. Two
+// publishes of one site are refused by `drafts.publish`, on the release rows.
 
 import { defineJob }        from '@frontierjs/caravan'
 import { runsAsApp }        from './context.ts'
@@ -28,5 +31,5 @@ const sitePublish = defineJob<{ deploymentId: string }>({
 
 export default sitePublish
 
-export const dispatchPublish = (app: { jobs: { dispatch: Function } }, appId: string, deploymentId: string) =>
-  app.jobs.dispatch(sitePublish, { deploymentId }, { unique: `site:publish:${appId}`, actor: null, tenant: null, queue: 'deployments' })
+export const dispatchPublish = (app: { jobs: { dispatch: Function } }, deploymentId: string) =>
+  app.jobs.dispatch(sitePublish, { deploymentId }, { id: `site:publish:${deploymentId}`, actor: null, tenant: null, queue: 'deployments' })

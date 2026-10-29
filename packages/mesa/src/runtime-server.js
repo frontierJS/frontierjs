@@ -50,6 +50,11 @@ const refusedURL = (name, value) => URL_ATTRS.has(name) && value != null &&
 const cssText = (s) => ('' + s).split(';').map((d) => d.trim()).filter(Boolean)
   .map((d) => { const i = d.indexOf(':'); return i < 0 ? d + ';' : `${d.slice(0, i).trim()}: ${d.slice(i + 1).trim()};` }).join(' ')
 
+// Where the DOM path writes a live `value` as a property: `<textarea>` and
+// `<select>` always, `<input>` unless its type is one of VALUE_ATTR_INPUTS.
+const VALUE_PROP = new Set(['textarea', 'select', 'output'])
+const VALUE_ATTR_INPUTS = new Set(['checkbox', 'radio', 'hidden', 'submit', 'button', 'reset', 'image'])
+
 /**
  * The attributes of one element as ` name="value"…`, in the DOM path's order:
  * the template's static attributes with `class` last, then each live one as
@@ -67,25 +72,53 @@ export function attrs(tag, entries, scope) {
   // `class:` or a live `class=` adds its tokens in the order they ran.
   const classes = []
   const styles = []
+  // happy-dom drops a `style=""` the moment a `style:` runs after the write
+  // that put it there, and re-serializes a non-empty one the moment a
+  // `style:` runs anywhere, even one that writes nothing.
+  let styleDirective = false, styleTouchedAfter = false, liveValue = false
   const reserve = (name) => { if (!out.has(name)) out.set(name, '') }
-  const set = (name, value, live) => {
-    if (name === '...') { for (const k in value) set(k, value[k], true); return }
+  const set = (name, value, live, spread) => {
+    // The scope class is in the DOM path's template, so with no authored
+    // class it sits after the statics and ahead of the first live write.
+    if (live && scope) reserve('class')
+    if (name === '...') { for (const k in value) set(k, value[k], true, true); return }
+    // A handler a spread carries is listened to on the DOM path, never written.
+    if (live && typeof value === 'function') return
     if (name.startsWith('class:')) { reserve('class'); if (value) classes.push(name.slice(6)); return }
-    if (name.startsWith('style:')) { reserve('style'); if (value != null && value !== false) styles.push(`${name.slice(6)}: ${value};`); return }
+    // A directive that writes nothing creates no attribute, so a later
+    // write decides where `style` sits.
+    if (name.startsWith('style:')) { styleDirective = styleTouchedAfter = true; if (value != null && value !== false) { reserve('style'); styles.push(`${name.slice(6)}: ${value};`) }; return }
+    // A live `style` replaces the whole attribute, every directive before it
+    // included; from a spread it is the CSSOM's text.
+    if (name === 'style') {
+      styleTouchedAfter = false
+      if (live) styles.length = 0
+      if (spread) { out.set('style', cssText(value ?? '')); return }
+    }
     if (live && name === 'class') { reserve('class'); if (value != null && value !== false && value !== '') classes.push('' + value); return }
     if (live && refusedURL(name, value)) { out.delete(name); return }
-    if (live && (PROPS.has(name) || (name === 'value' && tag !== 'input'))) return
+    if (live && (PROPS.has(name) || (name === 'value' && VALUE_PROP.has(tag)))) return
+    if (live && name === 'value' && tag === 'input') liveValue = true
     if (value === false && ARIA_FALSE.has(name)) { out.set(name, 'false'); return }
     if (value == null || value === false) { out.delete(name); return }
     if (value === true) { out.set(name, BOOL.has(name) || !live ? '' : 'true'); return }
     out.set(name, '' + value)
   }
   for (const [name, value, live] of entries) set(name, value, live)
+  // A text-like input's value is a property on the DOM path, so no attribute;
+  // a checkbox, radio, hidden or button input keeps it as HTML does.
+  if (liveValue && !VALUE_ATTR_INPUTS.has(('' + (out.get('type') ?? 'text')).toLowerCase())) out.delete('value')
+  // A class anything touched — a live write, a toggle, the scope — is the
+  // DOM path's token list, each token once; a lone static class is the
+  // template's text.
+  const touched = scope || classes.length || out.has('class') && entries.some(([n, , l]) => (l && n === 'class') || n.startsWith('class:'))
   const cls = [out.get('class'), scope, ...classes].filter((c) => c)
-  if (cls.length) out.set('class', cls.join(' '))
+  const tokens = touched ? [...new Set(cls.flatMap((c) => ('' + c).split(/\s+/)).filter(Boolean))] : cls
+  if (tokens.length) out.set('class', tokens.join(' '))
   else out.delete('class')
   if (styles.length) out.set('style', [out.get('style') && cssText(out.get('style')), ...styles].filter(Boolean).join(' '))
-  else if (out.get('style') === '') out.delete('style')
+  else if (out.get('style') === '') { if (styleTouchedAfter) out.delete('style') }
+  else if (styleDirective && out.has('style')) out.set('style', cssText(out.get('style')))
   let s = ''
   for (const [name, value] of out) {
     s += ` ${name}="${ATTR.test(value) ? value.replace(ATTR, (c) => ATTR_MAP[c]) : value}"`

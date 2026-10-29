@@ -53,7 +53,7 @@ import { targetFor } from '../../providers/compute/index.ts'
 import type { ProviderKind } from '../../../../db/schema.d.ts'
 // The one reader of `App.source`. A service that parsed the blob itself would
 // be the second, and the two would disagree the first time a kind was added.
-import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit, isInline, byteLength, DOCKERFILE_BYTES }
+import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit, byteLength, DOCKERFILE_BYTES }
   from '../../domain/release/app-source.ts'
 import { fjsDockerfileTemplate, readRepoDockerfile, forgeRepo, DOCKERFILE_PATHS } from '../../domain/release/dockerfile-template.ts'
 import { runtimeOf, CONTAINER_TYPES } from '../../domain/release/runtime.ts'

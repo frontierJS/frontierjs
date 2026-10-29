@@ -42,6 +42,15 @@ export const BROKEN_ZONE = 'zone-broken'
 /** The account every zone here is in. */
 export const SINK_ACCOUNT = 'acct-sink'
 
+/** What the account runs: a Worker with code, and an assets-only one, which
+ *  the platform connector reads as a site. */
+const SCRIPTS = [
+  { id: 'harbor-edge', tag: 'tag-harbor-edge', handlers: ['fetch'], has_assets: false,
+    created_on: '2026-10-01T00:00:00Z', modified_on: '2026-10-20T00:00:00Z', last_deployed_from: 'wrangler' },
+  { id: 'harbor-docs', tag: 'tag-harbor-docs', handlers: [], has_assets: true,
+    created_on: '2026-10-02T00:00:00Z', modified_on: '2026-10-21T00:00:00Z', last_deployed_from: 'dash' },
+]
+
 const ZONES = [
   { id: 'zone-example', name: 'example.test', status: 'active',  account: { id: SINK_ACCOUNT } },
   { id: 'zone-shop',    name: 'shop.test',    status: 'active',  account: { id: SINK_ACCOUNT } },
@@ -141,7 +150,12 @@ function fail(code: number, message: string, status: number) {
 export function startCfSink(port = PORT) {
   const zoneRecords: Record<string, Rec[]> = structuredClone(RECORDS)
   const configSets:  Record<string, Rec>   = {}
+  const deployments: Record<string, Rec[]> = {}
   let made = 0
+  const deploymentOf = (versionId: string, source: string): Rec => ({
+    id: `dep-${++made}`, created_on: new Date().toISOString(), source, author_email: 'dev@sink.test',
+    annotations: { 'workers/message': `ship ${versionId}` }, versions: [{ version_id: versionId, percentage: 100 }],
+  })
   const nextId = () => `rec-${++made}-${Math.random().toString(36).slice(2, 8)}`
 
   return Bun.serve({
@@ -158,6 +172,23 @@ export function startCfSink(port = PORT) {
       const zones = auth === `Bearer ${EMPTY_TOKEN}` ? [] : ZONES
 
       if (path === '/zones') return ok(zones, url)
+      if (path === '/accounts') return ok(zones.length ? [{ id: SINK_ACCOUNT, name: 'Sink' }] : [], url)
+      // Cloudflare answers the script list whole, unpaged.
+      const scripts = path.match(/^\/accounts\/([^/]+)\/workers\/scripts(?:\/([^/]+)\/deployments)?$/)
+      if (scripts) {
+        const [, account, name] = scripts
+        if (account !== SINK_ACCOUNT || !zones.length) return fail(10000, 'Authentication error', 403)
+        if (!name) return json({ success: true, errors: [], messages: [], result: SCRIPTS })
+        if (!SCRIPTS.some(s => s.id === name)) return fail(10007, 'This Worker does not exist on your account.', 404)
+        const list = deployments[name] ??= [deploymentOf('v-1', 'wrangler')]
+        // A POST is what `wrangler versions deploy` sends; newest first, as Cloudflare lists.
+        if (req.method === 'POST') {
+          const body = await req.json() as { versions?: { version_id: string; percentage: number }[] }
+          list.unshift({ ...deploymentOf(body.versions?.[0]?.version_id ?? 'v-none', 'api'), versions: body.versions ?? [] })
+          return json({ success: true, errors: [], messages: [], result: list[0] })
+        }
+        return json({ success: true, errors: [], messages: [], result: { deployments: list } })
+      }
 
       const one = path.match(/^\/zones\/([^/]+)$/)
       if (one) {

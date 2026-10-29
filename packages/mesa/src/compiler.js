@@ -1801,7 +1801,7 @@ xNode.node = (data) =>
       ctx.write(`<${node.name}`)
       node.attributes.forEach((p) => {
         if (p.name === 'class') {
-          if (p.value) p.value.split(/\s+/).forEach((c) => node.class.add(c))
+          if (p.value) p.value.split(/\s+/).filter(Boolean).forEach((c) => node.class.add(c))
           return
         }
         if (p.value) ctx.write(` ${p.name}="${attrValue(p.value)}"`)
@@ -10865,7 +10865,9 @@ export async function compile(source, config = {}) {
     const target = TARGETS[config.target]
     if (!target) return buildRuntime.call(ctx)
     const refused = hostRefusal(ctx.ir, target)
-    if (refused && !ctx.scriptModuleNodes[0]) throw new Error(refused)
+    // `err.refused` is how a caller that falls back (render-component's
+    // string mode) tells a refusal from a compile error without reading text.
+    if (refused && !ctx.scriptModuleNodes[0]) throw Object.assign(new Error(refused), { refused })
     if (refused) return void (ctx.targetRefusal = refused)
     buildHead.call(ctx)
     buildHost(ctx, target)

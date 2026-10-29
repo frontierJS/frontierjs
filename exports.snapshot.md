@@ -165,6 +165,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./devtools` | `src/plugins/devtools/index.ts` | yes |
 | exports | `./export` | `src/plugins/export/index.ts` | yes |
 | exports | `./search` | `src/plugins/search/index.ts` | yes |
+| exports | `./audit` | `src/plugins/audit/index.ts` | yes |
 | exports | `./metrics` | `src/plugins/metrics/index.ts` | yes |
 | exports | `./client` | `src/client/index.ts` | yes |
 | exports | `./outbox.lite` | `db/outbox.lite` | yes |
@@ -238,6 +239,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./runtime (import)` | `src/runtime.js` | yes |
 | exports | `./runtime/terminal (import)` | `src/runtime-terminal.js` | yes |
 | exports | `./runtime/native (import)` | `src/runtime-native.js` | yes |
+| exports | `./runtime/server (import)` | `src/runtime-server.js` | yes |
 | exports | `./compiler (import)` | `src/compiler.js` | yes |
 | exports | `./compiler-md (import)` | `src/compiler-md.js` | yes |
 | exports | `./render (import)` | `src/render.js` | yes |
@@ -402,6 +404,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./mime (types)` | `src/mime/mime.d.ts` | yes |
 | exports | `./mime (default)` | `src/mime/mime.js` | yes |
 | exports | `./predicate` | `src/predicate/predicate.js` | yes |
+| exports | `./qr (types)` | `src/qr/qr.d.ts` | yes |
+| exports | `./qr (default)` | `src/qr/qr.js` | yes |
 | exports | `./query (types)` | `src/query/query.d.ts` | yes |
 | exports | `./query (default)` | `src/query/query.js` | yes |
 | exports | `./transforms` | `src/transforms/transforms.js` | yes |

@@ -85,6 +85,8 @@ model AppPlatform {
   app             App      @relation(fields: [appId], references: [id], onDelete: Cascade)
   accountId       String   @immutable          // the provider_key Secret
   provider        PlatformProvider @immutable
+  // The account at the vendor: one token opens several (1.2).
+  providerAccountId String @immutable
   // The platform's own name: a Worker's script name, a Vercel project id, a
   // Netlify site id. Adopting reads it, and creating derives it (FJS-D1213).
   name            String   @immutable
@@ -95,7 +97,8 @@ model AppPlatform {
   status          AppStatus @default(unknown) @system
   liveVersion     String?  @system             // what serves traffic, as the platform last said
   observedAt      DateTime? @system
-  @@unique([appId, accountId, name])
+  @@gate(2.5)                                   // the Secret's write level
+  @@unique([provider, providerAccountId, name]) // one Worker is one App, whichever key
   @@trail(audit)
 }
 
@@ -113,15 +116,22 @@ per call, as it does today, and is never stored on the machine.
 **The Basecamp half is everything else**, in `providers/platform/` beside
 `compute/` and `edge/`:
 
+The connector carries no `descriptor()`. Cloudflare's conduit target is
+already registered by edge, with the same address and bearer. `account` below
+is the vendor's account id, because one token can open several. Read the first
+block as `(send, account, …)`; the later blocks leave `account` out for
+brevity.
+
 ```ts
 export interface PlatformConnector {
-  provider: PlatformProvider
-  descriptor(opts: { accountId: string; ref: string }): TargetDescriptor
+  kind:  PlatformProvider        // ProviderKind until 1.1 lands the enum
+  label: string
   verify(send: AccountSend): Promise<boolean>
+  accounts(send: AccountSend): Promise<PlatformAccount[]>
 
   // Adopt — what the account already runs.
-  projects(send: AccountSend): Promise<PlatformProject[]>
-  project(send: AccountSend, name: string): Promise<PlatformProject | null>
+  projects(send: AccountSend, account: string): Promise<PlatformProject[]>
+  project(send: AccountSend, account: string, name: string): Promise<PlatformProject | null>
 
   // Ship with build = platform: the account token by default, the App's hook
   // when it has one (FJS-D1637). Name the commit, or the build records none.
@@ -129,8 +139,9 @@ export interface PlatformConnector {
   buildState(send: AccountSend, name: string, buildId: string): Promise<PlatformBuildState>
 
   // Record and roll back. A rollback is a promote: no rebuild, no Outpost.
-  versions(send: AccountSend, name: string, opts?: { since?: string }): Promise<PlatformVersion[]>
-  live(send: AccountSend, name: string): Promise<{ versions: { id: string; percent: number }[] }>
+  versions(send: AccountSend, name: string, opts?: { limit?: number }): Promise<PlatformVersion[]>
+  // Newest first; [0] is what serves now, one version or two mid-rollout.
+  deployments(send: AccountSend, name: string): Promise<PlatformDeployment[]>
   promote(send: AccountSend, name: string, versionId: string): Promise<void>
 
   // Manage.
@@ -147,6 +158,14 @@ export interface PlatformConnector {
   readEvent?(raw: Request, secret: string): Promise<PlatformEvent | null>
 }
 ```
+
+**One account, two tokens (`FJS-D1638`).** The account `Secret` keeps its
+`#token`, the account-owned token that ships, rolls back and sets
+variables. It may also hold `#buildsToken`, a user token that the connector
+spends on `/builds/` alone, because Cloudflare's Builds API refuses an
+account-owned one. A connector without `#buildsToken` starts a platform build
+through the App's hook and reads success as a new deployment. When no
+deployment appears within the build bound, it fails the step by name.
 
 **Who carries a release stays one decision.** `resolveExecutor` gains a third
 real answer, `platform`, beside `outpost` and `stub`. `none` stays a refusal by
@@ -170,7 +189,7 @@ refuses by name rather than pushing nothing (`decision-rules` Q9).
 
 ### Phase 0 — probes and rulings
 
-- [ ] 0.1 Against the hand-run awe.dev account: which token scopes list
+- [x] 0.1 Against the hand-run awe.dev account: which token scopes list
   Workers scripts, versions, deployments and builds. Write down what one
   account-owned (`cfat_`) token needs.
   *Read 2026-10-29 with `cf`'s OAuth login on the awe.dev account
@@ -181,6 +200,17 @@ refuses by name rather than pushing nothing (`decision-rules` Q9).
   `annotations["workers/triggered_by"]`. That login cannot list
   permission groups or create tokens (403, code 9109), so the account-owned
   token's scope list is still open.
+  *Built 2026-10-29 with an account-owned (`cfat_`) token* holding Workers
+  Scripts Edit, Workers Builds Configuration Edit, Workers Tail Read and
+  Account Settings Read. These answer: verify, list scripts, versions,
+  deployments, a promote, a secret, `/workers/domains`, and a tail opened and
+  closed. `wrangler deploy` with it shipped v3, so the Outpost path needs
+  nothing more. A deploy hook POST queues a build, since it needs no token.
+  **Every `/builds/` call is refused (10000)**: listing triggers, mapping a
+  version to its build, creating a hook, and starting a build. Cloudflare's
+  Builds API reference says account-scoped tokens are not supported. So an
+  account token can START a platform build only through a hook, and can see
+  neither its status nor its log (Q7).
 - [x] 0.2 Create a deploy hook on a test Worker, POST it, and follow
   `build_uuid` to `success` through List builds. Record the latency.
   *Read 2026-10-29, the half that needs no repository,* on the throwaway
@@ -223,15 +253,45 @@ refuses by name rather than pushing nothing (`decision-rules` Q9).
 
 ### Phase 1 — see what runs (read only)
 
-- [ ] 1.1 `PlatformProvider`, `PlatformBuild` and `AppPlatform`, plus
+- [x] 1.1 `PlatformProvider`, `PlatformBuild` and `AppPlatform`, plus
   `Deployment.platformVersion` and `DeployTrigger.observed`. Add a test that
   `PlatformProvider` stays a subset of `ProviderKind`, as `FJS-D1607` has one.
-- [ ] 1.2 `providers/platform/cloudflare.ts`: `verify`, `projects`,
-  `project`, `versions`, `live`.
-- [ ] 1.3 Adopt: pick a Worker from the account, and Basecamp makes an App
+  *Built 2026-10-29.* `AppPlatform` gained `providerAccountId`, which the
+  sketch lacked and every connector call needs, and its unique key became
+  `[provider, providerAccountId, name]`, scoped per workspace by tenancy: one
+  Worker is one App, whichever of two keys to its account adopts it. The seed holds
+  no row (`app_platform` in `seed.test.ts`'s `NOT_SEEDED`): a seeded Cloudflare
+  key would be asked by every edge job. The initial migration was edited, so
+  an existing dev database refuses to boot until `db:reset`.
+- [x] 1.2 `providers/platform/cloudflare.ts`: `verify`, `accounts`,
+  `projects`, `project`, `versions`, `deployments`. Each was read live against
+  `fjs-platform-probe` with the `cfat_` token, and `verify` returns false on a
+  401. `kind: 'site'` (assets only, no `fetch` handler) has not been seen yet,
+  because the account has no assets-only Worker; 1.3 meets one.
+- [x] 1.3 Adopt: pick a Worker from the account, and Basecamp makes an App
   (`static` or `worker`) and its `AppPlatform`.
-- [ ] 1.4 `platform:observe` writes `observed` releases and keeps
+  *Built 2026-10-29* as the `platforms` service: `projects` (READER, each
+  project carrying the `appId` that adopted it) and `adopt` (ADMINISTRATOR,
+  App + row in one transaction, every refusal before a write). Proved through
+  the real app against the Cloudflare sink, which now answers `/accounts` and
+  an unpaged script list with one Worker and one assets-only site: 14 checks,
+  the developer refused, a second adopt 409, a foreign vendor account 502.
+  **Not yet run against the live account**, and `site` is still unseen there.
+- [x] 1.4 `platform:observe` writes `observed` releases and keeps
   `liveVersion` current.
+  *Built 2026-10-29* as `jobs/platform-observe.job.ts`, every five minutes.
+  A release is a change in the version serving (the most traffic in
+  `deployments()[0]`), so a version that served only between two sweeps is
+  never recorded. The row is created `pending` and run through
+  `release-record.ts`, which sets the App `running` and announces it. A newest
+  Deployment already naming the version (Phase 2's own) is taken, not
+  recorded twice. A compare-and-set on `liveVersion` serializes two sweeps.
+  `Deployment.platformVersion` became `@system`: a rollback promotes it. Proved
+  against the sink, which now answers and accepts `…/deployments`: first
+  sweep, no-op sweep, laptop ship, Basecamp's own release, dashboard rollback,
+  two concurrent sweeps, vendor refusal. Dropping the compare-and-set did not
+  fail the concurrent check (the newest-row read caught it), so that guard is
+  unproven.
 - [ ] 1.5 The App screen lists machines and platforms together as *where it
   runs*.
 
@@ -299,6 +359,23 @@ refuses by name rather than pushing nothing (`decision-rules` Q9).
     `@encrypted` column for a platform or a setup that offers only a hook.
   - **Recommend A** — one credential to hold and rotate, and the release names
     its commit; the column returns if the 5.1 adapter can only be hooked.
+
+- ~~**Q7 — How does Basecamp see a platform build when the account's token is account-owned?**~~ **Answered 2026-10-29 (`FJS-D1638`): B — Connect takes an optional user token beside the account token, for `/builds/` alone. With it, Basecamp gets the token trigger, the status, the log and the version-to-build mapping. Without it, Basecamp behaves as A. The account screen says the user token ends with that person's seat.**
+  The Builds API takes only a user token (0.1).
+  - **A** — the account token only. The build starts through the App's hook,
+    and success is read as a new deployment appearing. No deployment within
+    the build bound fails the step by name and points at the dashboard; the
+    build's log is not shown.
+  - **B** — Connect takes an optional user token beside the account token, for
+    `/builds/` alone. With it, Basecamp gets the token trigger, the status, the
+    log and the version-to-build mapping. Without it, Basecamp behaves as A.
+    The account screen says the user token ends with that person's seat.
+  - **C** — `build = platform` is not offered on an account without a user
+    token. Basecamp builds on an Outpost, which the account token covers end
+    to end.
+  - **Recommend B** — the owner asked to see platform builds, and under A a
+    failed build is only ever a timeout. B keeps the account token as the one
+    that ships (`FJS-D558`), and the user token reads builds and nothing more.
 
 ---
 

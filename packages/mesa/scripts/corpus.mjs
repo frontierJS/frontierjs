@@ -9,6 +9,9 @@
  *   bun run corpus -- --portability terminal
  *                                        also say how much of the corpus a target lowers today,
  *                                        and what stops the rest (`IDEAS/mesa-ir.md` § 3, § 6 step 2)
+ *   bun run corpus -- --portability server
+ *                                        the same tally, and then every file that lowers is RENDERED
+ *                                        on both paths and the HTML compared byte for byte
  *
  * This is the grade for a compiler change meant to change NOTHING — the IR
  * extraction (`IDEAS/mesa-ir.md` § 6 step 1) above all. Invariant 12 makes the
@@ -34,6 +37,26 @@
  * cannot say whether it lowers. A shape's *unlocks* is how many more files
  * would lower if that shape alone lowered next, children included.
  *
+ * ── The parity pass ──────────────────────────────────────────────────
+ *
+ * A target with a string mode (`server`) is admissible only while it writes
+ * the HTML the DOM path serializes (`IDEAS/server-render-without-dom.md` § 3),
+ * so for that target every file the tally says lowers is compiled twice more
+ * (`css: false`, unscoped), rendered once through `renderToHTML` and once as
+ * `Comp(out, props)` with no props, and the two strings compared raw. The
+ * modules are imported for real, so the script's imports have to resolve: a
+ * `.mesa` the script imports compiles on the fly, for the path of the module
+ * importing it (a tree is one mode throughout), a stylesheet or an asset is
+ * an empty module, and a specifier the workspace cannot resolve from the
+ * file's own directory (`$lib/…`, a vite alias, `?raw`) binds to a stub
+ * value that answers every property and call with itself. Both paths see the
+ * same stub, so the comparison still means something; what it cannot grade
+ * is a page whose markup depends on what the alias would have returned. A
+ * file that throws on both paths — a page that reads a prop it was not
+ * given — is counted and set aside, as is one importing a component the mode
+ * refuses; one that throws on ONE path is a finding and fails the run, as a
+ * byte that differs does.
+ *
  * ── What it does not see ─────────────────────────────────────────────
  *
  * The files are compiled raw. Sierra rewrites a page before handing it over
@@ -43,7 +66,7 @@
 
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync, rmSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, extname, join, relative, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import * as acorn from 'acorn'
@@ -55,6 +78,29 @@ import { callsOf, follow, lowering, plan } from './portability.js'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '../../..')
 const CACHE = join(ROOT, '.cache/mesa-corpus')
+const PARITY = join(CACHE, 'parity')
+const STUB = join(PARITY, 'stub.mjs')
+const REFUSAL = /has no \w+ lowering/
+
+const ASSET = /\.(css|scss|less|svg|png|jpe?g|gif|webp|avif|ico|woff2?|ttf|mp4|webm|md|txt)$/
+const LOADERS = { ts: 'ts', mts: 'ts', tsx: 'tsx', jsx: 'jsx' }
+
+const RUNTIME = {
+  '@frontierjs/mesa/runtime':        join(HERE, '../src/runtime.js'),
+  '@frontierjs/mesa/runtime/server': join(HERE, '../src/runtime-server.js'),
+}
+
+// A value that answers every property and every call with itself, and
+// serializes as an empty string: what an unresolvable import binds to.
+const STUB_SOURCE = `const handler = {
+  get: (t, k) => (k === Symbol.toPrimitive ? () => '' : k === 'then' ? undefined : k === 'toString' || k === 'toJSON' ? () => '' : stub),
+  apply: () => stub,
+  construct: () => stub,
+}
+export const stub = new Proxy(function stub() {}, handler)
+export default stub
+`
+
 
 const MODES = {
   prod: (filename) => ({ filename, dev: false }),
@@ -118,7 +164,7 @@ const invalid = results.filter((r) => r.invalid)
 console.log(`${files.length} files · ${results.length} compiles · ${refusedCount} refused · ${invalid.length} invalid JS`)
 for (const r of invalid) console.log(`  invalid  ${r.file} [${r.mode}]  ${r.invalid}`)
 
-if (portability) reportPortability(portability)
+if (portability) await reportPortability(portability)
 
 if (saveAs) console.log(`saved ${relative(ROOT, save(saveAs))}`)
 
@@ -151,6 +197,9 @@ if (diffAgainst) {
 }
 
 if (invalid.length) process.exitCode = 1
+// An app module the parity pass imported leaves timers behind — a client that
+// reconnects, a poll — and the process would never return on its own.
+if (portability && TARGETS[portability].mode === 'string') process.exit()
 
 function save(name) {
   const dir = join(CACHE, name)
@@ -172,7 +221,7 @@ function manifestOf(rs) {
   return Object.fromEntries(rs.map((r) => [`${r.mode}:${r.file}`, r.hash]))
 }
 
-function reportPortability(target) {
+async function reportPortability(target) {
   const files = follow(portable)
   const pct = (n, of) => `${of ? Math.round((n / of) * 100) : 0}%`
   const now = lowering(files)
@@ -205,4 +254,217 @@ function reportPortability(target) {
   mkdirSync(CACHE, { recursive: true })
   writeFileSync(path, JSON.stringify(files, null, 1))
   console.log(`\n  every offender, by file: ${relative(ROOT, path)}`)
+
+  if (TARGETS[target].mode === 'string') await reportParity(target, [...now].sort())
+}
+
+// ── Parity ──────────────────────────────────────────────────────────────────
+
+async function reportParity(target, lowering) {
+  const { initRenderer, renderToHTML } = await import('../src/render.js')
+  const { createRoot, setRenderEnvironment } = await import('../src/runtime.js')
+  installLoaders()
+  initRenderer()
+  mkdirSync(PARITY, { recursive: true })
+  writeFileSync(STUB, STUB_SOURCE)
+
+  const buckets = { same: [], styleText: [], unstable: [], differs: [], threwBoth: [], threwDom: [], threwStr: [], childRefused: [], unimportable: [] }
+  for (const file of lowering) {
+    const source = readFileSync(join(ROOT, file), 'utf8')
+    let Dom, Str
+    try {
+      Dom = await importCompiled(file, source, undefined)
+    } catch (err) {
+      buckets.unimportable.push({ file, why: firstLine(err) })
+      continue
+    }
+    try {
+      Str = await importCompiled(file, source, target)
+    } catch (err) {
+      // A file lowers while a component it imports does not: the render
+      // path falls the whole tree back, so there is no string render to
+      // compare. Set aside and named, since the tally counts the file.
+      if (REFUSAL.test(err.message)) { buckets.childRefused.push({ file, why: firstLine(err) }); continue }
+      buckets.unimportable.push({ file, why: firstLine(err) })
+      continue
+    }
+    // A terminal or native fixture's runtime flips the environment as it
+    // loads, and an imported module graph can reach one.
+    setRenderEnvironment(true, false)
+    const dom = attempt(() => renderToHTML(Dom, {}))
+    const str = attempt(() => { let html = ''; createRoot((dispose) => { const out = []; Str(out, {}); html = out.join(''); dispose() }); return html })
+    const [a, b] = await Promise.all([dom, str])
+    if (a.error && b.error) { buckets.threwBoth.push({ file, why: firstLine(a.error) }); continue }
+    if (a.error) { buckets.threwDom.push({ file, why: firstLine(a.error) }); continue }
+    if (b.error) { buckets.threwStr.push({ file, why: firstLine(b.error) }); continue }
+    // `renderToHTML` trims the page it returns; the string path is the raw join.
+    const html = b.value.trim()
+    if (a.value === html) { buckets.same.push({ file }); continue }
+    // Beside the module that wrote it, so the diff and its source are one `ls` apart.
+    writeFileSync(join(PARITY, 'dom', `${file}.html`), a.value)
+    writeFileSync(join(PARITY, 'str', `${file}.html`), html)
+    const why = firstDifference(a.value, html)
+    // A component that mints an id renders differently every time, on either
+    // path; a second DOM render says so.
+    const again = await attempt(() => renderToHTML(Dom, {}))
+    if (again.value !== a.value) { buckets.unstable.push({ file, why }); continue }
+    // happy-dom's CSSOM re-serializes a style a directive touched — `0` as
+    // `0px`, a shorthand as its longhands — which the string path does not
+    // imitate (plan 1.2's known non-parity); the markup around it is graded.
+    if (sansStyle(a.value) === sansStyle(html)) { buckets.styleText.push({ file, why }); continue }
+    buckets.differs.push({ file, why })
+  }
+
+  const n = (k) => String(buckets[k].length).padStart(5)
+  console.log(`\n  parity on ${target}: ${lowering.length} lowering files rendered on both paths`)
+  console.log(`  ${n('same')} same`)
+  console.log(`  ${n('differs')} differ`)
+  console.log(`  ${n('styleText')} differ only in a style attribute's CSS text (set aside — happy-dom's CSSOM re-serialization)`)
+  console.log(`  ${n('unstable')} render differently each time on the DOM path too (set aside — a minted id)`)
+  console.log(`  ${n('threwBoth')} threw on both paths (set aside — a page that reads a prop it was not given)`)
+  console.log(`  ${n('threwDom')} threw on the DOM path only`)
+  console.log(`  ${n('threwStr')} threw on the string path only`)
+  console.log(`  ${n('childRefused')} import a component the mode refuses (set aside — the tree falls back)`)
+  console.log(`  ${n('unimportable')} could not be imported (a transitive import the workspace cannot resolve)`)
+  for (const [k, label] of [['differs', 'differs'], ['threwDom', 'dom threw'], ['threwStr', 'str threw'], ['styleText', 'style'], ['unstable', 'unstable'], ['childRefused', 'child'], ['unimportable', 'import']]) {
+    for (const r of buckets[k]) console.log(`  ${label.padEnd(10)} ${r.file}  ${r.why}`)
+  }
+  if (buckets.differs.length) {
+    const { file } = buckets.differs[0]
+    console.log(`  the first difference, compared:`)
+    console.log(`    git diff --no-color --no-index ${relative(ROOT, join(PARITY, 'dom', `${file}.html`))} ${relative(ROOT, join(PARITY, 'str', `${file}.html`))}`)
+  }
+  if (buckets.differs.length || buckets.threwDom.length || buckets.threwStr.length) process.exitCode = 1
+}
+
+async function attempt(fn) {
+  try { return { value: await fn() } } catch (error) { return { error } }
+}
+
+function firstLine(err) {
+  return String(err?.message ?? err).split('\n')[0].slice(0, 160)
+}
+
+// The attribute stays, so a style missing on one path is still a difference;
+// only its text is set aside. A property-name set would be stricter, but
+// the CSSOM expands a shorthand into longhands and the names would differ.
+function sansStyle(html) {
+  return html.replace(/ style="[^"]*"/g, ' style="…"')
+}
+
+function firstDifference(a, b) {
+  let i = 0
+  while (i < a.length && i < b.length && a[i] === b[i]) i++
+  const show = (s) => JSON.stringify(s.slice(Math.max(0, i - 20), i + 40))
+  return `at ${i}: dom ${show(a)} · str ${show(b)}`
+}
+
+/**
+ * Compile the file for one path, write the module under the parity cache and
+ * import it. Every import specifier is rebound before the write: the runtimes
+ * to this package's own source (so the script and the module share one
+ * reactive core), a specifier the workspace resolves from the file's own
+ * directory to its absolute path, and anything else to the stub.
+ */
+async function importCompiled(file, source, target) {
+  const mode = target ? 'str' : 'dom'
+  const { result } = await compile(source, { target, filename: file, dev: false, css: false, warning: warningsOff })
+  const js = rebindImports(result, dirname(join(ROOT, file)))
+  const path = join(PARITY, mode, `${file}.mjs`)
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, js)
+  const mod = await import(`file://${path}`)
+  if (typeof mod.default !== 'function') throw new Error('no default export')
+  return mod.default
+}
+
+function rebindImports(js, from) {
+  const ast = acorn.parse(js, { ecmaVersion: 'latest', sourceType: 'module' })
+  const edits = []
+  for (const node of ast.body) {
+    if (!node.source) continue
+    const spec = node.source.value
+    const resolved = resolveFrom(spec, from)
+    if (resolved) { edits.push([node.source.start, node.source.end, JSON.stringify(resolved)]); continue }
+    if (node.type !== 'ImportDeclaration') { edits.push([node.source.start, node.source.end, JSON.stringify(STUB)]); continue }
+    // An unresolvable import becomes a binding to the stub value, named as
+    // the import named it: an ESM import of a stub module could not supply
+    // the names statically.
+    const names = node.specifiers.map((s) => {
+      if (s.type === 'ImportDefaultSpecifier') return `${s.local.name} = $$stub`
+      if (s.type === 'ImportNamespaceSpecifier') return `${s.local.name} = $$stub`
+      return `${s.local.name} = $$stub`
+    })
+    edits.push([node.start, node.end, names.length ? `const ${names.join(', ')};` : ''])
+  }
+  let out = js
+  for (const [start, end, text] of edits.sort((x, y) => y[0] - x[0])) out = out.slice(0, start) + text + out.slice(end)
+  return `import { stub as $$stub } from ${JSON.stringify(STUB)};\n${out}`
+}
+
+function resolveFrom(spec, from) {
+  if (RUNTIME[spec]) return RUNTIME[spec]
+  try { return Bun.resolveSync(spec, from) } catch { return null }
+}
+
+function installLoaders() {
+  if (installLoaders.done) return
+  installLoaders.done = true
+  Bun.plugin({
+    name: 'mesa-corpus-parity',
+    setup(build) {
+      // A tree is one mode throughout: everything a string-path module
+      // reaches loads under the `str` namespace, so a .mesa on that path
+      // compiles for the string path and is a different module from the
+      // same file on the DOM path. A workspace .js is loaded there too, since
+      // a kit's index re-exports its .mesa files. What stays ONE copy: a
+      // third-party package, which reaches no .mesa, and this package's own
+      // runtime, whose reactive core is process-global. Paths are not
+      // realpath'd: an installed workspace package resolves its own
+      // dependencies from its installed directory, not from the source tree.
+      const str = join(PARITY, 'str')
+      const mesaSrc = join(HERE, '../src')
+      // Bun names a namespaced importer `str:/path` and leaves `namespace`
+      // unset; the `?str` suffix keeps a string-path copy apart from the
+      // same file loaded on the DOM path.
+      const pathOf = (args) => args.path.replace(/\?str$/, '')
+      const fromStr = (args) => (args.importer ?? '').startsWith('str:') || (args.importer ?? '').startsWith(str)
+      const shared = (p) => p.startsWith(mesaSrc) || p.includes('/@frontierjs/mesa/') || (p.includes('/node_modules/') && !p.includes('/@frontierjs/'))
+      // Every specifier on the string path is already absolute (rebound at
+      // load), and `Bun.resolveSync` from inside a resolve hook re-enters
+      // the resolver, which then retries from each parent directory and
+      // discards the answer.
+      build.onResolve({ filter: /.*/ }, (args) => {
+        if (!fromStr(args) || !args.path.startsWith('/')) return undefined
+        return shared(args.path) ? undefined : { path: args.path + '?str', namespace: 'str' }
+      })
+      // A namespaced module's `import.meta.url` is `str:/path`, so a module
+      // that locates a file from its own is pointed at the real one.
+      const meta = (js, file) => js
+        .replace(/import\.meta\.url\b/g, JSON.stringify(`file://${file}`))
+        .replace(/import\.meta\.(?:dirname|dir)\b/g, JSON.stringify(dirname(file)))
+        .replace(/import\.meta\.(?:filename|path)\b/g, JSON.stringify(file))
+      build.onLoad({ filter: /.*/, namespace: 'str' }, async (args) => {
+        const file = pathOf(args)
+        if (file.endsWith('.mesa')) {
+          const { result } = await compile(readFileSync(file, 'utf8'), { target: 'server', filename: relative(ROOT, file), dev: false, css: false, warning: warningsOff })
+          return { contents: meta(rebindImports(result, dirname(file)), file), loader: 'js' }
+        }
+        if (ASSET.test(file)) return { contents: "export default ''", loader: 'js' }
+        // Bun resolves a bare specifier in a namespaced module from the cwd,
+        // not from the file, so every specifier is made absolute here as a
+        // compiled .mesa's are; TypeScript is transpiled first so acorn can
+        // read it.
+        const ext = extname(file).slice(1)
+        const code = readFileSync(file, 'utf8')
+        const js = LOADERS[ext] ? new Bun.Transpiler({ loader: LOADERS[ext] }).transformSync(code) : code
+        return { contents: meta(rebindImports(js, dirname(file)), file), loader: 'js' }
+      })
+      build.onLoad({ filter: /\.mesa$/ }, async (args) => {
+        const { result } = await compile(readFileSync(args.path, 'utf8'), { filename: relative(ROOT, args.path), dev: false, css: false, warning: warningsOff })
+        return { contents: rebindImports(result, dirname(args.path)), loader: 'js' }
+      })
+      build.onLoad({ filter: ASSET }, () => ({ contents: "export default ''", loader: 'js' }))
+    }
+  })
 }

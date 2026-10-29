@@ -425,7 +425,7 @@ export class BasecampSeeder extends Seeder {
       // The application audit trail, written explicitly.
       //
       // Seeding goes through the Litestone client, not through the services, so
-      // the basecampAuditLog hook that normally writes these never fires — a
+      // the call trail (`auditPlugin`, api/src/app.ts) never fires — a
       // seeded database has a full fleet and an empty trail, which reads as a
       // broken audit screen rather than as "nothing has happened through the
       // API yet". These rows are synthetic and say so in their action names'

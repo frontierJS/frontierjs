@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-166 definitions · 72 models · 1 view · 38 types · 55 enums · 0 other
+169 definitions · 73 models · 1 view · 38 types · 57 enums · 0 other
 ```
 
 ## Definitions
@@ -63,6 +63,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `DomainRoute` | model |
 | `AppEditor` | model |
 | `AppServer` | model |
+| `AppPlatform` | model |
 | `AppBackup` | model |
 | `AppDrill` | model |
 | `AppNetwork` | model |
@@ -118,6 +119,8 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `ServerEventKind` | enum |
 | `ProviderKind` | enum |
 | `ComputeProvider` | enum |
+| `PlatformProvider` | enum |
+| `PlatformBuild` | enum |
 | `RegisterMethod` | enum |
 | `CertKind` | enum |
 | `SslMode` | enum |
@@ -217,6 +220,8 @@ validates, and a select that silently drops an option.
 - `ServerEventKind` — `created`, `removed`, `reboot_requested`, `drain_started`, `drain_cancelled`, `provision_requested`, `provision_created`, `provision_ready`, `provision_timeout`, `destroy_requested`, `destroy_finished`, `enrollment_issued`, `sync_requested`, `status_synced`, `status_sync_ignored`, `sync_failed`, `sync_no_account`, `sync_unsupported`, `sync_unrecognized`, `came_online`, `unreachable`, `recipe_ran`, `recipe_failed`, `cleanup_queued`, `cleanup_ran`, `cleanup_failed`, `volume_removed`, `volumes_pruned`, `posture_failed`, `posture_restored`
 - `ProviderKind` — `custom`, `hetzner`, `digitalocean`, `cloudflare`, `github`
 - `ComputeProvider` — `custom`, `hetzner`, `digitalocean`
+- `PlatformProvider` — `cloudflare`
+- `PlatformBuild` — `outpost`, `platform`
 - `RegisterMethod` — `imported`, `provisioned`
 - `CertKind` — `acme`, `origin_ca`, `uploaded`
 - `SslMode` — `off`, `flexible`, `full`, `full_strict`
@@ -227,7 +232,7 @@ validates, and a select that silently drops an option.
 - `AppType` — `container`, `worker`, `database`, `daemon`, `cron`, `static`, `function`
 - `AppStatus` — `unknown`, `stopped`, `starting`, `running`, `stopping`, `deploying`, `error`
 - `DeployStatus` — `pending`, `building`, `success`, `failed`, `cancelled`, `rolled_back`
-- `DeployTrigger` — `button`, `push`, `laptop`, `rollback`, `rebind`, `publish`, `freeze`
+- `DeployTrigger` — `button`, `push`, `laptop`, `rollback`, `rebind`, `publish`, `freeze`, `observed`
 - `StepStatus` — `pending`, `running`, `success`, `failed`, `skipped`
 - `JobKind` — `one_shot`, `scheduled`, `triggered`, `workflow`
 - `JobStatus` — `pending`, `running`, `failed`, `cancelled`
@@ -900,6 +905,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `deployments` — hasMany `Deployment`
 - relation `jobs` — hasMany `Job`
 - relation `appServers` — hasMany `AppServer`
+- relation `appPlatforms` — hasMany `AppPlatform`
 - relation `appNetworks` — hasMany `AppNetwork`
 - relation `domains` — hasMany `Domain`
 - relation `domainRoutes` — hasMany `DomainRoute`
@@ -1036,6 +1042,30 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 **On create**: required — `appId`, `serverId` · not accepted — `id`
 
+### `AppPlatform`
+
+- gate `read:2 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+- relation `app` — belongsTo `App` via `appId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
+| `appId` | `string` | yes | — | — | — |
+| `accountId` | `string` | yes | — | — | — |
+| `provider` | `PlatformProvider` | yes | — | — | — |
+| `providerAccountId` | `string` | yes | — | — | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
+| `build` | `PlatformBuild` = `"outpost"` | — | — | — | — |
+| `builderServerId` | `string`? | — | — | — | — |
+| `hookUrl` | `string`? | — | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
+| `receiverSecret` | `string`? | — | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` `x-litestone-kind` | — |
+| `status` | `AppStatus` = `"unknown"` | — | — | `x-litestone-kind` | — |
+| `liveVersion` | `string`? | — | — | `x-litestone-kind` | — |
+| `observedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+
+**On create**: required — `appId`, `accountId`, `provider`, `providerAccountId`, `name` · not accepted — `id`
+
 ### `AppBackup`
 
 - gate `read:5 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
@@ -1132,6 +1162,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `branch` | `string`? | — | — | — | — |
 | `author` | `string`? | — | — | — | — |
 | `builtImage` | `string`? | — | — | — | — |
+| `platformVersion` | `string`? | — | — | `x-litestone-kind` | — |
 | `previousDeploymentId` | `string`? | — | — | — | — |
 | `configSnapshot` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `triggeredBy` | `string`? | — | — | — | — |

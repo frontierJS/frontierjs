@@ -1,21 +1,13 @@
 /**
  * HTML character references as text. Two readers: the compiler, which turns
  * a template's static text into a string, and the terminal runtime, which
- * reads `{@html}` markup as the text it holds.
+ * reads `{@html}` markup as the text it holds. The names are the whole HTML5
+ * list (`entities-table.js`): the DOM path decodes through a parser that
+ * knows them all, and the string mode has to write the same byte.
  */
 
-// The named references an author types in prose, not HTML5's 2,231: a compiler
-// that cannot reach a DOM needs a table, and one name missing from it prints as
-// its own source rather than failing. A numeric reference is general.
-const NAMED_ENTITIES = {
-  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", lbrace: '{', rbrace: '}',
-  nbsp: ' ', copy: '©', reg: '®', trade: '™', sect: '§', para: '¶', deg: '°',
-  plusmn: '±', times: '×', divide: '÷', middot: '·', bull: '•', hellip: '…',
-  ndash: '–', mdash: '—', lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”',
-  laquo: '«', raquo: '»', larr: '←', rarr: '→', uarr: '↑', darr: '↓',
-  cent: '¢', pound: '£', yen: '¥', euro: '€', frac12: '½', frac14: '¼', frac34: '¾',
-  check: '✓', star: '☆', hearts: '♥'
-}
+import NAMED_ENTITIES from './entities-table.js'
+
 const ENTITY = /&(?:#[xX]([0-9a-fA-F]+)|#(\d+)|([a-zA-Z][a-zA-Z0-9]*));/g
 
 /**

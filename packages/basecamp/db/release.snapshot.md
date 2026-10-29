@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-72 model(s) · 55 enum(s) · 2 database(s)
+73 model(s) · 57 enum(s) · 2 database(s)
 audit → sqlite · main → sqlite
 ```
 
@@ -36,7 +36,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `ComputeProvider` | `custom` · `digitalocean` · `hetzner` |
 | `DependencyKind` | `dependency` · `dev` · `optional` · `peer` |
 | `DeployStatus` | `building` · `cancelled` · `failed` · `pending` · `rolled_back` · `success` |
-| `DeployTrigger` | `button` · `freeze` · `laptop` · `publish` · `push` · `rebind` · `rollback` |
+| `DeployTrigger` | `button` · `freeze` · `laptop` · `observed` · `publish` · `push` · `rebind` · `rollback` |
 | `DrillKind` | `manual` · `scheduled` |
 | `EditorRole` | `edit` · `publish` |
 | `EnvironmentTier` | `development` · `preview` · `production` · `staging` · `test` |
@@ -56,6 +56,8 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `NotificationContext` | `AlertEvent` · `Deployment` · `JobRun` · `Monitor` · `Server` · `Workspace` |
 | `NotificationKind` | `AlertFiring` · `AlertResolved` · `DependencyVulnerable` · `DeployFailed` · `DeploySuccess` · `HubPostureFailed` · `JobFailed` · `MemberJoined` · `MonitorDown` · `MonitorUp` · `PostureFailed` · `ReplicaFound` · `ServerUnreachable` · `WeeklyDigest` |
 | `ParamGenerator` | `random_hex_16` · `random_hex_32` · `random_hex_64` |
+| `PlatformBuild` | `outpost` · `platform` |
+| `PlatformProvider` | `cloudflare` |
 | `ProjectStatus` | `active` · `archived` |
 | `ProviderKind` | `cloudflare` · `custom` · `digitalocean` · `github` · `hetzner` |
 | `ProvisionStepName` | `create` · `poll` · `start` · `timeout` |
@@ -232,6 +234,7 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `appBackups` | `AppBackup[]` | — | — | relation |
 | `appDrills` | `AppDrill[]` | — | — | relation |
 | `appNetworks` | `AppNetwork[]` | — | — | relation |
+| `appPlatforms` | `AppPlatform[]` | — | — | relation |
 | `appServers` | `AppServer[]` | — | — | relation |
 | `backupCron` | `String` | yes | — | — |
 | `backupDestination` | `BackupDestination` | — | — | relation |
@@ -441,6 +444,41 @@ table `app_network` · db `main` · gate `2.8`
 @@deny(read, !check(network, tenancy))
 @@deny(update, !check(app, tenancy))
 @@deny(update, !check(network, tenancy))
+```
+
+### `AppPlatform`
+
+table `app_platform` · db `main` · gate `2.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `accountId` | `String` | no | — | **required on write** |
+| `app` | `App` | — | — | relation |
+| `appId` | `String` | no | — | **required on write** |
+| `build` | `PlatformBuild` | no | `'outpost'` | — |
+| `builderServerId` | `String` | yes | — | — |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `hookUrl` | `String` | yes | — | @encrypted |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `liveVersion` | `String` | yes | — | @system |
+| `name` | `String` | no | — | **required on write** |
+| `observedAt` | `DateTime` | yes | — | @system |
+| `provider` | `PlatformProvider` | no | — | **required on write** |
+| `providerAccountId` | `String` | no | — | **required on write** |
+| `receiverSecret` | `String` | yes | — | @encrypted |
+| `status` | `AppStatus` | no | `'unknown'` | @system |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `workspaceId` | `String` | no | — | **required on write** |
+
+```
+@@unique(name, provider, providerAccountId, workspaceId)
+@@index(appId)
+@@index(workspaceId)
+@@deny(create, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
+@@deny(delete, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
+@@deny(postUpdate, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
+@@deny(read, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
+@@deny(update, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
 ```
 
 ### `AppServer`
@@ -812,6 +850,7 @@ table `deployment` · db `main` · gate `2.4.4.4`
 | `finishedAt` | `DateTime` | yes | — | — |
 | `fromImage` | `String` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `platformVersion` | `String` | yes | — | @system |
 | `previousDeploymentId` | `String` | yes | — | — |
 | `queuedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `startedAt` | `DateTime` | yes | — | — |
@@ -2263,6 +2302,7 @@ table `workspace` · db `main` · gate `1.1.5.6` · @@softDelete(cascade)
 | `owner` | `User` | — | — | relation |
 | `ownerId` | `String` | no | — | @system · **required on write** |
 | `projects` | `Project[]` | — | — | relation |
+| `pushTopic` | `String` | yes | — | @secret |
 | `secrets` | `Secret[]` | — | — | relation |
 | `servers` | `Server[]` | — | — | relation |
 | `settings` | `Json` | no | `'{}'` | — |

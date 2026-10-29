@@ -320,9 +320,10 @@ describe('the hub grader', () => {
                   env: { path: '/srv/basecamp/.env', mode: '600', owner: 'root', group: 'root' } }
   const KEY  = 'a'.repeat(64)
   const INSTALL = { production: true, appUrl: 'https://hub.test', apiUrl: 'https://api.hub.test',
-                    mailer: 'https://api.resend.com', mailFrom: 'ops@hub.test' }
+                    mailer: 'https://api.resend.com', mailFrom: 'ops@hub.test',
+                    push: { rung: 3 as const, url: 'https://ntfy.sh' } }
   const hub  = (r: PostureReadings | null, lastBackupAt: string | null, at: number = NOW, host: Partial<HostDeclared> = {}) =>
-    Object.fromEntries(gradeHub(r, { lastBackupAt, keyFingerprint: KEY, keyEscrow: null, install: INSTALL, ...host }, { at, now: NOW }).map(c => [c.id, c]))
+    Object.fromEntries(gradeHub(r, { lastBackupAt, keyFingerprint: KEY, keyEscrow: null, hubApp: null, install: INSTALL, ...host }, { at, now: NOW }).map(c => [c.id, c]))
 
   test('the URLs and the mailer are graded from the env, report or none', () => {
     const grade = (install: Partial<HostDeclared['install']>) => hub(null, null, NOW, { install: { ...INSTALL, ...install } })
@@ -338,6 +339,11 @@ describe('the hub grader', () => {
     // A failing control says what to do; a passing one carries nothing to do.
     expect(grade({ mailer: null })['hub.mailer'].fix).toContain('RESEND_API_KEY')
     expect(grade({})['hub.mailer'].fix).toBeUndefined()
+    // The push row names the rung; only a self-hosted ntfy with no iOS relay fails.
+    expect(grade({})['hub.push']).toMatchObject({ ok: true, message: expect.stringContaining('ntfy.sh (public server') })
+    expect(grade({ push: { rung: 1, url: 'https://ntfy.acme.com' } })['hub.push'].message).toContain('your ntfy at https://ntfy.acme.com')
+    expect(grade({ push: { rung: 2, url: 'https://push.hub.test', relay: 'https://ntfy.sh' } })['hub.push'].ok).toBe(true)
+    expect(grade({ push: { rung: 2, url: 'https://push.hub.test', relay: null } })['hub.push']).toMatchObject({ ok: false, fix: expect.stringContaining('iOS relay') })
   })
 
   test('no backup ever is failing, and a recent one passes', () => {

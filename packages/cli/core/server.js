@@ -60,7 +60,7 @@ import { globalEnvPath, GLOBAL_ENV_HEADER } from './global-env.js'
 import { gitOut }        from './git.js'
 import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { basename } from 'path'
-import { resolve, dirname, relative } from 'path'
+import { resolve, dirname } from 'path'
 import { rel } from './fs.js'
 import { fileURLToPath } from 'url'
 

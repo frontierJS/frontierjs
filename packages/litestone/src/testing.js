@@ -398,7 +398,7 @@ export async function createTestEnv(opts = {}) {
     if (!hasFieldWrite) return env.atLevel(n)
     const client = await clientAt(unpoliced, n, parseUnpoliced)
     if (n === 8) return client.asSystem()
-    return client.$setAuth({ id: 'test-principal', capabilities: [...capabilityNames(built.parsed.schema)] })
+    return client.$setAuth({ id: LADDER_PRINCIPAL_ID, capabilities: [...capabilityNames(built.parsed.schema)] })
   }
 
   const env = {
@@ -437,7 +437,7 @@ export async function createTestEnv(opts = {}) {
       // building one is asking about a specific person, and a set injected
       // under them is a grant they did not write.
       return client.$setAuth(
-        principal ?? { id: 'test-principal', capabilities: [...capabilityNames(built.parsed.schema)] })
+        principal ?? { id: LADDER_PRINCIPAL_ID, capabilities: [...capabilityNames(built.parsed.schema)] })
     },
 
     // Every gated model's ladder, model name attached. The axis, not the run.
@@ -591,6 +591,11 @@ export async function createTestEnv(opts = {}) {
               // it would fail the required check instead, which says nothing
               // about either lock. Level 8 IS asSystem() and writes them all.
               if (row.level < 8) for (const f of guardedOptional) delete data[f.name]
+              // A create policy reads the payload, and no factory row belongs to
+              // the synthetic caller, so `@@allow(all, userId == auth().id)`
+              // refused it at every level the gate admits and the create was
+              // never graded. Owning the row leaves the gate as the only rule.
+              if (row.level < 8) Object.assign(data, _ownedBy(schema.models.find(x => x.name === modelName), { id: LADDER_PRINCIPAL_ID }))
               run = () => client[acc].create({ data, ...named(data) })
             } else if (row.op !== 'read') {
               // Update and delete need a row that is already there, made as
@@ -2737,6 +2742,10 @@ function _arrayOf(field, n) {
 
 // ─── row policies ─────────────────────────────────────────────────────────────
 
+// The ladder's synthetic caller. A create stamps it into the columns a policy
+// pins to `auth().id`, so it is one value in both places.
+const LADDER_PRINCIPAL_ID = 'test-principal'
+
 // The principal `verifyRowPolicies` compares against. Carries the keys an
 // `auth().x` predicate is realistically written over in this repo, because a
 // principal missing the key a policy names makes every row fail to match — and
@@ -3437,6 +3446,30 @@ async function _refusedParentExists(sys, model, err) {
   if (!rel || !err.target) return false
   const where = Object.fromEntries([rel.references].flat().map((r, i) => [r, err.key.values[i]]))
   return sys[modelToAccessor(err.target)].exists({ where })
+}
+
+// The columns a create `@@allow` pins to the caller (`userId == auth().id`),
+// valued from `who`. Only an allow made wholly of such equalities is used;
+// anything else answers `{}` and the create stays ungraded rather than guessed.
+function _ownedBy(model, who) {
+  const pins = (e) => {
+    if (e?.type === 'and') { const l = pins(e.left), r = pins(e.right); return l && r && [...l, ...r] }
+    if (e?.type !== 'compare' || e.op !== '==') return null
+    const [f, a] = e.left?.type === 'field' ? [e.left, e.right] : [e.right, e.left]
+    if (f?.type !== 'field' || a?.type !== 'auth' || !a.field) return null
+    const field = model.fields.find(x => x.name === f.name)
+    const value = who[a.field]
+    if (!field || field.attributes?.some(x => x.kind === 'guarded' || x.kind === 'system')) return null
+    const fits = field.type?.name === 'String' ? typeof value === 'string'
+               : field.type?.name === 'Int'    ? Number.isInteger(value) : false
+    return fits ? [[f.name, value]] : null
+  }
+  for (const a of model?.attributes ?? []) {
+    if (a.kind !== 'allow' || !a.operations?.includes('create')) continue
+    const p = pins(a.expr)
+    if (p) return Object.fromEntries(p)
+  }
+  return {}
 }
 
 // Whether a ValidationError is the value set on a foreign key refusing a parent

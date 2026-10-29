@@ -1142,6 +1142,32 @@ CREATE TABLE IF NOT EXISTS "app_server" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_app_server_serverId" ON "app_server" ("serverId");
 
+CREATE TABLE IF NOT EXISTS "app_platform" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "workspaceId" TEXT NOT NULL,
+  "appId" TEXT NOT NULL,
+  "accountId" TEXT NOT NULL,
+  "provider" TEXT NOT NULL,
+  "providerAccountId" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "build" TEXT NOT NULL DEFAULT 'outpost',
+  "builderServerId" TEXT,
+  "hookUrl" TEXT,
+  "receiverSecret" TEXT,
+  "status" TEXT NOT NULL DEFAULT 'unknown',
+  "liveVersion" TEXT,
+  "observedAt" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("provider" IN ('cloudflare')),
+  CHECK ("build" IN ('outpost', 'platform')),
+  CHECK ("status" IN ('unknown', 'stopped', 'starting', 'running', 'stopping', 'deploying', 'error')),
+  UNIQUE ("workspaceId", "provider", "providerAccountId", "name"),
+  FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_app_platform_appId" ON "app_platform" ("appId");
+CREATE INDEX IF NOT EXISTS "idx_app_platform_workspaceId" ON "app_platform" ("workspaceId");
+
 CREATE TABLE IF NOT EXISTS "app_network" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "appId" TEXT NOT NULL,
@@ -1168,6 +1194,7 @@ CREATE TABLE IF NOT EXISTS "deployment" (
   "branch" TEXT,
   "author" TEXT,
   "builtImage" TEXT,
+  "platformVersion" TEXT,
   "previousDeploymentId" TEXT,
   "configSnapshot" TEXT NOT NULL DEFAULT '{}',
   "triggeredBy" TEXT,
@@ -1178,7 +1205,7 @@ CREATE TABLE IF NOT EXISTS "deployment" (
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   CHECK ("status" IN ('pending', 'building', 'success', 'failed', 'cancelled', 'rolled_back')),
-  CHECK ("trigger" IN ('button', 'push', 'laptop', 'rollback', 'rebind', 'publish', 'freeze')),
+  CHECK ("trigger" IN ('button', 'push', 'laptop', 'rollback', 'rebind', 'publish', 'freeze', 'observed')),
   FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE,
   FOREIGN KEY ("triggeredBy") REFERENCES "user" ("id")
 ) STRICT;

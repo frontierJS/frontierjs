@@ -84,6 +84,9 @@ const NOT_SEEDED: Record<string, string> = {
   // A prefix of a seeded Domain sent to a second App is a choice an owner makes about
   // their own pair of Apps; the seeded fleet has no such pair (FJS-D1040).
   domain_route: 'a choice about two Apps sharing a hostname, which no seeded Domain makes',
+  // Adopting reads a live vendor account, and a seeded Cloudflare key would be
+  // asked by every edge job that walks the workspace's accounts.
+  app_platform: 'an App adopted from a vendor account, which the seed holds no key for',
 
   // Empty because they describe something that has not happened.
   //

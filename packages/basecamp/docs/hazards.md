@@ -366,13 +366,11 @@ The full hazard catalog for `@frontierjs/basecamp`, moved out of `CLAUDE.md`. Th
   recorded on `Deployment.builtImage` and every later step is addressed by it.
   Only `sha256:<64 hex>` is accepted — a `builtImage` nobody can resolve reads as
   an answer, which is worse than an empty one.
-- **The audit trail is two hooks and both sides are read the same way.**
-  `basecampAuditPreImage` (before) parks the row on `ctx.locals`; the after half
-  re-reads through `asSystem()` rather than diffing `ctx.result`, because a
-  service may answer a projection and a scoped read strips protected columns —
-  taking the after from the result reported an `@encrypted` column as REMOVED on
-  every rotation. Protected column names come from `db.$protectedFields()`, never
-  a list here.
+- **The call trail is junction's `auditPlugin`, and basecamp states only its
+  columns** (`FJS-D873`). What counts as a write, the pre-image and the system
+  re-read are the plugin's; `except` and `columns.workspaceId` in `app.ts` are
+  this app's. A required `AuditEvent` column the plugin does not write must be
+  named in `columns`, or the app refuses to boot.
 - **A service DECLARES its channel; it does not run a announce hook.**
   `channel: workspaceChannel` on the definition, which answers the channel's
   NAME, so a definition needs no app. Junction announces in one

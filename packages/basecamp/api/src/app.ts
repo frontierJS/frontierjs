@@ -52,7 +52,8 @@ import { S3_SIGNER, s3Signer }    from './providers/storage/s3.ts'
 import { enrollTokenMatches, mintOutpostSecret, installScript, isCertificate } from './providers/compute/enrollment.ts'
 import { notifications, ntfy } from '@frontierjs/notifications'
 import { resolvePush, PUBLIC_NTFY } from './push.ts'
-import { basecampAuditLog, basecampAuditPreImage, outpostCredential, outpostScope, workspaceOrKeys } from './core/hooks.ts'
+import { outpostCredential, outpostScope, workspaceOrKeys } from './core/hooks.ts'
+import { auditPlugin }           from '@frontierjs/junction/audit'
 import { grantsFor } from './core/capabilities.ts'
 import { basecampSessionFields, ownerOwesSecondFactor, refuseSuspendedLogin, refuseSuspended } from './core/session-auth.ts'
 import { agentGuard, apiKeyGuard, apiKeyUsage, narrowForAgent } from './domain/api-key/scopes.ts'
@@ -66,12 +67,6 @@ import { syncReplicasOn }            from './jobs/replicate-sync.job.ts'
 import { workspaceChannelName, workspaceIdFromChannel, notificationChannelName } from './core/channels.ts'
 
 import type { App }         from '@frontierjs/junction'
-
-// Recorded nowhere, and stated once because two hooks take it: both halves of
-// the audit trail must skip the same calls or a pre-image is read for an event
-// that is never written. Every one is an outpost on a timer — fifty machines
-// reporting their disks every minute buries every action a person took.
-const AUDIT_EXCEPT = ['servers.heartbeat', 'volumes.report', 'cleanup.report', 'posture.report']
 
 /**
  * Build the app.
@@ -608,24 +603,10 @@ export async function buildBasecampApp(
         // inherit the exemption without it (`FJS-349`) and a signed machine
         // cannot reach any other method (`FJS-1715`).
         outpostScope(),
-        // The other half of the trail. A diff needs the row as it stands, and
-        // an `after` hook cannot have it — so the pre-image is read here, under
-        // the same exception list the `after` half takes.
-        basecampAuditPreImage({ except: AUDIT_EXCEPT }),
       ],
     },
     after: {
-      // `all`, not the three CRUD verbs: a custom method is a mutation too, and
-      // drain / cancel / deploy / trigger are most of what an operator does.
-      // The hook itself decides what counts (find/get and dispatch:false are
-      // out) and takes the exceptions by name.
       all: [
-        // Both exceptions are an outpost on a timer. Fifty machines reporting
-        // their disks every minute buries every action a person took, and an
-        // audit trail nobody can read is an audit trail nobody reads.
-        // Deliberately NOT `ctx.dispatch = false` — that would also silence the
-        // channel, and both screens are fed by exactly that broadcast.
-        basecampAuditLog({ except: AUDIT_EXCEPT }),
         // Only fires when apiKeyGuard stamped a key id, so a session request
         // pays nothing for it.
         apiKeyUsage(),
@@ -655,6 +636,24 @@ export async function buildBasecampApp(
       }],
     },
   })
+
+  // ── The call trail ────────────────────────────────────────────────────
+  // After the hooks above, so its pre-image is read for a call the guards let
+  // through. Every exception is an outpost on a timer: fifty machines reporting
+  // their disks every minute buries every action a person took.
+  //
+  // A null workspace is a claim, not a shrug: the row belongs to no workspace
+  // and only the hub reads it (`FJS-D141`). `internalOnly()` methods run outside
+  // sessionScope, so the subject's own column answers second, and a Workspace
+  // is its own workspace.
+  app.configure(auditPlugin({
+    model:   'AuditEvent',
+    except:  ['servers.heartbeat', 'volumes.report', 'cleanup.report', 'posture.report'],
+    columns: {
+      workspaceId: (ctx, subject) => (ctx.locals.workspaceId as string | undefined)
+        ?? (ctx.service === 'workspaces' ? subject?.id : subject?.workspaceId),
+    },
+  }))
 
   // ── Schedules held in the database ────────────────────────────────────
   // A job file registers its own handler — caravan autoloads `api/src/jobs`.

@@ -8,8 +8,10 @@ import { parseArgv, BOOL_ARGV } from './argv.js'
 import { requiresOf } from './requires.js'
 import { chalk, amber } from './color.js'
 import { homedir } from 'os'
+import { readFileSync } from 'fs'
+import { spawnSync } from 'child_process'
 import { logger, loadFliEnv, fliVersion } from './utils.js'
-import { printPlanFromFile } from './prose.js'
+import { printPlanFromFile, extractProse } from './prose.js'
 import { buildRegistry, uniqueCommands, getModule, userCommandsDir } from './registry.js'
 import { loadConfig } from './config.js'
 import { setVerbose } from './verbosity.js'
@@ -179,12 +181,15 @@ async function printNamespace(ns, commands, verbose = false) {
 // ─── printHelp() — pretty-print a command's metadata ─────────────────────────
 // Same palette as printSearch/printNamespace: an exact `fli ? <name>` must not
 // read plainer than the partial match that lists the same command.
-function printHelp(meta, filePath) {
+// `-h` is the card; `--help` and `fli help <cmd>` add the file's prose, which
+// runs to hundreds of lines and buries the flags on a short screen.
+function printHelp(meta, filePath, { full = true } = {}) {
+  let text = ''
   const dim    = (s) => chalk.dim(s)
   const green  = (s) => chalk.green(s)
   const yellow = (s) => chalk.yellow(s)
   const cyan   = (s) => chalk.cyan(s)
-  const out    = (s = '') => process.stdout.write(s + '\n')
+  const out    = (s = '') => { text += s + '\n' }
 
   meta = { ...meta, flags: withModuleFlags(meta.flags, getModule(meta.title?.split(':')[0])) }
   const alias = meta.alias ? dim(` · ${meta.alias}`) : ''
@@ -235,11 +240,34 @@ function printHelp(meta, filePath) {
     for (const ex of examples) out(`    ${dim(ex)}`)
   }
 
-  if (filePath) {
-    try { printPlanFromFile(filePath, {}, { indent: '  ' }) } catch {}
-  } else {
-    out()
+  if (filePath && full) {
+    try { printPlanFromFile(filePath, {}, { indent: '  ', write: (s) => { text += s } }) } catch {}
+    return page(text)
   }
+  out()
+  const prose = proseLines(filePath)
+  if (prose) out(`  ${dim(`full guide (${prose} lines):`)} ${cyan('fli')} ${green(meta.title)} ${dim('--help')}\n`)
+  process.stdout.write(text)
+}
+
+// Taller than the terminal goes through $PAGER (git's rule): the top of the
+// guide, where the flags are, would otherwise scroll away. PAGER=cat opts out.
+function page(text) {
+  const rows  = process.stdout.isTTY ? process.stdout.rows : 0
+  const pager = process.env.PAGER ?? 'less'
+  if (!rows || text.split('\n').length <= rows || !pager || pager === 'cat') return process.stdout.write(text)
+  const run = spawnSync(pager, {
+    shell: true,
+    input: text,
+    stdio: ['pipe', 'inherit', 'inherit'],
+    env:   { ...process.env, LESS: process.env.LESS ?? 'FRX' },
+  })
+  if (run.error || run.status === 127) process.stdout.write(text)
+}
+
+function proseLines(filePath) {
+  if (!filePath) return 0
+  try { return extractProse(readFileSync(filePath, 'utf8')).split('\n').length } catch { return 0 }
 }
 
 // ─── run() ────────────────────────────────────────────────────────────────────
@@ -595,7 +623,7 @@ export async function run(process) {
       logger(`Command "${rawArgs[0]}" not found`, 'error')
       return
     }
-    printHelp(target.meta, target.filePath)
+    printHelp(target.meta, target.filePath, { full: !!flag.help || cmd === 'help' })
     return
   }
 

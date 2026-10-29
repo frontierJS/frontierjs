@@ -69,6 +69,22 @@ export const cases = [
       `<tr data-id="${r.id}"><td>${r.id}</td><td><a>${esc(r.label)}</a></td></tr>`).join('') + '</tbody></table>',
   },
   {
+    // The same table through the string mode (`FJS-D1634`). The floor is the
+    // same string, so the two ratios say what happy-dom costs.
+    name: 'ssr-100-server', ceiling: 10, ops: 30,
+    async open() {
+      const rows = buildData(100)
+      const opts = { data: { rows }, cwd: '/tmp/mesa-bench', target: 'fragment', compileOptions: { target: 'server' } }
+      const { html, unlowered } = await renderComponent(TABLE, opts)
+      if (unlowered.length) throw new Error('ssr-100-server: fell back to the DOM path — ' + unlowered[0].refused)
+      if (!html.includes(esc(rows[99].label))) throw new Error('ssr-100-server: the render is missing the last row')
+      return { rows, opts }
+    },
+    run:   ({ opts }) => renderComponent(TABLE, opts),
+    floor: ({ rows }) => '<table><tbody>' + rows.map(r =>
+      `<tr data-id="${r.id}"><td>${r.id}</td><td><a>${esc(r.label)}</a></td></tr>`).join('') + '</tbody></table>',
+  },
+  {
     name: 'signal-fanout', ceiling: 250, ops: 500,
     open() {
       const s = { sink: 0, runs: 0, plain: { a: 0, sinks: new Array(EFFECTS).fill(0) } }

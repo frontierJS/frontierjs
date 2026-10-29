@@ -38,6 +38,7 @@ it re-resolved when it runs. Survives a restart.
 | `monitor-sweep` | `default` | `* * * * *` | — | 3 | default | **none** |
 | `orion.run` | `orion` | on dispatch | — | 3 | default | **none** |
 | `orion.sweep` | `orion` | `* * * * *` | — | 3 | default | **none** |
+| `platform-observe` | `default` | `*/5 * * * *` | — | 3 | default | **none** |
 | `recipe:run` | `fleet` | on dispatch | — | 2 | 10000 | **none** |
 | `replicate:sync` | `fleet` | on dispatch | — | 5 | 10000, 60000 | 240000ms |
 | `restore:reconcile` | `fleet` | on dispatch | — | 3 | 30000, 120000 | **none** |
@@ -50,9 +51,9 @@ it re-resolved when it runs. Survives a restart.
 | `site:publish` | `deployments` | on dispatch | — | 1 | default | 2130000ms |
 | `weekly-digest` | `default` | `0 9 * * 1` | — | 3 | default | **none** |
 
-25 handler(s), 8 of them on a clock.
+26 handler(s), 9 of them on a clock.
 
-**15 with no timeout.** Absent means no bound, honestly — but a
+**16 with no timeout.** Absent means no bound, honestly — but a
 handler that never settles holds its slot for the life of the process, and on a
 single-concurrency queue everything behind it waits (`FJS-295`). Worth knowing
 which ones those are, which is why the column is here rather than omitted when

@@ -151,7 +151,7 @@ export default createService({
   // The workspace channel, except for `accept` — whose result carries a
   // session token, and an announcement announces the RESULT. Silencing it
   // with `$.dispatch = false` would have worked and cost the audit trail:
-  // `recordable()` reads the same flag to mean *this method is read-shaped*,
+  // the call trail (`auditPlugin`) reads the same flag to mean *this method is read-shaped*,
   // so an accept would have gone unrecorded. Two different statements —
   // "nobody needs to hear this" and "nobody may hear this" — and only one of
   // them belongs on the publish side.

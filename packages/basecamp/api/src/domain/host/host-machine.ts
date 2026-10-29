@@ -255,7 +255,7 @@ async function hubAppDeclared(sys: any, appId: string | null): Promise<HostDecla
 }
 
 /** What the `hub.*` controls grade in process: the newest archive, the key's escrow and the env. */
-async function hostDeclared(sys: any): Promise<HostDeclared> {
+async function hostDeclared(sys: any, push: HostDeclared['install']['push']): Promise<HostDeclared> {
   const config = await sys.hubConfig.findFirst({ where: { id: 'hub' } })
   return {
     hubApp:         await hubAppDeclared(sys, config?.appId ?? null),
@@ -270,6 +270,7 @@ async function hostDeclared(sys: any): Promise<HostDeclared> {
       apiUrl:     env.FRONTIER_API_URL,
       mailer:     mailProvider()?.address ?? null,
       mailFrom:   env.MAIL_FROM,
+      push,
     },
   }
 }
@@ -279,11 +280,11 @@ async function hostDeclared(sys: any): Promise<HostDeclared> {
  * they were graded from. One reading for `/hub/security/` and the daily
  * `hub-posture` job, so the screen and the mail cannot disagree.
  */
-export async function gradeHubNow(sys: any, now = Date.now()) {
+export async function gradeHubNow(sys: any, push: HostDeclared['install']['push'], now = Date.now()) {
   const server = await hostServer(sys)
   const row    = server
     ? await sys.serverPosture.findFirst({ where: { serverId: server.id }, orderBy: { at: 'desc' } })
     : null
-  const hub = gradeHub(row?.readings ?? null, await hostDeclared(sys), { at: row?.at ?? now, now })
+  const hub = gradeHub(row?.readings ?? null, await hostDeclared(sys, push), { at: row?.at ?? now, now })
   return { server, row, hub }
 }

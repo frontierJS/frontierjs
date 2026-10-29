@@ -34,7 +34,7 @@ function inlineFormat(text, vars) {
 }
 
 // Render a full prose string to the terminal
-export function renderProse(prose, vars = {}, { indent = '' } = {}) {
+export function renderProse(prose, vars = {}, { indent = '', write = (s) => process.stdout.write(s) } = {}) {
   const lines  = prose.split('\n')
   let   inCode = false
   let   codeBuf = []
@@ -84,9 +84,9 @@ export function renderProse(prose, vars = {}, { indent = '' } = {}) {
   }
 
   // Print with a leading blank line for breathing room
-  process.stdout.write('\n')
-  for (const line of out) process.stdout.write((line ? indent + line : line) + '\n')
-  process.stdout.write('\n')
+  write('\n')
+  for (const line of out) write((line ? indent + line : line) + '\n')
+  write('\n')
 }
 
 // Read prose from a file path and render it
