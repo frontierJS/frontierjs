@@ -227,7 +227,7 @@ try {
   const current = (await call('/hub-config', { serviceMethod: 'current', body: {} })).body
   const saved   = await call('/hub-config', { serviceMethod: 'save',
     body: { replicaDestinationId: hubDest.id, ...(current?.version ? { version: current.version } : {}) } })
-  check('the hub replicates to a destination of its own', saved.status < 300 && saved.body?.replicaDestinationId === hubDest.id,
+  check('the hub replicates to a destination of its own', saved.status < 300 && saved.body?.app?.replicaDestinationId === hubDest.id,
     JSON.stringify(saved))
 
   const listed = (await call('/apps?$limit=200')).body?.data ?? []
@@ -284,8 +284,7 @@ try {
     pulled.status === 0 && counts(join(SCRATCH, 'from-replica.db')) === counts(join(hubVol, 'basecamp.db')),
     `${pulled.stderr}${pulled.stdout}`)
 
-  const asked  = await call('/backups', { body: { destinationId: archives.id } })
-  const backup = asked.body?.backup ?? asked.body
+  const backup = (await call('/backups', { serviceMethod: 'take', body: { destinationId: archives.id } })).body
   let row = null
   await until(async () => {
     row = (await call(`/backups/${backup?.id}`)).body
@@ -365,8 +364,8 @@ try {
       api.out.split('\n').filter(l => /reconcile|replica|restore/i.test(l)).slice(-12).join('\n'))
   const hub = (await call('/hub-config', { serviceMethod: 'current', body: {} })).body
   const hubNewest = newest(await bucketObjects('hubrep/basecamp/'))
-  check('…and Basecamp\'s own replica on HubConfig', !!hub?.replicaFoundAt && hub?.replicaSyncedAt === hubNewest,
-    JSON.stringify({ hub: hub?.replicaSyncedAt, hubNewest }))
+  check('…and Basecamp\'s own replica on the hub App', !!hub?.app?.replicaFoundAt && hub?.app?.replicaSyncedAt === hubNewest,
+    JSON.stringify({ hub: hub?.app?.replicaSyncedAt, hubNewest }))
   let foundArchive = null
   await until(async () => (foundArchive = ((await call(`/app-backups?appId=${target.id}`)).body?.data ?? [])
     .find(r => r.kind === 'found'))?.status === 'success', 30_000)

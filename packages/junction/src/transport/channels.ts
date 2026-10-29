@@ -131,6 +131,9 @@ export interface WSMessage {
   // so the frame's own shape did not say that a call travels this way.
   service?: string
   method?:  string
+
+  // A `visibility` frame: the tab's `document.visibilityState === 'visible'`.
+  visible?: boolean
 }
 
 // ─── Presence ─────────────────────────────────────────────────────────────

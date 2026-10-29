@@ -171,9 +171,9 @@ title: Workspace
         to this topic, through {RUNG[ping.rung]}. The topic's random tail is what keeps strangers
         off it — share it like a password.
       </p>
-      <div class="cluster items-start" style="gap: var(--space-4)">
+      <div class="cluster gap-lg ws-push">
         <div class="ws-push-qr" aria-label="QR code of the subscribe link">{@html qrSvg(ping.subscribeUrl)}</div>
-        <div class="stack text-sm" style="flex: 1 1 16rem">
+        <div class="stack text-sm ws-push-facts">
           <div>
             <div class="text-muted">Topic</div>
             <Mono>{ping.topic}</Mono>
@@ -182,7 +182,7 @@ title: Workspace
             <div class="text-muted">Server</div>
             <Mono>{ping.url}</Mono>
           </div>
-          <ol class="stack-xs" style="padding-left: 1.25rem">
+          <ol class="stack gap-2xs ws-push-steps">
             <li>Install the <strong>ntfy</strong> app (Android, iPhone or desktop).</li>
             <li>Scan the code, or add a subscription by hand: topic above, and under
                 <em>Use another server</em> the server above.</li>
@@ -237,6 +237,9 @@ title: Workspace
 {/if}
 
 <style>
+  .ws-push { align-items: flex-start }
   .ws-push-qr { inline-size: 11rem; max-inline-size: 100%; flex: 0 0 auto }
-  .ws-push-qr :global(svg) { display: block; inline-size: 100%; block-size: auto; border-radius: var(--radius-md, 6px) }
+  .ws-push-qr :global(svg) { display: block; inline-size: 100%; block-size: auto; border-radius: var(--radius-md) }
+  .ws-push-facts { flex: 1 1 16rem }
+  .ws-push-steps { padding-inline-start: 1.25rem }
 </style>

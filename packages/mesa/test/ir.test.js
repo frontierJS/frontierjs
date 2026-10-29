@@ -90,7 +90,7 @@ describe('lower()', () => {
             ],
             else: null,
           }]),
-        ], { attrs: [{ name: 'class', value: 'box' }] }),
+        ], { attrs: [{ name: 'class', value: 'box', at: 130 }] }),
       ],
     })
   })
@@ -255,12 +255,12 @@ describe('lower()', () => {
 <p style:font-size style:gap={w} style:width="{w}ch" class="x">t</p>
 `, 'S.mesa')
     const p = tree.children[0]
-    expect(p.attrs).toEqual([{ name: 'class', value: 'x' }])
+    expect(p.attrs).toEqual([{ name: 'class', value: 'x', at: 98 }])
     expect(p.directives).toEqual([])
     expect(p.styles).toEqual([
-      { prop: 'font-size', loc: 'S.mesa:4:4', expr: { raw: 'fontSize', code: '$$runtime.get($$sig_fontSize)', reads: ['fontSize'] } },
-      { prop: 'gap', loc: 'S.mesa:4:20', expr: { raw: 'w', code: '$$runtime.get($$sig_w)', reads: ['w'] } },
-      { prop: 'width', loc: 'S.mesa:4:34', expr: { raw: '{w}ch', code: '`${$$runtime.get($$sig_w)}ch`', reads: ['w'] } },
+      { prop: 'font-size', loc: 'S.mesa:4:4', at: 48, expr: { raw: 'fontSize', code: '$$runtime.get($$sig_fontSize)', reads: ['fontSize'] } },
+      { prop: 'gap', loc: 'S.mesa:4:20', at: 64, expr: { raw: 'w', code: '$$runtime.get($$sig_w)', reads: ['w'] } },
+      { prop: 'width', loc: 'S.mesa:4:34', at: 78, expr: { raw: '{w}ch', code: '`${$$runtime.get($$sig_w)}ch`', reads: ['w'] } },
     ])
   })
 
@@ -271,11 +271,11 @@ describe('lower()', () => {
 <p class:on class:wide={n > 1} class="x">t</p>
 `, 'C.mesa')
     const p = tree.children[0]
-    expect(p.attrs).toEqual([{ name: 'class', value: 'x' }])
+    expect(p.attrs).toEqual([{ name: 'class', value: 'x', at: 73 }])
     expect(p.directives).toEqual([])
     expect(p.classes).toEqual([
-      { name: 'on', loc: 'C.mesa:4:4', expr: { raw: 'on', code: '$$runtime.get($$sig_on)', reads: ['on'] } },
-      { name: 'wide', loc: 'C.mesa:4:13', expr: { raw: 'n > 1', code: '$$runtime.get($$sig_n) > 1', reads: ['n'] } },
+      { name: 'on', loc: 'C.mesa:4:4', at: 45, expr: { raw: 'on', code: '$$runtime.get($$sig_on)', reads: ['on'] } },
+      { name: 'wide', loc: 'C.mesa:4:13', at: 54, expr: { raw: 'n > 1', code: '$$runtime.get($$sig_n) > 1', reads: ['n'] } },
     ])
   })
 

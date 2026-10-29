@@ -23,12 +23,15 @@ text, so a body that elevates through a helper is not listed.
 | Method | Who may call it |
 | --- | --- |
 | `apiKeys.owners` | standing 5 or above — declared `gate: 5` |
+| `appBackups.take` | standing 5 or above — declared `gate: 5` |
 | `apps.unplace` | standing 4 or above — declared `gate: 4` |
 | `apps.disablePush` | standing 5 or above — declared `gate: 5` |
+| `backups.take` | **any signed-in caller** — floor, read gate 5; standing not graded |
 | `backups.download` | standing 7 or above — declared `gate: 7` |
 | `channels.test` | standing 5 or above — declared `gate: 5` |
+| `deployments.rollback` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `deployments.rebind` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `edge.syncStep` | anyone, a stranger included — declared `gate: 0` |
-| `hubConfig.save` | **any signed-in caller** — floor, read gate 7; standing not graded |
 | `hubConfig.dismissFound` | **any signed-in caller** — floor, read gate 7; standing not graded |
 | `infra.onboarding` | standing 2 or above — declared `gate: 2` |
 | `servers.metrics` | **any signed-in caller** — floor, read gate 2; standing not graded |
@@ -37,6 +40,7 @@ text, so a body that elevates through a helper is not listed.
 | `variables.reveal` | standing 5 or above — declared `gate: 5` |
 | `workspaces.leave` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `workspaces.transferOwnership` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `workspaces.testPing` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
 ## Custom methods whose caller's standing is not graded
 
@@ -58,7 +62,7 @@ and what it does.
 | `notificationPreferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notificationPreferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (92)
+### A service hook runs in front of the body (96)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -80,6 +84,8 @@ name, and is as unread as the body.
 | `apps.analytics` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `apps.fromBlueprint` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `backupDestinations.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `backups.take` | **any signed-in caller** — floor, read gate 5; standing not graded | `requireSystemAdmin` |
+| `backups.discard` | **any signed-in caller** — floor, read gate 5; standing not graded | `requireSystemAdmin` |
 | `blueprints.setParams` | **any signed-in caller** — floor, read gate 1; standing not graded | `requireSystemAdmin` |
 | `channels.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `channels.rules` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
@@ -158,6 +164,8 @@ name, and is as unread as the body.
 | `workspaces.removeMember` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` |
 | `workspaces.leave` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` |
 | `workspaces.transferOwnership` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` |
+| `workspaces.push` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` |
+| `workspaces.testPing` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` |
 
 ### No body — a derived `@@transitions` move (1)
 
@@ -280,7 +288,7 @@ name when it declares none.
 - **input** — `rescan` takes `AppBackupRescan`
 - **input** — `take` takes `AppBackupTake`
 - **who may call** —
-  - `take` — standing 5 or above — declared `gate: 5`
+  - `take` — standing 5 or above — declared `gate: 5`; body writes as the app
   - `rescan` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
@@ -418,12 +426,14 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
-### `backups` · model `Backup`
+### `backups` · model `AppBackup`
 
-- **methods** — `find`, `get`, `create`, `remove`, `rescan`, `download`
-- **custom methods** — `rescan`, `download`
+- **methods** — `find`, `get`, `take`, `discard`, `rescan`, `download`
+- **custom methods** — `take`, `discard`, `rescan`, `download`
 - **input** — `rescan` takes `BackupRescan`
 - **who may call** —
+  - `take` — **any signed-in caller** — floor, read gate 5; standing not graded; then `requireSystemAdmin`; body writes as the app
+  - `discard` — **any signed-in caller** — floor, read gate 5; standing not graded; then `requireSystemAdmin`
   - `rescan` — standing 7 or above — declared `gate: 7`
   - `download` — standing 7 or above — declared `gate: 7`; body writes as the app
 
@@ -594,8 +604,8 @@ name when it declares none.
 - **custom methods** — `cancel`, `rollback`, `rebind`, `startRun`, `stepStatus`, `finishRun`
 - **who may call** —
   - `cancel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`; no body, a derived move
-  - `rollback` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `rebind` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
+  - `rollback` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`; body writes as the app
+  - `rebind` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`; body writes as the app
   - `startRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
   - `stepStatus` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
   - `finishRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
@@ -883,7 +893,7 @@ name when it declares none.
 - **also answers to** — `hub-config`
 - **who may call** —
   - `current` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`
-  - `save` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`; body writes as the app
+  - `save` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`
   - `attestEscrow` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`
   - `dismissFound` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`; body writes as the app
 
@@ -1476,8 +1486,8 @@ name when it declares none.
 
 ### `workspaces` · model `Workspace`
 
-- **methods** — `find`, `get`, `create`, `patch`, `remove`, `restore`, `members`, `addMember`, `setMemberRole`, `removeMember`, `leave`, `transferOwnership`
-- **custom methods** — `members`, `addMember`, `setMemberRole`, `removeMember`, `leave`, `transferOwnership`
+- **methods** — `find`, `get`, `create`, `patch`, `remove`, `restore`, `members`, `addMember`, `setMemberRole`, `removeMember`, `leave`, `transferOwnership`, `push`, `testPing`
+- **custom methods** — `members`, `addMember`, `setMemberRole`, `removeMember`, `leave`, `transferOwnership`, `push`, `testPing`
 - **input** — `addMember` takes `WorkspaceMemberAdd`
 - **input** — `setMemberRole` takes `WorkspaceMemberRole`
 - **input** — `transferOwnership` takes `WorkspaceTransfer`
@@ -1489,6 +1499,8 @@ name when it declares none.
   - `removeMember` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole`
   - `leave` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`; body writes as the app
   - `transferOwnership` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole`; body writes as the app
+  - `push` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole`
+  - `testPing` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole`; body writes as the app
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -1501,6 +1513,8 @@ name when it declares none.
 | before | `setMemberRole` | `requireWorkspaceRole` → `refuseGrantAboveOwn` → `validateInput` |
 | before | `removeMember` | `requireWorkspaceRole` |
 | before | `transferOwnership` | `requireWorkspaceRole` → `validateInput` |
+| before | `push` | `requireWorkspaceRole` |
+| before | `testPing` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
