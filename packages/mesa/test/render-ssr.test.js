@@ -341,14 +341,12 @@ describe('renderToHTML — basics', () => {
     expect(html).toContain('<li>1</li><li>2</li><li>3</li>')
   })
 
-  it('renders the {:pending} branch of {#await} — nothing settles mid-render', async () => {
+  it('waits on {#await} and writes the branch it settled into (FJS-D1647)', async () => {
     const Comp = await build(`<script>
   const data = Promise.resolve('LATE')
 </script>
 <div>{#await data}<span>loading</span>{:then v}<span>{v}</span>{/await}</div>`)
-    const html = await renderToHTML(Comp)
-    expect(html).toContain('loading')
-    expect(html).not.toContain('LATE')
+    expect(await renderToHTML(Comp)).toBe('<div><span>LATE</span></div>')
   })
 
   it('strips Mesa comment anchors by default and keeps them on request', async () => {
@@ -511,18 +509,25 @@ describe('renderToHTML — target: server (FJS-D1634)', () => {
     await expect(renderToHTML(Comp, {}, { target: 'server', keepAnchors: true })).rejects.toThrow(/keepAnchors has no meaning/)
   })
 
-  // The fallback lives where the compile does. `renderComponent` compiles with
-  // `compileOptions.target: 'server'`; a file the mode refuses is compiled
-  // again for the DOM and named in `.unlowered`, and a clean tree says `[]`.
+  // The fallback lives where the compile does. `renderComponent` compiles for
+  // the string mode unless `compileOptions` names a target; a file the mode
+  // refuses is compiled again for the DOM and named in `.unlowered`, and a
+  // clean tree says `[]`.
   const DIR = path.join(process.cwd(), '_tmp_ssr_server')
   const file = (name, src) => { mkdirSync(DIR, { recursive: true }); const f = path.join(DIR, name); writeFileSync(f, src); return f }
   afterAll(() => rmSync(DIR, { recursive: true, force: true }))
 
-  it('renderComponent on the string mode: a clean file lowers and unlowered is empty', async () => {
-    const r = await renderFile(file('Clean.mesa', SRC), { target: 'fragment', compileOptions: { target: 'server' } })
-    const dom = await renderFile(file('Clean.mesa', SRC), { target: 'fragment' })
+  it('renderComponent takes the string mode by default: a clean file lowers and unlowered is empty', async () => {
+    const r = await renderFile(file('Clean.mesa', SRC), { target: 'fragment' })
+    const dom = await renderFile(file('Clean.mesa', SRC), { target: 'fragment', compileOptions: { target: undefined } })
     expect(r.unlowered).toEqual([])
     expect(r.html).toBe(dom.html)
+  })
+
+  it('compileOptions: { target: undefined } is the happy-dom path, told apart by the CSSOM\'s style text', async () => {
+    const f = file('Styled.mesa', `<script>let s = '0'</script><p style:margin-top={s}>x</p>`)
+    expect((await renderFile(f)).html).toBe('<p style="margin-top: 0;">x</p>')
+    expect((await renderFile(f, { compileOptions: { target: undefined } })).html).toBe('<p style="margin-top: 0px;">x</p>')
   })
 
   it('a refused file with a <script module> falls back to the DOM path and is named', async () => {
@@ -530,23 +535,23 @@ describe('renderToHTML — target: server (FJS-D1634)', () => {
   export const kind = 'rich'
 </script>
 <script>
-  let p = Promise.resolve(1)
+  const mounting = $.mounted(async () => {})
 </script>
-<div>{#await p}<i>x</i>{:then v}{v}{/await}</div>`)
+<mesa:mounted>{#snippet pending()}<i>x</i>{/snippet}<b>c</b></mesa:mounted>`)
     const r = await renderFile(f, { target: 'fragment', compileOptions: { target: 'server' } })
-    expect(r.html).toBe('<div><i>x</i></div>')
+    expect(r.html).toBe('<i>x</i>')
     expect(r.exports.kind).toBe('rich')
     expect(r.unlowered).toHaveLength(1)
     expect(r.unlowered[0].file).toBe(f)
-    expect(r.unlowered[0].refused).toMatch(/\{#await\}/)
+    expect(r.unlowered[0].refused).toMatch(/<mesa:mounted>/)
   })
 
   it('a refused file without one falls back the same way', async () => {
-    const f = file('Raw.mesa', `<script>let p = Promise.resolve(1)</script>{#await p}<p>out</p>{:then v}{v}{/await}<span>in</span>`)
+    const f = file('Raw.mesa', `<script>const mounting = $.mounted(async () => {})</script><mesa:mounted>{#snippet pending()}<span>in</span>{/snippet}<p>out</p></mesa:mounted>`)
     const r = await renderFile(f, { target: 'fragment', compileOptions: { target: 'server' } })
     expect(r.html).toContain('<span>in</span>')
     expect(r.unlowered.map((u) => u.file)).toEqual([f])
-    expect(r.unlowered[0].refused).toMatch(/\{#await\}/)
+    expect(r.unlowered[0].refused).toMatch(/<mesa:mounted>/)
   })
 
   it('a tree of components lowers whole: unlowered is empty and the bytes are the DOM path\'s', async () => {
@@ -571,18 +576,18 @@ describe('renderToHTML — target: server (FJS-D1634)', () => {
   // refuses takes the whole tree to the DOM path; the child alone is named.
   it('a server-mode entry importing a refused file falls back with it, naming only the child', async () => {
     file('Rich.mesa', `<script>
-  let p = Promise.resolve(1)
+  const mounting = $.mounted(async () => {})
 </script>
-<div>{#await p}<i>x</i>{:then v}{v}{/await}</div>`)
+<mesa:mounted>{#snippet pending()}<i>x</i>{/snippet}<b>c</b></mesa:mounted>`)
     const f = file('Page.mesa', `<script>
   import Rich from './Rich.mesa'
   let n = 1
 </script>
 <main><h1>{n}</h1><Rich /></main>`)
     const r = await renderFile(f, { target: 'fragment', compileOptions: { target: 'server' } })
-    expect(r.html).toBe('<main><h1>1</h1><div><i>x</i></div></main>')
+    expect(r.html).toBe('<main><h1>1</h1><i>x</i></main>')
     expect(r.unlowered.map((u) => path.basename(u.file))).toEqual(['Rich.mesa'])
-    expect(r.unlowered[0].refused).toMatch(/\{#await\}/)
+    expect(r.unlowered[0].refused).toMatch(/<mesa:mounted>/)
   })
 
   it('a compile error under the string mode is still a compile error', async () => {

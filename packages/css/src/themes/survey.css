@@ -1,13 +1,13 @@
 /*
- * survey.css — Survey: a precision instrument panel in black, gray and white.
+ * survey.css — Survey: a precision instrument panel in Everforest Dark Medium.
  *
- * Black for space, gray for structure, white for information. The surfaces
- * sit close together and each has one job — canvas, sidebar, panel, raised —
- * so the page reads as one machined face rather than a stack of cards in
- * slightly different grays. The look is borrowed from surveyor's field
- * instruments and drafting sheets: hairline rules instead of shadows, square
- * corners, stamped uppercase legends, a dashed focus ring like a construction
- * line.
+ * Deep forest green for space, moss for structure, parchment for
+ * information. The surfaces sit close together and each has one job —
+ * canvas, sidebar, panel, raised — so the page reads as one machined face
+ * rather than a stack of cards in slightly different grays. The look is
+ * borrowed from surveyor's field instruments and drafting sheets: hairline
+ * rules instead of shadows, square corners, stamped uppercase legends, a
+ * dashed focus ring like a construction line.
  *
  * Tokens only, no selector of its own.
  */
@@ -27,68 +27,85 @@
   --tone-l-max: 1;
 
   /* ── Grounds ────────────────────────────────────────────────────────
-   * Four neutral blacks, no hue, each a role:
+   * Everforest's own grounds (bg_dim #232a2e, bg0 #2d353b) sit at OKLCH
+   * L 0.28–0.32 with chroma 0.012 on a blue-slate hue, which reads as a
+   * washed gray rather than a dark color. These keep the family but sit
+   * darker (L 0.185–0.285), carry about twice the chroma and lean to a
+   * forest hue (175), so black reads as deep green:
    *
-   *   canvas    #0a0a0a   the page, and anything recessed into it
-   *   sidebar   #101010   navigation, the topbar, a table's head
-   *   panel     #151515   cards, widgets, dialogs
-   *   elevated  #1c1c1c   hover, a raised region
+   *   canvas    #0f1d19   the page, at its edges (see --app-depth)
+   *   sunken    #0a1512   anything recessed into a panel
+   *   sidebar   #0d1a17   navigation, the topbar, a table's head
+   *   panel     #13221d   cards, widgets, dialogs
+   *   elevated  #1d2e29   hover, a raised region
    */
-  --app-bg:          #0a0a0a;
-  --surface-sunken:  #0a0a0a;
-  --surface:         #151515;
-  --surface-raised:  #1c1c1c;
+  --app-bg:          #0f1d19;
+  --surface-sunken:  #0a1512;
+  --surface:         #13221d;
+  --surface-raised:  #1d2e29;
 
-  --topbar-bg:       #101010;
-  --sidebar-bg:      #101010;
-  --dialog-bg:       #151515;
-  --table-head-bg:   #101010;
+  --topbar-bg:       #0d1a17;
+  --sidebar-bg:      #0d1a17;
+  --dialog-bg:       #13221d;
+  --table-head-bg:   #0d1a17;
 
   /* A field is a well cut into the panel, not a box set on top of it. */
-  --field-bg:        #0e0e0e;
+  --field-bg:        #0d1a17;
 
   /* ── Ink ────────────────────────────────────────────────────────────
-   * The brief's muted gray, #707070, is 3.44:1 on --surface-raised and under
-   * AA on every ground here, and --ink-mute is placeholder text, table
-   * headers and field hints at 11–13px. Lifted until it clears the tightest
-   * ground:
+   * Everforest's fg and grey2 as they are. grey1 (#859289) is 4.33:1 on
+   * --surface-raised, and --ink-mute is placeholder text, table headers and
+   * field hints at 11–13px, so it is lifted along its own hue:
    *
-   *   --ink        #f2f2f2   15.22:1 on raised
-   *   --ink-soft   #a0a0a0    6.52:1
-   *   --ink-mute   #858585    4.62:1   (was #707070, 3.44:1)
+   *   --ink        #d3c6aa   8.43:1 on raised
+   *   --ink-soft   #9da9a0   5.84:1
+   *   --ink-mute   #89968d   4.62:1   (grey1 #859289, lifted)
    */
-  --ink:             #f2f2f2;
-  --ink-soft:        #a0a0a0;
-  --ink-mute:        #858585;
-
-  /* Gray for structure: the rule is what draws the instrument's face. */
-  --rule:            #303030;
-  --rule-strong:     #4a4a4a;
-
-  /* ── Tones ──────────────────────────────────────────────────────────
-   * Primary is the white accent, so a primary button is a white slab with
-   * black type — chip.css derives the ink from the fill. The status tones
-   * are indicator lamps behind smoked glass: present because a status must
-   * still be told apart, desaturated so they never compete with white.
-   */
-  --color-primary:   #e8e8e8;
-  --color-secondary: #9a9a9a;
-  --color-muted:     #707070;
-  --color-info:      #8fb0c4;
-  --color-success:   #93b98a;
-  --color-warning:   #d9b060;
-  --color-danger:    #e06a5e;
+  --ink:             #d3c6aa;
+  --ink-soft:        #9da9a0;
+  --ink-mute:        #89968d;
 
   /*
-   * The current nav link is a raised slab with white ink. The default is a
-   * 12% mix of primary, which here is a gray indistinguishable from hover.
+   * A heading in fg reads as yellow against the teal grounds, so titles
+   * take a pale sage on the grounds' own hue — 10.71:1 on raised.
    */
-  --navlink-current-bg:  #1c1c1c;
-  --navlink-current-ink: #f2f2f2;
+  --h1-ink: #d0e4da;
+  --h2-ink: #d0e4da;
+  --h3-ink: #d0e4da;
+  --h4-ink: #d0e4da;
+  --h5-ink: #d0e4da;
+  --h6-ink: #d0e4da;
 
-  --check-accent: #e8e8e8;
-  --step-accent:  #e8e8e8;
-  --tab-accent:   #f2f2f2;
+  /* Gray for structure: the rule is what draws the instrument's face. */
+  --rule:            #2c3d38;
+  --rule-strong:     #3e504b;
+
+  /* ── Tones ──────────────────────────────────────────────────────────
+   * Primary is Everforest's green turned 10° toward teal — #a7c080 sits at
+   * OKLCH hue 126 and leans yellow on these grounds; 136 stays clear of
+   * success's aqua at 151. A primary button is a moss slab with dark type —
+   * chip.css derives the ink from the fill. Success takes aqua rather than
+   * the same green, so a success state is not read as "primary".
+   */
+  --color-primary:   #9bc389;
+  --color-secondary: #9da9a0;
+  --color-muted:     #7a8478;
+  --color-info:      #7fbbb3;
+  --color-success:   #83c092;
+  --color-warning:   #dbbc7f;
+  --color-danger:    #e67e80;
+
+  /*
+   * The current nav link sits on a moss slab, Everforest's bg_green taken
+   * down to these grounds. The default is a
+   * 12% mix of primary, which on this ground is indistinguishable from hover.
+   */
+  --navlink-current-bg:  #243928;
+  --navlink-current-ink: #d3c6aa;
+
+  --check-accent: #9bc389;
+  --step-accent:  #9bc389;
+  --tab-accent:   #9bc389;
 
   /* ── Set type ───────────────────────────────────────────────────────
    * A neo-grotesk for data, the same face tightened for headings, and a
@@ -119,40 +136,58 @@
   --tab-font-weight:      500;
 
   /* ── Shape ──────────────────────────────────────────────────────────
-   * Machined, not molded: square corners everywhere a reading is taken.
+   * Machined, not molded: a 2px break on every edge, the way a milled
+   * part is deburred, so a corner reads as finished rather than cut.
    */
-  --btn-radius:   0;
-  --card-radius:  0;
-  --field-radius: 0;
-  --badge-radius: 0;
-  --pill-radius:  2px;
-  --toast-radius: 0;
+  --btn-radius:   2px;
+  --card-radius:  2px;
+  --field-radius: 2px;
+  --badge-radius: 2px;
+  --pill-radius:  3px;
+  --toast-radius: 2px;
 
   /* A construction line, not a glow. */
   --ring-style: dashed;
-  --ring-color: #e8e8e8;
+  --ring-color: #9bc389;
 
   /* ── Elevation ──────────────────────────────────────────────────────
-   * Nothing at rest casts a shadow; a panel is told apart by its rule. What
-   * floats — a menu, a dialog, a toast — gets a hairline edge and a deep,
-   * soft drop, because a near-black shadow is invisible on this ground
-   * without one.
+   * A panel at rest is a pane of smoked glass: a lit top edge where the
+   * light catches it, and a soft drop that lifts it off the canvas. What
+   * floats — a menu, a dialog, a toast — gets a hairline edge and a deeper
+   * drop, because a dark shadow is invisible on this ground without one.
    */
-  --surface-shadow: none;
-  --shadow-sm: 0 0 0 1px #303030;
-  --shadow-md: 0 0 0 1px #303030, 0 8px 20px -8px rgba(0, 0, 0, 0.8);
-  --shadow-lg: 0 0 0 1px #3a3a3a, 0 24px 48px -16px rgba(0, 0, 0, 0.9);
-  --scrim:     rgba(0, 0, 0, 0.72);
+  --surface-shadow: inset 0 1px 0 rgb(211 198 170 / 0.06), 0 12px 32px -16px rgb(0 0 0 / 0.6);
+  --shadow-sm: 0 0 0 1px #2c3d38;
+  --shadow-md: 0 0 0 1px #2c3d38, 0 8px 20px -8px rgba(0, 0, 0, 0.8);
+  --shadow-lg: 0 0 0 1px #3e504b, 0 24px 48px -16px rgba(0, 0, 0, 0.9);
+  --scrim:     rgba(2, 8, 6, 0.72);
+
+  /*
+   * Every ground darkens toward its center, so a panel has depth rather
+   * than reading as a flat sheet, and a sheen falls from the upper corner
+   * the way light lies on glass. Both are translucent over the token's
+   * color, so a toned or raised panel keeps its own ground under them.
+   */
+  --surface-depth:
+    linear-gradient(155deg, rgb(211 198 170 / 0.035), rgb(211 198 170 / 0) 38%),
+    radial-gradient(ellipse at center, rgb(0 0 0 / 0.16), rgb(0 0 0 / 0) 100%);
+
+  /*
+   * The page is already near black, so the panels' 16% would not show on
+   * it: its center falls to #111 against a canvas lifted a step to carry
+   * the fall. Fixed, so the dark is where the eye is, not halfway down a
+   * long document.
+   */
+  --app-depth: radial-gradient(ellipse at center, #111 0%, rgb(17 17 17 / 0) 100%) fixed;
 
   /* ── Code ───────────────────────────────────────────────────────────
-   * The derived palette steps the hue off primary, and primary has no hue,
-   * so names and keywords would both render white. Grays carry structure
-   * and the two lamps carry values and specials.
+   * Everforest's own syntax roles: green names, red keywords, aqua strings,
+   * purple specials, grey comments and punctuation.
    */
-  --code-name:    #f2f2f2;
-  --code-keyword: #bdbdbd;
-  --code-value:   #a9c79f;
-  --code-special: #e88a80;
-  --code-comment: #858585;
-  --code-punct:   #a0a0a0;
+  --code-name:    #9bc389;
+  --code-keyword: #e67e80;
+  --code-value:   #83c092;
+  --code-special: #d699b6;
+  --code-comment: #89968d;
+  --code-punct:   #9da9a0;
 }

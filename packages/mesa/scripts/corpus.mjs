@@ -42,8 +42,8 @@
  * A target with a string mode (`server`) is admissible only while it writes
  * the HTML the DOM path serializes (`IDEAS/server-render-without-dom.md` § 3),
  * so for that target every file the tally says lowers is compiled twice more
- * (`css: false`, unscoped), rendered once through `renderToHTML` and once as
- * `Comp(out, props)` with no props, and the two strings compared raw. The
+ * (`css: false`, unscoped), rendered through `renderToHTML` on each path with
+ * no props, so each waits on its `{#await}`, and the two strings compared raw. The
  * modules are imported for real, so the script's imports have to resolve: a
  * `.mesa` the script imports compiles on the fly, for the path of the module
  * importing it (a tree is one mode throughout), a stylesheet or an asset is
@@ -262,7 +262,7 @@ async function reportPortability(target) {
 
 async function reportParity(target, lowering) {
   const { initRenderer, renderToHTML } = await import('../src/render.js')
-  const { createRoot, setRenderEnvironment } = await import('../src/runtime.js')
+  const { setRenderEnvironment } = await import('../src/runtime.js')
   installLoaders()
   initRenderer()
   mkdirSync(PARITY, { recursive: true })
@@ -292,13 +292,12 @@ async function reportParity(target, lowering) {
     // loads, and an imported module graph can reach one.
     setRenderEnvironment(true, false)
     const dom = attempt(() => renderToHTML(Dom, {}))
-    const str = attempt(() => { let html = ''; createRoot((dispose) => { const out = []; Str(out, {}); html = out.join(''); dispose() }); return html })
+    const str = attempt(() => renderToHTML(Str, {}, { target: 'server' }))
     const [a, b] = await Promise.all([dom, str])
     if (a.error && b.error) { buckets.threwBoth.push({ file, why: firstLine(a.error) }); continue }
     if (a.error) { buckets.threwDom.push({ file, why: firstLine(a.error) }); continue }
     if (b.error) { buckets.threwStr.push({ file, why: firstLine(b.error) }); continue }
-    // `renderToHTML` trims the page it returns; the string path is the raw join.
-    const html = b.value.trim()
+    const html = b.value
     if (a.value === html) { buckets.same.push({ file }); continue }
     // Beside the module that wrote it, so the diff and its source are one `ls` apart.
     writeFileSync(join(PARITY, 'dom', `${file}.html`), a.value)

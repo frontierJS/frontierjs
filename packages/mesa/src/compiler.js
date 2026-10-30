@@ -135,7 +135,7 @@ export const PLACED_PROP = '__fjsPlaced'
  * is one field off an object (`{item.name}`, `{hours[day]}`), else null. Text
  * beside the value, a call or a bare name is not one field.
  */
-function fieldRead(n, ctx) {
+export function fieldRead(n, ctx) {
   const kids = (n.body ?? []).filter((c) => !(c.type === 'text' && !c.value.trim()))
   if (kids.length !== 1 || kids[0].type !== 'text') return null
   const raw = kids[0].value.trim()
@@ -740,7 +740,7 @@ function noteReadonlyWrite(accessorMap, name, shadowed) {
 
 const WATCHED_CALLS = Symbol.for('mesa.watchedCalls')
 
-function withoutWatchedCalls(accessorMap) {
+export function withoutWatchedCalls(accessorMap) {
   if (!accessorMap?.[WATCHED_CALLS]) return accessorMap
   const m = { ...accessorMap }
   delete m[WATCHED_CALLS]
@@ -6689,6 +6689,27 @@ function parseVirtualOptions(right, raw) {
   return { optionsExpr: `{ ${parts.join(', ')} }`, rest: right.slice(0, cut).trim() }
 }
 
+/**
+ * Run `fn` with each name a `{:then}` / `{:catch}` parameter binds read as
+ * itself: the branch is handed a plain value, and an outer prop or signal of
+ * the same name otherwise wins inside the branch, reading the prop.
+ */
+export function withAwaitParam(ctx, param, fn) {
+  if (!param || !ctx.accessors) return fn()
+  const parsed = acorn.parseExpressionAt(`(${param}) => 0`, 0, { ecmaVersion: 'latest' })
+  const saved = {}
+  for (const name of patternBindingNames(parsed.params)) {
+    saved[name] = ctx.accessors[name]
+    ctx.accessors[name] = name
+  }
+  try { return fn() } finally {
+    for (const name of Object.keys(saved)) {
+      if (saved[name] === undefined) delete ctx.accessors[name]
+      else ctx.accessors[name] = saved[name]
+    }
+  }
+}
+
 export function makeAwaitBlock(data, label) {
   const rx = data.value.match(/^#await\s+(.+)$/s)
   assert(rx, 'Wrong #await expression')
@@ -6702,18 +6723,18 @@ export function makeAwaitBlock(data, label) {
 
   const thenValue = data.parts.thenValue?.match(/^:then\s*(.*)/s)?.[1]?.trim() || null
   const thenBlock = data.parts.then?.length
-    ? this.buildBlock(
+    ? withAwaitParam(this, thenValue, () => this.buildBlock(
         { body: data.parts.then },
         { allowSingleBlock: false, extraArguments: thenValue ? [thenValue] : [] }
-      ).block
+      ).block)
     : null
 
   const catchValue = data.parts.catchValue?.match(/^:catch\s*(.*)/s)?.[1]?.trim() || null
   const catchBlock = data.parts.catch?.length
-    ? this.buildBlock(
+    ? withAwaitParam(this, catchValue, () => this.buildBlock(
         { body: data.parts.catch },
         { allowSingleBlock: false, extraArguments: catchValue ? [catchValue] : [] }
-      ).block
+      ).block)
     : null
 
   return xNode(

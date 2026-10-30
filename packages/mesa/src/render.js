@@ -26,20 +26,21 @@
  * SSR semantics:
  *   - $.onMount, watchProxy and path watches are inert (RULE 19). Effects, memos
  *     and block directives run, then are disposed when the render returns.
- *   - {#await} renders its {:pending} branch — nothing settles mid-render.
+ *   - {#await} is waited on, and writes the branch its promise settled into
+ *     (FJS-D1647); <mesa:mounted> writes its pending branch, as onMount never runs.
  *   - {#virtual each} renders its first window plus spacers — no viewport can be
  *     measured here, so the window comes from the row height.
  *   - Comment anchors are stripped unless `{ keepAnchors: true }`.
- *   - Renders are serial by construction; see renderToHTML and renderAll.
+ *   - Renders are serial: each waits for the one before it; see renderToHTML.
  *   - The window is process-global. For true concurrency, run one worker per
  *     window rather than sharing this module across requests.
  *
  * See docs/STATIC_RENDERING.md for the full model and the Sierra integration status.
  */
 
-import { setRenderEnvironment, createRoot, flushSync } from './runtime.js'
+import { setRenderEnvironment, createRoot, flushSync, settleAwaits } from './runtime.js'
 import { missingPeer } from './optional-peer.js'
-import { isAnchorComment } from './runtime-server.js'
+import { isAnchorComment, settle } from './runtime-server.js'
 
 const { Window } = await import('happy-dom').catch(missingPeer('happy-dom', 'renderToHTML'))
 
@@ -238,16 +239,19 @@ export function renderFailure(cause, label) {
  * `setRenderEnvironment(true, false)` in `initRenderer`): `$.onMount` callbacks,
  * `watchProxy`/`watchPath` proxies, and path watches. Effects, memos and block
  * directives DO run — that is how the markup gets built — they are simply
- * disposed before this returns. `{#await}` renders its `{:pending}` branch: a
- * promise cannot settle inside a synchronous render. `{#virtual each}` renders
- * its first window plus the spacers that carry the rest of the list's height.
+ * disposed before this returns. `{#await}` is waited on and writes the branch
+ * its promise settled into (`FJS-D1647`), so a promise that never settles is a
+ * render that never returns. `{#virtual each}` renders its first window plus
+ * the spacers that carry the rest of the list's height.
  *
- * The body is synchronous end to end despite the `async` signature. That is
- * load-bearing: the reactive core (`_owner`, `_listener`) and the happy-dom
- * window are process-global, so two interleaved renders would corrupt each
- * other. Because there is no `await` between the first line and the last, a
- * render runs to completion before any other can start — which is what makes
- * `renderAll()` safe. Do not introduce an `await` into this function.
+ * Renders run one at a time: the reactive core (`_owner`, `_listener`) and the
+ * happy-dom window are process-global, and a render that is waiting on an
+ * `{#await}` would otherwise collect the next render's promises as its own.
+ * Each call waits on `_queue`, so `Promise.all` over many is safe; a render
+ * that awaits another render from inside itself never returns. Nothing waits
+ * on a page with no `{#await}`, and the DOM path's graph runs while one does:
+ * an `$async` load that settles meanwhile redraws there, and the string mode
+ * wrote it once.
  *
  * @param {Function} ComponentFactory — default export of a compiled .mesa file
  * @param {object}   [props={}]
@@ -266,7 +270,18 @@ export function renderFailure(cause, label) {
  *                                     module run this way fails on its anchor.
  * @returns {Promise<string>}
  */
-export async function renderToHTML(ComponentFactory, props = {}, options = {}) {
+export function renderToHTML(ComponentFactory, props = {}, options = {}) {
+  // An idle renderer starts at once, so a render with no `{#await}` has
+  // finished before the caller's next line runs.
+  const run = _queue ? _queue.then(() => _render(ComponentFactory, props, options)) : _render(ComponentFactory, props, options)
+  const tail = _queue = run.catch(() => {})
+  tail.then(() => { if (_queue === tail) _queue = null })
+  return run
+}
+
+let _queue = null
+
+async function _render(ComponentFactory, props, options) {
   if (typeof ComponentFactory !== 'function') {
     throw new Error(
       '[Mesa renderToHTML] Expected the default export of a compiled .mesa file, got ' +
@@ -301,31 +316,32 @@ export async function renderToHTML(ComponentFactory, props = {}, options = {}) {
   const anchor    = doc.createComment('mesa-root')
   container.appendChild(anchor)
 
-  let html = ''
-  createRoot((dispose) => {
-    // Settle the graph before serializing. Derivations and render effects run
-    // eagerly on creation, but anything a block queued during setup is still
-    // pending, and an unflushed queue would also outlive the dispose below.
-    // Inside the try: a throw under a `<mesa:boundary>` leaves the flush
-    // rather than rendering `failed` into the page (`FJS-D377`).
-    try {
+  // Settle the graph before serializing. Derivations and render effects run
+  // eagerly on creation, but anything a block queued during setup is still
+  // pending, and an unflushed queue would also outlive the dispose below.
+  // Inside the try: a throw under a `<mesa:boundary>` leaves the flush
+  // rather than rendering `failed` into the page (`FJS-D377`).
+  let dispose = null
+  try {
+    createRoot((d) => {
+      dispose = d
       ComponentFactory(anchor, props ?? {})
       flushSync()
-    } catch (e) {
-      dispose()
-      throw renderFailure(e, options.label)
-    }
-    html = options.keepAnchors ? container.innerHTML : _serializeWithoutAnchors(container)
-    dispose()
-  })
-
+    })
+    const waiting = settleAwaits()
+    if (waiting) await waiting
+  } catch (e) {
+    dispose?.()
+    throw renderFailure(e, options.label)
+  }
+  const html = options.keepAnchors ? container.innerHTML : _serializeWithoutAnchors(container)
+  dispose()
   return options.full ? wrapPage(html, options) : html
 }
 
-// The string mode's half of renderToHTML. Synchronous for the same reason as
-// the DOM half: the reactive core is process-global. Trimmed as the DOM
-// serializer trims, so the two paths answer the same bytes for one source.
-function _renderString(ComponentFactory, props, options) {
+// The string mode's half of renderToHTML, trimmed as the DOM serializer trims,
+// so the two paths answer the same bytes for one source.
+async function _renderString(ComponentFactory, props, options) {
   // The string mode writes no anchor comments — a block is a `for` or an `if`
   // over pushes — so there is nothing to keep, and honoring the flag by
   // writing nothing would read as the anchors being there. Island markers
@@ -336,21 +352,24 @@ function _renderString(ComponentFactory, props, options) {
       'mode writes no anchor comments. Drop the option, or render on the DOM path.'
     )
   }
-  let html = ''
-  createRoot((dispose) => {
-    const out = []
-    try {
+  const out = []
+  let dispose = null
+  try {
+    createRoot((d) => {
+      dispose = d
       ComponentFactory(out, props ?? {})
-    } catch (e) {
-      dispose()
-      throw renderFailure(e, options.label)
-    }
-    html = out.join('').trim()
-    // `<mesa:head>` wrote beside the body (`runtime-server.js` `head`); the
-    // page is the one place it has somewhere to go.
-    if (out.head) options = { ...options, head: (options.head ?? '') + out.head.join('') }
-    dispose()
-  })
+    })
+    const waiting = settle(out)
+    if (waiting) await waiting
+  } catch (e) {
+    dispose?.()
+    throw renderFailure(e, options.label)
+  }
+  const html = out.join('').trim()
+  // `<mesa:head>` wrote beside the body (`runtime-server.js` `head`); the
+  // page is the one place it has somewhere to go.
+  if (out.head) options = { ...options, head: (options.head ?? '') + out.head.join('') }
+  dispose()
   return options.full ? wrapPage(html, options) : html
 }
 
@@ -404,14 +423,9 @@ ${bodyClosing ? bodyClosing + '\n' : ''}</body>
 /**
  * Render many pages, in order, and resolve with all their HTML.
  *
- * "In parallel" would be a lie and a bug: the happy-dom window and the reactive
- * core are process-global, so overlapping renders would share `_owner` and
- * `document`. This is safe only because `renderToHTML` is synchronous inside —
- * each render completes before the next begins, and `Promise.all` merely
- * collects results that are already settled. Should `renderToHTML` ever gain an
- * `await`, this function becomes a race and must be rewritten as a sequential
- * loop (and, for real concurrency, one window per worker rather than one
- * process).
+ * Not in parallel: the happy-dom window and the reactive core are
+ * process-global, so `renderToHTML` queues each render behind the last and
+ * `Promise.all` only collects them. Real concurrency is one window per worker.
  *
  * @param {Array<{ component, props, options }>} pages
  * @returns {Promise<string[]>}

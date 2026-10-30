@@ -2,7 +2,8 @@
  * @frontierjs/mesa-runtime  v0.1.0
  */
 import { WINDOW_BINDS } from './window-binds.js'
-import { ISLAND_OPEN, ISLAND_CLOSE, islandPayload, dynamicTag } from './runtime-server.js'
+import { ISLAND_OPEN, ISLAND_CLOSE, islandPayload, dynamicTag, stampAt, warnRefusedName,
+  SPREAD_REFUSED, warnRefusedMarkup, warnRefusedHandler } from './runtime-server.js'
 
 const _resolved = Promise.resolve()
 /** True in any browser environment. False in Node/Deno/workers without DOM.
@@ -1397,12 +1398,7 @@ export function recorded(value, at) {
  */
 export function stampFrom(el, read) {
   createEffect(() => {
-    let at
-    try {
-      const [box, key] = read()
-      const p = box?.[PROVENANCE]?.[key]
-      if (p && p[1] === box[key]) at = p[0]
-    } catch {}
+    const at = stampAt(read)
     if (at) el.setAttribute('data-fjs-loc', at)
   })
 }
@@ -3746,7 +3742,46 @@ export function keyBlock(anchor, keyFn, makeBlock, noAnchor) {
 
 
 
-export function awaitBlock(anchor, getPromise, pendingBlock, thenBlock, catchBlock) {
+// A server render waits on every `{#await}` it started and writes the branch
+// the promise settled into (`FJS-D1647`); `settleAwaits` is how renderToHTML
+// waits. Only a server render collects: a tab would keep every promise alive.
+const _serverAwaits = []
+
+/** Resolve when every `{#await}` a server render started, and every one its
+ *  settled branches started in turn, has mounted its branch; null when none
+ *  is pending, so a render with no `{#await}` never yields — a yield lets an
+ *  `$async` load settle and redraw the DOM path, which the string mode wrote
+ *  once. */
+export function settleAwaits() {
+  return _serverAwaits.length ? _settleAwaits() : null
+}
+async function _settleAwaits() {
+  while (_serverAwaits.length) {
+    const failed = (await Promise.allSettled(_serverAwaits.splice(0))).find((r) => r.status === 'rejected')
+    if (failed) throw failed.reason
+    flushSync()
+  }
+}
+
+/**
+ * The owner and `$context` stack where a block is declared, for content it
+ * builds after setup has returned: a branch built in a promise callback
+ * otherwise runs under whatever owner the microtask finds, so its effects are
+ * never disposed, and every `$context` read in it is `undefined` (`FJS-311`).
+ *
+ * @returns {(fn: Function) => any} run `fn` under a child of the captured owner
+ */
+export function captureScope() {
+  const withContext = captureContext()
+  const outer = _owner
+  return (fn) => {
+    const prev = _owner
+    _owner = outer
+    try { return createRoot(() => withContext(fn)) } finally { _owner = prev }
+  }
+}
+
+export function awaitBlock(anchor, getPromise, pendingBlock, thenBlock, catchBlock, waits = true) {
   const withContext = captureContext()
   if (!_isBrowser)
     throw new Error(
@@ -3760,14 +3795,17 @@ export function awaitBlock(anchor, getPromise, pendingBlock, thenBlock, catchBlo
   //   2. A makeBlock factory: (v) => DOM — call to get DOM
   //   3. A snippet wrapper: (anchor, ...args) => inserts before anchor
   //   4. A DOM node or {$dom} object — use directly
+  // A settled branch that throws during a server render fails the render, as
+  // the string mode's does (`FJS-D1647`); swallowed, the page shipped without it.
+  let strict = false
   const _resolve = (fn, ...args) => {
     if (!fn) return null
     // Call the outer wrapper fn (e.g. ($parentElement) => makeBlock(...))
     let result
-    try { result = fn(...args) } catch (_) { result = undefined }
+    try { result = fn(...args) } catch (e) { if (strict) throw e; result = undefined }
     // If result is still a factory function (e.g. makeBlock returns (v) => DOM), call it
     if (typeof result === 'function') {
-      try { result = result() } catch (_) { result = undefined }
+      try { result = result() } catch (e) { if (strict) throw e; result = undefined }
     }
     // Unwrap {$dom} wrapper
     if (result && result.$dom) result = result.$dom
@@ -3847,14 +3885,22 @@ export function awaitBlock(anchor, getPromise, pendingBlock, thenBlock, catchBlo
       active = false
       _disposeContent()
     })
-    promise.then(
-      (value) => {
-        if (active) _mount(outerOwner, thenBlock, value)
-      },
-      (err) => {
-        if (active) _mount(outerOwner, catchBlock, err)
-      }
-    )
+    const server = waits && _isBrowser && !_isClient
+    const settle = (factory, v) => {
+      if (!active) return
+      strict = server
+      try { _mount(outerOwner, factory, v) } finally { strict = false }
+    }
+    const settled = promise.then((value) => settle(thenBlock, value), (err) => settle(catchBlock, err))
+    // A branch a re-run or a failed render disposed is not waited on: the
+    // next render would otherwise wait on this one's promise.
+    if (server) {
+      _serverAwaits.push(settled)
+      onCleanup(() => {
+        const at = _serverAwaits.indexOf(settled)
+        if (at !== -1) _serverAwaits.splice(at, 1)
+      })
+    }
   })
 }
 
@@ -3924,7 +3970,9 @@ export function mountedBlock(anchor, getPromise, pendingBlock, contentBlock, fai
     ? (value) => (value === false || value === 0 || value === '') ? null : contentBlock(value)
     : null
 
-  awaitBlock(anchor, getPromise, pendingBlock, wrappedContent, wrappedCatch)
+  // `$.mounted` settles in `onMount`, which a server render never runs, so a
+  // render that waited on it would never return.
+  awaitBlock(anchor, getPromise, pendingBlock, wrappedContent, wrappedCatch, false)
 }
 
 /**
@@ -4241,19 +4289,8 @@ function _protoDescs(el) {
   return descs
 }
 
-/*
- * The keys a spread may not carry.
- *
- * A spread's KEYS come from data — `{...record}` over a fetched row, and
- * `{...$attributes}` through every kit component — while an authored
- * `innerHTML=` names itself in the source the way `{@html}` does. So the
- * descriptor test below, which routes anything with a setter to the property,
- * turned a remote party's object key into a markup parse.
- *
- * Refused rather than dropped-and-forgotten: a spread that silently stops
- * carrying a key is what FJS-612 cost.
- */
-const _SPREAD_REFUSED = new Set(['innerHTML', 'outerHTML', 'srcdoc', 'text'])
+// `SPREAD_REFUSED` is the server's list: a spread may not carry a key that
+// parses data as markup, on either path.
 
 export function spreadAttributes(el, fn) {
   const propDescs = _protoDescs(el)
@@ -4269,22 +4306,12 @@ export function spreadAttributes(el, fn) {
   const _set = (k, v) => {
     try { _setOne(k, v) } catch (e) {
       if (e?.name !== 'InvalidCharacterError') throw e
-      console.warn(
-        `[Mesa] {...spread} — the DOM refused ${JSON.stringify(k)} as an attribute name on ` +
-        `<${el.tagName?.toLowerCase() ?? '?'}>, so it was skipped and nothing was written. ` +
-        `A spread's keys come from data; this one is not a name an attribute can have.`
-      )
+      warnRefusedName(el.tagName?.toLowerCase() ?? '?', k)
     }
   }
   const _setOne = (k, v) => {
-    if (_SPREAD_REFUSED.has(k)) {
-      if (v != null) {
-        console.warn(
-          `[Mesa] {...spread} — ${k} refused on <${el.tagName?.toLowerCase() ?? '?'}>. ` +
-          `A spread's keys come from data, so this one parses that data as markup. ` +
-          `Write {@html} where the markup is the author's own.`
-        )
-      }
+    if (SPREAD_REFUSED.has(k)) {
+      if (v != null) warnRefusedMarkup(el.tagName?.toLowerCase() ?? '?', k)
       return
     }
     if (refusedURL(k, v)) {
@@ -4296,10 +4323,7 @@ export function spreadAttributes(el, fn) {
     // exists for. Holding a string it is a handler COMPILED FROM DATA, which is
     // the same sink one door along.
     if (k.length > 2 && k[0] === 'o' && k[1] === 'n' && v != null && typeof v !== 'function') {
-      console.warn(
-        `[Mesa] {...spread} — ${k} refused on <${el.tagName?.toLowerCase() ?? '?'}>: ` +
-        `got ${typeof v}, and a non-function handler is source code. Pass the function itself.`
-      )
+      warnRefusedHandler(el.tagName?.toLowerCase() ?? '?', k, v)
       return
     }
     if (k === 'style') { el.style.cssText = v ?? ''; return }

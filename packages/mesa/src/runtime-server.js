@@ -66,6 +66,79 @@ const VALUE_ATTR_INPUTS = new Set(['checkbox', 'radio', 'hidden', 'submit', 'but
  * nothing; `true` writes the empty string on a boolean attribute and the word
  * on any other. `tag` decides whether a live `value` is a property.
  */
+// The symbol `recorded()` in runtime.js writes under; `Symbol.for` makes the
+// two modules agree without one importing the other's state.
+const PROVENANCE = Symbol.for('mesa.provenance')
+
+/**
+ * The line of the field `read()` names as `[object, key]`, when that field was
+ * recorded and still holds the value the line wrote (`FJS-D1231`); otherwise
+ * undefined and the template's stamp stands. Both paths' `data-fjs-loc` on a
+ * field read come from here.
+ */
+export function stampAt(read) {
+  try {
+    const [box, key] = read()
+    const p = box?.[PROVENANCE]?.[key]
+    if (p && p[1] === box[key]) return p[0]
+  } catch {}
+}
+
+// A spread's keys come from data. The DOM path asks `setAttribute`, so this
+// asks the document `initRenderer` installs, once per name; with none, a name
+// holding a character that ends an attribute name in HTML's tokenizer would
+// write the rest of the key as markup (FJS-872).
+const NAME_BREAK = /[\s"'>/=\0]/
+const _names = new Map()
+function attributeName(name) {
+  if (name === '' || NAME_BREAK.test(name)) return false
+  const doc = globalThis.document
+  // Only the document's answer is kept: one given with none installed would
+  // outlive the render that had no document.
+  if (!doc) return true
+  let ok = _names.get(name)
+  if (ok !== undefined) return ok
+  ok = true
+  try { doc.createElement('div').setAttribute(name, '') } catch { ok = false }
+  if (_names.size > 4096) _names.clear()
+  _names.set(name, ok)
+  return ok
+}
+
+/*
+ * The keys a spread may not carry, on both paths. A spread's KEYS come from
+ * data — `{...record}` over a fetched row, and `{...$attributes}` through
+ * every kit component — while an authored `innerHTML=` names itself in the
+ * source the way `{@html}` does. Refused with a warning, since a spread that
+ * silently stops carrying a key is what FJS-612 cost.
+ */
+export const SPREAD_REFUSED = new Set(['innerHTML', 'outerHTML', 'srcdoc', 'text'])
+
+export function warnRefusedMarkup(tag, name) {
+  console.warn(
+    `[Mesa] {...spread} — ${name} refused on <${tag}>. ` +
+    `A spread's keys come from data, so this one parses that data as markup. ` +
+    `Write {@html} where the markup is the author's own.`
+  )
+}
+
+/** An `on*` key holding anything but a function is a handler compiled from data. */
+export function warnRefusedHandler(tag, name, value) {
+  console.warn(
+    `[Mesa] {...spread} — ${name} refused on <${tag}>: ` +
+    `got ${typeof value}, and a non-function handler is source code. Pass the function itself.`
+  )
+}
+
+/** The one warning for a spread key that is not an attribute name, on both paths. */
+export function warnRefusedName(tag, name) {
+  console.warn(
+    `[Mesa] {...spread} — the DOM refused ${JSON.stringify(name)} as an attribute name on ` +
+    `<${tag}>, so it was skipped and nothing was written. ` +
+    `A spread's keys come from data; this one is not a name an attribute can have.`
+  )
+}
+
 export function attrs(tag, entries, scope) {
   const out = new Map()
   // `class` and `style` are serialized where the FIRST write put them, and a
@@ -84,6 +157,14 @@ export function attrs(tag, entries, scope) {
     if (name === '...') { for (const k in value) set(k, value[k], true, true); return }
     // A handler a spread carries is listened to on the DOM path, never written.
     if (live && typeof value === 'function') return
+    if (spread) {
+      if (!attributeName(name)) { warnRefusedName(tag, name); return }
+      if (SPREAD_REFUSED.has(name)) { if (value != null) warnRefusedMarkup(tag, name); return }
+      if (name.length > 2 && name[0] === 'o' && name[1] === 'n' && value != null) { warnRefusedHandler(tag, name, value); return }
+      // The DOM path's `setAttribute` writes the word for a key no boolean
+      // property answers.
+      if (value === false && !BOOL.has(name) && !ARIA_FALSE.has(name)) { out.set(name, 'false'); return }
+    }
     if (name.startsWith('class:')) { reserve('class'); if (value) classes.push(name.slice(6)); return }
     // A directive that writes nothing creates no attribute, so a later
     // write decides where `style` sits.
@@ -247,6 +328,7 @@ export const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 
  * `<meta http-equiv>` redirect the whole page, and `<link>`, `<iframe>`,
  * `<object>` and `<embed>` fetch and run something the copied attributes name.
  */
+const ELEMENT_NAME = /^[a-zA-Z][^\s/>\0]*$/
 const DYNAMIC_TAG_REFUSED = new Set(['script', 'style', 'base', 'link', 'meta', 'iframe', 'object', 'embed'])
 
 /**
@@ -255,6 +337,15 @@ const DYNAMIC_TAG_REFUSED = new Set(['script', 'style', 'base', 'link', 'meta', 
  * serializes any element it creates.
  */
 export function dynamicTag(tag) {
+  // A browser's createElement refuses any other name; happy-dom's accepts
+  // `div onmouseover=…` and serializes it as written, so on a server the
+  // tag would carry the attributes in it.
+  if (typeof tag === 'string' && tag && !ELEMENT_NAME.test(tag)) {
+    throw new Error(
+      `[Mesa] <mesa:element this={…}> — ${JSON.stringify(tag)} refused: not a name an element ` +
+      `can have. A tag starts with a letter and holds no space, '/' or '>'.`
+    )
+  }
   if (typeof tag === 'string' && DYNAMIC_TAG_REFUSED.has(tag.toLowerCase())) {
     throw new Error(
       `[Mesa] <mesa:element this={…}> — <${tag.toLowerCase()}> refused. A dynamic tag is ` +
@@ -280,6 +371,39 @@ export function dynamicTag(tag) {
  */
 export function head(out) {
   return (out.head ??= [])
+}
+
+/**
+ * `{#await}` (`FJS-D1647`): a value that is not a promise writes `{:then}` in
+ * place, as the DOM path mounts it; a promise pushes itself, settling to the
+ * buffer of the branch it took, which `settle` writes where the block sat.
+ * Neither path writes `{:pending}`. `scope` is `captureScope()` at the block,
+ * so the branch's effects belong to the render and its `$context` reads find
+ * their providers.
+ */
+export function awaitBlock(out, scope, value, then, fail) {
+  if (!value?.then) { then?.(out, value); return }
+  const buf = []
+  out.push(Promise.resolve(value).then(
+    (v) => { if (then) scope(() => then(buf, v)); return buf },
+    (e) => { if (fail) scope(() => fail(buf, e)); return buf },
+  ))
+}
+
+/** Replace each promise `awaitBlock` pushed with its branch, the branch's own
+ *  awaits first; a branch's `<mesa:head>` joins the render's head. Null when
+ *  nothing waits, so the render does not yield (`settleAwaits` says why). */
+export function settle(out) {
+  return out.some((x) => typeof x !== 'string' && x?.then) ? _settle(out) : null
+}
+async function _settle(out) {
+  for (let i = 0; i < out.length; i++) {
+    if (!out[i]?.then) continue
+    const buf = await out[i]
+    await _settle(buf)
+    if (buf.head) head(out).push(...buf.head)
+    out[i] = buf.join('')
+  }
 }
 
 /**

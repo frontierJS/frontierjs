@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 3984 source file(s) read
+26 package(s) · 3986 source file(s) read
 247 entry point(s), 35 imported by nothing outside their package, 16 emitted
-1671 value export(s), 624 reached by nothing outside, 174 emitted
+1682 value export(s), 633 reached by nothing outside, 175 emitted
 458 type export(s), 348 reached by nothing outside
 ```
 
@@ -36,7 +36,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `litestone` | 28 | 5 | 266 | 136 | 35 | 1 | 1 |
 | `junction` | 27 | 4 | 271 | 121 | 13 | 269 | 212 |
-| `mesa` | 19 | 4 | 302 | 101 | 76 | 0 | 0 |
+| `mesa` | 19 | 4 | 313 | 110 | 77 | 0 | 0 |
 | `sierra` | 25 | 6 | 197 | 80 | 21 | 0 | 0 |
 | `auth` | 6 | 1 | 52 | 37 | 3 | 15 | 13 |
 | `jetty` | 7 | 4 | 43 | 29 | 3 | 0 | 0 |
@@ -205,7 +205,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/mesa`
 
-`packages/mesa` · 19 entry point(s) · 302 value, 0 type export(s)
+`packages/mesa` · 19 entry point(s) · 313 value, 0 type export(s)
 
 **Entries imported by nothing outside (4):** `./render` `./css-inliner` `./vite/client` `./vite/hmr`
 
@@ -213,9 +213,9 @@ Every entry is imported and every name reached.
 
 **Entries not source (2, not graded):** `./drive` `./browser`
 
-**Unreached values (101):** `_registerDelegateRoot` `_registerStyleRoot` `addBlock` `analyzeScript` `applyAttachments` `applyEventModifiers` `attachBlock` `bindClassExp` `bindSetter` `blockSlotTarget` `boundaryWatchSet` `buildBlock` `buildHead` `buildRuntime` `captureContext` `checkRootName` `classSource` `componentAttributes` `constDeclaration` `constScope` `cssHash` `declareSlotProps` `delegationRootOf` `detectExpressionType` `detectStatic` `EACH_LIFT` `eachFrame` `eachLiftFrame` `elementBindTarget` `emitScript` `emitTransforms` `eventAttribute` `extractKeywords` `extractStyles` `ifBlockReadOnly` `inlineCSS` `insertAfter` `insertBlock` `inspectProp` `isAnchorComment` `isClient` `isSimpleName` `iterNodes` `LISTENER_OPTIONS` `localWatchProxy` `locFileOf` `lowerSlots` `makeAwaitBlock` `makeBlockBound` `makeCallState` `makeEachBlock` `makeExternalProperty` `makeifBlock` `makeKeyBlock` `makeRenderTag` `makeSnippet` `makeVirtualEachBlock` `mergeAllEvents` `mesaDevtools` `mesaRollup` `mesaVite` `parseAttributes` `parseBinding` `parseEachHeader` `parseJS` `parseModifiers` `parseRenderTag` `PRESERVE_WHITESPACE` `processCSS` `provideContext` `readSourceMarks` `refer` `removeElements` `renderFailure` `replaceKeyword` `resetAttributeWarnings` `resetContentWarnings` `resetDerivedWriteWarnings` `resetDestructureWarnings` `resetRenderer` `resolveCSSVars` `resolveDependencies` `REST_PROPS` `rewriteTextResult` `routeSlots` `scopeCSS` `slotProp` `snippetParam` `spliceEdits` `stripSourceMarks` `styleSource` `svgElements` `templateSource` `unproxy` `unspliceOffset` `unwrapExp` `use_context` `useContext` `writtenOnce` `xBuild` `xNode`
+**Unreached values (110):** `_registerDelegateRoot` `_registerStyleRoot` `addBlock` `analyzeScript` `applyAttachments` `applyEventModifiers` `attachBlock` `bindClassExp` `bindSetter` `blockSlotTarget` `boundaryWatchSet` `buildBlock` `buildHead` `buildRuntime` `captureContext` `checkRootName` `classSource` `componentAttributes` `constDeclaration` `constScope` `cssHash` `declareSlotProps` `delegationRootOf` `detectExpressionType` `detectStatic` `EACH_LIFT` `eachFrame` `eachLiftFrame` `elementBindTarget` `emitScript` `emitTransforms` `eventAttribute` `extractKeywords` `extractStyles` `fieldRead` `ifBlockReadOnly` `inlineCSS` `insertAfter` `insertBlock` `inspectProp` `isAnchorComment` `isClient` `isSimpleName` `iterNodes` `LISTENER_OPTIONS` `localWatchProxy` `locFileOf` `lowerSlots` `makeAwaitBlock` `makeBlockBound` `makeCallState` `makeEachBlock` `makeExternalProperty` `makeifBlock` `makeKeyBlock` `makeRenderTag` `makeSnippet` `makeVirtualEachBlock` `mergeAllEvents` `mesaDevtools` `mesaRollup` `mesaVite` `parseAttributes` `parseBinding` `parseEachHeader` `parseJS` `parseModifiers` `parseRenderTag` `PRESERVE_WHITESPACE` `processCSS` `provideContext` `readSourceMarks` `refer` `removeElements` `renderAll` `renderFailure` `replaceKeyword` `resetAttributeWarnings` `resetContentWarnings` `resetDerivedWriteWarnings` `resetDestructureWarnings` `resetRenderer` `resolveCSSVars` `resolveDependencies` `REST_PROPS` `rewriteTextResult` `routeSlots` `scopeCSS` `settleAwaits` `slotProp` `snippetParam` `spliceEdits` `SPREAD_REFUSED` `stripSourceMarks` `styleSource` `svgElements` `templateSource` `unproxy` `unspliceOffset` `unwrapExp` `use_context` `useContext` `warnRefusedHandler` `warnRefusedMarkup` `warnRefusedName` `withAwaitParam` `withoutWatchedCalls` `writtenOnce` `xBuild` `xNode`
 
-**Emitted (76):** `__dev` `$$eachBlock` `$$virtualEach` `addEvent` `addGlobalEvent` `addHeadStyle` `addToHead` `ANCHOR_DATA` `awaitBlock` `bindAttribute` `bindClass` `bindClassPassthrough` `bindGroup` `bindInput` `bindMask` `bindProp` `bindStyle` `bindText` `bindWindow` `boundaryBlock` `componentApi` `contentFallback` `contextProvide` `contextRead` `createKeyedEquals` `createWritableSignal` `dynamicElement` `dynamicTag` `eachBlock` `eachDefaultKey` `eachItems` `get_context` `hotkey` `htmlToFragment` `htmlToFragmentClean` `ifBlock` `initRenderer` `ISLAND_CLOSE` `ISLAND_OPEN` `islandPayload` `keyBlock` `LOC_ATTR` `makeAsyncState` `makeBlock` `makeEmitter` `makeRootEvent` `markupText` `mergeEvents` `mountedBlock` `mountStatic` `onMounted` `onWindow` `orderedGroup` `PLACED_PROP` `propDefault` `push_component` `pushProps` `reducedMotion` `registerComponentAnchor` `registerExports` `renderAll` `renderToHTML` `restProps` `rewriteAssignments` `rewriteExpr` `set_style` `set_text` `setInnerHTML` `spreadAttributes` `stampFrom` `svgToFragment` `toggle_class` `trackDerived` `trimEmptyNodes` `unclaimedContent` `warnDestructuredAccessors`
+**Emitted (77):** `__dev` `$$eachBlock` `$$virtualEach` `addEvent` `addGlobalEvent` `addHeadStyle` `addToHead` `ANCHOR_DATA` `awaitBlock` `bindAttribute` `bindClass` `bindClassPassthrough` `bindGroup` `bindInput` `bindMask` `bindProp` `bindStyle` `bindText` `bindWindow` `boundaryBlock` `captureScope` `componentApi` `contentFallback` `contextProvide` `contextRead` `createKeyedEquals` `createWritableSignal` `dynamicElement` `dynamicTag` `eachBlock` `eachDefaultKey` `eachItems` `get_context` `hotkey` `htmlToFragment` `htmlToFragmentClean` `ifBlock` `initRenderer` `ISLAND_CLOSE` `ISLAND_OPEN` `islandPayload` `keyBlock` `LOC_ATTR` `makeAsyncState` `makeBlock` `makeEmitter` `makeRootEvent` `markupText` `mergeEvents` `mountedBlock` `mountStatic` `onMounted` `onWindow` `orderedGroup` `PLACED_PROP` `propDefault` `push_component` `pushProps` `reducedMotion` `registerComponentAnchor` `registerExports` `renderToHTML` `restProps` `rewriteAssignments` `rewriteExpr` `set_style` `set_text` `setInnerHTML` `spreadAttributes` `stampAt` `stampFrom` `svgToFragment` `toggle_class` `trackDerived` `trimEmptyNodes` `unclaimedContent` `warnDestructuredAccessors`
 
 ## `@frontierjs/notifications`
 

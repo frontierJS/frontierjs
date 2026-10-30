@@ -11,7 +11,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { ASK_BASH, ASK_EFFORT, ASK_MAX_LINES, ASK_MAX_RULES, ASK_RULES, EFFORTS, WORK_BUDGET_USD, askArgv, askInput, askPrompt, readAskEvent, runAsk } from '../core/ask-claude.js'
+import { ASK_BASH, ASK_EFFORT, ASK_MAX_LINES, ASK_MAX_RULES, ASK_RULES, DRAW_BUDGET_USD, EFFORTS, WORK_BUDGET_USD, askArgv, askInput, askPrompt, readAskEvent, runAsk } from '../core/ask-claude.js'
 
 const SESSION = '5acea7bb-3850-44cf-81dc-97688510acda'
 const dir     = mkdtempSync(join(tmpdir(), 'fli-ask-claude-'))
@@ -68,6 +68,19 @@ describe('askArgv', () => {
     expect(askArgv({ work: {}, session: SESSION }).slice(-2)).toEqual(['--resume', SESSION])
     expect(askArgv({ work: {}, session: SESSION, fork: true }).slice(-3)).toEqual(['--resume', SESSION, '--fork-session'])
     expect(askArgv({ work: {}, fork: true })).not.toContain('--fork-session')
+  })
+
+  test('draw: no tool, the system prompt replaced, no settings file, hooks or MCP, the budget stated', () => {
+    const argv = askArgv({ draw: { system: 'draw it', budget: 5 } })
+    expect(argv[argv.indexOf('--tools') + 1]).toBe('')
+    expect(argv[argv.indexOf('--system-prompt') + 1]).toBe('draw it')
+    expect(argv[argv.indexOf('--setting-sources') + 1]).toBe('')
+    expect(argv).toContain('--strict-mcp-config')
+    expect(JSON.parse(argv[argv.indexOf('--settings') + 1])).toEqual({ disableAllHooks: true })
+    expect(argv[argv.indexOf('--max-budget-usd') + 1]).toBe('5')
+    expect(argv).not.toContain('--allowedTools')
+    const fallback = askArgv({ draw: { system: 'x' } })
+    expect(fallback[fallback.indexOf('--max-budget-usd') + 1]).toBe(String(DRAW_BUDGET_USD))
   })
 
   test('effort is passed when named and left to the account when not', () => {

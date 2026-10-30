@@ -1,14 +1,15 @@
 ---
 id: server-render-without-dom
-status: proposed
+status: shipped
 dated: 2026-10-16
 ---
 
 # Idea — a server render that builds no DOM
 
-**Status: RULED** (`FJS-D1634`, 2026-10-29): the server render is `target:
+**Status: SHIPPED** (`FJS-D1634`, 2026-10-29): the server render is `target:
 'server'`, an output mode of the one host emitter that writes the template as
-string pushes. Dated 2026-10-16. The figures in § 1 were measured by
+string pushes. Every phase is built, and `renderComponent` takes the mode by
+default (`FJS-D1648`). Dated 2026-10-16. The figures in § 1 were measured by
 `packages/mesa/bench/cases.mjs` `ssr-100`, each on the day named, and hold for
 that afternoon only (`PHILOSOPHY.md` § VII). This paper picks up where
 `FJS-2993` (closed) stopped: the per-row template parse is gone, and what
@@ -315,7 +316,21 @@ count at zero, and `verify:site` passes.
   stated, not caught, and the reopen path in the ruling. `server-emit.test.js`:
   the emitted-text pin, a 19-control parity row, the null pin on both paths.
   Corpus: 679 lowering, 533 same, 0 differ, 5 `boundNode`, 0 `childRefused`.
-- [ ] 2.6 `{#await}`, per Q3.
+- [x] 2.6 `{#await}`, per Q3 (B). Built 2026-10-29 (`FJS-D1647`): both paths
+  wait and write the branch the promise settled into. The DOM path's
+  `awaitBlock` collects each promise under a server render and `renderToHTML`
+  waits on `settleAwaits()` before serializing (`<mesa:mounted>` opts out: its
+  promise settles in `onMount`); the IR lowers `{#await}` and the string mode
+  pushes the promise onto `$$out`, `settle` writing each branch's buffer in
+  its place, the branch run under `captureScope()` so its effects and
+  `$context` belong to the render. `renderToHTML` queues, since a render that
+  waits would take the next one's promises, and a page with no `{#await}`
+  never yields: one microtask let `invoices/[id].mesa`'s `$async` load redraw
+  the DOM path alone. Two DOM-path bugs found and fixed: a `{:then value}` beside
+  a prop `value` read the prop, and a throwing settled branch wrote nothing.
+  The hang on a promise that never settles is `FJS-3601`. `server-emit.test.js`
+  § `{#await}`: 17 cases. Corpus: 679 lowering, 533 same, 0 differ, 5
+  `boundNode`, 0 one-path throws (`now.mesa`, a clock, flaps into `unstable`).
 
 ### Phase 3 — The default
 
@@ -323,9 +338,29 @@ Goal: `renderToHTML` takes the server mode for every component that lowers.
 Done when: `email-kit` and `site-kit` builds are byte-identical to the
 happy-dom path, or each difference is a ruling.
 
-- [ ] 3.1 Switch the default, keeping the fallback.
-- [ ] 3.2 Decide whether happy-dom stays a required peer for the server half.
-  That depends on Q1.
+- [x] 3.1 Switch the default, keeping the fallback.
+  Built 2026-10-29: `renderComponent` compiles for `target: 'server'` unless
+  `compileOptions` names a target, so `{ target: undefined }` is the happy-dom
+  path with no new option, and `target: 'js'` keeps the DOM compile since its
+  caller may mount the modules. The per-file fallback and `unlowered` are
+  unchanged. Before the switch, a temporary hook rendered every
+  `renderComponent` call on both paths and compared bytes: email-kit 157/157,
+  site-kit 20/20 after two fixes, `example` `build:site` 18/18, sierra 62/64 —
+  the two being an island fixture whose DOM run imported a second runtime
+  copy and wrote no markers, which the string mode is immune to. Fixes it
+  found: a dev build's `data-fjs-loc` was absent from the string mode (the IR
+  now carries `stamp: { at, read }` on an element and a `<mesa:element>`, a
+  Markdown element's own stamp is completed in `lowerAttributes`, the
+  provenance lookup is `runtime-server.js`'s `stampAt` on both paths, and
+  `compiler-md.js` records frontmatter for the string mode); temp modules
+  under a tmpDir outside mesa could not resolve
+  `@frontierjs/mesa/runtime/server`; and `FJS-3602`, a spread's hostile key
+  and a `<mesa:element>` tag written as markup. Corpus unchanged: 533 same,
+  0 differ, 21 style-text set-asides. A style attribute's CSS text is the one
+  standing byte difference, as ruled in Phase 1. Ruled `FJS-D1648`.
+- [x] 3.2 Decide whether happy-dom stays a required peer for the server half.
+  That depends on Q1. Ruled `FJS-D1649`: it stays. `initRenderer()` installs
+  the window, the mode builds no nodes, and no code changes.
 
 ## 5. Open questions
 
@@ -339,6 +374,7 @@ happy-dom path, or each difference is a ruling.
   - **B**: a small stub of the globals that are read.
   - **Recommend A**: the measured cost is nodes, not the window, and B is a
     second answer to a question `FJS-D214` settled.
+  - **Ruled A** by the owner, 2026-10-29 (`FJS-D1649`).
 - **Q2: `{@html}`.** A raw string has to be pushed as-is. That is the one
   place the escaping owner is deliberately bypassed, so it needs its own test.
   - **A** — push the string verbatim. Fastest, but the client parses the same
@@ -366,6 +402,7 @@ happy-dom path, or each difference is a ruling.
   - **C** — fall back to happy-dom, named in `unlowered`.
   - **Recommend A** — § 3 is parity against the DOM path, and B changes what a
     page shows on both paths, which is its own ruling once a site asks for it.
+  - **Ruled B** by the owner, 2026-10-29 (`FJS-D1647`), on both paths.
 
 ## See also
 

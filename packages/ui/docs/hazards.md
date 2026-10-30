@@ -355,9 +355,9 @@ Every hazard, the full catalog; `CLAUDE.md` § What bites here is the dozen that
   every instance — `View ?? (loading ??= import('./X.mesa').then(...))` —
   handed to `{#await}`, which renders a VALUE with no pending frame, so only the
   first instance on a page waits. The pending branch and `{:catch}` both render
-  the value as text, not a spinner: SSR never waits, so the pending branch is
-  all a server render shows, and a failed import keeps the text rather than
-  blanking the cell. Proved by the build, not the suite: the component gets its
+  the value as text, not a spinner: a server render waits on the import
+  (`FJS-D1647`) and writes `Json` where it resolves, the client draws pending
+  first, and a failed import keeps the text rather than blanking the cell. Proved by the build, not the suite: the component gets its
   own chunk and the importer's chunk reaches it by `import()`.
 - **`CodeInput` is a transparent `<textarea>` over glow's paint in one grid
   cell, and every way it breaks is a caret beside its character.** One rule,

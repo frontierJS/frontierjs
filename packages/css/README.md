@@ -135,6 +135,7 @@ rule of its own, the token that would have carried it is missing.
 | `--*-radius` | corners, per component |
 | `--border-width` | every structural border — card, field, table, topbar, code block, tab strip. `--field-border-width` and `--table-border-width` fall back to it and can diverge |
 | `--surface-shadow` | resting elevation on the Block tier, `none` by default. `--shadow-sm/md/lg` are the ladder above it and reach everything that floats |
+| `--surface-depth` | an image laid over the Block tier's and `.app`'s ground, `none` by default — a translucent radial gives a flat ground depth. `.outlined` and `.ghost` paint none. `--app-depth` is the page's own, and falls back to it |
 | `--density` | the whole space ladder, uniformly |
 | `--space-*-base` | the ladder's **shape** — a rung is `base × density`, so this is how a theme is tight at the small rungs and generous at the large ones |
 | `--text-*` · `--leading-*` · `--font-*` | the type scale, the leading ladder, both faces |

@@ -61,7 +61,7 @@
   --_surface-color:  var(--surface-tint-color,  var(--ink));
 
   display:       block;
-  background:    var(--surface-bg);
+  background:    var(--surface-depth), var(--surface-bg);
   color:         var(--_surface-color);
   border:        var(--border-width) solid var(--_surface-border);
   border-radius: var(--card-radius);
@@ -85,14 +85,20 @@
     --_surface-border: transparent;
     box-shadow:       var(--shadow-md);
   }
+  /*
+   * No ground, so no depth: a darkening layer over transparent would paint
+   * a shadow the treatment promised not to draw.
+   */
   &.outlined {
     --surface-bg:     transparent;
     --_surface-border: var(--surface-tint-border, var(--rule-strong));
+    background-image: none;
     box-shadow:       none;
   }
   &.ghost {
     --surface-bg:     transparent;
     --_surface-border: transparent;
+    background-image: none;
     box-shadow:       none;
   }
   /*

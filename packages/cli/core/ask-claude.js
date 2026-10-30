@@ -270,6 +270,9 @@ const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 // A work run builds rather than answers; the operator sets it per checkout.
 export const WORK_BUDGET_USD = 10
 
+// A draw writes one page in one reply; a run that loops has gone wrong.
+export const DRAW_BUDGET_USD = 3
+
 // How hard Claude thinks, as `--effort`. Thinking itself cannot be switched off
 // here: on Opus 5.5 and Sonnet 5.5 `claude -p` keeps it on through
 // `alwaysThinkingEnabled: false`, `MAX_THINKING_TOKENS=0` and
@@ -290,15 +293,28 @@ export function editEffort(kind, asked = null) {
 // which is what lets `claude --resume` from a workbench branch's folder find it;
 // a plain resume from there answers but stays filed under the old directory.
 // No `effort` leaves it to the account, which is what the workbench passes.
-export function askArgv({ session = null, edit = null, reads = [], work = null, agent = null, fork = false, images = false, effort = null, model = null } = {}) {
-  const argv = askFlags({ session, edit, reads, work, agent, fork })
+export function askArgv({ session = null, edit = null, reads = [], work = null, agent = null, draw = null, fork = false, images = false, effort = null, model = null } = {}) {
+  const argv = askFlags({ session, edit, reads, work, agent, draw, fork })
   if (effort) argv.push('--effort', effort)
   if (model)  argv.push('--model', model)
   if (images) argv.push('--input-format', 'stream-json')
   return argv
 }
 
-function askFlags({ session, edit, reads, work, agent, fork }) {
+function askFlags({ session, edit, reads, work, agent, draw, fork }) {
+  // DRAW is `project:diagram`: no tool at all and the whole system prompt
+  // replaced, so stdin is the only thing it reads and one input gives one page.
+  if (draw) return [
+    '-p',
+    '--output-format',   'stream-json',
+    '--verbose',
+    '--system-prompt',   String(draw.system),
+    '--settings',        JSON.stringify({ disableAllHooks: true }),
+    '--setting-sources', '',
+    '--strict-mcp-config',
+    '--tools',           '',
+    '--max-budget-usd',  String(Number(draw.budget) > 0 ? Number(draw.budget) : DRAW_BUDGET_USD),
+  ]
   // AGENT is `:ask`: no built-in tool, one MCP server and every tool on it.
   // `dontAsk` denies anything else rather than prompting, as in EDIT.
   if (agent) {
@@ -546,13 +562,13 @@ export function readAskEvent(event) {
  * `{ child, done }` where `done` resolves to the exit code. Detached, so a stop
  * signals the group and takes a running `rg` with it.
  */
-export function runAsk({ root, prompt, session = null, edit = null, reads = [], agent = null, images = [], effort = ASK_EFFORT, model = null, bin = 'claude', env = process.env, onEvent }) {
+export function runAsk({ root, prompt, session = null, edit = null, reads = [], agent = null, draw = null, images = [], effort = ASK_EFFORT, model = null, bin = 'claude', env = process.env, onEvent }) {
   if (session && !SESSION_ID.test(String(session)))
     return { error: `not a session id: ${JSON.stringify(String(session).slice(0, 40))}` }
   if (!EFFORTS.includes(effort))
     return { error: `no such effort: ${JSON.stringify(String(effort).slice(0, 40))} — one of ${EFFORTS.join(', ')}` }
 
-  const child = spawn(bin, askArgv({ session, edit, reads, agent, effort, model, images: images.length > 0 }), {
+  const child = spawn(bin, askArgv({ session, edit, reads, agent, draw, effort, model, images: images.length > 0 }), {
     cwd: root, detached: true, env,
     stdio: ['pipe', 'pipe', 'pipe'],
   })

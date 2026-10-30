@@ -102,10 +102,9 @@ describe('server target — the emitted module', () => {
   })
 
   it('refuses a kind it does not write yet, naming the construct and its line', async () => {
-    await expect(server(`<mesa:portal><p>x</p></mesa:portal>\n<p>{#await p}{:then v}{v}{/await}</p>\n`))
-      .rejects.toThrow('{#await} at Counter.mesa:2:4 has no server lowering')
-    await expect(server(`<script>let p = Promise.resolve(1)</script>\n<p>{#await p}{:then v}{v}{/await}</p>\n`))
-      .rejects.toThrow('{#await} at Counter.mesa:2:4 has no server lowering')
+    const M = `<script>const m = $.mounted(async () => {})</script>`
+    await expect(server(`${M}<mesa:portal><p>x</p></mesa:portal>\n<p><mesa:mounted><b>c</b></mesa:mounted></p>\n`))
+      .rejects.toThrow('<mesa:mounted> at Counter.mesa:2:4 has no server lowering')
   })
 
   it('drops every bind: on an element and hands bind:this null', async () => {
@@ -332,6 +331,28 @@ line1
     const Str = await build(src, 'server')
     expect(() => renderString(Str, { tag: '' })).toThrow('expected a tag name')
     await expect(renderToHTML(await build(src), { tag: null })).rejects.toThrow('expected a tag name')
+    // happy-dom's createElement takes any string, so the DOM path would
+    // write these as markup too.
+    for (const bad of ['div onmouseover=alert(1)', 'b><img src=x onerror=alert(1)', 'p/x']) {
+      expect(() => renderString(Str, { tag: bad })).toThrow('not a name an element can have')
+      await expect(renderToHTML(await build(src), { tag: bad })).rejects.toThrow('not a name an element can have')
+    }
+  })
+
+  it('a spread\'s keys are data: a hostile name, a markup key and a string handler are refused on both paths, each with its warning', async () => {
+    const src = `<script>
+  let a = { 'x" onmouseover="alert(1)': 'y', title: 'kept', innerHTML: '<b>x</b>', srcdoc: 'q', text: 't', onclick: 'alert(1)', href: 'javascript:alert(1)', 'aria-expanded': false, hidden: true, n: null, f: false, num: 0, 'data-ü': 1, '@click': 'z', 'x:y': 2 }
+</script>
+<div {...a}>hi</div><iframe {...a}></iframe>`
+    const warned = []
+    const warn = console.warn
+    console.warn = (m) => warned.push(String(m))
+    let dom, str
+    try { ({ dom, str } = await both(src)) } finally { console.warn = warn }
+    expect(str).toBe(dom)
+    expect(str).not.toMatch(/onmouseover|onclick|srcdoc|innerHTML|javascript/i)
+    expect(str).toContain('title="kept"')
+    for (const k of ['onmouseover', 'innerHTML', 'srcdoc', 'onclick']) expect(warned.some((w) => w.includes(k))).toBe(true)
   })
 
   it('a head and a portal: neither path writes them into the body; the string mode keeps the head for the page', async () => {
@@ -427,6 +448,23 @@ line1
     expect(comp.dom).toBe('<i>k</i><p>object</p>')
   })
 
+  it('a dev build stamps data-fjs-loc where the DOM path does: before class, from a recorded field, and completing a Markdown stamp', async () => {
+    const src = `<script>
+import { recorded } from './src/runtime.js'
+let t = 'x'
+const item = recorded({ name: 'N', other: 'o' }, [[['name'], 'data.md:3:1']])
+</script>
+<div id="a" class="b" title="c">x</div><p class:on={t} data-k="1" title={t}>y</p><span>{t}</span><b>{item.name}</b><i>{item.other}</i><em data-fjs-loc="6:1">md</em>`
+    const extra = { loc: true, filename: 'L.mesa' }
+    const dom = await renderToHTML(await build(src, undefined, extra))
+    const str = renderString(await build(src, 'server', extra))
+    expect(str).toBe(dom)
+    expect(str).toContain('<div id="a" title="c" data-fjs-loc="L.mesa:6:1" class="b')
+    expect(str).toContain('<b data-fjs-loc="data.md:3:1">N</b><i data-fjs-loc="L.mesa:6:')
+    expect(str).toContain('<em data-fjs-loc="L.mesa:6:1">md</em>')
+    expect(renderString(await build(src, 'server', { filename: 'L.mesa' }))).not.toContain('data-fjs-loc')
+  })
+
   it('a preserved comment is written', async () => {
     const { result } = await server('<p>a<!-- hi -->b</p>', 'C.mesa', { preserveComments: true })
     expect(result).toContain("$$out.push('<p>a<!-- hi -->b</p>');")
@@ -453,10 +491,133 @@ line1
     expect(str).toContain('<p>0</p><p></p><p></p>')
   })
 
+  it('a spread key with no document installed is refused by the characters that end a name, and that answer is not kept', async () => {
+    const Comp = await build(`<script>export let a = {}</script>\n<p {...a}>x</p>\n`, 'server')
+    const doc = globalThis.document
+    const warn = console.warn
+    console.warn = () => {}
+    delete globalThis.document
+    try {
+      expect(renderString(Comp, { a: { 'x" onclick="y': 1, '-k': 2 } })).toBe('<p -k="2">x</p>')
+    } finally { globalThis.document = doc; console.warn = warn }
+    // happy-dom refuses `-k`, and the render with no document did not decide it.
+    console.warn = () => {}
+    try { expect(renderString(Comp, { a: { '-k': 2 } })).toBe('<p>x</p>') } finally { console.warn = warn }
+  })
+
   it('{@html} with no document installed throws by name', async () => {
     const Comp = await build(`<script>let h = '<b>x</b>'</script>\n<div>{@html h}</div>\n`, 'server')
     const doc = globalThis.document
     delete globalThis.document
     try { expect(() => renderString(Comp)).toThrow('initRenderer()') } finally { globalThis.document = doc }
+  })
+})
+
+// ─── {#await} (FJS-D1647) ─────────────────────────────────────────────────────
+
+describe('{#await}: both paths wait and write the settled branch', () => {
+  // renderToHTML on both paths: the harness's synchronous renderString cannot wait.
+  async function bothAwait(src, props = {}) {
+    const dom = await renderToHTML(await build(src), props)
+    const str = await renderToHTML(await build(src, 'server'), props, { target: 'server' })
+    return { dom, str }
+  }
+
+  const CASES = {
+    resolved: `<script>let p = Promise.resolve({ n: 2, name: 'a<b' })</script>
+<div>{#await p}<i>wait</i>{:then { n, name }}<b>{n} {name}</b>{:catch e}<s>{e.message}</s>{/await}</div>`,
+    rejected: `<script>let p = Promise.reject(new Error('no & way'))</script>
+<p>{#await p}wait{:then v}{v}{:catch e}<s>{e.message}</s>{/await}</p>`,
+    rejectedNoCatch: `<script>let p = Promise.reject(new Error('x'))</script>
+<p>a{#await p}wait{:then v}{v}{/await}b</p>`,
+    plainValue: `<script>let v = 7</script>
+<p>{#await v}wait{:then x}<b>{x}</b>{/await}</p>`,
+    noThen: `<script>let p = Promise.resolve(1)</script>
+<p>{#await p}wait{/await}done</p>`,
+    nested: `<script>
+  const inner = () => new Promise((r) => setTimeout(() => r('deep'), 5))
+  let p = Promise.resolve(inner)
+</script>
+<ul>{#await p}<li>1</li>{:then f}<li>outer</li>{#await f()}<li>2</li>{:then d}<li>{d}</li>{/await}{/await}<li>tail</li></ul>`,
+    shadowedProp: `<script>export let value = 'prop'; let p = Promise.resolve('then')</script>
+<p>{value}{#await p}{:then value}<b>{value}</b>{/await}</p>`,
+    formatted: `<script>let p = Promise.resolve('v'); let q = Promise.reject(new Error('e'))</script>
+<section>
+  {#await p}
+    <i>wait</i>
+  {:then v}
+    <b>{v}</b>
+    tail
+  {/await}
+  {#await q}
+    wait
+  {:catch e}
+    <s>{e.message}</s>
+  {/await}
+</section>`,
+    inEach: `<script>let rows = [1, 2, 3].map((n) => Promise.resolve(n * 10))</script>
+<ol>{#each rows as r}<li>{#await r}…{:then v}{v}{/await}</li>{/each}</ol>`,
+  }
+  for (const [name, src] of Object.entries(CASES)) {
+    it(name, async () => {
+      const { dom, str } = await bothAwait(src)
+      expect(str).toBe(dom)
+      expect(dom).not.toMatch(/wait|…/)
+    })
+  }
+
+  it('writes the settled bytes, a pattern bound and the value escaped', async () => {
+    const { dom, str } = await bothAwait(CASES.resolved)
+    expect(dom).toBe('<div><b>2 a&lt;b</b></div>')
+    expect(str).toBe(dom)
+    expect((await bothAwait(CASES.nested)).str).toBe('<ul><li>outer</li><li>deep</li><li>tail</li></ul>')
+    expect((await bothAwait(CASES.shadowedProp)).dom).toBe('<p>prop<b>then</b></p>')
+  })
+
+  it('a component in {:then} finds $context across the await, and its head joins the page', async () => {
+    const parent = `<script>
+  import Child from '__CHILD__'
+  $context.tone = 'warm'
+  let p = new Promise((r) => setTimeout(() => r('x'), 5))
+</script>
+<main>{#await p}wait{:then v}<Child {v} />{/await}</main>`
+    const child = `<script>export let v; const tone = $context.tone</script>
+<mesa:head><title>{v}</title></mesa:head><i>{v}:{tone}</i>`
+    const domComp = await build(parent.replace('__CHILD__', await buildKept(child)))
+    const strComp = await build(parent.replace('__CHILD__', await buildKept(child, 'server')), 'server')
+    const dom = await renderToHTML(domComp)
+    expect(dom).toBe('<main><i>x:warm</i></main>')
+    expect(await renderToHTML(strComp, {}, { target: 'server' })).toBe(dom)
+    expect(await renderToHTML(strComp, {}, { target: 'server', full: true })).toMatch(/<head>[^]*<title>x<\/title>[^]*<\/head>/)
+  })
+
+  it('renders queue: one waiting on a slow promise does not take the next one\'s', async () => {
+    const slow = await build(`<script>let p = new Promise((r) => setTimeout(() => r('slow'), 20))</script>
+<p>{#await p}{:then v}{v}{/await}</p>`)
+    const fast = await build(`<script>let p = Promise.resolve('fast')</script>
+<p>{#await p}{:then v}{v}{/await}</p>`)
+    const [a, b] = await Promise.all([renderToHTML(slow), renderToHTML(fast)])
+    expect([a, b]).toEqual(['<p>slow</p>', '<p>fast</p>'])
+  })
+
+  it('a render that throws leaves no promise for the next one to wait on', async () => {
+    const thrower = await build(`<script>let p = new Promise(() => {})</script>
+<p>{#await p}{:then v}{v}{/await}{(() => { throw new Error('late') })()}</p>`)
+    await expect(renderToHTML(thrower)).rejects.toThrow(/late/)
+    const ok = await build(`<script>let p = Promise.resolve(1)</script><p>{#await p}{:then v}{v}{/await}</p>`)
+    expect(await renderToHTML(ok)).toBe('<p>1</p>')
+  })
+
+  it('a settled branch that throws fails the render on both paths', async () => {
+    const src = `<script>let p = Promise.resolve(1); const boom = () => { throw new Error('in then') }</script>
+<p>{#await p}wait{:then v}<b>{boom()}</b>{/await}</p>`
+    await expect(renderToHTML(await build(src))).rejects.toThrow(/in then/)
+    await expect(renderToHTML(await build(src, 'server'), {}, { target: 'server' })).rejects.toThrow(/in then/)
+  })
+
+  it('<mesa:mounted> is not waited on: onMount never runs on a server', async () => {
+    const Comp = await build(`<script>const mounting = $.mounted(async () => {})</script>
+<mesa:mounted>{#snippet pending()}<i>loading</i>{/snippet}<b>content</b></mesa:mounted>`)
+    expect(await renderToHTML(Comp)).toBe('<i>loading</i>')
   })
 })

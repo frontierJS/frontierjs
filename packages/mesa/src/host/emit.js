@@ -35,7 +35,7 @@
  * come too late, which is why the DOM builder makes its own at build time.
  */
 
-import { xNode, Q, PRESERVE_WHITESPACE, contentFallback, writtenOnce } from '../compiler.js'
+import { xNode, Q, PRESERVE_WHITESPACE, contentFallback, writtenOnce, LOC_ATTR } from '../compiler.js'
 import { htmlEntitiesToText } from '../entities.js'
 import { eachNode } from '../ir.js'
 import { esc, attrs as attrString, VOID } from '../runtime-server.js'
@@ -81,6 +81,7 @@ function kindSpelling(n) {
     case 'boundary':        return '<mesa:boundary>'
     case 'head':            return '<mesa:head>'
     case 'html':            return '{@html}'
+    case 'await':           return '{#await}'
     default:                return `{${n.kind}}`
   }
 }
@@ -315,6 +316,7 @@ export function hostOffenses(ir, t) {
       // one surface and has no document head.
       case 'boundary':
       case 'head':
+      case 'await':
         return t.mode === 'string' ? undefined : add(kindSpelling(n), kindSpelling(n), n.loc)
       case 'portal':
       case 'html':
@@ -482,6 +484,12 @@ export function buildHost(ctx, t) {
       else if (a.name === 'style' && a.value) pieces.push({ at: -1, plain: true, entry: ['style', q1(htmlEntitiesToText(a.value))] })
       else statics.push([a.name, a.value === true ? true : htmlEntitiesToText(a.value)])
     }
+    // The stamp is the DOM template's last attribute before `class`; on a
+    // field read its value is decided at render, in the same position.
+    if (n.stamp) {
+      const { at, read } = n.stamp
+      statics.push([LOC_ATTR, read ? { code: `$$host.stampAt(() => [${read.box}, ${read.key}]) ?? ${q1(at)}` } : at])
+    }
     if (cls) statics.push(cls)
     for (const st of n.styles) { dep(st.expr); pieces.push({ at: st.at, entry: [`style:${st.prop}`, st.expr.code] }) }
     for (const c of n.classes) { dep(c.expr); pieces.push({ at: c.at, entry: [`class:${c.name}`, `!!(${c.expr.code})`] }) }
@@ -496,10 +504,10 @@ export function buildHost(ctx, t) {
     }
     endRun()
     const sc = cls || styled ? scope : null
-    if (!lives.length && !dyn) push(ind, `<${n.tag}${attrString(n.tag, statics, sc)}>`)
+    if (!lives.length && !dyn && !statics.some(([, v]) => v?.code)) push(ind, `<${n.tag}${attrString(n.tag, statics, sc)}>`)
     else {
       const list = [
-        ...statics.map(([k, v]) => `[${q1(k)}, ${v === true ? 'true' : q1(v)}]`),
+        ...statics.map(([k, v]) => `[${q1(k)}, ${v === true ? 'true' : v?.code ? `(${v.code})` : q1(v)}]`),
         ...lives.map(({ entry: [k, code] }) => `[${q1(k)}, (${code}), 1]`),
       ]
       if (dyn) { push(ind, '<'); hole(ind, dyn) } else push(ind, `<${n.tag}`)
@@ -563,6 +571,19 @@ export function buildHost(ctx, t) {
     emitChildren(content, '$$out', bodyInd)
     if (n.states.length) line(ind + 1, '}')
     line(ind, '}')
+  }
+
+  // `{:pending}` is never written: a server render waits (`FJS-D1647`).
+  const emitAwait = (n, ind) => {
+    dep(n.value)
+    line(ind, `$$host.awaitBlock($$out, $$runtime.captureScope(), (${n.value.code}),`)
+    for (const b of [n.then, n.catch]) {
+      if (!b) { line(ind + 1, 'null,'); continue }
+      line(ind + 1, `($$out${b.param ? `, ${b.param}` : ''}) => {`)
+      emitChildren(b.children, '$$out', ind + 2)
+      line(ind + 1, '},')
+    }
+    line(ind, ');')
   }
 
   const emitElement = (n, parent, ind, tag = q1(n.tag)) => {
@@ -874,6 +895,7 @@ export function buildHost(ctx, t) {
       case 'portal':    return string ? emitPortalString(n, ind) : emitChildren(n.children, parent, ind)
       case 'boundary':  return string ? emitBoundary(n, ind) : unwritten(n)
       case 'head':      return string ? emitHead(n, ind) : unwritten(n)
+      case 'await':     return string ? emitAwait(n, ind) : unwritten(n)
       default:          throw new Error(`${t.name} emitter reached a ${n.kind} node that hostOffenses passed`)
     }
   }

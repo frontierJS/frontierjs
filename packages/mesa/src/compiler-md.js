@@ -530,8 +530,10 @@ export async function compileMd(source, config = {}) {
   //
   // A stamping build records where each value was written, so an element a
   // block draws from one (`{item.name}`) names that line and not the block's
-  // (`FJS-D1231`). A host target's runtime has no stamps to give it.
-  const written = locOn && !TARGETS[config.target] && !frontmatterError ? writtenAt(source, config) : []
+  // (`FJS-D1231`). A host target's runtime has no stamps to give it; the
+  // server's string mode writes them as the DOM path does.
+  const stamps = !TARGETS[config.target] || TARGETS[config.target].mode === 'string'
+  const written = locOn && stamps && !frontmatterError ? writtenAt(source, config) : []
   const moduleScript = written.length
     ? `<script module>\n  import { recorded as __mesaRecorded } from '@frontierjs/mesa/runtime'\n` +
       `  export const frontmatter = __mesaRecorded(${JSON.stringify(frontmatter)}, ${JSON.stringify(written)})\n</script>`

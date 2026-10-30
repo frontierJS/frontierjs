@@ -96,7 +96,7 @@ describe('lower()', () => {
     })
   })
 
-  it('names {#await} and a dynamic <component> as unlowered, with their position', async () => {
+  it('lowers {#await} and names a dynamic <component> as unlowered, with its position', async () => {
     const tree = await ir(`<script>
   import Foo from './Foo.mesa'
   let p = Promise.resolve(1)
@@ -109,7 +109,12 @@ describe('lower()', () => {
 <component this={Foo} />
 `, 'U.mesa')
     expect(tree.children).toEqual([
-      { kind: 'unlowered', what: 'await', loc: 'U.mesa:5:1', node: expect.objectContaining({ type: 'await' }) },
+      expect.objectContaining({
+        kind: 'await', loc: 'U.mesa:5:1', value: expect.objectContaining({ raw: 'p' }),
+        pending: expect.arrayContaining([expect.objectContaining({ kind: 'element', tag: 'p' })]),
+        then: { param: 'v', children: expect.arrayContaining([expect.objectContaining({ kind: 'element', tag: 'p' })]) },
+        catch: null,
+      }),
       { kind: 'unlowered', what: 'component', loc: 'U.mesa:10:1', node: expect.objectContaining({ name: 'component' }) },
     ])
   })

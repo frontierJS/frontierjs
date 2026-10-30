@@ -19,6 +19,16 @@ import tree, collects CSS, and supports `target: 'html' | 'email' | 'fragment' |
 'js'`. It renders **through** `render.js`, so both share one renderer — there is
 no second implementation to drift.
 
+**`renderComponent` renders through the string mode** (`target: 'server'`,
+`FJS-D1634`): the tree is compiled to string pushes and no node is built. A
+file the mode refuses takes the whole tree to the happy-dom path and is named
+in `result.unlowered`; `compileOptions: { target: undefined }` asks for the
+happy-dom path outright, and `target: 'js'` compiles for it, since its caller
+may mount the modules. Both paths write the same bytes — `bun run corpus --
+--portability server` checks every file in the workspace — except a `style`
+attribute's CSS text, which happy-dom's CSSOM re-serializes (`margin: 0px` for
+the author's `margin: 0`) and the string mode writes as authored.
+
 `render.js` is the layer beneath. Reach for it when the compilation step is
 already yours: a bundler plugin that hands you compiled modules, or an SSG loop
 that imports pages itself.
@@ -62,8 +72,8 @@ reactivity pass split them.
 | `{#if}`, `{#each}`, `{#key}`, `{@html}`, `{@render}` | **run** |
 | `$.onMount` / `$onMounted` | inert (RULE 19) |
 | `watchProxy`, `watchPath`, `localWatchProxy` | inert (RULE 19) |
-| `{#await}` | renders `{:pending}` — nothing settles inside a synchronous render |
-| `<mesa:mounted>` | renders its pending branch, for the same reason |
+| `{#await}` | **waited on** — writes `{:then}` or `{:catch}`, whichever its promise settled into, never `{:pending}`; a branch that throws fails the render; a promise that never settles never returns (`FJS-D1647`, `FJS-3601`) |
+| `<mesa:mounted>` | renders its pending branch — `$.mounted` settles in `onMount`, which never runs here |
 | `{#virtual each}` | **runs** — renders the first window plus its spacers. No viewport can be measured, so the window comes from the declared or fallback row height |
 | Event handlers | attached to DOM that is then discarded; never fire |
 | `bind:` on an element | writes a property, which the serializer never reads — a bound field renders as authored, blank unless a `value=` sits beside it; `target: 'server'` writes the same and hands `bind:this` null (`FJS-D1643`) |
@@ -71,9 +81,11 @@ reactivity pass split them.
 Everything that does run is disposed before `renderToHTML` returns. See
 *Lifetimes* below.
 
-If a page needs data, resolve it **before** rendering and pass it as props.
-There is no server-side `await` inside a component that the renderer will wait
-for; a promise in the template renders as pending, permanently.
+A page's data can be resolved before rendering and passed as props, or
+awaited in the template: the renderer waits on every `{#await}`, including one
+a settled branch opens. A client that mounts the page draws `{:pending}` first,
+so a prerendered `{:then}` shows its pending branch again until the client's
+own promise settles.
 
 ---
 
@@ -177,15 +189,14 @@ oversight. The happy-dom window is process-global and so is the reactive core
 (`_owner`, `_listener`, the flush queue). Two interleaved renders would share
 all of it.
 
-`renderToHTML` is `async` in signature but synchronous end to end: there is no
-`await` between its first line and its last. That is what makes `renderAll()`
-safe — `Promise.all` collects results that have already settled, and no render
-can begin before the previous finishes. A test asserts the non-interleaving
-directly.
-
-**If you add an `await` to `renderToHTML`, `renderAll` becomes a race.** For
-genuine parallelism, run one worker process per window rather than sharing this
-module.
+A render waits on its `{#await}` blocks, so `renderToHTML` queues: each call
+starts when the one before it has returned, and an idle renderer starts at
+once, so a page with no `{#await}` has finished before the caller's next line
+and never yields. That is what makes `renderAll()` and any `Promise.all` over
+renders safe; tests assert the non-interleaving directly. A render that awaits
+another render from inside itself waits on itself and never returns
+(`FJS-D1647`). For genuine parallelism, run one worker process per window
+rather than sharing this module.
 
 ---
 

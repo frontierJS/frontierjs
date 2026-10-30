@@ -27,6 +27,7 @@ import {
   rewriteExpr, rewriteTextResult, extractKeywords, eventAttribute, applyEventModifiers,
   unwrapExp, parseEachHeader, eachFrame, templateSource, componentAttributes, styleSource, classSource,
   bindSetter, elementBindTarget, snippetParam, parseRenderTag, constScope, constDeclaration, boundaryWatchSet,
+  withoutWatchedCalls, withAwaitParam, fieldRead, LOC_ATTR,
 } from './compiler.js'
 
 // ─── expressions ──────────────────────────────────────────────────────────────
@@ -148,6 +149,11 @@ function lowerAttributes(ctx, n) {
     }
     if (p.type === 'text' && p.value.includes('{')) {
       attrs.push({ name, value: { kind: 'binding', expr: interpolated(ctx, p.value), to: 'attr' }, at })
+      continue
+    }
+    if (name === LOC_ATTR) {
+      const done = ctx.locIn(p.value)
+      if (done) attrs.push({ name, value: done, at })
       continue
     }
     attrs.push({ name, value: p.type === 'attribute' ? true : p.value, at })
@@ -347,6 +353,29 @@ function lowerKey(ctx, n) {
   return { kind: 'key', loc: ctx.posOf(n.start), key: read(ctx, rx?.[1]?.trim() ?? ''), children: lowerChildren(ctx, n.body) }
 }
 
+/**
+ * `{#await}`, read as `makeAwaitBlock` reads it: the expression without the
+ * watched-call rewrite, a branch with no body is null, and `{:then v}` /
+ * `{:catch e}` bind a plain value, a pattern kept in the parameter list.
+ */
+function lowerAwait(ctx, n) {
+  const raw = n.value.match(/^#await\s+(.+)$/s)?.[1]?.trim() ?? ''
+  const value = expr(ctx, raw, ctx.accessors ? rewriteExpr(raw, withoutWatchedCalls(ctx.accessors)) : raw)
+  const branch = (body, header) => {
+    if (!body?.length) return null
+    const param = header?.match(/^:(?:then|catch)\s*(.*)/s)?.[1]?.trim() || null
+    return { param, children: withAwaitParam(ctx, param, () => lowerChildren(ctx, body)) }
+  }
+  return {
+    kind: 'await',
+    loc: ctx.posOf(n.start),
+    value,
+    pending: n.parts.main?.length ? lowerChildren(ctx, n.parts.main) : null,
+    then: branch(n.parts.then, n.parts.thenValue),
+    catch: branch(n.parts.catch, n.parts.catchValue),
+  }
+}
+
 function lowerEach(ctx, n) {
   const header = parseEachHeader(n.value)
   const { arrayName, itemName, indexName, keyName, isDestructure, destructurePattern, patNames } = header
@@ -398,6 +427,7 @@ function lowerDynamicElement(ctx, n) {
     tag,
     loc: ctx.posOf(n.start),
     ...lowered,
+    ...stampOf(ctx, n),
     directives: lowered.directives.filter((d) => d.name !== 'this'),
     children: n.closedTag ? [] : lowerChildren(ctx, n.body ?? []),
   }
@@ -467,6 +497,18 @@ function lowerHead(ctx, n) {
   }
 }
 
+/**
+ * A dev build's `data-fjs-loc`, as the DOM builder writes it: the element's
+ * own line as `stamp.at`, and as `stamp.read` the field it shows, whose
+ * recorded line wins at render (`FJS-D1231`). An element out of Markdown
+ * carries its own, completed in `lowerAttributes`.
+ */
+function stampOf(ctx, n) {
+  if (n.attributes.some((a) => a.name === LOC_ATTR)) return {}
+  const at = ctx.locOf(n.start)
+  return at ? { stamp: { at, read: fieldRead(n, ctx) } } : {}
+}
+
 function lowerNode(ctx, n) {
   switch (n.type) {
     case 'script':
@@ -496,6 +538,7 @@ function lowerNode(ctx, n) {
         tag: n.name,
         loc: ctx.posOf(n.start),
         ...lowerAttributes(ctx, n),
+        ...stampOf(ctx, n),
         children: n.closedTag ? [] : lowerChildren(ctx, n.body ?? [], false),
         selfClosing: !!n.closedTag,
       }
@@ -512,6 +555,7 @@ function lowerNode(ctx, n) {
     case 'key':
       return lowerKey(ctx, n)
     case 'await':
+      return lowerAwait(ctx, n)
     case 'fragment':
     case 'virtual-each':
     case 'block':
@@ -590,6 +634,9 @@ export function eachNode(children, visit) {
       case 'head':
       case 'key':
         eachNode(n.children, visit)
+        break
+      case 'await':
+        for (const b of [n.pending, n.then?.children, n.catch?.children]) if (b) eachNode(b, visit)
         break
       case 'component':
         eachNode(n.snippets, visit)

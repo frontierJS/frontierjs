@@ -162,6 +162,17 @@
   --surface-shadow: none;
 
   /*
+   * ── Depth — an image laid over a ground ───────────────────
+   *
+   * `none`, or an image the Block tier and `.app` paint ABOVE their color:
+   * a translucent radial is how a theme gives a flat ground depth. It is
+   * a layer and not a gradient in --surface because --surface is read as a
+   * color — tint mixes, chip ink, the contrast specs — and a gradient there
+   * is invalid in every one of them.
+   */
+  --surface-depth: none;
+
+  /*
    * ── Glass — the .glass treatment's two numbers ────────────
    *
    * The package cannot know what is behind a glass surface, so the alpha
@@ -714,6 +725,7 @@
   --align:                initial;
   --grid-min:             initial;
   --app-bg:               initial;
+  --app-depth:            initial;
   --topbar-bg:            initial;
   --sidebar-bg:           initial;
   --navlink-current-bg:   initial;

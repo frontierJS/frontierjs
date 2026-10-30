@@ -29,5 +29,5 @@ export const THEMES = {
   'theme-twilight':   { label: 'Twilight',   blurb: 'Sand on warm black',               scheme: 'dark'  },
   'theme-expedition': { label: 'Expedition', blurb: 'Sunset colors on black and white', scheme: 'dark'  },
   'theme-catppuccin': { label: 'Catppuccin', blurb: 'Pastels on blue-violet charcoal',  scheme: 'dark'  },
-  'theme-survey':     { label: 'Survey',     blurb: 'Instrument panel in black and white', scheme: 'dark' },
+  'theme-survey':     { label: 'Survey',     blurb: 'Instrument panel in Everforest greens', scheme: 'dark' },
 }

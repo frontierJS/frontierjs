@@ -195,20 +195,26 @@
 
 {#snippet navigation(where)}
   {#if collapsible && shape === 'sidebar' && where !== 'drawer'}
-    <button class="btn ghost square shell-fold" type="button"
-            aria-label={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
-            aria-expanded={collapsed ? 'false' : 'true'}
-            title={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
-            onclick={() => collapsed = !collapsed}>
-      <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
-        <path d="M9 3v18" />
-        {#if collapsed}<path d="M14 9l3 3-3 3" />{:else}<path d="M16 15l-3-3 3-3" />{/if}
-      </svg>
-    </button>
+    <!-- The brand and the fold control share the sidebar's first line; in the
+         rail they stack, the control on top where the pointer left it. -->
+    <div class="cluster shell-head">
+      {@render brand?.()}
+      <button class="btn ghost square shell-fold" type="button"
+              aria-label={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
+              aria-expanded={collapsed ? 'false' : 'true'}
+              title={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
+              onclick={() => collapsed = !collapsed}>
+        <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
+          <path d="M9 3v18" />
+          {#if collapsed}<path d="M14 9l3 3-3 3" />{:else}<path d="M16 15l-3-3 3-3" />{/if}
+        </svg>
+      </button>
+    </div>
+  {:else}
+    {@render brand?.()}
   {/if}
-  {@render brand?.()}
   {#each shown as group, gi}
     {#if foldable && group.label && where !== 'rail'}
       <!-- The open state is read with (path, query) first, for the same
@@ -348,8 +354,10 @@
 {/if}
 
 <style>
-  /* Layout only: pushed to the sidebar's far edge, and to its middle once
-     folded to a rail, where the icons are centered. */
+  /* Layout only: the fold control is pushed to the far edge of the brand's
+     line, and to the rail's middle once folded, where the icons are centered. */
+  .shell-head { flex-wrap: nowrap; }
+  .sidebar.rail .shell-head { flex-direction: column-reverse; }
   .shell-fold { display: flex; margin-inline-start: auto; }
   .sidebar.rail .shell-fold { margin-inline: auto; }
 </style>

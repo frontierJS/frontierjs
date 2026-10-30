@@ -187,7 +187,15 @@ core/
                 on 2.1.308 as an init with `tools: []`. `contentPrompt`
                 is a site OWNER's ask, which basecamp runs with `runAsk` in
                 EDIT mode over a copy of a draft's `content/`, handing its own
-                `env` so its key reaches that child only
+                `env` so its key reaches that child only. DRAW mode is
+                `project:diagram`: no tool at all and `--system-prompt` in place
+                of the default, so stdin is the whole of what it reads
+  diagram.js    `fli project:diagram` — the digest of an app (state machines,
+                `belongsTo` refs, verbs beyond CRUD, raw routes, page counts,
+                `AGENTS.project.md`) from `buildProjectMap` and `readAppAtlas`,
+                and the last whole page out of the reply. `diagram-prompt.md`
+                beside it is the prompt; an app's `cli/prompts/diagram.md`
+                replaces it
   tldr.js       `fli tldr` — a question answered as a tldr page: the prompt
                 and the renderer. The session is `runAsk` above, read-only
                 with the same budget; a reply that strays from the shape

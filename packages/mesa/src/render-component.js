@@ -268,23 +268,27 @@ function isMesaSpecifier(spec) {
 // globals are installed BEFORE the import, so it believes it is in a browser and
 // every RULE 19 guard is off — `{@attach}` runs, `$.onMount` runs, and `island()`
 // emits no markers at all. The specifier is rewritten to this file's own sibling
-// so the two halves cannot be two files.
-const RUNTIME_SPECIFIERS = new Set(['@frontierjs/mesa/runtime'])
+// so the two halves cannot be two files. The string mode's runtime is the
+// same case: a tmpDir outside this package cannot resolve it at all.
+const RUNTIME_SPECIFIERS = new Map([
+  ['@frontierjs/mesa/runtime',        'runtime.js'],
+  ['@frontierjs/mesa/runtime/server', 'runtime-server.js'],
+])
 
-let _runtimePath
-function runtimePath() {
-  if (_runtimePath === undefined) {
+let _runtimeDir
+function runtimePath(file) {
+  if (_runtimeDir === undefined) {
     try {
       // `path.dirname(fileURLToPath(...))` and not `new URL('./runtime.js', ...)`:
       // under a happy-dom test environment the global URL is the DOM's, and
       // node's fileURLToPath refuses an instance it did not make, so the whole
       // suite fell back to the bare specifier without a render failing.
-      _runtimePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'runtime.js')
+      _runtimeDir = path.dirname(fileURLToPath(import.meta.url))
     } catch {
       // import.meta.url was rewritten by a bundler to a non-file URL. Leaving
       // the bare specifier is the old behavior and still works whenever the two
       // copies coincide, so this warns rather than failing a render that renders.
-      _runtimePath = null
+      _runtimeDir = null
       console.warn(
         '[Mesa renderComponent] could not resolve this package\'s own runtime.js; ' +
         'temp modules keep the bare specifier and may execute a DIFFERENT copy of ' +
@@ -293,7 +297,7 @@ function runtimePath() {
       )
     }
   }
-  return _runtimePath
+  return _runtimeDir && path.join(_runtimeDir, file)
 }
 
 /**
@@ -575,7 +579,7 @@ async function compileTree(filePath, visited = new Map(), opts = {}, sourceOverr
     const spec = applyAlias(m[2], opts.alias) ?? m[2]
 
     if (RUNTIME_SPECIFIERS.has(spec)) {
-      const abs = runtimePath()
+      const abs = runtimePath(RUNTIME_SPECIFIERS.get(spec))
       if (abs) rewrites.push({ match: m[0], prefix: m[1], tmpPath: abs, suffix: m[3] })
       continue
     }
@@ -994,10 +998,12 @@ async function generateUnoCSS(html, unoConfig) {
  * @param {'html'|'email'|'fragment'|'js'} [options.target='html']
  * @param {object}  [options.unocss]        — UnoCSS config object (@unocss/core createGenerator options)
  * @param {object}  [options.compileOptions] — Extra options forwarded to compileSource().
- *                                             `{ target: 'server' }` renders through
- *                                             the string mode (`FJS-D1634`); a file
+ *                                             A render compiles for the string mode
+ *                                             (`target: 'server'`, `FJS-D1634`); a file
  *                                             that mode refuses is rendered by the
- *                                             DOM path and named in `.unlowered`.
+ *                                             DOM path and named in `.unlowered`, and
+ *                                             `{ target: undefined }` asks for the DOM
+ *                                             path for the whole tree.
  * @param {boolean} [options.islands=false]  — Wrap `client:*` components in island
  *                                             markers so a client loader can find them
  *                                             in the output. Off by default: RULE 26
@@ -1053,10 +1059,10 @@ async function generateUnoCSS(html, unoConfig) {
  *                           emit `<style id="mHASH">` per component; that id is
  *                           the scope hash, so the runtime's `addStyles` treats
  *                           an already-present block as done and injects nothing.
- *     .unlowered {Array}  — under `compileOptions.target: 'server'`, each file the
- *                           string mode refused and the DOM path rendered instead,
- *                           `{ file, refused }` with the refusal's sentence; `[]`
- *                           when every file lowered, and always `[]` otherwise.
+ *     .unlowered {Array}  — each file the string mode refused and the DOM path
+ *                           rendered instead, `{ file, refused }` with the
+ *                           refusal's sentence; `[]` when every file lowered,
+ *                           and always `[]` when the DOM path was asked for.
  *     .islands  {Array}   — every `client:*` call site in the rendered tree, in
  *                           compile order, each `{ component, directive, media?,
  *                           props?, file }`. This is `ctx.islands` per module,
@@ -1097,7 +1103,12 @@ export async function renderComponent(source, options = {}) {
   // switches emission, and it has to reach every module in the tree, not just
   // the entry, because an island call site can be anywhere in it. An explicit
   // compileOptions.islands still wins, so a caller can force it either way.
-  const _compileOptions = { islands, ...compileOptions }
+  //
+  // A render takes the string mode (`FJS-D1634`) and a file it refuses falls
+  // back by itself; `compileOptions: { target: undefined }` asks for the DOM
+  // path outright. `js` hands its modules to a caller that may mount them, so
+  // it keeps the DOM compile.
+  const _compileOptions = { islands, ...(target === 'js' ? {} : { target: 'server' }), ...compileOptions }
 
   // Resolve once per call and create it if the caller named a directory that
   // does not exist yet — a build pointing at `outDir/.mesa-tmp` should not have

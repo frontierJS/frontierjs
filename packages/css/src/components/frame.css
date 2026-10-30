@@ -67,7 +67,7 @@
   min-block-size:   100vh;
   /* biome-ignore lint/suspicious/noDuplicateProperties: the first declaration is the fallback for a browser without dvh */
   min-block-size:   100dvh;
-  background:       var(--app-bg, var(--surface-sunken));
+  background:       var(--app-depth, var(--surface-depth)), var(--app-bg, var(--surface-sunken));
   color:            var(--ink);
   font-family:      var(--font-primary);
   -webkit-font-smoothing: antialiased;
