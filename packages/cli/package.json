@@ -1,7 +1,7 @@
 {
   "name": "@frontierjs/cli",
-  "version": "0.1.9",
-  "description": "fli \u2014 the FrontierJS command line: scaffold, develop, check, deploy and release an app",
+  "version": "0.1.10",
+  "description": "fli — the FrontierJS command line: scaffold, develop, check, deploy and release an app",
   "engines": {
     "bun": ">=1.4.0"
   },

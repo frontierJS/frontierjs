@@ -82,6 +82,9 @@ html {
   --surface-shadow: none;
 
   
+  --surface-depth: none;
+
+  
   --glass-alpha: 85%;
   --glass-blur:  16px;
 
@@ -274,6 +277,7 @@ html {
   --align:                initial;
   --grid-min:             initial;
   --app-bg:               initial;
+  --app-depth:            initial;
   --topbar-bg:            initial;
   --sidebar-bg:           initial;
   --navlink-current-bg:   initial;
@@ -950,44 +954,52 @@ html {
   --tone-l-max: 1;
 
   
-  --app-bg:          #0a0a0a;
-  --surface-sunken:  #0a0a0a;
-  --surface:         #151515;
-  --surface-raised:  #1c1c1c;
+  --app-bg:          #0f1d19;
+  --surface-sunken:  #0a1512;
+  --surface:         #13221d;
+  --surface-raised:  #1d2e29;
 
-  --topbar-bg:       #101010;
-  --sidebar-bg:      #101010;
-  --dialog-bg:       #151515;
-  --table-head-bg:   #101010;
-
-  
-  --field-bg:        #0e0e0e;
+  --topbar-bg:       #0d1a17;
+  --sidebar-bg:      #0d1a17;
+  --dialog-bg:       #13221d;
+  --table-head-bg:   #0d1a17;
 
   
-  --ink:             #f2f2f2;
-  --ink-soft:        #a0a0a0;
-  --ink-mute:        #858585;
+  --field-bg:        #0d1a17;
 
   
-  --rule:            #303030;
-  --rule-strong:     #4a4a4a;
+  --ink:             #d3c6aa;
+  --ink-soft:        #9da9a0;
+  --ink-mute:        #89968d;
 
   
-  --color-primary:   #e8e8e8;
-  --color-secondary: #9a9a9a;
-  --color-muted:     #707070;
-  --color-info:      #8fb0c4;
-  --color-success:   #93b98a;
-  --color-warning:   #d9b060;
-  --color-danger:    #e06a5e;
+  --h1-ink: #d0e4da;
+  --h2-ink: #d0e4da;
+  --h3-ink: #d0e4da;
+  --h4-ink: #d0e4da;
+  --h5-ink: #d0e4da;
+  --h6-ink: #d0e4da;
 
   
-  --navlink-current-bg:  #1c1c1c;
-  --navlink-current-ink: #f2f2f2;
+  --rule:            #2c3d38;
+  --rule-strong:     #3e504b;
 
-  --check-accent: #e8e8e8;
-  --step-accent:  #e8e8e8;
-  --tab-accent:   #f2f2f2;
+  
+  --color-primary:   #9bc389;
+  --color-secondary: #9da9a0;
+  --color-muted:     #7a8478;
+  --color-info:      #7fbbb3;
+  --color-success:   #83c092;
+  --color-warning:   #dbbc7f;
+  --color-danger:    #e67e80;
+
+  
+  --navlink-current-bg:  #243928;
+  --navlink-current-ink: #d3c6aa;
+
+  --check-accent: #9bc389;
+  --step-accent:  #9bc389;
+  --tab-accent:   #9bc389;
 
   
   --font-primary: 'Helvetica Neue', Arial, 'Noto Sans', system-ui, sans-serif;
@@ -1011,31 +1023,39 @@ html {
   --tab-font-weight:      500;
 
   
-  --btn-radius:   0;
-  --card-radius:  0;
-  --field-radius: 0;
-  --badge-radius: 0;
-  --pill-radius:  2px;
-  --toast-radius: 0;
+  --btn-radius:   2px;
+  --card-radius:  2px;
+  --field-radius: 2px;
+  --badge-radius: 2px;
+  --pill-radius:  3px;
+  --toast-radius: 2px;
 
   
   --ring-style: dashed;
-  --ring-color: #e8e8e8;
+  --ring-color: #9bc389;
 
   
-  --surface-shadow: none;
-  --shadow-sm: 0 0 0 1px #303030;
-  --shadow-md: 0 0 0 1px #303030, 0 8px 20px -8px rgba(0, 0, 0, 0.8);
-  --shadow-lg: 0 0 0 1px #3a3a3a, 0 24px 48px -16px rgba(0, 0, 0, 0.9);
-  --scrim:     rgba(0, 0, 0, 0.72);
+  --surface-shadow: inset 0 1px 0 rgb(211 198 170 / 0.06), 0 12px 32px -16px rgb(0 0 0 / 0.6);
+  --shadow-sm: 0 0 0 1px #2c3d38;
+  --shadow-md: 0 0 0 1px #2c3d38, 0 8px 20px -8px rgba(0, 0, 0, 0.8);
+  --shadow-lg: 0 0 0 1px #3e504b, 0 24px 48px -16px rgba(0, 0, 0, 0.9);
+  --scrim:     rgba(2, 8, 6, 0.72);
 
   
-  --code-name:    #f2f2f2;
-  --code-keyword: #bdbdbd;
-  --code-value:   #a9c79f;
-  --code-special: #e88a80;
-  --code-comment: #858585;
-  --code-punct:   #a0a0a0;
+  --surface-depth:
+    linear-gradient(155deg, rgb(211 198 170 / 0.035), rgb(211 198 170 / 0) 38%),
+    radial-gradient(ellipse at center, rgb(0 0 0 / 0.16), rgb(0 0 0 / 0) 100%);
+
+  
+  --app-depth: radial-gradient(ellipse at center, #111 0%, rgb(17 17 17 / 0) 100%) fixed;
+
+  
+  --code-name:    #9bc389;
+  --code-keyword: #e67e80;
+  --code-value:   #83c092;
+  --code-special: #d699b6;
+  --code-comment: #89968d;
+  --code-punct:   #9da9a0;
 }
 }
 @layer tones {
@@ -1142,7 +1162,7 @@ html {
   --_surface-color:  var(--surface-tint-color,  var(--ink));
 
   display:       block;
-  background:    var(--surface-bg);
+  background:    var(--surface-depth), var(--surface-bg);
   color:         var(--_surface-color);
   border:        var(--border-width) solid var(--_surface-border);
   border-radius: var(--card-radius);
@@ -1157,14 +1177,17 @@ html {
     --_surface-border: transparent;
     box-shadow:       var(--shadow-md);
   }
+  
   &.outlined {
     --surface-bg:     transparent;
     --_surface-border: var(--surface-tint-border, var(--rule-strong));
+    background-image: none;
     box-shadow:       none;
   }
   &.ghost {
     --surface-bg:     transparent;
     --_surface-border: transparent;
+    background-image: none;
     box-shadow:       none;
   }
   
@@ -1327,7 +1350,7 @@ dialog:where(.dialog, .drawer, .surface):not([open]) {
   min-block-size:   100vh;
   
   min-block-size:   100dvh;
-  background:       var(--app-bg, var(--surface-sunken));
+  background:       var(--app-depth, var(--surface-depth)), var(--app-bg, var(--surface-sunken));
   color:            var(--ink);
   font-family:      var(--font-primary);
   -webkit-font-smoothing: antialiased;
@@ -4549,7 +4572,7 @@ try {
   <div class="kicker">frontierjs · generated by fli ws:atlas --as=report</div>
   <h1>Repo map</h1>
   <p class="lede">Every row on this page was read out of the tree it describes — the snapshot walker, <code>main()</code> in the CI script, each package.json and the port registry. Regenerate it rather than editing it.</p>
-  <div class="counters"><div class="counter"><b>26</b><span>packages</span></div><div class="counter"><b>32</b><span>snapshots</span></div><div class="counter"><b>16</b><span>ci phases</span></div><div class="counter"><b>96</b><span>drives</span></div><div class="counter"><b>255</b><span>commands</span></div></div>
+  <div class="counters"><div class="counter"><b>26</b><span>packages</span></div><div class="counter"><b>32</b><span>snapshots</span></div><div class="counter"><b>16</b><span>ci phases</span></div><div class="counter"><b>96</b><span>drives</span></div><div class="counter"><b>256</b><span>commands</span></div></div>
 </header>
 <section id="run">
   <div class="head"><h2>Run it</h2><div class="rule"></div><span class="kicker">scripts declared at the workspace root</span></div>
@@ -4821,7 +4844,7 @@ try {
   <div class="head"><h2>Packages</h2><div class="rule"></div><span class="kicker">a member is a directory with a package.json</span></div>
   <p class="note">Depends-on lists workspace siblings only, which is the dependency direction drawn from the files rather than asserted.</p><div class="panel scroll"><table><thead><tr><th>Package</th><th>Version</th><th>Depends on</th><th>Test</th></tr></thead><tbody><tr data-row>
         <td class="m">@frontierjs/auth</td>
-        <td class="m sub">1.0.8</td>
+        <td class="m sub">1.0.9</td>
         <td class="m sub">junction · litestone</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
@@ -4831,32 +4854,32 @@ try {
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/caravan</td>
-        <td class="m sub">0.1.6</td>
+        <td class="m sub">0.1.7</td>
         <td class="m sub">junction · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/cli</td>
-        <td class="m sub">0.1.9</td>
+        <td class="m sub">0.1.10</td>
         <td class="m sub">css · litestone · mesa · outpost · toolbelt · ui</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/conduit</td>
-        <td class="m sub">0.1.5</td>
+        <td class="m sub">0.1.6</td>
         <td class="m sub">junction · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/config</td>
-        <td class="m sub">0.1.4</td>
+        <td class="m sub">0.1.5</td>
         <td class="m sub"><i>leaf</i></td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/css</td>
-        <td class="m sub">0.16.6</td>
+        <td class="m sub">0.16.7</td>
         <td class="m sub"><i>leaf</i></td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/email-kit</td>
-        <td class="m sub">0.1.6</td>
+        <td class="m sub">0.1.7</td>
         <td class="m sub">mesa · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
@@ -4866,32 +4889,32 @@ try {
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/jetty</td>
-        <td class="m sub">0.0.7</td>
+        <td class="m sub">0.0.8</td>
         <td class="m sub">junction · mesa · sierra · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/junction</td>
-        <td class="m sub">0.1.9</td>
+        <td class="m sub">0.1.10</td>
         <td class="m sub">litestone · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/litestone</td>
-        <td class="m sub">1.1.11</td>
+        <td class="m sub">1.1.12</td>
         <td class="m sub">toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/mcp</td>
-        <td class="m sub">0.0.3</td>
+        <td class="m sub">0.0.4</td>
         <td class="m sub">junction · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/mesa</td>
-        <td class="m sub">0.1.7</td>
+        <td class="m sub">0.1.8</td>
         <td class="m sub">toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/notifications</td>
-        <td class="m sub">0.1.6</td>
+        <td class="m sub">0.1.7</td>
         <td class="m sub">junction</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
@@ -4901,22 +4924,22 @@ try {
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/orion</td>
-        <td class="m sub">0.0.2</td>
+        <td class="m sub">0.0.3</td>
         <td class="m sub">conduit · junction · litestone · sierra · toolbelt · ui</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/outpost</td>
-        <td class="m sub">0.1.7</td>
+        <td class="m sub">0.1.8</td>
         <td class="m sub">litestone · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/print-kit</td>
-        <td class="m sub">0.1.1</td>
+        <td class="m sub">0.1.2</td>
         <td class="m sub">junction · mesa</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/sierra</td>
-        <td class="m sub">0.1.8</td>
+        <td class="m sub">0.1.9</td>
         <td class="m sub">junction · litestone · mesa · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
@@ -4926,17 +4949,17 @@ try {
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/testing</td>
-        <td class="m sub">0.1.8</td>
+        <td class="m sub">0.1.9</td>
         <td class="m sub">junction · litestone · mesa</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/toolbelt</td>
-        <td class="m sub">0.1.6</td>
+        <td class="m sub">0.1.7</td>
         <td class="m sub"><i>leaf</i></td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/ui</td>
-        <td class="m sub">0.1.7</td>
+        <td class="m sub">0.1.8</td>
         <td class="m sub">css · mesa · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
@@ -4945,7 +4968,7 @@ try {
         <td class="sub" colspan="2">No package.json — does not install, test, or count as a workspace member</td>
       </tr><tr data-row>
         <td class="m">create-frontier</td>
-        <td class="m sub">0.1.5</td>
+        <td class="m sub">0.1.6</td>
         <td class="m sub">cli</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
@@ -7982,8 +8005,8 @@ try {
   </tr></tbody></table></div>
 </section>
 <section id="commands">
-  <div class="head"><h2>Command namespaces</h2><div class="rule"></div><span class="kicker">255 invokable commands</span></div>
-  <p class="note">A command is a markdown file compiled to JavaScript, so this count is the tree itself. Namespace modules (<code>_module.md</code>) and step files are not invokable and are not counted.</p><div class="tallies"><span class="tally" data-row><b>workspace</b>25</span><span class="tally" data-row><b>db</b>21</span><span class="tally" data-row><b>deploy</b>18</span><span class="tally" data-row><b>make</b>17</span><span class="tally" data-row><b>utils</b>15</span><span class="tally" data-row><b>npm</b>14</span><span class="tally" data-row><b>tutor</b>14</span><span class="tally" data-row><b>register</b>12</span><span class="tally" data-row><b>fli</b>9</span><span class="tally" data-row><b>test</b>9</span><span class="tally" data-row><b>env</b>8</span><span class="tally" data-row><b>git</b>8</span><span class="tally" data-row><b>dev</b>7</span><span class="tally" data-row><b>frontier</b>7</span><span class="tally" data-row><b>auth</b>6</span><span class="tally" data-row><b>basecamp</b>6</span><span class="tally" data-row><b>cloudflare</b>6</span><span class="tally" data-row><b>completion</b>4</span><span class="tally" data-row><b>project</b>4</span><span class="tally" data-row><b>server</b>4</span><span class="tally" data-row><b>tell</b>4</span><span class="tally" data-row><b>app</b>3</span><span class="tally" data-row><b>github</b>3</span><span class="tally" data-row><b>ai</b>2</span><span class="tally" data-row><b>api</b>2</span><span class="tally" data-row><b>desktop</b>2</span><span class="tally" data-row><b>extension</b>2</span><span class="tally" data-row><b>fetch</b>2</span><span class="tally" data-row><b>haven</b>2</span><span class="tally" data-row><b>ports</b>2</span><span class="tally" data-row><b>release</b>2</span><span class="tally" data-row><b>site</b>2</span><span class="tally" data-row><b>widgets</b>2</span><span class="tally" data-row><b>admin</b>1</span><span class="tally" data-row><b>backfill</b>1</span><span class="tally" data-row><b>browser</b>1</span><span class="tally" data-row><b>cli</b>1</span><span class="tally" data-row><b>crypto</b>1</span><span class="tally" data-row><b>literate</b>1</span><span class="tally" data-row><b>mcp</b>1</span><span class="tally" data-row><b>notifications</b>1</span><span class="tally" data-row><b>outbox</b>1</span><span class="tally" data-row><b>outpost</b>1</span><span class="tally" data-row><b>web</b>1</span></div>
+  <div class="head"><h2>Command namespaces</h2><div class="rule"></div><span class="kicker">256 invokable commands</span></div>
+  <p class="note">A command is a markdown file compiled to JavaScript, so this count is the tree itself. Namespace modules (<code>_module.md</code>) and step files are not invokable and are not counted.</p><div class="tallies"><span class="tally" data-row><b>workspace</b>25</span><span class="tally" data-row><b>db</b>21</span><span class="tally" data-row><b>deploy</b>18</span><span class="tally" data-row><b>make</b>17</span><span class="tally" data-row><b>utils</b>15</span><span class="tally" data-row><b>npm</b>14</span><span class="tally" data-row><b>tutor</b>14</span><span class="tally" data-row><b>register</b>12</span><span class="tally" data-row><b>fli</b>9</span><span class="tally" data-row><b>test</b>9</span><span class="tally" data-row><b>env</b>8</span><span class="tally" data-row><b>git</b>8</span><span class="tally" data-row><b>dev</b>7</span><span class="tally" data-row><b>frontier</b>7</span><span class="tally" data-row><b>auth</b>6</span><span class="tally" data-row><b>basecamp</b>6</span><span class="tally" data-row><b>cloudflare</b>6</span><span class="tally" data-row><b>project</b>5</span><span class="tally" data-row><b>completion</b>4</span><span class="tally" data-row><b>server</b>4</span><span class="tally" data-row><b>tell</b>4</span><span class="tally" data-row><b>app</b>3</span><span class="tally" data-row><b>github</b>3</span><span class="tally" data-row><b>ai</b>2</span><span class="tally" data-row><b>api</b>2</span><span class="tally" data-row><b>desktop</b>2</span><span class="tally" data-row><b>extension</b>2</span><span class="tally" data-row><b>fetch</b>2</span><span class="tally" data-row><b>haven</b>2</span><span class="tally" data-row><b>ports</b>2</span><span class="tally" data-row><b>release</b>2</span><span class="tally" data-row><b>site</b>2</span><span class="tally" data-row><b>widgets</b>2</span><span class="tally" data-row><b>admin</b>1</span><span class="tally" data-row><b>backfill</b>1</span><span class="tally" data-row><b>browser</b>1</span><span class="tally" data-row><b>cli</b>1</span><span class="tally" data-row><b>crypto</b>1</span><span class="tally" data-row><b>literate</b>1</span><span class="tally" data-row><b>mcp</b>1</span><span class="tally" data-row><b>notifications</b>1</span><span class="tally" data-row><b>outbox</b>1</span><span class="tally" data-row><b>outpost</b>1</span><span class="tally" data-row><b>web</b>1</span></div>
 </section>
 <section id="root-docs">
   <div class="head"><h2>Which file answers which question</h2><div class="rule"></div><span class="kicker">each one holds a single kind of statement</span></div>
