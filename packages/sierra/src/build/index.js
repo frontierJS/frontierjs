@@ -55,6 +55,8 @@ import { beginBuildImports, importAppModule } from './app-import.js'
  * @property {boolean} [preview] — a review build, `static` target only: every
  *   element is stamped `data-fjs-loc` as in dev, and `_headers` tells crawlers
  *   `noindex` (`FJS-D838`). The Cloudflare adapter ships one only as a preview.
+ *   `SIERRA_PREVIEW=1` sets it when the config does not, which is how
+ *   `fli site:build --preview` reaches an app's own vite.config.js.
  * @property {'spa'|'static'} [render='spa']
  * @property {string} [outDir='dist/client']
  * @property {{ dir?: string, outDir?: string, prefix?: string, minify?: boolean }} [widgets]
@@ -121,6 +123,7 @@ function withoutPostBuildHook(plugin) {
  * @returns {import('vite').UserConfig}
  */
 export function createSierraViteConfig(config = {}) {
+  if (config.preview === undefined && process.env.SIERRA_PREVIEW === '1') config = { ...config, preview: true }
   const {
     target = 'spa',
     routesDir = 'src/routes',

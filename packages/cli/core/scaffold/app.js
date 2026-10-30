@@ -187,6 +187,9 @@ export function makeGitignore() {
     // a committed copy churns with every route edit.
     'routes.build.js',
     'web/config/routes.js',
+    // What a surface's build and Sierra's Cloudflare adapter write, the
+    // wrangler config included; derived from the Sierra config on every run.
+    '.sierra/',
     '',
   ].join('\n')
 }

@@ -25,7 +25,8 @@
  * runtime cache would eventually answer a read with a row the live layer
  * believes it has already corrected, and a cached write is not a thing that can
  * be made safe. Writes made offline are the pending queue's job and no part of
- * this file knows they exist.
+ * this file knows they exist. The device database's files are the one list it
+ * caches at runtime, and only once the device holds a database (`FJS-3688`).
  *
  * Navigations are network-FIRST. Online, the shell is always the current one;
  * offline, the last one is served instead of an error page.
@@ -103,7 +104,7 @@ function weigh(buffers) {
 const kB = (n) => Math.ceil(n / 1024)
 
 /** What a shell is made of. A route chunk is one of these; a photograph is not. */
-import { WASM_DIR } from '../build/local-db-plugin.js'
+import { WASM_DIR, SCHEMA_URL, WORKER_CHUNK } from '../build/local-db-plugin.js'
 import { refusal } from '../build/refusal.js'
 
 const SHELL_EXT = new Set(['.js', '.css', '.woff', '.woff2', '.svg', '.webmanifest', '.json'])
@@ -112,6 +113,10 @@ const extOf = (name) => {
   const i = name.lastIndexOf('.')
   return i < 0 ? '' : name.slice(i)
 }
+
+/** The device database's engine, worker and schema — what only a device that opens it needs. */
+const isDbFile = (f) =>
+  (f.startsWith(`${WASM_DIR}/`) && extOf(f) !== '.d.mts') || f === SCHEMA_URL.slice(1) || WORKER_CHUNK.test(f)
 
 /** Every file under `dir`, at any depth, as paths relative to it. */
 async function walk(dir, base = dir) {
@@ -169,16 +174,15 @@ export async function writeOfflineShell(offlineConfig, outDir, root, push) {
   // so — and `sw.js` itself is never in its own precache list.
   const extra  = new Set(cfg.include ?? [])
 
-  // The engine, when the app asked for a database. It is `.mjs` and `.wasm`,
-  // neither of which is shell-shaped by extension — and it has to be here
-  // rather than left to the browser's own cache, because a device that has
-  // never fetched it has no engine at exactly the moment it needs one. This is
-  // the weight `FJS-D302`'s baseline exists to make somebody agree to.
-  const wantsDb = !!cfg.db
   const assets = all.filter(f =>
-    f !== 'sw.js' &&
-    (SHELL_EXT.has(extOf(f)) || extra.has(f) ||
-     (wantsDb && f.startsWith(`${WASM_DIR}/`) && extOf(f) !== '.d.mts')))
+    f !== 'sw.js' && !isDbFile(f) && (SHELL_EXT.has(extOf(f)) || extra.has(f)))
+
+  // The device database, when the app asked for one, is cached by the device
+  // that holds one: ~540 kB of engine precached for every visitor was a
+  // download for people who never open a synced screen (`FJS-3688`). It cannot
+  // be left to the browser's own cache, because a device holding rows has no
+  // engine to read them with at exactly the moment it is offline.
+  const lazy = cfg.db ? all.filter(isDbFile) : []
 
   // `/` rather than `index.html`: that is the URL a navigation asks for, and a
   // cache keyed by the file name would miss every one of them.
@@ -187,23 +191,27 @@ export async function writeOfflineShell(offlineConfig, outDir, root, push) {
     ...pages.map(p => '/' + p),
     ...assets.map(a => '/' + a),
   ])].sort()
+  const lazyUrls = lazy.map(f => '/' + f).sort()
 
-  // Measured rather than rhetorical — this is the phase where the byte budget
-  // in `IDEAS/offline-first-and-release.md` stops being a sentence.
-  const buffers = []
-  for (const f of [...pages, ...assets]) {
-    try { buffers.push(await readFile(join(outDir, f))) } catch { /* raced with a rebuild */ }
+  const weightOf = async (files) => {
+    const buffers = []
+    for (const f of files) {
+      try { buffers.push(await readFile(join(outDir, f))) } catch { /* raced with a rebuild */ }
+    }
+    return weigh(buffers)
   }
-  const weight = weigh(buffers)
+  const weight = await weightOf([...pages, ...assets])
+  const dbKB   = lazy.length ? kB((await weightOf(lazy)).brotli) : 0
 
-  const version = createHash('sha256').update(urls.join('\n')).digest('hex').slice(0, 12)
-  await writeFile(join(outDir, 'sw.js'), swSource({ push, scope, shell: { version, urls } }), 'utf8')
+  const version = createHash('sha256').update([...urls, ...lazyUrls].join('\n')).digest('hex').slice(0, 12)
+  await writeFile(join(outDir, 'sw.js'), swSource({ push, scope, shell: { version, urls, lazy: lazyUrls } }), 'utf8')
   await register(outDir, scope)
 
   const verdict = await gradeBudget(kB(weight.brotli), cfg, root ?? outDir)
 
   return `sw.js — ${urls.length} file(s) precached · ${kB(weight.brotli)} kB over the wire ` +
-         `(${kB(weight.gzip)} kB gzip, ${kB(weight.raw)} kB raw)${verdict}`
+         `(${kB(weight.gzip)} kB gzip, ${kB(weight.raw)} kB raw)` +
+         (lazy.length ? ` · device db ${dbKB} kB, cached on first open` : '') + verdict
 }
 
 /** The one registration path, whichever key asked for the worker. */
@@ -309,23 +317,40 @@ self.addEventListener('activate', (e) => {
 })
 ` + tail
 
+  const lazy = shell.lazy?.length ? shell.lazy : null
   return head + `const VERSION = ${JSON.stringify(shell.version)}
 const CACHE   = 'fjs-shell-' + VERSION
 const SHELL   = ${JSON.stringify(shell.urls, null, 0)}
 const INDEX   = ${JSON.stringify(scope)}
+` + (lazy ? `const DB      = ${JSON.stringify(lazy, null, 0)}
 
+// The device database is cached by a device that holds one. OPFS is where the
+// engine keeps its files, so a non-empty OPFS is a device that opened it --
+// including on the first visit, whose fetches ran before this worker claimed
+// the page and so never reached the fetch handler below.
+async function holdsDb() {
+  try { for await (const _ of (await navigator.storage.getDirectory()).keys()) return true } catch {}
+  return false
+}
+
+async function warmDb() {
+  if (!(await holdsDb())) return
+  const c = await caches.open(CACHE)
+  for (const url of DB) if (!(await c.match(url))) await c.add(url).catch(() => {})
+}
+` : '') + `
 self.addEventListener('install', (e) => {
   // Waiting for every tab to close means a phone with the app open never sees a
   // release — measured, not assumed: without this the drive's rebuild never
   // activated, because a navigation in the same tab does not release control.
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()))
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL))${lazy ? '.then(warmDb)' : ''}.then(() => self.skipWaiting()))
 })
 
 self.addEventListener('activate', (e) => {
   e.waitUntil((async () => {
     for (const name of await caches.keys())
       if (name.startsWith('fjs-shell-') && name !== CACHE) await caches.delete(name)
-    await self.clients.claim()
+    await self.clients.claim()${lazy ? '\n    await warmDb()' : ''}
   })())
 })
 
@@ -354,6 +379,21 @@ self.addEventListener('fetch', (e) => {
   // of the way and one that merely tries to be.
   const url = new URL(req.url)
   if (url.origin !== self.location.origin) return
+` + (lazy ? `
+  // A file this build hashed or versioned, never a row, so keeping what the
+  // network answered cannot serve anything the live layer has since corrected.
+  if (DB.includes(url.pathname)) {
+    e.respondWith((async () => {
+      const c   = await caches.open(CACHE)
+      const hit = await c.match(url.pathname)
+      if (hit) return hit
+      const res = await fetch(req)
+      if (res.ok) e.waitUntil(c.put(url.pathname, res.clone()))
+      return res
+    })())
+    return
+  }
+` : '') + `
   if (!SHELL.includes(url.pathname)) return
 
   e.respondWith((async () => {

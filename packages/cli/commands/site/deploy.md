@@ -22,8 +22,9 @@ adapter writes the wrangler config from `config/sierra.config.js`: the Worker
 is `siteUrl`'s host with dots as dashes, served at that host as a custom domain
 (`FJS-D1213`). The site states nothing else, and keeps no `wrangler.jsonc`.
 
-**A production deploy claims `siteUrl`'s host**, so until that zone is on the
-Cloudflare account it is refused there; ship previews until then. A preview
+**A production deploy claims `siteUrl`'s host.** Where that zone is on the
+signed-in Cloudflare account, the deploy takes the domain from whatever
+answers it now, so before a cutover ship previews only. A preview
 is a version of the same Worker, uploaded and never deployed, at
 `<alias>-<name>.<account>.workers.dev` (`FJS-D1221`, `FJS-D1222`). It needs a
 review build, and a production deploy refuses one: the build stamps source

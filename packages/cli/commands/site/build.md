@@ -5,10 +5,15 @@ alias: site-build
 examples:
   - fli site:build
   - fli site:build --binary
+  - fli site:build --preview
 flags:
   binary:
     type: boolean
     description: Then compile dist/ and its server into one executable at bin/site
+    defaultValue: false
+  preview:
+    type: boolean
+    description: A review build, stamped with source paths and noindex, which only fli site:deploy --preview ships
     defaultValue: false
 ---
 
@@ -35,6 +40,11 @@ the same directory-index, cache and 404 answers. `./bin/site --port 8080`, or
 `sierra site --compile --target bun-darwin-arm64` (or `bun-windows-x64`) from
 `site/`; `--dir` compiles a `dist/` something else built.
 
+`--preview` is a review build (`FJS-D838`): every element stamped with its
+source path and every page `noindex`. `fli site:deploy --preview` ships it, and
+a production deploy refuses it. It reaches Sierra as `SIERRA_PREVIEW=1`, so the
+surface's own `vite.config.js` states nothing for it.
+
 ```js
 // A site-kit site is content/ with no Vite config of its own, and Vite's
 // answer to the missing file is an UNRESOLVED_ENTRY from rolldown.
@@ -53,6 +63,7 @@ $.exec({
   // from the surface and bun auto-loads `.env` from the working directory.
   command: 'bun --bun --env-file=../.env vite build -c config/vite.config.js',
   cwd:     $.paths.site,
+  env:     { ...process.env, ...(flag.preview && { SIERRA_PREVIEW: '1' }) },
   dry:     flag.dry,
 })
 

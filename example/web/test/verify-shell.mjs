@@ -157,8 +157,13 @@ try {
   check('it precaches this build\'s own files', swText, v => /const SHELL\s+= \[/.test(v))
   // The one thing a shell must never become. Asserted against the SOURCE as
   // well as against behavior below, because a runtime cache added later would
-  // pass every behavioral test on the day it was added.
-  check('it does no runtime caching', swText, v => !/cache\.put\(|c\.put\(/.test(v))
+  // pass every behavioral test on the day it was added. The device database's
+  // files are the one runtime-cached list (FJS-3688), so a visitor who never
+  // opens a synced screen never downloads the engine.
+  const shellList = swText.match(/const SHELL\s+= (\[.*?\])\n/s)?.[1] ?? ''
+  check('the engine is not in the install precache', shellList, v => v.length > 2 && !/fjs-sqlite|local-db-worker/.test(v))
+  check('it is cached on first open instead', swText, v => /const DB\s+= \[[^\n]*fjs-sqlite\/sqlite3\.wasm/.test(v))
+  check('and nothing else is cached at runtime', swText, v => (v.match(/\.put\(/g) ?? []).length === 1)
 
   // ─── it registers, and takes control ────────────────────────────────────
 
@@ -524,6 +529,10 @@ try {
   check('the stale cache was swept', after, v => !v.includes('fjs-shell-stale'))
   check('still exactly one shell cache', after.length, 1)
   check('and the app still renders on it', await evaluate(`!!document.querySelector('header button')`), true)
+  // This device holds a database, so the new release must carry the engine:
+  // a cache swept of it strands the rows above the next time it is offline.
+  check('the new cache already holds the engine', await evaluate(
+    `caches.open(${JSON.stringify(after[0])}).then(c => c.match('/fjs-sqlite/sqlite3.wasm')).then(r => !!r)`), true)
   console.log(`      (${before[0]} → ${after[0]})`)
 
 } catch (err) {

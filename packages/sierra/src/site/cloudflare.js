@@ -188,7 +188,7 @@ export async function writeCloudflare({ root, config, preview = false }) {
     throw new Error(`[Sierra] cloudflare: ${relative(root, stamped)} is a preview build's, stamped with source paths — rebuild without preview, or ship it as a preview`)
   }
   if (!stamped && preview) {
-    throw new Error(`[Sierra] cloudflare: ${relative(root, outDir)} is a production build, and a preview needs the source paths a pin anchors to — build it with preview: true (site-kit build --preview)`)
+    throw new Error(`[Sierra] cloudflare: ${relative(root, outDir)} is a production build, and a preview needs the source paths a pin anchors to — build it with preview: true (site-kit build --preview, fli site:build --preview)`)
   }
   const dir = join(root, '.sierra')
   await mkdir(dir, { recursive: true })

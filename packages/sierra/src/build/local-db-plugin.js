@@ -44,6 +44,9 @@ export const WASM_DIR   = 'fjs-sqlite'
 export const SCHEMA_URL = '/fjs-device-schema.json'
 export const WASM_URL   = `/${WASM_DIR}/index.js`
 
+/** The worker chunk Vite emits for `resource/local-db-worker.js`, named for that file. */
+export const WORKER_CHUNK = /(?:^|\/)local-db-worker-[\w-]+\.js$/
+
 /**
  * The two files a browser needs, and the three it does not.
  *

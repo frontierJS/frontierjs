@@ -44,6 +44,7 @@ afterAll(async () => { await rm(ROOT, { recursive: true, force: true }) })
 const sw = async (dir) => readFile(join(dir, 'sw.js'), 'utf8')
 const shellOf = (src) => JSON.parse(src.match(/const SHELL\s+= (\[.*?\])\n/s)[1])
 const versionOf = (src) => src.match(/const VERSION = "(\w+)"/)[1]
+const dbOf = (src) => JSON.parse(src.match(/const DB\s+= (\[.*?\])\n/s)[1])
 
 describe('nothing is written for an app that did not ask', () => {
   test('no config, no worker', async () => {
@@ -86,21 +87,44 @@ describe('what a shell is made of', () => {
     expect(shell).not.toContain('/downloads/terms.pdf')
   })
 
-  test('the device database engine is precached when db is asked for, and only then', async () => {
+  test('the device database is never precached, and is cached on first open when db is asked for', async () => {
+    // ~540 kB precached for every visitor was a download for people who never
+    // open a synced screen (FJS-3688).
     const files = {
-      'index.html':                 PAGE,
-      'fjs-sqlite/index.js':        'export {}',
-      'fjs-sqlite/sqlite3.wasm':    'wasm',
+      'index.html':                       PAGE,
+      'assets/app.js':                    'export {}',
+      'assets/local-db-worker-AbC_12.js': 'export {}',
+      'fjs-device-schema.json':           '{}',
+      'fjs-sqlite/index.js':              'export {}',
+      'fjs-sqlite/sqlite3.wasm':          'wasm',
     }
+    const DB = ['/assets/local-db-worker-AbC_12.js', '/fjs-device-schema.json', '/fjs-sqlite/index.js', '/fjs-sqlite/sqlite3.wasm']
+
     const dbDir = await build(files)
-    await writeOfflineShell({ db: true }, dbDir)
-    const withDb = shellOf(await sw(dbDir))
-    expect(withDb).toContain('/fjs-sqlite/index.js')
-    expect(withDb).toContain('/fjs-sqlite/sqlite3.wasm')
+    const line  = await writeOfflineShell({ db: true }, dbDir)
+    const src   = await sw(dbDir)
+    expect(shellOf(src)).toContain('/assets/app.js')
+    for (const url of DB) expect(shellOf(src)).not.toContain(url)
+    expect(dbOf(src)).toEqual(DB)
+    expect(line).toMatch(/device db \d+ kB, cached on first open/)
 
     const plainDir = await build(files)
     await writeOfflineShell(true, plainDir)
-    expect(shellOf(await sw(plainDir))).not.toContain('/fjs-sqlite/sqlite3.wasm')
+    const plain = await sw(plainDir)
+    for (const url of DB) expect(shellOf(plain)).not.toContain(url)
+    expect(plain).not.toContain('const DB')
+  })
+
+  test('a device that holds a database gets its engine at install and at activate', async () => {
+    // At install, so a release does not strand rows the device already holds;
+    // at activate, because a first visit opened the database before this
+    // worker claimed the page and its fetches never reached the handler.
+    const dir = await build({ 'index.html': PAGE, 'fjs-sqlite/sqlite3.wasm': 'wasm' })
+    await writeOfflineShell({ db: true }, dir)
+    const src = await sw(dir)
+    expect(src).toContain('c.addAll(SHELL)).then(warmDb)')
+    expect(src).toMatch(/clients\.claim\(\)\n\s+await warmDb\(\)/)
+    expect(src).toContain('navigator.storage.getDirectory()')
   })
 
   test('include widens it by name', async () => {
@@ -258,14 +282,18 @@ describe('the byte budget', () => {
 })
 
 describe('what the worker will not do', () => {
-  test('it never writes to the cache at runtime', async () => {
+  test('it writes to the cache at runtime only for the device database files', async () => {
     // A runtime cache would eventually answer a read with a row the live layer
     // believes it has already corrected. Asserted against the SOURCE, because a
     // behavioural test would pass on the day one was added.
-    const dir = await build({ 'index.html': PAGE })
+    const dir = await build({ 'index.html': PAGE, 'fjs-sqlite/sqlite3.wasm': 'wasm' })
     await writeOfflineShell(true, dir)
+    expect(/\.put\(/.test(await sw(dir))).toBe(false)
+
+    await writeOfflineShell({ db: true }, dir)
     const src = await sw(dir)
-    expect(/\.put\(/.test(src)).toBe(false)
+    expect(src.match(/\.put\(/g)).toHaveLength(1)
+    expect(src).toMatch(/if \(DB\.includes\(url\.pathname\)\) \{[^]*?c\.put\(url\.pathname/)
   })
 
   test('it answers only for a precached path or a navigation', async () => {

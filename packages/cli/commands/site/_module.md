@@ -21,6 +21,7 @@ An app may have this surface and no `web/` at all.
 | `fli dev:site` | Vite over `site/`, port 8600, routes served as an app |
 | `fli site:build` | the bundle, then one prerendered HTML file per route |
 | `fli site:serve` | serve `dist/` the way a static host does |
+| `fli site:deploy` | ship `dist/` to the Cloudflare Worker named for `siteUrl`; `--preview` as a version of it |
 
 **Dev is an SPA and the build is files.** `fli dev:site` is the writing loop;
 the publish check, the island chunks and the one-file-per-route output exist
