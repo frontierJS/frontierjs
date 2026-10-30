@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os'
 import { parseFile, createClient, GatePlugin, LEVELS, listMigrationFiles } from '../../../litestone/src/index.js'
 import { createTestEnv } from '../../../litestone/src/testing.js'
 import { introspect }     from '../../../litestone/src/core/migrate.js'
-import { historyGap }     from '../../../litestone/src/core/migrations.js'
+import * as migrations    from '../../../litestone/src/core/migrations.js'
 // The app's own resolver, not a stand-in. A gate test against a hand-written
 // getLevel proves the levels in this file, not the ones the API runs — and the
 // two disagreeing is exactly the failure @@gate exists to prevent.
@@ -38,6 +38,11 @@ import { RECLAIM_TARGET_NAMES } from '../../api/src/services/cleanup/targets.ts'
 // import is what keeps it a copy of the schema rather than a second opinion.
 import { NOTIFICATION_KINDS, NOTIFICATION_KIND_NAMES } from '../../api/src/domain/notification/kinds.ts'
 import { grantsFor } from '../../api/src/core/capabilities.ts'
+
+// Internal to litestone: migrations.d.ts types only the public verbs.
+const { historyGap } = migrations as unknown as {
+  historyGap: (parse: unknown, dir: string, opts: { dbName: string }) => { ok?: boolean }
+}
 
 const SCHEMA     = join(import.meta.dir, '..', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', 'migrations')
@@ -2528,7 +2533,7 @@ describe('App runtime columns', () => {
 // labelled by `name` alone shows rows a person cannot tell apart.
 describe('App display label', () => {
   test('names the environment as well as the app', () => {
-    const app   = parseFile(SCHEMA).schema.models.find((m: any) => m.name === 'App')
+    const app   = parseFile(SCHEMA).schema.models.find((m: any) => m.name === 'App')!
     const label = app.attributes.find((a: any) => a.kind === 'labelField')
     expect(label?.parts).toEqual([{ via: null, field: 'name' }, { via: 'environment', field: 'name' }])
   })

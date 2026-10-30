@@ -212,7 +212,7 @@ describe('the edge service', () => {
   beforeAll(async () => {
     const sys  = env.system as any
     const acct = await sys.account.create({ data: { slug: `dns-${tag()}`, displayName: 'DNS' } })
-    const own  = await sys.user.create({ data: { email: `dns-${tag()}@x.co`, accountId: acct.id } })
+    await sys.user.create({ data: { email: `dns-${tag()}@x.co`, accountId: acct.id } })
     site = await sys.workspace.create({ data: { accountId: acct.id, name: 'DNS', slug: `dns-${tag()}` } })
     // A developer is 4, below the Secret's read gate of 5 — the level the
     // service must NOT borrow, or the screen tells a developer no account exists.

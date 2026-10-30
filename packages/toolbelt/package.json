@@ -5,7 +5,7 @@
   "type": "module",
   "sideEffects": false,
   "scripts": {
-    "test": "node ../../scripts/tmp-run.mjs 'bun test test/doc-examples.test.js && bun test/run.js'",
+    "test": "node ../../scripts/tmp-run.mjs 'r=0; bun test test/doc-examples.test.js || r=$?; bun test/run.js || r=$?; exit $r'",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "exports": {

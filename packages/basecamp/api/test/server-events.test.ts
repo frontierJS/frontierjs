@@ -118,7 +118,7 @@ describe('a machine\'s history is written in one vocabulary', () => {
     const sys  = env.system as any
     const uniq = Math.random().toString(36).slice(2, 8)
     const acct = await sys.account.create({ data: { slug: `ev-${uniq}`, displayName: 'Ev' } })
-    const user = await sys.user.create({ data: { email: `e-${uniq}@x.co`, accountId: acct.id } })
+    await sys.user.create({ data: { email: `e-${uniq}@x.co`, accountId: acct.id } })
     const ws   = await sys.workspace.create({
       data: { accountId: acct.id, name: 'Fleet', slug: `fleet-${uniq}` },
     })

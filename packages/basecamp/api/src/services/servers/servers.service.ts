@@ -1056,7 +1056,7 @@ export default createService({
     // own diagnostic.
     const sys  = $.db.asSystem() as any
     const id   = $.id as string
-    const data = $.data as HeartbeatData
+    const data = $.data as unknown as HeartbeatData
 
     const server = await sys.server.findUnique({ where: { id } })
     if (!server) throw new NotFound(`Server '${id}' not found`)

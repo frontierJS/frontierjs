@@ -7,7 +7,6 @@
 
 import { describe, test, expect } from 'bun:test'
 import { readFileSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
-import { tmpdir }        from 'node:os'
 import { join }          from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { docFences, isRunnable } from '../src/docfences/docfences.js'

@@ -113,7 +113,7 @@ export default createService({
       orderBy: { hostname: 'asc' },
       limit, offset,
     })
-    return { ...result, data: result.data.map(decorate) }
+    return { ...result, data: (result.data as Record<string, unknown>[]).map(decorate) }
   },
 
   async get() {

@@ -217,7 +217,7 @@ describe('the monitor sweep grades every destination', () => {
     const sys  = env.system as any
     const uniq = () => Math.random().toString(36).slice(2, 8)
     const acct = await sys.account.create({ data: { slug: `a-${uniq()}`, displayName: 'A' } })
-    const user = await sys.user.create({ data: {
+    await sys.user.create({ data: {
       email: `m-${uniq()}@x.co`, accountId: acct.id, status: 'active' } })
     ws = await sys.workspace.create({
       data: { accountId: acct.id, name: 'Fleet', slug: `f-${uniq()}` } })

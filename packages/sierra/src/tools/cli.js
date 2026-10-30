@@ -5,6 +5,7 @@
 //   sierra routes --config config/sierra.config.js --check  exit 1 if it is stale (CI)
 //   sierra routes --config config/sierra.config.js --stdout
 //   sierra mcp --out /abs/app/api/dist/mcp                    one view per resource file
+//   sierra site --serve | --compile | --deploy [--preview [name]] [--dry]
 //
 // Run it from the app's WEB ROOT — the directory Vite is rooted at, which is
 // what `routesDir` in the config is relative to. The snapshot lands there for
@@ -221,10 +222,11 @@ async function cmdMcp() {
 // by something other than this package's Vite config compiles too.
 
 async function cmdSite() {
-  if (!flag('serve') && !flag('compile')) {
+  if (!flag('serve') && !flag('compile') && !flag('deploy')) {
     fatal(
       'sierra site --serve [--port N] serves the built site;\n' +
-      '     sierra site --compile [--out bin/site] [--target T] makes it one executable.\n' +
+      '     sierra site --compile [--out bin/site] [--target T] makes it one executable;\n' +
+      '     sierra site --deploy [--preview [name]] [--dry] ships it to Cloudflare.\n' +
       '     Build it with `vite build -c config/vite.config.js` — a static\n' +
       '     target is an ordinary Vite build that prerenders afterwards.'
     )
@@ -232,6 +234,26 @@ async function cmdSite() {
 
   const configPath = getFlag('config') ?? 'config/sierra.config.js'
   const absConfig  = resolve(configPath)
+
+  // A deploy derives the Worker from the config (FJS-D1213), so there is no
+  // --dir form: a build somebody else produced has no siteUrl to name it by.
+  if (flag('deploy')) {
+    if (!existsSync(absConfig))
+      fatal(`No Sierra config at ${rel(absConfig)} — the Worker is named for its siteUrl; name one with --config`)
+    const mod = await import(`file://${absConfig}`)
+    const { deploySite } = await import('../site/cloudflare.js')
+    let made
+    try {
+      made = await deploySite({
+        root:    process.cwd(),
+        config:  mod.default ?? mod,
+        preview: flag('preview'),
+        alias:   getFlag('preview') ?? undefined,
+        dry:     flag('dry'),
+      })
+    } catch (err) { fatal(err.message) }
+    process.exit(made.exitCode)
+  }
 
   // The output directory comes from the config where there is one, so a site
   // that moved its outDir is served from where it actually lands. `--dir` is
@@ -297,6 +319,8 @@ if (cmd === 'routes') {
   console.log('            cache and 404 answers a static host gives (--dir to point at a build)')
   console.log('            --compile [--out bin/site] [--target T]  the same server and the build')
   console.log('            as one executable (needs bun; T is a bun target, e.g. bun-darwin-arm64)')
+  console.log('            --deploy [--preview [name]] [--dry]  ship the build to the Cloudflare Worker')
+  console.log('            named for siteUrl; --preview uploads a review build as a version of it')
   console.log()
   console.log('  Run from the SURFACE root, not the app root — web/ for routes and mcp, widgets/')
   console.log('  for widgets, site/ for a site. Each is a Vite root, and every path in a sierra')

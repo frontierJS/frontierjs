@@ -66,7 +66,11 @@ export function firstLoadRefs(html) {
 /** The bytes a built surface puts on the wire. `dist` is the build directory. */
 export function measureSurface(dist) {
   if (!existsSync(dist)) return null
-  const files = walk(dist)
+  // An SPA build writes dist/client/ and a static build writes dist/ itself; the
+  // shipped tree is wherever index.html is. Vite empties only its own outDir, so
+  // walking dist/ whole would gate an older build's leftovers and the server half.
+  const pageRoot = existsSync(join(dist, 'index.html')) || !existsSync(join(dist, 'client')) ? dist : join(dist, 'client')
+  const files = walk(pageRoot)
   const kinds = { js: [0, 0], css: [0, 0], html: [0, 0], other: [0, 0] }
   let largest = { file: null, brotli: 0 }
   const compressed = new Map()
@@ -82,9 +86,6 @@ export function measureSurface(dist) {
     if (kind === 'js' && z > largest.brotli) largest = { file: relative(dist, f.path), brotli: z }
   }
 
-  // An SPA build writes dist/client/ (the server half is not shipped to a browser),
-  // a static build writes dist/ itself; the page is wherever index.html is.
-  const pageRoot = existsSync(join(dist, 'index.html')) ? dist : join(dist, 'client')
   const index = join(pageRoot, 'index.html')
   let first = null
   if (existsSync(index)) {

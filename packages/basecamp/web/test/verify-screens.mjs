@@ -1885,7 +1885,6 @@ try {
   await typeIn('dialog[open] [name=pathPrefix]', '/api')
   await click('#route-save')
   const madeRoute = await eventually(async () => (await apiGet(`/domain-routes?domainId=${dnsRow?.id}`)).body?.data?.[0], r => !!r)
-  const routedTo = madeRoute && (await apiGet(`/apps/${madeRoute.appId}`)).body
   check('a path route is made from DNS', madeRoute?.pathPrefix === '/api' && madeRoute?.appId === routeApp?.id,
     `prefix ${madeRoute?.pathPrefix} app ${madeRoute?.appId} wanted ${routeApp?.id}`)
   await until(`document.querySelectorAll('#route-rows tbody tr').length`, n => n > 0, 'the new route never listed')

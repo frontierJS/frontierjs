@@ -785,11 +785,13 @@ function refsIn(text = '', ids) {
  * Repo-relative paths out of markdown links. A `#fjs-d04` anchor is a
  * cross-reference to another record, an `http` link is somebody else's tree,
  * and a `#L134` fragment is a line inside a file that is still the same file.
+ * Code is not a link: `mod[v](ctx, app)` in a span would read as one to `ctx, app`.
  */
 export function linkedFiles(text = '') {
   const out = new Set()
+  const prose = text.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '')
 
-  for (const [, target] of text.matchAll(/\]\(([^)]+)\)/g)) {
+  for (const [, target] of prose.matchAll(/\]\(([^)]+)\)/g)) {
     const path = target.split('#')[0].trim()
     if (!path || /^[a-z]+:/i.test(path)) continue
     out.add(path)

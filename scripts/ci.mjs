@@ -172,6 +172,7 @@ const MAX_BUFFER = 64 * 1024 * 1024
 const allowances = loadAllowances()
 const problems   = []   // fatal — sets the exit code
 const notes      = []   // worth saying, does not fail the run
+const outcomes   = []   // one per phase run, for the closing summary
 
 let _dirs = null        // workspaceDirs() memo — declared here so the phases,
                         // which run at module top level, are not in its TDZ
@@ -243,8 +244,10 @@ async function runPhase(name) {
   const from = problems.length
   currentPhase = name
   runLog.emit('phase', { name })
+  const warned = warnings
   await PHASES[name]()
   runLog.emit('phase-end', { name, ms: Date.now() - t0, ok: problems.length === from })
+  outcomes.push({ name, ms: Date.now() - t0, failed: problems.slice(from), warned: warnings - warned })
 }
 
 // Something long is about to start. The step that answers it carries the same
@@ -654,7 +657,13 @@ function structure() {
       `      \`fli check\` runs these same rules against a client app; \`--list\` prints the table.\n` +
       `      A genuine exception is a named entry under "structure" in scripts/ci-allowances.json.`
     )
-    for (const line of formatFindings(warns, base)) note(`${label} ${line.trim()}`)
+    // One line per rule: forty findings of one rule printed one per line is the
+    // wall that hides the failures above it. The findings go to the file.
+    const byRule = {}
+    for (const f of warns) (byRule[f.rule] ??= []).push(f)
+    for (const [rule, list] of Object.entries(byRule))
+      note(`${label} ⚠ ${rule} — ${list.length} finding(s) · ${label === 'packages' ? `listed in ${relative(ROOT, LAST_FILE)}` : `\`fli check\` in ${label} lists them`}`,
+           formatFindings(list, base))
     for (const key of result.stale) {
       note(`structure allowance is stale — nothing under ${label} matches ${key}. Remove it.`)
     }
@@ -2161,7 +2170,10 @@ function ok(message, ms, meta = {}) {
   step('ok', message, { ms, ...meta })
 }
 
+let warnings = 0
+
 function warn(message, ms, meta = {}) {
+  warnings++
   console.log(`  ! ${message}${ms ? ` (${(ms / 1000).toFixed(1)}s)` : ''}`)
   step('warn', message, { ms, ...meta })
 }
@@ -2183,8 +2195,9 @@ function step(status, label, { key, ms, counts, detail, output, fix } = {}) {
   runLog.emit('step', { phase: currentPhase, status, label, key, ms, counts, detail, output, fix })
 }
 
-function note(message) {
-  notes.push(message)
+// `detail` lines reach .cache/ci-last.txt and a runner's log, not the terminal.
+function note(message, detail = []) {
+  notes.push({ message, detail })
   runLog.emit('note', { text: message })
 }
 
@@ -2220,15 +2233,51 @@ function escapeProp(value) {
 
 function report() {
   const seconds = ((Date.now() - started) / 1000).toFixed(1)
+  const inline  = !!process.env.GITHUB_ACTIONS
   const lines = []
   const say = line => { console.log(line); lines.push(line) }
 
   if (notes.length) {
     say(`\n─── notes ${'─'.repeat(45)}`)
-    for (const n of notes) { say(`  · ${n}`); annotate('notice', n) }
+    for (const n of notes) {
+      say(`  · ${n.message}`)
+      for (const d of n.detail) { lines.push(`      ${d}`); if (inline) console.log(`      ${d}`) }
+      annotate('notice', [n.message, ...n.detail].join('\n'))
+    }
   }
 
   runLog.emit('end', { ok: !problems.length, ms: Date.now() - started })
+
+  // A reader pasting stdout into an agent pays per line: fixture JSON and
+  // snapshot diffs outweigh the headers ten to one. The detail goes to the
+  // file only; a runner has no file to read back, so it prints in full.
+  if (problems.length) {
+    lines.push(`\n─── ${problems.length} failure(s) in full ${'─'.repeat(27)}`)
+    for (const p of problems) {
+      const output = outputText(p.output)
+      lines.push(`\n✗ ${p.message}`)
+      if (inline) console.log(`\n✗ ${p.message}`)
+      if (output) {
+        lines.push(output)
+        if (inline) console.log(output)
+      }
+      annotate('error', output ? `${p.message}\n\n${output.slice(0, 4000)}` : p.message)
+    }
+  }
+
+  // The last thing on screen is what to do: every phase's verdict, and each
+  // failure's first line under the phase that raised it.
+  say(`\n─── summary ${'─'.repeat(43)}`)
+  const green = outcomes.filter(o => !o.failed.length && !o.warned)
+  if (green.length) say(`  ✓ ${green.map(o => o.name).join(' · ')}`)
+  for (const o of outcomes) {
+    if (!o.failed.length && !o.warned) continue
+    const mark = o.failed.length ? '✗' : '!'
+    const tally = [o.failed.length && `${o.failed.length} failure(s)`, o.warned && `${o.warned} warning(s)`].filter(Boolean).join(', ')
+    say(`  ${mark} ${o.name.padEnd(11)} ${tally}`)
+    for (const p of o.failed) say(`      ${p.message.split('\n')[0]}`)
+  }
+  if (notes.length) say(`  · ${notes.length} note(s) — advisory, do not fail the run`)
 
   if (!problems.length) {
     say(`\n✓ CI passed in ${seconds}s${fast ? ' (fast tier — suites not run)' : ''}\n`)
@@ -2236,25 +2285,8 @@ function report() {
     process.exit(0)
   }
 
-  say(`\n─── ${problems.length} failure(s) ${'─'.repeat(35)}`)
-  // A reader pasting stdout into an agent pays per line: fixture JSON and
-  // snapshot diffs outweigh the headers ten to one. The detail goes to the
-  // file only; a runner has no file to read back, so it prints in full.
-  const inline = !!process.env.GITHUB_ACTIONS
-  for (const p of problems) {
-    const output = outputText(p.output)
-    const head   = `\n✗ ${p.message}`
-    lines.push(head)
-    // The phase section above already printed the whole message.
-    console.log(inline ? head : `\n✗ ${p.message.split('\n')[0]}`)
-    if (output) {
-      lines.push(output)
-      if (inline) console.log(output)
-    }
-    annotate('error', output ? `${p.message}\n\n${output.slice(0, 4000)}` : p.message)
-  }
-  say(`\n✗ CI failed in ${seconds}s\n`)
-  if (!inline) console.log(`  detail: ${relative(ROOT, LAST_FILE)} (${problems.length} failure(s) in full)\n`)
+  say(`\n✗ CI failed in ${seconds}s — ${problems.length} failure(s)\n`)
+  if (!inline) console.log(`  detail: ${relative(ROOT, LAST_FILE)} (failures and notes in full)\n`)
   saveLast(lines)
   process.exit(1)
 }

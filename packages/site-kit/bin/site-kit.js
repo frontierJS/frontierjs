@@ -35,7 +35,7 @@
 // running runtime, and a companion may use what only Bun has.
 
 import { existsSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { resolve } from 'node:path'
 
 const args = process.argv.slice(2)
 const flag = (name) => {
@@ -86,14 +86,6 @@ async function functionsEntry() {
     process.exit(1)
   }
   return entry
-}
-
-// What wrangler names a preview after when nothing else does; undefined on a
-// detached HEAD, which the alias then refuses by name.
-function gitBranch() {
-  const r = Bun.spawnSync(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], { cwd: root })
-  const branch = r.exitCode === 0 ? r.stdout.toString().trim() : ''
-  return branch && branch !== 'HEAD' ? branch : undefined
 }
 
 if (cmd === 'fetch') {
@@ -182,37 +174,15 @@ if (cmd === 'fetch') {
   })
   console.log(`\n  ·  serving ${dir}/dist at ${server.url}\n`)
 } else if (cmd === 'deploy') {
-  // What ships is the dist the last build wrote, so a deploy after `test` ships
-  // the build the drive just passed rather than a second one it never saw.
   const { resolveSite } = await import('../config/vite.js')
-  const { writeCloudflare, previewAlias } = await import('@frontierjs/sierra/site/cloudflare')
-  let made, alias
+  const { deploySite } = await import('@frontierjs/sierra/site/cloudflare')
   try {
-    made = await writeCloudflare({ root, config: (await resolveSite({ root })).sierra, preview })
-    if (preview) alias = previewAlias(made.wrangler.name, previewName ?? gitBranch())
+    const made = await deploySite({ root, config: (await resolveSite({ root })).sierra, preview, alias: previewName, dry })
+    process.exitCode = made.exitCode
   } catch (e) {
     console.error(`site-kit deploy: ${e.message}`)
     process.exit(1)
   }
-  let wrangler
-  try {
-    wrangler = resolve(dirname(Bun.resolveSync('wrangler/package.json', root)), 'bin/wrangler.js')
-  } catch {
-    console.error(`site-kit deploy: wrangler does not resolve from ${root}; the site installs it`)
-    process.exit(1)
-  }
-  // A preview is uploaded and never deployed: wrangler prints its version URL,
-  // and `<alias>-<name>` follows the latest upload under that alias.
-  const verb = preview
-    ? ['versions', 'upload', '--preview-alias', alias, '--tag', 'preview', '--message', `site-kit preview: ${alias}`]
-    : ['deploy']
-  console.log(preview
-    ? `\n  ·  ${dir}/dist → a preview version of Worker ${made.wrangler.name}, aliased ${alias}\n`
-    : `\n  ·  ${dir}/dist → Worker ${made.wrangler.name} at ${made.wrangler.routes[0].pattern}\n`)
-  const run = Bun.spawnSync(['node', wrangler, ...verb, '-c', made.config, ...(dry ? ['--dry-run'] : [])], {
-    cwd: root, stdio: ['inherit', 'inherit', 'inherit'],
-  })
-  process.exitCode = run.exitCode
 } else {
   // The site's vite, which is a peer: Vite finds a preset's preprocessors
   // (ksite's sass) beside its own copy. A bare import from a linked site-kit

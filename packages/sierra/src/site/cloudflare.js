@@ -27,9 +27,11 @@
  * ran, so `directory` is written relative to `.sierra/`.
  */
 
+import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { basename, join, relative, resolve } from 'node:path'
+import { createRequire } from 'node:module'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { FUNCTIONS_ENTRY, functionRoutes } from '../postbuild/functions.js'
@@ -203,4 +205,56 @@ export async function writeCloudflare({ root, config, preview = false }) {
   const path = join(root, WRANGLER_CONFIG)
   await writeFile(path, JSON.stringify(wrangler, null, 2) + '\n', 'utf8')
   return { config: path, worker, wrangler }
+}
+
+/** What wrangler names a preview after when nothing else does; undefined on a detached HEAD. */
+export function gitBranch(cwd) {
+  const r = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd, encoding: 'utf8' })
+  const branch = r.status === 0 ? r.stdout.trim() : ''
+  return branch && branch !== 'HEAD' ? branch : undefined
+}
+
+/**
+ * Ship the dist the last build wrote, never a rebuild, so what goes out is
+ * what the drive just passed. The one caller of `wrangler deploy` and
+ * `wrangler versions upload`: site-kit, `sierra site --deploy` and fli's
+ * `site:deploy` all reach Cloudflare through here.
+ *
+ * Wrangler is the site's, resolved from `root` and run under node; Sierra does
+ * not depend on it, so a site that never deploys never installs it.
+ *
+ * @param {object} opts
+ * @param {string} opts.root  project root, where `.sierra/` is
+ * @param {object} opts.config  the Sierra config
+ * @param {boolean} [opts.preview]  upload a version under an alias, never deployed
+ * @param {string} [opts.alias]  the preview's name; the git branch otherwise
+ * @param {boolean} [opts.dry]  wrangler's `--dry-run`: bundle, upload nothing
+ * @param {(line: string) => void} [opts.log]
+ * @returns {Promise<{ name: string, alias: string | null, exitCode: number }>}
+ */
+export async function deploySite({ root, config, preview = false, alias, dry = false, log = console.log }) {
+  const made = await writeCloudflare({ root, config, preview })
+  const name = made.wrangler.name
+  const named = preview ? previewAlias(name, alias ?? gitBranch(root)) : null
+
+  let wrangler
+  try {
+    wrangler = resolve(dirname(createRequire(join(root, 'package.json')).resolve('wrangler/package.json')), 'bin/wrangler.js')
+  } catch {
+    throw new Error(`[Sierra] cloudflare: wrangler does not resolve from ${root}; the site installs it`)
+  }
+
+  // A preview is uploaded and never deployed: wrangler prints its version URL,
+  // and `<alias>-<name>` follows the latest upload under that alias.
+  const verb = named
+    ? ['versions', 'upload', '--preview-alias', named, '--tag', 'preview', '--message', `preview: ${named}`]
+    : ['deploy']
+  const dist = relative(root, resolve(root, config.outDir ?? 'dist'))
+  log(named
+    ? `\n  ·  ${dist} → a preview version of Worker ${name}, aliased ${named}\n`
+    : `\n  ·  ${dist} → Worker ${name} at ${made.wrangler.routes[0].pattern}\n`)
+  const run = spawnSync('node', [wrangler, ...verb, '-c', made.config, ...(dry ? ['--dry-run'] : [])], {
+    cwd: root, stdio: 'inherit',
+  })
+  return { name, alias: named, exitCode: run.status ?? 1 }
 }
