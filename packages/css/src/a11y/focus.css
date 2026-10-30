@@ -102,7 +102,8 @@
   .navlink,
   summary.navlist-label,
   .disclosure-summary,
-  .pill-close
+  .pill-close,
+  .drawer-handle
 ):focus-visible,
 :where(.field, .skip-link):focus {
   outline:        var(--ring-width) var(--ring-style) var(--ring-color, var(--ring, var(--color-primary)));
@@ -143,8 +144,9 @@
  *   summary.navlist-label  a folding group's label, flush the same way
  *   .disclosure-summary  fills its bordered box edge to edge
  *   .pill-close          would spill outside the pill it sits in
+ *   .drawer-handle       an edge of the drawer, so outward is the backdrop
  */
-:where(.tab, .navlink, summary.navlist-label, .disclosure-summary, .pill-close):focus-visible {
+:where(.tab, .navlink, summary.navlist-label, .disclosure-summary, .pill-close, .drawer-handle):focus-visible {
   outline-offset: calc(var(--ring-offset) * -1);
 }
 

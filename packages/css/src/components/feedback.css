@@ -184,7 +184,7 @@
   color:       var(--ink-mute);
 }
 /* Icon sizing: icon.css. .empty-icon sets --icon-size: 2rem there — and
-   gets the `[class*=" i-heroicons"]` branch this rule was missing. The
+   gets the `[class*=" i-"]` branch this rule was missing. The
    font-size above reads the same token so a text glyph matches an <svg>. */
 .empty-title {
   margin:      0;

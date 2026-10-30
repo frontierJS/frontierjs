@@ -11,8 +11,9 @@
  * The operators asserted here are exactly the ones the wire carries — junction's
  * `parseWhere`/`translateOps` and litestone's `buildWhere` between them — and the
  * expectations are what SQL would answer, NULL semantics included: `col != 'x'`
- * does not match a NULL column, `NOT IN` does. Reading them as JavaScript gives
- * the wrong answer for both.
+ * does not match a NULL column, so litestone ORs `IS NULL` back in for `!=` and
+ * `NOT IN` alike. Reading them as JavaScript gives the wrong answer for `NOT IN`
+ * bare.
  *
  * Lives here rather than in sierra because there are two tethers and they
  * had one implementation between them (`FJS-493`). What stays in sierra is the
@@ -89,8 +90,8 @@ test('match: operators — $nin matches a NULL column, because NOT IN would not'
 })
 
 
-test('match: operators — $ne does not match a NULL column, because != would not', function () {
-  assert.equal(match(row({ score: null }), { score: { $ne: 1 } }), false)
+test('match: operators — $ne matches a NULL column, as $nin does (FJS-3582)', function () {
+  assert.equal(match(row({ score: null }), { score: { $ne: 1 } }), true)
   assert.equal(match(row({ score: 2 }),    { score: { $ne: 1 } }), true)
 })
 

@@ -108,7 +108,7 @@ compose freely, so Button takes each as its own prop:
 
 **layout** — `Card` `Accordion` `AccordionItem` `Tabs` `TabList` `Tab` `TabPanel`
 
-**overlay** — `Modal` `Drawer` `Popover` `Tooltip` `HoverCard` `DropdownMenu`
+**overlay** — `Modal` `Drawer` `Window` `Popover` `Tooltip` `HoverCard` `DropdownMenu`
 `DropdownItem` `DropdownGroup` `DropdownSeparator` `CommandPalette`
 `ConfirmationPopover` `ConfirmPanel` `ConfirmProvider`
 

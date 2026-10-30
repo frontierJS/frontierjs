@@ -1,0 +1,277 @@
+<script>
+  // Window.mesa
+  // The kit's one non-modal panel (FJS-D1036): a floating box the person keeps
+  // working under. Drawer and Modal stay modal -- a Window is `position: fixed`
+  // and takes neither the top layer, the backdrop nor the inert page, so the
+  // page behind it keeps reading, selecting and picking.
+  //
+  // Its geometry is `box` -- `{ x, y, w, h }` in CSS px, or null while it sits
+  // at its `anchor` corner. Moving (the title bar), resizing (the grip) and
+  // the arrow keys on either write `box`, and `onchange(box)` fires when the
+  // gesture ends. The kit stores nothing (FJS-D1661): remembering the box is
+  // the app's line over `bind:box`.
+  //
+  //   <Window bind:open bind:box title="Support" anchor="bottom-right"
+  //           onchange={(b) => localStorage.box = JSON.stringify(b)}>
+  //     {#snippet launcher()}Help{/snippet}
+  //     ...
+  //   </Window>
+  //
+  // `dock="right"` pins it to an edge instead (left | right | top | bottom):
+  // it cannot be moved, and `box.w` (or `box.h` for top and bottom) is the
+  // thickness the grip on its inner edge resizes. `launcher` is the content of
+  // the corner button shown while the window is shut; a press opens it.
+  // `action` is the title bar's trailing content, before the close button.
+  //
+  // Both gestures are `drag()`, so a touch the browser takes for a scroll ends
+  // as a cancel and the box snaps back to where the press began.
+
+  import { cx, uid } from '../../utils.js'
+  import { drag } from '../../drag.js'
+
+  export let open       = false
+  export let title      = ''
+  export let box        = null     // { x, y, w, h } | null -- bindable
+  export let resizable  = true
+  export let minWidth   = 240
+  export let minHeight  = 160
+  export let action     = null     // snippet: title bar content, after the title
+  export let launcher   = null     // snippet: the corner button's content while shut
+  export let onchange   = undefined
+  export let onclose    = undefined
+
+  // anchor and dock are snapshot at mount -- a window does not change corner.
+  export var anchor = 'bottom-right'  // 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+  export var dock   = null            // null | 'left' | 'right' | 'top' | 'bottom'
+
+  const CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
+  const corner  = CORNERS.includes(anchor) ? anchor : 'bottom-right'
+  const vertical = dock === 'top' || dock === 'bottom'
+
+  const titleId = uid('window-title')
+  const STEP = 32
+
+  let el
+
+  // `position: fixed` insets measure from the viewport less its scrollbar or
+  // scrollbar-gutter; the root's width is that, while innerWidth and the root's
+  // clientWidth both include the gutter.
+  const viewW = () => document.documentElement.getBoundingClientRect().width
+  const viewH = () => innerHeight
+
+  const num = (v, min, max) => Math.min(Math.max(v, min), Math.max(min, max))
+
+  // Where a free window may sit: wholly inside the viewport.
+  function fit(b) {
+    const w = num(b.w, minWidth,  viewW())
+    const h = num(b.h, minHeight, viewH())
+    return { x: num(b.x, 0, viewW() - w), y: num(b.y, 0, viewH() - h), w, h }
+  }
+
+  function measure() {
+    const r = el.getBoundingClientRect()
+    return { x: r.left, y: r.top, w: r.width, h: r.height }
+  }
+
+  function set(next) {
+    box = dock ? next : fit(next)
+  }
+
+  // Docked, only the thickness is a size; the other three numbers are the
+  // edge's, so a bound box from a free window cannot skew it.
+  function thick(b, grow) {
+    return vertical
+      ? { ...b, h: num(grow, minHeight, viewH()) }
+      : { ...b, w: num(grow, minWidth,  viewW()) }
+  }
+
+  function startOf() {
+    return { box, rect: measure() }
+  }
+
+  function endOf(_e, from, { cancelled }) {
+    if (cancelled) { box = from.box; return }
+    onchange?.(box)
+  }
+
+  const accept = (e) => e.button === 0 && !e.target.closest('button')
+
+  const move = () => ({
+    accept,
+    start: startOf,
+    move: (_e, { rect }, d) => set({ ...rect, x: rect.x + d.x, y: rect.y + d.y }),
+    end: endOf,
+  })
+
+  const resize = () => ({
+    accept,
+    start: startOf,
+    move: (_e, { rect }, d) => {
+      if (!dock) return set({ ...rect, w: rect.w + d.x, h: rect.h + d.y })
+      const grow = { left: rect.w + d.x, right: rect.w - d.x, top: rect.h + d.y, bottom: rect.h - d.y }[dock]
+      set(thick(rect, grow))
+    },
+    end: endOf,
+  })
+
+  const ARROWS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
+
+  // One arrow press is one finished gesture, so it reports on its own.
+  function nudge(e, what) {
+    const dir = ARROWS[e.key]
+    if (!dir) return
+    e.preventDefault()
+    const r = measure()
+    if (what === 'move') {
+      if (dock) return
+      set({ ...r, x: r.x + dir[0] * STEP, y: r.y + dir[1] * STEP })
+    } else if (dock) {
+      const sign = { left: [1, 0], right: [-1, 0], top: [0, 1], bottom: [0, -1] }[dock]
+      set(thick(r, (vertical ? r.h : r.w) + (dir[0] * sign[0] + dir[1] * sign[1]) * STEP))
+    } else {
+      set({ ...r, w: r.w + dir[0] * STEP, h: r.h + dir[1] * STEP })
+    }
+    onchange?.(box)
+  }
+
+  function close() {
+    open = false
+    onclose?.()
+  }
+
+  function toggle() {
+    open = !open
+  }
+
+  // The inline size of a free window is `box`; a docked one only its thickness.
+  const px = (n) => (n == null ? null : n + 'px')
+  $: left   = !dock && box ? px(box.x) : null
+  $: top    = !dock && box ? px(box.y) : null
+  $: width  = box && !vertical ? px(box.w) : null
+  $: height = box && (vertical || !dock) ? px(box.h) : null
+</script>
+
+{#if open}
+  <section
+    bind:this={el}
+    class={cx('fjs-window', dock ? 'dock-' + dock : 'at-' + corner, box && !dock && 'placed')}
+    role="dialog"
+    aria-modal="false"
+    aria-labelledby={title ? titleId : null}
+    {class}
+    {...$attributes}
+    style:left={left}
+    style:top={top}
+    style:width={width}
+    style:height={height}
+  >
+    <div class="surface-header fjs-window-bar" class:fjs-window-fixed={!!dock}>
+      <h2
+        id={titleId}
+        class="fjs-window-title"
+        tabindex={dock ? null : 0}
+        aria-label={dock ? null : title ? title + ' (arrow keys move)' : 'Move window'}
+        onkeydown={(e) => nudge(e, 'move')}
+        {@attach drag(move)}
+        style:margin="0"
+      >{title}</h2>
+      {#if action}{@render action?.()}{/if}
+      <button type="button" class="dialog-close" aria-label="Close" onclick={close}>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="surface-body fjs-window-body">
+      <slot />
+    </div>
+
+    {#if resizable}
+      <div
+        class="fjs-window-grip"
+        role="separator"
+        tabindex="0"
+        aria-label="Resize"
+        aria-orientation={dock ? (vertical ? 'horizontal' : 'vertical') : null}
+        onkeydown={(e) => nudge(e, 'resize')}
+        {@attach drag(resize)}
+      ></div>
+    {/if}
+  </section>
+{:else if launcher}
+  <button type="button" class={cx('fjs-window-launcher', 'at-' + corner)} aria-expanded="false" onclick={toggle}>
+    {@render launcher?.()}
+  </button>
+{/if}
+
+<style>
+  .fjs-window,
+  .fjs-window-launcher {
+    position: fixed;
+    z-index:  var(--z-popover);
+  }
+  .fjs-window {
+    display:        flex;
+    flex-direction: column;
+    inline-size:    360px;
+    block-size:     420px;
+    max-inline-size: 100vw;
+    max-block-size:  100vh;
+    margin:         0;
+    padding:        0;
+    overflow:       hidden;
+    color:          var(--ink);
+    background:     var(--surface);
+    border:         var(--border-width) solid var(--rule);
+    border-radius:  var(--field-radius);
+    box-shadow:     var(--shadow-lg);
+  }
+  .fjs-window-body { flex: 1; overflow-y: auto; }
+
+  /* Anchored: a corner, offset by the page's own gutter. A placed window
+     (a drag has written `box`) is positioned by left/top alone, so the corner
+     inset must not also pull on it. */
+  .fjs-window.at-top-left,    .fjs-window-launcher.at-top-left    { inset-block-start: var(--space-lg); inset-inline-start: var(--space-lg); }
+  .fjs-window.at-top-right,   .fjs-window-launcher.at-top-right   { inset-block-start: var(--space-lg); inset-inline-end:   var(--space-lg); }
+  .fjs-window.at-bottom-left, .fjs-window-launcher.at-bottom-left { inset-block-end:   var(--space-lg); inset-inline-start: var(--space-lg); }
+  .fjs-window.at-bottom-right,.fjs-window-launcher.at-bottom-right{ inset-block-end:   var(--space-lg); inset-inline-end:   var(--space-lg); }
+  .fjs-window.placed { inset: auto; }
+
+  /* Docked: the edge's geometry; box.w / box.h is the thickness. */
+  .fjs-window.dock-left,
+  .fjs-window.dock-right  { inset-block: 0; block-size: auto; border-radius: 0; }
+  .fjs-window.dock-top,
+  .fjs-window.dock-bottom { inset-inline: 0; inline-size: auto; block-size: 240px; border-radius: 0; }
+  .fjs-window.dock-left   { inset-inline-start: 0; }
+  .fjs-window.dock-right  { inset-inline-end:   0; }
+  .fjs-window.dock-top    { inset-block-start:  0; }
+  .fjs-window.dock-bottom { inset-block-end:    0; }
+
+  .fjs-window-title {
+    flex:         1;
+    cursor:       grab;
+    touch-action: none;
+    user-select:  none;
+  }
+  .fjs-window-fixed .fjs-window-title { cursor: default; }
+
+  .fjs-window-grip {
+    position:     absolute;
+    touch-action: none;
+    inline-size:  var(--space-xl);
+    block-size:   var(--space-xl);
+    inset-block-end: 0;
+    inset-inline-end: 0;
+    cursor: nwse-resize;
+  }
+  .fjs-window.dock-left   .fjs-window-grip,
+  .fjs-window.dock-right  .fjs-window-grip { inset-block: 0; inline-size: var(--space-xs); block-size: auto; cursor: ew-resize; }
+  .fjs-window.dock-top    .fjs-window-grip,
+  .fjs-window.dock-bottom .fjs-window-grip { inset-inline: 0; block-size: var(--space-xs); inline-size: auto; cursor: ns-resize; }
+  .fjs-window.dock-left   .fjs-window-grip { inset-inline: auto 0; }
+  .fjs-window.dock-right  .fjs-window-grip { inset-inline: 0 auto; }
+  .fjs-window.dock-top    .fjs-window-grip { inset-block: auto 0; }
+  .fjs-window.dock-bottom .fjs-window-grip { inset-block: 0 auto; }
+  .fjs-window-grip:focus-visible { outline: var(--ring-width, 2px) solid var(--ring, currentColor); }
+</style>

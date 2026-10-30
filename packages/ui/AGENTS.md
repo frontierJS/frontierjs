@@ -118,7 +118,8 @@ the package has no root entry.
 | the app frame: the nav, a drawer below md, the section's tabs | `@frontierjs/ui/components/layout/Shell.mesa` in the `_module.mesa`, drawn from a `src/lib/nav.js` table that `@frontierjs/ui/nav` types. `layout` is `sidebar`, `rail` or `topbar`; a topbar draws an unlabeled group flat and a labeled one as one menu named by its label, and gives the drawer the nav below md. `collapsible` adds a fold control to a `sidebar` and `bind:collapsed` is the choice (the app persists it); folded is a plain rail that does not peek. `foldable` draws each labeled group of a sidebar and of the drawer as a `<details>` its label opens: the first labeled group starts open and the rest closed, and the group holding the current page opens on arrival; the choice is not persisted. The page, the session and Sierra's `isActive` arrive as props, because the kit cannot import Sierra. A `show` predicate is handed `{ user, level }` and nothing else, and one that throws SHOWS its entry. Signed out, the frame is drawn when the table offers a guest any entry, so a members-only table marks its groups `show: ({ user }) => !!user` or its sign-in page draws the members' nav. ⌘K's Navigate rows are `paletteItems(groups, session, go)` from the same module, so the palette and the nav cannot disagree |
 | tabs | `@frontierjs/ui/components/layout/Tabs.mesa` around `@frontierjs/ui/components/layout/TabList.mesa`, `@frontierjs/ui/components/layout/Tab.mesa`, `@frontierjs/ui/components/layout/TabPanel.mesa` |
 | disclosure sections | `@frontierjs/ui/components/layout/Accordion.mesa` around `@frontierjs/ui/components/layout/AccordionItem.mesa` |
-| a blocking dialog · a side panel | `@frontierjs/ui/components/overlay/Modal.mesa` · `@frontierjs/ui/components/overlay/Drawer.mesa` |
+| a blocking dialog · a side panel | `@frontierjs/ui/components/overlay/Modal.mesa` · `@frontierjs/ui/components/overlay/Drawer.mesa` — `resizable` puts a handle on a left or right drawer's inner edge, `bind:width` (px) and `minWidth`; it stores nothing, so remember the width in one line over `bind:width` (`FJS-D1654`) |
+| a floating panel the page stays live under (a chat, a notes box, an edge dock) | `@frontierjs/ui/components/overlay/Window.mesa` — `bind:open`, `bind:box` (`{ x, y, w, h }`, null while at its `anchor` corner), `dock`, an `action` snippet in the title bar, a `launcher` snippet for the corner button; it stores nothing, so remember the box in one line: `onchange={(b) => localStorage.box = JSON.stringify(b)}` (`FJS-D1661`) |
 | a menu of actions | `@frontierjs/ui/components/overlay/DropdownMenu.mesa` with `@frontierjs/ui/components/overlay/DropdownItem.mesa`, `@frontierjs/ui/components/overlay/DropdownGroup.mesa`, `@frontierjs/ui/components/overlay/DropdownSeparator.mesa` |
 | content that must escape a scroll container · a description on hover and focus | `@frontierjs/ui/components/overlay/Popover.mesa` · `@frontierjs/ui/components/overlay/Tooltip.mesa` |
 | a card on hover and focus for MANY triggers in one region (every element matching `selector`), one card and two listeners | `@frontierjs/ui/components/overlay/HoverCard.mesa` — the region is `children`, `content(el)` is handed the trigger; a trigger needs `tabindex="0"` for the keyboard, and a touch pointer never opens it |
@@ -353,7 +354,7 @@ caller's value replaces the component's own. Where they land is not uniform:
 
 | Component | Attributes land on |
 |---|---|
-| display · layout · feedback · `Modal` · `Drawer` | the outermost element |
+| display · layout · feedback · `Modal` · `Drawer` · `Window` | the outermost element |
 | `Popover` · `DropdownMenu` · `ConfirmationPopover` | the wrapper around the TRIGGER, never the panel |
 | every form control | the `<input>`, `<select>` or `<textarea>`, so `<label for>` and `aria-describedby` reach it |
 | `FileUpload` · `DatePicker` · `Slider` · `Thresholds` | the visible dropzone · the wrapper · the wrapper · the root, since there are N range inputs and no one control an `aria-describedby` could mean |
@@ -373,7 +374,36 @@ keep their contrast on it:
 `<Slider style={`--data-accent: hsl(${h} 80% 50%)`} … />`.
 
 **Trailing content has three names**: `actions` on `Form` and `Table`, `action`
-on `SectionHeader` and `EmptyState`, `footer` on `Modal`, `Drawer` and `Card`.
+on `SectionHeader`, `EmptyState` and `Drawer`, `footer` on `Modal`, `Drawer` and
+`Card`.
+
+---
+
+## Icons
+
+**The kit ships no icons and keeps no registry** (`FJS-D1655`). A component
+that shows one takes it as a snippet, as `Shell` does; it never takes an icon
+name. **An app writes ONE `Icon` component**, and every icon on every screen
+goes through it — two icon components are two copies of one decision, and
+they drift:
+
+```mesa
+<script>
+  import { icons } from '../lib/icons.js'   // name → path data, from the set the app chose
+  export let name
+</script>
+
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+     aria-hidden="true" {class} {...$attributes}>
+  {#each icons[name] ?? [] as d}<path {d} />{/each}
+</svg>
+```
+
+It carries no size. Inside a kit component (a button, a navlink, an alert) the
+css sizes it; anywhere else `class="icon"` does, and an unsized `<svg>` draws at
+300×150. Uno's preset-icons works too: any class starting `i-` is sized, not
+only `i-heroicons:`. An icon beside a label stays `aria-hidden`; an icon-only
+`<Button square>` puts the name in its `aria-label`.
 
 ---
 

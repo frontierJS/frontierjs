@@ -251,14 +251,17 @@ t('panel.rendersBothVerdictsSeparately', await probe(`
 // A verdict that stops a deploy must not be rendered in the tone of one that
 // does not. The tone comes off a table keyed by verdict, so this asserts the
 // lookup ran rather than that a particular colour is on screen.
+// The expected verdict comes from the server for the ref the panel selected:
+// the panel opens on the second ref, not on the first one graded above, and
+// two refs rarely share a verdict.
+const shownRef = await probe(`return document.getElementById('cmpRef').value`)
+const shown = (await post('/api/compare', { ref: shownRef })).json
 t('panel.theVerdictToneFollowsTheVerdict', await probe(`
   const b = [...document.querySelectorAll('#cmpPanel .badge')].find(x => x.textContent.startsWith('Deploy:'));
   const v = b.textContent.split(':')[1].trim();
   const tone = [...b.classList].find(c => ['success','warning','danger','muted'].includes(c));
   return { v, tone };
-`), { deploy: 'x' }.deploy === 'x'
-  ? { v: cmp.deploy.verdict, tone: { unchanged: 'success', expand: 'success', unknown: 'warning', contract: 'danger' }[cmp.deploy.verdict] }
-  : null)
+`), { v: shown.deploy.verdict, tone: { unchanged: 'success', expand: 'success', unknown: 'warning', contract: 'danger' }[shown.deploy.verdict] })
 
 // The note is a WARNING and not a footnote. The commonest one says a package
 // fragment came from the working tree; left small, it is a panel quietly

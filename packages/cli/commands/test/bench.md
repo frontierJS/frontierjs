@@ -4,7 +4,7 @@ description: What a built app costs — bytes on the wire, bytes on disk, memory
 examples:
   - fli test:bench
   - fli test:bench --update
-  - fli test:bench --boot "bun run api" --url http://localhost:8110/health --get /api/products
+  - fli test:bench --boot "bun run api" --url http://localhost:8110/api/health --get /api/products
 flags:
   update:
     type: boolean

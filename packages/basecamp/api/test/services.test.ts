@@ -591,6 +591,17 @@ describe('apps.find — the caller\'s $orderBy (FJS-2832)', () => {
     expect(mine(await apps().find({ environmentId: e.id }, { directives: { orderBy: '-name' } }))).toEqual(['zz', 'mm', 'aa'])
     expect(mine(await apps().find({ environmentId: e.id })).sort()).toEqual(['aa', 'mm', 'zz'])
   })
+
+  // FJS-3497: the picker's label reads `environment.name`, so it sends $populate.
+  test('an app list answers $populate rather than refusing it', async () => {
+    const sys     = env.system as any
+    const tag     = uniq()
+    const project = await sys.project.create({ data: { workspaceId: ws.id, name: 'Pop', slug: `pop-${tag}` } })
+    const e       = await sys.environment.create({ data: { workspaceId: ws.id, projectId: project.id, name: 'Staging', slug: `e-${tag}` } })
+    await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'web', slug: `web-${tag}` } })
+    const got = await env.as(owner).service('apps').find({ environmentId: e.id }, { directives: { populate: ['environment'] } })
+    expect((got.data ?? got)[0].environment.name).toBe('Staging')
+  })
 })
 
 // A hand-written find that never read `$orderBy` answered it in its own order

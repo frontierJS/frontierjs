@@ -1,0 +1,26 @@
+<script>
+  // window.mesa — a Window as an app writes one: bound `open` and `box`, an
+  // `onchange` that counts finished gestures, and a launcher for the shut state.
+  import Window from '../../../components/overlay/Window.mesa'
+
+  export let open = true
+  export let dock = null
+  export let box  = null
+
+  let changes = 0
+  let last = ''
+</script>
+
+<p id="page-text">The page behind the window</p>
+
+<Window bind:open={open} bind:box={box} dock={dock} title="Support"
+        onchange={(b) => { changes++; last = JSON.stringify(b) }}>
+  {#snippet launcher()}Help{/snippet}
+  {#snippet action()}<button type="button" id="pop-out">Pop out</button>{/snippet}
+  <input id="inside" aria-label="Message">
+</Window>
+
+<output id="changes">{changes}</output>
+<output id="last">{last}</output>
+<output id="state">{open ? 'open' : 'shut'}</output>
+<output id="box">{box ? JSON.stringify(box) : 'none'}</output>

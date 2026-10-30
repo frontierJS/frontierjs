@@ -3404,6 +3404,10 @@
         "slug"
       ],
       "x-litestone-policies": true,
+      "x-label-field": [
+        "name",
+        "environment.name"
+      ],
       "x-identify": [
         "slug"
       ],

@@ -99,4 +99,50 @@ export async function run(t) {
   await t.evaluate(`await new Promise(r => setTimeout(r, 120)); return true;`)
   t.ok(await t.evaluate(`return document.querySelector('dialog.drawer').matches(':modal');`),
     'a Drawer mounted with open={true} is opened as a modal')
+  t.ok(await t.evaluate(`return !document.querySelector('dialog.drawer .drawer-handle');`),
+    'a drawer that is not resizable has no handle')
+  t.ok(await t.evaluate(`return !!document.querySelector('dialog.drawer .surface-header #pop-out');`),
+    'the action snippet renders in the header')
+
+  /* ── resizable (FJS-D1654) ───────────────────────────────────────────
+   *
+   * The handle is the inner edge, so a right drawer widens as it is dragged
+   * left and a left drawer as it is dragged right; a sign flipped here is a
+   * drawer that shrinks under the pointer.
+   */
+  const box = `const r = document.querySelector('dialog.drawer').getBoundingClientRect(); return { x: r.left, w: r.width };`
+  const handleAt = `const r = document.querySelector('.drawer-handle').getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };`
+
+  await t.mount('drawer', { open: true, resizable: true })
+  await t.evaluate(`await new Promise(r => setTimeout(r, 400)); return true;`)
+  const right = await t.evaluate(box)
+  const h = await t.evaluate(handleAt)
+  t.ok(Math.abs(h.x - right.x) < 10, 'a right drawer puts its handle on the left edge')
+  await t.drag(h, { x: h.x - 60, y: h.y }, { steps: 4 })
+  const wider = await t.evaluate(box)
+  t.is(Math.round(wider.w - right.w), 60, 'a drag left widens a right drawer by the pointer distance')
+  t.is(await t.evaluate(`return document.querySelector('#width').textContent;`), String(Math.round(wider.w)),
+    'and bind:width carries the width')
+  t.is(await t.evaluate(`return document.querySelector('.drawer-handle').getAttribute('aria-valuenow');`), String(Math.round(wider.w)),
+    'the separator reports it as aria-valuenow')
+
+  await t.evaluate(`document.querySelector('.drawer-handle').focus(); return true;`)
+  await t.press('ArrowRight')
+  t.is(Math.round((await t.evaluate(box)).w), Math.round(wider.w) - 32, 'ArrowRight on the handle narrows a right drawer 32px')
+
+  await t.drag(await t.evaluate(handleAt), { x: 2000, y: h.y }, { steps: 4 })
+  t.is(Math.round((await t.evaluate(box)).w), 240, 'minWidth is the floor')
+
+  await t.mount('drawer', { open: true, resizable: true, side: 'left' })
+  await t.evaluate(`await new Promise(r => setTimeout(r, 400)); return true;`)
+  const left = await t.evaluate(box)
+  const lh = await t.evaluate(handleAt)
+  t.ok(Math.abs(lh.x - (left.x + left.w)) < 10, 'a left drawer puts its handle on the right edge')
+  await t.drag(lh, { x: lh.x + 50, y: lh.y }, { steps: 4 })
+  t.is(Math.round((await t.evaluate(box)).w - left.w), 50, 'a drag right widens a left drawer')
+
+  await t.mount('drawer', { open: true, resizable: true, side: 'bottom' })
+  t.ok(await t.evaluate(`return !document.querySelector('.drawer-handle');`),
+    'a bottom drawer is full width, so it draws no handle')
 }

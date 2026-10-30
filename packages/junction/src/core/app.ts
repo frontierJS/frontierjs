@@ -6,6 +6,7 @@
 import { HttpTransport }            from '../transport/http.ts'
 import type { WsRouteOptions }       from '../transport/http.ts'
 import { resolveTrustProxy }        from '../transport/forwarded.ts'
+import { mountLocalFiles }          from '../transport/local-files.ts'
 import { bridge, errorResponse, readTransportFlags, refuseBadDirectives } from '../transport/bridge.ts'
 import { freezeUser, enterRequest, reenterAs, requestMeta, NEVER_ABORTED, currentCall, enterCall, callDb, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions, type Attester, type RequestMeta } from './context.ts'
 import { hookContext } from '@frontierjs/toolbelt/hooks'
@@ -2203,6 +2204,11 @@ export function createApp(opts: AppOptions = {}): App {
       // them. Registering at createApp() time would add them before
       // CORS/helmet/rateLimit patched the router, so they'd never get those headers.
       { name: 'service-routes', run: () => registerServiceRoutes(app) },
+
+      // The route a local FileStorage's URLs name (`FJS-D1549`). After the
+      // plugins, so their middleware wraps it, and after `load-config`, so the
+      // prefix it reads is the final one.
+      { name: 'local-files', run: () => mountLocalFiles(app, _apiPrefix, config.port) },
 
       // Compile merged hook pipelines for every service now, and for any service
       // registered later (e.g. in a plugin's ready(), or by user code after start()).

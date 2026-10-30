@@ -1866,21 +1866,25 @@ try {
 
   // A path route is made and removed from the same screen (`FJS-3323`), not
   // only through /domain-routes. It needs an app other than the hostname's own.
-  // The picker shows names and the seed repeats one per environment, so the
-  // route is held to the NAME picked, which is all a person can tell apart.
-  const routeApp = (await apiGet('/apps?$limit=100')).body?.data?.find(a => a.name !== dnsApp?.name)
+  // The picker labels an app "name · environment" (`FJS-3497`), so one app is
+  // picked by that whole label. Two projects can each hold a "Production", so the app chosen is one whose
+  // whole label no other app shares.
+  const routeApps  = (await apiGet('/apps?$limit=100')).body?.data ?? []
+  const labelOf  = a => `${a.name} · ${a.environment?.name}`
+  const routeApp = routeApps.find(a => a.id !== dnsApp?.id && routeApps.filter(b => labelOf(b) === labelOf(a)).length === 1)
+  const routeEnv = routeApp?.environment
   await goto('/dns/')
   await until(`!!document.getElementById('route-add')`, v => v, 'the DNS screen offers no way to add a path route')
   await click('#route-add')
   await until(`!!document.querySelector('#route-save')`, v => v, 'the route drawer never opened')
   await choose('dialog[open] [name=domainId]', 'dns-drive.example.test')
-  await choose('dialog[open] [name=appId]', routeApp?.name)
+  await choose('dialog[open] [name=appId]', `${routeApp?.name} · ${routeEnv?.name}`)
   await typeIn('dialog[open] [name=pathPrefix]', '/api')
   await click('#route-save')
   const madeRoute = await eventually(async () => (await apiGet(`/domain-routes?domainId=${dnsRow?.id}`)).body?.data?.[0], r => !!r)
   const routedTo = madeRoute && (await apiGet(`/apps/${madeRoute.appId}`)).body
-  check('a path route is made from DNS', madeRoute?.pathPrefix === '/api' && routedTo?.name === routeApp?.name,
-    JSON.stringify(madeRoute))
+  check('a path route is made from DNS', madeRoute?.pathPrefix === '/api' && madeRoute?.appId === routeApp?.id,
+    `prefix ${madeRoute?.pathPrefix} app ${madeRoute?.appId} wanted ${routeApp?.id}`)
   await until(`document.querySelectorAll('#route-rows tbody tr').length`, n => n > 0, 'the new route never listed')
   const routeText = await text('#route-rows')
   check('and listed with its hostname, prefix and the app that answers it',

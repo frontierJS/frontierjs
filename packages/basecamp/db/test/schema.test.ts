@@ -2522,3 +2522,13 @@ describe('App runtime columns', () => {
     expect(unplaced).toEqual([])
   })
 })
+
+// FJS-3497: the seed holds one App per environment under one name, so a picker
+// labelled by `name` alone shows rows a person cannot tell apart.
+describe('App display label', () => {
+  test('names the environment as well as the app', () => {
+    const app   = parseFile(SCHEMA).schema.models.find((m: any) => m.name === 'App')
+    const label = app.attributes.find((a: any) => a.kind === 'labelField')
+    expect(label?.parts).toEqual([{ via: null, field: 'name' }, { via: 'environment', field: 'name' }])
+  })
+})

@@ -38,14 +38,15 @@ treatment. They aren't chained, they're nested.
 - See the Vocabulary page / table above for every term's element + ARIA.
 
 ### Icons
-`<span class="i-heroicons:NAME" aria-hidden="true">`. Icon-only buttons:
+`<span class="i-SET:NAME" aria-hidden="true">`, or an app's one `Icon`
+component (`@frontierjs/ui` AGENTS.md § Icons). Icon-only buttons:
 `.btn.square` + `aria-label` on the button.
 
 **Supplying the icons is the consumer's job** as of v0.6 — the package no longer
 depends on UnoCSS, so it doesn't ship the heroicons preset. It only *sizes* what
-it finds: `.btn.square` sets `1.15em` on a child `<svg>` or any class starting
-`i-heroicons`. Use Uno's preset-icons, Iconify, or inline SVG; the
-`i-heroicons:*` naming is what the sizing rule expects.
+it finds: `.btn.square` sets `1.15em` on a child `<svg>`, an `<img>` or any
+class starting `i-`. Use Uno's preset-icons (any collection — `i-lucide:*`,
+`i-tabler:*`), Iconify, or inline SVG.
 
 (Note: Panel.svelte still uses `<i>`; docs prefer `<span>`. Unresolved, accepted
 either way.)

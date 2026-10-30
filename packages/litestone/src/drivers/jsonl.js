@@ -158,7 +158,7 @@ function matchCondition(val, cond, key) {
     if (!SCAN_OPS.includes(op))
       refuse([key], `Unknown where operator "${op}" on field "${key}" -- one of: ${[...SCAN_OPS].sort().join(', ')}`)
   }
-  if ('not'       in cond && (cond.not === null ? val != null  : val === cond.not))      return false
+  if ('not'       in cond && (cond.not === null ? val == null : Array.isArray(cond.not) ? cond.not.includes(val) : val === cond.not)) return false
   if ('gt'         in cond && !(val >  cond.gt))   return false
   if ('gte'        in cond && !(val >= cond.gte))  return false
   if ('lt'         in cond && !(val <  cond.lt))   return false

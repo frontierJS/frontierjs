@@ -54,12 +54,13 @@ ICON_CONTEXTS.forEach(function (ctx) {
   });
 });
 
-test('icon: the i-heroicons naming is sized too', function () {
+test('icon: the i-* naming is sized too, whatever the collection', function () {
   /*
-   * The package ships no icons; it sizes what it finds. `i-heroicons:*` is
-   * what Uno's preset-icons produces and what the docs tell consumers to
-   * write, so both the `^=` and the `*=" "` forms have to match — a
-   * multi-class icon is the common case and feedback.css used to miss it.
+   * The package ships no icons; it sizes what it finds. `i-<set>:*` is what
+   * Uno's preset-icons produces for every collection, so both the `^=` and
+   * the `*=" "` forms have to match — a multi-class icon is the common case
+   * and feedback.css used to miss it — and a Lucide icon is sized the same
+   * as a Heroicons one (FJS-D1655).
    */
   var first = el('<button class="btn square" aria-label="x"><span class="i-heroicons:check"></span></button>', 'span');
   assert.ok(parseFloat(style(first, 'inline-size')) < 40, 'i-heroicons as the first class was not sized');
@@ -70,6 +71,10 @@ test('icon: the i-heroicons naming is sized too', function () {
     parseFloat(style(later, 'inline-size')) < 40,
     'i-heroicons as a later class was not sized — the [class*=" …"] branch is missing'
   );
+  cleanup();
+
+  var lucide = el('<button class="btn square" aria-label="x"><span class="shrink-0 i-lucide:check"></span></button>', 'span');
+  assert.ok(parseFloat(style(lucide, 'inline-size')) < 40, 'an i-lucide icon was not sized — the selector still names one vendor');
 });
 
 test('icon: .icon works somewhere the package has never heard of', function () {

@@ -67,5 +67,5 @@ rowlist.js selection.js Select.mesa Shell.mesa SignaturePad.mesa SignatureView.m
 Skeleton.mesa Slider.mesa Sparkline.mesa Spinner.mesa StatCard.mesa Stat.mesa Steps.mesa
 Switch.mesa Table.mesa TabList.mesa Tab.mesa TabPanel.mesa Tabs.mesa Tag.mesa
 TemplatePreview.mesa Textarea.mesa Textbox.mesa ThemePicker.mesa ThemeSwatch.mesa Thresholds.mesa Toast.mesa toastStore.js
-Tooltip.mesa Transcript.mesa utils.js
+Tooltip.mesa Transcript.mesa utils.js Window.mesa
 -->

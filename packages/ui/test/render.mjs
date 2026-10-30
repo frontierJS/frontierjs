@@ -86,6 +86,7 @@ const CASES = [
   ['components/feedback/Skeleton.mesa', { variant: 'text' },         ['skeleton', 'text']],
   ['components/overlay/Modal.mesa',     { title: 'T' },              ['dialog', 'surface-header']],
   ['components/overlay/Drawer.mesa',    { title: 'T' },              ['drawer', 'from-right']],
+  ['components/overlay/Window.mesa',    { title: 'T', open: true }, ['fjs-window', 'at-bottom-right']],
   ['components/overlay/DropdownGroup.mesa', { heading: 'Account' },  ['items', 'navlist-label']],
 ]
 

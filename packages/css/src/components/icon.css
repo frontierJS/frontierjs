@@ -13,7 +13,7 @@
  *
  * Three restatements of one rule, three different sizes, two different
  * property spellings — and feedback.css was missing the
- * `[class*=" i-heroicons"]` branch, so an icon written
+ * `[class*=" i-…"]` branch, so an icon written
  * `class="shrink-0 i-heroicons:inbox"` silently had no size there. That is
  * the four-focus-recipes problem in miniature, and it is why this is one
  * rule now with the size as a token.
@@ -22,8 +22,9 @@
  *
  * It only sizes what it finds. Bring your own — Iconify, Uno's
  * preset-icons, inline <svg>, an <img>. The recognized shapes are an
- * <svg>, an <img>, or any element whose class starts `i-heroicons`, which
- * is the naming Uno's preset produces.
+ * <svg>, an <img>, or any element with a class starting `i-` — the naming
+ * Uno's preset produces for every collection (`i-lucide:…`,
+ * `i-tabler:…`), so no one vendor's prefix is the one that gets sized.
  *
  * An unsized <svg> defaults to 300x150, so this is not cosmetic: an icon
  * the package does not size does not look slightly wrong, it destroys the
@@ -92,7 +93,7 @@
   .topbar,
   .surface-header,
   .disclosure-summary
-) > :where(svg, img, [class^="i-heroicons"], [class*=" i-heroicons"]),
+) > :where(svg, img, [class^="i-"], [class*=" i-"]),
 .icon {
   inline-size: var(--icon-size, 1.15em);
   block-size:  var(--icon-size, 1.15em);

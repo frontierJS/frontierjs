@@ -60,6 +60,7 @@ const PROPS = {
   'overlay/ConfirmationPopover': { open: true },
   'overlay/DropdownMenu':   { open: true },
   'overlay/Popover':        { open: true },
+  'overlay/Window':         { open: true },
 }
 
 // `id` is a declared prop here and means something other than a DOM id, so the

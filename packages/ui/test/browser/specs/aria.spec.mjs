@@ -43,7 +43,7 @@ const WHERE = {
   Steps:      { fixture: 'display', at: '.steps' },
   Switch:     { fixture: 'form-changed', at: '.switch' },
   Dialog:     { fixture: 'modal', props: { open: true }, at: '.dialog' },
-  Drawer:     { fixture: 'drawer', props: { open: true }, at: '.drawer' },
+  Drawer:     { fixture: 'drawer', props: { open: true, resizable: true }, at: '.drawer' },
   Tooltip:    { fixture: 'tooltip', at: '.tooltip' },
   Shell:      { fixture: 'shell', props: { user: { email: 'a@b.c' } }, at: '.shell' },
 }

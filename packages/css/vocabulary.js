@@ -486,6 +486,8 @@ const ANATOMY = {
 
   Drawer: {
     markup: `<dialog class="drawer from-right">
+  <div class="drawer-handle" role="separator" aria-orientation="vertical"
+       aria-label="Resize" aria-valuenow="320" tabindex="0"></div>
   <div class="surface-header">
     <strong>Settings</strong>
     <button class="dialog-close" aria-label="Close">&times;</button>
@@ -497,7 +499,9 @@ const ANATOMY = {
     <button class="btn">Save</button>
   </div>
 </dialog>`,
-    parts: [],
+    parts: [
+      ['.drawer-handle', 'The resize edge of a side drawer: a focusable separator the arrow keys and a drag move', 'optional'],
+    ],
     uses: ['surface-header', 'surface-body', 'surface-footer', 'dialog-close'],
   },
 

@@ -94,3 +94,24 @@
 .drawer {
   --overlay-from: translateX(100%);
 }
+
+/* ── Resize handle ──────────────────────────────────────────────
+ *
+ * The inner edge of a side drawer, a focusable role="separator"; the drag
+ * and the arrow keys are @frontierjs/ui's Drawer. Without touch-action a
+ * finger drag is taken for a scroll and ends as a pointercancel.
+ */
+.drawer-handle {
+  position:     absolute;
+  inset-block:  0;
+  inset-inline-start: 0;
+  inline-size:  var(--space-xs);
+  cursor:       ew-resize;
+  touch-action: none;
+}
+.drawer.from-left .drawer-handle {
+  inset-inline: auto 0;
+}
+.drawer-handle:hover {
+  background: var(--rule);
+}

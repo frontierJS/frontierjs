@@ -8365,8 +8365,10 @@ function iconsPage() {
           Bring your own glyphs — Iconify, Uno's <code>preset-icons</code>,
           inline <code>&lt;svg&gt;</code>, an <code>&lt;img&gt;</code>. The
           recognized shapes are an <code>&lt;svg&gt;</code>, an
-          <code>&lt;img&gt;</code>, or any element whose class starts
-          <code>i-heroicons</code>, which is what Uno's preset produces.
+          <code>&lt;img&gt;</code>, or any element with a class starting
+          <code>i-</code>, which is what Uno's preset produces for every
+          collection — <code>i-lucide:…</code> and <code>i-tabler:…</code>
+          as much as <code>i-heroicons:…</code>.
         </p>
         <div class="alert danger">
           <div class="alert-icon" aria-hidden="true">!</div>
@@ -8585,7 +8587,7 @@ function iconsPage() {
           miniature, and it is why the size is a token now.
         </p>
         ${code(`:where(.btn, .square, .pill-close, .empty-icon, .alert-icon, .navlink, …)
-  > :where(svg, img, [class^="i-heroicons"], [class*=" i-heroicons"]),
+  > :where(svg, img, [class^="i-"], [class*=" i-"]),
 .icon {
   inline-size: var(--icon-size, 1.15em);
   block-size:  var(--icon-size, 1.15em);

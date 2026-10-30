@@ -24,7 +24,7 @@
  *
  * A term whose role or state sits on a child carries it under `parts`, keyed
  * by the anatomy class the css package already names (`.tab`, `.step`), each
- * part the same shape. Only `Tabs` has a part with a ROLE; the rest track a
+ * part the same shape. Only `Tabs` and `Drawer` have a part with a ROLE; the rest track a
  * state on a child the term lays out. A state on a child that carries NO
  * class — a breadcrumb's current page is styled by `[aria-current]` alone —
  * sits on the term's own row: `tracks` means reported on or within the
@@ -75,7 +75,7 @@ export const ARIA = Object.freeze({
 
   // Overlay — role and modality are the <dialog> element's (accessibility.md § 1.2)
   Dialog:     { requires: ['label'] },
-  Drawer:     { requires: ['label'] },
+  Drawer:     { requires: ['label'], parts: { 'drawer-handle': { role: 'separator', requires: ['label'] } } },
   Tooltip:    { role: 'tooltip' },
 
   // Frame

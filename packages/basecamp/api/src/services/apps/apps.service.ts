@@ -580,6 +580,9 @@ export default createService({
     // the key but left the value raw, and junction refuses a directive the
     // body never read (the jobs form sorts its app picker by name).
     const sort = $.directives?.orderBy
+    // The App picker's label reads `environment.name`, so it sends `$populate`;
+    // a find that never read it would be refused, and the picker would be empty.
+    const asked = [$.directives?.populate ?? []].flat().flatMap(s => String(s).split(',')).map(s => s.trim()).filter(Boolean)
     // Every filter the caller sent, not a chosen few. autoFilter has already
     // refused a key that is not a column, so a key it admitted and this body
     // skipped answered every row as a match: `?name=` or `?status=` came back
@@ -591,7 +594,7 @@ export default createService({
         ...(serverId ? { appServers: { some: { serverId } } } : {}),
         ...await notHub(db().asSystem(), 'app'),
       },
-      include: WITH_DETAIL,
+      include: { ...WITH_DETAIL, ...Object.fromEntries(asked.map(r => [r, true])) },
       orderBy: sort ? normalizeOrderBy(sort as SortParam) : { createdAt: 'desc' },
       limit, offset,
     })

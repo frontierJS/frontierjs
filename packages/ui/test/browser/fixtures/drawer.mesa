@@ -10,6 +10,8 @@
 
   export let side        = 'right'
   export let dismissible = true
+  export let resizable   = false
+  export let width       = null
 
   // A prop so a spec can mount the overlay already open, the way a caller
   // writes {#if shown}<Modal open> -- that path never passes through a change.
@@ -20,10 +22,12 @@
 
 <Button id="open-drawer" onclick={() => open = true}>Open</Button>
 
-<Drawer bind:open={open} side={side} dismissible={dismissible} title="Settings" onclose={() => closes++}>
+<Drawer bind:open={open} bind:width={width} side={side} dismissible={dismissible} {resizable} title="Settings" onclose={() => closes++}>
+  {#snippet action()}<button type="button" id="pop-out">Pop out</button>{/snippet}
   <p>Drawer content</p>
   <button type="button" id="inside">Inside</button>
 </Drawer>
 
 <output id="closes">{closes}</output>
 <output id="state">{open ? 'open' : 'shut'}</output>
+<output id="width">{width ?? 'none'}</output>

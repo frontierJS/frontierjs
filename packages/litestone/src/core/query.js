@@ -795,9 +795,10 @@ function jsonLeafClauses(at, val, params, label) {
         break
       case 'not': {
         if (operand === null) { clauses.push(`${at()} IS NOT NULL`); break }
+        if (Array.isArray(operand)) { if (operand.length) clauses.push(membership(operand, true)); break }
         const c = at()
         params.push(coerce(operand))
-        clauses.push(`${c} != ?`)
+        clauses.push(`(${c} != ? OR ${at()} IS NULL)`)
         break
       }
       default:
@@ -1295,7 +1296,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
             }
             break
           }
-          clauses.push(`${col} != ${operandSql(operand, push)}`)
+          clauses.push(`(${col} != ${operandSql(operand, push)} OR ${col} IS NULL)`)
           break
         default: {
           // An untyped `Json` column has no declared shape to traverse, so a

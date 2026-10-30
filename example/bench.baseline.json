@@ -1,0 +1,15 @@
+{
+  "//": "Ratchets DOWN only. `fli test:bench --update` writes an improvement back and cannot raise a number; `--adopt` is the verb that can, so a raise is a visible line in a diff.",
+  "metrics": {
+    "site.files": 42,
+    "site.firstLoadCssBrotli": 13699,
+    "site.firstLoadJsBrotli": 0,
+    "site.firstLoadRequests": 2,
+    "site.totalBrotli": 624944,
+    "web.files": 111,
+    "web.firstLoadCssBrotli": 13699,
+    "web.firstLoadJsBrotli": 87651,
+    "web.firstLoadRequests": 9,
+    "web.totalBrotli": 928667
+  }
+}

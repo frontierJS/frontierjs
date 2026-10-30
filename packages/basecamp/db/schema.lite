@@ -1869,6 +1869,9 @@ model App {
   // flag, so no column here says it.
   hub           HubConfig?  @relation("HubApp") @keep
 
+  // The seed holds one App per environment under one name, so `name` alone
+  // gives a picker identical rows.
+  @@label([name, environment.name])
   @@gate(2.4.4.5)
   // The deploy job writes App.status through asSystem(), which is how it
   // crosses the tenancy the block at the top of this file compiles in.

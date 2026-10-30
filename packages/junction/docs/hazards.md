@@ -145,3 +145,4 @@ Each names its pin. The failure behind each is `docs/internals.md`, by path.
 - **A test injects a transport rather than mocking a module**; `mock.module()` is
   process-wide in bun (`FJS-908`). A hand-built context sets `ctx.result = null`.
 - **An `around` that ends the call without assigning `ctx.result` is a 500, not a 204** (`FJS-946`, `test/around-forgot-next.test.ts`). It is graded only on a context the three builders made through `hookContext`; a hand-built one is exempt, so a test that forgets `next()` still passes.
+- **A local FileStorage's files are public by key.** `GET <apiPrefix>/files/*` (`transport/local-files.ts`) serves `<db dir>/files` with no gate, the same exposure as an R2 `publicBase`, so a key must stay an unguessable `:uuid`. It sets the store's `publicBase` from `FRONTIER_APP_URL` only where `FILES_PUBLIC_BASE` left it unset, and a type outside the inline allow-list downloads (`FJS-3536`, `FJS-D1549`).

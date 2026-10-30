@@ -14,15 +14,25 @@
   //   <Drawer bind:open={drawerOpen} title="Settings" side="right">
   //     <p>Drawer content</p>
   //   </Drawer>
+  //
+  // `resizable` puts a handle on a side drawer's inner edge; a drag or the
+  // arrow keys write `width` (px). The kit stores nothing (FJS-D1654), so
+  // remembering it is the app's line over `bind:width`. `action` is the
+  // header's trailing content, before the close button.
 
   import { tone as toTone, cx, uid } from '../../utils.js'
+  import { drag } from '../../drag.js'
 
   export let open        = false
   export let title       = ''
   export let tone        = ''
+  export let action      = null   // optional header snippet, after the title
   export let footer      = null   // optional footer snippet
   export let onclose     = undefined
   export let dismissible = true
+  export let resizable   = false
+  export let width       = null   // px | null for the css default -- bindable
+  export let minWidth    = 240
 
   // side is snapshot at mount — a drawer does not change edge mid-life.
   export var side = 'right'  // 'left' | 'right' | 'top' | 'bottom'
@@ -33,13 +43,46 @@
   const titleId = uid('drawer-title')
   const t = toTone(tone)
 
+  // A top or bottom drawer is full width, so there is no edge to drag.
+  const sideways = edge === EDGES.right || edge === EDGES.left
+  const STEP = 32
+
   let dialogEl
+  let measured = null
+  let ceiling  = null
+
+  // drawers.css caps a drawer at 90vw; past that the box stops and the number would not.
+  const maxWidth = () => Math.max(minWidth, Math.floor(innerWidth * 0.9))
+  const clamp = (w) => Math.round(Math.min(Math.max(w, minWidth), maxWidth()))
+  const current = () => width ?? dialogEl.getBoundingClientRect().width
+
+  // The handle's edge is the inner one, so a right drawer grows as it moves left.
+  const grows = edge === EDGES.left ? 1 : -1
+
+  const resize = () => ({
+    start: () => ({ width, from: current() }),
+    move: (_e, s, d) => { width = clamp(s.from + grows * d.x) },
+    end: (_e, s, { cancelled }) => { if (cancelled) width = s.width },
+  })
+
+  function nudge(e) {
+    const dir = { ArrowLeft: -1, ArrowRight: 1 }[e.key]
+    if (!dir) return
+    e.preventDefault()
+    width = clamp(current() + grows * dir * STEP)
+  }
 
   // A `$:` watch fires on change only, so a Drawer mounted with open={true}
   // stays closed without the onMount call.
   function sync() {
     if (!dialogEl) return
-    if (open && !dialogEl.open) dialogEl.showModal()
+    if (open && !dialogEl.open) {
+      dialogEl.showModal()
+      if (resizable) {
+        measured = Math.round(dialogEl.getBoundingClientRect().width)
+        ceiling  = maxWidth()
+      }
+    }
     else if (!open && dialogEl.open) dialogEl.close()
   }
   $: open, () => sync()
@@ -84,13 +127,30 @@
   aria-labelledby={title ? titleId : null}
   {class}
   {...$attributes}
+  style:width={width == null ? null : width + 'px'}
   onclose={handleClose}
   oncancel={handleCancel}
   onmousedown={handleMouseDown}
   onclick={handleClick}
 >
+  {#if resizable && sideways}
+    <div
+      class="drawer-handle"
+      role="separator"
+      tabindex="0"
+      aria-label="Resize"
+      aria-orientation="vertical"
+      aria-valuenow={width ?? measured}
+      aria-valuemin={minWidth}
+      aria-valuemax={ceiling}
+      onkeydown={nudge}
+      {@attach drag(resize)}
+    ></div>
+  {/if}
+
   <div class="surface-header">
-    <h2 id={titleId} style:margin="0">{title}</h2>
+    <h2 id={titleId} style:margin="0" style:flex="1">{title}</h2>
+    {#if action}{@render action?.()}{/if}
     {#if dismissible}
       <button type="button" class="dialog-close" aria-label="Close" onclick={close}>
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">

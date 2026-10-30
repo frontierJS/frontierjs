@@ -104,9 +104,9 @@ still `String @id @default(uuid())`.
 
 ---
 
-## notIn includes NULL rows
+## notIn and not include NULL rows
 
-SQLite's `NOT IN` does not match `NULL` values — which is mathematically correct but surprises most developers. Litestone's `notIn` operator matches the developer expectation and **does** include `NULL` rows, by compiling to `("status" NOT IN (?) OR "status" IS NULL)`:
+SQLite's `NOT IN` and `!=` do not match `NULL` values — which is mathematically correct but surprises most developers. Litestone's `not: 'admin'`, `not: ['admin']` and `notIn` all match the developer expectation and **do** include `NULL` rows, by compiling to `("status" NOT IN (?) OR "status" IS NULL)`:
 
 ```js
 await db.user.create({ data: { name: 'a', status: 'admin' } })

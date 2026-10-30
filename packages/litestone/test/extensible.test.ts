@@ -612,7 +612,7 @@ describe('querying by the tenant’s own key', () => {
       const db = await rows()
       expect(names(await db.customer.findMany({ where: { fields: { tier: 'gold', notes: 'x' } } }))).toEqual(['Di'])
       expect(names(await db.customer.findMany({ where: { name: 'Cy', fields: { notes: 'x' } } }))).toEqual([])
-      expect(await db.customer.count({ where: { fields: { notes: { not: 'x' } } } })).toBe(1)
+      expect(await db.customer.count({ where: { fields: { notes: { not: 'x' } } } })).toBe(4)
     })
 
     test('it nests under OR and NOT, and meets a caller’s own $raw', async () => {

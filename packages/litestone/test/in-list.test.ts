@@ -162,6 +162,11 @@ describe('a null member is the IS NULL test', () => {
     ["notIn [null, '']",           { notIn: [null, ''] },                   '1,2'],
     ["notIn [null, ''] past four", { notIn: [null, '', 'x', 'y', 'z', 'w'] }, '1,2'],
     ["notIn ['a']",                { notIn: ['a'] },                        '2,3,4'],
+    // Not this value keeps the null row in every spelling (`FJS-3582`).
+    ["not 'a'",                    { not: 'a' },                            '2,3,4'],
+    ["not ''",                     { not: '' },                             '1,2,3'],
+    ["not ['a']",                  { not: ['a'] },                          '2,3,4'],
+    ['not null',                   { not: null },                           '1,2,4'],
   ]
   const BODIES = ['a', 'b', null, '']
   const ids = (rows: any[]) => rows.map((r: any) => r.n).sort().join()

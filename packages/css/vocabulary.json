@@ -703,8 +703,14 @@
       ]
     },
     "Drawer": {
-      "markup": "<dialog class=\"drawer from-right\">\n  <div class=\"surface-header\">\n    <strong>Settings</strong>\n    <button class=\"dialog-close\" aria-label=\"Close\">&times;</button>\n  </div>\n  <div class=\"surface-body\">\n    <p>Anything a Dialog would hold.</p>\n  </div>\n  <div class=\"surface-footer\">\n    <button class=\"btn\">Save</button>\n  </div>\n</dialog>",
-      "parts": [],
+      "markup": "<dialog class=\"drawer from-right\">\n  <div class=\"drawer-handle\" role=\"separator\" aria-orientation=\"vertical\"\n       aria-label=\"Resize\" aria-valuenow=\"320\" tabindex=\"0\"></div>\n  <div class=\"surface-header\">\n    <strong>Settings</strong>\n    <button class=\"dialog-close\" aria-label=\"Close\">&times;</button>\n  </div>\n  <div class=\"surface-body\">\n    <p>Anything a Dialog would hold.</p>\n  </div>\n  <div class=\"surface-footer\">\n    <button class=\"btn\">Save</button>\n  </div>\n</dialog>",
+      "parts": [
+        [
+          ".drawer-handle",
+          "The resize edge of a side drawer: a focusable separator the arrow keys and a drag move",
+          "optional"
+        ]
+      ],
       "uses": [
         "surface-header",
         "surface-body",
