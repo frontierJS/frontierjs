@@ -278,10 +278,19 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
     // What Chrome printed is the only account of why it did not start — a
     // sandbox, a profile directory, a missing library — so it travels with
     // the refusal rather than being dropped with the process.
+    const said = () => buf.trim().split('\n').slice(-12).join('\n')
     const timer = setTimeout(() => {
-      const said = buf.trim().split('\n').slice(-12).join('\n')
-      reject(new Error(`Chrome never announced a DevTools port${said ? ` — it printed:\n${said}` : ' and printed nothing'}`))
+      const s = said()
+      reject(new Error(`Chrome never announced a DevTools port${s ? ` — it printed:\n${s}` : ' and printed nothing'}`))
     }, 15000)
+    // A Chrome that dies at launch will never announce a port; waiting out the
+    // timer refuses after the caller (a server's idle timeout is 10s) is gone.
+    // 'close', not 'exit': stderr can still hold the reason when 'exit' fires.
+    chrome.once('close', (code, signal) => {
+      clearTimeout(timer)
+      const s = said()
+      reject(new Error(`Chrome exited (${signal ?? `code ${code}`}) before announcing a DevTools port${s ? ` — it printed:\n${s}` : ' and printed nothing'}`))
+    })
     chrome.on('error', (e) => { clearTimeout(timer); reject(new Error(`could not launch ${exe}: ${e.message}`)) })
     chrome.stderr.on('data', (d) => {
       buf += d

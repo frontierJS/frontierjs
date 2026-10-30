@@ -14,6 +14,54 @@ finished.
 
 ---
 
+# Handoff — 2026-10-29 (seventeen parallel sessions closed; where each thread stopped)
+
+> **A day of parallel sessions ended with the 21-package release, Outpost
+> 0.1.8 and toolbelt 0.1.7 / litestone 1.1.12 on npm, and nearly every change
+> committed in the `updates` commits through `34c763c4`.** The through-line:
+> one publish (`FJS-3592`) gated four plans, and `FJS-3616` came out of it.
+> Every thread below now lives in a register or a plan box; this entry only
+> says where to pick each one up.
+
+**The order, and why.** `FJS-3592` (`./env` added to toolbelt without a version
+bump) blocked package-host 3.1's `auth:install` proof and box-layout 4.1's
+Outpost publish, so three sessions converged on one `ws:pub`. That release made
+every GitHub Release before pushing its commit and all 21 were refused;
+`FJS-3616` swapped push before publish and moved `gh` to `--verify-tag`; it closed
+on a `ws:pub` run against a bare remote and a `gh` that refuses as GitHub does. The CI sweep afterwards
+closed `FJS-3592`, bumped `OUTPOST_VERSION` to 0.1.8 and rewrote `tutor:fleet`
+for key pairs. Alongside: server render without a DOM shipped (`FJS-D1649`,
+the plan is `shipped`), Web Push closed with `verify:push` (`FJS-D1641`),
+app-platforms reached 1.4, basecamp-dogfood reached 2.4 (Outpost key pairs,
+`FJS-D1644`–`D1646`), `fli db:reset --seed` landed, and `fli deploy`'s reconcile
+(`FJS-D1599`) got its routes half (`FJS-3529`).
+
+**Where each thread picks up** — run `fli plan <file>` for the box:
+
+- `IDEAS/basecamp-dogfood.md` 2.5. Then 2.6, whose failure is probably one of
+  `FJS-3627`'s three; the whole 0.9 drive list reruns after Phase 2.
+- `IDEAS/app-platforms.md` 1.5. The peer edit to `apps/[id]/index.mesa` it
+  waited on is committed. The live drive against `fjs-platform-probe` needs the
+  owner to say where the `cfat_` token lives.
+- `IDEAS/package-host.md` 3.2, behind Q1 and Q2.
+- `IDEAS/box-layout.md` 4.2: the owner reinstalls Outpost on yuma.
+- `IDEAS/zero-to-live.md` Phase 0 (0.3 needs a real droplet); `IDEAS/backups.md`
+  5.4 waits on it.
+- `FJS-3529`: remove `neverReleased` so preflight and setup share `releasePlan`.
+
+**What is NOT proved or still owed.** `fli db:reset --test --seed` rebuilds
+the test database but the seeder probably writes the dev one. The cli suite's
+`repo-rings` › *every route renders* found `undefined` on the Decisions page
+once and was never run again. Outpost `verify:docker` failed three disk/volume
+checks (`FJS-3557` covers one). Basecamp's dev `basecamp.db` predates the
+latest rewrite of `initial_schema.sql`, so four snapshot checks need the
+owner's `db:reset`. The Survey theme moved to Catppuccin Mocha purples and is
+uncommitted; its two new tokens (`--surface-depth`, `--app-depth`) owe a
+`decision-rules` pass. The tpm ui-kit Phase C tickets were still being
+drafted when this was written.
+
+---
+
 # Handoff — 2026-10-24 (backups go continuous, Basecamp's own database included)
 
 > **Started at `IDEAS/backups.md` 2.1 and ended with Phase 2 closed: every

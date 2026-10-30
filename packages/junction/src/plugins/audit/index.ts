@@ -24,7 +24,6 @@
 // never break the request, and a required column the app forgot would
 // otherwise fail every row in silence.
 
-import { REDACTED }       from '@frontierjs/toolbelt/redact'
 import { isReadMethod, serviceAccessor } from '../../core/service.ts'
 import { accessorCandidates }  from '../../core/litestone.ts'
 import { resultData }          from '../../core/envelope.ts'
@@ -70,9 +69,11 @@ const DIFF_VALUE_LIMIT = 500
 interface SchemaField { name: string; type?: { kind?: string; name?: string; optional?: boolean; array?: boolean }; attributes?: Array<{ kind?: string }> }
 interface SchemaAst   { models?: Array<{ name: string; fields?: SchemaField[] }>; enums?: Array<{ name: string; values?: Array<{ name: string }> }> }
 
+type TrailMarks = Record<string, (value: unknown) => string>
+
 interface AuditClient {
   $schema?: SchemaAst
-  $protectedFields?(accessor: string): Record<string, string>
+  $trailMarks?(accessor: string): TrailMarks
   asSystem(): AuditClient
   [accessor: string]: unknown
 }
@@ -145,11 +146,12 @@ function diffValue(v: unknown): unknown {
 /**
  * `{ field: { before, after } }` for every column that moved.
  *
- * `protectedFields` is `db.$protectedFields(accessor)`, litestone's reading of
- * the schema: a protected column still appears, because that it changed is the
- * fact, and its values never do.
+ * `marks` is `db.$trailMarks(accessor)`, litestone's reading of the schema: a
+ * protected, `@personal` or `@opaque` column still appears, because that it
+ * changed is the fact, and its values never do — each side is the mark the
+ * model's own trail would write.
  */
-export function diffRows(before: Row | null, after: Row | null, protectedFields: Record<string, string>): Row | null {
+export function diffRows(before: Row | null, after: Row | null, marks: TrailMarks): Row | null {
   const keys = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])
   const diff: Row = {}
 
@@ -161,9 +163,10 @@ export function diffRows(before: Row | null, after: Row | null, protectedFields:
     // A Json column comes back as a fresh object on every read, so identity
     // would report it changed on every write.
     if (JSON.stringify(from) === JSON.stringify(to)) continue
-    diff[key] = protectedFields[key]
-      ? { before: from === undefined ? undefined : REDACTED, after: to === undefined ? undefined : REDACTED }
-      : { before: diffValue(from), after: diffValue(to) }
+    const mark = key in marks ? marks[key] : null
+    // A null holds nothing to leak and keeps a null → value move visible.
+    const side = (value: unknown) => value === undefined ? undefined : mark && value !== null ? mark(value) : diffValue(value)
+    diff[key] = { before: side(from), after: side(to) }
   }
 
   return Object.keys(diff).length ? diff : null
@@ -229,7 +232,7 @@ export function auditPlugin({ model, except = [], columns = {} }: AuditPluginOpt
             ? null
             : await table.findUnique({ where: { id } }) ?? result ?? null
           subject = after ?? before
-          diff = diffRows(before, after, sys.$protectedFields?.(accessor) ?? {})
+          diff = diffRows(before, after, sys.$trailMarks?.(accessor) ?? {})
         }
       } catch {
         // The call is still recorded, without what it changed.

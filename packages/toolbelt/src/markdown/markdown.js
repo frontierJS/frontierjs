@@ -84,6 +84,20 @@ const SPACE = /\s/
  * the rule of three). Links and code spans are finished in the first pass, so
  * no delimiter inside one can pair with one outside it.
  */
+/*
+ * The one place an anchor is written. A link off this site opens in a new tab:
+ * a reply in a chat is a conversation the reader is in the middle of, and an
+ * `<a href="https://…">` with no target replaces the page and the chat with it.
+ * The function has no origin, so "off this site" is the URL's own shape -- an
+ * absolute `http(s):` or a `//host`; `mailto:` and a relative path stay put.
+ * `noopener` keeps the opened page from reaching back through `window.opener`.
+ */
+const EXTERNAL = /^(?:https?:)?\/\//i
+function anchor(href, label, title = '') {
+  const out = EXTERNAL.test(href) ? ' target="_blank" rel="noopener noreferrer"' : ''
+  return `<a href="${esc(href)}"${title}${out}>${label}</a>`
+}
+
 function inline(src, opts, inLink = false) {
   const toks = []
   let text = ''
@@ -132,7 +146,7 @@ function inline(src, opts, inLink = false) {
       const m = /^<((?:https?|mailto):[^\s<>]*|[\w.+-]+@[\w-]+(?:\.[\w-]+)+)>/i.exec(src.slice(i))
       if (m) {
         const href = m[1].includes(':') ? m[1] : `mailto:${m[1]}`
-        push(`<a href="${esc(href)}">${esc(m[1])}</a>`)
+        push(anchor(href, esc(m[1])))
         i += m[0].length
         continue
       }
@@ -144,7 +158,7 @@ function inline(src, opts, inLink = false) {
         const label = c === '!' ? escText(link.text) || esc(link.url) : inline(link.text, opts, true)
         const href = safeUrl(link.url)
         const title = link.title ? ` title="${esc(link.title)}"` : ''
-        push(href == null ? label : `<a href="${esc(href)}"${title}>${label}</a>`)
+        push(href == null ? label : anchor(href, label, title))
         i = link.end
         continue
       }
@@ -158,7 +172,7 @@ function inline(src, opts, inLink = false) {
         while (url.endsWith(')') && (url.match(/\(/g)?.length ?? 0) < (url.match(/\)/g)?.length ?? 0)) url = url.slice(0, -1)
         if (url.length > 4 && !/^www\.$/i.test(url)) {
           const href = /^www\./i.test(url) ? `https://${url}` : url
-          push(`<a href="${esc(href)}">${esc(url)}</a>`)
+          push(anchor(href, esc(url)))
           i += url.length
           continue
         }
@@ -410,7 +424,7 @@ function list(lines, i, opts, out) {
 function table(lines, i, opts, out) {
   const head = splitRow(lines[i])
   const align = splitRow(lines[i + 1]).map((d) => d.startsWith(':') && d.endsWith(':') ? 'center' : d.endsWith(':') ? 'right' : d.startsWith(':') ? 'left' : '')
-  const cell = (tag, text, k) => `<${tag}${align[k] ? ` style="text-align: ${align[k]}"` : ''}>${inline(text ?? '', opts)}</${tag}>`
+  const cell = (tag, text, k) => `<${tag}${align[k] ? ` align="${align[k]}"` : ''}>${inline(text ?? '', opts)}</${tag}>`
   const rows = []
   i += 2
   while (i < lines.length && !blank(lines[i]) && lines[i].includes('|') && !(FENCE.test(lines[i]) || HEADING.test(lines[i]) || QUOTE.test(lines[i]))) {

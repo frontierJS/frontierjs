@@ -9,7 +9,7 @@ import { describe, test, expect } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { releaseFindings, mergeVariables, imageRuntime, readEnvSpec, releasePlan, neverReleased } from '../core/release-preflight.js'
+import { releaseFindings, mergeVariables, imageRuntime, readEnvSpec, releasePlan } from '../core/release-preflight.js'
 
 const SPEC = { spec: {
   ENCRYPTION_KEY:   { type: 'string', required: true },
@@ -185,13 +185,6 @@ describe('readEnvSpec', () => {
 describe('the plan a never-released App yields (FJS-3525)', () => {
   const found = run({ surfaces: ['web'] })
 
-  test('the measured App is never-released, and one with a release or a Variable of its own is not', () => {
-    expect(neverReleased(BARE, [])).toBe(true)
-    expect(neverReleased({ ...BARE, recent_deployments: [{ id: 'd1' }] }, [])).toBe(false)
-    expect(neverReleased(BARE, [v('NODE_ENV', 'production')])).toBe(false)
-    expect(neverReleased(BARE, [{ key: 'NODE_ENV', value: 'x', appId: null }])).toBe(true)
-  })
-
   test('every setting finding carries its fix, and the ones that need a person do not', () => {
     const fixes = Object.fromEntries(found.map(f => [f.rule, f.fix]))
     expect(fixes['no-port']).toEqual({ app: { port: 8100, containerPort: 8100 } })
@@ -239,5 +232,45 @@ describe('the plan a never-released App yields (FJS-3525)', () => {
   test('a settled App plans nothing', () => {
     const plan = releasePlan(run({ app: SETTLED, variables: ANSWERED }), { hostname: 'ela.example.com' })
     expect(plan.empty).toBe(true)
+  })
+})
+
+describe('a setup that stopped part way is finished by the next run (FJS-3529, FJS-D1599)', () => {
+  // NELA after its first run failed at the first route: the App patched, its
+  // Variables written, the static App and its Domain made, no route back.
+  const WEB  = { id: 'w1', name: 'app', source: { kind: 'inline' }, domains: [{ id: 'd1', hostname: 'nela.awe.dev' }] }
+  const HALF = { ...SETTLED, domains: [] }
+  const half = (over = {}) => run({ app: HALF, variables: ANSWERED, siblings: [WEB], routes: [], prefixes: ['/api', '/ws'], ...over })
+
+  test('a Domain on the static App with no route to the API is a finding whose fix is the routes', () => {
+    const f = half().find(f => f.rule === 'route-missing')
+    expect(f.title).toContain('nela.awe.dev')
+    expect(f.fix).toEqual({ routes: [{ domainId: 'd1', hostname: 'nela.awe.dev', prefixes: ['/api', '/ws'] }] })
+    expect(half().some(f => f.rule === 'unrouted')).toBe(false)
+  })
+
+  test('the plan writes only the route that is missing, and nothing else', () => {
+    const plan = releasePlan(half({ routes: [{ domainId: 'd1', appId: 'a1', pathPrefix: '/api' }] }), {})
+    expect(plan.routes).toEqual([{ domainId: 'd1', hostname: 'nela.awe.dev', prefixes: ['/ws'] }])
+    expect(plan.app).toEqual({})
+    expect(plan.variables).toEqual([])
+    expect(plan.empty).toBe(false)
+  })
+
+  test('a Domain routed to another App is that App\'s front door, and a routed one is quiet', () => {
+    expect(half({ routes: [{ domainId: 'd1', appId: 'other', pathPrefix: '/api' }] }).some(f => f.rule === 'route-missing')).toBe(false)
+    const routed = [{ domainId: 'd1', appId: 'a1', pathPrefix: '/api' }, { domainId: 'd1', appId: 'a1', pathPrefix: '/ws/' }]
+    expect(releasePlan(half({ routes: routed }), {}).empty).toBe(true)
+  })
+
+  test('a static App made with no Domain yet takes the Domain, routed back here', () => {
+    const plan = releasePlan(half({ siblings: [{ ...WEB, domains: [] }] }), { hostname: 'nela.awe.dev' })
+    expect(plan.web).toBe(false)
+    expect(plan.domain).toEqual({ hostname: 'nela.awe.dev', on: 'web', webId: 'w1', routes: ['/api', '/ws'] })
+  })
+
+  test('a Variable the App already holds is never written again, even when its value is the finding', () => {
+    const f = run({ variables: [v('NODE_ENV', 'development')] }).find(f => f.rule === 'node-env')
+    expect(f.fix.variables).toEqual([])
   })
 })

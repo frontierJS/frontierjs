@@ -25,6 +25,7 @@ import { filterableKeysFor, sortableKeysFor } from './query.js'
 import { suggestKey, pointFieldsOf, liftNearOrders, sortHopFor, _guardedNames, _shownSet,
          collectWhereKeyProblems, collectOrderByKeyProblems } from './args.js'
 import { applyFieldPolicyTo } from './field-policy.js'
+import { trailMarksOf, markOf } from './trail-entries.js'
 
 export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   const { shapes, schema, now } = ctx
@@ -198,6 +199,24 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
       else if (policy.hashed)    out[field] = 'hashed'
       else if (policy.encrypted) out[field] = 'encrypted'
     }
+    return out
+  }
+
+  // ─── $trailMarks ────────────────────────────────────────────────────────
+  //
+  // $trailMarks(accessor) → { field: (value) => mark }
+  //
+  // What the trail writes in place of each field's value: `[redacted]` for a
+  // protected column, `[personal]`, `[opaque:<digest>]`. A wider set than
+  // $protectedFields, which names only what no reader may see — a @personal
+  // value is readable and still must not outlive the person in a trail. An
+  // app writing its own trail asks here, so it keeps what litestone's keeps.
+  // Unknown accessor answers {}.
+  function $trailMarks(accessor) {
+    const model = modelForAccessor(accessor)
+    if (!model?.fields) return {}
+    const out = {}
+    for (const [field, mark] of trailMarksOf(shapes[model.name].fieldPolicy)) out[field] = value => markOf(mark, value)
     return out
   }
 
@@ -632,7 +651,7 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   }
 
   return {
-    $checkWhere, $scopes, $checkOrderBy, $protectedFields, $primaryKey, $mirrorKey,
+    $checkWhere, $scopes, $checkOrderBy, $protectedFields, $trailMarks, $primaryKey, $mirrorKey,
     $declaresAccessRules, $readAs, $inWindow, $readGrading, $readReach, $readColumns,
     $fromReach, $levelOfAs, $checkWriteAs, $capabilitiesFor, $claimsFor,
     modelForAccessor, accessorIndex, tenancyInfo,

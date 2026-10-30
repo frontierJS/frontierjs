@@ -1,13 +1,13 @@
 /*
- * survey.css — Survey: a precision instrument panel in Everforest Dark Medium.
+ * survey.css — Survey: a precision instrument panel in Catppuccin Mocha.
  *
- * Deep forest green for space, moss for structure, parchment for
+ * Violet-black for space, slate for structure, lavender-white for
  * information. The surfaces sit close together and each has one job —
  * canvas, sidebar, panel, raised — so the page reads as one machined face
  * rather than a stack of cards in slightly different grays. The look is
  * borrowed from surveyor's field instruments and drafting sheets: hairline
- * rules instead of shadows, square corners, stamped uppercase legends, a
- * dashed focus ring like a construction line.
+ * rules, deburred corners, stamped uppercase legends, a dashed focus ring
+ * like a construction line — and every panel a pane of smoked glass.
  *
  * Tokens only, no selector of its own.
  */
@@ -27,95 +27,68 @@
   --tone-l-max: 1;
 
   /* ── Grounds ────────────────────────────────────────────────────────
-   * Everforest's own grounds (bg_dim #232a2e, bg0 #2d353b) sit at OKLCH
-   * L 0.28–0.32 with chroma 0.012 on a blue-slate hue, which reads as a
-   * washed gray rather than a dark color. These keep the family but sit
-   * darker (L 0.185–0.285), carry about twice the chroma and lean to a
-   * forest hue (175), so black reads as deep green:
+   * Mocha's own ramp, each a role:
    *
-   *   canvas    #0f1d19   the page, at its edges (see --app-depth)
-   *   sunken    #0a1512   anything recessed into a panel
-   *   sidebar   #0d1a17   navigation, the topbar, a table's head
-   *   panel     #13221d   cards, widgets, dialogs
-   *   elevated  #1d2e29   hover, a raised region
+   *   canvas    #181825   mantle — the page, at its edges (see --app-depth)
+   *   sunken    #11111b   crust — anything recessed into a panel
+   *   sidebar   #181825   mantle — navigation, the topbar, a table's head
+   *   panel     #1e1e2e   base — cards, widgets, dialogs
+   *   elevated  #313244   surface0 — hover, a raised region
    */
-  --app-bg:          #0f1d19;
-  --surface-sunken:  #0a1512;
-  --surface:         #13221d;
-  --surface-raised:  #1d2e29;
+  --app-bg:          #181825;
+  --surface-sunken:  #11111b;
+  --surface:         #1e1e2e;
+  --surface-raised:  #313244;
 
-  --topbar-bg:       #0d1a17;
-  --sidebar-bg:      #0d1a17;
-  --dialog-bg:       #13221d;
-  --table-head-bg:   #0d1a17;
+  --topbar-bg:       #181825;
+  --sidebar-bg:      #181825;
+  --dialog-bg:       #1e1e2e;
+  --table-head-bg:   #181825;
 
   /* A field is a well cut into the panel, not a box set on top of it. */
-  --field-bg:        #0d1a17;
+  --field-bg:        #181825;
 
   /* ── Ink ────────────────────────────────────────────────────────────
-   * Everforest's fg and grey2 as they are. grey1 (#859289) is 4.33:1 on
-   * --surface-raised, and --ink-mute is placeholder text, table headers and
-   * field hints at 11–13px, so it is lifted along its own hue:
-   *
-   *   --ink        #d3c6aa   8.43:1 on raised
-   *   --ink-soft   #9da9a0   5.84:1
-   *   --ink-mute   #89968d   4.62:1   (grey1 #859289, lifted)
+   * Mocha's text, subtext1 and subtext0, unchanged — the tightest pairing
+   * is subtext0 on surface0 at 5.65:1, so nothing needs lifting.
    */
-  --ink:             #d3c6aa;
-  --ink-soft:        #9da9a0;
-  --ink-mute:        #89968d;
+  --ink:             #cdd6f4;
+  --ink-soft:        #bac2de;
+  --ink-mute:        #a6adc8;
 
-  /*
-   * A heading in fg reads as yellow against the teal grounds, so titles
-   * take a pale sage on the grounds' own hue — 10.71:1 on raised.
-   */
-  --h1-ink: #d0e4da;
-  --h2-ink: #d0e4da;
-  --h3-ink: #d0e4da;
-  --h4-ink: #d0e4da;
-  --h5-ink: #d0e4da;
-  --h6-ink: #d0e4da;
-
-  /* Gray for structure: the rule is what draws the instrument's face. */
-  --rule:            #2c3d38;
-  --rule-strong:     #3e504b;
+  /* Slate for structure: the rule is what draws the instrument's face. */
+  --rule:            #45475a;
+  --rule-strong:     #585b70;
 
   /* ── Tones ──────────────────────────────────────────────────────────
-   * Primary is Everforest's green turned 10° toward teal — #a7c080 sits at
-   * OKLCH hue 126 and leans yellow on these grounds; 136 stays clear of
-   * success's aqua at 151. A primary button is a moss slab with dark type —
-   * chip.css derives the ink from the fill. Success takes aqua rather than
-   * the same green, so a success state is not read as "primary".
+   * Mocha's accents. Primary is mauve, so a primary button is a lilac
+   * slab with dark type — chip.css derives the ink from the fill.
    */
-  --color-primary:   #9bc389;
-  --color-secondary: #9da9a0;
-  --color-muted:     #7a8478;
-  --color-info:      #7fbbb3;
-  --color-success:   #83c092;
-  --color-warning:   #dbbc7f;
-  --color-danger:    #e67e80;
+  --color-primary:   #cba6f7;
+  --color-secondary: #f5c2e7;
+  --color-muted:     #9399b2;
+  --color-info:      #89dceb;
+  --color-success:   #a6e3a1;
+  --color-warning:   #f9e2af;
+  --color-danger:    #f38ba8;
 
   /*
-   * The current nav link sits on a moss slab, Everforest's bg_green taken
-   * down to these grounds. The default is a
-   * 12% mix of primary, which on this ground is indistinguishable from hover.
+   * The current nav link sits on a slab of mauve taken down to these
+   * grounds. The default is a 12% mix of primary, which on this ground is
+   * indistinguishable from hover.
    */
-  --navlink-current-bg:  #243928;
-  --navlink-current-ink: #d3c6aa;
+  --navlink-current-bg:  #392c47;
+  --navlink-current-ink: #cdd6f4;
 
-  --check-accent: #9bc389;
-  --step-accent:  #9bc389;
-  --tab-accent:   #9bc389;
+  --check-accent: #cba6f7;
+  --step-accent:  #cba6f7;
+  --tab-accent:   #cba6f7;
 
   /* ── Set type ───────────────────────────────────────────────────────
-   * A neo-grotesk for data, the same face tightened for headings, and a
-   * monospace for code. Platform faces only (FJS-D879): the package ships no
-   * @font-face, so a web face renders only where someone installed it.
+   * The package's system faces, as Catppuccin sets them — no --font-*
+   * here. What makes it Survey is the setting, not the face: headings
+   * tightened, captions stamped.
    */
-  --font-primary: 'Helvetica Neue', Arial, 'Noto Sans', system-ui, sans-serif;
-  --font-display: 'Helvetica Neue', Arial, 'Noto Sans', system-ui, sans-serif;
-  --font-mono:    ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
-
   --heading-font-weight:    600;
   --heading-letter-spacing: -0.015em;
 
@@ -139,16 +112,16 @@
    * Machined, not molded: a 2px break on every edge, the way a milled
    * part is deburred, so a corner reads as finished rather than cut.
    */
-  --btn-radius:   2px;
-  --card-radius:  2px;
-  --field-radius: 2px;
-  --badge-radius: 2px;
-  --pill-radius:  3px;
-  --toast-radius: 2px;
+  --btn-radius:   3px;
+  --card-radius:  3px;
+  --field-radius: 3px;
+  --badge-radius: 3px;
+  --pill-radius:  4px;
+  --toast-radius: 3px;
 
   /* A construction line, not a glow. */
   --ring-style: dashed;
-  --ring-color: #9bc389;
+  --ring-color: #cba6f7;
 
   /* ── Elevation ──────────────────────────────────────────────────────
    * A panel at rest is a pane of smoked glass: a lit top edge where the
@@ -156,11 +129,11 @@
    * floats — a menu, a dialog, a toast — gets a hairline edge and a deeper
    * drop, because a dark shadow is invisible on this ground without one.
    */
-  --surface-shadow: inset 0 1px 0 rgb(211 198 170 / 0.06), 0 12px 32px -16px rgb(0 0 0 / 0.6);
-  --shadow-sm: 0 0 0 1px #2c3d38;
-  --shadow-md: 0 0 0 1px #2c3d38, 0 8px 20px -8px rgba(0, 0, 0, 0.8);
-  --shadow-lg: 0 0 0 1px #3e504b, 0 24px 48px -16px rgba(0, 0, 0, 0.9);
-  --scrim:     rgba(2, 8, 6, 0.72);
+  --surface-shadow: inset 0 1px 0 rgb(205 214 244 / 0.06), 0 12px 32px -16px rgb(0 0 0 / 0.6);
+  --shadow-sm: 0 0 0 1px #45475a;
+  --shadow-md: 0 0 0 1px #45475a, 0 8px 20px -8px rgba(0, 0, 0, 0.8);
+  --shadow-lg: 0 0 0 1px #585b70, 0 24px 48px -16px rgba(0, 0, 0, 0.9);
+  --scrim:     rgba(17, 17, 27, 0.72);
 
   /*
    * Every ground darkens toward its center, so a panel has depth rather
@@ -169,25 +142,39 @@
    * color, so a toned or raised panel keeps its own ground under them.
    */
   --surface-depth:
-    linear-gradient(155deg, rgb(211 198 170 / 0.035), rgb(211 198 170 / 0) 38%),
+    linear-gradient(155deg, rgb(205 214 244 / 0.035), rgb(205 214 244 / 0) 38%),
     radial-gradient(ellipse at center, rgb(0 0 0 / 0.16), rgb(0 0 0 / 0) 100%);
 
   /*
    * The page is already near black, so the panels' 16% would not show on
-   * it: its center falls to #111 against a canvas lifted a step to carry
-   * the fall. Fixed, so the dark is where the eye is, not halfway down a
-   * long document.
+   * it: its center falls to crust against mantle at the edges. Fixed, so
+   * the dark is where the eye is, not halfway down a long document.
+   *
+   * Mantle to crust is seven 8-bit steps across a whole screen, and without
+   * dithering each step is a visible ring. Two things hide them: the stops
+   * ease, so there is no bright point at the center to read rings around,
+   * and a grain of white noise at 0–1.5% breaks every step's edge up.
    */
-  --app-depth: radial-gradient(ellipse at center, #111 0%, rgb(17 17 17 / 0) 100%) fixed;
+  --app-depth:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0.03 0 0 0 -0.008'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse at center,
+      rgb(14 14 23 / 1)    0%,
+      rgb(14 14 23 / 0.95) 15%,
+      rgb(14 14 23 / 0.8)  30%,
+      rgb(14 14 23 / 0.55) 45%,
+      rgb(14 14 23 / 0.3)  60%,
+      rgb(14 14 23 / 0.12) 75%,
+      rgb(14 14 23 / 0.03) 88%,
+      rgb(14 14 23 / 0)    100%) fixed;
 
   /* ── Code ───────────────────────────────────────────────────────────
-   * Everforest's own syntax roles: green names, red keywords, aqua strings,
-   * purple specials, grey comments and punctuation.
+   * Mocha's own syntax roles: blue names, mauve keywords, green strings,
+   * peach specials, overlay comments and punctuation.
    */
-  --code-name:    #9bc389;
-  --code-keyword: #e67e80;
-  --code-value:   #83c092;
-  --code-special: #d699b6;
-  --code-comment: #89968d;
-  --code-punct:   #9da9a0;
+  --code-name:    #89b4fa;
+  --code-keyword: #cba6f7;
+  --code-value:   #a6e3a1;
+  --code-special: #fab387;
+  --code-comment: #9399b2;
+  --code-punct:   #9399b2;
 }

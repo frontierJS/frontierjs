@@ -17,6 +17,7 @@ litestone migrate apply [--backup[=dir]]
 litestone migrate status
 litestone migrate verify
 litestone migrate check                                  # does the history build the schema? no database opened
+litestone migrate lock [--check]                         # freeze applied files: an edit fails, an append passes
 litestone migrate baseline                               # record the files as applied, running none
 litestone db push [--accept-data-loss]                   # apply the schema directly, no file written (dev)
 litestone studio [--port=5502] [--no-open] [--gate <path[#export]>] [--host <addr> --token <secret>] [--readonly]
@@ -87,6 +88,11 @@ Apply all pending migration files in chronological order. Records applied migrat
 litestone migrate check
 ```
 Does the migration history build the schema this app declares? Asked of the repo alone — the files are replayed into a shadow database and diffed against the schema, no database of yours is opened — which is what lets CI and `fli deploy:doctor` ask it before an image exists. Exits 1 when the history falls short.
+
+```bash
+litestone migrate lock [--check]
+```
+Freeze the history once a real database has applied it. Writes `migrations.snapshot.md` beside the migrations directory: each file with the checksum `migrate apply` records for it. `--check` exits 1 when a listed file was edited or removed, and passes a newer file that is not listed yet. A write only appends — it refuses a changed or missing listed file rather than rehashing it, so `fli check --fix` cannot bless the edit. The header names the command, so `fli test:snapshots` and the CI `snapshots` phase run it.
 
 ```bash
 litestone migrate baseline

@@ -16,13 +16,15 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { parseFile, generateDDLForDatabase, createClient, GatePlugin, LEVELS, listMigrationFiles } from '../../../litestone/src/index.js'
+import { parseFile, createClient, GatePlugin, LEVELS, listMigrationFiles } from '../../../litestone/src/index.js'
 import { createTestEnv } from '../../../litestone/src/testing.js'
 import { introspect }     from '../../../litestone/src/core/migrate.js'
+import { historyGap }     from '../../../litestone/src/core/migrations.js'
 // The app's own resolver, not a stand-in. A gate test against a hand-written
 // getLevel proves the levels in this file, not the ones the API runs — and the
 // two disagreeing is exactly the failure @@gate exists to prevent.
 import { basecampGateLevel, WORKSPACE_ROLE_LEVEL } from '../../api/src/core/gate.ts'
+import { RUNTIME_COLUMNS } from '../../api/src/domain/release/runtime.ts'
 // The API realm's half of the tile vocabulary. Imported rather than restated:
 // the whole point of the first Dashboard test is that these two lists are one
 // list, and a copy here would be a third.
@@ -103,9 +105,18 @@ function freshDb(): string {
   if (freshDbPath) return freshDbPath
   const path = join(scratchDir('ddl'), 'bc.db')
   const raw  = new Database(path)
-  raw.run(readFileSync(MIGRATION, 'utf8'))
+  // Every file, not the first: the folder is append-only (FJS-D1605), so the
+  // first file is the schema as it stood on the freeze date.
+  for (const f of listMigrationFiles(MAIN_MIGRATIONS)) raw.run(readFileSync(join(MAIN_MIGRATIONS, f), 'utf8'))
   raw.close()
   return (freshDbPath = path)
+}
+
+/** One table's CREATE as the replayed history left it -- after a rebuild, the rebuilt one. */
+function tableSql(name: string): string {
+  const raw = new Database(freshDb(), { readonly: true })
+  try { return (raw.query(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?`).get(name) as { sql: string }).sql }
+  finally { raw.close() }
 }
 
 /**
@@ -291,13 +302,6 @@ describe('generated migration', () => {
     expect(existsSync(MIGRATION)).toBe(true)
   })
 
-  test('is in sync with schema.lite', () => {
-    // Same comparison `bun run db:check` makes — a hand-edit to the SQL fails here.
-    const r      = parseFile(SCHEMA)
-    const onDisk = readFileSync(MIGRATION, 'utf8')
-    expect(onDisk).toContain(generateDDLForDatabase(r.schema, 'main'))
-  })
-
   test('the audit database has its own migration', () => {
     // `migrate apply` reads each declared database from its own directory, so
     // a trail table generated into the main file never reaches audit.db.
@@ -305,7 +309,8 @@ describe('generated migration', () => {
     const dir   = join(MIGRATIONS, 'audit')
     const files = listMigrationFiles(dir)
     expect(files.length).toBeGreaterThan(0)
-    expect(readFileSync(join(dir, files[0]), 'utf8')).toContain(generateDDLForDatabase(r.schema, 'audit'))
+    // The history, not the first file: the folder is append-only (FJS-D1605).
+    expect(historyGap(r, dir, { dbName: 'audit' }).ok).toBe(true)
   })
 
   test('applies to a fresh database — 72 tables, FK-clean, all STRICT', () => {
@@ -373,10 +378,9 @@ describe('generated migration', () => {
   }, 30_000)
 
   test('the database the migrations build is the one schema.lite declares', async () => {
-    // The text check above compares the initial migration against generateDDLForDatabase,
-    // which stops meaning anything the moment a second migration file exists —
-    // a concatenation of two files does not contain the whole current DDL.
-    // This asks the durable question instead: build a database each way and
+    // A text comparison against generateDDLForDatabase stops meaning anything
+    // the moment a second migration file exists -- a concatenation of two files
+    // does not contain the whole current DDL. This asks the durable question: build a database each way and
     // compare what SQLite ended up with. Every other test in this file runs
     // against the migration, so this is what keeps that honest.
     const fromMigrations = await makeEnv()
@@ -1591,13 +1595,11 @@ describe('ApiKey — the token Basecamp issues', () => {
   }
 
   test('there is no column that could hold a token', () => {
-    // The whole security property, asserted against the DDL rather than taken
+    // The whole security property, asserted against the built table rather than taken
     // on trust from the model: a column added later called `token` would make
     // the service's "shown exactly once" promise quietly false, and nothing
     // else in this repo would notice.
-    const ddl   = readFileSync(MIGRATION, 'utf8')
-    const start = ddl.indexOf('CREATE TABLE IF NOT EXISTS "api_key"')
-    const table = ddl.slice(start, start + ddl.slice(start).indexOf(') STRICT;'))
+    const table = tableSql('api_key')
 
     expect(table).toContain('"tokenHint"')
     expect(table).not.toMatch(/"token"\s+TEXT/)
@@ -1745,9 +1747,7 @@ describe('Volume — observed, not declared', () => {
     // make two owners of one answer and every query would still work. The
     // service's scope (`serversOf`) is written on the assumption there is no
     // other route to a volume's workspace.
-    const ddl   = readFileSync(MIGRATION, 'utf8')
-    const start = ddl.indexOf('CREATE TABLE IF NOT EXISTS "volume"')
-    const table = ddl.slice(start, start + ddl.slice(start).indexOf(') STRICT;'))
+    const table = tableSql('volume')
 
     expect(table).toContain('"serverId"')
     expect(table).not.toContain('"workspaceId"')
@@ -2490,5 +2490,35 @@ describe('a protected environment — a developer deploys to it and does not res
     await admin.variable.update({ where: { id: held.id }, data: { value: 'y', version: held.version } })
     expect(await valueAt(held.id)).toBe('y')
     db.$close()
+  })
+})
+
+// FJS-D1438 / FJS-3428: the columns that start a container are listed once, in
+// `runtimeOf`'s reader, and the schema cannot say them without a new attribute
+// for one reader. This is the pin that stands in for it: a name there that is no
+// column is a flag nothing sets, and an App column neither listed nor named
+// exempt is one a release would silently not apply (the FJS-1605 failure).
+describe('App runtime columns', () => {
+  // Every other scalar App column, each one a thing a release does not hand to `docker run`.
+  const NOT_RUNTIME = [
+    'id', 'workspaceId', 'environmentId', 'name', 'slug', 'type', 'status', 'source', 'exposesPort',
+    'deployOnPush', 'pushSecret', 'pushTokenHash', 'pushActorId', 'deployPublicKey', 'blueprintId',
+    'backupCron', 'backupDestinationId', 'replicaDestinationId', 'drillCron', 'replicaFoundAt',
+    'replicaSyncedAt', 'createdAt', 'updatedAt', 'deletedAt',
+  ]
+  const models = parseFile(SCHEMA).schema.models
+  const columns = (name: string) => models.find((m: any) => m.name === name)!.fields
+    .filter((f: any) => f.type.kind !== 'relation').map((f: any) => f.name)
+
+  test('every runtime column is an App column, and a Blueprint one but containerPort', () => {
+    const app = columns('App'), blueprint = columns('Blueprint')
+    expect(RUNTIME_COLUMNS.filter(c => !app.includes(c))).toEqual([])
+    // `containerPort` is App-only: a blueprint's `port` is both until a person splits them.
+    expect(RUNTIME_COLUMNS.filter(c => !blueprint.includes(c))).toEqual(['containerPort'])
+  })
+
+  test('a new App column is either a runtime column or named exempt', () => {
+    const unplaced = columns('App').filter(c => !(RUNTIME_COLUMNS as readonly string[]).includes(c) && !NOT_RUNTIME.includes(c))
+    expect(unplaced).toEqual([])
   })
 })

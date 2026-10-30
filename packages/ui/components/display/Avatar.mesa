@@ -9,13 +9,17 @@
   //
   // ── The accessibility rule, which is markup and not CSS ──────────────
   //
-  // The image form carries its name in `alt`. The initials form defaults to
-  // aria-hidden, because nine times out of ten it sits beside the name it
-  // abbreviates and announcing "D O" there is noise. Pass `standalone` when
-  // the avatar IS the only identification — then it gets role="img" and the
-  // real name. Getting this wrong is the common avatar bug in both
-  // directions: a wall of unlabelled images, or a screen reader spelling out
-  // initials after every name it just read.
+  // Both forms are decorative by default: nine times out of ten the avatar
+  // sits beside the name it abbreviates, and announcing "D O" or the name
+  // twice is noise. Pass `standalone` when the avatar IS the only
+  // identification — the image then gets the name as its `alt` and the
+  // initials get role="img" and the name. Getting this wrong is the common
+  // avatar bug in both directions: a wall of unlabelled images, or a screen
+  // reader repeating a name it just read.
+  //
+  // A stored colour (a client's own hex) is `--data-accent` in `style`, which
+  // the fill reads before the tone and keeps readable text on.
+  //   <Avatar name={c.name} style={`--data-accent: ${c.avatarColor}`} />
   //
   // Usage:
   //   <Avatar src={user.avatar} name={user.name} />
@@ -52,12 +56,12 @@
   // null is what a signed-in user without a name hands over (FJS-2604).
   const n = name ?? ''
 
-  // Derive initials from name — first letter of first two words
-  const initials = n
-    .trim()
-    .split(/\s+/)
+  // First letter of the first two words, a word being a run of letters or
+  // digits: "Smith & Sons" is SS and "acme.com" is AC, where a whitespace
+  // split drew "S&" and "A".
+  const initials = (n.match(/[\p{L}\p{N}]+/gu) ?? [])
     .slice(0, 2)
-    .map(w => w[0]?.toUpperCase() ?? '')
+    .map(w => Array.from(w)[0].toUpperCase())
     .join('')
 
   // Deterministic tone from the name, so the same person is always the same
@@ -71,6 +75,7 @@
   ]
 
   const sz          = sizeMap[size] ?? sizeMap.md
+  const px          = Math.round(parseFloat(sz) * 16)   // reserves the box before the image loads
   const statusTone  = statusToneMap[status] ?? ''
   const radius      = shape === 'square' ? 'var(--card-radius, 0.5rem)' : '999px'
   const initialTone = toTone(tone) || autoTone
@@ -86,7 +91,10 @@
     <img
       class="avatar"
       src={src}
-      alt={name || ''}
+      alt={standalone ? n : ''}
+      width={px}
+      height={px}
+      decoding="async"
       style:--avatar-size={sz}
       style:--avatar-radius={radius}
       style:object-fit="cover"

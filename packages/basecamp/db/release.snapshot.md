@@ -471,7 +471,7 @@ table `app_platform` · db `main` · gate `2.5`
 | `workspaceId` | `String` | no | — | **required on write** |
 
 ```
-@@unique(name, provider, providerAccountId, workspaceId)
+@@unique(name, provider, providerAccountId)
 @@index(appId)
 @@index(workspaceId)
 @@deny(create, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)

@@ -105,5 +105,24 @@ const PAGINATION = 'components/display/Pagination.mesa'
   check(binary === 'BNI,Bing,apple', `an unstated column stays BINARY: ${binary}`)
 }
 
+// FJS-3603: initials come from the words of a name, not its whitespace runs; the
+// image names the person only where the avatar stands alone; a stored colour
+// is --data-accent, which the fill reads before the tone.
+{
+  const AVATAR = 'components/display/Avatar.mesa'
+  const initialsOf = async (name) => (await render(AVATAR, { name })).match(/<span class="(?:[^"]* )?avatar[ "][^>]*>\s*([^<\s]*)\s*</)?.[1]
+  check(await initialsOf('Smith & Sons') === 'SS', `"Smith & Sons" draws SS: ${await initialsOf('Smith & Sons')}`)
+  check(await initialsOf('acme.com') === 'AC', `"acme.com" draws AC: ${await initialsOf('acme.com')}`)
+  check(await initialsOf('Dana Ortiz') === 'DO', `"Dana Ortiz" still draws DO: ${await initialsOf('Dana Ortiz')}`)
+  const img = (data) => render(AVATAR, { src: '/u/12.jpg', name: 'Dana Ortiz', ...data })
+  const beside = await img({})
+  check(/alt=""/.test(beside), `an image beside a printed name has an empty alt: ${beside.slice(0, 160)}`)
+  check(/decoding="async"/.test(beside) && /width="\d+"/.test(beside) && /height="\d+"/.test(beside),
+    `the image carries width, height and decoding: ${beside.slice(0, 160)}`)
+  check(/alt="Dana Ortiz"/.test(await img({ standalone: true })), 'a standalone image keeps the name as its alt')
+  const css =readFileSync(join(ROOT, '../css/src/components/avatar.css'), 'utf8')
+  check(/--tone-fill:\s*var\(--data-accent,/.test(css), 'the avatar fill reads --data-accent before the tone')
+}
+
 console.log(failed ? `${failed} display-fixes case(s) failed` : 'display-fixes cases hold')
 if (failed) process.exit(1)

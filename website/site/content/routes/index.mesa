@@ -5,12 +5,19 @@ render: static
 ---
 <!--
   The splash. One screen that says what is coming and hands the reader to the
-  journey; the long-form case is /pitch/. No script beyond the layout's theme
-  island, so the motion here is CSS and stops under reduced-motion.
+  journey; the long-form case is /pitch/. The only scripts are the layout's theme
+  island and the landscape cloud below the splash, so the splash motion is CSS and
+  stops under reduced-motion.
 -->
 <script>
   import Marquee from '@frontierjs/site-kit/blocks/Marquee.mesa'
+  import LandscapeCloud from '../islands/LandscapeCloud.mesa'
   import { derived } from '../data/derived.js'
+
+  export let data = null
+
+  const d = data ?? { projects: [], factors: [], stances: [] }
+  const first = d.projects[0] ?? null
 </script>
 
 <section id="top" class="splash">
@@ -44,6 +51,114 @@ render: static
     </div>
   </div>
 </section>
+
+<section class="why" aria-labelledby="why-title">
+  <div class="container grid">
+    <div class="case">
+      <p class="eyebrow">Why</p>
+      <h2 id="why-title">Why another framework?</h2>
+      <p>
+        Because most of a web app is restatement. A Lead has an email, so the schema
+        says so. So do the validator, the TypeScript type, the access middleware and
+        the API docs. That's five copies of one fact, and sooner or later two of them
+        disagree.
+      </p>
+      <p>
+        Most frameworks help you write that glue faster. FrontierJS derives it, so
+        there is no second copy to drift.
+      </p>
+      <blockquote>Every duplicated truth eventually becomes a duplicated mental model.</blockquote>
+    </div>
+
+    <div class="reasons">
+      <h3>Why this one</h3>
+      <ol>
+        <li>
+          <b>One file is the origin.</b>
+          <code>db/schema.lite</code> seeds the tables, migrations, API, typed client,
+          forms and live updates. Each is a projection of it, never a second source.
+        </li>
+        <li>
+          <b>The rules travel with the data.</b>
+          Who can read, write or change a status is declared on the model with
+          <code>@@gate</code>, <code>@guarded</code> and <code>@@transitions</code>, and
+          enforced at the data. No route, job or agent gets around it.
+        </li>
+        <li>
+          <b>Three nouns to learn.</b>
+          Model, Service, Resource. Know those and you can guess where a feature lives
+          before you read its docs.
+        </li>
+        <li>
+          <b>Yours, not a platform.</b>
+          Your app stays a file tree, a binary and a SQLite database you own and run.
+        </li>
+      </ol>
+      <p class="more">
+        <a class="link" href="/direction/story/">The long version →</a>
+        <a class="link" href="/why/">When not to use it: pre-alpha, Bun and SQLite only →</a>
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="landscape" aria-labelledby="landscape-title">
+  <div class="container">
+    <h2 id="landscape-title">Nothing here was invented</h2>
+    <p class="lede">
+      FrontierJS is assembled out of {d.projects.length} other projects. Each word is one of them,
+      sized by <span data-factor-label>how close it is</span>; hover one to see what was
+      taken and where it stops.
+    </p>
+
+    <div class="controls">
+      <div class="segmented" data-factors role="group" aria-label="Size the cloud by">
+        {#each d.factors as f}
+          <button data-factor={f.key} data-label={f.label} data-help={f.help}
+                  aria-pressed={f.key === 'closeness'}>{f.label}</button>
+        {/each}
+      </div>
+      <div class="legend" aria-label="Tier">
+        <span><i style="background:var(--tier-1)"></i> Direct lineage</span>
+        <span><i style="background:var(--tier-2)"></i> Partial overlap</span>
+        <span><i style="background:var(--tier-3)"></i> Ancestors</span>
+      </div>
+    </div>
+
+    <!-- Filled at mount: the cloud is packed against the box it is measured in. -->
+    <div class="cloud" data-cloud data-state="static"></div>
+
+    <div class="detail" data-detail>
+      {#each d.projects as p}
+        <div class="proj" class:is-shown={p.rank === first?.rank} data-rank={p.rank}>
+          <div class="head">
+            <span class="name">{p.name}</span>
+            <span class="meta">{p.realm} · tier {p.tier} · closeness {p.closeness} · influence {p.inspiration}</span>
+          </div>
+          <p><span class="k">Taken</span>{p.relation}</p>
+          <p><span class="k">Stops at</span>{p.gap}</p>
+        </div>
+      {/each}
+    </div>
+
+    <!-- The island reads each word off these, and reorders them. They are the
+         crawlable list too, so they stay in the flow, clipped. -->
+    <ul class="visually-hidden" data-rows>
+      {#each d.projects as p}
+        <li class="entry" data-rank={p.rank} data-name={p.name} data-url={p.url}
+            data-tier={p.tier} data-stance={p.stance}
+            data-closeness={p.closeness} data-inspiration={p.inspiration}
+            data-proximity={p.proximity}>
+          <a href={p.url} target="_blank" rel="noopener">{p.name}</a> — {p.relation}
+        </li>
+      {/each}
+    </ul>
+
+    <p class="more"><a class="link" href="/why/landscape/">The full register — what was taken, where it stops, what we did with it →</a></p>
+  </div>
+</section>
+
+<LandscapeCloud client:load />
 
 <section class="derived" aria-labelledby="derived-title">
   <h2 id="derived-title" class="container">Derived from the schema, extended by you</h2>
@@ -222,6 +337,93 @@ render: static
   }
   .promises li { font-size: .92rem; color: var(--ink-soft); }
   .promises b { color: var(--ink); display: block; margin-bottom: .2rem; }
+
+  .why { padding: 4rem 0; border-top: 1px solid var(--rule); font-family: var(--font-primary); }
+  .why .grid {
+    display: grid; gap: 2.5rem 4rem; padding-inline: 1.25rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  }
+  .why h2 { font-size: clamp(1.6rem, 3.4vw, 2.3rem); letter-spacing: -.03em; line-height: 1.1; margin: 0 0 .6em; }
+  .why .case p { color: var(--ink-soft); font-size: 1.05rem; line-height: 1.6; max-width: 52ch; margin: 0 0 1em; }
+  .why blockquote {
+    margin: 1.5rem 0 0; padding-left: 1rem; border-left: 3px solid var(--color-primary);
+    font-size: 1.15rem; line-height: 1.45; color: var(--ink); max-width: 40ch;
+  }
+  .why h3 {
+    margin: 0 0 1rem; font-size: .78rem; font-weight: 600; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink-mute);
+  }
+  .why ol { list-style: none; counter-reset: why; padding: 0; margin: 0; display: grid; gap: 1.1rem; }
+  .why li {
+    counter-increment: why; position: relative; padding-left: 2.25rem;
+    font-size: .95rem; line-height: 1.55; color: var(--ink-soft);
+  }
+  .why li::before {
+    content: counter(why, decimal-leading-zero); position: absolute; left: 0; top: .1rem;
+    font-family: var(--font-mono, ui-monospace, Menlo, monospace); font-size: .78rem; color: var(--color-primary);
+  }
+  .why li b { display: block; color: var(--ink); font-size: 1.02rem; margin-bottom: .15rem; }
+  .why li code { font-family: var(--font-mono, ui-monospace, Menlo, monospace); font-size: .85em; }
+  .why .more { display: grid; gap: .4rem; margin: 1.5rem 0 0; font-size: .92rem; }
+
+  .landscape { padding: 3.5rem 0; border-top: 1px solid var(--rule); font-family: var(--font-primary); }
+  .landscape h2 { font-size: clamp(1.4rem, 3vw, 1.9rem); letter-spacing: -.02em; margin: 0 0 .35em; }
+  .landscape .lede { font-size: 1.05rem; color: var(--ink-soft); max-width: 60ch; line-height: 1.6; margin: 0; }
+  .landscape .more { margin: 1.25rem 0 0; font-size: .92rem; }
+
+  /* The ordinal tier ramp, the same three the landscape page validated. */
+  :root {
+    --tier-1: #104281;
+    --tier-2: #256abf;
+    --tier-3: #5598e7;
+    --cloud-hover: color-mix(in srgb, var(--tier-1) 12%, transparent);
+  }
+  :global(.theme-dark) {
+    --tier-1: #b7d3f6;
+    --tier-2: #6da7ec;
+    --tier-3: #3987e5;
+  }
+
+  .controls { display: flex; gap: 1.25rem; align-items: center; flex-wrap: wrap; margin: 1.5rem 0 1rem; }
+  .segmented { display: inline-flex; border: 1px solid var(--rule-strong); border-radius: 8px; overflow: hidden; }
+  .segmented button {
+    appearance: none; border: 0; background: var(--surface); color: var(--ink-soft);
+    font: inherit; font-size: .85rem; padding: .4rem .85rem; cursor: pointer;
+  }
+  .segmented button + button { border-left: 1px solid var(--rule); }
+  .segmented button[aria-pressed="true"] { background: var(--surface-sunken); color: var(--ink); font-weight: 600; }
+  .legend { display: flex; gap: 1rem; flex-wrap: wrap; margin-left: auto; font-size: .8rem; color: var(--ink-soft); }
+  .legend span { display: inline-flex; align-items: center; gap: .4rem; }
+  .legend i { width: .8rem; height: .8rem; border-radius: 3px; display: inline-block; }
+
+  .cloud {
+    position: relative;
+    height: clamp(22rem, 58vh, 34rem);
+    border: 1px solid var(--rule); border-radius: 14px;
+    background: var(--surface-raised); overflow: hidden;
+  }
+  /* The words are made by the island, so they carry no scope id. */
+  .cloud :global(a) {
+    position: absolute; white-space: nowrap; text-decoration: none;
+    font-weight: 700; letter-spacing: -.02em; line-height: 1;
+    padding: .12em .2em; border-radius: 6px;
+    transition: background-color .12s ease, transform .12s ease;
+  }
+  .cloud :global(a:hover), .cloud :global(a:focus-visible) { background: var(--cloud-hover); transform: scale(1.04); }
+  .cloud :global(a:focus-visible) { outline: 2px solid var(--ink); outline-offset: 1px; }
+
+  .detail {
+    margin-top: 1rem; border: 1px solid var(--rule); border-left: 4px solid var(--tier-1);
+    border-radius: 10px; background: var(--surface-raised); padding: 1rem 1.15rem;
+    min-height: 8.5rem;
+  }
+  .detail .head { display: flex; gap: .75rem; align-items: baseline; flex-wrap: wrap; }
+  .detail .name { font-size: 1.05rem; font-weight: 700; letter-spacing: -.01em; }
+  .detail .meta { font-size: .78rem; color: var(--ink-mute); }
+  .detail p { margin: .5rem 0 0; font-size: .9rem; color: var(--ink-soft); line-height: 1.55; max-width: 78ch; }
+  .detail p .k { color: var(--ink-mute); font-size: .76rem; letter-spacing: .1em; text-transform: uppercase; margin-right: .45rem; }
+  .detail .proj { display: none; }
+  .detail .proj.is-shown { display: block; }
 
   .derived { padding: 1rem 0 4rem; font-family: var(--font-primary); }
   .derived h2 {

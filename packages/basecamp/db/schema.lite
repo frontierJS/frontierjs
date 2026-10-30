@@ -2087,7 +2087,7 @@ model AppPlatform {
   // there: one token can open several, and every project path is under one.
   providerAccountId String           @immutable
   // The vendor's own name for it: a Worker's script name, a Vercel project id.
-  // Two Apps cannot both be one Worker.
+  // Two Apps cannot both be one Worker, in any workspace: the key is global.
   name              String           @trim @length(1, 200) @immutable
   build             PlatformBuild    @default(outpost)
   // Which Outpost builds; null with `build = platform`.
@@ -2105,7 +2105,7 @@ model AppPlatform {
   // Binding an App to a vendor account spends that account's token, which is
   // the Secret's own write level.
   @@gate(2.5)
-  @@unique([provider, providerAccountId, name])
+  @@unique([provider, providerAccountId, name], global: true)
   @@trail(audit)
   @@index([appId])
   @@index([workspaceId])

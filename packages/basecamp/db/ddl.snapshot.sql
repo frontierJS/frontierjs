@@ -1168,7 +1168,7 @@ CREATE TABLE IF NOT EXISTS "app_platform" (
   CHECK ("provider" IN ('cloudflare')),
   CHECK ("build" IN ('outpost', 'platform')),
   CHECK ("status" IN ('unknown', 'stopped', 'starting', 'running', 'stopping', 'deploying', 'error')),
-  UNIQUE ("workspaceId", "provider", "providerAccountId", "name"),
+  UNIQUE ("provider", "providerAccountId", "name"),
   FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_app_platform_appId" ON "app_platform" ("appId");

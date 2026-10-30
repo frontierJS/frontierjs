@@ -30,12 +30,12 @@ flags:
     defaultValue: false
   domain:
     type: string
-    description: "A never-released App's hostname: the Domain, and what both FRONTIER_*_URLs derive from (asked at a terminal)"
+    description: "The App's hostname, when it has no Domain: the Domain, and what both FRONTIER_*_URLs derive from (asked at a terminal)"
     defaultValue: ''
   yes:
     char: y
     type: boolean
-    description: Apply a never-released App's settings without asking; with no terminal and no --yes the plan is printed and nothing is written
+    description: Apply what the App is missing without asking; with no terminal and no --yes the plan is printed and nothing is written
     defaultValue: false
 ---
 
@@ -88,10 +88,12 @@ in the image are errors, and an error stops the release before the build;
 service, a health route the App never asks, and a git-ignored file the image
 would carry are warnings. `--dry` prints the whole report and builds nothing.
 
-**An App that has never been released is set up here, from those same
-declarations** (`FJS-3525`). No release, no port and no Variables of its own
-is the sign, detected rather than flagged. Each finding that is a setting
-carries its fix, and the command merges them into one plan: the App's
+**What the App is missing is set up here, from those same declarations**
+(`FJS-3525`), on every run rather than the first (`FJS-D1599`), so a setup
+that stopped part way is finished by the next one. Each finding that is a
+missing setting carries its fix, and the command merges them into one plan:
+a Variable the App already holds is never written again, and a Domain or
+route already there is read rather than made twice. The plan holds the App's
 container port from the app's `PORT` and its host port the first from there
 that no other App on its machines publishes (`FJS-3563`), its volume at `/db` with every
 database path moved onto it, its health check, `NODE_ENV=production`, each
@@ -104,7 +106,8 @@ app. A slug never changes, so the static App's is `app`, or `web` where this
 one already holds `app`. The
 Domain goes on that App with the API's prefixes and `/ws` routed back here —
 `fli deploy`'s shape, `FJS-D1040`'s rows (`FJS-D1547`); an app without one
-gets the Domain itself. The plan is shown, applied on a yes (`--yes` skips
+gets the Domain itself. A Domain on the static App missing a route back is a
+finding whose fix is the route (`FJS-3529`). The plan is shown, applied on a yes (`--yes` skips
 the asking), and the preflight runs again on what Basecamp now holds. With no
 terminal and no `--yes` the plan is printed and nothing is written; `--dry`
 prints it too. A credential the app requires, a Dockerfile edit and
@@ -119,15 +122,16 @@ and `BASECAMP_APP_ID`. With `BASECAMP_APP_ID` set, `fli deploy` is this command.
 would put it in shell history. The key needs `apps:read`,
 `deployments:write` and `deployments:read` (to watch the release) — and
 `apps:write` for a static App — and a standing that may release in its
-workspace. Setting up a never-released App writes through `apps:write`,
-`variables:write`, `domains:write` and `domainRoutes:write`; a 403 names
+workspace. Setting up what the App is missing reads `domainRoutes:read` and
+writes through `apps:write`, `variables:write`, `domains:write` and
+`domainRoutes:write`; a 403 names
 the scope the key lacks.
 
 <script>
 const { loadFrontierConfig }         = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
 const { vendorApp, GENERATED_DIR, chooseDockerfile, needsGenerated } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
 const { createMachine }              = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
-const { releaseFindings, gatherReleaseInputs, releasePlan, neverReleased } = await import(new URL('file://' + global.fliRoot + '/core/release-preflight.js'))
+const { releaseFindings, gatherReleaseInputs, releasePlan } = await import(new URL('file://' + global.fliRoot + '/core/release-preflight.js'))
 const { routePrefixes, apiPaths }    = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
 const { readAppSnapshot }            = await import(new URL('file://' + global.fliRoot + '/core/app-entry.js'))
 const { inspectBuild, inspectIgnored, gatherLocal, gatherIgnored } = await import(new URL('file://' + global.fliRoot + '/core/build-check.js'))
@@ -153,18 +157,20 @@ async function readList(origin, key, path) {
 }
 
 /** Everything the preflight finds for a container App, errors first, with the
- *  Variables it read (the walkthrough asks them whether the App has any). */
+ *  API's route prefixes the plan routes back to it. */
 async function preflight({ origin, key, app, root, dockerfile }) {
   const fs = await import('fs')
   const { spawnSync } = await import('child_process')
   const vars     = await readList(origin, key, `/variables?environmentId=${encodeURIComponent(app.environmentId)}&$limit=200`)
   const siblings = await readList(origin, key, `/apps?environmentId=${encodeURIComponent(app.environmentId)}&$limit=200`)
+  const routes   = await readList(origin, key, '/domainRoutes?$limit=200')
+  const prefixes = routePrefixes(apiPaths(readAppSnapshot(root)))
   const build    = gatherLocal({ root, fs, dockerfile })
   const level    = { error: 0, warn: 1, info: 2 }
   const findings = [
     ...releaseFindings({
-      app, variables: vars.rows, siblings: siblings.rows,
-      unread: { ...(vars.error ? { variables: vars.error } : {}) },
+      app, variables: vars.rows, siblings: siblings.rows, routes: routes.rows, prefixes,
+      unread: { ...(vars.error ? { variables: vars.error } : {}), ...(routes.error ? { routes: routes.error } : {}) },
       ...gatherReleaseInputs(root, { dockerfile }),
     }),
     ...(build.missing ? [] : inspectBuild(build)),
@@ -173,7 +179,7 @@ async function preflight({ origin, key, app, root, dockerfile }) {
       groups: gatherIgnored({ root, fs, spawnSync }), expected: [GENERATED_DIR],
     })),
   ].sort((a, b) => level[a.level] - level[b.level])
-  return { findings, variables: vars.rows }
+  return { findings, prefixes }
 }
 
 /** The page a static App serves until web/ is released onto it. */
@@ -198,6 +204,7 @@ function planLines(plan, app, servers) {
   if (plan.domain)
     lines.push(`Domain ${plan.domain.hostname} on '${plan.domain.on === 'web' ? WEB_NAME : apiName}'` +
       (plan.domain.routes.length ? `, ${plan.domain.routes.join(' and ')} → '${apiName}'` : ''))
+  for (const r of plan.routes) lines.push(`Routes on ${r.hostname}: ${r.prefixes.join(' and ')} → '${apiName}'`)
   return lines
 }
 
@@ -224,7 +231,7 @@ async function applyPlan({ origin, key, app, plan }) {
       await basecamp(origin, key, `/apps/${encodeURIComponent(web.id)}`, { method: 'POST', headers: { 'x-service-method': 'place' }, body: { serverId: p.serverId } })
   }
   if (plan.domain) {
-    const owner  = plan.domain.on === 'web' ? web : app
+    const owner  = plan.domain.on === 'web' ? (web ?? { id: plan.domain.webId }) : app
     // A run that stopped after this write finds its own row on the rerun, and
     // a second POST is refused by the per-workspace unique hostname. Basecamp's
     // find filters on appId only, so the hostname is matched here.
@@ -233,20 +240,26 @@ async function applyPlan({ origin, key, app, plan }) {
     if (found && found.appId !== owner.id)
       throw new Error(`${plan.domain.hostname} is already a Domain of another App (${found.appId}) — move it in Basecamp, or pass a different --domain`)
     const domain = found ?? await basecamp(origin, key, '/domains', { method: 'POST', body: { appId: owner.id, hostname: plan.domain.hostname } })
-    // A prefix already routed elsewhere is a hand edit, and a reconcile never
-    // overwrites one (`FJS-D1599`). Basecamp stores a prefix lowercased with
-    // no trailing slash, so the plan's is compared in that form.
-    const norm   = (p) => String(p).trim().toLowerCase().replace(/\/+$/, '')
-    const routed = new Map((await basecamp(origin, key, `/domainRoutes?domainId=${encodeURIComponent(domain.id)}&$limit=200`))
-      .filter(r => r.domainId === domain.id).map(r => [norm(r.pathPrefix), r]))
-    for (const pathPrefix of plan.domain.routes) {
-      const have = routed.get(norm(pathPrefix))
-      if (have && have.appId !== app.id)
-        throw new Error(`${plan.domain.hostname}${pathPrefix} already routes to another App (${have.appId}) — change it in Basecamp, or remove the route`)
-      if (!have) await basecamp(origin, key, '/domainRoutes', { method: 'POST', body: { domainId: domain.id, pathPrefix, appId: app.id } })
-    }
+    await routeBack({ origin, key, app, domainId: domain.id, hostname: plan.domain.hostname, prefixes: plan.domain.routes })
   }
+  for (const r of plan.routes) await routeBack({ origin, key, app, ...r })
   return { web }
+}
+
+/** Each of `prefixes` on the Domain routed to `app`, posting only what is not
+ *  there. A prefix already routed elsewhere is a hand edit, and a reconcile
+ *  never overwrites one (`FJS-D1599`). Basecamp stores a prefix lowercased
+ *  with no trailing slash, so the plan's is compared in that form. */
+async function routeBack({ origin, key, app, domainId, hostname, prefixes }) {
+  const norm   = (p) => String(p).trim().toLowerCase().replace(/\/+$/, '')
+  const routed = new Map((await basecamp(origin, key, `/domainRoutes?domainId=${encodeURIComponent(domainId)}&$limit=200`))
+    .filter(r => r.domainId === domainId).map(r => [norm(r.pathPrefix), r]))
+  for (const pathPrefix of prefixes) {
+    const have = routed.get(norm(pathPrefix))
+    if (have && have.appId !== app.id)
+      throw new Error(`${hostname}${pathPrefix} already routes to another App (${have.appId}) — change it in Basecamp, or remove the route`)
+    if (!have) await basecamp(origin, key, '/domainRoutes', { method: 'POST', body: { domainId, pathPrefix, appId: app.id } })
+  }
 }
 
 /** The release once it stops moving, or as it stands after WAIT_MS. */
@@ -401,17 +414,19 @@ if (inline) {
     return count
     }
 
-    let { findings, variables } = await preflight({ origin, key, app, root, dockerfile })
+    let { findings, prefixes } = await preflight({ origin, key, app, root, dockerfile })
     let count = report(findings)
 
-    // ─── A never-released App: its settings, from what the app declares ───────
-    if (neverReleased(app, variables)) {
-      const prefixes = routePrefixes(apiPaths(readAppSnapshot(root)))
+    // ─── What the App is missing, from what the app declares ──────────────────
+    // On every run, so a setup that stopped part way is finished by the next
+    // one rather than skipped (`FJS-3529`); a settled App plans nothing.
+    const missing = releasePlan(findings, { prefixes })
+    if (!missing.empty || missing.asked.length) {
       const asking   = process.stdin.isTTY && !flag.yes
       const ask      = async (q, hint) => (await tty.line(`  ${q} ${chalk.dim(hint)}\n  ${chalk.cyan('›')}`)).trim()
       let hostname = flag.domain
-      if (!hostname && asking && releasePlan(findings, { prefixes }).asked.length) {
-        echo(`  App '${app.name}' has never been released. One question shapes it:`)
+      if (!hostname && asking && missing.asked.length) {
+        echo(`  App '${app.name}' is missing what its hostname gives it. One question shapes it:`)
         hostname = await ask('Its hostname', 'e.g. app.example.com — Enter: none yet, the URLs and the Domain stay unset')
       }
       const plan    = releasePlan(findings, { hostname, prefixes })
@@ -426,8 +441,9 @@ if (inline) {
         echo('')
         if (!apply) {
           if (!flag.dry) log.info('No terminal — pass --yes (and --domain <hostname>) to apply this, or set the App in Basecamp')
+        } else if (!flag.yes && (await ask('Apply it?', '[Y/n]')).toLowerCase().startsWith('n')) {
+          log.info('Left as it is — nothing was written')
         } else {
-          if (!flag.yes && (await ask('Apply it?', '[Y/n]')).toLowerCase().startsWith('n')) throw new Error('left as it is — nothing was written')
           const { web } = await applyPlan({ origin, key, app, plan })
           log.success(`Set up App '${app.name}'${web ? ` and its static App '${web.name}' (${web.id})` : ''}`)
           app = await basecamp(origin, key, `/apps/${encodeURIComponent(appId)}`)

@@ -177,3 +177,58 @@ test('the console never shows the one-time password', () => {
   const shown = displayArgv('fli', pubArgv({ otp: '654321' }, members()).argv)
   expect(shown).toBe('fli ws:pub patch --otp ••••••')
 })
+
+// ─── the release order ───────────────────────────────────────────────────────
+// GitHub makes a release only on a commit it has: `gh release create` for a tag
+// still local answers 422 `target_commitish is invalid` (FJS-3616). `--dry`
+// never calls gh, so only a real run against a remote meets the order. The gh
+// stand-in refuses the way GitHub does, by asking the bare remote for the tag.
+
+test('a fresh release pushes its tag before gh makes the release on it', async () => {
+  const base   = mkdtempSync(join(tmpdir(), 'fli-publish-order-'))
+  const ws     = join(base, 'ws')
+  const remote = join(base, 'remote.git')
+  const bin    = join(base, 'bin')
+  const calls  = join(base, 'gh.log')
+  try {
+    mkdirSync(join(ws, 'packages', 'pkg'), { recursive: true })
+    mkdirSync(bin)
+    writeFileSync(join(ws, 'package.json'), JSON.stringify({ name: 'ws', private: true, workspaces: ['packages/*'] }))
+    writeFileSync(join(ws, 'packages', 'pkg', 'package.json'), JSON.stringify({ name: '@t/pkg', version: '0.1.0' }, null, 2) + '\n')
+    writeFileSync(join(bin, 'gh'), [
+      '#!/bin/sh',
+      'echo "$*" >> "$GH_CALLS"',
+      'case "$1 $2" in',
+      '  "auth status") echo "Logged in to github.com account t"; exit 0 ;;',
+      '  "release view") echo "release not found" >&2; exit 1 ;;',
+      '  "release create")',
+      '    git --git-dir="$GH_REMOTE" rev-parse -q --verify "refs/tags/$3" >/dev/null && exit 0',
+      '    echo "HTTP 422: Validation Failed (target_commitish is invalid)" >&2; exit 1 ;;',
+      'esac',
+      'exit 1',
+    ].join('\n') + '\n', { mode: 0o755 })
+    const git = (c, cwd = ws) => execSync(`git ${c}`, { cwd, stdio: 'ignore' })
+    git(`init -q --bare ${JSON.stringify(remote)}`, base)
+    git('init -q -b main')
+    git('config user.email t@t')
+    git('config user.name t')
+    git('add -A')
+    git('commit -qm init')
+    git(`remote add origin ${JSON.stringify(remote)}`)
+    git('push -q origin main')
+
+    const proc = Bun.spawn([process.execPath, join(CLI, 'bin/fli.js'), 'ws:pub', 'patch'], {
+      cwd: ws, stdout: 'pipe', stderr: 'pipe', stdin: 'ignore',
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, GH_CALLS: calls, GH_REMOTE: remote,
+             HTTPS_PROXY: 'http://127.0.0.1:9', NO_COLOR: '1' },
+    })
+    const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
+    const text = (out + err).replace(/\x1b\[[0-9;]*m/g, '')
+
+    expect(readFileSync(calls, 'utf8')).toContain('release create @t/pkg@0.1.1')
+    expect(text).not.toContain('target_commitish is invalid')
+    expect(text).toContain('✓ @t/pkg@0.1.1 → release @t/pkg@0.1.1')
+  } finally {
+    rmSync(base, { recursive: true, force: true })
+  }
+}, 90_000)

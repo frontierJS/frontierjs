@@ -53,4 +53,12 @@ export async function run(t) {
   t.ok(reply.tableScrolls, 'a table wider than the column scrolls in its own box')
   t.ok(reply.tableFits, 'and stays inside the column')
   t.ok(reply.pageOver <= 0, `the page does not scroll sideways (${reply.pageOver}px over)`)
+
+  /* ── onnavigate observes a link click, and never prevents it ─────────── */
+
+  await t.clickAt('#heard a')
+  t.is(JSON.stringify(await t.evaluate(`return window.__heard`)), '[{"href":"#frag","prevented":false}]',
+    'a link click is heard with its href and left alone')
+  await t.clickAt('#heard strong')
+  t.is(await t.evaluate(`return window.__heard.length`), 1, 'a click off a link is not heard')
 }

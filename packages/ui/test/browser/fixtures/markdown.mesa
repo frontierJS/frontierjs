@@ -35,6 +35,11 @@
     'const lead = await $.db.lead.create({ data })',
     '```',
   ].join('\n')
+
+  // `#heard` is what onnavigate saw. It must never prevent: a link click in a
+  // reply still follows its href (the anchor here is `#frag`, so the page stays).
+  window.__heard = []
+  const heard = (href, event) => window.__heard.push({ href, prevented: event.defaultPrevented })
 </script>
 
 <Markdown id="hostile" text={hostile} />
@@ -42,3 +47,5 @@
 <div id="narrow" style="inline-size: 320px">
   <Markdown text={reply} headingBase={3} />
 </div>
+
+<Markdown id="heard" text={'[in page](#frag) and **bold**'} onnavigate={heard} />

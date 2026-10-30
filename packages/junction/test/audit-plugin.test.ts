@@ -39,6 +39,8 @@ model Server {
   workspaceId String?
   state       String
   password    String? @hashed
+  contact     String? @personal(contact)
+  sealed      String? @opaque
   @@gate(0)
 }
 `
@@ -138,8 +140,25 @@ describe('what changed', () => {
 
   test('a protected column appears in the diff and its values never do', async () => {
     const db = await createClient({ db: ':memory:', schema: SCHEMA }) as any
-    const diff = diffRows({ id: 's1', password: 'a', state: 'up' }, { id: 's1', password: 'b', state: 'up' }, db.$protectedFields('server'))
+    const diff = diffRows({ id: 's1', password: 'a', state: 'up' }, { id: 's1', password: 'b', state: 'up' }, db.$trailMarks('server'))
     expect(diff).toEqual({ password: { before: '[redacted]', after: '[redacted]' } })
+  })
+
+  // FJS-3599: litestone's own trail logs these as [personal] and a digest.
+  test('a @personal column diffs as [personal] and an @opaque one as a digest of each side', async () => {
+    const { app, db, rows } = await harness()
+    await app.service('servers').create({ id: 's1', state: 'up', contact: 'ann@example.com', sealed: 'abc' })
+    await app.service('servers').patch('s1', { contact: 'bob@example.com', sealed: 'abd' })
+
+    const diff = (await rows())[1].diff
+    expect(JSON.stringify(diff)).not.toMatch(/example\.com|abc|abd/)
+    expect(diff.contact).toEqual({ before: '[personal]', after: '[personal]' })
+    expect(diff.sealed.before).toMatch(/^\[opaque:[\w-]{12}\]$/)
+    expect(diff.sealed.after).toMatch(/^\[opaque:[\w-]{12}\]$/)
+    expect(diff.sealed.before).not.toBe(diff.sealed.after)
+
+    // The hashed column is still named beside the two the trail only marks.
+    expect(Object.keys((db as any).$trailMarks('server')).sort()).toEqual(['contact', 'password', 'sealed'])
   })
 })
 

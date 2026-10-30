@@ -21,10 +21,10 @@
 //
 // A finding whose answer is a setting carries it as `fix` beside the prose
 // `hint`, and `releasePlan` merges every fix into the writes one walkthrough
-// makes (`FJS-3525`): one App patch, the Variable rows, and for an App that
-// has never been released, the Domain — on a static sibling for the app's
-// `web/`, with the API's prefixes routed to this App (`FJS-D1547`). What a
-// fix cannot know (a credential, a Dockerfile edit) stays prose.
+// makes (`FJS-3525`): one App patch, the Variable rows, and the Domain — on a
+// static sibling for the app's `web/`, with the API's prefixes routed to this
+// App (`FJS-D1547`). What a fix cannot know (a credential, a Dockerfile edit)
+// stays prose.
 
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
@@ -42,6 +42,7 @@ export const RULES = {
   'port-taken':       'a host port another App on the same machine already publishes',
   'health-unchecked': 'a health route the App never asks, so a crash after start is a success',
   'unrouted':         'an App with no Domain and no exposed port',
+  'route-missing':    "a Domain on the static App with no route back to the API's prefixes",
   'external-default': 'a URL left on its default, which is a real outside service',
   'local-default':    'a URL left on a localhost default, which inside the container is the container',
   'node-env':         'NODE_ENV resolving to development in a release',
@@ -98,9 +99,15 @@ export function imageRuntime(dockerfile) {
 export function releaseFindings({
   app, variables = null, siblings = null, envSpec = null, unread = {},
   databases = [], health = null, image = { workdir: '/', env: {} }, surfaces = [],
+  routes = null, prefixes = ['/api', '/ws'],
 }) {
   const findings = []
-  const add = (rule, level, title, detail, hint, fix = null) => findings.push({ rule, level, title, detail, hint, fix })
+  // A fix fills what is missing and never rewrites a row the App holds
+  // (`FJS-D1599`): a second POST of one of its Variables is refused, and the
+  // value there may be a hand edit.
+  const own = new Set((variables ?? []).filter(r => r.appId === app.id).map(r => r.key))
+  const add = (rule, level, title, detail, hint, fix = null) => findings.push({ rule, level, title, detail, hint,
+    fix: fix?.variables ? { ...fix, variables: fix.variables.filter(r => !own.has(r.key)) } : fix })
 
   const vars = variables ? mergeVariables(variables, app.id) : null
   const spec = envSpec?.spec ?? null
@@ -212,10 +219,37 @@ export function releaseFindings({
       'A health check on a path nothing serves fails every release and puts the previous one back.',
       `Set the App's health check to ${health.path}.`, { app: { healthCheck: health.path } })
 
-  if (!(app.domains ?? []).length && !app.exposesPort)
+  // The API split from web/ is reached through a Domain on the static App and
+  // the routes back to it (`FJS-D1547`); a setup that stopped after the Domain
+  // left none, and the hostname served the page for /api (`FJS-3529`). A
+  // Domain routed to another App is that App's, and left alone.
+  const statics = (siblings ?? []).filter(s => s.id !== app.id && s.source?.kind === 'inline')
+  const norm    = (p) => String(p).trim().toLowerCase().replace(/\/+$/, '')
+  let fronted = false
+  for (const s of statics) for (const d of s.domains ?? []) {
+    const on = (routes ?? []).filter(r => r.domainId === d.id)
+    if (on.some(r => r.appId !== app.id)) continue
+    fronted = true
+    if (!routes) continue
+    const have    = new Set(on.map(r => norm(r.pathPrefix)))
+    const missing = prefixes.filter(p => !have.has(norm(p)))
+    if (!missing.length) continue
+    add('route-missing', 'warn', `${d.hostname} serves ${s.name}, and routes ${missing.join(' and ')} to no App`,
+      `It is the Domain of the static App, so a request for the API under ${missing.join(' or ')} is answered with the page.`,
+      `Route ${missing.join(' and ')} on ${d.hostname} to '${app.name}'.`,
+      { routes: [{ domainId: d.id, hostname: d.hostname, prefixes: missing }] })
+  }
+  if (!routes && statics.some(s => s.domains?.length))
+    add('unreadable', 'warn', "could not read the Domain routes",
+      `${unread.routes ?? 'No answer'} — so whether the static App's Domain reaches this App was not checked.`,
+      /\b403\b/.test(unread.routes ?? '') ? 'Issue the key with domainRoutes:read.' : 'Run it again, or read the routes in Basecamp.')
+
+  if (!(app.domains ?? []).length && !app.exposesPort && !fronted && !(routes ?? []).some(r => r.appId === app.id))
     add('unrouted', 'warn', 'nothing routes to the App',
       'It has no Domain and its port is not exposed, so it answers no one outside the machine.',
-      'Add a Domain to the App.', { domain: true })
+      'Add a Domain to the App.',
+      // A lone static App with no Domain is web/'s, made by a setup that stopped before its Domain.
+      { domain: true, ...(statics.length === 1 ? { webApp: statics[0].id } : {}) })
 
   // ── what it talks to ──────────────────────────────────────────────────────
   if (vars && spec) {
@@ -275,24 +309,20 @@ export function releaseFindings({
 
 // ─── the plan ────────────────────────────────────────────────────────────────
 
-/** An App nothing has shaped yet: no release, no port, no Variables of its own.
- *  Detected rather than flagged, so the first `fli basecamp:deploy` walks it
- *  through and the second finds nothing to ask. */
-export function neverReleased(app, variables) {
-  return !app.port
-    && !(app.recent_deployments ?? app.deployments ?? []).length
-    && !(variables ?? []).some(v => v.appId === app.id)
-}
-
 /**
- * Every finding's `fix`, merged into the writes one walkthrough makes:
+ * Every finding's `fix`, merged into the writes one walkthrough makes. Each
+ * fix is something missing, so `empty` is the gate: a run that stopped part
+ * way plans the rest, and a settled App plans nothing (`FJS-D1599`).
  *
  *   app        one PATCH /apps/:id
  *   variables  POST /variables rows — `generate: 'hex32'` is minted by the
  *              caller and never printed, `derive: 'origin'` is https://hostname
  *   web        create a static App for web/ (`FJS-D1547`)
- *   domain     `{ hostname, on: 'web' | 'api', routes }` — on the static App
- *              with the API's prefixes routed here, or on this App without one
+ *   domain     `{ hostname, on: 'web' | 'api', webId?, routes }` — on the
+ *              static App (`webId` when it exists) with the API's prefixes
+ *              routed here, or on this App without one
+ *   routes     `{ domainId, hostname, prefixes }` — routes back to this App
+ *              on a Domain that already exists
  *
  * `hostname` empty leaves `domain` null and the `derive` rows out, and says so
  * in `asked`, so a run with no terminal prints what one answer would unlock.
@@ -301,14 +331,18 @@ export function neverReleased(app, variables) {
 export function releasePlan(findings, { hostname = '', prefixes = ['/api', '/ws'] } = {}) {
   const app  = {}
   const vars = new Map()
-  let web = false, domain = false
+  const routes = []
+  let web = false, domain = false, webId = null
   for (const f of findings) {
     if (!f.fix) continue
     Object.assign(app, f.fix.app ?? {})
     for (const v of f.fix.variables ?? []) if (!vars.has(v.key)) vars.set(v.key, v)
+    routes.push(...f.fix.routes ?? [])
     web    ||= !!f.fix.web
     domain ||= !!f.fix.domain
+    webId  ??= f.fix.webApp ?? null
   }
+  const fronted = web || !!webId
   const host = hostname.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '')
   const variables = [...vars.values()].flatMap(v => {
     if (v.derive !== 'origin') return [v]
@@ -316,10 +350,12 @@ export function releasePlan(findings, { hostname = '', prefixes = ['/api', '/ws'
   })
   const asked = [...vars.values()].filter(v => v.derive === 'origin').map(v => v.key)
   return {
-    app, variables, web,
-    domain: domain && host ? { hostname: host, on: web ? 'web' : 'api', routes: web ? prefixes : [] } : null,
+    app, variables, web, routes,
+    domain: domain && host
+      ? { hostname: host, on: fronted ? 'web' : 'api', ...(webId && !web ? { webId } : {}), routes: fronted ? prefixes : [] }
+      : null,
     asked:  host ? [] : [...(domain ? ['Domain'] : []), ...asked],
-    empty:  !Object.keys(app).length && !variables.length && !web && !(domain && host),
+    empty:  !Object.keys(app).length && !variables.length && !web && !routes.length && !(domain && host),
   }
 }
 

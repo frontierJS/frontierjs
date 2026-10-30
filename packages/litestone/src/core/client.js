@@ -7121,7 +7121,7 @@ export async function createClient({
   // The `$`-introspection surface — one build over the root ctx, handed to every
   // proxy below. `$levelOfAs`/`$checkWriteAs` take the flavor's own ctx there.
   const {
-    $checkWhere, $scopes, $checkOrderBy, $protectedFields, $primaryKey, $mirrorKey,
+    $checkWhere, $scopes, $checkOrderBy, $protectedFields, $trailMarks, $primaryKey, $mirrorKey,
     $declaresAccessRules, $readAs, $inWindow, $readGrading, $readReach, $readColumns,
     $fromReach, $levelOfAs, $checkWriteAs, $capabilitiesFor, $claimsFor,
     accessorIndex, tenancyInfo,
@@ -7797,7 +7797,7 @@ export async function createClient({
       })
     }
 
-    const sysOwnProps = ['asSystem', '$close', '$schema', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const sysOwnProps = ['asSystem', '$close', '$schema', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
     const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $search: (q, opts) => $searchWith(sysTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
@@ -7816,6 +7816,7 @@ export async function createClient({
         if (prop === '$retain')     return () => _flavor.run(sysFlavor, $retain)
         if (prop === '$checkWhere') return $checkWhere
         if (prop === '$protectedFields') return $protectedFields
+        if (prop === '$trailMarks') return $trailMarks
         if (prop === '$primaryKey') return $primaryKey
         if (prop === '$mirrorKey')  return $mirrorKey
         if (prop === '$declaresAccessRules') return $declaresAccessRules
@@ -7937,7 +7938,7 @@ export async function createClient({
       })
     }
 
-    const authOwnProps = ['$close', '$schema', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
+    const authOwnProps = ['$close', '$schema', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
     const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $search: (q, opts) => $searchWith(authTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
@@ -7953,6 +7954,7 @@ export async function createClient({
         if (prop === '$retain')         return retainRefusal
         if (prop === '$checkWhere')     return $checkWhere
         if (prop === '$protectedFields') return $protectedFields
+        if (prop === '$trailMarks') return $trailMarks
         if (prop === '$primaryKey') return $primaryKey
         if (prop === '$mirrorKey')  return $mirrorKey
         if (prop === '$declaresAccessRules') return $declaresAccessRules
@@ -8116,7 +8118,7 @@ export async function createClient({
     scopedFlavor.tables = rawTables
     sCtx.tables = rawTables
     const tables = installScopesLazy(rawTables, () => sCtx)
-    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
     const target = {
       $scopedBy: (b) => _makeScopedProxy({ ...overrides, scopedBy: { ...(overrides.scopedBy ?? {}), ...(b ?? {}) } }),
       $setAuth:  (u) => _makeScopedProxy({ ...overrides, auth: u }),
@@ -8141,6 +8143,7 @@ export async function createClient({
         if (prop === '$retain')     return retainRefusal
         if (prop === '$checkWhere') return $checkWhere
         if (prop === '$protectedFields') return $protectedFields
+        if (prop === '$trailMarks') return $trailMarks
         if (prop === '$primaryKey') return $primaryKey
         if (prop === '$mirrorKey')  return $mirrorKey
         if (prop === '$declaresAccessRules') return $declaresAccessRules
@@ -8354,7 +8357,7 @@ export async function createClient({
     return result
   }
 
-  const rootOwnProps = ['$close', '$attached', '$schema', '$search', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$files', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
+  const rootOwnProps = ['$close', '$attached', '$schema', '$search', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$files', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
   clientProxy = new Proxy({ sql, query, $transaction, $search: (q, opts) => $searchWith(scopedTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
     get(target, prop) {
       if (typeof prop === 'symbol')   return undefined
@@ -8386,6 +8389,7 @@ export async function createClient({
       if (prop === '$retain')     return retainRefusal
       if (prop === '$checkWhere')     return $checkWhere
       if (prop === '$protectedFields') return $protectedFields
+      if (prop === '$trailMarks') return $trailMarks
       if (prop === '$primaryKey')      return $primaryKey
       if (prop === '$mirrorKey')      return $mirrorKey
       if (prop === '$declaresAccessRules') return $declaresAccessRules

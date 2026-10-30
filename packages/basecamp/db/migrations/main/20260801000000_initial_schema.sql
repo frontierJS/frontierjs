@@ -1,8 +1,9 @@
 -- ============================================================
 -- Basecamp — initial schema
 --
--- GENERATED FROM db/schema.lite. Do not edit by hand.
--- Regenerate:  bun db/generate.js
+-- Generated from db/schema.lite, then frozen: a database that applied this
+-- file refuses to boot on a changed one, and migrations.snapshot.md fails CI.
+-- A schema change is a new file:  bun run db:migrate <label>
 -- ============================================================
 
 PRAGMA foreign_keys = ON;
@@ -1162,7 +1163,7 @@ CREATE TABLE IF NOT EXISTS "app_platform" (
   CHECK ("provider" IN ('cloudflare')),
   CHECK ("build" IN ('outpost', 'platform')),
   CHECK ("status" IN ('unknown', 'stopped', 'starting', 'running', 'stopping', 'deploying', 'error')),
-  UNIQUE ("workspaceId", "provider", "providerAccountId", "name"),
+  UNIQUE ("provider", "providerAccountId", "name"),
   FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_app_platform_appId" ON "app_platform" ("appId");

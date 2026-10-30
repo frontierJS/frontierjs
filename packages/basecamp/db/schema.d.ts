@@ -6391,6 +6391,9 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   // Which columns must never be written down in plain text — asked for the
   // same reason, by an application keeping a trail of its own.
   $protectedFields(accessor: string): Record<string, 'guarded' | 'encrypted' | 'hashed'>
+  // What the trail writes in place of each field's value — [redacted],
+  // [personal] or [opaque:<digest>].
+  $trailMarks(accessor: string): Record<string, (value: unknown) => string>
 
   // Transactions
   $transaction<T>(fn: (tx: LitestoneClient) => Promise<T>): Promise<T>

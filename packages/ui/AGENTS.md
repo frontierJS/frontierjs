@@ -364,10 +364,12 @@ declares `id` it names something else — a `Toast`'s identity, a `Tab` and
 `TabPanel` pairing, an `AccordionItem`, the control a `Label` or `Field` points
 at, a `Tooltip`'s own element — so address those with `data-*`.
 
-**A `Slider` takes its hue from `tone`, or from the data.** `tone` is one of the
-seven css tones and follows the theme. A hue that IS the data (an HSL slider
-accented in its own hue) is `--data-accent` on the slider or an ancestor, the
-custom-property name `fli check` lets a raw color sit in; it wins over `tone`:
+**A `Slider` or an `Avatar` takes its color from `tone`, or from the data.**
+`tone` is one of the seven css tones and follows the theme. A color that IS the
+data (an HSL slider accented in its own hue, a client's stored `avatarColor`) is
+`--data-accent` on the component or an ancestor, the custom-property name
+`fli check` lets a raw color sit in; it wins over `tone`, and an Avatar's initials
+keep their contrast on it:
 `<Slider style={`--data-accent: hsl(${h} 80% 50%)`} … />`.
 
 **Trailing content has three names**: `actions` on `Form` and `Table`, `action`

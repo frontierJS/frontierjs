@@ -13,7 +13,10 @@
  *  `daemon` or `cron` App publishes nothing. */
 export const CONTAINER_TYPES: ReadonlySet<string> = new Set(['container', 'function', 'database'])
 
-/** The columns, in `App`'s and `Blueprint`'s shared spelling. */
+/** The columns, in `App`'s and `Blueprint`'s shared spelling (`containerPort` is `App`'s alone).
+ *  The declared residual of `restated-fields` (`FJS-D1438`): `db/test/schema.test.ts`
+ *  'App runtime columns' fails on a name that is no column and on an App column neither here nor
+ *  named exempt there. */
 export const RUNTIME_COLUMNS = ['port', 'containerPort', 'volumePath', 'healthCheck', 'cpuLimit', 'memLimitMb', 'command'] as const
 
 export type Runtime = Partial<Record<(typeof RUNTIME_COLUMNS)[number], string | number | string[]>>

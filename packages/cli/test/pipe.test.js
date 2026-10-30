@@ -11,7 +11,7 @@
 // closed. stderr is captured to its own file here, which is how a person sees it.
 
 import { describe, test, expect } from 'bun:test'
-import { execSync } from 'child_process'
+import { execSync, spawnSync } from 'child_process'
 import { readFileSync, rmSync, mkdtempSync, mkdirSync, writeFileSync } from 'fs'
 import { resolve, dirname, join } from 'path'
 import { tmpdir } from 'os'
@@ -69,5 +69,36 @@ describe('a reader that reads everything', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+// ─── A command that does not exist ───────────────────────────────────────────
+//
+// A script or drive reads the exit code, so a typo that prints "not found" and
+// exits 0 reads as success (`FJS-3466`).
+
+describe('an unknown command', () => {
+  const exitOf = (args) => {
+    const dir = mkdtempSync(join(tmpdir(), 'fli-unknown-'))
+    try {
+      return spawnSync(process.execPath, [FLI, ...args], { cwd: dir, encoding: 'utf8' })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+
+  test('`fli nosuch:thing` exits non-zero', () => {
+    const r = exitOf(['nosuch:thing'])
+    expect(r.status).not.toBe(0)
+  })
+
+  test('`fli nosuch:thing --help` exits non-zero', () => {
+    const r = exitOf(['nosuch:thing', '--help'])
+    expect(r.status).not.toBe(0)
+  })
+
+  test('a namespace listing still exits 0', () => {
+    const r = exitOf(['git'])
+    expect(r.status).toBe(0)
   })
 })

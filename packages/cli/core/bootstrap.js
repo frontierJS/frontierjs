@@ -593,6 +593,7 @@ export async function run(process) {
 
     // ── Partial match → suggestions ────────────────────────────────────────
     logger(`Command ${chalk.italic(cmd)} not found`, 'error')
+    process.exitCode = 1
 
     if (scored.length) {
       process.stdout.write('\n')

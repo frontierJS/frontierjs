@@ -34,10 +34,10 @@ the app's `.env` as `BASECAMP_APP_ID`. With that set, `fli deploy` is `fli
 basecamp:deploy`.
 
 **The App is made bare on purpose**: no port, no volume, no Variables, no
-Domain. That is what `basecamp:deploy` reads as an App that has never been
-released, and it then sets each of them from what the app declares — the port
-off `PORT`, the `/db` volume, the health check, `ENCRYPTION_KEY`, the Domain
-and the static App for `web/`. Setting any of them here would turn that off.
+Domain. `basecamp:deploy` completes it on every run, setting whatever is
+missing from what the app declares — the port off `PORT`, the `/db` volume, the
+health check, `ENCRYPTION_KEY`, the Domain and the static App for `web/`
+(`FJS-D1599`). Setting them here would put a second owner beside `releasePlan`.
 
 An app whose env already names a `BASECAMP_APP_ID` is refused, as is a name a
 project in the workspace already holds as its slug: a second run never makes a

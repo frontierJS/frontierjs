@@ -8,6 +8,9 @@
 // drive at `test/browser/drive/`.
 
 import { describe, test, expect } from 'vitest'
+import { mkdtempSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { openChrome, findChrome } from '../src/drive.js'
 
 const world =({ have = [], files = [], env = {} } = {}) => ({
@@ -64,3 +67,24 @@ test('openChrome refuses the flags it owns, before launching anything', async ()
   await expect(openChrome({ args: ['--remote-debugging-port=9222'] })).rejects.toThrow(/--remote-debugging-port is the driver's own flag/)
   await expect(openChrome({ args: ['--user-data-dir=/tmp/x'] })).rejects.toThrow(/--user-data-dir is the driver's own flag/)
 })
+
+// A Chrome that dies at launch (a missing shared library) said why on stderr
+// and exited; the wait for a DevTools port ran its full 15s regardless, longer
+// than a server's idle timeout, so the caller was gone before the refusal came.
+test('openChrome rejects at once, with what Chrome printed, when Chrome exits before announcing a port', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fjs-drive-test-'))
+  const fake = join(dir, 'chrome')
+  writeFileSync(fake, '#!/bin/sh\necho "error while loading shared libraries: libXfixes.so.3" >&2\nexit 127\n')
+  chmodSync(fake, 0o755)
+  const was = process.env.FJS_CHROME
+  process.env.FJS_CHROME = fake
+  const t0 = Date.now()
+  try {
+    await expect(openChrome()).rejects.toThrow(/exited.*127[\s\S]*libXfixes\.so\.3/)
+    expect(Date.now() - t0).toBeLessThan(5000)
+  } finally {
+    if (was === undefined) delete process.env.FJS_CHROME
+    else process.env.FJS_CHROME = was
+    rmSync(dir, { recursive: true, force: true })
+  }
+}, 20000)

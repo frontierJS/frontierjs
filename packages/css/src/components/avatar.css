@@ -36,7 +36,7 @@
   --avatar-size: 2.25rem;
 
   /* Layout and auto-contrast come from chip.css. */
-  --tone-fill: var(--bg-mix, var(--color-muted));
+  --tone-fill: var(--data-accent, var(--bg-mix, var(--color-muted)));
 
   inline-size:   var(--avatar-size);
   block-size:    var(--avatar-size);

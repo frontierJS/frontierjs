@@ -73,11 +73,11 @@ test('markdown: a refused link keeps its text', function () {
 
 test('markdown: an attribute cannot be closed from inside a URL or a title', function () {
   const html = markdown('[x](https://a.test "say \\"hi\\"")')
-  assert.equal(html, '<p><a href="https://a.test" title="say &quot;hi&quot;">x</a></p>')
+  assert.equal(html, '<p><a href="https://a.test" title="say &quot;hi&quot;" target="_blank" rel="noopener noreferrer">x</a></p>')
 })
 
 test('markdown: an image is a link to it, never loaded', function () {
-  assert.equal(markdown('![a cat](https://a.test/cat.png)'), '<p><a href="https://a.test/cat.png">a cat</a></p>')
+  assert.equal(markdown('![a cat](https://a.test/cat.png)'), '<p><a href="https://a.test/cat.png" target="_blank" rel="noopener noreferrer">a cat</a></p>')
 })
 
 test('markdown: safeUrl reads the scheme the browser would', function () {
@@ -118,11 +118,24 @@ test('markdown: a backslash escapes punctuation', function () {
 
 test('markdown: links, autolinks and bare URLs', function () {
   assert.equal(markdown('[the **docs**](/docs/)'), '<p><a href="/docs/">the <strong>docs</strong></a></p>')
-  assert.equal(markdown('<https://a.test>'), '<p><a href="https://a.test">https://a.test</a></p>')
-  assert.equal(markdown('see https://a.test/x.'), '<p>see <a href="https://a.test/x">https://a.test/x</a>.</p>')
-  assert.equal(markdown('(https://a.test/wiki/A_(b))'), '<p>(<a href="https://a.test/wiki/A_(b)">https://a.test/wiki/A_(b)</a>)</p>')
-  assert.equal(markdown('www.a.test'), '<p><a href="https://www.a.test">www.a.test</a></p>')
-  assert.equal(markdown('[a](https://a.test?x=1&y=2)'), '<p><a href="https://a.test?x=1&amp;y=2">a</a></p>')
+  assert.equal(markdown('<https://a.test>'), '<p><a href="https://a.test" target="_blank" rel="noopener noreferrer">https://a.test</a></p>')
+  assert.equal(markdown('see https://a.test/x.'), '<p>see <a href="https://a.test/x" target="_blank" rel="noopener noreferrer">https://a.test/x</a>.</p>')
+  assert.equal(markdown('(https://a.test/wiki/A_(b))'), '<p>(<a href="https://a.test/wiki/A_(b)" target="_blank" rel="noopener noreferrer">https://a.test/wiki/A_(b)</a>)</p>')
+  assert.equal(markdown('www.a.test'), '<p><a href="https://www.a.test" target="_blank" rel="noopener noreferrer">www.a.test</a></p>')
+  assert.equal(markdown('[a](https://a.test?x=1&y=2)'), '<p><a href="https://a.test?x=1&amp;y=2" target="_blank" rel="noopener noreferrer">a</a></p>')
+})
+
+// FJS-3604: a link off this site must not replace the page the reader is on.
+test('markdown: a link off this site opens in a new tab, one on it does not', function () {
+  const T = ' target="_blank" rel="noopener noreferrer"'
+  assert.equal(markdown('[a](https://a.test)'), '<p><a href="https://a.test"' + T + '>a</a></p>')
+  assert.equal(markdown('[a](HTTP://a.test)'), '<p><a href="HTTP://a.test"' + T + '>a</a></p>')
+  assert.equal(markdown('[a](//a.test/x)'), '<p><a href="//a.test/x"' + T + '>a</a></p>')
+  assert.equal(markdown('<https://a.test>'), '<p><a href="https://a.test"' + T + '>https://a.test</a></p>')
+  assert.equal(markdown('[a](/docs)'), '<p><a href="/docs">a</a></p>')
+  assert.equal(markdown('[a](#top)'), '<p><a href="#top">a</a></p>')
+  assert.equal(markdown('[a](mailto:x@a.test)'), '<p><a href="mailto:x@a.test">a</a></p>')
+  assert.equal(markdown('<x@a.test>'), '<p><a href="mailto:x@a.test">x@a.test</a></p>')
 })
 
 test('markdown: an entity in text stands, a bare ampersand is escaped', function () {
@@ -205,9 +218,9 @@ test('markdown: task items', function () {
 
 test('markdown: a pipe table, aligned', function () {
   assert.equal(markdown('| Model | Rows |\n| :-- | --: |\n| `Lead` | 3 |\n| a \\| b |'),
-    '<table>\n<thead>\n<tr><th style="text-align: left">Model</th><th style="text-align: right">Rows</th></tr>\n</thead>\n' +
-    '<tbody>\n<tr><td style="text-align: left"><code>Lead</code></td><td style="text-align: right">3</td></tr>\n' +
-    '<tr><td style="text-align: left">a | b</td><td style="text-align: right"></td></tr>\n</tbody>\n</table>')
+    '<table>\n<thead>\n<tr><th align="left">Model</th><th align="right">Rows</th></tr>\n</thead>\n' +
+    '<tbody>\n<tr><td align="left"><code>Lead</code></td><td align="right">3</td></tr>\n' +
+    '<tr><td align="left">a | b</td><td align="right"></td></tr>\n</tbody>\n</table>')
 })
 
 test('markdown: a table carries the class the caller names', function () {

@@ -13,6 +13,22 @@ import { REDACTED } from '@frontierjs/toolbelt/redact'
 import { isProtected } from './schema-maps.js'
 import { trailModelName, buildLogEntry, trailRowValues, fireLog } from './audit-log.js'
 
+// The trail's mark per field: what it writes in place of the value. The one
+// reading of that rule — `$trailMarks` hands it to an app's own trail, which
+// would otherwise log what this one redacts (FJS-3599). A mark that is a
+// function takes the value.
+export function trailMarksOf(fieldPolicy) {
+  const marks = new Map()
+  for (const [f, p] of Object.entries(fieldPolicy)) {
+    if (isProtected(p))   marks.set(f, REDACTED)
+    else if (p.personal)  marks.set(f, '[personal]')
+    else if (p.opaque)    marks.set(f, opaqueMark)
+  }
+  return marks
+}
+
+export const markOf = (mark, value) => (typeof mark === 'function' ? mark(value) : mark)
+
 export function makeTrailEntries(shape, ctx, deps) {
   const { modelName, fieldPolicy } = shape
   const { tx, idField, parseArgs } = deps
@@ -118,13 +134,7 @@ export function makeTrailEntries(shape, ctx, deps) {
   // An @opaque value is stored sealed by a client, so the trail writes a digest
   // of the stored bytes and not the bytes (FJS-D1158): an edit's entry still
   // says WHICH sealed column moved. A mark that is a function takes the value.
-  const logMarks = new Map()
-  for (const [f, p] of Object.entries(fieldPolicy)) {
-    if (isProtected(p))   logMarks.set(f, REDACTED)
-    else if (p.personal)  logMarks.set(f, '[personal]')
-    else if (p.opaque)    logMarks.set(f, opaqueMark)
-  }
-  const markOf = (mark, value) => (typeof mark === 'function' ? mark(value) : mark)
+  const logMarks = trailMarksOf(fieldPolicy)
   const hasProtectedLogFields = logMarks.size > 0
 
   // Field-level entries: the entry IS about this field, so it stays — only the

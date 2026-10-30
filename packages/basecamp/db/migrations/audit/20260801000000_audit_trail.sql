@@ -1,8 +1,9 @@
 -- ============================================================
 -- Basecamp — initial schema
 --
--- GENERATED FROM db/schema.lite. Do not edit by hand.
--- Regenerate:  bun db/generate.js
+-- Generated from db/schema.lite, then frozen: a database that applied this
+-- file refuses to boot on a changed one, and migrations.snapshot.md fails CI.
+-- A schema change is a new file:  bun run db:migrate <label>
 -- ============================================================
 
 PRAGMA foreign_keys = ON;

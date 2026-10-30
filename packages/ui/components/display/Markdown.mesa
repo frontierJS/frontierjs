@@ -6,7 +6,8 @@
   // The text is never trusted, and nothing here has to trust it. The renderer is
   // @frontierjs/toolbelt/markdown, which escapes every slice of the source and
   // writes only its own tags — raw HTML in the text draws as text, a link goes
-  // only to http, https, mailto or this site, and an image is a link to it
+  // only to http, https, mailto or this site (an absolute http(s) link opens in
+  // a new tab, so a chat is not replaced), and an image is a link to it
   // rather than a request made on sight. So `{@html}` below is not a hole, for
   // the same reason Code's is not: the string has been through a function that
   // cannot emit markup it did not write.
@@ -26,6 +27,13 @@
   export let text        = ''
   export let headingBase = 1
   export let breaks      = false
+  export let onnavigate  = undefined  // (href: string, event: MouseEvent) => void
+
+  function heard(event) {
+    if (!onnavigate) return
+    const a = event.target?.closest?.('a[href]')
+    if (a) onnavigate(a.getAttribute('href'), event)
+  }
 
   $: html = markdown(text ?? '', { headingBase, breaks, classes: { table: 'table compact' } })
 </script>
@@ -33,7 +41,7 @@
 <!-- `prose` owns measure, ink and list indentation; `stack` the gap between
      blocks. Neither knows a block quote, a rule or a task box, so those are
      below. -->
-<div class="fjs-markdown prose stack" {class} {...$attributes}>{@html html}</div>
+<div class="fjs-markdown prose stack" {class} onclick={heard} {...$attributes}>{@html html}</div>
 
 <style>
   .fjs-markdown { overflow-wrap: break-word; }
