@@ -1,5 +1,5 @@
 ---
-title: 02-publish-all
+title: 03-publish-all
 description: Pack each package once and ship that tarball to each destination the run names
 ---
 
@@ -33,12 +33,7 @@ for (const entry of released) {
 const shipsFor = (name) => missing?.[name] ?? to
 const anyNpm   = released.some(({ name }) => shipsFor(name).includes('npm'))
 
-// The release is created against the commit step 01 made, by FULL sha: with no
-// `--target`, gh writes a tag it cannot find at the default branch's head, and
-// step 03 has not pushed this one yet. Writing it here means the push later
-// finds the same tag at the same commit and has nothing to say.
 const ghCwd = repo ?? released[0].dir
-const sha   = flag.dry ? '<sha>' : String(execSync('git rev-parse HEAD', { cwd: ghCwd, stdio: ['ignore', 'pipe', 'ignore'] })).trim()
 const notes = releaseSubject(released)
 
 const published = []
@@ -86,9 +81,11 @@ for (const { name, dir, newVersion, tarball } of released) {
   // is the name the package host's redirect spells (`FJS-D1568`). No
   // `--clobber`: GitHub refuses a second asset under the same name, so a tag
   // already released is refused here the way a spent version is on npm.
+  // `--verify-tag`, never `--target`: step 02 pushed the tag, and a tag GitHub
+  // lacks would otherwise be written at the default branch's head.
   const tagName = releaseTag(name, newVersion)
   const release = ['gh release create', JSON.stringify(tagName), JSON.stringify(tarball),
-                   '--latest=false', '--target', sha, '--title', JSON.stringify(tagName), '--notes', JSON.stringify(notes)]
+                   '--latest=false', '--verify-tag', '--title', JSON.stringify(tagName), '--notes', JSON.stringify(notes)]
 
   log.info(`  Publishing ${name}@${newVersion}...`)
 
@@ -141,9 +138,8 @@ if (skipped.length) {
 }
 
 if (failures.length) {
-  // The commit and tags from step 01 are still local and nothing is pushed.
-  // Re-running finishes the release: `ws:pub` asks the registry which tagged
-  // versions it lacks and publishes those, without a second bump.
+  // Re-running finishes the release: `ws:pub` asks each destination which
+  // tagged versions it lacks and ships those, without a second bump.
   if (published.length) log.warn(`  ${published.length} package(s) DID publish to npm: ${published.join(', ')}`)
   if (uploaded.length)  log.warn(`  ${uploaded.length} release(s) DID upload: ${uploaded.join(', ')}`)
   if (lapsed) {
@@ -153,6 +149,9 @@ if (failures.length) {
   } else {
     log.warn('  Fix the failure and run `fli ws:pub` again: it finishes this release rather than bumping')
   }
-  throw new Error(`${lapsed ? 'npm auth lapsed' : `${failures.length} package(s) failed to publish: ${failures.join(', ')}`} — nothing pushed`)
+  throw new Error(lapsed ? 'npm auth lapsed' : `${failures.length} package(s) failed to publish: ${failures.join(', ')}`)
 }
+
+prompts?.close()
+if (!flag.dry) log.success(`Published ${released.length} package(s) in ${((Date.now() - $.config.startTime) / 1000).toFixed(1)}s`)
 ```

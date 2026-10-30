@@ -371,6 +371,7 @@ function lowerAwait(ctx, n) {
     loc: ctx.posOf(n.start),
     value,
     pending: n.parts.main?.length ? lowerChildren(ctx, n.parts.main) : null,
+    // biome-ignore lint/suspicious/noThenProperty: a `then` here is a field of the IR node, not a thenable
     then: branch(n.parts.then, n.parts.thenValue),
     catch: branch(n.parts.catch, n.parts.catchValue),
   }

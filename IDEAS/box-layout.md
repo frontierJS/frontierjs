@@ -111,8 +111,8 @@ Done when: `bun run test` and `bun run verify:docker` in outpost are green, and 
 Goal: yuma runs the layout and still serves.
 Done when: `ls -la /frontier-outpost` on yuma shows the three links, `sqlite3` opens an app database through `data`, and https://fjs.maverickmade.tech/ still answers.
 
-- [ ] 4.1 Publish Outpost (owner: npm needs their login) and bump `OUTPOST_VERSION`
-  - `0.1.6` (the leading-underscore fix) and `0.1.7` are on npm and `OUTPOST_VERSION` is `0.1.7`. The layout ships in the next patch.
+- [x] 4.1 Publish Outpost (owner: npm needs their login) and bump `OUTPOST_VERSION`
+  - Done 2026-10-29: `0.1.8` shipped in release ecea9f74 with `src/` identical to the tree's (layout.js, `data_dir`), and `OUTPOST_VERSION` is `0.1.8`; basecamp compute.test.ts 115/115.
   - **Basecamp and Outpost ship together.** Phase 2's install, pinned to the published `0.1.7`, would give a new box a sandbox without `/etc/basecamp` while that Outpost still writes `/etc/basecamp/litestream.yml`, so `/replicate` fails on it. Basecamp is not deployed from this tree until the bump to the published layout version is in the same deploy.
 - [ ] 4.2 Reinstall Outpost on yuma (owner runs it on the production box)
 - [ ] 4.3 Docs follow: outpost `README.md` and `CLAUDE.md` (the sandbox paragraph names `/etc/basecamp`), basecamp `docs/`, `cli/docs/deploy.md`

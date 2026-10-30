@@ -138,7 +138,7 @@ Goal: one pack, two destinations, from the pipeline that already owns a release.
 Done when: `fli ws:pub patch --filter litestone --dry` prints the asset it would
 upload beside the npm line, and a real run leaves an asset the postflight verifies.
 
-- [x] 1.1 `02-publish-all` packs once with `core/vendor.js`'s pack and publishes
+- [x] 1.1 `03-publish-all` packs once with `core/vendor.js`'s pack and publishes
   THAT file to npm (`npm publish <tgz>`), so the asset and the registry copy are
   the same bytes by construction rather than by two packs agreeing.
   **Built:** `packPackage({ name, dir, destination })` and `tarballStem` are
@@ -162,11 +162,11 @@ upload beside the npm line, and a real run leaves an asset the postflight verifi
   `npm whoami`.
   **Built:** `--to` is a repeatable `choices: [npm, tarballs]` flag on
   `ws:publish`; **unset is `tarballs` alone** (Q1 ruled C, `FJS-D1613`). Step
-  02 runs, per package and after any npm publish, `gh release create <tag>
-  <tgz> --latest=false --target <full sha> --title <tag> --notes <subject>` in
-  the repo — `--target` because 0.3 showed gh writes the tag on GitHub and
-  step 03 has not pushed yet; without it the tag lands on the default branch's
-  head. No `--clobber`, so GitHub's own refusal is the write-once. The resume
+  03 runs, per package and after any npm publish, `gh release create <tag>
+  <tgz> --latest=false --verify-tag --title <tag> --notes <subject>` in the
+  repo, and step 02 has pushed the commit and tags first: GitHub refuses
+  `--target` at a commit it does not have, which the first real 21-package run
+  met for every package (`FJS-3616`). No `--clobber`, so GitHub's own refusal is the write-once. The resume
   rule asks EVERY destination in the run (`npm view`; `gh release view <tag>
   --json assets`, the asset by its packed name) and a half-shipped version is
   shipped only where it is missing, so a failed release after a good npm

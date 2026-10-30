@@ -31,8 +31,8 @@ if (!await narrate($)) return
 
 $.config.__step = 4
 
-if (!needs($, ['token', 'workspaceId', 'secret', 'basecamp'], {
-  from: { token: '03-setup', workspaceId: '03-setup', secret: '02-basecamp', basecamp: '01-machine' },
+if (!needs($, ['token', 'workspaceId', 'basecamp'], {
+  from: { token: '03-setup', workspaceId: '03-setup', basecamp: '01-machine' },
 })) return
 
 if (!await must($, await ensureFleet($), {

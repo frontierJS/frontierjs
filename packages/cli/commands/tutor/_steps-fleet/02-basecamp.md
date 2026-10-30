@@ -30,11 +30,6 @@ $.config.__step = 2
 
 if (!needs($, ['basecamp'], { from: '01-machine' })) return
 
-// The fleet secret, minted per run. It is the credential on BOTH ends — the
-// control plane verifies with it and the outpost signs with it — so it is
-// remembered here and read again by the step that starts the machine.
-// `OUTPOST_SECRET` is declared with a minimum length, so this is not a nonce.
-const secret = `tutor-fleet-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 const dbFile = join($.config.ws.dir, 'basecamp.db')
 
 // `--restart` begins the lesson again, and the rows are part of what the last
@@ -49,8 +44,6 @@ if ($.flag.restart) {
   log.info('--restart: the control plane starts on an empty database again')
 }
 
-$.config.secret = secret
-
 const hub = await startHub($)
 
 if (!await must($, hub.up, {
@@ -61,5 +54,5 @@ if (!await must($, hub.up, {
 
 log.info(`  ${dbFile}`)
 
-remember($, '02-basecamp', { secret, dbFile })
+remember($, '02-basecamp', { dbFile })
 ```

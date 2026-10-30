@@ -25,8 +25,8 @@ if (!await narrate($)) return
 
 $.config.__step = 3
 
-if (!needs($, ['dbFile', 'secret', 'basecamp'], {
-  from: { dbFile: '02-basecamp', secret: '02-basecamp', basecamp: '01-machine' },
+if (!needs($, ['dbFile', 'basecamp'], {
+  from: { dbFile: '02-basecamp', basecamp: '01-machine' },
 })) return
 
 if (!await must($, await ensureFleet($), {

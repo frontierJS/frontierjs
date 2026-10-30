@@ -35,12 +35,12 @@ if (!await narrate($)) return
 
 $.config.__step = 7
 
-// `outpostSecret` for the same reason 06 needs it: ensureFleet restarts the
+// `signingKey` for the same reason 06 needs it: ensureFleet restarts the
 // machine when nothing is answering, and it may only start on its own key.
-if (!needs($, ['appId', 'dbFile', 'outpostSecret', 'token', 'workspaceId', 'basecamp', 'outpost'], {
+if (!needs($, ['appId', 'dbFile', 'signingKey', 'hubKey', 'token', 'workspaceId', 'basecamp', 'outpost'], {
   from: {
     appId: '06-command', dbFile: '02-basecamp',
-    outpostSecret: '05-outpost',
+    signingKey: '05-outpost', hubKey: '05-outpost',
     token: '03-setup', workspaceId: '03-setup',
     basecamp: '01-machine', outpost: '01-machine',
   },

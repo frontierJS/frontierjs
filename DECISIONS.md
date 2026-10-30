@@ -19392,7 +19392,7 @@ The honest answer: two things, neither in play. A range — `^1.1` and `bun upda
 - **Cost.** Every version already on npm has no release and reads as in flight under the new default; the plan's 1.5 is the owner-run backfill from npm's own bytes. `core/publish-view.js`'s walk still gates on npm (1.4).
 - **Silence.** *Every version `ws:publish` ships has an asset at the derived URL, and where it also went to npm the two are byte-equal.* Fails today: **none**; 1.3 is the artefact.
 
-*Lives in:* `packages/cli/commands/workspace/publish/index.md` (`--to`, the per-destination probe), `packages/cli/commands/workspace/publish/_steps/00-preflight.md`, `packages/cli/commands/workspace/publish/_steps/02-publish-all.md`.
+*Lives in:* `packages/cli/commands/workspace/publish/index.md` (`--to`, the per-destination probe), `packages/cli/commands/workspace/publish/_steps/00-preflight.md`, `packages/cli/commands/workspace/publish/_steps/03-publish-all.md`.
 
 ### <a id="fjs-d1602"></a>2026-10-28 · `FJS-D1602` — Q2 — A dev channel for the package host — `fli ws:publish --channel dev` packs a CLEAN tree and uploads `<stem>-<version>-dev.<sha>.tgz` to one rolling GitHub Release named `dev`; no npm, no git tag, no version spent; the sha in the filename is the one origin and the release's own tag is never cited.
 

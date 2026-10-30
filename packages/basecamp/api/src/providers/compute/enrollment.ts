@@ -38,7 +38,7 @@ import { litestreamInstall } from '@frontierjs/litestone/replicate'
  *  workspace carries (a test holds the two together); Docker and Caddy come
  *  from signed apt repositories. */
 export const BUN_VERSION     = '1.4.4'
-export const OUTPOST_VERSION = '0.1.7'
+export const OUTPOST_VERSION = '0.1.8'
 
 /** The box's paths, from the module the Outpost reads its own from, so the
  *  unit's sandbox and the process cannot name two places (`FJS-D1544`). */

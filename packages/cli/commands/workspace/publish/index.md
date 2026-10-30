@@ -76,6 +76,11 @@ flags:
     type: boolean
     description: Confirm before every publish, not just the first — the pacing a browser 2FA prompt needs
     defaultValue: false
+  yes:
+    char: y
+    type: boolean
+    description: Answer every confirmation with its default — npm's own 2FA still asks
+    defaultValue: false
 ---
 
 Bump versions, ship each package to a GitHub Release named for its tag — and to
@@ -106,8 +111,7 @@ over a version nobody installed or republishes one. This is what `lerna publish
 from-package` and `changeset publish` do — the destination, not a state file,
 says what is left.
 
-A package marked `private` in its `package.json` is skipped — npm refuses it,
-and a failed publish aborts the run before anything is pushed.
+A package marked `private` in its `package.json` is skipped — npm refuses it.
 
 **One pack, each destination asked for.** Each package is packed ONCE and that
 file goes wherever `--to` names: `tarballs` is a GitHub Release named for the
@@ -121,11 +125,17 @@ same bytes by construction. A destination left out today can be added tomorrow:
 the resume rule above asks each one. GitHub refuses a second asset under the same
 name, so a tag already released is refused the way npm refuses a spent version.
 
-`--no-push` stops after publishing: the release commit and its tags stay local.
-Worth reaching for when this repo's `pre-push` hook is a CI tier — a release
-commit carries version bumps and nothing else, so re-running the checks that
-already passed on its parent costs about a minute and proves nothing new. The
-push command is printed for you to run when you mean to.
+**The push comes before the first publish.** A GitHub Release can only be made
+on a commit GitHub has (`FJS-3616`), and a refused push — this repo's
+`pre-push` hook is a CI tier — is a reason not to publish at all. A version
+pushed and not yet shipped is the in-flight case above.
+
+`--no-push` keeps the release commit and its tags local and ships to npm alone;
+beside `tarballs` it is refused, since the release has no commit to sit on.
+Worth reaching for when the `pre-push` hook is a CI tier — a release commit
+carries version bumps and nothing else, so re-running the checks that already
+passed on its parent costs about a minute and proves nothing new. The push
+command is printed for you to run when you mean to.
 
 **One bump for the whole run, always.** `bun publish` rewrites a `workspace:*`
 dependency from the LOCKFILE, so every version is written, the lockfile is
@@ -144,7 +154,9 @@ fails rather than failing every one after it, and the next `ws:pub` finishes the
 release.
 `--interactive` extends that pause to every package, and adds one before
 versioning and one before the push — the pacing to reach for when the 2FA
-prompt is a browser round trip rather than a code you can type.
+prompt is a browser round trip rather than a code you can type. `--yes` answers
+every one of these with its default and never reads stdin; npm's own 2FA is
+bun's prompt, not this command's, and still asks.
 
 ```js
 const { wsRoot, packages: all } = await $.wsPackages()
@@ -287,7 +299,7 @@ let planned = packages.map(p => ({ ...p, newVersion: resume ? p.pkg.version : bu
 let prompts = null
 if (!flag.dry) {
   const { createPrompts } = await import(new URL('file://' + global.fliRoot + '/core/prompt.js'))
-  prompts = createPrompts()
+  prompts = createPrompts({ yes: flag.yes })
 }
 
 log.info(`Publishing ${planned.length} package(s)`)

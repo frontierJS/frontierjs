@@ -26,6 +26,7 @@ const { existsSync, mkdirSync, openSync, readFileSync, writeFileSync, appendFile
 const { join, resolve, basename } = await import('node:path')
 const { homedir }        = await import('node:os')
 const { spawn, spawnSync } = await import('node:child_process')
+const { generateKeyPairSync } = await import('node:crypto')
 
 // ─── openTutor ────────────────────────────────────────────────────────────────
 //
@@ -522,7 +523,7 @@ const hubUrl = ($, path = '') => `http://127.0.0.1:${$.config.apiPort}${path}`
 // than in the steps for the reason that one owns them: the outpost is started
 // by step 5 and needed again by step 6, and a step run on its own — `--step 6`
 // — reaches neither. Two environments written twice is how the lesson and the
-// resume end up disagreeing about which secret is the fleet's.
+// resume end up disagreeing about which key the machine holds.
 
 const startHub = ($) => startServer($, {
   name:   'basecamp',
@@ -538,7 +539,6 @@ const startHub = ($) => startServer($, {
     // CWD — which is the checkout — and a lesson that set only `DATABASE_URL`
     // writes its rows into the developer's own trail (`FJS-633`).
     AUDIT_PATH:       join($.config.ws.dir, 'audit'),
-    OUTPOST_SECRET:   $.config.secret,
   },
   port:   $.config.apiPort,
   path:   '/setup/probe',
@@ -568,13 +568,11 @@ const startOutpost = async ($) => {
     tls:    tls.pin,
     env:    {
       OUTPOST_SERVER_ID:  $.config.serverId,
-      // The machine's OWN secret, learned by enrolling, and never the fleet-wide
-      // one. Basecamp stopped accepting `OUTPOST_SECRET` as an authentication
-      // input when per-machine credentials landed — one string every machine
-      // holds means a compromised box can forge any other machine's check-in —
-      // and this lesson went on handing over the fleet key, so every heartbeat
-      // was answered 401 and the lesson died at step 5 (`FJS-1041`).
-      OUTPOST_SECRET:     $.config.outpostSecret,
+      // The machine's OWN private key, made at enrollment, and the control
+      // plane's public one it learned there (`FJS-D1604`). Started on any other
+      // pair, every heartbeat is answered 401 and the lesson dies at step 5.
+      OUTPOST_SIGNING_KEY: $.config.signingKey,
+      OUTPOST_HUB_KEY:     $.config.hubKey,
       BASECAMP_URL:       hubUrl($),
       OUTPOST_PORT:       String($.config.outpostPort),
       OUTPOST_PUBLIC_URL: outpostUrl($),

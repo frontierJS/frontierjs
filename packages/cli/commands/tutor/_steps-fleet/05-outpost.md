@@ -10,15 +10,16 @@ FrontierJS app — its job is to run Docker commands and answer questions about 
 machine, and an app would put a schema, a migration runner and an ORM on every
 server in the fleet to do that.
 
-It takes five things with no defaults, and refuses to start without any of
+It takes six things with no defaults, and refuses to start without any of
 them:
 
 ```console
-OUTPOST_SERVER_ID   which row it is — one that cannot name its server reports as nobody
-OUTPOST_SECRET      this machine's OWN key, learned by enrolling
-BASECAMP_URL        where to report
-OUTPOST_TLS_CERT    the command port's certificate
-OUTPOST_TLS_KEY     and its private key
+OUTPOST_SERVER_ID    which row it is — one that cannot name its server reports as nobody
+OUTPOST_SIGNING_KEY  this machine's OWN private key, made when enrolling
+OUTPOST_HUB_KEY      the control plane's public key, learned by enrolling
+BASECAMP_URL         where to report
+OUTPOST_TLS_CERT     the command port's certificate
+OUTPOST_TLS_KEY      and its private key
 ```
 
 **The command port is https and nothing else**, because every deploy sends an
@@ -27,18 +28,20 @@ makes its own, sends it in the enrollment exchange, and Basecamp pins it — the
 one certificate that port may answer with, checked by fingerprint rather than by
 hostname. A machine that sends none is refused before its token is spent.
 
-**The secret is per machine, and getting one is a step of its own.** There is no
-fleet-wide key that also works: one string every machine holds means a
-compromised box can forge any other machine's check-in, and two accepted keys
-means the weaker one is the one an attacker uses. So a machine that has not
-enrolled is refused — with one sentence for every refusal, because telling *no
-such machine* apart from *that signature is wrong* tells an unauthenticated
-caller which server ids are real.
+**Each side holds a key pair, and the private halves never travel.** The machine
+makes its own Ed25519 pair and signs every report with it; the control plane
+signs every command with its own, and the machine checks against that public
+half and no other. There is no fleet-wide key: one string every machine holds
+means a compromised box can forge any other machine's check-in, and a shared
+secret on both ends means the box can also sign as the control plane. So a
+machine that has not enrolled is refused — with one sentence for every refusal,
+because telling *no such machine* apart from *that signature is wrong* tells an
+unauthenticated caller which server ids are real.
 
 Enrolling is an exchange, and it happens twice below. `issueEnrollment` mints a
 **single-use** token and prints the command an operator would paste on a real
-box; `POST /servers/{id}/enroll` takes that token and the certificate once, and
-answers with the secret. The token is burned inside the same statement that reads it, so two
+box; `POST /servers/{id}/enroll` takes that token, the certificate and the
+machine's public key once, and answers with the control plane's. The token is burned inside the same statement that reads it, so two
 machines racing the same token means exactly one enrolls. On a provisioned
 machine cloud-init does this and nobody types anything; here the lesson does what
 `install.sh` does, minus Docker, Bun and a systemd unit.
@@ -60,9 +63,9 @@ if (!await narrate($)) return
 
 $.config.__step = 5
 
-if (!needs($, ['serverId', 'secret', 'outpost', 'basecamp', 'token', 'workspaceId'], {
+if (!needs($, ['serverId', 'outpost', 'basecamp', 'token', 'workspaceId'], {
   from: {
-    serverId: '04-server', secret: '02-basecamp',
+    serverId: '04-server',
     outpost: '01-machine', basecamp: '01-machine',
     token: '03-setup', workspaceId: '03-setup',
   },
@@ -100,6 +103,14 @@ if (!await must($, issued, {
   likely: 'issueEnrollment was refused — it is gate 5, the same rung as provision and destroy',
 })) return
 
+// The machine's pair, in the forms install.sh writes: the raw public half and
+// the PKCS#8 private half, both base64url. Only the public half is sent.
+const pair = generateKeyPairSync('ed25519')
+const keys = {
+  publicKey:  pair.publicKey.export({ format: 'jwk' }).x,
+  privateKey: pair.privateKey.export({ type: 'pkcs8', format: 'der' }).toString('base64url'),
+}
+
 // No bearer and no workspace header, deliberately: this is the machine, and it
 // has nothing to authenticate with yet. That is the whole reason the token is
 // single-use and lives fifteen minutes.
@@ -107,15 +118,15 @@ const enrolled = await probe.httpJson({
   url:      hubUrl($, `/servers/${$.config.serverId}/enroll`),
   method:   'POST',
   headers:  { 'content-type': 'application/json' },
-  body:     JSON.stringify({ token: issued.json.token, cert: tls.cert }),
-  expect:   (j) => typeof j.secret === 'string' && j.secret.length > 0,
-  describe: 'the machine trades its token for a key of its own',
+  body:     JSON.stringify({ token: issued.json.token, cert: tls.cert, publicKey: keys.publicKey }),
+  expect:   (j) => typeof j.hubKey === 'string' && j.hubKey.length > 0,
+  describe: 'the machine trades its token and public key for the control plane\'s',
   name:     'and the machine spends it, once',
 })
 
 if (!await must($, enrolled, {
   likely:    'the exchange was refused — every refusal here says the same sentence on purpose',
-  reproduce: `curl -s -X POST ${hubUrl($, `/servers/${$.config.serverId}/enroll`)} -H 'content-type: application/json' -d '{"token":"…","cert":"…"}'`,
+  reproduce: `curl -s -X POST ${hubUrl($, `/servers/${$.config.serverId}/enroll`)} -H 'content-type: application/json' -d '{"token":"…","cert":"…","publicKey":"…"}'`,
 })) return
 
 // The negative control, and it is the claim rather than tidiness: a token that
@@ -126,24 +137,25 @@ if (!await must($, await probe.httpStatus({
   url:      hubUrl($, `/servers/${$.config.serverId}/enroll`),
   method:   'POST',
   headers:  { 'content-type': 'application/json' },
-  body:     JSON.stringify({ token: issued.json.token, cert: tls.cert }),
+  body:     JSON.stringify({ token: issued.json.token, cert: tls.cert, publicKey: keys.publicKey }),
   expect:   401,
   name:     'and it is worth nothing the second time',
 })) ) return
 
-$.config.outpostSecret = enrolled.json.secret
+$.config.signingKey = keys.privateKey
+$.config.hubKey     = enrolled.json.hubKey
 
 const machine = await startOutpost($)
 
 if (!await must($, machine.up, {
   likely:    'the outpost refused to start — it names the variable it wanted',
-  reproduce: `cd ${$.config.outpost} && OUTPOST_SERVER_ID=${$.config.serverId} OUTPOST_SECRET=… BASECAMP_URL=${hubUrl($)} OUTPOST_TLS_CERT=${tls.certPath} OUTPOST_TLS_KEY=${tls.keyPath} bun run start`,
+  reproduce: `cd ${$.config.outpost} && OUTPOST_SERVER_ID=${$.config.serverId} OUTPOST_SIGNING_KEY=… OUTPOST_HUB_KEY=… BASECAMP_URL=${hubUrl($)} OUTPOST_TLS_CERT=${tls.certPath} OUTPOST_TLS_KEY=${tls.keyPath} bun run start`,
   detail:    serverLog(machine),
 })) return
 
 // Polled rather than slept on: the first heartbeat goes out as the process
 // starts, so this is normally answered on the first try, and a machine whose
-// clock or secret is wrong is answered by the same request never changing.
+// clock or key is wrong is answered by the same request never changing.
 if (!await must($, await probe.httpJson({
   url:      hubUrl($, `/servers/${$.config.serverId}`),
   headers:  as,
@@ -153,7 +165,7 @@ if (!await must($, await probe.httpJson({
   everyMs:  500,
   name:     'the machine is online, and said which outpost it runs',
 }), {
-  likely:    'the heartbeat is being refused — the two ends disagree about the fleet secret',
+  likely:    'the heartbeat is being refused — the control plane does not hold this machine\'s public key',
   reproduce: `curl -s ${hubUrl($, `/servers/${$.config.serverId}`)}`,
   detail:    serverLog(machine),
 })) return
@@ -179,5 +191,5 @@ if (!await must($, await probe.httpJson({
   likely: 'the heartbeat landed but registered no address — OUTPOST_PUBLIC_URL was not set',
 })) return
 
-remember($, '05-outpost', { publicUrl, outpostSecret: enrolled.json.secret })
+remember($, '05-outpost', { publicUrl, signingKey: keys.privateKey, hubKey: enrolled.json.hubKey })
 ```

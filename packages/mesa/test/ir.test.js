@@ -112,6 +112,7 @@ describe('lower()', () => {
       expect.objectContaining({
         kind: 'await', loc: 'U.mesa:5:1', value: expect.objectContaining({ raw: 'p' }),
         pending: expect.arrayContaining([expect.objectContaining({ kind: 'element', tag: 'p' })]),
+        // biome-ignore lint/suspicious/noThenProperty: a `then` here is a field of the IR node, not a thenable
         then: { param: 'v', children: expect.arrayContaining([expect.objectContaining({ kind: 'element', tag: 'p' })]) },
         catch: null,
       }),

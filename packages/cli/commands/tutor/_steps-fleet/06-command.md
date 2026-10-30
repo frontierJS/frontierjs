@@ -8,8 +8,8 @@ description: A command sent from the control plane, that really runs here
 Everything so far arranged for this. A **Job** is a command an app owns, and
 running one is the shortest path through the whole machinery: the control plane
 looks up where the app is placed, finds the Outpost target for that machine,
-signs a request with the fleet secret, and the Outpost — having verified the
-signature — runs the command as a real process on a real machine and hands back
+signs a request with its own key, and the Outpost — having verified the
+signature against the public half it learned at enrollment — runs the command as a real process on a real machine and hands back
 what it said.
 
 Four rows have to exist before there is anywhere to send it, and the shape is
@@ -35,13 +35,13 @@ if (!await narrate($)) return
 
 $.config.__step = 6
 
-// `outpostSecret` is the machine's own, minted at 05. It is needed here because
+// `signingKey` is the machine's own, made at 05. It is needed here because
 // `ensureFleet({ outpost: true })` below RESTARTS the outpost when nothing is
 // answering, and starting it on any other key is a machine Basecamp refuses.
-if (!needs($, ['serverId', 'dbFile', 'secret', 'outpostSecret', 'token', 'workspaceId', 'basecamp', 'outpost'], {
+if (!needs($, ['serverId', 'dbFile', 'signingKey', 'hubKey', 'token', 'workspaceId', 'basecamp', 'outpost'], {
   from: {
-    serverId: '04-server', dbFile: '02-basecamp', secret: '02-basecamp',
-    outpostSecret: '05-outpost',
+    serverId: '04-server', dbFile: '02-basecamp',
+    signingKey: '05-outpost', hubKey: '05-outpost',
     token: '03-setup', workspaceId: '03-setup',
     basecamp: '01-machine', outpost: '01-machine',
   },
@@ -134,7 +134,7 @@ if (!await must($, probe.sqliteRow({
 })) return
 
 log.info('')
-log.info(`  echo ${nonce}   ran on this machine, sent by the control plane, signed with the fleet secret`)
+log.info(`  echo ${nonce}   ran on this machine, sent by the control plane, signed with its own key`)
 
 remember($, '06-command', { appId, jobId: job.json.id, nonce })
 ```

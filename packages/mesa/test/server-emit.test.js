@@ -588,7 +588,7 @@ describe('{#await}: both paths wait and write the settled branch', () => {
     const dom = await renderToHTML(domComp)
     expect(dom).toBe('<main><i>x:warm</i></main>')
     expect(await renderToHTML(strComp, {}, { target: 'server' })).toBe(dom)
-    expect(await renderToHTML(strComp, {}, { target: 'server', full: true })).toMatch(/<head>[^]*<title>x<\/title>[^]*<\/head>/)
+    expect(await renderToHTML(strComp, {}, { target: 'server', full: true })).toMatch(/<head>[\s\S]*<title>x<\/title>[\s\S]*<\/head>/)
   })
 
   it('renders queue: one waiting on a slow promise does not take the next one\'s', async () => {

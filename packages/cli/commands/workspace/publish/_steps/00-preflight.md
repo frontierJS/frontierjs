@@ -48,6 +48,17 @@ if (refusals.some(r => !r.note)) {
   return
 }
 
+// A GitHub Release is made on a commit GitHub has, so a release host in a run
+// that keeps the commit local cannot ship (FJS-3616).
+if (!flag.push && $.config.to?.includes('tarballs')) {
+  log.error('  ✗  no-push-tarballs')
+  log.error('      --no-push keeps the release commit local, and a GitHub Release needs it on GitHub')
+  log.error('      Drop --no-push, or `--to npm` to leave the release host out of this run')
+  $.config.abort = true
+  $.config.prompts?.close()
+  return
+}
+
 // Whether npm knows who you are, asked BEFORE a version is spent. bun reads
 // npm's own credentials, and without them the refusal arrives from the registry
 // after the commit and the tags are written.
