@@ -37,6 +37,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { availableParallelism }                   from 'node:os'
 import { join, dirname, relative }                from 'node:path'
 import { safeRead, walk }                         from './fs.js'
+import { chalk }                                   from './color.js'
 
 /**
  * Binaries a snapshot header may name, and the package that ships each one. A
@@ -426,15 +427,15 @@ export function formatSnapshotResults(results) {
   const out = []
   for (const r of results) {
     if (r.ok) continue
-    out.push(`  ✗  ${r.file} ${r.error}`)
-    if (r.argv) out.push(`       cd ${r.dir} && bunx ${r.argv.join(' ')}`)
+    out.push(`  ${chalk.red('✗')}  ${chalk.bold(r.file)} ${chalk.red(r.error)}`)
+    if (r.argv) out.push(chalk.dim(`       cd ${r.dir} && bunx ${r.argv.join(' ')}`))
     // A CHECK that failed is a diff, and the remedy is the rerun above. A
     // generator that could not RUN failed for a reason only it printed — a
     // migration the database never got, an unset env var — and without those
     // lines `--fix` reads as having done nothing for no reason, which is how a
     // broken app boot was mistaken for a broken command.
     if (r.seeded || r.wrote) {
-      for (const line of (r.stderr ?? '').trim().split('\n').filter(Boolean).slice(-4)) out.push(`       ${line}`)
+      for (const line of (r.stderr ?? '').trim().split('\n').filter(Boolean).slice(-4)) out.push(chalk.dim(`       ${line}`))
     }
   }
   return out

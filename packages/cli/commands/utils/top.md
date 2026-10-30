@@ -5,7 +5,12 @@ alias: top
 examples:
   - fli top
   - fli top --interval 1000
+  - fli top --once
 flags:
+  once:
+    type: boolean
+    description: print the process table once and exit, for a script or an ssh session
+    defaultValue: false
   interval:
     char: i
     type: number
@@ -57,14 +62,21 @@ const execv = argv => {
 The monitor is native code built on first use from `native/top/` — Rust with
 cargo, else C with cc — into `~/.cache/frontierjs/top`, then fli hands the
 terminal to it. Keys: `j`/`k` move, `g`/`G` jump, `c`/`m` sort by CPU or
-memory, `dd` sends SIGTERM to every process in the selected group, `q` quits.
+memory, `/` filters groups by name (Enter keeps it, Esc clears it), Enter
+opens a group to its processes and command lines, `dd` sends SIGTERM to the
+selected group or process, `D` sends SIGKILL after a `y`, `q` quits. The Ports
+column lists listening TCP ports, refreshed every ~10 s; another user's
+process shows none unless fli top runs as root.
+
+`--once` prints the table with CPU over one second and exits, and needs no
+terminal.
 
 ```js
 if (process.platform !== 'linux') {
   log.error('fli top reads /proc, so it runs on Linux only')
   process.exitCode = 1; return
 }
-if (!process.stdin.isTTY || !process.stdout.isTTY) {
+if (!flag.once && (!process.stdin.isTTY || !process.stdout.isTTY)) {
   log.error('fli top needs a terminal')
   process.exitCode = 1; return
 }
@@ -79,7 +91,7 @@ if (built.error) {
   process.exitCode = 1; return
 }
 
-execv([built.bin, '--interval', String(flag.interval)])
+execv([built.bin, '--interval', String(flag.interval), ...(flag.once ? ['--once'] : [])])
 log.error(`could not start ${built.bin}`)
 process.exitCode = 1
 ```

@@ -20,6 +20,9 @@
   export let maxHeight     = '62vh'
   export let searchGroups  = true
   export let source        = 'none'      // the `search` the palette is handed — none · server · failing
+  export let groupLimit    = undefined   // a number, or { group: number }
+  export let searchMinLength = 0
+  export let rowAs         = 'plain'     // plain · custom — whether the palette is handed an `item` snippet
 
   let open   = true
   let ran    = ''
@@ -45,7 +48,13 @@
     id: `cmd-${i}`, group: 'Everything', label: `Command ${i}`, action: hit(`cmd-${i}`),
   }))
 
-  const items     = ({ default: MIXED, none: [], long: LONG })[set] ?? MIXED
+  // Two groups of different depth, to cap one and not the other.
+  const MANY = [
+    ...Array.from({ length: 6 }, (_, i) => ({ id: `p${i}`, group: 'People', label: `Person ${i}`, avatar: `P${i}`, action: hit(`p${i}`) })),
+    ...Array.from({ length: 4 }, (_, i) => ({ id: `d${i}`, group: 'Docs',   label: `Doc ${i}`,    avatar: `D${i}`, action: hit(`d${i}`) })),
+  ]
+
+  const items     = ({ default: MIXED, none: [], long: LONG, many: MANY })[set] ?? MIXED
   const emptyText = useEmptyText ? (q) => `nothing here for “${q}”` : undefined
 
   // A stand-in for a full-text search: it matches words the rows it returns do
@@ -73,9 +82,25 @@
   })[source]
 </script>
 
-{#if open}
+{#if open && rowAs === 'custom'}
   <CommandPalette
     items={items}
+    groupLimit={groupLimit}
+    searchMinLength={searchMinLength}
+    search={search}
+    data-fixture="modes"
+    onclose={() => { open = false; closes++ }}
+  >
+    {#snippet item(row, { active })}
+      <img class="custom-avatar" alt="" data-avatar={row.avatar} data-active={active} />
+      <span class="custom-label">{row.label}</span>
+    {/snippet}
+  </CommandPalette>
+{:else if open}
+  <CommandPalette
+    items={items}
+    groupLimit={groupLimit}
+    searchMinLength={searchMinLength}
     groupOrder={groupOrder}
     closeOnSelect={closeOnSelect}
     emptyText={emptyText}

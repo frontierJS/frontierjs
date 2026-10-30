@@ -257,6 +257,87 @@ export async function run(t) {
   t.is(await t.evaluate(`return window.__escTaken;`), true, 'and takes the key')
   await t.evaluate(`await waitFor(() => !document.querySelector('body > .popover')); return true;`)
 
+  /* ── ConfirmationPopover inline ──────────────────────────────────────── */
+
+  const grp   = `document.querySelector('#inline-clip [role=group]')`
+  const out   = (id) => `document.querySelector('#${id}').textContent`
+  const gone  = `!${grp}`
+
+  t.is(await t.evaluate(`return !!${grp};`), false, 'an inline confirmation starts closed')
+
+  await t.clickAt('#inline-trigger')
+  await t.eventually(`!!${grp}`, true, 'inline: clicking the trigger shows the prompt')
+  t.ok(await t.evaluate(`
+    const g = ${grp};
+    return g.getAttribute('aria-label') === 'Delete Acme?' && g.textContent.includes('Delete Acme?');
+  `), 'the group is named by the title')
+  t.is(await t.evaluate(`return document.querySelectorAll('body > .popover, [data-confirm-panel]').length;`), 0,
+    'no panel and no portal node')
+  t.is(await t.evaluate(`return ${grp}.parentElement.id;`), 'inline-clip',
+    'the prompt stands in the trigger\'s own container')
+  t.is(await t.evaluate(`return document.querySelector('#inline-trigger').getClientRects().length;`), 0,
+    'the trigger gives its place to the prompt')
+  t.ok(await t.evaluate(`return !${grp}.textContent.includes('Never drawn inline');`),
+    'the message is not drawn inline')
+  t.ok(await t.evaluate(`return ${grp}.contains(document.activeElement) && document.activeElement.textContent.trim() === 'Delete';`),
+    'focus lands on the confirm button')
+
+  await t.clickAt('#inline-clip [role=group] .btn.ghost')
+  await t.eventually(out('inline-cancels'), '1', 'inline: Cancel fires oncancel')
+  t.is(await t.evaluate(`return ${out('inline-confirms')};`), '0', 'and does not confirm')
+  await t.eventually(gone, true, 'and closes the prompt')
+  await t.eventually(`document.activeElement?.id`, 'inline-trigger', 'focus returns to the trigger')
+
+  await t.clickAt('#inline-trigger')
+  await t.eventually(`!!${grp}`, true)
+  await t.clickAt('#inline-clip [role=group] .btn.danger')
+  await t.eventually(out('inline-confirms'), '1', 'inline: Delete fires onconfirm once')
+  t.is(await t.evaluate(`return ${out('inline-cancels')};`), '1', 'and does not cancel')
+  await t.eventually(gone, true, 'and closes the prompt')
+  await t.eventually(`document.activeElement?.id`, 'inline-trigger', 'focus returns to the trigger after confirm')
+
+  // The clicks on the prompt's own buttons are not the row's.
+  t.is(await t.evaluate(`return ${out('row-clicks')};`), '0', 'no click on the trigger or the prompt reaches the container')
+
+  await t.clickAt('#inline-trigger')
+  await t.eventually(`!!${grp}`, true)
+  await t.press('Escape')
+  await t.eventually(out('inline-cancels'), '2', 'inline: Escape cancels')
+  await t.eventually(gone, true, 'and closes the prompt')
+  await t.eventually(`document.activeElement?.id`, 'inline-trigger', 'focus returns to the trigger after Escape')
+
+  await t.clickAt('#inline-trigger')
+  await t.eventually(`!!${grp}`, true)
+  await t.evaluate(`
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') e.preventDefault() }, { once: true });
+    return true;
+  `)
+  await t.press('Escape')
+  await t.evaluate(`await new Promise(r => setTimeout(r, 150)); return true;`)
+  t.is(await t.evaluate(`return !!${grp};`), true, 'an Escape already taken does not cancel the inline prompt')
+  await t.press('Escape')
+  await t.eventually(gone, true, 'the next one does')
+
+  // Click-away is the floating panel's rule too: outside cancels, inside does not.
+  await t.clickAt('#inline-trigger')
+  await t.eventually(`!!${grp}`, true)
+  await t.clickAt('#inline-clip [role=group] span')
+  await t.evaluate(`await new Promise(r => setTimeout(r, 100)); return true;`)
+  t.is(await t.evaluate(`return !!${grp};`), true, 'a click inside the cluster does not cancel')
+  t.is(await t.evaluate(`return ${out('inline-cancels')};`), '3', 'and fires no oncancel')
+  await t.clickAt('#outside')
+  await t.eventually(out('inline-cancels'), '4', 'inline: a click outside cancels, firing oncancel once')
+  await t.eventually(gone, true, 'and closes the prompt')
+  await t.eventually(`document.activeElement?.id`, 'inline-trigger', 'focus returns to the trigger after click-away')
+  t.is(await t.evaluate(`return ${out('inline-confirms')};`), '1', 'and does not confirm')
+
+  // A disabled trigger takes no click, so no prompt.
+  await t.evaluate(`document.querySelector('#inline-disabled').click(); return true;`)
+  await t.clickAt('#inline-disabled')
+  await t.evaluate(`await new Promise(r => setTimeout(r, 100)); return true;`)
+  t.is(await t.evaluate(`return document.querySelectorAll('[role=group]').length;`), 0,
+    'a click on a disabled trigger does not open the prompt')
+
   // The window listener goes with the panel. One left behind swallows the
   // NEXT fixture's first click, which reads as a component that stopped
   // responding.

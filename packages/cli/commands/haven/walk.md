@@ -8,6 +8,7 @@ examples:
   - fli haven --browser
   - fli haven --api http://localhost:5505
   - fli haven --frame /tavern/
+  - fli haven --open /workshop/
 flags:
   api:
     char: a
@@ -23,6 +24,11 @@ flags:
     char: f
     type: string
     description: Print one room's frame and exit — no TTY needed
+    defaultValue: ''
+  open:
+    char: o
+    type: string
+    description: Walk in at this room's path instead of the square, e.g. /tavern/
     defaultValue: ''
 ---
 
@@ -264,6 +270,7 @@ if (flag.browser) {
 const shellArgs = [
   '--api', api,
   ...(flag.frame ? ['--frame', flag.frame] : []),
+  ...(flag.open ? ['--open', flag.open] : []),
   ...(checkout ? ['--side', 'src/components/Study.mesa'] : []),
 ]
 // The token reaches the shell as HAVEN_TOKEN: a terminal has no storage a

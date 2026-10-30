@@ -12,6 +12,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fs::{read_dir, File};
 use std::io::{Read, Write};
+use std::os::unix::ffi::OsStrExt;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::time::Instant;
 
@@ -34,6 +35,7 @@ mod sys {
     pub const POLLIN: c_short = 1;
     pub const SIGHUP: c_int = 1;
     pub const SIGINT: c_int = 2;
+    pub const SIGKILL: c_int = 9;
     pub const SIGTERM: c_int = 15;
     pub const SIGWINCH: c_int = 28;
     pub const SC_CLK_TCK: c_int = 2;
@@ -116,6 +118,7 @@ const DEF: i16 = -1;
 const HIST: usize = 4096;
 const KEY_PGUP: i32 = 1001;
 const KEY_PGDN: i32 = 1002;
+const KEY_ESC: i32 = 1003;
 
 static QUIT: AtomicBool = AtomicBool::new(false);
 static RESIZE: AtomicBool = AtomicBool::new(false);
@@ -142,11 +145,33 @@ struct PSamp {
     start: u64,
 }
 
+struct Proc {
+    pid: i32,
+    start: u64,
+    name: String,
+    cpu: f64,
+    mem: f64,
+    ports: Vec<u16>,
+}
+
 struct Group {
     name: String,
     cpu: f64,
     mem: f64,
     count: u32,
+    ports: Vec<u16>,
+}
+
+// One line of the list: a group, or (pid > 0) one process of the open group.
+struct Row {
+    name: String,
+    pid: i32,
+    start: u64,
+    label: String,
+    cpu: f64,
+    mem: f64,
+    count: u32,
+    ports: String,
 }
 
 struct App {
@@ -172,11 +197,20 @@ struct App {
     prev: Vec<PSamp>,
     curr: Vec<PSamp>,
     last_scan: Option<f64>,
+    procs: Vec<Proc>,
+    port_cache: HashMap<i32, (u64, Vec<u16>)>,
+    scans: u32,
     groups: Vec<Group>,
     index: HashMap<String, usize>,
+    list: Vec<Row>,
+    open: String,
+    filter: String,
+    typing: bool,
     sort_mem: bool,
     sel: usize,
     sel_name: String,
+    sel_pid: i32,
+    confirm: bool,
     scroll: usize,
     list_rows: usize,
     flash: String,
@@ -235,6 +269,125 @@ fn proc_pids() -> impl Iterator<Item = String> {
         .flatten()
         .filter_map(|e| e.file_name().into_string().ok())
         .filter(|n| n.as_bytes()[0].is_ascii_digit())
+}
+
+// Socket inode → port for every listening TCP socket, v4 and v6 (state 0A).
+fn listen_inodes() -> HashMap<u64, u16> {
+    let mut m = HashMap::new();
+    for path in ["/proc/net/tcp", "/proc/net/tcp6"] {
+        let Ok(s) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        for line in s.lines().skip(1) {
+            let f: Vec<&str> = line.split_whitespace().collect();
+            if f.len() < 10 || f[3] != "0A" {
+                continue;
+            }
+            let port = f[1].rsplit(':').next().and_then(|p| u16::from_str_radix(p, 16).ok());
+            if let (Some(port), Ok(ino)) = (port, f[9].parse()) {
+                m.insert(ino, port);
+            }
+        }
+    }
+    m
+}
+
+// Another user's fd directory is unreadable, so a root-owned listener shows no
+// port unless fli top runs as root, as with ss -p.
+fn pid_ports(pid: &str, listen: &HashMap<u64, u16>) -> Vec<u16> {
+    let mut v = Vec::new();
+    if listen.is_empty() {
+        return v;
+    }
+    let Ok(dir) = read_dir(format!("/proc/{pid}/fd")) else {
+        return v;
+    };
+    for e in dir.flatten() {
+        let Ok(link) = std::fs::read_link(e.path()) else {
+            continue;
+        };
+        if let Some(rest) = link.as_os_str().as_bytes().strip_prefix(b"socket:[") {
+            if let Some(p) = listen.get(&num(rest)) {
+                if !v.contains(p) {
+                    v.push(*p);
+                }
+            }
+        }
+    }
+    v.sort_unstable();
+    v
+}
+
+fn fmt_ports(p: &[u16]) -> String {
+    p.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(" ")
+}
+
+// argv[0] loses its directory, which would fill the column on its own. A
+// kernel thread has an empty cmdline; the caller falls back to its name.
+fn read_cmdline(pid: i32) -> String {
+    let mut buf = [0u8; 512];
+    let s = slurp(&format!("/proc/{pid}/cmdline"), &mut buf).unwrap_or(&[]);
+    let arg0 = s.iter().position(|b| *b == 0).unwrap_or(s.len());
+    let s = match s[..arg0].iter().rposition(|b| *b == b'/') {
+        Some(p) => &s[p + 1..],
+        None => s,
+    };
+    let s: String = s
+        .iter()
+        .map(|b| match *b {
+            0 => ' ',
+            0x20..=0x7e => *b as char,
+            _ => '?',
+        })
+        .collect();
+    s.trim_end().to_string()
+}
+
+fn sig_name(sig: i32) -> &'static str {
+    if sig == sys::SIGKILL {
+        "SIGKILL"
+    } else {
+        "SIGTERM"
+    }
+}
+
+// Every process in the group, as vtop's `killall <name>` does.
+fn kill_group(target: &str, sig: i32) -> String {
+    let me = std::process::id() as i32;
+    let (mut ok, mut denied) = (0, 0);
+    for pid_s in proc_pids() {
+        match read_stat(&pid_s) {
+            Some((name, ..)) if name == target => {}
+            _ => continue,
+        }
+        let pid: i32 = pid_s.parse().unwrap_or(0);
+        if pid == me {
+            continue;
+        }
+        if unsafe { sys::kill(pid, sig) } == 0 {
+            ok += 1;
+        } else {
+            denied += 1;
+        }
+    }
+    match (ok, denied) {
+        (0, 0) => format!("{target}: no such process "),
+        (_, 0) => format!("{target}: {} sent to {ok} ", sig_name(sig)),
+        _ => format!("{target}: {ok} killed, {denied} not permitted "),
+    }
+}
+
+// The start time is read again: a pid reused since the scan is someone else.
+fn kill_pid(pid: i32, start: u64, sig: i32) -> String {
+    match read_stat(&pid.to_string()) {
+        Some((_, _, s, _)) if s == start => {}
+        _ => return format!("{pid}: no such process "),
+    }
+    if unsafe { sys::kill(pid, sig) } == 0 {
+        format!("{pid}: {} sent ", sig_name(sig))
+    } else {
+        format!("{pid}: not permitted ")
+    }
 }
 
 impl App {
@@ -415,8 +568,20 @@ impl App {
         let dt = self.last_scan.map_or(0.0, |t| now - t);
         self.last_scan = Some(now);
         self.curr.clear();
+        self.procs.clear();
         self.groups.clear();
         self.index.clear();
+        // Reading every fd link costs ~3x the rest of the scan (~26k readlinks
+        // on a desktop), so ports are re-walked every 5th scan, ~10 s, and a new
+        // listener can take that long to show.
+        let fresh = self.scans % 5 == 0;
+        self.scans += 1;
+        let listen = if fresh {
+            self.port_cache.clear();
+            listen_inodes()
+        } else {
+            HashMap::new()
+        };
         for pid_s in proc_pids() {
             let Some((name, ticks, start, rss)) = read_stat(&pid_s) else {
                 continue;
@@ -446,8 +611,9 @@ impl App {
                         cpu: 0.0,
                         mem: 0.0,
                         count: 0,
+                        ports: Vec::new(),
                     });
-                    self.index.insert(name, self.groups.len() - 1);
+                    self.index.insert(name.clone(), self.groups.len() - 1);
                     self.groups.len() - 1
                 }
             };
@@ -455,22 +621,103 @@ impl App {
             g.cpu += cpu;
             g.mem += mem;
             g.count += 1;
+            let ports = if fresh {
+                let p = pid_ports(&pid_s, &listen);
+                self.port_cache.insert(pid, (start, p.clone()));
+                p
+            } else {
+                match self.port_cache.get(&pid) {
+                    Some((s, p)) if *s == start => p.clone(),
+                    _ => Vec::new(),
+                }
+            };
+            g.ports.extend(&ports);
             self.curr.push(PSamp { pid, ticks, start });
+            self.procs.push(Proc {
+                pid,
+                start,
+                name,
+                cpu,
+                mem,
+                ports,
+            });
+        }
+        for g in &mut self.groups {
+            g.ports.sort_unstable();
+            g.ports.dedup();
         }
         self.curr.sort_unstable_by_key(|p| p.pid);
         std::mem::swap(&mut self.prev, &mut self.curr);
     }
 
     fn select_row(&mut self, i: isize) {
-        self.sel = i.min(self.groups.len() as isize - 1).max(0) as usize;
-        if let Some(g) = self.groups.get(self.sel) {
-            self.sel_name.clone_from(&g.name);
+        self.sel = i.min(self.list.len() as isize - 1).max(0) as usize;
+        if let Some(r) = self.list.get(self.sel) {
+            self.sel_name.clone_from(&r.name);
+            self.sel_pid = r.pid;
+        }
+    }
+
+    fn find_sel(&mut self) -> bool {
+        let at = self
+            .list
+            .iter()
+            .position(|r| r.name == self.sel_name && r.pid == self.sel_pid);
+        if let Some(i) = at {
+            self.sel = i;
+        }
+        at.is_some()
+    }
+
+    // The groups the filter matches, with the open group's processes under it.
+    fn rebuild_rows(&mut self) {
+        let m = self.sort_mem;
+        let f = self.filter.to_ascii_lowercase();
+        self.list.clear();
+        for g in &self.groups {
+            if !g.name.to_ascii_lowercase().contains(&f) {
+                continue;
+            }
+            self.list.push(Row {
+                name: g.name.clone(),
+                pid: 0,
+                start: 0,
+                label: g.name.clone(),
+                cpu: g.cpu,
+                mem: g.mem,
+                count: g.count,
+                ports: fmt_ports(&g.ports),
+            });
+            if g.name != self.open {
+                continue;
+            }
+            let mut kids: Vec<&Proc> = self.procs.iter().filter(|p| p.name == g.name).collect();
+            kids.sort_by(|a, b| {
+                let (ka, kb) = if m { (a.mem, b.mem) } else { (a.cpu, b.cpu) };
+                kb.partial_cmp(&ka)
+                    .unwrap_or(Ordering::Equal)
+                    .then_with(|| a.pid.cmp(&b.pid))
+            });
+            for p in kids {
+                let cmd = read_cmdline(p.pid);
+                self.list.push(Row {
+                    name: g.name.clone(),
+                    pid: p.pid,
+                    start: p.start,
+                    label: format!("  {} {}", p.pid, if cmd.is_empty() { &p.name } else { &cmd }),
+                    cpu: p.cpu,
+                    mem: p.mem,
+                    count: 0,
+                    ports: fmt_ports(&p.ports),
+                });
+            }
         }
     }
 
     // At the top the cursor stays put, so the view keeps showing the busiest rows.
     // Once moved it follows its process: a refresh that adds a group above would
-    // otherwise slide another process under it, and dd would kill that one.
+    // otherwise slide another process under it, and dd would kill that one. A
+    // process that exits hands the cursor to its group.
     fn sort_groups(&mut self) {
         let m = self.sort_mem;
         self.groups.sort_by(|a, b| {
@@ -479,39 +726,58 @@ impl App {
                 .unwrap_or(Ordering::Equal)
                 .then_with(|| a.name.cmp(&b.name))
         });
+        self.rebuild_rows();
         if self.sel > 0 {
-            if let Some(i) = self.groups.iter().position(|g| g.name == self.sel_name) {
-                self.sel = i;
+            if self.find_sel() {
+                return;
+            }
+            self.sel_pid = 0;
+            if self.find_sel() {
                 return;
             }
         }
         self.select_row(self.sel as isize);
     }
 
-    // SIGTERM every process in the group, as vtop's `killall <name>` does.
-    fn kill_group(&mut self, now: f64) {
-        let target = self.sel_name.clone();
-        let me = std::process::id() as i32;
-        let (mut ok, mut denied) = (0, 0);
-        for pid_s in proc_pids() {
-            match read_stat(&pid_s) {
-                Some((name, ..)) if name == target => {}
-                _ => continue,
-            }
-            let pid: i32 = pid_s.parse().unwrap_or(0);
-            if pid == me {
-                continue;
-            }
-            if unsafe { sys::kill(pid, sys::SIGTERM) } == 0 {
-                ok += 1;
-            } else {
-                denied += 1;
-            }
+    // One group open at a time; Enter on a process row closes its group.
+    fn toggle_open(&mut self) {
+        let Some(r) = self.list.get(self.sel) else {
+            return;
+        };
+        let name = r.name.clone();
+        self.open = if r.pid == 0 && self.open != name {
+            name.clone()
+        } else {
+            String::new()
+        };
+        self.sel_name = name;
+        self.sel_pid = 0;
+        self.rebuild_rows();
+        self.find_sel();
+    }
+
+    fn refilter(&mut self) {
+        self.rebuild_rows();
+        self.select_row(0);
+    }
+
+    fn target(&self) -> String {
+        match self.list.get(self.sel) {
+            Some(r) if r.pid > 0 => format!("pid {}", r.pid),
+            Some(r) => format!("{} ({})", r.name, r.count),
+            None => String::new(),
         }
-        self.flash = match (ok, denied) {
-            (0, 0) => format!("{target}: no such process "),
-            (_, 0) => format!("{target}: SIGTERM sent to {ok} "),
-            _ => format!("{target}: {ok} killed, {denied} not permitted "),
+    }
+
+    // A group row signals the group; a process row only that process.
+    fn kill_selected(&mut self, sig: i32, now: f64) {
+        let Some(r) = self.list.get(self.sel) else {
+            return;
+        };
+        self.flash = if r.pid > 0 {
+            kill_pid(r.pid, r.start, sig)
+        } else {
+            kill_group(&r.name.clone(), sig)
         };
         self.flash_until = now + 3.0;
     }
@@ -594,8 +860,13 @@ impl App {
     }
 
     fn draw_procs(&mut self, x: i32, y: i32, w: i32, h: i32) {
-        const HDR: [&str; 4] = ["Command", "CPU %", "Count", "Memory %"];
-        self.draw_box(x, y, w, h, " Process List ");
+        const HDR: [&str; 5] = ["Command", "CPU %", "Count", "Memory %", "Ports"];
+        let label = if self.typing || !self.filter.is_empty() {
+            format!(" Process List /{}{} ", self.filter, if self.typing { "_" } else { "" })
+        } else {
+            " Process List ".to_string()
+        };
+        self.draw_box(x, y, w, h, &label);
         let tw = w - 3;
         if tw < 1 || h - 3 < 1 {
             self.list_rows = 1;
@@ -609,13 +880,14 @@ impl App {
         } else {
             1
         };
-        // columns drop from the right until Command keeps 12 cells, as in vtop
-        let mut ncol = 4;
-        let mut width = [0i32; 4];
+        // columns drop from the right until Command keeps 12 cells, as in vtop;
+        // Ports is fli's own and goes first
+        let mut ncol = 5;
+        let mut width = [0i32; 5];
         loop {
             let mut used = 0;
             for i in 1..ncol {
-                width[i] = HDR[i].len() as i32 + pad;
+                width[i] = if i == 4 { 12 } else { HDR[i].len() as i32 } + pad;
                 used += width[i];
             }
             width[0] = tw - used;
@@ -638,14 +910,15 @@ impl App {
         }
         let shown = self
             .list_rows
-            .min(self.groups.len().saturating_sub(self.scroll));
+            .min(self.list.len().saturating_sub(self.scroll));
         for r in 0..shown {
-            let g = &self.groups[self.scroll + r];
+            let g = &self.list[self.scroll + r];
             let v = [
-                g.name.clone(),
+                g.label.clone(),
                 format!("{:.1}", g.cpu),
-                g.count.to_string(),
+                if g.count > 0 { g.count.to_string() } else { String::new() },
                 format!("{:.1}", g.mem),
+                g.ports.clone(),
             ];
             let yy = y + 2 + r as i32;
             let bg = if self.scroll + r == self.sel {
@@ -695,8 +968,11 @@ impl App {
         self.draw_chart(0, by, lw, bh, " Memory Usage ", true);
         self.draw_procs(lw, by, cols - lw, bh);
 
-        const KEYS: [(&str, &str); 7] = [
+        const KEYS: [(&str, &str); 10] = [
             ("dd", "Kill process"),
+            ("D", "Force kill"),
+            ("Enter", "Expand"),
+            ("/", "Filter"),
             ("j", "Down"),
             ("k", "Up"),
             ("g", "Jump to top"),
@@ -711,9 +987,14 @@ impl App {
             fx = self.text(fx, fy, " ", DEF, DEF, false);
             fx = self.text(fx, fy, d, DEF, DEF, false);
         }
-        if now < self.flash_until {
+        // over the key list when it runs past the edge: a SIGKILL prompt that
+        // drew off-screen would hold the list waiting for an answer nobody sees
+        if self.confirm || now < self.flash_until {
             let flash = std::mem::take(&mut self.flash);
-            let fx2 = (cols - flash.len() as i32).max(fx + 2);
+            let fx2 = (cols - flash.len() as i32).max(0);
+            for x in (fx2 - 1).max(0)..cols {
+                self.put(x, fy, ' ', DEF, DEF, false);
+            }
             self.textn(fx2, fy, &flash, cols - fx2, DEF, DEF, true);
             self.flash = flash;
         }
@@ -733,12 +1014,11 @@ impl App {
         let mut i = 0;
         while i < n {
             let mut k = b[i] as i32;
-            if k == 0x1b {
-                // a lone Esc quits, as in vtop; anything after it is a sequence
-                if i + 1 >= n {
-                    QUIT.store(true, Relaxed);
-                    return;
-                }
+            let mut seq = false;
+            // a lone Esc is a key of its own; anything after it is a sequence
+            if k == 0x1b && i + 1 >= n {
+                k = KEY_ESC;
+            } else if k == 0x1b {
                 if b[i + 1] != b'[' && b[i + 1] != b'O' {
                     i += 2;
                     continue;
@@ -761,15 +1041,60 @@ impl App {
                     _ => 0,
                 };
                 i = j;
+                seq = true;
+            }
+            if self.confirm {
+                self.confirm = false;
+                if k == 0x79 /* y */ {
+                    self.kill_selected(sys::SIGKILL, now);
+                    *next_scan = now + 0.5;
+                } else {
+                    self.flash = "cancelled ".into();
+                    self.flash_until = now + 1.5;
+                }
+                *last_key = 0;
+                i += 1;
+                continue;
+            }
+            // while typing a filter, letters are text; arrows still move
+            if self.typing && !seq {
+                match k {
+                    KEY_ESC => {
+                        self.typing = false;
+                        self.filter.clear();
+                    }
+                    0x0d | 0x0a => self.typing = false,
+                    0x7f | 0x08 => {
+                        self.filter.pop();
+                    }
+                    0x20..=0x7e => self.filter.push(k as u8 as char),
+                    _ => {}
+                }
+                self.refilter();
+                i += 1;
+                continue;
             }
             let sel = self.sel as isize;
             let page = self.list_rows as isize;
             // moving holds the list for a second, as vtop does, so rows do not
             // reorder under a cursor that is still travelling
             match k {
-                0x71 /* q */ => {
+                // Esc clears a filter first, and quits as in vtop once there is none
+                KEY_ESC if !self.filter.is_empty() => {
+                    self.filter.clear();
+                    self.refilter();
+                }
+                KEY_ESC | 0x71 /* q */ => {
                     QUIT.store(true, Relaxed);
                     return;
+                }
+                0x2f /* / */ => self.typing = true,
+                0x0d | 0x0a => self.toggle_open(),
+                0x44 /* D */ => {
+                    if !self.list.is_empty() {
+                        self.confirm = true;
+                        self.flash = format!("SIGKILL {}? y to confirm ", self.target());
+                    }
                 }
                 0x6a /* j */ => {
                     self.select_row(sel + 1);
@@ -788,7 +1113,7 @@ impl App {
                     *frozen_until = now + 1.0;
                 }
                 0x67 /* g */ => self.select_row(0),
-                0x47 /* G */ => self.select_row(self.groups.len() as isize - 1),
+                0x47 /* G */ => self.select_row(self.list.len() as isize - 1),
                 0x63 | 0x6d /* c m */ => {
                     let want = k == 0x6d;
                     if self.sort_mem != want {
@@ -798,8 +1123,8 @@ impl App {
                     }
                 }
                 0x64 /* d */ => {
-                    if *last_key == 0x64 && !self.groups.is_empty() {
-                        self.kill_group(now);
+                    if *last_key == 0x64 && !self.list.is_empty() {
+                        self.kill_selected(sys::SIGTERM, now);
                         *next_scan = now + 0.5;
                         k = 0;
                     }
@@ -834,43 +1159,63 @@ impl Drop for Terminal {
     }
 }
 
+// One table on stdout and out: CPU needs two scans, so it is the last second's.
+fn print_once(app: &mut App) {
+    app.sample_cpu(1);
+    app.sample_mem();
+    app.scan_procs(app.now());
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    let cpu = app.sample_cpu(1);
+    let mem = app.sample_mem();
+    app.scan_procs(app.now());
+    app.sort_groups();
+    let mut la = [0f64; 3];
+    unsafe { sys::getloadavg(la.as_mut_ptr(), 3) };
+    let w = app.groups.iter().map(|g| g.name.len()).max().unwrap_or(0).max(7);
+    let mut o = Vec::with_capacity(16 * 1024);
+    let _ = writeln!(
+        o,
+        "{}  load {:.2} {:.2} {:.2}  cpu {cpu}%  mem {mem}%",
+        app.host, la[0], la[1], la[2]
+    );
+    let _ = writeln!(o, "{:<w$}  {:>6}  {:>5}  {:>8}  Ports", "Command", "CPU %", "Count", "Memory %");
+    for g in &app.groups {
+        let line = format!(
+            "{:<w$}  {:>6.1}  {:>5}  {:>8.1}  {}",
+            g.name,
+            g.cpu,
+            g.count,
+            g.mem,
+            fmt_ports(&g.ports)
+        );
+        let _ = writeln!(o, "{}", line.trim_end());
+    }
+    let _ = std::io::stdout().write_all(&o);
+}
+
 fn main() {
     let mut interval: u64 = 300;
+    let mut once = false;
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
     while i < args.len() {
         if (args[i] == "-i" || args[i] == "--interval") && i + 1 < args.len() {
             interval = args[i + 1].parse().unwrap_or(300);
             i += 2;
+        } else if args[i] == "--once" {
+            once = true;
+            i += 1;
         } else {
-            eprintln!("usage: fli top [--interval milliseconds]");
+            eprintln!("usage: fli top [--interval milliseconds] [--once]");
             std::process::exit(1);
         }
     }
     let interval = interval.max(50) as f64 / 1000.0;
-    if unsafe { sys::isatty(0) == 0 || sys::isatty(1) == 0 } {
-        eprintln!("fli top: needs a terminal");
-        std::process::exit(1);
-    }
 
     let mut hostbuf = [0u8; 64];
     unsafe { sys::gethostname(hostbuf.as_mut_ptr().cast(), hostbuf.len() - 1) };
     let end = hostbuf.iter().position(|b| *b == 0).unwrap_or(0);
     let host = String::from_utf8_lossy(&hostbuf[..end]).into_owned();
-
-    for s in [sys::SIGINT, sys::SIGTERM, sys::SIGHUP, sys::SIGWINCH] {
-        unsafe { sys::signal(s, on_signal) };
-    }
-
-    let mut orig: sys::Termios = unsafe { std::mem::zeroed() };
-    unsafe { sys::tcgetattr(0, &mut orig) };
-    let mut raw = orig;
-    raw.c_lflag &= !(sys::ICANON | sys::ECHO);
-    raw.c_iflag &= !(sys::IXON | sys::ICRNL);
-    raw.c_cc[sys::VMIN] = 0;
-    raw.c_cc[sys::VTIME] = 0;
-    unsafe { sys::tcsetattr(0, sys::TCSAFLUSH, &raw) };
-    let _term = Terminal(orig);
 
     let mut app = App {
         t0: Instant::now(),
@@ -895,20 +1240,51 @@ fn main() {
         prev: Vec::with_capacity(1024),
         curr: Vec::with_capacity(1024),
         last_scan: None,
+        procs: Vec::with_capacity(1024),
+        port_cache: HashMap::with_capacity(1024),
+        scans: 0,
         groups: Vec::with_capacity(256),
         index: HashMap::with_capacity(256),
+        list: Vec::with_capacity(256),
+        open: String::new(),
+        filter: String::new(),
+        typing: false,
         sort_mem: false,
         sel: 0,
         sel_name: String::new(),
+        sel_pid: 0,
+        confirm: false,
         scroll: 0,
         list_rows: 1,
         flash: String::new(),
         flash_until: 0.0,
         dots: Vec::new(),
     };
+    if once {
+        print_once(&mut app);
+        return;
+    }
+    if unsafe { sys::isatty(0) == 0 || sys::isatty(1) == 0 } {
+        eprintln!("fli top: needs a terminal");
+        std::process::exit(1);
+    }
+
+    for s in [sys::SIGINT, sys::SIGTERM, sys::SIGHUP, sys::SIGWINCH] {
+        unsafe { sys::signal(s, on_signal) };
+    }
+
+    let mut orig: sys::Termios = unsafe { std::mem::zeroed() };
+    unsafe { sys::tcgetattr(0, &mut orig) };
+    let mut raw = orig;
+    raw.c_lflag &= !(sys::ICANON | sys::ECHO);
+    raw.c_iflag &= !(sys::IXON | sys::ICRNL);
+    raw.c_cc[sys::VMIN] = 0;
+    raw.c_cc[sys::VTIME] = 0;
+    unsafe { sys::tcsetattr(0, sys::TCSAFLUSH, &raw) };
+    let _term = Terminal(orig);
+
     app.out.extend_from_slice(b"\x1b[?1049h\x1b[?25l");
     app.resize();
-
     let window = ((1.0 / interval).ceil() as usize).min(31);
     let mut now = app.now();
     let (mut next_tick, mut next_scan, mut frozen_until) = (now, now + 1.0, 0.0);
@@ -932,8 +1308,8 @@ fn main() {
             app.hist_cpu[app.hist_n % HIST] = app.cur_cpu as u8;
             app.hist_mem[app.hist_n % HIST] = app.cur_mem as u8;
             app.hist_n += 1;
-            // a pending first 'd' holds the list, so dd kills the row that was shown
-            if now >= next_scan && now >= frozen_until && last_key != 0x64 {
+            // a pending first 'd' or SIGKILL prompt holds the list, so the row shown is the one signalled
+            if now >= next_scan && now >= frozen_until && last_key != 0x64 && !app.confirm {
                 app.scan_procs(now);
                 app.sort_groups();
                 next_scan = now + 2.0;

@@ -7,6 +7,9 @@
 
   let confirms = 0
   let cancels  = 0
+  let inlineConfirms = 0
+  let inlineCancels  = 0
+  let rowClicks      = 0
 </script>
 
 <div style:padding="6rem 3rem">
@@ -23,6 +26,30 @@
   </ConfirmationPopover>
 </div>
 
+<div id="inline-clip" style:overflow="hidden" style:width="22rem" style:padding="0.5rem"
+     onclick={() => rowClicks++}>
+  <ConfirmationPopover
+    inline
+    title="Delete Acme?"
+    message="Never drawn inline."
+    confirmLabel="Delete"
+    onconfirm={() => inlineConfirms++}
+    oncancel={() => inlineCancels++}
+  >
+    {#snippet trigger()}
+      <Button id="inline-trigger" treatment="ghost">Delete</Button>
+    {/snippet}
+  </ConfirmationPopover>
+  <ConfirmationPopover inline title="Never?" onconfirm={() => inlineConfirms += 100}>
+    {#snippet trigger()}
+      <Button id="inline-disabled" disabled treatment="ghost">Locked</Button>
+    {/snippet}
+  </ConfirmationPopover>
+</div>
+
 <button type="button" id="outside">Elsewhere</button>
 <output id="confirms">{confirms}</output>
 <output id="cancels">{cancels}</output>
+<output id="inline-confirms">{inlineConfirms}</output>
+<output id="inline-cancels">{inlineCancels}</output>
+<output id="row-clicks">{rowClicks}</output>

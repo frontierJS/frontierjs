@@ -1123,7 +1123,7 @@ invisible to any comparison of two numbers (`FJS-529`). Seeding roles is therefo
 **A key to a row holding the list is the grant too**, so assigning a role checks the
 role's list. The check is one row deep, and the parser refuses a key that reaches a list
 through a second row: with `GroupMember.groupId` → `Group.roleId` → `Role`, joining a
-group would hand out the role's list unchecked (`FJS-D1670`). Put the list on `Group`
+group would hand out the role's list unchecked (`FJS-D1674`). Put the list on `Group`
 instead. A key to the `@@auth` model names a person, not a grant, and is exempt.
 
 Separation of duties — *the person who administers access must not use it* — is the

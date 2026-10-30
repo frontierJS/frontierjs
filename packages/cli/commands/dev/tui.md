@@ -46,7 +46,7 @@ const { shippedFile } = await import(resolve(global.fliRoot, 'core/app-schema.js
 
 const shell = shippedFile($.paths.root, '@frontierjs/sierra', './tui')?.file
 if (!shell) {
-  echo('\n  ✗ @frontierjs/sierra is not installed in this app, or is too old to have ./tui\n')
+  echo(`\n  ${chalk.red('✗')} @frontierjs/sierra is not installed in this app, or is too old to have ./tui\n`)
   process.exitCode = 1
   return
 }

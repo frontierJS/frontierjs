@@ -45,4 +45,17 @@ export async function run(t) {
   await t.eventually(onTop, true, 'and its panel is on top of the drawer')
   await t.clickAt('[role=dialog][aria-modal=false] .btn.danger')
   await t.eventually(ran, 'remove|archive', 'clicking confirm runs onconfirm')
+
+  /* -- inline -------------------------------------------------------------- */
+
+  // No portal to land beneath the drawer: the prompt is in the dialog already.
+  await t.clickAt('#inline-delete')
+  await t.eventually(`!!document.querySelector('dialog.drawer [role=group]')`, true,
+    'an inline confirmation opens inside the drawer')
+  await t.eventually(`!!${panel}`, false, 'and floats no panel')
+  await t.clickAt('dialog.drawer [role=group] .btn.danger')
+  await t.eventually(ran, 'remove|archive|inline', 'its confirm runs onconfirm')
+  await t.eventually(`document.activeElement?.id`, 'inline-delete', 'and focus returns to the trigger')
+  t.is(await t.evaluate(`return document.querySelector('dialog.drawer').open;`), true,
+    'the drawer stays open')
 }

@@ -69,8 +69,8 @@ if (flag.create) {
   if (flag.dry) { log.dry(`cf pages projects create --body '${JSON.stringify(body)}'`); return }
   const project = await createPagesProject(profile, acct, body)
   log.success(`Created: ${project.name}`)
-  echo(`  subdomain: ${project.subdomain}`)
-  if (acct) echo(`  dashboard: https://dash.cloudflare.com/${acct}/pages/view/${project.name}`)
+  echo(`  ${chalk.dim('subdomain:')} ${project.subdomain}`)
+  if (acct) echo(`  ${chalk.dim('dashboard:')} https://dash.cloudflare.com/${acct}/pages/view/${project.name}`)
   return
 }
 
@@ -80,8 +80,8 @@ if (flag.deploy) {
   if (flag.dry) { log.dry(`cf pages projects deployments create ${flag.deploy}`); return }
   const deployment = await deployPages(profile, acct, flag.deploy)
   log.success(`Deployment triggered: ${deployment.id}`)
-  echo(`  url:    ${deployment.url || 'pending…'}`)
-  echo(`  status: ${deployment.latest_stage?.name || 'queued'}`)
+  echo(`  ${chalk.dim('url:   ')} ${deployment.url || 'pending…'}`)
+  echo(`  ${chalk.dim('status:')} ${deployment.latest_stage?.name || 'queued'}`)
   return
 }
 
@@ -89,13 +89,14 @@ if (flag.deploy) {
 if (flag.status) {
   const deployments = await pagesDeployments(profile, acct, flag.status, 5)
   echo('')
-  echo(`  ${flag.status} — last ${deployments.length} deployments\n`)
+  echo(`  ${chalk.bold(flag.status)}  ${chalk.dim(`·  last ${deployments.length} deployment(s)  ·  ✓ success  ✗ failure  ~ other`)}\n`)
   for (const d of deployments) {
     const ts     = new Date(d.created_on).toLocaleString()
     const status = d.latest_stage?.status || 'unknown'
+    const tone   = status === 'success' ? chalk.green : status === 'failure' ? chalk.red : chalk.yellow
     const icon   = status === 'success' ? '✓' : status === 'failure' ? '✗' : '~'
-    echo(`  ${icon}  ${d.id.slice(0, 8)}  ${status.padEnd(10)} ${ts}`)
-    echo(`       ${d.url || ''}`)
+    echo(`  ${tone(icon)}  ${d.id.slice(0, 8)}  ${tone(status.padEnd(10))} ${chalk.dim(ts)}`)
+    echo(`       ${chalk.dim(d.url || '')}`)
   }
   echo('')
   return
@@ -106,14 +107,15 @@ const projects = await pagesProjects(profile, acct)
 if (flag.json) { echo(JSON.stringify(projects, null, 2)); return }
 
 echo('')
-echo(`  ${projects.length} Pages project(s)\n`)
+echo(`  ${chalk.bold('Pages')}  ${chalk.dim(`·  ${projects.length} project(s)  ·  ✓ last deploy succeeded  ✗ failed  · none`)}\n`)
 for (const p of projects) {
   const latest = p.latest_deployment
   const status = latest?.latest_stage?.status || 'no deployments'
+  const tone   = status === 'success' ? chalk.green : status === 'failure' ? chalk.red : chalk.dim
   const icon   = status === 'success' ? '✓' : status === 'failure' ? '✗' : '·'
-  echo(`  ${icon}  ${p.name.padEnd(35)} ${p.subdomain}`)
+  echo(`  ${tone(icon)}  ${p.name.padEnd(35)} ${chalk.dim(p.subdomain)}`)
   if (latest) {
-    echo(`       last deploy: ${new Date(latest.created_on).toLocaleString()}  ·  ${status}`)
+    echo(`       ${chalk.dim(`last deploy: ${new Date(latest.created_on).toLocaleString()}  ·  ${status}`)}`)
   }
 }
 echo('')

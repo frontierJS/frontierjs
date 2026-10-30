@@ -8,7 +8,7 @@
   //     id:      string           — unique key
   //     group:   string           — section heading
   //     label:   string           — primary text (searched)
-  //     icon?:   string           — emoji or text glyph
+  //     icon?:   string           — emoji or text glyph (an `item` snippet draws anything else)
   //     sub?:    string           — secondary text (searched)
   //     keywords?: string         — words that find the row and are never drawn
   //                                 ("save export download"); one string, not a list
@@ -45,6 +45,16 @@
   // aborts the `signal` of a search the words have moved past, and says so
   // when one fails. A hit's `id` must not repeat an item's.
   //
+  // `searchMinLength` holds the search back until the words are that long, so
+  // a one-letter query does not reach a server. `groupLimit` caps the rows a
+  // group draws — a number for every group, or `{ Group: n }` for the ones it
+  // names — and the cursor, the count and Enter see only the drawn rows.
+  //
+  // `item` is a snippet, `{#snippet item(row, { active })}`, drawn inside the
+  // row's `role="option"` button in place of the icon, label and sub line (an
+  // avatar, an icon component). The badge and shortcut hint stay the kit's.
+  // The button, its id, the cursor and the keys remain the palette's.
+  //
   // A list built from the words some other way — a row whose label IS the
   // words — follows `onquery` and hands back new `items`, which ARE ranked.
   // Reading the box off the DOM instead misses the ✕, which empties it
@@ -62,6 +72,9 @@
   export let minimumScore = 0          // a word scoring at or below this matches nothing (0–1)
   export let searchGroups = true       // whether a group's heading matches its rows
   export let search       = undefined  // (query: string, signal: AbortSignal) => Promise<Item[]>, drawn unranked
+  export let searchMinLength = 0       // `search` is not asked until the trimmed words are this long
+  export let groupLimit   = undefined  // rows drawn per group: a number, or { group: number }
+  export let item         = null       // snippet (row, { active }) — replaces the icon, label and sub line
 
   // export var — snapshot at mount, layout never changes after open
   export var maxHeight     = '62vh'
@@ -106,7 +119,7 @@
     _asking = null
     hits = []
     searchError = null
-    searching = !!(search && words.trim())
+    searching = !!(search && words.trim() && words.trim().length >= searchMinLength)
     if (!searching) return
     _timer = setTimeout(() => {
       const mine = _asking = new AbortController()
@@ -145,11 +158,16 @@
   // to score best at offsets belonging to the other.
   const marksOf = new Map((ranked ?? []).map(r => [r.item, r.byKey ?? {}]))
 
+  const capOf = (g) => typeof groupLimit === 'number' ? groupLimit : groupLimit?.[g]
   const groupMap = filtered.reduce((acc, c) => {
     if (!acc[c.group]) acc[c.group] = []
     acc[c.group].push(c)
     return acc
   }, {})
+  for (const g of Object.keys(groupMap)) {
+    const cap = capOf(g)
+    if (cap >= 0) groupMap[g] = groupMap[g].slice(0, cap)
+  }
 
   const allGroups  = Object.keys(groupMap)
   const groupNames = groupOrder.length
@@ -351,8 +369,8 @@
             </div>
 
             <!-- Group rows -->
-            {#each groupMap[group] as item (item.id)}
-              {@const gi       = flatIdx[item.id]}
+            {#each groupMap[group] as row (row.id)}
+              {@const gi       = flatIdx[row.id]}
               {@const isActive = gi === at}
 
               <!--
@@ -370,43 +388,46 @@
               <button
                 type="button"
                 tabindex="-1"
-                id={rowId(item)}
+                id={rowId(row)}
                 class="fjs-cp-row {isActive ? 'fjs-cp-row--active' : ''}"
                 data-active={isActive}
                 role="option"
                 aria-selected={isActive}
                 onmousemove={() => { if (idx !== gi) idx = gi }}
-                onclick={() => run(item)}
+                onclick={() => run(row)}
               >
-                <!-- Icon -->
-                {#if item.icon !== undefined}
+                {#if item}
+                  {@render item(row, { active: isActive })}
+                {:else}
+                {#if row.icon !== undefined}
                   <span class="fjs-cp-rowicon {isActive ? 'fjs-cp-rowicon--active' : ''}">
-                    {item.icon}
+                    {row.icon}
                   </span>
                 {/if}
 
                 <!-- Label + sub. item-text/-title/-sub ship in lists.css. -->
                 <span class="item-text">
                   <!-- One line: a break here renders whitespace inside the word. -->
-                  <span class="item-title fjs-cp-rowlabel {isActive ? 'fjs-cp-rowlabel--active' : ''}">{#each segments(item.label, marksOf.get(item)?.label ?? []) as part, i (i)}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>
-                  {#if item.sub}
+                  <span class="item-title fjs-cp-rowlabel {isActive ? 'fjs-cp-rowlabel--active' : ''}">{#each segments(row.label, marksOf.get(row)?.label ?? []) as part, i (i)}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>
+                  {#if row.sub}
                     <span
                       class="item-sub"
-                      style:color={item.color || undefined}
-                    >{#each segments(item.sub, marksOf.get(item)?.sub ?? []) as part, i (i)}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>
+                      style:color={row.color || undefined}
+                    >{#each segments(row.sub, marksOf.get(row)?.sub ?? []) as part, i (i)}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>
                   {/if}
                 </span>
+                {/if}
 
                 <!-- Badge -->
-                {#if item.badge}
-                  <span class="badge fjs-cp-badge">{item.badge}</span>
+                {#if row.badge}
+                  <span class="badge fjs-cp-badge">{row.badge}</span>
                 {/if}
 
                 <!-- Shortcut hint: ↵ when active, kbd string otherwise -->
                 {#if isActive}
                   <kbd>↵</kbd>
-                {:else if item.kbd}
-                  <span class="fjs-cp-rowkbd">{item.kbd}</span>
+                {:else if row.kbd}
+                  <span class="fjs-cp-rowkbd">{row.kbd}</span>
                 {/if}
               </button>
             {/each}

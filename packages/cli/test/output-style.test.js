@@ -22,6 +22,9 @@ const OFFLINE = [
   ['register:check', '--rules'],
   ['register:next', '--limit', '3'],
   ['register:decisions'],
+  ['register:close', 'NOPE-0', '--how', 'x'],
+  ['register:amend', 'NOPE-0', '--detail', 'x'],
+  ['register:file', '--sev', 'S4', '--area', 'cli', '--title', 'x', '--detail', 'x', '--dry'],
 ]
 
 for (const args of OFFLINE) {
@@ -44,7 +47,10 @@ test('--json stays plain even under FORCE_COLOR', () => {
 const STYLED = [
   'cloudflare/dns', 'cloudflare/zones', 'cloudflare/workers', 'project/map',
   'register/next', 'register/decisions', 'register/check', 'test/done',
-  'utils/outline', 'workspace/tidy',
+  'utils/outline', 'workspace/tidy', 'register/close', 'register/file',
+  'register/amend', 'register/archive', 'register/decide', 'test/snapshots',
+  'dev/tui', 'basecamp/_module', 'register/atlas', 'cloudflare/pages',
+  'project/intent',
 ]
 
 for (const name of STYLED) {

@@ -126,6 +126,47 @@ export async function run(t) {
   await t.eventually(`document.querySelector('.fjs-cp-searcherror')?.textContent.includes('search is down')`, true,
     'a search that fails says so, rather than reading as no results')
 
+  /* ── a minimum before the search is asked (FJS-3611) ──────────────────── */
+
+  const searched = `document.querySelector('#searches').textContent`
+  await t.mount('palette-modes', { source: 'server', searchMinLength: 3 })
+  await t.type('th')
+  await t.evaluate(`await new Promise(r => setTimeout(r, 400)); return true;`)
+  t.is(await t.evaluate(`return ${searched};`), '0', 'words shorter than searchMinLength ask the search nothing')
+  t.ok(!(await t.evaluate(`return !!document.body.textContent.includes('Searching');`)), 'and do not say Searching')
+  await t.type('rottling')
+  await t.eventually(`${labels}.join(',')`, 'Rate-limit the search endpoint', 'the words reaching the minimum ask it')
+  t.is(await t.evaluate(`return ${searched};`), '1', 'once')
+
+  /* ── a cap on each group (FJS-3611) ───────────────────────────────────── */
+
+  await t.mount('palette-modes', { set: 'many' })
+  t.is(await t.evaluate(`return ${rows}.length;`), 10, 'with no groupLimit every row is drawn')
+
+  await t.mount('palette-modes', { set: 'many', groupLimit: 3 })
+  t.is(await t.evaluate(`return ${labels}.join(',');`), 'Person 0,Person 1,Person 2,Doc 0,Doc 1,Doc 2',
+    'a number caps every group')
+  for (let i = 0; i < 5; i++) await t.press('ArrowDown')
+  t.is(await t.evaluate(`return ${activeLabel};`), 'Doc 2', 'and the cursor stops at the last drawn row')
+  t.is(await t.evaluate(`return document.querySelector('.fjs-cp-count').textContent.trim();`), '6 results',
+    'and the count is of what is drawn')
+
+  await t.mount('palette-modes', { set: 'many', groupLimit: { People: 2 } })
+  t.is(await t.evaluate(`return ${labels}.length;`), 6, 'a map caps the groups it names and leaves the rest whole')
+
+  /* ── a row the app draws (FJS-3611) ───────────────────────────────────── */
+
+  await t.mount('palette-modes', { set: 'many', rowAs: 'custom' })
+  t.is(await t.evaluate(`return document.querySelectorAll('[role=option] .custom-avatar').length;`), 10,
+    'an item snippet is drawn inside each role=option button')
+  t.is(await t.evaluate(`return document.querySelector('.fjs-cp-row--active .custom-avatar')?.dataset.avatar;`), 'P0',
+    'and is handed the row')
+  t.is(await t.evaluate(`return document.querySelector('.fjs-cp-row--active .custom-avatar')?.dataset.active;`), 'true',
+    'and whether it is the active one')
+  await t.press('ArrowDown')
+  t.is(await t.evaluate(`return document.querySelector('.fjs-cp-row--active .custom-avatar')?.dataset.avatar;`), 'P1',
+    'the cursor still moves over snippet rows')
+
   /* ── the cursor ───────────────────────────────────────────────────────── */
 
   await t.mount('palette-modes')

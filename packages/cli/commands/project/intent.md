@@ -85,17 +85,17 @@ if (answer.refused) {
 if (missing.length) log.warn(`not indexed: ${missing.join(', ')}`)
 
 echo('')
-echo(`  ${answer.verdict.toUpperCase()}  ·  cost ${answer.depth}${answer.identity ? `  ·  ${answer.identity}` : ''}`)
+echo(`  ${chalk.bold(answer.verdict.toUpperCase())}  ${chalk.dim(`·  cost ${answer.depth}${answer.identity ? `  ·  ${answer.identity}` : ''}`)}`)
 echo('')
 for (const f of answer.facts) {
   const words = [f.fact.about, f.fact.words, f.fact.from && `from ${f.fact.from}`, f.fact.to && `to ${f.fact.to}`].filter(Boolean).join(' · ')
-  echo(`  ${f.fact.kind.padEnd(12)} ${words}`)
+  echo(`  ${chalk.cyan(f.fact.kind.padEnd(12))} ${words}`)
   echo(`    → ${f.verdict}${f.target ? `  ${f.target}` : ''}`)
-  if (f.why)                 echo(`      ${f.why}`)
-  if (f.cite)                echo(`      cite  ${f.cite}`)
-  if (f.notes?.length)       echo(`      note  ${f.notes.join('; ')}`)
-  if (f.unverified?.length)  echo(`      unverified: ${f.unverified.join(', ')} — nothing indexes what a screen shows`)
-  if (f.candidates?.length)  echo(`      could be: ${f.candidates.join(', ')}`)
+  if (f.why)                 echo(`      ${chalk.dim(f.why)}`)
+  if (f.cite)                echo(`      ${chalk.dim('cite')}  ${f.cite}`)
+  if (f.notes?.length)       echo(`      ${chalk.dim('note')}  ${f.notes.join('; ')}`)
+  if (f.unverified?.length)  echo(`      ${chalk.yellow('unverified:')} ${f.unverified.join(', ')} — nothing indexes what a screen shows`)
+  if (f.candidates?.length)  echo(`      ${chalk.dim('could be:')} ${f.candidates.join(', ')}`)
 }
 echo('')
 ```

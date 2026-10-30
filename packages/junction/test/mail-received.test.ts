@@ -41,6 +41,12 @@ describe('replyAddress', () => {
     await expect(replyAddress('support+vip@acme.test', id, SECRET)).rejects.toThrow(/already carries a plus-tag/)
     await expect(replyAddress('support@acme.test', 'not-a-ulid!', SECRET)).rejects.toThrow(/Crockford/)
   })
+
+  // FJS-3677: '41' is Crockford but not a ULID, so readReplyTag could never read the tag back
+  it('refuses at mint an id that is not a 26-character ULID', async () => {
+    await expect(replyAddress('support@acme.test', '41', SECRET)).rejects.toThrow(/ULID/)
+    await expect(replyAddress('support@acme.test', generateUlid() + '0', SECRET)).rejects.toThrow(/ULID/)
+  })
 })
 
 describe('splitAddress', () => {

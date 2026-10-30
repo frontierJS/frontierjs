@@ -35,6 +35,12 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1683"></a>2026-10-30 · `FJS-D1683` — Q5 — What is the noun — *Processes* on the page, `processes` as the stream source; no new word, the reader is a `processes.js` beside the Outpost's `vitals.js`.
+
+Asked in [`IDEAS/box-top.md`](IDEAS/box-top.md) § Open questions. **A** was picked over **B** (*Top*, after the tool).
+
+The paper's recommendation, taken as written: it names what is shown; *top* is a program, not a thing.
+
 ### <a id="fjs-d1629"></a>2026-10-29 · `FJS-D1629` — Q5 — What is the noun — *Platform*.
 
 Asked in [`IDEAS/app-platforms.md`](IDEAS/app-platforms.md) § Open questions. **A** was picked over **B** (*Destination*, already `BackupDestination`'s word), **C** (*Target*, already Conduit's).
@@ -1727,6 +1733,18 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d1682"></a>2026-10-30 · `FJS-D1682` — Q4 — What does the action on a row do, and how is it gated — No action in the first cut; a read-only view.
+
+Asked in [`IDEAS/box-top.md`](IDEAS/box-top.md) § Open questions. **C** was picked over **A** (a container row offers the existing restart; a host row sends SIGTERM through a new Outpost signal route (allow-list: refuses pid 1, the Outpost, `dockerd`, `containerd`, and anything in a container), gated as a `servers` action at developer level and written as a `ServerEvent` (new kind `signal_sent`, a migration)), **B** (SIGTERM any row, container or not, same gate and event).
+
+Against the recommendation (**A**): the owner wants the read-only view first; a signal route and a new ServerEventKind wait until the view is in use, and A stays the reopen path.
+
+### <a id="fjs-d1674"></a>2026-10-30 · `FJS-D1674` — The parser refuses a key that reaches a `Capability[]` list through a second row; a key to the `@@auth` model is exempt
+
+Asked in session, closing `FJS-3681`. As recommended. **C** (refuse the shape at parse) was picked over **A** (walk keys at write time to any depth, never through the `@@auth` model's rows), **B** (a fixed two-hop walk) and C as a warning only. The may-only-grant-what-you-hold guard grades a key to a row that holds the list (`FJS-2324`), one row deep. With `GroupMember.groupId` → `Group.roleId` → `Role`, a caller holding nothing joined a group whose role held everything. None of the seven schemas here and in fjs-prototypes that declare `Capability[]` has the shape, and `FJS-D1671` puts the list on Group itself, so the refusal costs nothing today. A walk over-grades: followed to any depth, assigning a maidtech `Job.cleanerId` required holding the cleaner's whole role. A key to the `@@auth` model names a person rather than a grant, so it is exempt; otherwise every schema whose principal carries a role would be refused. An implicit many-to-many counts as a key, and its far side keying back along the same edge is one hop. Reopen as A only when a real schema needs two hops.
+
+*Lives in:* `packages/litestone/src/core/capabilities.js` `checkGrantReach`. *Enforced by:* `packages/litestone/test/capabilities.test.ts` § a key to a row holding a grant is the grant.
 
 ### <a id="fjs-d1673"></a>2026-10-30 · `FJS-D1673` — Q2 — How does the framework sanction the Group shape — Example models only: the documented house pattern, with no syntax.
 
@@ -8421,6 +8439,24 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1681"></a>2026-10-30 · `FJS-D1681` — Q3 — How are rows grouped — By owner then name: one row per App (its container), expandable to its process names; host processes grouped by name as in `fli top`.
+
+Asked in [`IDEAS/box-top.md`](IDEAS/box-top.md) § Open questions. **A** was picked over **B** (by name only, as `fli top` does).
+
+The paper's recommendation, taken as written: B makes `bun` one row holding every app on the box.
+
+### <a id="fjs-d1680"></a>2026-10-30 · `FJS-D1680` — Q2 — Live stream or the heartbeat — A stream: a `processes` row in `SOURCES`, an Outpost `POST /processes/follow` that emits a frame per tick while held open.
+
+Asked in [`IDEAS/box-top.md`](IDEAS/box-top.md) § Open questions. **A** was picked over **B** (ride the 30 s heartbeat: add a top-N process list to `health`. Cost: a 30 s process list is not *top*, and every box pays the scan whether anyone watches).
+
+The paper's recommendation, taken as written: the rail exists and its header asks for exactly this shape; B also grows a column every heartbeat writes.
+
+### <a id="fjs-d1679"></a>2026-10-30 · `FJS-D1679` — Q1 — Where does the view live — A *Processes* card on `/servers/[id]/` beside `#server-health`; the workspace's own servers, graded like the page.
+
+Asked in [`IDEAS/box-top.md`](IDEAS/box-top.md) § Open questions. **A** was picked over **B** (a Hub screen under `hub/fleet/`, cross-workspace for a system admin. Cost: fleet rows are not links today because `/servers/:id/` is workspace-scoped, so it needs its own route and its own grading).
+
+The paper's recommendation, taken as written: the person debugging a box is in its workspace; B can link to A later through the same route fleet would need anyway.
+
 ### <a id="fjs-d1646"></a>2026-10-29 · `FJS-D1646` — Basecamp's own signing pair is derived from `ENCRYPTION_KEY` and never stored: HKDF-SHA256 over it with the label `basecamp hub signing key v1` seeds `generateSigningKeys({ seed })`, and a conduit target names it by the ref `hub:signing`.
 
 Asked building `IDEAS/basecamp-dogfood.md` 2.4, which needed a home for the private half of [`FJS-D1645`](#fjs-d1645)'s pair. As recommended: **derive** over **a `Secret` row** (a second encrypted record to back up, and a database restored without it is a fleet that obeys nobody) and **an env var** (a second required secret an operator sets and a deploy writes, beside the one that already must exist). Prior art: Rails `secret_key_base` through `KeyGenerator`, one root secret with a label per purpose. What it costs: rotating `ENCRYPTION_KEY` re-enrolls every machine, which [`FJS-D1644`](#fjs-d1644) already makes the rotation path. The label carries a version so a second derivation can sit beside it.
@@ -8532,6 +8568,8 @@ Asked in session (`IDEAS/basecamp-dogfood.md` Q10). Both were nullable copies of
 ### <a id="fjs-d1610"></a>2026-10-28 · `FJS-D1610` — `Workspace.ownerId` is a relation to `User`, `onDelete: Restrict`, still `@system`.
 
 Asked in session (`IDEAS/basecamp-dogfood.md` Q10). A bare id today; `transferOwnership` reads it and a soft-deleted owner is the failure nothing refuses. `Restrict` because a workspace with no owner is the state the hub cannot act on.
+
+**Superseded 2026-10-30 by `FJS-D1669`:** the owner chose to drop the column (`FJS-3680`). Owner is the `WorkspaceMember` role, and the hub lists every member holding it.
 
 ### <a id="fjs-d873"></a>2026-10-28 · `FJS-D873` — Where does a service-level (per-call) audit trail write, and what owns the declaration — The app declares a model and hands it to the plugin: `auditPlugin({ model: 'AuditEvent' })`, junction validating the shape at boot. Keeps basecamp's typed columns and per-workspace feed; the plugin owns the capture (`recordable()` from `callService`'s own predicate, the registry-read model, `$protectedFields` redaction, system-client re-read of both sides) and the app owns the table. Costs: a column contract junction must name and refuse on, and a second audit table beside `@@trail`.
 
@@ -13030,6 +13068,14 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d1676"></a>2026-10-30 · `FJS-D1676` — Composer's height cap is a `maxRows` prop, and `sending` is a prop of its own
+
+Answers [FJS-3613](ISSUES.md#fjs-3613). As recommended (A). `maxRows = 8` sets the textarea's `max-block-size` inline, in `lh`, so a caller's 10 rows never depends on stylesheet order. **B** (a `--composer-rows` custom property) was not taken: no prop, but the first knob of its kind in the kit. **C** (keep 8 fixed) was not taken: tpm's companion would shrink, or override with a selector that wins only by load order. The row's other pricing settled without a ruling. `sending` cannot fold into `disabled`, which disables the textarea and so stops typing. It cannot be read from the pending `onsend` promise either, because tpm's chat sends while an earlier send is still pending. The rest is the ticket as written: `busy`/`onstop`, `ondraft`, `maxlength`, a `false` send restoring the words unless new ones were typed, `send`/`stop` snippets for a square icon button named by `aria-label`, `inputLabel` (default the placeholder), and a regrow on an outside `value`, on mount and on resize. *Lives in:* `packages/ui/components/display/Composer.mesa`; proved by `test/browser/specs/chat.spec.mjs` § the composer's names onward.
+
+
+### <a id="fjs-d1678"></a>2026-10-30 · `FJS-D1678` — An inline ConfirmationPopover hides its trigger, focuses confirm, and cancels on a click outside
+
+Answers [FJS-3612](ISSUES.md#fjs-3612). `inline` puts a `role="group"` of title, confirm and cancel in place of the trigger, with no portal and no `message`. The trigger stays mounted under `display: none` rather than unmounting, because a re-rendered trigger is a node nothing holds and focus could only come back by query, which a terminal node lacks (FJS-2391). Focus lands on confirm, matching `ConfirmPanel` and tpm's `InlineConfirm`; cancel-first was offered for a destructive row and not taken. Escape and a click outside the trigger or the cluster both cancel, as the floating panel does, so a row is never left mid-prompt; tpm's Escape-only behavior was not taken. No `size` prop until a consumer asks. *Lives in:* `packages/ui/components/overlay/ConfirmationPopover.mesa`; proved by `test/browser/specs/popover.spec.mjs` § inline and `confirm-in-drawer.spec.mjs`.
 ### <a id="fjs-d1670"></a>2026-10-30 · `FJS-D1670` — A route strip is `<TabList nav>` of `<Tab href current>`: `current` is the caller's prop, not derived from a handed-in `isActive`.
 
 Answers [FJS-3610](ISSUES.md#fjs-3610). As recommended (A). `TabList nav` draws `<nav aria-label>` with no `role="tablist"` and no arrow keys, and provides `$context.tabStrip` so its Tabs know they are not tabs. A `Tab` with `href` is `<a class="tab">` answering `aria-current="page"` when `current`, with no tab role and no registration, with or without a `Tabs`; disabled, it drops its `href` and says `aria-disabled`. A `Tab` with no `href` inside a `nav` is a plain `<button class="tab">`, because tpm's strip mixes routes with panel openers. A `Tab` with `href` inside a real tablist warns by name and still draws. **B** (`TabList nav` takes Sierra's `isActive`, Shell's shape, and each Tab derives `current` from its `href`, `exact` for a parent route) was not taken: one route source, but a fourth prop, and a parent route that forgets `exact` is current on every child. *Lives in:* `packages/ui/components/layout/Tab.mesa`, `TabList.mesa`; proved by `test/render.mjs` § A strip of routes is a nav of links.
@@ -15934,6 +15980,12 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1677"></a>2026-10-30 · `FJS-D1677` — Does `fli top` ship native source that fli builds on first use, and in which language — Both: Rust when cargo is on the PATH, C when it is not, and a refusal naming both when neither is. Cost: one monitor in two languages, changed together.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked over **A** (Rust only (`native/top/src/main.rs`, no crates, so it builds offline in ~5 s). Cost: refuses on a machine without cargo), **B** (C only (`native/top/top.c`, `cc -O2`, ~0.4 s). Measured equal to A: 1.30% CPU / 2.1 MB vs 1.33% / 2.4 MB).
+
+Against the recommendation (**B**): the owner asked for Rust in fli with the C build kept as the fallback; Q1/Q3/Q6 overridden by name, the two sources change together, and B (C only) is the reopen path if they drift.
 
 ### <a id="fjs-d1617"></a>2026-10-29 · `FJS-D1617` — Q2 — Outpost logs to journald, so nothing writes `/var/log/outpost`. What does the `logs` link point at — A (confidence 2).
 

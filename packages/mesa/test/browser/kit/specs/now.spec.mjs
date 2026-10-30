@@ -48,7 +48,8 @@ export async function run(t) {
   const ticked = Number(await text(t, 'a'))
   t.is(await text(t, 'b'), String(ticked), 'both readers move on the one tick')
   t.ok(ticked % 1000 < 250, `a tick lands on a whole second (${ticked % 1000} ms past)`)
-  t.is(JSON.stringify(await t.evaluate(`return window.kitIntervalCalls.slice();`)), '[1000]',
+  // the 60 s reader aligns to :00 then calls setInterval(60000), so only the 1000 ms calls are counted
+  t.is(await t.evaluate(`return window.kitIntervalCalls.filter((ms) => ms === 1000).length;`), 1,
     'two readers of 1000 ms run one interval')
 
   await t.evaluate(`window.kitDropFirst(); return true;`)

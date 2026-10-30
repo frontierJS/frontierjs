@@ -290,4 +290,72 @@ export async function run(t) {
   t.is(await t.evaluate(ticked('byField')), 'Grace', 'rowKey as a field name keeps the tick with its record')
   t.is(await t.evaluate(ticked('byFn')), 'Grace', 'rowKey as a function keeps the tick with its record')
   t.is(await t.evaluate(ticked('byIndex')), 'Alan', 'no rowKey keys by position, as it always did')
+
+  /* ── a row cap (FJS-3614) ─────────────────────────────────────────────── */
+
+  const refs = (id) => `return [...document.querySelectorAll('#${id} tbody tr')].map(r => r.cells[0].textContent.trim()).join(',');`
+  const more = (id) => `return [...document.querySelectorAll('#${id} .table-wrap + button')].map(b => b.textContent.replace(/\\s+/g, ' ').trim()).join('|');`
+  const foot = `document.querySelector('#capped tfoot td')?.textContent.trim()`
+
+  t.is(await t.evaluate(refs('capped')), 'R1,R2,R3', 'limit draws only that many rows')
+  t.is(await t.evaluate(more('capped')), 'Show 4 more rows', 'and counts the rest in the control')
+  t.is(await t.evaluate(`return document.querySelectorAll('#capped table').length;`), 1,
+    'one table, so the columns share their widths')
+  t.is(await t.evaluate(`
+    const b = document.querySelector('#capped .table-wrap + button');
+    return b && !b.hasAttribute('aria-expanded') && b.getAttribute('aria-controls') === document.querySelector('#capped tbody').id;
+  `), true, 'the control follows .table-wrap and names the tbody it opens')
+  t.is(await t.evaluate(`return ${foot};`), '7 rows · 280', 'footer is handed every row, not the visible ones')
+
+  // Sorted first, then capped: descending amount puts R2 70, R4 60, R6 50 on top.
+  await t.clickAt('#capped thead th:nth-child(2) button')
+  await t.clickAt('#capped thead th:nth-child(2) button')
+  await t.eventually(`document.querySelector('#capped thead th:nth-child(2)').getAttribute('aria-sort')`, 'descending', 'sorted descending')
+  t.is(await t.evaluate(refs('capped')), 'R2,R4,R6', 'the cap applies after the sort')
+  t.is(await t.evaluate(`return ${foot};`), '7 rows · 280', 'the footer still sees every row after a sort')
+
+  const printEvent = (type) => t.evaluate(`window.dispatchEvent(new Event('${type}')); await new Promise(r => setTimeout(r, 50)); return true;`)
+  await printEvent('beforeprint')
+  t.is(await t.evaluate(refs('capped')), 'R2,R4,R6,R7,R3,R5,R1', 'beforeprint draws every row, in sorted order')
+  t.is(await t.evaluate(more('capped')), '', 'and the control is gone while printing')
+  await printEvent('afterprint')
+  t.is(await t.evaluate(refs('capped')), 'R2,R4,R6', 'afterprint restores the cap')
+  t.is(await t.evaluate(more('capped')), 'Show 4 more rows', 'and the control')
+
+  await t.clickAt('#capped .table-wrap + button')
+  await t.eventually(`document.querySelectorAll('#capped tbody tr').length`, 7, 'the control draws the rest')
+  t.is(await t.evaluate(more('capped')), '', 'and goes away')
+  t.is(await t.evaluate(`return document.querySelectorAll('#capped tbody').length;`), 1, 'in the same tbody')
+  await printEvent('beforeprint')
+  await printEvent('afterprint')
+  t.is(await t.evaluate(refs('capped')), 'R2,R4,R6,R7,R3,R5,R1', 'a table the reader opened stays open after printing')
+
+  await t.clickAt('#cap-swap')
+  await t.eventually(`document.querySelectorAll('#capped tbody tr').length`, 3, 'replacing rows puts the cap back')
+  t.is(await t.evaluate(more('capped')), 'Show 2 more rows', 'with the new count')
+  t.is(await t.evaluate(refs('capped')), 'S5,S4,S3', 'over the new rows, still sorted')
+
+  await t.clickAt('#cap-loading')
+  await t.eventually(`document.querySelectorAll('#capped tbody tr[aria-busy=true]').length`, 5, 'loading ignores limit')
+  t.is(await t.evaluate(more('capped')), '', 'and draws no control over skeletons')
+  await t.clickAt('#cap-loading')
+  await t.eventually(`document.querySelectorAll('#capped tbody tr').length`, 3, 'then the cap returns')
+
+  t.is(await t.evaluate(more('cap-one')), 'Show 1 more row', 'one hidden row is singular')
+  t.is(await t.evaluate(refs('cap-one')), 'R1,R2,R3', 'and the rest are not drawn')
+  t.is(await t.evaluate(more('cap-equal')), '', 'rows equal to limit draw no control')
+  t.is(await t.evaluate(refs('cap-equal')), 'R1,R2,R3', 'and all rows')
+  t.is(await t.evaluate(more('cap-over')), '', 'rows below limit draw no control')
+  t.is(await t.evaluate(refs('cap-over')), 'R1,R2,R3,R4,R5,R6,R7', 'and all rows')
+  t.is(await t.evaluate(more('cap-none')), '', 'no limit draws no control')
+  t.is(await t.evaluate(refs('cap-none')), 'R1,R2,R3,R4,R5,R6,R7', 'and every row, as before')
+  t.is(await t.evaluate(`return document.querySelector('#cap-empty .empty-text')?.textContent.trim();`), 'Nothing capped.',
+    'the empty state ignores limit')
+  t.is(await t.evaluate(more('cap-empty')), '', 'and draws no control')
+
+  t.is(await t.evaluate(`return window.__printListeners;`) > 0, true, 'the kit holds a beforeprint listener')
+  const held = await t.evaluate(`return window.__printListeners;`)
+  await t.clickAt('#cap-unmount')
+  await t.eventually(`document.getElementById('capped') === null`, true, 'the capped table unmounted')
+  t.is(await t.evaluate(`return window.__printListeners;`), held - 1, 'and its beforeprint listener was removed with it')
 }

@@ -170,8 +170,8 @@ const makeAdmin = async ({ dest, identity, workspace, admin, password, log, echo
     log.error(`POST /setup answered ${code || 'nothing'}${said ? `: ${said}` : ''}. Make the admin at /setup in the browser`)
     return false
   }
-  echo(`  admin    ${admin}`)
-  if (generated) echo(`  password ${password}   shown once — change it after you sign in`)
+  echo(`  ${chalk.dim('admin   ')} ${chalk.bold(admin)}`)
+  if (generated) echo(`  ${chalk.dim('password')} ${chalk.bold(password)}   ${chalk.dim('shown once — change it after you sign in')}`)
   return true
 }
 

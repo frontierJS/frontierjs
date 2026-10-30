@@ -197,7 +197,7 @@ export function expandCapabilityType(schema) {
  * `Capability[]`, one row deep (`constraint-refusals.js`). `GroupMember.groupId ->
  * Group.roleId -> Role.capabilities` is two, and an admin holding nothing joined a
  * group whose role holds everything (`FJS-3681`). The list belongs on the row the key
- * names, so the shape is refused rather than walked (`FJS-D1670`).
+ * names, so the shape is refused rather than walked (`FJS-D1674`).
  *
  * A key to the `@@auth` model names a person, not a grant: `Job.cleanerId -> User ->
  * Role` assigns nothing, and refusing it would refuse every schema whose principal
@@ -232,7 +232,7 @@ function checkGrantReach(schema) {
       errors.push(
         `Model '${model.name}', field '${field}': a key to ${target.name} hands out ${via.target.name}.${list} ` +
         `through ${target.name}.${via.field}, and the may-only-grant-what-you-hold guard grades a key one row ` +
-        `deep, so this assignment would go ungraded (FJS-D1670). Put the list on ${target.name} as ` +
+        `deep, so this assignment would go ungraded (FJS-D1674). Put the list on ${target.name} as ` +
         `Capability[], or key ${via.target.name} from ${model.name} directly.`)
     }
   return errors

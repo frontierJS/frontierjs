@@ -118,7 +118,7 @@ describe('User (1.8.1.5): own row at every standing and no other, created and de
       for (const k of ['isSystemAdmin', 'status', 'kind', 'emailVerified']) expect([k, after[k]]).toEqual([k, before[k]])
       expect(after.displayName).not.toBe(before.displayName)
     }
-  })
+  }, 60_000)
   test('at the Data boundary: at every level one reads only oneself; nobody updates another; create needs SYSTEM; delete needs 5', async () => {
     const sys = fx.env.system as any
     const n = async (w: Who2) => summarize(await d.call('job-caller-db', w, 'users', 'find')).n

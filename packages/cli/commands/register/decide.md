@@ -46,7 +46,7 @@ const root = findRegisterRoot(process.cwd()) ?? $.paths.root
 
 if (!arg.id) {
   if (!tty.interactive) {
-    echo('\n  ✗ The walk asks one key per question and needs a terminal. Answer one with fli decide <id> <letter> --section "<section>".\n')
+    echo(`\n  ${chalk.red('✗')} The walk asks one key per question and needs a terminal. Answer one with fli decide <id> <letter> --section "<section>".\n`)
     process.exitCode = 1
     return
   }
@@ -77,41 +77,41 @@ if (!arg.id) {
 
 if (flag.by) {
   if (arg.pick) {
-    echo(`\n  ✗ --by settles ${arg.id} with an existing ruling, so there is no letter to pick — drop ${arg.pick}\n`)
+    echo(`\n  ${chalk.red('✗')} --by settles ${arg.id} with an existing ruling, so there is no letter to pick — drop ${arg.pick}\n`)
     process.exitCode = 1
     return
   }
   const out = settle({ root, id: arg.id, by: flag.by, why: flag.why ?? '', file: flag.file, dry: flag.dry })
   echo('')
   if (!out.ok) {
-    echo(`  ✗ ${out.reason}`)
+    echo(`  ${chalk.red('✗')} ${out.reason}`)
     echo('')
     process.exitCode = 1
     return
   }
   if (out.dry) {
-    echo(`  ✓ ${out.question} — would be answered by ${out.ruling} (--dry: nothing written, register:check not run)`)
-    for (const f of out.files) echo(`    would write ${f}`)
+    echo(`  ${chalk.green('✓')} ${chalk.bold(out.question)} would be answered by ${out.ruling} ${chalk.dim('(--dry: nothing written, register:check not run)')}`)
+    for (const f of out.files) echo(chalk.dim(`    would write ${f}`))
     echo('')
     return
   }
-  echo(`  ✓ ${out.question} — answered by ${out.ruling}`)
-  for (const f of out.files) echo(`    wrote ${f}`)
-  echo('    register:check agrees with the result')
+  echo(`  ${chalk.green('✓')} ${chalk.bold(out.question)} answered by ${out.ruling}`)
+  for (const f of out.files) echo(chalk.dim(`    wrote ${f}`))
+  echo(chalk.dim('    register:check agrees with the result'))
   echo('')
   return
 }
 
 if (!arg.pick) {
-  echo(`\n  ✗ name the option letter, or --by <ruling> when a ruling already answers ${arg.id}\n`)
+  echo(`\n  ${chalk.red('✗')} name the option letter, or --by <ruling> when a ruling already answers ${arg.id}\n`)
   process.exitCode = 1
   return
 }
 
 if (!flag.section) {
   echo('')
-  echo('  --section is required. DECISIONS.md has:')
-  for (const s of rulingSections(root)) echo(`    ${s}`)
+  echo(`  ${chalk.red('--section is required.')} DECISIONS.md has:`)
+  for (const s of rulingSections(root)) echo(`    ${chalk.cyan(s)}`)
   echo('')
   process.exitCode = 1
   return
@@ -121,22 +121,22 @@ const out = decide({ root, id: arg.id, pick: arg.pick, why: flag.why ?? '', sect
 
 echo('')
 if (!out.ok) {
-  echo(`  ✗ ${out.reason}`)
+  echo(`  ${chalk.red('✗')} ${out.reason}`)
   echo('')
   process.exitCode = 1
   return
 }
 
 if (out.dry) {
-  echo(`  ✓ ${out.ruling} — ${out.question} → ${out.pick} (--dry: nothing written, register:check not run)`)
-  for (const f of out.files) echo(`    would write ${f}`)
+  echo(`  ${chalk.green('✓')} ${chalk.bold(out.ruling)} ${chalk.dim('—')} ${out.question} → ${out.pick} ${chalk.dim('(--dry: nothing written, register:check not run)')}`)
+  for (const f of out.files) echo(chalk.dim(`    would write ${f}`))
   echo('')
   return
 }
 
-echo(`  ✓ ${out.ruling} — ${out.question} → ${out.pick}`)
-for (const f of out.files) echo(`    wrote ${f}`)
-echo('    register:check agrees with the result')
+echo(`  ${chalk.green('✓')} ${chalk.bold(out.ruling)} ${chalk.dim('—')} ${out.question} → ${out.pick}`)
+for (const f of out.files) echo(chalk.dim(`    wrote ${f}`))
+echo(chalk.dim('    register:check agrees with the result'))
 echo('')
 ```
 

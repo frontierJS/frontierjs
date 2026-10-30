@@ -30,6 +30,13 @@
       <Button id="archive" treatment="ghost">Archive board</Button>
     {/snippet}
   </ConfirmationPopover>
+
+  <ConfirmationPopover inline title="Delete card?" confirmLabel="Delete"
+                       onconfirm={() => did('inline')}>
+    {#snippet trigger()}
+      <Button id="inline-delete" treatment="ghost">Delete card</Button>
+    {/snippet}
+  </ConfirmationPopover>
 </Drawer>
 
 <output id="ran">{ran.join('|')}</output>

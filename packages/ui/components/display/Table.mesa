@@ -38,6 +38,15 @@
   // empty label, and it is not `aria-label`: the text belongs in the cell so
   // the header is read in the row context that a table's own navigation uses.
   //
+  // `limit` caps the rows drawn, AFTER the sort, and leaves a "Show N more rows"
+  // button under `.table-wrap` that draws the rest in the SAME <tbody>. Two
+  // tables, one for the head and one for the rest, size their columns apart and
+  // misalign. `footer` is still handed every sorted row, so a total sums rows
+  // the reader has not opened. The button goes when it is used, when `rows` is
+  // replaced the cap returns, and `loading` and the empty state ignore `limit`.
+  // The kit owns print: a capped table opens on `beforeprint` and restores on
+  // `afterprint`, so a page that prints does not carry its own listener.
+  //
   // USAGE — basic:
   //   <Table {columns} {rows} {loading}>
   //     {#snippet row(r)}
@@ -62,7 +71,7 @@
 
   import { orderByPair, orderByValue } from '@frontierjs/toolbelt/directives'
   import { comparatorFor } from '@frontierjs/toolbelt/query'
-  import { cx } from '../../utils.js'
+  import { cx, uid } from '../../utils.js'
 
   export let columns    = []       // { name, label, sortable?, align?, width? }[]
   export let rows       = []       // any[] — passed to the row snippet
@@ -89,6 +98,7 @@
   export let striped    = false    // alternate row shading
   export let hover      = true     // row hover highlight
   export let compact    = false    // reduce row padding
+  export let limit      = 0        // rows drawn before "Show N more rows"; 0 is no cap
 
   // Snippets
   export let row     = null        // required — renders each data row
@@ -127,6 +137,16 @@
   // that sorts the page and not the list; such a caller states `onsort`. The
   // comparator is toolbelt's, the one the live list uses to place a pushed row.
   $: shown = onsort ? rows : sortedRows(rows, orderBy, collations)
+
+  let opened   = false
+  let printing = false
+  const bodyId = uid('table-body')
+
+  // A new `rows` is a new list, not the one the reader opened.
+  $: { rows; opened = false }
+  $: capped  = limit > 0 && shown.length > limit && !opened && !printing
+  $: visible = capped ? shown.slice(0, limit) : shown
+  $: hidden  = shown.length - visible.length
 
   function sortedRows(list, ordering, collating) {
     const cmp = comparatorFor(ordering || null, collating)
@@ -195,7 +215,7 @@
         </tr>
       </thead>
 
-      <tbody>
+      <tbody id={bodyId}>
         {#if loading}
           <!-- Skeleton rows -->
           <!-- Array.from, not `{ length: n }` — an each takes a real array;
@@ -231,7 +251,7 @@
 
         {:else}
           <!-- Data rows — the snippet supplies its own <tr>. -->
-          {#each shown as r, i (keyOf(r, i))}
+          {#each visible as r, i (keyOf(r, i))}
             {@render row?.(r, i)}
           {/each}
         {/if}
@@ -244,4 +264,12 @@
       {/if}
     </table>
   </div>
+
+  {#if capped && !loading && rows.length}
+    <button type="button" class="btn link" aria-controls={bodyId} onclick={() => { opened = true }}>
+      Show {hidden} more {hidden === 1 ? 'row' : 'rows'}
+    </button>
+  {/if}
 </div>
+
+<mesa:window onbeforeprint={() => { printing = true }} onafterprint={() => { printing = false }} />

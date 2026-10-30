@@ -22,8 +22,22 @@
   //   >
   //     {#snippet trigger()}<Button>Remove</Button>{/snippet}
   //   </ConfirmationPopover>
+  //
+  // Props: title, message, confirmLabel, cancelLabel, tone, onconfirm, oncancel,
+  // trigger (snippet), and `inline`.
+  //
+  // `inline` asks in place instead of floating: while it is open the trigger is
+  // hidden and a `role="group"` named by `title` stands where it was — the
+  // title, a confirm button, a cancel button. No ConfirmPanel, no portal, and
+  // `message` is not drawn. For a table row or a narrow list row, where a
+  // floating panel hides its neighbors. Escape and a click outside cancel.
+  //
+  //   <ConfirmationPopover inline title="Delete Acme?" confirmLabel="Delete" onconfirm={remove}>
+  //     {#snippet trigger()}<Button size="sm" treatment="ghost" tone="danger">Delete</Button>{/snippet}
+  //   </ConfirmationPopover>
 
   import ConfirmPanel from './ConfirmPanel.mesa'
+  import { tone as toTone, cx } from '../../utils.js'
 
   export let title        = 'Are you sure?'
   export let message      = 'This action cannot be undone.'
@@ -33,35 +47,80 @@
   export let onconfirm    = undefined
   export let oncancel     = undefined
   export let trigger      = null       // snippet
+  export let inline       = false      // ask in place of the trigger, not in a floating panel
 
   let open      = false
   let triggerEl
+  let confirmEl
+  let groupEl
 
   function handleConfirm() { open = false; restoreFocus(); onconfirm?.() }
   function handleCancel()  { open = false; restoreFocus(); oncancel?.() }
 
+  // Focus is refused on a hidden element, and `open` only reaches the DOM on
+  // mesa's microtask, so both moves wait for it.
+  function handleOpen() {
+    open = true
+    if (inline) queueMicrotask(() => $.focus(confirmEl))
+  }
+
+  function onClickAway(e) {
+    if (!inline || !open) return
+    if (triggerEl?.contains?.(e.target) || groupEl?.contains?.(e.target)) return
+    handleCancel()
+  }
+
+  // Escape is taken, so a terminal shell going back a screen does not also
+  // answer it (`FJS-3405`).
+  function onKeydown(e) {
+    if (!inline || !open || e.key !== 'Escape' || e.defaultPrevented) return
+    e.preventDefault()
+    handleCancel()
+  }
+
   // The control that held focus when the panel opened; a terminal node cannot
   // be queried for one. A browser that does not focus a button on press
   // (Safari) never reports one, and finds it by query.
+  //
+  // The inline prompt HIDES the trigger rather than unmounting it: a trigger
+  // drawn again is a new node no part holds a reference to, and `control`
+  // would point at a detached one.
   var control = null
 
   function restoreFocus() {
-    (control ?? triggerEl?.querySelector?.('button, a, [tabindex]'))?.focus?.()
+    const back = () => (control ?? triggerEl?.querySelector?.('button, a, [tabindex]'))?.focus?.()
+    if (inline) queueMicrotask(back)
+    else back()
   }
 </script>
 
+<mesa:window onkeydown={onKeydown} onclick|capture={onClickAway} />
+
 <span
   bind:this={triggerEl}
-  style:display="inline-block"
+  style:display={inline && open ? 'none' : 'inline-block'}
   {class}
   {...$attributes}
   onfocusin={(e) => control = e.target}
-  onclick|stopPropagation={() => open = true}
+  onclick|stopPropagation={handleOpen}
 >
   {@render trigger?.()}
 </span>
 
-{#if open}
+{#if inline && open}
+  <span bind:this={groupEl} class="cluster" role="group" aria-label={title} onclick|stopPropagation={() => {}}>
+    <span class="text-sm">{title}</span>
+    <button bind:this={confirmEl} type="button" class={cx('btn', toTone(tone) || 'danger')}
+            onclick={handleConfirm}>
+      {confirmLabel}
+    </button>
+    <button type="button" class="btn ghost" onclick={handleCancel}>
+      {cancelLabel}
+    </button>
+  </span>
+{/if}
+
+{#if open && !inline}
   <ConfirmPanel
     anchor={triggerEl}
     {title} {message} {confirmLabel} {cancelLabel}

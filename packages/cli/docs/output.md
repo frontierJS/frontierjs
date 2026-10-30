@@ -49,6 +49,8 @@ only restates the subject.
 
 Styled: `cloudflare:dns`, `cloudflare:zones`, `cloudflare:workers`,
 `project:map`, `register:next`, `register:decisions`, `register:check`,
-`test:done`, `utils:outline`, `workspace:tidy`, and help. `test/output-style.test.js`
+`test:done`, `utils:outline`, `workspace:tidy`, `register:close/file/amend/archive/decide`,
+`test:snapshots`, `dev:tui`, `basecamp` (admin printout), `register:atlas`,
+`cloudflare:pages`, `project:intent`, and help. `test/output-style.test.js`
 holds the list that must stay styled. The commands not yet graded are named
-by `FJS-3665`.
+by `FJS-3682`.

@@ -16,6 +16,7 @@
 // leaders  who checked off the most to-dos in fourteen days, against the fourteen before
 // team     each teammate's open to-dos: how many, how many late, what falls due this week
 // daily    the newest daily check posted in the Kobami chat, each item a link
+// daily-dev  the same check less the 📣 ads / SEO section and what Vlad holds alone
 // plans    open to-dos per client plan (the Daily Checklist doc's table), project by project
 import { execFile } from 'node:child_process'
 
@@ -91,6 +92,7 @@ function itemOf(html, customer) {
   const head = plain(html.slice(0, a.index))
   const late = /overdue reply/.test(head)
   return {
+    who,
     text: [plain(a[2]), who, customer].filter(Boolean).join(' · '),
     note: shortTiming(timing),
     tone: late ? 'danger' : TAG.find(([e]) => head.includes(e))?.[1],
@@ -100,9 +102,13 @@ function itemOf(html, customer) {
   }
 }
 
-/** The post's HTML as blocks: the counts, then each section's items under its heading. */
-function dailyBlocks(html) {
-  const blocks = [], stats = []
+/**
+ * The post's HTML as blocks: the counts, then each section's items under its heading.
+ * `drop(item, section)` names why an item is left out, or is falsy to keep it.
+ */
+function dailyBlocks(html, drop = () => null) {
+  const blocks = [], hidden = new Map(), kept = []
+  let stats = []
   let section = null, customer = null, lines = null
   const flush = () => { if (lines?.length) blocks.push({ kind: 'list', items: lines }); lines = null }
   for (const m of html.matchAll(/<div dir="auto"><strong>([\s\S]*?)<\/strong><\/div>(\s*<ul)?|<li>([\s\S]*?)<\/li>|⏸ On hold:([\s\S]*?)<\/div>/g)) {
@@ -124,11 +130,24 @@ function dailyBlocks(html) {
       else if (value != null) stats.push({ label: SHORT[emoji] ?? text.split(':')[0], key: KEY_OF[emoji], value: plain(value), tone: Number(plain(value)) ? TONE_OF[emoji] : 'ok',
         note: emoji === '⏰' ? `${plain(m[3].match(/<strong>[\s\S]*?<strong>([\s\S]*?)<\/strong>/)?.[1] ?? '')} ≤7d late` : '' })
     } else {
-      ;(lines ??= []).push(itemOf(m[3], section === 'Notes' ? null : customer))
+      const item = itemOf(m[3], section === 'Notes' ? null : customer)
+      const why = drop(item, section)
+      if (why) { hidden.set(why, (hidden.get(why) ?? 0) + 1); continue }
+      kept.push(item)
+      ;(lines ??= []).push(item)
       if (lines.length === 12) flush()
     }
   }
   flush()
+  if (hidden.size) {
+    // The post's counts are the whole check's, so a cut list counts only what it kept.
+    stats = Object.entries(KEY_OF).map(([emoji, key]) => ({ emoji, key, value: kept.filter((i) => i.keys?.includes(key)).length }))
+      .filter((s) => s.value).map(({ emoji, key, value }) => ({ label: SHORT[emoji], key, value, tone: TONE_OF[emoji] }))
+    stats.unshift({ label: 'listed', value: kept.length, note: `${[...hidden.values()].reduce((a, b) => a + b, 0)} hidden`, noteTone: 'muted' })
+    blocks.unshift({ kind: 'text', tone: 'muted', text: `Hidden: ${[...hidden].map(([why, n]) => `${n} ${why}`).join(', ')}` })
+  }
+  // A section whose every item was dropped leaves its heading with nothing under it.
+  for (let i = blocks.length - 1; i >= 0; i--) if (blocks[i].kind === 'heading' && blocks[i + 1]?.kind !== 'list') blocks.splice(i, 1)
   const rows = []
   for (let i = 0; i < stats.length; i += 4) rows.push({ kind: 'stats', items: stats.slice(i, i + 4) })
   return [...rows, ...blocks]
@@ -418,22 +437,32 @@ const REPORTS = {
 
   daily: {
     help: 'the newest daily check posted in the Kobami chat, each item a link',
-    async run() {
-      const lines = await basecamp('api', 'get', KOBAMI_CHAT)
-      const post = lines.find((l) => /Daily check —/.test(l.content) && !/Daily check audit/.test(l.content))
-      if (!post) return { title: 'No daily check', blocks: [{ kind: 'callout', tone: 'warn', text: 'No "Daily check" line on the first page of the Kobami chat.' }] }
-      const when = plain(post.content.match(/<strong>(Daily check —[^<]*)<\/strong>/)?.[1] ?? 'Daily check')
-      const old = Date.now() - Date.parse(post.created_at) > 36 * 60 * 60 * 1000
-      return {
-        title: `${when} · posted ${ago(post.created_at)}`,
-        blocks: [
-          ...(old ? [{ kind: 'callout', tone: 'warn', text: `This check was posted ${ago(post.created_at)}; no newer one is in the chat.` }] : []),
-          ...dailyBlocks(post.content),
-          { kind: 'list', items: [{ text: 'the post in the Kobami chat', tone: 'muted', url: post.app_url }] },
-        ],
-      }
-    },
+    run: () => dailyReport(),
   },
+
+  // The 📣 section is the marketing lane's, and a `who` of exactly "Vlad" is a
+  // to-do he holds alone; one he shares ("Colin/Vlad") stays.
+  'daily-dev': {
+    help: 'the daily check without the 📣 ads / SEO section or what Vlad holds alone',
+    run: () => dailyReport((item, section) =>
+      section.includes('📣') ? 'in 📣 ads / SEO' : item.who === 'Vlad' ? "Vlad's alone" : null),
+  },
+}
+
+async function dailyReport(drop) {
+  const lines = await basecamp('api', 'get', KOBAMI_CHAT)
+  const post = lines.find((l) => /Daily check —/.test(l.content) && !/Daily check audit/.test(l.content))
+  if (!post) return { title: 'No daily check', blocks: [{ kind: 'callout', tone: 'warn', text: 'No "Daily check" line on the first page of the Kobami chat.' }] }
+  const when = plain(post.content.match(/<strong>(Daily check —[^<]*)<\/strong>/)?.[1] ?? 'Daily check')
+  const old = Date.now() - Date.parse(post.created_at) > 36 * 60 * 60 * 1000
+  return {
+    title: `${when} · posted ${ago(post.created_at)}`,
+    blocks: [
+      ...(old ? [{ kind: 'callout', tone: 'warn', text: `This check was posted ${ago(post.created_at)}; no newer one is in the chat.` }] : []),
+      ...dailyBlocks(post.content, drop),
+      { kind: 'list', items: [{ text: 'the post in the Kobami chat', tone: 'muted', url: post.app_url }] },
+    ],
+  }
 }
 
 const name = process.argv[2]

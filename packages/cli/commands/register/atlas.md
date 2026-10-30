@@ -89,12 +89,12 @@ const shown  = relative(process.cwd(), outPath) || outPath
 const toPick = model.questions.filter(q => q.state === 'decidable').length
 
 echo('')
-echo(`  ✓  ${shown}`)
-echo(`  ${open.length} open · ${model.ready.length} ready · ${model.blocked.length} blocked · ${toPick} to decide · ${model.rulings.length} ruling(s) · ${model.ideas.length} idea(s) · ${model.issues.length - open.length} closed`)
+echo(`  ${chalk.green('✓')}  ${chalk.bold(shown)}`)
+echo(`  ${chalk.dim(`${open.length} open · ${model.ready.length} ready · ${model.blocked.length} blocked · ${toPick} to decide · ${model.rulings.length} ruling(s) · ${model.ideas.length} idea(s) · ${model.issues.length - open.length} closed`)}`)
 if (model.unparsed.length || model.duplicates.length)
-  echo(`  ⚠  the registers disagree with themselves — run fli register:check`)
+  echo(`  ${chalk.yellow('⚠')}  the registers disagree with themselves — run fli register:check`)
 if (ignored(outPath) === false)
-  echo(`  ⚠  ${shown} is not git-ignored — add it to .gitignore; it is regenerated, never committed`)
-if (flag.open && !(await openUrl(outPath))) echo('  ⚠  could not open a browser — the file is written')
+  echo(`  ${chalk.yellow('⚠')}  ${shown} is not git-ignored — add it to .gitignore; it is regenerated, never committed`)
+if (flag.open && !(await openUrl(outPath))) echo(`  ${chalk.yellow('⚠')}  could not open a browser — the file is written`)
 echo('')
 ```

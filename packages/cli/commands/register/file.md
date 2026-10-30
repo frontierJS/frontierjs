@@ -45,32 +45,32 @@ const out = fileIssue({ root, severity: flag.sev, area: flag.area, title: flag.t
 
 echo('')
 if (!out.ok) {
-  echo(`  ✗ ${out.reason}`)
+  echo(`  ${chalk.red('✗')} ${out.reason}`)
   echo('')
   process.exitCode = 1
   return
 }
 
 if (out.dry) {
-  echo(`  ✓ ${out.id} would be filed — ${out.file}:${out.line} (--dry: nothing written, register:check not run)`)
-  if (out.blocks) echo(`    ${out.blocks} would wait on it`)
+  echo(`  ${chalk.green('✓')} ${chalk.bold(out.id)} would be filed ${chalk.dim(`— ${out.file}:${out.line} (--dry: nothing written, register:check not run)`)}`)
+  if (out.blocks) echo(chalk.dim(`    ${out.blocks} would wait on it`))
   smell(out)
   echo('')
   return
 }
 
-echo(`  ✓ ${out.id} filed — ${out.file}:${out.line}`)
-if (out.blocks) echo(`    ${out.blocks} now waits on it — fli next sets it aside until ${out.id} closes`)
-echo('    register:check agrees with the result')
+echo(`  ${chalk.green('✓')} ${chalk.bold(out.id)} filed ${chalk.dim(`— ${out.file}:${out.line}`)}`)
+if (out.blocks) echo(chalk.dim(`    ${out.blocks} now waits on it — fli next sets it aside until ${out.id} closes`))
+echo(chalk.dim('    register:check agrees with the result'))
 smell(out)
 echo('')
 
 function smell(out) {
   if (!out.smell) return
-  echo(`  ⚠ the title reads like an environment failure and names no env: cause (env-smell)`)
+  echo(`  ${chalk.yellow('⚠')} the title reads like an environment failure and names no env: cause ${chalk.dim('(env-smell)')}`)
   const add = out.dry ? 'end --detail with " · env: <cause>"' : `fli amend ${out.id} --detail "env: <cause>"`
-  echo(`    if the fix is the machine: ${add} — ${ENV_CAUSES.join(' · ')}`)
-  echo(`    if it is code: ${out.dry ? 'retitle it' : `edit the title in ${out.file}:${out.line}`} to say what the code does wrong`)
+  echo(chalk.dim(`    if the fix is the machine: ${add} — ${ENV_CAUSES.join(' · ')}`))
+  echo(chalk.dim(`    if it is code: ${out.dry ? 'retitle it' : `edit the title in ${out.file}:${out.line}`} to say what the code does wrong`))
 }
 ```
 

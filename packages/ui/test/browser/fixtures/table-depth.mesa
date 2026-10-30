@@ -57,6 +57,35 @@
     { name: 'act', label: 'Actions', hideLabel: true },
   ]
 
+  // FJS-3614: `limit`. Amounts are chosen so the descending order differs from
+  // the input order in which rows are visible: the cap must follow the sort.
+  const capColumns = [
+    { name: 'ref',    label: 'Ref',    sortable: true },
+    { name: 'amount', label: 'Amount', sortable: true, align: 'right' },
+  ]
+  const capRows = [
+    { ref: 'R1', amount: 10 }, { ref: 'R2', amount: 70 }, { ref: 'R3', amount: 30 },
+    { ref: 'R4', amount: 60 }, { ref: 'R5', amount: 20 }, { ref: 'R6', amount: 50 },
+    { ref: 'R7', amount: 40 },
+  ]
+  let cappedRows  = capRows
+  let cappedOrder = ''
+  let cappedMounted = true
+  let cappedLoading = false
+  const swapped = [{ ref: 'S1', amount: 1 }, { ref: 'S2', amount: 2 }, { ref: 'S3', amount: 3 }, { ref: 'S4', amount: 4 }, { ref: 'S5', amount: 5 }]
+
+  // Net `beforeprint` listeners on window, so a spec can see one removed on unmount.
+  // Patched once: the fixture's script can run more than once and stacked wrappers
+  // would count every listener again.
+  if (!window.__printPatched) {
+    window.__printPatched = true
+    window.__printListeners = 0
+    const addL = window.addEventListener.bind(window)
+    const removeL = window.removeEventListener.bind(window)
+    window.addEventListener = (type, ...rest) => { if (type === 'beforeprint') window.__printListeners++; return addL(type, ...rest) }
+    window.removeEventListener = (type, ...rest) => { if (type === 'beforeprint') window.__printListeners--; return removeL(type, ...rest) }
+  }
+
   // FJS-1622 below.
   const keyColumns = [{ name: 'who', label: 'Who' }]
   let people = [{ id: 'a', who: 'Ada' }, { id: 'b', who: 'Grace' }, { id: 'c', who: 'Alan' }]
@@ -197,5 +226,47 @@
 <div id="byIndex">
   <Table columns={keyColumns} rows={people}>
     {#snippet row(r)}<tr><td><input type="checkbox" aria-label={r.who} /> {r.who}</td></tr>{/snippet}
+  </Table>
+</div>
+
+<!-- FJS-3614: `limit`. -->
+<button type="button" id="cap-swap" onclick={() => { cappedRows = swapped }}>swap rows</button>
+<button type="button" id="cap-unmount" onclick={() => { cappedMounted = false }}>unmount capped</button>
+<button type="button" id="cap-loading" onclick={() => { cappedLoading = !cappedLoading }}>toggle capped loading</button>
+
+{#if cappedMounted}
+  <div id="capped">
+    <Table columns={capColumns} rows={cappedRows} limit={3} bind:orderBy={cappedOrder} loading={cappedLoading}>
+      {#snippet row(r)}<tr><td>{r.ref}</td><td>{r.amount}</td></tr>{/snippet}
+      {#snippet footer(all)}
+        <tr><th scope="row">Total</th><td>{all.length} rows · {all.reduce((n, r) => n + r.amount, 0)}</td></tr>
+      {/snippet}
+    </Table>
+  </div>
+{/if}
+
+<div id="cap-one">
+  <Table columns={capColumns} rows={capRows.slice(0, 4)} limit={3}>
+    {#snippet row(r)}<tr><td>{r.ref}</td><td>{r.amount}</td></tr>{/snippet}
+  </Table>
+</div>
+<div id="cap-equal">
+  <Table columns={capColumns} rows={capRows.slice(0, 3)} limit={3}>
+    {#snippet row(r)}<tr><td>{r.ref}</td><td>{r.amount}</td></tr>{/snippet}
+  </Table>
+</div>
+<div id="cap-over">
+  <Table columns={capColumns} rows={capRows} limit={10}>
+    {#snippet row(r)}<tr><td>{r.ref}</td><td>{r.amount}</td></tr>{/snippet}
+  </Table>
+</div>
+<div id="cap-none">
+  <Table columns={capColumns} rows={capRows}>
+    {#snippet row(r)}<tr><td>{r.ref}</td><td>{r.amount}</td></tr>{/snippet}
+  </Table>
+</div>
+<div id="cap-empty">
+  <Table columns={capColumns} rows={[]} limit={3} emptyText="Nothing capped.">
+    {#snippet row(r)}<tr><td>{r.ref}</td></tr>{/snippet}
   </Table>
 </div>

@@ -65,6 +65,17 @@ let machine: any
 
 // A Server is born `pending`, even for the system, so a fixture in any other
 // state walks the declared moves to it.
+// The app makes an account only for an invited address (`FJS-3685`); the
+// invitation is dropped after so a fixture leaves no pending row behind.
+async function invitedUser(tenv: any, workspaceId: string, email: string, password: string, name: string) {
+  const sys = tenv.system as any
+  const inv = await sys.invitation.create({ data: { workspaceId, email, role: 'viewer', token: crypto.randomUUID(),
+    expiresAt: new Date(Date.now() + 3_600_000).toISOString() } })
+  const made = await tenv.app.auth.createUser({ email, password, name })
+  await sys.invitation.delete({ where: { id: inv.id } })
+  return made
+}
+
 const WALK_TO: Record<string, string[]> = {
   pending: [], online: ['checkIn'], stopped: ['reportStopped'], draining: ['checkIn', 'drain'],
 }
@@ -351,13 +362,13 @@ describe('the two transports answer the same app', () => {
     const uniq = () => Math.random().toString(36).slice(2, 8)
     const acct = await sys.account.create({ data: { slug: `p-${uniq()}`, displayName: 'Parity' } })
     const email = `parity-${uniq()}@x.co`
-    const user  = await penv.app.auth.createUser({ email, password: 'hunter2hunter2', name: 'Parity' })
-    // Active, because a registered account starts `pending_verification` and
-    // `notifyPeople` pages nobody who is not.
-    await sys.user.update({ where: { id: user.id }, data: { accountId: acct.id, status: 'active' } })
     const wsp = await sys.workspace.create({
       data: { accountId: acct.id, name: 'Parity', slug: `pw-${uniq()}` },
     })
+    const user  = await invitedUser(penv, wsp.id, email, 'hunter2hunter2', 'Parity')
+    // Active, because a registered account starts `pending_verification` and
+    // `notifyPeople` pages nobody who is not.
+    await sys.user.update({ where: { id: user.id }, data: { accountId: acct.id, status: 'active' } })
     await sys.workspaceMember.create({
       data: { workspaceId: wsp.id, userId: user.id, role: 'owner',
               capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString() },
@@ -419,10 +430,10 @@ describe('the two transports answer the same app', () => {
     const uniq   = () => Math.random().toString(36).slice(2, 8)
     const acct   = await sys.account.create({ data: { slug: `s-${uniq()}`, displayName: 'Stranger' } })
     const email  = `stranger-${uniq()}@x.co`
-    const user   = await penv.app.auth.createUser({ email, password: 'hunter2hunter2', name: 'Stranger' })
+    const wsp = await sys.workspace.create({ data: { accountId: acct.id, name: 'Elsewhere', slug: `sw-${uniq()}` } })
+    const user   = await invitedUser(penv, wsp.id, email, 'hunter2hunter2', 'Stranger')
     const theirs = user.id
     await sys.user.update({ where: { id: theirs }, data: { accountId: acct.id, status: 'active' } })
-    const wsp = await sys.workspace.create({ data: { accountId: acct.id, name: 'Elsewhere', slug: `sw-${uniq()}` } })
     await sys.workspaceMember.create({ data: { workspaceId: wsp.id, userId: theirs, role: 'admin',
       capabilities: grantsFor('admin'), acceptedAt: new Date().toISOString() } })
     const strangerToken = (await penv.app.auth.login(email, 'hunter2hunter2')).token
@@ -1727,7 +1738,7 @@ describe('the installation settings are one row, behind the hub tier', () => {
   test('requireTwoFactorForOwners holds an owner with no authenticator to enrollment, and off lets them in', async () => {
     const sys   = env.system as any
     const email = `owner2fa-${uniq()}@x.co`
-    const made  = await (env as any).app.auth.createUser({ email, password: 'hunter2hunter2', name: 'Owner' })
+    const made  = await invitedUser(env, ws.id, email, 'hunter2hunter2', 'Owner')
     const uid   = made.id ?? made.userId
     await sys.user.update({ where: { id: uid }, data: { accountId: ws.accountId, status: 'active' } })
     await sys.workspaceMember.create({ data: {
@@ -3123,6 +3134,23 @@ describe('accepting an invitation puts somebody in the workspace', () => {
     const me = await env.http.get('/account/me').set('authorization', `Bearer ${res.body.sessionToken}`)
     expect(me.body.email).toBe(email)
   })
+
+  // auth mounts register, the verification click, a provider and a magic link
+  // for every app, and each one ends in createUser; open, a stranger could hold
+  // an address before its owner was invited (`FJS-3685`).
+  test('an address nobody invited gets no account, by any door', async () => {
+    const email = `stranger-${Math.random().toString(36).slice(2, 8)}@x.co`
+    await expect(env.app.auth.createUser({ email, password: 'correct-horse', name: 'Stranger' }))
+      .rejects.toThrow(/invitation/)
+    expect(await env.system.user.findFirst({ where: { email } })).toBeNull()
+  })
+
+  test('an invited address gets one', async () => {
+    const email = `invited-${Math.random().toString(36).slice(2, 8)}@x.co`
+    await env.as(owner).service('invitations').create({ email, role: 'viewer' })
+    const made = await env.app.auth.createUser({ email, password: 'correct-horse', name: 'Invited' })
+    expect(made.id ?? made.userId).toBeTruthy()
+  })
 })
 
 // ─── A machine's readings, kept ──────────────────────────────────────────
@@ -3633,7 +3661,7 @@ describe('a service over no model is graded by the level it declares (FJS-D408)'
   test('over HTTP the same refusal names the role, and a level no role reaches keeps its level', async () => {
     const sys   = env.system as any
     const email = `wire-${Math.random().toString(36).slice(2, 8)}@x.co`
-    const made  = await (env as any).app.auth.createUser({ email, password: 'hunter2hunter2', name: 'Wire' })
+    const made  = await invitedUser(env, ws.id, email, 'hunter2hunter2', 'Wire')
     const uid   = made.id ?? made.userId
     await sys.user.update({ where: { id: uid }, data: { accountId: ws.accountId, status: 'active' } })
     await sys.workspaceMember.create({ data: {
@@ -3660,7 +3688,7 @@ describe('a service over no model is graded by the level it declares (FJS-D408)'
   test('over HTTP a viewer is refused a server create with 403 and a secrets read by its level', async () => {
     const sys   = env.system as any
     const email = `lad-${Math.random().toString(36).slice(2, 8)}@x.co`
-    const made  = await (env as any).app.auth.createUser({ email, password: 'hunter2hunter2', name: 'Ladder' })
+    const made  = await invitedUser(env, ws.id, email, 'hunter2hunter2', 'Ladder')
     const uid   = made.id ?? made.userId
     await sys.user.update({ where: { id: uid }, data: { accountId: ws.accountId, status: 'active' } })
     await sys.workspaceMember.create({ data: {

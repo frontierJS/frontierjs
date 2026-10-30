@@ -157,6 +157,24 @@ export function ownerOwesSecondFactor(db: any) {
 }
 
 /**
+ * auth's `onRegistered`: Basecamp is invitation-only (`FJS-032`), so an account
+ * is made by `/setup` before anyone is active, or for an address a live
+ * invitation names. auth mounts `POST /auth/register` for every app, and
+ * without this anyone who found the box could make a user and hold an address
+ * before its owner was invited (`FJS-3685`).
+ *
+ * The hook runs on every door that makes a row, so a provider sign-in or a
+ * magic link is held to the same list as the register route.
+ */
+export async function refuseUninvited({ user, db }: { user: Record<string, any>; db: any }): Promise<void> {
+  if (await db.user.count({ where: { status: 'active' } }) === 0) return
+  const invited = await db.invitation.exists({
+    where: { email: String(user.email).toLowerCase(), expiresAt: { gt: new Date().toISOString() } },
+  })
+  if (!invited) throw new Forbidden('Basecamp accounts are made by invitation — ask a workspace admin for one')
+}
+
+/**
  * App-level before hook: a suspended principal acts on nothing.
  *
  * Registered under `before: { all: [...] }` in app.ts, so it covers every

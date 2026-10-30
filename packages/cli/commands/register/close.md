@@ -28,20 +28,20 @@ const out = closeIssue({ root, id: arg.id, how: flag.how ?? '', dry: flag.dry })
 
 echo('')
 if (!out.ok) {
-  echo(`  ✗ ${out.reason}`)
+  echo(`  ${chalk.red('✗')} ${out.reason}`)
   echo('')
   process.exitCode = 1
   return
 }
 
 if (out.dry) {
-  echo(`  ✓ ${out.id} would be closed — ${out.file}:${out.line} (--dry: nothing written, register:check not run)`)
+  echo(`  ${chalk.green('✓')} ${chalk.bold(out.id)} would be closed ${chalk.dim(`— ${out.file}:${out.line} (--dry: nothing written, register:check not run)`)}`)
   echo('')
   return
 }
 
-echo(`  ✓ ${out.id} closed — ${out.file}:${out.line}`)
-echo('    register:check agrees with the result')
+echo(`  ${chalk.green('✓')} ${chalk.bold(out.id)} closed ${chalk.dim(`— ${out.file}:${out.line}`)}`)
+echo(chalk.dim('    register:check agrees with the result'))
 echo('')
 ```
 

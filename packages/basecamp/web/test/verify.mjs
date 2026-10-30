@@ -2814,7 +2814,7 @@ let humanKey = null
 try {
   await apiCall('/api-keys', {
     method: 'POST', workspace: firstWs.id,
-    body: { name: 'not-mine', userId: firstWs.ownerId + 'x', scopes: ['servers:read'] },
+    body: { name: 'not-mine', userId: botId + 'x', scopes: ['servers:read'] },
   })
   humanKey = 'accepted'
 } catch (e) { humanKey = String(e.message) }
@@ -2840,7 +2840,9 @@ check('a bot cannot be made a system administrator', botAdmin, t => t.includes('
 //
 // account-mail.ts mails a verification, so register answers 202 and makes no
 // account; the link in the mail makes it and signs in (`FJS-D1310`). The link
-// is read from the sink, which is where the mail actually went.
+// is read from the sink, which is where the mail actually went. The click makes
+// the account only for an invited address (`FJS-3685`), so Pat is invited first.
+await apiCall('/invitations', { method: 'POST', workspace: firstWs.id, body: { email: 'pat@example.com', role: 'viewer' } })
 const patMailFrom = mailbox.length
 const patAsked = await fetch(`http://localhost:${API_PORT}/auth/register`, {
   method: 'POST',

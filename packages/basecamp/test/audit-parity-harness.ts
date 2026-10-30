@@ -33,18 +33,23 @@ export async function build(): Promise<Fixture> {
   const uniq = () => Math.random().toString(36).slice(2, 8)
   const acct = await sys.account.create({ data: { slug: `acme-${uniq()}`, displayName: 'Acme' } })
 
+  const ws = await sys.workspace.create({ data: { accountId: acct.id, name: 'Fleet', slug: `fleet-${uniq()}` } })
+  const other = await sys.workspace.create({ data: { accountId: acct.id, name: 'Other', slug: `other-${uniq()}` } })
+
   const tokens: any = { stranger: null }, ids: any = { stranger: null }
   async function person(who: Who, opts: { role?: string; sysadmin?: boolean } = {}) {
     const email = `${who}-${uniq()}@x.co`
+    // The app makes an account only for an invited address (`FJS-3685`).
+    const inv = await sys.invitation.create({ data: { workspaceId: ws.id, email, role: 'viewer', token: crypto.randomUUID(),
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString() } })
     const u = await env.app.auth.createUser({ email, password: PW, name: who })
+    await sys.invitation.delete({ where: { id: inv.id } })
     const id = u.id
     await sys.user.update({ where: { id }, data: { accountId: acct.id, status: 'active', ...(opts.sysadmin ? { isSystemAdmin: true } : {}) } })
     ids[who] = id
     return id
   }
   const ownerId = await person('owner')
-  const ws = await sys.workspace.create({ data: { accountId: acct.id, name: 'Fleet', slug: `fleet-${uniq()}`, ownerId } })
-  const other = await sys.workspace.create({ data: { accountId: acct.id, name: 'Other', slug: `other-${uniq()}`, ownerId } })
   const member = (workspaceId: string, userId: string, role: string) => sys.workspaceMember.create({ data: {
     workspaceId, userId, role, capabilities: grantsFor(role), acceptedAt: new Date().toISOString() } })
   await member(ws.id, ownerId, 'owner')

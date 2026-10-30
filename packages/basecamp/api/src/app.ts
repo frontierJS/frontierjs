@@ -55,7 +55,7 @@ import { resolvePush, PUBLIC_NTFY } from './push.ts'
 import { outpostCredential, outpostScope, workspaceOrKeys } from './core/hooks.ts'
 import { auditPlugin }           from '@frontierjs/junction/audit'
 import { grantsFor } from './core/capabilities.ts'
-import { basecampSessionFields, ownerOwesSecondFactor, refuseSuspendedLogin, refuseSuspended } from './core/session-auth.ts'
+import { basecampSessionFields, ownerOwesSecondFactor, refuseSuspendedLogin, refuseSuspended, refuseUninvited } from './core/session-auth.ts'
 import { agentGuard, apiKeyGuard, apiKeyUsage, narrowForAgent } from './domain/api-key/scopes.ts'
 import { slugify }                        from './core/resource.ts'
 import { basecampGateLevel, roleForLevel, SYSTEM, workspaceClaim } from './core/gate.ts'
@@ -171,6 +171,7 @@ export async function buildBasecampApp(
     // An owner with no authenticator signs in to a session held to enrollment
     // rather than being refused: a refusal would leave them no way to set one up.
     requireSecondFactor: ownerOwesSecondFactor(db),
+    onRegistered:  refuseUninvited,
     sessionFields: basecampSessionFields,
     totpIssuer:    'Basecamp',
     ...accountMail(() => built, logger),

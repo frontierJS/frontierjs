@@ -41,7 +41,7 @@ const root = $.paths.root
 // is refused rather than read as zero snapshots, all current.
 const only = flag.only ? [String(flag.only)] : null
 if (only && !findSnapshots({ root }).some(s => s.file === only[0])) {
-  echo(`\n  No snapshot at ${only[0]} — \`fli test:snapshots --list\` names them.\n`)
+  echo(`\n  ${chalk.red('✗')} No snapshot at ${only[0]} ${chalk.dim('— `fli test:snapshots --list` names them.')}\n`)
   process.exitCode = 1
   return
 }
@@ -51,20 +51,20 @@ if (flag.list) {
   const missing = missingSnapshots({ root, found })
   echo('')
   if (!found.length && !missing.length) {
-    echo(`  No snapshot under ${root}`)
+    echo(chalk.dim(`  No snapshot under ${root}`))
     echo('')
     return
   }
   for (const s of found) {
-    echo(`  ${s.file}`)
-    echo(`     ${s.argv ? s.argv.join(' ') : `no generator — ${s.error}`}`)
+    echo(`  ${chalk.bold(s.file)}`)
+    echo(s.argv ? chalk.dim(`     ${s.argv.join(' ')}`) : `     ${chalk.red('no generator')} ${chalk.dim(`— ${s.error}`)}`)
   }
   for (const m of missing) {
-    echo(`  ${m.file}  (not written — --fix writes it)`)
-    echo(`     ${m.argv.join(' ')}`)
+    echo(`  ${chalk.bold(m.file)}  ${chalk.yellow('(not written — --fix writes it)')}`)
+    echo(chalk.dim(`     ${m.argv.join(' ')}`))
   }
   echo('')
-  echo(`  Generators may name: ${[...SNAPSHOT_BINS.keys()].join(', ')}`)
+  echo(chalk.dim(`  Generators may name: ${[...SNAPSHOT_BINS.keys()].join(', ')}`))
   echo('')
   return
 }
@@ -100,7 +100,7 @@ if (flag.fix) {
   }
 
   const seeded = new Set(wrote.results.filter(r => r.seeded).map(r => r.file))
-  for (const r of after.results) echo(`  ${seeded.has(r.file) ? '+' : '✓'}  ${r.file}${seeded.has(r.file) ? '  (new)' : ''}`)
+  for (const r of after.results) echo(`  ${seeded.has(r.file) ? chalk.cyan('+') : chalk.green('✓')}  ${r.file}${seeded.has(r.file) ? chalk.dim('  (new)') : ''}`)
   echo('')
   echo(`  ${after.checked} snapshot(s) current${seeded.size ? `, ${seeded.size} of them written for the first time` : ''}. Read the diff before committing.`)
   echo('')
@@ -114,9 +114,9 @@ const { results, checked, failed } = await checkSnapshots({ root, only })
 const missing = missingSnapshots({ root })
 const noteMissing = () => {
   if (!missing.length) return
-  echo(`  ${missing.length} snapshot(s) this app's layout calls for are not written yet:`)
+  echo(chalk.yellow(`  ${missing.length} snapshot(s) this app's layout calls for are not written yet:`))
   const width = Math.max(...missing.map(m => m.file.length))
-  for (const m of missing) echo(`     ${m.file.padEnd(width)}   ${m.argv.join(' ')}`)
+  for (const m of missing) echo(`     ${m.file.padEnd(width)}   ${chalk.dim(m.argv.join(' '))}`)
   echo('  `fli test:snapshots --fix` writes them.')
   echo('')
 }
@@ -128,10 +128,10 @@ if (flag.json) {
 }
 
 echo('')
-echo('  fli test:snapshots\n')
+echo(`  ${chalk.bold('fli test:snapshots')}\n`)
 
 if (!checked) {
-  echo('  No snapshot in this app — nothing to recheck.')
+  echo(chalk.dim('  No snapshot in this app — nothing to recheck.'))
   echo('')
   echo('  A snapshot is a generated file committed beside its source, so a change')
   echo('  nothing else can see arrives as a diff.')

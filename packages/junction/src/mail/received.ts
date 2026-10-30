@@ -53,6 +53,7 @@ export function headerOf(mail: Pick<ReceivedMail, 'headers'>, name: string): str
 
 /** RFC 5321 § 4.5.3.1.1 — the longest local part an address may carry. */
 export const LOCAL_PART_MAX = 64
+const ULID_LENGTH = 26
 
 // One purpose for every reply tag, so a secret shared with another token kit
 // (an unsubscribe link, a magic link) cannot mint a tag that threads a reply.
@@ -60,9 +61,10 @@ const REPLY_PURPOSE = 'mail.reply'
 
 /**
  * `support@acme.test` + the id of the record a reply should land on →
- * `support+<token>@acme.test`, for the message's `replyTo`. `id` is a ULID
- * (Crockford base32 — anything else cannot survive a server folding case and
- * is refused by `mintToken`). Throws when the result is not a legal address:
+ * `support+<token>@acme.test`, for the message's `replyTo`. `id` is a ULID:
+ * not Crockford base32 is refused by `mintToken`, and any other length here,
+ * since `readReplyTag` reads the tag's age from the ULID — so a ttl counts from
+ * the record's creation, not from the send. Throws when the result is not a legal address:
  * a mailbox whose local part is longer than 21 characters cannot carry a tag
  * at all, and that is known at mint, before anything is sent.
  */
@@ -74,6 +76,8 @@ export async function replyAddress(base: string, id: string, secret: string): Pr
   if (local.includes('+'))
     throw new SmtpError(`Mail: '${base}' already carries a plus-tag — a reply address is minted from the bare mailbox`)
   const token  = await mintToken({ id, secret, purpose: REPLY_PURPOSE })
+  if (id.length !== ULID_LENGTH)
+    throw new TypeError(`replyAddress: id '${id}' is not a ${ULID_LENGTH}-character ULID — readReplyTag takes the tag's age from the ULID and would answer 'malformed'`)
   const tagged = `${local}+${token}`
   if (tagged.length > LOCAL_PART_MAX)
     throw new SmtpError(
