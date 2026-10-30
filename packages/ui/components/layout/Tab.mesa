@@ -11,9 +11,21 @@
   // Usage:
   //   <Tab id="general">General</Tab>
   //   <Tab id="security" disabled>Security</Tab>
+  //
+  // A route is a link, not a tab: role="tab" on it announces a tabpanel that
+  // is not there. With `href` it is an <a> answering aria-current, inside a
+  // <TabList nav>; a Tab with no href there is a plain button that opens
+  // something (FJS-3610). `current` is the caller's, because this kit cannot
+  // import Sierra's isActive.
+  //   <TabList nav label="Client sections">
+  //     <Tab href="/clients/1/" current>Overview</Tab>
+  //     <Tab onclick={openFunctions}>Functions</Tab>
+  //   </TabList>
 
   export let id       = ''
   export let disabled = false
+  export let href     = undefined
+  export let current  = false
   // Consume from Tabs context — const always tracks provider (Rule 25a)
   const activeId  = $context.activeId
   const setActive = $context.setActive
@@ -26,34 +38,58 @@
   // Capture context functions at top level (Rule 25) then use in lifecycle callbacks
   const registerTab   = $context.registerTab
   const unregisterTab = $context.unregisterTab
+  const strip         = $context.tabStrip    // 'nav' | 'tablist' | undefined
+
+  // A link inside a tablist is invalid ARIA, and the strip still draws.
+  if (href && strip === 'tablist')
+    console.warn(`[Tab] href="${href}" inside a tablist; a strip of routes is <TabList nav>`)
+  const isTab = !href && strip !== 'nav'
 
   // Register/unregister for keyboard nav — imperative, not reactive.
   // `disabled` goes over as a getter rather than a value: it is a prop and may
   // change after this runs, and a stale copy is a strip that keeps stepping
   // onto a tab that has since been turned off.
   let el
-  $.onMount(() => { registerTab?.(id, () => disabled, () => el) })
-  $.onDestroy(() => { unregisterTab?.(id) })
+  $.onMount(() => { if (isTab) registerTab?.(id, () => disabled, () => el) })
+  $.onDestroy(() => { if (isTab) unregisterTab?.(id) })
 
   function handleClick() {
     if (!disabled) setActive(id)
   }
 </script>
 
-<button
-  bind:this={el}
-  type="button"
-  role="tab"
-  id="{scope}-tab-{id}"
-  aria-selected={isActive}
-  aria-controls="{scope}-panel-{id}"
-  tabindex={isActive ? 0 : -1}
-  disabled={disabled}
-  data-tab-id={id}
-  class="tab"
-  {class}
-  {...$attributes}
-  onclick={handleClick}
->
-  <slot />
-</button>
+{#if href}
+  <!-- A disabled link drops its href: an <a> without one is not focusable. -->
+  <a
+    href={disabled ? null : href}
+    aria-current={current && !disabled ? 'page' : null}
+    aria-disabled={disabled || null}
+    class="tab"
+    {class}
+    {...$attributes}
+  >
+    <slot />
+  </a>
+{:else if !isTab}
+  <button type="button" disabled={disabled} class="tab" {class} {...$attributes}>
+    <slot />
+  </button>
+{:else}
+  <button
+    bind:this={el}
+    type="button"
+    role="tab"
+    id="{scope}-tab-{id}"
+    aria-selected={isActive}
+    aria-controls="{scope}-panel-{id}"
+    tabindex={isActive ? 0 : -1}
+    disabled={disabled}
+    data-tab-id={id}
+    class="tab"
+    {class}
+    {...$attributes}
+    onclick={handleClick}
+  >
+    <slot />
+  </button>
+{/if}

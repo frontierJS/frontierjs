@@ -59,7 +59,7 @@ beforeAll(async () => {
   const acct = await sys.account.create({ data: { slug: `gh-${uniq}`, displayName: 'GH' } })
   const user = await sys.user.create({ data: { email: `o-${uniq}@x.co`, accountId: acct.id } })
   ws = await sys.workspace.create({
-    data: { accountId: acct.id, name: 'Source', slug: `source-${uniq}`, ownerId: user.id },
+    data: { accountId: acct.id, name: 'Source', slug: `source-${uniq}` },
   })
   const { grantsFor } = await import('../src/core/capabilities.ts')
   await sys.workspaceMember.create({ data: {

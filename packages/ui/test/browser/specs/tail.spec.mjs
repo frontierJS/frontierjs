@@ -2,7 +2,7 @@
  * tail.spec.mjs — the last ten components nothing had opened.
  *
  * Badge, Pill, Stat, StatCard, Breadcrumbs, EmptyState, SectionHeader,
- * Progress, Spinner, Skeleton. They were called "mostly static markup", and
+ * Progress, Ring, Spinner, Skeleton. They were called "mostly static markup", and
  * that is the reason to ask a browser rather than a renderer: what static
  * markup gets wrong is what it ANNOUNCES and what it PAINTS, and both are
  * invisible to a string comparison of the HTML.
@@ -15,7 +15,7 @@ export const name = 'the display and feedback tail'
 export const covers = [
   'display/Badge', 'display/Pill', 'display/Stat', 'display/StatCard',
   'display/Breadcrumbs', 'display/EmptyState', 'display/SectionHeader',
-  'feedback/Progress', 'feedback/Spinner', 'feedback/Skeleton',
+  'feedback/Progress', 'feedback/Ring', 'feedback/Spinner', 'feedback/Skeleton',
 ]
 
 const text = (sel) => `document.querySelector(${JSON.stringify(sel)})?.textContent?.replace(/\\s+/g,' ').trim()`
@@ -184,6 +184,36 @@ export async function run(t) {
     const h = (sel) => parseFloat(getComputedStyle(document.querySelector(sel)).blockSize);
     return h('#progress-toned progress') > h('#progress-determinate progress');
   `), 'size is a real block-size, not a class that lands nowhere')
+
+  /* ── Ring ─────────────────────────────────────────────────────────────── */
+
+  // No native element behind it, so the announcement is hand-written: it has to
+  // follow the value the arc is drawn from, and an indeterminate ring claims none.
+  const ring = (sel) => t.evaluate(`
+    const el = document.querySelector('${sel} [role=progressbar]');
+    const arc = el.querySelectorAll('circle')[1];
+    return {
+      now: el.getAttribute('aria-valuenow'), max: el.getAttribute('aria-valuemax'),
+      name: el.getAttribute('aria-label'), arcs: el.querySelectorAll('circle').length,
+      dash: arc ? parseFloat(arc.getAttribute('stroke-dasharray')) : 0,
+      circ: arc ? 2 * Math.PI * parseFloat(arc.getAttribute('r')) : 0,
+      stroke: arc ? getComputedStyle(arc).stroke : '',
+      track: getComputedStyle(el.querySelectorAll('circle')[0]).stroke,
+      width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height,
+      text: el.textContent.trim(),
+    };
+  `)
+  let r = await ring('#ring-determinate')
+  t.is(r.now, '75', 'Ring announces the value it is given')
+  t.is(r.max, '100', 'and its max')
+  t.is(r.name, 'Uploading', 'under its label')
+  t.ok(Math.abs(r.dash / r.circ - 0.75) < 0.001, 'the arc covers the same fraction it announces')
+  t.ok(r.stroke !== r.track, 'the arc paints in the tone, apart from the track')
+  t.ok(r.width > 0 && r.width === r.height, 'and is a square with a real size')
+  t.is(r.text, '75%', 'showLabel prints the percentage in the middle')
+  r = await ring('#ring-indeterminate')
+  t.is(r.now, null, 'an indeterminate ring announces no value')
+  t.is(r.name, 'Loading', 'but is named')
 
   /* ── Spinner ──────────────────────────────────────────────────────────── */
 

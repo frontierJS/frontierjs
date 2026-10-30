@@ -101,6 +101,36 @@
  * other (16px) on every page that used `.stack`.
  */
 
+/* ── Section — a titled block with its body ────────────────────────
+ * A chapter of a long page: a Section Header, then the body under it. The
+ * Section owns the space (header to body at the 2xl rung, the body's blocks
+ * at xl), so a page stops hand-writing the column. A Section inside a body
+ * is the sub-section: tighter inside, 2xl more above it unless it leads, and
+ * a quieter heading. Nesting states the level; the caller still picks the
+ * heading element by the document outline.
+ *
+ *   <section class="section" aria-labelledby="contacts-h">
+ *     <div class="section-header"><h2 id="contacts-h">Contacts</h2></div>
+ *     <div class="section-body">…</div>
+ *   </section>
+ *
+ * Name the <section> only when it is titled: a named <section> is a landmark.
+ */
+.section,
+.section-body {
+  display:        flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+.section      { gap: var(--space-2xl); }
+.section-body { gap: var(--space-xl); }
+.section .section { gap: var(--space-xl); }
+.section-body > .section:not(:first-child) { margin-block-start: var(--space-2xl); }
+.section .section > .section-header :is(h1, h2, h3, h4, h5, h6) {
+  font-size: var(--text-lg);
+  color:     var(--ink-soft);
+}
+
 /* ── Divider — a plain horizontal rule ─────────────────────────────
  * The Region-tier "Divider". <hr> is the element: it means "thematic
  * break", which is exactly what a rule between sections is, and it is

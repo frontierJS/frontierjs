@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "demo": "bun demo/serve.js",
-    "test": "node ../../scripts/tmp-run.mjs 'bun test/run.js && bun test test/doc-examples.test.js'",
+    "test": "node ../../scripts/tmp-run.mjs 'bun test test/doc-examples.test.js && bun test/run.js'",
     "build": "bun build.js && bun run build:vocabulary",
     "build:vocabulary": "bun build-vocabulary.js",
     "prepack": "bun run build",

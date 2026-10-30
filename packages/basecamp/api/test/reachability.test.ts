@@ -98,7 +98,7 @@ describe('the fleet sweep', () => {
     member = await sys.user.create({ data: {
       email: `m-${uniq()}@x.co`, accountId: acct.id, status: 'active' } })
     ws = await sys.workspace.create({
-      data: { accountId: acct.id, name: 'Fleet', slug: `f-${uniq()}`, ownerId: member.id } })
+      data: { accountId: acct.id, name: 'Fleet', slug: `f-${uniq()}` } })
     await sys.workspaceMember.create({ data: {
       workspaceId: ws.id, userId: member.id, role: 'owner',
       capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString() } })

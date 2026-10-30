@@ -1,10 +1,18 @@
 <script>
   // popover.mesa — Popover with both snippets, plus a target OUTSIDE it for
   // the click-away path, which is the half a click on the trigger cannot test.
+  //
+  // The panel is the header-panel shape: `bind:open` from a button outside
+  // it, a title and an action, a sheet below md. `hideTrigger` hides its
+  // trigger the way a phone header does; the bare one has no trigger at all.
   import Popover from '../../../components/overlay/Popover.mesa'
   import Button  from '../../../components/forms/Button.mesa'
 
-  export let placement = 'bottom-start'
+  export let placement   = 'bottom-start'
+  export let hideTrigger = false
+
+  let panelOpen = false
+  let bareOpen  = false
 </script>
 
 <div style:padding="6rem 3rem">
@@ -20,3 +28,26 @@
 
 <button type="button" id="outside">Elsewhere</button>
 <input type="text" id="outside-input" aria-label="Elsewhere field">
+
+<button type="button" id="open-panel" onclick={() => panelOpen = true}>Open panel</button>
+<span id="panel-state">{panelOpen ? 'open' : 'shut'}</span>
+<div style:padding="1rem 3rem" style:text-align="right" style:display={hideTrigger ? 'none' : null}>
+  <Popover bind:open={panelOpen} title="Notifications" placement="bottom-end" sheet>
+    {#snippet trigger()}
+      <Button id="panel-trigger">Bell</Button>
+    {/snippet}
+    {#snippet action()}
+      <button type="button" id="read-all">Mark all read</button>
+    {/snippet}
+    {#snippet content()}
+      <button type="button" id="panel-row">First row</button>
+    {/snippet}
+  </Popover>
+</div>
+
+<button type="button" id="open-bare" onclick={() => bareOpen = true}>Open bare</button>
+<Popover bind:open={bareOpen} title="More">
+  {#snippet content()}
+    <button type="button" id="bare-row">Settings</button>
+  {/snippet}
+</Popover>

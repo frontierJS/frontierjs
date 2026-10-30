@@ -3,7 +3,7 @@ import { $ } from '@frontierjs/junction'
 // Workspaces — the multi-tenancy boundary. Every other resource belongs to one.
 //
 // Mounted at /workspaces. Custom methods dispatch on X-Service-Method:
-//   members · addMember · setMemberRole · removeMember · leave · transferOwnership
+//   members · addMember · setMemberRole · removeMember · leave
 //   push · testPing
 //
 // This service is the one exception to the workspace-scoped pattern: it does
@@ -53,12 +53,11 @@ async function stampSelfAsWorkspace(): Promise<void> {
 /**
  * Put the session-derived columns on $.data BEFORE validation sees it.
  *
- * `accountId` and `ownerId` are required and NOT the caller's to send —
- * create() takes both from the session, which is the whole point: a client
- * that could name them could create a workspace inside another tenant or
- * owned by someone else. But `autoValidate` runs against the model's field
- * rules and does not know that, so it rejected every create with
- * `accountId is required, ownerId is required` and the method never ran.
+ * `accountId` is required and NOT the caller's to send — create() takes it
+ * from the session, which is the whole point: a client that could name it
+ * could create a workspace inside another tenant. But `autoValidate` runs
+ * against the model's field rules and does not know that, so it rejected
+ * every create with `accountId is required` and the method never ran.
  *
  * Order is what makes this work: user hooks run BEFORE the derived
  * gateAuth/autoValidate pair (junction core/service.ts ~688), so a
@@ -70,11 +69,10 @@ function stampOwnership(): void {
   if (!user.accountId) throw new Unauthorized('Session carries no account')
 
   const data = ($.data ?? {}) as Record<string, unknown>
-  // Assigned, not defaulted: whatever a client sent for these is discarded.
+  // Assigned, not defaulted: whatever a client sent is discarded.
   data.accountId = user.accountId
-  data.ownerId   = user.id
   // Derived, not assigned — a caller may name their own slug. It has to
-  // happen HERE for the same reason the two above do: `slug` is required and
+  // happen HERE for the same reason the one above does: `slug` is required and
   // autoValidate runs after this hook and before the method, so deriving it
   // in create() 400s with `slug is required` on every caller that did not
   // send one. The browser sends one, which is why nothing caught it.
@@ -96,6 +94,25 @@ function members(): any {
   return $.db.asSystem().workspaceMember
 }
 
+/** A member who outranks you is not yours to move or remove. `refuseGrantAboveOwn`
+ *  grades what is being HANDED OUT and this grades who is being acted on — an
+ *  admin demoting an owner is the same inversion pointed the other way, and the
+ *  last-owner guard only catches it where there happens to be exactly one. */
+function refuseOutranked(member: { role: string }, verb: string): void {
+  const myRole = roleOf($) ?? ''
+  if ((WORKSPACE_ROLE_LEVEL[member.role] ?? 0) > (WORKSPACE_ROLE_LEVEL[myRole] ?? 0))
+    throw new Forbidden(
+      `You cannot ${verb} ${member.role === 'owner' || member.role === 'admin' ? 'an' : 'a'} ${member.role} — you hold ${myRole || 'none'}.`
+    )
+}
+
+/** A workspace with no owner is one nobody can administer or delete. */
+async function refuseLastOwner(wsId: string, verb: string): Promise<void> {
+  const owners = await members().count({ where: { workspaceId: wsId, role: 'owner' } })
+  if (owners <= 1)
+    throw new Forbidden(`Cannot ${verb} the last owner of a workspace. Make another member an owner first.`)
+}
+
 /** The person a roster write names, read as the app: `User` reads self-only. */
 function people(): any {
   return $.db.asSystem().user
@@ -104,8 +121,8 @@ function people(): any {
 /** The three roster writes go through the caller's own client, re-claimed to
  *  the workspace being addressed by `stampSelfAsWorkspace`, so the schema's
  *  gate, `@@allow` and `@@deny(update, userId == auth().id)` hold them and not
- *  a restatement here. `leave` and `transferOwnership` stay system: both
- *  write the caller's own row, which that deny exists to refuse. */
+ *  a restatement here. `leave` stays system: it deletes the caller's own
+ *  row, which that deny exists to refuse. */
 function memberWrites(): any {
   return $.db.workspaceMember
 }
@@ -125,7 +142,6 @@ export default createService({
             { method: 'addMember',     input: 'WorkspaceMemberAdd' },
             { method: 'setMemberRole', input: 'WorkspaceMemberRole' },
             'removeMember', 'leave',
-            { method: 'transferOwnership', input: 'WorkspaceTransfer' },
             'push', 'testPing'],
 
   // Only workspaces the caller belongs to. The old version did this with a
@@ -176,7 +192,7 @@ export default createService({
     // unreachable by its own owner.
     const ws = await ($.db.asSystem() as any).$transaction(async (tx: any) => {
       const ws = await tx.workspace.create({
-        data: { ...data, accountId: user.accountId, ownerId: user.id },
+        data: { ...data, accountId: user.accountId },
       })
       await tx.workspaceMember.create({
         data: { workspaceId: ws.id, userId: user.id, role: 'owner',
@@ -193,9 +209,8 @@ export default createService({
     if (!ws) throw new NotFound(`Workspace '${$.id}' not found`)
 
     const data = $.data as Record<string, unknown>
-    // accountId and ownerId are not a client's to change: one moves the
-    // workspace between tenants, the other hands over ownership, and neither
-    // belongs on a general PATCH.
+    // accountId is not a client's to change: it moves the workspace between
+    // tenants, which does not belong on a general PATCH.
     const patch = narrowPatch(data)
     if (changesNothing(patch)) return ws
     return db().workspace.update({ where: { id: $.id as string }, data: patch })
@@ -273,22 +288,8 @@ export default createService({
     const member = await members().findFirst({ where: { workspaceId: wsId, userId: target } })
     if (!member) throw new NotFound('Member not found')
 
-    // A member who outranks you is not yours to move either. `refuseGrantAboveOwn`
-    // grades what is being HANDED OUT and this grades who is being acted on —
-    // an admin demoting an owner is the same inversion pointed the other way,
-    // and the last-owner guard below only catches it where there happens to
-    // be exactly one.
-    const myRole = roleOf($) ?? ''
-    if ((WORKSPACE_ROLE_LEVEL[member.role] ?? 0) > (WORKSPACE_ROLE_LEVEL[myRole] ?? 0))
-      throw new Forbidden(
-        `You cannot change the role of ${member.role === 'owner' ? 'an' : 'a'} ${member.role} — you hold ${myRole || 'none'}.`
-      )
-
-    // Demoting the last owner would leave the workspace unadministrable.
-    if (member.role === 'owner' && role !== 'owner') {
-      const owners = await members().count({ where: { workspaceId: wsId, role: 'owner' } })
-      if (owners <= 1) throw new Forbidden('Cannot demote the last owner of a workspace')
-    }
+    refuseOutranked(member, 'change the role of')
+    if (member.role === 'owner' && role !== 'owner') await refuseLastOwner(wsId, 'demote')
 
     // Re-stamped, not merged. A role IS a default set (core/capabilities.ts),
     // so leaving the old grants behind would make a demotion change the word
@@ -315,7 +316,8 @@ export default createService({
     const wsId   = $.id as string
     const member = await members().findFirst({ where: { workspaceId: wsId, userId: target } })
     if (!member) throw new NotFound('Member not found')
-    if (member.role === 'owner') throw new Forbidden('Cannot remove the workspace owner')
+    refuseOutranked(member, 'remove')
+    if (member.role === 'owner') await refuseLastOwner(wsId, 'remove')
 
     // Hard delete: WorkspaceMember has no @@softDelete — a revoked membership
     // should stop matching, not linger as a tombstone the role hooks read.
@@ -323,63 +325,21 @@ export default createService({
     return { workspace_id: wsId, user_id: target, removed: true }
   },
 
-  // ── leave · transferOwnership ─────────────────────────────────────
-  // The two acts on your OWN membership. `setMemberRole` refuses your own row
-  // because a person must not promote themselves; stepping down is the other
-  // direction and is only safe while somebody else holds the workspace, so it
-  // happens here, inside the act that hands it over.
+  // ── leave ─────────────────────────────────────────────────────────
+  // The one act on your OWN membership. Owner is a role and a workspace may
+  // hold several (`FJS-D1669`), so handing it over is `setMemberRole` naming
+  // somebody else `owner`; you step down by leaving, or a co-owner demotes you.
 
-  /** End your own membership. Any role may; the last owner may not, because
-   *  a workspace with no owner is one nobody can administer or delete. */
+  /** End your own membership. Any role may; the last owner may not. */
   async leave() {
     const me     = sessionOf().id as string
     const wsId   = $.id as string
     const mine   = await members().findFirst({ where: { workspaceId: wsId, userId: me } })
     if (!mine) throw new NotFound(`Workspace '${wsId}' not found`)
+    if (mine.role === 'owner') await refuseLastOwner(wsId, 'leave as')
 
-    const heir = mine.role === 'owner'
-      ? await members().findFirst({
-          where:   { workspaceId: wsId, role: 'owner', userId: { not: me } },
-          orderBy: { createdAt: 'asc' },
-        })
-      : null
-    if (mine.role === 'owner' && !heir)
-      throw new Forbidden('You are the only owner. Hand ownership to another member before you leave.')
-
-    return db().asSystem().$transaction(async (tx: any) => {
-      await tx.workspaceMember.delete({ where: { id: mine.id } })
-      // `ownerId` is who the hub names as the owner. Left pointing at
-      // somebody outside the workspace, it names a person nobody can reach.
-      const ws = await tx.workspace.findUnique({ where: { id: wsId } })
-      if (heir && ws.ownerId === me)
-        await tx.workspace.update({ where: { id: wsId }, data: { ownerId: heir.userId, version: ws.version }, system: ['ownerId'] })
-      return { workspace_id: wsId, user_id: me, left: true }
-    })
-  },
-
-  /** Hand the workspace to another member and step down to admin, in one
-   *  write: two steps would leave a window with no owner, or two. */
-  async transferOwnership() {
-    const me     = sessionOf().id as string
-    const target = ($.data as { userId: string }).userId
-    if (target === me) throw new BadRequest('You already own this workspace')
-
-    const wsId  = $.id as string
-    const heir  = await members().findFirst({ where: { workspaceId: wsId, userId: target } })
-    if (!heir) throw new NotFound('Member not found')
-    const mine  = await members().findFirst({ where: { workspaceId: wsId, userId: me } })
-
-    return db().asSystem().$transaction(async (tx: any) => {
-      const owner = await tx.workspaceMember.update({
-        where: { id: heir.id }, data: { role: 'owner', capabilities: grantsFor('owner') },
-      })
-      await tx.workspaceMember.update({
-        where: { id: mine.id }, data: { role: 'admin', capabilities: grantsFor('admin') },
-      })
-      const ws = await tx.workspace.findUnique({ where: { id: wsId } })
-      await tx.workspace.update({ where: { id: wsId }, data: { ownerId: target, version: ws.version }, system: ['ownerId'] })
-      return owner
-    })
+    await db().asSystem().workspaceMember.delete({ where: { id: mine.id } })
+    return { workspace_id: wsId, user_id: me, left: true }
   },
 
   // ── push · testPing ───────────────────────────────────────────────
@@ -430,7 +390,6 @@ export default createService({
       addMember:     [requireWorkspaceRole('admin', 'owner'), refuseGrantAboveOwn()],
       setMemberRole: [requireWorkspaceRole('admin', 'owner'), refuseGrantAboveOwn()],
       removeMember:  [requireWorkspaceRole('admin', 'owner')],
-      transferOwnership: [requireWorkspaceRole('owner')],
       // The topic is the secret on the public rung: an admin's to read and to ring.
       push:          [requireWorkspaceRole('admin', 'owner')],
       testPing:      [requireWorkspaceRole('admin', 'owner')],

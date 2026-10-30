@@ -30,6 +30,7 @@
   import FileField     from '../../../components/forms/FileField.mesa'
   import GeoField      from '../../../components/forms/GeoField.mesa'
   import Textbox       from '../../../components/forms/Textbox.mesa'
+  import ColorInput    from '../../../components/forms/ColorInput.mesa'
 
   let SERVER_ERRORS = {}
   window.kitFailWith = (map) => { SERVER_ERRORS = map }
@@ -75,6 +76,7 @@
   let notes    = ''
   let site     = { lat: 1, lng: 2 }
   let line     = 'ab'
+  let accent   = ''
 </script>
 
 <div id="host">
@@ -101,6 +103,7 @@
     <div data-ctl="FileField"><FileField name="photo" /></div>
     <div data-ctl="GeoField"><GeoField name="site" value={site} onvalue={(v) => site = v} /></div>
     <div data-ctl="Textbox"><Textbox name="line" bind:value={line} /></div>
+    <div data-ctl="ColorInput"><ColorInput name="accent" bind:value={accent} /></div>
   </Form>
 </div>
 

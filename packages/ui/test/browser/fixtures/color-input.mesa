@@ -1,0 +1,27 @@
+<script>
+  // color-input.mesa — a stored data colour picked from swatches or a custom
+  // picker.
+  import ColorInput from '../../../components/forms/ColorInput.mesa'
+
+  const SET = ['#ef4444', '#22c55e', '#3b82f6']
+
+  let picked = '#22c55e'
+  let calls  = 0
+  let custom = '#abcdef'
+</script>
+
+<div id="basic">
+  <ColorInput swatches={SET} value={picked} onchange={(v) => { picked = v; calls++ }} />
+</div>
+
+<div id="custom">
+  <ColorInput label="Brand colour" swatches={SET} bind:value={custom} />
+</div>
+
+<div id="bare">
+  <ColorInput swatches={SET} custom={false} value="" />
+</div>
+
+<output id="picked">{picked}</output>
+<output id="calls">{calls}</output>
+<output id="custom-value">{custom}</output>

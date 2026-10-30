@@ -5,7 +5,7 @@ The file-by-file map of the package; `CLAUDE.md` § Where things are is the shor
 ```
 components/
   forms/      Form · Field · Fieldset · Label · Input · Textarea · Select ·
-              Checkbox · RadioGroup · Switch · Slider · Thresholds · SignaturePad · NumberInput · Combobox ·
+              Checkbox · RadioGroup · Switch · ColorInput · Slider · Thresholds · SignaturePad · NumberInput · Combobox ·
               MultiSelect · DatePicker · DateTimeInput · JsonInput · CodeInput · MarkdownInput ·
               FileUpload · FileField · GeoField · MoneyInput · Button ·
               Textbox (a <textarea> on vim's keys, toolbelt /textbox under
@@ -13,7 +13,7 @@ components/
               answers its mode, which the terminal shell follows, and
               `idle` takes no key and keeps none — FJS-D1411)
   display/    Table · Badge · Pill · Tag · Stat · StatCard · Steps · Pagination ·
-              Breadcrumbs · Callout · EmptyState · Avatar(+Group) · Sparkline ·
+              Breadcrumbs · Callout · EmptyState · Avatar(+Group) · AttachmentList · FileType · Sparkline ·
               Json · Markdown · HtmlFrame · TemplatePreview · SignatureView · BulkBar ·
               Transcript · Message · ToolCalls · Composer (chat) · ThemeSwatch · ThemePicker
               (real radios over swatches; sierra's setTheme is the caller's) ·
@@ -30,7 +30,7 @@ components/
   overlay/    Modal · Drawer · Popover · Tooltip · HoverCard · DropdownMenu(+Item/Group/
               Separator) · ConfirmationPopover · ConfirmPanel · ConfirmProvider ·
               CommandPalette
-  feedback/   Alert(+Provider) · Toast(+er) · Progress · Spinner · Skeleton
+  feedback/   Alert(+Provider) · Toast(+er) · Progress · Ring · Spinner · Skeleton
 stores/       alertStore · toastStore · commandPaletteStore
 controls.js   control name → component; where an app contributes one
 dnd.js        dndzone — drag and drop between flow lists, an {@attach}

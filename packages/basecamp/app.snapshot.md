@@ -39,7 +39,6 @@ text, so a body that elevates through a helper is not listed.
 | `servers.heartbeat` | anyone, a stranger included — declared `gate: 0` |
 | `variables.reveal` | standing 5 or above — declared `gate: 5` |
 | `workspaces.leave` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `workspaces.transferOwnership` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `workspaces.testPing` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
 ## Custom methods whose caller's standing is not graded
@@ -62,7 +61,7 @@ and what it does.
 | `notificationPreferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notificationPreferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (96)
+### A service hook runs in front of the body (95)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -163,7 +162,6 @@ name, and is as unread as the body.
 | `workspaces.setMemberRole` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` → `refuseGrantAboveOwn` |
 | `workspaces.removeMember` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` |
 | `workspaces.leave` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` |
-| `workspaces.transferOwnership` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` |
 | `workspaces.push` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` |
 | `workspaces.testPing` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` |
 
@@ -1505,11 +1503,10 @@ name when it declares none.
 
 ### `workspaces` · model `Workspace`
 
-- **methods** — `find`, `get`, `create`, `patch`, `remove`, `restore`, `members`, `addMember`, `setMemberRole`, `removeMember`, `leave`, `transferOwnership`, `push`, `testPing`
-- **custom methods** — `members`, `addMember`, `setMemberRole`, `removeMember`, `leave`, `transferOwnership`, `push`, `testPing`
+- **methods** — `find`, `get`, `create`, `patch`, `remove`, `restore`, `members`, `addMember`, `setMemberRole`, `removeMember`, `leave`, `push`, `testPing`
+- **custom methods** — `members`, `addMember`, `setMemberRole`, `removeMember`, `leave`, `push`, `testPing`
 - **input** — `addMember` takes `WorkspaceMemberAdd`
 - **input** — `setMemberRole` takes `WorkspaceMemberRole`
-- **input** — `transferOwnership` takes `WorkspaceTransfer`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`
   - `members` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`
@@ -1517,7 +1514,6 @@ name when it declares none.
   - `setMemberRole` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` → `refuseGrantAboveOwn`
   - `removeMember` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole`
   - `leave` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`; body writes as the app
-  - `transferOwnership` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole`; body writes as the app
   - `push` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole`
   - `testPing` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole`; body writes as the app
 
@@ -1531,7 +1527,6 @@ name when it declares none.
 | before | `addMember` | `requireWorkspaceRole` → `refuseGrantAboveOwn` → `validateInput` |
 | before | `setMemberRole` | `requireWorkspaceRole` → `refuseGrantAboveOwn` → `validateInput` |
 | before | `removeMember` | `requireWorkspaceRole` |
-| before | `transferOwnership` | `requireWorkspaceRole` → `validateInput` |
 | before | `push` | `requireWorkspaceRole` |
 | before | `testPing` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |

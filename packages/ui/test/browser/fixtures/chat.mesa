@@ -4,6 +4,11 @@
   // `#log` is a 12rem log that grows by a button: `#add` appends a message,
   // `#token` appends a word to the last one the way a streamed reply lands.
   // `#sent` lists what the composer handed over, in order.
+  //
+  // `#rich` is a Composer with every option set. Its send is held until
+  // `#settle` answers it, `false` while `#fail` is ticked; `#suggest` writes a
+  // three-line draft from outside. `#rich-sent`, `#drafts` and `#stops` record
+  // what it handed over.
   import Transcript from '../../../components/display/Transcript.mesa'
   import Message from '../../../components/display/Message.mesa'
   import Composer from '../../../components/display/Composer.mesa'
@@ -19,6 +24,19 @@
     turns = [...turns.slice(0, -1), { ...last, text: last.text + ' more words that stream in' }]
   }
   const ask   = (text) => { sent = [...sent, text]; add(); log.scrollToEnd() }
+
+  let draft    = ''
+  let busy     = false
+  let sending  = false
+  let fail     = false
+  let richSent = []
+  let drafts   = []
+  let stops    = 0
+  let settle   = null
+  const richSend = (text) => {
+    richSent = [...richSent, text]
+    return new Promise((resolve) => { settle = () => { settle = null; resolve(!fail) } })
+  }
 </script>
 
 <button id="add" type="button" onclick={add}>add</button>
@@ -34,6 +52,22 @@
   <Composer onsend={ask} />
 </div>
 <output id="sent">{sent.join('|')}</output>
+
+<button id="busy" type="button" onclick={() => (busy = !busy)}>busy</button>
+<button id="sending" type="button" onclick={() => (sending = !sending)}>sending</button>
+<button id="fail" type="button" onclick={() => (fail = !fail)}>fail</button>
+<button id="settle" type="button" onclick={() => settle?.()}>settle</button>
+<button id="suggest" type="button" onclick={() => (draft = 'one\ntwo\nthree')}>suggest</button>
+
+<div id="rich" style="inline-size: 20rem">
+  <Composer bind:value={draft} {busy} {sending} maxlength={12} maxRows={2} inputLabel="Message the bot"
+            onsend={richSend} onstop={() => stops++} ondraft={(v) => (drafts = [...drafts, v])}>
+    {#snippet send()}<span class="icon-send">&gt;</span>{/snippet}
+  </Composer>
+</div>
+<output id="rich-sent">{richSent.join('|')}</output>
+<output id="drafts">{drafts.join('|')}</output>
+<output id="stops">{stops}</output>
 
 <div id="failed" style="inline-size: 20rem">
   <Message side="mine" tone="danger">Could not send</Message>

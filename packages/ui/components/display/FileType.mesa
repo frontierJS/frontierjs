@@ -1,0 +1,96 @@
+<script module>
+  // `fileKind` is this tile's own verb and a list of stored files asks the same
+  // question (`FJS-D116`), so it is exported rather than copied:
+  //
+  //   import FileType, { fileKind } from '@frontierjs/ui/components/display/FileType.mesa'
+
+  const BY_EXT = {
+    image:   'png jpg jpeg gif webp avif svg heic bmp ico',
+    pdf:     'pdf',
+    doc:     'doc docx odt rtf txt md pages',
+    sheet:   'xls xlsx ods csv tsv numbers',
+    slides:  'ppt pptx odp key',
+    archive: 'zip tar gz tgz bz2 7z rar',
+    audio:   'mp3 wav ogg m4a flac aac',
+    video:   'mp4 mov webm mkv avi m4v',
+    code:    'js mjs ts json html css xml yml yaml sh py rb go rs sql',
+  }
+
+  const KIND_OF = {}
+  for (const [kind, list] of Object.entries(BY_EXT)) for (const ext of list.split(' ')) KIND_OF[ext] = kind
+
+  /** The extension of a file name, lowercased and without the dot — '' when it has none. */
+  export function fileExt(name) {
+    const m = /\.([A-Za-z0-9]+)$/.exec(String(name ?? ''))
+    return m ? m[1].toLowerCase() : ''
+  }
+
+  /**
+   * What kind of file is this: image · pdf · doc · sheet · slides · archive ·
+   * audio · video · code · file. The MIME type wins where it says something
+   * and the extension answers where it does not (`application/octet-stream`).
+   */
+  export function fileKind(name, type = '') {
+    const t = String(type ?? '').toLowerCase()
+    if (t.startsWith('image/')) return 'image'
+    if (t.startsWith('audio/')) return 'audio'
+    if (t.startsWith('video/')) return 'video'
+    if (t === 'application/pdf') return 'pdf'
+    return KIND_OF[fileExt(name)] ?? 'file'
+  }
+</script>
+
+<script>
+  // FileType.mesa
+  // A square tile that says what kind of file this is — the extension on a
+  // tone chosen by kind. For a stored file with no thumbnail to show.
+  //
+  // The tone is one of the kit's seven, so a theme recolors it and the text
+  // keeps its contrast; the kind picks WHICH tone, never a hue of its own.
+  // Pass `tone` to pin it.
+  //
+  // Decorative by default: the file's name sits beside it and is the
+  // identification. Pass `standalone` when the tile stands alone — it then
+  // names the kind ("PDF file") the way a standalone Avatar names its person.
+  //
+  // Usage:
+  //   <FileType name="Q3 report.pdf" />
+  //   <FileType type="image/png" size="lg" />
+  //   <FileType name={file.name} type={file.type} standalone />
+
+  import { tone as toTone, cx } from '../../utils.js'
+
+  export let name       = ''      // file name — the extension is the tile's text
+  export let type       = ''      // MIME type — read before the extension
+  export let kind       = ''      // pin the kind instead of deriving it
+  export let size       = 'md'    // 'sm'|'md'|'lg'
+  export let tone       = ''      // pin the tone instead of taking the kind's
+  export let standalone = false   // this tile is the only identification
+
+  const KIND_TONE = {
+    image: 'info', pdf: 'danger', doc: 'primary', sheet: 'success', slides: 'warning',
+    archive: 'muted', audio: 'secondary', video: 'secondary', code: 'muted', file: 'muted',
+  }
+
+  const sizeMap = { sm: '2rem', md: '2.5rem', lg: '3.5rem' }
+
+  const k    = kind || fileKind(name, type)
+  const ext  = fileExt(name).slice(0, 4).toUpperCase()
+  const text = ext || k.slice(0, 4).toUpperCase()
+  const t    = toTone(tone) || KIND_TONE[k] || 'muted'
+  const sz   = sizeMap[size] ?? sizeMap.md
+</script>
+
+<span
+  class={cx('avatar', t)}
+  data-kind={k}
+  style:--avatar-size={sz}
+  style:--avatar-radius="var(--card-radius)"
+  style:font-size="calc({sz} * 0.3)"
+  style:font-weight="600"
+  role={standalone ? 'img' : null}
+  aria-label={standalone ? `${ext || k} file` : null}
+  aria-hidden={standalone ? null : 'true'}
+  {class}
+  {...$attributes}
+>{text}</span>

@@ -76,6 +76,7 @@ function _remove(arr, item) {
 
 let _listener = null
 let _owner = null
+let _roots = null   // set by trackOwners(); the ownerless roots still alive
 let _batching = false
 const _queue = new Set()
 let _microtaskPending = false
@@ -540,6 +541,7 @@ export function createRoot(fn) {
     _run() {}
   }
   if (_owner) _owner._children.push(node)
+  else _roots?.add(node)
   const prevOwner = _owner,
     prevListener = _listener
   _owner = node
@@ -668,7 +670,32 @@ function _disposeNode(node, removeFromOwner) {
   // snapshot array, not in _queue, so _queue.delete() is a no-op.
   node._disposed = true
   _queue.delete(node)
+  _roots?.delete(node)
   if (removeFromOwner && node._owner) _remove(node._owner._children, node)
+}
+
+/**
+ * trackOwners() — start counting live owner nodes; returns the counter.
+ *
+ * A leak gate that reads heap bytes fails open: Chrome frees ~3.5 MB of its own
+ * at a moment no collection controls, and a small leak hides behind it
+ * (`FJS-3550`). Owner nodes are a count: after a mount is destroyed or a list
+ * cleared, the nodes reachable from a live root are the ones nothing disposed.
+ * Call it before the first `createRoot` — it tracks the roots made after it —
+ * and read the counter whenever. Costs one null check per root until called.
+ */
+export function trackOwners() {
+  const roots = (_roots = new Set())
+  return () => {
+    let n = 0
+    const todo = [...roots]
+    while (todo.length) {
+      const node = todo.pop()
+      n++
+      todo.push(...node._children)
+    }
+    return n
+  }
 }
 
 /**
@@ -1975,10 +2002,20 @@ export function delegationRootOf(el) {
 export function portal(getTarget, blockFactory) {
   const withContext = captureContext()
   if (!_isBrowser) return
-  let nodes = []
+  let start = null
+  let end = null
   let currentTarget = null
   let unregisterRoot = null
   let contentNode = null
+
+  // The content is the range between two markers the portal owns. An inner
+  // {#if} that is false at mount holds only its anchor in the fragment, and
+  // the branch it inserts later lands beside that anchor -- outside any list of
+  // the nodes recorded at mount -- and stayed in the target for good.
+  const removeContent = () => {
+    if (start) _removeRange(start, end?.nextSibling)
+    start = end = null
+  }
 
   createEffect(() => {
     const target = getTarget()
@@ -1986,7 +2023,7 @@ export function portal(getTarget, blockFactory) {
     if (target === currentTarget) return
 
     // Remove from old target
-    nodes.forEach((n) => n.parentNode?.removeChild(n))
+    removeContent()
     unregisterRoot?.()
     if (contentNode) _disposeNode(contentNode, true)
 
@@ -2015,10 +2052,11 @@ export function portal(getTarget, blockFactory) {
     } finally {
       _owner = prevOwner
     }
-    nodes = $dom.nodeType === Node.DOCUMENT_FRAGMENT_NODE
-      ? [...$dom.childNodes]
-      : [$dom]
+    start = document.createComment(ANCHOR_DATA)
+    end = document.createComment(ANCHOR_DATA)
+    target.appendChild(start)
     target.appendChild($dom)
+    target.appendChild(end)
     currentTarget = target
 
     // The portal target is a delegation root of its own.
@@ -2033,7 +2071,7 @@ export function portal(getTarget, blockFactory) {
   })
 
   onCleanup(() => {
-    nodes.forEach((n) => n.parentNode?.removeChild(n))
+    removeContent()
     unregisterRoot?.()
     if (contentNode) { _disposeNode(contentNode, true); contentNode = null }
   })

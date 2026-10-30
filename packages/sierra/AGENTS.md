@@ -133,7 +133,7 @@ Keep `where` for what the list is scoped to (`projectId`). A dock or widget that
 shows the rows is `tethered({ state: 'local' })`; every row rather than a page is
 `{ all: true }` — never a `service.find` above the server's page max, which is refused.
 
-```js
+```js fragment
 // src/routes/blog/[slug].meta.js
 export async function load({ params, url, meta, fetch }) { … }  // → page.data and the `data` prop
 export function head({ params, data, url }) { return { title: data.title } }
@@ -153,7 +153,7 @@ redirects — and they run on a cold load and on the Back button.
 A `ctx.sse()` stream is read with `readEvents` from `@frontierjs/sierra/fetch`,
 never `EventSource`, which cannot send the session:
 
-```js
+```js fragment
 import { sierraFetch, readEvents } from '@frontierjs/sierra/fetch'
 const res = await sierraFetch('/api/search/stream', { method: 'POST', body, signal })
 for await (const { event, data, id } of readEvents(res)) { … }  // data is JSON-decoded
@@ -164,7 +164,7 @@ response that is not `text/event-stream` throws rather than yielding nothing.
 
 A detail screen watches its row:
 
-```js
+```js fragment
 let order  = null
 let failed = null
 let row    = null
@@ -242,7 +242,7 @@ never resolves: resolving would claim the server has a row it may not have. Ever
 write through the resource is held — `save()`, `service.create/patch/remove/restore`
 and a custom method through `service.invoke` — and only `find` and `get` are not.
 
-```js
+```js fragment
 try {
   saved = await counts.save(row)
 } catch (err) {
@@ -262,7 +262,7 @@ when the server ACKNOWLEDGES it, and a replay carries the entry's key as its
 idempotency key, so a write that did arrive is answered, not applied twice.
 `pendingQueue()` from `@frontierjs/sierra/resource` is the screen's view of it:
 
-```js
+```js fragment
 const q = pendingQueue()
 q.pending()  ·  q.rejected()      // entries, oldest first
 q.subscribe(list => …)            // after every change; answers the unsubscribe
@@ -293,7 +293,7 @@ resource that must work offline from `main.js`, which `virtual:sierra` imports a
 **`offlineStatus()` from `@frontierjs/sierra/resource` is what the last warm found**
 (`FJS-D484`), beside `pendingQueue()`:
 
-```js
+```js fragment
 const s = offlineStatus()
 s.report()       // [{ service, rows?, kept?, error? }] — null until a warm finishes
 s.ranAt()        // ms since the epoch, or null

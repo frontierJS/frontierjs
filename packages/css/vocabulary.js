@@ -83,7 +83,7 @@ const VOCAB = [
     "Region",
     "Grouping and wayfinding inside a Screen.",
     [
-      ["Section", "<section> / <article>", "<article> when nested inside a Section (Principle 2)", null],
+      ["Section", "<section> / <article>", "A titled block with its body. <article> when nested inside a Section (Principle 2); the .section class spaces both, and a nested one is the sub-section", "section"],
       ["Group", "<div>", "A horizontal group with no semantic identity, on ONE line. What goes INSIDE a strip — the strip is a Bar and there is one per area. Cluster is the utility that wraps; a Group inside a fixed-height container is the case wrapping gets wrong"],
       ["Prose", "<div>", "A region of authored long-form copy, styled by element — the one place the package touches a bare <p>. Sets measure, ink and list indentation only; a Heading or Code inside keeps its own term. Spacing is the parent's: compose with Stack"],
       ["Bar", "<div>", "A horizontal strip. Layout only — no role, no keyboard contract, contents are whatever you put there"],
@@ -200,12 +200,12 @@ const NOT_A_TERM = {
    * Scoped modifiers — the fourth group the Kinds-of-class page warns about.
    * They read like Treatments and are not: each only works on one Element.
    * `striped` and `top` only on Table, `circle` only on Skeleton and Avatar, `menu`
-   * only on Items. Naming them as vocabulary would imply they compose.
+   * only on Items, `sheet` only on Popover. Naming them as vocabulary would imply they compose.
    */
   modifier: [
     'bottom', 'circle', 'compact', 'complete', 'disabled', 'divided', 'end',
     'flush', 'focusable', 'hover', 'menu', 'narrow', 'peek', 'pills', 'removable',
-    'rail', 'segmented', 'square', 'start', 'stretch', 'striped', 'text', 'top', 'vertical', 'viewport',
+    'rail', 'segmented', 'sheet', 'square', 'start', 'stretch', 'striped', 'text', 'top', 'vertical', 'viewport',
     'wide', 'wrap',
   ],
 
@@ -515,6 +515,7 @@ const ANATOMY = {
 </div>`,
     parts: [
       ['.popover-anchor', 'The positioning context, and the default placement. The Popover is absolute inside it. Optional only for a native [popover], which is in the top layer and escapes it', 'optional'],
+      ['.popover-backdrop', 'The dim behind a sheet, a sibling before the panel. A press on it is a click-away; the panel stays non-modal', 'optional'],
     ],
     uses: ['surface-header', 'surface-body'],
   },
@@ -618,15 +619,16 @@ const ANATOMY = {
   },
 
   Section: {
-    markup: `<section aria-labelledby="s-1">
+    markup: `<section class="section" aria-labelledby="s-1">
   <div class="section-header">
     <h2 id="s-1" class="h4">Recent invoices</h2>
     <button class="btn outlined">New</button>
   </div>
-  <div class="stack">&hellip;</div>
+  <div class="section-body">&hellip;</div>
 </section>`,
     parts: [
       ['.section-header', 'A heading with its own actions beside it', 'optional'],
+      ['.section-body', 'The blocks under the header, spaced by the Section. A .section in here is the sub-section: tighter, with a quieter heading', 'optional'],
     ],
   },
 
@@ -740,6 +742,7 @@ const NOT_ANATOMY = {
   'from-right': 'A direction modifier on Drawer',
   'from-bottom': 'A direction modifier on Drawer',
   'from-left': 'A direction modifier on Drawer',
+  'sheet-narrow': 'A modifier on Popover and its backdrop: a bottom sheet below md, a placed panel above it',
   'align-start': 'The align axis (tokens.css), beside tone, treatment and density, and like density it inherits. `start` is the default, so this is how a region undoes an ancestor\u2019s alignment',
   'align-center': 'The align axis (tokens.css): text-align, plus the --align that Stack, Cluster, Group, Bar and Toolbar read to place their children. Inherits',
   'align-end': 'The align axis (tokens.css). On a Popover inside .popover-anchor it aligns the POPOVER, opening it against the trigger\u2019s end edge; an Overlay does not inherit a region\u2019s alignment',

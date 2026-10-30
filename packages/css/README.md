@@ -340,7 +340,7 @@ top layer and escapes it — place that one with anchor positioning
 &nbsp;&nbsp;— current state comes from `[aria-current]` / `[aria-selected]`,
 never a class
 
-**Patterns** `bar` `toolbar` (+ the align axis) `section-header` `divider-label` · `items` `rows`
+**Patterns** `bar` `toolbar` (+ the align axis) `section` (`section-header`, `section-body`) `divider-label` · `items` `rows`
 `list-row` · `feed` · `disclosure` · `avatars` · `<hr>` / `divider`
 · `<pre class="code">` and inline `<code>`
 

@@ -84,6 +84,8 @@
 
 .popover {
   position:   absolute;
+  left:       var(--popover-x);
+  top:        var(--popover-y);
   max-width:  280px;
   padding:    var(--space-md) var(--space-lg);
   box-shadow: var(--shadow-md);
@@ -108,6 +110,74 @@
 }
 [popover].popover::backdrop {
   background: transparent;
+}
+
+/* ── A panel with a title bar, and the sheet ──────────────────────
+ *
+ * A panel placed by script writes the point it measured as --popover-x and
+ * --popover-y, not as inline left/top: an inline value beats every rule
+ * here, and the sheet below has to take the box back.
+ *
+ * A header makes it a panel: the header stays put and the body scrolls,
+ * contained so the page behind does not scroll on past its end.
+ *
+ * `.sheet` is a bottom sheet at every width, `.sheet-narrow` only below md.
+ * `--sheet-offset` lifts it over an app's fixed bottom bar. A sheet stays
+ * non-modal: `.popover-backdrop` dims the page and a press on it is a
+ * click-away, so it needs no handler of its own. @frontierjs/ui's Popover
+ * is the component that writes all of this.
+ */
+.popover:has(> .surface-header) {
+  display:        flex;
+  flex-direction: column;
+  width:          22rem;
+  max-width:      calc(100vw - 2 * var(--space-md));
+  max-height:     calc(100dvh - 2 * var(--space-lg));
+  padding:        0;
+  overflow:       hidden;
+}
+.popover > .surface-header {
+  padding: var(--space-sm) var(--space-sm) var(--space-sm) var(--space-lg);
+}
+.popover > .surface-body {
+  flex:                1;
+  min-height:          0;
+  padding:             var(--space-md) var(--space-lg);
+  overflow-x:          hidden;
+  overflow-y:          auto;
+  overscroll-behavior: contain;
+}
+
+.popover-backdrop {
+  position:   fixed;
+  inset:      0;
+  z-index:    var(--z-popover);
+  background: var(--scrim);
+}
+
+.popover.sheet {
+  left:       var(--space-md);
+  right:      var(--space-md);
+  top:        auto;
+  bottom:     calc(var(--sheet-offset, 0px) + env(safe-area-inset-bottom, 0px) + var(--space-md));
+  width:      auto;
+  max-width:  none;
+  max-height: 80dvh;
+  --overlay-from: translateY(8px);
+}
+@media (max-width: 767px) {
+  .popover.sheet-narrow {
+    left:       var(--space-md);
+    right:      var(--space-md);
+    top:        auto;
+    bottom:     calc(var(--sheet-offset, 0px) + env(safe-area-inset-bottom, 0px) + var(--space-md));
+    width:      auto;
+    max-width:  none;
+    max-height: 80dvh;
+  }
+}
+@media (min-width: 768px) {
+  .popover-backdrop.sheet-narrow { display: none; }
 }
 
 @keyframes popover-in {

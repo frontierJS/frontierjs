@@ -7,9 +7,14 @@
 // defect and passes while it fails.
 //
 // The prelude is what a block may assume without declaring it:
-//   app      a `createTestApp()` — stub auth, no services, nothing listening
+//   app      a `createTestApp()` — stub auth, no services, nothing listening;
+//            under a `client.auth.` call, a `createApp` with auth's real routes
+//   db       a Litestone client over auth's schema, files in the block's tmpdir
+//   client   a `createJunctionClient` whose fetch the prelude app answers in process
 //   <name>   any other export of `@frontierjs/junction` the block uses and does
 //            not import or declare
+// A peer junction does not depend on (auth, caravan, conduit) resolves from its
+// sibling package.
 // A sliver naming a free service, ctx or hook argument is a `fragment`: it
 // runs nothing, and the count may only fall.
 //
@@ -18,7 +23,7 @@
 // of file:line> runs one block.
 
 import { describe, test, beforeAll } from 'bun:test'
-import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir }                       from 'node:os'
 import { join }                         from 'node:path'
 import { fileURLToPath }                from 'node:url'
@@ -38,10 +43,32 @@ type Block = ReturnType<typeof docFences>[number] & { file: string }
 // ─── the module a block runs as ───────────────────────────────────────────────
 
 /** `@frontierjs/<pkg>[/sub]` → the file this checkout serves it from; the block runs in a tmpdir. */
+function resolvePeer(spec: string) {
+  try { return Bun.resolveSync(spec, PKG) } catch {}
+  try { return Bun.resolveSync(spec, join(PKG, '..', spec.split('/')[1])) } catch { return null }
+}
 const rewriteSpecifiers = (src: string) =>
   src.replace(/(['"])(@frontierjs\/[\w-]+(?:\/[\w.-]+)?)\1/g, (all, q, spec) => {
-    try { return `${q}${Bun.resolveSync(spec, PKG)}${q}` } catch { return all }
+    const file = resolvePeer(spec)
+    return file ? `${q}${file}${q}` : all
   })
+
+// What an app's schema holds once auth is installed, with the audit database
+// its models trail into; the files land in the block's own tmpdir.
+const AUTH_SCHEMA = [
+  'database main  { path "./db/main.db" }',
+  'database audit { path "./db/audit.db" model AuditTrail }',
+  readFileSync(join(PKG, '../litestone/references/AuditTrail.lite'), 'utf8'),
+  'model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate(8) }',
+].join('\n')
+
+function dbPrelude() {
+  return [
+    `import { createClient as __createClient } from '${resolvePeer('@frontierjs/litestone')}'`,
+    `import { authSchemaFragments as __authSchema } from '${resolvePeer('@frontierjs/auth')}'`,
+    `const db = await __createClient({ schema: ${JSON.stringify(AUTH_SCHEMA)} + __authSchema('main'), encryptionKey: 'ab'.repeat(32) })`,
+  ]
+}
 
 /** Names the block declares or imports, so the prelude never shadows them. */
 function declaredIn(body: string) {
@@ -61,11 +88,37 @@ function moduleFor(block: Block) {
   for (const m of block.body.matchAll(/[\w$]+/g)) if (EXPORTS.has(m[0]) && !declared.has(m[0])) used.add(m[0])
   const head: string[] = []
   if (used.size) head.push(`import { ${[...used].join(', ')} } from '${join(PKG, 'index.ts')}'`)
-  if (/\bapp\b/.test(block.body) && !declared.has('app')) {
+  const browser = /\bcreateJunctionClient\b|\bclient\./.test(block.body)
+  const signsIn = /\bclient\.auth\./.test(block.body)
+  if ((signsIn || /(?<![.\w$])db\b/.test(block.body)) && !declared.has('db')) head.push(...dbPrelude())
+  const needsApp = (browser || /\bapp\b/.test(block.body)) && !declared.has('app')
+  if (needsApp && signsIn) {
+    // A sign-in needs the real routes, which the stub auth has none of.
+    head.push(`import { createLitestoneAuth as __createAuth, auth as __authPlugin } from '${resolvePeer('@frontierjs/auth')}'`)
+    head.push(`import { createApp as __createApp } from '${join(PKG, 'index.ts')}'`)
+    head.push('const __auth = __createAuth(db)')
+    head.push('const app = __createApp({ auth: __auth, db })')
+    head.push('app.configure(__authPlugin({ auth: __auth }))')
+  } else if (needsApp) {
     head.push(`import { createTestApp as __createTestApp } from '${join(PKG, 'src/testing/index.ts')}'`)
     head.push('const app = await __createTestApp()')
   }
-  const body = rewriteSpecifiers(block.body)
+  // The client takes no transport, so the prelude app answers its `fetch` in
+  // process, and its socket never opens and the client falls back to HTTP:
+  // an example's url names a port, and whatever answers there is not this app.
+  if (browser) {
+    head.push('globalThis.fetch = (async (input, init) => {')
+    head.push('  if (!app.http.router.isBuilt) { await app._startForTest(); app.http.router.build() }')
+    head.push('  return app.http.fetch(new Request(input, init))')
+    head.push('}) as typeof fetch')
+    head.push('globalThis.WebSocket = class { readyState = 3; constructor() { setTimeout(() => this.onclose?.({ code: 1006, reason: "" })) } send() {} close() {} } as any')
+    if (!declared.has('createJunctionClient') && !declared.has('client'))
+      head.push(`import { createJunctionClient } from '${join(PKG, 'src/client/index.ts')}'`)
+    if (!declared.has('client')) head.push("const client = createJunctionClient({ url: 'http://localhost:3000' })")
+  }
+  if (/\bexpect\(/.test(block.body) && !declared.has('expect')) head.push("import { expect } from 'bun:test'")
+  // A page never ends, so a client's reconnect timer would hold the process open.
+  const body = rewriteSpecifiers(block.body) + (browser ? '\nprocess.exit(0)' : '')
   if (!block.words.has('throws')) return [...head, body].join('\n')
   // An import is hoisted out of the try, since a declaration inside a block is a syntax error.
   const imports: string[] = []
@@ -76,6 +129,8 @@ function moduleFor(block: Block) {
 async function runBlock(block: Block) {
   const dir = mkdtempSync(join(tmpdir(), 'junction-doc-example-'))
   try {
+    // An app root: a block naming `./db/jobs.db` opens a file there.
+    mkdirSync(join(dir, 'db'))
     const file = join(dir, 'example.ts')
     writeFileSync(file, moduleFor(block))
     const proc = Bun.spawn(['bun', file], { cwd: dir, stdout: 'pipe', stderr: 'pipe', env: { ...process.env, NODE_ENV: 'test' } })
@@ -100,7 +155,7 @@ const TS = new Set(['ts', 'typescript'])
 
 // A `fragment` runs nothing and nothing says so, so the count may only fall: a new
 // sliver is written complete, or an old one is completed to make room.
-const FRAGMENT_CEILING = 67
+const FRAGMENT_CEILING = 13
 
 const all: { id: string, block: Block }[] = []
 let fragments = 0

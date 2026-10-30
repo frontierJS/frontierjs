@@ -24,9 +24,10 @@ devDependency moves; one `Bun.build` with splitting, because a second copy of
 `@codemirror/state` fails on an `instanceof` that no message explains.
 
 **`test` ends with `bench/run.mjs --gate`** — bytes and DOM mutations, and a
-rise in either fails it (`FJS-D532`); heap kept after five create/clear cycles
-over 5% of one 1k-row mount fails it too, and that one fails open, never
-falsely (`FJS-3550`). The timed `bun run bench` is by hand: run
+rise in either fails it (`FJS-D532`); so does a live-owner-node count
+(`trackOwners` in the runtime) after five create/clear cycles that differs from
+the count after one. Heap bytes are printed, not gated: Chrome's own release
+hides a small leak (`FJS-3550`). The timed `bun run bench` is by hand: run
 it when a change touches `{#each}`, the flush or anything that writes the DOM. A
 time never fails it; it is printed as a ratio to the hand-written floor measured
 in the same browser.

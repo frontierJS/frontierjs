@@ -13,6 +13,7 @@
   import EmptyState    from '../../../components/display/EmptyState.mesa'
   import SectionHeader from '../../../components/display/SectionHeader.mesa'
   import Progress      from '../../../components/feedback/Progress.mesa'
+  import Ring          from '../../../components/feedback/Ring.mesa'
   import Spinner       from '../../../components/feedback/Spinner.mesa'
   import Skeleton      from '../../../components/feedback/Skeleton.mesa'
 
@@ -80,6 +81,9 @@
 <div id="progress-toned">
   <Progress value={3} max={10} tone="success" size="lg" />
 </div>
+
+<div id="ring-determinate"><Ring value={pct} showLabel label="Uploading" tone="success" /></div>
+<div id="ring-indeterminate"><Ring indeterminate /></div>
 
 <div id="spin"><Spinner label="Saving…" /></div>
 <div id="spin-lg"><Spinner size="lg" /></div>

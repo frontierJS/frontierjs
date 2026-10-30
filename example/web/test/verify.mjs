@@ -26,7 +26,7 @@
 // What `fli prove` queues on: this checkout's ports and its dev database.
 export const holds = ['ports', 'db']
 
-import { PORTS } from './lib/preflight.mjs'
+import { PORTS, TEST_SINK_ENV } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
 import { watchReloads } from './lib/reload.mjs'
 import { openChrome, PAGE_AUDIT } from '../../../packages/mesa/src/drive.js'
@@ -103,7 +103,7 @@ for (const [port, what] of [[API_PORT, 'the API'], [UI_PORT, 'the dev server']])
 // reads as a regression in whatever was just changed.
 putSeedBack()
 
-const PORT_ENV = { API_PORT, UI_PORT }
+const PORT_ENV = { API_PORT, UI_PORT, ...TEST_SINK_ENV }
 start('bun', ['run', 'api/index.ts'], 'api', PORT_ENV)
 start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web', PORT_ENV)
 

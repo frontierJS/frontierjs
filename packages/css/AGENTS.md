@@ -183,7 +183,7 @@ they share `surface-header` / `surface-body` / `surface-footer`.
 | Divider | `divider-label` |
 | Item | `item-lead` `item-text` `item-title` `item-sub` |
 | Row | `row-actions` |
-| Section | `section-header` |
+| Section | `section-body` *(the `section` class is the Section itself; a `.section` in a body is the sub-section)* `section-header` |
 | Toast | `toast-stack` *(one per app, not one per Toast)* |
 | Tooltip | `tooltip-anchor` |
 | Shell | `sidebar-footer` `sidebar-toggle` |

@@ -59,7 +59,7 @@ beforeAll(async () => {
 
   const a = await mk(), d = await mk()
   ws = await sys.workspace.create({
-    data: { accountId: acct.id, name: 'Fleet', slug: `f-${uniq()}`, ownerId: a.id } })
+    data: { accountId: acct.id, name: 'Fleet', slug: `f-${uniq()}` } })
   for (const [u, role] of [[a, 'admin'], [d, 'developer']] as const)
     await sys.workspaceMember.create({ data: {
       workspaceId: ws.id, userId: u.id, role,
@@ -270,7 +270,7 @@ describe('what a rollback refuses, before it writes anything', () => {
     const sys   = env.system as any
     const other = await sys.workspace.create({ data: {
       accountId: (await sys.account.findFirst({})).id,
-      name: 'Other', slug: `o-${uniq()}`, ownerId: (await sys.user.findFirst({})).id } })
+      name: 'Other', slug: `o-${uniq()}` } })
     const slug   = `their-${uniq()}`
     const otherProject = await sys.project.create({ data: {
       workspaceId: other.id, name: 'Theirs', slug: `p-${uniq()}` } })

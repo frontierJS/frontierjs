@@ -1,14 +1,27 @@
 <script>
   // Composer.mesa
   // The box a chat message is typed into: Enter sends, Shift+Enter breaks the
-  // line, and the box grows with what is typed up to a few lines, then scrolls.
+  // line, and the box grows with what is typed up to `maxRows` lines, then
+  // scrolls. It regrows when `value` is set from outside (a suggestion, Retry,
+  // a tab switch), on mount and on a window resize.
   //
-  // `onsend(text)` is handed the text trimmed, and the box clears after it
-  // returns. A caller whose send can fail and wants the words back writes them
-  // into `value` again (`bind:value`); nothing here retries.
+  // `onsend(text)` is handed the text trimmed, and the box clears at once. A
+  // send that can fail returns (or resolves to) `false`: the words come back,
+  // unless the person has typed something new meanwhile. Focus returns to the
+  // box once the send settles.
   //
   // An empty or whitespace-only box sends nothing, and neither does one that is
-  // `disabled` — set that while a reply is being waited for.
+  // `disabled`, `sending` (the caller's request is in flight; the button shows
+  // loading) or `busy` (a reply is streaming: the button is Stop and calls
+  // `onstop`, and the box stays live so the next message can be typed).
+  //
+  // `ondraft(value)` hears every change of the text — typing, the clear after
+  // a send, a restore — for a draft kept outside the component.
+  //
+  // `label` is the Send button's text; `inputLabel` (default the placeholder)
+  // is the box's accessible name. The `send` and `stop` snippets replace the
+  // buttons' content with an icon: the button turns square and keeps its name
+  // as an `aria-label`.
   //
   // Enter while an input method is composing (`isComposing`) confirms the
   // composition, not the message, so a Japanese or Chinese reader is not
@@ -16,7 +29,10 @@
   //
   // Usage:
   //   <Composer onsend={(text) => ask(text)} disabled={waiting} />
-  //   <Composer bind:value={draft} placeholder="Ask anything" label="Ask" onsend={ask} />
+  //   <Composer bind:value={draft} busy={turn.busy} sending={turn.sending}
+  //             inputLabel="Message the Companion" maxRows={10} onsend={ask} onstop={stop}>
+  //     {#snippet send()}<IconSend />{/snippet}
+  //   </Composer>
   //
   // bind:this exposes: focus()
 
@@ -25,8 +41,17 @@
   export let value       = ''
   export let placeholder = 'Write a message'
   export let label       = 'Send'
+  export let inputLabel  = undefined
   export let disabled    = false
+  export let sending     = false
+  export let busy        = false
+  export let maxlength   = undefined
+  export let maxRows     = 8
   export let onsend      = undefined
+  export let onstop      = undefined
+  export let ondraft     = undefined
+  export let send        = null       // snippet — the Send button's icon
+  export let stop        = null       // snippet — the Stop button's icon
 
   let el
   export function focus() { el?.focus() }
@@ -36,41 +61,62 @@
     el.style.height = 'auto'
     el.style.height = `${el.scrollHeight}px`
   }
+  $: value, () => { requestAnimationFrame(grow) }
+  $.onMount(() => { requestAnimationFrame(grow) })
 
-  function handleInput(e) {
-    value = e.target.value
+  function draft(text) {
+    value = text
+    if (el && el.value !== text) el.value = text
+    ondraft?.(text)
     grow()
   }
 
-  function send() {
+  function handleInput(e) { draft(e.target.value) }
+
+  async function submit() {
     const text = (value ?? '').trim()
-    if (disabled || !text) return
-    onsend?.(text)
-    value = ''
-    if (el) el.value = ''
-    grow()
+    if (disabled || sending || busy || !text) return
+    const kept = value
+    draft('')
+    const ok = await onsend?.(text)
+    if (ok === false && !value) draft(kept)
+    el?.focus()
   }
 
   function handleKey(e) {
     if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return
     e.preventDefault()
-    send()
+    submit()
   }
 </script>
+
+<mesa:window onresize|throttle(200)={grow} />
 
 <div class="fjs-composer" {class} {...$attributes}>
   <textarea
     bind:this={el}
     class="field"
     rows="1"
-    aria-label={placeholder}
+    aria-label={inputLabel ?? placeholder}
     placeholder={placeholder}
+    maxlength={maxlength}
     disabled={disabled}
+    style:max-block-size={`${maxRows}lh`}
     oninput={handleInput}
     onkeydown={handleKey}
     value={value}
   >{value}</textarea>
-  <Button type="button" disabled={disabled || !(value ?? '').trim()} onclick={send}>{label}</Button>
+  {#if busy}
+    <Button type="button" tone="danger" square={!!stop} aria-label={stop ? 'Stop' : undefined}
+            disabled={disabled} onclick={() => onstop?.()}>
+      {#if stop}{@render stop()}{:else}Stop{/if}
+    </Button>
+  {:else}
+    <Button type="button" square={!!send} aria-label={send ? label : undefined} loading={sending}
+            disabled={disabled || sending || !(value ?? '').trim()} onclick={submit}>
+      {#if send}{@render send()}{:else}{label}{/if}
+    </Button>
+  {/if}
 </div>
 
 <style>
@@ -82,7 +128,6 @@
   .fjs-composer > textarea {
     flex:            1 1 auto;
     min-inline-size: 0;
-    max-block-size:  8lh;
     resize:          none;
   }
 </style>

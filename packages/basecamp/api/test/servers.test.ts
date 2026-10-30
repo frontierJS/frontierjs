@@ -37,7 +37,7 @@ beforeAll(async () => {
   const sys  = env.system as any
   const acct = await sys.account.create({ data: { slug: `a-${uniq()}`, displayName: 'A' } })
   const user = await sys.user.create({ data: { email: `u-${uniq()}@x.co`, accountId: acct.id, status: 'active' } })
-  const ws   = await sys.workspace.create({ data: { accountId: acct.id, name: 'Fleet', slug: `f-${uniq()}`, ownerId: user.id } })
+  const ws   = await sys.workspace.create({ data: { accountId: acct.id, name: 'Fleet', slug: `f-${uniq()}` } })
   await sys.workspaceMember.create({ data: {
     workspaceId: ws.id, userId: user.id, role: 'admin', capabilities: grantsFor('admin'), acceptedAt: new Date().toISOString() } })
   admin = session({ id: user.id, workspaceId: ws.id })

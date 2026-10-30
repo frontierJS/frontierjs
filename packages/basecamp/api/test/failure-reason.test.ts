@@ -47,7 +47,7 @@ beforeAll(async () => {
   const acct = await sys.account.create({ data: { slug: `a-${uniq()}`, displayName: 'A' } })
   const a    = await sys.user.create({ data: { email: `u-${uniq()}@x.co`, accountId: acct.id, status: 'active' } })
   ws = await sys.workspace.create({
-    data: { accountId: acct.id, name: 'Fleet', slug: `f-${uniq()}`, ownerId: a.id } })
+    data: { accountId: acct.id, name: 'Fleet', slug: `f-${uniq()}` } })
   await sys.workspaceMember.create({ data: {
     workspaceId: ws.id, userId: a.id, role: 'admin',
     capabilities: grantsFor('admin'), acceptedAt: new Date().toISOString() } })

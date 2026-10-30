@@ -733,6 +733,9 @@
   --dialog-bg:            initial;
   --toast-bg:             initial;
   --toast-radius:         initial;
+  --popover-x:            initial;
+  --popover-y:            initial;
+  --sheet-offset:         initial;
   --font-display:         initial;
   --heading-font-weight:  initial;
   --heading-letter-spacing: initial;

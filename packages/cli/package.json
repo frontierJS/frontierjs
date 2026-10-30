@@ -36,6 +36,7 @@
     "core",
     "commands",
     "console",
+    "native",
     "web",
     "README.md",
     "LICENSE"

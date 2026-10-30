@@ -61,7 +61,7 @@ beforeAll(async () => {
   const acct = await sys.account.create({ data: { slug: `cf-${uniq}`, displayName: 'CF' } })
   const user = await sys.user.create({ data: { email: `o-${uniq}@x.co`, accountId: acct.id } })
   ws = await sys.workspace.create({
-    data: { accountId: acct.id, name: 'Edge', slug: `edge-${uniq}`, ownerId: user.id },
+    data: { accountId: acct.id, name: 'Edge', slug: `edge-${uniq}` },
   })
   const { grantsFor } = await import('../src/core/capabilities.ts')
   await sys.workspaceMember.create({ data: {
@@ -213,7 +213,7 @@ describe('the edge service', () => {
     const sys  = env.system as any
     const acct = await sys.account.create({ data: { slug: `dns-${tag()}`, displayName: 'DNS' } })
     const own  = await sys.user.create({ data: { email: `dns-${tag()}@x.co`, accountId: acct.id } })
-    site = await sys.workspace.create({ data: { accountId: acct.id, name: 'DNS', slug: `dns-${tag()}`, ownerId: own.id } })
+    site = await sys.workspace.create({ data: { accountId: acct.id, name: 'DNS', slug: `dns-${tag()}` } })
     // A developer is 4, below the Secret's read gate of 5 — the level the
     // service must NOT borrow, or the screen tells a developer no account exists.
     developer = await member(sys, site.id, acct.id, 'developer')
@@ -236,7 +236,7 @@ describe('the edge service', () => {
     for (const hostname of ['Example.test', 'www.example.test', 'elsewhere.test'])
       await sys.domain.create({ data: { workspaceId: site.id, appId: web.id, hostname } })
 
-    const other = await sys.workspace.create({ data: { accountId: acct.id, name: 'Bare', slug: `bare-${tag()}`, ownerId: own.id } })
+    const other = await sys.workspace.create({ data: { accountId: acct.id, name: 'Bare', slug: `bare-${tag()}` } })
     bare = await member(sys, other.id, acct.id, 'developer')
   })
 
@@ -424,7 +424,7 @@ describe('sync', () => {
     const { grantsFor } = await import('../src/core/capabilities.ts')
     const acct = await sys.account.create({ data: { slug: `sync-${tag()}`, displayName: 'Sync' } })
     const own  = await sys.user.create({ data: { email: `sync-${tag()}@x.co`, accountId: acct.id } })
-    site = await sys.workspace.create({ data: { accountId: acct.id, name: 'Sync', slug: `sync-${tag()}`, ownerId: own.id } })
+    site = await sys.workspace.create({ data: { accountId: acct.id, name: 'Sync', slug: `sync-${tag()}` } })
     await sys.workspaceMember.create({ data: { workspaceId: site.id, userId: own.id, role: 'owner', capabilities: grantsFor('owner') } })
     admin = session({ id: own.id, workspaceId: site.id })
     const dev = await sys.user.create({ data: { email: `dev-${tag()}@x.co`, accountId: acct.id } })

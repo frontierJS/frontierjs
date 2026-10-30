@@ -71,6 +71,7 @@ the package has no root entry.
 | a stepper with its own formatting · a range | `@frontierjs/ui/components/forms/NumberInput.mesa` · `@frontierjs/ui/components/forms/Slider.mesa` |
 | the cut points of a banded scale — a heat ramp, alert levels, price tiers — tuned against the distribution they cut | `@frontierjs/ui/components/forms/Thresholds.mesa`. The band of a value is `bandIndex()` from `@frontierjs/ui/utils`, which is what the plot colors itself by, so the picture and whatever it is tuning cannot disagree |
 | a `Json` column | `@frontierjs/ui/components/forms/JsonInput.mesa` |
+| a stored data colour (a hex) picked from swatches or a custom picker | `@frontierjs/ui/components/forms/ColorInput.mesa` (`bind:value`, `swatches`, `custom={false}` for the swatches alone; real radios, so arrows work) |
 | a `String[]` or `Int[]` column, a list a person types item by item | `@frontierjs/ui/components/forms/MultiSelect.mesa` with `allowNew` and no options — what a generated form draws; Enter adds the typed item |
 | source text edited in its own syntax — a template, a query, a snippet | `@frontierjs/ui/components/forms/CodeInput.mesa` — `language` is glow's, `numbered` draws a gutter. It is a real `<textarea>` over a highlighted `<pre>`, so style the box through `@frontierjs/css`'s `--code-*` variables and never by restating the text metrics on one layer |
 | a `File` column · a free-standing dropzone | `@frontierjs/ui/components/forms/FileField.mesa` · `@frontierjs/ui/components/forms/FileUpload.mesa` |
@@ -98,9 +99,11 @@ the package has no root entry.
 | one measure over categories, as columns, ranked bars or a line, with axes and a hover readout | `@frontierjs/ui/components/display/Chart.mesa` — `rows`, `x`, `y`, `type`, `label`, `format`, `formatTick`. `orientation="horizontal"` puts the names in a left gutter and every value at its bar's tip, for a ranked list with long names. `compare` names a second field holding the SAME measure — last year, the plan — drawn beside it, lighter, with a legend from `label` and `compareLabel`. `reference` is a dashed rule at one value, named by `referenceLabel` — a target, a reorder level. Pure SVG that renders on the server too, so it prints. One measure and one axis: a second measure is a second chart. Put the same values in a table beside it, since a tooltip may never be the only way to read one |
 | nothing to show yet | `@frontierjs/ui/components/display/EmptyState.mesa` |
 | a page or section heading with a trailing action | `@frontierjs/ui/components/display/SectionHeader.mesa` |
+| a titled block of a long page, with its body under the header | `<section class="section">` around `SectionHeader` and a `.section-body` (css pattern, no component; a `.section` inside a body is the sub-section; name the `<section>` with `aria-labelledby` only when titled) |
 | guidance that sits on the page and is not announced | `@frontierjs/ui/components/display/Callout.mesa` |
 | wayfinding · a multi-step flow | `@frontierjs/ui/components/display/Breadcrumbs.mesa` · `@frontierjs/ui/components/display/Steps.mesa` |
 | a person · a stack of people · an account's state | `@frontierjs/ui/components/display/Avatar.mesa` · `@frontierjs/ui/components/display/AvatarGroup.mesa` · `@frontierjs/ui/components/display/AccountStatus.mesa` |
+| files already stored — a list with thumbnails and download buttons · a tile for one file's kind | `@frontierjs/ui/components/display/AttachmentList.mesa` — `files` (`{ name, url, type?, size?, thumbnail? }`), `label`, `onremove` adds a remove button per row; a real `<ul>` · `@frontierjs/ui/components/display/FileType.mesa` — `name`, `type`, `size`, `standalone`; the kind picks one of the seven tones, never a hue. `fileKind(name, type)` is exported. `FileUpload` draws files being picked, not these |
 | a JSON document, read, diffed or `editable` | `@frontierjs/ui/components/display/Json.mesa` |
 | a command or snippet somebody pastes — a block with a copy button in its corner | `@frontierjs/ui/components/display/Code.mesa` |
 | Markdown somebody else wrote — a model's reply, a `@syntax(md)` column — read | `@frontierjs/ui/components/display/Markdown.mesa` — `text`, `headingBase` (the level a `#` draws at; 3 inside a card), `breaks`. Raw HTML in the text draws as text and a link goes only to http, https, mailto or this site, so it is safe on a public page with no sanitizer |
@@ -117,11 +120,13 @@ the package has no root entry.
 | a surface with header and footer | `@frontierjs/ui/components/layout/Card.mesa` |
 | the app frame: the nav, a drawer below md, the section's tabs | `@frontierjs/ui/components/layout/Shell.mesa` in the `_module.mesa`, drawn from a `src/lib/nav.js` table that `@frontierjs/ui/nav` types. `layout` is `sidebar`, `rail` or `topbar`; a topbar draws an unlabeled group flat and a labeled one as one menu named by its label, and gives the drawer the nav below md. `collapsible` adds a fold control to a `sidebar` and `bind:collapsed` is the choice (the app persists it); folded is a plain rail that does not peek. `foldable` draws each labeled group of a sidebar and of the drawer as a `<details>` its label opens: the first labeled group starts open and the rest closed, and the group holding the current page opens on arrival; the choice is not persisted. The page, the session and Sierra's `isActive` arrive as props, because the kit cannot import Sierra. A `show` predicate is handed `{ user, level }` and nothing else, and one that throws SHOWS its entry. Signed out, the frame is drawn when the table offers a guest any entry, so a members-only table marks its groups `show: ({ user }) => !!user` or its sign-in page draws the members' nav. ⌘K's Navigate rows are `paletteItems(groups, session, go)` from the same module, so the palette and the nav cannot disagree |
 | tabs | `@frontierjs/ui/components/layout/Tabs.mesa` around `@frontierjs/ui/components/layout/TabList.mesa`, `@frontierjs/ui/components/layout/Tab.mesa`, `@frontierjs/ui/components/layout/TabPanel.mesa` |
+| a strip of routes, the current one marked | `@frontierjs/ui/components/layout/TabList.mesa` `nav` around `@frontierjs/ui/components/layout/Tab.mesa` with `href` and `current`, no `Tabs` |
 | disclosure sections | `@frontierjs/ui/components/layout/Accordion.mesa` around `@frontierjs/ui/components/layout/AccordionItem.mesa` |
 | a blocking dialog · a side panel | `@frontierjs/ui/components/overlay/Modal.mesa` · `@frontierjs/ui/components/overlay/Drawer.mesa` — `resizable` puts a handle on a left or right drawer's inner edge, `bind:width` (px) and `minWidth`; it stores nothing, so remember the width in one line over `bind:width` (`FJS-D1654`) |
 | a floating panel the page stays live under (a chat, a notes box, an edge dock) | `@frontierjs/ui/components/overlay/Window.mesa` — `bind:open`, `bind:box` (`{ x, y, w, h }`, null while at its `anchor` corner), `dock`, an `action` snippet in the title bar, a `launcher` snippet for the corner button; it stores nothing, so remember the box in one line: `onchange={(b) => localStorage.box = JSON.stringify(b)}` (`FJS-D1661`) |
 | a menu of actions | `@frontierjs/ui/components/overlay/DropdownMenu.mesa` with `@frontierjs/ui/components/overlay/DropdownItem.mesa`, `@frontierjs/ui/components/overlay/DropdownGroup.mesa`, `@frontierjs/ui/components/overlay/DropdownSeparator.mesa` |
 | content that must escape a scroll container · a description on hover and focus | `@frontierjs/ui/components/overlay/Popover.mesa` · `@frontierjs/ui/components/overlay/Tooltip.mesa` |
+| a panel opened from a toolbar button, with a title bar (notifications, a status list) | `@frontierjs/ui/components/overlay/Popover.mesa` — `bind:open` so a second opener (a phone menu) shares the app's store, `title` and an `action` snippet in a `.surface-header` over a body that scrolls, `sheet` for a bottom sheet below md; with no trigger on screen it is a sheet at every width. Non-modal: the page stays live under it (`FJS-D1668`) |
 | a card on hover and focus for MANY triggers in one region (every element matching `selector`), one card and two listeners | `@frontierjs/ui/components/overlay/HoverCard.mesa` — the region is `children`, `content(el)` is handed the trigger; a trigger needs `tabindex="0"` for the keyboard, and a touch pointer never opens it |
 | confirm a destructive click | `@frontierjs/ui/components/overlay/ConfirmProvider.mesa` once, then `data-confirm` on any element — the provider's document listener is what reads the attribute, so with none mounted the click runs unconfirmed; `@frontierjs/ui/components/overlay/ConfirmationPopover.mesa` when a component owns its trigger or cannot be sure a provider is mounted |
 | ⌘K | `@frontierjs/ui/components/overlay/CommandPalette.mesa` with `@frontierjs/ui/stores/commandPaletteStore` |
@@ -374,7 +379,7 @@ keep their contrast on it:
 `<Slider style={`--data-accent: hsl(${h} 80% 50%)`} … />`.
 
 **Trailing content has three names**: `actions` on `Form` and `Table`, `action`
-on `SectionHeader`, `EmptyState` and `Drawer`, `footer` on `Modal`, `Drawer` and
+on `SectionHeader`, `EmptyState`, `Drawer`, `Window` and `Popover`, `footer` on `Modal`, `Drawer` and
 `Card`.
 
 ---
@@ -463,7 +468,7 @@ The kit owns focus trapping, roving tabindex, `aria-activedescendant`,
 1. An icon-only `<Button square>` carries an `aria-label`.
 2. A `Modal` or `Drawer` has a `title`; without one the dialog is unnamed.
 3. A `Table` column of row actions declares `hideLabel: true`, not `label: ''`.
-4. `Dot`, `Sparkline`, `Progress`, a `Popover` panel and a `TabList` take a
+4. `Dot`, `Sparkline`, `Progress`, `Ring`, a `Popover` panel and a `TabList` take a
    `label`; an `Avatar` that is the only identification is `standalone`.
 5. A `Tooltip`'s trigger carries `aria-describedby` — pass `id`, or take `tipId`
    from a `children` snippet — and nothing essential lives only in a tooltip.

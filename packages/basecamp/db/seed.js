@@ -386,7 +386,7 @@ export class BasecampSeeder extends Seeder {
       const workspaces = []
       for (const [name, slug] of [['Acme Platform', 'acme-platform'], ['Skunkworks', 'skunkworks']]) {
         const ws = await sys.workspace.create({
-          data: { accountId: account.id, name, slug, type: 'team', ownerId: owner.id },
+          data: { accountId: account.id, name, slug, type: 'team' },
         })
 
         // Everyone is in the first workspace; only the owner and one admin are

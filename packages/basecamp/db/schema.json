@@ -1628,11 +1628,6 @@
           "$ref": "#/$defs/WorkspaceType",
           "default": "team"
         },
-        "ownerId": {
-          "type": "string",
-          "readOnly": true,
-          "x-litestone-kind": "system"
-        },
         "settings": {
           "default": {},
           "x-aggregatable": "json",
@@ -1696,19 +1691,6 @@
             "id"
           ],
           "onDelete": null,
-          "optional": false
-        },
-        {
-          "field": "owner",
-          "model": "User",
-          "type": "belongsTo",
-          "fields": [
-            "ownerId"
-          ],
-          "references": [
-            "id"
-          ],
-          "onDelete": "Restrict",
           "optional": false
         },
         {
@@ -9106,20 +9088,6 @@
         }
       },
       "additionalProperties": false
-    },
-    "WorkspaceTransfer": {
-      "type": "object",
-      "title": "WorkspaceTransfer",
-      "x-litestone-kind": "type",
-      "properties": {
-        "userId": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "userId"
-      ]
     },
     "AppFromBlueprint": {
       "type": "object",

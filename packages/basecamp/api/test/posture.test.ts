@@ -186,7 +186,7 @@ beforeAll(async () => {
   const uniq = () => Math.random().toString(36).slice(2, 8)
   const acct = await sys.account.create({ data: { slug: `acme-${uniq()}`, displayName: 'Acme' } })
   const o    = await sys.user.create({ data: { email: `owner-${uniq()}@x.co`, accountId: acct.id } })
-  ws = await sys.workspace.create({ data: { accountId: acct.id, name: 'Fleet', slug: `fleet-${uniq()}`, ownerId: o.id } })
+  ws = await sys.workspace.create({ data: { accountId: acct.id, name: 'Fleet', slug: `fleet-${uniq()}` } })
   await sys.workspaceMember.create({ data: {
     workspaceId: ws.id, userId: o.id, role: 'owner', capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString(),
   } })

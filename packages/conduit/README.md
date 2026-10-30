@@ -104,7 +104,7 @@ pasted, one per row, which is its own credential. Registering one target per
 row would put each URL in the registry and in every observer. Declare one
 target with `address_from: 'request'` and name the URL on each send:
 
-```ts
+```ts fragment
 { id: 'hook:slack', kind: 'provider', protocol: 'http', address: '',
   address_from: 'request', auth: { type: 'none' } }
 
@@ -126,7 +126,7 @@ with the client's own key — takes that row's credential, `per_caller`
 answers that row's token, and a send with no `grant` is refused by name, since
 keyed on the tenant alone two rows would share one cached token.
 
-```ts
+```ts fragment
 { id: 'provider:plausible', kind: 'provider', protocol: 'http', address: '',
   address_from: 'request', auth: { type: 'bearer', ref: 'PLAUSIBLE', per_caller: true } }
 
@@ -174,7 +174,7 @@ Resilience does not cross: the retry is the sender's, and there is no breaker on
 
 **`opened({ connection })` runs after every handshake conduit believes** — the first dial and each redial — ahead of that connection's first frame, handed what the handshake answered (`FJS-D1154`). A Provider that redelivers nothing lost what it sent while the socket was down, and this is where the gap's backfill starts; a throw is logged and the frames still flow. **`gap({ connection, after, at })`** is the same backfill for frames lost while still connected: called when the framing's `sequence` skips from `after` to `at`, in frame order and ahead of the frame that showed it. A connection's first frame only sets the start, and a lower or repeated number is no gap. `deregister(target)` drops the receiver with the target, so the same id can be registered and received again.
 
-```ts
+```ts fragment
 await app.conduit.register(mattermostSocketTarget({ address: 'https://chat.example', id: `broker:chat:${userId}`, ref: `CHAT_SOCKET:${userId}` }))
 await app.conduit.receive({
   provider: 'mattermost',
@@ -194,7 +194,7 @@ A broker target registers readiness only when its descriptor says `readiness: tr
 
 A **mirror app** keeps rows whose system of record is a Provider (`IDEAS/mirror-apps.md`). The schema declares the model `@@mirror(key: externalId)` and names no vendor; the connector exports a **claim** naming the models it feeds, and the app binds it in wiring (`FJS-D1125`):
 
-```ts
+```ts fragment
 import { mirror } from '@frontierjs/conduit-mattermost'
 
 app.configure(conduit({ credentials, targets }))
@@ -228,7 +228,7 @@ interface TargetResilience {
 }
 ```
 
-```ts
+```ts fragment
 { id: 'provider:stripe', /* … */ resilience: { timeout_ms: 20_000, retry_limit: 1 } }
 { id: 'local:mail',      /* … */ resilience: { timeout_ms: 2_000,  max_concurrent: 8 } }
 ```
@@ -242,14 +242,14 @@ idempotency key, and the error from one conduit refused to replay says so:
 which is the question a payment caller actually has and is not the same as
 whether sending it again is safe.
 
-```ts
+```ts fragment
 { id: 'provider:paypal', /* … */ idempotency: { header: 'PayPal-Request-Id' } }
 { id: 'provider:psp',    /* … */ idempotency: { auto: true } }
 ```
 
 A caller with no key can still say the request is safe to repeat:
 
-```ts
+```ts fragment
 await conduit.send({ target: 'provider:psp', method: 'POST', path: '/intents',
                      body, replayable: true })
 ```
@@ -309,7 +309,7 @@ A secret inside the body, SigV4 and a minted JWT are not new `type`s. One
 `signed` type names a function in `ConduitOptions.signers`, which a connector
 exports for the app to spread in:
 
-```ts
+```ts fragment
 const inBody: Signer = ({ secret, body }) => ({ body: `${body ?? ''}&secret=${secret}` })
 
 createConduit({ signers: { inBody }, targets: [
@@ -380,7 +380,7 @@ Header precedence is **case-insensitive**: `authorization` from a caller and `Au
 
 A `TargetDescriptor` holds a credential **reference**, never the secret:
 
-```ts
+```ts fragment
 auth: { type: 'bearer', ref: 'HETZNER_TOKEN' }
 ```
 
@@ -399,7 +399,7 @@ interface CredentialResolver {
 
 Five are built in:
 
-```ts
+```ts fragment
 import {
   createEnvResolver,     // reads process.env[ref] — the default
   createStaticResolver,  // fixed { ref: secret } map, for the composition root and tests
@@ -473,7 +473,7 @@ A burst against a cold session logs in once (`withCache` collapses concurrent mi
 
 `send()` never throws. It always returns a `ConduitResult`:
 
-```ts
+```ts fragment
 const result = await app.conduit.send({ ... })
 
 if (result.error) {
@@ -520,7 +520,7 @@ It also throws if the socket **drops mid-stream**, so a network blip during a lo
 
 **Over `http` and `unix`, what a chunk holds is decided by the response's `content-type`** (`FJS-D934`). A `text/event-stream` body yields one chunk per event, `data: { event, data, id }` as `@frontierjs/toolbelt/sse` reads it. Any other body yields a `Uint8Array` per read and is never held whole, so `max_response_bytes` does not apply to it. Each chunk's `meta` carries the response's status and headers.
 
-```ts
+```ts fragment
 const body = { model: 'claude-sonnet-4-5', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hello' }] }
 for await (const chunk of app.conduit.stream({ target: 'provider:anthropic', method: 'POST', path: '/v1/messages', body })) {
   const { event, data } = chunk.data as { event: string; data: unknown }
@@ -541,6 +541,7 @@ SSE has no end marker of its own, so a body that closes between two events reads
 Send a request to a registered target. Returns `ConduitResult<T>`.
 
 ```ts
+const ac     = new AbortController()
 const result = await app.conduit.send<ServerResponse>({
   target:     'provider:hetzner',   // required — registered target ID
   method:     'POST',               // HTTP verb or protocol-specific method
@@ -571,7 +572,7 @@ Backoff is jittered, so N callers hitting the same degraded provider don't retry
 
 It is also how a caller sets a deadline for the whole call. `AbortSignal.timeout(400)` bounds every attempt and every sleep, and `AbortSignal.any([quorum.signal, AbortSignal.timeout(400)])` cancels the rest of a fan-out once it has its answer. There is no per-request `deadline_ms`. A caller's budget answered as `timeout` would open the breaker on a healthy target for every other caller (`FJS-1409`), and the target's own `resilience.deadline_ms` is still the ceiling. A per-request `timeout_ms` shorter than the target's own is the same patience: its miss answers `timeout` and the breaker does not count it.
 
-```ts
+```ts fragment
 const ac      = new AbortController()
 const signal  = AbortSignal.any([ac.signal, AbortSignal.timeout(400)])
 const answers = providers.map(target => app.conduit.send({ target, method: 'GET', path: '/search', query: { q }, signal }))
@@ -642,7 +643,8 @@ Stream responses from a target. Throws `ConduitStreamError` if setup fails.
 
 ```ts
 try {
-  for await (const chunk of app.conduit.stream({ target: 'hub:peer', method: 'logs' }))   // a websocket target {
+  // 'hub:peer' is a websocket target
+  for await (const chunk of app.conduit.stream({ target: 'hub:peer', method: 'logs' })) {
     console.log(chunk.data, chunk.sequence)
   }
 } catch (err) {
@@ -656,7 +658,7 @@ try {
 
 Register or update a target at runtime. Evicts any pooled connection for that target so the next `send()` uses the updated config.
 
-```ts
+```ts fragment
 // Typically called when an outpost sends its first heartbeat
 await app.conduit.register({
   id:            `outpost:${serverId}`,
@@ -675,7 +677,7 @@ The outpost's secret itself goes wherever your `CredentialResolver` reads from �
 
 The heartbeat path. Refreshes `last_seen_at` without rewriting the descriptor and without evicting the pooled connection — an outpost saying "still here" should not tear down the socket it said it on.
 
-```ts
+```ts fragment
 await app.conduit.touch(`outpost:${serverId}`)
 ```
 
@@ -715,7 +717,7 @@ Closes all pooled transport connections. Wired to the plugin's `shutdown()`, so 
 
 ## Plugin options
 
-```ts
+```ts fragment
 conduit({
   // Registry backend. Defaults to in-memory (lost on restart).
   // Pass createSQLiteStore(db) for persistence.
@@ -925,7 +927,7 @@ conduit({ management: { gate: 7 } })   // every route needs level 7
 
 …or attach auth to the service:
 
-```ts
+```ts fragment
 conduit({
   management: { hooks: { before: { all: [authenticate()] } } }
 })
@@ -933,7 +935,7 @@ conduit({
 
 …or opt out explicitly, if your app already authenticates every service:
 
-```ts
+```ts fragment
 app.hooks({ before: { all: [authenticate()] } })   // covers this service too
 conduit({ management: { public: true } })
 ```
@@ -954,7 +956,7 @@ The path must be a **single path segment** — Junction routes services as `{api
 
 Use `createTestConduit` for unit and integration tests. It gives you a fully wired conduit with stub transports — no real HTTP calls, no database.
 
-```ts
+```ts fragment
 import { createTestConduit } from '@frontierjs/conduit/testing'
 
 const { conduit, stubs } = await createTestConduit({
@@ -986,7 +988,7 @@ It is `await`ed because the store is async. Stubbed targets are registered in th
 
 Stubs are not success-only. This is what makes retry logic, the error taxonomy and timeout handling testable:
 
-```ts
+```ts fragment
 const stub = stubs['outpost:srv-abc']
 
 stub.mockError('POST /deploy', 'timeout', { retryable: true })
@@ -999,7 +1001,7 @@ Mocks are keyed on **method + path** when you qualify them, so `GET /servers/42`
 
 ### Mixing stubs with real targets
 
-```ts
+```ts fragment
 const { conduit } = await createTestConduit(
   { 'outpost:stubbed': { '/ping': { pong: true } } },
   { targets: [hetznerDescriptor] },   // registered, not stubbed
@@ -1009,6 +1011,8 @@ const { conduit } = await createTestConduit(
 Observers work in tests too:
 
 ```ts
+import { createTestConduit } from '@frontierjs/conduit/testing'
+
 const errors: ConduitError[] = []
 
 const { conduit } = await createTestConduit(

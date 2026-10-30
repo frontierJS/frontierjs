@@ -917,7 +917,7 @@ describe('AppEditor — an editor reads their own grants, an admin writes them',
   async function twoSites(sys: any) {
     const a = await seedWorkspace(sys)
     const b = await sys.workspace.create({ data: {
-      accountId: a.accountId, ownerId: a.ownerId,
+      accountId: a.accountId,
       name: 'Other', slug: `other-${Math.random().toString(36).slice(2, 8)}`,
     } })
     const site = async (ws: any, tag: string) => {
@@ -996,7 +996,7 @@ describe('Server — @@allow, the tenancy the gate cannot express', () => {
   async function twoTenants(sys: any) {
     const a = await seedWorkspace(sys)
     const b = await sys.workspace.create({ data: {
-      accountId: a.accountId, ownerId: a.ownerId,
+      accountId: a.accountId,
       name: 'Other', slug: `other-${Math.random().toString(36).slice(2, 8)}`,
     } })
     await sys.server.create({ data: { workspaceId: a.id, name: 'a1', slug: 'a1' } })
@@ -1097,7 +1097,7 @@ describe('Project · Environment · App — the tenancy declared', () => {
   async function twoHierarchies(sys: any) {
     const a = await seedWorkspace(sys)
     const b = await sys.workspace.create({ data: {
-      accountId: a.accountId, ownerId: a.ownerId,
+      accountId: a.accountId,
       name: 'Other', slug: `other-${Math.random().toString(36).slice(2, 8)}`,
     } })
     const build = async (ws: any, tag: string) => {
@@ -1200,7 +1200,7 @@ describe('Deployment · Job · Domain — the tenancy declared', () => {
   async function twoFleets(sys: any) {
     const a = await seedWorkspace(sys)
     const b = await sys.workspace.create({ data: {
-      accountId: a.accountId, ownerId: a.ownerId,
+      accountId: a.accountId,
       name: 'Other', slug: `other-${Math.random().toString(36).slice(2, 8)}`,
     } })
     const build = async (ws: any, tag: string) => {
@@ -1325,7 +1325,7 @@ describe('the workspace-owned six — the tenancy declared', () => {
   async function twoWorkspaces(sys: any) {
     const a = await seedWorkspace(sys)
     const b = await sys.workspace.create({ data: {
-      accountId: a.accountId, ownerId: a.ownerId,
+      accountId: a.accountId,
       name: 'Other', slug: `other-${Math.random().toString(36).slice(2, 8)}`,
     } })
     const rows: Record<string, { mine: any; theirs: any }> = {}
@@ -1416,14 +1416,14 @@ describe('Secret · ApiKey — the tenancy declared over credential material', (
   async function twoVaults(sys: any) {
     const a = await seedWorkspace(sys)
     const b = await sys.workspace.create({ data: {
-      accountId: a.accountId, ownerId: a.ownerId,
+      accountId: a.accountId,
       name: 'Other', slug: `other-${Math.random().toString(36).slice(2, 8)}`,
     } })
     const build = async (ws: any, tag: string) => ({
       secret: await sys.secret.create({ data: {
         workspaceId: ws.id, name: `deploy-key-${tag}`, kind: 'ssh_key', data: 'PRIVATE', createdBy: 'u1' } }),
       apiKey: await sys.apiKey.create({ data: {
-        workspaceId: ws.id, userId: a.ownerId, name: `ci-${tag}`, tokenHint: `bc_${tag}` } }),
+        workspaceId: ws.id, userId: a.userId, name: `ci-${tag}`, tokenHint: `bc_${tag}` } }),
     })
     return { a, b, mine: await build(a, 'mine'), theirs: await build(b, 'theirs') }
   }
@@ -1466,7 +1466,7 @@ describe('Secret · ApiKey — the tenancy declared over credential material', (
       workspaceId: b.id, name: 'smuggled', kind: 'generic', data: 'X', createdBy: 'u1' } }))
       .rejects.toThrow(/Outside your workspaceId|denied by @@allow/)
     await expect(caller.apiKey.create({ data: {
-      workspaceId: b.id, userId: a.ownerId, name: 'smuggled', tokenHint: 'bc_x' } }))
+      workspaceId: b.id, userId: a.userId, name: 'smuggled', tokenHint: 'bc_x' } }))
       .rejects.toThrow(/Outside your workspaceId|denied by @@allow/)
 
     for (const accessor of ACCESSORS) {
@@ -2136,9 +2136,10 @@ async function seedEnvironmentId(sys: any, ws: any) {
 async function seedWorkspace(sys: any) {
   const acct = await sys.account.create({ data: { slug: `acme-${Math.random().toString(36).slice(2, 8)}`, displayName: 'Acme' } })
   const user = await sys.user.create({ data: { email: `u${Math.random().toString(36).slice(2, 8)}@x.co`, accountId: acct.id } })
-  return sys.workspace.create({
-    data: { accountId: acct.id, name: 'Fleet', slug: `fleet-${Math.random().toString(36).slice(2, 8)}`, ownerId: user.id },
+  const ws   = await sys.workspace.create({
+    data: { accountId: acct.id, name: 'Fleet', slug: `fleet-${Math.random().toString(36).slice(2, 8)}` },
   })
+  return { ...ws, userId: user.id }
 }
 
 // ─── The two state machines, executed ────────────────────────────────────────

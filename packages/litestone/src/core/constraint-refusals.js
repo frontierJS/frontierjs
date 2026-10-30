@@ -312,8 +312,8 @@ export function makeConstraintRefusals(shape, ctx, deps) {
   // column guard alone is walked around: an admin refused writing a role with
   // more than they hold points their own key at the owner's role and takes all
   // of it (FJS-2324). The parent is read past every rule, since a policy
-  // stripping the list would grade it as empty. One hop — a key to a row that
-  // keys a role is the resolver's to flatten, and nothing here can see it.
+  // stripping the list would grade it as empty. One hop: the parser refuses a
+  // key that reaches a list through another row's key (capabilities.js).
   function grantColumnsOf(target) {
     return (ctx.shapes[target]?.model?.fields ?? []).filter(f => f.type?.name === 'Capability').map(f => f.name)
   }

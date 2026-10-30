@@ -30,12 +30,11 @@
  *
  * RECORDED — heap after mount, after 1k rows, and after five create/clear
  * cycles. The last one should come back to the first; growth there is a leak.
- * Mesa's growth is also GATED, as a ratio: five cycles may keep at most
- * `LEAK_CEILING` of what one 1k-row mount costs. A ratio is the only heap
- * number that repeats across machines, and it fails open and never falsely:
- * Chrome releases ~3.5 MB of its own at a moment no `collectGarbage` controls
- * (measured 2026-10-27, one run in three, either fixture), so a small leak
- * can hide behind that release once in a while and a gross one never can.
+ * Mesa's growth is GATED as a COUNT, not bytes: live owner nodes after five
+ * cycles must equal the count after one, read from the runtime (`trackOwners`)
+ * the way DOM mutations are read from a MutationObserver. Heap bytes fail open
+ * — Chrome releases ~3.5 MB of its own at a moment no `collectGarbage`
+ * controls, and a small leak hides behind it — so they are printed, not gated.
  * The idle read comes after one warm create/clear, which is what made the
  * +1k-rows number repeat to the kilobyte.
  *
@@ -76,7 +75,6 @@ const flag    = (f) => argv.includes(f)
 const option  = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined }
 const gate    = flag('--gate')
 const runs    = gate ? 1 : Number(option('--runs') ?? 10)
-const LEAK_CEILING = 0.05   // five cycles may keep 5% of one 1k-row mount
 const only    = option('--only')?.split(',')
 
 // ─── operations ──────────────────────────────────────────────────────────────
@@ -258,13 +256,17 @@ async function memory(page, origin, fixture) {
   await page.evaluate(`return await window.__bench.step('#run');`)
   await page.evaluate(`return await window.__bench.step('#clear');`)
   const idle = await heap(page)
+  const ownersIdle = fixture === 'rows' ? await page.evaluate(`return window.__owners();`) : null
   await page.evaluate(`return await window.__bench.step('#run');`)
   const rows = await heap(page)
   for (let i = 0; i < 5; i++) {
     await page.evaluate(`return await window.__bench.step('#run');`)
     await page.evaluate(`return await window.__bench.step('#clear');`)
   }
-  return { idle, rows: rows - idle, cycled: (await heap(page)) - idle }
+  const cycled = (await heap(page)) - idle
+  // The Mesa fixture alone installs the counter.
+  const owners = fixture === 'rows' ? await page.evaluate(`return window.__owners();`) : null
+  return { idle, rows: rows - idle, cycled, owners, ownersIdle }
 }
 
 // ─── report ──────────────────────────────────────────────────────────────────
@@ -339,11 +341,12 @@ if (flag('--serve')) {
     console.log(`  ${pad('geomean', 14)}${' '.repeat(18)}${lpad(geo.toFixed(2) + '×', 8)}   ${dim(`median of ${runs}, script + style + layout, no paint`)}`)
     console.log(`\n${pad('heap', 16)}${lpad('idle', 10)}${lpad('+1k rows', 11)}${lpad('5 cycles', 11)}`)
     for (const f of TABLES) console.log(`  ${pad(f, 14)}${kb(heaps[f].idle)}${kb(heaps[f].rows)}${kb(heaps[f].cycled)}`)
+    console.log(dim(`  live owner nodes: ${heaps.rows.ownersIdle} after one cycle, ${heaps.rows.owners} after six`))
   }
 
-  // ── the leak ceiling ──
-  const leak = heaps.rows.cycled / heaps.rows.rows
-  if (leak > LEAK_CEILING) failures.push(`leak: five create/clear cycles kept ${kb(heaps.rows.cycled).trim()}, ${(leak * 100).toFixed(1)}% of a 1k-row mount — the ceiling is ${LEAK_CEILING * 100}%`)
+  // ── the leak gate ──
+  const { owners, ownersIdle } = heaps.rows
+  if (owners !== ownersIdle) failures.push(`leak: five create/clear cycles left ${owners} live owner nodes, the first cycle left ${ownersIdle}`)
 
   // ── the ratchet ──
   const current  = { bytes: Object.fromEntries(['floor', 'rows'].map((n) => [n, bytes[n].js])), dom }

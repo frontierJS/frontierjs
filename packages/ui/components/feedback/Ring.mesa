@@ -1,0 +1,88 @@
+<script>
+  // Ring.mesa
+  // Progress drawn as a ring — a dial, a completion badge, a quota gauge.
+  // Takes Progress's props by name, so moving between the two is a rename.
+  //
+  // Unlike Progress there is no native element to lean on: <progress> cannot
+  // be a circle. So the role and the three aria-value* attributes are here,
+  // on the wrapper, and `value` feeds both the arc and the announcement from
+  // one place. The SVG is decorative.
+  //
+  // Usage:
+  //   <Ring value={uploadPct} />
+  //   <Ring value={3} max={10} tone="success" showLabel size="lg" />
+  //   <Ring indeterminate label="Uploading…" />
+
+  import { tone as toTone, cx } from '../../utils.js'
+
+  export let value         = 0
+  export let max           = 100
+  export let indeterminate = false
+  export let label         = ''       // accessible name
+  export let showLabel     = false    // show "42%" in the middle of the ring
+  export let size          = 'md'     // 'xs' | 'sm' | 'md' | 'lg'
+  export let tone          = ''       // '' uses the primary fill
+
+  const pct = Math.min(100, Math.max(0, (value / max) * 100))
+
+  // Diameter, and the center text scales with it so "100%" stays inside.
+  const sizeMap = { xs: 1.5, sm: 2.25, md: 3.5, lg: 5.5 }
+  const dim     = sizeMap[size] ?? sizeMap.md
+  const t       = toTone(tone)
+
+  // 100-unit viewBox: radius 42 plus a 10-wide stroke stays inside it.
+  const radius = 42
+  const circ   = 2 * Math.PI * radius
+  const arc    = indeterminate ? circ * 0.25 : (pct / 100) * circ
+</script>
+
+<div
+  class={cx('fjs-ring', t)}
+  role="progressbar"
+  aria-label={label || (indeterminate ? 'Loading' : 'Progress')}
+  aria-valuemin="0"
+  aria-valuemax={indeterminate ? null : max}
+  aria-valuenow={indeterminate ? null : value}
+  style:display="inline-grid"
+  style:place-items="center"
+  style:inline-size="{dim}rem"
+  style:block-size="{dim}rem"
+  style:flex="none"
+  {class}
+  {...$attributes}
+>
+  <svg
+    viewBox="0 0 100 100"
+    aria-hidden="true"
+    style:grid-area="1 / 1"
+    style:inline-size="100%"
+    style:block-size="100%"
+    style:animation={indeterminate ? 'fjs-spin var(--motion-spin) linear infinite' : null}
+  >
+    <circle
+      cx="50" cy="50" r={radius}
+      fill="none"
+      stroke-width="10"
+      style:stroke="var(--surface-sunken)"
+    />
+    <!--
+      Start at 12 o'clock, not 3: SVG circles begin at the right edge.
+      A zero arc is dropped so the round cap does not draw a dot at 0%.
+    -->
+    {#if arc > 0}
+      <circle
+        cx="50" cy="50" r={radius}
+        fill="none"
+        stroke-width="10"
+        stroke-linecap="round"
+        stroke-dasharray="{arc} {circ}"
+        transform="rotate(-90 50 50)"
+        style:stroke="var(--bg-mix, var(--color-primary))"
+        style:transition={indeterminate ? null : 'stroke-dasharray var(--motion-slow) var(--motion-ease)'}
+      />
+    {/if}
+  </svg>
+  {#if showLabel && !indeterminate}
+    <span class="text-muted" aria-hidden="true" style:grid-area="1 / 1" style:font-size="{dim * 0.26}rem">{Math.round(pct)}%</span>
+  {/if}
+</div>

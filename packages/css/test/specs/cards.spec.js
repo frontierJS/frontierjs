@@ -187,3 +187,54 @@ test('cards: a Section Header wraps its action under the title when the row is t
   cleanup();
   assert.ok(sameLine, 'a header that fits keeps its action on the title line');
 });
+
+test('cards: a Section spaces its header from its body, the body\'s blocks from each other, and a nested Section from what is above it', function () {
+  /*
+   * FJS-3620: SectionHeader drew a header and nothing around it, so every
+   * detail page wrote the same column by hand. `.section` owns the space
+   * (header to body at the 2xl rung, body blocks at xl) and `.section .section`
+   * is the sub-section: more room above it unless it leads, a quieter heading.
+   */
+  var box = el(
+    '<section class="section">' +
+      '<div class="section-header"><h2>Outer</h2></div>' +
+      '<div class="section-body">' +
+        '<div style="block-size:20px">a</div>' +
+        '<div style="block-size:20px">b</div>' +
+        '<section class="section">' +
+          '<div class="section-header"><h3>Inner</h3></div>' +
+          '<div class="section-body"><div style="block-size:20px">c</div></div>' +
+        '</section>' +
+      '</div>' +
+    '</section>'
+  );
+  var head = box.children[0].getBoundingClientRect();
+  var body = box.children[1];
+  var kids = Array.prototype.map.call(body.children, function (c) { return c.getBoundingClientRect(); });
+  var inner = body.children[2];
+  var h3 = inner.querySelector('h3');
+  var got = {
+    display: style(box, 'display'),
+    headToBody: Math.round(body.getBoundingClientRect().top - head.bottom),
+    between: Math.round(kids[1].top - kids[0].bottom),
+    nestedAbove: Math.round(kids[2].top - kids[1].bottom),
+    innerHeadToBody: Math.round(inner.children[1].getBoundingClientRect().top - inner.children[0].getBoundingClientRect().bottom),
+    innerSize: style(h3, 'font-size'),
+    outerSize: style(box.querySelector('h2'), 'font-size'),
+  };
+  var xl = rungPx('--space-xl'), x2 = rungPx('--space-2xl');
+  cleanup();
+  assert.equal(got.display, 'flex');
+  assert.equal(got.headToBody, x2, 'header to body at the 2xl rung');
+  assert.equal(got.between, xl, 'body blocks at the xl rung');
+  assert.equal(got.nestedAbove, xl + x2, 'a nested Section takes one more 2xl above it');
+  assert.equal(got.innerHeadToBody, xl, 'a nested Section is tighter inside');
+  assert.notEqual(got.innerSize, got.outerSize, 'a nested heading is drawn smaller than the outer one');
+
+  var lead = el(
+    '<div class="section-body"><section class="section"><div class="section-body"><div>x</div></div></section></div>'
+  );
+  var top = Math.round(lead.children[0].getBoundingClientRect().top - lead.getBoundingClientRect().top);
+  cleanup();
+  assert.equal(top, 0, 'a Section that leads its body takes no space above');
+});

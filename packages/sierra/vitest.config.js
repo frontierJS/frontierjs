@@ -47,6 +47,8 @@ function aliasFromExports(pkgName, pkgDir) {
 export default defineConfig({
   test: {
     environment: 'node',
+    // bun:test and a Litestone client; `bun test test/doc-examples.test.js` runs it.
+    exclude: ['**/node_modules/**', '**/dist/**', 'test/doc-examples.test.js'],
   },
   resolve: {
     alias: {

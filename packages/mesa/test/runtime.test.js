@@ -1604,6 +1604,32 @@ describe('mount()', () => {
     instance.destroy()
     expect(container.textContent).toBe('minenot mine')
   })
+
+  /*
+   * FJS-3550 — the bench's leak gate reads heap bytes, and Chrome frees ~3.5 MB
+   * of its own at a moment no collection controls, so a small leak hid behind
+   * it. A COUNT of live owner nodes does not drift: after a mount is destroyed
+   * the runtime holds none of it.
+   */
+  it('trackOwners() counts the owner nodes a mount keeps alive, and destroy() returns them', () => {
+    const count = $rt.trackOwners()
+    const base = count()
+
+    const container = div()
+    const label = document.createComment('')
+    container.appendChild(label)
+    const [read, write] = createSignal(0)
+    const instance = mount(label, (__anchor) => {
+      createEffect(() => { read() })
+      createEffect(() => { createEffect(() => { read() }) })
+    })
+    expect(count() - base).toBeGreaterThanOrEqual(3)
+
+    write(1)
+    flushSync()
+    instance.destroy()
+    expect(count()).toBe(base)
+  })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -5692,6 +5718,37 @@ describe('<mesa:portal> and event delegation', () => {
     expect(b).toBe(1)                // …the second still responds
 
     disposeB()
+    target.remove()
+  })
+
+  // An {#if} false at mount puts only its anchor in the portal's first
+  // fragment; the branch it inserts later landed beside, not in, the nodes the
+  // portal recorded, and stayed in the target when the portal was torn down.
+  it('removes a branch an inner {#if} inserted after the portal mounted', () => {
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const [on, setOn] = $rt.createSignal(false)
+
+    let dispose
+    $rt.createRoot((d) => {
+      dispose = d
+      $rt.portal(() => target, () => {
+        const frag = document.createDocumentFragment()
+        const anchor = document.createComment('$')
+        frag.appendChild(anchor)
+        $rt.ifBlock(anchor, () => (on() ? 0 : null), [() => document.createElement('aside')])
+        return frag
+      })
+    })
+    expect(target.querySelector('aside')).toBe(null)
+
+    setOn(true)
+    $rt.flushSync?.()
+    expect(target.querySelector('aside')).not.toBe(null)
+
+    dispose()
+    expect(target.querySelector('aside')).toBe(null)
+    expect(target.childNodes.length).toBe(0)
     target.remove()
   })
 })

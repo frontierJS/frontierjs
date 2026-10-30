@@ -35,7 +35,7 @@
     "sierra": "./src/tools/cli.js"
   },
   "scripts": {
-    "test": "node ../../scripts/tmp-run.mjs 'vitest run && node bench/run.mjs'",
+    "test": "node ../../scripts/tmp-run.mjs 'vitest run && node bench/run.mjs && bun test test/doc-examples.test.js'",
     "bench": "node bench/run.mjs",
     "test:safety": "bun test/static-safety-real.mjs && bun test/filter-operators-real.mjs",
     "test:installable": "node test/browser/installable.mjs",

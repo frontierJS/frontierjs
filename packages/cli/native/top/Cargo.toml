@@ -1,0 +1,15 @@
+# fli top's monitor. No dependencies: the first `fli top` builds it offline, in
+# seconds, with whatever cargo the machine has.
+[package]
+name = "fli-top"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

@@ -105,7 +105,7 @@ beforeAll(async () => {
   const acct = await sys.account.create({ data: { slug: `do-${uniq}`, displayName: 'DO' } })
   owner = await sys.user.create({ data: { email: `o-${uniq}@x.co`, accountId: acct.id } })
   ws = await sys.workspace.create({
-    data: { accountId: acct.id, name: 'Fleet', slug: `fleet-${uniq}`, ownerId: owner.id },
+    data: { accountId: acct.id, name: 'Fleet', slug: `fleet-${uniq}` },
   })
   // A membership, because a standing here is per WORKSPACE and read off this
   // row — without it the owner is an authenticated stranger to their own fleet.

@@ -305,13 +305,6 @@ export interface NotificationPreferenceReset {
 }
 
 /**
- * What `workspaces.transferOwnership` accepts: the member who becomes owner.
- */
-export interface WorkspaceTransfer {
-  userId: string
-}
-
-/**
  * What `apps.fromBlueprint`, `apps.place` and `apps.unplace` accept.
  */
 export interface AppFromBlueprint {
@@ -1921,7 +1914,6 @@ export interface Workspace {
   name: string
   slug: string
   type: WorkspaceType
-  ownerId: string
   settings: unknown
   status: WorkspaceStatus
   expiresAt?: string | null
@@ -1964,7 +1956,6 @@ export interface WorkspaceUpdate {
 }
 
 export interface WorkspaceSystem {
-  ownerId?: string
   expiresAt?: string | Date | null
 }
 
@@ -1974,7 +1965,6 @@ export interface WorkspaceWhere extends WhereBase {
   name?: string | WhereOp<string> | null
   slug?: string | WhereOp<string> | null
   type?: WorkspaceType | WhereOp<WorkspaceType> | null
-  ownerId?: string | WhereOp<string> | null
   settings?: unknown | WhereOp<unknown> | null
   status?: WorkspaceStatus | WhereOp<WorkspaceStatus> | null
   expiresAt?: string | Date | WhereOp<string | Date> | null
@@ -1996,7 +1986,6 @@ export type WorkspaceOrderBy =
 
 export interface WorkspaceRelations {
   account: Account | null
-  owner: User | null
   members: WorkspaceMember[]
   invitations: Invitation[]
   projects: Project[]
@@ -6130,7 +6119,6 @@ export interface SeedTypes {
   DomainCertUpload: DomainCertUpload
   NotificationPreferenceSave: NotificationPreferenceSave
   NotificationPreferenceReset: NotificationPreferenceReset
-  WorkspaceTransfer: WorkspaceTransfer
   AppFromBlueprint: AppFromBlueprint
   ProjectFromRepo: ProjectFromRepo
   AppRepoDockerfile: AppRepoDockerfile
@@ -6323,7 +6311,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly auditTrail: TableClient<AuditTrail, AuditTrailCreate, AuditTrailUpdate, AuditTrailWhere, AuditTrailRelations, never, '@@gate'>
   readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere, UserRelations, never, 'kind' | '@@gate', UserSystem>
   readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere, AccountRelations, never, '@@gate'>
-  readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere, WorkspaceRelations, never, 'ownerId' | 'expiresAt' | 'pushTopic' | '@@gate', WorkspaceSystem>
+  readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere, WorkspaceRelations, never, 'expiresAt' | 'pushTopic' | '@@gate', WorkspaceSystem>
   readonly workspaceMember: TableClient<WorkspaceMember, WorkspaceMemberCreate, WorkspaceMemberUpdate, WorkspaceMemberWhere, WorkspaceMemberRelations, never, 'userId' | '@@gate', WorkspaceMemberSystem>
   readonly invitation: TableClient<Invitation, InvitationCreate, InvitationUpdate, InvitationWhere, InvitationRelations, never, 'token' | '@@gate'>
   readonly secret: TableClient<Secret, SecretCreate, SecretUpdate, SecretWhere, SecretRelations, never, 'verifiedAt' | 'verifyError' | '@@gate', SecretSystem>

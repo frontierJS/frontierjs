@@ -17,6 +17,9 @@
   export let variant = ''    // '' | 'pills' | 'stretch'  ('boxed' → stretch)
   export let tone    = ''
   export let label   = ''    // aria-label for the strip
+  // A strip of routes: <nav> with no tablist role and no arrow keys, because
+  // links take Tab like any link (FJS-3610). Its Tabs take `href`.
+  export let nav     = false
 
   const VARIANTS = { pills: 'pills', stretch: 'stretch', boxed: 'stretch', underline: '' }
   const v = VARIANTS[variant] ?? ''
@@ -31,6 +34,8 @@
   const activeId  = $context.activeId
   const setActive = $context.setActive
   const focusTab  = $context.focusTab
+
+  $context.tabStrip = nav ? 'nav' : 'tablist'
 
   function handleKeyDown(e) {
     const isNext = e.key === 'ArrowRight'
@@ -54,13 +59,19 @@
   }
 </script>
 
-<div
-  role="tablist"
-  aria-label={label || null}
-  class={cx('tablist', v, toTone(tone))}
-  {class}
-  {...$attributes}
-  onkeydown={handleKeyDown}
->
-  <slot />
-</div>
+{#if nav}
+  <nav aria-label={label || null} class={cx('tablist', v, toTone(tone))} {class} {...$attributes}>
+    <slot />
+  </nav>
+{:else}
+  <div
+    role="tablist"
+    aria-label={label || null}
+    class={cx('tablist', v, toTone(tone))}
+    {class}
+    {...$attributes}
+    onkeydown={handleKeyDown}
+  >
+    <slot />
+  </div>
+{/if}

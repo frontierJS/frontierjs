@@ -855,7 +855,7 @@ export async function buildBasecampApp(
                    emailVerified: true, isSystemAdmin: true },
         })
         const workspace = await tx.workspace.create({
-          data: { accountId: account.id, name: wsName, slug, type: 'team', ownerId: user.id },
+          data: { accountId: account.id, name: wsName, slug, type: 'team' },
         })
         await tx.workspaceMember.create({
           data: { workspaceId: workspace.id, userId: user.id, role: 'owner',

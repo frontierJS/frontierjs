@@ -15,18 +15,16 @@ siteName: Basecamp
   import DropdownMenu      from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
   import DropdownItem      from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
   import DropdownGroup     from '@frontierjs/ui/components/overlay/DropdownGroup.mesa'
-  import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
   import Toaster        from '@frontierjs/ui/components/feedback/Toaster.mesa'
   import ConfirmProvider from '@frontierjs/ui/components/overlay/ConfirmProvider.mesa'
   import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore'
 
   import NoticeBar from '../components/NoticeBar.mesa'
   import NavIcon   from '../components/NavIcon.mesa'
+  import Bell      from '../components/Bell.mesa'
   import { servers }     from '../resources/Server.mesa'
   import { deployments } from '../resources/Deployment.mesa'
   import { jobs }        from '../resources/Job.mesa'
-  import { notifications, INBOX, isUnread, titleOf, bodyOf, actionOf, markRead, markAllRead }
-    from '../resources/Notification.mesa'
   import { computeNotices } from '../lib/notices.js'
   import { primary, groups, elsewhere } from '../lib/nav.js'
   import { paletteItems, visible } from '@frontierjs/ui/nav'
@@ -67,25 +65,6 @@ siteName: Basecamp
   // Derived here, not in the template: one definition of "needs attention",
   // shared with the home screen's queue (src/notices.js).
   $: notices = computeNotices({ servers: srv(), deployments: dep(), jobs: jbs() })
-
-  // ── The bell ─────────────────────────────────────────────────────────────
-  // Per PERSON, not per workspace: the rows are scoped by their recipient, so
-  // this reloads on sign-in and never on a workspace switch. New rows arrive as
-  // pushed frames on the person's own channel; nothing here polls.
-  const bell  = notifications.tethered({ state: 'local', directives: INBOX })
-  const inbox = () => bell.rows
-
-  $: session.user, () => { if (session.user && !session.user.enrollmentOnly) bell.reload() }
-
-  // The menu shows the newest few unread; /notifications/ is the whole list.
-  const BELL_MAX = 6
-  $: unread = inbox().filter(isUnread)
-
-  async function openNote(n) {
-    await markRead(n).catch(() => {})
-    const url = actionOf(n)?.url
-    goto(url || '/notifications/')
-  }
 
   // ── Recent ───────────────────────────────────────────────────────────────
   // The screens this browser visited, newest first, so ⌘K then Enter is
@@ -375,33 +354,7 @@ siteName: Basecamp
           Search <kbd class="kbd hide-sm">⌘K</kbd>
         </Button>
 
-        <!-- The count is a Badge inside the trigger, so the unread number is
-             part of the button's name to a screen reader as well as its look. -->
-        <DropdownMenu placement="bottom-end">
-          {#snippet trigger()}
-            <Button treatment="ghost" id="bell"
-                    aria-label={unread.length ? `Notifications, ${unread.length} unread` : 'Notifications'}
-            >🔔{#if unread.length} <Badge tone="danger" id="bell-count">{unread.length}</Badge>{/if}</Button>
-          {/snippet}
-          {#if unread.length}
-            <DropdownGroup heading="Unread">
-              {#each unread.slice(0, BELL_MAX) as n}
-                <DropdownItem onclick={() => openNote(n)}>
-                  <span class="stack">
-                    <strong>{titleOf(n)}</strong>
-                    {#if bodyOf(n)}<span class="text-sm text-muted">{bodyOf(n)}</span>{/if}
-                  </span>
-                </DropdownItem>
-              {/each}
-            </DropdownGroup>
-            <DropdownSeparator />
-            <DropdownItem onclick={() => markAllRead(bell).catch(() => {})}>Mark all read</DropdownItem>
-          {:else}
-            <DropdownItem disabled>Nothing unread</DropdownItem>
-            <DropdownSeparator />
-          {/if}
-          <DropdownItem onclick={() => goto('/notifications/')}>All notifications</DropdownItem>
-        </DropdownMenu>
+        {#if !session.user.enrollmentOnly}<Bell />{/if}
 
         <!-- Who you are and signing out are one control, not two.
              `.cluster` wraps, so a right-hand cluster that does not fit lays a

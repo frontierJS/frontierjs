@@ -35,6 +35,7 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url))
 // Props a component needs before it renders anything at all. Without these it
 // renders an empty shell and the assertion below would pass on nothing.
 const PROPS = {
+  'display/AttachmentList': { files: [{ name: 'a.pdf', url: '/f/1' }] },
   'display/AvatarGroup': { users: [{ name: 'Ada' }, { name: 'Bob' }] },
   'display/Bar':         { value: 40 },
   'display/Chart':       { rows: [{ m: 'Jan', v: 3 }], x: 'm', y: 'v' },

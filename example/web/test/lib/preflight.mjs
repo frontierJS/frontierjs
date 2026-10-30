@@ -52,6 +52,18 @@ export const PORTS = {
   idp:    await at('be', { env: 'dev', service: 3 }),   // 8113
 }
 
+// The sinks of a drive's OWN api, on the test tier beside it (7111–7114, 7119).
+// An api bound to the dev numbers dies on "port 8111 is already answering"
+// whenever `bun run api` is up, which is the state a drive is meant to run in
+// (`FJS-3674`). A drive that READS a sink asks for the dev port instead.
+export const TEST_SINK_ENV = {
+  MAIL_SINK_PORT:   String(await at('be', { env: 'test', service: 1 })),
+  PSP_SINK_PORT:    String(await at('be', { env: 'test', service: 2 })),
+  IDP_SINK_PORT:    String(await at('be', { env: 'test', service: 3 })),
+  STRIPE_SINK_PORT: String(await at('be', { env: 'test', service: 4 })),
+  PUSH_SINK_PORT:   String(await at('be', { env: 'test', service: 9 })),
+}
+
 // What the API process is built from. `web/` is absent on purpose: the SPA is
 // served by vite, which reloads its own graph, and a browser drive's page is
 // fetched fresh every run.

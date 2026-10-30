@@ -70,7 +70,7 @@ async function workspace(db: any): Promise<string> {
   })
   const owner = await db.user.create({ data: { email: `owner-${stamp}@example.com` } })
   const ws = await db.workspace.create({
-    data: { name: 'Ops', slug: `ops-${stamp}`, accountId: account.id, ownerId: owner.id },
+    data: { name: 'Ops', slug: `ops-${stamp}`, accountId: account.id },
   })
   return ws.id as string
 }

@@ -17,20 +17,36 @@
   //       <p class="text-sm">Popover body</p>
   //     {/snippet}
   //   </Popover>
+  //
+  // A panel opened from two places (a header button and a phone menu) binds
+  // `open` to the app's store, takes a `title` and an `action` header snippet,
+  // and `sheet` draws it as a bottom sheet below md (FJS-D1668):
+  //   <Popover bind:open={bellOpen} title="Notifications" placement="bottom-end" sheet>
+  //     {#snippet trigger()}<Button …/>{/snippet}
+  //     {#snippet action()}<Button size="sm">Mark all read</Button>{/snippet}
+  //     {#snippet content()}<NotificationList />{/snippet}
+  //   </Popover>
+  // With no trigger, or one that is not on screen, there is nothing to place
+  // against, so the panel is a sheet at every width.
 
-  import { tone as toTone, cx, placeAgainst, FOCUSABLE, overlayHost } from '../../utils.js'
+  import { tone as toTone, cx, placeAgainst, FOCUSABLE, overlayHost, uid } from '../../utils.js'
 
+  export let open      = false           // bindable
   export let placement = 'bottom-start'  // '<side>-<align>': top|bottom|left|right, start|center|end
   export let offset    = 8               // gap between trigger and panel, px
   export let tone      = ''
-  export let label     = ''              // accessible name for the panel
+  export let label     = ''              // accessible name for the panel; `title` when empty
+  export let title     = ''
+  export let sheet     = false           // a bottom sheet below md
   export let trigger   = null            // snippet
+  export let action    = null            // header snippet, after the title
   export let content   = null            // snippet
 
-  let open   = false
   let x      = 0
   let y      = 0
   let placed = false                     // has THIS open been positioned yet
+  let afloat = true                      // false: no trigger on screen, so a sheet everywhere
+  let shown  = false                     // listeners and focus are set up for this open
   let triggerEl
   let panelEl
 
@@ -38,8 +54,12 @@
   // queried for one. A browser that does not focus a button on press (Safari)
   // never reports one, and finds it by query.
   var control = null
+  // Opened by `open` rather than the trigger: what had focus, to give it back.
+  var opener  = null
+  var byTrigger = false
 
   const t = toTone(tone)
+  const titleId = uid('popover-title')
 
   const panelAnim = $.entrance({
     in:  el => el.animate(
@@ -53,34 +73,66 @@
     ).finished,
   })
 
-  function openPopover() {
+  function onTrigger() {
     if (open) { closePopover(); return }
-    // x and y still hold the LAST open's placement and the panel has to exist
-    // before it can be measured, so it renders hidden and the frame that
-    // places it shows it. Painted at the stale coordinates it appears where
-    // the trigger used to be — after a scroll that can be ON the trigger, and
-    // the click meant to close it then lands inside the panel, where
-    // click-away lets it through (FJS-331).
-    placed = false
-    open   = true
-    // Position after mesa renders the panel into the portal
-    requestAnimationFrame(async () => { await position(); placed = true })
+    open = true
+    show(true)
+  }
+
+  // x and y still hold the LAST open's placement and the panel has to exist
+  // before it can be measured, so it renders hidden and the frame that
+  // places it shows it. Painted at the stale coordinates it appears where
+  // the trigger used to be — after a scroll that can be ON the trigger, and
+  // the click meant to close it then lands inside the panel, where
+  // click-away lets it through (FJS-331).
+  function show(fromTrigger) {
+    shown     = true
+    placed    = false
+    byTrigger = fromTrigger
+    opener    = fromTrigger ? null : document.activeElement
+    requestAnimationFrame(async () => {
+      await position()
+      placed = true
+      // A panel opened from elsewhere has no trigger holding focus for it.
+      if (!fromTrigger) requestAnimationFrame(() => $.focus(panelEl?.querySelector?.(FOCUSABLE)))
+    })
     document.addEventListener('click', onClickAway, { capture: true })
   }
 
   async function position() {
     const [tr, pr, vp] = await Promise.all([$.measure(triggerEl), $.measure(panelEl), $.viewport()])
-    if (!tr || !pr) return
+    // A trigger hidden on a phone measures 0x0, and a panel placed against it sits at the origin.
+    afloat = !!(tr && (tr.width || tr.height))
+    if (!afloat || !pr) return
     ;({ x, y } = placeAgainst(tr, pr, vp, { placement, offset }))
+  }
+
+  function hide(restoreFocus) {
+    shown = false
+    document.removeEventListener('click', onClickAway, { capture: true })
+    if (!restoreFocus) return
+    // Otherwise a keyboard user is dropped at the top of the document when the panel unmounts.
+    if (byTrigger) $.focus(control ?? triggerEl?.querySelector?.('button, a, [tabindex]'))
+    else if (opener?.isConnected) $.focus(opener)
   }
 
   function closePopover(restoreFocus = true) {
     open = false
-    document.removeEventListener('click', onClickAway, { capture: true })
-    // Return focus to the trigger — otherwise a keyboard user is dropped at
-    // the top of the document when the panel unmounts.
-    if (restoreFocus) $.focus(control ?? triggerEl?.querySelector?.('button, a, [tabindex]'))
+    hide(restoreFocus)
   }
+
+  // A `$:` watch fires on change only, so a Popover mounted with open={true}
+  // stays closed without the onMount call. An app closing it takes focus back
+  // only when focus went with the panel.
+  function sync() {
+    if (open && !shown) show(false)
+    else if (!open && shown) {
+      const at = document.activeElement
+      hide(!at || at === document.body || !!panelEl?.contains?.(at))
+    }
+  }
+  $: open, () => sync()
+  $.onMount(sync)
 
   function onClickAway(e) {
     if (triggerEl?.contains(e.target) || panelEl?.contains(e.target)) return
@@ -95,32 +147,43 @@
 
 <mesa:window onkeydown={(e) => { if (e.key === 'Escape' && open && !e.defaultPrevented) { e.preventDefault(); closePopover() } }} />
 
-<!-- Trigger wrapper -->
 <span
   bind:this={triggerEl}
   style:display="inline-block"
   {class}
   {...$attributes}
   onfocusin={(e) => control = e.target}
-  onclick|stopPropagation={openPopover}
+  onclick|stopPropagation={onTrigger}
 >
   {@render trigger?.()}
 </span>
 
 {#if open}
   <mesa:portal to={overlayHost()}>
+    {#if !afloat || sheet}
+      <div class={cx('popover-backdrop', afloat && 'sheet-narrow')}></div>
+    {/if}
     <div
       bind:this={panelEl}
-      class={cx('popover', t)}
+      class={cx('popover', t, !afloat ? 'sheet' : sheet && 'sheet-narrow')}
       role="dialog"
       aria-label={label || null}
+      aria-labelledby={!label && title ? titleId : null}
       style:position="fixed"
-      style:left="{x}px"
-      style:top="{y}px"
+      style:--popover-x="{x}px"
+      style:--popover-y="{y}px"
       style:visibility="{placed ? 'visible' : 'hidden'}"
       {@attach panelAnim}
     >
-      {@render content?.()}
+      {#if title || action}
+        <div class="surface-header">
+          <h2 id={titleId} style:margin="0" style:flex="1" style:font-size="inherit">{title}</h2>
+          {#if action}<div class="cluster">{@render action?.()}</div>{/if}
+        </div>
+        <div class="surface-body">{@render content?.()}</div>
+      {:else}
+        {@render content?.()}
+      {/if}
     </div>
   </mesa:portal>
 {/if}

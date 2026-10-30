@@ -149,6 +149,7 @@ view                switchable panel, [hidden] restated
 ```
 bar                 horizontal action strip (+ .start/.center/.end/.bordered)
 section-header      heading + trailing affordance
+section             titled block: header, then .section-body; nested .section is the sub-section
 divider-label       centered label on a rule
 items / item        lightweight list entries (+ .menu variant)
 rows / list-row     record entries with trailing actions (+ .divided/.hover)

@@ -1,0 +1,175 @@
+<script>
+  // ColorInput.mesa
+  // A stored data colour -- a client's avatar hex, a tag's colour -- picked
+  // from a row of swatches or, for anything else, a native colour picker.
+  //
+  // The swatches are real radios in a role="radiogroup", as in ThemePicker and
+  // RadioGroup: one tab stop and the arrow keys are the platform's, which a
+  // row of <button>s gets neither of. The picker is a visually hidden
+  // `type="color"` behind a label, so it is keyboard-reachable and opens the
+  // browser's own dialog.
+  //
+  // The value is a hex string, '' when none. A value outside `swatches` checks
+  // no radio and reads as the picker's. Each fill is its data value through
+  // `--data-accent`, so it does not follow the theme.
+  //
+  // swatches: a hex string or { value, label }[]; a string's label is the hex.
+  //
+  // Usage:
+  //   <ColorInput bind:value={client.avatarColor} />
+  //   <ColorInput name="color" swatches={['#ef4444', '#3b82f6']} custom={false} />
+
+  import Field from './Field.mesa'
+  import { uid, ruleLabel, resolveError, resolveRule, stated, lockedBy } from '../../utils.js'
+
+  export let value    = ''
+  export let swatches = [
+    '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6',
+    '#3b82f6', '#8b5cf6', '#ec4899', '#64748b',
+  ]
+  export let custom   = true       // draw the native picker beside the swatches
+  // `undefined` is "not stated" and `''` is "no label, deliberately", as in RadioGroup.
+  export let label    = undefined
+  export let hint     = ''
+  export let error    = ''
+  export let errors   = undefined
+  export let name     = ''
+  export let required = undefined
+  export let disabled = undefined  // undefined = ask the form; false overrides it
+  export let onchange = undefined  // (hex) => void, once per pick
+
+  const form = $context.form
+
+  const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
+  const rule = resolveRule(form, name)
+
+  const resolvedLabel    = stated(label, ruleLabel(name, rule))
+  const resolvedRequired = stated(required, rule?.required)
+  const displayError     = resolveError(form, name, error, errors)
+
+  // `label` is the group's accessible name too, and stays 'Color' when the
+  // caller or the schema names nothing.
+  const groupName = name || uid('color')
+  const groupLabel = resolvedLabel || 'Color'
+
+  const items = swatches.map((s) => typeof s === 'string' ? { value: s, label: s } : s)
+
+  // Hex compares case-blind: the native picker answers lowercase and a stored
+  // value may not be.
+  const same = (a, b) => String(a ?? '').toLowerCase() === String(b ?? '').toLowerCase()
+
+  $: inSet     = items.some((it) => same(it.value, value))
+  $: customOn  = custom && !!value && !inSet
+
+  // The radios hand back the string the item holds.
+  function pick(e) {
+    value = items.find((it) => String(it.value) === e.target.value)?.value ?? e.target.value
+    onchange?.(value)
+    form?.changed?.(name)
+  }
+
+  // The picker fires `input` for every drag across its dialog and `change`
+  // once it closes: the value follows the first, `onchange` hears the second.
+  function dial(e) {
+    value = e.target.value
+    form?.changed?.(name)
+  }
+  function settle(e) {
+    value = e.target.value
+    onchange?.(value)
+  }
+</script>
+
+{#snippet control()}
+  <div class="fjs-color-input" {...$attributes}>
+    <div
+      role="radiogroup"
+      aria-label={groupLabel}
+      aria-required={resolvedRequired ? 'true' : null}
+      aria-invalid={displayError ? 'true' : null}
+      class="fjs-color-group"
+    >
+      {#each items as item (item.value)}
+        <label class="fjs-color-option" title={item.label}>
+          <input
+            type="radio"
+            class="visually-hidden"
+            name={groupName}
+            value={item.value}
+            aria-label={item.label}
+            checked={same(item.value, value)}
+            disabled={resolvedDisabled}
+            onchange={pick}
+          />
+          <span class="fjs-color-fill" style:--data-accent={item.value}></span>
+        </label>
+      {/each}
+    </div>
+    {#if custom}
+      <label class="fjs-color-custom" class:is-active={customOn} title="Custom color">
+        <input
+          type="color"
+          class="visually-hidden"
+          aria-label="Custom color"
+          value={value || '#000000'}
+          disabled={resolvedDisabled}
+          oninput={dial}
+          onchange={settle}
+        />
+        <span class="fjs-color-fill" style:--data-accent={customOn ? value : null}></span>
+      </label>
+    {/if}
+  </div>
+{/snippet}
+
+{#if label || name}
+  <Field name={name} label={label} required={resolvedRequired} hint={hint} error={error} errors={errors} {class}>
+    {@render control()}
+  </Field>
+{:else}
+  <div {class}>{@render control()}</div>
+{/if}
+
+<style>
+  .fjs-color-input { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm) }
+  .fjs-color-group { display: flex; flex-wrap: wrap; gap: var(--space-xs) }
+
+  .fjs-color-option,
+  .fjs-color-custom {
+    display:       inline-flex;
+    padding:       var(--space-3xs);
+    border:        var(--border-width) solid transparent;
+    border-radius: 50%;
+    cursor:        pointer;
+  }
+  .fjs-color-fill {
+    inline-size:   var(--space-lg);
+    block-size:    var(--space-lg);
+    border-radius: 50%;
+    background:    var(--data-accent, var(--surface-sunken));
+    box-shadow:    inset 0 0 0 var(--border-width) var(--rule);
+  }
+  /* No stored custom colour yet: a spectrum says "pick any". */
+  .fjs-color-custom:not(.is-active) .fjs-color-fill {
+    background: conic-gradient(red, yellow, lime, aqua, blue, magenta, red);
+  }
+  .fjs-color-option:hover,
+  .fjs-color-custom:hover { border-color: var(--rule-strong) }
+
+  /* Selected from the checked input, not a class, so look and state cannot
+     drift apart; the picker has no radio, so it carries is-active. */
+  .fjs-color-option:has(input:checked),
+  .fjs-color-custom.is-active { border-color: var(--ink) }
+
+  /* The inputs are visually hidden, so the focus ring is drawn on the label. */
+  .fjs-color-option:has(input:focus-visible),
+  .fjs-color-custom:has(input:focus-visible) {
+    outline:        var(--ring-width) var(--ring-style) var(--ring-color);
+    outline-offset: var(--ring-offset);
+  }
+  .fjs-color-option:has(input:disabled),
+  .fjs-color-custom:has(input:disabled) {
+    opacity: 0.55;
+    cursor:  not-allowed;
+  }
+</style>

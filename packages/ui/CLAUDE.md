@@ -54,15 +54,15 @@ both are worth running: this one mounts a component alone and can reach modes no
 screen uses, `example`'s puts it in an app with a real service behind it.
 
 <!-- layout-named: the file names fli done grades a new module against, kept here because done.js reads this file by path. The map itself is docs/layout.md.
-Accordion.mesa Alert.mesa alertStore.js Avatar.mesa Badge.mesa Bar.mesa Breadcrumbs.mesa
+Accordion.mesa Alert.mesa alertStore.js AttachmentList.mesa Avatar.mesa Badge.mesa Bar.mesa Breadcrumbs.mesa
 BulkBar.mesa Button.mesa Callout.mesa Card.mesa Cell.mesa Checkbox.mesa CLAUDE.md
-CodeInput.mesa Combobox.mesa CommandPalette.mesa commandPaletteStore.js Composer.mesa
+CodeInput.mesa ColorInput.mesa Combobox.mesa CommandPalette.mesa commandPaletteStore.js Composer.mesa
 ConfirmationPopover.mesa ConfirmPanel.mesa ConfirmProvider.mesa controls.js DatePicker.mesa
 DateTimeInput.mesa DayRangeFilter.mesa dnd.js drag.js Drawer.mesa DropdownMenu.mesa EmptyState.mesa Field.mesa
-Fieldset.mesa FileField.mesa FileUpload.mesa FilterBar.mesa FormField.mesa Form.mesa
+Fieldset.mesa FileField.mesa FileType.mesa FileUpload.mesa FilterBar.mesa FormField.mesa Form.mesa
 GeoField.mesa HoverCard.mesa HtmlFrame.mesa Input.mesa JsonInput.mesa Json.mesa Label.mesa
 Markdown.mesa Message.mesa Modal.mesa MoneyInput.mesa MultiSelect.mesa nav.js
-NumberInput.mesa Pagination.mesa Pill.mesa Popover.mesa Progress.mesa RadioGroup.mesa RangeInput.mesa
+NumberInput.mesa Pagination.mesa Pill.mesa Popover.mesa Progress.mesa RadioGroup.mesa RangeInput.mesa Ring.mesa
 rowlist.js selection.js Select.mesa Shell.mesa SignaturePad.mesa SignatureView.mesa
 Skeleton.mesa Slider.mesa Sparkline.mesa Spinner.mesa StatCard.mesa Stat.mesa Steps.mesa
 Switch.mesa Table.mesa TabList.mesa Tab.mesa TabPanel.mesa Tabs.mesa Tag.mesa

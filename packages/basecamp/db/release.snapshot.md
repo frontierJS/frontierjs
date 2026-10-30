@@ -2299,8 +2299,6 @@ table `workspace` · db `main` · gate `1.1.5.6` · @@softDelete(cascade)
 | `members` | `WorkspaceMember[]` | — | — | relation |
 | `monitors` | `Monitor[]` | — | — | relation |
 | `name` | `String` | no | — | **required on write** |
-| `owner` | `User` | — | — | relation |
-| `ownerId` | `String` | no | — | @system · **required on write** |
 | `projects` | `Project[]` | — | — | relation |
 | `pushTopic` | `String` | yes | — | @secret |
 | `secrets` | `Secret[]` | — | — | relation |

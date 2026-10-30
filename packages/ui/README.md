@@ -98,12 +98,12 @@ compose freely, so Button takes each as its own prop:
 ## What's in the box
 
 **forms** — `Form` `Button` `Field` `Fieldset` `Label` `Input` `Textarea`
-`Select` `Checkbox` `Switch` `RadioGroup` `NumberInput` `Slider` `Thresholds` `SignaturePad` `Combobox`
+`Select` `Checkbox` `Switch` `RadioGroup` `ColorInput` `NumberInput` `Slider` `Thresholds` `SignaturePad` `Combobox`
 `MultiSelect` `DatePicker` `DateTimeInput` `MoneyInput` `JsonInput` `CodeInput` `FileUpload`
 
 **display** — `Badge` `Pill` `Tag` `Dot` `Kbd` `Mono` `Divider` `Breadcrumbs`
 `Pagination` `Steps` `SectionHeader` `Callout` `EmptyState` `CopyButton` `Code`
-`Avatar` `AvatarGroup` `Stat` `StatCard` `Table` `Bar` `Sparkline`
+`Avatar` `AvatarGroup` `AttachmentList` `FileType` `Stat` `StatCard` `Table` `Bar` `Sparkline`
 `AccountStatus` `SignatureView` `Json` (read, or `editable`) `ThemeSwatch` `ThemePicker`
 
 **layout** — `Card` `Accordion` `AccordionItem` `Tabs` `TabList` `Tab` `TabPanel`
@@ -112,7 +112,7 @@ compose freely, so Button takes each as its own prop:
 `DropdownItem` `DropdownGroup` `DropdownSeparator` `CommandPalette`
 `ConfirmationPopover` `ConfirmPanel` `ConfirmProvider`
 
-**feedback** — `Alert` `AlertProvider` `Toast` `Toaster` `Progress` `Spinner`
+**feedback** — `Alert` `AlertProvider` `Toast` `Toaster` `Progress` `Ring` `Spinner`
 `Skeleton`
 
 **stores** — `toastStore` `alertStore` `commandPaletteStore`

@@ -83,6 +83,9 @@ const CASES = [
   ['components/feedback/Alert.mesa',    { tone: 'danger' },          ['alert', 'danger', 'alert-icon']],
   ['components/feedback/Spinner.mesa',  {},                          ['spinner', 'visually-hidden']],
   ['components/feedback/Progress.mesa', { value: 40 },               ['progress']],
+  // FJS-3623: a ring has no native element, so the progressbar role and the
+  // aria-value* trio are checked below on the rendered markup.
+  ['components/feedback/Ring.mesa',     { value: 40, showLabel: true, tone: 'success' }, ['fjs-ring', 'success', 'svg', 'circle']],
   // Renderable at all only since mesa stopped running {@attach} server-side
   // (FJS-146) — its fade-in attachment called el.animate on a happy-dom node.
   ['components/feedback/Toast.mesa',    { message: 'Saved', tone: 'success' }, ['toast', 'success', 'alert-icon']],
@@ -133,6 +136,73 @@ for (const [file, data, expected] of CASES) {
   const uno = html.match(UNO)
   if (uno) {
     console.error(`✗ ${label}\n    utility class leaked back in: ${uno[0].slice(0, 80)}`)
+    failed++
+  }
+}
+
+// ── A Ring announces as a progress bar ──────────────────────────────────────
+//
+// `FJS-3623`. Progress gets role and value from native <progress>; a ring is
+// an SVG, so the wrapper carries them, and an indeterminate ring must not
+// claim a value it does not have.
+for (const [data, want, absent] of [
+  [{ value: 3, max: 10, label: 'Quota' }, ['role="progressbar"', 'aria-valuemin="0"', 'aria-valuemax="10"', 'aria-valuenow="3"', 'aria-label="Quota"'], []],
+  [{ indeterminate: true },               ['role="progressbar"', 'aria-label="Loading"'], ['aria-valuenow', 'aria-valuemax']],
+]) {
+  const out = await renderComponent(readFileSync(join(ROOT, 'components/feedback/Ring.mesa'), 'utf8'), {
+    data, cwd: ROOT, filename: 'components/feedback/Ring.mesa', styleTag: false,
+    tmpDir: join(ROOT, 'components', '.mesa-tmp'),
+  })
+  const bar = out.html.match(/<div[^>]*role="progressbar"[^>]*>/)?.[0] ?? ''
+  const problems = [
+    ...want.filter(a => !bar.includes(a)).map(a => `missing ${a}`),
+    ...absent.filter(a => bar.includes(a)).map(a => `unexpected ${a}`),
+  ]
+  if (problems.length) {
+    console.error(`✗ Ring ${JSON.stringify(data)}\n    ${problems.join('\n    ')}\n    ${bar}`)
+    failed++
+  }
+}
+
+// ── Stored files: a real list, a tile toned by kind ─────────────────────────
+//
+// `FJS-3624`. The list is a <ul> whose <li> holds the link (not role="listitem"
+// on the link), an image shows its own picture, anything else a FileType tile,
+// and the tile's tone comes from the kit's seven by kind rather than a hue.
+{
+  const run = (file, data) => renderComponent(readFileSync(join(ROOT, file), 'utf8'), {
+    data, cwd: ROOT, filename: file, styleTag: false,
+    tmpDir: join(ROOT, 'components', '.mesa-tmp'),
+  }).then(o => o.html)
+
+  const LIST = 'components/display/AttachmentList.mesa'
+  const TILE = 'components/display/FileType.mesa'
+  const files = [
+    { name: 'photo.png', url: '/f/1', type: 'image/png', size: 2048 },
+    { name: 'Q3 report.pdf', url: '/f/2', size: 1048576 },
+  ]
+  const problems = []
+
+  const html = await run(LIST, { files })
+  if (!/<ul[^>]*class="rows divided\b/.test(html)) problems.push('list is not a <ul class="rows divided">')
+  if ((html.match(/<li\b/g) ?? []).length !== 2) problems.push('want one <li> per file')
+  if (/role="listitem"/.test(html)) problems.push('role="listitem" on a row')
+  if (!/<img[^>]*src="\/f\/1"/.test(html)) problems.push('an image does not draw its own picture')
+  if (!/data-kind="pdf"/.test(html) || !/class="[^"]*\bdanger\b/.test(html)) problems.push('the pdf has no FileType tile toned danger')
+  if (!/<a[^>]*href="\/f\/2"[^>]*download/.test(html) && !/<a[^>]*download[^>]*href="\/f\/2"/.test(html)) problems.push('no download link to /f/2')
+  if (!/aria-label="Download Q3 report.pdf"/.test(html)) problems.push('the download link is unnamed')
+  if (/Remove/.test(html)) problems.push('a remove button without onremove')
+  if ((await run(LIST, { files: [] })).trim()) problems.push('an empty list draws markup')
+
+  const tile = await run(TILE, { name: 'data.csv' })
+  if (!/data-kind="sheet"/.test(tile) || !/\bsuccess\b/.test(tile) || !/>CSV</.test(tile)) problems.push(`csv tile: ${tile}`)
+  if (!/aria-hidden="true"/.test(tile)) problems.push('a tile beside a name is not decorative')
+  if (!/role="img"/.test(await run(TILE, { name: 'a.pdf', standalone: true }))) problems.push('a standalone tile is unnamed')
+  if (!/data-kind="image"/.test(await run(TILE, { name: 'blob', type: 'image/webp' }))) problems.push('the MIME type is not read')
+  if (/(?:#|rgb|hsl)\(?[0-9a-f]{3,}/i.test(tile)) problems.push('the tile carries a raw color')
+
+  if (problems.length) {
+    console.error(`✗ AttachmentList / FileType\n    ${problems.join('\n    ')}`)
     failed++
   }
 }
@@ -191,6 +261,46 @@ const TRIGGER = `<script>
   if (/aria-label/.test(button)) problems.push(`named over its own content: ${button}`)
   if (problems.length) {
     console.error(`✗ CopyButton with a trigger snippet\n    ${problems.join('\n    ')}`)
+    failed++
+  }
+}
+
+// ── A strip of routes is a nav of links ─────────────────────────────────────
+//
+// `FJS-3610`. role="tab" on a route announces a tabpanel that is not there, so
+// a route strip was hand-written beside the kit. A link inside a tablist role
+// is invalid ARIA, which is why the list changes with its tabs.
+{
+  const NAV = `<script>
+  import TabList from './TabList.mesa'
+  import Tab     from './Tab.mesa'
+</script>
+<TabList nav label="Client sections">
+  <Tab href="/clients/1/" current>Overview</Tab>
+  <Tab href="/clients/1/files/">Files</Tab>
+  <Tab href="/clients/1/archive/" disabled>Archive</Tab>
+  <Tab>Functions</Tab>
+</TabList>`
+  const out = await renderComponent(NAV, {
+    cwd: ROOT, filename: 'components/layout/NavTabs.mesa', styleTag: false,
+    tmpDir: join(ROOT, 'components', '.mesa-tmp'),
+  })
+  const nav   = out.html.match(/<nav[^>]*>/)?.[0] ?? ''
+  const links = out.html.match(/<a[^>]*>/g) ?? []
+  const button = out.html.match(/<button[^>]*>/)?.[0] ?? ''
+  const problems = []
+  if (!/aria-label="Client sections"/.test(nav)) problems.push(`no labelled <nav>: ${nav || out.html}`)
+  if (/role="tab/.test(out.html)) problems.push('a tab or tablist role inside a route strip')
+  if (links.length !== 3) problems.push(`${links.length} links, wanted 3`)
+  if (!/href="\/clients\/1\/"/.test(links[0] ?? '') || !/aria-current="page"/.test(links[0] ?? ''))
+    problems.push(`the current link: ${links[0]}`)
+  if (/aria-current/.test(links[1] ?? '')) problems.push(`a link not current answers aria-current: ${links[1]}`)
+  if (/href/.test(links[2] ?? '') || !/aria-disabled="true"/.test(links[2] ?? ''))
+    problems.push(`a disabled link stays focusable: ${links[2]}`)
+  if (!/class="tab\b/.test(button) || /aria-selected|tabindex/.test(button))
+    problems.push(`a hrefless Tab in a nav is not a plain button: ${button}`)
+  if (problems.length) {
+    console.error(`✗ TabList nav\n    ${problems.join('\n    ')}`)
     failed++
   }
 }

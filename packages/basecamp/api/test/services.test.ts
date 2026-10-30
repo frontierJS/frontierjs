@@ -97,7 +97,7 @@ beforeAll(async () => {
   const x = await mk(`out-${uniq()}@x.co`)
 
   ws = await sys.workspace.create({
-    data: { accountId: acct.id, name: 'Fleet', slug: `fleet-${uniq()}`, ownerId: o.id },
+    data: { accountId: acct.id, name: 'Fleet', slug: `fleet-${uniq()}` },
   })
   // Stamped through the app's own table rather than by hand: a fixture that
   // invents its own grants tests a grid nothing in production produces.
@@ -132,7 +132,7 @@ beforeAll(async () => {
   // own workspace" is true of a database that has only one, which is a test
   // that cannot fail.
   const other = await sys.workspace.create({
-    data: { accountId: acct.id, name: 'Other', slug: `other-${uniq()}`, ownerId: o.id },
+    data: { accountId: acct.id, name: 'Other', slug: `other-${uniq()}` },
   })
   await sys.project.create({
     data: { workspaceId: other.id, name: 'Elsewhere', slug: `else-${uniq()}` },
@@ -356,7 +356,7 @@ describe('the two transports answer the same app', () => {
     // `notifyPeople` pages nobody who is not.
     await sys.user.update({ where: { id: user.id }, data: { accountId: acct.id, status: 'active' } })
     const wsp = await sys.workspace.create({
-      data: { accountId: acct.id, name: 'Parity', slug: `pw-${uniq()}`, ownerId: user.id },
+      data: { accountId: acct.id, name: 'Parity', slug: `pw-${uniq()}` },
     })
     await sys.workspaceMember.create({
       data: { workspaceId: wsp.id, userId: user.id, role: 'owner',
@@ -422,7 +422,7 @@ describe('the two transports answer the same app', () => {
     const user   = await penv.app.auth.createUser({ email, password: 'hunter2hunter2', name: 'Stranger' })
     const theirs = user.id
     await sys.user.update({ where: { id: theirs }, data: { accountId: acct.id, status: 'active' } })
-    const wsp = await sys.workspace.create({ data: { accountId: acct.id, name: 'Elsewhere', slug: `sw-${uniq()}`, ownerId: theirs } })
+    const wsp = await sys.workspace.create({ data: { accountId: acct.id, name: 'Elsewhere', slug: `sw-${uniq()}` } })
     await sys.workspaceMember.create({ data: { workspaceId: wsp.id, userId: theirs, role: 'admin',
       capabilities: grantsFor('admin'), acceptedAt: new Date().toISOString() } })
     const strangerToken = (await penv.app.auth.login(email, 'hunter2hunter2')).token
@@ -1287,7 +1287,7 @@ describe('auth\'s people service reaches only the operator\'s workspace', () => 
     const sys = env.system as any
     const wsRow = await sys.workspace.findUnique({ where: { id: ws.id } })
     const other = await sys.workspace.create({
-      data: { accountId: wsRow.accountId, name: 'B', slug: `b-${uniq()}`, ownerId: wsRow.ownerId },
+      data: { accountId: wsRow.accountId, name: 'B', slug: `b-${uniq()}` },
     })
     const mk = async (memberships: Array<[any, string]>) => {
       const u = await sys.user.create({ data: { email: `ppl-${uniq()}@x.co`, accountId: wsRow.accountId } })
@@ -1342,7 +1342,7 @@ describe('a job runs as whoever asked for it', () => {
     const acct = await sys.account.create({ data: { slug: `other-${uniq()}`, displayName: 'Other' } })
     const u    = await sys.user.create({ data: { email: `o-${uniq()}@x.co`, accountId: acct.id } })
     const w    = await sys.workspace.create({
-      data: { accountId: acct.id, name: 'Elsewhere', slug: `else-${uniq()}`, ownerId: u.id } })
+      data: { accountId: acct.id, name: 'Elsewhere', slug: `else-${uniq()}` } })
     await sys.workspaceMember.create({
       data: { workspaceId: w.id, userId: u.id, role: 'owner',
               capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString() } })
@@ -2275,7 +2275,7 @@ describe('the audit trail is scoped by the schema, not by one service', () => {
     adminId = (await sys.user.findFirst({ where: { id: (await sys.workspaceMember.findFirst({ where: { workspaceId: ws.id, role: 'owner' } })).userId } })).id
 
     otherWs = await sys.workspace.create({
-      data: { accountId: ws.accountId, name: 'Rival', slug: `rival-${uniq()}`, ownerId: adminId },
+      data: { accountId: ws.accountId, name: 'Rival', slug: `rival-${uniq()}` },
     })
 
     const row = (workspaceId: string | null, action: string) =>
@@ -2503,7 +2503,7 @@ describe('a column the system writes and its caller does not', () => {
     const sys   = env.system as any
     const wsRow = await sys.workspace.findUnique({ where: { id: ws.id } })
     const wsB   = await sys.workspace.create({
-      data: { accountId: wsRow.accountId, name: 'B', slug: `b-${tag()}`, ownerId: wsRow.ownerId },
+      data: { accountId: wsRow.accountId, name: 'B', slug: `b-${tag()}` },
     })
     const mine   = await botIn(ws.id)
     const theirs = await botIn(wsB.id)
@@ -2724,7 +2724,7 @@ describe('an alert rule says whether anything writes the metric it watches', () 
     const sys   = env.system as any
     const wsRow = await sys.workspace.findUnique({ where: { id: ws.id } })
     const wsB   = await sys.workspace.create({
-      data: { accountId: wsRow.accountId, name: 'B', slug: `b-${tag()}`, ownerId: wsRow.ownerId },
+      data: { accountId: wsRow.accountId, name: 'B', slug: `b-${tag()}` },
     })
     const watch = async (workspaceId: string) => {
       const box = await sys.server.create({ data: { workspaceId, name: 'box', slug: `box-${tag()}` } })
@@ -3007,7 +3007,7 @@ describe('infra.summary counts the fleet Home opens on', () => {
     const sys  = env.system as any
     const acct = await sys.account.create({ data: { slug: `sum-${tag()}`, displayName: 'Sum' } })
     const u    = await sys.user.create({ data: { email: `sum-${tag()}@x.co`, accountId: acct.id } })
-    const w    = await sys.workspace.create({ data: { accountId: acct.id, name: 'Sum', slug: `sum-${tag()}`, ownerId: u.id } })
+    const w    = await sys.workspace.create({ data: { accountId: acct.id, name: 'Sum', slug: `sum-${tag()}` } })
     await sys.workspaceMember.create({ data: { workspaceId: w.id, userId: u.id, role: 'viewer',
       capabilities: grantsFor('viewer'), acceptedAt: new Date().toISOString() } })
     me = session({ id: u.id, workspaceId: w.id })
@@ -4000,7 +4000,7 @@ describe('infra.launch walks to the screen each step happens on', () => {
     const sys  = env.system as any
     const uniq = Math.random().toString(36).slice(2, 8)
     const o    = await sys.user.create({ data: { email: `launch-${uniq}@x.co`, accountId: (await sys.workspace.findFirst({ where: { id: ws.id } })).accountId } })
-    const w    = await sys.workspace.create({ data: { accountId: o.accountId, name: 'Launch', slug: `launch-${uniq}`, ownerId: o.id } })
+    const w    = await sys.workspace.create({ data: { accountId: o.accountId, name: 'Launch', slug: `launch-${uniq}` } })
     await sys.workspaceMember.create({ data: {
       workspaceId: w.id, userId: o.id, role: 'owner', capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString(),
     } })
@@ -4154,11 +4154,14 @@ describe('users — a person edits their own profile, at any standing', () => {
   })
 })
 
-describe('leaving a workspace, and handing one over', () => {
+describe('owners: leaving, promoting, removing', () => {
+  // FJS-D1669: owner is a role and a workspace may hold several, so handing it
+  // over is promoting somebody, and the giver stays until a co-owner demotes them
+  // or they leave. The one thing every door refuses is the last owner going.
   const uniq = () => Math.random().toString(36).slice(2, 8)
   const sys  = () => env.system as any
 
-  /** A workspace of its own per test, so a transfer never moves the shared
+  /** A workspace of its own per test, so a promotion never moves the shared
    *  `ws` owner every other test signs in as. */
   async function crew(...roles: string[]) {
     const acct = await sys().account.create({ data: { slug: `crew-${uniq()}`, displayName: 'Crew' } })
@@ -4168,7 +4171,7 @@ describe('leaving a workspace, and handing one over', () => {
       people.push({ id: u.id, role })
     }
     const w = await sys().workspace.create({
-      data: { accountId: acct.id, name: 'Crew', slug: `crew-${uniq()}`, ownerId: people[0].id },
+      data: { accountId: acct.id, name: 'Crew', slug: `crew-${uniq()}` },
     })
     for (const p of people)
       await sys().workspaceMember.create({ data: {
@@ -4178,8 +4181,7 @@ describe('leaving a workspace, and handing one over', () => {
     const as = (i: number) => env.as(session({ id: people[i].id, workspaceId: w.id })).service('workspaces')
     const roleOf = async (i: number) =>
       (await sys().workspaceMember.findFirst({ where: { workspaceId: w.id, userId: people[i].id } }))?.role ?? null
-    const ownerId = async () => (await sys().workspace.findUnique({ where: { id: w.id } })).ownerId
-    return { w, people, as, roleOf, ownerId }
+    return { w, people, as, roleOf }
   }
 
   test('a viewer leaves, and is no longer a member', async () => {
@@ -4191,15 +4193,14 @@ describe('leaving a workspace, and handing one over', () => {
 
   test('the only owner cannot leave, and is told what to do instead', async () => {
     const c = await crew('owner', 'admin')
-    await expect(c.as(0).call('leave', c.w.id)).rejects.toThrow(/Hand ownership to another member/)
+    await expect(c.as(0).call('leave', c.w.id)).rejects.toThrow(/last owner.*Make another member an owner/)
     expect(await c.roleOf(0)).toBe('owner')
   })
 
-  test('one of two owners leaves, and the workspace names the other', async () => {
+  test('one of two owners leaves, and the other still holds it', async () => {
     const c = await crew('owner', 'owner')
     await c.as(0).call('leave', c.w.id)
-    expect(await c.roleOf(0)).toBeNull()
-    expect(await c.ownerId()).toBe(c.people[1].id)
+    expect([await c.roleOf(0), await c.roleOf(1)]).toEqual([null, 'owner'])
   })
 
   test('leaving a workspace you are not in is a 404, not a success', async () => {
@@ -4207,30 +4208,30 @@ describe('leaving a workspace, and handing one over', () => {
     await expect(env.as(developer).service('workspaces').call('leave', c.w.id)).rejects.toThrow(/not found/)
   })
 
-  test('an owner hands over and steps down to admin, in one write', async () => {
+  test('handing over is promoting: the giver stays owner until a co-owner demotes them', async () => {
     const c = await crew('owner', 'developer')
-    await c.as(0).call('transferOwnership', c.w.id, { userId: c.people[1].id })
-    expect([await c.roleOf(0), await c.roleOf(1)]).toEqual(['admin', 'owner'])
-    expect(await c.ownerId()).toBe(c.people[1].id)
-    // Stepped down means graded down: the grid moved with the word.
+    await c.as(0).call('setMemberRole', c.w.id, { userId: c.people[1].id, role: 'owner' })
+    expect([await c.roleOf(0), await c.roleOf(1)]).toEqual(['owner', 'owner'])
+    await c.as(1).call('setMemberRole', c.w.id, { userId: c.people[0].id, role: 'admin' })
+    expect(await c.roleOf(0)).toBe('admin')
+    // Demoted means graded down: the grid moved with the word.
     const row = await sys().workspaceMember.findFirst({ where: { workspaceId: c.w.id, userId: c.people[0].id } })
     expect(row.capabilities).toEqual(grantsFor('admin'))
-    // …and the one who stepped down can now leave, since somebody holds it.
-    await c.as(0).call('leave', c.w.id)
-    expect(await c.roleOf(0)).toBeNull()
   })
 
-  test('an admin cannot hand over what they do not hold', async () => {
-    const c = await crew('owner', 'admin', 'developer')
-    await expect(c.as(1).call('transferOwnership', c.w.id, { userId: c.people[2].id }))
-      .rejects.toThrow(/Requires owner role/)
-    expect(await c.roleOf(2)).toBe('developer')
+  test('an owner removes a co-owner, and not the last one', async () => {
+    const c = await crew('owner', 'owner')
+    await c.as(0).call('removeMember', c.w.id, { userId: c.people[1].id })
+    expect(await c.roleOf(1)).toBeNull()
+    await expect(c.as(0).call('removeMember', c.w.id, { userId: c.people[0].id }))
+      .rejects.toThrow(/Cannot remove the last owner/)
+    expect(await c.roleOf(0)).toBe('owner')
   })
 
-  test('nor to somebody outside the workspace', async () => {
-    const c = await crew('owner')
-    await expect(c.as(0).call('transferOwnership', c.w.id, { userId: developer.id }))
-      .rejects.toThrow(/Member not found/)
+  test('an admin removes neither owner of two, since both outrank them', async () => {
+    const c = await crew('owner', 'owner', 'admin')
+    await expect(c.as(2).call('removeMember', c.w.id, { userId: c.people[0].id }))
+      .rejects.toThrow(/cannot remove an owner — you hold admin/)
     expect(await c.roleOf(0)).toBe('owner')
   })
 })
@@ -4686,8 +4687,8 @@ describe('a CRUD verb is graded by the model gate alone (FJS-2353)', () => {
   })
 })
 
-// FJS-2865. A preference names its kind from NotificationKind and a hand-over
-// names its heir, each a type in the seed, so a malformed payload is a 400
+// FJS-2865. A preference names its kind from NotificationKind and a role change
+// names its member, each a type in the seed, so a malformed payload is a 400
 // naming the field before the method reads it.
 describe('preference and ownership verbs declare their input', () => {
   test('each names a type in the seed', () => {
@@ -4695,7 +4696,7 @@ describe('preference and ownership verbs declare their input', () => {
     expect(prefs.save).toBe('NotificationPreferenceSave')
     expect(prefs.reset).toBe('NotificationPreferenceReset')
     const workspaces = (env.app.services.get('workspaces') as any).describe().inputs
-    expect(workspaces.transferOwnership).toBe('WorkspaceTransfer')
+    expect(workspaces.setMemberRole).toBe('WorkspaceMemberRole')
   })
 
   test('a kind outside the enum, or a transport that is not a boolean, is refused naming it', async () => {
@@ -4705,8 +4706,8 @@ describe('preference and ownership verbs declare their input', () => {
     await expect(prefs.call('reset', null, { kind: 'deploy_fail' })).rejects.toThrow(/kind/)
   })
 
-  test('a hand-over naming nobody is refused naming userId', async () => {
-    await expect(env.as(owner).service('workspaces').call('transferOwnership', ws.id, {}))
+  test('a role change naming nobody is refused naming userId', async () => {
+    await expect(env.as(owner).service('workspaces').call('setMemberRole', ws.id, { role: 'admin' }))
       .rejects.toThrow(/userId/)
   })
 })
@@ -4770,7 +4771,7 @@ describe('monitors', () => {
     expect(detached.channels.length).toBe(0)
 
     const other = await sys.workspace.create({ data: {
-      accountId: ws.accountId, name: 'Other', slug: `o-${tag()}`, ownerId: owner.id } })
+      accountId: ws.accountId, name: 'Other', slug: `o-${tag()}` } })
     const foreign = await sys.notificationChannel.create({ data: {
       workspaceId: other.id, name: `f-${tag()}`, kind: 'webhook', config: { url: 'https://hooks.example.com/y' } } })
     await expect(env.as(owner).service('monitors').call('attachChannel', m.id, { channelId: foreign.id }))
@@ -4880,7 +4881,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
 
     test('another workspace\'s destination is NotFound, and nothing is asked of the machine', async () => {
       const sys   = env.system as any
-      const rival = await sys.workspace.create({ data: { accountId: ws.accountId, name: `Rival ${tag()}`, slug: `rival-${tag()}`, ownerId: ws.ownerId } })
+      const rival = await sys.workspace.create({ data: { accountId: ws.accountId, name: `Rival ${tag()}`, slug: `rival-${tag()}` } })
       const theirs = await sys.backupDestination.create({ data: { workspaceId: rival.id, ...bucket(), secret: undefined, secretId: 'sec-x' } })
       await expect(take(owner, { appId: app.id, serverId: server.id, destinationId: theirs.id })).rejects.toThrow(/No backup destination/)
       expect(await sys.appBackup.count({ where: { destinationId: theirs.id } })).toBe(0)
@@ -5037,8 +5038,8 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
         await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: dest.id })
         await sys.notification.deleteMany({ where: { type: 'ReplicaFound' } })
         // notifyPeople pages only an active account, and run alone this fixture's never verified.
-        wasStatus = (await sys.user.findFirst({ where: { id: ws.ownerId } })).status
-        await sys.user.update({ where: { id: ws.ownerId }, data: { status: 'active' } })
+        wasStatus = (await sys.user.findFirst({ where: { id: owner.id } })).status
+        await sys.user.update({ where: { id: owner.id }, data: { status: 'active' } })
 
         // A replica with no database in it is not found.
         expect(await reconcileFound(env.app)).toContainEqual({ appId: app.id, databases: [], syncedAt: null })
@@ -5053,7 +5054,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
         expect(at).toBeTruthy()
         expect(synced).toBe('2026-10-27T02:00:00.000Z')
         const told = await sys.notification.findMany({ where: { type: 'ReplicaFound' } }) as any[]
-        expect(told.map(n => n.userId)).toContain(ws.ownerId)
+        expect(told.map(n => n.userId)).toContain(owner.id)
         expect(told.every(n => n.subjectType === 'Workspace' && n.subjectId === ws.id && n.data.apps[0].id === app.id)).toBe(true)
         expect((await env.as(owner).service('apps').get(app.id) as any).replicaSyncedAt).toBe('2026-10-27T02:00:00.000Z')
 
@@ -5066,7 +5067,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
         expect(await found()).toEqual([null, null])
       } finally {
         bucket.stop(true)
-        if (wasStatus) await sys.user.update({ where: { id: ws.ownerId }, data: { status: wasStatus } })
+        if (wasStatus) await sys.user.update({ where: { id: owner.id }, data: { status: wasStatus } })
         await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: null })
       }
     })
@@ -5193,7 +5194,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       const sys  = env.system as any
       const box  = await sys.server.findFirst({ where: { slug: HOST_SLUG, workspaceId: ws.id } })
         ?? await sys.server.create({ data: { workspaceId: ws.id, name: 'host', slug: HOST_SLUG, status: 'pending' } })
-      const rival = await sys.workspace.create({ data: { accountId: ws.accountId, name: `Spoof ${tag()}`, slug: `spoof-${tag()}`, ownerId: ws.ownerId } })
+      const rival = await sys.workspace.create({ data: { accountId: ws.accountId, name: `Spoof ${tag()}`, slug: `spoof-${tag()}` } })
       const spoof = await sys.server.create({ data: { workspaceId: rival.id, name: 'spoof', slug: HOST_SLUG, status: 'pending' } })
       expect(await hostReplicaFor(env.app, box.id)).toBeNull()
       await placeHubOn(box.id)
@@ -5272,7 +5273,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
 
     test('another workspace\'s destination is refused, and a removed one drops off the list', async () => {
       const sys    = env.system as any
-      const rival  = await sys.workspace.create({ data: { accountId: ws.accountId, name: `Rival ${tag()}`, slug: `rival-${tag()}`, ownerId: ws.ownerId } })
+      const rival  = await sys.workspace.create({ data: { accountId: ws.accountId, name: `Rival ${tag()}`, slug: `rival-${tag()}` } })
       const theirs = await sys.backupDestination.create({ data: {
         workspaceId: rival.id, name: `t-${tag()}`, endpoint: 'https://x.example.com', region: 'auto', bucket: 'theirs', prefix: '', secretId: 'sec-x' } })
       await expect(env.as(owner).service('apps').patch(app.id, { replicaDestinationId: theirs.id })).rejects.toThrow(/No backup destination/)

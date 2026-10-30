@@ -22,7 +22,7 @@ export const covers = [
   'forms/Switch', 'forms/RadioGroup', 'forms/Slider', 'forms/Thresholds', 'forms/SignaturePad',
   'forms/NumberInput', 'forms/MoneyInput', 'forms/Combobox', 'forms/MultiSelect',
   'forms/DatePicker', 'forms/DateTimeInput', 'forms/CodeInput', 'forms/JsonInput', 'forms/MarkdownInput',
-  'forms/FileUpload', 'forms/FileField', 'forms/GeoField', 'forms/Textbox',
+  'forms/FileUpload', 'forms/FileField', 'forms/GeoField', 'forms/Textbox', 'forms/ColorInput',
 ]
 
 const FORMS = fileURLToPath(new URL('../../../components/forms/', import.meta.url))
@@ -101,6 +101,7 @@ const COMMITS = {
   FileUpload:    { field: 'files',   commit: (t) => t.evaluate(dropFile('FileUpload')) },
   FileField:     { field: 'photo',    commit: (t) => t.evaluate(dropFile('FileField')) },
   GeoField:      { field: 'site',     commit: (t) => t.evaluate(setValue(`${box('GeoField')} input:not([name])`, '3')) },
+  ColorInput:    { field: 'accent',   commit: (t) => t.evaluate(click(`${box('ColorInput')} input[type=radio]`)) },
   // NORMAL's x writes the value from code, so no event carries it.
   Textbox:       { field: 'line',     commit: async (t) => {
     await t.clickAt(`${box('Textbox')} textarea`)

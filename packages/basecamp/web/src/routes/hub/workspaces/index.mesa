@@ -71,7 +71,7 @@ title: Hub workspaces
     { name: 'members',   label: 'Members' },
     { name: 'servers',   label: 'Servers' },
     { name: 'projects',  label: 'Projects' },
-    { name: 'owner',     label: 'Owner' },
+    { name: 'owners',    label: 'Owners' },
     { name: 'created',   label: 'Created' },
     { name: 'actions',   label: 'Actions', hideLabel: true },
   ]
@@ -120,7 +120,7 @@ title: Hub workspaces
         <td>{w.members}</td>
         <td>{w.servers}</td>
         <td>{w.projects}</td>
-        <td class="text-sm text-muted">{w.owner?.email ?? '—'}</td>
+        <td class="text-sm text-muted">{w.owners?.map(o => o.email).join(', ') || '—'}</td>
         <td class="text-sm text-muted">{day(w.createdAt)}</td>
         <td>
           {#if w.status === 'active'}

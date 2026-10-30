@@ -139,7 +139,7 @@ async function member(db: any, tag: string) {
     data: { email: `${stamp}@x.co`, name: 'Pat', accountId: acct.id, status: 'active' },
   })
   const ws = await db.workspace.create({
-    data: { name: 'Ops', slug: `ops-${stamp}`, accountId: acct.id, ownerId: user.id },
+    data: { name: 'Ops', slug: `ops-${stamp}`, accountId: acct.id },
   })
   await db.workspaceMember.create({
     data: { workspaceId: ws.id, userId: user.id, role: 'owner',

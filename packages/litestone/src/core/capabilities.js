@@ -186,6 +186,55 @@ export function expandCapabilityType(schema) {
   // own bag and this package has nothing to say about what is in it; `FJS-D151`
   // only claims the name for schemas that declare the grid.
   errors.push(...checkCapabilityLiterals(schema, new Set(values)))
+  errors.push(...checkGrantReach(schema))
+  return errors
+}
+
+/**
+ * A key that hands out a grant two rows away, refused.
+ *
+ * The may-only-grant-what-you-hold guard grades a key to a row holding a
+ * `Capability[]`, one row deep (`constraint-refusals.js`). `GroupMember.groupId ->
+ * Group.roleId -> Role.capabilities` is two, and an admin holding nothing joined a
+ * group whose role holds everything (`FJS-3681`). The list belongs on the row the key
+ * names, so the shape is refused rather than walked (`FJS-D1670`).
+ *
+ * A key to the `@@auth` model names a person, not a grant: `Job.cleanerId -> User ->
+ * Role` assigns nothing, and refusing it would refuse every schema whose principal
+ * carries a role.
+ *
+ * Read off the AST before validate() has marked relations, so a to-one is a
+ * non-array field naming a model with `@relation(fields:)`, and an implicit
+ * many-to-many is an array field whose target points back with an array.
+ */
+function checkGrantReach(schema) {
+  const models  = new Map((schema.models ?? []).map(m => [m.name, m]))
+  const holds   = (m) => m.fields.some(f => f.type?.name === CAPABILITY_TYPE)
+  const isAuth  = (m) => (m.attributes ?? []).some(a => a.kind === 'auth')
+  const keysOf  = (m) => m.fields.flatMap(f => {
+    const target = models.get(f.type?.name)
+    if (!target) return []
+    if (!f.type.array)
+      return f.attributes?.some(a => a.kind === 'relation' && a.fields) ? [{ field: f.name, target }] : []
+    const back = target.fields.filter(b => b.type?.name === m.name && b.type.array)
+    return back.length && !f.attributes?.some(a => a.kind === 'relation' && a.fields)
+      ? [{ field: f.name, target, back: back.map(b => b.name) }] : []
+  })
+
+  const errors = []
+  for (const model of models.values())
+    for (const { field, target, back = [] } of keysOf(model)) {
+      if (isAuth(target)) continue
+      // A many-to-many's far side keys back along the same edge, one row deep.
+      const via = keysOf(target).find(k => holds(k.target) && !(k.target === model && back.includes(k.field)))
+      if (!via) continue
+      const list = via.target.fields.find(f => f.type?.name === CAPABILITY_TYPE).name
+      errors.push(
+        `Model '${model.name}', field '${field}': a key to ${target.name} hands out ${via.target.name}.${list} ` +
+        `through ${target.name}.${via.field}, and the may-only-grant-what-you-hold guard grades a key one row ` +
+        `deep, so this assignment would go ungraded (FJS-D1670). Put the list on ${target.name} as ` +
+        `Capability[], or key ${via.target.name} from ${model.name} directly.`)
+    }
   return errors
 }
 

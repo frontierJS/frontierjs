@@ -117,6 +117,85 @@ export async function run(t) {
     'an Escape already taken does not close the popover')
   await t.press('Escape')
 
+  /* ── a header panel: bind:open, a title bar, a sheet (FJS-D1668) ────── */
+
+  const panel = `document.querySelector('body > .popover[aria-labelledby]')`
+  const shown = (sel) => `(() => { const el = document.querySelector(${JSON.stringify(sel)}); return !!el && getComputedStyle(el).display !== 'none' })()`
+
+  await t.viewport(1280)
+  await t.mount('popover')
+
+  await t.clickAt('#open-panel')
+  t.ok(await t.evaluate(`return await waitVisible('body > .popover[aria-labelledby]');`),
+    'setting the bound open from outside opens the panel')
+  t.ok(await t.evaluate(`
+    const tr = document.querySelector('#panel-trigger').getBoundingClientRect();
+    const p  = ${panel}.getBoundingClientRect();
+    return p.top >= tr.bottom && Math.abs(p.right - tr.right) < 40 && !${panel}.classList.contains('sheet');
+  `), 'it is placed against its trigger, end-aligned, when the trigger is on screen')
+  t.ok(await t.evaluate(`return !${shown('body > .popover-backdrop')};`),
+    'a sheet-narrow panel has no backdrop above md')
+
+  t.ok(await t.evaluate(`
+    const p = ${panel};
+    const h = p.querySelector(':scope > .surface-header h2');
+    return h?.textContent === 'Notifications' && p.getAttribute('aria-labelledby') === h.id
+        && !!p.querySelector(':scope > .surface-header #read-all')
+        && !!p.querySelector(':scope > .surface-body #panel-row');
+  `), 'the title and the action sit in a .surface-header, the content in a .surface-body, and the title names the panel')
+
+  t.ok(await t.evaluate(`return ${panel}.contains(document.activeElement);`),
+    'a panel opened from outside its trigger takes focus')
+
+  await t.press('Escape')
+  await t.eventually(`document.querySelector('#panel-state').textContent`, 'shut',
+    'Escape writes false back through bind:open')
+  t.ok(await t.evaluate(`return document.activeElement === document.querySelector('#open-panel');`),
+    'and focus goes back to what opened it')
+
+  await t.clickAt('#stage #panel-trigger')
+  await t.eventually(`document.querySelector('#panel-state').textContent`, 'open',
+    'the trigger writes true through bind:open')
+  await t.clickAt('#stage #panel-trigger')
+  await t.eventually(`document.querySelector('#panel-state').textContent`, 'shut',
+    'and a second press writes false')
+
+  await t.viewport(375)
+  await t.clickAt('#open-panel')
+  await t.evaluate(`return await waitVisible('body > .popover[aria-labelledby]');`)
+  t.ok(await t.evaluate(`
+    const p = ${panel}.getBoundingClientRect();
+    return p.left > 0 && p.left < 40 && innerWidth - p.right < 40 && innerHeight - p.bottom < 60;
+  `), 'below md the same panel is a bottom sheet, full width less a gutter')
+  t.ok(await t.evaluate(`return ${shown('body > .popover-backdrop')};`),
+    'with a backdrop')
+  await t.clickAt('body > .popover-backdrop')
+  await t.eventually(`document.querySelector('#panel-state').textContent`, 'shut',
+    'a press on the backdrop closes it')
+  await t.viewport(1280)
+
+  // A trigger a phone header hides measures 0x0; placed against it the panel sat at the origin.
+  await t.mount('popover', { hideTrigger: true })
+  await t.clickAt('#open-panel')
+  await t.evaluate(`return await waitVisible('body > .popover[aria-labelledby]');`)
+  t.ok(await t.evaluate(`
+    const el = ${panel};
+    const p  = el.getBoundingClientRect();
+    return el.classList.contains('sheet') && p.top > 40 && innerHeight - p.bottom < 60;
+  `), 'a hidden trigger makes it a sheet at every width, not a panel at the origin')
+  await t.press('Escape')
+  await t.clickAt('#open-bare')
+  t.ok(await t.evaluate(`return await waitVisible('body > .popover.sheet');`),
+    'with no trigger at all the panel opens as a sheet')
+  t.ok(await t.evaluate(`return ${shown('body > .popover-backdrop')};`),
+    'with a backdrop at every width')
+  await t.eventually(`document.activeElement?.id`, 'bare-row',
+    'and focus lands on its first control')
+  await t.clickAt('body > .popover-backdrop')
+  await t.evaluate(`await waitFor(() => !document.querySelector('body > .popover')); return true;`)
+  t.is(await t.evaluate(`return document.querySelectorAll('body > .popover, body > .popover-backdrop').length;`), 0,
+    'the backdrop closes it and goes with it')
+
   /* ── ConfirmationPopover ─────────────────────────────────────────────── */
 
   await t.mount('confirm-popover')

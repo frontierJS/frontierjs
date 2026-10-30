@@ -39,7 +39,7 @@ beforeAll(async () => {
   const sys  = env.system as any
   const own  = await sys.user.create({ data: { email: 'hub-owner@example.com' } })
   const acct = await sys.account.create({ data: { slug: 'hub-acct', displayName: 'Hub' } })
-  const ws   = await sys.workspace.create({ data: { accountId: acct.id, name: 'Hub', slug: 'hub-ws', ownerId: own.id } })
+  const ws   = await sys.workspace.create({ data: { accountId: acct.id, name: 'Hub', slug: 'hub-ws' } })
   const box  = await sys.server.create({ data: { workspaceId: ws.id, name: 'Basecamp host', slug: 'basecamp-host' } })
   await sys.hubConfig.create({ data: { id: 'hub' } })
   hubId = (await placeHub(sys, box)).id
@@ -357,7 +357,7 @@ describe('a backup naming a destination is uploaded, and a failed upload keeps t
     const uniq = Math.random().toString(36).slice(2, 8)
     const acct = await sys.account.create({ data: { slug: `bk-${uniq}`, displayName: 'Backups' } })
     const own  = await sys.user.create({ data: { email: `bk-${uniq}@example.com` } })
-    const ws   = await sys.workspace.create({ data: { accountId: acct.id, name: 'Backups', slug: `bk-${uniq}`, ownerId: own.id } })
+    const ws   = await sys.workspace.create({ data: { accountId: acct.id, name: 'Backups', slug: `bk-${uniq}` } })
     const key  = await sys.secret.create({ data: {
       workspaceId: ws.id, name: 'backup:Stand-in', kind: 'backup', data: 'keyid:applicationkey',
     } })
@@ -465,7 +465,7 @@ describe('retention prunes by count and age, local and remote apart, and a resca
     const uniq = Math.random().toString(36).slice(2, 8)
     const acct = await sys.account.create({ data: { slug: `rt-${uniq}`, displayName: 'Retention' } })
     const own  = await sys.user.create({ data: { email: `rt-${uniq}@example.com` } })
-    const ws   = await sys.workspace.create({ data: { accountId: acct.id, name: 'Retention', slug: `rt-${uniq}`, ownerId: own.id } })
+    const ws   = await sys.workspace.create({ data: { accountId: acct.id, name: 'Retention', slug: `rt-${uniq}` } })
     const key  = await sys.secret.create({ data: { workspaceId: ws.id, name: 'backup:Retention', kind: 'backup', data: 'keyid:applicationkey' } })
     dest = await sys.backupDestination.create({ data: {
       workspaceId: ws.id, name: 'Retention', endpoint: `http://127.0.0.1:${server.port}`,

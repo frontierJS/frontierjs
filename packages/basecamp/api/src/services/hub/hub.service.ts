@@ -61,10 +61,9 @@ import { postureView } from '../posture/posture.service.ts'
  *  inbox, and a plausible-looking address would eventually be mailed. */
 const BOT_EMAIL_DOMAIN = 'bots.invalid'
 
-/** A bot may not be the owner of a workspace. An owner is the one member
- *  `removeMember` refuses to remove and the one role that can delete the
- *  tenant — held by something with no password and no inbox, that is a
- *  workspace with no recoverable human. */
+/** A bot may not be an owner of a workspace. An owner is the one role that
+ *  can delete the tenant — held by something with no password and no inbox,
+ *  that is a workspace with no recoverable human. */
 const BOT_ROLES = ['viewer', 'billing', 'developer', 'admin']
 
 /** Uptime is measured from when this service was registered, which is during
@@ -220,15 +219,18 @@ export default createService({
       : rows
 
     const data = await Promise.all(page.map(async (w: any) => {
-      const [members, servers, projects, owner] = await Promise.all([
+      const [members, servers, projects, owners] = await Promise.all([
         sys().workspaceMember.count({ where: { workspaceId: w.id } }),
         sys().server.count({ where: { workspaceId: w.id } }),
         sys().project.count({ where: { workspaceId: w.id } }),
-        sys().user.findUnique({ where: { id: w.ownerId } }),
+        sys().workspaceMember.findMany({
+          where: { workspaceId: w.id, role: 'owner' }, include: { user: true }, orderBy: { createdAt: 'asc' },
+        }),
       ])
       return {
         ...w, members, servers, projects,
-        owner: owner ? { id: owner.id, email: owner.email, name: owner.displayName ?? owner.name } : null,
+        owners: owners.filter((m: any) => m.user)
+          .map(({ user: u }: any) => ({ id: u.id, email: u.email, name: u.displayName ?? u.name })),
       }
     }))
 

@@ -344,11 +344,6 @@ type NotificationPreferenceReset {
   kind NotificationKind?
 }
 
-/// What `workspaces.transferOwnership` accepts: the member who becomes owner.
-type WorkspaceTransfer {
-  userId String
-}
-
 /// What `apps.fromBlueprint`, `apps.place` and `apps.unplace` accept.
 type AppFromBlueprint {
   blueprintId   String
@@ -937,10 +932,6 @@ model Workspace {
   name      String        @trim @length(1, 80)
   slug      String        @unique @trim @length(1, 64)
   type      WorkspaceType @default(team)
-  // Restrict: a workspace with no owner is the state the hub cannot act on
-  // (`FJS-D1610`).
-  ownerId   String @system
-  owner     User          @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   settings  Json          @default("{}")
 
   // Suspension, which is NOT deletion. `deletedAt` means the tenant is gone
@@ -1061,8 +1052,8 @@ model WorkspaceMember {
 
   // `workspaces.addMember`, `setMemberRole` and `removeMember` write through
   // the caller's own client, so this deny holds the door a person walks
-  // through; only their reads (and `leave`, `transferOwnership`, which write
-  // the caller's own row) are asSystem(). A refused update answers null, which
+  // through; only their reads (and `leave`, which deletes the caller's own
+  // row) are asSystem(). A refused update answers null, which
   // setMemberRole turns into a 403. The grade of what is being handed out is
   // core/hooks.ts § refuseGrantAboveOwn.
 

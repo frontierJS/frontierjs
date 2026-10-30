@@ -715,6 +715,31 @@ describe('a key to a row holding a grant is the grant', () => {
     await db.$close()
   })
 
+  it('refuses at parse a key that hands out a grant two rows away, which the guard cannot see', () => {
+    // FJS-3681: an admin holding nothing created a GroupMember into a group whose
+    // role held everything — the guard grades Group, which holds no list.
+    const two = (join: string) => parse(`
+      model Invoice { id Int @id  amt Int  @@capabilities }
+      model Role  { id Int @id  capabilities Capability[]  @@capabilities }
+      model Group { id Int @id  roleId Int  role Role @relation(fields: [roleId], references: [id])  ${join.includes('Group[]') ? 'people Person[]' : ''} }
+      model Person { id Int @id  ${join}  @@auth }
+    `)
+    const keyed = two('groupId Int  group Group @relation(fields: [groupId], references: [id])')
+    expect(keyed.valid).toBe(false)
+    expect(keyed.errors.join('\n')).toMatch(/'Person', field 'group': a key to Group hands out Role\.capabilities through Group\.role/)
+    expect(two('groups Group[]').errors.join('\n')).toMatch(/'Person', field 'groups'/)
+  })
+
+  it('admits the list on the row the key names, and a key to the principal', () =>
+    expect(parse(`
+      model Invoice { id Int @id  amt Int  @@capabilities }
+      model Role   { id Int @id  capabilities Capability[]  @@capabilities }
+      model Group  { id Int @id  capabilities Capability[] }
+      model Person { id Int @id  roleId Int  role Role @relation(fields: [roleId], references: [id])  @@auth }
+      model Member { id Int @id  groupId Int  group Group @relation(fields: [groupId], references: [id]) }
+      model Job    { id Int @id  cleanerId Int  cleaner Person @relation(fields: [cleanerId], references: [id]) }
+    `).valid).toBe(true))
+
   it('permits a role the caller holds all of, and clearing the key', async () => {
     const { db, clerk, me, as } = await env()
     expect((await as(admin).person.update({ where: { id: me.id }, data: { roleId: clerk.id } }))!.roleId).toBe(clerk.id)

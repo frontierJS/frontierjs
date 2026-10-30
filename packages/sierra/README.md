@@ -102,7 +102,7 @@ the Vite root — `web/` — never to `config/` and never to the app root.
 
 **`config/vite.config.js`**
 
-```js
+```js fragment
 import { defineConfig } from 'vite'
 import { createSierraViteConfig } from '@frontierjs/sierra/build'
 import sierraConfig from './sierra.config.js'   // sibling — both live in config/
@@ -143,7 +143,7 @@ loads `/src/main.js` is refused at build.
 refused: a build would run main.js's imports before the boot. A first render that
 must wait goes in `App.mesa`, as an `{#if}`.
 
-```js
+```js fragment
 import '@frontierjs/css'
 ```
 
@@ -355,7 +355,7 @@ import {
 
 ### Guards and hooks
 
-```js
+```js fragment
 beforeNavigate(async ({ from, to }) => {
   if (to.pathname.startsWith('/admin/') && !isAdmin()) return '/login/'  // redirect
   if (unsavedChanges) return false                                    // cancel
@@ -533,7 +533,7 @@ that is a banner, a prompt or a silent reload is the app's answer:
 `createResource` wraps a Junction service with a four-phase hook pipeline that mirrors the
 API realm:
 
-```js
+```js fragment
 import { createResource } from '@frontierjs/sierra/resource'
 
 export const leads = createResource('leads', {
@@ -557,7 +557,7 @@ Returns `{ service, tethered, record, make, save, move, fields, relations, gate,
 **A Resource is the model's whole client-side surface** (`FJS-D114`) — the tether, the
 verbs, the reads it is asked for, and its default form. Four of those are worth naming:
 
-```js
+```js fragment
 export const leads = createResource('leads', {
   detailQuery:  { directives: { populate: ['company'] } },   // what get(id) asks for
   optionsQuery: { directives: { orderBy: 'name', limit: 500 } },  // what a picker asks for
@@ -717,7 +717,7 @@ const problems = leads.validate(draft)
 The resource *also* runs that check automatically before every `create` and `patch`,
 throwing `ResourceValidationError` instead of making the request:
 
-```js
+```js throws
 export const leads = createResource('leads')
 
 await leads.service.create({ name: 'Ada' })
@@ -779,7 +779,7 @@ leads.fields.accountId.references
 A page that shows a FrontierJS app it is not, such as a studio over the app it
 hosts, builds the resource from a handle on that app:
 
-```js
+```js fragment
 import { connectApp, createResource } from '@frontierjs/sierra/resource'
 
 const hosted = connectApp({ url: `/hosted/${id}`, apiPrefix: '/api', schema, user })
@@ -835,7 +835,7 @@ because it has no idea what the field is. So a form bound to `make()` sends `"42
 
 Only the schema knows what they were meant to be:
 
-```js
+```js throws
 export const leads = createResource('leads')
 
 await leads.service.create({ value: '42', accountId: '1' })
@@ -876,7 +876,7 @@ matches `''`, so "records with no X" silently excludes everything the app create
 The resource replaces `''` with `null` on nullable fields before every create and
 patch — on by default, off with `blankToNull: false`:
 
-```js
+```js throws
 export const leads = createResource('leads')
 
 await leads.service.create({ name: 'Ada', slug: '', notes: '' })
@@ -902,7 +902,7 @@ alongside `ready`, `signIn`, `signUp` and `signOut`; the wire half is `client.au
 client's `unauthorized` event, which clears the credential and redirects to
 `auth.redirectTo`. Route protection is declarative:
 
-```js
+```js fragment
 junction: {
   url: '…',
   cookieAuth: true,                      // only if the server issues a cookie
@@ -1333,7 +1333,7 @@ test:installable` holds the grader against Chrome's own `Page.getInstallabilityE
   and duplicate snippet/layout-prop names.
 - **Auto-import.** Two registries, one namespace:
 
-  ```js
+  ```js fragment
   autoImport: {
     components: ['src/components/UI'],
     modules: {
@@ -1412,7 +1412,7 @@ and theme if present, plus the dev-only overlay and HMR bridge. An entry that mo
 somewhere other than `#app` imports `virtual:sierra/boot` and mounts itself. The boot
 exports the route table:
 
-```js
+```js fragment
 import { tree, components, loaders, layouts, published, indexed, redirects } from 'virtual:sierra/boot'
 ```
 

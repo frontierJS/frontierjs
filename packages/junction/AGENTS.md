@@ -195,10 +195,17 @@ a column is admitted, and a key the body never reads off `$.query` is a 400 nami
 it (`FJS-D553`). A schema-built FilterBar sends columns the body did not name, so
 spread the query rather than picking keys out of it:
 
-```ts fragment
-async find() {
-  return $.db.order.findMany({ where: { ...parseWhere($.query), shopId: shop() } })
-}
+```ts
+import { createService, parseWhere, $ } from '@frontierjs/junction'
+
+const shop = () => $.me?.shopId
+
+createService({
+  name: 'orders',
+  async find() {
+    return $.db.order.findMany({ where: { ...parseWhere($.query), shopId: shop() } })
+  },
+})
 ```
 
 The same holds for a hand-written `get` or `aggregate`. A before hook that applies
@@ -212,15 +219,22 @@ SQLite's write lock for that long. `find` and `get` are never wrapped.
 does not declare `transactional:`**, because the lock would be held across the
 network. Leave it undeclared and scope the writes alone:
 
-```ts fragment
-async locate() {
-  const match = await lookupAtVendor($.data)                          // no lock held
-  return $.db.$transaction(async (tx) => {                            // lock taken here
-    const customer = await tx.customer.create({ data: { name: match.name } })
-    await tx.property.create({ data: { customerId: customer.id, ref: match.ref } })
-    return customer
-  })
-}
+```ts
+import { createService, $ } from '@frontierjs/junction'
+
+const lookupAtVendor = async (q) => (await fetch(`https://vendor.example.com/match?q=${q.address}`)).json()
+
+createService({
+  name: 'properties',
+  async locate() {
+    const match = await lookupAtVendor($.data)                          // no lock held
+    return $.db.$transaction(async (tx) => {                            // lock taken here
+      const customer = await tx.customer.create({ data: { name: match.name } })
+      await tx.property.create({ data: { customerId: customer.id, ref: match.ref } })
+      return customer
+    })
+  },
+})
 ```
 
 The writes are atomic with each other and not with the call's `after` hooks.
@@ -229,9 +243,10 @@ moves the row between the read and the write.
 
 **Report a rule the schema cannot state the way the schema reports its own:**
 
-```ts fragment
+```ts throws
 import { validateFields, BadRequest, Forbidden, NotFound, Conflict } from '@frontierjs/junction'
 
+const total = 250_000, note = ''
 await validateFields(e => {
   if (total >= 100_000 && !note) e.invalid('note', 'An order this large needs a note')
 })
@@ -242,7 +257,18 @@ await validateFields(e => {
 
 ## Calling a service from code
 
-```ts fragment
+```ts
+import { createService, $ } from '@frontierjs/junction'
+
+const posts = new Map([[1, { id: 1, title: 'Hello', status: 'open' }]])
+app.services.register(createService({ name: 'posts',
+  async find()     { return [...posts.values()].filter(p => p.status === $.query.status).slice(0, $.directives.limit) },
+  async get(ctx)   { return posts.get(ctx.id) },
+  async patch(ctx) { return Object.assign(posts.get(ctx.id), ctx.data) },
+}))
+app.services.register(createService({ name: 'orders', async pay(ctx) { return { id: ctx.id, paid: true } } }))
+const id = 1, title = 'Hello again', data = { amount: 100 }
+
 app.service('posts').find({ status: 'open' }, { directives: { limit: 10 } })
 app.service('posts').get(id)
 app.service('posts').patch(id, { title })
@@ -285,9 +311,13 @@ policy reads as `auth().x`, and every name must be declared in `db/schema.lite`
 | two sources where one WINS a shared claim | `async (ctx, user) => …` applying the precedence, with `describe: () => [a.describe(), b.describe()]` (`FJS-D694`) |
 | something else | `async (ctx, user) => ({ … })` — returns `{}` for no standing |
 
-```ts fragment
+```ts
 import { createApp } from '@frontierjs/junction'
 import { bearerClaim, cookie } from '@frontierjs/junction/bearer'
+import { createLitestoneAuth } from '@frontierjs/auth'
+
+const auth = createLitestoneAuth(db)
+const env  = { LINK_KEY: 'ab'.repeat(32) }
 
 createApp({ auth, db, principal: bearerClaim({
   from:    cookie('portal'),                 // or header('x-cart-token'), or authorization()

@@ -1,0 +1,79 @@
+<script>
+  // AttachmentList.mesa
+  // Files that are already stored: a thumbnail for an image, a FileType tile
+  // for the rest, the name, the size and a download button. FileUpload draws
+  // files being PICKED; this draws the ones that came back from the server.
+  //
+  // A real <ul> of <li> rows — the list is announced as a list, and the link
+  // is inside its item rather than carrying role="listitem" itself.
+  //
+  // Each file is `{ name, url, type?, size?, thumbnail? }`. `thumbnail` is a
+  // smaller image for the row; without one an image shows its own `url`.
+  //
+  // Usage:
+  //   <AttachmentList files={ticket.attachments} />
+  //   <AttachmentList files={files} label="Receipts" onremove={(f) => detach(f)} />
+
+  import FileType, { fileKind } from './FileType.mesa'
+  import { formatBytes } from '@frontierjs/toolbelt/units'
+
+  export let files    = []         // { name, url, type?, size?, thumbnail? }[]
+  export let label    = 'Attachments'  // accessible name of the list
+  export let onremove = undefined  // (file) => void — adds a remove button per row
+</script>
+
+{#if files?.length}
+  <ul class="rows divided" aria-label={label} {class} {...$attributes}>
+    {#each files as file, i (file.url + i)}
+      <li class="list-row">
+        {#if fileKind(file.name, file.type) === 'image' && (file.thumbnail || file.url)}
+          <img
+            class="avatar"
+            style:--avatar-size="2.5rem"
+            style:--avatar-radius="var(--card-radius)"
+            style:object-fit="cover"
+            src={file.thumbnail || file.url}
+            loading="lazy"
+            decoding="async"
+            alt=""
+          />
+        {:else}
+          <FileType name={file.name} type={file.type} />
+        {/if}
+
+        <div class="stack" style:gap="0.25rem" style:flex="1" style:min-inline-size="0">
+          <span class="text-sm">{file.name}</span>
+          {#if file.size != null}
+            <span class="text-xs text-muted">{formatBytes(file.size)}</span>
+          {/if}
+        </div>
+
+        <span class="row-actions">
+          <a
+            class="btn ghost square"
+            href={file.url}
+            download={file.name}
+            aria-label="Download {file.name}"
+          >
+            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.69L6.28 8.47a.75.75 0 0 0-1.06 1.06l4.25 4.25a.75.75 0 0 0 1.06 0l4.25-4.25a.75.75 0 1 0-1.06-1.06l-2.97 2.97V2.75z"/>
+              <path d="M3.5 13.25a.75.75 0 0 0-1.5 0v2A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2a.75.75 0 0 0-1.5 0v2c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2z"/>
+            </svg>
+          </a>
+          {#if onremove}
+            <button
+              type="button"
+              class="btn ghost square"
+              aria-label="Remove {file.name}"
+              onclick={() => onremove(file)}
+            >
+              <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z"/>
+              </svg>
+            </button>
+          {/if}
+        </span>
+      </li>
+    {/each}
+  </ul>
+{/if}

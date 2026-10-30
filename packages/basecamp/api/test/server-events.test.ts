@@ -120,7 +120,7 @@ describe('a machine\'s history is written in one vocabulary', () => {
     const acct = await sys.account.create({ data: { slug: `ev-${uniq}`, displayName: 'Ev' } })
     const user = await sys.user.create({ data: { email: `e-${uniq}@x.co`, accountId: acct.id } })
     const ws   = await sys.workspace.create({
-      data: { accountId: acct.id, name: 'Fleet', slug: `fleet-${uniq}`, ownerId: user.id },
+      data: { accountId: acct.id, name: 'Fleet', slug: `fleet-${uniq}` },
     })
     const server = await sys.server.create({
       data: { workspaceId: ws.id, name: 'ev-01', slug: `ev-${uniq}` },

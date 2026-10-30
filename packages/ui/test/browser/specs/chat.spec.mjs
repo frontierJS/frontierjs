@@ -2,7 +2,9 @@
  * chat.spec.mjs — the three chat parts: a log that follows the newest message
  * unless the reader scrolled up, a bubble on the reader's side or the other
  * party's, and a box where Enter sends and Shift+Enter breaks the line
- * (`FJS-2810`).
+ * (`FJS-2810`). The second composer carries every option: Stop while a reply
+ * streams, a send that fails and gives the words back, a draft written from
+ * outside (`FJS-3613`).
  *
  * Scroll position and key handling are properties of a real layout and real
  * input; a render test sees neither.
@@ -97,4 +99,83 @@ export async function run(t) {
   t.is(await t.evaluate(`return document.querySelector('#composer button').disabled`), false, 'Send is live with text in the box')
   await t.evaluate(`document.querySelector('#composer button').click(); return 1`)
   await t.eventually(`document.querySelector('#sent').textContent`, 'first\nsecond|x', 'the Send button sends too')
+
+  /* ── the composer's names: the box's own, and an icon button's ────── */
+
+  const names = await t.evaluate(`
+    const q = (s) => document.querySelector(s);
+    return {
+      plain: q('#composer textarea').getAttribute('aria-label'),
+      plainMax: q('#composer textarea').hasAttribute('maxlength'),
+      rich: q('#rich textarea').getAttribute('aria-label'),
+      richMax: q('#rich textarea').maxLength,
+      button: q('#rich button').getAttribute('aria-label'),
+      square: q('#rich button').classList.contains('square'),
+      icon: !!q('#rich button .icon-send'),
+    };
+  `)
+  t.is(names.plain, 'Write a message', 'with no inputLabel the box is named by its placeholder')
+  t.is(names.plainMax, false, 'and carries no maxlength')
+  t.is(names.rich, 'Message the bot', 'inputLabel names the box')
+  t.is(names.richMax, 12, 'maxlength reaches the textarea')
+  t.ok(names.button === 'Send' && names.square && names.icon, 'a send snippet makes a square icon button named by label')
+
+  /* ── a send that fails gives the words back ───────────────────────── */
+
+  const rich = (k) => `document.querySelector('#${k}').textContent`
+  const box  = `document.querySelector('#rich textarea')`
+  await t.clickAt('#fail')
+  await t.clickAt('#rich textarea')
+  await t.type('hi')
+  await t.press('Enter')
+  await t.eventually(rich('rich-sent'), 'hi', 'Enter hands the words over')
+  await t.eventually(`${box}.value`, '', 'and the box clears before the send settles')
+  await t.clickAt('#settle')
+  await t.eventually(`${box}.value`, 'hi', 'a false result puts the words back')
+  await t.eventually(rich('drafts'), 'h|hi||hi', 'ondraft hears the typing, the clear and the restore')
+  await t.eventually(`document.activeElement === ${box}`, true, 'focus returns to the box once the send settles')
+
+  await t.press('Enter')
+  await t.eventually(`${box}.value`, '', 'sent again')
+  await t.type('x')
+  await t.clickAt('#settle')
+  await t.evaluate(`return new Promise(r => setTimeout(r, 50))`)
+  t.is(await t.evaluate(`return ${box}.value`), 'x', 'words typed while the send was pending are not overwritten')
+  await t.clickAt('#fail')
+
+  /* ── sending and busy leave Enter inert ───────────────────────────── */
+
+  await t.clickAt('#sending')
+  await t.eventually(`document.querySelector('#rich button').getAttribute('aria-busy')`, 'true', 'sending shows the button loading')
+  await t.clickAt('#rich textarea')
+  await t.press('Enter')
+  t.is(await t.evaluate(`return ${rich('rich-sent')}`), 'hi|hi', 'Enter sends nothing while sending')
+  await t.clickAt('#sending')
+
+  await t.clickAt('#busy')
+  await t.clickAt('#rich textarea')
+  await t.press('Enter')
+  t.is(await t.evaluate(`return ${rich('rich-sent')}`), 'hi|hi', 'Enter sends nothing while busy')
+  await t.press('Backspace')
+  const stop = await t.evaluate(`
+    const b = document.querySelector('#rich button');
+    return { text: b.textContent.trim(), danger: b.classList.contains('danger'), off: b.disabled,
+             typing: !${box}.disabled, value: ${box}.value };
+  `)
+  t.is(stop.value, '', 'the box stays live while busy')
+  t.ok(stop.text === 'Stop' && stop.danger, 'busy turns the button into a danger Stop')
+  t.is(stop.off, false, 'and an empty box does not disable Stop')
+  await t.clickAt('#rich button')
+  await t.eventually(rich('stops'), '1', 'Stop calls onstop')
+  await t.clickAt('#busy')
+  await t.eventually(`document.querySelector('#rich button').disabled`, true, 'back to Send, off over an empty box')
+
+  /* ── a draft set from outside regrows the box, up to maxRows ──────── */
+
+  const empty = await t.evaluate(`return ${box}.offsetHeight`)
+  await t.clickAt('#suggest')
+  await t.eventually(`${box}.value`, 'one\ntwo\nthree', 'the outside draft lands in the box')
+  await t.eventually(`${box}.offsetHeight > ${empty}`, true, 'and the box regrows to it')
+  t.ok(await t.evaluate(`const b = ${box}; return b.scrollHeight > b.clientHeight`),
+    'three lines past maxRows=2 scroll')
 }

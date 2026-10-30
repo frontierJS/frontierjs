@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-169 definitions · 73 models · 1 view · 38 types · 57 enums · 0 other
+168 definitions · 73 models · 1 view · 37 types · 57 enums · 0 other
 ```
 
 ## Definitions
@@ -177,7 +177,6 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `DomainCertUpload` | type |
 | `NotificationPreferenceSave` | type |
 | `NotificationPreferenceReset` | type |
-| `WorkspaceTransfer` | type |
 | `AppFromBlueprint` | type |
 | `ProjectFromRepo` | type |
 | `AppRepoDockerfile` | type |
@@ -611,7 +610,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 - gate `read:1 create:1 update:5 delete:6` · version field `version` · closed (`additionalProperties: false`)
 - relation `account` — belongsTo `Account` via `accountId`
-- relation `owner` — belongsTo `User` via `ownerId` · on delete Restrict
 - relation `members` — hasMany `WorkspaceMember`
 - relation `invitations` — hasMany `Invitation`
 - relation `projects` — hasMany `Project`
@@ -633,7 +631,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` `x-transforms` | — |
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` `x-transforms` | — |
 | `type` | `WorkspaceType` = `"team"` | — | — | — | — |
-| `ownerId` | `string` | — | — | `x-litestone-kind` | — |
 | `settings` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `status` | `WorkspaceStatus` = `"active"` | — | — | — | — |
 | `expiresAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
@@ -2060,16 +2057,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `kind` | `NotificationKind`? | — | — | — | — |
 
 **On create**: required — nothing
-
-### `WorkspaceTransfer`
-
-- closed (`additionalProperties: false`)
-
-| Field | Type | Required | Label | Rules | Messages |
-| --- | --- | --- | --- | --- | --- |
-| `userId` | `string` | yes | — | — | — |
-
-**On create**: required — `userId`
 
 ### `AppFromBlueprint`
 

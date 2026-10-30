@@ -1728,6 +1728,32 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1673"></a>2026-10-30 · `FJS-D1673` — Q2 — How does the framework sanction the Group shape — Example models only: the documented house pattern, with no syntax.
+
+Asked in [`IDEAS/groups.md`](IDEAS/groups.md) § Open questions. **D** was picked over **A** (A `@@group` marker. Litestone recognizes the shape: it computes the union, guards a member write, and refuses a level column or nesting), **B** (Litestone synthesizes fixed `Group`/`GroupMember` models, the way it synthesizes `Capability`), **C** (`@frontierjs/auth` ships the models and the resolver).
+
+Against the recommendation (**A**): the owner wants the house pattern shown in example models before any syntax; the gate-8 member model plus one service door closes the escalation hole with today's syntax, and a @@group marker reopens if several apps copy the door unchanged.
+
+### <a id="fjs-d1672"></a>2026-10-30 · `FJS-D1672` — Q3 — When are a user's group capabilities computed — Per request, one join in the claim resolver.
+
+Asked in [`IDEAS/groups.md`](IDEAS/groups.md) § Open questions. **A** was picked over **B** (Copied onto the member row on write, as Basecamp does today).
+
+The paper's recommendation, taken as written: a group edit reaches every member on their next request. This is already `permission-sets.md`'s rule, and B keeps the staleness defect class.
+
+### <a id="fjs-d1671"></a>2026-10-30 · `FJS-D1671` — Q1 — How many tiers between a capability and a user — Two: Group holds `Capability[]` and its member list. No Role model, and no grant column on the member row.
+
+Asked in [`IDEAS/groups.md`](IDEAS/groups.md) § Open questions. **A** was picked over **B** (Two, plus a per-member `Capability[]` unioned in, for one-off grants), **C** (Three, Role → Group → user, as in Keycloak and AD. A Role is reusable across groups, at the cost of two editors and two escalation checks).
+
+The paper's recommendation, taken as written: one noun, one origin for a capability, and one level simpler than C. A one-off grant is a group of one.
+
+### <a id="fjs-d1669"></a>2026-10-30 · `FJS-D1669` — A framework membership makes OWNER a role on the member row, and a tenant may hold several; the framework keeps no single `ownerId`
+
+Asked in session, after prior art was pulled. As recommended. **A** (role only, many owners) was picked over **B** (owner roles plus one named `ownerId` kept in sync, Basecamp's shape today) and **C** (one owner on the tenant row, Jetstream's). GitHub and Better Auth both store owner as a role on the membership, and GitHub recommends at least two owners per organization; Clerk has no owner and Jetstream keeps one beside the members. B is two answers to *who owns this* that `leave` and `transferOwnership` must keep agreeing. C makes an owner a single point of loss.
+
+The guards come with the role, at the Data boundary rather than in each app's service: the last owner may not leave or be demoted, nobody moves a member who outranks them, and nobody changes their own role. So handing ownership over is promoting another member, and the giver stays an owner until a co-owner demotes them or they leave. Better Auth shipped without the third and an organization lost its only owner to a self-demotion ([better-auth#3651](https://github.com/better-auth/better-auth/issues/3651)). The ladder already carries `OWNER: 6`, read off `isOwner` (`packages/toolbelt/src/gate/gate.js`); this rules what fills that claim per tenant, not the scale. Whether the framework ships the membership at all, and in which package, is not ruled here.
+
+*Lives in:* nothing yet; Basecamp's `WorkspaceMember` + `membershipClaim()` is the shape to lift, and `Workspace.ownerId` is Basecamp's own to keep as a billing contact or drop. *Enforced by:* nothing yet.
+
 ### <a id="fjs-d1608"></a>2026-10-28 · `FJS-D1608` — `Invitation.token` is `@hashed`.
 
 Asked in session (`IDEAS/basecamp-dogfood.md` Q10). A bearer token stored raw under `@guarded`, where its siblings hash — `Server.enrollTokenHash`, `App.pushTokenHash`, `ApiKey` keeps a hint and the credential. Invariant 7 names `@hashed`; it is WHERE-matchable, so the `@unique(global)` lookup survives. Later it is a reissue of every outstanding invite, which is why it is in the pre-dogfood pass.
@@ -13003,6 +13029,14 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 `core/errors.ts`.
 
 ## UI substrate (Mesa)
+
+### <a id="fjs-d1670"></a>2026-10-30 · `FJS-D1670` — A route strip is `<TabList nav>` of `<Tab href current>`: `current` is the caller's prop, not derived from a handed-in `isActive`.
+
+Answers [FJS-3610](ISSUES.md#fjs-3610). As recommended (A). `TabList nav` draws `<nav aria-label>` with no `role="tablist"` and no arrow keys, and provides `$context.tabStrip` so its Tabs know they are not tabs. A `Tab` with `href` is `<a class="tab">` answering `aria-current="page"` when `current`, with no tab role and no registration, with or without a `Tabs`; disabled, it drops its `href` and says `aria-disabled`. A `Tab` with no `href` inside a `nav` is a plain `<button class="tab">`, because tpm's strip mixes routes with panel openers. A `Tab` with `href` inside a real tablist warns by name and still draws. **B** (`TabList nav` takes Sierra's `isActive`, Shell's shape, and each Tab derives `current` from its `href`, `exact` for a parent route) was not taken: one route source, but a fourth prop, and a parent route that forgets `exact` is current on every child. *Lives in:* `packages/ui/components/layout/Tab.mesa`, `TabList.mesa`; proved by `test/render.mjs` § A strip of routes is a nav of links.
+
+### <a id="fjs-d1668"></a>2026-10-30 · `FJS-D1668` — `Popover` takes a bindable `open`, a `title` with an `action` snippet, and a boolean `sheet`; with no trigger on screen it is a sheet at every width, and it takes no `anchor` or `maxHeight`.
+
+Answers [FJS-3628](ISSUES.md#fjs-3628). As recommended (A). `sheet` draws the panel as a bottom sheet below md, in CSS (`.sheet-narrow` in `popovers.css`), over a `.popover-backdrop` a press on which is a click-away, so the panel stays non-modal. A trigger that is absent or measures 0×0 (a phone header hides it) leaves nothing to place against, so the panel is `.sheet` at every width; that is the ticket's `'always'`. The placed point is written as `--popover-x`/`--popover-y` rather than inline `left`/`top`, so the sheet rule can take the box back without `!important`. A header makes the panel a column with a scrolling, contained `.surface-body` capped at the viewport, which is the ticket's `maxHeight`. A panel opened by `open` moves focus into itself and gives it back to what had it. **B** (a `title` alone turns on the phone sheet: one prop fewer, but the title does two jobs) and **C** (the ticket as written: `sheet: 'never'|'narrow'|'always'`, `anchor: Element|selector`, `maxHeight`; `anchor` would be a second implementation beside `ConfirmPanel`'s, and the other two restate what the trigger and the header already say) were not taken. `action`, not `actions`, per `FJS-D1654`. Lives in `packages/ui/components/overlay/Popover.mesa` and `@frontierjs/css` `popovers.css`.
 
 ### <a id="fjs-d1002"></a>2026-10-30 · `FJS-D1002` — A generated `<Form>` draws an implicit m2m as a field: a get populates its members and `save()` writes a changed list as one `set`, and a typed member is created where the caller may create the related row.
 

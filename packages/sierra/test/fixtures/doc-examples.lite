@@ -1,0 +1,44 @@
+database main { path ":memory:" }
+
+enum Plan { starter pro enterprise }
+
+model Account {
+  id    Int    @id @default(autoincrement())
+  name  String
+  leads Lead[]
+  @@gate(0.0.0.0)
+}
+
+model Lead {
+  id        Int      @id @default(autoincrement())
+  name      String   @length(1, 200)
+  email     String   @email
+  plan      Plan
+  status    String   @default("new")
+  value     Float    @default(0)
+  slug      String?  @unique
+  notes     String?
+  accountId Int
+  account   Account  @relation(fields: [accountId], references: [id])
+  tags      Tag[]
+  @@gate(0.4.4.5)
+}
+
+model Tag {
+  id    Int    @id @default(autoincrement())
+  name  String
+  leads Lead[]
+  @@gate(0.0.0.0)
+}
+
+model Child {
+  id   Int    @id @default(autoincrement())
+  name String
+  @@gate(0.0.0.0)
+}
+
+model Person {
+  id   Int    @id @default(autoincrement())
+  name String
+  @@gate(0.0.0.0)
+}
