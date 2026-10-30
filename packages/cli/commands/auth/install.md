@@ -278,7 +278,9 @@ if (alreadyInstalled) {
 for (const name of [flag.db, 'audit']) {
   if (new RegExp(`database\\s+${name}\\s*\\{`).test(schemaContents)) continue
   log.error(`Database block '${name}' not found in schema.lite`)
-  log.info(`Add a 'database ${name} { path ... }' block to schema.lite first`)
+  log.info(name === 'audit'
+    ? `Add 'database audit { path "./db/audit/" driver trail retention 90d }' to schema.lite first -- a plain sqlite audit database also needs a log model`
+    : `Add a 'database ${name} { path ... }' block to schema.lite first`)
   return
 }
 

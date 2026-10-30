@@ -12,7 +12,7 @@
 //
 //   `api/test/sso-env.test.ts` reads the environment and mounts the API; it
 //   cannot say that the SAME variables, set on the web server's process,
-//   reach `sierra.config.js` as `__BASECAMP_COOKIE_AUTH__`. Left false while
+//   reach the client as `junction.cookieAuth`. Left false while
 //   the API runs cookie sessions, a signed-in browser holds a session it
 //   cannot find again: the page keeps no token and has no boot restore.
 //
@@ -168,7 +168,7 @@ try {
   await until(`location.pathname`, p => p === '/', 'password sign-in never landed on the overview')
   ok('a password still signs in with a provider configured')
   check('and the page holds no bearer token', (await evaluate(`localStorage.getItem(${JSON.stringify(TOKEN_KEY)})`)) === null,
-    'cookieAuth never reached sierra.config.js, so the client stored a token the API never sent')
+    'cookieAuth never reached the client, so the client stored a token the API never sent')
   await goto('/')
   await sleep(800)
   check('a reload is still signed in, restored from the cookie', await evaluate(`location.pathname`) === '/',

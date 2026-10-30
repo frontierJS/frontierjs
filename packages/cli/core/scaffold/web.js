@@ -272,7 +272,7 @@ export function makeNavJs(useAuth) {
   return `// The app's navigation table, drawn by the Shell in routes/_module.mesa.
 // \`fli make:scaffold\` appends an entry here for each model it lays out.
 //
-// A \`show\` is an affordance and never the boundary (Invariant 6): the server
+// A \`show\` is an affordance and never the boundary: the server
 // refuses whatever the nav offers, so hiding a link changes what is worth
 // clicking and nothing about what is reachable.
 ${useAuth ? `

@@ -418,7 +418,7 @@ export function buildRelations(schema, resolveName = modelNameFor) {
 // the error — is NOT repeated here; that resolution already has an owner and
 // restating it is what this whole row exists to remove.
 
-/** The one syntax that is prose a person writes, so it gets a text box rather than a code editor. */
+/** The one syntax that is prose a person writes, so it gets the Markdown control rather than a code editor. */
 const _PROSE = 'md'
 /** Prose that is not Markdown: a text box, shown as written (`FJS-D673`). */
 const _PLAIN = 'txt'
@@ -429,7 +429,7 @@ const _SCALAR_ITEMS = ['string', 'integer', 'number']
 // The table above is the framework's answer, and it is deliberately small: a
 // kit that ships five controls can only claim five kinds of column. Everything
 // else — a `Json` document, a `String[]`, a `Decimal` an app renders as money,
-// a rich text editor over `@syntax(md)` — is a control somebody else owns, and
+// a WYSIWYG editor over `@syntax(md)` — is a control somebody else owns, and
 // until this registry existed there was nowhere to put it. `controlFor` was a
 // switch inside a published package, so "contribute a control" meant forking
 // Sierra.
@@ -565,7 +565,7 @@ export function defaultControlFor(rule) {
 /**
  * Which control this field gets.
  *
- *   { control: 'input'|'textarea'|'select'|'checkbox'|'picker'|'datetime'|'geo'|'json'|'money'|null,
+ *   { control: 'input'|'textarea'|'markdown'|'select'|'checkbox'|'picker'|'datetime'|'geo'|'json'|'money'|null,
  *     task?: 'select'|'quantify'|'text'|'position'|'bytes',
  *     type?, options?, model?, valueField?, relation?, reason? }
  *
@@ -744,7 +744,8 @@ function _builtinControl(rule) {
       return { control: 'input', task: 'quantify', step: 'any' }
 
     case 'string': {
-      if (rule['x-syntax'] === _PROSE || rule['x-syntax'] === _PLAIN) return { control: 'textarea', task: 'text' }
+      if (rule['x-syntax'] === _PROSE) return { control: 'markdown', task: 'text' }
+      if (rule['x-syntax'] === _PLAIN) return { control: 'textarea', task: 'text' }
       if (rule['x-syntax']) return { control: 'code', task: 'text', language: rule['x-syntax'] }
       // `@big`. Asked before every other string row because it is the one whose
       // JSON type does not describe the value: the column is an integer and the

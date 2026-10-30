@@ -127,7 +127,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 A value removed here is a row already in the database that no longer
 validates, and a select that silently drops an option.
 
-- `VerificationPurpose` — `passwordReset`, `emailVerify`, `oauthLink`, `magicLink`, `emailChange`, `registration`
+- `VerificationPurpose` — `passwordReset`, `emailVerify`, `oauthLink`, `magicLink`, `emailChange`, `registration`, `invitation`
 - `MetricType` — `counter`, `gauge`, `histogram`
 - `FlowStatus` — `draft`, `active`, `paused`, `archived`
 - `FlowRunStatus` — `pending`, `running`, `waiting`, `completed`, `failed`, `cancelled`

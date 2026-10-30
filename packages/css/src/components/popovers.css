@@ -8,7 +8,7 @@
  *
  *   <div class="popover-anchor">
  *     <button class="btn" aria-expanded="false">Actions</button>
- *     <article class="popover" hidden> … </article>
+ *     <article class="popover" role="dialog" aria-label="…" hidden> … </article>
  *   </div>
  *
  * `.popover` is `position: absolute`, so without a positioned ancestor it

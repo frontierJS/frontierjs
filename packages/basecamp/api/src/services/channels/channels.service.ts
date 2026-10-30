@@ -30,7 +30,7 @@
 // evaluator is its second caller, and a per-kind table in two places is a kind
 // added to one of them — tests green, never delivers.
 
-import { createService, BadRequest, Conflict, $ } from '@frontierjs/junction'
+import { createService, BadRequest, Conflict, parseWhere, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, actor }
@@ -96,14 +96,13 @@ export default createService({
 
   async find() {
     const { limit, offset } = getPagination()
-    const kind     = $.query.kind as string | undefined
     // The wire carries strings and the column is a boolean; comparing them
     // raw matches nothing and reports an empty list rather than an error.
     const isActive = $.query.isActive as string | boolean | undefined
 
     const page = await findScoped('notificationChannel', {
       where: {
-        ...(kind ? { kind } : {}),
+        ...parseWhere($.query),
         ...(isActive !== undefined ? { isActive: isActive === true || isActive === 'true' } : {}),
       },
       orderBy: { name: 'asc' },

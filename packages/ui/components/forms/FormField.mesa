@@ -22,8 +22,9 @@
   import DateTimeInput from './DateTimeInput.mesa'
   import FileField     from './FileField.mesa'
   import GeoField      from './GeoField.mesa'
+  import MarkdownInput from './MarkdownInput.mesa'
   import MultiSelect   from './MultiSelect.mesa'
-  import Input         from './Input.mesa'
+  import Input        from './Input.mesa'
   import JsonInput     from './JsonInput.mesa'
   import MoneyInput    from './MoneyInput.mesa'
   import Select        from './Select.mesa'
@@ -121,8 +122,15 @@
         name: f.name, value: v, oninput: (e) => onvalue(e.target.value),
       }),
     },
-    // `@syntax(sql)` and every other language but `md`, which is prose and
-    // stays a textarea. The language is the column's, so it rides the entry.
+    // `@syntax(md)` (`FJS-D1656`): prose with a toolbar and a Preview.
+    markdown: {
+      component: MarkdownInput,
+      props: ({ field: f, value: v, onvalue }) => ({
+        name: f.name, value: v, oninput: (e) => onvalue(e.target.value),
+      }),
+    },
+    // `@syntax(sql)` and every other language but `md` and `txt`, which are
+    // prose. The language is the column's, so it rides the entry.
     // Numbered, because a server refusing a column of code names its line.
     code: {
       component: CodeInput,

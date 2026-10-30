@@ -21,10 +21,9 @@ and removing it took Mesa from 27 skipped tests to zero.
   34 covered 16 of the 22 components: `Header` and `Link` were rendered by
   nothing at all, and four more only through the whole-document template. Every
   component is now rendered on its own, off a list READ from the directory.
-- **A component that cannot take children warns instead of dropping them**
-  (`components/slot-guard.js`). Eight take no content and `TwoCol` takes only
-  named slots; Mesa drops the children in silence, so the kit says so. The
-  language-level rule is `FJS-926`.
+- **Children handed to a component that cannot take them are named by Mesa**,
+  with the props the component declares (`FJS-926`, `FJS-938`). The kit warns
+  only where Mesa cannot know the parent (`refuseCell` in `components/slot-guard.js`).
 - Re-verified 2026-08-06: between
   2026-08-03 and then **all 34 were failing**, because mesa moved its sources
   into `src/` and both this package's probe paths and mesa's own temp-dir

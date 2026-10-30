@@ -715,25 +715,20 @@ export function outpostScope(): Hook {
 // ─── getPagination ───────────────────────────────────────────────────────
 // `$limit` / `$offset` are TRANSPORT syntax. The bridge parses them off the
 // query string and puts them on ctx.directives; nothing past the bridge ever
-// sees a `$` (Invariant 10). ctx.query is filters only, so the old
-// `q.$limit ?? ctx.raw.query.$limit` chain read fields that are never there.
-// ctx.query.limit is still honored for internal callers that pass it plainly.
+// sees a `$` (Invariant 10). ctx.query is filters only: a plain `limit` there
+// is a column no model has, and the find's autoFilter refuses it by name.
 
 export function getPagination(
   defaults: { limit?: number; max?: number } = {}
 ): { limit: number; offset: number; after?: string } {
-  const q = $.query as Record<string, unknown>
   const d = ($.directives ?? {}) as { limit?: number; offset?: number; after?: string }
 
-  const limit  = Math.min(
-    parseInt(String(d.limit ?? q.limit ?? defaults.limit ?? 20), 10),
-    defaults.max ?? 200
-  )
-  const offset = parseInt(String(d.offset ?? q.offset ?? 0), 10)
+  const limit  = Math.min(Number(d.limit ?? defaults.limit ?? 20), defaults.max ?? 200)
+  const offset = Number(d.offset ?? 0)
 
   return {
-    limit:  Number.isNaN(limit)  ? (defaults.limit ?? 20)  : Math.max(1, limit),
-    offset: Number.isNaN(offset) ? 0 : Math.max(0, offset),
+    limit:  Number.isNaN(limit)      ? (defaults.limit ?? 20) : Math.max(1, Math.trunc(limit)),
+    offset: Number.isFinite(offset)  ? Math.max(0, Math.trunc(offset)) : 0,
     // `$after` is the third thing a caller can ask for and it is one of these,
     // not a filter: a hand-written find that reads limit and offset and drops
     // the cursor answers page one to every press of "load more" (`FJS-D145`).

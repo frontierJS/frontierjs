@@ -8020,7 +8020,8 @@
         "oauthLink",
         "magicLink",
         "emailChange",
-        "registration"
+        "registration",
+        "invitation"
       ],
       "title": "VerificationPurpose"
     },

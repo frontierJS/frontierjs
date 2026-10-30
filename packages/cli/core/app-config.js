@@ -21,12 +21,12 @@
 // a hand copy of `packages/config/editorconfig`, and `packages/config/test`
 // asserts the two are byte-identical rather than trusting anyone to remember.
 
-import { viteScript, tsconfigWithSurface } from './scaffold/surface.js'
+import { viteScript, tsconfigWithSurface, writeAbsent } from './scaffold/surface.js'
 
 // ─── config/api-origin.js ─────────────────────────────────────────────────────
 // Byte-identical to example/config/api-origin.js, which make:desktop's test
-// compares against. Only make:desktop writes it; the other surface scaffolds
-// still read FRONTIER_PUBLIC_API_URL themselves (FJS-3551).
+// compares against. Every scaffold that reads the API origin (desktop, site,
+// extension) writes it through `writeApiOrigin` and calls `pinApiOrigin`.
 
 export const API_ORIGIN_MODULE = `// config/api-origin.js — where a surface's build finds the API.
 //
@@ -48,6 +48,11 @@ export function pinApiOrigin(stated, env) {
   return env.FRONTIER_PUBLIC_API_URL
 }
 `
+
+/** The app's, not a surface's: written when absent, so a surface added later shares it. */
+export function writeApiOrigin(root) {
+  return writeAbsent(root, '', { files: [['config/api-origin.js', API_ORIGIN_MODULE]] })
+}
 
 // ─── .editorconfig ────────────────────────────────────────────────────────────
 // Byte-identical to packages/config/editorconfig. Change one, change both — the

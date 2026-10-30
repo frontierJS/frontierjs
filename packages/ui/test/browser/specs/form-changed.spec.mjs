@@ -21,7 +21,7 @@ export const covers = [
   'forms/Form', 'forms/Input', 'forms/Textarea', 'forms/Select', 'forms/Checkbox',
   'forms/Switch', 'forms/RadioGroup', 'forms/Slider', 'forms/Thresholds', 'forms/SignaturePad',
   'forms/NumberInput', 'forms/MoneyInput', 'forms/Combobox', 'forms/MultiSelect',
-  'forms/DatePicker', 'forms/DateTimeInput', 'forms/CodeInput', 'forms/JsonInput',
+  'forms/DatePicker', 'forms/DateTimeInput', 'forms/CodeInput', 'forms/JsonInput', 'forms/MarkdownInput',
   'forms/FileUpload', 'forms/FileField', 'forms/GeoField', 'forms/Textbox',
 ]
 
@@ -97,7 +97,8 @@ const COMMITS = {
   DateTimeInput: { field: 'at',       commit: (t) => t.evaluate(setValue(`${box('DateTimeInput')} input`, '2026-01-02T03:04')) },
   CodeInput:     { field: 'body',     commit: (t) => typeInto(t, `${box('CodeInput')} textarea`, 'x') },
   JsonInput:     { field: 'doc',      commit: (t) => t.evaluate(setValue(`${box('JsonInput')} textarea`, '5')) },
-  FileUpload:    { field: 'files',    commit: (t) => t.evaluate(dropFile('FileUpload')) },
+  MarkdownInput: { field: 'notes',    commit: (t) => typeInto(t, `${box('MarkdownInput')} textarea`, 'x') },
+  FileUpload:    { field: 'files',   commit: (t) => t.evaluate(dropFile('FileUpload')) },
   FileField:     { field: 'photo',    commit: (t) => t.evaluate(dropFile('FileField')) },
   GeoField:      { field: 'site',     commit: (t) => t.evaluate(setValue(`${box('GeoField')} input:not([name])`, '3')) },
   // NORMAL's x writes the value from code, so no event carries it.

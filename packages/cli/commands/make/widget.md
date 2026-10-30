@@ -75,8 +75,8 @@ const root = $.paths.root
 
 if (!isWidgetName(name)) {
   log.error(
-    `"${name}" is not a widget name — PascalCase and singular, like a component ` +
-    `(Invariant 19). It is also the tag a host page writes: ${name} → <${widgetTag(name)}>.`
+    `"${name}" is not a widget name — PascalCase and singular, like a component, ` +
+    `because it is also the tag a host page writes: ${name} → <${widgetTag(name)}>.`
   )
   return
 }

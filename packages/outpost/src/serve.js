@@ -19,7 +19,7 @@
  */
 
 import fsp                from 'node:fs/promises'
-import { basename, join, resolve, extname } from 'node:path'
+import { basename, join, relative, resolve, extname } from 'node:path'
 import { contentTypeFor } from '@frontierjs/toolbelt/mime'
 import { layout }         from './layout.js'
 
@@ -39,6 +39,53 @@ function labelFromHost(host) {
   if (/^[0-9.]+$/.test(name) || !name.includes('.')) return null
   const label = name.split('.')[0]
   return /^[a-z0-9][a-z0-9-]*$/.test(label) ? label : null
+}
+
+/** Files a build ships for its HOST to read: this origin is the host, so they
+ *  are configuration here and never a public file. A site that kept serving
+ *  them published its own cache rules at `/_headers` and applied none. */
+const HOST_CONFIG = new Set(['_headers', '_redirects'])
+
+/** A `_headers` rule is a stranger's text; these would break the framing of the
+ *  reply or plant a cookie on an origin that may be shared by path. */
+const REFUSED_HEADERS = new Set([
+  'content-length', 'content-encoding', 'transfer-encoding', 'connection', 'host', 'set-cookie', 'etag',
+])
+
+function patternMatches(pattern, path) {
+  const source = pattern
+    .split('*').map(part => part
+      .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+      .replace(/:[A-Za-z]\w*/g, '[^/]+'))
+    .join('.*')
+  return new RegExp(`^${source}$`).test(path)
+}
+
+/**
+ * The headers a `_headers` file (Cloudflare's format) gives one path.
+ *
+ * Every matching rule applies in file order and a repeated header joins with a
+ * comma, the way Cloudflare does; `! Name` detaches what an earlier rule set,
+ * which is how Sierra's narrower `/assets/*` rule replaces `/*`'s revalidate
+ * rather than sending both.
+ */
+export function headersFor(text, path) {
+  const out = new Map()
+  let applies = false
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (line === '' || line.startsWith('#')) continue
+    if (!/^\s/.test(raw)) { applies = patternMatches(line, path); continue }
+    if (!applies) continue
+    if (line.startsWith('!')) { out.delete(line.slice(1).trim().toLowerCase()); continue }
+    const at = line.indexOf(':')
+    if (at < 1) continue
+    const name = line.slice(0, at).trim().toLowerCase()
+    if (REFUSED_HEADERS.has(name) || !/^[a-z0-9-]+$/.test(name)) continue
+    const value = line.slice(at + 1).trim()
+    out.set(name, out.has(name) ? `${out.get(name)}, ${value}` : value)
+  }
+  return Object.fromEntries(out)
 }
 
 export function createStaticServer({ staticDir = layout().static } = {}, { log = console } = {}) {
@@ -93,9 +140,15 @@ export function createStaticServer({ staticDir = layout().static } = {}, { log =
     // built around the History API asks for `/orders/7` and the server that
     // 404s it turns every refresh into a broken page. A request that names a
     // file — `app.js`, `logo.png` — is answered with the truth instead.
-    if (!extname(wanted[wanted.length - 1])) return settle(base, ['index.html'])
+    if (!extname(wanted[wanted.length - 1]) && !isHostConfig(base, resolve(base, ...wanted))) return settle(base, ['index.html'])
     return null
   }
+
+  const isHostConfig = (base, target) => HOST_CONFIG.has(relative(base, target))
+
+  /** The release's `_headers`, or null. Read per request: it is a few lines,
+   *  and a cache would have to be keyed on the digest to be safe. */
+  const headerRules = (base) => fsp.readFile(join(base, '_headers'), 'utf8').catch(() => null)
 
   /** Whether a label has an app published under it — a `hosts/` entry that resolves inside the root. */
   async function isApp(label) {
@@ -120,6 +173,7 @@ export function createStaticServer({ staticDir = layout().static } = {}, { log =
     // it there, which is exactly when the check has to hold.
     const real = await fsp.realpath(target).catch(() => null)
     if (!real || (real !== base && !real.startsWith(base + '/'))) return null
+    if (isHostConfig(base, target) || isHostConfig(base, real)) return null
 
     return { path: real, size: stat.size, base }
   }
@@ -138,8 +192,9 @@ export function createStaticServer({ staticDir = layout().static } = {}, { log =
       return NOT_FOUND('no app named here — reach one by hostname, or by /<slug>/ on this port')
 
     let file = null
+    let seen = null
     for (const t of tries) {
-      if ((file = await locate(t.label, t.rest))) break
+      if ((file = await locate(t.label, t.rest))) { seen = t; break }
       // A port is an origin (`FJS-D345`, `FJS-D618`): a host that names an app
       // makes that app's origin, so a request that app cannot answer is a 404
       // rather than a second try at another app's files under its hostname.
@@ -152,19 +207,26 @@ export function createStaticServer({ staticDir = layout().static } = {}, { log =
     // it has; one byte different and every URL is new, with no path to purge.
     const digest = basename(file.base)
     const etag   = `"${digest}:${file.path.slice(file.base.length)}"`
+
+    // Rules match the path the app sees: a path-reached app is mounted at
+    // `/<slug>/`, which its `_headers` never mentions.
+    const rules  = await headerRules(file.base)
+    const ruled  = rules ? headersFor(rules, seen.byHost ? url.pathname : url.pathname.replace(/^\/[^/]*/, '') || '/') : {}
     if (req.headers.get('if-none-match') === etag)
-      return new Response(null, { status: 304, headers: { etag, 'cache-control': 'no-cache' } })
+      return new Response(null, { status: 304, headers: { etag, 'cache-control': 'no-cache', ...ruled } })
 
     const headers = {
       etag,
       // Revalidate rather than expire. A prototype is republished while
       // somebody watches the tab, and a max-age here is a person being shown
-      // the release before last with no way to tell.
+      // the release before last with no way to tell. The app's own `_headers`
+      // replaces this where it states a rule.
       'cache-control':          'no-cache',
       'content-type':           contentTypeFor(file.path, { charset: true }),
       // The type is the one the extension declares and the bytes are a
       // stranger's, so a `.txt` full of markup must stay a `.txt`.
       'x-content-type-options': 'nosniff',
+      ...ruled,
     }
     if (req.method === 'HEAD')
       return new Response(null, { status: 200, headers: { ...headers, 'content-length': String(file.size) } })

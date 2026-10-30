@@ -12,7 +12,7 @@ inside the API you are already running, and `projectTools()` is what it serves â
 
 ## Mounting it
 
-```js
+```js fragment
 import { mcp } from '@frontierjs/mcp'
 
 app.configure(mcp())          // POST/GET/DELETE at {apiPrefix}/mcp
@@ -52,7 +52,7 @@ Here it is three numbers that already exist, enforced in the database layer:
 
 ## Using it
 
-```js
+```js fragment
 import { projectTools, schemaViews } from '@frontierjs/mcp'
 import { generateJsonSchema } from '@frontierjs/litestone/jsonschema'
 
@@ -150,7 +150,7 @@ cli/
   dist/                    what fli cli:build writes
 ```
 
-```js
+```js fragment
 // cli/config/cli.config.js
 export default { name: 'shop', tenantHeader: 'x-workspace-id', url: 'https://shop.example/mcp' }
 
@@ -164,7 +164,7 @@ await main({ ...config, routes: new URL('./routes/', import.meta.url) })
 declares every tool it calls in `uses`. It is offered only to a caller who holds
 all of them, and `checkRoutes` names a route whose tool is gone.
 
-```js
+```js fragment
 // cli/src/routes/orders/summary.js  â†’  shop orders summary
 import { defineCommand } from '@frontierjs/mcp/client'
 export default defineCommand({

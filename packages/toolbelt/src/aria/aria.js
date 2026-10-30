@@ -77,6 +77,9 @@ export const ARIA = Object.freeze({
   Dialog:     { requires: ['label'] },
   Drawer:     { requires: ['label'], parts: { 'drawer-handle': { role: 'separator', requires: ['label'] } } },
   Tooltip:    { role: 'tooltip' },
+  // A non-modal dialog: a `<article>` has no role to say so, and a panel of
+  // controls opened from a trigger and handing focus back to it is one
+  Popover:    { role: 'dialog', requires: ['label'] },
 
   // Frame
   Shell:      { parts: { 'sidebar-toggle': { tracks: { open: 'aria-expanded' } } } },

@@ -35,30 +35,30 @@ const { outlineFile, renderOutline, findRows, renderBody, pathOf, BODY_AT } = aw
 const file = resolve(process.cwd(), arg.file)
 const got  = await outlineFile(file)
 if (got.refused) {
-  echo(got.refused)
+  echo(chalk.red(got.refused))
   process.exitCode = 1
   return
 }
 
 if (!arg.symbol) {
   const out = renderOutline(got.rows)
-  echo(out.length ? out.join('\n') : 'no functions, declarations or headings')
+  echo(out.length ? out.join('\n') : chalk.dim('no functions, declarations or headings'))
   return
 }
 
 const found = findRows(got.rows, String(arg.symbol))
 if (found.length !== 1) {
-  echo(found.length ? `${found.length} rows match ${arg.symbol} — name one by its path:` : `nothing in ${arg.file} matches ${arg.symbol}`)
-  for (const r of found) echo(`  ${r.start}-${r.end}  ${pathOf(r)}`)
+  echo(found.length ? `${chalk.yellow(`${found.length} rows match ${arg.symbol}`)} — name one by its path:` : chalk.red(`nothing in ${arg.file} matches ${arg.symbol}`))
+  for (const r of found) echo(`  ${chalk.dim(`${r.start}-${r.end}`)}  ${pathOf(r)}`)
   process.exitCode = 1
   return
 }
 
 const [row] = found
 const lines = row.end - row.start + 1
-echo(`# ${arg.file} · ${pathOf(row)} · ${row.start}-${row.end}`)
+echo(chalk.dim(`# ${arg.file} · `) + chalk.bold(pathOf(row)) + chalk.dim(` · ${row.start}-${row.end}`))
 if (lines > BODY_AT && row.children.length && !flag.full) {
-  echo(`# ${lines} lines — its outline; name a row inside it, or pass --full`)
+  echo(chalk.dim(`# ${lines} lines — its outline; name a row inside it, or pass --full`))
   echo(renderOutline([row], { open: row }).join('\n'))
   return
 }

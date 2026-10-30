@@ -75,6 +75,9 @@ const CASES = [
   // and a level that stopped reaching the DOM would render something that looks
   // identical and carries a different document outline.
   ['components/display/SectionHeader.mesa', { title: 'T', level: 3 }, ['section-header', 'h3']],
+  // FJS-3608: the kit's .kicker had no way into the header, and the top
+  // alignment was an inline style a caller's class could not beat.
+  ['components/display/SectionHeader.mesa', { title: 'T', kicker: 'Settings', level: 1 }, ['section-header', 'start', 'kicker', 'h1']],
   ['components/layout/Card.mesa',       { tone: 'danger' },          ['card', 'danger']],
   ['components/layout/Tab.mesa',        { id: 'x' },                 ['tab']],
   ['components/feedback/Alert.mesa',    { tone: 'danger' },          ['alert', 'danger', 'alert-icon']],

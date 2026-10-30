@@ -202,6 +202,26 @@ test('pressed: aria-pressed="true" draws on every treatment, "false" draws nothi
   });
 });
 
+test('pressed: a .pill with aria-pressed="true" draws, "false" draws nothing', function () {
+  /*
+   * FJS-3523. A filter chip is a <button class="pill" aria-pressed>, and the
+   * attribute that announces the state must be what draws it, as on .btn.
+   */
+  function look(html) {
+    var n = el(html);
+    var s = style(n, 'background-color') + '|' + style(n, 'box-shadow') + '|' + style(n, 'filter');
+    cleanup();
+    return s;
+  }
+  ['', ' primary', ' danger'].forEach(function (cls) {
+    var rest = look('<button class="pill' + cls + '">Mine</button>');
+    var on = look('<button class="pill' + cls + '" aria-pressed="true">Mine</button>');
+    var off = look('<button class="pill' + cls + '" aria-pressed="false">Mine</button>');
+    assert.notEqual(on, rest, '.pill' + cls + ' with aria-pressed="true" looks like one without');
+    assert.equal(off, rest, '.pill' + cls + ' with aria-pressed="false" is drawn as pressed');
+  });
+});
+
 test('overlay: a ghost button reads its tone', function () {
   var plain = el('<button class="btn ghost">Delete</button>');
   var plainColor = style(plain, 'color');

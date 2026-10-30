@@ -46,8 +46,6 @@ app.configure(conduit({
       protocol:      'http',
       address:       'https://api.hetzner.cloud/v1',
       auth:          { type: 'bearer', ref: 'HETZNER_TOKEN' },
-      registered_at: Date.now(),
-      last_seen_at:  null,
     }
   ],
 }))
@@ -89,10 +87,13 @@ interface TargetDescriptor {
   encoding?:     'json' | 'form'   // how bodies go on the wire; default 'json'
   idempotency?:  { header?: string; auto?: boolean }
   resilience?:   TargetResilience // what this one costs when it misbehaves
-  registered_at: number      // unix ms
-  last_seen_at:  number | null
+  registered_at: number      // unix ms; stamped (now) when a declaration omits it
+  last_seen_at:  number | null   // stamped null when omitted
 }
 ```
+
+`register()` and `opts.targets` take a `TargetInput`: a descriptor whose two
+registry stamps are optional, so a config literal never invents them.
 
 Targets can be registered statically at startup (see `opts.targets`) or dynamically at runtime (see `register()`).
 
@@ -105,7 +106,7 @@ target with `address_from: 'request'` and name the URL on each send:
 
 ```ts
 { id: 'hook:slack', kind: 'provider', protocol: 'http', address: '',
-  address_from: 'request', auth: { type: 'none' }, registered_at: 0, last_seen_at: null }
+  address_from: 'request', auth: { type: 'none' } }
 
 await app.conduit.send({ target: 'hook:slack', address: row.url, method: 'POST', body: { text } })
 ```
@@ -127,7 +128,7 @@ keyed on the tenant alone two rows would share one cached token.
 
 ```ts
 { id: 'provider:plausible', kind: 'provider', protocol: 'http', address: '',
-  address_from: 'request', auth: { type: 'bearer', ref: 'PLAUSIBLE', per_caller: true }, registered_at: 0, last_seen_at: null }
+  address_from: 'request', auth: { type: 'bearer', ref: 'PLAUSIBLE', per_caller: true } }
 
 await app.conduit.send({ target: 'provider:plausible', address: `${row.address}/api/v2/query`, grant: row.id, method: 'POST', body: q })
 ```
@@ -370,6 +371,8 @@ The encoded body is the same value the HMAC signer hashes, so an encoder anywher
 ### Constant headers
 
 `headers` on a target is sent with every request to it — a pinned API version, a required `User-Agent`. It sits below `req.headers`, so a caller can still override one, and below the auth headers, which nothing may displace.
+
+`query` is its twin for a provider that keys its tier on a parameter — OpenAlex's polite-pool `mailto`. A string map, sent on every request; whatever the caller puts on the `path`, in a GET `body` or in `req.query` wins, and an `api_key` under `query` displaces it. It is not a credential's home: the value is stored with the descriptor and visible in the URL an observer sees.
 
 Header precedence is **case-insensitive**: `authorization` from a caller and `Authorization` from the target's auth are the same header, and the auth one wins. (A plain object merge kept both and `fetch` joined them with a comma.)
 

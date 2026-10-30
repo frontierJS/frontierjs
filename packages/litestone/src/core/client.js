@@ -671,7 +671,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
       if (dimId == null) {
         if (desc.onMissing === 'skip') continue
         const bind = desc.auth ? '$setAuth' : `scopedBy({ ${desc.key} })`   // scopedBy never binds a @scoped dimension
-        throw new Error(`@edge '${modelName}.${desc.field}': cannot resolve dimension '${desc.key}' — bind it with ${bind}`)
+        const err = new Error(`@edge '${modelName}.${desc.field}': cannot resolve dimension '${desc.key}' — bind it with ${bind}`)
+        if (desc.auth) err.status = 401   // no viewer is the caller's to fix; an unbound scopedBy is the app's, a 500
+        throw err
       }
       const gkey = `${desc.table}|${dimId}`
       let g = groups.get(gkey)

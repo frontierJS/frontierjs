@@ -52,8 +52,8 @@ export function makePackageJson(spec) {
     // that cannot resolve their own imports.
     deps['@frontierjs/ui']     = specFor('@frontierjs/ui')
     // The generated list page imports `encodeQueryString` and `directiveParams`
-    // — the `$`-directive table and what a query string MEANS, which Invariant
-    // 10 gives one owner. Declared here rather than leaned on transitively:
+    // — the `$`-directive table and what a query string MEANS, which has one
+    // owner. Declared here rather than leaned on transitively:
     // sierra and junction both depend on it, but bun installs into `.bun/` with
     // symlinks, so a package an app does not name is not resolvable BY NAME
     // from the app's own source. That is why the `scaffold` CI phase built

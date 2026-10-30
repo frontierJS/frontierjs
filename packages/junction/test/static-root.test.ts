@@ -210,3 +210,40 @@ describe('the config type names what serveStatic reads (FJS-1303)', () => {
     expect(block.untrusted).toBe(true)
   })
 })
+
+// FJS-3543 — a reload on a client route (`/admin/items`) names no file, and an
+// app served with no proxy in front has no `try_files` to hand it index.html.
+describe('spa fallback', () => {
+  const html = { headers: { accept: 'text/html,application/xhtml+xml' } }
+  const spaAsk = (path: string, init: RequestInit = html, opts: Record<string, unknown> = { spa: true }) =>
+    serveStatic(new Request(`http://x${path}`, init), path, { root, ...opts } as never)
+
+  beforeAll(() => writeFileSync(join(root, 'index.html'), '<html>shell</html>'))
+
+  it('answers a document request for a client route with the index', async () => {
+    const res = await spaAsk('/admin/items')
+    expect(res?.status).toBe(200)
+    expect(await res?.text()).toBe('<html>shell</html>')
+  })
+
+  it('leaves a missing client route null when spa is off', async () => {
+    expect(await spaAsk('/admin/items', html, {})).toBeNull()
+  })
+
+  it('does not answer a missing file (has an extension) with the index', async () => {
+    expect(await spaAsk('/assets/missing.js')).toBeNull()
+  })
+
+  it('does not answer a non-document request (fetch, no text/html) with the index', async () => {
+    expect(await spaAsk('/admin/items', { headers: { accept: 'application/json' } })).toBeNull()
+  })
+
+  it('still serves a real file as itself', async () => {
+    const res = await spaAsk('/assets/real.css')
+    expect(await res?.text()).toBe('body { color: red }')
+  })
+
+  it('does not turn a refused path into the index', async () => {
+    expect((await spaAsk('/a/../../etc'))?.status).not.toBe(200)
+  })
+})

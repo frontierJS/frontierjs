@@ -74,6 +74,9 @@ temp/
 # the rest is real and belongs on the machine that produced it, not in git.
 **/db/audit/
 *.jsonl
+# A captured Caddy access log is a test fixture, not an audit trail: a clone
+# without it fails outpost's analytics test with ENOENT.
+!packages/outpost/test/fixtures/caddy/access.jsonl
 
 # `fli db push` writes the schema's JSON Schema here. Derived from the .lite on
 # every push, so a committed copy is only ever a stale one.

@@ -17,9 +17,13 @@
  * page. What an SPA's shell still gets is `lang` on `<html>` and the skip link
  * first in `<body>` (`FJS-D836`), each written only where the shell wrote
  * nothing -- a shell with no `<html>` tag at all, which the parser allows, is
- * given one so `lang` has somewhere to sit.
+ * given one so `lang` has somewhere to sit. A layout renders at runtime, so the
+ * shell's HTML never shows a skip link the layout writes; `appWritesSkipLink()`
+ * reads the app's `.mesa` sources for one instead (`FJS-3556`).
  */
 
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { documentParts, DEFAULT_LANG, SKIP_LINK, SKIP_LINK_GUARD, hasSkipLink } from './prerender.js'
 
 // The opening tag's attribute names. A value never matters: stating the
@@ -42,13 +46,28 @@ function refuseRestated(tag, element, stated) {
 }
 
 /**
+ * Whether a `.mesa` file under `<root>/src` renders a `.skip-link` element. A
+ * rule in a `<style>` block is not one: only a `class` attribute counts.
+ */
+export function appWritesSkipLink(root) {
+  const walk = (dir) => {
+    let entries
+    try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return false }
+    return entries.some((e) =>
+      e.isDirectory() ? e.name !== 'node_modules' && walk(join(dir, e.name))
+        : e.name.endsWith('.mesa') && hasSkipLink(readFileSync(join(dir, e.name), 'utf8')))
+  }
+  return walk(join(root, 'src'))
+}
+
+/**
  * The shell with `document` applied: `lang` and `htmlClass` on `<html>`,
  * `bodyClass` and `bodyAttrs` on `<body>`, `meta`, `links`, `jsonLd` and `head`
  * at the end of `<head>`, `bodyEnd` at the end of `<body>`; and, whatever
  * `doc` holds, `lang` on an `<html>` that has none and the skip link first in
  * a `<body>` that has none.
  */
-export function applyDocument(html, doc = {}) {
+export function applyDocument(html, doc = {}, { appSkipLink = false } = {}) {
   const htmlTag = html.match(/<html\b[^>]*>/i)?.[0] ?? '<html>'
   const htmlStated = [
     ...(doc.lang ? [['lang', 'lang']] : []),
@@ -71,7 +90,7 @@ export function applyDocument(html, doc = {}) {
       : `${opened}\n${html}`
   // The guard goes first in <head>, ahead of every stylesheet, so its layer is
   // the lowest; a shell with no <head> carries it just before the link.
-  const writesSkip = !hasSkipLink(html)
+  const writesSkip = !appSkipLink && !hasSkipLink(html)
   const hasHead = /<head\b[^>]*>/i.test(out)
   if (writesSkip && hasHead) out = out.replace(/<head\b[^>]*>/i, (tag) => `${tag}\n  ${SKIP_LINK_GUARD}`)
   out = out.replace(/<body\b[^>]*>/i, (tag) => {
@@ -93,10 +112,12 @@ export function applyDocument(html, doc = {}) {
 }
 
 export function documentShellPlugin(config, target) {
+  let root = process.cwd()
   return {
     name: 'sierra:document-shell',
+    configResolved(resolved) { root = resolved.root },
     transformIndexHtml(html) {
-      return applyDocument(html, target === 'static' ? config.document ?? {} : {})
+      return applyDocument(html, target === 'static' ? config.document ?? {} : {}, { appSkipLink: appWritesSkipLink(root) })
     },
   }
 }

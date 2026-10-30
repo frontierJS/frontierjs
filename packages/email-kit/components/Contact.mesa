@@ -1,8 +1,7 @@
 <script>
-  import { refuseChildren, refuseCell } from './slot-guard.js'
+  import { refuseCell } from './slot-guard.js'
   const emailCell = $context.emailCell
   refuseCell('Contact', emailCell)
-  refuseChildren('Contact', $.slots, "Pass `name`, `email` and `phone`.")
   export let name     = ''
   export let email    = ''
   export let phone    = ''

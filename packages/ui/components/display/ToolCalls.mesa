@@ -1,0 +1,97 @@
+<script>
+  // ToolCalls.mesa
+  // The tool calls an assistant turn made, one disclosure per call (FJS-D1658).
+  // Each row is a native <details>: a status mark, the tool's name, and what
+  // it was given and what came back inside. The kit folds none of them away --
+  // a list that hides rows by count is a policy, and an app that wants it
+  // wraps this.
+  //
+  // The mark is a <Dot> in the status's tone, and its status word is visually
+  // hidden, so the state is read as well as seen. A call still `running`
+  // pulses. Anything that is not 'running' or 'failed' is 'done'.
+  //
+  // `input` and `output` are shown as text; an object is shown as indented
+  // JSON. A call with neither has nothing to open and draws as a plain row.
+  //
+  // Usage:
+  //   <Message>
+  //     <ToolCalls calls={turn.toolCalls} />
+  //     <Markdown text={turn.body} />
+  //   </Message>
+  //
+  //   calls = [{ name: 'search', status: 'done', input: { q: 'orders' }, output: '3 rows' }]
+
+  import Dot  from './Dot.mesa'
+  import Code from './Code.mesa'
+
+  export let calls = []   // [{ id?, name, status?, input?, output? }]
+
+  const STATUS = {
+    running: { tone: 'primary', word: 'Running' },
+    done:    { tone: 'success', word: 'Done' },
+    failed:  { tone: 'danger',  word: 'Failed' },
+  }
+
+  const stateOf = (call) => STATUS[call.status] ?? STATUS.done
+  const show    = (v) => (v === undefined || v === null || v === '') ? ''
+    : typeof v === 'string' ? v : JSON.stringify(v, null, 2)
+</script>
+
+<div class="fjs-toolcalls" {class} {...$attributes}>
+  {#each calls as call, i (call.id ?? i)}
+    {@const st = stateOf(call)}
+    {@const input = show(call.input)}
+    {@const output = show(call.output)}
+    {#if input || output}
+      <details class="disclosure fjs-toolcall" data-status={call.status ?? 'done'}>
+        <summary class="disclosure-summary">
+          <span class="fjs-toolcall-head">
+            <Dot tone={st.tone} pulse={call.status === 'running'} label={st.word} />
+            <span class="fjs-toolcall-name">{call.name}</span>
+          </span>
+        </summary>
+        <div class="disclosure-body">
+          {#if input}
+            <p class="fjs-toolcall-label">Input</p>
+            <Code text={input} copy={false} />
+          {/if}
+          {#if output}
+            <p class="fjs-toolcall-label">Output</p>
+            <Code text={output} copy={false} />
+          {/if}
+        </div>
+      </details>
+    {:else}
+      <div class="disclosure fjs-toolcall" data-status={call.status ?? 'done'}>
+        <div class="disclosure-summary fjs-toolcall-plain">
+          <span class="fjs-toolcall-head">
+            <Dot tone={st.tone} pulse={call.status === 'running'} label={st.word} />
+            <span class="fjs-toolcall-name">{call.name}</span>
+          </span>
+        </div>
+      </div>
+    {/if}
+  {/each}
+</div>
+
+<style>
+  .fjs-toolcalls {
+    display:        flex;
+    flex-direction: column;
+    gap:            var(--space-xs);
+    font-size:      0.875rem;
+  }
+  .fjs-toolcall-head {
+    display:     inline-flex;
+    align-items: center;
+    gap:         var(--space-sm);
+  }
+  .fjs-toolcall-name  { font-family: var(--font-mono, monospace); }
+  .fjs-toolcall-plain { cursor: default; }
+  .fjs-toolcall-label {
+    margin:     var(--space-sm) 0 var(--space-xs);
+    font-size:  0.75rem;
+    font-weight: 600;
+    opacity:    0.7;
+  }
+</style>

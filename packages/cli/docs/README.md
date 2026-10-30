@@ -5,3 +5,4 @@
 - [deploy.md](deploy.md) — the deploy pipeline, its steps and verdicts
 - [layout.md](layout.md) — the file-by-file map of the package
 - [hazards.md](hazards.md) — every hazard, the full `What bites here`
+- [output.md](output.md) — how a command prints a result: tones, dim ids, widths, plain when piped

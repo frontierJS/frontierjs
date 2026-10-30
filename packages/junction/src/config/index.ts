@@ -85,8 +85,11 @@ export interface AppConfig {
       // answered as an attachment (`FJS-D314`). The block reaches
       // `serveStatic` whole, so a key it reads is named here.
       untrusted?: boolean
+      // A document request for a path naming no file gets the index, for a
+      // client-routed app with no proxy to do `try_files`.
+      spa?: boolean
     }
-    powered:      string
+    powered:     string
     /**
      * How many proxies stand in front of this app, or which ones.
      *

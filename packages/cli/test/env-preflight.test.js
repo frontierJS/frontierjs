@@ -18,7 +18,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, statSync }
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { encryptionKeyState, envValue, fillKey } from '../core/env-preflight.js'
+import { encryptionKeyState, envValue, fillKey, fileColumns, filesProviderNote } from '../core/env-preflight.js'
 
 let dir
 beforeAll(() => { dir = mkdtempSync(join(tmpdir(), 'fli-env-')) })
@@ -94,4 +94,44 @@ test('fillKey writes nothing for an app whose example never names the key', () =
   const root = app('fill-nokey', { example: 'PORT=8100\n' })
   expect(fillKey(root, join(root, '.env.production'))).toBe('undeclared')
   expect(() => statSync(join(root, '.env.production'))).toThrow()
+})
+
+// ─── FJS-D1549: a File column with FILES_PROVIDER unset is said, never refused ─
+
+const SCHEMA = `model Lead {
+  id    String @id
+  // photo File   <- a comment is not a column
+  photo File?
+  docs  File[]
+  name  String
+}
+
+model Note {
+  id   String @id
+  body String
+  scan File   @accept("image/png")
+}
+`
+
+test('fileColumns names every File column, comments and other types left out', () => {
+  expect(fileColumns(SCHEMA)).toEqual(['Lead.photo', 'Lead.docs', 'Note.scan'])
+  expect(fileColumns('model A {\n  id String @id\n}\n')).toEqual([])
+})
+
+test('filesProviderNote warns on a File schema with no provider, naming columns, folder and fixes', () => {
+  const note = filesProviderNote({ columns: fileColumns(SCHEMA), env: 'PORT=3000\nFILES_PROVIDER=\n', dir: '/srv/app/db/files' })
+  expect(note).toContain('Lead.photo')
+  expect(note).toContain('Note.scan')
+  expect(note).toContain('/srv/app/db/files')
+  expect(note).toContain('FILES_PROVIDER=local')
+  expect(note).toMatch(/r2|s3/)
+  expect(note).toContain('FILES_BUCKET')
+})
+
+test('filesProviderNote is silent once FILES_PROVIDER is set, or when no column is a File', () => {
+  const columns = fileColumns(SCHEMA)
+  expect(filesProviderNote({ columns, env: 'FILES_PROVIDER=local\n', dir: '/d' })).toBeNull()
+  expect(filesProviderNote({ columns, env: '# FILES_PROVIDER=local\n', dir: '/d' })).not.toBeNull()
+  expect(filesProviderNote({ columns, env: '', set: ['FILES_PROVIDER'], dir: '/d' })).toBeNull()
+  expect(filesProviderNote({ columns: [], env: '', dir: '/d' })).toBeNull()
 })

@@ -783,7 +783,7 @@ function srcLayoutFindings(root) {
         if (companion && dbModule && stem(target) === dbModule) continue
         const other = SURFACES.find(s => s !== surface && inside(join(root, s), target))
         if (!other) continue
-        warn(rel(root, file), `${surface}/ imports ${other}/ by relative path. Surfaces are peers (Invariant 3): ` +
+        warn(rel(root, file), `${surface}/ imports ${other}/ by relative path. Surfaces are peers: ` +
           `the side that runs the file owns it, and the other surface gets its output through a service (FJS-D627).`)
         break
       }

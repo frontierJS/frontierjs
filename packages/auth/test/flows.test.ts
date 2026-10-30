@@ -368,6 +368,36 @@ describe('password reset', () => {
   })
 })
 
+// ─── operator invitation ──────────────────────────────────────────────────
+
+describe('operator invitation (FJS-3606)', () => {
+  const settle = () => new Promise(r => setTimeout(r, 50))
+
+  test('is its own purpose and outlives a reset window', async () => {
+    const inv = await h.auth.createInvitation!(email('inv-ttl'), { actorId: 'op' })
+    const row = await h.sys.verification.findFirst({ where: { identifier: email('inv-ttl') } })
+
+    expect(row.purpose).toBe('invitation')
+    expect(new Date(inv.expiresAt).getTime() - Date.now()).toBeGreaterThan(24 * 3600_000)
+  })
+
+  test('sets the first password through confirmPasswordReset', async () => {
+    const inv = await h.auth.createInvitation!(email('inv-use'), { actorId: 'op' })
+    await h.auth.confirmPasswordReset!(inv.token, 'pw-first-1')
+    expect((signedIn(await h.auth.login(email('inv-use'), 'pw-first-1'))).token).toBeTruthy()
+  })
+
+  test('a reset request neither spends nor replaces the invitation', async () => {
+    const inv = await h.auth.createInvitation!(email('inv-keep'), { actorId: 'op' })
+    await h.requestReset(email('inv-keep'))
+    await settle()
+
+    const rows = await h.sys.verification.findMany({ where: { identifier: email('inv-keep') } })
+    expect(rows.map((r: any) => r.purpose).sort()).toEqual(['invitation', 'passwordReset'])
+    await h.auth.confirmPasswordReset!(inv.token, 'pw-first-2')
+  })
+})
+
 // ─── email verification ───────────────────────────────────────────────────
 
 describe('email verification', () => {

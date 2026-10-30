@@ -461,6 +461,9 @@ try {
   await goto('/hub/backups/')
   await until(`!!document.getElementById('take-backup')`, v => v, 'the backups screen never rendered')
 
+  // The Take button renders before the hub's config is answered; the card
+  // waits on that read, so it is polled for like the key line below.
+  await until(`!!document.getElementById('backup-schedule')`, v => v, 'the schedule card never rendered')
   const schedule = await text('#backup-schedule')
   check('the schedule says what a fire does', /each fire of this expression/i.test(schedule ?? ''),
     (schedule ?? '').slice(0, 120))

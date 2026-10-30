@@ -182,6 +182,17 @@ export interface TargetDescriptor {
   // collides with an auth header is therefore ignored rather than merged.
   headers?:        Record<string, string>
 
+  // Query parameters sent on every request to this target — headers' twin,
+  // for a provider that keys its tier on a parameter (OpenAlex's polite-pool
+  // `mailto`) and would otherwise need every call site to add it.
+  //
+  // Precedence: below `path`'s own query, the GET `body` shorthand and
+  // `req.query`, so a caller can still override one, and below an `api_key`
+  // sent under `query`, which nothing may displace. Not a place for a
+  // credential: the value is stored with the descriptor and shown to observers
+  // in the URL, which `auth` is built to avoid.
+  query?:          Record<string, string>
+
   // This target is one of our own services, so the conduit-wide `trace` may
   // hand it the inbound request's correlation id and `traceparent`.
   //
@@ -312,6 +323,13 @@ export interface TargetDescriptor {
   registered_at:   number        // unix ms
   last_seen_at:    number | null
 }
+
+// A target as a caller declares it: the registry stamps `registered_at` (now)
+// and `last_seen_at` (null) when they are absent, so a config literal has no
+// registry-owned numbers to invent.
+export type TargetInput =
+  Omit<TargetDescriptor, 'registered_at' | 'last_seen_at'>
+  & Partial<Pick<TargetDescriptor, 'registered_at' | 'last_seen_at'>>
 
 // ─── Credentials ────────────────────────────────────────────
 // Resolves a TargetAuth.ref to its secret material at send time.
@@ -795,7 +813,7 @@ export interface ConduitOptions {
 
   // Targets to register immediately on init.
   // Use for provider integrations known at startup time.
-  targets?:     TargetDescriptor[]
+  targets?:     TargetInput[]
 
   timeout_ms?:  number    // default: 10_000
   retry_limit?: number    // default: 3
@@ -893,7 +911,7 @@ export interface IConduit {
   send<T>(req: ConduitRequest): Promise<ConduitResult<T>>
   stream(req: ConduitRequest): AsyncIterable<ConduitChunk>
 
-  register(descriptor: TargetDescriptor): Promise<void>
+  register(descriptor: TargetInput): Promise<void>
   deregister(target: string): Promise<void>
   resolve(target: string): Promise<TargetDescriptor | null>
   list(): Promise<TargetDescriptor[]>

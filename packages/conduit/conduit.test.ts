@@ -512,6 +512,41 @@ describe('HTTP transport — headers', () => {
   })
 })
 
+describe('HTTP transport — constant query', () => {
+  it('a target\'s query rides every request, and the caller\'s own wins', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = providerTarget({ address: s.url, query: { mailto: 'ops@example.com', tier: 'polite' } })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      await t.send({ target: target.id, method: 'GET', path: '/works' })
+      await t.send({ target: target.id, method: 'GET', path: '/works?tier=path', query: { mailto: 'me@example.com' } })
+
+      const first = new URL(s.seen[0].url)
+      expect(first.searchParams.get('mailto')).toBe('ops@example.com')
+      expect(first.searchParams.get('tier')).toBe('polite')
+      const second = new URL(s.seen[1].url)
+      expect(second.searchParams.getAll('mailto')).toEqual(['me@example.com'])
+      expect(second.searchParams.getAll('tier')).toEqual(['path'])
+    } finally { s.stop() }
+  })
+
+  it('a constant query is refused when it is not a string map', async () => {
+    const c = createConduit({ credentials: secrets() })
+    await expect(c.register(providerTarget({ query: { page: 2 } as never }))).rejects.toThrow(/query/)
+  })
+
+  it('survives a restart through the sqlite store', async () => {
+    const db = new Database(':memory:')
+    const a  = createSQLiteStore(db)
+    await a.init()
+    await a.set(providerTarget({ query: { mailto: 'ops@example.com' } }))
+    const b = createSQLiteStore(db)
+    await b.init()
+    expect((await b.get('provider:hetzner'))!.query).toEqual({ mailto: 'ops@example.com' })
+  })
+})
+
 describe('HTTP transport — buildUrl', () => {
   async function urlFor(req: Partial<ConduitRequest>): Promise<string> {
     const s = recorder(() => Response.json({ ok: true }))
@@ -1660,6 +1695,7 @@ describe('WebSocket transport — per-target settings', () => {
     const target = outpostTarget({
       protocol: 'websocket', address: s.url,
       headers:     { 'X-Target': 'constant' },
+      query:       { mailto: 'ops@example.com', page: 'target' },
       idempotency: { header: 'PayPal-Request-Id' },
     })
     const t = new WebSocketTransport(target, secrets())
@@ -1672,7 +1708,7 @@ describe('WebSocket transport — per-target settings', () => {
       })
       const f = s.frames[0]
       expect(f.headers).toEqual({ 'x-target': 'constant', 'x-caller': 'one', 'paypal-request-id': 'key-1' })
-      expect(f.query).toEqual({ tag: ['a', 'b'], page: '2' })
+      expect(f.query).toEqual({ mailto: 'ops@example.com', tag: ['a', 'b'], page: '2' })
     } finally { t.destroy(); s.stop() }
   })
 
@@ -6522,5 +6558,29 @@ describe('an api_key target that puts its key in the URL (FJS-2727)', () => {
       [{ type: 'api_key', ref: 'K', query: '' }, {}, /exactly one of header or query/],
       [{ type: 'api_key', ref: 'K', query: 'key' }, { protocol: 'websocket', address: 'ws://127.0.0.1:1' }, /only an 'http' or 'unix' target/],
     ] as const) await expect(c.register(providerTarget({ auth: auth as unknown as TargetDescriptor['auth'], ...(extra as Partial<TargetDescriptor>) }))).rejects.toThrow(why)
+  })
+})
+
+// FJS-2430
+describe('a target declared without registry stamps', () => {
+  const literal = { id: 'provider:x', kind: 'provider', protocol: 'http', address: 'https://x.test', auth: { type: 'none' } } as const
+
+  it('is stamped on register and on opts.targets', async () => {
+    const before = Date.now()
+    const c = createConduit({ targets: [{ ...literal, id: 'provider:static' }] })
+    await c.init()
+    await c.register({ ...literal })
+    for (const id of ['provider:static', 'provider:x']) {
+      const d = await c.resolve(id)
+      expect(d!.registered_at).toBeGreaterThanOrEqual(before)
+      expect(d!.last_seen_at).toBeNull()
+    }
+  })
+
+  it('keeps stamps a caller supplies', async () => {
+    const c = createConduit()
+    await c.init()
+    await c.register({ ...literal, registered_at: 5, last_seen_at: 9 })
+    expect(await c.resolve('provider:x')).toMatchObject({ registered_at: 5, last_seen_at: 9 })
   })
 })

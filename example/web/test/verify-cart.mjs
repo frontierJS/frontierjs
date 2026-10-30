@@ -169,13 +169,20 @@ const api = (path, opts = {}) => fetch(`${API}/api${path}`, opts)
 //
 // It used to ask anonymously and be answered, which is the leak these gates
 // closed — the catalog's `@@gate(0.4.4.5)` had been pasted onto the ledger.
+// A failed login has to stop here: an undefined token reads the ledger as a
+// stranger, and the drive then dies three checks later on a null `.data`.
 let staffToken = null
 async function asStaff(path) {
-  staffToken ??= (await (await fetch(`${API}/api/auth/login`, {
-    method:  'POST',
-    headers: { 'content-type': 'application/json' },
-    body:    JSON.stringify({ email: 'alex@shop.test', password: 'correct-horse-battery' }),
-  })).json())?.token
+  if (!staffToken) {
+    const res  = await fetch(`${API}/api/auth/login`, {
+      method:  'POST',
+      headers: { 'content-type': 'application/json' },
+      body:    JSON.stringify({ email: 'alex@shop.test', password: 'correct-horse-battery' }),
+    })
+    const body = await res.json().catch(() => null)
+    if (!body?.token) throw new Error(`staff login for alex@shop.test answered ${res.status}: ${body?.message ?? 'no token'}`)
+    staffToken = body.token
+  }
   return fetch(`${API}/api${path}`, { headers: { authorization: `Bearer ${staffToken}` } })
 }
 const call = (method, id, body, token) => api(id == null ? '/carts' : `/carts/${id}`, {
@@ -191,7 +198,7 @@ console.log('\n  basket — the API, with no session at all')
 
 const opened = await (await call('open', null)).json()
 check('open answers a basket',           typeof opened.id, 'number')
-check('open answers the token, once',    /^c[0-9a-z]{24}$/.test(opened.token ?? ''), true)
+check('open answers the token, once',    /^[\w-]{43}$/.test(opened.token ?? ''), true)
 check('a new basket is empty',           [opened.count, opened.total], [0, 0])
 
 const { id: cartId, token } = opened

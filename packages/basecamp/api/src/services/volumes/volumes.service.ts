@@ -36,7 +36,7 @@
 // reads better as MB or GB, and a rounded number stored is a number nothing can
 // un-round — `0.01 GB` in the mock is 10.7 MB.
 
-import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict, parseWhere, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor, callerOrder }  from '../../core/resource.ts'
@@ -195,6 +195,7 @@ export default createService({
 
     const { rows, total } = await db().volume.findManyAndCount({
       where: {
+        ...parseWhere($.query),
         serverId: { in: serverId ? [serverId] : [...fleet.keys()] },
         ...(inUse !== undefined ? { inUse: inUse === true || inUse === 'true' } : {}),
         ...(search ? { name: { contains: search } } : {}),

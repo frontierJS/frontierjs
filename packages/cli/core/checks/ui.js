@@ -495,7 +495,7 @@ export const CHECKS = {
 
       if (!/^[A-Z][A-Za-z0-9]*$/.test(base)) findings.push({
         file: full,
-        message: `"${base}" is not a widget name. PascalCase, singular (Invariant 19) — it is also the ` +
+        message: `"${base}" is not a widget name. PascalCase, singular — it is also the ` +
                  `custom element a host page writes, and a name with no word boundary reaches HTML as a ` +
                  `tag with no dash, which no browser will upgrade.`,
       })
@@ -659,10 +659,25 @@ export const CHECKS = {
     // `{fromMinor(o.total, c)}` do not match, which is the point: what is being
     // reported is the absence of anything between the column and the screen.
     const bare = new RegExp(`\\{\\s*([A-Za-z_$][\\w$]*)\\.(${cols})\\s*\\}`, 'g')
+    // `thing.col.toCurrency(` / `thing.col?.toCurrency(` — sugar's MAJOR-unit
+    // formatter handed a MINOR-unit column (`FJS-D1515`). Unlike the bare case it
+    // is wrong in an attribute too: nothing downstream divides it back.
+    const major = new RegExp(`\\b([A-Za-z_$][\\w$]*)\\.(${cols})\\s*\\??\\.toCurrency\\s*\\(`, 'g')
 
     for (const path of files) {
       const lines = readCode(path).split('\n')
       for (let i = 0; i < lines.length; i++) {
+        for (const m of lines[i].matchAll(major)) {
+          findings.push({
+            file: path, line: i + 1,
+            message: `\`${m[1]}.${m[2]}\` is a \`@money\` column and \`.toCurrency()\` formats MAJOR units, ` +
+                     `so the screen shows a number a hundred times too big (a hundred times too small for ` +
+                     `a yen amount). The column stores MINOR units: use \`.toMoney(code)\`, which reads ` +
+                     `minor units, or \`<Cell value={${m[1]}.${m[2]}} column={c} />\` (\`FJS-D1515\`). ` +
+                     `\`.toCurrency()\` on a value already in major units is a fair exception; baseline ` +
+                     `it with a reason.`,
+          })
+        }
         for (const m of lines[i].matchAll(bare)) {
           // TEXT position only. An ATTRIBUTE — `value={row.total}` — is handing
           // the raw column to something whose job is to render it, which is

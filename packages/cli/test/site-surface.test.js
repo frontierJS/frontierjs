@@ -210,3 +210,39 @@ describe('how an island reaches the API (FJS-1233)', () => {
     expect(api).toMatch(/apiPrefix:\s*'\/api'/)
   })
 })
+
+// FJS-3551: a second checkout gets its API port only as FRONTIER_PORT_BE, so a
+// surface that reads FRONTIER_PUBLIC_API_URL with a literal fallback builds
+// against the parent's API unless config/api-origin.js pins it first.
+describe('the API origin is pinned for a second checkout', () => {
+  test('site: config/api-origin.js is written and vite.config.js calls it', async () => {
+    const { API_ORIGIN_MODULE } = await import('../core/app-config.js')
+    const root = appRoot('pin-site')
+    scaffoldSiteSurface({ root })
+
+    expect(readFileSync(join(root, 'config', 'api-origin.js'), 'utf8')).toBe(API_ORIGIN_MODULE)
+    const vite = readFileSync(join(root, 'site', 'config', 'vite.config.js'), 'utf8')
+    expect(vite).toContain("import { pinApiOrigin } from '../../config/api-origin.js'")
+    expect(vite).toContain("pinApiOrigin(loadEnv(mode, resolve(ROOT, '..'), 'FRONTIER_PUBLIC_'), process.env)")
+  })
+
+  test('site without an API pins nothing and writes no api-origin.js', () => {
+    const root = appRoot('pin-site-noapi')
+    scaffoldSiteSurface({ root, hasApi: false })
+
+    expect(existsSync(join(root, 'config', 'api-origin.js'))).toBe(false)
+    const vite = readFileSync(join(root, 'site', 'config', 'vite.config.js'), 'utf8')
+    expect(vite).not.toContain('pinApiOrigin')
+  })
+
+  test('extension: jetty.config.js reads the pinned origin, not a literal ws port', async () => {
+    const { scaffoldExtensionSurface } = await import('../core/extension-surface.js')
+    const root = appRoot('pin-ext')
+    scaffoldExtensionSurface({ root })
+
+    expect(existsSync(join(root, 'config', 'api-origin.js'))).toBe(true)
+    const jetty = readFileSync(join(root, 'extension', 'config', 'jetty.config.js'), 'utf8')
+    expect(jetty).toContain("import { pinApiOrigin } from '../../config/api-origin.js'")
+    expect(jetty).toContain('pinApiOrigin(process.env, process.env)')
+  })
+})

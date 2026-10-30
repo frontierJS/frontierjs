@@ -359,6 +359,7 @@ Every hazard, the full catalog; `CLAUDE.md` § What bites here is the dozen that
   (`FJS-D1647`) and writes `Json` where it resolves, the client draws pending
   first, and a failed import keeps the text rather than blanking the cell. Proved by the build, not the suite: the component gets its
   own chunk and the importer's chunk reaches it by `import()`.
+- **`MarkdownInput` Preview HIDES its textarea, never removes it** (`FJS-D1656`): an `{#if}` drops the named element and a form that cannot find it at submit sends an empty field. Toolbar edits go through `insert()`, so the real `input` bubbles to the `<Form>`. `@syntax(md)` is the `markdown` control; `txt` stays `textarea`.
 - **`CodeInput` is a transparent `<textarea>` over glow's paint in one grid
   cell, and every way it breaks is a caret beside its character.** One rule,
   `.fjs-code-input-layer`, sets the metrics for both layers; glow runs with

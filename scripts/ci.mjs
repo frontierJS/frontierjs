@@ -73,6 +73,7 @@ fenceThisProcess()
 
 const ROOT       = resolveRoot()
 const ALLOWANCES = join(ROOT, 'scripts', 'ci-allowances.json')
+const LAST_FILE  = join(ROOT, '.cache', 'ci-last.txt')
 
 const args      = process.argv.slice(2)
 const fast      = args.includes('--fast')
@@ -2236,13 +2237,24 @@ function report() {
   }
 
   say(`\n─── ${problems.length} failure(s) ${'─'.repeat(35)}`)
+  // A reader pasting stdout into an agent pays per line: fixture JSON and
+  // snapshot diffs outweigh the headers ten to one. The detail goes to the
+  // file only; a runner has no file to read back, so it prints in full.
+  const inline = !!process.env.GITHUB_ACTIONS
   for (const p of problems) {
     const output = outputText(p.output)
-    say(`\n✗ ${p.message}`)
-    if (output) say(output)
+    const head   = `\n✗ ${p.message}`
+    lines.push(head)
+    // The phase section above already printed the whole message.
+    console.log(inline ? head : `\n✗ ${p.message.split('\n')[0]}`)
+    if (output) {
+      lines.push(output)
+      if (inline) console.log(output)
+    }
     annotate('error', output ? `${p.message}\n\n${output.slice(0, 4000)}` : p.message)
   }
   say(`\n✗ CI failed in ${seconds}s\n`)
+  if (!inline) console.log(`  detail: ${relative(ROOT, LAST_FILE)} (${problems.length} failure(s) in full)\n`)
   saveLast(lines)
   process.exit(1)
 }
@@ -2251,7 +2263,7 @@ function report() {
 // time anyone asks what failed, so the summary is kept where it can be read
 // back instead of pasted.
 function saveLast(lines) {
-  const file = join(ROOT, '.cache', 'ci-last.txt')
+  const file = LAST_FILE
   const head = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).stdout?.trim()
   const header = `# ${new Date().toISOString()} · ${head ?? '?'} · ci ${process.argv.slice(2).join(' ')}`.trimEnd()
   try {

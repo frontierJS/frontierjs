@@ -6,7 +6,7 @@
 // Who may read or write a row is the model's policy. This service adds which
 // App may have an editor at all.
 
-import { createService, BadRequest, NotFound, $ } from '@frontierjs/junction'
+import { createService, BadRequest, NotFound, parseWhere, $ } from '@frontierjs/junction'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing } from '../../core/resource.ts'
 import { isGit } from '../../domain/release/app-source.ts'
@@ -40,7 +40,7 @@ export default createService({
     const { limit, offset } = getPagination()
     const appId = $.query.appId as string | undefined
     const apps  = appId ? [appId] : (await db().app.findMany({ select: { id: true } })).map((a: { id: string }) => a.id)
-    return findScoped('appEditor', { where: { appId: apps }, limit, offset })
+    return findScoped('appEditor', { where: { ...parseWhere($.query), appId: apps }, limit, offset })
   },
 
   get: () => getScoped('appEditor', 'App editor'),

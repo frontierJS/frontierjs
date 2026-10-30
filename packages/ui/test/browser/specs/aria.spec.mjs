@@ -45,7 +45,8 @@ const WHERE = {
   Dialog:     { fixture: 'modal', props: { open: true }, at: '.dialog' },
   Drawer:     { fixture: 'drawer', props: { open: true, resizable: true }, at: '.drawer' },
   Tooltip:    { fixture: 'tooltip', at: '.tooltip' },
-  Shell:      { fixture: 'shell', props: { user: { email: 'a@b.c' } }, at: '.shell' },
+  Popover:    { fixture: 'popover', open: '#stage #pop-trigger', at: 'body > .popover' },
+  Shell:     { fixture: 'shell', props: { user: { email: 'a@b.c' } }, at: '.shell' },
 }
 
 export async function run(t) {
@@ -63,6 +64,13 @@ export async function run(t) {
 
   for (const { fixture, props, terms } of byFixture.values()) {
     await t.mount(fixture, props)
+    // A term whose element exists only once opened is clicked open first
+    for (const term of terms) {
+      const w = WHERE[term]
+      if (!w.open) continue
+      await t.clickAt(w.open)
+      t.ok(await t.evaluate(`return await waitVisible(${JSON.stringify(w.at)});`), `${term} opens to be graded`)
+    }
     for (const term of terms) {
       const findings = await t.evaluate(`
         return (${grade.toString()})(

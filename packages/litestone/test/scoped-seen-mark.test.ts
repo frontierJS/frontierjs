@@ -2,6 +2,8 @@
 // that a list filters and counts by and that goes with either side.
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { createClient } from '../src/core/client.js'
+import { parse } from '../src/core/parser.js'
+import { generateJsonSchema } from '../src/jsonschema.js'
 
 const SCHEMA = `
 model User { id Int @id; name String; @@auth }
@@ -61,5 +63,36 @@ model Doc { id Int @id; pinned Boolean @scoped @default(false); rank Int @scoped
     expect(await me.doc.count({ where: { mine: { rank: { in: [9] }, pinned: true } } })).toBe(1)
     expect(await me.doc.count({ where: { mine: { rank: { gt: 5 }, pinned: false } } })).toBe(0)
     d.$close()
+  })
+})
+
+// FJS-3571 — the generated JSON Schema describes the edge namespace, not the
+// per-viewer field as a host column.
+describe('FJS-3571 — @scoped / @edge in the generated schema', () => {
+  const EDGE = `
+model User { id Int @id; name String; @@auth }
+model Project { id Int @id }
+model Task { id Int @id; title String
+  isImportant Boolean @edge(ref: Project) @default(false)
+  readAt DateTime? @scoped
+  tag String @scoped }`
+  const defs = (mode: string, src = EDGE) => (generateJsonSchema(parse(src).schema, { mode } as any) as any).$defs.Task
+
+  for (const mode of ['create', 'update', 'full']) {
+    test(`${mode}: the field lives under its namespace, never on the host`, () => {
+      const p = defs(mode).properties
+      expect(p.readAt).toBeUndefined()
+      expect(p.isImportant).toBeUndefined()
+      expect(p.mine.type).toBe('object')
+      expect(Object.keys(p.mine.properties).sort()).toEqual(['readAt', 'tag'])
+      expect(p.mine.additionalProperties).toBe(false)
+      expect(Object.keys(p.projectEdge.properties)).toEqual(['isImportant'])
+    })
+  }
+
+  test('a namespace is optional and its fields are not owed on create', () => {
+    const d = defs('create')
+    expect(d.required ?? []).toEqual(['title'])
+    expect(d.properties.mine.required).toBeUndefined()
   })
 })

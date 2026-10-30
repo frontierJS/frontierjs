@@ -1041,6 +1041,12 @@ try {
   check('a checkout on the listing pins to the workbench', true)
 
   await goto('/workbench/')
+  // An earlier visit left this browser's stage chosen and empty, so a new pin
+  // waits in the dock (FJS-D1176) until a click stages it.
+  const alphaTile = `document.querySelector('.workbench-dock .workbench-tile-open')`
+  await until(`!!(${alphaTile} || document.querySelector('#workbench-grid article[data-state]'))`, v => v,
+    'the pinned checkout was drawn nowhere')
+  await evaluate(`${alphaTile}?.click()`)
   await until(`document.querySelectorAll('#workbench-grid article[data-state]').length`, n => n === 1,
     'the pinned checkout never became a card')
   const card = `document.querySelector('#workbench-grid article[data-state]')`
@@ -1797,7 +1803,7 @@ try {
   await until(panels, ([s, r]) => !s && !r, 'Focus left a side panel drawn')
   check('Focus hides the sidebar and the notice rail', true)
   check('…and the screen takes the sidebar\'s column',
-    (await evaluate(`document.getElementById('screen').getBoundingClientRect().left`)) < 1)
+    (await evaluate(`document.getElementById('main').getBoundingClientRect().left`)) < 1)
   await goto('/workbench/')
   await until(panels, ([s, r]) => !s && !r, 'a reload came back unfocused')
   check('…and a reload stays focused', true)

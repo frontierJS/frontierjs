@@ -1,8 +1,10 @@
 <script>
-  import { refuseChildren, refuseCell } from './slot-guard.js'
+  import { refuseCell } from './slot-guard.js'
+  // The label is `text`, never a child: it also goes into the Outlook VML, which
+  // is built as a STRING, and slot content is DOM. A child would label the anchor
+  // and leave every Outlook recipient an unlabelled button.
   const emailCell = $context.emailCell
   refuseCell('Button', emailCell)
-  refuseChildren('Button', $.slots, "Pass `text`. It is also what the Outlook VML fallback renders, and only a string can reach that — a slot would label the anchor and leave Outlook an unlabelled button.")
   export let href     = ''
   export let text     = ''
   export let bgcolor  = '#9fc612'

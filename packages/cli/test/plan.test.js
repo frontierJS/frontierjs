@@ -118,6 +118,20 @@ describe('parsePlan', () => {
     expect(done.blocking).toEqual([])
   })
 
+  // FJS-3553: an open box outside the shape is reported, never read as "nothing next".
+  test('an open box outside the Phase N / N.M shape is stray, and no plan with one is closed', () => {
+    const text  = '# T\n\n### Phase 0 — x\n\n- [x] 0.1 a\n- [ ] no number\n\n## Core upgrade\n\n- [ ] **7.1** later\n  - [ ] indented note\n\n```\n- [ ] fenced\n```\n'
+    const stray = parsePlan(text, { file: 'PLAN.md' })
+    expect(stray.next).toBeNull()
+    expect(stray.stray.map(s => [s.line, s.text])).toEqual([[6, 'no number'], [10, '**7.1** later']])
+    expect(parsePlan('### Phase 0\n\n- [ ] 0.1 a\n').stray).toEqual([])
+    for (const rows of [renderNext(stray), renderPlan(stray)].map(r => r.join('\n'))) {
+      expect(rows).not.toContain('every box is closed')
+      expect(rows).toContain('not in the plan\'s shape')
+      expect(rows).toContain('line 10')
+    }
+  })
+
   test('a reissued number is reported', () => {
     expect(reissued(plan)).toEqual([])
     expect(reissued(parsePlan('### Phase 1\n\n- [ ] 1.1 a\n- [ ] 1.1 b\n'))).toEqual(['1.1'])

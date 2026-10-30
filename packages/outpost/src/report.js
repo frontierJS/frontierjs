@@ -110,17 +110,19 @@ export function createReporter(config, {
       const tick = (what, fn) => fn().catch(err => log.warn?.(`outpost: ${what} — ${err.message}`))
 
       tick('first heartbeat', () => this.heartbeat())
-      tick('first report', async () => { await this.reportVolumes(); await this.reportDisk() })
+      tick('first volumes', () => this.reportVolumes())
+      tick('first disk', () => this.reportDisk())
       tick('first posture', () => this.reportPosture())
 
+      // Volumes and disk are separate ticks: the volume report is a docker
+      // call per volume, so one behind the other held the disk report for
+      // minutes, and a throw in the first dropped the second.
       const beat = setInterval(() => tick('heartbeat', () => this.heartbeat()), config.heartbeatMs)
-      const rep  = setInterval(() => tick('report', async () => {
-        await this.reportVolumes()
-        await this.reportDisk()
-      }), config.reportMs)
+      const vols = setInterval(() => tick('volumes', () => this.reportVolumes()), config.reportMs)
+      const disk = setInterval(() => tick('disk', () => this.reportDisk()), config.reportMs)
       const pos  = setInterval(() => tick('posture', () => this.reportPosture()), config.postureMs)
 
-      return () => { clearInterval(beat); clearInterval(rep); clearInterval(pos) }
+      return () => { clearInterval(beat); clearInterval(vols); clearInterval(disk); clearInterval(pos) }
     },
   }
 }

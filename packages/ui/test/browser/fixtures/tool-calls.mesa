@@ -1,0 +1,18 @@
+<script>
+  // tool-calls.mesa — the fixture for ToolCalls.
+  //
+  // Four calls: done with input and output, failed, running with input only,
+  // and one with neither (nothing to open).
+  import ToolCalls from '../../../components/display/ToolCalls.mesa'
+
+  const calls = [
+    { name: 'search', status: 'done', input: { q: 'orders' }, output: '3 rows' },
+    { name: 'refund', status: 'failed', input: 'order 7', output: 'card declined' },
+    { name: 'lookup', status: 'running', input: { id: 4 } },
+    { name: 'ping' },
+  ]
+</script>
+
+<div id="calls" style="inline-size: 24rem">
+  <ToolCalls {calls} />
+</div>

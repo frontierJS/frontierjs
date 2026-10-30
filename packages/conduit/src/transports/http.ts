@@ -862,6 +862,12 @@ export class HttpTransport extends BaseTransport {
       }
     }
 
+    // Last and only where absent: whatever the caller put on the path, in the
+    // body shorthand or in `query` is theirs to say.
+    for (const [k, v] of Object.entries(this.descriptor.query ?? {})) {
+      if (!url.searchParams.has(k)) url.searchParams.set(k, v)
+    }
+
     return url.toString()
   }
 

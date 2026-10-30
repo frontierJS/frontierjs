@@ -39,6 +39,7 @@
  */
 
 import { scaffoldPort, writeAbsent } from './scaffold/surface.js'
+import { writeApiOrigin }             from './app-config.js'
 
 /** The six, minus `dist/`, which a build writes as `dist/chrome` + `dist/firefox`. */
 export const EXTENSION_SURFACE_DIRS = [
@@ -58,6 +59,19 @@ export function jettyConfig({ appName = 'app', tokenKey = 'app_token', port = sc
 // One config, both browsers. \`--browser=chrome|firefox|both\` decides which
 // manifest jetty emits; the fields that differ between them are the two blocks
 // at the bottom, and everything above is shared.
+
+import { pinApiOrigin } from '../../config/api-origin.js'
+
+// FRONTIER_PUBLIC_API_URL, pinned from the port a second checkout is handed
+// before anything reads it. The worker bundle has no process, so Vite's
+// inlined value is asked first.
+if (typeof process !== 'undefined') pinApiOrigin(process.env, process.env)
+
+const API = new URL(
+  import.meta.env?.FRONTIER_PUBLIC_API_URL ??
+  (typeof process !== 'undefined' ? process.env.FRONTIER_PUBLIC_API_URL : undefined) ??
+  'http://localhost:${apiPort}'
+).origin
 
 export default {
   name:        '${appName}',
@@ -100,8 +114,9 @@ export default {
   junction: {
     // The harbor holds the only connection — a dock, an options page and every
     // island talk to Junction THROUGH it, over the port protocol, so a service
-    // worker that sleeps does not leave four half-open sockets behind.
-    url:      'ws://localhost:${apiPort}',
+    // worker that sleeps does not leave four half-open sockets behind. The API's
+    // http origin: Junction's client derives the socket from it.
+    url:      API,
     tokenKey: '${tokenKey}',
   },
 }
@@ -157,8 +172,8 @@ export function dockApp({ appName = 'app' } = {}) {
 </div>
 
 <style>
-  .dock { font: 14px system-ui, sans-serif; padding: 1rem; min-width: 320px; }
-  h1    { font-size: 1.1rem; margin: 0 0 0.5rem; }
+  .dock { font: var(--text-md) system-ui, sans-serif; padding: var(--space-2xl); min-width: var(--dock-width, 320px); }
+  h1    { font-size: var(--text-xl); margin: 0 0 var(--space-sm); }
 </style>
 `
 }
@@ -244,7 +259,7 @@ refuses an upload that does not raise it.
 export function scaffoldExtensionSurface({
   root, dir = 'extension', appName = 'app', devPort = scaffoldPort('ext'), apiPort = scaffoldPort('be'),
 } = {}) {
-  return writeAbsent(root, dir, { dirs: EXTENSION_SURFACE_DIRS, files: [
+  const surface = writeAbsent(root, dir, { dirs: EXTENSION_SURFACE_DIRS, files: [
     ['.gitignore',             extensionGitignore()],
     ['config/jetty.config.js', jettyConfig({ appName, tokenKey: `${appName}_token`, port: devPort, apiPort })],
     ['src/harbor/index.js',    harborEntry()],
@@ -252,6 +267,8 @@ export function scaffoldExtensionSurface({
     ['test/README.md',         extensionTestReadme({ appName })],
     ['deploy/README.md',       extensionDeployReadme({ appName })],
   ] })
+  const app = writeApiOrigin(root)
+  return { written: [...surface.written, ...app.written], skipped: [...surface.skipped, ...app.skipped] }
 }
 
 /**

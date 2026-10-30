@@ -52,6 +52,7 @@
   //   <Form {leads} />                        every writable column, in schema order
   //   <Form {leads} only={['name','email']} />
   //   <Form {leads} except={['internalRef']} />
+  //   <Form {leads} sections={[{ title: 'Contact', fields: ['name','email'] }]} />
   //
   // A field list typed into a page is the last thing a form still restates
   // about a model, and it drifts the way every duplicated list does: a column
@@ -76,6 +77,7 @@
 
   import Alert     from '../feedback/Alert.mesa'
   import FormField from './FormField.mesa'
+  import Fieldset  from './Fieldset.mesa'
   import { cx } from '../../utils.js'
 
   // The resource this form writes through. Optional only when `onsubmit` is
@@ -105,6 +107,13 @@
   export let auto   = undefined       // boolean
   export let only   = undefined       // string[] — narrows AND orders
   export let except = undefined       // string[] — removes
+
+  // Group the generated list: each `{ title, fields }` is a titled Fieldset
+  // holding the named fields in the order named. Fields no section names follow
+  // the sections in schema order; a name that is not a rendered field is
+  // skipped. The grouping is a page's choice, so the schema declares none
+  // (`FJS-D1657`).
+  export let sections = undefined     // { title: string, fields: string[] }[]
 
   // The buttons under the form: `slot="actions"` and `{#snippet actions()}`
   // are two spellings of this one snippet prop (`FJS-D668`).
@@ -298,6 +307,14 @@
   // A button does not: Cancel has to stay live while a slow save runs, or the
   // save traps the person in the form, and only the SUBMIT button follows
   // `submitting`. Reporting one merged flag is what made that undecidable.
+  // A disabled form cannot be picked from, so rows are fetched only to label a
+  // value it holds. The caller it is disabled for often cannot read the related
+  // model either, and the fetch comes back refused and logged (`FJS-1986`).
+  function _nothingToLabel(name) {
+    return !!disabled && (record?.[name] == null || record[name] === '' ||
+                          (Array.isArray(record[name]) && !record[name].length))
+  }
+
   // `optionsFor` is how a control asks what a field's options are without
   // knowing where they come from. This package peers on mesa and css alone, so
   // it cannot reach the resource itself, and a relation's options need a
@@ -323,7 +340,7 @@
     // value, and the form is the only thing here holding the draft. A control
     // asks for its options exactly as before (`FJS-D122`).
     optionsFor: (name, opts) =>
-      (resource?.options?.(name, { record, ...opts }) ??
+      ((_nothingToLabel(name) ? undefined : resource?.options?.(name, { record, ...opts })) ??
        Promise.resolve({ options: [], total: 0, truncated: false }))
         // A value the list no longer offers comes back pinned and disabled, and
         // the field is marked invalid HERE rather than in each control: four of
@@ -351,9 +368,24 @@
   // missing from a form is the exact failure generating the list is meant to
   // end, and it would be invisible in the one place a person would look.
 
+  // `.stack` sets flex-direction and `.cluster` does not unset it, so a form
+  // given both laid out as a column and the caller's term lost in silence.
+  // A caller naming a layout term of its own replaces the default stack.
+  const LAYOUT_TERM = /(?:^|\s)(?:stack|cluster|group|grid|split|center|bar)(?:\s|$)/
+
   const _auto = auto ?? !$slots.default
   const generated = _auto ? (resource?.formFields?.({ only, except }) ?? []) : []
   const rendered  = generated.filter(f => f.control)
+
+  // A field belongs to the first section naming it, so it renders once.
+  $: _grouped = (() => {
+    const left = new Map(rendered.map(f => [f.name, f]))
+    const groups = (sections ?? []).map(s => ({
+      title:  s.title,
+      fields: (s.fields ?? []).map(n => left.get(n)).filter(f => f && left.delete(f.name)),
+    }))
+    return { groups, rest: [...left.values()] }
+  })()
 
   // A `readOnly` field is not one of them: `@system`, `@computed`, `@generated`
   // and `@from` are the schema saying this value is not the caller's to write,
@@ -771,7 +803,7 @@
 
   let _autoTimer  = null
   let _autoWarned = false
-  let _destroyed  = false
+  let _armedFields = []
 
   const _autoDelay = () => (typeof autosave === 'number' ? autosave : AUTOSAVE_MS)
 
@@ -801,6 +833,7 @@
 
     clearTimeout(_autoTimer)
     _setAutoState('pending')
+    _armedFields = rendered
     _autoTimer = setTimeout(_autosaveNow, _autoDelay())
   }
 
@@ -816,9 +849,7 @@
     // sending a second copy: <Form> refuses a re-entrant submit, and that
     // refusal would be reported as a failed autosave over a write that
     // succeeded.
-    // A destroyed form has no later to wait for, and the button's write carries
-    // the record.
-    if (submitting) { if (!_destroyed) _autoBump(); return }
+    if (submitting) { _autoBump(); return }
 
     // Refused over what is ALREADY speaking, and nothing is revealed to find
     // more. A control that cannot convert its own text is on screen by
@@ -836,7 +867,23 @@
     if (!out.ok) { _setAutoState('error'); return }
 
     _setAutoState('saved')
-    if (!_destroyed) onautosaved?.(out.result, record)
+    onautosaved?.(out.result, record)
+  }
+
+  /**
+   * The same guards and the same write as `_autosaveNow`, for a form being
+   * torn down. Nothing after the request is read: the props this component
+   * reads are memos its teardown has disposed, and no state it could set is
+   * on screen. `onerror` is taken now, and the field list is the one the timer
+   * was armed with, because `rendered` is a memo too.
+   */
+  function _flushGone() {
+    if (disabled || committed || submitting) return
+    if (Object.keys(_control).length || _armedFields.some(f => errors[f.name])) return
+    const fail = onerror
+    try {
+      Promise.resolve(onsubmit ? onsubmit(record) : _send(_writable(record))).catch(err => fail?.(err))
+    } catch (err) { fail?.(err) }
   }
 
   /**
@@ -1014,9 +1061,10 @@
         console.warn(
           `[Form] no fields were rendered and no control was passed, but ${model} offers ` +
           `${offered.length} (${offered.slice(0, 4).map(f => f.name).join(', ')}${offered.length > 4 ? ', …' : ''}). ` +
-          'Generation is off because this form was passed children: a `slot=` child inside `{#if}` ' +
-          'puts the BLOCK in the default slot, which reads as a hand-written form. Render the ' +
-          'slotted children unconditionally, or state `auto` to force either way.',
+          'Generation is off because this form was passed children: anything between its tags, a `<p>` ' +
+          'of help text included, reads as a hand-written form. Put the controls in, or state `auto` ' +
+          'to generate beside the children. A `slot=` child inside `{#if}` also lands in the default ' +
+          'slot when its branches are not all slotted.',
         )
       }
     }
@@ -1035,6 +1083,7 @@
     // the number is gone, which is the whole of `FJS-391`.
     for (const f of rendered) {
       if (!f.rule?.references && !f.rule?.values && !f.rule?.items?.enum) continue
+      if (_nothingToLabel(f.name)) continue
       resource?.options?.(f.name)?.then?.(r => {
         pickers = { ...pickers, [f.name]: Array.isArray(r) ? r : (r?.options ?? []) }
         totals  = { ...totals,  [f.name]: Array.isArray(r) ? null : (r?.total ?? null) }
@@ -1054,8 +1103,8 @@
     // it. Fire and forget: the screen that owned this form has moved on.
     if (_autoTimer) {
       clearTimeout(_autoTimer)
-      _destroyed = true
-      _autosaveNow()
+      _autoTimer = null
+      _flushGone()
     }
     // Guarded as the add is: a terminal's `window` is the engine's own and has
     // no listeners, so an unguarded remove threw on every form's teardown.
@@ -1073,7 +1122,7 @@
 
 <form
   bind:this={formEl}
-  class={cx('stack')}
+  class={cx(LAYOUT_TERM.test($class || '') ? null : 'stack')}
   novalidate={novalidate || null}
   aria-busy={submitting || null}
   onsubmit|preventDefault={submit}
@@ -1097,7 +1146,7 @@
     `$context.form`. What IS stated is the control, its value and how the value
     comes back — the three things the schema does not say.
   -->
-  {#each rendered as f (f.name)}
+  {#snippet control(f)}
     <FormField
       field={f}
       value={record?.[f.name]}
@@ -1107,6 +1156,20 @@
       total={totals[f.name]}
       write={(v) => writeField(f.name, v)}
     />
+  {/snippet}
+
+  {#each _grouped.groups as g (g.title)}
+    {#if g.fields.length}
+      <Fieldset legend={g.title}>
+        {#each g.fields as f (f.name)}
+          {@render control(f)}
+        {/each}
+      </Fieldset>
+    {/if}
+  {/each}
+
+  {#each _grouped.rest as f (f.name)}
+    {@render control(f)}
   {/each}
 
   <slot />

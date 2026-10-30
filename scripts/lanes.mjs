@@ -127,6 +127,11 @@ export function syncLane(lane, { linked = true } = {}) {
   for (const f of run('git', ['-C', ROOT, 'ls-files', '--others', '--exclude-standard', '-z'], ROOT).split('\0').filter(f => f && !SCRATCH.test(f))) {
     copyIfPresent(join(ROOT, f), join(dir, f))
   }
+  // A lane is reused, so the workspace links it was installed with go stale
+  // when a package gains a dependency: `Cannot find module '@frontierjs/outpost/dockerfile'`
+  // (FJS-3630). A no-op when the manifests are unchanged.
+  const install = spawnSync('bun', ['install', '--frozen-lockfile'], { cwd: dir, encoding: 'utf8' })
+  if (install.status !== 0) throw new Error(`lane ${lane.n}: bun install failed\n${install.stderr}`)
 
   for (const f of LINKED) {
     if (existsSync(join(dir, f))) unlinkSync(join(dir, f))

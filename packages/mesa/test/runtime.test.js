@@ -3411,6 +3411,27 @@ describe('context reaches content a block creates LATER', () => {
   })
 })
 
+// FJS-1142: the imperative `$context.use` / `.provide` and the `$context.key`
+// sugar are one context, so a key provided by either is read by either.
+describe('the $context object shares the compiled form\'s context', () => {
+  it('provide reaches contextRead, and contextProvide reaches use', () => {
+    push_component('Provider', 'P.mesa')
+    $rt.context.provide('a', () => 'imperative')
+    contextProvide('b', () => 'compiled')
+    push_component('Consumer', 'C.mesa')
+    expect(contextRead('a')?.()).toBe('imperative')
+    expect($rt.context.use('b')?.()).toBe('compiled')
+    pop_component()
+    pop_component()
+  })
+
+  it('the symbol-keyed trio is gone', () => {
+    expect($rt.createContext).toBeUndefined()
+    expect($rt.provideContext).toBeUndefined()
+    expect($rt.useContext).toBeUndefined()
+  })
+})
+
 describe('component setup that throws does not poison later mounts', () => {
   it('unwinds on the initial effect run, and rethrows', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -4680,6 +4701,35 @@ describe('boundaryBlock', () => {
     s1._update('error', new Error('boom'))
     flushSync()
     expect(container.textContent).toBe('error:boom')
+  })
+
+  it('keeps the mounted pending branch while another state changes (FJS-1144)', () => {
+    const container = div()
+    const anchor = document.createComment('')
+    container.appendChild(anchor)
+
+    const s1 = makeAsyncState()
+    const s2 = makeAsyncState()
+    let built = 0
+    boundaryBlock(
+      anchor,
+      () => [s1, s2],
+      () => { const el = div(); el.textContent = 'content'; return el },
+      () => { built++; const el = div(); el.textContent = 'loading'; return el },
+      null
+    )
+    flushSync()
+    const first = container.firstElementChild
+    expect(built).toBe(1)
+
+    s1._update('done')
+    flushSync()
+    expect(built).toBe(1)
+    expect(container.firstElementChild).toBe(first)
+
+    s2._update('done')
+    flushSync()
+    expect(container.textContent).toBe('content')
   })
 
   it('waits for all states — shows loading until last resolves', () => {

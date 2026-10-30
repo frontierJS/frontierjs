@@ -69,6 +69,7 @@ export type {
 
   // Targets
   TargetDescriptor,
+  TargetInput,
   TargetKind,
   TargetAuth,
   Signer,

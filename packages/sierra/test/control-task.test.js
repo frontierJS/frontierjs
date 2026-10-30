@@ -37,6 +37,7 @@ model Visit {
   id         Int      @id @default(autoincrement())
   name       String
   body       String   @syntax(md)
+  memo       String   @syntax(txt)
   query      String   @syntax(sql)
   count      Int
   weight     Float
@@ -78,7 +79,7 @@ const SETS = buildFieldRules({
 // fails here until it is listed, which is where its task gets decided.
 const CONTROLS = [
   'checkbox', 'code', 'combobox', 'datetime', 'file', 'geo', 'input',
-  'json', 'money', 'multiselect', 'picker', 'select', 'textarea',
+  'json', 'markdown', 'money', 'multiselect', 'picker', 'select', 'textarea',
 ]
 
 afterEach(() => {

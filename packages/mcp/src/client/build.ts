@@ -71,7 +71,11 @@ export async function buildCli({ root, targets = [] }: BuildOptions): Promise<Bu
       entrypoints: [entry, ...routes.map(r => r.file)],
       splitting:   true,
       compile:     target ? { outfile, target: target as Bun.Build.CompileTarget } : { outfile },
-      define:      { 'process.env.FJS_CLI_ROUTES': JSON.stringify(String(routes.length)) },
+      define:      {
+        'process.env.FJS_CLI_ROUTES': JSON.stringify(String(routes.length)),
+        // bun build inlines the builder's NODE_ENV, so a binary would read "development" whatever it runs under
+        'process.env.NODE_ENV':       'globalThis.process.env.NODE_ENV',
+      },
     })
     if (!result.success)
       throw new Error(`${config.name}${target ? ` (${target})` : ''}: ${result.logs.map(l => l.message).join('\n')}`)

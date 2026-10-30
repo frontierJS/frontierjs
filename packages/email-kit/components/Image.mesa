@@ -1,6 +1,5 @@
 <script>
-  import { refuseChildren, refuseCell } from './slot-guard.js'
-  refuseChildren('Image', $.slots, "Pass `src` and `alt`.")
+  import { refuseCell } from './slot-guard.js'
   const emailCell = $context.emailCell
   refuseCell('Image', emailCell)
   export let src      = ''

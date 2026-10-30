@@ -196,6 +196,23 @@ catch (e) { console.log(e.stack) }
     expect(out).toContain('Widget.mesa:8:')   // the interpolation that called it
   }, 30000)
 
+  it('names the source line of an ATTRIBUTE EXPRESSION (FJS-948)', () => {
+    const out = stackOf([
+      '<script>',                            // 1
+      '  let seed = 1',                      // 2
+      '  function explode(n) {',             // 3
+      `    throw new Error('attr: ' + n)`,   // 4
+      '  }',                                 // 5
+      '</script>',                           // 6
+      '<p>ok</p>',                           // 7
+      '<b title={explode(seed)}>x</b>',      // 8
+    ])
+    expect(out).not.toContain('NO_MAP')
+    expect(out).not.toContain('NO_THROW')
+    expect(out).toContain('Widget.mesa:4:')
+    expect(out).toContain('Widget.mesa:8:')
+  }, 30000)
+
   it('names the source line of a declaration that was REWRITTEN', () => {
     // The frame lands on the generated `trackDerived` call, which shares no
     // text with `const answer = explode()`. Only the declaration tier can put

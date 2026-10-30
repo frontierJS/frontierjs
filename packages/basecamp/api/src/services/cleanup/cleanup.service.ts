@@ -27,7 +27,7 @@
 // No `workspaceId` on either model — a disk is meaningless without its server,
 // so the scope is the join, the same one `volumes` and `servers.feed` make.
 
-import { createService, NotFound, BadRequest, $, seriesKey } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, parseWhere, $, seriesKey } from '@frontierjs/junction'
 import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor, callerOrder }  from '../../core/resource.ts'
 import {
@@ -273,7 +273,7 @@ export default createService({
     if (serverId && !fleet.has(serverId)) throw new NotFound(`Server '${serverId}' not found`)
 
     const { rows, total } = await db().maintenanceRun.findManyAndCount({
-      where:   { kind: 'cleanup', serverId: { in: serverId ? [serverId] : [...fleet.keys()] } },
+      where:   { ...parseWhere($.query), kind: 'cleanup', serverId: { in: serverId ? [serverId] : [...fleet.keys()] } },
       orderBy: callerOrder({ createdAt: 'desc' }),
       limit, offset,
     })

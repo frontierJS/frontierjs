@@ -50,7 +50,10 @@ core/
                 `ENCRYPTION_KEY` its `.env.example` names. Only that key: fli
                 can make random bytes and no other blank is fli's to fill.
                 `fillKey` is the same rule for `deploy:setup`'s first seed,
-                written into the LOCAL `.env.production` (`FJS-D1381`)
+                written into the LOCAL `.env.production` (`FJS-D1381`).
+                `fileColumns` / `filesProviderNote` are `01c-files-check`'s
+                warning that File columns meet an unset `FILES_PROVIDER`
+                (`FJS-D1549`)
   dev-run.js    `fli dev`'s surfaces as one labeled stream — each its own process
                 group, stopped as one on exit, so a launcher's child never keeps a port.
                 Compact by default: children get `FLI_DEV=1` and print one ready
@@ -581,7 +584,9 @@ core/
                 copy alone refuses every multi-stage build here. Pure — the
                 caller reads the files, so the suite needs no daemon
                 — and `inspectIgnored` grades the context against what GIT
-                ignores, the app's own list of what is not source (`FJS-3524`)
+                ignores, the app's own list of what is not source (`FJS-3524`),
+                and a committed SQLite copy with no state suffix by its
+                16-byte header (`gatherSqliteCopies`, `FJS-3584`)
   release-preflight.js  will a Basecamp App start, keep its data and be
                 reached — its settings (Variables, volume, port, health,
                 Domains) against what the app declares (defineEnv's spec, the

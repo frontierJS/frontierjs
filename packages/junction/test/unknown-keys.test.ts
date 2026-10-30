@@ -287,3 +287,46 @@ describe('the refusal does not hand the caller the author\'s advice', () => {
     expect(out.length).toBe(1)
   })
 })
+
+// ─── a per-viewer field travels under its namespace (`FJS-3571`) ──────────
+
+describe('@scoped / @edge — the namespace is the field the client sends', () => {
+  const EDGE = `
+    model User { id Int @id; name String; @@auth }
+    model Note { id Int @id; body String; readAt DateTime? @scoped; @@gate(0) }
+  `
+  async function edgeApp() {
+    const db  = await createClient({ db: ':memory:', schema: EDGE })
+    const app = createApp({ db: db as never })
+    app.services.register(createService({
+      name: 'notes', model: 'Note', db: db as never, methods: ['find', 'get', 'create', 'update', 'patch'],
+    } as never))
+    await app._startForTest()
+    const ann = await (db as any).asSystem().user.create({ data: { name: 'Ann' } })
+    return { app, ann }
+  }
+
+  test('the namespace is accepted and the host column name is not', async () => {
+    const { app, ann } = await edgeApp()
+    const note = await app.service('notes').call('create', null, { body: 'x' } as never) as { id: number }
+    const as = { user: { id: ann.id } } as never
+    await app.service('notes').call('update', note.id, { mine: { readAt: '2026-01-01T00:00:00.000Z' } } as never, as)
+    const read = await app.service('notes').call('get', note.id, null as never, as) as any
+    expect(read.mine.readAt).toBe('2026-01-01T00:00:00.000Z')
+    const unread = (q: unknown) => app.service('notes').find(q as never, as).then((r: any) => (r.data ?? r) as { id: number }[])
+    expect(await unread({ mine: { readAt: null } })).toEqual([])
+    expect((await unread({ mine: { readAt: { not: null } } })).map(r => r.id)).toEqual([note.id])
+    expect(call2(app, note.id, { readAt: 'x' }, as)).rejects.toThrow(/readAt: is not a field of Note/)
+  })
+
+  test('a write of the namespace with no viewer is a 401, not a 500 (FJS-3641)', async () => {
+    const { app } = await edgeApp()
+    const note = await app.service('notes').call('create', null, { body: 'x' } as never) as { id: number }
+    const err = await call2(app, note.id, { mine: { readAt: '2026-01-01T00:00:00.000Z' } }, undefined).catch((e: unknown) => e) as { code?: number }
+    expect(err).toBeInstanceOf(Error)
+    expect(err.code).toBe(401)
+  })
+
+  const call2 = (app: any, id: number, data: unknown, as: unknown) =>
+    app.service('notes').call('update', id, data as never, as as never)
+})

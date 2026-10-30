@@ -230,6 +230,43 @@ export function parseError(msg, pos) {
   return e
 }
 
+/**
+ * A throw out of one template node's build, placed. `parseText` positions are
+ * relative to the text it was handed, so a text node adds its own start; any
+ * other node (an attribute's expression) is named by the element it sits on.
+ */
+export function locateThrown(ctx, e, n) {
+  if (!(e instanceof Error) || e._located || n.start == null) return e
+  const index = n.type === 'text' && e.pos != null ? n.start + e.pos : n.start
+  const at = ctx.posOf(index)
+  if (at) {
+    e.message = `${e.message} — ${at}`
+    e._located = true
+  }
+  return e
+}
+
+/**
+ * The refusals one template node's build pushed onto `analysis.errors` with no
+ * place in them, placed at that node. A node nested inside this one placed its
+ * own first, so what is left is this node's.
+ */
+export function locateReported(ctx, from, n) {
+  if (n.start == null) return
+  const errors = ctx.analysis.errors
+  for (let i = from; i < errors.length; i++) {
+    if (typeof errors[i] !== 'string' || /:\d+:\d+$/.test(errors[i])) continue
+    const at = ctx.posOf(n.start)
+    if (at) errors[i] = `${errors[i]} — ${at}`
+  }
+}
+
+/** ` — File:line:column` for a parse node, or nothing when it carries no offset. */
+function placeOf(ctx, node) {
+  const at = node?.start != null ? ctx.posOf(node.start) : null
+  return at ? ` — ${at}` : ''
+}
+
 /** The same, thrown rather than returned, for use as an `assert` with a place. */
 function assertAt(condition, msg, pos) {
   if (condition) return
@@ -561,6 +598,45 @@ function isExpression(exp) {
   }
 }
 
+// An expression is emitted verbatim, so one that is not JavaScript compiled
+// clean and failed at import, naming no file — a CSS block pasted into an
+// attribute (`data-styles="main { --x: 1 }"`) did exactly that (Invariant 15).
+function assertExpression(exp, pos) {
+  if (!isExpression(exp)) throw parseError(
+    `{${exp.length > 40 ? exp.slice(0, 40) + '…' : exp}} is not a JavaScript expression. ` +
+    "A brace meant as text is '&lbrace;', or '\\{' in Markdown.", pos)
+}
+
+// A block head is emitted into the module the way an attribute expression is,
+// so `{#if a ==}`, `{#each a as n n.id}` and `{@render x.?()}` compiled clean
+// and failed at import. `value` is the head without its braces.
+function assertBlockHead(value, pos) {
+  const refuse = (what, src) => {
+    throw parseError(`{${value.length > 40 ? value.slice(0, 40) + '…' : value}} — ${what} ` +
+      `'${src}' is not JavaScript.`, pos)
+  }
+  const expr = (src, what = 'the expression') => { if (!isExpression(src)) refuse(what, src) }
+  const pattern = (src, what) => {
+    try { acorn.parseExpressionAt(`(${src}) => 0`, 0, { ecmaVersion: 'latest' }) }
+    catch { refuse(what, src) }
+  }
+  let m
+  if ((m = value.match(/^(?:#if|#key|#await|:elif|:else\s+if|@render|@html)\s+([\s\S]*)$/))) return expr(m[1].trim())
+  if ((m = value.match(/^:(?:then|catch)\s+([\s\S]+)$/))) return pattern(m[1].trim(), 'the binding')
+  if (value.startsWith('#each ') || value.startsWith('#virtual each ')) {
+    let h
+    try {
+      // `height=48 viewport="500px"` trail the binding of a virtual list.
+      const v = value.match(/^#virtual each\s+(.+)\s+as\s+(.+)$/s)
+      h = parseEachHeader(v ? `#each ${v[1]} as ${parseVirtualOptions(v[2].trim(), value).rest}` : value)
+    } catch (e) { throw parseError(e.message, pos) }
+    expr(h.arrayName.trim(), 'the list')
+    if (h.keyName != null) expr(h.keyName, 'the key')
+    if (!h.isDestructure) pattern(h.itemName, 'the item')
+    if (h.indexName != null) pattern(h.indexName, 'the index')
+  }
+}
+
 export function parseJS(exp, fullParse) {
   const self = {}
   if (fullParse === true) self.ast = acorn.parse(exp, { ecmaVersion: 'latest' })
@@ -708,11 +784,41 @@ const READONLY_PROPS = Symbol.for('mesa.readonlyProps')
 
 function declareReadonlyProps(accessorMap, names) {
   if (!accessorMap) return
-  accessorMap[READONLY_PROPS] = { names: new Set(names), written: new Set() }
+  accessorMap[READONLY_PROPS] = { names: new Set(names), written: new Set(), unwritable: new Set() }
 }
 
 function readonlyPropWrites(accessorMap) {
   return [...(accessorMap?.[READONLY_PROPS]?.written ?? [])]
+}
+
+/**
+ * Names a template expression assigned that the compiler rewrites to a call and
+ * has no setter for — a derived `const`, an `{#each}` item, a `{@const}`.
+ * `d = 3` there emits `$$runtime.get(d) = 3`, which acorn refuses (FJS-3662).
+ */
+function unwritableWrites(accessorMap) {
+  return [...(accessorMap?.[READONLY_PROPS]?.unwritable ?? [])]
+}
+
+/** The bare names a write target assigns: `d`, `[d, e]`, `{ k: d, ...e }`, `d = 1` inside a pattern. */
+function assignedNames(t, names = []) {
+  if (!t) return names
+  if (t.type === 'Identifier') names.push(t.name)
+  else if (t.type === 'AssignmentPattern') assignedNames(t.left, names)
+  else if (t.type === 'RestElement') assignedNames(t.argument, names)
+  else if (t.type === 'ArrayPattern') t.elements.forEach((e) => assignedNames(e, names))
+  else if (t.type === 'ObjectPattern') t.properties.forEach((p) => assignedNames(p.value ?? p.argument, names))
+  return names
+}
+
+/** True when `name` is read through a call and has no setter, so a write cannot be emitted. */
+function noteUnwritableWrite(accessorMap, setterMap, name, shadowed) {
+  const reg = accessorMap?.[READONLY_PROPS]
+  if (!reg || shadowed || setterMap?.[name]) return false
+  const acc = accessorMap[name]
+  if (typeof acc !== 'string' || !acc.endsWith(')')) return false
+  reg.unwritable.add(name)
+  return true
 }
 
 /** True when `name` is an `export const` prop and the write must be refused. */
@@ -935,15 +1041,25 @@ export function rewriteExpr(expr, accessorMap, setterMap, fireFns) {
       }
     }
 
-    if (
-      n.type === 'AssignmentExpression' &&
-      n.left.type === 'Identifier' &&
-      noteReadonlyWrite(accessorMap, n.left.name, localScope.has(n.left.name))
-    ) return
+    // A `for (d of …)` head with no declaration assigns each pass, the same write.
+    const writeTarget =
+      n.type === 'AssignmentExpression' ? n.left
+      : (n.type === 'ForOfStatement' || n.type === 'ForInStatement') && n.left.type !== 'VariableDeclaration' ? n.left
+      : null
+    if (writeTarget) {
+      let refused = false
+      for (const name of assignedNames(writeTarget)) {
+        const shadowed = localScope.has(name)
+        if (noteReadonlyWrite(accessorMap, name, shadowed) ||
+            noteUnwritableWrite(accessorMap, setterMap, name, shadowed)) refused = true
+      }
+      if (refused) return
+    }
     if (
       n.type === 'UpdateExpression' &&
       n.argument.type === 'Identifier' &&
-      noteReadonlyWrite(accessorMap, n.argument.name, localScope.has(n.argument.name))
+      (noteReadonlyWrite(accessorMap, n.argument.name, localScope.has(n.argument.name)) ||
+        noteUnwritableWrite(accessorMap, setterMap, n.argument.name, localScope.has(n.argument.name)))
     ) return
 
     if (
@@ -2139,13 +2255,16 @@ export function parseHTML(source) {
             continue
           }
           const v = bind.value
+          // An {#await} head is checked below, after its one-line form is named.
+          if (!v.startsWith('#await ')) assertBlockHead(v, bindStart)
           if (v.match(/^@\w+/)) {
             if (v.startsWith('@attach')) {
               const expr = v.slice(7).trim()
-              _parseErrors.push(
-                `{@attach} is an element directive — it cannot appear in text content. ` +
-                `Place it on an element instead: <div {@attach ${expr}}>…</div>`
-              )
+              _parseErrors.push({
+                message: `{@attach} is an element directive — it cannot appear in text content. ` +
+                  `Place it on an element instead: <div {@attach ${expr}}>…</div>`,
+                pos: bindStart
+              })
             }
             push({ type: 'systag', value: v, start: bindStart })
             continue
@@ -2244,6 +2363,7 @@ export function parseHTML(source) {
             assertAt(!short,
               `{${v}} — the one-line \`${short?.[1]}\` form is not supported. Write ` +
               `{#await p}…{:${short?.[1]} v}…{/await}.`, bindStart)
+            assertBlockHead(v, bindStart)
             const tag = { type: 'await', value: v, parts: { main: [] }, start: bindStart }
             push(tag)
             go(tag, (n) => tag.parts.main.push(n))
@@ -2451,13 +2571,7 @@ export function parseText(source, options = {}) {
     if (jsx) throw parseError(
       `{${exp}} — JSX inside an expression is not supported; markup is not a value. ` +
       'Write {#if cond}<b>…</b>{/if}, or a {#snippet} rendered with {@render}.', i)
-    // An expression is emitted verbatim as `${…}`, so one that is not
-    // JavaScript compiled clean and failed at import, naming no file — a CSS
-    // block pasted into an attribute (`data-styles="main { --x: 1 }"`) did
-    // exactly that (Invariant 15).
-    if (!js && !isExpression(exp)) throw parseError(
-      `{${exp.length > 40 ? exp.slice(0, 40) + '…' : exp}} is not a JavaScript expression. ` +
-      "A brace meant as text is '&lbrace;', or '\\{' in Markdown.", i)
+    if (!js) assertExpression(exp, i)
     parts.push({ value: exp, type: js ? 'js' : 'exp' })
     i = end
   }
@@ -2527,6 +2641,7 @@ export const parseAttributes = (source, option = {}) => {
       // {@attach expr} — element/component attachment
       const { raw, value } = parseBinding(r)
       const expr = value.replace(/^@attach\s*/, '')
+      assertExpression(expr, start)
       result.push({ name: '@attach', value: expr, raw, content: raw, type: 'attach' })
     } else if (r.probe('{*')) {
       const { raw } = parseBinding(r)
@@ -2536,13 +2651,15 @@ export const parseAttributes = (source, option = {}) => {
       const { raw } = parseBinding(r)
       result.push({ name: '*' + raw, content: '*' + raw })
     } else if (r.probe('{...')) {
-      const { raw } = parseBinding(r)
+      const { raw, value } = parseBinding(r)
+      assertExpression(value.slice(3), start)
       result.push({ name: raw, content: raw })
     } else {
       let name = r.readAttribute()
       if (r.readIf('=')) {
         if (r.probe('{')) {
-          const { raw } = parseBinding(r)
+          const { raw, value } = parseBinding(r)
+          assertExpression(value, start)
           result.push({ name, value: raw, raw, content: r.sub(start), type: 'exp' })
         } else if (r.probeQuote()) {
           const raw = r.readString()
@@ -3412,7 +3529,7 @@ export function analyzeScript(raw, ast) {
           localName = prop.value.name
           syntheticInit = memberExpr
         }
-        if (refuseRedeclaration(localName)) continue
+        if (refuseRedeclaration(localName, node)) continue
 
         vars[localName] = {
           name: localName,
@@ -3466,7 +3583,7 @@ export function analyzeScript(raw, ast) {
           localName = el.name
           syntheticInit = memberExpr
         }
-        if (refuseRedeclaration(localName)) return
+        if (refuseRedeclaration(localName, node)) return
 
         vars[localName] = {
           name: localName,
@@ -3595,12 +3712,13 @@ export function analyzeScript(raw, ast) {
   // order, so the guard on the `$:` side only fires when the declaration comes
   // FIRST; the other way round the plain declaration overwrote the entry and
   // the writable derived vanished with nothing said.
-  const refuseRedeclaration = (name) => {
+  const refuseRedeclaration = (name, node) => {
     if (!vars[name]?.isWritableDerived) return false
-    errors.push(
-      `'${name}' is already declared by '$: ${name} = ...'. ` +
-      `A '$:' assignment is the declaration — remove the let/const/var, or drop the '$:' line.`
-    )
+    errors.push({
+      message: `'${name}' is already declared by '$: ${name} = ...'. ` +
+        `A '$:' assignment is the declaration — remove the let/const/var, or drop the '$:' line.`,
+      pos: node?.start ?? null
+    })
     return true
   }
 
@@ -3650,11 +3768,12 @@ export function analyzeScript(raw, ast) {
     // export; there is no second one to give away (RULE 56).
     if (node.type === 'ExportDefaultDeclaration' || node.type === 'ExportAllDeclaration') {
       const form = node.type === 'ExportDefaultDeclaration' ? 'export default' : 'export *'
-      errors.push(
-        `'${form}' — an instance <script> exports only props (\`export let\`, ` +
-        `\`const\`, \`var\`) and methods (\`export function\`); the component is already the module's ` +
-        `default export. Module-scope exports go in <script module>.`
-      )
+      errors.push({
+        message: `'${form}' — an instance <script> exports only props (\`export let\`, ` +
+          `\`const\`, \`var\`) and methods (\`export function\`); the component is already the module's ` +
+          `default export. Module-scope exports go in <script module>.`,
+        pos: node.start
+      })
       continue
     }
 
@@ -3665,11 +3784,12 @@ export function analyzeScript(raw, ast) {
       node.type === 'ExportNamedDeclaration' &&
       node.declaration?.type !== 'VariableDeclaration'
     ) {
-      errors.push(
-        `'${raw.slice(node.start, Math.min(node.end, node.start + 40)).split('\n')[0].trim()}' — ` +
-        `an instance <script> exports only props (\`export let\`, \`const\`, \`var\`) ` +
-        `and methods (\`export function\`). Module-scope exports go in <script module>.`
-      )
+      errors.push({
+        message: `'${raw.slice(node.start, Math.min(node.end, node.start + 40)).split('\n')[0].trim()}' — ` +
+          `an instance <script> exports only props (\`export let\`, \`const\`, \`var\`) ` +
+          `and methods (\`export function\`). Module-scope exports go in <script module>.`,
+        pos: node.start
+      })
       continue
     }
 
@@ -3681,7 +3801,7 @@ export function analyzeScript(raw, ast) {
       for (const d of decl.declarations) {
         const name = d.id?.name
         if (!name) continue
-        if (refuseRedeclaration(name)) continue
+        if (refuseRedeclaration(name, node)) continue
         vars[name] = {
           name,
           kind: decl.kind,
@@ -3719,7 +3839,7 @@ export function analyzeScript(raw, ast) {
           }
           continue
         }
-        if (refuseRedeclaration(name)) continue
+        if (refuseRedeclaration(name, node)) continue
 
         // $context.key consume — let/const/var name = $context.key
         const init = d.init
@@ -4026,10 +4146,11 @@ export function analyzeScript(raw, ast) {
         const name = expr.left.name
         const rhsRaw = raw.slice(expr.right.start, expr.right.end)
         if (vars[name]) {
-          errors.push(
-            `'$: ${name} = ...' — '${name}' is already declared. ` +
-            `Remove the existing let/const/var declaration.`
-          )
+          errors.push({
+            message: `'$: ${name} = ...' — '${name}' is already declared. ` +
+              `Remove the existing let/const/var declaration.`,
+            pos: node.start
+          })
         } else {
           vars[name] = {
             name,
@@ -5308,7 +5429,7 @@ export function buildBlock(data, option = {}) {
       return label
     }
 
-    body.forEach((n) => {
+    const buildNode = (n) => {
       if (n.type === 'text') {
         if (n.value.includes('{')) {
           // pathOnly is the PROSE rule only (FJS-D213), the same split
@@ -5777,6 +5898,15 @@ export function buildBlock(data, option = {}) {
         }
       } else if (n.type === 'comment') {
         const _cn = tpl.push(n.content); labelRequest?.set(_cn)
+      }
+    }
+    body.forEach((n) => {
+      const reported = ctx.analysis.errors.length
+      try {
+        buildNode(n)
+        locateReported(ctx, reported, n)
+      } catch (e) {
+        throw locateThrown(ctx, e, n)
       }
     })
 
@@ -7780,13 +7910,8 @@ export function bindProp(prop, node, element) {
     }
 
     return {
-      // No marker: `parseAttributes` reads a SUB-READER over the tag, so an
-      // offset taken here is relative to the tag and not to the file. Plumbing
-      // the tag's own start through would be the fix; a marker built from the
-      // tag-relative number would point at the wrong line, which is the one
-      // outcome this whole mechanism is arranged to avoid.
-      bind: xNode('bindAttribute', { el: element.bindName(), name, exp }, (w, n) => {
-        w.writeLine(`$$runtime.bindAttribute(${n.el}, '${n.name}', () => (${n.exp}));`)
+      bind: xNode('bindAttribute', { el: element.bindName(), name, exp, srcStart: prop.start }, (w, n) => {
+        w.writeLine(`$$runtime.bindAttribute(${n.el}, '${n.name}', () => (${mark(n.srcStart)}${n.exp}));`)
       })
     }
   }
@@ -8176,14 +8301,14 @@ function _checkDerivedAssigned(ctx) {
       if (s.type === 'VariableDeclaration') s.declarations.forEach((d) => collect(d.id))
     return names.includes(name)
   }
-  const found = new Set()
+  const found = new Map()
   const walk = (n, shadowed) => {
     if (!n || typeof n !== 'object') return
     if (/^(FunctionDeclaration|FunctionExpression|ArrowFunctionExpression)$/.test(n.type))
       shadowed = new Set([...shadowed, ...[...derived].filter((d) => declares(n, d))])
     const target = n.type === 'AssignmentExpression' ? n.left : n.type === 'UpdateExpression' ? n.argument : null
     if (target?.type === 'Identifier' && derived.has(target.name) && !shadowed.has(target.name))
-      found.add(target.name)
+      if (!found.has(target.name)) found.set(target.name, target.start)
     for (const k of Object.keys(n)) {
       if (k === 'start' || k === 'end' || k === 'type') continue
       const c = n[k]
@@ -8192,10 +8317,13 @@ function _checkDerivedAssigned(ctx) {
     }
   }
   walk(ctx.script?.ast, new Set())
-  for (const name of found)
+  for (const [name, offset] of found) {
+    const at = ctx.script?.posOf?.(offset)
     ctx.analysis.errors.push(
       `'${name}' is a derived 'const' — it is computed from the state it reads, and cannot be ` +
-      `assigned. Assign the state it reads, or declare it 'let ${name}' for a writable value.`)
+      `assigned. Assign the state it reads, or declare it 'let ${name}' for a writable value.` +
+      (at ? ` — ${at}` : ''))
+  }
 }
 
 function _checkExternalReactivity(ctx, imports) {
@@ -10473,7 +10601,8 @@ export async function compile(source, config = {}) {
       throw new Error(
         `<script ${a.name}="${v}"> — Mesa compiles JavaScript only, and this block ` +
         `would be dropped whole. Remove the attribute` +
-        (v === 'module' ? `; a module block is spelled <script module>.` : '.')
+        (v === 'module' ? `; a module block is spelled <script module>.` : '.') +
+        placeOf(ctx, node)
       )
     }
   }
@@ -10513,7 +10642,8 @@ export async function compile(source, config = {}) {
       if (ast?.body.some((n) => n.type === 'ExportDefaultDeclaration')) {
         throw new Error(
           `<script module> cannot 'export default' — the component is the module's ` +
-          `default export. Give it a name: 'export const x = …'.`
+          `default export. Give it a name: 'export const x = …'.` +
+          placeOf(ctx, ctx.scriptModuleNodes[0])
         )
       }
     }
@@ -10617,7 +10747,16 @@ export async function compile(source, config = {}) {
     scriptParseError = `<script> does not parse: ${e.message}${at ? ` — ${at}` : ''}`
   }
 
-  ctx.script = { source: rawScript, ast: scriptAST, rootVariables: {}, rootFunctions: {} }
+  ctx.script = {
+    source: rawScript,
+    ast: scriptAST,
+    rootVariables: {},
+    rootFunctions: {},
+    // A script offset as File.mesa:line:column, or null when there is no script.
+    posOf: (offset) => _scriptStart == null
+      ? null
+      : ctx.posOf(_scriptStart + unspliceOffset(offset, _scriptEdits))
+  }
   scriptAST.body.forEach((n) => {
     // `export function f()` declares f exactly as `function f()` does — the
     // export only adds it to the instance API.
@@ -11014,6 +11153,16 @@ export async function compile(source, config = {}) {
       `'${name}' is declared \`export const\` — a read-only prop. Assigning to it ` +
       `in the child is refused (RULE 56); use \`export let ${name}\` if the ` +
       `component needs to change it.`
+    )
+  })
+
+  // The script check already refused (and placed) a derived const it assigns.
+  unwritableWrites(ctx.accessors).forEach((name) => {
+    if (ctx.analysis.errors.some((e) => e.startsWith(`'${name}' is a derived 'const'`))) return
+    ctx.analysis.errors.push(
+      `'${name}' is read through a call here — a derived 'const', an {#each} item or a ` +
+      `{@const} — and cannot be assigned. Assign the state it reads, or declare ` +
+      `'let ${name}' for a writable value.`
     )
   })
 

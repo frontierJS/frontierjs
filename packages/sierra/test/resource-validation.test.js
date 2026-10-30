@@ -441,6 +441,24 @@ describe('coerceToSchema — the DOM only ever produces strings', () => {
     expect(coerceToSchema(fields(), { score: 'abc' })).toEqual({ score: 'abc' })
   })
 
+  // FJS-1873 — HTML's number grammar, not JavaScript's. `Number('0x10')` is 16,
+  // and a price box once took it while the quantity box refused the same text.
+  test.each(['0x10', '0b101', '0o17', '1_000', 'Infinity', '-Infinity', '1,5', '1e', ' '])(
+    '%j is refused by an Int and by a Float alike', text => {
+      expect(coerceToSchema(fields(), { count: text })).toEqual({ count: text })
+      expect(coerceToSchema(fields(), { score: text })).toEqual({ score: text })
+    })
+
+  test.each([['1e3', 1000], ['.5', 0.5], ['+7', 7], [' 42 ', 42], ['-3.', -3]])(
+    '%j is the number a native number input accepts', (text, n) => {
+      expect(coerceToSchema(fields(), { score: text })).toEqual({ score: n })
+    })
+
+  test('an exponent that lands on an integer fills an Int; one that does not is left', () => {
+    expect(coerceToSchema(fields(), { count: '1e3' })).toEqual({ count: 1000 })
+    expect(coerceToSchema(fields(), { count: '1e-3' })).toEqual({ count: '1e-3' })
+  })
+
   test('strings and enums are untouched', () => {
     const rec = { name: 'Ada', plan: 'pro' }
     expect(coerceToSchema(fields(), rec)).toBe(rec)

@@ -35,7 +35,7 @@ was written from.
 FrontierJS aligns columns where a run of lines is parallel — imports, object
 literals, `const` blocks:
 
-```ts
+```ts fragment
 import { withDb }  from './core/hooks.ts'
 import { env }     from './core/env.ts'
 ```

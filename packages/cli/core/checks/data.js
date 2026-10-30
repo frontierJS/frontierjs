@@ -962,6 +962,7 @@ export const CHECKS = {
           findings.push({
             file: schema.path,
             line: ours.columnLines.get(column) ?? ours.line,
+            subject: `${name}.${column}`,
             message: here === undefined
               ? `model ${name} is a copy of ${dep.pkg}'s and is missing its column '${column}' ` +
                 `(${declared}). That package's own code still writes to it. Add the column — or, ` +
@@ -969,7 +970,8 @@ export const CHECKS = {
                 `and put what is yours in an \`extend model\`.`
               : `model ${name} is a copy of ${dep.pkg}'s and declares '${column}' differently — ` +
                 `the package says \`${declared}\`, this says \`${here}\`. If the deviation is ` +
-                `deliberate, say so here and baseline this rule; if it is drift, it is silent ` +
+                `deliberate, say so in check-baseline.json under allow as ` +
+                `\`package-model-drift:db/schema.lite:${name}.${column}\`; if it is drift, it is silent ` +
                 `until that package's code meets the column.`,
           })
         }

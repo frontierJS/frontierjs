@@ -3307,7 +3307,7 @@ function popoversPage() {
         )}
         ${code(`<div class="popover-anchor">
   <button class="btn outlined" onclick="show()">Open</button>
-  <article class="popover" hidden>
+  <article class="popover" role="dialog" aria-label="Quick note" hidden>
     <strong>Quick note</strong>
     <p>Popovers carry short, contextual info.</p>
   </article>

@@ -208,8 +208,8 @@ says each term owes.
     is by itself: Dialog and Drawer carry no role, Field and Switch no label. A
     role or state on a child sits under `parts`, keyed by its anatomy class
     (`FJS-D837` amended). `aria-hidden` on Icon, Spinner and Skeleton has no
-    slot in the shape and stays in the anatomy; Popover is left out until the
-    css `<article>` and the ui `role=dialog` agree.
+    slot in the shape and stays in the anatomy. Popover is a non-modal
+    `role=dialog` that requires a label (`FJS-3555`).
 - [x] 2.2 `css` `ANATOMY` reads its roles from the kit
   - `test/run.js` hands the page `roles()`; `anatomy.spec.js` grades both ways
     (2026-10-27): a kit role is written where a reader meets it (own role in
@@ -227,8 +227,7 @@ says each term owes.
     term fails by name. Found one kit error: Breadcrumb's `.navlink` part named a
     class css never styles (`[aria-current]` alone), so the state moved to the
     term's own row and `tracks` means on or within the carrier. Four mutations red
-    (Tab's role, Breadcrumbs' current, Modal's label, a kit attribute). Popover
-    is `FJS-3555`.
+    (Tab's role, Breadcrumbs' current, Modal's label, a kit attribute).
 
 **Done 2026-10-27.** One table, two readers: css grades what the vocabulary WRITES,
 ui grades what a component RENDERS, and a role, relationship or state stated in

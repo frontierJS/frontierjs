@@ -124,7 +124,7 @@ export function viteScript(dir, opts) {
  * sierra.config.js's junction.apiPrefix, so the generated sierra config must
  * have one.
  */
-export function surfaceViteConfig({ surface, about, port, proxy = false, apiPort = scaffoldPort('be') }) {
+export function surfaceViteConfig({ surface, about, port, proxy = false, pinApi = false, apiPort = scaffoldPort('be') }) {
   const { category, env } = surfacePort(surface)
   const api = proxy
     ? `
@@ -150,16 +150,24 @@ ${commented(about, '//')}
 
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath }    from 'node:url'
-import { defineConfig }     from 'vite'
+import { defineConfig${pinApi ? ', loadEnv' : ''} } from 'vite'
 import { createSierraViteConfig } from '@frontierjs/sierra/build'
-import sierraConfig from './sierra.config.js'
+${pinApi ? "import { pinApiOrigin } from '../../config/api-origin.js'\n" : ''}import sierraConfig from './sierra.config.js'
 
 // The Vite root is the surface root, one level up from config/.
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 ${api}
 const base = createSierraViteConfig(sierraConfig)
+${pinApi ? `
+// The island bundle reads FRONTIER_PUBLIC_API_URL from this process, so the
+// pin has to land before the build starts.
+export default ({ mode }) => {
+  pinApiOrigin(loadEnv(mode, resolve(ROOT, '..'), 'FRONTIER_PUBLIC_'), process.env)
+  return config
+}
 
-export default defineConfig({
+const config = defineConfig({` : `
+export default defineConfig({`}
   ...base,
   root: ROOT,
   // An app has ONE .env, at its root; vite reads the Vite root's otherwise and a

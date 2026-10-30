@@ -34,7 +34,8 @@
  *   node src/tools/cli.js widgets --config config/sierra.config.js   # from the surface root
  *   node test/fixtures/widget-site/test/verify.mjs
  *
- * `bun run test:widgets` does both. Needs Chrome on PATH (or $FJS_CHROME).
+ * `bun run test:widgets` does both. Needs Chrome on PATH (or $FJS_CHROME), and
+ * Playwright's Firefox for the CSP page (FJS-3549).
  */
 
 import { createServer } from 'node:http'
@@ -330,6 +331,21 @@ const CSP_PROBE = `
 })()
 `
 
+async function openFirefoxCsp(url) {
+  const { firefox } = await import('playwright-core').catch(() => {
+    throw new Error('The Firefox CSP run needs playwright-core (a devDependency of sierra) and its cached Firefox: bunx playwright-core install firefox')
+  })
+  const ff = await firefox.launch()
+  try {
+    const page = await ff.newPage()
+    await page.goto(url)
+    await page.waitForTimeout(1500)
+    return await page.evaluate(CSP_PROBE)
+  } finally {
+    await ff.close()
+  }
+}
+
 // ─── Drive Chrome ─────────────────────────────────────────────────────────────
 
 const browser = await openChrome().catch((e) => { console.error(e.message); process.exit(1) })
@@ -354,7 +370,17 @@ const csp = await cmd('Runtime.evaluate', {
   expression: CSP_PROBE, awaitPromise: true, returnByValue: true,
 })
 
-const got = { ...fileChecks, ...headerChecks, ...(result?.result?.value ?? {}), ...(csp?.result?.value ?? {}) }
+// ── …and in Firefox ─────────────────────────────────────────────────────────────
+// Chromium applies markup a policy forbids that Firefox refuses, so the same
+// page proves a claim about one engine only. playwright-core drives the cached
+// Firefox; the probe and its expectations are the Chrome run's, keyed apart.
+const firefoxCsp = await openFirefoxCsp(`${origin}/csp`)
+  .catch((e) => { console.error(e.message); process.exit(1) })
+
+const got = {
+  ...fileChecks, ...headerChecks, ...(result?.result?.value ?? {}), ...(csp?.result?.value ?? {}),
+  ...Object.fromEntries(Object.entries(firefoxCsp).map(([k, v]) => [`firefox${k[0].toUpperCase()}${k.slice(1)}`, v])),
+}
 
 await browser.close()
 server.close()
@@ -428,7 +454,12 @@ const EXPECTED = {
   cspImportedBorder:  'rgb(0, 0, 255)',  // the imported sheet, under style-src 'self'
   cspViolations:      [],
 
-  errors:             [],
+  firefoxCspMounted:        true,
+  firefoxCspScopedBg:       'rgb(0, 128, 0)',
+  firefoxCspImportedBorder: 'rgb(0, 0, 255)',
+  firefoxCspViolations:     [],
+
+  errors:            [],
 }
 
 let failed = 0

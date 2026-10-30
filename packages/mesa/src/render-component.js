@@ -270,6 +270,12 @@ function isMesaSpecifier(spec) {
 // emits no markers at all. The specifier is rewritten to this file's own sibling
 // so the two halves cannot be two files. The string mode's runtime is the
 // same case: a tmpDir outside this package cannot resolve it at all.
+//
+// Inside a bundle or a `bun --compile` binary this file's sibling is a path in
+// the bundle (`/$bunfs/root/runtime.js`) that a module written to disk cannot
+// import. `MESA_RUNTIME_DIR` names a real directory holding `runtime.js` and
+// `runtime-server.js` instead; they must re-export the copy the bundle
+// carries, or the two halves are two files again.
 const RUNTIME_SPECIFIERS = new Map([
   ['@frontierjs/mesa/runtime',        'runtime.js'],
   ['@frontierjs/mesa/runtime/server', 'runtime-server.js'],
@@ -277,6 +283,8 @@ const RUNTIME_SPECIFIERS = new Map([
 
 let _runtimeDir
 function runtimePath(file) {
+  const named = process.env.MESA_RUNTIME_DIR
+  if (named) return path.join(named, file)
   if (_runtimeDir === undefined) {
     try {
       // `path.dirname(fileURLToPath(...))` and not `new URL('./runtime.js', ...)`:

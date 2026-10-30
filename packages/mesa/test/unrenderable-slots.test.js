@@ -79,6 +79,8 @@ describe('a component that cannot render the children it was given', () => {
     expect(warnings[0]).toContain(`<${child}>`)
     expect(warnings[0]).toContain('children')
     expect(warnings[0]).toContain('renders no content at all')
+    // FJS-938: the props to pass instead, which only the component knows
+    expect(warnings[0]).toContain('It takes: text.')
   })
 
   it('names the other slots when it has some', async () => {

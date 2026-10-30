@@ -420,7 +420,7 @@ describe('terminal target', () => {
     const dom = await said(undefined)
     const tui = await said('terminal')
     expect(tui.out).toEqual(dom.out)
-    expect(tui.out).toEqual(['bind:value={c} — cannot two-way bind: `const c` cannot be reassigned. Declare it `let`.'])
+    expect(tui.out).toEqual(['bind:value={c} — cannot two-way bind: `const c` cannot be reassigned. Declare it `let`. — C.mesa:2:1'])
     expect(tui.result).not.toMatch(/\$\$tui\.bind/)
   })
 
@@ -435,8 +435,8 @@ describe('terminal target', () => {
     const tui = await said('terminal')
     expect(tui.out).toEqual(dom.out)
     expect(tui.out).toEqual([
-      "bind:this={c} — 'c' must be a top-level let variable",
-      'bind:this requires a variable: bind:this={myRef}',
+      "bind:this={c} — 'c' must be a top-level let variable — P.mesa:2:1",
+      'bind:this requires a variable: bind:this={myRef} — P.mesa:3:1',
     ])
     expect(tui.result).not.toMatch(/\$\$set_c/)
   })

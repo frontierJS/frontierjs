@@ -88,6 +88,7 @@ export function createLitestoneAuth(
     password: passwordPolicy = {},
     passwordResetTtl     = '1 hour',
     emailVerificationTtl = '24 hours',
+    invitationTtl        = '7 days',
     loginChallengeTtl      = '5 minutes',
     loginChallengeAttempts = 5,
     totpDrift              = 1,
@@ -1993,9 +1994,9 @@ export function createLitestoneAuth(
       }))
 
       const token = generateToken()
-      const until = expiresAt(passwordResetTtl, sys.$now())
+      const until = expiresAt(invitationTtl, sys.$now())
       await sys.verification.create({
-        data: { purpose: 'passwordReset', identifier: email, value: token, expiresAt: until },
+        data: { purpose: 'invitation', identifier: email, value: token, expiresAt: until },
       })
 
       await audit('invitation.created', {
@@ -2079,10 +2080,11 @@ export function createLitestoneAuth(
 
       // `purpose` is not decoration: without it this matched an EMAIL-VERIFY
       // token too, and what refused it was two steps downstream and accidental
-      // (FJS-476).
+      // (FJS-476). An invitation is the one other purpose spent here: it sets
+      // an account's first password, and a reset request leaves it alone.
       const verification = await sys.verification.findFirst({
         where: {
-          purpose: 'passwordReset',
+          purpose: { in: ['passwordReset', 'invitation'] },
           value:   token,
         }
       })

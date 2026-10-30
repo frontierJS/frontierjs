@@ -2683,6 +2683,7 @@ The paper's recommendation, taken as written: it is the one answer where the row
 *Lives in:* `packages/toolbelt/src/predicate/parse.js` (the node and its refusals) · `packages/litestone/src/core/policy.js` (`someSql`, `evalSome`, the startup check against the child model) · `packages/litestone/test/policy-some.test.ts` · `policy-interpreters.test.ts` (SQL against `$readAs`) · `packages/litestone/docs/access-control.md` § *Any row of a to-many*.
 
 ### <a id="fjs-d550"></a>2026-09-29 · `FJS-D550` — account recovery takes its own grader, `services.recoveryLevel`, falling back to `level`. Acting on somebody else is not the caller's own standing.
+**Status:** amended-by [`FJS-D574`](#fjs-d574) — the option's name only. `services.recoveryLevel` is now `services.standingLevel`, falling back to `level`, and it grades the support path too. The floor, the peer rule and the fallback below stand.
 
 **Amends [`FJS-D264`](#fjs-d264)**, which graded both people by `services.level`.
 That one option also sets the level `account.me` publishes, which sierra puts on
@@ -7252,6 +7253,7 @@ and the pragma, read by every site that opens a connection. `@frontierjs/caravan
 and Junction's SQLite cache take their own option for the connections they own.
 
 ### <a id="fjs-d152"></a>2026-08-26 · `FJS-D152` — litestone's clock has ONE owner and it is the client. The `@updatedAt` trigger is retired, and `@updatedAt` stops covering a raw `UPDATE`.
+**Status:** amended-by [`FJS-D469`](#fjs-d469) — *the client's clock is the one clock* now has a second reading on a replayed write: inside that call every `now()` litestone resolves, `@default(now())` and `@updatedAt` among them, is the device's `ctx.madeAt` rather than the server's landing time. The trigger's retirement and the raw-`UPDATE` floor below stand.
 
 `createClient({ now })` reached `now()` in a row policy and `@@softDelete`'s
 stamp. `@default(now())` was a column DEFAULT, `@updatedAt` an AFTER UPDATE
@@ -18695,6 +18697,7 @@ that maps intentions onto directories is not a thing a probe can do.
 
 
 ### <a id="fjs-d163"></a>2026-08-30 · `FJS-D163` — `AGENTS.md` is a permitted fifth file at a package root and is not a required one. It is `CLAUDE.md`'s question asked about the other audience, and that audience has a tarball rather than a tree.
+**Status:** amended-by [`FJS-D675`](#fjs-d675) — the count only. `CHANGES.md` is retired, so three files are the standard and `AGENTS.md` is the permitted **fourth**, not fifth. Permitted-and-not-required stands.
 
 **The problem.** Invariant 17 named four files and warned about a fifth, which is
 the right shape for a rule that cannot tell a stray design note from the next
@@ -20916,6 +20919,7 @@ when that row is built, not pre-empted here.
 `IDEAS/speed-and-footprint.md` (the numbers).
 
 ### <a id="fjs-d26"></a>2026-08-15 · `FJS-D26` — `@frontierjs/toolbelt` is substrate, not a member of the dependency graph. Any package may import it, mesa and litestone included.
+**Status:** amended-by [`FJS-D306`](#fjs-d306) — the clause *pure functions only — no clock, no filesystem, no network*. What the exemption rests on is **depends on nothing**, which stays absolute; an ambient capability (`crypto.getRandomValues` in `/ids`) is allowed per file and per capability in `scripts/ci-allowances.json`.
 
 The question was what *leaf* meant, and it was undecidable while two
 documents wrote down two answers: Invariant 1 said mesa carried zero workspace

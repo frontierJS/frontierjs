@@ -109,7 +109,7 @@ export class WebSocketTransport extends BaseTransport {
       req.headers,
     )
 
-    const query: Record<string, string | string[]> = {}
+    const query: Record<string, string | string[]> = { ...this.descriptor.query }
     for (const [k, v] of Object.entries(req.query ?? {})) {
       if (v === undefined || v === null) continue
       query[k] = Array.isArray(v) ? v.map(String) : String(v)

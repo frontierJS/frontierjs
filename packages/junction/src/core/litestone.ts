@@ -2076,7 +2076,9 @@ export function resolveDefsKey(
  * nothing here restates what a model has.
  */
 function modelFieldNames(schema: unknown, defsKey: string): Set<string> {
-  return new Set(fieldsOf(schema, defsKey).map(f => f?.name).filter((n): n is string => typeof n === 'string'))
+  // An `@edge` / `@scoped` field is a column of the join table: a payload
+  // names its namespace (`mine`), never the field (`FJS-3571`).
+  return new Set(fieldsOf(schema, defsKey).map(f => f?.edge?.as ?? f?.name).filter((n): n is string => typeof n === 'string'))
 }
 
 // An implicit many-to-many is its own kind, not a `relation`.
@@ -2088,7 +2090,7 @@ function relationFieldNames(schema: unknown, defsKey: string): string[] {
     .map(f => f.name as string)
 }
 
-type SchemaField = { name?: string, type?: { kind?: string } }
+type SchemaField = { name?: string, type?: { kind?: string }, edge?: { as?: string } }
 
 function fieldsOf(schema: unknown, defsKey: string): SchemaField[] {
   const models = (schema as { models?: Array<{ name?: string, fields?: SchemaField[] }> })?.models
@@ -2755,6 +2757,8 @@ async function modelColumns(client: unknown, accessor: string): Promise<Set<stri
   const defsKey    = jsonSchema ? resolveDefsKey(jsonSchema, accessor, c.$schema) : null
   const def        = defsKey ? jsonSchema!.$defs[defsKey] as { properties?: Record<string, unknown> } : null
   const cols       = def?.properties ? new Set(Object.keys(def.properties)) : null
+  // An edge namespace is per viewer, so a write's row never carries it.
+  if (cols && defsKey) for (const f of fieldsOf(c.$schema, defsKey)) if (f.edge?.as) cols.delete(f.edge.as)
 
   perModel.set(accessor, cols)
   return cols

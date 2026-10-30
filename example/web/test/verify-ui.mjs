@@ -278,7 +278,7 @@ try {
     return {
       title: d.querySelector('h2').textContent.trim(),
       focusInside: d.contains(document.activeElement),
-      body: d.textContent.replace(/\\s+/g, ' ').includes('no way back'),
+      body: d.textContent.replace(/\\s+/g, ' ').includes('declares no move out of'),
     };
   `))
 

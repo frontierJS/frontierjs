@@ -28,6 +28,22 @@ async function typeInto(t, sel, value) {
   `)
 }
 
+/**
+ * Type, then press a button in the same turn. `clickAt` waits out a frame or
+ * more before it presses, which is longer than the 60ms quiet window: the timer
+ * fires first and the claim about an armed timer is never tested.
+ */
+async function typeThenClick(t, sel, value, buttonSel) {
+  await t.evaluate(`
+    const el = document.querySelector(${JSON.stringify(sel)});
+    el.focus();
+    el.value = ${JSON.stringify(value)};
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector(${JSON.stringify(buttonSel)}).click();
+    return true;
+  `)
+}
+
 /** Well past the quiet window, so "nothing happened" is a settled answer. */
 const settle = (t) => t.evaluate(`return new Promise(r => setTimeout(() => r(true), 260));`)
 
@@ -131,8 +147,7 @@ export async function run(t) {
   // form is destroyed. Dropping the edit is the failure a form with no button
   // cannot afford; calling onautosaved on a form that is gone is the other.
   const beforeClose = Number(await t.evaluate(`return ${text('#count')};`))
-  await typeInto(t, '#closing [name=reference]', 'CLOS-1')
-  await t.clickAt('#close-d')
+  await typeThenClick(t, '#closing [name=reference]', 'CLOS-1', '#close-d')
   await t.eventually(text('#count'), String(beforeClose + 1),
     'a form destroyed inside its quiet window still sends the waiting edit')
   await settle(t)
@@ -148,9 +163,8 @@ export async function run(t) {
   // is the write going out behind the panel somebody is reading, and after a
   // reload of another person's revision is that revision written back over
   // them. Both are silent.
-  await typeInto(t, '#auto [name=reference]', 'ORD-82')
   const beforeSubmit = Number(await t.evaluate(`return ${text('#count')};`))
-  await t.clickAt('#submit')
+  await typeThenClick(t, '#auto [name=reference]', 'ORD-82', '#submit')
   await t.eventually(text('#count'), String(beforeSubmit + 1), 'the button writes once')
   await settle(t)
   t.is(await t.evaluate(`return ${text('#count')};`), String(beforeSubmit + 1),

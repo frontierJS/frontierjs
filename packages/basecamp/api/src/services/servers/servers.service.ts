@@ -40,7 +40,7 @@
 // The old parseServer()/parseEvent() JSON.parse helpers are gone — parsing an
 // already-parsed object is how you get "[object Object]" in a column.
 
-import { createService, NotFound, BadRequest, Conflict, seriesKey, isStale, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict, seriesKey, isStale, parseWhere, $ } from '@frontierjs/junction'
 import { normalizeOrderBy, type SortParam } from '@frontierjs/toolbelt/query'
 import { LEVELS }                from '@frontierjs/litestone'
 import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
@@ -225,15 +225,9 @@ export default createService({
 
   // ── find ──────────────────────────────────────────────────────────
   async find() {
-    const status = $.query.status as string | undefined
-    const role   = $.query.role   as string | undefined
-    const slug   = $.query.slug   as string | undefined
     const search = $.reserved.search as string | undefined
 
-    const where: Record<string, unknown> = {}
-    if (status) where.status = status
-    if (role)   where.role   = role
-    if (slug)   where.slug   = slug
+    const where: Record<string, unknown> = parseWhere($.query)
     if (search) where.name   = { contains: search }
 
     // `$orderBy` is honored rather than ignored: this list is sorted from the

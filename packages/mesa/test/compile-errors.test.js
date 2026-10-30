@@ -375,6 +375,48 @@ describe('a construct from another framework is refused by name', () => {
     expect(await threw('<div data-x="{ a: 1 }"></div>')).toContain('is not a JavaScript expression')
   })
 
+  // FJS-3659: a whole-brace value and every directive took the expression on trust.
+  it('refuses an attribute or directive value that is not JavaScript', async () => {
+    for (const src of [
+      '<p class={a ==}></p>',
+      '<button onclick={a ==}>x</button>',
+      '<p class:on={a ==}></p>',
+      '<input bind:value={a ==}>',
+      '<p style:color={a ==}></p>',
+      '<p use:foo={a ==}></p>',
+      '<p {...a ==}></p>',
+      '<p {@attach a ==}></p>'
+    ]) expect(await threw(src), src).toContain('is not a JavaScript expression')
+  })
+
+  // FJS-3661: a block head is emitted into the module like an attribute value.
+  it('refuses a block head that is not JavaScript', async () => {
+    for (const src of [
+      '<script>let a = 1</script>{#if a ==}x{/if}',
+      '<script>let a = 1</script>{#if a}x{:else if .kind}y{/if}',
+      '<script>let a = 1</script>{#if a}x{:elif a ==}y{/if}',
+      '<script>let a = [1]</script>{#each a as n n.id}{n}{/each}',
+      '<script>let a = [1]</script>{#each a == as n}{n}{/each}',
+      '<script>let a = [1]</script>{#each a as n (n.)}{n}{/each}',
+      '<script>let a = 1</script>{#key a ==}x{/key}',
+      '<script>let a = 1</script>{#await a ==}x{/await}',
+      '<script>let a = {}</script>{@render a.?()}',
+      '<script>let a = 1</script>{@html a ==}'
+    ]) expect(await threw(src), src).toContain('is not JavaScript')
+  })
+
+  it('leaves well-formed block heads alone', async () => {
+    for (const src of [
+      '<script>let a = [1]</script>{#each a as n, i (n.id)}{n}{/each}',
+      '<script>let a = [[1]]</script>{#each a as [x], i}{x}{/each}',
+      '<script>let a = [{ k: 1 }]</script>{#each a as { k }}{k}{/each}',
+      '<script>let a = 1</script>{#if a}x{:else if a > 1}y{:else}z{/if}',
+      '<script>let a = Promise.resolve(1)</script>{#await a}p{:then v}{v}{:catch e}{e}{/await}',
+      '<script>let a = Promise.resolve({ k: 1 })</script>{#await a}p{:then { k }}{k}{/await}',
+      '<script>let a = () => 1</script>{@render a?.()}'
+    ]) expect(await threw(src), src).toBe('')
+  })
+
   it('leaves a sequence, an object literal and a template string alone', async () => {
     expect(await threw('<script>let a = 1</script><p>{(a, 2)}</p>')).toBe('')
     expect(await threw('<script>let a = 1</script><p>{JSON.stringify({ a })}</p>')).toBe('')
@@ -386,6 +428,31 @@ describe('a construct from another framework is refused by name', () => {
     const { errors } = await cx(
       '<script>let a = 1; const d = a * 2; function f() { d = 3 }</script><button onclick={f}>{d}</button>')
     expect(errors.join('\n')).toContain("'d' is a derived 'const'")
+  })
+
+  // FJS-3662: a template expression's write to a name read through a call
+  // emitted `$$runtime.get(d) = 3` and compiled clean.
+  it('refuses a template assignment to a derived const, an each item and a @const', async () => {
+    const derived = '<script>let a = 1; const d = a * 2</script>'
+    for (const src of [
+      derived + '<button onclick={() => d = 3}>{d}</button>',
+      derived + '<button onclick={() => { d += 3 }}>{d}</button>',
+      derived + '<button onclick={() => d++}>{d}</button>',
+      derived + '<button onclick={() => [d] = [3]}>{d}</button>',
+      derived + '<button onclick={() => { for (d of [1]) {} }}>{d}</button>',
+      '<script>let rows = [1]</script>{#each rows as r}<button onclick={() => r = 3}>{r}</button>{/each}',
+      '<script>let a = 1</script>{@const w = a * 2}<button onclick={() => w = 3}>{w}</button>'
+    ]) {
+      const { errors } = await cx(src)
+      expect(errors.join('\n'), src).toContain('cannot be assigned')
+      expect(errors.join('\n'), src).toContain('read through a call')
+    }
+  })
+
+  it('allows a template write to a local that shadows a derived const', async () => {
+    const { errors } = await cx(
+      '<script>let a = 1; const d = a * 2</script><button onclick={(d) => d = 3}>{d}</button>')
+    expect(errors).toEqual([])
   })
 
   it('allows a local that shadows the derived', async () => {
@@ -446,4 +513,33 @@ describe('a component tag must name a binding', () => {
     ]
     for (const src of bound) expect(await cx(src).then((r) => r.errors), src).toEqual([])
   })
+})
+
+// FJS-3656: a refusal the author cannot find is half a refusal. Every one of
+// these named no line; each now ends in `Probe.mesa:line:column`.
+describe('a refusal names where it happened', () => {
+  const POSITIONED = /Probe\.mesa:\d+:\d+$/
+  const cases = {
+    '{@attach} in text': 'a\n{@attach foo}',
+    'unknown mesa: element': '<p>x</p>\n<mesa:frobnicate />',
+    'bind:this on a non-let': '<script>const r = null</script>\n<div bind:this={r}></div>',
+    'bad {@const}': '{#if true}\n{@const 5}\n{/if}',
+    'script lang': '<script lang="ts">let a = 1</script>',
+    'instance export default': '<script>\nexport default 1\n</script>',
+    'module export default': '<script module>export default 1</script>',
+    'bind to a derived const': '<script>let a = 1\nconst g = a * 2</script>\n<input bind:value={g} />',
+    'derived const assigned': '<script>let a = 1\nconst d = a * 2\nd = 3</script>',
+    'JSX in an expression': '<script>let ok = true</script>\n{ok && <b>x</b>}',
+    'braces that are not JavaScript': '<p>\n{ a: 1 }</p>',
+    'braces in an attribute': '<div data-x="{ a: 1 }"></div>',
+  }
+  for (const [name, source] of Object.entries(cases)) {
+    it(name, async () => {
+      const { errors, thrown } = await compile(source, { filename: 'Probe.mesa', warning: () => {} })
+        .then((ctx) => ({ errors: ctx.analysis.errors, thrown: '' }), (e) => ({ errors: [], thrown: e.message }))
+      const all = [...errors, thrown].filter(Boolean)
+      expect(all.length, 'refused').toBeGreaterThan(0)
+      for (const m of all) expect(m).toMatch(POSITIONED)
+    })
+  }
 })

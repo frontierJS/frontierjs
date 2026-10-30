@@ -92,6 +92,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
 const { createResource, buildVersion, isStaleWrite, toConflict, toFieldErrors, STALE_WRITE_MESSAGE, tetherOf } =
   await import('../src/resource/resource.js')
 const { registerSchemas } = await import('../src/resource/schema-registry.js')
+const { COMMITTED_MESSAGE } = await import('../src/resource/field-rules.js')
 
 // Litestone by relative path — `bun install` resolves workspace:* to a copy, so
 // a package-name import would test a stale snapshot of the generator that
@@ -338,5 +339,56 @@ describe('a stale write says something a person can act on', () => {
     const err = Object.assign(new Error('Bad Request'),
       { code: 400, data: { data: [{ field: 'note', message: 'Too short' }] } })
     expect(toFieldErrors(err)).toEqual({ fields: { note: 'Too short' }, message: '', committed: false })
+  })
+})
+
+// FJS-1873 — a write that LANDED and then threw is not "save failed". The mark
+// is what keeps a form from offering Save again over a row that exists.
+describe('err.committed — the write landed, something after it threw', () => {
+  const boom = () => { throw new Error('analytics down') }
+
+  test('an after hook that throws on a create marks the error and carries the result', async () => {
+    const r = createResource('orders', { model: 'Order', hooks: { after: { create: [boom] } } })
+    const err = await r.service.create({ note: 'x' }).then(() => null, e => e)
+    expect(err.message).toBe('analytics down')
+    expect(err.committed).toBe(true)
+    expect(err.result).toMatchObject({ note: 'x' })
+    expect(calls.filter(c => c[0] === 'create')).toHaveLength(1)
+    const shown = toFieldErrors(err)
+    expect(shown.committed).toBe(true)
+    expect(shown.fields).toEqual({})
+    expect(shown.message).toBe(COMMITTED_MESSAGE)
+  })
+
+  test('a patch is marked the same way', async () => {
+    const r = createResource('orders', { model: 'Order', hooks: { after: { patch: [boom] } } })
+    await r.service.get(1)
+    const err = await r.service.patch(1, { note: 'y' }).then(() => null, e => e)
+    expect(err.committed).toBe(true)
+  })
+
+  test('a failure BEFORE the write lands is not marked', async () => {
+    const r = createResource('orders', { model: 'Order', hooks: { before: { patch: [boom] } } })
+    await r.service.get(1)
+    const err = await r.service.patch(1, { note: 'y' }).then(() => null, e => e)
+    expect(err.message).toBe('analytics down')
+    expect(err.committed).toBeUndefined()
+    expect(calls.filter(c => c[0] === 'patch')).toHaveLength(0)
+  })
+
+  test('the server refusing the write is not marked', async () => {
+    const r = createResource('orders', { model: 'Order' })
+    await r.service.get(1)
+    nextError = conflictError(4, 3)
+    const err = await r.service.patch(1, { note: 'y' }).then(() => null, e => e)
+    expect(err.committed).toBeUndefined()
+    expect(toFieldErrors(err).committed).toBe(false)
+  })
+
+  test('a read whose after hook throws is never marked', async () => {
+    const r = createResource('orders', { model: 'Order', hooks: { after: { get: [boom] } } })
+    const err = await r.service.get(1).then(() => null, e => e)
+    expect(err.message).toBe('analytics down')
+    expect(err.committed).toBeUndefined()
   })
 })

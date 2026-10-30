@@ -27,7 +27,7 @@ import {
   rewriteExpr, rewriteTextResult, extractKeywords, eventAttribute, applyEventModifiers,
   unwrapExp, parseEachHeader, eachFrame, templateSource, componentAttributes, styleSource, classSource,
   bindSetter, elementBindTarget, snippetParam, parseRenderTag, constScope, constDeclaration, boundaryWatchSet,
-  withoutWatchedCalls, withAwaitParam, fieldRead, LOC_ATTR,
+  withoutWatchedCalls, withAwaitParam, fieldRead, LOC_ATTR, locateThrown, locateReported,
 } from './compiler.js'
 
 // ─── expressions ──────────────────────────────────────────────────────────────
@@ -594,7 +594,14 @@ function lowerChildren(ctx, body, block = true) {
   const out = []
   try {
     for (const n of body) {
-      const ir = lowerNode(ctx, n)
+      const reported = ctx.analysis?.errors.length ?? 0
+      let ir
+      try {
+        ir = lowerNode(ctx, n)
+      } catch (e) {
+        throw locateThrown(ctx, e, n)
+      }
+      if (ctx.analysis) locateReported(ctx, reported, n)
       if (ir) out.push(ir)
     }
   } finally {

@@ -1,8 +1,7 @@
 <script>
-  import { refuseChildren, refuseCell } from './slot-guard.js'
+  import { refuseCell } from './slot-guard.js'
   const emailCell = $context.emailCell
   refuseCell('TwoCol', emailCell)
-  refuseChildren('TwoCol', $.slots, 'It lays out two NAMED slots — put the content in `<div slot="left">` and `<div slot="right">`.')
   export let bgcolor   = undefined
   export let valign    = 'top'
   export let leftWidth = '50%'

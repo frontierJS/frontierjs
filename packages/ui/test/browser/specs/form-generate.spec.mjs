@@ -151,6 +151,27 @@ export async function run(t) {
     return document.querySelector('#slotted .cluster #slotted-save') !== null;
   `), 'and so does a slot="actions" child')
 
+  /* ── sections (FJS-3615) ──────────────────────────────────────────────── */
+
+  // A call-site grouping: each section is a titled <fieldset>, its fields in
+  // the order the section names them. Unnamed fields follow the sections, in
+  // schema order; a name that is not a rendered field (readOnly, missing) is
+  // skipped rather than rendered empty.
+  t.is(await t.evaluate(`
+    return [...document.querySelectorAll('#sectioned form > fieldset > legend')].map(l => l.textContent.trim()).join(',');
+  `), 'Billing,Lifecycle', 'each section is a fieldset titled by its legend')
+  t.is(await t.evaluate(`
+    return [...document.querySelectorAll('#sectioned form > fieldset')]
+      .map(fs => [...fs.querySelectorAll('[name]')].map(el => el.getAttribute('name')).join('+')).join(',');
+  `), 'qty+title,archived', 'a section holds the fields it names, in its order')
+  t.is(await t.evaluate(`
+    return [...document.querySelectorAll('#sectioned form > :not(fieldset) [name]')].map(el => el.getAttribute('name')).join(',');
+  `), 'status,dueOn', 'unnamed fields follow the sections, outside any fieldset')
+  t.is(await t.evaluate(`return document.querySelectorAll('#sectioned [name=title]').length;`), 1,
+    'and a field renders once')
+  t.is(await t.evaluate(`return document.querySelectorAll('#all fieldset').length;`), 0,
+    'a form with no sections stays one stack')
+
   /* ── the form element itself ──────────────────────────────────────────── */
 
   // novalidate by default: the kit puts a real `required` on its controls, so
@@ -191,6 +212,16 @@ export async function run(t) {
     return document.querySelector('#conditional-actions #cond-save') !== null;
   `), 'while the conditional button still renders, in the slot it named')
 
+  /* ── an ordinary default child (FJS-1141) ─────────────────────────────── */
+
+  // One `<p>` of help text is the likeliest way to reach the empty-form
+  // warning, so the sentence names that cause before the `slot=` one. It is
+  // also the only form on this page that warns: the conditional one above is
+  // a working form.
+  t.is(await t.evaluate(`return document.querySelectorAll('#help-text-child input').length;`), 0,
+    'a help-text child turns generation off')
   const empty = await t.evaluate(`return window.kitWarnings.filter(w => w.includes('no fields were rendered'));`)
-  t.is(empty.length, 0, 'and the form has nothing to report — it is a working form')
+  t.is(empty.length, 1, 'and only that form has nothing to report')
+  t.ok(empty[0] && empty[0].includes('a `<p>`') && empty[0].indexOf('a `<p>`') < empty[0].indexOf('slot='),
+    'naming the ordinary default child before the slot= one')
 }

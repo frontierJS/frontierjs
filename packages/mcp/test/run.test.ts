@@ -451,6 +451,25 @@ describe('buildCli compiles a cli/ surface with its routes inside', () => {
     expect(JSON.parse(ran.stdout)).toEqual({ routes: ['servers status', 'servers summary'], same: true })
     rmSync(root, { recursive: true, force: true })
   }, 60_000)
+
+  // FJS-3545: bun build bakes the builder's NODE_ENV (development) into the
+  // bundle, so a binary run under NODE_ENV=production still reads development.
+  test('the binary reads NODE_ENV from the environment it runs in, not the one it was built in', async () => {
+    const root = surface("export default { name: 'shop' }\n")
+    writeFileSync(join(root, 'src', 'main.js'),
+      "console.log(JSON.stringify({ mode: process.env.NODE_ENV ?? null, present: 'NODE_ENV' in process.env }))\n")
+    const [built] = await buildCli({ root })
+
+    const run = (NODE_ENV?: string) => {
+      const { NODE_ENV: _, ...env } = process.env
+      const ran = spawnSync(built.outfile, { encoding: 'utf8', cwd: tmpdir(), env: NODE_ENV === undefined ? env : { ...env, NODE_ENV } })
+      return JSON.parse(ran.stdout)
+    }
+    expect(run()).toEqual({ mode: null, present: false })
+    expect(run('production').mode).toBe('production')
+    expect(run('test').mode).toBe('test')
+    rmSync(root, { recursive: true, force: true })
+  }, 60_000)
 })
 
 // ─── breadcrumbs ─────────────────────────────────────────────────────────────

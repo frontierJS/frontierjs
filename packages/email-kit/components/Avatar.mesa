@@ -1,8 +1,7 @@
 <script>
-  import { refuseChildren, refuseCell } from './slot-guard.js'
+  import { refuseCell } from './slot-guard.js'
   const emailCell = $context.emailCell
   refuseCell('Avatar', emailCell)
-  refuseChildren('Avatar', $.slots, "Pass `name` — the initial is drawn from it, and `bgcolor` and `size` shape the circle.")
   export let name    = ''
   export let bgcolor = '#9fc612'
   export let color   = '#ffffff'

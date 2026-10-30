@@ -383,3 +383,37 @@ describe('stop() and the crash path (FJS-1875)', () => {
     expect(process.listeners('unhandledRejection')).toEqual(before)
   })
 })
+
+// ─── FJS-747 · a crash under a silent logger still names itself ────────────
+
+describe('crash handlers under a silent logger (FJS-747)', () => {
+
+  test('an uncaught exception reaches stderr even at logLevel silent', async () => {
+    // Most of this suite runs `logLevel: 'silent'`. The handler logged through
+    // the app's logger and then exited 1, so a stray throw ended the run red
+    // with `0 fail` and nothing printed anywhere.
+    const before = process.listeners('uncaughtException')
+    const app = createApp({ logLevel: 'silent', config: { port: 0, shutdown: { timeout: 60 } } })
+    await app.start()
+    const handler = process.listeners('uncaughtException').find(l => !before.includes(l))!
+    expect(handler).toBeDefined()
+
+    const realExit = process.exit
+    const realWrite = process.stderr.write
+    const codes: Array<number | undefined> = []
+    const written: string[] = []
+    process.exit = ((code?: number) => { codes.push(code) }) as typeof process.exit
+    process.stderr.write = ((chunk: unknown) => { written.push(String(chunk)); return true }) as typeof process.stderr.write
+    try {
+      const t = Date.now()
+      handler(new Error('stray-throw-747'), 'uncaughtException')
+      while (!codes.length && Date.now() - t < 2_000) await Bun.sleep(5)
+      expect(codes).toEqual([1])
+    } finally {
+      process.exit = realExit
+      process.stderr.write = realWrite
+    }
+    expect(written.join('')).toContain('stray-throw-747')
+    await Bun.sleep(100)
+  })
+})

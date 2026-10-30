@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { writeFile, unlink, mkdir, readdir, utimes } from 'fs/promises'
+import { writeFile, unlink, mkdir, readdir, utimes, readFile } from 'fs/promises'
 import { existsSync, rmSync } from 'fs'
 import path from 'path'
 import { renderComponent, renderFile } from '../src/render-component.js'
@@ -730,5 +730,43 @@ describe('renderComponent — temp module lifetime', () => {
 
     expect(existsSync(stale)).toBe(false)
     expect(existsSync(live)).toBe(true)
+  })
+})
+
+/**
+ * `MESA_RUNTIME_DIR` (FJS-3542) — the directory the temp modules import the
+ * runtime from. Inside a bundle or a `bun --compile` binary the renderer's own
+ * sibling path is `/$bunfs/root/runtime.js`, which a temp module on disk cannot
+ * import; the caller names a directory holding the one copy instead.
+ */
+describe('renderComponent — MESA_RUNTIME_DIR', () => {
+  const SCRATCH = path.join(process.cwd(), `_tmp_rt_${process.pid}`)
+  const SRC     = path.join(process.cwd(), 'src')
+  const saved   = process.env.MESA_RUNTIME_DIR
+
+  afterAll(() => {
+    if (saved === undefined) delete process.env.MESA_RUNTIME_DIR
+    else process.env.MESA_RUNTIME_DIR = saved
+    rmSync(SCRATCH, { recursive: true, force: true })
+  })
+
+  it('imports the runtime from the named directory, which re-exports the one copy', async () => {
+    const named = path.join(SCRATCH, 'named')
+    const tmp   = path.join(SCRATCH, 'tmp')
+    await mkdir(named, { recursive: true })
+    await writeFile(path.join(named, 'runtime.js'), `export * from ${JSON.stringify(path.join(SRC, 'runtime.js'))}\n`)
+    await writeFile(path.join(named, 'runtime-server.js'), `export * from ${JSON.stringify(path.join(SRC, 'runtime-server.js'))}\n`)
+
+    process.env.MESA_RUNTIME_DIR = named
+    const { html } = await renderComponent('<p>named runtime</p>', {
+      filename: path.join(SCRATCH, 'Named.mesa'), tmpDir: tmp, target: 'fragment',
+    })
+    expect(html).toContain('named runtime')
+
+    const written = (await readdir(tmp)).filter((f) => f.startsWith('__mesa_render_'))
+    expect(written).toHaveLength(1)
+    const text = await readFile(path.join(tmp, written[0]), 'utf8')
+    expect(text).toContain(path.join(named, 'runtime.js'))
+    expect(text).not.toContain(path.join(SRC, 'runtime.js'))
   })
 })

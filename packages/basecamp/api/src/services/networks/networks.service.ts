@@ -13,7 +13,7 @@
 // `members` returns the join rows with their servers included rather than
 // making the browser fan out one request per server.
 
-import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict, parseWhere, $ } from '@frontierjs/junction'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
@@ -60,8 +60,7 @@ export default createService({
 
   async find() {
     const { limit, offset } = getPagination()
-    const type = $.query.type as string | undefined
-    return findScoped('network', { where: { ...(type ? { type } : {}) }, limit, offset })
+    return findScoped('network', { where: parseWhere($.query), limit, offset })
   },
 
   async get() {

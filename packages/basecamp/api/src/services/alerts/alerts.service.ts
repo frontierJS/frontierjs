@@ -12,7 +12,7 @@
 // The split in the schema is the split in the hooks: a rule is authored by a
 // person (admin), an event is FIRED by the system and ACKNOWLEDGED by a person.
 
-import { createService, NotFound, BadRequest, Conflict, $, isStale } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict, parseWhere, $, isStale } from '@frontierjs/junction'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
@@ -93,7 +93,6 @@ export default createService({
 
   async find() {
     const { limit, offset } = getPagination()
-    const severity = $.query.severity as string | undefined
     // The wire carries strings; the column is a boolean. Comparing them raw
     // matches nothing and reports an empty list rather than an error — so the
     // coercion is explicit, and `?isActive=false` means false rather than
@@ -102,7 +101,7 @@ export default createService({
 
     return findScoped('alertRule', {
       where: {
-        ...(severity ? { severity } : {}),
+        ...parseWhere($.query),
         ...(isActive !== undefined ? { isActive: isActive === true || isActive === 'true' } : {}),
       },
       limit, offset,

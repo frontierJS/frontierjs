@@ -149,7 +149,7 @@ describe('controlFor — the one place a type becomes a control', () => {
     expect(controlFor(rules.apiKey)).toEqual({ control: 'input', task: 'text', type: 'password' })
     expect(controlFor(rules.pin)).toEqual({ control: 'input', task: 'text', type: 'password' })
     expect(controlFor(rules.contact)).toEqual({ control: 'input', task: 'text' })
-    expect(controlFor(rules.note).control).toBe('textarea')
+    expect(controlFor(rules.note).control).toBe('markdown')
     expect(controlFor(rules.label)).toEqual({ control: 'input', task: 'text' })
   })
 
@@ -185,8 +185,8 @@ describe('controlFor — the one place a type becomes a control', () => {
     expect(r.externalId['x-big']).toBe(true)
   })
 
-  test('@syntax(md) is a textarea — a declaration, not a guess about length', () => {
-    expect(controlFor(rules().body).control).toBe('textarea')
+  test('@syntax(md) is the markdown control — a declaration, not a guess about length (FJS-D1656)', () => {
+    expect(controlFor(rules().body)).toEqual({ control: 'markdown', task: 'text' })
     // An ordinary unbounded string is NOT promoted. Nothing declared it long.
     expect(controlFor({ type: 'string' })).toEqual({ control: 'input', task: 'text' })
   })

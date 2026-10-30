@@ -149,6 +149,7 @@ else await worker(null)
 console.log(`\n[fix-loop] ${closed} closed · ${blocked} waiting on a ruling · $${spent.toFixed(2)} spent · log ${LOG}`)
 for (const d of dodged) console.log(`[fix-loop] ${d.id} needs a person: ${d.verdicts.length} attempts ended ${d.verdicts.join(', ')} and it is still open — \`--ids ${d.id}\` runs it anyway`)
 if (usageAtStart) printPlanUsage('fix-loop', 'end', await planUsage(), usageAtStart)
+console.log(`[fix-loop] finished ${new Date().toLocaleString()}`)
 
 async function worker(lane) {
   const tag = lane ? `fix-loop:${lane.n}` : 'fix-loop'

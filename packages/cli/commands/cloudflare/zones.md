@@ -26,12 +26,17 @@ const all = await zones(profileFor(flag.profile))
 
 if (flag.json) { echo(JSON.stringify(all, null, 2)); return }
 
+const NAME_MAX = 40
+const namePad = Math.min(NAME_MAX, Math.max(4, ...all.map(z => z.name.length)))
+
 echo('')
-echo(`  ${all.length} zone(s)\n`)
+echo(`  ${chalk.bold('Zones')}  ${chalk.dim(`·  ${all.length} zone(s)  ·  ${chalk.green('✓')} active  ${chalk.yellow('~')} nameservers not moved`)}\n`)
 for (const z of all) {
-  const status = z.status === 'active' ? '✓' : '~'
-  echo(`  ${status}  ${z.name.padEnd(40)} ${z.id}`)
-  echo(`       plan: ${z.plan?.name || 'free'}  ·  ${z.account?.name || ''}  ·  ${z.name_servers?.join(', ') || ''}`)
+  const active = z.status === 'active'
+  const mark = active ? chalk.green('✓') : chalk.yellow('~')
+  const name = z.name.length > namePad ? z.name.slice(0, namePad - 1) + '…' : z.name
+  echo(`  ${mark}  ${active ? name.padEnd(namePad) : chalk.yellow(name.padEnd(namePad))}  ${chalk.dim(z.id)}`)
+  echo(chalk.dim(`     ${z.plan?.name || 'free'}  ·  ${z.account?.name || ''}  ·  ${z.name_servers?.join(', ') || ''}`))
 }
 echo('')
 ```

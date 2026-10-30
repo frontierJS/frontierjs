@@ -126,7 +126,7 @@ export const RULES = [
   { id: 'resource-model-miss',  scope: 'app',  severity: 'error', invariant: 2,
     title: 'a resource name resolves to the model it means' },
   { id: 'money-rendered-raw',   scope: 'app',  severity: 'warn',  invariant: null,
-    title: 'a @money column is not printed as the integer it stores' },
+    title: 'a @money column is not printed as the integer it stores, nor handed to .toCurrency()' },
   { id: 'table-column-key',     scope: 'app',  severity: 'error', invariant: null,
     title: 'a <Table> column names its field `name`, the way the schema does' },
   { id: 'page-path-retired',    scope: 'app',  severity: 'error', invariant: null,
@@ -283,6 +283,15 @@ export function blindSkips({ skipped = [] }) {
 // is a named entry with a reason, never a loosened rule: the rule is what every
 // app gets on the next release, and the one place it may not hold is written down
 // where the next person can disagree with it.
+//
+// A finding that carries a `subject` (`User.email`) is keyed `<rule>:<path>:<subject>`
+// and the path-only key does not reach it: a rule whose findings all land in one
+// file (`package-model-drift` → db/schema.lite) would otherwise let one excused
+// deviation silence every later drift of every copied model (FJS-2316).
+function allowKey(ruleId, root, f) {
+  const at = `${ruleId}:${relative(root, f.file) || '.'}`
+  return f.subject ? `${at}:${f.subject}` : at
+}
 
 // A rule answers `{ findings: [...] }` or `{ skipped: 'why' }`, and anything else
 // THROWS naming the rule. Read leniently, a rule returning a bare array — which
@@ -304,6 +313,17 @@ export function verdictOf(rule, out) {
     `{ skipped: 'why' } — exactly one — and any other shape would be read as a rule that ran ` +
     `and found nothing.`
   )
+}
+
+// The workspace is the tree holding `scripts/ci-allowances.json`: the file is
+// what CI's `structure` phase reads its repo-wide exceptions from, so a root
+// without it has no repo-scope run to reproduce. Answers the `runChecks` options
+// for that run, or null for an app. Without this `fli check` at the workspace
+// root ran the app rules and exited 1 on fixtures CI excuses by name (FJS-2372).
+export function workspaceChecks(root) {
+  let raw
+  try { raw = JSON.parse(readFileSync(join(root, 'scripts', 'ci-allowances.json'), 'utf8')) } catch { return null }
+  return { scope: 'repo', allow: raw?.structure?.['.'] ?? {} }
 }
 
 export function runChecks({ root, only = null, scope = 'app', allow = {} } = {}) {
@@ -332,7 +352,7 @@ export function runChecks({ root, only = null, scope = 'app', allow = {} } = {})
     else             ran.push(rule.id)
     for (const f of out.findings ?? []) {
       const found = { rule: rule.id, severity: rule.severity, invariant: rule.invariant, ...f }
-      const key   = `${rule.id}:${relative(root, f.file) || '.'}`
+      const key   = allowKey(rule.id, root, found)
       if (key in allow) allowed.push({ ...found, why: allow[key] })
       else              findings.push(found)
     }
@@ -342,7 +362,7 @@ export function runChecks({ root, only = null, scope = 'app', allow = {} } = {})
   // thing it excused is an unenforced rule nobody knows is unenforced.
   // Only for a rule that RAN: under `--only` an allowance for another rule has
   // nothing to hit, and calling it stale would tell a person to delete a live one.
-  const hit   = new Set(allowed.map(a => `${a.rule}:${relative(root, a.file) || '.'}`))
+  const hit   = new Set(allowed.map(a => allowKey(a.rule, root, a)))
   const stale = Object.keys(allow).filter(k => !hit.has(k) && ran.includes(k.slice(0, k.indexOf(':'))))
 
   return { findings, allowed, stale, ran, skipped }
@@ -582,13 +602,12 @@ export function formatFindings(findings, root) {
   const out = []
   for (const [id, list] of Object.entries(byRule)) {
     const rule = BY_ID[id]
-    const tag  = rule.invariant ? ` (invariant ${rule.invariant})` : ''
     // A finding a person has to fix and one a flag can fix read identically
     // otherwise, and the second is the one nobody should be typing out.
     const fix  = list.every(f => f.edit) ? '  ·  fli check --fix'
                : list.some(f => f.edit)  ? `  ·  ${list.filter(f => f.edit).length} fixable with --fix`
                : ''
-    out.push(`  ${rule.severity === 'error' ? '✗' : '⚠'}  ${id}${tag} — ${rule.title}${fix}`)
+    out.push(`  ${rule.severity === 'error' ? '✗' : '⚠'}  ${id} — ${rule.title}${fix}`)
     for (const f of list) {
       const where = relative(root, f.file) || '.'
       out.push(`       ${where}${f.line ? `:${f.line}` : ''}`)

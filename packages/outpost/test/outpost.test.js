@@ -2427,6 +2427,21 @@ describe('what this machine tells basecamp', () => {
     expect(warned.length).toBeGreaterThan(0)
     expect(warned.join(' ')).toContain('502')
   })
+
+  // FJS-3557: the volume report is one docker call per volume and takes
+  // minutes on a box with a hundred of them; the disk report queued behind it.
+  test('a slow volume report does not hold the disk report back', async () => {
+    const posted = []
+    const doFetch = async (url) => { posted.push(new URL(url).pathname); return Response.json({ ok: true }) }
+    const reporter = createReporter(CONFIG, {
+      inspector: { volumes: () => new Promise(() => {}), disk: async () => ({ images: { total: 1 } }) },
+      fetch: doFetch, log: { warn: () => {} },
+    })
+    const stop = reporter.start()
+    await new Promise(r => setTimeout(r, 50))
+    stop()
+    expect(posted).toContain('/cleanup')
+  })
 })
 
 // ─── what the machine feels like ────────────────────────────────────────────

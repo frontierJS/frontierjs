@@ -558,12 +558,31 @@ export const HEAVY_CONTEXT = 50e6
  *                      ignores (a file, or a directory ending in `/`) with the
  *                      files under it
  * @param expected      ignored paths the image is built from on purpose
+ * @param sqliteCopies  `[{ path, bytes }]` — files whose header is SQLite's and
+ *                      whose name no state rule matches (`gatherSqliteCopies`)
  */
-export function inspectIgnored({ dockerfile = '', dockerignore = null, groups = [], expected = [] } = {}) {
+export function inspectIgnored({ dockerfile = '', dockerignore = null, groups = [], expected = [], sqliteCopies = [] } = {}) {
   const df       = parseDockerfile(dockerfile)
   const patterns = parseDockerignore(dockerignore)
   const findings = []
   const sent     = []
+
+  // A committed copy is in no group: git does not ignore it, so only its
+  // header says what it is.
+  for (const f of sqliteCopies) {
+    if (expected.some(e => under(e, f.path)) || ignoreDecision(f.path, patterns) !== 'included') continue
+    const trace = traceToFinalImage(df, f.path)
+    if (trace.ships !== true) continue
+    findings.push({
+      rule:   'sqlite-in-image',
+      level:  'warn',
+      title:  `${f.path} is a SQLite database and would be in the image`,
+      detail: `${formatBytes(f.bytes)} that no file name gives away, landing at ${trace.at}. A copy kept beside the live ` +
+              'database is one machine\'s data, and the image then carries it to every server.',
+      hint:   `Add \`${f.path}\` to .dockerignore, or move the copy out of the directory the image takes.`,
+      line:   trace.line,
+    })
+  }
 
   for (const group of groups) {
     if (expected.some(e => under(e, group.path.replace(/\/$/, '')))) continue
@@ -720,7 +739,41 @@ export function gatherIgnored({ root, fs, spawnSync }) {
   return [...groups.values()]
 }
 
-/** The local half of `gather`, for a caller that has the tree in front of it. */
+const SQLITE_MAGIC = 'SQLite format 3\0'
+
+/**
+ * Files whose first 16 bytes are SQLite's header and whose name no state rule
+ * grades: the backup an app commits as `app.db.pre-move`. A SQLite file is at
+ * least one page, so a shorter file is not read.
+ */
+export function gatherSqliteCopies({ root, fs, limit = 20000 }) {
+  const out  = []
+  const head = Buffer.alloc(SQLITE_MAGIC.length)
+  let seen   = 0
+  const sniff = (path) => {
+    let fd
+    try {
+      fd = fs.openSync(`${root}/${path}`, 'r')
+      const bytes = fs.fstatSync(fd).size
+      if (bytes < 512 || fs.readSync(fd, head, 0, head.length, 0) !== head.length) return
+      if (head.toString('latin1') === SQLITE_MAGIC) out.push({ path, bytes })
+    } catch {} finally { if (fd !== undefined) try { fs.closeSync(fd) } catch {} }
+  }
+  const walk = (dir, prefix) => {
+    let entries
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+    for (const e of entries) {
+      if (seen >= limit) return
+      const rel = prefix ? `${prefix}/${e.name}` : e.name
+      if (e.isDirectory()) { if (!SKIP.has(e.name)) walk(`${dir}/${e.name}`, rel) }
+      else if (e.isFile() && !classifyContextFile(rel)) { seen++; sniff(rel) }
+    }
+  }
+  walk(root, '')
+  return out.sort((a, b) => a.path.localeCompare(b.path))
+}
+
+/** The local half of `gather`,for a caller that has the tree in front of it. */
 export function gatherLocal({ root, fs, dockerfile = 'deploy/Dockerfile' }) {
   const read = (rel) => {
     try { return fs.readFileSync(`${root}/${rel}`, 'utf8') } catch { return null }

@@ -1765,6 +1765,18 @@ describe('backup / replicate — the rest of db/', () => {
     expect(existsSync(join(dir, 'out', 'db-files', 'backups'))).toBe(false)
   })
 
+  // FJS-3537: the unbound-provider default (FJS-D1549) stores under db/files,
+  // which only this copy keeps for a deploy's pre-swap backup.
+  test('backup copies db/files, the unbound FileStorage default, byte for byte', async () => {
+    const dir = appFixture('layout-default-files')
+    mkdirSync(join(dir, 'db', 'files', 'photos'), { recursive: true })
+    const bytes = Buffer.from([0, 255, 1, 254, 137, 80, 78, 71])
+    writeFileSync(join(dir, 'db', 'files', 'photos', 'k1'), bytes)
+    const r = await runCli(dir, ['backup', 'out'])
+    expect(r.exit).toBe(0)
+    expect(readFileSync(join(dir, 'out', 'db-files', 'files', 'photos', 'k1')).equals(bytes)).toBe(true)
+  })
+
   test('replicate streams the queue and names the bytes it cannot stream', async () => {
     const dir  = appFixture('layout-replicate')
     const fake = join(dir, 'fake-litestream')

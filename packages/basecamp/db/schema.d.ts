@@ -26,7 +26,7 @@ export interface WhereBase {
 
 // ── Enums ────────────────────────────────────────────────────────────────────
 
-export type VerificationPurpose = 'passwordReset' | 'emailVerify' | 'oauthLink' | 'magicLink' | 'emailChange' | 'registration'
+export type VerificationPurpose = 'passwordReset' | 'emailVerify' | 'oauthLink' | 'magicLink' | 'emailChange' | 'registration' | 'invitation'
 
 export type MetricType = 'counter' | 'gauge' | 'histogram'
 

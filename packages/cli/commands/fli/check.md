@@ -52,15 +52,13 @@ flags:
 const { resolve } = await import('node:path')
 
 const { RULES, runChecks, formatFindings, applyFixes,
-        BASELINE_FILE, readBaseline, gradeBaseline, writeBaseline } =
+        BASELINE_FILE, readBaseline, gradeBaseline, writeBaseline, workspaceChecks } =
   await import(resolve(global.fliRoot, 'core/checks.js'))
 
 if (flag.list) {
   echo('')
   for (const r of RULES) {
-    const inv = r.invariant ? `invariant ${r.invariant}` : 'live hazard'
     echo(`  ${r.severity === 'error' ? '✗' : '⚠'}  ${r.id.padEnd(22)} ${r.title}`)
-    echo(`     ${''.padEnd(22)} ${inv}`)
   }
   echo('')
   return
@@ -73,7 +71,14 @@ const only = flag.only ? flag.only.split(',').map(s => s.trim()).filter(Boolean)
 // exceptions (`allow`, `FJS-D508`), which the run itself needs.
 let baseline = readBaseline(root)
 
-let { findings, allowed, stale, ran, skipped } = runChecks({ root, only, allow: baseline.allow })
+// At the workspace root the run is CI's `structure` phase: repo scope, with the
+// exceptions CI reads from `scripts/ci-allowances.json`. An app gets its own scope.
+const ws    = workspaceChecks(root)
+const scope = ws?.scope ?? 'app'
+const allow = { ...ws?.allow, ...baseline.allow }
+const run   = () => runChecks({ root, only, scope, allow })
+
+let { findings, allowed, stale, ran, skipped } = run()
 
 // `fli check` with no flags is the plan and `--fix` applies it, which is the
 // order Terraform got right: nothing is written by the command a person runs to
@@ -85,7 +90,7 @@ if (flag.fix) {
   const result = applyFixes(findings)
   fixed = result.fixed
 
-  if (fixed.length) ({ findings, allowed, stale, ran, skipped } = runChecks({ root, only, allow: baseline.allow }))
+  if (fixed.length) ({ findings, allowed, stale, ran, skipped } = run())
 
   for (const f of result.failed) {
     log.warn(`could not fix ${f.rule} at ${f.file}: ${f.why}`)
@@ -209,14 +214,14 @@ the whole membership test. A rule whose violation already raises an error belong
 in the thing that raises it.
 
 ```
-fli check --list        the rule table, with the invariant each one comes from
+fli check --list        the rule table
 ```
 
-Half of them are FrontierJS invariants: a model name is PascalCase singular
+Half of them are framework rules: a model name is PascalCase singular
 (three resolvers agree on that and none of them says so), `src/resources/` holds
 `.mesa` files, a resource file is named for its model, one Resource per file.
 
-The other half are hazards with no invariant and a long memory:
+The other half are hazards that bit a real app and have a long memory:
 
 - **`strictPort`** — vite hops to the next free port without a word, so the
   second app to start serves on the port the first app's test drive is pointed
@@ -321,7 +326,7 @@ fli check --update    lock in an improvement. It cannot raise a number
 ```
 
 `check-baseline.json` at the app root, one number per rule id, absent = 0 =
-clean. Invariant 14's ratchet applied to a second kind of count, and
+clean. The typecheck ratchet applied to a second kind of count, and
 `scripts/typecheck-baselines.json` is the precedent — deliberately identical,
 down to `--update` being unable to raise. Two verbs, because one flag that both
 locks in a fix and records a regression is how a ceiling goes up without anyone

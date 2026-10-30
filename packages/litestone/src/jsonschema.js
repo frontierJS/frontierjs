@@ -475,7 +475,15 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   // Detect row-level policies on this model
   const hasPolicies = model.attributes.some(a => a.kind === 'allow' || a.kind === 'deny')
 
+  // @edge / @scoped fields are columns of the join table, not of this model:
+  // they are read and written under their namespace (`mine`, `projectEdge`),
+  // so listing one at the top level describes a write the boundary refuses and
+  // the namespace a browser must send is described nowhere (`FJS-3571`).
+  const edgeFields = []
+
   for (const field of model.fields) {
+    if (field.edge) { edgeFields.push(field); continue }
+
     // Skip relation fields — they have no JSON representation.
     //
     // implicitM2M belongs here too. It is set by the parser's second pass for
@@ -886,6 +894,15 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   // call reaches none of them — and @computed is the case this exists for. A
   // fifth virtual kind gets the right answer without touching this.
   for (const name of Object.keys(properties)) Object.assign(properties[name], queryable(name))
+
+  // Optional in every mode: an unset edge reads as its @default, and a write
+  // names only the values it sets.
+  for (const field of edgeFields) {
+    const ns = field.edge.as
+    properties[ns] ??= { type: 'object', properties: {}, additionalProperties: false }
+    properties[ns].properties[field.name] =
+      fieldToJsonSchema(field, schema, enumDefs, inlineEnums, audience, typeDefs, fileDef)
+  }
 
   const result = {
     type:       'object',

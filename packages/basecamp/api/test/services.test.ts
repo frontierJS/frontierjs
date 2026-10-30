@@ -681,6 +681,25 @@ describe('windowed and computed finds apply the caller\'s directives (FJS-2904)'
     expect([...seen].sort()).toEqual([...all].sort())
   })
 
+  // getPagination re-read `limit` off ctx.query as if it were a pagination key;
+  // ctx.query is filters only, so a plain `limit` is not a page size (FJS-2362).
+  test('a hand-written find pages by the bridge\'s directives, not a plain query key', async () => {
+    const svc = () => env.as(sysadmin).service('blueprints')
+    for (const n of ['p1', 'p2', 'p3']) {
+      await svc().create({
+        name: n, slug: `pg-${n}-${Math.random().toString(36).slice(2, 8)}`, category: 'Cache',
+        description: 'x', version: '1', image: 'x:1', appType: 'container', port: 1,
+      })
+    }
+
+    const all = await svc().find({})
+    expect(all.data.length).toBeGreaterThan(2)
+    await expect(svc().find({ limit: 1, offset: 1 } as any)).rejects.toThrow(/Unknown filter keys 'limit', 'offset'/)
+
+    expect((await find(sysadmin, 'blueprints', { limit: 1 })).data.length).toBe(1)
+    expect((await find(sysadmin, 'blueprints', { limit: 99999 })).data.length).toBe(all.data.length)
+  })
+
   test('trash sorts and projects what is deleted', async () => {
     const mk = (n: string) => env.as(owner).service('projects').create({ name: n, slug: `trash-${n}-${Math.random().toString(36).slice(2, 8)}` })
     for (const n of ['zeta', 'alpha']) await env.as(owner).service('projects').remove((await mk(n)).id)
@@ -4291,6 +4310,43 @@ describe('a list honors every filter it admits', () => {
     expect(got).toEqual([api.id])
   })
 
+  // One row it must find and one it must leave out, per service: a find that
+  // names `status` or `kind` and nothing else answers 400 on `name`.
+  const byName: Array<[string, string, (name: string, uniq: string) => Record<string, unknown>]> = [
+    ['projects',  'project',             (name, u) => ({ name, slug: `p-${u}` })],
+    ['networks',  'network',             (name, u) => ({ name, slug: `n-${u}` })],
+    ['monitors',  'monitor',             (name)    => ({ name, url: 'https://example.test/up' })],
+    ['secrets',   'secret',              (name)    => ({ name })],
+    ['alerts',    'alertRule',           (name)    => ({ name, metricName: 'cpu', threshold: 90 })],
+    ['channels',  'notificationChannel', (name)    => ({ name, kind: 'webhook' })],
+  ]
+  for (const [service, model, make] of byName) {
+    test(`${service} by name, and not the other one`, async () => {
+      const sys  = env.system as any
+      const uniq = Math.random().toString(36).slice(2, 8)
+      const want = await sys[model].create({ data: { workspaceId: ws.id, ...make(`want-${uniq}`, `${uniq}a`) } })
+      await sys[model].create({ data: { workspaceId: ws.id, ...make(`other-${uniq}`, `${uniq}b`) } })
+      const got = ids(await env.as(owner).service(service).find({ name: want.name }))
+      expect(got).toEqual([want.id])
+    })
+  }
+
+  test('servers by name, and not the other one', async () => {
+    const uniq = Math.random().toString(36).slice(2, 8)
+    const want = await serverAt('online', { workspaceId: ws.id, name: `want-${uniq}`, slug: `want-${uniq}` })
+    await serverAt('online', { workspaceId: ws.id, name: `other-${uniq}`, slug: `other-${uniq}` })
+    expect(ids(await env.as(owner).service('servers').find({ name: want.name }))).toEqual([want.id])
+  })
+
+  test('registry images by tag, and not the other one', async () => {
+    const sys  = env.system as any
+    const uniq = Math.random().toString(36).slice(2, 8)
+    const img  = (tag: string) => sys.registryImage.create({ data: { workspaceId: ws.id, repository: `repo-${uniq}`, tag, digest: `sha256:${tag}-${uniq}` } })
+    const want = await img(`v1-${uniq}`)
+    await img(`v2-${uniq}`)
+    expect(ids(await env.as(owner).service('registry').find({ tag: want.tag }))).toEqual([want.id])
+  })
+
   test('a key that is not a column is still refused by name', async () => {
     await expect(env.as(owner).service('deployments').find({ bogusColumn: 1 })).rejects.toThrow(/bogusColumn/)
     await expect(env.as(owner).service('apps').find({ service_id: placed.id })).rejects.toThrow(/service_id/)
@@ -5036,6 +5092,11 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
         return new Response(`<ListBucketResult><IsTruncated>false</IsTruncated>${body}</ListBucketResult>`,
           { headers: { 'content-type': 'application/xml' } })
       } })
+      // `rescan` queues the same list-and-hash the test calls by hand; running,
+      // the job takes the archive first and the test's own count comes up short
+      // (FJS-3576). Resumed after the destination is detached, it finds nothing.
+      const fleet = env.app.jobs.queue('fleet')
+      fleet.pause({ reason: 'the rescan test drives the work itself' })
       try {
         const dest = await env.as(owner).service('backupDestinations').create({
           name: `Archives ${tag()}`, endpoint: `http://127.0.0.1:${bucket.port}`, region: 'auto',
@@ -5070,6 +5131,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
         bucket.stop(true)
         await sys.appBackup.deleteMany({ where: { appId: app.id, kind: 'found' } })
         await env.as(owner).service('apps').patch(app.id, { backupDestinationId: null })
+        fleet.resume()
       }
     })
 

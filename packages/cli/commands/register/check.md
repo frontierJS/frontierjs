@@ -43,10 +43,11 @@ const root = findRegisterRoot(process.cwd()) ?? $.paths.root
 if (flag.rules) {
   echo('')
   for (const rule of RULES) {
-    echo(`  ${rule.level === 'error' ? '✗' : '⚠'}  ${rule.id.padEnd(18)} ${rule.what}`)
+    const isError = rule.level === 'error'
+    echo(`  ${(isError ? chalk.red : chalk.yellow)(isError ? '✗' : '⚠')}  ${chalk.bold(rule.id.padEnd(18))} ${chalk.dim(rule.what)}`)
   }
   echo('')
-  echo('  An error is a register contradicting itself. A warning is one that is thin.')
+  echo(chalk.dim('  An error is a register contradicting itself. A warning is one that is thin.'))
   echo('')
   return
 }
@@ -62,8 +63,8 @@ try {
   result = runRegisterCheck({ root, staleDays: Number.isFinite(staleDays) ? staleDays : 60 })
 } catch (err) {
   echo('')
-  echo(`  fli register:check\n`)
-  for (const line of String(err.message).split('\n')) echo(`  ${line}`)
+  echo(`  ${chalk.bold('fli register:check')}\n`)
+  for (const line of String(err.message).split('\n')) echo(`  ${chalk.red(line)}`)
   echo('')
   process.exitCode = 1
   return
@@ -76,14 +77,14 @@ if (flag.json) {
 }
 
 echo('')
-echo('  fli register:check\n')
+echo(`  ${chalk.bold('fli register:check')}\n`)
 for (const line of formatRegisterCheck(result)) echo(line)
 echo('')
 
 if (result.errors.length) {
   process.exitCode = 1
 } else if (flag.strict && result.warnings.length) {
-  echo(`  --strict: ${result.warnings.length} warning(s) count as failures`)
+  echo(chalk.red(`  --strict: ${result.warnings.length} warning(s) count as failures`))
   echo('')
   process.exitCode = 1
 }

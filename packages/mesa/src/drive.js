@@ -489,11 +489,32 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
    *  `el.click()` is enough for a handler, and not enough for anything the
    *  browser itself decides: light-dismissing a `[popover]`, closing a
    *  `<dialog>` by its backdrop, or a `:focus-visible` that only a real
-   *  pointer or key produces. */
+   *  pointer or key produces.
+   *
+   *  The press waits for the element's box to hold still across two frames.
+   *  A disclosure closing above it, a panel sliding in, a list settling all
+   *  move it for ~100ms after the state that caused them reads as done, and a
+   *  box measured at the first frame is a point the element has left by the
+   *  time the press arrives. Under load the move outlasts the round trips, so
+   *  the click lands on a neighbor on some runs and not others (FJS-3577).
+   *  Capped, so an element that never stops (a spinner) is pressed where it is. */
   async function clickAt(selector) {
     const box = await evaluate(`
       const el = document.querySelector(${JSON.stringify(selector)});
       if (!el) throw new Error('clickAt: no element for ' + ${JSON.stringify(selector)});
+      const frame = () => new Promise((res) => { requestAnimationFrame(res); setTimeout(res, 50) });
+      const key = () => { const b = el.getBoundingClientRect(); return [b.left, b.top, b.width, b.height].join() };
+      // An animation's first frames hold the start value, so two equal boxes
+      // are not yet a stopped element while a finite one is still running.
+      const moving = () => document.getAnimations().some((a) =>
+        a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity);
+      const until = Date.now() + 500;
+      for (let was = key(); ; ) {
+        await frame();
+        const now = key();
+        if ((now === was && !moving()) || Date.now() > until) break;
+        was = now;
+      }
       // A press is dispatched at viewport coordinates, so an element below the
       // fold is clicked at a point that is off-screen — the event lands on
       // whatever is at those coordinates, or nowhere, and the assertion

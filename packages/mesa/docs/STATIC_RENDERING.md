@@ -289,6 +289,11 @@ imports `@frontierjs/mesa/runtime`; sierra's build passes
 `@frontierjs/sierra/router`. `render-component.test.js` carries the negative case —
 the same import still fails under the default.
 
+Inside a bundle or a `bun --compile` binary the renderer's own sibling path is
+`/$bunfs/root/runtime.js`, which a module on disk cannot import.
+`MESA_RUNTIME_DIR` names a real directory holding `runtime.js` and
+`runtime-server.js` that re-export the bundled copy (`FJS-3542`).
+
 A temp module is named by its text and this process's pid, and it lives until the
 process exits. Two trees that compile a shared component to the same text name it
 the same way, so the second root's import is answered by the module registry —

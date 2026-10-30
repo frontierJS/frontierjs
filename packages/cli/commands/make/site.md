@@ -28,7 +28,7 @@ application server behind any of it.
 
 **It is a peer of `api/` and `web/`, never a routes directory inside `web/`.**
 Its config, its tests and its release are a different set of answers from the
-SPA's (Invariant 3), and the fourth answer is what makes it a defect rather
+SPA's, and the fourth answer is what makes it a defect rather
 than a preference: folded into `web/` the two builds share a Vite root, so the
 site's output lands inside the SPA's `dist/` — and Vite empties `outDir` by
 default, so building the SPA deletes the site with nothing said.

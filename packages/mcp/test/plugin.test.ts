@@ -26,6 +26,7 @@ import { generateJsonSchema } from '@frontierjs/litestone/jsonschema'
 import { createApp, createService, $ } from '@frontierjs/junction'
 import type { App } from '@frontierjs/junction'
 import { createStubAuth } from '@frontierjs/junction/testing'
+import { searchService } from '@frontierjs/junction/search'
 import { mcp } from '../src/plugin.ts'
 import type { McpOptions } from '../src/plugin.ts'
 import { projectTools, schemaViews } from '../src/projection.ts'
@@ -871,5 +872,27 @@ describe('the base a view read rides _meta', () => {
     expect(r.text).toContain("frontierjs/base")
     expect(r.text).toContain('a list')
     expect(seenBase).toBeUndefined()
+  })
+})
+
+// ─── a battery whose rows are graded below the API ─────────────────────────────
+
+// searchService reads no model of its own: each hit is graded by the hit's row
+// policies at the Data boundary. A find left undeclared projects `ungraded`,
+// which boot reports as "graded by nothing" on a service that is not.
+describe('searchService is not reported as graded by nothing', () => {
+  test('its find is a declared level in the projection, so boot has nothing to warn of', async () => {
+    const db = await createClient({ db: ':memory:', schema: SCHEMA, encryptionKey: '0'.repeat(64) }) as Record<string, never>
+    const own = createApp({
+      db, auth: createStubAuth({ users: [{ id: 'staff', isAdmin: true }] }),
+      config: { port: 0 }, logLevel: 'silent',
+    }) as never as App
+    own.services.register(searchService({ models: ['order'] }))
+    const services = (own as unknown as { services: { list(): string[]; get(n: string): { describe(): ServiceShape } } }).services
+    const shapes = services.list().map(n => services.get(n).describe())
+    const parsed = parse(SCHEMA)
+    const p = projectTools(shapes, schemaViews(parsed.schema, generateJsonSchema as never), 8)
+    expect(p.tools.filter(t => t.name === 'search_find' && t.model === null && t.verdict === 'ungraded')).toEqual([])
+    expect(p.tools.map(t => t.name)).toContain('search_find')
   })
 })

@@ -287,6 +287,10 @@ confirms the caller found a way out; the operator gets the warning instead, and
 `allowOutside` is how a shared assets directory is published on purpose. An
 EMPTY root is exempt — `ctx.file(path)` names a file the app chose and there is
 nothing for it to be inside of.
+`static.spa` answers a document request (`Accept: text/html`, no extension in
+the path) that names no file with the index, for an app with no proxy to do
+`try_files`. It is checked after the router, so an unrouted `/api/x` asked for
+by a browser gets the shell too; a `fetch` or a missing asset stays a 404.
 - **Security is opt-out and CORS is the exception.** `cors.origins` defaults to
   `[]` and `'*'` is never applied for you. Helmet headers are on unless
   `http: { helmet: false }`, and the DDoS gate and the rate limiter are off

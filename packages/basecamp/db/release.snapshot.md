@@ -72,7 +72,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `TileKind` | `activity_feed` · `alert_status` · `app_status` · `deploy_feed` · `job_history` · `server_fleet` · `server_health` · `service_health` · `stat_counter` |
 | `UserKind` | `bot` · `peer` · `user` |
 | `UserStatus` | `active` · `pending_verification` · `suspended` |
-| `VerificationPurpose` | `emailChange` · `emailVerify` · `magicLink` · `oauthLink` · `passwordReset` · `registration` |
+| `VerificationPurpose` | `emailChange` · `emailVerify` · `invitation` · `magicLink` · `oauthLink` · `passwordReset` · `registration` |
 | `VolumeKind` | `bind` · `volume` |
 | `WorkspaceRole` | `admin` · `billing` · `developer` · `owner` · `viewer` |
 | `WorkspaceStatus` | `active` · `suspended` |

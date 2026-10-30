@@ -343,7 +343,8 @@ describe('plain-text alternative', () => {
 // hand-kept list is what let two components fall out of it.
 
 import { readdirSync } from 'fs'
-import { refuseChildren, resetSlotGuard } from './components/slot-guard.js'
+import { resetContentWarnings } from '@frontierjs/mesa/runtime'
+import { resetSlotGuard } from './components/slot-guard.js'
 
 const ALL = readdirSync(COMPONENTS).filter((f) => f.endsWith('.mesa')).map((f) => f.replace('.mesa', ''))
 
@@ -384,54 +385,54 @@ describe('every component in the directory renders', () => {
   }
 })
 
-// ── a component that cannot take children says so ────────────────────────────
+// ── a component that cannot take children is named by Mesa ──────────────────
 //
-// Mesa drops children handed to a component with no matching <slot>, silently.
-// Fourteen of these take children and eight cannot, so a caller has no way to
-// tell which kind they are holding — and getting it wrong renders an empty
-// button, not an error.
-//
-// Every refusal is PAIRED with a component that legitimately keeps its
-// children, because a guard that warned on everything would satisfy any test
-// that only asked about the refusal.
+// Fourteen of these take children and nine cannot. Every refusal is PAIRED with
+// a component that legitimately keeps its children, because a warning on
+// everything would satisfy any test that only asked about the refusal.
 
 const CANNOT = ['Address', 'Avatar', 'Button', 'Contact', 'Divider', 'Image', 'Spacer', 'Stars', 'TwoCol']
 const CAN    = ['Section', 'Row', 'Column', 'Card', 'Header', 'Footer', 'Text', 'Heading', 'Link']
 
 describe('children handed to a component that cannot render them', () => {
+  // Mesa names the component and the props it declares (FJS-926, FJS-938); the
+  // kit adds nothing of its own, so a drop is graded on that one message.
   const warnings = async (name) => {
-    resetSlotGuard()
+    resetContentWarnings()
     const seen = []
     const real = console.warn
     console.warn = (...a) => seen.push(a.join(' '))
     try { await renderOne(name) } finally { console.warn = real }
-    return seen.filter((w) => w.includes('[email-kit]'))
+    return seen.filter((w) => w.includes('[Mesa]'))
   }
 
   for (const name of CANNOT) {
-    it(`${name} names itself and what to write instead`, async () => {
+    it(`${name} names itself and the props it takes`, async () => {
       const w = await warnings(name)
       expect(w.length).toBe(1)
       expect(w[0]).toContain(`<${name}>`)
-      expect(w[0]).toMatch(/`|slot=/)          // it names a prop or a named slot
+      expect(w[0]).toMatch(/It takes: /)
+      const src   = sources[name]
+      const props = [...src.matchAll(/export let (\w+)/g)].map((m) => m[1])
+      for (const n of props) expect(w[0], `${name} lists ${n}`).toContain(n)
     })
   }
 
   for (const name of CAN) {
     it(`${name} keeps its children and says nothing`, async () => {
-      resetSlotGuard()
+      resetContentWarnings()
       const seen = []
       const real = console.warn
       console.warn = (...a) => seen.push(a.join(' '))
       let r
       try { r = await renderOne(name) } finally { console.warn = real }
-      expect(seen.filter((x) => x.includes('[email-kit]'))).toEqual([])
+      expect(seen.filter((x) => x.includes('[Mesa]'))).toEqual([])
       expect(r.html).toContain('SLOTMARK')
     })
   }
 
   it('warns once per component, not once per render', async () => {
-    resetSlotGuard()
+    resetContentWarnings()
     const seen = []
     const real = console.warn
     console.warn = (...a) => seen.push(a.join(' '))
@@ -439,56 +440,15 @@ describe('children handed to a component that cannot render them', () => {
       await renderOne('Divider')
       await renderOne('Divider')
     } finally { console.warn = real }
-    expect(seen.filter((w) => w.includes('[email-kit]')).length).toBe(1)
-  })
-
-  // The guard reads $.slots, which is what a slotless child is given. If Mesa
-  // ever stops handing it over, every refusal above goes quiet and passes.
-  it('a slotless child can see that it was given children at all', async () => {
-    const slots = { default: () => {} }
-    const seen = []
-    const real = console.warn
-    console.warn = (...a) => seen.push(a.join(' '))
-    resetSlotGuard()
-    try { refuseChildren('Probe', slots, 'Pass `x`.') } finally { console.warn = real }
-    expect(seen[0]).toContain('<Probe>')
+    expect(seen.filter((w) => w.includes('[Mesa]')).length).toBe(1)
   })
 })
 
-// ─── the advice names a prop that exists ─────────────────────────────────
-//
-// A guard's whole value is the sentence it prints. Three of the nine named a
-// prop the component does not declare — `region`/`postcode` on Address, which
-// takes `state`/`zip`; `rating` on Stars, which takes `count`; `src` on Avatar,
-// which draws a letter and has no image at all. Advice that fails when taken is
-// worse than none, and nothing could see it: the warning is a string, so every
-// test above passed on all three.
-
-describe('every guard names props the component declares', () => {
-  const sources = Object.fromEntries(
-    readdirSync(COMPONENTS)
-      .filter((f) => f.endsWith('.mesa'))
-      .map((f) => [f.replace('.mesa', ''), readFileSync(path.join(COMPONENTS, f), 'utf8')]),
-  )
-
-  const guarded = Object.entries(sources).filter(([, src]) => src.includes('refuseChildren('))
-
-  it('finds the guards', () => {
-    expect(guarded.length).toBe(CANNOT.length)
-  })
-
-  for (const [name, src] of guarded) {
-    it(`${name}`, () => {
-      const line   = src.split('\n').find((l) => l.includes('refuseChildren('))
-      const advice = line.slice(line.indexOf('$.slots,') + 8)
-      const props  = new Set([...src.matchAll(/export let (\w+)/g)].map((m) => m[1]))
-      // Only bare identifiers. TwoCol's backticks hold `<div slot="left">`,
-      // which is markup and not a prop.
-      const named = [...advice.matchAll(/`([A-Za-z][A-Za-z0-9]*)`/g)].map((m) => m[1])
-      for (const n of named) expect(props, `${name} advice names \`${n}\``).toContain(n)
-    })
-  }
-})
+const sources = Object.fromEntries(
+  readdirSync(COMPONENTS)
+    .filter((f) => f.endsWith('.mesa'))
+    .map((f) => [f.replace('.mesa', ''), readFileSync(path.join(COMPONENTS, f), 'utf8')]),
+)
 
 // ─── values a caller supplies reach the document intact ──────────────────
 

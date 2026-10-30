@@ -374,3 +374,60 @@ describe('the routes basecamp reaches these through', () => {
       .toMatchObject({ healthy: true })
   })
 })
+
+// FJS-3521: Sierra ships `_headers` and `_redirects` in the build as host
+// configuration, and this origin is the host.
+describe('a release carrying _headers', () => {
+
+  const HEADERS = [
+    '/*', '  Cache-Control: public, max-age=0, must-revalidate', '  X-Frame-Options: DENY',
+    '/assets/*', '  ! Cache-Control', '  Cache-Control: public, max-age=31536000, immutable', '',
+  ].join('\n')
+
+  beforeEach(async () => {
+    await release({ appId: 'app-1', slug: 'shop', files: [
+      { path: 'index.html',    content: '<!doctype html><h1>x</h1>' },
+      { path: 'assets/a.js',   content: 'console.log(1)' },
+      { path: '_headers',      content: HEADERS },
+      { path: '_redirects',    content: '/old /new 301\n' },
+    ] })
+  })
+
+  test('its rules are applied, the narrower one replacing the wider', async () => {
+    const page  = await serve('shop.fleet.test', '/')
+    const asset = await serve('shop.fleet.test', '/assets/a.js')
+    expect(page.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate')
+    expect(page.headers.get('x-frame-options')).toBe('DENY')
+    expect(asset.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
+  })
+
+  test('a 304 carries the same cache rule', async () => {
+    const etag = (await serve('shop.fleet.test', '/assets/a.js')).headers.get('etag')
+    const res  = await createStaticServer({ staticDir: dir }).handle(new Request('http://shop.fleet.test/assets/a.js', {
+      headers: { host: 'shop.fleet.test', 'if-none-match': etag },
+    }))
+    expect(res.status).toBe(304)
+    expect(res.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
+  })
+
+  test('the path origin matches rules against the path after the slug', async () => {
+    const res = await serve('fleet.test', '/shop/assets/a.js')
+    expect(res.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
+  })
+
+  test('the files themselves are not served', async () => {
+    expect((await serve('shop.fleet.test', '/_headers')).status).toBe(404)
+    expect((await serve('shop.fleet.test', '/_redirects')).status).toBe(404)
+  })
+
+  test('a rule cannot set a header that frames the response or sets a cookie', async () => {
+    await release({ appId: 'app-1', slug: 'shop', files: [
+      { path: 'index.html', content: '<!doctype html><h1>x</h1>' },
+      { path: '_headers',   content: '/*\n  Set-Cookie: a=b\n  Content-Length: 1\n  X-Ok: yes\n' },
+    ] })
+    const res = await serve('shop.fleet.test', '/')
+    expect(res.headers.get('set-cookie')).toBeNull()
+    expect(res.headers.get('x-ok')).toBe('yes')
+    expect((await res.text())).toContain('<h1>x</h1>')
+  })
+})

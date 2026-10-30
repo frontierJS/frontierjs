@@ -1,8 +1,7 @@
 <script>
-  import { refuseChildren, refuseCell } from './slot-guard.js'
+  import { refuseCell } from './slot-guard.js'
   const emailCell = $context.emailCell
   refuseCell('Divider', emailCell)
-  refuseChildren('Divider', $.slots, "A rule has no content; `color`, `height` and `margin` are what it takes.")
   export let color   = '#eeeeee'
   export let height  = 1
   export let margin  = 8       // vertical spacing above and below in px

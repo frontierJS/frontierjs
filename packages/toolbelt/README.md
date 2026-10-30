@@ -124,7 +124,7 @@ Sunday is 0 and 7. A term may combine a list, a range and a step (`0,2-4,9-15/3`
 
 ## `datetime` — an instant, a place, and the words between them
 
-```js
+```js fragment
 import { createDatetime } from '@frontierjs/toolbelt/datetime'
 
 // once, in the app — the kit reads no clock and keeps no settings of its own
@@ -155,7 +155,7 @@ Names follow `locale`; digits are always Latin. `QQQQ` and `WWWW` are English an
 
 **Plain dates — a day in no zone**, which is what a `String @date` column holds and what a billing period, a due date or a birthday is (`FJS-D288`).
 
-```js
+```js fragment
 plainDateIn('2026-01-31T01:00:00Z', 'America/New_York')  // '2026-01-30' — an evening there
 addToDate('2026-01-31', { months: 1 })                   // '2026-02-28' — clamped, Temporal's 'constrain'
 daysBetween('2026-08-30', '2026-09-29')                  // 30
@@ -207,7 +207,7 @@ Three axes of one question. NUMBER is `post` ⇄ `posts`; SHAPE is
 `postal_code` → `Postal Code`.
 
 ```js
-import { pluralize, singularize, modelName, camel, snake, slug } from '@frontierjs/toolbelt/inflect'
+import { pluralize, singularize, modelName, camel, snake, slug, toolName } from '@frontierjs/toolbelt/inflect'
 
 pluralize('category')            // 'categories'
 singularize('statuses')          // 'status'

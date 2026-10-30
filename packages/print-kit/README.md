@@ -4,7 +4,7 @@ An HTML document to a PDF, an element to a PNG, in one headless Chromium
 behind one seam. Built on `@frontierjs/mesa/drive`, so an app that prints
 adds no second Chrome driver.
 
-```js
+```js fragment
 import { createPrinter, printDocument, printer as printerPlugin } from '@frontierjs/print-kit'
 
 const printer = createPrinter()            // opens Chrome on the first job

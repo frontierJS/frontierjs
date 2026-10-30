@@ -364,7 +364,7 @@ const second = await post('carts', 'redeem', null, { code: spare.code })
 // own token if it wanted to: `CartGrant` stores a digest. So what is asserted is
 // the basket, and that the secret is not the one that crossed the origin.
 const redeemed = await first.json()
-check('redeeming it answers a token', /^c[0-9a-z]{24}$/.test(redeemed.token ?? ''), true)
+check('redeeming it answers a token', /^[\w-]{43}$/.test(redeemed.token ?? ''), true)
 check('a DIFFERENT token from the one the widget holds', redeemed.token !== heldToken, true)
 check('…that opens the same basket', redeemed.id, heldId)
 // Cleared in the same transaction that read it. A code that survives its own

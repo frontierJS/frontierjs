@@ -19,7 +19,16 @@ const UI_PORT  = Number(process.env.UI_PORT ?? process.env.FRONTIER_PORT_FE ?? 8
 const API  = `http://localhost:${API_PORT}`
 const UI   = resolve(HERE, '../../../ui')
 
-const sierra = createSierraViteConfig(sierraConfig)
+// The twin of `cookieAuth` on the API's auth plugin: on exactly when a
+// sign-in provider is configured (`FJS-D670`). The browser cannot read the
+// API's environment, so the build reads the same variables. It is set HERE and
+// not in sierra.config.js with a `define`: virtual:sierra serializes
+// `junction` in Node, where a define is undefined, so the client was built
+// with cookie mode off and a reload restored nobody (`FJS-3562`).
+const sierra = createSierraViteConfig({
+  ...sierraConfig,
+  junction: { ...sierraConfig.junction, cookieAuth: ssoFromEnv(process.env).length > 0 },
+})
 
 // Basecamp mounts services at /{service} with no prefix, so an API path and a
 // UI path are the SAME URL: GET /projects is both the service and the page.
@@ -54,17 +63,6 @@ proxy[WS_PATH] = { target: API, ws: true }
 
 export default defineConfig({
   ...sierra,
-
-  // The twin of `cookieAuth` on the API's auth plugin: on exactly when a
-  // sign-in provider is configured (`FJS-D670`). The browser cannot read the
-  // API's environment, so the build reads the same variables and bakes the
-  // answer in; sierra.config.js is evaluated in the page and holds no process.
-  // Left false while the API runs cookie sessions, a signed-in browser has no
-  // boot restore and no socket.
-  define: {
-    ...sierra.define,
-    __BASECAMP_COOKIE_AUTH__: JSON.stringify(ssoFromEnv(process.env).length > 0),
-  },
 
   // @frontierjs/ui is aliased to the WORKSPACE SOURCE, not to the copy under
   // node_modules. `bun install` resolves a workspace dep by COPYING it

@@ -160,8 +160,8 @@ export function widgetStarter({ name, prefix = '' }) {
      own button rules cannot reach it and these cannot reach the host page. */
   .widget-button {
     font: inherit;
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
+    padding: var(--space-sm) var(--space-2xl);
+    border-radius: var(--btn-radius);
     border: 1px solid currentColor;
     cursor: pointer;
   }
@@ -236,8 +236,8 @@ export function scaffoldWidgetSurface({
 } = {}) {
   if (!isWidgetName(name)) {
     throw new Error(
-      `"${name}" is not a widget name — PascalCase, singular, like a component ` +
-      `(Invariant 19). It is also the tag a host page writes.`
+      `"${name}" is not a widget name — PascalCase, singular, like a component, ` +
+      `because it is also the tag a host page writes.`
     )
   }
 

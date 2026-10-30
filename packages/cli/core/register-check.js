@@ -32,6 +32,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
+import { chalk } from './color.js'
 import { treePaths } from './tree.js'
 import { ideaQuestions } from './decisions.js'
 import { envCause, ENV_CAUSES, reproOf, seamOf } from './next.js'
@@ -749,15 +750,15 @@ export function formatRegisterCheck(result) {
   const out = []
   const { counts } = result
 
-  out.push(`  ${counts.open} open · ${counts.decisions} rulings (${counts.namedRulings} named) · ${counts.ideas} ideas`)
+  out.push(`  ${chalk.bold(counts.open)} open · ${chalk.bold(counts.decisions)} rulings ${chalk.dim(`(${counts.namedRulings} named)`)} · ${chalk.bold(counts.ideas)} ideas`)
   // What was READ, beside what was found in it. A project keeping two of the
   // three registers is normal; the line exists so a small count is legible as
   // a small register rather than as a register nobody opened.
-  out.push(`  read ${(result.sources ?? []).join(' · ')}  in ${result.root}`)
+  out.push(chalk.dim(`  read ${(result.sources ?? []).join(' · ')}  in ${result.root}`))
   out.push('')
 
   if (!result.findings.length) {
-    out.push('  ✓  every register agrees with itself')
+    out.push(`  ${chalk.green('✓')}  every register agrees with itself`)
     return out
   }
 
@@ -765,17 +766,18 @@ export function formatRegisterCheck(result) {
     const hits = result.findings.filter(f => f.rule === rule.id)
     if (!hits.length) continue
 
-    const mark = rule.level === 'error' ? '✗' : '⚠'
-    out.push(`  ${mark}  ${rule.id} — ${rule.what}  (${hits.length})`)
+    const isError = rule.level === 'error'
+    const tone = isError ? chalk.red : chalk.yellow
+    out.push(`  ${tone(isError ? '✗' : '⚠')}  ${chalk.bold(rule.id)} ${chalk.dim(`— ${rule.what}  (${hits.length})`)}`)
 
     for (const f of hits) {
       const where = f.line ? `${f.file}:${f.line}` : f.file
-      out.push(`       ${f.id ?? '—'}  ${f.message}`)
-      out.push(`         ${where}${f.detail ? `  · ${f.detail}` : ''}`)
+      out.push(`       ${chalk.cyan(f.id ?? '—')}  ${f.message}`)
+      out.push(chalk.dim(`         ${where}${f.detail ? `  · ${f.detail}` : ''}`))
     }
     out.push('')
   }
 
-  out.push(`  ${counts.errors} error(s), ${counts.warnings} warning(s)`)
+  out.push(`  ${counts.errors ? chalk.red(`${counts.errors} error(s)`) : '0 error(s)'}, ${counts.warnings ? chalk.yellow(`${counts.warnings} warning(s)`) : '0 warning(s)'}`)
   return out
 }

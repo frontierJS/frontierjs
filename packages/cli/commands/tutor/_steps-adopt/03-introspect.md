@@ -10,7 +10,7 @@ litestone introspect shop.db --no-camel --out imported.lite --report gaps.json
 ```
 
 Two tables become two models. `customers` becomes **`model Customer`** — the
-framework's naming rule applied backwards, PascalCase and singular (Invariant 2)
+framework's naming rule applied backwards, PascalCase and singular
 — and because the derivation does not come back to `customers`, the model
 carries **`@@map("customers")`**, which is what points it at the table that is
 really there. A foreign key becomes a `@relation`. The database is not touched.

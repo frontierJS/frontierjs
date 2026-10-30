@@ -87,6 +87,12 @@
   gap:             var(--space-sm);
 }
 /*
+ * `.start` top-aligns a header whose title block is taller than its action
+ * (a kicker or a subtitle). It is a class, not an inline style, and :where()
+ * keeps its weight at one class, so a caller's own `align-items` class wins.
+ */
+.section-header:where(.start) { align-items: flex-start; }
+/*
  * No margin of its own: the space under a Section Header belongs to the box
  * it sits in. It carried `margin-bottom: 0.5rem`, which collapsed into a
  * Card's or a Container's flow margin and ADDED to a Stack's gap, so a heading

@@ -426,8 +426,8 @@
       "term": "Popover",
       "tier": "Overlay",
       "tierBlurb": "Things that float above the Screen.",
-      "element": "<article>",
-      "meaning": "An anchored floating unit",
+      "element": "<article role=\"dialog\">",
+      "meaning": "An anchored floating unit, a non-modal dialog that owes a name",
       "class": "popover"
     },
     {
@@ -719,7 +719,7 @@
       ]
     },
     "Popover": {
-      "markup": "<div class=\"popover-anchor\">\n  <button class=\"btn\" aria-expanded=\"false\">Actions</button>\n  <article class=\"popover\">\n    <div class=\"surface-header\"><strong>Quick note</strong></div>\n    <div class=\"surface-body\">Short, contextual information.</div>\n  </article>\n</div>",
+      "markup": "<div class=\"popover-anchor\">\n  <button class=\"btn\" aria-expanded=\"false\">Actions</button>\n  <article class=\"popover\" role=\"dialog\" aria-label=\"Quick note\">\n    <div class=\"surface-header\"><strong>Quick note</strong></div>\n    <div class=\"surface-body\">Short, contextual information.</div>\n  </article>\n</div>",
       "parts": [
         [
           ".popover-anchor",

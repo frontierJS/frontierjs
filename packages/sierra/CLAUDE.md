@@ -104,7 +104,7 @@ prerender, islands or static-safety. **`bun run test:widgets` for anything
 touching `src/widget/` or `build/widget-build.js`**; `test/mcp-build.test.js` runs a
 REAL build of one resource file for `build/mcp-build.js`, `test/mcp-relay.test.js`
 the relay's tool table and the handshake against a stand-in parent window, and `example`'s `verify:mcp-view` runs a built view in ext-apps' reference host on a third origin. `test:widgets` builds the fixture and
-drives a plain host page in Chrome, which is the only place shadow isolation,
+drives a plain host page in Chrome (its strict-CSP page in Firefox too), which is the only place shadow isolation,
 custom element upgrade and a delegated click inside a shadow root are decidable.
 **`bun run test:connect-app` for `connectApp()` or a Resource built with `{ app }`** — a bundled page over a hosted app, and the socket at `url` + `/ws` through a forward that upgrades it; `test/connect-app.test.js` has no socket.
 **`bun run test:installable` for `postbuild/manifest.js`** — the grader restates

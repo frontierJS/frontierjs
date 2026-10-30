@@ -39,45 +39,49 @@ const size = b => b >= 1 << 30 ? `${(b / (1 << 30)).toFixed(1)}G` : b >= 1 << 20
 const ago  = ms => { const d = Math.floor((Date.now() - ms) / 86400000); return d < 1 ? 'today' : `${d}d` }
 const verb = report.applied ? '' : ' (--apply)'
 
+const ok   = chalk.green('✓')
+const warn = chalk.yellow('!')
+const head = (title, rest = '') => echo(`  ${chalk.bold(title)}${rest ? chalk.dim(`  ·  ${rest}`) : ''}`)
+
 echo('')
-echo('  records')
+head('records')
 const { handoff, closed } = report.records
 for (const [name, r, what] of [['HANDOFF.md', handoff, 'sessions'], ['§ Closed', closed, 'rows']]) {
-  if (!r.ok)         echo(`    ✗ ${name}: ${r.reason}`)
-  else if (!r.moved) echo(`    ✓ ${name} holds ${r.kept} ${what}`)
-  else if (r.dry)    echo(`    ! ${name}: ${r.moved} ${what} past the newest ${r.kept}${verb}`)
-  else               echo(`    ✓ ${name}: ${r.moved} ${what} archived, ${r.kept} stay`)
+  if (!r.ok)         echo(`    ${chalk.red('✗')} ${name}: ${r.reason}`)
+  else if (!r.moved) echo(`    ${ok} ${name} ${chalk.dim(`holds ${r.kept} ${what}`)}`)
+  else if (r.dry)    echo(`    ${warn} ${name}: ${r.moved} ${what} past the newest ${r.kept}${chalk.dim(verb)}`)
+  else               echo(`    ${ok} ${name}: ${r.moved} ${what} archived, ${r.kept} stay`)
 }
 
 echo('')
-echo('  worktrees')
+head('worktrees')
 const extra = report.worktrees
-if (!extra.length) echo('    ✓ only this one')
+if (!extra.length) echo(`    ${ok} ${chalk.dim('only this one')}`)
 for (const w of extra) {
   const note = w.prunable ? (report.applied ? 'pruned' : `directory gone${verb}`) : w.inTmp ? 'in a temp dir — git worktree remove' : ''
-  echo(`    ${w.prunable || w.inTmp ? '!' : '·'} ${w.path}  ${w.head}${note ? `  — ${note}` : ''}`)
+  echo(`    ${w.prunable || w.inTmp ? warn : chalk.dim('·')} ${w.path}  ${chalk.dim(w.head)}${note ? chalk.yellow(`  — ${note}`) : ''}`)
 }
 
 echo('')
-echo('  strays — SQLite outside every <app>/db/ (Invariant 3)')
-if (!report.strays.length) echo('    ✓ none')
-for (const s of report.strays) echo(`    ! ${s.dir}/  ${s.files} files · ${size(s.bytes)} · newest ${ago(s.newest)}`)
+head('strays', 'SQLite outside every <app>/db/')
+if (!report.strays.length) echo(`    ${ok} ${chalk.dim('none')}`)
+for (const s of report.strays) echo(`    ${warn} ${s.dir}/  ${chalk.dim(`${s.files} files · ${size(s.bytes)} · newest ${ago(s.newest)}`)}`)
 
 echo('')
 const { entries, piles } = report.tmp
 const leaked = piles.reduce((n, p) => n + p.count, 0)
-echo(`  tmp — ${leaked} of ${entries} temp entries carry a prefix this repo's mkdtemp calls write`)
-for (const p of piles.slice(0, 12)) echo(`    ${String(p.count).padStart(6)}  ${p.prefix.padEnd(26)} oldest ${ago(p.oldest).padEnd(5)}  ${p.source}`)
-if (piles.length > 12) echo(`    … ${piles.length - 12} more prefixes — --json lists them`)
+head('tmp', `${leaked} of ${entries} temp entries carry a prefix this repo's mkdtemp calls write`)
+for (const p of piles.slice(0, 12)) echo(`    ${String(p.count).padStart(6)}  ${p.prefix.padEnd(26)} ${chalk.dim(`oldest ${ago(p.oldest).padEnd(5)}  ${p.source}`)}`)
+if (piles.length > 12) echo(chalk.dim(`    … ${piles.length - 12} more prefixes — --json lists them`))
 
 echo('')
-echo('  bulky — ignored directories past 500M')
-if (!report.bulky.length) echo('    ✓ none')
+head('bulky', 'ignored directories past 500M')
+if (!report.bulky.length) echo(`    ${ok} ${chalk.dim('none')}`)
 for (const b of report.bulky) {
-  echo(`    ! ${b.path}  ${size(b.bytes)}${b.cargo ? '  — cargo build cache, rebuilt on the next build' : ''}`)
+  echo(`    ${warn} ${b.path}  ${size(b.bytes)}${b.cargo ? chalk.dim('  — cargo build cache, rebuilt on the next build') : ''}`)
   if (!b.cargo) continue
-  if (b.cargo.stale.length) echo(`        no longer built (crate is ${b.cargo.crate}): ${b.cargo.stale.join(', ')}`)
-  echo(`        ${b.cargo.clean}`)
+  if (b.cargo.stale.length) echo(chalk.dim(`        no longer built (crate is ${b.cargo.crate}): ${b.cargo.stale.join(', ')}`))
+  echo(`        ${chalk.cyan(b.cargo.clean)}`)
 }
 echo('')
 ```

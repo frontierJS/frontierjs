@@ -1,0 +1,240 @@
+<script>
+  // MarkdownInput.mesa
+  // The control for a `@syntax(md)` column (`FJS-D1656`): a textarea, a toolbar
+  // that writes Markdown into it, and a Write / Preview switch that reads it
+  // back through <Markdown>.
+  //
+  // The textarea is the control and the only thing that holds the value — caret,
+  // selection, undo and form submission are the browser's, as in CodeInput. The
+  // toolbar edits it through `insert()`, which goes through `execCommand` so the
+  // edit is a real `input` event: the <Form> above hears it by bubbling, which
+  // is the whole of this control's report that it changed (`FJS-D903`).
+  //
+  // Preview HIDES the textarea and does not remove it. An `{#if}` would drop the
+  // named element, and a form that cannot find the field's element at submit
+  // sends an empty one.
+  //
+  // This is not a WYSIWYG editor and does not grow into one: that stays an
+  // app's own control, registered over this name.
+  //
+  // Usage:
+  //   <MarkdownInput name="body" value={post.body} oninput={e => post.body = e.target.value} />
+  //
+  // bind:this exposes: focus(), insert(text)
+
+  import Field    from './Field.mesa'
+  import Markdown from '../display/Markdown.mesa'
+  import { cx, humanize, uid, resolveError, resolveRule, stated, nativeValidationGuard, lockedBy } from '../../utils.js'
+
+  export let value       = ''
+  export let placeholder = ''
+  export let rows        = 8
+  export let maxlength   = undefined
+  export let disabled    = undefined  // undefined = ask the form; false overrides it
+  export let required    = undefined
+  export let readonly    = false
+
+  // Field integration
+  export let name   = ''
+  export let label  = undefined
+  export let hint   = ''
+  export let error  = ''
+  export let errors = undefined
+  export let badge  = undefined
+  export let help   = undefined
+
+  export let oninput  = undefined  // (event: Event) => void
+  export let onchange = undefined  // (event: Event) => void
+  export let onblur   = undefined
+  export let onfocus  = undefined
+
+  export var id = ''
+  const areaId    = id || uid('markdown')
+  const autoLabel = humanize(name)
+  const wrapped   = !!(label || (name && autoLabel))
+
+  const form = $context.form
+
+  const resolvedDisabled  = stated(disabled, lockedBy(form, name)) ?? false
+  const rule              = resolveRule(form, name)
+  const resolvedRequired  = stated(required,  rule?.required)
+  const resolvedMaxlength = stated(maxlength, rule?.maxLength)
+  const hasError          = !!resolveError(form, name, error, errors)
+
+  let el
+  let previewing = false
+  export function focus() { return $.focus(el) }
+
+  // Replaces the selection, or inserts at the caret. `execCommand` keeps the
+  // browser's undo stack and fires the real `input`; setRangeText does neither,
+  // so the event is sent by hand.
+  export function insert(text) {
+    if (!el || readonly || resolvedDisabled) return false
+    $.focus(el)
+    const typed = typeof document !== 'undefined' && document.execCommand?.('insertText', false, text)
+    if (!typed) {
+      el.setRangeText(text, el.selectionStart, el.selectionEnd, 'end')
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    return true
+  }
+
+  // Wraps the selection in `before`/`after`, or writes both around a prompt
+  // word when nothing is selected. A line mark (`- `, `# `) is the `after: ''`
+  // case and goes at the start of the line the selection begins on.
+  function wrap(before, after = before, fallback = 'text') {
+    if (!el) return
+    const picked = el.value.slice(el.selectionStart, el.selectionEnd) || fallback
+    insert(before + picked + after)
+  }
+
+  function line(mark) {
+    if (!el) return
+    const at = el.value.lastIndexOf('\n', el.selectionStart - 1) + 1
+    el.setSelectionRange(at, at)
+    insert(mark)
+  }
+
+  const TOOLS = [
+    { label: 'Bold',          text: 'B',  run: () => wrap('**') },
+    { label: 'Italic',        text: 'I',  run: () => wrap('*') },
+    { label: 'Heading',       text: 'H',  run: () => line('## ') },
+    { label: 'Link',          text: '↗',  run: () => wrap('[', '](https://)', 'text') },
+    { label: 'Bulleted list', text: '•',  run: () => line('- ') },
+    { label: 'Code',          text: '<>', run: () => wrap('`') },
+  ]
+
+  function handleInput(e) {
+    value = e.target.value
+    oninput?.(e)
+  }
+
+  $: source = value ?? ''
+</script>
+
+{#snippet control()}
+  <div class={cx('fjs-markdown-input', !wrapped && $class)}>
+    <div class="fjs-markdown-input-bar" role="toolbar" aria-label="Markdown">
+      <div class="fjs-markdown-input-tools">
+        {#each TOOLS as tool}
+          <button
+            type="button"
+            class="fjs-markdown-input-tool"
+            aria-label={tool.label}
+            title={tool.label}
+            disabled={resolvedDisabled || readonly || previewing}
+            onclick={tool.run}
+          >{tool.text}</button>
+        {/each}
+      </div>
+      <div class="fjs-markdown-input-modes" role="group" aria-label="View">
+        <button type="button" class="fjs-markdown-input-mode" aria-pressed={!previewing} onclick={() => previewing = false}>Write</button>
+        <button type="button" class="fjs-markdown-input-mode" aria-pressed={previewing} onclick={() => previewing = true}>Preview</button>
+      </div>
+    </div>
+
+    <textarea
+      bind:this={el}
+      class="field fjs-markdown-input-text"
+      id={areaId}
+      name={name || undefined}
+      rows={rows}
+      maxlength={resolvedMaxlength}
+      placeholder={placeholder}
+      disabled={resolvedDisabled}
+      required={resolvedRequired}
+      {@attach nativeValidationGuard}
+      readonly={readonly}
+      hidden={previewing}
+      aria-invalid={hasError || null}
+      oninput={handleInput}
+      onchange={onchange}
+      onblur={onblur}
+      onfocus={onfocus}
+      {...$attributes}
+      value={source}
+    >{source}</textarea>
+    <!--
+      Written as child text and as the property for the reason Textarea.mesa
+      gives: the text is what a server render emits, the property is what a
+      later change has to go through.
+    -->
+
+    {#if previewing}
+      <div class="fjs-markdown-input-preview" aria-live="polite">
+        {#if source.trim()}
+          <Markdown text={source} headingBase={3} />
+        {:else}
+          <p class="field-hint">Nothing to preview.</p>
+        {/if}
+      </div>
+    {/if}
+  </div>
+{/snippet}
+
+{#if wrapped}
+  <Field
+    id={areaId}
+    name={name}
+    label={label}
+    required={resolvedRequired}
+    badge={badge}
+    help={help}
+    hint={hint}
+    error={error}
+    errors={errors}
+    {class}
+  >
+    {@render control()}
+  </Field>
+{:else}
+  {@render control()}
+{/if}
+
+<style>
+  .fjs-markdown-input {
+    display: grid;
+    gap:     var(--space-xs);
+  }
+
+  .fjs-markdown-input-bar {
+    display:         flex;
+    justify-content: space-between;
+    align-items:     center;
+    gap:             var(--space-sm);
+    flex-wrap:       wrap;
+  }
+
+  .fjs-markdown-input-tools,
+  .fjs-markdown-input-modes {
+    display: flex;
+    gap:     var(--space-2xs);
+  }
+
+  .fjs-markdown-input-tool,
+  .fjs-markdown-input-mode {
+    padding:       var(--space-2xs) var(--space-sm);
+    border:        var(--border-width) solid var(--rule);
+    border-radius: var(--radius-sm);
+    background:    transparent;
+    color:         var(--ink);
+    font:          inherit;
+    font-size:     var(--text-sm);
+    cursor:        pointer;
+  }
+
+  .fjs-markdown-input-tool:disabled { cursor: default; opacity: 0.5; }
+
+  .fjs-markdown-input-mode[aria-pressed="true"] {
+    background:   var(--color-primary);
+    border-color: var(--color-primary);
+    color:        var(--color-primary-ink, white);
+  }
+
+  .fjs-markdown-input-preview {
+    min-block-size: calc(var(--leading-relaxed) * 1em * 4);
+    padding:        var(--space-md);
+    border:         var(--border-width) solid var(--rule);
+    border-radius:  var(--radius-sm);
+  }
+</style>

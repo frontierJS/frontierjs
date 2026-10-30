@@ -49,4 +49,6 @@ widgets in one box.
 bun run test:widgets        # from the sierra package root — builds, then drives
 ```
 
-Needs Chrome on PATH, or `$FJS_CHROME`.
+Needs Chrome on PATH, or `$FJS_CHROME`. The strict-CSP page runs a second time
+in Playwright's Firefox (`playwright-core`, a devDependency), because Chromium
+applies markup under a policy that Firefox refuses.

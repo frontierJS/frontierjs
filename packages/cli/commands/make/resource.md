@@ -38,7 +38,7 @@ const { resourceFile, servicePlural } =
 Creates the Resource for one model — a `.mesa` file whose data half is `<script module>`. It is the
 UI's half of the API boundary. A form is built **from** a Resource, and the
 default one belongs in the same file: markup here is what a create or edit page
-renders (invariant 18, `FJS-D112`). `fli make:route` builds the pages that
+renders. `fli make:route` builds the pages that
 consume it.
 
 The file names a service and a model and nothing else. `resource.fields`,

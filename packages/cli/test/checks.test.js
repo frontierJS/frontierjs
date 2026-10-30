@@ -12,9 +12,11 @@ import { tmpdir, homedir } from 'os'
 
 import { keyLiteral, weakLiteral, buildIndex, identifierOf, readKeyList } from '../core/seams.js'
 import { spawnSync } from 'child_process'
-import { RULES, runChecks, findApps, applyFixes, verdictOf, blindSkips,
-         BASELINE_FILE, readBaseline, gradeBaseline, writeBaseline, AUTH_SERVICES } from '../core/checks.js'
+import { RULES, runChecks, findApps, applyFixes, verdictOf, blindSkips, formatFindings,
+         BASELINE_FILE, readBaseline, gradeBaseline, writeBaseline, AUTH_SERVICES, workspaceChecks } from '../core/checks.js'
 import { API_SRC_KINDS, WEB_SRC_KINDS } from '../core/checks/app.js'
+import { scaffoldWidgetSurface } from '../core/widget-surface.js'
+import { scaffoldExtensionSurface } from '../core/extension-surface.js'
 
 let ROOT
 
@@ -1090,6 +1092,34 @@ describe('package-model-drift', () => {
   }
 
   const withModel = (body) => ({ ...CLEAN, ...KIT, 'db/schema.lite': SCHEMA + '\n' + body })
+
+  // FJS-2316: the allowance names the model.column it excuses, so excusing one
+  // deliberate deviation leaves the next drift of the same file reported.
+  test('an allowance names the model.column it excuses, not the file', () => {
+    const root = tree('pmd-allow', withModel([
+      'model Token {',
+      '  id      String  @id @default(uuid())',
+      '  secret  String  @guarded',
+      '  label   String',
+      '}',
+    ].join('\n')))
+    const KEY = 'package-model-drift:db/schema.lite'
+
+    const wide = only(root, 'package-model-drift', { allow: { [KEY]: 'file-wide' } })
+    expect(wide.findings).toHaveLength(2)
+    expect(wide.allowed).toEqual([])
+    expect(wide.stale).toEqual([KEY])
+
+    const one = only(root, 'package-model-drift', { allow: { [`${KEY}:Token.secret`]: 'guarded on purpose' } })
+    expect(one.allowed).toHaveLength(1)
+    expect(one.allowed[0].subject).toBe('Token.secret')
+    expect(one.findings.map(f => f.subject)).toEqual(['Token.label'])
+    expect(one.stale).toEqual([])
+
+    const both = only(root, 'package-model-drift', {
+      allow: { [`${KEY}:Token.secret`]: 'a', [`${KEY}:Token.label`]: 'b' } })
+    expect(both.findings).toEqual([])
+  })
 
   test('a column declared differently from the package is a warning naming both', () => {
     // The measured case: `@secret` becomes `@guarded` in the copy, so the
@@ -2596,6 +2626,19 @@ describe('call-header-declared', () => {
     expect(findings[0].message).toMatch(/callHeaders/)
   })
 
+  test('the fix it names is the spelling junction.config.js accepts (FJS-2236)', () => {
+    // `http:` is the runtime key; start() refuses it in junction.config.js
+    // ("declares 'http', which nothing reads"), where the key is `middleware`.
+    const root = tree('ch-spelling', {
+      ...CLEAN,
+      'api/src/core/cart.ts': CART,
+      'web/src/cart.js':      CART + sets,
+    })
+    const { findings } = only(root, 'call-header-declared')
+    expect(findings[0].message).toMatch(/middleware: \{ callHeaders: \['x-cart-token'\] \}/)
+    expect(findings[0].message).toMatch(/junction\.config\.js/)
+  })
+
   test('both halves resolve through a shared constant, which is how apps write it', () => {
     const root = tree('ch-declared', {
       ...CLEAN,
@@ -2714,7 +2757,10 @@ describe('service-model', () => {
     const { findings } = only(root, 'service-model')
     expect(findings).toHaveLength(1)
     expect(findings[0].message).toMatch(/orderLine/)
-    expect(findings[0].message).toMatch(/fails open/)
+    // Measured: every CRUD call answers 500 naming the model. Nothing is
+    // served, so the message must not claim the service is open (FJS-1252).
+    expect(findings[0].message).toMatch(/500/)
+    expect(findings[0].message).not.toMatch(/fails? open|served to anyone/)
   })
 
   test('stating the model is the fix, and it is checked against the schema', () => {
@@ -2733,6 +2779,8 @@ describe('service-model', () => {
     const { findings } = only(root, 'service-model')
     expect(findings).toHaveLength(1)
     expect(findings[0].message).toMatch(/names no model/)
+    expect(findings[0].message).toMatch(/500/)
+    expect(findings[0].message).not.toMatch(/fails? open|served to anyone/)
   })
 
   test('an irregular plural resolves — the singular has one owner and this asks it', () => {
@@ -2765,6 +2813,26 @@ describe('service-model', () => {
       'api/src/services/ela.service.ts': base("{ model: null, methods: [{ method: 'hello', gate: 0 }] }"),
     })
     expect(only(root, 'service-model').findings).toEqual([])
+  })
+
+  test('a service whose every method states a gate is graded by them, and is quiet (FJS-1448)', () => {
+    // Over no model the method gates are the service's whole grade (FJS-D408),
+    // so there is no @@gate to miss and nothing fails open.
+    const root = tree('sm-gated', {
+      ...CLEAN, 'db/schema.lite': SCHEMA2,
+      'api/src/services/links.service.ts': base(
+        "{ methods: [{ method: 'find', gate: 4 }, { method: 'create', gate: 4 }, { method: 'remove', gate: 4 }] }"),
+    })
+    expect(only(root, 'service-model').findings).toEqual([])
+  })
+
+  test('one method without a gate leaves the service reported (FJS-1448)', () => {
+    const root = tree('sm-half-gated', {
+      ...CLEAN, 'db/schema.lite': SCHEMA2,
+      'api/src/services/links.service.ts': base(
+        "{ methods: [{ method: 'find', gate: 4 }, { method: 'create' }] }"),
+    })
+    expect(only(root, 'service-model').findings).toHaveLength(1)
   })
 })
 
@@ -2931,6 +2999,24 @@ describe('money-rendered-raw', () => {
       '  @@sql("SELECT status, SUM(total) AS total FROM [order] GROUP BY status")\n}\n',
       '<td>{order.total}</td>\n'))
     expect(only(root, 'money-rendered-raw').findings).toHaveLength(1)
+  })
+
+  test('.toCurrency() on a @money column is reported: it takes MAJOR units (FJS-3494)', () => {
+    // `toMoney` is minor and `toCurrency` major; only the name says which, and
+    // the wrong one prints a hundred times the amount with nothing looking odd.
+    for (const call of ['{order.total.toCurrency()}', '{order.total?.toCurrency(\'USD\')}']) {
+      const root = tree('mrr-tocurrency', screen(ORDER, `<td>${call}</td>\n`))
+      const { findings } = only(root, 'money-rendered-raw')
+      expect(findings).toHaveLength(1)
+      expect(findings[0].message).toMatch(/toCurrency/)
+      expect(findings[0].message).toMatch(/toMoney/)
+    }
+  })
+
+  test('.toMoney() on a @money column, and .toCurrency() on a plain one, are left alone', () => {
+    const root = tree('mrr-tomoney', screen(ORDER,
+      '<td>{order.total?.toMoney()}</td>\n<td>{(order.ref).toCurrency()}</td>\n<td>{x.rate.toCurrency()}</td>\n'))
+    expect(only(root, 'money-rendered-raw').findings).toEqual([])
   })
 
   test('a seed with no @money column skips rather than passing vacuously', () => {
@@ -5490,6 +5576,15 @@ describe('a .mesa <style> holds no raw color, size or spacing value', () => {
     const { findings } = only(root, 'css-raw-literal')
     expect(findings.map(f => [f.line, f.message.split(' ')[0]])).toEqual([[6, '16px']])
   })
+
+  // FJS-1453: the surfaces `fli new` writes are an app's first files, so a
+  // warning there is one the owner never wrote.
+  test('the widget and extension starters carry no raw literal', () => {
+    const root = tree('raw-scaffold', CLEAN)
+    scaffoldWidgetSurface({ root })
+    scaffoldExtensionSurface({ root })
+    expect(only(root, 'css-raw-literal').findings.map(f => [relative(root, f.file), f.message.split(' ')[0]])).toEqual([])
+  })
 })
 
 // FJS-1888: `src/` layout (FJS-D625, FJS-D626, FJS-D627). Each case is the
@@ -5969,5 +6064,55 @@ describe('db-path-committed', () => {
     const { findings, skipped } = only(root, 'db-path-committed')
     expect(findings).toEqual([])
     expect(skipped).toHaveLength(1)
+  })
+})
+
+describe('fli check at the workspace root (FJS-2372)', () => {
+  test('a tree holding scripts/ci-allowances.json is the workspace: repo scope, its "." allowances', () => {
+    const root = tree('ws-root', {
+      'packages/thing/package.json': '{}',
+      'scripts/ci-allowances.json': JSON.stringify({
+        structure: { '.': { 'drive-opens-chrome:packages/a/test/x.test.js': 'its own fixture' } },
+      }),
+    })
+    const ws = workspaceChecks(root)
+    expect(ws.scope).toBe('repo')
+    expect(ws.allow).toEqual({ 'drive-opens-chrome:packages/a/test/x.test.js': 'its own fixture' })
+  })
+
+  test('an app, with no allowances file, stays on the app scope', () => {
+    const root = tree('ws-app', { 'db/schema.lite': 'model Lead {\n  id Int @id\n}\n' })
+    expect(workspaceChecks(root)).toBeNull()
+  })
+})
+
+// FJS-1282. The numbered Invariant list lives in the framework repo's CLAUDE.md,
+// which no installed app has, so a refusal that cites a number points at nothing.
+// The message states the rule; the number stays on `rule.invariant` for ws:invariants.
+describe('output an app developer reads names the rule, not an Invariant number', () => {
+  const NUMBERED = /invariants?\s*\d/i
+
+  test('formatFindings prints no invariant number beside a rule', () => {
+    const rule = RULES.find(r => r.invariant)
+    expect(rule.invariant).toBeTruthy()
+    const out = formatFindings([{ rule: rule.id, file: '/app/x', message: 'm' }], '/app').join('\n')
+    expect(out).toContain(rule.id)
+    expect(out).not.toMatch(NUMBERED)
+  })
+
+  test('a widget-name refusal and its finding state the rule', () => {
+    expect(() => scaffoldWidgetSurface({ root: join(ROOT, 'inv-w'), name: 'bad' })).toThrow(/PascalCase/)
+    let msg = ''
+    try { scaffoldWidgetSurface({ root: join(ROOT, 'inv-w'), name: 'bad' }) } catch (e) { msg = e.message }
+    expect(msg).not.toMatch(NUMBERED)
+
+    const root = tree('inv-widget', { 'db/schema.lite': SCHEMA, 'widgets/src/widgets/bad.mesa': '<div></div>\n' })
+    const { findings } = only(root, 'widget-entry-name')
+    for (const f of findings) expect(f.message).not.toMatch(NUMBERED)
+  })
+
+  test('a surface-config finding states the rule', () => {
+    const root = tree('inv-sc', { 'db/schema.lite': SCHEMA, 'api/app.ts': '// api\n' })
+    for (const f of only(root, 'surface-config').findings) expect(f.message).not.toMatch(NUMBERED)
   })
 })

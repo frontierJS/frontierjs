@@ -12,13 +12,16 @@
 // Those eight are reproduced below as the cases that must not drift.
 
 import { describe, test, expect } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import * as nodeFs from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   inspectBuild, parseDockerfile, parseDockerignore, ignoreDecision,
   traceToFinalImage, compileGlob, joinPath, isEnvFile, isStateFile,
   refuses, summarize, gather, walkContextFiles,
   STATE_EXTENSIONS, CONTEXT_FIND, classifyContextFile,
-  inspectIgnored, gatherIgnored, HEAVY_CONTEXT,
+  inspectIgnored, gatherIgnored, gatherSqliteCopies, HEAVY_CONTEXT,
 } from '../core/build-check.js'
 
 const findingsFor = (opts) => inspectBuild(opts).map(f => `${f.level}:${f.rule}`)
@@ -584,5 +587,41 @@ describe('a file git ignores, in the build', () => {
       { path: 'db/audit-prod/', files: [{ path: 'db/audit-prod/a.jsonl', bytes: 10 }, { path: 'db/audit-prod/b.jsonl', bytes: 10 }] },
       { path: 'db/move-report.json', files: [{ path: 'db/move-report.json', bytes: 10 }] },
     ])
+  })
+})
+
+// A copy an app commits under db/ with no state suffix: nothing names it, git
+// does not ignore it, and the allowlisted db/ lets it in. Its header does.
+
+describe('a SQLite file no suffix names, in the build', () => {
+  const MAGIC = 'SQLite format 3\0'
+  const DF    = 'FROM oven/bun:1-slim\nWORKDIR /app\nCOPY db ./db\n'
+  let root
+  const put = (rel, body) => { mkdirSync(join(root, rel, '..'), { recursive: true }); writeFileSync(join(root, rel), body) }
+
+  test('gatherSqliteCopies finds it by its header, and nothing else', () => {
+    root = mkdtempSync(join(tmpdir(), 'fli-sqlite-'))
+    try {
+      put('db/backup/app.db.pre-move', MAGIC + 'x'.repeat(4096))
+      put('db/schema.lite', 'model Lead {}')
+      put('db/tiny', 'SQLite')
+      put('node_modules/p/data.bin', MAGIC + 'x'.repeat(100))
+      put('db/app.db', MAGIC + 'x'.repeat(100))
+      expect(gatherSqliteCopies({ root, fs: nodeFs })).toEqual([{ path: 'db/backup/app.db.pre-move', bytes: 4096 + 16 }])
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  const copies = [{ path: 'db/backup/app.db.pre-move', bytes: 4112 }]
+
+  test('inspectIgnored warns once per file the image would carry', () => {
+    const found = inspectIgnored({ dockerfile: DF, sqliteCopies: copies })
+    expect(found.map(f => `${f.level}:${f.rule}:${f.title}`)).toEqual([
+      'warn:sqlite-in-image:db/backup/app.db.pre-move is a SQLite database and would be in the image',
+    ])
+  })
+
+  test('a .dockerignore that excludes it, or a Dockerfile that never copies it, answers it', () => {
+    expect(inspectIgnored({ dockerfile: DF, dockerignore: 'db/backup\n', sqliteCopies: copies })).toEqual([])
+    expect(inspectIgnored({ dockerfile: 'FROM x\nCOPY api ./api\n', sqliteCopies: copies })).toEqual([])
   })
 })

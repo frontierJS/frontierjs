@@ -70,7 +70,9 @@ command waits for the release and prints its steps.
 **A static App (an inline source) is released as its files.** `web/` is built
 here with `vite build` into a temp directory, never into `web/dist`, with the
 checkout's own `.env` as Vite reads it — the App's Variables in Basecamp are
-not what the bundle carries. `--dist` names a folder already built and sends
+not what the bundle carries, and the build is preceded by a line naming the
+`VITE_` / `FRONTIER_PUBLIC_` keys it will bake and the file each comes from
+(never a value; `FJS-3475`). `--dist` names a folder already built and sends
 it as it is. The files go to `apps.publish`, where Basecamp sends them to the
 App's machine and releases the digest the machine answers, the path a
 preview's Freeze takes; this laptop never holds the machine's secret. Outpost
@@ -134,7 +136,8 @@ const { createMachine }              = await import(new URL('file://' + global.f
 const { releaseFindings, gatherReleaseInputs, releasePlan } = await import(new URL('file://' + global.fliRoot + '/core/release-preflight.js'))
 const { routePrefixes, apiPaths }    = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
 const { readAppSnapshot }            = await import(new URL('file://' + global.fliRoot + '/core/app-entry.js'))
-const { inspectBuild, inspectIgnored, gatherLocal, gatherIgnored } = await import(new URL('file://' + global.fliRoot + '/core/build-check.js'))
+const { bundleEnvKeys, bundleEnvLine } = await import(new URL('file://' + global.fliRoot + '/core/bundle-env.js'))
+const { inspectBuild, inspectIgnored, gatherLocal, gatherIgnored, gatherSqliteCopies } = await import(new URL('file://' + global.fliRoot + '/core/build-check.js'))
 
 // Basecamp's own bound on a release that pulls nothing and starts and health
 // checks once, with room for a put-back.
@@ -176,7 +179,7 @@ async function preflight({ origin, key, app, root, dockerfile }) {
     ...(build.missing ? [] : inspectBuild(build)),
     ...(build.missing ? [] : inspectIgnored({
       dockerfile: build.dockerfile, dockerignore: build.dockerignore,
-      groups: gatherIgnored({ root, fs, spawnSync }), expected: [GENERATED_DIR],
+      groups: gatherIgnored({ root, fs, spawnSync }), sqliteCopies: gatherSqliteCopies({ root, fs }), expected: [GENERATED_DIR],
     })),
   ].sort((a, b) => level[a.level] - level[b.level])
   return { findings, prefixes }
@@ -347,6 +350,7 @@ if (inline) {
   const out = flag.dist ? null : mkdtempSync(join(tmpdir(), 'basecamp-deploy-'))
   try {
     if (out) {
+      log.info(bundleEnvLine(bundleEnvKeys(web)))
       log.info(`Building ${web}...`)
       $.exec({ command: 'bun --bun vite build', args: ['-c', config, '--outDir', out, '--emptyOutDir'], cwd: web, env: { ...process.env, NODE_ENV: 'production' } })
     }

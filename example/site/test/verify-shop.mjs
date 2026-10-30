@@ -1,8 +1,8 @@
 /**
  * site/test/verify-shop.mjs — buying something, on the shop's own storefront.
  *
- * Started by `bun run verify:shop`. Needs a built site (`bun run build:site`);
- * it starts the API and the storefront origin itself.
+ * Started by `bun run verify:shop`. It builds its own copy of the site against
+ * its API's port, and starts the API and the storefront origin itself.
  *
  * ─── What this is for, and what it is not ─────────────────────────────────
  *
@@ -57,7 +57,7 @@
 export const holds = ['ports']
 
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { serveSite } from '@frontierjs/sierra/site/serve'
@@ -68,9 +68,11 @@ import { PORTS } from '../../web/test/lib/preflight.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SITE = join(HERE, '..')
-const DIST = join(SITE, 'dist')
 const ROOT = join(SITE, '..')
 const API_PORT = process.env.API_PORT ?? String(PORTS.apiTest)
+// Its own build: `site/dist` bakes the dev API's port, and this drive's API
+// listens on the test slot, so the buy island would sit `offline` on that one.
+const DIST = join(tmpdir(), `verify-shop-dist-${API_PORT}`)
 const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 // test / siteServe / project 1 / service 3 — its own slot, so it collides with
 // neither `verify:site` (7710) nor `verify:account` (7712).
@@ -105,10 +107,6 @@ const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 // ─── preflight ────────────────────────────────────────────────────────────
 
-if (!existsSync(join(DIST, 'cart', 'index.html'))) {
-  console.error(`No basket page at ${DIST}/cart/.\nRun: bun run build:site`)
-  process.exit(1)
-}
 for (const [port, what] of [[API_PORT, 'the API'], [PORT, 'the storefront origin']]) {
   let busy = false
   try { await fetch(`http://localhost:${port}/`, { signal: AbortSignal.timeout(500) }); busy = true } catch {}
@@ -117,6 +115,9 @@ for (const [port, what] of [[API_PORT, 'the API'], [PORT, 'the storefront origin
 
 const { execFileSync } = await import('node:child_process')
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
+// API_PORT in the env is what config/api-origin.js bakes into the island.
+execFileSync('bun', ['--bun', 'vite', 'build', '-c', 'config/vite.config.js', '--outDir', DIST, '--emptyOutDir'],
+  { cwd: SITE, stdio: 'ignore', env: { ...process.env, API_PORT } })
 start('bun', ['run', 'api/index.ts'], 'api')
 for (let i = 0; i < 160; i++) {
   try { if ((await fetch(`${API}/api/health`)).ok) break } catch {}

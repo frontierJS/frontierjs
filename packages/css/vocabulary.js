@@ -142,7 +142,7 @@ const VOCAB = [
     [
       ["Dialog", "<dialog>", "A modal, via showModal()"],
       ["Drawer", "<dialog>", "An off-canvas panel, also via showModal()"],
-      ["Popover", "<article>", "An anchored floating unit"],
+      ["Popover", '<article role="dialog">', "An anchored floating unit, a non-modal dialog that owes a name"],
       ["Tooltip", '<span role="tooltip">', "An attachment, not a unit. A span, because .tooltip-anchor is inline and a div is not phrasing content"],
       ["Toast", "<article>", "A transient notification"],
     ],
@@ -508,7 +508,7 @@ const ANATOMY = {
   Popover: {
     markup: `<div class="popover-anchor">
   <button class="btn" aria-expanded="false">Actions</button>
-  <article class="popover">
+  <article class="popover" role="dialog" aria-label="Quick note">
     <div class="surface-header"><strong>Quick note</strong></div>
     <div class="surface-body">Short, contextual information.</div>
   </article>

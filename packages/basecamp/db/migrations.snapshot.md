@@ -8,3 +8,4 @@ Every migration a database may have applied, with the checksum `migrate apply` r
 | --- | --- |
 | `migrations/main/20260801000000_initial_schema.sql` | `2feab4ca59543847` |
 | `migrations/audit/20260801000000_audit_trail.sql` | `96f7e7c2cf2812b8` |
+| `migrations/main/20261030082406_invitation_purpose.sql` | `84d7f0f4274fd443` |

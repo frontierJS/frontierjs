@@ -124,5 +124,29 @@
   </Form>
 </div>
 
+<div id="help-text-child">
+  <!-- An ordinary default child: one paragraph of help text is enough to read
+       as a hand-written form, so nothing is generated and the warning names
+       that, not a `slot=`. -->
+  <Form resource={RESOURCE} {onsubmit} only={['title']}>
+    <p>Fill in the title.</p>
+  </Form>
+</div>
+
+<div id="sectioned">
+  <!-- `sections` groups the generated list at the call site; the schema says
+       nothing about grouping. A name no section claims follows them, in schema
+       order, and a name that is not a rendered field is skipped. -->
+  <Form
+    resource={RESOURCE}
+    {onsubmit}
+    except={['notes', 'query', 'customerId', 'tags', 'shape']}
+    sections={[
+      { title: 'Billing', fields: ['qty', 'title'] },
+      { title: 'Lifecycle', fields: ['archived', 'createdAt', 'nope'] },
+    ]}
+  />
+</div>
+
 <output id="options-calls">{optionsCalls.join(',')}</output>
 <output id="saved">{saved}</output>

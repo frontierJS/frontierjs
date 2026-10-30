@@ -25,6 +25,7 @@
   import DateTimeInput from '../../../components/forms/DateTimeInput.mesa'
   import CodeInput     from '../../../components/forms/CodeInput.mesa'
   import JsonInput     from '../../../components/forms/JsonInput.mesa'
+  import MarkdownInput from '../../../components/forms/MarkdownInput.mesa'
   import FileUpload    from '../../../components/forms/FileUpload.mesa'
   import FileField     from '../../../components/forms/FileField.mesa'
   import GeoField      from '../../../components/forms/GeoField.mesa'
@@ -71,6 +72,7 @@
   let at       = ''
   let body     = ''
   let doc      = null
+  let notes    = ''
   let site     = { lat: 1, lng: 2 }
   let line     = 'ab'
 </script>
@@ -94,6 +96,7 @@
     <div data-ctl="DateTimeInput"><DateTimeInput name="at" value={at} onvalue={(v) => at = v} /></div>
     <div data-ctl="CodeInput"><CodeInput name="body" value={body} oninput={(e) => body = e.target.value} /></div>
     <div data-ctl="JsonInput"><JsonInput name="doc" value={doc} onvalue={(v) => doc = v} /></div>
+    <div data-ctl="MarkdownInput"><MarkdownInput name="notes" value={notes} oninput={(e) => notes = e.target.value} /></div>
     <div data-ctl="FileUpload"><FileUpload name="files" /></div>
     <div data-ctl="FileField"><FileField name="photo" /></div>
     <div data-ctl="GeoField"><GeoField name="site" value={site} onvalue={(v) => site = v} /></div>

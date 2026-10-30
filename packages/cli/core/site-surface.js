@@ -47,6 +47,7 @@
  */
 
 import { frontmatterValue } from './compiler.js'
+import { writeApiOrigin }   from './app-config.js'
 import {
   scaffoldPort, writeAbsent, viteScript, surfaceViteConfig, surfaceIndexHtml, surfaceServe, surfaceDockerfile,
 } from './scaffold/surface.js'
@@ -149,8 +150,8 @@ export const clientOptions = { url: API_ORIGIN, apiPrefix: '/api' }
 `
 }
 
-export function siteViteConfig({ port = scaffoldPort('siteDev') } = {}) {
-  return surfaceViteConfig({ surface: 'site', port, about: `
+export function siteViteConfig({ port = scaffoldPort('siteDev'), hasApi = true } = {}) {
+  return surfaceViteConfig({ surface: 'site', port, pinApi: hasApi, about: `
 vite dev here is how the site is WRITTEN -- routes served as a client-routed
 app, so a page's markup can be iterated on without a build.
 
@@ -269,9 +270,9 @@ export function scaffoldSiteSurface({
   root, dir = 'site', appName = 'app', hasApi = true,
   devPort = scaffoldPort('siteDev'), servePort = scaffoldPort('siteServe'), apiPort = scaffoldPort('be'),
 } = {}) {
-  return writeAbsent(root, dir, { dirs: SITE_SURFACE_DIRS, files: [
+  const surface = writeAbsent(root, dir, { dirs: SITE_SURFACE_DIRS, files: [
     ['config/sierra.config.js',  siteSierraConfig({ hasApi })],
-    ['config/vite.config.js',    siteViteConfig({ port: devPort })],
+    ['config/vite.config.js',    siteViteConfig({ port: devPort, hasApi })],
     ['index.html',               siteIndexHtml({ appName })],
     ['src/main.js',              siteMainEntry()],
     ['src/api.js',               siteApiModule({ apiPort })],
@@ -280,6 +281,9 @@ export function scaffoldSiteSurface({
     ['deploy/serve.js',          siteServeEntry({ servePort })],
     ['deploy/Dockerfile',        siteDockerfile({ servePort })],
   ] })
+  if (!hasApi) return surface
+  const app = writeApiOrigin(root)
+  return { written: [...surface.written, ...app.written], skipped: [...surface.skipped, ...app.skipped] }
 }
 
 /**

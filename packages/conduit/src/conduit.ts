@@ -23,6 +23,7 @@ import type {
   ConduitError,
   ConduitStats,
   TargetDescriptor,
+  TargetInput,
   BrokerHandler,
   BrokerFraming,
   BrokerGap,
@@ -59,7 +60,7 @@ const RESILIENCE_FIELDS = {
 // refused at runtime as unknown.
 const DESCRIPTOR_FIELDS: Record<keyof TargetDescriptor, true> = {
   id: true, kind: true, protocol: true, address: true, auth: true,
-  encoding: true, headers: true, trace: true, pinned_cert: true,
+  encoding: true, headers: true, query: true, trace: true, pinned_cert: true,
   follow_redirects: true, address_from: true, destinations: true, origins: true,
   idempotency: true, resilience: true, readiness: true, registered_at: true, last_seen_at: true,
 }
@@ -93,6 +94,7 @@ function assertDescriptor(descriptor: TargetDescriptor): void {
     )
   }
 
+  assertQuery(descriptor)
   assertRefusal(descriptor)
   assertApiKey(descriptor)
   assertSignerParams(descriptor)
@@ -247,6 +249,21 @@ function assertPinnedCert(descriptor: TargetDescriptor): void {
     new X509Certificate(pem)
   } catch {
     throw new TypeError(`${where}: not a PEM certificate`)
+  }
+}
+
+// A number or an array here would be sent as `String(v)` and read by nobody
+// as what the author meant; a key is a name the target reads, so it is not blank.
+function assertQuery(descriptor: TargetDescriptor): void {
+  const spec = descriptor.query
+  if (spec === undefined) return
+  const where = `Target '${descriptor.id}' query`
+  if (typeof spec !== 'object' || spec === null || Array.isArray(spec)) {
+    throw new TypeError(`${where}: expected a map of parameter name to string`)
+  }
+  for (const [k, v] of Object.entries(spec)) {
+    if (k.trim() === '') throw new TypeError(`${where}: a parameter name must be non-empty`)
+    if (typeof v !== 'string') throw new TypeError(`${where}: '${k}' must be a string`)
   }
 }
 
@@ -436,7 +453,12 @@ export function createConduit(
 
   // Upsert through a read so the counters stay correct when a re-register
   // changes a target's kind or protocol.
-  async function put(descriptor: TargetDescriptor): Promise<void> {
+  async function put(input: TargetInput): Promise<TargetDescriptor> {
+    const descriptor: TargetDescriptor = {
+      ...input,
+      registered_at: input.registered_at ?? Date.now(),
+      last_seen_at:  input.last_seen_at ?? null,
+    }
     assertDescriptor(descriptor)
     // Here and not in assertDescriptor: it is a fact about the installed
     // resolver, not the descriptor. Without getFor a per-caller target would
@@ -457,6 +479,7 @@ export function createConduit(
     await store.set(descriptor)
     if (previous) countTarget(previous, -1)
     countTarget(descriptor, 1)
+    return descriptor
   }
 
   function recordResult(result: ConduitResult<unknown>, duration_ms: number) {
@@ -749,10 +772,10 @@ export function createConduit(
     }
   }
 
-  async function register(descriptor: TargetDescriptor): Promise<void> {
+  async function register(input: TargetInput): Promise<void> {
     // Every refusal is `put()`'s — a static target reaches this store through
     // the same door and must be refused by the same rules.
-    await put(descriptor)
+    const descriptor = await put(input)
     router.evict(descriptor.id)   // evict stale pooled connection
     safe('onRegistered', () => observers.onRegistered?.(descriptor))
   }

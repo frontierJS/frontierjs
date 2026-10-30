@@ -42,17 +42,16 @@ if (flag.status) {
   ])
 
   echo('')
-  echo(`  ${w.name}`)
-  echo(`  deployed: ${w.deployed_on ? new Date(w.deployed_on).toLocaleString() : 'never'}`)
+  echo(`  ${chalk.bold(w.name)}  ${chalk.dim(`·  deployed ${w.deployed_on ? new Date(w.deployed_on).toLocaleString() : 'never'}`)}`)
   const domains = w.references?.domains ?? []
   if (domains.length) {
-    echo(`\n  domains:`)
-    for (const d of domains) echo(`    ${d.hostname}`)
+    echo(`\n  ${chalk.dim('DOMAINS')}`)
+    for (const d of domains) echo(`    ${chalk.cyan(d.hostname)}`)
   }
   const bindings = version?.bindings ?? []
   if (bindings.length) {
-    echo(`\n  bindings (version ${version.number}):`)
-    for (const b of bindings) echo(`    ${b.type.padEnd(16)} ${b.name}`)
+    echo(`\n  ${chalk.dim(`BINDINGS  ·  version ${version.number}`)}`)
+    for (const b of bindings) echo(`    ${chalk.dim(b.type.padEnd(16))} ${b.name}`)
   }
   echo('')
   return
@@ -63,10 +62,13 @@ const all = await workers(profile, acct)
 if (flag.json) { echo(JSON.stringify(all, null, 2)); return }
 
 echo('')
-echo(`  ${all.length} worker(s)\n`)
+echo(`  ${chalk.bold('Workers')}  ${chalk.dim(`·  ${all.length} worker(s)`)}\n`)
+const namePad = Math.min(40, Math.max(4, ...all.map(w => w.name.length)))
+echo(chalk.dim(`  ${'NAME'.padEnd(namePad)}  UPDATED`))
 for (const w of all) {
   const updated = w.updated_on ? new Date(w.updated_on).toLocaleString() : ''
-  echo(`  ·  ${w.name.padEnd(40)} ${updated}`)
+  const name = w.name.length > namePad ? w.name.slice(0, namePad - 1) + '…' : w.name
+  echo(`  ${name.padEnd(namePad)}  ${chalk.dim(updated)}`)
 }
 echo('')
 ```

@@ -14,7 +14,7 @@
 // in both, but only the schema knew `slug` had to be unique per workspace.
 
 import { randomBytes } from 'node:crypto'
-import { createService, BadRequest, Conflict, $ } from '@frontierjs/junction'
+import { createService, BadRequest, Conflict, parseWhere, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, slugify }
@@ -55,8 +55,7 @@ export default createService({
 
   async find() {
     const { limit, offset } = getPagination()
-    const status = $.query.status as string | undefined
-    return findScoped('project', { where: { ...(status ? { status } : {}), ...await notHub(db().asSystem(), 'project') }, limit, offset })
+    return findScoped('project', { where: { ...parseWhere($.query), ...await notHub(db().asSystem(), 'project') }, limit, offset })
   },
 
   get: () => getScoped('project', 'Project'),

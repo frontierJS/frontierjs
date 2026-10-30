@@ -1,6 +1,6 @@
 <script>
   // SectionHeader.mesa
-  // Title + optional subtitle + optional trailing action area.
+  // Optional kicker + title + optional subtitle + optional trailing action area.
   // Used at the top of pages, settings sections, card groups.
   //
   // `.section-header` supplies the split layout; the heading levels and the
@@ -17,11 +17,12 @@
   //     {/snippet}
   //   </SectionHeader>
   //
-  //   <SectionHeader title="Billing" level={3} border />
+  //   <SectionHeader kicker="Settings" title="Billing" level={3} border />
 
+  export let kicker = ''      // small caps line above the title (.kicker, FJS-D253)
   export let title  = ''
   export let sub    = ''
-  export let level  = 2       // heading level — 2..6. Pick by document outline.
+  export let level  = 2       // heading level — 1..6, default 2. Pick by document outline.
   export let border = false   // bottom rule + extra padding
   export let action = null    // snippet — rendered trailing right
 
@@ -29,14 +30,16 @@
 </script>
 
 <div
-  class="section-header"
-  style:align-items="flex-start"
+  class="section-header start"
   style:border-block-end={border ? '1px solid var(--rule)' : null}
   style:padding-block-end={border ? '0.75rem' : null}
   {class}
   {...$attributes}
 >
   <div class="stack" style:gap="0.125rem" style:min-inline-size="0">
+    {#if kicker}
+      <p class="kicker" style:margin="0">{kicker}</p>
+    {/if}
     {#if title}
       <!--
         A real heading element, chosen by the caller, because the outline is

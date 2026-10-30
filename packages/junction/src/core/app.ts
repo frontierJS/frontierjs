@@ -1114,7 +1114,14 @@ export function createApp(opts: AppOptions = {}): App {
     }
   }
 
-  const crashStop = () => {
+  // A silent logger drops the crash line, and the exit below is 1: the run
+  // ends red naming nothing (`FJS-747`). stderr is the floor under the logger.
+  const crashStop = (what: string, err: unknown) => {
+    logger.error(what, err as Error)
+    if (logger.level === 'silent') {
+      const detail = err instanceof Error ? (err.stack ?? err.message) : String(err)
+      process.stderr.write(`${what}\n${detail}\n`)
+    }
     const ms = config.shutdown?.timeout ?? 15_000
     withDeadline(app.stop(), ms, () => {})
       .then(() => process.exit(1))
@@ -2278,15 +2285,13 @@ export function createApp(opts: AppOptions = {}): App {
         if (config.shutdown?.crashHandlers !== false) {
           if (process.listenerCount('unhandledRejection') === 0) {
             _rejectionHandler = (reason: unknown) => {
-              logger.error('[App] Unhandled rejection — shutting down', reason as Error)
-              crashStop()
+              crashStop('[App] Unhandled rejection — shutting down', reason)
             }
             process.on('unhandledRejection', _rejectionHandler)
           }
           if (process.listenerCount('uncaughtException') === 0) {
             _exceptionHandler = (err: Error) => {
-              logger.error('[App] Uncaught exception — shutting down', err)
-              crashStop()
+              crashStop('[App] Uncaught exception — shutting down', err)
             }
             process.on('uncaughtException', _exceptionHandler)
           }

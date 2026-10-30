@@ -13,7 +13,7 @@
 // and reported success both times.
 
 import { describe, test, expect, beforeAll } from 'bun:test'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defineNotification } from '../define.ts'
@@ -99,6 +99,16 @@ describe('the loader — the file name is the type', () => {
       mkdirSync(join(root, 'node_modules/x'), { recursive: true })
       writeFileSync(join(root, 'node_modules/x/Never.notification.ts'), 'throw new Error("scanned node_modules")\n')
       expect((await loadNotifications(root)).size).toBe(0)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  test('follows a symlinked directory under the app root (FJS-3540)', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'fjs-notif-'))
+    try {
+      symlinkSync(FIXTURES, join(root, 'notifications'), 'dir')
+      const reg = await loadNotifications(root)
+      expect(reg.has('WelcomePerson')).toBe(true)
+      expect(reg.size).toBe((await loadNotifications(FIXTURES)).size)
     } finally { rmSync(root, { recursive: true, force: true }) }
   })
 

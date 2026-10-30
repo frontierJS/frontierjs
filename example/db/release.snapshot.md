@@ -45,7 +45,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `StockMovementKind` | `adjusted` · `damaged` · `received` · `returned` · `sold` |
 | `SubscriptionStatus` | `active` · `cancelled` · `pastDue` · `trialing` |
 | `UserKind` | `bot` · `peer` · `user` |
-| `VerificationPurpose` | `emailChange` · `emailVerify` · `magicLink` · `oauthLink` · `passwordReset` · `registration` |
+| `VerificationPurpose` | `emailChange` · `emailVerify` · `invitation` · `magicLink` · `oauthLink` · `passwordReset` · `registration` |
 
 ## Value sets
 

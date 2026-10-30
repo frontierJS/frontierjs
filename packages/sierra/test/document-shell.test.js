@@ -144,8 +144,12 @@ async function fixture() {
   await writeFile(join(root, 'src/routes/index.mesa'), '<h1>x</h1>\n', 'utf8')
 }
 
-async function devShell(target, document) {
+async function devShell(target, document, files = {}) {
   await fixture()
+  for (const [name, source] of Object.entries(files)) {
+    await mkdir(dirname(join(root, name)), { recursive: true })
+    await writeFile(join(root, name), source, 'utf8')
+  }
   const server = await createServer(createSierraViteConfig({
     target,
     document,
@@ -181,6 +185,23 @@ describe('the dev server', () => {
   test('an spa\'s shell still carries lang and the skip link', async () => {
     const html = await devShell('spa', undefined)
     expect(html).toContain('<html lang="en">')
+    expect(html).toMatch(/<body>\s*<a class="skip-link" href="#main">/)
+  })
+
+  // FJS-3556: a layout renders at runtime, so the shell cannot see its link in the HTML.
+  test('an spa whose layout writes its own skip link gets no second one from the shell', async () => {
+    const html = await devShell('spa', undefined, {
+      'src/routes/_module.mesa': '<a class="skip-link" href="#top">Aller au contenu</a>\n<main id="top"><slot /></main>\n<style>.skip-link { left: 0 }</style>\n',
+    })
+    expect(html).toContain('<html lang="en">')
+    expect(html).not.toContain('class="skip-link"')
+    expect(html).not.toContain('sierra-skip-link')
+  })
+
+  test('a skip-link rule in a stylesheet is not a skip link', async () => {
+    const html = await devShell('spa', undefined, {
+      'src/routes/_module.mesa': '<main><slot /></main>\n<style>.skip-link { left: 0 }</style>\n',
+    })
     expect(html).toMatch(/<body>\s*<a class="skip-link" href="#main">/)
   })
 })

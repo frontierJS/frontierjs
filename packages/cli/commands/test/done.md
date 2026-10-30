@@ -28,14 +28,15 @@ if (flag.json) {
 
 echo('')
 if (!report.changed) {
-  echo('  fli test:done — nothing changed against HEAD')
+  echo(`  ${chalk.bold('fli test:done')}  ${chalk.dim('·  nothing changed against HEAD')}`)
   echo('')
   return
 }
 
-echo(`  fli test:done — ${report.changed} file(s) changed · ${report.unfinished} unfinished\n`)
+const unfinished = report.unfinished ? chalk.yellow(`${report.unfinished} unfinished`) : chalk.green('0 unfinished')
+echo(`  ${chalk.bold('fli test:done')}  ${chalk.dim(`·  ${report.changed} file(s) changed  ·`)} ${unfinished}\n`)
 for (const item of report.items) {
-  echo(`  ${item.ok ? '✓' : '✗'}  ${item.check.padEnd(15)} ${item.message}`)
+  echo(`  ${item.ok ? chalk.green('✓') : chalk.red('✗')}  ${item.check.padEnd(15)} ${item.ok ? chalk.dim(item.message) : item.message}`)
 }
 
 if (report.drives.length) {
@@ -44,14 +45,14 @@ if (report.drives.length) {
   const named = report.drives.filter(d => d.tier !== 'package')
   const loose = report.drives.filter(d => d.tier === 'package')
   echo('')
-  echo('  run before calling it proved:')
+  echo(`  ${chalk.bold('run before calling it proved:')}`)
   for (const d of named) {
-    echo(`    ${d.changed}   (matched by ${d.tier}${d.on.length ? `: ${d.on.slice(0, 3).join(', ')}` : ''})`)
-    for (const r of d.run) echo(`      ${r}`)
+    echo(`    ${d.changed}   ${chalk.dim(`(matched by ${d.tier}${d.on.length ? `: ${d.on.slice(0, 3).join(', ')}` : ''})`)}`)
+    for (const r of d.run) echo(`      ${chalk.cyan(r)}`)
   }
   if (loose.length) {
     const pkgs = [...new Set(loose.flatMap(d => d.on))].join(', ')
-    echo(`    + ${loose.length} row(s) that name only the package (${pkgs}) — \`fli proves\` lists them`)
+    echo(chalk.dim(`    + ${loose.length} row(s) that name only the package (${pkgs}) — \`fli proves\` lists them`))
   }
 }
 echo('')

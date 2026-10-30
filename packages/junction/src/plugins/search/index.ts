@@ -57,7 +57,9 @@ export function searchService({ models, name = 'search' }: SearchServiceOptions)
   return createService({
     name,
     model:         null,
-    methods:       ['find'],
+    // Level 0 states that no level grades this verb: each hit is graded by its
+    // own model's row policies. Undeclared, mcp reports the tool as graded by nothing.
+    methods:       [{ method: 'find', gate: 0 }],
     reservedQuery: KEYS,
 
     async find(ctx: ServiceContext) {

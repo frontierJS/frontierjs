@@ -18,7 +18,7 @@
 // Verified in the Data realm rebuild by planting an SSH key through the real
 // client: 0 occurrences in `strings bc.db`, 0 in the audit trail.
 
-import { createService, BadRequest, $ } from '@frontierjs/junction'
+import { createService, BadRequest, parseWhere, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, actor }
@@ -87,9 +87,8 @@ export default createService({
 
   async find() {
     const { limit, offset } = getPagination()
-    const kind = $.query.kind as string | undefined
     return findScoped('secret', {
-      where:   { ...(kind ? { kind } : {}) },
+      where:   parseWhere($.query),
       orderBy: { name: 'asc' },
       limit, offset,
     })

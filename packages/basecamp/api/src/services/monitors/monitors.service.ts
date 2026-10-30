@@ -10,7 +10,7 @@
 // caller can set (`@system`), and `status` moves only by `@@transitions`.
 // `MonitorCheck` and `MonitorEvent` are written by the system and read here.
 
-import { createService, NotFound, Conflict, $ } from '@frontierjs/junction'
+import { createService, NotFound, Conflict, parseWhere, $ } from '@frontierjs/junction'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
@@ -59,8 +59,7 @@ export default createService({
 
   async find() {
     const { limit, offset } = getPagination()
-    const status = $.query.status as string | undefined
-    return findScoped('monitor', { where: status ? { status } : {}, limit, offset })
+    return findScoped('monitor', { where: parseWhere($.query), limit, offset })
   },
 
   async get() {

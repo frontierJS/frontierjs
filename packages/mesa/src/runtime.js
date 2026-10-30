@@ -50,6 +50,14 @@ export function isBrowserClient() {
 export function isClient() {
   return _isClient
 }
+// Children are disposed before the owner's cleanups run, so a cleanup that
+// reads a memo its own component derived reads a disposed one by design.
+let _tearing = 0
+function _runCleanups(list) {
+  _tearing++
+  for (let i = list.length - 1; i >= 0; i--) _safeCall(list[i])
+  _tearing--
+}
 function _safeCall(fn) {
   try {
     return fn?.()
@@ -600,7 +608,7 @@ function _makeNode(fn) {
         _disposeNode(child, false)
         this._children.splice(i, 1)
       }
-      for (let i = this._cleanups.length - 1; i >= 0; i--) _safeCall(this._cleanups[i])
+      _runCleanups(this._cleanups)
       this._cleanups = []
       for (const sig of this._deps) sig._subs.delete(this)
       this._deps.clear()
@@ -649,7 +657,7 @@ function _disposeNode(node, removeFromOwner) {
   for (const child of node._children) _disposeNode(child, false)
   node._children = []
   // This node's cleanups run after all children are disposed, LIFO.
-  for (let i = node._cleanups.length - 1; i >= 0; i--) _safeCall(node._cleanups[i])
+  _runCleanups(node._cleanups)
   node._cleanups = []
   for (const sig of node._deps) sig._subs.delete(node)
   node._deps.clear()
@@ -833,7 +841,13 @@ export function createMemo(fn, opts) {
   if (_owner) _owner._children.push(memoNode)
   const memoSignal = { _subs: ownSubs, _node: memoNode }
   memoNode._out = memoSignal
+  let warnedDisposed = false
   const read = () => {
+    // A clean memo past its owner's teardown serves its last value, looking live.
+    if (memoNode._disposed && !warnedDisposed && !_tearing) {
+      warnedDisposed = true
+      console.warn('[Mesa] memo read after its owner was disposed; it serves a stale value')
+    }
     if (_listener) {
       ownSubs.add(_listener)
       _listener._deps.add(memoSignal)
@@ -1008,20 +1022,7 @@ function _runMounts(rootNode, mountList) {
   return !rootNode._disposed
 }
 
-export function createContext(defaultValue) {
-  return { id: Symbol('mesa.ctx'), defaultValue }
-}
 const _contextStack = []
-export function provideContext(ctx, value) {
-  const map = _contextStack[_contextStack.length - 1]
-  if (map) map.set(ctx.id, value)
-}
-export function useContext(ctx) {
-  for (let i = _contextStack.length - 1; i >= 0; i--) {
-    if (_contextStack[i].has(ctx.id)) return _contextStack[i].get(ctx.id)
-  }
-  return ctx.defaultValue
-}
 
 /**
  * context.key = expr  — provide a reactive getter for `key` in this component's
@@ -1060,7 +1061,9 @@ export function contextRead(key) {
   return null
 }
 
-export const context = { use: useContext, provide: provideContext }
+// The imperative `$context.use(key)` / `.provide(key, getter)` — the same
+// string-keyed slots `$context.key` compiles to.
+export const context = { use: contextRead, provide: contextProvide }
 
 /**
  * Capture the context stack as it stands NOW, for reinstating later.
@@ -4010,6 +4013,7 @@ export function boundaryBlock(anchor, getStates, contentBlock, pendingBlock, fai
   let contentMounted = false
   let startMarker  = null   // comment delimiting the mounted branch, owned here
   let branchNode   = null   // owner node for the mounted branch's effects
+  let pendingUp    = false  // the mounted branch is the pending one
 
   const catches = !!failedBlock && _isClient
   const NONE = {}
@@ -4081,6 +4085,7 @@ export function boundaryBlock(anchor, getStates, contentBlock, pendingBlock, fai
   // anything they read, rendering into DOM that had already been detached, for
   // the life of the page, one more set per swap.
   const _mountBranch = (outerOwner, factory, ...args) => {
+    pendingUp = false
     if (branchNode) {
       _disposeNode(branchNode, true)
       branchNode = null
@@ -4124,7 +4129,10 @@ export function boundaryBlock(anchor, getStates, contentBlock, pendingBlock, fai
     }
     // First-load gate — show pending while any state is still loading
     if (states.some(s => s.loading)) {
+      // A rebuild would discard the pending branch's DOM state (a focused input)
+      if (pendingUp && branchNode) return
       _mountBranch(outerOwner, pendingBlock)
+      pendingUp = !!pendingBlock
       return
     }
     // All resolved — mount content once and leave it
@@ -4194,7 +4202,8 @@ export function unclaimedContent(props, declared, componentName, renders = []) {
     console.warn(
       `[Mesa] <${componentName}> was given ${name === 'children' ? 'children' : `content for "${name}"`} ` +
       `and renders no {@render ${name}}, so it has been dropped. ` +
-      (renders.length ? `It renders: ${renders.join(', ')}.` : 'It renders no content at all — pass it as a prop.')
+      (renders.length ? `It renders: ${renders.join(', ')}.` : 'It renders no content at all — pass it as a prop.') +
+      (declared.length ? ` It takes: ${declared.join(', ')}.` : '')
     )
   }
 }

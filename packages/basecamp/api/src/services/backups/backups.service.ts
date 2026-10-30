@@ -24,7 +24,7 @@
 // at the dispatch, and who asked is kept where it can be read: `requestedBy` on
 // the row (`FJS-384`).
 
-import { createService, BadRequest, Conflict, NotFound, $ } from '@frontierjs/junction'
+import { createService, BadRequest, Conflict, NotFound, parseWhere, $ } from '@frontierjs/junction'
 import { requireSystemAdmin, getPagination }                from '../../core/hooks.ts'
 import { db, actor, callerOrder, callerSelect }               from '../../core/resource.ts'
 import { requireHubAppId }                                  from '../../domain/host/host-machine.ts'
@@ -57,14 +57,13 @@ export default createService({
 
   async find() {
     const { limit, offset } = getPagination()
-    const status = $.query.status as string | undefined
     // No hub App yet is no archive yet, not a refusal: the screen lists before
     // anyone has pressed Use this Basecamp server.
     const order  = callerOrder({ createdAt: 'desc' }), select = callerSelect()
     const appId  = (await db().asSystem().hubConfig.findFirst({ where: { id: 'hub' }, select: { appId: true } }))?.appId
     if (!appId) return { total: 0, limit, offset, data: [] }
     const { rows, total } = await db().asSystem().appBackup.findManyAndCount({
-      where:   status ? { appId, status } : { appId },
+      where:   { ...parseWhere($.query), appId },
       limit, offset, orderBy: order, ...select,
     })
     return { total, limit, offset, data: rows }

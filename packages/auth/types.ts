@@ -73,6 +73,11 @@ export interface LitestoneAuthOptions {
   // How long a password reset token lives. Default: '1 hour'
   passwordResetTtl?: string
 
+  // How long an operator's invitation link lives (`createInvitation`). It is a
+  // person's first password and is forwarded by hand, so days, not the reset
+  // window. Default: '7 days'
+  invitationTtl?: string
+
   // How long an email verification token lives. Default: '24 hours'
   emailVerificationTtl?: string
 

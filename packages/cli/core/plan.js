@@ -35,6 +35,7 @@ import { paperQuestions }     from './decisions.js'
 
 const PHASE     = /^#{2,4}\s+Phase\s+(\d+[a-z]?)\s*(?:[—–:-]\s*(.*))?$/i
 const STEP      = /^- \[([ x~])\]\s+(\d+\.\d+[a-z]?)\s+(.*)$/
+const OPEN_BOX   = /^- \[ \]\s+(.*)$/
 const GOAL      = /^\*{0,2}Goal:?\*{0,2}:?\s*(.*)$/i
 const DONE_WHEN = /^\*{0,2}Done when:?\*{0,2}:?\s*(.*)$/i
 const DONE_PARA = /^\*{0,2}Done\s+(\d{4}-\d{2}-\d{2}|[A-Z][a-z]+ \d{1,2}(?:, \d{4})?)\.?\*{0,2}/
@@ -42,15 +43,17 @@ const DROPPED   = /\s[—–-]+\s*dropped:?\s*(.*)$/i
 const BOX       = { ' ': 'open', 'x': 'done', '~': 'dropped' }
 
 /**
- * Parse a plan. Returns `{ file, title, status, phases, steps, next, questions,
+ * Parse a plan. Returns `{ file, title, status, phases, steps, stray, next, questions,
  * blocking }` — `phases` is `[{ n, title, line, goal, doneWhen, steps, done }]`,
- * `steps` the same steps flat, `next` the first open step or null, `questions`
- * every `Q` bullet (`decisions.js`'s shape) and `blocking` the ones not ruled.
+ * `steps` the same steps flat, `next` the first open step or null, `stray` the
+ * open boxes outside the shape (`[{ line, text }]`), `questions` every `Q`
+ * bullet (`decisions.js`'s shape) and `blocking` the ones not ruled.
  */
 export function parsePlan(text, { file = 'PLAN.md' } = {}) {
   const meta   = extractFrontmatter(text, file)
   const lines  = text.split('\n')
   const phases = []
+  const stray  = []
   let title    = null
   let phase    = null
   let step     = null
@@ -74,9 +77,13 @@ export function parsePlan(text, { file = 'PLAN.md' } = {}) {
     }
     // A heading of any other kind ends the phase: its steps are over.
     if (/^#{1,6}\s/.test(line)) { phase = null; step = null; last = null; return }
+    const st = phase ? line.match(STEP) : null
+    // An open box that is no step is a task the plan cannot place; saying nothing
+    // would read as "every box is closed".
+    const open = !st && line.match(OPEN_BOX)
+    if (open) stray.push({ line: i + 1, text: open[1].trim() })
     if (!phase) return
 
-    const st = line.match(STEP)
     if (st) {
       const box     = BOX[st[1]]
       const dropped = box === 'dropped' ? st[3].match(DROPPED) : null
@@ -123,6 +130,7 @@ export function parsePlan(text, { file = 'PLAN.md' } = {}) {
     status:    meta.status || null,
     phases,
     steps,
+    stray,
     next:      steps.find(s => s.box === 'open') ?? null,
     questions,
     blocking:  questions.filter(q => q.state !== 'ruled'),
@@ -160,6 +168,14 @@ const MARK = { open: '☐', done: '☑', dropped: '⊘' }
 
 const plain = (strs, ...vals) => strs.reduce((out, str, i) => out + str + (i < vals.length ? vals[i] : ''), '').replace(/\{[a-z.]+ ([^{}]*)\}/g, '$1')
 
+/** Open boxes the parse could not place, as rows; empty when there are none. */
+function strayRows(plan, c) {
+  if (!plan.stray?.length) return []
+  const rows = [c`  {yellow ${plan.stray.length} open box${plan.stray.length === 1 ? '' : 'es'} not in the plan's shape} {dim (a \`### Phase N\` heading and an \`N.M\` number)}`]
+  for (const s of plan.stray) rows.push(c`    ☐ {dim line ${s.line}} ${s.text}`)
+  return rows
+}
+
 /**
  * The plan as the rows a session needs to act: the title, one line a phase,
  * the next step with its findings, and the questions that block it. A plan is
@@ -184,7 +200,9 @@ export function renderNext(plan, chalk) {
     rows.push(c`  {cyan next} ${MARK.open} {bold ${next.id}} ${next.title}`)
     for (const n of next.notes) rows.push(c`        {dim ${n}}`)
     for (const q of plan.blocking) rows.push(c`  {yellow blocked by} ${q.state === 'decidable' ? '?' : '…'} ${q.question} {dim ${q.id}}`)
-  } else rows.push(c`  {green every box is closed}`)
+  } else if (!plan.stray?.length) rows.push(c`  {green every box is closed}`)
+  const stray = strayRows(plan, c)
+  if (stray.length) rows.push(...(next ? [''] : []), ...stray)
   rows.push('', c`  {dim fli plan ${plan.file} --all prints every step}`)
   return rows
 }
@@ -221,8 +239,8 @@ export function renderPlan(plan, chalk) {
     }
     rows.push('')
   }
-  rows.push(plan.next
+  rows.push(...strayRows(plan, c), plan.next
     ? c`  {cyan next} ${plan.next.id} ${plan.next.title}${plan.blocking.length ? c` {yellow — blocked by ${plan.blocking.length} open question${plan.blocking.length === 1 ? '' : 's'}}` : ''}`
-    : c`  {green every box is closed}`)
+    : plan.stray?.length ? '' : c`  {green every box is closed}`)
   return rows
 }

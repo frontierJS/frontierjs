@@ -16,6 +16,18 @@ import {
   modelResolver, spanFrom, models,
 } from './lib.js'
 
+// True when a `methods: [...]` array states `gate:` on every entry. A count of
+// `method:` keys against `gate:` keys, so one ungated entry fails it.
+function everyMethodGated(code) {
+  const open = code.match(/\bmethods\s*:\s*\[/)
+  if (!open) return false
+  let depth = 1, i = open.index + open[0].length
+  for (; i < code.length && depth; i++) depth += code[i] === '[' ? 1 : code[i] === ']' ? -1 : 0
+  const entries = code.slice(open.index + open[0].length, i)
+  const methods = (entries.match(/\bmethod\s*:/g) || []).length
+  return methods > 0 && (entries.match(/\bgate\s*:/g) || []).length === methods
+}
+
 export const CHECKS = {
 
   'surface-config': ({ root }) => {
@@ -61,7 +73,7 @@ export const CHECKS = {
           ? `${surface}/${stray[0]} sits at the surface root; configuration lives in ` +
             `${surface}/config/. Loaders resolve the DIRECTORY, so a config file here is read by ` +
             `nothing and the surface boots on defaults looking configured.`
-          : `${surface}/ has no config/. Configuration lives there (Invariant 3) and the ` +
+          : `${surface}/ has no config/. Configuration lives there and the ` +
             `framework looks there unprompted — junction's default is ${surface}/config/ — so an ` +
             `absent directory is not "this surface declares nothing", it is a path the loader ` +
             `resolves to nowhere. Nothing fails when it is missing, which is why this is a rule: ` +
@@ -194,11 +206,12 @@ export const CHECKS = {
         if (name === null || declared.has(name.toLowerCase())) continue
         findings.push({
           file: path, line: lineOf(code, m.index),
-          message: `'${name}' is set per call and is not in the API's http.callHeaders. Over HTTP it is ` +
+          message: `'${name}' is set per call and is not in the API's callHeaders. Over HTTP it is ` +
                    `an ordinary header and this works; a WebSocket frame carries none of its own, so the ` +
                    `server merges only declared names and the header is absent the moment the socket ` +
                    `connects — an empty list with a 200, or a 404, depending on what reads it. Declare ` +
-                   `it: http: { callHeaders: ['${name}'] }.`,
+                   `it in junction.config.js as middleware: { callHeaders: ['${name}'] } ` +
+                   `(createApp's config spells the same key http: { callHeaders }).`,
         })
       }
     }
@@ -206,10 +219,10 @@ export const CHECKS = {
   },
 
   // Invariant 2, at the seam it was written for. A service resolves its model by
-  // NAME — the literal spelling, then the singular of it — and a miss is not an
-  // error: getTable throws, but the two that grade the caller fail OPEN. No
-  // @@gate is found, so a gated model is served to anyone; no schema is found,
-  // so autoValidate validates nothing.
+  // NAME — the literal spelling, then the singular of it — and a miss serves
+  // nothing: getTable throws, so each CRUD call answers 500 naming the model
+  // (FJS-1252). What goes ungraded is a custom method, which finds no @@gate to
+  // take as its floor, and autoValidate, which finds no schema.
   //
   // The name judged is the one junction's registry gives the file —
   // `product-variants.service.ts` registers `productVariants` — and the
@@ -239,10 +252,9 @@ export const CHECKS = {
         if (resolves(stated[1])) continue
         findings.push({
           file: path, line: lineOf(code, stated.index),
-          message: `model: '${stated[1]}' names no model in db/schema.lite. The lookup misses rather ` +
-                   `than throws and the two things that grade a caller fail open: no @@gate is found, ` +
-                   `so a gated model is served to anyone, and no schema is found, so autoValidate ` +
-                   `validates nothing.`,
+          message: `model: '${stated[1]}' names no model in db/schema.lite, so every CRUD call on ` +
+                   `this service answers 500 naming the model. A custom method on it has no @@gate ` +
+                   `as its floor and autoValidate has no schema to check.`,
         })
         continue
       }
@@ -259,6 +271,9 @@ export const CHECKS = {
       // `model: null` is junction's word for "there is none" (FJS-D628): the
       // derived layer is the method gates alone, so there is no @@gate to miss.
       if (/\bmodel\s*:\s*null\b/.test(code)) continue
+      // Over no model a declared `gate:` on every method is the whole grade
+      // (FJS-D408), so there is no @@gate to miss.
+      if (everyMethodGated(code)) continue
       if (resolves(service)) continue
 
       // No edit: a model the schema holds under this name would have resolved,
@@ -266,9 +281,9 @@ export const CHECKS = {
       findings.push({
         file: path, line: lineOf(code, call.index),
         message: `createService with no model:, and '${service}' resolves to none — it singularizes ` +
-                 `to '${singularize(service)}', and no model has that accessor. The miss is silent and ` +
-                 `fails open: the @@gate is not found and the model is served to anyone. State it — ` +
-                 `model: '<Model>', naming one in db/schema.lite, or model: null if there is none.`,
+                 `to '${singularize(service)}', and no model has that accessor. Every CRUD call on it ` +
+                 `answers 500 naming the model, and no @@gate or field schema is found to grade it. ` +
+                 `State it — model: '<Model>', naming one in db/schema.lite, or model: null if there is none.`,
       })
     }
     return { findings }

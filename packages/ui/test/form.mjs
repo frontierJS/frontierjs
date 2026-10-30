@@ -335,6 +335,40 @@ await check(
   }
 }
 
+// ── A disabled form asks for no rows nobody can pick (FJS-1986) ─────────────
+//
+// A caller who cannot create is shown the form disabled, and the same caller
+// cannot read the related model: the fetch could only come back refused and
+// log the refusal. A held value still needs its label, so only a field with
+// nothing in it is skipped.
+{
+  const asked = []
+  const FK = {
+    context: { model: 'Action', service: 'actions', idField: 'id' },
+    fields: { webhookId: { type: 'integer', title: 'Webhook',
+                           references: { model: 'Webhook', field: 'id', relation: 'webhook' } } },
+    make: () => ({ webhookId: null }),
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    service: {},
+    options: (name) => { asked.push(name); return Promise.resolve({ options: [], total: 0, truncated: false }) },
+  }
+  FK.formFields = (opts) => formFieldList(FK.fields, opts)
+  const src = (disabled) => `<script>
+     import Form from '../forms/Form.mesa'
+     import Select from '../forms/Select.mesa'
+     export let resource
+   </script>
+   <Form {resource} ${disabled ? 'disabled' : ''}>
+     <Select name="webhookId" />
+   </Form>`
+  asked.length = 0
+  await check('a disabled form fetches no options for an empty field', src(true), { resource: FK },
+    { 'resource.options was never called': () => asked.length === 0 })
+  asked.length = 0
+  await check('an enabled form still fetches them', src(false), { resource: FK },
+    { 'resource.options was called': () => asked.length === 1 })
+}
+
 // ── The error sources merge in one order (FJS-D457) ─────────────────────────
 //
 // A control's own report is about the box on screen now, so it merges last over
@@ -623,6 +657,23 @@ await check(
   },
 )
 clearRegistrations()
+
+// FJS-2067: a Form that always carried `stack` put a caller's `cluster` beside
+// it, and `.stack`'s column direction won in silence.
+await check(
+  'a caller layout term replaces the form\'s own stack',
+  `<script>
+     import Form from '../forms/Form.mesa'
+     export let resource
+   </script>
+   <Form {resource} class="cluster"><p>x</p></Form>
+   <Form {resource} class="card"><p>x</p></Form>`,
+  { resource: RESOURCE },
+  {
+    'the row form is a cluster alone': has(/<form\b[^>]*class="cluster"/),
+    'a styling-only class keeps the stack': has(/<form\b[^>]*class="stack card"/),
+  },
+)
 
 console.log(
   failed

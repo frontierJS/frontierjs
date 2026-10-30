@@ -108,6 +108,17 @@ export interface StaticOptions {
    * root costs a photograph nothing.
    */
   untrusted?: boolean
+
+  /**
+   * Answer a document request for a path that names no file with the index.
+   *
+   * A client-routed app is reloaded on `/admin/items`, which is a route in the
+   * browser and nothing on disk — behind nginx `try_files` hands it the shell,
+   * and with no proxy in front it was a 404. Only a request that asks for HTML
+   * and names no extension gets the shell: a missing `/assets/app.js` or a
+   * `fetch` for JSON stays a 404 rather than an HTML page parsed as either.
+   */
+  spa?: boolean
 }
 
 export async function serveStatic(
@@ -139,7 +150,11 @@ export async function serveStatic(
   // Resolve file via Bun — throws if not found
   const file = Bun.file(filePath)
   const exists = await file.exists()
-  if (!exists) return null  // let router handle 404
+  if (!exists) {
+    if (opts.spa && !extname(safe) && req.headers.get('accept')?.includes('text/html'))
+      return serveStatic(req, '/', { ...opts, spa: false })
+    return null  // let router handle 404
+  }
 
   // A path that stays inside the root is not the same as a FILE that does.
   // `sanitizePath` refuses `..` and a NUL byte, which is the whole of what a

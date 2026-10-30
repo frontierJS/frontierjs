@@ -78,3 +78,46 @@ function declares(text, name) {
   return new RegExp(`^[ \\t]*${name}[ \\t]*=`, 'm').test(text)
 }
 
+
+export const PROVIDER = 'FILES_PROVIDER'
+
+/**
+ * `Model.field` for every File column in a schema's text -- `File`, `File?` and
+ * `File[]`; a `//` comment is not a column.
+ *
+ * @returns {string[]}
+ */
+export function fileColumns(schemaText) {
+  const out = []
+  let model = null
+  for (const raw of schemaText.split('\n')) {
+    const line = raw.replace(/\/\/.*$/, '')
+    const open = line.match(/^\s*model\s+(\w+)/)
+    if (open) { model = open[1]; continue }
+    if (/^\s*}/.test(line)) { model = null; continue }
+    const col = model && line.match(/^\s*(\w+)\s+File(\?|\[\])?(\s|$)/)
+    if (col) out.push(`${model}.${col[1]}`)
+  }
+  return out
+}
+
+/**
+ * The warning a deploy owes an app with File columns whose server env leaves
+ * FILES_PROVIDER unset (FJS-D1549), or null. An unbound provider is not refused:
+ * the client stores under `db/files` anyway, so the note is what makes that
+ * default a choice rather than a surprise. Set, in `env` text or in `set` (the
+ * keys a secrets directory or a deploy configuration supplies), silences it.
+ *
+ * @param {{ columns: string[], env: string, dir: string, set?: string[] }} a
+ * @returns {string|null}
+ */
+export function filesProviderNote({ columns, env, dir, set = [] }) {
+  if (!columns.length || set.includes(PROVIDER) || envValue(env, PROVIDER)) return null
+  return [
+    `${PROVIDER} is not set, and the schema has File columns: ${columns.join(', ')}`,
+    `  Uploads are stored on the box under ${dir}, beside the database, and served by the API.`,
+    `  Set it to say so on purpose, or point at object storage:`,
+    `    ${PROVIDER}=local`,
+    `    ${PROVIDER}=r2|s3  with FILES_BUCKET, FILES_KEY and FILES_SECRET (and FILES_ENDPOINT for r2)`,
+  ].join('\n')
+}

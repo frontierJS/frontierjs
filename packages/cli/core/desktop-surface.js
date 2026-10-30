@@ -47,7 +47,7 @@ import { encodePng }                            from './png.js'
 import { frontmatterValue }                     from './compiler.js'
 import { portAnswering }                        from './probe.js'
 import { appPorts, describeProcess, pidsOnPort, processCwd } from './ports.js'
-import { API_ORIGIN_MODULE }                    from './app-config.js'
+import { writeApiOrigin }                      from './app-config.js'
 import { scaffoldPort, writeAbsent, viteScript, surfaceViteConfig, surfaceIndexHtml } from './scaffold/surface.js'
 
 // ─── names ────────────────────────────────────────────────────────────────────
@@ -496,7 +496,7 @@ export function scaffoldDesktopSurface({
   // The app's, not this surface's: every surface's config reads the API port
   // through it, so a second checkout's FRONTIER_PORT_BE reaches the build.
   if (!hasApi) return surface
-  const app = writeAbsent(root, '', { files: [['config/api-origin.js', API_ORIGIN_MODULE]] })
+  const app = writeApiOrigin(root)
   return { written: [...surface.written, ...app.written], skipped: [...surface.skipped, ...app.skipped] }
 }
 

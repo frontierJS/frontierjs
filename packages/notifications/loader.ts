@@ -50,7 +50,9 @@ async function findFiles(dir: string): Promise<string[]> {
   try {
     // scan() throws when the directory is not there.
     const glob = new Bun.Glob(`**/*${SUFFIX}`)
-    for await (const f of glob.scan({ cwd: dir, absolute: false }))
+    // followSymlinks: a test root whose notifications/ links to the app's
+    // loads nothing otherwise, and every send then throws 'no type'.
+    for await (const f of glob.scan({ cwd: dir, absolute: false, followSymlinks: true }))
       if (!f.split(sep).includes('node_modules')) out.push(resolve(dir, f))
   } catch {
     return []

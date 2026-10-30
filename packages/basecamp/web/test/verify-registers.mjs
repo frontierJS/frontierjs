@@ -328,7 +328,19 @@ async function decideScreen() {
 
   // A real touch drag: touch-action pan-y hands the horizontal move to the card.
   const swipe = async (by) => {
-    const box = await evaluate(`(() => { const r = document.getElementById('decide-card').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + 60 } })()`)
+    // The card sits below the screen's error banner, and a press that starts on
+    // a button is the button's, never a drag: scroll it up and start on bare card.
+    const box = await evaluate(`(() => {
+      const card = document.getElementById('decide-card')
+      card.scrollIntoView({ block: 'start', behavior: 'instant' })
+      const r = card.getBoundingClientRect()
+      const x = r.left + r.width / 2
+      for (let y = r.top + 8; y < Math.min(r.bottom, innerHeight) - 8; y += 8) {
+        const hit = document.elementFromPoint(x, y)
+        if (hit && card.contains(hit) && !hit.closest('button, a, input, textarea, select, summary, form')) return { x, y }
+      }
+      return { x, y: r.top + 8 }
+    })()`)
     await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x, y: box.y }] })
     for (let i = 1; i <= 8; i++) {
       await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: box.x + by * i / 8, y: box.y + i }] })

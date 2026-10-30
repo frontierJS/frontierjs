@@ -393,6 +393,13 @@ describe('the scaffold verification link lands on a page fli new writes', () => 
     expect(hits).toEqual([])
   })
 
+  // FJS-3570 — the refusal for a missing audit block named no driver, and a block
+  // written to its words (plain sqlite) failed the schema push on @@trail(audit).
+  test('auth:install tells an app with no audit block to declare driver trail', async () => {
+    const text = await Bun.file(join(CLI, 'commands/auth/install.md')).text()
+    expect(text).toContain('database audit { path "./db/audit/" driver trail')
+  })
+
   // FJS-3205 / FJS-D1311 — a token in the query string is read by the analytics
   // tag from location.href; a fragment never leaves the browser.
   test('no link carries the token in the query, and both token pages read the fragment', async () => {
