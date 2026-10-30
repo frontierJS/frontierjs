@@ -484,7 +484,10 @@ title: Decide
 </div>
 
 <style>
-  .decide { max-inline-size: 40rem; margin-inline: auto; padding-block-end: var(--space-sm); }
+  .decide {
+    --decide-letter-size: 2rem;
+    --decide-action-size: 3rem;
+    max-inline-size: var(--measure, 64ch); margin-inline: auto; padding-block-end: var(--space-sm); }
   .decide-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-sm); }
 
   .decide-file { display: grid; gap: var(--space-3xs); }
@@ -530,7 +533,7 @@ title: Decide
   .decide-options { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-xs); }
   .decide-option {
     display: grid;
-    grid-template-columns: 2rem 1fr;
+    grid-template-columns: var(--decide-letter-size) 1fr;
     gap: var(--space-xs);
     align-items: start;
     padding: var(--space-xs) var(--space-sm);
@@ -542,8 +545,8 @@ title: Decide
   .decide-letter {
     display: grid;
     place-items: center;
-    inline-size: 2rem;
-    block-size: 2rem;
+    inline-size: var(--decide-letter-size);
+    block-size: var(--decide-letter-size);
     border: var(--border-width) solid var(--rule-strong);
     border-radius: var(--pill-radius);
     font-weight: 600;
@@ -568,7 +571,7 @@ title: Decide
     border-block-start: var(--border-width) solid var(--rule);
   }
   .decide-actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
-  .decide-actions :global(.btn) { flex: 1; min-block-size: 3rem; justify-content: center; }
+  .decide-actions :global(.btn) { flex: 1; min-block-size: var(--decide-action-size); justify-content: center; }
   .decide-actions :global(#decide-accept) { flex: 2.5; }
   .decide-hint { margin: 0; text-align: center; }
   @media (pointer: coarse) { .decide-hint { display: none; } }
@@ -589,7 +592,7 @@ title: Decide
     position: absolute;
     inset-inline-start: 0;
     inset-block-end: 0;
-    block-size: 3px;
+    block-size: var(--stroke-width);
     inline-size: 100%;
     background: var(--rule-strong);
     transform-origin: left;

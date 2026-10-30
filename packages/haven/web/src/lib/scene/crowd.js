@@ -3,8 +3,8 @@
 // one that spoke. Pure over a presence snapshot (`here.get()`), a stage and the
 // view, so `Scene.mesa`, `Bubbles.mesa` and `Nameplates.mesa` ask one rule and
 // a test asks it without a terminal.
-import { hears } from '../../../../api/src/hearing.ts'
-import { spanOf } from '../../../../api/src/shape.ts'
+import { hears } from '#shared/hearing.ts'
+import { spanOf } from '#shared/shape.ts'
 import { bubble } from '../games/booth.js'
 import { cells } from './cells.js'
 

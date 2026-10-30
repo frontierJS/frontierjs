@@ -17,7 +17,7 @@
 // that is no motion.
 
 import { keymap } from '@frontierjs/toolbelt/keys'
-import { glyphOf, shapeOf } from '../../../../api/src/shape.ts'
+import { glyphOf, shapeOf } from '#shared/shape.ts'
 
 export const HOME_ROW = keymap({
   d:  'bolt',

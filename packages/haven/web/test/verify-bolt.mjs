@@ -20,7 +20,7 @@ import { join } from 'node:path'
 import { createTestEnv } from '@frontierjs/testing'
 
 import { buildHavenApp } from '../../api/src/app.ts'
-import { BOLT_MS } from '../../api/src/bolt.ts'
+import { BOLT_MS } from '#shared/bolt.ts'
 import { POST_KEY, signIn } from '../../api/test/sign-in.ts'
 import { TUI, cellOf, screen, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'

@@ -523,7 +523,11 @@
     return out
   }
 
+  let _gone = false
   function _recompute() {
+    // A write's `onsubmit` may close the drawer that holds this form, so the
+    // code after its await runs on a disposed form whose memos are stale.
+    if (_gone) return
     // `_control` last: it is the only one of the three describing what is on
     // screen NOW. A server message is about the value that was sent and a live
     // message is about the last value the control could convert, so both are
@@ -1099,6 +1103,7 @@
   }
 
   $.onDestroy(() => {
+    _gone = true
     // The edit is waiting in the quiet window and nothing will be here to send
     // it. Fire and forget: the screen that owned this form has moved on.
     if (_autoTimer) {

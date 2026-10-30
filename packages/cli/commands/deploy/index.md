@@ -9,6 +9,7 @@ examples:
   - fli deploy --stage
   - fli deploy --dry
   - fli deploy --resume
+  - fli deploy --production --site
 flags:
   production:
     type: boolean
@@ -25,6 +26,10 @@ flags:
   web:
     type: boolean
     description: Deploy the web only (skip API)
+    defaultValue: false
+  site:
+    type: boolean
+    description: Publish site/ alone, built against the production database (only once its Worker has a deployment)
     defaultValue: false
   plan:
     type: boolean
@@ -56,13 +61,20 @@ it refuses — unless `BASECAMP_APP_ID` is set (the app's `.env`, the shell, or
 through. The target flags are refused there, because the App IS the
 environment — a second environment is a second App id.
 
+A production deploy then publishes `site/`: built here against a copy of the
+production database the new API just migrated, and shipped with Sierra's
+`deploySite()` signed in as whoever runs this — `CLOUDFLARE_API_TOKEN`, else
+`wrangler login` (`FJS-D1687`). Only once the site's Worker has a deployment:
+the first one claims `siteUrl`'s domain, and is `fli site:deploy` by hand
+(`FJS-D1688`). `--site` runs that step alone.
+
 ```js
 // ─── An App Basecamp runs ─────────────────────────────────────────────────────
 // Ahead of the deploy block, which such an app may still carry as the
 // scaffold's placeholder. The command is run as a child of THIS checkout's
 // fli, never a bare `fli`, which would be the global install.
 if (process.env.BASECAMP_APP_ID) {
-  const refused = ['production', 'stage', 'api', 'web', 'plan', 'resume'].filter(f => flag[f])
+  const refused = ['production', 'stage', 'api', 'web', 'site', 'plan', 'resume'].filter(f => flag[f])
   if (refused.length) {
     log.error(`--${refused.join(', --')} ${refused.length === 1 ? 'is' : 'are'} for the ssh deploy — BASECAMP_APP_ID names one Basecamp App, ` +
       'and another environment is another App: run `BASECAMP_APP_ID=<id> fli deploy`')
@@ -101,11 +113,20 @@ if (deployConf?.server) {
   // --api and --web are additive filters, matching deploy:rollback, which has
   // had this split since before the deploy side could express it. Neither flag
   // means both halves, which is what an unsplit config wants.
-  const bothSides = !flag.api && !flag.web
+  // --site alone still resolves the API side: its container holds the
+  // database the site is built against.
+  const siteOnly  = flag.site && !flag.api && !flag.web
+  const bothSides = !flag.api && !flag.web && !siteOnly
   const doApi     = bothSides || flag.api
   const doWeb     = (bothSides || flag.web) && deployConf.web !== false
 
-  const api = doApi ? resolveSide(deployConf, target, 'api') : null
+  if (flag.site && target !== 'production') {
+    log.error(`--site publishes siteUrl's domain, which only a production deploy does — add --production`)
+    $.config.abort = true
+    return
+  }
+
+  const api = doApi || siteOnly ? resolveSide(deployConf, target, 'api') : null
   const web = doWeb ? resolveSide(deployConf, target, 'web') : null
 
   // Where the image is BUILT, which is not necessarily where it runs (2.3f).
@@ -115,8 +136,8 @@ if (deployConf?.server) {
   // which is what makes *one artefact, many environments* sayable at all.
   const builder = doApi ? resolveSide(deployConf, target, 'builder') : null
 
-  if ((doApi && !api) || (doWeb && !web)) {
-    const missing = doApi && !api ? 'api' : 'web'
+  if (((doApi || siteOnly) && !api) || (doWeb && !web)) {
+    const missing = !api ? 'api' : 'web'
     log.error(`Cannot resolve a server and path for the ${missing} side on target: ${target}`)
     log.info(`Set deploy.server + deploy.path, or deploy.${missing}.server + deploy.${missing}.path`)
     $.config.abort = true
@@ -126,7 +147,7 @@ if (deployConf?.server) {
   const hosts = distinctHosts([api, web, builder])
   const split = api && web && (api.host !== web.host || api.path !== web.path)
 
-  const scope = bothSides ? 'api + web' : doApi ? 'api only' : 'web only'
+  const scope = siteOnly ? 'site only' : bothSides ? 'api + web' : doApi ? 'api only' : 'web only'
   log.info(`Deploying ${scope} to ${target}${branchStr}`)
   for (const h of hosts) log.info(`  ${h.host}:${h.path}`)
   if (builder && api && (builder.host !== api.host || builder.path !== api.path))
@@ -137,7 +158,8 @@ if (deployConf?.server) {
   $.config.api        = api
   $.config.web        = web
   $.config.builder    = builder
-  $.config.doApi      = Boolean(api)
+  $.config.doApi      = Boolean(api) && !siteOnly
+  $.config.siteOnly   = siteOnly
   $.config.doWeb      = Boolean(web)
   $.config.hosts      = hosts
   $.config.split      = split

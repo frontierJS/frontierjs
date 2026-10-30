@@ -3,7 +3,8 @@
   // weather where you like, or hand it back to the clock with `auto`. Drawn on
   // this screen only and never sent, so two screens in one room may stand in
   // two weathers; it holds from scene to scene until `auto`. Draws nothing.
-  import { KINDS, almanacAt, heldOf, hold } from '@/lib/scene/sky.js'
+  import { KINDS, almanacAt, heldOf } from '#shared/sky.js'
+  import { held, hold } from '@/lib/sky/held.js'
 
   export let stage
 
@@ -12,12 +13,12 @@
 
   function turn({ args }) {
     const w = args.trim().toLowerCase()
-    const now = almanacAt(Date.now())
-    if (!w) return `it is ${now.weather}${heldOf('weather') ? ' (held)' : ''}, ${now.temp}°C — ${HELP}`
+    const now = almanacAt(Date.now(), held)
+    if (!w) return `it is ${now.weather}${heldOf('weather', held) ? ' (held)' : ''}, ${now.temp}°C — ${HELP}`
     if (w !== 'auto' && !KINDS.includes(w)) return HELP
     hold('weather', w === 'auto' ? null : w)
     stage.touch()
-    return w === 'auto' ? `the weather follows the clock: ${almanacAt(Date.now()).weather}` : `it is ${w}`
+    return w === 'auto' ? `the weather follows the clock: ${almanacAt(Date.now(), held).weather}` : `it is ${w}`
   }
 
   $.onDestroy(verbs.add({ word: 'weather', help: HELP, run: turn }))

@@ -134,6 +134,7 @@ rule of its own, the token that would have carried it is missing.
 | --- | --- |
 | `--*-radius` | corners, per component |
 | `--border-width` | every structural border — card, field, table, topbar, code block, tab strip. `--field-border-width` and `--table-border-width` fall back to it and can diverge |
+| `--stroke-width` · `--track-size` | a line the kit draws — step connector, chevron, spinner, a code block's changed-line rule — and how thick a `.progress` or `.meter` bar is. Neither follows `--border-width` |
 | `--surface-shadow` | resting elevation on the Block tier, `none` by default. `--shadow-sm/md/lg` are the ladder above it and reach everything that floats |
 | `--surface-depth` | an image laid over the Block tier's and `.app`'s ground, `none` by default — a translucent radial gives a flat ground depth. `.outlined` and `.ghost` paint none. `--app-depth` is the page's own, and falls back to it |
 | `--density` | the whole space ladder, uniformly |

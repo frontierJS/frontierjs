@@ -544,7 +544,7 @@ siteName: Basecamp
 
   @media (min-width: 1536px) {
     .screen-grid:has(> .notice-rail section) {
-      grid-template-columns: minmax(0, 1fr) 20rem;
+      grid-template-columns: minmax(0, 1fr) var(--aside-width);
     }
     .screen-body { grid-column: 1; grid-row: 1; }
     .notice-rail {

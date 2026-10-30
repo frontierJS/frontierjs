@@ -22,6 +22,13 @@ import { adoptContainerPort } from './runtime.ts'
  */
 export const SWAP_STEPS = new Set(['Start container', 'Activate', 'Build and deploy'])
 
+/**
+ * An API App's `site/`, published after its release (`IDEAS/site-hosting.md`
+ * step 9). The one step whose failure leaves the release a success: the API
+ * it follows is live, and the last site is still serving.
+ */
+export const SITE_STEP = 'Publish site'
+
 type Row = Record<string, any>
 
 const sys = (app: App): any => (app.db as any).asSystem()

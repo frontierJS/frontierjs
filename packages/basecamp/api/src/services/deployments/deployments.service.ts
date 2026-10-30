@@ -16,7 +16,7 @@ import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_
 import { db, getScoped, narrowPatch, changesNothing, ws, actor, callerOrder } from '../../core/resource.ts'
 import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
-import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow } from '../../domain/release/release-record.ts'
+import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow, SITE_STEP } from '../../domain/release/release-record.ts'
 import { isInline, isGit, imageOf, inlineFilesFor } from '../../domain/release/app-source.ts'
 import { snapshotVariables } from '../../domain/release/variables.ts'
 import { runtimeOf, type Runtime, CONTAINER_TYPES } from '../../domain/release/runtime.ts'
@@ -64,6 +64,10 @@ const WITH_APP = { app: { include: { environment: true } } }
  * entrypoint migrates the volume forward, so the copy is the way back. Read
  * off the release's own runtime snapshot, as every other step is — a rollback
  * puts back a release whose snapshot differs from the app.
+ *
+ * A git container build with a volume ends with `SITE_STEP`: the commit's
+ * `site/`, if it has one, built against that database and published. A
+ * rollback has none, since its clone is the branch as it is now.
  */
 function buildInitialSteps(target: { type: string; source?: unknown; runtime?: Runtime }, built = false): string[] {
   if (target.type === 'static' && isGit(target.source)) return ['Validate', 'Build and deploy']
@@ -75,7 +79,7 @@ function buildInitialSteps(target: { type: string; source?: unknown; runtime?: R
   if ((target.type === 'container' || target.type === 'function') && isGit(target.source))
     return built
       ? ['Validate', ...copy, 'Start container', 'Health check']
-      : ['Validate', 'Build image', ...copy, 'Start container', 'Health check']
+      : ['Validate', 'Build image', ...copy, 'Start container', 'Health check', ...(copy.length ? [SITE_STEP] : [])]
   // An image somebody else built has nothing to build, and a list that says
   // otherwise sends no /pull at all and reports the build as done. A database is
   // a container too: a blueprint app carries an image source, and a list of its

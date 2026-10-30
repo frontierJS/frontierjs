@@ -1214,6 +1214,34 @@ describe('a workspace role is not a thing you may hand yourself', () => {
     expect(await roleOfMember(pat.id)).toBe('owner')
   })
 
+  test('an admin of the workspace on screen is a viewer of the one the id names, to the gate (FJS-2858)', async () => {
+    // The session names `ws`, where they are admin; the id names `other`,
+    // where they are a viewer. The sentence is the gate's (`… to <op>`), not a
+    // hook's, so a hook grading the right workspace cannot pass this alone.
+    const sys = env.system as any
+    const { admin, adminS } = await team()
+    const wsRow = await sys.workspace.findUnique({ where: { id: ws.id } })
+    const other = await sys.workspace.create({ data: { accountId: wsRow.accountId, name: 'Elsewhere', slug: `el-${uniq()}` } })
+    const add = (userId: string, role: string) => sys.workspaceMember.create({
+      data: { workspaceId: other.id, userId, role, capabilities: grantsFor(role as any), acceptedAt: new Date().toISOString() } })
+    await add(admin.id, 'viewer')
+    const target = await sys.user.create({ data: { email: `t-${uniq()}@x.co`, accountId: wsRow.accountId } })
+    await add(target.id, 'developer')
+
+    const as = env.as(adminS).service('workspaces')
+    for (const [method, data] of [
+      ['setMemberRole', { userId: target.id, role: 'viewer' }],
+      ['removeMember',  { userId: target.id }],
+      ['addMember',     { userId: target.id, role: 'viewer' }],
+    ] as const)
+      await expect(as.call(method, other.id, data)).rejects.toThrow(/Requires admin role in this workspace to /)
+    await expect(as.patch(other.id, { name: 'Taken' })).rejects.toThrow(/Requires admin role in this workspace to /)
+
+    const row = await sys.workspaceMember.findFirst({ where: { workspaceId: other.id, userId: target.id } })
+    expect(row.role).toBe('developer')
+    expect((await sys.workspace.findUnique({ where: { id: other.id } })).name).toBe('Elsewhere')
+  })
+
   // `addMember` names a person the caller cannot read (`User` is self-only),
   // and lifts that key under `system:` (FJS-1953) rather than writing as the
   // app. An asSystem() write would pass both cases below: the Capability[]
@@ -4708,7 +4736,7 @@ describe('a CRUD verb is graded by the model gate alone (FJS-2353)', () => {
     const { readdirSync, readFileSync } = await import('node:fs')
     const dir = new URL('../src/services/', import.meta.url)
     const holders = readdirSync(dir)
-      .filter(d => !['workspaces', 'audit', 'invitations'].includes(d))
+      .filter(d => !['audit', 'invitations'].includes(d))
       .flatMap(d => readdirSync(new URL(`${d}/`, dir)).filter(f => f.endsWith('.ts')).map(f => `${d}/${f}`))
       .filter(f => /requireWorkspaceRole\(/.test(readFileSync(new URL(f, dir), 'utf8')))
     expect(holders).toEqual([])

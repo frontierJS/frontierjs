@@ -6,8 +6,8 @@
 import { test, expect } from 'bun:test'
 import { createStage, STEP_FG, INDOORS, OUTDOORS } from '../src/lib/scene/stage.js'
 import { piece } from '../src/pieces/index.js'
-import { DAY_MS, FALL, fallAt, windAt, shade, moonAt } from '../src/lib/scene/sky.js'
-import { TRACES } from '../../api/src/memory.ts'
+import { DAY_MS, FALL, fallAt, windAt, shade, moonAt } from '#shared/sky.js'
+import { TRACES } from '#shared/memory.ts'
 
 const LIFE = TRACES.step.ms
 const NOON = 3 * DAY_MS + 1000

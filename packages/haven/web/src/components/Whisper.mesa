@@ -1,6 +1,6 @@
 <script>
   // Whisper.mesa — `/w <nick> <line>`: a Message with a `toId`, heard by the
-  // member it names and nobody else (`api/src/hearing.ts`). Draws nothing.
+  // member it names and nobody else (`shared/hearing.ts`). Draws nothing.
   import { members } from '@/resources/Member.mesa'
   import { messages } from '@/resources/Message.mesa'
 

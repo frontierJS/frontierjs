@@ -1,4 +1,4 @@
-// api/src/shape.ts
+// shared/shape.ts
 // A figure drawn as a character a member picked (`IDEAS/haven.md` 9.7), and
 // the one rule for what character a stranger may put on another member's
 // screen — chalk (9.8) asks it too. One printable ASCII character, so nothing

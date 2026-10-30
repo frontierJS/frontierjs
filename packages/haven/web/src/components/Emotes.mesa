@@ -14,7 +14,7 @@
   import { cellOf, figures, inView } from '@/lib/scene/crowd.js'
   import { spotsOf } from '@/pieces/index.js'
   import { at } from '#cell'
-  import { EMOTE_MS } from '../../../api/src/shape.ts'
+  import { EMOTE_MS } from '#shared/shape.ts'
 
   export let stage
   export let here

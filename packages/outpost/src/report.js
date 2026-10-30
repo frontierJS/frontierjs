@@ -107,20 +107,24 @@ export function createReporter(config, {
      *  it — the machine still has containers to run, and the next tick is the
      *  recovery. */
     start() {
-      const tick = (what, fn) => fn().catch(err => log.warn?.(`outpost: ${what} — ${err.message}`))
-
-      tick('first heartbeat', () => this.heartbeat())
-      tick('first volumes', () => this.reportVolumes())
-      tick('first disk', () => this.reportDisk())
-      tick('first posture', () => this.reportPosture())
+      // A report waits out its own last run: a volume walk outlasting the
+      // interval started another beside it, and on 106 volumes the walks
+      // piled onto the daemon until none finished.
+      const running = new Set()
+      const tick = (what, fn) => {
+        if (running.has(what)) return
+        running.add(what)
+        fn().catch(err => log.warn?.(`outpost: ${what} — ${err.message}`)).finally(() => running.delete(what))
+      }
+      const every = (ms, what, fn) => (tick(what, fn), setInterval(() => tick(what, fn), ms))
 
       // Volumes and disk are separate ticks: the volume report is a docker
       // call per volume, so one behind the other held the disk report for
       // minutes, and a throw in the first dropped the second.
-      const beat = setInterval(() => tick('heartbeat', () => this.heartbeat()), config.heartbeatMs)
-      const vols = setInterval(() => tick('volumes', () => this.reportVolumes()), config.reportMs)
-      const disk = setInterval(() => tick('disk', () => this.reportDisk()), config.reportMs)
-      const pos  = setInterval(() => tick('posture', () => this.reportPosture()), config.postureMs)
+      const beat = every(config.heartbeatMs, 'heartbeat', () => this.heartbeat())
+      const vols = every(config.reportMs,    'volumes',   () => this.reportVolumes())
+      const disk = every(config.reportMs,    'disk',      () => this.reportDisk())
+      const pos  = every(config.postureMs,   'posture',   () => this.reportPosture())
 
       return () => { clearInterval(beat); clearInterval(vols); clearInterval(disk); clearInterval(pos) }
     },

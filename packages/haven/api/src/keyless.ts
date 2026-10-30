@@ -4,13 +4,15 @@
 // `dice.ts`). One list and one maker, so a new voice is a line here and the
 // login refuses its nick without being told.
 //
-// The `root` is no chain root, so no login reaches it. Imports
-// nothing: the client imports the nicks.
+// The `root` is no chain root, so no login reaches it. The crier's nick is
+// `shared/crier.ts`'s, since the client draws it.
+
+import { CRIER } from '#shared/crier.ts'
 
 type Db = { asSystem: () => any }
 
 /** Every keyless voice, by role. A member row naming one of these nicks is refused as held. */
-export const VOICES = { crier: 'crier', dice: 'dice' } as const
+export const VOICES = { crier: CRIER, dice: 'dice' } as const
 
 export const isVoice = (nick: string): boolean => (Object.values(VOICES) as string[]).includes(nick)
 

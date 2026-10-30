@@ -7,7 +7,7 @@
 // A level is in decibels under the part's own `CEIL`: the parts are mixed at
 // gains up to seven times apart, and on one scale the singer would never leave the
 // floor while the drums never left the top.
-import { PARTS, RATE } from './band.js'
+import { PARTS, RATE } from '#shared/band.js'
 
 /** The wall-clock ms one column of a trace covers. */
 export const COL_MS = 50

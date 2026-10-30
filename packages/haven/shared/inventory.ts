@@ -1,4 +1,4 @@
-// api/src/inventory.ts
+// shared/inventory.ts
 // What a member carries (`IDEAS/haven.md` 9.9). The API holds it in memory per
 // member, like the room's memory and the bolt's cooldown (`app.inventory` —
 // `app.ts`): a restart refills every quiver, which a game of arrows can afford,

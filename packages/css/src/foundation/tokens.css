@@ -147,6 +147,21 @@
   --border-width: 1px;
 
   /*
+   * ── Stroke and track ──────────────────────────────────────
+   *
+   * The two thin marks a border cannot carry. `--stroke-width` is a line
+   * the kit DRAWS: a step connector, a step disc's ring, a chevron, a
+   * spinner, a code block's changed-line rule. `--track-size` is how thick
+   * a bar is: .progress and .meter.
+   *
+   * Neither follows --border-width. A heavy hairline must not distort a
+   * chevron, and a heavier line must not fatten a bar, so each is its own
+   * axis; press.css moves the stroke and leaves the bar alone.
+   */
+  --stroke-width: 2px;
+  --track-size:   0.5rem;
+
+  /*
    * ── Resting elevation on the Block tier ───────────────────
    *
    * `none`, and it is a token rather than an omission. A resting Card is

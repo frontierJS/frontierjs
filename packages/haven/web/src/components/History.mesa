@@ -61,7 +61,7 @@
 </script>
 
 {#if open}
-  <div class="surface pane" {@attach at(box.x, box.y, 13, [box.w, box.h])}>
+  <div class="surface overlay" {@attach at(box.x, box.y, 13, [box.w, box.h])}>
     {#each history(rows(), back, nicks) as l (l.key)}
       <p>{l.text}</p>
     {/each}
@@ -71,5 +71,5 @@
 
 <style>
   /* A browser's paragraph carries a margin; a pane's row is one cell tall. */
-  .pane p { margin: 0; line-height: inherit; white-space: pre; overflow: hidden }
+  .overlay p { margin: 0; line-height: inherit; white-space: pre; overflow: hidden }
 </style>

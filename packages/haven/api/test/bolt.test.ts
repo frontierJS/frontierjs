@@ -7,10 +7,10 @@
 
 import { test, expect, describe } from 'bun:test'
 
-import { ARROWS, ITEMS, createInventories } from '../src/inventory.ts'
-import { BOLT_MS, KNOCK, RANGE, VOLLEY_MS, createCooldowns, crosses, fly, knockBack, volley, type Figure, type World } from '../src/bolt.ts'
-import { FIRST_FACING, ahead, behind, facingOf, isFacing, opposite } from '../src/facing.ts'
-import { SHAPE_MS, glyphOf, shapeOf, spanOf } from '../src/shape.ts'
+import { ARROWS, ITEMS, createInventories } from '#shared/inventory.ts'
+import { BOLT_MS, KNOCK, RANGE, VOLLEY_MS, createCooldowns, crosses, fly, knockBack, volley, type Figure, type World } from '#shared/bolt.ts'
+import { FIRST_FACING, ahead, behind, facingOf, isFacing, opposite } from '#shared/facing.ts'
+import { SHAPE_MS, glyphOf, shapeOf, spanOf } from '#shared/shape.ts'
 
 const MEMBERS = 'abcdefghijklmnopqrstuvwxyz'
 const SHOOTER = 0

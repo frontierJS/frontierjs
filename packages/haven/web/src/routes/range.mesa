@@ -3,7 +3,7 @@
   // is written by `Scores.mesa` from the room's memory.
   import WalkIn from '@/components/WalkIn.mesa'
   import Scores from '@/components/Scores.mesa'
-  import Range from '@/scenes/Range.mesa'
+  import Range from '@/components/scenes/Range.mesa'
 </script>
 
 <WalkIn slug="range"><Range><Scores /></Range></WalkIn>

@@ -239,9 +239,9 @@ title: Workspace
 {/if}
 
 <style>
-  .ws-push { align-items: flex-start }
-  .ws-push-qr { inline-size: 11rem; max-inline-size: 100%; flex: 0 0 auto }
+  .ws-push { --ws-push-qr-size: 11rem; align-items: flex-start }
+  .ws-push-qr { inline-size: var(--ws-push-qr-size); max-inline-size: 100%; flex: 0 0 auto }
   .ws-push-qr :global(svg) { display: block; inline-size: 100%; block-size: auto; border-radius: var(--card-radius) }
-  .ws-push-facts { flex: 1 1 16rem }
+  .ws-push-facts { flex: 1 1 var(--grid-min, 16rem) }
   .ws-push-steps { padding-inline-start: var(--space-3xl) }
 </style>

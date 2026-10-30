@@ -5,7 +5,7 @@ import { createService, $, BadRequest } from '@frontierjs/junction'
 import { rateLimitHook } from '@frontierjs/junction/hooks'
 
 import type { HavenApp } from '../app.ts'
-import { MAX_DICE, MAX_SIDES, parseRoll } from '../dice.ts'
+import { MAX_DICE, MAX_SIDES, parseRoll } from '#shared/dice.ts'
 import { roomChannelName } from '../rooms.ts'
 
 type Roster = { localPresence: (channel: string) => Array<{ userId: string | number }> }

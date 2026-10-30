@@ -138,7 +138,7 @@
   <p class="surface" {@attach at(h.x, h.y, 12)}>{h.text}</p>
 {/each}
 {#if open}
-  <div class="surface pane" {@attach at(PANE.x, PANE.y, 13, [PANE.w, PANE.h])}>
+  <div class="surface overlay" {@attach at(PANE.x, PANE.y, 13, [PANE.w, PANE.h])}>
     {#each rows(pins, back, names, failed) as r (r.key)}
       <p>{r.text}</p>
     {/each}
@@ -147,5 +147,5 @@
 {/if}
 
 <style>
-  .pane p { margin: 0; line-height: inherit; white-space: pre; overflow: hidden }
+  .overlay p { margin: 0; line-height: inherit; white-space: pre; overflow: hidden }
 </style>

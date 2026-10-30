@@ -25,7 +25,8 @@
   import { getClient } from '@frontierjs/sierra/resource'
   import { stream } from '#sound'
   import { at, tint } from '#cell'
-  import { createBand, listening, songAt, songOf, startOf, stringsAfter, MAX_SONG, PARTS, RATE } from '@/lib/band/band.js'
+  import { createBand, songAt, songOf, startOf, stringsAfter, MAX_SONG, PARTS, RATE } from '#shared/band.js'
+  import { listening } from '@/lib/band/listening.js'
   import { traces, COL_MS } from '@/lib/band/scope.js'
 
   var verbs = $context.commands

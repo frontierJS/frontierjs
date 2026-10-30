@@ -5,7 +5,7 @@
   import WalkIn  from '@/components/WalkIn.mesa'
   import Notices from '@/components/Notices.mesa'
   import Crier   from '@/components/Crier.mesa'
-  import Square  from '@/scenes/Square.mesa'
+  import Square  from '@/components/scenes/Square.mesa'
 </script>
 
 <WalkIn slug="square"><Square><Notices /><Crier /></Square></WalkIn>

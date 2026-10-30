@@ -11,7 +11,7 @@ Haven the way `fli studio` is served beside an app: a page on this machine and
 never a Haven route, so no stranger is served it and the terminal never has to
 draw it.
 
-Its document is a scene file, `web/src/scenes/<Name>.mesa`, and the preview
+Its document is a scene file, `web/src/components/scenes/<Name>.mesa`, and the preview
 is that scene's own component. A click selects the piece, door or pacer on
 that cell, arrows move it and Delete removes it; a move onto another piece is
 refused naming the cell. A click places the chosen piece or a door, or moves

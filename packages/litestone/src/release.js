@@ -619,8 +619,12 @@ function compareFieldAllows(old, field, at, f) {
       add(f, UNKNOWN, at, `@allow(${ops}) predicate changed — whether that widens or narrows is not decidable from the text`, { access: UNKNOWN })
   }
 
+  // `@system` refuses the write to every caller, so a write rule it replaces
+  // admitted a subset of nobody — reported as a widening, it put `User.kind`'s
+  // move to `@system` on the widens list beside the narrowing it was.
+  const systemWrites = field.protection?.includes('@system')
   for (const [ops] of was)
-    if (!now.has(ops))
+    if (!now.has(ops) && !(ops === 'write' && systemWrites))
       add(f, EXPAND, at, `@allow(${ops}) removed — nothing at the field refuses this column now`, { access: WIDENS })
 }
 

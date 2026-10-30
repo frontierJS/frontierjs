@@ -11,18 +11,14 @@
 // is a first walk-in, and without the limit a spammer would flood the square
 // through the crier's mouth. A welcome past the limit is dropped, not queued.
 //
-// The client imports `CRIER` and `CRY_MS` (`Crier.mesa`), so this file
-// imports types only.
+// The client imports `CRIER` and `CRY_MS` (`Crier.mesa`) from
+// `shared/crier.ts`, so junction stays out of its bundle.
 
 import type { App } from '@frontierjs/junction'
 
-import { ensureVoice, VOICES } from './keyless.ts'
+import { CRIER } from '#shared/crier.ts'
 
-/** The crier's nick. */
-export const CRIER = VOICES.crier
-
-/** How long a cry stays over the square, in ms. */
-export const CRY_MS = 8000
+import { ensureVoice } from './keyless.ts'
 
 type Db = { asSystem: () => any }
 

@@ -23,7 +23,7 @@
   // if it is one this figure hears.
   //
   // A line is heard within earshot of its speaker, a `!` line by the whole
-  // room, and a whisper by the member it names (`api/src/hearing.ts`, 7.1).
+  // room, and a whisper by the member it names (`shared/hearing.ts`, 7.1).
   // The server sends a line to those who hear it; the lines loaded from the
   // room's history are every line, so a bubble is drawn only for a speaker
   // this figure hears from where each stands now.
@@ -100,10 +100,10 @@
   import { remember }    from '@/lib/scene/map.js'
   import { createCommands, createHistory, complete, matches, partial } from '@/lib/hash/commands.js'
   import { WIDE_LAYER, cellOf, covered, figures, inView, standsOn } from '@/lib/scene/crowd.js'
-  import { spanOf } from '../../../api/src/shape.ts'
-  import { facingOf, FIRST_FACING } from '../../../api/src/facing.ts'
-  import { FLY_MS, STUN_MS } from '../../../api/src/bolt.ts'
-  import { stepped, TRACES } from '../../../api/src/memory.ts'
+  import { spanOf } from '#shared/shape.ts'
+  import { facingOf, FIRST_FACING } from '#shared/facing.ts'
+  import { FLY_MS, STUN_MS } from '#shared/bolt.ts'
+  import { stepped, TRACES } from '#shared/memory.ts'
   import WorldMap        from '@/components/WorldMap.mesa'
   import History         from '@/components/History.mesa'
   import HomeRow         from '@/components/HomeRow.mesa'

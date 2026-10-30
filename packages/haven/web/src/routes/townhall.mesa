@@ -4,7 +4,7 @@
   // and the board are `Assembly.mesa`'s.
   import WalkIn from '@/components/WalkIn.mesa'
   import Assembly from '@/components/Assembly.mesa'
-  import TownHall from '@/scenes/TownHall.mesa'
+  import TownHall from '@/components/scenes/TownHall.mesa'
 </script>
 
 <WalkIn slug="townhall"><TownHall><Assembly /></TownHall></WalkIn>

@@ -101,10 +101,11 @@
 // up, walk in front of all of them, and the two targets cannot disagree about
 // which cell has a drop or a footprint.
 
-import { pacerAt, pacerNow, pick } from '../../../../api/src/pacer.ts'
-import { ridersAt } from '../../../../api/src/carousel.ts'
-import { almanacAt, SEASONS, skyDarkness, isNight, shade, MOON_FG, SKY_MS, hash, fallAt, untilWeatherChange, FALL, STRIKE_MS, BURN_MS, CHAR_MS, FIRE_MS, strikeAt, flashAt, cloudAt, groundOn } from './sky.js'
-import { fadeOf } from '../../../../api/src/memory.ts'
+import { pacerAt, pacerNow, pick } from '#shared/pacer.ts'
+import { ridersAt } from '#shared/carousel.ts'
+import { almanacAt, SEASONS, skyDarkness, isNight, shade, MOON_FG, SKY_MS, hash, fallAt, untilWeatherChange, FALL, STRIKE_MS, BURN_MS, CHAR_MS, FIRE_MS, strikeAt, flashAt, cloudAt, groundOn } from '#shared/sky.js'
+import { fadeOf } from '#shared/memory.ts'
+import { held } from '../sky/held.js'
 import { pieceId } from './world.js'
 import { spotsOf } from '../../pieces/index.js'
 
@@ -323,7 +324,7 @@ export function arrival(stage, { from, x, y, stand } = {}) {
 /**
  * @param {{ slug: string, palette?: object, spawn: { x: number, y: number }, season?: string }} o
  */
-export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, sight = 0, manual = false, season = almanacAt(Date.now()).season }) {
+export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, sight = 0, manual = false, season = almanacAt(Date.now(), held).season }) {
   for (const l of layers) if (!LAYERS.includes(l)) throw new Error(`[${slug}] no layer is called ${l}; the layers are ${LAYERS.join(', ')}`)
   const has  = (name) => layers.includes(name)
   const fog  = has('fog')
@@ -663,7 +664,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, sigh
     const last = Math.floor(ms / STRIKE_MS)
     for (let n = last; n >= last - Math.ceil((BURN_MS + CHAR_MS) / STRIKE_MS); n--) {
       const s = strikeAt(n)
-      if (s && s.at <= ms && boltOf(n).hit === m && almanacAt(s.at).weather === 'storm') return ms - s.at
+      if (s && s.at <= ms && boltOf(n).hit === m && almanacAt(s.at, held).weather === 'storm') return ms - s.at
     }
     return Infinity
   }
@@ -689,12 +690,12 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, sigh
   const outdoors = has('weather') || has('ground') || has('sky')
   const skyAt = (ms) => {
     if (!outdoors) return { struck: new Map() }
-    const almanac = almanacAt(ms)
-    const flash = almanac.weather === 'storm' && flashAt(ms)
+    const almanac = almanacAt(ms, held)
+    const flash = almanac.weather === 'storm' && flashAt(ms, held)
     const { moon } = almanac
     return {
       almanac,
-      dark:  has('sky') ? skyDarkness(ms) : 0,
+      dark:  has('sky') ? skyDarkness(ms, held) : 0,
       bolt:  flash ? boltOf(Math.floor(ms / STRIKE_MS)).cells : null,
       moonX: moon.ch && moon.arc !== null ? moonX(moon.arc) : -1,
       struck: new Map(),
@@ -783,10 +784,10 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, sigh
     // The ground changes only on those steps, so it waits for them as the sky does.
     ground: (ms) => [Math.max(50, SKY_MS - (((ms % SKY_MS) + SKY_MS) % SKY_MS))],
     weather(ms) {
-      const kind = almanacAt(ms).weather
+      const kind = almanacAt(ms, held).weather
       // The edge of a spell is a step too: a screen with nothing else moving
       // would otherwise draw the rain up to a sky step late.
-      const until = untilWeatherChange(ms)
+      const until = untilWeatherChange(ms, held)
       return [...(until < Infinity ? [Math.max(50, Math.min(SKY_MS, until))] : []), ...(FALL[kind] ? [FALL[kind].ms] : []), ...(blazing(ms) ? [FIRE_MS] : [])]
     },
     steps: (ms) => fadeTick(steps, STEP_FG.length, ms),
@@ -1026,7 +1027,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, sigh
     },
 
     /**
-     * Targets riding a loop on the clock (`api/src/carousel.ts`): `of` is the
+     * Targets riding a loop on the clock (`shared/carousel.ts`): `of` is the
      * rider's piece, and the lane between the housings is claimed as a wall a
      * figure cannot step into, blank but for a chain down each column's middle
      * in the paint letter `rail`. The riders are drawn over it like a pacer.
@@ -1358,8 +1359,8 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, sigh
     /** `hex`, a pacer's color, as the sky leaves it at the cell `x, y` `ms` into the clock. */
     tint(hex, x, y, ms) {
       if (!has('sky')) return hex
-      const night = nightAt(x, y, skyDarkness(ms))
-      return night ? shade(hex ?? INK, night, almanacAt(ms).moon.light) : hex
+      const night = nightAt(x, y, skyDarkness(ms, held))
+      return night ? shade(hex ?? INK, night, almanacAt(ms, held).moon.light) : hex
     },
 
     /** Whether this cell's glyph is changed by the clock. */

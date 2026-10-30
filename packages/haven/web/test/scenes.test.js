@@ -10,11 +10,11 @@ import { test, expect } from 'bun:test'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { SCENES, WEB, mountScene } from './stage.mjs'
-import { inLane } from '../../api/src/carousel.ts'
+import { inLane } from '#shared/carousel.ts'
 import { pacerAt, createStage, follow, arrival, litAt, dim, INK, VIEW, EDGE, SIGHT, OUTDOORS, INDOORS, viewFor, edgeFor, MOON_ROW } from '../src/lib/scene/stage.js'
 import { piece } from '../src/pieces/index.js'
 import { worldOf, worldJson, pieceId } from '../src/lib/scene/world.js'
-import { DAY_MS } from '../src/lib/scene/sky.js'
+import { DAY_MS } from '#shared/sky.js'
 import HALL from '../src/lib/hash/townhall.data.json'
 
 const STEPS = [[0, 1], [0, -1], [1, 0], [-1, 0]]
@@ -25,14 +25,14 @@ const scenes = new Map()   // path → its stage, for the border across
 for (const { name, slug, path } of SCENES) {
   const { stage, frame, capture } = await mountScene(name)
   scenes.set(path, stage)
-  const expected = readFileSync(join(WEB, 'src/scenes', `${slug}.frame.txt`), 'utf8').replace(/\n$/, '').split('\n')
+  const expected = readFileSync(join(WEB, 'src/components/scenes', `${slug}.frame.txt`), 'utf8').replace(/\n$/, '').split('\n')
 
   test(`${slug}: the stage's picture is ${slug}.frame.txt`, () => {
     expect(stage.picture()).toEqual(expected)
   })
 
   test(`${slug}: the server's world is ${slug}.world.json`, () => {
-    expect(worldJson(worldOf(stage))).toBe(readFileSync(join(WEB, 'src/scenes', `${slug}.world.json`), 'utf8'))
+    expect(worldJson(worldOf(stage))).toBe(readFileSync(join(WEB, 'src/components/scenes', `${slug}.world.json`), 'utf8'))
   })
 
   test(`${slug}: the terminal draws that picture, the view's slice of it from the spawn and from the far corner`, async () => {

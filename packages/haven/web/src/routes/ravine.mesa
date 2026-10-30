@@ -1,7 +1,7 @@
 <script>
   // The ravine -- past the lane's end, where the town stops at the rim.
   import WalkIn from '@/components/WalkIn.mesa'
-  import Ravine from '@/scenes/Ravine.mesa'
+  import Ravine from '@/components/scenes/Ravine.mesa'
 </script>
 
 <WalkIn slug="ravine"><Ravine /></WalkIn>

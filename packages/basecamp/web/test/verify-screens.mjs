@@ -1734,14 +1734,16 @@ try {
   await confirmIt()
   const onlyOwner = await until(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.length > 0,
     'leaving as the only owner was not refused')
-  check('the only owner is refused, and told to hand it over first', /Hand ownership/.test(onlyOwner), onlyOwner)
+  check('the only owner is refused, and told to make another member an owner first',
+    /another member an owner/.test(onlyOwner), onlyOwner)
 
+  // Handing over is promoting a member to owner (FJS-D1669): the giver stays
+  // an owner, so leaving afterwards is what steps them down.
   await goto('/admin/')
-  const kimRow = await until(`[...document.querySelectorAll('#member-rows tbody tr')]
-    .find(r => r.textContent.includes('kim@example.com'))?.querySelector('[id^=hand-over-]')?.id ?? ''`,
-    v => v, 'no Hand over on the other member')
-  await click(`#${kimRow}`)
-  await confirmIt()
+  const kimRole = await until(`[...document.querySelectorAll('#member-rows tbody tr')]
+    .find(r => r.textContent.includes('kim@example.com'))?.querySelector('[id^=role-]')?.id ?? ''`,
+    v => v, 'no role picker on the other member')
+  await pickIn(`#${kimRole}`, 'owner')
   const handed = await (async () => {
     for (let i = 0; i < 40; i++) {
       const rows = (await callWs(handWs.id, 'members')).body?.data ?? []
@@ -1751,12 +1753,12 @@ try {
     }
     return null
   })()
-  check('handing over makes them the owner and you an admin',
-    handed?.['kim@example.com'] === 'owner' && handed?.[EMAIL] === 'admin', JSON.stringify(handed))
+  check('promoting them to owner leaves you an owner too',
+    handed?.['kim@example.com'] === 'owner' && handed?.[EMAIL] === 'owner', JSON.stringify(handed))
 
   await goto('/settings/')
-  await until(`document.getElementById('standing-role')?.textContent ?? ''`, t => t.trim() === 'admin here',
-    'settings never showed the new standing')
+  await until(`document.getElementById('standing-role')?.textContent ?? ''`, t => t.trim() === 'owner here',
+    'settings never showed the standing')
   await click('#leave-workspace')
   await confirmIt()
   await until(`localStorage.getItem('basecamp_workspace')`, v => v !== handWs.id, 'leaving never moved off the workspace')

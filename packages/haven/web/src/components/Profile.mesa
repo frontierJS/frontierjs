@@ -12,7 +12,7 @@
   // and as soon as a bolt of this member's lands or a pickup of theirs is lifted. Drawn on this screen only.
   import { getClient } from '@frontierjs/sierra/resource'
   import { members }   from '@/resources/Member.mesa'
-  import { ITEMS }     from '../../../api/src/inventory.ts'
+  import { ITEMS }     from '#shared/inventory.ts'
   import { coarse, SCALE } from '@/lib/scene/map.js'
   import { hud, HEIGHT } from '@/lib/scene/hud.js'
   import { FOOT }      from '#paint'

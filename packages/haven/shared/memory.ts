@@ -1,4 +1,4 @@
-// api/src/memory.ts
+// shared/memory.ts
 // The room's memory (`FJS-D993`): what happened in a room lately, kept by the
 // API in memory per room and sent on join, never a row. A restart loses it,
 // which scenery can afford. Footprints (`IDEAS/haven.md` 7.4), a piece a bolt
@@ -11,7 +11,7 @@
 // own clock against them, so two screens a few hundred ms apart fade it a few
 // hundred ms apart, which nobody can see.
 
-import type { Position } from './rooms.ts'
+import type { Position } from './position.ts'
 
 /** How long each kind lasts, how many a room keeps, and how many one member may hold. */
 export const TRACES = {

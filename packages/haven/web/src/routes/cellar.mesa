@@ -2,7 +2,7 @@
   // The cellar -- under the tavern, found by stepping on the rug where the
   // floor is hollow. Nothing on the screen says the way down is there.
   import WalkIn from '@/components/WalkIn.mesa'
-  import Cellar from '@/scenes/Cellar.mesa'
+  import Cellar from '@/components/scenes/Cellar.mesa'
 </script>
 
 <WalkIn slug="cellar"><Cellar /></WalkIn>

@@ -107,6 +107,6 @@
   .queue-empty :global(.empty-title),
   .queue-empty :global(.empty-text) {
     font-size: var(--text-md);
-    line-height: 1.25rem;
+    line-height: var(--leading-snug);
   }
 </style>

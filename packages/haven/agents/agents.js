@@ -45,8 +45,8 @@ import { checkout, fileRow, LOCK_FILE, LOG_FILE, loopOutput, loopReport, MAX_ROW
 import { layoutWorkshop } from '../web/src/pieces/workshop.js'
 import { CLAUDE_ENV } from '../web/src/lib/study/session.js'
 import { LEDGER } from '../web/src/lib/hash/ledger.data.js'
-import { facingOf } from '../api/src/facing.ts'
-import { parseRoll } from '../api/src/dice.ts'
+import { facingOf } from '#shared/facing.ts'
+import { parseRoll } from '#shared/dice.ts'
 import { FIRST_ROOM } from '../api/src/rooms.ts'
 import { walkable, worldFor } from '../api/src/world.ts'
 

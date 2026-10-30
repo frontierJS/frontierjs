@@ -1,7 +1,7 @@
 <script>
   // The glade -- past the woods' fence, through the plank that is loose.
   import WalkIn from '@/components/WalkIn.mesa'
-  import Glade from '@/scenes/Glade.mesa'
+  import Glade from '@/components/scenes/Glade.mesa'
 </script>
 
 <WalkIn slug="glade"><Glade /></WalkIn>

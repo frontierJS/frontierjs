@@ -1,4 +1,4 @@
-// api/src/carousel.ts
+// shared/carousel.ts
 // Targets riding a loop on the shared clock — the archery range's carousel
 // (`web/src/lib/scene/stage.js` draws it, `world.ts` says what a bolt hits). The riders
 // go up one column, over the top under its housing, down the other and back

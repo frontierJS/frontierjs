@@ -5602,6 +5602,24 @@ describe('app-layout grades the src/ layout (FJS-1888)', () => {
     })).toEqual([])
   })
 
+  // FJS-D1320: shared/ is not a surface. Both sides import it by alias; it imports
+  // neither side, and a file only one side reaches belongs to that side.
+  test('shared/ is pure, aliased and reached by two surfaces', () => {
+    const f = layout('lay-shared', {
+      'shared/ok.js':     'export const two = 2\n',
+      'shared/helper.js': "import { two } from './ok.js'\nexport const h = two\n",
+      'shared/bad.js':    "import { a } from '../api/src/domain/a.ts'\nexport const bad = a\n",
+      'shared/lonely.js': 'export const lonely = 1\n',
+      'api/src/domain/a.ts': "import { h } from '#shared/helper.js'\nimport { bad } from '#shared/bad.js'\nimport { lonely } from '#shared/lonely.js'\nexport const a = 1\n",
+      'web/src/lib/w.js':    "import { h } from '#shared/helper.js'\nimport { bad } from '../../../shared/bad.js'\n",
+    })
+    const at = (re) => f.filter(x => re.test(x.message)).map(x => x.file.replace(/.*lay-shared[^/]*\//, '')).sort()
+    expect(at(/a shared\/ file imports/)).toEqual(['shared/bad.js'])
+    expect(at(/imports shared\/ by relative path/)).toEqual(['web/src/lib/w.js'])
+    expect(at(/a shared\/ file only api\/ imports/)).toEqual(['shared/bad.js', 'shared/lonely.js'])
+    expect(f).toHaveLength(4)
+  })
+
   test('a module or declaration file loose in web/src', () => {
     const f = layout('lay-loose', { 'web/src/money.js': 'export const m = 1\n', 'web/src/db.d.ts': '\n' })
     expect(f.map(x => x.file.replace(/.*\/web\//, 'web/')).sort()).toEqual(['web/src/db.d.ts', 'web/src/money.js'])

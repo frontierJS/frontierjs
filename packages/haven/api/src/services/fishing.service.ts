@@ -12,14 +12,14 @@ import type { Channel } from '@frontierjs/junction'
 
 import type { HavenApp } from '../app.ts'
 import { biteMs, canFeed, castInto, castLine, EATERS, FISH, landedLine, THIEF, WATER } from '../fishing.ts'
-import { isItem, ITEMS } from '../inventory.ts'
-import type { ItemName } from '../inventory.ts'
-import type { Trace } from '../memory.ts'
-import { pacerNow } from '../pacer.ts'
+import { isItem, ITEMS } from '#shared/inventory.ts'
+import type { ItemName } from '#shared/inventory.ts'
+import type { Trace } from '#shared/memory.ts'
+import { pacerNow } from '#shared/pacer.ts'
 import { roomChannelName } from '../rooms.ts'
 import { pieceAt, worldFor } from '../world.ts'
 import type { SceneWorld } from '../world.ts'
-import { almanacAt } from '../../../web/src/lib/scene/sky.js'
+import { almanacAt } from '#shared/sky.js'
 
 type Roster = { localPresence: (channel: string) => Array<{ userId: string | number, meta: Record<string, unknown> }> }
 type PondApp = HavenApp & { channel: (name: string) => Channel, channels: Roster }

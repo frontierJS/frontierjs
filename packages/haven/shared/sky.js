@@ -1,4 +1,4 @@
-// src/sky.js — the time of day (`IDEAS/haven.md` 7.2), a pure function of the
+// shared/sky.js — the time of day (`IDEAS/haven.md` 7.2), a pure function of the
 // wall clock. Nothing is sent and nothing is stored: two terminals and a tab
 // read `Date.now()` and so draw the same sky, and a test hands `ms` in.
 //
@@ -28,10 +28,12 @@
 //
 // The almanac (7.6) is the one record of all of it: `almanacAt(ms)`, which a
 // layer asks rather than the clock's functions one by one, so a screen that
-// holds the weather or the season (`hold`) changes that field and nothing
-// else, everywhere it is read. What the WORLD causes lives here, a function of
+// holds the weather or the season changes that field and nothing else,
+// everywhere it is read. The hold is an argument, `held`: the store a screen
+// keeps it in is `web/src/lib/sky/held.js`, and the server passes none. What
+// the WORLD causes lives here, a function of
 // the clock sent nowhere; what a MEMBER causes is a trace in
-// `api/src/memory.ts`.
+// `shared/memory.ts`.
 
 /** One day of real time. An hour, to start. */
 export const DAY_MS = 3_600_000
@@ -50,8 +52,8 @@ export function darkness(ms) {
   return Math.round(((1 - t) / 0.1) * RAMP) / RAMP
 }
 
-/** Whether it is full night: what a door that is there only at night asks. */
-export const isNight = (ms) => almanacAt(ms).darkness === 1
+/** Whether it is full night: what a door that is there only at night asks. Nothing holds the darkness, so no screen's hold changes it. */
+export const isNight = (ms) => darkness(ms) === 1
 
 // What each channel keeps at full night under a new moon and under a full
 // one: moonlight is blue. A half moon is between them.
@@ -179,23 +181,23 @@ const THAW = 1 / 10
 
 const grounds = new Map()
 /**
- * What the weather left on the ground `ms` into the clock, `{ wet, snow }`,
+ * What the weather left on the ground `ms` into the clock under `held`, `{ wet, snow }`,
  * each 0 (bare) to 1: the spells of the last GROUND_MS replayed a SKY_MS step
  * at a time from bare, so it is the clock's and every screen agrees. Rain or
  * a storm wets it and a dry step dries it; snow covers it and nothing thaws
  * while it falls. A screen holding the weather has always had it, so holding
  * `clear` leaves the ground bare.
  */
-export const groundAt = (ms) => {
+export const groundAt = (ms, held = NONE) => {
   const step = Math.floor(ms / SKY_MS)
-  const held = heldOf('weather')
-  const k = step + '/' + held
+  const weather = heldOf('weather', held)
+  const k = step + '/' + weather
   let g = grounds.get(k)
   if (g) return g
   let wet = 0, snow = 0
   for (let s = step - GROUND_MS / SKY_MS + 1; s <= step; s++) {
     const t = s * SKY_MS
-    const kind = held ?? fallen(t)
+    const kind = weather ?? fallen(t)
     wet = Math.max(0, Math.min(1, kind === 'rain' || kind === 'storm' ? wet + WETS : wet - DRIES))
     snow = Math.max(0, Math.min(1, kind === 'snow' ? snow + COVERS : snow - Math.max(0, tempAt(t)) * THAW))
   }
@@ -234,8 +236,11 @@ export const seasonAt = (ms) => SEASONS[(Math.floor(((new Date(ms).getUTCMonth()
 
 // ─── the almanac ──────────────────────────────────────────────────────────
 
-// The fields a screen may hold, and the values each may be held at.
-const HOLDABLE = { weather: KINDS, season: SEASONS }
+/** The fields a screen may hold, and the values each may be held at. */
+export const HOLDABLE = { weather: KINDS, season: SEASONS }
+
+/** No field held: what the server, which holds nothing, reads under. */
+const NONE = Object.freeze({})
 
 // What the environment pins each field at. Spelled out rather than built from
 // the field's name, because Vite bakes in only a name it sees whole
@@ -248,28 +253,16 @@ const pinned = (field) => {
   return HOLDABLE[field].includes(v) ? v : null
 }
 
-// What this screen holds in place of the clock's, by field. Kept across doors,
-// since a scene is a fresh mount and the module is not.
-const held = { weather: null, season: null }
-
-/** Hold this screen's `field` of the almanac at `value`, or hand it back to the clock with null. */
-export function hold(field, value) {
-  const values = HOLDABLE[field]
-  if (!values) throw new Error(`the almanac holds no ${field}; a screen holds ${Object.keys(HOLDABLE).join(', ')}`)
-  if (value !== null && !values.includes(value)) throw new Error(`no ${field} is called ${value}; it is one of ${values.join(', ')}`)
-  held[field] = value
-}
-
-/** The value held in place of the clock's for `field`, or null. A screen's hold outranks the environment's pin: a person who typed the word means it. */
-export const heldOf = (field) => held[field] ?? pinned(field)
+/** The value `held` (`{ weather?, season? }`) or the environment's pin has in place of the clock's for `field`, or null. A screen's hold outranks the pin: a person who typed the word means it. */
+export const heldOf = (field, held = NONE) => held[field] ?? pinned(field)
 
 // `look()` asks the almanac once per cell at one `ms`, so the last answer is kept.
 /** @type {{ key: string | null, almanac: any }} */
 let last = { key: null, almanac: null }
 
-/** The world `ms` into the clock: `{ darkness, season, weather, wind, moon, temp, ground }`, each the clock's unless this screen holds it. */
-export const almanacAt = (ms) => {
-  const season = heldOf('season'), weather = heldOf('weather')
+/** The world `ms` into the clock: `{ darkness, season, weather, wind, moon, temp, ground }`, each the clock's unless `held` or a pin says otherwise. */
+export const almanacAt = (ms, held = NONE) => {
+  const season = heldOf('season', held), weather = heldOf('weather', held)
   const key = ms + '/' + season + '/' + weather
   if (last.key === key) return last.almanac
   const almanac = {
@@ -279,7 +272,7 @@ export const almanacAt = (ms) => {
     weather:  weather ?? fallen(ms),
     wind:     windAt(ms),
     temp:     tempAt(ms),
-    ground:   groundAt(ms),
+    ground:   groundAt(ms, held),
   }
   last = { key, almanac }
   return almanac
@@ -326,8 +319,8 @@ export const windAt = (ms) => {
   return { dx: hash(n, 13, 5) % 2 ? 1 : -1, strength: storm ? 2 + hash(n, 13, 6) % 2 : hash(n, 13, 6) % 3 }
 }
 
-/** Milliseconds until the weather can change; Infinity when it is held. */
-export const untilWeatherChange = (ms) => (heldOf('weather') ? Infinity : WEATHER_MS - (((ms % WEATHER_MS) + WEATHER_MS) % WEATHER_MS))
+/** Milliseconds until the weather can change; Infinity when `held` or a pin holds it. */
+export const untilWeatherChange = (ms, held = NONE) => (heldOf('weather', held) ? Infinity : WEATHER_MS - (((ms % WEATHER_MS) + WEATHER_MS) % WEATHER_MS))
 
 /** How each kind falls: a step in ms, cells between drops in a column, the glyph and its color, and whether the glyph leans in a wind of GUST 2 or less. */
 export const FALL = {
@@ -375,17 +368,17 @@ export function strikeAt(n) {
   return { at: n * STRIKE_MS + (hash(n, 5, 9) % (STRIKE_MS - FLASH_MS)), seed: hash(n, 1, 2) }
 }
 
-/** Whether a bolt is on the sky `ms` into the clock, for the weather the clock (or a pin) holds when it struck. */
-export function flashAt(ms) {
+/** Whether a bolt is on the sky `ms` into the clock, for the weather the clock, a pin or `held` has when it struck. */
+export function flashAt(ms, held = NONE) {
   const s = strikeAt(Math.floor(ms / STRIKE_MS))
-  return !!s && ms >= s.at && ms < s.at + FLASH_MS && almanacAt(s.at).weather === 'storm'
+  return !!s && ms >= s.at && ms < s.at + FLASH_MS && almanacAt(s.at, held).weather === 'storm'
 }
 
 /** How dark the sky is `ms` into the clock: the day's, at least a third under a storm's clouds, none while a bolt is on it. */
-export function skyDarkness(ms) {
-  const { darkness: d, weather } = almanacAt(ms)
+export function skyDarkness(ms, held = NONE) {
+  const { darkness: d, weather } = almanacAt(ms, held)
   if (weather !== 'storm') return d
-  return flashAt(ms) ? 0 : Math.max(d, 1 / 3)
+  return flashAt(ms, held) ? 0 : Math.max(d, 1 / 3)
 }
 
 // A cloud row: its glyph, color and how many of four blocks hold cloud.

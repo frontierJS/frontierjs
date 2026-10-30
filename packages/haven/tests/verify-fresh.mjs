@@ -46,7 +46,7 @@ const NICK     = 'fresh'
 
 // The square's top row as a screen at the spawn shows it: scenes.test.js pins
 // the picture, and the square is wider than a screen (6.1).
-const SQUARE_TOP = readFileSync(join(HAVEN, 'web/src/scenes/square.frame.txt'), 'utf8').split('\n')[0].slice(0, VIEW.w).trim()
+const SQUARE_TOP = readFileSync(join(HAVEN, 'web/src/components/scenes/square.frame.txt'), 'utf8').split('\n')[0].slice(0, VIEW.w).trim()
 
 let failed = 0
 const check = (ok, label, evidence = '') => {

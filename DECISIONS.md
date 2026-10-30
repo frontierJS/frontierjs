@@ -1734,6 +1734,18 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1010"></a>2026-10-30 · `FJS-D1010` — How does a declared `gate:` grade a method against the workspace `$.id` names rather than the one the `X-Workspace-Id` header names — The app's `tenantFrom` (`workspaceOrKeys`) answers `$.id` on the workspaces service, so `membershipClaim` resolves the addressed workspace before `gateAuth` reads a level. `addMember`, `setMemberRole`, `removeMember`, `push` and `testPing` declare `gate: 5`, `patch`/`remove` fall to `Workspace`'s `@@gate(1.1.5.6)`, and `restandingFor` and the hook go. No junction change and no client rename; the cost is one branch on a service name in the resolver. Built and proved red-then-green by `services.test.ts` (an admin of the session's workspace, a viewer of the id's: 403 with the gate's sentence).
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **D** was picked over **A** (junction resolves the level for the addressed workspace: a service declares which `$`-param names the tenant (`gateOn: 'id'`), and `gateAuth` re-reads the standing for it before grading. Fixes every service that addresses a tenant other than the header's and deletes `requireWorkspaceRole` from the four, but adds an option to junction and a second path into the claim resolver (Invariant 4)), **B** (split the four into a `workspaceMembers` service keyed by `workspaceId` in the header. The header then names the addressed workspace, so the declared gate is correct with no junction change; the client sends the header it already sends. Costs a service and a client-call rename (`workspaces.setMemberRole` → `workspaceMembers.setRole`), and `leave` stays behind because it addresses the caller's own row), **C** (leave `requireWorkspaceRole()` on the four and close the row as accepted: the hook is correct after `restandingFor`, and the cost is the second ladder the error mapper does not translate).
+
+Against the recommendation (**B**): B moves only the four roster methods; patch, remove, push and testPing address a workspace by id as well and would keep the hand ladder. tenantFrom answers which workspace a request is about, and for /workspaces/:id that is the id. The service name is a constant both sides import.
+
+### <a id="fjs-d1379"></a>2026-10-30 · `FJS-D1379` — Is an 80-bit truncated MAC in a plus-address reply token acceptable under ASVS V11.2.3, or does `mintToken` default to 128 bits and shrink the mailbox it can tag — Keep 16 as the default and accept it: record in `docs/ASVS.md` V11.2.3 that the MAC is truncated by RFC 5321's limit, online-only, bounded by the ULID's `ttlSeconds`; V11.2.3 becomes `covered` with that reason. `macChars` stays the knob for an app that wants more and has a short mailbox.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Default 26 (130 bits). The mailbox before `+` is then at most 11 characters (`support` fits, `notifications` and `customer-support` throw at mint), so most real inboxes cannot carry a tag), **C** (Default 16, but `replyAddress` spends the room the mailbox leaves: it takes `macChars = min(26, 64 - 1 - local.length - id.length)` so a short mailbox gets up to 130 bits and a long one keeps at least 80, and `readToken` is told the length it was minted with (the reader knows the base from the recipient). One more thing the reader must derive, and the token length now varies by mailbox).
+
+The paper's recommendation, taken as written: (confidence 2) — 2^80 mail deliveries is not an attack, B breaks the mailboxes people have, and C buys a bit count nobody can use at the cost of a reader that must re-derive the length; A keeps the knob. Whichever is ruled, correct `FJS-3201`'s title: Basecamp invitations are not on this function.
+
 ### <a id="fjs-d1682"></a>2026-10-30 · `FJS-D1682` — Q4 — What does the action on a row do, and how is it gated — No action in the first cut; a read-only view.
 
 Asked in [`IDEAS/box-top.md`](IDEAS/box-top.md) § Open questions. **C** was picked over **A** (a container row offers the existing restart; a host row sends SIGTERM through a new Outpost signal route (allow-list: refuses pid 1, the Outpost, `dockerd`, `containerd`, and anything in a container), gated as a `servers` action at developer level and written as a `ServerEvent` (new kind `signal_sent`, a migration)), **B** (SIGTERM any row, container or not, same gate and event).
@@ -8438,6 +8450,30 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d1696"></a>2026-10-30 · `FJS-D1696` — Q4 — How edge treats the MX and SPF records Email Routing writes — Leave them unmarked, with three conditions: an expected `cloudflare-email` class drift skips, a refusal on a zone that already has an MX, and one named owner for the SPF merge.
+
+Asked in [`IDEAS/cloudflare-email.md`](IDEAS/cloudflare-email.md) § Open questions through the question tool. **A with three conditions** was picked over **B** (`edge` writes the MX and SPF itself, marked, and owns the SPF merge) and **A alone**. A alone fails `FJS-D560`: an unmarked record is reported as drift, so Cloudflare's records would be a line on every sync that nobody can clear. Enabling routing replaces the root MX, so a zone already receiving mail elsewhere (Google Workspace) must be refused rather than cut over. That is `D560`'s owed refuse case. Two SPF TXT records at the root are invalid, so the merge of an outbound `include:` needs one owner. If that owner has to be `edge`, this reopens toward B.
+
+*Lives in:* not built — `cloudflare-email.md` Phase 2.2.
+
+### <a id="fjs-d1695"></a>2026-10-30 · `FJS-D1695` — Q3 — Who triggers the Email Routing zone calls — basecamp's `edge.sync`, on a mail flag on the `Domain` row, under the workspace edge token. The three calls are written once in `conduit-cloudflare`.
+
+Asked in [`IDEAS/cloudflare-email.md`](IDEAS/cloudflare-email.md) § Open questions through the question tool. **edge.sync** was picked over **a `fli` deploy step** (the person's token, beside `08c-site`) and **both runners** (the `FJS-D1687` split for the site Worker). The zone and the token already live in `edge`, and drift on the routing rule and the Worker script is the check DNS drift already runs. The Worker is fixed source with no build, so it does not need the laptop path the site Worker has. Whichever runner calls, the calls have one owner (Invariant 4). Unverified: whether the edge token carries Workers-write scope — Phase 0.3.
+
+*Lives in:* not built — `cloudflare-email.md` Phase 2.
+
+### <a id="fjs-d1694"></a>2026-10-30 · `FJS-D1694` — Q2 — Where `fromMime` lives once Cloudflare is its second asker — A shared home (`@frontierjs/conduit/mime` or a `conduit-mime` package), postal-mime moving with it.
+
+Asked in [`IDEAS/cloudflare-email.md`](IDEAS/cloudflare-email.md) § Open questions through the question tool. **A shared home** was picked over **`conduit-cloudflare` importing from `conduit-mailgun`** (a connector depending on a connector, on Mailgun's release cycle) and **a copy** (two origins, as the two `mailbox()` copies already are). `FJS-D784` set the trigger — the parser lives with the first raw-MIME vendor until a second asker moves it — and this is the second. Every importer in the sibling `conduit-connectors` repo moves in the same change.
+
+*Lives in:* not built — `cloudflare-email.md` Phase 1.1.
+
+### <a id="fjs-d1693"></a>2026-10-30 · `FJS-D1693` — Q1 — What the Email Worker does when junction is down or answers 5xx — Throw, so the sending MTA retries from its own queue, if Phase 0.2 measures Cloudflare turning a throw into an SMTP 4xx; otherwise buffer the raw mail in R2 or a Queue and retry the POST. A permanent refusal is always `setReject`.
+
+Asked in [`IDEAS/cloudflare-email.md`](IDEAS/cloudflare-email.md) § Open questions through the question tool. **B, else C** was picked over **C always** (a bucket or queue and a consumer in every app), **B with no fallback**, and **A** (`setReject` on any failure, losing mail a person wrote). B keeps one copy of the mail, in the sender's queue, and the receipt's `Message-ID` + recipient dedupe makes a retry safe. Our own 4xx (unknown recipient, bad signature) will never land, so it is rejected rather than retried. Under B an outage leaves no trace in our system, so the Worker logs each non-2xx and a drive re-asserts 0.2's 4xx, because the premise is Cloudflare's behavior.
+
+*Lives in:* not built — `cloudflare-email.md` Phase 0.2, 2.3.
 
 ### <a id="fjs-d1681"></a>2026-10-30 · `FJS-D1681` — Q3 — How are rows grouped — By owner then name: one row per App (its container), expandable to its process names; host processes grouped by name as in `fli top`.
 
@@ -15320,6 +15356,14 @@ hash is the only thing keeping one component's rules off another's markup.
 
 ## Design system (`@frontierjs/css`)
 
+### <a id="fjs-d1692"></a>2026-10-30 · `FJS-D1692` — The kit's two thin marks are tokens: `--stroke-width` (2px), a line the kit draws, and `--track-size` (0.5rem), how thick a `.progress` or `.meter` bar is. Neither follows `--border-width`.
+
+Asked in chat through the question tool. **A** (both tokens) was picked over **B** (`--stroke-width` alone, with the bars sharing the 0.5rem literal until a second consumer asks) and **C** (no kit change: basecamp names its marks locally).
+
+Eight kit sites drew a stroke as a literal 2px: the step connectors, the step disc, both chevrons, both spinners and a code block's changed-line rule. That left `press.css`, which strikes every border at 2px, with strokes lighter than its card edges. `.progress` and `.meter` repeated one thickness. `--track-size` is not `calc(--stroke-width * n)`, because a bar is a filled region and a heavier line must not fatten it. The tooltip arrow stays a literal, since it is a triangle built from borders. The sibling precedent is `--ring-width`. Basecamp's `css-raw-literal` went from 35 to 0 in the same change: its own screen dimensions are declared as named custom properties on each screen's root rule, which the rule accepts.
+
+*Lives in:* `packages/css/src/foundation/tokens.css` § Stroke and track; `press.css`. *Enforced by:* `packages/css/test/specs/theming.spec.js` (`STROKES`, the `--track-size` cases); basecamp's `check-baseline.json`.
+
 ### <a id="fjs-d1233"></a>2026-10-18 · `FJS-D1233` — How does the kit draw a record page (a fixed aside beside a fluid main, the aside collapsible to nothing with a « toggle, the actions ruled off at the main's top end): a new vocabulary term, a modifier on an existing one, or no CSS at all — A new Page-tier term, `Aside`, on `<aside class="aside">`: the supporting column beside a Screen's main content, named by the element as `Screen` is `<main>` (the working name `Record` named the data, not the layout). In `vocabulary.js` with ANATOMY and a wizard route. A Screen holding an `.aside` lays out two columns; the width is `--aside-width`, a published knob, and collapsed is read from the toggle the app already owns, `.aside-toggle[aria-expanded="false"]`, with the `«` glyph flipped by the same attribute. Costs a fifth Page-tier noun and a guide page.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (no new term: `Pane` gains a `.aside` modifier (`.pane.aside`, children `.pane-aside` / `.pane-main`). Reuses the noun, but a Pane is `<section aria-labelledby>` with one heading and the record page is a page inside the Screen, so the modifier changes what the element IS (the "treatment listed on the wrong element" trap, `CLAUDE.md`)), **C** (no CSS: write the recipe in the guide (a `.grid` with `grid-template-columns: var(--aside) 1fr`, a `.bar` for the action row, `aria-expanded` on a `.btn`) and ship nothing. Zero surface and no noun, but the collapsed state is exactly what the row names as hand-built per app, and the recipe is the restatement every app maintains). As recommended.
@@ -15981,11 +16025,21 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1686"></a>2026-10-30 · `FJS-D1686` — A finding an app's `check-baseline.json` already answers does not print as a CI note, and a DEFENDED finding is answered by name in `allow`, never by a count. CI folds every rule at or under its ceiling into one line per app (`· N baselined finding(s) across M rule(s)`); a rule with no ceiling prints as before. A count stays the spelling for debt, a ceiling that only falls (`css-raw-literal`, `css-class-collision`); an exemption with a reason goes in `allow` keyed `<rule>:<path>:<subject>`, so a finding that replaces another is visible.
+
+Asked in triage of the `ci --fast` notes, through `AskUserQuestion`. Basecamp's eight noted rules all carried a `//` reason and still printed every run with the same ⚠ as a fresh finding, which is most of what made the notes unreadable. Its `package-model-drift: 3` named `email` and `accountId`; by the time it was read the three were `email`, a missing `role` and `Notification.id`, and the count could not say so. `capability-ladder` and `polymorphic-subject` now carry a `subject` (the model; `Model.field`), because a path-only key on `db/schema.lite` would silence every later finding in the schema (`FJS-2316`). Amends `FJS-D1009`, whose adopted counts stand as debt.
+
+*Lives in:* `report()` in `scripts/ci.mjs`; `packages/cli/core/checks/data.js`; `packages/basecamp/check-baseline.json`. *Enforced by:* `none`.
+
 ### <a id="fjs-d1320"></a>2026-10-30 · `FJS-D1320` — Where does a module live that api and web both import: `db/`, a new root `shared/` directory, or nowhere — Both, split by origin. `db/` keeps code the schema points at (an `@computed` body, a merge field catalog) under `#db/*`. A root `shared/` holds every other pure module two surfaces run (haven's dice, checkers and sky clock) under `#shared/*`. Neither imports a surface or junction. `db/` may import `shared/`, but `shared/` imports nothing app-side. A `shared/` file must be pure (no I/O, no side effects) and imported by two or more surfaces, and `app-layout` warns on one that only a single surface imports. `FJS-D627` gains the exemption: an import through `#db` or `#shared` is allowed, and a relative import across surfaces is still refused. `shared/` is a root directory that is not a surface, so Invariant 3 and README § Project Structure say so. Cost: a ninth root name, and two aliases in tsconfig and `appAliasPlugin`.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **D** was picked over **A** (A root `shared/` directory beside the surfaces, aliased `#shared/*` in the app tsconfig and in Sierra's `appAliasPlugin`, `include`d by the scaffolded tsconfig. A new directory, a new noun and an Invariant 3 entry; `app-layout` must learn that it is not a surface, and the D627 warning must exempt an import of it. Cost: a ninth root name for what is usually a handful of files), **B** (`db/` is the sanctioned home for schema-derived pure modules (`computed.ts`, a field catalog): the directory is already "shared by all sub-projects, owned by none", the ela precedent needs no file moved, and the fix is the scaffolded tsconfig `include` of `db/**/*.ts` plus an alias (`#db/*`) in tsconfig and `appAliasPlugin` so the `../../../` ladder goes. Cost: a module with no schema ancestor (a date formatter) has no home and falls to C), **C** (No folder: D627 stands and the answer is a service call or an app-local workspace package (`packages/<x>` in the app's own workspaces) that both surfaces depend on by name. Cost: a quote total shown live in a form then needs a round trip or its own package for a 40-line function).
 
 Against the recommendation (**B**): haven is the second app sharing code and its game rules have no schema ancestor, which is B's own reopen trigger for A; ela's computed.ts is the code half of schema @computed fields and stays beside the schema. Precedent: Nuxt's root shared/ with a #shared alias that may import neither bundle (nuxt.com/docs/4.x/directory-structure/shared).
+
+The alias is the app's `package.json` `"imports"` (`"#shared/*": "./shared/*"`), Node's subpath imports, which Vite and Bun both resolve. It is not a tsconfig path or an `appAliasPlugin` entry, and haven's ten target seams already use the same field.
+
+*Lives in:* `sharedFindings()` in `packages/cli/core/checks/app.js` (rule `app-layout`); `README.md` § Project Structure; Invariant 3. *Enforced by:* `app-layout`, as a warning.
 
 ### <a id="fjs-d1677"></a>2026-10-30 · `FJS-D1677` — Does `fli top` ship native source that fli builds on first use, and in which language — Both: Rust when cargo is on the PATH, C when it is not, and a refusal naming both when neither is. Cost: one monitor in two languages, changed together.
 
@@ -19502,6 +19556,46 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d1691"></a>2026-10-30 · `FJS-D1691` — What an API App's site build is given on the box — the App's release variables (`releaseEnv`), with `DATABASE_URL` pointed at the copy.
+
+Asked in [`IDEAS/site-hosting.md`](IDEAS/site-hosting.md) § Step 9, through the question tool. **A** was picked over **B** (`DATABASE_URL` alone).
+
+A prerender that reads an `@encrypted` column needs `ENCRYPTION_KEY`, and a laptop build reads every variable from `../.env`, so B builds on a laptop and fails on the box. The code is the release's own commit, already trusted with these values in the API container. Each variable reaches the build container as `-e NAME`, valued in the docker client's environment, as the Cloudflare token reaches the upload; the token reaches only the probe and the upload.
+
+*Lives in:* `runAppSiteStep` in `packages/basecamp/api/src/jobs/deployment-run.job.ts`; `siteBuild` in `packages/outpost/src/docker.js`. *Enforced by:* `packages/outpost/test/outpost.test.js` § an app site publish, `packages/basecamp/api/test/push.test.ts`.
+
+### <a id="fjs-d1690"></a>2026-10-30 · `FJS-D1690` — What a failed site publish does to a Basecamp release — the `Publish site` step reads failed, the release and the App stay success and running, and `DeploySuccess` says the site did not publish.
+
+Asked in [`IDEAS/site-hosting.md`](IDEAS/site-hosting.md) § Step 9, through the question tool. **A** was picked over **B** (the release reads failed, the App's status stays running by a carve-out in `finishRelease`).
+
+Step 8's `optional`, said on Basecamp's record: the API the site follows is live and the last site is still serving, so a red release would send someone to undo a release that worked. `SITE_STEP` is the one step the runner catches; no new `NotificationKind`, since the release did succeed. A second step with this behavior makes it a flag on the step, as step 8's `optional:` is, rather than a second name compared. Nothing reads a failed step as a failed release: the one reader, `/sites/`, shows static publishes, and rollback reads the release's status.
+
+*Lives in:* `SITE_STEP` in `packages/basecamp/api/src/domain/release/release-record.ts`, the step loop in `deployment-run.job.ts`, `DeploySuccess.notification.ts`. *Enforced by:* `packages/basecamp/api/test/push.test.ts`.
+
+### <a id="fjs-d1689"></a>2026-10-30 · `FJS-D1689` — Where Outpost builds an API App's `site/` — `siteBuild`'s throwaway containers over a fresh fetch of the release's commit, against a `litestone backup` taken inside the serving container.
+
+Asked in [`IDEAS/site-hosting.md`](IDEAS/site-hosting.md) § Step 9, through the question tool. **A** was picked over **B** (the clone `/build` left behind) and **C** (`docker exec` in the API container).
+
+One code path for both kinds of site: `/site/publish` with an `app` body. B would leave a `bun install` in the next image build's context until its `clean -fdx`. C needs every app image to ship `site/`, Sierra and wrangler, and the vendor step prunes them. The copy leaves the container by `docker cp`, which writes as the Outpost's user, where the App's uid's 0700 data directory would refuse a read. A commit with no `site/config/vite.config.js` and a Worker with no deployment (`FJS-D1688`) both answer `skipped`, and a backup with no `main.db` is refused before the build, since a missing database file builds an empty site. A rollback and a laptop release build nothing, so their step lists carry no `Publish site`. Backup, copy, build against the copy and deploy is now one sequence on two executors, this and `08c-site.md`, which differ in who signs in (`FJS-D1687`) and where the variables come from (`FJS-D1691`); `sierra site --deployed` and `--deploy` are the part they share, and a third executor takes a shared helper, not a third copy.
+
+*Lives in:* `siteBuild` and `copyDatabase` in `packages/outpost/src/docker.js`; `POST /site/publish` in `packages/outpost/src/server.js`; `buildInitialSteps` in `packages/basecamp/api/src/services/deployments/deployments.service.ts`. *Enforced by:* `packages/outpost/test/outpost.test.js` § an app site publish.
+
+### <a id="fjs-d1688"></a>2026-10-30 · `FJS-D1688` — When `fli deploy` publishes the site — on a production deploy, only once the site's Worker has a deployment; the first one is `fli site:deploy`, the cutover.
+
+Asked in [`IDEAS/site-hosting.md`](IDEAS/site-hosting.md) § Steps 8, through the question tool. **A** was picked over **B** (every production deploy of an app with `site/`), **C** (a `deploy.site: true` key in the deploy block).
+
+The paper's recommendation, taken as written: a production deploy claims `siteUrl`'s host from whatever answers it, and thod's zone is already on the account, so B makes thod's next API deploy its cutover. C states in config what the account already says. Wrangler's `deployments list` answers a Worker with a deployment as a non-empty list and a missing one as `code: 10007` (read on thod 2026-10-30); anything else is *could not tell*, and the step skips with a warning rather than guessing. fli's `activeVersion()` (`core/cloudflare.js`) answers the same question through `cf`, but `cf`'s login may be another account than wrangler's, and the probe must ask as the credential `deploySite()` will upload with.
+
+*Lives in:* `workerDeployed()` in `packages/sierra/src/site/cloudflare.js`, `sierra site --deployed`; `packages/cli/commands/deploy/_steps-docker/08c-site.md`. *Enforced by:* `none`.
+
+### <a id="fjs-d1687"></a>2026-10-30 · `FJS-D1687` — Where wrangler signs in for `fli deploy`'s site step — where the deploy runs: from a laptop, `CLOUDFLARE_API_TOKEN` else the laptop's `wrangler login`, building beside a copy of the production database; from Basecamp, the workspace's edge account (`FJS-D1252`).
+
+Asked in [`IDEAS/site-hosting.md`](IDEAS/site-hosting.md) § Steps 8, through the question tool. The owner's answer combined **A** (laptop: token, else login) and **B** (the box: Basecamp's edge token, Outpost building) by where the run starts, over **C** (a token in each app's `.env.production`).
+
+Prior art: wrangler, the Vercel, Netlify and Fly CLIs and Kamal each take an env token and fall back to the person's login, which is also what `fli cf:*` and `fli site:deploy` do. The ssh deploy already runs from the laptop and Basecamp's `releaseSite` already builds on the box with the workspace token, so each runner keeps the credential it has; neither borrows the other's. The production database is copied by `litestone backup` inside the serving container, so the copy is consistent under writes, and deleted from both ends when the step ends.
+
+*Lives in:* `packages/cli/commands/deploy/_steps-docker/08c-site.md`; Basecamp's half is `IDEAS/site-hosting.md` step 9. *Enforced by:* `none`.
 
 ### <a id="fjs-d1685"></a>2026-10-30 · `FJS-D1685` — How an app's surface asks Sierra for a review build — `createSierraViteConfig` reads `SIERRA_PREVIEW=1` when the config states no `preview`, and `fli site:build --preview` sets it.
 

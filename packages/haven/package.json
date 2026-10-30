@@ -44,7 +44,8 @@
     "#study": {
       "browser": "./web/src/lib/study/study.browser.js",
       "default": "./web/src/lib/study/study.js"
-    }
+    },
+    "#shared/*": "./shared/*"
   },
   "license": "MIT",
   "author": "FrontierJS",

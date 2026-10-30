@@ -1,7 +1,7 @@
 // api/src/setlist.ts
 // Song requests in the loft: `/song 42` puts song 42 on for every screen in the
 // room at the band's next bar line, and the songs after it follow on in order.
-// Every song is drawn by `web/src/lib/band/band.js` from its number alone, so a request
+// Every song is drawn by `shared/band.js` from its number alone, so a request
 // is a cue of two numbers -- the song and the wall-clock ms it starts -- and is
 // the one thing the server sends about the music.
 //
@@ -9,7 +9,7 @@
 // the room back on the clock's songs, and a screen already in the loft keeps
 // counting from the old cue until it walks in again.
 
-import { CLOCK, cueAt } from '../../web/src/lib/band/band.js'
+import { CLOCK, cueAt } from '#shared/band.js'
 
 /** The rooms with a band in them. */
 export const BAND_ROOMS = new Set(['upstairs'])

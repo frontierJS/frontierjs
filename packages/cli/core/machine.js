@@ -157,6 +157,12 @@ export const sendCommand = (host, transport, localPath, remotePath) =>
     ? `cp -f ${shQuote(localPath)} ${shQuote(remotePath)}`
     : `scp -q ${SSH_MUX} ${shQuote(localPath)} ${host}:${remotePath}`
 
+/** Bring a file or directory on the target here — `sendCommand` the other way. */
+export const fetchCommand = (host, transport, remotePath, localPath) =>
+  transport === 'local'
+    ? `cp -Rf ${shQuote(remotePath)} ${shQuote(localPath)}`
+    : `scp -rq ${SSH_MUX} ${host}:${remotePath} ${shQuote(localPath)}`
+
 /**
  * Mirror a local directory onto the target, deleting what is no longer in it.
  *
@@ -311,6 +317,9 @@ export function createMachine({ host, exec, transport = null, path = null, verbo
 
     send: (localPath, remotePath) =>
       exec({ command: sendCommand(host, kind, localPath, remotePath) }),
+
+    fetch: (remotePath, localPath) =>
+      exec({ command: fetchCommand(host, kind, remotePath, localPath) }),
 
     /** Mirror a local directory there. */
     sync: (localDir, remoteDir) =>

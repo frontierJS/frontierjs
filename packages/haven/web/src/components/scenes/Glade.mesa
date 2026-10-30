@@ -6,7 +6,7 @@
   // night onto the cellar under the tavern, a `night` door at each end, so by
   // day it is trunk. The picture this draws is `glade.frame.txt`, the glade by
   // day, which `scenes.test.js` pins. A deer grazes the south edge; shot at,
-  // it bolts out of the scene (`pacerNow` in `api/src/pacer.ts`).
+  // it bolts out of the scene (`pacerNow` in `shared/pacer.ts`).
   import Scene from '@/components/Scene.mesa'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'

@@ -12,7 +12,7 @@ import { piece } from '../../web/src/pieces/index.js'
 import { table } from '../../web/src/pieces/table.js'
 import { mountScene, SCENES, WEB } from '../../web/test/stage.mjs'
 
-const SOURCES = Object.fromEntries(SCENES.map(({ name }) => [name, readFileSync(join(WEB, 'src/scenes', `${name}.mesa`), 'utf8')]))
+const SOURCES = Object.fromEntries(SCENES.map(({ name }) => [name, readFileSync(join(WEB, 'src/components/scenes', `${name}.mesa`), 'utf8')]))
 
 // ─── the file as text ────────────────────────────────────────────────
 

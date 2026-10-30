@@ -20,8 +20,6 @@ import type { TransportContext } from '@frontierjs/junction'
 import type { HavenAuth } from './auth.ts'
 import { isVoice } from './keyless.ts'
 
-export const LOGIN_PATH = '/haven/login'
-
 /** Seconds a signature stays fresh. */
 const WINDOW = 300
 

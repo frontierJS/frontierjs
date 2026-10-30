@@ -210,7 +210,7 @@
 {/each}
 
 {#if listed}
-  <div class="surface pane" {@attach at(box.x, box.y, 13, [box.w, box.h])}>
+  <div class="surface overlay" {@attach at(box.x, box.y, 13, [box.w, box.h])}>
     {#each listed.rows as r (r.key)}
       <pre class="line">{r.text}</pre>
     {/each}
@@ -220,5 +220,5 @@
 
 <style>
   /* Outside a pre the terminal collapses the columns' padding. */
-  .pane p, .line { margin: 0; font: inherit; line-height: inherit; white-space: pre; overflow: hidden }
+  .overlay p, .line { margin: 0; font: inherit; line-height: inherit; white-space: pre; overflow: hidden }
 </style>

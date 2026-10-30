@@ -96,7 +96,7 @@
   <p {@attach at(keeper.x - view.x, bar.y - 1 - view.y, 11)}>☻</p>
 {/if}
 {#if reply}
-  <div class="surface pane" {@attach at(PANE.x - view.x, PANE.y - view.y, 14, [PANE.w, PANE.h])}>
+  <div class="surface overlay" {@attach at(PANE.x - view.x, PANE.y - view.y, 14, [PANE.w, PANE.h])}>
     <p>{TITLE}</p>
     {#each lines(reply) as l, i (i)}
       <p>{l}</p>
@@ -105,5 +105,5 @@
 {/if}
 
 <style>
-  .pane p { margin: 0; line-height: inherit; white-space: pre; overflow: hidden }
+  .overlay p { margin: 0; line-height: inherit; white-space: pre; overflow: hidden }
 </style>

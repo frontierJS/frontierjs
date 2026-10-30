@@ -42,11 +42,11 @@
 // reason, so widening the net is a diff and narrowing it is automatic.
 // ============================================================
 
-import { spawnSync }                       from 'node:child_process'
+import { spawn, spawnSync }                from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync, readdirSync, rmSync, mkdtempSync, mkdirSync } from 'node:fs'
 import { join, dirname, relative }         from 'node:path'
 import { fileURLToPath }                   from 'node:url'
-import { tmpdir }                          from 'node:os'
+import { tmpdir, availableParallelism }    from 'node:os'
 
 // The SAME module `fli check` runs against a client app. Imported by relative
 // path rather than reimplemented, because a framework that breaks its own stated
@@ -74,6 +74,9 @@ fenceThisProcess()
 const ROOT       = resolveRoot()
 const ALLOWANCES = join(ROOT, 'scripts', 'ci-allowances.json')
 const LAST_FILE  = join(ROOT, '.cache', 'ci-last.txt')
+// A narrowed run writes its own file: written over ci-last.txt, a one-phase
+// rerun erased the full run's notes, which were the only list of them.
+const PARTIAL_FILE = join(ROOT, '.cache', 'ci-last-partial.txt')
 
 const args      = process.argv.slice(2)
 const fast      = args.includes('--fast')
@@ -152,7 +155,8 @@ Phases, in the order a full run does them
 ${Object.keys(PHASES).map(n => `  ${n.padEnd(width)}  ${tier(n)}`).join('\n')}
 
 What fails each one: docs/CI.md.
-The last run's summary, failures and their output: .cache/ci-last.txt.
+The last run's summary, failures and their output: .cache/ci-last.txt;
+a run narrowed by --phase, --only or --tests-only writes .cache/ci-last-partial.txt.
 Every run, live, phase by phase: .cache/ci-runs/ — the ci panel in fli gui.
 Every allowance is a named entry with a reason in scripts/ci-allowances.json.
 `.trim())
@@ -169,6 +173,11 @@ const TIMEOUT_MS = Number(process.env.FJS_CI_TIMEOUT_MS ?? 15 * 60 * 1000)
 // a clean hygiene phase over a repo it had never read.
 const MAX_BUFFER = 64 * 1024 * 1024
 
+// How many packages typecheck and tests run at once. A suite is often several
+// processes of its own (vitest workers, a Chrome, a server), so a third of the
+// cores rather than all of them; `FJS_CI_LANES=1` is the serial run.
+const LANES = Number(process.env.FJS_CI_LANES ?? Math.max(1, Math.floor(availableParallelism() / 3)))
+
 const allowances = loadAllowances()
 const problems   = []   // fatal — sets the exit code
 const notes      = []   // worth saying, does not fail the run
@@ -183,6 +192,7 @@ const started = Date.now()
 // Opened in main() so `--help` writes nothing.
 let runLog       = { emit() {} }
 let currentPhase = null
+let lastFile     = LAST_FILE
 
 // Called from the very bottom of the file. Function declarations hoist and
 // `const` does not, so running the phases from up here puts every helper
@@ -231,6 +241,7 @@ async function main() {
 }
 
 function startRunLog(phases, scope) {
+  if (scope === 'partial' || scope === 'tests-only') lastFile = PARTIAL_FILE
   const commit = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).stdout?.trim() || null
   const status = spawnSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: ROOT, encoding: 'utf8', maxBuffer: MAX_BUFFER })
   runLog = openRunLog(ROOT, {
@@ -670,7 +681,7 @@ function structure() {
       note(`${label} · ${covered.reduce((n, [, list]) => n + list.length, 0)} baselined finding(s) across ` +
            `${covered.length} rule(s) · \`fli check\` in ${label} lists them`)
     for (const [rule, list] of Object.entries(byRule).filter(([rule, list]) => list.length > ceiling(rule)))
-      note(`${label} ⚠ ${rule} — ${list.length} finding(s) · ${label === 'packages' ? `listed in ${relative(ROOT, LAST_FILE)}` : `\`fli check\` in ${label} lists them`}`,
+      note(`${label} ⚠ ${rule} — ${list.length} finding(s) · ${label === 'packages' ? `listed in ${relative(ROOT, lastFile)}` : `\`fli check\` in ${label} lists them`}`,
            formatFindings(list, base))
     for (const key of result.stale) {
       note(`structure allowance is stale — nothing under ${label} matches ${key}. Remove it.`)
@@ -1012,26 +1023,23 @@ function lint() {
 // itself (each package's own script already answers that, and exits 1 above
 // its ceiling).
 
-function typecheck() {
+async function typecheck() {
   phase('typecheck')
 
   checkBaselineDirection()
 
-  for (const dir of selectedDirs()) {
-    const pkg = readPackage(dir)
-    if (!pkg?.scripts?.typecheck) continue
-
-    const run = runScript(dir, 'typecheck')
+  const dirs = selectedDirs().filter(dir => readPackage(dir)?.scripts?.typecheck)
+  await inLanes(dirs, LANES, dir => runScriptAsync(dir, 'typecheck'), (dir, run) => {
     if (run.code !== 0) {
       fail(`${dir} typecheck exited ${run.code}`, run.output)
-      continue
+      return
     }
     // scripts/typecheck.mjs prints this when a package has improved and nobody
     // locked the improvement in. Not a failure — an unclaimed one.
     const improved = /below the baseline of (\d+)/.exec(`${run.output.stdout}${run.output.stderr}`)
     if (improved) note(`${dir} is below its baseline of ${improved[1]} — run \`bun run typecheck -- --update\` in it.`)
     ok(`${dir}`, run.ms)
-  }
+  })
 }
 
 // A baseline can only be lowered. Comparing the working tree against the base
@@ -1112,6 +1120,7 @@ async function registry() {
   ].sort()
 
   const t0    = Date.now()
+  await prefetchNpm(scaffolded.flatMap(name => [['view', name, 'version'], ['view', name, '--json']]))
   const state = scaffolded.map(name => [name, npmVersion(name)])
 
   // Distinguish "the registry said no" from "nobody answered". Every name
@@ -1166,6 +1175,9 @@ async function registry() {
   // here: it answers a version for anything satisfiable, exact pin and range
   // alike, and E404s when nothing is. A range resolving to something OLD is not
   // a failure — it installs, which is the question being asked.
+  const live = state.filter(([, v]) => v !== 'unpublished' && v !== 'unreachable')
+  await prefetchNpm(live.flatMap(([name]) => publishedSiblingRanges(name).map(([s, r]) => ['view', `${s}@${r}`, 'version'])))
+
   let pins = 0
   for (const [name, version] of state) {
     if (version === 'unpublished' || version === 'unreachable') continue
@@ -1260,9 +1272,7 @@ async function registry() {
 // markdown command. Answers three things and never throws: the published
 // version, `unpublished` (E404 — an answer), or `unreachable` (no answer).
 function npmVersion(name) {
-  const r = spawnSync('npm', ['view', name, 'version'], {
-    cwd: ROOT, encoding: 'utf8', shell: false, timeout: 30_000,
-  })
+  const r = npm(['view', name, 'version'])
   if (r.status === 0) return (r.stdout ?? '').trim()
   const text = `${r.stderr ?? ''}${r.stdout ?? ''}`
   return /E404|is not in this registry|404 Not Found/.test(text) ? 'unpublished' : 'unreachable'
@@ -1396,9 +1406,7 @@ const _manifests = new Map()
 
 function publishedManifest(name) {
   if (_manifests.has(name)) return _manifests.get(name)
-  const r = spawnSync('npm', ['view', name, '--json'], {
-    cwd: ROOT, encoding: 'utf8', shell: false, timeout: 30_000,
-  })
+  const r = npm(['view', name, '--json'])
   let doc = null
   if (r.status === 0) {
     try { doc = JSON.parse(r.stdout) } catch { doc = null }
@@ -1427,12 +1435,28 @@ function publishedSiblingRanges(name) {
 // already reported once, above, and a second reading of it as a broken manifest
 // would be a false accusation against a package that is fine.
 function npmSatisfiable(spec) {
-  const r = spawnSync('npm', ['view', spec, 'version'], {
-    cwd: ROOT, encoding: 'utf8', shell: false, timeout: 30_000,
-  })
+  const r = npm(['view', spec, 'version'])
   if (r.status === 0) return true
   const text = `${r.stderr ?? ''}${r.stdout ?? ''}`
   return !/E404|No match found for version|is not in this registry|404 Not Found/.test(text)
+}
+
+// Every registry question is an `npm view` of about a second, and there are
+// fifty; asked one at a time they were most of the fast tier. `prefetchNpm`
+// asks a batch at once and `npm` answers from what it fetched, falling back to
+// asking itself, so a call nobody prefetched is slower and never wrong.
+const _npm = new Map()
+
+function npm(argv) {
+  const key = argv.join('\0')
+  if (!_npm.has(key)) _npm.set(key, spawnSync('npm', argv, { cwd: ROOT, encoding: 'utf8', shell: false, timeout: 30_000 }))
+  return _npm.get(key)
+}
+
+async function prefetchNpm(argvs) {
+  const todo = argvs.filter(argv => !_npm.has(argv.join('\0')))
+  await inLanes(todo, 8, argv => spawnAsync('npm', argv, { cwd: ROOT, timeout: 30_000, env: process.env }),
+    (argv, r) => _npm.set(argv.join('\0'), r))
 }
 
 function localVersion(name) {
@@ -1661,38 +1685,43 @@ function perf() {
 }
 
 // ─── phase 8 · tests ────────────────────────────────────────
-// Sequential on purpose: several suites bind ports and start real servers, and
-// interleaved output from four different runners is unreadable when one fails.
+// Suites run `LANES` at once, each one's output captured whole, so a failure
+// still reads as one runner's. Ports do not collide because every package
+// tests on its own slot (docs/PORTS.md). A suite that cannot share the machine
+// — a timing assertion, a port outside its slot — is named here with the reason
+// and runs alone after the rest.
+const SOLO_SUITES = {
+}
 
-function tests() {
+async function tests() {
   phase('tests')
 
   const known  = allowances.knownTestFailures ?? {}
   const passed = []
   const fixed  = []
 
-  for (const dir of selectedDirs()) {
-    const pkg = readPackage(dir)
-    if (!pkg?.scripts?.test) continue
-
-    const run  = runScript(dir, 'test')
+  const settle = (dir, run) => {
     const meta = { key: dir, ms: run.ms, counts: run.counts }
 
     if (run.code === 0) {
       if (dir in known) fixed.push(dir)
       else passed.push(dir)
       ok(`${dir}`, run.ms, meta)
-      continue
+      return
     }
 
     if (dir in known) {
       note(`${dir} failed — known: ${known[dir]}`)
       warn(`${dir} (known failure)`, run.ms, meta)
-      continue
+      return
     }
 
     fail(`${dir} test exited ${run.code}`, run.output, meta)
   }
+
+  const dirs = selectedDirs().filter(dir => readPackage(dir)?.scripts?.test)
+  await inLanes(dirs.filter(dir => !(dir in SOLO_SUITES)), LANES, dir => runScriptAsync(dir, 'test'), settle)
+  await inLanes(dirs.filter(dir => dir in SOLO_SUITES), 1, dir => runScriptAsync(dir, 'test'), settle)
 
   for (const dir of fixed) {
     if (update) {
@@ -1719,47 +1748,75 @@ function tests() {
 //
 // Full tier, each app under the `kinds` its entry names: a mutant costs ~30s,
 // and example alone is ~490 of them, so neither whole run fits any tier.
-function mutate() {
+// One `litestone mutate` per (app, kind), `LANES` at once: the gate ladder each
+// mutant pays is synchronous SQLite, so one process grades one mutant at a time
+// and basecamp's run alone was ten minutes. Each process repeats the control
+// (the original schema built and checked) — the price of not adding a shard
+// flag to litestone. The per-kind answers are summed back into one per app.
+async function mutate() {
   const from   = phase('mutate')
   const file   = 'scripts/mutate-baselines.json'
-  const floors = readJson(join(ROOT, file))
+  const floors = Object.entries(readJson(join(ROOT, file))).filter(([app]) => !app.startsWith('//'))
 
-  for (const [app, floor] of Object.entries(floors)) {
-    if (app.startsWith('//')) continue
+  const jobs = floors.flatMap(([app, floor]) =>
+    (floor.kinds?.length ? floor.kinds : [null]).map(kind => ({ app, kind })))
+
+  const one = async ({ app, kind }) => {
     const args = ['litestone', 'mutate', '--schema', 'db/schema.lite', '--json']
-    if (floor.kinds?.length) args.push(`--kinds=${floor.kinds.join(',')}`)
-
-    const started = Date.now()
+    if (kind) args.push(`--kinds=${kind}`)
     begin(app)
-    const run = spawnSync('bunx', args, {
-      cwd: join(ROOT, app), encoding: 'utf8', shell: false, maxBuffer: MAX_BUFFER,
+    return spawnAsync('bunx', args, {
+      cwd: join(ROOT, app),
       timeout: Math.max(TIMEOUT_MS, 45 * 60 * 1000),
       // The mutants are built in memory, so any key opens them; basecamp
       // declares `@secret` and cannot be built without one (FJS-597).
       env: { ...process.env, CI: '1', FORCE_COLOR: '0', ENCRYPTION_KEY: process.env.ENCRYPTION_KEY ?? 'a'.repeat(64) },
     })
-    const ms     = Date.now() - started
+  }
+
+  const started = Date.now()
+  const byApp   = new Map(floors.map(([app]) => [app, { killed: 0, graded: 0, errored: [], survived: [], broken: [] }]))
+  await inLanes(jobs, LANES, one, ({ app, kind }, run) => {
+    const sum    = byApp.get(app)
     const result = parseJsonOr(run.stdout ?? '', null)
+    // A kind this app's schema has nothing for is refused by the CLI, and is
+    // an empty answer rather than a broken one.
+    if (!result && /No mutants for/.test(run.stderr ?? '')) return
     if (!result) {
       // A run killed by a signal or the timeout prints nothing on either stream,
       // and the exit is then the only thing that says which.
       const exit = run.error ? `spawn failed: ${run.error.message}`
                  : run.signal ? `killed by ${run.signal}` : `exited ${run.status}`
-      fail(`${app} — litestone mutate did not report (${exit})\n      Run \`cd ${app} && bunx litestone mutate --schema db/schema.lite\`.`,
-           { stdout: run.stdout ?? '', stderr: run.stderr ?? '', ci: exit }, { key: app, ms })
+      sum.broken.push({ kind, exit, stdout: run.stdout ?? '', stderr: run.stderr ?? '' })
+      return
+    }
+    sum.killed += result.killed
+    sum.graded += result.graded
+    sum.errored.push(...result.errored)
+    sum.survived.push(...result.survived)
+  })
+  const ms = Date.now() - started
+
+  for (const [app, floor] of floors) {
+    const sum = byApp.get(app)
+    if (sum.broken.length) {
+      const b = sum.broken[0]
+      fail(`${app} — litestone mutate did not report (${b.exit})\n      Run \`cd ${app} && bunx litestone mutate --schema db/schema.lite${b.kind ? ` --kinds=${b.kind}` : ''}\`.`,
+           { stdout: b.stdout, stderr: b.stderr, ci: b.exit }, { key: app, ms })
       continue
     }
-
-    const line = `${app} — ${result.score}% killed, ${result.killed}/${result.graded} graded` +
-                 (floor.kinds?.length ? ` (${floor.kinds.length} kinds)` : '')
-    if (result.errored.length)
-      fail(`${line}: ${result.errored.length} mutant(s) the checks fell over on`,
-           { stdout: result.errored.map(e => `${e.kind} line ${e.lineNo}: ${e.describe} — ${e.thrown}`).join('\n'), stderr: '' }, { key: app, ms })
-    else if (result.score < floor.score)
+    const score = sum.graded ? Math.round(sum.killed / sum.graded * 100) : 100
+    const where = m => `${m.kind} ${m.file}:${m.line}: ${m.describe}`
+    const line  = `${app} — ${score}% killed, ${sum.killed}/${sum.graded} graded` +
+                  (floor.kinds?.length ? ` (${floor.kinds.length} kinds)` : '')
+    if (sum.errored.length)
+      fail(`${line}: ${sum.errored.length} mutant(s) the checks fell over on`,
+           { stdout: sum.errored.map(e => `${where(e)} — ${e.thrown}`).join('\n'), stderr: '' }, { key: app, ms })
+    else if (score < floor.score)
       fail(`${line}, below the floor of ${floor.score} in ${file}\n      A surviving mutant is a rule nothing grades — add the check, never lower the floor.`,
-           { stdout: result.survived.map(s => `${s.kind} line ${s.lineNo}: ${s.describe}`).join('\n'), stderr: '' }, { key: app, ms })
+           { stdout: sum.survived.map(where).join('\n'), stderr: '' }, { key: app, ms })
     else {
-      if (result.score > floor.score) note(`${app} mutation score ${result.score} is above its floor of ${floor.score} — raise it in ${file}.`)
+      if (score > floor.score) note(`${app} mutation score ${score} is above its floor of ${floor.score} — raise it in ${file}.`)
       ok(line, ms, { key: app })
     }
   }
@@ -2022,6 +2079,23 @@ function runScript(dir, script) {
   // shorter for a package with a long name. Blank the line before writing it.
   if (pending) process.stdout.write(`\r${' '.repeat(pending.length)}\r`)
 
+  return scriptResult(dir, script, result, at)
+}
+
+// The same run without blocking, for a phase that runs its packages in lanes.
+// No progress line: several are running at once and a \r can erase only one.
+async function runScriptAsync(dir, script) {
+  const at = Date.now()
+  begin(dir)
+  const result = await spawnAsync(packageManagerFor(dir), ['run', script], {
+    cwd:     join(ROOT, dir),
+    timeout: TIMEOUT_MS,
+    env:     { ...process.env, CI: '1', FORCE_COLOR: '0' },
+  })
+  return scriptResult(dir, script, result, at)
+}
+
+function scriptResult(dir, script, result, at) {
   // Kept apart, not concatenated. A runner writes its assertions to stdout and
   // its warnings to stderr, so a tail of the two glued together is a tail of
   // whichever came second — jetty's failing assertion sat 20 lines above the
@@ -2037,6 +2111,44 @@ function runScript(dir, script) {
   if (result.signal) return { code: 2, output: { ...output, ci: `killed by ${result.signal} after ${TIMEOUT_MS}ms` }, ms, counts }
 
   return { code: result.status ?? 2, output, ms, counts }
+}
+
+// spawnSync's answer shape — { status, signal, stdout, stderr, error } — so a
+// caller reads either the same way. A timeout is SIGKILL, as there: a hung
+// suite that traps SIGTERM would otherwise hold its lane forever.
+function spawnAsync(cmd, argv, { cwd, timeout, env } = {}) {
+  return new Promise(resolve => {
+    const child = spawn(cmd, argv, { cwd, env, shell: false })
+    const out = [], err = []
+    let error = null
+    child.stdout.on('data', d => out.push(d))
+    child.stderr.on('data', d => err.push(d))
+    child.on('error', e => { error = e })
+    const timer = timeout ? setTimeout(() => child.kill('SIGKILL'), timeout) : null
+    child.on('close', (status, signal) => {
+      clearTimeout(timer)
+      resolve({ status, signal, error, stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8') })
+    })
+  })
+}
+
+// Runs `run` over `items`, `width` at a time, and hands each result to
+// `settle` in the ITEMS' order as soon as every earlier one has landed — the
+// printed run reads the same whichever lane finished first, and still moves.
+// `settle` is synchronous: an await inside the flush lets a second lane settle
+// the same item twice.
+async function inLanes(items, width, run, settle) {
+  const results = new Array(items.length)
+  let next = 0
+  let flushed = 0
+  const lane = async () => {
+    while (next < items.length) {
+      const i = next++
+      results[i] = await run(items[i])
+      while (flushed < items.length && flushed in results) settle(items[flushed], results[flushed++])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(width, items.length)) }, lane))
 }
 
 // Everything here runs under bun except the extension, whose own scripts shell
@@ -2294,7 +2406,7 @@ function report() {
   }
 
   say(`\n✗ CI failed in ${seconds}s — ${problems.length} failure(s)\n`)
-  if (!inline) console.log(`  detail: ${relative(ROOT, LAST_FILE)} (failures and notes in full)\n`)
+  if (!inline) console.log(`  detail: ${relative(ROOT, lastFile)} (failures and notes in full)\n`)
   saveLast(lines)
   process.exit(1)
 }
@@ -2303,7 +2415,7 @@ function report() {
 // time anyone asks what failed, so the summary is kept where it can be read
 // back instead of pasted.
 function saveLast(lines) {
-  const file = LAST_FILE
+  const file = lastFile
   const head = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).stdout?.trim()
   const header = `# ${new Date().toISOString()} · ${head ?? '?'} · ci ${process.argv.slice(2).join(' ')}`.trimEnd()
   try {

@@ -109,8 +109,8 @@
   inline-size:      100%;
   inset-block-start: calc(var(--step-marker-size) / 2);
 
-  block-size:  2px;
-  translate:   0 -1px;
+  block-size:  var(--stroke-width);
+  translate:   0 calc(var(--stroke-width) / -2);
   background:  var(--rule);
 }
 
@@ -146,7 +146,7 @@
   border-radius: 999px;
 
   background:  var(--surface);
-  border:      2px solid var(--rule);
+  border:      var(--stroke-width) solid var(--rule);
   color:       var(--ink-mute);
   font-size:   var(--text-sm);
   font-weight: 600;
@@ -297,8 +297,8 @@
   z-index:  0;
 
   inset-inline-start: calc(var(--step-marker-size) / 2);
-  translate:          -1px 0;
-  inline-size:        2px;
+  translate:          calc(var(--stroke-width) / -2) 0;
+  inline-size:        var(--stroke-width);
 
   inset-block-start: calc(var(--step-marker-size) / 2);
   inset-block-end:   0;
@@ -366,8 +366,8 @@
       position:           absolute;
       z-index:            0;
       inset-inline-start: calc(var(--step-marker-size) / 2);
-      translate:          -1px 0;
-      inline-size:        2px;
+      translate:          calc(var(--stroke-width) / -2) 0;
+      inline-size:        var(--stroke-width);
       inset-block-start:  calc(var(--step-marker-size) / 2);
       inset-block-end:    0;
       background:         var(--rule);
@@ -409,8 +409,8 @@
       position:           absolute;
       z-index:            0;
       inset-inline-start: calc(var(--step-marker-size) / 2);
-      translate:          -1px 0;
-      inline-size:        2px;
+      translate:          calc(var(--stroke-width) / -2) 0;
+      inline-size:        var(--stroke-width);
       inset-block-start:  calc(var(--step-marker-size) / 2);
       inset-block-end:    0;
       background:         var(--rule);

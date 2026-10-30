@@ -5,10 +5,10 @@
 // and the page cannot read a field the runner stopped writing.
 //
 // Appended DURING the run rather than written at the end, because the question
-// it answers is "what is it doing right now": ci.mjs is serial and every spawn
-// in it is synchronous, so a run with no log is a terminal that says nothing for
-// fifteen minutes. A `begin` written before a spawn is enough to show which
-// suite is running and for how long, without making the runner async.
+// it answers is "what is it doing right now": a run with no log is a terminal
+// that says nothing for fifteen minutes. A `begin` written before a spawn says
+// which suite is running and for how long; typecheck and tests run several at
+// once, so `running` holds every begin no step has answered yet.
 //
 // Events, each with `at` (epoch ms):
 //   run        { id, pid, commit, dirty, argv, scope, only, phases }
@@ -164,7 +164,7 @@ export function foldRun(events, { alive = pidAlive } = {}) {
     id: head.id, pid: head.pid, at: head.at, commit: head.commit ?? null, dirty: head.dirty ?? null,
     argv: head.argv ?? [], scope: head.scope ?? 'partial', only: head.only ?? null,
     planned: head.phases ?? [], phases: [], notes: [],
-    status: 'running', ms: null, current: null, lastAt: head.at,
+    status: 'running', ms: null, running: [], lastAt: head.at,
   }
   let phase = null
 
@@ -173,24 +173,24 @@ export function foldRun(events, { alive = pidAlive } = {}) {
     if (ev.e === 'phase') {
       phase = { name: ev.name, at: ev.at, ms: null, ok: null, steps: [] }
       run.phases.push(phase)
-      run.current = null
+      run.running = []
     } else if (ev.e === 'begin') {
-      run.current = { phase: ev.phase, key: ev.key, at: ev.at }
+      run.running.push({ phase: ev.phase, key: ev.key, at: ev.at })
     } else if (ev.e === 'step') {
       phase?.steps.push({
         key: ev.key ?? null, status: ev.status, label: ev.label, ms: ev.ms ?? null, counts: ev.counts ?? null, at: ev.at,
         detail: ev.detail ?? null, output: ev.output ?? null, fix: ev.fix ?? null,
       })
-      if (run.current && ev.key === run.current.key) run.current = null
+      if (ev.key) run.running = run.running.filter(r => r.key !== ev.key)
     } else if (ev.e === 'phase-end') {
       if (phase?.name === ev.name) { phase.ms = ev.ms; phase.ok = ev.ok }
-      run.current = null
+      run.running = []
     } else if (ev.e === 'note') {
       run.notes.push(ev.text)
     } else if (ev.e === 'end') {
       run.status = ev.ok ? 'passed' : 'failed'
       run.ms = ev.ms
-      run.current = null
+      run.running = []
     }
   }
 
@@ -306,7 +306,7 @@ function summarize(run) {
     id: run.id, at: run.at, lastAt: run.lastAt, status: run.status, ms: run.ms, scope: run.scope,
     argv: run.argv, only: run.only, commit: run.commit, dirty: run.dirty,
     planned: run.planned, done: run.phases.filter(p => p.ms != null).length,
-    current: run.current, phase: run.phases.at(-1)?.name ?? null, phaseAt: run.phases.at(-1)?.at ?? null,
+    running: run.running, phase: run.phases.at(-1)?.name ?? null, phaseAt: run.phases.at(-1)?.at ?? null,
     failures: steps.filter(s => s.status === 'fail').map(s => s.label),
   }
 }
@@ -386,7 +386,7 @@ export function stopCiRun(root, { alive = pidAlive, kill = process.kill.bind(pro
   const active = activeRun(readRuns(root, { alive }))
   if (!active) return { ok: false, status: 404, error: 'no run is going' }
   // A run the page started leads its own group; one from a terminal does not,
-  // and then only ci.mjs itself is stopped and its current suite finishes alone.
+  // and then only ci.mjs itself is stopped and its running suites finish alone.
   try { kill(-active.pid, 'SIGTERM'); return { ok: true, pid: active.pid, group: true } }
   catch {}
   try { kill(active.pid, 'SIGTERM'); return { ok: true, pid: active.pid, group: false } }

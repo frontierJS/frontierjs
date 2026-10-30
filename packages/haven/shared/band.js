@@ -1,4 +1,4 @@
-// band.js — the loft's band as sound, target-neutral and pure over the wall
+// shared/band.js — the loft's band as sound, target-neutral and pure over the wall
 // clock: sample `s` is the same on every screen, so two members in the loft
 // hear one beat with nothing sent, the way `sky.js` gives them one sky.
 //
@@ -619,6 +619,3 @@ export function createBand() {
     },
   }
 }
-
-/** Whether this machine wants the band heard — `/music` turns it, and `HAVEN_MUSIC=off` starts it off — and how loud, 0 to 100 (`/volume`). */
-export const listening = { heard: globalThis.process?.env?.HAVEN_MUSIC !== 'off', volume: 100 }

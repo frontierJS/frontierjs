@@ -18,7 +18,7 @@
   import { sconce } from '@/pieces/sconce.js'
   import { chandelier } from '@/pieces/chandelier.js'
   import { stairs } from '@/pieces/stairs.js'
-  import { PARTS }  from '@/lib/band/band.js'
+  import { PARTS }  from '#shared/band.js'
 
   // Arms and strumming hands are cells that cycle between two glyphs (`chars`
   // in the palette), so the band plays with no clock of its own. Two cells of

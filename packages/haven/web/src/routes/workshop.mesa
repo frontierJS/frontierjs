@@ -7,7 +7,7 @@
   import Workers from '@/components/Workers.mesa'
   import Taskmaster from '@/components/Taskmaster.mesa'
   import Ledger from '@/components/Ledger.mesa'
-  import Workshop from '@/scenes/Workshop.mesa'
+  import Workshop from '@/components/scenes/Workshop.mesa'
   import { LEDGER } from '@/lib/hash/ledger.data.js'
 
   let ledger = LEDGER

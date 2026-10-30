@@ -270,8 +270,8 @@ summary.navlist-label::after {
   margin-inline-start: auto;
   inline-size:         0.35rem;
   block-size:          0.35rem;
-  border-right:        2px solid currentColor;
-  border-bottom:       2px solid currentColor;
+  border-right:        var(--stroke-width) solid currentColor;
+  border-bottom:       var(--stroke-width) solid currentColor;
   transform:           rotate(-45deg);
   transition:          transform var(--motion-base) var(--motion-ease);
   flex-shrink:         0;

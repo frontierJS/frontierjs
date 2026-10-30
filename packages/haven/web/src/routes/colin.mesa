@@ -4,7 +4,7 @@
   import WalkIn from '@/components/WalkIn.mesa'
   import HomeBoard from '@/components/HomeBoard.mesa'
   import Desk from '@/components/Desk.mesa'
-  import Colin from '@/scenes/Colin.mesa'
+  import Colin from '@/components/scenes/Colin.mesa'
 </script>
 
 <WalkIn slug="colin"><Colin><HomeBoard /><Desk /></Colin></WalkIn>

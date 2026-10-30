@@ -3,7 +3,7 @@
   // plays, and is heard on this machine's speaker (`/music` to turn it off).
   import WalkIn from '@/components/WalkIn.mesa'
   import Band from '@/components/Band.mesa'
-  import Upstairs from '@/scenes/Upstairs.mesa'
+  import Upstairs from '@/components/scenes/Upstairs.mesa'
 </script>
 
 <WalkIn slug="upstairs"><Upstairs><Band /></Upstairs></WalkIn>

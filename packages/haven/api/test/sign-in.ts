@@ -14,7 +14,7 @@ import { generateSigningKeys, signRequest } from '@frontierjs/toolbelt/signature
 import { generateSealingKeys } from '@frontierjs/toolbelt/seal'
 import { linkHash, rootLink, signRow } from '@frontierjs/toolbelt/frontier'
 
-import { LOGIN_PATH } from '../src/login.ts'
+import { LOGIN_PATH } from '#shared/login.ts'
 
 type Keys = { publicKey: string, privateKey: string }
 

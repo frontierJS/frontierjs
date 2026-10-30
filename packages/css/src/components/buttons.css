@@ -190,7 +190,7 @@
   margin:        auto;
   inline-size:   1em;
   block-size:    1em;
-  border:        2px solid color-mix(in srgb, var(--_on-fill, white) 30%, transparent);
+  border:        var(--stroke-width) solid color-mix(in srgb, var(--_on-fill, white) 30%, transparent);
   border-block-start-color: var(--_on-fill, white);
   border-radius: 50%;
   animation:     fjs-spin var(--motion-spin) linear infinite;

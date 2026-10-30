@@ -1,4 +1,4 @@
-// api/src/checkers.ts
+// shared/checkers.ts
 // The rules of checkers (`IDEAS/haven.md` 9.1b), American: eight by eight, a
 // man steps and takes forward, a king both ways, a capture is compulsory and
 // one that can go on must, and a man that crowns stops there. Pure and

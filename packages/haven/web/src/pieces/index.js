@@ -27,10 +27,10 @@
 // season's walls (`world.js`) and the server walks the one its almanac is in.
 // A floor piece may be a
 // `pickup`, `{ item, n }`: stepping onto it hands the member `n` of an item
-// (`api/src/inventory.ts`), and it is gone from the cell for a while after
+// (`shared/inventory.ts`), and it is gone from the cell for a while after
 // (`IDEAS/haven.md` 9.9). The server resolves it from `world.json`.
-import { ITEMS, isItem } from '../../../api/src/inventory.ts'
-import { SEASONS } from '../lib/scene/sky.js'
+import { ITEMS, isItem } from '#shared/inventory.ts'
+import { SEASONS } from '#shared/sky.js'
 
 /**
  * @param {string} name

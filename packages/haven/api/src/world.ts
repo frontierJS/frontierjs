@@ -1,19 +1,19 @@
 // api/src/world.ts
 // A scene as the server knows it (`IDEAS/haven.md` 12.2): the cells that can be
 // walked, the doors, what stands on the rest. The client draws the art and the
-// server never mounts it, so `bun run frames` writes `web/src/scenes/<slug>.
+// server never mounts it, so `bun run frames` writes `web/src/components/scenes/<slug>.
 // world.json` (`web/src/lib/scene/world.js`) and this reads it, as `hearing.ts` is read
 // by both sides. A bolt is resolved here rather than on the caller's screen,
 // so there is one answer for every screen.
 
 import { readFileSync } from 'node:fs'
 
-import type { Obstacle } from './bolt.ts'
-import { cellsOf, inLane, riderOn, ridersAt } from './carousel.ts'
-import type { CarouselSpec } from './carousel.ts'
-import { pacerNow } from './pacer.ts'
-import type { PacerSpec } from './pacer.ts'
-import { almanacAt } from '../../web/src/lib/scene/sky.js'
+import type { Obstacle } from '#shared/bolt.ts'
+import { cellsOf, inLane, riderOn, ridersAt } from '#shared/carousel.ts'
+import type { CarouselSpec } from '#shared/carousel.ts'
+import { pacerNow } from '#shared/pacer.ts'
+import type { PacerSpec } from '#shared/pacer.ts'
+import { almanacAt } from '#shared/sky.js'
 
 export interface SceneWorld {
   slug: string, width: number, height: number
@@ -33,7 +33,7 @@ export interface SceneWorld {
   season?: string
 }
 
-const DIR = new URL('../../web/src/scenes/', import.meta.url)
+const DIR = new URL('../../web/src/components/scenes/', import.meta.url)
 
 /** A world and the cells it is read through. */
 type Loaded = { world: SceneWorld, solid: Map<string, SceneWorld['pieces'][number]>, pickup: Map<string, SceneWorld['pickups'][number]> }

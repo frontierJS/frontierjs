@@ -12,7 +12,7 @@
   // lines, an empty side where their head was and `<nick> left` under it;
   // the booth stays theirs.
   //
-  // A game of checkers (`api/src/checkers.ts`, `IDEAS/haven.md` 9.1b) is played
+  // A game of checkers (`shared/checkers.ts`, `IDEAS/haven.md` 9.1b) is played
   // from this line: `/checkers` begins one, `/move c3 d4` makes a move and
   // `/resign` gives it up, each a call to the `games` service, which is the
   // only thing that writes the board. The board draws in the middle column
@@ -27,7 +27,7 @@
   import { createStage } from '@/lib/scene/stage.js'
   import { transcript } from '@/lib/games/booth.js'
   import { BOARD_H, boardRows, sideFor, status } from '@/lib/games/checkers.js'
-  import { parseMove, squareName } from '../../../api/src/checkers.ts'
+  import { parseMove, squareName } from '#shared/checkers.ts'
   import Piece           from '@/components/Piece.mesa'
   import { piece }       from '@/pieces/index.js'
   import { candle }      from '@/pieces/candle.js'

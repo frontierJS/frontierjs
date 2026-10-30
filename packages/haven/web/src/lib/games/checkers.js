@@ -1,7 +1,7 @@
 // src/checkers.js — the checkers board as plain rows of text (`IDEAS/haven.md`
 // 9.1b), what `components/Booth.mesa` places in the booth's middle column.
 // Target-neutral and pure, so a test lays a game out without a screen. The
-// rules and the board's string are the server's (`api/src/checkers.ts`); this
+// rules and the board's string are the server's (`shared/checkers.ts`); this
 // only reads them.
 //
 // The board is drawn from the viewer's side: their own pieces `o` and `O`
@@ -10,7 +10,7 @@
 // light one a space. The files and ranks keep their real names, so reading a
 // square off the picture is what `/move` takes.
 
-import { FILES, sideOf } from '../../../../api/src/checkers.ts'
+import { FILES, sideOf } from '#shared/checkers.ts'
 
 /** The board's width in cells: a rank's number, a space, and eight squares a space apart. */
 export const BOARD_W = 17

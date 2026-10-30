@@ -8,9 +8,9 @@ import { test, expect } from 'bun:test'
 import { createStage, INDOORS, SCORCH_FG } from '../src/lib/scene/stage.js'
 import { barrel } from '../src/pieces/barrel.js'
 import { piece } from '../src/pieces/index.js'
-import { DAY_MS } from '../src/lib/scene/sky.js'
+import { DAY_MS } from '#shared/sky.js'
 import { worldOf } from '../src/lib/scene/world.js'
-import { TRACES } from '../../api/src/memory.ts'
+import { TRACES } from '#shared/memory.ts'
 
 const NOON = 3 * DAY_MS + 1000
 const GROWS = TRACES.struck.ms

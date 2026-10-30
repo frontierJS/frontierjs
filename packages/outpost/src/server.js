@@ -125,13 +125,14 @@ export function createOutpostServer(config, {
     },
     // The same build without `--preview`, deployed as the live site. `commit`
     // is the one basecamp decided to ship, and a branch that moved since is
-    // refused rather than built.
+    // refused rather than built. `app` is an API App's site/, after its release.
     'POST /site/publish': async (body) => {
       const built = await docker.sitePublish({
         appId: body.app_id, source: body.source, branch: body.branch, commit: body.commit,
         token: body.cloudflare?.token, accountId: body.cloudflare?.account_id,
+        app: body.app ? { volumePath: body.app.volume_path, env: body.app.env } : undefined,
       })
-      return { commit_sha: built.commit, url: built.url }
+      return { commit_sha: built.commit, url: built.url, ...(built.skipped ? { skipped: built.skipped } : {}) }
     },
     // The route goes with the container: left behind, Caddy answers the app's
     // hostnames with a 502 from a port nothing holds. A redeploy's own stop

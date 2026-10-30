@@ -2,7 +2,7 @@
 // Basecamp-specific hooks — used across Basecamp services.
 // Framework hooks (authenticate, requireRole, etc.) imported from '@frontierjs/junction'.
 
-import { BadRequest, Forbidden, NotFound, Unauthorized, applyClaims, MEMBERSHIP, signedRequest, $ } from '@frontierjs/junction'
+import { BadRequest, Forbidden, NotFound, Unauthorized, MEMBERSHIP, signedRequest, $ } from '@frontierjs/junction'
 import { authenticate } from '@frontierjs/junction/hooks'
 import type { Hook, ILogger, ServiceContext, CredentialVerifier, InboundRequest }  from '@frontierjs/junction'
 import { actsAsApp } from './gate.ts'
@@ -61,6 +61,10 @@ export function resolveWorkspaceId(ctx: ServiceContext): string | undefined {
          (userOf(ctx)?.workspaceId as string | undefined)
 }
 
+/** The service whose id names its workspace. Its `name:` reads this, so a
+ *  rename cannot leave `workspaceOrKeys` grading the header in silence. */
+export const WORKSPACES_SERVICE = 'workspaces'
+
 /**
  * `tenantFrom` for the principal resolver: the workspace the request names,
  * else the one an API key belongs to.
@@ -70,8 +74,16 @@ export function resolveWorkspaceId(ctx: ServiceContext): string | undefined {
  * to send `X-Workspace-Id` with an id it could not be told, and a CLI signed in
  * with one was refused on its first command for naming nothing (`FJS-D399`).
  * A session still names its workspace: a person belongs to several.
+ *
+ * The workspaces service is the one whose subject IS the tenant, so there the
+ * id names it and the header does not. The header is the workspace on screen,
+ * and grading against it carried an admin of the workspace a person was LOOKING
+ * AT into a patch or a roster write on any other they could name (`FJS-2858`).
+ * Answered here because the gate reads the level this resolves, and the gate
+ * runs before every hook.
  */
 export async function workspaceOrKeys(ctx: ServiceContext): Promise<string | undefined> {
+  if (ctx.service === WORKSPACES_SERVICE && ctx.id != null) return String(ctx.id)
   const named = resolveWorkspaceId(ctx)
   const user  = userOf(ctx)
   if (named || user?.authMethod !== 'apiKey' || !user.credentialId) return named
@@ -154,44 +166,6 @@ export function refuseProtectedForDeveloper(env: { isProtected?: boolean }, ctx:
     throw new Forbidden('Protected environments require admin or owner role to modify')
 }
 
-/**
- * Re-resolve the standing against a DIFFERENT workspace, mid-call.
- *
- * One caller: the workspaces service, where the workspace IS the id being
- * addressed. The request's own resolution ran against `X-Workspace-Id` — the
- * workspace the UI is currently showing — and that is a different workspace
- * from the one being renamed or left whenever a person acts on one from a list.
- * Without this an admin of the workspace they are LOOKING AT would carry
- * ADMINISTRATOR(5) into a patch of any other workspace they can name.
- *
- * A no-op where the caller is not a member: no claim, which the gate grades a
- * visitor and tenancy answers nothing for — the same shape as naming a
- * workspace you do not belong to on the way in.
- */
-export async function restandingFor(
-  ctx:         ServiceContext,
-  workspaceId: string,
-): Promise<MemberRow | null> {
-  const user = userOf(ctx)
-  if (!user?.id) return null
-
-  const db       = ctx.app.db!
-  const sys: any = db.asSystem()
-  const member: MemberRow | null = await sys.workspaceMember.findFirst({
-    where:   { workspaceId, userId: user.id },
-    include: { workspace: true },
-  })
-
-  ctx.locals[MEMBERSHIP]   = member
-  ctx.locals.workspaceId   = workspaceId
-
-  applyClaims(ctx, db, member
-    ? { workspaceId, memberRole: member.role, capabilities: member.capabilities ?? [] }
-    : {})
-
-  return member
-}
-
 // ─── scopeToWorkspace ────────────────────────────────────────────────────
 // Verifies the authenticated user is a member of the requested workspace, and
 // turns *not a member* into a SENTENCE.
@@ -234,9 +208,7 @@ export function scopeToWorkspace(): Hook {
 // the gate's two numbers back into a role, so a method needs no hook once a
 // gate grades it: the model's `@@gate` where it writes through the caller's own
 // client, a `gate:` in `methods:` where it writes through `asSystem()` or acts
-// on a machine or a provider first. This one is for what no gate grades yet —
-// a service that addresses another workspace, because `gateAuth` runs before
-// `restandingFor` and reads the level of the workspace named in the header.
+// on a machine or a provider first. This one is for what no gate grades yet.
 //
 // Reads the membership row `membershipClaim()` already resolved — no extra query.
 
@@ -253,9 +225,6 @@ export function requireWorkspaceRole(...roles: string[]): Hook {
 
     if (!userId || actsAsApp(userOf(ctx)) || !workspaceId) return
 
-    // No re-read: the request's own resolution already ran against this
-    // workspace, and the one case where a service addresses a DIFFERENT one
-    // calls `restandingFor` before this hook sees it.
     const role = roleOf(ctx)
 
     const userLevel = ROLE_LEVEL[role ?? ''] ?? 0

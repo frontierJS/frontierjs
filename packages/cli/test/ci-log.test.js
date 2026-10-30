@@ -145,7 +145,7 @@ describe('openRunLog → readRuns', () => {
     expect(run.phases.map(p => [p.name, p.ok, p.ms])).toEqual([['hygiene', true, 40], ['tests', false, 950]])
     expect(run.phases[1].steps[0]).toMatchObject({ key: 'packages/a', status: 'fail', ms: 900 })
     expect(run.notes).toEqual(['a note'])
-    expect(run.current).toBeNull()
+    expect(run.running).toEqual([])
   })
 
   test('a run whose pid is gone with no end was killed, and is not running forever', () => {
@@ -154,15 +154,16 @@ describe('openRunLog → readRuns', () => {
     expect(readRuns(root, { alive: () => true })[0].status).toBe('running')
   })
 
-  test('a begin with no answering step is what is running now', () => {
+  test('every begin with no answering step is running now, since suites run in lanes', () => {
     writeRun({ scope: 'full', phases: ['tests'] }, [
       ['phase', { name: 'tests' }],
       ['begin', { phase: 'tests', key: 'packages/a' }],
-      ['step', { phase: 'tests', status: 'ok', label: 'packages/a', key: 'packages/a' }],
       ['begin', { phase: 'tests', key: 'packages/b' }],
+      ['begin', { phase: 'tests', key: 'packages/c' }],
+      ['step', { phase: 'tests', status: 'ok', label: 'packages/b', key: 'packages/b' }],
     ], { end: false })
     const [run] = readRuns(root, { alive: () => true })
-    expect(run.current).toMatchObject({ phase: 'tests', key: 'packages/b' })
+    expect(run.running.map(r => r.key)).toEqual(['packages/a', 'packages/c'])
   })
 
   test('half a line at the end of a log being written is skipped, not fatal', () => {

@@ -21,7 +21,7 @@ import { join } from 'node:path'
 import { createTestEnv } from '@frontierjs/testing'
 
 import { buildHavenApp } from '../../api/src/app.ts'
-import { EARSHOT } from '../../api/src/hearing.ts'
+import { EARSHOT } from '#shared/hearing.ts'
 import { POST_KEY, signIn, stakedHome } from '../../api/test/sign-in.ts'
 import { TUI, cellOf, screen, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'

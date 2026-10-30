@@ -1,6 +1,7 @@
 ---
 title: 02-ship
 description: Ship the app's committed tree and its vendored dependencies to every machine
+skip: "$.config.siteOnly"
 ---
 
 ```js

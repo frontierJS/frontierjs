@@ -15,9 +15,9 @@
 
 import { randomInt } from 'node:crypto'
 
-import { STEP, isFacing } from './facing.ts'
-import type { Facing } from './facing.ts'
-import type { ItemName } from './inventory.ts'
+import { STEP, isFacing } from '#shared/facing.ts'
+import type { Facing } from '#shared/facing.ts'
+import type { ItemName } from '#shared/inventory.ts'
 
 /** The pieces a line may be cast into: the docks' water, the glade's and the lane's ponds, the hole in the glade's ice, and the ravine's river. */
 export const WATER = new Set(['water', 'pond', 'river', 'hole'])
@@ -32,7 +32,7 @@ export const CAST_MS = 5000
 /** The float sits on the water this long before the line comes up: the server's dice, within these. */
 export const BITE_MS = { min: 1200, max: 3200 }
 
-/** The part of the almanac (`web/src/lib/scene/sky.js`, `almanacAt`) a fish answers to. */
+/** The part of the almanac (`shared/sky.js`, `almanacAt`) a fish answers to. */
 export interface Sky {
   darkness: number
   season:   string

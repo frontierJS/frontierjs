@@ -34,7 +34,7 @@ Date.now = () => FROZEN
 
 initJunction({ url: 'http://127.0.0.1:9', debug: false })
 await installTerminalLoader({ root: WEB })
-const Square  = (await import(join(WEB, 'src/scenes/Square.mesa'))).default
+const Square  = (await import(join(WEB, 'src/components/scenes/Square.mesa'))).default
 const Bubbles = (await import(join(WEB, 'src/components/Bubbles.mesa'))).default
 
 const settle = async (t) => { await new Promise((r) => setTimeout(r, 20)); await t.renderOnce() }

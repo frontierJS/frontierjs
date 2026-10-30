@@ -7,7 +7,7 @@
   import Runner from '@/components/Runner.mesa'
   import Bar from '@/components/Bar.mesa'
   import Barkeep from '@/components/Barkeep.mesa'
-  import Tavern from '@/scenes/Tavern.mesa'
+  import Tavern from '@/components/scenes/Tavern.mesa'
 </script>
 
 <WalkIn slug="tavern"><Tavern><Runner /><Bar /><Barkeep /></Tavern></WalkIn>

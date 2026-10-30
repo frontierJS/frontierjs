@@ -198,6 +198,73 @@ GEOMETRY.forEach(function (subject) {
   });
 });
 
+var STROKES = [
+  {
+    name: 'the step connector',
+    html: '<ol class="steps"><li class="step">a</li><li class="step">b</li></ol>',
+    read: function (n) { return getComputedStyle(n.children[1], '::before').blockSize; },
+  },
+  {
+    name: 'the step marker',
+    html: '<ol class="steps"><li class="step"><span class="step-marker">1</span></li></ol>',
+    read: function (n) { return getComputedStyle(n.querySelector('.step-marker')).borderTopWidth; },
+  },
+  {
+    name: 'the disclosure chevron',
+    html: '<details class="disclosure"><summary class="disclosure-summary">x</summary></details>',
+    read: function (n) { return getComputedStyle(n.querySelector('summary'), '::after').borderRightWidth; },
+  },
+  {
+    name: 'the navlist chevron',
+    html: '<details><summary class="navlist-label">x</summary></details>',
+    read: function (n) { return getComputedStyle(n.querySelector('summary'), '::after').borderRightWidth; },
+  },
+  {
+    name: 'the spinner',
+    html: '<span class="spinner"></span>',
+    read: function (n) { return getComputedStyle(n).borderTopWidth; },
+  },
+  {
+    name: 'the button spinner',
+    html: '<button class="btn" aria-busy="true">x</button>',
+    read: function (n) { return getComputedStyle(n, '::after').borderTopWidth; },
+  },
+  {
+    name: 'the changed-line rule',
+    html: '<pre class="code"><code language="js"><ins>x</ins></code></pre>',
+    read: function (n) { return getComputedStyle(n.querySelector('ins')).borderLeftWidth; },
+  },
+];
+
+STROKES.forEach(function (subject) {
+  test('theming: --stroke-width reaches ' + subject.name + ', and --border-width does not', function () {
+    var at2 = themedBy('--border-width: 4px', subject.html);
+    assert.equal(px(subject.read(at2)), 2, subject.name + ' is not a 2px stroke under a 4px hairline');
+    cleanup();
+
+    var at5 = themedBy('--stroke-width: 5px', subject.html);
+    assert.equal(
+      px(subject.read(at5)), 5,
+      subject.name + ' ignored --stroke-width — it is still a literal, so press.css cannot reach it'
+    );
+    cleanup();
+  });
+});
+
+['progress', 'meter'].forEach(function (tag) {
+  test('theming: --track-size reaches .' + tag + ', and --stroke-width does not', function () {
+    var html = '<' + tag + ' class="' + tag + '" value="1" max="2"></' + tag + '>';
+
+    var at8 = themedBy('--stroke-width: 5px', html);
+    assert.equal(px(getComputedStyle(at8).blockSize), 8, '.' + tag + ' moved with --stroke-width');
+    cleanup();
+
+    var at12 = themedBy('--track-size: 12px', html);
+    assert.equal(px(getComputedStyle(at12).blockSize), 12, '.' + tag + ' ignored --track-size');
+    cleanup();
+  });
+});
+
 test('theming: a field and a table divider can diverge from the structural weight', function () {
   var field = themedBy('--border-width: 3px; --field-border-width: 1px', '<input class="field">');
   assert.equal(px(getComputedStyle(field).borderTopWidth), 1, '--field-border-width did not override');

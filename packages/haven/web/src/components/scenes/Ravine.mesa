@@ -8,7 +8,7 @@
   // the lane, and the lane's east edge there the run back. The picture this
   // draws is `ravine.frame.txt`, which `scenes.test.js` pins. A mule grazes
   // the rim; shot at, it bolts out of the scene (`pacerNow` in
-  // `api/src/pacer.ts`).
+  // `shared/pacer.ts`).
   import Scene from '@/components/Scene.mesa'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'

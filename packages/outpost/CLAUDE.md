@@ -62,12 +62,16 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
 - **`/site/preview` and `/site/publish` run a STRANGER's edit through the repository's code**
   (`FJS-D1251`): the branch is an owner's draft, so install, build and upload
   each run in a `docker run --rm` as this process's user over a fresh checkout,
-  never here. The Cloudflare token reaches the upload alone, as `-e NAME` with
+  never here. The Cloudflare token reaches the upload alone (and an app site's `--deployed` probe), as `-e NAME` with
   the value in the docker client's environment: argv is readable off `ps`, and
   an `--env-file` is opened by the docker CLIENT, which a dev machine's docker
   refused (`permission denied`) for a 0600 file this process wrote. A failed
   upload answers wrangler's `[ERROR]` lines, never its last three, which are
   its bug-report footer.
+  With `app` (an API App's `site/`), the App's variables reach the build
+  container the same way, and its database arrives by `litestone backup`
+  inside `fjs-<app>` then `docker cp`, which writes as this process's user:
+  the data directory is the App's uid's 0700.
 - **A failing command answers the machine's own words.** A generic 500 is how a
   deploy fails with nothing on screen but a red pill, which is the shape
   `FJS-257` was filed about.

@@ -314,6 +314,13 @@ describe('what a permission diff has to see', () => {
     expect(about(r, 'User.role')!.detail).toContain(`@allow(write) removed`)
   })
 
+  it('a write @allow replaced by @system narrows and nothing widens', () => {
+    const after = GUARDED.replace(`@allow(write, auth().isAdmin)`, '@system')
+    const r = accessOf(GUARDED, after)
+    expect(r.verdict).toBe('narrows')
+    expect(r.findings.filter((x: any) => x.access === 'widens')).toEqual([])
+  })
+
   it('a field-level @allow whose predicate moved is undecidable, not a widening', () => {
     const after = GUARDED.replace('auth().isAdmin', 'auth().isOwner')
     const r = accessOf(GUARDED, after)

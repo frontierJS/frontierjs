@@ -1,7 +1,7 @@
 ---
 title: 04c-journal
 description: Open the deploy journal on the target and record this transition
-skip: "$.flag.dry || $.config.deployConf.journal === false"
+skip: "$.flag.dry || $.config.siteOnly || $.config.deployConf.journal === false"
 ---
 
 ```js

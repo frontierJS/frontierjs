@@ -1,10 +1,10 @@
-// api/src/pacer.ts
+// shared/pacer.ts
 // Where a pacer is on the shared clock (`web/src/lib/scene/stage.js` draws it, `world.ts`
 // says what a bolt hits). The sprite walks a row back and forth, so its cell is
 // a function of the wall clock alone and no screen is told where it is; the
 // server asks the same function, which is why this is not in `web/`.
 
-import { isNight, skyIs } from '../../web/src/lib/scene/sky.js'
+import { isNight, skyIs } from '#shared/sky.js'
 
 /** What a scene says of a pacer: a row, the columns it walks between, and its frames. */
 export interface PacerSpec {

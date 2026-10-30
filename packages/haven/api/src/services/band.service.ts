@@ -9,7 +9,7 @@ import type { Channel } from '@frontierjs/junction'
 import type { HavenApp } from '../app.ts'
 import { roomChannelName } from '../rooms.ts'
 import { BAND_ROOMS } from '../setlist.ts'
-import { MAX_SONG, songOf } from '../../../web/src/lib/band/band.js'
+import { MAX_SONG, songOf } from '#shared/band.js'
 
 type Roster = { localPresence: (channel: string) => Array<{ userId: string | number }> }
 

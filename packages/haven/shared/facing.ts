@@ -1,10 +1,10 @@
-// api/src/facing.ts
+// shared/facing.ts
 // The way a figure faces (`IDEAS/haven.md` 9.4): the way it last stepped. A
 // bolt flies it (9.5) and chalk lands behind it (9.8), so the server and the
 // client must agree on it, and both import it from here as they do
 // `hearing.ts`. It rides presence as one more key beside `{ x, y }`.
 
-import type { Position } from './rooms.ts'
+import type { Position } from './position.ts'
 
 /** The four ways, as compass letters — one byte each in a presence frame capped at 64. */
 export type Facing = 'n' | 'e' | 's' | 'w'

@@ -83,6 +83,10 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           recorded (`FJS-D1339`), undeployed commits named by author
           (`FJS-D1229`), a both-sides line — and the site's branch moves only
           after the deploy, so a failed build never strands the owner's merge.
+          An API App's `site/` is not a static App: a git container release
+          with a volume ends with `SITE_STEP` (`release-record.ts`), sent by
+          `deployment-run`'s `runAppSiteStep`, whose failure leaves the release
+          a success (`FJS-D1690`).
           `drafts.history` is DERIVED (releases + git diff, nothing stored);
           `drafts.revert` is that merge run backwards into a new draft at the
           `edit` grant, and refuses a developer's deploy.

@@ -18,15 +18,16 @@
 
 import type { App, Connection, channels } from '@frontierjs/junction'
 
-import { ITEMS, isItem } from './inventory.ts'
-import type { Inventories } from './inventory.ts'
-import { stepped } from './memory.ts'
-import type { RoomMemory } from './memory.ts'
-import { isFacing } from './facing.ts'
-import type { Facing } from './facing.ts'
+import { ITEMS, isItem } from '#shared/inventory.ts'
+import type { Inventories } from '#shared/inventory.ts'
+import { stepped } from '#shared/memory.ts'
+import type { RoomMemory } from '#shared/memory.ts'
+import { isFacing } from '#shared/facing.ts'
+import type { Facing } from '#shared/facing.ts'
+import type { Position } from '#shared/position.ts'
 import { standingOf } from './principal.ts'
-import { emoteOf, inkOf, shapeOf, spanOf } from './shape.ts'
-import type { Emote } from './shape.ts'
+import { emoteOf, inkOf, shapeOf, spanOf } from '#shared/shape.ts'
+import type { Emote } from '#shared/shape.ts'
 import { pickupAt, standable, worldFor } from './world.ts'
 
 type ChannelsOptions = NonNullable<Parameters<typeof channels>[1]>
@@ -77,10 +78,6 @@ export async function ensureRooms (db: { asSystem: () => any }): Promise<void> {
     if (!found) await sys.room.create({ data: { ...room } })
   }
 }
-
-/** A cell on a scene. The art is the client's, so the server bounds the
- *  coordinates and nothing finer. */
-export type Position = { x: number, y: number }
 
 const MAX_CELL = 255
 

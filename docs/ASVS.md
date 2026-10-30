@@ -260,7 +260,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V11.1.2 | 2 | none | `packages/litestone/docs/encryption.md` | no inventory of keys, algorithms, certs (ENCRYPTION_KEY, webhook, signing, outpost cert, TOTP) |
 | V11.2.1 | 2 | covered | `packages/litestone/src/host/node.js:44`, `packages/toolbelt/src/signature/signature.js:229`, `packages/auth/crypto.ts:14` | node:crypto, WebCrypto, Bun.password; no hand-rolled primitive |
 | V11.2.2 | 2 | partial | `packages/litestone/src/core/encryption.js:37`, `packages/litestone/test/key-rotation.test.ts` | key ids, `$rotateKey`, key ring, password rehash; algorithms fixed per version, not configurable |
-| V11.2.3 | 2 | partial | `packages/toolbelt/src/signature/signature.js:512` | AES-256, HMAC-SHA256, P-256, Ed25519; plus-address token MAC truncated to 80 bits · [FJS-3201](../ISSUES.md#fjs-3201) |
+| V11.2.3 | 2 | covered | `packages/toolbelt/src/signature/signature.js:584` | AES-256, HMAC-SHA256, P-256, Ed25519; the plus-address token MAC is cut to 80 bits by RFC 5321's 64-octet local part, accepted: forgery is online only, one delivered mail a guess, bounded by the ULID's `ttlSeconds` · [FJS-D1379](../DECISIONS.md#fjs-d1379) |
 | V11.3.1 | 1 | covered | `packages/litestone/src/core/encryption.js:125` | AES-GCM only; no ECB, no RSA padding anywhere in framework src |
 | V11.3.2 | 1 | covered | `packages/litestone/src/core/encryption.js:125` | AES-256-GCM is the one cipher |
 | V11.3.3 | 2 | covered | `packages/litestone/src/core/encryption.js:220`, `packages/litestone/test/write-claims.test.ts` | GCM tag checked on read and on a client-supplied envelope at write |

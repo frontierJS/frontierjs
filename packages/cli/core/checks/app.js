@@ -790,6 +790,66 @@ function srcLayoutFindings(root) {
     }
   }
 
+  findings.push(...sharedFindings(root, inside))
+  return findings
+}
+
+const SHARED_RE = /(?:\bfrom\s*|\bimport\s*\(?\s*)['"`]#shared\/([^'"`\n]+)['"`]/g
+const SERVER_RE = /(?:\bfrom\s*|\bimport\s*\(?\s*)['"`]@frontierjs\/(?:junction|litestone)\b/
+
+/**
+ * shared/ is the one app root that is not a surface (FJS-D1320): pure code two
+ * surfaces run, imported as `#shared/<file>`. A shared file that reaches into a
+ * surface, db/ or a server package drags that side into the other's bundle; one
+ * a single surface imports is that surface's file in the wrong place, and the
+ * folder becomes where anything goes.
+ */
+function sharedFindings(root, inside) {
+  const dir   = join(root, 'shared')
+  const files = sources(root, SCRIPT_EXT, 'shared')
+  if (!files.length) return []
+
+  const findings = []
+  const warn = (file, message) => findings.push({ file, message })
+
+  for (const file of files) {
+    let text = ''
+    try { text = stripComments(readFileSync(file, 'utf8')) } catch { continue }
+    const out = relativeImports(file).find(t => !inside(dir, t))
+    if (out || SERVER_RE.test(text))
+      warn(file, `a shared/ file imports ${out ? rel(root, out) : 'a server package'}. shared/ holds pure code ` +
+        `both surfaces run, so it imports nothing from a surface, db/ or the server; db/ may import shared/, ` +
+        `never the reverse (FJS-D1320).`)
+  }
+
+  // Who reaches each shared file: a surface directly, or a shared file it imports.
+  const reach = new Map(files.map(f => [stem(f), new Set()]))
+  const via   = new Map(files.map(f => [stem(f), relativeImports(f).filter(t => inside(dir, t)).map(stem)]))
+  for (const surface of SURFACES) {
+    for (const file of sources(root, [...SCRIPT_EXT, '.mesa'], `${surface}/src`)) {
+      let text = ''
+      try { text = stripComments(readFileSync(file, 'utf8')) } catch { continue }
+      for (const m of text.matchAll(SHARED_RE)) reach.get(stem(join(dir, m[1])))?.add(surface)
+      if (relativeImports(file).some(t => inside(dir, t)))
+        warn(file, `${surface}/ imports shared/ by relative path. Import it as #shared/<file>, the alias ` +
+          `the app's package.json "imports" names, so no surface depends on where another sits (FJS-D1320).`)
+    }
+  }
+  for (let changed = true; changed;) {
+    changed = false
+    for (const [from, targets] of via) for (const t of targets) for (const s of reach.get(from) ?? []) {
+      const set = reach.get(t)
+      if (set && !set.has(s)) { set.add(s); changed = true }
+    }
+  }
+
+  for (const file of files) {
+    const n = reach.get(stem(file))?.size ?? 0
+    if (n < 2) warn(file, n
+      ? `a shared/ file only ${[...reach.get(stem(file))][0]}/ imports. shared/ is for code two surfaces run; ` +
+        `one surface's file goes in that surface (FJS-D1320).`
+      : `a shared/ file no surface imports (FJS-D1320).`)
+  }
   return findings
 }
 

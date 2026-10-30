@@ -78,11 +78,11 @@ const root = join(PKG, 'editor', `.copy-${process.pid}`)
 rmSync(root, { recursive: true, force: true })
 mkdirSync(root, { recursive: true })
 // The package's own layout, so the web's relative imports of the rules it
-// shares with the server (`api/src/hearing.ts`, `memory.ts`, `pacer.ts`) land
+// shares with the server (`shared/hearing.ts`, `memory.ts`, `pacer.ts`) land
 // on the copy of them; a file left out is a preview that draws nothing.
 cpSync(SRC, join(root, 'web/src'), { recursive: true })
 cpSync(join(PKG, 'api/src'), join(root, 'api/src'), { recursive: true })
-const SCENE = join(root, 'web/src/scenes/Tavern.mesa')
+const SCENE = join(root, 'web/src/components/scenes/Tavern.mesa')
 const original = readFileSync(SCENE, 'utf8')
 
 const SEEN = join(root, 'claude-seen.json')
@@ -105,7 +105,7 @@ if (await fetch(URL_).then(() => true, () => false)) {
 }
 const vite = spawn(VITE, ['-c', 'editor/vite.config.js'], {
   cwd: PKG, detached: true, stdio: ['ignore', 'pipe', 'pipe'],
-  env: { ...process.env, PORT: String(port), SCENES_DIR: join(root, 'web/src/scenes'), PATH: `${join(root, 'bin')}:${process.env.PATH}` },
+  env: { ...process.env, PORT: String(port), SCENES_DIR: join(root, 'web/src/components/scenes'), PATH: `${join(root, 'bin')}:${process.env.PATH}` },
 })
 let viteLog = ''
 vite.stdout.on('data', (d) => { viteLog += d })

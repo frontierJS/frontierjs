@@ -12,8 +12,8 @@ import { createService } from '@frontierjs/junction'
 import { rateLimitHook } from '@frontierjs/junction/hooks'
 import type { App, Channel } from '@frontierjs/junction'
 
-import { hears } from '../hearing.ts'
-import type { Cell } from '../hearing.ts'
+import { hears } from '#shared/hearing.ts'
+import type { Cell } from '#shared/hearing.ts'
 import { roomChannelName } from '../rooms.ts'
 
 type Positions = { localPresence: (channel: string) => Array<{ connectionId: string, userId: string | number, meta: Record<string, unknown> }> }

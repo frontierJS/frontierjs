@@ -47,7 +47,7 @@
   import { readWorkers, closeOut } from '#workers'
   import { checkout, readMenu, setMenu, clearMenu, readyRows, rulings, running, MENUS, flagsLine } from '#taskmaster'
   import { stream } from '#sound'
-  import { listening } from '@/lib/band/band.js'
+  import { listening } from '@/lib/band/listening.js'
   import { createBells, RATE } from '@/lib/band/bell.js'
   import { LEDGER } from '@/lib/hash/ledger.data.js'
   import { TICKET, rail, line, board, pass, lamps, bell } from '@/pieces/kitchen.js'

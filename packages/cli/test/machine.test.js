@@ -23,7 +23,7 @@ import { fileURLToPath, pathToFileURL } from 'url'
 const HERE = dirname(fileURLToPath(import.meta.url))
 import {
   LOCAL_SERVERS, serverOf, transportFor, shQuote,
-  runCommand, reachCommand, sendCommand, syncCommand, withCwd, createMachine,
+  runCommand, reachCommand, sendCommand, fetchCommand, syncCommand, withCwd, createMachine,
   shipCommand, sameMachine, SSH_MUX, HELD_TAIL_LINES,
 } from '../core/machine.js'
 
@@ -76,6 +76,7 @@ describe('the command that carries a script', () => {
     expect(SSH_MUX).toMatch(/ControlMaster=auto/)
     expect(reachCommand('deploy@box', 'ssh')).toContain(SSH_MUX)
     expect(sendCommand('deploy@box', 'ssh', '/a', '/b')).toContain(SSH_MUX)
+    expect(fetchCommand('deploy@box', 'ssh', '/a', '/b')).toContain(SSH_MUX)
     expect(syncCommand('deploy@box', 'ssh', '/a', '/b')).toContain(`-e ${shQuote(`ssh ${SSH_MUX}`)}`)
   })
 

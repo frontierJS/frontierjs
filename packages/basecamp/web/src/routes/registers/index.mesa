@@ -620,14 +620,14 @@ title: Registers
   .registers-headline { font-size: var(--text-3xl, 2.25rem); line-height: 1.15; margin: 0; }
   .registers-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+    grid-template-columns: minmax(0, 1fr) minmax(var(--grid-min, 16rem), var(--aside-width));
     gap: var(--space-lg);
     align-items: start;
   }
   @media (max-width: 64rem) { .registers-layout { grid-template-columns: minmax(0, 1fr); } }
 
   .registers-text { resize: vertical; inline-size: 100%; font-family: var(--font-mono); }
-  .registers-search { flex: 1; min-inline-size: 12rem; }
+  .registers-search { flex: 1; min-inline-size: var(--tile-min, 12rem); }
   .registers-chip { cursor: pointer; border: 0; font: inherit; }
   .registers-intent { cursor: pointer; }
   .registers-check { display: grid; grid-template-columns: auto 1fr; gap: var(--space-2xs); align-items: baseline; flex: 1; cursor: pointer; }
@@ -648,14 +648,16 @@ title: Registers
     cursor: pointer;
   }
   .registers-open:hover .clamp-2 { text-decoration: underline; text-decoration-color: var(--tint-rule); }
-  .registers-rank { min-inline-size: 3em; text-align: end; }
+  .registers-rank { --registers-rank-size: 3em; min-inline-size: var(--registers-rank-size); text-align: end; }
 
   .registers-pkg {
+    --registers-pkg-name: 8rem;
+    --registers-pkg-count: 2.5rem;
     display: grid;
-    grid-template-columns: 8rem 1fr 2.5rem;
+    grid-template-columns: var(--registers-pkg-name) 1fr var(--registers-pkg-count);
     align-items: center;
     gap: var(--space-xs);
-    padding: 2px 0;
+    padding: var(--space-3xs) 0;
     border: 0;
     background: none;
     color: inherit;
@@ -665,7 +667,7 @@ title: Registers
   }
   .registers-pkg > .text-sm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .registers-pkg > .text-xs { text-align: end; }
-  .registers-track { block-size: 6px; border-radius: var(--pill-radius); background: var(--tint-surface); overflow: hidden; }
+  .registers-track { block-size: var(--track-size); border-radius: var(--pill-radius); background: var(--tint-surface); overflow: hidden; }
   .registers-fill { display: block; block-size: 100%; background: var(--tone-ink, currentColor); opacity: 0.7; }
   .registers-pkg[aria-pressed='true'] .registers-fill { opacity: 1; }
   .registers-pkg[aria-pressed='true'] > .text-sm { font-weight: 600; }

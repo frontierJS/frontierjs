@@ -1,11 +1,11 @@
 // api/test/world.test.ts
-// The scene the server reads (`web/src/scenes/<slug>.world.json`): what can be
+// The scene the server reads (`web/src/components/scenes/<slug>.world.json`): what can be
 // walked, what a bolt hits. The files are pinned against the stages by
 // `web/test/scenes.test.js`; this is the reader.
 
 import { test, expect } from 'bun:test'
 
-import { pacerAt } from '../src/pacer.ts'
+import { pacerAt } from '#shared/pacer.ts'
 import { obstacleAt, pickupAt, standable, walkable, worldFor } from '../src/world.ts'
 
 test('a scene is read by its slug, and a room with no scene has none', () => {

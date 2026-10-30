@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { createTestEnv } from '@frontierjs/testing'
 
 import { buildHavenApp } from '../src/app.ts'
-import { EARSHOT, hears, withinEarshot } from '../src/hearing.ts'
+import { EARSHOT, hears, withinEarshot } from '#shared/hearing.ts'
 import { roomChannelName } from '../src/rooms.ts'
 import { POST_KEY, signIn } from './sign-in.ts'
 

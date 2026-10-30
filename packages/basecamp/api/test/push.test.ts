@@ -8,7 +8,7 @@
  * that has not opted in is refused at the door and not ignored behind it.
  */
 
-import { test, expect, describe, beforeAll } from 'bun:test'
+import { test, expect, describe, beforeAll, spyOn } from 'bun:test'
 import { createHmac }             from 'node:crypto'
 import { join }                   from 'node:path'
 import { createTestEnv, session } from '@frontierjs/testing'
@@ -244,5 +244,70 @@ describe('the button and the laptop say which door they are', () => {
     expect(made).toMatchObject({ trigger: 'laptop', commitSha: `${sha}-dirty`, branch: 'main' })
     const steps = await (env.system as any).deploymentStep.findMany({ where: { deploymentId: made.id } })
     expect(steps.map((s: any) => s.name)).not.toContain('Build image')
+  })
+})
+
+// An API App's site/ publishes after its release (`IDEAS/site-hosting.md`
+// step 9), and a site that fails leaves the API it follows released.
+describe('a git container App publishes its site/ after the release', () => {
+
+  const deployments = () => env.as(admin).service('deployments')
+  const stepNames = async (id: string) =>
+    ((await (env.system as any).deploymentStep.findMany({ where: { deploymentId: id }, orderBy: { position: 'asc' } })) as any[]).map(s => s.name)
+  const settled = async (id: string) => {
+    for (let i = 0; i < 200; i++) {
+      const row = await (env.system as any).deployment.findUnique({ where: { id } })
+      if (['success', 'failed'].includes(row?.status)) return row
+      await Bun.sleep(50)
+    }
+    throw new Error(`release ${id} never finished`)
+  }
+
+  test('a build with a data volume ends with Publish site; one without, or a laptop build, has none', async () => {
+    const withVolume: any = await aGitApp()
+    await apps().patch(withVolume.id, { volumePath: '/db' })
+    expect(await stepNames((await deployments().create({ appId: withVolume.id })).id)).toEqual(
+      ['Validate', 'Build image', 'Back up volume', 'Start container', 'Health check', 'Publish site'])
+
+    const bare: any = await aGitApp()
+    expect(await stepNames((await deployments().create({ appId: bare.id })).id)).not.toContain('Publish site')
+
+    const laptop: any = await deployments().create({
+      appId: withVolume.id, trigger: 'laptop', commitSha: uniq().padEnd(40, '3'), branch: 'main',
+      toImage: `fjs-${withVolume.id}:laptop`, builtImage: `sha256:${'b'.repeat(64)}`,
+    })
+    expect(await stepNames(laptop.id)).not.toContain('Publish site')
+  })
+
+  test('a site that fails to publish is a failed step on a release that succeeded', async () => {
+    const executor = await import('../src/providers/executor.ts')
+    const real = executor.resolveExecutor
+    const sent: { path: string, body: any }[] = []
+    const spy = spyOn(executor, 'resolveExecutor').mockImplementation(async (...args: any[]) => {
+      const stub: any = await (real as any)(...args)
+      return { ...stub, async call(path: string, body: any, opts: any) {
+        if (path !== '/site/publish') return stub.call(path, body, opts)
+        sent.push({ path, body })
+        return { error: { message: 'the upload failed: Authentication failed' } }
+      } }
+    })
+    try {
+      const app: any = await aGitApp()
+      await apps().patch(app.id, { volumePath: '/db' })
+      await (env.system as any).variable.create({ data: { workspaceId: ws.id, environmentId: environment.id, appId: app.id, key: 'SITE_SECRET', secret: true, secretValue: 's3' } })
+      const made: any = await deployments().create({ appId: app.id })
+      const done = await settled(made.id)
+
+      expect(done.status).toBe('success')
+      const site = await (env.system as any).deploymentStep.findFirst({ where: { deploymentId: made.id, name: 'Publish site' } })
+      expect(site.status).toBe('failed')
+      expect(site.output).toContain('the upload failed: Authentication failed')
+      expect((await (env.system as any).app.findUnique({ where: { id: app.id } })).status).toBe('running')
+      // The site is the App's own commit and database, with its release variables.
+      const mine = sent.find(s => s.body.app_id === app.id)
+      expect(mine?.body).toMatchObject({ branch: 'main', app: { volume_path: '/db', env: { SITE_SECRET: 's3' } } })
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

@@ -14,7 +14,7 @@ import { generateSigningKeys } from '@frontierjs/toolbelt/signature'
 
 import { buildHavenApp } from '../src/app.ts'
 import { createHavenAuth } from '../src/auth.ts'
-import { CRIER } from '../src/crier.ts'
+import { CRIER } from '#shared/crier.ts'
 import { POST_KEY, chainOf, member, signIn, signedLogin, postLogin } from './sign-in.ts'
 
 const SCHEMA = join(import.meta.dir, '..', '..', 'db', 'schema.lite')

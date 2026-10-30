@@ -3,7 +3,7 @@
   // sessions on this machine are its brigade, read from `#workers`.
   import WalkIn from '@/components/WalkIn.mesa'
   import Brigade from '@/components/Brigade.mesa'
-  import Kitchen from '@/scenes/Kitchen.mesa'
+  import Kitchen from '@/components/scenes/Kitchen.mesa'
 </script>
 
 <WalkIn slug="kitchen">

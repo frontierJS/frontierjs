@@ -5,7 +5,8 @@
   // only and never sent, so two screens in one room may stand in two seasons;
   // it holds from scene to scene until `auto`, since the next stage is made in
   // the almanac's season. Draws nothing.
-  import { SEASONS, almanacAt, heldOf, hold } from '@/lib/scene/sky.js'
+  import { SEASONS, almanacAt, heldOf } from '#shared/sky.js'
+  import { held, hold } from '@/lib/sky/held.js'
 
   export let stage
 
@@ -14,13 +15,13 @@
 
   function turn({ args }) {
     const s = args.trim().toLowerCase()
-    if (!s) return `it is ${stage.season}${heldOf('season') ? ' (held)' : ''} — ${HELP}`
+    if (!s) return `it is ${stage.season}${heldOf('season', held) ? ' (held)' : ''} — ${HELP}`
     if (s !== 'auto' && !SEASONS.includes(s)) return HELP
-    const was = heldOf('season')
+    const was = held.season
     hold('season', s === 'auto' ? null : s)
     // A turn refused (a tree's new look on a claimed cell) leaves the stage
     // where it was, so the hold goes back with it.
-    try { stage.toSeason(almanacAt(Date.now()).season) } catch (e) { hold('season', was); return `the season tripped: ${e.message}` }
+    try { stage.toSeason(almanacAt(Date.now(), held).season) } catch (e) { hold('season', was); return `the season tripped: ${e.message}` }
     return s === 'auto' ? `the season follows the clock: ${stage.season}` : `it is ${s}`
   }
 

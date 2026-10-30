@@ -1,4 +1,4 @@
-// editor/source.js — a scene FILE (`src/scenes/<Name>.mesa`) read and written
+// editor/source.js — a scene FILE (`src/components/scenes/<Name>.mesa`) read and written
 // back as text.
 //
 // The editor's document is the file's markup: the `<Scene>` tag and the

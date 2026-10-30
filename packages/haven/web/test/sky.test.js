@@ -5,7 +5,8 @@
 import { test, expect, setSystemTime } from 'bun:test'
 import { createStage, INK, INDOORS, OUTDOORS, MOON_ROW } from '../src/lib/scene/stage.js'
 import { piece } from '../src/pieces/index.js'
-import { DAY_MS, SKY_MS, WEATHER_MS, FALL, DROPS, GUST, GROUND, GROUND_MS, tempAt, groundAt, groundOn, darkness, isNight, shade, moonAt, MOON_FG, SYNODIC_MS, scheduleAt, seasonAt, almanacAt, windAt, hold, heldOf, fallAt, cloudAt, CLOUD_MS, untilWeatherChange } from '../src/lib/scene/sky.js'
+import { DAY_MS, SKY_MS, WEATHER_MS, FALL, DROPS, GUST, GROUND, GROUND_MS, tempAt, groundAt, groundOn, darkness, isNight, shade, moonAt, MOON_FG, SYNODIC_MS, scheduleAt, seasonAt, almanacAt, windAt, heldOf, fallAt, cloudAt, CLOUD_MS, untilWeatherChange } from '#shared/sky.js'
+import { hold } from '../src/lib/sky/held.js'
 import { mountScene } from './stage.mjs'
 
 const NOON = 0.25 * DAY_MS
@@ -286,11 +287,9 @@ test('the ground keeps what fell: puddles dry within minutes of the rain, a cove
 
 test('a held weather is a weather the ground has always had: clear is bare, rain is wet, snow is covered', () => {
   const ms = Date.parse('2026-07-10T12:00Z')
-  try {
-    hold('weather', 'clear'); expect(groundAt(ms)).toEqual({ wet: 0, snow: 0 })
-    hold('weather', 'rain');  expect(groundAt(ms)).toEqual({ wet: 1, snow: 0 })
-    hold('weather', 'snow');  expect(groundAt(ms)).toEqual({ wet: 0, snow: 1 })   // a summer's day: nothing thaws while it falls
-  } finally { hold('weather', null) }
+  expect(groundAt(ms, { weather: 'clear' })).toEqual({ wet: 0, snow: 0 })
+  expect(groundAt(ms, { weather: 'rain' })).toEqual({ wet: 1, snow: 0 })
+  expect(groundAt(ms, { weather: 'snow' })).toEqual({ wet: 0, snow: 1 })   // a summer's day: nothing thaws while it falls
 })
 
 test('the ground is drawn on a blank lit outdoor cell, fewer cells as it fades, behind a drop, and never indoors', () => {
@@ -337,17 +336,18 @@ test('a screen holds one field of the almanac, and the rest stays the clock\'s',
     process.env.HAVEN_SEASON = 'monsoon'
     expect(almanacAt(ms).season).toBe('winter')                           // a pin that is no season is the clock's
   } finally { process.env.HAVEN_SEASON = pin }
+  // the ground is what the weather left, so it follows a held weather too
+  pinned('rain', () => expect(almanacAt(ms, { weather: 'snow' })).toEqual({ ...clock, weather: 'snow', ground: { wet: 0, snow: 1 } }))
+  pinned(null, () => expect(almanacAt(ms, { season: 'winter' })).toEqual({ ...clock, season: 'winter' }))
+  expect(heldOf('season', { season: 'winter' })).toBe('winter')
+  pinned(null, () => expect(almanacAt(ms)).toEqual(clock))
+  // the server holds nothing, so a screen's store never reaches its almanac
   try {
-    // the ground is what the weather left, so it follows a held weather too
-    pinned('rain', () => { hold('weather', 'snow'); expect(almanacAt(ms)).toEqual({ ...clock, weather: 'snow', ground: { wet: 0, snow: 1 } }) })
-    hold('weather', null)
-    hold('season', 'winter')
-    pinned(null, () => expect(almanacAt(ms)).toEqual({ ...clock, season: 'winter' }))
+    hold('weather', 'snow')
+    pinned(null, () => expect(almanacAt(ms)).toEqual(clock))
     expect(() => hold('season', 'monsoon')).toThrow(/no season is called monsoon/)
     expect(() => hold('darkness', 1)).toThrow(/the almanac holds no darkness/)
-    expect(heldOf('season')).toBe('winter')
-  } finally { hold('weather', null); hold('season', null) }
-  pinned(null, () => expect(almanacAt(ms)).toEqual(clock))
+  } finally { hold('weather', null) }
 })
 
 /** The rows of column `x` that have a drop of `kind` at `ms`. */
@@ -375,7 +375,7 @@ test('the wind is one per spell, the clock\'s, and a storm\'s is the strongest',
   expect(new Set(winds.filter((w) => w.kind !== 'storm').map((w) => w.strength))).toEqual(new Set([0, 1, 2]))
   // A held storm keeps the clock's wind: a hold replaces one field.
   const calm = winds.findIndex((w) => w.kind !== 'storm' && w.strength === 0) * WEATHER_MS
-  try { hold('weather', 'storm'); expect(almanacAt(calm).wind).toEqual(windAt(calm)) } finally { hold('weather', null) }
+  expect(almanacAt(calm, { weather: 'storm' }).wind).toEqual(windAt(calm))
 })
 
 test('every fall drifts a column downwind every GUST steps, and calm falls straight', () => {

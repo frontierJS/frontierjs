@@ -3,7 +3,7 @@
 // `dye`), and only a flower dyes.
 import { test, expect } from 'bun:test'
 import { mountScene } from './stage.mjs'
-import { DAY_MS } from '../src/lib/scene/sky.js'
+import { DAY_MS } from '#shared/sky.js'
 
 const { stage } = await mountScene('Square')
 const FLOWER = { x: 6, y: 24 }

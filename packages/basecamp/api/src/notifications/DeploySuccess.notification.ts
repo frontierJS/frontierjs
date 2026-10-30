@@ -15,6 +15,8 @@ export interface DeployPayload {
   appName:      string
   environment:  string
   release?:     string
+  /** Why the App's site/ did not publish, when the API released (`SITE_STEP`). */
+  siteFailed?:  string
 }
 
 const where = (p: DeployPayload) => `${p.appName} → ${p.environment}`
@@ -24,15 +26,18 @@ export default defineNotification<DeployPayload>({
 
   inApp: (p) => inApp()
     .title('Deploy succeeded')
-    .body(`${where(p)}${p.release ? ` — ${p.release}` : ''}`)
+    .body(`${where(p)}${p.release ? ` — ${p.release}` : ''}${p.siteFailed ? ' — the site did not publish' : ''}`)
     .action('View deployment', `/deployments/${p.deploymentId}/`)
     // A loose reference with no foreign key: a deleted deployment leaves this
     // row readable as a dead link rather than cascading it away.
     .context('Deployment', p.deploymentId)
-    .data({ appName: p.appName, environment: p.environment, release: p.release }),
+    .data({ appName: p.appName, environment: p.environment, release: p.release, siteFailed: p.siteFailed }),
 
-  email: (p) => mail()
-    .subject(`Deploy succeeded — ${where(p)}`)
-    .line(`${where(p)} is live${p.release ? ` at ${p.release}` : ''}.`)
-    .action('View deployment', appUrl(`/deployments/${p.deploymentId}/`)),
+  email: (p) => {
+    const m = mail()
+      .subject(`Deploy succeeded — ${where(p)}`)
+      .line(`${where(p)} is live${p.release ? ` at ${p.release}` : ''}.`)
+    if (p.siteFailed) m.line(`Its site did not publish, and the last one is still serving: ${p.siteFailed}`)
+    return m.action('View deployment', appUrl(`/deployments/${p.deploymentId}/`))
+  },
 })

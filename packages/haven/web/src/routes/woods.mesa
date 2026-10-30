@@ -1,7 +1,7 @@
 <script>
   // The woods — west of the square, across its border.
   import WalkIn from '@/components/WalkIn.mesa'
-  import Woods from '@/scenes/Woods.mesa'
+  import Woods from '@/components/scenes/Woods.mesa'
 </script>
 
 <WalkIn slug="woods"><Woods /></WalkIn>

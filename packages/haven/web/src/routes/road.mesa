@@ -1,7 +1,7 @@
 <script>
   // The road — east of the square, across its border.
   import WalkIn from '@/components/WalkIn.mesa'
-  import Road from '@/scenes/Road.mesa'
+  import Road from '@/components/scenes/Road.mesa'
 </script>
 
 <WalkIn slug="road"><Road /></WalkIn>

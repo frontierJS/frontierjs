@@ -1911,10 +1911,19 @@ title: Workbench
   /* The stage is the window under the header, so a long run scrolls inside
      its pane and the message box never leaves the screen. */
   .workbench {
+    --workbench-min-block: 34rem;
+    --workbench-pane-max: 48rem;
+    --workbench-slot-min: 6rem;
+    --workbench-tab-size: 12rem;
+    --workbench-tab-min: 5rem;
+    --workbench-rail-size: 0.75rem;
+    --workbench-tail-radius: 2px;
+    --workbench-gutter: 3.5em;
+    --workbench-sign: 1.2em;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 18rem;
+    grid-template-columns: minmax(0, 1fr) var(--aside-width);
     gap: var(--space-lg);
-    block-size: max(34rem, calc(100dvh - var(--workbench-top, 10rem) - var(--screen-pad, 1rem)));
+    block-size: max(var(--workbench-min-block), calc(100dvh - var(--workbench-top, 10rem) - var(--screen-pad, 1rem)));
   }
   .workbench-stage { display: flex; flex-direction: column; gap: var(--space-sm); min-block-size: 0; }
   .workbench-bar { justify-content: space-between; flex-shrink: 0; }
@@ -1931,7 +1940,7 @@ title: Workbench
   .workbench-slot {
     display: grid;
     place-items: center;
-    min-block-size: 6rem;
+    min-block-size: var(--workbench-slot-min);
     border: calc(var(--border-width) * 2) dashed var(--tint-rule);
     border-radius: var(--card-radius);
     color: var(--ink-mute);
@@ -1969,7 +1978,7 @@ title: Workbench
   /* A Card spaces its children with a flow margin; the pane is a flex
      column and spaces them with its gap, so the margin would come twice. */
   .workbench-pane > * { margin-block-start: 0; }
-  .workbench-pane[data-branch] { border-inline-start: 3px solid var(--rule-strong); }
+  .workbench-pane[data-branch] { border-inline-start: var(--stroke-width) solid var(--rule-strong); }
   /* Slim: a pane folds to its header; clicking the header flips it. */
   .workbench-pane[data-slim] { align-self: start; }
   .workbench-pane[data-slim] > :not(.workbench-head) { display: none; }
@@ -2017,8 +2026,8 @@ title: Workbench
   .workbench-chat-tab {
     display: flex;
     align-items: center;
-    flex: 0 1 12rem;
-    min-inline-size: 5rem;
+    flex: 0 1 var(--workbench-tab-size);
+    min-inline-size: var(--workbench-tab-min);
     border: var(--border-width) solid transparent;
     border-block-start: 0;
     border-radius: 0 0 var(--card-radius) var(--card-radius);
@@ -2080,7 +2089,7 @@ title: Workbench
     background: var(--tint-surface);
     box-shadow: var(--shadow-sm, none);
     /* Little windows: the dock reads at a glance, so the type shrinks with them. */
-    font-size: 0.625rem;
+    font-size: var(--text-2xs);
     line-height: 1.3;
   }
   .workbench-tile .text-sm,
@@ -2113,13 +2122,13 @@ title: Workbench
   @media (max-width: 64rem) {
     .workbench { display: flex; flex-direction: column-reverse; block-size: auto; }
     .workbench-dock { flex-direction: row; flex-wrap: wrap; overflow: visible; }
-    .workbench-tile { flex: 1 1 12rem; }
+    .workbench-tile { flex: 1 1 var(--tile-min, 12rem); }
     .workbench-pin { flex: 1 1 100%; }
     /* One column: the cell each pane was given is an inline style, so only
        !important takes it back. */
     .workbench-panes { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
     .workbench-panes > * { grid-area: auto !important; }
-    .workbench-pane { block-size: min(85dvh, 48rem); }
+    .workbench-pane { block-size: min(85dvh, var(--workbench-pane-max)); }
   }
 
   .workbench-msg {
@@ -2129,8 +2138,8 @@ title: Workbench
     border-radius: var(--card-radius);
     background: var(--tint-surface);
   }
-  .workbench-you { align-self: flex-end; border-end-end-radius: 2px; }
-  .workbench-ai  { align-self: flex-start; border-end-start-radius: 2px; }
+  .workbench-you { align-self: flex-end; border-end-end-radius: var(--workbench-tail-radius); }
+  .workbench-ai  { align-self: flex-start; border-end-start-radius: var(--workbench-tail-radius); }
   .workbench-msg-head {
     display: flex;
     align-items: baseline;
@@ -2155,7 +2164,7 @@ title: Workbench
 
   .workbench-rail {
     position: relative;
-    inline-size: 0.75rem;
+    inline-size: var(--workbench-rail-size);
     border-radius: var(--pill-radius);
     background: var(--surface-sunken);
   }
@@ -2169,17 +2178,17 @@ title: Workbench
   .workbench-notch {
     position: absolute;
     inset-inline: -2px;
-    block-size: 4px;
+    block-size: calc(var(--stroke-width) * 2);
     padding: 0;
     border: 0;
     border-radius: var(--pill-radius);
     background: var(--tint-rule);
     cursor: pointer;
   }
-  /* A 4px notch is too thin to hit; the hit area is taller than the mark. */
+  /* A notch is too thin to hit; the hit area is taller than the mark. */
   .workbench-notch::before { content: ''; position: absolute; inset: -5px 0; }
   .workbench-notch:hover,
-  .workbench-notch[aria-current='true'] { background: var(--tone-ink); block-size: 6px; }
+  .workbench-notch[aria-current='true'] { background: var(--tone-ink); block-size: calc(var(--stroke-width) * 3); }
   .workbench-now { overflow-wrap: anywhere; }
 
   .workbench-runrow { padding-block: var(--space-2xs); border-block-end: var(--border-width) solid var(--tint-rule); }
@@ -2219,10 +2228,10 @@ title: Workbench
     font-family: var(--font-mono);
     font-size: var(--text-xs);
   }
-  .workbench-hunk { padding-block: 2px; }
+  .workbench-hunk { padding-block: var(--space-3xs); }
   .workbench-line {
     display: grid;
-    grid-template-columns: 3.5em 1.2em 1fr;
+    grid-template-columns: var(--workbench-gutter) var(--workbench-sign) 1fr;
     inline-size: 100%;
     padding: 0;
     border: 0;

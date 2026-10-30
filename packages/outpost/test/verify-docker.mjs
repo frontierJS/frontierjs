@@ -98,6 +98,7 @@ const OUTPOST  = `https://127.0.0.1:${PORT}`
 const fail  = (msg) => { console.error(`verify-docker: ${msg}`); process.exit(1) }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 const sh    = (...argv) => spawnSync(argv[0], argv.slice(1), { encoding: 'utf8' })
+const volumeNames = () => new Set(sh('docker', 'volume', 'ls', '-q').stdout.trim().split('\n').filter(Boolean))
 
 // ─── Preflight ────────────────────────────────────────────────────────────
 
@@ -187,6 +188,7 @@ const dataDir    = join(appsDir, APP, 'data')
 const rootPath = join(scratch, 'caddy-root.pem')
 let outpost    = null
 let stoppedEarly = null
+let volumesBefore = new Set()
 
 try {
   // ─── The machine's Caddy ────────────────────────────────────────────────
@@ -209,6 +211,7 @@ try {
   }) })
   if (!settings.ok) throw new Error(`caddy refused the machine settings: ${await settings.text()}`)
 
+  volumesBefore = volumeNames()
   outpost = Bun.spawn(['bun', 'src/index.js'], {
     cwd: ROOT, stdout: 'pipe', stderr: 'pipe',
     env: {
@@ -451,8 +454,13 @@ try {
   t('reports.areSigned',               received.length > 0 && received.every(r => r.signed))
   t('reports.heartbeatRegistersTheUrl', beat?.path === '/servers/verify-docker' && beat?.body?.outpost_url === OUTPOST)
   t('reports.heartbeatCarriesVitals',  typeof beat?.body?.health === 'object' && beat.body.health !== null)
-  const volumeCount = sh('docker', 'volume', 'ls', '-q').stdout.trim().split('\n').filter(Boolean).length
-  t('reports.volumesAreEveryVolume',   volumes?.body?.volumes?.filter(v => v.kind === 'volume').length === volumeCount)
+  // The report lists the volumes at some moment after the Outpost started, and
+  // other lanes on a shared daemon make and remove volumes meanwhile, so only
+  // a volume present before the start and still present now must be in it.
+  const volumesAfter = volumeNames()
+  const reported     = new Set(volumes?.body?.volumes?.filter(v => v.kind === 'volume').map(v => v.name))
+  const stable       = [...volumesBefore].filter(n => volumesAfter.has(n))
+  t('reports.volumesAreEveryVolume',   volumes !== undefined && stable.every(n => reported.has(n)))
   t('reports.volumesHaveMountpoints',  (volumes?.body?.volumes ?? []).every(v => v.mountpoint))
   // The daemon's own count, from its API: `docker images -a` lists every
   // intermediate layer and answers a number no report should match.

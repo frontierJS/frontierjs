@@ -4,11 +4,11 @@
 // reads are the app's (`app.memory`, `app.cooldowns` — `app.ts`), claimed there
 // so two apps in one process, a test's, never share a cooldown.
 
-import { FLY_MS, crosses, fly, volley } from './bolt.ts'
-import type { Figure, Flight, Hit, World } from './bolt.ts'
-import type { Facing } from './facing.ts'
-import type { RoomMemory, Trace } from './memory.ts'
-import type { Position } from './rooms.ts'
+import { FLY_MS, crosses, fly, volley } from '#shared/bolt.ts'
+import type { Figure, Flight, Hit, World } from '#shared/bolt.ts'
+import type { Facing } from '#shared/facing.ts'
+import type { RoomMemory, Trace } from '#shared/memory.ts'
+import type { Position } from '#shared/position.ts'
 import { obstacleAt, riderOf } from './world.ts'
 import type { SceneWorld } from './world.ts'
 

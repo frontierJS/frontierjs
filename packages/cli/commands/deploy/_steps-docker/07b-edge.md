@@ -1,6 +1,7 @@
 ---
 title: 07b-edge
 description: Rewrite this app's Caddy routes when the API's paths have moved
+skip: "$.config.siteOnly"
 ---
 
 ```js

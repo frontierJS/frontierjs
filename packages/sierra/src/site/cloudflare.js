@@ -216,6 +216,43 @@ export function gitBranch(cwd) {
   return branch && branch !== 'HEAD' ? branch : undefined
 }
 
+function wranglerBin(root) {
+  try {
+    return resolve(dirname(createRequire(join(root, 'package.json')).resolve('wrangler/package.json')), 'bin/wrangler.js')
+  } catch {
+    throw new Error(`[Sierra] cloudflare: wrangler does not resolve from ${root}; the site installs it`)
+  }
+}
+
+/**
+ * Whether the site's Worker has a deployment on the account wrangler signs in
+ * to — what `fli deploy` asks before it publishes, so the first deploy of a
+ * domain stays a deliberate `site --deploy` (`FJS-D1688`). Asked through
+ * wrangler because the upload is: fli's `cf` login may be another account.
+ *
+ * @param {object} opts
+ * @param {string} opts.root
+ * @param {object} opts.config  the Sierra config
+ * @returns {{ name: string, deployed: boolean | null, reason?: string }}
+ *   `deployed: null` when wrangler answered neither yes nor no
+ */
+export function workerDeployed({ root, config }) {
+  const name = workerName(config.siteUrl)
+  const run = spawnSync('node', [wranglerBin(root), 'deployments', 'list', '--name', name, '--json'], {
+    cwd: root, encoding: 'utf8',
+  })
+  if (run.status === 0) {
+    try { return { name, deployed: JSON.parse(run.stdout).length > 0 } }
+    catch { return { name, deployed: null, reason: 'wrangler answered something other than JSON' } }
+  }
+  // Cloudflare's code for a script the account does not have; anything else —
+  // signed out, offline, another account — is not a no.
+  const said = `${run.stdout}\n${run.stderr}`
+  if (/\[code: 10007\]/.test(said)) return { name, deployed: false }
+  const line = said.split('\n').map(l => l.replace(/\x1b\[[0-9;]*m/g, '').trim()).find(l => /ERROR|error/.test(l))
+  return { name, deployed: null, reason: line ?? `wrangler exited ${run.status}` }
+}
+
 /**
  * Ship the dist the last build wrote, never a rebuild, so what goes out is
  * what the drive just passed. The one caller of `wrangler deploy` and
@@ -238,13 +275,7 @@ export async function deploySite({ root, config, preview = false, alias, dry = f
   const made = await writeCloudflare({ root, config, preview })
   const name = made.wrangler.name
   const named = preview ? previewAlias(name, alias ?? gitBranch(root)) : null
-
-  let wrangler
-  try {
-    wrangler = resolve(dirname(createRequire(join(root, 'package.json')).resolve('wrangler/package.json')), 'bin/wrangler.js')
-  } catch {
-    throw new Error(`[Sierra] cloudflare: wrangler does not resolve from ${root}; the site installs it`)
-  }
+  const wrangler = wranglerBin(root)
 
   // A preview is uploaded and never deployed: wrangler prints its version URL,
   // and `<alias>-<name>` follows the latest upload under that alias.

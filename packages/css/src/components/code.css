@@ -286,7 +286,7 @@ code[language] :is(ins, del, dfn) {
   min-inline-size:  100%;
   margin-inline:    calc(var(--code-pad, 0px) * -1);
   padding-inline:   var(--code-pad, 0px);
-  border-inline-start: 2px solid var(--code-line-rule);
+  border-inline-start: var(--stroke-width) solid var(--code-line-rule);
   background:       var(--code-line-bg);
 }
 

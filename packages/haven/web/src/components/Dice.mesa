@@ -5,7 +5,7 @@
   // The answer is the note under this figure as well. A roll is a verb and
   // never a Message of this member's own. Draws nothing.
   import { getClient } from '@frontierjs/sierra/resource'
-  import { MAX_DICE, MAX_SIDES, parseRoll } from '../../../api/src/dice.ts'
+  import { MAX_DICE, MAX_SIDES, parseRoll } from '#shared/dice.ts'
 
   export let room
 

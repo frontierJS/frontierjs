@@ -1,6 +1,6 @@
 // Who walked in. A figure in presence carries a member id; the client reads
 // the nick here. Created by the login (`IDEAS/haven.md` 1.3), so no create.
-// `inventory` is what the caller carries (`api/src/inventory.ts`): it is kept in
+// `inventory` is what the caller carries (`shared/inventory.ts`): it is kept in
 // memory and is nobody's but the caller's, so the call names no member.
 import { createService, $, BadRequest } from '@frontierjs/junction'
 

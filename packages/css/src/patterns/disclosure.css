@@ -74,8 +74,8 @@
   content:       "";
   width:         0.45rem;
   height:        0.45rem;
-  border-right:  2px solid var(--ink-mute);
-  border-bottom: 2px solid var(--ink-mute);
+  border-right:  var(--stroke-width) solid var(--ink-mute);
+  border-bottom: var(--stroke-width) solid var(--ink-mute);
   transform:     rotate(-45deg);
   transition:    transform var(--motion-base) var(--motion-ease);
   flex-shrink:   0;

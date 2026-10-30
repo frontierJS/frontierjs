@@ -65,7 +65,7 @@
   import { stream } from '#sound'
   import { onOpen, setLive, studyCwd } from '#study'
   import { readWorkers } from '#workers'
-  import { listening } from '@/lib/band/band.js'
+  import { listening } from '@/lib/band/listening.js'
   import { createBells, RATE } from '@/lib/band/bell.js'
   import { TONES } from '@/lib/home/answer.js'
   var DANGER = TONES.danger

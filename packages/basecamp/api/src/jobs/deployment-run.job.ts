@@ -56,6 +56,8 @@ import { syncReplicasOn }       from './replicate-sync.job.ts'
 import { isInline, isGit, inlineFilesFor } from '../domain/release/app-source.ts'
 import { siteBranch } from '../domain/site/site-checkout.ts'
 import { releaseSite } from '../domain/site/site-publish.ts'
+import { cloudflareFor } from '../domain/site/site-preview.ts'
+import { SITE_STEP } from '../domain/release/release-record.ts'
 import { releaseEnv } from '../domain/release/variables.ts'
 import { runtimeOf, routedHosts, routedPaths, routedRedirects, markRunning, type Runtime } from '../domain/release/runtime.ts'
 import { takeAppBackup, destinationFor } from './app-backup-run.job.ts'
@@ -229,12 +231,25 @@ function runner(app: App) {
       // The digest travels down the steps: whatever /pull reported is what
       // /deploy is asked to start, and what /health-check is asked about.
       let digest: string | null = asDigest(deploy.builtImage)
+      // The commit the image was built from, which is the site's.
+      let commit: string | null = null
+      let siteFailed: string | undefined
 
       for (const s of steps) {
         current = s.id
         await step(deploymentId, s.id, 'running')
 
-        const result = await runStep(s, { deploy, service, config, executor, digest })
+        let result: Awaited<ReturnType<typeof runStep>>
+        try {
+          result = await runStep(s, { deploy, service, config, executor, digest, commit })
+        } catch (err) {
+          if (s.name !== SITE_STEP) throw err
+          siteFailed = (err as Error).message ?? 'unknown error'
+          await step(deploymentId, s.id, 'failed', { output: siteFailed })
+          current = undefined
+          continue
+        }
+        if (result.commit) commit = result.commit
 
         // A later step's digest wins: /deploy names the bytes that were started,
         // where /pull names the bytes that were fetched, and a release records
@@ -257,8 +272,8 @@ function runner(app: App) {
       // A first release is what makes the volume a replica list skips until
       // it exists, so the machine is sent its list again.
       if (service?.replicaDestinationId) await syncReplicasOn(app, [executor.serverId])
-      log.info('deployment succeeded', { id: deploymentId, duration_ms: Date.now() - startedAt })
-      await tellThem('DeploySuccess', deploy, service)
+      log.info('deployment succeeded', { id: deploymentId, duration_ms: Date.now() - startedAt, ...(siteFailed ? { site: siteFailed } : {}) })
+      await tellThem('DeploySuccess', deploy, service, siteFailed ? { siteFailed } : {})
 
     } catch (err: unknown) {
       const msg = (err as Error).message ?? 'unknown error'
@@ -279,6 +294,7 @@ function runner(app: App) {
       config:   Record<string, unknown>
       executor: Executor
       digest:   string | null
+      commit?:  string | null
     }
   ): Promise<{ output?: string; digest: string | null; commit?: string; containerPort?: number }> {
     const { deploy, service, executor, digest } = ctx
@@ -291,6 +307,7 @@ function runner(app: App) {
     const source = ctx.config.source ?? service.source ?? {}
     if (isInline(source)) return runInlineStep(step, { ...ctx, source })
     if (service.type === 'static' && isGit(source)) return runSiteStep(step, { ...ctx, source })
+    if (step.name === SITE_STEP) return runAppSiteStep({ ...ctx, source })
     // The image as the app names it. The digest is what identifies bytes, but a
     // registry still needs a name to pull by, so both travel.
     // A git release is named for itself: two builds of one app share nothing
@@ -542,6 +559,30 @@ function runner(app: App) {
         digest, commit: live.note ? undefined : live.commit }
     }
     return { output: `step '${step.name}' needs no work for a static site`, digest }
+  }
+
+  // An API App's site/ (`IDEAS/site-hosting.md` step 9), from the commit the
+  // image was built from, against a copy of the database the new release just
+  // migrated, uploaded with the workspace's Cloudflare account (`FJS-D1252`).
+  // The machine answers `skipped` for a commit with no site/ and for a Worker
+  // with no deployment, whose first deploy is a person's (`FJS-D1688`).
+  async function runAppSiteStep(
+    ctx: { deploy: DeploymentRow; service: ServiceRow; config: Record<string, unknown>; executor: Executor; digest: string | null; commit?: string | null; source: any },
+  ): Promise<{ output?: string; digest: string | null }> {
+    const { deploy, executor, digest, source } = ctx
+    const runtime    = runtimeFor(ctx.config, ctx.service)
+    // Asked here and not refused here: a commit with no site/ needs no account.
+    const cloudflare = await cloudflareFor(app, deploy.workspaceId)
+    const reply = await executor.call('/site/publish', {
+      // A real machine refuses a null commit by name; a stub's build names none.
+      app_id: deploy.appId, source, branch: source.branch ?? 'main', commit: ctx.commit ?? null,
+      ...('refused' in cloudflare ? {} : { cloudflare: { token: cloudflare.token, account_id: cloudflare.accountId } }),
+      app: { volume_path: runtime.volumePath, env: await releaseEnv(app.db as never, ctx.config as never) },
+    }, { timeoutMs: BUILD_TIMEOUT_MS })
+    if (reply.error) throw new Error('refused' in cloudflare ? `${reply.error.message} — ${cloudflare.refused}` : reply.error.message)
+    if (reply.data?.stubbed) return { output: String(reply.data.note ?? 'stub executor — nothing was published'), digest }
+    if (reply.data?.skipped) return { output: String(reply.data.skipped), digest }
+    return { output: `live at ${reply.data?.url ?? 'the site\'s own domain'}`, digest }
   }
 
   // The release, the steps it left behind, the app's status and the event —

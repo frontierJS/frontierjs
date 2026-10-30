@@ -11,7 +11,7 @@
   import { members }  from '@/resources/Member.mesa'
   import { cells, clip } from '@/lib/scene/cells.js'
   import { at } from '#cell'
-  import { CRIER, CRY_MS } from '../../../api/src/crier.ts'
+  import { CRIER, CRY_MS } from '#shared/crier.ts'
 
   const scene = $context.scene
   let view = scene.view

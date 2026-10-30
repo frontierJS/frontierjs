@@ -9,11 +9,13 @@ import { $ } from '@frontierjs/junction'
 // This service is the one exception to the workspace-scoped pattern: it does
 // not live INSIDE a workspace, it is the workspace. So it does not use
 // sessionScope()'s requireWorkspace — the id IS the workspace, and
-// stampSelfAsWorkspace below makes the role hooks work on that basis.
+// workspaceOrKeys (core/hooks.ts) names it as the tenant, so the gate and the
+// standing are both read against the workspace addressed.
 
 import { createService, NotFound, Conflict, Forbidden, BadRequest, Unauthorized } from '@frontierjs/junction'
 import { authenticate } from '@frontierjs/junction/hooks'
-import { requireWorkspaceRole, refuseGrantAboveOwn, roleOf, restandingFor, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { LEVELS } from '@frontierjs/litestone'
+import { refuseGrantAboveOwn, roleOf, getPagination, WORKSPACE_QUERY, WORKSPACES_SERVICE } from '../../core/hooks.ts'
 import { grantsFor } from '../../core/capabilities.ts'
 import { db, actor, slugify, narrowPatch, changesNothing, callerOrder } from '../../core/resource.ts'
 import type { WorkspaceRole }  from '../../../../db/schema.d.ts'
@@ -27,28 +29,6 @@ import { keyScope } from '../../domain/api-key/scopes.ts'
 import { pushTopicFor } from '../../domain/notification/push-topic.ts'
 import pushTest from '../../domain/notification/push-test.ts'
 import { env } from '../../core/env.ts'
-
-/**
- * Point the role hooks at the workspace being addressed.
- *
- * requireWorkspaceRole reads $.locals.workspaceId, which sessionScope's
- * requireWorkspace() normally stamps from the X-Workspace-Id header. This
- * service has no such header — the workspace is $.id. Without this the
- * hook found no workspaceId, hit its `if (!userId || !workspaceId) return`
- * guard and **enforced nothing**: any authenticated user could rename or
- * delete any workspace, or promote themselves inside it.
- */
-async function stampSelfAsWorkspace(): Promise<void> {
-  if (!$.id) return
-  $.locals.workspaceId = String($.id)
-  // Re-resolve the standing against THIS workspace. The around hook already
-  // resolved one from X-Workspace-Id — the workspace the UI is currently
-  // showing — and that is a different workspace from the one being addressed
-  // whenever a person renames or leaves one from a list. Without this an
-  // admin of the workspace they are LOOKING AT would carry ADMINISTRATOR(5)
-  // into a patch of any other workspace they can name.
-  await restandingFor($, String($.id))
-}
 
 /**
  * Put the session-derived columns on $.data BEFORE validation sees it.
@@ -118,8 +98,8 @@ function people(): any {
   return $.db.asSystem().user
 }
 
-/** The three roster writes go through the caller's own client, re-claimed to
- *  the workspace being addressed by `stampSelfAsWorkspace`, so the schema's
+/** The three roster writes go through the caller's own client, claimed to
+ *  the workspace being addressed, so the schema's
  *  gate, `@@allow` and `@@deny(update, userId == auth().id)` hold them and not
  *  a restatement here. `leave` stays system: it deletes the caller's own
  *  row, which that deny exists to refuse. */
@@ -128,7 +108,7 @@ function memberWrites(): any {
 }
 
 export default createService({
-  name:  'workspaces',
+  name:  WORKSPACES_SERVICE,
   scope: keyScope('workspaces'),
   model: 'Workspace',
   reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
@@ -139,10 +119,13 @@ export default createService({
   // method runs.
   methods: ['find', 'get', 'create', 'patch', 'remove', 'restore',
             'members',
-            { method: 'addMember',     input: 'WorkspaceMemberAdd' },
-            { method: 'setMemberRole', input: 'WorkspaceMemberRole' },
-            'removeMember', 'leave',
-            'push', 'testPing'],
+            { method: 'addMember',     input: 'WorkspaceMemberAdd',  gate: LEVELS.ADMINISTRATOR },
+            { method: 'setMemberRole', input: 'WorkspaceMemberRole', gate: LEVELS.ADMINISTRATOR },
+            { method: 'removeMember',  gate: LEVELS.ADMINISTRATOR },
+            'leave',
+            // The topic is the secret on the public rung: an admin's to read and to ring.
+            { method: 'push',          gate: LEVELS.ADMINISTRATOR },
+            { method: 'testPing',      gate: LEVELS.ADMINISTRATOR }],
 
   // Only workspaces the caller belongs to. The old version did this with a
   // JOIN; `memberships: { some: { userId } }` is the relation the schema
@@ -378,21 +361,13 @@ export default createService({
 
   hooks: {
     before: {
-      // stampSelfAsWorkspace must run BEFORE the role hooks — they read the
-      // workspaceId it sets.
-      all:           [authenticate, stampSelfAsWorkspace],
+      all:           [authenticate],
       create:        [stampOwnership],
-      patch:         [requireWorkspaceRole('admin', 'owner')],
-      remove:        [requireWorkspaceRole('owner')],
-      // refuseGrantAboveOwn is the other half of FJS-410: the hook above says
-      // *may you manage the team*, this one says *not a role above your own*.
-      // Without it an admin still mints an owner, on somebody else's row.
-      addMember:     [requireWorkspaceRole('admin', 'owner'), refuseGrantAboveOwn()],
-      setMemberRole: [requireWorkspaceRole('admin', 'owner'), refuseGrantAboveOwn()],
-      removeMember:  [requireWorkspaceRole('admin', 'owner')],
-      // The topic is the secret on the public rung: an admin's to read and to ring.
-      push:          [requireWorkspaceRole('admin', 'owner')],
-      testPing:      [requireWorkspaceRole('admin', 'owner')],
+      // refuseGrantAboveOwn is the other half of FJS-410: the gate says *may
+      // you manage the team*, this says *not a role above your own*. Without
+      // it an admin still mints an owner, on somebody else's row.
+      addMember:     [refuseGrantAboveOwn()],
+      setMemberRole: [refuseGrantAboveOwn()],
     },
   },
 })

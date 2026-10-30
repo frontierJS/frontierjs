@@ -58,6 +58,10 @@
    */
   --border-width: 2px;
 
+  /* A drawn line stays a rung above the struck border, or a chevron and
+     a step connector read lighter than the card edge beside them. */
+  --stroke-width: 3px;
+
   /* ── Square everything ──────────────────────────────────────────────
    * --badge-radius is deliberately unset: badges follow --btn-radius through
    * a use-site fallback, so squaring buttons squares badges for free.

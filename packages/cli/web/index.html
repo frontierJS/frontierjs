@@ -1972,7 +1972,7 @@ const TILES = [
     if (active) return {
       value: 'running', tone: 'info',
       word: `phase ${Math.min(active.done + 1, active.planned.length)}/${active.planned.length} · ${active.phase ?? 'starting'}`,
-      sub: active.current ? `now: ${active.current.key}` : '',
+      sub: active.running?.length ? `now: ${active.running.map(r => r.key).join(', ')}` : '',
     }
     const head = ciBody.runs[0]
     if (!head) return { value: 'never', word: 'no run logged yet', tone: 'muted' }
@@ -2232,8 +2232,8 @@ function renderCi() {
     // The run going now answers ahead of history, suite by suite as it reaches them.
     const stepMap = new Map(latest.filter(i => i.kind === 'step' && i.phase === name).map(i => [i.key, i]))
     for (const s of now?.steps ?? []) if (s.key) stepMap.set(s.key, { ...stepMap.get(s.key), ...s, thisRun: true })
-    if (running && active.current?.phase === name)
-      stepMap.set(active.current.key, { ...stepMap.get(active.current.key), key: active.current.key, status: 'running', ms: b.now - active.current.at, thisRun: true })
+    if (running) for (const r of active.running ?? []) if (r.phase === name)
+      stepMap.set(r.key, { ...stepMap.get(r.key), key: r.key, status: 'running', ms: b.now - r.at, thisRun: true })
     const steps = [...stepMap.values()]
       .sort((x, y) => (y.status === 'fail') - (x.status === 'fail') || (y.ms ?? 0) - (x.ms ?? 0))
     const open = ciOpen.has(name)
@@ -2411,8 +2411,7 @@ function renderCiLive(active, b) {
   el.hidden = !active
   if (!active) return
   const elapsed = b.now - active.at
-  const cur = active.current
-  const curUsual = cur ? b.latest.find(i => i.kind === 'step' && i.phase === cur.phase && i.key === cur.key)?.usualMs : null
+  const usualOf = r => b.latest.find(i => i.kind === 'step' && i.phase === r.phase && i.key === r.key)?.usualMs
   const phaseUsual = b.usual[active.phase]
   el.innerHTML = `
     <div class="cluster gap-sm">
@@ -2420,7 +2419,7 @@ function renderCiLive(active, b) {
       <span class="text-sm">phase ${Math.min(active.done + 1, active.planned.length)}/${active.planned.length} · <strong>${esc(active.phase ?? 'starting')}</strong>
         ${active.phaseAt ? ciTime(b.now - active.phaseAt, phaseUsual) : ''}</span>
     </div>
-    ${cur ? `<span class="text-sm">now: <code>${esc(cur.key)}</code> ${ciTime(b.now - cur.at, curUsual)}</span>` : ''}
+    ${(active.running ?? []).map(r => `<span class="text-sm">now: <code>${esc(r.key)}</code> ${ciTime(b.now - r.at, usualOf(r))}</span>`).join('')}
     <span class="text-xs text-muted">total ${duration(elapsed)}${b.usualRunMs ? ` of a usual ${duration(b.usualRunMs)}` : ''} · last output ${ago(active.lastAt)}</span>`
 }
 

@@ -5,7 +5,7 @@
 
 import { test, expect, describe } from 'bun:test'
 
-import { TRACES, createRoomMemory, fadeOf, stepped } from '../src/memory.ts'
+import { TRACES, createRoomMemory, fadeOf, stepped } from '#shared/memory.ts'
 
 const clock = () => {
   const c = { t: 1_000_000, now: () => c.t }

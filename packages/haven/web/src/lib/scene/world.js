@@ -16,7 +16,7 @@
 // riders are `carousels`, which the server scores a bolt on. A floor piece that
 // is a pickup (`pieces/index.js`) is named by `pickups`, its cells all `.`.
 
-import { SEASONS } from './sky.js'
+import { SEASONS } from '#shared/sky.js'
 
 /** Pieces a bolt shatters; every other solid piece is a wall, which takes a scorch. */
 export const FRAGILE = new Set(['barrel', 'crate', 'crates', 'log', 'stump', 'shroom', 'chest', 'bollard'])

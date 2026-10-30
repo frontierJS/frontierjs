@@ -42,7 +42,7 @@ import { buildHavenApp } from '../../api/src/app.ts'
 import { POST_KEY, signIn } from '../../api/test/sign-in.ts'
 import { cellOf, terminal, until } from './terminal.mjs'
 import { litAt } from '../src/lib/scene/stage.js'
-import { DAY_MS } from '../src/lib/scene/sky.js'
+import { DAY_MS } from '#shared/sky.js'
 import { stageOf } from './stage.mjs'
 
 const WEB  = join(import.meta.dir, '..')

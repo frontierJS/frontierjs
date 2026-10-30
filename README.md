@@ -256,7 +256,14 @@ Three directories at the app root, one per realm, all orbiting the shared schema
 and beside them a surface for each of the other shapes a UI takes: `site/` for a
 public prerendered site, `widgets/` for embeddable scripts, `extension/` for a
 browser extension, `desktop/` for a native app with its screens bundled in,
-`mobile/` for the same on a phone, and `cli/` for the app on a command line:
+`mobile/` for the same on a phone, and `cli/` for the app on a command line.
+
+Surfaces never import each other. Code two of them run lives in one of two places, split
+by origin: `db/` keeps what the schema points at (an `@computed` body), and `shared/` holds
+the rest. Each is imported by alias, through `"imports"` in the app's `package.json`
+(`#shared/*`). Neither one imports a surface or the server, `db/` may import `shared/` but
+not the reverse, and a `shared/` file has to be pure and imported by two surfaces
+(`FJS-D1320`):
 
 ```
 my-app/
@@ -266,6 +273,9 @@ my-app/
     schema.lite              ← single source of truth
     migrations/
     backups/
+
+  shared/                    ← pure code two surfaces run, imported as #shared/<file>
+                               (optional; not a surface — FJS-D1320)
 
   api/                       ← API realm — Junction
     index.ts                 ← bun --watch entry

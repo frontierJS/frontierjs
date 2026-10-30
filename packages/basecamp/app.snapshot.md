@@ -39,7 +39,7 @@ text, so a body that elevates through a helper is not listed.
 | `servers.heartbeat` | anyone, a stranger included — declared `gate: 0` |
 | `variables.reveal` | standing 5 or above — declared `gate: 5` |
 | `workspaces.leave` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `workspaces.testPing` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `workspaces.testPing` | standing 5 or above — declared `gate: 5` |
 
 ## Custom methods whose caller's standing is not graded
 
@@ -61,7 +61,7 @@ and what it does.
 | `notificationPreferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notificationPreferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (95)
+### A service hook runs in front of the body (90)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -156,14 +156,9 @@ name, and is as unread as the body.
 | `servers.destroyStep` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `servers.host` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `volumes.usage` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `workspaces.restore` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` |
-| `workspaces.members` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` |
-| `workspaces.addMember` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` → `refuseGrantAboveOwn` |
-| `workspaces.setMemberRole` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` → `refuseGrantAboveOwn` |
-| `workspaces.removeMember` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` |
-| `workspaces.leave` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` |
-| `workspaces.push` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` |
-| `workspaces.testPing` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` |
+| `workspaces.restore` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` |
+| `workspaces.members` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` |
+| `workspaces.leave` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` |
 
 ### No body — a derived `@@transitions` move (1)
 
@@ -1508,30 +1503,26 @@ name when it declares none.
 - **input** — `addMember` takes `WorkspaceMemberAdd`
 - **input** — `setMemberRole` takes `WorkspaceMemberRole`
 - **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`
-  - `members` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`
-  - `addMember` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` → `refuseGrantAboveOwn`
-  - `setMemberRole` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` → `refuseGrantAboveOwn`
-  - `removeMember` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole`
-  - `leave` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`; body writes as the app
-  - `push` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole`
-  - `testPing` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole`; body writes as the app
+  - `restore` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate`
+  - `members` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate`
+  - `addMember` — standing 5 or above — declared `gate: 5`
+  - `setMemberRole` — standing 5 or above — declared `gate: 5`
+  - `removeMember` — standing 5 or above — declared `gate: 5`
+  - `leave` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate`; body writes as the app
+  - `push` — standing 5 or above — declared `gate: 5`
+  - `testPing` — standing 5 or above — declared `gate: 5`; body writes as the app
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `authenticate` → `stampSelfAsWorkspace` |
+| before | `all` | `authenticate` |
 | before | `create` | `stampOwnership` → `autoValidate` |
-| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
-| before | `remove` | `requireWorkspaceRole` |
-| before | `addMember` | `requireWorkspaceRole` → `refuseGrantAboveOwn` → `validateInput` |
-| before | `setMemberRole` | `requireWorkspaceRole` → `refuseGrantAboveOwn` → `validateInput` |
-| before | `removeMember` | `requireWorkspaceRole` |
-| before | `push` | `requireWorkspaceRole` |
-| before | `testPing` | `requireWorkspaceRole` |
+| before | `addMember` | `refuseGrantAboveOwn` → `validateInput` |
+| before | `setMemberRole` | `refuseGrantAboveOwn` → `validateInput` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ## Routes

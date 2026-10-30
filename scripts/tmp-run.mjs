@@ -23,7 +23,7 @@
 // ============================================================
 
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir, constants } from 'node:os'
 import { join } from 'node:path'
 
@@ -67,6 +67,39 @@ if (dead.length) {
 const dir = join(base, `${PREFIX}${process.pid}`)
 rmSync(dir, { recursive: true, force: true })
 mkdirSync(dir)
+
+// ─── one run per package ─────────────────────────────────────
+//
+// Two runs in one package share its ports and its fixture files, and
+// each fails in ways that belong to neither — three sessions once ran
+// `bun run test` together. So the second run refuses. The claim is the
+// marker in this run's own directory, which dies with its pid like
+// everything else here, so no lock is ever left behind. The marker is
+// written BEFORE the scan: two runs starting together both see each
+// other, and the earlier (started, pid) is the one that goes ahead.
+
+const MARKER = '.run'
+const cwd = process.cwd()
+const started = Date.now()
+writeFileSync(join(dir, MARKER), JSON.stringify({ cwd, command, started }))
+
+const before = (a, b) => a.started < b.started || (a.started === b.started && a.pid < b.pid)
+const me = { pid: process.pid, started }
+for (const name of readdirSync(base)) {
+  if (!name.startsWith(PREFIX)) continue
+  const pid = Number(name.slice(PREFIX.length))
+  if (!pid || pid === process.pid || !alive(pid)) continue
+  let other
+  try { other = { pid, ...JSON.parse(readFileSync(join(base, name, MARKER), 'utf8')) } }
+  catch { continue /* still writing its marker */ }
+  if (other.cwd !== cwd || !before(other, me)) continue
+  const secs = Math.round((started - other.started) / 1000)
+  console.error(`tmp-run: ${cwd} already has a test run going`)
+  console.error(`  pid ${pid}, started ${secs}s ago: ${other.command}`)
+  console.error(`  rerun when it exits, or kill ${pid}`)
+  rmSync(dir, { recursive: true, force: true })
+  process.exit(75)
+}
 
 const child = spawn(command, { shell: true, stdio: 'inherit', env: { ...process.env, TMPDIR: dir } })
 

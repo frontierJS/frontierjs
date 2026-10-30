@@ -35,7 +35,7 @@ const sierra = createSierraViteConfig(sierraConfig)
 export default defineConfig({
   ...sierra,
   root: ROOT,
-  // The weather and season a person or a drive pins (`web/src/lib/scene/sky.js`) -- the
+  // The weather and season a person or a drive pins (`shared/sky.js`) -- the
   // browser has no environment, so each name is baked in when the server starts.
   define: {
     ...sierra.define,

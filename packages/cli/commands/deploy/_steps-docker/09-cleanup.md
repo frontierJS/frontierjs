@@ -35,8 +35,8 @@ const { replaced, imageTag, appId } = $.config
 const apiSide = $.config.api
 
 // ─── Remove _replaced container ───────────────────────────────────────────────
-// Containers and images live on the API host; a web-only run has none.
-if (apiSide) {
+// Containers and images live on the API host; a web-only or site-only run has none.
+if (apiSide && !$.config.siteOnly) {
 const machine = machineFor($, apiSide.host, apiSide.path)
 
 machine.run(`if docker inspect ${replaced} > /dev/null 2>&1; then

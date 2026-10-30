@@ -23,7 +23,7 @@
   import { HOME_ROW, homeAction } from '@/lib/home/home-row.js'
   import { findByNick, pathBeside, WALK_MS } from '@/lib/scene/paths.js'
   import { cellOf } from '@/lib/scene/crowd.js'
-  import { SHAPE_MS } from '../../../api/src/shape.ts'
+  import { SHAPE_MS } from '#shared/shape.ts'
 
   export let stage
   export let here

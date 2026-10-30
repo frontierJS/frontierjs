@@ -1,7 +1,7 @@
 <script>
   // The post office — through the house with the sign east of the well.
   import WalkIn from '@/components/WalkIn.mesa'
-  import PostOffice from '@/scenes/PostOffice.mesa'
+  import PostOffice from '@/components/scenes/PostOffice.mesa'
 </script>
 
 <WalkIn slug="postoffice"><PostOffice /></WalkIn>

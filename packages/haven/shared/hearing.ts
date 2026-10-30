@@ -1,4 +1,4 @@
-// api/src/hearing.ts
+// shared/hearing.ts
 // Who hears a line (`IDEAS/haven.md` 7.1, `FJS-D992`). The server filters a
 // line's fan-out by the speaker's cell and each listener's, and the client
 // asks the same question of the lines it loaded, so one rule lives here and
@@ -16,7 +16,7 @@
 // cell is heard by the room, which is what a booth is (nobody there sends a
 // cell) and costs a withholding client nothing it could not do with `!`.
 
-import type { Position } from './rooms.ts'
+import type { Position } from './position.ts'
 
 /** How far a said line carries, in cells. A cell is about twice as tall as wide. */
 export const EARSHOT = { x: 16, y: 6 } as const

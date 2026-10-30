@@ -1,6 +1,6 @@
 // The scenes — square, tavern — laid out by the system, the booths two members
 // make by sitting across a table (`api/src/booth.ts`), and the bolt a member
-// fires (`api/src/bolt.ts`). A member reads the rooms and asks for a booth; the
+// fires (`shared/bolt.ts`). A member reads the rooms and asks for a booth; the
 // Room read policy decides which they see.
 // `traces` is the room's memory (`IDEAS/haven.md` 7.4, 9.5): footprints, the
 // pieces a bolt broke and the walls it scorched, which a joiner reads once and
@@ -11,11 +11,11 @@ import type { Channel } from '@frontierjs/junction'
 
 import type { HavenApp } from '../app.ts'
 import { boothFor } from '../booth.ts'
-import { FIRST_FACING, isFacing } from '../facing.ts'
-import { ARROWS } from '../inventory.ts'
+import { FIRST_FACING, isFacing } from '#shared/facing.ts'
+import { ARROWS } from '#shared/inventory.ts'
 import { shoot } from '../play.ts'
 import { roomChannelName } from '../rooms.ts'
-import { spanOf } from '../shape.ts'
+import { spanOf } from '#shared/shape.ts'
 import { worldFor } from '../world.ts'
 
 type Roster = { localPresence: (channel: string) => Array<{ userId: string | number, meta: Record<string, unknown> }> }

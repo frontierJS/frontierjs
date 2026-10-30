@@ -12,7 +12,7 @@ import { dirname } from 'node:path'
 
 import { generateSigningKeys, signRequest } from '@frontierjs/toolbelt/signature'
 
-import { LOGIN_PATH } from '../../../../api/src/login.ts'
+import { LOGIN_PATH } from '#shared/login.ts'
 
 /** The key pair at `file`, made and written 0600 on the first run. */
 export async function machineKeys(file) {

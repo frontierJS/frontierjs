@@ -14,8 +14,8 @@ import { rateLimitHook } from '@frontierjs/junction/hooks'
 import type { Channel } from '@frontierjs/junction'
 
 import type { HavenApp } from '../app.ts'
-import { START, applyMove, other, pathText, squareIndex, winnerOf } from '../checkers.ts'
-import type { Side } from '../checkers.ts'
+import { START, applyMove, other, pathText, squareIndex, winnerOf } from '#shared/checkers.ts'
+import type { Side } from '#shared/checkers.ts'
 import { roomChannelName } from '../rooms.ts'
 
 type GamesApp = HavenApp & { channel: (name: string) => Channel }

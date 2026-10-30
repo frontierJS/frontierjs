@@ -414,6 +414,106 @@ describe('what the machine is asked to do', () => {
     })
   })
 
+  // An API App's site/ after its release (site-hosting step 9): built against
+  // a backup of the serving container's database, uploaded by `sierra site`.
+  describe('an app site publish', () => {
+    const APP    = { kind: 'git', repo: 'https://git.test/acme/thod.git', branch: 'main' }
+    const COMMIT = 'c0ffee'.padEnd(40, '0')
+    const BODY   = { app_id: 'app-1', source: APP, branch: 'main', commit: COMMIT,
+      cloudflare: { token: 'cf-secret-token', account_id: 'acct-1' },
+      app: { volume_path: '/db', env: { ENCRYPTION_KEY: 'enc-secret', DATABASE_URL: '/db/main.db' } } }
+    const DEPLOY = 'Deployed thod-com triggers\n  https://thod-com.kobami.workers.dev\n'
+    // `site` and `db` lay down what the clone and `docker cp` would have written.
+    const serverFor = ({ site = true, db = true, deployed = 0 } = {}) => {
+      const workDir = mkdtempSync(join(tmpdir(), 'outpost-app-site-'))
+      if (site) mkdirSync(`${workDir}/app-1.release/site/config`, { recursive: true }), writeFileSync(`${workDir}/app-1.release/site/config/vite.config.js`, '')
+      if (db) mkdirSync(`${workDir}/app-1.release.db`, { recursive: true }), writeFileSync(`${workDir}/app-1.release.db/main.db`, '')
+      const fake = fakeRunner({ 'git -C': { stdout: COMMIT + '\n' }, 'docker run --rm': { stdout: DEPLOY } })
+      const envs = []
+      const run = async (argv, opts) => {
+        if (opts?.env) envs.push({ argv: argv.join(' '), env: opts.env })
+        if (argv.includes('--deployed')) { await fake.run(argv); return { exitCode: deployed, stdout: deployed === 3 ? '✗ thod-com has no deployment\n' : '', stderr: '' } }
+        return fake.run(argv)
+      }
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ appsDir: APPS, run, workDir }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
+      })
+      return { server, workDir, envs, argv: () => fake.calls.map(c => c.join(' ')) }
+    }
+    const tail = (c) => c.split(` oven/bun:${Bun.version} `)[1]
+
+    test('probes, copies the database from inside the container, builds against the copy and deploys', async () => {
+      const { server, workDir, envs, argv } = serverFor()
+      const res = await send(server, 'POST', '/site/publish', BODY)
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ commit_sha: COMMIT, url: 'https://thod-com.kobami.workers.dev' })
+      const runs = argv().filter(c => c.startsWith('docker run --rm'))
+      expect(runs.map(tail)).toEqual([
+        'bun install --frozen-lockfile', 'bun x sierra site --deployed',
+        'bun --bun vite build -c config/vite.config.js', 'bun x sierra site --deploy',
+      ])
+      expect(runs.slice(1).every(c => c.includes('-w /src/site'))).toBe(true)
+      const backup = argv().find(c => c.startsWith('docker exec -w /app fjs-app-1 bunx litestone backup /db/backups/site-build-'))
+      expect(backup).toBeDefined()
+      const inner = backup.split(' ')[8]
+      expect(argv()).toContain(`docker cp fjs-app-1:${inner}/. ${workDir}/app-1.release.db`)
+      expect(argv()).toContain(`docker exec fjs-app-1 rm -rf ${inner}`)
+
+      // The copy is the build's database; the App's own DATABASE_URL is not passed.
+      expect(runs[2]).toContain(`--mount type=bind,source=${workDir}/app-1.release.db,target=/db -e DATABASE_URL=/db/main.db -e ENCRYPTION_KEY`)
+      const build = envs.find(e => e.argv.includes('vite build'))
+      expect(build.env).toEqual({ ENCRYPTION_KEY: 'enc-secret' })
+      // Secrets ride the client's environment, never argv, and the token only the probe and the upload.
+      expect(argv().some(c => c.includes('cf-secret-token') || c.includes('enc-secret'))).toBe(false)
+      expect(envs.filter(e => e.env.CLOUDFLARE_API_TOKEN).map(e => tail(e.argv))).toEqual(['bun x sierra site --deployed', 'bun x sierra site --deploy'])
+      expect(argv().at(-1)).toBe(`rm -rf ${workDir}/app-1.release ${workDir}/app-1.release.db`)
+    })
+
+    test('a commit with no site/ is skipped before an install, and needs no token', async () => {
+      const { server, argv } = serverFor({ site: false })
+      const res = await send(server, 'POST', '/site/publish', { ...BODY, cloudflare: undefined })
+      expect(res.status).toBe(200)
+      expect((await res.json()).skipped).toBe('c0ffee0 has no site/ surface')
+      expect(argv().some(c => c.startsWith('docker '))).toBe(false)
+    })
+
+    test('a Worker with no deployment is skipped before the database is touched (FJS-D1688)', async () => {
+      const { server, argv } = serverFor({ deployed: 3 })
+      const res = await send(server, 'POST', '/site/publish', BODY)
+      expect(res.status).toBe(200)
+      expect((await res.json()).skipped).toContain('thod-com has no deployment')
+      expect(argv().some(c => c.startsWith('docker exec') || c.includes('vite build'))).toBe(false)
+    })
+
+    test('a Worker nobody could ask about fails, in sierra\'s words', async () => {
+      const { server } = serverFor({ deployed: 1 })
+      const res = await send(server, 'POST', '/site/publish', BODY)
+      expect(res.status).toBe(500)
+      expect((await res.json()).error).toContain('could not tell whether the site\'s Worker is deployed')
+    })
+
+    test('a backup that wrote no main.db is refused before the build, which would prerender an empty database', async () => {
+      const { server, argv } = serverFor({ db: false })
+      const res = await send(server, 'POST', '/site/publish', BODY)
+      expect(res.status).toBe(500)
+      expect((await res.json()).error).toBe('litestone backup in fjs-app-1 wrote no main.db')
+      expect(argv().some(c => c.includes('vite build'))).toBe(false)
+    })
+
+    test.each([
+      ['a relative volume path', { app: { volume_path: 'db' } }],
+      ['a volume path with ..', { app: { volume_path: '/db/../etc' } }],
+      ['a variable name carrying a value', { app: { volume_path: '/db', env: { 'A=b': 'x' } } }],
+      ['no commit', { commit: undefined }],
+    ])('%s is refused before anything runs', async (_, over) => {
+      const { server, argv } = serverFor()
+      const res = await send(server, 'POST', '/site/publish', { ...BODY, ...over })
+      expect(res.status).toBe(500)
+      expect(argv().some(c => c.startsWith('git ') || c.startsWith('docker '))).toBe(false)
+    })
+  })
+
   // A build of its own, so a failing one is a red "Build image" step and the
   // live container is never touched (FJS-1496).
   describe('a build on its own', () => {
@@ -2384,6 +2484,18 @@ describe('what this machine tells basecamp', () => {
     })
   })
 
+  test('a volume removed between the ls and its inspect is not reported', async () => {
+    const run = async (argv) => {
+      if (argv[2] === 'ls') return { exitCode: 0, stdout: '{"Name":"kept"}\n{"Name":"gone"}\n', stderr: '' }
+      if (argv[2] === 'inspect') return argv[3] === 'gone'
+        ? { exitCode: 1, stdout: '', stderr: 'no such volume' }
+        : { exitCode: 0, stdout: '[{"Mountpoint":"/var/lib/docker/volumes/kept/_data"}]\n', stderr: '' }
+      return { exitCode: 0, stdout: '', stderr: '' }
+    }
+    const rows = await createInspector({ run, appsDir: mkdtempSync(join(tmpdir(), 'outpost-binds-')) }).volumes()
+    expect(rows.map(r => r.name)).toEqual(['kept'])
+  })
+
   test('a data directory is removed only by its exact path, and never while a container holds it', async () => {
     const apps = mkdtempSync(join(tmpdir(), 'outpost-binds-'))
     for (const app of ['ela', 'crm']) mkdirSync(join(apps, app, 'data'), { recursive: true })
@@ -2441,6 +2553,18 @@ describe('what this machine tells basecamp', () => {
     await new Promise(r => setTimeout(r, 50))
     stop()
     expect(posted).toContain('/cleanup')
+  })
+
+  test('a volume walk longer than the interval is not started again beside itself', async () => {
+    let walks = 0
+    const reporter = createReporter({ ...CONFIG, reportMs: 5 }, {
+      inspector: { volumes: () => { walks++; return new Promise(() => {}) }, disk: async () => ({}) },
+      fetch: async () => Response.json({ ok: true }), log: { warn: () => {} },
+    })
+    const stop = reporter.start()
+    await new Promise(r => setTimeout(r, 50))
+    stop()
+    expect(walks).toBe(1)
   })
 })
 

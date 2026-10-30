@@ -66,12 +66,12 @@ let loader = null
  * Mount a scene with no room: `{ stage, frame, capture, dispose }`, `frame`
  * the rows the terminal drew of the stage's view, and `capture()` those rows
  * drawn again — after `stage.follow()` panned it. `name` is a scene's file
- * name under `src/scenes/`, or a path to a scene file elsewhere, which a
+ * name under `src/components/scenes/`, or a path to a scene file elsewhere, which a
  * drive gives for a saved copy.
  */
 export async function mountScene(name) {
   await (loader ??= installTerminalLoader({ root: WEB }))
-  const path = name.endsWith('.mesa') ? name : join(WEB, 'src/scenes', `${name}.mesa`)
+  const path = name.endsWith('.mesa') ? name : join(WEB, 'src/components/scenes', `${name}.mesa`)
   const Component = (await import(path)).default
   const { renderer, renderOnce, captureCharFrame } = await tui.createHeadlessRenderer({ width: 100, height: 30 })
   const mounted = tui.mount(Component, { renderer })

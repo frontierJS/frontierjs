@@ -20,7 +20,7 @@
 // The ask panel (`IDEAS/haven.md` 14.1) is the cli's (`core/vite-ask.js`),
 // imported from the checkout beside this package — `fli haven:scenes` serves
 // only a checkout's editor. It and Mesa's inspector are both rooted at `SRC`,
-// not at this Vite root: a scene is `src/scenes/`, so against `editor/` every
+// not at this Vite root: a scene is `src/components/scenes/`, so against `editor/` every
 // pick is a `../` path the inspector refuses, and an ask may edit nothing it
 // is for. The editor's own files are outside `SRC`, so the panel cannot edit
 // the editor.
@@ -32,7 +32,7 @@ import mesa from '@frontierjs/mesa/vite'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const PORT   = Number(process.env.PORT ?? 5507)
-const SCENES = resolve(process.env.SCENES_DIR ?? join(HERE, '../web/src/scenes'))
+const SCENES = resolve(process.env.SCENES_DIR ?? join(HERE, '../web/src/components/scenes'))
 const SRC    = dirname(SCENES)
 const PIECES = join(SRC, 'pieces')
 

@@ -256,12 +256,31 @@ Each step adds its case to the website's `verify` drive before it is done.
    a preview build passes its `verify:site`, `--preview --wrangler-dry`
    bundles, and a production deploy refuses the stamped dist; `site-kit
    deploy site --dry` on the website still bundles. Left: no upload has run.
-8. **`fli deploy` publishes the site.** A step after the API health check
-   builds `site/` beside the database the API serves, so a page never names a
-   row only a laptop has, and ships it with `deploySite()`; a failed site
-   step leaves the API swap standing and the last site serving.
-   `fli deploy --site` runs the site step alone. Open: where wrangler signs
-   in (`FJS-D921` puts the Cloudflare account in basecamp).
+8. ~~**`fli deploy` publishes the site.**~~ Done for the ssh deploy:
+   `_steps-docker/08c-site.md`, after health, copies the production database
+   by `litestone backup` inside the serving container, builds `site/` against
+   the copy with `fli site:build` and ships it with `fli site:deploy`; a
+   failure leaves the API swap standing and the last site serving, and the copy
+   is deleted at both ends. Wrangler signs in where the run starts
+   (`FJS-D1687`). Only a Worker that already has a deployment is published,
+   asked by `sierra site --deployed` (`FJS-D1688`). `fli deploy --production
+   --site` runs the step alone. Proved on thod with `--dry`: the step skips
+   with *no deployment*, and `--site` without `--production` is refused. The
+   copy's `main.db` and the build reading `DATABASE_URL` were proved
+   separately (65 URLs against the copy, 8 against an empty db). Left: no
+   real publish has run, because thod's first one is its cutover.
+9. ~~**A Basecamp-run App publishes its `site/`.**~~ Done: a git container
+   release with a data volume ends with `Publish site`, which sends
+   `/site/publish` with an `app` body. Outpost's `siteBuild` fetches the
+   release's commit, probes `sierra site --deployed` (`FJS-D1688`), copies the
+   database by `litestone backup` inside `fjs-<app>` and `docker cp`, builds
+   `site/` against the copy with the App's release variables (`FJS-D1691`) and
+   uploads with `sierra site --deploy`, which is `deploySite()` (`FJS-D1689`).
+   A commit with no `site/` and a Worker with no deployment answer `skipped`.
+   A failure is a red step on a release that succeeded (`FJS-D1690`). Proved by
+   `outpost/test/outpost.test.js` § an app site publish and
+   `basecamp/api/test/push.test.ts`. Left: no box has run it. A laptop
+   release (`fli basecamp:deploy`) and a rollback carry no site step.
 
 ## The nine (`decision-rules`, answered before any edit)
 

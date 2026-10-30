@@ -1,4 +1,4 @@
-// api/src/bolt.ts
+// shared/bolt.ts
 // `d` deletes: a bolt (`IDEAS/haven.md` 9.5). The client draws it; the server
 // says what it hit, so there is one answer for every screen. A member is
 // knocked back and never removed — Haven has strangers on it, and a bolt that
@@ -10,8 +10,8 @@
 // from presence; the art is the scene's, which the client holds, so the server
 // passes an `at` built from whatever it knows of the scene.
 
-import { FACINGS, STEP, type Facing } from './facing.ts'
-import type { Position } from './rooms.ts'
+import { FACINGS, STEP, type Facing } from '#shared/facing.ts'
+import type { Position } from './position.ts'
 
 /** A bolt flies until it hits; every scene is walled, so this only bounds a world that is not. */
 export const RANGE = 256

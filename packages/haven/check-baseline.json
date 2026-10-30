@@ -1,0 +1,12 @@
+{
+  "//": "One number per fli check rule id — the count that may never rise. Absent = 0 = clean. `fli check --update` locks in an improvement and cannot raise; `fli check --adopt` records what is there, which is the verb for taking debt on. A defended finding is named under allow with its reason, never counted (FJS-D1686).",
+  "allow": {
+    "detail-read-dead:web/src/components/Booth.mesa": "A member's nick, read once to sign a figure. FJS-D1451 rules a rename out at the post, so nothing writes the column again, and the members service publishes on no channel, so a watch would hear nothing.",
+    "detail-read-dead:web/src/components/Crier.mesa": "A member's nick, read once to sign a figure. FJS-D1451 rules a rename out at the post, so nothing writes the column again, and the members service publishes on no channel, so a watch would hear nothing.",
+    "detail-read-dead:web/src/components/Notices.mesa": "A member's nick, read once to sign a notice. FJS-D1451 rules a rename out at the post, so nothing writes the column again, and the members service publishes on no channel, so a watch would hear nothing.",
+    "detail-read-dead:web/src/components/Scene.mesa": "A member's nick, read once to sign a figure. FJS-D1451 rules a rename out at the post, so nothing writes the column again, and the members service publishes on no channel, so a watch would hear nothing.",
+    "detail-read-dead:web/src/components/Scores.mesa": "A member's nick, read once to sign a score. FJS-D1451 rules a rename out at the post, so nothing writes the column again, and the members service publishes on no channel, so a watch would hear nothing.",
+    "service-as-system:api/src/services/barkeep.service.ts": "Correct: Miss is @@gate(8), written by the system alone, and ask() is the one writer. The count it answers is every unanswered question on purpose — the barkeep says how many have gone unanswered, not how many were the caller's.",
+    "service-as-system:api/src/services/games.service.ts": "Correct: the service is the referee. Game writes are @@gate(3.8.8.8), so no caller writes a board directly. Each elevated step is bounded to one booth: boothOf reads the Room through the caller's own client, and Room's read policy shows a booth to its pair alone, so an outsider is refused NotFound before asSystem; move and resign also refuse a caller who is neither red nor black."
+  }
+}

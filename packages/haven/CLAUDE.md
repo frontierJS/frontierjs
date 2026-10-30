@@ -5,7 +5,7 @@ built for two targets (`FJS-D985`) — the terminal (`fli haven`, `fli dev:tui`)
 and a browser (`bun run web`, `fli dev`). Ten modules differ per target and
 nothing else: `#paint`, `#cell`, `#sign-in`, `#errand`, `#workers`, `#taskmaster`, `#ledger`, `#seen`, `#sound` and `#study`, the
 package's `imports`, whose `browser` condition Vite takes and Bun does not.
-**A `#name` import is a target seam and nothing else**: use it only where the map swaps the file per target (`x.js` default, `x.browser.js` browser). Everything else stays relative or `@/`. The plan, and the first open
+**A `#name` import is a target seam, and `#shared/*` is the one other use**: a seam only where the map swaps the file per target (`x.js` default, `x.browser.js` browser). `shared/` at the root (`FJS-D1320`) holds the pure code `api/` and `web/` both run, imported as `#shared/<file>`; it imports nothing from either surface or from junction. Everything else stays relative or `@/`, and `api/` and `web/` never import each other. The plan, and the first open
 box, is `IDEAS/haven.md`.
 
 ## Where things are
@@ -14,7 +14,7 @@ box, is `IDEAS/haven.md`.
 
 - `db/schema.lite` — Member · Room · Message · Game · Vote · Miss · Session; every gate and the ban policy live here, `db/test/schema.test.js` admits and refuses each rule once.
 - `api/src/app.ts` builds the app; `rooms.ts` is presence, moves and footprints; `login.ts` + `keyless.ts` the two doors (`HAVEN_POST_KEY`); `messages`, `votes`, `hearing.ts`, `barkeep.ts`, `townhall.ts` and `services/` are the rest; `agents/` the stand-in actors.
-- `web/src/lib/scene/stage.js` is the stage (cells, doors, `viewFor`/`fit`/`follow`), `paint.js` beside it draws, `cells.js` measures glyphs, `paths.js` walks the floor, `map.js` the world map; `web/src/lib/hash/taskmaster.js` the taskmaster; `editor/` at the package root is the scene editor; `scenes/*.mesa` each with a `*.frame.txt` + `*.world.json`; `#name` imports are the ten target seams (`x.js` terminal, `x.browser.js` browser).
+- `web/src/lib/scene/stage.js` is the stage (cells, doors, `viewFor`/`fit`/`follow`), `paint.js` beside it draws, `cells.js` measures glyphs, `paths.js` walks the floor, `map.js` the world map; `web/src/lib/hash/taskmaster.js` the taskmaster; `editor/` at the package root is the scene editor; `web/src/components/scenes/*.mesa` each with a `*.frame.txt` + `*.world.json`; `#name` imports are the ten target seams (`x.js` terminal, `x.browser.js` browser); `shared/` is `sky.js`, `band.js`, the home row, checkers, bolt and the other pure rules both sides run.
 - `packages/cli/commands/haven/` is `fli haven`; drives are `web/test/verify-*.mjs` over `stage.mjs`.
 
 ## Traps
