@@ -70,7 +70,7 @@ bun add @frontierjs/email-kit @frontierjs/mesa happy-dom css-tree
 
 ### Server-side rendering
 
-```js
+```js fragment
 import { renderEmailFile } from '@frontierjs/email-kit/render'
 
 const data   = { firstName: 'Alice', planName: 'Pro', amount: '$49.00' }

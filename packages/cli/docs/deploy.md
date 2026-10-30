@@ -42,7 +42,7 @@ The `deploy:setup` nginx template includes a `/ws` location block with WebSocket
 
 ### `frontier.config.js` deploy block shape
 
-```js
+```js fragment
 export default {
   deploy: {
     server: 'myapp.com',

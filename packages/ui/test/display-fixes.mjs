@@ -124,5 +124,27 @@ const PAGINATION = 'components/display/Pagination.mesa'
   check(/--tone-fill:\s*var\(--data-accent,/.test(css), 'the avatar fill reads --data-accent before the tone')
 }
 
+// FJS-3609: a StatCard draws a trend line from `spark` and tints its icon chip
+// with the card's tone.
+{
+  const host = (attrs) => `<script>
+  import StatCard from './display/StatCard.mesa'
+</script>
+<StatCard label="MRR" value="$12" ${attrs}>
+  {#snippet icon()}<svg class="glyph"></svg>{/snippet}
+</StatCard>`
+  const html = async (attrs) => (await renderComponent(host(attrs), {
+    data: {}, cwd: ROOT, filename: 'components/Host.mesa', styleTag: false,
+    tmpDir: join(ROOT, 'components', '.mesa-tmp'),
+  })).html
+  const plain = await html('')
+  check(!plain.includes('fjs-sparkline'), 'a StatCard without spark draws no trend line')
+  const sparked = await html('spark={[1, 4, 2, 8]} tone="danger"')
+  check(/<svg[^>]*class="[^"]*fjs-sparkline[^"]*danger/.test(sparked), `spark draws a Sparkline in the card's tone: ${sparked.slice(0, 300)}`)
+  check(/aria-hidden="true"/.test(sparked.match(/<svg[^>]*fjs-sparkline[^>]*>/)?.[0] ?? ''), 'and the trend line is decorative')
+  check(/class="[^"]*fjs-tile-icon[^"]*danger/.test(sparked), `the icon chip takes the card's tone: ${sparked.match(/<div[^>]*fjs-tile-icon[^>]*>/)?.[0]}`)
+  check(!/fjs-tile-icon[^"]*text-muted/.test(sparked), 'and is no longer text-muted')
+}
+
 console.log(failed ? `${failed} display-fixes case(s) failed` : 'display-fixes cases hold')
 if (failed) process.exit(1)

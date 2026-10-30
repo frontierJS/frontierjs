@@ -15,7 +15,7 @@ let row
 vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => ({
-      get:   async (id) => { calls.push(['get', id]); return row },
+      get:   async (id, params) => { calls.push(['get', id, params]); return row },
       find:  async () => ({ data: [row] }),
       patch: async (id, data) => { calls.push(['patch', id, data]); return { ...row, ...data } },
       on: () => {},
@@ -39,6 +39,13 @@ const { schema, valid, errors } = parse(`
     meta   Json?
     prefs  Json @type(Prefs)
     params BlueprintParam[]
+    tags   Tag[]
+  }
+
+  model Tag {
+    id         Int         @id
+    name       String
+    blueprints Blueprint[]
   }
 
   type Prefs {
@@ -59,7 +66,7 @@ const DEFS = generateJsonSchema(schema, { mode: 'update' }).$defs
 const lastPatch = () => calls.filter(c => c[0] === 'patch').at(-1)?.[2]
 
 beforeEach(() => {
-  registerSchemas(DEFS, ['Blueprint', 'BlueprintParam'])
+  registerSchemas(DEFS, ['Blueprint', 'BlueprintParam', 'Tag'])
   calls.length = 0
   row = { id: 1, name: 'Deploy', meta: { a: 1 }, prefs: { theme: 'dark', size: 2 }, params: [{ id: 9, key: 'env' }] }
 })
@@ -127,5 +134,56 @@ describe('a patch carries columns, never a composed key', () => {
 
     await r.save({ ...row, prefs: { ...row.prefs, size: 3 } })
     expect(lastPatch()).toEqual({ id: 1, prefs: { $merge: { size: 3 } } })
+  })
+})
+
+// FJS-D1002: an m2m a form draws is a field of the row, read populated and
+// written as one op, unlike the composed keys above.
+describe('an m2m is read with the row and saved as one op', () => {
+  test('the rule, the control, and no list column', async () => {
+    const { buildFieldRules, controlFor, displayFor } = await import('../src/resource/field-rules.js')
+    const rule = buildFieldRules(DEFS.Blueprint).tags
+    expect(rule).toMatchObject({ type: 'array', relation: { kind: 'm2m', model: 'Tag', field: 'tags' } })
+    expect(controlFor(rule)).toMatchObject({ control: 'multiselect', model: 'Tag', relation: 'tags' })
+    expect(displayFor(rule).display).toBeNull()
+  })
+
+  test('formFields offers it with the related label and allowNew', () => {
+    const r = createResource('blueprints', { model: 'Blueprint' })
+    const tags = r.formFields().find(f => f.name === 'tags')
+    expect(tags).toMatchObject({ control: 'multiselect', valueField: 'id', labelField: 'name', allowNew: true })
+  })
+
+  test('a get populates the members', async () => {
+    const r = createResource('blueprints', { model: 'Blueprint' })
+    await r.service.get(1)
+    expect(JSON.stringify(calls.find(c => c[0] === 'get'))).toContain('tags')
+  })
+
+  test('a changed list after a read is a set; an untouched one is not sent', async () => {
+    row = { ...row, tags: [{ id: 1, name: 'a' }] }
+    const r = createResource('blueprints', { model: 'Blueprint' })
+    await r.service.get(1)
+
+    await r.save({ ...row, name: 'Ship' })
+    expect(lastPatch()).toEqual({ id: 1, name: 'Ship' })
+
+    await r.save({ ...row, name: 'Ship', tags: [1, 2] })
+    expect(lastPatch()).toEqual({ id: 1, tags: { set: [{ id: 1 }, { id: 2 }] } })
+  })
+
+  test('a typed member is created beside the set', async () => {
+    row = { ...row, tags: [{ id: 1, name: 'a' }] }
+    const r = createResource('blueprints', { model: 'Blueprint' })
+    await r.service.get(1)
+
+    await r.save({ ...row, tags: [1, { name: 'new' }] })
+    expect(lastPatch()).toEqual({ id: 1, tags: { set: [{ id: 1 }], create: [{ name: 'new' }] } })
+  })
+
+  test('with no read of the members, picks connect rather than replace', async () => {
+    const r = createResource('blueprints', { model: 'Blueprint' })
+    await r.save({ id: 1, tags: [2] }, { mode: 'patch' })
+    expect(lastPatch()).toEqual({ id: 1, tags: { connect: [{ id: 2 }] } })
   })
 })

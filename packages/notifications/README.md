@@ -84,7 +84,7 @@ which is why the check asks.
 
 ## Wiring
 
-```typescript
+```typescript fragment
 // api/src/app.ts
 import { notifications } from '@frontierjs/notifications'
 import { mail, createResendMailer } from '@frontierjs/junction/mail'
@@ -117,7 +117,7 @@ The file name IS the type — `PaymentReceived.notification.ts` is
 `PaymentReceived`, verbatim, the same rule `<name>.job.ts` follows — so nothing
 restates it and nothing can drift from what the browser reads back.
 
-```typescript
+```typescript fragment
 // api/src/notifications/PaymentReceived.notification.ts
 import { defineNotification, inApp, mail } from '@frontierjs/notifications'
 
@@ -142,7 +142,7 @@ export default defineNotification<Payment>({
 
 Send it by calling the definition with its payload:
 
-```typescript
+```typescript fragment
 import paymentReceived from '../notifications/PaymentReceived.notification.ts'
 
 await app.notify(user, paymentReceived(payment))
@@ -154,7 +154,7 @@ unreachable mail provider is a new in-app row per attempt. `key` names what
 makes two sends the same send, and a recipient who already has a row under that
 key and type gets no second one:
 
-```typescript
+```typescript fragment
 export default defineNotification<Order>({
   via:   () => ['inApp', 'email'],
   key:   (order) => `order:${order.id}`,
@@ -171,7 +171,7 @@ retry sends is sent again (`FJS-D872`).
 **A formatter may be async.** That is what lets a body be rendered where it is
 read, rather than earlier:
 
-```typescript
+```typescript fragment
 email: async (order) => {
   const { subject, html, text } = await renderEmailFile(TEMPLATE, { data: order })
   return mail().subject(subject).html(html).text(text)
@@ -187,7 +187,7 @@ its in-app sibling rather than around them.
 asked what it supports before anything is sent — which is what a preferences
 screen and a devtools panel need:
 
-```typescript
+```typescript fragment
 paymentReceived.type        // 'PaymentReceived'
 paymentReceived.transports  // ['inApp', 'email']
 app.notifications           // every type this app declares, by name
@@ -205,7 +205,7 @@ The type is persisted — it is written into `notifications.type` and read by th
 browser to choose a renderer — so renaming the file renames the type, and rows
 already written keep the old one. State `type:` to hold it still:
 
-```typescript
+```typescript fragment
 export default defineNotification<Payment>({
   type: 'PaymentReceived',   // rows were written under this; the file moved on
   via:  () => ['inApp'],
@@ -233,7 +233,7 @@ If `via` returns a transport the definition has no formatter for, `notify()` thr
 
 ## Sending
 
-```typescript
+```typescript fragment
 // From anywhere with app context:
 await app.notify(user, paymentReceived(payment))
 
@@ -280,7 +280,7 @@ await app.notify({ email: customer.email, name: customer.name }, orderConfirmati
 
 ## @frontierjs/auth integration
 
-```typescript
+```typescript fragment
 // api/src/notifications/WelcomeUser.notification.ts
 import { defineNotification, inApp, mail } from '@frontierjs/notifications'
 
@@ -391,7 +391,7 @@ The builder's `lines` are rendered to text and HTML here — `MailMessage` is th
 
 A value under `transports:` with no `send()` is refused when the plugin is constructed, naming the key. `email: { mailer }` is the one plain object accepted, since it selects the built-in path; `sms: { provider: 'twilio' }` would configure nothing and was otherwise found at the first send.
 
-```typescript
+```typescript fragment
 // api/src/drivers/SlackDriver.ts
 import type { NotificationDriver, Recipient, App } from '@frontierjs/notifications'
 
@@ -449,7 +449,7 @@ An app that sends push writes one formatter. The rest is five lines, each an own
 
 `webPush()` is the one driver this package ships beyond the two built-ins, because the part worth sharing is not the vendor (there is none: a push service is plain HTTPS) but the RFC 8291/8188/8292 cryptography, which fails identically whether right or wrong — the push service answers `201` to a body it cannot read.
 
-```typescript
+```typescript fragment
 import { webPush } from '@frontierjs/notifications'
 
 // once: fli crypto:keygen vapid --env --subject mailto:ops@acme.test
@@ -487,7 +487,7 @@ A message that must buzz anyway -- a new sign-in, not an order the page just sho
 
 `ntfy()` is the other `push` driver — a phone one HTTP request away. ntfy (`ntfy.sh`, or your own from the Basecamp `ntfy` blueprint) is topic pub/sub with a phone app: the app subscribes to a NAME, and publishing is an authenticated POST with the text as the body and the metadata as headers. No service worker, no device rows, and a 4xx is a 4xx.
 
-```typescript
+```typescript fragment
 import { ntfy, push } from '@frontierjs/notifications'
 
 app.configure(notifications({

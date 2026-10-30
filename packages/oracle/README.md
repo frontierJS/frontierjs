@@ -4,7 +4,7 @@
 
 **No model runs inside Oracle** (`FJS-D601`). This package is the deterministic half: the catalog, the checks an answer must pass, and the emitter. Whatever runs the model calls it. That can be a skill for a developer or a prompt-to-app builder for anyone else. `fli` never holds a key, and CI runs all of it.
 
-```js
+```js fragment
 import { brief, checkAnswer, emit } from '@frontierjs/oracle'
 
 const system = brief()                         // the contract + catalog, for the model

@@ -10,7 +10,7 @@ bun add @frontierjs/caravan
 
 ## Quick start
 
-```ts
+```ts fragment
 import { caravan } from '@frontierjs/caravan'
 
 const queue = caravan({
@@ -33,7 +33,7 @@ await queue.dispatch('send-email', { to: 'alice@example.com' })
 
 ## As a Junction plugin
 
-```ts
+```ts fragment
 import { caravan } from '@frontierjs/caravan'
 
 // *.job.ts files load from anywhere under createApp({ root }) (FJS-D1141).
@@ -50,7 +50,7 @@ A job file declares everything about that job: what it does, which queue it runs
 on, how it retries, and — with `cron` — when it runs on its own. Nothing about a
 job belongs in `app.ts`.
 
-```ts
+```ts fragment
 // jobs/send-email.job.ts
 import { defineJob } from '@frontierjs/caravan'
 
@@ -76,7 +76,7 @@ job by hand with `queue.handle()` from outside the app root.
 **The default export is also the dispatch handle.** Import it and the name is
 stated nowhere else:
 
-```ts
+```ts fragment
 import sendEmail from './jobs/send-email.job.ts'
 
 await app.jobs.dispatch(sendEmail, { to: 'alice@example.com' })  // typed payload
@@ -111,7 +111,7 @@ file the app did not name.
 Enqueue a job. Takes a definition — the import from its file — or the name in
 one. Returns the job ID.
 
-```ts
+```ts fragment
 import sendEmail from './jobs/send-email.job.ts'
 
 await queue.dispatch(sendEmail, { to: 'alice@example.com' })  // name from the file
@@ -153,7 +153,7 @@ schedule was registered.
 
 Register a handler for a job type. Must be called before `start()`.
 
-```ts
+```ts fragment
 queue.handle('send-email', async (ctx) => {
   // ctx.id, ctx.queue, ctx.name, ctx.data, ctx.attempts
   // ctx.app, ctx.user, ctx.actorId — see "Who a job runs as" below
@@ -177,7 +177,7 @@ payload, onto the queue that same registration names, as the application itself
 (`actor: null` — a timer never inherits whatever request happened to be in
 scope).
 
-```ts
+```ts fragment
 // jobs/abandoned-orders-sweep.job.ts
 export default defineJob({ handler: sweep, cron: '0 3 * * *' })
 ```
@@ -201,7 +201,7 @@ Re-queue a `dead` or `cancelled` job (resets attempts to 0, clears error). Retur
 
 ### `queue.stats()`
 
-```ts
+```ts fragment
 {
   queues: {
     default:  { pending: 4,  running: 2, done: 91,  dead: 1, cancelled: 0 },
@@ -232,7 +232,7 @@ meant work a customer asked for was done with the authority of the application.
 Now `dispatch()` records who asked and the worker runs the handler on their
 behalf:
 
-```ts
+```ts fragment
 // In a service, handling a signed-in caller's request:
 await app.jobs.dispatch('courier-book', { orderId })
 
@@ -283,7 +283,7 @@ nothing gated.
 
 Retry delays are configured per handler as an array of millisecond values. Index 0 is the delay before the 2nd attempt, index 1 before the 3rd, etc. If attempts exceed the array length, the last value is reused.
 
-```ts
+```ts fragment
 retryDelay: [60_000, 300_000, 1_800_000]
 // attempt 2: wait 1m
 // attempt 3: wait 5m
@@ -324,7 +324,7 @@ A pause stops CLAIMING, on every instance that shares the jobs database, and
 survives a restart. Work already running finishes; a dispatch into a paused
 queue is still queued and runs on resume.
 
-```ts
+```ts fragment
 app.jobs.queue('mail').pause({ actor: 'ops', reason: 'bounce storm' })
 await app.jobs.queue('mail').drain({ timeout: 30_000 })   // pause, then wait on running jobs
 app.jobs.queue('mail').resume({ actor: 'ops' })

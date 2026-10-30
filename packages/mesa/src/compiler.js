@@ -2062,6 +2062,8 @@ class Reader {
   readAttribute() {
     let name = ''
     let depth = 0  // paren depth — chars inside (...) are part of the name regardless
+    let braces = 0
+    const start = this.index
     while (!this.end()) {
       const a = this.source[this.index]
       if (a === '(') depth++
@@ -2069,6 +2071,13 @@ class Reader {
         if (depth > 0) { depth--; name += a; this.index++; continue }
       }
       if (depth === 0 && '=/>\t\n\v\f\r '.includes(a)) break
+      if (a === '{') braces++
+      else if (a === '}' && braces > 0) braces--
+      // `style:padding"6rem"` is `style:padding="6rem"` with its `=` deleted; as
+      // a name it reaches the output as `'padding"6rem'` and acorn refuses the module.
+      if (depth === 0 && braces === 0 && (a === '"' || a === "'" || a === '`')) {
+        throw parseError(`Syntax error: attribute name ${JSON.stringify(name + a)} holds a quote -- is an \`=\` missing?`, start)
+      }
       name += a
       this.index++
     }
@@ -2689,6 +2698,7 @@ export const parseAttributes = (source, option = {}) => {
               $classAuto: true
             })
           } else {
+            assertExpression(attrName, start)
             result.push({ name: attrName, value, raw: value, content: r.sub(start), type: 'exp' })
           }
         } else {

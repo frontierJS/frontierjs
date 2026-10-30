@@ -11,8 +11,13 @@
   //   </div>
   //
   //   <StatCard label="Open tickets" value={42} href="/tickets" />
+  //   <StatCard label="Signups" value={310} tone="success" spark={[4, 9, 7, 12]}>
+  //     {#snippet icon()}<span class="i-lucide:users"></span>{/snippet}
+  //   </StatCard>
 
   import Stat from './Stat.mesa'
+  import Sparkline from './Sparkline.mesa'
+  import { tone as toTone, cx } from '../../utils.js'
 
   // Stat props
   export let label = ''
@@ -25,12 +30,15 @@
   export let loading = false
   export let href    = ''         // makes the whole tile a link — preferred
   export let onclick = undefined  // fallback for non-navigation actions
-  export let icon    = null       // snippet — rendered top-right
+  export let icon    = null       // snippet — a chip top-right, in the card's tone
+  export let spark   = null       // number[] — a decorative trend line under the figure
+
+  const t = toTone(tone)
 </script>
 
 {#snippet body()}
   {#if icon}
-    <div class="fjs-tile-icon text-muted" aria-hidden="true">{@render icon?.()}</div>
+    <div class={cx('fjs-tile-icon', t)} aria-hidden="true">{@render icon?.()}</div>
   {/if}
   {#if loading}
     <div class="stack" style:gap="0.5rem" aria-busy="true">
@@ -40,6 +48,9 @@
     </div>
   {:else}
     <Stat {label} {value} {sub} {trend} {tone} />
+    {#if spark?.length}
+      <Sparkline data={spark} tone={t} width={120} style="margin-block-start: 0.5rem" />
+    {/if}
   {/if}
 {/snippet}
 
@@ -81,8 +92,14 @@
     border-color: var(--rule-strong);
   }
   .fjs-tile-icon {
-    position:         absolute;
+    position:           absolute;
     inset-block-start:  1rem;
     inset-inline-end:   1rem;
+    display:            grid;
+    place-items:        center;
+    padding:            0.4rem;
+    border-radius:      var(--card-radius);
+    color:              var(--tone-ink, var(--ink-mute));
+    background:         var(--tint-surface, transparent);
   }
 </style>

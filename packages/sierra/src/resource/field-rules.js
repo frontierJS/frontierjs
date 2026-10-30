@@ -346,6 +346,18 @@ export function buildFieldRules(schema, resolve = resolveRef, resolveName = mode
     })
   }
 
+  // An implicit m2m is in `x-relations` and in no `properties`, so without a
+  // rule here a generated form has no entry for `tags` and every app writes its
+  // own connect/disconnect picker (`FJS-D1002`). The value is the related ids;
+  // `resource.save()` sends a changed list as one `set`.
+  for (const rel of Object.values(buildRelations(schema, resolveName))) {
+    if (rel.type !== 'm2m' || out[rel.field]) continue
+    out[rel.field] = {
+      type: 'array', required: false, nullable: false,
+      relation: { kind: 'm2m', model: rel.model, field: rel.field },
+    }
+  }
+
   return out
 }
 
@@ -620,6 +632,13 @@ export function controlFor(rule, ctx = {}) {
 function _builtinControl(rule) {
   if (!rule || typeof rule !== 'object') return { control: null, reason: 'no rule' }
   if (rule.readOnly) return { control: null, reason: 'readOnly' }
+
+  // The members of an m2m, picked from the related model's rows. `allowNew` is
+  // not answered here: whether this caller may create a related row is a gate
+  // question, and the resource holding the user answers it (`formFields()`).
+  if (rule.relation?.kind === 'm2m') {
+    return { control: 'multiselect', task: 'select', model: rule.relation.model, relation: rule.relation.field }
+  }
 
   // A value set is asked BEFORE the foreign key and before the array branch,
   // because it is strictly more information about the same column: it carries
@@ -1026,6 +1045,9 @@ export function defaultDisplayFor(rule) {
 
 function _builtinDisplay(rule) {
   if (!rule || typeof rule !== 'object') return { display: null, reason: 'no rule' }
+
+  // A list read carries no include, so an m2m column would be blank on every row.
+  if (rule.relation?.kind === 'm2m') return { display: null, reason: 'a to-many relation: a list row does not carry its members' }
 
   // A value set is asked before the foreign key for `controlFor`'s reason
   // exactly: it is strictly more information about the same column, and a bound

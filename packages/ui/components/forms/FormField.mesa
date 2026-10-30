@@ -49,6 +49,20 @@
   // the schema declared, which cannot fail to arrive (`FJS-587`).
   export let optionsError = undefined
 
+  // An m2m's words typed this session, and every key it has shown, by text.
+  const _minted = new Set()
+  const _ids    = new Map()
+
+  function _memberIds(v, rows, f) {
+    for (const o of rows ?? []) _ids.set(String(o.value), o.value)
+    return (Array.isArray(v) ? v : []).map((x) => {
+      if (!x || typeof x !== 'object') return x
+      if (x[f.valueField] == null) return x[f.labelField]
+      _ids.set(String(x[f.valueField]), x[f.valueField])
+      return x[f.valueField]
+    })
+  }
+
   // The kit's own controls, in the registry's shape. `props` receives the same
   // object a contributed control's builder does.
   const BUILTIN = {
@@ -101,7 +115,16 @@
     // `itemType` says whether it is a number.
     multiselect: {
       component: MultiSelect,
-      props: ({ field: f, value: v, onvalue, options: rows, total: n, optionsError: e }) => ({
+      props: ({ field: f, value: v, onvalue, options: rows, total: n, optionsError: e }) => f.valueField && f.relation ? {
+        // An m2m (`FJS-D1002`): the row holds the populated related rows, the
+        // control holds ids, and a typed word goes back as a row to create.
+        name: f.name, options: rows ?? [], multiple: true, total: n, optionsError: e,
+        allowNew: f.allowNew === true,
+        value: _memberIds(v, rows, f),
+        oncreate: (opt) => _minted.add(opt.value),
+        // MultiSelect stringifies what it holds; an integer key goes back as one.
+        onchange: (next) => onvalue(next.map(x => _minted.has(x) ? { [f.labelField]: x } : (_ids.get(String(x)) ?? x))),
+      } : ({
         name: f.name, options: rows ?? [], multiple: true, total: n, optionsError: e,
         allowNew: f.allowNew === true,
         type: f.itemType === 'integer' || f.itemType === 'number' ? 'number' : 'string',

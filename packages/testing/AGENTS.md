@@ -6,7 +6,7 @@ factories, the verifiers, `phases`, the clock — read `litestone/AGENTS.md` §
 Testing first) and adds the API half. **Nothing here mocks a module**; a test
 passes a real client, a real plugin, or a double listed below.
 
-```ts
+```ts fragment
 import { createTestEnv, session, createTestMailer } from '@frontierjs/testing'
 
 const env = await createTestEnv({

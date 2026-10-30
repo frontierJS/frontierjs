@@ -159,3 +159,31 @@ test('cards: a Section Header sits at the rung from its content, in a Stack and 
   });
   assert.equal(bad.length, 0, 'Section Header not at the rung (' + want + 'px) from its content:\n        ' + bad.join('\n        '));
 });
+
+test('cards: a Section Header wraps its action under the title when the row is too narrow', function () {
+  /*
+   * FJS-3664: a long title plus an action at phone width squeezed the title to
+   * a sliver (or overflowed) because the row never wrapped. Wrapping only
+   * changes a header whose content overflows, so one that fits stays on a line.
+   */
+  var title = 'A very long section title that cannot share a phone-width row with its action';
+  var narrow = el(
+    '<div style="inline-size:320px"><div class="section-header"><h3>' + title + '</h3>' +
+    '<button class="btn">Add something</button></div></div>'
+  );
+  var h = narrow.querySelector('h3').getBoundingClientRect();
+  var b = narrow.querySelector('button').getBoundingClientRect();
+  var below = b.top >= h.bottom - 1;
+  cleanup();
+  assert.ok(below, 'action wraps under the title (title bottom ' + h.bottom + ', action top ' + b.top + ')');
+
+  var wide = el(
+    '<div style="inline-size:800px"><div class="section-header"><h3>Tags</h3>' +
+    '<button class="btn">Add</button></div></div>'
+  );
+  var h2 = wide.querySelector('h3').getBoundingClientRect();
+  var b2 = wide.querySelector('button').getBoundingClientRect();
+  var sameLine = b2.top < h2.bottom;
+  cleanup();
+  assert.ok(sameLine, 'a header that fits keeps its action on the title line');
+});

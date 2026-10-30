@@ -61,32 +61,44 @@ export const TK = {
 // template takes the same table, and so does a flow's reading of its raw text.
 export const STRING_ESCAPES ={ n: '\n', t: '\t', r: '\r' }
 
+// Dispatch is on the char code, and a run of identifier or space characters
+// moves `col` by its length rather than one step at a time. The lexer is a
+// third of a schema's parse time, so a per-character closure call or an object
+// literal built per token shows in `bench/cases.mjs`.
 export function tokenize(src) {
-  // Strip leading UTF-8 BOM if present — editors sometimes write \uFEFF at the
+  // Strip leading UTF-8 BOM if present — editors sometimes write ﻿ at the
   // start of files and the rest of the parser treats it as garbage.
   if (src.charCodeAt(0) === 0xFEFF) src = src.slice(1)
 
   const tokens = []
+  const n = src.length
   let i = 0
   let line = 1
   let col  = 1
 
-  function mark() { return { line, col } }
-  function advance(n = 1) {
-    for (let k = 0; k < n; k++) {
-      if (src[i] === '\n') { line++; col = 1 } else col++
+  function advance(k = 1) {
+    for (let m = 0; m < k; m++) {
+      if (src.charCodeAt(i) === 10) { line++; col = 1 } else col++
       i++
     }
   }
+  function moveTo(j) {
+    for (; i < j; i++) {
+      if (src.charCodeAt(i) === 10) { line++; col = 1 } else col++
+    }
+  }
+  const isDigit = c => c >= 48 && c <= 57
 
-  while (i < src.length) {
-    const pos = mark()
+  while (i < n) {
+    const code = src.charCodeAt(i)
+    const next = src.charCodeAt(i + 1)   // NaN past the end; compares false to every code
 
     // Whitespace — includes ASCII \s plus common Unicode invisibles that get
     // pasted in from rich-text editors (NBSP, zero-width, BOM mid-file, etc.)
-    if (/\s/.test(src[i])) { advance(); continue }
-    const code = src.charCodeAt(i)
-    if (
+    if (code === 32 || code === 9 || code === 13 || code === 11 || code === 12) { i++; col++; continue }
+    if (code === 10) { i++; line++; col = 1; continue }
+    if (code > 127 && (
+      /\s/.test(src[i]) ||
       code === 0x00A0 ||  // NO-BREAK SPACE
       code === 0x2007 ||  // FIGURE SPACE
       code === 0x202F ||  // NARROW NO-BREAK SPACE
@@ -94,117 +106,35 @@ export function tokenize(src) {
       code === 0x200C ||  // ZERO WIDTH NON-JOINER
       code === 0x200D ||  // ZERO WIDTH JOINER
       code === 0xFEFF     // BOM appearing mid-stream (concat'd files etc.)
-    ) { advance(); continue }
+    )) { i++; col++; continue }
 
-    // Triple-slash doc comment
-    if (src.slice(i, i + 3) === '///') {
-      const start = i + 3
-      while (i < src.length && src[i] !== '\n') advance()
-      tokens.push({ type: TK.COMMENT, value: src.slice(start, i).trim(), ...pos })
-      continue
-    }
+    const pos = { line, col }
 
-    // Regular line comment — skip
-    if (src.slice(i, i + 2) === '//') {
-      while (i < src.length && src[i] !== '\n') advance()
-      continue
-    }
-
-    // Block comment — skip
-    if (src.slice(i, i + 2) === '/*') {
-      advance(2)
-      while (i < src.length && src.slice(i, i + 2) !== '*/') advance()
-      if (i >= src.length) throw new ParseError('Unterminated block comment — no closing */', pos)
-      advance(2)
-      continue
-    }
-
-    // @@ before @
-    if (src.slice(i, i + 2) === '@@') {
-      tokens.push({ type: TK.ATAT, value: '@@', ...pos })
-      advance(2); continue
-    }
-
-    // Multi-char operators — must check before single chars
-    if (src.slice(i, i+2) === '->') { tokens.push({ type: TK.ARROW, value: '->', ...pos }); advance(2); continue }
-    // `=>` and `$` are a flow expression's (`FJS-D284`, `FJS-D286`). They lex in a
-    // schema too and no schema grammar accepts one, so `$` there is now `Expected
-    // …, got '$'` from whoever was parsing rather than an unknown character.
-    if (src.slice(i, i+2) === '=>') { tokens.push({ type: TK.FATARROW, value: '=>', ...pos }); advance(2); continue }
-    if (src.slice(i, i+2) === '||') { tokens.push({ type: TK.OR,  value: '||', ...pos }); advance(2); continue }
-    if (src.slice(i, i+2) === '&&') { tokens.push({ type: TK.AND, value: '&&', ...pos }); advance(2); continue }
-    if (src.slice(i, i+2) === '==') { tokens.push({ type: TK.EQ,  value: '==', ...pos }); advance(2); continue }
-    if (src.slice(i, i+2) === '!=') { tokens.push({ type: TK.NEQ, value: '!=', ...pos }); advance(2); continue }
-    if (src.slice(i, i+2) === '<=') { tokens.push({ type: TK.LTE, value: '<=', ...pos }); advance(2); continue }
-    if (src.slice(i, i+2) === '>=') { tokens.push({ type: TK.GTE, value: '>=', ...pos }); advance(2); continue }
-    if (src[i] === '<') { tokens.push({ type: TK.LT,   value: '<',  ...pos }); advance(); continue }
-    if (src[i] === '>') { tokens.push({ type: TK.GT,   value: '>',  ...pos }); advance(); continue }
-    if (src[i] === '!') { tokens.push({ type: TK.BANG, value: '!',  ...pos }); advance(); continue }
-    if (src[i] === '+') { tokens.push({ type: TK.PLUS, value: '+',  ...pos }); advance(); continue }
-    if (src[i] === '*') { tokens.push({ type: TK.STAR, value: '*',  ...pos }); advance(); continue }
-    if (src[i] === '%') { tokens.push({ type: TK.PERCENT, value: '%', ...pos }); advance(); continue }
-    if (src[i] === '-' && !/[0-9]/.test(src[i + 1])) { tokens.push({ type: TK.MINUS, value: '-', ...pos }); advance(); continue }
-
-    // Semicolon — field separator in compact inline schemas, treated as whitespace
-    if (src[i] === ';') { advance(); continue }
-
-    // Single-char tokens
-    const single = { '{': TK.LBRACE, '}': TK.RBRACE, '[': TK.LBRACKET, ']': TK.RBRACKET,
-                     '(': TK.LPAREN, ')': TK.RPAREN, ',': TK.COMMA,    ':': TK.COLON,
-                     '?': TK.QUESTION, '.': TK.DOT,  '@': TK.AT,
-                     '$': TK.DOLLAR }
-    if (single[src[i]]) {
-      tokens.push({ type: single[src[i]], value: src[i], ...pos })
-      advance(); continue
-    }
-
-    // Template literal — backticks. A separate token kind from a quoted string
-    // because the two are different LANGUAGES at the one place that takes both:
-    // `@generated("…")` is SQL and `@generated(`…`)` is a template. Accepting a
-    // backtick as an ordinary string would make every other attribute take one
-    // and mean nothing by it.
-    // `value` is the text with escapes taken; `raw` is the source between the
-    // backticks, which is what a flow reads `${…}` holes out of (`FJS-D513`) —
-    // after the escapes are taken, `\${` and `${` are the same characters.
-    if (src[i] === '`') {
-      const start = i + 1
-      const end   = templateEnd(src, start)
-      if (end < 0) throw new ParseError('Unterminated template literal — no closing `', { ...pos })
-      advance()
-      let str = ''
-      while (i < end) {
-        if (src[i] === '\\') { advance(); str += STRING_ESCAPES[src[i]] ?? src[i] } else { str += src[i] }
-        advance()
+    // Identifier or keyword or boolean
+    if ((code >= 97 && code <= 122) || (code >= 65 && code <= 90) || code === 95) {
+      let j = i + 1
+      for (; j < n; j++) {
+        const c = src.charCodeAt(j)
+        if (!((c >= 97 && c <= 122) || (c >= 65 && c <= 90) || c === 95 || isDigit(c))) break
       }
-      advance() // closing backtick
-      tokens.push({ type: TK.TEMPLATE, value: str, raw: src.slice(start, end), ...pos })
-      continue
-    }
-
-    // String literal
-    if (src[i] === '"' || src[i] === "'") {
-      const quote = src[i]
-      advance()
-      let str = ''
-      while (i < src.length && src[i] !== quote) {
-        if (src[i] === '\\') {
-          advance()
-          if (i >= src.length) break
-          str += STRING_ESCAPES[src[i]] ?? src[i]
-        } else { str += src[i] }
-        advance()
-      }
-      if (i >= src.length) throw new ParseError(`Unterminated string — no closing ${quote}`, pos)
-      advance() // closing quote
-      tokens.push({ type: TK.STRING, value: str, ...pos })
+      const id = src.slice(i, j)
+      col += j - i
+      i = j
+      if (id === 'true' || id === 'false') tokens.push({ type: TK.BOOL, value: id === 'true', ...pos })
+      else                                 tokens.push({ type: TK.IDENT, value: id, ...pos })
       continue
     }
 
     // Number
-    if (/[0-9]/.test(src[i]) || (src[i] === '-' && /[0-9]/.test(src[i + 1]))) {
-      let num = ''
-      if (src[i] === '-') { num += '-'; advance() }
-      while (i < src.length && /[0-9.]/.test(src[i])) { num += src[i]; advance() }
+    if (isDigit(code) || (code === 45 && isDigit(next))) {
+      let j = i + (code === 45 ? 1 : 0)
+      for (; j < n; j++) {
+        const c = src.charCodeAt(j)
+        if (!(isDigit(c) || c === 46)) break
+      }
+      const num = src.slice(i, j)
+      col += j - i
+      i = j
       // `3.8.3.8` is a gate's level per operation (`FJS-D1081`), never a number.
       if (/^\d+(\.\d+){2,}$/.test(num)) {
         tokens.push({ type: TK.DOTTED, value: num, ...pos })
@@ -220,15 +150,111 @@ export function tokenize(src) {
       continue
     }
 
-    // Identifier or keyword or boolean
-    if (/[_a-zA-Z]/.test(src[i])) {
-      let id = ''
-      while (i < src.length && /[\w]/.test(src[i])) { id += src[i]; advance() }
-      if (id === 'true' || id === 'false')
-        tokens.push({ type: TK.BOOL, value: id === 'true', ...pos })
-      else
-        tokens.push({ type: TK.IDENT, value: id, ...pos })
+    // String literal
+    if (code === 34 || code === 39) {
+      let j = i + 1
+      let seg = j
+      let str = ''
+      while (j < n) {
+        const c = src.charCodeAt(j)
+        if (c === code) break
+        if (c === 92) {
+          str += src.slice(seg, j)
+          j++
+          if (j >= n) { seg = j; break }
+          str += STRING_ESCAPES[src[j]] ?? src[j]
+          seg = ++j
+          continue
+        }
+        j++
+      }
+      if (j >= n) throw new ParseError(`Unterminated string — no closing ${src[i]}`, pos)
+      str += src.slice(seg, j)
+      moveTo(j + 1)
+      tokens.push({ type: TK.STRING, value: str, ...pos })
       continue
+    }
+
+    switch (code) {
+      case 47: // '/'
+        if (next === 47) {
+          // Triple-slash doc comment, or a regular line comment that is skipped
+          const eol = src.indexOf('\n', i)
+          const end = eol < 0 ? n : eol
+          if (src.charCodeAt(i + 2) === 47) tokens.push({ type: TK.COMMENT, value: src.slice(i + 3, end).trim(), ...pos })
+          col += end - i
+          i = end
+          continue
+        }
+        if (next === 42) {
+          // Block comment — skip
+          const close = src.indexOf('*/', i + 2)
+          if (close < 0) throw new ParseError('Unterminated block comment — no closing */', pos)
+          moveTo(close + 2)
+          continue
+        }
+        break
+      case 64: // '@' — `@@` before `@`
+        if (next === 64) { tokens.push({ type: TK.ATAT, value: '@@', ...pos }); i += 2; col += 2 }
+        else             { tokens.push({ type: TK.AT,   value: '@',  ...pos }); i++;   col++ }
+        continue
+      case 45: // '-' — `->` is an arrow; a digit after it is a number, taken above
+        if (next === 62) { tokens.push({ type: TK.ARROW, value: '->', ...pos }); i += 2; col += 2 }
+        else             { tokens.push({ type: TK.MINUS, value: '-',  ...pos }); i++;   col++ }
+        continue
+      // `=>` and `$` are a flow expression's (`FJS-D284`, `FJS-D286`). They lex in a
+      // schema too and no schema grammar accepts one, so `$` there is now `Expected
+      // …, got '$'` from whoever was parsing rather than an unknown character.
+      case 61: // '='
+        if (next === 62)      { tokens.push({ type: TK.FATARROW, value: '=>', ...pos }); i += 2; col += 2; continue }
+        if (next === 61)      { tokens.push({ type: TK.EQ,       value: '==', ...pos }); i += 2; col += 2; continue }
+        break
+      case 124: // '|'
+        if (next === 124) { tokens.push({ type: TK.OR,  value: '||', ...pos }); i += 2; col += 2; continue }
+        break
+      case 38: // '&'
+        if (next === 38)  { tokens.push({ type: TK.AND, value: '&&', ...pos }); i += 2; col += 2; continue }
+        break
+      case 33: // '!'
+        if (next === 61) { tokens.push({ type: TK.NEQ,  value: '!=', ...pos }); i += 2; col += 2 }
+        else             { tokens.push({ type: TK.BANG, value: '!',  ...pos }); i++;   col++ }
+        continue
+      case 60: // '<'
+        if (next === 61) { tokens.push({ type: TK.LTE, value: '<=', ...pos }); i += 2; col += 2 }
+        else             { tokens.push({ type: TK.LT,  value: '<',  ...pos }); i++;   col++ }
+        continue
+      case 62: // '>'
+        if (next === 61) { tokens.push({ type: TK.GTE, value: '>=', ...pos }); i += 2; col += 2 }
+        else             { tokens.push({ type: TK.GT,  value: '>',  ...pos }); i++;   col++ }
+        continue
+      // Semicolon — field separator in compact inline schemas, treated as whitespace
+      case 59: i++; col++; continue
+      case 96: { // '`'
+        // Template literal — backticks. A separate token kind from a quoted string
+        // because the two are different LANGUAGES at the one place that takes both:
+        // `@generated("…")` is SQL and `@generated(`…`)` is a template. Accepting a
+        // backtick as an ordinary string would make every other attribute take one
+        // and mean nothing by it.
+        // `value` is the text with escapes taken; `raw` is the source between the
+        // backticks, which is what a flow reads `${…}` holes out of (`FJS-D513`) —
+        // after the escapes are taken, `\${` and `${` are the same characters.
+        const start = i + 1
+        const end   = templateEnd(src, start)
+        if (end < 0) throw new ParseError('Unterminated template literal — no closing `', { ...pos })
+        advance()
+        let str = ''
+        while (i < end) {
+          if (src[i] === '\\') { advance(); str += STRING_ESCAPES[src[i]] ?? src[i] } else { str += src[i] }
+          advance()
+        }
+        advance() // closing backtick
+        tokens.push({ type: TK.TEMPLATE, value: str, raw: src.slice(start, end), ...pos })
+        continue
+      }
+      default: {
+        const type = SINGLE[code]
+        if (type) { tokens.push({ type, value: src[i], ...pos }); i++; col++; continue }
+      }
     }
 
     // Unknown character — surface code point + line context so smart quotes,
@@ -255,6 +281,14 @@ export function tokenize(src) {
 
   tokens.push({ type: TK.EOF, value: null, line, col })
   return tokens
+}
+
+// One-character tokens by char code. `+ * %` and the brackets never combine.
+const SINGLE = {
+  123: TK.LBRACE, 125: TK.RBRACE, 91: TK.LBRACKET, 93: TK.RBRACKET,
+  40: TK.LPAREN,  41: TK.RPAREN,  44: TK.COMMA,    58: TK.COLON,
+  63: TK.QUESTION, 46: TK.DOT,    36: TK.DOLLAR,
+  43: TK.PLUS,    42: TK.STAR,    37: TK.PERCENT,
 }
 
 // Map common gotcha codepoints to actionable hints. Returns null if nothing

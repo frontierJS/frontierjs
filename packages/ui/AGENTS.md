@@ -25,7 +25,7 @@ table, `<Cell>` renders a value from the column's declaration — money, enum
 labels, instants. A label or an option list typed into a page is a second
 answer that drifts.
 
-```mesa
+```mesa fragment
 <script>
   import Form   from '@frontierjs/ui/components/forms/Form.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
@@ -160,7 +160,7 @@ off with a console warning naming it.
 **A hand-written form writes the record itself.** Each control resolves its
 label, rules and error from the form; its callback carries the value back:
 
-```mesa
+```mesa fragment
 <script>
   import Form   from '@frontierjs/ui/components/forms/Form.mesa'
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
@@ -208,7 +208,7 @@ warning. `bind:autosaveState` reads `idle`, `pending`, `saving`, `saved` or
 **A contributed control is two registrations**, made once at startup: sierra's
 answers *which columns get it*, the kit's *what it renders as*.
 
-```js
+```js fragment
 import { registerControl }     from '@frontierjs/sierra/resource'
 import { registerFormControl } from '@frontierjs/ui/controls'
 import Duration from './Duration.mesa'
@@ -226,7 +226,7 @@ do the same for `<Cell>` and `<FilterBar>` — see `@frontierjs/ui/controls`.
 
 ## Tables
 
-```mesa
+```mesa fragment
 <script>
   import Table from '@frontierjs/ui/components/display/Table.mesa'
   import Cell  from '@frontierjs/ui/components/display/Cell.mesa'
@@ -260,7 +260,7 @@ A selection is a set of KEYS the screen owns, not a mode of `<Table>`: the
 table draws the header box through its `header(col)` snippet and the row box
 in your `row` snippet.
 
-```mesa
+```mesa fragment
 <script>
   import Table    from '@frontierjs/ui/components/display/Table.mesa'
   import Checkbox from '@frontierjs/ui/components/forms/Checkbox.mesa'
@@ -331,7 +331,7 @@ template needs no `$:` to follow a selection, and the verbs are closures:
 A screen worked from the keyboard — an inbox — takes `rowlist` from
 `@frontierjs/ui/rowlist`, an `{@attach}` on the element holding the rows:
 
-```mesa
+```mesa fragment
 <ul {@attach rowlist(() => ({
   onopen:   (row) => goto(row.dataset.id),
   onselect: (row) => picked.toggle(byId[row.dataset.id]),
@@ -387,7 +387,7 @@ name. **An app writes ONE `Icon` component**, and every icon on every screen
 goes through it — two icon components are two copies of one decision, and
 they drift:
 
-```mesa
+```mesa fragment
 <script>
   import { icons } from '../lib/icons.js'   // name → path data, from the set the app chose
   export let name

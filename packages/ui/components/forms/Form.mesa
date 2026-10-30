@@ -1069,8 +1069,8 @@
       }
     }
 
-    // Rows are fetched for a SCHEMA FACT — a foreign key, or a declared value
-    // set — not for the control named `picker`. The relation is the fact and
+    // Rows are fetched for a SCHEMA FACT — a foreign key, an m2m, or a declared
+    // value set — not for the control named `picker`. The relation is the fact and
     // the control is a choice made over it, so a contributed combobox over
     // `customerId` gets its rows without having to claim the built-in name to
     // do it, and a `@values` column gets them with no relation at all.
@@ -1082,7 +1082,7 @@
     // capped at the server's limit reads identically to a complete one once
     // the number is gone, which is the whole of `FJS-391`.
     for (const f of rendered) {
-      if (!f.rule?.references && !f.rule?.values && !f.rule?.items?.enum) continue
+      if (!f.rule?.references && !f.rule?.relation && !f.rule?.values && !f.rule?.items?.enum) continue
       if (_nothingToLabel(f.name)) continue
       resource?.options?.(f.name)?.then?.(r => {
         pickers = { ...pickers, [f.name]: Array.isArray(r) ? r : (r?.options ?? []) }

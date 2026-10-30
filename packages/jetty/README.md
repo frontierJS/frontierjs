@@ -104,7 +104,7 @@ restart — gitignore it. `--temp-profile` is web-ext's fresh profile per launch
 
 Set `permissions.audit` in `jetty.config.js`:
 
-```js
+```js fragment
 permissions: {
   declared: ['storage', 'tabs'],
   audit:    'warn',  // 'warn' = log; 'strict' = fail build; false = off
@@ -139,7 +139,7 @@ automatically per `--browser` flag:
 | `commands` (keyboard shortcuts) | identical               | identical                                |
 
 Firefox-specific settings live under `firefox: {...}` in `jetty.config.js`:
-```js
+```js fragment
 firefox: {
   geckoId:          'my-extension@example.com',
   strictMinVersion: 121,
@@ -149,7 +149,7 @@ firefox: {
 
 A keyboard shortcut is a `commands` entry in `jetty.config.js`, written as the
 manifest spells it and received in Harbor through `chrome.commands.onCommand`:
-```js
+```js fragment
 commands: {
   'pick-element': {
     suggested_key: { default: 'Ctrl+Shift+E', mac: 'Command+Shift+E' },
@@ -185,7 +185,7 @@ lookup walks up from the surface to find it.
 A page's Resource is sierra's own, the same one a web page uses. Only the app it
 talks to differs:
 
-```js
+```js fragment
 import { createResource } from '@frontierjs/sierra/resource'
 import { harborApp }      from '@frontierjs/jetty/resources'
 

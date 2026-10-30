@@ -92,7 +92,7 @@ scoped client for work that is not a service call. The `db` exported from
 only as `db.asSystem()`, for work that is nobody's (`service-module-db`, below,
 refuses it inside a service).
 
-```ts
+```ts fragment
 $.db          // this caller's Litestone client
 $.me          // the principal (SessionContext) or null
 $.data        // the payload — a row, or an ARRAY of rows on a bulk create
@@ -195,7 +195,7 @@ a column is admitted, and a key the body never reads off `$.query` is a 400 nami
 it (`FJS-D553`). A schema-built FilterBar sends columns the body did not name, so
 spread the query rather than picking keys out of it:
 
-```ts
+```ts fragment
 async find() {
   return $.db.order.findMany({ where: { ...parseWhere($.query), shopId: shop() } })
 }
@@ -212,7 +212,7 @@ SQLite's write lock for that long. `find` and `get` are never wrapped.
 does not declare `transactional:`**, because the lock would be held across the
 network. Leave it undeclared and scope the writes alone:
 
-```ts
+```ts fragment
 async locate() {
   const match = await lookupAtVendor($.data)                          // no lock held
   return $.db.$transaction(async (tx) => {                            // lock taken here
@@ -229,7 +229,7 @@ moves the row between the read and the write.
 
 **Report a rule the schema cannot state the way the schema reports its own:**
 
-```ts
+```ts fragment
 import { validateFields, BadRequest, Forbidden, NotFound, Conflict } from '@frontierjs/junction'
 
 await validateFields(e => {
@@ -242,7 +242,7 @@ await validateFields(e => {
 
 ## Calling a service from code
 
-```ts
+```ts fragment
 app.service('posts').find({ status: 'open' }, { directives: { limit: 10 } })
 app.service('posts').get(id)
 app.service('posts').patch(id, { title })
@@ -285,7 +285,7 @@ policy reads as `auth().x`, and every name must be declared in `db/schema.lite`
 | two sources where one WINS a shared claim | `async (ctx, user) => …` applying the precedence, with `describe: () => [a.describe(), b.describe()]` (`FJS-D694`) |
 | something else | `async (ctx, user) => ({ … })` — returns `{}` for no standing |
 
-```ts
+```ts fragment
 import { createApp } from '@frontierjs/junction'
 import { bearerClaim, cookie } from '@frontierjs/junction/bearer'
 

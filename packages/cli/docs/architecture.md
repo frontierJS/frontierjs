@@ -66,7 +66,7 @@ The orchestrator sets `$.config.stepsDir = '_steps-docker'` (or another folder) 
 
 Available as top-level locals in every `js` block:
 
-```js
+```js fragment
 arg          // positional args by name
 flag         // named flags (--dry always present, --debug hidden but present)
 log          // log.info / .success / .warn / .error / .dry

@@ -4,7 +4,7 @@
 realms — a migrated database, factories, a principal, a mounted Junction app, and
 the announcements a mutation made.
 
-```js
+```js fragment
 import { createTestEnv, session } from '@frontierjs/testing'
 
 const env = await createTestEnv({
@@ -32,7 +32,7 @@ test('a developer archives a lead', async () => {
 `createTestMailer()` is an `IMail` that keeps what it was given — `sent`, `last`,
 `to(address)` across `to`/`cc`/`bcc`, `failNext()` for the retry paths, `reset()`.
 
-```js
+```js fragment
 import { createTestMailer } from '@frontierjs/testing'
 
 const mail = createTestMailer()
@@ -104,7 +104,7 @@ HTTP goes URL → router → `bridge.toContext()`, WebSocket goes frame →
 the id, the filters, the `$`-directives, the method — the second lifts out of a
 JSON object by hand. This puts the same call down both and compares the answers.
 
-```js
+```js fragment
 const env = await createTestEnv({ schema, plugins: [gate], listen: true, api })
 
 const found = await env.verifyTransportParity({
@@ -174,7 +174,7 @@ server in its own process group, waits for each URL, opens Chrome
 everything on a throw, on Ctrl-C and on exit. `process.exitCode` is set from the
 result, so the file is its steps:
 
-```ts
+```ts fragment
 import { drive } from '@frontierjs/testing/drive'
 
 await drive({

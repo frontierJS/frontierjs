@@ -238,7 +238,7 @@ HTTP response
 
 Nothing above the bridge ever touches `req`/`res`. Nothing below it knows what HTTP is. Services are completely transport-agnostic — the same service handles HTTP, WebSocket, and internal calls identically.
 
-```typescript
+```typescript fragment
 bridge.toContext(httpCtx, 'users', 'users', 'http', app)  // HTTP
 bridge.toContext(wsCtx,   'users', 'users', 'websocket', app) // WebSocket
 bridge.internal('users',  'create', { name: 'Alice' })        // internal — zero HTTP
@@ -249,7 +249,7 @@ transport. There is no `ctx.params` — it was an open bag whose contents
 propagated into sub-calls, which is the FeathersJS shared-mutation footgun. It
 is four typed fields instead, each with one propagation rule:
 
-```typescript
+```typescript fragment
 ctx.user       // WHO is calling. Frozen. Propagates to internal calls.
 ctx.caller.headers  // caller environment — ip, userAgent, headers. Read-only,
 ctx.caller.ip       //   propagates. `{}` on internal calls.
@@ -260,7 +260,7 @@ ctx.locals          // per-call scratch. FRESH {} every call, does NOT propagate
 
 Alongside them, the two halves of what used to be one query object:
 
-```typescript
+```typescript fragment
 ctx.query       // FILTERS ONLY — becomes the WHERE clause. Never holds a
                 //   `$`-prefixed key.
 ctx.directives  // { limit, offset, orderBy, select, … } — how to SHAPE the
@@ -271,7 +271,7 @@ ctx.directives  // { limit, offset, orderBy, select, … } — how to SHAPE the
 Internal callers pass directives under their own key — a flat `{ limit: 10 }`
 is not a directive and is ignored:
 
-```typescript
+```typescript fragment
 await app.service('posts').find({ status: 'open' }, { directives: { limit: 10 } })
 ```
 
@@ -293,7 +293,7 @@ silently never fires.
 
 **Work that outlives the request** has no store to read, so it opens its own:
 
-```typescript
+```typescript fragment
 await app.runAs(userId, async () => {
   await app.service('orders').patch(id, { status: 'shipped' })   // runs as them
 })
@@ -313,7 +313,7 @@ around:enter → before → [method] → after → around:exit
 
 Cross-cutting concerns — auth, validation, rate limiting, caching, real-time push — all live in hooks and compose without touching service method bodies.
 
-```typescript
+```typescript fragment
 createService({
   name: 'deployments',
   hooks: {
@@ -371,7 +371,7 @@ Two things it does not do, and both matter:
 
 `protect()` supports dot-path notation for nested fields:
 
-```typescript
+```typescript fragment
 // Top-level field
 service.hooks({ after: { all: [protect('passwordHash')] } })
 
@@ -381,7 +381,7 @@ service.hooks({ after: { all: [protect('meta.internal', 'auth.refreshToken')] } 
 
 **`rateLimitHook`** — per-service, per-method rate limiting. Keys on `userId` for authenticated requests, falls back to IP for anonymous. Different from the `rateLimit` middleware, `app.configure(rateLimit(...))`, which applies globally to all HTTP routes.
 
-```typescript
+```typescript fragment
 import { rateLimitHook } from '@frontierjs/junction/hooks'
 
 // Per-service: limit create to 10/minute per user
@@ -440,7 +440,7 @@ unsubscribed is omitted rather than reported as zero.
 
 Custom methods are defined directly on the service alongside CRUD — no separate wrapper needed.
 
-```typescript
+```typescript fragment
 createService({
   name: 'servers',
 
@@ -474,7 +474,7 @@ Custom methods run through the full hook pipeline — identical to CRUD methods.
 
 Works the same when the service is model-backed — the generated CRUD and your custom methods sit side by side:
 
-```typescript
+```typescript fragment
 createService({
   name:   'servers',
   model:  'servers',
@@ -509,7 +509,7 @@ app.ws('/chat/{roomId}', {
 
 `app.ws` is the raw door (`FJS-D688`): the path takes `apiPrefix` as `app.post` does, and junction sends the peer no `connected` and no `{type:'error'}` frame, since a vendor's socket speaks its own protocol. Per-socket state is `ctx.locals`, and a handler's throw goes to `onError`. A third argument sets the route's own bounds:
 
-```typescript
+```typescript fragment
 app.ws('/media/{ticket}', handlers, {
   limits:  { maxFramesPerSecond: 0, maxInFlight: 0, maxConnectionsPerIp: 0 },   // over config.http.ws, field by field
   upgrade: req => { if (!known(req)) return new Response('no such ticket', { status: 404 }) },
@@ -522,7 +522,7 @@ A frame sent the instant the socket opens waits until `open()` has settled, an a
 
 ### 5. Channels — real-time without polling
 
-```typescript
+```typescript fragment
 app.configure(channels(app => {
   app.channels.on('connection', (session, conn) => {
     if (session?.workspaceId)
@@ -542,7 +542,7 @@ Client: `{ type: 'event', event: 'deployments created', data: { ... } }`
 `channel(name).send` are not graded per recipient, so the room's membership is
 kept true instead:
 
-```typescript
+```typescript fragment
 app.configure(channels(setup, { rooms: { 'page:{id}': 'Page' }, presence: ['page:*'] }))
 
 // in the connection hook: graded at the Data boundary, answers whether it admitted
@@ -575,7 +575,7 @@ Hook pipelines are merged and compiled once per service during `app.start()`, af
 
 ## Response helpers
 
-```typescript
+```typescript fragment
 ctx.json(data, status?)
 ctx.text(data, status?)
 ctx.html(data, status?)
@@ -671,7 +671,7 @@ Caravan registers `jobs`, the outbox `outbox` — and is answered in `/health`'s
 
 ### Exporting to a collector — `otlp()`
 
-```typescript
+```typescript fragment
 import { otlp } from '@frontierjs/junction/otlp'
 
 app.configure(otlp({
@@ -705,7 +705,7 @@ An app that starts its own sidecar — a dev mail catcher, a stand-in payment
 provider — has a process nothing here can see: the boot banner is derived from
 mounted routes and a sidecar has none.
 
-```typescript
+```typescript fragment
 const sink = startMailSink()          // your process, your handle
 app.registerDevService('mail', {
   url:  'http://localhost:8111',
@@ -808,7 +808,7 @@ If you use **bearer tokens only** (no cookies), omit `csrf()` entirely — beare
 ## Circuit breaker
 
 
-```typescript
+```typescript fragment
 import { circuitBreaker } from '@frontierjs/junction/hooks'
 
 service.hooks({
@@ -829,7 +829,7 @@ Throws `Unavailable` (503) in open state so error hooks and logging still run.
 
 ## API versioning
 
-```typescript
+```typescript fragment
 const app = createApp({
   config: { ...config, apiPrefix: '/api/v1' },
 })
@@ -847,7 +847,7 @@ Default is `''` — services mount at `/{service}`. Handles missing/extra slashe
 
 The browser client takes the same option and must be given the same value:
 
-```typescript
+```typescript fragment
 createJunctionClient({ url, apiPrefix: '/api/v1' })
 // client.auth.signIn() then posts to /api/v1/auth/login — `authPrefix` is the auth
 // plugin's own prefix and stays relative to this one.
@@ -881,7 +881,7 @@ Two cases worth knowing:
   answerable. It is not executed in parallel, which is the outcome the key
   exists to prevent.
 
-```typescript
+```typescript fragment
 config: {
   idempotency: {
     enabled:    true,          // default
@@ -1012,7 +1012,7 @@ sit outside the prefix still goes through `app.http.router`. An app with no
 
 ## Auth
 
-```typescript
+```typescript fragment
 import { createLitestoneAuth, auth as authPlugin } from '@frontierjs/auth'
 
 const auth = createLitestoneAuth(db)
@@ -1078,7 +1078,7 @@ interface SessionContext {
 
 **`IAuth` optional flow methods** — implement these on your auth adapter to support password reset and email verification. The plugin's route handlers call them if present.
 
-```typescript
+```typescript fragment
 // Password reset flow
 auth.requestPasswordReset?(email)                        // sends reset email
 auth.confirmPasswordReset?(token, newPassword)           // consumes token, sets password
@@ -1116,7 +1116,7 @@ answer and yields `null` — an app whose background work touches nothing gated
 needs no system identity, and inventing one would hand every app a privileged
 principal it never asked for.
 
-```typescript
+```typescript fragment
 app.principal()                  // who is in scope, or null
 await app.runAs(userId, async (user) => { … })   // open a scope for them
 await app.runAs(null,   async ()     => { … })   // as the app itself
@@ -1143,7 +1143,7 @@ at dispatch and runs the handler inside `app.runAs(actorId, …)`.
 
 ## Schema validation
 
-```typescript
+```typescript fragment
 import { createSchema, v } from '@frontierjs/junction'
 
 const CreateUserSchema = createSchema({
@@ -1170,7 +1170,7 @@ const LoginSchema   = CreateUserSchema.pick('email', 'password')
 
 **Convenience types** (`v.*` and `v.required.*`):
 
-```typescript
+```typescript fragment
 v.string()        v.required.string()
 v.number()        v.required.number()
 v.boolean()       v.required.boolean()
@@ -1236,7 +1236,7 @@ app.own('serviceCache', createSqliteCache({ path: './cache.db', defaultTtl: '1 m
 
 Junction opens no database (`FJS-D641`). `createApp({ db })` is the one way in: a Litestone client, or any table-shaped client, becomes `app.db`. Opening it, its pragmas and its migrations are the client's business.
 
-```typescript
+```typescript fragment
 const db  = await createClient({ schema: './db/schema.lite', db: './app.db' })
 const app = createApp({ config, db })
 ```
@@ -1247,7 +1247,7 @@ const app = createApp({ config, db })
 
 [Litestone](https://github.com/frontierjs/litestone) is Junction's first-party SQLite ORM. When installed, `createService` replaces manual CRUD — all five methods are generated from the schema, validation is auto-generated from the JSON Schema output, and `File` columns wire up to object storage transparently.
 
-```typescript
+```typescript fragment
 import { createService, withLitestoneDb } from '@frontierjs/junction'
 import { createClient, generateJsonSchema, GatePlugin, LEVELS } from '@frontierjs/litestone'
 
@@ -1335,7 +1335,7 @@ scanning the definition for a function whose key is not a known option — which
 works, is what most services do, and cannot see a name an option already owns.
 Declaring it is the way in:
 
-```typescript
+```typescript fragment
 createService({
   name:    'reports',
   model:   'Report',
@@ -1358,7 +1358,7 @@ of the hook pipeline — an anonymous caller gets 405, not 401.
 
 **`jsonSchemaToJunctionSchema`** is available directly if you need to build a schema manually:
 
-```typescript
+```typescript fragment
 import { jsonSchemaToJunctionSchema } from '@frontierjs/junction'
 
 const schema = jsonSchemaToJunctionSchema('Post', jsonSchema, 'create')
@@ -1397,7 +1397,7 @@ litestone's own refusal. `name:` moves the route from `/search`.
 
 Multi-step operations that need atomicity — create a user and a workspace together, or not at all — require a transaction. Litestone exposes `db.$transaction()` for this.
 
-```typescript
+```typescript fragment
 createService({
   name: 'accounts',
 
@@ -1496,7 +1496,7 @@ relay hands it to `app.jobs` afterwards and marks it delivered.
 fli outbox:install     # imports the OutboxMessage model into db/schema.lite
 ```
 
-```typescript
+```typescript fragment
 import { outbox } from '@frontierjs/junction/outbox'
 
 app.configure(caravan())   // the relay needs a queue
@@ -1561,7 +1561,7 @@ A schema says what the SYSTEM owes a row and when —
 `abandon: pending -> cancelled @system` — and Litestone answers which rows are
 due (`db.order.due()`). Nothing in Litestone moves a row; this plugin does.
 
-```typescript
+```typescript fragment
 import { commitments } from '@frontierjs/junction/commitments'
 
 app.configure(caravan())   // the sweep is a Caravan cron
@@ -1729,7 +1729,7 @@ put.
 
 ## Testing
 
-```typescript
+```typescript fragment
 import { createTestApp, testCtx, request, callService } from '@frontierjs/junction'
 import notes from './services/notes.service.ts'
 
@@ -1754,7 +1754,7 @@ expect(res.status).toBe(201)   // create returns 201 by default
 
 **Lifecycle:** `createTestApp` returns a fully wired app without binding a port. The first `request()` call lazily runs `_startForTest()` — which fires all queued plugin `register()` calls, registers service routes, and compiles hook pipelines. This means you can call `app.configure(middleware)` freely between `createTestApp()` and the first request and the middleware will wrap the routes correctly.
 
-```typescript
+```typescript fragment
 const app = await createTestApp({ services: [...] })
 app.configure(cors({ origins: ['https://myapp.com'] }))  // queued
 app.configure(csrf({ origins: ['https://myapp.com'] }))  // queued
@@ -1771,7 +1771,7 @@ every call, `@frontierjs/testing` composes this with Litestone's `createTestEnv`
 
 ## OpenAPI
 
-```typescript
+```typescript fragment
 import { openapi } from '@frontierjs/junction/openapi'
 
 app.configure(openapi({
@@ -1788,7 +1788,7 @@ The generator respects `config.apiPrefix` — if your routes live at `/api/v2`, 
 
 Schema registration improves the generated docs. Both raw `Schema` objects and compiled `CompiledSchema` objects work — compiled schemas expose their field definitions automatically:
 
-```typescript
+```typescript fragment
 import { createSchema, v } from '@frontierjs/junction'
 
 const CreateNoteSchema = createSchema({
@@ -1811,7 +1811,7 @@ app.configure(openapi({
 
 Action schemas are also supported:
 
-```typescript
+```typescript fragment
 schemas: {
   servers: {
     reboot: { body: RebootOptionsSchema, response: JobSchema },
@@ -1843,7 +1843,7 @@ The plugin listens for declared events, writes a `webhook_deliveries` row, fires
 
 **Registering a subscriber:**
 
-```typescript
+```typescript fragment
 const hook = await app.webhooks.register(
   'https://partner.com/hooks/orders',
   ['orders:created', 'orders:patched']
@@ -1855,7 +1855,7 @@ Every delivery is signed with `@frontierjs/toolbelt/signature` under the `X-Webh
 
 **Receiving — a subscription** (`FJS-D1087`). The same scheme read the other way: a *subscriber* is the far side of a registration this app made, a *subscription* is this app's side of a registration a far app holds. The row carries the secrets the far app signs under, the route is `POST {apiPrefix}/webhooks/subscriptions/{id}`, and one `receive` says what to do:
 
-```typescript
+```typescript fragment
 app.configure(webhooks({
   events, store,
   receive: async (ev, { subscription }) => {
@@ -1876,7 +1876,7 @@ The order is verify → receipt → `receive` → mark applied, and **dedupe mea
 
 **Other API:**
 
-```typescript
+```typescript fragment
 await app.webhooks.deliver('orders:created', payload)  // manual fan-out
 await app.webhooks.retry(deliveryId)                   // force-retry a dead delivery
 const list = await app.webhooks.list()                  // all registrations
@@ -1911,7 +1911,7 @@ webhooks test <webhook-id>                fire a test ping
 
 **Custom store** — `createSqliteWebhookStore` takes a raw `bun:sqlite` `Database`; implement `IWebhookStore` for Postgres, Redis, etc.:
 
-```typescript
+```typescript fragment
 app.configure(webhooks({ events: ['*'], store: myPostgresStore }))
 ```
 
@@ -1931,7 +1931,7 @@ app.scheduler.once('30 seconds', async () => { /* warmup */ })
 
 `@frontierjs/junction/client` is a zero-dependency browser client for connecting Sierra/Mesa frontends (or any browser app) to a Junction API. Import as ESM or bundle with Vite.
 
-```typescript
+```typescript fragment
 import { createJunctionClient } from '@frontierjs/junction/client'
 
 const client = createJunctionClient({
@@ -1959,7 +1959,7 @@ client.setSocketQuery({ room: 'tavern' })
 split: the routes that ESTABLISH a session, and the services for what the
 caller does to their own credentials afterwards.
 
-```typescript
+```typescript fragment
 await client.auth.signUp({ email, password, name })
 await client.auth.signOut()          // tells the server, THEN clears here
 const me       = await client.auth.me()
@@ -1994,7 +1994,7 @@ declare module '@frontierjs/junction/client' {
 }
 ```
 
-```typescript
+```typescript fragment
 const rows = await client.service('posts').findData()
 rows[0].title      // string
 rows[0].slug       // error — not a column on Post
@@ -2015,7 +2015,7 @@ A custom method's declared `output: 'SearchResult'` reaches `invoke()` and
 answers which method is in its `methods:` arrays, and the generator reads only
 the seed:
 
-```typescript
+```typescript fragment
 declare module '@frontierjs/junction/client' {
   interface ServiceMethods { posts: { search: SearchResult } }
 }
@@ -2026,7 +2026,7 @@ found.total        // number — a method not listed still answers `unknown`
 
 **Service proxy** — CRUD methods prefer WebSocket when connected, fall back to HTTP automatically. File uploads always use HTTP (multipart/form-data):
 
-```typescript
+```typescript fragment
 const posts = client.service('posts')
 
 // TypeScript — typed generic (optional, JS users omit)
@@ -2077,7 +2077,7 @@ await posts.create({ title: 'With image', cover: file })
 
 **Real-time events** — the server broadcasts mutations over WebSocket:
 
-```typescript
+```typescript fragment
 posts.on('created', (post) => console.log('new post', post))
 posts.on('patched', (post) => updateRow(post))
 posts.on('removed', (post) => removeRow(post))
@@ -2093,7 +2093,7 @@ the announcement carries the row, and the caller still gets the report.
 
 **`resource()`** — convenience wrapper that combines a service proxy, a reactive `Tether`, and a `load()` function. The tether stays in sync with real-time events automatically:
 
-```typescript
+```typescript fragment
 const { service, tether, load } = client.resource('posts')
 
 // Initial fetch from server — load(query?, params?)
@@ -2112,7 +2112,7 @@ Every option is named — `createResource`'s shape, with no positional argument
 
 **`Tether<T>`** is framework-agnostic. Works with Svelte, Mesa, or plain JS:
 
-```typescript
+```typescript fragment
 // Svelte
 const posts = writable([])
 tether.subscribe(v => posts.set(v))
@@ -2131,14 +2131,14 @@ tether.set([])                                // replace all
 
 **URL normalization** — pass `http://`, `https://`, `ws://`, or `wss://` — the client normalizes to `http(s)://` for requests and converts back to `ws(s)://` for the WebSocket connection:
 
-```typescript
+```typescript fragment
 createJunctionClient({ url: 'ws://localhost:3000' })   // works fine
 createJunctionClient({ url: 'wss://api.example.com' }) // works fine
 ```
 
 **`relay`**: a client whose connection is somebody else's. Some contexts cannot keep a socket. An extension page is one, because MV3 keeps the connection in the service worker. Such a page still needs the whole client, since `resource()`'s tether is what a Resource is built on. A relayed client hands each call to `relay` as the frame the socket would have carried. The client that holds the connection makes it with `forward()` and hands each push back through `receive()`:
 
-```typescript
+```typescript fragment
 // the page
 const page = createJunctionClient({ relay: (call) => port.request('call', call) })
 port.on('frame', (frame) => page.receive(frame))   // { type: 'event', event, data }, or { type: 'connected' }
@@ -2157,7 +2157,7 @@ Every `connected` after the first emits `reconnected`, as a socket's reconnect d
 `@frontierjs/junction/mail` puts an `IMail` on `app.mail`. Pick a transport and
 hand it to `mail`:
 
-```typescript
+```typescript fragment
 import { mail, createSmtpMailer, createResendMailer } from '@frontierjs/junction/mail'
 
 // Any SMTP server: no package, no account. Bun opens the socket.
@@ -2179,7 +2179,7 @@ app.configure(mail({ mailer: createResendMailer({
 
 Send from anywhere you have `app`:
 
-```typescript
+```typescript fragment
 await app.mail.send({
   to:      'alice@example.com',
   subject: 'Your password has been reset',
@@ -2201,7 +2201,7 @@ read the other way, plus the envelope `recipient` — and your `apply` decides
 what the address does with it. To have a reply land on the record it answers,
 send with a tagged `replyTo` and read the tag back:
 
-```typescript
+```typescript fragment
 import { replyAddress, splitAddress, readReplyTag, headerOf } from '@frontierjs/junction/mail'
 
 // Out: support+<token>@acme.test, the token naming the message being answered.
@@ -2251,7 +2251,7 @@ and `hasRoute()` answers a *matching* question — every app registers
 `GET /{service}`, which matches almost anything. So "is this mounted, and
 where" needs the router asked rather than guessed.
 
-```typescript
+```typescript fragment
 import { manifest } from '@frontierjs/junction/manifest'
 
 app.configure(manifest({ db }))   // devOnly by default
@@ -2284,7 +2284,7 @@ First-party plugins built specifically for Junction. Each is a separate package 
 
 SQLite-backed background job queue. Zero external dependencies. Jobs survive process restarts.
 
-```ts
+```ts fragment
 import { caravan } from '@frontierjs/caravan'
 
 const queue = caravan({
@@ -2316,7 +2316,7 @@ A handler runs **on behalf of whoever dispatched it**. Caravan records the
 principal in scope at `dispatch()` and re-resolves them when the job runs, so a
 service call inside a handler names no `auth` and inherits one:
 
-```ts
+```ts fragment
 export default defineJob({
   handler: async (ctx) => {
     const code = await courier.book(ctx.data)
@@ -2365,7 +2365,7 @@ Dead jobs (exhausted retries) stay in the database — use `app.jobs.retry(id)` 
 
 One interface for talking to third-party systems — REST APIs, server Outposts, local processes. Abstracts HTTP, WebSocket, and Unix socket protocols behind a single `send()` call.
 
-```ts
+```ts fragment
 import { authenticate } from '@frontierjs/junction/hooks'
 import { conduit }           from '@frontierjs/conduit'
 import { createSQLiteStore } from '@frontierjs/conduit/stores/sqlite'
@@ -2406,7 +2406,7 @@ await app.conduit.register({
 
 Streaming for Outposts that push data:
 
-```ts
+```ts fragment
 for await (const chunk of app.conduit.stream({ target: 'outpost:srv-abc', method: 'logs' })) {
   console.log(chunk.data)
 }
@@ -2422,7 +2422,7 @@ Conduit stats appear in `GET /metrics` under `conduit`:
 
 Testing with stub transports — no real HTTP calls:
 
-```ts
+```ts fragment
 import { createTestConduit } from '@frontierjs/conduit/testing'
 
 const { conduit, stubs } = createTestConduit({
@@ -2469,7 +2469,7 @@ Deploy is `fli deploy`, from the Dockerfile `fli make:deploy` writes. Junction h
 
 An app that bundles itself anyway (`bun build`) **must register its services statically** and state no `root`:
 
-```ts
+```ts fragment
 import messages from './messages.service.ts'
 
 const app = createApp({ config: { /* … */ } })

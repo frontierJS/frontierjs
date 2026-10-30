@@ -336,7 +336,7 @@ principal, no `auth`, no `query`; the fields are capabilities rather than inputs
 The spelling is the framework's: Junction's `$` is the call in progress and
 Mesa's is the component runtime, so knowing one teaches the next.
 
-```js
+```js fragment
 // Destructured from $ at the top of the body:
 arg             // positional args        → arg.name, arg.path
 flag            // flags                  → flag.dry, flag.force
@@ -391,7 +391,7 @@ reporting one another's state.
 style stays a call, `chalk.dim(s)`. A count with a noun is `plural(n, word)`
 from `core/text.js`. `commands/ports/status.md` is the reference:
 
-```js
+```js fragment
 const { plural } = await import(resolve(global.fliRoot, 'core/text.js'))
 
 echo(chalk`  {bold ${plural(busy.length, 'port')} in use}\n`)
@@ -412,7 +412,7 @@ leading space in the source is output and a body line starts at column 0.
 `echo` adds the final newline, so the closing backtick on its own line leaves
 one blank line after the block. `commands/basecamp/create.md` is the reference:
 
-```js
+```js fragment
 const block = `Host ${made.name}
   HostName ${made.ip}
   User root
@@ -432,7 +432,7 @@ or `null` row, so `started && dim(started)` needs no `if` around it.
 `$.exec` is synchronous — for short work whose output can arrive at the
 end (git, a quick docker call, file manipulation):
 
-```js
+```js fragment
 $.exec({ command: `git push origin ${flag.branch}` })
 // --dry logs "[dry] git push origin main" and runs nothing
 ```
@@ -440,7 +440,7 @@ $.exec({ command: `git push origin ${flag.branch}` })
 `args` appends words one shell word each, quoted, which is how a command hands
 what it was given to another one — a shortcut is exactly that:
 
-```js
+```js fragment
 $.exec({ command: `${$.fli} dev:desktop`, args: $.forwarded })
 // fli basecamp --no-build → fli dev:desktop '--no-build'
 ```
@@ -449,7 +449,7 @@ $.exec({ command: `${$.fli} dev:desktop`, args: $.forwarded })
 docker build, tailing logs, a dev server, an SSH session). In the GUI it streams
 line by line as SSE rather than landing all at once:
 
-```js
+```js fragment
 await $.stream({ command: `ssh ${host} "docker logs --follow ${container}"` })
 ```
 
@@ -458,7 +458,7 @@ await $.stream({ command: `ssh ${host} "docker logs --follow ${container}"` })
 For a command that stays open: a single-key prompt, a status line pinned to the
 bottom, the screen handed to an editor and taken back.
 
-```js
+```js fragment
 tty.onExit(() => api('POST', '/status', { online: false }))  // Ctrl-C included, capped at 3s
 tty.title('● online')
 const bar = tty.live(() => [chalk.green('● online'), `${waiting} waiting`, chalk.dim('? keys')])
@@ -695,7 +695,7 @@ fli tell:download 'https://network.frontierjs.com/file/<id>#<key>'
 Two things the compiler cannot see through, and both only matter when your
 command *generates* `.md` files — `make:command` does:
 
-```js
+```js fragment
 const fence       = '`'.repeat(3)     // no literal triple backticks
 const scriptClose = '</' + 'script>'  // no literal closing script tag
 ```

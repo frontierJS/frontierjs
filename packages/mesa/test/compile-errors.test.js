@@ -389,6 +389,14 @@ describe('a construct from another framework is refused by name', () => {
     ]) expect(await threw(src), src).toContain('is not a JavaScript expression')
   })
 
+  // FJS-3666: `{height}}` read as the shorthand attribute named `height}`.
+  it('refuses a shorthand attribute that is not an identifier', async () => {
+    for (const src of [
+      '<script>let height = 1</script><div {height}}></div>',
+      '<script>import Foo from "./Foo.mesa"\nlet height = 1</script><Foo {height}} />'
+    ]) expect(await threw(src), src).toContain('is not a JavaScript expression')
+  })
+
   // FJS-3661: a block head is emitted into the module like an attribute value.
   it('refuses a block head that is not JavaScript', async () => {
     for (const src of [
@@ -542,4 +550,27 @@ describe('a refusal names where it happened', () => {
       for (const m of all) expect(m).toMatch(POSITIONED)
     })
   }
+})
+
+// ─── FJS-3667 · a quote inside an attribute name ─────────────────────────────
+
+describe('an attribute name holding a quote is refused', () => {
+  // `style:padding="6rem"` minus its `=` read as the name `style:padding"6rem`
+  // and emitted `bindStyle(el, 'padding"6rem', () => (padding"6rem))`.
+  for (const [name, source] of Object.entries({
+    'style directive': '<div style:padding"6rem 3rem"></div>',
+    'plain attribute': '<div class"a b"></div>',
+    'component attribute': '<script>import C from "./C.mesa"</script>\n<C label"x" />',
+  })) {
+    it(name, async () => {
+      const { errors, thrown } = await compile(source, { filename: 'Probe.mesa', warning: () => {} })
+        .then((ctx) => ({ errors: ctx.analysis.errors, thrown: '' }), (e) => ({ errors: [], thrown: e.message }))
+      expect([...errors, thrown].join('\n')).toMatch(/attribute name .* quote/)
+    })
+  }
+
+  it('leaves a quote inside a braced or parenthesized name alone', async () => {
+    const { errors } = await cx('<script>let o = {}</script>\n<div {...{ a: "b" }} x-on:click.foo(a, "b")="o"></div>')
+    expect(errors.join('\n')).not.toMatch(/quote/)
+  })
 })

@@ -16,7 +16,7 @@ bun add @frontierjs/auth
 
 ## Setup
 
-```typescript
+```typescript fragment
 // api/src/core/auth.ts
 import { createLitestoneAuth }               from '@frontierjs/auth'
 import { createClient, GatePlugin, LEVELS } from '@frontierjs/litestone'
@@ -73,7 +73,7 @@ export const auth = createLitestoneAuth(db, {
 })
 ```
 
-```typescript
+```typescript fragment
 // api/src/app.ts
 import { auth, db }         from './core/auth.ts'
 import { auth as authPlugin } from '@frontierjs/auth'
@@ -185,7 +185,7 @@ the top (`@frontierjs/sierra/resource`).
 Rename or drop any of them with `services`, and add a `level` resolver to
 have `account.me` answer the caller's gate level:
 
-```ts
+```ts fragment
 app.configure(authPlugin({
   auth,
   services: { apiKeys: false, level: myGateLevel },
@@ -223,7 +223,7 @@ see `litestone/docs/access-control.md` § The identity models.
 Passwordless sign-in by mail. Setting `onMagicLinkRequested` turns it on; without
 it the methods do not exist and the routes are not mounted (`FJS-D888`).
 
-```ts
+```ts fragment
 const auth = createLitestoneAuth(db, {
   onMagicLinkRequested: async ({ email, token, code }) => {
     await mailer.send({
@@ -240,7 +240,7 @@ The link lands on a page of the app's web surface. That page posts the token,
 for the reason `/auth/email/verify` does it that way: a mail scanner's prefetch
 would spend a GET. In the browser:
 
-```ts
+```ts fragment
 await client.auth.requestMagicLink(email)
 // the token from the link's page, or the address and code typed on another device
 const result = await client.auth.signInWithMagicLink(token ? { token } : { email, code })
@@ -269,14 +269,14 @@ secret and an `otpauth://` URI, and **`confirmTotp` is what switches it on**,
 because enrollment that enabled before it verified would cost the account rather
 than a retry on the first wrong clock.
 
-```typescript
+```typescript fragment
 const { secret, qr } = await auth.setupTotp(userId)
 const { recoveryCodes } = await auth.confirmTotp(userId, codeFromTheApp)
 ```
 
 `login()` then answers one of two things, and the caller discriminates on the key:
 
-```typescript
+```typescript fragment
 const result = await auth.login(email, password)
 
 if ('challenge' in result) {
@@ -314,7 +314,7 @@ a route (`FJS-D20`):
 | `disableTotp` | — | `{ ok: true }` |
 | `regenerateRecoveryCodes` | — | `{ recoveryCodes }` |
 
-```typescript
+```typescript fragment
 const { secret, qr }    = await client.auth.setupTotp()
 const { recoveryCodes } = await client.auth.confirmTotp(code)
 ```
@@ -356,7 +356,7 @@ for, and it answers about the subject.
 
 A factor is opt-in per account until the app says otherwise:
 
-```typescript
+```typescript fragment
 createLitestoneAuth(db, {
   encryptionKey,
   requireSecondFactor: true,                          // every person
@@ -404,7 +404,7 @@ Every change to how an account signs in reaches `onCredentialChanged`, after it
 is written. Wire it to mail, because the person who did NOT make a change learns
 of it here or nowhere:
 
-```typescript
+```typescript fragment
 createLitestoneAuth(db, {
   onCredentialChanged: async ({ event, email, actorId, userId }) => {
     await mailer.send({ to: email, subject: 'Your sign-in settings changed', text: describe(event) })
@@ -433,7 +433,7 @@ A seed or a drive that enrolls TOTP through `setupTotp()` / `confirmTotp()` must
 type a live code. `@frontierjs/auth/totp` is the package's own arithmetic
 (`totp(secret, at)`, `verifyTotp`, base32), so there is one copy of it:
 
-```js
+```js fragment
 import { totp } from '@frontierjs/auth/totp'
 const code = totp(secret, new Date())
 ```
@@ -443,7 +443,7 @@ const code = totp(secret, new Date())
 `@frontierjs/auth/console` holds commands for an app's `db/repl.js`, which
 `fli db:repl` loads:
 
-```js
+```js fragment
 import { resetPasswords } from '@frontierjs/auth/console'
 export default { resetPasswords }
 ```

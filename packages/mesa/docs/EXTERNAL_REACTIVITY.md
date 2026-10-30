@@ -41,7 +41,7 @@ the module it came from.
 
 So the consuming build passes a list:
 
-```js
+```js fragment
 // sierra/src/build/mesa-plugin.js
 externalSignals: {
   '@frontierjs/sierra/router':   ['activeRoute', 'params', 'page', …],

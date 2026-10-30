@@ -7,7 +7,7 @@ display, layout, overlay and feedback.
 bun add @frontierjs/ui @frontierjs/css @frontierjs/mesa
 ```
 
-```js
+```js fragment
 import '@frontierjs/css'
 ```
 
@@ -306,7 +306,7 @@ checkbox, textarea, input, json, file, geo, money and datetime — so the column
 declared `type`, a `@scale` number, a rating, a rich editor — are controls your app owns. Two
 registrations, in one place, at startup:
 
-```js
+```js fragment
 import { registerControl }     from '@frontierjs/sierra/resource'
 import { registerFormControl } from '@frontierjs/ui/controls'
 import Rating from './Rating.mesa'
@@ -466,7 +466,7 @@ Five suites, and the split matters:
 
 ## Toasts
 
-```js
+```js fragment
 import { toasts } from '@frontierjs/ui/stores/toastStore'
 
 toasts.success('Saved')

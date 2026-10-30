@@ -134,13 +134,17 @@ title: Stocktake
       toasts.success(`Sheet closed — ${r.posted.length} of ${r.counted} shelves corrected`)
       sheet = null; lines = []; pending = 0
     } catch (err) {
-      // A close is NOT held: it reads every count and posts to the ledger, so
-      // it is server work by definition. `close` is not a create either, which
-      // is why nothing queued it — `@@sync` holds writes, and this one has to
-      // see rows the device cannot.
-      error = err.queued
-        ? 'The sheet cannot be closed from here until the counts have reached the server.'
-        : err.message
+      // A close IS held: `@@sync(server)` holds every write but find and get,
+      // custom methods included. The queue replays oldest first, so the close
+      // runs after the counts that were held before it and lands on reconnect
+      // with nobody pressing it again. The sheet stays open on this screen
+      // until then, because the server has not posted anything yet.
+      if (err.queued) {
+        pending += 1
+        toasts.info('Close held — it runs once the counts have reached the server')
+      } else {
+        error = err.message
+      }
     } finally {
       busy = false
     }

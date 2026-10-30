@@ -17337,6 +17337,25 @@ describe('implicit many-to-many', () => {
     db.$close()
   })
 
+  // FJS-D1002: a form saving its members with a typed new one sends both ops.
+  test('nested set beside a create keeps the created row joined', async () => {
+    const db = await makeDb(m2mSchema, 'm2m-set-create')
+    await db.post.create({ data: { id: 1, title: 'Post' } })
+    await db.tag.create({ data: { id: 1, name: 'ts' } })
+    await db.tag.create({ data: { id: 2, name: 'orm' } })
+    db.$db.run(`INSERT INTO _post_tag VALUES (1, 1)`)
+    db.$db.run(`INSERT INTO _post_tag VALUES (1, 2)`)
+
+    await db.post.update({
+      where: { id: 1 },
+      data: { tags: { set: [{ id: 2 }], create: [{ id: 3, name: 'bun' }] } }
+    })
+
+    const post = await db.post.findUnique({ where: { id: 1 }, include: { tags: true } })
+    expect(post.tags.map(t => t.id).sort()).toEqual([2, 3])
+    db.$close()
+  })
+
   // ── cascade delete ──────────────────────────────────────────────────────────
 
   test('deleting a post cascades join rows', async () => {

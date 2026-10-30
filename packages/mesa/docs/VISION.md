@@ -29,7 +29,7 @@ Mesa is built on five foundational principles:
 
 Mesa's compiler targets `@frontierjs/mesa/runtime` and emits a named function per component:
 
-```js
+```js fragment
 import * as $$runtime from '@frontierjs/mesa/runtime';
 
 // Template factory — cloned once per mount via cloneNode(true)
@@ -132,7 +132,7 @@ a snapshot — it does not track its initializer for future changes. To derive a
 variable from other reactive state on an ongoing basis, use the `$:` writable derived form
 (see Section 4.5).
 
-```js
+```js fragment
 let selectedCity = cities[0]       // snapshot of cities[0] at init — independent after that
 
 $: selectedCity = cities[0]        // writable derived — re-derives when cities changes,
@@ -294,7 +294,7 @@ first keystroke instead. A derived `const` is answered with `$: name = expr`
 (§4.5), which is what that form is for; only a bare identifier is graded, so
 `bind:value={draft[key]}` still compiles.
 
-```mesa
+```mesa fragment
 let name = ''
 <Child bind:value={name} />     <!-- parent → child via props, child → parent via bindProp -->
 ```
@@ -535,7 +535,7 @@ a value derived from its own dependency, you wanted `const`.
 
 **Previous value.** The handler receives the current and previous values:
 
-```js
+```js fragment
 $: userId, (id, prevId) => load(id, prevId)
 $: (a, b), ([a, b], [prevA, prevB]) => …       // multi dep gives arrays
 ```
@@ -550,7 +550,7 @@ so there is always a real previous value rather than `undefined`.
 **Cleanup and async.** The handler's return value is registered as a cleanup, run before
 the next invocation and on destroy:
 
-```js
+```js fragment
 $: selectedId, () => {
     const c = new AbortController()
     fetch(`/api/${selectedId}`, { signal: c.signal }).then(…)
@@ -611,7 +611,7 @@ Handlers fire in declaration order, once per reactive flush.
 > `{ a, syncFn }` and `{ a, b }` have identical ASTs — there is no way to tell an intended
 > handler from a pair of values being read.
 
-```js
+```js fragment
 $: { userId, () => load() }     // ✅
 $: { userId, load }             // ❌ compile error — write `() => load()`
 $: userId, load                 // ✅ unbraced — shorthand is fine here
@@ -623,7 +623,7 @@ $: userId, load                 // ✅ unbraced — shorthand is fine here
 of two identifiers. The parentheses are the only thing that distinguishes them, and the
 compiler reads them from source position.
 
-```js
+```js fragment
 $: (cart.items, cart.total)      // multi-path watch — §4.1
 $: { (cart.items, cart.total) }  // compile error — see §4.8
 ```
@@ -668,7 +668,7 @@ comes from the `let` initializer rather than from the handler.
 A `$_name:` prefix on any `$:` annotation attaches a debug name visible in the Graph panel
 and runtime dev tools.
 
-```js
+```js fragment
 $_fetchData: selectedId, async () => { ... }
 $_computeTotal: total = items.reduce(...)
 ```
@@ -748,7 +748,7 @@ removal happens first.
 > **RULE 50** — A `$: { }` block runs code. If every top-level statement in it is a bare
 > read, it is a compile error.
 
-```js
+```js fragment
 $: { }               // error — empty
 $: { count }         // error — reads, does nothing
 $: { (a, b) }        // error — reads, does nothing
@@ -953,7 +953,7 @@ RULE 51 is unchanged by this. Reactive *logic* still does not belong in a `.js` 
 time without subscribing to future changes. Writes are invisible — nothing re-renders.
 
 ```js
-let price = await fetchPrice(id)      // reactive signal
+let price = 0                         // reactive signal
 var snapshot = price                  // samples price NOW — does not subscribe
 var previous = null                   // holds last value for comparison
 
@@ -1023,7 +1023,7 @@ $context.theme = theme + '-high-contrast'       // re-provide modified version d
 Read from `$context.key` using any variable keyword. The keyword determines the consumer's
 relationship to the value — the same semantics as regular variable declarations.
 
-```js
+```js fragment
 const theme = $context.theme    // pure derived — always re-derives when provider changes
 let   theme = $context.theme    // initialized from context at mount, then independent
 var   theme = $context.theme    // snapshot at mount — non-reactive
@@ -1644,7 +1644,7 @@ Radios — the signal is a scalar:
 
 `fn(el)` is called when the element mounts. Return value determines cleanup:
 
-```js
+```js fragment
 // Return nothing — no cleanup
 (el) => el.focus()
 
@@ -1935,7 +1935,7 @@ resolves after the component mounts. The variable name is the developer's choice
 Only one `$.mounted()` call is allowed per component — compiler error if used twice.
 For multiple async operations, use `Promise.all` inside a single `$.mounted`.
 
-```js
+```js fragment
 // Single operation
 const mounting = $.mounted(async () => {
   user = await usersService.get(currentUser.id)
@@ -2114,7 +2114,7 @@ that is not a form submit needs no hand-kept `busy`/`error` pair:
 `var` is the natural staging area for optimistic updates:
 
 ```js
-let displayPrice = await fetchPrice(id)
+let displayPrice = 100
 var optimistic = null
 
 function applyDiscount() {
@@ -2549,7 +2549,7 @@ resolving a component *name* to a module to import — which is what the
 
 ### 18.7 Compilation API
 
-```js
+```js fragment
 import { compile, compileSource, compileFile } from '@frontierjs/mesa'
 import { compileMd } from '@frontierjs/mesa/compiler-md'
 import { parseFrontmatter } from '@frontierjs/toolbelt/frontmatter'
@@ -2615,7 +2615,7 @@ Static components can be rendered to HTML at build time with no JavaScript shipp
 
 ### 19.2 `renderToHTML`
 
-```js
+```js fragment
 import { initRenderer, renderToHTML, wrapPage } from '@frontierjs/mesa/render'
 
 // Call once before importing any compiled components
@@ -2672,7 +2672,7 @@ CSS extraction, optional CSS inlining, optional UnoCSS scanning, and render.
 They are the primary API for build-time templating, email rendering, and
 server-side fragment generation.
 
-```js
+```js fragment
 import { renderComponent, renderFile } from '@frontierjs/mesa/render-component'
 
 // From a source string

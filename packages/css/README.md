@@ -8,7 +8,7 @@ Plain CSS — no build step, no config file, and no UnoCSS *required*
 bun add @frontierjs/css
 ```
 
-```js
+```js fragment
 import '@frontierjs/css'
 ```
 
@@ -274,7 +274,7 @@ outranks the component of the same name:
 | `text-xs…xl` | Uno's scale (14/18px) replaces this package's (13/16px) | **retune the tokens** — see below — or blocklist |
 | `table`, `tab` | `display:table`, `tab-size:4` | harmless — that is what those elements already are |
 
-```ts
+```ts fragment
 // uno.config.ts
 export default defineConfig({
   presets: [presetWind3()],
@@ -370,7 +370,7 @@ ring
 Code blocks are highlighted by [`glow()`](../toolbelt/) in `@frontierjs/toolbelt`,
 and this package themes the result:
 
-```js
+```js fragment
 import { glow } from '@frontierjs/toolbelt/glow'
 
 el.innerHTML = glow(source, { language: 'css', prefix: false })

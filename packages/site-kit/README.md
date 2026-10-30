@@ -120,7 +120,7 @@ menu is `@content/menus/main-menu.md` the same way.
 item per file. A block lists one with an eager glob it writes itself, because
 the glob has to be a literal in the `.mesa` file for the prerender to expand it:
 
-```js
+```js fragment
 import { collection } from '@frontierjs/site-kit/collection'
 const reviews = collection(import.meta.glob('/content/collections/reviews/*.md', { eager: true }))
 // [{ slug: '1-stacy', frontmatter: { rating: 5, … }, Body }, …] in file-name order

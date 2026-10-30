@@ -16,7 +16,7 @@
     }
   },
   "scripts": {
-    "test": "node ../../scripts/tmp-run.mjs 'vitest run'",
+    "test": "node ../../scripts/tmp-run.mjs 'vitest run email-kit.test.js test/doc-examples.test.js'",
     "test:watch": "vitest",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },

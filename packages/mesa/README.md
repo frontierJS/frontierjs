@@ -200,7 +200,7 @@ const ctx = await compileSource(src, {
 
 ## Compiler API
 
-```js
+```js fragment
 import { compile, compileSource, compileFile } from '@frontierjs/mesa'
 
 // .mesa source — always routes to Mesa compiler
@@ -309,7 +309,7 @@ from the shadow root.
 recursive imports, CSS extraction, and rendering in one call. Use it for
 build-time templating, transactional emails, and server-rendered fragments.
 
-```js
+```js fragment
 import { renderComponent, renderFile } from '@frontierjs/mesa/render-component'
 
 // Full HTML document
@@ -426,7 +426,7 @@ up to Sierra's `static` target yet.
 
 ## Vite plugin
 
-```js
+```js fragment
 // vite.config.js
 import mesaPlugin from '@frontierjs/mesa/vite'
 
@@ -479,7 +479,7 @@ registered — the DevTools route and the client injection are silently absent.
 
 Add `mesaDevtools()` through `sierra.config.js`'s `plugins`:
 
-```js
+```js fragment
 // web/config/sierra.config.js
 import { mesaDevtools } from '@frontierjs/mesa/vite'
 

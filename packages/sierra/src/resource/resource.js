@@ -933,11 +933,20 @@ export function createResource(serviceName, opts = {}, ...extra) {
   const _read = new Map()
   const _entryKey = model ?? serviceName
 
+  // An m2m a form draws is a field of the row (`FJS-D1002`): a get populates it
+  // and a save writes it, so it is not a composed key.
+  const _m2mKeys = new Set(Object.values(fields).filter(r => r?.relation?.kind === 'm2m').map(r => r.relation.field))
+
   function _held(id) {
     return !!client?.entries?.peek(_entryKey, id)?.held
   }
 
   function _remember(id, row) {
+    // A write answers the row without its members. Losing them from the
+    // baseline would turn the next save's `set` into a `connect` that cannot
+    // remove one.
+    const prev = _read.get(id)
+    for (const k of _m2mKeys) if (prev && k in prev && !(k in row)) row = { ...row, [k]: prev[k] }
     if (_read.has(id)) _read.delete(id)
     _read.set(id, row)
     if (_read.size <= READ_CACHE_MAX) return
@@ -1106,6 +1115,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
   // ── _call — full 4-phase pipeline ──────────────────────────────────────────
 
   async function _call(method, id, data, query = {}, directives = {}) {
+    if (method === 'get') directives = _withMembers(directives)
     // `hookContext` rather than a literal: `result` remembers whether anything
     // ever set it, which is the only thing separating a legitimate `null` from
     // a pipeline no hook completed. See the throw after runAroundHooks.
@@ -1198,6 +1208,8 @@ export function createResource(serviceName, opts = {}, ...extra) {
         if (known == null) throw _versionUnread(model ?? serviceName, ctx.id)
         ctx.data = { ...ctx.data, [versionOf]: known }
       }
+
+      if (method === 'create' || method === 'patch') ctx.data = _memberWrite(method, ctx.id, ctx.data)
 
       // ── the key, if the caller is the one who makes it ───────────────────
       //
@@ -1716,7 +1728,8 @@ export function createResource(serviceName, opts = {}, ...extra) {
    * makes the entry the trigger and re-runs this read instead.
    */
   function record(id, opts = {}) {
-    const composed = opts.composed === true
+    // A push carries the row alone, so a model with m2m members re-reads.
+    const composed = opts.composed ?? _m2mKeys.size > 0
     // An entry another view already holds is not read again, so what it shows
     // is this screen's first sight of the row.
     _sighted(id, null)
@@ -1779,7 +1792,41 @@ export function createResource(serviceName, opts = {}, ...extra) {
   const _composedWarned = new Set()
 
   function isComposed(k, v) {
-    return _relationKeys.has(k) || (!_declaredKeys.has(k) && v !== null && typeof v === 'object')
+    return (_relationKeys.has(k) && !_m2mKeys.has(k)) || (!_declaredKeys.has(k) && v !== null && typeof v === 'object')
+  }
+
+  // A narrowed read (`select`) asked for its own shape and is left alone.
+  function _withMembers(directives) {
+    if (!_m2mKeys.size || directives?.select) return directives
+    const have = directives?.populate
+    const list = Array.isArray(have) ? have : typeof have === 'string' ? have.split(',') : []
+    const missing = [..._m2mKeys].filter(k => !list.includes(k))
+    return missing.length ? { ...directives, populate: [...list, ...missing] } : directives
+  }
+
+  // The members as the write op litestone takes. A list read off the row is a
+  // `set`. A row whose read never carried the members (a list row, a push) gets
+  // a `connect`, since a `set` from it would drop every member nobody saw. An
+  // entry with no id is a row `allowNew` minted and is created.
+  function _memberWrite(method, id, data) {
+    if (!_m2mKeys.size || !data || typeof data !== 'object' || Array.isArray(data)) return data
+    const base = method === 'patch' ? _read.get(id) : null
+    let out = data
+    for (const key of _m2mKeys) {
+      const list = data[key]
+      if (!Array.isArray(list)) continue
+      const ids = [], made = []
+      for (const v of list) {
+        if (v && typeof v === 'object') v.id != null ? ids.push({ id: v.id }) : made.push(v)
+        else if (v != null && v !== '') ids.push({ id: v })
+      }
+      const op = base && key in base ? { set: ids } : ids.length ? { connect: ids } : {}
+      if (made.length) op.create = made
+      out = { ...out }
+      if (Object.keys(op).length) out[key] = op
+      else delete out[key]
+    }
+    return out
   }
 
   function composedKeysOf(rows) {
@@ -1855,7 +1902,17 @@ export function createResource(serviceName, opts = {}, ...extra) {
     // The model name travels with the list: a registered control is handed
     // `{ field, model }`, which is what lets an app claim `Order.notes` rather
     // than every markdown column in the app.
-    return formFieldList(fields, { ...opts, model })
+    return formFieldList(fields, { ...opts, model }).map(f => f.rule?.relation?.kind === 'm2m' ? _members(f) : f)
+  }
+
+  // A typed member is created as a related row, so `allowNew` is offered only
+  // where the related gate lets this caller create one (the boundary grades the
+  // write regardless) and the related model has a column a typed word can fill.
+  function _members(f) {
+    const related = relatedResource(serviceNameFor(f.model) ?? f.model, f.model)
+    const level   = app ? app.user?.level : session.level
+    const named   = related.labelSource !== 'fallback' ? related.labelField : null
+    return { ...f, valueField: 'id', labelField: named, allowNew: !!named && related.can('create', level) }
   }
 
   // ── The workspace's declared custom fields ────────────────────────────────
@@ -2487,7 +2544,8 @@ export function createResource(serviceName, opts = {}, ...extra) {
     const held = record?.[fieldName]
     if (held == null) return answer
     // A list held under a scalar column is a filter's picks, one value each.
-    const wanted = [].concat(held).filter(v => v != null)
+    // An m2m holds its populated rows; a row `allowNew` minted has no key yet.
+    const wanted = [].concat(held).map(v => v && typeof v === 'object' ? v[valueField] : v).filter(v => v != null)
     if (!wanted.length) return answer
 
     const have    = new Set((answer.options ?? []).map(o => o.value))
@@ -2703,7 +2761,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
       return pending
     }
 
-    const ref = rule?.references
+    const ref = rule?.references ?? (rule?.relation?.kind === 'm2m' ? { model: rule.relation.model, field: 'id' } : null)
     if (!ref) {
       console.warn(
         `[${serviceName}] options('${fieldName}') — that field is neither an enum nor a foreign ` +

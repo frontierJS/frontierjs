@@ -12,6 +12,8 @@
 // here that needs a new client API reads as the base failing, and the runner
 // says so rather than comparing nothing.
 
+import { readFileSync } from 'node:fs'
+import { tokenize }     from '@frontierjs/toolbelt/predicate'
 import { createClient } from '../src/index.js'
 import { GatePlugin }   from '../src/plugins/gate.js'
 import { main }         from '../../../scripts/bench-round.mjs'
@@ -69,6 +71,22 @@ export const cases = [
     },
     run:   ({ db })  => db.user.create({ data: { name: 'x', age: 1 } }),
     floor: ({ raw }) => raw.get('x', 1),
+  },
+  {
+    // The lexer every schema parse starts with (FJS-112 P4). Its floor is a
+    // sticky-regex scan counting the same tokens: no positions, no objects.
+    name: 'tokenize-schema', ceiling: 6, ops: 50,
+    open() {
+      const src = readFileSync(new URL('../test/fixtures/corpus/discourse.lite', import.meta.url), 'utf8')
+      return { src, lex: /\s+|\/\/[^\n]*|"(?:[^"\\]|\\.)*"|-?\d[\d.]*|\w+|@@|->|=>|[|&=!<>]=?|[^\s\w]/y }
+    },
+    run:   ({ src }) => tokenize(src),
+    floor: ({ src, lex }) => {
+      let n = 0
+      lex.lastIndex = 0
+      while (lex.test(src)) n++
+      return n
+    },
   },
 ]
 

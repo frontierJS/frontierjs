@@ -179,6 +179,24 @@ export function makeNestedWrites(shape, ctx, deps) {
           return v
         }
 
+        if (ops.set) {
+          // Replace the relation FIRST, so a create or connect beside it adds to
+          // the new set rather than being deleted by it.
+          const before = new Set(writeDb.query(`SELECT ${ident(tk).sql} AS k FROM ${ident(jt).sql} WHERE ${ident(sk).sql} = ?`).all(parentPk).map(r => r.k))
+          writeDb.run(`DELETE FROM "${jt}" WHERE "${sk}" = ?`, parentPk)
+          const wheres = Array.isArray(ops.set) ? ops.set : [ops.set]
+          const after = new Set()
+          for (const where of wheres) {
+            const target = await tbl.findFirst({ where })
+            if (!target) throw new Error(`m2m set on "${fieldName}": no "${rel.targetModel}" found matching ${JSON.stringify(where)}`)
+            requireJoinGrants(target)
+            writeDb.run(`INSERT OR IGNORE INTO "${jt}" ("${sk}", "${tk}") VALUES (?, ?)`, parentPk, keyOf(target))
+            after.add(keyOf(target))
+          }
+          // Only a row that crossed the relation's edge changed membership.
+          for (const k of before) if (!after.has(k)) joined.add(k)
+          for (const k of after) if (!before.has(k)) joined.add(k)
+        }
         if (ops.create) {
           const rows = Array.isArray(ops.create) ? ops.create : [ops.create]
           for (const row of rows) {
@@ -213,23 +231,6 @@ export function makeNestedWrites(shape, ctx, deps) {
             writeDb.run(`DELETE FROM "${jt}" WHERE "${sk}" = ? AND "${tk}" = ?`, parentPk, keyOf(target))
             await tbl.delete({ where: { [tpk]: keyOf(target) } })
           }
-        }
-        if (ops.set) {
-          // Replace entire relation — DELETE all join rows, INSERT new ones
-          const before = new Set(writeDb.query(`SELECT ${ident(tk).sql} AS k FROM ${ident(jt).sql} WHERE ${ident(sk).sql} = ?`).all(parentPk).map(r => r.k))
-          writeDb.run(`DELETE FROM "${jt}" WHERE "${sk}" = ?`, parentPk)
-          const wheres = Array.isArray(ops.set) ? ops.set : [ops.set]
-          const after = new Set()
-          for (const where of wheres) {
-            const target = await tbl.findFirst({ where })
-            if (!target) throw new Error(`m2m set on "${fieldName}": no "${rel.targetModel}" found matching ${JSON.stringify(where)}`)
-            requireJoinGrants(target)
-            writeDb.run(`INSERT OR IGNORE INTO "${jt}" ("${sk}", "${tk}") VALUES (?, ?)`, parentPk, keyOf(target))
-            after.add(keyOf(target))
-          }
-          // Only a row that crossed the relation's edge changed membership.
-          for (const k of before) if (!after.has(k)) joined.add(k)
-          for (const k of after) if (!before.has(k)) joined.add(k)
         }
         for (const key of joined) await tbl[JOINED](key)
         continue
