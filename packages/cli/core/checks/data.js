@@ -478,7 +478,7 @@ export const CHECKS = {
       const above = ['create', 'update', 'delete'].filter(op => m.gate[op] > m.gate.read && m.gate[op] < 8)
       if (!above.length) continue
       findings.push({
-        file: schema.path, line: m.gateLine,
+        file: schema.path, line: m.gateLine, subject: m.name,
         message: `${m.name} declares @@capabilities and @@gate(${m.gateSource}) — ` +
                  `${above.join(', ')} need${above.length > 1 ? '' : 's'} level ` +
                  `${above.map(o => m.gate[o]).join('/')} where read needs ${m.gate.read}. The grid and ` +
@@ -1080,13 +1080,15 @@ export const CHECKS = {
         findings.push({
           file: schema.path,
           line: model.line + body.split('\n').findIndex(l => new RegExp(`^\\s+${f.name}\\s`).test(l)),
+          subject: `${model.name}.${f.name}`,
           message: `${model.name}.${f.name} names what ${id.name} points at, and it is a bare String — so ` +
                    `nothing refuses a value that names nothing, and not a migration, a seed or asSystem() ` +
                    `either. There is no foreign key on a pair like this by design, which is exactly why the ` +
                    `one column that CAN be constrained should be: make ${f.name} an enum and it emits a ` +
                    `CHECK and reaches the browser as a set a picker renders, or @@check("${f.name} IN (…)") ` +
                    `where the values are not identifiers. Leave it where the set genuinely grows with every ` +
-                   `model — an audit trail keyed by service name — and baseline this rule to say so.`,
+                   `model — an audit trail keyed by service name — and say so under allow in check-baseline.json ` +
+                   `as \`polymorphic-subject:${relative(root, schema.path)}:${model.name}.${f.name}\`.`,
         })
       }
     }

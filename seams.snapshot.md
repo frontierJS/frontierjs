@@ -14,7 +14,7 @@ owned, so the gap is written down rather than left to be rediscovered.
 would let junction and orion share litestone's types, so each declares the shape it
 holds. The count is here because it is the only place that cost is visible.
 
-Seams: **98**. With a stated owner: **98**. Stated and missing: **0**.
+Seams: **99**. With a stated owner: **99**. Stated and missing: **0**.
 
 **Every seam names an owner.** A callable is graded by where it is DECLARED; a key — a `$` on a
 wire, a schema keyword, a header — has no declaration anywhere, so its owner is where it is
@@ -171,3 +171,4 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `appSrcDir(root)` / `appAliasPlugin()` | `packages/sierra/src/build/app-alias-plugin.js` | yes | — |
 | `swapInstances(entries, newFn, newSetMark, label)` | `packages/mesa/mesa-vite/swap.js` | yes | 1 |
 | `island(anchor, Comp, props, block, meta)` | `packages/mesa/src/runtime.js` | yes | 3 |
+| `deploySite({ root, config, preview, alias, dry })` | `packages/sierra/src/site/cloudflare.js` | yes | — |

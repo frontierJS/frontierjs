@@ -25,6 +25,8 @@
  *
  * Wrangler resolves a config's paths from the config file, not from where it
  * ran, so `directory` is written relative to `.sierra/`.
+ *
+ * `deploySite` is the one place wrangler runs (`FJS-D1684`).
  */
 
 import { spawnSync } from 'node:child_process'

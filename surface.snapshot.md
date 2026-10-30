@@ -28,7 +28,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 ```
 26 package(s) · 4017 source file(s) read
 247 entry point(s), 35 imported by nothing outside their package, 16 emitted
-1683 value export(s), 632 reached by nothing outside, 175 emitted
+1685 value export(s), 635 reached by nothing outside, 175 emitted
 459 type export(s), 349 reached by nothing outside
 ```
 
@@ -37,7 +37,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `litestone` | 28 | 5 | 266 | 135 | 35 | 1 | 1 |
 | `junction` | 27 | 4 | 271 | 121 | 13 | 269 | 212 |
 | `mesa` | 19 | 4 | 313 | 110 | 77 | 0 | 0 |
-| `sierra` | 25 | 6 | 197 | 80 | 21 | 0 | 0 |
+| `sierra` | 25 | 6 | 199 | 83 | 21 | 0 | 0 |
 | `auth` | 6 | 1 | 52 | 37 | 3 | 15 | 13 |
 | `jetty` | 7 | 4 | 43 | 29 | 3 | 0 | 0 |
 | `ui` | 9 | 0 | 53 | 33 | 3 | 0 | 0 |
@@ -269,13 +269,13 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/sierra`
 
-`packages/sierra` · 25 entry point(s) · 197 value, 0 type export(s)
+`packages/sierra` · 25 entry point(s) · 199 value, 0 type export(s)
 
 **Entries imported by nothing outside (6):** `./scanner` `./fetch` `./components/RouterView` `./components/ChainRenderer` `./check` `./tui`
 
 **Entries emitted (7):** `.` `./router/internals` `./analytics` `./islands` `./devtools` `./widget` `./mcp`
 
-**Unreached values (80):** `_deepMerge` `_findCatchAll` `_resetInternals` `_resetMcpApp` `_resetPage` `_resetPresenceHolders` `_scrollMemoryHas` `_scrollMemorySize` `afterNavigate` `allSchemas` `appFailed` `applyHostContext` `buildCommitments` `buildGate` `buildLayoutMap` `buildRelations` `buildTransitions` `buildVersion` `ChainRenderer` `columnList` `commitmentsAt` `COMMITTED_MESSAGE` `COMPATIBILITY_DATE` `configureFetch` `createMemoryHistory` `defaultControlFor` `defaultDisplayFor` `fromFor` `generatedFor` `generateRouteTable` `getComponents` `getDirection` `getLayoutChainForNode` `hasFileComponent` `hasSchemas` `hmrInvalidate` `isLegalTag` `isPublicRoute` `isSameDocumentOrigin` `isStaleWrite` `labelFieldInfo` `linkHrefOf` `loadLayoutChain` `mountIsland` `mountView` `normalizeBlanks` `oauthErrorMessage` `offlineStatus` `PAGE_RESERVED` `pathAliases` `pickFilter` `readFrontmatter` `refusedFor` `registeredDisplays` `registerFileComponent` `registerModule` `renderRouteTable` `resolveHtmlClass` `ResourceHookError` `runPostBuild` `scanAndWrite` `seedDetermined` `setScheme` `sierraFetch` `siteEntry` `STALE_WRITE_MESSAGE` `stampedPage` `stripReadOnly` `submitInPlace` `suggestModel` `toConflict` `toolAnswer` `toolCall` `transitionsAt` `unregisterDisplay` `updateParams` `whenReady` `WORKER_ENTRY` `workerName` `WRANGLER_CONFIG`
+**Unreached values (83):** `_deepMerge` `_findCatchAll` `_resetInternals` `_resetMcpApp` `_resetPage` `_resetPresenceHolders` `_scrollMemoryHas` `_scrollMemorySize` `afterNavigate` `allSchemas` `appFailed` `applyHostContext` `buildCommitments` `buildGate` `buildLayoutMap` `buildRelations` `buildTransitions` `buildVersion` `ChainRenderer` `columnList` `commitmentsAt` `COMMITTED_MESSAGE` `COMPATIBILITY_DATE` `configureFetch` `createMemoryHistory` `defaultControlFor` `defaultDisplayFor` `fromFor` `generatedFor` `generateRouteTable` `getComponents` `getDirection` `getLayoutChainForNode` `gitBranch` `hasFileComponent` `hasSchemas` `hmrInvalidate` `isLegalTag` `isPublicRoute` `isSameDocumentOrigin` `isStaleWrite` `labelFieldInfo` `linkHrefOf` `loadLayoutChain` `mountIsland` `mountView` `normalizeBlanks` `oauthErrorMessage` `offlineStatus` `PAGE_RESERVED` `pathAliases` `pickFilter` `previewAlias` `readFrontmatter` `refusedFor` `registeredDisplays` `registerFileComponent` `registerModule` `renderRouteTable` `resolveHtmlClass` `ResourceHookError` `runPostBuild` `scanAndWrite` `seedDetermined` `setScheme` `sierraFetch` `siteEntry` `STALE_WRITE_MESSAGE` `stampedPage` `stripReadOnly` `submitInPlace` `suggestModel` `toConflict` `toolAnswer` `toolCall` `transitionsAt` `unregisterDisplay` `updateParams` `whenReady` `WORKER_ENTRY` `workerName` `WRANGLER_CONFIG` `writeCloudflare`
 
 **Emitted (21):** `_setStaticPage` `buildThemeScript` `columnLabel` `configureAnalytics` `configureLocalDb` `CSS_MARK` `generateSchemas` `hmrReload` `hydrateIslands` `initAnalytics` `initRouter` `INTERACTION_TASKS` `mcpApp` `modelNameFor` `paletteSource` `pendingQueue` `registerSchemas` `remountKey` `resolveChain` `resourceIn` `startView`
 

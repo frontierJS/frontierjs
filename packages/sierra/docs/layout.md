@@ -104,7 +104,8 @@ src/
                          `files` map and judges headers by the PUBLISHED name;
                          `test/site-compile.test.js` asserts the binary answers
                          what the directory does
-    cloudflare.js        the Cloudflare adapter, the one file naming Cloudflare:
+    cloudflare.js        the Cloudflare adapter, the one file naming Cloudflare,
+                         and `deploySite()`, the one caller of wrangler (`FJS-D1684`):
                          `.sierra/wrangler.json` derived from `siteUrl` and the
                          build (`FJS-D1213`), and `.sierra/worker.js` when there
                          are functions — `run_worker_first` lists their paths

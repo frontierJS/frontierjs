@@ -129,5 +129,6 @@ Detail: `references/ui.md`
 - `appSrcDir(root)` / `appAliasPlugin()` — `@` is the surface's own `src/`, for Vite and prerender alike — `sierra/src/build/app-alias-plugin.js`
 - `swapInstances(entries, newFn, newSetMark, label)` — the DOM a hot update replaces; no imports — `mesa/mesa-vite/swap.js`
 - `island(anchor, Comp, props, block, meta)` — the island seam; markers are comments — `mesa/src/runtime.js`
+- `deploySite({ root, config, preview, alias, dry })` — a built site → Cloudflare; the one caller of wrangler, for site-kit, `sierra site --deploy` and `fli site:deploy` (`FJS-D1684`) — `sierra/src/site/cloudflare.js`
 - **The theme is a class on `<html>` and Sierra owns the switch** — `sierra.config.js` `theme: {}`
 - **There is no cross-package reactivity registry.** — sierra passes `externalReactivityHints: 'strict'`

@@ -166,6 +166,30 @@ candidate host for that file's option A.
      precedent found: Cloudflare's own adapters (SvelteKit, Astro, OpenNext)
      have the user write `name`, and Vercel and Netlify keep the id in a
      linked state file.
+5. ~~**Who runs the adapter for an app's `site/` surface.**~~ **Answered 2026-10-30 (`FJS-D1684`): A — Sierra's `deploySite()` beside `writeCloudflare` is the one caller of `wrangler deploy` and `versions upload`; site-kit's bin, `sierra site --deploy` and `fli site:deploy` call it.** `fli site:*` had
+   build and serve and no deploy, so thod wrote a `staging.sh` and a
+   `wrangler.jsonc` that restated the adapter by hand.
+   - **A** — Sierra's `deploySite()` beside `writeCloudflare` is the one caller
+     of `wrangler deploy` and `versions upload`; site-kit's bin, `sierra site
+     --deploy` and `fli site:deploy` call it.
+   - **B** — `fli site:deploy` shells out to the site-kit bin.
+   - **C** — each app writes its own script and wrangler file.
+   - **Recommend A** — question 2 already says an app's `site/` gets the
+     adapter without site-kit, and B makes an app depend on the markdown-site
+     engine. Prior art splits two ways: SvelteKit and Astro stop at the build
+     and the user runs wrangler; Nitro's `nitro deploy --prebuilt`, Redwood's
+     `rw deploy <target> --side` and `hugo deploy --target` wrap the host's
+     CLI. A is the second, with the config derived rather than written.
+6. ~~**How an app's surface asks Sierra for a review build.**~~ **Answered 2026-10-30 (`FJS-D1685`): A — `createSierraViteConfig` reads `SIERRA_PREVIEW=1` when the config states no `preview`, and `fli site:build --preview` sets it.** site-kit sets
+   `preview: true` itself; an app's `vite.config.js` imports
+   `sierra.config.js` directly, with nothing in between.
+   - **A** — `createSierraViteConfig` reads `SIERRA_PREVIEW=1` when the config
+     states no `preview`, and `fli site:build --preview` sets it.
+   - **B** — `make:site`'s `vite.config.js` spreads `preview` in from the env.
+   - **C** — Vite's `--mode preview`, with the template in function form.
+   - **Recommend A** — no app file changes, and `createSierraViteConfig`
+     already reads `FRONTIER_PORT_FE`. B and C edit every existing surface's
+     config.
 
 ## The plan
 
@@ -224,6 +248,20 @@ Each step adds its case to the website's `verify` drive before it is done.
    built.
 6. ~~**Owner editing** gets its own idea file.~~ Done: `owner-editing.md`,
    whose six questions are ruled (`FJS-D1225`–`FJS-D1230`).
+7. ~~**An app's `site/` deploys through the same adapter** (question 5).~~
+   Done: `deploySite()` in `site/cloudflare.js`, `sierra site --deploy
+   [--preview [name]] [--dry]`, `fli site:deploy [--preview [name]]
+   [--wrangler-dry]` and `fli site:build --preview` (`FJS-D1684`,
+   `FJS-D1685`); the app scaffold ignores `.sierra/`. Proved on thod by hand:
+   a preview build passes its `verify:site`, `--preview --wrangler-dry`
+   bundles, and a production deploy refuses the stamped dist; `site-kit
+   deploy site --dry` on the website still bundles. Left: no upload has run.
+8. **`fli deploy` publishes the site.** A step after the API health check
+   builds `site/` beside the database the API serves, so a page never names a
+   row only a laptop has, and ships it with `deploySite()`; a failed site
+   step leaves the API swap standing and the last site serving.
+   `fli deploy --site` runs the site step alone. Open: where wrangler signs
+   in (`FJS-D921` puts the Cloudflare account in basecamp).
 
 ## The nine (`decision-rules`, answered before any edit)
 

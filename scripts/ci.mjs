@@ -659,9 +659,17 @@ function structure() {
     )
     // One line per rule: forty findings of one rule printed one per line is the
     // wall that hides the failures above it. The findings go to the file.
+    // A rule within its check-baseline.json ceiling already has a written reason,
+    // and printing it every run beside fresh findings made the two unreadable
+    // apart — so the covered ones fold into a single line.
     const byRule = {}
     for (const f of warns) (byRule[f.rule] ??= []).push(f)
-    for (const [rule, list] of Object.entries(byRule))
+    const ceiling = (rule) => baseline?.present ? (baseline.counts[rule] ?? 0) : 0
+    const covered = Object.entries(byRule).filter(([rule, list]) => list.length <= ceiling(rule))
+    if (covered.length)
+      note(`${label} · ${covered.reduce((n, [, list]) => n + list.length, 0)} baselined finding(s) across ` +
+           `${covered.length} rule(s) · \`fli check\` in ${label} lists them`)
+    for (const [rule, list] of Object.entries(byRule).filter(([rule, list]) => list.length > ceiling(rule)))
       note(`${label} ⚠ ${rule} — ${list.length} finding(s) · ${label === 'packages' ? `listed in ${relative(ROOT, LAST_FILE)}` : `\`fli check\` in ${label} lists them`}`,
            formatFindings(list, base))
     for (const key of result.stale) {

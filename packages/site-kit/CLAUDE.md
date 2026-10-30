@@ -34,8 +34,8 @@ what they mean in any app.
   --binary` cannot, because it runs the `config/vite.config.js` a site-kit site
   has none of (FJS-2756).
   `deploy [--dry]` ships the dist the last build wrote, never a rebuild, through
-  Sierra's Cloudflare adapter (`@frontierjs/sierra/site/cloudflare`) and the
-  SITE's wrangler, run under node; `--dry` is wrangler's `--dry-run`, which
+  Sierra's `deploySite()` (`@frontierjs/sierra/site/cloudflare`, `FJS-D1684`),
+  which runs the SITE's wrangler under node; `--dry` is wrangler's `--dry-run`, which
   bundles the Worker and uploads nothing. `build --preview` is Sierra's
   `preview: true`, a review build; `deploy --preview [name]` uploads it as a
   version of the same Worker, never deployed, aliased by the git branch or the

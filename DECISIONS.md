@@ -19503,6 +19503,22 @@ the file puts the judgement where judgement lives.
 
 ## Dependencies & the ecosystem
 
+### <a id="fjs-d1685"></a>2026-10-30 · `FJS-D1685` — How an app's surface asks Sierra for a review build — `createSierraViteConfig` reads `SIERRA_PREVIEW=1` when the config states no `preview`, and `fli site:build --preview` sets it.
+
+Asked in [`IDEAS/site-hosting.md`](IDEAS/site-hosting.md) § Open questions. **A** was picked over **B** (`make:site`'s `vite.config.js` spreads `preview` in from the env), **C** (Vite's `--mode preview`, with the template in function form).
+
+The paper's recommendation, taken as written: no app file changes, and `createSierraViteConfig` already reads `FRONTIER_PORT_FE`. B and C edit every existing surface's config.
+
+*Lives in:* `createSierraViteConfig` in `packages/sierra/src/build/index.js`; `packages/cli/commands/site/build.md`. *Enforced by:* `none`.
+
+### <a id="fjs-d1684"></a>2026-10-30 · `FJS-D1684` — Who runs the adapter for an app's `site/` surface — Sierra's `deploySite()` beside `writeCloudflare` is the one caller of `wrangler deploy` and `versions upload`; site-kit's bin, `sierra site --deploy` and `fli site:deploy` call it.
+
+Asked in [`IDEAS/site-hosting.md`](IDEAS/site-hosting.md) § Open questions. **A** was picked over **B** (`fli site:deploy` shells out to the site-kit bin), **C** (each app writes its own script and wrangler file).
+
+The paper's recommendation, taken as written: question 2 already says an app's `site/` gets the adapter without site-kit, and B makes an app depend on the markdown-site engine. Prior art splits two ways: SvelteKit and Astro stop at the build and the user runs wrangler; Nitro's `nitro deploy --prebuilt`, Redwood's `rw deploy <target> --side` and `hugo deploy --target` wrap the host's CLI. A is the second, with the config derived rather than written.
+
+*Lives in:* `deploySite()` in `packages/sierra/src/site/cloudflare.js`; `packages/cli/commands/site/deploy.md`. *Enforced by:* `none` — no suite runs wrangler; `--dry` both ways by hand.
+
 ### <a id="fjs-d1620"></a>2026-10-28 · `FJS-D1620` — The package host URL mirrors the GitHub release path — `packages.frontierjs.com/<tag>/<stem>-<version>.tgz` 302s to `github.com/frontierJS/frontierjs/releases/download/<tag>/<stem>-<version>.tgz`; one `concat()` rule, no regex, no second grammar.
 
 Asked at [`IDEAS/package-host.md`](IDEAS/package-host.md) § Phase 2 step 2.1, through `decision-rules`. **A** was picked over **B**, the plan's own `<stem>/<version>.tgz`, after the rule came to be written: B needs `regex_replace`, which Cloudflare sells on Business and Enterprise only, plus a second rule for the unscoped `create-frontier`, whose tag has no `@frontierjs/` to restore. A is one dynamic redirect on `http.host eq "packages.frontierjs.com"` with target `concat("https://github.com/frontierJS/frontierjs/releases/download", http.request.uri.path)`, and it carries the tag's `@` and `/` literally, which `FJS-D1568`'s 0.3 probe already showed the download path accepts.
