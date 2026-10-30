@@ -56,42 +56,40 @@ render: static
   <div class="container grid">
     <div class="case">
       <p class="eyebrow">Why</p>
-      <h2 id="why-title">Why another framework?</h2>
+      <h2 id="why-title">Why a framework, now that agents write the code?</h2>
       <p>
-        Because most of a web app is restatement. A Lead has an email, so the schema
-        says so. So do the validator, the TypeScript type, the access middleware and
-        the API docs. That's five copies of one fact, and sooner or later two of them
-        disagree.
+        Code is cheap now. An agent writes a route, a validator and a form in a
+        minute. What it can't do is make them agree with each other.
       </p>
       <p>
-        Most frameworks help you write that glue faster. FrontierJS derives it, so
-        there is no second copy to drift.
+        Writing code stopped being the hard part. Keeping an app coherent didn't.
       </p>
       <blockquote>Every duplicated truth eventually becomes a duplicated mental model.</blockquote>
     </div>
 
     <div class="reasons">
-      <h3>Why this one</h3>
+      <h3>Our answer</h3>
       <ol>
         <li>
-          <b>One file is the origin.</b>
-          <code>db/schema.lite</code> seeds the tables, migrations, API, typed client,
-          forms and live updates. Each is a projection of it, never a second source.
+          <b>Coherence.</b>
+          An agent learns your rules by reading your code. If one fact lives in the
+          schema, the validator, the type, the middleware and the docs, it learns five
+          versions and copies whichever it read last. FrontierJS states each fact once,
+          in <code>db/schema.lite</code>, and derives the rest. Access is enforced at the
+          data, so code an agent writes can't route around it.
         </li>
         <li>
-          <b>The rules travel with the data.</b>
-          Who can read, write or change a status is declared on the model with
-          <code>@@gate</code>, <code>@guarded</code> and <code>@@transitions</code>, and
-          enforced at the data. No route, job or agent gets around it.
+          <b>It isn't new.</b>
+          These ideas have run real apps for years, as the glue we wrote to make
+          Prisma, Feathers and Svelte agree about one app. FrontierJS is the same design
+          with the seams taken out: each layer has one owner, so nothing has to be
+          translated between them.
         </li>
         <li>
-          <b>Three nouns to learn.</b>
-          Model, Service, Resource. Know those and you can guess where a feature lives
-          before you read its docs.
-        </li>
-        <li>
-          <b>Yours, not a platform.</b>
-          Your app stays a file tree, a binary and a SQLite database you own and run.
+          <b>Architecture still matters.</b>
+          An agent multiplies whatever it's handed. A clear design gets more done; a
+          tangled one gets more tangled, faster. Three nouns (Model, Service, Resource)
+          are a model small enough that a person can check what an agent built.
         </li>
       </ol>
       <p class="more">

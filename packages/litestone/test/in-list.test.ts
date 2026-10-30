@@ -184,8 +184,7 @@ describe('a null member is the IS NULL test', () => {
       const got = {
         column: ids(await sys.note.findMany({ where: { body: where } })),
         typed:  ids(await sys.note.findMany({ where: { box: { body: where } } })),
-        // The jsonl driver refuses the bare-array shorthand (`FJS-3581`).
-        jsonl:  Array.isArray(where) ? want : ids(await sys.line.findMany({ where: { body: where } })),
+        jsonl:  ids(await sys.line.findMany({ where: { body: where } })),
         live:   ids(rows.filter(r => matchesQuery({}, r, { body: where }))),
       }
       expect(got).toEqual({ column: want, typed: want, jsonl: want, live: want })

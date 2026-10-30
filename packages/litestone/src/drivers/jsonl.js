@@ -150,6 +150,7 @@ function matchCondition(val, cond, key) {
   cond = stored(cond)
   if (cond === null || cond === undefined) return val == null
   if (typeof cond !== 'object')            return val === cond
+  if (Array.isArray(cond))                 cond = { in: cond }
   cond = Object.fromEntries(Object.entries(cond).map(([op, v]) =>
     [op, Array.isArray(v) ? v.map(stored) : stored(v)]))
   for (const op of Object.keys(cond)) {

@@ -57,13 +57,11 @@ COPY app.snapshot.md ./
 # what the builder's node_modules happened to hold — the failure that made
 # `03-build-web` untrustworthy in the shipped pipeline.
 #
-# `build:db` is deliberately NOT run here. It is a drift check — has the
-# committed migration diverged from schema.lite — which is a question about the
-# repository and is answered by `bun run db:check` on the host and in CI. It
-# also cannot run here: db/generate.js imports litestone by relative workspace
-# path ON PURPOSE, so that the emitter is the tree's and never the stale copy
-# `bun install` leaves under node_modules/.bun. That path does not exist in an
-# image, and it should not.
+# `build:db` is deliberately NOT run here. It asks whether the committed
+# migration history builds schema.lite, which is a question about the
+# repository, answered by `bun run db:check` on the host and in CI. The image
+# applies that history at boot (`api/src/app.ts`), and a history that does not
+# build the schema is refused there by name.
 RUN bun run build:web
 
 # ─── runtime ─────────────────────────────────────────────────────────────────

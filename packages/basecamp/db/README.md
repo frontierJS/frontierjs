@@ -1,12 +1,14 @@
 # Basecamp — Data realm
 
-`schema.lite` is the seed. The SQL in `migrations/` is generated from
-it and must never be hand-edited.
+`schema.lite` is the seed. The SQL in `migrations/` is generated from it and
+is **append-only from 2026-10-30** (`FJS-D1605`): a database that applied a file
+refuses to boot on a changed one, so a schema change is a new file.
 
 ```bash
-bun db/generate.js           # regenerate migrations/main/20260801000000_initial_schema.sql
-bun db/generate.js --check   # exit 1 if the SQL is stale (wire this into CI)
-bun db/generate.js --print   # dump DDL to stdout
+bun run db:push              # dev: apply the schema to the dev database, no file written
+bun run db:migrate <label>   # land it: append migrations/main/<timestamp>_<label>.sql
+bun run db:check             # the history builds the schema, and no locked file changed
+cd db && bunx litestone migrate lock   # after a new file lands: add it to migrations.snapshot.md
 ```
 
 

@@ -110,6 +110,7 @@ touching a gate, tenancy, a deploy, a channel or a notification.
 - **A level is per WORKSPACE, and it rides on the principal** — `sessionGateLevel()` is not used here; `membershipClaim` in `app.ts` reads the `WorkspaceMember` row once per request (`FJS-D113`).
 - **`Server`, `Environment` and `Variable` are graded on TWO axes** — the gate and the workspace, and a hook grades neither.
 - **`narrowPatch(data)` takes no list: which columns a patch drops is the schema's** (`FJS-D1243`); thirteen models declare `@version`, and a service-side write must carry it.
+- **`db/migrations/` is append-only from 2026-10-30** (`FJS-D1605`): `bun run db:push` on dev, `bun run db:migrate <label>` to land a change. An edit to a committed file makes a database that applied it refuse to boot, and `db/migrations.snapshot.md` (`litestone migrate lock`) fails CI on it.
 - **`db/schema.d.ts` is generated, committed, and the only place the client is typed** — `bun run db:types` after a schema change, or the SPA lies.
 - **Tenancy is DECLARED, one block at the top of the schema**, and the crossing is asserted by `verifyTenantIsolation()`; `asSystem()` has to survive a transaction.
 - **A session carries three columns auth knows nothing about**, and `suspended` has two doors — login and the session read — and both are needed.

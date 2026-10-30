@@ -46,6 +46,15 @@ describe('a jsonl where refuses an operator it does not know', () => {
     })
   })
 
+  test('a bare array is membership, as on a SQLite model (FJS-3581)', async () => {
+    await withTrail(async (sys) => {
+      const rows = await sys.auditTrail.findMany({ where: { operation: ['create', 'nope'] } })
+      expect(rows.length).toBe(2)
+      expect(await sys.auditTrail.count({ where: { operation: ['update'] } })).toBe(0)
+      expect(await sys.auditTrail.count({ where: { operation: [] } })).toBe(0)
+    })
+  })
+
   test('the operators it does know still filter', async () => {
     await withTrail(async (sys) => {
       const rows = await sys.auditTrail.findMany({ where: { model: 'Thing', operation: { in: ['create'] } } })

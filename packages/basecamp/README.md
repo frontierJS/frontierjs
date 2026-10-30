@@ -77,8 +77,9 @@ Seeding is idempotent — a second run does nothing; `--force` starts over.
 | `bun run test` | schema + data-layer suite |
 | `bun run verify` | drive the UI in a real browser — add `--reset` for an empty database |
 | `bun run typecheck` | package-local diagnostics |
-| `bun run db:ddl` | regenerate the migration from `db/schema.lite` |
-| `bun run db:check` | fail if the migration is stale — wire into CI |
+| `bun run db:push` | apply `db/schema.lite` straight to the dev database, no file written |
+| `bun run db:migrate <label>` | append a migration for the schema change — the folder is append-only |
+| `bun run db:check` | fail if the history does not build the schema, or a locked migration was edited |
 | `bun run db:tables` | dump the live schema out of SQLite |
 | `bun run db:seed` | example fleet — 4 users, 2 workspaces, servers, deployments, jobs, audit trail. `--force` re-seeds |
 | `bun run db:reset` | stop the servers and delete the database, jobs queue and audit trail |
@@ -157,8 +158,10 @@ basecamp/
 ```
 
 **`db/schema.lite` is the single source of truth.** The SQL in `db/migrations/`
-is generated from it; editing that SQL by hand is how the two drift apart, and
-`bun run db:check` exists to catch exactly that.
+is generated from it and append-only from 2026-10-30: a change is a new file
+from `bun run db:migrate <label>`, never an edit, because a database that applied
+the old text refuses to boot on the new. `bun run db:check` catches both a
+history that does not build the schema and an edited locked file.
 
 ---
 
