@@ -56,7 +56,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/cli`
 
-`packages/cli` · ships `LICENSE` `README.md` `bin/` `commands/` `console/` `core/` `db/` `package.json` `web/`
+`packages/cli` · ships `LICENSE` `README.md` `bin/` `commands/` `console/` `core/` `db/` `native/` `package.json` `web/`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -279,7 +279,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./routes` | `web/routes.js` | yes |
 | exports | `./orion.lite` | `db/orion.lite` | yes |
 
-- peers — `@frontierjs/junction`: `^0.1.10` · `@frontierjs/litestone`: `^1.1.12` · `@frontierjs/conduit`: `^0.1.6` · `@frontierjs/sierra`: `^0.1.9` · `@frontierjs/ui`: `^0.1.8`
+- peers — `@frontierjs/junction`: `^0.1.11` · `@frontierjs/litestone`: `^1.1.13` · `@frontierjs/conduit`: `^0.1.7` · `@frontierjs/sierra`: `^0.1.10` · `@frontierjs/ui`: `^0.1.9`
 
 ## `@frontierjs/outpost`
 
@@ -442,7 +442,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./rowlist` | `rowlist.js` | yes |
 | exports | `./controls` | `controls.js` | yes |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 94 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 101 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

@@ -10,7 +10,7 @@ left out. The latest version and any advisory are NOT here: they change with
 no commit, so they live in Basecamp, which `fli ws:deps --push` feeds.
 
 ```
-54 package(s) · 26 runtime · 28 dev only · 110 declaration(s) · 30 member(s) · 0 finding(s)
+55 package(s) · 26 runtime · 29 dev only · 111 declaration(s) · 30 member(s) · 0 finding(s)
 ```
 
 ## Findings
@@ -52,7 +52,7 @@ that declaration listed beside the others.
 | `vscode-languageserver-textdocument` | `1.0.12` | vscode-frontierjs `^1.0.11` |
 | `ws` | `8.21.1` | @frontierjs/example (dev) `^8.20.0`<br>@frontierjs/jetty (dev) `^8.20.0`<br>@frontierjs/jetty (peer) `^8.20.0` |
 
-## Dev only (28)
+## Dev only (29)
 
 Every declaration is a devDependency: building, testing and tooling, and
 never installed by a consumer.
@@ -83,6 +83,7 @@ never installed by a consumer.
 | `fake-indexeddb` | `6.2.5` | @frontierjs/jetty (dev) `^6.2.5` |
 | `jsdom` | `29.1.1` | @frontierjs/jetty (dev) `^29.1.1` |
 | `lz-string` | `1.5.0` | @frontierjs/mesa (dev) `^1.5.0` |
+| `playwright-core` | `1.62.1` | @frontierjs/sierra (dev) `1.62.1` |
 | `vitest` | `5.0.3` | @frontierjs/email-kit (dev) `^5.0.3`<br>@frontierjs/mesa (dev) `^5.0.3`<br>@frontierjs/sierra (dev) `^5.0.3` |
 | `vscode-oniguruma` | `2.0.1` | vscode-frontierjs (dev) `^2.0.1` |
 | `vscode-textmate` | `9.3.2` | vscode-frontierjs (dev) `^9.3.2` |

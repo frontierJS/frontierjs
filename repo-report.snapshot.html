@@ -285,6 +285,9 @@ html {
   --dialog-bg:            initial;
   --toast-bg:             initial;
   --toast-radius:         initial;
+  --popover-x:            initial;
+  --popover-y:            initial;
+  --sheet-offset:         initial;
   --font-display:         initial;
   --heading-font-weight:  initial;
   --heading-letter-spacing: initial;
@@ -330,6 +333,7 @@ html {
   --avatar-radius:   initial;
   --avatar-ring:     initial;
   --avatar-overlap:  initial;
+  --data-accent:     initial;
 
   --overlay-time:    initial;
   --overlay-ease:    initial;
@@ -994,10 +998,6 @@ html {
   --tab-accent:   #cba6f7;
 
   
-  --font-primary: 'Helvetica Neue', Arial, 'Noto Sans', system-ui, sans-serif;
-  --font-display: 'Helvetica Neue', Arial, 'Noto Sans', system-ui, sans-serif;
-  --font-mono:    ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
-
   --heading-font-weight:    600;
   --heading-letter-spacing: -0.015em;
 
@@ -1015,12 +1015,12 @@ html {
   --tab-font-weight:      500;
 
   
-  --btn-radius:   2px;
-  --card-radius:  2px;
-  --field-radius: 2px;
-  --badge-radius: 2px;
-  --pill-radius:  3px;
-  --toast-radius: 2px;
+  --btn-radius:   3px;
+  --card-radius:  3px;
+  --field-radius: 3px;
+  --badge-radius: 3px;
+  --pill-radius:  4px;
+  --toast-radius: 3px;
 
   
   --ring-style: dashed;
@@ -1039,7 +1039,17 @@ html {
     radial-gradient(ellipse at center, rgb(0 0 0 / 0.16), rgb(0 0 0 / 0) 100%);
 
   
-  --app-depth: radial-gradient(ellipse at center, #11111b 0%, rgb(17 17 27 / 0) 100%) fixed;
+  --app-depth:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0.03 0 0 0 -0.008'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse at center,
+      rgb(14 14 23 / 1)    0%,
+      rgb(14 14 23 / 0.95) 15%,
+      rgb(14 14 23 / 0.8)  30%,
+      rgb(14 14 23 / 0.55) 45%,
+      rgb(14 14 23 / 0.3)  60%,
+      rgb(14 14 23 / 0.12) 75%,
+      rgb(14 14 23 / 0.03) 88%,
+      rgb(14 14 23 / 0)    100%) fixed;
 
   
   --code-name:    #89b4fa;
@@ -1794,7 +1804,7 @@ code[language] > span::before {
   .topbar,
   .surface-header,
   .disclosure-summary
-) > :where(svg, img, [class^="i-heroicons"], [class*=" i-heroicons"]),
+) > :where(svg, img, [class^="i-"], [class*=" i-"]),
 .icon {
   inline-size: var(--icon-size, 1.15em);
   block-size:  var(--icon-size, 1.15em);
@@ -1961,6 +1971,12 @@ code[language] > span::before {
 }
 
 
+.pill[aria-pressed="true"] {
+  box-shadow: inset 0 1px 3px color-mix(in srgb, black 35%, transparent);
+  filter:     brightness(0.9);
+}
+
+
 .pill.removable {
   padding-right: 3px;
   gap:           var(--space-2xs);
@@ -2014,7 +2030,7 @@ code[language] > span::before {
 .card { padding: var(--space-3xl); }
 
 
-:is(.card, .screen, .container, .pane):where(:not(.stack, .cluster, .group, .center, .split, .grid, .bar, .toolbar, .navlist, .pagination)) > :where(:not(:first-child)) {
+:is(.card, .screen, .container, .pane):where(:not(.stack, .cluster, .group, .center, .split, .grid, .bar, .toolbar, .navlist, .pagination, .section)) > :where(:not(:first-child)) {
   margin-block-start: var(--space-2xl);
 }
 
@@ -2070,7 +2086,7 @@ code[language] > span::before {
   --avatar-size: 2.25rem;
 
   
-  --tone-fill: var(--bg-mix, var(--color-muted));
+  --tone-fill: var(--data-accent, var(--bg-mix, var(--color-muted)));
 
   inline-size:   var(--avatar-size);
   block-size:    var(--avatar-size);
@@ -2438,6 +2454,8 @@ dialog.drawer[open]::backdrop {
 
 .popover {
   position:   absolute;
+  left:       var(--popover-x);
+  top:        var(--popover-y);
   max-width:  280px;
   padding:    var(--space-md) var(--space-lg);
   box-shadow: var(--shadow-md);
@@ -2460,6 +2478,60 @@ dialog.drawer[open]::backdrop {
 }
 [popover].popover::backdrop {
   background: transparent;
+}
+
+
+.popover:has(> .surface-header) {
+  display:        flex;
+  flex-direction: column;
+  width:          22rem;
+  max-width:      calc(100vw - 2 * var(--space-md));
+  max-height:     calc(100dvh - 2 * var(--space-lg));
+  padding:        0;
+  overflow:       hidden;
+}
+.popover > .surface-header {
+  padding: var(--space-sm) var(--space-sm) var(--space-sm) var(--space-lg);
+}
+.popover > .surface-body {
+  flex:                1;
+  min-height:          0;
+  padding:             var(--space-md) var(--space-lg);
+  overflow-x:          hidden;
+  overflow-y:          auto;
+  overscroll-behavior: contain;
+}
+
+.popover-backdrop {
+  position:   fixed;
+  inset:      0;
+  z-index:    var(--z-popover);
+  background: var(--scrim);
+}
+
+.popover.sheet {
+  left:       var(--space-md);
+  right:      var(--space-md);
+  top:        auto;
+  bottom:     calc(var(--sheet-offset, 0px) + env(safe-area-inset-bottom, 0px) + var(--space-md));
+  width:      auto;
+  max-width:  none;
+  max-height: 80dvh;
+  --overlay-from: translateY(8px);
+}
+@media (max-width: 767px) {
+  .popover.sheet-narrow {
+    left:       var(--space-md);
+    right:      var(--space-md);
+    top:        auto;
+    bottom:     calc(var(--sheet-offset, 0px) + env(safe-area-inset-bottom, 0px) + var(--space-md));
+    width:      auto;
+    max-width:  none;
+    max-height: 80dvh;
+  }
+}
+@media (min-width: 768px) {
+  .popover-backdrop.sheet-narrow { display: none; }
 }
 
 @keyframes popover-in {
@@ -2630,6 +2702,22 @@ dialog.drawer[open]::backdrop {
 
 .drawer {
   --overlay-from: translateX(100%);
+}
+
+
+.drawer-handle {
+  position:     absolute;
+  inset-block:  0;
+  inset-inline-start: 0;
+  inline-size:  var(--space-xs);
+  cursor:       ew-resize;
+  touch-action: none;
+}
+.drawer.from-left .drawer-handle {
+  inset-inline: auto 0;
+}
+.drawer-handle:hover {
+  background: var(--rule);
 }
 }
 @layer components {
@@ -3065,9 +3153,28 @@ input[type="file"]:disabled::file-selector-button {
   display:         flex;
   align-items:     center;
   justify-content: space-between;
+  flex-wrap:       wrap;
   gap:             var(--space-sm);
 }
 
+.section-header:where(.start) { align-items: flex-start; }
+
+
+
+.section,
+.section-body {
+  display:        flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+.section      { gap: var(--space-2xl); }
+.section-body { gap: var(--space-xl); }
+.section .section { gap: var(--space-xl); }
+.section-body > .section:not(:first-child) { margin-block-start: var(--space-2xl); }
+.section .section > .section-header :is(h1, h2, h3, h4, h5, h6) {
+  font-size: var(--text-lg);
+  color:     var(--ink-soft);
+}
 
 
 hr, .divider {
@@ -4385,7 +4492,8 @@ details[open]:has(> summary.navlist-label)::details-content {
   .navlink,
   summary.navlist-label,
   .disclosure-summary,
-  .pill-close
+  .pill-close,
+  .drawer-handle
 ):focus-visible,
 :where(.field, .skip-link):focus {
   outline:        var(--ring-width) var(--ring-style) var(--ring-color, var(--ring, var(--color-primary)));
@@ -4400,7 +4508,7 @@ details[open]:has(> summary.navlist-label)::details-content {
 }
 
 
-:where(.tab, .navlink, summary.navlist-label, .disclosure-summary, .pill-close):focus-visible {
+:where(.tab, .navlink, summary.navlist-label, .disclosure-summary, .pill-close, .drawer-handle):focus-visible {
   outline-offset: calc(var(--ring-offset) * -1);
 }
 
@@ -4564,7 +4672,7 @@ try {
   <div class="kicker">frontierjs · generated by fli ws:atlas --as=report</div>
   <h1>Repo map</h1>
   <p class="lede">Every row on this page was read out of the tree it describes — the snapshot walker, <code>main()</code> in the CI script, each package.json and the port registry. Regenerate it rather than editing it.</p>
-  <div class="counters"><div class="counter"><b>26</b><span>packages</span></div><div class="counter"><b>32</b><span>snapshots</span></div><div class="counter"><b>16</b><span>ci phases</span></div><div class="counter"><b>96</b><span>drives</span></div><div class="counter"><b>256</b><span>commands</span></div></div>
+  <div class="counters"><div class="counter"><b>26</b><span>packages</span></div><div class="counter"><b>33</b><span>snapshots</span></div><div class="counter"><b>16</b><span>ci phases</span></div><div class="counter"><b>96</b><span>drives</span></div><div class="counter"><b>257</b><span>commands</span></div></div>
 </header>
 <section id="run">
   <div class="head"><h2>Run it</h2><div class="rule"></div><span class="kicker">scripts declared at the workspace root</span></div>
@@ -4601,7 +4709,7 @@ try {
     </div></div>
 </section>
 <section id="snapshots">
-  <div class="head"><h2>Snapshots</h2><div class="rule"></div><span class="kicker">32 committed · discovered, never listed</span></div>
+  <div class="head"><h2>Snapshots</h2><div class="rule"></div><span class="kicker">33 committed · discovered, never listed</span></div>
   <p class="note">A generated artefact committed beside its source, so a change nothing else can see arrives as a diff. Each names the command that wrote it; that command is rerun with <code>--check</code> from the file's own directory. To regenerate one, run the command below <strong>without</strong> <code>--check</code> and read the diff.</p><div class="panel scroll"><table><thead><tr><th>Realm</th><th>Snapshot</th><th>Regenerate</th></tr></thead><tbody><tr data-row>
     <td><span class="chip c-repo">repo</span></td>
     <td class="path">deps.snapshot.md</td>
@@ -4674,6 +4782,10 @@ try {
     <td><span class="chip c-data">data</span></td>
     <td class="path">packages/basecamp/db/jsonschema.snapshot.md</td>
     <td class="m">cd packages/basecamp/db &amp;&amp; bunx litestone jsonschema --snapshot --schema schema.lite</td>
+  </tr><tr data-row>
+    <td><span class="chip c-data">data</span></td>
+    <td class="path">packages/basecamp/db/migrations.snapshot.md</td>
+    <td class="m">cd packages/basecamp/db &amp;&amp; bunx litestone migrate lock --schema schema.lite</td>
   </tr><tr data-row>
     <td><span class="chip c-data">data</span></td>
     <td class="path">packages/basecamp/db/release.snapshot.md</td>
@@ -4836,7 +4948,7 @@ try {
   <div class="head"><h2>Packages</h2><div class="rule"></div><span class="kicker">a member is a directory with a package.json</span></div>
   <p class="note">Depends-on lists workspace siblings only, which is the dependency direction drawn from the files rather than asserted.</p><div class="panel scroll"><table><thead><tr><th>Package</th><th>Version</th><th>Depends on</th><th>Test</th></tr></thead><tbody><tr data-row>
         <td class="m">@frontierjs/auth</td>
-        <td class="m sub">1.0.9</td>
+        <td class="m sub">1.0.10</td>
         <td class="m sub">junction · litestone</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
@@ -4846,32 +4958,32 @@ try {
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/caravan</td>
-        <td class="m sub">0.1.7</td>
+        <td class="m sub">0.1.8</td>
         <td class="m sub">junction · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/cli</td>
-        <td class="m sub">0.1.10</td>
+        <td class="m sub">0.1.11</td>
         <td class="m sub">css · litestone · mesa · outpost · toolbelt · ui</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/conduit</td>
-        <td class="m sub">0.1.6</td>
+        <td class="m sub">0.1.7</td>
         <td class="m sub">junction · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/config</td>
-        <td class="m sub">0.1.5</td>
+        <td class="m sub">0.1.6</td>
         <td class="m sub"><i>leaf</i></td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/css</td>
-        <td class="m sub">0.16.7</td>
+        <td class="m sub">0.16.8</td>
         <td class="m sub"><i>leaf</i></td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/email-kit</td>
-        <td class="m sub">0.1.7</td>
+        <td class="m sub">0.1.8</td>
         <td class="m sub">mesa · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
@@ -4881,32 +4993,32 @@ try {
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/jetty</td>
-        <td class="m sub">0.0.8</td>
+        <td class="m sub">0.0.9</td>
         <td class="m sub">junction · mesa · sierra · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/junction</td>
-        <td class="m sub">0.1.10</td>
+        <td class="m sub">0.1.11</td>
         <td class="m sub">litestone · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/litestone</td>
-        <td class="m sub">1.1.12</td>
+        <td class="m sub">1.1.13</td>
         <td class="m sub">toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/mcp</td>
-        <td class="m sub">0.0.4</td>
+        <td class="m sub">0.0.5</td>
         <td class="m sub">junction · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/mesa</td>
-        <td class="m sub">0.1.8</td>
+        <td class="m sub">0.1.9</td>
         <td class="m sub">toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/notifications</td>
-        <td class="m sub">0.1.7</td>
+        <td class="m sub">0.1.8</td>
         <td class="m sub">junction</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
@@ -4921,17 +5033,17 @@ try {
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/outpost</td>
-        <td class="m sub">0.1.8</td>
+        <td class="m sub">0.1.9</td>
         <td class="m sub">litestone · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/print-kit</td>
-        <td class="m sub">0.1.2</td>
+        <td class="m sub">0.1.3</td>
         <td class="m sub">junction · mesa</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/sierra</td>
-        <td class="m sub">0.1.9</td>
+        <td class="m sub">0.1.10</td>
         <td class="m sub">junction · litestone · mesa · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
@@ -4941,17 +5053,17 @@ try {
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/testing</td>
-        <td class="m sub">0.1.9</td>
+        <td class="m sub">0.1.10</td>
         <td class="m sub">junction · litestone · mesa</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/toolbelt</td>
-        <td class="m sub">0.1.7</td>
+        <td class="m sub">0.1.8</td>
         <td class="m sub"><i>leaf</i></td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/ui</td>
-        <td class="m sub">0.1.8</td>
+        <td class="m sub">0.1.9</td>
         <td class="m sub">css · mesa · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
@@ -4971,7 +5083,7 @@ try {
       </tr></tbody></table></div>
 </section>
 <section id="features">
-  <div class="head"><h2>Every capability</h2><div class="rule"></div><span class="kicker">373 across 27 packages · read, never invented</span></div>
+  <div class="head"><h2>Every capability</h2><div class="rule"></div><span class="kicker">374 across 27 packages · read, never invented</span></div>
   <p class="note">One row per file under a package's <code>docs/</code> and per <code>##</code> heading in its README — the two places a capability is already written down. A package that documents itself in one README contributes headings; one that writes a file per feature contributes files; a package with neither contributes a finding.</p><div class="panel scroll"><table><thead><tr><th>Package</th><th>Capability</th><th>The first thing it says</th><th>Where</th></tr></thead><tbody><tr data-row>
       <td class="m">@frontierjs/auth</td>
       <td class="m">auth — hazards</td>
@@ -5182,6 +5294,11 @@ try {
       <td class="m">cli — layout</td>
       <td class="m sub">The file-by-file map of @frontierjs/cli, moved out of CLAUDE.md so a turn in this package does not pay for it.</td>
       <td class="m sub">packages/cli/docs/layout.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Command output</td>
+      <td class="m sub">How a command prints a result. Drawn from cloudflare:dns&#39;s list, the</td>
+      <td class="m sub">packages/cli/docs/output.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">What it does for an application</td>
@@ -5620,12 +5737,12 @@ try {
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Circuit breaker</td>
-      <td class="m sub">import { circuitBreaker } from &#39;@frontierjs/junction/hooks&#39;</td>
+      <td class="m sub">import { createService } from &#39;@frontierjs/junction&#39;</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">API versioning</td>
-      <td class="m sub">const app = createApp({</td>
+      <td class="m sub">import { createApp, defaultConfig } from &#39;@frontierjs/junction&#39;</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -5655,7 +5772,7 @@ try {
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Schema validation</td>
-      <td class="m sub">import { createSchema, v } from &#39;@frontierjs/junction&#39;</td>
+      <td class="m sub">import { createSchema, createService, v } from &#39;@frontierjs/junction&#39;</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -5685,12 +5802,12 @@ try {
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Testing</td>
-      <td class="m sub">import { createTestApp, testCtx, request, callService } from &#39;@frontierjs/junction&#39;</td>
+      <td class="m sub">import { expect } from &#39;bun:test&#39;</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">OpenAPI</td>
-      <td class="m sub">import { openapi } from &#39;@frontierjs/junction/openapi&#39;</td>
+      <td class="m sub">import { createSchema, v } from &#39;@frontierjs/junction&#39;</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -7997,8 +8114,8 @@ try {
   </tr></tbody></table></div>
 </section>
 <section id="commands">
-  <div class="head"><h2>Command namespaces</h2><div class="rule"></div><span class="kicker">256 invokable commands</span></div>
-  <p class="note">A command is a markdown file compiled to JavaScript, so this count is the tree itself. Namespace modules (<code>_module.md</code>) and step files are not invokable and are not counted.</p><div class="tallies"><span class="tally" data-row><b>workspace</b>25</span><span class="tally" data-row><b>db</b>21</span><span class="tally" data-row><b>deploy</b>18</span><span class="tally" data-row><b>make</b>17</span><span class="tally" data-row><b>utils</b>15</span><span class="tally" data-row><b>npm</b>14</span><span class="tally" data-row><b>tutor</b>14</span><span class="tally" data-row><b>register</b>12</span><span class="tally" data-row><b>fli</b>9</span><span class="tally" data-row><b>test</b>9</span><span class="tally" data-row><b>env</b>8</span><span class="tally" data-row><b>git</b>8</span><span class="tally" data-row><b>dev</b>7</span><span class="tally" data-row><b>frontier</b>7</span><span class="tally" data-row><b>auth</b>6</span><span class="tally" data-row><b>basecamp</b>6</span><span class="tally" data-row><b>cloudflare</b>6</span><span class="tally" data-row><b>project</b>5</span><span class="tally" data-row><b>completion</b>4</span><span class="tally" data-row><b>server</b>4</span><span class="tally" data-row><b>tell</b>4</span><span class="tally" data-row><b>app</b>3</span><span class="tally" data-row><b>github</b>3</span><span class="tally" data-row><b>ai</b>2</span><span class="tally" data-row><b>api</b>2</span><span class="tally" data-row><b>desktop</b>2</span><span class="tally" data-row><b>extension</b>2</span><span class="tally" data-row><b>fetch</b>2</span><span class="tally" data-row><b>haven</b>2</span><span class="tally" data-row><b>ports</b>2</span><span class="tally" data-row><b>release</b>2</span><span class="tally" data-row><b>site</b>2</span><span class="tally" data-row><b>widgets</b>2</span><span class="tally" data-row><b>admin</b>1</span><span class="tally" data-row><b>backfill</b>1</span><span class="tally" data-row><b>browser</b>1</span><span class="tally" data-row><b>cli</b>1</span><span class="tally" data-row><b>crypto</b>1</span><span class="tally" data-row><b>literate</b>1</span><span class="tally" data-row><b>mcp</b>1</span><span class="tally" data-row><b>notifications</b>1</span><span class="tally" data-row><b>outbox</b>1</span><span class="tally" data-row><b>outpost</b>1</span><span class="tally" data-row><b>web</b>1</span></div>
+  <div class="head"><h2>Command namespaces</h2><div class="rule"></div><span class="kicker">257 invokable commands</span></div>
+  <p class="note">A command is a markdown file compiled to JavaScript, so this count is the tree itself. Namespace modules (<code>_module.md</code>) and step files are not invokable and are not counted.</p><div class="tallies"><span class="tally" data-row><b>workspace</b>25</span><span class="tally" data-row><b>db</b>21</span><span class="tally" data-row><b>deploy</b>18</span><span class="tally" data-row><b>make</b>17</span><span class="tally" data-row><b>utils</b>16</span><span class="tally" data-row><b>npm</b>14</span><span class="tally" data-row><b>tutor</b>14</span><span class="tally" data-row><b>register</b>12</span><span class="tally" data-row><b>fli</b>9</span><span class="tally" data-row><b>test</b>9</span><span class="tally" data-row><b>env</b>8</span><span class="tally" data-row><b>git</b>8</span><span class="tally" data-row><b>dev</b>7</span><span class="tally" data-row><b>frontier</b>7</span><span class="tally" data-row><b>auth</b>6</span><span class="tally" data-row><b>basecamp</b>6</span><span class="tally" data-row><b>cloudflare</b>6</span><span class="tally" data-row><b>project</b>5</span><span class="tally" data-row><b>completion</b>4</span><span class="tally" data-row><b>server</b>4</span><span class="tally" data-row><b>tell</b>4</span><span class="tally" data-row><b>app</b>3</span><span class="tally" data-row><b>github</b>3</span><span class="tally" data-row><b>ai</b>2</span><span class="tally" data-row><b>api</b>2</span><span class="tally" data-row><b>desktop</b>2</span><span class="tally" data-row><b>extension</b>2</span><span class="tally" data-row><b>fetch</b>2</span><span class="tally" data-row><b>haven</b>2</span><span class="tally" data-row><b>ports</b>2</span><span class="tally" data-row><b>release</b>2</span><span class="tally" data-row><b>site</b>2</span><span class="tally" data-row><b>widgets</b>2</span><span class="tally" data-row><b>admin</b>1</span><span class="tally" data-row><b>backfill</b>1</span><span class="tally" data-row><b>browser</b>1</span><span class="tally" data-row><b>cli</b>1</span><span class="tally" data-row><b>crypto</b>1</span><span class="tally" data-row><b>literate</b>1</span><span class="tally" data-row><b>mcp</b>1</span><span class="tally" data-row><b>notifications</b>1</span><span class="tally" data-row><b>outbox</b>1</span><span class="tally" data-row><b>outpost</b>1</span><span class="tally" data-row><b>web</b>1</span></div>
 </section>
 <section id="root-docs">
   <div class="head"><h2>Which file answers which question</h2><div class="rule"></div><span class="kicker">each one holds a single kind of statement</span></div>

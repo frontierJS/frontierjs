@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/caravan",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "_built": "2026-05-04",
   "description": "SQLite-backed job queue for Bun — first-party Junction plugin",
   "type": "module",

@@ -127,23 +127,23 @@ indent_style = tab
 // MINOR — and `test/app-config.test.js` fails the day it does.
 
 export const FJS_PACKAGES = {
-  '@frontierjs/junction':       '0.1.10',
-  '@frontierjs/sierra':         '0.1.9',
-  '@frontierjs/mesa':           '0.1.8',
-  '@frontierjs/litestone':      '1.1.12',
-  '@frontierjs/css':            '0.16.7',
-  '@frontierjs/ui':             '0.1.8',
-  '@frontierjs/auth':           '1.0.9',
-  '@frontierjs/conduit':        '0.1.6',
-  '@frontierjs/caravan':        '0.1.7',
-  '@frontierjs/notifications':  '0.1.7',
-  '@frontierjs/jetty':          '0.0.8',
-  '@frontierjs/toolbelt':       '0.1.7',
+  '@frontierjs/junction':       '0.1.11',
+  '@frontierjs/sierra':         '0.1.10',
+  '@frontierjs/mesa':           '0.1.9',
+  '@frontierjs/litestone':      '1.1.13',
+  '@frontierjs/css':            '0.16.8',
+  '@frontierjs/ui':             '0.1.9',
+  '@frontierjs/auth':           '1.0.10',
+  '@frontierjs/conduit':        '0.1.7',
+  '@frontierjs/caravan':        '0.1.8',
+  '@frontierjs/notifications':  '0.1.8',
+  '@frontierjs/jetty':          '0.0.9',
+  '@frontierjs/toolbelt':       '0.1.8',
 }
 
 export const APP_DEV_DEPS = {
-  '@frontierjs/cli':    '0.1.10',
-  '@frontierjs/config': '0.1.5',
+  '@frontierjs/cli':    '0.1.11',
+  '@frontierjs/config': '0.1.6',
   '@biomejs/biome':     '^2.5.0',
   'bun-types':          '1.4.2',
   'typescript':         '^5.0.0',

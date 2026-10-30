@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/print-kit",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "description": "One headless-Chromium render worker behind one seam: an HTML document to a PDF, an element to a PNG, over @frontierjs/mesa/drive",
   "exports": {
