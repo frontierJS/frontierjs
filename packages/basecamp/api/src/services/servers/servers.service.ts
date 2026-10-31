@@ -58,7 +58,7 @@ import { outbound, outpostFor } from '../../providers/outpost.ts'
 import { asPublicKey }           from '../apps/apps.service.ts'
 
 import type { TargetDescriptor } from '@frontierjs/conduit'
-import type { ProviderKind, ServerEventKind } from '../../../../db/schema.d.ts'
+import type { ProviderKind, ServerEventKind } from '#db/schema.d.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 
 // ─── Types ───────────────────────────────────────────────────────────────

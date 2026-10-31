@@ -169,6 +169,7 @@ test('--template web-only writes web/ and nothing that needs an API or a databas
   const deps = { ...manifest.dependencies, ...manifest.devDependencies }
   expect(deps['@frontierjs/litestone']).toBeUndefined()
   expect(deps['@frontierjs/junction']).toBeUndefined()
+  expect(manifest.imports).toBeUndefined()
   for (const s of ['api', 'start', 'db:migrate', 'db:backup', 'db:types'])
     expect(manifest.scripts[s]).toBeUndefined()
   expect(manifest.scripts.dev).toBe(manifest.scripts.web)
@@ -294,6 +295,17 @@ test('db:types writes one types file per audience, and only the browser one augm
   expect(web).toContain('--audience client')
   expect(web).toContain('--augment junction')
   expect(web).toContain('--out web/src/lib/db.d.ts')
+}, 60_000)
+
+// FJS-D1320 — code the schema points at is imported as #db/<file>; without the
+// alias each surface climbs ../../db/ and depends on where it sits.
+test('a scaffolded surface reaches db/ through #db/*', () => {
+  const app = scaffold('aliased')
+  writeFileSync(join(app, 'db/probe.js'), "export const probe = 'from db'\n")
+  writeFileSync(join(app, 'api/src/probe.js'), "import { probe } from '#db/probe.js'\nconsole.log(probe)\n")
+  const r = spawnSync(process.execPath, [join(app, 'api/src/probe.js')], { cwd: app, encoding: 'utf8' })
+  expect(r.stderr).toBe('')
+  expect(r.stdout.trim()).toBe('from db')
 }, 60_000)
 
 // FJS-2439 — auth.ts imports db.ts, which opens db/app.db at import, so what

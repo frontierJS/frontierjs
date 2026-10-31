@@ -27,7 +27,7 @@ import { targetFor }              from '../../providers/compute/index.ts'
 import { sendVia }                from '../../providers/compute/accounts.ts'
 import { keyScope }               from '../../domain/api-key/scopes.ts'
 import type { PlatformProject }   from '../../providers/platform/index.ts'
-import type { PlatformProvider }  from '../../../../db/schema.d.ts'
+import type { PlatformProvider }  from '#db/schema.d.ts'
 
 interface PlatformAccountRow {
   id:           string

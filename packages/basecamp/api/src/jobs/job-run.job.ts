@@ -20,7 +20,7 @@ import type { App }         from '@frontierjs/junction'
 // code read `job.timeoutSeconds` and `job.appId` correctly and the TYPE was
 // what was wrong, which is the direction nothing catches until the type comes
 // from the schema.
-import type { Job } from '../../../db/schema.d.ts'
+import type { Job } from '#db/schema.d.ts'
 
 function runner(app: App) {
 

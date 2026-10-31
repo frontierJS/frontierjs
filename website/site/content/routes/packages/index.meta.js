@@ -3,7 +3,7 @@
 // The list is read from the same data the package pages are, so a package
 // added there appears here without an edit.
 
-import { loadFJS, hrefFor } from '../../data/packages.js'
+import { loadFJS, hrefFor, realmStyleFor } from '../../data/packages.js'
 
 export async function load() {
   const { PKGS } = await loadFJS()
@@ -12,7 +12,7 @@ export async function load() {
       href:  hrefFor(p),
       name:  p.name,
       realm: p.realm,
-      tone:  p.tone,
+      accent: realmStyleFor(p.realm),
       pitch: p.pitch,
     })),
   }

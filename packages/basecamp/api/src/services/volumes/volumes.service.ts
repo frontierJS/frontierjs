@@ -40,7 +40,7 @@ import { createService, NotFound, BadRequest, Conflict, parseWhere, $ } from '@f
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor, callerOrder }  from '../../core/resource.ts'
-import type { ServerEventKind } from '../../../../db/schema.d.ts'
+import type { ServerEventKind } from '#db/schema.d.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 
 // ─── The outpost's wire contract ───────────────────────────────────────────

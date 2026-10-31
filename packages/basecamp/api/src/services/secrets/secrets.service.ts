@@ -26,7 +26,7 @@ import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, ch
 import { targetFor } from '../../providers/compute/index.ts'
 import { registerAccount, unregisterAccount, sendVia, tokenDocument, TOKEN_FIELD, accountConnectorFor }
   from '../../providers/compute/accounts.ts'
-import type { ProviderKind }   from '../../../../db/schema.d.ts'
+import type { ProviderKind }   from '#db/schema.d.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /** Secret has no `slug` column, so the shared deriveSlug — which derives

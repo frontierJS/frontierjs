@@ -7,8 +7,7 @@
 
 import { SCHEMA, FIELDS, RULES, CHIPS } from '../../data/showroom.js'
 import { block, line, esc, langOf } from '../../data/code.js'
-
-const TONE = { Data: 'primary', API: 'info', UI: 'success' }
+import { realmStyleFor } from '../../data/packages.js'
 
 export async function load() {
   return {
@@ -28,7 +27,8 @@ export async function load() {
       id:    c.id,
       label: c.label,
       realm: c.soon ? 'proposed' : c.realm,
-      tone:  c.soon ? 'warning' : (TONE[c.realm] ?? 'success'),
+      tone:  c.soon ? 'warning' : '',
+      accent: c.soon ? '' : realmStyleFor(c.realm),
       blurb: c.blurb,
       from:  esc(c.from),
       code:  block(c.code, langOf(c.lang, c.code)),

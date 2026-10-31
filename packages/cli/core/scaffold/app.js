@@ -152,6 +152,10 @@ export function makePackageJson(spec) {
     version: '0.1.0',
     private: true,
     type:    'module',
+    // Code the schema points at is imported as `#db/<file>`, so no surface
+    // climbs `../../db/` to reach it (FJS-D1320). Vite, Bun and tsc's bundler
+    // resolution all read this field.
+    imports: useDb ? { '#db/*': './db/*' } : undefined,
     scripts,
     dependencies:    deps,
     devDependencies: devDeps,

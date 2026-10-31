@@ -261,7 +261,7 @@ browser extension, `desktop/` for a native app with its screens bundled in,
 Surfaces never import each other. Code two of them run lives in one of two places, split
 by origin: `db/` keeps what the schema points at (an `@computed` body), and `shared/` holds
 the rest. Each is imported by alias, through `"imports"` in the app's `package.json`
-(`#shared/*`). Neither one imports a surface or the server, `db/` may import `shared/` but
+(`#db/*`, which `fli new` writes, and `#shared/*`). Neither one imports a surface or the server, `db/` may import `shared/` but
 not the reverse, and a `shared/` file has to be pure and imported by two surfaces
 (`FJS-D1320`):
 
@@ -269,7 +269,7 @@ not the reverse, and a `shared/` file has to be pure and imported by two surface
 my-app/
   frontier.config.js         ← deploy config (fli make:deploy)
 
-  db/                        ← Data realm — Litestone
+  db/                        ← Data realm — Litestone, imported as #db/<file>
     schema.lite              ← single source of truth
     migrations/
     backups/

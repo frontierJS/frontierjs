@@ -10,7 +10,7 @@
 // the row exists.
 
 import type { App }         from '@frontierjs/junction'
-import type { ServerEventKind } from '../../../db/schema.d.ts'
+import type { ServerEventKind } from '#db/schema.d.ts'
 
 /** Output kept per run, per stream. An outpost that cats a log file can answer
  *  megabytes, and a row nothing can render is a row nobody reads — the tail is

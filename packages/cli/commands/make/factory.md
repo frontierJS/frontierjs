@@ -55,7 +55,7 @@ const makeFactoryFile = (model, states) => {
 // Registered by name, keyed by ACCESSOR (db.${accessor} → factories.${accessor}):
 //
 //   import { makeTestClient } from '@frontierjs/litestone/testing'
-//   import { ${model}Factory } from '../db/factories/${model}Factory.js'
+//   import { ${model}Factory } from '#db/factories/${model}Factory.js'
 //
 //   const { db, factories } = await makeTestClient(schemaText, {
 //     seed: 42,

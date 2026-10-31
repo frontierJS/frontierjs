@@ -14,7 +14,7 @@
 // `/packages/fli/` and `editor` at `/packages/vscode/`, because those are the
 // names the subnav shows.
 
-import { loadFJS, hrefFor } from '../../data/packages.js'
+import { loadFJS, hrefFor, realmStyleFor } from '../../data/packages.js'
 import { block, sniff } from '../../data/code.js'
 
 export async function getStaticPaths() {
@@ -43,7 +43,7 @@ export async function load({ params }) {
   return {
     name:   pkg.name,
     realm:  pkg.realm,
-    tone:   pkg.tone,
+    accent: realmStyleFor(pkg.realm),
     who:    pkg.who,
     pitch:  pkg.pitch,
     install: pkg.install,

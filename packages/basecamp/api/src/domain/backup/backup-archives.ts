@@ -35,7 +35,7 @@ import type { ListedObject }  from '../../providers/storage/s3.ts'
 import { destinationFor, mintDownload } from '../../jobs/app-backup-run.job.ts'
 import { requireHubAppId } from '../host/host-machine.ts'
 import type { App }           from '@frontierjs/junction'
-import type { BackupDestination } from '../../../../db/schema.d.ts'
+import type { BackupDestination } from '#db/schema.d.ts'
 
 /** The start time with `:` and `.` flattened to `-`, as both archive names carry it. */
 const STAMP = String.raw`(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z`

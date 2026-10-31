@@ -40,7 +40,7 @@ import { DISK_READINGS, readingOf } from '../../domain/host/server-metrics.ts'
 import type { DiskReport } from '../../domain/cleanup/disk-report.ts'
 import cleanupRunJob from '../../jobs/cleanup-run.job.ts'
 import { announce } from '../../core/channels.ts'
-import type { ServerEventKind } from '../../../../db/schema.d.ts'
+import type { ServerEventKind } from '#db/schema.d.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /** The system client, typed once — the accessors have no generated types yet. */

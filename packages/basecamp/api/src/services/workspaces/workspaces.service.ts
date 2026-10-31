@@ -18,7 +18,7 @@ import { LEVELS } from '@frontierjs/litestone'
 import { refuseGrantAboveOwn, roleOf, getPagination, WORKSPACE_QUERY, WORKSPACES_SERVICE } from '../../core/hooks.ts'
 import { grantsFor } from '../../core/capabilities.ts'
 import { db, actor, slugify, narrowPatch, changesNothing, callerOrder } from '../../core/resource.ts'
-import type { WorkspaceRole }  from '../../../../db/schema.d.ts'
+import type { WorkspaceRole }  from '#db/schema.d.ts'
 // The roles are graded in core/gate.ts and the enum lives in schema.lite; the
 // map's KEYS are the one place this app already states the vocabulary, and a
 // data test holds it to the enum. Reading it here rather than restating the

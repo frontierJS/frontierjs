@@ -1867,7 +1867,7 @@ export function snapshot(db) {
     if (!raw) continue
     const tables = _userTables(raw)
     const perDb  = {}
-    for (const t of tables) perDb[t] = raw.query(`SELECT * FROM "${t}"`).all()
+    for (const t of tables) perDb[t] = _once(raw, `SELECT * FROM "${t}"`, s => s.all())
     out[dbName] = perDb
   }
   return out
@@ -1890,16 +1890,16 @@ export function restore(db, snap) {
       // A DELETE on an EMPTY table still costs up to a millisecond on a schema
       // with triggers and indexes, and a write touches a few tables of thirty:
       // clearing all of them dominated a gate ladder (5s of 9s on a 29-model
-      // schema, repeated per mutant). A one-row probe is 40x cheaper.
-      for (const t of _userTables(raw))
-        if (raw.query(`SELECT 1 FROM "${t}" LIMIT 1`).get()) raw.run(`DELETE FROM "${t}"`)
+      // schema, repeated per mutant). So only the tables holding a row are cleared.
+      for (const t of _nonEmpty(raw, _userTables(raw))) raw.run(`DELETE FROM "${t}"`)
       for (const [table, rows] of Object.entries(perDb)) {
         if (!rows.length) continue
         const cols        = Object.keys(rows[0])
         const colList     = cols.map(c => `"${c}"`).join(', ')
         const placeholders = cols.map(() => '?').join(', ')
-        const stmt        = raw.prepare(`INSERT INTO "${table}" (${colList}) VALUES (${placeholders})`)
-        for (const row of rows) stmt.run(...cols.map(c => row[c]))
+        _once(raw, `INSERT INTO "${table}" (${colList}) VALUES (${placeholders})`, stmt => {
+          for (const row of rows) stmt.run(...cols.map(c => row[c]))
+        })
       }
       raw.run('COMMIT')
     } catch (e) {
@@ -1913,9 +1913,8 @@ export function restore(db, snap) {
 
 /** Tables a restore may touch — excludes sqlite internals and FTS shadow tables. */
 function _userTables(raw) {
-  const rows = raw.query(
-    `SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`
-  ).all()
+  const rows = _once(raw,
+    `SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`, s => s.all())
   const names = rows.map(r => r.name)
   // An FTS5 virtual table owns shadow tables (<name>_data, _idx, _content, …).
   // Writing those directly corrupts the index; deleting the virtual table's rows
@@ -1924,6 +1923,29 @@ function _userTables(raw) {
   const shadowed = new Set(ftsRoots.flatMap(root =>
     names.filter(n => n.startsWith(`${root}_`))).concat(ftsRoots))
   return names.filter(n => !shadowed.has(n))
+}
+
+// Every statement here is finalized after its one use. bun's `query()` keeps 20
+// texts and never finalizes the ones it evicts, and a restore names one text
+// per table, so on a 72-table schema each restore left ~72 live statements on
+// the connection. `PRAGMA foreign_keys` walks every live statement, and after
+// 2,000 restores the two toggles above cost 4ms each: 11s of a 17s gate ladder.
+function _once(raw, sql, use) {
+  const s = raw.prepare(sql)
+  try { return use(s) } finally { s.finalize?.() }
+}
+
+// The tables holding at least one row, asked in one statement rather than one
+// per table. Chunked to stay far under SQLite's 2,000-column result limit.
+function _nonEmpty(raw, tables) {
+  const out = []
+  for (let i = 0; i < tables.length; i += 500) {
+    const chunk = tables.slice(i, i + 500)
+    const sql   = `SELECT ${chunk.map((t, j) => `EXISTS (SELECT 1 FROM "${t}") AS "${j}"`).join(', ')}`
+    const row   = _once(raw, sql, s => s.get())
+    chunk.forEach((t, j) => { if (row[j]) out.push(t) })
+  }
+  return out
 }
 
 // ─── reset ────────────────────────────────────────────────────────────────────

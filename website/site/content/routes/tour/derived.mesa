@@ -103,7 +103,7 @@ render: static
              data-id={p.id} data-lines={p.lines.join(',')} role="tabpanel" tabindex="0">
           <div class="panel-head">
             <h2>{p.label}</h2>
-            <span class="badge {p.tone}">{p.realm}</span>
+            <span class="badge {p.tone}" style={p.accent}>{p.realm}</span>
           </div>
           <p class="text-sm text-muted blurb">{p.blurb}</p>
           <p class="from">Derived from <code>{@html p.from}</code></p>

@@ -13,7 +13,7 @@
 // `account` below is the VENDOR's account id, not the `Secret`'s: one token
 // can open several, and every project path is under one of them.
 
-import type { PlatformProvider } from '../../../../db/schema.d.ts'
+import type { PlatformProvider } from '#db/schema.d.ts'
 import type { AccountSend }   from '../compute/index.ts'
 import { cloudflare }         from './cloudflare.ts'
 

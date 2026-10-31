@@ -164,8 +164,9 @@ The full hazard catalog for `@frontierjs/cli`, moved out of `CLAUDE.md`. The doz
   Dialog, Table, Facts, Item, Badge, Pill, Field — and a TONE carries what a
   color used to: `danger` for an S1, `info` for a ruling, `muted` for a claimed
   folder. **A realm accent is the second axis** — identity, not status, which
-  the vocabulary has no word for — so `--realm` is DERIVED from the tone tokens
-  (mixed in oklab where seven tones cannot make nine) and used for a plate's
+  the vocabulary has no word for — so `--realm` comes from the one realm table,
+  `REALM_ACCENT` in `console/map-model.js` (`FJS-D1697`), mixed from the tone
+  tokens in oklab, and used for a plate's
   rule, motif and badge, never body text — and a THEME may name all nine
   outright (`--realm-data` …), which is what `theme-field` does. That theme is
   the page's own field-manual look, a token block with no selector, default and

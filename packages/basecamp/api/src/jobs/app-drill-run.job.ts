@@ -25,7 +25,7 @@ import type { Executor }                   from '../providers/executor.ts'
 import { replicaOf, replicaDatabases }     from './replicate-sync.job.ts'
 import { releaseEnv }                      from '../domain/release/variables.ts'
 import type { App }                        from '@frontierjs/junction'
-import type { App as AppRow, AppDrill, DrillKind } from '../../../db/schema.d.ts'
+import type { App as AppRow, AppDrill, DrillKind } from '#db/schema.d.ts'
 
 /** Outpost bounds the restore at an hour and the verify at half of one; this
  *  outlasts both, so a slow drill reads as slow rather than as failed. */

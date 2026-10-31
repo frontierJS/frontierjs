@@ -62,7 +62,7 @@ import { releaseEnv } from '../domain/release/variables.ts'
 import { runtimeOf, routedHosts, routedPaths, routedRedirects, markRunning, type Runtime } from '../domain/release/runtime.ts'
 import { takeAppBackup, destinationFor } from './app-backup-run.job.ts'
 import type { App }         from '@frontierjs/junction'
-import type { StepStatus } from '../../../db/schema.d.ts'
+import type { StepStatus } from '#db/schema.d.ts'
 
 // Row shapes come from the schema now, not from hand-written mirrors of it.
 // The old DeploymentRow / ServiceRow / StepRow / ServiceServerRow interfaces

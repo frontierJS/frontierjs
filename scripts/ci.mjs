@@ -1691,6 +1691,8 @@ function perf() {
 // — a timing assertion, a port outside its slot — is named here with the reason
 // and runs alone after the rest.
 const SOLO_SUITES = {
+  'packages/sierra':  'resource-tethered counts reads inside a real 80ms window, and it and attachment-lazy failed in lanes and pass alone',
+  'packages/outpost': 'its inspector compares a disk report to the Docker daemon\'s own totals, which any suite running a container moves',
 }
 
 async function tests() {
@@ -1758,6 +1760,13 @@ async function mutate() {
   const file   = 'scripts/mutate-baselines.json'
   const floors = Object.entries(readJson(join(ROOT, file))).filter(([app]) => !app.startsWith('//'))
 
+  const skip = mutateSkip()
+  if (skip) {
+    note(`mutate skipped — ${skip}. \`fli ci --phase mutate\` runs it anyway.`)
+    ok(`skipped: ${skip}`)
+    return
+  }
+
   const jobs = floors.flatMap(([app, floor]) =>
     (floor.kinds?.length ? floor.kinds : [null]).map(kind => ({ app, kind })))
 
@@ -1822,6 +1831,27 @@ async function mutate() {
   }
 
   if (clean(from)) ok(`mutation floors held`)
+}
+
+// The score moves only when a check or a schema does: the checks live in
+// litestone (and the toolbelt under it) and the rules they grade in a `.lite`
+// (FJS-D476 as amended), and this file is how they are graded. Any
+// other diff re-proves the same floor for minutes, so it is skipped with a
+// reason. Every doubt runs it — a base ref that does not resolve, the phase
+// named by `--phase`, scripts/mutate-baselines.json itself changed.
+const MUTATE_PATHS = [/^packages\/(litestone|toolbelt)\/src\//, /\.lite$/, /^scripts\/(mutate-baselines\.json|ci\.mjs)$/]
+
+function mutateSkip() {
+  if (wantedPhases.includes('mutate')) return null
+  const ref = resolveRef(baseRef)
+  if (!ref) return null
+  const changed = [
+    ...git(['diff', '--name-only', ref]).split('\n'),
+    ...git(['ls-files', '--others', '--exclude-standard']).split('\n'),
+  ].filter(Boolean)
+  return changed.some(path => MUTATE_PATHS.some(re => re.test(path)))
+    ? null
+    : `no litestone or toolbelt source, .lite or mutate harness changed against ${ref.slice(0, 8)}`
 }
 
 // ─── phase 9 · tutor ────────────────────────────────────────

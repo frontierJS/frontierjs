@@ -40,7 +40,7 @@ render: static
 <div class="container phero">
   <div class="id">
     <h1>{d.name}</h1>
-    <span class="badge {d.tone}">{d.realm}</span>
+    <span class="badge" style={d.accent}>{d.realm}</span>
     <span class="who">{d.who}</span>
   </div>
   <p class="pitch">{d.pitch}</p>

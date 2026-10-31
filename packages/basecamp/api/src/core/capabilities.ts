@@ -28,7 +28,7 @@
 // where the gate does, and `capabilityLadderAgrees()` below is the executed
 // check rather than a comment claiming it.
 
-import type { WorkspaceRole } from '../../../db/schema.d.ts'
+import type { WorkspaceRole } from '#db/schema.d.ts'
 
 /**
  * The grants a role is stamped with.

@@ -779,6 +779,9 @@ function srcLayoutFindings(root) {
     const dbModule = staticDb.get(join(root, surface))
     for (const file of sources(root, [...SCRIPT_EXT, '.mesa'], `${surface}/src`)) {
       const companion = /\.meta\.[jt]s$/.test(basename(file))
+      if (relativeImports(file).some(t => inside(join(root, 'db'), t)))
+        warn(rel(root, file), `${surface}/ imports db/ by relative path. Import it as #db/<file>, the alias ` +
+          `the app's package.json "imports" names, so no surface depends on where db/ sits (FJS-D1320).`)
       for (const target of relativeImports(file)) {
         if (companion && dbModule && stem(target) === dbModule) continue
         const other = SURFACES.find(s => s !== surface && inside(join(root, s), target))

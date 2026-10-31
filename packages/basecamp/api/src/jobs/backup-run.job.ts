@@ -58,7 +58,7 @@ import { putObject }        from '../providers/storage/s3.ts'
 import { writeManifest }    from '../domain/backup/archive-manifest.ts'
 import { hostServer, requireHubAppId } from '../domain/host/host-machine.ts'
 import type { App }         from '@frontierjs/junction'
-import type { AppBackup, RunStatus } from '../../../db/schema.d.ts'
+import type { AppBackup, RunStatus } from '#db/schema.d.ts'
 
 /** One PUT, held in memory. B2 and S3 cap a single PUT at 5 GB; this is lower
  *  because the whole body is a buffer in the API process. */

@@ -48,7 +48,7 @@
 
 import { connectorFor, fleetMark, hostMark, markFor, priceIn, sizeRegions } from '../../providers/compute/index.ts'
 import type { ComputeSize, ReservedIp } from '../../providers/compute/index.ts'
-import type { ProviderKind }  from '../../../../db/schema.d.ts'
+import type { ProviderKind }  from '#db/schema.d.ts'
 import { bearerSend }         from './bearer-send.ts'
 
 const answer = (o: Record<string, unknown>) => console.log(JSON.stringify(o))

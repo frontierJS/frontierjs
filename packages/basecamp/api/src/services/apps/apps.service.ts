@@ -50,7 +50,7 @@ import { sourceConnectorFor, RepoUnseen } from '../../providers/source/index.ts'
 import type { SourceRepo } from '../../providers/source/index.ts'
 import { sendVia }   from '../../providers/compute/accounts.ts'
 import { targetFor } from '../../providers/compute/index.ts'
-import type { ProviderKind } from '../../../../db/schema.d.ts'
+import type { ProviderKind } from '#db/schema.d.ts'
 // The one reader of `App.source`. A service that parsed the blob itself would
 // be the second, and the two would disagree the first time a kind was added.
 import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit, byteLength, DOCKERFILE_BYTES }

@@ -5620,6 +5620,16 @@ describe('app-layout grades the src/ layout (FJS-1888)', () => {
     expect(f).toHaveLength(4)
   })
 
+  test('a surface reaches db/ through #db/*, not a relative path', () => {
+    const f = layout('lay-db', {
+      'db/computed.js':           'export const total = 1\n',
+      'api/src/domain/q/quote.ts': "import { total } from '#db/computed.js'\nconst schema = new URL('../../../../db/schema.lite', import.meta.url)\n",
+      'web/src/lib/q.js':          "import { total } from '../../../db/computed.js'\n",
+    })
+    expect(f.map(x => x.file.replace(/.*lay-db[^/]*\//, ''))).toEqual(['web/src/lib/q.js'])
+    expect(f[0].message).toMatch(/imports db\/ by relative path/)
+  })
+
   test('a module or declaration file loose in web/src', () => {
     const f = layout('lay-loose', { 'web/src/money.js': 'export const m = 1\n', 'web/src/db.d.ts': '\n' })
     expect(f.map(x => x.file.replace(/.*\/web\//, 'web/')).sort()).toEqual(['web/src/db.d.ts', 'web/src/money.js'])
@@ -5758,7 +5768,7 @@ describe('app-layout grades the src/ layout (FJS-1888)', () => {
   test('a relative import from one surface into another', () => {
     const f = layout('lay-cross', {
       'api/src/domain/report.ts': "import { Q } from '../../../web/src/reports/Q.query.js'\n",
-      'web/src/lib/api-types.js': "import type { T } from '../../../api/src/types.ts'\nimport { x } from '../../../db/gen.js'\nimport { y } from './own.js'\n",
+      'web/src/lib/api-types.js': "import type { T } from '../../../api/src/types.ts'\nimport { y } from './own.js'\n",
     })
     expect(f).toHaveLength(2)
     expect(f.map(x => x.message).join('\n')).toMatch(/service/)

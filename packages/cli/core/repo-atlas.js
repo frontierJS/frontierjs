@@ -24,6 +24,7 @@
 // describing where it is.
 
 import { htmlPage, themePicker, themesFor, esc, CLIENT_ESC } from './html-page.js'
+import { realmCss } from '../console/map-model.js'
 
 // ─── realm buckets ────────────────────────────────────────────────────────────
 //
@@ -728,7 +729,7 @@ function plate(card, model) {
   return `<a class="card atlas-plate b-${esc(card.bucket)}" href="#/part/${esc(card.key)}"
      data-card data-key="${esc(card.key)}" data-bucket="${esc(card.bucket)}">
   <div class="surface-header">
-    <span class="badge ${toneFor(card.bucket)}">${esc(card.bucket)}</span>
+    <span class="badge atlas-realm">${esc(card.bucket)}</span>
     <span class="text-xs text-muted">FJS-${card.plate}</span>
   </div>
   <div class="surface-body">
@@ -753,17 +754,12 @@ function plate(card, model) {
 // in `@frontierjs/css`, and there should not be, because a category is an app's
 // fact and not a design system's.
 //
-// So the accent is derived from the tone tokens rather than picked: nine realms
-// against seven tones, the last two mixed from them in oklab. No hex is written
-// and every theme moves all nine together, which is the property that matters.
+// The accent is the console's realm table (`realmCss`, `FJS-D1697`), so a realm
+// is one color on every page that draws the framework. `other` and `claimed`
+// are the atlas's own states, not realms, and stay in its sheet.
 //
 // It is used for the plate's rule, its motif and its realm badge — never for
 // body text, where a tone token's contrast is not guaranteed.
-
-const REALM_TONE = {
-  data: 'primary', api: 'success', ui: 'warning', testing: 'secondary',
-  tooling: 'info', app: 'danger', other: 'muted', claimed: 'muted',
-}
 
 // ─── the heat bar ─────────────────────────────────────────────────────────────
 //
@@ -786,11 +782,6 @@ function heatBar(issues, share = null) {
   }</span>`
 
   return `<span class="atlas-heat" title="${esc(label)}" aria-label="open issues: ${esc(label)}">${track}<em>${issues.length} open</em></span>`
-}
-
-/** The badge on a plate takes the tone class where one exists; `cross` is mixed. */
-function toneFor(bucket) {
-  return REALM_TONE[bucket] ?? ''
 }
 
 function svg(path) {
@@ -1454,13 +1445,14 @@ body.app{--app-bg:transparent;--surface-solid:var(--surface)}
    page a color literal is written. Every other theme derives its nine from
    the tone tokens, which is what the fallbacks below do. */
 .theme-field{
-  --realm-data:    #4fa8a0;
-  --realm-api:     #93a83f;
-  --realm-ui:      #d2762e;
+  --realm-data:    #5e93bf;
+  --realm-api:     #4fa8a0;
+  --realm-ui:      #93a83f;
   --realm-testing: #a79ae4;
-  --realm-tooling: #5e93bf;
+  --realm-tooling: #d6b94b;
+  --realm-deploy:  #dc6a58;
   --realm-cross:   #c9bfa4;
-  --realm-app:     #dc6a58;
+  --realm-app:     #d2762e;
   --realm-other:   #8c8778;
   --realm-claimed: #4a4e48;
 }
@@ -1501,20 +1493,10 @@ gap:var(--space-md);margin-top:var(--space-md)}
 .atlas-doors{display:grid;grid-template-columns:repeat(auto-fit,minmax(22rem,1fr));gap:var(--space-md)}
 .atlas-q{font-size:var(--text-lg);margin:0 0 var(--space-sm)}
 
-/* Nine realms out of seven tone tokens: the two the tones cannot reach are
-   mixed from them, so a theme still moves all nine at once and no hex is
-   written. Identity, not status — never used for body text. */
-.b-data{--realm:var(--realm-data,var(--color-primary))}
-.b-api{--realm:var(--realm-api,var(--color-success))}
-.b-ui{--realm:var(--realm-ui,var(--color-warning))}
-/* The secondary tone is near-ink in several themes, which is no grouping at all
-   on a dark card. Mixed toward the one hue the seven tones leave free — nine
-   realms have to read as nine, and two that mix to the same place are eight. */
-.b-testing{--realm:var(--realm-testing,color-mix(in oklab,var(--color-danger) 45%,var(--color-primary)))}
-.b-tooling{--realm:var(--realm-tooling,var(--color-info))}
-.b-cross{--realm:var(--realm-cross,color-mix(in oklab,var(--color-success) 55%,var(--color-info)))}
-.b-app{--realm:var(--realm-app,var(--color-danger))}
-.b-other{--realm:var(--realm-other,var(--color-muted))}
+/* Identity, not status — never used for body text. Cross is the muted tone,
+   so other sits further toward the ground or the two read as one. */
+${realmCss('.b-')}.b-other{--realm:var(--realm-other,color-mix(in oklab,var(--color-muted) 75%,var(--surface)))}
+.atlas-realm{--bg-mix:var(--realm)}
 .b-claimed{--realm:var(--realm-claimed,color-mix(in oklab,var(--color-muted) 55%,var(--surface)))}
 .b-action{--realm:var(--color-warning)}
 .atlas-swatch{width:1rem;height:2px;background:var(--realm);display:inline-block;margin-right:var(--space-3xs)}

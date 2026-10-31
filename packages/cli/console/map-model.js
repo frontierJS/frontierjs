@@ -8,10 +8,36 @@
 
 import { REF } from './map-reference.js'
 
-// A realm is a tone. Three categories, and the three tones that carry no
-// status meaning — status is what `success`, `warning` and `danger` say here,
-// so a realm cannot borrow one without claiming something.
-export const REALM_TONE = { data: 'primary', api: 'info', ui: 'secondary' }
+// The one realm table (`FJS-D1697`): the console, the atlas, the website and
+// any drawing of the framework read a realm's color here. A realm is identity,
+// not status, so it never takes a bare `success`, `warning` or `danger` — a red
+// Deploy would read as broken. Seven tones cannot give eight realms eight hues,
+// and in the default theme primary and info are both blue and secondary is ink,
+// so a realm is a MIX of tone tokens, chosen so all eight stay apart in the
+// default theme (oklab distance ≥ 0.12). A theme where two collide names them
+// outright as `--realm-<id>`, which is what the atlas's `theme-field` does.
+export const REALM_ACCENT = {
+  data:    'var(--color-primary)',
+  api:     'var(--color-info)',
+  ui:      'color-mix(in oklab, var(--color-muted) 30%, var(--color-success))',
+  testing: 'color-mix(in oklab, var(--color-secondary) 50%, var(--color-muted))',
+  tooling: 'color-mix(in oklab, var(--color-success) 30%, var(--color-warning))',
+  deploy:  'color-mix(in oklab, var(--color-primary) 30%, var(--color-danger))',
+  app:     'var(--color-secondary)',
+  cross:   'var(--color-muted)',
+}
+
+// A default that is another token is a use-site fallback, never a `:root`
+// declaration — declared once at the root it resolves there and no theme
+// below reaches it.
+export const realmColor = (realm) => `var(--realm-${realm}, ${REALM_ACCENT[realm] ?? 'var(--color-muted)'})`
+
+/** The tone machinery reads `--bg-mix`, so a realm tints a card, pill or button the way a tone does. */
+export const realmStyle = (realm) => `--bg-mix: ${realmColor(realm)}`
+
+/** One `<prefix><realm>{--realm:…}` rule per realm, for a page that styles from its own sheet. */
+export const realmCss = (prefix) =>
+  Object.keys(REALM_ACCENT).map(realm => `${prefix}${realm}{--realm:${realmColor(realm)}}\n`).join('')
 
 // ─── The model ────────────────────────────────────────────────────────────────
 //

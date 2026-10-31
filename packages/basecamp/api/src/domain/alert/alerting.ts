@@ -15,7 +15,7 @@
 // breach* for a series nobody is writing is the silence the store was built to
 // break.
 
-import type { ComparisonOp } from '../../../../db/schema.d.ts'
+import type { ComparisonOp } from '#db/schema.d.ts'
 
 /** One reading. `at` is epoch ms — `MetricPoint.at`'s own units. */
 export interface Reading { at: number; value: number }

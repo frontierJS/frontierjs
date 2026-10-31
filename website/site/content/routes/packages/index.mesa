@@ -22,7 +22,7 @@ render: static
       {#each pkgs as p}
         <li>
           <a href={p.href}><strong>{p.name}</strong></a>
-          <span class="badge {p.tone}">{p.realm}</span>
+          <span class="badge" style={p.accent}>{p.realm}</span>
           <p>{p.pitch}</p>
         </li>
       {/each}

@@ -277,7 +277,9 @@ describe('account — the password, asked again, is bounded per account', () => 
     expect((await as(reader, 'reauthenticate', { password: PW })).status).toBe(200)
 
     scoped.cleanup()
-  })
+  // Eight bcrypt verifies at cost 12 are ~4s on an idle machine, so bun's 5s
+  // default fails it whenever another suite shares the cores.
+  }, 15_000)
 })
 
 // ─── sessions ─────────────────────────────────────────────────────────────

@@ -61,7 +61,7 @@ import { basecampGateLevel }       from './gate.ts'
 // server: `Secret.data` is @encrypted and core/credentials.ts reads it through
 // asSystem(), so the client-audience file — which strips protected columns —
 // would type a real read as an error.
-import type { LitestoneClient } from '../../../db/schema.d.ts'
+import type { LitestoneClient } from '#db/schema.d.ts'
 
 // The generated file registers this interface as what `createClient()` answers,
 // so no call site here or downstream casts.

@@ -16,6 +16,15 @@ import { readFile, readdir } from 'node:fs/promises'
 import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { range } from './pin.js'
+import { realmStyle } from '@frontierjs/cli/console/map-model.js'
+
+// A realm label is written for people (`API · Jobs`, `Ops · Fleet`); its color
+// is the one realm table's (`FJS-D1697`), keyed by the label's first word.
+const REALM_KEY = {
+  Data: 'data', API: 'api', UI: 'ui', Testing: 'testing', Tooling: 'tooling',
+  Substrate: 'cross', Control: 'deploy', Ops: 'deploy',
+}
+export const realmStyleFor = (label) => realmStyle(REALM_KEY[label.split(/[\s·]/)[0]] ?? 'cross')
 
 const HERE     = dirname(fileURLToPath(import.meta.url))
 const SOURCE   = resolve(HERE, '../../../packages.js')

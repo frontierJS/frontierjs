@@ -17,7 +17,7 @@ import { hubApp, isHubApp } from '../host/host-machine.ts'
 import appBackupRun         from '../../jobs/app-backup-run.job.ts'
 import appDrillRun          from '../../jobs/app-drill-run.job.ts'
 import type { App }         from '@frontierjs/junction'
-import type { App as AppRow, Job } from '../../../../db/schema.d.ts'
+import type { App as AppRow, Job } from '#db/schema.d.ts'
 
 /**
  * The caravan registration name for a job's schedule.

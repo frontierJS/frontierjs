@@ -17,7 +17,7 @@
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
   import { REF } from './map-reference.js'
-  import { REALM_TONE, bands, liveHooksFor } from './map-model.js'
+  import { realmStyle, bands, liveHooksFor } from './map-model.js'
 
   export let model   // buildModel()'s
 
@@ -74,14 +74,14 @@
   <span class="node-slot">
     {#each tagsAt(model, n.id) as p (p.id)}
       <button
-        class={`node-tag pill text-xs ${REALM_TONE[n.realm]}`}
+        class="node-tag pill text-xs" style={realmStyle(n.realm)}
         title={p.label}
         aria-pressed={pressed(selected, 'package', p.id)}
         onclick={() => select('package', p.id)}
       >{p.short}</button>
     {/each}
     <button
-      class={`gui-node ${REALM_TONE[n.realm]}`}
+      class="gui-node" style={realmStyle(n.realm)}
       data-node={n.id}
       aria-pressed={pressed(selected, 'node', n.id)}
       onclick={() => select('node', n.id)}
@@ -93,7 +93,7 @@
   <div class="chain-lane">
     {#each groups as b, gi (gi)}
       {#if gi}<span class="flow" aria-hidden="true"> {arrow} </span>{/if}
-      <span class={`realm-band ${REALM_TONE[b.realm]}`}>
+      <span class="realm-band" style={realmStyle(b.realm)}>
         {#each b.nodes as n, ni (n.id)}
           {#if ni}<span class="flow" aria-hidden="true"> {arrow} </span>{/if}
           {@render nodeSlot(n)}
@@ -117,20 +117,20 @@
   </div>
 
   <div class="chain">
-    <div class={`chain-rail ${REALM_TONE.data}`} style="grid-area: 1 / 1">{@render elbow('top-left')}</div>
+    <div class="chain-rail" style={`grid-area: 1 / 1; ${realmStyle('data')}`}>{@render elbow('top-left')}</div>
     <div style="grid-area: 1 / 2 / 2 / 5"><span class="text-xs text-muted">result →</span> {@render run(OUT, '→')}</div>
-    <div class={`chain-rail ${REALM_TONE.ui}`} style="grid-area: 1 / 5">{@render elbow('top-right')}</div>
+    <div class="chain-rail" style={`grid-area: 1 / 5; ${realmStyle('ui')}`}>{@render elbow('top-right')}</div>
 
-    <div class={`spine ${REALM_TONE.data}`} style="grid-area: 2 / 1 / 3 / 3">
+    <div class="spine" style={`grid-area: 2 / 1 / 3 / 3; ${realmStyle('data')}`}>
       <span class="text-xs text-muted">data realm</span>
       {#each lane('mid') as n (n.id)}{@render nodeSlot(n)}{/each}
     </div>
     <div class="realms" style="grid-area: 2 / 3">
       {#each REF.CHAIN_DATA.realms as r (r.id)}
-        <article class={`card realm ${REALM_TONE[r.realm]}`} data-realm={r.id}>
+        <article class="card realm" style={realmStyle(r.realm)} data-realm={r.id}>
           <div class="bar dense">
             <button
-              class={`btn link ${REALM_TONE[r.realm]}`}
+              class="btn link" style={realmStyle(r.realm)}
               aria-pressed={pressed(selected, 'realm', r.id)}
               onclick={() => select('realm', r.id)}
             ><strong>{r.label}</strong></button>
@@ -151,18 +151,18 @@
         </article>
       {/each}
     </div>
-    <div class={`spine ${REALM_TONE.ui}`} style="grid-area: 2 / 4 / 3 / 6">
+    <div class="spine" style={`grid-area: 2 / 4 / 3 / 6; ${realmStyle('ui')}`}>
       <span class="text-xs text-muted">ui realm</span>
       {#each lane('ui') as n (n.id)}{@render nodeSlot(n)}{/each}
     </div>
 
-    <div class={`chain-rail ${REALM_TONE.data}`} style="grid-area: 3 / 1">{@render elbow('bottom-left')}</div>
+    <div class="chain-rail" style={`grid-area: 3 / 1; ${realmStyle('data')}`}>{@render elbow('bottom-left')}</div>
     <div style="grid-area: 3 / 2 / 4 / 5"><span class="text-xs text-muted">← request</span> {@render run(IN, '←')}</div>
-    <div class={`chain-rail ${REALM_TONE.ui}`} style="grid-area: 3 / 5">{@render elbow('bottom-right')}</div>
+    <div class="chain-rail" style={`grid-area: 3 / 5; ${realmStyle('ui')}`}>{@render elbow('bottom-right')}</div>
   </div>
 
   {#if node}
-    <article class={`card stack gap-sm ${REALM_TONE[node.realm]}`} data-detail="node">
+    <article class="card stack gap-sm" style={realmStyle(node.realm)} data-detail="node">
       <div class="bar dense">
         <strong>{ref?.title ?? node.label}</strong>
         <Badge size="xs">{node.realm} realm</Badge>
@@ -193,7 +193,7 @@
   {/if}
 
   {#if realm && !noun}
-    <article class={`card stack gap-sm ${REALM_TONE[realm.realm]}`} data-detail="realm">
+    <article class="card stack gap-sm" style={realmStyle(realm.realm)} data-detail="realm">
       <div class="bar dense">
         <strong>{realm.label}</strong>
         <Badge size="xs">{realm.realm} realm</Badge>
@@ -205,7 +205,7 @@
   {/if}
 
   {#if noun?.it}
-    <article class={`card stack gap-sm ${REALM_TONE[realm.realm]}`} data-detail={noun.kind}>
+    <article class="card stack gap-sm" style={realmStyle(realm.realm)} data-detail={noun.kind}>
       <div class="bar dense">
         <strong>{noun.kind} {noun.it.name}</strong>
         {#if noun.kind === 'model'}
@@ -267,8 +267,8 @@
   /*
    * Five columns and three rows, which is the picture: the two lanes across
    * the top and bottom, the data spine and the UI spine down the sides, the
-   * three realms between them. No color is written here: a realm carries a
-   * tone and the tone carries the color.
+   * three realms between them. No color is written here: a realm's color
+   * arrives as --bg-mix from realmStyle(), the table every surface reads.
    */
   .chain {
     display:               grid;

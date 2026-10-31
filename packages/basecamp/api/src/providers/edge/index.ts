@@ -15,7 +15,7 @@
 // changes live DNS, which is the same accident as a machine made by mistake.
 
 import type { TargetDescriptor }  from '@frontierjs/conduit'
-import type { ProviderKind }      from '../../../../db/schema.d.ts'
+import type { ProviderKind }      from '#db/schema.d.ts'
 import type { AccountSend }       from '../compute/index.ts'
 import { FLEET }                  from '../compute/index.ts'
 import { cloudflare }             from './cloudflare.ts'

@@ -16,7 +16,7 @@
 // real repository's hooks.
 
 import type { TargetDescriptor }  from '@frontierjs/conduit'
-import type { ProviderKind }      from '../../../../db/schema.d.ts'
+import type { ProviderKind }      from '#db/schema.d.ts'
 import type { AccountSend }       from '../compute/index.ts'
 import { github }                 from './github.ts'
 

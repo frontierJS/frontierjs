@@ -42,7 +42,7 @@ import { keyUnder }                                  from '../providers/storage/
 import { objectPath, presign }                       from '../providers/storage/s3.ts'
 import { refuseHubVolume }                           from '../domain/host/host-machine.ts'
 import type { App }                                  from '@frontierjs/junction'
-import type { App as AppRow, AppBackup, BackupDestination, BackupKind } from '../../../db/schema.d.ts'
+import type { App as AppRow, AppBackup, BackupDestination, BackupKind } from '#db/schema.d.ts'
 
 /** Outpost's tar is bounded at an hour; this outlasts it by a minute, as the
  *  volume restore does, so a slow archive reads as slow rather than as failed. */

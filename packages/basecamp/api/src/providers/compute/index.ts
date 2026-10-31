@@ -18,7 +18,7 @@
 // built and every caller goes through it.
 
 import type { TargetDescriptor } from '@frontierjs/conduit'
-import type { ComputeProvider, ProviderKind } from '../../../../db/schema.d.ts'
+import type { ComputeProvider, ProviderKind } from '#db/schema.d.ts'
 import { digitalOcean }          from './digitalocean.ts'
 import { hetzner }               from './hetzner.ts'
 

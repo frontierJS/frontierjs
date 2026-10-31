@@ -26,7 +26,7 @@ import { edgeConnectorFor }          from '../edge/index.ts'
 import { sourceConnectorFor }        from '../source/index.ts'
 import type { AccountSend, ComputeConnector } from './index.ts'
 import type { App }                  from '@frontierjs/junction'
-import type { ProviderKind }         from '../../../../db/schema.d.ts'
+import type { ProviderKind }         from '#db/schema.d.ts'
 
 /** The key a provider token is stored under inside `Secret.data`. One name,
  *  three readers — the write, the ref, and the check that a row is usable. */
