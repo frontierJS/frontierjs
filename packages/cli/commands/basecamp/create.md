@@ -124,7 +124,7 @@ token is still asked for, since it has no default.
 A second run refuses while a box made by an earlier one is still at the
 account with nothing installed on it, so a retry never buys two. Once Basecamp
 answers, the install marks the box as Basecamp's host, which a later create
-passes over. `fli server` shows it, and `fli server:stop <id>` then `fli server:destroy <id>` removes it. The box half alone is `fli server:create`; this is that and `fli basecamp:install` in one run.
+passes over; it passes over a box `fli deploy:setup` readied an app on too. `fli server` shows it, and `fli server:stop <id>` then `fli server:destroy <id>` removes it. The box half alone is `fli server:create`; this is that and `fli basecamp:install` in one run.
 
 ```js
 const key = await publicKey(flag.key)

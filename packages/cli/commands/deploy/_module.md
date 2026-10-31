@@ -215,7 +215,7 @@ const ADDRESS_KEYS = ['server', 'user']
 // a command without `confirm: human` may not bill a cloud account on a `y` —
 // so the refusal names the two commands and, with no cloud token stored, where
 // one comes from.
-const { CLOUDS, storedClouds } = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
+const { CLOUDS, storedClouds, boxAddress, markApp } = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
 const noServerHint = (deployConf) => {
   const name  = appIdOf(deployConf) ?? '<name>'
   const lines = [`No box yet? fli server:create --name ${name} buys one, then fli deploy:setup --server ${name} --auto-install readies it`]

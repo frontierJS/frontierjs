@@ -123,6 +123,17 @@ export const markHost = async ({ ip, cloud, id, log }) => {
   if (done.error) unmarked(done.error)
 }
 
+// The app mark, once `fli deploy:setup` readied an app on the box. Without it
+// the box reads as bare, and `fli basecamp:create` refuses while it is there.
+export const markApp = async ({ ip, log }) => {
+  const unmarked = (why) => log.warn(`  Not marked as an app box at its cloud: ${why}. fli server reads it as bare until a rerun of fli deploy:setup marks it`)
+  const found = await boxAt(ip)
+  if (found.error) return unmarked(found.error)
+  if (!found.box) return
+  const done = await runProvision({ cloud: found.box.cloud, action: 'app', id: String(found.box.id) })
+  if (done.error) unmarked(done.error)
+}
+
 // The server mark, once the box is a fleet machine: the Server row's id, the
 // mark a box Basecamp bought itself carries from birth. Without it the box
 // reads as bare, and `fli server:destroy` would take a machine the fleet runs on.
@@ -316,8 +327,8 @@ ${block.replace(/^(?=.)/gm, '  ')}`
 
 // ─── The list ────────────────────────────────────────────────────────────────
 // One row of `fli server`, and of the pick `server:stop` and `server:destroy`
-// offer with no id. A box with no server id and no host mark is bare: bought
-// and nothing on it yet. Each column is padded before it is painted: an escape
+// offer with no id. A box with no server id, no host mark and no app mark is
+// bare: bought and nothing on it yet. Each column is padded before it is painted: an escape
 // code counts toward padEnd. `chalk` is handed in, since a module script does
 // not see `$`.
 const STATUS_TONE = { running: 'green', off: 'gray', starting: 'yellow', deleting: 'red' }
@@ -338,6 +349,7 @@ export const machineLine = (m, chalk) => {
   const ip     = m.ip ? chalk.cyan(m.ip.padEnd(15)) : chalk.dim('no address yet')
   const role   = m.serverId ? chalk`📡 {magenta fleet machine} {dim · server ${m.serverId} · destroy it in Basecamp}`
     : m.basecampHost ? chalk`⛺ {bold.green Basecamp host}`
+    : m.app ? chalk`🚀 {blue app box} {dim · fli outpost:install enrolls it in a fleet}`
     : chalk`📦 {yellow bare} {dim · deploy an app to it, fli outpost:install, or fli basecamp:install}`
   const host   = m.host ? chalk`  {cyan https://${m.host}}` : ''
   const name   = chalk.bold((m.name ?? '-').padEnd(14))

@@ -32,7 +32,9 @@ steps: _steps-setup
 
 Checks the target server for all requirements and walks through
 installing what's missing. Writes this app's Caddy routes and creates the
-directory structure needed for fli deploy.
+directory structure needed for fli deploy. A box `fli server:create` bought is
+then marked as an app's at its cloud, so `fli server` reads it as an app box
+and `fli basecamp:create` no longer counts it as one left behind.
 
 ```js
 const head = await deployTargetFor($, flag, log, { why: 'add one with server, user and path before running setup' })

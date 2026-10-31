@@ -111,6 +111,7 @@ const STATES: Record<string, MachineState> = {
 
 const identityTag = (mark: MachineMark) => `${mark.fleet}:server:${mark.serverId}`
 const hostTag     = (fleet: string) => `${fleet}:host`
+const appTag      = (fleet: string) => `${fleet}:app`
 
 /** What a create applies. The fleet tag always, since a sweep selects on it
  *  and a lookup on the narrower one, and DO's filter is a single exact value. */
@@ -118,11 +119,13 @@ const markTags = (mark: MachineMark): string[] => [
   mark.fleet,
   ...(mark.serverId ? [identityTag(mark)] : []),
   ...(mark.basecampHost ? [hostTag(mark.fleet)] : []),
+  ...(mark.app ? [appTag(mark.fleet)] : []),
 ]
 
 /** Which single tag answers this mark. */
 const selectorTag = (mark: MachineMark): string =>
-  mark.serverId ? identityTag(mark) : mark.basecampHost ? hostTag(mark.fleet) : mark.fleet
+  mark.serverId ? identityTag(mark) : mark.basecampHost ? hostTag(mark.fleet)
+  : mark.app ? appTag(mark.fleet) : mark.fleet
 
 const tagsOf = (droplet: Row): string[] =>
   Array.isArray(droplet.tags) ? (droplet.tags as unknown[]).map(str) : []
@@ -336,6 +339,7 @@ export const digitalOcean: ComputeConnector = {
       name:             str(droplet.name) || null,
       serverId:         markedServer(droplet),
       basecampHost:     tagsOf(droplet).includes(hostTag(FLEET)),
+      app:              tagsOf(droplet).includes(appTag(FLEET)),
       createdAt:        str(droplet.created_at) || null,
     }
   },
@@ -429,6 +433,7 @@ export const digitalOcean: ComputeConnector = {
       name:             str(d.name) || null,
       serverId:         markedServer(d),
       basecampHost:     tagsOf(d).includes(hostTag(FLEET)),
+      app:              tagsOf(d).includes(appTag(FLEET)),
       createdAt:        str(d.created_at) || null,
     })).filter(m => m.providerServerId)
   },

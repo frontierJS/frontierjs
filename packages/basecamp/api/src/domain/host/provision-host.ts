@@ -9,6 +9,7 @@
 //   <KIND>_TOKEN=… bun api/src/domain/host/provision-host.ts '{"cloud":"<kind>","action":"destroy","id":"123"}'
 //   <KIND>_TOKEN=… bun api/src/domain/host/provision-host.ts '{"cloud":"<kind>","action":"list"}'
 //   <KIND>_TOKEN=… bun api/src/domain/host/provision-host.ts '{"cloud":"<kind>","action":"host","id":"123"}'
+//   <KIND>_TOKEN=… bun api/src/domain/host/provision-host.ts '{"cloud":"<kind>","action":"app","id":"123"}'
 //   <KIND>_TOKEN=… bun api/src/domain/host/provision-host.ts '{"cloud":"<kind>","action":"server","id":"123","serverId":"…"}'
 //   <KIND>_TOKEN=… bun api/src/domain/host/provision-host.ts '{"cloud":"<kind>","action":"release","ip":"203.0.113.9"}'
 //
@@ -29,7 +30,9 @@
 // until a Server row names it, which is the truth: a box billing at this
 // account that no row describes. `host` adds the host mark once `fli
 // basecamp:install` has Basecamp running on it, which is what tells a working
-// Basecamp from a box an earlier create left behind.
+// Basecamp from a box an earlier create left behind. `app` adds the app mark
+// once `fli deploy:setup` readied an app on it, which tells the same about a
+// box that runs an app and not Basecamp.
 //
 // The last line of stdout is one JSON object, which is fli's whole contract:
 //   { id, name, ip, region, size, image, monthly }   created and up
@@ -37,8 +40,9 @@
 //   { id, name, pending: true, … }                    created, not up before the deadline
 //   { off: '<id>' }  { off: '<id>', pending: true }   powered off, or asked and not off yet
 //   { destroyed: '<id>', reservedIp }                 the address it held, unassigned now
-//   { machines: [{ id, name, status, ip, region, serverId, basecampHost, reservedIp }] }   every fleet-marked box
+//   { machines: [{ id, name, status, ip, region, serverId, basecampHost, app, reservedIp }] }   every fleet-marked box
 //   { host: '<id>' }                                  carries the host mark now
+//   { app: '<id>' }                                   carries the app mark now, or a fleet machine's
 //   { server: '<id>', serverId }                      carries its Server row's mark now
 //   { released: '<ip>' }
 //   { error: '<what>' }                               and the exit is non-zero
@@ -46,7 +50,7 @@
 // stderr is what the minute is spent on, for the person watching: fli lets it
 // through to the terminal untouched.
 
-import { connectorFor, fleetMark, hostMark, markFor, priceIn, sizeRegions } from '../../providers/compute/index.ts'
+import { appMark, connectorFor, fleetMark, hostMark, markFor, priceIn, sizeRegions } from '../../providers/compute/index.ts'
 import type { ComputeSize, ReservedIp } from '../../providers/compute/index.ts'
 import type { ProviderKind }  from '#db/schema.d.ts'
 import { bearerSend }         from './bearer-send.ts'
@@ -146,12 +150,12 @@ async function create() {
   const price  = priceIn(picked, region)
 
   // One Basecamp has one box, so a second `fli basecamp:create` must not buy a
-  // second: a fleet-marked box with no server id and no host mark is bare —
-  // this script made it and nothing was installed on it or claimed it. A fleet
-  // takes many, so `fli server:create` buys beside one.
+  // second: a fleet-marked box with no server id, no host mark and no app mark
+  // is bare — this script made it and nothing was installed on it or claimed
+  // it. A fleet takes many, so `fli server:create` buys beside one.
   if (input.sole) {
     step('Checking the account for a box an earlier run left behind')
-    const prior = (await connector.marked(send, fleetMark())).filter(m => !m.serverId && !m.basecampHost)
+    const prior = (await connector.marked(send, fleetMark())).filter(m => !m.serverId && !m.basecampHost && !m.app)
     if (prior.length)
       fail(`a bare box is still at this account: `
         + prior.map(m => `${m.providerServerId} (${m.ipAddress ?? 'no address yet'})`).join(', ')
@@ -278,7 +282,7 @@ async function list() {
   const held = await heldBy()
   const machines = (await connector.marked(send, fleetMark())).map(m => ({
     id: m.providerServerId, name: m.name, status: m.status, ip: m.ipAddress, region: m.region, serverId: m.serverId,
-    basecampHost: m.basecampHost, createdAt: m.createdAt,
+    basecampHost: m.basecampHost, app: m.app, createdAt: m.createdAt,
     reservedIp: held.get(m.providerServerId) ?? null,
   }))
   answer({ machines })
@@ -288,6 +292,16 @@ async function host() {
   const ours = await ownBox('it runs apps, not Basecamp; manage it')
   if (!ours.basecampHost) await connector.addMark(send, ours.providerServerId, hostMark())
   answer({ host: ours.providerServerId })
+}
+
+// A fleet machine is Basecamp's and in use already, so it is left as it is.
+async function app() {
+  const id = input.id
+  if (!id) fail('app needs id')
+  const ours = (await connector.marked(send, fleetMark())).find(m => m.providerServerId === id)
+  if (!ours) fail(`${id} is not a box fli server:create made (no fleet mark at this ${vendor} account)`)
+  if (!ours!.serverId && !ours!.app) await connector.addMark(send, ours!.providerServerId, appMark())
+  answer({ app: ours!.providerServerId })
 }
 
 // The mark a box Basecamp bought carries from birth, put on one it did not buy
@@ -325,6 +339,7 @@ try {
   else if (input.action === 'off')     await powerOff()
   else if (input.action === 'list')    await list()
   else if (input.action === 'host')    await host()
+  else if (input.action === 'app')     await app()
   else if (input.action === 'server')  await server()
   else if (input.action === 'release') await release()
   else fail(`unknown action '${input.action}'`)

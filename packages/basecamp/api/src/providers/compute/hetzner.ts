@@ -156,11 +156,15 @@ const serverKey = (mark: MachineMark) => `${mark.fleet}.server`
 /** Present, with an empty value, on a box Basecamp itself is installed on. */
 const hostKey = (fleet: string) => `${fleet}.host`
 
+/** Present, with an empty value, on a box `fli deploy:setup` readied an app on. */
+const appKey = (fleet: string) => `${fleet}.app`
+
 /** What a create applies. */
 const markLabels = (mark: MachineMark): Record<string, string> => ({
   [fleetKey(mark)]: '',
   ...(mark.serverId ? { [serverKey(mark)]: mark.serverId } : {}),
   ...(mark.basecampHost ? { [hostKey(mark.fleet)]: '' } : {}),
+  ...(mark.app ? { [appKey(mark.fleet)]: '' } : {}),
 })
 
 /**
@@ -172,6 +176,7 @@ const markLabels = (mark: MachineMark): Record<string, string> => ({
 const markSelector = (mark: MachineMark): string =>
   mark.serverId ? `${serverKey(mark)}==${mark.serverId}`
   : mark.basecampHost ? hostKey(mark.fleet)
+  : mark.app ? appKey(mark.fleet)
   : fleetKey(mark)
 
 /** The `Server` a machine says it is, read back off its labels. */
@@ -203,6 +208,7 @@ function toMachine(server: Row, fallbackId = ''): ComputeMachine {
     name:             str(server.name) || null,
     serverId:         markedServer(server),
     basecampHost:     hostKey(FLEET) in ((server.labels ?? {}) as Record<string, unknown>),
+    app:              appKey(FLEET) in ((server.labels ?? {}) as Record<string, unknown>),
     createdAt:        str(server.created) || null,
   }
 }

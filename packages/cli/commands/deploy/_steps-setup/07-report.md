@@ -9,8 +9,16 @@ const { host, serverPath, appId, edge, edgeWritten } = $.config
 log.success(`\nSetup complete for ${appId}`)
 echo('')
 // `fli basecamp:create` and `:install` point the DNS and deploy right after, so
-// a checklist telling the person to do both reads as work left undone.
+// a checklist telling the person to do both reads as work left undone. They
+// mark the box as Basecamp's host instead of an app's.
 if (!$.flag['next-steps']) return
+
+// A box that runs an app is in use: without the mark, fli basecamp:create
+// takes it for one an earlier run left behind and refuses to buy.
+if (!machineFor($, host, serverPath).local) {
+  const ip = await boxAddress(host)
+  if (ip) await markApp({ ip, log })
+}
 
 // ─── Checklist ────────────────────────────────────────────────────────────────
 echo('─── Next steps ──────────────────────────────────────────────────────')

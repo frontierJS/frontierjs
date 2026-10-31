@@ -120,9 +120,12 @@ export interface ComputeMachine {
    *  one carrying none was never ours. */
   serverId:         string | null
   /** Basecamp itself is installed on it — the mark `fli basecamp:install` adds.
-   *  Without it a fleet-marked box with no server id reads as one an earlier
-   *  `fli basecamp:create` left behind, and the next create refuses. */
+   *  Without it, or `app`, a fleet-marked box with no server id reads as one an
+   *  earlier `fli basecamp:create` left behind, and the next create refuses. */
   basecampHost:     boolean
+  /** An app was set up on it by `fli deploy:setup`, so it is in use, not
+   *  left behind. */
+  app:              boolean
   /** When the vendor made it, ISO 8601. Not when it last booted: neither
    *  vendor says that, so a box powered off and on keeps its first date. */
   createdAt:        string | null
@@ -347,6 +350,8 @@ export interface MachineMark {
   serverId?: string
   /** Basecamp itself runs on it. */
   basecampHost?: boolean
+  /** An app runs on it, deployed straight over ssh. */
+  app?: boolean
 }
 
 /** The fleet every machine here belongs to. One word, so a connector's spelling
@@ -366,4 +371,9 @@ export function fleetMark(): MachineMark {
 /** The mark a box carries once Basecamp is installed on it. */
 export function hostMark(): MachineMark {
   return { fleet: FLEET, basecampHost: true }
+}
+
+/** The mark a box carries once `fli deploy:setup` has readied an app on it. */
+export function appMark(): MachineMark {
+  return { fleet: FLEET, app: true }
 }

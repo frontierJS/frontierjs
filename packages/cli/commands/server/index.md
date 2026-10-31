@@ -19,7 +19,7 @@ examples:
 
 Every box carrying the `basecamp` mark, at every cloud whose token is stored.
 One with nothing on it reads `bare`; one Basecamp is installed on reads
-`Basecamp host`; one enrolled in a fleet names its server, because `fli
+`Basecamp host`; one `fli deploy:setup` readied an app on reads `app box`; one enrolled in a fleet names its server, because `fli
 server:destroy` refuses it — as it refuses any box whose status is not `off`.
 
 With a `CLOUDFLARE_TOKEN` each row ends in the hostname whose A record points
