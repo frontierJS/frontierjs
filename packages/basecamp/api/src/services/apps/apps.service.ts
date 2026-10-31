@@ -10,6 +10,7 @@
 //   logs           — what the container is saying, read through the executor
 //   analytics      — what traffic its route took, counted off the machine's access log
 //   liveCheck      — why it is not live: release, placement, then each hostname's zone, DNS and HTTPS
+//   retryLive      — Caddy reloaded on every machine serving it, so a certificate in backoff is asked for now
 //   restoreVolume  — an archive on the machine or a backup in a bucket, extracted into the app's data directory
 //   restoreReplica — the app's databases out of its Litestream replica, at an instant
 //   fromBlueprint  — an app made out of a catalog entry and its parameters
@@ -566,6 +567,41 @@ async function httpsRoot(hostname: string): Promise<HttpsAnswer> {
   }
 }
 
+/** The chain `liveCheck` answers and `retryLive` reruns. */
+async function liveCheckOf(target: { id: string }) {
+  const [release, addresses, ingress, domains] = await Promise.all([
+    db().deployment.findFirst({ where: { appId: target.id }, select: { status: true }, orderBy: { queuedAt: 'desc' } }),
+    servingAddresses($.app.db!, target.id),
+    ingressRefusal(),
+    db().domain.findMany({
+      where:   { appId: target.id },
+      select:  { hostname: true, redirectTo: true, proxied: true, isPrimary: true },
+      orderBy: { hostname: 'asc' },
+    }),
+  ])
+
+  return runLiveCheck({
+    release,
+    addresses,
+    ingress,
+    hosts: (domains as Array<{ hostname: string; redirectTo: string | null; proxied: boolean }>).map(d => ({
+      hostname:   d.hostname,
+      redirectTo: d.redirectTo,
+      proxied:    d.proxied,
+      dns:        () => publicLookup(d.hostname),
+      https:      () => httpsRoot(d.hostname),
+    })),
+  })
+}
+
+// A reload's certificate lands a few seconds after it; up to twenty seconds is
+// waited before the check is answered as it stands.
+const RETRY_LIVE_POLLS  = 4
+const RETRY_LIVE_GAP_MS = 5000
+
+const httpsFailing = (check: { hosts: { steps: { key: string; status: string }[] }[] }) =>
+  check.hosts.some(h => h.steps.some(s => s.key === 'https' && s.status === 'fail'))
+
 export default createService({
   name:  'apps',
   scope: keyScope('apps'),
@@ -580,6 +616,9 @@ export default createService({
     { method: 'analytics', read: true },
     // Asks the public internet about the App's hostnames; writes nothing.
     { method: 'liveCheck', read: true },
+    // Reloads Caddy on a machine, every App's front door there: an act, so a
+    // write scope, though it writes no row.
+    { method: 'retryLive', gate: LEVELS.USER },
     { method: 'fromBlueprint', input: 'AppFromBlueprint' },
     { method: 'place',   gate: LEVELS.USER, input: 'AppPlace' },
     { method: 'unplace', gate: LEVELS.USER, input: 'AppUnplace' },
@@ -799,31 +838,42 @@ export default createService({
   // so the lookups run only for an App the caller may see. Nothing is written,
   // so there is no audit event and no announcement.
   async liveCheck() {
-    const target = await getScoped('app', 'App')
+    return liveCheckOf(await getScoped('app', 'App'))
+  },
 
-    const [release, addresses, ingress, domains] = await Promise.all([
-      db().deployment.findFirst({ where: { appId: target.id }, select: { status: true }, orderBy: { queuedAt: 'desc' } }),
-      servingAddresses($.app.db!, target.id),
-      ingressRefusal(),
-      db().domain.findMany({
-        where:   { appId: target.id },
-        select:  { hostname: true, redirectTo: true, proxied: true, isPrimary: true },
-        orderBy: { hostname: 'asc' },
-      }),
-    ])
+  // ── retryLive — POST /apps/:id  X-Service-Method: retryLive ──────────
+  //
+  // "Try again now" for a hostname whose DNS was just fixed (`FJS-D1715`).
+  // Caddy waits out its own ACME backoff, up to twenty minutes between tries,
+  // and pushing the same route again changes nothing it would reload for.
+  // A forced reload on each serving machine starts the attempt at once; the
+  // check is then rerun until HTTPS answers or the wait is spent, since the
+  // certificate lands seconds after the reload rather than during it.
+  async retryLive() {
+    const target  = await getScoped('app', 'App')
+    const placed  = await db().appServer.findMany({ where: { appId: target.id, status: 'running' }, include: { server: true } }) as any[]
+    const servers = new Map<string, string>()
+    for (const p of placed) if (p.server?.status === 'online') servers.set(p.serverId, p.server.name ?? p.serverId)
+    if (!servers.size) throw new BadRequest(`App '${target.name}' runs on no online machine, so no Caddy holds its hostnames`)
 
-    return runLiveCheck({
-      release,
-      addresses,
-      ingress,
-      hosts: (domains as Array<{ hostname: string; redirectTo: string | null; proxied: boolean }>).map(d => ({
-        hostname:   d.hostname,
-        redirectTo: d.redirectTo,
-        proxied:    d.proxied,
-        dns:        () => publicLookup(d.hostname),
-        https:      () => httpsRoot(d.hostname),
-      })),
-    })
+    const reloaded: string[] = []
+    const failed: { server: string; error: string }[] = []
+    for (const [serverId, name] of servers) {
+      const executor = await executorOn($.app, serverId, name)
+      if (!isExecutor(executor)) { failed.push({ server: name, error: executor.reason }); continue }
+      const reply = await executor.call('/ingress/reload', {})
+      if (reply.error) failed.push({ server: name, error: reply.error.message })
+      else reloaded.push(name)
+    }
+    if (!reloaded.length)
+      throw new BadRequest(`Caddy was not reloaded: ${failed.map(f => `${f.server}: ${f.error}`).join('; ')}`)
+
+    let check = await liveCheckOf(target)
+    for (let i = 0; i < RETRY_LIVE_POLLS && httpsFailing(check); i++) {
+      await Bun.sleep(RETRY_LIVE_GAP_MS)
+      check = await liveCheckOf(target)
+    }
+    return { ...target, reloaded, failed, check }
   },
 
   // ── fromBlueprint — POST /apps  X-Service-Method: fromBlueprint ───

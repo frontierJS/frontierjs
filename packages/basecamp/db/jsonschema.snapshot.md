@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-168 definitions · 73 models · 1 view · 37 types · 57 enums · 0 other
+170 definitions · 75 models · 1 view · 37 types · 57 enums · 0 other
 ```
 
 ## Definitions
@@ -52,6 +52,8 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Server` | model |
 | `ServerEvent` | model |
 | `OutpostNonce` | model |
+| `ClaudeTranscript` | model |
+| `ClaudeMessage` | model |
 | `Volume` | model |
 | `Network` | model |
 | `ServerNetwork` | model |
@@ -684,7 +686,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
+| `name` | `string` | yes | — | `pattern: "^(?=.{1,253}$)[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"` `x-transforms` | `pattern` `regex` |
 | `kind` | `SecretKind` = `"generic"` | — | — | — | — |
 | `data` | `string` = `"{}"` | — | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
 | `verifiedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
@@ -788,6 +790,50 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `seenAt` | `string` | — | — | `format: "date-time"` | — |
 
 **On create**: required — `nonce`
+
+### `ClaudeTranscript`
+
+- gate `read:5 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `path` | `string` | yes | — | — | — |
+| `sessionId` | `string` | yes | — | — | — |
+| `cwd` | `string`? | — | — | — | — |
+| `subagent` | `boolean` = `false` | — | — | — | — |
+| `headless` | `boolean` = `false` | — | — | — | — |
+| `title` | `string`? | — | — | — | — |
+| `firstPrompt` | `string`? | — | — | — | — |
+| `offset` | `integer` = `0` | — | — | — | — |
+| `size` | `integer` = `0` | — | — | — | — |
+| `startedAt` | `string`? | — | — | `format: "date-time"` | — |
+| `lastAt` | `string`? | — | — | `format: "date-time"` | — |
+| `gone` | `boolean` = `false` | — | — | — | — |
+
+**On create**: required — `path`, `sessionId` · not accepted — `id`
+
+### `ClaudeMessage`
+
+- gate `read:5 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `messageId` | `string` | yes | — | — | — |
+| `sessionId` | `string` | yes | — | — | — |
+| `cwd` | `string`? | — | — | — | — |
+| `model` | `string` | yes | — | — | — |
+| `at` | `string` | yes | — | `format: "date-time"` | — |
+| `input` | `integer` | yes | — | — | — |
+| `cacheWrite` | `integer` | yes | — | — | — |
+| `cacheWrite1h` | `integer` = `0` | — | — | — | — |
+| `cacheRead` | `integer` | yes | — | — | — |
+| `output` | `integer` | yes | — | — | — |
+| `tools` | `string` = `""` | — | — | — | — |
+| `subagent` | `boolean` = `false` | — | — | — | — |
+
+**On create**: required — `messageId`, `sessionId`, `model`, `at`, `input`, `cacheWrite`, `cacheRead`, `output` · not accepted — `id`
 
 ### `Volume`
 

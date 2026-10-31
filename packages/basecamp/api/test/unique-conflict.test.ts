@@ -71,3 +71,16 @@ describe('a duplicate under a @@unique is a 409 in the app\'s words', () => {
     expect(err.data.map((f: any) => f.path[0])).toEqual(['projectId', 'slug'])
   })
 })
+
+describe('a secret another screen writes takes the next free name', () => {
+  test('two channels whose names slug alike each keep a credential', async () => {
+    const tag      = uniq()
+    const channels = () => env.as(owner).service('channels')
+    const config   = { url: 'https://hooks.example.test/x' }
+    const a = await channels().create({ name: `Pager ${tag}`, kind: 'webhook', config, secret: 'tok-a' })
+    const b = await channels().create({ name: `pager-${tag}`, kind: 'webhook', config, secret: 'tok-b' })
+    const names = await Promise.all([a, b].map(async c =>
+      (await (env.system as any).secret.findFirst({ where: { id: c.secretId } }))?.name))
+    expect(names).toEqual([`channel-pager-${tag}`, `channel-pager-${tag}-2`])
+  })
+})

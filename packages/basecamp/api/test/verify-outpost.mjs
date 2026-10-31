@@ -63,6 +63,12 @@ const IMAGE    = 'traefik/whoami:v1.10.3'
 const sh       = (...argv) => spawnSync(argv[0], argv.slice(1), { encoding: 'utf8' })
 const hadImage = sh('docker', 'image', 'inspect', IMAGE).status === 0
 let container  = null
+let routeId    = null
+// Apps this drive released. Their containers are found by the `fjs.app` label,
+// because the name spells slugs and an id's head, not the id.
+const owned    = []
+const named    = (id) => sh('docker', 'ps', '-a', '--filter', `label=fjs.app=${id}`, '--format', '{{.Names}}').stdout
+  .split('\n').filter(n => n && !n.endsWith('_replaced'))[0] ?? null
 let built      = []
 
 const ENV = {
@@ -190,7 +196,9 @@ async function cleanup() {
   caddy?.stop(true)
   await sleep(3000)
   for (const c of children) { try { process.kill(-c.pid, 'SIGKILL') } catch {} }
-  if (container) sh('docker', 'rm', '-f', container)
+  for (const id of owned)
+    for (const n of sh('docker', 'ps', '-a', '--filter', `label=fjs.app=${id}`, '--format', '{{.Names}}').stdout.split('\n').filter(Boolean))
+      sh('docker', 'rm', '-f', n)
   for (const [name, tag] of built) { sh('docker', 'rm', '-f', name); sh('docker', 'rmi', tag) }
   if (!hadImage) sh('docker', 'rmi', IMAGE)
   rmSync(OWN, { recursive: true, force: true })
@@ -330,13 +338,15 @@ try {
   } })
   if (!box?.id) throw new Error(`the app was not made: ${JSON.stringify(box)}`)
   await call('/variables', { ...auth, body: { appId: box.id, key: 'WHOAMI_NAME', value: name } })
-  container = `fjs-${box?.id}`
+  owned.push(box.id)
+  routeId = `fjs-${box.id}`
   await call(`/apps/${box?.id}`, { ...auth, serviceMethod: 'place', body: { serverId: first.serverId, replicaIndex: 0 } })
 
   const ran   = await released(box?.id, auth)
   const steps = ran?.steps ?? []
   if (ran?.status !== 'success')
     console.log(`\n${ran?.error ?? ''}\n${steps.map(s => `    ${s.status.padEnd(8)} ${s.name}  ${s.output ?? ''}`).join('\n')}\n`)
+  container = named(box.id)
   check('a container app releases through the real daemon', ran?.status === 'success')
   check('…recording the image its source names', ran?.toImage === IMAGE)
   check('…which a step PULLED', steps.some(s => /pull/i.test(s.name) && s.status === 'success'))
@@ -362,7 +372,7 @@ try {
   const releases  = (await call(`/deployments?appId=${box.id}`, auth))?.data?.length
   const hostname  = `${name}.example.test`
   const domain    = await call('/domains', { ...auth, body: { appId: box.id, hostname } })
-  const routeOf   = () => caddyRoutes().find(r => r['@id'] === container)
+  const routeOf   = () => caddyRoutes().find(r => r['@id'] === routeId)
   const routed    = await until(() => routeOf()?.match?.[0]?.host?.includes(hostname), 30_000)
   check('a Domain added after the release is routed on the machine with nobody pressing release', routed)
   check('…dialing the port the container published',
@@ -457,6 +467,7 @@ try {
     environmentId: environment?.id, name: `fli-${process.pid}`, slug: `fli-${process.pid}`, type: 'container',
     source: { kind: 'git', repo: 'https://git.invalid/nothing.git' },
   } })
+  owned.push(fliApp?.id)
   await call(`/apps/${fliApp?.id}`, { ...auth, serviceMethod: 'place', body: { serverId: first.serverId, replicaIndex: 0 } })
   const appDir = join(OWN, 'fli-app')
   // `db/schema.lite` is what fli reads as an app root; without one it walks up to basecamp's own.
@@ -479,7 +490,7 @@ try {
   check('…naming the image id as the release\'s bytes', !!madeId && fliRelease?.builtImage === madeId && fliRelease?.status === 'success')
   check('…and building nothing from the app\'s git source', steps2.length > 0 && !steps2.some(s => /build/i.test(s.name)))
   check('…the container runs those bytes',
-    !!madeId && sh('docker', 'inspect', '--format', '{{.Image}}', `fjs-${fliApp?.id}`).stdout.trim() === madeId)
+    !!madeId && sh('docker', 'inspect', '--format', '{{.Image}}', named(fliApp?.id) ?? '').stdout.trim() === madeId)
 } catch (err) {
   console.log(`\n  ✗ ${err.message}`)
   failed++

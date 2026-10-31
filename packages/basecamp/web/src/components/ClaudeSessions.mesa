@@ -1,0 +1,184 @@
+<script>
+  // Sessions per project, newest first, and one transcript folded into turns, on
+  // the Claude Code tab (api services/claude: sessions, transcript). The list is
+  // the usage index, so a session whose transcript Claude Code has deleted is
+  // still listed, marked *gone*, and its drawer says why there is no text.
+  import { at, ago } from '../lib/datetime.js'
+  import { count, usd, tokensOf, tilde } from '../lib/claude-format.js'
+  import { claude }  from '../resources/Claude.mesa'
+
+  import Badge    from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout  from '@frontierjs/ui/components/display/Callout.mesa'
+  import Drawer   from '@frontierjs/ui/components/overlay/Drawer.mesa'
+  import Markdown from '@frontierjs/ui/components/display/Markdown.mesa'
+  import Pill     from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select   from '@frontierjs/ui/components/forms/Select.mesa'
+  import Table    from '@frontierjs/ui/components/display/Table.mesa'
+
+  // [{ value: absolute path, label: shown path }] from the config scan, pins first.
+  export let projects = []
+  export let home     = ''
+
+  const COLUMNS = [
+    { name: 'title', label: 'Session' }, { name: 'startedAt', label: 'Started' }, { name: 'lastAt', label: 'Last activity' },
+    { name: 'messages', label: 'Messages', align: 'right' }, { name: 'tokens', label: 'Tokens', align: 'right' },
+    { name: 'cost', label: 'Est. cost', align: 'right' }, { name: 'subagents', label: 'Subagents', align: 'right' },
+  ]
+
+  let cwd     = ''
+  let result  = null
+  let error   = null
+  let groups  = []
+
+  const options = [{ value: '', label: 'All projects' }, ...projects.map(p => ({ value: p.value, label: p.label }))]
+
+  let asked = 0
+  async function load(path) {
+    const n = ++asked
+    try {
+      const r = await claude.service.invoke('sessions', null, path ? { cwd: path } : {})
+      if (n === asked) { result = r; error = null }
+    } catch (err) {
+      if (n === asked) error = err.message
+    }
+  }
+  $: { load(cwd) }
+
+  const titleOf = (s) => (s.title || s.firstPrompt || s.sessionId).replace(/\s+/g, ' ').trim()
+  const clip    = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
+  $: {
+    groups = result
+      ? result.projects.map(p => ({
+          cwd: p.cwd, label: p.cwd ? tilde(p.cwd, home) : '(no project)',
+          rows: p.sessions.map(s => ({ ...s, shown: clip(titleOf(s), 110), tokens: tokensOf(s) })),
+        }))
+      : []
+  }
+
+  // ─── transcript drawer ───────────────────────────────────────────────────────
+
+  let drawer = false
+  let picked = null        // the session row
+  let folded = null        // Folded
+  let foldedError = null
+  let reading = 0
+
+  async function open(row) {
+    const n = ++reading
+    picked = row
+    drawer = true
+    folded = null
+    foldedError = null
+    try {
+      const f = await claude.service.invoke('transcript', null, { sessionId: row.sessionId })
+      // A slow answer for a drawer since closed or swapped must not land in the new one.
+      if (n === reading) folded = f
+    } catch (err) {
+      if (n === reading) foldedError = err.message
+    }
+  }
+  const close = () => { drawer = false; reading++ }
+
+  // A /clear or other slash command echoes as a "prompt"; it is not something the person wrote.
+  const isCommand = (turn) => turn.prompt.text.trimStart().startsWith('<command-name>')
+  const resultOf  = (t) => (t.result === null ? { tone: '', word: 'no result' } : t.result.ok ? { tone: 'success', word: 'ok' } : { tone: 'danger', word: 'error' })
+  const tokenLine = (k) => `${count(k.input)} in, ${count(k.cacheCreation)} cache write, ${count(k.cacheRead)} cache read, ${count(k.output)} out`
+</script>
+
+<div class="stack" id="claude-sessions">
+  <Select id="claude-sessions-project" name="sessions-project" label="" placeholder="" aria-label="Project"
+          options={options} value={cwd} onchange={(e) => { cwd = e.target.value }} />
+
+  {#if error && !result}
+    <Callout tone="danger" title="Could not read the sessions">{error}</Callout>
+  {:else if !result}
+    <p class="text-sm text-muted">Reading…</p>
+  {:else}
+    {#if error}<Callout tone="warning" title="Refresh failed, showing the last read">{error}</Callout>{/if}
+    {#each groups as g}
+      <h3><code class="wrap">{g.label}</code> <span class="text-sm text-muted">{g.rows.length} {g.rows.length === 1 ? 'session' : 'sessions'}</span></h3>
+      <Table id={`claude-sessions-${g.cwd ? 'project' : 'none'}`} class="claude-session-table" columns={COLUMNS} rows={g.rows} compact striped hover={false} emptyText="No sessions">
+        {#snippet row(s)}
+          <tr data-session={s.sessionId}>
+            <td>
+              <Button treatment="link" size="sm" onclick={() => open(s)}>{s.shown}</Button>
+              {#if s.gone}<Badge tone="warning" title="Claude Code has deleted this transcript; its spend is still counted">gone</Badge>{/if}
+            </td>
+            <td class="text-sm" title={at(s.startedAt)}>{s.startedAt ? at(s.startedAt) : '—'}</td>
+            <td class="text-sm text-muted" title={at(s.lastAt)}>{ago(s.lastAt)}</td>
+            <td class="text-right">{count(s.messages)}</td>
+            <td class="text-right">{count(s.tokens)}</td>
+            <td class="text-right">{usd(s.cost)}</td>
+            <td class="text-right">{s.subagents || '—'}</td>
+          </tr>
+        {/snippet}
+      </Table>
+    {:else}
+      <p class="text-sm text-muted" id="claude-sessions-empty">No sessions are indexed{cwd ? ' for this project' : ''} yet.</p>
+    {/each}
+    <p class="text-sm text-muted">
+      {#if result.indexedAt}Indexed {ago(result.indexedAt)}.{:else}The index has not run yet; the job runs every 5 minutes.{/if}
+      Costs are estimated at list price, read {result.pricing.readOn}.
+    </p>
+  {/if}
+
+  <Drawer open={drawer} onclose={close} resizable width={760} title={picked ? clip(titleOf(picked), 80) : ''}>
+    {#if picked}
+      <dl class="facts" id="claude-transcript-facts">
+        <dt>Session</dt><dd><code>{picked.sessionId}</code>{#if picked.gone} <Badge tone="warning">gone</Badge>{/if}</dd>
+        <dt>Started</dt><dd>{at(picked.startedAt)}</dd>
+        <dt>Spend</dt><dd>{count(picked.tokens)} tokens, {usd(picked.cost)} estimated</dd>
+      </dl>
+    {/if}
+    {#if foldedError}
+      <div id="claude-transcript-error"><Callout tone="warning" title="No transcript to show">{foldedError}</Callout></div>
+    {:else if !folded}
+      <p class="text-sm text-muted">Reading…</p>
+    {:else}
+      <p class="text-sm text-muted" id="claude-transcript-count">{folded.turns.length} {folded.turns.length === 1 ? 'turn' : 'turns'}{#if folded.cwd}, in <code class="wrap">{tilde(folded.cwd, home)}</code>{/if}</p>
+      <div class="stack" id="claude-transcript">
+        {#each folded.turns as turn (turn.index)}
+          <article class="turn" data-turn={turn.index}>
+            <header class="cluster text-sm text-muted">
+              <strong>Turn {turn.index + 1}</strong>
+              <span>{turn.at ? at(turn.at) : ''}</span>
+              {#each turn.models as m}<Badge>{m}</Badge>{/each}
+              <span>{tokenLine(turn.tokens)}</span>
+            </header>
+            {#if isCommand(turn)}
+              <details class="prompt"><summary class="text-sm">Command echo</summary><pre class="prompt-text">{turn.prompt.text}</pre></details>
+            {:else}
+              <div class="prompt"><pre class="prompt-text">{turn.prompt.text}</pre>
+                {#if turn.prompt.truncated}<span class="text-sm text-muted">cut, {count(turn.prompt.chars)} characters in all</span>{/if}
+              </div>
+            {/if}
+            {#each turn.replies as r}
+              <div class="reply"><Markdown text={r.text} headingBase={5} />
+                {#if r.truncated}<span class="text-sm text-muted">cut, {count(r.chars)} characters in all</span>{/if}
+              </div>
+            {/each}
+            {#if turn.tools.length}
+              <ul class="tools plain">
+                {#each turn.tools as t (t.id)}
+                  {@const res = resultOf(t)}
+                  <li class="cluster"><Badge>{t.name}</Badge> <span class="text-sm wrap">{t.summary}</span> <Pill tone={res.tone} size="xs">{res.word}</Pill></li>
+                {/each}
+              </ul>
+            {/if}
+          </article>
+        {/each}
+      </div>
+    {/if}
+  </Drawer>
+</div>
+
+<style>
+  .wrap { overflow-wrap: anywhere; }
+  .plain { list-style: none; padding: 0; margin: 0; }
+  .turn { border: var(--border-width) solid var(--rule); padding: var(--space-sm); display: grid; gap: var(--space-xs); }
+  .prompt-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+  .prompt { border-inline-start: var(--border-width) solid var(--rule-strong); padding-inline-start: var(--space-xs); }
+  .reply { overflow-wrap: anywhere; }
+  .tools { display: grid; gap: var(--space-3xs); }
+</style>

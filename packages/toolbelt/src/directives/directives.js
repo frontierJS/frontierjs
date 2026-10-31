@@ -440,17 +440,22 @@ export function orderByValue(key, dir = 'asc') {
 }
 
 /**
- * One bag of parameters → the two things it was carrying.
+ * One bag of parameters → everything a boundary needs from it, in one call.
  *
  * `query` is the filters, with every `$` key removed but the combinators — a
  * directive left in it is a WHERE clause on a column that does not exist.
- * `directives` is the structured form and never contains a `$`.
+ * `directives` is the structured form and never contains a `$`. `flags` is
+ * `$first` / `$wrap`, and `unknown`, `listed` and `invalid` are what a boundary
+ * refuses (`FJS-D237`) — reported here so a request is graded off the bag it
+ * was split from, rather than walked once per question (`FJS-3749`).
  *
  * @param {Record<string, unknown>} params
- * @returns {{ query: Record<string, unknown>, directives: object }}
+ * @returns {{ query: Record<string, unknown>, directives: object, flags: { first?: boolean, wrap?: boolean },
+ *             unknown: string[], listed: string[], invalid: string[] }}
  */
 export function splitParams(params) {
   const query = {}
+  let dollar = false
   if (params && typeof params === 'object') {
     // Own keys, and defined rather than assigned. A WS frame's query bag is
     // `JSON.parse`d, so `__proto__` arrives as an OWN key — `query[k] = v`
@@ -459,15 +464,29 @@ export function splitParams(params) {
     // see one way and a property read sees another. `for...in` compounds it by
     // enumerating what a previous pass put there (`FJS-996`).
     for (const k of Object.keys(params)) {
-      // Two conditions, and the prefix is the one that holds the invariant.
-      // Asking only whether the name is a KNOWN directive let every other `$`
-      // key through — `$nope`, `$$limit`, a misspelled `$limitt` — each landing
-      // in the filters as a WHERE on a column that cannot exist, which is the
-      // consequence this function's own contract names (FJS-988). The
-      // recognized names were removed correctly, so nothing failed.
-      if ((k.startsWith('$') && !COMBINATORS.includes(k)) || RESERVED_PARAMS.has(k)) continue
+      // The prefix, not the known names, is what holds the invariant. Asking
+      // only whether the name is a KNOWN directive let every other `$` key
+      // through — `$nope`, `$$limit`, a misspelled `$limitt` — each landing in
+      // the filters as a WHERE on a column that cannot exist (FJS-988).
+      // Every name RESERVED_PARAMS holds starts with `$`.
+      if (k[0] === '$') {
+        dollar = true
+        if (!COMBINATORS.includes(k)) continue
+      }
       Object.defineProperty(query, k, { value: params[k], writable: true, enumerable: true, configurable: true })
     }
   }
-  return { query, directives: parseDirectives(params) }
+  if (!dollar) return { query, directives: {}, flags: {}, unknown: NONE, listed: NONE, invalid: NONE }
+
+  const { invalid: badFlags, ...flags } = transportFlags(params)
+  return {
+    query,
+    directives: parseDirectives(params),
+    flags,
+    unknown:    unknownDirectives(params),
+    listed:     listedDirectives(params),
+    invalid:    [...invalidDirectives(params), ...badFlags],
+  }
 }
+
+const NONE = Object.freeze([])

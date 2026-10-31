@@ -16,7 +16,7 @@ import type { App }                           from './app.ts'
 import { CALL_OPTIONS_AT }                    from './app.ts'
 import { toFrameworkError }                   from './errors.ts'
 import { reenterAs }                          from './context.ts'
-import { splitParams, unknownDirectives }     from '@frontierjs/toolbelt/directives'
+import { splitParams }                        from '@frontierjs/toolbelt/directives'
 
 export interface CallRequest {
   /** `<service>.<method>`, a CRUD verb or a custom method. */
@@ -104,9 +104,8 @@ export async function callAs(
   // a column that does not exist.
   const opts: Record<string, unknown> = {}
   if (!custom && isBag(positional[0]) && methodName !== 'create' && methodName !== 'aggregate') {
-    const unknown = unknownDirectives(positional[0])
+    const { query, directives, unknown } = splitParams(positional[0])
     if (unknown.length) return refuse(400, `Unknown directive ${unknown.join(', ')} — a $ key is read only when it names one.`)
-    const { query, directives } = splitParams(positional[0])
     positional[0] = query
     if (Object.keys(directives).length) opts.directives = directives
   }

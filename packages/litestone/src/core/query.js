@@ -56,7 +56,8 @@ import { fieldPolicyOf } from './schema-maps.js'
 
 /** @param {string} name */
 export function quoteIdent(name) {
-  return `"${String(name).replace(/"/g, '""')}"`
+  const s = String(name)
+  return '"' + (s.includes('"') ? s.replace(/"/g, '""') : s) + '"'
 }
 
 // ─── IN lists ─────────────────────────────────────────────────────────────────
@@ -946,6 +947,57 @@ function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJson
 // document whether it equals 'x'. It is the same fact a text operator needs, so
 // it is one map rather than one per question.
 
+// Coerce JS values that aren't valid SQLite bind types. The Bun driver will
+// happily call `.toString()` on a Date, producing the human-readable form
+// ("Mon Apr 27 2026 ...") which compares lexically wrong against ISO
+// datetime columns. We normalize Dates to ISO 8601 here so comparisons
+// line up with how DateTime values are stored.
+//
+// Functions, symbols, and undefined values can't be bound at all and Bun
+// throws "Binding expected ..." — a useless error that doesn't say which
+// field caused it. We catch that case here and re-throw with the field name
+// so the user can find their bug in five seconds instead of five minutes.
+//
+// A Boolean column filtered by TEXT is the third case, and it is the one that
+// fails silently. SQLite stores a Boolean as 0/1, a JS `true` binds as 1, and
+// the string `'true'` binds as the text `'true'` — which matches no row and
+// answers an empty list with a 200. `fieldKinds` already knows which columns
+// are Boolean, so the conversion is available exactly where the guess would
+// otherwise be one. Only the two spellings SQLite could never have stored;
+// anything else is left alone and compares as itself.
+/** @param {any} v @param {string} fieldName @param {Map<string, string> | null} fieldKinds */
+function coerceOperand(v, fieldName, fieldKinds) {
+  if (v instanceof Date) return v.toISOString()
+  if (typeof v === 'string' && fieldKinds?.get(fieldName) === 'boolean') {
+    if (v === 'true')  return 1
+    if (v === 'false') return 0
+  }
+  return v
+}
+/** @param {any} v @param {string} fieldName */
+function checkBindable(v, fieldName) {
+  if (v === undefined) {
+    throw new Error(`where clause: field "${fieldName}" was given undefined — did you mean null?`)
+  }
+  if (typeof v === 'function') {
+    throw new Error(`where clause: field "${fieldName}" was given a function — you probably forgot to call it (e.g. \`${fieldName}: req.headers.get('x')\` not \`${fieldName}: req.headers.get\`)`)
+  }
+  if (typeof v === 'symbol') {
+    throw new Error(`where clause: field "${fieldName}" was given a symbol — symbols can't be used in queries`)
+  }
+  // A plain object is the one unbindable value the driver does NOT throw on:
+  // bun:sqlite reads it as a bag of NAMED parameters, and a statement built
+  // with positional `?` matches none of its keys — so it runs with EVERY
+  // binding dropped, including the WHERE, and reports no error. The read
+  // answers nothing and the write changes nothing. Arrays and Dates are
+  // legitimate operands and never reach here as a single value.
+  if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+    throw new Error(`where clause: field "${fieldName}" was given an object where a value was expected — ` +
+                    `an operator object belongs one level up (\`${fieldName}: { gt: 1 }\`), and a nested object needs @type(...) on the column`)
+  }
+  return v
+}
+
 // `columnMap` is a mapped model's field → column, threaded rather than folded
 // into `fromExprMap` because the two mean different things at the one identifier
 // point below: a `@from` field is a SUBQUERY and self-qualifying, where a mapped
@@ -969,61 +1021,11 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
   const clauses = []
   const aliasPrefix = tableAlias ? `${tableAlias}.` : ''
 
-  // Coerce JS values that aren't valid SQLite bind types. The Bun driver will
-  // happily call `.toString()` on a Date, producing the human-readable form
-  // ("Mon Apr 27 2026 ...") which compares lexically wrong against ISO
-  // datetime columns. We normalize Dates to ISO 8601 here so comparisons
-  // line up with how DateTime values are stored.
-  //
-  // Functions, symbols, and undefined values can't be bound at all and Bun
-  // throws "Binding expected ..." — a useless error that doesn't say which
-  // field caused it. We catch that case here and re-throw with the field name
-  // so the user can find their bug in five seconds instead of five minutes.
-  //
-  // A Boolean column filtered by TEXT is the third case, and it is the one that
-  // fails silently. SQLite stores a Boolean as 0/1, a JS `true` binds as 1, and
-  // the string `'true'` binds as the text `'true'` — which matches no row and
-  // answers an empty list with a 200. `fieldKinds` already knows which columns
-  // are Boolean, so the conversion is available exactly where the guess would
-  // otherwise be one. Only the two spellings SQLite could never have stored;
-  // anything else is left alone and compares as itself.
-  const coerce = (v, fieldName) => {
-    if (v instanceof Date) return v.toISOString()
-    if (typeof v === 'string' && fieldKinds?.get(fieldName) === 'boolean') {
-      if (v === 'true')  return 1
-      if (v === 'false') return 0
-    }
-    return v
-  }
-  const checkBindable = (/** @type {any} */ v, /** @type {string} */ fieldName) => {
-    if (v === undefined) {
-      throw new Error(`where clause: field "${fieldName}" was given undefined — did you mean null?`)
-    }
-    if (typeof v === 'function') {
-      throw new Error(`where clause: field "${fieldName}" was given a function — you probably forgot to call it (e.g. \`${fieldName}: req.headers.get('x')\` not \`${fieldName}: req.headers.get\`)`)
-    }
-    if (typeof v === 'symbol') {
-      throw new Error(`where clause: field "${fieldName}" was given a symbol — symbols can't be used in queries`)
-    }
-    // A plain object is the one unbindable value the driver does NOT throw on:
-    // bun:sqlite reads it as a bag of NAMED parameters, and a statement built
-    // with positional `?` matches none of its keys — so it runs with EVERY
-    // binding dropped, including the WHERE, and reports no error. The read
-    // answers nothing and the write changes nothing. Arrays and Dates are
-    // legitimate operands and never reach here as a single value.
-    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
-      throw new Error(`where clause: field "${fieldName}" was given an object where a value was expected — ` +
-                      `an operator object belongs one level up (\`${fieldName}: { gt: 1 }\`), and a nested object needs @type(...) on the column`)
-    }
-    return v
-  }
-  // Bound to the current key being processed in the loop below. `pushFor(k)(v)`
-  // both coerces and bind-checks `v` against field name `k`. The factory keeps
-  // hot-path overhead minimal — the closure is created once per top-level key
-  // and reused for all operands at that key.
-  const pushFor = (/** @type {string} */ fieldName) => (/** @type {any} */ v) => params.push(checkBindable(coerce(v, fieldName), fieldName))
 
-  for (const [key, val] of Object.entries(where)) {
+  // Object.keys, not Object.entries: entries allocates a pair per key and was
+  // the largest single cost of a short where (FJS-3752).
+  for (const key of Object.keys(where)) {
+    const val = where[key]
     if (key === 'AND') {
       const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap, pointMap)).filter(Boolean)
       if (parts.length) clauses.push(`(${parts.join(' AND ')})`)
@@ -1132,9 +1134,8 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
 
     if (val === null) { clauses.push(`${col} IS NULL`); continue }
 
-    // Field-bound binder — captures the field name so any "Binding expected"
-    // error tells the caller which field caused it.
-    const push = pushFor(key)
+    // Field-bound, so any "Binding expected" error names the field.
+    const push = (/** @type {any} */ v) => params.push(checkBindable(coerceOperand(v, key, fieldKinds), key))
 
     const isArrayCol = fieldKinds?.get(key) === 'array'
 
@@ -1148,7 +1149,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
     /** @param {any[]} operand @param {boolean} [not] */
     const longList = (operand, not = false) => {
       if (operand.length <= IN_INLINE || isFromExpr || !fieldKinds) return null
-      const values = operand.map(v => checkBindable(coerce(v, key), key))
+      const values = operand.map(v => checkBindable(coerceOperand(v, key, fieldKinds), key))
       return isArrayCol
         ? inList('value', values, params, { affinity: false })
         : inList(col, values, params, { not, affinity: fieldKinds.get(key) !== 'any' })
@@ -1187,7 +1188,8 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
       continue
     }
 
-    for (const [op, operand] of Object.entries(val)) {
+    for (const op of Object.keys(val)) {
+      const operand = val[op]
       // json_each and json() raise "malformed JSON" on a column that is not a
       // JSON document — a message naming neither the field nor the operator.
       // Say it here instead, while both are still in hand.
@@ -1264,7 +1266,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
           // none of these elements present
           if (!operand?.length) break
           clauses.push(`NOT EXISTS (SELECT 1 FROM json_each(${col}) WHERE ${
-            inList('value', operand.map(v => checkBindable(coerce(v, key), key)), params, { affinity: false })})`)
+            inList('value', operand.map(v => checkBindable(coerceOperand(v, key, fieldKinds), key)), params, { affinity: false })})`)
           break
         case 'isEmpty':
           clauses.push(operand ? `json_array_length(${col}) = 0` : `json_array_length(${col}) > 0`)

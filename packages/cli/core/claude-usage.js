@@ -17,31 +17,122 @@ const localDay = (iso) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// ─── one transcript's text, read as messages ─────────────────────────────────
+//
+// `readMessages` is the reader both the per-day tally below and basecamp's usage
+// index (`api/src/domain/claude/claude-index.ts`) stand on, so there is one
+// opinion of what a transcript line means.
+//
+// A reply streams as several lines with one `message.id`, each carrying the
+// same full `usage` but ONE content block, so usage is taken from the first line
+// and `tools` is the union over every line of that id.
+//
+// **The text may be a chunk.** An index re-reads only what a transcript gained
+// since the byte offset it stopped at, so the last line of a chunk may be half
+// written. `consumed` is the byte length of the text through its last newline,
+// and the caller's next read starts there; `final` reads the tail line too, for a
+// whole file that is complete. A message split across two chunks comes back from
+// both, and the caller unions the tool names (usage is the same on both).
+//
+// Facts about the FILE are what this chunk saw: `title` is the last `ai-title`
+// line and `firstPrompt` the first real user line, either null when the chunk
+// holds none, so a caller appending keeps what it had.
+
+const PROMPT_CHARS = 200
+
+// A slash command's own echo (`/clear`) and a harness reminder are the first
+// user lines of a session and nothing a person typed.
+const WRAPPED = /^<(command-name|command-message|local-command|system-reminder)/
+
+const textOf = (content) => {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return null
+  const block = content.find(b => b?.type === 'text' && typeof b.text === 'string')
+  return block ? block.text : null
+}
+
+export const readMessages = (text, { final = false } = {}) => {
+  const lastNl = text.lastIndexOf('\n')
+  const end = final ? text.length : lastNl + 1
+  const body = text.slice(0, end)
+  const consumed = Buffer.byteLength(body)
+  const file = { sessionId: null, cwd: null, headless: false, title: null, firstPrompt: null, startedAt: null, lastAt: null }
+  const byId = new Map(), list = []
+  const lines = body.split('\n')
+  if (lines.length && lines[lines.length - 1] === '') lines.pop()
+
+  let haveCwd = false, havePrompt = false
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (!line) continue
+    const edge = i === 0 || i === lines.length - 1
+    const wantsUsage = line.includes('"usage"')
+    const wantsCwd = !haveCwd && line.includes('"cwd"')
+    const wantsPrompt = !havePrompt && line.includes('"type":"user"')
+    const wantsTitle = line.includes('"type":"ai-title"')
+    if (!(edge || wantsUsage || wantsCwd || wantsPrompt || wantsTitle)) continue
+    let j
+    try { j = JSON.parse(line) } catch { continue }
+    if (!j || typeof j !== 'object') continue
+
+    if (j.timestamp) { file.startedAt ??= j.timestamp; file.lastAt = j.timestamp }
+    file.sessionId ??= j.sessionId ?? null
+    if (!haveCwd && j.cwd) { haveCwd = true; file.cwd = j.cwd; file.headless = j.entrypoint === 'sdk-cli' }
+    if (j.type === 'ai-title' && typeof j.aiTitle === 'string') file.title = j.aiTitle
+    if (!havePrompt && j.type === 'user' && !j.isMeta) {
+      const t = textOf(j.message?.content)?.trim()
+      if (t && !WRAPPED.test(t)) { havePrompt = true; file.firstPrompt = t.slice(0, PROMPT_CHARS) }
+    }
+
+    const u = j.message?.usage
+    if (!u || !j.timestamp) continue
+    const id = j.message.id ?? null
+    const tools = []
+    if (Array.isArray(j.message.content))
+      for (const b of j.message.content) if (b?.type === 'tool_use' && typeof b.name === 'string') tools.push(b.name)
+
+    let m = id ? byId.get(id) : null
+    if (m) {
+      for (const t of tools) if (!m.tools.includes(t)) m.tools.push(t)
+      continue
+    }
+    const cacheWrite = u.cache_creation_input_tokens ?? 0
+    m = {
+      id,
+      model: j.message.model ?? null,
+      at: j.timestamp,
+      sessionId: j.sessionId ?? null,
+      cwd: j.cwd ?? null,
+      input: u.input_tokens ?? 0,
+      cacheWrite,
+      cacheWrite1h: Math.min(cacheWrite, u.cache_creation?.ephemeral_1h_input_tokens ?? 0),
+      cacheRead: u.cache_read_input_tokens ?? 0,
+      output: u.output_tokens ?? 0,
+      tools: [...new Set(tools)],
+    }
+    if (id) byId.set(id, m)
+    list.push(m)
+  }
+  return { consumed, file, messages: list }
+}
+
 // `cwd` is the directory the session ran in, read from the transcript rather
 // than the folder name, because the folder slug flattens `/` and `.` alike.
 // `headless` is a `claude -p` run — a fix loop, not a person at a prompt.
 export const tallySession = (text, { seen = new Set(), day = localDay } = {}) => {
+  const { file, messages } = readMessages(text, { final: true })
   const days = new Map()
-  let cwd = null, headless = false, first = null
-  for (const line of text.split('\n')) {
-    if (!cwd && line.includes('"cwd"')) {
-      try { const j = JSON.parse(line); cwd = j.cwd ?? null; headless = j.entrypoint === 'sdk-cli' } catch {}
-    }
-    if (!line.includes('"usage"')) continue
-    let j
-    try { j = JSON.parse(line) } catch { continue }
-    const u = j.message?.usage
-    if (!u || !j.timestamp) continue
-    const id = j.message.id
-    if (id) { if (seen.has(id)) continue; seen.add(id) }
-    const key = day(j.timestamp)
+  let first = null
+  for (const m of messages) {
+    if (m.id) { if (seen.has(m.id)) continue; seen.add(m.id) }
+    const key = day(m.at)
     first ??= key
     const d = days.get(key) ?? { ...CLAUDE_ZERO }
-    d.output += u.output_tokens ?? 0
-    d.total += (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.output_tokens ?? 0)
+    d.output += m.output
+    d.total += m.input + m.cacheWrite + m.cacheRead + m.output
     days.set(key, d)
   }
-  return { cwd, headless, first, days }
+  return { cwd: file.cwd, headless: file.headless, first, days }
 }
 
 // Folds one session into the running map. A subagent's tokens count, but it is

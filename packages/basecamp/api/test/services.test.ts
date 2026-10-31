@@ -5422,3 +5422,38 @@ describe('apps.analytics: an app\'s traffic, or why there is none', () => {
     expect((out as any).hosts[0]).toMatchObject({ clientIps: 2, durations: [{ path: '/x', requests: 3, meanMs: 1.25, maxMs: 2 }] })
   })
 })
+
+describe('apps.retryLive: Caddy reloaded on the machines serving an App (FJS-D1715)', () => {
+  const tag = () => Math.random().toString(36).slice(2, 8)
+  let placed: any, unplaced: any, previous: string | undefined
+
+  beforeAll(async () => {
+    previous = process.env.BASECAMP_STUB_OUTPOST
+    process.env.BASECAMP_STUB_OUTPOST = '1'
+    const sys     = env.system as any
+    const project = await sys.project.create({ data: { workspaceId: ws.id, name: 'Rl', slug: `rl-${tag()}` } })
+    const e       = await sys.environment.create({ data: { workspaceId: ws.id, projectId: project.id, name: 'E', slug: `e-${tag()}` } })
+    placed   = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'rl', slug: `rl-${tag()}` } })
+    unplaced = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'rl-bare', slug: `rl-bare-${tag()}` } })
+    const server = await serverAt('online', { workspaceId: ws.id, name: 'rl-host', slug: `rl-host-${tag()}` })
+    await sys.appServer.create({ data: { appId: placed.id, serverId: server.id, replicaIndex: 0, status: 'running' } })
+  })
+  afterAll(() => {
+    if (previous === undefined) delete process.env.BASECAMP_STUB_OUTPOST
+    else process.env.BASECAMP_STUB_OUTPOST = previous
+  })
+
+  const retry = (who: any, app: any) => env.as(who).service('apps').call('retryLive', app.id, {})
+
+  test('a placed App reloads its machine and answers the check rerun after it', async () => {
+    const out = await retry(owner, placed) as any
+    expect(out.reloaded).toEqual(['rl-host'])
+    expect(out.failed).toEqual([])
+    expect(out.check.steps.map((s: any) => s.key)).toEqual(['release', 'placement'])
+  })
+
+  test('an App on no machine is refused, as is a caller outside its workspace', async () => {
+    await expect(retry(owner, unplaced)).rejects.toThrow(/runs on no online machine/)
+    await expect(retry(outsider, placed)).rejects.toThrow()
+  })
+})

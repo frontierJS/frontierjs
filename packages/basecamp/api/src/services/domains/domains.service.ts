@@ -22,7 +22,7 @@
 // somebody remembers to run an update.
 
 import { createService, NotFound, BadRequest, Conflict, parseWhere, $ } from '@frontierjs/junction'
-import { slug } from '@frontierjs/toolbelt/inflect'
+import { createSystemSecret } from '../../domain/secret/system-secret.ts'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
@@ -187,16 +187,13 @@ export default createService({
     const { certPem, keyPem, kind, issuedAt, expiresAt } =
       ($.data ?? {}) as Record<string, string>
 
-    const secret = await db().secret.create({
-      data: {
-        workspaceId: ws(),
-        name:        `tls-${slug(domain.hostname as string, { max: 240 }) || 'unnamed'}`,
-        kind:        'tls_cert',
-        // One value, both halves. Splitting them across two Secrets would
-        // let a rotation replace one and not the other.
-        data:        JSON.stringify({ certPem, keyPem }),
-        createdBy:   actor(),
-      },
+    const secret = await createSystemSecret(db(), 'tls', domain.hostname as string, {
+      workspaceId: ws(),
+      kind:        'tls_cert',
+      // One value, both halves. Splitting them across two Secrets would
+      // let a rotation replace one and not the other.
+      data:        JSON.stringify({ certPem, keyPem }),
+      createdBy:   actor(),
     })
 
     const cert = {

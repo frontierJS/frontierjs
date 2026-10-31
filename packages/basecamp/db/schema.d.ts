@@ -2647,6 +2647,162 @@ export type OutpostNonceOrderBy =
 export interface OutpostNonceRelations {
 }
 
+// ─── ClaudeTranscript ────────────────────────────────────────────
+
+export interface ClaudeTranscript {
+  id: string
+  path: string
+  sessionId: string
+  cwd?: string | null
+  subagent: boolean
+  headless: boolean
+  title?: string | null
+  firstPrompt?: string | null
+  offset: number
+  size: number
+  startedAt?: string | null
+  lastAt?: string | null
+  gone: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ClaudeTranscriptCreate {
+  id?: string
+  path: string
+  sessionId: string
+  cwd?: string | null
+  subagent?: boolean
+  headless?: boolean
+  title?: string | null
+  firstPrompt?: string | null
+  offset?: number
+  size?: number
+  startedAt?: string | Date | null
+  lastAt?: string | Date | null
+  gone?: boolean
+}
+
+export interface ClaudeTranscriptUpdate {
+  id?: string
+  path?: string
+  sessionId?: string
+  cwd?: string | null
+  subagent?: boolean
+  headless?: boolean
+  title?: string | null
+  firstPrompt?: string | null
+  offset?: number
+  size?: number
+  startedAt?: string | Date | null
+  lastAt?: string | Date | null
+  gone?: boolean
+}
+
+export interface ClaudeTranscriptWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  path?: string | WhereOp<string> | null
+  sessionId?: string | WhereOp<string> | null
+  cwd?: string | WhereOp<string> | null
+  subagent?: boolean | WhereOp<boolean> | null
+  headless?: boolean | WhereOp<boolean> | null
+  title?: string | WhereOp<string> | null
+  firstPrompt?: string | WhereOp<string> | null
+  offset?: number | WhereOp<number> | null
+  size?: number | WhereOp<number> | null
+  startedAt?: string | Date | WhereOp<string | Date> | null
+  lastAt?: string | Date | WhereOp<string | Date> | null
+  gone?: boolean | WhereOp<boolean> | null
+  createdAt?: string | Date | WhereOp<string | Date> | null
+  updatedAt?: string | Date | WhereOp<string | Date> | null
+  AND?: ClaudeTranscriptWhere[]
+  OR?:  ClaudeTranscriptWhere[]
+  NOT?: ClaudeTranscriptWhere
+}
+
+export type ClaudeTranscriptOrderBy =
+  | { [K in keyof Omit<ClaudeTranscript, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<ClaudeTranscript, never>]?: OrderDir }>
+
+export interface ClaudeTranscriptRelations {
+}
+
+// ─── ClaudeMessage ───────────────────────────────────────────────
+
+export interface ClaudeMessage {
+  id: string
+  messageId: string
+  sessionId: string
+  cwd?: string | null
+  model: string
+  at: string
+  input: number
+  cacheWrite: number
+  cacheWrite1h: number
+  cacheRead: number
+  output: number
+  tools: string
+  subagent: boolean
+}
+
+export interface ClaudeMessageCreate {
+  id?: string
+  messageId: string
+  sessionId: string
+  cwd?: string | null
+  model: string
+  at: string | Date
+  input: number
+  cacheWrite: number
+  cacheWrite1h?: number
+  cacheRead: number
+  output: number
+  tools?: string
+  subagent?: boolean
+}
+
+export interface ClaudeMessageUpdate {
+  id?: string
+  messageId?: string
+  sessionId?: string
+  cwd?: string | null
+  model?: string
+  at?: string | Date
+  input?: number
+  cacheWrite?: number
+  cacheWrite1h?: number
+  cacheRead?: number
+  output?: number
+  tools?: string
+  subagent?: boolean
+}
+
+export interface ClaudeMessageWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  messageId?: string | WhereOp<string> | null
+  sessionId?: string | WhereOp<string> | null
+  cwd?: string | WhereOp<string> | null
+  model?: string | WhereOp<string> | null
+  at?: string | Date | WhereOp<string | Date> | null
+  input?: number | WhereOp<number> | null
+  cacheWrite?: number | WhereOp<number> | null
+  cacheWrite1h?: number | WhereOp<number> | null
+  cacheRead?: number | WhereOp<number> | null
+  output?: number | WhereOp<number> | null
+  tools?: string | WhereOp<string> | null
+  subagent?: boolean | WhereOp<boolean> | null
+  AND?: ClaudeMessageWhere[]
+  OR?:  ClaudeMessageWhere[]
+  NOT?: ClaudeMessageWhere
+}
+
+export type ClaudeMessageOrderBy =
+  | { [K in keyof Omit<ClaudeMessage, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<ClaudeMessage, never>]?: OrderDir }>
+
+export interface ClaudeMessageRelations {
+}
+
 // ─── Volume ──────────────────────────────────────────────────────
 
 export interface Volume {
@@ -6058,6 +6214,8 @@ export interface ServiceTypes {
   servers: Server
   serverEvents: ServerEvent
   outpostNonces: OutpostNonce
+  claudeTranscripts: ClaudeTranscript
+  claudeMessages: ClaudeMessage
   volumes: Volume
   networks: Network
   serverNetworks: ServerNetwork
@@ -6305,7 +6463,7 @@ type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient
 type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
-  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'domainRoute' | 'appEditor' | 'appServer' | 'appPlatform' | 'appBackup' | 'appDrill' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'maintenanceRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'backupDestination' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'monitor' | 'monitorCheck' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardTile' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
+  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'claudeTranscript' | 'claudeMessage' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'domainRoute' | 'appEditor' | 'appServer' | 'appPlatform' | 'appBackup' | 'appDrill' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'maintenanceRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'backupDestination' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'monitor' | 'monitorCheck' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardTile' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
   readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere, CredentialRelations, never, 'value' | 'accessToken' | 'refreshToken' | '@@gate'>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'token' | '@@gate'>
   readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere, VerificationRelations, never, 'value' | 'secret' | 'code' | '@@gate'>
@@ -6333,6 +6491,8 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere, ServerRelations, 'reboot' | 'drain' | 'undrain' | 'provision' | 'destroy' | 'checkIn' | 'loseContact' | 'reportProvisioned' | 'reportRunning' | 'reportStopped' | 'reportRebuilding' | 'reportDestroyed', 'enrollTokenHash' | 'status' | '@@gate'>
   readonly serverEvent: TableClient<ServerEvent, ServerEventCreate, ServerEventUpdate, ServerEventWhere, ServerEventRelations, never, '@@gate'>
   readonly outpostNonce: TableClient<OutpostNonce, OutpostNonceCreate, OutpostNonceUpdate, OutpostNonceWhere, OutpostNonceRelations, never, '@@gate'>
+  readonly claudeTranscript: TableClient<ClaudeTranscript, ClaudeTranscriptCreate, ClaudeTranscriptUpdate, ClaudeTranscriptWhere, ClaudeTranscriptRelations, never, '@@gate'>
+  readonly claudeMessage: TableClient<ClaudeMessage, ClaudeMessageCreate, ClaudeMessageUpdate, ClaudeMessageWhere, ClaudeMessageRelations, never, '@@gate'>
   readonly volume: TableClient<Volume, VolumeCreate, VolumeUpdate, VolumeWhere, VolumeRelations, never, '@@gate'>
   readonly network: TableClient<Network, NetworkCreate, NetworkUpdate, NetworkWhere, NetworkRelations, never, '@@gate'>
   readonly serverNetwork: TableClient<ServerNetwork, ServerNetworkCreate, ServerNetworkUpdate, ServerNetworkWhere, ServerNetworkRelations, never, '@@gate'>

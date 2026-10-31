@@ -1,0 +1,88 @@
+<script>
+  // What a project's Claude Code session loads before the first prompt, on the
+  // Claude Code tab (api services/claude: context).
+  //
+  // The total is the API's own count for that session's first request; the parts
+  // are an apportioning of it by character share, which is an estimate. A read
+  // that did not parse says *unavailable* with its reason.
+  import { at }       from '../lib/datetime.js'
+  import { count, share } from '../lib/claude-format.js'
+  import { claude }   from '../resources/Claude.mesa'
+
+  import Badge   from '@frontierjs/ui/components/display/Badge.mesa'
+  import Callout from '@frontierjs/ui/components/display/Callout.mesa'
+  import Select  from '@frontierjs/ui/components/forms/Select.mesa'
+  import Stat    from '@frontierjs/ui/components/display/Stat.mesa'
+  import Table   from '@frontierjs/ui/components/display/Table.mesa'
+
+  // [{ value: absolute path, label: shown path, pinned }] from the config scan, pins first.
+  export let projects = []
+
+  const COLUMNS = [
+    { name: 'name', label: 'Part' }, { name: 'tokens', label: 'Tokens', align: 'right' },
+    { name: 'share', label: 'Share', align: 'right' },
+  ]
+
+  const first = projects.find(p => p.pinned) ?? projects[0]
+  let cwd     = first ? first.value : ''
+  let answer  = null   // Read<ContextFor>
+  let error   = null
+  let loading = false
+
+  let asked = 0
+  async function load(path) {
+    if (!path) return
+    const n = ++asked
+    loading = true
+    try {
+      const r = await claude.service.invoke('context', null, { cwd: path })
+      if (n === asked) { answer = r; error = null }
+    } catch (err) {
+      if (n === asked) { answer = null; error = err.message }
+    } finally {
+      if (n === asked) loading = false
+    }
+  }
+  $: { load(cwd) }
+
+  // A window is the denominator when the transcript names one; else the parts are shares of the total.
+  const rowsOf = (c) => c.parts.map(p => ({ ...p, share: share(p.tokens / (c.window ?? c.measuredTotal)) }))
+</script>
+
+<div class="stack" id="claude-context">
+  <Select id="claude-context-project" name="context-project" label="" placeholder="" aria-label="Project"
+          options={projects} value={cwd} onchange={(e) => { cwd = e.target.value }} />
+
+  {#if !projects.length}
+    <p class="text-sm text-muted">No projects were found to measure.</p>
+  {:else if error}
+    <Callout tone="danger" title="Could not read the context">{error}</Callout>
+  {:else if !answer}
+    <p class="text-sm text-muted">Reading…</p>
+  {:else if !answer.ok}
+    <p id="claude-context-unavailable"><Badge tone="warning">unavailable</Badge> <span class="text-sm">{answer.reason}</span></p>
+  {:else}
+    {@const c = answer.value}
+    <div class="grid" id="claude-context-totals">
+      <Stat label="Measured total" value={count(c.measuredTotal)} sub={c.window ? `of a ${count(c.window)} token window` : 'tokens, first request'} />
+      <Stat label="Always on" value={count(c.alwaysOn)} sub="before the first prompt" />
+    </div>
+    <p class="text-sm text-muted" id="claude-context-from">
+      From a session on {c.model ?? 'an unnamed model'}, Claude Code {c.version ?? 'version unknown'}, {at(c.at)}.
+    </p>
+    <Table id="claude-context-parts" columns={COLUMNS} rows={rowsOf(c)} compact striped hover={false} emptyText="No parts were found">
+      {#snippet row(p)}
+        <tr>
+          <td>{p.name}</td>
+          <td class="text-right">{count(p.tokens)}</td>
+          <td class="text-right">{p.share}</td>
+        </tr>
+      {/snippet}
+    </Table>
+    <p class="text-sm text-muted">
+      Shares are of {c.window ? `the ${count(c.window)} token window` : 'the measured total'}.
+      The totals are the API's own count for that session's first request; the parts are apportioned
+      from them by character share, an estimate. Tool schemas Claude Code defers are not in the first request.
+    </p>
+  {/if}
+</div>

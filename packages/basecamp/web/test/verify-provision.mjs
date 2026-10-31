@@ -494,7 +494,7 @@ try {
   console.log('\n  /secrets/ — an account at a cloud')
   await goto('/secrets/')
   await click('#new-secret')
-  await until(`!!document.getElementById('kind')`, v => v, 'the secret form never opened')
+  await until(`!!document.querySelector('input[type=radio][name=kind]')`, v => v, 'the secret form never opened')
 
   // What the page SENDS, not what its DOM shows. For a `<textarea>` the value
   // property and the child text diverge the moment either is written, so
@@ -509,7 +509,8 @@ try {
   await instrument()
 
 
-  await fill({ name: 'do-main', kind: 'provider_key' })
+  await evaluate(`document.querySelector('input[type=radio][name=kind][value=provider_key]').click()`)
+  await fill({ name: 'do-main' })
   await until(`!!document.getElementById('providerKind')`, v => v,
     'choosing provider_key never revealed the cloud field')
   ok('choosing "provider key" asks which cloud — the column the @@check requires')
@@ -522,7 +523,7 @@ try {
 
   // The refusal FIRST, and it is a pair with the save below: a form that
   // refused everything would satisfy any assertion about the refusal alone.
-  await fill({ data: JSON.stringify({ token: DO_TOKEN }) })
+  await fill({ 'value-token': DO_TOKEN })
   await evaluate(`document.querySelector('form button[type=submit]').click()`)
   await until(`!!document.getElementById('screen-error')`, v => v,
     'a provider key naming no cloud was accepted')
@@ -535,7 +536,7 @@ try {
   // retyping a credential with nothing on screen saying it is gone — and the
   // second attempt then stores an EMPTY token, which fails later at the vendor
   // as an authentication error nobody can trace back to this form.
-  const kept = await evaluate(`document.getElementById('data')?.value ?? ''`)
+  const kept = await evaluate(`document.getElementById('value-token')?.value ?? ''`)
   check('the token typed survives the refusal — it cannot be read back to check',
     kept.includes('dop_v1_'), kept ? `held ${kept.length} chars` : '(empty)')
 
@@ -856,14 +857,15 @@ try {
   await until(`!!document.getElementById('new-secret')`, v => v, 'the secrets screen never rendered')
   await click('#new-secret')
   await until(`!!document.getElementById('name')`, v => v, 'the secret form never opened')
-  await fill({ name: 'hz-main', kind: 'provider_key' })
+  await evaluate(`document.querySelector('input[type=radio][name=kind][value=provider_key]').click()`)
+  await fill({ name: 'hz-main' })
   await until(`!!document.getElementById('providerKind')`, v => v, 'the cloud field never appeared')
 
   const clouds2 = await options('providerKind')
   check('the second cloud is offered too, off the schema rather than a list here',
     clouds2.includes('hetzner') && clouds2.includes('digitalocean'), clouds2.join(', '))
 
-  await fill({ providerKind: 'hetzner', data: JSON.stringify({ token: HZ_TOKEN }) })
+  await fill({ providerKind: 'hetzner', 'value-token': HZ_TOKEN })
   await evaluate(`document.querySelector('form button[type=submit]').click()`)
   await until(`document.body.textContent.includes('hz-main')`, v => v,
     'the Hetzner key never appeared in the list')

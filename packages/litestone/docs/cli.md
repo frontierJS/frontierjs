@@ -35,6 +35,7 @@ litestone transform [config.js] [--preview] [--dry-run] [--out=<path>] [--only=A
 litestone explain [@word] [--visibility] [--json]        # the language, no schema needed
 litestone catalog --snapshot [--check] [--stdout] [--out=<path>]   # the language surface, committed
 litestone catalog --reference [--check] [--stdout] [--out=<path>]  # docs/reference.snapshot.md, the A-Z page
+litestone spec [--stdout] [--out=<path>]                           # docs/spec.snapshot.md, the specification working draft (not gated)
 litestone advise [--json] [--strict]                     # legal-and-wrong, plus legal-and-MISSING
 litestone validate [--only=A,B] [--json]                 # which STORED rows the schema would now refuse; exits 1
 litestone assistant [--bare] [--out=<path>] [--purpose=<path>]  # a chat-model schema assistant + this schema + PURPOSE.md, to paste
@@ -212,6 +213,14 @@ you do not already know the word to look up.
 Both are gated by CI, and every example on the reference page is the same text
 `test/catalog.test.ts` parses. Neither takes a `--schema`: the language is a
 property of this package, not of your seed.
+
+```bash
+litestone spec [--stdout] [--out=<path>]
+```
+Writes `docs/spec.snapshot.md`: litestone as built, grouped by the entries of
+`IDEAS/specifications.md` — catalog rows, the JSON form each entry already has,
+host terms still in its wording, and the tests that pin it. A working draft, not
+a ruling, and not gated: nothing reruns it in CI.
 
 ```bash
 litestone introspect <db> [--out=schema.lite] [--report=<path>] [--strict] [--no-camel]

@@ -187,12 +187,12 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
   /** One admin call. Answers the status and Caddy's own words; throws only
    *  when nothing answered, with the address, because *connection refused* on
    *  its own does not say it was Caddy that was missing. */
-  async function caddy(method, path, body) {
+  async function caddy(method, path, body, headers = {}) {
     let res
     try {
       res = await fetchFn(`${admin}${path}`, {
         method,
-        headers: body === undefined ? {} : { 'content-type': 'application/json' },
+        headers: body === undefined ? headers : { 'content-type': 'application/json', ...headers },
         body:    body === undefined ? undefined : JSON.stringify(body),
         signal:  AbortSignal.timeout(10_000),
       })
@@ -370,6 +370,20 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
           must(await caddy('PATCH', `/config/apps/http/servers/${SERVER}/routes`, sort), 'ordering its routes')
         await logAccess(config, id, hosts)
         return { hosts, paths, redirects }
+      })
+    },
+
+    /**
+     * Caddy's config loaded again as it stands, so a certificate waiting out
+     * its ACME backoff is asked for now (`FJS-D1715`). Caddy skips a load
+     * whose config is byte-identical — the case here — unless told
+     * `must-revalidate`; without the header this does nothing.
+     */
+    reload() {
+      return serially(async () => {
+        const config = must(await caddy('GET', '/config/'), 'reading its config')
+        must(await caddy('POST', '/load', config ?? {}, { 'cache-control': 'must-revalidate' }), 'reloading its config')
+        return { reloaded: true }
       })
     },
 

@@ -558,6 +558,11 @@ function scanProject(cx: Cx, found: Sighting & { both: boolean }, user: Loaded<S
 
 // ─── scan ─────────────────────────────────────────────────────────────────────
 
+/** Where Claude Code keeps its files: the option, else `CLAUDE_CONFIG_DIR`, else `<home>/.claude`. */
+export function claudeConfigDir(opts: { home?: string, configDir?: string } = {}): string {
+  return opts.configDir ?? process.env.CLAUDE_CONFIG_DIR ?? join(opts.home ?? homedir(), '.claude')
+}
+
 /**
  * Read the whole configuration once. Synchronous: a few hundred small files and
  * the heads of one transcript per project.
@@ -572,7 +577,7 @@ export function scanClaude(opts: ScanOptions = {}): ClaudeConfig {
 
   const home = opts.home ?? homedir()
   const custom = opts.configDir ?? process.env.CLAUDE_CONFIG_DIR ?? null
-  const configDir = custom ?? join(home, '.claude')
+  const configDir = claudeConfigDir({ home, configDir: opts.configDir })
   const claudeJson = custom ? join(custom, '.claude.json') : join(home, '.claude.json')
 
   const userSettings = load(cx, join(configDir, 'settings.json'), parseSettings)
@@ -643,4 +648,32 @@ export function allMcpServers(c: ClaudeConfig): McpServer[] {
   const json = c.mcp.result.ok ? [...c.mcp.result.value.user, ...c.mcp.result.value.local] : []
   const project = c.projects.flatMap(p => p.mcpJson.result.ok ? p.mcpJson.result.value : [])
   return [...new Set([...json, ...project, ...c.plugins.list.flatMap(p => p.mcp)])]
+}
+
+// ─── one listed file ──────────────────────────────────────────────────────────
+
+/** A detail view's file: a skill, agent or command, or a memory file. Shown, never parsed. */
+export type ListedFile = { path: string, bytes: number, text: string }
+
+/** Past this a detail view draws a file nobody reads; none of these is near it. */
+const MAX_SHOWN_BYTES = 1024 * 1024
+
+/**
+ * A file's text, only when `c` listed it as an item or a memory file. The path
+ * arrives from a browser, and the scan's own list is what keeps a request from
+ * naming `~/.ssh/id_ed25519` or a `../` walk out of a plugin folder.
+ */
+export function readListedFile(c: ClaudeConfig, path: string): Read<ListedFile> {
+  const listed = new Set([
+    ...allItems(c).map(i => i.file),
+    ...c.user.memory.filter(m => m.exists).map(m => m.path),
+    ...c.projects.flatMap(p => p.memory.filter(m => m.exists).map(m => m.path)),
+  ])
+  if (!listed.has(path)) return unreadable('not a file this scan listed')
+  const st = statOf(path)
+  if (st && st.size > MAX_SHOWN_BYTES) return unreadable(`${st.size} bytes, over the ${MAX_SHOWN_BYTES} shown`)
+  const t = loadText(path)
+  if (t.kind === 'absent') return unreadable('gone since the scan')
+  if (t.kind === 'error')  return unreadable(t.reason)
+  return read({ path, bytes: Buffer.byteLength(t.text), text: t.text })
 }

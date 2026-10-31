@@ -1564,7 +1564,7 @@ check('a notice can be dismissed',
     await evaluate(`document.getElementById('deploy-steps')?.textContent ?? ''`),
     t => t.includes(caddyDownSaid))
   check('…and the running container was never touched',
-    outpostSaw.docker.slice(dockerFrom).filter(c => c.includes(`fjs-${appId}`)).join(' | '), '')
+    outpostSaw.docker.slice(dockerFrom).filter(c => c.includes(appId.slice(0, 8))).join(' | '), '')
   check('…because nothing stopped it first',
     outpostSaw.deploy.slice(sentFrom).map(d => d.path).join(','),
     t => t.includes('/deploy') && !t.includes('/stop'))

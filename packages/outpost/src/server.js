@@ -162,6 +162,10 @@ export function createOutpostServer(config, {
     // so this answers once the release is healthy, not once it has started.
     'POST /deploy': async (body) => {
       const appId = body.app_id ?? body.deployment_id
+      // The slugs spell the container's name. Left out, it would be named for
+      // `undefined` and `docker ps` would show a stranger.
+      for (const field of ['project', 'environment', 'app_slug'])
+        if (typeof body[field] !== 'string' || !body[field].trim()) throw new Error(`a deploy needs the ${field} that names its container`)
       const hosts     = hostsOf(body.hosts)
       const redirects = redirectsOf(body.redirects)
       const paths     = pathsOf(body.paths)
@@ -183,6 +187,9 @@ export function createOutpostServer(config, {
       try {
         started = await docker.deploy({
           appId,
+          project:     body.project,
+          environment: body.environment,
+          appSlug:     body.app_slug,
           image,
           digest:   built.digest ?? body.digest,
           config:   body.config ?? {},
@@ -199,7 +206,7 @@ export function createOutpostServer(config, {
           const live = await docker.published({ appId }).catch(() => null)
           if (live?.port && live.port !== port)
             await ingress.route({ appId, hosts, port: live.port, redirects, paths })
-              .catch(e => log.error?.(`outpost: re-routing fjs-${appId} to the restored container failed — ${e.message}`))
+              .catch(e => log.error?.(`outpost: re-routing app ${appId} to the restored container failed — ${e.message}`))
         }
         throw err
       }
@@ -239,15 +246,15 @@ export function createOutpostServer(config, {
       }
       if (body.port != null) {
         // A machine with no docker holds no container to collide with.
-        if (await docker.published({ appId }).catch(() => null)) throw new Error(`fjs-${appId} is a container on this machine and is routed to the port it published — send no port`)
+        if (await docker.published({ appId }).catch(() => null)) throw new Error(`app ${appId} has a container on this machine and is routed to the port it published — send no port`)
         const port = Number(body.port)
         if (routed) await ingress.route({ appId, hosts, port, redirects, paths })
         else await ingress.unroute({ appId })
         return { hosts, paths, port, rebind: null }
       }
       const live  = await docker.published({ appId })
-      if (fronted && !live) throw new Error(`no container fjs-${appId} on this machine to route to — deploy it first`)
-      if (fronted && !live.port) throw new Error(`fjs-${appId} publishes no port to route to — set the app's port and redeploy`)
+      if (fronted && !live) throw new Error(`no container for app ${appId} on this machine to route to — deploy it first`)
+      if (fronted && !live.port) throw new Error(`app ${appId}'s container publishes no port to route to — set the app's port and redeploy`)
 
       if (routed) await ingress.route({ appId, hosts, port: live?.port, redirects, paths })
       else await ingress.unroute({ appId })
@@ -325,6 +332,8 @@ export function createOutpostServer(config, {
     // A read, signed like every other route: the hostnames a machine serves
     // are the fleet's map, and the static origin beside this is public.
     'POST /ingress':       () => ingress.routes(),
+    // Basecamp's "try again now" for a hostname whose DNS was just fixed.
+    'POST /ingress/reload': () => ingress.reload(),
 
     'POST /system/prune':  (body) => inspector.prune({ targets: body.targets, keepImages: body.keep_images })
       .then(async result => ({ ...result, usage: await inspector.disk() })),

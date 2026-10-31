@@ -1,0 +1,99 @@
+<script>
+  // What drives the limit, on the Claude Code tab (api services/claude: insights):
+  // the share of cost-weighted use per project, model and tool over 24 hours or
+  // 7 days. A message's cost is split evenly across the tools it called.
+  import { ago }    from '../lib/datetime.js'
+  import { count, usd, share, tilde } from '../lib/claude-format.js'
+  import { claude } from '../resources/Claude.mesa'
+
+  import Callout from '@frontierjs/ui/components/display/Callout.mesa'
+  import Select  from '@frontierjs/ui/components/forms/Select.mesa'
+  import Stat    from '@frontierjs/ui/components/display/Stat.mesa'
+  import Table   from '@frontierjs/ui/components/display/Table.mesa'
+
+  export let home = ''
+
+  const WINDOWS = [{ value: '24h', label: 'Last 24 hours' }, { value: '7d', label: 'Last 7 days' }]
+  const columns = (label) => [
+    { name: 'name', label }, { name: 'share', label: 'Share', align: 'right' },
+    { name: 'cost', label: 'Est. cost', align: 'right' }, { name: 'messages', label: 'Messages', align: 'right' },
+  ]
+  const PROJECT_COLUMNS = columns('Project')
+  const MODEL_COLUMNS   = columns('Model')
+  const TOOL_COLUMNS    = columns('Tool')
+
+  let span    = '7d'
+  let result  = null
+  let error   = null
+
+  const top = (rows) => [...rows].sort((a, b) => b.share - a.share)
+
+  let asked = 0
+  async function load(w) {
+    const n = ++asked
+    try {
+      const r = await claude.service.invoke('insights', null, { window: w })
+      if (n === asked) { result = r; error = null }
+    } catch (err) {
+      if (n === asked) error = err.message
+    }
+  }
+  $: { load(span) }
+</script>
+
+<div class="stack" id="claude-drivers">
+  <Select id="claude-drivers-window" name="drivers-window" label="" placeholder="" aria-label="Window"
+          options={WINDOWS} value={span} onchange={(e) => { span = e.target.value }} />
+
+  {#if error && !result}
+    <Callout tone="danger" title="Could not read what drives the limit">{error}</Callout>
+  {:else if !result}
+    <p class="text-sm text-muted">Reading…</p>
+  {:else}
+    {#if error}<Callout tone="warning" title="Refresh failed, showing the last read">{error}</Callout>{/if}
+    <div class="grid" id="claude-drivers-totals">
+      <Stat label="Messages" value={count(result.messages)} />
+      <Stat label="Estimated cost" value={usd(result.cost)} sub="the shares divide this" />
+      {#if result.unpricedTokens > 0}
+        <Stat label="Unpriced" value={count(result.unpricedTokens)} sub="tokens, in no share" tone="warning" />
+      {/if}
+    </div>
+
+    <h3>By project</h3>
+    <Table id="claude-drivers-projects" columns={PROJECT_COLUMNS} rows={top(result.projects)} compact striped hover={false} emptyText="No usage in this window">
+      {#snippet row(r)}
+        <tr><td><code class="wrap">{tilde(r.cwd, home) || '(no project)'}</code></td>{@render cells(r)}</tr>
+      {/snippet}
+    </Table>
+
+    <h3>By model</h3>
+    <Table id="claude-drivers-models" columns={MODEL_COLUMNS} rows={top(result.models)} compact striped hover={false} emptyText="No usage in this window">
+      {#snippet row(r)}
+        <tr><td><code>{r.model}</code></td>{@render cells(r)}</tr>
+      {/snippet}
+    </Table>
+
+    <h3>By tool</h3>
+    <Table id="claude-drivers-tools" columns={TOOL_COLUMNS} rows={top(result.tools)} compact striped hover={false} emptyText="No usage in this window">
+      {#snippet row(r)}
+        <tr><td><code>{r.tool}</code></td>{@render cells(r)}</tr>
+      {/snippet}
+    </Table>
+
+    <p class="text-sm text-muted">
+      A message's cost is split evenly across the tools it called. Estimated at list price, read {result.pricing.readOn} from
+      <a href={result.pricing.sourceUrl} target="_blank" rel="noreferrer">{result.pricing.sourceUrl}</a>.
+      {#if result.indexedAt}Indexed {ago(result.indexedAt)}.{:else}The index has not run yet; the job runs every 5 minutes.{/if}
+    </p>
+  {/if}
+</div>
+
+{#snippet cells(r)}
+  <td class="text-right">{share(r.share)}</td>
+  <td class="text-right">{usd(r.cost)}</td>
+  <td class="text-right">{count(Math.round(r.messages))}</td>
+{/snippet}
+
+<style>
+  .wrap { overflow-wrap: anywhere; }
+</style>

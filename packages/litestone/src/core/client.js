@@ -2090,10 +2090,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
   }
 
   // findUnique({ where: { <pk>: value } }) — lookup by id, the most common
-  // read an app makes. Not with a field policy or a @from field, whose read
-  // the slow path shapes.
+  // read an app makes. Not with a @from field, whose subqueries the slow
+  // path's SELECT carries. A field policy is applied by readAll on either path,
+  // and a pk the caller may not name is refused or narrowed by guardArgs first.
   const _pkField = shape.model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? null
-  const _canFastFindUnique = _pkField && !hasFieldPolicy && !_hasFrom
+  const _canFastFindUnique = _pkField && !_hasFrom
   const _fastFindUniqueSql = _canFastFindUnique
     ? (softDelete
         ? `SELECT ${_starCols()} FROM "${tableName}" WHERE "${col(_pkField)}" = ? AND "${col('deletedAt')}" IS NULL LIMIT 2`

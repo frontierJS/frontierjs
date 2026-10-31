@@ -169,8 +169,23 @@ in a browser.
     `claude plugins list` (basecamp on, cloudflare off), MCP shows `shop` (local)
     and `cloudflare` (plugin), 102 items, 65 hook handlers, 108 projects with 11
     from pins; search narrowed 102 to 1 and back, and no console errors.
-- [ ] 1.4 Detail drawers — a skill or agent's markdown, a plugin's contents, a
+- [x] 1.4 Detail drawers — a skill or agent's markdown, a plugin's contents, a
   hook's full command, read-only.
+  - A name in the Plugins, Skills & agents and Hooks tables, or a path in the
+    Memory table, opens one kit `Drawer`. The plugin and hook drawers draw from
+    the scan already loaded. The item and memory drawers ask `claude.file`, which
+    scans again and reads only a path that scan lists as an item or an existing
+    memory file (`readListedFile`, 1 MB cap). Memory now lists each project's
+    files beside the user's.
+  - Driven in Chrome on a scratch database with the real pins. Plugin: author,
+    sha, 69 projects (folded), 3 skills, 4 hook events. Skill: frontmatter facts
+    plus a rendered body with the frontmatter stripped. Agent and hook (full
+    command) drawers also checked, and 87 memory files open. `/etc/passwd`,
+    `settings.json` and a `../` walk to `.ssh` all got a 404 naming "not a file
+    this scan listed". No console errors.
+  - The drive surfaced `FJS-3769` (an object id over the socket times out
+    instead of being refused) and `FJS-3770` (Drawer's `onclose` arrives late,
+    so an immediate reopen is lost).
 
 ## Phase 2 — Context, sessions and spend
 

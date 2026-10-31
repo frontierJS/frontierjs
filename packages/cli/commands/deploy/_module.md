@@ -34,7 +34,13 @@ const derivedOrigins = ($, deployConf) => crossOrigins(edgeNamesOf(deployConf), 
 // the pipeline and by every standalone command that has to find it again —
 // `deploy:logs`, `deploy:status`, `deploy:run`, the revert and the rollback.
 // Nine hand-written copies is how the name came to ignore the port tier.
-const apiContainer = (appId, deployConf) => apiContainerName(appId, deployConf?.api?.port)
+// The app that runs the fleet (`outpost: true`) is the box's platform, named
+// `frontier-<app>` beside outpost's served `fjs--…` containers, so `docker ps`
+// tells the control plane from what it serves.
+const apiContainer = (appId, deployConf) => {
+  const name = apiContainerName(appId, deployConf?.api?.port)
+  return deployConf?.outpost === true ? name.replace(`${appId}-api`, `frontier-${appId}`) : name
+}
 
 // The `--user` an app's container starts with: its own user on a box
 // (`FJS-D1484`), made by `deploy:setup`, and nothing on localhost, where the

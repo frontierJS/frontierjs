@@ -16,7 +16,7 @@
 
 import { mount }                       from '@frontierjs/mesa/runtime'
 import { toolName }                    from '@frontierjs/toolbelt/inflect'
-import { splitParams, unknownDirectives, invalidDirectives, listedDirectives, TRANSPORT_PARAMS } from '@frontierjs/toolbelt/directives'
+import { splitParams, TRANSPORT_PARAMS } from '@frontierjs/toolbelt/directives'
 import { setScheme }                   from '../theme/index.js'
 import { initJunction, getClient }     from '../resource/index.js'
 import { defaultRegistry }             from '../resource/schema-registry.js'
@@ -140,12 +140,12 @@ function toolArguments({ service, method, id, data, query, opts }) {
   }
 
   if (method === 'find') {
+    const split = splitParams(query)
     const bad = [
-      ...unknownDirectives(query), ...invalidDirectives(query), ...listedDirectives(query),
+      ...split.unknown, ...split.invalid, ...split.listed,
       ...TRANSPORT_PARAMS.filter(p => query && p in query),
     ]
     if (bad.length) throw new Error(`[sierra/mcp] ${where}: ${[...new Set(bad)].join(', ')} cannot be relayed — the find tool takes filters and the directive table, nothing else`)
-    const split = splitParams(query)
     const args  = {}
     if (Object.keys(split.query).length)      args.query      = split.query
     if (Object.keys(split.directives).length) args.directives = split.directives

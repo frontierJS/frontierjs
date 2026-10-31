@@ -31,7 +31,7 @@
 // added to one of them — tests green, never delivers.
 
 import { createService, BadRequest, Conflict, parseWhere, $ } from '@frontierjs/junction'
-import { slug } from '@frontierjs/toolbelt/inflect'
+import { createSystemSecret } from '../../domain/secret/system-secret.ts'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, actor }
@@ -62,16 +62,10 @@ async function storeCredential(
   const field  = KINDS[kind].secretField as string
   // The caller's own client: `@encrypted` hides `Secret.data` from a reader
   // and leaves it writable, and the tenancy default stamps the workspace.
-  const secret = await db().secret.create({
-    data: {
-      // The unique is [workspaceId, name]. `Secret.name` is a lowercase slug,
-      // so the free text a channel is named with is slugged and the prefix
-      // keeps it out of the way of secrets a person authored.
-      name:      `channel-${slug(name, { max: 240 }) || 'unnamed'}`,
-      kind:      'notification',
-      data:      JSON.stringify({ [field]: value }),
-      createdBy: actor(),
-    },
+  const secret = await createSystemSecret(db(), 'channel', name, {
+    kind:      'notification',
+    data:      JSON.stringify({ [field]: value }),
+    createdBy: actor(),
   })
   return secret.id as string
 }

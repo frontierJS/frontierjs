@@ -266,6 +266,7 @@ function states(v) {
 
 const EXPAND = 'expand', CONTRACT = 'contract', UNKNOWN = 'unknown'
 const RANK   = { unchanged: 0, [EXPAND]: 1, [UNKNOWN]: 2, [CONTRACT]: 3 }
+export const PIVOT_RANK = RANK
 
 // The other axis. Ranked the same way RANK is — the answer that costs something
 // sits highest, so the verdict is the worst thing present rather than the last
@@ -282,6 +283,7 @@ const WIDENS = 'widens', NARROWS = 'narrows', DECLARED = 'new'
 // keeps `--strict` meaning exactly what it meant: a branch whose only findings
 // are new models passes, and one that also narrows reads as narrowing.
 const ARANK  = { unchanged: 0, [DECLARED]: 1, [NARROWS]: 2, [UNKNOWN]: 3, [WIDENS]: 4 }
+export const ACCESS_RANK = ARANK
 
 export function classifyPivot(before, after) {
   const f = []

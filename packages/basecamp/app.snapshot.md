@@ -338,8 +338,8 @@ name when it declares none.
 
 ### `apps` · model `App`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `analytics`, `liveCheck`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`
-- **custom methods** — `logs`, `analytics`, `liveCheck`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `analytics`, `liveCheck`, `retryLive`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`
+- **custom methods** — `logs`, `analytics`, `liveCheck`, `retryLive`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`
 - **input** — `fromBlueprint` takes `AppFromBlueprint`
 - **input** — `place` takes `AppPlace`
 - **input** — `publish` takes `AppPublish`
@@ -352,6 +352,7 @@ name when it declares none.
   - `logs` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `analytics` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `liveCheck` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `retryLive` — standing 4 or above — declared `gate: 4`
   - `fromBlueprint` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `place` — standing 4 or above — declared `gate: 4`
   - `unplace` — standing 4 or above — declared `gate: 4`; body writes as the app
@@ -487,10 +488,18 @@ name when it declares none.
 
 ### `claude` · model `claude`
 
-- **methods** — `config`
-- **custom methods** — `config`
+- **methods** — `config`, `file`, `stats`, `insights`, `sessions`, `transcript`, `context`, `account`, `quota`
+- **custom methods** — `config`, `file`, `stats`, `insights`, `sessions`, `transcript`, `context`, `account`, `quota`
 - **who may call** —
   - `config` — standing 5 or above — declared `gate: 5`
+  - `file` — standing 5 or above — declared `gate: 5`
+  - `stats` — standing 5 or above — declared `gate: 5`
+  - `insights` — standing 5 or above — declared `gate: 5`
+  - `sessions` — standing 5 or above — declared `gate: 5`
+  - `transcript` — standing 5 or above — declared `gate: 5`
+  - `context` — standing 5 or above — declared `gate: 5`
+  - `account` — standing 5 or above — declared `gate: 5`
+  - `quota` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

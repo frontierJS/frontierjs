@@ -260,9 +260,28 @@ title: App
     error = null; liveBusy = true
     try {
       liveReport = await apps.service.invoke('liveCheck', app.id)
+      liveReloaded = null
     } catch (e) {
       error = e.message
       liveReport  = null
+    } finally {
+      liveBusy = false
+    }
+  }
+
+  // A failed HTTPS step is usually Caddy waiting out its certificate backoff
+  // after DNS was fixed; this reloads it on the serving machines and answers
+  // the check rerun after (FJS-D1715).
+  let liveReloaded = null
+
+  async function retryLive() {
+    error = null; liveBusy = true
+    try {
+      const out = await apps.service.invoke('retryLive', app.id)
+      liveReport   = out.check
+      liveReloaded = out.reloaded
+    } catch (e) {
+      error = e.message
     } finally {
       liveBusy = false
     }
@@ -1351,6 +1370,11 @@ title: App
                 <Pill tone={LIVE_TONE[s.status] ?? 'muted'}>{s.status}</Pill>
                 <strong>{s.label}</strong>
                 <span class="text-sm text-muted">{s.detail}</span>
+                {#if s.key === 'https' && s.status === 'fail'}
+                  <Button treatment="outlined" onclick={retryLive} disabled={liveBusy} data-retry-live>
+                    {liveBusy ? 'Retrying…' : 'Try again now'}
+                  </Button>
+                {/if}
                 {#if s.fix}
                   {#if tabOfFix(s.fix.href)}
                     <Button treatment="ghost" onclick={() => tab = tabOfFix(s.fix.href)}>{s.fix.label}</Button>
@@ -1363,6 +1387,10 @@ title: App
           </ul>
         </Card>
       {/each}
+
+      {#if liveReloaded}
+        <p class="text-sm text-muted" id="app-live-reloaded">Caddy reloaded on {liveReloaded.join(', ')}.</p>
+      {/if}
 
       {#if !liveReport.hosts.length}
         <EmptyState title="No hostnames" id="app-live-no-hosts">This App has no domain, so there is no name to check.</EmptyState>

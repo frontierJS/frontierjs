@@ -81,8 +81,18 @@ export function orderByPair(orderBy: unknown): OrderByPair
 /** The pair → the `orderBy` a page writes back. `orderByPair`'s inverse; an empty key answers `undefined`. */
 export function orderByValue(key: string, dir?: 'asc' | 'desc'): string | undefined
 
-/** One bag of parameters → the two things it was carrying. Neither half has a `$`. */
+/**
+ * One bag of parameters → the filters, the structured directives, the transport
+ * flags and the `$` keys a boundary refuses. Neither `query` nor `directives` has a `$`.
+ */
 export function splitParams(params: Record<string, unknown> | null | undefined): {
   query: Record<string, unknown>
   directives: Directives
+  flags: { first?: boolean, wrap?: boolean }
+  /** `$` keys the table does not name. */
+  unknown: readonly string[]
+  /** Single-valued keys given a list. */
+  listed: readonly string[]
+  /** Flags and counts given a value outside their grammar, `$first`/`$wrap` last. */
+  invalid: readonly string[]
 }

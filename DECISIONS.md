@@ -35,6 +35,14 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1716"></a>2026-10-31 · `FJS-D1716` — What does `docker ps` call a box's containers — Served apps `fjs--<project>-<env>-<app>-<id8>`, found by an `fjs.app` label; the fleet's own app `frontier-<app>`.
+
+Asked in chat, through the question tool. **A** was picked over **B** (keep `fjs-<uuid>`, add labels and a `fli ps`) and **C** (`fjs-<project>-<app>` with a collision guard). The owner added the platform/served split after CapRover's `captain-` / `srv-captain--`, and labels on every served container whatever the name.
+
+The name stops being the identity. Outpost resolves an app's container by `docker ps -a --filter label=fjs.app=<appId>`, the one not ending `_replaced` live, so the readable name can carry slugs without a rename orphaning anything. `id8` (the app id's head) keeps two environments' same-slug apps apart on one box; slugs are `@immutable`, so the name is stable. Labels `fjs.app`, `fjs.app.slug`, `fjs.project`, `fjs.env` go on at `docker run`. `/deploy` refuses a body without `project`, `environment` and `app_slug`; Basecamp's deploy job reads them off the App's Environment and Project. Platform: `fli deploy`'s `apiContainer` names the `deploy.outpost: true` app `frontier-<app>` (`-test` kept), every other app `<app>-api` as before.
+
+Not renamed: Caddy route ids and image tags stay `fjs-<appId>`, and the Linux user stays `appUser`. No fallback to the old name: a box holding an `fjs-<uuid>` or `basecamp-api` container removes it by hand at the first release after the upgrade, or the new one cannot bind its port. Proved by outpost's suite (331) and `verify:outpost` (48/48, real docker).
+
 ### <a id="fjs-d1683"></a>2026-10-30 · `FJS-D1683` — Q5 — What is the noun — *Processes* on the page, `processes` as the stream source; no new word, the reader is a `processes.js` beside the Outpost's `vitals.js`.
 
 Asked in [`IDEAS/box-top.md`](IDEAS/box-top.md) § Open questions. **A** was picked over **B** (*Top*, after the tool).
@@ -16076,6 +16084,14 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1715"></a>2026-10-31 · `FJS-D1715` — How does an operator make Caddy try for a certificate now, once a hand-fixed DNS record resolves — An explicit retry: a forced Caddy reload on every machine serving the App, then the live check rerun.
+
+**A** (explicit) was picked over **B** (a sweep that reloads once DNS resolves) and **C** (both). Basecamp has no event for "DNS now resolves", so B is a poll that forces reloads nobody chose, against Let's Encrypt's five failed validations per hostname per hour.
+
+Probed on yuma (Caddy 2.11.7) with a throwaway hostname: with no record, Caddy backed off 60, 120, 120, 300, then 600 s. A `POST /load` of the config Caddy already holds, with `Cache-Control: must-revalidate`, cancelled the sleeping attempt ("context canceled") and had the certificate four seconds later, nine minutes before the scheduled retry. The same load without the header logs `config is unchanged` and does nothing, and so does re-pushing a route, which outpost PATCHes in place. So the header is the whole lever.
+
+Built: outpost `POST /ingress/reload` (`ingress.reload()`, serialized with route writes); `apps.retryLive`, a write at `LEVELS.USER` that reloads each online machine running the App, then reruns `liveCheck` up to four times five seconds apart while an HTTPS step fails; a "Try again now" button on a failed HTTPS step on the App page's Live tab; `fli basecamp:live [--retry]`. Unenforced: `verify:docker` runs Caddy on its internal CA with no ACME server, so nothing in CI proves a reload re-issues after backoff; the probe above is the evidence.
 
 ### <a id="fjs-d1714"></a>2026-10-31 · `FJS-D1714` — Q3 — Are stats over the transcripts scanned live, or indexed — An index model in Basecamp's database, appended from each file's last read offset.
 

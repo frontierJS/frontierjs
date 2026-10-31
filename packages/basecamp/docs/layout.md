@@ -129,6 +129,24 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           always handed `-F` with the file that was listed, because ssh finds ~
           through passwd and Bun through $HOME; git is always handed
           `core.fsmonitor=false`, because a status runs that command
+          domain/local/local-claude.ts is `claude auth status --json`, mapped to
+          named fields only so a token in its output cannot pass through
+          domain/claude/ is the Workbench's *Claude Code* tab (`claude` service,
+          IDEAS/claude-code.md): what `~/.claude` (or CLAUDE_CONFIG_DIR) loads,
+          behind the same refusal. Readers are pure and return `Read<T>`
+          (claude-read.ts) — a format Claude Code changes shows *unavailable*,
+          never a wrong number; claude-scan.ts is the fs half and the one
+          `claudeConfigDir()`. claude-index.ts keeps the usage index
+          (`ClaudeTranscript`, `ClaudeMessage`, `FJS-D1714`) by byte offset from
+          `jobs/claude-index.job.ts` every five minutes, never in a request (the
+          first fill is ~100 s); claude-spend.ts reads it back, priced by
+          claude-pricing.ts (list price, its page and read date beside it).
+          claude-context.ts measures a session's first request from its
+          transcript; claude-transcript.ts folds one into turns and refuses a
+          path outside `projects/`; claude-quota.ts reads the account's limits
+          with the OAuth token Claude Code keeps, never refreshing it
+          (`FJS-D1711`), and backs off on a 429 because every running `claude`
+          shares that limit
           domain/workbench/workbench.ts is Claude Code chats per PINNED checkout — tabs
           under the message box, one running at a time since they share the
           tree (`workbench` service, /workbench/), behind the same refusal: each

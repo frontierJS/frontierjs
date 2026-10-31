@@ -221,6 +221,7 @@ const HELP = `
     ${dim('  --json')}                                 the catalog as data
     ${cyan('litestone catalog --snapshot')}            write the language surface ${dim('(--check in CI)')}
     ${cyan('litestone catalog --reference')}           write docs/reference.snapshot.md ${dim('(--check in CI)')}
+    ${cyan('litestone spec')}                          write docs/spec.snapshot.md ${dim('(a working draft, not gated)')}
     ${cyan('litestone advise')}                       what this schema says wrong, and what it never said
     ${dim('  --json')}                                 both lists as data
     ${dim('  --strict')}                               exit 1 on an error or warn rule (CI)
@@ -5404,6 +5405,22 @@ async function main() {
       console.log()
       return
     }
+    writeFileSync(outPath, body, 'utf8')
+    console.log(`  ${green('✓')}  ${rel(outPath)}`)
+    console.log()
+    return
+  }
+
+  // litestone spec
+  //
+  // A working draft of the specification, collected from the code. Not gated:
+  // no --check, because nothing about it is a claim anyone relies on yet.
+  if (cmd === 'spec') {
+    const { renderSpecDraft } = await import('./spec-draft.js')
+    const body    = renderSpecDraft()
+    const outPath = resolve(getFlag('out') ?? resolve(import.meta.dirname, '../../docs/spec.snapshot.md'))
+
+    if (flag('stdout')) { process.stdout.write(body); return }
     writeFileSync(outPath, body, 'utf8')
     console.log(`  ${green('✓')}  ${rel(outPath)}`)
     console.log()

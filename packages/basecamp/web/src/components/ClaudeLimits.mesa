@@ -1,0 +1,118 @@
+<script>
+  // The account and its limits, on the Claude Code tab (api services/claude: account, quota).
+  //
+  // Both answer `{ ok, value }` or `{ ok: false, reason }`: Claude Code changes
+  // these formats without notice, so a read that did not parse shows as
+  // *unavailable* with its reason, never as a zero. A quota served from the last
+  // good read says so -- the endpoint is shared with every running `claude`, and
+  // a forced refresh does not skip its rate-limit stop.
+  import { at, ago }  from '../lib/datetime.js'
+  import { claude }   from '../resources/Claude.mesa'
+
+  import Badge   from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button  from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout from '@frontierjs/ui/components/display/Callout.mesa'
+  import Pill    from '@frontierjs/ui/components/display/Pill.mesa'
+
+  let account  = null   // Read<AuthStatus>
+  let quota    = null   // Read<QuotaRead>
+  let accountError = null
+  let quotaError   = null
+  let loading  = false
+
+  const failure = (err) => err?.message ?? String(err)
+
+  async function loadAccount() {
+    try { account = await claude.service.invoke('account', null); accountError = null } catch (err) { accountError = failure(err) }
+  }
+  async function loadQuota(force) {
+    try { quota = await claude.service.invoke('quota', null, force ? { force: true } : {}); quotaError = null } catch (err) { quotaError = failure(err) }
+  }
+  async function load(force) {
+    loading = true
+    await Promise.all([loadAccount(), loadQuota(force)])
+    loading = false
+  }
+  $.onMount(() => load(false))
+
+  // Green until it is nearly gone: the point of a meter is the one about to run out.
+  const toneOf = (pct) => (pct >= 90 ? 'danger' : pct >= 70 ? 'warning' : 'success')
+
+  function meters(q) {
+    const rows = [
+      { id: 'session', label: 'Session (5 hours)', meter: q.session, none: 'No window is open' },
+      { id: 'weekly', label: 'Weekly', meter: q.weekly, none: 'Not reported' },
+    ]
+    for (const [i, m] of q.models.entries()) rows.push({ id: `model-${i}`, label: `${m.label} weekly`, meter: m, none: 'Not reported', active: m.active })
+    return rows.map(r => ({ ...r, pct: r.meter ? Math.round(r.meter.utilization) : null, tone: r.meter ? toneOf(r.meter.utilization) : '' }))
+  }
+</script>
+
+<div class="stack" id="claude-limits">
+  <div class="cluster claude-limits-head">
+    <h3>Account</h3>
+    <Button id="claude-limits-refresh" treatment="outlined" size="sm" loading={loading} disabled={loading}
+            onclick={() => load(true)}>Refresh</Button>
+  </div>
+
+  {#if accountError}
+    <Callout tone="danger" title="Account read failed">{accountError}</Callout>
+  {:else if !account}
+    <p class="text-sm text-muted">Reading…</p>
+  {:else if !account.ok}
+    <p id="claude-account-unavailable"><Badge tone="warning">unavailable</Badge> <span class="text-sm">{account.reason}</span></p>
+  {:else}
+    {@const a = account.value}
+    <dl class="facts" id="claude-account">
+      <dt>Signed in</dt><dd>{#if a.loggedIn}<Pill tone="success">yes</Pill>{:else}<Pill tone="warning">no</Pill>{/if}</dd>
+      <dt>Plan</dt><dd>{a.subscriptionType ?? '—'}</dd>
+      <dt>Auth method</dt><dd>{a.authMethod ?? '—'}{#if a.apiProvider} <span class="text-sm text-muted">via {a.apiProvider}</span>{/if}</dd>
+      <dt>Organization</dt><dd>{a.orgName ?? '—'}{#if a.orgId} <code class="text-sm">{a.orgId}</code>{/if}</dd>
+      <dt>Email</dt><dd>{a.email ?? '—'}</dd>
+    </dl>
+  {/if}
+
+  <h3>Limits</h3>
+  {#if quotaError}
+    <Callout tone="danger" title="Limits read failed">{quotaError}</Callout>
+  {:else if !quota}
+    <p class="text-sm text-muted">Reading…</p>
+  {:else if !quota.ok}
+    <p id="claude-quota-unavailable"><Badge tone="warning">unavailable</Badge> <span class="text-sm">{quota.reason}</span></p>
+  {:else}
+    {@const q = quota.value}
+    {#if q.stale}
+      <Callout tone="warning" title="Stale">
+        <span id="claude-quota-stale">stale, next read at {q.retryAt ? at(q.retryAt) : 'an unknown time'}</span>
+        -- the usage endpoint is rate limited and shared with every running <code>claude</code>; a refresh does not skip that stop.
+      </Callout>
+    {/if}
+    <div class="stack" id="claude-quota">
+      {#each meters(q) as m (m.id)}
+        <div class="quota-row" data-meter={m.id}>
+          <div class="cluster quota-label">
+            <strong>{m.label}</strong>
+            {#if m.active}<Badge tone="info">binding</Badge>{/if}
+          </div>
+          {#if m.meter}
+            <div class="cluster">
+              <meter class={`meter ${m.tone}`} value={m.pct} min="0" max="100" aria-label={`${m.label}: ${m.pct}% used`}>{m.pct}%</meter>
+              <span class="quota-pct">{m.pct}% used</span>
+            </div>
+            <span class="text-sm text-muted">{m.meter.resetsAt ? `resets ${at(m.meter.resetsAt)}` : 'no reset time given'}</span>
+          {:else}
+            <span class="text-sm text-muted">{m.none}</span>
+          {/if}
+        </div>
+      {/each}
+    </div>
+    <p class="text-sm text-muted">Read {ago(q.fetchedAt)}.</p>
+  {/if}
+</div>
+
+<style>
+  .claude-limits-head { justify-content: space-between; align-items: center; }
+  .quota-row { display: grid; gap: var(--space-2xs); }
+  .quota-row meter { inline-size: min(var(--measure), 70vw); }
+  .quota-pct { font-variant-numeric: tabular-nums; }
+</style>

@@ -266,9 +266,11 @@ UI.
 ```js
 import { splitParams, RESERVED_PARAMS } from '@frontierjs/toolbelt/directives'
 
-splitParams({ status: 'active', $limit: '20', $orderBy: '-createdAt' })
+splitParams({ status: 'active', $limit: '20', $orderBy: '-createdAt', $first: '1', $limitt: '5' })
 // { query:      { status: 'active' },
-//   directives: { limit: 20, orderBy: '-createdAt' } }
+//   directives: { limit: 20, orderBy: '-createdAt' },
+//   flags:      { first: true },
+//   unknown: ['$limitt'], listed: [], invalid: [] }
 ```
 
 FrontierJS carries two different kinds of thing in one bag of parameters: the
@@ -282,9 +284,11 @@ string or a WebSocket frame, and Sierra's router, off a URL's search string.
 Same grammar, two realms, which is why the table is here rather than in either.
 A `$` key the table does not name never reaches the filters: `splitParams`
 drops every `$` key but `COMBINATORS` (`$or`, `$and`, `$not` — filters written
-with a `$`, left in `query` for the where grammar), and `unknownDirectives(params)`
-names the ones it did not recognize, so a boundary can refuse them by name
-(`FJS-D237`, `FJS-D910`).
+with a `$`, left in `query` for the where grammar), and its `unknown` names the
+ones it did not recognize, so a boundary can refuse them by name (`FJS-D237`,
+`FJS-D910`). `listed` and `invalid` are the other two refusals, and `flags` is
+`$first` / `$wrap`, so a request is graded off one call; a bag with no `$` key
+answers all of them empty without walking the table.
 
 Both directions: `parseDirectives` reads the `$` names into the structured
 form, and `directiveParams` writes that form back out as `$` names, so a

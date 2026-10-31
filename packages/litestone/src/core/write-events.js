@@ -9,6 +9,11 @@
 import { checkAnnounce, defer } from './hooks.js'
 import { ident, keyIn, tuplesOf } from './query.js'
 
+// The vocabulary an event is stated in, for readers that must list it (`litestone spec`).
+// `index.d.ts` `WriteEvent` types the same two sets by hand.
+export const WRITE_EVENT_KINDS  = ['create', 'update', 'remove', 'transition']
+export const WRITE_EVENT_SCOPES = ['row', 'collection']
+
 export function makeWriteEvents(shape, ctx, deps) {
   const { modelName } = shape
   const { emitter, tx, readDb, idField, _modelToTable, read } = deps

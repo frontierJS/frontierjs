@@ -14,7 +14,7 @@
 import { test, expect, describe } from 'bun:test'
 import { signRequest, generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { createOutpostServer }    from '../src/server.js'
-import { createDocker, createInspector, isDigest, BACKUP_SCRIPT } from '../src/docker.js'
+import { createDocker, createInspector, containerName, isDigest, BACKUP_SCRIPT } from '../src/docker.js'
 import { createReporter }         from '../src/report.js'
 import { createIngress }          from '../src/ingress.js'
 import { createVitals }           from '../src/vitals.js'
@@ -52,10 +52,21 @@ const CONFIG = {
 
 const DIGEST = 'sha256:' + 'ab'.repeat(32)
 
+/** The slugs a `/deploy` carries, and the container name they spell for an app. */
+const SLUGS = { project: 'acme', environment: 'prod', app_slug: 'web' }
+const nameFor = (appId) => containerName({ appId, project: 'acme', environment: 'prod', appSlug: 'web' })
+
 /** A docker that records argv and answers canned output, so a test can assert
  *  what the MACHINE was asked to do rather than what the route returned. */
 function fakeRunner(answers = {}) {
   const calls = []
+  // The containers each app has, by name, which `rename`, `rm` and `run --name`
+  // move the way the daemon would.
+  const named = new Map()
+  const namesOf = (id) => {
+    if (!named.has(id)) named.set(id, [...answers.containers ?? [nameFor(id)]])
+    return named.get(id)
+  }
   const run = async (argv, opts) => {
     calls.push(argv)
     calls.opts = [...(calls.opts ?? []), opts]
@@ -74,6 +85,19 @@ function fakeRunner(answers = {}) {
     // An image that declares no USER runs as root and keeps it, so a case
     // about anything else is not handed a uid table to write.
     if (argv.includes('{{json .Config.User}}')) return { exitCode: 0, stdout: '""\n', stderr: '', ...answers.user }
+    // An app's containers are found by label. Unless a case states `containers`
+    // (names, `[]` for a first deploy), the app already has one live.
+    const labelled = argv.find(a => a.startsWith('label=fjs.app='))
+    if (labelled) {
+      const names = namesOf(labelled.slice('label=fjs.app='.length))
+      return { exitCode: 0, stdout: names.map(n => `${n}\n`).join(''), stderr: '' }
+    }
+    if (argv[1] === 'rename') for (const names of named.values()) names.splice(0, names.length, ...names.map(n => n === argv[2] ? argv[3] : n))
+    if (argv[1] === 'rm') for (const names of named.values()) names.splice(0, names.length, ...names.filter(n => !argv.slice(3).includes(n)))
+    if (argv[1] === 'run' && argv.includes('--name') && !argv.includes('--rm')) {
+      const at = argv.find(a => a.startsWith('fjs.app='))
+      if (at) namesOf(at.slice('fjs.app='.length)).push(argv[argv.indexOf('--name') + 1])
+    }
     const key = argv.slice(0, 3).join(' ')
     const canned = Object.entries(answers).find(([prefix]) => key.startsWith(prefix))?.[1]
     return { exitCode: 0, stdout: '', stderr: '', ...(canned ?? {}) }
@@ -173,7 +197,7 @@ describe('what the machine is asked to do', () => {
       inspector: createInspector({ run: fake.run }),
     })
 
-    const res  = await send(server, 'POST', '/deploy', {
+    const res  = await send(server, 'POST', '/deploy', { ...SLUGS,
       deployment_id: 'dep-1', app_id: 'app-1', image: 'acme-web',
       source: { kind: 'git', repo: 'https://git.test/acme/web.git', branch: 'main' },
       config: { env: { NODE_ENV: 'production' }, port: 3000 },
@@ -201,11 +225,11 @@ describe('what the machine is asked to do', () => {
     // The old container is set aside under `_replaced` and stopped before the
     // new one takes its name, and removed only once the new one is healthy.
     const at = (c) => argv.indexOf(c)
-    expect(at('docker rename fjs-app-1 fjs-app-1_replaced')).toBeGreaterThan(-1)
-    expect(at('docker stop -t 10 fjs-app-1_replaced')).toBeGreaterThan(at('docker rename fjs-app-1 fjs-app-1_replaced'))
-    expect(argv.findIndex(c => c.startsWith('docker run'))).toBeGreaterThan(at('docker stop -t 10 fjs-app-1_replaced'))
-    expect(argv.lastIndexOf('docker rm -f fjs-app-1_replaced')).toBeGreaterThan(argv.findIndex(c => c.startsWith('docker run')))
-    expect(argv).not.toContain('docker rm -f fjs-app-1')
+    expect(at('docker rename fjs--acme-prod-web-app-1 fjs--acme-prod-web-app-1_replaced')).toBeGreaterThan(-1)
+    expect(at('docker stop -t 10 fjs--acme-prod-web-app-1_replaced')).toBeGreaterThan(at('docker rename fjs--acme-prod-web-app-1 fjs--acme-prod-web-app-1_replaced'))
+    expect(argv.findIndex(c => c.startsWith('docker run'))).toBeGreaterThan(at('docker stop -t 10 fjs--acme-prod-web-app-1_replaced'))
+    expect(argv.lastIndexOf('docker rm -f fjs--acme-prod-web-app-1_replaced')).toBeGreaterThan(argv.findIndex(c => c.startsWith('docker run')))
+    expect(argv).not.toContain('docker rm -f fjs--acme-prod-web-app-1')
   })
 
   // FJS-D1484: each app on a box is a host uid of its own, so one that
@@ -213,7 +237,7 @@ describe('what the machine is asked to do', () => {
   describe('an image with a USER runs as the app\'s own uid', () => {
     const release = async (docker, app_id, config = { port: 3000, volumePath: '/db' }) => {
       const server = createOutpostServer(CONFIG, { docker, inspector: createInspector({ run: async () => ({ exitCode: 0, stdout: '', stderr: '' }) }) })
-      return send(server, 'POST', '/deploy', { deployment_id: `dep-${app_id}`, app_id, image: DIGEST, config })
+      return send(server, 'POST', '/deploy', { ...SLUGS, deployment_id: `dep-${app_id}`, app_id, image: DIGEST, config })
     }
     const machine = (user = '"bun"\n') => {
       const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'docker run': { stdout: 'c-1\n' }, user: { stdout: user } })
@@ -228,7 +252,7 @@ describe('what the machine is asked to do', () => {
       const argv = m.fake.calls.map(c => c.join(' '))
       const [chown, app] = runs(m.fake)
       expect(chown).toBe(`docker run --rm --user 0:0 --entrypoint chown --mount type=bind,src=${APPS}/app-1/data,dst=/db ${DIGEST} -R 400000:400000 /db`)
-      expect(argv.indexOf(chown)).toBeGreaterThan(argv.indexOf('docker stop -t 10 fjs-app-1_replaced'))
+      expect(argv.indexOf(chown)).toBeGreaterThan(argv.indexOf('docker stop -t 10 fjs--acme-prod-web-app-1_replaced'))
       expect(app).toContain('--user 400000:400000')
       expect(app).toContain(`--mount type=bind,src=${APPS}/app-1/data,dst=/db`)
     })
@@ -454,11 +478,11 @@ describe('what the machine is asked to do', () => {
         'bun --bun vite build -c config/vite.config.js', 'bun x sierra site --deploy',
       ])
       expect(runs.slice(1).every(c => c.includes('-w /src/site'))).toBe(true)
-      const backup = argv().find(c => c.startsWith('docker exec -w /app fjs-app-1 bunx litestone backup /db/backups/site-build-'))
+      const backup = argv().find(c => c.startsWith('docker exec -w /app fjs--acme-prod-web-app-1 bunx litestone backup /db/backups/site-build-'))
       expect(backup).toBeDefined()
       const inner = backup.split(' ')[8]
-      expect(argv()).toContain(`docker cp fjs-app-1:${inner}/. ${workDir}/app-1.release.db`)
-      expect(argv()).toContain(`docker exec fjs-app-1 rm -rf ${inner}`)
+      expect(argv()).toContain(`docker cp fjs--acme-prod-web-app-1:${inner}/. ${workDir}/app-1.release.db`)
+      expect(argv()).toContain(`docker exec fjs--acme-prod-web-app-1 rm -rf ${inner}`)
 
       // The copy is the build's database; the App's own DATABASE_URL is not passed.
       expect(runs[2]).toContain(`--mount type=bind,source=${workDir}/app-1.release.db,target=/db -e DATABASE_URL=/db/main.db -e ENCRYPTION_KEY`)
@@ -497,7 +521,7 @@ describe('what the machine is asked to do', () => {
       const { server, argv } = serverFor({ db: false })
       const res = await send(server, 'POST', '/site/publish', BODY)
       expect(res.status).toBe(500)
-      expect((await res.json()).error).toBe('litestone backup in fjs-app-1 wrote no main.db')
+      expect((await res.json()).error).toBe('litestone backup in fjs--acme-prod-web-app-1 wrote no main.db')
       expect(argv().some(c => c.includes('vite build'))).toBe(false)
     })
 
@@ -623,7 +647,7 @@ describe('what the machine is asked to do', () => {
 
     test('/deploy given the digest of a build starts those bytes and builds nothing', async () => {
       const { server, argv } = serverFor({ 'docker run': { stdout: 'container-1\n' } })
-      const res = await send(server, 'POST', '/deploy', {
+      const res = await send(server, 'POST', '/deploy', { ...SLUGS,
         deployment_id: 'dep-1', app_id: 'app-1', image: 'fjs-app-1:dep-1', digest: DIGEST, source: GIT, config: { port: 3000 },
       })
 
@@ -643,7 +667,7 @@ describe('what the machine is asked to do', () => {
         docker: createDocker({ appsDir: APPS, run: fake.run, fetch, health: HEALTH }), inspector: createInspector({ run: fake.run }),
         log: { warn() {}, error() {} },
       })
-      const sent = send(server, 'POST', '/deploy', {
+      const sent = send(server, 'POST', '/deploy', { ...SLUGS,
         deployment_id: 'dep-9', app_id: 'app-1', image: 'acme-web', digest: DIGEST, config: { port: 7300 }, ...body,
       })
       return { fake, sent, argv: () => fake.calls.map(c => c.join(' ')) }
@@ -663,11 +687,11 @@ describe('what the machine is asked to do', () => {
 
       const run = argv().findIndex(c => c.startsWith('docker run'))
       expect(argv().slice(run + 1)).toEqual(expect.arrayContaining([
-        'docker rm -f fjs-app-1',
-        'docker rename fjs-app-1_replaced fjs-app-1',
-        'docker start fjs-app-1',
+        'docker rm -f fjs--acme-prod-web-app-1',
+        'docker rename fjs--acme-prod-web-app-1_replaced fjs--acme-prod-web-app-1',
+        'docker start fjs--acme-prod-web-app-1',
       ]))
-      expect(argv().indexOf('docker start fjs-app-1')).toBeGreaterThan(argv().indexOf('docker rename fjs-app-1_replaced fjs-app-1'))
+      expect(argv().indexOf('docker start fjs--acme-prod-web-app-1')).toBeGreaterThan(argv().indexOf('docker rename fjs--acme-prod-web-app-1_replaced fjs--acme-prod-web-app-1'))
     })
 
     test('a start that never answers its health path is taken down, and the old one put back', async () => {
@@ -683,10 +707,10 @@ describe('what the machine is asked to do', () => {
       const { error } = await res.json()
       expect(error).toContain('started and is not healthy — http://127.0.0.1:7300/healthz answered 503')
       expect(error).toContain('the previous container is serving again')
-      expect(argv()).toContain('docker rename fjs-app-1_replaced fjs-app-1')
+      expect(argv()).toContain('docker rename fjs--acme-prod-web-app-1_replaced fjs--acme-prod-web-app-1')
       // The handle is spent, not deleted: no `rm -f _replaced` after the run.
       const run = argv().findIndex(c => c.startsWith('docker run'))
-      expect(argv().slice(run)).not.toContain('docker rm -f fjs-app-1_replaced')
+      expect(argv().slice(run)).not.toContain('docker rm -f fjs--acme-prod-web-app-1_replaced')
     })
 
     test('a container that is not running after the start is the same failure', async () => {
@@ -696,13 +720,13 @@ describe('what the machine is asked to do', () => {
       const { error } = await res.json()
       expect(error).toContain('started and is not healthy — not running')
       expect(error).toContain('the previous container is back and is not healthy either')
-      expect(argv()).toContain('docker start fjs-app-1')
+      expect(argv()).toContain('docker start fjs--acme-prod-web-app-1')
     })
 
     test('a first deploy has nothing to put back, and says so', async () => {
       const { sent, argv } = deployWith({
-        'docker container inspect': { exitCode: 1, stderr: 'Error: No such container\n' },
-        'docker run':               { exitCode: 125, stderr: 'invalid reference format\n' },
+        containers: [],
+        'docker run': { exitCode: 125, stderr: 'invalid reference format\n' },
       })
       const res = await sent
       expect(res.status).toBe(500)
@@ -716,23 +740,80 @@ describe('what the machine is asked to do', () => {
       const fake = fakeRunner({
         'docker image inspect': { stdout: DIGEST + '\n' },
         'docker run':           { exitCode: 125, stderr: 'boom\n' },
+        containers:             ['fjs--acme-prod-web-app-1_replaced'],
       })
-      const inner = fake.run
-      const run = async (argv) => argv[1] === 'container' && argv.at(-1) === 'fjs-app-1'
-        ? (fake.calls.push(argv), { exitCode: 1, stdout: '', stderr: 'Error: No such container\n' })
-        : inner(argv)
+      const run = fake.run
       const server = createOutpostServer(CONFIG, {
         docker: createDocker({ appsDir: APPS, run, health: HEALTH }), inspector: createInspector({ run }),
         log: { warn() {}, error() {} },
       })
-      const res = await send(server, 'POST', '/deploy', {
+      const res = await send(server, 'POST', '/deploy', { ...SLUGS,
         deployment_id: 'dep-9', app_id: 'app-1', image: 'acme-web', digest: DIGEST, config: {},
       })
       expect((await res.json()).error).toContain('the previous container is serving again')
       const argv = fake.calls.map(c => c.join(' '))
       const run_ = argv.findIndex(c => c.startsWith('docker run'))
-      expect(argv.slice(0, run_)).not.toContain('docker rm -f fjs-app-1_replaced')
-      expect(argv).toContain('docker rename fjs-app-1_replaced fjs-app-1')
+      expect(argv.slice(0, run_)).not.toContain('docker rm -f fjs--acme-prod-web-app-1_replaced')
+      expect(argv).toContain('docker rename fjs--acme-prod-web-app-1_replaced fjs--acme-prod-web-app-1')
+    })
+
+    test('a container the slugs no longer name is set aside and put back under its own name', async () => {
+      // The name is not the identity: the App was renamed since the last
+      // release, and the label still finds the old container.
+      const { sent, argv } = deployWith({
+        containers: ['fjs--acme-prod-oldweb-app-1'],
+        'docker run': { exitCode: 125, stderr: 'boom\n' },
+      })
+      await sent
+      expect(argv()).toContain('docker rename fjs--acme-prod-oldweb-app-1 fjs--acme-prod-oldweb-app-1_replaced')
+      expect(argv()).toContain('docker rename fjs--acme-prod-oldweb-app-1_replaced fjs--acme-prod-oldweb-app-1')
+      expect(argv()).toContain('docker start fjs--acme-prod-oldweb-app-1')
+    })
+  })
+
+  describe('a served container is named for what runs in it, and found by its label', () => {
+    const HEALTH = { attempts: 2, intervalMs: 0 }
+    const deployWith = (answers, { body = {} } = {}) => {
+      const fake   = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, ...answers })
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ appsDir: APPS, run: fake.run, health: HEALTH }), inspector: createInspector({ run: fake.run }),
+        log: { warn() {}, error() {} },
+      })
+      const sent = send(server, 'POST', '/deploy', { ...SLUGS,
+        deployment_id: 'dep-9', app_id: 'app-1', image: 'acme-web', digest: DIGEST, config: { port: 7300 }, ...body,
+      })
+      return { sent, argv: () => fake.calls.map(c => c.join(' ')) }
+    }
+
+    test('the name is lowercased, anything outside [a-z0-9-] becomes a dash, and the id is cut to 8', () => {
+      expect(containerName({ appId: 'app-1', project: 'Acme Co', environment: 'prod', appSlug: 'web_api' })).toBe('fjs--acme-co-prod-web-api-app-1')
+      expect(containerName({ appId: '0123456789abcdef', project: 'a', environment: 'b', appSlug: 'c' })).toBe('fjs--a-b-c-01234567')
+    })
+
+    test('the run carries the identity label and the slug labels', async () => {
+      const { sent, argv } = deployWith({ 'docker run': { stdout: 'c-1\n' } })
+      expect((await sent).status).toBe(200)
+      const run = argv().find(c => c.startsWith('docker run'))
+      expect(run).toContain('--name fjs--acme-prod-web-app-1 ')
+      for (const label of ['fjs.app=app-1', 'fjs.app.slug=web', 'fjs.project=acme', 'fjs.env=prod'])
+        expect(run).toContain(`--label ${label}`)
+    })
+
+    test('the container is asked for by label, never by a name derived from the id', async () => {
+      const { sent, argv } = deployWith({ 'docker run': { stdout: 'c-1\n' } })
+      await sent
+      expect(argv()).toContain('docker ps -a --filter label=fjs.app=app-1 --format {{.Names}}')
+      expect(argv().some(c => c.includes('fjs-app-1'))).toBe(false)
+    })
+
+    test('a deploy without the slugs is refused before anything is touched', async () => {
+      for (const field of ['project', 'environment', 'app_slug']) {
+        const { sent, argv } = deployWith({}, { body: { [field]: undefined } })
+        const res = await sent
+        expect(res.status).toBe(500)
+        expect((await res.json()).error).toContain(`needs the ${field}`)
+        expect(argv().some(c => c.startsWith('docker rename') || c.startsWith('docker run'))).toBe(false)
+      }
     })
   })
 
@@ -750,7 +831,7 @@ describe('what the machine is asked to do', () => {
       inspector: createInspector({ run: fake.run }),
     })
 
-    const res = await send(server, 'POST', '/deploy', {
+    const res = await send(server, 'POST', '/deploy', { ...SLUGS,
       deployment_id: 'dep-2', app_id: 'app-2', image: 'acme-web', digest: DIGEST, config: {},
     })
     expect(res.status).toBe(200)
@@ -768,7 +849,7 @@ describe('what the machine is asked to do', () => {
       docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
       log: { warn() {}, error() {} },
     })
-    const ok = await send(server, 'POST', '/deploy', {
+    const ok = await send(server, 'POST', '/deploy', { ...SLUGS,
       deployment_id: 'dep-3', app_id: 'pg', image: 'postgres:16', config: { volumePath: '/var/lib/postgresql/data' },
     })
     expect(ok.status).toBe(200)
@@ -778,7 +859,7 @@ describe('what the machine is asked to do', () => {
     expect(statSync(join(APPS, 'pg', 'data')).isDirectory()).toBe(true)
 
     fake.calls.length = 0
-    const bad = await send(server, 'POST', '/deploy', {
+    const bad = await send(server, 'POST', '/deploy', { ...SLUGS,
       deployment_id: 'dep-4', app_id: 'pg', image: 'postgres:16', config: { volumePath: '/etc:/host' },
     })
     expect(bad.status).toBe(500)
@@ -793,7 +874,7 @@ describe('what the machine is asked to do', () => {
       docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
       log: { warn() {}, error() {} },
     })
-    const ok = await send(server, 'POST', '/deploy', {
+    const ok = await send(server, 'POST', '/deploy', { ...SLUGS,
       deployment_id: 'dep-5', app_id: 'n8n', image: 'n8n:1', config: { cpuLimit: 0.5, memLimitMb: 512, command: ['serve', '--listen-http', ':2586'] },
     })
     expect(ok.status).toBe(200)
@@ -806,7 +887,7 @@ describe('what the machine is asked to do', () => {
 
     for (const config of [{ cpuLimit: '500m' }, { memLimitMb: '512Mi' }, { command: 'serve --listen-http :2586' }]) {
       fake.calls.length = 0
-      const bad = await send(server, 'POST', '/deploy', { deployment_id: 'dep-6', app_id: 'n8n', image: 'n8n:1', config })
+      const bad = await send(server, 'POST', '/deploy', { ...SLUGS, deployment_id: 'dep-6', app_id: 'n8n', image: 'n8n:1', config })
       expect(bad.status).toBe(500)
       expect(fake.calls.some(c => c.join(' ').startsWith('docker rm'))).toBe(false)
     }
@@ -883,7 +964,7 @@ describe('what the machine is asked to do', () => {
     })
     const body = await (await send(server, 'POST', '/health-check', { app_id: 'app-1' })).json()
     expect(body.healthy).toBe(true)
-    expect(fake.calls.map(c => c.join(' '))).toContain('docker inspect --format {{.State.Running}} fjs-app-1')
+    expect(fake.calls.map(c => c.join(' '))).toContain('docker inspect --format {{.State.Running}} fjs--acme-prod-web-app-1')
   })
 
   test('a step with no command is acknowledged rather than failed', async () => {
@@ -1445,9 +1526,10 @@ describe('the ingress — Caddy, through its admin API', () => {
   function fakeCaddy(initial = null) {
     let config = structuredClone(initial)
     const asked = []
+    const loads = []
     const routes = () => config?.apps?.http?.servers?.ingress?.routes
     const answer = (status, body) => new Response(body === undefined ? '' : JSON.stringify(body), { status })
-    const fetch = async (url, { method = 'GET', body } = {}) => {
+    const fetch = async (url, { method = 'GET', body, headers = {} } = {}) => {
       const path = new URL(url).pathname
       asked.push(`${method} ${path}`)
       const data = body ? JSON.parse(body) : undefined
@@ -1466,6 +1548,7 @@ describe('the ingress — Caddy, through its admin API', () => {
         routes().push(data)
         return answer(200)
       }
+      if (method === 'POST' && path === '/load') { loads.push({ body: data, revalidate: headers['cache-control'] === 'must-revalidate' }); config = data; return answer(200) }
       if (method === 'POST' && path === '/config/logging') { config.logging = data; return answer(200) }
       if (method === 'POST' && path === '/config/apps/http/servers/ingress/logs') {
         if (!config?.apps?.http?.servers?.ingress) return answer(400, { error: 'invalid traversal path' })
@@ -1477,7 +1560,7 @@ describe('the ingress — Caddy, through its admin API', () => {
       if (method === 'DELETE') { routes().splice(at, 1); return answer(200) }
       return answer(400, { error: `unexpected ${method} ${path}` })
     }
-    return { fetch, asked, get config() { return config } }
+    return { fetch, asked, loads, get config() { return config } }
   }
 
   const serverWith = (caddy, fake = fakeRunner({ 'docker run': { stdout: 'container-1\n' } })) => ({
@@ -1488,7 +1571,7 @@ describe('the ingress — Caddy, through its admin API', () => {
       log: { warn() {}, error() {} },
     }),
   })
-  const deploy = (server, extra = {}) => send(server, 'POST', '/deploy', {
+  const deploy = (server, extra = {}) => send(server, 'POST', '/deploy', { ...SLUGS,
     deployment_id: 'dep-1', app_id: 'app-1', image: 'acme-web', digest: DIGEST,
     config: { port: 7300, containerPort: 80 }, ...extra,
   })
@@ -1666,6 +1749,20 @@ describe('the ingress — Caddy, through its admin API', () => {
       expect(fake.calls).toEqual([])
       expect(caddy.asked).toEqual([])
     }
+  })
+
+  test('a reload loads the config Caddy holds, forced, so a certificate in backoff is asked for now', async () => {
+    // Caddy logs "config is unchanged" and does nothing for an identical load
+    // without the header -- proved on a real box under FJS-D1715.
+    const caddy = fakeCaddy()
+    const { server } = serverWith(caddy)
+    await deploy(server, { hosts: ['shop.example.com'] })
+    const held = structuredClone(caddy.config)
+
+    const res = await send(server, 'POST', '/ingress/reload', {})
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ reloaded: true })
+    expect(caddy.loads).toEqual([{ body: held, revalidate: true }])
   })
 
   test('hostnames with no published port are refused', async () => {
@@ -1868,7 +1965,7 @@ describe('the ingress — Caddy, through its admin API', () => {
       expect(routes[0].match[0].host).toEqual(['shop.example.com', 'new.example.com'])
       expect(routes[0].handle[0].upstreams[0].dial).toBe('127.0.0.1:7302')
       // Routing restarts nothing.
-      expect(fake.calls.filter(c => c[1] !== 'inspect')).toEqual([])
+      expect(fake.calls.filter(c => c[1] !== 'inspect' && c[1] !== 'ps')).toEqual([])
     })
 
     test('the last hostname removed takes the route out, and says nothing reaches the app now', async () => {
@@ -1889,11 +1986,11 @@ describe('the ingress — Caddy, through its admin API', () => {
     })
 
     test('no container, or no published port, is refused and nothing is routed', async () => {
-      const gone = fakeRunner({ 'docker inspect --format': { exitCode: 1, stderr: 'Error: No such object: fjs-app-1' } })
+      const gone = fakeRunner({ containers: [] })
       const caddy = fakeCaddy()
       const res = await route(serverWith(caddy, gone).server, ['shop.example.com'])
       expect(res.status).toBe(500)
-      expect((await res.json()).error).toContain('no container fjs-app-1')
+      expect((await res.json()).error).toContain('no container for app app-1')
 
       const unpublished = fakeRunner({ 'docker inspect --format': { stdout: '{}\n' } })
       const res2 = await route(serverWith(caddy, unpublished).server, ['shop.example.com'])
@@ -1906,7 +2003,7 @@ describe('the ingress — Caddy, through its admin API', () => {
 
     test('a stated port routes an app with no container to it — a preview\'s dev server', async () => {
       const caddy = fakeCaddy()
-      const gone  = fakeRunner({ 'docker inspect --format': { exitCode: 1, stderr: 'Error: No such object: fjs-app-1' } })
+      const gone  = fakeRunner({ containers: [] })
       const res   = await send(serverWith(caddy, gone).server, 'POST', '/route', { app_id: 'app-1', hosts: ['try.preview.example.com'], port: 18020 })
       expect(await res.json()).toEqual({ hosts: ['try.preview.example.com'], paths: [], port: 18020, rebind: null })
       expect(caddy.config.apps.http.servers.ingress.routes[0].handle[0].upstreams[0].dial).toBe('127.0.0.1:18020')
@@ -2205,7 +2302,7 @@ describe('reading a container log', () => {
     expect(res.status).toBe(200)
 
     const argv = fake.calls.find(c => c[1] === 'logs')
-    expect(argv).toEqual(['docker', 'logs', '--tail', '50', 'fjs-app-1'])
+    expect(argv).toEqual(['docker', 'logs', '--tail', '50', 'fjs--acme-prod-web-app-1'])
     expect((await res.json()).stdout).toContain('listening on 3000')
   })
 
@@ -2215,11 +2312,11 @@ describe('reading a container log', () => {
     // anything can trim it.
     const fake = fakeRunner({ 'docker logs': { stdout: '' } })
     await send(serverWith(fake), 'POST', '/logs', { app_id: 'app-1', tail: 10_000_000 })
-    expect(fake.calls.find(c => c[1] === 'logs')).toEqual(['docker', 'logs', '--tail', '5000', 'fjs-app-1'])
+    expect(fake.calls.find(c => c[1] === 'logs')).toEqual(['docker', 'logs', '--tail', '5000', 'fjs--acme-prod-web-app-1'])
 
     const fake2 = fakeRunner({ 'docker logs': { stdout: '' } })
     await send(serverWith(fake2), 'POST', '/logs', { app_id: 'app-1', tail: 'not-a-number' })
-    expect(fake2.calls.find(c => c[1] === 'logs')).toEqual(['docker', 'logs', '--tail', '200', 'fjs-app-1'])
+    expect(fake2.calls.find(c => c[1] === 'logs')).toEqual(['docker', 'logs', '--tail', '200', 'fjs--acme-prod-web-app-1'])
   })
 
   test('`since` is passed through, and absent when not asked for', async () => {
@@ -2288,7 +2385,6 @@ describe('reading a container log', () => {
     const fs  = fakeStream()
     const res = await send(followServer(fs), 'POST', '/logs/follow', { app_id: 'app-1', tail: 10 })
     expect(res.headers.get('content-type')).toBe('text/event-stream')
-    expect(fs.proc.argv).toEqual(['docker', 'logs', '--follow', '--tail', '10', 'fjs-app-1'])
 
     // A line split across two writes arrives once, whole.
     fs.out('listening on ')
@@ -2299,6 +2395,17 @@ describe('reading a container log', () => {
     expect(text).toContain('data: {"stream":"stdout","text":"listening on 3000"}')
     expect(text).toContain('data: {"stream":"stderr","text":"warn: slow"}')
     expect(text).toContain('event: end')
+    expect(fs.proc.argv).toEqual(['docker', 'logs', '--follow', '--tail', '10', 'fjs--acme-prod-web-app-1'])
+  })
+
+  test('a container the label does not find is a line and an end, with nothing spawned', async () => {
+    const fs  = fakeStream()
+    const res = await send(createOutpostServer(CONFIG, {
+      docker: createDocker({ appsDir: APPS, run: fakeRunner({ containers: [] }).run, stream: fs.spawn, workDir: CONFIG.workDir }),
+    }), 'POST', '/logs/follow', { app_id: 'app-1' })
+    const { text } = await readEvents(res, t => t.includes('event: end'))
+    expect(text).toContain('no such container for app app-1')
+    expect(fs.proc.argv).toBeNull()
   })
 
   test('a reader that goes away kills the process', async () => {

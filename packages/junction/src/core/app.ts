@@ -7,7 +7,7 @@ import { HttpTransport }            from '../transport/http.ts'
 import type { WsRouteOptions }       from '../transport/http.ts'
 import { resolveTrustProxy }        from '../transport/forwarded.ts'
 import { mountLocalFiles }          from '../transport/local-files.ts'
-import { bridge, errorResponse, readTransportFlags, refuseBadDirectives } from '../transport/bridge.ts'
+import { bridge, errorResponse, refuseBadDirectives } from '../transport/bridge.ts'
 import { freezeUser, enterRequest, reenterAs, requestMeta, NEVER_ABORTED, currentCall, enterCall, callDb, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions, type Attester, type RequestMeta } from './context.ts'
 import { hookContext } from '@frontierjs/toolbelt/hooks'
 import { DEV_ENV, formatDevLine } from '@frontierjs/toolbelt/devline'
@@ -2662,17 +2662,6 @@ export function registerServiceRoutes(app: App): void {
     const serviceName = service.name
 
     const model  = (service as unknown as { model?: string }).model ?? serviceName
-    // $wrap is a three-state request, not a boolean:
-    //   absent      → the default rule (list keeps its envelope, single unwraps)
-    //   'true'      → envelope the single too
-    //   'false'     → unwrap the list to a bare array (Feathers' paginate:false)
-    // It used to be read as `=== 'true'`, so $wrap=false on a list was silently
-    // ignored — the only way to get a bare array out of find() was not to ask.
-    //
-    // Read by the flag grammar the bridge shares with `$first`: the transport
-    // parses types (`FJS-D125`), so `?$wrap=0` is the number and `?$wrap=false`
-    // the boolean, and a hand-built context passes the string.
-    const { wrap } = readTransportFlags(ctx.query)
     const svcCtx = bridge.toContext(ctx, serviceName, model, 'http', app)
 
     // The transport opened the request scope around this handler. Opening a
@@ -2684,7 +2673,7 @@ export function registerServiceRoutes(app: App): void {
     // all, a test driving it by hand, still gets one.
     const run = async (): Promise<Response> => {
       await callService(service, svcCtx, app._appHooks, app.events, app.telemetry)
-      return bridge.toResponse(svcCtx, wrap)
+      return bridge.toResponse(svcCtx)
     }
     try {
       return await (requestMeta()

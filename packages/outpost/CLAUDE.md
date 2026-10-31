@@ -46,15 +46,19 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   which this process may write.
 - **The route bodies are basecamp's wire contract and they are snake_case.**
   `app_id`, `timeout_s`, `keep_images`, `server_id`. Inside is camelCase. A route
-  that passes a body straight through addresses a container called
-  `fjs-undefined`, which exists on no machine and reports healthy nowhere — the
-  first test written here caught exactly that.
+  that passes a body straight through addresses an app called `undefined`,
+  which exists on no machine and reports healthy nowhere — the first test
+  written here caught exactly that.
+- **A container is found by its `fjs.app=<appId>` label, never by name.** The
+  name, `fjs--<project>-<env>-<app>-<first 8 of the id>`, is for `docker ps`;
+  `/deploy` takes `project`, `environment` and `app_slug` to spell it and
+  refuses without them. Caddy route ids stay `fjs-<app>`.
 - **Nothing interpolates caller text into a shell string.** Every command is an
   argv array handed to the runner, so a volume name with a space in it is one
   argument. `/exec` is the deliberate exception and it is what it says it is.
 - **`/deploy` answers once the release is HEALTHY, and puts the old one back
   when it is not** (`FJS-1765`). The live container waits as
-  `fjs-<app>_replaced`, stopped, because a SQLite volume takes one writer. A
+  `<its name>_replaced`, stopped, because a SQLite volume takes one writer. A
   `_replaced` with nothing live beside it is the last good container of an
   unfinished swap, so `deploy` keeps it and only `/stop` removes it. The wait
   is up to 30s, so a caller sending `/deploy` at a 10s timeout reads a working

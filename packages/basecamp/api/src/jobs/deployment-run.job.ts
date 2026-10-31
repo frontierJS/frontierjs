@@ -166,6 +166,19 @@ function runner(app: App) {
     }
   }
 
+  // The slugs outpost spells the container's name from: `docker ps` on the box
+  // reads `fjs--<project>-<env>-<app>-<id>`. Read off the rows rather than
+  // carried on the snapshot, which holds the release's config and not where the
+  // App lives. An App with no Environment is refused here, before the old
+  // container is touched, because outpost refuses a deploy with no slug anyway.
+  async function containerSlugs(service: any): Promise<{ project: string; environment: string; app_slug: string }> {
+    const db  = app.db!.asSystem() as any
+    const env = service.environmentId ? await db.environment.findFirst({ where: { id: service.environmentId } }) : null
+    const project = env?.projectId ? await db.project.findFirst({ where: { id: env.projectId } }) : null
+    if (!env?.slug || !project?.slug) throw new Error(`App ${service.slug} has no Environment and Project to name its container for`)
+    return { project: project.slug, environment: env.slug, app_slug: service.slug }
+  }
+
   // ── Core runner ───────────────────────────────────────────────────
   async function runDeployment(deploymentId: string): Promise<void> {
     const startedAt = Date.now()
@@ -380,14 +393,15 @@ function runner(app: App) {
     } else if (name.includes('start') || name.includes('deploy')) {
       const reply = await executor.call('/deploy', {
         deployment_id: deploy.id,
-        // The container is named for the APP, and this line is what makes that
+        // The container is found by the APP, and this line is what makes that
         // true: outpost falls back to the deployment id when it is absent, so
-        // every release started a container called `fjs-<deployment>` while
-        // `/stop`, `/health-check` and `/logs` — which all send `app_id` — asked
-        // about `fjs-<app>`. The health check then failed on every release, the
-        // next deploy stopped nothing and the containers accumulated one per
-        // release, each of them unreachable by name (`FJS-920`).
+        // every release started a container for the deployment while `/stop`,
+        // `/health-check` and `/logs` — which all send `app_id` — asked about
+        // the app's. The health check then failed on every release, the next
+        // deploy stopped nothing and the containers accumulated one per
+        // release (`FJS-920`). The slugs only spell its name for `docker ps`.
         app_id:        deploy.appId,
+        ...await containerSlugs(service),
         image,
         digest,
         // The snapshot, not the app. `rollback` exists to put back the config

@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-73 model(s) · 57 enum(s) · 2 database(s)
+75 model(s) · 57 enum(s) · 2 database(s)
 audit → sqlite · main → sqlite
 ```
 
@@ -668,6 +668,59 @@ table `blueprint_param` · db `main` · gate `1.7`
 ```
 @@unique(blueprintId, key)
 @@index(blueprintId)
+```
+
+### `ClaudeMessage`
+
+table `claude_message` · db `main` · gate `5.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `at` | `DateTime` | no | — | **required on write** |
+| `cacheRead` | `Int` | no | — | **required on write** |
+| `cacheWrite` | `Int` | no | — | **required on write** |
+| `cacheWrite1h` | `Int` | no | `0` | — |
+| `cwd` | `String` | yes | — | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `input` | `Int` | no | — | **required on write** |
+| `messageId` | `String` | no | — | unique · **required on write** |
+| `model` | `String` | no | — | **required on write** |
+| `output` | `Int` | no | — | **required on write** |
+| `sessionId` | `String` | no | — | **required on write** |
+| `subagent` | `Boolean` | no | `0` | — |
+| `tools` | `String` | no | `''` | — |
+
+```
+@@index(at)
+@@index(cwd)
+@@index(sessionId)
+```
+
+### `ClaudeTranscript`
+
+table `claude_transcript` · db `main` · gate `5.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `cwd` | `String` | yes | — | — |
+| `firstPrompt` | `String` | yes | — | — |
+| `gone` | `Boolean` | no | `0` | — |
+| `headless` | `Boolean` | no | `0` | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `lastAt` | `DateTime` | yes | — | — |
+| `offset` | `Int` | no | `0` | — |
+| `path` | `String` | no | — | unique · **required on write** |
+| `sessionId` | `String` | no | — | **required on write** |
+| `size` | `Int` | no | `0` | — |
+| `startedAt` | `DateTime` | yes | — | — |
+| `subagent` | `Boolean` | no | `0` | — |
+| `title` | `String` | yes | — | — |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+
+```
+@@index(cwd)
+@@index(sessionId)
 ```
 
 ### `Credential`

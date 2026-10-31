@@ -51,8 +51,8 @@
 ///
 /// A gate is per MODEL and never per row. WHICH rows is TENANCY, declared once
 /// in the `tenancy { }` block below rather than as a rule per model: every model
-/// carrying `workspaceId` is scoped on it, the 14 that reach one through a
-/// relation are scoped through that parent, and the FOURTEEN that legitimately
+/// carrying `workspaceId` is scoped on it, the 25 that reach one through a
+/// relation are scoped through that parent, and the TWENTY-TWO that legitimately
 /// span workspaces say so by name with `@@tenant(none)`. They are three kinds
 /// of thing and the kind is the argument:
 ///
@@ -66,7 +66,9 @@
 ///                     every workspace sees, NotificationPreference has no
 ///                     workspace column at all, and OutpostNonce is a machine's
 ///                     spent credential, which no workspace owns and no
-///                     session resolves a claim from
+///                     session resolves a claim from,
+///                     and ClaudeTranscript/ClaudeMessage are the index of the
+///                     operator's own `~/.claude`, which is nobody's workspace
 ///
 /// A NULLABLE column is not a fourth kind and `AuditEvent` used to be listed as
 /// one. It is scoped like everything else, and its null means the row belongs
@@ -1553,6 +1555,77 @@ model OutpostNonce {
   @@gate(8)
   @@tenant(none)
   @@index([seenAt])
+}
+
+
+// ── Claude Code's usage on THIS machine, indexed (`FJS-D1714`) ───────────────
+//
+// History, not state: `domain/claude/claude-index.ts` reads the transcripts under
+// `<config dir>/projects/` and these two tables are what it learned. They are
+// rebuildable from the files still on disk and are the ONLY record of those
+// Claude Code has since deleted (`cleanupPeriodDays`), which is why a message row
+// carries its own `sessionId` and `cwd` and names no transcript: a relation with
+// a cascade would take the history with the file.
+//
+// @@gate(5.8): the Workbench's ADMINISTRATOR reads, and only the job writes
+// (`asSystem()`). @@tenant(none): the machine's `~/.claude` belongs to no
+// workspace. No @@trail(audit): one row per assistant message would bury the
+// human trail, and the rows are derived.
+
+// One row per transcript FILE — where the indexer stopped reading it. A
+// subagent's transcript is its own file under a `subagents/` folder and carries
+// its PARENT's `sessionId`, so a session's subagent count is a count here.
+model ClaudeTranscript {
+  id          String    @id @default(uuid())
+  path        String    @unique
+  sessionId   String
+  cwd         String?
+  subagent    Boolean   @default(false)
+  headless    Boolean   @default(false)
+  title       String?
+  firstPrompt String?
+  // Bytes read to, always at a newline. Equal to `size` → nothing to read;
+  // larger `size` → read [offset, size); smaller → the file was rewritten, from 0.
+  offset      Int       @default(0)
+  size        Int       @default(0)
+  startedAt   DateTime?
+  lastAt      DateTime?
+  // The file is no longer on disk; this row and its messages are the record.
+  gone        Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+
+  @@gate(5.8)
+  @@tenant(none)
+  @@index([sessionId])
+  @@index([cwd])
+}
+
+// One row per assistant MESSAGE, unique on the id Claude Code writes — a streamed
+// reply's several lines, a resumed session's repeats and a re-read file all
+// collapse onto it. `cacheWrite` is the whole write and `cacheWrite1h` the part
+// of it written to the one-hour cache, which is priced differently.
+// `tools` is the sorted, comma-joined names of the tools the message called.
+model ClaudeMessage {
+  id           String   @id @default(uuid())
+  messageId    String   @unique
+  sessionId    String
+  cwd          String?
+  model        String
+  at           DateTime
+  input        Int
+  cacheWrite   Int
+  cacheWrite1h Int      @default(0)
+  cacheRead    Int
+  output       Int
+  tools        String   @default("")
+  subagent     Boolean  @default(false)
+
+  @@gate(5.8)
+  @@tenant(none)
+  @@index([at])
+  @@index([cwd])
+  @@index([sessionId])
 }
 
 

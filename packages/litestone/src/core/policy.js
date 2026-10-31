@@ -2171,6 +2171,10 @@ function evalSome(node, ctx, data, modelName, op) {
 // the same way, so only NULL is special.
 
 
+// Which half refused a transition: `client.js` `transitions()` returns one of these, or null
+// when allowed. Listed here for readers that must name the set (`litestone spec`).
+export const REFUSED_BY = ['system', 'gate', 'policy']
+
 // Does this rule fire? An ALLOW is a whitelist and only TRUE admits; a DENY
 // excludes on TRUE and on UNKNOWN alike, because `AND NOT (NULL)` keeps no row.
 export const allowHolds = (v) => truth(v) === true

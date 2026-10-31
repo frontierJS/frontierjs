@@ -1,0 +1,118 @@
+<script>
+  // Tokens and dollars per day, model and project, on the Claude Code tab
+  // (api services/claude: stats). Read from Basecamp's usage index, not the
+  // transcripts, so a session Claude Code has since deleted still counts.
+  import { ago }    from '../lib/datetime.js'
+  import { count, usd, tilde } from '../lib/claude-format.js'
+  import { claude } from '../resources/Claude.mesa'
+
+  import Callout from '@frontierjs/ui/components/display/Callout.mesa'
+  import Select  from '@frontierjs/ui/components/forms/Select.mesa'
+  import Stat    from '@frontierjs/ui/components/display/Stat.mesa'
+  import Table   from '@frontierjs/ui/components/display/Table.mesa'
+
+  export let home = ''
+
+  const RANGES = [{ value: '7', label: 'Last 7 days' }, { value: '30', label: 'Last 30 days' }, { value: '90', label: 'Last 90 days' }, { value: '0', label: 'All of it' }]
+
+  const spend = (first) => [
+    first,
+    { name: 'messages', label: 'Messages', align: 'right' }, { name: 'input', label: 'Input', align: 'right' },
+    { name: 'cacheWrite', label: 'Cache write', align: 'right' }, { name: 'cacheRead', label: 'Cache read', align: 'right' },
+    { name: 'output', label: 'Output', align: 'right' }, { name: 'cost', label: 'Est. cost', align: 'right' },
+    { name: 'unpricedTokens', label: 'Unpriced tokens', align: 'right' },
+  ]
+  const DAY_COLUMNS     = spend({ name: 'day', label: 'Day' })
+  const MODEL_COLUMNS   = spend({ name: 'model', label: 'Model' })
+  const PROJECT_COLUMNS = spend({ name: 'cwd', label: 'Project' })
+
+  let range   = '7'
+  let stats   = null
+  let error   = null
+  let loading = false
+
+  let asked = 0
+  async function load(value) {
+    const n = ++asked
+    loading = true
+    try {
+      const s = await claude.service.invoke('stats', null, { days: Number(value) })
+      if (n === asked) { stats = s; error = null }
+    } catch (err) {
+      if (n === asked) error = err.message
+    } finally {
+      if (n === asked) loading = false
+    }
+  }
+  $: { load(range) }
+</script>
+
+<div class="stack" id="claude-usage">
+  <Select id="claude-usage-range" name="usage-range" label="" placeholder="" aria-label="Period"
+          options={RANGES} value={range} onchange={(e) => { range = e.target.value }} />
+
+  {#if error && !stats}
+    <Callout tone="danger" title="Could not read usage">{error}</Callout>
+  {:else if !stats}
+    <p class="text-sm text-muted">Reading…</p>
+  {:else}
+    {#if error}<Callout tone="warning" title="Refresh failed, showing the last read">{error}</Callout>{/if}
+    <div class="grid" id="claude-usage-totals">
+      <Stat label="Sessions" value={count(stats.totals.sessions)} />
+      <Stat label="Messages" value={count(stats.totals.messages)} />
+      <Stat label="Input" value={count(stats.totals.input)} sub="tokens" />
+      <Stat label="Cache write" value={count(stats.totals.cacheWrite)} sub="tokens" />
+      <Stat label="Cache read" value={count(stats.totals.cacheRead)} sub="tokens" />
+      <Stat label="Output" value={count(stats.totals.output)} sub="tokens" />
+      <Stat label="Estimated cost" value={usd(stats.totals.cost)} sub="at list price" />
+      {#if stats.totals.unpricedTokens > 0}
+        <Stat label="Unpriced" value={count(stats.totals.unpricedTokens)} sub="tokens of a model with no price" tone="warning" />
+      {/if}
+    </div>
+
+    <h3>Per day</h3>
+    <Table id="claude-usage-days" columns={DAY_COLUMNS} rows={stats.days} compact striped hover={false} emptyText="No usage in this period">
+      {#snippet row(r)}
+        <tr><td>{r.day}</td>{@render cells(r)}</tr>
+      {/snippet}
+    </Table>
+
+    <h3>Per model</h3>
+    <Table id="claude-usage-models" columns={MODEL_COLUMNS} rows={stats.models} compact striped hover={false} emptyText="No usage in this period">
+      {#snippet row(r)}
+        <tr><td><code>{r.model}</code></td>{@render cells(r)}</tr>
+      {/snippet}
+    </Table>
+
+    <h3>Per project</h3>
+    <Table id="claude-usage-projects" columns={PROJECT_COLUMNS} rows={stats.projects} compact striped hover={false} emptyText="No usage in this period">
+      {#snippet row(r)}
+        <tr><td><code class="wrap">{tilde(r.cwd, home) || '(no project)'}</code></td>{@render cells(r)}</tr>
+      {/snippet}
+    </Table>
+
+    <p class="text-sm text-muted" id="claude-usage-source">
+      Estimated at list price, read {stats.pricing.readOn} from
+      <a href={stats.pricing.sourceUrl} target="_blank" rel="noreferrer">{stats.pricing.sourceUrl}</a>.
+      {#if stats.indexedAt}
+        Indexed {ago(stats.indexedAt)}.
+      {:else}
+        The index has not run yet; the job runs every 5 minutes.
+      {/if}
+    </p>
+  {/if}
+</div>
+
+{#snippet cells(r)}
+  <td class="text-right">{count(r.messages)}</td>
+  <td class="text-right">{count(r.input)}</td>
+  <td class="text-right">{count(r.cacheWrite)}</td>
+  <td class="text-right">{count(r.cacheRead)}</td>
+  <td class="text-right">{count(r.output)}</td>
+  <td class="text-right">{usd(r.cost)}</td>
+  <td class="text-right">{r.unpricedTokens > 0 ? count(r.unpricedTokens) : '—'}</td>
+{/snippet}
+
+<style>
+  .wrap { overflow-wrap: anywhere; }
+</style>

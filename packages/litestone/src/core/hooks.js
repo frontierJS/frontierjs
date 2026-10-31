@@ -26,7 +26,7 @@
 // The dial is per CALL with a client-level floor, because the call site is the
 // only place the batch size is knowable — the same model carries both a
 // three-row cancel and a two-million-row purge.
-const ANNOUNCE_MODES = ['collection', 'rows', 'none']
+export const ANNOUNCE_MODES = ['collection', 'rows', 'none']
 
 /**
  * Validate an `announce` option, answering it unchanged or `undefined` when the

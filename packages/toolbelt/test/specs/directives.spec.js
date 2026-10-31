@@ -129,8 +129,18 @@ test('directives: a transport param is stripped and has no structured form', fun
   assert.deepEqual(directives, {})
 })
 
-test('directives: nothing in, two empties out', function () {
-  assert.deepEqual(splitParams(undefined), { query: {}, directives: {} })
+test('directives: nothing in, empties out', function () {
+  assert.deepEqual(splitParams(undefined), { query: {}, directives: {}, flags: {}, unknown: [], listed: [], invalid: [] })
+})
+
+test('directives: the split carries every report a boundary refuses by', function () {
+  const params = { $limit: [5, 6], $withDeleted: 'yes', $wrap: 'no', $first: 1, $limitt: '2', status: 'x' }
+  const { query, flags, unknown, listed, invalid } = splitParams(params)
+  assert.deepEqual(query, { status: 'x' })
+  assert.deepEqual(flags, { first: true })
+  assert.deepEqual(unknown, unknownDirectives(params))
+  assert.deepEqual(listed, listedDirectives(params))
+  assert.deepEqual(invalid, [...invalidDirectives(params), ...transportFlags(params).invalid])
 })
 
 /* ── The table is the definition ───────────────────────────────────── */
@@ -432,7 +442,8 @@ test('directives: $scope is a list of names — one name is a list of one (FJS-2
   // Not dropped: an unnarrowed list answered 200 is the defect. The Data
   // boundary holds the declared names and refuses a number by name.
   assert.deepEqual(parseDirectives({ $scope: 5 }), { scope: [5] })
-  assert.deepEqual(splitParams({ $scope: ['a'], kind: 'x' }), { query: { kind: 'x' }, directives: { scope: ['a'] } })
+  const scoped = splitParams({ $scope: ['a'], kind: 'x' })
+  assert.deepEqual([scoped.query, scoped.directives], [{ kind: 'x' }, { scope: ['a'] }])
   assert.deepEqual(directiveParams({ scope: ['a'] }), { $scope: ['a'] })
 })
 

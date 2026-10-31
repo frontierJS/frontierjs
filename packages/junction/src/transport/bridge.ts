@@ -14,7 +14,7 @@ import {
   type CallOptions, type QueryDirectives,
 } from '../core/context.ts'
 import { isServiceResult, unwrapResult } from '../core/envelope.ts'
-import { invalidDirectives, listedDirectives, splitParams, transportFlags, unknownDirectives } from '@frontierjs/toolbelt/directives'
+import { splitParams } from '@frontierjs/toolbelt/directives'
 
 // ─── HTTP method → service method map ────────────────────────────────────
 // PUT -> update, PATCH -> patch. Both MERGE (`FJS-D179`): Feathers' word for
@@ -61,7 +61,7 @@ export const bridge = {
   // ── Transport → ServiceContext ────────────────────────────────────────
   // X-Service-Method header dispatches restore, upsert, and every custom method.
   // CRUD method names are blocked from header override.
-  // Strips reserved params ($first, $wrap, etc.) from ctx.query.
+  // Strips reserved params ($first, $wrap, etc.) from ctx.query; $wrap shapes toResponse.
   // Merges multipart files into ctx.data as File objects.
 
   toContext(
@@ -76,7 +76,7 @@ export const bridge = {
   ): ServiceContext {
 
     const httpMethod = raw.method.toUpperCase()
-    const rawQuery   = raw.query as Record<string, unknown> ?? {}
+    const { query, directives, flags } = readParams(raw.query)
 
     // ── X-Service-Method header — whitelist only ──────────────────────
     // Case is preserved for custom methods (getStats stays getStats — the
@@ -103,25 +103,9 @@ export const bridge = {
     if (serviceMethod === 'find') {
       if (raw.route.id) {
         resolvedMethod = 'get'
-      } else if (readTransportFlags(rawQuery).first) {
+      } else if (flags.first) {
         resolvedMethod = 'get'
       }
-    }
-
-    // ── Split the query string in two — single pass ────────────────────
-    // `$`-prefixed keys are DIRECTIVES (how to shape the result); everything
-    // else is a FILTER (which records). The bridge is the only place that
-    // knows about the `$` convention — it is wire syntax, not a data model.
-    //
-    // This used to only strip the reserved keys and throw them away, while
-    // parseQuery downstream looked for those exact keys on ctx.query. The
-    // transport deleted precisely what the query builder was written to read,
-    // so $limit / $offset / $orderBy / $select were all silently inert.
-    refuseBadDirectives(rawQuery)
-
-    const { query, directives } = splitParams(rawQuery) as {
-      query: Record<string, unknown>
-      directives: QueryDirectives
     }
 
     refuseUnservableWindow(directives)
@@ -187,7 +171,7 @@ export const bridge = {
       finalMethod = (data as Record<string, unknown>)?.id != null ? 'patch' : 'create'
     }
 
-    return callContext({
+    return withWrap(callContext({
       service,
       method:    finalMethod,
       transport,
@@ -208,7 +192,7 @@ export const bridge = {
       app:    appRef,
       signal: raw.signal ?? new AbortController().signal,
       raw,
-    })
+    }), flags.wrap)
   },
 
   // ── Socket frame → ServiceContext ─────────────────────────────────────
@@ -236,13 +220,8 @@ export const bridge = {
     },
     appRef?: import('../core/app.ts').App
   ): ServiceContext {
-    refuseBadDirectives(frame.query)
-    const method = frame.method === 'find' && readTransportFlags(frame.query).first ? 'get' : frame.method
-
-    const { query, directives } = splitParams(frame.query) as {
-      query: Record<string, unknown>
-      directives: QueryDirectives
-    }
+    const { query, directives, flags } = readParams(frame.query)
+    const method = frame.method === 'find' && flags.first ? 'get' : frame.method
     refuseUnservableWindow(directives)
 
     // A STRING, as over HTTP. There the id is a path segment and can be
@@ -252,7 +231,7 @@ export const bridge = {
     // as a Map key, then answered differently depending on whether a socket
     // happened to be connected.
     const id = frame.id ?? (frame.data as Record<string, unknown> | null)?.id
-    return callContext({
+    return withWrap(callContext({
       service:   frame.service,
       method,
       transport: 'websocket',
@@ -269,7 +248,7 @@ export const bridge = {
       app:    appRef,
       signal: frame.signal ?? NEVER_ABORTED,
       raw:    null,
-    })
+    }), flags.wrap)
   },
 
   // ── ServiceContext → HTTP Response ────────────────────────────────────
@@ -279,12 +258,12 @@ export const bridge = {
   /**
    * ServiceContext → HTTP Response.
    *
-   * `wrap` is tri-state, mirroring `$wrap` on the wire:
-   *   undefined → the default rule
+   * Shaped by the `$wrap` the context was built from, which is tri-state:
+   *   absent    → the default rule
    *   true      → envelope everything, singles included
    *   false     → unwrap everything, lists included (bare array)
    */
-  toResponse(ctx: ServiceContext, rawWrap?: boolean): Response {
+  toResponse(ctx: ServiceContext): Response {
     if (ctx.error) return errorResponse(ctx.error, ctx)
 
     const result = ctx.result
@@ -294,7 +273,7 @@ export const bridge = {
     }
 
     const status = ctx.statusCode ?? (ctx.method === 'create' ? 201 : 200)
-    return jsonResponse(resultBody(ctx, rawWrap), status)
+    return jsonResponse(resultBody(ctx), status)
   },
 
   // ── ServiceContext → socket reply ─────────────────────────────────────
@@ -302,8 +281,8 @@ export const bridge = {
   // so a call answers alike whichever wire it came over. The socket shaped
   // its reply with the default rule, and `$wrap` was read on HTTP alone.
 
-  toFrame(ctx: ServiceContext, rawWrap?: boolean): unknown {
-    return resultBody(ctx, rawWrap)
+  toFrame(ctx: ServiceContext): unknown {
+    return resultBody(ctx)
   },
 
   // ── Internal service call context ────────────────────────────────────
@@ -324,12 +303,7 @@ export const bridge = {
     // An internal caller may still hand us a `$`-spelled query (older code,
     // and tests that predate ctx.directives). Translate rather than ignore:
     // explicit opts.directives wins, `$` keys are the fallback.
-    refuseBadDirectives(query)
-
-    const { query: filters, directives: fromQuery } = splitParams(query) as {
-      query: Record<string, unknown>
-      directives: QueryDirectives
-    }
+    const { query: filters, directives: fromQuery } = readParams(query)
     // The same refusal toContext makes, so a negative count is not floored to
     // no rows with a 200 on the in-process and socket paths.
     const merged = { ...fromQuery, ...directives }
@@ -392,7 +366,8 @@ function callContext(parts: CallParts): ServiceContext {
 // Branching on `kind` rather than `object === 'list'` — `object` is always the
 // service name, so a service literally named 'list' does not change how its
 // singles serialize.
-function resultBody(ctx: ServiceContext, rawWrap?: boolean): unknown {
+function resultBody(ctx: ServiceContext): unknown {
+  const rawWrap = WRAP.get(ctx)
   return withholdProtected(unwrapResult(ctx.result, {
     single: rawWrap === true  ? 'envelope' : 'data',
     list:   rawWrap === false ? 'data'     : 'envelope',
@@ -519,7 +494,7 @@ function protectedFieldsFor(ctx?: ServiceContext): Record<string, string> {
 // shape `$checkWhere` refuses a filter key it cannot honor.
 //
 // Only a stated negative NUMBER is refused here; a value that is not decimal
-// digits at all never reaches this check, `invalidDirectives` refused it.
+// digits at all never reaches this check, the split's `invalid` refused it.
 /*
  * A `$` name the wire does not know is refused, and the refusal names it.
  *
@@ -539,15 +514,27 @@ function protectedFieldsFor(ctx?: ServiceContext): Record<string, string> {
  * table was built to end.
  */
 export function refuseBadDirectives(params: unknown): void {
-  // Every check below grades a `$` key, and most calls carry none; the three
-  // table walks ran on every request regardless (`FJS-2992`).
-  if (!params || typeof params !== 'object') return
-  let dollar = false
-  for (const key in params) if (key[0] === '$') { dollar = true; break }
-  if (!dollar) return
-  refuseListedDirectives(params)
-  refuseInvalidFlags(params)
-  const unknown = unknownDirectives(params as Record<string, unknown>)
+  refuseSplit(params, splitParams(params as Record<string, unknown>))
+}
+
+// `$`-PREFIXED keys are DIRECTIVES (how to shape the result); everything else
+// is a FILTER (which records). Split once and graded off that split: the bag
+// was walked once per question, six times a request (`FJS-3749`).
+function readParams(params: unknown): {
+  query:      Record<string, unknown>
+  directives: QueryDirectives
+  flags:      { first?: boolean, wrap?: boolean }
+} {
+  const bag   = (params ?? {}) as Record<string, unknown>
+  const split = splitParams(bag)
+  refuseSplit(bag, split)
+  return split as ReturnType<typeof readParams>
+}
+
+function refuseSplit(params: unknown, split: ReturnType<typeof splitParams>): void {
+  refuseListedDirectives(split.listed)
+  refuseFlagValues(params as Record<string, unknown>, split.invalid)
+  const { unknown } = split
   if (!unknown.length) return
 
   const available = [...RESERVED_PARAMS].sort()
@@ -565,8 +552,7 @@ export function refuseBadDirectives(params: unknown): void {
  * A single-valued directive given a list. The filter half makes a repeated key a
  * list by design; read as one value it fell to the default page with a 200.
  */
-function refuseListedDirectives(params: unknown): void {
-  const listed = listedDirectives(params as Record<string, unknown>)
+function refuseListedDirectives(listed: readonly string[]): void {
   if (!listed.length) return
   throw new BadRequest(
     `${listed.join(', ')} ${listed.length > 1 ? 'take' : 'takes'} one value, and was given a list. ` +
@@ -581,12 +567,7 @@ function refuseListedDirectives(params: unknown): void {
  * asked for (`FJS-2476`); `?$limit=true` read as 1 answers a one-row page
  * (`FJS-2459`).
  */
-function refuseInvalidFlags(params: unknown): void {
-  const bag = params as Record<string, unknown>
-  refuseFlagValues(bag, [...invalidDirectives(bag), ...transportFlags(bag).invalid])
-}
-
-function refuseFlagValues(bag: Record<string, unknown>, invalid: string[]): void {
+function refuseFlagValues(bag: Record<string, unknown>, invalid: readonly string[]): void {
   if (!invalid.length) return
   throw new BadRequest(
     `${invalid.map(k => `${k}=${String(bag[k])}`).join(', ')} is not a value ${invalid.length > 1 ? 'they take' : 'it takes'}. ` +
@@ -595,14 +576,14 @@ function refuseFlagValues(bag: Record<string, unknown>, invalid: string[]): void
   )
 }
 
-/**
- * `$first` / `$wrap` off the raw query, refusing a value the flag grammar does
- * not hold. The only reader of either on this side of the wire.
- */
-export function readTransportFlags(params: unknown): { first?: boolean, wrap?: boolean } {
-  const { first, wrap, invalid } = transportFlags(params as Record<string, unknown>)
-  refuseFlagValues(params as Record<string, unknown>, invalid)
-  return { first, wrap }
+// `$wrap` is how the caller wants the answer shaped, so it is read where the
+// context is built and answered where the response is: held beside the context
+// rather than on it, since no hook or service may read a `$` key (Invariant 10).
+const WRAP = new WeakMap<ServiceContext, boolean>()
+
+function withWrap(ctx: ServiceContext, wrap: boolean | undefined): ServiceContext {
+  if (wrap !== undefined) WRAP.set(ctx, wrap)
+  return ctx
 }
 
 function refuseUnservableWindow(directives: QueryDirectives): void {

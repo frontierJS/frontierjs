@@ -38,11 +38,11 @@ Proof: litestone, mesa, sierra and ui suites green after the change; `count.mjs`
 
 1. **FJS-D1713 (ruled)** — a page counts its total by default; `$total: false` skips it for a large list. Build is FJS-3765.
 2. ~~**FJS-3748**~~ — closed: an owned Response keeps its body text and is gzipped from it; the rewrap measured ~30 µs, not ~90.
-3. **FJS-3749** — the `$` grammar is walked ~6 times per request; owner split across `bridge.ts`, `app.ts`, `toolbelt/directives` (Invariant 4). ~4–6% of a find.
-4. **FJS-3750** — `@encrypted` anywhere on a model turns the pk fast path off, 3.7x slower `findUnique`. Check `FJS-223` before widening.
+3. ~~**FJS-3749**~~ — closed: `splitParams` carries the flags and refusal reports, the bridge splits once; measured 1–3 µs a request, not ~10.
+4. ~~**FJS-3750**~~ — closed: the pk fast path takes a field-policy model, since `readAll` applies the policy on either path; `@from` still excluded (`FJS-223`). 11 → 3.9 µs.
 5. **FJS-3751** — cold navigation awaits component, layouts, loader import and `load()` in series: 1–2 RTT lost on a split route. Reasoning only.
 6. ~~**FJS-3756**~~ — closed: `bridge.fromFrame`/`toFrame` read and shape a socket call by the HTTP rules; one `callContext()` literal.
-7. **FJS-3752** — `buildWhere` rebuilt per call, three closures, fresh SQL string hashed by the statement cache: ~10–15% of update-by-where.
+7. ~~**FJS-3752**~~ — closed: the cost was `Object.entries`, not the closures; `Object.keys` and a regex-free `quoteIdent` halve `buildWhere` (four-key 3.0 → ~1.5 µs). The shape cache is not worth its key.
 8. **FJS-3753** — `announcementPayload` rebuilds static Sets per announced write; bulk writes do it per row then grade serially.
 9. **FJS-3754** — two Proxy unread-watchers per find in production, even for the derived `find`.
 10. **FJS-3755** — id writes run the whole `parseQuery`; filter keys validated twice.

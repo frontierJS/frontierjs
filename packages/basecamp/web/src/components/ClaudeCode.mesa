@@ -7,12 +7,28 @@
   // heading says so. Every file the scan reads comes back as `Loaded<T>`, and a
   // read that failed is shown as "unavailable: reason" -- never as a zero or a blank
   // row, which would read as "nothing configured".
+  //
+  // Account and limits, context, usage, what drives the limit and sessions are
+  // sibling components (ClaudeLimits, ClaudeContext, ClaudeUsage, ClaudeDrivers,
+  // ClaudeSessions), each read the first time its section opens and kept mounted.
+  //
+  // A name opens a read-only drawer. A plugin's or a hook's comes from the scan
+  // already here; a skill, agent, command or memory file's text is asked for
+  // (`claude.file`), and the server reads only a path its own scan lists.
   import { ago }    from '../lib/datetime.js'
   import { claude } from '../resources/Claude.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import ClaudeContext  from './ClaudeContext.mesa'
+  import ClaudeDrivers  from './ClaudeDrivers.mesa'
+  import ClaudeLimits   from './ClaudeLimits.mesa'
+  import ClaudeSessions from './ClaudeSessions.mesa'
+  import ClaudeUsage    from './ClaudeUsage.mesa'
   import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import Code       from '@frontierjs/ui/components/display/Code.mesa'
+  import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
+  import Markdown   from '@frontierjs/ui/components/display/Markdown.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
@@ -26,6 +42,8 @@
   const SECTIONS = [
     ['overview', 'Overview'], ['plugins', 'Plugins'], ['marketplaces', 'Marketplaces'],
     ['skills', 'Skills & agents'], ['hooks', 'Hooks'], ['mcp', 'MCP'], ['settings', 'Settings'],
+    ['limits', 'Account & limits'], ['context', 'Context'], ['usage', 'Usage'],
+    ['drivers', 'What drives the limit'], ['sessions', 'Sessions'],
   ]
 
   const PLUGIN_COLUMNS = [
@@ -67,10 +85,15 @@
   let offered  = true
   let loading  = false
   let section  = 'overview'
+  let seen     = { overview: true }
   let qs       = { plugins: '', marketplaces: '', skills: '', hooks: '', mcp: '', settings: '' }
   let kind     = ''
   let tables   = null
   let shown    = null
+  let detail   = null   // { kind: 'item' | 'plugin' | 'hook' | 'memory', row }
+  let drawer   = false
+  let file     = null   // { path, bytes, text } for an item or memory drawer
+  let fileErr  = null
 
   async function load() {
     loading = true
@@ -89,7 +112,36 @@
   $: { tables = cfg ? build(cfg) : null }
   $: { shown = tables ? narrow(tables, qs, kind) : null }
 
+  // A section is read the first time it opens, so the rate-limited usage endpoint is
+  // not asked for by a person looking at plugins.
+  const onSection = (id) => { if (!seen[id]) seen = { ...seen, [id]: true } }
+
   const setQ = (id, v) => { qs = { ...qs, [id]: v } }
+
+  // ─── detail drawer ───────────────────────────────────────────────────────────
+
+  let asked = 0
+  async function show(kind, row) {
+    const n = ++asked
+    detail  = { kind, row }
+    drawer  = true
+    file    = null
+    fileErr = null
+    if (kind !== 'item' && kind !== 'memory') return
+    try {
+      const f = await claude.service.invoke('file', null, { path: row.abs })
+      // A slow answer for a drawer since closed or swapped must not land in the new one.
+      if (n === asked) file = f
+    } catch (err) {
+      if (n === asked) fileErr = err.message
+    }
+  }
+  const hide = () => { drawer = false; asked++ }
+
+  // The frontmatter is shown as facts above, so the drawer renders what follows it.
+  const body = (text) => text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '')
+  const list = (v) => (v && v.length ? v.join(', ') : '—')
+  const yes  = (v) => (v === null || v === undefined ? '—' : v ? 'yes' : 'no')
 
   // ─── shaping ─────────────────────────────────────────────────────────────────
 
@@ -126,6 +178,11 @@
         project: p.install.projectPath ? tilde(p.install.projectPath) : '',
         enabled: p.enabled, enabledIn: p.enabledIn.length, items: p.items.length,
         hooks: p.hooks.reduce((n, h) => n + handlers(h), 0), mcp: p.mcp.length, warn: bad.join('; '),
+        manifest: p.manifest.result.ok ? p.manifest.result.value : null, install: p.install,
+        installPath: tilde(p.install.installPath), projects: p.enabledIn.map(tilde),
+        contents: p.items.map(i => ({ kind: i.kind, name: i.name })),
+        hookEvents: p.hooks.flatMap(h => h.entries.ok ? h.entries.value.map(e => e.event) : []),
+        servers: p.mcp.map(m => m.name),
       }
       return { ...r, hay: hay(r.id, r.name, r.version, r.scope, r.project, r.enabled ? 'enabled' : 'disabled', r.warn) }
     })
@@ -156,7 +213,7 @@
         const r = {
           kind: s.kind, name: s.name, full: squash(v?.description), description: squash(v?.description),
           origin: origin(s.origin), originScope: s.origin.scope, model: dash(v?.model),
-          file: tilde(s.file), warn: bad.join('; '),
+          file: tilde(s.file), abs: s.file, item: v, reason: s.item.ok ? null : s.item.reason, warn: bad.join('; '),
         }
         items.push({ ...r, hay: hay(r.kind, r.name, r.full, r.origin, r.model, r.warn) })
       }
@@ -178,7 +235,7 @@
             const r = {
               event: e.event, matcher: dash(e.matcher), command: h?.command ?? (h?.type ? `(${h.type})` : '—'),
               timeout: h?.timeout != null ? `${h.timeout}s` : '—', origin: origin(sh.origin), file: tilde(sh.file),
-              warn: e.issues.join('; '),
+              handler: h, originScope: sh.origin.scope, warn: e.issues.join('; '),
             }
             hooks.push({ ...r, hay: hay(r.event, r.matcher, r.command, r.origin, r.file, r.warn) })
           }
@@ -233,7 +290,7 @@
         if (!l.result.ok && !l.absent) { bad.push(`${label} unavailable: ${l.result.reason}`); failed('settings', `${tilde(p.path)} ${label}`, l) }
       }
       const r = {
-        path: tilde(p.path), source: p.source, exists: p.exists, lastActive: p.lastActive,
+        path: tilde(p.path), abs: p.path, source: p.source, exists: p.exists, lastActive: p.lastActive,
         transcripts: p.transcripts, model: dash(p.settings.merged.model), plugins: p.enabledPlugins.length, warn: bad.join('; '),
       }
       return { ...r, hay: hay(r.path, r.source, r.exists ? 'on disk' : 'gone', r.model, r.warn) }
@@ -241,7 +298,10 @@
 
     // ─── overview
     const kinds = (k) => items.filter(i => i.kind === k).length
-    const memory = c.user.memory.map(m => ({ ...m, path: tilde(m.path) }))
+    const memory = [
+      ...c.user.memory.map(m => ({ ...m, abs: m.path, path: tilde(m.path) })),
+      ...c.projects.flatMap(p => p.memory.filter(m => m.exists).map(m => ({ ...m, abs: m.path, path: tilde(m.path) }))),
+    ]
     const issues = c.issues.map(i => ({ path: tilde(i.path), message: i.message }))
     const counts = [
       ['Plugins', plugins.length, `${plugins.filter(p => p.enabled).length} enabled`],
@@ -253,7 +313,9 @@
     ]
     const unavailable = Object.values(notes).flat()
 
-    return { plugins, catalogs, items, hooks, mcp, settings, projects, notes, memory, issues, counts, unavailable }
+    // Pinned checkouts first, as the scan lists them.
+    const choices = projects.map(p => ({ value: p.abs, label: p.path, pinned: p.source !== 'transcript' }))
+    return { choices, plugins, catalogs, items, hooks, mcp, settings, projects, notes, memory, issues, counts, unavailable }
   }
 
   // Case-insensitive match on the text a row shows, section by section.
@@ -298,7 +360,7 @@
   {:else}
     {#if error}<Callout tone="warning" title="Refresh failed, showing the last read">{error}</Callout>{/if}
 
-    <Tabs bind:activeId={section}>
+    <Tabs bind:activeId={section} onchange={onSection}>
       <TabList label="Claude Code sections">
         {#each SECTIONS as s}
           <Tab id={s[0]}>{s[1]}</Tab>
@@ -332,7 +394,10 @@
           {#snippet row(m)}
             <tr>
               <td><Badge>{m.kind}</Badge></td>
-              <td><code>{m.path}</code></td>
+              <td>
+                {#if m.exists}<Button treatment="link" size="sm" onclick={() => show('memory', m)}><code>{m.path}</code></Button>
+                {:else}<code>{m.path}</code>{/if}
+              </td>
               <td>{#if m.exists}<Pill tone="success">yes</Pill>{:else}<Pill>no</Pill>{/if}</td>
               <td class="text-right">{m.bytes ?? '—'}</td>
             </tr>
@@ -349,7 +414,10 @@
         <Table id="claude-plugins" columns={PLUGIN_COLUMNS} rows={shown.plugins} striped hover={false} emptyText="No plugins match">
           {#snippet row(p)}
             <tr>
-              <td>{p.name} <span class="text-sm text-muted"><code>{p.id}</code></span></td>
+              <td>
+                <Button treatment="link" size="sm" onclick={() => show('plugin', p)}>{p.name}</Button>
+                <span class="text-sm text-muted"><code>{p.id}</code></span>
+              </td>
               <td>{p.version}</td>
               <td>
                 <Badge>{p.scope}</Badge>
@@ -395,7 +463,7 @@
           {#snippet row(i)}
             <tr>
               <td><Badge tone={i.kind === 'agent' ? 'info' : ''}>{i.kind}</Badge></td>
-              <td title={i.file}><code>{i.name}</code></td>
+              <td title={i.file}><Button treatment="link" size="sm" onclick={() => show('item', i)}><code>{i.name}</code></Button></td>
               <td class="text-sm" title={i.full}>{clip(i.description, 140)}</td>
               <td class="text-sm"><Badge>{i.originScope}</Badge> {#if i.originScope !== 'user'}<code>{i.origin}</code>{/if}</td>
               <td class="text-sm">{i.model}</td>
@@ -414,7 +482,7 @@
         <Table id="claude-hooks" columns={HOOK_COLUMNS} rows={shown.hooks} striped hover={false} compact emptyText="No hooks match">
           {#snippet row(h)}
             <tr>
-              <td>{h.event}</td>
+              <td><Button treatment="link" size="sm" onclick={() => show('hook', h)}>{h.event}</Button></td>
               <td>{#if h.matcher === '—'}—{:else}<code>{h.matcher}</code>{/if}</td>
               <td>
                 <code class="wrap">{h.command}</code>
@@ -484,12 +552,128 @@
           {/snippet}
         </Table>
       </TabPanel>
+
+      <TabPanel id="limits">
+        {#if seen.limits}<ClaudeLimits />{/if}
+      </TabPanel>
+
+      <TabPanel id="context">
+        {#if seen.context}<ClaudeContext projects={tables.choices} />{/if}
+      </TabPanel>
+
+      <TabPanel id="usage">
+        {#if seen.usage}<ClaudeUsage home={cfg.home} />{/if}
+      </TabPanel>
+
+      <TabPanel id="drivers">
+        {#if seen.drivers}<ClaudeDrivers home={cfg.home} />{/if}
+      </TabPanel>
+
+      <TabPanel id="sessions">
+        {#if seen.sessions}<ClaudeSessions projects={tables.choices} home={cfg.home} />{/if}
+      </TabPanel>
     </Tabs>
   {/if}
+
+  <Drawer open={drawer} onclose={hide} resizable width={640}
+          title={!detail ? '' : detail.kind === 'hook' ? `${detail.row.event} hook` : detail.kind === 'memory' ? detail.row.path : detail.row.name}>
+    {#if detail?.kind === 'item'}
+      {@const i = detail.row}
+      {@const v = i.item}
+      <dl class="facts" id="claude-detail-item">
+        <dt>Kind</dt><dd><Badge>{i.kind}</Badge></dd>
+        <dt>Origin</dt><dd><Badge>{i.originScope}</Badge> {#if i.originScope !== 'user'}<code>{i.origin}</code>{/if}</dd>
+        <dt>File</dt><dd><code class="wrap">{i.file}</code></dd>
+        {#if v}
+          <dt>Description</dt><dd>{v.description ?? '—'}</dd>
+          {#if v.whenToUse}<dt>When to use</dt><dd>{v.whenToUse}</dd>{/if}
+          <dt>Model</dt><dd>{v.model ?? '—'}</dd>
+          {#if v.tools}<dt>Tools</dt><dd><code class="wrap">{list(v.tools)}</code></dd>{/if}
+          {#if v.allowedTools}<dt>Allowed tools</dt><dd><code class="wrap">{list(v.allowedTools)}</code></dd>{/if}
+          {#if v.disallowedTools}<dt>Disallowed tools</dt><dd><code class="wrap">{list(v.disallowedTools)}</code></dd>{/if}
+          {#if v.argumentHint}<dt>Argument hint</dt><dd><code>{v.argumentHint}</code></dd>{/if}
+          <dt>Model may invoke</dt><dd>{v.disableModelInvocation === null ? 'yes, by default' : yes(!v.disableModelInvocation)}</dd>
+          <dt>User may invoke</dt><dd>{v.userInvocable === null ? 'yes, by default' : yes(v.userInvocable)}</dd>
+          <dt>Listing cost</dt><dd>~{v.indexTokens} tokens always loaded; body {v.bodyChars} characters when used</dd>
+          {#if v.otherKeys.length}<dt>Other keys</dt><dd><code class="wrap">{list(v.otherKeys)}</code></dd>{/if}
+          {#if v.issues.length}<dt>Health</dt><dd>{#each v.issues as w}<Badge tone="warning">{w}</Badge> {/each}</dd>{/if}
+        {:else}
+          <dt>Frontmatter</dt><dd><Badge tone="warning">unavailable: {i.reason}</Badge></dd>
+        {/if}
+      </dl>
+      {@render text()}
+    {:else if detail?.kind === 'memory'}
+      {@const m = detail.row}
+      <dl class="facts" id="claude-detail-memory">
+        <dt>Kind</dt><dd><Badge>{m.kind}</Badge></dd>
+        <dt>Bytes</dt><dd>{m.bytes ?? '—'} <span class="text-sm text-muted">its own; @imports are not followed</span></dd>
+      </dl>
+      {@render text()}
+    {:else if detail?.kind === 'plugin'}
+      {@const p = detail.row}
+      <dl class="facts" id="claude-detail-plugin">
+        <dt>Id</dt><dd><code>{p.id}</code></dd>
+        <dt>Description</dt><dd>{p.manifest?.description ?? '—'}</dd>
+        <dt>Author</dt><dd>{#if p.manifest?.author}{p.manifest.author.name}{#if p.manifest.author.email} <span class="text-muted">&lt;{p.manifest.author.email}&gt;</span>{/if}{:else}—{/if}</dd>
+        <dt>Version</dt><dd>{p.version}{#if p.install.gitCommitSha} <code class="text-sm">{p.install.gitCommitSha.slice(0, 12)}</code>{/if}</dd>
+        <dt>Scope</dt><dd><Badge>{p.scope}</Badge> {#if p.project}<code>{p.project}</code>{/if}</dd>
+        <dt>Enabled</dt><dd>{#if p.enabled}<Pill tone="success">on</Pill>{:else}<Pill>off</Pill>{/if} at user level</dd>
+        <dt>On in projects</dt>
+        <dd>
+          {#if p.projects.length}
+            <details><summary>{plural(p.projects.length, 'project')}</summary>
+              {#each p.projects as pp}<code class="wrap">{pp}</code><br>{/each}
+            </details>
+          {:else}—{/if}
+        </dd>
+        <dt>Installed</dt><dd>{p.install.installedAt ? ago(p.install.installedAt) : '—'}, updated {p.install.lastUpdated ? ago(p.install.lastUpdated) : '—'}</dd>
+        <dt>Install folder</dt><dd><code class="wrap">{p.installPath || '—'}</code></dd>
+        {#if p.warn}<dt>Health</dt><dd><Badge tone="warning">{p.warn}</Badge></dd>{/if}
+      </dl>
+      <h3>Skills, agents and commands ({p.contents.length})</h3>
+      {#if p.contents.length}
+        <ul class="plain">{#each p.contents as c}<li><Badge>{c.kind}</Badge> <code>{c.name}</code></li>{/each}</ul>
+      {:else}<p class="text-sm text-muted">None</p>{/if}
+      <h3>Hooks ({p.hookEvents.length})</h3>
+      <p class="text-sm">{p.hookEvents.length ? p.hookEvents.join(', ') : 'None'}</p>
+      <h3>MCP servers ({p.servers.length})</h3>
+      <p class="text-sm">{#if p.servers.length}{#each p.servers as n}<code>{n}</code> {/each}{:else}None{/if}</p>
+    {:else if detail?.kind === 'hook'}
+      {@const h = detail.row}
+      <dl class="facts" id="claude-detail-hook">
+        <dt>Event</dt><dd>{h.event}</dd>
+        <dt>Matcher</dt><dd>{#if h.matcher === '—'}— <span class="text-sm text-muted">every call</span>{:else}<code class="wrap">{h.matcher}</code>{/if}</dd>
+        <dt>Type</dt><dd>{h.handler?.type ?? '—'}</dd>
+        <dt>Timeout</dt><dd>{h.timeout}</dd>
+        <dt>Async</dt><dd>{yes(h.handler?.async)}</dd>
+        {#if h.handler?.statusMessage}<dt>Status message</dt><dd>{h.handler.statusMessage}</dd>{/if}
+        {#if h.handler?.otherKeys.length}<dt>Other keys</dt><dd><code>{list(h.handler.otherKeys)}</code></dd>{/if}
+        <dt>Origin</dt><dd><Badge>{h.originScope}</Badge> {#if h.originScope !== 'user'}<code class="wrap">{h.origin}</code>{/if}</dd>
+        <dt>Declared in</dt><dd><code class="wrap">{h.file}</code></dd>
+        {#if h.warn}<dt>Health</dt><dd><Badge tone="warning">{h.warn}</Badge></dd>{/if}
+      </dl>
+      <h3>Command</h3>
+      {#if h.handler?.command}<Code text={h.handler.command} language="bash" />{:else}<p class="text-sm text-muted">No command</p>{/if}
+    {/if}
+  </Drawer>
 </section>
+
+{#snippet text()}
+  <h3>Contents</h3>
+  {#if fileErr}
+    <Callout tone="warning" title="Could not read the file">{fileErr}</Callout>
+  {:else if !file}
+    <p class="text-sm text-muted">Reading…</p>
+  {:else}
+    <div id="claude-detail-text" class="detail-text"><Markdown text={body(file.text)} headingBase={4} /></div>
+  {/if}
+{/snippet}
 
 <style>
   .claude-head { justify-content: space-between; align-items: flex-start; }
   .wrap { overflow-wrap: anywhere; }
+  .facts > dd { overflow-wrap: anywhere; }
+  .plain { list-style: none; padding: 0; margin: 0; }
+  .detail-text { overflow-wrap: anywhere; }
   .clip { display: inline-block; max-inline-size: var(--measure, 64ch); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 </style>

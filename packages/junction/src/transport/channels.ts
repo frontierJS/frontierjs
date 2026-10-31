@@ -1820,7 +1820,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
             // first let maxInFlight read 0 under any number of running calls.
             return (async () => {
               await ensureDeps()
-              const { bridge: _bridge2, readTransportFlags: _readFlags, errorBody: _errorBody } = _bridge!
+              const { bridge: _bridge2, errorBody: _errorBody } = _bridge!
               const { callService: _call }        = _callSvc!
               const { toFrameworkError: _toErr }  = _errUtils!
 
@@ -1912,7 +1912,6 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
                   locals:  { __channels: manager, ...restExtra } as Record<string, unknown>,
                   signal:  conn?.__gone?.signal,
                 }, app)
-                const { wrap } = _readFlags(wsQuery)
                 const call = svcCtx
                 await _enterRequest!({
                   origin:         'websocket',
@@ -1924,7 +1923,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
                   caller:         call.caller,
                 }, () =>
                   _call(svc, call, app._appHooks, app.events, app.telemetry))
-                ctx.send({ type: 'service_result', id: callId, result: _bridge2.toFrame(call, wrap) })
+                ctx.send({ type: 'service_result', id: callId, result: _bridge2.toFrame(call) })
               } catch (err: unknown) {
                 const fe = _toErr(err, app)
                 status = fe.code

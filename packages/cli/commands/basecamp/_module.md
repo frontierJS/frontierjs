@@ -230,3 +230,8 @@ needs a `BASECAMP_API_KEY` from the running Basecamp, not a cloud token.
 `fli basecamp:key` mints that key over ssh — `api-keys.create` called as an
 owner through `fli deploy:repl` — and stores it in the global env, with no
 browser and no password.
+
+`fli basecamp:live` says why a released App is not answering — its release,
+its machine, then each hostname's zone, DNS and HTTPS — and `--retry` reloads
+Caddy on its machines so a certificate waiting out its backoff is asked for
+now (`FJS-D1715`).

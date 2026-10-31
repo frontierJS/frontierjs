@@ -186,6 +186,19 @@ const HEALTH = { attempts: 10, intervalMs: 3_000 }
 const EXPOSED_LABEL = 'fjs.exposed-port'
 const EXPOSED_SET   = 'inet basecamp exposed'
 
+/** The container's identity. The NAME is for `docker ps` and carries slugs a
+ *  person can rename; this label carries the App's id, which cannot change, so
+ *  every lookup asks for the label and a rename never orphans a container. */
+const APP_LABEL = 'fjs.app'
+
+/** `fjs--<project>-<env>-<app>-<first 8 of the id>`, the shape `docker ps`
+ *  reads at a glance. The double dash is where the user-chosen slugs begin; the
+ *  id's head keeps two apps with the same slugs on one box from colliding. */
+export function containerName({ appId, project, environment, appSlug }) {
+  const part = (text) => String(text).toLowerCase().replace(/[^a-z0-9-]/g, '-')
+  return `fjs--${[project, environment, appSlug].map(part).join('-')}-${part(String(appId).slice(0, 8))}`
+}
+
 // ─── restore ─────────────────────────────────────────────────────────────────
 // The extract runs in a throwaway container holding only the data and the
 // archive, read-only, with no network: a tar entry naming `../etc` or an
@@ -410,7 +423,9 @@ export function createDocker({
    * the app row's port may have been edited since.
    */
   async function published({ appId }) {
-    const result = await run(['docker', 'inspect', '--format', '{{json .HostConfig.PortBindings}}', `fjs-${appId}`])
+    const { live } = await containersOf(appId)
+    if (!live) return null
+    const result = await run(['docker', 'inspect', '--format', '{{json .HostConfig.PortBindings}}', live])
     if (result.exitCode !== 0) {
       if (/No such (object|container)/i.test(result.stderr ?? '')) return null
       throw new Error(result.stderr?.trim() || `docker inspect exited ${result.exitCode}`)
@@ -428,7 +443,8 @@ export function createDocker({
    *  release a running-only check calls healthy. `State.Running` is asked of
    *  the daemon rather than inferred from the fact that `docker run` returned. */
   async function healthCheck({ appId, port, path }) {
-    const name = `fjs-${appId}`
+    const { live: name } = await containersOf(appId).catch(() => ({ live: null }))
+    if (!name) return { healthy: false, reason: 'not running' }
     const result = await run(['docker', 'inspect', '--format', '{{.State.Running}}', name])
     if (!(result.exitCode === 0 && result.stdout.trim() === 'true')) return { healthy: false, reason: 'not running' }
     if (path == null) return { healthy: true }
@@ -460,38 +476,58 @@ export function createDocker({
   // Stopped BEFORE the new one starts: a SQLite file takes one writer, and
   // the new entrypoint opens it to migrate.
 
-  const exists = async (name) =>
-    (await run(['docker', 'container', 'inspect', '--format', '{{.Id}}', name])).exitCode === 0
+  /** The containers an App has on this machine, found by the `fjs.app` label
+   *  and told apart by the `_replaced` suffix: `live` is the one served,
+   *  `replaced` the set-aside one a swap keeps. `all` is every name, for the
+   *  step that removes them. Asked of the daemon rather than derived from the
+   *  slugs, which a rename changes between releases. */
+  async function containersOf(appId) {
+    checkAppId(appId)
+    const listed = await run(['docker', 'ps', '-a', '--filter', `label=${APP_LABEL}=${appId}`, '--format', '{{.Names}}'])
+    if (listed.exitCode !== 0) throw new Error(`docker ps failed (exit ${listed.exitCode}): ${(listed.stderr ?? '').trim()}`)
+    const all = String(listed.stdout ?? '').split('\n').map(line => line.trim()).filter(Boolean)
+    return {
+      live:     all.find(name => !name.endsWith('_replaced')) ?? null,
+      replaced: all.find(name => name.endsWith('_replaced')) ?? null,
+      all,
+    }
+  }
 
-  /** Set the live container aside. Answers whether there is one to go back to.
-   *  A `_replaced` with nothing live beside it is the last good container of a
-   *  swap this process did not finish, so it is kept rather than cleared. */
-  async function setAside(name, replaced) {
-    if (await exists(name)) {
-      await run(['docker', 'rm', '-f', replaced])
-      await docker(['rename', name, replaced])
-    } else if (!await exists(replaced)) {
-      return false
+  /** Set the live container aside, under whatever name it carries. Answers the
+   *  handle to go back to, or `null` when there is nothing. A `_replaced` with
+   *  nothing live beside it is the last good container of a swap this process
+   *  did not finish, so it is kept rather than cleared. */
+  async function setAside(appId) {
+    const { live, replaced } = await containersOf(appId)
+    const held = live ? { name: live, replaced: `${live}_replaced` }
+      : replaced ? { name: replaced.slice(0, -'_replaced'.length), replaced }
+      : null
+    if (!held) return null
+    if (live) {
+      // Any `_replaced` the label finds goes too: a slug renamed since the last
+      // release leaves one under a name this swap would never write.
+      await run(['docker', 'rm', '-f', ...new Set([held.replaced, replaced].filter(Boolean))])
+      await docker(['rename', live, held.replaced])
     }
     try {
-      await docker(['stop', '-t', '10', replaced])
+      await docker(['stop', '-t', '10', held.replaced])
     } catch (err) {
-      await run(['docker', 'rename', replaced, name])
+      await run(['docker', 'rename', held.replaced, held.name])
       throw err
     }
-    return true
+    return held
   }
 
   /** Take the failed container away and start the set-aside one again. Answers
    *  the error `/deploy` throws: `restored` says whether the old container is
    *  back, which is what tells the route to follow it to its own port. */
-  async function putBack({ appId, name, replaced, held, path, why }) {
+  async function putBack({ appId, name, held, path, why }) {
     const fail = (said, restored) => Object.assign(new Error(`the new container ${why}; ${said}`), { restored })
     await run(['docker', 'rm', '-f', name])
     if (!held) return fail('there was no previous container to put back', false)
     try {
-      await docker(['rename', replaced, name])
-      await docker(['start', name])
+      await docker(['rename', held.replaced, held.name])
+      await docker(['start', held.name])
     } catch (err) {
       return fail(`putting the previous container back failed too: ${err.message}`, false)
     }
@@ -625,7 +661,8 @@ export function createDocker({
    * build pointed at a missing file makes an empty one and prerenders nothing.
    */
   async function copyDatabase(appId, volumePath, to) {
-    const name  = `fjs-${appId}`
+    const { live: name } = await containersOf(appId)
+    if (!name) throw new Error(`no container for app ${appId} on this machine to copy the database from`)
     const inner = `${volumePath}/backups/site-build-${randomBytes(6).toString('hex')}`
     await run(['rm', '-rf', to])
     try {
@@ -800,17 +837,18 @@ export function createDocker({
 
     /**
      * Start the new container, and answer only once it is healthy. It takes
-     * the old one's name, because a machine that accumulates `app-1`, `app-2`
-     * is one nothing can address by name afterwards; the old one waits as
-     * `_replaced` until then, and comes back if the new one does not start or
-     * does not answer.
+     * the name the slugs spell, and the `fjs.app` label is what every later
+     * step finds it by, so a machine does not accumulate `app-1`, `app-2`; the
+     * old one waits as `<its name>_replaced` until then, and comes back under
+     * its own name if the new one does not start or does not answer.
      */
-    async deploy({ appId, image, digest, config = {}, port, loopback = false, exposesPort = false }) {
-      const name     = `fjs-${appId}`
-      const replaced = `${name}_replaced`
+    async deploy({ appId, project, environment, appSlug, image, digest, config = {}, port, loopback = false, exposesPort = false }) {
+      const name = containerName({ appId, project, environment, appSlug })
       checkRunConfig(config)
 
       const argv = ['run', '-d', '--name', name, '--restart', 'unless-stopped']
+      argv.push('--label', `${APP_LABEL}=${appId}`, '--label', `${APP_LABEL}.slug=${appSlug}`,
+                '--label', `fjs.project=${project}`, '--label', `fjs.env=${environment}`)
       // Docker's default json-file driver caps nothing, so an app that logs per
       // request fills the machine's disk and stops every OTHER app on it — which
       // is the fleet version of the failure and the reason this is not left to
@@ -854,7 +892,7 @@ export function createDocker({
       // does; ntfy's image does nothing without `serve`.
       argv.push(ref, ...config.command ?? [])
 
-      const held = await setAside(name, replaced)
+      const held = await setAside(appId)
       const path = config.healthCheck ?? null
       let containerId
       try {
@@ -867,13 +905,13 @@ export function createDocker({
         // A port another process holds, a bad env value, an image the daemon
         // cannot resolve — docker's own refusals, which come after the old
         // container has stopped.
-        throw await putBack({ appId, name, replaced, held, path, why: `did not start — ${err.message}` })
+        throw await putBack({ appId, name, held, path, why: `did not start — ${err.message}` })
       }
       const fresh = await untilHealthy({ appId, port, path })
       if (!fresh.healthy)
-        throw await putBack({ appId, name, replaced, held, path, why: `started and is not healthy — ${fresh.reason}` })
+        throw await putBack({ appId, name, held, path, why: `started and is not healthy — ${fresh.reason}` })
 
-      if (held) await run(['docker', 'rm', '-f', replaced])
+      if (held) await run(['docker', 'rm', '-f', held.replaced])
       return { containerId, digest: digest ?? await digestOf(image) }
     },
 
@@ -898,7 +936,7 @@ export function createDocker({
      * the one that happened.
      */
     async logs({ appId, tail = 200, since = null } = {}) {
-      const name  = `fjs-${appId}`
+      const { live: name } = await containersOf(appId)
       // A caller-supplied count reaches an argv array rather than a shell, so
       // this is a resource bound and not an injection guard.
       const lines = Math.min(Math.max(Number.parseInt(tail, 10) || 200, 1), MAX_LOG_LINES)
@@ -907,6 +945,7 @@ export function createDocker({
       // Anything else is refused BY DOCKER, whose message is more use than a
       // second grammar maintained here.
       if (since != null && String(since).trim() !== '') argv.push('--since', String(since))
+      if (!name) return { running: false, tail: lines, since, stdout: '', stderr: '', error: 'no such container' }
       argv.push(name)
 
       const result = await run(argv)
@@ -928,24 +967,25 @@ export function createDocker({
      * A container that is not there arrives as docker's own stderr line and
      * the end of the stream.
      */
-    follow({ appId, tail = 200, since = null, signal } = {}) {
+    async *follow({ appId, tail = 200, since = null, signal } = {}) {
+      const { live } = await containersOf(appId)
+      if (!live) { yield { stream: 'stderr', text: `no such container for app ${appId}` }; return }
       const lines = Math.min(Math.max(Number.parseInt(tail, 10) || 200, 0), MAX_LOG_LINES)
       const argv  = ['docker', 'logs', '--follow', '--tail', String(lines)]
       if (since != null && String(since).trim() !== '') argv.push('--since', String(since))
-      argv.push(`fjs-${appId}`)
-      return followLines(stream(argv), signal)
+      argv.push(live)
+      yield* followLines(stream(argv), signal)
     },
 
     async stop({ appId }) {
-      const name = `fjs-${appId}`
-      const result = await run(['docker', 'rm', '-f', name])
+      const { live, all } = await containersOf(appId)
       // A `_replaced` left by a swap that never finished goes too: kept, the
       // app's next release would bring it back as the last good container of
       // an app somebody removed, and it holds the data directory in the meantime.
-      await run(['docker', 'rm', '-f', `${name}_replaced`])
+      const result = all.length ? await run(['docker', 'rm', '-f', ...all]) : null
       // Not an error: a first deploy has no previous container, and Basecamp
       // treats this step as non-fatal for exactly that reason.
-      return { stopped: result.exitCode === 0 }
+      return { stopped: !!live && result.exitCode === 0 }
     },
 
     /**

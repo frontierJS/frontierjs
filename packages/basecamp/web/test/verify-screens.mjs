@@ -1597,10 +1597,10 @@ try {
   await goto('/secrets/')
   await until(`!!document.querySelector('[aria-label^="Rotate "]')`, v => v, 'no secret offers a rotation')
   const secretsBefore = (await apiGet('/secrets')).body?.data ?? []
-  const verifiedOne = secretsBefore.find(x => x.verifiedAt && x.kind === 'notification')
+  const verifiedOne = secretsBefore.find(x => x.verifiedAt && x.kind === 'ssh_key')
   await byLabel(`Rotate ${verifiedOne?.name}`)
-  await until(`!!document.getElementById('rotate-value')`, v => v, 'the rotate drawer never opened')
-  await typeIn('#rotate-value', JSON.stringify({ url: 'https://hooks.example.com/rotated' }))
+  await until(`!!document.getElementById('value-privateKey')`, v => v, 'the rotate drawer never opened')
+  await typeIn('#value-privateKey', 'ssh-ed25519 AAAAC3NzaC1ROTATED')
   await click('#rotate-save')
   await until(`!document.getElementById('rotate-save')`, v => v, 'the rotation never closed')
   const rotated = (await apiGet(`/secrets/${verifiedOne?.id}`)).body
