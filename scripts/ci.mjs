@@ -2082,37 +2082,7 @@ function course(LESSONS, { fli, daemon, chrome, verbose }) {
 // because every phase in this file is synchronous, and a listen is not.
 // ─── running a package's own script ─────────────────────────
 
-function runScript(dir, script) {
-  const cwd = join(ROOT, dir)
-  const pm  = packageManagerFor(dir)
-  const at  = Date.now()
-
-  // A carriage return only erases on a terminal. Piped to a file — which is
-  // what a workflow log is — it stays in the text and the "running…" line is
-  // left padded across the result. So only draw progress when someone is
-  // watching it happen.
-  const pending = process.stdout.isTTY ? `  · ${dir} ${script}…` : ''
-  if (pending) process.stdout.write(pending)
-  begin(dir)
-
-  const result = spawnSync(pm, ['run', script], {
-    cwd,
-    encoding:   'utf8',
-    shell:      false,
-    maxBuffer:  MAX_BUFFER,
-    timeout:    TIMEOUT_MS,
-    killSignal: 'SIGKILL',
-    env:        { ...process.env, CI: '1', FORCE_COLOR: '0' },
-  })
-
-  // A bare \r leaves the "running…" text under the result, since the result is
-  // shorter for a package with a long name. Blank the line before writing it.
-  if (pending) process.stdout.write(`\r${' '.repeat(pending.length)}\r`)
-
-  return scriptResult(dir, script, result, at)
-}
-
-// The same run without blocking, for a phase that runs its packages in lanes.
+// A package's own script, run without blocking, for a phase that runs its packages in lanes.
 // No progress line: several are running at once and a \r can erase only one.
 async function runScriptAsync(dir, script) {
   const at = Date.now()

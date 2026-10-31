@@ -293,7 +293,7 @@ describe('what the worker will not do', () => {
     await writeOfflineShell({ db: true }, dir)
     const src = await sw(dir)
     expect(src.match(/\.put\(/g)).toHaveLength(1)
-    expect(src).toMatch(/if \(DB\.includes\(url\.pathname\)\) \{[^]*?c\.put\(url\.pathname/)
+    expect(src).toMatch(/if \(DB\.includes\(url\.pathname\)\) \{[\s\S]*?c\.put\(url\.pathname/)
   })
 
   test('it answers only for a precached path or a navigation', async () => {

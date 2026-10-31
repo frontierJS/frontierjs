@@ -249,6 +249,7 @@ export function workerDeployed({ root, config }) {
   // signed out, offline, another account — is not a no.
   const said = `${run.stdout}\n${run.stderr}`
   if (/\[code: 10007\]/.test(said)) return { name, deployed: false }
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: the control characters are what this pattern removes or refuses
   const line = said.split('\n').map(l => l.replace(/\x1b\[[0-9;]*m/g, '').trim()).find(l => /ERROR|error/.test(l))
   return { name, deployed: null, reason: line ?? `wrangler exited ${run.status}` }
 }

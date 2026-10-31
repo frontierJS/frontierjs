@@ -1,6 +1,6 @@
 ---
 id: cloudflare-email
-status: proposal
+status: proposed
 dated: 2026-10-30
 ---
 
