@@ -200,3 +200,35 @@ describe('a text operator on a number is a ValidationError', () => {
     expect(await sys.item.findMany({ where: { at: { contains: '2024-01' } } })).toHaveLength(3)
   })
 })
+
+// ─── a combinator is graded before it is walked (FJS-3726) ─────────────────
+// `?OR=[{"status":"x"}]` reaches buildWhere as one string. `.map` on it was a
+// TypeError, a 500 blaming the server for the caller's shape.
+
+describe('AND / OR take a list, NOT takes an object', () => {
+  for (const key of ['AND', 'OR']) {
+    for (const [label, bad] of [['a JSON string', '[{"title":"B"}]'], ['an object', { title: 'B' }], ['a number', 1]] as const) {
+      test(`${key} given ${label} is a ValidationError naming ${key}`, async () => {
+        const sys = await db()
+        const err = await refusal(() => sys.book.findMany({ where: { [key]: bad } })) as any
+        expect(err).toBeInstanceOf(ValidationError)
+        expect(err.errors?.[0]?.path).toEqual(['where', key])
+        expect(err.message).toMatch(new RegExp(key))
+      })
+    }
+  }
+
+  test('NOT given a JSON string is a ValidationError', async () => {
+    const sys = await db()
+    const err = await refusal(() => sys.book.findMany({ where: { NOT: '{"title":"B"}' } })) as any
+    expect(err).toBeInstanceOf(ValidationError)
+    expect(err.errors?.[0]?.path).toEqual(['where', 'NOT'])
+  })
+
+  test('…and the real lists still answer', async () => {
+    const sys = await db()
+    expect(await sys.book.findMany({ where: { OR: [{ title: 'B' }, { title: 'Z' }] } })).toHaveLength(1)
+    expect(await sys.book.findMany({ where: { AND: [{ title: 'B' }] } })).toHaveLength(1)
+    expect(await sys.book.findMany({ where: { NOT: { title: 'Z' } } })).toHaveLength(1)
+  })
+})

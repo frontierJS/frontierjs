@@ -300,7 +300,7 @@ export class HttpTransport {
   // a refusal is an HTTP response the caller can read rather than a close code
   // after the fact.
   private _wsPerIp:     Map<string, number> = new Map()
-  private _wsLimits:    Required<WsLimits>
+  private _wsLimits!:   Required<WsLimits>
   private _upgradeOrigins: CsrfOptions['origins']
   private _ddosGc:      ReturnType<typeof setInterval> | null = null
   private _reverifyTick: ReturnType<typeof setInterval> | null = null
@@ -351,19 +351,6 @@ export class HttpTransport {
     this.router = new Router()
     this.stats  = createStats()
 
-    // `maxFrameBytes` follows `maxBodySize` unless the app says otherwise: a
-    // socket must not be a wider door than a POST, and a number invented here
-    // would be a second answer to a question the app has already given.
-    this._wsLimits = {
-      ...WS_DEFAULTS,
-      maxFrameBytes: opts.maxBodySize ?? 256 * 1024,
-      ...Object.fromEntries(Object.entries(opts.ws ?? {}).filter(([, v]) => v !== undefined)),
-    } as Required<WsLimits>
-    const every = this._wsLimits.reverifySeconds
-    if (typeof every !== 'number' || !Number.isFinite(every) || every < 0) {
-      throw new Error(`http.ws.reverifySeconds must be a number of seconds, zero or more (got ${every})`)
-    }
-
     const stats = this.stats
     this._sharedHelpers = {
       json: (data, status = 200) => {
@@ -400,10 +387,40 @@ export class HttpTransport {
       powered:     'Junction',
       ...opts
     }
+    this._applyOpts()
+  }
+
+  /**
+   * Take options that arrived after construction. `createApp` builds the
+   * transport before `junction.config.js` is read, so what the file states
+   * under `app.http` reaches it here (`FJS-3717`). Everything the options
+   * derive is derived again.
+   */
+  reconfigure(patch: Partial<HttpTransportOptions>): void {
+    this._opts = { ...this._opts, ...patch }
+    this._applyOpts()
+  }
+
+  /** What is computed from `_opts` rather than read from it at request time. */
+  private _applyOpts(): void {
+    const opts = this._opts
+
+    // `maxFrameBytes` follows `maxBodySize` unless the app says otherwise: a
+    // socket must not be a wider door than a POST, and a number invented here
+    // would be a second answer to a question the app has already given.
+    this._wsLimits = {
+      ...WS_DEFAULTS,
+      maxFrameBytes: opts.maxBodySize ?? 256 * 1024,
+      ...Object.fromEntries(Object.entries(opts.ws ?? {}).filter(([, v]) => v !== undefined)),
+    } as Required<WsLimits>
+    const every = this._wsLimits.reverifySeconds
+    if (typeof every !== 'number' || !Number.isFinite(every) || every < 0) {
+      throw new Error(`http.ws.reverifySeconds must be a number of seconds, zero or more (got ${every})`)
+    }
 
     // Refused here rather than at `Bun.serve`, where it is a throw out of
     // `start()` with the app already half-built.
-    const idle = this._opts.idleTimeout
+    const idle = opts.idleTimeout
     if (idle !== undefined && (!Number.isInteger(idle) || idle < 0 || idle > 255)) {
       throw new Error(
         `http.idleTimeout must be a whole number of seconds between 0 and 255 (got ${idle}). ` +
@@ -413,20 +430,21 @@ export class HttpTransport {
     }
 
     for (const part of ['cert', 'key'] as const) {
-      const path = this._opts.tls?.[part]
-      if (this._opts.tls && (typeof path !== 'string' || !existsSync(path))) {
+      const path = opts.tls?.[part]
+      if (opts.tls && (typeof path !== 'string' || !existsSync(path))) {
         throw new Error(`http.tls.${part} must be the path of an existing PEM file (got ${JSON.stringify(path)}).`)
       }
     }
 
-    const cap = this._opts.maxConcurrentRequests
+    const cap = opts.maxConcurrentRequests
     if (cap !== undefined && (!Number.isInteger(cap) || cap < 0)) {
       throw new Error(`http.maxConcurrentRequests must be a whole number, 0 for unlimited (got ${cap}).`)
     }
 
     // GC: prune expired DDoS counters every window interval so the map
     // doesn't accumulate every IP the server has ever seen. Handle is kept
-    // so stop() can clear it — previously it ran forever after shutdown.
+    // so stop() can clear it, and a second pass replaces it.
+    if (this._ddosGc) { clearInterval(this._ddosGc); this._ddosGc = null }
     if (opts.ddos?.enabled) {
       this._ddosGc = setInterval(() => {
         const now = Date.now()

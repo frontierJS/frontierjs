@@ -121,3 +121,31 @@ describe("beside the app's own resolver", () => {
     expect(seen.user.shiftLead).toBe(true)
   })
 })
+
+// ─── the wire (FJS-3728) ─────────────────────────────────────────────────────
+//
+// A broadcast has no request, so the same declaration is read per recipient
+// when the frame is graded: no `channels({ claims })` resolver restates it.
+
+describe('a claim the schema reads off a row, on a broadcast', () => {
+  test('the employee at the site hears the write and a stranger to it does not', async () => {
+    const { createChannelManager } = await import('../src/transport/channels.ts')
+    const { setCallDb }            = await import('../src/core/context.ts')
+    const db      = await seeded()
+    const manager = createChannelManager()
+    const listen  = (id: string) => {
+      const frames: string[] = []
+      const conn = { id, user: { id }, data: {}, socket: { send: (d: string) => { frames.push(d); return 1 }, close() {}, readyState: 1 } }
+      manager.channel('shifts').join(conn as never)
+      return frames
+    }
+    const u1 = listen('u1')
+    const u2 = listen('u2')
+
+    const ctx = setCallDb({ service: 'shifts', locals: {}, app: {} } as unknown as ServiceContext, db)
+    await manager.announce('shifts created', { id: 1, siteId: 7, note: 'site seven' }, ctx, () => [manager.channel('shifts')])
+
+    expect(u1.map(f => JSON.parse(f).event)).toContain('shifts created')
+    expect(u2.map(f => JSON.parse(f).event)).not.toContain('shifts created')
+  })
+})

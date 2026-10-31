@@ -12,6 +12,7 @@ import { isNestedWrite } from '../plugins/reach.js'
 import { modelToAccessor } from './ddl.js'
 import { ident } from './query.js'
 import { ValidationError } from './validate.js'
+import { untrailed } from './trail-entries.js'
 
 // The seam a many-to-many write announces its OTHER side through:
 // `tbl[JOINED](key)`. A join row is the only thing a connect writes, so the
@@ -89,7 +90,7 @@ export function makeNestedWrites(shape, ctx, deps) {
       const keyFrom = (target) => { for (let i = 0; i < fks.length; i++) extra[fks[i]] = target[refs[i]] }
       const grantsOf = (target) => requireParentGrants(rel.targetModel, fks, refs, refs.map(r => target[r]))
       if (ops.connect) {
-        const target = await tbl.findFirst({ where: ops.connect })
+        const target = await tbl.findFirst(untrailed({ where: ops.connect }))
         // The same answer the foreign key itself gets, hidden or missing.
         if (!target) {
           const named = Object.keys(ops.connect)
@@ -105,7 +106,7 @@ export function makeNestedWrites(shape, ctx, deps) {
         keyFrom(await tbl.create({ data: ops.create }))
       } else if (ops.connectOrCreate) {
         const { where: coWhere, create: coCreate } = ops.connectOrCreate
-        let target = await tbl.findFirst({ where: coWhere })
+        let target = await tbl.findFirst(untrailed({ where: coWhere }))
         if (target) grantsOf(target)
         else target = await tbl.create({ data: coCreate })
         keyFrom(target)
@@ -187,7 +188,7 @@ export function makeNestedWrites(shape, ctx, deps) {
           const wheres = Array.isArray(ops.set) ? ops.set : [ops.set]
           const after = new Set()
           for (const where of wheres) {
-            const target = await tbl.findFirst({ where })
+            const target = await tbl.findFirst(untrailed({ where }))
             if (!target) throw new Error(`m2m set on "${fieldName}": no "${rel.targetModel}" found matching ${JSON.stringify(where)}`)
             requireJoinGrants(target)
             writeDb.run(`INSERT OR IGNORE INTO "${jt}" ("${sk}", "${tk}") VALUES (?, ?)`, parentPk, keyOf(target))
@@ -207,7 +208,7 @@ export function makeNestedWrites(shape, ctx, deps) {
         if (ops.connect) {
           const wheres = Array.isArray(ops.connect) ? ops.connect : [ops.connect]
           for (const where of wheres) {
-            const target = await tbl.findFirst({ where })
+            const target = await tbl.findFirst(untrailed({ where }))
             if (!target) throw new Error(`m2m connect on "${fieldName}": no "${rel.targetModel}" found`)
             requireJoinGrants(target)
             const res = writeDb.run(`INSERT OR IGNORE INTO "${jt}" ("${sk}", "${tk}") VALUES (?, ?)`, parentPk, keyOf(target))
@@ -217,7 +218,7 @@ export function makeNestedWrites(shape, ctx, deps) {
         if (ops.disconnect) {
           const wheres = Array.isArray(ops.disconnect) ? ops.disconnect : [ops.disconnect]
           for (const where of wheres) {
-            const target = await tbl.findFirst({ where })
+            const target = await tbl.findFirst(untrailed({ where }))
             if (!target) continue
             const res = writeDb.run(`DELETE FROM "${jt}" WHERE "${sk}" = ? AND "${tk}" = ?`, parentPk, keyOf(target))
             if (res.changes) joined.add(keyOf(target))
@@ -226,7 +227,7 @@ export function makeNestedWrites(shape, ctx, deps) {
         if (ops.delete) {
           const wheres = Array.isArray(ops.delete) ? ops.delete : [ops.delete]
           for (const where of wheres) {
-            const target = await tbl.findFirst({ where })
+            const target = await tbl.findFirst(untrailed({ where }))
             if (!target) continue
             writeDb.run(`DELETE FROM "${jt}" WHERE "${sk}" = ? AND "${tk}" = ?`, parentPk, keyOf(target))
             await tbl.delete({ where: { [tpk]: keyOf(target) } })

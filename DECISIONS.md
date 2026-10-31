@@ -8495,6 +8495,10 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1732"></a>2026-10-31 · `FJS-D1732` — An app archive uploads by a link `appBackups.upload` signs; the stream route checks only the signature.
+
+Box 3.1 of [`IDEAS/app-archives.md`](IDEAS/app-archives.md). Junction buffers a service body under `maxBodySize` (10 MB in basecamp), so the archive has to arrive on a raw `{ body: 'stream' }` route, and that route runs no pipeline. **A** was taken after `decision-rules`: the method holds the gate (`ADMINISTRATOR`, `appBackups:write`, the app proved in the caller's scope, the hub refused, `FJS-D1718`'s destination required) and mints a five-minute HMAC link over the app, the file name, the uploader and the expiry, the shape `plugins/backup-archive.ts` uses for a hub download. `PUT /app-archive-upload/{appId}` checks that signature and nothing else. **B**, the route reading `ctx.user` and grading the level itself as `plugins/machine-stream.ts` does, was refused: it writes the gate a second time and refuses API keys. Cost: two calls per upload, and the link is a bearer credential until it expires. Reopen B only for a one-call client, and then through a grade function the service shares.
+
 ### <a id="fjs-d1724"></a>2026-10-31 · `FJS-D1724` — A wrapped `.db` is keyed `<appId>-<stamp>.db.tar.gz` and restores per file; amends `FJS-D1719`.
 
 Probe 0.1 of [`IDEAS/app-archives.md`](IDEAS/app-archives.md) found two things `FJS-D1719` got wrong. First, an app archive is flat (`./shop.db`, `./shop.db-wal`, …), so the import check reads top-level `./*.db`, not `db/*.db`. Second, a wrapped `.db` cannot restore "like any other archive": `/volume/restore`'s overwrite empties `/data`, which would delete the volume's other databases, and that breaks D1719's "replaces only that database". It restores through Outpost's per-file path instead, behind `restore`'s url door, so the fetch and sha256 check keep one owner. Asked through the question tool after `decision-rules`, and the recommendation was picked: the archive's scope is recorded in the key name, **A**. This was chosen over **B**, a column on `AppBackup` (a schema change, and rescan would infer it from the key anyway), and **C**, inspecting the tar at restore (the path would be unknown until after the fetch). The marker shows in the bucket, and a rescan rebuilds it from the key alone.
@@ -8515,7 +8519,7 @@ Asked in [`IDEAS/app-archives.md`](IDEAS/app-archives.md) § Open questions, thr
 
 Asked through the question tool after the 2026-10-31 perf audit ([`docs/perf-audit-2026-10-31.md`](docs/perf-audit-2026-10-31.md)). The owner first picked **B** (`total: null` unless `$total` asks), then amended it to an opt-out: most lists hold a few hundred rows, where a `COUNT(*)` costs microseconds and an exact page N of M is worth having. The count's cost scales with the rows the filter matches, not the page. It measured 74x the page at 50k matching rows with no index, so a large list passes `$total: false` and the window answers `hasMore` from a `limit + 1` fetch with `total: null`, as the keyset path already does. A short page is its own total and never counts (`FJS-3743`). **C** (a `COUNT` over a `LIMIT N` subquery) was not taken because it still scans up to N. `$total` is one new row in the directive table (`@frontierjs/toolbelt/directives`, Invariant 10).
 
-*Lives in:* not built — `FJS-3765`.
+*Lives in:* the `$total` row of `DIRECTIVES` in `packages/toolbelt/src/directives/directives.js`; `findWindow`'s `count` argument and `parseQuery`'s `total` in `packages/junction/src/core/litestone.ts`; pinned by `window.test.ts` (`FJS-3765`).
 
 ### <a id="fjs-d1696"></a>2026-10-30 · `FJS-D1696` — Q4 — How edge treats the MX and SPF records Email Routing writes — Leave them unmarked, with three conditions: an expected `cloudflare-email` class drift skips, a refusal on a zone that already has an MX, and one named owner for the SPF merge.
 
@@ -16100,6 +16104,37 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1728"></a>2026-10-31 · `FJS-D1728` — `ws:pub --changed-only` — Removed, with no alias.
+
+Asked during [`IDEAS/publish-order.md`](IDEAS/publish-order.md) box 1.2, through the question tool, after `decision-rules`. **Remove** was picked, as recommended. The flag picked packages with uncommitted files. Since box 1.1, `03-publish-all` packs from the release commit, and `01-version-all` commits only manifests and `bun.lock`, so the edits that picked a package never reach its tarball. A package that is dirty and has commits since its tag is already in the default set. One that is dirty and has none would spend a version on bytes equal to its tag, which the default hold-back exists to prevent. Selection has one owner: commits since the package's own tag, with `--all` as its off switch (Invariant 4). `ws:changed` still reports uncommitted packages. **Redefine as commits since tag** is the default under a second name. **Keep** ships a tarball without the edits that selected it. Reopen path: a wish to publish named packages is `--filter`, not a dirty-state selector.
+
+### <a id="fjs-d1733"></a>2026-10-31 · `FJS-D1733` — What a skill's and a subagent's share of Claude Code spend means — A skill takes the whole cost of every turn it loaded in; a subagent type takes the cost of its own transcript's messages.
+
+Built in [`IDEAS/claude-code.md`](IDEAS/claude-code.md) box 2.8, decided by measurement against `/stats`. The box said *the skill a `Skill` call names*; measured, that put every skill at 0.0–0.6% of 7-day spend, where `/stats` shows 1–5%.
+
+Measured over the same 7 days of transcripts, cost-weighted, against `claude -p "/stats"`:
+
+- **Per turn** (a skill counts from its `Base directory for this skill:` line to the next prompt, a slash command and a `Skill` call alike, subagent transcripts included): decision-rules 4.7, fix-next 4.6, drive-browser 3.6, doc-hygiene 2.1, ui/api/data-hazards 1.6/1.3/1.2. `/stats`: 4, 5, 4, 2, 1, 1, 1. Same seven skills, each within a point.
+- **Per call** (the message that called `Skill`): every skill under 1%. Rejected.
+- **Per session** (sticky after a load): drive-browser 7.3 and ui-hazards 5.1. Too high.
+- **Subagents**: `agentType` from the `.meta.json` Claude Code writes beside each subagent transcript. A parent's `Agent` call says nothing about the spend inside the child. general-purpose was 17.6% over 24h against `/stats`' 19%, but 8.9% over 7d against its 5%. `/stats` calls itself approximate, and the 7-day gap is not explained.
+
+Skills overlap, so their shares need not sum to 1. A turn can straddle an index read, so `ClaudeTranscript.turnSkills` holds the skills open at the offset. The migration resets every offset to 0, and the re-read fills `skills` and `agent` on the rows already there. Doing it this way keeps the history of transcripts already deleted from disk.
+
+What counts as a skill loading in a transcript is decided in one place, `readMessages` in `packages/cli/core/claude-usage.js`. `scripts/skill-reach.mjs` asks something else, whether a skill's `Detail:` pointer was followed. It reads `Read` calls, never load lines, so the two are not detecting the same thing. Graded by `decision-rules` after it was built (Late). Reopen if `/stats` changes its definition or Claude Code stops writing the load line.
+
+### <a id="fjs-d1734"></a>2026-10-31 · `FJS-D1734` — How the Claude Code tab splits a session's context into parts — Count each part with `count_tokens` over the claude.ai login token; a refused count leaves the character-share split, marked *estimated* with its reason.
+
+Asked in [`IDEAS/claude-code.md`](IDEAS/claude-code.md) box 2.9, through the question tool, after `decision-rules`. **Real count** was picked over **per-kind ratios**, as recommended.
+
+Measured on one session read both ways (a headless transcript and its own `/context`), then on a second session from another folder:
+
+- Characters per token run 2.3 to 3.5 by kind (memory 2.3, skills 3.0, tool schemas 3.5), and memory files ran 2.3 on one session and 3.4 on the other, by content. A ratio table fit on one session predicted the other within 4% for system prompt, tools and skills, and 50% off for memory.
+- `POST /v1/messages/count_tokens` accepts the OAuth token with `anthropic-beta: oauth-2025-04-20`. Each part is a count of a request holding it less one without it, so the tool-use preamble lands once. The parts summed to the measured total within 0.2% on both sessions, and agree with `/context` within 3% on system prompt, memory and skills.
+- `/context` is not ground truth for tools: its *System tools* ran about 4.4k under a count of the same schemas (18.7k against 23.2k), and its *Messages* is the remainder of its total. Phase 2's done-when is restated to match: the parts agree with `count_tokens`, and with `/context` on the parts both count the same text.
+
+The call lives in `claude-quota.ts`, the token's one owner (Invariant 4); `claude-context.ts` never sees the token. It takes no 429 stop of its own: a transcript's first request never changes, so its counts are kept in process and asked once. A shape's `defer_loading` tools are the deferred tools a session loaded and are counted; `DeferredToolPlaceholder` is not. The agent part is renamed *Agent listing*, since it holds the built-in agents `/context`'s *Custom agents* leaves out. **Reopen when** restarts make the re-counts hurt (persist them in a column, after `FJS-D1660`'s lock allows), or `count_tokens` stops accepting the login token (then ratios with a ± on memory).
 
 ### <a id="fjs-d1726"></a>2026-10-31 · `FJS-D1726` — Q6 — The release gate and `deploy --source npm` — The gate skips that branch, by name, and the published framework is graded after publish, from each host the run shipped to.
 

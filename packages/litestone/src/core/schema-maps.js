@@ -15,6 +15,7 @@
 
 import { isSoftDelete, modelToTableName, isUpdatedAtField, detectM2MPairs, sqlType, columnMapFor, mapExprCols } from './ddl.js'
 import { quoteIdent }                                            from './query.js'
+import { shiftInstant }                                          from '@frontierjs/toolbelt/predicate'
 import { compileDerived, compileFromWhere, checkDerivedType, dependsOnClock, evalDerived } from './policy.js'
 import { ID_GENERATORS, GENERATED_DEFAULTS }                       from './ids.js'
 
@@ -207,8 +208,9 @@ export function buildGeneratedDefaultMap(schema, now) {
       const def = field.attributes.find(a => a.kind === 'default')
       if (def?.value?.kind !== 'call') continue
       const clock = def.value.fn === 'now'
+      const shift = def.value.shift
       const generate = clock
-        ? () => nowISO(now)
+        ? () => shift ? shiftInstant(nowISO(now), shift) : nowISO(now)
         : GENERATED_DEFAULTS[def.value.fn]
       if (generate) entries.push(clock ? { field: field.name, generate, clock } : { field: field.name, generate })
     }

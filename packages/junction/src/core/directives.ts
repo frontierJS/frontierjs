@@ -36,6 +36,11 @@ export interface QueryDirectives {
    * no position either one of them means.
    */
   after?:       string
+  /**
+   * `false` skips the page's COUNT(*): a large list opts out, `total` answers
+   * null and `hasMore` comes from fetching one row past the page (`FJS-D1713`).
+   */
+  total?:       boolean
   /** Raw sort spec — 'name,-createdAt' | { name: 'asc' } | [{...}] */
   orderBy?:     unknown
   /** Raw select spec — 'id,name' | ['id','name'] */

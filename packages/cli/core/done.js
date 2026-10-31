@@ -200,7 +200,7 @@ export async function engineItems(root) {
       : `npm holds all ${asked} tagged version(s)` })
     for (const w of lacking) out.push({
       check: 'npm', subject: `${w.name}@${w.version}`, ok: false, message: w.from === 'tag'
-        ? `${w.name}@${w.version} is tagged and npm does not have it — fli ws:pub finishes the release`
+        ? `${w.name}@${w.version} is tagged and neither npm nor its GitHub Release has it — fli ws:pub finishes the release`
         : `${w.from} pins ${w.constant} = ${w.version} and npm has no ${w.name}@${w.version}, so every machine installed from it fails — publish it, or move the pin back`,
     })
   }

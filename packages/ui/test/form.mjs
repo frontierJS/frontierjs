@@ -379,7 +379,7 @@ await check(
   const { readFileSync } = await import('node:fs')
   const form = readFileSync(join(ROOT, 'components', 'forms', 'Form.mesa'), 'utf8')
   cases++
-  if (!/errors = \{ \.\.\._server, \.\.\._live\(\), \.\.\._control \}/.test(form)) {
+  if (!/next = \{ \.\.\._server, \.\.\._live\(\), \.\.\._control \}/.test(form)) {
     console.error('✗ Form.mesa _recompute\n    `_control` must be spread last, over `_server` and `_live()`')
     failed++
   }

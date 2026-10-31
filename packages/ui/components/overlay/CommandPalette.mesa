@@ -65,7 +65,7 @@
 
   export let items        = []      // Item[]
   export let placeholder  = 'Search commands…'
-  export let groupOrder   = []      // explicit group sort order
+  export let groupOrder   = []      // group sort order while the box is empty; a query orders groups by best hit
   export let emptyText    = undefined  // (query: string) => string
   export let onclose      = undefined
   export let onquery      = undefined  // Observer: (query: string) => void, untrimmed, on every change
@@ -170,7 +170,10 @@
   }
 
   const allGroups  = Object.keys(groupMap)
-  const groupNames = groupOrder.length
+  // `filtered` is already in rank order, so the groups of a typed query come out
+  // by their best hit. groupOrder is for browsing: held over a query, a group's
+  // place outranks its hit and Enter runs a weak match above the best one.
+  const groupNames = groupOrder.length && !ranked
     ? [...groupOrder.filter(g => groupMap[g]), ...allGroups.filter(g => !groupOrder.includes(g))]
     : allGroups
 

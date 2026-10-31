@@ -147,3 +147,54 @@ describe("the file's apiPrefix moves every route", () => {
     expect(app.http.router.routePaths('POST')).toContain('/v1/auth/login')
   })
 })
+
+// The transport is built inside `createApp`, before the file is read, so an
+// `app: { http: { maxBodySize } }` in junction.config.js merged into the config
+// and was never seen by the transport that enforces it: a 20 MB receipt was
+// refused 413 at the 256 KB default (`FJS-3717`).
+describe("the file's http section reaches the transport", () => {
+  const post = (base: string, bytes: number) =>
+    fetch(`${base}/up`, {
+      method:  'POST',
+      headers: { 'content-type': 'application/octet-stream' },
+      body:    new Uint8Array(bytes),
+    })
+
+  async function serve (file: Record<string, unknown>, config: Record<string, unknown> = {}) {
+    const app = createApp({
+      root:     configDir(file),
+      config:   { port: 0, ...config } as never,
+      logLevel: 'silent',
+    })
+    app.post('/up', ctx => ctx.json({ ok: true }))
+    await app.start()
+    running.push(app as unknown as { stop: () => Promise<void> })
+    return `http://127.0.0.1:${app.http.port}`
+  }
+
+  test('maxBodySize stated only in the file admits a body over the default', async () => {
+    const base = await serve({ app: { http: { maxBodySize: 1024 * 1024 } } })
+    expect((await post(base, 600 * 1024)).status).toBe(200)
+    expect((await post(base, 2 * 1024 * 1024)).status).toBe(413)
+  })
+
+  test('a maxBodySize passed to createApp still beats the file', async () => {
+    const base = await serve(
+      { app: { http: { maxBodySize: 1024 * 1024 } } },
+      { http: { maxBodySize: 100 * 1024 } },
+    )
+    expect((await post(base, 600 * 1024)).status).toBe(413)
+  })
+
+  test('the websocket frame bound follows the file maxBodySize', async () => {
+    const app = createApp({
+      root:     configDir({ app: { http: { maxBodySize: 1024 * 1024 } } }),
+      config:   { port: 0 } as never,
+      logLevel: 'silent',
+    })
+    await app.start()
+    running.push(app as unknown as { stop: () => Promise<void> })
+    const limits = (app.http as unknown as { _wsLimits: { maxFrameBytes: number } })._wsLimits
+    expect(limits.maxFrameBytes).toBe(1024 * 1024)
+  })
+})

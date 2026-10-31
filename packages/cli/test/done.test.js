@@ -245,17 +245,21 @@ describe('a tagged version npm does not hold', () => {
       const git = (...a) => execFileSync('git', a, { cwd: root, stdio: 'ignore' })
       git('init', '-q'); git('add', '.')
       git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'x')
-      for (const t of ['@x/a@1.0.0', '@x/b@2.0.0', '@x/p@9.0.0']) git('tag', t)
+      for (const t of ['@x/a@1.0.0', '@x/b@2.0.0', '@x/c@3.0.0', '@x/p@9.0.0']) git('tag', t)
 
-      const npm = { '@x/a@1.0.0': true, '@x/b@2.0.0': false, '@frontierjs/outpost@0.1.6': false }
-      const r = await tagsNpmLacks(root, { ask: async (n, v) => npm[`${n}@${v}`] ?? null })
+      const npm = { '@x/a@1.0.0': true, '@x/b@2.0.0': false, '@x/c@3.0.0': false, '@frontierjs/outpost@0.1.6': false }
+      // FJS-3721: a release published to the package host alone is finished
+      const released = { '@x/c@3.0.0': true }
+      const askRelease = async (n, v) => released[`${n}@${v}`] ?? false
+      const r = await tagsNpmLacks(root, { ask: async (n, v) => npm[`${n}@${v}`] ?? null, askRelease })
       expect(r.lacking.map(w => [`${w.name}@${w.version}`, w.from])).toEqual([
         ['@x/b@2.0.0', 'tag'], ['@frontierjs/outpost@0.1.6', pin],
       ])
-      expect(r.asked).toBe(3)
+      expect(r.asked).toBe(4)
+      expect(r.unknown).toEqual([])
 
-      const offline = await tagsNpmLacks(root, { ask: async () => null })
-      expect([offline.lacking.length, offline.unknown.length]).toEqual([0, 3])
+      const offline = await tagsNpmLacks(root, { ask: async () => null, askRelease: async () => null })
+      expect([offline.lacking.length, offline.unknown.length]).toEqual([0, 4])
     } finally { cleanup() }
   })
 })

@@ -21,6 +21,7 @@ import { dirname, join } from 'node:path'
 import { ensureCert }  from '@frontierjs/outpost/cert'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir }      from 'node:os'
+import { Database }    from 'bun:sqlite'
 import { createTestEnv, session } from '@frontierjs/testing'
 import { generateSigningKeys, signRequest } from '@frontierjs/toolbelt/signature'
 import { slug } from '@frontierjs/toolbelt/inflect'
@@ -41,6 +42,7 @@ import { snapshotVariables, releaseEnv } from '../src/domain/release/variables.t
 import { appBackupSchedule, appDrillSchedule, fireBackup, restoreSchedules } from '../src/domain/job/job-schedule.ts'
 import { mintDownload } from '../src/jobs/app-backup-run.job.ts'
 import { mintArchiveUrl } from '../src/plugins/backup-archive.ts'
+import { mintUploadUrl } from '../src/plugins/app-archive-upload.ts'
 import { replicasFor, syncReplicas, hostReplicaFor } from '../src/jobs/replicate-sync.job.ts'
 import { reconcileFound } from '../src/domain/backup/found-replicas.ts'
 import { rescanAppArchives, hashFoundArchives } from '../src/domain/backup/backup-archives.ts'
@@ -5034,6 +5036,74 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       const hubs = await sys.appBackup.create({ data: { appId: await ensureHub(), status: 'success', destinationId: dest.id, location: 'hub/basecamp-x.tar.gz' } })
       await expect(download(owner, hubs.id)).rejects.toThrow(/not found/)
       await sys.appBackup.delete({ where: { id: hubs.id } })
+    })
+
+    // IDEAS/app-archives.md 3.1: the method grades the caller and signs a
+    // link; the stream route refuses a file that is not an app archive before
+    // anything lands, so a garbage upload never reads as restorable.
+    test('an uploaded archive lands in the app\'s bucket as a hashed found row; garbage, a forged link or no destination does not', async () => {
+      const sys  = env.system as any
+      const sink = startS3Sink({ port: 0 })
+      const work = mkdtempSync(join(tmpdir(), 'bk-upload-'))
+      const tar  = (name: string, files: Record<string, string | Uint8Array>) => {
+        const dir = join(work, `${name}-src`)
+        for (const [path, body] of Object.entries(files)) { mkdirSync(dirname(join(dir, path)), { recursive: true }); writeFileSync(join(dir, path), body) }
+        Bun.spawnSync(['tar', '-czf', join(work, name), '-C', dir, '.'])
+        return Bun.file(join(work, name))
+      }
+      const shop = join(work, 'shop.db')
+      const made = new Database(shop); made.run('CREATE TABLE t (v TEXT)'); made.run(`INSERT INTO t VALUES ('kept')`); made.close()
+      const put  = async (url: string, body: BodyInit) => {
+        if (!env.app.http.router.isBuilt) await env.http.get('/setup/probe')
+        const res = await env.app.http.fetch(new Request(`http://basecamp.test${url}`, { method: 'PUT', body }))
+        return { status: res.status, body: await res.json() as any }
+      }
+      const keys = async () => ((await fetch(`${sink.url}/_sink/seen`).then(r => r.json())) as { keys: string[] }).keys
+      const mint = (who: any, name: string, appId = app.id) =>
+        env.as(who).service('appBackups').call('upload', null, { appId, name }) as Promise<{ url: string }>
+      try {
+        const dest = await env.as(owner).service('backupDestinations').create(bucket({ endpoint: sink.url, region: sink.region, secret: sink.credential })) as any
+        await expect(mint(owner, 'shop.db')).rejects.toThrow(/names no backup destination/)
+        await env.as(owner).service('apps').patch(app.id, { backupDestinationId: dest.id })
+        await expect(mint(developer, 'shop.db')).rejects.toThrow()
+        await expect(mint(outsider, 'shop.db')).rejects.toThrow()
+        await expect(mint(owner, 'x.db', await ensureHub())).rejects.toThrow()
+
+        const { url } = await mint(owner, 'archive.tar.gz')
+        const by      = new URL(url, 'http://x').searchParams.get('by')!
+        expect((await put(url.replace(/by=[^&]+/, 'by=someone-else'), 'x')).status).toBe(403)
+        expect((await put(mintUploadUrl(app.id, 'archive.tar.gz', by, Date.now() - 6 * 60_000), 'x')).status).toBe(403)
+
+        expect(await put(url, 'not an archive')).toMatchObject({ status: 422, body: { message: expect.stringMatching(/neither a gzipped tar nor a SQLite/) } })
+        expect(await put(url, tar('nested.tar.gz', { 'db/shop.db': 'x' }))).toMatchObject({ status: 422, body: { message: expect.stringMatching(/flat/) } })
+        expect(await put(url, tar('nodb.tar.gz', { 'notes.txt': 'x' }))).toMatchObject({ status: 422, body: { message: expect.stringMatching(/no top-level \.db/) } })
+        expect((await put((await mint(owner, 'shop.sqlite')).url, Bun.file(shop))).body.message).toMatch(/ending \.db/)
+        expect(await keys()).toEqual([])
+        expect(await sys.appBackup.count({ where: { appId: app.id, kind: 'found' } })).toBe(0)
+
+        const good = tar('good.tar.gz', { 'shop.db': new Uint8Array(await Bun.file(shop).arrayBuffer()), 'shop.db-wal': '' })
+        const sent = await put(url, good)
+        expect(sent.status).toBe(201)
+        expect(sent.body).toMatchObject({ kind: 'found', status: 'success', serverId: null, destinationId: dest.id, requestedBy: by })
+        expect(sent.body.location).toMatch(new RegExp(`^apps/${app.id}-\\d{4}-\\d{2}-\\d{2}T[\\d-]+Z\\.tar\\.gz$`))
+        expect(sent.body.sha256).toBe(new Bun.CryptoHasher('sha256').update(await good.arrayBuffer()).digest('hex'))
+
+        const bare = await put((await mint(owner, 'shop.db')).url, Bun.file(shop))
+        expect(bare.status).toBe(201)
+        expect(bare.body.location).toMatch(/\.db\.tar\.gz$/)
+        const wrapped = join(work, 'wrapped.tar.gz')
+        writeFileSync(wrapped, new Uint8Array(await (await fetch(await mintDownload(env.app as any, dest, bare.body.location))).arrayBuffer()))
+        expect(Bun.spawnSync(['tar', '-tzf', wrapped]).stdout.toString().split('\n').filter(Boolean).sort()).toEqual(['./', './shop.db'])
+
+        // Both keys are what a rescan would mint a row for, and it names them already.
+        expect((await keys()).sort()).toEqual([`frontier-basecamp/${sent.body.location}`, `frontier-basecamp/${bare.body.location}`].sort())
+        expect(await rescanAppArchives(env.app, app.id)).toEqual({ listed: 2, found: 0 })
+      } finally {
+        sink.stop()
+        rmSync(work, { recursive: true, force: true })
+        await sys.appBackup.deleteMany({ where: { appId: app.id, kind: 'found' } })
+        await env.as(owner).service('apps').patch(app.id, { backupDestinationId: null })
+      }
     })
   })
 

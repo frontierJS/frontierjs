@@ -13,6 +13,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join }                     from 'node:path'
 import { gitOut }                   from './git.js'
 import { workspaceMembers }         from './publish-view.js'
+import { hosts }                    from './publish-hosts.js'
 
 const TIMEOUT = 5_000
 
@@ -38,13 +39,15 @@ export async function onRegistry(name, version) {
 }
 
 /**
- * Every `<name>@<version>` tag on a member's current version, and every install
- * pin, that npm does not hold.
+ * Every `<name>@<version>` tag on a member's current version that neither npm
+ * nor the release host holds, and every install pin npm does not hold. A tag
+ * shipped `--to tarballs` (ws:pub's default, `FJS-D1613`) is finished with npm
+ * never asked to hold it; a pin is installed from npm alone.
  *
  * @returns {{ lacking: [{ name, version, from }], unknown: [{ name, version, from }], asked: number }}
  *   `from` is `tag` or the pin's `file`
  */
-export async function tagsNpmLacks(root, { ask = onRegistry } = {}) {
+export async function tagsNpmLacks(root, { ask = onRegistry, askRelease = hosts(root).tarballs } = {}) {
   const tags = new Set((gitOut(root, ['tag', '--list', '*@*']) ?? '').split('\n').filter(Boolean))
   const wanted = workspaceMembers(root)
     .filter(m => !m.private && m.version && tags.has(`${m.name}@${m.version}`))
@@ -63,9 +66,22 @@ export async function tagsNpmLacks(root, { ask = onRegistry } = {}) {
     answers.set(k, await ask(k.slice(0, at), k.slice(at + 1)))
   }))
 
+  // The release host is asked only about a tag npm did not hold: held on npm
+  // is finished, and a gh call per package is the cost of a `fli done`.
+  const released = new Map()
+  await Promise.all(wanted.filter(w => w.from === 'tag' && answers.get(key(w)) !== true).map(async w =>
+    released.set(key(w), await askRelease(w.name, w.version))))
+
+  const held = (w) => {
+    const npm = answers.get(key(w))
+    if (w.from !== 'tag' || npm === true) return npm
+    const rel = released.get(key(w))
+    return rel === true ? true : npm === false && rel === false ? false : null
+  }
+
   return {
-    lacking: wanted.filter(w => answers.get(key(w)) === false),
-    unknown: wanted.filter(w => answers.get(key(w)) === null),
+    lacking: wanted.filter(w => held(w) === false),
+    unknown: wanted.filter(w => held(w) === null),
     asked:   answers.size,
   }
 }

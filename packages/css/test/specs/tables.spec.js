@@ -208,3 +208,14 @@ test('table: .top reads a row from its top, and a plain table stays centred (FJS
   assert.equal(style(plain.querySelector('#r1 td'), 'vertical-align'), 'middle', 'a plain table no longer centres');
   assert.equal(style(top.querySelector('#r1 td'), 'vertical-align'), 'top', '.table.top does not read a row from its top');
 });
+
+test('table: FJS-3773 .table is not a scroll container, so a sticky th inside it sticks', function () {
+  /*
+   * overflow: hidden clipped the rounded corners but also made the table a
+   * scroll container, so a position: sticky header resolved against a box
+   * that never scrolls. overflow: clip clips the same and is not one.
+   */
+  var t = el(ROWS);
+  var ov = style(t, 'overflow-x');
+  assert.ok(ov !== 'hidden' && ov !== 'auto' && ov !== 'scroll', '.table overflow-x is ' + ov);
+});

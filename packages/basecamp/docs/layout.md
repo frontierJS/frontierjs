@@ -179,6 +179,10 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           route through `Executor.stream()`. One SOURCES row per stream (`logs`
           is `/logs/follow`), the row graded by `$readAs` under the caller's
           `workspaceClaim` (`FJS-D1550`).
+          plugins/app-archive-upload.ts is `PUT /app-archive-upload/{appId}`: an
+          archive a person uploads, streamed, behind a link `appBackups.upload`
+          signed; domain/backup/app-archive-import.ts checks it and puts it in
+          the app's bucket as a `found` row (`FJS-D1732`).
           plugins/workbench-terminal.ts is the Terminal tab: `/ws/terminal/{pin}`
           (under /ws/ because both proxies forward that prefix as a socket),
           Bun's own PTY in the pin's folder, xterm.js in web/src/components/

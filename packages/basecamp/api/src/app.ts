@@ -32,6 +32,7 @@ import { createWorkbench }           from './domain/workbench/workbench.ts'
 import { workbenchTerminal }         from './plugins/workbench-terminal.ts'
 import { machineStream }             from './plugins/machine-stream.ts'
 import { backupArchive }             from './plugins/backup-archive.ts'
+import { appArchiveUpload }          from './plugins/app-archive-upload.ts'
 import { bucketFromEnv, fetchHubArchive, listHubArchives, readBucket, receiveUpload, restoreStaged, restoreState, scratchTarball, stageHubArchive } from './domain/backup/hub-restore.ts'
 import { LEVELS }                                from '@frontierjs/litestone'
 import { apply }                                 from '@frontierjs/litestone/migrations'
@@ -1008,6 +1009,10 @@ export async function buildBasecampApp(
   // A local hub archive behind a link `backups.download` signed
   // (plugins/backup-archive.ts).
   app.configure(function backupArchiveRoute() { backupArchive(app) })
+
+  // An app archive a person uploads, behind a link `appBackups.upload` signed
+  // (plugins/app-archive-upload.ts).
+  app.configure(function appArchiveUploadRoute() { appArchiveUpload(app) })
 
   app.configure(function staticRoutes(a) {
     a.get('/', () => Bun.file(new URL('../../web/index.html', import.meta.url).pathname))

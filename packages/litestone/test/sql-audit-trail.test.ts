@@ -514,3 +514,96 @@ describe('an event recorded on a SQLite trail', () => {
     }
   })
 })
+
+// A read the engine makes to fill or grade a write is not one anybody asked for
+// (FJS-3714): the read trail named the parent chart under the caller.
+describe('the engine\'s own reads file no read entry (FJS-3714)', () => {
+  test('a path default, a connect and a value-set check read a logged parent and leave only the write', async () => {
+    const db = await client(`
+      database main { path ":memory:" model AuditRow }
+      model AuditRow { ${TRAIL} }
+      model Encounter { id Int @id  clinic Int  notes Note[]  @@trail(main, reads: true)  @@allow(all, true) }
+      model Note {
+        id Int @id  encounterId Int  encounter Encounter @relation(fields: [encounterId], references: [id])
+        clinic Int @default(encounter.clinic)
+        @@trail(main)
+        @@allow(all, true)
+      }
+    `)
+    const sys = db.asSystem()
+    await sys.encounter.create({ data: { id: 1, clinic: 7 } })
+    await tick()
+    await sys.auditRow.deleteMany({})
+
+    const note = await db.$setAuth({ id: 5 }).note.create({ data: { id: 1, encounterId: 1 } })
+    expect(note.clinic).toBe(7)
+    await tick()
+    const entries = (await sys.auditRow.findMany({ orderBy: { id: 'asc' } })).map((r: any) => `${r.operation} ${r.model}`)
+    expect(entries).toEqual(['create Note'])
+
+    // The caller's own read still files its entry.
+    await db.$setAuth({ id: 5 }).encounter.findFirst({ where: { id: 1 } })
+    await tick()
+    expect((await sys.auditRow.findMany({ where: { operation: 'read' } })).map((r: any) => r.model)).toEqual(['Encounter'])
+  })
+})
+
+// A read through a relation is a read of the related model (FJS-3709): the
+// include door was a way round the read log of every model with reads: true.
+describe('a read through a relation files the related model\'s read entry (FJS-3709)', () => {
+  const lite = `
+    database main { path ":memory:" model AuditRow }
+    model AuditRow { ${TRAIL} }
+    model Patient { id Int @id  name String  notes Note[]  memos Memo[]  @@trail(main, reads: true)  @@allow(all, true) }
+    model Note {
+      id Int @id  patientId Int  body String
+      patient Patient @relation(fields: [patientId], references: [id])
+      @@trail(main, reads: true)
+      @@allow(all, true)
+    }
+    model Memo { id Int @id  patientId Int  patient Patient @relation(fields: [patientId], references: [id])  @@allow(all, true) }
+  `
+  const reads = async (sys: any) =>
+    (await sys.auditRow.findMany({ where: { operation: 'read' }, orderBy: { id: 'asc' } }))
+      .map((r: any) => `${r.model} ${r.records}`).sort()
+
+  test('include and a nested select each file the note, by id', async () => {
+    const db = await client(lite)
+    const sys = db.asSystem()
+    await sys.patient.create({ data: { id: 1, name: 'A' } })
+    await sys.note.create({ data: { id: 10, patientId: 1, body: 'x' } })
+    await sys.note.create({ data: { id: 11, patientId: 1, body: 'y' } })
+    await tick()
+    await sys.auditRow.deleteMany({})
+
+    const who = db.$setAuth({ id: 5 })
+    const p = await who.patient.findFirst({ where: { id: 1 }, include: { notes: true } })
+    expect(p.notes.length).toBe(2)
+    await tick()
+    expect(await reads(sys)).toEqual(['Note 10,11', 'Patient 1'])
+
+    await sys.auditRow.deleteMany({})
+    const q = await who.patient.findFirst({ where: { id: 1 }, include: { notes: { select: { body: true } } } })
+    expect(q.notes).toEqual([{ body: 'x' }, { body: 'y' }])
+    await tick()
+    expect(await reads(sys)).toEqual(['Note 10,11', 'Patient 1'])
+
+    // The other direction: a belongsTo include reads the patient.
+    await sys.auditRow.deleteMany({})
+    await who.note.findFirst({ where: { id: 10 }, include: { patient: true } })
+    await tick()
+    expect(await reads(sys)).toEqual(['Note 10', 'Patient 1'])
+  })
+
+  test('an include of a model with no read log files nothing extra', async () => {
+    const db = await client(lite)
+    const sys = db.asSystem()
+    await sys.patient.create({ data: { id: 1, name: 'A' } })
+    await sys.memo.create({ data: { id: 1, patientId: 1 } })
+    await tick()
+    await sys.auditRow.deleteMany({})
+    await db.$setAuth({ id: 5 }).patient.findFirst({ where: { id: 1 }, include: { memos: true } })
+    await tick()
+    expect(await reads(sys)).toEqual(['Patient 1'])
+  })
+})

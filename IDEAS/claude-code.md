@@ -190,8 +190,9 @@ in a browser.
 ## Phase 2 — Context, sessions and spend
 
 Goal: what is always loaded, what was spent, and what is left.
-Done when: the context estimate and the 7-day token total agree with
-`/context` and `/stats` in a live `claude` session within 10%.
+Done when: the context parts agree with `count_tokens` and the 7-day totals
+with `/stats` within 10% (`/context` runs its own tool count short, so it
+grades only the parts both count the same text, `FJS-D1734`).
 
 - [x] 2.1 Context estimate — tokens per always-on part (system prompt, skill
   index, agents, memory files, MCP tool lists) against the window.
@@ -230,15 +231,34 @@ Done when: the context estimate and the 7-day token total agree with
     tool schemas (26.5k against 18.6k). That gap is 2.9.
   - The per-model weekly quota is Fable now, not Sonnet; the endpoint's
     `limits[]` list is read, whatever models it names.
-- [ ] 2.8 Skills and subagents — the skill a `Skill` call names and the
-  `subagent_type` an `Agent` call names, two columns on `ClaudeMessage` read
-  by `readMessages` in `claude-usage.js` (not a second parser), so 2.7 lists
-  top skills and subagents as `/stats` does. In by `bun run db:migrate`, then
-  a re-index from 0. Their counts stay a subset of the tool counts.
-- [ ] 2.9 Context agrees with `/context` — per-kind chars-per-token ratios or
+- [x] 2.8 Skills and subagents — the skills loaded in a message's turn and its
+  subagent's type, two columns on `ClaudeMessage` filled by `readMessages` in
+  `claude-usage.js` (not a second parser) and the `.meta.json` beside a
+  subagent's transcript, so 2.7 lists top skills and subagents as `/stats`
+  does (`FJS-D1733`). In by `bun run db:migrate`, then a re-index from 0.
+  - Built 2026-10-31, uncommitted. A skill takes the whole cost of every turn
+    it loaded in. Per call, every skill was under 1% against `/stats`' 1–5%.
+    `ClaudeTranscript.turnSkills` carries a turn across an index read, and the
+    migration resets offsets so the re-read fills rows already there. Over 7
+    days: the same seven skills as `/stats`, each within a point.
+    general-purpose is 17.6% against 19% over 24h, but 8.9% against 5% over
+    7d, unexplained. Re-read from 0: 7 GB in 171 s. An append: 548 ms.
+  - Test envs replayed migrations without recording them, so the first
+    `ADD COLUMN` failed every basecamp test when the app booted
+    (`FJS-3779`, fixed in litestone's `testdb.js`).
+- [x] 2.9 Context agrees with `/context` — per-kind chars-per-token ratios or
   a real count in place of the char-share split, proved on one session read
   both ways (a transcript and its own `/context`). This is Phase 2's
   done-when, still false.
+  - Built 2026-10-31, uncommitted: a real count (`FJS-D1734`), `countTokens`
+    in `claude-quota.ts`, `countContext` in `claude-context.ts`, once per
+    transcript per process. On a headless session and its own `/context`, and
+    a second from another folder: parts sum to the measured total within
+    0.2%; system prompt, memory and skills within 3% of `/context`. Tools
+    count 23.2k against `/context`'s 18.7k, which runs short; ratios failed on
+    memory (2.3 against 3.4 chars per token). Drive over a temp
+    `CLAUDE_CONFIG_DIR`: counted with the login linked in, *estimated* with
+    the reason without it, 1280 and 400 px, no console errors.
 - [x] 2.10 The tab row overflows at *Usage* — eleven tabs on one row; wrap
   them or group them.
   - The kit's strip scrolls sideways with its scrollbar hidden; the tab's own

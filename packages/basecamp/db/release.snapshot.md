@@ -676,6 +676,7 @@ table `claude_message` · db `main` · gate `5.8`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
+| `agent` | `String` | yes | — | — |
 | `at` | `DateTime` | no | — | **required on write** |
 | `cacheRead` | `Int` | no | — | **required on write** |
 | `cacheWrite` | `Int` | no | — | **required on write** |
@@ -687,6 +688,7 @@ table `claude_message` · db `main` · gate `5.8`
 | `model` | `String` | no | — | **required on write** |
 | `output` | `Int` | no | — | **required on write** |
 | `sessionId` | `String` | no | — | **required on write** |
+| `skills` | `String` | no | `''` | — |
 | `subagent` | `Boolean` | no | `0` | — |
 | `tools` | `String` | no | `''` | — |
 
@@ -702,6 +704,7 @@ table `claude_transcript` · db `main` · gate `5.8`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
+| `agent` | `String` | yes | — | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `cwd` | `String` | yes | — | — |
 | `firstPrompt` | `String` | yes | — | — |
@@ -716,6 +719,7 @@ table `claude_transcript` · db `main` · gate `5.8`
 | `startedAt` | `DateTime` | yes | — | — |
 | `subagent` | `Boolean` | no | `0` | — |
 | `title` | `String` | yes | — | — |
+| `turnSkills` | `String` | no | `''` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 
 ```

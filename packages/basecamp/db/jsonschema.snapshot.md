@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-171 definitions · 76 models · 1 view · 37 types · 57 enums · 0 other
+172 definitions · 76 models · 1 view · 38 types · 57 enums · 0 other
 ```
 
 ## Definitions
@@ -192,6 +192,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `AppBackupTake` | type |
 | `BackupRescan` | type |
 | `AppBackupRescan` | type |
+| `AppBackupUpload` | type |
 | `FlagOverrideSet` | type |
 | `FlagOverrideClear` | type |
 | `ServerProvision` | type |
@@ -803,10 +804,12 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `sessionId` | `string` | yes | — | — | — |
 | `cwd` | `string`? | — | — | — | — |
 | `subagent` | `boolean` = `false` | — | — | — | — |
+| `agent` | `string`? | — | — | — | — |
 | `headless` | `boolean` = `false` | — | — | — | — |
 | `title` | `string`? | — | — | — | — |
 | `firstPrompt` | `string`? | — | — | — | — |
 | `offset` | `integer` = `0` | — | — | — | — |
+| `turnSkills` | `string` = `""` | — | — | — | — |
 | `size` | `integer` = `0` | — | — | — | — |
 | `startedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `lastAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -832,7 +835,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `cacheRead` | `integer` | yes | — | — | — |
 | `output` | `integer` | yes | — | — | — |
 | `tools` | `string` = `""` | — | — | — | — |
+| `skills` | `string` = `""` | — | — | — | — |
 | `subagent` | `boolean` = `false` | — | — | — | — |
+| `agent` | `string`? | — | — | — | — |
 
 **On create**: required — `messageId`, `sessionId`, `model`, `at`, `input`, `cacheWrite`, `cacheRead`, `output` · not accepted — `id`
 
@@ -2268,6 +2273,17 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `appId` | `string` | yes | — | — | — |
 
 **On create**: required — `appId`
+
+### `AppBackupUpload`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `appId` | `string` | yes | — | — | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
+
+**On create**: required — `appId`, `name`
 
 ### `FlagOverrideSet`
 

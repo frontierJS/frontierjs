@@ -121,3 +121,27 @@ describe('a @rank column', () => {
     expect(cards.summary().columns.map(c => c.name)).toContain('rank')
   })
 })
+
+// FJS-3732: litestone's UPDATE schema emits the machine column `readOnly` with
+// `x-litestone-kind: 'transition'` (`FJS-D1243`), so a page patching it through
+// the resource lost the key in `stripReadOnly` and sent an empty patch -- a 200
+// that moved nothing. The Data boundary grades the move; the client must send it.
+describe('the machine column in the update schema', () => {
+  const UPDATE_TODO = {
+    ...TODO,
+    properties: {
+      ...TODO.properties,
+      status: { ...TODO.properties.status, readOnly: true, 'x-litestone-kind': 'transition' },
+    },
+  }
+
+  test('stripReadOnly keeps the column a hand-written save names', () => {
+    const rules = buildFieldRules(UPDATE_TODO)
+    expect(stripReadOnly(rules, { status: 'done' })).toEqual({ status: 'done' })
+  })
+
+  test('the generated form still offers no control for it', () => {
+    const names = formFieldList(buildFieldRules(UPDATE_TODO)).map(f => f.name)
+    expect(names).not.toContain('status')
+  })
+})

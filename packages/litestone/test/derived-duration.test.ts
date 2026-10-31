@@ -79,6 +79,25 @@ describe('a row policy takes it at startup', () => {
   })
 })
 
+// FJS-3698: a bare number added to a DateTime column is SQLite's TEXT-to-number
+// coercion, a predicate that filters by accident. createClient and `litestone
+// validate` refuse it; `migrate dry-run` diffs DDL and never grades policies.
+describe('a policy that does arithmetic on a DateTime column', () => {
+  test.each([
+    ['@@allow(read, now() < dateOfBirth + 16)'],
+    ['@@allow(read, dateOfBirth - 1 > 3)'],
+    ['@@scope(adult, now() < dateOfBirth * 2)'],
+  ])('%s is refused at startup', async (attr) => {
+    await expect(createClient({ db: ':memory:', schema: `model Patient { id Int @id  dateOfBirth DateTime  ${attr} }` }))
+      .rejects.toThrow(/'dateOfBirth' is DateTime, and [-+*] takes Int or Float operands/)
+  })
+
+  test('the duration form the message points at is accepted', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: `model Patient { id Int @id  dateOfBirth DateTime  @@allow(read, dateOfBirth < now() - 16yr) }` })
+    db.$close()
+  })
+})
+
 // FJS-2629: @derived read SQLite's own clock, so `createClient({ now })` never
 // reached it and a suite frozen at 2020 read a 2021 due date as overdue.
 describe('@derived reads the client clock', () => {

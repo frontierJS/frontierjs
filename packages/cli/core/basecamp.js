@@ -1,7 +1,12 @@
 // core/basecamp.js — talking to a Basecamp: its API from this side as a key's
 // owner, and the one enrollment command a box runs to join its fleet.
 // `basecamp:app`, `basecamp:deploy`, `outpost:install` and `deploy`'s
-// `08b-outpost` step share these, so a box cannot be enrolled two ways.
+// `08b-outpost` step share these, so a box cannot be enrolled two ways; an
+// app's archive is fetched here for `basecamp:backup` and the `db:` verbs.
+
+import { spawnSync }                from 'node:child_process'
+import { mkdirSync, rmSync }        from 'node:fs'
+import { basename, join, resolve }  from 'node:path'
 
 // The dev API's port in basecamp's own CLAUDE.md, as `fli ws:deps --push` has it.
 export const LOCAL_BASECAMP = 'http://localhost:8120'
@@ -62,4 +67,83 @@ export function installOutpost(machine, command, { host, log }) {
     log.warn(`Outpost install failed on ${host}${said ? `: ${said}` : ''} — the Servers page issues a fresh command`)
     return { outcome: 'failed', reason: said || 'the install command failed' }
   }
+}
+
+// ─── An app's archive, fetched ────────────────────────────────────────────────
+// `basecamp:backup`, `db:download` and `db:import` fetch through this one
+// (`FJS-D1717`). Only an archive in a bucket has a URL: no bytes cross the
+// command port (`FJS-D1485`), so one kept on its machine is refused, never
+// fetched some other way. The tar is flat — `./<name>.db` with its `-wal`
+// beside it (IDEAS/app-archives.md 0.1).
+
+/** Basecamp's `isRemote`: the archives a pre-signed GET reaches. */
+const inBucket = (b) => b.status === 'success' && !!b.destinationId && !b.error && !!b.location
+
+/** The newest archive of the app in a bucket, or one taken now and waited on. */
+async function archiveRow(origin, key, appId, { take, dry, log, say }) {
+  if (!take) {
+    const rows = (await basecampAll(origin, key, `/app-backups?appId=${encodeURIComponent(appId)}&status=success`)).filter(inBucket)
+    const newest = rows.sort((a, b) => Date.parse(b.startedAt ?? b.createdAt) - Date.parse(a.startedAt ?? a.createdAt))[0]
+    if (!newest) throw new Error(`App ${appId} has no archive in a bucket to fetch — take one with fli basecamp:backup --take, once the App has a backup destination`)
+    return newest
+  }
+  const app = await basecamp(origin, key, `/apps/${encodeURIComponent(appId)}`)
+  if (!app.backupDestinationId) throw new Error(`App ${app.name} has no backup destination, so an archive it takes stays on its machine — give it one on the App's page first`)
+  // The machine the App page's Back up now picks.
+  const placed = (app.placement ?? []).find(p => p.server?.status === 'online') ?? app.placement?.[0]
+  if (!placed) throw new Error(`App ${app.name} is placed on no machine, so there is nothing to back up`)
+  const machine = placed.server?.name ?? placed.serverId
+  if (dry) { log.dry(`take a backup of ${app.name} on ${machine}, then fetch it`); return null }
+  say(`Backing up ${app.name} on ${machine} — answered once the archive is in the bucket`)
+  const row = await basecamp(origin, key, '/app-backups', {
+    method: 'POST', headers: { 'x-service-method': 'take' },
+    body: { appId: app.id, serverId: placed.serverId, destinationId: app.backupDestinationId },
+  })
+  if (row.status !== 'success') throw new Error(`The backup on ${machine} ${row.status}: ${row.error ?? 'no reason given'}`)
+  if (!inBucket(row)) throw new Error(`The backup was taken but its upload failed, so it is kept on ${machine}: ${row.error}`)
+  return row
+}
+
+/** A tar whose every entry is a file at its top, as an archive's is. */
+function flatEntries(file) {
+  const r = spawnSync('tar', ['-tzf', file], { encoding: 'utf8' })
+  if (r.status !== 0) throw new Error(`${file} is not a tar.gz: ${r.stderr.trim()}`)
+  const entries = r.stdout.split('\n').filter(e => e && e !== './')
+  const deep = entries.find(e => e.replace(/^\.\//, '').includes('/') || e.startsWith('/') || e.includes('..'))
+  if (deep) throw new Error(`${file} holds ${deep}, and an app's archive is a flat set of databases — not unpacked`)
+  return entries.map(e => e.replace(/^\.\//, ''))
+}
+
+/**
+ * Fetch an app's archive and unpack it into `out`, or `<dbDir>/backups/<stamp>/`
+ * by the archive's own start time. The tar stays beside what it holds, since
+ * it is the file an import takes back. `say` hears the wait a take is. Answers
+ * `{ dir, file, files, row }`, or null on a dry run.
+ */
+export async function pullAppArchive({ origin, key, appId, take = false, dbDir, out, dry = false, log, say = () => {} }) {
+  const row = await archiveRow(origin, key, appId, { take, dry, log, say })
+  if (!row) return null
+  const stamp = (row.startedAt ?? row.createdAt).replace(/[:.]/g, '-')
+  const dir   = resolve(out ?? join(dbDir, 'backups', stamp))
+  if (dry) { log.dry(`fetch the archive taken ${row.startedAt ?? row.createdAt} into ${dir}`); return null }
+
+  const { url, name } = await basecamp(origin, key, `/app-backups/${encodeURIComponent(row.id)}`,
+    { method: 'POST', headers: { 'x-service-method': 'download' }, body: {} })
+  const res = await fetch(url)
+  if (!res.ok || !res.body) throw new Error(`the bucket answered ${res.status} for the archive taken ${row.startedAt}`)
+  mkdirSync(dir, { recursive: true })
+  const file   = join(dir, basename(name))
+  const hasher = new Bun.CryptoHasher('sha256')
+  const sink   = Bun.file(file).writer()
+  for await (const chunk of res.body) { hasher.update(chunk); sink.write(chunk) }
+  await sink.end()
+  const got = hasher.digest('hex')
+  if (row.sha256 && got !== row.sha256) {
+    rmSync(file, { force: true })
+    throw new Error(`the archive fetched hashes ${got}, not the ${row.sha256} Basecamp recorded — not unpacked`)
+  }
+  const files = flatEntries(file)
+  const r = spawnSync('tar', ['-xzf', file, '-C', dir, '--no-same-owner'], { encoding: 'utf8' })
+  if (r.status !== 0) throw new Error(`could not unpack ${file}: ${r.stderr.trim()}`)
+  return { dir, file, files, row }
 }

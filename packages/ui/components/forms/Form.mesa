@@ -536,7 +536,16 @@
     // screen NOW. A server message is about the value that was sent and a live
     // message is about the last value the control could convert, so both are
     // talking about a record the box no longer agrees with.
-    errors = { ..._server, ..._live(), ..._control }
+    const next = { ..._server, ..._live(), ..._control }
+    // Kept when nothing changed: `$context.form` is rebuilt from `errors`, so a
+    // fresh map per keystroke re-derived every Field under the form although
+    // only the one being typed in could have a new message (`FJS-3760`).
+    if (!_sameMessages(errors, next)) errors = next
+  }
+
+  function _sameMessages(a, b) {
+    const ka = Object.keys(a ?? {})
+    return ka.length === Object.keys(b).length && ka.every((k) => a[k] === b[k])
   }
 
   function _map(err) {

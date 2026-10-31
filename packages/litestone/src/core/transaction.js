@@ -43,6 +43,7 @@ import { AsyncLocalStorage } from '#host'
  * @property {number}        cmark
  * @property {number}        xmark
  * @property {number}        wmark
+ * @property {number}        lmark
  * @property {boolean}       [settled]
  */
 
@@ -135,6 +136,18 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
     return anonymous.size ? held.filter(p => anonymous.has(p.model)) : held
   }
 
+  // ── Trail lines held until the write is real ──────────────────────────────
+  //
+  // A trail line is the record of a write that happened. Fired at statement
+  // time it outlived a rollback: the row was gone from main and the trail, a
+  // separate file, still said the act took place (`FJS-3712`). Held here and
+  // fired when the outermost transaction commits; the mark makes a SAVEPOINT
+  // rollback drop exactly its own lines.
+  /** @type {(() => void)[]} */
+  const logs = []
+  /** @param {() => void} fire */
+  function queueLog(fire) { logs.push(fire) }
+
   // ── Which side of an @@anonymous pairing this transaction has written ──────
   //
   // An anonymous row and a logged row written together are re-attributable:
@@ -167,7 +180,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
     }
     else { spCount++; each(`SAVEPOINT sp_${spCount}`) }
     state.depth++
-    return { sp: state.depth === 1 ? null : spCount, mark: pending.length, cmark: ledger?.length ?? 0, xmark: exclusions?.length ?? 0, wmark: wrote.length }
+    return { sp: state.depth === 1 ? null : spCount, mark: pending.length, cmark: ledger?.length ?? 0, xmark: exclusions?.length ?? 0, wmark: wrote.length, lmark: logs.length }
   }
 
   /** @param {Frame} frame */
@@ -182,6 +195,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
     state.depth--
     if (sp != null) { each(`RELEASE sp_${sp}`); return }
     const held = heldEvents()
+    const filed = logs.splice(0, logs.length)
     for (const p of held) p.record()
     const order = [...conns.slice(1), conns[0]]
     for (let i = 0; i < order.length; i++) {
@@ -203,15 +217,17 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
     }
     wrote.length = 0
     for (const p of held) p.dispatch?.()
+    for (const fire of filed) fire()
   }
 
   /** @param {Frame} frame */
   function rollback(frame) {
     if (frame.settled) return
-    const { sp, mark, cmark, xmark, wmark } = frame
+    const { sp, mark, cmark, xmark, wmark, lmark } = frame
     state.depth--
     pending.length = mark
     wrote.length = wmark
+    logs.length = lmark
     if (ledger) ledger.truncate(cmark)
     if (exclusions) exclusions.truncate(xmark)
     // Every file is rolled back even when one refuses, then the first refusal
@@ -265,7 +281,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
     finally { release() }
   }
 
-  return { begin, commit, rollback, wrap, exclusive, wrapExclusive, queueEvent, noteWrite, ledger, exclusions, owns: () => ownsTx(state), state }
+  return { begin, commit, rollback, wrap, exclusive, wrapExclusive, queueEvent, queueLog, noteWrite, ledger, exclusions, owns: () => ownsTx(state), state }
 }
 
 // ─── Read routing ─────────────────────────────────────────────────────────────

@@ -41,7 +41,7 @@
 import { spawnSync }                                             from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync, copyFileSync, statSync,
          readdirSync, mkdirSync, rmSync, realpathSync }           from 'node:fs'
-import { join, resolve, dirname }                                 from 'node:path'
+import { join, resolve, dirname, relative }                       from 'node:path'
 
 // Where the generated build context lands, relative to the app root. The
 // Dockerfile `fli make:deploy` writes names the same path, and the `file:` specs
@@ -175,6 +175,37 @@ export function packPackage({ name, dir, destination }) {
     .sort((a, b) => statSync(join(destination, b)).mtimeMs - statSync(join(destination, a)).mtimeMs)[0]
   if (!file) throw new Error(`packed ${name} but no tarball landed in ${destination}`)
   return { file, path: join(destination, file) }
+}
+
+// ─── packAtCommit ─────────────────────────────────────────────────────────────
+// Pack from a checkout of one commit, never the working tree: another session's
+// edit landing mid-release would otherwise ship bytes the tag does not hold.
+//
+//   { repo, sha, entries: [{ name, dir }], destination, scratch }
+//     → [{ name, dir, file, path }]
+//
+// The checkout is installed before packing because a `prepack` build (css)
+// needs real dependencies. Removed before returning, whatever happened — a
+// leftover worktree holds its sha checked out and `git worktree add` at that
+// path refuses the next run.
+export function packAtCommit({ repo, sha, entries, destination, scratch }) {
+  const tree = join(scratch, `tree-${sha.slice(0, 12)}`)
+  const git  = (...args) => run('git', args, repo)
+  git('worktree', 'add', '--detach', tree, sha)
+  try {
+    const frozen = ['bun.lock', 'bun.lockb'].some(f => existsSync(join(tree, f)))
+    run('bun', frozen ? ['install', '--frozen-lockfile'] : ['install'], tree)
+    return entries.map(e => ({ ...e, ...packPackage({ name: e.name, dir: join(tree, relative(repo, realpathSync(e.dir))), destination }) }))
+  } finally {
+    git('worktree', 'remove', '--force', tree)
+  }
+}
+
+function run(cmd, args, cwd) {
+  const r = spawnSync(cmd, args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: 'pipe' })
+  if (r.status !== 0)
+    throw new Error(`${cmd} ${args.join(' ')} failed in ${cwd}\n${[r.stdout, r.stderr].filter(Boolean).join('\n')}`)
+  return r.stdout.trim()
 }
 
 // ─── vendorWorkspacePackages ──────────────────────────────────────────────────

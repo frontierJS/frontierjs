@@ -27,6 +27,7 @@ import { executorOn, isExecutor }                            from '../../provide
 import { takeAppBackup }                                     from '../../jobs/app-backup-run.job.ts'
 import { queueAppArchiveRescan }                             from '../../jobs/app-archive-rescan.job.ts'
 import { bucketDownload, isRemote }                          from '../../domain/backup/backup-archives.ts'
+import { mintUploadUrl }                                     from '../../plugins/app-archive-upload.ts'
 import { keyScope }                                          from '../../domain/api-key/scopes.ts'
 import { hubIds, refuseHubVolume }                           from '../../domain/host/host-machine.ts'
 
@@ -43,7 +44,8 @@ export default createService({
   methods: ['find', 'get',
     { method: 'take',   gate: LEVELS.ADMINISTRATOR, input: 'AppBackupTake' },
     { method: 'rescan', gate: LEVELS.ADMINISTRATOR, input: 'AppBackupRescan' },
-    { method: 'download', gate: LEVELS.ADMINISTRATOR, read: true }],
+    { method: 'download', gate: LEVELS.ADMINISTRATOR, read: true },
+    { method: 'upload',   gate: LEVELS.ADMINISTRATOR, input: 'AppBackupUpload' }],
 
   async find() {
     const { limit, offset } = getPagination({ limit: 50, max: 200 })
@@ -123,6 +125,20 @@ export default createService({
     // The URL is the credential and nobody follows it through here.
     $.app.logger.info('app backup link minted', { backup_id: row.id, app_id: app.id, by: actor() })
     return bucketDownload($.app, row, name)
+  },
+
+  // ── upload — POST /app-backups  X-Service-Method: upload ──
+  /** The link one file is PUT to, signed for this app, its name and the
+   *  caller. The bytes cannot cross a service body (`maxBodySize`), so the
+   *  grading is here and the stream route checks only the signature
+   *  (`plugins/app-archive-upload.ts`). */
+  async upload() {
+    const data = ($.data ?? {}) as Record<string, unknown>
+    const app  = await getScoped('app', 'App', data.appId as string)
+    await refuseHubVolume(db().asSystem(), app.id)
+    if (!app.backupDestinationId) throw new BadRequest(`App '${app.name}' names no backup destination — give it one to import an archive`)
+    $.dispatch = false   // nothing written yet; the route writes the row
+    return { url: mintUploadUrl(app.id, String(data.name ?? ''), actor()), method: 'PUT' }
   },
 
   hooks: {

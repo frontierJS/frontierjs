@@ -65,7 +65,7 @@ function sourceHint(node) {
 // and the node is its own type, so an interpreter that does not know it throws
 // where one that read `now` and dropped the offset would answer the wrong rows.
 // `-` against a digit arrives as a negative NUMBER, so `now() -2d` is read too.
-function durationOffset(p, base) {
+export function durationOffset(p, base) {
   let sign = 0
   if (p.maybeEat(TK.PLUS))       sign = 1
   else if (p.maybeEat(TK.MINUS)) sign = -1

@@ -215,7 +215,8 @@ async function eachUnknown(
     for (const o of page.objects!) {
       listed++
       const name  = basename(o.key, '.tar.gz')
-      const stamp = stampOf(name, owner)
+      // An app's wrapped database is `<appId>-<stamp>.db.tar.gz` (`FJS-D1724`).
+      const stamp = stampOf(owner === 'basecamp' ? name : name.replace(/\.db$/, ''), owner)
       if (!stamp || o.key !== keyUnder(dest, `${name}.tar.gz`) || known.has(o.key)) continue
       await add(o, stamp)
       known.add(o.key)

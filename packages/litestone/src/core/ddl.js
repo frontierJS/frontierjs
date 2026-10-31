@@ -17,7 +17,7 @@ import { BYTES_PER_DIM } from './vector.js'
 
 // The one spelling of a quoted identifier (Invariant 8); query.js imports
 // pointColumns from here, and both edges are call-time, so the cycle is inert.
-import { quoteIdent } from './query.js'
+import { quoteIdent, sqliteShiftModifier } from './query.js'
 
 // ─── Scale constraints ────────────────────────────────────────────────────────
 
@@ -277,7 +277,9 @@ function defaultExpr(attr) {
   if (v.kind === 'call') {
     if (v.fn === 'auth') return null  // runtime-only — stamped from ctx.auth, not a SQL DEFAULT
     switch (v.fn) {
-      case 'now':   return `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`
+      case 'now':   return v.shift
+        ? `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '${sqliteShiftModifier(v.shift)}'))`
+        : `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`
       case 'uuid':  return `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))`
       // No native SQLite equivalent for these three — the client generates them
       // at insert time, from core/ids.js (FJS-423).

@@ -38,7 +38,7 @@ import { AUTO_EVENT_MAP, REMOVAL_EVENTS, markAnnounceHook } from '../core/events
 import { unwrapResult }         from '../core/envelope.ts'
 import { resolveAccessor, toDataPrincipal, readGateLevel, principalGateLevel, declaredCallHeaders } from '../core/litestone.ts'
 import { PROTOCOL_CALL_HEADERS, acceptedRequestId, callDb } from '../core/context.ts'
-import { serviceAccessor }      from '../core/service.ts'
+import { serviceAccessor, channelsOf } from '../core/service.ts'
 import { columnsUnmoved }       from '../core/write-narrowing.ts'
 import { wsSend }               from './send-queue.ts'
 import { firstUnsafeInteger, UnsafeIntegerError } from './body.ts'
@@ -285,6 +285,10 @@ interface ClaimGroup { claims: Record<string, unknown> | null; conns: Connection
  * proof (basecamp joins a connection to `workspace:<id>` only after reading the
  * `WorkspaceMember` row), returning the id is exactly that statement.
  *
+ * A claim the schema reads off a row (`claim employeeId from Employee(userId)`)
+ * is not stated here: it is read through `$claimsFor` per recipient and this
+ * answer is merged over it (`FJS-3728`).
+ *
  * An empty object is not a claim and is treated as none, or a resolver that
  * answers `{}` for an anonymous connection turns a `null` principal into an
  * object and grades it a rung ABOVE a stranger.
@@ -385,6 +389,36 @@ async function resolveClaims(
     return null
   }
   return answer && typeof answer === 'object' && Object.keys(answer).length > 0 ? answer : null
+}
+
+// A claim the schema reads off a row pointing at the caller (`claim employeeId
+// from Employee(userId)`) is the schema's to answer on the wire as on HTTP,
+// where `applySchemaClaims` merges it before the app's resolver. It is the
+// recipient's and not the channel's, so it is read once per principal per
+// frame and sits under the channel's claims (`FJS-3728`).
+const _schemaClaimsThrew = new Set<string>()
+
+function declaresClaims(db: unknown): db is { $claimsFor: (p: unknown) => Promise<Record<string, unknown>> } {
+  if (!db || typeof db !== 'object' || !('$claimsFor' in db) || !('$schema' in db)) return false
+  const schema = (db as { $schema?: { claimSources?: object } }).$schema
+  return typeof (db as { $claimsFor?: unknown }).$claimsFor === 'function' &&
+         Object.keys(schema?.claimSources ?? {}).length > 0
+}
+
+async function resolveSchemaClaims(db: unknown, user: unknown, label?: string): Promise<Record<string, unknown> | null> {
+  if (user == null || !declaresClaims(db)) return null
+  try { return await db.$claimsFor(toDataPrincipal(user as never)) }
+  catch (err) {
+    const key = label ?? ''
+    if (!_schemaClaimsThrew.has(key)) {
+      _schemaClaimsThrew.add(key)
+      console.warn(
+        `[Junction] $claimsFor threw while grading a '${label ?? 'channel'}' broadcast, so its ` +
+        `recipient is graded carrying none of the schema's claims: ${(err as Error)?.message ?? err}`
+      )
+    }
+    return null
+  }
 }
 
 /** The claim name the tenancy deny reads, under `strategy row` only. */
@@ -605,6 +639,10 @@ export async function gradeRecipients(
       else chans.set(ch.name, [conn])
     }
   }
+  const fromSchema = new Map<unknown, Record<string, unknown> | null>()
+  await Promise.all([...byPrincipal].map(async ([key, group]) => {
+    fromSchema.set(key, await resolveSchemaClaims(db, group.user, src.label))
+  }))
   const asked = [...byChannel].flatMap(([key, chans]) => [...chans].map(([name, conns]) => ({ key, name, conns })))
   const answers = claimsFor
     ? await Promise.all(asked.map(({ name, conns }) => resolveClaims(claimsFor, name, conns[0])))
@@ -677,7 +715,9 @@ export async function gradeRecipients(
     // path must go through the same one.
     // Claims are merged OVER the principal: the resolver is answering about this
     // channel, and the principal was built where the channel was not known.
-    const base = key === ANON ? null : toDataPrincipal(group.user as never)
+    const own  = key === ANON ? null : toDataPrincipal(group.user as never)
+    const declared = fromSchema.get(key)
+    const base = declared ? { ...(own as object ?? {}), ...declared } : own
     const who  = claims ? { ...(base as object ?? {}), ...claims } : base
 
     if (mode === 'gate') {
@@ -1454,8 +1494,9 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
 //   1. Mounts a /ws WebSocket endpoint that handles auth, connection
 //      lifecycle, and routing through the channel manager.
 //
-//   2. Stamps ctx.locals.__channels on every service call so the
-//      announce() hook can find the manager without a global variable.
+//   2. Owns `app.channels`, which announce() reads off `ctx.app` -- an
+//      app-wide around hook to stamp it would put a hook frame on every
+//      service call in the app (`FJS-3761`).
 //
 //   3. Calls the optional setup function so the app can declare which
 //      channels a connection joins at connect time.
@@ -2043,18 +2084,6 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
         },
       })
 
-      // ── Stamp __channels on every service context ────────────────
-      // Added as an app-level around hook so announce() can find the
-      // manager without importing it or closing over a variable.
-      app.hooks({
-        around: {
-          all: [async (ctx, next) => {
-            ctx.locals.__channels = manager
-            await next()
-          }]
-        }
-      })
-
       // ── WS counts, as a /metrics section ─────────────────────────
       // Not a route: a `GET /channels/stats` takes the name `channels` from
       // the app, and refuseShadowedServices then refuses its service by that
@@ -2261,7 +2290,7 @@ export function announce<T = unknown>(
   // so the telemetry waterfall reads 'announce' rather than 'anonymous'.
   const hook = async function announce(ctx: ServiceContext): Promise<void> {
 
-    const manager = ctx.locals.__channels as
+    const manager = channelsOf(ctx) as
       ReturnType<typeof createChannelManager> | undefined
 
     // Channels plugin not loaded — silent no-op

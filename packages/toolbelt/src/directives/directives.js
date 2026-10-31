@@ -121,6 +121,9 @@ const DIRECTIVES = Object.freeze([
   // and a numeric-looking one must not be read as a number (`FJS-D145`).
   // `asText` also takes the wire's typed spelling of it (`?$after=123`).
   { param: '$after',         name: 'after',         read: asText,  schema: TEXT   },
+  // `false` skips the page's COUNT(*), which scales with the rows the filter
+  // matches and not the page (`FJS-D1713`). Unstated counts.
+  { param: '$total',         name: 'total',         read: asBool,  schema: FLAG   },
   { param: '$orderBy',       name: 'orderBy',       read: asIs,    schema: OPAQUE },
   { param: '$select',        name: 'select',        read: asIs,    schema: OPAQUE, write: asCsv },
   { param: '$populate',      name: 'populate',      read: asIs,    schema: OPAQUE, write: asCsv },

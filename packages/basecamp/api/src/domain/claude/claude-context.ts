@@ -8,17 +8,22 @@
 // really cost. This reads those, so the figure is the session's own and not a
 // re-estimate of the configuration.
 //
-// **The parts are an apportionment, not a tokenizer.** The API reports one
-// total. Each part's `tokens` is that total split by the part's share of
-// characters, so a part is as right as its characters-per-token matches the
-// whole prompt's. The total is measured; the split is not.
+// **The parts are counted by the API when it answers** (`FJS-D1734`):
+// `countContext` sends each part's text to `count_tokens`, and the counts sum
+// to the measured total within about 1%. Characters per token run 2.3 to 3.5
+// by kind and by content, so a character-share split was off by up to 31% on
+// tool schemas. When a count is refused the parts stay that split, `basis:
+// 'estimated'` with the reason, never shown as counted.
 //
 // **Not the same number as `/context`.** `/context` counts the schemas of
 // DEFERRED tools (loaded on demand through ToolSearch) as their own lines; the
 // first request carries only their names, so those schemas are not in
-// `measuredTotal` and not in `parts`. The parts that map are named as
-// `/context` names them. The measured total also includes the first prompt the
-// user typed, which is its own part and left out of `alwaysOn`.
+// `measuredTotal` and not in `parts`. Its *System tools* line runs about 4k
+// under a count of the same schemas and its *Messages* is the remainder, so
+// the two agree on system prompt, memory files and skills, not on tools. The
+// agent listing here holds the built-in agents its *Custom agents* leaves out.
+// The measured total also includes the first prompt the user typed, which is
+// its own part and left out of `alwaysOn`.
 //
 // **Older transcripts have no shape line** and are unreadable here, said so
 // rather than estimated. The window is reported only when the transcript names
@@ -31,12 +36,20 @@
 
 import { closeSync, openSync, readdirSync, readSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { countTokens, type CountBody } from './claude-quota.ts'
 import { read, unreadable, type Read } from './claude-read.ts'
 import { claudeConfigDir } from './claude-scan.ts'
 
 export type ContextPart = { name: string, chars: number, tokens: number }
 
+/** What a part was sent as — what a count is asked about. */
+type Sent = { system: string } | { tools: Record<string, unknown>[] } | { text: string }
+
 export type Context = {
+  /** Whether `parts[].tokens` came from `count_tokens` or from character share. */
+  basis:         'counted' | 'estimated'
+  /** Why the parts are estimated; null when counted. */
+  estimatedWhy:  string | null
   /** input + cache creation + cache read of the first request, as the API counted them. */
   measuredTotal: number
   /** measuredTotal less the first prompt: what every session of this setup starts with. */
@@ -50,6 +63,9 @@ export type Context = {
   window:        number | null
 }
 
+/** A Context as read, before it is counted: what each part was sent as rides beside it, never to the page. */
+export type Measured = Context & { sent: Map<string, Sent> }
+
 export type ContextFor = Context & { file: string, sessionId: string }
 
 const HEAD_BYTES = 2 * 1024 * 1024
@@ -58,23 +74,23 @@ const HEAD_BYTES = 2 * 1024 * 1024
 
 const isObj = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v)
 
-/** Characters of a rendered attachment: the `content` strings it was sent as. */
-function renderedChars(rendered: unknown): number {
-  if (!Array.isArray(rendered)) return 0
-  let n = 0
+/** The text of a rendered attachment: the `content` strings it was sent as. */
+function renderedText(rendered: unknown): string {
+  if (!Array.isArray(rendered)) return ''
+  let s = ''
   for (const r of rendered) {
     const c = isObj(r) ? r.content : null
-    if (typeof c === 'string') n += c.length
-    else if (Array.isArray(c)) for (const b of c) if (isObj(b) && typeof b.text === 'string') n += b.text.length
+    if (typeof c === 'string') s += c
+    else if (Array.isArray(c)) for (const b of c) if (isObj(b) && typeof b.text === 'string') s += b.text
   }
-  return n
+  return s
 }
 
 /** Which part an attachment type fills. A type not named here (hook output, IDE selection) is not always-on. */
 const ATTACHMENT_PART: Record<string, string> = {
   instructions:          'Memory files',
   skill_listing:         'Skills',
-  agent_listing_delta:   'Custom agents',
+  agent_listing_delta:   'Agent listing',
   deferred_tools_delta:  'Deferred tool list',
   mcp_instructions_delta:'MCP server instructions',
   environment:           'Other',
@@ -86,28 +102,36 @@ const ATTACHMENT_PART: Record<string, string> = {
 }
 
 const PART_ORDER = [
-  'System prompt', 'System tools', 'MCP tools', 'MCP server instructions', 'Custom agents',
+  'System prompt', 'System tools', 'MCP tools', 'MCP server instructions', 'Agent listing',
   'Memory files', 'Skills', 'Deferred tool list', 'Other', 'First prompt',
 ]
 
 const mcpServer = (tool: string): string => tool.split('__')[1] || 'unknown'
 
 /** The text of the first human prompt: a string, or the `text` blocks of an array. */
-function promptChars(content: unknown): number {
-  if (typeof content === 'string') return content.length
-  if (!Array.isArray(content)) return 0
-  let n = 0
-  for (const b of content) if (isObj(b) && b.type === 'text' && typeof b.text === 'string') n += b.text.length
-  return n
+function promptText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  let s = ''
+  for (const b of content) if (isObj(b) && b.type === 'text' && typeof b.text === 'string') s += b.text
+  return s
 }
 
 /**
- * The context estimate from the head of one transcript. A last line cut off by
- * the head's end fails to parse and is skipped.
+ * The context from the head of one transcript, its parts split by character
+ * share until `countContext` counts them. A last line cut off by the head's
+ * end fails to parse and is skipped.
  */
-export function readContext(text: string): Read<Context> {
+export function readContext(text: string): Read<Measured> {
   const chars = new Map<string, number>()
+  const sent = new Map<string, Sent>()
   const add = (name: string, n: number) => { if (n > 0) chars.set(name, (chars.get(name) ?? 0) + n) }
+  const addText = (name: string, s: string) => {
+    if (!s) return
+    add(name, s.length)
+    const had = sent.get(name)
+    sent.set(name, { text: (had && 'text' in had ? had.text : '') + s })
+  }
 
   let shape: Record<string, any> | null = null
   let request: Record<string, any> | null = null
@@ -129,12 +153,12 @@ export function readContext(text: string): Read<Context> {
       // A tool result is not a prompt; the first typed prompt is.
       if (typeof c === 'string' || (Array.isArray(c) && !c.some(b => isObj(b) && b.type === 'tool_result'))) {
         sawPrompt = true
-        add('First prompt', promptChars(c))
+        addText('First prompt', promptText(c))
       }
     }
     else if (o.type === 'attachment' && isObj(o.attachment)) {
       const part = ATTACHMENT_PART[o.attachment.type]
-      if (part) add(part, renderedChars(o.rendered))
+      if (part) addText(part, renderedText(o.rendered))
     }
     else if (o.type === 'assistant' && isObj(o.message)) {
       usage = isObj(o.message.usage) ? o.message.usage : null
@@ -150,19 +174,25 @@ export function readContext(text: string): Read<Context> {
     .reduce((n, k) => n + (typeof usage![k] === 'number' ? usage![k] : 0), 0)
   if (total <= 0) return unreadable('the first reply recorded no input tokens')
 
+  let system = ''
   for (const b of Array.isArray(shape.shape.system) ? shape.shape.system : []) {
-    if (isObj(b) && typeof b.text === 'string') add('System prompt', b.text.length)
+    if (isObj(b) && typeof b.text === 'string') system += b.text
   }
-  const mcpChars = new Map<string, number>()
-  for (const t of Array.isArray(shape.shape.tools) ? shape.shape.tools : []) {
-    if (!isObj(t)) continue
-    const size = JSON.stringify(t).length
-    const name = typeof t.name === 'string' ? t.name : ''
-    if (name.startsWith('mcp__')) mcpChars.set(mcpServer(name), (mcpChars.get(mcpServer(name)) ?? 0) + size)
-    else add('System tools', size)
-  }
+  if (system) { add('System prompt', system.length); sent.set('System prompt', { system }) }
   // Per server, so a screen can name the one server eating the budget.
-  for (const [server, n] of mcpChars) add(`MCP tools: ${server}`, n)
+  const tools = new Map<string, Record<string, unknown>[]>()
+  for (const t of Array.isArray(shape.shape.tools) ? shape.shape.tools : []) {
+    // The shape lists the deferred tools a session has loaded, which are charged,
+    // and a placeholder that only keeps deferral on, which is not. `count_tokens`
+    // refuses `defer_loading` without the tool-search beta, so it is dropped.
+    if (!isObj(t) || t.name === 'DeferredToolPlaceholder') continue
+    const { defer_loading: _, ...schema } = t
+    const name = typeof t.name === 'string' ? t.name : ''
+    const part = name.startsWith('mcp__') ? `MCP tools: ${mcpServer(name)}` : 'System tools'
+    add(part, JSON.stringify(schema).length)
+    tools.set(part, [...(tools.get(part) ?? []), schema])
+  }
+  for (const [part, list] of tools) sent.set(part, { tools: list })
 
   const sum = [...chars.values()].reduce((a, b) => a + b, 0)
   if (sum <= 0) return unreadable('the request shape holds no content')
@@ -179,6 +209,9 @@ export function readContext(text: string): Read<Context> {
     || betas.some(b => typeof b === 'string' && b.startsWith('context-1m'))
 
   return read({
+    basis:         'estimated',
+    estimatedWhy:  'not counted yet',
+    sent,
     measuredTotal: total,
     alwaysOn:      total - (parts.find(p => p.name === 'First prompt')?.tokens ?? 0),
     parts,
@@ -216,7 +249,7 @@ const TRY_FILES = 15
  * Subagent transcripts live in a folder beside the session file and are not
  * listed; a sidechain line inside one is skipped by the reader.
  */
-export function contextFor(cwd: string, opts: { configDir?: string } = {}): Read<ContextFor> {
+export function contextFor(cwd: string, opts: { configDir?: string } = {}): Read<Measured & { file: string, sessionId: string }> {
   const dir = join(opts.configDir ?? claudeConfigDir(), 'projects', projectFolderName(cwd))
   let names: string[]
   try { names = readdirSync(dir).filter(f => f.endsWith('.jsonl')) }
@@ -237,4 +270,55 @@ export function contextFor(cwd: string, opts: { configDir?: string } = {}): Read
     why = ctx.reason
   }
   return unreadable(`none of the ${files.length} newest transcripts for ${cwd} has a request shape (${why})`)
+}
+
+// ─── the count ────────────────────────────────────────────────────────────────
+
+type Counter = (model: string, bodies: CountBody[]) => Promise<Read<number[]>>
+
+/** Counted parts by transcript: a first request never changes, so each is asked once per process. */
+const counted = new Map<string, ContextPart[]>()
+const KEEP = 64
+
+/**
+ * `m` with its parts counted by the API, or as read with the reason the count
+ * was refused. Each part is a count of a request holding it less a count of
+ * the same request without it, so the tool-use preamble the API adds lands
+ * once, on *System tools*, and an MCP server is counted on top of those.
+ */
+export async function countContext<T extends Measured>(m: T, key: string, count: Counter = countTokens): Promise<Omit<T, 'sent'>> {
+  const { sent, ...ctx } = m
+  const asCounted = (parts: ContextPart[]) => ({
+    ...ctx, parts, basis: 'counted' as const, estimatedWhy: null,
+    alwaysOn: ctx.measuredTotal - (parts.find(p => p.name === 'First prompt')?.tokens ?? 0),
+  })
+  const hit = counted.get(key)
+  if (hit) return asCounted(hit)
+  if (!ctx.model) return { ...ctx, estimatedWhy: 'the transcript names no model to count under' }
+
+  const probe = { role: 'user', content: 'x' }
+  const bare: CountBody = { messages: [probe] }
+  const own = sent.get('System tools')
+  const systemTools = own && 'tools' in own ? own.tools : []
+  const bodies: CountBody[] = [bare, systemTools.length ? { tools: systemTools, messages: [probe] } : bare]
+  // [body index, the index it is less, tokens added back]: a text part replaces the probe's one token.
+  const plan = ctx.parts.map((p): [number, number, number] => {
+    const s = sent.get(p.name)
+    if (!s) return [0, 0, 0]
+    if (p.name === 'System tools') return [1, 0, 0]
+    if ('tools' in s) return [bodies.push({ tools: [...systemTools, ...s.tools], messages: [probe] }) - 1, 1, 0]
+    if ('system' in s) return [bodies.push({ system: s.system, messages: [probe] }) - 1, 0, 0]
+    return [bodies.push({ messages: [{ role: 'user', content: s.text }] }) - 1, 0, 1]
+  })
+
+  // A window suffix (`[1m]`) names a beta, not a model the endpoint knows.
+  const r = await count(ctx.model.replace(/\[[^\]]*\]$/, ''), bodies)
+  if (!r.ok) return { ...ctx, estimatedWhy: r.reason }
+  const parts = ctx.parts.map((p, i) => {
+    const [at, less, back] = plan[i]
+    return { ...p, tokens: Math.max(0, r.value[at] - r.value[less] + back) }
+  })
+  if (counted.size >= KEEP) counted.delete(counted.keys().next().value!)
+  counted.set(key, parts)
+  return asCounted(parts)
 }

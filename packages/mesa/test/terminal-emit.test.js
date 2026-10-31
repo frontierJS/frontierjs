@@ -105,6 +105,19 @@ describe('terminal target', () => {
     expect(result).not.toMatch(/display|none/)
   })
 
+  // A terminal never prints, so the kit's print listeners are heard and
+  // never sent; refusing them kept fli gui from starting (FJS-3691).
+  it('hears onbeforeprint and onafterprint on <mesa:window>', async () => {
+    const { result } = await terminal(`<script>
+  let printing = false
+</script>
+<mesa:window onbeforeprint={() => { printing = true }} onafterprint={() => { printing = false }} />
+<p>{printing}</p>
+`, 'P.mesa')
+    expect(result).toContain("$$host.onWindow('beforeprint'")
+    expect(result).toContain("$$host.onWindow('afterprint'")
+  })
+
   describe('refuses by name, with the line', () => {
     const refusal = async (source, filename, message) => {
       await expect(terminal(source, filename)).rejects.toThrow(message)

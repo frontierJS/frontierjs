@@ -12,7 +12,7 @@ modelless app at load.
 Each names its pin; the full wording and every test file is `docs/hazards.md`
 § Rules, the failure behind each `docs/internals.md`, by path.
 
-- **A broadcast is graded per recipient**, with the DECLARED `model:` as accessor (`FJS-D175`, `FJS-672`, `FJS-700`); claims are the app's to state, per channel (`FJS-749`); a room is regraded after every committed write its read policy reaches (`FJS-D596`).
+- **A broadcast is graded per recipient**, with the DECLARED `model:` as accessor (`FJS-D175`, `FJS-672`, `FJS-700`); a channel's tenant claim is the app's to state, per channel (`FJS-749`), and a `claim … from` the schema declares is read per recipient with no resolver (`FJS-3728`); a room is regraded after every committed write its read policy reaches (`FJS-D596`).
 - **`channel:` or `announce()`, never both** (`FJS-045`). **A write is done when the OUTERMOST transaction commits** — `afterCommit` and the announcement drop on rollback (`FJS-682`, `FJS-688`).
 - **The gate wraps every hook an app wrote** — `around(gateAuth) → before → validated → method → after` (`FJS-403`).
 - **A scoped key reaches only a method declaring that `scope:`**; one naming none refuses it (`FJS-D916`).

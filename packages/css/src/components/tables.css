@@ -23,7 +23,8 @@
   border-radius:   var(--card-radius);
   border-collapse: separate;
   border-spacing:  0;
-  overflow:        hidden;
+  /* clip, not hidden: hidden makes the table a scroll container, and a sticky th/td inside then never sticks (FJS-3773). */
+  overflow:        clip;
   font-family:     var(--font-primary);
   font-size:       var(--text-md);
   color:           var(--ink);

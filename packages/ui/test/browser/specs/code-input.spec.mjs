@@ -262,4 +262,39 @@ export async function run(t) {
     return target ? target.tagName + ':' + target.name : null;
   `)
   t.is(field, 'TEXTAREA:body', 'a label names the textarea, so clicking it focuses the box')
+
+  /* ── chunks off screen are skipped, and the paint still scrolls as far ── */
+
+  // A million elements laid out taxed every frame the page drew (FJS-3741), so a
+  // chunk outside the view is skipped. The skip clips a chunk at its box and
+  // adds no width, and either one stops the paint short of the textarea's
+  // longest line, which slides the paint off the caret.
+  const skipped = await t.evaluate(`${layers('wide')}
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const all  = [...paint.querySelectorAll('code')];
+    // A skipped <code> is itself visible; it is its lines that are not.
+    const drawn = () => all.filter(c => c.firstElementChild.checkVisibility({ contentVisibilityAuto: true })).length;
+    const off  = drawn();
+    paint.scrollIntoView();
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return [all.length, off < 5, drawn() > 0 && drawn() < 5].join(',');
+  `)
+  t.is(skipped, '47,true,true', 'a long paint is skipped but for a few chunks while off screen, and draws what is scrolled to')
+
+  const reach = await t.evaluate(`${layers('wide')}
+    text.scrollLeft = 1e6;
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return [text.scrollLeft > 0, paint.scrollLeft === text.scrollLeft].join(',');
+  `)
+  t.is(reach, 'true,true', 'and the paint follows the textarea to a line only a skipped chunk holds')
+
+  const own = await t.evaluate(`${layers('many')}
+    text.focus(); text.setSelectionRange(0, 0);
+    document.execCommand('insertText', false, 'x'.repeat(900) + '\\n');
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    text.scrollLeft = 1e6;
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return [text.scrollLeft > 0, paint.scrollLeft === text.scrollLeft].join(',');
+  `)
+  t.is(own, 'true,true', 'and to a long line in a chunk that is drawn, which the skip would otherwise clip')
 }

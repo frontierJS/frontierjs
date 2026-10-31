@@ -22,7 +22,7 @@
  * this function.
  */
 
-import { matchesQuery } from '../../src/match/match.js'
+import { matchesQuery, compileQuery } from '../../src/match/match.js'
 
 const FIELDS = {
   id:        { type: 'integer', required: true },
@@ -365,4 +365,18 @@ test('match: operators — a scalar operand to hasEvery/hasSome/hasNone is undec
   for (const op of ['hasEvery', 'hasSome', 'hasNone']) {
     assert.equal(match(row(), { tags: { [op]: 'a' } }), null)
   }
+})
+
+test('match: compileQuery — reads the query once and grades any number of rows', function () {
+  // FJS-3763: a filter over a document is one query and many records; the
+  // one-shot form re-read the query, and re-folded its operands, per record.
+  let reads = 0
+  const query = { $or: [{ get name() { reads++; return { contains: 'AL' } } }, { age: { $gt: '40' } }] }
+  const grade = compileQuery(FIELDS, query)
+  const rows = [row({ name: 'Alice', age: 1 }), row({ name: 'Bob', age: 41 }), row({ name: 'Bob', age: 3 })]
+  assert.deepEqual(rows.map(grade), rows.map(r => matchesQuery(FIELDS, r, query)))
+  assert.deepEqual(rows.map(grade), [true, true, false])
+  assert.equal(reads, 1 + 3)   // once to compile, then only the one-shot calls above
+  assert.equal(grade(null), null)
+  assert.equal(compileQuery(FIELDS, null)(null), true)
 })

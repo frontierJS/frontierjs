@@ -32,7 +32,7 @@ import { modelToTableName, sqlType, columnMapFor, isStoredField } from './ddl.js
 import { sqlFragment, inList, pairsOn, quoteIdent } from './query.js'
 import { comparisonEncoderFor } from './encryption.js'
 import { ValidationError }     from './validate.js'
-import { DERIVED_NOW_ARG, rawClause }  from './query.js'
+import { DERIVED_NOW_ARG, rawClause, sqliteShiftModifier }  from './query.js'
 // The evaluator itself. It was here, and a condition cannot cross to a browser
 // as a value — so the pure half moved below the dependency graph (`FJS-D26`)
 // and litestone became one of its two callers. A MOVE and not a third
@@ -541,20 +541,9 @@ function nonNumeric(model, node, relationMap = null, schema = null) {
 const DERIVED_SQL_OPS = { '==': 'IS', '!=': 'IS NOT', '<': '<', '>': '>', '<=': '<=', '>=': '>=' }
 const DERIVED_NULL_SAFE = new Set(['==', '!='])
 
-// `now() + 2d` as a SQLite date modifier on the same clock `now()` reads. The
-// value is a whole number the grammar parsed and the unit comes from a closed
-// table, so the modifier is spliced as a literal: a derived field is static SQL
-// and has no parameters to bind it to. `mo` and `yr` are SQLite's calendar
-// months and years, which clamp nothing -- Jan 31 + 1mo is Mar 3.
-const SQLITE_MODIFIER = {
-  ms: ['seconds', 0.001], s: ['seconds', 1], min: ['minutes', 1], h: ['hours', 1],
-  d: ['days', 1], wk: ['days', 7], mo: ['months', 1], yr: ['years', 1],
-}
-
+// `now() + 2d` on the same clock `now()` reads.
 function nowShifted(n) {
-  const [unit, per] = SQLITE_MODIFIER[n.unit]
-  const amount = +(n.sign * n.value * per).toFixed(3)
-  return `strftime('%Y-%m-%dT%H:%M:%fZ',${DERIVED_NOW_ARG},'${amount > 0 ? '+' : ''}${amount} ${unit}')`
+  return `strftime('%Y-%m-%dT%H:%M:%fZ',${DERIVED_NOW_ARG},'${sqliteShiftModifier(n)}')`
 }
 
 // A column is `%SELF%."name"`, the placeholder an @from subquery correlates on,

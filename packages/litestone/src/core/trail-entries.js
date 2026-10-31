@@ -27,6 +27,13 @@ export function trailMarksOf(fieldPolicy) {
   return marks
 }
 
+// A read the engine makes to grade or fill a write (a parent's column for a path
+// default, a connect target, a value set) is not a read anybody asked for, so
+// it files no entry: the trail would hold reads of charts nobody opened, under
+// whichever principal the engine happened to ask as (FJS-3714).
+export const UNTRAILED = Symbol.for('litestone.untrailed')
+export const untrailed = args => ({ ...args, [UNTRAILED]: true })
+
 export const markOf = (mark, value) => (typeof mark === 'function' ? mark(value) : mark)
 
 export function makeTrailEntries(shape, ctx, deps) {
@@ -103,7 +110,12 @@ export function makeTrailEntries(shape, ctx, deps) {
     const table = getLogTable(dbName)
     if (!table) return
     const built = buildLogEntry(entry, ctx, ctx.onLog)
-    fireLog(table, trailRowValues(built), ctx._logStats)
+    const values = trailRowValues(built)
+    // The entry is BUILT now, so its clock and actor are the write's own; only
+    // its filing waits. A write's line goes with its transaction (`FJS-3712`);
+    // a read happened whether or not the transaction that asked for it did.
+    if (entry.operation !== 'read' && tx.owns()) tx.queueLog(() => fireLog(table, values, ctx._logStats))
+    else fireLog(table, values, ctx._logStats)
   }
 
   // ── Audit redaction ─────────────────────────────────────────────────────

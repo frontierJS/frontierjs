@@ -1,4 +1,5 @@
-// src/domain/claude/claude-quota.ts — how much of the account's Claude limits are used.
+// src/domain/claude/claude-quota.ts — how much of the account's Claude limits are used, and the
+// API's own token count: the two reads that carry the claude.ai login token.
 //
 // `GET api.anthropic.com/api/oauth/usage` with the OAuth token Claude Code
 // keeps in `<configDir>/.credentials.json`: a private endpoint (`FJS-D1711`),
@@ -23,6 +24,11 @@
 // `{ label, ... }`, not named fields: which models are limited is the
 // account's, and a new one must not need a code change. `five_hour` is `null`
 // while no session window is open, which is a state and not a failure.
+//
+// **`countTokens` asks `POST /v1/messages/count_tokens`** — the only tokenizer
+// for these models is the API's (`FJS-D1734`). It takes no 429 stop of its own:
+// its caller counts a transcript once and keeps the answer, and a refusal
+// leaves that caller's estimate in place, marked as one.
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -200,4 +206,45 @@ export async function fetchUsage(opts: FetchUsageOptions = {}): Promise<Read<Quo
   state.goodAt = now
   state.good = { ...quota.value, fetchedAt: new Date(now).toISOString(), stale: false, retryAt: null }
   return read(state.good)
+}
+
+// ─── the count ────────────────────────────────────────────────────────────────
+
+const URL_COUNT = 'https://api.anthropic.com/v1/messages/count_tokens'
+
+/** One request to count: the parts of a Messages request that cost input tokens. */
+export type CountBody = { system?: string, tools?: unknown[], messages: unknown[] }
+
+export type CountTokensOptions = { configDir?: string, now?: number, fetch?: typeof fetch }
+
+/**
+ * The input tokens of each body under `model`, in order, or why not. One
+ * refusal fails the lot: a caller subtracts counts from each other, and a
+ * partial answer would subtract a missing one. Never throws.
+ */
+export async function countTokens(model: string, bodies: CountBody[], opts: CountTokensOptions = {}): Promise<Read<number[]>> {
+  const token = accessToken(claudeConfigDir({ configDir: opts.configDir }), opts.now ?? Date.now())
+  if (!token.ok) return unreadable(token.reason)
+  const headers = {
+    Authorization: `Bearer ${token.value}`, 'anthropic-beta': 'oauth-2025-04-20',
+    'anthropic-version': '2023-06-01', 'content-type': 'application/json',
+  }
+  const one = async (body: CountBody): Promise<Read<number>> => {
+    let res: Response
+    try {
+      res = await (opts.fetch ?? fetch)(URL_COUNT, {
+        method: 'POST', headers, body: JSON.stringify({ model, ...body }), signal: AbortSignal.timeout(TIMEOUT_MS),
+      })
+    } catch (e) { return unreadable(`count endpoint unreachable (${(e as Error).name})`) }
+    if (res.status === 429) return unreadable('rate limited by the count endpoint')
+    if (res.status === 401 || res.status === 403) return unreadable(`count endpoint refused the login (${res.status}); run claude to refresh it`)
+    if (!res.ok) return unreadable(`count endpoint answered ${res.status}`)
+    let json: unknown
+    try { json = await res.json() } catch { return unreadable('count endpoint answered with text that is not JSON') }
+    return isObj(json) && typeof json.input_tokens === 'number' ? read(json.input_tokens) : unreadable('count endpoint answered without input_tokens')
+  }
+  const counts = await Promise.all(bodies.map(one))
+  const failed = counts.find(c => !c.ok)
+  if (failed && !failed.ok) return unreadable(failed.reason)
+  return read(counts.map(c => (c as { ok: true, value: number }).value))
 }

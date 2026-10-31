@@ -892,6 +892,14 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   // visit. Started here, awaited below.
   const layoutsReady = loadLayoutChain(toNode, _layouts, _reportError)
 
+  // The loader module is a third independent chunk. Imported after the component
+  // and the layouts it costs a round-trip before load() can start. The no-op
+  // catch keeps a rejection from being unhandled when the component fails first;
+  // the real failure is read where the module is awaited below.
+  const loaderFactory = _loaders[toNode.id]
+  const loaderImport  = loaderFactory ? (async () => loaderFactory())() : null
+  loaderImport?.catch(() => {})
+
   // Load component (lazy) and register with internals
   const componentFactory = _components[toNode.id]
   if (componentFactory && !toNode._componentLoaded) {
@@ -935,7 +943,6 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   // Run load() if this route has a .meta.js companion
   let loadedData   = null
   let loaderModule = null
-  const loaderFactory = _loaders[toNode.id]
 
   // A prerendered route has a companion and no loader here, deliberately: its
   // `load()` runs in Node at build time and is where an app reads its own
@@ -965,13 +972,10 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
       const cacheKey = `${toNode.id}:${normalized}${search}`
       if (_prefetchCacheHas(cacheKey)) {
         loadedData = _prefetchCacheTake(cacheKey)   // consume once
-        // The data came from the cache, so the module was never imported on
-        // this navigation — but head() lives in it. The import is already
-        // resolved (the prefetch did it), so asking again costs a map lookup.
-        loaderModule = await loaderFactory().catch(() => null)
+        // head() lives in the module even when the data came from the cache.
+        loaderModule = await loaderImport.catch(() => null)
       } else {
-        // Lazy-import the loader module
-        const loaderMod = loaderModule = await loaderFactory()
+        const loaderMod = loaderModule = await loaderImport
         const loadFn = loaderMod?.load ?? loaderMod?.default?.load
 
         if (typeof loadFn === 'function') {

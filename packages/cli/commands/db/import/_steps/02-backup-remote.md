@@ -1,6 +1,7 @@
 ---
 title: 02-backup-remote
 description: Create a sqlite backup on the remote server
+skip: "$.config.viaBasecamp"
 ---
 
 ```js

@@ -756,3 +756,27 @@ describe('goto answers whether the navigation committed (FJS-1026)', () => {
     expect(page.route?.id).toBe('admin')
   })
 })
+
+// ─── FJS-3751 — the loader module imports beside the component chunk ─────────
+
+describe('a cold navigation starts the loader import with the component chunk', () => {
+  test('the loader factory is called while the component chunk is still pending', async () => {
+    const tree = makeTree()
+    const comps = makeComponents(tree)
+    let release
+    const gate = new Promise(r => { release = r })
+    comps.leads = () => gate.then(() => ({ default: function () {}, _name: 'leads' }))
+    let imported = 0
+    await boot('/', {
+      components: comps,
+      loaders: { leads: async () => { imported++; return { load: async () => ({ ok: 1 }) } } },
+    })
+    const nav = goto('/leads/')
+    await tick(5)
+    expect(imported).toBe(1)
+    release()
+    expect(await nav).toBe(true)
+    expect(page.data).toEqual({ ok: 1 })
+    expect(imported).toBe(1)
+  })
+})

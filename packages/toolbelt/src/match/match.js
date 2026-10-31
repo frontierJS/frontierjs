@@ -112,53 +112,75 @@ function _operand(rule, v) {
 }
 
 /** `IN (…)` for a scalar column, `hasSome` for an array one — as the bare-array shorthand compiles. */
-function _inList(rule, actual, list) {
-  if (!Array.isArray(list)) return null
+function _inList(rule, list) {
+  if (!Array.isArray(list)) return () => null
   const wanted = list.map(v => _operand(rule, v))
-  if (Array.isArray(actual)) return actual.some(v => wanted.includes(v))
-  return wanted.includes(actual)
+  return actual => Array.isArray(actual) ? actual.some(v => wanted.includes(v)) : wanted.includes(actual)
 }
 
 // LIKE is case-insensitive for ASCII in SQLite, which is what makes `$like` and
 // `$ilike` compile to the same `contains` on the server. ONLY for ASCII: a
 // Unicode fold keeps `CAFÉ` in a live list for `contains: 'é'` that the server
 // returns nothing for.
-const _ascii = s => String(s).replace(/[A-Z]+/g, m => m.toLowerCase())
-const _like = (actual, operand, test) =>
-  actual == null ? false : test(_ascii(actual), _ascii(operand))
+// A string with nothing past U+007F folds the same under `toLowerCase`, which
+// is several times cheaper than the replace a graded document would pay per cell.
+const _ASCII_ONLY = /^[\x00-\x7f]*$/
+const _ascii = s => {
+  const str = String(s)
+  return _ASCII_ONLY.test(str) ? str.toLowerCase() : str.replace(/[A-Z]+/g, m => m.toLowerCase())
+}
+const _like = (operand, test) => {
+  const want = _ascii(operand)
+  return actual => actual == null ? false : test(_ascii(actual), want)
+}
 
-function _matchOp(rule, actual, op, operand) {
+// One operator block entry as a function of the stored value. The operand is
+// folded here, once, so a filter graded over a document does not repeat it per
+// row (`FJS-3763`).
+function _compileOp(rule, op, operand) {
   switch (op) {
-    case 'in':     return _inList(rule, actual, operand)
+    case 'in':     return _inList(rule, operand)
     // NOT IN excludes NULL rows in SQLite, so Litestone ORs `IS NULL` back in.
-    case 'notIn':  return operand?.length ? _not(_inList(rule, actual, operand)) : true
-    case 'gt':     return actual == null ? false : actual >  _operand(rule, operand)
-    case 'gte':    return actual == null ? false : actual >= _operand(rule, operand)
-    case 'lt':     return actual == null ? false : actual <  _operand(rule, operand)
-    case 'lte':    return actual == null ? false : actual <= _operand(rule, operand)
-    case 'contains':   return _like(actual, operand, (a, b) => a.includes(b))
-    case 'startsWith': return _like(actual, operand, (a, b) => a.startsWith(b))
-    case 'endsWith':   return _like(actual, operand, (a, b) => a.endsWith(b))
-    case 'equals':
-      if (operand === null) return actual == null
+    case 'notIn': {
+      if (!operand?.length) return () => true
+      const inList = _inList(rule, operand)
+      return actual => _not(inList(actual))
+    }
+    case 'gt':  { const w = _operand(rule, operand); return actual => actual == null ? false : actual >  w }
+    case 'gte': { const w = _operand(rule, operand); return actual => actual == null ? false : actual >= w }
+    case 'lt':  { const w = _operand(rule, operand); return actual => actual == null ? false : actual <  w }
+    case 'lte': { const w = _operand(rule, operand); return actual => actual == null ? false : actual <= w }
+    case 'contains':   return _like(operand, (a, b) => a.includes(b))
+    case 'startsWith': return _like(operand, (a, b) => a.startsWith(b))
+    case 'endsWith':   return _like(operand, (a, b) => a.endsWith(b))
+    case 'equals': {
+      if (operand === null) return actual => actual == null
       if (Array.isArray(operand)) {
         // The exact set, in order — the one place an array is not a membership test.
-        if (!Array.isArray(actual)) return null
-        return actual.length === operand.length && actual.every((v, i) => v === operand[i])
+        return actual => !Array.isArray(actual) ? null
+          : actual.length === operand.length && actual.every((v, i) => v === operand[i])
       }
-      return actual === _operand(rule, operand)
-    case 'not':
-      if (operand === null) return actual != null
-      if (Array.isArray(operand)) return operand.length ? _not(_inList(rule, actual, operand)) : true
+      const w = _operand(rule, operand)
+      return actual => actual === w
+    }
+    case 'not': {
+      if (operand === null) return actual => actual != null
+      if (Array.isArray(operand)) {
+        if (!operand.length) return () => true
+        const inList = _inList(rule, operand)
+        return actual => _not(inList(actual))
+      }
       // Litestone ORs `IS NULL` back in, as it does for `notIn`.
-      return actual == null ? true : actual !== _operand(rule, operand)
-    case 'has':      return Array.isArray(actual) ? actual.includes(operand) : null
-    case 'hasEvery': return Array.isArray(actual) && Array.isArray(operand) ? operand.every(v => actual.includes(v)) : null
-    case 'hasSome':  return Array.isArray(actual) && Array.isArray(operand) ? operand.some(v => actual.includes(v))  : null
-    case 'hasNone':  return Array.isArray(actual) && Array.isArray(operand) ? !operand.some(v => actual.includes(v)) : null
-    case 'isEmpty':  return Array.isArray(actual) ? (operand ? actual.length === 0 : actual.length > 0) : null
-    case 'near':     return _matchNear(actual, operand)
-    default:         return null
+      const w = _operand(rule, operand)
+      return actual => actual == null ? true : actual !== w
+    }
+    case 'has':      return actual => Array.isArray(actual) ? actual.includes(operand) : null
+    case 'hasEvery': return actual => Array.isArray(actual) && Array.isArray(operand) ? operand.every(v => actual.includes(v)) : null
+    case 'hasSome':  return actual => Array.isArray(actual) && Array.isArray(operand) ? operand.some(v => actual.includes(v))  : null
+    case 'hasNone':  return actual => Array.isArray(actual) && Array.isArray(operand) ? !operand.some(v => actual.includes(v)) : null
+    case 'isEmpty':  return actual => Array.isArray(actual) ? (operand ? actual.length === 0 : actual.length > 0) : null
+    case 'near':     return actual => _matchNear(actual, operand)
+    default:         return () => null
   }
 }
 
@@ -212,32 +234,142 @@ function _matchNear(actual, operand) {
   try { return isNear(actual, { lat, lng }, metres) } catch { return null }
 }
 
-function _matchField(rule, actual, expected) {
-  if (expected === null) return actual == null
-  if (expected instanceof Date) return actual === expected.toISOString()
+function _compileField(rule, expected) {
+  if (expected === null) return actual => actual == null
+  if (expected instanceof Date) {
+    const iso = expected.toISOString()
+    return actual => actual === iso
+  }
   if (Array.isArray(expected)) {
     // A bare array is membership, never equality — Prisma reads it the other way
     // and a schema ported from there filters wider than it did.
-    return expected.length ? _inList(rule, actual, expected) : false
+    return expected.length ? _inList(rule, expected) : () => false
   }
-  if (typeof expected !== 'object') return actual === _operand(rule, expected)
+  if (typeof expected !== 'object') {
+    const want = _operand(rule, expected)
+    return actual => actual === want
+  }
 
-  if ('$null' in expected) return expected.$null ? actual == null : actual != null
+  if ('$null' in expected) {
+    const isNull = Boolean(expected.$null)
+    return actual => isNull ? actual == null : actual != null
+  }
 
   const keys = Object.keys(expected)
-  if (!keys.length) return true
+  if (!keys.length) return () => true
 
   // Every key an operator, or none of them: the same disambiguation the server
   // makes (`isTypedJsonPath`). Anything else is a path into a JSON document or a
   // filter over a relation, neither of which this record can answer.
-  if (!keys.every(k => k in _WIRE_OPS || _BARE_OPS.has(k))) return null
+  if (!keys.every(k => k in _WIRE_OPS || _BARE_OPS.has(k))) return () => null
 
-  let verdict = true
-  for (const k of keys) {
-    verdict = _and(verdict, _matchOp(rule, actual, _WIRE_OPS[k] ?? k, expected[k]))
-    if (verdict === false) return false
+  const ops = keys.map(k => _compileOp(rule, _WIRE_OPS[k] ?? k, expected[k]))
+  if (ops.length === 1) return ops[0]
+  return actual => {
+    let verdict = true
+    for (const op of ops) {
+      verdict = _and(verdict, op(actual))
+      if (verdict === false) return false
+    }
+    return verdict
   }
-  return verdict
+}
+
+// A query as one function of a record, for the clauses of one level. The
+// record is known to be an object by the time a clause runs.
+function _compileClauses(fields, query) {
+  const clauses = []
+
+  for (const [key, val] of Object.entries(query)) {
+    if (val === undefined || _DIRECTIVES.has(key)) continue
+
+    if (_OPAQUE.has(key)) {
+      // A flag at false, an empty search and an empty scope list ask nothing,
+      // and a client that folds its directives in states them all.
+      if (val === null || val === false || val === '' || (Array.isArray(val) && val.length === 0)) continue
+      clauses.push(() => null)
+    } else if (key === '$or') {
+      clauses.push(Array.isArray(val) ? _some(_compileList(fields, val)) : () => null)
+    } else if (key === '$and') {
+      clauses.push(Array.isArray(val) ? _every(_compileList(fields, val)) : () => null)
+    } else if (key === '$not') {
+      const inner = _compileLevel(fields, val)
+      clauses.push(record => _not(inner(record)))
+    } else if (key.startsWith('$')) {
+      clauses.push(() => null)   // an operator the server may know and this does not
+    } else {
+      const test = _compileField(Object.hasOwn(fields ?? {}, key) ? fields[key] : undefined, val)
+      // A `select` that dropped the filtered column, or a filter naming a
+      // relation — the row is here, the answer is not.
+      //
+      // Own keys rather than `in`: a record inherits `constructor`, `toString`,
+      // `valueOf` and `hasOwnProperty` from Object.prototype, so `in` said the
+      // column was present, the comparison ran on two functions, and a query
+      // naming an undeclared field by one of those names answered FALSE —
+      // dropping the record from a live list — where the contract says null,
+      // ask the server (`FJS-996`).
+      clauses.push(record => Object.hasOwn(record, key) ? test(record[key]) : null)
+    }
+  }
+
+  if (!clauses.length) return () => true
+  if (clauses.length === 1) return clauses[0]
+  return record => {
+    let verdict = true
+    for (const clause of clauses) {
+      verdict = _and(verdict, clause(record))
+      if (verdict === false) return false
+    }
+    return verdict
+  }
+}
+
+function _compileLevel(fields, query) {
+  return !query || typeof query !== 'object' ? () => true : _compileClauses(fields, query)
+}
+
+const _compileList = (fields, list) => list.map(q => _compileLevel(fields, q))
+
+function _some(branches) {
+  return record => {
+    let verdict = false
+    for (const branch of branches) {
+      const one = branch(record)
+      if (one === true) return true
+      if (one === null) verdict = null
+    }
+    return verdict
+  }
+}
+
+function _every(branches) {
+  return record => {
+    let verdict = true
+    for (const branch of branches) {
+      verdict = _and(verdict, branch(record))
+      if (verdict === false) return false
+    }
+    return verdict
+  }
+}
+
+/**
+ * A query read once, as a function of a record.
+ *
+ * `matchesQuery` is the one-shot form. A caller grading many records against
+ * one query — a grid's filter row over a document — compiles here and calls the
+ * result per row: the query's keys, operand folds and field rules are resolved
+ * once, not once per record (`FJS-3763`). The query is read at compile time;
+ * a later mutation of it is not seen.
+ *
+ * @param {Record<string, object>} fields  as `matchesQuery`
+ * @param {object} query
+ * @returns {(record: object) => true|false|null}
+ */
+export function compileQuery(fields, query) {
+  if (!query || typeof query !== 'object') return () => true
+  const run = _compileClauses(fields, query)
+  return record => !record || typeof record !== 'object' ? null : run(record)
 }
 
 /**
@@ -250,67 +382,7 @@ function _matchField(rule, actual, expected) {
  * @returns {true|false|null}  in the results, not in them, or undecidable
  */
 export function matchesQuery(fields, record, query) {
-  if (!query || typeof query !== 'object') return true
-  if (!record || typeof record !== 'object') return null
-
-  let verdict = true
-
-  for (const [key, val] of Object.entries(query)) {
-    if (val === undefined || _DIRECTIVES.has(key)) continue
-
-    let one
-    if (_OPAQUE.has(key)) {
-      // A flag at false, an empty search and an empty scope list ask nothing,
-      // and a client that folds its directives in states them all.
-      if (val === null || val === false || val === '' || (Array.isArray(val) && val.length === 0)) continue
-      one = null
-    } else if (key === '$or') {
-      one = Array.isArray(val) ? _some(fields, record, val) : null
-    } else if (key === '$and') {
-      one = Array.isArray(val) ? _every(fields, record, val) : null
-    } else if (key === '$not') {
-      one = _not(matchesQuery(fields, record, val))
-    } else if (key.startsWith('$')) {
-      one = null   // an operator the server may know and this does not
-    } else if (!Object.hasOwn(record, key)) {
-      // A `select` that dropped the filtered column, or a filter naming a
-      // relation — the row is here, the answer is not.
-      //
-      // Own keys rather than `in`: a record inherits `constructor`, `toString`,
-      // `valueOf` and `hasOwnProperty` from Object.prototype, so `in` said the
-      // column was present, `_matchField` compared two functions, and a query
-      // naming an undeclared field by one of those names answered FALSE —
-      // dropping the record from a live list — where the contract says null,
-      // ask the server (`FJS-996`).
-      one = null
-    } else {
-      one = _matchField(Object.hasOwn(fields ?? {}, key) ? fields[key] : undefined, record[key], val)
-    }
-
-    verdict = _and(verdict, one)
-    if (verdict === false) return false
-  }
-
-  return verdict
-}
-
-function _some(fields, record, list) {
-  let verdict = false
-  for (const q of list) {
-    const one = matchesQuery(fields, record, q)
-    if (one === true) return true
-    if (one === null) verdict = null
-  }
-  return verdict
-}
-
-function _every(fields, record, list) {
-  let verdict = true
-  for (const q of list) {
-    verdict = _and(verdict, matchesQuery(fields, record, q))
-    if (verdict === false) return false
-  }
-  return verdict
+  return compileQuery(fields, query)(record)
 }
 
 /**

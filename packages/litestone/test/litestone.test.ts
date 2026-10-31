@@ -15500,10 +15500,24 @@ describe('createTestEnv', () => {
 
     // 002 adds `note` as plain TEXT; the schema's own DDL declares it too, so
     // what separates them is the table list — the migration knows only Account.
-    expect(fromDDL.db.$rawDbs.main.query("SELECT count(*) c FROM sqlite_master WHERE type='table'").get().c)
-      .toBe(fromMig.db.$rawDbs.main.query("SELECT count(*) c FROM sqlite_master WHERE type='table'").get().c)
+    const tables = "SELECT count(*) c FROM sqlite_master WHERE type='table' AND name NOT LIKE '\\_litestone\\_%' ESCAPE '\\'"
+    expect(fromDDL.db.$rawDbs.main.query(tables).get().c).toBe(fromMig.db.$rawDbs.main.query(tables).get().c)
 
     fromDDL.close(); fromMig.close()
+  })
+
+  test('a migration template records what it replayed, so apply() on a clone has nothing pending', async () => {
+    // FJS-3779: an app that runs apply() at boot replayed every file over its
+    // own tables, and the first ADD COLUMN failed every test.
+    const fixtures = join(import.meta.dir, 'fixtures', 'migrations')
+    const dir = tempDir('litestone-replayed-')
+    writeFileSync(join(dir, '20260101000000_init.sql'), readFileSync(join(fixtures, '001_init.sql')))
+    writeFileSync(join(dir, '20260101000001_add_note.sql'), readFileSync(join(fixtures, '002_add_note.sql')))
+    const env = await createTestEnv({ schema: `model Account { id Int @id; name String; note String? }`, migrations: dir })
+    const r = await apply(env.db.$rawDbs.main, dir)
+    expect(r.applied).toEqual([])
+    expect(r.message).toMatch(/already applied/)
+    env.close()
   })
 
   test('a missing migrations path is refused by name', async () => {

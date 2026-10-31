@@ -589,3 +589,73 @@ describe('a count is graded by the tenant the write touched', () => {
     expect(anyone.sent().length).toBe(1)
   })
 })
+
+// ─── claims the schema reads off a row (FJS-3728) ──────────────────────────
+//
+// `claim employeeId from Employee(userId)` is declared once and HTTP reads it
+// through `$claimsFor`. A broadcast read none of it: the channels resolver was
+// the only origin the wire asked, so the owner of a row heard nothing until the
+// app restated the claim in `channels({ claims })`.
+
+describe('a claim the schema declares reaches the wire from the schema', () => {
+  const EMP = { 'u-1': 'e-1', 'u-2': 'e-2' } as Record<string, string>
+  const expense = (employeeId: string, workspaceId = WS_A) => ({ id: `x-${employeeId}`, employeeId, workspaceId })
+
+  function claimBoundary() {
+    let reads = 0
+    return {
+      reads: () => reads,
+      db: {
+        $schema:      { models: [{ name: 'Server' }], claimSources: { employeeId: { model: 'Employee', subject: 'userId' } } },
+        $tenancy:     { strategy: 'row', column: 'workspaceId', claim: 'workspaceId' },
+        $readGrading: () => 'graded' as const,
+        $claimsFor:   async (p: any) => { reads++; return { employeeId: EMP[p?.id] ?? null } },
+        $readAs:      async (_a: string, row: any, p: any) =>
+          p?.employeeId != null && p.employeeId === row.employeeId && p.workspaceId === row.workspaceId ? row : null,
+      },
+    }
+  }
+
+  test('the owner of the row hears it, a colleague does not, with the tenant claim from the resolver', async () => {
+    const manager = createChannelManager(undefined, workspaceClaims)
+    const owner   = subscriber(manager, [`workspace:${WS_A}`], { id: 'u-1' })
+    const other   = subscriber(manager, [`workspace:${WS_A}`], { id: 'u-2' })
+    const { db }  = claimBoundary()
+
+    await announce(manager, db, expense('e-1'), [`workspace:${WS_A}`])
+
+    expect(owner.rows()).toEqual([expense('e-1')])
+    expect(other.sent()).toEqual([])
+  })
+
+  test('a recipient holding no row for the claim is refused, not widened', async () => {
+    const manager = createChannelManager(undefined, workspaceClaims)
+    const nobody  = subscriber(manager, [`workspace:${WS_A}`], { id: 'u-9' })
+    const { db }  = claimBoundary()
+
+    await announce(manager, db, expense('e-1'), [`workspace:${WS_A}`])
+
+    expect(nobody.sent()).toEqual([])
+  })
+
+  test('read once per principal per frame, whatever the tabs and channels', async () => {
+    const manager = createChannelManager(undefined, workspaceClaims)
+    subscriber(manager, [`workspace:${WS_A}`, `workspace:${WS_B}`], { id: 'u-1' })
+    subscriber(manager, [`workspace:${WS_A}`], { id: 'u-1' })
+    const { db, reads } = claimBoundary()
+
+    await announce(manager, db, expense('e-1'), [`workspace:${WS_A}`, `workspace:${WS_B}`])
+
+    expect(reads()).toBe(1)
+  })
+
+  test('a fixed channel still falls back to the tenants held elsewhere', async () => {
+    const manager = createChannelManager(undefined, workspaceClaims)
+    const owner   = subscriber(manager, ['flows', `workspace:${WS_A}`], { id: 'u-1' })
+    const { db }  = claimBoundary()
+
+    await announce(manager, db, expense('e-1'), ['flows'])
+
+    expect(owner.rows()).toEqual([expense('e-1')])
+  })
+})

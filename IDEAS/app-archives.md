@@ -99,17 +99,37 @@ Goal: `fli` takes and fetches an app's archive without ssh to the box.
 Done when: the new verb fetches `example`'s latest archive into
 `db/backups/<stamp>/` against the dev Basecamp, and Q1's ruling is built.
 
-- [ ] 2.1 `fli basecamp:backup [--app] [--take] [--out]`: the newest
+- [x] 2.1 `fli basecamp:backup [--app] [--take] [--out]`: the newest
       successful bucket archive of `BASECAMP_APP_ID`, or one taken first with
       `--take` and waited on, fetched and unpacked under `db/backups/<stamp>/`.
       Which key scope a custom method needs (`appBackups:read` or `:write`)
       is found here.
-- [ ] 2.2 `fli db:download` and `fli db:import` per `FJS-D1717`: with
+      **Built 2026-10-31** (`pullAppArchive` in `packages/cli/core/basecamp.js`).
+      The fetch needs `appBackups:read` (`download` is a declared read);
+      `--take` needs `appBackups:write` and `apps:read`, which picks the
+      machine Back up now picks. `take` answers once the machine has, so the
+      wait is the call. The fetch checks the row's sha256 and refuses a tar
+      with any entry below its top.
+- [x] 2.2 `fli db:download` and `fli db:import` per `FJS-D1717`: with
       `BASECAMP_APP_ID` set, print `BASECAMP_APP_ID <id> detected — pulling
       through Basecamp`, fetch by 2.1's helper, and for `db:import` put the
       archive's db in place as `development.db`; otherwise print that ssh is
       used and run today's steps. The ELA-only lines in `db:import`
       (`pausedAt`, `attom.db`, `ss.db`) stay on the ssh path.
+      **Built 2026-10-31.** An archive holds the app's named databases, not
+      one `production.db` (0.1), so `db:import` puts each in place under its
+      own name with its `-wal`, and only `production.db` lands as
+      `development.db`. `--dev` is refused with the id set, as `fli deploy`
+      refuses its target flags.
+      **Proved 2026-10-31** against a scratch Basecamp on 7120 seeded by
+      `db/seed.js`, because the dev db holds no workspace. A tar of
+      `example/db`'s databases was put in SeaweedFS under a seeded App's key
+      and found by `rescan`. All three verbs fetched it with an
+      `appBackups:read` key, and `db:import`'s `shop.db` matched example's
+      byte for byte. Refusals proved: a tampered object, an App with no
+      archive, and `--take` on the stub executor. A `--take` on a real
+      Outpost is not proved, and no standing test grades `placeArchive`; one
+      is owed the next time the area is touched.
 
 ### Phase 3 — Import an archive into an app
 
@@ -118,7 +138,7 @@ Done when: an archive downloaded in Phase 1 is uploaded to a second app,
 restored onto its machine by the existing Restore, and the drive reads back a
 row it wrote before the download.
 
-- [ ] 3.1 The upload route: the body streamed by `receiveUpload` into the
+- [x] 3.1 The upload route: the body streamed by `receiveUpload` into the
       app's bucket at `keyUnder(dest, '<appId>-<stamp>.tar.gz')`, its sha256
       taken on the way, then an `AppBackup` row of kind `found`, the way
       `rescan` writes one, with `requestedBy` saying who uploaded. The kind is
@@ -132,6 +152,16 @@ row it wrote before the download.
       purpose. An app with no destination is refused (`FJS-D1718`). Check
       that `rescan` dedupes by `location`, or the next rescan writes the
       upload twice.
+      **Built 2026-10-31** (`FJS-D1732`). `appBackups.upload` grades the
+      caller and signs a link; `PUT /app-archive-upload/{appId}`
+      (`plugins/app-archive-upload.ts`) streams the body and hands it to
+      `importAppArchive` (`domain/backup/app-archive-import.ts`), which PUTs
+      by `mintPut` from a scratch file beside the database. Every entry must
+      be a top-level plain file; a bare upload needs a `.db` name. Rescan
+      dedupes by `location` within the destination, and now mints a row for a
+      `.db.tar.gz` key too, which it skipped before. A request is capped at
+      128 MB by Bun, below `MAX_UPLOAD_BYTES` (`FJS-3090`), the same ceiling
+      `/setup/restore` has.
 - [ ] 3.1b A `.db.tar.gz` restores per file (`FJS-D1724`). `/volume/restore`'s
       overwrite empties `/data`, which would delete the volume's other
       databases. Outpost's `restore` takes one more option, so its url door's

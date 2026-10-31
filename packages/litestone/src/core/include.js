@@ -565,9 +565,25 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
         coerceBooleans(deserializeRow(r, targetJsonFields), shapes[rel.targetModel].boolFields),
         targetFrom, hidden))
       resolveFromRowRefs(readDb, staged, targetFrom, ctx)
-      return shapeRelated(
+      const shaped = shapeRelated(
         staged.map(r => applyComputed(r, rel.targetModel, computedFns, ctx, requested)),
         opts)
+      if (readSink?.hears && shaped.length) readSink.emit(shaped)
+      return shaped
+    }
+
+    // A read through a relation is a read of the target, so the target's own
+    // `reads: true` trail files it (FJS-3709). The entry names rows by id, and a
+    // nested `select` that left the id out would file `records: []`.
+    const readSink = ctx.readSinkFor?.(rel.targetModel) ?? null
+    const parseNested = () => {
+      if (!nestedSelect) return null
+      const wantId = readSink?.hears && !nestedSelect[readSink.idField]
+      const parsed = parseSelectArg(
+        wantId ? { ...nestedSelect, [readSink.idField]: true } : nestedSelect,
+        rel.targetModel, shapes, nestedInclude, computedFns)
+      if (wantId) parsed.injectedFKs.add(readSink.idField)
+      return parsed
     }
 
     const nestedInclude = typeof relInclude === 'object' && relInclude !== true
@@ -694,9 +710,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       const fkValues = tuplesOf(rows, rel.foreignKeys)
       if (!fkValues.length) { rows.forEach(r => r[relName] = null); continue }
 
-      const parsedNested = nestedSelect
-        ? parseSelectArg(nestedSelect, rel.targetModel, shapes, nestedInclude, computedFns)
-        : null
+      const parsedNested = parseNested()
 
       let sqlCols = parsedNested?.sqlCols ?? '*'
       if (parsedNested && sqlCols !== '*')
@@ -762,9 +776,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
         .filter(d => d.storage === 'decorate' && d.table === rel.joinTable)
       const edgeSelect = edgeDescs.map(d => `, j."${d.col}" AS "__edge_${d.col}"`).join('')
 
-      const parsedNested = nestedSelect
-        ? parseSelectArg(nestedSelect, rel.targetModel, shapes, nestedInclude, computedFns)
-        : null
+      const parsedNested = parseNested()
       const narrowed = !!parsedNested?.dbCols
 
       // The target is aliased `t` here, so the @from correlation has to be too.
@@ -853,9 +865,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       const pkValues = tuplesOf(rows, rel.referencedKeys)
       if (!pkValues.length) { rows.forEach(r => r[relName] = rel.toOne ? null : []); continue }
 
-      const parsedNested = nestedSelect
-        ? parseSelectArg(nestedSelect, rel.targetModel, shapes, nestedInclude, computedFns)
-        : null
+      const parsedNested = parseNested()
 
       let sqlCols = parsedNested?.sqlCols ?? '*'
       if (parsedNested && sqlCols !== '*')

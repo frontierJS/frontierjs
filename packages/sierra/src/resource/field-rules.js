@@ -2509,6 +2509,10 @@ export function stripReadOnly(fields, data, opts = {}) {
     // A claimed mirror's verb takes the Provider's columns as its input, and
     // the server, which knows the claim, is the one that may refuse them.
     if (rule['x-litestone-kind'] === 'mirror') continue
+    // A @@transitions column is read-only to a FORM and to narrowPatch, not to a
+    // hand-written save: the boundary grades the arc, and stripping it here left
+    // an empty patch that answered 200 and moved nothing (`FJS-3732`).
+    if (rule['x-litestone-kind'] === 'transition') continue
 
     if (out === null) out = { ...data }
     delete out[name]

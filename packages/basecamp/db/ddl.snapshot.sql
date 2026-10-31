@@ -168,10 +168,12 @@ CREATE TABLE IF NOT EXISTS "claude_transcript" (
   "sessionId" TEXT NOT NULL,
   "cwd" TEXT,
   "subagent" INTEGER NOT NULL DEFAULT 0,
+  "agent" TEXT,
   "headless" INTEGER NOT NULL DEFAULT 0,
   "title" TEXT,
   "firstPrompt" TEXT,
   "offset" INTEGER NOT NULL DEFAULT 0,
+  "turnSkills" TEXT NOT NULL DEFAULT '',
   "size" INTEGER NOT NULL DEFAULT 0,
   "startedAt" TEXT,
   "lastAt" TEXT,
@@ -195,7 +197,9 @@ CREATE TABLE IF NOT EXISTS "claude_message" (
   "cacheRead" INTEGER NOT NULL,
   "output" INTEGER NOT NULL,
   "tools" TEXT NOT NULL DEFAULT '',
-  "subagent" INTEGER NOT NULL DEFAULT 0
+  "skills" TEXT NOT NULL DEFAULT '',
+  "subagent" INTEGER NOT NULL DEFAULT 0,
+  "agent" TEXT
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_claude_message_at" ON "claude_message" ("at");
 CREATE INDEX IF NOT EXISTS "idx_claude_message_cwd" ON "claude_message" ("cwd");

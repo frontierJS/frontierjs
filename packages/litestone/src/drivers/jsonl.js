@@ -31,6 +31,7 @@ import { noteMintedDirectory } from '../core/db-path.js'
 import { buildWhere } from '../core/query.js'
 import { ValidationError } from '../core/validate.js'
 import { ID_GENERATORS } from '../core/ids.js'
+import { shiftInstant } from '@frontierjs/toolbelt/predicate'
 import { compactJsonl } from '../core/retention.js'
 import { indexPathFor, indexShapeFor, openIndexDb, ensureIndexTable, withWriteLock,
   utf8Bytes, utf8Length, utf8Text } from './jsonl-index.js'
@@ -241,7 +242,10 @@ function resolveDefault(field, stamp) {
   const def = field.attributes.find(a => a.kind === 'default')
   if (!def) return undefined
   const v = def.value
-  if (v.kind === 'call'    && v.fn === 'now')  return new Date(stamp()).toISOString()
+  if (v.kind === 'call'    && v.fn === 'now') {
+    const at = new Date(stamp()).toISOString()
+    return v.shift ? shiftInstant(at, v.shift) : at
+  }
   // A jsonl table has no DDL, so every generated default is filled here — where
   // a SQLite table gets uuid() from its column DEFAULT and the other three from
   // the client's insert path (core/ids.js is the shared owner).

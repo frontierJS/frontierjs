@@ -73,25 +73,6 @@ const gte = (a, b) =>
 // ─── the checks ──────────────────────────────────────────────────────────────
 
 /**
- * Packages in the release whose working tree has uncommitted files.
- *
- * `npm publish` packs the WORKING DIRECTORY and not the commit, so a dirty tree
- * ships whatever is sitting there under a git tag whose tree does not contain
- * it — and the tag is then a lie about what people installed.
- *
- * @param planned  [{ name, dir }]
- * @param stateOf  (name, dir) => { dirty, files }   — `context.git.pkgState`
- */
-export function dirtyPackages(planned = [], stateOf = () => ({})) {
-  const out = []
-  for (const p of planned) {
-    const state = stateOf(p.name, p.dir) ?? {}
-    if (state.dirty) out.push({ name: p.name, files: state.files ?? [] })
-  }
-  return out
-}
-
-/**
  * Sibling ranges this release would step outside of.
  *
  * Read across every workspace member rather than the release set alone: the
@@ -140,7 +121,10 @@ export function peerDrift(members = [], planned = []) {
  *
  * @param planned  [{ name, pkg }]
  * @param members  [{ name, dir, pkg }]  every workspace member
- * @param stateOf  (name, dir) => { lastTag, commits, files }   — `context.git.pkgState`
+ * Uncommitted files are not movement: the pack reads the release commit, so
+ * an edit in the main tree reaches no tarball on either side.
+ *
+ * @param stateOf  (name, dir) => { lastTag, commits }   — `context.git.pkgState`
  */
 export function movedDependencies(planned = [], members = [], stateOf = () => ({})) {
   const releasing = new Set(planned.map(p => p.name))
@@ -155,9 +139,9 @@ export function movedDependencies(planned = [], members = [], stateOf = () => ({
       if (!m || releasing.has(dep) || !String(spec).startsWith('workspace:')) continue
       if (!states.has(dep)) states.set(dep, stateOf(dep, m.dir) ?? {})
       const s = states.get(dep)
-      const commits = s.commits?.length ?? 0, files = s.files?.length ?? 0
-      if (s.lastTag && !commits && !files) continue
-      out.push({ by: p.name, dep, version: m.pkg?.version ?? null, tag: s.lastTag || null, commits, files })
+      const commits = s.commits?.length ?? 0
+      if (s.lastTag && !commits) continue
+      out.push({ by: p.name, dep, version: m.pkg?.version ?? null, tag: s.lastTag || null, commits })
     }
   }
   return out
@@ -204,7 +188,7 @@ export function publishOrder(planned = []) {
  * an operator should usually do, and the override is what is available when
  * they know better. Printing only the override teaches everyone to reach for it.
  */
-export function publishRefusals({ dirty = [], drift = [], moved = [], cycles = [], heldBack = [], force = {} } = {}) {
+export function publishRefusals({ drift = [], moved = [], cycles = [], heldBack = [], force = {} } = {}) {
   const out = []
 
   if (moved.length) {
@@ -218,22 +202,8 @@ export function publishRefusals({ dirty = [], drift = [], moved = [], cycles = [
       fix:     'publish the dependency first, as a new version — add it to --filter, or run without one',
       override: null,
       detail:  moved.map(m => `${m.by} → ${m.dep} ${m.version ?? '?'}: ${m.tag
-        ? `${m.commits} commit(s) since ${m.tag}${m.files ? `, ${m.files} uncommitted file(s)` : ''}`
+        ? `${m.commits} commit(s) since ${m.tag}`
         : 'never tagged'}`),
-    })
-  }
-
-  if (dirty.length && !force.dirty) {
-    const total = dirty.reduce((n, d) => n + d.files.length, 0)
-    out.push({
-      check:   'dirty-tree',
-      message: `${total} uncommitted file(s) in ${dirty.length} package(s) being published: ${dirty.map(d => d.name).join(', ')}`,
-      // The reason rather than the rule — somebody reading this at a terminal
-      // needs to know why a clean tree is not merely tidy.
-      because:  'npm packs the working directory, not the commit, so these files ship under a tag whose tree does not contain them',
-      fix:      'commit or stash them',
-      override: '--allow-dirty',
-      detail:   dirty.flatMap(d => d.files.slice(0, 5).map(f => `${d.name}  ${f}`)),
     })
   }
 

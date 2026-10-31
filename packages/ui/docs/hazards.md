@@ -379,7 +379,16 @@ Every hazard, the full catalog; `CLAUDE.md` § What bites here is the dozen that
   holds that untouched chunks keep their nodes; it cannot see a stylesheet
   rule that restyles the whole paint per key, which is what the last 300 ms
   was (css `CLAUDE.md`). Chrome's `Performance.getMetrics` around one
-  keystroke at 10,000 rows splits script, style and layout.
+  keystroke at 10,000 rows splits script, style and layout — and does not
+  reach paint, so time keydown to the second `requestAnimationFrame`.
+  **Chunks off screen are `content-visibility: auto`** (`FJS-3741`): laid out,
+  220,000 lines taxed every frame the page drew (6.6 s a key, 4.7 s a width
+  change; 0.9 s and 1.5 s skipped), not only a keystroke in the box. Skipping
+  contains paint, which clips a long line at its chunk and adds no width from a
+  chunk not drawn, so a chunk is `max-content` wide and `::after` is as wide as
+  the textarea's scroll width (`--text-width`, written by `syncScroll`); drop
+  either and the paint stops short of the caret on a long line. The 0.9 s left
+  is the textarea laying out its own text.
 - **A component file may export the verbs that belong to its noun** (`FJS-D116`).
   `import FileUpload, { formatBytes, isImage } from '.../FileUpload.mesa'` — a
   `<script module>` export compiles to a plain top-level ESM export beside the

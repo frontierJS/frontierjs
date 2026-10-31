@@ -24,7 +24,7 @@ describe('@@anonymous — refused at parse', () => {
   }
 
   test('a model may declare it', () => {
-    const r = parse('model Ballot {\n id Int @id\n rating Int\n day String @date\n @@anonymous\n}')
+    const r = parse('model Ballot {\n id String @id @default(uuid())\n rating Int\n day String @date\n @@anonymous\n}')
     expect(r.errors).toEqual([])
     expect(r.schema.models[0].attributes.some(a => a.kind === 'anonymous')).toBe(true)
   })
@@ -42,14 +42,42 @@ describe('@@anonymous — refused at parse', () => {
     refuses('model User { id Int @id\n @@auth }\nmodel Ballot {\n id Int @id\n by Int @updatedBy\n @@anonymous\n}', /field 'by'.*writer/)
   })
 
+  // FJS-3699: the tenant stamp is shared by every respondent in the tenant, so
+  // it names a tenant and no writer.
+  test('row tenancy\'s own tenant stamp is not a writer stamp (FJS-3699)', () => {
+    const TENANT = 'tenancy {\n strategy row\n column orgId\n claim orgId\n}\nmodel User { id Int @id\n orgId String\n @@auth }\n'
+    const r = parse(TENANT + 'model Response {\n id String @id @default(uuid())\n orgId String\n score Int\n @@tenant(orgId)\n @@anonymous\n}')
+    expect(r.errors).toEqual([])
+    // A hand-written auth() default on another column still names its writer.
+    refuses(TENANT + 'model Response {\n id Int @id\n orgId String\n who String @default(auth().id)\n @@tenant(orgId)\n @@anonymous\n}', /field 'who'.*writer/)
+  })
+
   test('a clock column — a millisecond is a join key', () => {
     refuses('model Ballot {\n id Int @id\n at DateTime @default(now())\n @@anonymous\n}', /field 'at'.*clock/)
     refuses('model Ballot {\n id Int @id\n at DateTime @updatedAt\n @@anonymous\n}', /field 'at'.*clock/)
   })
 
+  // FJS-3700: a bare DateTime is the app's new Date() — the same millisecond
+  // join key now() is refused for — and ulid()/autoincrement() ids carry the
+  // write's clock or its order.
+  test('a bare DateTime, a ulid() or an autoincrement() id (FJS-3700)', () => {
+    refuses('model Ballot {\n id Int @id\n answeredAt DateTime\n @@anonymous\n}', /field 'answeredAt'.*clock/)
+    refuses('model Ballot {\n id Int @id\n answeredAt DateTime?\n @@anonymous\n}', /field 'answeredAt'.*clock/)
+    refuses('model Ballot {\n id String @id @default(ulid())\n @@anonymous\n}', /field 'id'.*ulid\(\).*millisecond/)
+    refuses('model Ballot {\n id Int @id @default(autoincrement())\n @@anonymous\n}', /field 'id'.*autoincrement\(\).*order/)
+    expect(parse('model Ballot {\n id String @id @default(uuid())\n day String @date\n @@anonymous\n}').errors).toEqual([])
+  })
+
+  // FJS-3787: a lone Int @id is emitted AUTOINCREMENT, the same write order
+  // autoincrement() is refused for. A composite key has no rowid alias.
+  test('a lone Int @id (FJS-3787)', () => {
+    refuses('model Ballot {\n id Int @id\n @@anonymous\n}', /field 'id'.*lone Int @id.*order/)
+    expect(parse('model Ballot {\n a String\n b String\n @@id([a, b])\n @@anonymous\n}').errors).toEqual([])
+  })
+
   // FJS-D1700: the service that holds the minimum-group rule is the only read
   // path, so a view reading the rows below the model's own read gate is refused.
-  const RESPONSE = 'model Response {\n id Int @id\n teamId String\n score Int\n @@anonymous\n @@gate(8.8.9.9)\n}\n'
+  const RESPONSE = 'model Response {\n id String @id @default(uuid())\n teamId String\n score Int\n @@anonymous\n @@gate(8.8.9.9)\n}\n'
   const view = (sql: string, gate: string) =>
     `view ResponseLeak {\n teamId String\n score Int\n @@sql("${sql}")\n @@gate(${gate})\n}\n`
 
@@ -74,7 +102,7 @@ describe('@@anonymous — a logged write in the same transaction is refused', ()
   const SCHEMA = `
     database main  { path ":memory:" }
     database audit { path "./audit/" driver trail }
-    model Ballot   { id Int @id  rating Int  @@anonymous }
+    model Ballot   { id String @id @default(uuid())  rating Int  @@anonymous }
     model Roster   { id Int @id  person String  answered Boolean @default(false)  @@trail(audit) }
     model Note     { id Int @id  text String }
   `
@@ -157,7 +185,7 @@ describe('@@anonymous — a logged write in the same transaction is refused', ()
 describe('@@anonymous — a transaction that wrote one announces nothing else', () => {
   const schemaAt = (file: string) => `
     database main { path "${file}"  announce crossProcess }
-    model Ballot  { id Int @id  rating Int  @@anonymous }
+    model Ballot  { id String @id @default(uuid())  rating Int  @@anonymous }
     model Roster  { id Int @id  person String  answered Boolean @default(false) }
   `
 

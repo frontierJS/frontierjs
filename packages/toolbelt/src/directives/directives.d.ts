@@ -14,6 +14,8 @@ export interface Directives {
   limit?:         number
   offset?:        number
   after?:         string
+  /** `false` skips the page's COUNT; the answer carries `total: null`. Unstated counts. */
+  total?:         boolean
   orderBy?:       unknown
   select?:        unknown
   populate?:      unknown

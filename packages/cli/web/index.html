@@ -3508,7 +3508,7 @@ function renderPublishPackages() {
           ${p.private ? '<span class="badge muted text-xs">private</span>'
             : p.affected ? `<span class="badge info text-xs">${plural(p.commits ?? 0, 'commit')} since ${esc(p.lastTag || 'never released')}</span>`
             : '<span class="badge muted text-xs" title="no commits since its tag — include unchanged to publish it">unchanged</span>'}
-          ${p.dirty ? '<span class="badge danger text-xs" title="ws:pub refuses a package with uncommitted files">uncommitted</span>' : ''}
+          ${p.dirty ? '<span class="badge warning text-xs" title="uncommitted files stay out — ws:pub packs the release commit">uncommitted</span>' : ''}
           ${r && r.status ? `<span class="text-xs text-muted" data-registry>npm ${esc(r.remote ?? '—')} · ${esc(r.status)}</span>` : ''}
           ${r && 'release' in r ? `<span class="text-xs text-muted" data-release>release ${r.release === true ? 'shipped' : r.release === false ? 'missing' : 'could not say'}</span>` : ''}
         </div>

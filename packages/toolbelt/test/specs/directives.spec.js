@@ -160,6 +160,9 @@ test('directives: the template pair reads like the deleted pair', function () {
   assert.equal(parseDirectives({ $onlyTemplates: 'true' }).onlyTemplates, true)
   assert.equal(parseDirectives({ $withTemplates: true }).withTemplates, true)
   assert.equal(parseDirectives({ $onlyTemplates: 'false' }).onlyTemplates, false)
+  assert.equal(parseDirectives({ $total: 'false' }).total, false)
+  assert.equal('total' in parseDirectives({}), false)
+  assert.deepEqual(splitParams({ $total: 'false', name: 'x' }).query, { name: 'x' })
   // …and it is a directive, so it never lands among the filters.
   assert.deepEqual(splitParams({ $onlyTemplates: 'true', name: 'x' }).query, { name: 'x' })
 })
@@ -235,7 +238,7 @@ test('directives: every name written is a name this table strips', function () {
   // own comment; a name emitted there and absent here lands in the WHERE clause
   // as a column nobody declared, three layers from the cause (`FJS-988`).
   const every = {
-    limit: 1, offset: 2, after: 'cur', orderBy: { name: 'asc' },
+    limit: 1, offset: 2, after: 'cur', total: false, orderBy: { name: 'asc' },
     select: ['a', 'b'], populate: ['c'], search: 'wid',
     withDeleted: true, onlyDeleted: false,
     withTemplates: true, onlyTemplates: false,

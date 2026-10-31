@@ -82,7 +82,7 @@ import { makeFindManyCursor } from './find-many-cursor.js'
 import { makeUpsertMany } from './upsert-many.js'
 import { makeRestore } from './restore.js'
 import { makeWriteEvents } from './write-events.js'
-import { makeTrailEntries } from './trail-entries.js'
+import { makeTrailEntries, UNTRAILED } from './trail-entries.js'
 import { makeConstraintRefusals, NARROWED } from './constraint-refusals.js'
 import { applyFieldPolicyTo } from './field-policy.js'
 import { fromSelectExpr, resolveFromRowRefs, coerceEdgeValue, resolveIncludes } from './include.js'
@@ -972,6 +972,15 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // Hoisted function, reached only at call time.
       parseArgs: (...a) => parseArgs(...a),
     })
+
+  // The row-read half of this table's trail, for a read that arrives through a
+  // relation: `include` selects this table's rows from another model's verb, so
+  // the verbs above never see them (FJS-3709). Runs inside the caller's flavor.
+  ctx.registerReadSink?.(modelName, {
+    idField,
+    hears: tableHasLogWork,
+    emit: rows => emitLogs('read', rows),
+  })
 
   // ── What a foreign key's `onDelete: Cascade` takes with a row ─────────────
   // SQLite removes those rows inside the parent's own DELETE, so the plugins
@@ -4220,7 +4229,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       if (_dists) for (let i = 0; i < rows.length; i++) rows[i][DISTANCE_FIELD] = _dists[i]
       attachFlatEdges(rows, scopedBy)
       if (plugins?.hasPlugins) await plugins.afterRead(modelName, rows, ctx, { select })
-      if (tableHasLogWork && rows.length > 0) emitLogs('read', rows, { ids: _logIds })
+      if (tableHasLogWork && rows.length > 0 && !args[UNTRAILED]) emitLogs('read', rows, { ids: _logIds })
       return rows
     },
 
@@ -4255,7 +4264,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       else row = null
       if (plugins?.hasPlugins && row) await plugins.afterRead(modelName, [row], ctx, { select })
       // ── Logging ──────────────────────────────────────────────────────────────
-      if (tableHasLogWork && row) emitLogs('read', [row], { ids: _logIds })
+      if (tableHasLogWork && row && !args[UNTRAILED]) emitLogs('read', [row], { ids: _logIds })
       return row
     },
 
@@ -4285,7 +4294,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
           if (rows.length > 1) throw new Error(`findUnique on "${tableName}" returned more than one row`)
           const row = rows[0] ?? null
           if (plugins?.hasPlugins && row) await plugins.afterRead(modelName, [row], ctx, {})
-          if (tableHasLogWork && row) emitLogs('read', [row])
+          if (tableHasLogWork && row && !args[UNTRAILED]) emitLogs('read', [row])
           return row
         }
       }
@@ -4319,7 +4328,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       // `beforeRead` above was already here, which is what made the gap look
       // like plugin support rather than half of it.
       if (plugins?.hasPlugins && row) await plugins.afterRead(modelName, [row], ctx, { select })
-      if (tableHasLogWork && row) emitLogs('read', [row], { ids: _logIds })
+      if (tableHasLogWork && row && !args[UNTRAILED]) emitLogs('read', [row], { ids: _logIds })
       return row
     },
 
@@ -4438,7 +4447,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       })()
 
       if (plugins?.hasPlugins) await plugins.afterRead(modelName, rows, ctx, { select })
-      if (tableHasLogWork && rows.length > 0) emitLogs('read', rows, { ids: _logIds })
+      if (tableHasLogWork && rows.length > 0 && !args[UNTRAILED]) emitLogs('read', rows, { ids: _logIds })
 
       return { rows, total }
     },
@@ -6675,6 +6684,21 @@ export async function createClient({
     value: (modelName) => {
       if (!_cascadeSinks.has(modelName)) sharedTableFor(modelToAccessor(modelName))
       return _cascadeSinks.get(modelName) ?? null
+    },
+  })
+
+  // The same registry for a read through a relation (FJS-3709). A table that
+  // is not built yet is built on ask, since its sink is registered by building.
+  const _readSinks = new Map()
+  Object.defineProperty(sharedCtx, 'registerReadSink', {
+    configurable: true, enumerable: false,
+    value: (modelName, sink) => { _readSinks.set(modelName, sink) },
+  })
+  Object.defineProperty(sharedCtx, 'readSinkFor', {
+    configurable: true, enumerable: false,
+    value: (modelName) => {
+      if (!_readSinks.has(modelName)) sharedTableFor(modelToAccessor(modelName))
+      return _readSinks.get(modelName) ?? null
     },
   })
 

@@ -205,3 +205,29 @@ describe('the fall-through report', () => {
     expect(lines).toHaveLength(0)
   })
 })
+
+// FJS-3761. The manager was stamped on ctx.locals by an app-wide around hook, so
+// every service call in the app paid a runAroundHooks frame for one assignment.
+describe('announce finds the manager without an app-wide around hook (FJS-3761)', () => {
+  test('channels() registers no around hook, and a call still broadcasts', async () => {
+    const app = createApp()
+    app.services.register(buildService({
+      name: 'posts', model: 'Post', channel: 'posts',
+      create: async () => ({ id: 1, title: 'x' }),
+    } as never))
+    app.configure(channels())
+    await app._startForTest()
+
+    expect(app._appHooks.around?.all ?? []).toHaveLength(0)
+
+    const manager = (app as unknown as { channels: Manager }).channels
+    const sub = subscriber(manager, 'posts')
+    const posts = app.services.get('posts') as never
+    await callService(posts, {
+      service: 'posts', method: 'create', id: null, data: { title: 'x' },
+      params: {}, query: {}, directives: {}, auth: {}, caller: {},
+      locals: {}, app, result: null, error: null,
+    } as unknown as ServiceContext, app._appHooks, app.events, app.telemetry)
+    expect(sub.events()).toContain('posts created')
+  })
+})

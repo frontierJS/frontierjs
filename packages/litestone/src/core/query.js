@@ -423,6 +423,22 @@ export const NOW_SQL = `strftime('%Y-%m-%dT%H:%M:%fZ','now')`
 // statement is prepared (`clockedDb`), and one given none runs it as written.
 export const DERIVED_NOW_ARG = `'now'/*clock*/`
 
+// `now() + 2d` as a SQLite date modifier. The value is a whole number the
+// grammar parsed and the unit comes from a closed table, so the modifier is
+// spliced as a literal: a derived field and a column DEFAULT are static SQL and
+// have no parameters to bind it to. `mo` and `yr` are SQLite's calendar months
+// and years, which clamp nothing -- Jan 31 + 1mo is Mar 3.
+const SQLITE_MODIFIER = {
+  ms: ['seconds', 0.001], s: ['seconds', 1], min: ['minutes', 1], h: ['hours', 1],
+  d: ['days', 1], wk: ['days', 7], mo: ['months', 1], yr: ['years', 1],
+}
+
+export function sqliteShiftModifier({ sign, value, unit }) {
+  const [word, per] = SQLITE_MODIFIER[unit]
+  const amount = +(sign * value * per).toFixed(3)
+  return `${amount > 0 ? '+' : ''}${amount} ${word}`
+}
+
 /** @param {string} sqlText */
 export function expandNowTokens(sqlText) {
   if (!sqlText || !/\bnow\s*\(/i.test(sqlText)) return sqlText
@@ -998,6 +1014,22 @@ function checkBindable(v, fieldName) {
   return v
 }
 
+const isFilterObject = (/** @type {any} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v)
+
+// A combinator's operand arrives as the caller wrote it. A string there is how
+// a query string delivers `OR=[...]`, and buildWhere returns a string whole as
+// SQL, so it is refused before it is mapped or walked.
+/** @param {string} key @param {any} val */
+function refuseCombinator(key, val) {
+  const list = key !== 'NOT'
+  const ok = list ? Array.isArray(val) && val.every(isFilterObject) : isFilterObject(val)
+  if (ok) return
+  const got = typeof val === 'string' ? 'a string' : Array.isArray(val) ? 'a list that holds a non-object' : val === null ? 'null' : `a ${typeof val}`
+  throw new ValidationError([{ path: ['where', key], message: list
+    ? `where.${key} takes a list of filters, got ${got} — \`${key}: [{ status: 'open' }, { status: 'late' }]\``
+    : `"NOT" takes a filter object, got ${got} — \`NOT: { status: 'open' }\`` }])
+}
+
 // `columnMap` is a mapped model's field → column, threaded rather than folded
 // into `fromExprMap` because the two mean different things at the one identifier
 // point below: a `@from` field is a SUBQUERY and self-qualifying, where a mapped
@@ -1027,16 +1059,19 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
   for (const key of Object.keys(where)) {
     const val = where[key]
     if (key === 'AND') {
+      refuseCombinator(key, val)
       const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap, pointMap)).filter(Boolean)
       if (parts.length) clauses.push(`(${parts.join(' AND ')})`)
       continue
     }
     if (key === 'OR') {
+      refuseCombinator(key, val)
       const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap, pointMap)).filter(Boolean)
       if (parts.length) clauses.push(`(${parts.join(' OR ')})`)
       continue
     }
     if (key === 'NOT') {
+      refuseCombinator(key, val)
       const inner = buildWhere(val, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap, pointMap)
       if (inner) clauses.push(`NOT (${inner})`)
       continue

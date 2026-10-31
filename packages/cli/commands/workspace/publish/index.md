@@ -50,17 +50,9 @@ flags:
     type: boolean
     description: Include packages marked private in package.json
     defaultValue: false
-  allow-dirty:
-    type: boolean
-    description: Publish even though a package has uncommitted files — npm packs the working directory, not the commit
-    defaultValue: false
   allow-peer-drift:
     type: boolean
     description: Publish even though a sibling range (peer or dependency) would no longer resolve, or could not be decided
-    defaultValue: false
-  changed-only:
-    type: boolean
-    description: Only publish packages with uncommitted changes of their own
     defaultValue: false
   push:
     type: boolean
@@ -113,8 +105,9 @@ says what is left.
 
 A package marked `private` in its `package.json` is skipped — npm refuses it.
 
-**One pack, each destination asked for.** Each package is packed ONCE and that
-file goes wherever `--to` names: `tarballs` is a GitHub Release named for the
+**One pack, each destination asked for.** Each package is packed ONCE, from a
+checkout of the commit its tag names rather than the working tree, and that file
+goes wherever `--to` names: `tarballs` is a GitHub Release named for the
 package's tag (`gh release create <name>@<version> <tgz>`), the bytes
 `packages.frontierjs.com/<tag>/<stem>-<version>.tgz` redirects to (`FJS-D1620`); `npm`
 is `bun publish <tgz>`. **Unset is the release alone** (`FJS-D1613`): a release
@@ -137,11 +130,10 @@ carries version bumps and nothing else, so re-running the checks that already
 passed on its parent costs about a minute and proves nothing new. The push
 command is printed for you to run when you mean to.
 
-**One bump for the whole run, always.** `bun publish` rewrites a `workspace:*`
-dependency from the LOCKFILE, so every version is written, the lockfile is
-refreshed once and the commit is made BEFORE anything is published — a
-per-package bump would pin every sibling to a version this run has not
-published yet. A package that should go out on its own bump is its own run,
+**One bump for the whole run, always.** `bun pm pack` rewrites a `workspace:*`
+dependency from the sibling's manifest in the tree it packs, so every version is
+written and committed BEFORE anything is packed — a per-package bump would pin
+every sibling to a version this run has not published yet. A package that should go out on its own bump is its own run,
 which is what `--filter` and `--except` are for.
 
 **Every run stops once before the first publish**, on a terminal. npm's browser
@@ -201,14 +193,6 @@ if (!flag.private) {
   for (const { pkg } of skipped) log.info(`  skipping ${pkg.name} (private)`)
 }
 
-if (flag['changed-only']) {
-  packages = packages.filter(({ dir, pkg }) => $.git.pkgState(pkg.name, dir).dirty)
-  if (!packages.length) {
-    log.info('No packages with uncommitted changes — nothing to publish')
-    return
-  }
-}
-
 // Where each tarball goes. Unset is the release host alone (`FJS-D1613`): a
 // public release is `--to npm`, said on purpose, because every npm publish is a
 // browser 2FA round trip and a version promised to the world.
@@ -237,8 +221,8 @@ const { pending, unknown, moved } = unpublished(onHosts)
 
 if (moved.length) {
   log.error(`  ✗  in-flight-moved: tagged, not shipped to ${to.join(' + ')}, and committed to since: ${moved.join(', ')}`)
-  log.error('      npm packs the working directory, so publishing now ships commits the tag does not hold')
-  log.error('      fix: publish each from its tag — git worktree add <dir> <name>@<version>, then bun publish in that package')
+  log.error('      a pack of the working directory would ship commits the tag does not hold')
+  log.error(`      fix: ship each from its tag — git worktree add <dir> <name>@<version>, then ${to.includes('npm') ? 'bun publish in that package' : 'gh release create <name>@<version> <tgz> from a pack of it'}`)
   $.config.abort = true
   return
 }

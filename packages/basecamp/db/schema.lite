@@ -450,6 +450,13 @@ type AppBackupRescan {
   appId String
 }
 
+/// What `app-backups.upload` accepts: the app an archive is imported into, and
+/// the file's own name, which a bare database is wrapped under.
+type AppBackupUpload {
+  appId String
+  name  String @length(1, 200)
+}
+
 /// What `flags.setOverride` and `flags.clearOverride` accept. A rollout outside
 /// 0..100 is clamped by the method, so it is not narrowed here.
 type FlagOverrideSet {
@@ -1575,18 +1582,23 @@ model OutpostNonce {
 // One row per transcript FILE — where the indexer stopped reading it. A
 // subagent's transcript is its own file under a `subagents/` folder and carries
 // its PARENT's `sessionId`, so a session's subagent count is a count here.
+// `agent` is a subagent's type, from the `.meta.json` beside its file.
 model ClaudeTranscript {
   id          String    @id @default(uuid())
   path        String    @unique
   sessionId   String
   cwd         String?
   subagent    Boolean   @default(false)
+  agent       String?
   headless    Boolean   @default(false)
   title       String?
   firstPrompt String?
   // Bytes read to, always at a newline. Equal to `size` → nothing to read;
   // larger `size` → read [offset, size); smaller → the file was rewritten, from 0.
   offset      Int       @default(0)
+  // The skills loaded in the turn still open at `offset`, which the next read's
+  // messages carry until a prompt closes it.
+  turnSkills  String    @default("")
   size        Int       @default(0)
   startedAt   DateTime?
   lastAt      DateTime?
@@ -1605,7 +1617,9 @@ model ClaudeTranscript {
 // reply's several lines, a resumed session's repeats and a re-read file all
 // collapse onto it. `cacheWrite` is the whole write and `cacheWrite1h` the part
 // of it written to the one-hour cache, which is priced differently.
-// `tools` is the sorted, comma-joined names of the tools the message called.
+// `tools` is the sorted, comma-joined names of the tools the message called;
+// `skills` the same of the skills loaded in its turn, and `agent` its subagent's
+// type, copied from the transcript row so a spend read groups on it.
 model ClaudeMessage {
   id           String   @id @default(uuid())
   messageId    String   @unique
@@ -1619,7 +1633,9 @@ model ClaudeMessage {
   cacheRead    Int
   output       Int
   tools        String   @default("")
+  skills       String   @default("")
   subagent     Boolean  @default(false)
+  agent        String?
 
   @@gate(5.8)
   @@tenant(none)

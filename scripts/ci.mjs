@@ -55,7 +55,7 @@ import { tmpdir, availableParallelism }    from 'node:os'
 import { runChecks, blindSkips, findApps, formatFindings, readBaseline, gradeBaseline } from '../packages/cli/core/checks.js'
 import { checkSnapshots }                      from '../packages/cli/core/snapshots.js'
 import { runRegisterCheck, RULES as REGISTER_RULES } from '../packages/cli/core/register-check.js'
-import { FJS_PACKAGES, APP_DEV_DEPS }          from '../packages/cli/core/app-config.js'
+import { FJS_PACKAGES, APP_DEV_DEPS, FJS_TRANSITIVE } from '../packages/cli/core/app-config.js'
 import { openRunLog, parseCounts }             from '../packages/cli/core/ci-log.js'
 import { runtimeClosure, gradeAdvisories }     from '../packages/cli/core/advisories.js'
 import { findChrome }                          from '../packages/mesa/src/drive.js'
@@ -1515,7 +1515,25 @@ function scaffold() {
 // The entry ratchets like every other: the day the package is published, the
 // branch passes and a stale allowance fails CI.
 
-function deploy() {
+// **The `npm` branch installs the pins the scaffold writes, and `ws:pub` ships
+// to the GitHub Release alone unless told `--to npm` (FJS-D1613).** After a
+// tarball-only release those pins are not on npm, so the branch fails on a
+// version nobody can fix in the tree (FJS-3774). That is the branch finding
+// nothing to grade, not the framework breaking: it is skipped by name, with the
+// pins that are missing. `04-verify-assets` grades the published framework
+// from each host a release shipped to (FJS-D1726).
+async function unpublishedScaffoldPins() {
+  const pins = Object.entries({
+    ...FJS_PACKAGES,
+    ...Object.fromEntries(Object.entries(APP_DEV_DEPS).filter(([n]) => n.startsWith('@frontierjs/'))),
+    ...FJS_TRANSITIVE,
+  }).map(([name, version]) => `${name}@${version}`)
+
+  await prefetchNpm(pins.map(spec => ['view', spec, 'version']))
+  return pins.filter(spec => !npmSatisfiable(spec))
+}
+
+async function deploy() {
   const from = phase('deploy')
 
   const t0     = Date.now()
@@ -1523,6 +1541,16 @@ function deploy() {
   const fixed  = []
 
   for (const source of ['npm', 'local']) {
+    if (source === 'npm') {
+      const missing = await unpublishedScaffoldPins()
+      if (missing.length) {
+        const shown = missing.slice(0, 3).join(', ') + (missing.length > 3 ? ` and ${missing.length - 3} more` : '')
+        note(`--source npm SKIPPED — npm does not hold ${shown}. The last release shipped to the tarball host alone; \`fli ws:pub --to npm\` publishes them.`)
+        warn(`--source npm skipped (${missing.length} pin${missing.length === 1 ? '' : 's'} not on npm)`)
+        continue
+      }
+    }
+
     const { findings, skipped } = scaffoldAndDeploy({ source, verbose })
 
     if (skipped) {

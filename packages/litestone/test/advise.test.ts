@@ -1224,7 +1224,7 @@ describe('rule: deny-reads-nullable-column', () => {
 describe('anonymous-beside-logged', () => {
   const rule  = 'anonymous-beside-logged'
   const TRAIL = 'database audit { path "./audit/" driver trail }\n'
-  const BALLOT = `model Ballot { id Int @id  rating Int  @@anonymous }\n`
+  const BALLOT = `model Ballot { id String @id @default(uuid())  rating Int  @@anonymous }\n`
 
   test('fires once on the anonymous model, naming every model that logs writes', () => {
     const f = findings(`${TRAIL}${BALLOT}
@@ -1251,7 +1251,7 @@ describe('anonymous-beside-logged', () => {
 
 describe('anonymous-quiets-its-transaction', () => {
   const rule   = 'anonymous-quiets-its-transaction'
-  const BALLOT = `model Ballot { id Int @id  rating Int  @@anonymous }\n`
+  const BALLOT = `model Ballot { id String @id @default(uuid())  rating Int  @@anonymous }\n`
 
   test('names the anonymous model whose transactions announce nothing else', () => {
     const f = findings(`${BALLOT}model Roster { id Int @id  answered Boolean @default(false) }`, rule)

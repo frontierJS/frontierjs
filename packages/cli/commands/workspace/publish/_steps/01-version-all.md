@@ -57,16 +57,15 @@ if (pinFile && existsSync(pinFile)) {
   }
 }
 
-// bun rewrites a `workspace:*` dependency from the LOCKFILE, not from the
-// sibling's manifest — so a lockfile still holding the pre-bump versions pins
-// every dependent to a version this run just bumped away and will never
-// publish. Refresh it here, before step 02 packs anything.
+// A manifest whose version no longer matches the lock beside it fails
+// `--frozen-lockfile` — in every image build, and in step 03's install of the
+// release commit's checkout. Refreshed before the commit so the lock rides in it.
 if (!flag.dry) {
   const lockRoot = repo || wsRoot
   try {
     execSync('bun install --lockfile-only', { cwd: lockRoot, stdio: 'inherit' })
   } catch (err) {
-    throw new Error(`Could not refresh the lockfile in ${lockRoot} — publishing now would pin siblings to unpublished versions: ${err.message}`)
+    throw new Error(`Could not refresh the lockfile in ${lockRoot} — the release commit would fail every frozen install: ${err.message}`)
   }
 }
 
@@ -124,9 +123,6 @@ if (repo) {
   // One repo, one commit. Staging is per manifest — an unrelated edit sitting
   // in the working tree is not part of this release.
   for (const { path } of released) execSync(`git add ${path}/package.json`, { cwd: repo })
-  // The refreshed lockfile belongs to the release: a manifest whose version no
-  // longer matches the lock beside it fails `--frozen-lockfile` in every image
-  // build.
   execSync('git add --ignore-errors -- bun.lock', { cwd: repo })
   execSync(`git commit -m ${JSON.stringify(releaseSubject(released))}`, { cwd: repo, stdio: 'inherit' })
   for (const { name, newVersion } of released) {

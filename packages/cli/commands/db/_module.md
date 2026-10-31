@@ -9,7 +9,7 @@ defaults:
 
 <script>
 import { resolve } from 'path'
-import { existsSync, readFileSync, readdirSync } from 'fs'
+import { copyFileSync, existsSync, readFileSync, readdirSync, rmSync } from 'fs'
 import { stripVTControlCharacters } from 'util'
 
 // ─── resolveDb ───────────────────────────────────────────────────────────────
@@ -190,6 +190,50 @@ const jsonSchemaDone = ($, json, out) => {
   $.log.success(`JSON Schema  ${$.chalk.dim(path.relative(process.cwd(), out))}${counts ? $.chalk.dim(` · ${counts}`) : ''}`)
 }
 
+// ─── Through Basecamp ────────────────────────────────────────────────────────
+// `db:download` and `db:import` fetch the App's bucket archive when
+// `BASECAMP_APP_ID` is set and go over ssh otherwise, saying which; with the id
+// set and no archive the refusal stands, never a quiet ssh (`FJS-D1717`). On a
+// Basecamp machine the db is inside the App's volume, which ssh never reaches.
+
+/** The App id when the pull goes through Basecamp, null for ssh. `--dev` names
+ *  another server, and another environment is another App, so it is refused. */
+const pullPath = ({ flag, log, echo, chalk }) => {
+  const appId = process.env.BASECAMP_APP_ID
+  if (!appId) { echo(chalk`  {dim No BASECAMP_APP_ID — pulling over ssh}`); return null }
+  echo(chalk`  {dim BASECAMP_APP_ID} ${appId} {dim detected — pulling through Basecamp}`)
+  if (flag.dev) {
+    log.error('--dev is for the ssh pull — BASECAMP_APP_ID names one Basecamp App, and another environment is another App: run `BASECAMP_APP_ID=<id> fli <command>`')
+    return false
+  }
+  return appId
+}
+
+/** The App's newest bucket archive, unpacked under db/backups/<stamp>/ — `fli
+ *  basecamp:backup`'s fetch. Answers what `pullAppArchive` does, or null after
+ *  saying why. */
+const pullThroughBasecamp = async ({ $, flag, log, echo, chalk }, appId) => {
+  const { pullAppArchive, LOCAL_BASECAMP } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
+  const key = process.env.BASECAMP_API_KEY
+  if (!key) { log.error('needs BASECAMP_API_KEY — a key with appBackups:read, issued at /api-keys/ in the Basecamp workspace the app is in'); return null }
+  const origin = (process.env.BASECAMP_URL || LOCAL_BASECAMP).replace(/\/+$/, '')
+  const got = await pullAppArchive({ origin, key, appId, dbDir: $.paths.db, dry: flag.dry, log })
+    .catch(err => { log.error(err.message); return null })
+  if (got) echo(chalk`  {green ✓} {dim archive taken} ${got.row.startedAt} {dim unpacked into} ${got.dir}`)
+  return got
+}
+
+/** Each database an archive holds put in place in `dbDir`, its `-wal` with it:
+ *  under its own name, but `production.db` as `development.db`, the ssh pull's
+ *  mapping. A stale `-shm` would describe a WAL that is gone, so it is removed. */
+const placeArchive = (dir, files, dbDir) =>
+  files.filter(f => f.endsWith('.db')).map(f => {
+    const to = f === 'production.db' ? 'development.db' : f
+    for (const end of ['', '-wal', '-shm']) rmSync(resolve(dbDir, to + end), { force: true })
+    copyFileSync(resolve(dir, f), resolve(dbDir, to))
+    if (files.includes(`${f}-wal`)) copyFileSync(resolve(dir, `${f}-wal`), resolve(dbDir, `${to}-wal`))
+    return { from: f, to }
+  })
 </script>
 
 ## Setup

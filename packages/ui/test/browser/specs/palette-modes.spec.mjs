@@ -51,6 +51,16 @@ export async function run(t) {
   await t.eventually(`${groups}.join(',')`, 'People',
     'a group the query empties drops its heading, ordered or not')
 
+  // FJS-3767: groupOrder is for browsing. Once words are typed the groups follow
+  // their best hit, or Enter runs a weak match in an earlier group.
+  await t.mount('palette-modes', { groupOrder: ['People', 'Orders'] })
+  await t.type('order')
+  await t.eventually(`${labels}.length`, 3, 'typing filters the ordered palette')
+  t.is(await t.evaluate(`return ${groups}.join(',');`), 'Orders,People',
+    'with a query, groups follow their best hit rather than groupOrder')
+  t.is(await t.evaluate(`return ${activeLabel};`), 'New order',
+    'so Enter runs the best hit, not the first group\'s weak one')
+
   /* ── what a query searches ────────────────────────────────────────────── */
 
   await t.mount('palette-modes')

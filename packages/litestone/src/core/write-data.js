@@ -25,6 +25,7 @@ import { validate, applyTransforms, applyTypedDefaults, ValidationError } from '
 import { after as rankAfter, isRankKey } from '@frontierjs/toolbelt/rank'
 import { ident, serializeRow, serializeBooleans } from './query.js'
 import { noteStamp } from './stamps.js'
+import { untrailed } from './trail-entries.js'
 import { enumOptions } from './args.js'
 
 // ─── Strip unwritable fields ──────────────────────────────────────────────────
@@ -278,7 +279,7 @@ export function makeWriteData(shape, ctx, {
       if (!tbl) continue
       const where = Object.fromEntries(p.references.map((r, i) => [r, out[p.foreignKeys[i]]]))
       let parent
-      try { parent = await tbl.findFirst({ where, select: { [p.sourceField]: true } }) }
+      try { parent = await tbl.findFirst(untrailed({ where, select: { [p.sourceField]: true } })) }
       catch (e) { if (e instanceof AccessDeniedError) continue; throw e }
       if (parent?.[p.sourceField] == null) continue
       noteStamp(stamped, out, p.field)

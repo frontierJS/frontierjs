@@ -427,6 +427,15 @@ export interface AppBackupRescan {
 }
 
 /**
+ * What `app-backups.upload` accepts: the app an archive is imported into, and
+ * the file's own name, which a bare database is wrapped under.
+ */
+export interface AppBackupUpload {
+  appId: string
+  name: string
+}
+
+/**
  * What `flags.setOverride` and `flags.clearOverride` accept. A rollout outside
  * 0..100 is clamped by the method, so it is not narrowed here.
  */
@@ -2655,10 +2664,12 @@ export interface ClaudeTranscript {
   sessionId: string
   cwd?: string | null
   subagent: boolean
+  agent?: string | null
   headless: boolean
   title?: string | null
   firstPrompt?: string | null
   offset: number
+  turnSkills: string
   size: number
   startedAt?: string | null
   lastAt?: string | null
@@ -2673,10 +2684,12 @@ export interface ClaudeTranscriptCreate {
   sessionId: string
   cwd?: string | null
   subagent?: boolean
+  agent?: string | null
   headless?: boolean
   title?: string | null
   firstPrompt?: string | null
   offset?: number
+  turnSkills?: string
   size?: number
   startedAt?: string | Date | null
   lastAt?: string | Date | null
@@ -2689,10 +2702,12 @@ export interface ClaudeTranscriptUpdate {
   sessionId?: string
   cwd?: string | null
   subagent?: boolean
+  agent?: string | null
   headless?: boolean
   title?: string | null
   firstPrompt?: string | null
   offset?: number
+  turnSkills?: string
   size?: number
   startedAt?: string | Date | null
   lastAt?: string | Date | null
@@ -2705,10 +2720,12 @@ export interface ClaudeTranscriptWhere extends WhereBase {
   sessionId?: string | WhereOp<string> | null
   cwd?: string | WhereOp<string> | null
   subagent?: boolean | WhereOp<boolean> | null
+  agent?: string | WhereOp<string> | null
   headless?: boolean | WhereOp<boolean> | null
   title?: string | WhereOp<string> | null
   firstPrompt?: string | WhereOp<string> | null
   offset?: number | WhereOp<number> | null
+  turnSkills?: string | WhereOp<string> | null
   size?: number | WhereOp<number> | null
   startedAt?: string | Date | WhereOp<string | Date> | null
   lastAt?: string | Date | WhereOp<string | Date> | null
@@ -2742,7 +2759,9 @@ export interface ClaudeMessage {
   cacheRead: number
   output: number
   tools: string
+  skills: string
   subagent: boolean
+  agent?: string | null
 }
 
 export interface ClaudeMessageCreate {
@@ -2758,7 +2777,9 @@ export interface ClaudeMessageCreate {
   cacheRead: number
   output: number
   tools?: string
+  skills?: string
   subagent?: boolean
+  agent?: string | null
 }
 
 export interface ClaudeMessageUpdate {
@@ -2774,7 +2795,9 @@ export interface ClaudeMessageUpdate {
   cacheRead?: number
   output?: number
   tools?: string
+  skills?: string
   subagent?: boolean
+  agent?: string | null
 }
 
 export interface ClaudeMessageWhere extends WhereBase {
@@ -2790,7 +2813,9 @@ export interface ClaudeMessageWhere extends WhereBase {
   cacheRead?: number | WhereOp<number> | null
   output?: number | WhereOp<number> | null
   tools?: string | WhereOp<string> | null
+  skills?: string | WhereOp<string> | null
   subagent?: boolean | WhereOp<boolean> | null
+  agent?: string | WhereOp<string> | null
   AND?: ClaudeMessageWhere[]
   OR?:  ClaudeMessageWhere[]
   NOT?: ClaudeMessageWhere
@@ -6367,6 +6392,7 @@ export interface SeedTypes {
   AppBackupTake: AppBackupTake
   BackupRescan: BackupRescan
   AppBackupRescan: AppBackupRescan
+  AppBackupUpload: AppBackupUpload
   FlagOverrideSet: FlagOverrideSet
   FlagOverrideClear: FlagOverrideClear
   ServerProvision: ServerProvision

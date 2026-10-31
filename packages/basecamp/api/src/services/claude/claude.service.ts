@@ -11,8 +11,8 @@
 //   POST /claude   file     { path } — a skill, agent, command or memory file's text, for a detail drawer
 //   POST /claude   stats    { days? } — per local day, per model and per project: messages, tokens and an
 //                           estimated cost (30 days by default, 0 = all); with when the index last moved
-//   POST /claude   insights { window: '24h' | '7d' } — the share of cost-weighted use per project, model and
-//                           tool, a message's cost split evenly across the tools it called
+//   POST /claude   insights { window: '24h' | '7d' } — the share of cost-weighted use per project, model,
+//                           tool, skill and subagent, a message's cost split evenly across the tools it called
 //   POST /claude   sessions { cwd?, limit? } — sessions per project, newest first, with their spend
 //   POST /claude   transcript { sessionId } — one session folded into turns, read from the file the index lists
 //   POST /claude   context  { cwd } — what the project's newest session sent before its first prompt, per part
@@ -73,7 +73,7 @@ import {
   checkRules, checkSettingsPatch, cliFailure, patchJson, patchPermissions, readOrNull, recordCli, saveFile, trashPath, undoable, undoWrite,
   WRITE_SELECT, type RuleList,
 } from '../../domain/claude/claude-write.ts'
-import { contextFor }              from '../../domain/claude/claude-context.ts'
+import { contextFor, countContext } from '../../domain/claude/claude-context.ts'
 import { fetchUsage }              from '../../domain/claude/claude-quota.ts'
 import { readTranscript }          from '../../domain/claude/claude-transcript.ts'
 import { claudeAuthStatus, readDoctor, readMcpList, runClaude } from '../../domain/local/local-claude.ts'
@@ -302,7 +302,8 @@ export default createService({
     offered()
     const cwd = body().cwd
     if (typeof cwd !== 'string' || !cwd.startsWith('/')) throw new BadRequest('context needs a project path')
-    return contextFor(cwd)
+    const r = contextFor(cwd)
+    return r.ok ? read(await countContext(r.value, r.value.file)) : r
   },
 
   async account() {

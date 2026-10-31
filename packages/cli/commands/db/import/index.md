@@ -1,6 +1,6 @@
 ---
 title: db:import
-description: Import the production sqlite DB from server to local dev
+description: Replace the local dev database with production's — through Basecamp when BASECAMP_APP_ID is set, over ssh otherwise
 alias: db-import
 examples:
   - fli db:import
@@ -9,11 +9,28 @@ examples:
 flags:
   dev:
     type: boolean
-    description: Import from dev server instead of production
+    description: Import from the dev server instead of production (ssh only)
     defaultValue: false
 ---
 
+With `BASECAMP_APP_ID` set, the App's newest bucket archive is fetched as
+`fli db:download` fetches it, and each database in it replaces the local one
+of its name — `production.db` as `development.db`. With no archive in a bucket
+it refuses rather than falling back to ssh (`FJS-D1717`). Otherwise
+`PROD_SERVER` backs its `production.db` up in place, the copy is fetched by
+scp and restored as `development.db`; the `actions.pausedAt` reset and the
+`ela.prod` extras are that path's alone.
+
 ```js
+const appId = pullPath({ flag, log, echo, chalk })
+if (appId === false) { $.config.abort = true; return }
+if (appId) {
+  $.config.viaBasecamp = true
+  $.config.appId       = appId
+  $.config.dbPath      = $.paths.db
+  return
+}
+
 const env = $.env
 
 const server     = flag.dev ? env.DEV_SERVER      : env.PROD_SERVER
@@ -37,5 +54,5 @@ $.config.file        = 'production.db'
 $.config.backupFile  = `production.db_${date}`
 $.config.isElaProd   = server === 'ela.prod'
 
-log.info(`Importing DB from ${server}`)
+echo(chalk`  {dim Importing production.db from} ${server}`)
 ```

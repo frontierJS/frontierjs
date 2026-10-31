@@ -2955,10 +2955,47 @@ export function $$virtualEach(anchor, getItems, keyFn, makeRow, options = {}) {
 
   let rowHeight  = options.height > 0 ? options.height : DEFAULT_ROW
   let measured   = options.height > 0
-  let renderedBlocks = new Map()  // key → { node, item }
-  let prevStart  = -1
-  let prevEnd    = -1
+  let renderedBlocks = new Map()  // key → row (see makeRowBlock)
   let scroller   = null
+  const outerOwner = _owner
+
+  // A row's effects hang off an inert owner of their own, as in {#each}: made
+  // inside the render effect they would be its self-owned children, and its
+  // next run (any array change) would dispose every drawn row's effects.
+  function makeRowBlock(item, index) {
+    const [getItem, setItem]   = createSignal(item)
+    const [getIndex, setIndex] = createSignal(index)
+    const owner = {
+      _fn: null, _deps: new Set(), _cleanups: [], _children: [],
+      _owner: outerOwner, _notify() {}, _run() {}
+    }
+    if (outerOwner) outerOwner._children.push(owner)
+    const prevOwner = _owner
+    _owner = owner
+    let result
+    try { result = untrack(() => withContext(() => makeRow(getItem, getIndex))) }
+    finally { _owner = prevOwner }
+    // makeBlock hands back a fragment, which is empty once inserted: removing or
+    // moving the row has to name the nodes it held.
+    const $dom = result?.$dom ?? result
+    const nodes = $dom?.nodeType === 11 ? [...$dom.childNodes] : $dom ? [$dom] : []
+    return {
+      nodes,
+      item, index,
+      sync(nextItem, nextIndex) {
+        if (nextItem === this.item && nextIndex === this.index) return
+        this.item = nextItem
+        this.index = nextIndex
+        setItem(nextItem)
+        setIndex(nextIndex)
+        result?.rebind?.(nextItem, nextIndex)
+      },
+      dispose() {
+        for (const n of nodes) n.remove()
+        _disposeNode(owner, true)
+      }
+    }
+  }
 
   function measure(node) {
     if (measured) return
@@ -2981,9 +3018,8 @@ export function $$virtualEach(anchor, getItems, keyFn, makeRow, options = {}) {
     if (!arr || arr.length === 0) {
       topSpacer.style.height = '0px'
       botSpacer.style.height = '0px'
-      renderedBlocks.forEach(b => b.node.remove())
+      renderedBlocks.forEach(b => b.dispose())
       renderedBlocks.clear()
-      prevStart = prevEnd = -1
       return
     }
 
@@ -2997,45 +3033,44 @@ export function $$virtualEach(anchor, getItems, keyFn, makeRow, options = {}) {
     const start    = Math.max(0, visStart - OVERSCAN)
     const end      = Math.min(total, visEnd + OVERSCAN)
 
-    if (start === prevStart && end === prevEnd) return
-    prevStart = start; prevEnd = end
-
-    // Keys for the new window
+    // An unmoved window is no reason to stop: an array change under the same
+    // keys still owes every drawn row its new item and index.
+    const keys = []
     const newKeys = new Set()
     for (let i = start; i < end; i++) {
-      const item = arr[i]
-      newKeys.add(keyFn ? keyFn(item, i) : i)
+      const key = keyFn ? keyFn(arr[i], i) : i
+      keys.push(key)
+      newKeys.add(key)
     }
 
-    // Remove rows that scrolled out
     renderedBlocks.forEach((b, key) => {
       if (!newKeys.has(key)) {
-        b.node.remove()
+        b.dispose()
         renderedBlocks.delete(key)
       }
     })
 
-    // Render rows in window — insert in order before botSpacer
-    const frag = document.createDocumentFragment()
+    // Walk the window in order with a cursor, moving a node only when it is out
+    // of place: a row scrolled in above the drawn ones, or a key that moved,
+    // lands where it belongs without disturbing rows already in position.
+    const container = botSpacer.parentNode
+    let cursor = topSpacer.nextSibling
     for (let i = start; i < end; i++) {
-      const item = arr[i]
-      const key  = keyFn ? keyFn(item, i) : i
-      if (!renderedBlocks.has(key)) {
-        // Create item/index signals — same as $$eachBlock so compiled block
-        // receives row (a getter function) and index getter.
-        const [getItem]  = createSignal(item)
-        const [getIndex] = createSignal(i)
-        // makeRow() returns a factory; call it to get the DOM.
-        // The factory calls fn($parentElement, getItem, getIndex) internally via makeBlock.
-        // makeBlock factory takes (item getter, index getter)
-        const $dom = withContext(() => makeRow(getItem, getIndex))
-        const node = $dom?.$dom ?? $dom
-        if (node) frag.appendChild(node)
-        renderedBlocks.set(key, { node, item })
-        if (!measured && node?.getBoundingClientRect) measure(node)
+      const key = keys[i - start]
+      let block = renderedBlocks.get(key)
+      if (block) {
+        block.sync(arr[i], i)
+      } else {
+        block = makeRowBlock(arr[i], i)
+        renderedBlocks.set(key, block)
       }
+      const { nodes } = block
+      if (!nodes.length || !container) continue
+      if (nodes[0] === cursor) cursor = nodes[nodes.length - 1].nextSibling
+      else for (const n of nodes) container.insertBefore(n, cursor)
+      const el = nodes.find(n => n.nodeType === 1)
+      if (!measured && el) measure(el)
     }
-    botSpacer.parentNode?.insertBefore(frag, botSpacer)
 
     // Update spacers
     topSpacer.style.height = (start * rowHeight) + 'px'
@@ -3089,7 +3124,7 @@ export function $$virtualEach(anchor, getItems, keyFn, makeRow, options = {}) {
     detachScroll?.()
     topSpacer.remove()
     botSpacer.remove()
-    renderedBlocks.forEach(b => { b.anchor?.remove(); b.node?.remove() })
+    renderedBlocks.forEach(b => b.dispose())
     renderedBlocks.clear()
   }
   if (_owner) {
@@ -3145,9 +3180,11 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
   const outerOwner = _owner
 
   // blocks: Map<key, block>
-  // prevKeys: key[] — the last rendered key order, parallel to the DOM order
-  let blocks   = new Map()
-  let prevKeys = []
+  // prevKeys, prevBlocks: the last rendered key order and its blocks, parallel
+  // to the DOM order
+  let blocks     = new Map()
+  let prevKeys   = []
+  let prevBlocks = []
   // Original key → the stand-in keys its repeats were filed under last render,
   // so a duplicated row keeps its block instead of being rebuilt every time.
   // Rebuilt each render from the duplicates that are still there, so it empties
@@ -3325,8 +3362,9 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
           anchor.textContent = ''
         }
       }
-      prevKeys = []
-      dupKeys  = null
+      prevKeys   = []
+      prevBlocks = []
+      dupKeys    = null
       _showElse()
       return
     }
@@ -3334,6 +3372,21 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
 
     const newKeys = array.map((item, i) => keyFn(item, i))
     const oldLen  = prevKeys.length
+
+    // ── Fast path: same keys ────────────────────────────────────────────────
+    // Selecting a row or editing one in place keeps every key, and the key
+    // count, the block arrays and both scans below cost ~100 µs at a thousand
+    // rows to learn that. Last render's keys held no repeat (`dupKeys` is null),
+    // so an identical list holds none either.
+    if (dupKeys === null && newLen === oldLen) {
+      let i = 0
+      while (i < newLen && prevKeys[i] === newKeys[i]) i++
+      if (i === newLen) {
+        for (let k = 0; k < newLen; k++) _sync(prevBlocks[k], array[k], k)
+        prevKeys = newKeys
+        return
+      }
+    }
 
     // ── Duplicate keys ──────────────────────────────────────────────────────
     //
@@ -3381,18 +3434,19 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
 
     // ── Fast path: first render ─────────────────────────────────────────────
     if (oldLen === 0) {
+      const made = new Array(newLen)
       for (let i = 0; i < newLen; i++) {
         const b = _makeBlock(array[i], i)
         _insertBlock(b, insertBefore)
         blocks.set(newKeys[i], b)
+        made[i] = b
       }
-      prevKeys = newKeys
+      prevKeys   = newKeys
+      prevBlocks = made
       return
     }
 
-    // Build ordered array of old blocks for scanning
-    const oldBlocks = new Array(oldLen)
-    for (let i = 0; i < oldLen; i++) oldBlocks[i] = blocks.get(prevKeys[i])
+    const oldBlocks = prevBlocks
 
     // newBlocks[i] = the block that should occupy new position i
     const newBlocks = new Array(newLen)
@@ -3445,14 +3499,16 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
         blocks.set(newKeys[i], b)
         newBlocks[i] = b
       }
-      prevKeys = newKeys
+      prevKeys   = newKeys
+      prevBlocks = newBlocks
       return
     }
 
     // ── Trivial: only removals ──────────────────────────────────────────────
     if (j > b_end) {
       // All new blocks matched — removals already handled above
-      prevKeys = newKeys
+      prevKeys   = newKeys
+      prevBlocks = newBlocks
       return
     }
 
@@ -3516,7 +3572,8 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
       }
     }
 
-    prevKeys = newKeys
+    prevKeys   = newKeys
+    prevBlocks = newBlocks
   })
 }
 

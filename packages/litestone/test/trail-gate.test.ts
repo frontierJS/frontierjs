@@ -163,3 +163,54 @@ describe('createTestEnv on a schema whose only declared database is a trail', ()
     }
   })
 })
+
+// FJS-3712 — a trail line is the record of a write that happened, so it waits
+// for the write's transaction to commit and goes with it on a rollback.
+describe('a trailed write inside a transaction', () => {
+  const open = async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fjs-trail-tx-'))
+    const db: any = await createClient({ schema: `
+      database main  { path ":memory:" }
+      database audit { path "${dir}/audit/" driver trail }
+      model Note { id Int @id  body String  @@trail(audit) }
+    `, resolveFrom: dir })
+    const sys = db.asSystem()
+    const trail = async () => { await tick(); await tick(); return (await sys.auditTrail.findMany({})).map((r: any) => `${r.operation} ${r.recordId ?? ''}`.trim()) }
+    return { sys, trail, close: () => { db.$close(); rmSync(dir, { recursive: true, force: true }) } }
+  }
+
+  test('a rolled-back transaction leaves no entry', async () => {
+    const { sys, trail, close } = await open()
+    await expect(sys.$transaction(async (tx: any) => {
+      await tx.note.create({ data: { id: 1, body: 'a' } })
+      throw new Error('refused')
+    })).rejects.toThrow('refused')
+    expect(await sys.note.count()).toBe(0)
+    expect(await trail()).toEqual([])
+    close()
+  })
+
+  test('a committed one files its entries, and a rolled-back savepoint takes only its own', async () => {
+    const { sys, trail, close } = await open()
+    await sys.$transaction(async (tx: any) => {
+      await tx.note.create({ data: { id: 1, body: 'a' } })
+      await tx.$transaction(async (inner: any) => {
+        await inner.note.create({ data: { id: 2, body: 'b' } })
+        throw new Error('undo')
+      }).catch(() => {})
+      await tx.note.create({ data: { id: 3, body: 'c' } })
+    })
+    expect(await sys.note.count()).toBe(2)
+    expect((await trail()).length).toBe(2)
+    close()
+  })
+
+  test('a createMany that refuses part way files nothing', async () => {
+    const { sys, trail, close } = await open()
+    await sys.note.create({ data: { id: 1, body: 'a' } })
+    await expect(sys.note.createMany({ data: [{ id: 2, body: 'b' }, { id: 1, body: 'dup' }] })).rejects.toThrow()
+    expect(await sys.note.count()).toBe(1)
+    expect((await trail()).length).toBe(1)
+    close()
+  })
+})

@@ -262,6 +262,31 @@ const history = await trail.findMany({
 
 The auto-generated model name for a trail database is `<DbName>Trail` — `audit` → `AuditTrail`, read as `db.auditTrail`.
 
+### Reading the trail as a reader, not as SYSTEM
+
+The default `@@gate(8)` admits nobody but `asSystem()`, so a service over it answers nothing to anyone. A reader is stated on the host's own `AuditTrail` model, a SQLite trail only (a jsonl trail compiles no row policy). A level-4 gate admits a signed-in caller, and the row policy then hides every row that is not theirs, so the answer for everyone else is `200` with zero rows, never a `403`:
+
+```text
+import "@frontierjs/litestone/references/AuditTrail.lite"
+
+database audit { path env("AUDIT_PATH", "./db/audit.db") retention 90d model AuditTrail }
+
+model AuditTrail {
+  id Int @id @default(autoincrement())
+  @@trait(AuditTrail)
+  @@db(audit)
+  @@tenant(none)
+  @@gate(4.8.8.8)
+  @@allow(read, auth().kindOfStaff == 'privacyOfficer' && tenant == auth().clinicId)
+}
+```
+
+Then a service over it (`createService({ channel })` in `api/src/services/auditTrails.service.ts`) serves `GET /api/auditTrails`. `@@tenant(none)` is what lets the policy name `tenant` itself: the trail spans tenants, and the `@@allow` is the only thing narrowing it. Three limits of this shape:
+
+- **`tenant` is stamped only when the actor carries a tenant.** A system write, a seed, and a read the engine makes for its own check (`FJS-3714`) land with `tenant` null, so no tenant's reader sees them. A review queue built on this policy omits them silently; read them as `asSystem()`.
+- **`records` is a JSON array of ids**, so a policy cannot ask "reads on charts the actor has no row for". That anti-join is done by the service after the read.
+- **Invariant:** the gate and the policy are enforced at the Data boundary, so a client `x-gate` is only an affordance.
+
 ## @secret — encrypted + guarded + logged
 
 `@secret` is a composite that bundles all three security attributes:

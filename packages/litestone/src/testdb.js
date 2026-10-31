@@ -17,7 +17,7 @@
 
 import { generateDDL, generateDDLForDatabase } from './core/ddl.js'
 import { splitStatements }                     from './core/migrate.js'
-import { migrationStatements }                 from './core/migrations.js'
+import { migrationStatements, recordReplayed } from './core/migrations.js'
 import { openDatabase }                        from './core/engine.js'
 import { copyFileSync, existsSync, rmSync, readdirSync, statSync } from 'fs'
 import { join, resolve }                       from 'path'
@@ -101,8 +101,10 @@ function applyMigrations(file, files) {
   const raw = openDatabase(file)
   raw.run('PRAGMA journal_mode = WAL')
   raw.run('PRAGMA foreign_keys = OFF')     // migrations arrive in file order, not dependency order
-  for (const path of files)
+  for (const path of files) {
     for (const stmt of migrationStatements(path)) raw.run(stmt + ';')
+    recordReplayed(raw, path)
+  }
   raw.run('PRAGMA foreign_keys = ON')
   raw.run('PRAGMA wal_checkpoint(TRUNCATE)')
   raw.close()

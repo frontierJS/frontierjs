@@ -294,7 +294,9 @@ export const isInline = (tag) => {
  * inside the screen would be the engine's `onMouseDrop`, a drag source's
  * lowering, so a drag source stays refused until that is built.
  * `touchstart` is heard and never sent: a terminal has no touch, and every
- * kit listener sits beside a `mousedown` that does the same. `toggle` is a
+ * kit listener sits beside a `mousedown` that does the same.
+ * `beforeprint` and `afterprint` are heard and never sent: a terminal
+ * never prints, so a print-only state stays at its screen value. `toggle` is a
  * `<details>`'s, sent a task after its `open` changes. `cancel`
  * and `close` are a `<dialog>`'s, and neither bubbles. `paste` is a
  * bracketed paste, sent where a key would be before the field takes the
@@ -331,7 +333,9 @@ export const TERMINAL_EVENTS = {
   dragleave: { bubbles: true },
   drop:      { bubbles: true },
   touchstart: { bubbles: true },
-  focus:   { bubbles: false },
+  beforeprint: { bubbles: false },
+  afterprint:  { bubbles: false },
+  focus:  { bubbles: false },
   blur:    { bubbles: false },
   focusin:  { bubbles: true },
   focusout: { bubbles: true },

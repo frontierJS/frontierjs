@@ -226,13 +226,19 @@
 
   $: repaint(paintable)
 
+  function matchWidth() {
+    paint.style.setProperty('--text-width', el.scrollWidth + 'px')
+  }
+
   function handleInput(e) {
     value = e.target.value
     oninput?.(e)
+    if (paint) matchWidth()
   }
 
   function syncScroll() {
     if (!paint || !el) return
+    matchWidth()
     paint.scrollTop  = el.scrollTop
     paint.scrollLeft = el.scrollLeft
   }
@@ -360,6 +366,33 @@
      or its padding would clip the paint where the textarea's does not. */
   .fjs-code-input-paint :global(code) {
     overflow: visible;
+
+    /* A chunk outside the view is skipped, not laid out: with every chunk laid
+       out, a million elements taxed every frame the page drew (FJS-3741).
+       Skipping contains paint, which clips at the box, so a chunk is as wide as
+       its longest line (less the <pre>'s end padding, which the <pre> adds
+       again) and the <pre> still scrolls to it. A skipped chunk is 64 lines
+       high, CHUNK in the script; the last holds fewer, so it is never skipped. */
+    content-visibility:           auto;
+    contain-intrinsic-block-size: calc(64 * var(--text-sm) * var(--leading-relaxed));
+    inline-size:                  max-content;
+    min-inline-size:              100%;
+    margin-inline-end:            calc(-1 * var(--space-2xl));
+  }
+  .fjs-code-input-paint :global(code:last-child) {
+    content-visibility: visible;
+  }
+
+  /* Skipped chunks add no width, so the <pre> would stop scrolling where the
+     lines on screen end while the textarea goes on to its longest line, and the
+     paint would slide off the caret. This block is as wide as the textarea's
+     scroll width, which syncScroll writes. */
+  .fjs-code-input-paint::after {
+    content:             '';
+    display:             block;
+    block-size:          0;
+    inline-size:         calc(var(--text-width, 0px) - var(--space-2xl));
+    margin-inline-start: calc(-1 * var(--space-2xl));
   }
 
   .fjs-code-input-text {

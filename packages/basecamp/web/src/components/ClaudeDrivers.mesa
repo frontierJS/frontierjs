@@ -1,7 +1,8 @@
 <script>
   // What drives the limit, on the Claude Code tab (api services/claude: insights):
-  // the share of cost-weighted use per project, model and tool over 24 hours or
-  // 7 days. A message's cost is split evenly across the tools it called.
+  // the share of cost-weighted use per project, model, tool, skill and subagent
+  // over 24 hours or 7 days. A message's cost is split evenly across the tools
+  // it called; a skill takes the whole cost of the turns it loaded in.
   import { ago }    from '../lib/datetime.js'
   import { count, usd, share, tilde } from '../lib/claude-format.js'
   import { claude } from '../resources/Claude.mesa'
@@ -21,6 +22,8 @@
   const PROJECT_COLUMNS = columns('Project')
   const MODEL_COLUMNS   = columns('Model')
   const TOOL_COLUMNS    = columns('Tool')
+  const SKILL_COLUMNS   = columns('Skill')
+  const AGENT_COLUMNS   = columns('Subagent')
 
   let span    = '7d'
   let result  = null
@@ -80,8 +83,23 @@
       {/snippet}
     </Table>
 
+    <h3>By skill</h3>
+    <Table id="claude-drivers-skills" columns={SKILL_COLUMNS} rows={top(result.skills)} compact striped hover={false} emptyText="No skill loaded in this window">
+      {#snippet row(r)}
+        <tr><td><code>{r.skill}</code></td>{@render cells(r)}</tr>
+      {/snippet}
+    </Table>
+
+    <h3>By subagent</h3>
+    <Table id="claude-drivers-agents" columns={AGENT_COLUMNS} rows={top(result.agents)} compact striped hover={false} emptyText="No subagent ran in this window">
+      {#snippet row(r)}
+        <tr><td><code>{r.agent}</code></td>{@render cells(r)}</tr>
+      {/snippet}
+    </Table>
+
     <p class="text-sm text-muted">
-      A message's cost is split evenly across the tools it called. Estimated at list price, read {result.pricing.readOn} from
+      A message's cost is split evenly across the tools it called. A skill's share is the whole cost of the turns it
+      loaded in, so skills overlap; a subagent's is the cost of its own messages. Estimated at list price, read {result.pricing.readOn} from
       <a href={result.pricing.sourceUrl} target="_blank" rel="noreferrer">{result.pricing.sourceUrl}</a>.
       {#if result.indexedAt}Indexed {ago(result.indexedAt)}.{:else}The index has not run yet; the job runs every 5 minutes.{/if}
     </p>

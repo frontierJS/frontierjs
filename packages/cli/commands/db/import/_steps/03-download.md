@@ -1,6 +1,7 @@
 ---
 title: 03-download
 description: Download the backup from the remote server
+skip: "$.config.viaBasecamp"
 ---
 
 ```js
@@ -9,5 +10,5 @@ $.exec({
   command: `scp ${server}:${serverPath}/db/backups/${backupFile} ${dbPath}/backups/.`,
   dry: flag.dry
 })
-if (!flag.dry) log.success('Downloaded backup')
+if (!flag.dry) echo(chalk`  {green ✓} {dim downloaded} ${backupFile}`)
 ```

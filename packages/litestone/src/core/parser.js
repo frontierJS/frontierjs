@@ -7,7 +7,7 @@
 import { isKnownCurrency, minorUnits, isKnownUnit, unitInfo, suggestUnit, MEASURE_UNITS }
   from '@frontierjs/toolbelt/units'
 import { LEVELS }                       from '@frontierjs/toolbelt/gate'
-import { parseExpression, tokenize, TK, ParseError, templateShape } from '@frontierjs/toolbelt/predicate'
+import { parseExpression, durationOffset, tokenize, TK, ParseError, templateShape } from '@frontierjs/toolbelt/predicate'
 import { expandCapabilityType } from './capabilities.js'
 import { parseGateString, validateGate } from '../plugins/gate.js'
 // One owner for the range a value round-trips through a JS number in — the
@@ -1617,6 +1617,13 @@ class Parser {
           this.advance()  // consume '.'
           const field = this.eat(TK.IDENT).value
           return { kind: 'call', fn: 'auth', field }
+        }
+        // now() + 4h — the instant a policy reads, moved by a whole duration.
+        // The one grammar for an instant (`durationOffset`), so a default and
+        // the `@@require` that bounds it cannot disagree on what is legal.
+        if (name === 'now') {
+          const at = durationOffset(this, { type: 'now' })
+          if (at.type === 'shift') return { kind: 'call', fn: 'now', shift: { sign: at.sign, value: at.value, unit: at.unit } }
         }
         // now(), uuid(), cuid(), ulid()
         return { kind: 'call', fn: name }
@@ -8878,15 +8885,28 @@ function validate(schema) {
     const where = `Model '${model.name}' is @@anonymous`
     for (const log of model.attributes.filter(a => a.kind === 'trail'))
       errors.push(`${where}, and @@trail(${log.db}) stamps the writer and the whole row on every write. Remove the log`)
+    const idFields = model.fields.filter(f => f.attributes.some(a => a.kind === 'id'))
     for (const field of model.fields) {
       const kinds = new Set(field.attributes.map(a => a.kind))
-      const dflt  = field.attributes.find(a => a.kind === 'default')?.value
+      const dfltAttr = field.attributes.find(a => a.kind === 'default')
+      // A lone Int @id is the rowid alias and ddl.js emits it AUTOINCREMENT, so
+      // it counts up in write order whether or not autoincrement() is written.
+      if (kinds.has('id') && idFields.length === 1 && field.type.name === 'Int' && !field.type.array)
+        errors.push(`${where}, and field '${field.name}' is a lone Int @id, which SQLite counts up in the order rows were written. Use String @id @default(uuid())`)
+      // The tenancy pass's stamp is shared by every writer in the tenant, so it
+      // names a tenant and no one.
+      const dflt  = dfltAttr?.generated === 'tenancy' ? undefined : dfltAttr?.value
       if (kinds.has('trail'))
         errors.push(`${where}, and field '${field.name}' is logged (@trail, or the one @secret implies) — an audit entry names its writer`)
       if (kinds.has('createdBy') || kinds.has('updatedBy') || (dflt?.kind === 'call' && dflt.fn === 'auth'))
         errors.push(`${where}, and field '${field.name}' is stamped from the writer (@createdBy, @updatedBy or auth())`)
-      if (kinds.has('updatedAt') || (dflt?.kind === 'call' && dflt.fn === 'now'))
+      // A DateTime the app fills is the same millisecond, so the type is the refusal.
+      if (kinds.has('updatedAt') || (dflt?.kind === 'call' && dflt.fn === 'now') || (field.type.name === 'DateTime' && !field.type.array))
         errors.push(`${where}, and field '${field.name}' stamps the clock — a millisecond joins this row to the writer's other writes. Use a String @date the app sets`)
+      if (dflt?.kind === 'call' && dflt.fn === 'ulid')
+        errors.push(`${where}, and field '${field.name}' defaults to ulid(), whose first 48 bits are the write's millisecond — the same join key as a clock. Use uuid()`)
+      if (dflt?.kind === 'call' && dflt.fn === 'autoincrement')
+        errors.push(`${where}, and field '${field.name}' defaults to autoincrement(), which reads out the order rows were written in. Use uuid()`)
     }
   }
 

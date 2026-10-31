@@ -4,7 +4,7 @@
 // Plugin system: Option C hybrid — simple fn or full lifecycle object.
 
 import { HttpTransport }            from '../transport/http.ts'
-import type { WsRouteOptions }       from '../transport/http.ts'
+import type { WsRouteOptions, HttpTransportOptions } from '../transport/http.ts'
 import { resolveTrustProxy }        from '../transport/forwarded.ts'
 import { mountLocalFiles }          from '../transport/local-files.ts'
 import { bridge, errorResponse, refuseBadDirectives } from '../transport/bridge.ts'
@@ -1152,10 +1152,9 @@ export function createApp(opts: AppOptions = {}): App {
 
   const errorMappers: ErrorMapper[] = [...(opts.errorMappers ?? [])]
 
-  const http      = new HttpTransport({
-    errorMappers,
-    port:        config.port,
-    hostname:    config.hostname,
+  // What `config.http` states of the transport. Read again after the config
+  // file is merged, since the transport is built before it (`FJS-3717`).
+  const httpOptionsFromConfig = (): HttpTransportOptions => ({
     maxBodySize: config.http.maxBodySize,
     compress:    config.http.compress,
     // Both timers, from the config an app already writes. The runtime's own
@@ -1177,6 +1176,14 @@ export function createApp(opts: AppOptions = {}): App {
     // which is silent at every layer above it.
     wsMaxQueued: config.http.wsMaxQueued,
     ws:          config.http.ws,
+    powered:     config.http.powered,
+  })
+
+  const http      = new HttpTransport({
+    errorMappers,
+    port:        config.port,
+    hostname:    config.hostname,
+    ...httpOptionsFromConfig(),
     auth:        opts.auth,
     credentials: opts.credentials,
     // Cookie mode is normally declared by the auth plugin, which calls
@@ -1185,7 +1192,6 @@ export function createApp(opts: AppOptions = {}): App {
     authCookie:  (config as Record<string, unknown>).auth
       ? ((config as { auth?: { cookie?: string } }).auth?.cookie ?? null)
       : null,
-    powered:     config.http.powered,
     onError:     (err) => {
       // The transport announces every throw before errorResponse maps it, so
       // a 404/409/429 a raw route means would log beside a real 500 with a
@@ -1675,6 +1681,7 @@ export function createApp(opts: AppOptions = {}): App {
         throw new Error(`[Junction] Failed to load configuration: ${err instanceof Error ? err.message : err}`)
       }
       rebasePrefix()
+      http.reconfigure(httpOptionsFromConfig())
     },
 
     errorMappers,

@@ -22,6 +22,7 @@
 
 import { ValidationError } from './validate.js'
 import { modelToAccessor } from './ddl.js'
+import { untrailed } from './trail-entries.js'
 
 /**
  * A value could not join an `open` set — the source model refused the row.
@@ -157,10 +158,10 @@ async function enforceBoundValueSets(modelName, rows, ctx, { where = null } = {}
     const table = ctx.tables?.[bind.accessor]
     if (!table) continue                      // unreachable for a validated schema
 
-    const found = await table.findMany({
+    const found = await table.findMany(untrailed({
       where:  setFilter(bind, values),
       select: { [bind.valueField]: true },
-    })
+    }))
     const have    = new Set(found.map(r => r[bind.valueField]))
     const missing = values.filter(v => !have.has(v))
     if (!missing.length) continue
@@ -186,10 +187,10 @@ async function enforceBoundValueSets(modelName, rows, ctx, { where = null } = {}
     // Still the caller's own read: a row they cannot see is not one they can be
     // told about, so it falls through to the create and its refusal.
     if (bind.scopes.length) {
-      const exists = await table.findMany({
+      const exists = await table.findMany(untrailed({
         where:  { [bind.valueField]: { in: missing } },
         select: { [bind.valueField]: true },
-      })
+      }))
       if (exists.length) {
         const names = exists.map(r => r[bind.valueField])
         errors.push({
@@ -274,10 +275,10 @@ async function enforceDependent(modelName, bind, list, ctx, where, errors) {
     // One half came off the payload and the other has to come from the rows
     // this write is about. Distinct pairs only — a bulk update over a thousand
     // rows in three countries is three questions.
-    const stored = await own.findMany({
+    const stored = await own.findMany(untrailed({
       where,
       select: { [bind.field]: true, [bind.dependsOn]: true },
-    })
+    }))
     const seen = new Set()
     for (const row of stored) {
       const v   = names   ? list.find(r => r?.[bind.field] != null)?.[bind.field] : row[bind.field]
@@ -299,10 +300,10 @@ async function enforceDependent(modelName, bind, list, ctx, where, errors) {
   if (!pairs.length) return
 
   const values = [...new Set(pairs.map(([v]) => v))]
-  const found  = await table.findMany({
+  const found  = await table.findMany(untrailed({
     where:  setFilter(bind, values),
     select: { [bind.valueField]: true, [bind.matchField]: true },
-  })
+  }))
 
   // One value can legitimately exist under several controllers — `CA` is a
   // state of two countries — so the answer is a SET per value, never one row.

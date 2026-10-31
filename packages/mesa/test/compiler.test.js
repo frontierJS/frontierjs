@@ -4165,6 +4165,144 @@ describe('{#virtual each}', () => {
     app.destroy()
   })
 
+  // FJS-3737. A drawn row keeps its key across an array change, so it has to be
+  // handed the new item and index; the window alone not moving is no reason to
+  // skip that, and the row's own effects must outlive the block's re-run.
+  it('rebinds drawn rows when the array changes under the same keys', async () => {
+    const fn = await compileAndExec(`
+<script>
+  let rows = Array.from({ length: 50 }, (_, i) => ({ id: i + 1, name: 'Old ' + (i + 1) }))
+  function load() { rows = rows.map(r => ({ id: r.id, name: 'New ' + r.id })) }
+  function rename() { rows = rows.map((r, i) => i === 0 ? { ...r, name: 'Edited' } : r) }
+  function drop() { rows = rows.slice(1) }
+</script>
+<button class="load" onclick={load}>load</button>
+<button class="rename" onclick={rename}>rename</button>
+<button class="drop" onclick={drop}>drop</button>
+<div class="container" style="height:200px;overflow-y:auto">
+  {#virtual each rows as row, i (row.id)}
+    <div class="row" style="height:40px">{i}:{row.name}</div>
+  {/virtual}
+</div>`, runtime)
+
+    // A real mount: its root is where clicks are delegated from.
+    const c = document.createElement('div')
+    document.body.appendChild(c)
+    const anchor = document.createComment('')
+    c.appendChild(anchor)
+    runtime.mount(anchor, fn, { props: {}, root: c })
+    runtime.flushSync()
+    const drawn = () => [...c.querySelectorAll('.row')]
+    const texts = () => drawn().slice(0, 3).map(r => r.textContent.trim())
+    expect(texts()).toEqual(['0:Old 1', '1:Old 2', '2:Old 3'])
+
+    c.querySelector('.load').click(); runtime.flushSync()
+    expect(texts()).toEqual(['0:New 1', '1:New 2', '2:New 3'])
+
+    c.querySelector('.rename').click(); runtime.flushSync()
+    expect(texts()).toEqual(['0:Edited', '1:New 2', '2:New 3'])
+
+    // The deleted key's row leaves the DOM, and every drawn row is renumbered.
+    c.querySelector('.drop').click(); runtime.flushSync()
+    expect(texts()).toEqual(['0:New 2', '1:New 3', '2:New 4'])
+    drawn().forEach((r, i) => expect(r.textContent.trim()).toBe(`${i}:New ${i + 2}`))
+    c.remove()
+  })
+
+  // FJS-3738. Rows scrolled in above the window were appended after the drawn
+  // ones, so scrolling back up drew the list out of order with rows missing.
+  it('keeps drawn rows in index order scrolling down and back up', async () => {
+    const fn = await compileAndExec(`
+<script>
+  let rows = Array.from({ length: 500 }, (_, i) => ({ id: i + 1 }))
+</script>
+<div class="container" style="height:400px;overflow-y:auto">
+  {#virtual each rows as row (row.id) height=40}
+    <div class="row">{row.id}</div>
+  {/virtual}
+</div>`, runtime)
+
+    const c = document.createElement('div')
+    document.body.appendChild(c)
+    const anchor = document.createComment('')
+    c.appendChild(anchor)
+    runtime.mount(anchor, fn, { props: {}, root: c })
+    runtime.flushSync()
+    const frame = () => new Promise(r => requestAnimationFrame(() => r()))
+    await frame()
+
+    const box = c.querySelector('.container')
+    let top = 0
+    Object.defineProperty(box, 'scrollTop', { get: () => top, configurable: true })
+    Object.defineProperty(box, 'clientHeight', { get: () => 400, configurable: true })
+    const ids = () => [...c.querySelectorAll('.row')].map(r => Number(r.textContent.trim()))
+    const scrollTo = async (y) => { top = y; box.dispatchEvent(new Event('scroll')); await frame() }
+
+    const bottom = 500 * 40 - 400
+    const stops = []
+    for (let y = 0; y <= bottom; y += 280) stops.push(y)
+    stops.push(bottom)
+    for (let y = bottom; y >= 0; y -= 280) stops.push(y)
+    stops.push(0)
+
+    for (const y of stops) {
+      await scrollTo(y)
+      const drawn = ids()
+      const run = Array.from({ length: drawn.length }, (_, i) => drawn[0] + i)
+      expect({ y, drawn }).toEqual({ y, drawn: run })
+    }
+    expect(ids()[0]).toBe(1)
+    c.remove()
+  })
+
+  // FJS-3739. A row whose block is not one element -- a leading {@const} -- is a
+  // DocumentFragment; the scroll-out path called .remove() on it and threw, and
+  // the emptied fragment could never have taken the row's DOM with it.
+  it('removes a multi-node row (leading {@const}) when it scrolls out', async () => {
+    const fn = await compileAndExec(`
+<script>
+  let rows = Array.from({ length: 500 }, (_, i) => ({ id: i + 1 }))
+  const idOf = (r) => 'r' + r.id
+</script>
+<div class="container" style="height:400px;overflow-y:auto">
+  {#virtual each rows as row (row.id) height=40}
+    {@const id = idOf(row)}
+    <div class="row" data-id={id}>{row.id}</div>
+  {/virtual}
+</div>`, runtime)
+
+    const c = document.createElement('div')
+    document.body.appendChild(c)
+    const anchor = document.createComment('')
+    c.appendChild(anchor)
+    runtime.mount(anchor, fn, { props: {}, root: c })
+    runtime.flushSync()
+    const frame = () => new Promise(r => requestAnimationFrame(() => r()))
+    await frame()
+
+    const errors = []
+    const onError = (e) => errors.push(e)
+    window.addEventListener('error', onError)
+    const box = c.querySelector('.container')
+    let top = 0
+    Object.defineProperty(box, 'scrollTop', { get: () => top, configurable: true })
+    Object.defineProperty(box, 'clientHeight', { get: () => 400, configurable: true })
+    const ids = () => [...c.querySelectorAll('.row')].map(r => r.getAttribute('data-id'))
+    expect(ids()[0]).toBe('r1')
+
+    top = 8000
+    box.dispatchEvent(new Event('scroll'))
+    await frame()
+    window.removeEventListener('error', onError)
+
+    expect(errors).toEqual([])
+    const drawn = ids()
+    expect(drawn).not.toContain('r1')
+    expect(drawn).toContain('r201')
+    expect(new Set(drawn).size).toBe(drawn.length)
+    c.remove()
+  })
+
   // The options are documented (VISION §9.7) and used to be swallowed into the
   // `as` binding, so `height=48` compiled to the identifier list `row height=48`
   // and every component written from the docs died as "Unexpected identifier

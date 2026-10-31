@@ -211,6 +211,7 @@ export interface ParsedQuery {
   offset: number
   limit:  number
   after?: string    // $after — the window's far edge, opaque (`FJS-D145`)
+  total?: false     // $total: false — skip the COUNT (`FJS-D1713`); unstated counts
   select?: Record<string, boolean>
   include?: IncludeTree
   search?:         string    // $search — FTS5 via table.search()
@@ -320,7 +321,8 @@ export function parseQuery(
     offset,
     limit,
     after:        typeof afterRaw === 'string' && afterRaw !== '' ? afterRaw : undefined,
-    select:       select && Object.keys(select).length ? select : undefined,
+    total:        directives.total === false ? false : undefined,
+    select:      select && Object.keys(select).length ? select : undefined,
     include:      popRaw     != null ? parsePopulate(popRaw as PopulateParam) : undefined,
     search:       typeof searchRaw === 'string' ? searchRaw : undefined,
     withDeleted:   withDel  === true || undefined,
@@ -801,6 +803,7 @@ export async function findWindow(
   args:  Record<string, unknown>,
   after?: string,
   label = 'This list',
+  count = true,
 ): Promise<WindowResult> {
   const limit  = (args.limit  as number) ?? 0
   const offset = (args.offset as number) ?? 0
@@ -834,7 +837,26 @@ export async function findWindow(
   const ordered = typeof table.orderTotal === 'function' ? table.orderTotal(args.orderBy) : null
   const scan    = ordered ? { ...args, orderBy: ordered } : args
 
-  const { rows, total } = await table.findManyAndCount(scan)
+  // `count` false is `$total: false` (`FJS-D1713`): no COUNT, so the page fetches
+  // one row past itself and that row is the whole answer to `hasMore`.
+  let rows: unknown[]
+  let total: number | null
+  let more: boolean
+  if (count) {
+    const counted = await table.findManyAndCount(scan)
+    rows  = counted.rows
+    total = counted.total
+    more  = total > offset + rows.length
+  } else if (args.limit == null) {
+    rows  = await table.findMany(scan) as unknown[]
+    total = null
+    more  = false
+  } else {
+    const fetched = await table.findMany({ ...scan, limit: limit + 1 }) as unknown[]
+    more  = fetched.length > limit
+    rows  = more ? fetched.slice(0, limit) : fetched
+    total = null
+  }
   // No total order, no window: a list whose ties cannot be broken has no edge
   // to name, and offering one would be the same silent loss from the other end.
   const endCursor = (offset === 0 && rows.length > 0 && ordered && typeof table.cursorFor === 'function')
@@ -842,7 +864,7 @@ export async function findWindow(
     : null
   return {
     total, limit, offset, data: rows,
-    endCursor, hasMore: total > offset + rows.length,
+    endCursor, hasMore: more,
   }
 }
 
@@ -1514,6 +1536,15 @@ const columns = writableColumns(db, m.accessor)
         if (q.onlyExpired)   args.onlyExpired   = true
         if (q.asOf)          args.asOf          = q.asOf
 
+        if (q.total === false) {
+          const fetched = await table.search(q.search, { ...args, limit: q.limit + 1 })
+          const more    = fetched.length > q.limit
+          return {
+            total: null, limit: q.limit, offset: q.offset,
+            data: more ? fetched.slice(0, q.limit) : fetched, hasMore: more,
+          }
+        }
+
         const rows  = await table.search(q.search, args)
         const total = (!q.offset && rows.length < q.limit)
           ? rows.length
@@ -1557,7 +1588,7 @@ const columns = writableColumns(db, m.accessor)
       // The window (`FJS-D145`) — a caller asking `$after` is growing a
       // window rather than stepping to a page. Both paths are `findWindow`'s,
       // because a service that assembles its own query answers the same two.
-      return await findWindow(table, args, q.after, modelLabel(ctx))
+      return await findWindow(table, args, q.after, modelLabel(ctx), q.total !== false)
     },
 
     /**

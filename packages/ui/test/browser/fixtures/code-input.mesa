@@ -21,6 +21,9 @@
 
   const long = Array.from({ length: 65 }, (_, i) => 'row ' + i).join('\n')
 
+  // Enough chunks that most are off screen, with the widest line in one of them.
+  const wide = Array.from({ length: 3000 }, (_, i) => i === 2000 ? 'w'.repeat(900) : 'row ' + i).join('\n')
+
   window.__value = undefined
 
   // The Merge fields menu of a template editor: a button outside the box that
@@ -46,7 +49,9 @@
   <CodeInput id="bounded" language="js" numbered rows={4} maxRows={8} value={long} />
   <button id="below" type="button">below the box</button>
 
-  <CodeInput id="short" rows={4} maxRows={8} value={'one\ntwo'} />
+  <CodeInput id="wide" language="js" rows={4} maxRows={8} value={wide} />
+
+  <CodeInput id="short"rows={4} maxRows={8} value={'one\ntwo'} />
 
   <CodeInput name="body" label="Body" language="md" value="# Title" />
 

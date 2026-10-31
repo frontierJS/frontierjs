@@ -505,7 +505,7 @@
         {#if p.private}<Badge size="xs">private</Badge>
         {:else if p.affected}<Badge tone="info" size="xs">{plural(p.commits ?? 0, 'commit')} since {p.lastTag || 'never released'}</Badge>
         {:else}<Badge size="xs">unchanged</Badge>{/if}
-        {#if p.dirty}<Badge tone="danger" size="xs">uncommitted</Badge>{/if}
+        {#if p.dirty}<Badge tone="warning" size="xs">uncommitted</Badge>{/if}
         {#if regBy[p.name]}<span class="text-xs text-muted">npm {regBy[p.name].remote ?? '—'} · {regBy[p.name].status}</span>{/if}
       </div>
     {/each}

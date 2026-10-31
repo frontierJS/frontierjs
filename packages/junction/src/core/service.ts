@@ -3289,10 +3289,22 @@ function overNoModel(name: string | undefined) {
 // ─── Channel fan-out ──────────────────────────────────────────────────────
 
 /**
+ * The channel manager for a call, or undefined where the plugin is not loaded.
+ * `ctx.locals.__channels` is what a hand-built context carries; a real call
+ * reaches it through `ctx.app`. Read `app.channels` bare and an app without the
+ * plugin throws from the slot guard, so the probe is `'channels' in app`.
+ */
+export function channelsOf(ctx: ServiceContext): unknown {
+  const stamped = ctx.locals?.__channels
+  if (stamped) return stamped
+  const app = ctx.app as unknown as object | undefined
+  return app && 'channels' in app ? (app as { channels: unknown }).channels : undefined
+}
+
+/**
  * Broadcast one record to the channels a service declares.
  *
- * No-ops unless BOTH are true: the channels plugin is loaded (it stamps the
- * manager on every context), and the service declared `channel:`. Broadcasting
+ * No-ops unless BOTH are true: the channels plugin is loaded (`app.channels`), and the service declared `channel:`. Broadcasting
  * is opt-in because a channel name is a decision about WHO is listening that
  * only the app can make, not because a frame would be ungraded: a broadcast is
  * not a SELECT, so `@@allow` — which compiles into a WHERE — cannot reach one,
@@ -3318,7 +3330,7 @@ async function announceToChannels(
   const decl = service.channel as ChannelDeclaration | undefined
   if (decl === false) return
 
-  const manager = ctx.locals.__channels as {
+  const manager = channelsOf(ctx) as {
     channel:  (name: string) => unknown
     announce: (event: string, data: unknown, ctx: ServiceContext, fn: (d: unknown, c: ServiceContext) => unknown, accessor?: string) => Promise<void>
     defaultAnnouncer?: ((data: unknown, ctx: ServiceContext) => unknown) | null

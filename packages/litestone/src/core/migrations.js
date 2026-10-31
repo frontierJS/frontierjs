@@ -14,7 +14,7 @@
 // browser half answers `existsSync` with false, which is the true answer for a
 // device that has no migrations directory.
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from '#host'
-import { resolve, join } from 'path'
+import { basename, resolve, join } from 'path'
 import { slug } from '@frontierjs/toolbelt/inflect'
 import { openDatabase } from './engine.js'
 import {
@@ -595,6 +595,14 @@ function executableStatements(stmts) {
 // getting it wrong leaves a connection inside an open transaction.
 export function migrationStatements(filePath) {
   return executableStatements(loadMigrationSql(filePath).stmts)
+}
+
+// Records a file replayed outside apply() as applied, with the checksum apply()
+// compares. Without it a template's clone has every table and no history, so
+// an app that runs apply() at boot replays the files over their own tables, and
+// the first one that is not idempotent (an ADD COLUMN) fails every test.
+export function recordReplayed(db, filePath) {
+  recordMigration(db, basename(filePath), loadMigrationSql(filePath).sql)
 }
 
 // Step 11 of SQLite's own 12-step ALTER procedure, and it was the missing one.

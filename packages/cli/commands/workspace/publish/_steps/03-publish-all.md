@@ -6,26 +6,47 @@ description: Pack each package once and ship that tarball to each destination th
 <script>
 import { execSync } from 'child_process'
 import { join }     from 'path'
+
+// The commit each package ships from, grouped so one checkout serves every
+// package tagged on it. The tag, not HEAD: a commit landing after the tag is not
+// in the release. A --dry run has written no tag, so it packs HEAD.
+function releaseCommits(released, releaseTag, dry) {
+  const git = (cwd, args) => execSync(`git ${args}`, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  const commits = new Map()
+  for (const entry of released) {
+    const repo = git(entry.dir, 'rev-parse --show-toplevel')
+    const tag  = releaseTag(entry.name, entry.newVersion)
+    let sha = ''
+    try { sha = git(repo, `rev-parse --verify --quiet ${JSON.stringify(`refs/tags/${tag}^{commit}`)}`) } catch {}
+    if (!sha && !dry) throw new Error(`${tag} is not tagged, so there is no commit to pack it from — nothing published`)
+    sha ||= git(repo, 'rev-parse HEAD')
+    const key = `${repo}\0${sha}`
+    if (!commits.has(key)) commits.set(key, { repo, sha, entries: [] })
+    commits.get(key).entries.push(entry)
+  }
+  return [...commits.values()]
+}
 </script>
 
 ```js
 const { released, tag, otp, to, missing, interactive, prompts, repo, releaseTag, releaseSubject } = $.config
 if (!released?.length) { log.info('Nothing to publish'); return }
 
-const { packPackage } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
-const { fliTmpRoot }  = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
+const { packAtCommit } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
+const { fliTmpRoot }   = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
 
 // One pack per package, kept for the run: the registry copy and every other
-// destination are this file, so they agree by construction rather than by two
-// packs of a tree that may have moved between them. Packed before the first
-// prompt, so a package that does not pack is named before any 2FA round trip.
-// Under fli's own tmp root, not the workspace: a dry run must leave no file
-// behind, and a repository's .gitignore is not something to count on.
+// destination are this file, so they agree by construction. Packed from a
+// checkout of the tagged commit, so the file holds what the tag holds whatever
+// lands in the working tree meanwhile. Packed before the first prompt, so a
+// package that does not pack is named before any 2FA round trip. Under fli's
+// own tmp root: a dry run must leave no file behind.
 const packDir = join(fliTmpRoot(global.fliRoot), 'publish', String($.config.startTime))
-for (const entry of released) {
-  const { file, path } = packPackage({ name: entry.name, dir: entry.dir, destination: packDir })
-  entry.tarball = path
-  log.info(`  packed ${file}${flag.dry ? ' (the bump is not written on --dry, so this is the tree as it stands)' : ''}`)
+for (const commit of releaseCommits(released, releaseTag, flag.dry)) {
+  for (const { name, file, path } of packAtCommit({ ...commit, destination: packDir, scratch: packDir })) {
+    released.find(e => e.name === name).tarball = path
+    echo`  {dim packed} ${file} {dim at ${commit.sha.slice(0, 12)}${flag.dry ? ', HEAD — the bump is not written on --dry' : ''}}`
+  }
 }
 
 // A release in flight goes only where it is missing; a fresh one goes everywhere

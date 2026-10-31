@@ -13,11 +13,10 @@ import { existsSync } from 'fs'
 const { planned, members } = $.config
 if (!planned?.length) return
 
-const { dirtyPackages, peerDrift, movedDependencies, publishOrder, publishRefusals, formatRefusals } =
+const { peerDrift, movedDependencies, publishOrder, publishRefusals, formatRefusals } =
   await import(new URL('file://' + global.fliRoot + '/core/publish-preflight.js'))
 
 const stateOf = (name, dir) => $.git.pkgState(name, dir)
-const dirty  = dirtyPackages(planned.map(p => ({ name: p.pkg.name, dir: p.dir })), stateOf)
 const drift  = peerDrift((members ?? []).map(m => ({ name: m.pkg.name, pkg: m.pkg })), planned.map(p => ({ name: p.pkg.name, newVersion: p.newVersion })))
 const moved  = movedDependencies(planned.map(p => ({ name: p.pkg.name, pkg: p.pkg })),
                                  (members ?? []).map(m => ({ name: m.pkg.name, dir: m.dir, pkg: m.pkg })), stateOf)
@@ -33,8 +32,8 @@ if (existsSync(siteData)) {
 }
 
 const refusals = publishRefusals({
-  dirty, drift, moved, cycles: sorted.cycles, heldBack,
-  force: { dirty: flag['allow-dirty'], peers: flag['allow-peer-drift'] },
+  drift, moved, cycles: sorted.cycles, heldBack,
+  force: { peers: flag['allow-peer-drift'] },
 })
 
 if (refusals.length) for (const line of formatRefusals(refusals)) log.info(line)

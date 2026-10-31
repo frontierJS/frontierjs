@@ -76,6 +76,30 @@ describe('the server answers a window', () => {
     expect(res.hasMore).toBe(false)
   })
 
+  // FJS-3765: a large list opts out of the COUNT; hasMore comes from a limit + 1 fetch.
+  test('$total: false skips the count — total is null, hasMore and the edge still answer', async () => {
+    const db  = await shop()
+    const svc = buildService({ model: 'Item' })
+
+    const first: any = await svc.find(svcCtx(db, { directives: { limit: 10, orderBy: 'id', total: false } }))
+    expect(first.total).toBeNull()
+    expect(first.data.length).toBe(10)
+    expect(first.hasMore).toBe(true)
+    expect(typeof first.endCursor).toBe('string')
+
+    const last: any = await svc.find(svcCtx(db, { directives: { limit: 10, offset: 20, orderBy: 'id', total: false } }))
+    expect(last.total).toBeNull()
+    expect(last.data.length).toBe(5)
+    expect(last.hasMore).toBe(false)
+
+    const exact: any = await svc.find(svcCtx(db, { directives: { limit: 25, orderBy: 'id', total: false } }))
+    expect(exact.data.length).toBe(25)
+    expect(exact.hasMore).toBe(false)
+
+    const counts: any = await svc.find(svcCtx(db, { directives: { limit: 10, orderBy: 'id' } }))
+    expect(counts.total).toBe(25)
+  })
+
   test('$after is the keyset path — no total, and it resumes from the edge', async () => {
     const db  = await shop()
     const svc = buildService({ model: 'Item' })

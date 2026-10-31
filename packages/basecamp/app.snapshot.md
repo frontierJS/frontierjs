@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-59 services · 45 routes · 23 plugins · prefix (none)
+59 services · 46 routes · 24 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -25,6 +25,7 @@ text, so a body that elevates through a helper is not listed.
 | `apiKeys.owners` | standing 5 or above — declared `gate: 5` |
 | `appBackups.take` | standing 5 or above — declared `gate: 5` |
 | `appBackups.download` | standing 5 or above — declared `gate: 5` |
+| `appBackups.upload` | standing 5 or above — declared `gate: 5` |
 | `apps.unplace` | standing 4 or above — declared `gate: 4` |
 | `apps.disablePush` | standing 5 or above — declared `gate: 5` |
 | `backups.take` | **any signed-in caller** — floor, read gate 5; standing not graded |
@@ -278,15 +279,17 @@ name when it declares none.
 
 ### `appBackups` · model `AppBackup`
 
-- **methods** — `find`, `get`, `take`, `rescan`, `download`
-- **custom methods** — `take`, `rescan`, `download`
+- **methods** — `find`, `get`, `take`, `rescan`, `download`, `upload`
+- **custom methods** — `take`, `rescan`, `download`, `upload`
 - **also answers to** — `app-backups`
 - **input** — `rescan` takes `AppBackupRescan`
 - **input** — `take` takes `AppBackupTake`
+- **input** — `upload` takes `AppBackupUpload`
 - **who may call** —
   - `take` — standing 5 or above — declared `gate: 5`; body writes as the app
   - `rescan` — standing 5 or above — declared `gate: 5`
   - `download` — standing 5 or above — declared `gate: 5`; body writes as the app
+  - `upload` — standing 5 or above — declared `gate: 5`; body writes as the app
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -300,6 +303,7 @@ name when it declares none.
 | before | `update` | `autoValidate` |
 | before | `take` | `validateInput` |
 | before | `rescan` | `validateInput` |
+| before | `upload` | `validateInput` |
 
 ### `appDrills` · model `AppDrill`
 
@@ -1590,6 +1594,7 @@ once; everything else was registered by hand or by a plugin.
 | POST | `/{service}/{id}` | service |
 | PUT | `/{service}/{id}` | service |
 | OPTIONS | `/*` | raw |
+| PUT | `/app-archive-upload/{appId}` | raw |
 | POST | `/auth/email/verify` | raw |
 | POST | `/auth/email/verify/request` | raw |
 | POST | `/auth/login` | raw |
@@ -1644,10 +1649,11 @@ In configure order, which is what `requires:` is checked against.
 14. `terminalRoute`
 15. `machineStreamRoute`
 16. `backupArchiveRoute`
-17. `staticRoutes`
-18. `basecamp-cloud-accounts`
-19. `basecamp-backup-destinations`
-20. `basecamp-push`
-21. `basecamp-dns-follows-fleet`
-22. `basecamp-cleanup`
-23. `corsPlugin`
+17. `appArchiveUploadRoute`
+18. `staticRoutes`
+19. `basecamp-cloud-accounts`
+20. `basecamp-backup-destinations`
+21. `basecamp-push`
+22. `basecamp-dns-follows-fleet`
+23. `basecamp-cleanup`
+24. `corsPlugin`

@@ -207,9 +207,25 @@ Goal: the tarball matches its tag by construction.
 Done when: a dry-run pack from a worktree is byte-equal to one from a clean
 main tree at the same sha, and `--allow-dirty` is gone.
 
-- [ ] 1.1 03 packs from a worktree of the release commit, removed at teardown.
-- [ ] 1.2 Drop `--allow-dirty` and the dirty-package refusal; a dirty tree no
+- [x] 1.1 03 packs from a worktree of the release commit, removed at teardown.
+  - 2026-10-31: `packAtCommit` in `core/vendor.js` (worktree add at the sha,
+    `bun install --frozen-lockfile`, pack, remove in `finally`); 03 groups
+    packages by repo and tag sha, and `--dry` packs HEAD. A dry css run takes
+    9s and its tarball is byte-equal to one from a separate clean checkout. For
+    mesa (dirty in the main tree) the worktree pack equals the clean checkout
+    and differs from the dirty tree's pack. The 0.3 "from the LOCKFILE"
+    comments are corrected. The lockfile refresh now also feeds 03's frozen
+    install.
+- [x] 1.2 Drop `--allow-dirty` and the dirty-package refusal; a dirty tree no
   longer reaches the bytes.
+  - 2026-10-31: `dirtyPackages`, the `dirty-tree` refusal and the flag are
+    gone. `workspace-dep-moved` no longer counts a dependency's uncommitted
+    files, only its commits since its tag. The publish page and the console's
+    Ship screen mark an uncommitted package `warning`, not `danger`. A dry
+    `--filter mesa --filter toolbelt` with mesa dirty clears preflight and packs
+    both at HEAD. The `in-flight-moved` text still says npm packs the working
+    directory; 1.3 rewrites it. `--changed-only` picked by uncommitted files
+    that no longer ship, so it is removed too (`FJS-D1728`).
 - [ ] 1.3 `in-flight-moved` per Q3, for a tag the remote holds. A tag only
   this clone holds was never public, and its sha is usually the one the hook
   refused (0.1), so it is not published from (Q5).

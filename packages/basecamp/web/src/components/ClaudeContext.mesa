@@ -2,9 +2,9 @@
   // What a project's Claude Code session loads before the first prompt, on the
   // Claude Code tab (api services/claude: context).
   //
-  // The total is the API's own count for that session's first request; the parts
-  // are an apportioning of it by character share, which is an estimate. A read
-  // that did not parse says *unavailable* with its reason.
+  // The total is the API's own count for that session's first request, and so
+  // are the parts when `basis` is counted; an estimated split says so with its
+  // reason. A read that did not parse says *unavailable* with its reason.
   import { at }       from '../lib/datetime.js'
   import { count, share } from '../lib/claude-format.js'
   import { claude }   from '../resources/Claude.mesa'
@@ -70,6 +70,9 @@
     <p class="text-sm text-muted" id="claude-context-from">
       From a session on {c.model ?? 'an unnamed model'}, Claude Code {c.version ?? 'version unknown'}, {at(c.at)}.
     </p>
+    {#if c.basis === 'estimated'}
+      <p id="claude-context-estimated"><Badge tone="warning">estimated</Badge> <span class="text-sm">Parts split by character share: {c.estimatedWhy}</span></p>
+    {/if}
     <Table id="claude-context-parts" columns={COLUMNS} rows={rowsOf(c)} compact striped hover={false} emptyText="No parts were found">
       {#snippet row(p)}
         <tr>
@@ -81,8 +84,10 @@
     </Table>
     <p class="text-sm text-muted">
       Shares are of {c.window ? `the ${count(c.window)} token window` : 'the measured total'}.
-      The totals are the API's own count for that session's first request; the parts are apportioned
-      from them by character share, an estimate. Tool schemas Claude Code defers are not in the first request.
+      {c.basis === 'counted'
+        ? `Totals and parts are the API's own count; the parts sum to ${count(c.parts.reduce((n, p) => n + p.tokens, 0))}.`
+        : `The totals are the API's own count; the parts are apportioned from them.`}
+      Tool schemas Claude Code defers are not in the first request.
     </p>
   {/if}
 </div>

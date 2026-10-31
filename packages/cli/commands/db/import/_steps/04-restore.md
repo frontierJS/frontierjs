@@ -1,6 +1,7 @@
 ---
 title: 04-restore
 description: Replace local dev DB with the downloaded backup
+skip: "$.config.viaBasecamp"
 ---
 
 ```js
@@ -15,5 +16,5 @@ $.exec({
   command: `sqlite3 ${dbPath}/development.db 'UPDATE actions SET pausedAt = createdAt'`,
   dry: flag.dry
 })
-if (!flag.dry) log.success('Local DB restored from backup')
+if (!flag.dry) echo(chalk`  {green ✓} {dim development.db restored from} ${backupFile}`)
 ```

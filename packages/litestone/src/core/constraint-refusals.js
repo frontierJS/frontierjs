@@ -14,6 +14,7 @@ import { ValidationError } from './validate.js'
 import { AccessDeniedError } from './plugin.js'
 import { requireGrantSubset } from '../plugins/capability.js'
 import { checkCreatePolicy } from './policy.js'
+import { untrailed } from './trail-entries.js'
 import {
   SoftDeletedUniqueError, UniqueConflictError, uniqueConflictColumns, isUniqueConflict,
   checkViolationExpr, isCheckViolation, datatypeMismatch, isDatatypeMismatch,
@@ -572,7 +573,7 @@ export function makeConstraintRefusals(shape, ctx, deps) {
       if (!tbl) continue
       for (let i = 0; i < ids.length; i += 500) {
         let hit = null
-        try { hit = await tbl.findFirst({ where: { [idField]: { in: ids.slice(i, i + 500) } }, select: { [idField]: true } }) }
+        try { hit = await tbl.findFirst(untrailed({ where: { [idField]: { in: ids.slice(i, i + 500) } }, select: { [idField]: true } })) }
         catch (e) { if (!(e instanceof AccessDeniedError)) throw e }
         if (hit) return new ForeignKeyError(modelName, { child: { model, id: hit[idField] } })
       }

@@ -37,12 +37,22 @@ const localDay = (iso) => {
 // Facts about the FILE are what this chunk saw: `title` is the last `ai-title`
 // line and `firstPrompt` the first real user line, either null when the chunk
 // holds none, so a caller appending keeps what it had.
+//
+// **A skill colors the whole turn it loads in**, as `/stats` reads it: every
+// message from its `Base directory for this skill:` line to the next prompt
+// carries its name, a slash command's and a `Skill` call's alike. Only the
+// message that CALLED it would put each skill under 1% (`FJS-D1733`). A turn
+// can straddle a chunk, so `skills` passes in the turn open at the chunk's start
+// and `file.skills` hands back the one open at its end.
 
 const PROMPT_CHARS = 200
 
 // A slash command's own echo (`/clear`) and a harness reminder are the first
 // user lines of a session and nothing a person typed.
 const WRAPPED = /^<(command-name|command-message|local-command|system-reminder)/
+// A slash command's echo starts a turn; a reminder and a command's output do not.
+const NOT_A_TURN = /^<(local-command|system-reminder)/
+const SKILL_LOAD = /^Base directory for this skill: (\S+)/
 
 const textOf = (content) => {
   if (typeof content === 'string') return content
@@ -51,12 +61,12 @@ const textOf = (content) => {
   return block ? block.text : null
 }
 
-export const readMessages = (text, { final = false } = {}) => {
+export const readMessages = (text, { final = false, skills = [] } = {}) => {
   const lastNl = text.lastIndexOf('\n')
   const end = final ? text.length : lastNl + 1
   const body = text.slice(0, end)
   const consumed = Buffer.byteLength(body)
-  const file = { sessionId: null, cwd: null, headless: false, title: null, firstPrompt: null, startedAt: null, lastAt: null }
+  const file = { sessionId: null, cwd: null, headless: false, title: null, firstPrompt: null, startedAt: null, lastAt: null, skills: [...skills] }
   const byId = new Map(), list = []
   const lines = body.split('\n')
   if (lines.length && lines[lines.length - 1] === '') lines.pop()
@@ -70,7 +80,8 @@ export const readMessages = (text, { final = false } = {}) => {
     const wantsCwd = !haveCwd && line.includes('"cwd"')
     const wantsPrompt = !havePrompt && line.includes('"type":"user"')
     const wantsTitle = line.includes('"type":"ai-title"')
-    if (!(edge || wantsUsage || wantsCwd || wantsPrompt || wantsTitle)) continue
+    const wantsTurn = line.includes('"type":"user"') && !line.includes('"type":"tool_result"')
+    if (!(edge || wantsUsage || wantsCwd || wantsPrompt || wantsTitle || wantsTurn)) continue
     let j
     try { j = JSON.parse(line) } catch { continue }
     if (!j || typeof j !== 'object') continue
@@ -83,6 +94,13 @@ export const readMessages = (text, { final = false } = {}) => {
       const t = textOf(j.message?.content)?.trim()
       if (t && !WRAPPED.test(t)) { havePrompt = true; file.firstPrompt = t.slice(0, PROMPT_CHARS) }
     }
+    if (j.type === 'user') {
+      const c = j.message?.content
+      const t = Array.isArray(c) && c.some(b => b?.type === 'tool_result') ? null : textOf(c)
+      const load = j.isMeta && t ? SKILL_LOAD.exec(t) : null
+      if (load) { const name = load[1].split('/').pop(); if (!file.skills.includes(name)) file.skills.push(name) }
+      else if (!j.isMeta && t && !NOT_A_TURN.test(t)) file.skills = []
+    }
 
     const u = j.message?.usage
     if (!u || !j.timestamp) continue
@@ -94,6 +112,7 @@ export const readMessages = (text, { final = false } = {}) => {
     let m = id ? byId.get(id) : null
     if (m) {
       for (const t of tools) if (!m.tools.includes(t)) m.tools.push(t)
+      for (const s of file.skills) if (!m.skills.includes(s)) m.skills.push(s)
       continue
     }
     const cacheWrite = u.cache_creation_input_tokens ?? 0
@@ -109,6 +128,7 @@ export const readMessages = (text, { final = false } = {}) => {
       cacheRead: u.cache_read_input_tokens ?? 0,
       output: u.output_tokens ?? 0,
       tools: [...new Set(tools)],
+      skills: [...file.skills],
     }
     if (id) byId.set(id, m)
     list.push(m)

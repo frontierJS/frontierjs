@@ -40,14 +40,14 @@ Proof: litestone, mesa, sierra and ui suites green after the change; `count.mjs`
 2. ~~**FJS-3748**~~ — closed: an owned Response keeps its body text and is gzipped from it; the rewrap measured ~30 µs, not ~90.
 3. ~~**FJS-3749**~~ — closed: `splitParams` carries the flags and refusal reports, the bridge splits once; measured 1–3 µs a request, not ~10.
 4. ~~**FJS-3750**~~ — closed: the pk fast path takes a field-policy model, since `readAll` applies the policy on either path; `@from` still excluded (`FJS-223`). 11 → 3.9 µs.
-5. **FJS-3751** — cold navigation awaits component, layouts, loader import and `load()` in series: 1–2 RTT lost on a split route. Reasoning only.
+5. ~~**FJS-3751**~~ — closed: the loader module import starts beside the layout chain, so `load()` no longer waits a round trip behind the component chunk.
 6. ~~**FJS-3756**~~ — closed: `bridge.fromFrame`/`toFrame` read and shape a socket call by the HTTP rules; one `callContext()` literal.
 7. ~~**FJS-3752**~~ — closed: the cost was `Object.entries`, not the closures; `Object.keys` and a regex-free `quoteIdent` halve `buildWhere` (four-key 3.0 → ~1.5 µs). The shape cache is not worth its key.
 8. ~~**FJS-3753**~~ — closed: the visible columns and the hidden set are cached per (schemaKey, accessor) and the payload is tested in place; a whole row 2.5 → 0.75 µs, a 100-row bulk ~230 → ~65 µs.
 9. ~~**FJS-3754**~~ — closed: the base `find` and `get` are marked derived and skip both watchers, since `parseQuery` reads everything; `aggregate` stays watched. ~9 µs a find, not 3.5.
 10. ~~**FJS-3755**~~ — closed: `$checkWhere` rebuilt the key sets the table guard caches; it reads `whereKeysFor` now, 2.6 → 0.86 µs a two-key filter. The id-write `parseQuery` measured ~0.35 µs and was left.
-11. **FJS-3757** — `$$eachBlock` allocates `keyCount`, `oldBlocks`, `newBlocks` before the head/tail scan can say nothing moved. Another 30–50 µs at n=1000.
-12. **FJS-3760** — Form rebuilds `$context.form` and `errors` as fresh objects per change, so every Field re-renders per keystroke. Unmeasured.
+11. ~~**FJS-3757**~~ — closed: an update that keeps every key syncs the blocks and returns before the key count, and the blocks are kept beside `prevKeys`; same keys 121 → ~30 µs at a thousand rows. The middle-only key count was left: a repeated tail key must become the stand-in.
+12. ~~**FJS-3760**~~ — closed: `_recompute` keeps `errors` when the new map holds the same messages, so `$context.form` is not rebuilt per keystroke. 20 fields: 80 schema reads per keystroke to 0, ~1450 to ~400 µs in Chrome.
 13. **FJS-3761** — an app-wide `around` hook exists only to stamp `locals.__channels`.
 14. **FJS-3762** — delegated handler defines/deletes `currentTarget` on the Event per node; needs a Chrome bench before acting.
 15. **FJS-3759** — the junction bench sends no `content-length`, so it measures a path browsers never take.
@@ -65,7 +65,7 @@ Proof: litestone, mesa, sierra and ui suites green after the change; `count.mjs`
 
 ## Refuted — do not spend here
 
-Read hydration (`read()`/`readAll()` within 10% of a hand-written hydrator). AsyncLocalStorage (0.1 µs per `run`, 12–15 `getStore` per write). Gate plugin overhead (unmeasurable gated vs ungated). The signal/effect engine. WS fan-out (already stringify-once per cohort). Toolbelt `inflect`/`directives` (table-first, module-level). Junction's service index (cached by `services.version`). The browser client `_request`. `UPDATE … RETURNING` vs `UPDATE` then `SELECT` (equal).
+Read hydration (`read()`/`readAll()` within 10% of a hand-written hydrator). AsyncLocalStorage (0.1 µs per `run`, 12–15 `getStore` per write). Gate plugin overhead (unmeasurable gated vs ungated). The signal/effect engine. WS fan-out (already stringify-once per cohort). Toolbelt `inflect`/`directives` (table-first, module-level). Junction's service index (cached by `services.version`). The browser client `_request`. `UPDATE … RETURNING` vs `UPDATE` then `SELECT` (equal). The mesa delegated handler's per-node `defineProperty`/`delete` of `currentTarget` and per-event `Set` (`FJS-3762`): real Chrome, 200k dispatches through a nested root, costs 4–5 µs per event with a handler and 2–3 µs with none, and a define-once/lazy-Set rewrite moved the handler path by nothing (4.7–5.1 µs either way) and the no-handler path by about 1 µs.
 
 ## Not reached
 

@@ -26,7 +26,21 @@
 /// **No `@@gate`.** Written by the host, as above: the trail
 /// holds the before- and after-image of every audited write, every tenant's
 /// included, so the host states who may read it. `@@gate(8)` is the system
-/// level the auth models use.
+/// level the auth models use, and a service over it answers nothing to anyone.
+/// To let a role read its own tenant's trail, state a level that admits the
+/// caller and a row policy that hides the rest (`200` with no rows, not `403`):
+///
+/// ```lite
+/// model AuditTrail {
+///   id Int @id @default(autoincrement())
+///   @@trait(AuditTrail) @@db(audit) @@tenant(none) @@gate(4.8.8.8)
+///   @@allow(read, auth().kindOfStaff == 'privacyOfficer' && tenant == auth().clinicId)
+/// }
+/// ```
+///
+/// `tenant` is stamped only when the actor carries one, so system writes and
+/// engine reads have a null `tenant` and fall outside every such policy.
+/// `docs/trail.md` § Reading the trail as a reader.
 trait AuditTrail {
   operation     String
   model         String

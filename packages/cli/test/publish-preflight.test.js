@@ -8,7 +8,7 @@
 
 import { describe, test, expect } from 'bun:test'
 
-import { satisfiesRange, dirtyPackages, peerDrift, movedDependencies, publishOrder, writePins,
+import { satisfiesRange, peerDrift, movedDependencies, publishOrder, writePins,
          publishRefusals, formatRefusals, matchesSelector, unpublished } from '../core/publish-preflight.js'
 
 describe('a version against a range', () => {
@@ -48,22 +48,6 @@ describe('a version against a range', () => {
     expect(satisfiesRange('0.1.0', '0.1.x')).toBeNull()
     expect(satisfiesRange('0.1.0', '')).toBeNull()
     expect(satisfiesRange('not-a-version', '^0.1.0')).toBeNull()
-  })
-})
-
-describe('a dirty package', () => {
-  const planned = [{ name: 'a', dir: '/a' }, { name: 'b', dir: '/b' }]
-
-  test('is reported with its files', () => {
-    const found = dirtyPackages(planned, (name) =>
-      name === 'a' ? { dirty: true, files: [' M src/x.js'] } : { dirty: false, files: [] })
-    expect(found).toHaveLength(1)
-    expect(found[0].name).toBe('a')
-    expect(found[0].files).toEqual([' M src/x.js'])
-  })
-
-  test('and a clean release reports nothing', () => {
-    expect(dirtyPackages(planned, () => ({ dirty: false, files: [] }))).toEqual([])
   })
 })
 
@@ -120,19 +104,19 @@ describe('a workspace dependency that moved past its tag', () => {
   test('commits since its tag, and not in the release, is refused with no override', () => {
     const moved = movedDependencies([outpost], members, state({ commits: [{}, {}] }))
     expect(moved).toEqual([{ by: '@frontierjs/outpost', dep: '@frontierjs/litestone', version: '1.1.10',
-      tag: '@frontierjs/litestone@1.1.10', commits: 2, files: 0 }])
+      tag: '@frontierjs/litestone@1.1.10', commits: 2 }])
     const [r] = publishRefusals({ moved })
     expect(r).toMatchObject({ check: 'workspace-dep-moved', override: null })
     expect(r.detail[0]).toContain('2 commit(s) since @frontierjs/litestone@1.1.10')
   })
 
-  test('uncommitted files and a dependency never tagged are refused too', () => {
-    expect(movedDependencies([outpost], members, state({ files: ['x'] }))).toHaveLength(1)
+  test('a dependency never tagged is refused too', () => {
     expect(movedDependencies([outpost], members, state({ lastTag: '' }))[0].tag).toBe(null)
   })
 
-  test('at its tag, in the release, or a devDependency, is allowed', () => {
+  test('at its tag (uncommitted files or not), in the release, or a devDependency, is allowed', () => {
     expect(movedDependencies([outpost], members, state())).toEqual([])
+    expect(movedDependencies([outpost], members, state({ files: ['x'] }))).toEqual([])
     const both = [outpost, { name: '@frontierjs/litestone', pkg: {} }]
     expect(movedDependencies(both, members, state({ commits: [{}] }))).toEqual([])
     const dev = { name: '@frontierjs/outpost', pkg: { devDependencies: { '@frontierjs/litestone': 'workspace:*' } } }
@@ -182,19 +166,17 @@ describe('publish order', () => {
 })
 
 describe('the verdict', () => {
-  const dirty = [{ name: 'mesa', files: [' M a.js'] }]
+  const moved = [{ by: 'ui', dep: 'mesa', version: '0.1.0', tag: 'mesa@0.1.0', commits: 1 }]
   const drift = [{ kind: 'excluded', by: 'ui', dep: 'mesa', range: '^0.1.0', version: '0.2.0' }]
 
   test('reports every reason, not the first', () => {
-    const r = publishRefusals({ dirty, drift })
-    expect(r.map(x => x.check)).toEqual(['dirty-tree', 'peer-range'])
+    const r = publishRefusals({ moved, drift })
+    expect(r.map(x => x.check)).toEqual(['workspace-dep-moved', 'peer-range'])
   })
 
-  test('each override silences its own refusal and no other', () => {
-    expect(publishRefusals({ dirty, drift, force: { dirty: true } }).map(r => r.check))
-      .toEqual(['peer-range'])
-    expect(publishRefusals({ dirty, drift, force: { peers: true } }).map(r => r.check))
-      .toEqual(['dirty-tree'])
+  test('an override silences its own refusal and no other', () => {
+    expect(publishRefusals({ moved, drift, force: { peers: true } }).map(r => r.check))
+      .toEqual(['workspace-dep-moved'])
   })
 
   test('a clean release refuses nothing', () => {
@@ -224,11 +206,11 @@ describe('the verdict', () => {
 
 describe('what a person reads', () => {
   test('a refusal names the check, the reason, the fix and the override', () => {
-    const out = formatRefusals(publishRefusals({ dirty: [{ name: 'mesa', files: [' M a.js'] }] })).join('\n')
-    expect(out).toContain('dirty-tree')
-    expect(out).toContain('npm packs the working directory')
-    expect(out).toContain('--allow-dirty')
-    expect(out).toContain('commit or stash')
+    const out = formatRefusals(publishRefusals({ drift: [{ kind: 'excluded', by: 'ui', dep: 'mesa', range: '^0.1.0', version: '0.2.0' }] })).join('\n')
+    expect(out).toContain('peer-range')
+    expect(out).toContain('a caret below 1.0 pins the minor')
+    expect(out).toContain('--allow-peer-drift')
+    expect(out).toContain('bump `patch`')
   })
 
   test('a note does not say the release is unpublishable', () => {

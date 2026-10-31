@@ -79,7 +79,13 @@ async function presignFor(app: App, dest: BackupDestination, method: 'PUT' | 'GE
 /** One object key and the URL that writes it. */
 async function mintUpload(app: App, dest: BackupDestination, appId: string, stamp: string): Promise<{ key: string; url: string }> {
   const key = keyUnder(dest, `${appId}-${stamp}.tar.gz`)
-  return { key, url: await presignFor(app, dest, 'PUT', key, UPLOAD_URL_TTL_S) }
+  return { key, url: await mintPut(app, dest, key) }
+}
+
+/** The pre-signed PUT for one key — a machine's archive, or one a person
+ *  uploaded through the hub (`domain/backup/app-archive-import.ts`). */
+export function mintPut(app: App, dest: BackupDestination, key: string): Promise<string> {
+  return presignFor(app, dest, 'PUT', key, UPLOAD_URL_TTL_S)
 }
 
 /** The URL that reads one backup's archive back out of its bucket (`FJS-D1521`).

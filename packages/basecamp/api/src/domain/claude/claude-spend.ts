@@ -145,6 +145,10 @@ export interface Insights {
   projects:       Array<Share & { cwd: string }>
   models:         Array<Share & { model: string }>
   tools:          Array<Share & { tool: string }>
+  /** Overlapping: a message carries every skill loaded in its turn, at its whole cost. */
+  skills:         Array<Share & { skill: string }>
+  /** Subagent messages only, by the subagent's type; the rest is the main thread. */
+  agents:         Array<Share & { agent: string }>
   indexedAt:      string | null
   pricing:        { sourceUrl: string, readOn: string }
 }
@@ -155,13 +159,16 @@ export const NO_TOOL = '(no tool)'
  * Share of cost-weighted use per project, model and tool. A message's cost is
  * split EVENLY across the tools it called (none → `(no tool)`), subagent
  * messages included — a group's messages all name the same tools, so splitting
- * the group is splitting each of them.
+ * the group is splitting each of them. A skill's share is the WHOLE cost of the
+ * turns it loaded in, as `/stats` counts it (`FJS-D1733`), so skills overlap and
+ * need not sum to 1.
  */
 export async function readInsights(db: Db, window: InsightWindow, now = Date.now()): Promise<Insights> {
   const where  = { at: { gte: new Date(now - INSIGHT_WINDOWS[window]).toISOString() } }
-  const groups = await grouped(db, ['tools', 'cwd'], where)
+  const groups = await grouped(db, ['tools', 'cwd', 'skills', 'agent'], where)
 
   const projects = new Map<string, Share>(), models = new Map<string, Share>(), tools = new Map<string, Share>()
+  const skills = new Map<string, Share>(), agents = new Map<string, Share>()
   const put = (m: Map<string, Share>, k: string, cost: number, messages: number) => {
     const s = m.get(k) ?? m.set(k, { cost: 0, share: 0, messages: 0 }).get(k)!
     s.cost += cost; s.messages += messages
@@ -177,6 +184,8 @@ export async function readInsights(db: Db, window: InsightWindow, now = Date.now
     const names = String(g.tools ?? '').split(',').filter(Boolean)
     const list = names.length ? names : [NO_TOOL]
     for (const t of list) put(tools, t, s.cost / list.length, s.messages / list.length)
+    for (const k of String(g.skills ?? '').split(',').filter(Boolean)) put(skills, k, s.cost, s.messages)
+    if (g.agent) put(agents, String(g.agent), s.cost, s.messages)
   }
 
   const rank = <K extends string>(m: Map<string, Share>, key: K) =>
@@ -186,6 +195,7 @@ export async function readInsights(db: Db, window: InsightWindow, now = Date.now
   return {
     window, cost, unpricedTokens, messages,
     projects: rank(projects, 'cwd'), models: rank(models, 'model'), tools: rank(tools, 'tool'),
+    skills: rank(skills, 'skill'), agents: rank(agents, 'agent'),
     indexedAt: await indexedAt(db),
     pricing: { sourceUrl: SOURCE_URL, readOn: READ_ON },
   }

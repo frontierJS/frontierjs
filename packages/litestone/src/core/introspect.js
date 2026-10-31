@@ -25,7 +25,7 @@ import { sortableKeysFor } from './query.js'
 import { suggestKey, pointFieldsOf, liftNearOrders, sortHopFor, _guardedNames, _shownSet,
          collectWhereKeyProblems, collectOrderByKeyProblems, whereKeysFor } from './args.js'
 import { applyFieldPolicyTo } from './field-policy.js'
-import { trailMarksOf, markOf } from './trail-entries.js'
+import { trailMarksOf, markOf, untrailed } from './trail-entries.js'
 
 export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   const { shapes, schema, now } = ctx
@@ -644,7 +644,7 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
     const out = {}
     for (const { model, subject, claims } of reads.values()) {
       const select = Object.fromEntries(claims.map(c => [c.column, true]))
-      const row    = await sys[modelToAccessor(model)].findFirst({ where: { [subject]: id }, select })
+      const row    = await sys[modelToAccessor(model)].findFirst(untrailed({ where: { [subject]: id }, select }))
       for (const c of claims) out[c.name] = row?.[c.column] ?? null
     }
     return out
