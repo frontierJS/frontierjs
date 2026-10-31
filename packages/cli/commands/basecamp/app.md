@@ -68,11 +68,11 @@ const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, 
 if (!slug) throw new Error(`'${name}' makes no slug — pass --name`)
 
 // ─── What is there already ─────────────────────────────────────────────────
-const projects = await basecamp(origin, key, '/projects?$limit=100')
+const projects = await basecampAll(origin, key, '/projects')
 if (projects.some(p => p.slug === slug))
   throw new Error(`a project '${slug}' is already in this workspace — pass --name for another, or put its App's id in ${flag.file} as BASECAMP_APP_ID`)
 
-const servers = (await basecamp(origin, key, '/servers?$limit=100')).filter(s => s.status === 'online')
+const servers = (await basecampAll(origin, key, '/servers')).filter(s => s.status === 'online')
 let server
 if (flag.server) {
   server = servers.find(s => [s.id, s.slug, s.name].includes(flag.server))

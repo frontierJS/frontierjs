@@ -27,6 +27,20 @@ export async function basecamp(origin, key, path, { method = 'GET', body, header
   return answer?.data ?? answer
 }
 
+// Basecamp refuses a `$limit` above its maximum page rather than capping it.
+const PAGE = 100
+
+/** Every row a list path answers, a page at a time: a lookup that reads only
+ *  the first page misses the row it is looking for once a workspace outgrows it. */
+export async function basecampAll(origin, key, path) {
+  const rows = []
+  for (let offset = 0; ; offset += PAGE) {
+    const page = await basecamp(origin, key, `${path}${path.includes('?') ? '&' : '?'}$limit=${PAGE}&$offset=${offset}`)
+    rows.push(...page)
+    if (page.length < PAGE) return rows
+  }
+}
+
 // A root login on a box with no sudo installed runs the same scripts through a
 // function of that name.
 export const SUDO = 'command -v sudo >/dev/null 2>&1 || sudo() { "$@"; }'

@@ -44,6 +44,7 @@ const styles = {
   dim:     wrap(2, 22),
   italic:  wrap(3, 23),
   underline: wrap(4, 24),
+  inverse: wrap(7, 27),
 }
 
 // Only the literal parts of the template are read as markup. An interpolated

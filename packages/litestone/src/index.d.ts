@@ -877,10 +877,15 @@ export interface LitestoneClient {
   /**
    * The plugin storing File columns, or null — installed by the client itself
    * when the schema has one and the app installs none (FJS-D1549). `localRoot`
-   * is the directory a local store writes under; `config.publicBase` is read at
-   * every resolve.
+   * is the directory a local store writes under; `config.publicBase` and
+   * `config.signingKey` are read at every resolve, and `verify` checks a
+   * local URL's signature (FJS-D1703).
    */
-  readonly $files: (LitestonePlugin & { readonly localRoot: string | null; config: { publicBase?: string } & Record<string, unknown> }) | null
+  readonly $files: (LitestonePlugin & {
+    readonly localRoot: string | null
+    config: { publicBase?: string; signingKey?: string } & Record<string, unknown>
+    verify(key: string, signed: { exp?: string; sig?: string }): boolean
+  }) | null
   $lock<T>(key: string, fn: () => Promise<T>, opts?: LockOptions): Promise<T>
   $locks: {
     acquire(key: string, opts?: LockOptions): Promise<{ release(): Promise<void>; heartbeat(): Promise<void> }>

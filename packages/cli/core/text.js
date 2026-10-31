@@ -1,6 +1,8 @@
 // ─── text.js — blocks and rows of terminal output ─────────────────────────────
-// A leaf beside color.js. `lines` is handed to every command body as
-// `echo.lines`; `wrap` is what keeps a long line inside a labeled column.
+import { chalk } from './color.js'
+
+// A leaf beside color.js, whose tag `untag` reads. `lines` is handed to every
+// command body as `echo.lines`; `wrap` keeps a long line inside a labeled column.
 
 // false, null and undefined are dropped, so a row that only exists sometimes is
 // written `started && dim(started)` instead of an if around echo. An empty
@@ -17,12 +19,13 @@ export const lines = (rows, { indent = 0, style } = {}) => {
 
 // The arguments of a function that can also be a template tag, as the plain
 // call's. Called as echo`a ${b}`, a function gets the literal parts as an array
-// carrying `raw` and the values after it; that becomes the one string the
-// template would have built. Any other call passes through as it came.
+// carrying `raw` and the values after it; that becomes the one string chalk's
+// tag builds, so echo`{dim name} ${v}` styles its literal text and never a
+// value. Any other call passes through as it came.
 export const untag = (args) => {
   const [strings, ...values] = args
   if (!Array.isArray(strings) || !Array.isArray(strings.raw)) return args
-  return [strings.reduce((out, s, i) => out + s + (i < values.length ? values[i] : ''), '')]
+  return [chalk(strings, ...values)]
 }
 
 // `3 ports`, `1 port`. A word whose plural is not an s is spelled out by the

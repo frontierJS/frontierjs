@@ -1888,7 +1888,7 @@ model Example {
 - **Deeper** — [multi-tenancy.md](multi-tenancy.md)
 - **See also** — [`tenancy`](#tenancy-declaration) · [`@@deny`](#deny-model)
 
-#### `@@transitions` `(<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …)], …) | (<field>, declaredBy: Model, scope: <column>)` <a id="transitions-model"></a>
+#### `@@transitions` `(<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …, by: col)], …) | (<field>, declaredBy: Model, scope: <column>)` <a id="transitions-model"></a>
 
 A state machine on a CLOSED column — an enum, or a Boolean, which is the two-state machine every schema has (isPrimary, isPublished, isSuspended) and whose two directions are routinely different authorities. Enforced at the Data boundary. `declaredBy:` is the machine a tenant edits: the field is a state's key, the moves are rows of the declaring model — `fromId?` (null is an entry, where a row may start), `toId`, an optional `gate Int?`, and the `scope:` column's twin — each move is checked inside the UPDATE's own WHERE, a create names one of its scope's entries or takes the only one, and a move is named for its target. A boolean move states its own name, because `-> true` says which value is written and not what a person did. @gate(N) on a move is a floor on top of the model update level, and @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller passes and asSystem() bypasses. Reaches the client as x-transitions keyed by field — on the model, never on the enum $def, because only a model can carry a per-transition gate. @seals on a move is the moment the row becomes a DOCUMENT: after it the row's @sealed children may not be created, changed or removed. A seal is an event rather than a state, so the sealed set is computed — everything reachable from the move's target — and nothing restates it.
 
@@ -2087,7 +2087,7 @@ One `@`, after the target of a `@@transitions` move. `@system` and `@gate` are t
 
 #### `@seals` <a id="seals-transition"></a>
 
-The move is the moment this row becomes a DOCUMENT. After it the row's @sealed children may not be created, changed or removed, and its @immutable columns freeze (SealedDocumentError). A seal is an event rather than a state, so it is declared on the move and not as a predicate over the state column, and the sealed set is computed from the move's target. Takes no argument: WHICH children seal is @sealed on the relation field.
+The move is the moment this row becomes a DOCUMENT. After it the row's @sealed children may not be created, changed or removed, and its @immutable columns freeze (SealedDocumentError), as do the columns a @seals move itself @stamps, so the instant it became a document cannot be back-dated. A seal is an event rather than a state, so it is declared on the move and not as a predicate over the state column, and the sealed set is computed from the move's target. Takes no argument: WHICH children seal is @sealed on the relation field.
 
 ```lite
 enum DocState {
@@ -2109,9 +2109,9 @@ model Example {
 
 ### Record who and when
 
-#### `@stamps` `(<column>, …)` <a id="stamps-transition"></a>
+#### `@stamps` `(<column>, …, [by: <column>])` <a id="stamps-transition"></a>
 
-The move records WHEN it was made: the named DateTime columns get the clock in the move's own UPDATE, the way @updatedAt does, whether the move was made by transition(id, name) or by an update that lands it. The column is the engine's, so a payload naming it is refused by name; a direct transition() cannot leave it null, and a @@check requiring it holds in the same statement. Move-keyed, so two moves into one state can stamp different columns.
+The move records WHEN it was made: the named DateTime columns get the clock in the move's own UPDATE, the way @updatedAt does, whether the move was made by transition(id, name) or by an update that lands it. The column is the engine's, so a payload naming it is refused by name; a direct transition() cannot leave it null, and a @@check requiring it holds in the same statement. Move-keyed, so two moves into one state can stamp different columns. `by: <column>` records WHO: the acting principal's id (ctx.auth.id, as @updatedBy reads it) goes in the same UPDATE, so a row policy can compare the first approver to the second without a hook writing either. The by column must be @system or @guarded; with no principal (a bare asSystem(), a service principal) it is left as it was, and `$setAuth(u).asSystem()` still names u.
 
 ```lite
 enum DocState {
@@ -2124,7 +2124,8 @@ model Example {
   id Int @id
   state DocState @default(draft)
   issuedAt DateTime?
-  @@transitions(state, issue: draft -> issued @stamps(issuedAt))
+  issuedById String? @system
+  @@transitions(state, issue: draft -> issued @stamps(issuedAt, by: issuedById))
 }
 ```
 
@@ -2323,6 +2324,10 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 ### `anonymous-beside-logged` — an @@anonymous model in a schema where other models log their writes
 
 *warn*. An anonymous row has no writer, and a log on ANOTHER model can give it one back: the logged write carries the actor and a millisecond clock, and the two tables line up in order (FJS-D349). The client refuses the pairing inside one transaction; nothing refuses a roster logged in a separate one. Ask whether any model named here is written when someone answers.
+
+### `anonymous-quiets-its-transaction` — a transaction that writes an @@anonymous row announces none of its other writes
+
+*info*. An event for a row written beside an anonymous one names who answered at the instant the anonymous table grows, so the client drops it: no tap, onEvent hook or cross-process subscriber hears it (FJS-D1704). A screen watching such a model refetches to see the change.
 
 ### `create-reaches-unpickable-relation` — a create policy reaches through a relation the picker cannot be narrowed by
 

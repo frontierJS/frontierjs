@@ -75,7 +75,8 @@ if (published) {
   deps.push({ name: `fli ${FLI}`, check: `fli --version | grep -qx ${FLI}`,
               install: `BUN_INSTALL=/usr/local bun add -g @frontierjs/cli@${FLI}`, needs: ['bun'], optional: true })
 } else {
-  log.warn(`  fli ${FLI} — ${published === null ? 'npm did not answer' : 'not on npm'}, so the box gets no fli; publish @frontierjs/cli ${FLI} and run setup again`)
+  $.config.fliSkipped = `fli ${FLI} — ${published === null ? 'npm did not answer' : 'not on npm'}, so the box gets no fli; publish @frontierjs/cli ${FLI} and run setup again`
+  log.warn(`  ${$.config.fliSkipped}`)
 }
 
 const missing = []

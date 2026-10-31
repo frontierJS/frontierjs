@@ -377,10 +377,20 @@ class FileStoragePlugin extends ExternalRefPlugin {
   // A ref with no publicBase and no endpoint has no address and resolves to null
   // for every client, asSystem() included. `select: { file: { resolve: false } }`
   // is how a caller allowed to see the ref reads it.
-  // fileUrl() still works for manual resolution of raw ref strings.
+  // fileUrl() still works for manual resolution of raw ref strings, and a
+  // local ref's plain URL is refused by the route that serves it.
+  // A local store's bytes are reachable only through a URL this read signed:
+  // the row gate ran on the read, and the key alone is no secret (FJS-D1703).
   async resolve(ref, { field, model, ctx }) {
     if (!ref) return null
-    return refUrlUnder(ref, this.config)
+    const url = refUrlUnder(ref, this.config)
+    if (!url || ref.provider !== 'local' || !this.localRoot) return url
+    return this._provider.sign(ref.key)
+  }
+
+  // Whether a request for `key` carries a live signature from resolve().
+  verify(key, signed) {
+    return this._provider instanceof LocalProvider && this._provider.verify(key, signed)
   }
 
   // cleanup: delete the S3/R2 object

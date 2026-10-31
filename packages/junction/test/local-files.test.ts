@@ -5,7 +5,7 @@
 // serves the directory read-only under apiPrefix, and the client's publicBase
 // names that route on the app's own origin.
 
-import { describe, test, expect, afterEach } from 'bun:test'
+import { describe, test, expect, afterEach, setSystemTime } from 'bun:test'
 import { join } from 'node:path'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { createClient, autoMigrate } from '../../litestone/src/index.js'
@@ -45,13 +45,42 @@ describe('a local FileStorage is served by junction', () => {
     await db.asSystem().doc.create({ data: { id: 1, resume: upload() } })
     // The route registers when the app boots, and a read resolves its URL after.
     const first = await request(app).get('/api/files/none/nothing.pdf')
-    expect(first.status).toBe(404)
+    expect(first.status).toBe(403)
     const row = await db.asSystem().doc.findUnique({ where: { id: 1 } })
-    expect(row.resume).toMatch(/^https:\/\/app\.example\/api\/files\/Doc\/resume\/.+\.pdf$/)
-    const path = new URL(row.resume).pathname
-    const res = await request(app).get(path)
+    expect(row.resume).toMatch(/^https:\/\/app\.example\/api\/files\/Doc\/resume\/.+\.pdf\?exp=\d+&sig=[\w-]+$/)
+    const url = new URL(row.resume)
+    const res = await request(app).get(url.pathname + url.search)
     expect(res.status).toBe(200)
     expect([...res.bytes]).toEqual([1, 2, 3])
+  })
+
+  // The key is printed in every list response and is 12 hex chars, so it is no
+  // secret: a row the read policy hides was readable by anyone holding it (FJS-3716).
+  test('the bytes answer only a URL a read signed, and only until it expires', async () => {
+    const { app, db } = await appWith('/api')
+    await db.asSystem().doc.create({ data: { id: 1, resume: upload() } })
+    await request(app).get('/api/files/none/nothing.pdf')
+    const read = async () => new URL((await db.asSystem().doc.findUnique({ where: { id: 1 } })).resume)
+
+    const url = await read()
+    expect((await request(app).get(url.pathname)).status, 'no signature').toBe(403)
+
+    const sig = url.searchParams.get('sig')!
+    const tampered = new URLSearchParams(url.search)
+    tampered.set('sig', (sig[0] === 'A' ? 'B' : 'A') + sig.slice(1))
+    expect((await request(app).get(`${url.pathname}?${tampered}`)).status, 'tampered sig').toBe(403)
+
+    const stretched = new URLSearchParams(url.search)
+    stretched.set('exp', String(Number(url.searchParams.get('exp')) + 3600))
+    expect((await request(app).get(`${url.pathname}?${stretched}`)).status, 'moved exp').toBe(403)
+
+    setSystemTime(new Date(Date.now() - 3 * 3600_000))
+    const old = await read()
+    setSystemTime()
+    expect((await request(app).get(old.pathname + old.search)).status, 'expired').toBe(403)
+
+    // Bucketed to the hour, so two reads in one hour print one URL.
+    expect((await read()).href).toBe(url.href)
   })
 
   test('a key that climbs out of the directory is refused', async () => {

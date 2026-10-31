@@ -681,6 +681,10 @@ minimum bar and spending everything else on `only`.**
   needed no exercise at all — i18n has zero hits in every package's source and in
   every proposal in this directory. Distinct from `reference-library.md`, which is
   schemas to READ
+- `IDEAS/stressor-coverage.md` — `stressors.md` read against `fjs-prototypes/`
+  for the seams no stressor has pressed, plus two shapes the list lacks (a
+  federated server, uncertain records). Ranked nowhere because it proposes
+  nothing to build; kept as the order to pick the next stressor from
 - `IDEAS/corpus-synthesis.md` — the whole directory read as one document: five findings
   that recur across clusters which never cite each other, and the keystone of each
   sitting unread in another. Ranked nowhere because it proposes nothing to build on its

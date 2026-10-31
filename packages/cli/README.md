@@ -422,6 +422,11 @@ echo`  Add to ~/.ssh/config:
 ${block.replace(/^(?=.)/gm, '  ')}`
 ```
 
+**`echo`'s tag reads the same markup as `chalk`'s**, so a styled line or block
+is one tag with no `chalk` around it — `` echo`  {dim name } ${key.name}` ``.
+As with `chalk`, only the literal text is markup and an interpolated value
+prints as itself.
+
 A block whose rows exist only sometimes is `echo.lines`, which drops a `false`
 or `null` row, so `started && dim(started)` needs no `if` around it.
 

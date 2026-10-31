@@ -1521,9 +1521,13 @@ abandoned basket's seats are buyable at minute eleven.
 
 ### 31. Clinical record — the gate that says *no, unless you say why*
 
+*Started 2026-10-30 in `fjs-prototypes/clinical`; plan complete 2026-10-31. Ruled `FJS-D1698` (the gate stays binary, against the recommendation); `FJS-3696`, `3705`, `3707`–`3709`, `3713`–`3715`, `3722`–`3724`, `3729`, `3730`.*
+
 **The audit trail records writes; here the read is the regulated event.** Who
-opened a chart is the fact a regulator asks for, and `@@log` says nothing about a
-select. **Break-the-glass**: the gate refuses, the clinician states a reason,
+opened a chart is the fact a regulator asks for. `@@trail(audit, reads: true)`
+does log a read (one entry per `findMany`, every id, no value — measured
+2026-10-30), but a REFUSED read leaves nothing (`FJS-3708`), which is the entry
+the regulator asks for. **Break-the-glass**: the gate refuses, the clinician states a reason,
 access is granted and flagged for review — a gate with an override path, which
 Invariant 6 cannot spell. Corrections are addenda, never edits. A parent's proxy
 access to a child's record ends on a birthday (`effective-time.md`). And **data
@@ -1536,6 +1540,8 @@ queue; every chart open lands in the trail with no field value in it
 
 ### 32. Expense approvals — an actor constrained by an earlier actor
 
+*Started 2026-10-30 in `fjs-prototypes/expenses`; plan complete 2026-10-31. Ruled `FJS-D1699` (`@stamps` records who); `FJS-3692`–`3695`, `3710`, `3716`–`3718`, `3725`–`3728`.*
+
 **Four-eyes**: the approver must not be the submitter, and above a threshold a
 second, different approver signs too. `@@transitions` grades who may move a row,
 never *who may not, given who moved it last*. A card charge arrives by webhook
@@ -1547,6 +1553,8 @@ period, which `payroll.md` answers with adjustments rather than edits.
 boundary, over HTTP and over WebSocket.
 
 ### 33. Anonymous pulse survey — the gate on an aggregate
+
+*Started 2026-10-30 in `fjs-prototypes/pulse`; plan complete 2026-10-31. Ruled `FJS-D1700` (the rule stays in a service; `FJS-3701` becomes a parser refusal); `FJS-3699`–`3703`, `3706`, `3711`, `3712`.*
 
 A manager sees the team's result only if five or more answered, and **must not
 reach one person's answer by differencing two filters** — the department, then
@@ -1890,3 +1898,55 @@ that read it, and the one left un-aged is the finding you did not get.
 browser holding its debug port, and the next run attached to that stale browser
 and graded it. Kill by port rather than by pattern, close on every exit path,
 and refuse a port that already answers.
+
+### What the third batch learned
+
+*Folded back from the clinical, expenses and pulse stressors (#31–33), run as
+one batch 2026-10-30/31 — three apps, one agent each per phase, forty-one new
+ids and three rulings (`FJS-D1698`–`D1700`). Generic only.*
+
+**Write the pre-run guess under each question before measuring.** About half
+of this batch's guesses were wrong at parse time — a shipped word existed
+(`@seals`), a service existed (the trail is gated, not raw SQL), the suspected
+flood did not happen — and the wrong guesses were the findings. A guess that is
+not written down cannot be wrong on the record.
+
+**Run every access question on both transports and on the system path, with a
+third listener who must hear nothing.** A policy that holds over HTTP says
+nothing about the socket; `asSystem()` walks past what users cannot; and a
+broadcast that reaches nobody is indistinguishable from one correctly refused
+unless a stranger's socket is on the drive (`FJS-3711` was found that way).
+
+**A rule over a derived value has no row-grain home.** A count, a complement,
+a threshold that differs per field: expect a service to hold it, and spend the
+effort proving every OTHER read path is closed by construction, because that
+is what the declaration can say (`FJS-D1700`).
+
+**"Can the filter say X" has two answers: the grammar and the caller.** The
+filter language reaches the conjunction; it cannot name the person asking
+(`FJS-3725`), so the client carries a literal and the screen is an affordance.
+Worth a row once.
+
+**A model with no service answers 404 exactly like a refusal.** A screen that
+lists nothing proves the route exists before it proves the gate (`FJS-3707`'s
+first sighting read as a gate).
+
+**A declaration that points a recorder at itself needs an idle-growth check.**
+`@@trail` on the trail parsed, booted quietly and wrote 75 rows a second with
+nobody asking (`FJS-3729`). Count rows, wait, count again.
+
+**The seed and the clock are instruments and fail like them.** A period ended
+at midnight of its last day, a reseed that did not delete the files, a sealed
+fixture one drive consumed for every drive after. Order drives read-only first,
+let each create what it signs, and reread the state a drive starts from before
+believing a refusal.
+
+**Put the expected answer in the drive and let a miss be the finding.** A
+drive that records only what happened cannot be read as a verdict a week
+later. Say in each found line whether a page was driven in a browser or only
+graded as the data it is handed; those are different claims.
+
+**Run the brief's script before handing it over.** Two of three briefs, written
+from green drives, named an hour that could not run: no manager login, a link
+that 404'd, a week composed from curl. The gaps a full set of green drives did
+not see were all surfaces.

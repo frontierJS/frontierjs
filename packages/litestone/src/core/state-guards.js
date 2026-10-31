@@ -335,7 +335,7 @@ export function makeStateGuards(shape, ctx, deps) {
           throw new TransitionViolationError(tableName, fieldName, currentValue, named.to,
             Object.values(transitions).filter(t => t.from.includes(currentValue)).map(t => t.to))
 
-        return { transitionName: requestedMove, field: fieldName, from: currentValue, to: named.to, stamps: named.stamps ?? [] }
+        return { transitionName: requestedMove, field: fieldName, from: currentValue, to: named.to, stamps: named.stamps ?? [], stampBy: named.stampBy ?? null }
       }
 
       if (currentValue === newValue) return null   // no change — nothing to enforce
@@ -357,7 +357,7 @@ export function makeStateGuards(shape, ctx, deps) {
       // The move is legal — is this caller allowed to make it?
       await gradeMove(fieldName, matchedName, transitions[matchedName])
 
-      return { transitionName: matchedName, field: fieldName, from: currentValue, to: newValue, stamps: transitions[matchedName].stamps ?? [] }
+      return { transitionName: matchedName, field: fieldName, from: currentValue, to: newValue, stamps: transitions[matchedName].stamps ?? [], stampBy: transitions[matchedName].stampBy ?? null }
     }
     return null
   }
@@ -465,9 +465,17 @@ export function makeStateGuards(shape, ctx, deps) {
   // at the seal*, and `@immutable(after: <move>)` means *frozen from that move's
   // target* (`FJS-D568`). Either way it stops being answerable from the payload
   // and becomes a state guard like the rest of them: one group per freeze instant.
+  // A column a `@seals` move stamps joins the group: it is the instant a reader
+  // trusts as when the row became a document, and without it a signed note can
+  // be back-dated by a payload (`FJS-3713`). A later move stamping the same
+  // column still lands, since a move writes its stamps in SET, not the payload.
   const _selfFreezes = []
-  if (_sealSelf && _immutableWriteKeys.size)
-    _selfFreezes.push({ keys: _immutableWriteKeys, column: _sealSelf.column, states: _sealSelf.states })
+  if (_sealSelf) {
+    const machine = _modelForKeys?.attributes?.find(a => a.kind === 'transitions' && a.field === _sealSelf.column)
+    const stamped = Object.values(machine?.transitions ?? {}).filter(t => t.seals).flatMap(t => t.stamps ?? [])
+    const keys    = new Set([..._immutableWriteKeys, ...stamped])
+    if (keys.size) _selfFreezes.push({ keys, column: _sealSelf.column, states: _sealSelf.states })
+  }
   {
     const byMove = new Map()
     for (const [name, p] of Object.entries(fieldPolicy))

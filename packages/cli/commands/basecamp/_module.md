@@ -10,7 +10,7 @@ description: Basecamp itself — make its box at a cloud, install it, point its 
 const { CLOUDS, cloudLabel, pickCloud, cloudsToRead, listBoxes, cloudOf, runProvision, provisionScript, markHost,
   cloudflareToken, hostRecord, withHosts, boxAddress, waitForSsh, publicKey, boxName, buyBox, machineLine }
   = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
-const { basecamp, LOCAL_BASECAMP } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
+const { basecamp, basecampAll, LOCAL_BASECAMP } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 
 // Basecamp's own hostname, the one `pointHost` points at the box.
 const webDomain = async () =>
@@ -226,3 +226,7 @@ releases through Basecamp from then on.
 `fli basecamp:deploy --app <id>` builds an app's image here, loads it onto
 every machine Basecamp runs that app on, and asks Basecamp to release it. It
 needs a `BASECAMP_API_KEY` from the running Basecamp, not a cloud token.
+
+`fli basecamp:key` mints that key over ssh — `api-keys.create` called as an
+owner through `fli deploy:repl` — and stores it in the global env, with no
+browser and no password.

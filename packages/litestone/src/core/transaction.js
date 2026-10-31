@@ -117,14 +117,22 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
   // the rows they describe, and the ones from before it survive (`FJS-D170`).
   //
   // Flushed only when the OUTERMOST transaction commits, because until then
-  // the rows are still provisional.
-  /** @type {(() => void)[]} */
+  // the rows are still provisional. The cross-process `record` is a row in the
+  // same files, written just before COMMIT so it lands or rolls back with them.
+  //
+  // A transaction that wrote an @@anonymous row keeps only that model's
+  // events: any other write announced at the instant the anonymous table grows
+  // (a roster flip) names who answered, which is the join `noteWrite` refuses
+  // for a logged write (`FJS-3711`, `FJS-D1704`).
+  /** @typedef {{ model: string, record: () => void, dispatch: (() => void) | null }} Pending */
+  /** @type {Pending[]} */
   const pending = []
-  /** @param {() => void} fire */
-  function queueEvent(fire) { pending.push(fire) }
-  function flushPending() {
-    const fns = pending.splice(0, pending.length)
-    for (const fire of fns) fire()
+  /** @param {Pending} p */
+  function queueEvent(p) { pending.push(p) }
+  function heldEvents() {
+    const anonymous = new Set(wrote.filter(w => w.anonymous).map(w => w.model))
+    const held = pending.splice(0, pending.length)
+    return anonymous.size ? held.filter(p => anonymous.has(p.model)) : held
   }
 
   // ── Which side of an @@anonymous pairing this transaction has written ──────
@@ -173,6 +181,8 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
     if (sp == null && exclusions) { exclusions.grade(); exclusions.truncate(0) }
     state.depth--
     if (sp != null) { each(`RELEASE sp_${sp}`); return }
+    const held = heldEvents()
+    for (const p of held) p.record()
     const order = [...conns.slice(1), conns[0]]
     for (let i = 0; i < order.length; i++) {
       try { order[i].db.run('COMMIT') }
@@ -180,7 +190,6 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
         // Settled here, not by the caller's rollback(): the depth has already
         // moved, and the files committed before this one cannot be rolled back.
         frame.settled = true
-        pending.length = frame.mark
         wrote.length = 0
         for (const c of order.slice(i)) { try { c.db.run('ROLLBACK') } catch {} }
         if (conns.length === 1) throw e
@@ -193,7 +202,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
       }
     }
     wrote.length = 0
-    flushPending()
+    for (const p of held) p.dispatch?.()
   }
 
   /** @param {Frame} frame */

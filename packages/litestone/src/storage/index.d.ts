@@ -21,8 +21,10 @@ export interface FileStorageOptions {
 export declare function FileStorage(options?: FileStorageOptions): LitestonePlugin & {
   /** The directory a local store writes under, which junction serves; null for any other provider. */
   readonly localRoot: string | null
-  /** The settled options, the environment's FILES_* names included. `publicBase` is read at every resolve. */
-  config: FileStorageOptions
+  /** The settled options, the environment's FILES_* names included. `publicBase` and `signingKey` are read at every resolve. */
+  config: FileStorageOptions & { signingKey?: string }
+  /** Whether a request for a local `key` carries a live signature from a read (FJS-D1703). */
+  verify(key: string, signed: { exp?: string; sig?: string }): boolean
 }
 /** The environment names an option falls back to, keyed by that option (FJS-D1549). */
 export declare const FILES_ENV: Readonly<Record<'provider' | 'bucket' | 'endpoint' | 'accessKeyId' | 'secretAccessKey' | 'publicBase', string>>

@@ -183,6 +183,41 @@ describe('the parser says which mistake was made', () => {
     expect(msg).toMatch(/missing required field 'model'/)
     expect(msg).toMatch(/missing required field 'createdAt'/)
   })
+
+  // Each trail write is a write to a model that trails into the same table, so
+  // it files another entry: ~75 rows a second with the server idle (FJS-3729).
+  test('`@@trail` on the trail model itself is refused, naming the ways to audit its reader', () => {
+    const msg = refuse(`
+      database main  { path ":memory:" }
+      database audit { path ":memory:" model AuditRow }
+      model AuditRow { ${TRAIL} @@db(audit) @@trail(audit, reads: true) }
+    `)
+    expect(msg).toMatch(/Model 'AuditRow': @@trail\(audit\)/)
+    expect(msg).toMatch(/service/)
+    expect(msg).toMatch(/second trail database/)
+  })
+
+  test('two trail models trailing into each other are refused too', () => {
+    const msg = refuse(`
+      database main   { path ":memory:" }
+      database audit  { path ":memory:" model AuditRow }
+      database audit2 { path ":memory:" model AuditRow2 }
+      model AuditRow  { ${TRAIL} @@db(audit)  @@trail(audit2) }
+      model AuditRow2 { ${TRAIL} @@db(audit2) @@trail(audit) }
+    `)
+    expect(msg).toMatch(/Model 'AuditRow': @@trail\(audit2\)/)
+  })
+
+  test('a trail model audited into a second trail database parses', () => {
+    const r = parse(`
+      database main   { path ":memory:" }
+      database audit  { path ":memory:" model AuditRow }
+      database audit2 { path ":memory:" model AuditRow2 }
+      model AuditRow  { ${TRAIL} @@db(audit)  @@trail(audit2, reads: true) }
+      model AuditRow2 { ${TRAIL} @@db(audit2) }
+    `)
+    expect(r.errors).toEqual([])
+  })
 })
 
 // ─── every write path files an entry ──────────────────────────────────────────

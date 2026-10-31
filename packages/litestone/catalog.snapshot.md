@@ -140,7 +140,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@require` | Decide who may | (create\|postUpdate\|update\|delete, <expression>[, message]) |  |  |  |
 | `@@scope` | Decide who may | (<name>, <expression>) |  |  |  |
 | `@@tenant` | Decide who may | (<column> \| none \| via: parent) |  | mode: none |  |
-| `@@transitions` | Decide who may | (<field>, [<name>:] <from>\|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …)], …) \| (<field>, declaredBy: Model, scope: <column>) |  |  |  |
+| `@@transitions` | Decide who may | (<field>, [<name>:] <from>\|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …, by: col)], …) \| (<field>, declaredBy: Model, scope: <column>) |  |  |  |
 | `@@auth` | Wire it to the app |  |  |  |  |
 | `@@person` | Wire it to the app | [(child)] |  | kind: child |  |
 | `@@trail` | Wire it to the app | (<database>[, reads: false][, writes: false]) |  |  |  |
@@ -158,7 +158,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@gate` | Decide who may | (<0-9>) |  |  |  |
 | `@system` | Decide who may |  |  |  |  |
 | `@seals` | Hide or lock a value |  |  |  |  |
-| `@stamps` | Record who and when | (<column>, …) |  |  |  |
+| `@stamps` | Record who and when | (<column>, …, [by: <column>]) |  |  |  |
 
 ## Positions
 
@@ -222,6 +222,7 @@ Shapes the parser accepts and something later refuses.
 | `write-policy-reads-a-parent-without-post-update` | warn | a create or update policy reads a parent through a key the caller can move, with no post-update beside it |
 | `anonymous-create-auth-default` | warn | a public create on a model whose required column defaults to auth() |
 | `anonymous-beside-logged` | warn | an @@anonymous model in a schema where other models log their writes |
+| `anonymous-quiets-its-transaction` | info | a transaction that writes an @@anonymous row announces none of its other writes |
 | `create-reaches-unpickable-relation` | warn | a create policy reaches through a relation the picker cannot be narrowed by |
 | `read-allow-hides-tenant-members` | warn | a read @@allow written for a claim the tenant's members do not carry hides the model from them |
 | `allow-needs-bearer-claim-under-gate` | warn | an @@allow only a bearer can satisfy sits under a gate a bearer cannot pass |

@@ -47,6 +47,23 @@ describe('@@anonymous — refused at parse', () => {
     refuses('model Ballot {\n id Int @id\n at DateTime @updatedAt\n @@anonymous\n}', /field 'at'.*clock/)
   })
 
+  // FJS-D1700: the service that holds the minimum-group rule is the only read
+  // path, so a view reading the rows below the model's own read gate is refused.
+  const RESPONSE = 'model Response {\n id Int @id\n teamId String\n score Int\n @@anonymous\n @@gate(8.8.9.9)\n}\n'
+  const view = (sql: string, gate: string) =>
+    `view ResponseLeak {\n teamId String\n score Int\n @@sql("${sql}")\n @@gate(${gate})\n}\n`
+
+  test('a view reading it below its read gate (FJS-3701)', () => {
+    refuses(RESPONSE + view('SELECT teamId, score FROM Response', '0'), /View 'ResponseLeak'.*Response.*@@anonymous.*read level 0.*8/s)
+    refuses(RESPONSE + view('SELECT r.teamId, r.score FROM responses r', '7'), /View 'ResponseLeak'.*Response/s)
+    refuses(RESPONSE.replace('@@gate(8.8.9.9)', '@@map("answers")\n @@gate(8.8.9.9)') + view('SELECT teamId, score FROM answers', '0'), /View 'ResponseLeak'.*Response/s)
+  })
+
+  test('a view at or above its read gate, or not naming it, parses', () => {
+    expect(parse(RESPONSE + view('SELECT teamId, score FROM Response', '8')).errors).toEqual([])
+    expect(parse(RESPONSE + 'model Team {\n id Int @id\n name String\n @@gate(0.8)\n}\n' + view('SELECT name AS teamId, 0 AS score FROM team', '0')).errors).toEqual([])
+  })
+
   test('it takes no argument', () => {
     const r = parse('model Ballot {\n id Int @id\n @@anonymous(x)\n}')
     expect(r.valid).toBe(false)
@@ -129,6 +146,69 @@ describe('@@anonymous — a logged write in the same transaction is refused', ()
       await tx.ballot.create({ data: { id: 1, rating: 4 } })
     })
     expect(await db.ballot.count()).toBe(1)
+    close()
+  })
+})
+
+// The announcement is the trail's clock without the trail: a roster flip
+// broadcast at the instant the anonymous table grows names who answered
+// (`FJS-3711`). A transaction that wrote an anonymous row announces none of its
+// other writes, to any audience (`FJS-D1704`).
+describe('@@anonymous — a transaction that wrote one announces nothing else', () => {
+  const schemaAt = (file: string) => `
+    database main { path "${file}"  announce crossProcess }
+    model Ballot  { id Int @id  rating Int  @@anonymous }
+    model Roster  { id Int @id  person String  answered Boolean @default(false) }
+  `
+
+  async function open() {
+    const dir  = mkdtempSync(join(tmpdir(), 'ls-anon-quiet-'))
+    const file = join(dir, 'main.db')
+    const hooked: any[] = []
+    const db: any = await createClient({ schema: schemaAt(file), onEvent: { change: (e: any) => { hooked.push(e) } } })
+    await autoMigrate(db)
+    const tapped: any[] = []
+    db.$tapEvents((e: any) => { tapped.push(e) })
+    const recorded = () => {
+      const { Database } = require('bun:sqlite')
+      const raw = new Database(file, { readonly: true })
+      try { return raw.query('SELECT model, recordId FROM _litestone_events').all() }
+      finally { raw.close() }
+    }
+    return { db: db.asSystem(), tapped, hooked, recorded, close: () => { db.$close(); rmSync(dir, { recursive: true, force: true }) } }
+  }
+
+  const settle = () => new Promise(r => setTimeout(r, 20))
+
+  test('the roster flip beside a ballot reaches no tap, no onEvent hook and no cross-process record', async () => {
+    const { db, tapped, hooked, recorded, close } = await open()
+    await db.roster.create({ data: { id: 1, person: 'ana' } })
+    await settle()
+    tapped.length = 0; hooked.length = 0
+    const before = recorded().filter((r: any) => r.model === 'Roster').length
+
+    await db.$transaction(async (tx: any) => {
+      await tx.roster.update({ where: { id: 1 }, data: { answered: true } })
+      await tx.ballot.create({ data: { id: 1, rating: 4 } })
+    })
+    await settle()
+
+    expect(tapped.filter(e => e.model === 'Roster')).toEqual([])
+    expect(hooked.filter(e => e.model === 'Roster')).toEqual([])
+    expect(recorded().filter((r: any) => r.model === 'Roster').length).toBe(before)
+    expect((await db.roster.findFirst({ where: { id: 1 } })).answered).toBe(true)
+    close()
+  })
+
+  test('the same flip with no ballot beside it is announced', async () => {
+    const { db, tapped, recorded, close } = await open()
+    await db.roster.create({ data: { id: 1, person: 'ana' } })
+    await db.$transaction(async (tx: any) => {
+      await tx.roster.update({ where: { id: 1 }, data: { answered: true } })
+    })
+    await settle()
+    expect(tapped.filter(e => e.model === 'Roster').length).toBe(2)
+    expect(recorded().filter((r: any) => r.model === 'Roster').length).toBe(2)
     close()
   })
 })

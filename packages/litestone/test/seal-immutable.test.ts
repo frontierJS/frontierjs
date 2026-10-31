@@ -149,3 +149,56 @@ describe('a one-write move carrying a frozen column', () => {
     expect((await db.invoice.findUnique({ where: { id: 1 } })).state).toBe('issued')
   })
 })
+
+// FJS-3713 — the column a seal stamps is the instant a reader trusts as WHEN the
+// row became a document, so it freezes at that move without a second @immutable.
+describe('a column the @seals move stamps freezes at the seal', () => {
+  const STAMPED = `
+enum NoteState { draft signed void }
+
+model Note {
+  id       Int       @id
+  status   NoteState @default(draft)
+  body     String    @immutable
+  signedAt DateTime?
+  voidedAt DateTime?
+  @@transitions(status,
+    sign: draft  -> signed @seals @stamps(signedAt),
+    void: signed -> void   @stamps(voidedAt, signedAt))
+}
+`
+  let n: any
+  beforeEach(async () => {
+    n = await createClient({ schema: STAMPED, db: ':memory:' })
+    await n.note.create({ data: { id: 1, body: 'x' } })
+  })
+
+  test('a draft may still set it, since the seal has not happened', async () => {
+    const r = await n.note.update({ where: { id: 1 }, data: { signedAt: '2020-01-01T00:00:00.000Z' } })
+    expect(r.signedAt).toBe('2020-01-01T00:00:00.000Z')
+  })
+
+  test('the seal still writes its own stamp', async () => {
+    const r = await n.note.transition(1, 'sign')
+    expect(r.signedAt).not.toBe(null)
+  })
+
+  test('after the seal a payload naming it is refused, by name, for asSystem() too', async () => {
+    await n.note.transition(1, 'sign')
+    for (const c of [n, n.asSystem()]) {
+      const e = await refusal(() => c.note.update({ where: { id: 1 }, data: { signedAt: '2020-01-01T00:00:00.000Z' } }))
+      expect(e?.name).toBe('SealedDocumentError')
+      expect(e.fields).toEqual(['signedAt'])
+    }
+    expect((await n.note.updateMany({ where: { id: 1 }, data: { signedAt: null } })).count).toBe(0)
+    expect((await n.note.findUnique({ where: { id: 1 } })).signedAt).not.toBe(null)
+  })
+
+  test('a later move that stamps the same column still lands', async () => {
+    const signed = await n.note.transition(1, 'sign')
+    await new Promise(r => setTimeout(r, 5))
+    const voided = await n.note.transition(1, 'void')
+    expect(voided.voidedAt).not.toBe(null)
+    expect(voided.signedAt).not.toBe(signed.signedAt)
+  })
+})

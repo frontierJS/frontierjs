@@ -24,18 +24,24 @@ export function makeWriteEvents(shape, ctx, deps) {
   // write it did not make) would otherwise re-derive the name from `operation`,
   // which a transition event does not carry.
   function fireEvent(event, eventCtx) {
-    // Recorded BEFORE the local-audience guard, and that is the whole of what
-    // makes it cross-process: the subscriber this row is for is in another
-    // process, so whether anything here is listening says nothing about whether
-    // the announcement is wanted (`FJS-642`).
-    recordCrossProcess(event, eventCtx)
-    if (!emitter && !ctx._eventListeners.size) return
+    // Recorded whether or not anything here listens, and that is the whole of
+    // what makes it cross-process: the subscriber this row is for is in another
+    // process (`FJS-642`).
+    const local = !!(emitter || ctx._eventListeners.size)
     // An announcement is a claim that a row is there. Inside this context's own
-    // transaction it is not there yet and may never be, so it is held and
-    // flushed on COMMIT — one funnel, so every announcement in the package gets
-    // this and no call site is asked to remember (`FJS-D170`).
-    if (tx.owns()) { tx.queueEvent(() => dispatchEvent(event, eventCtx)); return }
-    dispatchEvent(event, eventCtx)
+    // transaction it is not there yet and may never be, so both halves are held
+    // for COMMIT, which also drops them beside an @@anonymous write — one
+    // funnel, so no call site is asked to remember (`FJS-D170`, `FJS-D1704`).
+    if (tx.owns()) {
+      tx.queueEvent({
+        model:    modelName,
+        record:   () => recordCrossProcess(event, eventCtx),
+        dispatch: local ? () => dispatchEvent(event, eventCtx) : null,
+      })
+      return
+    }
+    recordCrossProcess(event, eventCtx)
+    if (local) dispatchEvent(event, eventCtx)
   }
 
   // The id and never the row (`cross-process.js` says why): writing the row

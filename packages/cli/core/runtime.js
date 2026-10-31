@@ -563,10 +563,14 @@ export async function Command({ file, arg, flag, emit }) {
   if (defaultStepsDir && existsSync(defaultStepsDir)) {
     // Return a function that runs the orchestrator then all steps
     const runSteps = async () => {
+      await dryBanner(config, emit, 'start')
       try { return await runStepsOnce() } catch (err) {
         if (err?.interrupt) await _stop(err.interrupt)
         throw err
-      } finally { await config.tty.close() }
+      } finally {
+        await config.tty.close()
+        await dryBanner(config, emit, 'end')
+      }
     }
     const runStepsOnce = async () => {
       // config.config is already there — see the initialization above.
@@ -923,6 +927,7 @@ export async function Command({ file, arg, flag, emit }) {
   // the deploy commands are this shape (`deploy:logs`, `:status`, `:run`,
   // `:unlock`), and every one of their refusals exited 0 (`FJS-589`).
   return async () => {
+    await dryBanner(config, emit, 'start')
     try {
       const out = await config.run(config)
       assertNotRefused(config, null)
@@ -932,6 +937,7 @@ export async function Command({ file, arg, flag, emit }) {
       throw err
     } finally {
       await config.tty.close()
+      await dryBanner(config, emit, 'end')
     }
   }
 }
@@ -959,6 +965,33 @@ function assertNotRefused(config, refusedBy) {
   err.quiet   = true
   err.refusal = true
   throw err
+}
+
+// `--dry` is every command's flag, and a long report or a question asked part
+// way through reads the same under it as in a real run. The mark says which,
+// at both ends. It claims no more than that: a dry run touching nothing is the
+// command's promise (`core/effects.js`). On stderr, so `--as json` still parses.
+// A command that hands off to another (`deploy` spawns `basecamp:deploy`)
+// passes it the environment, and the env mark keeps the mark to the outermost
+// run. A terminal's only: `fli gui` runs unrelated commands in one process, so
+// a mark in its environment would hide one run's behind another's.
+const DRY_MARK = {
+  start: 'shows what this run would do',
+  end:   'the above is what a run would do',
+}
+const DRY_MARKED = 'FLI_DRY_MARKED'
+function dryBanner(config, emit, at) {
+  if (config.flag.dry !== true || emit) return
+  if (at === 'start') {
+    if (process.env[DRY_MARKED]) return
+    process.env[DRY_MARKED] = '1'
+    config.dryMarked = true
+  } else {
+    if (!config.dryMarked) return
+    delete process.env[DRY_MARKED]
+  }
+  // Not console.error: Bun paints its whole line red.
+  process.stderr.write(colorChalk`{bold.cyan.inverse  DRY RUN } {dim ${DRY_MARK[at]}}` + '\n')
 }
 
 // The options `execSync` understands, plus nothing. An unrecognized key used

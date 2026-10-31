@@ -16,7 +16,7 @@ import { EXACT_INT_MAX, validateTypedBinding } from './validate.js'
 import { suggestKey } from './args.js'
 import { compileStatic, policyExprToString, compileGenerated, generatedProblems, compileFromWhere } from './policy.js'
 import { tenantAdmission } from './tenancy.js'
-import { pointColumnNames, isStoredField, mapIdentifiers, labelColumn, COLLATIONS } from './ddl.js'
+import { pointColumnNames, isStoredField, mapIdentifiers, labelColumn, COLLATIONS, modelToTableName } from './ddl.js'
 import { inferFromFk, inferFromHop, inferToOneFrom } from './schema-maps.js'
 import { sealedStates, sealFaults, machineWithMove } from './seal.js'
 import { PERSONAL_CATEGORIES, isPersonModel, personalNameCategory } from './personal.js'
@@ -3233,15 +3233,18 @@ class Parser {
       let gate   = null
       let system = false
       let seals  = false
-      let stamps = []
+      let stamps  = []
+      let stampBy = null
+      let stamped = false
       while (this.check(TK.AT)) {
         this.eat(TK.AT)
         const attr = this.eat(TK.IDENT)
 
         if (attr.value === 'stamps') {
-          if (stamps.length)
+          if (stamped)
             throw new ParseError(`@@transitions(${field}) '${name}': @stamps stated twice — name every column in one list`, attr)
-          stamps = this.parseTransitionStamps(field, name)
+          stamped = true
+          ;({ cols: stamps, by: stampBy } = this.parseTransitionStamps(field, name))
           continue
         }
 
@@ -3292,29 +3295,41 @@ class Parser {
 
       if (name in transitions)
         throw new ParseError(`@@transitions(${field}): duplicate transition name '${name}'`, this.peek())
-      transitions[name] = { from, to, gate, system, seals, stamps }
+      transitions[name] = { from, to, gate, system, seals, stamps, stampBy }
     } while (this.maybeEat(TK.COMMA))
 
     this.eat(TK.RPAREN)
     return { field, transitions }
   }
 
-  // @stamps(sentAt, …) — the DateTime columns the move writes with the clock,
-  // in the move's own UPDATE. Whether each names a DateTime column of this
-  // model is checked once the fields are known (validate()).
+  // @stamps(sentAt, …, by: sentById) — the DateTime columns the move writes with
+  // the clock and the one column it writes the acting principal's id into, in
+  // the move's own UPDATE (FJS-D1699). Whether each names a column of this model
+  // that can hold it is checked once the fields are known (validate()).
   parseTransitionStamps(field, name) {
     this.eat(TK.LPAREN)
     const cols = []
+    let by = null
     do {
       const tok = this.advance()
       if (tok.type !== TK.IDENT)
         throw new ParseError(`@@transitions(${field}) '${name}': @stamps expects column names, got '${tok.value}'`, tok)
+      if (tok.value === 'by' && this.check(TK.COLON)) {
+        this.eat(TK.COLON)
+        if (by !== null)
+          throw new ParseError(`@@transitions(${field}) '${name}': @stamps names a by: column twice`, tok)
+        const target = this.advance()
+        if (target.type !== TK.IDENT)
+          throw new ParseError(`@@transitions(${field}) '${name}': @stamps(by:) expects a column name, got '${target.value}'`, target)
+        by = target.value
+        continue
+      }
       if (cols.includes(tok.value))
         throw new ParseError(`@@transitions(${field}) '${name}': @stamps names '${tok.value}' twice`, tok)
       cols.push(tok.value)
     } while (this.maybeEat(TK.COMMA))
     this.eat(TK.RPAREN)
-    return cols
+    return { cols, by }
   }
 
   // @gate(5) — a single level, unlike @@gate's R.C.U.D tuple. A level name is
@@ -3626,6 +3641,19 @@ function normalizePolicyOps(op, attr, token) {
 // them and `test/catalog.test.ts` binds the two.
 export const ALLOWED_TOKENIZERS   = new Set(['unicode61', 'ascii', 'porter', 'trigram'])
 export const ON_DELETE_ACTIONS    = new Set(['Cascade', 'SetNull', 'Restrict', 'NoAction'])
+// Whether filing `modelName`'s entries into `dbName` comes back to `modelName`:
+// a trail model that is itself trailed, directly or through other trail models.
+function trailLoopsBack(schema, modelName, dbName) {
+  const seen = new Set()
+  while (dbName && !seen.has(dbName)) {
+    seen.add(dbName)
+    const next = schema.databases.find(d => d.name === dbName)?.trailModel
+    if (!next) return false
+    if (next === modelName) return true
+    dbName = schema.models.find(m => m.name === next)?.attributes.find(a => a.kind === 'trail')?.db
+  }
+  return false
+}
 // Why a database named by `@@trail` is not one a trail can be written to. Two
 // different mistakes with two different fixes, and a single "must use driver
 // logger" told half of them the wrong one.
@@ -6373,6 +6401,12 @@ function validate(schema) {
         errors.push(`Model '${model.name}': @@trail references unknown database '${attr.db}'`)
       else if (!logTargets.has(attr.db))
         errors.push(`Model '${model.name}': @@trail database '${attr.db}' is not an audit trail — ${logTargetHint(schema, attr.db)}`)
+      else if (trailLoopsBack(schema, model.name, attr.db))
+        errors.push(
+          `Model '${model.name}': @@trail(${attr.db}) files every entry into a trail that trails back into ` +
+          `'${model.name}', so each entry writes another and the table grows with the server idle (FJS-3729). ` +
+          `To audit who reads the trail, record the read on the service layer, or trail '${model.name}' into ` +
+          `a second trail database whose own model declares no @@trail.`)
     }
 
     // @required carries a message for a rule it does not create. On a nullable
@@ -8295,6 +8329,19 @@ function validate(schema) {
           else if (target.type.name !== 'DateTime' || target.type.array || !isStoredField(target))
             errors.push(`${where} — '${c}' must be a stored DateTime column`)
         }
+        // The by: column holds the principal's id. A caller who could write it
+        // could name any actor, so it must already be locked to callers.
+        if (move.stampBy) {
+          const target = model.fields.find(f => f.name === move.stampBy)
+          const where  = `Model '${model.name}': @@transitions(${attr.field}) '${moveName}' @stamps(by: ${move.stampBy})`
+          if (!target) errors.push(`${where} — no such field`)
+          else if (move.stampBy === attr.field) errors.push(`${where} — that is the state column the move writes`)
+          else if ((move.stamps ?? []).includes(move.stampBy)) errors.push(`${where} — that column is also stamped with the clock`)
+          else if (target.type.array || target.type.name === 'DateTime' || !isStoredField(target))
+            errors.push(`${where} — '${move.stampBy}' must be a stored column that holds an id`)
+          else if (!target.attributes.some(a => a.kind === 'system' || a.kind === 'guarded'))
+            errors.push(`${where} — '${move.stampBy}' must be @system or @guarded, or a caller could name the actor`)
+        }
       }
 
       const field = model.fields.find(f => f.name === attr.field)
@@ -8522,6 +8569,13 @@ function validate(schema) {
     m.attributes?.some(a => a.kind === 'gate' || a.kind === 'allow' || a.kind === 'deny') ||
     m.fields?.some(f => f.attributes?.some(a => a.kind === 'fieldAllow' || a.kind === 'guarded')))
   const rowTenancy = schema.tenancy?.strategy === 'row'
+  const anonymousModels = schema.models.filter(m => m.attributes.some(a => a.kind === 'anonymous'))
+  // An unparseable gate is refused by its own check; null skips this one.
+  const readLevelOf = (attrs) => {
+    const gate = (attrs ?? []).find(a => a.kind === 'gate')
+    if (!gate) return 0
+    try { return parseGateString(gate.value).read } catch { return null }
+  }
 
   for (const view of schema.views) {
     const viewAttrs = view.attributes ?? []
@@ -8547,6 +8601,23 @@ function validate(schema) {
     // Must have @@sql
     if (!view.sql)
       errors.push(`View '${view.name}' must declare @@sql("...")`)
+
+    // An @@anonymous model's rows are read through one service that holds the
+    // minimum-group rule (FJS-D1700); a view below the model's read gate is a
+    // second path that holds nothing. Matched on the table name as a word, as
+    // viewProtectedRead does, with both pluralize spellings since the client
+    // option is not known here.
+    for (const model of anonymousModels) {
+      const sql = String(view.sql ?? '').replace(/'(?:[^']|'')*'/g, "''")
+      const named = [modelToTableName(model), modelToTableName(model, true)]
+        .some(t => new RegExp(`(?<![\\w$.])"?${t}"?(?![\\w$])`, 'i').test(sql))
+      const viewRead = readLevelOf(viewAttrs), modelRead = readLevelOf(model.attributes)
+      if (named && viewRead != null && modelRead != null && viewRead < modelRead)
+        errors.push(
+          `View '${view.name}': its @@sql reads '${model.name}', which is @@anonymous, at read level ` +
+          `${viewRead} — below the model's own read gate of ${modelRead}. Its rows are read through the ` +
+          `service that holds the threshold, and nothing else; raise the view's @@gate to ${modelRead} or drop it.`)
+    }
 
     // @@db must reference a declared database
     if (view.db && !dbNames.has(view.db))

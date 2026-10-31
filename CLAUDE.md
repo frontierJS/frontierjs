@@ -54,6 +54,7 @@ Match the file you are in first. The code rules load from `.claude/rules/code-st
 
 - **No semicolons**, single quotes, 2-space indent. TypeScript in junction, auth, caravan, conduit and every `conduit-*` connector (`FJS-D890`), notifications, mcp and testing; plain ESM JavaScript in every other package.
 - **A comment explains the failure, not the mechanism, and must be load-bearing.** Edit history and narration of your own change belong in `DECISIONS.md` and git (`FJS-D675`). Inside a template literal a comment uses plain words or `--` quoting — a backtick there closes the literal.
+- **A fli command's body reads like a doc** — steps as named helpers, output in `packages/cli/README.md` § Printing a line; the rest loads from `.claude/rules/cli-commands.md`.
 - **American spelling** in prose and identifiers (`FJS-D192`); `cancelled`, a persisted enum value, is the one exception.
 - **A document an agent reads is written by `doc-hygiene`** (`.claude/skills/`), and **a plan is Phases of Steps** in that skill's § A plan's shape (`FJS-D927`). A section a parser reads moves only with its parser — modules read this file's Invariants and Bridge index by path.
 - **A new defect gets an `FJS-###` in `ISSUES.md`**; a ruling closes an `FJS-D##` in `DECISIONS.md`.

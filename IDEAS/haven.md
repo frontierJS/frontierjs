@@ -2283,6 +2283,20 @@ These need server state:
 - **The arcade,** in the tavern's back room. Snake on the floor played on 9.4's
   home row, the high-score table as rows, and 8.3's crier announcing a new
   record.
+- **The platformer cabinet,** the arcade's second machine: an original
+  side-scroller in an 8-bit look -- gravity, jumps, tiles. Read 2026-10-31,
+  nothing built. Each screen runs its own figure's physics at 30–60 frames a
+  second, because a walk today is a presence update per step and a platformer
+  cannot wait on the server; another member's figure arrives at presence rate
+  and is smoothed, as 9.5's arrow is animated per screen. The browser draws a
+  pixelated canvas (5.2 allows one). The terminal reaches about 96×52 pixels
+  through 14.5's half-blocks, a third of an old console's resolution; OpenTUI's
+  `KittyImageTransport` gives real pixels in Kitty, WezTerm and Ghostty only. The
+  trap is a held key: a terminal sends repeats after about 500ms and no
+  release, so run-then-jump feels wrong; OpenTUI's `KittyKeyboardOptions.events`
+  reports releases where the terminal speaks that protocol, and elsewhere a tap
+  toggles a run. Single player is days; two members on one level is the
+  shared-state problem 9.1 names.
 - **The troll bridge.** A 14.8 line-bank NPC guards a bridge with a riddle. The
   answer is graded on the server, so no client holds it, and the door opens for
   that member only.

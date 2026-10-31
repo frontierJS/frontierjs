@@ -11016,8 +11016,8 @@ describe('@@transitions — parser', () => {
 
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
     expect(attr.field).toBe('status')
-    expect(attr.transitions.pay).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false, seals: false, stamps: [] })
-    expect(attr.transitions.refund).toEqual({ from: ['paid'], to: 'refunded', gate: 5, system: false, seals: false, stamps: [] })
+    expect(attr.transitions.pay).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false, seals: false, stamps: [], stampBy: null })
+    expect(attr.transitions.refund).toEqual({ from: ['paid'], to: 'refunded', gate: 5, system: false, seals: false, stamps: [], stampBy: null })
     expect(attr.transitions.cancel.from).toEqual(['pending', 'paid'])
   })
 
@@ -11026,7 +11026,7 @@ describe('@@transitions — parser', () => {
 model Order { id Int @id  status S @default(pending)  @@transitions(status, pending -> paid) }`)
     expect(r.valid).toBe(true)
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
-    expect(attr.transitions.paid).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false, seals: false, stamps: [] })
+    expect(attr.transitions.paid).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false, seals: false, stamps: [], stampBy: null })
   })
 
   test('@gate refuses a level name and names the digit it means (FJS-D239)', () => {
@@ -11248,6 +11248,71 @@ model M { id Int @id  s S @default(a)  ${fields}  @@transitions(s, go: a -> b @s
     await expect(db.msg.update({ where: { id: 1 }, data: { status: 'sent', sentAt: new Date('2001-01-01') } }))
       .rejects.toThrow(/sentAt is stamped by the 'send' move/)
     expect((await db.msg.findUnique({ where: { id: 1 } })).status).toBe('draft')
+    db.$close()
+  })
+})
+
+// FJS-3693 (FJS-D1699): a move writes WHO as well as WHEN, so a four-eyes policy
+// compares columns no caller and no hook writes.
+describe('@@transitions — @stamps(by:) writes the actor (FJS-3693)', () => {
+  const BY = `enum S { draft submitted approved }
+model Claim {
+  id            Int @id
+  status        S @default(draft)
+  submittedAt   DateTime?
+  submittedById Int? @system
+  approvedById  Int? @system
+  @@transitions(status,
+    submit:  draft -> submitted @stamps(submittedAt, by: submittedById),
+    approve: submitted -> approved @stamps(by: approvedById),
+    reopen:  approved -> draft)
+  @@allow(all, true)
+}`
+
+  test('parses by: beside the clock list, and refuses a column that cannot hold a principal', () => {
+    const r = parse(BY)
+    expect(r.errors).toEqual([])
+    const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
+    expect(attr.transitions.submit.stamps).toEqual(['submittedAt'])
+    expect(attr.transitions.submit.stampBy).toBe('submittedById')
+    expect(attr.transitions.approve.stamps).toEqual([])
+    expect(attr.transitions.reopen.stampBy).toBeNull()
+
+    const bad = (fields: string, by: string) => parse(`enum S { a b }
+model M { id Int @id  s S @default(a)  ${fields}  @@transitions(s, go: a -> b @stamps(by: ${by})) }`)
+    expect(bad('', 'nope').errors.join()).toContain('no such field')
+    expect(bad('', 's').errors.join()).toContain('state column')
+    expect(bad('t DateTime?', 't').errors.join()).toContain('must be a stored column')
+    expect(bad('who Int?', 'who').errors.join()).toContain('@system or @guarded')
+  })
+
+  test('the move writes ctx.auth.id, over HTTP-shaped and system-held clients alike', async () => {
+    const { db } = await makeTestClient(BY)
+    await db.claim.create({ data: { id: 1 } })
+    await db.claim.create({ data: { id: 2 } })
+
+    const submitted = await db.$setAuth({ id: 7 }).claim.transition(1, 'submit')
+    expect(submitted.submittedById).toBe(7)
+    expect(submitted.submittedAt).not.toBeNull()
+
+    // A form-style update that reaches the state is the same move.
+    const viaUpdate = await db.$setAuth({ id: 8 }).claim.update({ where: { id: 2 }, data: { status: 'submitted' } })
+    expect(viaUpdate.submittedById).toBe(8)
+
+    // A job holding the principal still names it; no principal leaves it null.
+    const approved = await db.$setAuth({ id: 9 }).asSystem().claim.transition(1, 'approve')
+    expect(approved.approvedById).toBe(9)
+    const anon = await db.asSystem().claim.transition(2, 'approve')
+    expect(anon.approvedById).toBeNull()
+    db.$close()
+  })
+
+  test('a payload naming the principal column is refused by name', async () => {
+    const { db } = await makeTestClient(BY)
+    await db.claim.create({ data: { id: 1 } })
+    await expect(db.$setAuth({ id: 7 }).claim.update({ where: { id: 1 }, data: { status: 'submitted', submittedById: 99 } }))
+      .rejects.toThrow()
+    expect((await db.claim.findUnique({ where: { id: 1 } })).status).toBe('draft')
     db.$close()
   })
 })

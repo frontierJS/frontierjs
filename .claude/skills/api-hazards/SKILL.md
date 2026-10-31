@@ -57,6 +57,7 @@ Detail: `references/routes-query-and-headers.md`
 - **An API on a sibling subdomain needs no cookie `Domain`; the cross-origin list is `cors.origins` + `credentials` + `csrf.origins`** (`FJS-2655`) — measured in Chrome: a host-only cookie rides only a fetch that says `credentials: 'include'`, and `app.localhost` / `api.localhost` are NOT the same site (`localhost` has no registrable domain). `fli deploy` derives the list as `FRONTIER_CORS_ORIGINS` (`FJS-D912`).
 - **Above 128 MB, a declared length over `http.maxBodySize` is refused by Bun, not by junction** (`FJS-3090`)
 - **A `{ body: 'stream' }` route bounds nothing a chunked sender writes, and its credential verifier sees an empty body** (`FJS-D1159`)
+- **A local File URL serves only as a read printed it, for one to two hours, from the process that printed it** (`FJS-D1703`)
 
 ## Sockets
 Detail: `references/sockets.md`

@@ -1309,7 +1309,7 @@ const MODEL = [
     'transitions',
     'model',
     'access',
-    '(<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …)], …) | (<field>, declaredBy: Model, scope: <column>)',
+    '(<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …, by: col)], …) | (<field>, declaredBy: Model, scope: <column>)',
     "A state machine on a CLOSED column — an enum, or a Boolean, which is the two-state machine every schema has (isPrimary, isPublished, isSuspended) and whose two directions are routinely different authorities. Enforced at the Data boundary. `declaredBy:` is the machine a tenant edits: the field is a state's key, the moves are rows of the declaring model — `fromId?` (null is an entry, where a row may start), `toId`, an optional `gate Int?`, and the `scope:` column's twin — each move is checked inside the UPDATE's own WHERE, a create names one of its scope's entries or takes the only one, and a move is named for its target. A boolean move states its own name, because `-> true` says which value is written and not what a person did. @gate(N) on a move is a floor on top of the model update level, and @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller passes and asSystem() bypasses. Reaches the client as x-transitions keyed by field — on the model, never on the enum $def, because only a model can carry a per-transition gate. @seals on a move is the moment the row becomes a DOCUMENT: after it the row's @sealed children may not be created, changed or removed. A seal is an event rather than a state, so the sealed set is computed — everything reachable from the move's target — and nothing restates it.",
     '@@transitions(status,\n    pay:    draft        -> paid,\n    ship:   paid         -> shipped,\n    cancel: [draft, paid] -> cancelled @gate(5))',
     {
@@ -1457,7 +1457,7 @@ const TRANSITION = [
     'transition',
     'protect',
     '',
-    "The move is the moment this row becomes a DOCUMENT. After it the row's @sealed children may not be created, changed or removed, and its @immutable columns freeze (SealedDocumentError). A seal is an event rather than a state, so it is declared on the move and not as a predicate over the state column, and the sealed set is computed from the move's target. Takes no argument: WHICH children seal is @sealed on the relation field.",
+    "The move is the moment this row becomes a DOCUMENT. After it the row's @sealed children may not be created, changed or removed, and its @immutable columns freeze (SealedDocumentError), as do the columns a @seals move itself @stamps, so the instant it became a document cannot be back-dated. A seal is an event rather than a state, so it is declared on the move and not as a predicate over the state column, and the sealed set is computed from the move's target. Takes no argument: WHICH children seal is @sealed on the relation field.",
     '@@transitions(state, issue: draft -> issued @seals)',
     {
       context: TRANSITION_CONTEXT,
@@ -1469,12 +1469,12 @@ const TRANSITION = [
     'stamps',
     'transition',
     'stamp',
-    '(<column>, …)',
-    "The move records WHEN it was made: the named DateTime columns get the clock in the move's own UPDATE, the way @updatedAt does, whether the move was made by transition(id, name) or by an update that lands it. The column is the engine's, so a payload naming it is refused by name; a direct transition() cannot leave it null, and a @@check requiring it holds in the same statement. Move-keyed, so two moves into one state can stamp different columns.",
-    '@@transitions(state, issue: draft -> issued @stamps(issuedAt))',
+    '(<column>, …, [by: <column>])',
+    "The move records WHEN it was made: the named DateTime columns get the clock in the move's own UPDATE, the way @updatedAt does, whether the move was made by transition(id, name) or by an update that lands it. The column is the engine's, so a payload naming it is refused by name; a direct transition() cannot leave it null, and a @@check requiring it holds in the same statement. Move-keyed, so two moves into one state can stamp different columns. `by: <column>` records WHO: the acting principal's id (ctx.auth.id, as @updatedBy reads it) goes in the same UPDATE, so a row policy can compare the first approver to the second without a hook writing either. The by column must be @system or @guarded; with no principal (a bare asSystem(), a service principal) it is left as it was, and `$setAuth(u).asSystem()` still names u.",
+    '@@transitions(state, issue: draft -> issued @stamps(issuedAt, by: issuedById))',
     {
       context: TRANSITION_CONTEXT,
-      extraFields: 'state DocState @default(draft)\n  issuedAt DateTime?',
+      extraFields: 'state DocState @default(draft)\n  issuedAt DateTime?\n  issuedById String? @system',
       seeAlso: ['transitions', 'field:updatedAt']
     }
   )

@@ -1905,11 +1905,23 @@ function makeTable(readDb, writeDb, shape, ctx) {
   }
 
   // The columns a move's `@stamps` names, written with the same clock as
-  // `@updatedAt` so one event carries one instant.
-  function moveStampSets(cols) {
-    if (!cols.length) return []
-    const _at = nowISO(ctx.stampClock ?? ctx.now).replace(/'/g, "''")
-    return cols.map(c => `${ident(col(c)).sql} = '${_at}'`)
+  // `@updatedAt` so one event carries one instant, and the `by:` column
+  // written with the principal's id (FJS-D1699). A literal, as `stampSets`
+  // is: this joins SET lists whose parameter arrays are built separately. A
+  // service principal and a context with none name no row, so the column stays
+  // as it was, as it does for `@updatedBy`.
+  function moveStampSets(cols, by = null) {
+    const sets = []
+    if (cols.length) {
+      const _at = nowISO(ctx.stampClock ?? ctx.now).replace(/'/g, "''")
+      sets.push(...cols.map(c => `${ident(col(c)).sql} = '${_at}'`))
+    }
+    const id = ctx.auth && ctx.auth.type !== 'service' ? ctx.auth.id : null
+    if (by && id != null) {
+      if (typeof id === 'number' && Number.isFinite(id)) sets.push(`${ident(col(by)).sql} = ${id}`)
+      else sets.push(`${ident(col(by)).sql} = '${String(id).replace(/'/g, "''")}'`)
+    }
+    return sets
   }
 
   // Pre-compute base SELECT — reused by every buildSQL call
@@ -3564,7 +3576,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // A column the move stamps is the engine's: a payload naming it would be
       // a second clock for one event, so it is refused by name, as @system is.
       const _moveStamps = _transResult?.stamps ?? []
-      const _namedStamps = _moveStamps.filter(c => c in data)
+      const _moveBy     = _transResult?.stampBy ?? null
+      const _namedStamps = [..._moveStamps, ...(_moveBy ? [_moveBy] : [])].filter(c => c in data)
       if (_namedStamps.length) throw new ValidationError(
         _namedStamps.map(f => ({
           path: [f],
@@ -3615,7 +3628,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // naming no column issues no statement at all below, and the trigger it
       // used to lean on never fired for one either.
       const _setColsV     = _setColsBase
-        ? [_setColsBase, ...stampSets(Object.keys(row)), ...moveStampSets(_moveStamps)].join(', ')
+        ? [_setColsBase, ...stampSets(Object.keys(row)), ...moveStampSets(_moveStamps, _moveBy)].join(', ')
         : _setColsBase
 
       const version = _expectVersion == null ? null : { field: _versionField, expect: _expectVersion }

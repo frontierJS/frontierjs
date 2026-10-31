@@ -12,7 +12,7 @@
 // inserts the last child, because nothing says it was the last. SQL:92 named
 // the same problem DEFERRABLE INITIALLY DEFERRED and SQLite has no such thing.
 //
-// So the grade happens where `flushPending` already fires: the outermost
+// So the grade happens where held announcements already fire: the outermost
 // commit, the one moment the package already treats as *the write is real*
 // (`FJS-D170`). Outside `$transaction` a single call IS the outermost unit, so
 // there is one rule and not an immediate/deferred pair for anybody to learn.

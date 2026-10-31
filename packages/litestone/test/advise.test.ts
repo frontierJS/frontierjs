@@ -1248,3 +1248,19 @@ describe('anonymous-beside-logged', () => {
     expect(findings(`${TRAIL}model Roster { id Int @id  person String  @@trail(audit) }`, rule)).toEqual([])
   })
 })
+
+describe('anonymous-quiets-its-transaction', () => {
+  const rule   = 'anonymous-quiets-its-transaction'
+  const BALLOT = `model Ballot { id Int @id  rating Int  @@anonymous }\n`
+
+  test('names the anonymous model whose transactions announce nothing else', () => {
+    const f = findings(`${BALLOT}model Roster { id Int @id  answered Boolean @default(false) }`, rule)
+    expect(f.length).toBe(1)
+    expect(f[0].model).toBe('Ballot')
+  })
+
+  test('stays quiet with nothing beside it to silence, or with no anonymous model', () => {
+    expect(findings(BALLOT, rule)).toEqual([])
+    expect(findings('model Roster { id Int @id  answered Boolean }', rule)).toEqual([])
+  })
+})

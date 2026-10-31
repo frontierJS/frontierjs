@@ -101,7 +101,10 @@ that no other App on its machines publishes (`FJS-3563`), its volume at `/db` wi
 database path moved onto it, its health check, `NODE_ENV=production`, each
 external URL recorded at its default, and `ENCRYPTION_KEY` minted as a secret
 and never printed. One question is asked, the hostname — `--domain` answers
-it, and both `FRONTIER_*_URL`s derive from it. An app with `web/` gets a
+it, and both `FRONTIER_*_URL`s derive from it. At a terminal it offers the
+package's name under Basecamp's own domain (`@acme/kos` beside
+`yuma.acme.cloud` offers `kos.acme.cloud`) and `-` leaves it unset; `--yes`
+offers nothing, since a guessed hostname would write DNS unasked. An app with `web/` gets a
 static App for it beside this one, placed on the same machines and named
 `app`, and this one is renamed `api` — the front door is the one called the
 app. A slug never changes, so the static App's is `app`, or `web` where this
@@ -109,7 +112,11 @@ one already holds `app`. The
 Domain goes on that App with the API's prefixes and `/ws` routed back here —
 `fli deploy`'s shape, `FJS-D1040`'s rows (`FJS-D1547`); an app without one
 gets the Domain itself. A Domain on the static App missing a route back is a
-finding whose fix is the route (`FJS-3529`). The plan is shown, applied on a yes (`--yes` skips
+finding whose fix is the route (`FJS-3529`). On an App no release of which
+has succeeded, a finding the plan fixes is printed only as a line of the plan,
+headed *New deployment*, and the preflight's Errors and Warnings keep what the
+plan cannot set; the error count that stops the release still counts every
+one. The plan is shown, applied on a yes (`--yes` skips
 the asking), and the preflight runs again on what Basecamp now holds. With no
 terminal and no `--yes` the plan is printed and nothing is written; `--dry`
 prints it too. A credential the app requires, a Dockerfile edit and
@@ -137,6 +144,7 @@ const { releaseFindings, gatherReleaseInputs, releasePlan } = await import(new U
 const { routePrefixes, apiPaths }    = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
 const { readAppSnapshot }            = await import(new URL('file://' + global.fliRoot + '/core/app-entry.js'))
 const { bundleEnvKeys, bundleEnvLine } = await import(new URL('file://' + global.fliRoot + '/core/bundle-env.js'))
+const { plural }                     = await import(new URL('file://' + global.fliRoot + '/core/text.js'))
 const { inspectBuild, inspectIgnored, gatherLocal, gatherIgnored, gatherSqliteCopies } = await import(new URL('file://' + global.fliRoot + '/core/build-check.js'))
 
 // Basecamp's own bound on a release that pulls nothing and starts and health
@@ -152,11 +160,42 @@ function sshDestination(server) {
     : `ssh://${user}@${server.ipAddress}:${server.sshPort}`
 }
 
+/** The hostname offered when nothing names one: the package's name under the
+ *  domain Basecamp itself answers on — `@acme/kos` beside yuma.acme.cloud is
+ *  kos.acme.cloud. Null where a half is no DNS name: a localhost or bare-IP
+ *  Basecamp has no domain to share, and a two-label one would offer a TLD. */
+function suggestedHostname(packageName, origin) {
+  const label = String(packageName ?? '').replace(/^@[^/]+\//, '').toLowerCase()
+  if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) return null
+  let host
+  try { host = new URL(origin).hostname } catch { return null }
+  const parts = host.split('.')
+  if (parts.length < 3 || /^\d+$/.test(parts.at(-1))) return null
+  return `${label}.${parts.slice(1).join('.')}`
+}
+
+async function packageName(root) {
+  const { readFileSync } = await import('fs')
+  try { return JSON.parse(readFileSync(`${root}/package.json`, 'utf8')).name }
+  catch { return null }
+}
+
 /** A list read that answers null and why, rather than throwing: the preflight
  *  reports what it could not read and grades the rest. */
 async function readList(origin, key, path) {
-  try { return { rows: await basecamp(origin, key, path) } }
+  try { return { rows: await basecampAll(origin, key, path) } }
   catch (err) { return { rows: null, error: err.message } }
+}
+
+/** Whether the App has never gone live: no release of it succeeded, a rolled
+ *  back one included. An unreadable history answers false, so a live App is
+ *  never shown its gaps as a first setup. */
+async function neverReleased(origin, key, app) {
+  for (const status of ['success', 'rolled_back']) {
+    const rows = await basecamp(origin, key, `/deployments?appId=${encodeURIComponent(app.id)}&status=${status}&$limit=1`).catch(() => null)
+    if (!rows || rows.some(r => r.appId === app.id)) return false
+  }
+  return true
 }
 
 /** Everything the preflight finds for a container App, errors first, with the
@@ -164,9 +203,9 @@ async function readList(origin, key, path) {
 async function preflight({ origin, key, app, root, dockerfile }) {
   const fs = await import('fs')
   const { spawnSync } = await import('child_process')
-  const vars     = await readList(origin, key, `/variables?environmentId=${encodeURIComponent(app.environmentId)}&$limit=200`)
-  const siblings = await readList(origin, key, `/apps?environmentId=${encodeURIComponent(app.environmentId)}&$limit=200`)
-  const routes   = await readList(origin, key, '/domainRoutes?$limit=200')
+  const vars     = await readList(origin, key, `/variables?environmentId=${encodeURIComponent(app.environmentId)}`)
+  const siblings = await readList(origin, key, `/apps?environmentId=${encodeURIComponent(app.environmentId)}`)
+  const routes   = await readList(origin, key, '/domainRoutes')
   const prefixes = routePrefixes(apiPaths(readAppSnapshot(root)))
   const build    = gatherLocal({ root, fs, dockerfile })
   const level    = { error: 0, warn: 1, info: 2 }
@@ -239,7 +278,7 @@ async function applyPlan({ origin, key, app, plan }) {
     // a second POST is refused by the per-workspace unique hostname. Basecamp's
     // find filters on appId only, so the hostname is matched here.
     const host   = plan.domain.hostname.toLowerCase()
-    const found  = (await basecamp(origin, key, '/domains?$limit=200')).find(d => d.hostname.toLowerCase() === host)
+    const found  = (await basecampAll(origin, key, '/domains')).find(d => d.hostname.toLowerCase() === host)
     if (found && found.appId !== owner.id)
       throw new Error(`${plan.domain.hostname} is already a Domain of another App (${found.appId}) — move it in Basecamp, or pass a different --domain`)
     const domain = found ?? await basecamp(origin, key, '/domains', { method: 'POST', body: { appId: owner.id, hostname: plan.domain.hostname } })
@@ -255,7 +294,7 @@ async function applyPlan({ origin, key, app, plan }) {
  *  with no trailing slash, so the plan's is compared in that form. */
 async function routeBack({ origin, key, app, domainId, hostname, prefixes }) {
   const norm   = (p) => String(p).trim().toLowerCase().replace(/\/+$/, '')
-  const routed = new Map((await basecamp(origin, key, `/domainRoutes?domainId=${encodeURIComponent(domainId)}&$limit=200`))
+  const routed = new Map((await basecampAll(origin, key, `/domainRoutes?domainId=${encodeURIComponent(domainId)}`))
     .filter(r => r.domainId === domainId).map(r => [norm(r.pathPrefix), r]))
   for (const pathPrefix of prefixes) {
     const have = routed.get(norm(pathPrefix))
@@ -394,15 +433,23 @@ if (inline) {
     const tag = `fjs-${app.id}:${sha ? sha.slice(0, 12) + (dirty ? '-dirty' : '') : Date.now()}`.toLowerCase()
 
     const mark   = { error: chalk.red('✗'), warn: chalk.yellow('!'), info: chalk.dim('·') }
-    const report = (findings) => {
-    const count = (l) => findings.filter(f => f.level === l).length
+    // On an App never released, a finding the plan fixes is its first setup
+    // rather than a fault, and is printed once, as a line of that plan. The
+    // count stays over every finding: it is what stops a release the plan
+    // was not applied to.
+    const report = (findings, { setup = false } = {}) => {
+    const count  = (l) => findings.filter(f => f.level === l).length
+    const shown  = setup ? findings.filter(f => !f.fix) : findings
+    const tally  = (l) => shown.filter(f => f.level === l).length
+    const held   = findings.length - shown.length
     echo('')
-    echo(`  Preflight — ${count('error')} error(s), ${count('warn')} warning(s)`)
+    echo(`  Preflight — ${tally('error')} error(s), ${tally('warn')} warning(s)` +
+      (held ? chalk.dim(` · ${plural(held, 'finding')} set up below, as a new deployment`) : ''))
     // One group per level, each under its own header, so where the errors end
     // and the warnings begin is read off the page rather than counted.
     const groups = [['error', 'Errors', chalk.red], ['warn', 'Warnings', chalk.yellow], ['info', 'Notes', chalk.dim]]
     for (const [level, label, color] of groups) {
-      const these = findings.filter(f => f.level === level)
+      const these = shown.filter(f => f.level === level)
       if (!these.length) continue
       echo('')
       echo(`  ${color(`${label}:`)}`)
@@ -419,7 +466,8 @@ if (inline) {
     }
 
     let { findings, prefixes } = await preflight({ origin, key, app, root, dockerfile })
-    let count = report(findings)
+    const fresh = await neverReleased(origin, key, app)
+    let count = report(findings, { setup: fresh })
 
     // ─── What the App is missing, from what the app declares ──────────────────
     // On every run, so a setup that stopped part way is finished by the next
@@ -431,7 +479,12 @@ if (inline) {
       let hostname = flag.domain
       if (!hostname && asking && missing.asked.length) {
         echo(`  App '${app.name}' is missing what its hostname gives it. One question shapes it:`)
-        hostname = await ask('Its hostname', 'e.g. app.example.com — Enter: none yet, the URLs and the Domain stay unset')
+        const offered = suggestedHostname(await packageName(root), origin)
+        hostname = await ask('Its hostname', offered
+          ? `Enter: ${offered} — '-': none yet, the URLs and the Domain stay unset`
+          : 'e.g. app.example.com — Enter: none yet, the URLs and the Domain stay unset')
+        if (offered && !hostname) hostname = offered
+        if (hostname === '-') hostname = ''
       }
       const plan    = releasePlan(findings, { hostname, prefixes })
       if (plan.web && app.name !== API_NAME) plan.app = { name: API_NAME, ...plan.app }
@@ -439,7 +492,9 @@ if (inline) {
       const lines   = planLines(plan, app, servers)
       if (lines.length) {
         const apply = !flag.dry && (flag.yes || process.stdin.isTTY)
-        echo(`  ${chalk.bold(apply ? 'Setting up' : 'Would set up')} App '${app.name}' from what the app declares:`)
+        echo(fresh
+          ? `  ${chalk.bold('New deployment')} — App '${app.name}' has never been released, so ${apply ? 'this run sets' : 'a run would set'} up:`
+          : `  ${chalk.bold(apply ? 'Setting up' : 'Would set up')} App '${app.name}' from what the app declares:`)
         for (const l of lines) echo(`    ${chalk.cyan('+')} ${l}`)
         if (plan.asked.length) echo(chalk.dim(`    ${plan.asked.join(', ')} wait on a hostname — pass --domain <hostname>.`))
         echo('')

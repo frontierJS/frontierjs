@@ -10,6 +10,13 @@ test('untag builds the string a template would, values in place', () => {
   expect(tag`line\tone`).toEqual(['line\tone'])
 })
 
+test('untag reads chalk markup in the literal text and never in a value', () => {
+  const plain = (s) => s.replace(/\x1b\[[0-9;]*m/g, '')
+  const [out] = tag`{dim name } ${'{bold x}'} {green.bold ok}`
+  expect(plain(out)).toBe('name  {bold x} ok')
+  expect(() => tag`{dim never closed`).toThrow('never closed')
+})
+
 test('untag passes an ordinary call through, arrays included', () => {
   expect(untag(['a', 1])).toEqual(['a', 1])
   expect(untag([['a', 'b'], 'c'])).toEqual([['a', 'b'], 'c'])

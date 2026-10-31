@@ -1203,6 +1203,27 @@ export const RULES = [
   },
 
   {
+    id:       'anonymous-quiets-its-transaction',
+    severity: 'info',
+    title:    'a transaction that writes an @@anonymous row announces none of its other writes',
+    blurb:    'An event for a row written beside an anonymous one names who answered at the instant ' +
+              'the anonymous table grows, so the client drops it: no tap, onEvent hook or ' +
+              'cross-process subscriber hears it (FJS-D1704). A screen watching such a model ' +
+              'refetches to see the change.',
+    run(schema) {
+      const anonymous = m => m.attributes?.some(a => a.kind === 'anonymous')
+      const models = schema.models ?? []
+      if (!models.some(m => !anonymous(m))) return []
+      return models.filter(anonymous).map(m => ({
+        model: m.name,
+        message: `${m.name}: @@anonymous, so a transaction that writes a ${m.name} row announces only its ` +
+          `${m.name} writes. A model flipped in the same transaction (a roster marked answered) changes ` +
+          `with no event; a screen subscribed to it sees the change on its next read.`,
+      }))
+    },
+  },
+
+  {
     id:       'create-reaches-unpickable-relation',
     severity: 'warn',
     title:    'a create policy reaches through a relation the picker cannot be narrowed by',
