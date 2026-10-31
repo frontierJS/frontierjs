@@ -9,6 +9,7 @@
 //   place · unplace — which machines the app runs on
 //   logs           — what the container is saying, read through the executor
 //   analytics      — what traffic its route took, counted off the machine's access log
+//   liveCheck      — why it is not live: release, placement, then each hostname's zone, DNS and HTTPS
 //   restoreVolume  — an archive on the machine or a backup in a bucket, extracted into the app's data directory
 //   restoreReplica — the app's databases out of its Litestream replica, at an instant
 //   fromBlueprint  — an app made out of a catalog entry and its parameters
@@ -30,6 +31,7 @@
 // `environment_name` / `environment_tier` columns.
 
 import { randomBytes } from 'node:crypto'
+import { Resolver } from 'node:dns/promises'
 import { createService, NotFound, BadRequest, BadGateway, Conflict, parseWhere, $ } from '@frontierjs/junction'
 import { normalizeOrderBy, type SortParam } from '@frontierjs/toolbelt/query'
 import { LEVELS, AccessDeniedError } from '@frontierjs/litestone'
@@ -56,7 +58,10 @@ import type { ProviderKind } from '#db/schema.d.ts'
 import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit, byteLength, DOCKERFILE_BYTES }
   from '../../domain/release/app-source.ts'
 import { fjsDockerfileTemplate, readRepoDockerfile, forgeRepo, DOCKERFILE_PATHS } from '../../domain/release/dockerfile-template.ts'
-import { runtimeOf, CONTAINER_TYPES } from '../../domain/release/runtime.ts'
+import { runtimeOf, CONTAINER_TYPES, servingAddresses } from '../../domain/release/runtime.ts'
+import { runLiveCheck } from '../../domain/release/live-check.ts'
+import type { DnsAnswer, HttpsAnswer } from '../../domain/release/live-check.ts'
+import { ingressRefusal } from '../edge/edge.service.ts'
 import { portHolders, serversOf, assertPortFree, allocatePort } from '../../domain/release/host-port.ts'
 import { mintDownload } from '../../jobs/app-backup-run.job.ts'
 import { cronProblem, syncAppBackupSchedule, syncAppDrillSchedule } from '../../domain/job/job-schedule.ts'
@@ -530,6 +535,37 @@ function paramValues(params: any[], values: Record<string, unknown>) {
   return out
 }
 
+// ─── liveCheck's two lookups ─────────────────────────────────────────────
+// What the public internet says about a hostname, asked from Basecamp's own
+// network through resolvers it does not run: the machine's resolver would
+// answer from its own cache or its own hosts file, which is the one place a
+// record that the world cannot see still resolves.
+const PUBLIC_RESOLVERS = ['1.1.1.1', '8.8.8.8']
+
+async function publicLookup(hostname: string): Promise<DnsAnswer> {
+  const resolver = new Resolver({ timeout: 5000, tries: 1 })
+  resolver.setServers(PUBLIC_RESOLVERS)
+  try {
+    return { addresses: await resolver.resolve4(hostname) }
+  } catch (err: any) {
+    // NODATA is a name with no A record: as much "nothing points here" as a
+    // name that does not exist.
+    if (err?.code === 'ENOTFOUND' || err?.code === 'ENODATA') return { nxdomain: true }
+    return { error: String(err?.code ?? err?.message ?? err) }
+  }
+}
+
+async function httpsRoot(hostname: string): Promise<HttpsAnswer> {
+  try {
+    const res = await fetch(`https://${hostname}/`, { redirect: 'manual', signal: AbortSignal.timeout(8000) })
+    await res.body?.cancel()
+    return { status: res.status }
+  } catch (err: any) {
+    const code = err?.code ?? err?.cause?.code
+    return { error: `${err?.message ?? err}${code ? ` (${code})` : ''}` }
+  }
+}
+
 export default createService({
   name:  'apps',
   scope: keyScope('apps'),
@@ -542,6 +578,8 @@ export default createService({
     'logs',
     // A read that names a window; a keyed retry asks the machine again.
     { method: 'analytics', read: true },
+    // Asks the public internet about the App's hostnames; writes nothing.
+    { method: 'liveCheck', read: true },
     { method: 'fromBlueprint', input: 'AppFromBlueprint' },
     { method: 'place',   gate: LEVELS.USER, input: 'AppPlace' },
     { method: 'unplace', gate: LEVELS.USER, input: 'AppUnplace' },
@@ -571,11 +609,14 @@ export default createService({
   channel: workspaceChannel,
   // `?serverId=` is not a column of App — a placement is an AppServer row —
   // so it is reserved rather than graded as a filter, and read below.
-  reservedQuery: [...WORKSPACE_QUERY, 'serverId'],
+  // `?projectId=` likewise: it is the environment's column, and the project
+  // screen lists every app across its environments by it.
+  reservedQuery: [...WORKSPACE_QUERY, 'serverId', 'projectId'],
 
   async find() {
     const { limit, offset } = getPagination()
-    const serverId = $.reserved.serverId as string | undefined
+    const serverId  = $.reserved.serverId as string | undefined
+    const projectId = $.reserved.projectId as string | undefined
     // The caller's `$orderBy` wins over newest-first; autoSort has validated
     // the key but left the value raw, and junction refuses a directive the
     // body never read (the jobs form sorts its app picker by name).
@@ -592,6 +633,7 @@ export default createService({
         ...parseWhere($.query),
         workspaceId: ws(),
         ...(serverId ? { appServers: { some: { serverId } } } : {}),
+        ...(projectId ? { environment: { is: { projectId } } } : {}),
         ...await notHub(db().asSystem(), 'app'),
       },
       include: { ...WITH_DETAIL, ...Object.fromEntries(asked.map(r => [r, true])) },
@@ -748,6 +790,40 @@ export default createService({
       throw new BadRequest(`Could not read traffic: ${reply.error.message}`)
     }
     return trafficOf(executor.serverId, routeId, (reply.data ?? {}) as Record<string, unknown>)
+  },
+
+  // ── liveCheck — POST /apps/:id  X-Service-Method: liveCheck ──────────
+  //
+  // Why this App is not live, as a chain that stops at the first failure
+  // (`domain/release/live-check.ts` decides; this gathers). A scoped read first,
+  // so the lookups run only for an App the caller may see. Nothing is written,
+  // so there is no audit event and no announcement.
+  async liveCheck() {
+    const target = await getScoped('app', 'App')
+
+    const [release, addresses, ingress, domains] = await Promise.all([
+      db().deployment.findFirst({ where: { appId: target.id }, select: { status: true }, orderBy: { queuedAt: 'desc' } }),
+      servingAddresses($.app.db!, target.id),
+      ingressRefusal(),
+      db().domain.findMany({
+        where:   { appId: target.id },
+        select:  { hostname: true, redirectTo: true, proxied: true, isPrimary: true },
+        orderBy: { hostname: 'asc' },
+      }),
+    ])
+
+    return runLiveCheck({
+      release,
+      addresses,
+      ingress,
+      hosts: (domains as Array<{ hostname: string; redirectTo: string | null; proxied: boolean }>).map(d => ({
+        hostname:   d.hostname,
+        redirectTo: d.redirectTo,
+        proxied:    d.proxied,
+        dns:        () => publicLookup(d.hostname),
+        https:      () => httpsRoot(d.hostname),
+      })),
+    })
   },
 
   // ── fromBlueprint — POST /apps  X-Service-Method: fromBlueprint ───

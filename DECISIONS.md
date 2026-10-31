@@ -8487,6 +8487,12 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1713"></a>2026-10-31 · `FJS-D1713` — A list page counts its total by default; `$total: false` skips the count.
+
+Asked through the question tool after the 2026-10-31 perf audit ([`docs/perf-audit-2026-10-31.md`](docs/perf-audit-2026-10-31.md)). The owner first picked **B** (`total: null` unless `$total` asks), then amended it to an opt-out: most lists hold a few hundred rows, where a `COUNT(*)` costs microseconds and an exact page N of M is worth having. The count's cost scales with the rows the filter matches, not the page. It measured 74x the page at 50k matching rows with no index, so a large list passes `$total: false` and the window answers `hasMore` from a `limit + 1` fetch with `total: null`, as the keyset path already does. A short page is its own total and never counts (`FJS-3743`). **C** (a `COUNT` over a `LIMIT N` subquery) was not taken because it still scans up to N. `$total` is one new row in the directive table (`@frontierjs/toolbelt/directives`, Invariant 10).
+
+*Lives in:* not built — `FJS-3765`.
+
 ### <a id="fjs-d1696"></a>2026-10-30 · `FJS-D1696` — Q4 — How edge treats the MX and SPF records Email Routing writes — Leave them unmarked, with three conditions: an expected `cloudflare-email` class drift skips, a refusal on a zone that already has an MX, and one named owner for the SPF merge.
 
 Asked in [`IDEAS/cloudflare-email.md`](IDEAS/cloudflare-email.md) § Open questions through the question tool. **A with three conditions** was picked over **B** (`edge` writes the MX and SPF itself, marked, and owns the SPF merge) and **A alone**. A alone fails `FJS-D560`: an unmarked record is reported as drift, so Cloudflare's records would be a line on every sync that nobody can clear. Enabling routing replaces the root MX, so a zone already receiving mail elsewhere (Google Workspace) must be refused rather than cut over. That is `D560`'s owed refuse case. Two SPF TXT records at the root are invalid, so the merge of an outbound `include:` needs one owner. If that owner has to be `edge`, this reopens toward B.
@@ -16070,6 +16076,36 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1714"></a>2026-10-31 · `FJS-D1714` — Q3 — Are stats over the transcripts scanned live, or indexed — An index model in Basecamp's database, appended from each file's last read offset.
+
+Asked in [`IDEAS/claude-code.md`](IDEAS/claude-code.md) § Open questions. **B** was picked over **A** (scan every JSONL on each request).
+
+The paper's recommendation, taken as written: 0.2 measured 21 s for a full parse and 6.4 s for the last 7 days, against a 1 s bar. Claude Code also deletes transcripts after `cleanupPeriodDays` (30 by default), so a live scan can never show more than a month and the index is the only place older spend survives. An append reads only new bytes (~13 MB an hour of active use here).
+
+### <a id="fjs-d1711"></a>2026-10-31 · `FJS-D1711` — Q5 — Are the quota bars ported — Port it, read-only, and never refresh the token (the refresh token rotates, so refreshing it signs out every running `claude`); a failed read shows *unavailable*.
+
+Asked in [`IDEAS/claude-code.md`](IDEAS/claude-code.md) § Open questions. **A** was picked over **B** (skip it).
+
+The paper's recommendation, taken as written: the bars are the reason people open this screen.
+
+### <a id="fjs-d1710"></a>2026-10-31 · `FJS-D1710` — Q4 — Is the Anthropic API key CLACOROO stores as `apiKeyHelper` ported — Not ported; Basecamp's `ANTHROPIC_API_KEY` env already covers its own runs.
+
+Asked in [`IDEAS/claude-code.md`](IDEAS/claude-code.md) § Open questions. **A** was picked over **B** (kept in the OS keychain as CLACOROO does), **C** (a Basecamp `Secret` (`@encrypted`) with a helper script that asks the API).
+
+The paper's recommendation, taken as written: it is the one feature that writes a credential Claude Code reads, and nothing else here needs it.
+
+### <a id="fjs-d1709"></a>2026-10-31 · `FJS-D1709` — Q2 — Which projects are scanned for project-scope config — Both, pins first.
+
+Asked in [`IDEAS/claude-code.md`](IDEAS/claude-code.md) § Open questions. **C** was picked over **A** (the Workbench's pins), **B** (every `cwd` found in the transcript history (`~/.claude/projects/*`)).
+
+The paper's recommendation, taken as written: pins are the ones the operator cares about, and history finds the rest without a second list to keep.
+
+### <a id="fjs-d1708"></a>2026-10-31 · `FJS-D1708` — Q1 — Where does the screen live — A tab on `/workbench/`.
+
+Asked in [`IDEAS/claude-code.md`](IDEAS/claude-code.md) § Open questions. **B** was picked over **A** (`/claude/`, nav label *Claude Code*, under *Build* beside Workbench).
+
+Against the recommendation (**A**): owner's pick through the question tool: Claude Code's configuration stays in the one screen that already runs Claude Code, rather than a second nav entry.
 
 ### <a id="fjs-d1686"></a>2026-10-30 · `FJS-D1686` — A finding an app's `check-baseline.json` already answers does not print as a CI note, and a DEFENDED finding is answered by name in `allow`, never by a count. CI folds every rule at or under its ceiling into one line per app (`· N baselined finding(s) across M rule(s)`); a rule with no ceiling prints as before. A count stays the spelling for debt, a ceiling that only falls (`css-raw-literal`, `css-class-collision`); an exemption with a reason goes in `allow` keyed `<rule>:<path>:<subject>`, so a finding that replaces another is visible.
 

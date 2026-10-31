@@ -1,0 +1,31 @@
+<script>
+  // AppEnvironments.mesa — the same app in this project's other environments,
+  // as a strip of links. An App belongs to one Environment, so "the same app"
+  // is the rows sharing its slug; one renamed in a single environment drops out.
+  //
+  // A component of its own because its tether needs the project and the slug,
+  // which the app screen only has once its record has loaded.
+  import { apps } from '../resources/App.mesa'
+  import { environments } from '../resources/Environment.mesa'
+  import TabList from '@frontierjs/ui/components/layout/TabList.mesa'
+  import Tab     from '@frontierjs/ui/components/layout/Tab.mesa'
+
+  export let projectId = null
+  export let slug      = null
+  export let current   = null   // this app's id
+
+  const siblings = apps.tethered({ state: 'local', composed: true, where: { projectId, slug } })
+
+  $: tierOrder = environments.fields?.tier?.enum ?? []
+  $: rows = [...siblings.rows]
+    .filter(a => a.environment)
+    .sort((a, b) => tierOrder.indexOf(b.environment.tier) - tierOrder.indexOf(a.environment.tier))
+</script>
+
+{#if rows.length > 1}
+  <TabList nav variant="pills" label="Environment" id="app-environments">
+    {#each rows as a (a.id)}
+      <Tab href={`/apps/${a.id}/`} current={a.id === current}>{a.environment.name}</Tab>
+    {/each}
+  </TabList>
+{/if}

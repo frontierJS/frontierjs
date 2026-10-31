@@ -514,6 +514,10 @@
   // which `@length(1, …)` refuses although the send would carry `null`.
   function _live() {
     if (!resource?.validate) return {}
+    // Only a revealed field can show a message, and under `validateOn='blur'`
+    // none is revealed until the first blur — so every keystroke before it
+    // validated the whole record to keep nothing.
+    if (_revealed.length === 0) return {}
     const coerced = resource.coerce ? resource.coerce(record) : record
     const payload = resource.normalize ? resource.normalize(coerced) : coerced
     const out = {}

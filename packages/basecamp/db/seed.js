@@ -995,7 +995,7 @@ async function seedInstallation(sys, owner, users) {
   // destination is workspace-owned (`FJS-D1491`), so it hangs off a tenant.
   const acme = await sys.workspace.findFirst({ where: { slug: 'acme-platform' } })
   const offBoxKey = await sys.secret.create({
-    data: { workspaceId: acme.id, name: 'backup:Backblaze B2', kind: 'backup', data: 'seeded-key-id:seeded-application-key', createdBy: owner.id },
+    data: { workspaceId: acme.id, name: 'backup-backblaze-b2', kind: 'backup', data: 'seeded-key-id:seeded-application-key', createdBy: owner.id },
   })
   const offBox = await sys.backupDestination.create({
     data: {

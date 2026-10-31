@@ -26,6 +26,7 @@
 // mistakes and only one of them is the credential.
 
 import { createService, BadRequest, Conflict, $ } from '@frontierjs/junction'
+import { slug } from '@frontierjs/toolbelt/inflect'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, actor }
@@ -110,10 +111,10 @@ function checkCredential(value: string): void {
 async function storeCredential(name: string, value: string): Promise<string> {
   const secret = await db().secret.create({
     data: {
-      // The unique is [workspaceId, name] and a destination's name is already
-      // unique in the workspace. The prefix keeps it out of the way of secrets
-      // a person authored.
-      name:      `backup:${name}`,
+      // The unique is [workspaceId, name]. `Secret.name` is a lowercase slug,
+      // so the free text a destination is named with is slugged and the prefix
+      // keeps it out of the way of secrets a person authored.
+      name:      `backup-${slug(name, { max: 240 }) || 'unnamed'}`,
       kind:      'backup',
       data:      value,
       createdBy: actor(),

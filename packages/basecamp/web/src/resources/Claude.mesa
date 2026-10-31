@@ -1,0 +1,10 @@
+<script module>
+  // src/resources/Claude.mesa — the Resource layer for Claude Code's
+  // configuration on this machine (api services/claude/claude.service.ts).
+  //
+  // No model, like Workbench: the plugins, skills, hooks and servers are files
+  // under the account's home and the pinned checkouts, read at request time.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const claude = createResource('claude', { model: null })
+</script>

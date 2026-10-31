@@ -3420,7 +3420,10 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
     }
 
     // ── Destroy removed blocks ──────────────────────────────────────────────
-    // Any old key not present in the new key set is removed now.
+    // Any old key not present in the new key set is removed now. This pass and
+    // the `blocks.set` on every created block are what keep `blocks` current:
+    // rebuilding it from `newKeys` at the end cost 69 µs of a 123 µs no-change
+    // update at a thousand rows, for a Map that already held the answer.
     const newKeySet = keyCount
     for (let i = j; i <= a_end; i++) {
       const key = prevKeys[i]
@@ -3442,7 +3445,6 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
         blocks.set(newKeys[i], b)
         newBlocks[i] = b
       }
-      blocks = new Map(newKeys.map((k, i) => [k, newBlocks[i]]))
       prevKeys = newKeys
       return
     }
@@ -3450,7 +3452,6 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
     // ── Trivial: only removals ──────────────────────────────────────────────
     if (j > b_end) {
       // All new blocks matched — removals already handled above
-      blocks = new Map(newKeys.map((k, i) => [k, newBlocks[i]]))
       prevKeys = newKeys
       return
     }
@@ -3515,7 +3516,6 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
       }
     }
 
-    blocks   = new Map(newKeys.map((k, i) => [k, newBlocks[i]]))
     prevKeys = newKeys
   })
 }

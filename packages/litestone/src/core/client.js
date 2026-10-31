@@ -4171,6 +4171,8 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const _vecPlan = vectorOrderPlan(orderBy, _vectorMap)
       const _jsVec   = _vecPlan && !_vectorFn(readDb) ? _vecPlan : null
 
+      const _nt = needsTiming()
+      const _fmT0 = _nt ? performance.now() : 0
       let sql, params, rawRows
       if (_jsVec) {
         // Graded before the scan and by the SQL path's own function, so a wrong
@@ -4209,8 +4211,6 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       // it is positional because every step from here maps one row to one row.
       const _dists = _vecPlan ? rawRows.map(r => r[DISTANCE_FIELD]) : null
 
-      const _nt = needsTiming()
-      const _fmT0 = _nt ? performance.now() : 0
       let rows              = readAll(rawRows, { mode: 'list', selectedFields: psLog?.requestedFields })
       if (_nt) fireQuery({ operation: 'findMany', args, sql, params, duration: _nt ? performance.now() - _fmT0 : 0, rowCount: rows.length })
       const _logIds = psLog !== ps ? extractIds(rows) : null
@@ -4424,10 +4424,17 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       if (_dists) for (let i = 0; i < rows.length; i++) rows[i][DISTANCE_FIELD] = _dists[i]
 
       // ── count query (same WHERE, no limit/offset) ─────────────────────
-      const vis      = visibleWhere('findManyAndCount', where, args)
-      const whereAll = and(whereFragment(vis.where), vis.policy)
-      const countSql = `SELECT COUNT(*) as n FROM "${tableName}"` + (whereAll ? ` WHERE ${whereAll.sql}` : '')
-      const total    = readDb.query(countSql).get(...(whereAll?.params ?? [])).n
+      // A first page that came back short IS the filtered set, so its length
+      // is the total and the COUNT would scan the table to say so again: at
+      // 50k rows the count cost 74x the page. `distinct` keeps the count,
+      // because COUNT(*) and a DISTINCT page disagree about what a row is.
+      const _short = !offset && distinct !== true && (limit == null || rawRows.length < Number(limit))
+      const total  = _short ? rawRows.length : (() => {
+        const vis      = visibleWhere('findManyAndCount', where, args)
+        const whereAll = and(whereFragment(vis.where), vis.policy)
+        const countSql = `SELECT COUNT(*) as n FROM "${tableName}"` + (whereAll ? ` WHERE ${whereAll.sql}` : '')
+        return readDb.query(countSql).get(...(whereAll?.params ?? [])).n
+      })()
 
       if (plugins?.hasPlugins) await plugins.afterRead(modelName, rows, ctx, { select })
       if (tableHasLogWork && rows.length > 0) emitLogs('read', rows, { ids: _logIds })
@@ -4538,7 +4545,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
           if (!inserted.row) return inserted
           const created = inserted.row
           // hasMany ops after — children need parent PK + parent row (for co-FK propagation)
-          const pkField = shape.model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
+          const pkField = _pkField ?? 'id'
           await processHasManyNested(nested, created[pkField], created)
           applyEdgeWrites(edgeWrites, created[pkField], scopedBy)
           return hasNested || edgeWrites.length ? rehydrateAfterChildren(inserted) : inserted
@@ -4581,7 +4588,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const body = async () => {
         plan = await u.plan(u.hasNested ? await processBelongsToNested(u.nested) : {})
         if (!plan) return null
-        const pkField = shape.model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
+        const pkField = _pkField ?? 'id'
         // A model that seals is written children first: its own UPDATE may be
         // the move that seals them, and a child written after it is refused,
         // rolling the move back. A child still refused here is refused because

@@ -10,9 +10,6 @@ title: DNS & edge
   // what the edge actually answers. The second half comes from a workspace's
   // edge ACCOUNT through the `edge` service, and the value of the screen is the
   // two disagreeing — a hostname with no record resolves nowhere.
-  //
-  // Analytics is still a skeleton with the reason beside it: no service reads
-  // it, and a zeroed figure reads as an outage rather than an absence.
   import { session } from '../../lib/session.js'
   import Domain, { domains } from '../../resources/Domain.mesa'
   import DomainRoute, { domainRoutes } from '../../resources/DomainRoute.mesa'
@@ -383,15 +380,19 @@ title: DNS & edge
           {:else if account.zones.length === 0}
             <p class="text-sm text-muted">This token opens no zone.</p>
           {:else}
-            <div class="cluster" id="edge-zones">
+            <!-- Status only when not active: twenty identical "active" pills
+                 hid the one zone that was pending. -->
+            <ul class="zone-list" id="edge-zones">
               {#each account.zones as z}
-                <Button
-                  treatment={picked?.zoneId === z.id ? 'outlined' : 'ghost'}
-                  aria-pressed={picked?.zoneId === z.id ? 'true' : 'false'}
-                  onclick={() => readZone(account.id, z.id)}
-                >{z.name} <Pill tone={ZONE_TONE[z.status] ?? 'muted'}>{z.status}</Pill>{#if ingress?.accountId === account.id && ingress?.zoneId === z.id} <Badge tone="success">ingress</Badge>{/if}</Button>
+                <li>
+                  <Button
+                    treatment={picked?.zoneId === z.id ? 'outlined' : 'ghost'}
+                    aria-pressed={picked?.zoneId === z.id ? 'true' : 'false'}
+                    onclick={() => readZone(account.id, z.id)}
+                  ><span class="zone-name">{z.name}</span>{#if z.status !== 'active'} <Pill tone={ZONE_TONE[z.status] ?? 'muted'}>{z.status}</Pill>{/if}{#if ingress?.accountId === account.id && ingress?.zoneId === z.id} <Badge tone="success">ingress</Badge>{/if}</Button>
+                </li>
               {/each}
-            </div>
+            </ul>
           {/if}
         </section>
       {/each}
@@ -487,7 +488,7 @@ title: DNS & edge
         <p class="text-body">
           The zone's own DNS records are the provider's to state, not this app's. Connect one by adding
           its API token as a provider key on <a href="/secrets/">Secrets</a> — an account-owned Cloudflare
-          token with Zone:Read — and its zones appear here beside the hostnames above.
+          token with Zone › Zone › Read, Zone › DNS › Edit and Zone › Config Rules › Edit — and its zones appear here beside the hostnames above.
         </p>
         <p class="text-body"><a href="/admin/adapters/">All adapters</a>.</p>
       </Callout>
@@ -497,14 +498,6 @@ title: DNS & edge
         <Skeleton variant="text" width="62%" />
       </div>
     {/if}
-
-    <h3 class="h5">Analytics</h3>
-    <div class="tiles" style="--tile-min: 12rem" aria-busy="true" aria-label="Edge analytics, not connected">
-      <Skeleton variant="stat" />
-      <Skeleton variant="stat" />
-      <Skeleton variant="stat" />
-      <Skeleton variant="stat" />
-    </div>
   </Card>
 {/if}
 
@@ -519,3 +512,20 @@ title: DNS & edge
     <Domain record={editing} only={['redirectTo', 'port', 'proxied', 'sslMode']} oncancel={() => editing = null} ondone={saved} submitId="domain-edit-save" />
   {/if}
 </Drawer>
+
+<style>
+  .zone-list {
+    display:               grid;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap:                   var(--space-2xs) var(--space-sm);
+    margin:                0;
+    padding:               0;
+    list-style:            none;
+  }
+  .zone-list :global(.btn) {
+    inline-size:     100%;
+    justify-content: flex-start;
+    text-align:      start;
+  }
+  .zone-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>

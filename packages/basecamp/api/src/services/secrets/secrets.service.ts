@@ -60,6 +60,8 @@ function normalizeProviderKey(data: Record<string, unknown>): void {
     throw new BadRequest(`Basecamp has no connector for '${data.providerKind}'`)
 
   const raw = String(data.data ?? '').trim()
+  // Wrapped, an empty token is a well-formed document that every vendor refuses.
+  if (!raw) throw new BadRequest('a provider key needs its token')
   try {
     const parsed = JSON.parse(raw)
     if (parsed && typeof parsed === 'object' && typeof parsed[TOKEN_FIELD] === 'string') return

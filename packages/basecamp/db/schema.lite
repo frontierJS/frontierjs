@@ -1157,7 +1157,13 @@ model Secret {
   workspaceId String
   workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
-  name        String     @trim @length(1, 200)
+  /// A label people pick a secret from, never an environment variable key: a
+  /// secret is referenced by id (`secret:<id>#field`), and the env key, if one
+  /// is ever needed, belongs on the binding. Shaped as a DNS-1123 subdomain
+  /// (the Kubernetes Secret-name rule), so what one screen writes another can
+  /// quote in a path, a flag or a hostname without escaping.
+  name        String     @trim
+                         @regex("^(?=.{1,253}$)[a-z0-9]([-a-z0-9.]*[a-z0-9])?$", "A secret's name is lowercase letters, digits and dashes — like cloudflare-prod")
   kind        SecretKind @default(generic) @immutable
   data        String     @default("{}") @encrypted
   // When a probe last proved this credential opens what it claims, and what

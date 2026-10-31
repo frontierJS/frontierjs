@@ -187,10 +187,9 @@ export const bridge = {
       finalMethod = (data as Record<string, unknown>)?.id != null ? 'patch' : 'create'
     }
 
-    return withCallEffects(hookContext({
-      service:   service,
+    return callContext({
+      service,
       method:    finalMethod,
-      type:      'before',
       transport,
       model,
       id:        raw.route.id ?? null,
@@ -206,16 +205,71 @@ export const bridge = {
       },
       route:  { ...raw.route },   // path-pattern captures — same word both sides
       locals: {},
-      transients: {},             // filled by autoValidate, from what the model declares
-      reserved:   {},             // filled by callService, from what the service reserved
-      app:       appRef ?? NO_APP,
-      result:    null,
-      error:     null,
-      statusCode: undefined,
-      dispatch:   undefined,
-      signal:    raw.signal ?? new AbortController().signal,
-      raw:       raw
-    }))
+      app:    appRef,
+      signal: raw.signal ?? new AbortController().signal,
+      raw,
+    })
+  },
+
+  // ── Socket frame → ServiceContext ─────────────────────────────────────
+  // A `service_call` frame says what a request line and its headers say over
+  // HTTP, so it is read by the same rules. Built from `internal` and patched
+  // afterwards, a frame's `$first` was dropped as an unread flag, and a find
+  // asking for one row answered the whole list (`FJS-3756`).
+  //
+  // `caller` is the transport's to state: the upgrade's headers merged with
+  // the frame's allow-listed ones, which only the socket layer knows.
+
+  fromFrame(
+    frame: {
+      service: string
+      model:   string
+      method:  AnyMethod
+      data:    Record<string, unknown> | null
+      query:   Record<string, unknown>
+      id:      unknown
+      base:    Record<string, unknown> | null
+      user:    import('../auth/types.ts').SessionContext | null
+      caller:  ServiceContext['caller']
+      locals:  Record<string, unknown>
+      signal?: AbortSignal
+    },
+    appRef?: import('../core/app.ts').App
+  ): ServiceContext {
+    refuseBadDirectives(frame.query)
+    const method = frame.method === 'find' && readTransportFlags(frame.query).first ? 'get' : frame.method
+
+    const { query, directives } = splitParams(frame.query) as {
+      query: Record<string, unknown>
+      directives: QueryDirectives
+    }
+    refuseUnservableWindow(directives)
+
+    // A STRING, as over HTTP. There the id is a path segment and can be
+    // nothing else; here it is whatever JSON type the client wrote, so
+    // `patch(42, …)` handed a service the number and `PATCH /x/42` handed it
+    // the string. A handler comparing `ctx.id` to a row's own id, or using it
+    // as a Map key, then answered differently depending on whether a socket
+    // happened to be connected.
+    const id = frame.id ?? (frame.data as Record<string, unknown> | null)?.id
+    return callContext({
+      service:   frame.service,
+      method,
+      transport: 'websocket',
+      model:     frame.model,
+      id:        id != null && id !== '' ? String(id) : null,
+      query,
+      directives,
+      data:   frame.data,
+      base:   frame.base,
+      user:   frame.user ? freezeUser(frame.user) : null,
+      caller: frame.caller,
+      route:  {},
+      locals: frame.locals,
+      app:    appRef,
+      signal: frame.signal ?? NEVER_ABORTED,
+      raw:    null,
+    })
   },
 
   // ── ServiceContext → HTTP Response ────────────────────────────────────
@@ -240,21 +294,16 @@ export const bridge = {
     }
 
     const status = ctx.statusCode ?? (ctx.method === 'create' ? 201 : 200)
+    return jsonResponse(resultBody(ctx, rawWrap), status)
+  },
 
-    // The framework's one rule, stated once: a list keeps its envelope (it
-    // carries total/limit/offset, which have nowhere else to live), a single
-    // unwraps to the record. $wrap=true opts a single into the envelope too.
-    //
-    // Branching on `kind` rather than `object === 'list'` — `object` is now
-    // always the service name, so a service literally named 'list' no longer
-    // changes how its singles serialize.
-    return jsonResponse(
-      withholdProtected(unwrapResult(result, {
-        single: rawWrap === true  ? 'envelope' : 'data',
-        list:   rawWrap === false ? 'data'     : 'envelope',
-      }), ctx),
-      status
-    )
+  // ── ServiceContext → socket reply ─────────────────────────────────────
+  // What a `service_result` frame carries: toResponse's shape and redaction,
+  // so a call answers alike whichever wire it came over. The socket shaped
+  // its reply with the default rule, and `$wrap` was read on HTTP alone.
+
+  toFrame(ctx: ServiceContext, rawWrap?: boolean): unknown {
+    return resultBody(ctx, rawWrap)
   },
 
   // ── Internal service call context ────────────────────────────────────
@@ -285,10 +334,9 @@ export const bridge = {
     // no rows with a 200 on the in-process and socket paths.
     const merged = { ...fromQuery, ...directives }
     refuseUnservableWindow(merged)
-    return withCallEffects(hookContext({
+    return callContext({
       service,
       method,
-      type:      'before',
       transport,
       model:     service,
       id:        (data as Record<string, unknown>)?.id as string ?? null,
@@ -303,18 +351,52 @@ export const bridge = {
       },
       route:  {},
       locals: locals ? { ...locals } : {},   // fresh; explicit seed only
-      transients: {},
-      reserved:   {},
-      app:       appRef ?? NO_APP,
-      result:    null,
-      error:     null,
-      statusCode: undefined,
-      dispatch:   undefined,
-      signal:    opts.signal ?? NEVER_ABORTED,
-      raw:       null
-    }))
+      app:    appRef,
+      signal: opts.signal ?? NEVER_ABORTED,
+      raw:    null,
+    })
   }
 
+}
+
+// ─── The one context literal ──────────────────────────────────────────────
+//
+// Every wire and the in-process call build a ServiceContext, and three copies of
+// a 25-field literal drift: a field added to one is missing from the others
+// with no type error, because each copy is complete on its own. A caller states
+// what the call is; what every call starts with is stated here.
+type CallParts = Pick<ServiceContext,
+  'service' | 'method' | 'transport' | 'model' | 'id' | 'query' | 'directives' | 'data' |
+  'base' | 'user' | 'caller' | 'route' | 'locals' | 'signal' | 'raw'> & {
+  app?: import('../core/app.ts').App
+}
+
+function callContext(parts: CallParts): ServiceContext {
+  return withCallEffects(hookContext({
+    ...parts,
+    type:       'before',
+    transients: {},             // filled by autoValidate, from what the model declares
+    reserved:   {},             // filled by callService, from what the service reserved
+    app:        parts.app ?? NO_APP,
+    result:     null,
+    error:      null,
+    statusCode: undefined,
+    dispatch:   undefined,
+  }))
+}
+
+// The framework's one rule, stated once: a list keeps its envelope (it carries
+// total/limit/offset, which have nowhere else to live), a single unwraps to the
+// record. `$wrap=true` opts a single into the envelope, `$wrap=false` a list out.
+//
+// Branching on `kind` rather than `object === 'list'` — `object` is always the
+// service name, so a service literally named 'list' does not change how its
+// singles serialize.
+function resultBody(ctx: ServiceContext, rawWrap?: boolean): unknown {
+  return withholdProtected(unwrapResult(ctx.result, {
+    single: rawWrap === true  ? 'envelope' : 'data',
+    list:   rawWrap === false ? 'data'     : 'envelope',
+  }), ctx)
 }
 
 // ─── What may be said about a failure ─────────────────────────────────────
@@ -562,17 +644,20 @@ const JSON_HEADERS = {
  * The Responses junction built this request, so the transport may write its
  * headers on them in place. A Response the handler made, or one a cache hands
  * out again, is still copied: a header set on a shared Response is set for
- * every later caller of it.
+ * every later caller of it. The body text is kept beside it so a gzip caller
+ * is compressed from the string, not from the body read back out.
  */
-const OWNED = new WeakSet<Response>()
-export function own(res: Response): Response { OWNED.add(res); return res }
+const OWNED = new WeakMap<Response, string | null>()
+export function own(res: Response, text: string | null = null): Response { OWNED.set(res, text); return res }
 export function isOwned(res: Response): boolean { return OWNED.has(res) }
+export function ownedText(res: Response): string | null { return OWNED.get(res) ?? null }
 
 export function jsonResponse(data: unknown, status = 200): Response {
-  return own(new Response(JSON.stringify(data), {
+  const text = JSON.stringify(data)
+  return own(new Response(text, {
     status,
     headers: JSON_HEADERS
-  }))
+  }), text)
 }
 
 // `host` is for a failure before any service context exists (a bad query, a raw
@@ -581,10 +666,11 @@ export function errorResponse(err: unknown, ctx?: ServiceContext, host?: ErrorMa
   const fe     = sanitizeError(toFrameworkError(err, host ?? ctx?.app), boundaryOptions(ctx))
   const status = fe.code ?? 500
 
-  return own(new Response(JSON.stringify(fe.toJSON()), {
+  const text   = JSON.stringify(fe.toJSON())
+  return own(new Response(text, {
     status,
     headers: JSON_HEADERS
-  }))
+  }), text)
 }
 
 export function redirectResponse(url: string, status = 302): Response {

@@ -31,6 +31,7 @@
 // added to one of them — tests green, never delivers.
 
 import { createService, BadRequest, Conflict, parseWhere, $ } from '@frontierjs/junction'
+import { slug } from '@frontierjs/toolbelt/inflect'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, actor }
@@ -63,10 +64,10 @@ async function storeCredential(
   // and leaves it writable, and the tenancy default stamps the workspace.
   const secret = await db().secret.create({
     data: {
-      // The unique is [workspaceId, name] and a channel's name is already
-      // unique in the workspace, so this cannot collide where the channel did
-      // not. The prefix keeps it out of the way of secrets a person authored.
-      name:      `channel:${name}`,
+      // The unique is [workspaceId, name]. `Secret.name` is a lowercase slug,
+      // so the free text a channel is named with is slugged and the prefix
+      // keeps it out of the way of secrets a person authored.
+      name:      `channel-${slug(name, { max: 240 }) || 'unnamed'}`,
       kind:      'notification',
       data:      JSON.stringify({ [field]: value }),
       createdBy: actor(),

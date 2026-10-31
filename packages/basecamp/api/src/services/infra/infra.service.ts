@@ -33,6 +33,7 @@ import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws } from '../../core/resource.ts'
 import { isSnoozed } from '../../domain/alert/alerting.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
+import { edgeAccounts, ingressRefusal } from '../edge/edge.service.ts'
 
 /** The ceiling on any one kind of node. A fleet past this is a graph nobody
  *  can read anyway, and the answer says it was cut rather than looking whole. */
@@ -258,11 +259,13 @@ export default createService({
   async launch() {
     $.dispatch = false   // read-shaped
 
-    const [online, project, env, apps] = await Promise.all([
+    const [online, project, env, apps, edge, noIngress] = await Promise.all([
       db().server.findFirst({  where: { workspaceId: ws(), status: 'online' }, orderBy: { createdAt: 'asc' } }),
       db().project.findFirst({ where: { workspaceId: ws() }, orderBy: { createdAt: 'asc' } }),
       db().environment.findFirst({ where: { workspaceId: ws() }, orderBy: { createdAt: 'asc' } }),
       db().app.findMany({ where: { workspaceId: ws() }, orderBy: { createdAt: 'asc' }, limit: MAX_NODES }),
+      edgeAccounts(),
+      ingressRefusal(),
     ])
 
     const appIds = apps.map((a: { id: string }) => a.id)
@@ -280,6 +283,13 @@ export default createService({
       { id: 'machine', title: 'Connect a machine',
         detail: online ? `${online.name} is online.` : 'Import a machine and run its install command, or run bun run dev:outpost on this laptop.',
         href: online ? `/servers/${online.id}/` : '/servers/import/', done: !!online },
+      // A release with no ingress zone succeeds and answers on no name: the
+      // DNS push is skipped as not-yet, so nothing else on the path says so.
+      { id: 'dns', title: 'Connect Cloudflare',
+        detail: !edge.length ? 'Add an account-owned Cloudflare API token as a provider key, with Zone › Zone › Read, Zone › DNS › Edit and Zone › Config Rules › Edit on the zones your apps use.'
+          : noIngress ? 'Choose the zone app records go in — Use for ingress on the DNS screen.'
+          : 'The ingress zone is set.',
+        href: !edge.length ? '/secrets/' : '/dns/', done: !!edge.length && !noIngress },
       { id: 'project', title: 'Create a project',
         detail: project ? `${project.name}.` : 'Apps and environments live inside one.',
         href: project ? `/projects/${project.id}/` : '/projects/create/', done: !!project },

@@ -48,6 +48,7 @@ title: Workbench
   import { ago }       from '../../lib/datetime.js'
   import { markdownText } from '@frontierjs/toolbelt/markdown'
   import { slug }      from '@frontierjs/toolbelt/inflect'
+  import { page }      from '@frontierjs/sierra/router'
   import { workbench } from '../../resources/Workbench.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -62,8 +63,13 @@ title: Workbench
   import Markdown   from '@frontierjs/ui/components/display/Markdown.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import Tab        from '@frontierjs/ui/components/layout/Tab.mesa'
+  import TabList    from '@frontierjs/ui/components/layout/TabList.mesa'
+  import TabPanel   from '@frontierjs/ui/components/layout/TabPanel.mesa'
+  import Tabs       from '@frontierjs/ui/components/layout/Tabs.mesa'
   import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
   import Terminal   from '../../components/Terminal.mesa'
+  import ClaudeCode from '../../components/ClaudeCode.mesa'
 
   const POLL_MS   = 2000
   const SHOW_TOOLS = 4
@@ -78,6 +84,16 @@ title: Workbench
   let offered     = true
   let loaded      = false
   let pinning     = false
+
+  // Checkouts is per pin, Claude Code is the machine's; `?tab=claude` opens the
+  // second. The checkouts stay mounted while hidden, or a pane's terminal and
+  // scroll are gone on the way back, and Claude Code is read the first time it opens.
+  let pageTab     = page.query?.tab === 'claude' ? 'claude' : 'checkouts'
+  let claudeSeen  = pageTab === 'claude'
+  function onView(id) {
+    if (id === 'claude') claudeSeen = true
+    else afterDraw(place)
+  }
 
   // The revs the transcripts were fetched at; a poll answering another is the
   // cue to fetch again.
@@ -440,7 +456,7 @@ title: Workbench
 
   // Alt and a code rather than a key: on a Mac, Alt+1 types ¡.
   function onKey(e) {
-    if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+    if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || pageTab !== 'checkouts') return
     const digit = /^Digit([1-9])$/.exec(e.code)?.[1]
     if (digit) {
       const p = ordered(pins)[Number(digit) - 1]
@@ -1168,6 +1184,12 @@ title: Workbench
   </span>
 </div>
 
+<Tabs bind:activeId={pageTab} onchange={onView}>
+<TabList label="What the workbench shows">
+  <Tab id="checkouts">Checkouts</Tab>
+  <Tab id="claude">Claude Code</Tab>
+</TabList>
+<TabPanel id="checkouts">
 {#if !offered}
   <Callout tone="muted" title="Not offered on this Basecamp">
     <p class="text-body">
@@ -1906,6 +1928,11 @@ title: Workbench
     </aside>
   </div>
 {/if}
+</TabPanel>
+<TabPanel id="claude">
+  {#if claudeSeen}<ClaudeCode />{/if}
+</TabPanel>
+</Tabs>
 
 <style>
   /* The stage is the window under the header, so a long run scrolls inside

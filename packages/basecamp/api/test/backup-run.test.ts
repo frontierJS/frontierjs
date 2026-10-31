@@ -359,7 +359,7 @@ describe('a backup naming a destination is uploaded, and a failed upload keeps t
     await sys.user.create({ data: { email: `bk-${uniq}@example.com` } })
     const ws   = await sys.workspace.create({ data: { accountId: acct.id, name: 'Backups', slug: `bk-${uniq}` } })
     const key  = await sys.secret.create({ data: {
-      workspaceId: ws.id, name: 'backup:Stand-in', kind: 'backup', data: 'keyid:applicationkey',
+      workspaceId: ws.id, name: 'backup-stand-in', kind: 'backup', data: 'keyid:applicationkey',
     } })
     const dest = await sys.backupDestination.create({ data: {
       workspaceId: ws.id, name: 'Stand-in', endpoint: `http://127.0.0.1:${server.port}`,
@@ -466,7 +466,7 @@ describe('retention prunes by count and age, local and remote apart, and a resca
     const acct = await sys.account.create({ data: { slug: `rt-${uniq}`, displayName: 'Retention' } })
     await sys.user.create({ data: { email: `rt-${uniq}@example.com` } })
     const ws   = await sys.workspace.create({ data: { accountId: acct.id, name: 'Retention', slug: `rt-${uniq}` } })
-    const key  = await sys.secret.create({ data: { workspaceId: ws.id, name: 'backup:Retention', kind: 'backup', data: 'keyid:applicationkey' } })
+    const key  = await sys.secret.create({ data: { workspaceId: ws.id, name: 'backup-retention', kind: 'backup', data: 'keyid:applicationkey' } })
     dest = await sys.backupDestination.create({ data: {
       workspaceId: ws.id, name: 'Retention', endpoint: `http://127.0.0.1:${server.port}`,
       region: 'us-west-000', bucket: 'frontier-basecamp', prefix: 'basecamp-', secretId: key.id,

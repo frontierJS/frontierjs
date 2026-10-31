@@ -174,7 +174,7 @@ because whichever provider gains an adapter first is the one that fills them.
 
 | View | Lines | Adapter | Screen |
 | --- | --- | --- | --- |
-| `CloudflareView` | 220 | Cloudflare zones, DNS, SSL mode | **Built** — `/dns/`. The real half is this app's own `Domain` rows: hostname, primary, certificate status, proxied. The zone's records come from the workspace's edge account through `edge`, with the hostnames that have no record; analytics is the skeleton |
+| `CloudflareView` | 220 | Cloudflare zones, DNS, SSL mode | **Built** — `/dns/`. The real half is this app's own `Domain` rows: hostname, primary, certificate status, proxied. The zone's records come from the workspace's edge account through `edge`, with the hostnames that have no record |
 | `DigitalOceanView` | 258 | DO droplets, volumes, floating IPs, **spend** | **Built** — `/cloud-spend/`. The real half is the inventory a bill is computed from — machines by provider and region, planned vCPU and RAM, attached disk. There is no DigitalOcean in `providers/index.ts` and no price column anywhere, so the money is the skeleton |
 | `GitActivityView` | 304 | Git host — repos, CI status | **Built** — `/git-activity/`, reporting the adapter's own state off `/portal/`. `IGit.listRepos()` answers a name and a clone URL, so even a wired adapter could not fill the table — widening the interface is the work |
 | `ObservabilityView` | 24 | A metrics source. The mock reads `LOGS`; nothing here stores or streams metrics | **Built** — `/observability/`, the same portal read. `IObservability` declares `queryLogs` and `queryMetrics` and no service exposes either, deliberately: a read here needs a window, a service and a level, which is a service to design rather than a pass-through to ship |
@@ -1288,7 +1288,7 @@ that is missing and a screen whose subject is missing.
 | --- | --- | --- |
 | `/infra-graph/` | `InfraGraphView` | `infra.graph` — servers, apps, networks, domains and the three join tables |
 | `/onboarding/` | `OnboardingView` | `infra.onboarding` — six counts |
-| `/dns/` | `CloudflareView` | `domains` + `apps` + `portal.get('edge')` + `edge.zones` / `edge.records` · skeleton for analytics |
+| `/dns/` | `CloudflareView` | `domains` + `apps` + `portal.get('edge')` + `edge.zones` / `edge.records` |
 | `/cloud-spend/` | `DigitalOceanView` | `servers` + `volumes.usage` + `portal.get('cloudSpend')` · skeleton for the money |
 | `/git-activity/` | `GitActivityView` | `portal.get('git')` · skeleton for the repositories |
 | `/observability/` | `ObservabilityView` | `portal.get('observability')` · skeleton for metrics and logs |

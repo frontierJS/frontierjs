@@ -1710,8 +1710,30 @@ function _patternSentence(label, rule, value) {
   return `${label} is not in the expected format`
 }
 
+// The label is only ever read into an error sentence, and `humanize` was two
+// thirds of validating a VALID twenty-field record on every keystroke; the
+// pattern was recompiled per field per call. Both are facts of the rule, so
+// each is kept on it. A rule object answers for one column.
+const _LABELS   = new WeakMap()
+const _PATTERNS = new WeakMap()
+function _labelOf(name, rule) {
+  if (!rule || typeof rule !== 'object') return columnLabel(name, rule)
+  let hit = _LABELS.get(rule)
+  if (!hit || hit.name !== name) { hit = { name, label: columnLabel(name, rule) }; _LABELS.set(rule, hit) }
+  return hit.label
+}
+function _patternOf(rule) {
+  if (_PATTERNS.has(rule)) return _PATTERNS.get(rule)
+  let re = null
+  try { re = new RegExp(rule.pattern) } catch { re = null }
+  _PATTERNS.set(rule, re)
+  return re
+}
+
 function _checkConstraints(name, rule, value, errors) {
-  const label = columnLabel(name, rule)
+  // Lazy: a valid value never asks for it.
+  let _label
+  const label = { toString() { return _label ??= _labelOf(name, rule) } }
   const add = (message) => errors.push({ field: name, message })
   const say = (keyword, fallback) => add(_say(rule, keyword, fallback))
 
@@ -1725,8 +1747,7 @@ function _checkConstraints(name, rule, value, errors) {
     if (rule.minLength != null && value.length < rule.minLength) say('minLength', `${label} must be at least ${rule.minLength} character${rule.minLength === 1 ? '' : 's'}`)
     if (rule.maxLength != null && value.length > rule.maxLength) say('maxLength', `${label} must be at most ${rule.maxLength} characters`)
     if (rule.pattern) {
-      let re = null
-      try { re = new RegExp(rule.pattern) } catch { re = null }
+      const re = _patternOf(rule)
       if (re && !re.test(value)) say('pattern', _patternSentence(label, rule, value))
     }
     if (rule.format === 'email' && !_EMAIL.test(value)) say('format', `${label} must be a valid email address`)

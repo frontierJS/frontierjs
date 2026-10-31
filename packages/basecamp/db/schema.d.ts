@@ -2150,6 +2150,13 @@ export interface InvitationRelations {
 export interface Secret {
   id: string
   workspaceId: string
+  /**
+   * A label people pick a secret from, never an environment variable key: a
+   * secret is referenced by id (`secret:<id>#field`), and the env key, if one
+   * is ever needed, belongs on the binding. Shaped as a DNS-1123 subdomain
+   * (the Kubernetes Secret-name rule), so what one screen writes another can
+   * quote in a path, a flag or a hostname without escaping.
+   */
   name: string
   kind: SecretKind
   /** @encrypted */
@@ -2182,6 +2189,13 @@ export interface Secret {
 export interface SecretCreate {
   id?: string
   workspaceId: string
+  /**
+   * A label people pick a secret from, never an environment variable key: a
+   * secret is referenced by id (`secret:<id>#field`), and the env key, if one
+   * is ever needed, belongs on the binding. Shaped as a DNS-1123 subdomain
+   * (the Kubernetes Secret-name rule), so what one screen writes another can
+   * quote in a path, a flag or a hostname without escaping.
+   */
   name: string
   kind?: SecretKind
   data?: string

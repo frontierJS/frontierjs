@@ -1,0 +1,495 @@
+<script>
+  // The Claude Code tab on the Workbench: what Claude Code loads on THIS machine,
+  // read-only -- plugins, marketplaces, skills and agents, hooks, MCP servers and
+  // settings, each a searchable table (api services/claude, domain/claude/claude-scan.ts).
+  //
+  // Machine-wide, unlike the Workbench's other tab, which is per checkout; the
+  // heading says so. Every file the scan reads comes back as `Loaded<T>`, and a
+  // read that failed is shown as "unavailable: reason" -- never as a zero or a blank
+  // row, which would read as "nothing configured".
+  import { ago }    from '../lib/datetime.js'
+  import { claude } from '../resources/Claude.mesa'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import Stat       from '@frontierjs/ui/components/display/Stat.mesa'
+  import Table      from '@frontierjs/ui/components/display/Table.mesa'
+  import Tab        from '@frontierjs/ui/components/layout/Tab.mesa'
+  import TabList    from '@frontierjs/ui/components/layout/TabList.mesa'
+  import TabPanel   from '@frontierjs/ui/components/layout/TabPanel.mesa'
+  import Tabs       from '@frontierjs/ui/components/layout/Tabs.mesa'
+
+  const SECTIONS = [
+    ['overview', 'Overview'], ['plugins', 'Plugins'], ['marketplaces', 'Marketplaces'],
+    ['skills', 'Skills & agents'], ['hooks', 'Hooks'], ['mcp', 'MCP'], ['settings', 'Settings'],
+  ]
+
+  const PLUGIN_COLUMNS = [
+    { name: 'name', label: 'Plugin' }, { name: 'version', label: 'Version' }, { name: 'scope', label: 'Scope' },
+    { name: 'enabled', label: 'Enabled' }, { name: 'enabledIn', label: 'Projects' },
+    { name: 'items', label: 'Items' }, { name: 'hooks', label: 'Hooks' }, { name: 'mcp', label: 'MCP' },
+    { name: 'warn', label: 'Health' },
+  ]
+  const MARKETPLACE_COLUMNS = [
+    { name: 'name', label: 'Marketplace' }, { name: 'source', label: 'Source' },
+    { name: 'lastUpdated', label: 'Updated' }, { name: 'manifest', label: 'Manifest' },
+  ]
+  const ITEM_COLUMNS = [
+    { name: 'kind', label: 'Kind' }, { name: 'name', label: 'Name' }, { name: 'description', label: 'Description' },
+    { name: 'origin', label: 'Origin' }, { name: 'model', label: 'Model' }, { name: 'warn', label: 'Health' },
+  ]
+  const HOOK_COLUMNS = [
+    { name: 'event', label: 'Event' }, { name: 'matcher', label: 'Matcher' }, { name: 'command', label: 'Command' },
+    { name: 'timeout', label: 'Timeout' }, { name: 'origin', label: 'Origin' },
+  ]
+  const MCP_COLUMNS = [
+    { name: 'name', label: 'Server' }, { name: 'scope', label: 'Scope' }, { name: 'where', label: 'Project / plugin' },
+    { name: 'transport', label: 'Transport' }, { name: 'target', label: 'Command / URL' },
+    { name: 'keys', label: 'Env / header names' },
+  ]
+  const SETTING_COLUMNS = [{ name: 'key', label: 'Setting' }, { name: 'value', label: 'Value' }]
+  const PROJECT_COLUMNS = [
+    { name: 'path', label: 'Project' }, { name: 'source', label: 'Found by' }, { name: 'exists', label: 'On disk' },
+    { name: 'lastActive', label: 'Last active' }, { name: 'transcripts', label: 'Transcripts' },
+    { name: 'model', label: 'Model' }, { name: 'plugins', label: 'Plugins on' }, { name: 'warn', label: 'Health' },
+  ]
+  const KIND_OPTIONS = [
+    { value: '', label: 'All kinds' }, { value: 'skill', label: 'Skills' },
+    { value: 'agent', label: 'Agents' }, { value: 'command', label: 'Commands' },
+  ]
+
+  let cfg      = null
+  let error    = null
+  let offered  = true
+  let loading  = false
+  let section  = 'overview'
+  let qs       = { plugins: '', marketplaces: '', skills: '', hooks: '', mcp: '', settings: '' }
+  let kind     = ''
+  let tables   = null
+  let shown    = null
+
+  async function load() {
+    loading = true
+    try {
+      cfg   = await claude.service.invoke('config', null)
+      error = null
+    } catch (err) {
+      if (err.code === 404) offered = false
+      error = err.message
+    } finally {
+      loading = false
+    }
+  }
+  $.onMount(load)
+
+  $: { tables = cfg ? build(cfg) : null }
+  $: { shown = tables ? narrow(tables, qs, kind) : null }
+
+  const setQ = (id, v) => { qs = { ...qs, [id]: v } }
+
+  // ─── shaping ─────────────────────────────────────────────────────────────────
+
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+  const squash = (s) => String(s ?? '').replace(/\s+/g, ' ').trim()
+  const dash   = (v) => (v === null || v === undefined || v === '' ? '—' : String(v))
+  const hay    = (...parts) => parts.flat().filter(p => p !== null && p !== undefined).join(' ').toLowerCase()
+
+  function build(c) {
+    const tilde = (p) => (p && c.home && (p === c.home || p.startsWith(`${c.home}/`)) ? `~${p.slice(c.home.length)}` : p ?? '')
+    const notes = { plugins: [], marketplaces: [], skills: [], hooks: [], mcp: [], settings: [] }
+    // A file that exists and would not read. An absent one is a state, not a failure.
+    const failed = (section, label, loaded) => {
+      if (loaded.result.ok || loaded.absent) return
+      notes[section].push({ label, path: tilde(loaded.path), reason: loaded.result.reason })
+    }
+    const origin = (o) => o.scope === 'user' ? 'user' : o.scope === 'plugin' ? o.plugin : tilde(o.project)
+
+    failed('settings', 'user settings', c.user.settings)
+    failed('mcp', '~/.claude.json', c.mcp)
+    failed('plugins', 'installed plugins', c.plugins.installed)
+    failed('marketplaces', 'known marketplaces', c.plugins.marketplaces)
+
+    const handlers = (sh) => sh.entries.ok ? sh.entries.value.reduce((n, e) => n + Math.max(1, e.handlers.length), 0) : 0
+
+    // ─── plugins and marketplaces
+    const plugins = c.plugins.list.map(p => {
+      failed('plugins', `${p.install.id} manifest`, p.manifest)
+      const bad = []
+      if (!p.rootExists) bad.push('install folder is missing')
+      if (!p.manifest.result.ok && !p.manifest.absent) bad.push(`manifest unavailable: ${p.manifest.result.reason}`)
+      const r = {
+        id: p.install.id, name: p.name, version: dash(p.install.version), scope: dash(p.install.scope),
+        project: p.install.projectPath ? tilde(p.install.projectPath) : '',
+        enabled: p.enabled, enabledIn: p.enabledIn.length, items: p.items.length,
+        hooks: p.hooks.reduce((n, h) => n + handlers(h), 0), mcp: p.mcp.length, warn: bad.join('; '),
+      }
+      return { ...r, hay: hay(r.id, r.name, r.version, r.scope, r.project, r.enabled ? 'enabled' : 'disabled', r.warn) }
+    })
+
+    const describeSource = (s) => s.kind === 'github' ? `github ${s.repo}${s.ref ? `@${s.ref}` : ''}`
+      : s.kind === 'git' ? `git ${s.url}${s.ref ? `@${s.ref}` : ''}`
+      : s.kind === 'url' ? `url ${s.url}`
+      : s.kind === 'path' ? `path ${tilde(s.path)}` : 'unrecognized source'
+    const catalogs = c.plugins.catalogs.map(k => {
+      failed('marketplaces', `${k.marketplace.name} manifest`, k.manifest)
+      const m = k.manifest.result
+      const manifest = m.ok ? `${plural(m.value.plugins.length, 'plugin')} offered`
+        : k.manifest.absent ? 'no manifest' : `unavailable: ${m.reason}`
+      const r = {
+        name: k.marketplace.name, source: describeSource(k.marketplace.source),
+        lastUpdated: k.marketplace.lastUpdated ? ago(k.marketplace.lastUpdated) : '—',
+        manifest, bad: !m.ok && !k.manifest.absent,
+      }
+      return { ...r, hay: hay(r.name, r.source, r.manifest) }
+    })
+
+    // ─── skills, agents, commands
+    const items = []
+    const addItems = (list) => {
+      for (const s of list) {
+        const v = s.item.ok ? s.item.value : null
+        const bad = !s.item.ok ? [`unavailable: ${s.item.reason}`] : v.issues
+        const r = {
+          kind: s.kind, name: s.name, full: squash(v?.description), description: squash(v?.description),
+          origin: origin(s.origin), originScope: s.origin.scope, model: dash(v?.model),
+          file: tilde(s.file), warn: bad.join('; '),
+        }
+        items.push({ ...r, hay: hay(r.kind, r.name, r.full, r.origin, r.model, r.warn) })
+      }
+    }
+    addItems(c.user.items)
+    c.plugins.list.forEach(p => addItems(p.items))
+    c.projects.forEach(p => addItems(p.items))
+
+    // ─── hooks
+    const hooks = []
+    const addHooks = (list) => {
+      for (const sh of list) {
+        if (!sh.entries.ok) {
+          notes.hooks.push({ label: `hooks of ${origin(sh.origin)}`, path: tilde(sh.file), reason: sh.entries.reason })
+          continue
+        }
+        for (const e of sh.entries.value) {
+          for (const h of e.handlers.length ? e.handlers : [null]) {
+            const r = {
+              event: e.event, matcher: dash(e.matcher), command: h?.command ?? (h?.type ? `(${h.type})` : '—'),
+              timeout: h?.timeout != null ? `${h.timeout}s` : '—', origin: origin(sh.origin), file: tilde(sh.file),
+              warn: e.issues.join('; '),
+            }
+            hooks.push({ ...r, hay: hay(r.event, r.matcher, r.command, r.origin, r.file, r.warn) })
+          }
+        }
+      }
+    }
+    addHooks(c.user.hooks)
+    c.plugins.list.forEach(p => addHooks(p.hooks))
+    c.projects.forEach(p => addHooks(p.hooks))
+
+    // ─── MCP
+    const mcp = []
+    const addMcp = (list) => {
+      for (const m of list) {
+        const target = m.url ?? [m.command, ...m.args].filter(Boolean).join(' ')
+        const r = {
+          name: m.name, scope: m.scope, where: m.plugin ?? tilde(m.project) ?? '', transport: dash(m.transport),
+          target: dash(target), keys: [...m.envKeys.map(k => `env ${k}`), ...m.headerKeys.map(k => `header ${k}`)].join(', '),
+          oauth: m.hasOauth, warn: m.issues.join('; '),
+        }
+        mcp.push({ ...r, hay: hay(r.name, r.scope, r.where, r.transport, r.target, r.keys, r.warn) })
+      }
+    }
+    if (c.mcp.result.ok) { addMcp(c.mcp.result.value.user); addMcp(c.mcp.result.value.local) }
+    c.plugins.list.forEach(p => addMcp(p.mcp))
+    for (const p of c.projects) {
+      failed('mcp', `${tilde(p.path)} .mcp.json`, p.mcpJson)
+      if (p.mcpJson.result.ok) addMcp(p.mcpJson.result.value)
+    }
+
+    // ─── settings
+    const s = c.user.settings.result.ok ? c.user.settings.result.value : null
+    const settings = []
+    if (s) {
+      const n = (list) => String(list.length)
+      const rows = [
+        ['model', s.model], ['effortLevel', s.effortLevel], ['theme', s.theme], ['outputStyle', s.outputStyle],
+        ['language', s.language], ['alwaysThinkingEnabled', s.alwaysThinkingEnabled],
+        ['cleanupPeriodDays', s.cleanupPeriodDays], ['permissions.defaultMode', s.permissions.defaultMode],
+        ['permissions.allow', `${n(s.permissions.allow)} rules`], ['permissions.ask', `${n(s.permissions.ask)} rules`],
+        ['permissions.deny', `${n(s.permissions.deny)} rules`],
+        ['permissions.additionalDirectories', n(s.permissions.additionalDirectories)],
+        ['enabledPlugins', `${Object.values(s.enabledPlugins).filter(Boolean).length} on of ${Object.keys(s.enabledPlugins).length}`],
+        ['env (names only)', s.envKeys.join(', ') || 'none'], ['apiKeyHelper', s.apiKeyHelper ? 'set' : 'not set'],
+        ...s.issues.map(i => ['issue', i]),
+      ]
+      for (const [key, value] of rows) settings.push({ key, value: dash(value), hay: hay(key, dash(value)) })
+    }
+    const projects = c.projects.map(p => {
+      const bad = []
+      for (const [label, l] of [['project settings', p.settings.project], ['local settings', p.settings.local]]) {
+        if (!l.result.ok && !l.absent) { bad.push(`${label} unavailable: ${l.result.reason}`); failed('settings', `${tilde(p.path)} ${label}`, l) }
+      }
+      const r = {
+        path: tilde(p.path), source: p.source, exists: p.exists, lastActive: p.lastActive,
+        transcripts: p.transcripts, model: dash(p.settings.merged.model), plugins: p.enabledPlugins.length, warn: bad.join('; '),
+      }
+      return { ...r, hay: hay(r.path, r.source, r.exists ? 'on disk' : 'gone', r.model, r.warn) }
+    })
+
+    // ─── overview
+    const kinds = (k) => items.filter(i => i.kind === k).length
+    const memory = c.user.memory.map(m => ({ ...m, path: tilde(m.path) }))
+    const issues = c.issues.map(i => ({ path: tilde(i.path), message: i.message }))
+    const counts = [
+      ['Plugins', plugins.length, `${plugins.filter(p => p.enabled).length} enabled`],
+      ['Marketplaces', catalogs.length, ''],
+      ['Skills & agents', items.length, [plural(kinds('skill'), 'skill'), plural(kinds('agent'), 'agent'), plural(kinds('command'), 'command')].join(', ')],
+      ['Hook handlers', hooks.length, ''],
+      ['MCP servers', mcp.length, ''],
+      ['Projects', projects.length, `${projects.filter(p => !p.exists).length} gone from disk`],
+    ]
+    const unavailable = Object.values(notes).flat()
+
+    return { plugins, catalogs, items, hooks, mcp, settings, projects, notes, memory, issues, counts, unavailable }
+  }
+
+  // Case-insensitive match on the text a row shows, section by section.
+  function narrow(t, q, k) {
+    const pick = (rows, term) => {
+      const w = (term ?? '').trim().toLowerCase()
+      return w ? rows.filter(r => r.hay.includes(w)) : rows
+    }
+    return {
+      plugins: pick(t.plugins, q.plugins), catalogs: pick(t.catalogs, q.marketplaces),
+      items: pick(k ? t.items.filter(i => i.kind === k) : t.items, q.skills),
+      hooks: pick(t.hooks, q.hooks), mcp: pick(t.mcp, q.mcp),
+      settings: pick(t.settings, q.settings), projects: pick(t.projects, q.settings),
+    }
+  }
+
+  const clip = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
+</script>
+
+<section id="claude-code" class="stack">
+  <header class="cluster claude-head">
+    <div>
+      <h2>Claude Code on this machine</h2>
+      <p class="text-sm text-muted">
+        Machine-wide, not per checkout.
+        {#if cfg}
+          Config dir <code>{cfg.configDir.replace(cfg.home, '~')}</code>,
+          scanned in {cfg.durationMs} ms, {ago(cfg.scannedAt)}.
+        {/if}
+      </p>
+    </div>
+    <Button id="claude-refresh" treatment="outlined" size="sm" loading={loading} disabled={loading || !offered}
+            onclick={load}>Refresh</Button>
+  </header>
+
+  {#if !offered}
+    <Callout tone="muted" title="Not offered on this Basecamp">{error}</Callout>
+  {:else if error && !cfg}
+    <Callout tone="danger" title="Could not read Claude Code's configuration">{error}</Callout>
+  {:else if !shown}
+    <p class="text-sm text-muted">Reading…</p>
+  {:else}
+    {#if error}<Callout tone="warning" title="Refresh failed, showing the last read">{error}</Callout>{/if}
+
+    <Tabs bind:activeId={section}>
+      <TabList label="Claude Code sections">
+        {#each SECTIONS as s}
+          <Tab id={s[0]}>{s[1]}</Tab>
+        {/each}
+      </TabList>
+
+      <TabPanel id="overview">
+        <div class="grid" id="claude-overview">
+          {#each tables.counts as c}
+            <Stat label={c[0]} value={c[1]} sub={c[2]} />
+          {/each}
+        </div>
+
+        {#if tables.unavailable.length || tables.issues.length}
+          <Callout tone="warning" title="Reads that did not complete">
+            <ul>
+              {#each tables.unavailable as u}
+                <li>{u.label}: <strong>unavailable: {u.reason}</strong> <code>{u.path}</code></li>
+              {/each}
+              {#each tables.issues as i}
+                <li><code>{i.path}</code> {i.message}</li>
+              {/each}
+            </ul>
+          </Callout>
+        {/if}
+
+        <h3>Memory files</h3>
+        <Table id="claude-memory" compact striped hover={false} emptyText="No memory files"
+               columns={[{ name: 'kind', label: 'Kind' }, { name: 'path', label: 'Path' }, { name: 'exists', label: 'Exists' }, { name: 'bytes', label: 'Bytes', align: 'right' }]}
+               rows={tables.memory}>
+          {#snippet row(m)}
+            <tr>
+              <td><Badge>{m.kind}</Badge></td>
+              <td><code>{m.path}</code></td>
+              <td>{#if m.exists}<Pill tone="success">yes</Pill>{:else}<Pill>no</Pill>{/if}</td>
+              <td class="text-right">{m.bytes ?? '—'}</td>
+            </tr>
+          {/snippet}
+        </Table>
+      </TabPanel>
+
+      <TabPanel id="plugins">
+        {#each tables.notes.plugins as n}
+          <Callout tone="warning" title={`${n.label} unavailable`}>{n.reason} <code>{n.path}</code></Callout>
+        {/each}
+        <Input id="claude-search-plugins" type="search" placeholder="Filter plugins…" aria-label="Filter plugins"
+               value={qs.plugins} oninput={(e) => setQ('plugins', e.target.value)} />
+        <Table id="claude-plugins" columns={PLUGIN_COLUMNS} rows={shown.plugins} striped hover={false} emptyText="No plugins match">
+          {#snippet row(p)}
+            <tr>
+              <td>{p.name} <span class="text-sm text-muted"><code>{p.id}</code></span></td>
+              <td>{p.version}</td>
+              <td>
+                <Badge>{p.scope}</Badge>
+                {#if p.project}<span class="text-sm text-muted"><code>{p.project}</code></span>{/if}
+              </td>
+              <td>{#if p.enabled}<Pill tone="success">on</Pill>{:else}<Pill>off</Pill>{/if}</td>
+              <td>{p.enabledIn}</td>
+              <td>{p.items}</td>
+              <td>{p.hooks}</td>
+              <td>{p.mcp}</td>
+              <td>{#if p.warn}<Badge tone="warning" title={p.warn}>{p.warn}</Badge>{:else}<span class="text-muted">ok</span>{/if}</td>
+            </tr>
+          {/snippet}
+        </Table>
+      </TabPanel>
+
+      <TabPanel id="marketplaces">
+        {#each tables.notes.marketplaces as n}
+          <Callout tone="warning" title={`${n.label} unavailable`}>{n.reason} <code>{n.path}</code></Callout>
+        {/each}
+        <Input id="claude-search-marketplaces" type="search" placeholder="Filter marketplaces…" aria-label="Filter marketplaces"
+               value={qs.marketplaces} oninput={(e) => setQ('marketplaces', e.target.value)} />
+        <Table id="claude-marketplaces" columns={MARKETPLACE_COLUMNS} rows={shown.catalogs} striped hover={false} emptyText="No marketplaces match">
+          {#snippet row(k)}
+            <tr>
+              <td>{k.name}</td>
+              <td><code class="clip" title={k.source}>{k.source}</code></td>
+              <td class="text-sm text-muted">{k.lastUpdated}</td>
+              <td>{#if k.bad}<Badge tone="warning" title={k.manifest}>{k.manifest}</Badge>{:else}<span class="text-sm text-muted">{k.manifest}</span>{/if}</td>
+            </tr>
+          {/snippet}
+        </Table>
+      </TabPanel>
+
+      <TabPanel id="skills">
+        <div class="cluster">
+          <Input id="claude-search-skills" type="search" placeholder="Filter skills and agents…" aria-label="Filter skills and agents"
+                 value={qs.skills} oninput={(e) => setQ('skills', e.target.value)} />
+          <Select id="claude-kind" name="kind" label="" placeholder="" aria-label="Kind" options={KIND_OPTIONS}
+                  value={kind} onchange={(e) => { kind = e.target.value }} />
+        </div>
+        <Table id="claude-skills" columns={ITEM_COLUMNS} rows={shown.items} striped hover={false} compact emptyText="No skills or agents match">
+          {#snippet row(i)}
+            <tr>
+              <td><Badge tone={i.kind === 'agent' ? 'info' : ''}>{i.kind}</Badge></td>
+              <td title={i.file}><code>{i.name}</code></td>
+              <td class="text-sm" title={i.full}>{clip(i.description, 140)}</td>
+              <td class="text-sm"><Badge>{i.originScope}</Badge> {#if i.originScope !== 'user'}<code>{i.origin}</code>{/if}</td>
+              <td class="text-sm">{i.model}</td>
+              <td>{#if i.warn}<Badge tone="warning" title={i.warn}>{clip(i.warn, 60)}</Badge>{:else}<span class="text-muted">ok</span>{/if}</td>
+            </tr>
+          {/snippet}
+        </Table>
+      </TabPanel>
+
+      <TabPanel id="hooks">
+        {#each tables.notes.hooks as n}
+          <Callout tone="warning" title={`${n.label} unavailable`}>{n.reason} <code>{n.path}</code></Callout>
+        {/each}
+        <Input id="claude-search-hooks" type="search" placeholder="Filter hooks…" aria-label="Filter hooks"
+               value={qs.hooks} oninput={(e) => setQ('hooks', e.target.value)} />
+        <Table id="claude-hooks" columns={HOOK_COLUMNS} rows={shown.hooks} striped hover={false} compact emptyText="No hooks match">
+          {#snippet row(h)}
+            <tr>
+              <td>{h.event}</td>
+              <td>{#if h.matcher === '—'}—{:else}<code>{h.matcher}</code>{/if}</td>
+              <td>
+                <code class="wrap">{h.command}</code>
+                {#if h.warn}<Badge tone="warning" title={h.warn}>issue</Badge>{/if}
+              </td>
+              <td>{h.timeout}</td>
+              <td class="text-sm" title={h.file}><code class="wrap">{h.origin}</code></td>
+            </tr>
+          {/snippet}
+        </Table>
+      </TabPanel>
+
+      <TabPanel id="mcp">
+        {#each tables.notes.mcp as n}
+          <Callout tone="warning" title={`${n.label} unavailable`}>{n.reason} <code>{n.path}</code></Callout>
+        {/each}
+        <Input id="claude-search-mcp" type="search" placeholder="Filter MCP servers…" aria-label="Filter MCP servers"
+               value={qs.mcp} oninput={(e) => setQ('mcp', e.target.value)} />
+        <Table id="claude-mcp" columns={MCP_COLUMNS} rows={shown.mcp} striped hover={false} emptyText="No MCP servers match">
+          {#snippet row(m)}
+            <tr>
+              <td>
+                <code>{m.name}</code>
+                {#if m.oauth}<Badge>oauth</Badge>{/if}
+                {#if m.warn}<Badge tone="warning" title={m.warn}>issue</Badge>{/if}
+              </td>
+              <td><Badge>{m.scope}</Badge></td>
+              <td class="text-sm">{#if m.where}<code>{m.where}</code>{:else}—{/if}</td>
+              <td>{m.transport}</td>
+              <td><code class="clip" title={m.target}>{clip(m.target, 90)}</code></td>
+              <td class="text-sm text-muted">{m.keys || '—'}</td>
+            </tr>
+          {/snippet}
+        </Table>
+      </TabPanel>
+
+      <TabPanel id="settings">
+        {#each tables.notes.settings as n}
+          <Callout tone="warning" title={`${n.label} unavailable`}>{n.reason} <code>{n.path}</code></Callout>
+        {/each}
+        <Input id="claude-search-settings" type="search" placeholder="Filter settings and projects…" aria-label="Filter settings and projects"
+               value={qs.settings} oninput={(e) => setQ('settings', e.target.value)} />
+        <h3>User settings</h3>
+        {#if !cfg.user.settings.result.ok && !cfg.user.settings.absent}
+          <p class="text-sm"><Badge tone="warning">unavailable: {cfg.user.settings.result.reason}</Badge></p>
+        {:else}
+          <Table id="claude-settings" columns={SETTING_COLUMNS} rows={shown.settings} compact striped hover={false}
+                 emptyText={cfg.user.settings.absent ? 'No user settings file' : 'No settings match'}>
+            {#snippet row(r)}
+              <tr><td><code>{r.key}</code></td><td>{r.value}</td></tr>
+            {/snippet}
+          </Table>
+        {/if}
+        <h3>Projects</h3>
+        <Table id="claude-projects" columns={PROJECT_COLUMNS} rows={shown.projects} compact striped hover={false} emptyText="No projects match">
+          {#snippet row(p)}
+            <tr>
+              <td><code class="wrap">{p.path}</code></td>
+              <td><Badge>{p.source}</Badge></td>
+              <td>{#if p.exists}<Pill tone="success">yes</Pill>{:else}<Pill tone="warning">gone</Pill>{/if}</td>
+              <td class="text-sm text-muted">{ago(p.lastActive)}</td>
+              <td>{p.transcripts}</td>
+              <td class="text-sm">{p.model}</td>
+              <td>{p.plugins}</td>
+              <td>{#if p.warn}<Badge tone="warning" title={p.warn}>{clip(p.warn, 60)}</Badge>{:else}<span class="text-muted">ok</span>{/if}</td>
+            </tr>
+          {/snippet}
+        </Table>
+      </TabPanel>
+    </Tabs>
+  {/if}
+</section>
+
+<style>
+  .claude-head { justify-content: space-between; align-items: flex-start; }
+  .wrap { overflow-wrap: anywhere; }
+  .clip { display: inline-block; max-inline-size: var(--measure, 64ch); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+</style>

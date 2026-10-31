@@ -3880,6 +3880,51 @@ describe('ctx.sse()', () => {
       warn.mockRestore()
     }
   })
+
+  // A body junction built is compressed from the string it was built from
+  // (FJS-3748), so the bytes must still be that string's UTF-8.
+  async function both(app: Awaited<ReturnType<typeof createTestApp>>, path: string) {
+    await app._startForTest()
+    app.http!.router.build()
+    const plain = await app.http!.fetch(new Request(`http://localhost${path}`))
+    const gz    = await app.http!.fetch(new Request(`http://localhost${path}`, { headers: { 'accept-encoding': 'gzip' } }))
+    const bytes = new Uint8Array(await gz.arrayBuffer())
+    return { plain: await plain.text(), gz, bytes }
+  }
+
+  it('a gzipped service answer decompresses to the plain answer, Vary naming the encoding once', async () => {
+    const rows = Array.from({ length: 60 }, (_, i) => ({ id: String(i), name: `row ${i}` }))
+    const app = await createTestApp({
+      services: [buildService({ name: 'items', find: async () => rows })]
+    })
+    const { plain, gz, bytes } = await both(app, '/items')
+    expect(gz.headers.get('content-encoding')).toBe('gzip')
+    expect(gz.headers.get('content-length')).toBe(String(bytes.byteLength))
+    expect(gz.headers.get('vary')).toBe('Accept-Encoding')
+    expect(new TextDecoder().decode(Bun.gunzipSync(bytes))).toBe(plain)
+  })
+
+  it('compresses a non-ASCII ctx.text body as UTF-8', async () => {
+    const app = await createTestApp({
+      services: [buildService({ name: 'noop', find: async () => [] })]
+    })
+    app.get('/accents', (ctx) => ctx.text('café — naïve ✓ '.repeat(100)))
+    const { plain, gz, bytes } = await both(app, '/accents')
+    expect(gz.headers.get('content-encoding')).toBe('gzip')
+    expect(new TextDecoder().decode(Bun.gunzipSync(bytes))).toBe(plain)
+  })
+
+  it('a small ctx.json body goes out as built, still carrying the transport headers', async () => {
+    const app = await createTestApp({
+      config: { http: { powered: 'small-probe' } },
+      services: [buildService({ name: 'noop', find: async () => [] })]
+    })
+    app.get('/small', (ctx) => ctx.json({ ok: true }))
+    const { plain, gz, bytes } = await both(app, '/small')
+    expect(gz.headers.get('content-encoding')).toBeNull()
+    expect(gz.headers.get('x-powered-by')).toBe('small-probe')
+    expect(new TextDecoder().decode(bytes)).toBe(plain)
+  })
 })
 
 // ─── apiPrefix ────────────────────────────────────────────────────────────

@@ -572,7 +572,11 @@ const row = await settle(origin, key, release.id)
 echo('')
 for (const s of row?.steps ?? []) echo(`    ${String(s.status).padEnd(8)} ${s.name}${s.output ? `  ${s.output}` : ''}`)
 echo('')
-if (row?.status === 'success') { log.success(`Released ${named}`); return }
+if (row?.status === 'success') {
+  log.success(`Released ${named}`)
+  echo(chalk`  {dim Deployment} ${origin}/deployments/${release.id}/\n`)
+  return
+}
 if (!['failed', 'cancelled'].includes(row?.status))
   throw new Error(`Release ${release.id} is still ${row?.status} after ${WAIT_MS / 60_000} minutes — follow it in Basecamp`)
 throw new Error(`Release ${release.id} ${row.status}`)

@@ -22,6 +22,7 @@
 // somebody remembers to run an update.
 
 import { createService, NotFound, BadRequest, Conflict, parseWhere, $ } from '@frontierjs/junction'
+import { slug } from '@frontierjs/toolbelt/inflect'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
@@ -189,7 +190,7 @@ export default createService({
     const secret = await db().secret.create({
       data: {
         workspaceId: ws(),
-        name:        `tls:${domain.hostname}`,
+        name:        `tls-${slug(domain.hostname as string, { max: 240 }) || 'unnamed'}`,
         kind:        'tls_cert',
         // One value, both halves. Splitting them across two Secrets would
         // let a rotation replace one and not the other.

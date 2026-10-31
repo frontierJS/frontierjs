@@ -423,3 +423,63 @@ describe('a hook that answers with a stream is refused', () => {
     expect(frame.type).toBe('service_error')
   })
 })
+
+describe('a socket call is shaped by $first and $wrap as an HTTP one is (FJS-3756)', () => {
+  const { createApp, createService, channels, defaultConfig } = require('../index.ts')
+
+  const notes = createService({
+    name:    'notes',
+    methods: ['find', 'get'],
+    async find() { return [{ id: 1 }, { id: 2 }] },
+    async get()  { return { id: 1 } },
+  })
+
+  let app: any
+  let ws: WebSocket
+  let n = 0
+
+  const start = async () => {
+    if (app) return
+    app = createApp({ config: { port: 0, http: { ...defaultConfig.http, drainTimeout: 250 } } })
+    app.services.register(notes)
+    app.configure(channels())
+    await app.start()
+    ws = new WebSocket(`ws://localhost:${app.http.port}/ws`)
+    await new Promise<void>((ok, no) => { ws.onopen = () => ok(); ws.onerror = () => no(new Error('ws')) })
+  }
+
+  const call = (method: string, query: Record<string, unknown>) => new Promise<any>(ok => {
+    const id = `c${++n}`
+    ws.addEventListener('message', (e: any) => {
+      const f = JSON.parse(e.data)
+      if (f.id === id) ok(f)
+    })
+    ws.send(JSON.stringify({ type: 'service_call', id, service: 'notes', method, meta: { query } }))
+  })
+
+  test('$first routes a find to get, so the answer is the one record', async () => {
+    await start()
+    const frame = await call('find', { $first: true })
+    expect(frame.result).toEqual({ id: 1 })
+    const res = await fetch(`http://localhost:${app.http.port}/notes?$first=true`)
+    expect(await res.json()).toEqual(frame.result)
+  })
+
+  test('$wrap=false unwraps a list to its rows', async () => {
+    expect((await call('find', { $wrap: false })).result).toEqual([{ id: 1 }, { id: 2 }])
+  })
+
+  test('$wrap=true keeps a single in its envelope', async () => {
+    const { result } = await call('get', { $wrap: true })
+    expect(result.kind).toBe('single')
+    expect(result.data).toEqual({ id: 1 })
+  })
+
+  test('a directive the table does not name is answered with a refusal, not silence', async () => {
+    const frame = await call('find', { $limitt: 1 })
+    ws.close()
+    await app.stop()
+    expect(frame.type).toBe('service_error')
+    expect(frame.error.code).toBe(400)
+  })
+})

@@ -52,6 +52,7 @@ title: App
   import { toasts } from '@frontierjs/ui/stores/toastStore'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
   import { offerUndo } from '../../../resources/Trash.mesa'
+  import AppEnvironments from '../../../components/AppEnvironments.mesa'
 
   $: page.params
 
@@ -247,6 +248,29 @@ title: App
       trafficBusy = false
     }
   }
+
+  // ─── Live check ─────────────────────────────────────────────────────────
+  // On demand, like the log: it asks the public internet about every hostname,
+  // which is a request to other people's servers per click. A fix that names a
+  // tab of this screen switches to it; any other is a screen of its own.
+  let liveReport = null
+  let liveBusy = false
+
+  async function runLiveCheck() {
+    error = null; liveBusy = true
+    try {
+      liveReport = await apps.service.invoke('liveCheck', app.id)
+    } catch (e) {
+      error = e.message
+      liveReport  = null
+    } finally {
+      liveBusy = false
+    }
+  }
+
+  const LIVE_TONE  = { pass: 'success', fail: 'danger', warn: 'warning', skip: 'muted' }
+  const LIVE_TITLE = { live: 'Live', warn: 'Reachable, with warnings', down: 'Not live' }
+  const tabOfFix   = (href) => href.startsWith('?tab=') ? href.slice('?tab='.length) : null
 
   const TRAFFIC_NONE = {
     'unplaced':        'Not on a machine',
@@ -697,7 +721,7 @@ title: App
   }
 
   // Only the tabs with something behind them. See the note at the foot.
-  const TABS = ['overview', 'domains', 'source', 'config', 'releases', 'backups', 'logs', 'log-analysis']
+  const TABS = ['overview', 'domains', 'source', 'config', 'releases', 'backups', 'live', 'logs', 'log-analysis']
   if (!TABS.includes(tab)) tab = 'overview'
   const APP_RELEASES_COLUMNS = [
     { name: 'queued',  label: 'Queued' },
@@ -726,11 +750,15 @@ title: App
 {:else if app}
   <nav aria-label="Breadcrumb" class="cluster" id="app-breadcrumb">
     {#if app.environment?.project}
-      <a class="navlink" href={`/projects/${app.environment.projectId}/`}>{app.environment.project.name}</a>
+      <a class="navlink" href={`/projects/${app.environment.projectId}/?env=${app.environment.slug}`}>{app.environment.project.name}</a>
       <span class="text-muted">/</span>
     {/if}
     <a class="navlink" href={`/environments/${app.environmentId}/`}>{app.environment?.name ?? 'Environment'}</a>
   </nav>
+
+  {#if app.environment?.projectId}
+    <AppEnvironments projectId={app.environment.projectId} slug={app.slug} current={app.id} />
+  {/if}
 
   <div class="section-header">
     <div class="stack" style:gap="0.25rem">
@@ -1270,6 +1298,76 @@ title: App
 
   {#if tab === 'backups'}
     <AppBackups app={app} />
+  {/if}
+
+  {#if tab === 'live'}
+    <Card>
+      <h2 class="h4">Live check</h2>
+      <p class="text-sm text-muted">
+        Why this App might not be live. Walks the release, the machine, then each hostname's zone, DNS and HTTPS,
+        and stops at the first failure — a later step cannot be judged while an earlier one is broken.
+        DNS is asked of public resolvers and HTTPS is a request from Basecamp, when you ask.
+      </p>
+      <div class="cluster" id="app-live-controls">
+        <Button onclick={runLiveCheck} disabled={liveBusy} id="app-live-run">
+          {liveBusy ? 'Checking…' : 'Run check'}
+        </Button>
+        {#if liveReport}
+          <Pill tone={liveReport.status === 'live' ? 'success' : liveReport.status === 'warn' ? 'warning' : 'danger'} id="app-live-status">{LIVE_TITLE[liveReport.status]}</Pill>
+        {/if}
+      </div>
+    </Card>
+
+    {#if liveReport}
+      <Card>
+        <h3 class="h5">App</h3>
+        <ul class="stack" id="app-live-steps" style:list-style="none" style:padding="0">
+          {#each liveReport.steps as s (s.key)}
+            <li class="cluster" data-step={s.key} data-status={s.status}>
+              <Pill tone={LIVE_TONE[s.status] ?? 'muted'}>{s.status}</Pill>
+              <strong>{s.label}</strong>
+              <span class="text-sm text-muted">{s.detail}</span>
+              {#if s.fix}
+                {#if tabOfFix(s.fix.href)}
+                  <Button treatment="ghost" onclick={() => tab = tabOfFix(s.fix.href)}>{s.fix.label}</Button>
+                {:else}
+                  <a href={s.fix.href}>{s.fix.label}</a>
+                {/if}
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      </Card>
+
+      {#each liveReport.hosts as h (h.hostname)}
+        <Card>
+          <h3 class="h5"><code>{h.hostname}</code></h3>
+          {#if h.redirectTo}
+            <p class="text-sm text-muted" data-redirect>Redirects to <code>{h.redirectTo}</code>; the target's own checks apply.</p>
+          {/if}
+          <ul class="stack" style:list-style="none" style:padding="0" data-host={h.hostname}>
+            {#each h.steps as s (s.key)}
+              <li class="cluster" data-step={s.key} data-status={s.status}>
+                <Pill tone={LIVE_TONE[s.status] ?? 'muted'}>{s.status}</Pill>
+                <strong>{s.label}</strong>
+                <span class="text-sm text-muted">{s.detail}</span>
+                {#if s.fix}
+                  {#if tabOfFix(s.fix.href)}
+                    <Button treatment="ghost" onclick={() => tab = tabOfFix(s.fix.href)}>{s.fix.label}</Button>
+                  {:else}
+                    <a href={s.fix.href}>{s.fix.label}</a>
+                  {/if}
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        </Card>
+      {/each}
+
+      {#if !liveReport.hosts.length}
+        <EmptyState title="No hostnames" id="app-live-no-hosts">This App has no domain, so there is no name to check.</EmptyState>
+      {/if}
+    {/if}
   {/if}
 
   {#if tab === 'logs'}

@@ -30,6 +30,9 @@ const OFF_LIMITS = new Set([
   // A key acts unattended, and a send here runs Claude Code on the operator's
   // machine with every permission bypassed.
   'workbench',
+  // The operator's Claude Code config: hook commands, MCP servers and their
+  // environment, read off this machine.
+  'claude',
   // A start runs a command from the workspace's own tree on the operator's
   // machine, and a view reads a file there.
   'pages',
@@ -46,7 +49,7 @@ const OFF_LIMITS = new Set([
  * that machine. Registers: a discuss is a workbench send. `agentGuard` refuses the call and `narrowForAgent` withholds
  * the tool, off this one set.
  */
-const NOT_FOR_AGENTS = new Set(['workbench', 'pages', 'registers'])
+const NOT_FOR_AGENTS = new Set(['workbench', 'claude', 'pages', 'registers'])
 
 /** The scope a workspace service declares: read for `find`, `get` and a declared read, write for the rest. */
 export const keyScope = (service: string) => ({ read: `${service}:read`, write: `${service}:write` })

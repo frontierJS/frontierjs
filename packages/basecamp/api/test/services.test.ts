@@ -23,6 +23,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir }      from 'node:os'
 import { createTestEnv, session } from '@frontierjs/testing'
 import { generateSigningKeys, signRequest } from '@frontierjs/toolbelt/signature'
+import { slug } from '@frontierjs/toolbelt/inflect'
 import { seriesKey }   from '@frontierjs/junction'
 import { GatePlugin }  from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
@@ -786,7 +787,7 @@ describe('the audit trail records what changed', () => {
     // is litestone's own reading of the schema (`$protectedFields`), so a new
     // `@secret` is covered without an edit here.
     const before = await env.as(owner).service('secrets').create({
-      name: `TRAIL_${Math.random().toString(36).slice(2, 8)}`, kind: 'generic', data: 'first-value',
+      name: `trail-${Math.random().toString(36).slice(2, 8)}`, kind: 'generic', data: 'first-value',
     })
     const created = ((before as any).data ?? before) as Record<string, unknown>
 
@@ -2020,7 +2021,7 @@ describe('a backup destination is an address, and its key is a Secret', () => {
     expect(JSON.stringify(row)).not.toContain('applicationkey')
 
     const secret = await (env.system as any).secret.findFirst({ where: { id: row.secretId } })
-    expect(secret).toMatchObject({ kind: 'backup', name: `backup:${row.name}`, workspaceId: ws.id })
+    expect(secret).toMatchObject({ kind: 'backup', name: `backup-${slug(row.name)}`, workspaceId: ws.id })
     expect(await registered(row.id)).toBe(true)
 
     const got = await env.as(owner).service('backupDestinations').get(row.id)
@@ -3983,7 +3984,7 @@ describe('the trash lists what was deleted, and each service brings its own back
 
   test('a viewer sees the trash without the kinds it cannot read, and cannot restore', async () => {
     const sys    = env.system as any
-    const secret = await sys.secret.create({ data: { workspaceId: ws.id, name: `GONE_${uniq()}`, kind: 'generic' } })
+    const secret = await sys.secret.create({ data: { workspaceId: ws.id, name: `gone-${uniq()}`, kind: 'generic' } })
     const proj   = await sys.project.create({ data: { workspaceId: ws.id, name: `Seen ${uniq()}`, slug: `seen-${uniq()}` } })
     await sys.secret.remove({ where: { id: secret.id } })
     await sys.project.remove({ where: { id: proj.id } })
@@ -4016,7 +4017,7 @@ describe('the trash lists what was deleted, and each service brings its own back
     const name = `Pager ${uniq()}`
     await env.as(owner).service('channels').create({ name, kind: 'webhook', config: { url: 'https://hooks.example.test/x' }, secret: 'tok-2357' })
 
-    const secret = await (env.system as any).secret.findFirst({ where: { workspaceId: ws.id, name: `channel:${name}` } })
+    const secret = await (env.system as any).secret.findFirst({ where: { workspaceId: ws.id, name: `channel-${slug(name)}` } })
     expect(secret.workspaceId).toBe(ws.id)
 
     await new Promise(r => setTimeout(r, 50))
@@ -4040,7 +4041,7 @@ describe('the trash lists what was deleted, and each service brings its own back
     const rows = {
       recipes:    ['recipe',    await sys.recipe.create({ data: { workspaceId: ws.id, name: `R ${uniq()}`, slug: `r-${uniq()}`, script: 'true' } })],
       dashboards: ['dashboard', await sys.dashboard.create({ data: { workspaceId: ws.id, name: `D ${uniq()}`, slug: `d-${uniq()}` } })],
-      secrets:    ['secret',    await sys.secret.create({ data: { workspaceId: ws.id, name: `S_${uniq()}`, kind: 'generic' } })],
+      secrets:    ['secret',    await sys.secret.create({ data: { workspaceId: ws.id, name: `s-${uniq()}`, kind: 'generic' } })],
     } as Record<string, [string, any]>
     for (const [service, [accessor, row]] of Object.entries(rows)) {
       await expect(env.as(owner).service(service).restore(row.id)).rejects.toThrow(/not/)
@@ -4079,6 +4080,16 @@ describe('infra.launch walks to the screen each step happens on', () => {
     const d = await sys.deployment.create({ data: { workspaceId: w.id, appId: a.id, trigger: 'button' } })
     await sys.deployment.transition(d.id, 'build')
     await sys.deployment.transition(d.id, 'succeed')
+
+    // Released and still on no name: the zone is the step left.
+    const unnamed = await me.call('launch')
+    expect(unnamed.steps.find((s: any) => s.id === 'dns')).toMatchObject({ done: false, href: '/secrets/' })
+
+    const cf = await sys.secret.create({ data: {
+      workspaceId: w.id, name: 'cf', kind: 'provider_key', providerKind: 'cloudflare', data: JSON.stringify({ token: 't' }),
+    } })
+    expect((await me.call('launch')).steps.find((s: any) => s.id === 'dns')).toMatchObject({ done: false, href: '/dns/' })
+    await sys.workspace.update({ where: { id: w.id }, data: { ingressAccountId: cf.id, ingressZoneId: 'zone-1' } })
 
     const all = await me.call('launch')
     expect(all.done).toBe(all.total)
@@ -4563,7 +4574,7 @@ describe('hub custom methods declare their input', () => {
 describe('secrets kind is the schema enum, not a service copy', () => {
   test('create and patch refuse a kind outside SecretKind', async () => {
     await expect(env.as(owner).service('secrets').call('create', undefined,
-      { name: `S_${Date.now()}`, kind: 'password', data: 'x' })).rejects.toThrow(/kind/)
+      { name: `s-${Date.now()}`, kind: 'password', data: 'x' })).rejects.toThrow(/kind/)
   })
 })
 
@@ -4728,7 +4739,7 @@ describe('a CRUD verb is graded by the model gate alone (FJS-2353)', () => {
   test('api-keys and secrets: a developer is refused create', async () => {
     await expect(env.as(developer).service('apiKeys').create({ name: `k-${uniq()}`, scopes: ['servers:read'], expiresIn: '30d' }))
       .rejects.toThrow(/^Requires admin role in this workspace/)
-    await expect(env.as(developer).service('secrets').create({ name: `S_${uniq()}`, kind: 'generic', data: 'x' }))
+    await expect(env.as(developer).service('secrets').create({ name: `s-${uniq()}`, kind: 'generic', data: 'x' }))
       .rejects.toThrow(/^Requires admin role in this workspace/)
   })
 

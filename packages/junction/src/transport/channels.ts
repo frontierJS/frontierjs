@@ -1820,7 +1820,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
             // first let maxInFlight read 0 under any number of running calls.
             return (async () => {
               await ensureDeps()
-              const { bridge: _bridge2, withholdProtected: _withhold, errorBody: _errorBody } = _bridge!
+              const { bridge: _bridge2, readTransportFlags: _readFlags, errorBody: _errorBody } = _bridge!
               const { callService: _call }        = _callSvc!
               const { toFrameworkError: _toErr }  = _errUtils!
 
@@ -1851,59 +1851,6 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
                 ...restExtra
               } = extra
 
-              const svcCtx = _bridge2.internal(
-                // The CANONICAL name — a frame naming an older spelling of it
-                // resolves, and then announces and resolves its model under the
-                // one name the service has (`FJS-570`).
-                svc.name,
-                method as 'create',
-                (data as Record<string, unknown> | null) ?? null,
-                {
-                  query: wsQuery,
-                  user: (conn?.user ?? null) as import('../auth/types.ts').SessionContext | null,
-                  transport: 'websocket',
-                  signal: conn?.__gone?.signal,
-                  base: (_base && typeof _base === 'object' && !Array.isArray(_base)
-                    ? _base as Record<string, unknown>
-                    : null),
-                  locals: { __channels: manager, ...restExtra } as Record<string, unknown>,
-                },
-                app
-              )
-              // WS-origin caller facts (headers/ip) belong on ctx.caller.
-              //
-              // `ctx.headers` are the UPGRADE request's headers — one set for
-              // the life of the connection. Anything a caller varies per call
-              // therefore cannot arrive that way: a workspace changes when a
-              // person switches workspace, a guest basket's token comes into
-              // existence after the socket is already up. The browser client
-              // sends those on the frame (`meta.headers`) and they are merged
-              // in here, so a hook reading ctx.caller.headers sees the same
-              // value it would have seen over HTTP.
-              //
-              // An ALLOW-LIST, not a merge. A frame that could name its own
-              // header could name Authorization and override the identity
-              // established at upgrade, so a name reaches the context only if
-              // the app declared it in `http.callHeaders` — or if it is one of
-              // junction's own, which the client sends unasked.
-              svcCtx.caller.headers = _mergeCallHeaders(
-                ctx.headers,
-                extra.headers as Record<string, unknown> | undefined,
-                extra.workspaceId,
-                app,
-              )
-              svcCtx.caller.ip      = ctx.ip
-              svcCtx.method    = method as string
-              svcCtx.transport = 'websocket'
-
-              // A STRING, as over HTTP. There the id is a path segment and can be
-              // nothing else; here it is whatever JSON type the client wrote, so
-              // `patch(42, …)` handed a service the number and `PATCH /x/42`
-              // handed it the string. A handler comparing `ctx.id` to a row's own
-              // id, or using it as a Map key, then answered differently depending
-              // on whether a socket happened to be connected.
-              const paramId = extra?.id ?? (data as Record<string, unknown>)?.id
-              if (paramId) svcCtx.id = String(paramId)
 
               // Request metadata is an AsyncLocalStorage store, and this path
               // wrapped nothing for its whole life — so requestMeta() was
@@ -1920,26 +1867,71 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
               let status = 200
               // A client wrote it, so it meets the same shape check a header does.
               const correlationId = acceptedRequestId(extra.correlationId)
+              // Built inside the try: a refused directive thrown before it
+              // rejected into the frame's catch-all, and the caller waited on a
+              // reply that never came.
+              let svcCtx: import('../core/context.ts').ServiceContext | undefined
               try {
+                // WS-origin caller facts (headers/ip) belong on ctx.caller.
+                //
+                // `ctx.headers` are the UPGRADE request's headers — one set for
+                // the life of the connection. Anything a caller varies per call
+                // therefore cannot arrive that way: a workspace changes when a
+                // person switches workspace, a guest basket's token comes into
+                // existence after the socket is already up. The browser client
+                // sends those on the frame (`meta.headers`) and they are merged
+                // in here, so a hook reading ctx.caller.headers sees the same
+                // value it would have seen over HTTP.
+                //
+                // An ALLOW-LIST, not a merge. A frame that could name its own
+                // header could name Authorization and override the identity
+                // established at upgrade, so a name reaches the context only if
+                // the app declared it in `http.callHeaders` — or if it is one of
+                // junction's own, which the client sends unasked.
+                const headers = _mergeCallHeaders(
+                  ctx.headers,
+                  extra.headers as Record<string, unknown> | undefined,
+                  extra.workspaceId,
+                  app,
+                )
+                svcCtx = _bridge2.fromFrame({
+                  // The CANONICAL name — a frame naming an older spelling of it
+                  // resolves, and then announces and resolves its model under the
+                  // one name the service has (`FJS-570`).
+                  service: svc.name,
+                  model:   (svc as unknown as { model?: string }).model ?? svc.name,
+                  method:  method as string,
+                  data:    (data as Record<string, unknown> | null) ?? null,
+                  query:   wsQuery,
+                  id:      extra.id,
+                  base:    (_base && typeof _base === 'object' && !Array.isArray(_base)
+                    ? _base as Record<string, unknown>
+                    : null),
+                  user:    (conn?.user ?? null) as import('../auth/types.ts').SessionContext | null,
+                  caller:  { ip: ctx.ip, userAgent: headers['user-agent'], headers },
+                  locals:  { __channels: manager, ...restExtra } as Record<string, unknown>,
+                  signal:  conn?.__gone?.signal,
+                }, app)
+                const { wrap } = _readFlags(wsQuery)
+                const call = svcCtx
                 await _enterRequest!({
                   origin:         'websocket',
                   correlationId,
                   headers:        _frameProtocolHeaders(extra.headers),
                   // Same as the HTTP path — the principal is request-wide, and
                   // it is what an internal call inherits when it names none.
-                  user:           svcCtx.user,
-                  caller:         svcCtx.caller,
+                  user:           call.user,
+                  caller:         call.caller,
                 }, () =>
-                  _call(svc, svcCtx, app._appHooks, app.events, app.telemetry))
-                // The bridge's rule and the bridge's redaction, not a copy of either.
-                ctx.send({ type: 'service_result', id: callId, result: _withhold(unwrapResult(svcCtx.result), svcCtx) })
+                  _call(svc, call, app._appHooks, app.events, app.telemetry))
+                ctx.send({ type: 'service_result', id: callId, result: _bridge2.toFrame(call, wrap) })
               } catch (err: unknown) {
                 const fe = _toErr(err, app)
                 status = fe.code
                 ctx.send({ type: 'service_error', id: callId, error: _errorBody(fe, svcCtx) })
               } finally {
                 logSocketCall(app, {
-                  service: svc.name, method: method as string, id: svcCtx.id == null ? null : String(svcCtx.id),
+                  service: svc.name, method: method as string, id: svcCtx?.id == null ? null : String(svcCtx.id),
                   status, ms: Date.now() - started, ip: ctx.ip,
                   correlationId,
                 })

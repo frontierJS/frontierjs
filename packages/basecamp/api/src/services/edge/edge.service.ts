@@ -143,13 +143,30 @@ async function ingressPair(): Promise<{ accountId: string; zoneId: string } | nu
   return { accountId: row.ingressAccountId, zoneId: row.ingressZoneId }
 }
 
+/** The refusal for a workspace with no ingress pair — one sentence, said by
+ *  `push` and by the App's live check alike. */
+export const NO_INGRESS = 'This workspace has no ingress zone — set one (an edge account and a zone it opens) before a Domain can be pushed'
+
+/** The refusal for an ingress pair whose account the workspace no longer holds. */
+export const ingressAccountGone = (accountId: string) =>
+  `The ingress zone names edge account '${accountId}', which this workspace no longer holds — set it again`
+
+/** Why a push would be refused for want of an ingress zone, or null when the
+ *  pair is set and its account is still held. The cause `records` names
+ *  `no-ingress`, as a sentence. */
+export async function ingressRefusal(): Promise<string | null> {
+  const pair = await ingressPair()
+  if (!pair) return NO_INGRESS
+  return (await edgeAccounts()).some(a => a.id === pair.accountId) ? null : ingressAccountGone(pair.accountId)
+}
+
 /** This workspace's ingress zone, or null when none is set. */
 async function ingressZone(accounts: EdgeAccount[]): Promise<ZoneAt | null> {
   const pair = await ingressPair()
   if (!pair) return null
   const account = accounts.find(a => a.id === pair.accountId)
   if (!account)
-    throw new Conflict(`The ingress zone names edge account '${pair.accountId}', which this workspace no longer holds — set it again`)
+    throw new Conflict(ingressAccountGone(pair.accountId))
   const { connector, send } = sendFor(account)
   return { account, connector, send, zone: await connector.zone(send, pair.zoneId) }
 }
@@ -191,7 +208,7 @@ async function push(domain: DomainRow) {
   try {
     ingress = await ingressZone(accounts)
     if (!ingress)
-      throw new NotYet('This workspace has no ingress zone — set one (an edge account and a zone it opens) before a Domain can be pushed')
+      throw new NotYet(NO_INGRESS)
     // Not-yet, never a delete: an App whose machines all left `online` keeps
     // its record where it last ran, and `records` names it `down`
     // (`FJS-D567`). Emptying it would make a dead machine a hostname that

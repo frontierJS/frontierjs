@@ -19,7 +19,7 @@ import { REFUSE, resolvePrincipal, resolveCaller, bearerPrincipal, type Credenti
 // --experimental-strip-types fails with "does not provide an export named
 // 'StaticOptions'". Bun transpiles fully so it never noticed.
 import type { StaticOptions }             from './static.ts'
-import { BAKED_CACHE_CONTROL, errorResponse, own, isOwned } from './bridge.ts'
+import { BAKED_CACHE_CONTROL, errorResponse, own, isOwned, ownedText } from './bridge.ts'
 import { enterRequest }                  from '../core/context.ts'
 import { BadRequest, TooManyRequests, isDevelopmentEnv, type ErrorMapper } from '../core/errors.ts'
 import { createStats, SESSION_SOCKET }    from './types.ts'
@@ -95,6 +95,16 @@ function warnSlowCompress(method: string, path: string, type: string, ms: number
     `so it could be gzipped, and a caller that accepts gzip saw nothing until then. If this is a ` +
     `stream, build it with ctx.stream() or set 'content-encoding' on the Response.`
   )
+}
+
+function gzipped(body: string | Uint8Array<ArrayBuffer>, status: number, headers: Headers): Response {
+  const compressed = Bun.gzipSync(body)
+  headers.set('content-encoding', 'gzip')
+  headers.set('content-length',   String(compressed.byteLength))
+  const existingVary = headers.get('vary')
+  if (!existingVary) headers.set('vary', 'Accept-Encoding')
+  else if (!/\baccept-encoding\b/i.test(existingVary)) headers.set('vary', `${existingVary}, Accept-Encoding`)
+  return new Response(compressed, { status, headers })
 }
 
 const ENCODER  = new TextEncoder()  // singleton — not per-request
@@ -358,15 +368,16 @@ export class HttpTransport {
     this._sharedHelpers = {
       json: (data, status = 200) => {
         stats.response.json++
-        return own(new Response(JSON.stringify(data), { status, headers: H_JSON }))
+        const text = JSON.stringify(data)
+        return own(new Response(text, { status, headers: H_JSON }), text)
       },
       text: (data, status = 200) => {
         stats.response.text++
-        return own(new Response(data, { status, headers: H_TEXT }))
+        return own(new Response(data, { status, headers: H_TEXT }), typeof data === 'string' ? data : null)
       },
       html: (data, status = 200) => {
         stats.response.html++
-        return own(new Response(data, { status, headers: H_HTML }))
+        return own(new Response(data, { status, headers: H_HTML }), typeof data === 'string' ? data : null)
       },
       redirect: (location, status = 302) => {
         stats.response.redirect++
@@ -1089,7 +1100,7 @@ export class HttpTransport {
     // A Response junction built this request is written in place; any other
     // is copied once, since a handler's or a cache's Response may be answered
     // again and a header set on it would be set for every later caller.
-    const inPlace = !willCompress && isOwned(response)
+    const inPlace = isOwned(response)
     const headers = inPlace ? response.headers : new Headers(response.headers)
 
     if (cookieHeaders?.length) {
@@ -1155,6 +1166,14 @@ export class HttpTransport {
       return inPlace ? response : new Response(response.body, { status: response.status, headers })
     }
 
+    const text = ownedText(response)
+    if (text !== null) {
+      // Too small — compression overhead not worth it. Counts characters, not
+      // bytes: the floor is a size guess, not a limit.
+      if (text.length < MIN_COMPRESS_BYTES) return response
+      return gzipped(text, response.status, headers)
+    }
+
     const readStart = performance.now()
     const bytes = new Uint8Array(await response.arrayBuffer())
     if (isDevelopmentEnv()) {
@@ -1162,17 +1181,10 @@ export class HttpTransport {
     }
 
     if (bytes.byteLength < MIN_COMPRESS_BYTES) {
-      // Too small — compression overhead not worth it
       return new Response(bytes, { status: response.status, headers })
     }
 
-    const compressed = Bun.gzipSync(bytes)
-    headers.set('content-encoding', 'gzip')
-    headers.set('content-length',   String(compressed.byteLength))
-    const existingVary = headers.get('vary')
-    headers.set('vary', existingVary ? `${existingVary}, Accept-Encoding` : 'Accept-Encoding')
-
-    return new Response(compressed, { status: response.status, headers })
+    return gzipped(bytes, response.status, headers)
   }
 
   // ─── Build TransportContext ────────────────────────────────────────

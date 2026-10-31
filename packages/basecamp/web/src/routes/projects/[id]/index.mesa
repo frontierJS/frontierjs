@@ -6,15 +6,21 @@ title: Project
   import { projects } from '../../../resources/Project.mesa'
   import { messageFor } from '../../../lib/errors.js'
   import { environments } from '../../../resources/Environment.mesa'
+  import { apps } from '../../../resources/App.mesa'
   import Alert    from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
   import Select   from '@frontierjs/ui/components/forms/Select.mesa'
   import Input    from '@frontierjs/ui/components/forms/Input.mesa'
   import Table    from '@frontierjs/ui/components/display/Table.mesa'
+  import TabList  from '@frontierjs/ui/components/layout/TabList.mesa'
+  import Tab      from '@frontierjs/ui/components/layout/Tab.mesa'
+  import NavIcon  from '../../../components/NavIcon.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
+  import VariablesEditor from '../../../components/VariablesEditor.mesa'
   import { offerUndo } from '../../../resources/Trash.mesa'
 
   $: page.params
+  $: page.query.env
 
   let project   = null
   let error     = null
@@ -55,6 +61,32 @@ title: Project
   // is a different route key, and the router remounts this page for it, so a
   // scope read once here cannot go stale.
   const envList = environments.tethered({ state: 'local', where: { projectId: page.params.id } })
+
+  // Every app in every environment of this project. An App belongs to one
+  // Environment, so "the api app" across environments is the rows sharing a
+  // slug; a slug that differs between environments shows as two apps.
+  const appList = apps.tethered({ state: 'local', composed: true, where: { projectId: page.params.id } })
+
+  // Production first: it is the environment a person opening a project most
+  // often means. The selection is `?env=<slug>`, so a link carries it.
+  $: tierOrder = environments.fields?.tier?.enum ?? []
+  $: envs      = [...envList.rows].sort((a, b) => tierOrder.indexOf(b.tier) - tierOrder.indexOf(a.tier))
+  $: env       = envs.find(e => e.slug === page.query?.env) ?? envs[0] ?? null
+  $: envById   = Object.fromEntries(envs.map(e => [e.id, e]))
+
+  $: appGroups = groupBySlug(appList.rows)
+
+  function groupBySlug(rows) {
+    const out = new Map()
+    for (const app of rows) {
+      if (!out.has(app.slug)) out.set(app.slug, { slug: app.slug, byEnv: {} })
+      out.get(app.slug).byEnv[app.environmentId] = app
+    }
+    return [...out.values()].sort((a, b) => a.slug.localeCompare(b.slug))
+  }
+
+  const primaryHost = (app) => app?.domains?.find(d => d.isPrimary)?.hostname ?? null
+  const envHref     = (e) => `/projects/${page.params.id}/?env=${e.slug}`
 
   async function load() {
     error = null; loadError = null; loading = true
@@ -126,11 +158,12 @@ title: Project
   // db/schema.lite, through the JSON Schema the build generated — so adding a
   // tier to the schema adds it to this picker with no edit.
   $: tiers = environments.fields?.tier?.enum ?? ['development', 'staging', 'production']
-  const ENVIRONMENT_COLUMNS = [
-    { name: 'name',      label: 'Name' },
-    { name: 'tier',      label: 'Tier' },
-    { name: 'protected', label: 'Protected' },
-    { name: 'actions',   label: 'Actions', hideLabel: true },
+  const APP_COLUMNS = [
+    { name: 'name',   label: 'Name' },
+    { name: 'type',   label: 'Type' },
+    { name: 'status', label: 'Status' },
+    { name: 'domain', label: 'Domain' },
+    { name: 'also',   label: 'Also in' },
   ]
 </script>
 
@@ -175,40 +208,100 @@ title: Project
     </dl>
   {/if}
 
-  <div class="section-header">
-    <h2 class="h4">Environments</h2>
-    <div class="cluster">
-      <label class="visually-hidden" for="tier-select">Tier</label>
-      <Select id="tier-select" style="--field-inline-size: auto"
-              placeholder="" options={tiers} bind:value={newTier} />
-      <Button treatment="outlined" onclick={addEnvironment} disabled={adding}>
-        {adding ? 'Adding…' : 'Add environment'}
-      </Button>
-    </div>
-  </div>
-
   {#if envList.error}
     <article class="alert danger">
       <div class="alert-content">{envList.error.message}</div>
     </article>
   {/if}
 
-  {#if !envList.rows.length}
-    <article class="alert info">
-      <div class="alert-content">No environments yet. Add one above — the slug is unique per project, so each tier exists once.</div>
-    </article>
-  {:else}
-    <Table id="environment-rows" columns={ENVIRONMENT_COLUMNS} rows={envList.rows} striped>
-      {#snippet row(environment)}
-        <tr>
-          <td><a href={`/environments/${environment.id}/`}>{environment.name}</a></td>
-          <td><span class="pill">{environment.tier}</span></td>
-          <td>{environment.isProtected ? 'yes' : 'no'}</td>
-          <td><Button treatment="ghost" href={`/environments/${environment.id}/`}>Open</Button></td>
-        </tr>
-      {/snippet}
-    </Table>
-  {/if}
+  <div class="split" style:align-items="start" style:flex-wrap="wrap" style:gap="1.5rem" id="project-layout">
+    <div class="stack" style:flex="1 1 32rem" style:min-width="0">
+      {#if !env}
+        <article class="alert info">
+          <div class="alert-content">No environments yet. An app lives in an environment, so add one first — each tier exists once per project.</div>
+        </article>
+      {:else}
+        <div class="section-header">
+          <h2 class="h4">Apps <span class="text-muted">· {env.name}</span></h2>
+          <Button treatment="outlined" href={`/environments/${env.id}/`} id="project-add-app">Add app</Button>
+        </div>
+
+        {#if appList.error}
+          <article class="alert danger">
+            <div class="alert-content">{appList.error.message}</div>
+          </article>
+        {/if}
+
+        {#if !appGroups.length}
+          <article class="alert info">
+            <div class="alert-content">No apps in this project yet.</div>
+          </article>
+        {:else}
+          <Table id="project-apps" columns={APP_COLUMNS} rows={appGroups} striped>
+            {#snippet row(group)}
+              <tr>
+                {#if group.byEnv[env.id]}
+                  <td><a href={`/apps/${group.byEnv[env.id].id}/`}>{group.byEnv[env.id].name}</a></td>
+                  <td><code>{group.byEnv[env.id].type}</code></td>
+                  <td>
+                    <span class="pill" class:success={group.byEnv[env.id].status === 'running'}
+                                       class:danger={group.byEnv[env.id].status === 'error'}>{group.byEnv[env.id].status}</span>
+                  </td>
+                  <td>
+                    {#if primaryHost(group.byEnv[env.id])}
+                      <code>{primaryHost(group.byEnv[env.id])}</code>
+                      <a href={`https://${primaryHost(group.byEnv[env.id])}`} target="_blank" rel="noopener"
+                         aria-label={`Open ${primaryHost(group.byEnv[env.id])} in a new tab`}><NavIcon name="external" /></a>
+                    {:else}<code>—</code>{/if}
+                  </td>
+                {:else}
+                  <td class="text-muted">{group.slug}</td>
+                  <td colspan="3" class="text-sm text-muted">not in {env.name}</td>
+                {/if}
+                <td class="cluster text-sm">
+                  {#each Object.entries(group.byEnv).filter(([id]) => id !== env.id) as [id, app] (id)}
+                    <a href={`/apps/${app.id}/`}>{envById[id]?.name ?? 'other'}</a>
+                  {/each}
+                </td>
+              </tr>
+            {/snippet}
+          </Table>
+        {/if}
+
+        <h2 class="h4">Variables <span class="text-muted">· {env.name}</span></h2>
+        <p class="text-sm text-muted">Every app in {env.name} starts with these. An app's own variable of the same key wins.</p>
+        <VariablesEditor environmentId={env.id} idPrefix="var" />
+      {/if}
+    </div>
+
+    <aside class="stack" style:flex="0 1 18rem" style:min-width="0" id="project-envs" aria-label="Environments">
+      <h2 class="h4">Environment</h2>
+      {#if envs.length}
+        <TabList nav variant="pills" label="Environment">
+          {#each envs as e (e.id)}
+            <Tab href={envHref(e)} current={e.id === env?.id}>{e.name}</Tab>
+          {/each}
+        </TabList>
+      {/if}
+
+      {#if env}
+        <dl class="facts" id="project-env-facts">
+          <dt>Tier</dt>      <dd><span class="pill">{env.tier}</span></dd>
+          <dt>Protected</dt> <dd>{env.isProtected ? 'yes' : 'no'}</dd>
+        </dl>
+        <a href={`/environments/${env.id}/`} id="env-open">Releases and settings</a>
+      {/if}
+
+      <div class="cluster">
+        <label class="visually-hidden" for="tier-select">Tier</label>
+        <Select id="tier-select" style="--field-inline-size: auto"
+                placeholder="" options={tiers} bind:value={newTier} />
+        <Button treatment="outlined" onclick={addEnvironment} disabled={adding}>
+          {adding ? 'Adding…' : 'Add environment'}
+        </Button>
+      </div>
+    </aside>
+  </div>
 {:else}
   <NoRecord error={loadError} noun="Project" onretry={load}
             backHref="/projects/" backLabel="Back to projects" />

@@ -767,19 +767,15 @@ await evaluate(`
 await click('Add environment')
 await sleep(2500)
 check('the environment is listed',
-  await evaluate(`[...document.querySelectorAll('#environment-rows td')].map(t => t.textContent.trim()).join('|')`),
+  await evaluate(`document.getElementById('project-envs')?.textContent ?? ''`),
+  t => t.includes('Production'))
+// The only environment is the one selected, so the apps column names it.
+check('…and the apps column is scoped to it',
+  await evaluate(`document.querySelector('#project-layout h2')?.textContent ?? ''`),
   t => t.includes('Production'))
 
-// Into the environment.
-// The production row's Open, not the first one on the page.
-await evaluate(`
-  (() => {
-    const row = [...document.querySelectorAll('#environment-rows tr')]
-      .find(tr => tr.textContent.includes('Production'))
-    if (!row) throw new Error('no Production row')
-    row.querySelector('a.btn').click()
-  })()
-`)
+// Into the environment, through the rail's link to the selected one.
+await evaluate(`document.getElementById('env-open').click()`)
 await sleep(2500)
 check('the environment opens', await heading(), 'Production')
 const envPath = await path()
@@ -1979,7 +1975,10 @@ await goto('/secrets/')
 check('secrets renders', await heading(), 'Secrets')
 await click('Add a secret')
 await sleep(800)
-await fill({ name: 'deploy-key', data: 'ssh-ed25519 AAAAC3NzaC1PLAINTEXTCANARY' })
+// Kind comes first and decides the value fields: an SSH key is a private-key box.
+await evaluate(`document.querySelector('input[type=radio][name=kind][value=ssh_key]').click()`)
+await waitFor(`document.getElementById('value-privateKey') ? '1' : ''`, t => t === '1')
+await fill({ 'value-privateKey': 'ssh-ed25519 AAAAC3NzaC1PLAINTEXTCANARY', name: 'deploy-key' })
 await submit()
 check('a secret is stored',
   await waitFor(`document.getElementById('secret-rows')?.textContent ?? ''`, t => t.includes('deploy-key')),
