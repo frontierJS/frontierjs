@@ -2318,7 +2318,7 @@ function _warnUnvalidated(
 // function itself — which is what survives being copied between hook maps.
 const _derivedHooks = new WeakSet<Function>()
 
-/** Tag a framework-derived hook. */
+/** Tag a framework-derived hook, or a base method the unread watchers skip. */
 export function markDerived<T extends Function>(fn: T): T {
   _derivedHooks.add(fn)
   return fn
@@ -2833,6 +2833,33 @@ function tableFor(client: unknown, accessor: string): { findFirst?: Function } |
   return null
 }
 
+const isOwnKey = Object.prototype.propertyIsEnumerable
+
+const _announcedFor = new WeakMap<object, Map<string, { visible: string[], hidden: Set<string> } | null>>()
+
+/**
+ * The columns an announced row must carry, and the ones it never can.
+ *
+ * A column the caller can never read (@encrypted/@secret/@guarded) is withheld
+ * from every answer, so counting it as missing warned 'answered 15 of 13
+ * columns -- missing pw' about a row that was whole (FJS-2258, FJS-1158).
+ * Both are facts of the schema, so a bulk write does not rebuild them per row.
+ */
+async function announcedColumns(client: unknown, accessor: string): Promise<{ visible: string[], hidden: Set<string> } | null> {
+  const key = schemaKey(client)
+  let perModel = _announcedFor.get(key)
+  if (!perModel) { perModel = new Map(); _announcedFor.set(key, perModel) }
+  if (perModel.has(accessor)) return perModel.get(accessor)!
+
+  const all     = await modelColumns(client, accessor)
+  const hidden  = protectedColumnNames(client, accessor)
+  const visible = all ? [...all].filter(c => !hidden.has(c)) : []
+  const facts   = visible.length > 0 ? { visible, hidden } : null
+
+  perModel.set(accessor, facts)
+  return facts
+}
+
 /**
  * What this call should announce — the row, or nothing.
  *
@@ -2849,23 +2876,18 @@ export async function announcementPayload(
   const client = callDb(ctx)
   if (!client) return payload
 
-  const all = await modelColumns(client, accessor)
-  if (!all || all.size === 0) return payload
+  const facts = await announcedColumns(client, accessor)
+  if (!facts) return payload
+  const { visible, hidden } = facts
 
-  // A column the caller can never read (@encrypted/@secret/@guarded) is withheld
-  // from every answer, so counting it as missing warned 'answered 15 of 13
-  // columns -- missing pw' about a row that was whole (FJS-2258, FJS-1158).
-  const hidden  = protectedColumnNames(client, accessor)
-  const columns = new Set([...all].filter(c => !hidden.has(c)))
-  if (columns.size === 0) return payload
-
-  const keys    = payload && typeof payload === 'object'
-    ? new Set(Object.keys(payload).filter(k => !hidden.has(k)))
-    : new Set<string>()
-  const missing = [...columns].filter(c => !keys.has(c))
   // Extra keys are fine — `{ ...job, queued: true }` is the whole row and a
   // flag, which is a row. Only an omission makes it a partial row.
-  if (missing.length === 0) return payload
+  const isObject = payload !== null && typeof payload === 'object'
+  let missing: string[] | null = null
+  for (const c of visible) if (!isObject || !isOwnKey.call(payload, c)) (missing ??= []).push(c)
+  if (!missing) return payload
+
+  const keys = isObject ? Object.keys(payload).filter(k => !hidden.has(k)) : []
 
   const id = (payload as Record<string, unknown> | null)?.[idField] ?? ctx.id
   const named = `${ctx.service}.${ctx.method}`
@@ -2882,7 +2904,7 @@ export async function announcementPayload(
       const row   = await table?.findFirst?.({ where: { [idField]: id } })
       if (row) {
         warnOnce(named,
-          `[Junction] ${named}() answered ${keys.size} of ${columns.size} columns — missing ${shown}. ` +
+          `[Junction] ${named}() answered ${keys.length} of ${visible.length} columns — missing ${shown}. ` +
           `The announcement carries the row instead, re-read by ${idField}; the CALLER still gets the ` +
           `partial row, and a page assigning it over the record it renders loses those fields. Answer the ` +
           `whole row, or state the payload with ctx.dispatch.${readHint}`)

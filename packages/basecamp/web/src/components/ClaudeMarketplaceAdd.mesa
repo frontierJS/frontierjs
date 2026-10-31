@@ -1,0 +1,43 @@
+<script>
+  // The form that adds a marketplace on the Claude Code tab (api services/claude:
+  // marketplace). One field: Claude Code takes owner/repo, a git URL or a local
+  // path, and clones it, which can take a minute.
+  import { claude } from '../resources/Claude.mesa'
+
+  import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
+
+  export let onwrote = undefined
+
+  let source = ''
+  let busy   = false
+  let error  = ''
+  let added  = ''
+
+  async function add() {
+    busy = true; error = ''; added = ''
+    try {
+      const row = await claude.service.invoke('marketplace', null, { action: 'add', source })
+      added = row.action === 'marketplace.add' ? `Added ${row.target}` : `${row.target} was already known; updated it`
+      source = ''
+      await onwrote?.()
+    } catch (err) {
+      error = err?.message ?? String(err)
+    } finally {
+      busy = false
+    }
+  }
+</script>
+
+<form class="cluster claude-mp-add" id="claude-marketplace-add-form" onsubmit={(e) => { e.preventDefault(); add() }}>
+  <Input id="claude-marketplace-source" label="Add a marketplace" placeholder="owner/repo, a git URL or a local path" bind:value={source} />
+  <Button id="claude-marketplace-add" type="submit" loading={busy} disabled={busy || !source.trim()}>Add</Button>
+  {#if added}<Badge tone="success" id="claude-marketplace-added" role="status">{added}</Badge>{/if}
+  {#if error}<Badge tone="danger" id="claude-marketplace-add-error" role="alert" class="claude-msg">{error}</Badge>{/if}
+</form>
+
+<style>
+  .claude-mp-add { align-items: flex-end; }
+  .claude-mp-add :global(.claude-msg) { white-space: normal; overflow-wrap: anywhere; }
+</style>

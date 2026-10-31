@@ -1,0 +1,56 @@
+<script>
+  // One MCP server's tools, in the Claude Code tab's drawer (api services/claude: mcpTools).
+  //
+  // The server is started for the answer and stopped after it, so the list is
+  // asked for on a click. An OAuth server, or a project server Claude Code has
+  // not approved, answers *unavailable* with the reason rather than starting.
+  import { claude } from '../resources/Claude.mesa'
+
+  import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Table  from '@frontierjs/ui/components/display/Table.mesa'
+
+  // { name, scope, project, plugin } from a scan row.
+  export let server = null
+
+  const COLUMNS = [{ name: 'name', label: 'Tool' }, { name: 'description', label: 'Description' }, { name: 'args', label: 'Arguments' }]
+
+  let answer  = null   // Read<{ server, tools, tookMs }>
+  let error   = null
+  let loading = false
+
+  async function list() {
+    loading = true; error = null
+    const s = server
+    try {
+      answer = await claude.service.invoke('mcpTools', null, {
+        name: s.name, scope: s.scope, ...(s.project ? { project: s.project } : {}), ...(s.plugin ? { plugin: s.plugin } : {}),
+      })
+    } catch (err) { answer = null; error = err.message }
+    finally { loading = false }
+  }
+</script>
+
+<div class="stack" id="claude-mcp-tools">
+  <div class="cluster">
+    <Button id="claude-mcp-tools-list" size="sm" treatment="outlined" loading={loading} disabled={loading} onclick={list}>{answer ? 'List again' : 'List tools'}</Button>
+    <span class="text-sm text-muted">Starts the server, asks it for its tools, stops it.</span>
+  </div>
+  {#if error}
+    <p><Badge tone="danger">refused</Badge> <span class="text-sm">{error}</span></p>
+  {:else if answer && !answer.ok}
+    <p id="claude-mcp-tools-unavailable"><Badge tone="warning">unavailable</Badge> <span class="text-sm">{answer.reason}</span></p>
+  {:else if answer}
+    {@const v = answer.value}
+    <p class="text-sm text-muted">{v.server.name ?? 'Unnamed server'}{v.server.version ? ` ${v.server.version}` : ''}: {v.tools.length} tools in {v.tookMs} ms.</p>
+    <Table id="claude-mcp-tools-table" columns={COLUMNS} rows={v.tools} compact striped hover={false} emptyText="The server offers no tools">
+      {#snippet row(t)}
+        <tr>
+          <td><code>{t.name}</code></td>
+          <td class="text-sm">{t.description ?? '—'}</td>
+          <td class="text-sm">{#if t.args.length}<code>{t.args.join(', ')}</code>{:else}—{/if}</td>
+        </tr>
+      {/snippet}
+    </Table>
+  {/if}
+</div>

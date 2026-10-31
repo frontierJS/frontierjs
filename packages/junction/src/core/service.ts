@@ -765,8 +765,11 @@ async function _callService(
     await runInServiceCall(coverage, () => runPipeline(ctx, resolvedPipeline, async () => {
       // The body must read every filter autoFilter admitted — see
       // watchFilterReads. Around the method alone, so a hook's reads do not count.
-      const settleFilterReads    = isCustom ? undefined : watchFilterReads(ctx)
-      const settleDirectiveReads = isCustom ? undefined : watchDirectiveReads(ctx, sent)
+      // Not around the base find and get: their parseQuery reads everything, and
+      // the two Proxies cost ~9 µs a find for a check that cannot fire (FJS-3754).
+      const watched = !isCustom && !isDerivedHook(methodFn)
+      const settleFilterReads    = watched ? watchFilterReads(ctx) : undefined
+      const settleDirectiveReads = watched ? watchDirectiveReads(ctx, sent) : undefined
       const raw = await methodFn(ctx)
       settleFilterReads?.()
       settleDirectiveReads?.()
@@ -2361,8 +2364,10 @@ export function buildBase(
   }
 
   return {
-    find:      withDb(base.find),
-    get:       withDb(base.get),
+    // Marked so _callService skips the unread watchers (FJS-3754). Not
+    // aggregate: parseAggregate reads two directives, so its watch can fire.
+    find:      markDerived(withDb(base.find)),
+    get:       markDerived(withDb(base.get)),
     aggregate: withDb(base.aggregate as Method),
     create:  withDb(base.create),
     update:  withDb(base.update),

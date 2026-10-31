@@ -8495,6 +8495,22 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1724"></a>2026-10-31 · `FJS-D1724` — A wrapped `.db` is keyed `<appId>-<stamp>.db.tar.gz` and restores per file; amends `FJS-D1719`.
+
+Probe 0.1 of [`IDEAS/app-archives.md`](IDEAS/app-archives.md) found two things `FJS-D1719` got wrong. First, an app archive is flat (`./shop.db`, `./shop.db-wal`, …), so the import check reads top-level `./*.db`, not `db/*.db`. Second, a wrapped `.db` cannot restore "like any other archive": `/volume/restore`'s overwrite empties `/data`, which would delete the volume's other databases, and that breaks D1719's "replaces only that database". It restores through Outpost's per-file path instead, behind `restore`'s url door, so the fetch and sha256 check keep one owner. Asked through the question tool after `decision-rules`, and the recommendation was picked: the archive's scope is recorded in the key name, **A**. This was chosen over **B**, a column on `AppBackup` (a schema change, and rescan would infer it from the key anyway), and **C**, inspecting the tar at restore (the path would be unknown until after the fetch). The marker shows in the bucket, and a rescan rebuilds it from the key alone.
+
+### <a id="fjs-d1719"></a>2026-10-31 · `FJS-D1719` — Q3 — An app import accepts the archive or a bare `.db`, which is wrapped into an archive on the way in.
+
+Asked in [`IDEAS/app-archives.md`](IDEAS/app-archives.md) § Open questions, through the question tool, after `decision-rules`. **B** was picked over **A** (the archive only, `FJS-D1561`'s answer for the hub), which was recommended. A bare `.db` is easier to make from a laptop. Wrapping keeps Restore at one input: the upload route builds the same `tar.gz` Download hands out, and the restore treats it like any other archive. A tar whose entries list no `db/*.db`, or a `.db` that does not open as SQLite, is refused before a row is written. Restoring a bare `.db` replaces only that database. The rest of the volume stays as it was, and the restore's confirmation says so.
+
+### <a id="fjs-d1718"></a>2026-10-31 · `FJS-D1718` — Q2 — An app with no backup destination refuses an import; an uploaded archive lands only in the app's bucket.
+
+Asked in [`IDEAS/app-archives.md`](IDEAS/app-archives.md) § Open questions, through the question tool, after `decision-rules`; the recommendation was picked. **A** was picked over **B** (keep the file on the hub's disk and hand the machine a signed link, as `plugins/backup-archive.ts` does for the hub). B would add a second place an archive lives and a second source Restore must know. The refusal names the fix: give the app a backup destination. Reopen B once a machine-kept archive can be sent to a bucket after the fact.
+
+### <a id="fjs-d1717"></a>2026-10-31 · `FJS-D1717` — Q1 — `fli db:download` and `fli db:import` go through Basecamp when `BASECAMP_APP_ID` is set, and over ssh otherwise, and print which.
+
+Asked in [`IDEAS/app-archives.md`](IDEAS/app-archives.md) § Open questions, through the question tool, after `decision-rules`. The recommendation was picked. **A** was picked over **B** (Basecamp only) and **C** (a separate `fli basecamp:backup`, with the ssh verbs unchanged). On a Basecamp machine an app's db is inside the `fjs-<app>-data` volume, so the ssh path, scp of `PROD_SERVER_PATH/db/production.db*`, never reaches it. ELA and maid.tech still run on hosts Basecamp does not manage, so B strands them. `fli deploy` already makes the same switch to `basecamp:deploy`. The owner added that each command prints that it detected the id and which path it is taking. With the id set and no bucket archive to fetch, the command refuses by name rather than falling back to ssh.
+
 ### <a id="fjs-d1713"></a>2026-10-31 · `FJS-D1713` — A list page counts its total by default; `$total: false` skips the count.
 
 Asked through the question tool after the 2026-10-31 perf audit ([`docs/perf-audit-2026-10-31.md`](docs/perf-audit-2026-10-31.md)). The owner first picked **B** (`total: null` unless `$total` asks), then amended it to an opt-out: most lists hold a few hundred rows, where a `COUNT(*)` costs microseconds and an exact page N of M is worth having. The count's cost scales with the rows the filter matches, not the page. It measured 74x the page at 50k matching rows with no index, so a large list passes `$total: false` and the window answers `hasMore` from a `limit + 1` fetch with `total: null`, as the keyset path already does. A short page is its own total and never counts (`FJS-3743`). **C** (a `COUNT` over a `LIMIT N` subquery) was not taken because it still scans up to N. `$total` is one new row in the directive table (`@frontierjs/toolbelt/directives`, Invariant 10).
@@ -16084,6 +16100,30 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1726"></a>2026-10-31 · `FJS-D1726` — Q6 — The release gate and `deploy --source npm` — The gate skips that branch, by name, and the published framework is graded after publish, from each host the run shipped to.
+
+Asked in [`IDEAS/publish-order.md`](IDEAS/publish-order.md) § Questions, through the question tool, after `decision-rules`. **A** was picked, as recommended. Phase 0.2's full `ci` at `f7e71079` showed why. The `deploy` phase's npm branch runs `fli new --source npm`, which installs the scaffold pins from npm. `01-version-all` raises those pins to the versions the run is about to publish, so on a release sha the branch fails by construction under tag-last (`FJS-D1720`). The pre-tag gate is therefore full `ci` without that one branch. It prints the skip, because a silent skip is a gate that grades less than it says. `--source local` still grades the sha's bytes before the tag. After publish, `04-verify-assets` scaffolds and installs a fresh app from each host the run shipped to: `--source url` (`packages.frontierjs.com`) for `tarballs`, and `--source npm` for `npm`. **B**, resolving bumped pins to the last published version, grades a framework nobody ships and adds a second pin resolver beside `01-version-all` (Invariant 4). **C**, publishing before the gate, contradicts `FJS-D1720`. **D**, a `knownDeployFailures` entry for release runs, goes stale right after publish, and the allowance ratchets. The `registry` phase does not need the same treatment: at `f7e71079`, with `sierra@0.1.10` absent from npm, it passed, because a version gap there is a note. A plain `ci` keeps both branches; [FJS-3774](ISSUES.md#fjs-3774) is that branch's standing red.
+
+### <a id="fjs-d1725"></a>2026-10-31 · `FJS-D1725` — Q5 — A release tag only this clone holds, with commits since it and on no host — `ws:pub` deletes it, by name and sha, and resumes the release as untagged.
+
+Asked in [`IDEAS/publish-order.md`](IDEAS/publish-order.md) § Questions, through the question tool, after `decision-rules`. **A** was picked, as recommended. Phase 0.1's scratch repro found the case: the pre-push hook refused the push, so the tag never left the clone, and `in-flight-moved` advised publishing from a tag whose sha is the commit CI refused. A tag the remote does not hold was never public, so it is not a commitment the way `FJS-D1722`'s pushed tag is. It collapses into Phase 2's untagged-bump resume: tag HEAD once CI is green. The deletion happens only when the remote answered, the tag is absent there, and the version is missing from every destination in the run. A failed `ls-remote` refuses like `unknown`. A version that reached one host keeps its tag and refuses. The read of the remote tag list belongs in `core/publish-preflight.js` beside `unpublished()`, not in the `in-flight-moved` block. **B**, refusing with `git tag -d` as the fix, is the reopen path if every deletion should be seen first. **C**, publishing from the tag, ships bytes CI refused.
+
+### <a id="fjs-d1723"></a>2026-10-31 · `FJS-D1723` — Q4 — Does the pre-push hook skip a sha CI already passed on — No. `ws:pub` alone pushes the sha it graded with `--no-verify`.
+
+Asked in [`IDEAS/publish-order.md`](IDEAS/publish-order.md) § Questions, through the question tool, after `decision-rules`. **A** was picked, as recommended. A general skip would make the hook trust `.cache/ci-runs`, which is gitignored and per-clone. Its `dirty` flag also ignores untracked files the run still graded, so a stale entry would skip the hook with nothing visible. The skip stays an open idea of its own. With the hook bypassed, `ws:pub` pushes the exact sha it graded, never `HEAD`: a commit landing mid-run would otherwise ship ungraded.
+
+### <a id="fjs-d1722"></a>2026-10-31 · `FJS-D1722` — Q3 — A pushed, unshipped tag with commits since it — `ws:pub` publishes from a worktree of the tag and says so.
+
+Asked in [`IDEAS/publish-order.md`](IDEAS/publish-order.md) § Questions, through the question tool, after `decision-rules`. **B** was picked, as recommended. It replaces the `in-flight-moved` refusal and its hand-run recipe with the worktree pack Phase 1 already builds. **C**, moving the tag to HEAD, was rejected: the tag is public, and moving it changes the bytes it names. Precedent: lerna `publish from-package` and goreleaser both build from the tag.
+
+### <a id="fjs-d1721"></a>2026-10-31 · `FJS-D1721` — Q2 — Where the release CI runs — In a git worktree of the release sha, after a `bun install` there.
+
+Asked in [`IDEAS/publish-order.md`](IDEAS/publish-order.md) § Questions, through the question tool, after `decision-rules`. **A** was picked, as recommended. Other sessions write to the main tree, so only a worktree proves the graded bytes are the tagged sha's. `ci.mjs` derives its root from its own path, so the worktree's copy grades its own sha. A slow install gets a dependency cache, not a second path. Reopen with **C** (worktree, falling back to a clean main tree) if Phase 0's measurement shows the worktree is impractical.
+
+### <a id="fjs-d1720"></a>2026-10-31 · `FJS-D1720` — Q1 — Which CI tier gates the release tag — The full `ci`.
+
+Asked in [`IDEAS/publish-order.md`](IDEAS/publish-order.md) § Questions, through the question tool, after `decision-rules`. **A** was picked, as recommended. A release is rare, and it is the one push npm cannot take back. `scripts/hooks/pre-push` already places the full tier in the workflow rather than on every push, and a release is that workflow. Precedent: changesets and goreleaser both gate publish on full CI.
 
 ### <a id="fjs-d1715"></a>2026-10-31 · `FJS-D1715` — How does an operator make Caddy try for a certificate now, once a hand-fixed DNS record resolves — An explicit retry: a forced Caddy reload on every machine serving the App, then the live check rerun.
 

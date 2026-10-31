@@ -87,6 +87,11 @@ const NOT_SEEDED: Record<string, string> = {
   // Adopting reads a live vendor account, and a seeded Cloudflare key would be
   // asked by every edge job that walks the workspace's accounts.
   app_platform: 'an App adopted from a vendor account, which the seed holds no key for',
+  // The index of THIS machine's Claude Code transcripts, filled by its job from
+  // ~/.claude; seeded rows would be spend nobody made.
+  claude_transcript: "the operator's own transcripts, which the index job reads from disk",
+  claude_message:    "the operator's own replies, which the index job reads from disk",
+  claude_write:      "changes made to the operator's own ~/.claude, each with its undo image",
 
   // Empty because they describe something that has not happened.
   //

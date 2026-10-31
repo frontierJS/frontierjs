@@ -34,6 +34,7 @@ import { deleteObject, listObjects } from '../../providers/storage/s3.ts'
 import type { ListedObject }  from '../../providers/storage/s3.ts'
 import { destinationFor, mintDownload } from '../../jobs/app-backup-run.job.ts'
 import { requireHubAppId } from '../host/host-machine.ts'
+import { NotFound }           from '@frontierjs/junction'
 import type { App }           from '@frontierjs/junction'
 import type { BackupDestination } from '#db/schema.d.ts'
 
@@ -73,6 +74,15 @@ type ArchiveRow = {
 }
 
 export const isRemote = (r: ArchiveRow) => r.status === 'success' && !!r.destinationId && !r.error && !!r.location
+
+/** The pre-signed GET a person downloads a remote archive by, saving as
+ *  `name` — the hub's `backups.download` and an app's `appBackups.download`
+ *  alike. The destination is read at SYSTEM: the caller proved the row first. */
+export async function bucketDownload(app: App, row: ArchiveRow, name: string): Promise<{ url: string; name: string }> {
+  const dest = await app.db!.asSystem().backupDestination.findFirst({ where: { id: row.destinationId! } })
+  if (!dest) throw new NotFound(`Destination '${row.destinationId}' is gone, so ${row.location} cannot be reached`)
+  return { url: await mintDownload(app, dest, row.location!, name), name }
+}
 
 /** The directory a local archive is, or null when this disk holds none for the
  *  row: a remote one, one that never finished, or one pruned or moved away. */

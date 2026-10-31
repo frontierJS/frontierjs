@@ -1,6 +1,6 @@
 <script>
   // AppBackups.mesa — an App's archives of its data volume: the rows, Back up
-  // now, Restore and Rescan bucket (`IDEAS/backups.md` 5.3).
+  // now, Restore, Download and Rescan bucket (`IDEAS/backups.md` 5.3).
   //
   // Every action names a MACHINE, because the volume is per machine: *Back up
   // now* archives that placement's copy, and *Restore* extracts onto it. One
@@ -77,11 +77,29 @@
     }
   }
 
+  // In the bucket is the server's `isRemote`: a row whose upload failed keeps
+  // its destination and its local path, with the failure in `error`, and
+  // both `download` and `restoreVolume` refuse it.
+  const inBucket = (b) => b.status === 'success' && !!b.destinationId && !b.error && !!b.location
+
   // The machine fetches the archive by a link the hub signs and refuses one
-  // whose sha256 is not the recorded one (`FJS-D1521`), so only a row with
-  // both an object key and a hash offers Restore.
-  const restorable = (b) => b.status === 'success' && !!b.sha256 && !!b.destinationId
-    && !!b.location && !b.location.startsWith('/')
+  // whose sha256 is not the recorded one (`FJS-D1521`), so only a row in the
+  // bucket with a hash offers Restore.
+  const restorable = (b) => inBucket(b) && !!b.sha256
+
+  // The server answers the bucket's pre-signed GET, signed to answer as an
+  // attachment named for the app, so the screen stays where it is.
+  async function download(b) {
+    error = null; busy = b.id
+    try {
+      const { url } = await appBackups.service.invoke('download', b.id, {})
+      location.assign(url)
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
 
   async function restore(b) {
     error = null; busy = b.id
@@ -187,6 +205,10 @@
           <td class="text-sm">{b.sizeBytes ? size(b.sizeBytes) : '—'}</td>
           <td class="text-sm text-muted"><code>{b.location ?? '—'}</code></td>
           <td>
+            {#if inBucket(b)}
+              <Button treatment="ghost" disabled={!!busy} aria-label={`Download the backup taken ${when(b)}`}
+                      onclick={() => download(b)}>Download</Button>
+            {/if}
             {#if restorable(b)}
               <Button treatment="ghost" disabled={!machine || !!busy} aria-label={`Restore the backup taken ${when(b)}`}
                       data-confirm={`The files in this app's volume on ${machineName} are replaced by this archive. Stop the app there first.`}
@@ -200,5 +222,9 @@
         {/if}
       {/snippet}
     </Table>
+    <p class="text-sm text-muted">
+      <em>Download</em> fetches an archive in the bucket as <code>{app.slug}-&lt;stamp&gt;.tar.gz</code>.
+      One kept on the machine downloads once it is in a bucket — give the app a backup destination.
+    </p>
   {/if}
 </div>

@@ -43,9 +43,9 @@ Proof: litestone, mesa, sierra and ui suites green after the change; `count.mjs`
 5. **FJS-3751** — cold navigation awaits component, layouts, loader import and `load()` in series: 1–2 RTT lost on a split route. Reasoning only.
 6. ~~**FJS-3756**~~ — closed: `bridge.fromFrame`/`toFrame` read and shape a socket call by the HTTP rules; one `callContext()` literal.
 7. ~~**FJS-3752**~~ — closed: the cost was `Object.entries`, not the closures; `Object.keys` and a regex-free `quoteIdent` halve `buildWhere` (four-key 3.0 → ~1.5 µs). The shape cache is not worth its key.
-8. **FJS-3753** — `announcementPayload` rebuilds static Sets per announced write; bulk writes do it per row then grade serially.
-9. **FJS-3754** — two Proxy unread-watchers per find in production, even for the derived `find`.
-10. **FJS-3755** — id writes run the whole `parseQuery`; filter keys validated twice.
+8. ~~**FJS-3753**~~ — closed: the visible columns and the hidden set are cached per (schemaKey, accessor) and the payload is tested in place; a whole row 2.5 → 0.75 µs, a 100-row bulk ~230 → ~65 µs.
+9. ~~**FJS-3754**~~ — closed: the base `find` and `get` are marked derived and skip both watchers, since `parseQuery` reads everything; `aggregate` stays watched. ~9 µs a find, not 3.5.
+10. ~~**FJS-3755**~~ — closed: `$checkWhere` rebuilt the key sets the table guard caches; it reads `whereKeysFor` now, 2.6 → 0.86 µs a two-key filter. The id-write `parseQuery` measured ~0.35 µs and was left.
 11. **FJS-3757** — `$$eachBlock` allocates `keyCount`, `oldBlocks`, `newBlocks` before the head/tail scan can say nothing moved. Another 30–50 µs at n=1000.
 12. **FJS-3760** — Form rebuilds `$context.form` and `errors` as fresh objects per change, so every Field re-renders per keystroke. Unmeasured.
 13. **FJS-3761** — an app-wide `around` hook exists only to stamp `locals.__channels`.

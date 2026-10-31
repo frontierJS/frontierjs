@@ -29,8 +29,7 @@ import { requireSystemAdmin, getPagination }                from '../../core/hoo
 import { db, actor, callerOrder, callerSelect }               from '../../core/resource.ts'
 import { requireHubAppId }                                  from '../../domain/host/host-machine.ts'
 import { queueBackup, SETTLED }                             from '../../jobs/backup-run.job.ts'
-import { deleteArchive, rescanDestination, isRemote, localArchive } from '../../domain/backup/backup-archives.ts'
-import { mintDownload }                                   from '../../jobs/app-backup-run.job.ts'
+import { deleteArchive, rescanDestination, isRemote, localArchive, bucketDownload } from '../../domain/backup/backup-archives.ts'
 import { mintArchiveUrl }                                 from '../../plugins/backup-archive.ts'
 import { LEVELS }                                           from '@frontierjs/litestone'
 import { keyScope } from '../../domain/api-key/scopes.ts'
@@ -125,18 +124,14 @@ export default createService({
   // ── download — POST /backups/{id}  X-Service-Method: download ──
   /** The URL one archive is fetched by (`IDEAS/backups.md` 4.2): the bucket's
    *  pre-signed GET for a remote one, a five-minute link this process signed
-   *  for a local one (`plugins/backup-archive.ts`). Either is the same
+   *  for a local one (`plugins/backup-archive.ts`). Both save as
    *  `basecamp-<stamp>.tar.gz`. */
   async download() {
     const row = await hubArchive($.id as string)
     if (row.status !== 'success') throw new BadRequest(`That backup is ${row.status}, so there is no archive to download`)
     const name = `${(row.location ?? '').split('/').pop()!.replace(/\.tar\.gz$/, '')}.tar.gz`
 
-    if (isRemote(row)) {
-      const dest = await db().asSystem().backupDestination.findFirst({ where: { id: row.destinationId! } })
-      if (!dest) throw new NotFound(`Destination '${row.destinationId}' is gone, so ${row.location} cannot be reached`)
-      return { url: await mintDownload($.app, dest, row.location!), name }
-    }
+    if (isRemote(row)) return bucketDownload($.app, row, name)
     if (!localArchive($.app, row)) throw new NotFound(`${row.location ?? 'That backup'} is no longer on this disk`)
     // The route cannot know who follows the link, so who minted it is logged here.
     $.app.logger.info('backup archive link minted', { backup_id: row.id, by: actor() })

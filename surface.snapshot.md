@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 4036 source file(s) read
+26 package(s) · 4063 source file(s) read
 247 entry point(s), 35 imported by nothing outside their package, 16 emitted
-1686 value export(s), 634 reached by nothing outside, 179 emitted
+1687 value export(s), 635 reached by nothing outside, 179 emitted
 459 type export(s), 349 reached by nothing outside
 ```
 
@@ -44,7 +44,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `ui` | 9 | 0 | 53 | 33 | 3 | 0 | 0 |
 | `conduit` | 4 | 2 | 26 | 15 | 1 | 60 | 41 |
 | `site-kit` | 9 | 4 | 38 | 11 | 1 | 0 | 0 |
-| `outpost` | 9 | 1 | 24 | 10 | 1 | 0 | 0 |
+| `outpost` | 9 | 1 | 25 | 11 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 7 | 0 | 36 | 21 |
 | `email-kit` | 3 | 0 | 10 | 4 | 1 | 0 | 0 |
 | `notifications` | 3 | 0 | 16 | 4 | 0 | 30 | 24 |
@@ -247,11 +247,11 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/outpost`
 
-`packages/outpost` · 9 entry point(s) · 24 value, 0 type export(s)
+`packages/outpost` · 9 entry point(s) · 25 value, 0 type export(s)
 
 **Entries imported by nothing outside (1):** `.`
 
-**Unreached values (10):** `BACKUP_SCRIPT` `checkRunConfig` `createInspector` `digestOfFiles` `followLines` `isDigest` `spawnRun` `spawnStream` `validName` `validRelativePath`
+**Unreached values (11):** `BACKUP_SCRIPT` `checkRunConfig` `containerName` `createInspector` `digestOfFiles` `followLines` `isDigest` `spawnRun` `spawnStream` `validName` `validRelativePath`
 
 **Emitted (1):** `ROOTS`
 

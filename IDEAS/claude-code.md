@@ -193,10 +193,10 @@ Goal: what is always loaded, what was spent, and what is left.
 Done when: the context estimate and the 7-day token total agree with
 `/context` and `/stats` in a live `claude` session within 10%.
 
-- [ ] 2.1 Context estimate — tokens per always-on part (system prompt, skill
+- [x] 2.1 Context estimate — tokens per always-on part (system prompt, skill
   index, agents, memory files, MCP tool lists) against the window.
-- [ ] 2.2 Sessions — list per project, and one transcript read folded into turns.
-- [ ] 2.3 Stats — per day, per model and per project, over
+- [x] 2.2 Sessions — list per project, and one transcript read folded into turns.
+- [x] 2.3 Stats — per day, per model and per project, over
   `packages/cli/core/claude-usage.js` (it already dedupes a streamed reply's
   repeated message id); extended there, not copied. Indexed (`FJS-D1714`):
   one row per assistant message, unique on its id, so a resumed session's
@@ -206,15 +206,43 @@ Done when: the context estimate and the 7-day token total agree with
   rather than in a request. The models go in by `bun run db:migrate <label>`
   (the lock, `FJS-D1660`, only freezes applied files); their gate is the
   Workbench's ADMINISTRATOR and settled with `data-hazards` there.
-- [ ] 2.4 Pricing — one table with its source URL and the date it was read,
+- [x] 2.4 Pricing — one table with its source URL and the date it was read,
   for the dollar estimate. Shown as an estimate with that date.
-- [ ] 2.5 Account — `claude auth status --json`: plan, email, org, auth method.
-- [ ] 2.6 Quotas per Q5 — session (5h), weekly, and weekly Sonnet. The
+- [x] 2.5 Account — `claude auth status --json`: plan, email, org, auth method.
+- [x] 2.6 Quotas per Q5 — session (5h), weekly, and weekly Sonnet. The
   endpoint shares the account's rate limit with every running `claude`, so a
   429 stops reads for the longer of `Retry-After` and a 5→10→20→30 min step,
   serving the last good read marked stale; a forced refresh does not skip it.
-- [ ] 2.7 What drives the limit — the share of 24h/7d spend per project, model
+- [x] 2.7 What drives the limit — the share of 24h/7d spend per project, model
   and tool, from the same scan.
+  - Built 2026-10-31, uncommitted. 2.1 reads the `api-request-shape` line a
+    transcript carries (the exact system prompt and tool list) and the first
+    reply's `usage`; the total is the API's own count, the parts an
+    apportionment by character share. 2.3's first fill: 5,085 files, 190k
+    messages, ~100 s; an append ~250 ms. Prices read from the platform pricing
+    page; `cacheWrite1h` is its own column because a 1h write costs 2x input.
+  - The done-when, measured against headless `claude -p "/context"` and
+    `/stats`: requests and sessions agree within 3% (24h 5,190 / 102 against
+    5,124 / 105; 7d 31,760 / 775 against 31,604 / 766). `/stats` no longer
+    prints a token total, so messages stand in. Context does NOT agree yet:
+    `/context` runs a headless session (38.9k) and the newest transcript is a
+    VSCode one (~51k), so totals differ by surface, and char-share overstates
+    tool schemas (26.5k against 18.6k). That gap is 2.9.
+  - The per-model weekly quota is Fable now, not Sonnet; the endpoint's
+    `limits[]` list is read, whatever models it names.
+- [ ] 2.8 Skills and subagents — the skill a `Skill` call names and the
+  `subagent_type` an `Agent` call names, two columns on `ClaudeMessage` read
+  by `readMessages` in `claude-usage.js` (not a second parser), so 2.7 lists
+  top skills and subagents as `/stats` does. In by `bun run db:migrate`, then
+  a re-index from 0. Their counts stay a subset of the tool counts.
+- [ ] 2.9 Context agrees with `/context` — per-kind chars-per-token ratios or
+  a real count in place of the char-share split, proved on one session read
+  both ways (a transcript and its own `/context`). This is Phase 2's
+  done-when, still false.
+- [x] 2.10 The tab row overflows at *Usage* — eleven tabs on one row; wrap
+  them or group them.
+  - The kit's strip scrolls sideways with its scrollbar hidden; the tab's own
+    strip wraps instead. Driven at 1280 and 400 px, every tab on screen.
 
 ## Phase 3 — Writes
 
@@ -222,23 +250,50 @@ Goal: every change CLACOROO makes, made from Basecamp, and each one undoable.
 Done when: a plugin toggled, a marketplace added, an MCP server removed and a
 setting changed on the screen show up in `claude` and undo cleanly.
 
-- [ ] 3.1 One writer — the single owner of a write under `~/.claude` or a
+- [x] 3.1 One writer — the single owner of a write under `~/.claude` or a
   project's `.claude/`. It stores the before image in Basecamp's database,
   `@encrypted`, because `settings.json` and MCP config carry env tokens; the
   activity row names the file and keys changed, never values (Invariant 7).
   It writes atomically. Undo replays the before image and is refused when the
   file's digest moved since the write — a running `claude` may have edited it.
-- [ ] 3.2 Plugins and marketplaces through the `claude` CLI (enable, disable,
+  - `domain/claude/claude-write.ts` and the `ClaudeWrite` model (migration
+    `claude_writes`). A CLI change is recorded too, and its undo is the inverse
+    command; `plugin update`, `marketplace update` and `mcp logout` have none.
+    The call trail's `claude.<method>` row names the write's id.
+- [x] 3.2 Plugins and marketplaces through the `claude` CLI (enable, disable,
   install, update, uninstall; marketplace add, update, remove).
-- [ ] 3.3 MCP servers — add, remove, enable, disable, clear auth. Claude Code
+  - A name reaching argv starts with a letter or digit: `--help` passed a
+    looser check, and `claude` printed help, exited 0 and was recorded.
+  - Install from the screen is user scope only; the API takes a scope.
+- [x] 3.3 MCP servers — add, remove, enable, disable, clear auth. Claude Code
   has no disable for a user-added server, so disable is `claude mcp remove` with
   its config kept by 3.1 (`@encrypted` — env and headers carry tokens) and
   enable re-adds it; a local-scope server is removed from its project's cwd.
-- [ ] 3.4 Settings editor — model, theme, language, thinking, effort, voice.
-- [ ] 3.4a Permissions — the allow, ask and deny rules in `settings.json`, each
+  - A project's `.mcp.json` server is turned off in its `settings.local.json`
+    (`disabledMcpjsonServers`), a file write. The scan does not read those two
+    keys yet, so the screen offers Disable and Enable both for one.
+  - Clear auth is `claude mcp logout`; CLACOROO's edit of
+    `mcp-needs-auth-cache.json` is not built.
+- [x] 3.4 Settings editor — model, theme, language, thinking, effort, voice.
+  - Per layer (user, a project's project or local file); a cleared field
+    removes the key. `theme` is written to `settings.json` as the reader reads
+    it, and this machine's `~/.claude.json` also carries one.
+- [x] 3.4a Permissions — the allow, ask and deny rules in `settings.json`, each
   checked as `Tool` or `Tool(specifier)`; an unknown tool and a broad allow
   warn rather than refuse.
-- [ ] 3.5 Edit a skill, an agent or a `CLAUDE.md`; move one to the trash.
+  - A malformed rule refuses the save: Claude Code ignores it, so a deny it
+    was meant to be is not in force.
+- [x] 3.5 Edit a skill, an agent or a `CLAUDE.md`; move one to the trash.
+  - Only a user- or project-scope file the scan lists; a plugin's own files
+    come back on its next update. A skill trashes as its folder, into
+    `~/.config/basecamp/claude-trash/<write id>/`.
+
+**Done 2026-10-31.** Proved over a temp `CLAUDE_CONFIG_DIR`: an API probe of
+every write and its undo (43 checks, `before` unreadable at rest, the call
+trail naming each row), and a Chrome drive that disabled a plugin, undid it,
+saved a setting, checked rules and disabled and re-enabled an MCP server, each
+then read back by `claude plugin list` and `claude mcp list`. Neither is
+committed (no new drives while experimenting); 6.2 is that drive.
 
 ## Phase 4 — Live and health
 
@@ -246,15 +301,40 @@ Goal: the screen stays true while Claude Code changes the files under it.
 Done when: a plugin toggled from a terminal redraws the open screen without a
 reload.
 
-- [ ] 4.1 A watcher on the config directory, and how the open screen hears it.
+- [x] 4.1 A watcher on the config directory, and how the open screen hears it.
   Basecamp has no broadcast for a model-less change today (the Workbench polls),
   so this step starts with `bridge-index`: reuse the owner it names, or poll
   like the Workbench and add nothing.
-- [ ] 4.2 MCP live status from `claude mcp list`, and a server's tool list by an
+  - Polled, nothing announced: `announce()` grades a model row per recipient
+    through `$readAs`, and the scan has no model. The tab asks `rev` every 3 s
+    while it is on screen; `rev` is a hash of the scan less its timings and
+    each project's last-active time, so a chat turn does not redraw it.
+  - The settings editor keeps unsaved typing when its file changes on disk and
+    says so, with a button to discard it.
+- [x] 4.2 MCP live status from `claude mcp list`, and a server's tool list by an
   MCP client handshake (stdio and HTTP).
-- [ ] 4.3 Hook dependencies — the CLI tools a hook command needs, and which are
+  - `claude mcp list` lists a checkout's `.mcp.json` servers only once the
+    folder is trusted, and a plugin's servers never; the tool list starts
+    those. It does not expand `${CLAUDE_PROJECT_DIR}` in `.mcp.json`, so the
+    tool list refuses a server with an unset variable as Claude Code skips it.
+  - An OAuth server answers *needs sign-in*: its token is in the keychain and a
+    refresh here would rotate it under every running `claude`.
+- [x] 4.3 Hook dependencies — the CLI tools a hook command needs, and which are
   missing on PATH.
-- [ ] 4.4 Doctor — `claude doctor` parsed into findings, per project.
+  - PATH is the API's, not the shell a hook runs in; a path through
+    `$CLAUDE_PROJECT_DIR` is *set per session*, not missing.
+- [x] 4.4 Doctor — `claude doctor` parsed into findings, per project.
+  - Runs from home and each pinned checkout; a finding several saw is listed
+    once with every folder.
+
+**Done 2026-10-31.** Proved over a temp `CLAUDE_CONFIG_DIR`: an API probe (28
+checks: rev moves on a settings edit and not on a chat turn, a server's env
+reaches it and its token is not answered, an unapproved and an unset-variable
+server refused) and a Chrome drive (21 checks) in which `claude plugin disable`
+from a terminal redrew the open Plugins row in under a second with no reload,
+plus health, a user and a plugin server's tools, the hook Programs column and
+Doctor at 1280 and 400 px. A read-only pass over the real config answered. Not
+committed (6.2).
 
 ## Phase 5 — Beyond reading, after use
 

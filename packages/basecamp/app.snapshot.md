@@ -24,11 +24,13 @@ text, so a body that elevates through a helper is not listed.
 | --- | --- |
 | `apiKeys.owners` | standing 5 or above — declared `gate: 5` |
 | `appBackups.take` | standing 5 or above — declared `gate: 5` |
+| `appBackups.download` | standing 5 or above — declared `gate: 5` |
 | `apps.unplace` | standing 4 or above — declared `gate: 4` |
 | `apps.disablePush` | standing 5 or above — declared `gate: 5` |
 | `backups.take` | **any signed-in caller** — floor, read gate 5; standing not graded |
-| `backups.download` | standing 7 or above — declared `gate: 7` |
 | `channels.test` | standing 5 or above — declared `gate: 5` |
+| `claude.writes` | standing 5 or above — declared `gate: 5` |
+| `claude.mcp` | standing 5 or above — declared `gate: 5` |
 | `deployments.rollback` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `deployments.rebind` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `edge.syncStep` | anyone, a stranger included — declared `gate: 0` |
@@ -276,14 +278,15 @@ name when it declares none.
 
 ### `appBackups` · model `AppBackup`
 
-- **methods** — `find`, `get`, `take`, `rescan`
-- **custom methods** — `take`, `rescan`
+- **methods** — `find`, `get`, `take`, `rescan`, `download`
+- **custom methods** — `take`, `rescan`, `download`
 - **also answers to** — `app-backups`
 - **input** — `rescan` takes `AppBackupRescan`
 - **input** — `take` takes `AppBackupTake`
 - **who may call** —
   - `take` — standing 5 or above — declared `gate: 5`; body writes as the app
   - `rescan` — standing 5 or above — declared `gate: 5`
+  - `download` — standing 5 or above — declared `gate: 5`; body writes as the app
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -431,7 +434,7 @@ name when it declares none.
   - `take` — **any signed-in caller** — floor, read gate 5; standing not graded; then `requireSystemAdmin`; body writes as the app
   - `discard` — **any signed-in caller** — floor, read gate 5; standing not graded; then `requireSystemAdmin`
   - `rescan` — standing 7 or above — declared `gate: 7`
-  - `download` — standing 7 or above — declared `gate: 7`; body writes as the app
+  - `download` — standing 7 or above — declared `gate: 7`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -488,8 +491,8 @@ name when it declares none.
 
 ### `claude` · model `claude`
 
-- **methods** — `config`, `file`, `stats`, `insights`, `sessions`, `transcript`, `context`, `account`, `quota`
-- **custom methods** — `config`, `file`, `stats`, `insights`, `sessions`, `transcript`, `context`, `account`, `quota`
+- **methods** — `config`, `file`, `stats`, `insights`, `sessions`, `transcript`, `context`, `account`, `quota`, `writes`, `rev`, `mcpHealth`, `mcpTools`, `hookTools`, `doctor`, `undo`, `plugin`, `marketplace`, `mcp`, `settings`, `permissions`, `save`, `trash`
+- **custom methods** — `config`, `file`, `stats`, `insights`, `sessions`, `transcript`, `context`, `account`, `quota`, `writes`, `rev`, `mcpHealth`, `mcpTools`, `hookTools`, `doctor`, `undo`, `plugin`, `marketplace`, `mcp`, `settings`, `permissions`, `save`, `trash`
 - **who may call** —
   - `config` — standing 5 or above — declared `gate: 5`
   - `file` — standing 5 or above — declared `gate: 5`
@@ -500,6 +503,20 @@ name when it declares none.
   - `context` — standing 5 or above — declared `gate: 5`
   - `account` — standing 5 or above — declared `gate: 5`
   - `quota` — standing 5 or above — declared `gate: 5`
+  - `writes` — standing 5 or above — declared `gate: 5`; body writes as the app
+  - `rev` — standing 5 or above — declared `gate: 5`
+  - `mcpHealth` — standing 5 or above — declared `gate: 5`
+  - `mcpTools` — standing 5 or above — declared `gate: 5`
+  - `hookTools` — standing 5 or above — declared `gate: 5`
+  - `doctor` — standing 5 or above — declared `gate: 5`
+  - `undo` — standing 5 or above — declared `gate: 5`
+  - `plugin` — standing 5 or above — declared `gate: 5`
+  - `marketplace` — standing 5 or above — declared `gate: 5`
+  - `mcp` — standing 5 or above — declared `gate: 5`; body writes as the app
+  - `settings` — standing 5 or above — declared `gate: 5`
+  - `permissions` — standing 5 or above — declared `gate: 5`
+  - `save` — standing 5 or above — declared `gate: 5`
+  - `trash` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

@@ -131,6 +131,8 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           `core.fsmonitor=false`, because a status runs that command
           domain/local/local-claude.ts is `claude auth status --json`, mapped to
           named fields only so a token in its output cannot pass through
+          domain/local/local-mcp.ts starts one MCP server and lists its tools;
+          the server's env and headers go in, only tool names come back
           domain/claude/ is the Workbench's *Claude Code* tab (`claude` service,
           IDEAS/claude-code.md): what `~/.claude` (or CLAUDE_CONFIG_DIR) loads,
           behind the same refusal. Readers are pure and return `Read<T>`
@@ -146,7 +148,11 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           path outside `projects/`; claude-quota.ts reads the account's limits
           with the OAuth token Claude Code keeps, never refreshing it
           (`FJS-D1711`), and backs off on a 429 because every running `claude`
-          shares that limit
+          shares that limit. claude-write.ts is the one writer: every change
+          the tab makes is a `ClaudeWrite` row, a file written through a rename
+          with its before image `@encrypted`, or a `claude` CLI call
+          (`local-claude.ts` `runClaude`) undone by its inverse; undo is
+          refused once the file's digest moved
           domain/workbench/workbench.ts is Claude Code chats per PINNED checkout — tabs
           under the message box, one running at a time since they share the
           tree (`workbench` service, /workbench/), behind the same refusal: each
@@ -352,6 +358,14 @@ web/src/  App.mesa · main.js · session.js · notices.js (one leaf definition t
           record, and the reason: gone, signed out, or the read failed. Every
           `[id]/` screen ends in it. `error` is the banner over a page that
           still has its row; `loadError` is why this page has none (`FJS-968`)
+          components/ClaudeCode.mesa is the Workbench's Claude Code tab, one section
+          per sibling where it is large: ClaudeLimits · ClaudeContext · ClaudeUsage ·
+          ClaudeDrivers · ClaudeSessions (reads), and the writes (IDEAS/claude-code.md
+          Phase 3): ClaudeActions (a row's buttons, an in-page confirm, the service's
+          refusal beside them) · ClaudeMarketplaceAdd · ClaudeMcpEdit (disabled-here
+          list, add-server form) · ClaudeSettingsEditor (a settings layer's keys and
+          permissions) · ClaudeChanges (the write trail, Undo) · ClaudeFileEdit (the
+          drawer's Edit and Trash). lib/claude-edit.js is the lines-to-JSON helpers
 web/test/ verify.mjs · verify-build.mjs + preview.mjs (the built output)
 cli/      config/cli.config.js (name, tenant header, dev endpoint) · src/main.js ·
           src/routes/<service>/<method>.js — the hand-written commands; every other

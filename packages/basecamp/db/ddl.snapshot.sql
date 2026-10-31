@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 75 models · 2 databases
+-- 76 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -200,6 +200,20 @@ CREATE TABLE IF NOT EXISTS "claude_message" (
 CREATE INDEX IF NOT EXISTS "idx_claude_message_at" ON "claude_message" ("at");
 CREATE INDEX IF NOT EXISTS "idx_claude_message_cwd" ON "claude_message" ("cwd");
 CREATE INDEX IF NOT EXISTS "idx_claude_message_sessionId" ON "claude_message" ("sessionId");
+
+CREATE TABLE IF NOT EXISTS "claude_write" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "action" TEXT NOT NULL,
+  "target" TEXT NOT NULL,
+  "project" TEXT,
+  "scope" TEXT,
+  "keys" TEXT NOT NULL DEFAULT '',
+  "before" TEXT,
+  "digest" TEXT,
+  "undoneAt" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_claude_write_createdAt" ON "claude_write" ("createdAt");
 
 CREATE TABLE IF NOT EXISTS "network" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),

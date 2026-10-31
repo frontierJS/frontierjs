@@ -564,21 +564,27 @@ export function claudeConfigDir(opts: { home?: string, configDir?: string } = {}
 }
 
 /**
+ * Claude Code keeps `.claude.json` beside the config dir when one is set and in
+ * the home folder otherwise; reading the wrong one shows an empty server list.
+ */
+export function claudeJsonPath(opts: { home?: string, configDir?: string } = {}): string {
+  const custom = opts.configDir ?? process.env.CLAUDE_CONFIG_DIR ?? null
+  return custom ? join(custom, '.claude.json') : join(opts.home ?? homedir(), '.claude.json')
+}
+
+/**
  * Read the whole configuration once. Synchronous: a few hundred small files and
  * the heads of one transcript per project.
  *
  * `configDir` is the option, else `CLAUDE_CONFIG_DIR`, else `<home>/.claude`.
- * Claude Code keeps `.claude.json` beside the config dir when one is set and in
- * the home folder otherwise; reading the wrong one shows an empty server list.
  */
 export function scanClaude(opts: ScanOptions = {}): ClaudeConfig {
   const t0 = performance.now()
   const cx = makeCx()
 
   const home = opts.home ?? homedir()
-  const custom = opts.configDir ?? process.env.CLAUDE_CONFIG_DIR ?? null
   const configDir = claudeConfigDir({ home, configDir: opts.configDir })
-  const claudeJson = custom ? join(custom, '.claude.json') : join(home, '.claude.json')
+  const claudeJson = claudeJsonPath({ home, configDir: opts.configDir })
 
   const userSettings = load(cx, join(configDir, 'settings.json'), parseSettings)
   const userEnabled = userSettings.result.ok ? userSettings.result.value.enabledPlugins : {}
@@ -676,4 +682,16 @@ export function readListedFile(c: ClaudeConfig, path: string): Read<ListedFile> 
   if (t.kind === 'absent') return unreadable('gone since the scan')
   if (t.kind === 'error')  return unreadable(t.reason)
   return read({ path, bytes: Buffer.byteLength(t.text), text: t.text })
+}
+
+// ─── revision ─────────────────────────────────────────────────────────────────
+
+/**
+ * A digest of what the screen draws from a scan. The scan time and each
+ * project's newest-transcript time are left out: a running session moves the
+ * second on every turn, and an open screen would redraw for nothing.
+ */
+export function configRev(c: ClaudeConfig): string {
+  const stable = { ...c, scannedAt: null, durationMs: null, projects: c.projects.map(p => ({ ...p, lastActive: null })) }
+  return Bun.hash(JSON.stringify(stable)).toString(36)
 }

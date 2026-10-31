@@ -1,0 +1,140 @@
+<script>
+  // The MCP writes that are not on a server's own row: the servers disabled here,
+  // and the form that adds one (api services/claude: mcp).
+  //
+  // Claude Code has no disable for a user or local server, so Disable removes it
+  // and keeps its config on the write row; Enable puts it back from there. A
+  // plugin's servers have no controls here -- they go with the plugin.
+  import { ago }    from '../lib/datetime.js'
+  import { lines, pairs, slug } from '../lib/claude-edit.js'
+  import { tilde }  from '../lib/claude-format.js'
+  import { claude } from '../resources/Claude.mesa'
+
+  import Badge         from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input         from '@frontierjs/ui/components/forms/Input.mesa'
+  import Select        from '@frontierjs/ui/components/forms/Select.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+  import Textarea      from '@frontierjs/ui/components/forms/Textarea.mesa'
+  import ClaudeActions from './ClaudeActions.mesa'
+
+  // [{ value: absolute path, label: shown path, exists }] from the config scan.
+  export let projects = []
+  // `writes().disabled`: the mcp.disable rows not yet taken back.
+  export let disabled = []
+  export let home     = ''
+  export let onwrote  = undefined
+
+  const SCOPES     = [{ value: 'user', label: 'User' }, { value: 'local', label: 'Local (this machine, one project)' }, { value: 'project', label: 'Project (.mcp.json)' }]
+  const TRANSPORTS = [{ value: 'stdio', label: 'stdio (a command)' }, { value: 'http', label: 'http' }, { value: 'sse', label: 'sse' }]
+  const COLUMNS = [
+    { name: 'target', label: 'Server' }, { name: 'scope', label: 'Scope / project' },
+    { name: 'createdAt', label: 'Disabled' }, { name: 'act', label: 'Enable', hideLabel: true },
+  ]
+
+  let choices = []
+  $: { choices = projects.filter(p => p.exists).map(p => ({ value: p.value, label: p.label })) }
+
+  let name      = ''
+  let scope     = 'user'
+  let project   = ''
+  let transport = 'stdio'
+  let command   = ''
+  let args      = ''
+  let url       = ''
+  let env       = ''
+  let headers   = ''
+  let adding    = false
+  let error     = ''
+  let added     = ''
+
+  const enable = (r) => [{
+    id: `claude-mcp-enable-${slug(r.target)}`, label: 'Enable', aria: `Enable ${r.target}`,
+    run: () => claude.service.invoke('mcp', null, { action: 'enable', name: r.target, scope: r.scope, ...(r.project ? { project: r.project } : {}) }),
+  }]
+
+  function configOf() {
+    if (transport === 'stdio') {
+      if (!command.trim()) throw new Error('a stdio server needs a command')
+      const cfg = { type: 'stdio', command: command.trim() }
+      if (lines(args).length) cfg.args = lines(args)
+      const e = pairs(env, '=', 'env')
+      if (Object.keys(e).length) cfg.env = e
+      return cfg
+    }
+    if (!url.trim()) throw new Error(`an ${transport} server needs a url`)
+    const cfg = { type: transport, url: url.trim() }
+    const h = pairs(headers, ':', 'headers')
+    if (Object.keys(h).length) cfg.headers = h
+    return cfg
+  }
+
+  async function add() {
+    adding = true; error = ''; added = ''
+    try {
+      if (!name.trim()) throw new Error('a server needs a name')
+      // The select shows its first option while the bound value is still empty.
+      const where = project || choices[0]?.value
+      if (scope !== 'user' && !where) throw new Error(`a ${scope} server needs a project`)
+      const body = { action: 'add', name: name.trim(), scope, config: configOf() }
+      if (scope !== 'user') body.project = where
+      await claude.service.invoke('mcp', null, body)
+      added = `Added ${name.trim()}`
+      name = ''; command = ''; args = ''; url = ''; env = ''; headers = ''
+      await onwrote?.()
+    } catch (err) {
+      error = err?.message ?? String(err)
+    } finally {
+      adding = false
+    }
+  }
+</script>
+
+<div class="stack" id="claude-mcp-edit">
+  <h3>Disabled here</h3>
+  <Table id="claude-mcp-disabled" columns={COLUMNS} rows={disabled} compact striped hover={false} emptyText="No server disabled from this tab">
+    {#snippet row(r)}
+      <tr>
+        <td><code>{r.target}</code></td>
+        <td class="text-sm"><Badge>{r.scope}</Badge> {#if r.project}<code class="wrap">{tilde(r.project, home)}</code>{/if}</td>
+        <td class="text-sm text-muted">{ago(r.createdAt)}</td>
+        <td><ClaudeActions actions={enable(r)} {onwrote} /></td>
+      </tr>
+    {/snippet}
+  </Table>
+
+  <h3>Add a server</h3>
+  <form class="stack" id="claude-mcp-add-form" onsubmit={(e) => { e.preventDefault(); add() }}>
+    <div class="grid claude-fields">
+      <Input id="claude-mcp-name" label="Name" placeholder="my-server" bind:value={name} />
+      <Select id="claude-mcp-scope" label="Scope" placeholder="" options={SCOPES} bind:value={scope} />
+      {#if scope !== 'user'}
+        <Select id="claude-mcp-project" label="Project" placeholder="" options={choices} bind:value={project} />
+      {/if}
+      <Select id="claude-mcp-transport" label="Transport" placeholder="" options={TRANSPORTS} bind:value={transport} />
+    </div>
+    {#if transport === 'stdio'}
+      <div class="grid claude-fields">
+        <Input id="claude-mcp-command" label="Command" placeholder="npx" bind:value={command} />
+        <Textarea id="claude-mcp-args" label="Arguments" rows={3} hint="One per line" bind:value={args} />
+        <Textarea id="claude-mcp-env" label="Environment" rows={3} hint="KEY=VALUE, one per line" bind:value={env} />
+      </div>
+    {:else}
+      <div class="grid claude-fields">
+        <Input id="claude-mcp-url" label="URL" placeholder="https://example.com/mcp" bind:value={url} />
+        <Textarea id="claude-mcp-headers" label="Headers" rows={3} hint="Name: value, one per line" bind:value={headers} />
+      </div>
+    {/if}
+    <div class="cluster claude-save">
+      <Button id="claude-mcp-add" type="submit" loading={adding} disabled={adding}>Add server</Button>
+      {#if added}<Badge tone="success" id="claude-mcp-added" role="status">{added}</Badge>{/if}
+      {#if error}<Badge tone="danger" id="claude-mcp-add-error" role="alert" class="claude-msg">{error}</Badge>{/if}
+    </div>
+  </form>
+</div>
+
+<style>
+  .claude-save { align-items: center; }
+  .claude-save :global(.claude-msg) { white-space: normal; overflow-wrap: anywhere; }
+  .wrap { overflow-wrap: anywhere; }
+</style>

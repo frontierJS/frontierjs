@@ -1,0 +1,85 @@
+<script>
+  // Edit and trash for a skill, agent, command or memory file in the Claude Code
+  // tab's detail drawer (api services/claude: save, trash).
+  //
+  // Only a file the service's own scan lists is written, and never a plugin's or a
+  // managed policy's, so the drawer offers this for a user or project item and a
+  // non-managed memory file. A memory file the scan lists as absent is created by
+  // Save. Trash applies to items, not memory files; it asks inside the page.
+  import { claude } from '../resources/Claude.mesa'
+
+  import Badge    from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import Textarea from '@frontierjs/ui/components/forms/Textarea.mesa'
+
+  export let path      = ''
+  export let text      = ''
+  export let exists    = true
+  export let trashable = false
+  export let editing   = false
+  export let onsaved   = undefined
+  export let ontrashed = undefined
+
+  let draft    = ''
+  let busy     = ''
+  let asking   = false
+  let error    = ''
+
+  const edit = () => { draft = text; error = ''; editing = true }
+  const cancel = () => { editing = false; error = '' }
+
+  async function save() {
+    busy = 'save'; error = ''
+    try {
+      await claude.service.invoke('save', null, { path, text: draft })
+      editing = false
+      await onsaved?.()
+    } catch (err) {
+      error = err?.message ?? String(err)
+    } finally {
+      busy = ''
+    }
+  }
+
+  async function trash() {
+    busy = 'trash'; error = ''
+    try {
+      await claude.service.invoke('trash', null, { path })
+      await ontrashed?.()
+    } catch (err) {
+      error = err?.message ?? String(err)
+    } finally {
+      busy = ''
+      asking = false
+    }
+  }
+</script>
+
+<div class="stack" id="claude-file-edit">
+  {#if editing}
+    <Textarea id="claude-file-text" label="Contents" rows={22} resize aria-label="File contents" bind:value={draft} />
+    <div class="cluster claude-file-bar">
+      <Button id="claude-file-save" loading={busy === 'save'} disabled={!!busy} onclick={save}>Save</Button>
+      <Button id="claude-file-cancel" treatment="outlined" disabled={!!busy} onclick={cancel}>Cancel</Button>
+    </div>
+  {:else}
+    <div class="cluster claude-file-bar">
+      <Button id="claude-file-edit-start" treatment="outlined" size="sm" disabled={!!busy} onclick={edit}>{exists ? 'Edit' : 'Create'}</Button>
+      {#if trashable && !asking}
+        <Button id="claude-file-trash" treatment="outlined" size="sm" tone="danger" aria-label="Move this file to the trash"
+                disabled={!!busy} onclick={() => { asking = true; error = '' }}>Trash</Button>
+      {:else if trashable}
+        <span class="text-sm">Move it to the trash? Undo on the Changes tab puts it back.</span>
+        <Button id="claude-file-trash-confirm" size="sm" tone="danger" loading={busy === 'trash'} disabled={!!busy} onclick={trash}>Confirm</Button>
+        <Button id="claude-file-trash-cancel" size="sm" treatment="outlined" disabled={!!busy} onclick={() => { asking = false }}>Cancel</Button>
+      {/if}
+    </div>
+  {/if}
+  {#if error}<Badge tone="danger" id="claude-file-error" role="alert" class="claude-msg">{error}</Badge>{/if}
+</div>
+
+<style>
+  .claude-file-bar { align-items: center; }
+  #claude-file-edit :global(.claude-msg) { white-space: normal; overflow-wrap: anywhere; }
+  #claude-file-edit :global(textarea) { font-family: var(--font-mono, monospace); }
+</style>

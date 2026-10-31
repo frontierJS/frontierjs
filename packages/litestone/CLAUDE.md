@@ -39,7 +39,7 @@ this list does not name. The owners that matter on most turns:
 - `src/core/query.js` buildWhere/buildOrderBy · `policy.js` `@@allow`/`@@deny` to SQL and JS · `args.js` what a verb may be passed · `errors.js` every error the client throws (junction builds them by name).
 - `src/core/migrate.js` + `migrations.js` + `operations.js` are the three-schema migration story · `introspect.js` the `$`-introspection surface · `transaction.js`, `locks.js`, `pragmas.js`, `databases.js` the connection story.
 - `src/core/engine.js` is `#sql-engine`; `engines/bun-sqlite.js` alone names `bun:sqlite`; `host/`, `browser/`, `drivers/` are the other side of the seams.
-- `src/plugins/gate.js`, `capability.js`, `reach.js` · `src/tools/cli.js` + `cli-helpers.js` (`KNOWN_FLAGS`) · `src/testing.js`, `testdb.js`, `seeder.js`, `fake.js` the `./testing` subpath.
+- `src/plugins/gate.js`, `capability.js`, `reach.js` · `src/tools/cli.js` + `cli-helpers.js` (`KNOWN_FLAGS`) · `spec-draft.js` the `litestone spec` working draft, ungated · `src/testing.js`, `testdb.js`, `seeder.js`, `fake.js` the `./testing` subpath.
 
 ## What bites here
 

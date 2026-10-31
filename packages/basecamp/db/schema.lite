@@ -1628,6 +1628,39 @@ model ClaudeMessage {
   @@index([sessionId])
 }
 
+// One change Basecamp made to Claude Code's configuration, and what taking it
+// back needs (`domain/claude/claude-write.ts`, the one writer). The call trail
+// records `claude.<method>` naming this row; this row names the file and the
+// top-level keys changed, never a value (Invariant 7).
+//
+// `before` is a file's whole text before the write, or a removed MCP server's
+// config — `settings.json` `env` and an MCP server's env and headers carry
+// tokens, so it is `@encrypted`. `digest` is the sha256 of the file as written:
+// a running `claude` edits these files too, and an undo that replayed `before`
+// over its edit would lose it, so undo is refused once the file has moved.
+//
+// @@gate(5.8): the Workbench's ADMINISTRATOR reads; the claude service writes
+// through `asSystem()`. @@tenant(none), as the usage index.
+model ClaudeWrite {
+  id        String    @id @default(uuid())
+  // `file.save`, `file.trash`, `settings`, `permissions`, `plugin.enable`, `mcp.disable`...
+  action    String
+  // A file path, `name@marketplace`, a marketplace name or an MCP server name.
+  target    String
+  // The project a project- or local-scope change belongs to.
+  project   String?
+  scope     String?
+  keys      String    @default("")
+  before    String?   @encrypted
+  digest    String?
+  undoneAt  DateTime?
+  createdAt DateTime  @default(now())
+
+  @@gate(5.8)
+  @@tenant(none)
+  @@index([createdAt])
+}
+
 
 // A persistent volume on a server. **Observed, not declared.**
 //

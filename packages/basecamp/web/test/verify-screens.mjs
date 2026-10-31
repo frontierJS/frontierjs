@@ -576,6 +576,38 @@ try {
   check('Restore reaches the machine with the archive, and its refusal is shown',
     /No outpost is registered/.test(restoreRefused), restoreRefused.trim().slice(0, 160))
 
+  // Download navigates to the bucket's pre-signed GET, and the seeded bucket
+  // is Backblaze's real host — so that one request is answered here, with the
+  // disposition the link was signed to ask for, as a bucket answers it. The
+  // kept archive offers no Download: the server refuses it by name.
+  const downloads = await evaluate(`document.querySelectorAll('#app-backups-history [aria-label^="Download "]').length`)
+  check('only the archive in the bucket offers Download',
+    downloads === 1 && !!(await evaluate(`!!document.querySelector('tr[data-backup="${foundArchive?.id}"] [aria-label^="Download "]')`)),
+    `${downloads} Download buttons`)
+  await send('Fetch.enable', { patterns: [{ urlPattern: 'https://s3.us-west-000.backblazeb2.com/*', requestStage: 'Request' }] })
+  let signed = null
+  const stopBucket = browser.on('Fetch.requestPaused', ({ requestId, request }) => {
+    signed = new URL(request.url)
+    const disposition = signed.searchParams.get('response-content-disposition') ?? ''
+    send('Fetch.fulfillRequest', { requestId, responseCode: 200, body: Buffer.from('stand-in').toString('base64'),
+      responseHeaders: [{ name: 'Content-Type', value: 'application/gzip' }, { name: 'Content-Disposition', value: disposition }] })
+  })
+  await evaluate(`document.querySelector('tr[data-backup="${foundArchive?.id}"] [aria-label^="Download "]').click()`)
+  const appTarball = await (async () => {
+    for (let i = 0; i < 60; i++) {
+      const done = (await readdir(saved).catch(() => [])).find(f => f.endsWith('.tar.gz') && !f.startsWith('basecamp-'))
+      if (done) return done
+      await sleep(250)
+    }
+    return null
+  })()
+  stopBucket()
+  await send('Fetch.disable', {})
+  check('Download follows the signed link to the archive\'s key, saved as the app\'s name',
+    !!signed && signed.pathname.endsWith(`/${foundArchive?.location}`) && !!appTarball
+      && signed.searchParams.get('response-content-disposition') === `attachment; filename="${appTarball}"`,
+    `${signed?.pathname ?? 'no request'} → ${appTarball ?? `nothing saved; ${await text('#app-backups-error')}`}`)
+
   // ─── Your settings ─────────────────────────────────────────────────────
   console.log('\n  /settings/ — the caller\'s own account')
   await goto('/settings/')
@@ -2459,8 +2491,8 @@ try {
   // sentences. It has to be a record nothing has read — a node already in the
   // client's store answers from memory with the API down, which is correct and
   // would have made this row green against the bug. The link is injected and
-  // clicked so the router handles it: `Page.navigate` is a full load, and a
-  // full load with no API cannot restore a session at all (asserted below).
+  // clicked so the router handles it: `Page.navigate` is a full load, whose
+  // session restore is the other path (asserted below).
   await evaluate(`(() => {
     const a = document.createElement('a')
     a.href = '/apps/00000000-0000-4000-8000-0000000000ff/'
@@ -2478,19 +2510,18 @@ try {
   check('and it offers a retry, which is the whole difference from gone',
     (await body()).includes('Try again'))
 
-  // The other path, and it is this app's own decision rather than the
-  // component's: a FULL load with the API down cannot restore a session, so the
-  // guard sends the caller to /login/ — `src/session.js` says so and says why.
-  // Asserted because that decision is only sound if the login screen then
-  // states the reason; a redirect that drops it is the same lost sentence one
-  // layer up.
+  // A FULL load with the API down: the proxy answers 502, which is silence and
+  // not the server speaking (`FJS-3704`), so the remembered session is
+  // restored rather than signed out. The person stays where they asked to be,
+  // and the record that could not be read says so, with the same retry.
   await goto(`/apps/${realId}/`)
-  await until(`document.body.textContent.length`, n => n > 0, 'the login screen never rendered')
+  await until(`location.pathname.startsWith('/apps/') && document.querySelector('h1')?.textContent || ''`,
+    t => t && t !== 'Loading…', 'a full load with no API rendered no heading')
   const landed = await evaluate(`location.pathname`)
-  check('a full load with no API lands on sign-in rather than a broken screen',
-    landed.includes('/login'), landed)
-  check('and the login screen says why it sent them there',
-    await evaluate(`!!document.getElementById('session-error')`),
+  check('a full load with no API keeps the session rather than signing out',
+    landed === `/apps/${realId}/`, landed)
+  check('and the record it could not read says so, with a retry',
+    (await text('h1'))?.trim() === 'Could not load this app' && (await body()).includes('Try again'),
     (await body()).replace(/\s+/g, ' ').slice(0, 160))
 
   // ─── The console ───────────────────────────────────────────────────────

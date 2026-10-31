@@ -1994,6 +1994,18 @@ describe('a backup is asked for by a person and run by the app', () => {
     await expect(env.as(sysadmin).service('backups').call('download', failed.id)).rejects.toThrow(/is failed/)
     const gone = await sys.appBackup.create({ data: { appId: hubId, status: 'success', location: `${dir}-gone` } })
     await expect(env.as(sysadmin).service('backups').call('download', gone.id)).rejects.toThrow(/no longer on this disk/)
+
+    // A bucket answers no disposition of its own, so the GET signs the name.
+    const dest = await env.as(owner).service('backupDestinations').create({
+      name: 'Hub B2', endpoint: 'https://s3.us-west-000.backblazeb2.com', region: 'us-west-000',
+      bucket: 'frontier-basecamp', prefix: 'hub', secret: 'keyid:applicationkey' }) as any
+    const remote = await sys.appBackup.create({ data: { appId: hubId, status: 'success', destinationId: dest.id,
+      location: 'hub/basecamp-2026-01-02T03-04-05-008Z.tar.gz' } })
+    const signed = await env.as(sysadmin).service('backups').call('download', remote.id) as any
+    expect(signed.name).toBe('basecamp-2026-01-02T03-04-05-008Z.tar.gz')
+    expect(new URL(signed.url).searchParams.get('response-content-disposition')).toBe(`attachment; filename="${signed.name}"`)
+    await sys.appBackup.delete({ where: { id: remote.id } })
+    await sys.backupDestination.delete({ where: { id: dest.id } })
     rmSync(dir, { recursive: true, force: true })
     await sys.appBackup.deleteMany({ where: { appId: hubId } })
   })
@@ -4992,6 +5004,36 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       expect(url.pathname).toBe(`/frontier-basecamp/apps/${app.id}-2026.tar.gz`)
       expect(url.searchParams.get('X-Amz-Signature')).toMatch(/^[0-9a-f]{64}$/)
       expect(url.toString()).not.toContain('applicationkey')
+    })
+
+    // IDEAS/app-archives.md 1.1: a bucket answers no disposition of its own, so
+    // the GET signs one, named for the slug rather than the key's app id.
+    test('a bucket archive downloads by a GET that names the file; a kept one, or another workspace\'s, does not', async () => {
+      const sys      = env.system as any
+      const dest     = await env.as(owner).service('backupDestinations').create(bucket()) as any
+      const download = (who: any, id: string) => env.as(who).service('appBackups').call('download', id)
+      const row      = (over: Record<string, unknown>) => sys.appBackup.create({ data: {
+        appId: app.id, serverId: server.id, destinationId: dest.id, status: 'success',
+        location: `apps/${app.id}-2026-01-02T03-04-05-006Z.tar.gz`, sha256: 'a'.repeat(64), ...over,
+      } })
+
+      const good = await row({})
+      const { url, name } = await download(owner, good.id) as any
+      expect(name).toBe(`${app.slug}-2026-01-02T03-04-05-006Z.tar.gz`)
+      const minted = new URL(url)
+      expect(minted.pathname).toBe(`/frontier-basecamp/apps/${app.id}-2026-01-02T03-04-05-006Z.tar.gz`)
+      expect(minted.searchParams.get('response-content-disposition')).toBe(`attachment; filename="${name}"`)
+      expect(minted.searchParams.get('X-Amz-Signature')).toMatch(/^[0-9a-f]{64}$/)
+
+      await expect(download(developer, good.id)).rejects.toThrow()
+      await expect(download(outsider, good.id)).rejects.toThrow()
+      const kept = await row({ location: '/var/lib/outpost/backups/x.tar.gz', error: 'Upload failed: 403' })
+      await expect(download(owner, kept.id)).rejects.toThrow(/kept on bk-host — give the app a backup destination/)
+      const failed = await row({ status: 'failed', location: null })
+      await expect(download(owner, failed.id)).rejects.toThrow(/is failed/)
+      const hubs = await sys.appBackup.create({ data: { appId: await ensureHub(), status: 'success', destinationId: dest.id, location: 'hub/basecamp-x.tar.gz' } })
+      await expect(download(owner, hubs.id)).rejects.toThrow(/not found/)
+      await sys.appBackup.delete({ where: { id: hubs.id } })
     })
   })
 

@@ -127,3 +127,51 @@ export function parseHooksJson(text: string): Read<HookEntry[]> {
   if (json.value.hooks === undefined) return unreadable('no hooks key')
   return readHooks(json.value.hooks)
 }
+
+// ─── what a command calls ─────────────────────────────────────────────────────
+
+// Words that start a segment without being the program it runs.
+const PREFIXES = new Set(['!', 'if', 'then', 'else', 'elif', 'do', 'while', 'until', 'exec', 'command', 'env', 'nohup', 'time', 'sudo', 'xargs', '{', '('])
+// Builtins and keywords: never on PATH, never missing.
+const BUILTINS = new Set([
+  'cd', 'echo', 'printf', 'test', '[', '[[', 'true', 'false', 'exit', 'export', 'set', 'unset', 'read', 'source', '.',
+  'eval', 'return', 'local', 'shift', 'trap', 'wait', 'type', 'fi', 'done', 'esac', 'case', 'for', 'in', '}', ')', ':',
+])
+
+const unquote = (w: string): string => w.replace(/"([^"]*)"|'([^']*)'/g, '$1$2')
+
+/** Split on unquoted `|`, `||`, `&&`, `;`, `&` and newlines; a regex in quotes holds `|` too. */
+function segments(command: string): string[] {
+  const out: string[] = []
+  let cur = ''
+  let quote: string | null = null
+  for (const ch of command) {
+    if (quote) { cur += ch; if (ch === quote) quote = null; continue }
+    if (ch === '"' || ch === "'") { quote = ch; cur += ch; continue }
+    if ('|;&\n'.includes(ch)) { out.push(cur); cur = ''; continue }
+    cur += ch
+  }
+  out.push(cur)
+  return out
+}
+
+/**
+ * The programs a hook command line calls, in order and once each — the first word
+ * of each pipeline segment past env assignments and wrappers like `sudo`. A path
+ * (`${CLAUDE_PLUGIN_ROOT}/hooks/x.sh`) is kept as written; the caller resolves its
+ * variables. A shell parse would be exact; this reads the common shapes, so a
+ * miss shows as a tool not listed rather than a wrong one, and `$(…)` is not entered.
+ */
+export function commandTools(command: string): string[] {
+  const out: string[] = []
+  for (const seg of segments(command.replace(/\\\n/g, ' '))) {
+    // `"$DIR"/x.sh` is one word: quoted and bare parts run together.
+    const words = seg.trim().match(/(?:"[^"]*"|'[^']*'|[^\s"'])+/g) ?? []
+    let i = 0
+    while (i < words.length && (PREFIXES.has(words[i]) || /^[A-Za-z_]\w*=/.test(words[i]) || (words[i - 1] === 'env' && words[i].startsWith('-')))) i++
+    const word = words[i] ? unquote(words[i]) : ''
+    if (!word || BUILTINS.has(word) || word.startsWith('-') || word.startsWith('#') || /^[<>]/.test(word) || word.startsWith('$(')) continue
+    if (!out.includes(word)) out.push(word)
+  }
+  return out
+}

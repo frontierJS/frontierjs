@@ -10,3 +10,5 @@ Every migration a database may have applied, with the checksum `migrate apply` r
 | `migrations/audit/20260801000000_audit_trail.sql` | `96f7e7c2cf2812b8` |
 | `migrations/main/20261030082406_invitation_purpose.sql` | `84d7f0f4274fd443` |
 | `migrations/main/20261030172042_drop_workspace_owner.sql` | `311e57e1aff648ce` |
+| `migrations/main/20261031173801_claude_usage_index.sql` | `738cd82018b2207e` |
+| `migrations/main/20261031182732_claude_writes.sql` | `5721c9f713b35c81` |

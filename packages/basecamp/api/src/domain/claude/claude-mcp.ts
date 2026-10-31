@@ -187,3 +187,21 @@ export function parseClaudeJsonMcp(text: string): Read<ClaudeJsonMcp> {
   }
   return read(out)
 }
+
+// ─── a server's own config, expanded ──────────────────────────────────────────
+
+/**
+ * `${NAME}` and `${NAME:-default}` replaced through a server's command, args, env,
+ * url and headers, as Claude Code expands a `.mcp.json` before starting it; a
+ * plugin's also names `${CLAUDE_PLUGIN_ROOT}`. A name with no value and no
+ * default is left as written, so the server fails the way Claude Code's would.
+ */
+export function expandMcpVars<T>(value: T, vars: Record<string, string | undefined>): T {
+  const one = (s: string) => s.replace(/\$\{([A-Za-z_]\w*)(?::-([^}]*))?\}/g, (all, name: string, dflt?: string) => vars[name] ?? dflt ?? all)
+  const walk = (v: unknown): unknown =>
+    typeof v === 'string' ? one(v)
+      : Array.isArray(v) ? v.map(walk)
+      : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]))
+      : v
+  return walk(value) as T
+}

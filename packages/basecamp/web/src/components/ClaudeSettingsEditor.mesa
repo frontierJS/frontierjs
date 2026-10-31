@@ -1,0 +1,244 @@
+<script>
+  // The settings Claude Code reads, editable one layer at a time on the Claude Code
+  // tab (api services/claude: settings, permissions).
+  //
+  // A layer is a file: the user's settings.json, or a project's committed
+  // settings.json or uncommitted settings.local.json. The form fills from that
+  // layer alone -- not the merged result -- so a save never copies another
+  // layer's value down into this one. Save sends only the keys that changed and
+  // a cleared box sends null (the key is removed), never an empty string.
+  //
+  // A layer that exists but did not parse is shown, not editable: the service
+  // refuses to write over a file it could not read.
+  import { lines }  from '../lib/claude-edit.js'
+  import { tilde }  from '../lib/claude-format.js'
+  import { claude } from '../resources/Claude.mesa'
+
+  import Badge    from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout  from '@frontierjs/ui/components/display/Callout.mesa'
+  import Input    from '@frontierjs/ui/components/forms/Input.mesa'
+  import Select   from '@frontierjs/ui/components/forms/Select.mesa'
+  import Textarea from '@frontierjs/ui/components/forms/Textarea.mesa'
+
+  export let config  = null
+  export let onwrote = undefined
+
+  const TRI = [{ value: '', label: 'unset' }, { value: 'on', label: 'on' }, { value: 'off', label: 'off' }]
+  const triOf  = (b) => (b === true ? 'on' : b === false ? 'off' : '')
+  const boolOf = (t) => (t === 'on' ? true : t === 'off' ? false : null)
+
+  let layer    = 'user'
+  let model    = ''
+  let theme    = ''
+  let language = ''
+  let effort   = ''
+  let thinking = ''
+  let voice    = ''
+  let allow    = ''
+  let ask      = ''
+  let deny     = ''
+  let base     = null
+  let info     = null     // { scope, project, path, absent, reason }
+  let options  = []
+
+  let saving    = false
+  let checking  = false
+  let setMsg    = ''
+  let setErr    = ''
+  let permMsg   = ''
+  let permErr   = ''
+  let checks    = []
+
+  // What fill() last drew, so a reload that changed another file does not
+  // overwrite what is being typed here. The tab polls, so this file changing
+  // on disk mid-edit is a real case: the form keeps the typing and says so.
+  const drawn = { sig: '', key: '' }
+  let stale = false
+  let force = false
+
+  function layerOf(c, key) {
+    if (key === 'user') return { scope: 'user', project: null, loaded: c.user.settings }
+    const i = key.indexOf('|')
+    const scope = key.slice(0, i)
+    const project = key.slice(i + 1)
+    const p = c.projects.find(x => x.path === project)
+    return { scope, project, loaded: p ? p.settings[scope] : null }
+  }
+
+  function layerOptions(c) {
+    const out = [{ value: 'user', label: 'User' }]
+    for (const p of c.projects) {
+      if (!p.exists) continue
+      out.push({ value: `project|${p.path}`, label: `${tilde(p.path, c.home)} -- Project` })
+      out.push({ value: `local|${p.path}`, label: `${tilde(p.path, c.home)} -- Local` })
+    }
+    return out
+  }
+
+  function fill(c, key) {
+    if (!c) return
+    options = layerOptions(c)
+    const { scope, project, loaded } = layerOf(c, key)
+    if (!loaded) { info = { scope, project, path: '', absent: false, reason: 'that project is not listed' }; base = null; return }
+    const s = loaded.result.ok ? loaded.result.value : null
+    const sig = JSON.stringify([key, loaded.path, loaded.absent, s && [s.model, s.theme, s.language, s.effortLevel, s.alwaysThinkingEnabled, s.voiceEnabled, s.permissions.allow, s.permissions.ask, s.permissions.deny], loaded.result.ok ? null : loaded.result.reason])
+    if (sig === drawn.sig) return
+    if (drawn.key === key && !force && (dirty || permsDirty)) { stale = true; return }
+    force = false; stale = false
+    drawn.sig = sig
+    if (drawn.key !== key) { drawn.key = key; setMsg = ''; setErr = ''; permMsg = ''; permErr = ''; checks = [] }
+    info = { scope, project, path: loaded.path, absent: loaded.absent, reason: loaded.result.ok ? '' : loaded.result.reason }
+    base = {
+      model: s?.model ?? '', theme: s?.theme ?? '', language: s?.language ?? '', effort: s?.effortLevel ?? '',
+      thinking: triOf(s?.alwaysThinkingEnabled), voice: triOf(s?.voiceEnabled),
+      allow: (s?.permissions.allow ?? []).join('\n'), ask: (s?.permissions.ask ?? []).join('\n'), deny: (s?.permissions.deny ?? []).join('\n'),
+    }
+    model = base.model; theme = base.theme; language = base.language; effort = base.effort
+    thinking = base.thinking; voice = base.voice
+    allow = base.allow; ask = base.ask; deny = base.deny
+  }
+  $: { fill(config, layer) }
+
+  const target = () => ({ scope: info.scope, ...(info.project ? { project: info.project } : {}) })
+  const readable = () => !!info && !info.reason
+
+  // Only the keys whose box differs from what the layer held; a blank one clears.
+  function patchOf() {
+    const text = (now, was) => (now.trim() === was ? undefined : now.trim() === '' ? null : now.trim())
+    const tri  = (now, was) => (now === was ? undefined : boolOf(now))
+    const all = {
+      model: text(model, base.model), theme: text(theme, base.theme), language: text(language, base.language),
+      effortLevel: text(effort, base.effort), alwaysThinkingEnabled: tri(thinking, base.thinking), voiceEnabled: tri(voice, base.voice),
+    }
+    return Object.fromEntries(Object.entries(all).filter(([, v]) => v !== undefined))
+  }
+
+  let dirty      = false
+  let permsDirty = false
+  $: { base, model, theme, language, effort, thinking, voice; dirty = base ? Object.keys(patchOf()).length > 0 : false }
+  $: { base, allow, ask, deny; permsDirty = base ? allow !== base.allow || ask !== base.ask || deny !== base.deny : false }
+
+  async function saveSettings() {
+    saving = true; setMsg = ''; setErr = ''
+    try {
+      const row = await claude.service.invoke('settings', null, { ...target(), patch: patchOf() })
+      setMsg = row.keys ? `Saved ${row.keys}` : 'Saved'
+      force = true
+      await onwrote?.()
+    } catch (err) {
+      setErr = err?.message ?? String(err)
+    } finally {
+      saving = false
+    }
+  }
+
+  const rules = () => ({ allow: lines(allow), ask: lines(ask), deny: lines(deny) })
+
+  async function checkRules() {
+    checking = true; permMsg = ''; permErr = ''
+    try {
+      const r = await claude.service.invoke('permissions', null, { ...target(), ...rules(), check: true })
+      checks = r.checks
+      permMsg = r.checks.some(c => c.error || c.warning) ? '' : 'No problems found'
+    } catch (err) {
+      permErr = err?.message ?? String(err)
+    } finally {
+      checking = false
+    }
+  }
+
+  async function savePermissions() {
+    saving = true; permMsg = ''; permErr = ''
+    try {
+      const row = await claude.service.invoke('permissions', null, { ...target(), ...rules() })
+      checks = row.checks
+      permMsg = 'Saved permissions'
+      force = true
+      await onwrote?.()
+    } catch (err) {
+      permErr = err?.message ?? String(err)
+    } finally {
+      saving = false
+    }
+  }
+
+  const flagged = (list) => list.filter(c => c.error || c.warning)
+
+  function showFile() { force = true; drawn.sig = ''; fill(config, layer) }
+</script>
+
+<div class="stack" id="claude-settings-editor">
+  {#if !config}
+    <p class="text-sm text-muted">Reading…</p>
+  {:else}
+    <Select id="claude-settings-layer" label="Layer" placeholder="" options={options} bind:value={layer}
+            hint="Each layer is its own file; the form shows what that file says, not the merged result." />
+
+    {#if info}
+      <p class="text-sm text-muted">
+        <code class="wrap">{tilde(info.path, config.home) || '—'}</code>
+        {#if info.absent}<Badge>no file yet</Badge> saving creates it{/if}
+      </p>
+    {/if}
+
+    {#if info && info.reason}
+      <Callout tone="warning" title="This layer is not editable">
+        <span id="claude-settings-unreadable">{info.reason}</span> -- the file is not written over until it reads again.
+      </Callout>
+    {:else if base}
+      {#if stale}
+        <Callout tone="warning" title="This file changed on disk">
+          <span id="claude-settings-stale">The form still holds your edits.</span> Saving sends only the boxes you changed.
+          <Button id="claude-settings-show-file" treatment="outlined" onclick={showFile}>Discard edits and show the file</Button>
+        </Callout>
+      {/if}
+      <h3>Settings</h3>
+      <div class="grid claude-fields">
+        <Input id="claude-settings-model" label="Model" placeholder="unset" bind:value={model} />
+        <Input id="claude-settings-theme" label="Theme" placeholder="unset" bind:value={theme} />
+        <Input id="claude-settings-language" label="Language" placeholder="unset" bind:value={language} />
+        <Input id="claude-settings-effort" label="Effort level" placeholder="unset" bind:value={effort} />
+        <Select id="claude-settings-thinking" label="Always thinking" placeholder="" options={TRI} bind:value={thinking} />
+        <Select id="claude-settings-voice" label="Voice" placeholder="" options={TRI} bind:value={voice} />
+      </div>
+      <div class="cluster claude-save">
+        <Button id="claude-settings-save" loading={saving} disabled={saving || !dirty} onclick={saveSettings}>Save settings</Button>
+        {#if setMsg}<Badge tone="success" id="claude-settings-saved" role="status">{setMsg}</Badge>{/if}
+        {#if setErr}<Badge tone="danger" id="claude-settings-error" role="alert" class="claude-msg">{setErr}</Badge>{/if}
+      </div>
+
+      <h3>Permissions</h3>
+      <p class="text-sm text-muted">One rule per line, as <code>Tool</code> or <code>Tool(specifier)</code>. A deny in any layer stays in force.</p>
+      <div class="grid claude-fields">
+        <Textarea id="claude-permissions-allow" label="Allow" rows={6} bind:value={allow} />
+        <Textarea id="claude-permissions-ask" label="Ask" rows={6} bind:value={ask} />
+        <Textarea id="claude-permissions-deny" label="Deny" rows={6} bind:value={deny} />
+      </div>
+      <div class="cluster claude-save">
+        <Button id="claude-permissions-check" treatment="outlined" loading={checking} disabled={checking || saving} onclick={checkRules}>Check rules</Button>
+        <Button id="claude-permissions-save" loading={saving} disabled={saving || checking || !permsDirty} onclick={savePermissions}>Save permissions</Button>
+        {#if permMsg}<Badge tone="success" id="claude-permissions-saved" role="status">{permMsg}</Badge>{/if}
+        {#if permErr}<Badge tone="danger" id="claude-permissions-error" role="alert" class="claude-msg">{permErr}</Badge>{/if}
+      </div>
+      {#if flagged(checks).length}
+        <ul class="plain" id="claude-permissions-checks">
+          {#each flagged(checks) as c}
+            <li>
+              <Badge tone={c.error ? 'danger' : 'warning'}>{c.error ? 'error' : 'warning'}</Badge>
+              <Badge>{c.list}</Badge> <code class="wrap">{c.rule}</code>
+              <span class="text-sm">{c.error ?? c.warning}</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    {/if}
+  {/if}
+</div>
+
+<style>
+  .claude-save { align-items: center; }
+  .claude-save :global(.claude-msg) { white-space: normal; overflow-wrap: anywhere; }
+  .wrap { overflow-wrap: anywhere; }
+  .plain { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-xs); }
+</style>

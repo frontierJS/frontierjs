@@ -44,11 +44,28 @@ Goal: know the file before a button offers it.
 Done when: one bucket archive of an FJS app is fetched by its pre-signed GET
 and its listing recorded under 0.1.
 
-- [ ] 0.1 Take an archive of `example` to the MinIO destination the backups
-      drives use, fetch it by `mintDownload`'s URL, and record the name the
-      browser saves it as (the hub comment says both halves answer as an
-      attachment; a bucket GET needs `response-content-disposition` for that)
-      and the tar's top entries (`db/*.db` and no `-wal`, given the retake).
+- [x] 0.1 Take an archive of `example` to the SeaweedFS destination the
+      backups drives use, fetch it by `mintDownload`'s URL, and record the
+      name the browser saves it as and the tar's top entries.
+      **Recorded 2026-10-31** (scratch probe: Outpost's own `backup()` over
+      example's three databases with a WAL writer open, uploaded by
+      basecamp's `presign` PUT to `chrislusf/seaweedfs:4.48`, fetched by its
+      GET):
+      - The GET is 200 `application/gzip` with **no `Content-Disposition`**,
+        and its sha256 matches the capture's. A browser saves it under the
+        URL's last segment, `<appId>-<stamp>.tar.gz` — the app's id, not its
+        slug. The hub comment's "both halves answer as an attachment" holds
+        for the local link only.
+      - `response-content-disposition` signed into the GET's query comes back
+        as the header (`attachment; filename="…"`), so 1.1 can name the file.
+      - The tar is flat: `./`, `./shop.db`, `./shop.db-wal`, `./shop.db-shm`,
+        `./jobs.db`, `./shops-registry.db`. No `db/` directory, and the
+        `-wal` is in it beside its database — the retake keeps the tar
+        consistent, it does not checkpoint.
+      - The capture container writes the archive as root under umask 077, so
+        an Outpost that is not root cannot read it to upload (EACCES). A box's
+        Outpost is root; a drive running one as a user must run the capture
+        as itself.
 
 ### Phase 1 — Download in Basecamp
 
@@ -57,17 +74,24 @@ Done when: `services.test.ts` grades `appBackups.download` (gate, scope,
 refusals) and `verify-screens.mjs` clicks Download on an app's archive;
 `fli done` is clean.
 
-- [ ] 1.1 `appBackups.download`, gate `ADMINISTRATOR` like `take`: the row
+- [x] 1.1 `appBackups.download`, gate `ADMINISTRATOR` like `take`: the row
       read in the caller's scope, the hub App's rows refused as `find`
       refuses them, a machine-kept archive refused by name ("kept on
       <machine> — give the app a backup destination to download its
       archives"). The bucket half of `backups.download` moves into
       `domain/backup/backup-archives.ts` and both methods call it (one owner).
-      Who minted is logged, as the hub's is. Rows beside the hub download
-      test.
-- [ ] 1.2 A Download button in `AppBackups.mesa` under the same predicate as
-      Restore, `location.assign(url)` as `/hub/backups/` does; the line under
-      the table says a kept archive downloads once it is in a bucket.
+      Who minted is logged, as the hub's is. The shared helper signs
+      `response-content-disposition` with the `name` the method answers
+      (`<slug>-<stamp>.tar.gz` here, `basecamp-<stamp>.tar.gz` for the hub),
+      because a bucket GET carries no disposition and the key's own name is
+      the app id (0.1); quotes and CR/LF are stripped from the slug. Rows
+      beside the hub download test assert the minted URL carries it.
+- [x] 1.2 A Download button in `AppBackups.mesa` for a row `isRemote`
+      admits (success, a destination, no `error`), `location.assign(url)` as
+      `/hub/backups/` does; the line under the table says a kept archive
+      downloads once it is in a bucket. Restore's `restorable` there omits
+      `!b.error`, so it offers Restore on a kept archive the server refuses;
+      the same predicate fixes both.
 
 ### Phase 2 — fli pulls an app's data through Basecamp
 
@@ -80,7 +104,12 @@ Done when: the new verb fetches `example`'s latest archive into
       `--take` and waited on, fetched and unpacked under `db/backups/<stamp>/`.
       Which key scope a custom method needs (`appBackups:read` or `:write`)
       is found here.
-- [ ] 2.2 `fli db:download` and `fli db:import` per Q1.
+- [ ] 2.2 `fli db:download` and `fli db:import` per `FJS-D1717`: with
+      `BASECAMP_APP_ID` set, print `BASECAMP_APP_ID <id> detected — pulling
+      through Basecamp`, fetch by 2.1's helper, and for `db:import` put the
+      archive's db in place as `development.db`; otherwise print that ssh is
+      used and run today's steps. The ELA-only lines in `db:import`
+      (`pausedAt`, `attom.db`, `ss.db`) stay on the ssh path.
 
 ### Phase 3 — Import an archive into an app
 
@@ -91,11 +120,31 @@ row it wrote before the download.
 
 - [ ] 3.1 The upload route: the body streamed by `receiveUpload` into the
       app's bucket at `keyUnder(dest, '<appId>-<stamp>.tar.gz')`, its sha256
-      taken on the way, then an `AppBackup` row the way `rescan` writes a
-      found one. `BackupKind` gains `upload` (a schema change; snapshots
-      regenerate). Shape per Q2 and Q3.
-- [ ] 3.2 An Upload control in `AppBackups.mesa`; the row it makes offers
-      Restore like any other.
+      taken on the way, then an `AppBackup` row of kind `found`, the way
+      `rescan` writes one, with `requestedBy` saying who uploaded. The kind is
+      reused, so there is no schema change. A bare `.db` is wrapped into the
+      same `tar.gz` first (`FJS-D1719`), keyed `<appId>-<stamp>.db.tar.gz`
+      (`FJS-D1724`). Before the row is written, a tar that lists no top-level
+      `./*.db` (the shape 0.1 recorded), or a `.db` that does not open as
+      SQLite, is refused, because otherwise a garbage file reads as
+      restorable. That refusal gets a row in `services.test.ts`. The check is
+      not keyed to the app id: Phase 3 restores app A's archive onto app B on
+      purpose. An app with no destination is refused (`FJS-D1718`). Check
+      that `rescan` dedupes by `location`, or the next rescan writes the
+      upload twice.
+- [ ] 3.1b A `.db.tar.gz` restores per file (`FJS-D1724`). `/volume/restore`'s
+      overwrite empties `/data`, which would delete the volume's other
+      databases. Outpost's `restore` takes one more option, so its url door's
+      fetch and sha256 check stay the only ones: the tar extracts into a temp
+      dir inside the same throwaway container and a `FILES_SCRIPT` taking
+      its source dir replaces that file and its `-wal`/`-shm`. Basecamp picks
+      the option from the key's `.db.tar.gz`. A row in Outpost's docker test:
+      a wrapped `.db` restored onto a volume holding two other databases and
+      an uploads file leaves the others, and the target's `-wal`/`-shm` are
+      gone.
+- [ ] 3.2 An Upload control in `AppBackups.mesa` taking `.tar.gz` or `.db`;
+      the row it makes offers Restore like any other, and a wrapped `.db`'s
+      confirmation says it replaces that database only.
 - [ ] 3.3 The round trip in `verify-screens.mjs`.
 
 ## After this (not in this plan)
@@ -105,22 +154,18 @@ machine makes on request), which would make every archive downloadable.
 
 ## Open questions
 
-- **Q1 — `fli db:download` and `fli db:import` once Basecamp can answer.**
-  **A** — go through Basecamp when `BASECAMP_APP_ID` is set, ssh otherwise.
-  **B** — Basecamp only; the ssh path goes. **C** — unchanged;
-  `basecamp:backup` is the only Basecamp path. **Recommend A** — ELA and
-  maid.tech run on hosts Basecamp does not manage, so B strands them, and C
-  leaves two verbs for one act.
-- **Q2 — An import into an app with no backup destination.** **A** — refused:
-  the upload lands in the app's bucket, and Restore stays the one restore
-  path. **B** — kept on the hub's disk and handed to the machine by a signed
-  link (the `backup-archive` route's shape). **Recommend A** — B adds a second
-  place an archive lives and a second link Restore has to know.
-- **Q3 — What an import accepts.** **A** — the archive only, a `tar.gz` of the
-  volume as Phase 1 hands it out. **B** — also a bare `.db`, wrapped into an
-  archive on the way in. **Recommend A** — the archive is the file
-  (`FJS-D1561`'s answer for the hub); a bare `.db` loses whatever else is on
-  the volume.
+- ~~**Q1 — `fli db:download` and `fli db:import` once Basecamp can answer.**~~
+  **Answered 2026-10-31 (`FJS-D1717`): A — through Basecamp when
+  `BASECAMP_APP_ID` is set, over ssh otherwise, and each prints that the id
+  was detected and which path it takes. With the id set and no bucket
+  archive, refused by name; no quiet fall back to ssh.**
+- ~~**Q2 — An import into an app with no backup destination.**~~
+  **Answered 2026-10-31 (`FJS-D1718`): A — refused; an upload lands only in
+  the app's bucket, and the refusal names the fix.**
+- ~~**Q3 — What an import accepts.**~~ **Answered 2026-10-31 (`FJS-D1719`):
+  B — the archive or a bare `.db`, wrapped into an archive on the way in.
+  Restoring a bare `.db` replaces that database only, and the confirmation
+  says so.**
 
 ## See also
 

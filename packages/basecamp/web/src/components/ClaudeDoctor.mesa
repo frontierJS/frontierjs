@@ -1,0 +1,93 @@
+<script>
+  // `claude doctor` on the Claude Code tab (api services/claude: doctor).
+  //
+  // Doctor reads the settings layers of the folder it runs in, so one run from
+  // home misses a broken project file. It runs from home and from each pinned
+  // checkout, and a finding seen from several -- a user settings one -- is listed
+  // once with every folder that saw it. The facts are home's.
+  import { tilde }  from '../lib/claude-format.js'
+  import { claude } from '../resources/Claude.mesa'
+
+  import Badge   from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button  from '@frontierjs/ui/components/forms/Button.mesa'
+  import Table   from '@frontierjs/ui/components/display/Table.mesa'
+
+  // [{ value: absolute path, label, pinned, exists }] from the config scan, pins first.
+  export let projects = []
+  export let home     = ''
+
+  const COLUMNS = [
+    { name: 'section', label: 'Section' }, { name: 'file', label: 'File' }, { name: 'key', label: 'Key' },
+    { name: 'message', label: 'Finding' }, { name: 'seen', label: 'Seen from' },
+  ]
+  // Every run is a `claude` process; the pins are the operator's own list and stay short.
+  const MAX_PROJECTS = 8
+
+  let facts    = null
+  let summary  = null
+  let findings = []
+  let failed   = []   // [{ where, reason }]
+  let loading  = false
+  let ran      = false
+
+  async function run() {
+    loading = true
+    const where = ['', ...projects.filter(p => p.pinned && p.exists).slice(0, MAX_PROJECTS).map(p => p.value)]
+    const answers = await Promise.all(where.map(project =>
+      claude.service.invoke('doctor', null, project ? { project } : {}).catch(err => ({ ok: false, reason: err.message }))))
+    const merged = new Map()
+    const bad = []
+    answers.forEach((a, i) => {
+      const label = where[i] ? tilde(where[i], home) : 'home'
+      if (!a.ok) { bad.push({ where: label, reason: a.reason }); return }
+      if (!where[i]) { facts = a.value.facts; summary = a.value.summary }
+      for (const f of a.value.findings) {
+        const key = `${f.path}\n${f.key}\n${f.message}`
+        const have = merged.get(key)
+        if (have) have.seen.push(label)
+        else merged.set(key, { ...f, file: f.path ? tilde(f.path, home) : '—', seen: [label] })
+      }
+    })
+    findings = [...merged.values()]
+    failed   = bad
+    loading  = false
+    ran      = true
+  }
+</script>
+
+<div class="stack" id="claude-doctor">
+  <div class="cluster">
+    <Button id="claude-doctor-run" size="sm" loading={loading} disabled={loading} onclick={run}>{ran ? 'Run again' : 'Run doctor'}</Button>
+    <span class="text-sm text-muted">From home and each pinned checkout (up to {MAX_PROJECTS}).</span>
+  </div>
+
+  {#each failed as f}
+    <p><Badge tone="warning">unavailable</Badge> <span class="text-sm">{f.where}: {f.reason}</span></p>
+  {/each}
+
+  {#if ran}
+    {#if summary}<p id="claude-doctor-summary">{summary}</p>{/if}
+    <h3>Findings</h3>
+    <Table id="claude-doctor-findings" columns={COLUMNS} rows={findings} compact striped hover={false} emptyText="No findings">
+      {#snippet row(f)}
+        <tr>
+          <td class="text-sm">{f.section}</td>
+          <td><code class="wrap">{f.file}</code></td>
+          <td>{#if f.key}<code>{f.key}</code>{:else}—{/if}</td>
+          <td class="text-sm">{f.message}{#if f.fix}<br><span class="text-muted">Fix: {f.fix}</span>{/if}</td>
+          <td class="text-sm">{f.seen.join(', ')}</td>
+        </tr>
+      {/snippet}
+    </Table>
+    {#if facts}
+      <h3>Installation</h3>
+      <dl class="facts" id="claude-doctor-facts">
+        {#each facts as f}<dt>{f.key}</dt><dd>{f.value}</dd>{/each}
+      </dl>
+    {/if}
+  {/if}
+</div>
+
+<style>
+  .wrap { overflow-wrap: anywhere; }
+</style>

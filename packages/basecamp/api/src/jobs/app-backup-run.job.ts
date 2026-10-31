@@ -66,12 +66,12 @@ const DOWNLOAD_URL_TTL_S = 2 * 3600
  * A URL for one object under a destination. The credential is read once,
  * here, and leaves only as a signature.
  */
-async function presignFor(app: App, dest: BackupDestination, method: 'PUT' | 'GET', key: string, expiresIn: number): Promise<string> {
+async function presignFor(app: App, dest: BackupDestination, method: 'PUT' | 'GET', key: string, expiresIn: number, query = ''): Promise<string> {
   if (!dest.secretId) throw new BadRequest(`Destination '${dest.name}' holds no credential`)
   const credential = await createSecretResolver(app.db as any).get(secretRef(dest.secretId))
   if (typeof credential !== 'string' || !credential) throw new BadRequest(`Destination '${dest.name}' has a credential nothing can read`)
   return presign({
-    method, url: `${dest.endpoint.replace(/\/$/, '')}${objectPath(dest.bucket, key)}`,
+    method, url: `${dest.endpoint.replace(/\/$/, '')}${objectPath(dest.bucket, key)}${query}`,
     credential, region: dest.region, expiresIn,
   })
 }
@@ -82,9 +82,16 @@ async function mintUpload(app: App, dest: BackupDestination, appId: string, stam
   return { key, url: await presignFor(app, dest, 'PUT', key, UPLOAD_URL_TTL_S) }
 }
 
-/** The URL that reads one backup's archive back out of its bucket (`FJS-D1521`). */
-export function mintDownload(app: App, dest: BackupDestination, key: string): Promise<string> {
-  return presignFor(app, dest, 'GET', key, DOWNLOAD_URL_TTL_S)
+/** The URL that reads one backup's archive back out of its bucket (`FJS-D1521`).
+ *  `saveAs` is for a browser: a bucket answers no disposition of its own, so
+ *  without it the file saves under the key's last segment, which for an app
+ *  is its id (`IDEAS/app-archives.md` 0.1). The bucket echoes the signed
+ *  `response-content-disposition` back as the header. */
+export function mintDownload(app: App, dest: BackupDestination, key: string, saveAs?: string): Promise<string> {
+  const query = saveAs
+    ? `?response-content-disposition=${encodeURIComponent(`attachment; filename="${saveAs.replace(/[^A-Za-z0-9._-]/g, '-')}"`)}`
+    : ''
+  return presignFor(app, dest, 'GET', key, DOWNLOAD_URL_TTL_S, query)
 }
 
 /**

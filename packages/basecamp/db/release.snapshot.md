@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-75 model(s) · 57 enum(s) · 2 database(s)
+76 model(s) · 57 enum(s) · 2 database(s)
 audit → sqlite · main → sqlite
 ```
 
@@ -721,6 +721,27 @@ table `claude_transcript` · db `main` · gate `5.8`
 ```
 @@index(cwd)
 @@index(sessionId)
+```
+
+### `ClaudeWrite`
+
+table `claude_write` · db `main` · gate `5.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `action` | `String` | no | — | **required on write** |
+| `before` | `String` | yes | — | @encrypted |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `digest` | `String` | yes | — | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `keys` | `String` | no | `''` | — |
+| `project` | `String` | yes | — | — |
+| `scope` | `String` | yes | — | — |
+| `target` | `String` | no | — | **required on write** |
+| `undoneAt` | `DateTime` | yes | — | — |
+
+```
+@@index(createdAt)
 ```
 
 ### `Credential`

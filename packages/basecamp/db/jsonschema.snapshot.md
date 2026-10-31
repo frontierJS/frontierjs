@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-170 definitions · 75 models · 1 view · 37 types · 57 enums · 0 other
+171 definitions · 76 models · 1 view · 37 types · 57 enums · 0 other
 ```
 
 ## Definitions
@@ -54,6 +54,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `OutpostNonce` | model |
 | `ClaudeTranscript` | model |
 | `ClaudeMessage` | model |
+| `ClaudeWrite` | model |
 | `Volume` | model |
 | `Network` | model |
 | `ServerNetwork` | model |
@@ -834,6 +835,24 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `subagent` | `boolean` = `false` | — | — | — | — |
 
 **On create**: required — `messageId`, `sessionId`, `model`, `at`, `input`, `cacheWrite`, `cacheRead`, `output` · not accepted — `id`
+
+### `ClaudeWrite`
+
+- gate `read:5 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `action` | `string` | yes | — | — | — |
+| `target` | `string` | yes | — | — | — |
+| `project` | `string`? | — | — | — | — |
+| `scope` | `string`? | — | — | — | — |
+| `keys` | `string` = `""` | — | — | — | — |
+| `before` | `string`? | — | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
+| `digest` | `string`? | — | — | — | — |
+| `undoneAt` | `string`? | — | — | `format: "date-time"` | — |
+
+**On create**: required — `action`, `target` · not accepted — `id`
 
 ### `Volume`
 

@@ -1,0 +1,64 @@
+<script>
+  // A row's write buttons on the Claude Code tab (api services/claude: plugin,
+  // marketplace, mcp, undo).
+  //
+  // A destructive action asks inside the page: its first click turns the row into
+  // a confirm, its second runs it. A refusal from the service (400 bad input, 404
+  // not listed, 409 the file changed since, 422 the CLI refused) shows beside the
+  // buttons it came from, in the service's own words.
+  //
+  // actions: [{ id, label, aria, run: async () => row, confirm?: 'Remove x?', tone?: 'danger' }]
+  // onwrote runs after a write took, so the screen reads the new state.
+  import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let actions = []
+  export let onwrote = undefined
+
+  let busy    = ''
+  let asking  = ''
+  let message = ''
+
+  async function go(a) {
+    busy = a.id
+    message = ''
+    try {
+      await a.run()
+      asking = ''
+      await onwrote?.()
+    } catch (err) {
+      message = err?.message ?? String(err)
+    } finally {
+      busy = ''
+    }
+  }
+
+  function click(a) {
+    if (a.confirm && asking !== a.id) { asking = a.id; message = ''; return }
+    go(a)
+  }
+
+  const asked = (list, id) => list.find(a => a.id === id)
+</script>
+
+<span class="cluster claude-actions">
+  {#if asking && asked(actions, asking)}
+    {@const a = asked(actions, asking)}
+    <span class="text-sm" role="group" aria-label={a.aria}>{a.confirm}</span>
+    <Button id={`${a.id}-confirm`} size="xs" tone="danger" loading={busy === a.id} disabled={!!busy}
+            aria-label={`Confirm: ${a.aria}`} onclick={() => go(a)}>Confirm</Button>
+    <Button id={`${a.id}-cancel`} size="xs" treatment="outlined" disabled={!!busy}
+            onclick={() => { asking = '' }}>Cancel</Button>
+  {:else}
+    {#each actions as a (a.id)}
+      <Button id={a.id} size="xs" treatment="outlined" tone={a.tone ?? ''} aria-label={a.aria}
+              loading={busy === a.id} disabled={!!busy} onclick={() => click(a)}>{a.label}</Button>
+    {/each}
+  {/if}
+  {#if message}<Badge tone="danger" class="claude-refusal" role="alert" title={message}>{message}</Badge>{/if}
+</span>
+
+<style>
+  .claude-actions { align-items: center; gap: var(--space-xs); }
+  .claude-actions :global(.claude-refusal) { white-space: normal; overflow-wrap: anywhere; }
+</style>

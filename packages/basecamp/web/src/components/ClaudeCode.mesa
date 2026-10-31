@@ -1,7 +1,8 @@
 <script>
-  // The Claude Code tab on the Workbench: what Claude Code loads on THIS machine,
-  // read-only -- plugins, marketplaces, skills and agents, hooks, MCP servers and
-  // settings, each a searchable table (api services/claude, domain/claude/claude-scan.ts).
+  // The Claude Code tab on the Workbench: what Claude Code loads on THIS machine --
+  // plugins, marketplaces, skills and agents, hooks, MCP servers and settings, each a
+  // searchable table (api services/claude, domain/claude/claude-scan.ts) -- and the
+  // writes to it.
   //
   // Machine-wide, unlike the Workbench's other tab, which is per checkout; the
   // heading says so. Every file the scan reads comes back as `Loaded<T>`, and a
@@ -11,19 +12,39 @@
   // Account and limits, context, usage, what drives the limit and sessions are
   // sibling components (ClaudeLimits, ClaudeContext, ClaudeUsage, ClaudeDrivers,
   // ClaudeSessions), each read the first time its section opens and kept mounted.
+  // The writes are siblings too: ClaudeActions on a row, ClaudeMcpEdit,
+  // ClaudeMarketplaceAdd, ClaudeSettingsEditor, ClaudeChanges and, in the drawer,
+  // ClaudeFileEdit. Every write ends in `wrote`, which reads the scan and the change
+  // list again so the screen shows the new state.
   //
-  // A name opens a read-only drawer. A plugin's or a hook's comes from the scan
-  // already here; a skill, agent, command or memory file's text is asked for
-  // (`claude.file`), and the server reads only a path its own scan lists.
+  // A name opens a drawer. A plugin's or a hook's comes from the scan already
+  // here; a skill, agent, command or memory file's text is asked for
+  // (`claude.file`), and the server reads and writes only a path its own scan lists.
+  //
+  // The screen is POLLED for a digest of the scan (`claude.rev`) and rereads when
+  // it moves, so a plugin toggled in a terminal redraws it. A scan has no model,
+  // and a broadcast here is graded per recipient against a model's row, so there
+  // is nothing to announce on. A write of its own already reread, and the reread
+  // carries the new digest, so it does not redraw twice.
   import { ago }    from '../lib/datetime.js'
+  import { slug }   from '../lib/claude-edit.js'
   import { claude } from '../resources/Claude.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import ClaudeActions  from './ClaudeActions.mesa'
+  import ClaudeChanges  from './ClaudeChanges.mesa'
   import ClaudeContext  from './ClaudeContext.mesa'
+  import ClaudeDoctor   from './ClaudeDoctor.mesa'
   import ClaudeDrivers  from './ClaudeDrivers.mesa'
+  import ClaudeFileEdit from './ClaudeFileEdit.mesa'
   import ClaudeLimits   from './ClaudeLimits.mesa'
+  import ClaudeMarketplaceAdd from './ClaudeMarketplaceAdd.mesa'
+  import ClaudeMcpEdit  from './ClaudeMcpEdit.mesa'
+  import ClaudeMcpHealth from './ClaudeMcpHealth.mesa'
+  import ClaudeMcpTools from './ClaudeMcpTools.mesa'
   import ClaudeSessions from './ClaudeSessions.mesa'
+  import ClaudeSettingsEditor from './ClaudeSettingsEditor.mesa'
   import ClaudeUsage    from './ClaudeUsage.mesa'
   import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
   import Code       from '@frontierjs/ui/components/display/Code.mesa'
@@ -42,6 +63,7 @@
   const SECTIONS = [
     ['overview', 'Overview'], ['plugins', 'Plugins'], ['marketplaces', 'Marketplaces'],
     ['skills', 'Skills & agents'], ['hooks', 'Hooks'], ['mcp', 'MCP'], ['settings', 'Settings'],
+    ['editor', 'Edit settings'], ['changes', 'Changes'], ['doctor', 'Doctor'],
     ['limits', 'Account & limits'], ['context', 'Context'], ['usage', 'Usage'],
     ['drivers', 'What drives the limit'], ['sessions', 'Sessions'],
   ]
@@ -50,11 +72,16 @@
     { name: 'name', label: 'Plugin' }, { name: 'version', label: 'Version' }, { name: 'scope', label: 'Scope' },
     { name: 'enabled', label: 'Enabled' }, { name: 'enabledIn', label: 'Projects' },
     { name: 'items', label: 'Items' }, { name: 'hooks', label: 'Hooks' }, { name: 'mcp', label: 'MCP' },
-    { name: 'warn', label: 'Health' },
+    { name: 'warn', label: 'Health' }, { name: 'actions', label: 'Actions', hideLabel: true },
   ]
   const MARKETPLACE_COLUMNS = [
     { name: 'name', label: 'Marketplace' }, { name: 'source', label: 'Source' },
     { name: 'lastUpdated', label: 'Updated' }, { name: 'manifest', label: 'Manifest' },
+    { name: 'actions', label: 'Actions', hideLabel: true },
+  ]
+  const AVAILABLE_COLUMNS = [
+    { name: 'id', label: 'Available plugin' }, { name: 'description', label: 'Description' },
+    { name: 'category', label: 'Category' }, { name: 'actions', label: 'Actions', hideLabel: true },
   ]
   const ITEM_COLUMNS = [
     { name: 'kind', label: 'Kind' }, { name: 'name', label: 'Name' }, { name: 'description', label: 'Description' },
@@ -62,12 +89,12 @@
   ]
   const HOOK_COLUMNS = [
     { name: 'event', label: 'Event' }, { name: 'matcher', label: 'Matcher' }, { name: 'command', label: 'Command' },
-    { name: 'timeout', label: 'Timeout' }, { name: 'origin', label: 'Origin' },
+    { name: 'programs', label: 'Programs' }, { name: 'timeout', label: 'Timeout' }, { name: 'origin', label: 'Origin' },
   ]
   const MCP_COLUMNS = [
     { name: 'name', label: 'Server' }, { name: 'scope', label: 'Scope' }, { name: 'where', label: 'Project / plugin' },
     { name: 'transport', label: 'Transport' }, { name: 'target', label: 'Command / URL' },
-    { name: 'keys', label: 'Env / header names' },
+    { name: 'keys', label: 'Env / header names' }, { name: 'actions', label: 'Actions', hideLabel: true },
   ]
   const SETTING_COLUMNS = [{ name: 'key', label: 'Setting' }, { name: 'value', label: 'Value' }]
   const PROJECT_COLUMNS = [
@@ -94,20 +121,73 @@
   let drawer   = false
   let file     = null   // { path, bytes, text } for an item or memory drawer
   let fileErr  = null
+  let writes   = null   // { rows, disabled } from `writes`
+  let writesErr = null
+  let editing  = false  // the drawer's file is open in ClaudeFileEdit
+  let programs = null   // { path, byHook: { 'file\ncommand': [{ tool, found, unknown }] } } from `hookTools`
+  let programsErr = null
+  let root     = null
 
-  async function load() {
-    loading = true
+  async function readConfig() {
     try {
       cfg   = await claude.service.invoke('config', null)
       error = null
     } catch (err) {
       if (err.code === 404) offered = false
       error = err.message
-    } finally {
-      loading = false
     }
   }
-  $.onMount(load)
+  async function readWrites() {
+    try {
+      writes    = await claude.service.invoke('writes', null, {})
+      writesErr = null
+    } catch (err) {
+      writesErr = err.message
+    }
+  }
+  async function load() {
+    loading = true
+    await Promise.all([readConfig(), readWrites()])
+    loading = false
+  }
+  // ─── live ────────────────────────────────────────────────────────────────────
+
+  const POLL_MS = 3000
+  // A poll in flight when the tab goes would reschedule itself after clearTimeout.
+  let timer = null
+  let destroyed = false
+  function schedule() { if (!destroyed) timer = setTimeout(poll, POLL_MS) }
+  // Only while someone can see it: the Workbench keeps this tab mounted behind its others.
+  const watched = () => document.visibilityState === 'visible' && !!root?.isConnected && root.checkVisibility?.() !== false
+  async function poll() {
+    try {
+      if (cfg && !loading && watched()) {
+        const { rev } = await claude.service.invoke('rev', null)
+        if (rev !== cfg.rev && !loading) await load()
+      }
+    } catch {}
+    schedule()
+  }
+  $.onMount(() => { load(); schedule() })
+  $.onDestroy(() => { destroyed = true; clearTimeout(timer) })
+
+  // ─── hook programs ───────────────────────────────────────────────────────────
+
+  async function readPrograms() {
+    try {
+      const r = await claude.service.invoke('hookTools', null)
+      programs = { path: r.path, byHook: Object.fromEntries(r.hooks.map(h => [`${h.file}\n${h.command}`, h.tools])) }
+      programsErr = null
+    } catch (err) {
+      programsErr = err.message
+    }
+  }
+  // Read when the hooks section opens, and again after a reread while it shows.
+  $: { if (section === 'hooks' && cfg) readPrograms() }
+  const missing = (tools) => (tools ?? []).filter(t => !t.found)
+
+  // After any write: the scan and the change list, so every control shows the new state.
+  const wrote = () => load()
 
   $: { tables = cfg ? build(cfg) : null }
   $: { shown = tables ? narrow(tables, qs, kind) : null }
@@ -127,7 +207,10 @@
     drawer  = true
     file    = null
     fileErr = null
+    editing = false
     if (kind !== 'item' && kind !== 'memory') return
+    // A memory file the scan lists as absent has no text to read; Save creates it.
+    if (kind === 'memory' && !row.exists) { file = { path: row.abs, bytes: 0, text: '' }; return }
     try {
       const f = await claude.service.invoke('file', null, { path: row.abs })
       // A slow answer for a drawer since closed or swapped must not land in the new one.
@@ -136,7 +219,53 @@
       if (n === asked) fileErr = err.message
     }
   }
-  const hide = () => { drawer = false; asked++ }
+  const hide = () => { drawer = false; asked++; editing = false }
+
+  async function saved() {
+    const row = detail.row
+    detail = { ...detail, row: { ...row, exists: true } }
+    try { file = await claude.service.invoke('file', null, { path: row.abs }) } catch (err) { fileErr = err.message }
+    await wrote()
+  }
+  const trashed = async () => { hide(); await wrote() }
+
+  // ─── writes ──────────────────────────────────────────────────────────────────
+
+  const act = (id, label, aria, method, args, confirm) => ({ id, label, aria, confirm, tone: confirm ? 'danger' : '', run: () => claude.service.invoke(method, null, args) })
+
+  // An install's own scope, and the checkout a project or local one belongs to.
+  function pluginActions(p) {
+    if (!['user', 'project', 'local'].includes(p.scope)) return []
+    const t = { id: p.id, scope: p.scope, ...(p.install.projectPath ? { project: p.install.projectPath } : {}) }
+    const key = slug(p.id)
+    return [
+      p.enabled
+        ? act(`claude-plugin-disable-${key}`, 'Disable', `Disable ${p.id}`, 'plugin', { ...t, action: 'disable' })
+        : act(`claude-plugin-enable-${key}`, 'Enable', `Enable ${p.id}`, 'plugin', { ...t, action: 'enable' }),
+      act(`claude-plugin-update-${key}`, 'Update', `Update ${p.id}`, 'plugin', { ...t, action: 'update' }),
+      act(`claude-plugin-uninstall-${key}`, 'Uninstall', `Uninstall ${p.id}`, 'plugin', { ...t, action: 'uninstall' }, `Uninstall ${p.id}?`),
+    ]
+  }
+  const installAction = (a) => [act(`claude-plugin-install-${slug(a.id)}`, 'Install', `Install ${a.id}`, 'plugin', { id: a.id, action: 'install', scope: 'user' })]
+  const marketplaceActions = (k) => [
+    act(`claude-marketplace-update-${slug(k.name)}`, 'Update', `Update ${k.name}`, 'marketplace', { action: 'update', name: k.name }),
+    act(`claude-marketplace-remove-${slug(k.name)}`, 'Remove', `Remove ${k.name}`, 'marketplace', { action: 'remove', name: k.name }, `Remove ${k.name}?`),
+  ]
+
+  // A plugin's servers go with the plugin. A `.mcp.json` server is checked in, so it is
+  // turned off in the local layer; a user or local one is removed (its config is kept for Enable).
+  function mcpActions(m) {
+    if (m.plugin) return []
+    const t = { name: m.name, scope: m.scope, ...(m.scope === 'user' ? {} : { project: m.project }) }
+    const key = slug(`${m.name}-${m.scope}`)
+    const off = act(`claude-mcp-disable-${key}`, 'Disable', `Disable ${m.name}`, 'mcp', { ...t, action: 'disable' })
+    if (m.scope === 'project') return [off, act(`claude-mcp-enable-${key}`, 'Enable', `Enable ${m.name}`, 'mcp', { ...t, action: 'enable' })]
+    return [
+      off,
+      act(`claude-mcp-remove-${key}`, 'Remove', `Remove ${m.name}`, 'mcp', { ...t, action: 'remove' }, `Remove ${m.name}?`),
+      ...(m.transport && m.transport !== 'stdio' ? [act(`claude-mcp-logout-${key}`, 'Log out', `Log out ${m.name}`, 'mcp', { ...t, action: 'logout' })] : []),
+    ]
+  }
 
   // The frontmatter is shown as facts above, so the drawer renders what follows it.
   const body = (text) => text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '')
@@ -204,6 +333,15 @@
       return { ...r, hay: hay(r.name, r.source, r.manifest) }
     })
 
+    const installed = new Set(c.plugins.list.map(p => p.install.id))
+    const available = c.plugins.catalogs.flatMap(k => {
+      const m = k.manifest.result
+      if (!m.ok) return []
+      return m.value.plugins.map(o => ({ id: `${o.name}@${k.marketplace.name}`, name: o.name, marketplace: k.marketplace.name, description: squash(o.description), category: dash(o.category) }))
+        .filter(o => !installed.has(o.id))
+        .map(o => ({ ...o, hay: hay(o.id, o.description, o.category) }))
+    })
+
     // ─── skills, agents, commands
     const items = []
     const addItems = (list) => {
@@ -235,7 +373,7 @@
             const r = {
               event: e.event, matcher: dash(e.matcher), command: h?.command ?? (h?.type ? `(${h.type})` : '—'),
               timeout: h?.timeout != null ? `${h.timeout}s` : '—', origin: origin(sh.origin), file: tilde(sh.file),
-              handler: h, originScope: sh.origin.scope, warn: e.issues.join('; '),
+              handler: h, originScope: sh.origin.scope, warn: e.issues.join('; '), key: `${sh.file}\n${h?.command ?? ''}`,
             }
             hooks.push({ ...r, hay: hay(r.event, r.matcher, r.command, r.origin, r.file, r.warn) })
           }
@@ -254,7 +392,7 @@
         const r = {
           name: m.name, scope: m.scope, where: m.plugin ?? tilde(m.project) ?? '', transport: dash(m.transport),
           target: dash(target), keys: [...m.envKeys.map(k => `env ${k}`), ...m.headerKeys.map(k => `header ${k}`)].join(', '),
-          oauth: m.hasOauth, warn: m.issues.join('; '),
+          oauth: m.hasOauth, warn: m.issues.join('; '), project: m.project, plugin: m.plugin, server: m,
         }
         mcp.push({ ...r, hay: hay(r.name, r.scope, r.where, r.transport, r.target, r.keys, r.warn) })
       }
@@ -314,8 +452,8 @@
     const unavailable = Object.values(notes).flat()
 
     // Pinned checkouts first, as the scan lists them.
-    const choices = projects.map(p => ({ value: p.abs, label: p.path, pinned: p.source !== 'transcript' }))
-    return { choices, plugins, catalogs, items, hooks, mcp, settings, projects, notes, memory, issues, counts, unavailable }
+    const choices = projects.map(p => ({ value: p.abs, label: p.path, pinned: p.source !== 'transcript', exists: p.exists }))
+    return { choices, plugins, catalogs, available, items, hooks, mcp, settings, projects, notes, memory, issues, counts, unavailable }
   }
 
   // Case-insensitive match on the text a row shows, section by section.
@@ -325,7 +463,7 @@
       return w ? rows.filter(r => r.hay.includes(w)) : rows
     }
     return {
-      plugins: pick(t.plugins, q.plugins), catalogs: pick(t.catalogs, q.marketplaces),
+      plugins: pick(t.plugins, q.plugins), catalogs: pick(t.catalogs, q.marketplaces), available: pick(t.available, q.marketplaces),
       items: pick(k ? t.items.filter(i => i.kind === k) : t.items, q.skills),
       hooks: pick(t.hooks, q.hooks), mcp: pick(t.mcp, q.mcp),
       settings: pick(t.settings, q.settings), projects: pick(t.projects, q.settings),
@@ -335,7 +473,7 @@
   const clip = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 </script>
 
-<section id="claude-code" class="stack">
+<section id="claude-code" class="stack" bind:this={root}>
   <header class="cluster claude-head">
     <div>
       <h2>Claude Code on this machine</h2>
@@ -361,7 +499,7 @@
     {#if error}<Callout tone="warning" title="Refresh failed, showing the last read">{error}</Callout>{/if}
 
     <Tabs bind:activeId={section} onchange={onSection}>
-      <TabList label="Claude Code sections">
+      <TabList label="Claude Code sections" class="claude-sections">
         {#each SECTIONS as s}
           <Tab id={s[0]}>{s[1]}</Tab>
         {/each}
@@ -396,6 +534,7 @@
               <td><Badge>{m.kind}</Badge></td>
               <td>
                 {#if m.exists}<Button treatment="link" size="sm" onclick={() => show('memory', m)}><code>{m.path}</code></Button>
+                {:else if m.kind !== 'managed'}<Button treatment="link" size="sm" aria-label={`Create ${m.path}`} onclick={() => show('memory', m)}><code>{m.path}</code></Button>
                 {:else}<code>{m.path}</code>{/if}
               </td>
               <td>{#if m.exists}<Pill tone="success">yes</Pill>{:else}<Pill>no</Pill>{/if}</td>
@@ -429,6 +568,7 @@
               <td>{p.hooks}</td>
               <td>{p.mcp}</td>
               <td>{#if p.warn}<Badge tone="warning" title={p.warn}>{p.warn}</Badge>{:else}<span class="text-muted">ok</span>{/if}</td>
+              <td><ClaudeActions actions={pluginActions(p)} onwrote={wrote} /></td>
             </tr>
           {/snippet}
         </Table>
@@ -438,6 +578,7 @@
         {#each tables.notes.marketplaces as n}
           <Callout tone="warning" title={`${n.label} unavailable`}>{n.reason} <code>{n.path}</code></Callout>
         {/each}
+        <ClaudeMarketplaceAdd onwrote={wrote} />
         <Input id="claude-search-marketplaces" type="search" placeholder="Filter marketplaces…" aria-label="Filter marketplaces"
                value={qs.marketplaces} oninput={(e) => setQ('marketplaces', e.target.value)} />
         <Table id="claude-marketplaces" columns={MARKETPLACE_COLUMNS} rows={shown.catalogs} striped hover={false} emptyText="No marketplaces match">
@@ -447,6 +588,18 @@
               <td><code class="clip" title={k.source}>{k.source}</code></td>
               <td class="text-sm text-muted">{k.lastUpdated}</td>
               <td>{#if k.bad}<Badge tone="warning" title={k.manifest}>{k.manifest}</Badge>{:else}<span class="text-sm text-muted">{k.manifest}</span>{/if}</td>
+              <td><ClaudeActions actions={marketplaceActions(k)} onwrote={wrote} /></td>
+            </tr>
+          {/snippet}
+        </Table>
+        <h3>Available plugins</h3>
+        <Table id="claude-available" columns={AVAILABLE_COLUMNS} rows={shown.available} limit={25} striped hover={false} compact emptyText="Every offered plugin is installed, or none match">
+          {#snippet row(a)}
+            <tr>
+              <td><code>{a.id}</code></td>
+              <td class="text-sm" title={a.description}>{clip(a.description, 120)}</td>
+              <td class="text-sm">{a.category}</td>
+              <td><ClaudeActions actions={installAction(a)} onwrote={wrote} /></td>
             </tr>
           {/snippet}
         </Table>
@@ -477,8 +630,14 @@
         {#each tables.notes.hooks as n}
           <Callout tone="warning" title={`${n.label} unavailable`}>{n.reason} <code>{n.path}</code></Callout>
         {/each}
+        {#if programsErr}<Callout tone="warning" title="Could not check the programs hooks call">{programsErr}</Callout>{/if}
         <Input id="claude-search-hooks" type="search" placeholder="Filter hooks…" aria-label="Filter hooks"
                value={qs.hooks} oninput={(e) => setQ('hooks', e.target.value)} />
+        <p class="text-sm text-muted">
+          Programs are read off each command line and looked up on the Basecamp API's PATH, which is the shell it was
+          started from and may not be the one Claude Code runs in.
+          <Button id="claude-hooks-recheck" treatment="link" size="sm" onclick={readPrograms}>Check again</Button>
+        </p>
         <Table id="claude-hooks" columns={HOOK_COLUMNS} rows={shown.hooks} striped hover={false} compact emptyText="No hooks match">
           {#snippet row(h)}
             <tr>
@@ -488,6 +647,7 @@
                 <code class="wrap">{h.command}</code>
                 {#if h.warn}<Badge tone="warning" title={h.warn}>issue</Badge>{/if}
               </td>
+              <td class="text-sm">{@render tools(programs?.byHook[h.key], false)}</td>
               <td>{h.timeout}</td>
               <td class="text-sm" title={h.file}><code class="wrap">{h.origin}</code></td>
             </tr>
@@ -505,7 +665,7 @@
           {#snippet row(m)}
             <tr>
               <td>
-                <code>{m.name}</code>
+                <Button treatment="link" size="sm" aria-label={`Tools of ${m.name}`} onclick={() => show('mcp', m)}><code>{m.name}</code></Button>
                 {#if m.oauth}<Badge>oauth</Badge>{/if}
                 {#if m.warn}<Badge tone="warning" title={m.warn}>issue</Badge>{/if}
               </td>
@@ -514,9 +674,12 @@
               <td>{m.transport}</td>
               <td><code class="clip" title={m.target}>{clip(m.target, 90)}</code></td>
               <td class="text-sm text-muted">{m.keys || '—'}</td>
+              <td><ClaudeActions actions={mcpActions(m)} onwrote={wrote} /></td>
             </tr>
           {/snippet}
         </Table>
+        <ClaudeMcpEdit projects={tables.choices} disabled={writes?.disabled ?? []} home={cfg.home} onwrote={wrote} />
+        <ClaudeMcpHealth projects={tables.choices} home={cfg.home} />
       </TabPanel>
 
       <TabPanel id="settings">
@@ -553,6 +716,19 @@
         </Table>
       </TabPanel>
 
+      <TabPanel id="editor">
+        <ClaudeSettingsEditor config={cfg} onwrote={wrote} />
+      </TabPanel>
+
+      <TabPanel id="changes">
+        {#if writesErr}<Callout tone="danger" title="Could not read the change list">{writesErr}</Callout>{/if}
+        <ClaudeChanges rows={writes?.rows ?? []} home={cfg.home} onwrote={wrote} />
+      </TabPanel>
+
+      <TabPanel id="doctor">
+        {#if seen.doctor}<ClaudeDoctor projects={tables.choices} home={cfg.home} />{/if}
+      </TabPanel>
+
       <TabPanel id="limits">
         {#if seen.limits}<ClaudeLimits />{/if}
       </TabPanel>
@@ -576,7 +752,7 @@
   {/if}
 
   <Drawer open={drawer} onclose={hide} resizable width={640}
-          title={!detail ? '' : detail.kind === 'hook' ? `${detail.row.event} hook` : detail.kind === 'memory' ? detail.row.path : detail.row.name}>
+          title={!detail ? '' : detail.kind === 'hook' ? `${detail.row.event} hook` : detail.kind === 'memory' ? detail.row.path : detail.kind === 'mcp' ? `${detail.row.name} MCP server` : detail.row.name}>
     {#if detail?.kind === 'item'}
       {@const i = detail.row}
       {@const v = i.item}
@@ -601,14 +777,20 @@
           <dt>Frontmatter</dt><dd><Badge tone="warning">unavailable: {i.reason}</Badge></dd>
         {/if}
       </dl>
-      {@render text()}
+      {#if file && i.originScope !== 'plugin'}
+        <ClaudeFileEdit path={i.abs} text={file.text} trashable bind:editing={editing} onsaved={saved} ontrashed={trashed} />
+      {/if}
+      {#if !editing}{@render text()}{/if}
     {:else if detail?.kind === 'memory'}
       {@const m = detail.row}
       <dl class="facts" id="claude-detail-memory">
         <dt>Kind</dt><dd><Badge>{m.kind}</Badge></dd>
         <dt>Bytes</dt><dd>{m.bytes ?? '—'} <span class="text-sm text-muted">its own; @imports are not followed</span></dd>
       </dl>
-      {@render text()}
+      {#if file && m.kind !== 'managed'}
+        <ClaudeFileEdit path={m.abs} text={file.text} exists={m.exists} bind:editing={editing} onsaved={saved} />
+      {/if}
+      {#if !editing}{@render text()}{/if}
     {:else if detail?.kind === 'plugin'}
       {@const p = detail.row}
       <dl class="facts" id="claude-detail-plugin">
@@ -638,6 +820,17 @@
       <p class="text-sm">{p.hookEvents.length ? p.hookEvents.join(', ') : 'None'}</p>
       <h3>MCP servers ({p.servers.length})</h3>
       <p class="text-sm">{#if p.servers.length}{#each p.servers as n}<code>{n}</code> {/each}{:else}None{/if}</p>
+    {:else if detail?.kind === 'mcp'}
+      {@const m = detail.row}
+      <dl class="facts" id="claude-detail-mcp">
+        <dt>Scope</dt><dd><Badge>{m.scope}</Badge> {#if m.where}<code class="wrap">{m.where}</code>{/if}</dd>
+        <dt>Transport</dt><dd>{m.transport}</dd>
+        <dt>Command / URL</dt><dd><code class="wrap">{m.target}</code></dd>
+        <dt>Env / header names</dt><dd class="text-sm">{m.keys || '—'}</dd>
+        {#if m.warn}<dt>Health</dt><dd><Badge tone="warning">{m.warn}</Badge></dd>{/if}
+      </dl>
+      <h3>Tools</h3>
+      {#key m}<ClaudeMcpTools server={m.server} />{/key}
     {:else if detail?.kind === 'hook'}
       {@const h = detail.row}
       <dl class="facts" id="claude-detail-hook">
@@ -652,11 +845,26 @@
         <dt>Declared in</dt><dd><code class="wrap">{h.file}</code></dd>
         {#if h.warn}<dt>Health</dt><dd><Badge tone="warning">{h.warn}</Badge></dd>{/if}
       </dl>
+      <h3>Programs</h3>
+      <p class="text-sm">{@render tools(programs?.byHook[h.key], true)}</p>
       <h3>Command</h3>
       {#if h.handler?.command}<Code text={h.handler.command} language="bash" />{:else}<p class="text-sm text-muted">No command</p>{/if}
     {/if}
   </Drawer>
 </section>
+
+{#snippet tools(list, all)}
+  {#if !list}<span class="text-muted">—</span>
+  {:else if !list.length}<span class="text-muted">none read</span>
+  {:else}
+    {#each all ? list : missing(list) as t}
+      {#if t.found}<Badge tone="success" title={t.found}>{t.tool}</Badge>
+      {:else if t.unknown}<Badge title={t.unknown}>{t.tool}: {t.unknown}</Badge>
+      {:else}<Badge tone="danger" title="not found on PATH">{t.tool} missing</Badge>{/if}
+    {/each}
+    {#if !all && !missing(list).length}<span class="text-muted">all found</span>{/if}
+  {/if}
+{/snippet}
 
 {#snippet text()}
   <h3>Contents</h3>
@@ -670,6 +878,8 @@
 {/snippet}
 
 <style>
+  /* Eleven tabs do not fit one row, and the kit's strip scrolls with its scrollbar hidden, which hides the tabs past the edge. */
+  :global(.tablist.claude-sections) { flex-wrap: wrap; overflow: visible; mask-image: none; animation: none; }
   .claude-head { justify-content: space-between; align-items: flex-start; }
   .wrap { overflow-wrap: anywhere; }
   .facts > dd { overflow-wrap: anywhere; }

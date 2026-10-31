@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-75 models · 1 view · 76 gated · 0 unrestricted
-59 with row policies · 28 with protected fields · 35 declared moves · 15 @system · 0 @seals
+76 models · 1 view · 77 gated · 0 unrestricted
+59 with row policies · 29 with protected fields · 35 declared moves · 15 @system · 0 @seals
 ```
 
 ## Gates
@@ -40,6 +40,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `BlueprintParam` | 1 VISITOR | 7 SYSADMIN | 7 SYSADMIN | 7 SYSADMIN |
 | `ClaudeMessage` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `ClaudeTranscript` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `ClaudeWrite` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Credential` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Dashboard` | 2 READER | 4 USER | 4 USER | 4 USER |
 | `DashboardTile` | 2 READER | 4 USER | 4 USER | 4 USER |
@@ -685,6 +686,7 @@ rather than refusing the row.
 | `AppPlatform` | `observedAt` | `@system` |
 | `BackupDestination` | `secretId` | `@system` |
 | `BackupDestination` | `lastTestAt` | `@system` |
+| `ClaudeWrite` | `before` | `@encrypted` |
 | `Credential` | `value` | `@guarded` |
 | `Credential` | `accessToken` | `@secret` |
 | `Credential` | `refreshToken` | `@secret` |

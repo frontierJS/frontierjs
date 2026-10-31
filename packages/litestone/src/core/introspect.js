@@ -21,9 +21,9 @@ import { capabilityNames } from './capabilities.js'
 import { policyExprToString, policyVerdict, withLiteralDefaults, readReach, readColumns, fromReach } from './policy.js'
 import { resolveTenancy } from './tenancy.js'
 import { schemaDeclaresAccessRules, shapesRead, nowISO } from './schema-maps.js'
-import { filterableKeysFor, sortableKeysFor } from './query.js'
+import { sortableKeysFor } from './query.js'
 import { suggestKey, pointFieldsOf, liftNearOrders, sortHopFor, _guardedNames, _shownSet,
-         collectWhereKeyProblems, collectOrderByKeyProblems } from './args.js'
+         collectWhereKeyProblems, collectOrderByKeyProblems, whereKeysFor } from './args.js'
 import { applyFieldPolicyTo } from './field-policy.js'
 import { trailMarksOf, markOf } from './trail-entries.js'
 
@@ -51,11 +51,11 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   function $checkWhere(accessor, where) {
     const model = modelForAccessor(accessor)
     if (!model?.fields) return []
-    // An empty filter names no key to grade, and junction asks on every read;
-    // the key sets below are built fresh per call (`FJS-2992`).
+    // An empty filter names no key to grade, and junction asks on every read.
     if (where && typeof where === 'object' && !Array.isArray(where) && Object.keys(where).length === 0) return []
-    const keys = filterableKeysFor(model)
-    for (const d of Object.values(shapes[model.name].edges)) keys.filterable.add(d.as)
+    // The table's own guard grades from the same cached sets; rebuilding them
+    // here cost ~2.5 µs on every filtered find (`FJS-3755`).
+    const keys = whereKeysFor(model, ctx)
     return collectWhereKeyProblems(where, keys.filterable, keys.computed, keys.encrypted, [],
                                    new Set(Object.keys(shapes[model.name].scopes)), keys.transient,
                                    { ctx, model: model.name }, '', 0, keys.opaque)

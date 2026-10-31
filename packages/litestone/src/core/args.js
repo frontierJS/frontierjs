@@ -311,8 +311,7 @@ function checkIncludeArgs(include, modelName, method, ctx, isWrite, depth = 0) {
     if (!target || !v || typeof v !== 'object' || Array.isArray(v)) continue
     const name = rel.targetModel
 
-    const keys = filterableKeysFor(target)
-    for (const d of Object.values(ctx.shapes[name].edges)) keys.filterable.add(d.as)
+    const keys = whereKeysFor(target, ctx)
     checkWhereKeys(v.where, keys, name, method, isWrite,
       new Set(Object.keys(ctx.shapes[name].scopes)), ctx)
     checkWhereKeys(v.cursor, keys, name, method, isWrite,
@@ -505,7 +504,7 @@ export const _guardedNames = (/** @type {{ name: string }} */ model, /** @type {
 export const _shownSet = (/** @type {Set<string>} */ set, /** @type {Set<string> | null | undefined} */ hidden) => hidden ? new Set([...set].filter(n => !hidden.has(n))) : set
 
 /** @param {ModelDef} model @param {Ctx} ctx */
-function whereKeysFor(model, ctx) {
+export function whereKeysFor(model, ctx) {
   let keys = _whereKeyCache.get(model)
   if (!keys) {
     keys = filterableKeysFor(model)
@@ -984,8 +983,7 @@ export function withArgValidation(table, model, ctx) {
   const reachesFieldRead = shape.reachesFieldRead
   const checkGuarded   = () => reachesGuarded   && !ctx.isSystem
   const checkFieldRead = () => reachesFieldRead && !ctx.isSystem
-  const whereKeys = filterableKeysFor(model)
-  for (const d of Object.values(ctx.shapes[model.name].edges)) whereKeys.filterable.add(d.as)
+  const whereKeys = whereKeysFor(model, ctx)
   const scopeNames = new Set(Object.keys(shape.scopes))
   const modelName = model.name
   const { sortable, relations, computed, transient, opaque } = sortableKeysFor(model)

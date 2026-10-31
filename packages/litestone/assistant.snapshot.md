@@ -1699,7 +1699,7 @@ How this model belongs to a tenant under `tenancy { strategy row }`. `none` says
 @@tenant(none)
 ```
 
-#### `@@transitions` (<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …)], …) | (<field>, declaredBy: Model, scope: <column>)
+#### `@@transitions` (<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …, by: col)], …) | (<field>, declaredBy: Model, scope: <column>)
 
 tier: **common** · legal in: in a model, in a trait · also called: workflow, status · see also: `gate`
 
@@ -1830,14 +1830,14 @@ The move is the moment this row becomes a DOCUMENT. After it the row's @sealed c
 
 **Record who and when**
 
-#### `@stamps` (<column>, …)
+#### `@stamps` (<column>, …, [by: <column>])
 
 tier: **common** · legal in: on a @@transitions transition · see also: `transitions`, `updatedAt`
 
-The move records WHEN it was made: the named DateTime columns get the clock in the move's own UPDATE, the way @updatedAt does, whether the move was made by transition(id, name) or by an update that lands it. The column is the engine's, so a payload naming it is refused by name; a direct transition() cannot leave it null, and a @@check requiring it holds in the same statement. Move-keyed, so two moves into one state can stamp different columns.
+The move records WHEN it was made: the named DateTime columns get the clock in the move's own UPDATE, the way @updatedAt does, whether the move was made by transition(id, name) or by an update that lands it. The column is the engine's, so a payload naming it is refused by name; a direct transition() cannot leave it null, and a @@check requiring it holds in the same statement. Move-keyed, so two moves into one state can stamp different columns. `by: <column>` records WHO: the acting principal's id (ctx.auth.id, as @updatedBy reads it) goes in the same UPDATE, so a row policy can compare the first approver to the second without a hook writing either. The by column must be @system or @guarded; with no principal (a bare asSystem(), a service principal) it is left as it was, and `$setAuth(u).asSystem()` still names u.
 
 ```lite
-@@transitions(state, issue: draft -> issued @stamps(issuedAt))
+@@transitions(state, issue: draft -> issued @stamps(issuedAt, by: issuedById))
 ```
 
 **Decide who may**

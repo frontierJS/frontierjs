@@ -136,10 +136,10 @@ fail differently.
 <!-- layout-named: the file names fli done grades a new module against, kept here because done.js reads this file by path. The map itself is docs/layout.md.
 access.snapshot.md account-mail.ts accounts.ts ADAPTERS.md alert-evaluate.job.ts alerting.ts 
 ApiKey.mesa api-paths.js App.mesa app.snapshot.md app-source.ts app.ts automations.ts 
-claude-context.ts claude-index.job.ts claude-index.ts claude-pricing.ts claude-quota.ts claude-read.ts claude-scan.ts claude-spend.ts claude-transcript.ts 
+claude-context.ts claude-index.job.ts claude-index.ts claude-pricing.ts claude-quota.ts claude-read.ts claude-scan.ts claude-spend.ts claude-transcript.ts claude-write.ts 
 bearer-send.ts build.mjs capabilities.ts cli.config.js credentials.ts db.ts delivery.ts 
 dependencies.ts dockerfile-template.ts domain-dns.job.ts executor.ts gate.ts generate.js hooks.ts host-record.ts index.ts 
-job-run.job.ts job-schedule.ts kinds.ts litestone.config.js local-claude.ts local-git.ts local-ssh.ts machine-stream.ts mailer.ts 
+job-run.job.ts job-schedule.ts kinds.ts litestone.config.js local-claude.ts local-git.ts local-mcp.ts local-ssh.ts machine-stream.ts mailer.ts 
 main.js monitor-sweep.job.ts NoRecord.mesa notices.js notify.ts outpost-dev.ts outpost-run.ts 
 outpost.ts package.json probe.ts provision-host.ts PROVISIONING.md push.ts README.md 
 registers.ts release-record.ts runtime.ts schema.d.ts schema.lite scopes.ts SCREENS.md seed.js 

@@ -1,0 +1,64 @@
+<script>
+  // What the Claude Code tab has changed on this machine, newest first (api
+  // services/claude: writes, undo).
+  //
+  // Undo is offered only where the service says it can be taken back, and a
+  // refusal -- the file changed since, a running `claude` edited it -- shows on
+  // that row. An undone row says so and keeps its place.
+  import { at, ago } from '../lib/datetime.js'
+  import { tilde }   from '../lib/claude-format.js'
+  import { claude }  from '../resources/Claude.mesa'
+
+  import Badge         from '@frontierjs/ui/components/display/Badge.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+  import ClaudeActions from './ClaudeActions.mesa'
+
+  export let rows    = []
+  export let home    = ''
+  export let onwrote = undefined
+
+  const COLUMNS = [
+    { name: 'createdAt', label: 'When' }, { name: 'action', label: 'Action' }, { name: 'target', label: 'Target' },
+    { name: 'scope', label: 'Scope / project' }, { name: 'keys', label: 'Keys' }, { name: 'undo', label: 'Undo', hideLabel: true },
+  ]
+
+  const undo = (r) => [{
+    id: `claude-undo-${r.id}`, label: 'Undo', aria: `Undo ${r.action} ${tilde(r.target, home)}`,
+    run: () => claude.service.invoke('undo', null, { id: r.id }),
+  }]
+</script>
+
+<div class="stack" id="claude-changes">
+  <p class="text-sm text-muted">
+    Every change this tab makes, with the file or CLI call it took. Undo puts the file back, or runs the CLI's inverse,
+    and is refused once the file has changed since.
+  </p>
+  <Table id="claude-changes-table" columns={COLUMNS} rows={rows} compact striped hover={false} emptyText="No changes yet">
+    {#snippet row(r)}
+      <tr data-write={r.id}>
+        <td class="text-sm" title={at(r.createdAt)}>{ago(r.createdAt)}</td>
+        <td><Badge>{r.action}</Badge></td>
+        <td><code class="wrap">{tilde(r.target, home)}</code></td>
+        <td class="text-sm">
+          {#if r.scope}<Badge>{r.scope}</Badge>{/if}
+          {#if r.project}<code class="wrap">{tilde(r.project, home)}</code>{/if}
+          {#if !r.scope && !r.project}—{/if}
+        </td>
+        <td class="text-sm text-muted">{r.keys || '—'}</td>
+        <td>
+          {#if r.undoneAt}
+            <span class="text-sm text-muted" title={at(r.undoneAt)}>undone {ago(r.undoneAt)}</span>
+          {:else if r.undoable}
+            <ClaudeActions actions={undo(r)} {onwrote} />
+          {:else}
+            <span class="text-sm text-muted">not undoable</span>
+          {/if}
+        </td>
+      </tr>
+    {/snippet}
+  </Table>
+</div>
+
+<style>
+  .wrap { overflow-wrap: anywhere; }
+</style>

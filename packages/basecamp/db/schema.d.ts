@@ -2803,6 +2803,69 @@ export type ClaudeMessageOrderBy =
 export interface ClaudeMessageRelations {
 }
 
+// ─── ClaudeWrite ─────────────────────────────────────────────────
+
+export interface ClaudeWrite {
+  id: string
+  action: string
+  target: string
+  project?: string | null
+  scope?: string | null
+  keys: string
+  /** @encrypted */
+  before?: string | null
+  digest?: string | null
+  undoneAt?: string | null
+  createdAt: string
+}
+
+export interface ClaudeWriteCreate {
+  id?: string
+  action: string
+  target: string
+  project?: string | null
+  scope?: string | null
+  keys?: string
+  before?: string | null
+  digest?: string | null
+  undoneAt?: string | Date | null
+}
+
+export interface ClaudeWriteUpdate {
+  id?: string
+  action?: string
+  target?: string
+  project?: string | null
+  scope?: string | null
+  keys?: string
+  before?: string | null
+  digest?: string | null
+  undoneAt?: string | Date | null
+}
+
+export interface ClaudeWriteWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  action?: string | WhereOp<string> | null
+  target?: string | WhereOp<string> | null
+  project?: string | WhereOp<string> | null
+  scope?: string | WhereOp<string> | null
+  keys?: string | WhereOp<string> | null
+  before?: string | WhereOp<string> | null
+  digest?: string | WhereOp<string> | null
+  undoneAt?: string | Date | WhereOp<string | Date> | null
+  createdAt?: string | Date | WhereOp<string | Date> | null
+  AND?: ClaudeWriteWhere[]
+  OR?:  ClaudeWriteWhere[]
+  NOT?: ClaudeWriteWhere
+}
+
+export type ClaudeWriteOrderBy =
+  | { [K in keyof Omit<ClaudeWrite, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<ClaudeWrite, never>]?: OrderDir }>
+
+export interface ClaudeWriteRelations {
+}
+
 // ─── Volume ──────────────────────────────────────────────────────
 
 export interface Volume {
@@ -6216,6 +6279,7 @@ export interface ServiceTypes {
   outpostNonces: OutpostNonce
   claudeTranscripts: ClaudeTranscript
   claudeMessages: ClaudeMessage
+  claudeWrites: ClaudeWrite
   volumes: Volume
   networks: Network
   serverNetworks: ServerNetwork
@@ -6463,7 +6527,7 @@ type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient
 type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
-  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'claudeTranscript' | 'claudeMessage' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'domainRoute' | 'appEditor' | 'appServer' | 'appPlatform' | 'appBackup' | 'appDrill' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'maintenanceRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'backupDestination' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'monitor' | 'monitorCheck' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardTile' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
+  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'claudeTranscript' | 'claudeMessage' | 'claudeWrite' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'domainRoute' | 'appEditor' | 'appServer' | 'appPlatform' | 'appBackup' | 'appDrill' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'maintenanceRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'backupDestination' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'monitor' | 'monitorCheck' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardTile' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
   readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere, CredentialRelations, never, 'value' | 'accessToken' | 'refreshToken' | '@@gate'>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'token' | '@@gate'>
   readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere, VerificationRelations, never, 'value' | 'secret' | 'code' | '@@gate'>
@@ -6493,6 +6557,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly outpostNonce: TableClient<OutpostNonce, OutpostNonceCreate, OutpostNonceUpdate, OutpostNonceWhere, OutpostNonceRelations, never, '@@gate'>
   readonly claudeTranscript: TableClient<ClaudeTranscript, ClaudeTranscriptCreate, ClaudeTranscriptUpdate, ClaudeTranscriptWhere, ClaudeTranscriptRelations, never, '@@gate'>
   readonly claudeMessage: TableClient<ClaudeMessage, ClaudeMessageCreate, ClaudeMessageUpdate, ClaudeMessageWhere, ClaudeMessageRelations, never, '@@gate'>
+  readonly claudeWrite: TableClient<ClaudeWrite, ClaudeWriteCreate, ClaudeWriteUpdate, ClaudeWriteWhere, ClaudeWriteRelations, never, '@@gate'>
   readonly volume: TableClient<Volume, VolumeCreate, VolumeUpdate, VolumeWhere, VolumeRelations, never, '@@gate'>
   readonly network: TableClient<Network, NetworkCreate, NetworkUpdate, NetworkWhere, NetworkRelations, never, '@@gate'>
   readonly serverNetwork: TableClient<ServerNetwork, ServerNetworkCreate, ServerNetworkUpdate, ServerNetworkWhere, ServerNetworkRelations, never, '@@gate'>

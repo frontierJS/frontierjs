@@ -26,6 +26,7 @@ import { db, getScoped, actor, callerOrder, callerSelect }   from '../../core/re
 import { executorOn, isExecutor }                            from '../../providers/executor.ts'
 import { takeAppBackup }                                     from '../../jobs/app-backup-run.job.ts'
 import { queueAppArchiveRescan }                             from '../../jobs/app-archive-rescan.job.ts'
+import { bucketDownload, isRemote }                          from '../../domain/backup/backup-archives.ts'
 import { keyScope }                                          from '../../domain/api-key/scopes.ts'
 import { hubIds, refuseHubVolume }                           from '../../domain/host/host-machine.ts'
 
@@ -41,7 +42,8 @@ export default createService({
   // `create` could never grade it and the method states its own.
   methods: ['find', 'get',
     { method: 'take',   gate: LEVELS.ADMINISTRATOR, input: 'AppBackupTake' },
-    { method: 'rescan', gate: LEVELS.ADMINISTRATOR, input: 'AppBackupRescan' }],
+    { method: 'rescan', gate: LEVELS.ADMINISTRATOR, input: 'AppBackupRescan' },
+    { method: 'download', gate: LEVELS.ADMINISTRATOR, read: true }],
 
   async find() {
     const { limit, offset } = getPagination({ limit: 50, max: 200 })
@@ -100,6 +102,27 @@ export default createService({
     await queueAppArchiveRescan($.app, app.id)
     $.dispatch = false   // nothing written yet; the job writes the rows
     return { queued: true }
+  },
+
+  // ── download — POST /app-backups/{id}  X-Service-Method: download ──
+  /** The bucket's pre-signed GET for one archive, saving as
+   *  `<slug>-<stamp>.tar.gz`. A machine-kept archive has no URL: no bytes
+   *  cross the command port (`FJS-D1485`), the rule Restore follows. */
+  async download() {
+    const row = await db().appBackup.findFirst({ where: { id: $.id as string } })
+    const hub = (await hubIds(db().asSystem())).app
+    if (!row || row.appId === hub) throw new NotFound(`App backup '${$.id}' not found`)
+    if (row.status !== 'success') throw new BadRequest(`That backup is ${row.status}, so there is no archive to download`)
+    if (!isRemote(row)) {
+      const server = row.serverId ? await db().asSystem().server.findFirst({ where: { id: row.serverId } }) : null
+      throw new BadRequest(`That backup is kept on ${server?.name ?? 'its machine'} — give the app a backup destination to download its archives`)
+    }
+    const app  = await getScoped('app', 'App', row.appId)
+    const base = row.location!.split('/').pop()!.replace(/\.tar\.gz$/, '')
+    const name = `${base.startsWith(`${app.id}-`) ? `${app.slug}-${base.slice(app.id.length + 1)}` : base}.tar.gz`
+    // The URL is the credential and nobody follows it through here.
+    $.app.logger.info('app backup link minted', { backup_id: row.id, app_id: app.id, by: actor() })
+    return bucketDownload($.app, row, name)
   },
 
   hooks: {

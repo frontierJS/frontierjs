@@ -1,0 +1,81 @@
+<script>
+  // Which MCP servers start, on the Claude Code tab (api services/claude: mcpHealth).
+  //
+  // `claude mcp list` starts every server it lists to answer, so it is run on a
+  // click and not on opening the tab: a slow server holds the list for seconds.
+  // Run from a checkout, it adds that project's local and `.mcp.json` servers to
+  // the user ones and the claude.ai connectors -- the list differs per project. A
+  // `.mcp.json` server shows only once the folder is trusted in Claude Code, and
+  // a plugin's server never does, so its absence here is not a failure.
+  import { ago }    from '../lib/datetime.js'
+  import { tilde }  from '../lib/claude-format.js'
+  import { claude } from '../resources/Claude.mesa'
+
+  import Badge   from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button  from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout from '@frontierjs/ui/components/display/Callout.mesa'
+  import Pill    from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select  from '@frontierjs/ui/components/forms/Select.mesa'
+  import Table   from '@frontierjs/ui/components/display/Table.mesa'
+
+  // [{ value: absolute path, label, pinned, exists }] from the config scan, pins first.
+  export let projects = []
+  export let home     = ''
+
+  const COLUMNS = [
+    { name: 'name', label: 'Server' }, { name: 'state', label: 'Status' },
+    { name: 'target', label: 'Command / URL' }, { name: 'detail', label: 'Detail' },
+  ]
+  const TONES = { connected: 'success', 'needs-auth': 'warning', failed: 'danger', other: '' }
+
+  const options = [{ value: '', label: 'Home folder (user servers)' }, ...projects.filter(p => p.exists).map(p => ({ value: p.value, label: p.label }))]
+  let project = ''
+  let answer  = null   // Read<{ cwd, servers, checkedAt }>
+  let error   = null
+  let loading = false
+
+  async function check() {
+    loading = true; error = null
+    try { answer = await claude.service.invoke('mcpHealth', null, project ? { project } : {}) }
+    catch (err) { answer = null; error = err.message }
+    finally { loading = false }
+  }
+
+  const clip = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
+</script>
+
+<div class="stack" id="claude-mcp-health">
+  <h3>Health</h3>
+  <div class="cluster">
+    <Select id="claude-mcp-health-project" name="mcp-health-project" label="" placeholder="" aria-label="Run from"
+            options={options} value={project} onchange={(e) => { project = e.target.value }} />
+    <Button id="claude-mcp-health-check" size="sm" treatment="outlined" loading={loading} disabled={loading} onclick={check}>Check health</Button>
+  </div>
+  <p class="text-sm text-muted">
+    Runs <code>claude mcp list</code>, which starts each server to see that it answers. A checkout's
+    <code>.mcp.json</code> servers are listed only once Claude Code trusts the folder, and a plugin's
+    servers are never listed: <strong>List tools</strong> in a server's drawer starts one of those.
+  </p>
+
+  {#if error}
+    <Callout tone="danger" title="Could not check">{error}</Callout>
+  {:else if answer && !answer.ok}
+    <p id="claude-mcp-health-unavailable"><Badge tone="warning">unavailable</Badge> <span class="text-sm">{answer.reason}</span></p>
+  {:else if answer}
+    <p class="text-sm text-muted">From <code>{tilde(answer.value.cwd, home)}</code>, {ago(answer.value.checkedAt)}.</p>
+    <Table id="claude-mcp-health-list" columns={COLUMNS} rows={answer.value.servers} compact striped hover={false} emptyText="No MCP servers configured">
+      {#snippet row(s)}
+        <tr>
+          <td><code>{s.name}</code></td>
+          <td><Pill tone={TONES[s.state]}>{s.status}</Pill></td>
+          <td><code class="clip" title={s.target}>{clip(s.target, 80)}</code></td>
+          <td class="text-sm">{s.detail ?? '—'}</td>
+        </tr>
+      {/snippet}
+    </Table>
+  {/if}
+</div>
+
+<style>
+  .clip { display: inline-block; max-inline-size: var(--measure, 64ch); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+</style>
