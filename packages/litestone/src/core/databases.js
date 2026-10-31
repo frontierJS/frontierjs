@@ -80,8 +80,9 @@ import { DERIVED_NOW_ARG } from './query.js'
 // out; a PRAGMA can carry a value. BEGIN, COMMIT and ROLLBACK are fixed text
 // and are cached — every create in a transaction pays a prepare otherwise,
 // and a prepared one is reused across commits, rollbacks and a failed
-// statement without complaint (measured, `FJS-1106`). Exported for
-// `bench/statements.mjs`, which counts the cache from outside it.
+// statement without complaint (measured, `FJS-1106`). One kept out is finalized
+// after its run: left live, it holds the file open past `close()` (`FJS-640`).
+// Exported for `bench/statements.mjs`, which counts the cache from outside it.
 export const NO_CACHE = /^\s*(SAVEPOINT|RELEASE|ROLLBACK\s+TO|PRAGMA|VACUUM|ATTACH|DETACH)/i
 // bun leaves an EXPLAIN's VM active once it has run, by any of its four
 // calls, and while it is active the connection's next read transaction never
@@ -152,7 +153,7 @@ function wrapDb(rawDb, { maxCacheSize = 500, label = 'sqlite' } = {}) {
     /** @param {string} sql @param {...any} params */
     run(sql, ...params) {
       if (closed) throw new ClientClosedError(label)
-      if (NO_CACHE.test(sql)) return rawDb.prepare(sql).run(...params)
+      if (NO_CACHE.test(sql)) return singleUse(sql).run(...params)
       return stmt(sql).run(...params)
     },
     // Finalizing every cached statement is what makes a close a close. bun's

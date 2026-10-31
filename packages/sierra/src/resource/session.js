@@ -209,6 +209,9 @@ function _adopt(me) {
   return me
 }
 
+/** The codes that mean nobody answered: a client timeout, and a gateway's three ways of saying the upstream did not. */
+const SILENT = new Set([408, 502, 503, 504])
+
 /** Ask the server who this token is. Safe to call at any time. */
 export async function refresh() {
   if (!_client) return null
@@ -224,9 +227,14 @@ export async function refresh() {
     // The server did not answer. A remembered session is restored rather than
     // leaving the app signed out — see REMEMBERED above for why that is safe.
     // Only on SILENCE: any answer, including a 403, is the server speaking and
-    // is not something a copy may override.
+    // is not something a copy may override. A 502, 503 or 504 is not the
+    // server speaking — it is the proxy in front of it saying nothing came
+    // back, which the dev proxy does for every call while the API restarts.
+    // Read as an answer, it signed the person out, the guard sent them to
+    // sign-in, and the restore a reload later found the session still good
+    // (FJS-3704).
     const code = err?.code ?? err?.status
-    if (code === undefined || code === null || code === 408) {
+    if (code === undefined || code === null || SILENT.has(code)) {
       const kept = recallSession()
       if (kept?.me) {
         _w.user  = kept.me

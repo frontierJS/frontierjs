@@ -321,6 +321,61 @@ describe('the boot restore', () => {
 
     expect(s.session.error).toBe('API not reachable')
   })
+
+  // The dev proxy answers 502 for every call while the API restarts. Read as
+  // the server saying "nobody", the restore ended signed out, the guard sent
+  // a signed-in person to sign-in, and a reload found the session still good
+  // (FJS-3704). A gateway code is the proxy speaking, not the server.
+  for (const code of [502, 503, 504]) {
+    test(`a ${code} during the restore keeps the remembered session`, async () => {
+      const stored = new Map()
+      vi.stubGlobal('localStorage', {
+        getItem: k => stored.get(k) ?? null,
+        setItem: (k, v) => stored.set(k, v),
+        removeItem: k => stored.delete(k),
+      })
+      try {
+        const first = await freshSession()
+        first.initSession(fakeClient({ token: 't', me: { id: 'u1', email: 'a@b.c', level: 4 } }))
+        await first.ready
+
+        const s = await freshSession()
+        const client = fakeClient({ token: 't', fail: Object.assign(new Error('Bad Gateway'), { code }) })
+        s.initSession(client)
+        await s.ready
+
+        expect(s.session.checked).toBe(true)
+        expect(s.session.user?.email).toBe('a@b.c')
+        expect(s.session.level).toBe(4)
+        expect(s.session.error).toBeNull()
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    })
+  }
+
+  test('a 403 during the restore is the server speaking, and no remembered copy overrides it', async () => {
+    const stored = new Map()
+    vi.stubGlobal('localStorage', {
+      getItem: k => stored.get(k) ?? null,
+      setItem: (k, v) => stored.set(k, v),
+      removeItem: k => stored.delete(k),
+    })
+    try {
+      const first = await freshSession()
+      first.initSession(fakeClient({ token: 't', me: { id: 'u1', email: 'a@b.c' } }))
+      await first.ready
+
+      const s = await freshSession()
+      s.initSession(fakeClient({ token: 't', fail: Object.assign(new Error('Forbidden'), { code: 403 }) }))
+      await s.ready
+
+      expect(s.session.user).toBeNull()
+      expect(s.session.error).toBe('Forbidden')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })
 
 describe('signing in', () => {
