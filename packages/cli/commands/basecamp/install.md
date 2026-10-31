@@ -146,5 +146,5 @@ echo`
 // An alias names the workspace after the box; a bare address has no name to give.
 const host = dest.split('@').pop()
 const workspace = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) ? 'basecamp' : host
-if (!await adminThenFleet({ dest, workspace, admin, password, log, echo, outpost, domain, later: ` --server ${dest}${named}` })) process.exitCode = 1
+if (!await adminThenFleet({ dest, workspace, admin, password, log, echo, chalk, outpost, domain, later: ` --server ${dest}${named}` })) process.exitCode = 1
 ```

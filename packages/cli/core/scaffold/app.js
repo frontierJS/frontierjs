@@ -8,7 +8,7 @@
 // Every builder is a pure function of the spec: nothing here reads the disk.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { APP_DEV_DEPS, FJS_PACKAGES, appCheckScripts, appSurfaceScripts } from '../app-config.js'
+import { APP_DEV_DEPS, FJS_PACKAGES, FJS_TRANSITIVE, appCheckScripts, appSurfaceScripts } from '../app-config.js'
 import { widgetScripts }                      from '../widget-surface.js'
 import { siteScripts, siteDevDeps }           from '../site-surface.js'
 import { extensionScripts, extensionDevDeps } from '../extension-surface.js'
@@ -32,7 +32,7 @@ export function makePackageJson(spec) {
   // local source → `link:@frontierjs/x` (resolves to a live symlink via bun link);
   // npm source → the exact version FJS_PACKAGES or APP_DEV_DEPS pins;
   // url source → the package host's tarball at that same version.
-  const pinned  = (key) => FJS_PACKAGES[key] ?? APP_DEV_DEPS[key]
+  const pinned  = (key) => FJS_PACKAGES[key] ?? APP_DEV_DEPS[key] ?? FJS_TRANSITIVE[key]
   const specFor = (key) => source === 'local' ? `link:${key}`
     : source === 'url' ? packageHostUrl(key, pinned(key))
     : pinned(key)
@@ -142,7 +142,7 @@ export function makePackageJson(spec) {
   // resolves from npm beside the hosted copy. Every framework package, named
   // or not, so a transitive one has the one source too (as vendor.js does).
   const overrides = source === 'url'
-    ? Object.fromEntries(Object.keys({ ...FJS_PACKAGES, ...APP_DEV_DEPS })
+    ? Object.fromEntries(Object.keys({ ...FJS_PACKAGES, ...APP_DEV_DEPS, ...FJS_TRANSITIVE })
         .filter(key => key.startsWith('@frontierjs/'))
         .map(key => [key, specFor(key)]))
     : undefined

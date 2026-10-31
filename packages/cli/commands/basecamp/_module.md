@@ -152,7 +152,7 @@ const hostnameOf = async (domain) => {
 // resolve yet. The body travels inside the script on ssh's stdin, never in an
 // argv another process on either machine can read. An empty password is
 // generated and printed once. Answers false when no admin was made.
-const makeAdmin = async ({ dest, identity, workspace, admin, password, log, echo }) => {
+const makeAdmin = async ({ dest, identity, workspace, admin, password, log, echo, chalk }) => {
   const { spawnSync }  = await import('node:child_process')
   const { existsSync } = await import('node:fs')
   const generated = !password

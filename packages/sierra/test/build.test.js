@@ -317,23 +317,39 @@ describe('virtual:sierra, the entry (FJS-D1085)', () => {
     const tag = '<script type="module" src="virtual:sierra"></script>'
     const dev = virtualSierraPlugin({})
     dev.configResolved({ root: '/app', command: 'serve', base: '/shop/' })
-    expect(dev.transformIndexHtml(tag)).toBe('<script type="module" src="/shop/@id/virtual:sierra"></script>')
+    expect(dev.transformIndexHtml.handler(tag)).toBe('<script type="module" src="/shop/@id/virtual:sierra"></script>')
     const build = virtualSierraPlugin({})
     build.configResolved({ root: '/app', command: 'build', base: '/' })
-    expect(build.transformIndexHtml(tag)).toBe(tag)
+    expect(build.transformIndexHtml.handler(tag)).toBe(tag)
   })
 
   test('dev keeps the ?t= Vite adds after an HMR update', () => {
     const dev = virtualSierraPlugin({})
     dev.configResolved({ root: '/app', command: 'serve', base: '/' })
-    expect(dev.transformIndexHtml('<script type="module" src="virtual:sierra?t=1793042865566"></script>'))
+    expect(dev.transformIndexHtml.handler('<script type="module" src="virtual:sierra?t=1793042865566"></script>'))
       .toBe('<script type="module" src="/@id/virtual:sierra?t=1793042865566"></script>')
   })
 
   test('an index.html naming /src/main.js is refused', () => {
     const plugin = virtualSierraPlugin({})
     plugin.configResolved({ root: '/app', command: 'serve' })
-    expect(() => plugin.transformIndexHtml('<script type="module" src="/src/main.js"></script>')).toThrow(/FJS-D1085/)
+    expect(() => plugin.transformIndexHtml.handler('<script type="module" src="/src/main.js"></script>')).toThrow(/FJS-D1085/)
+  })
+
+  // Called directly, the hook refused; inside Vite it ran after the page's
+  // script had become /assets/…, and the build shipped the page (FJS-3719).
+  test('a real build refuses an index.html naming /src/main.js', async () => {
+    const { build } = await import('vite')
+    const root = mkdtempSync(resolve(tmpdir(), 'sierra-entry-build-'))
+    try {
+      mkdirSync(resolve(root, 'src'))
+      writeFileSync(resolve(root, 'src/main.js'), 'export {}\n')
+      writeFileSync(resolve(root, 'index.html'), '<!doctype html><div id="app"></div><script type="module" src="/src/main.js"></script>\n')
+      await expect(build({ root, logLevel: 'silent', configFile: false, plugins: [virtualSierraPlugin({})] }))
+        .rejects.toThrow(/FJS-D1085/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   test('a top-level await in main.js is refused, one inside a function is not', async () => {

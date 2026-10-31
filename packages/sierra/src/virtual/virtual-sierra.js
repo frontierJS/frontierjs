@@ -282,17 +282,21 @@ export function virtualSierraPlugin(config, sierraContext) {
     // from the entry — and mounts the app before main.js has run. In dev the
     // entry's src is rewritten to the URL Vite serves a virtual id at: left as
     // written, the browser reads `virtual:` as a URL scheme, fetches nothing
-    // and reports nothing, and the page stays empty. Vite's hook runs first and
-    // appends `?t=` after an HMR update, so the query is kept.
-    transformIndexHtml(html) {
-      if (/<script[^>]*\ssrc=["']\/?src\/main\.js["']/.test(html)) {
-        throw refusal(
-          `[Sierra] index.html loads /src/main.js, and the page's entry is virtual:sierra, ` +
-          `which imports src/main.js itself and mounts src/App.mesa (FJS-D1085). ` +
-          `Write <script type="module" src="virtual:sierra"></script> in its place.`)
-      }
-      if (command !== 'serve') return html
-      return html.replace(/(<script[^>]*\ssrc=)(["'])virtual:sierra(\?[^"']*)?\2/g, `$1$2${base}@id/${VIRTUAL_ID}$3$2`)
+    // and reports nothing, and the page stays empty. An HMR update can append
+    // `?t=`, so the query is kept. `pre`, or a build has already rewritten the
+    // page's script to /assets/… and the refusal never fires (FJS-3719).
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html) {
+        if (/<script[^>]*\ssrc=["']\/?src\/main\.js["']/.test(html)) {
+          throw refusal(
+            `[Sierra] index.html loads /src/main.js, and the page's entry is virtual:sierra, ` +
+            `which imports src/main.js itself and mounts src/App.mesa (FJS-D1085). ` +
+            `Write <script type="module" src="virtual:sierra"></script> in its place.`)
+        }
+        if (command !== 'serve') return html
+        return html.replace(/(<script[^>]*\ssrc=)(["'])virtual:sierra(\?[^"']*)?\2/g, `$1$2${base}@id/${VIRTUAL_ID}$3$2`)
+      },
     },
   }
 }

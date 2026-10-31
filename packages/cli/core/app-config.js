@@ -149,6 +149,14 @@ export const APP_DEV_DEPS = {
   'typescript':         '^5.0.0',
 }
 
+// A framework package no app names that a pinned one depends on (cli → outpost).
+// A `--source url` app overrides it to the package host too: otherwise bun asks
+// npm for a version only the host serves, and the install stops. Exact, so
+// `ws:pub` raises it with the rest.
+export const FJS_TRANSITIVE = {
+  '@frontierjs/outpost': '0.1.9',
+}
+
 // ─── tsconfig.json ────────────────────────────────────────────────────────────
 // One line of extends plus what is genuinely about this app's layout. Everything
 // else — target, lib, strict, allowImportingTsExtensions — is in the dependency,

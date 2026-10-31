@@ -10,7 +10,7 @@ import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath }          from 'node:url'
 
 import {
-  EDITORCONFIG, APP_DEV_DEPS, FJS_PACKAGES, AGENT_DOCS,
+  EDITORCONFIG, APP_DEV_DEPS, FJS_PACKAGES, FJS_TRANSITIVE, AGENT_DOCS,
   appTsconfig, appBiomeJson, appCheckScripts, appSurfaceScripts, appWorkflow, appAgentsMd, appAgentsProjectMd, appClaudeMd,
 } from '../core/app-config.js'
 import { RULES }                             from '../core/checks.js'
@@ -542,8 +542,23 @@ describe('the agent guidance', () => {
 
 describe('every dependency a scaffold writes is an exact version', () => {
   const EXACT = /^\d+\.\d+\.\d+$/
-  const written = { ...FJS_PACKAGES, ...APP_DEV_DEPS }
+  const written = { ...FJS_PACKAGES, ...APP_DEV_DEPS, ...FJS_TRANSITIVE }
   const pinned  = Object.entries(written).filter(([name]) => name.startsWith('@frontierjs/') || name === 'bun-types')
+
+  test('the pins reach every framework package a pinned one depends on', () => {
+    // A `--source url` app overrides only what is pinned here, and bun asks npm
+    // for the rest at a version only the package host serves.
+    const pkgOf = name => JSON.parse(readFileSync(join(CLI, '..', name.split('/')[1], 'package.json'), 'utf8'))
+    const missing = []
+    for (const [name] of pinned) {
+      if (!name.startsWith('@frontierjs/')) continue
+      const pkg = pkgOf(name)
+      for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies'])
+        for (const dep of Object.keys(pkg[field] ?? {}))
+          if (dep.startsWith('@frontierjs/') && !(dep in written)) missing.push(`${name} → ${dep}`)
+    }
+    expect(missing).toEqual([])
+  })
 
   test('no framework package or bun-types floats', () => {
     expect(pinned.length).toBeGreaterThan(12)

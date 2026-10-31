@@ -297,5 +297,5 @@ echo`
     fli deploy${later}
 `
 
-if (!await adminThenFleet({ dest, identity, workspace: made.name, admin, password, log, echo, outpost, domain, later })) process.exitCode = 1
+if (!await adminThenFleet({ dest, identity, workspace: made.name, admin, password, log, echo, chalk, outpost, domain, later })) process.exitCode = 1
 ```
