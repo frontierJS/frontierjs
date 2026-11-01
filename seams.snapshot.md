@@ -29,7 +29,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 
 | Seam | Owner | Other declaring files |
 | --- | --- | --- |
-| `manifest()` | `packages/junction/src/plugins/manifest/index.ts` | 28 |
+| `manifest()` | `packages/junction/src/plugins/manifest/index.ts` | 29 |
 | `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 17 |
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 11 |
 | `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 10 |
@@ -135,7 +135,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `app.withDb(fn)` / `app.onTenantClient(observer)` | `packages/junction/src/core/app.ts` | yes | 1 |
 | `app.principal()` / `app.runAs(userId, fn)` | `packages/junction/src/core/app.ts` | yes | 7 |
 | `createLitestoneAuth(db, { sessionFields })` | `packages/auth/auth.ts` | yes | — |
-| `manifest()` | `packages/junction/src/plugins/manifest/index.ts` | yes | 28 |
+| `manifest()` | `packages/junction/src/plugins/manifest/index.ts` | yes | 29 |
 | `app.registerMetricsSource(name, fn)` / `app.registerReadiness(name, fn)` | `packages/junction/src/core/app.ts` | yes | — |
 | `app.registerDevService(name, { url, note })` | `packages/junction/src/core/app.ts` | yes | — |
 | `devtools({ port, auth })` | `packages/junction/src/plugins/devtools/index.ts` | yes | 1 |
