@@ -74,9 +74,10 @@ fix in `dev` or a row.
   scripts/hooks/pre-push origin x`.
   - 2026-11-01, at `0c34b8c3`: red on `registers` alone, 142s. Lint,
     structure, snapshots and typecheck are green. The four findings:
-    `FJS-D1761`, `FJS-D1762` and `FJS-D1763` are open questions in
-    `ISSUES.md` whose rulings already landed, and `owed-rulings.md`'s
-    `FJS-D1763` entry has a `**Recommend …**` line naming no option letter.
+    `FJS-D1761`, `FJS-D1762` and `FJS-D1763` were issued twice — as
+    question rows in `ISSUES.md` and, the same day, as naming-conformance
+    rulings in `DECISIONS.md` — and `owed-rulings.md`'s advise-rules entry
+    had a `**Recommend …**` line naming no option letter.
 - [ ] 0.2 Full tier in the same worktree, `FJS_CI_REQUIRE_DOCKER=1 node
   scripts/ci.mjs` from `../frontierjs-prepush`, about 30 minutes. A laptop and
   the runner differ in uid and Chrome, so this names what is drift and leaves
@@ -91,9 +92,11 @@ runner.
 Done when: the runner's `ci-last` artifact shows every fast-tier phase ✓ on
 main's tip.
 
-- [ ] 1.1 Clear 0.1's reds in `dev`: close the three question rows citing
-  their rulings (`fli close`), and give the `owed-rulings.md` line its option
-  letter. `fli register:check` prints 0 errors.
+- [x] 1.1 Clear 0.1's reds in `dev`: the three question rows are reissued
+  as `FJS-D1766`–`FJS-D1768` (the rulings keep the ids, being the half other
+  files cite), with their `blocked by` citations and the `owed-rulings.md`
+  and `browser-kit.md` entries moved, and the `Recommend` line names `A`.
+  `fli register:check` prints 0 errors (2026-11-01).
 - [ ] 1.2 Merge `dev` into `main` and push without `--no-verify`. Four minutes
   in the hook; a block names the sha and the detail file.
 - [ ] 1.3 Read the runner: `gh run list --workflow ci.yml -L 1`, then `gh run
