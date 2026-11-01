@@ -97,7 +97,11 @@ no commits since any tag, which the rule above reads as done. So every
 destination in the run is asked first: a package whose `<name>@<version>` tag
 exists and which a destination does not hold is shipped THERE as it stands, the
 bump argument ignored, and the run says so — which is also how a version that
-reached npm and not the release, or the other way round, is completed. A
+reached npm and not the release, or the other way round, is completed. Commits that
+landed since the tag change nothing when the remote holds the tag: the pack is of
+the tag's checkout, and the run says so (`FJS-D1722`). A tag only this clone
+holds was never public, so it is refused (`in-flight-moved`), not shipped
+(`FJS-D1725`). A
 destination that cannot answer refuses the run, because a guess either bumps
 over a version nobody installed or republishes one. This is what `lerna publish
 from-package` and `changeset publish` do — the destination, not a state file,

@@ -229,6 +229,16 @@ main tree at the same sha, and `--allow-dirty` is gone.
 - [x] 1.3 `in-flight-moved` per Q3, for a tag the remote holds. A tag only
   this clone holds was never public, and its sha is usually the one the hook
   refused (0.1), so it is not published from (Q5).
+  - 2026-10-31: `unpublished()` takes `pushed` per member (new
+    `remoteHasTag` in `core/publish-hosts.js`, `git ls-remote --tags origin`,
+    asked only for a tag with commits since it that a destination lacks). A
+    tag the remote holds becomes pending with `fromTag`, and `index.md` says
+    it ships from the tag; 03 already packs the tag's checkout. A tag the
+    remote lacks, or could not answer for, stays `in-flight-moved` with text
+    that says why and names `git tag -d`. Until 2.3 that fix burns the version
+    (the run bumps past it). The stale "npm packs the working directory"
+    comment and refusal text are rewritten. Proved by 4 new `unpublished`
+    unit cases; no live remote run.
 
 ## Phase 2 — Tag last
 
