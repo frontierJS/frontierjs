@@ -196,7 +196,7 @@ if (!flag.private) {
 // Where each tarball goes. Unset is the release host alone (`FJS-D1613`): a
 // public release is `--to npm`, said on purpose, because every npm publish is a
 // browser 2FA round trip and a version promised to the world.
-const { hosts, DEFAULT_TO, packageHostUrl } = await import(new URL('file://' + global.fliRoot + '/core/publish-hosts.js'))
+const { hosts, remoteHasTag, DEFAULT_TO, packageHostUrl } = await import(new URL('file://' + global.fliRoot + '/core/publish-hosts.js'))
 const to   = flag.to ? [...new Set([flag.to].flat())] : DEFAULT_TO
 const repo = $.wsRepo(all)
 
@@ -215,14 +215,21 @@ const onHosts = await Promise.all(packages.map(async ({ dir, pkg }) => {
   const held   = tagged ? await Promise.all(to.map(d => holds[d](pkg.name, pkg.version))) : []
   const missing   = to.filter((d, i) => held[i] === false)
   const published = !tagged ? false : held.some(h => h === null) ? null : missing.length === 0
-  return { name: pkg.name, version: pkg.version, tagged, moved: state.affected, published, missing }
+  // Asked only where the answer matters: a tag with commits since it that a
+  // destination lacks. The remote, not the local tag list, says what is public.
+  const needsRemote = tagged && state.affected && published === false
+  const pushed = needsRemote ? await remoteHasTag(repo ?? dir, releaseTag(pkg.name, pkg.version)) : undefined
+  return { name: pkg.name, version: pkg.version, tagged, moved: state.affected, published, missing, pushed }
 }))
-const { pending, unknown, moved } = unpublished(onHosts)
+const { pending, unknown, moved, fromTag } = unpublished(onHosts)
 
 if (moved.length) {
-  log.error(`  ✗  in-flight-moved: tagged, not shipped to ${to.join(' + ')}, and committed to since: ${moved.join(', ')}`)
-  log.error('      a pack of the working directory would ship commits the tag does not hold')
-  log.error(`      fix: ship each from its tag — git worktree add <dir> <name>@<version>, then ${to.includes('npm') ? 'bun publish in that package' : 'gh release create <name>@<version> <tgz> from a pack of it'}`)
+  const asked = onHosts.filter(m => moved.includes(m.name))
+  log.error(`  ✗  in-flight-moved: tagged, not shipped to ${to.join(' + ')}, committed to since, and the remote does not hold the tag: ${moved.join(', ')}`)
+  if (asked.some(m => m.pushed === null))
+    log.error(`      the remote could not say whether it holds: ${asked.filter(m => m.pushed === null).map(m => releaseTag(m.name, m.version)).join(', ')}`)
+  log.error('      a tag only this clone holds was never public, and its commit is usually the one the pre-push hook refused')
+  log.error('      fix: `git tag -d <name>@<version>` for each, then run again -- the version it spent is skipped and the next bump is cut from HEAD')
   $.config.abort = true
   return
 }
@@ -249,6 +256,9 @@ if (resume) {
   $.config.missing = Object.fromEntries(onHosts.filter(m => pending.includes(m.name)).map(m => [m.name, m.missing]))
   for (const m of onHosts) if (pending.includes(m.name)) log.info(`  ${m.name}@${m.version} is tagged and missing from ${m.missing.join(' + ')}`)
   log.info(`${pending.length} package(s) are versioned and tagged but not shipped everywhere — finishing that release, not bumping`)
+  // The pack is of the tag's checkout (03), so commits since the tag are
+  // not in the tarball. Said, because the working tree is not what ships.
+  for (const m of onHosts) if (fromTag.includes(m.name)) log.info(`  ${m.name}@${m.version} has commits since its tag, which the remote holds -- shipping from the tag, not from HEAD`)
   log.info(`  '${arg.bump}' is ignored: a bump over an unpublished version skips it for good`)
 }
 

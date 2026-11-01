@@ -226,7 +226,7 @@ main tree at the same sha, and `--allow-dirty` is gone.
     both at HEAD. The `in-flight-moved` text still says npm packs the working
     directory; 1.3 rewrites it. `--changed-only` picked by uncommitted files
     that no longer ship, so it is removed too (`FJS-D1728`).
-- [ ] 1.3 `in-flight-moved` per Q3, for a tag the remote holds. A tag only
+- [x] 1.3 `in-flight-moved` per Q3, for a tag the remote holds. A tag only
   this clone holds was never public, and its sha is usually the one the hook
   refused (0.1), so it is not published from (Q5).
 

@@ -305,22 +305,31 @@ export function formatRefusals(refusals = []) {
  * unknown is returned rather than guessed, because a guess of *published* bumps
  * over a version nobody installed and a guess of *not* republishes one.
  *
- * A pending package with commits since its tag is `moved`: npm packs the
- * working directory, so publishing it now ships those commits under a tag
- * whose tree does not hold them — the dirty-tree refusal, one commit later.
+ * A pending package with commits since its tag is packed from the TAG's
+ * checkout, so those commits cannot reach the tarball. Where the remote holds
+ * the tag it is public already and is simply shipped (`fromTag`, `FJS-D1722`).
+ * Where only this clone holds it, it is `moved`: that tag was never public and
+ * its sha is usually the commit the pre-push hook refused, so shipping from it
+ * would publish the bytes the hook turned away (`FJS-D1725`).
  *
- * @param members  [{ name, version, tagged, published, moved }]
+ * @param members  [{ name, version, tagged, published, moved, pushed }] --
+ *                 `pushed` is whether the remote holds the tag: true, false, or
+ *                 NULL where it could not be asked, which reads as not held
  */
 export function unpublished(members = []) {
   const pending = []
   const unknown = []
   const moved   = []
+  const fromTag = []
   for (const m of members) {
     if (!m.tagged) continue
     if (m.published === null || m.published === undefined) unknown.push(m.name)
-    else if (!m.published) (m.moved ? moved : pending).push(m.name)
+    else if (m.published) continue
+    else if (!m.moved) pending.push(m.name)
+    else if (m.pushed === true) { pending.push(m.name); fromTag.push(m.name) }
+    else moved.push(m.name)
   }
-  return { pending, unknown, moved }
+  return { pending, unknown, moved, fromTag }
 }
 
 // ─── selecting packages ──────────────────────────────────────────────────────

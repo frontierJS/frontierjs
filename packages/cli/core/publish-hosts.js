@@ -54,3 +54,13 @@ export function hosts(repo) {
     },
   }
 }
+
+/**
+ * Does the remote hold this tag: true, false, or NULL where it could not
+ * answer. A tag in the local clone proves nothing about what is public, and the
+ * two read as one only until a push is refused.
+ */
+export async function remoteHasTag(repo, tag) {
+  const { err, stdout } = await run('git', ['ls-remote', '--tags', 'origin', `refs/tags/${tag}`], repo)
+  return err ? null : stdout.trim().length > 0
+}
