@@ -12,7 +12,10 @@
 // null is kept apart from false on purpose: a guess of *held* bumps over a
 // version nobody installed and a guess of *not* republishes one.
 
-import { execFile } from 'node:child_process'
+import { execFile, spawnSync } from 'node:child_process'
+import { existsSync, readFileSync, mkdtempSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { tarballStem } from './vendor.js'
 
 export const DESTINATIONS = ['npm', 'tarballs']
@@ -52,5 +55,74 @@ export function hosts(repo) {
       if (err) return /release not found/i.test(stderr) ? false : null
       return stdout.split('\n').includes(`${tarballStem(name)}-${version}.tgz`)
     },
+  }
+}
+
+// ─── a fresh app, from each host the run shipped to ──────────────────────────
+// The release gate cannot grade a scaffold installed from npm or the package
+// host: 01 raises the scaffold pins to versions no host holds until the run
+// publishes them (`FJS-D1726`). So the published framework is graded after the
+// publish, by installing into an app that has none of this tree's links.
+
+// The `--source` a scaffold installs from, per destination.
+export const FRESH_APP_SOURCE = { tarballs: 'url', npm: 'npm' }
+
+/**
+ * The installs a run owes: one per destination it actually shipped to, and only
+ * when a shipped package is one a scaffold pins. A release of `fli` alone
+ * changes nothing a fresh app installs, and installing anyway would grade
+ * versions this run did not touch.
+ *
+ * `uploaded` and `published` are `<name>@<version>` lists (the release host and
+ * npm); `pinned` is the set of package names a scaffold pins.
+ */
+export function freshAppChecks({ uploaded = [], published = [], pinned }) {
+  const names   = (list) => list.map(entry => entry.slice(0, entry.lastIndexOf('@')))
+  const touches = (list) => names(list).some(name => pinned.has(name))
+  const shipped = { tarballs: uploaded, npm: published }
+  return DESTINATIONS
+    .filter(host => touches(shipped[host]))
+    .map(host => ({ host, source: FRESH_APP_SOURCE[host] }))
+}
+
+// `--no-install`: the install is run by installFreshApp so its exit status is
+// read, where `fli new` turns a failed install into a warning and exits 0.
+export const freshAppArgs = (name, from) =>
+  ['new', name, '--yes', '--no-auth', '--no-git', '--no-deploy', '--no-install', '--source', from]
+
+const tail = (text, lines = 12) => text.trim().split('\n').slice(-lines).join('\n')
+
+/**
+ * Scaffold an app from `from` (`url` or `npm`) into a throwaway directory and
+ * `bun install` it with a cache of its own: bun keys a tarball by name and
+ * version, so a warm cache would answer for a host that no longer holds the
+ * file. Every `@frontierjs` dependency the manifest names has to land as a real
+ * directory. Returns `{ ok, step, detail }`; the directory is removed either way.
+ *
+ * `fli` is the path of the cli's `bin/fli.js`.
+ */
+export function installFreshApp({ from, fli, timeoutMs = 300_000, base = tmpdir() }) {
+  const work = mkdtempSync(join(base, 'fjs-fresh-'))
+  const app  = join(work, 'freshapp')
+  const run  = (args, cwd) => spawnSync('bun', args, { cwd, encoding: 'utf8', timeout: timeoutMs })
+  const fail = (step, r) => ({ ok: false, step, detail: tail(`${r.stdout ?? ''}${r.stderr ?? ''}${r.error?.message ?? ''}`) })
+
+  try {
+    const made = run([fli, ...freshAppArgs('freshapp', from)], work)
+    if (made.status !== 0 || !existsSync(app)) return fail('fli new', made)
+
+    const installed = run(['install', '--cache-dir', join(work, '.bun-cache')], app)
+    if (installed.status !== 0) return fail('bun install', installed)
+
+    const manifest = JSON.parse(readFileSync(join(app, 'package.json'), 'utf8'))
+    const wanted   = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies })
+      .filter(name => name.startsWith('@frontierjs/'))
+    if (!wanted.length) return { ok: false, step: 'fli new', detail: 'the scaffold declared no @frontierjs dependency' }
+
+    const absent = wanted.filter(name => !existsSync(join(app, 'node_modules', name, 'package.json')))
+    if (absent.length) return { ok: false, step: 'bun install', detail: `installed without ${absent.join(', ')}` }
+    return { ok: true, step: 'bun install', detail: `${wanted.length} @frontierjs package(s)` }
+  } finally {
+    rmSync(work, { recursive: true, force: true })
   }
 }

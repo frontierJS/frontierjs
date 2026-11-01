@@ -244,9 +244,20 @@ the packages shipped, with no hand step.
   ungraded, with the hook's backstop already turned off.
 - [ ] 2.3 Resume: an untagged bumped version on no host means "tag HEAD after
   CI", with snapshots regenerated at HEAD first.
-- [ ] 2.4 After publish, 04 scaffolds and installs a fresh app from each
+- [x] 2.4 After publish, 04 scaffolds and installs a fresh app from each
   host the run shipped to: `--source url` for `tarballs`, `--source npm` for
   `npm` (Q6).
+  - 2026-10-31: `freshAppChecks` and `installFreshApp` in `core/publish-hosts.js`;
+    04 asks them after the asset check, from `uploaded` and `published`, and
+    only when a shipped package is one a scaffold pins. The install is run by
+    the helper (`fli new --no-install`, then `bun install` on a cache of its
+    own), because `fli new` reports a failed install as a warning and exits 0.
+    `--dry` now runs 04 and names each install. Run against what the hosts hold
+    today: `--source url` installs 9 `@frontierjs` packages in 4.5s; `--source
+    npm` fails at `bun install` on the versions npm lacks (`FJS-3774`), naming
+    them. `--dry --filter @frontierjs/config` prints `--source npm` for `--to
+    npm` and `--source url` for `--to tarballs`. A failed install throws after
+    the asset check, as a bad asset does; that verdict is not ruled.
 - [ ] 2.5 Update `PUBLISH_STEPS` so the GUI's `ci` and `push` steps describe
   the new order.
 
