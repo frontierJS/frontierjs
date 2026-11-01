@@ -10,7 +10,7 @@ how you confirm one.
 
 ## Why this is a rule and not a preference
 
-The 2026-08-01 audit read all twelve packages carefully first. Every serious
+The 2026-08-01 audit read every package carefully first. Every serious
 defect it found was invisible to that reading and obvious the moment something
 was executed:
 
@@ -80,7 +80,7 @@ data-loss classes found in migrations are now permanent tests.
 | "This is implemented" | The export exists | It was called and returned what it promises |
 | "This is enforced" | The check is in the source | An unauthorized attempt was actually refused |
 | "This package works" | README, status doc, version number | Its suite runs green *and* an example boots |
-| "X depends on Y" | `package.json` | A grep for real import sites (deps here are often undeclared, dynamic, or duck-typed) |
+| "X depends on Y" | `package.json` | An `rg` for real import sites (deps here are often undeclared, dynamic, or duck-typed) |
 | "This is fixed" | The code changed | The original reproduction now passes and the suite shows no new failures |
 | "Nothing else broke" | It compiles | Before/after failure sets compared, not just the after |
 

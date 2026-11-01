@@ -364,6 +364,6 @@ here is blocked on: bare-specifier `.lite` imports and the installer.
 ## See also
 
 - `ARCHITECT.md` §2 — the realm nouns these folders take their names from
-- `PHILOSOPHY.md` — the "growth happens outward and traces back" axiom this serves
+- `ARCHITECT.md` — the "growth happens outward and traces back" principle this serves
 - `DECISIONS.md` — where a ruling on `Rig` would land
 - `rig-catalog.md` — which rigs to build, counted from what the stressors rebuilt

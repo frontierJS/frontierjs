@@ -428,11 +428,13 @@ export const DERIVED_NOW_ARG = `'now'/*clock*/`
 // spliced as a literal: a derived field and a column DEFAULT are static SQL and
 // have no parameters to bind it to. `mo` and `yr` are SQLite's calendar months
 // and years, which clamp nothing -- Jan 31 + 1mo is Mar 3.
+/** @type {Record<string, [string, number]>} */
 const SQLITE_MODIFIER = {
   ms: ['seconds', 0.001], s: ['seconds', 1], min: ['minutes', 1], h: ['hours', 1],
   d: ['days', 1], wk: ['days', 7], mo: ['months', 1], yr: ['years', 1],
 }
 
+/** @param {{ sign: number, value: number, unit: string }} shift */
 export function sqliteShiftModifier({ sign, value, unit }) {
   const [word, per] = SQLITE_MODIFIER[unit]
   const amount = +(sign * value * per).toFixed(3)

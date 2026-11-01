@@ -57,8 +57,9 @@ documented.
 
 If a declaration exists, it binds: enforced from the first request, against
 a shipped default, with no further wiring. If it doesn't exist, nothing is
-implied — a model without a gate is open, honestly. The framework never
-activates machinery no declaration asked for.
+implied — a schema that declares no access rule is a plain ORM and stays
+open, honestly (`FJS-D1212`). The framework never activates machinery the
+schema gives no sign of wanting (`FJS-D1747`).
 
 ### Everything is a projection
 *— from Axiom 1*
@@ -165,7 +166,7 @@ added in answer widens the shoulder and records nothing: either the road
 changes, or the reason it does not is written down.
 
 **Batteries vs. smallness.** The core stays readable; the batteries stay
-owned. A battery may be large, but it must be *severable* — one owner, one
+owned. A battery may be large, but it must be *severable* (`FJS-D738`) — one owner, one
 seam, removable without surgery on the core. A battery that grows tendrils
 into the core has become the core, and must be admitted as such or cut
 back.
@@ -235,8 +236,8 @@ more from less knowledge.
 
 ## VII. How the documents govern
 
-*(Axiom 1 pointed at the prose. `VERIFYING.md` records why: every hand-maintained
-restatement drifted, and the documents drifted most.)*
+*(Axiom 1 pointed at the prose. `VERIFYING.md` records why: anything hand-maintained
+drifts, documents included.)*
 
 **Every document is one of four kinds, and the kind decides what a sentence may
 say.**
@@ -253,8 +254,9 @@ say.**
   snapshots. Live facts, each one backed by a generator or a check that fails when
   it stops being true. A README is here rather than one tier down because a
   consumer acts on it without reading anything else.
-  A map sentence beginning *until*, *used to*, *before FJS-* is history that
-  escaped its register.
+  A map sentence that opens *it used to*, *until <date>* or *before FJS-*, or
+  carries a calendar date, is history that escaped its register
+  (`doc-map-narration`).
 - **Assessment** — `IDEAS/` (`review-pros-and-cons.md` among them), a package's design notes. Carries
   a `status` and a date in its frontmatter and is never cited as behavior.
 

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>basecamp: the heart</title>
+<style>
+:root{--paper:#f7f4ec;--ink:#22201c;--mute:#6f6a5f;--box:#fffdf8;--person:#b4561f;--app:#1f6f6a;--world:#5a5fa8}
+@media(prefers-color-scheme:dark){:root{--paper:#1a1916;--ink:#ece7da;--mute:#9a9486;--box:#23211d;--person:#e58b52;--app:#4fc1b8;--world:#9aa0e6}}
+:root[data-t=light]{--paper:#f7f4ec;--ink:#22201c;--mute:#6f6a5f;--box:#fffdf8;--person:#b4561f;--app:#1f6f6a;--world:#5a5fa8}
+:root[data-t=dark]{--paper:#1a1916;--ink:#ece7da;--mute:#9a9486;--box:#23211d;--person:#e58b52;--app:#4fc1b8;--world:#9aa0e6}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1180px;margin:0 auto;padding:28px 24px 20px}
+.eye{font:12px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--mute)}
+h1{font-size:30px;line-height:1.2;margin:6px 0 8px;font-weight:600}
+.lede{margin:0 0 8px;color:var(--mute);max-width:70ch}
+svg{width:100%;height:auto;display:block}
+.b{fill:var(--box);stroke-width:1.6}
+.person .b{stroke:var(--person)}.app .b{stroke:var(--app)}.world .b{stroke:var(--world)}
+.t{font:600 15px system-ui,sans-serif;fill:var(--ink);text-anchor:middle}
+.s{font:12px system-ui,sans-serif;fill:var(--mute);text-anchor:middle}
+.l{font:11px ui-monospace,Menlo,monospace;fill:var(--mute)}
+.a{stroke:var(--ink);stroke-width:1.5;fill:none}
+.g{fill:var(--paper);stroke:var(--person);stroke-width:1.6}
+.notes{margin:8px 0 0;padding:0;list-style:none;color:var(--mute);font-size:14px}
+.notes li{margin:2px 0}
+.leg{font:11px ui-monospace,Menlo,monospace;fill:var(--mute)}
+button{position:fixed;top:12px;right:14px;background:none;border:1px solid var(--mute);color:var(--mute);border-radius:6px;font:11px ui-monospace,monospace;padding:3px 8px;cursor:pointer}
+</style>
+</head>
+<body>
+<button onclick="var r=document.documentElement,d=matchMedia('(prefers-color-scheme: dark)').matches;r.dataset.t=(r.dataset.t||(d?'dark':'light'))=='dark'?'light':'dark'">light / dark</button>
+<main>
+<div class="eye">@frontierjs/basecamp</div>
+<h1>Ship your code to your own servers</h1>
+<p class="lede">A pushed repo goes in; a built release running live on your servers comes out, for the team that runs them.</p>
+<svg viewBox="0 0 1140 420" role="img" aria-label="Code is pushed, built into a release, placed on a server and served as a live site">
+<defs><marker id="h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,1 L9,5 L0,9z" fill="var(--ink)"/></marker></defs>
+
+<!-- people -->
+<g class="person"><title>User: the developer who pushes code</title>
+<rect class="b" x="30" y="20" width="150" height="64" rx="10"/><text class="t" x="105" y="49">Developer</text><text class="s" x="105" y="67">writes the code</text></g>
+<g class="person"><title>User: the operator who can roll back a Deployment</title>
+<rect class="b" x="494" y="20" width="150" height="64" rx="10"/><text class="t" x="569" y="49">Operator</text><text class="s" x="569" y="67">owns the release</text></g>
+
+<!-- main path -->
+<g class="world"><title>App: git repository (hooks/git/{appId}, App.publish)</title>
+<rect class="b" x="30" y="150" width="150" height="80" rx="10"/><text class="t" x="105" y="186">Code</text><text class="s" x="105" y="206">git repo</text></g>
+<g class="app"><title>Deployment: pending→building (build)</title>
+<rect class="b" x="262" y="150" width="150" height="80" rx="10"/><text class="t" x="337" y="186">Build</text><text class="s" x="337" y="206">image from code</text></g>
+<g class="app"><title>Deployment: building→success (succeed); success→rolled_back (rollback)</title>
+<rect class="b" x="494" y="150" width="150" height="80" rx="10"/><text class="t" x="569" y="186">Release</text><text class="s" x="569" y="206">a version that works</text></g>
+<g class="world"><title>Server: provisioned, online (provision, checkIn, AppServer)</title>
+<rect class="b" x="726" y="150" width="150" height="80" rx="10"/><text class="t" x="801" y="186">Server</text><text class="s" x="801" y="206">your own machine</text></g>
+<g class="world"><title>Domain: routes to App (DomainRoute)</title>
+<rect class="b" x="958" y="150" width="150" height="80" rx="10"/><text class="t" x="1033" y="186">Live site</text><text class="s" x="1033" y="206">on your domain</text></g>
+
+<!-- supporting -->
+<g class="app"><title>AppBackup: take (appBackups)</title>
+<rect class="b" x="726" y="310" width="150" height="64" rx="10"/><text class="t" x="801" y="339">Backups</text><text class="s" x="801" y="357">copies of app data</text></g>
+<g class="app"><title>Monitor: markUp / markDown</title>
+<rect class="b" x="958" y="310" width="150" height="64" rx="10"/><text class="t" x="1033" y="339">Monitor</text><text class="s" x="1033" y="357">up or down</text></g>
+
+<!-- arrows -->
+<g><title>App.publish: Developer pushes to the repo</title>
+<path class="a" d="M105 84V148" marker-end="url(#h)"/><text class="l" x="117" y="122">pushes</text></g>
+<g><title>git hook starts a Deployment (build: pending→building)</title>
+<path class="a" d="M182 190H260" marker-end="url(#h)"/><text class="l" x="221" y="180" text-anchor="middle">builds</text></g>
+<g><title>Deployment.succeed: building→success</title>
+<path class="a" d="M414 190H492" marker-end="url(#h)"/><text class="l" x="453" y="180" text-anchor="middle">succeeds</text></g>
+<g><title>Deployment placed on a Server (AppServer)</title>
+<path class="a" d="M646 190H724" marker-end="url(#h)"/><text class="l" x="685" y="180" text-anchor="middle">runs on</text></g>
+<g><title>Domain routes traffic to the App</title>
+<path class="a" d="M878 190H956" marker-end="url(#h)"/><text class="l" x="917" y="180" text-anchor="middle">serves</text></g>
+<g><title>Deployment.rollback: success→rolled_back (sign-off by Operator)</title>
+<path class="a" d="M569 84V148" marker-end="url(#h)"/>
+<rect class="g" x="563" y="104" width="12" height="12" transform="rotate(45 569 110)"/>
+<text class="l" x="590" y="114">rolls back</text></g>
+<g><title>AppBackup.take from the Server's app</title>
+<path class="a" d="M801 232V308" marker-end="url(#h)"/><text class="l" x="813" y="276">backs up</text></g>
+<g><title>Monitor checks the live site</title>
+<path class="a" d="M1033 308V232" marker-end="url(#h)"/><text class="l" x="1045" y="276">watches</text></g>
+
+<!-- legend -->
+<g transform="translate(30,396)">
+<rect x="0" y="-9" width="12" height="12" rx="3" fill="none" stroke="var(--person)" stroke-width="1.6"/><text class="leg" x="18" y="1">a person acts</text>
+<rect x="140" y="-9" width="12" height="12" rx="3" fill="none" stroke="var(--app)" stroke-width="1.6"/><text class="leg" x="158" y="1">the app does it</text>
+<rect x="290" y="-9" width="12" height="12" rx="3" fill="none" stroke="var(--world)" stroke-width="1.6"/><text class="leg" x="308" y="1">the outside world</text>
+<rect class="g" x="456" y="-8" width="9" height="9" transform="rotate(45 460 -3)"/><text class="leg" x="476" y="1">needs sign-off</text>
+</g>
+</svg>
+<ul class="notes">
+<li>The code in the repo is the source of truth; every release is built from it.</li>
+<li>A build can fail or be cancelled, and then nothing goes live.</li>
+<li>The line ends at a live site; backups and monitoring keep it safe and watched.</li>
+</ul>
+</main>
+</body>
+</html>

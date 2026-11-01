@@ -14,6 +14,45 @@ finished.
 
 ---
 
+# Handoff — 2026-10-31 (a 19-package release, then a red CI holds the next one)
+
+> **10-30 shipped 19 packages (cli 0.1.11, litestone 1.1.13, sierra 0.1.10)
+> once `9a5d19c1` cleared the pre-push CI failures; 10-31 was parallel
+> plan-and-audit sessions, committed through `f624e49a`.** The through-line: every
+> release that gets stuck after tagging traces to `FJS-009` (CI has never gone
+> green on a runner), so the publish-order fix is held until it closes.
+
+**The order, and why.** Stuck releases (pre-push CI failing after `ws:pub` had
+already tagged) produced `IDEAS/publish-order.md` and rulings `FJS-D1720`–`D1738`:
+full `ci` gates the tag, in a worktree of the release sha. 1.1–1.2 are on dev;
+1.3 and Phase 2 sit on branch `publish-order-integ`, held because a gate that
+cannot pass would block every release. A beta-readiness pass the same day named
+the same blocker first, ahead of the deploy-for-outsiders gaps. Alongside: a
+per-call perf audit (`docs/perf-audit-2026-10-31.md`, `FJS-3742`–`3762`,
+ruling `FJS-D1713`) closed every row fixed or refuted; app archives closed
+(`FJS-D1735`, `FJS-3793`); the Claude Code Workbench tab reached Phase 4
+(`FJS-D1708`–`D1714`, `D1733`, `D1734`); the clinical, expenses and pulse
+stressors ran to their briefs (`FJS-D1698`–`D1700`) and seven more Tier 1
+stressors got a `PLAN.md` each. ALONGSIDE.md and `alongside/` were deleted.
+
+**Where each thread picks up** — run `fli plan <file>` for the box:
+
+- `FJS-009`, then merge `publish-order-integ` and run `IDEAS/publish-order.md`
+  Phase 2's scratch replay.
+- `IDEAS/claude-code.md` Phase 5, after the owner has used Phases 1–4.
+- Framework builds the three stressors owe: `FJS-3708` (`D1698`),
+  `@stamps(by:)` (`D1699`), the `@@anonymous` read refusal (`D1700`).
+- Stressors #29/30/34/35/38/39/40 in `fjs-prototypes/`: Phase 0, each Qn's
+  recommendation to the owner before Phase 1.
+- Frontier Town (`fli ws:world`) lives on branch `world`, plan and all, in the
+  `frontierjs-world` worktree; it waits on the owner's review and merge call.
+
+**What is NOT proved or still owed.** CI is red at a clean sha (`FJS-009`).
+`example verify:migrate` did not run after the Workbench
+migrations. Basecamp's dev db still needs the owner's `db:reset`.
+
+---
+
 # Handoff — 2026-10-29 (seventeen parallel sessions closed; where each thread stopped)
 
 > **A day of parallel sessions ended with the 21-package release, Outpost
@@ -96,66 +135,3 @@ vendor Basecamp should recommend as the default destination was never
 researched; B2 is only the first one tested. The cli suite's four reds are
 `FJS-3479`–`FJS-3481`, already filed. Nothing from 1.5 on is committed, and the
 owner's dev `basecamp.db` still needs their `db:reset`.
-
----
-
-# Handoff — 2026-10-23 (backups leave the box, on the day three real boxes enrolled)
-
-> **Started from `IDEAS/backups.md` with six questions open and nothing past a
-> local `backup:run`, and ended with Phase 1 closed: a hub archive and an app
-> archive each land in a bucket by a pre-signed PUT, retention prunes both
-> sides, a refused upload keeps the file and says so, and the operator's recipe
-> exists.** The through-line: every question was ruled before its step was
-> built, and every step reused a door that already existed — `backup:run`,
-> Outpost's `/backup`, `NotificationChannel`'s credential shape — so the day
-> was eleven steps rather than a design.
-
-**What is recorded where.** The six rulings are `FJS-D1485`–`FJS-D1488`,
-`FJS-D1490` (Q5: basecamp LIFTS `conduit-s3` into `providers/storage/`, since
-`FJS-D1185` rules a `link:` on the sibling out) and `FJS-D1491` (Q6:
-`BackupDestination` is workspace-owned). Five more fell out of building:
-`FJS-D1493` (a rescanned archive is `found`), `FJS-D1494` (one delete helper),
-`FJS-D1495` (`AppBackup.kind` gains `release`), `FJS-D1496` (the pre-swap
-*Back up volume* step is fatal with no opt-out) and `FJS-D1497` (a copy of
-`ENCRYPTION_KEY` off the box is a person's attestation, graded by
-`hub.key-escrowed`). The recipe is `packages/basecamp/docs/BACKUPS.md`;
-`packages/basecamp/PROJECT_STATE.md` § Backups leave the box is the build
-record. Steps 1.1–1.4 are committed (`038bce79`); 1.5–1.9 are in the
-working tree.
-
-**The same day, by hand, on real machines.** `fli basecamp:create` ran three
-times (ops, ops2, ops3) and each fresh Ubuntu 24.04 box found a failure the
-stand-ins could not: the security pass's systemd re-exec raced the Docker
-install (`FJS-3469`), the upgraded openssh left `/run/sshd` gone so `sshd -t`
-refused (`FJS-3473`), a box enrolled unpatched (`FJS-3462`), a download-only
-apt pass read as an upgrade (`FJS-3463`), the sandbox score and the static
-origin's bind (`FJS-3464`, `FJS-3465`), every app as host uid 1000
-(`FJS-3474`, ruled `FJS-D1484`: SSH and Outpost stay root, the isolation owed
-is a uid per app), and a rollback that lost the secrets directory
-(`FJS-3476`). All closed the same day. `FJS-D1481`–`FJS-D1483` settled how a
-static App built on a laptop reaches a box. Hetzner as a flag got its Phase 0
-and 1 on stand-ins (`FJS-D1478`–`FJS-D1480`); 2.1, a real token, is the
-owner's.
-
-**Also ruled that day.** `FJS-D1492`: local speech-to-text is Parakeet through
-sherpa-onnx, not whisper.cpp, off a 45-minute call measured on CPU (RTF 0.115
-against 0.65); the plan is `IDEAS/transcription.md`, Q1–Q3 open. The Frontier
-network's Haven side closed: a login is the chain (`FJS-D1476`), and a Haven
-takes nothing else (`FJS-D1477`).
-
-**The night pass, 2026-10-23/24.** `fli done` on the tree named two rows with
-an invalid status and a tracked build cache; `fli close` moved `FJS-3469` and
-`FJS-3473`, the cache is now ignored. The drives it named ran: `verify:provision`
-243/243, `verify:outpost` 48/48, `verify:pages` 24/24, outpost `verify:docker`
-54/54 — the last only ALONE, since two drives sharing Outpost's port read as 32
-failures. Seven tests red on COMMITTED main were filed rather than fixed:
-`FJS-3479` (example/desktop drifted from `make:desktop`), `FJS-3480` (`fli ask`
-at 21 of 24), `FJS-3481` (a verb-ended term candidate), `FJS-3482` (sierra's
-`composed: true` warning never fires); all four deterministic and dated to the
-10-21/22 renames.
-
-**What is NOT proved.** `verify:screens` stops at the path-route check, which
-is `FJS-3477`, filed that morning and open. The hand run against a real B2
-bucket that Phase 1's done-when asks for has not happened. The owner's dev
-`basecamp.db` predates the new tables and needs a reset. Nothing after
-`038bce79` is committed on the date above.

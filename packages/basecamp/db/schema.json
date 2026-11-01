@@ -1993,8 +1993,12 @@
           "x-transforms": [
             "trim"
           ],
-          "minLength": 1,
-          "maxLength": 200
+          "pattern": "^(?=.{1,253}$)[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "description": "A label people pick a secret from, never an environment variable key: a secret is referenced by id (`secret:<id>#field`), and the env key, if one is ever needed, belongs on the binding. Shaped as a DNS-1123 subdomain (the Kubernetes Secret-name rule), so what one screen writes another can quote in a path, a flag or a hostname without escaping.",
+          "x-messages": {
+            "regex": "A secret's name is lowercase letters, digits and dashes — like cloudflare-prod",
+            "pattern": "A secret's name is lowercase letters, digits and dashes — like cloudflare-prod"
+          }
         },
         "kind": {
           "$ref": "#/$defs/SecretKind",
@@ -2677,6 +2681,254 @@
       ],
       "x-gate": {
         "read": 8,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      }
+    },
+    "ClaudeTranscript": {
+      "type": "object",
+      "title": "ClaudeTranscript",
+      "x-litestone-kind": "model",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subagent": {
+          "type": "boolean",
+          "default": false
+        },
+        "agent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "headless": {
+          "type": "boolean",
+          "default": false
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "firstPrompt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "offset": {
+          "type": "integer",
+          "default": 0
+        },
+        "turnSkills": {
+          "type": "string",
+          "default": ""
+        },
+        "size": {
+          "type": "integer",
+          "default": 0
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gone": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sessionId"
+      ],
+      "x-identify": [
+        "path"
+      ],
+      "x-gate": {
+        "read": 5,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      }
+    },
+    "ClaudeMessage": {
+      "type": "object",
+      "title": "ClaudeMessage",
+      "x-litestone-kind": "model",
+      "properties": {
+        "messageId": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "input": {
+          "type": "integer"
+        },
+        "cacheWrite": {
+          "type": "integer"
+        },
+        "cacheWrite1h": {
+          "type": "integer",
+          "default": 0
+        },
+        "cacheRead": {
+          "type": "integer"
+        },
+        "output": {
+          "type": "integer"
+        },
+        "tools": {
+          "type": "string",
+          "default": ""
+        },
+        "skills": {
+          "type": "string",
+          "default": ""
+        },
+        "subagent": {
+          "type": "boolean",
+          "default": false
+        },
+        "agent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "messageId",
+        "sessionId",
+        "model",
+        "at",
+        "input",
+        "cacheWrite",
+        "cacheRead",
+        "output"
+      ],
+      "x-identify": [
+        "messageId"
+      ],
+      "x-gate": {
+        "read": 5,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      }
+    },
+    "ClaudeWrite": {
+      "type": "object",
+      "title": "ClaudeWrite",
+      "x-litestone-kind": "model",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "project": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scope": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "keys": {
+          "type": "string",
+          "default": ""
+        },
+        "before": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "password"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-aggregatable": "encrypted",
+          "x-sortable": "encrypted",
+          "x-filterable": "encrypted"
+        },
+        "digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "undoneAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "target"
+      ],
+      "x-gate": {
+        "read": 5,
         "create": 8,
         "update": 8,
         "delete": 8
@@ -9413,6 +9665,26 @@
       "additionalProperties": false,
       "required": [
         "appId"
+      ]
+    },
+    "AppBackupUpload": {
+      "type": "object",
+      "title": "AppBackupUpload",
+      "x-litestone-kind": "type",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "appId",
+        "name"
       ]
     },
     "FlagOverrideSet": {

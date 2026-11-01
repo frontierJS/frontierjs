@@ -17,7 +17,7 @@ flags:
     defaultValue: docs/diagram.html
   notes:
     type: string
-    description: "The app's description of itself, for its words and its purpose ('' for none)"
+    description: "The app's description of itself, for its words and its purpose ('' for none; the default is skipped when absent)"
     defaultValue: AGENTS.project.md
   prompt:
     type: string
@@ -72,7 +72,7 @@ Claude. Needs the `claude` CLI on `PATH` and signed in.
 
 ```js
 const { readAppAtlas } = await import(resolve(global.fliRoot, 'core/app-entry.js'))
-const { DIAGRAM_PROMPT, diagramDigest, diagramPrompt, surfacePages, readNotes, pageOf, restarted } = await import(resolve(global.fliRoot, 'core/diagram.js'))
+const { APP_NOTES, DIAGRAM_PROMPT, diagramDigest, diagramPrompt, surfacePages, readNotes, pageOf, restarted } = await import(resolve(global.fliRoot, 'core/diagram.js'))
 
 const root = $.paths.root
 if (!existsSync(resolve($.paths.db, 'schema.lite'))) {
@@ -83,7 +83,7 @@ if (!existsSync(resolve($.paths.db, 'schema.lite'))) {
 
 const promptFile = diagramPrompt(root, flag.prompt || null)
 if (!existsSync(promptFile)) { log.error(`no prompt at ${promptFile}`); process.exitCode = 1; return }
-if (flag.notes && !existsSync(resolve(root, flag.notes))) { log.error(`no notes file at ${flag.notes}`); process.exitCode = 1; return }
+if (flag.notes && flag.notes !== APP_NOTES && !existsSync(resolve(root, flag.notes))) { log.error(`no notes file at ${flag.notes}`); process.exitCode = 1; return }
 
 const { map, error: mapError } = await buildProjectMap($, { atlas: false, log: null })
 if (mapError) { log.error(mapError); process.exitCode = 1; return }

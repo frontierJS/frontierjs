@@ -25,7 +25,7 @@ Two further realms describe what an application *becomes*:
 | Realm      | Primary Noun           | Concern                            |
 | ---------- | ---------------------- | ---------------------------------- |
 | Deployment | **Release**            | How the application ships and runs |
-| Testing    | **Suite / Test**       | How the application is verified    |
+| Testing    | **Suite / Drive**      | How the application is verified    |
 
 A developer who understands Model, Service, Resource should be able to predict
 how any feature works before reading its docs. Keeping that model small is the
@@ -87,6 +87,8 @@ Use the left column. Never the right.
 
 Clarifications settled by the code:
 
+- **A Kit is a package of parts one realm composes; a Rig is installed across
+  realms** (`FJS-D1257`). The Rig row's refusal of *kit* is for that cross-realm sense.
 - **Signal is not Event, and both are legal words.** A **Signal** is Mesa's
   reactive cell; an **Event** is Junction's announcement. Never call an Event a
   signal. A Signal never crosses a Boundary; an Event exists only to
@@ -239,7 +241,7 @@ Standing rules the framework is designed against.
    relations, access, lifecycle, even storage topology. What it never encodes:
    UI behavior and business logic. Growth happens outward; it all traces back.
    *Named exemption:* framework-owned storage (job queues, outbound-target
-   registries, session stores) deliberately lives outside the schema — that gap
+   registries and receipts) deliberately lives outside the schema — that gap
    is intentional, not drift.
 2. **Boundaries are checkpoints, not walls.** A realm affects another realm
    through hooks at the boundary, never by reaching into its internals — and a
@@ -257,8 +259,10 @@ Standing rules the framework is designed against.
 6. **Access is declared, not programed — and declaration enforces.** Gates in
    the schema, resolved against the 0–9 gate ladder, enforced from the
    first request with no further wiring; a shipped default resolver, overridable.
-   The converse binds too: a model with no gate is open, honestly. `asSystem()`
-   is the audited bypass.
+   The converse binds too: a schema that declares no access rule is a plain
+   ORM and stays open, honestly; once it declares one, a model with no gate and
+   no policy is system-only and `@@gate(0)` says public (`FJS-D1206`,
+   `FJS-D1212`). `asSystem()` is the audited bypass.
 7. **Real-time is core.** Every fact has one origin; change flows outward —
    origin → event → channel → binding. Any parallel sync mechanism or second
    emitter for the same fact is a smell. A write that went through no service
@@ -296,15 +300,15 @@ this document's.
 | 2 — Database                     | Schema, migrations, ORM, gates                   | **Litestone**                           |
 | 3 — Configuration & Secrets      | Env config, secrets, runtime context             | per-tool `config/`, `junction.config.js` |
 | 4 — Integrations                 | Third-party connections                          | **Conduit**                             |
-| 5 — Automation & Orchestration   | Jobs, queues, schedules, workflows               | **Caravan** · Orion (V2, `FJS-D14`)     |
+| 5 — Automation & Orchestration   | Jobs, queues, schedules, workflows               | **Caravan** · **Orion**                  |
 | 6 — Authentication               | Identity, sessions, trust resolution             | `@frontierjs/auth`                      |
 | 7 — Observability & Operations   | Monitoring, logging, fleet                       | Basecamp · Outpost · junction telemetry/health/devtools |
 | 8 — Application & Infrastructure | The application itself; contains the five realms | **Junction** (API) · **Sierra** (UI meta) · **Mesa** (UI substrate, leaf) |
 
 Placements outside the table: **toolbelt** (substrate, `FJS-D26`), **testing**
-(the Testing realm's API tier), **mcp** (the API realm's agent surface), **ui** and
-**email-kit** (UI), **jetty** (a browser-extension
-application *container* — UI realm plus its own build/deploy surface),
+(the Testing realm's API tier), **mcp** (the API realm's agent surface), **ui**,
+**email-kit**, **print-kit** and **site-kit** (UI kits, `FJS-D1257`), **jetty** (the
+`extension/` Surface's container — UI realm plus its own build and deploy),
 **css** (presentation — the UI realm's second concern), and
 **auth**, **notifications** and **orion** as rigs — a schema fragment, a
 service whose plugin attaches it, and a resource, installed by part.
@@ -323,32 +327,4 @@ what is here is a question the mental model has not answered.
 - **The Deployment realm's Audience.** Release, Pivot and Environment are ruled
   (`FJS-D636`); Audience is proposed (`IDEAS/release-transitions.md`) and the
   word already runs in four other senses (§2).
-- **Auth's routes.** `/auth/*` establishes a session and deliberately bypasses
-  the Service abstraction — login cannot be gated by login (`FJS-D20`). Whether
-  a second provider inherits that shape unchanged is not yet asked.
 
----
-
-## 6. Auditing this repo
-
-The method that produced `IDEAS/review-coherence.md`, kept for reuse. One explorer per
-package, this document as shared context, each returning the same shape:
-
-```
-package / realm+domain / one-liner (in the vocabulary)
-declares:  what the developer writes        realizes: what the framework produces
-exports:   public surface     deps in/out (verified by grep, not inferred)
-bridges:   NAMED handoff points to other realms, with files
-state:     shipped | working | stub | aspirational — with evidence
-drift:     divergence from this doc, each with a verdict —
-           code-wrong | model-wrong | intentional — argued, cited
-friction:  where this doc made the package hard to describe
-proposal:  concrete changes to terms/boundaries — the doc is the thing under test
-```
-
-Then answer, across all reports: Is any term doing two jobs? Is any real
-concept missing a term? Do three nouns still predict the system? Where does
-the domain map fail? Does declaration → realization hold? Which principles
-does the code contradict — and is the code right? Disagree in specifics,
-propose rather than diagnose, and rank by cost of being wrong. Deferential
-agreement is the one useless outcome.

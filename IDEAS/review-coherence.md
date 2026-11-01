@@ -8,9 +8,8 @@ dated: 2026-07-31
 
 **Status: ARGUED, NOT ADOPTED.** Dated 2026-07-31/08-01 and unchanged since —
 this is the synthesis half of the twelve-package audit, kept verbatim. Twelve
-parallel explorers, each given `ARCHITECT.md` §6 verbatim, each returning the
-same template; synthesized per §7. The method is in `ARCHITECT.md` §6 and is
-reusable; this is what it found.
+parallel explorers, each returning the same per-package template; this is
+what it found.
 
 **It is the argument behind [`FJS-D06`](../ISSUES.md), which is still open.**
 Three neighbouring questions were ruled 2026-08-06 and are no longer part of

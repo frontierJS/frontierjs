@@ -262,8 +262,7 @@ turnstile · twilio · cloudflare · digitalocean + hetzner · postmark · slack
 plausible, shipping, tax · anthropic + openai · google-maps · oidc · gmail ·
 push · then the ones with something still in front of them — telnyx
 (`FJS-2571`), s3 (docker). Promotion adds each package's row to the root `CLAUDE.md`
-Packages table with ring `batteries`. `alongside/conduit-connectors.md` is the
-lane.
+Packages table with ring `batteries`.
 
 ## Basecamp onto conduit-digitalocean + conduit-hetzner
 

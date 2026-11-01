@@ -10,7 +10,9 @@
     { "include": "#database" },
     { "include": "#enum" },
     { "include": "#function" },
-    { "include": "#model" }
+    { "include": "#model" },
+    { "include": "#settings-block" },
+    { "include": "#line-declaration" }
   ],
   "repository": {
 
@@ -105,8 +107,9 @@
     },
 
     "model": {
+      "comment": "Every declaration whose body is fields and attributes. Only model was listed, so a type, view, trait or extend rendered as plain text from its keyword to its closing brace.",
       "name": "meta.model.litestone",
-      "begin": "\\b(model)\\s+(\\w+)\\s*\\{",
+      "begin": "\\b(model|view|trait|type|extend\\s+model)\\s+(\\w+)\\s*\\{",
       "end": "\\}",
       "beginCaptures": {
         "1": { "name": "keyword.declaration.model.litestone" },
@@ -119,6 +122,38 @@
         { "include": "#string" },
         { "include": "#field" }
       ]
+    },
+
+    "settings-block": {
+      "comment": "A block of key-value settings: tenancy has no name, a valueset has one.",
+      "name": "meta.settings.litestone",
+      "begin": "\\b(tenancy|valueset)(?:\\s+(\\w+))?\\s*\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "1": { "name": "keyword.declaration.settings.litestone" },
+        "2": { "name": "entity.name.type.settings.litestone" }
+      },
+      "patterns": [
+        { "include": "#doc-comment" },
+        { "include": "#comments" },
+        { "include": "#string" },
+        {
+          "match": "^\\s*(\\w+)\\b",
+          "captures": {
+            "1": { "name": "support.type.property-name.litestone" }
+          }
+        }
+      ]
+    },
+
+    "line-declaration": {
+      "comment": "Declarations that end at the line: claim <name> [bearer | from …] and scope <name>(fields).",
+      "match": "^\\s*(claim|scope)\\s+(\\w+)(?:\\s+(bearer|from)\\b)?",
+      "captures": {
+        "1": { "name": "keyword.declaration.litestone" },
+        "2": { "name": "entity.name.type.litestone" },
+        "3": { "name": "keyword.other.litestone" }
+      }
     },
 
     "field": {

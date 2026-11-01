@@ -298,6 +298,25 @@ async function main() {
       field && field.scopes.includes('variable.other.field.litestone'),
       field ? field.scopes.join(' ') : 'no token')
   }
+  // The top-level rules were a list too, and it held five of the catalog's
+  // thirteen words, so every type, view, trait and extend rendered as plain
+  // text. The catalog's own example of each word is the corpus. Paired with a
+  // field whose NAME is one of those words, which must stay a field.
+  {
+    const { TOP_LEVEL } = require(path.join(ROOT, 'out', 'litestone', 'catalog-bundle.js'))
+    for (const { word, example } of TOP_LEVEL) {
+      const tk = tokenize(lite, example)
+      ok(`${word} opens with a keyword`,
+        scopesOf(tk, word).some(s => s.startsWith('keyword')),
+        scopesOf(tk, word).join(' '))
+    }
+    const tk = tokenize(lite, 'model Change {\n  type String\n  view Int\n}\n')
+    for (const word of ['type', 'view']) {
+      ok(`a field named ${word} is a field`,
+        scopesOf(tk, word).includes('variable.other.field.litestone'),
+        scopesOf(tk, word).join(' '))
+    }
+  }
   {
     const tk = tokenize(lite, 'function discounted(price: Integer) {\n  @@expr("{price} * 2")\n}\n')
     ok('@@expr still opens its string',

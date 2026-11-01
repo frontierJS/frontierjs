@@ -382,7 +382,7 @@ title: DNS & edge
           {:else}
             <!-- Status only when not active: twenty identical "active" pills
                  hid the one zone that was pending. -->
-            <ul class="zone-list" id="edge-zones">
+            <ul class="grid zone-list" style="--grid-min: 14rem" id="edge-zones">
               {#each account.zones as z}
                 <li>
                   <Button
@@ -515,12 +515,10 @@ title: DNS & edge
 
 <style>
   .zone-list {
-    display:               grid;
-    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
-    gap:                   var(--space-2xs) var(--space-sm);
-    margin:                0;
-    padding:               0;
-    list-style:            none;
+    gap:        var(--space-2xs) var(--space-sm);
+    margin:     0;
+    padding:    0;
+    list-style: none;
   }
   .zone-list :global(.btn) {
     inline-size:     100%;

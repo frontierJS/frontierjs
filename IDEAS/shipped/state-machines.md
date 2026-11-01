@@ -74,7 +74,7 @@ logic in the component.
 ## Why this fits FJS specifically
 
 - It is a declaration that radiates into all three realms, which is the stated bar
-  for the seed (`PHILOSOPHY.md`, "growth happens outward and traces back"). A rule
+  for the seed (`ARCHITECT.md`, "growth happens outward and traces back"). A rule
   that only reached the ORM would not qualify — that is the Wasp lesson recorded in
   `website/projects.json`.
 - It composes with the gate rather than competing with it: `@gate(5)` on a single

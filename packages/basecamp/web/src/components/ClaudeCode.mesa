@@ -882,7 +882,6 @@
   :global(.tablist.claude-sections) { flex-wrap: wrap; overflow: visible; mask-image: none; animation: none; }
   .claude-head { justify-content: space-between; align-items: flex-start; }
   .wrap { overflow-wrap: anywhere; }
-  .facts > dd { overflow-wrap: anywhere; }
   .plain { list-style: none; padding: 0; margin: 0; }
   .detail-text { overflow-wrap: anywhere; }
   .clip { display: inline-block; max-inline-size: var(--measure, 64ch); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
