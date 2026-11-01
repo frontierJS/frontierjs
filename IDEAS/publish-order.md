@@ -283,7 +283,9 @@ the packages shipped, with no hand step.
     answered it lacks, on no host, is deleted by name and sha and resumes this
     way; an unanswered remote still refuses. A shipped-tag release and an
     untagged bump in one run is refused. Proved by 3 `untaggedBumps` unit
-    cases and `--dry` compile; the replay of 0.1's scratch run is not done.
+    cases and `--dry` compile. 2026-11-01: the replay is `green-and-ship.md`
+    3.2 — `~/fjs-pub-replay/replay.sh`, red at the gate with no tag, then
+    tagged on the fixed HEAD and shipped.
 - [x] 2.4 After publish, 04 scaffolds and installs a fresh app from each
   host the run shipped to: `--source url` for `tarballs`, `--source npm` for
   `npm` (Q6).

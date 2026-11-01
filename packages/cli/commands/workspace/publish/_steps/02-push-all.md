@@ -30,10 +30,24 @@ for (const { cwd, sha, tags } of graded) {
 // name. `git push origin HEAD --tags` would ship a commit nobody graded and
 // every stale local tag with it. `--no-verify` is the point of the order: CI
 // already passed on exactly this sha, so the hook's fast tier re-proves less.
-const pushArgs = ({ cwd, sha, tags }) => {
+//
+// A release in flight is finished from its tag's sha, which the branch has
+// moved past, and the remote refuses that sha as the branch tip (`FJS-3827`).
+// The branch is pushed only where the remote's tip is behind the graded sha;
+// the tags go by name either way, and one the remote holds is a no-op.
+const forwards = (cwd, sha) => {
   const branch = git(cwd, 'rev-parse --abbrev-ref HEAD')
   if (branch === 'HEAD') throw new Error(`${cwd} is on a detached HEAD -- there is no branch to push ${sha.slice(0, 12)} to`)
-  return `push --no-verify origin ${sha}:refs/heads/${branch} ${tags.map(t => JSON.stringify(`refs/tags/${t}`)).join(' ')}`
+  let tip = ''
+  // A workspace with no remote yet, which a --dry run in a fresh tree is.
+  try { tip = git(cwd, `ls-remote origin ${JSON.stringify(`refs/heads/${branch}`)}`).split(/\s/)[0] } catch {}
+  if (!tip) return branch
+  try { git(cwd, `merge-base --is-ancestor ${tip} ${sha}`); return branch } catch { return null }
+}
+const pushArgs = ({ cwd, sha, tags }) => {
+  const branch = forwards(cwd, sha)
+  const refs   = [...(branch ? [`${sha}:refs/heads/${branch}`] : []), ...tags.map(t => JSON.stringify(`refs/tags/${t}`))]
+  return `push --no-verify origin ${refs.join(' ')}`
 }
 
 if (flag.dry) {

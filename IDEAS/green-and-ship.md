@@ -77,6 +77,24 @@ This paper is the order between them, and the release at the end.
   **Recommend A** — it is one package of the run 4.2 makes anyway, and it ends
   with no allowance to retire.
 
+- **Q4 — Finishing a release in flight, after the branch moved on.** 4.1's
+  dry run shows every public package finishing from its 2026-10-31 tag, and
+  02 pushing that tag's sha to the branch head (`FJS-3827`). **A** — 02 pushes
+  the branch ref only when the graded sha is this run's HEAD, and for a tag
+  the remote already holds pushes nothing; then 4.2 ships the 19 as tagged,
+  from `347c0a3e` and its neighbors, which no runner graded. **B** — delete
+  the 19 unshipped-on-npm tags by name (they are on the tarball host only)
+  and let 4.2 bump every package fresh under the gate, one graded sha for
+  all. **Recommend B** — Q2 wanted "nothing red is promoted", and A promotes
+  tags on an ungraded sha; B costs one patch number per package and the
+  tarball host's 2026-10-31 assets stay as history.
+  `decision-rules` (2026-11-01) agrees, with conditions: B overrides
+  `FJS-D1722` (an unshipped pushed tag is finished from its worktree) and
+  `FJS-D1725` (a version on one host keeps its tag), so its ruling names
+  both and deletes by name and sha, only tags absent from npm; and under B,
+  Q3 is B too — the Outpost pin moves to the version 4.2 mints. The push
+  fix itself (`FJS-3827`) is independent of the answer and lands now.
+
 ## Phase 0 — Know what dev is
 
 Goal: a verdict on `dev` as committed, fast and full, with every red named.
@@ -193,15 +211,33 @@ Goal: `publish-order` 1.3 and Phase 2 on `dev`, proved in scratch.
 Done when: `publish-order` Phase 2's own done-when — the 0.1 scratch replay
 ends with the tag on the fixed HEAD and the packages shipped, no hand step.
 
-- [ ] 3.1 Merge `publish-order-integ` into `dev`; the one conflict is
+- [x] 3.1 Merge `publish-order-integ` into `dev`; the one conflict is
   `IDEAS/publish-order.md`. Then `cd packages/cli && bun run test` (583 were
   green on the branch) and a merged `fli ws:pub --dry` walking all six steps.
-- [ ] 3.2 The 0.1 replay: a one-package bun workspace in a scratch directory
+  - 2026-11-01: merged as `fb515f22` with no conflict — git folded the two
+    sides of `publish-order.md` itself. The cli suite is green on the merge
+    (4214 pass, 150 files, 147s) and `fli ws:pub --dry` walks 00 → 01 →
+    01b → 02 → 03 → 04, packing all twelve at `fb515f22`.
+- [x] 3.2 The 0.1 replay: a one-package bun workspace in a scratch directory
   under `$HOME`, a bare remote, a stub `npm` on `PATH`, a hook that fails
   once. Never this tree, never `git stash`.
-- [ ] 3.3 Tick 1.3 and 2.1–2.5 in `publish-order.md`. Its Phases 3 and 4 —
+  - 2026-11-01: `~/fjs-pub-replay/replay.sh`, rerunnable from scratch. Run 1
+    commits `alpha@0.1.1`, goes red at the gate (`scripts/ci.mjs` exits 1
+    while `BROKEN` exists), and tags nothing — `git tag` holds the seed
+    alone, the stub published nothing. Run 2, after the fix commit, takes
+    the untagged-bump path, grades HEAD in a checkout, tags `alpha@0.1.1`
+    on that HEAD (`rev-parse` of both agree), pushes branch and tag to the
+    bare remote and publishes once (`bun publish`, which 03 calls — an
+    `npm` stub alone would not have caught it). Verified by a second run
+    from the main thread. Two notes: a first release (no tag at all) that
+    goes red at the gate has no resume path, since `untaggedBumps` needs a
+    last tag — the replay seeds `alpha@0.1.0`; and 01 prints `committed 1
+    release commit(s)` on the resume when it committed nothing.
+- [x] 3.3 Tick 1.3 and 2.1–2.5 in `publish-order.md`. Its Phases 3 and 4 —
   `--status` and the GUI panel — belong to that plan's session and are not a
   release's wait.
+  - 2026-11-01: the branch had ticked them; 2.3's open note (the replay) now
+    cites 3.2.
 
 ## Phase 4 — Ship the latest of every package
 
@@ -210,9 +246,19 @@ Done when: `fli ws:pub --dry --to npm --to tarballs` names nothing missing and
 nothing to bump, and 04's fresh app installs from npm and from the package
 host.
 
-- [ ] 4.1 `fli ws:pub patch --to npm --to tarballs --dry` from `dev` at the
+- [x] 4.1 `fli ws:pub patch --to npm --to tarballs --dry` from `dev` at the
   Phase 2 sha: the picture per Q2 — which packages bump, which are finished on
   npm from their tag's worktree, and what 01b would grade.
+  - 2026-11-01, at `fb515f22`: nothing bumps. All 19 public packages are
+    "tagged and missing from npm", so the run finishes the 2026-10-31
+    release — `patch` is ignored, each is packed from its tag's worktree,
+    and 01b prints `CI: skipped — these tags were written after a green
+    run`, a credit read from this laptop's `.cache/ci-runs`, not a runner's.
+    Q2's premise was wrong: a package with commits since its tag is NOT
+    bumped while its tag is unshipped somewhere. Two findings, Q4 and
+    `FJS-3827`: 02 would push each tag's sha to `refs/heads/dev`, which git
+    rejects as non-fast-forward (`--dry-run` says *tip is behind*), so the
+    real run stops in 02 before 03 ships anything.
 - [ ] 4.2 The real run, `--interactive` for npm's 2FA. Under the landed gate:
   01 bumps and commits, 01b runs the full tier on that sha (about 30
   minutes), the tag is written on green, the graded sha and its tags are
