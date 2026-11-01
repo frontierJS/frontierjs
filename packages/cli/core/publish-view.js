@@ -49,10 +49,10 @@ export const PUBLISH_STAGES = [
 export const PUBLISH_STEPS = [
   { id: 'commit',   stage: 'ready',   gate: 'tree',
     title: 'commit what you mean to publish',
-    why:   'the pack reads the working directory, not the commit — ws:pub refuses a package with uncommitted files' },
+    why:   'the pack is of a checkout of the release commit, not the working directory — uncommitted work does not ship, and ws:pub warns when a package it releases has some' },
   { id: 'ci',       stage: 'ready',   gate: 'ci',
     title: 'a full CI run passes',
-    why:   'the release commit is pushed through the pre-push hook before anything ships, and a refused push publishes nothing' },
+    why:   'ws:pub runs the full CI in a checkout of the release commit and tags it only when green — a red run leaves no tag, and the next run keeps the commit and tags it once a fix is green' },
   { id: 'snapshots', stage: 'ready',  argv: ['test:snapshots'], fix: ['test:snapshots', '--fix'],
     title: 'every committed snapshot matches its source',
     why:   'exports.snapshot.md is what the hosts will be holding — fix reruns each generator; read the diff, then commit' },
@@ -74,9 +74,9 @@ export const PUBLISH_STEPS = [
     why:   'ws:pub --dry: every version it would write and every reason it would refuse, spending nothing' },
 
   { id: 'publish',  stage: 'publish', run: 'pub',
-    confirm: 'writes the versions, commits, tags and pushes them, then ships each where the destinations say',
+    confirm: 'writes the versions and commits them, runs the full CI on that commit, then tags, pushes it with --no-verify and ships each where the destinations say',
     title: 'publish',
-    why:   'one bump, one release commit with a tag per package, one pack shipped in dependency order — an npm 2FA prompt per package prints its link in the console' },
+    why:   'one bump, one release commit graded by CI before a tag per package is written, one pack shipped in dependency order — an npm 2FA prompt per package prints its link in the console' },
 
   { id: 'verify',   stage: 'after',   gate: 'registry',
     title: 'the destinations have the new versions',
@@ -84,7 +84,7 @@ export const PUBLISH_STEPS = [
   { id: 'push',     stage: 'after',   bin: 'git', argv: ['push', 'origin', 'HEAD', '--tags'],
     confirm: 'pushes the release commit and its tags', button: 'push',
     title: 'push, if you held it back',
-    why:   'only when "push when done" was off, which ships to npm alone — the release commit and tags are local until this' },
+    why:   'only when "push when done" was off, which ships to npm alone — the release commit and its tags are local until this, and the pre-push hook runs on it' },
 
   { id: 'partial',  stage: 'recover', gate: 'note',
     title: 'a run that published some and not others',

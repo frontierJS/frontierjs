@@ -305,22 +305,51 @@ export function formatRefusals(refusals = []) {
  * unknown is returned rather than guessed, because a guess of *published* bumps
  * over a version nobody installed and a guess of *not* republishes one.
  *
- * A pending package with commits since its tag is `moved`: npm packs the
- * working directory, so publishing it now ships those commits under a tag
- * whose tree does not hold them — the dirty-tree refusal, one commit later.
+ * A pending package with commits since its tag is packed from the TAG's
+ * checkout, so those commits cannot reach the tarball. Where the remote holds
+ * the tag it is public already and is simply shipped (`fromTag`, `FJS-D1722`).
+ * Where only this clone holds it, it is `moved`: that tag was never public and
+ * its sha is usually the commit the pre-push hook refused, so shipping from it
+ * would publish the bytes the hook turned away (`FJS-D1725`).
  *
- * @param members  [{ name, version, tagged, published, moved }]
+ * @param members  [{ name, version, tagged, published, moved, pushed }] --
+ *                 `pushed` is whether the remote holds the tag: true, false, or
+ *                 NULL where it could not be asked, which reads as not held
  */
 export function unpublished(members = []) {
   const pending = []
   const unknown = []
   const moved   = []
+  const fromTag = []
   for (const m of members) {
     if (!m.tagged) continue
     if (m.published === null || m.published === undefined) unknown.push(m.name)
-    else if (!m.published) (m.moved ? moved : pending).push(m.name)
+    else if (m.published) continue
+    else if (!m.moved) pending.push(m.name)
+    else if (m.pushed === true) { pending.push(m.name); fromTag.push(m.name) }
+    else moved.push(m.name)
   }
-  return { pending, unknown, moved }
+  return { pending, unknown, moved, fromTag }
+}
+
+/**
+ * The packages whose manifest holds a bumped version that was never tagged and
+ * that no destination holds: a release whose CI gate failed before the tag was
+ * written. Nothing public names that version, so the next run tags HEAD once it
+ * passes rather than bumping over it (`FJS-D1720`).
+ *
+ * A package with no tag at all is a first release and goes through the bump, and
+ * a version at or below its last tag is not a bump, so neither is listed.
+ *
+ * @param members  [{ name, version, lastTagVersion, tagged, none }] -- `none` is
+ *                 true only when every destination answered and holds nothing
+ */
+export function untaggedBumps(members = []) {
+  return members.filter(m => {
+    if (m.tagged || !m.none || !m.lastTagVersion) return false
+    const now = parseVersion(m.version), last = parseVersion(m.lastTagVersion)
+    return Boolean(now && last && gte(now, last) && !sameVersion(now, last))
+  }).map(m => m.name)
 }
 
 // ─── selecting packages ──────────────────────────────────────────────────────

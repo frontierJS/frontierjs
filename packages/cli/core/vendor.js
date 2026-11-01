@@ -177,28 +177,35 @@ export function packPackage({ name, dir, destination }) {
   return { file, path: join(destination, file) }
 }
 
-// ─── packAtCommit ─────────────────────────────────────────────────────────────
-// Pack from a checkout of one commit, never the working tree: another session's
-// edit landing mid-release would otherwise ship bytes the tag does not hold.
+// ─── withCheckout / packAtCommit ──────────────────────────────────────────────
+// Work from a checkout of one commit, never the working tree: another session's
+// edit landing mid-release would otherwise grade or ship bytes the tag does not
+// hold.
 //
-//   { repo, sha, entries: [{ name, dir }], destination, scratch }
-//     → [{ name, dir, file, path }]
+//   withCheckout({ repo, sha, scratch }, tree => result)   (fn is synchronous)
 //
-// The checkout is installed before packing because a `prepack` build (css)
-// needs real dependencies. Removed before returning, whatever happened — a
+// Installed before `fn` runs because a `prepack` build (css) and a CI run both
+// need real dependencies. Removed before returning, whatever happened -- a
 // leftover worktree holds its sha checked out and `git worktree add` at that
 // path refuses the next run.
-export function packAtCommit({ repo, sha, entries, destination, scratch }) {
+export function withCheckout({ repo, sha, scratch }, fn) {
   const tree = join(scratch, `tree-${sha.slice(0, 12)}`)
   const git  = (...args) => run('git', args, repo)
   git('worktree', 'add', '--detach', tree, sha)
   try {
     const frozen = ['bun.lock', 'bun.lockb'].some(f => existsSync(join(tree, f)))
     run('bun', frozen ? ['install', '--frozen-lockfile'] : ['install'], tree)
-    return entries.map(e => ({ ...e, ...packPackage({ name: e.name, dir: join(tree, relative(repo, realpathSync(e.dir))), destination }) }))
+    return fn(tree)
   } finally {
     git('worktree', 'remove', '--force', tree)
   }
+}
+
+//   { repo, sha, entries: [{ name, dir }], destination, scratch }
+//     → [{ name, dir, file, path }]
+export function packAtCommit({ repo, sha, entries, destination, scratch }) {
+  return withCheckout({ repo, sha, scratch }, tree =>
+    entries.map(e => ({ ...e, ...packPackage({ name: e.name, dir: join(tree, relative(repo, realpathSync(e.dir))), destination }) })))
 }
 
 function run(cmd, args, cwd) {

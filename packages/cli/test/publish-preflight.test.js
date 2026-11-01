@@ -9,7 +9,7 @@
 import { describe, test, expect } from 'bun:test'
 
 import { satisfiesRange, peerDrift, movedDependencies, publishOrder, writePins,
-         publishRefusals, formatRefusals, matchesSelector, unpublished } from '../core/publish-preflight.js'
+         publishRefusals, formatRefusals, matchesSelector, unpublished, untaggedBumps } from '../core/publish-preflight.js'
 
 describe('a version against a range', () => {
   // The trap this whole check exists for. Below 1.0 a caret pins the MINOR, so
@@ -266,23 +266,57 @@ describe('a release in flight', () => {
     expect(unpublished([
       { name: 'a', version: '0.1.1', tagged: true, published: false },
       { name: 'b', version: '0.2.0', tagged: true, published: true },
-    ])).toEqual({ pending: ['a'], unknown: [], moved: [] })
+    ])).toEqual({ pending: ['a'], unknown: [], moved: [], fromTag: [] })
   })
 
   test('a package with no tag at its version is an ordinary release, never pending', () => {
     expect(unpublished([{ name: 'a', version: '0.0.1', tagged: false, published: false }]))
-      .toEqual({ pending: [], unknown: [], moved: [] })
+      .toEqual({ pending: [], unknown: [], moved: [], fromTag: [] })
   })
 
   test('a registry that could not be asked is unknown, not published', () => {
     expect(unpublished([{ name: 'a', version: '0.1.1', tagged: true, published: null }]))
-      .toEqual({ pending: [], unknown: ['a'], moved: [] })
+      .toEqual({ pending: [], unknown: ['a'], moved: [], fromTag: [] })
   })
 
-  // Published from disk, it would carry commits its tag does not hold.
-  test('a pending package with commits since its tag is moved, not pending', () => {
-    expect(unpublished([{ name: 'a', version: '0.1.1', tagged: true, published: false, moved: true }]))
-      .toEqual({ pending: [], unknown: [], moved: ['a'] })
+  // Public already, and packed from the tag's checkout: the commits since
+  // cannot reach the tarball, so it is finished rather than refused.
+  test('commits since a tag the remote holds are shipped from the tag', () => {
+    expect(unpublished([{ name: 'a', version: '0.1.1', tagged: true, published: false, moved: true, pushed: true }]))
+      .toEqual({ pending: ['a'], unknown: [], moved: [], fromTag: ['a'] })
+  })
+
+  // Never public, and its sha is usually the commit the hook refused.
+  test('commits since a tag only this clone holds are moved, not shipped', () => {
+    expect(unpublished([{ name: 'a', version: '0.1.1', tagged: true, published: false, moved: true, pushed: false }]))
+      .toEqual({ pending: [], unknown: [], moved: ['a'], fromTag: [] })
+  })
+
+  test('a remote that could not answer is not read as holding the tag', () => {
+    for (const pushed of [null, undefined])
+      expect(unpublished([{ name: 'a', version: '0.1.1', tagged: true, published: false, moved: true, pushed }]).moved)
+        .toEqual(['a'])
+  })
+
+  test('a tag held by the remote with no commits since is plain pending', () => {
+    expect(unpublished([{ name: 'a', version: '0.1.1', tagged: true, published: false, moved: false, pushed: true }]))
+      .toEqual({ pending: ['a'], unknown: [], moved: [], fromTag: [] })
+  })
+})
+
+describe('an untagged bump', () => {
+  const m = (o) => ({ name: 'a', version: '0.1.2', lastTagVersion: '0.1.1', tagged: false, none: true, ...o })
+
+  test('a version ahead of the last tag that no host holds is resumed, not bumped over', () => {
+    expect(untaggedBumps([m({})])).toEqual(['a'])
+  })
+
+  test('a tagged version, a first release, or a host that holds it is not one', () => {
+    expect(untaggedBumps([m({ tagged: true }), m({ lastTagVersion: '' }), m({ none: false })])).toEqual([])
+  })
+
+  test('a version at or below the last tag is not a bump', () => {
+    expect(untaggedBumps([m({ version: '0.1.1' }), m({ version: '0.1.0' })])).toEqual([])
   })
 })
 

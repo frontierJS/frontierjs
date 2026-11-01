@@ -97,7 +97,11 @@ no commits since any tag, which the rule above reads as done. So every
 destination in the run is asked first: a package whose `<name>@<version>` tag
 exists and which a destination does not hold is shipped THERE as it stands, the
 bump argument ignored, and the run says so — which is also how a version that
-reached npm and not the release, or the other way round, is completed. A
+reached npm and not the release, or the other way round, is completed. Commits that
+landed since the tag change nothing when the remote holds the tag: the pack is of
+the tag's checkout, and the run says so (`FJS-D1722`). A tag only this clone
+holds was never public, so it is refused (`in-flight-moved`), not shipped
+(`FJS-D1725`). A
 destination that cannot answer refuses the run, because a guess either bumps
 over a version nobody installed or republishes one. This is what `lerna publish
 from-package` and `changeset publish` do — the destination, not a state file,
@@ -118,17 +122,23 @@ same bytes by construction. A destination left out today can be added tomorrow:
 the resume rule above asks each one. GitHub refuses a second asset under the same
 name, so a tag already released is refused the way npm refuses a spent version.
 
-**The push comes before the first publish.** A GitHub Release can only be made
-on a commit GitHub has (`FJS-3616`), and a refused push — this repo's
-`pre-push` hook is a CI tier — is a reason not to publish at all. A version
-pushed and not yet shipped is the in-flight case above.
+**The tag comes last, after a green CI run.** The bump is committed and nothing
+is tagged. The full `ci` then runs in a checkout of that commit, and only a green
+run tags it (`FJS-D1720`, `FJS-D1721`). A red run leaves a commit and no tag, so
+fixes land and the next run keeps the commit rather than moving a tag. The
+`deploy --source npm` branch is skipped by name: the bump raised the scaffold's
+pins to versions no host holds yet, and `04-verify-assets` grades the published
+framework afterwards (`FJS-D1726`).
 
-`--no-push` keeps the release commit and its tags local and ships to npm alone;
-beside `tarballs` it is refused, since the release has no commit to sit on.
-Worth reaching for when the `pre-push` hook is a CI tier — a release commit
-carries version bumps and nothing else, so re-running the checks that already
-passed on its parent costs about a minute and proves nothing new. The push
-command is printed for you to run when you mean to.
+**The push goes out before the first publish, for the graded sha.** A GitHub
+Release can only be made on a commit GitHub has (`FJS-3616`). The push names the
+sha CI graded and the release tags, never `HEAD`, and skips the pre-push hook
+because CI already passed on exactly that sha. A version pushed and not yet
+shipped is the in-flight case above.
+
+`--no-push` tags the graded commit and keeps it and its tags local, shipping to
+npm alone; beside `tarballs` it is refused, since the release has no commit to
+sit on. The push command is printed for you to run when you mean to.
 
 **One bump for the whole run, always.** `bun pm pack` rewrites a `workspace:*`
 dependency from the sibling's manifest in the tree it packs, so every version is
@@ -196,7 +206,7 @@ if (!flag.private) {
 // Where each tarball goes. Unset is the release host alone (`FJS-D1613`): a
 // public release is `--to npm`, said on purpose, because every npm publish is a
 // browser 2FA round trip and a version promised to the world.
-const { hosts, DEFAULT_TO, packageHostUrl } = await import(new URL('file://' + global.fliRoot + '/core/publish-hosts.js'))
+const { hosts, remoteHasTag, DEFAULT_TO, packageHostUrl } = await import(new URL('file://' + global.fliRoot + '/core/publish-hosts.js'))
 const to   = flag.to ? [...new Set([flag.to].flat())] : DEFAULT_TO
 const repo = $.wsRepo(all)
 
@@ -206,23 +216,53 @@ const repo = $.wsRepo(all)
 // release in flight is FINISHED rather than bumped: a bump over an unshipped
 // version skips it for good. Per destination, so a version that reached one
 // and not the other is completed, not bumped and not republished.
-const { unpublished } = await import(new URL('file://' + global.fliRoot + '/core/publish-preflight.js'))
+const { unpublished, untaggedBumps } = await import(new URL('file://' + global.fliRoot + '/core/publish-preflight.js'))
 
 const onHosts = await Promise.all(packages.map(async ({ dir, pkg }) => {
   const state  = $.git.pkgState(pkg.name, dir)
   const tagged = state.lastTag === releaseTag(pkg.name, pkg.version)
+  const lastTagVersion = state.lastTag ? state.lastTag.slice(pkg.name.length + 1) : ''
   const holds  = hosts(repo ?? dir)
-  const held   = tagged ? await Promise.all(to.map(d => holds[d](pkg.name, pkg.version))) : []
+  // An untagged version ahead of the last tag may be a bump whose CI gate failed
+  // before the tag was written, so the hosts are asked about it too.
+  const held   = tagged || (lastTagVersion && lastTagVersion !== pkg.version)
+    ? await Promise.all(to.map(d => holds[d](pkg.name, pkg.version))) : []
   const missing   = to.filter((d, i) => held[i] === false)
   const published = !tagged ? false : held.some(h => h === null) ? null : missing.length === 0
-  return { name: pkg.name, version: pkg.version, tagged, moved: state.affected, published, missing }
+  // Asked only where the answer matters: a tag with commits since it that a
+  // destination lacks. The remote, not the local tag list, says what is public.
+  const needsRemote = tagged && state.affected && published === false
+  const pushed = needsRemote ? await remoteHasTag(repo ?? dir, releaseTag(pkg.name, pkg.version)) : undefined
+  return { name: pkg.name, version: pkg.version, tagged, lastTagVersion, moved: state.affected, published, missing, pushed,
+           none: held.length > 0 && held.every(h => h === false) }
 }))
-const { pending, unknown, moved } = unpublished(onHosts)
+const { pending, unknown, moved: movedAll, fromTag } = unpublished(onHosts)
+
+// A tag only this clone holds, with commits since it and on no host, was never
+// public and its sha is usually the commit the hook refused: deleted by name
+// and sha, and the version resumes as an untagged bump (`FJS-D1725`). The
+// remote must have ANSWERED that it lacks the tag, and no destination may hold
+// the version; anything else is refused below.
+const { execSync } = await import('child_process')
+const stale = onHosts.filter(m => movedAll.includes(m.name) && m.pushed === false && m.none)
+for (const m of stale) {
+  const tagName = releaseTag(m.name, m.version)
+  const dir     = repo ?? packages.find(p => p.pkg.name === m.name).dir
+  const sha     = execSync(`git rev-parse --short ${JSON.stringify(`refs/tags/${tagName}^{commit}`)}`, { cwd: dir, encoding: 'utf8' }).trim()
+  if (flag.dry) { log.dry(`  Would delete the local-only tag ${tagName} ${sha} and resume ${m.version} as an untagged bump`); m.tagged = false; continue }
+  execSync(`git tag -d ${JSON.stringify(tagName)}`, { cwd: dir, stdio: 'ignore' })
+  m.tagged = false
+  log.warn(`  deleted ${tagName} ${sha} -- only this clone held it, and no destination holds ${m.version}`)
+}
+const moved = movedAll.filter(n => !stale.some(m => m.name === n))
 
 if (moved.length) {
-  log.error(`  ✗  in-flight-moved: tagged, not shipped to ${to.join(' + ')}, and committed to since: ${moved.join(', ')}`)
-  log.error('      a pack of the working directory would ship commits the tag does not hold')
-  log.error(`      fix: ship each from its tag — git worktree add <dir> <name>@<version>, then ${to.includes('npm') ? 'bun publish in that package' : 'gh release create <name>@<version> <tgz> from a pack of it'}`)
+  const asked = onHosts.filter(m => moved.includes(m.name))
+  log.error(`  ✗  in-flight-moved: tagged, not shipped to ${to.join(' + ')}, committed to since, and the remote does not hold the tag: ${moved.join(', ')}`)
+  if (asked.some(m => m.pushed === null))
+    log.error(`      the remote could not say whether it holds: ${asked.filter(m => m.pushed === null).map(m => releaseTag(m.name, m.version)).join(', ')}`)
+  log.error('      a tag only this clone holds was never public, and its commit is usually the one the pre-push hook refused')
+  log.error('      fix: `git tag -d <name>@<version>` for each, then run again -- the version it spent is skipped and the next bump is cut from HEAD')
   $.config.abort = true
   return
 }
@@ -241,14 +281,30 @@ if (unknown.length) {
   return
 }
 
+// An untagged bump on no host: the CI gate failed before the tag was written.
+const retag = untaggedBumps(onHosts)
+if (retag.length && pending.length) {
+  log.error(`  ✗  a shipped-tag release (${pending.join(', ')}) and an untagged bump (${retag.join(', ')}) are both in flight`)
+  log.error('      finish the tagged one first, narrowing the run with --filter, then run again')
+  $.config.abort = true
+  return
+}
+
 const resume = pending.length > 0
-if (resume) {
+if (retag.length) {
+  packages = packages.filter(({ pkg }) => retag.includes(pkg.name))
+  log.info(`${retag.length} package(s) have a bumped version that was never tagged -- tagging it after CI, not bumping again`)
+  log.info(`  '${arg.bump}' is ignored: ${retag.join(', ')} already hold the version`)
+} else if (resume) {
   packages = packages.filter(({ pkg }) => pending.includes(pkg.name))
   // What each one still lacks, read by step 02 so a half-shipped version goes
   // only where it is missing.
   $.config.missing = Object.fromEntries(onHosts.filter(m => pending.includes(m.name)).map(m => [m.name, m.missing]))
   for (const m of onHosts) if (pending.includes(m.name)) log.info(`  ${m.name}@${m.version} is tagged and missing from ${m.missing.join(' + ')}`)
   log.info(`${pending.length} package(s) are versioned and tagged but not shipped everywhere — finishing that release, not bumping`)
+  // The pack is of the tag's checkout (03), so commits since the tag are
+  // not in the tarball. Said, because the working tree is not what ships.
+  for (const m of onHosts) if (fromTag.includes(m.name)) log.info(`  ${m.name}@${m.version} has commits since its tag, which the remote holds -- shipping from the tag, not from HEAD`)
   log.info(`  '${arg.bump}' is ignored: a bump over an unpublished version skips it for good`)
 }
 
@@ -271,7 +327,7 @@ if (!packages.length) {
 
 // Target versions are resolved here rather than in the version step, so the
 // preview below states the numbers a user is approving.
-let planned = packages.map(p => ({ ...p, newVersion: resume ? p.pkg.version : bumpVersion(p.pkg.version, arg.bump) }))
+let planned = packages.map(p => ({ ...p, newVersion: resume || retag.length ? p.pkg.version : bumpVersion(p.pkg.version, arg.bump) }))
 
 // ─── prompts ──────────────────────────────────────────────────────────────────
 // Constructed ONCE and carried to the steps on `$.config`. A step
@@ -303,6 +359,7 @@ $.config.members    = all
 $.config.planned    = planned
 $.config.bump       = arg.bump
 $.config.resume     = resume
+$.config.retag      = retag.length > 0
 $.config.tag        = flag.tag
 $.config.otp        = flag.otp
 $.config.to         = to

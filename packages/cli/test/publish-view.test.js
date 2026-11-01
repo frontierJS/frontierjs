@@ -28,7 +28,7 @@ import {
   PUBLISH_STEPS, PUBLISH_STAGES, describePublish, pubArgv, runPublishStep,
   publishLocal, workspaceMembers, displayArgv,
 } from '../core/publish-view.js'
-import { DESTINATIONS, DEFAULT_TO } from '../core/publish-hosts.js'
+import { DESTINATIONS, DEFAULT_TO, freshAppChecks, freshAppArgs, pinsBehind } from '../core/publish-hosts.js'
 
 const CLI = resolve(fileURLToPath(new URL('.', import.meta.url)), '..')
 
@@ -232,3 +232,34 @@ test('a fresh release pushes its tag before gh makes the release on it', async (
     rmSync(base, { recursive: true, force: true })
   }
 }, 90_000)
+
+// ─── the fresh-app check after publish ───────────────────────
+
+const PINNED = new Set(['@frontierjs/sierra', '@frontierjs/config'])
+
+test('freshAppChecks installs from each host the run shipped to, by its own --source', () => {
+  expect(freshAppChecks({ uploaded: ['@frontierjs/sierra@0.1.11'], published: [], pinned: PINNED }))
+    .toEqual([{ host: 'tarballs', source: 'url' }])
+  expect(freshAppChecks({ uploaded: ['@frontierjs/sierra@0.1.11'], published: ['@frontierjs/sierra@0.1.11'], pinned: PINNED }))
+    .toEqual([{ host: 'npm', source: 'npm' }, { host: 'tarballs', source: 'url' }])
+})
+
+test('freshAppChecks owes nothing for a host the run did not reach or a package no scaffold pins', () => {
+  expect(freshAppChecks({ uploaded: [], published: [], pinned: PINNED })).toEqual([])
+  expect(freshAppChecks({ uploaded: ['@frontierjs/cli@0.1.12'], published: [], pinned: PINNED })).toEqual([])
+  expect(freshAppChecks({ published: ['@frontierjs/config@0.1.7'], pinned: PINNED }))
+    .toEqual([{ host: 'npm', source: 'npm' }])
+})
+
+test('pinsBehind names a shipped package the fresh app installed at another version', () => {
+  const shipped = ['@frontierjs/toolbelt@0.1.9', '@frontierjs/mesa@0.1.10', '@frontierjs/fli-only@1.0.0']
+  expect(pinsBehind(shipped, { '@frontierjs/toolbelt': '0.1.8', '@frontierjs/mesa': '0.1.10' }))
+    .toEqual([{ name: '@frontierjs/toolbelt', shipped: '0.1.9', installed: '0.1.8' }])
+  expect(pinsBehind(shipped, { '@frontierjs/toolbelt': '0.1.9', '@frontierjs/mesa': '0.1.10' })).toEqual([])
+})
+
+test('freshAppArgs leaves the install to the caller, who reads its exit status', () => {
+  const args = freshAppArgs('probe', 'url')
+  expect(args).toContain('--no-install')
+  expect(args.slice(args.indexOf('--source'))).toEqual(['--source', 'url'])
+})

@@ -226,9 +226,19 @@ main tree at the same sha, and `--allow-dirty` is gone.
     both at HEAD. The `in-flight-moved` text still says npm packs the working
     directory; 1.3 rewrites it. `--changed-only` picked by uncommitted files
     that no longer ship, so it is removed too (`FJS-D1728`).
-- [ ] 1.3 `in-flight-moved` per Q3, for a tag the remote holds. A tag only
+- [x] 1.3 `in-flight-moved` per Q3, for a tag the remote holds. A tag only
   this clone holds was never public, and its sha is usually the one the hook
   refused (0.1), so it is not published from (Q5).
+  - 2026-10-31: `unpublished()` takes `pushed` per member (new
+    `remoteHasTag` in `core/publish-hosts.js`, `git ls-remote --tags origin`,
+    asked only for a tag with commits since it that a destination lacks). A
+    tag the remote holds becomes pending with `fromTag`, and `index.md` says
+    it ships from the tag; 03 already packs the tag's checkout. A tag the
+    remote lacks, or could not answer for, stays `in-flight-moved` with text
+    that says why and names `git tag -d`. Until 2.3 that fix burns the version
+    (the run bumps past it). The stale "npm packs the working directory"
+    comment and refusal text are rewritten. Proved by 4 new `unpublished`
+    unit cases; no live remote run.
 
 **1.3 and Phase 2 are built on branch `publish-order-integ`, held off `dev`
 until [FJS-009](../ISSUES.md#fjs-009) closes** (owner, 2026-10-31). Its CI gate
@@ -242,19 +252,59 @@ Goal: no failing gate can leave a tag behind.
 Done when: 0.1's scratch run, replayed, ends with the tag on the fixed HEAD and
 the packages shipped, with no hand step.
 
-- [ ] 2.1 01 commits without tagging; a new step runs CI (tier per Q1, place
+- [x] 2.1 01 commits without tagging; a new step runs CI (tier per Q1, place
   per Q2) on the release sha, skipping `deploy --source npm` and saying so
   (Q6).
-- [ ] 2.2 Tag only on green, then push **the graded sha** and its tags with
+  - 2026-10-31: 01 commits and records `$.config.graded` (cwd, sha, tags) but
+    tags nothing. New `_steps/01b-ci.md` runs `node scripts/ci.mjs` (the full tier)
+    inside `withCheckout` (`core/vendor.js`, factored out of `packAtCommit`:
+    worktree at the sha, frozen install, removed in `finally`), and a red run
+    throws before any tag. A tagged resume skips it. `deploy --source npm` needed
+    no new flag: ci.mjs already skips it by name when the scaffold pins are on
+    npm nowhere, which is true of every release sha. Proved by `--dry` (names the
+    sha, the install and the skip) and a `withCheckout` unit test; no real CI run.
+    The run's `.cache/ci-runs/` record is copied to the main tree before the
+    checkout goes, for Phase 3 (`FJS-D1738`).
+- [x] 2.2 Tag only on green, then push **the graded sha** and its tags with
   `--no-verify`, never `HEAD`. A commit landing mid-run would otherwise ship
   ungraded, with the hook's backstop already turned off.
-- [ ] 2.3 Resume: an untagged bumped version on no host means "tag HEAD after
+  - 2026-10-31: 02 tags each graded sha, then pushes
+    `git push --no-verify origin <sha>:refs/heads/<branch> refs/tags/<tag>...`,
+    naming tags rather than `--tags` so a stale local tag is not carried. A
+    resume pushes each tag's own commit. `--no-push` tags and prints that same
+    command. Proved by `--dry` output only; no real push.
+- [x] 2.3 Resume: an untagged bumped version on no host means "tag HEAD after
   CI", with snapshots regenerated at HEAD first.
-- [ ] 2.4 After publish, 04 scaffolds and installs a fresh app from each
+  - 2026-10-31: `untaggedBumps()` (pure, `core/publish-preflight.js`) names a
+    manifest version ahead of the last tag that every destination answered
+    "not held". `index.md` then plans the run at the current versions, no bump,
+    and `$.config.retag` makes 01 regenerate snapshots at HEAD and commit only
+    if something changed, so HEAD is the graded sha. Q5: a moved tag the remote
+    answered it lacks, on no host, is deleted by name and sha and resumes this
+    way; an unanswered remote still refuses. A shipped-tag release and an
+    untagged bump in one run is refused. Proved by 3 `untaggedBumps` unit
+    cases and `--dry` compile; the replay of 0.1's scratch run is not done.
+- [x] 2.4 After publish, 04 scaffolds and installs a fresh app from each
   host the run shipped to: `--source url` for `tarballs`, `--source npm` for
   `npm` (Q6).
-- [ ] 2.5 Update `PUBLISH_STEPS` so the GUI's `ci` and `push` steps describe
+  - 2026-10-31: `freshAppChecks` and `installFreshApp` in `core/publish-hosts.js`;
+    04 asks them after the asset check, from `uploaded` and `published`, and
+    only when a shipped package is one a scaffold pins. The install is run by
+    the helper (`fli new --no-install`, then `bun install` on a cache of its
+    own), because `fli new` reports a failed install as a warning and exits 0.
+    `--dry` now runs 04 and names each install. Run against what the hosts hold
+    today: `--source url` installs 9 `@frontierjs` packages in 4.5s; `--source
+    npm` fails at `bun install` on the versions npm lacks (`FJS-3774`), naming
+    them. `--dry --filter @frontierjs/config` prints `--source npm` for `--to
+    npm` and `--source url` for `--to tarballs`. A failed install throws after
+    the asset check, as a bad asset does (`FJS-D1736`). `pinsBehind()` prints
+    *pins behind* when the app installed a shipped package at another version,
+    as a release without cli does (`FJS-D1737`); toolbelt 0.1.9 alone installs
+    0.1.8 from the host today.
+- [x] 2.5 Update `PUBLISH_STEPS` so the GUI's `ci` and `push` steps describe
   the new order.
+  - 2026-10-31: the `commit`, `ci`, `publish` and `push` steps' text now
+    describes the new order. `publish-view.test.js` green (no text asserted).
 
 ## Phase 3 — Status
 
