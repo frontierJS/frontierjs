@@ -32,7 +32,7 @@ import { notHub }               from '../../domain/host/host-machine.ts'
 
 type FromRepo = {
   name: string, slug?: string, repo: string, branch?: string, dockerfile?: string,
-  serverId?: string, hostname?: string, deployOnPush?: boolean, connect?: boolean,
+  serverId?: string, hostname?: string, isDeployedOnPush?: boolean, isConnecting?: boolean,
 }
 
 export default createService({
@@ -109,9 +109,9 @@ export default createService({
     // Everything a connect can be refused for is asked before a row exists:
     // the deploy key is the machine's, so it needs a server, and a token the
     // forge no longer accepts is refused here rather than after the App is made.
-    const at = data.connect ? forgeRepo(data.repo) : null
+    const at = data.isConnecting ? forgeRepo(data.repo) : null
     let accounts: Awaited<ReturnType<typeof connectableAccounts>> = []
-    if (data.connect) {
+    if (data.isConnecting) {
       if (!server) throw new BadRequest('connect needs a server — the deploy key is the machine\'s')
       if (at?.forge !== 'github') throw new BadRequest(`connect writes to GitHub, and '${data.repo}' is not a GitHub repository`)
       accounts = await connectableAccounts($.app, 'github')
@@ -143,7 +143,7 @@ export default createService({
         projectId: project.id, name: 'production', slug: 'production', tier: 'production', isProtected: false,
       } })
       const app = await tx.app.create({ data: {
-        environmentId: environment.id, name, slug, type: 'container', source,
+        environmentId: environment.id, name, slug, kind: 'container', source,
         containerPort, volumePath: '/db', healthCheck: '/health',
       } })
       // The /db layout `fli make:deploy`'s Dockerfile mounts and `fli deploy`
@@ -162,7 +162,7 @@ export default createService({
       // A secret variable holds its own value (FJS-1599); `variables.reveal`
       // is how an admin copies it to the laptop that opens this database.
       await tx.variable.create({ data: {
-        environmentId: environment.id, appId: app.id, key: 'ENCRYPTION_KEY', secret: true,
+        environmentId: environment.id, appId: app.id, key: 'ENCRYPTION_KEY', isSecret: true,
         secretValue: randomBytes(32).toString('hex'),
       } })
       const domain = hostname
@@ -187,7 +187,7 @@ export default createService({
       await placeApp($.app, made.app, server)
       const minted = await mintDeployKey($.app, made.app.id, server.id)
       if (minted.note) notes.push(minted.note)
-      if (data.deployOnPush !== false) push = await enablePushOn(made.app.id)
+      if (data.isDeployedOnPush !== false) push = await enablePushOn(made.app.id)
       if (at && accounts.length && (minted.deployPublicKey || push)) {
         connected = await connectRepository($.app, 'github', accounts, at, {
           key:  minted.deployPublicKey ? { title: `Basecamp ${made.app.slug}`, key: minted.deployPublicKey } : null,

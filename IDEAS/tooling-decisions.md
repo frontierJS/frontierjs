@@ -1,6 +1,6 @@
 ---
 id: tooling-decisions
-status: assessment
+status: reading
 dated: 2026-08-12
 ---
 

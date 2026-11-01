@@ -73,7 +73,7 @@ litestone migrate create rename --rename Issue.description=brief     # Model.old
 litestone migrate create rename --operations ops.json                # the same, as a document
 ```
 
-On a terminal with neither, `create` asks about each column that left beside one of the same type that arrived. `migrate dev` takes the same flags. The document is `{ "operations": [{ "op": "rename", "model": "Issue", "from": "description", "to": "brief" }] }`; `@frontierjs/oracle`'s `emit()` returns it as `document`.
+On a terminal with neither, `create` asks about each column that left beside one of the same type that arrived. `migrate dev` takes the same flags, and `migrate dry-run` previews them against the live database. The document is `{ "operations": [{ "op": "rename", "model": "Issue", "from": "description", "to": "brief" }] }`; `@frontierjs/oracle`'s `emit()` returns it as `document`.
 
 ```bash
 litestone migrate dev [label]
@@ -354,7 +354,7 @@ writing files nothing will read. See `docs/multi-tenancy.md`.
 |---|---|
 | `--config=<path>` | Path to `litestone.config.js` |
 | `--schema=<path>` | Path to `.lite` schema file |
-| `--db=<path>` | Path to SQLite database file |
+| `--db=<path>` | Path to SQLite database file. When the schema declares `database` blocks it is a database NAME, and a value naming none is refused, so a path cannot redirect a migration |
 | `--migrations=<dir>` | Path to migrations directory |
 | `--env-file=<path>` | Load env vars from this file (default: `./.env.local`, then `./.env`) |
 | `--no-env` | Skip loading `.env` files |

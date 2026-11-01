@@ -120,7 +120,7 @@ export default createService({
 
     const packages = deps.map(d => {
       const declared  = d.uses.map((u: any) => ({
-        member: u.member, memberPath: u.memberPath, published: u.published,
+        member: u.member, memberPath: u.memberPath, isPublished: u.isPublished,
         kind: u.kind, declared: u.declared, installed: u.installed,
       }))
       const installed = [...new Set(declared.map((u: any) => u.installed).filter(Boolean))] as string[]
@@ -136,7 +136,7 @@ export default createService({
         checkedAt: d.checkedAt, checkError: d.checkError,
         installed, ...verdict,
         inRange:   ranges.length && ranges.every((r: boolean | null) => r === true),
-        published: declared.some((u: any) => u.published),
+        isPublished: declared.some((u: any) => u.isPublished),
         uses:      declared,
       }
     }).sort((a, b) =>
@@ -199,7 +199,7 @@ export default createService({
       for (const u of push.uses) {
         const dependencyId = idOf.get(u.name)!
         const m    = paths.get(u.member)
-        const data = { memberPath: m?.path ?? '', published: m ? !m.private : false,
+        const data = { memberPath: m?.path ?? '', isPublished: m ? !m.private : false,
                        declared: u.range, installed: u.installed, observedAt: now }
         const was  = before.get(keyOf(dependencyId, u.member, u.kind))
         if (was) {

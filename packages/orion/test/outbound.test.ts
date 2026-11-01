@@ -74,8 +74,8 @@ describe("a flow's outbound call", () => {
     expect(row.secret).not.toContain("sk_live_bearer")
   })
 
-  test("an api_key credential uses the header it names", async () => {
-    await credential({ name: "mailer", auth: "api_key", header: "x-mailer-key", secret: "mk_123" })
+  test("an apiKey credential uses the header it names", async () => {
+    await credential({ name: "mailer", auth: "apiKey", header: "x-mailer-key", secret: "mk_123" })
     await call("mailer")
     expect(last().headers["x-mailer-key"]).toBe("mk_123")
     expect(last().headers["authorization"]).toBeUndefined()

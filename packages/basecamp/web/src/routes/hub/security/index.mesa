@@ -10,7 +10,7 @@ title: Host security
   // through `fli deploy`, and the screen says so. A host that never reported,
   // or whose report is stale, reads as such and never as clean; the backup
   // control is graded from the Backup rows on every read.
-  import { postures } from '../../../resources/ServerPosture.mesa'
+  import { hub } from '../../../resources/Hub.mesa'
   import { ago }      from '../../../lib/datetime.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
@@ -21,7 +21,7 @@ title: Host security
   async function load() {
     error = null
     try {
-      host = await postures.service.invoke('host', null, {})
+      host = await hub.service.invoke('hostPosture', null, {})
     } catch (e) {
       error = e.message
     } finally {

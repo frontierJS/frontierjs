@@ -160,7 +160,7 @@ title: Project
   $: tiers = environments.fields?.tier?.enum ?? ['development', 'staging', 'production']
   const APP_COLUMNS = [
     { name: 'name',   label: 'Name' },
-    { name: 'type',   label: 'Type' },
+    { name: 'kind',   label: 'Kind' },
     { name: 'status', label: 'Status' },
     { name: 'domain', label: 'Domain' },
     { name: 'also',   label: 'Also in' },
@@ -242,7 +242,7 @@ title: Project
               <tr>
                 {#if group.byEnv[env.id]}
                   <td><a href={`/apps/${group.byEnv[env.id].id}/`}>{group.byEnv[env.id].name}</a></td>
-                  <td><code>{group.byEnv[env.id].type}</code></td>
+                  <td><code>{group.byEnv[env.id].kind}</code></td>
                   <td>
                     <span class="pill" class:success={group.byEnv[env.id].status === 'running'}
                                        class:danger={group.byEnv[env.id].status === 'error'}>{group.byEnv[env.id].status}</span>

@@ -151,14 +151,14 @@ function validateConfig(kind: string, allowed: string[], config: Record<string, 
       `A ${kind} tile does not read ${unknown.join(', ')}` +
       (allowed.length ? ` — it takes ${allowed.join(', ')}` : ' — it takes no configuration'))
 
-  if (kind === 'stat_counter') {
+  if (kind === 'statCounter') {
     const source = config.source as string | undefined
     if (!source) throw new BadRequest(`A counter needs a source — one of: ${STAT_SOURCES.join(', ')}`)
     if (!STAT_SOURCES.includes(source as typeof STAT_SOURCES[number]))
       throw new BadRequest(`'${source}' is not countable here — one of: ${STAT_SOURCES.join(', ')}`)
   }
 
-  if (kind === 'service_health') {
+  if (kind === 'serviceHealth') {
     const serviceId = config.serviceId as string | undefined
     if (!serviceId) throw new BadRequest(`A service health tile needs a serviceId — one of: ${PORTAL_SERVICE_IDS.join(', ')}`)
     if (!PORTAL_SERVICE_IDS.includes(serviceId))

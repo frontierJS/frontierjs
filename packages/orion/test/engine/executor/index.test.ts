@@ -80,7 +80,7 @@ describe("Basic execution", () => {
     if (outcome.ok) {
       expect(outcome.data).toEqual({ value: 42 })
       expect(outcome.attempts).toBe(1)
-      expect(outcome.fromCache).toBe(false)
+      expect(outcome.isFromCache).toBe(false)
       expect(outcome.durationMs).toBeGreaterThanOrEqual(0)
     }
   })
@@ -419,13 +419,13 @@ describe("Cache", () => {
     // First call — miss, executes node
     const first = await ex.execute(def, baseCtx)
     expect(first.outcome.ok).toBe(true)
-    if (first.outcome.ok) expect(first.outcome.fromCache).toBe(false)
+    if (first.outcome.ok) expect(first.outcome.isFromCache).toBe(false)
 
     // Second call — hit, does not execute node
     const second = await ex.execute(def, baseCtx)
     expect(second.outcome.ok).toBe(true)
     if (second.outcome.ok) {
-      expect(second.outcome.fromCache).toBe(true)
+      expect(second.outcome.isFromCache).toBe(true)
       expect(second.outcome.data).toEqual({ expensive: true })
     }
 
@@ -522,16 +522,16 @@ describe("Cache", () => {
 
     const { outcome } = await ex.execute(def, baseCtx)
     expect(calls).toBe(1)
-    if (outcome.ok) expect(outcome.fromCache).toBe(false)
+    if (outcome.ok) expect(outcome.isFromCache).toBe(false)
   })
 
-  test("no cache configured — fromCache always false", async () => {
+  test("no cache configured — isFromCache always false", async () => {
     const ex = new NodeExecutor(registry([successImpl()]))
     // No cache passed to constructor
 
     const { outcome } = await ex.execute(baseNode(), baseCtx)
     expect(outcome.ok).toBe(true)
-    if (outcome.ok) expect(outcome.fromCache).toBe(false)
+    if (outcome.ok) expect(outcome.isFromCache).toBe(false)
   })
 })
 
@@ -716,7 +716,7 @@ describe("Integration — lead qualifier node", () => {
     expect(first.outcome.ok).toBe(true)
     if (first.outcome.ok) {
       expect(first.outcome.data).toEqual({ qualified: true, tier: "enterprise", score: 0.82 })
-      expect(first.outcome.fromCache).toBe(false)
+      expect(first.outcome.isFromCache).toBe(false)
       expect(first.outcome.attempts).toBe(1)
     }
 
@@ -724,7 +724,7 @@ describe("Integration — lead qualifier node", () => {
     const second = await ex.execute(node, baseCtx)
     expect(second.outcome.ok).toBe(true)
     if (second.outcome.ok) {
-      expect(second.outcome.fromCache).toBe(true)
+      expect(second.outcome.isFromCache).toBe(true)
     }
 
     expect(executions).toBe(1)  // only ran once

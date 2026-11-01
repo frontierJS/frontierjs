@@ -43,7 +43,7 @@ export function results() {
 /**
  * Grade `got` against `expected` and print the rows. Returns the number of
  * failures, so the caller owns its own exit — a drive with something to say
- * after the table (`verify-jobs` warns that it cancelled every pending order)
+ * after the table (`verify-jobs` warns that it canceled every pending order)
  * cannot say it if this exits for them.
  *
  * `stoppedEarly` is the error a drive caught in its own `try`, and it counts as

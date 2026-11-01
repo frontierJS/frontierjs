@@ -21,11 +21,11 @@ if ($.flag['keep-data']) log.info(`  ${$.config.dbDir} and ${$.config.envFile} a
 // take the box out from under the next app; listed, so the last app off a box
 // is a copy-paste away from a clean one.
 echo('')
-echo('  Left on the box for its other apps — remove by hand if this was the last:')
-echo(outpostPresent
-  ? '    docker, caddy    sudo outpost-uninstall --purge   (also every other container and volume)'
-  : '    docker, caddy    sudo apt-get purge docker-ce docker-ce-cli containerd.io caddy')
-echo('    fli              sudo BUN_INSTALL=/usr/local bun remove -g @frontierjs/cli')
-echo('    bun, litestream  sudo rm /usr/local/bin/bun /usr/local/bin/bunx /usr/local/bin/litestream')
-echo('    sqlite3, unzip   sudo apt-get purge sqlite3 unzip   (rsync too, unless the image shipped it)')
+echo(chalk`  {bold Left on the box} {dim for its other apps — remove by hand if this was the last:}`)
+const leftover = (what, cmd, aside) => echo(chalk`    {dim ${what.padEnd(16)}} {cyan ${cmd}}${aside ? chalk.dim(`   ${aside}`) : ''}`)
+if (outpostPresent) leftover('docker, caddy', 'sudo outpost-uninstall --purge', '(also every other container and volume)')
+else leftover('docker, caddy', 'sudo apt-get purge docker-ce docker-ce-cli containerd.io caddy')
+leftover('fli', 'sudo BUN_INSTALL=/usr/local bun remove -g @frontierjs/cli')
+leftover('bun, litestream', 'sudo rm /usr/local/bin/bun /usr/local/bin/bunx /usr/local/bin/litestream')
+leftover('sqlite3, unzip', 'sudo apt-get purge sqlite3 unzip', '(rsync too, unless the image shipped it)')
 ```

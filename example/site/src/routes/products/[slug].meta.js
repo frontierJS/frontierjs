@@ -21,7 +21,7 @@ import { sys } from '../../../../api/src/core/db.ts'
 /**
  * One page per ACTIVE product.
  *
- * `active: false` is a product the shop has retired, and a retired product must
+ * `isActive: false` is a product the shop has retired, and a retired product must
  * not get a page: a URL that exists is a URL a search engine keeps. It also
  * means the set of pages changes between builds, which is the honest shape of a
  * catalog — and is why the drive counts files against the database rather
@@ -29,7 +29,7 @@ import { sys } from '../../../../api/src/core/db.ts'
  */
 export async function getStaticPaths() {
   const products = await sys.product.findMany({
-    where:   { active: true },
+    where:   { isActive: true },
     orderBy: { slug: 'asc' },
     limit:   500,
   })
@@ -43,7 +43,7 @@ export async function load({ params }) {
   if (!product) throw new Error(`no product with slug "${params.slug}"`)
 
   const variants = await sys.productVariant.findMany({
-    where:   { productId: product.id, active: true },
+    where:   { productId: product.id, isActive: true },
     orderBy: { sku: 'asc' },
     limit:   100,
   })

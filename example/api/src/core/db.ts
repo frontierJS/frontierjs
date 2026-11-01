@@ -21,7 +21,7 @@ const HERE = import.meta.dir
 // `release.snapshot.md`, `ddl.snapshot.sql` and `jsonschema.snapshot.md` each
 // described 32 models while 39 ran. The seven missing were `User`, `Credential`,
 // `Session`, `Verification`, `OauthFlow`, `OutboxMessage` and the audit trail —
-// the identity model and the credential store, in the one artefact whose whole
+// the identity model and the credential store, in the one artifact whose whole
 // job is *who may do what*. The `snapshots` CI phase passed throughout, because
 // it re-runs the same command from the same directory and gets the same
 // incomplete answer.
@@ -113,7 +113,7 @@ export const STORAGE_BASE = process.env.STORAGE_BASE ?? `http://localhost:${proc
 const registry = await createTenantRegistry({
   // No `schema:`. Handed the path alone, litestone reads it with `parseFile`,
   // which resolves the imports — which is the whole of what makes the committed
-  // artefacts describe the schema that runs.
+  // artifacts describe the schema that runs.
   path:          SCHEMA_FILE,
   encryptionKey: ENCRYPTION_KEY,
 

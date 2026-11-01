@@ -9,7 +9,7 @@
 // person asks for it.
 
 import { defineJob }                            from '@frontierjs/caravan'
-import { runsAsApp }                            from './context.ts'
+import { runsAsApp }                            from '../domain/job/job-context.ts'
 import { rescanAppArchives, hashFoundArchives } from '../domain/backup/backup-archives.ts'
 import type { App }                             from '@frontierjs/junction'
 
@@ -25,11 +25,11 @@ const appArchiveRescan = defineJob<{ appId: string }>({
     const { app } = runsAsApp(ctx, 'app-archive:rescan')
     const log     = app.logger.child('app-archive-rescan')
     const listing = await rescanAppArchives(app, ctx.data.appId)
-    if ('error' in listing) log.warn('app archives not listed', { app_id: ctx.data.appId, error: listing.error })
-    else                    log.info('app archives listed', { app_id: ctx.data.appId, ...listing })
+    if ('error' in listing) log.warn('app archives not listed', { appId: ctx.data.appId, error: listing.error })
+    else                    log.info('app archives listed', { appId: ctx.data.appId, ...listing })
     // Rows an earlier listing left unhashed are read even when this one failed.
     const hashed = await hashFoundArchives(app, ctx.data.appId)
-    if (hashed.hashed || hashed.failed) log.info('found app archives read', { app_id: ctx.data.appId, ...hashed })
+    if (hashed.hashed || hashed.failed) log.info('found app archives read', { appId: ctx.data.appId, ...hashed })
   },
 })
 

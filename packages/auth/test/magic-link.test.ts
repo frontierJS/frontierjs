@@ -78,7 +78,7 @@ describe('an address nobody holds', () => {
     expect(result.token).toBeTruthy()
 
     const row = await h.sys.user.findFirst({ where: { email } })
-    expect(row.emailVerified).toBe(true)
+    expect(row.isEmailVerified).toBe(true)
     expect(await h.sys.credential.count({ where: { userId: row.id } })).toBe(0)
   })
 
@@ -112,12 +112,12 @@ describe('an account with a password', () => {
   test('the link signs in and marks the address verified', async () => {
     const email = nextEmail()
     const made  = await h.auth.createUser({ email, password: 'pw-correct-1' })
-    expect((await h.sys.user.findFirst({ where: { email } })).emailVerified).not.toBe(true)
+    expect((await h.sys.user.findFirst({ where: { email } })).isEmailVerified).not.toBe(true)
 
     const mail   = await mailed(email)
     const result = signedIn(await h.auth.verifyMagicLink!({ token: mail.token }))
     expect(result.user.id).toBe(made.id)
-    expect((await h.sys.user.findFirst({ where: { email } })).emailVerified).toBe(true)
+    expect((await h.sys.user.findFirst({ where: { email } })).isEmailVerified).toBe(true)
   })
 
   test('a link is spent by its first use', async () => {
@@ -217,7 +217,7 @@ describe('an account with a second factor', () => {
 
 describe('an account whose only way in is a provider', () => {
   async function providerOnly(email: string) {
-    const user = await h.sys.user.create({ data: { email, emailVerified: true } })
+    const user = await h.sys.user.create({ data: { email, isEmailVerified: true } })
     await h.sys.credential.create({ data: { userId: user.id, type: 'oauth:google', value: `sub-${email}` } })
     return user
   }
@@ -234,7 +234,7 @@ describe('an account whose only way in is a provider', () => {
 
   test('a provider linked between the mail and the click is refused at the click', async () => {
     const email = nextEmail()
-    const user  = await h.sys.user.create({ data: { email, emailVerified: true } })
+    const user  = await h.sys.user.create({ data: { email, isEmailVerified: true } })
     const mail  = await mailed(email)
     await h.sys.credential.create({ data: { userId: user.id, type: 'oauth:google', value: `sub-${email}` } })
 
@@ -253,7 +253,7 @@ describe('an account whose only way in is a provider', () => {
 
 describe('an account the mailbox made, then linked to a provider (FJS-2545)', () => {
   const identity = (email: string) =>
-    ({ providerId: `sub-${email}`, email, emailVerified: true, name: 'Ada' }) as any
+    ({ providerId: `sub-${email}`, email, isEmailVerified: true, name: 'Ada' }) as any
 
   test('keeps magic-link sign-in at the request and at the click', async () => {
     const email = nextEmail()

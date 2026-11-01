@@ -1,12 +1,12 @@
 ---
 id: conversion-ela
-status: assessment
+status: reading
 dated: 2026-10-07
 ---
 
 # Assessment — Converting ELA, maid.tech's sibling, onto FrontierJS
 
-**Status: ASSESSMENT, and a DELTA.** Dated 2026-10-07. It reads
+**Status: READING, and a DELTA.** Dated 2026-10-07. It reads
 `ela` only for what `conversion-maid-tech.md`
 does not already answer — read that file first; its blocker table, its free
 upgrades and its § *Running the port* hold here unless a line below says

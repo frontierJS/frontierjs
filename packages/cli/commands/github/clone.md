@@ -142,7 +142,7 @@ try {
   }
 
   echo('')
-  echo(`  cd ${destDir}`)
+  echo(chalk.cyan(`  cd ${destDir}`))
 } catch (err) {
   log.error(`Clone failed: ${err.message}`)
 }

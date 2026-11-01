@@ -14,7 +14,7 @@
   //
   // It is here rather than on the create page because there is nothing on it a
   // screen decides. `<Form>` with no children renders every WRITABLE column in
-  // schema order — `name`, `slug`, `description`, `brand`, `active` — and the
+  // schema order — `name`, `slug`, `description`, `brand`, `isActive` — and the
   // other nine are absent without a word from anywhere: `id` is `@id`,
   // `createdAt` is `@default(now())`, `deletedAt` belongs to `@@softDelete`,
   // `version` is `@version`, `variants`/`images` are relations, and

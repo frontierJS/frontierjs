@@ -26,9 +26,9 @@ title: Stocktake
   //
   // Both models are `@@gate(5.5.5.9)`. The level check decides what to
   // RENDER; the Data boundary refuses the request regardless (Invariant 6).
-  import { sheets }          from '../../resources/StocktakeSheet.mesa'
-  import { counts }          from '../../resources/StocktakeCount.mesa'
-  import { productVariants } from '../../resources/ProductVariant.mesa'
+  import { stocktakeSheets } from '@/resources/StocktakeSheet.mesa'
+  import { stocktakeCounts } from '@/resources/StocktakeCount.mesa'
+  import { productVariants } from '@/resources/ProductVariant.mesa'
   import { session } from '@frontierjs/sierra/resource'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -76,7 +76,7 @@ title: Stocktake
     error = null; busy = true
     let made = null
     try {
-      made = await sheets.save({ note: note || undefined })
+      made = await stocktakeSheets.save({ note: note || undefined })
     } catch (err) {
       if (!held(err)) { error = err.message; busy = false; return }
       // The key is the browser's, so the sheet exists here even though the
@@ -110,7 +110,7 @@ title: Stocktake
       ...(shot ? { damage: shot } : {}),
     }
     try {
-      const saved = await counts.save(row)
+      const saved = await stocktakeCounts.save(row)
       lines = [...lines, { ...row, id: saved?.id, sku: skuOf(row.variantId), held: false, shot: !!shot }]
     } catch (err) {
       if (!held(err)) { error = err.message; busy = false; return }
@@ -130,7 +130,7 @@ title: Stocktake
     if (!sheet) return
     error = null; busy = true
     try {
-      const r = await sheets.service.invoke('close', sheet.id, {})
+      const r = await stocktakeSheets.service.invoke('close', sheet.id, {})
       toasts.success(`Sheet closed — ${r.posted.length} of ${r.counted} shelves corrected`)
       sheet = null; lines = []; pending = 0
     } catch (err) {

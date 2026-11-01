@@ -184,5 +184,5 @@ Done when: Basecamp answers over HTTPS on a box made by `fli basecamp:create
 
 ## See also
 
-`zero-to-live.md` (the chain this runs on) · `packages/basecamp/docs/PROVISIONING.md` (ring 1) ·
+`zero-to-live.md` (the chain this runs on) · `packages/basecamp/docs/provisioning.md` (ring 1) ·
 `packages/basecamp/api/src/providers/compute/index.ts` (the `ComputeConnector` boundary)

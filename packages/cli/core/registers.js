@@ -84,7 +84,7 @@ export const RULING_STATUS = ['superseded-by', 'amended-by', 'withdrawn']
 // `proposed` decided or merely argued, nothing built · `partial` some of it
 // ships and the rest is still the design · `shipped` built, kept for the
 // argument · `superseded-by` a later paper or ruling replaced it ·
-// `withdrawn` argued and declined. Then `assessment`, a reading of the tree
+// `withdrawn` argued and declined. Then `reading`, a reading of the tree
 // rather than a proposal, which carries a date and is cited as behavior by
 // nobody, and `index`, derived from the others and authoritative over none.
 //
@@ -96,7 +96,7 @@ export const IDEA_STATUS = [
   'shipped',
   'superseded-by',
   'withdrawn',
-  'assessment',
+  'reading',
   'index'
 ]
 

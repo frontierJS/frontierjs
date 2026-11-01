@@ -32,7 +32,7 @@ title: Plan
   import { session } from '@frontierjs/sierra/resource'
   import { day } from '@/lib/datetime.js'
   import { page } from '@frontierjs/sierra/router'
-  import { money } from '../../lib/money.js'
+  import { money } from '@/lib/money.js'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge         from '@frontierjs/ui/components/display/Badge.mesa'
@@ -157,8 +157,8 @@ title: Plan
     {#snippet action()}
       <div class="cluster">
         <Badge tone="muted">{plan.interval}</Badge>
-        <Pill tone={plan.active ? 'success' : 'muted'} data-active={String(plan.active)}>
-          {plan.active ? 'on sale' : 'retired'}
+        <Pill tone={plan.isActive ? 'success' : 'muted'} data-active={String(plan.isActive)}>
+          {plan.isActive ? 'on sale' : 'retired'}
         </Pill>
       </div>
     {/snippet}

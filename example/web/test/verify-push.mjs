@@ -133,7 +133,7 @@ if (!existsSync(join(ROOT, 'web/dist/client/sw.js'))) {
 
 start('bun', ['api/src/providers/push/sink.ts'], 'sink', { PUSH_SINK_PORT: SINK_PORT })
 start('bun', ['run', 'api/index.ts'], 'api', { API_PORT, PUSH_SINK_URL: SINK })
-start('node', ['web/test/preview.mjs'], 'preview', { PREVIEW_PORT: UI_PORT, FRONTIER_API_URL: API })
+start('node', ['web/test/verify-preview.mjs'], 'preview', { PREVIEW_PORT: UI_PORT, FRONTIER_API_URL: API })
 await waitFor(`${SINK}/outbox`, 'the push sink')
 await waitFor(`${API}/api/products`, 'the API')
 await waitFor(UI, 'the preview')

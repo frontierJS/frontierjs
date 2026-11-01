@@ -1,12 +1,12 @@
 ---
 id: review-routify-v4
-status: assessment
+status: reading
 dated: 2026-09-07
 ---
 
 # Idea — Routify v4 read against Sierra: four features, two surfaces
 
-**Status: ASSESSMENT. UNBUILT, and nothing here is a commitment.** Dated
+**Status: READING. UNBUILT, and nothing here is a commitment.** Dated
 2026-09-07. Every Sierra claim was read off `packages/sierra/src/` and
 `packages/junction/src/client/` on that date and is cited by file; the Routify
 half is the proposal as it arrived and was never run. Do not cite this file as

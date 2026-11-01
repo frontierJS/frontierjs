@@ -32,7 +32,7 @@ test('scaffoldWidgetSurface with no name scaffolds rather than refusing', () => 
   roots.push(root)
   const { written } = scaffoldWidgetSurface({ root })
   expect(written.length).toBeGreaterThan(0)
-  expect(existsSync(join(root, 'widgets/src/Embeds/HelloWidget.mesa'))).toBe(true)
+  expect(existsSync(join(root, 'widgets/src/embeds/HelloWidget.mesa'))).toBe(true)
 })
 
 // FJS-2534: the prefix is glued to the name, so 'mt' scaffolds <mtbasic-lead>,

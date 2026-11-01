@@ -80,7 +80,7 @@ const serving = rows.find(r => r.status === 'succeeded')
 for (const r of rows) {
   const here = r.id === serving?.id ? '  ← serving' : ''
   console.log(`  ${MARK[r.status] ?? '?'} ${pad(r.kind, 7)}${pad(r.releaseId, 14)}${pad(r.status, 10)}${pad(r.startedAt ?? '', 26)}${r.actor ?? ''}${here}`)
-  if (r.crossesPivot) console.log(`    ${pad('', 7)}crossed the pivot — nothing before this can be restored`)
+  if (r.isCrossingPivot) console.log(`    ${pad('', 7)}crossed the pivot — nothing before this can be restored`)
 }
 
 const which = flag.transition || (flag.steps ? rows[0]?.id : null)

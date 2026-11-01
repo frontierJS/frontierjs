@@ -43,13 +43,13 @@ if (!staged.length) {
 }
 
 log.info(`Staged files (${staged.length}):`)
-for (const f of staged.slice(0, 8)) echo(`  ${f}`)
-if (staged.length > 8) echo(`  … and ${staged.length - 8} more`)
+for (const f of staged.slice(0, 8)) echo(chalk.cyan(`  ${f}`))
+if (staged.length > 8) echo(chalk.dim(`  … and ${staged.length - 8} more`))
 echo('')
 
 // ─── Type ─────────────────────────────────────────────────────────────────────
-echo('Commit types:')
-TYPES.forEach((t, i) => echo(`  ${String(i + 1).padStart(2)}. ${t.label}`))
+echo(chalk.bold('Commit types:'))
+TYPES.forEach((t, i) => echo(`  ${chalk.dim(String(i + 1).padStart(2) + '.')} ${t.label}`))
 echo('')
 
 let typeInput = await tty.line('Type (number or name): ')
@@ -84,9 +84,9 @@ const header     = `${type}${scopeStr}${breakingStr}: ${subject}`
 const fullMsg    = body ? `${header}\n\n${body}` : header
 
 echo('')
-echo('─── Commit message ───────────────────────────────')
-echo(fullMsg)
-echo('──────────────────────────────────────────────────')
+echo(chalk.dim('─── Commit message ───────────────────────────────'))
+echo(chalk.bold(fullMsg))
+echo(chalk.dim('──────────────────────────────────────────────────'))
 echo('')
 
 const confirm = (await tty.line('Commit? (Y/n): ')).trim().toLowerCase()

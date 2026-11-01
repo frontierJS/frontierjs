@@ -105,7 +105,7 @@ model Release {
   /// Set when a person declared a pivot the schema cannot see, or overrode one
   /// the classifier called. The second direction is the dangerous one and this
   /// is where it is loud.
-  pivotDeclared  Boolean      @default(false)
+  isPivotDeclared  Boolean      @default(false)
   pivotFindings  Json         @default("[]")
 
   /// When this Release stops being a revert target. Every surveyed system put
@@ -191,7 +191,7 @@ model Transition {
   /// Whether this passes the point at which compensation ends. Recorded rather
   /// than re-derived, because what matters afterwards is the answer the
   /// operator was shown and agreed to, not the answer a later classifier gives.
-  crossesPivot  Boolean          @default(false)
+  isCrossingPivot  Boolean          @default(false)
 
   /// The steps as planned. `--plan` prints this and executes nothing, so the
   /// plan and the record are one object rather than two that can disagree.

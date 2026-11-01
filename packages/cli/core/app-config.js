@@ -366,6 +366,9 @@ const AGENT_RULES = [
   { needs: '@frontierjs/litestone', rules: ['model-name-case', 'model-name-plural'],
     text: 'Model names are PascalCase singular. `model Lead` is `db.lead` and the `leads` service, each derived '
         + 'from the other, so `model Leads` disconnects the API and the UI from the table.' },
+  { needs: '@frontierjs/litestone', rules: ['enum-value-case', 'boolean-prefix', 'duration-unit-spelled'],
+    text: 'A schema spells one way. An enum value is camelCase (`pastDue`), a Boolean field starts `is` or `has` '
+        + '(`isPublished`) and a duration column spells its unit (`timeoutSeconds`; `Ms` stays).' },
   { needs: '@frontierjs/litestone', rules: [],
     text: 'Access is declared in the schema — `@@gate`, `@@allow`, `@guarded`, `@@transitions` — and never '
         + 'checked in a service hook. A hook guards the callers that pass through it; the schema guards every '
@@ -379,9 +382,10 @@ const AGENT_RULES = [
   { needs: '@frontierjs/litestone', rules: ['migration-history'],
     text: 'A schema change ships as a migration file, `fli db:migrate`. `fli db:push` changes the local tables '
         + 'and writes no file, and a deploy replays only files.' },
-  { needs: '@frontierjs/sierra', rules: ['resource-dir-mesa', 'resource-script', 'resource-file-name', 'resource-one-per-file'],
+  { needs: '@frontierjs/sierra', rules: ['resource-dir-mesa', 'resource-script', 'resource-file-name', 'resource-one-per-file', 'resource-export-name'],
     text: 'A Resource is a `.mesa` file in `src/resources/`, one per file and named for its model (`Lead.mesa`). '
-        + 'Its `<script module>` calls `createResource`; its markup, when present, is the model\'s default form.' },
+        + 'Its `<script module>` calls `createResource` with, and exports, the model\'s camelCase plural (`export const leads = createResource(\'leads\')`; a one-row model, its `@id` defaulting to a constant, stays singular); '
+        + 'its markup, when present, is the model\'s default form.' },
   { needs: '@frontierjs/css', rules: ['css-token-undefined', 'css-raw-literal', 'css-raw-utility', 'css-class-collision'],
     text: 'Style with what a thing is and what is true about it — `class="btn outlined danger"` — never with a '
         + 'color, a size or a spacing value.' },

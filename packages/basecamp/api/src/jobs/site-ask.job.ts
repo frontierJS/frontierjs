@@ -8,7 +8,7 @@
 // queues nothing beside it.
 
 import { defineJob }      from '@frontierjs/caravan'
-import { runsAsApp }      from './context.ts'
+import { runsAsApp }      from '../domain/job/job-context.ts'
 import { ASK_TIMEOUT_MS, askDraft } from '../domain/site/site-ask.ts'
 
 const siteAsk = defineJob<{ appId: string; draft: string }>({

@@ -1,6 +1,6 @@
 // src/services/deployments/deployments.service.ts
 // A Deployment is one release of an App to its Environment — a Manifest
-// realized at a point in time (VISION.md §Where Basecamp Fits).
+// realized at a point in time (vision.md §Where Basecamp Fits).
 //
 // Mounted at /deployments. Append-only from a person's point of view: creating
 // one is a user action, advancing its status is the job's, and `remove` is
@@ -19,7 +19,7 @@ import deploymentRun from '../../jobs/deployment-run.job.ts'
 import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow, SITE_STEP } from '../../domain/release/release-record.ts'
 import { isInline, isGit, imageOf, inlineFilesFor } from '../../domain/release/app-source.ts'
 import { snapshotVariables } from '../../domain/release/variables.ts'
-import { runtimeOf, type Runtime, CONTAINER_TYPES } from '../../domain/release/runtime.ts'
+import { runtimeOf, type Runtime, CONTAINER_KINDS } from '../../domain/release/runtime.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 import { refuseHubRelease } from '../../domain/host/host-machine.ts'
 
@@ -69,14 +69,14 @@ const WITH_APP = { app: { include: { environment: true } } }
  * `site/`, if it has one, built against that database and published. A
  * rollback has none, since its clone is the branch as it is now.
  */
-function buildInitialSteps(target: { type: string; source?: unknown; runtime?: Runtime }, built = false): string[] {
-  if (target.type === 'static' && isGit(target.source)) return ['Validate', 'Build and deploy']
+function buildInitialSteps(target: { kind: string; source?: unknown; runtime?: Runtime }, built = false): string[] {
+  if (target.kind === 'static' && isGit(target.source)) return ['Validate', 'Build and deploy']
   if (isInline(target.source))
     return inlineFilesFor(target.source).length
       ? ['Validate', 'Upload files', 'Activate', 'Health check']
       : ['Validate', 'Activate', 'Health check']
   const copy = target.runtime?.volumePath ? ['Back up volume'] : []
-  if ((target.type === 'container' || target.type === 'function') && isGit(target.source))
+  if ((target.kind === 'container' || target.kind === 'function') && isGit(target.source))
     return built
       ? ['Validate', ...copy, 'Start container', 'Health check']
       : ['Validate', 'Build image', ...copy, 'Start container', 'Health check', ...(copy.length ? [SITE_STEP] : [])]
@@ -116,7 +116,7 @@ async function deployInScope(id: string) {
  * release already made, so a git app is started and not rebuilt; `held` is an
  * inline release of bytes the machine holds, whose snapshot uploads no files.
  */
-async function queueRelease(target: { id: string; environmentId: string; type: string; source?: unknown }, data: Record<string, unknown>, { held = false, built = false } = {}) {
+async function queueRelease(target: { id: string; environmentId: string; kind: string; source?: unknown }, data: Record<string, unknown>, { held = false, built = false } = {}) {
   // What the app looked like at release time: how its container starts
   // (`domain/release/runtime.ts`) and its variables — plain values copied, secrets by
   // id (`domain/release/variables.ts`).
@@ -137,7 +137,7 @@ async function queueRelease(target: { id: string; environmentId: string; type: s
   const deployment = await db().deployment.create({ data })
 
   await db().deploymentStep.createMany({
-    data: buildInitialSteps({ type: target.type, ...(data.configSnapshot as { source: unknown; runtime: Runtime }) }, built).map((name, position) => ({
+    data: buildInitialSteps({ kind: target.kind, ...(data.configSnapshot as { source: unknown; runtime: Runtime }) }, built).map((name, position) => ({
       deploymentId: deployment.id, position, name, status: 'pending',
     })),
   })
@@ -220,12 +220,12 @@ export default createService({
     // the start step asking docker to pull the app's NAME from a public
     // registry. Only a git container is built, here on the machine; a
     // database is an image or nothing.
-    const builds = isGit(target.source) && target.type !== 'database'
+    const builds = isGit(target.source) && target.kind !== 'database'
     // The branch a git release builds is the App's unless the caller named
     // one; the button has no payload, so the row would otherwise say nothing.
     if (isGit(target.source) && data.branch == null && (target.source as { branch?: string }).branch)
       data.branch = (target.source as { branch?: string }).branch
-    if (CONTAINER_TYPES.has(target.type as string)
+    if (CONTAINER_KINDS.has(target.kind as string)
         && !isInline(target.source) && !builds && !imageOf(target.source) && !data.toImage)
       throw new BadRequest(
         `App '${target.name}' names no image — ` +
@@ -318,7 +318,7 @@ export default createService({
   // Every part of this was already being written and none of it was read:
   // `previousDeploymentId` is chained on every create under a comment saying
   // a rollback would want it, `configSnapshot` records what the app looked
-  // like at release time, and `rollback: success -> rolled_back @gate(5)` is
+  // like at release time, and `rollback: success -> rolledBack @gate(5)` is
   // declared on the model — while four screens carried a tone for a state no
   // write could produce (`FJS-517`).
   //
@@ -336,7 +336,7 @@ export default createService({
   //
   // ─── Why the retire happens HERE and not when the replacement lands ──
   //
-  // `rolled_back` is a DECISION, not an outcome — an operator with standing 5
+  // `rolledBack` is a DECISION, not an outcome — an operator with standing 5
   // withdrew this release — so it is written at the moment the decision is
   // made, and `@gate(5)` on the move is what grades them, at the Data
   // boundary, before anything is created (Invariant 6). Deferring it to the
@@ -396,7 +396,7 @@ export default createService({
     const executor = await resolveExecutor($.app, being.appId)
     if (!isExecutor(executor)) throw new BadRequest(executor.reason)
 
-    // The move, and the enforcement: `success -> rolled_back @gate(5)` is the
+    // The move, and the enforcement: `success -> rolledBack @gate(5)` is the
     // model's and so is the level. Everything above this line was a read.
     await db().deployment.transition(being.id, 'rollback')
 
@@ -425,7 +425,7 @@ export default createService({
       // An app switched from inline to a container since that release would
       // otherwise be rolled back through a pipeline its old bytes cannot run.
       data: buildInitialSteps({
-        type:    into.type,
+        kind:    into.kind,
         source:  (target.configSnapshot as any)?.source ?? into.source,
         runtime: (target.configSnapshot as any)?.runtime ?? runtimeOf(into),
       }, true).map((name, position) => ({

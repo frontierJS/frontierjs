@@ -499,7 +499,24 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
    *  the click lands on a neighbor on some runs and not others (FJS-3577).
    *  Capped, so an element that never stops (a spinner) is pressed where it is. */
   async function clickAt(selector) {
-    const box = await evaluate(`
+    const box = await settledCenter(selector)
+    for (const kind of ['mousePressed', 'mouseReleased'])
+      await cmd('Input.dispatchMouseEvent', {
+        type: kind, x: box.x, y: box.y, button: 'left', clickCount: 1,
+        buttons: kind === 'mousePressed' ? 1 : 0,
+      })
+  }
+
+  /** A real pointer move onto an element's center: `pointerenter`, `mouseover`
+   *  and `:hover` come from the browser, which a dispatched event does not
+   *  prove. Waits for the box to settle as `clickAt` does. */
+  async function hoverAt(selector) {
+    const box = await settledCenter(selector)
+    await cmd('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x, y: box.y, button: 'none', buttons: 0 })
+  }
+
+  async function settledCenter(selector) {
+    return await evaluate(`
       const el = document.querySelector(${JSON.stringify(selector)});
       if (!el) throw new Error('clickAt: no element for ' + ${JSON.stringify(selector)});
       const frame = () => new Promise((res) => { requestAnimationFrame(res); setTimeout(res, 50) });
@@ -536,11 +553,6 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
       }
       return p;
     `)
-    for (const kind of ['mousePressed', 'mouseReleased'])
-      await cmd('Input.dispatchMouseEvent', {
-        type: kind, x: box.x, y: box.y, button: 'left', clickCount: 1,
-        buttons: kind === 'mousePressed' ? 1 : 0,
-      })
   }
 
   /** Poll an expression until it is truthy and answer its value. A drive
@@ -654,7 +666,7 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
     launched.delete(entry)
   }
 
-  return { cmd, send, evaluate, navigate, newPage, key, press, type, clickAt, fill, waitFor, shot, on, errors, failed, close }
+  return { cmd, send, evaluate, navigate, newPage, key, press, type, clickAt, hoverAt, fill, waitFor, shot, on, errors, failed, close }
 }
 
 // ─── the network ──────────────────────────────────────────────────────

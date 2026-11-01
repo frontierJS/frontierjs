@@ -7,7 +7,7 @@ title: Subscriptions
   // The status column is a `@@transitions` machine and ALL FOUR moves are
   // `@system` — the trial converting, the lapse past an invoice's grace, the
   // recovery when the ledger comes clean, and the cancellation made when a
-  // period closes and finds `cancelAtPeriodEnd` set. So
+  // period closes and finds `isCancelingAtPeriodEnd` set. So
   // `transitions(row, level)` answers nothing here, and this is the first
   // screen in the app whose action buttons are NOT derived from the schema.
   //
@@ -20,7 +20,7 @@ title: Subscriptions
   import { day } from '@/lib/datetime.js'
   import { toneFor } from '@/lib/status-tone.js'
   import { session } from '@frontierjs/sierra/resource'
-  import { money } from '../../lib/money.js'
+  import { money } from '@/lib/money.js'
 
   import Alert               from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button              from '@frontierjs/ui/components/forms/Button.mesa'
@@ -96,16 +96,16 @@ title: Subscriptions
       <td class="text-muted">#{s.customerId}</td>
       <td><Pill tone={toneFor(s.status)} data-status={s.status}>{s.status}</Pill></td>
       <td class="text-right" data-quantity={s.quantity}>{s.quantity}</td>
-      <td data-renews={s.currentPeriodEnd ?? ''} data-stopping={s.cancelAtPeriodEnd ? '1' : ''}>
+      <td data-renews={s.currentPeriodEnd ?? ''} data-stopping={s.isCancelingAtPeriodEnd ? '1' : ''}>
         {day(s.currentPeriodEnd)}
-        {#if s.cancelAtPeriodEnd && s.status !== 'cancelled'}
+        {#if s.isCancelingAtPeriodEnd && s.status !== 'cancelled'}
           <span class="text-muted text-xs"> · ends, does not renew</span>
         {/if}
       </td>
       <td>
         <div class="cluster">
           <Button treatment="ghost" href={'/subscriptions/' + s.id + '/'}>Open</Button>
-          {#if canStop(s) && s.cancelAtPeriodEnd}
+          {#if canStop(s) && s.isCancelingAtPeriodEnd}
             <Button
               treatment="ghost"
               data-resume={s.reference}
@@ -141,7 +141,7 @@ title: Subscriptions
 <Alert tone="muted">
   All four of this model's moves are <code>@system</code> — made when a period
   closes or an invoice goes unpaid, never by a request. <em>Stop renewing</em>
-  writes <code>cancelAtPeriodEnd</code> instead, and the arrangement ends when
+  writes <code>isCancelingAtPeriodEnd</code> instead, and the arrangement ends when
   the period that has already been paid for closes. So these are
   the one set of buttons in this app that <code>transitions(row, level)</code>
   cannot answer for.

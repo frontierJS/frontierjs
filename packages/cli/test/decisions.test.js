@@ -14,7 +14,7 @@ import { tmpdir }        from 'os'
 import { fileURLToPath } from 'url'
 import { spawn }         from 'child_process'
 
-import { readDecisions, openDecisions, rulingSections, QUESTIONS_HEADING } from '../core/decisions.js'
+import { readDecisions, openDecisions, rulingSections, paperQuestions, QUESTIONS_HEADING } from '../core/decisions.js'
 import { decide, settle, nextDecisionNumber } from '../core/decide.js'
 import { runRegisterCheck }           from '../core/register-check.js'
 
@@ -283,6 +283,22 @@ describe('the pick', () => {
         `- ~~**Does the cache key grow with the view set?**~~ **Answered 2026-09-14 (\`${out.ruling}\`): A — no.** Nobody has\n`)
       expect(readDecisions(root).filter(q => q.paper?.id === 'views').map(q => q.state)).toEqual(['ruled'])
     } finally { cleanup() }
+  })
+
+  test('a question the paper writes as Ruled FJS-D…, struck with or without bold, is ruled (FJS-3792)', () => {
+    const paper = [
+      '---', 'id: views', 'status: proposed', '---', '', '## Open questions', '',
+      '- ~~Q1 — What an Account is.~~ Ruled `FJS-D1618`.',
+      '- **Q2 — Who picks the host port.** Ruled `FJS-D1557`: **A**.',
+      '  **A** — Basecamp allocates. **B** — keep the field.',
+      '- **Q3 — Default destinations.** Ruled `FJS-D1613`, 2026-10-28: **C**,',
+      '  tarballs alone.',
+      '- **Q4 — Is it still open?** Ruled out by nobody; see `FJS-D1` later.',
+      '',
+    ].join('\n')
+    const qs = paperQuestions(paper, { paper: { id: 'views', status: 'proposed', file: 'IDEAS/views.md' } })
+    expect(qs.map(q => q.state)).toEqual(['ruled', 'ruled', 'ruled', 'open'])
+    expect(qs[0].question).toBe('Q1 — What an Account is.')
   })
 
   test('a question that wraps is queued whole, and ruling it strikes the whole lead (FJS-2160)', () => {

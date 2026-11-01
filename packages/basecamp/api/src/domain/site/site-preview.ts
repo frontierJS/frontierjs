@@ -127,7 +127,7 @@ export async function cloudflareFor(app: App, workspaceId: string):
     where: { id: workspaceId }, select: { ingressAccountId: true, ingressZoneId: true },
   }) as { ingressAccountId: string | null, ingressZoneId: string | null } | null
   const accounts = await sys.secret.findMany({
-    where: { workspaceId, kind: 'provider_key', providerKind: 'cloudflare' }, select: { id: true, name: true },
+    where: { workspaceId, kind: 'providerKey', providerKind: 'cloudflare' }, select: { id: true, name: true },
   }) as { id: string, name: string }[]
 
   const chosen = accounts.find(a => a.id === ws?.ingressAccountId) ?? (accounts.length === 1 ? accounts[0] : null)
@@ -165,7 +165,7 @@ export async function buildDraftPreview(app: App, appId: string, draft: string, 
   const named = draftBranch(draft)
   if ('refused' in named) return null
   const row = await (app.db as any).asSystem().app.findFirst({ where: { id: appId } })
-  if (!row || row.type !== 'static' || !isGit(row.source)) return null
+  if (!row || row.kind !== 'static' || !isGit(row.source)) return null
   const site: GitSite = { id: row.id, source: row.source }
 
   let tried: string | null = null

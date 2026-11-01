@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS "credential" (
   "tokenExpiresAt" TEXT,
   "scope" TEXT,
   "totpLastStep" INTEGER,
-  "linked" INTEGER,
+  "isLinked" INTEGER,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_credential_userId_type" ON "credential" ("userId", "type");
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS "session" (
   "ipAddress" TEXT,
   "userAgent" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "enrollmentOnly" INTEGER NOT NULL DEFAULT 0,
+  "isEnrollmentOnly" INTEGER NOT NULL DEFAULT 0,
   "reauthenticatedAt" TEXT,
   "impersonatingUserId" TEXT,
   "impersonationReason" TEXT,
@@ -179,7 +179,7 @@ CREATE TABLE IF NOT EXISTS "flow_credential" (
   "secret" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  CHECK ("auth" IN ('none', 'bearer', 'api_key', 'hmac'))
+  CHECK ("auth" IN ('none', 'bearer', 'apiKey', 'hmac'))
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS "kv_entry" (
@@ -200,12 +200,12 @@ CREATE TABLE IF NOT EXISTS "product" (
   "description" TEXT,
   "brand" TEXT NOT NULL,
   "fields" TEXT NOT NULL DEFAULT '{}',
-  "active" INTEGER NOT NULL DEFAULT 1,
+  "isActive" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
   "version" INTEGER NOT NULL DEFAULT 1,
   CHECK ("brand" IN ('frontierjs', 'junction', 'litestone')),
-  CHECK (NOT ("active") OR "description" IS NOT NULL)
+  CHECK (NOT ("isActive") OR "description" IS NOT NULL)
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_product_deletedAt" ON "product" ("deletedAt") WHERE "deletedAt" IS NULL;
 CREATE VIRTUAL TABLE IF NOT EXISTS "product_fts" USING fts5(
@@ -254,7 +254,7 @@ CREATE TABLE IF NOT EXISTS "color" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "name" TEXT NOT NULL UNIQUE,
   "hex" TEXT,
-  "retired" INTEGER NOT NULL DEFAULT 0,
+  "isRetired" INTEGER NOT NULL DEFAULT 0,
   "sortOrder" INTEGER NOT NULL DEFAULT 999,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
@@ -296,7 +296,7 @@ CREATE TABLE IF NOT EXISTS "custom_field" (
   "label" TEXT NOT NULL,
   "type" TEXT NOT NULL,
   "defaultValue" TEXT,
-  "show" INTEGER NOT NULL DEFAULT 1,
+  "isVisible" INTEGER NOT NULL DEFAULT 1,
   "slot" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   CHECK ("type" IN ('text', 'number')),
@@ -332,7 +332,7 @@ CREATE TABLE IF NOT EXISTS "discount" (
   "endsAt" TEXT,
   "maxRedemptions" INTEGER,
   "redemptions" INTEGER NOT NULL DEFAULT 0,
-  "active" INTEGER NOT NULL DEFAULT 1,
+  "isActive" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   CHECK ("kind" IN ('percent', 'fixed')),
   CHECK (maxRedemptions IS NULL OR redemptions <= maxRedemptions),
@@ -367,7 +367,7 @@ CREATE TABLE IF NOT EXISTS "pickup_point" (
   "address" TEXT NOT NULL,
   "site" TEXT,
   "hours" TEXT,
-  "active" INTEGER NOT NULL DEFAULT 1,
+  "isActive" INTEGER NOT NULL DEFAULT 1,
   "version" INTEGER NOT NULL DEFAULT 1,
   "siteLat" REAL GENERATED ALWAYS AS (json_extract("site", '$.lat')) VIRTUAL,
   "siteLng" REAL GENERATED ALWAYS AS (json_extract("site", '$.lng')) VIRTUAL,
@@ -389,7 +389,7 @@ CREATE TABLE IF NOT EXISTS "shipping_method" (
   "price" INTEGER NOT NULL CHECK ("price" BETWEEN -9007199254740991 AND 9007199254740991),
   "freeOver" INTEGER CHECK ("freeOver" BETWEEN -9007199254740991 AND 9007199254740991),
   "position" INTEGER NOT NULL DEFAULT 0,
-  "active" INTEGER NOT NULL DEFAULT 1,
+  "isActive" INTEGER NOT NULL DEFAULT 1,
   "version" INTEGER NOT NULL DEFAULT 1
 ) STRICT;
 
@@ -407,7 +407,7 @@ CREATE TABLE IF NOT EXISTS "tax_rate" (
   "label" TEXT NOT NULL,
   "rate" REAL NOT NULL,
   "isDefault" INTEGER NOT NULL DEFAULT 0,
-  "active" INTEGER NOT NULL DEFAULT 1,
+  "isActive" INTEGER NOT NULL DEFAULT 1,
   "version" INTEGER NOT NULL DEFAULT 1
 ) STRICT;
 
@@ -433,7 +433,7 @@ CREATE TABLE IF NOT EXISTS "tax_rate" (
 CREATE TABLE IF NOT EXISTS "payment_event" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "eventId" TEXT NOT NULL UNIQUE,
-  "kind" TEXT NOT NULL,
+  "type" TEXT NOT NULL,
   "paymentRef" TEXT,
   "receivedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
@@ -447,7 +447,7 @@ CREATE TABLE IF NOT EXISTS "plan" (
   "name" TEXT NOT NULL,
   "description" TEXT,
   "interval" TEXT NOT NULL DEFAULT 'monthly',
-  "active" INTEGER NOT NULL DEFAULT 1,
+  "isActive" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   CHECK ("interval" IN ('monthly', 'yearly'))
 ) STRICT;
@@ -518,7 +518,7 @@ CREATE TABLE IF NOT EXISTS "employee" (
 -- `fromAmount` and `toAmount` are ANNUAL and cumulative, so a rate applies to
 -- the slice of income between them and not to the whole. That is what makes a
 -- tax band a band; applying the top rate to the whole salary is the classic
--- wrong answer, and `api/src/payrates.ts` is the only place the walk is
+-- wrong answer, and `api/src/domain/payroll/pay-rates.ts` is the only place the walk is
 -- written. `toAmount` null is *and everything above*, which every real band
 -- table has exactly one of per kind.
 CREATE TABLE IF NOT EXISTS "pay_rate" (
@@ -602,7 +602,7 @@ CREATE TABLE IF NOT EXISTS "user" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "email" TEXT NOT NULL UNIQUE,
   "name" TEXT,
-  "emailVerified" INTEGER NOT NULL DEFAULT 0,
+  "isEmailVerified" INTEGER NOT NULL DEFAULT 0,
   "role" TEXT NOT NULL DEFAULT 'user',
   "kind" TEXT NOT NULL DEFAULT 'user',
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -663,14 +663,14 @@ CREATE TABLE IF NOT EXISTS "product_variant" (
   "barcode" TEXT UNIQUE,
   "stock" INTEGER NOT NULL DEFAULT 0,
   "version" INTEGER NOT NULL DEFAULT 1,
-  "active" INTEGER NOT NULL DEFAULT 1,
+  "isActive" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
   CHECK ("size" IN ('one', 'xs', 's', 'm', 'l', 'xl', 'xxl')),
   UNIQUE ("productId", "color", "size"),
   FOREIGN KEY ("productId") REFERENCES "product" ("id") ON DELETE CASCADE
 ) STRICT;
-CREATE INDEX IF NOT EXISTS "idx_product_variant_productId" ON "product_variant" ("productId") WHERE ("deletedAt" IS NULL) AND ("active" = 1);
+CREATE INDEX IF NOT EXISTS "idx_product_variant_productId" ON "product_variant" ("productId") WHERE ("deletedAt" IS NULL) AND ("isActive" = 1);
 CREATE INDEX IF NOT EXISTS "idx_product_variant_deletedAt" ON "product_variant" ("deletedAt") WHERE "deletedAt" IS NULL;
 
 CREATE TABLE IF NOT EXISTS "order" (
@@ -911,7 +911,7 @@ CREATE INDEX IF NOT EXISTS "idx_product_image_deletedAt" ON "product_image" ("de
 -- 
 -- read   5  an administrator; a movement names orders and quantities
 -- create 5  receiving stock is an administrator's act, so the Data boundary
--- is what refuses it — `inventory.receive` contains no check of
+-- is what refuses it — `inventoryMovements.receive` contains no check of
 -- its own and needs none
 -- update 9  LOCKED — nothing passes 9, `asSystem()` included
 -- delete 9  LOCKED
@@ -961,6 +961,7 @@ CREATE TABLE IF NOT EXISTS "stocktake_count" (
   FOREIGN KEY ("variantId") REFERENCES "product_variant" ("id") ON DELETE RESTRICT
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_stocktake_count_sheetId" ON "stocktake_count" ("sheetId");
+CREATE INDEX IF NOT EXISTS "idx_stocktake_count_variantId" ON "stocktake_count" ("variantId");
 
 -- What was bought, at the price it was bought for.
 -- 
@@ -1135,7 +1136,7 @@ CREATE TABLE IF NOT EXISTS "subscription" (
   "quantity" INTEGER NOT NULL DEFAULT 1,
   "trialEndsAt" TEXT,
   "cancelledAt" TEXT,
-  "cancelAtPeriodEnd" INTEGER NOT NULL DEFAULT 0,
+  "isCancelingAtPeriodEnd" INTEGER NOT NULL DEFAULT 0,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "userId" TEXT,
   CHECK ("status" IN ('trialing', 'active', 'pastDue', 'cancelled')),
@@ -1159,7 +1160,7 @@ CREATE INDEX IF NOT EXISTS "idx_subscription_planVersionId" ON "subscription" ("
 -- in application code (`Invoice.subtotal`, `JournalEntry`'s balance, this).
 -- 
 -- **And this one carries the complication phase 0 found in a real payroll**:
--- the sum is not over every line. `PayslipLine.counts` is false for the
+-- the sum is not over every line. `PayslipLine.isCounted` is false for the
 -- employer's contributions, which appear on the payslip and are not deductions
 -- from the person — so whatever spelling the language grows has to admit a
 -- PREDICATE over the child rather than only an aggregate over it.
@@ -1198,7 +1199,7 @@ CREATE TABLE IF NOT EXISTS "run_step" (
   "nodeId" TEXT NOT NULL,
   "status" TEXT NOT NULL,
   "attempts" INTEGER NOT NULL DEFAULT 0,
-  "fromCache" INTEGER NOT NULL DEFAULT 0,
+  "isFromCache" INTEGER NOT NULL DEFAULT 0,
   "startedAt" TEXT,
   "durationMs" INTEGER,
   "output" TEXT,
@@ -1219,6 +1220,7 @@ CREATE TABLE IF NOT EXISTS "wait" (
   FOREIGN KEY ("runId") REFERENCES "run" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_wait_timeoutAt" ON "wait" ("timeoutAt");
+CREATE INDEX IF NOT EXISTS "idx_wait_runId" ON "wait" ("runId");
 
 -- One side of one journal.
 -- 
@@ -1310,7 +1312,7 @@ CREATE TABLE IF NOT EXISTS "invoice" (
   "graceDays" INTEGER NOT NULL,
   "dunningDays" INTEGER NOT NULL,
   "paidAt" TEXT,
-  "reminded" INTEGER NOT NULL DEFAULT 0,
+  "isReminded" INTEGER NOT NULL DEFAULT 0,
   "userId" TEXT,
   CHECK ("status" IN ('draft', 'issued', 'paid', 'void')),
   CHECK (total = subtotal + tax),
@@ -1327,7 +1329,7 @@ CREATE INDEX IF NOT EXISTS "idx_invoice_subscriptionId" ON "invoice" ("subscript
 -- totals cannot be summed, and summing is the only thing anybody wants to do
 -- with one.
 -- 
--- `counts` is the complication a real payroll has and a designed one does not.
+-- `isCounted` is the complication a real payroll has and a designed one does not.
 -- The employer's contributions belong ON the payslip — a person is entitled to
 -- see what their employment costs — and are not deductions from them, so the
 -- invariant is *the lines that count sum to net* rather than *the lines sum to
@@ -1338,7 +1340,7 @@ CREATE TABLE IF NOT EXISTS "payslip_line" (
   "kind" TEXT NOT NULL,
   "description" TEXT NOT NULL,
   "amount" INTEGER NOT NULL CHECK ("amount" BETWEEN -9007199254740991 AND 9007199254740991),
-  "counts" INTEGER NOT NULL DEFAULT 1,
+  "isCounted" INTEGER NOT NULL DEFAULT 1,
   "rateId" INTEGER,
   "correctsPayRunId" INTEGER,
   CHECK ("kind" IN ('basicPay', 'overtime', 'bonus', 'incomeTax', 'employeePension', 'employerPension', 'employerNI')),

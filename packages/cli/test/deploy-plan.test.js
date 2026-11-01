@@ -243,8 +243,8 @@ describe('the journal rows', () => {
     ['expand',   'expand',   false],
     ['contract', 'contract', true],
     ['unknown',  'unknown',  true],   // unknown counts as a contract
-  ])('%s → crossesPivot %s', (_l, pivot, expected) => {
-    expect(build({ ...RELEASE, pivot }).transition.crossesPivot).toBe(expected)
+  ])('%s → isCrossingPivot %s', (_l, pivot, expected) => {
+    expect(build({ ...RELEASE, pivot }).transition.isCrossingPivot).toBe(expected)
   })
 
   // The plan blob has to stand alone: 1e stores it and 1f reads it back, by

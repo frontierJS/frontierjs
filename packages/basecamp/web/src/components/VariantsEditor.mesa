@@ -1,7 +1,7 @@
 <script>
   // VariantsEditor.mesa — a variant flag's list of `{ key, weight }`.
   //
-  // `FeatureFlag.variants` is a Json column, so the default form would offer a
+  // `Flag.variants` is a Json column, so the default form would offer a
   // textarea of JSON. The rules are the service's (`assertVariants`): two or
   // more, unique keys, weights adding to 100. This shows the running total so
   // a person sees the refusal coming, and leaves the refusing to the server.

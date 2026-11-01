@@ -10,12 +10,12 @@
 // `gradeProbe` answers whether ONE request counted as a success. `nextState`
 // answers what that does to the monitor, and a failure is not yet an outage:
 // the monitor goes `down` only after `retries` failures in a row, and while it
-// is retrying the next check comes at `retryIntervalSec`. A single 502 behind a
+// is retrying the next check comes at `retryIntervalSeconds`. A single 502 behind a
 // load balancer is a blip; paging on it is what makes a pager ignored.
 
 export interface ProbeSubject {
   acceptedStatus: string
-  invert:         boolean
+  isInverted:     boolean
 }
 
 /** What the request produced: a status code, or the reason it never got one. */
@@ -51,7 +51,7 @@ export function parseStatusRanges(text: string): Array<[number, number]> | null 
 /**
  * The one owner of *is this a failure*.
  *
- * `invert` flips the verdict for a monitor whose healthy state is an error —
+ * `isInverted` flips the verdict for a monitor whose healthy state is an error —
  * a URL that must NOT answer. It flips a network error as well as a status,
  * which is the case it exists for.
  */
@@ -73,7 +73,7 @@ export function gradeProbe(subject: ProbeSubject, outcome: ProbeOutcome): ProbeG
     message = ok ? `${code} - ${STATUS_TEXT[code] ?? 'OK'}` : `Request failed with status code ${code}`
   }
 
-  if (!subject.invert) return { ok, message }
+  if (!subject.isInverted) return { ok, message }
   return { ok: !ok, message: ok ? `${message} (expected a failure)` : `${message} (inverted)` }
 }
 
@@ -90,8 +90,8 @@ export interface StateSubject {
   status:           MonitorStatus
   failStreak:       number
   retries:          number
-  intervalSec:      number
-  retryIntervalSec: number
+  intervalSeconds:      number
+  retryIntervalSeconds: number
   resendEvery:      number
 }
 
@@ -119,7 +119,7 @@ export function nextState(m: StateSubject, ok: boolean, at: number): NextState {
     return {
       status:      'up',
       failStreak:  0,
-      nextCheckAt: at + m.intervalSec * 1_000,
+      nextCheckAt: at + m.intervalSeconds * 1_000,
       move:        m.status === 'up' ? null : 'markUp',
       page:        m.status === 'down' ? 'up' : null,
     }
@@ -130,7 +130,7 @@ export function nextState(m: StateSubject, ok: boolean, at: number): NextState {
     return {
       status:      m.status,
       failStreak,
-      nextCheckAt: at + m.retryIntervalSec * 1_000,
+      nextCheckAt: at + m.retryIntervalSeconds * 1_000,
       move:        null,
       page:        null,
     }
@@ -145,7 +145,7 @@ export function nextState(m: StateSubject, ok: boolean, at: number): NextState {
   return {
     status:      'down',
     failStreak,
-    nextCheckAt: at + m.intervalSec * 1_000,
+    nextCheckAt: at + m.intervalSeconds * 1_000,
     move:        entering ? 'markDown' : null,
     page:        entering ? 'down' : resend ? 'resend' : null,
   }

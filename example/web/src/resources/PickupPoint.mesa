@@ -11,7 +11,7 @@
 
 import { createResource } from '@frontierjs/sierra/resource'
 
-export const pickupPoints = createResource('pickup-points', {
+export const pickupPoints = createResource('pickupPoints', {
   model: 'PickupPoint',
 })
 </script>

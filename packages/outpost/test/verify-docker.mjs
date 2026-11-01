@@ -474,10 +474,10 @@ try {
 
   const report = (m) => received.find(r => r.method === m)
   const arrived = (path) => received.some(r => r.path === path)
-  for (let i = 0; i < 360 && !(report('heartbeat') && arrived('/volumes') && arrived('/cleanup')); i++) await sleep(250)
+  for (let i = 0; i < 360 && !(report('heartbeat') && arrived('/volumes') && arrived('/maintenanceRuns')); i++) await sleep(250)
   const beat    = report('heartbeat')
   const volumes = received.find(r => r.path === '/volumes')
-  const disk    = received.find(r => r.path === '/cleanup')
+  const disk    = received.find(r => r.path === '/maintenanceRuns')
 
   t('reports.areSigned',               received.length > 0 && received.every(r => r.signed))
   t('reports.heartbeatRegistersTheUrl', beat?.path === '/servers/verify-docker' && beat?.body?.outpost_url === OUTPOST)
@@ -493,14 +493,14 @@ try {
   // The daemon's own count, from its API: `docker images -a` lists every
   // intermediate layer and answers a number no report should match.
   const socket = (process.env.DOCKER_HOST ?? 'unix:///var/run/docker.sock').replace(/^unix:\/\//, '')
-  const cleanups = () => received.filter(r => r.path === '/cleanup').length
+  const cleanups = () => received.filter(r => r.path === '/maintenanceRuns').length
   const reportsSeen = cleanups()
   const df = await fetch('http://localhost/system/df', { unix: socket }).then(r => r.json(), () => null)
   // The first report predates the images this drive pulled since. One already
   // in flight when the daemon was asked can too, so the count is read off the
   // second report to leave the Outpost after that.
   for (let i = 0; i < 80 && cleanups() < reportsSeen + 2; i++) await sleep(250)
-  const fresh = received.filter(r => r.path === '/cleanup').at(-1)
+  const fresh = received.filter(r => r.path === '/maintenanceRuns').at(-1)
   t('reports.diskCountsTheImages',     fresh?.body?.images?.total > 0 && fresh.body.images.total === df?.Images?.length)
   t('reports.diskIsInBytes',           disk?.body?.images?.size_bytes > 1_000_000)
 } catch (e) {

@@ -50,7 +50,7 @@ import { defineJob }       from '@frontierjs/caravan'
 import { resolveExecutor, isExecutor, PULL_TIMEOUT_MS, BUILD_TIMEOUT_MS, DEPLOY_TIMEOUT_MS } from '../providers/executor.ts'
 import type { Executor }    from '../providers/executor.ts'
 import { notifyPeople, workspaceMembers } from '../domain/notification/notify.ts'
-import { runsAsCaller }         from './context.ts'
+import { runsAsCaller }         from '../domain/job/job-context.ts'
 import domainDns                from './domain-dns.job.ts'
 import { syncReplicasOn }       from './replicate-sync.job.ts'
 import { isInline, isGit, inlineFilesFor } from '../domain/release/app-source.ts'
@@ -285,7 +285,7 @@ function runner(app: App) {
       // A first release is what makes the volume a replica list skips until
       // it exists, so the machine is sent its list again.
       if (service?.replicaDestinationId) await syncReplicasOn(app, [executor.serverId])
-      log.info('deployment succeeded', { id: deploymentId, duration_ms: Date.now() - startedAt, ...(siteFailed ? { site: siteFailed } : {}) })
+      log.info('deployment succeeded', { id: deploymentId, durationMs: Date.now() - startedAt, ...(siteFailed ? { site: siteFailed } : {}) })
       await tellThem('DeploySuccess', deploy, service, siteFailed ? { siteFailed } : {})
 
     } catch (err: unknown) {
@@ -319,7 +319,7 @@ function runner(app: App) {
     // would put the current files back under the old release's name.
     const source = ctx.config.source ?? service.source ?? {}
     if (isInline(source)) return runInlineStep(step, { ...ctx, source })
-    if (service.type === 'static' && isGit(source)) return runSiteStep(step, { ...ctx, source })
+    if (service.kind === 'static' && isGit(source)) return runSiteStep(step, { ...ctx, source })
     if (step.name === SITE_STEP) return runAppSiteStep({ ...ctx, source })
     // The image as the app names it. The digest is what identifies bytes, but a
     // registry still needs a name to pull by, so both travel.
@@ -420,7 +420,7 @@ function runner(app: App) {
         // The live App, as the hosts are: a rollback puts back old bytes, never
         // an exposure somebody has since withdrawn. The machine's firewall
         // drops a forwarded port this does not declare (FJS-D930).
-        exposes_port:  service.exposesPort === true,
+        exposes_port:  service.hasExposedPort === true,
       }, { timeoutMs: DEPLOY_TIMEOUT_MS })
       if (reply.error) throw new Error(`Deploy failed: ${reply.error.message}`)
       return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest }

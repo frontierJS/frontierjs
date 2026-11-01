@@ -359,7 +359,7 @@ describe('posture reaches basecamp', () => {
     })
     await reporter.reportPosture()
 
-    expect(sent[0].url).toBe('http://basecamp.test/posture')
+    expect(sent[0].url).toBe('http://basecamp.test/serverPostures')
     expect(sent[0].init.headers['x-service-method']).toBe('report')
     expect(sent[0].init.headers['X-Fjs-Signature']).toMatch(/^v1-ed25519=[A-Za-z0-9_-]{86}$/)
     expect(sent[0].body.server_id).toBe('srv-1')
@@ -430,7 +430,7 @@ describe('the host files on a fleet Outpost', () => {
     })
     await reporter.reportPosture()
 
-    expect(sent.map(s => s.url)).toEqual(['https://basecamp.test/posture'])
+    expect(sent.map(s => s.url)).toEqual(['https://basecamp.test/serverPostures'])
     expect(sent[0].body.server_id).toBe('srv-host')
     expect(sent[0].body.readings.host_files).toEqual({
       db:  { path: '/srv/basecamp/db', mode: '700', owner: 'root', group: 'root' },

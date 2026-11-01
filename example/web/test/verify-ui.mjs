@@ -361,7 +361,7 @@ try {
   // page opened first draws it `pending` for good. Wait for what is drawn next.
   for (let waited = 0; waited < 5000; waited += 100) {
     const paid = (await (await fetch(`${API}/api/payments?orderId=${orderB}`, { headers: auth })).json())?.data?.[0]
-    const told = (await (await fetch(`${API}/api/payment-events?paymentRef=${intent.providerRef}`, { headers: auth })).json())?.data ?? []
+    const told = (await (await fetch(`${API}/api/paymentEvents?paymentRef=${intent.providerRef}`, { headers: auth })).json())?.data ?? []
     if (paid?.status === 'succeeded' && told.length) break
     await new Promise(r => setTimeout(r, 100))
   }

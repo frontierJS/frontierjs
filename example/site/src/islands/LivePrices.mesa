@@ -55,7 +55,7 @@
       // Addressed to the COLLECTION — `invoke(name, null, data)` — because it
       // is a question about a set of shelves. One request fills a table with
       // twelve rows in it.
-      const body = await client.service('product-variants').invoke('availability', null, { productId })
+      const body = await client.service('productVariants').invoke('availability', null, { productId })
 
       const rows = body?.variants ?? []
       const seen = []

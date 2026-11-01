@@ -38,7 +38,7 @@
       : path === '/' ? '/login/' : `/login/?next=${encodeURIComponent(path + (to.search ?? ''))}`
     // An owner the hub requires an authenticator of, who has none, holds a
     // session every screen but this one would fill with 403s (`FJS-D1008`).
-    if (session.user.enrollmentOnly) return path === '/settings/' ? undefined : '/settings/'
+    if (session.user.isEnrollmentOnly) return path === '/settings/' ? undefined : '/settings/'
     if (path === '/login/') return '/'
 
     // The hub tier. `isSystemAdmin` reaches the browser on the SessionContext

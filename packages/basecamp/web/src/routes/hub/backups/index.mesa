@@ -22,10 +22,10 @@ title: Hub backups
   //
   // What IS here is the schedule, read from the settings row; `job-schedule.ts`
   // keeps the clock agreeing with it.
-  import { backups }            from '../../../resources/Backup.mesa'
+  import { hubBackups }         from '../../../resources/HubBackup.mesa'
   import { hubConfig }          from '../../../resources/HubConfig.mesa'
   import { backupDestinations } from '../../../resources/BackupDestination.mesa'
-  import { postures }           from '../../../resources/ServerPosture.mesa'
+  import { hub as hubTier }    from '../../../resources/Hub.mesa'
   import { ago }       from '../../../lib/datetime.js'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
 
@@ -53,7 +53,7 @@ title: Hub backups
   async function load() {
     error = null; loading = true
     try {
-      rows = (await backups.service.find({}, { limit: 50 })).data
+      rows = (await hubBackups.service.find({}, { limit: 50 })).data
       try {
         config = await hubConfig.service.invoke('current', null)
       } catch {
@@ -88,7 +88,7 @@ title: Hub backups
   let attesting = false
   async function loadEscrow() {
     try {
-      const host = await postures.service.invoke('host', null, {})
+      const host = await hubTier.service.invoke('hostPosture', null, {})
       escrow  = host.controls.find(c => c.id === 'hub.key-escrowed') ?? null
       // The box's own `backup.replica-lag`, which grades Basecamp's database
       // beside its apps' once a replica is set.
@@ -142,7 +142,7 @@ title: Hub backups
   async function takeOne() {
     error = null; asking = true
     try {
-      await backups.service.invoke('take', null, { destinationId: hub?.backupDestinationId ?? null })
+      await hubBackups.service.invoke('take', null, { destinationId: hub?.backupDestinationId ?? null })
       toasts.success('Backup queued. The row fills in as the job runs.')
       await load()
       // `inFlight` is derived from the rows `load()` just fetched, so the watch
@@ -166,7 +166,7 @@ title: Hub backups
   async function download(b) {
     error = null; busy = b.id
     try {
-      const { url } = await backups.service.invoke('download', b.id, {})
+      const { url } = await hubBackups.service.invoke('download', b.id, {})
       location.assign(url)
     } catch (e) {
       error = e.message
@@ -181,7 +181,7 @@ title: Hub backups
   async function drop(b) {
     error = null; busy = b.id
     try {
-      await backups.service.invoke('discard', b.id, {})
+      await hubBackups.service.invoke('discard', b.id, {})
       toasts.success('Backup deleted')
       await load()
     } catch (e) {
@@ -197,7 +197,7 @@ title: Hub backups
   async function rescan() {
     error = null; rescanning = true
     try {
-      const { listed, found } = await backups.service.invoke('rescan', null, { destinationId: hub.backupDestinationId })
+      const { listed, found } = await hubBackups.service.invoke('rescan', null, { destinationId: hub.backupDestinationId })
       toasts.success(found ? `${found} archive${found === 1 ? '' : 's'} found in the bucket` : `Nothing new — ${listed} listed`)
       await load()
     } catch (e) {
@@ -285,7 +285,7 @@ title: Hub backups
     </p>
     <p class="text-sm text-muted">
       A hub cannot replace itself while it serves, so that restore is the runbook:
-      <code>docs/BACKUPS.md</code> § 7, <em>The hub, from its own replica</em>, before this box's Outpost is enrolled.
+      <code>docs/backups.md</code> § 7, <em>The hub, from its own replica</em>, before this box's Outpost is enrolled.
     </p>
     <div class="cluster">
       <Button treatment="ghost" id="hub-found-dismiss" onclick={dismissFound}>Dismiss</Button>

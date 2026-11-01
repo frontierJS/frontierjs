@@ -11,7 +11,7 @@
 // beside it.
 
 import { defineJob }         from '@frontierjs/caravan'
-import { runsAsApp }         from './context.ts'
+import { runsAsApp }         from '../domain/job/job-context.ts'
 import { buildDraftPreview } from '../domain/site/site-preview.ts'
 import { BUILD_TIMEOUT_MS }  from '../providers/executor.ts'
 

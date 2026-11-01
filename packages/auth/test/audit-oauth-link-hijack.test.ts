@@ -48,8 +48,8 @@ afterAll(() => h.cleanup())
 
 const lastToken = () => sent[sent.length - 1]!.token
 
-async function victimAccount(email: string, emailVerified: boolean) {
-  const user = await h.sys.user.create({ data: { email, emailVerified } })
+async function victimAccount(email: string, isEmailVerified: boolean) {
+  const user = await h.sys.user.create({ data: { email, isEmailVerified } })
   await h.sys.credential.create({
     data: { userId: user.id, type: 'password', value: await hashPassword('victim-pass') },
   })
@@ -57,12 +57,12 @@ async function victimAccount(email: string, emailVerified: boolean) {
 }
 
 const attackerIdentity = (email: string, sub: string) =>
-  ({ providerId: sub, email, emailVerified: true, name: 'Mallory' } as any)
+  ({ providerId: sub, email, isEmailVerified: true, name: 'Mallory' } as any)
 
 // What the holder's click brings back from the provider: their own subject
 // there, never the attacker's.
 const holderIdentity = (email: string) =>
-  ({ providerId: `holder-own-${email}`, email, emailVerified: true, name: 'Holder' } as any)
+  ({ providerId: `holder-own-${email}`, email, isEmailVerified: true, name: 'Holder' } as any)
 
 describe('an oauthLink invitation the address holder did not start', () => {
 

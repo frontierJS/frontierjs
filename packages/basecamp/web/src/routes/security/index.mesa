@@ -8,8 +8,8 @@ title: Security
   // This screen READS. Check now, and every later fix, live on the server's own
   // page at the gate those actions already have. A machine that never reported
   // or whose last report is older than twice its interval reads as such, never
-  // as clean: `posture.fleet` grades staleness on read and sorts worst first.
-  import { postures } from '../../resources/ServerPosture.mesa'
+  // as clean: `serverPostures.fleet` grades staleness on read and sorts worst first.
+  import { serverPostures } from '../../resources/ServerPosture.mesa'
   import { ago }      from '../../lib/datetime.js'
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
@@ -21,7 +21,7 @@ title: Security
   async function load() {
     error = null
     try {
-      fleet = await postures.service.invoke('fleet', null, {})
+      fleet = await serverPostures.service.invoke('fleet', null, {})
     } catch (e) {
       error = e.message
     } finally {
@@ -30,7 +30,7 @@ title: Security
   }
   load()
 
-  const off = postures.service.on('*', (method) => {
+  const off = serverPostures.service.on('*', (method) => {
     if (method === 'report' || method === 'check') load()
   })
   $.onDestroy(off)

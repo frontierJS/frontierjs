@@ -2,7 +2,7 @@
 //
 //   GET /backup-archive/{id}?expires=&sig=   ← basecamp-<stamp>.tar.gz
 //
-// The local half of `backups.download` (`IDEAS/backups.md` 4.2); a remote
+// The local half of `hubBackups.download` (`IDEAS/backups.md` 4.2); a remote
 // archive is answered with the bucket's own pre-signed GET and never passes
 // through here. The answer is the same file either way: the archive directory
 // tarred with its own name as the one top entry, which is what `backup:run`
@@ -65,7 +65,7 @@ export function backupArchive(app: App) {
     // browser only as a truncated file; this line is where it is said.
     proc.exited.then(async code => {
       if (code !== 0) app.logger.error('backup archive download failed', {
-        backup_id: id, code, stderr: (await new Response(proc.stderr).text()).trim().slice(0, 500) })
+        backupId: id, code, stderr: (await new Response(proc.stderr).text()).trim().slice(0, 500) })
     })
     return new Response(proc.stdout, { headers: {
       'content-type':        'application/gzip',

@@ -2,7 +2,7 @@
 title: Orders
 ---
 <script>
-  import { orders } from '../../resources/Order.mesa'
+  import { orders } from '@/resources/Order.mesa'
   import { prefs } from '@/stores/prefs.js'
   import { day, today, calendarZone } from '@/lib/datetime.js'
   import { plainDateIn, addToDate, startOfDay } from '@frontierjs/toolbelt/datetime'
@@ -19,7 +19,7 @@ title: Orders
   import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
   import Tag           from '@frontierjs/ui/components/display/Tag.mesa'
-  import { money }     from '../../lib/money.js'
+  import { money }     from '@/lib/money.js'
   import { toneFor as tone } from '@/lib/status-tone.js'
 
   // The columns a Table draws are a UI decision, so they are written here —

@@ -1,0 +1,27 @@
+<script>
+  // datepicker-bare.mesa — DatePicker with nothing in its slot (FJS-1979).
+  //
+  // Not held open: the default trigger is what opens it, so `alwaysShow` and
+  // `isOpen` stay off. `today` is rebuilt as a LOCAL date, as the other
+  // fixtures do.
+  import DatePicker from '../../../components/forms/DatePicker.mesa'
+
+  export let todayISO  = '2026-01-15'
+  export let isRange   = false
+  export let disabled  = undefined
+
+  const [y, m, d] = todayISO.split('-').map(Number)
+  const today = new Date(y, m - 1, d)
+
+  let startDate = undefined
+  let endDate   = undefined
+</script>
+
+<DatePicker
+  today={today}
+  isRange={isRange}
+  disabled={disabled}
+  enableFutureDates
+  bind:startDate={startDate}
+  bind:endDate={endDate}
+/>

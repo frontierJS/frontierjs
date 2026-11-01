@@ -50,8 +50,26 @@ const STYLED = [
   'utils/outline', 'workspace/tidy', 'register/close', 'register/file',
   'register/amend', 'register/archive', 'register/decide', 'test/snapshots',
   'dev/tui', 'basecamp/_module', 'register/atlas', 'cloudflare/pages',
-  'project/intent',
+  'project/intent', 'workspace/status', 'workspace/list', 'workspace/changed',
+  'fli/check', 'fli/doctor', 'project/new', 'app/atlas', 'admin/generate',
+  'fli/setup', 'git/commit', 'github/create', 'github/prs', 'make/resource', 'make/route',
+  'make/scaffold', 'ports/proxy', 'env/list', 'fli/init', 'project/codegraph', 'make/command',
+  'make/shortcut', 'make/deploy', 'make/service', 'make/home', 'github/clone',
+  'deploy/status', 'deploy/doctor', 'deploy/vendor', 'deploy/_steps-setup/05-caddy',
+  'deploy/_steps-setup/07-report', 'deploy/_steps-retire/01-preflight', 'deploy/_steps-retire/06-cleanup',
+  'workspace/seams', 'workspace/invariants', 'workspace/hazards', 'workspace/surface',
+  'workspace/atlas', 'workspace/graph', 'workspace/deps', 'workspace/terms',
+  'workspace/exports', 'workspace/npm', 'workspace/version',
 ]
+
+// The raw escape a deploy printer once wrote is the color nobody can turn off:
+// it ignores NO_COLOR and a pipe.
+test('deploy commands write no raw ANSI escape', () => {
+  for (const name of ['deploy/doctor', 'deploy/status']) {
+    const src = readFileSync(join(CLI, 'commands', `${name}.md`), 'utf8')
+    expect(src).not.toContain('\\x1b[')
+  }
+})
 
 for (const name of STYLED) {
   test(`${name} paints with chalk`, () => {

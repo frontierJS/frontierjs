@@ -31,7 +31,7 @@ export default createService({
   // No `channel:`. A sheet is `@@gate(5.…)` for reads and a broadcast does
   // not re-check the gate, so publishing these would hand every connected
   // browser rows the Data boundary refuses them — the same reason
-  // `inventory` declares none.
+  // `inventoryMovements` declares none.
 
   // `close` reads every count, writes a movement per discrepancy and stamps
   // the sheet. Half a stocktake posted is worse than none posted: the ledger

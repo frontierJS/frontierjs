@@ -42,6 +42,7 @@
 import { existsSync, readFileSync }             from 'node:fs'
 import { join, basename }                        from 'node:path'
 import { safeRead }                             from './fs.js'
+import { modelName }                            from '@frontierjs/toolbelt/inflect'
 
 
 /**
@@ -318,9 +319,8 @@ export function serviceForModel(root, services = appServices(root)) {
   const byModel = new Map()
   for (const svc of services) {
     if (svc.model) { if (!byModel.has(svc.model)) byModel.set(svc.model, svc.name); continue }
-    const singular = svc.name.replace(/ies$/, 'y').replace(/(s|x|z|ch|sh)es$/, '$1').replace(/s$/, '')
-    const pascal   = singular.charAt(0).toUpperCase() + singular.slice(1)
-    if (!byModel.has(pascal)) byModel.set(pascal, svc.name)
+    const derived = modelName(svc.name)
+    if (!byModel.has(derived)) byModel.set(derived, svc.name)
   }
   return byModel
 }

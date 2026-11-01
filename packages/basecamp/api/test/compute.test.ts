@@ -10,7 +10,7 @@
 // untestable through a mock that returned the app's own shapes. There are two
 // vendors here, and the second one is the point: one connector cannot show a
 // boundary is generic, it can only show a boundary is consistent with itself
-// (`docs/PROVISIONING.md` § P4).
+// (`docs/provisioning.md` § P4).
 //
 // **The seam** is graded through the REAL app: conduit resolves the credential
 // out of an `@encrypted` column, writes an `Authorization` header, and a real
@@ -119,11 +119,11 @@ beforeAll(async () => {
   // declaration working, not a fixture detail to route around.
   owner = session({ id: owner.id, workspaceId: ws.id })
   account = await sys.secret.create({ data: {
-    workspaceId: ws.id, name: 'do-main', kind: 'provider_key',
+    workspaceId: ws.id, name: 'do-main', kind: 'providerKey',
     providerKind: 'digitalocean', data: JSON.stringify({ token: 'dop_v1_devtoken' }),
   }})
   hzAccount = await sys.secret.create({ data: {
-    workspaceId: ws.id, name: 'hz-main', kind: 'provider_key',
+    workspaceId: ws.id, name: 'hz-main', kind: 'providerKey',
     providerKind: 'hetzner', data: JSON.stringify({ token: HZ_TOKEN }),
   }})
 })
@@ -250,7 +250,7 @@ describe('an account is an address', () => {
     // registration overwrites the first and one workspace spends the other's
     // token.
     const second = await (env.system as any).secret.create({ data: {
-      workspaceId: ws.id, name: 'do-second', kind: 'provider_key',
+      workspaceId: ws.id, name: 'do-second', kind: 'providerKey',
       providerKind: 'digitalocean', data: JSON.stringify({ token: 'dop_v1_other' }),
     }})
     const a = await registerAtSink(account)
@@ -289,7 +289,7 @@ describe('an account is an address', () => {
     expect(await digitalOcean.verify(sendVia(app, good))).toBe(true)
 
     const bad = await (env.system as any).secret.create({ data: {
-      workspaceId: ws.id, name: 'do-revoked', kind: 'provider_key',
+      workspaceId: ws.id, name: 'do-revoked', kind: 'providerKey',
       providerKind: 'digitalocean', data: JSON.stringify({ token: 'dop_v1_wrong' }),
     }})
     expect(await digitalOcean.verify(sendVia(app, await registerAtSink(bad)))).toBe(false)
@@ -304,7 +304,7 @@ describe('an account is an address', () => {
     // missing case: it is the value meaning *no cloud*, which is the same
     // question asked of the one member that can never have an answer.
     const nowhere = await (env.system as any).secret.create({ data: {
-      workspaceId: ws.id, name: 'somewhere-else', kind: 'provider_key',
+      workspaceId: ws.id, name: 'somewhere-else', kind: 'providerKey',
       providerKind: 'custom', data: JSON.stringify({ token: 'x' }),
     }})
     // The raw call, not the throwing helper: a null IS the assertion here.
@@ -316,7 +316,7 @@ describe('an account is an address', () => {
     // like. The second cloud is asked, because the first one is asked
     // everywhere else in this file.
     const hz = await (env.system as any).secret.create({ data: {
-      workspaceId: ws.id, name: 'hz', kind: 'provider_key',
+      workspaceId: ws.id, name: 'hz', kind: 'providerKey',
       providerKind: 'hetzner', data: JSON.stringify({ token: 'x' }),
     }})
     expect(await registerAccount(app, hz, { address: SINK }))
@@ -325,7 +325,7 @@ describe('an account is an address', () => {
 
   test('a secret that is not a provider key is not an account', async () => {
     const key = await (env.system as any).secret.create({ data: {
-      workspaceId: ws.id, name: 'deploy-key', kind: 'ssh_key',
+      workspaceId: ws.id, name: 'deploy-key', kind: 'sshKey',
       data: JSON.stringify({ private: 'x' }),
     }})
     expect(await registerAccount(app, key, { address: SINK })).toBeNull()
@@ -337,7 +337,7 @@ describe('the schema refuses an account that names no vendor', () => {
     // Not a service check — the table itself. `asSystem()` cannot get past it
     // either, which is what makes it a rule rather than a convention.
     await expect((env.system as any).secret.create({ data: {
-      workspaceId: ws.id, name: `nameless-${Math.random()}`, kind: 'provider_key',
+      workspaceId: ws.id, name: `nameless-${Math.random()}`, kind: 'providerKey',
       data: JSON.stringify({ token: 'x' }),
     }})).rejects.toThrow(/names the vendor/)
   })
@@ -938,7 +938,7 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
   })
 
   test('a destroy without the typed name is REFUSED', async () => {
-    // `docs/VISION.md` constraint 5. The friction is the feature, and the thing
+    // `docs/vision.md` constraint 5. The friction is the feature, and the thing
     // typed is the thing destroyed — so a stale screen cannot confirm the wrong
     // row.
     const row = await (env.system as any).server.findFirst({ where: { name: 'prod-web-01' } })
@@ -1733,7 +1733,7 @@ describe('Hetzner answers through conduit, and is marked with LABELS', () => {
     expect(await hetzner.verify(sendVia(app, await registerAtHz(hzAccount)))).toBe(true)
 
     const bad = await (env.system as any).secret.create({ data: {
-      workspaceId: ws.id, name: 'hz-bad', kind: 'provider_key',
+      workspaceId: ws.id, name: 'hz-bad', kind: 'providerKey',
       providerKind: 'hetzner', data: JSON.stringify({ token: 'nope' }),
     }})
     expect(await hetzner.verify(sendVia(app, await registerAtHz(bad)))).toBe(false)

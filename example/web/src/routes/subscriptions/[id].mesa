@@ -26,7 +26,7 @@ title: Subscription
   import { day, span } from '@/lib/datetime.js'
   import { toneFor } from '@/lib/status-tone.js'
   import { page } from '@frontierjs/sierra/router'
-  import { money } from '../../lib/money.js'
+  import { money } from '@/lib/money.js'
 
   import Alert               from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Breadcrumbs         from '@frontierjs/ui/components/display/Breadcrumbs.mesa'
@@ -159,7 +159,7 @@ title: Subscription
     // effective dating means — so it is not in the list, and the version the
     // subscriber is already on is not either unless it is still open.
     const [ps, vs] = await Promise.all([
-      plans.service.find({ active: true }, { orderBy: 'code', limit: 100 }),
+      plans.service.find({ isActive: true }, { orderBy: 'code', limit: 100 }),
       planVersions.service.find({ effectiveTo: null }, { limit: 100 }),
     ])
     const byId = new Map((ps?.data ?? []).map(p => [p.id, p]))
@@ -284,7 +284,7 @@ title: Subscription
         {#each moves as move}
           <Button treatment="outlined" data-move={move.name} disabled={busy}>{move.name}</Button>
         {/each}
-        {#if canStop(sub) && sub.cancelAtPeriodEnd}
+        {#if canStop(sub) && sub.isCancelingAtPeriodEnd}
           <Button treatment="outlined" data-resume="1" disabled={busy} onclick={() => setRenewal(true)}>
             Resume
           </Button>
@@ -325,9 +325,9 @@ title: Subscription
     -->
     <StatCard label="Sold at" value={version ? money(version.price) : '—'} id="sd-sold-at" />
     <StatCard label="Seats"  value={String(sub.quantity)} id="sd-seats" />
-    <StatCard label={sub.cancelAtPeriodEnd ? 'Ends' : 'Renews'}
+    <StatCard label={sub.isCancelingAtPeriodEnd ? 'Ends' : 'Renews'}
               value={day(sub.currentPeriodEnd)}
-              tone={sub.cancelAtPeriodEnd ? 'warning' : ''} id="sd-renews" />
+              tone={sub.isCancelingAtPeriodEnd ? 'warning' : ''} id="sd-renews" />
     {#each owed as c}
       <StatCard label={OWED[c.name] ?? c.transition} value={day(c.dueAt)} tone="warning"
                 data-owed={c.name} data-due={c.dueAt} />
@@ -340,7 +340,7 @@ title: Subscription
     correct — it IS active, and somebody looking at the screen still has to be
     told what happens next.
   -->
-  {#if sub.cancelAtPeriodEnd && sub.status !== 'cancelled'}
+  {#if sub.isCancelingAtPeriodEnd && sub.status !== 'cancelled'}
     <Alert tone="warning" id="sd-stopping">
       This subscription stops on <strong>{day(sub.currentPeriodEnd)}</strong>
       and will not be invoiced again. It is still active until then — the period

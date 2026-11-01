@@ -22,5 +22,5 @@
 
   import { createResource } from '@frontierjs/sierra/resource'
 
-  export const journalEntries = createResource('journal-entries', { model: 'JournalEntry' })
+  export const journalEntries = createResource('journalEntries', { model: 'JournalEntry' })
 </script>

@@ -48,6 +48,16 @@
 > expensive-by-shape feature — nested policy subqueries, per-query policy
 > recompilation, `@from`, row cloning, `@computed` — is on the READ path.
 > **M7 is fixed** (`FJS-619`).
+>
+> **2026-11-01**: `FJS-112` is closed — the gate is CI's `perf` phase. The
+> 2026-10-09 tail it held is split: P9–P10 is `FJS-3819`, P5/P7 `FJS-3820`, B9
+> `FJS-3821`, the `$tapQuery` bypass `FJS-3822`, R9 `FJS-3823`. **Measured and
+> not worth a row**, each sub-µs to a few ms: R10 policy SQL recompiled per
+> query, R12 per-call allocations, P8 a new `$schema` per client, P11
+> validate()'s find-by-name in per-field loops, P12 DDL regenerated per tenant
+> create and boot hash, B6 clearBindings with no params, B7 the JSONL cold load,
+> B8 the LRU re-link per hit, S5 Studio inlining row JSON twice, S10 `/api/refs`
+> as 17 synchronous git calls. One gets a row only when a profile shows it.
 
 ---
 

@@ -24,7 +24,7 @@
 // half of it here would make this example teach the wrong thing.
 
 import { formatMoney, fromMinor } from '@frontierjs/toolbelt/units'
-import { prefs }                  from '../stores/prefs.js'
+import { prefs }                  from '@/stores/prefs.js'
 
 /** What the seed's numbers ARE. Every `price` and every `total` in the
  *  database is this currency; nothing stores a currency per row.

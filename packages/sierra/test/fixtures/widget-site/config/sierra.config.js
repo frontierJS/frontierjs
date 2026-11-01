@@ -1,7 +1,7 @@
 export default {
   target: 'widget',
   widgets: {
-    dir:    'src/Embeds',
+    dir:    'src/embeds',
     outDir: 'dist/embeds',
     // Every widget's tag and class take this. A host page writes <mt-counter>,
     // and the prefix is what keeps two vendors' widgets off each other's names.

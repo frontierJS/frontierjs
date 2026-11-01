@@ -2,7 +2,7 @@
 //
 // `AlertRule` declared a metric and a threshold, `NotificationChannel` really
 // delivered, and `AlertRuleChannel` joined them. Nothing read the first,
-// compared it, or reached the second — `AlertEvent` was a table written by
+// compared it, or reached the second — `Alert` was a table written by
 // nobody (`FJS-123`). This is that reader.
 //
 // It was not blocked on effort. A rule reading *above 80% for five minutes* has
@@ -42,7 +42,7 @@
 
 import { defineJob }        from '@frontierjs/caravan'
 import { isStale }          from '@frontierjs/junction'
-import { runsAsApp }        from './context.ts'
+import { runsAsApp }        from '../domain/job/job-context.ts'
 import { evaluateWindow, describeBreach, isSnoozed } from '../domain/alert/alerting.ts'
 import { watchedSeries }    from '../domain/alert/watched-series.ts'
 import { fanOutToChannels } from '../domain/notification/delivery.ts'
@@ -102,7 +102,7 @@ export default defineJob({
       // The newest event that is still open. Ordered, because a rule that fired
       // twice before anything resolved it would otherwise be closed in the
       // order sqlite happened to return.
-      const open = await db.alertEvent.findFirst({
+      const open = await db.alert.findFirst({
         where:   { ruleId: rule.id, status: 'firing' },
         orderBy: { firedAt: 'desc' },
       })
@@ -113,7 +113,7 @@ export default defineJob({
       // incident a page already opened is not paging anybody.
       if (verdict.breached && !open && !isSnoozed(rule, now)) {
         const message = describeBreach(rule.metricName, rule, verdict.value)
-        const event   = await db.alertEvent.create({
+        const event   = await db.alert.create({
           data: {
             ruleId:         rule.id,
             status:         'firing',
@@ -142,7 +142,7 @@ export default defineJob({
         })
 
       } else if (open && verdict.reason === 'recovered') {
-        await db.alertEvent.update({
+        await db.alert.update({
           where: { id: open.id },
           data:  { status: 'resolved', resolvedAt: new Date(now).toISOString() },
         })

@@ -14,7 +14,7 @@ import { createService } from '../src/core/service.ts'
 import { auditPlugin, assertAuditModel, diffRows } from '../src/plugins/audit/index.ts'
 
 const TRAIL = `
-enum ActorKind { user api_key system support }
+enum ActorKind { user apiKey system support }
 
 model AuditEvent {
   id           String    @id @default(uuid())
@@ -119,11 +119,11 @@ describe('what is recorded', () => {
 
 describe('who acted', () => {
 
-  test('an API key is filed as api_key, not as the person holding it', async () => {
+  test('an API key is filed as apiKey, not as the person holding it', async () => {
     const { app, rows } = await harness()
     await app.service('servers').create({ id: 's1', state: 'up' }, { user: { id: 'u1', userType: 'user', authMethod: 'apiKey' } } as never)
     const [row] = await rows()
-    expect(row.actorType).toBe('api_key')
+    expect(row.actorType).toBe('apiKey')
     expect(row.actorId).toBe('u1')
   })
 
@@ -186,7 +186,7 @@ describe('the model is checked at boot', () => {
   })
 
   test('an actor enum missing a kind', async () => {
-    expect(await refused(TRAIL.replace('enum ActorKind { user api_key system support }', 'enum ActorKind { user system }'))).toContain('has no api_key, support')
+    expect(await refused(TRAIL.replace('enum ActorKind { user apiKey system support }', 'enum ActorKind { user system }'))).toContain('has no apiKey, support')
   })
 
   test('a required column nothing writes', async () => {

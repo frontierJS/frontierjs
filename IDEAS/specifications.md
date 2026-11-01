@@ -539,7 +539,7 @@ rulings, which a spec would *propose* rather than impose.
   nothing is frozen until a second implementation passes the vectors.
 - **Not vocabulary-neutral** (`PHILOSOPHY.md` § VI). A committee needs words
   others will adopt. Gate, Target, Queue and Resource go in as proposals.
-- **§ VII has no document kind for a normative spec.** Adding one is a
+- **§ VII has no document tier for a normative spec.** Adding one is a
   `decision-rules` act and a ruling, taken when the first entry is written up.
 
 ---

@@ -157,8 +157,8 @@ const user  = await bearerFor('user')
 // drives have already bought from asserts the same facts — which is the shape
 // FJS-080 was, and it reads as a regression in whatever you changed last.
 
-const catalog = await (await api('/product-variants?$limit=500&$orderBy=sku')).json()
-const shelf = catalog.data.find(v => v.active && v.stock >= 4 && v.stock <= 30)
+const catalog = await (await api('/productVariants?$limit=500&$orderBy=sku')).json()
+const shelf = catalog.data.find(v => v.isActive && v.stock >= 4 && v.stock <= 30)
 if (!shelf) { console.error('no shelf between 4 and 30 to test with'); stopAll(); process.exit(1) }
 
 const V = shelf.id
@@ -286,7 +286,7 @@ check('on hand falls by what was bought', sold.onHand, start0.onHand - 2)
 check('and the hold is gone with it, so available follows on hand',
       sold.available, sold.onHand)
 
-const ledger = await (await api(`/inventory?variantId=${V}&$orderBy=-id&$limit=5`, { headers: admin })).json()
+const ledger = await (await api(`/inventoryMovements?variantId=${V}&$orderBy=-id&$limit=5`, { headers: admin })).json()
 const saleRow = ledger.data.find(m => m.kind === 'sold')
 check('the sale is on the tape, signed, with both ends of the shelf',
       [saleRow?.quantity, saleRow?.stockBefore, saleRow?.stockAfter],
@@ -297,39 +297,39 @@ check('and it names the order it belongs to', saleRow?.reference, receipt.refere
 
 console.log('\n  stock — who may look and who may move it')
 
-check('a stranger cannot read the ledger', (await api('/inventory')).status, 401)
+check('a stranger cannot read the ledger', (await api('/inventoryMovements')).status, 401)
 check('nor can a signed-in shopper at level 4',
-      (await api('/inventory', { headers: user })).status, 403)
+      (await api('/inventoryMovements', { headers: user })).status, 403)
 check('an administrator can',
-      (await api('/inventory', { headers: admin })).status, 200)
+      (await api('/inventoryMovements', { headers: admin })).status, 200)
 
-// No hook in `inventory.service.ts` checks a level. `InventoryMovement` is
+// No hook in `inventory-movements.service.ts` checks a level. `InventoryMovement` is
 // `@@gate(5.5.9.9)` and `receive` writes the movement through the CALLER's
 // own client, so the Data boundary is what refuses this — for every route in,
 // including ones nobody has thought of yet.
-const receiveAsUser = await post('inventory', 'receive', null, { variantId: V, quantity: 5 }, user)
+const receiveAsUser = await post('inventoryMovements', 'receive', null, { variantId: V, quantity: 5 }, user)
 check('receiving stock is refused at level 4 by the Data boundary, not by a hook',
       receiveAsUser.status, 403)
 
-const received = await (await post('inventory', 'receive', null,
+const received = await (await post('inventoryMovements', 'receive', null,
   { variantId: V, quantity: 5, reference: 'DRIVE-DN' }, admin)).json()
 check('an administrator receives a delivery',
       [received.before, received.after], [start0.onHand - 2, start0.onHand + 3])
 
-const afterReceipt = await (await api(`/inventory?variantId=${V}&$orderBy=-id&$limit=1`, { headers: admin })).json()
+const afterReceipt = await (await api(`/inventoryMovements?variantId=${V}&$orderBy=-id&$limit=1`, { headers: admin })).json()
 check('which is on the tape as a receipt',
       [afterReceipt.data[0]?.kind, afterReceipt.data[0]?.quantity, afterReceipt.data[0]?.reference],
       ['received', 5, 'DRIVE-DN'])
 
-const asSale = await post('inventory', 'adjust', null,
+const asSale = await post('inventoryMovements', 'adjust', null,
   { variantId: V, quantity: -1, kind: 'sold', note: 'trying it on' }, admin)
 check('a sale cannot be filed by hand', asSale.status, 400)
 
-const damaged = await (await post('inventory', 'adjust', null,
+const damaged = await (await post('inventoryMovements', 'adjust', null,
   { variantId: V, quantity: -1, kind: 'damaged', note: 'crushed in transit' }, admin)).json()
 check('a breakage takes one off the shelf', damaged.after, start0.onHand + 2)
 
-const noReason = await post('inventory', 'adjust', null,
+const noReason = await post('inventoryMovements', 'adjust', null,
   { variantId: V, quantity: -1, kind: 'damaged' }, admin)
 check("an adjustment with no reason is refused in the seed's own words",
       (await noReason.json()).data?.[0]?.message ?? (await noReason.status),
@@ -340,7 +340,7 @@ check("an adjustment with no reason is refused in the seed's own words",
 // are 9, which nothing passes including `asSystem()` — and that one cannot be
 // reached from here at all, which is the point of putting it in the schema.
 check('the ledger offers no way to edit a row',
-      (await api(`/inventory/${saleRow.id}`, {
+      (await api(`/inventoryMovements/${saleRow.id}`, {
         method: 'PATCH', headers: { ...admin, 'content-type': 'application/json' },
         body: '{"quantity":0}',
       })).status, 405)
@@ -415,7 +415,7 @@ check("the page's total is the server's, not the browser's own arithmetic",
 // The browser carries its own token, so this basket is a fresh one taken by
 // clicking rather than the one held over the API above.
 await evaluate(`(localStorage.removeItem('shop_cart'), true)`)
-const spare = catalog.data.find(v => v.active && v.stock > 0 && v.id !== V)
+const spare = catalog.data.find(v => v.isActive && v.stock > 0 && v.id !== V)
 await goto(`/products/${spare.productId}/`, '#buy-add', 1)
 await until(async () => await evaluate(`document.querySelector('#buy-add') && !document.querySelector('#buy-add').disabled`))
 await evaluate(`(document.querySelector('#buy-add').click(), true)`)

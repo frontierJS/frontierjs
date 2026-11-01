@@ -103,7 +103,7 @@
           <tr data-session={s.sessionId}>
             <td>
               <Button treatment="link" size="sm" onclick={() => open(s)}>{s.shown}</Button>
-              {#if s.gone}<Badge tone="warning" title="Claude Code has deleted this transcript; its spend is still counted">gone</Badge>{/if}
+              {#if s.isGone}<Badge tone="warning" title="Claude Code has deleted this transcript; its spend is still counted">gone</Badge>{/if}
             </td>
             <td class="text-sm" title={at(s.startedAt)}>{s.startedAt ? at(s.startedAt) : '—'}</td>
             <td class="text-sm text-muted" title={at(s.lastAt)}>{ago(s.lastAt)}</td>
@@ -126,7 +126,7 @@
   <Drawer open={drawer} onclose={close} resizable width={760} title={picked ? clip(titleOf(picked), 80) : ''}>
     {#if picked}
       <dl class="facts" id="claude-transcript-facts">
-        <dt>Session</dt><dd><code>{picked.sessionId}</code>{#if picked.gone} <Badge tone="warning">gone</Badge>{/if}</dd>
+        <dt>Session</dt><dd><code>{picked.sessionId}</code>{#if picked.isGone} <Badge tone="warning">gone</Badge>{/if}</dd>
         <dt>Started</dt><dd>{at(picked.startedAt)}</dd>
         <dt>Spend</dt><dd>{count(picked.tokens)} tokens, {usd(picked.cost)} estimated</dd>
       </dl>

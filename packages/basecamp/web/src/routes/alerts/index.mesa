@@ -8,8 +8,9 @@ title: Alerts
   // of the truth.
   import { session } from '../../lib/session.js'
   import { messageFor } from '../../lib/errors.js'
-  import AlertRule, { alerts } from '../../resources/AlertRule.mesa'
-  import { channels } from '../../resources/NotificationChannel.mesa'
+  import AlertRule, { alertRules } from '../../resources/AlertRule.mesa'
+  import { alerts } from '../../resources/Alert.mesa'
+  import { notificationChannels } from '../../resources/NotificationChannel.mesa'
   import { at }       from '../../lib/datetime.js'
 
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -32,7 +33,7 @@ title: Alerts
   let delivery = {}      // ruleId → attached channel rows
   let allChannels = []
   // Every channel a rule may deliver to, not a page.
-  const channelList = channels.tethered({ state: 'local', all: true })
+  const channelList = notificationChannels.tethered({ state: 'local', all: true })
   $: { allChannels = channelList.rows }
   $: session.workspaceId, () => channelList.reload()
   let picked   = {}      // ruleId → the channel id the picker is showing
@@ -47,7 +48,7 @@ title: Alerts
 
   // The rules, live. A rule's card is composed from three reads, so the two
   // that are not the rule row follow the list rather than an event handler.
-  const list = alerts.tethered({ state: 'local', all: true, directives: { limit: 100 } })
+  const list = alertRules.tethered({ state: 'local', all: true, directives: { limit: 100 } })
   $: { rows = list.rows; loading = list.loading }
   $: { if (list.error) error = list.error.message }
   $: session.workspaceId, () => list.reload()
@@ -59,7 +60,7 @@ title: Alerts
       // pays for the join, so the card is one request per rule — acceptable
       // at this size, and it is what makes "reaches nobody" sayable at a
       // glance rather than after a click.
-      const full = await Promise.all(list.rows.map(r => alerts.service.get(r.id)))
+      const full = await Promise.all(list.rows.map(r => alertRules.service.get(r.id)))
       delivery = Object.fromEntries(full.map(r => [r.id, r.channels ?? []]))
       // Whether the metric this rule watches EXISTS. `metricName` is not a
       // foreign key — a series is minted by the first scrape that sees it, so
@@ -81,7 +82,7 @@ title: Alerts
   async function showEvents(rule) {
     busy = rule.id
     try {
-      const raw = await alerts.service.invoke('events', rule.id)
+      const raw = await alerts.service.find({ ruleId: rule.id })
       events = { ...events, [rule.id]: raw.data }
     } catch (e) {
       error = e.message
@@ -95,11 +96,11 @@ title: Alerts
     if (!channelId) return
     error = null; busy = rule.id
     try {
-      const updated = await alerts.service.invoke('attachChannel', rule.id, { channelId })
+      const updated = await alertRules.service.invoke('attachChannel', rule.id, { channelId })
       delivery = { ...delivery, [rule.id]: updated.channels ?? [] }
       picked   = { ...picked, [rule.id]: '' }
     } catch (e) {
-      error = messageFor(alerts, e)
+      error = messageFor(alertRules, e)
     } finally {
       busy = null
     }
@@ -108,7 +109,7 @@ title: Alerts
   async function detach(rule, channelId) {
     error = null; busy = rule.id
     try {
-      const updated = await alerts.service.invoke('detachChannel', rule.id, { channelId })
+      const updated = await alertRules.service.invoke('detachChannel', rule.id, { channelId })
       delivery = { ...delivery, [rule.id]: updated.channels ?? [] }
     } catch (e) {
       error = e.message
@@ -134,9 +135,9 @@ title: Alerts
   async function toggle(rule) {
     error = null; busy = rule.id
     try {
-      replaceRow(await alerts.service.patch(rule.id, { isActive: !rule.isActive }))
+      replaceRow(await alertRules.service.patch(rule.id, { isActive: !rule.isActive }))
     } catch (e) {
-      error = messageFor(alerts, e)
+      error = messageFor(alertRules, e)
     } finally {
       busy = null
     }
@@ -163,10 +164,10 @@ title: Alerts
   async function snooze(rule, s) {
     error = null; busy = rule.id
     try {
-      replaceRow(await alerts.service.invoke('snooze', rule.id, { minutes: s.minutes }))
+      replaceRow(await alertRules.service.invoke('snooze', rule.id, { minutes: s.minutes }))
       toasts.success(`${rule.name} snoozed for ${s.label}`)
     } catch (e) {
-      error = messageFor(alerts, e)
+      error = messageFor(alertRules, e)
     } finally {
       busy = null
     }
@@ -175,9 +176,9 @@ title: Alerts
   async function unsnooze(rule) {
     error = null; busy = rule.id
     try {
-      replaceRow(await alerts.service.invoke('unsnooze', rule.id))
+      replaceRow(await alertRules.service.invoke('unsnooze', rule.id))
     } catch (e) {
-      error = messageFor(alerts, e)
+      error = messageFor(alertRules, e)
     } finally {
       busy = null
     }
@@ -186,7 +187,7 @@ title: Alerts
   async function acknowledge(rule, event) {
     error = null; busy = rule.id
     try {
-      await alerts.service.invoke('acknowledge', rule.id, { eventId: event.id })
+      await alerts.service.invoke('acknowledge', event.id)
       await showEvents(rule)
     } catch (e) {
       error = e.message
@@ -200,7 +201,7 @@ title: Alerts
   async function resolve(rule, event) {
     error = null; busy = rule.id
     try {
-      await alerts.service.invoke('resolve', rule.id, { eventId: event.id })
+      await alerts.service.invoke('resolve', event.id)
       await showEvents(rule)
     } catch (e) {
       error = e.message
@@ -212,7 +213,7 @@ title: Alerts
   async function remove(rule) {
     error = null; busy = rule.id
     try {
-      await alerts.service.remove(rule.id)
+      await alertRules.service.remove(rule.id)
       toasts.success(`${rule.name} deleted`)
       await load()
     } catch (e) {
@@ -222,8 +223,8 @@ title: Alerts
     }
   }
 
-  $: severities = alerts.fields?.severity?.enum ?? []
-  $: operators  = alerts.fields?.operator?.enum ?? []
+  $: severities = alertRules.fields?.severity?.enum ?? []
+  $: operators  = alertRules.fields?.operator?.enum ?? []
 
   const TONE = { critical: 'danger', warning: 'warning', info: 'info' }
   // How the four operators read. Not a second vocabulary: the LIST comes from

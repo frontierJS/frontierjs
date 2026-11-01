@@ -81,7 +81,7 @@ export default createService({
     const data = $.data as Record<string, unknown>
     await guard(data as { environmentId: string; appId: string | null }, ctx)
     if (data.value === undefined) throw new BadRequest('value is required')
-    placeValue(data, Boolean(data.secret))
+    placeValue(data, Boolean(data.isSecret))
     return db().variable.create({ data })
   },
 
@@ -91,7 +91,7 @@ export default createService({
     // key, secret and the scope are @immutable and the schema refuses them by
     // name; `value` is the one thing a person changes.
     const patch = narrowPatch($.data as Record<string, unknown>)
-    placeValue(patch, row.secret)
+    placeValue(patch, row.isSecret)
     if (changesNothing(patch)) return row
     return db().variable.update({ where: { id: row.id }, data: patch })
   },
@@ -113,7 +113,7 @@ export default createService({
   // the caller may see; the value is `@encrypted` and only a system read has it.
   async reveal() {
     const row = await getScoped('variable', 'Variable')
-    if (!row.secret) throw new BadRequest(`${row.key} is not a secret — its value is on every read`)
+    if (!row.isSecret) throw new BadRequest(`${row.key} is not a secret — its value is on every read`)
     const held = await $.db.asSystem().variable.findFirst({ where: { id: row.id }, select: { secretValue: true } })
     // The announcement states the row, so the workspace's other tabs never see the value.
     $.dispatch = row

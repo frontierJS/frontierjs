@@ -24,44 +24,43 @@ if (!machineFor($, host, serverPath).local) {
 }
 
 // ─── Checklist ────────────────────────────────────────────────────────────────
-echo('─── Next steps ──────────────────────────────────────────────────────')
-echo('')
+echo(chalk`{dim ─── }{bold Next steps}{dim  ${'─'.repeat(54)}}\n`)
 // The instructions name the machine they would run on — on a local target an
 // `ssh` line is advice that fails when taken.
 const there = (cmd) => (machineFor($, host, serverPath).local ? cmd : `ssh -t ${host} "${cmd}"`)
 
 const { envFile } = apiFiles($.config.deployConf, serverPath)
 echo($.config.envSeeded
-  ? `1. Your local .env.production was copied up — the server's copy is the one that counts now:`
-  : `1. Populate production env vars on the server (or put them in a local .env.production and set up a fresh box):`)
-echo(`   ${there(`vi ${envFile}`)}`)
+  ? chalk`{bold 1.} Your local .env.production was copied up — the server's copy is the one that counts now:`
+  : chalk`{bold 1.} Populate production env vars on the server (or put them in a local .env.production and set up a fresh box):`)
+echo(`   ${chalk.cyan(there(`vi ${envFile}`))}`)
 echo('')
 let n = 1
 
 // 06-dns pointed these at Cloudflare; a domain it could not point stays here.
 const unpointed = [edge.web.domain, edge.api.domain].filter(d => d && !($.config.dnsPointed ?? []).includes(d))
 if (unpointed.length) {
-  echo(`${++n}. Point DNS for ${unpointed.join(' and ')} at this server — Caddy fetches the certificate`)
-  echo(`   on the first request, and cannot before the name resolves here`)
+  echo(chalk`{bold ${++n}.} Point DNS for ${unpointed.join(' and ')} at this server — Caddy fetches the certificate`)
+  echo(chalk.dim(`   on the first request, and cannot before the name resolves here`))
   echo('')
 }
 
 if (!edgeWritten) {
-  echo(`${++n}. Write the routes: fli deploy:setup again, and answer y at step 5`)
+  echo(chalk`{bold ${++n}.} Write the routes: {cyan fli deploy:setup} again, and answer y at step 5`)
   echo('')
 }
-echo(`${++n}. Run your first deploy:`)
+echo(chalk`{bold ${++n}.} Run your first deploy:`)
 
-echo(`   fli deploy${$.config.target !== 'dev' ? ` --${$.config.target}` : ''}`)
+echo(`   ${chalk.cyan(`fli deploy${$.config.target !== 'dev' ? ` --${$.config.target}` : ''}`)}`)
 echo('')
 
 if (edge.web.domain) {
-  echo(`   App will be live at: https://${edge.web.domain}`)
+  echo(chalk`   {dim App will be live at:} https://${edge.web.domain}`)
 }
 if (edge.api.domain) {
-  echo(`   API will be live at: https://${edge.api.domain} — the web build names it. If the API`)
-  echo(`   narrows its CORS origins, they must include https://${edge.web.domain ?? '<the web domain>'}`)
+  echo(chalk`   {dim API will be live at:} https://${edge.api.domain} {dim — the web build names it. If the API}`)
+  echo(chalk.dim(`   narrows its CORS origins, they must include https://${edge.web.domain ?? '<the web domain>'}`))
 }
 
-echo('─────────────────────────────────────────────────────────────────────')
+echo(chalk.dim('─'.repeat(69)))
 ```

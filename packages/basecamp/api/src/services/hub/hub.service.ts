@@ -3,7 +3,7 @@
 //
 // Mounted at /hub. GET /hub is the runtime overview; everything else dispatches
 // on X-Service-Method, all collection-level:
-//   workspaces · accounts · users · flags · audit · fleet   reads across every tenant
+//   workspaces · accounts · users · flags · audit · fleet · hostPosture   reads across every tenant
 //   setWorkspaceStatus · setUserStatus    suspend and restore
 //   setSystemAdmin                        who else may be here
 //   createBot · setFlag
@@ -54,7 +54,8 @@ import { slugify } from '../../core/resource.ts'
 import { envReport } from '../../core/env.ts'
 import { hubPolicy } from '../../core/session-auth.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
-import { postureView } from '../posture/posture.service.ts'
+import { postureView } from '../server-postures/server-postures.service.ts'
+import { gradeHubNow } from '../../domain/host/host-machine.ts'
 
 /** A bot's address. `.invalid` is reserved by RFC 2606 and resolves nowhere,
  *  which is the point: `User.email` is required and unique, a bot has no
@@ -120,7 +121,7 @@ export default createService({
   // A payload is a `type` in db/schema.lite, so a status outside its enum is a
   // 400 naming the field from the schema's own vocabulary.
   methods: [
-    'overview', 'environment', 'workspaces', 'accounts', 'users', 'flags', 'audit', 'fleet',
+    'overview', 'environment', 'workspaces', 'accounts', 'users', 'flags', 'audit', 'fleet', 'hostPosture',
     ['setWorkspaceStatus', 'WorkspaceStatusChange'],
     ['setUserStatus',      'UserStatusChange'],
     ['setSystemAdmin',     'SystemAdminChange'],
@@ -281,7 +282,7 @@ export default createService({
       return {
         id: u.id, email: u.email, name: u.displayName ?? u.name,
         kind: u.kind, status: u.status, isSystemAdmin: !!u.isSystemAdmin,
-        emailVerified: !!u.emailVerified, createdAt: u.createdAt,
+        isEmailVerified: !!u.isEmailVerified, createdAt: u.createdAt,
         // Never the Credential rows themselves — `value` is @guarded and
         // a list of what proves an identity is not a list to render. The
         // count answers the only question the screen asks: can this actor
@@ -303,7 +304,7 @@ export default createService({
     $.dispatch = false
     const { limit, offset } = getPagination({ limit: 100, max: 300 })
 
-    const { rows, total } = await sys().featureFlag.findManyAndCount({
+    const { rows, total } = await sys().flag.findManyAndCount({
       include: { workspace: true }, orderBy: { key: 'asc' }, limit, offset,
     })
 
@@ -322,7 +323,7 @@ export default createService({
   // person files under nobody, and `/admin/audit` scopes on the workspace, so
   // this is the only screen that can show it. `scope` is `all`, `hub` for
   // those rows, or a workspace id. A window, not a page, for the reason the
-  // audit service gives (`FJS-D145`).
+  // auditEvents service gives (`FJS-D145`).
   async audit() {
     $.dispatch = false
     const { limit, offset, after } = getPagination({ limit: 50, max: 200 })
@@ -362,10 +363,34 @@ export default createService({
     }
   },
 
+  // ── hostPosture — the box this Basecamp runs on ──────────────────
+  // The box this Basecamp runs on, what /hub/security/ draws: the hub's host
+  // row's own grade, staleness on read as `view` does, and the `hub.*` controls
+  // graded from the same report. With no host row there is nothing reading the
+  // box, and `enrolled: false` says so. It lives here and not on
+  // `serverPostures` because that name is a tenant model's, so the schema's
+  // claim guard would refuse a system admin who is no member of the workspace
+  // the host row is in.
+  async hostPosture() {
+    $.dispatch = false   // read-shaped
+    const now    = Date.now()
+    const { server, row, hub } = await gradeHubNow(sys(), $.app.push, now)
+    const machine  = server ? await postureView(server, row) : null
+    const controls = [...hub, ...(machine?.controls ?? [])]
+    return {
+      enrolled: !!server,
+      serverId: server?.id ?? null, serverName: server?.name ?? null,
+      reported: !!row, stale: machine?.stale ?? false, at: row?.at ?? null, controls,
+      failing:  controls.filter(c => c.ok === false).length,
+      unknown:  controls.filter(c => c.ok === 'unknown').length,
+      readings: row?.readings ?? null,
+    }
+  },
+
   // ── fleet — every tenant's machines, worst first ──────────────────
   // Graded by posture's own `postureView`, so a box whose Outpost went quiet
   // reads stale here exactly as it does on its workspace's /security/. One
-  // window of up to 500 and no pager, the bound `posture.fleet` takes: worst
+  // window of up to 500 and no pager, the bound `serverPostures.fleet` takes: worst
   // first only means anything across the whole answer, and a page of it would
   // put a failing box on page three. `destroyed` is left out unless asked
   // for — a row kept for its history is not a machine to watch.
@@ -477,8 +502,8 @@ export default createService({
     const label = typeof name === 'string' ? name.trim() : ''
     if (!label) throw new BadRequest('name is required')
 
-    if (!(await hubPolicy(sys())).allowBotUsers)
-      throw new Forbidden('Bot accounts are turned off for this installation (HubConfig.allowBotUsers)')
+    if (!(await hubPolicy(sys())).isBotUserAllowed)
+      throw new Forbidden('Bot accounts are turned off for this installation (HubConfig.isBotUserAllowed)')
 
     const wsRole = (role as string) ?? 'developer'
     if (!BOT_ROLES.includes(wsRole))
@@ -501,7 +526,7 @@ export default createService({
           // no way to sign in, and an API key is issued to it separately
           // through /api-keys. That is what makes it safe to create one from
           // an admin screen when creating a human from here would not be.
-          emailVerified: false, isSystemAdmin: false,
+          isEmailVerified: false, isSystemAdmin: false,
         },
       })
       await tx.workspaceMember.create({
@@ -521,10 +546,10 @@ export default createService({
   async setFlag() {
     const { flagId, isEnabled } = ($.data ?? {}) as Record<string, unknown>
 
-    const flag = await sys().featureFlag.findUnique({ where: { id: flagId } })
+    const flag = await sys().flag.findUnique({ where: { id: flagId } })
     if (!flag) throw new NotFound(`Flag '${flagId}' not found`)
 
-    return sys().featureFlag.update({ where: { id: flag.id }, data: { isEnabled } })
+    return sys().flag.update({ where: { id: flag.id }, data: { isEnabled } })
   },
 
 })

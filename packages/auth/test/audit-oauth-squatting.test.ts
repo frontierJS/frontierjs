@@ -6,7 +6,7 @@
 // The sequence: an attacker's identity from an untrusted issuer (the `oidc`
 // preset, `trustEmail: false`) — or a trusted one that did not verify — claims
 // the victim's address. Nobody holds it yet, so branch 3 creates the row
-// (`emailVerified: false`), attaches the attacker's credential and signs the
+// (`isEmailVerified: false`), attaches the attacker's credential and signs the
 // attacker in. The victim then finds:
 //
 //   · register / `createUser(victim)`         → EmailTakenError
@@ -65,7 +65,7 @@ describe('an unproven address claimed through OAuth', () => {
     const email = 'squat-oidc@shop.test'
 
     const squat = await h.auth.oauthResolve('okta', {
-      providerId: 'attacker-sub-1', email, emailVerified: true, name: 'Mallory',
+      providerId: 'attacker-sub-1', email, isEmailVerified: true, name: 'Mallory',
     })
     const squatterToken = squat.outcome === 'signed-in' ? squat.token : null
 
@@ -76,7 +76,7 @@ describe('an unproven address claimed through OAuth', () => {
     if (squatterToken) expect(await h.auth.verifySession(squatterToken)).toBeNull()
     // And the squatter's identity no longer opens the account.
     const again = await h.auth.oauthResolve('okta', {
-      providerId: 'attacker-sub-1', email, emailVerified: true, name: 'Mallory',
+      providerId: 'attacker-sub-1', email, isEmailVerified: true, name: 'Mallory',
     })
     expect(again.outcome === 'signed-in' && again.user.id === victim.user.id).toBe(false)
   })
@@ -85,7 +85,7 @@ describe('an unproven address claimed through OAuth', () => {
     const email = 'squat-google@shop.test'
 
     const squat = await h.auth.oauthResolve('google', {
-      providerId: 'attacker-sub-2', email, emailVerified: false, name: 'Mallory',
+      providerId: 'attacker-sub-2', email, isEmailVerified: false, name: 'Mallory',
     })
     const squatterToken = squat.outcome === 'signed-in' ? squat.token : null
 
@@ -97,12 +97,12 @@ describe('an unproven address claimed through OAuth', () => {
   test('the squat cannot be laundered into a VERIFIED account by mailing the holder a verify link', async () => {
     // requestEmailVerification takes the attacker's own user id — a session
     // holder can ask for it — and mails the VICTIM. One click and the row is
-    // `emailVerified: true` under an address the attacker never held, after
+    // `isEmailVerified: true` under an address the attacker never held, after
     // which a trusted provider sign-in by the victim LINKS onto it (branch 4,
     // all three conditions met) with the attacker's credential still attached.
     const email = 'launder@shop.test'
     const squat = await h.auth.oauthResolve('okta', {
-      providerId: 'attacker-sub-3', email, emailVerified: true, name: 'Mallory',
+      providerId: 'attacker-sub-3', email, isEmailVerified: true, name: 'Mallory',
     })
     if (squat.outcome !== 'signed-in') return   // refused at branch 3 — nothing to launder
 
@@ -113,7 +113,7 @@ describe('an unproven address claimed through OAuth', () => {
     // The victim arrives with Google. Linking onto the squat hands them an
     // account the attacker can still open.
     const out = await h.auth.oauthResolve('google', {
-      providerId: 'victim-google-sub', email, emailVerified: true, name: 'Victim',
+      providerId: 'victim-google-sub', email, isEmailVerified: true, name: 'Victim',
     })
     if (out.outcome === 'signed-in') {
       const creds = await h.sys.credential.findMany({ where: { userId: out.user.id } })

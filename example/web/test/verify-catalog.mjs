@@ -155,8 +155,8 @@ function check(name, actual, expected) {
 console.log('\n  catalog — the API')
 
 const products = await (await fetch(`${API}/api/products?$limit=100`)).json()
-const variants = await (await fetch(`${API}/api/product-variants?$limit=100`)).json()
-const images   = await (await fetch(`${API}/api/product-images?$limit=100`)).json()
+const variants = await (await fetch(`${API}/api/productVariants?$limit=100`)).json()
+const images   = await (await fetch(`${API}/api/productImages?$limit=100`)).json()
 
 check('13 products seeded',        products.total, 13)
 check('43 variants seeded',        variants.total, 43)
@@ -169,7 +169,7 @@ check('image URL serves bytes',    head.ok && head.headers.get('content-type'), 
 
 // The composite @@unique is the whole reason the option columns are not
 // nullable — assert it holds through the API, not just in SQLite.
-const dup = await fetch(`${API}/api/product-variants`, {
+const dup = await fetch(`${API}/api/productVariants`, {
   method: 'POST', headers: { 'content-type': 'application/json' },
   body: JSON.stringify({ productId: 1, sku: 'DRIVE-DUP', color: 'Night Navy', size: 'm', price: 100 }),
 })
@@ -266,7 +266,7 @@ const upload = (name, type, alt, bytes = photo) => {
   fd.append('alt', alt)
   fd.append('position', '99')
   fd.append('file', new File([bytes], name, { type }))
-  return fetch(`${API}/api/product-images`, { method: 'POST', headers: asStaff, body: fd })
+  return fetch(`${API}/api/productImages`, { method: 'POST', headers: asStaff, body: fd })
 }
 
 // `@@gate(0.4.4.5)` — reading a photograph is public and writing one is not.
@@ -276,7 +276,7 @@ const anon = new FormData()
 anon.append('productId', '1'); anon.append('alt', 'from nobody')
 anon.append('file', new File([photo], 'nobody.png', { type: 'image/png' }))
 check('a stranger may not add a photograph',
-      (await fetch(`${API}/api/product-images`, { method: 'POST', body: anon })).status, 401)
+      (await fetch(`${API}/api/productImages`, { method: 'POST', body: anon })).status, 401)
 
 const made = await upload('uploaded.png', 'image/png', 'A hoodie, uploaded through a form')
 const row  = await made.json()
@@ -287,8 +287,8 @@ check('staff may — and the create is multipart', made.status, 201)
 // was an <img src> in a list and a broken image on the detail screen beside it,
 // and an edit form was handed the storage handle instead of the photograph
 // (`FJS-541`). They are asked together here because either alone passes.
-const viaGet  = await (await fetch(`${API}/api/product-images/${row.id}`, { headers: asStaff })).json()
-const viaFind = (await (await fetch(`${API}/api/product-images?id=${row.id}`, { headers: asStaff })).json()).data[0]
+const viaGet  = await (await fetch(`${API}/api/productImages/${row.id}`, { headers: asStaff })).json()
+const viaFind = (await (await fetch(`${API}/api/productImages?id=${row.id}`, { headers: asStaff })).json()).data[0]
 check('the stored file reads back as a URL',        typeof viaGet.file === 'string' && viaGet.file.startsWith('http'), true)
 check('…by id and in a list, identically',          viaGet.file, viaFind.file)
 
@@ -329,7 +329,7 @@ check('…naming the type and the list',
 const mislabeled = await upload('notes.txt', 'text/plain', 'a photo with the wrong name')
 check('a real photograph with the wrong name is accepted', mislabeled.status, 201)
 const fixedId = (await mislabeled.json()).id
-const fixed   = await (await fetch(`${API}/api/product-images/${fixedId}`, { headers: asStaff })).json()
+const fixed   = await (await fetch(`${API}/api/productImages/${fixedId}`, { headers: asStaff })).json()
 const fixedBytes = await fetch(fixed.file)
 check('…and is served as what the bytes are, not what the name said',
       fixedBytes.headers.get('content-type'), 'image/png')
@@ -341,7 +341,7 @@ check('…under a key the extension of which matches', fixed.file.endsWith('.png
 // below is `every(naturalWidth > 0)` over the swatches, and the images lazy-load
 // (two assertions above depend on that), so one more row pushes a swatch out of
 // view and it reads as a photograph that failed to decode.
-await fetch(`${API}/api/product-images/${fixedId}`, { method: 'DELETE', headers: asStaff })
+await fetch(`${API}/api/productImages/${fixedId}`, { method: 'DELETE', headers: asStaff })
 
 // ── and the same thing, done by a person ──────────────────────────────────
 //
@@ -396,7 +396,7 @@ const ALT = 'Chosen in a browser'
 const arrived = await (async () => {
   for (let i = 0; i < 60; i++) {
     const found = (await (await fetch(
-      `${API}/api/product-images?alt=${encodeURIComponent(ALT)}`, { headers: asStaff })).json()).data ?? []
+      `${API}/api/productImages?alt=${encodeURIComponent(ALT)}`, { headers: asStaff })).json()).data ?? []
     if (found.length) return found[0]
     await new Promise(r => setTimeout(r, 200))
   }
@@ -422,11 +422,11 @@ check('…and the new photograph decoded in the browser that sent it',
 
 // Put the catalog back. `19 photographs seeded` above counts live rows, and
 // this drive added two.
-for (const stale of ((await (await fetch(`${API}/api/product-images?position=99&$limit=50`, { headers: asStaff })).json()).data ?? []))
-  await fetch(`${API}/api/product-images/${stale.id}`, { method: 'DELETE', headers: asStaff })
+for (const stale of ((await (await fetch(`${API}/api/productImages?position=99&$limit=50`, { headers: asStaff })).json()).data ?? []))
+  await fetch(`${API}/api/productImages/${stale.id}`, { method: 'DELETE', headers: asStaff })
 for (const stale of ((await (await fetch(
-  `${API}/api/product-images?alt=${encodeURIComponent(ALT)}&$limit=50`, { headers: asStaff })).json()).data ?? []))
-  await fetch(`${API}/api/product-images/${stale.id}`, { method: 'DELETE', headers: asStaff })
+  `${API}/api/productImages?alt=${encodeURIComponent(ALT)}&$limit=50`, { headers: asStaff })).json()).data ?? []))
+  await fetch(`${API}/api/productImages/${stale.id}`, { method: 'DELETE', headers: asStaff })
 
 console.log(`\n  ${pass} passed, ${fail} failed\n`)
 stopAll()

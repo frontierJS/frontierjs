@@ -45,7 +45,7 @@ export function appArchiveUpload(app: App) {
     const by   = String(ctx.query.by)
     const done = await importAppArchive(app, { appId, name: String(ctx.query.name), by, body: ctx.body as ReadableStream<Uint8Array> | null })
     if ('refused' in done) return ctx.json({ message: done.refused }, done.status)
-    app.logger.info('app archive uploaded', { backup_id: done.row.id, app_id: appId, by })
+    app.logger.info('app archive uploaded', { backupId: done.row.id, appId, by })
     return ctx.json(done.row, 201)
   }, { body: 'stream' })
 }

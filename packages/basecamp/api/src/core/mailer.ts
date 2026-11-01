@@ -13,7 +13,7 @@
 // conduit target list and the plugin. **No provider is a real answer.** A fleet
 // console that cannot mail is normal; what is not acceptable is a screen that
 // looks like it sent something. Every caller therefore asks `app.mail` and says
-// so when it is absent, the way `channels.test` already refuses email.
+// so when it is absent, the way `notificationChannels.test` already refuses email.
 //
 // The payload is Resend's `POST /emails` shape, which is also what a dev sink
 // speaks, so pointing MAIL_URL at a catcher and pointing it at api.resend.com

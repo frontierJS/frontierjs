@@ -4,8 +4,8 @@ title: Home
 <script>
   import { money }   from '@/lib/money.js'
   import { prefs }   from '@/stores/prefs.js'
-  import { orders }    from '../resources/Order.mesa'
-  import { customers } from '../resources/Customer.mesa'
+  import { orders }    from '@/resources/Order.mesa'
+  import { customers } from '@/resources/Customer.mesa'
   import { session } from '@frontierjs/sierra/resource'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'

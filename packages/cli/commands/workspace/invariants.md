@@ -42,7 +42,7 @@ const rows = invariantCoverage({ root, rules: RULES })
 
 if (!rows.length) {
   echo('')
-  echo('  ✗  CLAUDE.md declares no numbered Invariants section — nothing to grade.')
+  echo(`  ${chalk.red('✗')}  CLAUDE.md ${chalk.dim('declares no numbered Invariants section — nothing to grade.')}`)
   echo('')
   process.exitCode = 1
   return
@@ -51,8 +51,8 @@ if (!rows.length) {
 if (flag.gaps) {
   const gap = rows.filter(r => !r.covered)
   echo('')
-  if (!gap.length) echo('  ✓  every invariant has something that fails when it stops being true')
-  for (const r of gap) echo(`  ⚠  ${String(r.n).padStart(2)}. ${r.title}`)
+  if (!gap.length) echo(`  ${chalk.green('✓')}  every invariant has something that fails when it stops being true`)
+  for (const r of gap) echo(`  ${chalk.yellow('⚠')}  ${chalk.dim(`${String(r.n).padStart(2)}.`)} ${r.title}`)
   echo('')
   return
 }
@@ -67,13 +67,13 @@ if (flag.check) {
   const have = existsSync(file) ? readFileSync(file, 'utf8') : null
   echo('')
   if (have === null) {
-    echo('  ✗  invariants.snapshot.md is missing. Run `fli ws:invariants` to write it.')
+    echo(`  ${chalk.red('✗')}  invariants.snapshot.md ${chalk.dim('is missing. Run `fli ws:invariants` to write it.')}`)
     process.exitCode = 1
   } else if (have !== out) {
-    echo('  ✗  invariants.snapshot.md is stale. Run `fli ws:invariants`.')
+    echo(`  ${chalk.red('✗')}  invariants.snapshot.md ${chalk.dim('is stale. Run `fli ws:invariants`.')}`)
     process.exitCode = 1
   } else {
-    echo('  ✓  invariants.snapshot.md')
+    echo(`  ${chalk.green('✓')}  invariants.snapshot.md`)
   }
   echo('')
   return
@@ -83,10 +83,10 @@ writeFileSync(file, out)
 
 const covered = rows.filter(r => r.covered).length
 echo('')
-echo('  ✓  invariants.snapshot.md')
-echo(`  ${covered} of ${rows.length} invariant(s) have an enforcer`)
-for (const r of rows.filter(r => !r.covered)) echo(`  ⚠  ${r.n}. ${r.title} — nothing grades this`)
-for (const u of unresolved) echo(`  ✗  Invariant ${u.n} names ${u.e.kind} \`${u.e.at}\`, which does not resolve`)
+echo(`  ${chalk.green('✓')}  invariants.snapshot.md`)
+echo(`  ${chalk.bold(`${covered} of ${rows.length}`)} ${chalk.dim('invariant(s) have an enforcer')}`)
+for (const r of rows.filter(r => !r.covered)) echo(`  ${chalk.yellow('⚠')}  ${chalk.dim(`${r.n}.`)} ${r.title} ${chalk.dim('— nothing grades this')}`)
+for (const u of unresolved) echo(`  ${chalk.red('✗')}  Invariant ${u.n} ${chalk.dim(`names ${u.e.kind} \`${u.e.at}\`, which does not resolve`)}`)
 if (unresolved.length) process.exitCode = 1
 echo('')
 ```

@@ -463,19 +463,19 @@ if (fjsSource === 'local') {
 echo('')
 log.info(`Creating ${appName} at ${finalTarget}`)
 echo('')
-echo(`  Template:  ${template}`)
-echo(`  FJS pkgs:  ${fjsSource === 'local' ? `local — symlink to ${packagesDir} (live edits; a build packs them)` : fjsSource === 'url' ? 'url (packages.frontierjs.com tarballs)' : 'npm (published)'}`)
-echo(`  Auth:      ${useAuth ? 'yes' : 'no'}`)
-echo(`  Web:       ${useWeb ? 'yes (Sierra + Mesa + Vite)' : 'no'}`)
-echo(`  Deploy:    ${useDeploy && useApi ? (flag.server || flag.domain ? 'yes (deploy/Dockerfile + frontier.config.js)' : 'yes (deploy/Dockerfile; pass --server to write frontier.config.js)') : 'no'}`)
-echo(`  FLI:       ${useFli ? 'yes (cli/src/routes/)' : 'no'}`)
-echo(`  Example:   ${useExample ? 'yes (User CRUD vertical slice)' : 'no'}`)
-echo(`  Git:       ${useGit ? 'yes' : 'no'}`)
-echo(`  CI:        ${flag.ci !== false ? 'yes (.github/workflows/ci.yml → bun run check)' : 'no'}`)
-echo(`  Tooling:   @frontierjs/config — tsconfig + Biome (linter only, no formatter)`)
-echo(`  Install:   ${useInstall ? 'yes' : 'no'}`)
-echo(`  Workspace: ${useWorkspace ? `yes (${process.env.WORKSPACE_DIR})` : 'no'}`)
-if (withPkgs.length) echo(`  Extras:    ${withPkgs.join(', ')}`)
+echo(`  ${chalk.dim('Template:')}  ${template}`)
+echo(`  ${chalk.dim('FJS pkgs:')}  ${fjsSource === 'local' ? `local — symlink to ${packagesDir} (live edits; a build packs them)` : fjsSource === 'url' ? 'url (packages.frontierjs.com tarballs)' : 'npm (published)'}`)
+echo(`  ${chalk.dim('Auth:')}      ${useAuth ? 'yes' : 'no'}`)
+echo(`  ${chalk.dim('Web:')}       ${useWeb ? 'yes (Sierra + Mesa + Vite)' : 'no'}`)
+echo(`  ${chalk.dim('Deploy:')}    ${useDeploy && useApi ? (flag.server || flag.domain ? 'yes (deploy/Dockerfile + frontier.config.js)' : 'yes (deploy/Dockerfile; pass --server to write frontier.config.js)') : 'no'}`)
+echo(`  ${chalk.dim('FLI:')}       ${useFli ? 'yes (cli/src/routes/)' : 'no'}`)
+echo(`  ${chalk.dim('Example:')}   ${useExample ? 'yes (User CRUD vertical slice)' : 'no'}`)
+echo(`  ${chalk.dim('Git:')}       ${useGit ? 'yes' : 'no'}`)
+echo(`  ${chalk.dim('CI:')}        ${flag.ci !== false ? 'yes (.github/workflows/ci.yml → bun run check)' : 'no'}`)
+echo(`  ${chalk.dim('Tooling:')}   @frontierjs/config — tsconfig + Biome (linter only, no formatter)`)
+echo(`  ${chalk.dim('Install:')}   ${useInstall ? 'yes' : 'no'}`)
+echo(`  ${chalk.dim('Workspace:')} ${useWorkspace ? `yes (${process.env.WORKSPACE_DIR})` : 'no'}`)
+if (withPkgs.length) echo(`  ${chalk.dim('Extras:')}    ${withPkgs.join(', ')}`)
 echo('')
 
 if (flag.dry) {
@@ -848,8 +848,8 @@ if (useGit) {
 echo('')
 log.success(`${appName} created`)
 echo('')
-echo(`  cd ${useHere ? '.' : (useWorkspace ? finalTarget : name)}`)
-if (!useInstall) echo('  bun install')
+echo(chalk`  {cyan cd ${useHere ? '.' : (useWorkspace ? finalTarget : name)}}`)
+if (!useInstall) echo(chalk.cyan('  bun install'))
 // `.env` is written with its key filled, so `cp .env.example .env` here would
 // overwrite a filled file with a blank one and break the app the scaffold just
 // built. The question is whether the key has a VALUE, asked of the file rather
@@ -862,9 +862,9 @@ if (useApi && !keySet) {
   // parses this variable as HEX, and a base64 key therefore decodes to zero
   // bytes and is refused with a sentence about a key length. Advice that fails
   // when taken is worse than none.
-  echo('  fli keygen aes --format hex --name ENCRYPTION_KEY --env   # .env needs a key before the API starts')
+  echo(chalk`  {cyan fli keygen aes --format hex --name ENCRYPTION_KEY --env}   {dim # .env needs a key before the API starts}`)
 }
-echo('  fli dev')
+echo(chalk.cyan('  fli dev'))
 
 // A scaffold with --auth has an empty `user` table, so the login page it just
 // wrote can sign nobody in and every screen behind a gate answers
@@ -873,14 +873,14 @@ echo('  fli dev')
 // working and not.
 if (useAuth) {
   echo('')
-  echo('  Nobody exists yet:')
-  echo('    fli auth:create-user you@example.com --role admin   mints an ADMIN')
-  echo('    /register/ in the browser                           role "user" — the link to finish it prints in the API terminal')
+  echo(chalk.bold('  Nobody exists yet:'))
+  echo(chalk`    {cyan fli auth:create-user you@example.com --role admin}   {dim mints an ADMIN}`)
+  echo(chalk`    {cyan /register/} in the browser                           {dim role "user" — the link to finish it prints in the API terminal}`)
 }
 
 echo('')
 if (fjsSource === 'local') {
-  echo(`  @frontierjs is symlinked from ${packagesDir} — edits are live.`)
+  echo(chalk`  {dim @frontierjs is symlinked from ${packagesDir} — edits are live.}`)
   log.detail('  A build packs them into the image rather than resolving the symlinks,')
   log.detail('  which a container cannot do — `fli deploy:local` runs the pack step for')
   log.detail('  you, `fli deploy:vendor` does it alone. What ships is that workspace at')
@@ -890,18 +890,18 @@ if (fjsSource === 'local') {
 // A scaffolded tree is where somebody who has never seen FrontierJS lands, and
 // it answers none of what the seed is FOR. The lessons build their own app, so
 // this points somewhere rather than back at the directory it just wrote.
-echo('  New to FrontierJS? `fli tutor` — thirteen lessons against a running app.')
+echo('  New to FrontierJS? ' + chalk.cyan('fli tutor') + ' — thirteen lessons against a running app.')
 log.detail('  They run the real commands and then ask the running world whether they')
 log.detail('  worked. They build their own app and leave this one alone.')
 echo('  Writing it with an AI agent? AGENTS.md is written for it.')
 log.detail('  Claude Code reads it through CLAUDE.md, and your own instructions about')
 log.detail('  the app go in AGENTS.project.md, which it imports.')
 echo('')
-echo('  bun run check           the gate CI runs')
+echo(chalk`  {cyan bun run check}           {dim the gate CI runs}`)
 if (useDb) {
-  echo('  fli scaffold <Model>    model + service + resource + routes')
-  echo('  fli admin:generate      CRUD admin UI from schema.lite')
+  echo(chalk`  {cyan fli scaffold <Model>}    {dim model + service + resource + routes}`)
+  echo(chalk`  {cyan fli admin:generate}      {dim CRUD admin UI from schema.lite}`)
 }
-if (useApi) echo('  fli deploy:doctor       deploy readiness')
+if (useApi) echo(chalk`  {cyan fli deploy:doctor}       {dim deploy readiness}`)
 echo('')
 ```

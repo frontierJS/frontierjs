@@ -3,7 +3,7 @@
 // A SECOND listener rather than a second dialect inside the first one. Two
 // vendors answered by one process would share a router, a store and an error
 // shape, and the whole reason a second cloud is built at all is to find out
-// what the first one's shape had quietly become (`docs/PROVISIONING.md` § P4).
+// what the first one's shape had quietly become (`docs/provisioning.md` § P4).
 // A stand-in that agreed with the connector by construction would answer that
 // question with itself.
 //

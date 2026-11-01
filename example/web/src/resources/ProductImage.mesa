@@ -6,7 +6,7 @@
 
   import { createResource } from '@frontierjs/sierra/resource'
 
-  export const productImages = createResource('product-images', { model: 'ProductImage' })
+  export const productImages = createResource('productImages', { model: 'ProductImage' })
 </script>
 
 <script>

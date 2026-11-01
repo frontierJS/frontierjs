@@ -45,7 +45,7 @@
 // joined against, which is not the same thing as a dimension.
 
 import { lastDayOf, payAsAtMany } from './employment.ts'
-import { allRatesAsAt }          from './payrates.ts'
+import { allRatesAsAt }          from './pay-rates.ts'
 import { draftPayslip }          from './payslip.ts'
 import type { PayslipDraft }     from './payslip.ts'
 
@@ -160,7 +160,7 @@ export async function arrearsFor(client: Client, employeeId: number): Promise<Ar
         kind,
         description: `${LABEL[kind] ?? 'Adjustment'} — ${run.reference}`,
         amount,
-        counts: COUNTS(kind),
+        isCounted: COUNTS(kind),
         // No rate, and not an omission: an adjustment is the DIFFERENCE between
         // two band walks, so no single band produced it. A line that named one
         // would be pointing at a row that explains part of it at most —

@@ -60,14 +60,14 @@ const prs   = await githubApi(token, 'GET', `/repos/${repoArg}/pulls?state=${sta
 if (flag.json) { echo(JSON.stringify(prs, null, 2)); return }
 
 const icon = (pr) => {
-  if (pr.state === 'closed' && pr.merged_at) return '↗'  // merged
-  if (pr.state === 'closed')                 return '✗'  // closed unmerged
-  if (pr.draft)                              return '○'  // draft
-  return '●'                                             // open
+  if (pr.state === 'closed' && pr.merged_at) return chalk.magenta('↗')  // merged
+  if (pr.state === 'closed')                 return chalk.red('✗')      // closed unmerged
+  if (pr.draft)                              return chalk.dim('○')      // draft
+  return chalk.green('●')                                               // open
 }
 
 echo('')
-echo(`  ${repoArg}  ·  ${prs.length} ${state} PR${prs.length !== 1 ? 's' : ''}`)
+echo(chalk`  {bold ${repoArg}}  {dim ·  ${prs.length} ${state} PR${prs.length !== 1 ? 's' : ''}}`)
 echo('')
 
 if (!prs.length) {
@@ -78,13 +78,13 @@ if (!prs.length) {
 for (const pr of prs) {
   const updated = new Date(pr.updated_at).toLocaleDateString()
   const checks  = pr.head?.sha ? '' : ''
-  echo(`  ${icon(pr)}  #${String(pr.number).padEnd(5)} ${pr.title}`)
-  echo(`       ${pr.user.login}  ·  ${pr.head.ref} → ${pr.base.ref}  ·  updated ${updated}`)
+  echo(chalk`  ${icon(pr)}  {bold.cyan #${String(pr.number).padEnd(5)}} ${pr.title}`)
+  echo(chalk`       {dim ${pr.user.login}  ·} {cyan ${pr.head.ref}} {dim → ${pr.base.ref}  ·  updated ${updated}}`)
   if (pr.body?.trim()) {
     const preview = pr.body.trim().split('\n')[0].slice(0, 72)
-    echo(`       ${preview}${pr.body.length > 72 ? '…' : ''}`)
+    echo(chalk.dim(`       ${preview}${pr.body.length > 72 ? '…' : ''}`))
   }
-  echo(`       ${pr.html_url}`)
+  echo(chalk.dim(`       ${pr.html_url}`))
   echo('')
 }
 ```

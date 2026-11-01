@@ -108,7 +108,7 @@
   async function restore(b) {
     error = null; busy = b.id
     try {
-      await apps.service.invoke('restoreVolume', app.id, { serverId: machine, backupId: b.id, overwrite: true })
+      await apps.service.invoke('restoreVolume', app.id, { serverId: machine, backupId: b.id, isOverwriting: true })
       toasts.success(`Restored onto ${machineName}`)
     } catch (e) {
       error = e.message

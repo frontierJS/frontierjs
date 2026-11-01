@@ -45,14 +45,13 @@ if (flag.json) {
 // Build a set of all workspace package names for dep detection
 const wsNames = new Set(packages.map(({ pkg }) => pkg.name))
 
-echo(`\nWorkspace: ${wsRoot}`)
-echo(`Packages:  ${packages.length}\n`)
+echo(`\n  ${chalk.bold('Workspace')}  ${chalk.dim(wsRoot)}  ${chalk.dim(`·  ${packages.length} package(s)`)}\n`)
 
 for (const { pkg, folder, dir } of packages) {
   const branch = $.git.branch(dir)
-  const branchStr = branch ? ` (${branch})` : ''
-  const privStr = pkg.private ? '  [private]' : ''
-  echo(`  ${pkg.name}@${pkg.version}${branchStr}${privStr}`)
+  const branchStr = branch ? `  ${chalk.cyan(branch)}` : ''
+  const privStr = pkg.private ? `  ${chalk.yellow('private')}` : ''
+  echo(`  ${chalk.bold(pkg.name)}${chalk.dim(`@${pkg.version}`)}${branchStr}${privStr}`)
 
   if (flag.deps) {
     const allDeps = { ...pkg.dependencies, ...pkg.devDependencies }
@@ -62,11 +61,11 @@ for (const { pkg, folder, dir } of packages) {
       .filter(([name]) => !wsNames.has(name))
 
     if (wsDeps.length) {
-      echo(`    workspace deps:`)
-      for (const [name, ver] of wsDeps) echo(`      ${name}: ${ver}`)
+      echo(`    ${chalk.dim('workspace deps')}`)
+      for (const [name, ver] of wsDeps) echo(`      ${name}  ${chalk.dim(ver)}`)
     }
     if (extDeps.length) {
-      echo(`    external deps: ${extDeps.length} packages`)
+      echo(`    ${chalk.dim(`external deps: ${extDeps.length} packages`)}`)
     }
     echo('')
   }

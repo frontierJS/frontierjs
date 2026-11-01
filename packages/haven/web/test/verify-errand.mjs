@@ -82,7 +82,9 @@ function route(stage, from, to) {
 /** A session of Sam's: into the square, then through the tavern's door. */
 async function visit(label, { errand, expectBoy, hyperlinks = true }) {
   // opentui turns OSC 8 on for a terminal it knows by name; a pty has none to ask.
-  const term = terminal(API, sam.token, square, { HOME: samHome, HAVEN_ERRAND: errand, TERM: hyperlinks ? 'xterm-kitty' : 'xterm' })
+  // opentui also reads TERM_PROGRAM and the like, so a drive run from a VS Code terminal would be handed hyperlinks it asked not to have.
+  const bare = hyperlinks ? {} : { TERM_PROGRAM: '', TERM_PROGRAM_VERSION: '', VTE_VERSION: '', WT_SESSION: '', KITTY_WINDOW_ID: '', WEZTERM_EXECUTABLE: '', ITERM_SESSION_ID: '' }
+  const term = terminal(API, sam.token, square, { HOME: samHome, HAVEN_ERRAND: errand, TERM: hyperlinks ? 'xterm-kitty' : 'xterm', ...bare })
   const at = (x, y, stage) => cellOf(term.screen(), x, y, 1, stage)
   check(await until(() => term.screen().includes('j/k moves, Enter opens')), `${label}: the shell lists the routes`, term.screen())
   term.shell.stdin.write('\r')

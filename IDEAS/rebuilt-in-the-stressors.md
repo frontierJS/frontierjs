@@ -1,12 +1,12 @@
 ---
 id: rebuilt-in-the-stressors
-status: assessment
+status: reading
 dated: 2026-09-29
 ---
 
 # Assessment — what the stressors rebuilt that the framework should own
 
-**Status: ASSESSMENT.** A reading of `fjs-prototypes/` against the packages, asking
+**Status: READING.** A reading of `fjs-prototypes/` against the packages, asking
 one question: *which file in an app is a reimplementation of something universal,
 rather than a domain module or a scaffold copy?* Open work carries an id in
 `ISSUES.md` and is named below; this file is not a register.

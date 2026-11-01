@@ -25,7 +25,7 @@
   on this page* is the kind of wrong that looks right until the shop grows.
 
   So the box asks the API. `Product` declares `@@fts([name, description])` and
-  the request is `?$search=…&active=true` — a directive and a filter, side by
+  the request is `?$search=…&isActive=true` — a directive and a filter, side by
   side, with no app code between them: junction routes `$search` to Litestone's
   `search()` and answers the ordinary list envelope. It also searches the
   DESCRIPTION, which nothing baked into this page could do.
@@ -83,7 +83,7 @@
     const mine = ++inflight
     try {
       const body = await client.service('products').find(
-        { active: true },
+        { isActive: true },
         { search: term, limit: 50 },
       )
       if (mine !== inflight) return          // a newer keystroke won

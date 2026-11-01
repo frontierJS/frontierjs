@@ -17,7 +17,7 @@ previous edit.
 
 **`--load-extension` loads nothing while a debugging port is open.** The page it
 names answers `ERR_BLOCKED_BY_CLIENT`, which reads as a broken extension rather
-than as a flag Chrome stopped honouring. The way in is CDP's
+than as a flag Chrome stopped honoring. The way in is CDP's
 `Extensions.loadUnpacked`, behind `--enable-unsafe-extension-debugging` — and it
 is also the only thing that answers the extension's **id**, which is a hash of
 the directory's absolute path and therefore different on every machine.

@@ -19,5 +19,5 @@
 
   import { createResource } from '@frontierjs/sierra/resource'
 
-  export const payRates = createResource('pay-rates', { model: 'PayRate' })
+  export const payRates = createResource('payRates', { model: 'PayRate' })
 </script>

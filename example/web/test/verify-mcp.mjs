@@ -366,7 +366,7 @@ console.log('\nno credential column reaches a tool schema')
   check('the shop declares protected columns at all', guarded.length, n => n > 0)
 
   // A name protected on one model can be an ordinary column on another —
-  // `providerRef` is @guarded on PaymentMethod and a labelled column on
+  // `providerRef` is @guarded on PaymentMethod and a labeled column on
   // Payment — and a tool on the wire does not say which model it is over, so
   // those names are graded by the pair below rather than by the search.
   const openSomewhere = new Set(Object.values(client).flatMap(d => Object.keys(d.properties ?? {})))

@@ -145,6 +145,7 @@ Covered: **19 of 19**.
 
 | Kind | What | Covers |
 | --- | --- | --- |
+| `fli check` | `resource-export-name` | a Resource exports, and registers, the camelCase plural of its model (FJS-D1751) |
 | `fli check` | `resource-file-name` | a resource file is named for its model |
 | `fli check` | `resource-one-per-file` | one Resource per file |
 | `fli check` | `widget-entry-name` | a widget is a PascalCase file, or a directory holding index.mesa |

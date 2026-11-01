@@ -1,5 +1,5 @@
 <script>
-  // server_health — CPU, memory and disk for one server.
+  // serverHealth — CPU, memory and disk for one server.
   //
   // Two readings of the same machine, and they answer different questions.
   //

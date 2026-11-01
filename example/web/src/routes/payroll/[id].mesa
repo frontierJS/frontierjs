@@ -30,7 +30,7 @@ title: Pay run
   import { day, span } from '@/lib/datetime.js'
   import { toneFor } from '@/lib/status-tone.js'
   import { page } from '@frontierjs/sierra/router'
-  import { money } from '../../lib/money.js'
+  import { money } from '@/lib/money.js'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge         from '@frontierjs/ui/components/display/Badge.mesa'
@@ -74,7 +74,7 @@ title: Pay run
   const lineColumns = [
     { name: 'description', label: 'Line' },
     { name: 'amount',      label: 'Amount', align: 'right' },
-    { name: 'counts',      label: '' },
+    { name: 'isCounted',   label: '' },
   ]
 
   const journalColumns = [
@@ -282,7 +282,7 @@ title: Pay run
           </td>
           <td class="text-right" data-amount={l.amount}>{money(l.amount)}</td>
           <td>
-            {#if !l.counts}<Badge tone="muted">employer</Badge>{/if}
+            {#if !l.isCounted}<Badge tone="muted">employer</Badge>{/if}
           </td>
         </tr>
       {/snippet}

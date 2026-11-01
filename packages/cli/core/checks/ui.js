@@ -8,7 +8,7 @@
 import { readdirSync, statSync, readFileSync, existsSync } from 'fs'
 import { join, extname, basename, relative, dirname }      from 'path'
 import { spawnSync }                                       from 'child_process'
-import { modelName }                                       from '@frontierjs/toolbelt/inflect'
+import { modelName, pluralize, camel }                     from '@frontierjs/toolbelt/inflect'
 import { ARIA, RELATIONSHIPS }                             from '@frontierjs/toolbelt/aria'
 import { appSchemaViews }                                  from '../app-schema.js'
 import {
@@ -253,6 +253,68 @@ export const CHECKS = {
     return { findings }
   },
 
+  // `FJS-D1751`, Invariant 19's other face. Model -> service -> Resource derive
+  // end to end: `Alert.mesa` exports `alerts` and registers `alerts`, so the
+  // import, the URL and the CLI command are one spelling. A Resource that
+  // exports `alert` over a service `alerts` is two names for one thing, and a
+  // kebab literal is the alias `FJS-D159` keeps MOUNTED, not the name to call.
+  //
+  // The derivation is `camel(pluralize(Model))` -- the toolbelt pair every
+  // resolver reads, not a copy of its rules -- except for a SINGLETON, a model
+  // whose `@id` defaults to a constant string (`FJS-D1762`): one row, so the
+  // service and Resource stay `camel(Model)`. It is judged only where the file
+  // IS a model's: a Resource over a view, over `model: null` or over a model the
+  // filename does not name (`HubBackup.mesa` over `AppBackup`) keeps its noun,
+  // and is graded for agreeing with itself.
+  'resource-export-name': ({ root }) => {
+    const dirs = resourceSrcDirs(root)
+    if (!dirs.length) return { skipped: 'no surface src/ to read' }
+    const schema = schemaFile(root)
+    const { modelNamed } = schema ? modelResolver(schema, root) : { modelNamed: () => null }
+    const findings = []
+    const ones = schema ? singletons(schema) : new Set()
+
+    for (const dir of dirs) {
+      for (const path of sources(root, new Set(['.mesa', ...SCRIPT_EXT]), relative(root, dir))) {
+        const src = stripComments(readFileSync(path, 'utf8'))
+        for (const m of src.matchAll(/\bcreateResource\(\s*['"]([^'"]+)['"]/g)) {
+          if (SERVICE_NAME.test(m[1])) continue
+          findings.push({
+            file: path, line: lineOf(src, m.index),
+            message: `createResource('${m[1]}') — pass the camelCase service name (${camel(m[1])}). ` +
+                     `A kebab name is the alias the URL keeps mounted, not what a Resource registers.`,
+          })
+        }
+      }
+    }
+
+    const files = dirs.flatMap(d => safeRead(join(d, 'resources')).filter(n => extname(n) === '.mesa').map(n => join(d, 'resources', n)))
+    for (const path of files) {
+      const name   = basename(path, '.mesa')
+      const src    = stripComments(readFileSync(path, 'utf8'))
+      const exp    = src.match(/\bexport\s+const\s+([A-Za-z0-9_$]+)\s*=\s*createResource\b/)?.[1]
+      const lit    = src.match(/\bcreateResource\(\s*['"]([^'"]+)['"]/)?.[1]
+      if (!exp) continue
+      const stated = src.match(/\bmodel:\s*(null|['"]([A-Za-z0-9_]+)['"])/)
+      const own    = Boolean(modelNamed(name)) && (!stated || stated[2] === name)
+      const want   = own ? (ones.has(modelNamed(name)) ? camel(name) : camel(pluralize(name))) : lit
+      const line   = lineOf(src, src.search(/\bexport\s+const\s+[A-Za-z0-9_$]+\s*=\s*createResource\b/))
+
+      if (want && exp !== want) findings.push({
+        file: path, line,
+        message: `exports ${exp}, and the service for ${name} is ${want}. A Resource exports the service ` +
+                 `name its model derives -- camel(plural(${name})), singular for a one-row model whose ` +
+                 `@id defaults to a constant -- so the import, the URL and the CLI ` +
+                 `command are one spelling. An irregular is resolved by renaming the model, not by a stated model:.`,
+      })
+      else if (own && lit && SERVICE_NAME.test(lit) && lit !== want) findings.push({
+        file: path, line,
+        message: `createResource('${lit}') over ${name} -- the service is ${want}, and the Resource registers it.`,
+      })
+    }
+    return { findings }
+  },
+
   'vite-strict-port': ({ root }) => {
     const configs = []
     walk(root, 4, dir => {
@@ -452,15 +514,15 @@ export const CHECKS = {
   // the widget never upgrades and the host page shows nothing.
   //
   // The second half is the silent one: discovery is per directory, so a folder
-  // in `src/Embeds/` with no `index.mesa` is simply not a widget. That is
+  // in `src/embeds/` with no `index.mesa` is simply not a widget. That is
   // correct for a widget's own parts and wrong for a widget somebody is midway
   // through writing, and neither says anything at build time.
   'widget-entry-name': ({ root }) => {
     // The surface root, or the surface itself — `fli check` is run from an app
     // root and from inside a sub-project alike.
-    const dir = [join(root, 'widgets', 'src', 'Embeds'), join(root, 'src', 'Embeds')]
+    const dir = [join(root, 'widgets', 'src', 'embeds'), join(root, 'src', 'embeds')]
       .find(d => existsSync(d) && statSync(d).isDirectory())
-    if (!dir) return { skipped: 'no widgets/src/Embeds/' }
+    if (!dir) return { skipped: 'no widgets/src/embeds/' }
 
     const findings = []
     for (const name of readdirSync(dir).sort()) {
@@ -486,7 +548,7 @@ export const CHECKS = {
       } else if (extname(name) !== '.mesa' && extname(name) !== '.js') {
         findings.push({
           file: full,
-          message: `not a widget and not built. src/Embeds/ holds one component per embeddable script — ` +
+          message: `not a widget and not built. src/embeds/ holds one component per embeddable script — ` +
                    `a .mesa file, or a directory holding index.mesa. Stylesheets and helpers belong ` +
                    `beside the widget that imports them.`,
         })
@@ -726,7 +788,7 @@ export const CHECKS = {
     if (!users.length) return { skipped: 'no screen renders a <Table>' }
 
     // The column shape, and only it: a `key` whose sibling is a `label`. The
-    // word boundary is load-bearing — `provider_key:` and `ssh_key:` are
+    // word boundary is load-bearing — `providerKey:` and `sshKey:` are
     // ordinary object keys in this repo's own screens.
     const DECLARED = /\bkey(\s*:\s*['"][A-Za-z_$][\w$]*['"]\s*,\s*label\s*:)/g
     // The translation itself, which is the thing the rename exists to delete.
@@ -1668,6 +1730,23 @@ function routeAnswers(pattern, segs, beneath) {
     if (pattern[i][0] !== ':' && pattern[i] !== segs[i]) return false
   }
   return pattern.length === segs.length
+}
+
+/** The models whose `@id` defaults to a constant string -- one row each (`FJS-D1762`). */
+function singletons(schema) {
+  const lines = schema.text.split('\n')
+  return new Set(models(schema)
+    .filter(m => /@id\b[^\n]*@default\(\s*["'][^"']*["']\s*\)|@default\(\s*["'][^"']*["']\s*\)[^\n]*@id\b/.test(bodyOf(lines, m.line - 1)))
+    .map(m => m.name))
+}
+
+// A service name as `createResource` registers it: camelCase, no separator.
+const SERVICE_NAME = /^[a-z][A-Za-z0-9]*$/
+
+/** Every client surface's `src/resources/`, and an app-less `src/resources/` -- the dirs whose files are Resources. */
+function resourceSrcDirs(root) {
+  const surfaces = CLIENT_SURFACES.map(s => join(root, s, 'src')).concat(join(root, 'src'))
+  return surfaces.filter(d => existsSync(d) && statSync(d).isDirectory())
 }
 
 function resourceFiles(root) {

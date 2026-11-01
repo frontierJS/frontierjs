@@ -1,12 +1,12 @@
 ---
 id: site-kit-parity
-status: assessment
+status: reading
 dated: 2026-10-01
 ---
 
 # Inventory — what `@frontierjs/site-kit` lacks against legacy ksite
 
-**Status: ASSESSMENT — an inventory. No direction is chosen and nothing here is sequenced.**
+**Status: READING — an inventory. No direction is chosen and nothing here is sequenced.**
 Dated 2026-10-01, § 6 added 2026-10-08. It lists what the ksite stressor left
 unported, so a choice of direction starts from a list instead of a re-read.
 **The "v0.5.0" this paper once cited is ksite's repo-root `package.json`; the

@@ -36,7 +36,7 @@ import { calculatePayRun, payPayRun, revertPayRun } from '../../api/src/domain/p
 import { periodShare }                 from '../../api/src/domain/payroll'
 import { plainDateIn, addToDate }          from '@frontierjs/toolbelt/datetime'
 
-import { sweepPayroll }                from './payroll-sweep.mjs'
+import { sweepPayroll }                from './verify-payroll-sweep.mjs'
 import { results, report } from './lib/report.mjs'
 
 const sys = db.asSystem()
@@ -51,7 +51,7 @@ const refused = async (fn) => { try { await fn(); return false } catch { return 
 
 // Everything this drive makes is registered here as it is made and swept in the
 // `finally` below — **on the failure path too**, which is the run whose
-// leftovers are hardest to recognize later. `payroll-sweep.mjs` owns the order
+// leftovers are hardest to recognize later. `verify-payroll-sweep.mjs` owns the order
 // and the one hatch under the boundary the books need.
 const fixtures = { runIds: [], employeeIds: [], entryIds: [] }
 
@@ -118,8 +118,8 @@ t('run.aSecondCalculationIsRefused', await refused(() => calculatePayRun(sys, ru
 
 const slipA  = slips[0]
 const linesA = await sys.payslipLine.findMany({ where: { payslipId: slipA.id }, orderBy: { id: 'asc' } })
-const counting = linesA.filter(l => l.counts)
-const employer = linesA.filter(l => !l.counts)
+const counting = linesA.filter(l => l.isCounted)
+const employer = linesA.filter(l => !l.isCounted)
 
 t('invariant.theCountedLinesSumToNet',
   counting.reduce((n, l) => n + l.amount, 0) === slipA.net)

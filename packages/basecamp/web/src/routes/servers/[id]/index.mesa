@@ -15,7 +15,7 @@ title: Server
   import NoRecord   from '../../../components/NoRecord.mesa'
   import ServerHealthBody from '../../../components/tiles/ServerHealthBody.mesa'
   import { offerUndo } from '../../../resources/Trash.mesa'
-  import { postures }  from '../../../resources/ServerPosture.mesa'
+  import { serverPostures }  from '../../../resources/ServerPosture.mesa'
 
   $: page.params
 
@@ -92,7 +92,7 @@ title: Server
   let posture = null
   async function loadPosture() {
     try {
-      posture = await postures.service.invoke('latest', page.params.id)
+      posture = await serverPostures.service.invoke('latest', page.params.id)
     } catch {
       posture = null
     }
@@ -101,7 +101,7 @@ title: Server
   async function checkPosture() {
     error = null; busy = 'posture'
     try {
-      posture = await postures.service.invoke('check', server.id)
+      posture = await serverPostures.service.invoke('check', server.id)
       await loadEvents()
       toasts.success(posture.failing ? `${posture.failing} control(s) failing` : 'Posture checked')
     } catch (e) {
@@ -111,7 +111,7 @@ title: Server
     }
   }
 
-  const offPosture = postures.service.on('*', (method, signal) => {
+  const offPosture = serverPostures.service.on('*', (method, signal) => {
     if (method === 'report' && signal?.serverId === page.params.id) { loadPosture(); loadEvents() }
   })
   $.onDestroy(offPosture)
@@ -482,7 +482,7 @@ title: Server
         <ul class="stack">
           {#each placed as a}
             <li><a href={`/apps/${a.id}/`}>{a.name}</a>
-              <span class="text-sm text-muted">{a.environment?.name ?? ''} · {a.type}</span></li>
+              <span class="text-sm text-muted">{a.environment?.name ?? ''} · {a.kind}</span></li>
           {/each}
         </ul>
       {/if}
@@ -649,7 +649,7 @@ title: Server
               <div class="text-muted text-sm">{at(event.createdAt)}</div>
               <div class="cluster">
                 <strong>{event.message}</strong>
-                <!-- `humanize`, not the identifier. `provision_requested` is a
+                <!-- `humanize`, not the identifier. `provisionRequested` is a
                      value the schema owns and a person reads, and the two are
                      different axes of one name — `@frontierjs/toolbelt/inflect`
                      is the one owner of the reader axis. -->

@@ -29,6 +29,18 @@ export function schemaAnchor(schemaFilePath) {
   return basename(dir) === 'db' ? dirname(dir) : dir
 }
 
+// A database path as the file it names. `file:/tmp/x.db`, `file:///tmp/x.db`
+// and `file:./x.db` are the Prisma/libSQL spelling of a path, and resolved as
+// one they became a directory literally named `file:` beside the schema
+// (`FJS-3802`). Plain string work, since the browser host has no
+// `fileURLToPath`; a `?query` or `#fragment` is the URL's, not the file's.
+export function dbFilePath(stated) {
+  if (typeof stated !== 'string' || !stated.startsWith('file:')) return stated
+  let rest = stated.slice('file:'.length).replace(/[?#].*$/, '')
+  if (rest.startsWith('//')) rest = rest.slice(2).replace(/^localhost(?=\/)/, '')
+  return rest
+}
+
 /**
  * The directory a relative declared path resolves against, from `resolveFrom`.
  *

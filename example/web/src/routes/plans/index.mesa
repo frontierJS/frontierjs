@@ -17,7 +17,7 @@ title: Plans
   import { prefs } from '@/stores/prefs.js'
   import { session } from '@frontierjs/sierra/resource'
   import { goto } from '@frontierjs/sierra/router'
-  import { money } from '../../lib/money.js'
+  import { money } from '@/lib/money.js'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge         from '@frontierjs/ui/components/display/Badge.mesa'
@@ -33,7 +33,7 @@ title: Plans
     { name: 'name',         label: 'Name' },
     { name: 'interval',     label: 'Billed' },
     { name: 'currentPrice', label: 'Price now', align: 'right' },
-    { name: 'active',       label: 'Offered' },
+    { name: 'isActive',     label: 'Offered' },
     { name: 'actions',      label: '' },
   ]
 
@@ -83,8 +83,8 @@ title: Plans
       <td class="text-right" data-price={p.currentPrice ?? ''}>
         {p.currentPrice == null ? '—' : money(p.currentPrice)}
       </td>
-      <td><Pill tone={p.active ? 'success' : 'muted'} data-active={String(p.active)}>
-        {p.active ? 'on sale' : 'retired'}
+      <td><Pill tone={p.isActive ? 'success' : 'muted'} data-active={String(p.isActive)}>
+        {p.isActive ? 'on sale' : 'retired'}
       </Pill></td>
       <td><Button treatment="ghost" href={'/plans/' + p.id + '/'}>Open</Button></td>
     </tr>
@@ -94,7 +94,7 @@ title: Plans
 <Alert tone="muted">
   <code>currentPrice</code> is <code>@from(PlanVersion, max: price, where: effectiveTo == null)</code> —
   the open window's price, read as a subquery. Retiring a plan is
-  <code>active</code>; it does not delete the versions past subscriptions point at.
+  <code>isActive</code>; it does not delete the versions past subscriptions point at.
 </Alert>
 
 <Drawer open={editing !== null} title="New plan" side="right" onclose={close}>

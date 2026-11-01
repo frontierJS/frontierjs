@@ -18,8 +18,6 @@ was executed:
 |---|---|---|
 | Gates fail open | `@@gate(0.4.4.5)` on the model, enforcement code present | Anonymous `create` succeeded — the enforcing plugin was never installed |
 | Migration data loss | A tidy generated `INSERT … SELECT` rebuild | Two seeded rows destroyed; reported `✓ 1 migration applied` |
-| Custom actions 404 | Header dispatch implemented, documented, exampled | Every camelCase action name was lowercased into a guaranteed miss |
-| Empty notification emails | A `MailMessage` built and passed to `app.mail.send()` | Two packages owned different message shapes; bodies dropped silently |
 
 And the inverse — self-descriptions were wrong often enough to be untrustworthy
 as evidence:
@@ -28,9 +26,6 @@ as evidence:
   **zero tests**.
 - A README documented `@@gate(9)` where the code shipped `"8"` — following
   the README would have bricked auth.
-- Three packages' docs advertised CLI commands that do not exist.
-- A doc comment described a `cancel()` behavior the code contradicted, and the
-  test passed because it asserted at the wrong moment.
 
 The pattern: **anything hand-maintained drifts** — which is the framework's own
 first axiom pointed back at its documentation.

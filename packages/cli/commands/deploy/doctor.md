@@ -29,12 +29,6 @@ flags:
 import { existsSync, readFileSync } from 'fs'
 import { resolve as resolvePath, basename } from 'path'
 
-// Status sigils — keep narrow so the checklist columns line up.
-const PASS = '\x1b[32m✓\x1b[0m' // green
-const FAIL = '\x1b[31m✗\x1b[0m' // red
-const WARN = '\x1b[33m⚠\x1b[0m' // yellow
-const INFO = '\x1b[2m·\x1b[0m'   // dim
-
 
 // Heuristic file content search. Used to detect /health route, junction
 // imports, db:migrate script, etc. Returns true on first match across files.
@@ -78,29 +72,26 @@ long-lived WebSocket connections.
 // `--json` prints exactly the rows the checklist drew.
 const rows = []
 let section = ''
+// Narrow glyphs, so the checklist columns line up.
+const sigils = { pass: chalk.green('✓'), fail: chalk.red('✗'), warn: chalk.yellow('⚠'), info: chalk.dim('·') }
 const renderCheck = (name, status, hint) => {
   rows.push({ section, name, status, hint: hint ?? null })
   if (flag.json) return
-  const sigil = status === 'pass' ? PASS
-              : status === 'fail' ? FAIL
-              : status === 'warn' ? WARN
-              : INFO
-  echo(`  ${sigil}  ${name}`)
-  if (hint) echo(`     \x1b[2m${hint}\x1b[0m`)
+  echo(`  ${sigils[status] ?? sigils.info}  ${name}`)
+  if (hint) echo(chalk.dim(`     ${hint}`))
 }
 
 const renderHeader = (text) => {
   section = text
   if (flag.json) return
-  echo('')
-  echo(`\x1b[1m${text}\x1b[0m`)
+  echo(chalk`\n{bold ${text}}`)
 }
 
 const target = resolveTarget(flag, $.git)
 
 // ─── Header ───────────────────────────────────────────────────────────────
 const projectName = basename($.paths.root)
-if (!flag.json) echo(`\n\x1b[1m${projectName}\x1b[0m  ·  target: \x1b[1m${target}\x1b[0m\n`)
+if (!flag.json) echo(chalk`\n  {bold ${projectName}}  {dim ·  target:} {bold ${target}}\n`)
 
 // Track failures + warnings for the final summary
 let failed = 0
@@ -128,7 +119,7 @@ if (!frontierConfig) {
   if (flag.json) return finishJson()
   echo('')
   log.error(`No frontier.config.js found in ${$.paths.root}`)
-  log.info(`Run \x1b[1mfli make:deploy --server <host>\x1b[0m to scaffold one.`)
+  log.info(chalk`Run {bold fli make:deploy --server <host>} to scaffold one.`)
   return
 }
 renderCheck('frontier.config.js exists', 'pass')
@@ -140,7 +131,7 @@ if (!deployConf) {
   if (flag.json) return finishJson()
   echo('')
   log.error('frontier.config.js has no deploy block')
-  log.info(`Run \x1b[1mfli make:deploy --server <host>\x1b[0m to add one.`)
+  log.info(chalk`Run {bold fli make:deploy --server <host>} to add one.`)
   return
 }
 renderCheck('deploy block defined', 'pass')
@@ -394,7 +385,7 @@ if (envCheckOn) {
   renderCheck('envCheck', 'info', 'disabled — set deploy.api.envCheck: true to validate server env before each deploy')
 }
 
-// The server pulls from git, so a tracked `.env` ships its secrets with the
+// The deploy ships the committed tree, so a tracked `.env` ships its secrets with the
 // source. Moved here from `junction setup audit` when that was deleted (FJS-D642).
 if (existsSync(resolvePath($.paths.root, '.env'))) {
   const ignored = $.exec({
@@ -439,47 +430,17 @@ if (branch) {
   renderCheck(`branch: ${branch}`, 'pass')
 } else {
   renderCheck('git repository', 'fail',
-    `the deploy pulls via git on the server — this needs to be a tracked repository`)
+    `the deploy ships a git commit — this needs to be a tracked repository`)
   fail()
 }
 
 if ($.git.isDirty()) {
   const dirty = $.git.status()
   renderCheck(`uncommitted changes`, 'warn',
-    `${dirty.length} file(s) — these won't be deployed since the server pulls from origin`)
+    `${dirty.length} file(s) — not in the shipped commit; the deploy is HEAD as committed`)
   warn()
 } else if (branch) {
   renderCheck('working tree clean', 'pass')
-}
-
-// Unpushed commits — `git rev-list @{u}..` returns commits ahead of upstream.
-// If no upstream is configured, fall back silently.
-if (branch) {
-  let unpushed = null
-  let upstreamOk = true
-  try {
-    const out = $.exec({
-      command: `git -C "${$.paths.root}" rev-list --count @{u}..HEAD`,
-      stdio:   'pipe',
-    })
-    unpushed = parseInt((out?.toString?.('utf8') ?? out ?? '0').trim()) || 0
-  } catch {
-    // No upstream set or some other failure — surface as a warn since it
-    // means we can't tell if commits are pushed
-    upstreamOk = false
-    renderCheck('upstream tracking', 'warn',
-      `branch has no upstream set — push it once with: git push -u origin ${branch}`)
-    warn()
-  }
-  if (upstreamOk) {
-    if (unpushed > 0) {
-      renderCheck(`commits pushed`, 'warn',
-        `${unpushed} commit(s) not pushed — server will pull origin, your unpushed work won't deploy`)
-      warn()
-    } else {
-      renderCheck('commits pushed', 'pass')
-    }
-  }
 }
 
 // ─── Remote checks ────────────────────────────────────────────────────────
@@ -684,13 +645,14 @@ if (flag.remote) {
 // ─── Summary ──────────────────────────────────────────────────────────────
 if (flag.json) return finishJson()
 if (failed > 0) $.config.abort = true
+const deployCmd = `fli deploy${flag.production ? ' --production' : flag.stage ? ' --stage' : ''}`
 echo('')
 if (failed === 0 && warned === 0) {
   log.success(`All checks passed${flag.remote ? '' : ' (run with --remote for server-side checks)'}`)
-  log.info(`Ready to deploy → \x1b[1mfli deploy${flag.production ? ' --production' : flag.stage ? ' --stage' : ''}\x1b[0m`)
+  log.info(chalk`Ready to deploy → {bold ${deployCmd}}`)
 } else if (failed === 0) {
   log.warn(`${warned} warning(s) — these won't block a deploy but are worth fixing`)
-  log.info(`To deploy anyway: \x1b[1mfli deploy${flag.production ? ' --production' : flag.stage ? ' --stage' : ''}\x1b[0m`)
+  log.info(chalk`To deploy anyway: {bold ${deployCmd}}`)
 } else {
   log.error(`${failed} failure(s)${warned > 0 ? `, ${warned} warning(s)` : ''} — fix the items above before deploying`)
   if (!flag.remote) {

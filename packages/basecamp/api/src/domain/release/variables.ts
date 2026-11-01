@@ -8,7 +8,7 @@
 
 import type { BasecampDb } from '../../core/db.ts'
 
-interface VariableRow { id: string; key: string; appId: string | null; secret: boolean; value: string | null }
+interface VariableRow { id: string; key: string; appId: string | null; isSecret: boolean; value: string | null }
 
 /** What `Deployment.configSnapshot` carries beside `source` and `runtime`. */
 export interface ReleaseVariables {
@@ -35,7 +35,7 @@ export async function snapshotVariables(
   // Environment-wide first, so the app's own row is the one left standing.
   for (const row of [...rows.filter(r => !r.appId), ...rows.filter(r => r.appId)]) {
     delete env[row.key]; delete secretEnv[row.key]
-    if (row.secret) secretEnv[row.key] = row.id
+    if (row.isSecret) secretEnv[row.key] = row.id
     else            env[row.key] = row.value ?? ''
   }
   return { env, secretEnv }

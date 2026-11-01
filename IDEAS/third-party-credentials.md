@@ -180,7 +180,7 @@ of anything:
     link only when all three hold
       provider.trustEmail            the app configured this provider as trustworthy
       claim.email_verified           the provider says it verified the address
-      existingUser.emailVerified     we verified it — the one the CVEs miss
+      existingUser.isEmailVerified     we verified it — the one the CVEs miss
 
 Everything else falls back to the app proving control of the address by mail, and a
 proof-path link onto a previously unverified account must also **invalidate that
@@ -233,7 +233,7 @@ rule this file carried an hour earlier.
 
 **The linking rule above was a named vulnerability class.** `CVE-2026-53516` against
 Better Auth is described as *the auto-link gate validates only the OAuth provider's
-`userInfo.emailVerified` claim; the local row's `emailVerified` field is never read* —
+`userInfo.isEmailVerified` claim; the local row's `isEmailVerified` field is never read* —
 which is what the first draft of § What was settled said, word for word in substance.
 `CVE-2026-35511` against Authorizer is the same shape. The attack is pre-registration:
 somebody signs up with the victim's address and a password they control, the row is
@@ -528,7 +528,7 @@ plan says:
 
 **Phase 1 — the flow engine, no server.** Provider descriptor → authorize URL with
 `state`, PKCE `S256` and the browser-binding cookie; code plus verifier → token
-exchange; token → a normalized `{ providerId, email, emailVerified, name }`. Pure
+exchange; token → a normalized `{ providerId, email, isEmailVerified, name }`. Pure
 functions, testable without an HTTP server.
 
 **No `id_token` validation in v1 — fetch userinfo.** One code path for OIDC providers

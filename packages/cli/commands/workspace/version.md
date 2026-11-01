@@ -85,7 +85,7 @@ const planned = packages.map(p => ({ ...p, newVersion: bumpVersion(p.pkg.version
 
 echo('')
 for (const { pkg, newVersion } of planned) {
-  echo(`  ${pkg.name}  ${pkg.version}  →  ${newVersion}`)
+  echo(`  ${chalk.bold(pkg.name)}  ${chalk.dim(pkg.version)}  →  ${chalk.green(newVersion)}`)
 }
 echo('')
 

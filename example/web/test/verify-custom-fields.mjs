@@ -259,9 +259,9 @@ try {
   // Each row is PAIRED with the customer field declared a moment ago, because
   // *no pool* and *the allocator is broken* answer identically from this side.
   const care = await declare('Product', 'care', 'text', 'Care symbol',
-                             { defaultValue: 'machine wash 30', show: true })
+                             { defaultValue: 'machine wash 30', isVisible: true })
   const sku  = await declare('Product', 'supplier_sku', 'text', 'Supplier SKU',
-                             { defaultValue: '', show: false })
+                             { defaultValue: '', isVisible: false })
 
   t('blob.aModelWithNoPoolAllocatesNoSlot',   care.slot === null)
   t('blob.andTheCustomerFieldStillGotOne',    tier.slot !== null)
@@ -274,7 +274,7 @@ try {
     careOnCustomer.key === care.key && careOnCustomer.id !== care.id)
 
   const prod = await sys.product.create({ data: {
-    name: `CF Widget ${RUN}`, slug: `cf-widget-${RUN}`, brand: 'frontierjs', active: true,
+    name: `CF Widget ${RUN}`, slug: `cf-widget-${RUN}`, brand: 'frontierjs', isActive: true,
     // Active, so `Product.description`'s `@required(where: active)` applies —
     // this is a CHECK in the DDL and `asSystem()` is held to it like anything
     // else.
@@ -322,7 +322,7 @@ try {
   t('assembler.anEmptyDefaultIsAbsentRatherThanBlank',
     !('default' in prodRules[`fields.${sku.key}`]))
 
-  // `show` decides a TABLE's columns and never an answer. Asserted as a pair,
+  // `isVisible` decides a TABLE's columns and never an answer. Asserted as a pair,
   // because a filter that returned nothing satisfies the hidden half alone.
   const shown = shownFields(prodDeclared)
   t('assembler.showChoosesTableColumns',
@@ -332,7 +332,7 @@ try {
 
   // ─── The audience: one predicate, two readers ───────────────────────────
   const terms  = [{ key: tier.key, op: 'eq', value: 'gold' }]
-  const code   = { code: `CF${RUN}`, active: true, kind: 'percent', value: 1000,
+  const code   = { code: `CF${RUN}`, isActive: true, kind: 'percent', value: 1000,
                    minSubtotal: 0, startsAt: null, endsAt: null,
                    maxRedemptions: null, redemptions: 0, audience: terms }
 
@@ -456,7 +456,7 @@ try {
 
     const key = `http_${RUN}`
 
-    const [ds, declaredRow] = await post('/custom-fields',
+    const [ds, declaredRow] = await post('/customFields',
       { model: 'Customer', key, label: 'HTTP tier', type: 'text' })
     if (declaredRow?.id) made.fields.push(declaredRow.id)
     t('http.declaringAFieldIsNotA500', ds === 201)
@@ -465,7 +465,7 @@ try {
     // The same request against a model with no pool. It is the same route, the
     // same hook and the same 201 — the only difference is a null the seed
     // decided, which is what makes this one feature rather than two.
-    const [blobStatus, blobRow] = await post('/custom-fields',
+    const [blobStatus, blobRow] = await post('/customFields',
       { model: 'Product', key: `${key}_p`, label: 'HTTP care', type: 'text' })
     if (blobRow?.id) made.fields.push(blobRow.id)
     t('http.declaringOnAPoollessModelIsTheSame201', blobStatus === 201)
@@ -543,7 +543,7 @@ try {
     const pageBody = literal
       ? new Function('key', 'label', 'type', `return (${literal})`)(pageKey, 'Page tier', 'text')
       : null
-    const [pgs, pageRow] = pageBody ? await post('/custom-fields', pageBody) : [0, null]
+    const [pgs, pageRow] = pageBody ? await post('/customFields', pageBody) : [0, null]
     if (pageRow?.id) made.fields.push(pageRow.id)
     t('page.theCreateItSendsIsNotRefused', pgs === 201 && pageRow?.model === 'Customer')
 

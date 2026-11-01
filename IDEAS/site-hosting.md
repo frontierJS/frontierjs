@@ -289,7 +289,7 @@ Each step adds its case to the website's `verify` drive before it is done.
    and the route table stays the one origin of a redirect.
 2. **Concept** — no new noun. *Host function* is `FJS-1540`'s phrase;
    *adapter* is the word SvelteKit and Astro use for this exact role, and
-   `packages/basecamp/docs/ADAPTERS.md` already uses it.
+   `packages/basecamp/docs/adapters.md` already uses it.
 3. **Complexity** — the problem's: every static framework that deploys to
    more than one host grew adapters, and Pages' `functions/` is the prior art.
 4. **Predictability** — one `dist/` and one function entry under every host;

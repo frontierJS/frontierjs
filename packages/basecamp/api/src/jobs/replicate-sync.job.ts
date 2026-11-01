@@ -44,7 +44,7 @@
 // across whoever placed them, so it is read at SYSTEM (`runsAsApp`).
 
 import { defineJob }                         from '@frontierjs/caravan'
-import { runsAsApp }                         from './context.ts'
+import { runsAsApp }                         from '../domain/job/job-context.ts'
 import { executorOn, isExecutor }            from '../providers/executor.ts'
 import { createSecretResolver, secretRef }   from '../core/credentials.ts'
 import { keyUnder, sendFor }                 from '../providers/storage/index.ts'

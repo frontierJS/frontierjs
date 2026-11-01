@@ -12,7 +12,7 @@ exported, shared or imported. This expands `paas-parity.md` row 6 (blueprint sha
 answers row 7's *export and import are the same structure written as a file* for the
 catalog case.
 
-**Read `packages/basecamp/docs/VISION.md` before building.** A blueprint becomes an App
+**Read `packages/basecamp/docs/vision.md` before building.** A blueprint becomes an App
 through `apps.fromBlueprint`, and that App deploys like any other. A multi-service shape
 that `fli` and Outpost cannot also deploy would break VISION's rule.
 

@@ -117,33 +117,33 @@ const source = model.files.filter(f => f.kind === 'source')
 const cx     = source.reduce((sum, f) => sum + (f.complexity ?? 0), 0)
 const ex     = source.reduce((sum, f) => sum + (f.exposure ?? 0), 0)
 const warn   = source.filter(f => (scoreOf(f)?.step ?? 0) >= SCORE_WARN).length
-echo(`  ✓  ${outPath.replace(root + '/', '')}`)
-if (as === 'map' || as === 'page') echo(`  ${flag.all ? `every file drawn (${model.files.length})` : `${source.length} source file(s) drawn — --all for all ${model.files.length}`}`)
-echo(`  ${model.files.length} file(s) · ${source.length} source · ${cx ? Math.round(ex / cx * 100) : 0}% of source complexity untested · ${warn} scoring over ${SCORE_STEPS[SCORE_WARN - 1]} · ${model.commits} commit(s), ${model.sweeps} sweep(s) over ${model.sweepLimit} files left out`)
+echo(`  ${chalk.green('✓')}  ${chalk.bold(outPath.replace(root + '/', ''))}`)
+if (as === 'map' || as === 'page') echo(chalk.dim(`  ${flag.all ? `every file drawn (${model.files.length})` : `${source.length} source file(s) drawn — --all for all ${model.files.length}`}`))
+echo(chalk.dim(`  ${model.files.length} file(s) · ${source.length} source · ${cx ? Math.round(ex / cx * 100) : 0}% of source complexity untested · ${warn} scoring over ${SCORE_STEPS[SCORE_WARN - 1]} · ${model.commits} commit(s), ${model.sweeps} sweep(s) over ${model.sweepLimit} files left out`))
 
 const parsed = model.files.filter(f => f.cognitive != null)
 if (parsed.length) {
   const worst = parsed.reduce((a, f) => f.cognitive > a.cognitive ? f : a)
   const fns = parsed.reduce((sum, f) => sum + (f.fns ?? 0), 0)
-  echo(`  ${fns} function(s) read in ${parsed.length} file(s) · hardest is ${worst.worst.name}() in ${worst.path} at ${worst.cognitive}`)
+  echo(chalk.dim(`  ${fns} function(s) read in ${parsed.length} file(s) · hardest is ${worst.worst.name}() in ${worst.path} at ${worst.cognitive}`))
 } else {
-  echo('  functions: no typescript installed in this project — complexity is the indent reading alone')
+  echo(chalk.yellow('  functions: no typescript installed in this project — complexity is the indent reading alone'))
 }
 
 // what is built on this project rather than shipped by it, named so a count that moved is explainable
 const priv = model.files.filter(f => f.kind === 'private')
 if (priv.length) {
   const by = [...priv.reduce((m, f) => m.set(f.region, (m.get(f.region) ?? 0) + 1), new Map())].sort((a, b) => b[1] - a[1])
-  echo(`  ${priv.length} private · ${by.map(([r, n]) => `${r} ${n}`).join(' · ')} — unpublished packages, graded but not counted as source`)
+  echo(chalk.dim(`  ${priv.length} private · ${by.map(([r, n]) => `${r} ${n}`).join(' · ')} — unpublished packages, graded but not counted as source`))
 }
 
 for (const r of model.reports) {
   const when = new Date(r.madeAt * 1000).toISOString().slice(0, 10)
   if (r.stale) log.warn(`${r.path} (${when}) is older than a commit to a file it covers — its ${r.files} file(s) may read as more tested than they are`)
-  else echo(`  coverage: ${r.path} (${when}) · ${r.files} file(s)`)
+  else echo(chalk.dim(`  coverage: ${r.path} (${when}) · ${r.files} file(s)`))
 }
-if (!model.reports.length) echo('  tested: no coverage/lcov.info found — a file counts as tested when a test names it')
-echo('  Not a snapshot: heat and age are measured against today. Do not gate on this file.')
+if (!model.reports.length) echo(chalk.yellow('  tested: no coverage/lcov.info found — a file counts as tested when a test names it'))
+echo(chalk.dim('  Not a snapshot: heat and age are measured against today. Do not gate on this file.'))
 ```
 
 ## Reading a tile

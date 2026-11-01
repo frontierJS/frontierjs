@@ -23,8 +23,8 @@ describe('the grade on a machine principal', () => {
   test('its own check-in passes', () => {
     expect(() => call('servers', 'heartbeat', machine('srv_1'), { id: 'srv_1' })).not.toThrow()
     expect(() => call('volumes', 'report', machine('srv_1'), { data: { server_id: 'srv_1' } })).not.toThrow()
-    expect(() => call('cleanup', 'report', machine('srv_1'), { data: { server_id: 'srv_1' } })).not.toThrow()
-    expect(() => call('posture', 'report', machine('srv_1'), { data: { server_id: 'srv_1' } })).not.toThrow()
+    expect(() => call('maintenanceRuns', 'report', machine('srv_1'), { data: { server_id: 'srv_1' } })).not.toThrow()
+    expect(() => call('serverPostures', 'report', machine('srv_1'), { data: { server_id: 'srv_1' } })).not.toThrow()
   })
 
   test('another machine\'s check-in is refused', () => {

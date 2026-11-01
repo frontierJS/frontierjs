@@ -19,7 +19,7 @@
 
 import { defineJob }                       from '@frontierjs/caravan'
 import { BadRequest }                      from '@frontierjs/junction'
-import { runsAsApp }                       from './context.ts'
+import { runsAsApp }                       from '../domain/job/job-context.ts'
 import { resolveExecutor, isExecutor }     from '../providers/executor.ts'
 import type { Executor }                   from '../providers/executor.ts'
 import { replicaOf, replicaDatabases }     from './replicate-sync.job.ts'
@@ -107,12 +107,12 @@ export async function fireAppDrill(app: App, appId: string): Promise<void> {
   if (!target || target.deletedAt || !target.drillCron) return
 
   const executor = await resolveExecutor(app, appId)
-  if (!isExecutor(executor)) { log.warn('scheduled drill skipped', { app_id: appId, reason: executor.reason }); return }
+  if (!isExecutor(executor)) { log.warn('scheduled drill skipped', { appId, reason: executor.reason }); return }
   try {
     const row = await drillApp(app, { target, executor, kind: 'scheduled', requestedBy: null })
-    if (row.status !== 'success') log.warn('scheduled drill failed', { app_id: appId, error: row.error })
+    if (row.status !== 'success') log.warn('scheduled drill failed', { appId, error: row.error })
   } catch (err) {
-    log.warn('scheduled drill skipped', { app_id: appId, reason: (err as Error).message })
+    log.warn('scheduled drill skipped', { appId, reason: (err as Error).message })
   }
 }
 

@@ -1,5 +1,6 @@
 {
-  "//": "One number per fli check rule id — the count that may never rise. Absent = 0 = clean. `fli check --update` locks in an improvement and cannot raise; `fli check --adopt` records what is there, which is the verb for taking debt on. A defended finding is named under allow with its reason, never counted (FJS-D1686).",
+  "//": "One number per fli check rule id — the count that may never rise. Absent = 0 = clean. `fli check --update` locks in an improvement and cannot raise; `fli check --adopt` records what is there, which is the verb for taking debt on. The findings still print either way.",
+  "schema-runs": 1,
   "allow": {
     "detail-read-dead:web/src/components/Booth.mesa": "A member's nick, read once to sign a figure. FJS-D1451 rules a rename out at the post, so nothing writes the column again, and the members service publishes on no channel, so a watch would hear nothing.",
     "detail-read-dead:web/src/components/Crier.mesa": "A member's nick, read once to sign a figure. FJS-D1451 rules a rename out at the post, so nothing writes the column again, and the members service publishes on no channel, so a watch would hear nothing.",

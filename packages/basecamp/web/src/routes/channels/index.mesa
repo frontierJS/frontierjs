@@ -6,7 +6,7 @@ title: Channels
   //
   // A channel is where an alert is delivered. The mock's version pauses,
   // deletes and "sends a test" against a hardcoded array; all four of those are
-  // real here, and the test genuinely leaves the process — `channels.test` goes
+  // real here, and the test genuinely leaves the process — `notificationChannels.test` goes
   // out through app.conduit and fails loudly if nothing answers.
   //
   // **The credential is never on this page.** It is written once into a
@@ -19,7 +19,7 @@ title: Channels
   // attached answers 409 with the count. The mock made that call in the
   // browser, over an array of rules it happened to have loaded.
   import { session } from '../../lib/session.js'
-  import { channels } from '../../resources/NotificationChannel.mesa'
+  import { notificationChannels } from '../../resources/NotificationChannel.mesa'
   import { messageFor } from '../../lib/errors.js'
   import { at } from '../../lib/datetime.js'
 
@@ -48,11 +48,11 @@ title: Channels
   let creating = page.query?.new !== undefined
   // ⌘K's New … entries land here with ?new, on this route or from another.
   $: page.query, () => { if (page.query?.new !== undefined) creating = true }
-  let draft    = channels.make()
+  let draft    = notificationChannels.make()
   let secret   = ''
 
   // Per-kind form shape. The KINDS list itself is NOT written here — it comes
-  // from the schema through the resource (`channels.fields.kind.enum`), the
+  // from the schema through the resource (`notificationChannels.fields.kind.enum`), the
   // same way the alerts screen gets its severities. What is here is what each
   // kind ASKS FOR, which is a UI fact and belongs to a UI file.
   const ASKS = {
@@ -64,7 +64,7 @@ title: Channels
   }
   const KIND_LABEL = { slack: 'Slack', pagerduty: 'PagerDuty', email: 'Email', webhook: 'Webhook', chat: 'FJS chat' }
 
-  $: kinds = channels.fields?.kind?.enum ?? Object.keys(ASKS)
+  $: kinds = notificationChannels.fields?.kind?.enum ?? Object.keys(ASKS)
   $: asks  = ASKS[draft.kind] ?? {}
 
   // The kit's controls take a value and hand back an event; they are NOT bound
@@ -86,7 +86,7 @@ title: Channels
   }
 
   // Every channel, not a page — the server refuses a page above its max.
-  const list = channels.tethered({ state: 'local', all: true })
+  const list = notificationChannels.tethered({ state: 'local', all: true })
   $: {
     rows    = list.rows
     loading = list.loading
@@ -96,7 +96,7 @@ title: Channels
   $: session.workspaceId, () => load()
 
   const READS = new Set(['get', 'find'])
-  const off = channels.service.on('*', (method, row) => {
+  const off = notificationChannels.service.on('*', (method, row) => {
     if (READS.has(method) || !row?.id) return
     load()
   })
@@ -108,10 +108,10 @@ title: Channels
       // `secret` is wire-only — it is not a column, so it is not on the record
       // the form validates. It rides alongside and the server lifts it into a
       // Secret; sending it as part of `draft` would only have it stripped.
-      const created = await channels.service.create(secret ? { ...data, secret } : data)
+      const created = await notificationChannels.service.create(secret ? { ...data, secret } : data)
       toasts.success(`${created.name} created`)
       creating = false
-      draft  = channels.make()
+      draft  = notificationChannels.make()
       secret = ''
       await load()
     } catch (e) {
@@ -123,12 +123,12 @@ title: Channels
   async function toggle(channel) {
     error = null; busy = channel.id
     try {
-      const updated = await channels.service.patch(channel.id, { isActive: !channel.isActive })
+      const updated = await notificationChannels.service.patch(channel.id, { isActive: !channel.isActive })
       toasts.success(updated.isActive ? `${channel.name} resumed` : `${channel.name} paused`)
       const i = rows.findIndex(r => r.id === channel.id)
       if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...updated }, ...rows.slice(i + 1)]
     } catch (e) {
-      error = messageFor(channels, e)
+      error = messageFor(notificationChannels, e)
     } finally {
       busy = null
     }
@@ -142,7 +142,7 @@ title: Channels
     error = null; busy = channel.id
     const said = toasts.loading(`Testing ${channel.name}…`)
     try {
-      const updated = await channels.service.invoke('test', channel.id)
+      const updated = await notificationChannels.service.invoke('test', channel.id)
       said.update('success', `Test delivered to ${channel.name}`)
       const i = rows.findIndex(r => r.id === channel.id)
       if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...updated }, ...rows.slice(i + 1)]
@@ -185,7 +185,7 @@ title: Channels
     editError = null; saving = true
     try {
       const { id, name, config, version, secret: credential } = editing
-      const updated = await channels.service.patch(id, {
+      const updated = await notificationChannels.service.patch(id, {
         name, config, version, ...(credential ? { secret: credential } : {}),
       })
       toasts.success(credential
@@ -194,7 +194,7 @@ title: Channels
       editing = null
       await load()
     } catch (e) {
-      editError = messageFor(channels, e)
+      editError = messageFor(notificationChannels, e)
     } finally {
       saving = false
     }
@@ -207,7 +207,7 @@ title: Channels
     if (rulesFor[c.id]) { const { [c.id]: _, ...rest } = rulesFor; rulesFor = rest; return }
     error = null; busy = c.id
     try {
-      const answer = await channels.service.invoke('rules', c.id)
+      const answer = await notificationChannels.service.invoke('rules', c.id)
       rulesFor = { ...rulesFor, [c.id]: (answer?.data ?? []).map(link => link.rule).filter(Boolean) }
     } catch (e) {
       error = e.message
@@ -219,8 +219,8 @@ title: Channels
   async function remove(channel) {
     error = null; busy = channel.id
     try {
-      await channels.service.remove(channel.id)
-      offerUndo(channel.name, channels, channel.id, load)
+      await notificationChannels.service.remove(channel.id)
+      offerUndo(channel.name, notificationChannels, channel.id, load)
       await load()
     } catch (e) {
       error = e.message
@@ -266,7 +266,7 @@ title: Channels
 
 {#if creating}
   <Card>
-    <Form resource={channels} bind:record={draft} onsubmit={create}>
+    <Form resource={notificationChannels} bind:record={draft} onsubmit={create}>
       <Input name="name" id="name" value={draft.name}
              oninput={(e) => write('name', e.target.value)} />
       <Select name="kind" id="kind" value={draft.kind}

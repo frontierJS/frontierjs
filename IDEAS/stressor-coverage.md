@@ -1,12 +1,12 @@
 ---
 id: stressor-coverage
-status: assessment
+status: reading
 dated: 2026-10-31
 ---
 
 # Assessment — stressor coverage: what the list has not reached, and two shapes it lacks
 
-**Status: ASSESSMENT.** Dated 2026-10-31. A reading of `IDEAS/stressors.md`
+**Status: READING.** Dated 2026-10-31. A reading of `IDEAS/stressors.md`
 against `fjs-prototypes/`, asking which seams no stressor has yet pressed, plus
 two product shapes the list does not have. Nothing here is committed to. The
 depth figures are a snapshot taken from each prototype's `PLAN.md` status line,

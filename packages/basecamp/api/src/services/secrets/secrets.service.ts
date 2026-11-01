@@ -52,7 +52,7 @@ function stampSecret(): void {
  * across a create and the rotation in `patch`.
  */
 function normalizeProviderKey(data: Record<string, unknown>): void {
-  if (data.kind !== 'provider_key') return
+  if (data.kind !== 'providerKey') return
 
   if (!data.providerKind)
     throw new BadRequest('providerKind is required on a provider key — which cloud this token opens')
@@ -174,7 +174,7 @@ export default createService({
   //
   // Does this credential open what it claims to?
   //
-  // For a `provider_key` the question is now ASKED: the connector makes the
+  // For a `providerKey` the question is now ASKED: the connector makes the
   // cheapest authenticated read the vendor offers, and a token the vendor
   // rejects leaves the flag false and says so. That is the whole difference
   // between a flag and evidence, and until there was a connector this method
@@ -182,7 +182,7 @@ export default createService({
   //
   // Every other kind is still a person asserting it. An SSH key opens a
   // machine, and testing it means connecting to one — which is a different
-  // capability and is `docs/PROVISIONING.md` phase 5's. Stated out loud on
+  // capability and is `docs/provisioning.md` phase 5's. Stated out loud on
   // the answer (`tested`), because a caller cannot otherwise tell which of
   // the two just happened, and *verified* meaning two things is how a flag
   // gets read as evidence it is not.
@@ -193,7 +193,7 @@ export default createService({
     // here it would read as evidence a bucket was never asked for.
     if (secret.kind === 'backup')
       throw new BadRequest('A backup credential is verified by testing its destination — use the Test bucket action on /hub/settings/')
-    const connector = secret.kind === 'provider_key'
+    const connector = secret.kind === 'providerKey'
       ? accountConnectorFor(secret.providerKind as ProviderKind | null)
       : null
 
@@ -210,7 +210,7 @@ export default createService({
         // reason to mark a working credential broken — so the failure is
         // reported and the flag is left where it was.
         $.app.logger.warn('secrets: verify could not reach the provider', {
-          secret_id: secret.id, provider: secret.providerKind, error: String(err),
+          secretId: secret.id, provider: secret.providerKind, error: String(err),
         })
         throw new BadRequest(`Could not reach ${connector.label} to check this token`)
       }

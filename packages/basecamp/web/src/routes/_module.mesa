@@ -354,7 +354,7 @@ siteName: Basecamp
           Search <kbd class="kbd hide-sm">⌘K</kbd>
         </Button>
 
-        {#if !session.user.enrollmentOnly}<Bell />{/if}
+        {#if !session.user.isEnrollmentOnly}<Bell />{/if}
 
         <!-- Who you are and signing out are one control, not two.
              `.cluster` wraps, so a right-hand cluster that does not fit lays a

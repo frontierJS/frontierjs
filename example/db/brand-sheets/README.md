@@ -66,7 +66,7 @@ displayed at 1×, which is the only reason they are not soft.
 | `arch-hawk.png` | `fjs-merch.image-ref.png` | `(667, 65, 787, 185)` | ” |
 | `arch-wolf.png` | `fjs-merch.image-ref.png` | `(821, 65, 941, 185)` | ” |
 
-Which archetype leads is a judgement, not an accident, and it has been made
+Which archetype leads is a judgment, not an accident, and it has been made
 twice. A first cut used the wolf for the hero and all three trail panels, which
 reads as one animal's brand rather than as three; the correction handed the hero
 to the hawk. The wolf leads again now — he is the sheets' most photogenic

@@ -25,7 +25,7 @@ touching a login path, a credential write, a `.lite` fragment or a callback.
 
 - **A route ESTABLISHES a session; everything after it is a service** (`FJS-D20`). Login cannot be gated by login; `me`, sessions, keys and the password can be refused and so get the hook pipeline.
 - **`login()` returns a session OR `{ challenge, expiresAt }`** (`FJS-D261`); every caller discriminates on `'challenge' in result`. A `totp` credential EXISTING is what makes a login owe a code; enrollment writes `totpPending` and only `confirmTotp` promotes it.
-- **Every first factor ends at `firstFactorProven()`** — password, magic link (`FJS-D888`), OAuth (`FJS-D915`), a registration click (`FJS-D1310`). A new door that reaches `issueSession` directly is a way past the second factor; `requireSecondFactor` holds an `enrollmentOnly` session rather than refusing (`FJS-D1008`).
+- **Every first factor ends at `firstFactorProven()`** — password, magic link (`FJS-D888`), OAuth (`FJS-D915`), a registration click (`FJS-D1310`). A new door that reaches `issueSession` directly is a way past the second factor; `requireSecondFactor` holds an `isEnrollmentOnly` session rather than refusing (`FJS-D1008`).
 - **Only a `kind: user` signs in, and `issueSession` is where that is refused** (`FJS-D1198`). A bot or peer holds API keys only.
 - **A refused proof inside a live session is 403, never 401** (`FJS-1088`) — sierra signs the person out on a 401. `login()` and `completeLogin` hold no session and keep 401.
 - **A credential change asks whether the SESSION proved a password recently** (`FJS-D1209`): `fresh(user)` after `refuseDelegated` on every method that changes how the account signs in, and such a change ends every OTHER session through `endOtherSessions` (`FJS-D1208`).

@@ -20,11 +20,11 @@
 import { sys } from '../../../../api/src/core/db.ts'
 
 export async function load() {
-  // `active` is what retires a plan. The rows stay — every past subscription
+  // `isActive` is what retires a plan. The rows stay — every past subscription
   // points at a version of one — so a pricing page that listed every plan would
   // offer things the shop stopped selling.
   const plans = await sys.plan.findMany({
-    where:   { active: true },
+    where:   { isActive: true },
     orderBy: { code: 'asc' },
     limit:   50,
   })

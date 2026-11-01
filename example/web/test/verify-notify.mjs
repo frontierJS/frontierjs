@@ -112,7 +112,7 @@ try {
   // ctx.enqueue, so the job is queued under the OUTBOX ROW's uuid rather than
   // under a `unique` key built from the order id — and SQLite reusing that id
   // can no longer make this run's announcement de-duplicate against a pending
-  // job left by an earlier one. What used to stand here cancelled those jobs
+  // job left by an earlier one. What used to stand here canceled those jobs
   // before every run.
 
   // ── 1. paying answers without waiting for anybody ──────────────────────
@@ -248,7 +248,7 @@ try {
   // which is the claim. Identified by its PAYLOAD rather than by a key — there
   // is no `unique` key any more, and the payload is what says which order this
   // job is about. Matching on `j.error` alone would also match cancelled
-  // corpses from earlier runs, which keep the error that got them cancelled.
+  // corpses from earlier runs, which keep the error that got them canceled.
   const isForThisOrder = (j) => {
     if (j.name !== 'payment-announce') return false
     try { return JSON.parse(j.data)?.orderId === secondId } catch { return false }

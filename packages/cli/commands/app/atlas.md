@@ -71,7 +71,7 @@ const rawRoutes = app.routes.filter(r => r.kind === 'raw')
 
 const rule = (label) => {
   echo('')
-  echo(`  ── ${label} ${'─'.repeat(Math.max(2, 64 - label.length))}`)
+  echo(chalk.bold(`  ── ${label} `) + chalk.dim('─'.repeat(Math.max(2, 64 - label.length))))
   echo('')
 }
 
@@ -80,11 +80,11 @@ const pad = (rows, i) => Math.max(...rows.map(r => String(r[i] ?? '').length))
 if (flag.ungraded) {
   rule('Reached over HTTP, graded by no service pipeline')
   if (!rawRoutes.length) {
-    echo('  None — every mounted route goes through a service.')
+    echo(chalk.green('  None — every mounted route goes through a service.'))
     return
   }
   const mw = Math.max(...rawRoutes.map(r => r.method.length))
-  for (const r of rawRoutes) echo(`  ${r.method.padEnd(mw)}  ${r.path}`)
+  for (const r of rawRoutes) echo(chalk`  {yellow ${r.method.padEnd(mw)}}  ${r.path}`)
   echo('')
   log.info(`${rawRoutes.length} raw route(s). A raw route runs BELOW the pipeline — ` +
            'no gateAuth, no autoValidate, no envelope. Each one grades its own caller or nothing does.')
@@ -92,8 +92,8 @@ if (flag.ungraded) {
 }
 
 echo('')
-echo(`  App atlas — ${$.paths.root}`)
-echo(`  read off ${entry.args.join(' ')} under ${entry.dir}`)
+echo(chalk`  {bold App atlas} {dim — ${$.paths.root}}`)
+echo(chalk.dim(`  read off ${entry.args.join(' ')} under ${entry.dir}`))
 
 // ── reached by a caller ──
 rule('Reached by a caller')
@@ -105,7 +105,7 @@ const svcRows = app.services.map(s => [
 ])
 const w0 = pad(svcRows, 0), w1 = pad(svcRows, 1)
 for (const [name, model_, methods] of svcRows) {
-  echo(`  ${name.padEnd(w0)}  ${model_.padEnd(w1)}  ${methods}`)
+  echo(chalk`  {bold ${name.padEnd(w0)}}  {cyan ${model_.padEnd(w1)}}  {dim ${methods}}`)
 }
 echo('')
 log.info(`${app.services.length} service(s) · ${app.routes.length} mounted route(s) ` +
@@ -116,13 +116,13 @@ log.info(`${app.services.length} service(s) · ${app.routes.length} mounted rout
 rule('Reached by a clock, or by a dispatch with no caller')
 
 if (!jobs.hasQueue) {
-  echo('  No queue is installed — nothing here is durable.')
+  echo(chalk.dim('  No queue is installed — nothing here is durable.'))
 } else if (!jobs.durable.length) {
-  echo('  A queue is installed and no handlers are registered.')
+  echo(chalk.dim('  A queue is installed and no handlers are registered.'))
 } else {
   const jr = jobs.durable.map(j => [j.name, j.cron ? j.cron : 'on dispatch', j.timeout == null ? 'no timeout' : `${j.timeout}ms`])
   const jw = pad(jr, 0), jw1 = pad(jr, 1)
-  for (const [n, sched, t] of jr) echo(`  ${n.padEnd(jw)}  ${sched.padEnd(jw1)}  ${t}`)
+  for (const [n, sched, t] of jr) echo(chalk`  {bold ${n.padEnd(jw)}}  {cyan ${sched.padEnd(jw1)}}  {dim ${t}}`)
   echo('')
   const onClock = jobs.durable.filter(j => j.cron).length
   log.info(`${jobs.durable.length} durable handler(s), ${onClock} on a clock · ${jobs.timers.length} in-process timer(s)`)
@@ -132,13 +132,13 @@ if (!jobs.hasQueue) {
 rule('What it can tell somebody')
 
 if (!notifications.installed) {
-  echo('  No notifications plugin is configured.')
+  echo(chalk.dim('  No notifications plugin is configured.'))
 } else if (!notifications.declared.length) {
-  echo('  Configured, and no notifications are registered — every send throws.')
+  echo(chalk.yellow('  Configured, and no notifications are registered — every send throws.'))
 } else {
   const nw = Math.max(...notifications.declared.map(n => n.type.length))
   for (const n of notifications.declared) {
-    echo(`  ${n.type.padEnd(nw)}  ${(n.transports ?? []).join(' · ') || 'no transport'}`)
+    echo(chalk`  {bold ${n.type.padEnd(nw)}}  {dim ${(n.transports ?? []).join(' · ') || 'no transport'}}`)
   }
 }
 
@@ -146,15 +146,15 @@ if (!notifications.installed) {
 rule('What graded it')
 
 if (!principal) {
-  echo('  This app declares no tenancy and installs no principal resolver.')
+  echo(chalk.dim('  This app declares no tenancy and installs no principal resolver.'))
 } else {
   const t = principal.tenancy
-  if (t?.strategy) echo(`  tenancy   ${t.strategy}${t.resolve ? `, resolved by ${t.resolve}` : ''}`)
+  if (t?.strategy) echo(chalk`  {dim tenancy  } ${t.strategy}${t.resolve ? `, resolved by ${t.resolve}` : ''}`)
   const r = principal.resolver
   if (r?.name) {
     const d = r.described ?? {}
     const bits = [d.kind, d.claims?.length ? `claims ${d.claims.join(', ')}` : null, d.namedBy].filter(Boolean)
-    echo(`  resolver  ${r.name}${bits.length ? ` — ${bits.join(', ')}` : ''}`)
+    echo(chalk`  {dim resolver } ${r.name}${bits.length ? chalk.dim(` — ${bits.join(', ')}`) : ''}`)
   }
 }
 

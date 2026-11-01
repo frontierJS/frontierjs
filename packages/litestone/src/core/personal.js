@@ -49,7 +49,7 @@ export function isChildModel(model) {
 //
 // A column on a person model with one of these names and no `@personal` is a
 // parse warning. Compared case-insensitively on the whole name, so `email` and
-// `Email` warn and `emailVerified` does not — a false positive on a correct
+// `Email` warn and `isEmailVerified` does not — a false positive on a correct
 // schema is what teaches people to stop reading warnings.
 
 export const PERSONAL_NAMES = Object.freeze({

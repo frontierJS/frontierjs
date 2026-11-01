@@ -178,7 +178,7 @@ export const DISK_READINGS: DiskReading[] = [
     unit:  'bytes',
     label: 'Reclaimable',
     // Volumes are NOT in this sum, and the omission is the same one
-    // `cleanup.usage` makes for the fleet total: an unused volume's bytes come
+    // `maintenanceRuns.usage` makes for the fleet total: an unused volume's bytes come
     // from `Volume`, which owns per-disk sizes, and adding a figure from a
     // second table would double-count the first time a report was missed.
     of: f => f.imagesReclaimableBytes + f.containersReclaimableBytes + f.buildCacheReclaimableBytes,

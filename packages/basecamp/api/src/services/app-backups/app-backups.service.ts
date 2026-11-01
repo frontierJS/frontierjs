@@ -49,7 +49,7 @@ export default createService({
 
   async find() {
     const { limit, offset } = getPagination({ limit: 50, max: 200 })
-    // The hub App's archives are `/backups`' (`FJS-D1606`), and its row is
+    // The hub App's archives are `/hubBackups`' (`FJS-D1606`), and its row is
     // left out of every list (`FJS-D1628`).
     const hub = (await hubIds(db().asSystem())).app
     if (hub && $.query.appId === hub) return { total: 0, limit, offset, data: [] }
@@ -123,7 +123,7 @@ export default createService({
     const base = row.location!.split('/').pop()!.replace(/\.tar\.gz$/, '')
     const name = `${base.startsWith(`${app.id}-`) ? `${app.slug}-${base.slice(app.id.length + 1)}` : base}.tar.gz`
     // The URL is the credential and nobody follows it through here.
-    $.app.logger.info('app backup link minted', { backup_id: row.id, app_id: app.id, by: actor() })
+    $.app.logger.info('app backup link minted', { backupId: row.id, appId: app.id, by: actor() })
     return bucketDownload($.app, row, name)
   },
 

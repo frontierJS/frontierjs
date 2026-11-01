@@ -4,7 +4,7 @@
 // two published CVEs rather than because of a feature.
 //
 // `CVE-2026-53516` (Better Auth) and `CVE-2026-35511` (Authorizer) are one
-// omission: the auto-link gate reads the PROVIDER's `emailVerified` and never
+// omission: the auto-link gate reads the PROVIDER's `isEmailVerified` and never
 // the local row's. The attack is pre-registration — somebody signs up with the
 // victim's address and a password they control, the row is written unverified,
 // the victim later signs in with Google, and the two are fused with the
@@ -34,7 +34,7 @@ afterAll(() => h.cleanup())
 const id = (over: Record<string, unknown> = {}) => ({
   providerId:    'sub-1',
   email:         'ada@shop.test',
-  emailVerified: true,
+  isEmailVerified: true,
   name:          'Ada',
   ...over,
 } as any)
@@ -111,22 +111,22 @@ describe('an address nobody holds', () => {
     expect((await userByEmail('new@shop.test'))).toBeTruthy()
   })
 
-  test('a trusted verified claim carries emailVerified onto the new account', async () => {
+  test('a trusted verified claim carries isEmailVerified onto the new account', async () => {
     await h.auth.oauthResolve('google', id({ providerId: 'v-1', email: 'verified@shop.test' }))
-    expect((await userByEmail('verified@shop.test')).emailVerified).toBe(true)
+    expect((await userByEmail('verified@shop.test')).isEmailVerified).toBe(true)
   })
 
   test('an UNTRUSTED provider creates nothing, however loudly it claims', async () => {
     // nOAuth: the issuer is whatever the app pointed `oidc` at, and an attacker
     // who can stand one up can assert anything. A row on its word squats the
     // address (FJS-1820), so the address is mailed instead.
-    const out = await h.auth.oauthResolve('okta', id({ providerId: 'u-1', email: 'untrusted@shop.test', emailVerified: true }))
+    const out = await h.auth.oauthResolve('okta', id({ providerId: 'u-1', email: 'untrusted@shop.test', isEmailVerified: true }))
     expect(out.outcome).toBe('proof-required')
     expect(await userByEmail('untrusted@shop.test')).toBeNull()
   })
 
   test('a trusted provider that did not verify creates nothing either', async () => {
-    const out = await h.auth.oauthResolve('google', id({ providerId: 'u-2', email: 'unverified@shop.test', emailVerified: false }))
+    const out = await h.auth.oauthResolve('google', id({ providerId: 'u-2', email: 'unverified@shop.test', isEmailVerified: false }))
     expect(out.outcome).toBe('proof-required')
     expect(await userByEmail('unverified@shop.test')).toBeNull()
   })
@@ -190,8 +190,8 @@ describe('an address nobody holds', () => {
 describe('an address somebody already holds', () => {
 
   /** A local account, verified or not, with a password on it. */
-  async function localAccount(email: string, emailVerified: boolean) {
-    const user = await h.sys.user.create({ data: { email, emailVerified } })
+  async function localAccount(email: string, isEmailVerified: boolean) {
+    const user = await h.sys.user.create({ data: { email, isEmailVerified } })
     await h.sys.credential.create({ data: { userId: user.id, type: 'password', value: 'hash' } })
     return user
   }
@@ -201,7 +201,7 @@ describe('an address somebody already holds', () => {
     const victim = await localAccount('victim@shop.test', false)
 
     const out = await h.auth.oauthResolve('google', id({
-      providerId: 'atk-1', email: 'victim@shop.test', emailVerified: true,
+      providerId: 'atk-1', email: 'victim@shop.test', isEmailVerified: true,
     }))
 
     expect(out.outcome).toBe('proof-required')
@@ -224,7 +224,7 @@ describe('an address somebody already holds', () => {
   test('a verified local account is still not linked by an UNTRUSTED provider', async () => {
     await localAccount('trusted-only@shop.test', true)
     const out = await h.auth.oauthResolve('okta', id({
-      providerId: 'okta-1', email: 'trusted-only@shop.test', emailVerified: true,
+      providerId: 'okta-1', email: 'trusted-only@shop.test', isEmailVerified: true,
     }))
     expect(out.outcome).toBe('proof-required')
   })
@@ -232,7 +232,7 @@ describe('an address somebody already holds', () => {
   test('a trusted provider that did NOT verify does not link either', async () => {
     await localAccount('unclaimed@shop.test', true)
     const out = await h.auth.oauthResolve('google', id({
-      providerId: 'unv-1', email: 'unclaimed@shop.test', emailVerified: false,
+      providerId: 'unv-1', email: 'unclaimed@shop.test', isEmailVerified: false,
     }))
     expect(out.outcome).toBe('proof-required')
   })
@@ -248,7 +248,7 @@ describe('an address somebody already holds', () => {
     for (const [provider, email, providerVerified, accountVerified] of cases) {
       await localAccount(email, accountVerified)
       const out = await h.auth.oauthResolve(provider, id({
-        providerId: `tt-${email}`, email, emailVerified: providerVerified,
+        providerId: `tt-${email}`, email, isEmailVerified: providerVerified,
       }))
       expect(out.outcome).toBe('proof-required')
     }

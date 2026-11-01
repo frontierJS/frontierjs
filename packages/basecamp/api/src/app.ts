@@ -43,7 +43,7 @@ import { createBasecampDb, jobsDatabasePath } from './core/db.ts'
 import { openSqlite }                    from './core/sqlite.ts'
 import { createSecretResolver, hubSigningKeys } from './core/credentials.ts'
 import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts'
-import { registerPushReceivers } from './plugins/push.ts'
+import { registerPushReceivers } from './plugins/git-push.ts'
 import { dependencyTargets }  from './core/dependencies.ts'
 import { accountMail }         from './core/account-mail.ts'
 import { isPreviewOrigin }      from './domain/site/site-preview.ts'
@@ -650,7 +650,7 @@ export async function buildBasecampApp(
   // is its own workspace.
   app.configure(auditPlugin({
     model:   'AuditEvent',
-    except:  ['servers.heartbeat', 'volumes.report', 'cleanup.report', 'posture.report'],
+    except:  ['servers.heartbeat', 'volumes.report', 'maintenanceRuns.report', 'serverPostures.report'],
     columns: {
       workspaceId: (ctx, subject) => (ctx.locals.workspaceId as string | undefined)
         ?? (ctx.service === 'workspaces' ? subject?.id : subject?.workspaceId),
@@ -810,7 +810,7 @@ export async function buildBasecampApp(
         const staged = await stageHubArchive(tarball, dbPath, { migrationsRoot })
         if ('refused' in staged)
           return ctx.json({ message: staged.refused[0], reasons: staged.refused }, 422)
-        logger.warn('hub archive staged; restart to restore it', { taken_at: staged.takenAt })
+        logger.warn('hub archive staged; restart to restore it', { takenAt: staged.takenAt })
         return ctx.json({ restore: 'staged', taken_at: staged.takenAt }, 202)
       } finally {
         rmSync(tarball, { force: true })
@@ -839,7 +839,7 @@ export async function buildBasecampApp(
       // itself — that is what running this without a transaction costs.
       const { account, workspace } = await sys.$transaction(async (tx: any) => {
         const account = await tx.account.create({
-          data: { type: 'organization', status: 'active', slug, displayName: wsName },
+          data: { kind: 'organization', status: 'active', slug, displayName: wsName },
         })
         // auth owns User: it hashes the password into a Credential row. Doing
         // it here by hand is what made the old setup route and the old login
@@ -854,10 +854,10 @@ export async function buildBasecampApp(
         const user    = await tx.user.update({
           where: { id: session.id },
           data:  { accountId: account.id, status: 'active', displayName: name.trim(),
-                   emailVerified: true, isSystemAdmin: true },
+                   isEmailVerified: true, isSystemAdmin: true },
         })
         const workspace = await tx.workspace.create({
-          data: { accountId: account.id, name: wsName, slug, type: 'team' },
+          data: { accountId: account.id, name: wsName, slug, kind: 'team' },
         })
         await tx.workspaceMember.create({
           data: { workspaceId: workspace.id, userId: user.id, role: 'owner',
@@ -970,7 +970,7 @@ export async function buildBasecampApp(
       // held the previous pair does not hold this one.
       await sys.server.update({ where: { id }, data: { outpostCert: cert, outpostPublicKey: publicKey } })
 
-      logger.info('outpost enrolled', { server_id: id })
+      logger.info('outpost enrolled', { serverId: id })
 
       // `hubKey` is the half the machine pins to verify every command it is
       // sent, and `publicUrl` the address the world reaches it at, which the
@@ -1019,7 +1019,7 @@ export async function buildBasecampApp(
   })
 
   // ── Cloud accounts as Conduit targets ─────────────────────────────────
-  // A `Secret` of kind `provider_key` IS a cloud account, and it becomes an
+  // A `Secret` of kind `providerKey` IS a cloud account, and it becomes an
   // address here. `boot()` and not `register()`: the descriptor goes into
   // conduit's own registry, so this cannot run before that plugin has bound
   // `app.conduit` — which `requires` states rather than leaves to file order.
@@ -1050,7 +1050,7 @@ export async function buildBasecampApp(
   })
 
   // ── A git push starts a release ───────────────────────────────────────
-  // The forge's door: two conduit Receivers (`plugins/push.ts`, `FJS-D884`).
+  // The forge's door: two conduit Receivers (`plugins/git-push.ts`, `FJS-D884`).
   app.configure({
     name:     'basecamp-push',
     requires: ['conduit'],

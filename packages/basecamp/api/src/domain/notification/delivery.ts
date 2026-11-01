@@ -1,6 +1,6 @@
 // src/domain/notification/delivery.ts — how a NotificationChannel is actually reached.
 //
-// ONE OWNER, and it has two callers: `channels.test` (a person pressing the
+// ONE OWNER, and it has two callers: `notificationChannels.test` (a person pressing the
 // button) and the alert evaluator (a cron, at 3am, with nobody watching). The
 // per-kind table below decides where a request goes, what credential it
 // carries and what the body looks like, and copying it into the second caller
@@ -126,7 +126,7 @@ export const KINDS: Record<string, KindSpec> = {
   },
 }
 
-/** A test post, in the shape `channels.test` has always sent. Kept as a message
+/** A test post, in the shape `notificationChannels.test` has always sent. Kept as a message
  *  rather than a fourth `testBody` column, so a kind gains a renderer once. */
 export function testMessage(channelName: string): Message {
   return {

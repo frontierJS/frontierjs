@@ -98,7 +98,7 @@ export const NOTIFICATION_KINDS: NotificationKindDef[] = [
     email: true,  inApp: true, push: false },
 
   // Spend is NOT in it. `cloudSpend` is a declared adapter with nothing behind
-  // it (docs/ADAPTERS.md), and a digest reporting a figure it cannot source is
+  // it (docs/adapters.md), and a digest reporting a figure it cannot source is
   // a number somebody would act on. The description says what is counted.
   { kind: 'WeeklyDigest',  label: 'Weekly digest',
     description: 'A summary of the week — deploys, alerts and job failures.',

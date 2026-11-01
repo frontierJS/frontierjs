@@ -57,7 +57,7 @@ const CLEAN: PostureReadings = {
   cert:         { expires_at: '2027-10-01T00:00:00Z' },
 }
 
-const DECLARED = declaredFor({ sshPort: 22, apps: [{ type: 'container', port: 8090, exposesPort: false }], sshKeyData: null })
+const DECLARED = declaredFor({ sshPort: 22, apps: [{ kind: 'container', port: 8090, hasExposedPort: false }], sshKeyData: null })
 const grade    = (r: PostureReadings | null, at: number | string = NOW) => gradePosture(r, DECLARED, { at, now: NOW })
 const byId     = (r: PostureReadings | null, at?: number) => Object.fromEntries(grade(r, at).map(c => [c.id, c]))
 
@@ -116,7 +116,7 @@ describe('the grader', () => {
     expect(undeclared['net.unexpected-listener'].ok).toBe(false)
     expect(undeclared['net.container-public'].ok).toBe(false)
 
-    const declared = declaredFor({ sshPort: 22, apps: [{ type: 'container', port: 9000, exposesPort: true }] })
+    const declared = declaredFor({ sshPort: 22, apps: [{ kind: 'container', port: 9000, hasExposedPort: true }] })
     const ok = Object.fromEntries(gradePosture(publicApp, declared, { at: NOW, now: NOW }).map(c => [c.id, c]))
     expect(ok['net.unexpected-listener'].ok).toBe(true)
     expect(ok['net.container-public'].ok).toBe(true)
@@ -207,9 +207,9 @@ afterAll(async () => { await env?.close() })
 
 async function report(readings: PostureReadings, at = new Date().toISOString()) {
   const body = { server_id: machine.id, at, readings }
-  const req  = env.http.post('/posture').set('x-service-method', 'report')
+  const req  = env.http.post('/serverPostures').set('x-service-method', 'report')
   const head = await signRequest({
-    privateKey: KEY, method: 'POST', path: '/posture', serviceMethod: 'report', body: JSON.stringify(body),
+    privateKey: KEY, method: 'POST', path: '/serverPostures', serviceMethod: 'report', body: JSON.stringify(body),
     timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
   })
   for (const [k, v] of Object.entries(head)) req.set(k, v)
@@ -218,7 +218,7 @@ async function report(readings: PostureReadings, at = new Date().toISOString()) 
 
 describe('a report lands', () => {
   test('unsigned is refused', async () => {
-    const res = await env.http.post('/posture').set('x-service-method', 'report').send({ server_id: machine.id, readings: CLEAN })
+    const res = await env.http.post('/serverPostures').set('x-service-method', 'report').send({ server_id: machine.id, readings: CLEAN })
     expect(res.status).toBe(401)
   })
 
@@ -232,27 +232,27 @@ describe('a report lands', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0].failing).toBeGreaterThanOrEqual(2)
 
-    const events = await env.system.serverEvent.findMany({ where: { serverId: machine.id, kind: 'posture_failed' } })
+    const events = await env.system.serverEvent.findMany({ where: { serverId: machine.id, kind: 'postureFailed' } })
     expect(events.map((e: any) => e.metadata.control)).toEqual(expect.arrayContaining(['ssh.password-off', 'net.firewall-default-deny']))
 
-    const fleet = await env.as(owner).service('posture').call('fleet', undefined, {})
+    const fleet = await env.as(owner).service('serverPostures').call('fleet', undefined, {})
     expect(fleet.servers.map((s: any) => s.serverName)).toEqual(['drifted-01', 'quiet-02'])
     expect(fleet.servers[1].reported).toBe(false)
     expect(fleet.dependencies.vulnerable).toBe(0)
   })
 
-  test('fixing it writes posture_restored, and the same failure twice writes no second event', async () => {
+  test('fixing it writes postureRestored, and the same failure twice writes no second event', async () => {
     await report({ ...CLEAN, firewall: { input_policy: 'accept', forward_drop: true, exposed: [] } })
-    const restored = await env.system.serverEvent.findMany({ where: { serverId: machine.id, kind: 'posture_restored' } })
+    const restored = await env.system.serverEvent.findMany({ where: { serverId: machine.id, kind: 'postureRestored' } })
     expect(restored.map((e: any) => e.metadata.control)).toEqual(['ssh.password-off'])
-    const failed = await env.system.serverEvent.findMany({ where: { serverId: machine.id, kind: 'posture_failed' } })
+    const failed = await env.system.serverEvent.findMany({ where: { serverId: machine.id, kind: 'postureFailed' } })
     expect(failed.filter((e: any) => e.metadata.control === 'net.firewall-default-deny')).toHaveLength(1)
   })
 
   test('the newest report reads stale once it is old, never clean', async () => {
     await report(CLEAN, new Date(Date.now() - 3 * POSTURE_INTERVAL_MS).toISOString())
     // Ordered by when the box read itself, so a late, old report is not "latest".
-    const latest = await env.as(owner).service('posture').call('latest', machine.id, {})
+    const latest = await env.as(owner).service('serverPostures').call('latest', machine.id, {})
     expect(latest.stale).toBe(false)
 
     const lone = await env.system.server.create({ data: { workspaceId: ws.id, name: 'lone', slug: `l-${Date.now()}`, status: 'pending' } })
@@ -260,7 +260,7 @@ describe('a report lands', () => {
       serverId: lone.id, at: new Date(Date.now() - 3 * POSTURE_INTERVAL_MS).toISOString(),
       controls: grade(CLEAN), failing: 0, unknown: 1,
     } })
-    const stale = await env.as(owner).service('posture').call('latest', lone.id, {})
+    const stale = await env.as(owner).service('serverPostures').call('latest', lone.id, {})
     expect(stale.stale).toBe(true)
     // The replica control is read off the heartbeat, which an old report does not age.
     const [replica, reported] = [stale.controls.filter((c: any) => c.id === 'backup.replica-lag'),
@@ -409,7 +409,7 @@ describe('the host row on /hub/security/', () => {
   })
 
   test('with no host row nothing reads the box, and only the backup is graded', async () => {
-    const view = await env.as(admin).service('posture').call('host', undefined, {})
+    const view = await env.as(admin).service('hub').call('hostPosture', undefined, {})
     const c    = Object.fromEntries(view.controls.map((x: any) => [x.id, x]))
     expect([view.enrolled, view.reported]).toEqual([false, false])
     expect(c['hub.backup-recent'].ok).toBe(false)
@@ -435,7 +435,7 @@ describe('the host row on /hub/security/', () => {
     const drifted = { machine, KEY }
     machine = await env.system.server.create({ data: { workspaceId: ws.id, name: 'hub-host', slug: HOST_SLUG, status: 'pending' } })
     // The slug is any administrator's to choose, so it names nothing until the hub points at the row.
-    expect((await env.as(admin).service('posture').call('host', undefined, {})).enrolled).toBe(false)
+    expect((await env.as(admin).service('hub').call('hostPosture', undefined, {})).enrolled).toBe(false)
     const sys = env.system as any
     if (!await sys.hubConfig.exists({ where: { id: 'hub' } }))
       await sys.hubConfig.create({ data: { id: 'hub' } })
@@ -451,7 +451,7 @@ describe('the host row on /hub/security/', () => {
                     env: { path: '/srv/.env', mode: '644', owner: 'root', group: 'root' } }
     expect((await report({ ...CLEAN, host_files: files })).status).toBe(200)
 
-    const view = await env.as(admin).service('posture').call('host', undefined, {})
+    const view = await env.as(admin).service('hub').call('hostPosture', undefined, {})
     const c    = Object.fromEntries(view.controls.map((x: any) => [x.id, x]))
     expect([view.enrolled, view.reported, view.serverId]).toEqual([true, true, machine.id])
     expect(c['hub.backup-recent'].ok).toBe(false)
@@ -460,16 +460,16 @@ describe('the host row on /hub/security/', () => {
     expect(c['ssh.password-off'].ok).toBe(true)
 
     // A workspace owner reaches the row through `latest`, never the hub's view.
-    expect((await env.as(owner).service('posture').call('host', undefined, {}).catch((e: any) => e)).code ?? 404).toBe(404)
+    expect((await env.as(owner).service('hub').call('hostPosture', undefined, {}).catch((e: any) => e)).code ?? 404).toBe(403)
     await sys.hubConfig.update({ where: { id: 'hub' }, data: { appId: null } })
     ;({ machine, KEY } = drifted)
   })
 
   test('a report naming no machine is refused, whatever signs it', async () => {
     const body = { readings: CLEAN }
-    const req  = env.http.post('/posture').set('x-service-method', 'report')
+    const req  = env.http.post('/serverPostures').set('x-service-method', 'report')
     const head = await signRequest({
-      privateKey: KEY, method: 'POST', path: '/posture', serviceMethod: 'report', body: JSON.stringify(body),
+      privateKey: KEY, method: 'POST', path: '/serverPostures', serviceMethod: 'report', body: JSON.stringify(body),
       timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     })
     for (const [k, v] of Object.entries(head)) req.set(k, v)

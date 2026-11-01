@@ -4,7 +4,7 @@
 // Both are the same shape of question — *what does this workspace look like
 // right now* — answered by walking several accessors and returning one object.
 // Neither is a model, so neither could be a CRUD service, and both were the
-// last two screens left blocked in docs/SCREENS.md for exactly that reason.
+// last two screens left blocked in docs/screens.md for exactly that reason.
 //
 // GET /infra dispatches on X-Service-Method, collection-level:
 //   graph        servers, apps, networks and domains as nodes and edges
@@ -16,7 +16,7 @@
 //
 // They share a property nothing else here has: the answer is assembled from
 // models the caller can already read, and storing it would be a second answer
-// that goes stale. `Onboarding` gets no model for that reason (SCREENS.md
+// that goes stale. `Onboarding` gets no model for that reason (screens.md
 // § Phase 11) and a graph projection is the same argument about edges — an
 // AppServer row IS the edge, and a cached graph is a copy of it.
 //
@@ -113,7 +113,7 @@ export default createService({
       ...domains.map((d: Record<string, any>): Node => ({
         id: `dom:${d.id}`, kind: 'domain', ref: d.id,
         label: d.hostname,
-        sub:   d.proxied ? 'proxied' : 'direct',
+        sub:   d.isProxied ? 'proxied' : 'direct',
         status: d.isPrimary ? 'primary' : null,
       })),
       ...servers.map((s: Record<string, any>): Node => ({
@@ -125,7 +125,7 @@ export default createService({
       ...apps.map((a: Record<string, any>): Node => ({
         id: `app:${a.id}`, kind: 'app', ref: a.id,
         label: a.name,
-        sub:   a.environment?.name ?? a.type,
+        sub:   a.environment?.name ?? a.kind,
         status: a.status,
       })),
       ...networks.map((n: Record<string, any>): Node => ({
@@ -190,7 +190,7 @@ export default createService({
 
   // ── onboarding — six questions the database already answers ───────
   //
-  // No `done` column anywhere, which is the ruling SCREENS.md § Phase 11
+  // No `done` column anywhere, which is the ruling screens.md § Phase 11
   // records: a stored flag is a second answer that survives the thing it
   // recorded being deleted. Every step here is a count taken now.
   async onboarding() {
@@ -210,7 +210,7 @@ export default createService({
 
     const [servers, sshKeys, projects, deploys, members, invites] = await Promise.all([
       db().server.count({     where: { workspaceId: ws() } }),
-      sys.secret.count({      where: { workspaceId: ws(), kind: 'ssh_key' } }),
+      sys.secret.count({      where: { workspaceId: ws(), kind: 'sshKey' } }),
       db().project.count({    where: { workspaceId: ws() } }),
       db().deployment.count({ where: { workspaceId: ws() } }),
       sys.workspaceMember.count({ where: { workspaceId: ws() } }),
@@ -297,7 +297,7 @@ export default createService({
         detail: env ? `${env.name}.` : 'Production, staging — an app belongs to exactly one.',
         href: project ? `/projects/${(env?.projectId ?? project.id)}/` : null, done: !!env },
       { id: 'app', title: 'Create an app',
-        detail: app ? `${app.name} (${app.type}).` : 'A static app takes pasted HTML — the quickest first release.',
+        detail: app ? `${app.name} (${app.kind}).` : 'A static app takes pasted HTML — the quickest first release.',
         href: env ? `/environments/${(app?.environmentId ?? env.id)}/` : null, done: !!app },
       { id: 'place', title: 'Place it on a machine',
         detail: app && isPlaced.has(app.id) ? 'Placed.' : 'Pick the machine on the app screen and press Place.',
@@ -311,7 +311,7 @@ export default createService({
       steps,
       done:  steps.filter(s => s.done).length,
       total: steps.length,
-      app:   app ? { id: app.id, name: app.name, slug: app.slug, type: app.type } : null,
+      app:   app ? { id: app.id, name: app.name, slug: app.slug, kind: app.kind } : null,
     }
   },
 
@@ -340,7 +340,7 @@ export default createService({
 
     const ruleIds = rules.map((r: { id: string }) => r.id)
     const firing  = ruleIds.length
-      ? await db().alertEvent.findMany({
+      ? await db().alert.findMany({
           where:  { ruleId: { in: ruleIds }, status: 'firing' },
           select: { acknowledgedAt: true },
         })

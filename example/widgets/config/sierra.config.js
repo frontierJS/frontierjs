@@ -12,10 +12,6 @@ export default {
   target: 'widget',
 
   widgets: {
-    // A widget is a .mesa file in here, or a directory holding index.mesa. A
-    // .mesa BESIDE an index.mesa is that widget's own component and is not
-    // built as a second script.
-    dir:    'src/Embeds',
     outDir: 'dist/embeds',
     // Every widget's tag and class take this. Two vendors' widgets land on the
     // same page more often than anyone expects, and a prefix is what keeps

@@ -67,32 +67,31 @@ const visit = (name) => {
 for (const name of Object.keys(graph)) visit(name)
 
 echo('')
-echo(`  Workspace: ${wsRoot}`)
-echo(`  Packages:  ${packages.length}\n`)
+echo(`  ${chalk.bold('Workspace')}  ${chalk.dim(wsRoot)}  ${chalk.dim(`·  ${packages.length} package(s)`)}\n`)
 
 for (const name of sorted) {
   const { version, wsDeps, extDeps, dependents } = graph[name]
   const hasWsDeps  = wsDeps.length > 0
   const hasDeps    = hasWsDeps || (flag.external && extDeps.length > 0)
 
-  echo(`  ${name}@${version}`)
+  echo(`  ${chalk.bold(name)}${chalk.dim(`@${version}`)}`)
 
   if (hasWsDeps) {
     for (const dep of wsDeps) {
-      echo(`    ← ${dep}  (workspace)`)
+      echo(`    ${chalk.dim('←')} ${dep}  ${chalk.dim('(workspace)')}`)
     }
   }
 
   if (flag.external && extDeps.length) {
-    echo(`    ← ${extDeps.length} external dep(s)`)
+    echo(`    ${chalk.dim(`← ${extDeps.length} external dep(s)`)}`)
   }
 
   if (dependents.length) {
-    echo(`    → used by: ${dependents.join(', ')}`)
+    echo(`    ${chalk.dim('→ used by:')} ${chalk.cyan(dependents.join(', '))}`)
   }
 
   if (!hasWsDeps && !dependents.length) {
-    echo(`    (standalone)`)
+    echo(chalk.dim('    (standalone)'))
   }
 }
 echo('')
@@ -107,6 +106,6 @@ for (const name of Object.keys(graph)) checkCycle(name)
 
 if (cycles.length) {
   log.warn(`Circular dependencies detected:`)
-  for (const cycle of cycles) echo(`  ${cycle.join(' → ')}`)
+  for (const cycle of cycles) echo(`  ${chalk.red(cycle.join(' → '))}`)
 }
 ```

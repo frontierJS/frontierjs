@@ -1,12 +1,12 @@
 ---
 id: conversion-maid-tech
-status: assessment
+status: reading
 dated: 2026-09-08
 ---
 
 # Assessment — Converting a live Feathers/Prisma/Svelte application onto FrontierJS
 
-**Status: ASSESSMENT. It reads two trees and proposes nothing for the
+**Status: READING. It reads two trees and proposes nothing for the
 framework.** Dated 2026-09-08; § *Running the port* was added 2026-09-12 and is a
 working plan for the APPLICATION, not a framework proposal. Every count below was produced by running a command against
 `my.maid.tech` or against this tree on that date; where a

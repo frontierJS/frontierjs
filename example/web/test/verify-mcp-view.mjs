@@ -151,7 +151,7 @@ const call = async (name, args) => {
   if (res.isError) throw new Error(`${name}: ${res.content?.[0]?.text}`)
   return res.structuredContent ?? JSON.parse(res.content[0].text)
 }
-const found   = await call('products_find', { query: { active: true }, directives: { limit: 1 } })
+const found   = await call('products_find', { query: { isActive: true }, directives: { limit: 1 } })
 const product = (found.data ?? found)[0]
 const args    = { id: product.id }
 // The agent's call this view belongs to, answered as the host would hand it on.

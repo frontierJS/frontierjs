@@ -7,7 +7,7 @@
 // handler runs as it.
 
 import { defineJob }           from '@frontierjs/caravan'
-import { runsAsApp }           from './context.ts'
+import { runsAsApp }           from '../domain/job/job-context.ts'
 import { refreshDependencies } from '../core/dependencies.ts'
 
 export interface DependencyCheckPayload { workspaceId?: string }

@@ -553,7 +553,7 @@ export const auth = createLitestoneAuth(db, {
   // gate.ts grades the gate on \`isAdmin\`, and schema.lite spends it three times —
   // \`@@gate(4.4.4.5)\` for who may delete a person, \`@@allow(update, … ||
   // auth().isAdmin)\` for whose row, \`@allow(write, auth().isAdmin)\` on role
-  // and emailVerified. The User model ships a role STRING, which auth stores
+  // and isEmailVerified. The User model ships a role STRING, which auth stores
   // and never interprets, so without this line \`isAdmin\` is never on the
   // session and all three are dead: an administrator grades USER(4), a delete
   // is a 403 nobody can clear, editing another person's row is a 404 because a

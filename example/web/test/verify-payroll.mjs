@@ -54,7 +54,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PORTS } from './lib/preflight.mjs'
 import { db } from '../../api/src/core/db.ts'
-import { sweepPayroll } from './payroll-sweep.mjs'
+import { sweepPayroll } from './verify-payroll-sweep.mjs'
 import { results, report } from './lib/report.mjs'
 import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
 import { watchReloads } from './lib/reload.mjs'
@@ -784,7 +784,7 @@ t('console.noErrorsAnywhere', noise.length === 0)
 } catch (err) {
   failedEarly = err
 } finally {
-  // The sweep has one owner — `payroll-sweep.mjs` — because five drives make
+  // The sweep has one owner — `verify-payroll-sweep.mjs` — because five drives make
   // the same shapes and the ORDER is the whole of it: four foreign keys point
   // into a pay run, two of them `Restrict`, and the books need the hatch under
   // the boundary.

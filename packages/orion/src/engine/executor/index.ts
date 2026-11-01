@@ -66,7 +66,7 @@ export interface INodeRegistry {
 // ─────────────────────────────────────────────
 
 export type ExecutorOutcome =
-  | { ok: true;  data: unknown; durationMs: number; attempts: number; fromCache: boolean }
+  | { ok: true;  data: unknown; durationMs: number; attempts: number; isFromCache: boolean }
   | { ok: false; error: string; durationMs: number; attempts: number; routable: boolean }
 
 // ─────────────────────────────────────────────
@@ -140,7 +140,7 @@ export class NodeExecutor {
         const hit      = await this.cache.get(cacheKey)
         if (hit !== undefined) {
           logger.debug("Cache hit", { key: cacheKey })
-          return { logs, outcome: { ok: true, fromCache: true, attempts: 0,
+          return { logs, outcome: { ok: true, isFromCache: true, attempts: 0,
             data: hit, durationMs: Date.now() - start } }
         }
       } catch (err) {
@@ -194,7 +194,7 @@ export class NodeExecutor {
               logger.warn("Cache write failed", { error: errorMessage(err) })
             }
           }
-          return { logs, outcome: { ok: true, fromCache: false,
+          return { logs, outcome: { ok: true, isFromCache: false,
             data: result.data, durationMs: Date.now() - start, attempts } }
         }
 

@@ -1275,7 +1275,7 @@ function buildPaths() {
     webComponents: resolve(r, d.web, 'src/components'),
     webResources:  resolve(r, d.web, 'src/resources'),
     widgets:       resolve(r, d.widgets),
-    widgetEmbeds:  resolve(r, d.widgets, 'src/Embeds'),
+    widgetEmbeds:  resolve(r, d.widgets, 'src/embeds'),
     widgetTests:   resolve(r, d.widgets, 'test'),
     site:           resolve(r, d.site),
     sitePages:      resolve(r, d.site, 'src/routes'),

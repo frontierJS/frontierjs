@@ -18,7 +18,7 @@
 export const name = 'DropdownMenu'
 export const covers = [
   'overlay/DropdownMenu', 'overlay/DropdownItem',
-  'overlay/DropdownGroup', 'overlay/DropdownSeparator',
+  'overlay/DropdownGroup', 'overlay/DropdownSeparator', 'overlay/DropdownSubmenu',
 ]
 
 const items    = `[...document.querySelectorAll('[role=menu] [role=menuitem]')]`
@@ -452,4 +452,98 @@ export async function run(t) {
   t.ok(rightEnd.gapX > 0 && rightEnd.dyEnd === 0, `right-end lines the bottom edges up (${rightEnd.dyEnd})`)
   const left = await placed('left-center')
   t.ok(left.gapLeft > 0 && left.gapLeft < 24 && Math.abs(left.cy) <= 1, `left-center opens on the left, centered on the trigger (${left.gapLeft}px, cy ${left.cy})`)
+
+  /* ── a submenu (FJS-1690) ─────────────────────────────────────────────── */
+
+  await t.mount('dropdown')
+  const menus = `document.querySelectorAll('[role=menu]').length`
+  const focusId = `document.activeElement?.id`
+  await t.clickAt('#dd-sub')
+  await t.evaluate(`return await waitVisible('[role=menu]');`)
+  await t.evaluate(`return await waitSettled('body');`)
+  t.is(await t.evaluate(`return ${menus};`), 1, 'a submenu is closed until asked')
+  t.is(await t.evaluate(`const r = document.querySelector('#sub-export'); return r.getAttribute('aria-haspopup') + r.getAttribute('aria-expanded');`),
+    'menufalse', 'its row announces a menu it controls, closed')
+
+  await t.press('ArrowDown')
+  await t.press('ArrowDown')
+  await t.eventually(focusId, 'sub-export', 'the arrow walk lands on the submenu row')
+  await t.press('ArrowRight')
+  await t.eventually(focusId, 'sub-pdf', 'ArrowRight opens it and focuses its first row')
+  t.is(await t.evaluate(`return ${menus};`), 2, 'a second panel is open')
+  await t.evaluate(`return await waitSettled('body');`)
+  const beside = await t.evaluate(`
+    const r = document.querySelector('#sub-export').getBoundingClientRect();
+    const p = document.querySelectorAll('.popover')[1].getBoundingClientRect();
+    return { gap: Math.round(p.left - r.right), dy: Math.abs(Math.round(p.top - r.top)) };
+  `)
+  t.ok(beside.gap >= 0 && beside.gap < 24 && beside.dy <= 8, `the panel is placed against the ROW, on its right (${beside.gap}px, dy ${beside.dy})`)
+  t.is(await t.evaluate(`return document.querySelector('#sub-export').getAttribute('aria-expanded');`), 'true', 'and the row says it is open')
+
+  await t.press('ArrowDown')
+  await t.eventually(focusId, 'sub-csv', 'arrows walk the submenu, not the menu')
+  await t.press('ArrowDown')
+  await t.eventually(focusId, 'sub-more', 'including a nested submenu row')
+  await t.press('ArrowDown')
+  await t.eventually(focusId, 'sub-pdf', 'and wrap inside the level')
+  await t.press('ArrowDown')
+  await t.press('ArrowDown')
+  await t.press('ArrowRight')
+  await t.eventually(focusId, 'sub-zip', 'ArrowRight opens a third level')
+  t.is(await t.evaluate(`return ${menus};`), 3, 'three panels are open')
+  await t.press('ArrowLeft')
+  await t.eventually(focusId, 'sub-more', 'ArrowLeft closes one level and gives the row its focus back')
+  t.is(await t.evaluate(`return ${menus};`), 2, 'the level above stays')
+  await t.press('Escape')
+  await t.eventually(focusId, 'sub-export', 'Escape closes the submenu only')
+  t.is(await t.evaluate(`return ${menus};`), 1, 'the menu stays open')
+
+  await t.press('ArrowRight')
+  await t.eventually(focusId, 'sub-pdf', 'it reopens')
+  await t.press('ArrowDown')
+  await t.press('ArrowDown')
+  await t.press('ArrowRight')
+  await t.eventually(focusId, 'sub-zip', 'to the deepest row')
+  // A press inside the deepest panel is outside both panels above it.
+  await t.clickAt('#sub-zip')
+  await t.eventually(`document.querySelector('#chose').textContent`, 'zip', 'a press in a nested panel runs its row')
+  await t.eventually(menus, 0, 'and closes the whole menu')
+
+  // Pressing another row of the menu ends the submenu without closing the menu.
+  await t.clickAt('#dd-sub')
+  await t.evaluate(`return await waitVisible('[role=menu]');`)
+  await t.clickAt('#sub-export')
+  await t.eventually(menus, 2, 'a press on the row opens the submenu')
+  await t.clickAt('#sub-last')
+  await t.eventually(`document.querySelector('#chose').textContent`, 'last', 'a press on a sibling row runs it')
+  await t.eventually(menus, 0, 'and closes everything')
+
+  await t.clickAt('#dd-sub')
+  await t.evaluate(`return await waitVisible('[role=menu]');`)
+  await t.clickAt('#sub-export')
+  await t.eventually(menus, 2, 'opened again')
+  await t.press('Escape')
+  await t.eventually(menus, 1, 'Escape closes the submenu even before the panel has taken focus')
+  await t.press('ArrowUp')
+  await t.eventually(focusId, 'sub-new', 'with the submenu shut, the menu walk answers again')
+  await t.press('Escape')
+
+  // Hover opens it, and moving to a sibling row of the level above shuts it
+  // (FJS-3809): focusin does not fire on hover, so the close is its own listener.
+  await t.eventually(menus, 0, 'Escape closed the menu')
+  await t.clickAt('#dd-sub')
+  await t.evaluate(`return await waitVisible('[role=menu]');`)
+  await t.hoverAt('#sub-export')
+  await t.eventually(menus, 2, 'hovering the row opens the submenu')
+  await t.evaluate(`return await waitSettled('body');`)
+  await t.hoverAt('#sub-more')
+  await t.eventually(menus, 3, 'hovering a nested submenu row opens a third level')
+  await t.evaluate(`return await waitSettled('body');`)
+  await t.hoverAt('#sub-zip')
+  await t.eventually(menus, 3, 'moving into the third level keeps every panel above it')
+  await t.hoverAt('#sub-csv')
+  await t.eventually(menus, 2, 'hovering a sibling of a nested row shuts that submenu only')
+  await t.hoverAt('#sub-new')
+  await t.eventually(menus, 1, 'hovering a sibling of the row shuts the submenu')
+  await t.press('Escape')
 }

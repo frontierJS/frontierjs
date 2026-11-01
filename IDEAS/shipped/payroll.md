@@ -856,7 +856,7 @@ function of every paid period rather than of what changed, so the next drive tha
 backdates one of them computes arrears against runs nobody remembers making. A stale
 run at the top of the console's list is also how `FJS-612` was first seen.
 
-**So the sweep got one owner** — `web/test/payroll-sweep.mjs`, five callers — and the
+**So the sweep got one owner** — `web/test/verify-payroll-sweep.mjs`, five callers — and the
 reason it needs one is the ORDER: four foreign keys point into a pay run, two of them
 `Restrict`, and `PayslipLine.correctsPayRunId` holds a run even after the payslip
 carrying that line is gone from a different one. **The proof is a measurement**: the
@@ -967,7 +967,7 @@ application's own schema being honest about what it cannot say.
   the original argument could be graded. The schema landed where predicted
   (23 → 31 models); the DRIVES did not — *at least three of its own* became five
   and 250 assertions — and the shared database grew a hazard nobody anticipated,
-  which is what `payroll-sweep.mjs` exists for.
+  which is what `verify-payroll-sweep.mjs` exists for.
 
 **Carried lessons, already fixed but easy to repeat**
 

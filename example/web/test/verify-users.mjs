@@ -307,13 +307,13 @@ await fetch(`${MAIL}/outbox`, { method: 'DELETE' })
 
 // Sent in MIXED case to prove @lower ran at the boundary rather than in a form.
 const made = await create(asAdmin, {
-  email: addr('C').toUpperCase(), name: 'New Person', isStaff: true, emailVerified: true,
+  email: addr('C').toUpperCase(), name: 'New Person', isStaff: true, isEmailVerified: true,
 })
 check('an admin creates one', made.status, 201)
 check('…with the address normalized by @lower at the boundary',
       made.row?.email, addr('c'))
 check('…and the three admin-only columns set, because an admin set them',
-      [made.row?.isStaff, made.row?.emailVerified], [true, true])
+      [made.row?.isStaff, made.row?.isEmailVerified], [true, true])
 
 // The same address again. `@unique` answers a 409 whose payload is a list of
 // { path, message } — one of the three shapes toFieldErrors reads — so <Form>

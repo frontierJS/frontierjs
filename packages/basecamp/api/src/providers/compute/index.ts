@@ -5,7 +5,7 @@
 // resolves to a stub or an adapter at boot; this is a Conduit target, because
 // `provider:<kind>` was already how `servers.sync` reached a cloud and a second
 // mechanism beside it would be two owners of *talk to a vendor*
-// (`docs/PROVISIONING.md` § D1). What lives here is the half a target cannot
+// (`docs/provisioning.md` § D1). What lives here is the half a target cannot
 // carry: which method and path a vendor wants, and what its answer means.
 //
 // ─── The target names an ACCOUNT ─────────────────────────────────────────

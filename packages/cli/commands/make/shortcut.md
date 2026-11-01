@@ -79,6 +79,6 @@ mkdirSync(dirname(outputPath), { recursive: true })
 writeFileSync(outputPath, content, 'utf8')
 
 log.success(`Created ${outputPath}`)
-echo(`\nRun it with:  fli ${name}`)
-echo(`Edit it with: fli edit ${shortcuts.shortcutTitle(name)}`)
+echo(`\n${chalk.dim('Run it with:')}  ${chalk.cyan(`fli ${name}`)}`)
+echo(`${chalk.dim('Edit it with:')} ${chalk.cyan(`fli edit ${shortcuts.shortcutTitle(name)}`)}`)
 ```

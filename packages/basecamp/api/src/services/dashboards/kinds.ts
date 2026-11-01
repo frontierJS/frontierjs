@@ -4,7 +4,7 @@
 // `enum TileKind` in db/schema.lite is the seed: it gives the column its
 // CHECK constraint and reaches the browser as a `$def`, so a picker cannot
 // offer a kind the column would refuse. What the schema cannot say is that
-// `app_status` is meaningless without an App and `server_fleet` takes no
+// `appStatus` is meaningless without an App and `serverFleet` takes no
 // subject at all — that rule lives here, once, and both the service and the
 // Add-tile screen read it from this file rather than restating it.
 //
@@ -27,7 +27,7 @@ export interface TileKindSpec {
   label:       string
   description: string
   subject:     TileSubject
-  /** A subject the tile cannot be placed without. `deploy_feed` reads the
+  /** A subject the tile cannot be placed without. `deployFeed` reads the
    *  whole workspace when no app is named, so its subject is optional. */
   required:    boolean
   /** Config keys this kind accepts. Anything else is refused at the boundary —
@@ -41,7 +41,7 @@ export interface TileKindSpec {
 }
 
 /**
- * The sources `stat_counter` may count.
+ * The sources `statCounter` may count.
  *
  * Each names a service this app already mounts, and the count is that
  * service's own `total` — so the number is whatever the caller may see, and a
@@ -49,11 +49,11 @@ export interface TileKindSpec {
  * Declared rather than free-form for the same reason the kinds are: a counter
  * carrying `{ where: … }` is a stored query wearing a smaller hat.
  */
-export const STAT_SOURCES = ['servers', 'apps', 'deployments', 'jobs', 'volumes', 'alerts'] as const
+export const STAT_SOURCES = ['servers', 'apps', 'deployments', 'jobs', 'volumes', 'alertRules'] as const
 
 export const TILE_KINDS: TileKindSpec[] = [
   {
-    kind:        'server_fleet',
+    kind:        'serverFleet',
     label:       'Server fleet',
     description: 'Every server in the workspace with its status.',
     subject:     null,
@@ -63,7 +63,7 @@ export const TILE_KINDS: TileKindSpec[] = [
     needs:       '',
   },
   {
-    kind:        'server_health',
+    kind:        'serverHealth',
     label:       'Server health',
     description: 'CPU, memory and disk for one server, as its outpost last reported them.',
     subject:     'server',
@@ -79,7 +79,7 @@ export const TILE_KINDS: TileKindSpec[] = [
     needs:       '',
   },
   {
-    kind:        'app_status',
+    kind:        'appStatus',
     label:       'App status',
     description: 'One app — status, environment and its last release.',
     subject:     'app',
@@ -89,7 +89,7 @@ export const TILE_KINDS: TileKindSpec[] = [
     needs:       '',
   },
   {
-    kind:        'deploy_feed',
+    kind:        'deployFeed',
     label:       'Deploy feed',
     description: 'Recent deployments, for one app or the whole workspace.',
     // The mock filters by PROJECT. A deployment belongs to an app and carries
@@ -102,7 +102,7 @@ export const TILE_KINDS: TileKindSpec[] = [
     needs:       '',
   },
   {
-    kind:        'job_history',
+    kind:        'jobHistory',
     label:       'Job history',
     description: 'Scheduled and one-shot jobs with their last outcome.',
     subject:     null,
@@ -112,7 +112,7 @@ export const TILE_KINDS: TileKindSpec[] = [
     needs:       '',
   },
   {
-    kind:        'activity_feed',
+    kind:        'activityFeed',
     label:       'Activity feed',
     description: 'The workspace audit trail, most recent first.',
     subject:     null,
@@ -122,7 +122,7 @@ export const TILE_KINDS: TileKindSpec[] = [
     needs:       '',
   },
   {
-    kind:        'alert_status',
+    kind:        'alertStatus',
     label:       'Alert rules',
     description: 'Alert rules and whether anything has fired against them.',
     subject:     null,
@@ -135,7 +135,7 @@ export const TILE_KINDS: TileKindSpec[] = [
     needs:       '',
   },
   {
-    kind:        'service_health',
+    kind:        'serviceHealth',
     label:       'Service health',
     description: 'One shared provider, pinged live.',
     subject:     null,
@@ -151,7 +151,7 @@ export const TILE_KINDS: TileKindSpec[] = [
     needs:       'latency history — the ping answers now, and nothing keeps it',
   },
   {
-    kind:        'stat_counter',
+    kind:        'statCounter',
     label:       'Counter',
     description: 'A single number — how many of one thing this workspace has.',
     subject:     null,

@@ -1,6 +1,6 @@
 ---
 id: speed-and-footprint
-status: assessment
+status: reading
 dated: 2026-08-13
 ---
 

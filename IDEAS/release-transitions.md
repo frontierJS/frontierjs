@@ -1548,7 +1548,7 @@ Compose has no traffic layer at all and stops the old container before starting 
   claimed, resumed after a crash with their output replayed (the journal, proven by
   `deployJournalCycle`). Orion checkpoints one `context` blob per run and writes its
   `RunStep` rows once, at the end. **Nowhere:** compensation. Deploy records
-  `crossesPivot`, and a revert is a separate transition.
+  `isCrossingPivot`, and a revert is a separate transition.
   - **A** — several uses of `occurrenceKey`, and 4.19 is withdrawn as a primitive. The
     discipline becomes graded: every durable dispatch id goes through `occurrenceKey`,
     orion's three hand-built ids are the first to move, and `toolbelt/history`'s header

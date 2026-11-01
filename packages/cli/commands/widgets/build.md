@@ -1,6 +1,6 @@
 ---
 title: widgets:build
-description: Build one embeddable script per widget in widgets/src/Embeds/
+description: Build one embeddable script per widget in widgets/src/embeds/
 alias: widgets-build
 examples:
   - fli widgets:build

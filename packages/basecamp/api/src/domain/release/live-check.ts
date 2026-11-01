@@ -47,7 +47,7 @@ export type HttpsAnswer =
 export interface LiveHost {
   hostname:   string
   redirectTo: string | null
-  proxied:    boolean
+  isProxied:  boolean
   /** Asked only when the step before it passed or warned. */
   dns:        () => Promise<DnsAnswer>
   https:      () => Promise<HttpsAnswer>
@@ -180,7 +180,7 @@ export async function runLiveCheck(facts: LiveFacts): Promise<LiveCheck> {
       redirectTo: null,
       steps: await walk([
         { key: 'zone',  label: 'Ingress zone', run: () => gradeZone(facts.ingress) },
-        { key: 'dns',   label: 'DNS',          run: async () => gradeDns(await host.dns(), host.proxied, facts.addresses) },
+        { key: 'dns',   label: 'DNS',          run: async () => gradeDns(await host.dns(), host.isProxied, facts.addresses) },
         { key: 'https', label: 'HTTPS',        run: async () => gradeHttps(await host.https()) },
       ], blocked?.label),
     })

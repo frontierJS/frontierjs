@@ -58,7 +58,7 @@ export interface IndexResult {
   ms:       number
 }
 
-type Row = { id: string, path: string, offset: number, size: number, gone: boolean, cwd: string | null, headless: boolean, title: string | null, firstPrompt: string | null, startedAt: string | null, lastAt: string | null, agent: string | null, turnSkills: string }
+type Row = { id: string, path: string, offset: number, size: number, isGone: boolean, cwd: string | null, isHeadless: boolean, title: string | null, firstPrompt: string | null, startedAt: string | null, lastAt: string | null, agent: string | null, turnSkills: string }
 
 const SLICE = 64 * 1024 * 1024
 const KEYS = 400
@@ -141,7 +141,7 @@ async function writeMessages(db: any, msgs: Msg[], subagent: boolean, agent: str
         data: fresh.map(m => ({
           messageId: m.id, sessionId: m.sessionId ?? sessionId, cwd: m.cwd ?? cwd, model: m.model, at: m.at,
           input: m.input, cacheWrite: m.cacheWrite, cacheWrite1h: m.cacheWrite1h, cacheRead: m.cacheRead, output: m.output,
-          tools: sorted(m.tools), skills: sorted(m.skills), subagent, agent,
+          tools: sorted(m.tools), skills: sorted(m.skills), isSubagent: subagent, agent,
         })),
       })
       added += fresh.length
@@ -161,7 +161,7 @@ export async function indexClaude(db: any, opts: { configDir?: string } = {}): P
   const onDisk = listTranscripts(configDir)
   const rows = new Map<string, Row>(
     (await db.claudeTranscript.findMany({
-      select: { id: true, path: true, offset: true, size: true, gone: true, cwd: true, headless: true, title: true, firstPrompt: true, startedAt: true, lastAt: true, agent: true, turnSkills: true },
+      select: { id: true, path: true, offset: true, size: true, isGone: true, cwd: true, isHeadless: true, title: true, firstPrompt: true, startedAt: true, lastAt: true, agent: true, turnSkills: true },
     })).map((r: Row) => [r.path, r]),
   )
   const res: IndexResult = { files: onDisk.length, read: 0, seen: 0, added: 0, gone: 0, bytes: 0, ms: 0 }
@@ -171,7 +171,7 @@ export async function indexClaude(db: any, opts: { configDir?: string } = {}): P
     let size: number
     try { size = statSync(path).size } catch { continue }
     const row = rows.get(path)
-    if (row && row.size === size && row.offset === size && !row.gone) continue
+    if (row && row.size === size && row.offset === size && !row.isGone) continue
 
     const rewritten = !!row && size < row.offset
     const from = !row || rewritten ? 0 : row.offset
@@ -207,21 +207,21 @@ export async function indexClaude(db: any, opts: { configDir?: string } = {}): P
     const keep = fresh ? null : row!
     const data = {
       cwd:         keep?.cwd ?? facts.cwd,
-      headless:    keep?.cwd ? keep.headless : facts.headless,
+      isHeadless:  keep?.cwd ? keep.isHeadless : facts.headless,
       title:       facts.title ?? keep?.title ?? null,
       firstPrompt: keep?.firstPrompt ?? facts.firstPrompt,
       startedAt:   keep?.startedAt ?? facts.startedAt,
       lastAt:      facts.lastAt ?? keep?.lastAt ?? null,
-      offset, size, gone: false, agent, turnSkills: sorted(skills),
+      offset, size, isGone: false, agent, turnSkills: sorted(skills),
     }
     if (row) await db.claudeTranscript.update({ where: { id: row.id }, data })
-    else await db.claudeTranscript.create({ data: { path, sessionId: facts.sessionId ?? fallbackSession, subagent, ...data } })
+    else await db.claudeTranscript.create({ data: { path, sessionId: facts.sessionId ?? fallbackSession, isSubagent: subagent, ...data } })
     res.read++
   }
 
-  const vanished = [...rows.values()].filter(r => !present.has(r.path) && !r.gone).map(r => r.id)
+  const vanished = [...rows.values()].filter(r => !present.has(r.path) && !r.isGone).map(r => r.id)
   for (let i = 0; i < vanished.length; i += KEYS)
-    await db.claudeTranscript.updateMany({ where: { id: { in: vanished.slice(i, i + KEYS) } }, data: { gone: true } })
+    await db.claudeTranscript.updateMany({ where: { id: { in: vanished.slice(i, i + KEYS) } }, data: { isGone: true } })
   res.gone = vanished.length
   res.ms = Math.round(performance.now() - t0)
   return res

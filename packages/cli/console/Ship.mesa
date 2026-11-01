@@ -463,7 +463,7 @@
                   <code class="text-xs">{t.releaseId ?? '—'}</code>
                   <span class="text-xs text-muted">{t.kind ?? ''} {t.startedAt ?? ''}</span>
                   {#if t.serving}<Badge tone="info" size="xs">serving</Badge>{/if}
-                  {#if t.crossesPivot}<Badge tone="danger" size="xs">crossed the pivot</Badge>{/if}
+                  {#if t.isCrossingPivot}<Badge tone="danger" size="xs">crossed the pivot</Badge>{/if}
                 </div>
               {/each}
               {#if !serving.transitions.length}

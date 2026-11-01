@@ -78,18 +78,18 @@ if (flag.json) {
   return
 }
 
-echo(`\n${flag.file}  (${plural(vars.length, 'variable')})\n`)
+echo(chalk`\n{bold ${flag.file}}  {dim (${plural(vars.length, 'variable')})}\n`)
 
 // Print with comments preserved for context
 for (const entry of entries) {
   if (entry.type === 'blank') continue
   if (entry.type === 'comment') {
-    echo(`  ${entry.text}`)
+    echo(chalk.dim(`  ${entry.text}`))
     continue
   }
   const display = flag.values ? entry.val : mask(entry.val)
   const pad     = Math.max(0, 28 - entry.key.length)
-  echo(`  ${entry.key}${' '.repeat(pad)}${display}`)
+  echo(`  ${chalk.cyan(entry.key)}${' '.repeat(pad)}${display}`)
 }
 echo('')
 ```

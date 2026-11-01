@@ -34,11 +34,11 @@ describe('the User fragment, written by its own person', () => {
 
   test('their address, verification and role do not', async () => {
     await h.db.$setAuth({ id: me.id, role: 'user' }).user.update({ where: { id: me.id }, data: {
-      email: 'taken@example.com', emailVerified: true, role: 'admin',
+      email: 'taken@example.com', isEmailVerified: true, role: 'admin',
     } })
     const row = await reread(me.id)
     expect(row.email).toBe('me@example.com')
-    expect(row.emailVerified).toBe(false)
+    expect(row.isEmailVerified).toBe(false)
     expect(row.role).toBe('user')
   })
 
@@ -49,10 +49,10 @@ describe('the User fragment, written by its own person', () => {
 
   test('an administrator may set them, which is how a person is corrected', async () => {
     await h.db.$setAuth({ id: other.id, role: 'user', isAdmin: true }).user.update({ where: { id: me.id }, data: {
-      email: 'fixed@example.com', emailVerified: true,
+      email: 'fixed@example.com', isEmailVerified: true,
     } })
     const row = await reread(me.id)
     expect(row.email).toBe('fixed@example.com')
-    expect(row.emailVerified).toBe(true)
+    expect(row.isEmailVerified).toBe(true)
   })
 })

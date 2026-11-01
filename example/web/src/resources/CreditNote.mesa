@@ -11,5 +11,5 @@
 
   import { createResource } from '@frontierjs/sierra/resource'
 
-  export const creditNotes = createResource('credit-notes', { model: 'CreditNote' })
+  export const creditNotes = createResource('creditNotes', { model: 'CreditNote' })
 </script>

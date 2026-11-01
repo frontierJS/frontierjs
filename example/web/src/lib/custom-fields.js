@@ -54,14 +54,14 @@ export const fieldKey = def => `fields.${def.key}`
 /**
  * Which declared fields a LIST offers as columns.
  *
- * `show` is the shop's default for the column and nothing more: the value is
+ * `isVisible` is the shop's default for the column and nothing more: the value is
  * readable by anyone who may read the row whatever it says, so this decides a
  * table's columns and never an answer (Invariant 6). Separate from
  * `withCustomFields` because a form shows every declared field and a table
  * shows the ones somebody chose.
  */
 export const shownFields = (defs, override = null) =>
-  (defs ?? []).filter(d => override?.[d.key] ?? d.show !== false)
+  (defs ?? []).filter(d => override?.[d.key] ?? d.isVisible !== false)
 
 /**
  * A resource that answers for the schema's columns AND this shop's own fields.

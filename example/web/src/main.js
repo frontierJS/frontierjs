@@ -17,12 +17,12 @@ import '@frontierjs/css'
 // against. Which resources are worth the entry chunk is the app's decision and
 // not the framework's, which is why this is a line here rather than a glob over
 // `src/resources/` (`FJS-1178`).
-import './resources/InventoryMovement.mesa'
-import './resources/ProductVariant.mesa'
+import '@/resources/InventoryMovement.mesa'
+import '@/resources/ProductVariant.mesa'
 
 import { getClient }        from '@frontierjs/sierra/resource'
-import { useCartClient }    from './stores/cart.js'
-import './lib/displays.js'
+import { useCartClient }    from '@/stores/cart.js'
+import '@/lib/displays.js'
 
 // The basket takes its client rather than importing one, so that the same store
 // can run on the storefront — where importing sierra's junction module into an

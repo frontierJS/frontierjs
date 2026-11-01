@@ -109,7 +109,7 @@ Two things fell out of building it:
 
 - **A field-level `@allow` was absent from the release surface entirely**, so
   `release:check` could not see it either. It is where the sharpest columns in
-  this repo are guarded — `isSystemAdmin`, `role`, `emailVerified` — which made
+  this repo are guarded — `isSystemAdmin`, `role`, `isEmailVerified` — which made
   it the one omission that would have discredited the feature on its first real
   use. It is a compatibility change as well as a permission one, so both axes
   gained it.

@@ -112,7 +112,7 @@ or *this app took no requests since noon*.
 5. **`/hub/notice-intake/` — every workspace, for the system admin.** The Hub
    is the tier above every tenant: one service behind `requireSystemAdmin`,
    taking no workspace, read through `asSystem()`, and answering 404 to anyone
-   else (`docs/SCREENS.md` § Phase 10). The cross-workspace queue is one more
+   else (`docs/screens.md` § Phase 10). The cross-workspace queue is one more
    read on **that** service, fed through the same `computeNotices`. It is not a
    `?scope=hub` on the nineteen workspace-scoped services, which is the shape
    Phase 10 already rejected. Each notice is tagged with its workspace, and the

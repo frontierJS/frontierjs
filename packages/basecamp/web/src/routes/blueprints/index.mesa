@@ -191,12 +191,12 @@ title: Blueprints
 
   function editParams() {
     paramsError = null
-    params = (selected.params ?? []).map(({ key, label, hint, defaultValue, required, secret, generate }) =>
-      ({ key, label, hint: hint ?? '', defaultValue: defaultValue ?? '', required, secret, generate: generate ?? '' }))
+    params = (selected.params ?? []).map(({ key, label, hint, defaultValue, isRequired, isSecret, generate }) =>
+      ({ key, label, hint: hint ?? '', defaultValue: defaultValue ?? '', isRequired, isSecret, generate: generate ?? '' }))
   }
 
   const setParam  = (i, field, v) => params = params.map((p, j) => j === i ? { ...p, [field]: v } : p)
-  const addParam  = () => params = [...params, { key: '', label: '', hint: '', defaultValue: '', required: false, secret: false, generate: '' }]
+  const addParam  = () => params = [...params, { key: '', label: '', hint: '', defaultValue: '', isRequired: false, isSecret: false, generate: '' }]
   const dropParam = (i) => params = params.filter((_, j) => j !== i)
   function moveParam(i, d) {
     const to = i + d
@@ -346,8 +346,8 @@ title: Blueprints
         <!-- Each lands as a variable on the app, a secret one encrypted. A
              blank field takes the default, then a minted value where the
              blueprint says how to mint one. -->
-        <Input id={`deploy-param-${p.key}`} label={`${p.label}${p.required && !p.generate && !p.defaultValue ? ' *' : ''}`}
-               type={p.secret ? 'password' : 'text'} autocomplete="off"
+        <Input id={`deploy-param-${p.key}`} label={`${p.label}${p.isRequired && !p.generate && !p.defaultValue ? ' *' : ''}`}
+               type={p.isSecret ? 'password' : 'text'} autocomplete="off"
                value={deployForm.values[p.key]}
                placeholder={p.generate ? 'Generated if left blank' : (p.defaultValue ?? '')}
                hint={p.hint ? `${p.key} — ${p.hint}` : p.key}
@@ -417,7 +417,7 @@ title: Blueprints
         <div class="cluster text-sm text-muted">
           <span>:{bp.port ?? '—'}</span>
           <span>{storage(bp)}</span>
-          <span>{bp.params.filter(p => p.required).length} required</span>
+          <span>{bp.params.filter(p => p.isRequired).length} required</span>
         </div>
 
         <div class="cluster">
@@ -457,7 +457,7 @@ title: Blueprints
     <pre class="code" id="blueprint-image"><code>{selected.image}</code></pre>
 
     <dl class="datalist">
-      <div><dt>Type</dt><dd>{selected.appType}</dd></div>
+      <div><dt>Kind</dt><dd>{selected.appKind}</dd></div>
       <div><dt>Port</dt><dd>{selected.port ?? 'none'}</dd></div>
       <div><dt>Storage</dt><dd>{storage(selected)}</dd></div>
       <div><dt>Health check</dt><dd>{selected.healthCheck ?? 'none'}</dd></div>
@@ -484,10 +484,10 @@ title: Blueprints
             <Input id={`param-hint-${i}`} label="Hint" value={p.hint}
                    oninput={(e) => setParam(i, 'hint', e.target.value)} />
             <div class="cluster">
-              <Checkbox id={`param-required-${i}`} label="Required" checked={p.required}
-                        onchange={(on) => setParam(i, 'required', on)} />
-              <Checkbox id={`param-secret-${i}`} label="Secret" checked={p.secret}
-                        onchange={(on) => setParam(i, 'secret', on)} />
+              <Checkbox id={`param-required-${i}`} label="Required" checked={p.isRequired}
+                        onchange={(on) => setParam(i, 'isRequired', on)} />
+              <Checkbox id={`param-secret-${i}`} label="Secret" checked={p.isSecret}
+                        onchange={(on) => setParam(i, 'isSecret', on)} />
               <Select id={`param-generate-${i}`} label="" aria-label="Generate a value" value={p.generate}
                       placeholder="Typed by a person" options={generators}
                       onchange={(e) => setParam(i, 'generate', e.target.value)} />
@@ -517,8 +517,8 @@ title: Blueprints
             <td class="text-sm text-muted">{p.defaultValue || '—'}</td>
             <td>
               <span class="cluster">
-                {#if p.required}<Pill tone="danger">required</Pill>{/if}
-                {#if p.secret}<Pill tone="warning">secret</Pill>{/if}
+                {#if p.isRequired}<Pill tone="danger">required</Pill>{/if}
+                {#if p.isSecret}<Pill tone="warning">secret</Pill>{/if}
                 {#if p.generate}<Pill tone="success">{p.generate}</Pill>{/if}
               </span>
             </td>

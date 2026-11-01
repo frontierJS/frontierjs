@@ -55,30 +55,35 @@ if (flag.json) {
   return
 }
 
-const ICON = { ok: '\u2713', warn: '\u26a0', error: '\u2717' }
+const ICON = {
+  ok:    chalk.green('\u2713'),
+  warn:  chalk.yellow('\u26a0'),
+  error: chalk.red('\u2717'),
+}
+const hint = text => chalk.dim(`  \u2192  ${text}`)
 
 echo('')
-echo('  fli doctor\n')
+echo(chalk`  {bold fli doctor}\n`)
 
-echo('  system')
+echo(chalk`  {bold system}`)
 for (const b of report.system) {
   const state = b.status ?? (b.present ? 'found' : 'not found')
-  echo(`    ${ICON[b.level]}  ${b.name.padEnd(10)} ${state}${b.ok ? '' : `  \u2192  ${b.hint}`}`)
+  echo(`    ${ICON[b.level]}  ${chalk.cyan(b.name.padEnd(10))} ${state}${b.ok ? '' : hint(b.hint)}`)
 }
 
-echo('\n  fli config')
+echo(chalk`\n  {bold fli config}`)
 for (const c of report.config) {
-  echo(`    ${ICON[c.level]}  ${c.label.padEnd(14)} ${c.ok ? 'ok' : c.hint}`)
+  echo(`    ${ICON[c.level]}  ${chalk.cyan(c.label.padEnd(14))} ${c.ok ? chalk.dim('ok') : c.hint}`)
 }
 
-echo('\n  namespace env vars')
-if (!report.namespaces.length) echo('    \u00b7  no _module.md files found with requires:')
+echo(chalk`\n  {bold namespace env vars}`)
+if (!report.namespaces.length) echo(chalk.dim('    \u00b7  no _module.md files found with requires:'))
 for (const n of report.namespaces) {
-  echo(`    ${ICON[n.level]}  ${n.ns.padEnd(14)} ${n.key}${n.ok ? '' : `  \u2192  ${n.fix}`}`)
+  echo(`    ${ICON[n.level]}  ${chalk.cyan(n.ns.padEnd(14))} ${n.key}${n.ok ? '' : hint(n.fix)}`)
 }
 
 echo('')
-echo('  ' + '\u2500'.repeat(45))
+echo(chalk.dim('  ' + '\u2500'.repeat(45)))
 
 if (report.ok) {
   log.success(`All ${report.checks} checks passed`)
@@ -86,11 +91,11 @@ if (report.ok) {
   log.warn(`${report.checks - report.failed}/${report.checks} checks passed  \u00b7  ${report.failed} issue${report.failed !== 1 ? 's' : ''} found`)
   // What is MISSING and what STOPS you are different sentences: a machine with
   // no GITHUB_TOKEN cannot run `github:` and runs everything else.
-  if (!report.blocked) echo('\n  Nothing here stops fli running \u2014 every required binary and path is present.')
-  echo('')
-  echo('  To fix missing env vars:')
-  echo('    fli config            \u2190 open global env file in editor')
-  echo('    fli eset KEY val --global  \u2190 set a value directly')
+  if (!report.blocked) echo(chalk.dim('\n  Nothing here stops fli running \u2014 every required binary and path is present.'))
+  echo(chalk`
+  {bold To fix missing env vars:}
+    fli config            {dim \u2190 open global env file in editor}
+    fli eset KEY val --global  {dim \u2190 set a value directly}`)
 }
 echo('')
 

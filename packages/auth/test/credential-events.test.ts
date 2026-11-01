@@ -179,11 +179,11 @@ describe('each change to how an account signs in tells the person', () => {
 
   test('oauth.linked and oauth.unlinked — and removing the last way in tells nobody', async () => {
     const email = `linked-${seq++}@shop.test`
-    const user  = await h.sys.user.create({ data: { email, emailVerified: true } })
+    const user  = await h.sys.user.create({ data: { email, isEmailVerified: true } })
     await h.sys.credential.create({ data: { userId: user.id, type: 'password', value: 'planted-hash' } })
 
     const linked = await tell(() => h.auth.oauthResolve('google', {
-      providerId: `sub-${seq++}`, email, emailVerified: true, name: 'L',
+      providerId: `sub-${seq++}`, email, isEmailVerified: true, name: 'L',
     } as any))
     expect(linked.map(c => c.event)).toEqual(['oauth.linked'])
     expect(linked[0]!.meta).toMatchObject({ provider: 'google' })
@@ -193,7 +193,7 @@ describe('each change to how an account signs in tells the person', () => {
 
     // Only the password is left now, and it is not a connection — the refusal
     // is the last-credential rule on an account with nothing else attached.
-    const only = await h.sys.user.create({ data: { email: `only-${seq++}@shop.test`, emailVerified: true } })
+    const only = await h.sys.user.create({ data: { email: `only-${seq++}@shop.test`, isEmailVerified: true } })
     const sole = await h.sys.credential.create({ data: { userId: only.id, type: 'oauth:google', value: `s-${seq++}` } })
     expect(await tell(() => h.auth.removeConnection!(only.id, sole.id).catch(() => {}))).toEqual([])
   })

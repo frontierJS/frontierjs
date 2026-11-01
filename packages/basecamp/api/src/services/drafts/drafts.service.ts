@@ -141,7 +141,7 @@ async function grantedSite(): Promise<GitSite & { role: string }> {
   const appId = arg('appId')
   const grant = await db().appEditor.findFirst({ where: { appId, userId: me() } })
   const app   = grant && await sys().app.findFirst({ where: { id: appId } })
-  if (!app || app.type !== 'static' || !isGit(app.source)) throw new NotFound(`No site '${appId}' you may edit`)
+  if (!app || app.kind !== 'static' || !isGit(app.source)) throw new NotFound(`No site '${appId}' you may edit`)
   return { id: app.id, source: app.source, role: grant.role }
 }
 
@@ -253,7 +253,7 @@ export default createService({
     const apps = await sys().app.findMany({ where: { id: [...role.keys()] }, orderBy: { name: 'asc' } })
     return {
       sites: apps
-        .filter((a: { type: string, source: unknown }) => a.type === 'static' && isGit(a.source))
+        .filter((a: { kind: string, source: unknown }) => a.kind === 'static' && isGit(a.source))
         .map((a: { id: string, name: string, slug: string, source: GitSite['source'] }) => ({
           id: a.id, name: a.name, slug: a.slug, repo: a.source.repo, role: role.get(a.id),
         })),

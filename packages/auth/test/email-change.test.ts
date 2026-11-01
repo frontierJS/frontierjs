@@ -63,7 +63,7 @@ describe('requestEmailChange, then the link', () => {
     expect(ctx.email).toBe(to)
     const after = await row(u.userId)
     expect(after.email).toBe(to)
-    expect(after.emailVerified).toBe(true)
+    expect(after.isEmailVerified).toBe(true)
 
     expect(signedIn(await h.auth.login(to, PW)).user.id).toBe(u.userId)
     await expect(h.auth.login(u.email, PW)).rejects.toThrow()
@@ -146,7 +146,7 @@ describe('requestEmailChange, then the link', () => {
     await h.auth.verifyEmail!(h.verifyToken())
     const after = await row(u.userId)
     expect(after.email).toBe(u.email)
-    expect(after.emailVerified).toBe(true)
+    expect(after.isEmailVerified).toBe(true)
   })
 
   test('without a way to mail the link the request is refused, not answered as sent', async () => {

@@ -38,11 +38,11 @@ interface PlatformAccountRow {
 
 const why = (err: unknown) => err instanceof Error ? err.message : String(err)
 
-/** This workspace's `provider_key` Secrets at a vendor that runs Apps. */
+/** This workspace's `providerKey` Secrets at a vendor that runs Apps. */
 async function platformAccounts(): Promise<PlatformAccountRow[]> {
   const kinds = platformProviders().map(p => p.kind)
   return await db().asSystem().secret.findMany({
-    where:   { workspaceId: ws(), kind: 'provider_key', providerKind: { in: kinds } },
+    where:   { workspaceId: ws(), kind: 'providerKey', providerKind: { in: kinds } },
     select:  { id: true, name: true, providerKind: true, verifiedAt: true },
     orderBy: { name: 'asc' },
   }) as PlatformAccountRow[]
@@ -148,7 +148,7 @@ export default createService({
 
     return await db().$transaction(async (tx: any) => {
       const app = await tx.app.create({ data: {
-        environmentId, name: project.name, slug, type: project.kind === 'site' ? 'static' : 'worker',
+        environmentId, name: project.name, slug, kind: project.kind === 'site' ? 'static' : 'worker',
       } })
       const platform = await tx.appPlatform.create({ data: {
         appId: app.id, accountId, provider: account.providerKind, providerAccountId: vendor, name: project.name,

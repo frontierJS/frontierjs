@@ -3458,18 +3458,9 @@ const isProxyAccessor = (acc, root) => acc === `$$proxy_${root}` || acc === `$$p
 const watchRootsOf = (paths) => new Set(paths.map((path) => splitWatchPath(path).root))
 
 
-export function analyzeScript(raw, ast) {
-  const vars = {}
-  const watchPaths = []
-  const watchHandlers = []
-  const watchGroups = []
-  const postCallHooks = []
-  const effects = []
-  const imports = []
-  const errors = []
-  const warnings = []
-  // Nodes that cannot be expanded (e.g. computed keys) — emitted verbatim.
-  const passthroughDeclStarts = new Set()
+/** Pass of analyzeScript: the destructuring expanders and the redeclaration guard the declaration scan shares. */
+function declarationHelpers(raw, st) {
+  const { vars, errors, warnings, passthroughDeclStarts } = st
 
   /**
    * Expand a destructuring declarator into synthetic flat identifier entries
@@ -3677,10 +3668,27 @@ export function analyzeScript(raw, ast) {
     return { names, flat }
   }
 
-  // ── Pass 1: classify declarations ──────────────────────────────────────────
-  const contextProvides = []   // { key, initRaw, nodeStart }
-  const exportedMembers = []   // { name } — `export function` on the instance API
+  // A `$:` assignment IS a declaration, and it is the only one JavaScript does
+  // not know about — acorn refuses every other redeclaration at parse time, so
+  // `let x` twice never reaches here. This pass walks `ast.body` in source
+  // order, so the guard on the `$:` side only fires when the declaration comes
+  // FIRST; the other way round the plain declaration overwrote the entry and
+  // the writable derived vanished with nothing said.
+  const refuseRedeclaration = (name, node) => {
+    if (!vars[name]?.isWritableDerived) return false
+    errors.push({
+      message: `'${name}' is already declared by '$: ${name} = ...'. ` +
+        `A '$:' assignment is the declaration — remove the let/const/var, or drop the '$:' line.`,
+      pos: node?.start ?? null
+    })
+    return true
+  }
 
+  return { expandPattern, patternSource, patternBindings, refuseRedeclaration }
+}
+
+/** Pass of analyzeScript: the names every import declaration binds. */
+function collectImportedNames(ast) {
   // Pre-scan for import names so $: label parsing (also in Pass 1) can
   // distinguish imported identifiers from locally-declared functions.
   // An imported name in $: (a, b) is a path watch, never a handler.
@@ -3691,6 +3699,11 @@ export function analyzeScript(raw, ast) {
     }
   }
 
+  return importedNameSet
+}
+
+/** Pass of analyzeScript: refuses a `$:` label below the top level (RULE 1). */
+function refuseNestedReactiveLabels(raw, ast) {
   // RULE 1, enforced. Pass 1 below only ever looks at `ast.body`, so a nested
   // `$:` reached the emitter untouched and compiled to a label nobody reads.
   for (const node of ast.body) {
@@ -3715,519 +3728,538 @@ export function analyzeScript(raw, ast) {
       )
     }
   }
+}
 
-  // A `$:` assignment IS a declaration, and it is the only one JavaScript does
-  // not know about — acorn refuses every other redeclaration at parse time, so
-  // `let x` twice never reaches here. This pass walks `ast.body` in source
-  // order, so the guard on the `$:` side only fires when the declaration comes
-  // FIRST; the other way round the plain declaration overwrote the entry and
-  // the writable derived vanished with nothing said.
-  const refuseRedeclaration = (name, node) => {
-    if (!vars[name]?.isWritableDerived) return false
-    errors.push({
-      message: `'${name}' is already declared by '$: ${name} = ...'. ` +
-        `A '$:' assignment is the declaration — remove the let/const/var, or drop the '$:' line.`,
-      pos: node?.start ?? null
-    })
-    return true
+/** Pass of analyzeScript: one top-level statement that declares an import, a `$context` provide, an export, a `let`, `const` or `var`. */
+function collectDeclaration(node, raw, st, helpers) {
+  const { vars, imports, errors, passthroughDeclStarts, contextProvides, exportedMembers } = st
+  const { expandPattern, patternSource, refuseRedeclaration } = helpers
+
+  if (node.type === 'ImportDeclaration') {
+    imports.push(node)
+    return
   }
 
-  for (const node of ast.body) {
-    if (node.type === 'ImportDeclaration') {
-      imports.push(node)
-      continue
-    }
+  // $context.key = expr  — context provide
+  if (
+    node.type === 'ExpressionStatement' &&
+    node.expression.type === 'AssignmentExpression' &&
+    node.expression.operator === '=' &&
+    node.expression.left?.type === 'MemberExpression' &&
+    node.expression.left.object?.type === 'Identifier' &&
+    node.expression.left.object.name === '$context' &&
+    !node.expression.left.computed &&
+    node.expression.left.property?.type === 'Identifier'
+  ) {
+    const key     = node.expression.left.property.name
+    const initRaw = raw.slice(node.expression.right.start, node.expression.right.end)
+    // initNode is what lets the emitter run rewriteAssignments over the value.
+    contextProvides.push({ key, initRaw, initNode: node.expression.right, nodeStart: node.start })
+    passthroughDeclStarts.add(node.start)
+    return
+  }
 
-    // $context.key = expr  — context provide
-    if (
-      node.type === 'ExpressionStatement' &&
-      node.expression.type === 'AssignmentExpression' &&
-      node.expression.operator === '=' &&
-      node.expression.left?.type === 'MemberExpression' &&
-      node.expression.left.object?.type === 'Identifier' &&
-      node.expression.left.object.name === '$context' &&
-      !node.expression.left.computed &&
-      node.expression.left.property?.type === 'Identifier'
-    ) {
-      const key     = node.expression.left.property.name
-      const initRaw = raw.slice(node.expression.right.start, node.expression.right.end)
-      // initNode is what lets the emitter run rewriteAssignments over the value.
-      contextProvides.push({ key, initRaw, initNode: node.expression.right, nodeStart: node.start })
-      passthroughDeclStarts.add(node.start)
-      continue
-    }
+  // export function name() {…} — a method on the component's instance API
+  // (VISION §10.2 / RULE 36). The declaration itself is emitted like any other
+  // top-level function; what `export` adds is the registration that puts it on
+  // whatever `bind:this` hands the parent.
+  if (
+    node.type === 'ExportNamedDeclaration' &&
+    node.declaration?.type === 'FunctionDeclaration'
+  ) {
+    const name = node.declaration.id?.name
+    if (name) exportedMembers.push({ name })
+    return
+  }
 
-    // export function name() {…} — a method on the component's instance API
-    // (VISION §10.2 / RULE 36). The declaration itself is emitted like any other
-    // top-level function; what `export` adds is the registration that puts it on
-    // whatever `bind:this` hands the parent.
-    if (
-      node.type === 'ExportNamedDeclaration' &&
-      node.declaration?.type === 'FunctionDeclaration'
-    ) {
-      const name = node.declaration.id?.name
-      if (name) exportedMembers.push({ name })
-      continue
-    }
+  // `export default` / `export * from`. Neither carries a declaration, so
+  // the check below walked past both and the statement was emitted VERBATIM
+  // inside the component function — where acorn refuses it as 'import and
+  // export may only appear at the top level', at a line of generated code
+  // the author never wrote. The component itself is the module's default
+  // export; there is no second one to give away (RULE 56).
+  if (node.type === 'ExportDefaultDeclaration' || node.type === 'ExportAllDeclaration') {
+    const form = node.type === 'ExportDefaultDeclaration' ? 'export default' : 'export *'
+    errors.push({
+      message: `'${form}' — an instance <script> exports only props (\`export let\`, ` +
+        `\`const\`, \`var\`) and methods (\`export function\`); the component is already the module's ` +
+        `default export. Module-scope exports go in <script module>.`,
+      pos: node.start
+    })
+    return
+  }
 
-    // `export default` / `export * from`. Neither carries a declaration, so
-    // the check below walked past both and the statement was emitted VERBATIM
-    // inside the component function — where acorn refuses it as 'import and
-    // export may only appear at the top level', at a line of generated code
-    // the author never wrote. The component itself is the module's default
-    // export; there is no second one to give away (RULE 56).
-    if (node.type === 'ExportDefaultDeclaration' || node.type === 'ExportAllDeclaration') {
-      const form = node.type === 'ExportDefaultDeclaration' ? 'export default' : 'export *'
-      errors.push({
-        message: `'${form}' — an instance <script> exports only props (\`export let\`, ` +
-          `\`const\`, \`var\`) and methods (\`export function\`); the component is already the module's ` +
-          `default export. Module-scope exports go in <script module>.`,
-        pos: node.start
-      })
-      continue
-    }
+  // Every other export form. They were dropped in silence, which is how a
+  // component could reference its own exported function from its template and
+  // throw ReferenceError on the first interaction with nothing to read.
+  if (
+    node.type === 'ExportNamedDeclaration' &&
+    node.declaration?.type !== 'VariableDeclaration'
+  ) {
+    errors.push({
+      message: `'${raw.slice(node.start, Math.min(node.end, node.start + 40)).split('\n')[0].trim()}' — ` +
+        `an instance <script> exports only props (\`export let\`, \`const\`, \`var\`) ` +
+        `and methods (\`export function\`). Module-scope exports go in <script module>.`,
+      pos: node.start
+    })
+    return
+  }
 
-    // Every other export form. They were dropped in silence, which is how a
-    // component could reference its own exported function from its template and
-    // throw ReferenceError on the first interaction with nothing to read.
-    if (
-      node.type === 'ExportNamedDeclaration' &&
-      node.declaration?.type !== 'VariableDeclaration'
-    ) {
-      errors.push({
-        message: `'${raw.slice(node.start, Math.min(node.end, node.start + 40)).split('\n')[0].trim()}' — ` +
-          `an instance <script> exports only props (\`export let\`, \`const\`, \`var\`) ` +
-          `and methods (\`export function\`). Module-scope exports go in <script module>.`,
-        pos: node.start
-      })
-      continue
-    }
-
-    if (
-      node.type === 'ExportNamedDeclaration' &&
-      node.declaration?.type === 'VariableDeclaration'
-    ) {
-      const decl = node.declaration
-      for (const d of decl.declarations) {
-        const name = d.id?.name
-        if (!name) continue
-        if (refuseRedeclaration(name, node)) continue
-        vars[name] = {
-          name,
-          kind: decl.kind,
-          initRaw: d.init ? raw.slice(d.init.start, d.init.end) : undefined,
-          initNode: d.init,
-          deps: [],
-          isExport: true,
-          isDerived: false,
-          isAsync: false,
-          isProp: true,   // all export let/const/var are props; kind determines mutability
-          nodeStart: node.start,
-          nodeEnd: node.end
-        }
+  if (
+    node.type === 'ExportNamedDeclaration' &&
+    node.declaration?.type === 'VariableDeclaration'
+  ) {
+    const decl = node.declaration
+    for (const d of decl.declarations) {
+      const name = d.id?.name
+      if (!name) continue
+      if (refuseRedeclaration(name, node)) continue
+      vars[name] = {
+        name,
+        kind: decl.kind,
+        initRaw: d.init ? raw.slice(d.init.start, d.init.end) : undefined,
+        initNode: d.init,
+        deps: [],
+        isExport: true,
+        isDerived: false,
+        isAsync: false,
+        isProp: true,   // all export let/const/var are props; kind determines mutability
+        nodeStart: node.start,
+        nodeEnd: node.end
       }
-      continue
     }
+    return
+  }
 
-    if (node.type === 'VariableDeclaration') {
-      for (const d of node.declarations) {
-        const name = d.id?.name
-        if (!name) {
-          // Pattern declarator — attempt to expand into flat identifier vars.
-          if (d.id.type === 'ObjectPattern' || d.id.type === 'ArrayPattern') {
-            const initExpr = d.init ? patternSource(d.init, { snapshot: node.kind === 'var' }, node) : 'undefined'
-            // The bound temporary is what a dev build inspects for getters (FJS-D667).
-            if (d.id.type === 'ObjectPattern' && vars[initExpr] && !vars[initExpr].destructured) {
-              const keys = d.id.properties
-                .filter((p) => p.type === 'Property' && !p.computed)
-                .map((p) => p.key.name ?? String(p.key.value))
-              vars[initExpr].destructured = { keys, site: raw.slice(node.start, node.end).replace(/\s+/g, ' ').trim() }
-            }
-            expandPattern(d.id, initExpr, node.kind, node)
-          } else {
-            passthroughDeclStarts.add(node.start)
+  if (node.type === 'VariableDeclaration') {
+    for (const d of node.declarations) {
+      const name = d.id?.name
+      if (!name) {
+        // Pattern declarator — attempt to expand into flat identifier vars.
+        if (d.id.type === 'ObjectPattern' || d.id.type === 'ArrayPattern') {
+          const initExpr = d.init ? patternSource(d.init, { snapshot: node.kind === 'var' }, node) : 'undefined'
+          // The bound temporary is what a dev build inspects for getters (FJS-D667).
+          if (d.id.type === 'ObjectPattern' && vars[initExpr] && !vars[initExpr].destructured) {
+            const keys = d.id.properties
+              .filter((p) => p.type === 'Property' && !p.computed)
+              .map((p) => p.key.name ?? String(p.key.value))
+            vars[initExpr].destructured = { keys, site: raw.slice(node.start, node.end).replace(/\s+/g, ' ').trim() }
           }
-          continue
+          expandPattern(d.id, initExpr, node.kind, node)
+        } else {
+          passthroughDeclStarts.add(node.start)
         }
-        if (refuseRedeclaration(name, node)) continue
+        continue
+      }
+      if (refuseRedeclaration(name, node)) continue
 
-        // $context.key consume — let/const/var name = $context.key
-        const init = d.init
-        if (
-          init?.type === 'MemberExpression' &&
-          init.object?.type === 'Identifier' &&
-          init.object.name === '$context' &&
-          !init.computed &&
-          init.property?.type === 'Identifier'
-        ) {
-          const contextKey = init.property.name
-          // Do NOT add to passthroughDeclStarts — the original `const x = $context.key`
-          // must be suppressed so the compiler-generated track() version is the only
-          // declaration emitted. Passthrough would re-declare x with `$context.key`
-          // (undefined at runtime), overwriting the reactive signal.
-          vars[name] = {
-            name,
-            kind: node.kind,
-            initRaw: raw.slice(init.start, init.end),
-            initNode: init,
-            deps: [],
-            isExport: false,
-            isDerived: node.kind === 'const' || node.kind === 'let',
-            isAsync: false,
-            isProp: false,
-            isContextConsume: true,
-            contextKey,
-            nodeStart: node.start,
-            nodeEnd: node.end
-          }
-          continue
-        }
-
+      // $context.key consume — let/const/var name = $context.key
+      const init = d.init
+      if (
+        init?.type === 'MemberExpression' &&
+        init.object?.type === 'Identifier' &&
+        init.object.name === '$context' &&
+        !init.computed &&
+        init.property?.type === 'Identifier'
+      ) {
+        const contextKey = init.property.name
+        // Do NOT add to passthroughDeclStarts — the original `const x = $context.key`
+        // must be suppressed so the compiler-generated track() version is the only
+        // declaration emitted. Passthrough would re-declare x with `$context.key`
+        // (undefined at runtime), overwriting the reactive signal.
         vars[name] = {
           name,
           kind: node.kind,
-          initRaw: d.init ? raw.slice(d.init.start, d.init.end) : undefined,
-          initNode: d.init,
+          initRaw: raw.slice(init.start, init.end),
+          initNode: init,
           deps: [],
           isExport: false,
-          isDerived: false,
+          isDerived: node.kind === 'const' || node.kind === 'let',
           isAsync: false,
           isProp: false,
+          isContextConsume: true,
+          contextKey,
           nodeStart: node.start,
           nodeEnd: node.end
         }
-      }
-      continue
-    }
-
-    if (node.type === 'LabeledStatement') {
-      const lbl = node.label.name
-
-      // Only process Mesa reactive labels.
-      if (!lbl.startsWith('$')) continue
-
-      // $: and $_name: are valid.
-      // Any other $xxx: is reserved for future Mesa features — compiler error.
-      const isBase   = lbl === '$'
-      const isDebug  = lbl.startsWith('$_') && lbl.length > 2
-      if (!isBase && !isDebug) {
-        errors.push(
-          `'${lbl}:' is reserved for future Mesa use. ` +
-          `Use '$:' or '$_name:' (with underscore) for named effects.`
-        )
         continue
       }
 
-      // The debug label name (without leading $_ ), or null for plain $:
-      const debugName = isDebug ? lbl.slice(2) : null
-      const body = node.body
-
-      // Block form — $: { dep, handler \n dep, handler \n ... }
-      // Each statement in the block must be a watch+handler expression statement.
-      // The entries are collected as an ordered group and emitted as a single
-      // orderedGroup() call — deps are subscribed individually but handlers run
-      // in declared order, batched, once per flush.
-      if (body.type === 'BlockStatement') {
-        // Check if this looks like an ordered watch group:
-        // every statement is a SequenceExpression ending in a function.
-        // If any statement is a bare expression, treat the whole block as
-        // an auto-tracked side effect instead.
-        const allAreWatchPairs = body.body.every((stmt) => {
-          if (stmt.type !== 'ExpressionStatement') return false
-          const e = stmt.expression
-          if (e.type !== 'SequenceExpression') return false
-          const lastE = e.expressions[e.expressions.length - 1]
-          // Inside a block the handler must be an INLINE function. The bare form
-          // (`$: dep, syncFn`) still accepts a function reference, but in a block
-          // that shorthand is indistinguishable from a plain multi-value read:
-          // `{ a, syncFn }` and `{ a, b }` have identical ASTs. Requiring `() =>`
-          // here removes the ambiguity and costs one arrow per line in a form
-          // whose whole purpose is ordering several handlers.
-          return ['ArrowFunctionExpression', 'FunctionExpression'].includes(lastE.type)
-        })
-
-        // A block runs code. If its body provably does nothing — every statement
-        // is a bare read — the author reached for braces to express a watch and
-        // got silence instead: effects don't drive renders in Mesa, so an effect
-        // with no side effect is unobservable.
-        //
-        // This is a compile error rather than a warning because it is decidable,
-        // and because the previous behavior was worse than either: `$: { (a, b) }`
-        // compiled to orderedGroup([{ deps: [a], handler: <value of b> }]) and
-        // threw `fn is not a function` the first time `a` changed.
-        // `[].every()` is true, so an empty block reads as "all watch pairs" —
-        // check length explicitly.
-        const looksLikeGroup = body.body.length > 0 && allAreWatchPairs
-        if (!looksLikeGroup && _isInertBlock(body)) {
-          const inner = raw.slice(body.start + 1, body.end - 1).trim()
-
-          // Distinguish "you probably meant a handler" from "you probably meant
-          // a watch". An unparenthesized sequence with an identifier tail is the
-          // shape of an attempted `dep, handlerRef`, which blocks no longer take.
-          const looksLikeHandlerRef = body.body.some((stmt) => {
-            if (stmt.type !== 'ExpressionStatement') return false
-            const e = stmt.expression
-            if (e.type !== 'SequenceExpression') return false
-            if (raw[e.start - 1] === '(') return false
-            return e.expressions[e.expressions.length - 1].type === 'Identifier'
-          })
-
-          if (body.body.length === 0) {
-            errors.push(
-              `'$: { }' is empty. A '$: { }' block runs code; to watch values without a body, use '$: deps' instead.`
-            )
-          } else if (looksLikeHandlerRef) {
-            const tail = inner.split(',').pop().trim()
-            const head = inner.slice(0, inner.lastIndexOf(',')).trim()
-            errors.push(
-              `'$: { ${inner} }' does nothing. A handler inside a '$: { }' block must be an inline ` +
-              `function — the reference shorthand is only available on the unbraced form, because ` +
-              `'{ a, handler }' and '{ a, b }' are indistinguishable. ` +
-              `If '${tail}' is a handler, write '${head}, () => ${tail}()'. ` +
-              `If you meant to watch both values, drop the braces: '$: (${inner})'.`
-            )
-          } else {
-            errors.push(
-              `'$: { ${inner} }' does nothing — a '$: { }' block runs code, and this body only reads values. ` +
-              `To watch these and re-render, drop the braces: '$: ${inner}'. ` +
-              `To run something when they change, add a handler: '$: ${inner}, () => { ... }'.`
-            )
-          }
-          continue
-        }
-
-        if (looksLikeGroup) {
-          // Ordered watch group — all entries are dep, handler pairs.
-          const entries = []
-          for (const stmt of body.body) {
-            const e = stmt.expression
-            const seqExprs = e.expressions
-            const lastE = seqExprs[seqExprs.length - 1]
-            const depExprs = seqExprs.slice(0, -1)
-            entries.push({
-              deps: watchDeps(depExprs),
-              isAsync: lastE.async || false,
-              handlerRaw: raw.slice(lastE.start, lastE.end),
-              depsRaw: depExprs.map((de) => raw.slice(de.start, de.end)).join(', ')
-            })
-          }
-          if (entries.length > 0) {
-            watchGroups.push({ entries, debugName })
-          }
-        } else {
-          // Auto-tracked block effect — re-runs when any reactive dep changes.
-          // `node` is what lets the emitter run rewriteAssignments over the
-          // body; without it, writes inside the block are emitted as
-          // `$$runtime.get($$sig_x) = …` and throw at runtime.
-          effects.push({
-            type: 'block',
-            raw: raw.slice(body.start, body.end),
-            node: body,
-            debugName
-          })
-        }
-        continue
+      vars[name] = {
+        name,
+        kind: node.kind,
+        initRaw: d.init ? raw.slice(d.init.start, d.init.end) : undefined,
+        initNode: d.init,
+        deps: [],
+        isExport: false,
+        isDerived: false,
+        isAsync: false,
+        isProp: false,
+        nodeStart: node.start,
+        nodeEnd: node.end
       }
-
-      if (body.type !== 'ExpressionStatement') {
-        // $: if / $: for / $: while etc. are not valid Mesa forms.
-        // Use $: { if (...) { } } — the block form — for conditional side effects.
-        if (body.type !== 'BlockStatement') {
-          errors.push(
-            `'$: ${body.type.replace('Statement', '').toLowerCase()} ...' is not a valid Mesa reactive form. ` +
-            `Wrap it in a block: $: { ${raw.slice(body.start, body.end)} }`
-          )
-        }
-        continue
-      }
-      const expr = body.expression
-
-      if (expr.type === 'SequenceExpression') {
-        const exprs = expr.expressions
-        const lastEx = exprs[exprs.length - 1]
-        const rest = exprs.slice(0, -1)
-        // An Identifier is a handler only if it's NOT a known reactive variable
-        // AND NOT an imported name. `$: dep, fn` is valid when fn is a locally-
-        // declared function. `$: (a, b)` where a/b are imports or local lets
-        // must go to Shape 3 (multi-path watch), not Shape 2 (watch+handler).
-        const identIsHandler = lastEx.type === 'Identifier' &&
-          !vars[lastEx.name] &&
-          !importedNameSet.has(lastEx.name)
-        const isHandler = [
-          'ArrowFunctionExpression',
-          'FunctionExpression',
-        ].includes(lastEx.type) || identIsHandler
-        // New shape: $: fn(), handler — post-execution hook
-        // First element is a CallExpression on a local function.
-        const firstEx = rest.length === 1 ? rest[0] : null
-        if (
-          isHandler &&
-          firstEx?.type === 'CallExpression' &&
-          firstEx.callee?.type === 'Identifier'
-        ) {
-          postCallHooks.push({
-            fnName: firstEx.callee.name,
-            handlerRaw: raw.slice(lastEx.start, lastEx.end),
-            isAsync: lastEx.async || false,
-            debugName,
-            nodeStart: node.start,
-            nodeEnd: node.end,
-          })
-          continue
-        }
-
-        if (isHandler) {
-          // Shape 2: $: dep, handler  or  $: (dep1, dep2), handler
-          watchHandlers.push({
-            deps: watchDeps(rest),
-            isAsync: lastEx.async || false,
-            handlerRaw: raw.slice(lastEx.start, lastEx.end),
-            depsRaw: rest.map((e) => raw.slice(e.start, e.end)).join(', '),
-            debugName,
-            nodeStart: node.start,
-            nodeEnd: node.end
-          })
-        } else {
-          // Shape 3: $: (path1, path2)  — multi-path watch
-          //
-          // Everything here has to name a value. An element that names none is
-          // refused rather than dropped: `$: o.x, doThing()` reads as a
-          // watch+handler and is not one — a call is not a handler form (RULE
-          // 7) — so it used to compile clean, register the watch and silently
-          // discard the tail. `$: o.x, hits++` lost the author's statement
-          // outright (`FJS-846`'s sibling, `FJS-848`).
-          const flat = flattenSeq(exprs)
-          const unnamed = flat.filter((e) => !memberPath(e))
-          if (unnamed.length) {
-            unnamed.forEach((e) => {
-              const src = raw.slice(e.start, e.end)
-              const isLast = e === flat[flat.length - 1]
-              const deps = flat.slice(0, -1).map((d) => raw.slice(d.start, d.end)).join(', ')
-              errors.push({
-                message: isLast
-                  ? `'${src}' is the last element of a '$:' watch, which is the handler, and ` +
-                    `a handler must be a function (RULE 7). Write '$: ${deps}, () => ${src}'. ` +
-                    `As written it is neither a value to watch nor something that can be called, ` +
-                    `so nothing would run on a change.`
-                  : `'$: …' watches values, and '${src}' names none. Every element before the ` +
-                    `handler must be a variable or a dotted path.`,
-                pos: e.start
-              })
-            })
-            continue
-          }
-          flat.forEach((e) => {
-            const p = memberPath(e)
-            watchPaths.push({
-              path: p,
-              soft: p.includes('?.'),
-              debugName,
-              nodeStart: node.start,
-              nodeEnd: node.end
-            })
-          })
-        }
-        continue
-      }
-
-      // Shape 4: $: path  or  $: identifier  — single path watch
-      const p = memberPath(expr) || (expr.type === 'Identifier' ? expr.name : null)
-      if (p) {
-        watchPaths.push({
-          path: p,
-          soft: p.includes('?.'),
-          debugName,
-          nodeStart: node.start,
-          nodeEnd: node.end
-        })
-        continue
-      }
-
-      // Shape 5: $: myVar = expr  — writable derived assignment.
-      // Declares myVar as a writable signal whose value re-derives from expr
-      // whenever its deps change, but can also be overridden manually.
-      // myVar must not already be declared with let/const/var — the $: label
-      // IS the declaration.
-      if (
-        expr.type === 'AssignmentExpression' &&
-        expr.operator === '=' &&
-        expr.left.type === 'Identifier'
-      ) {
-        const name = expr.left.name
-        const rhsRaw = raw.slice(expr.right.start, expr.right.end)
-        if (vars[name]) {
-          errors.push({
-            message: `'$: ${name} = ...' — '${name}' is already declared. ` +
-              `Remove the existing let/const/var declaration.`,
-            pos: node.start
-          })
-        } else {
-          vars[name] = {
-            name,
-            kind: 'let',
-            initRaw: rhsRaw,
-            initNode: expr.right,
-            deps: [],
-            isExport: false,
-            isDerived: false,    // pass 2 will detect deps and set this
-            isAsync: false,
-            isProp: false,
-            isWritableDerived: true,  // flag for emitter to use createWritableSignal
-            nodeStart: node.start,
-            nodeEnd: node.end
-          }
-        }
-        continue
-      }
-
-      // Shape 5b: $: ({ a, b } = obj) / $: ([a, b] = pair) — the pattern's names
-      // are the declaration, one writable derived each, expanded the way
-      // `const { a, b } = obj` is. Names that are all declared already keep
-      // the plain effect they always were.
-      if (
-        expr.type === 'AssignmentExpression' &&
-        expr.operator === '=' &&
-        (expr.left.type === 'ObjectPattern' || expr.left.type === 'ArrayPattern')
-      ) {
-        const { names, flat } = patternBindings(expr.left)
-        const declared = names.filter((n) => vars[n])
-        if (declared.length < names.length) {
-          const first = names.find((n) => !vars[n])
-          const rhs = raw.slice(expr.right.start, expr.right.end)
-          if (declared.length) {
-            errors.push(
-              `'$: ${raw.slice(expr.left.start, expr.left.end)} = ...' — '${declared[0]}' is already declared ` +
-              `but '${first}' is not. A '$:' pattern declares all of its names or none of them: ` +
-              `declare all with let, or remove the let for '${declared[0]}'.`
-            )
-          } else if (!flat) {
-            errors.push(
-              `'$: ${raw.slice(expr.left.start, expr.left.end)} = ...' cannot declare a rest element or a ` +
-              `computed key. Write one '$:' per name: '$: ${first} = ${rhs}.${first}'.`
-            )
-          } else {
-            const before = new Set(Object.keys(vars))
-            const rhsExpr = patternSource(expr.right, { kind: 'let', isWritableDerived: true }, node)
-            if (expandPattern(expr.left, rhsExpr, 'let', node)) {
-              for (const n of names) if (!before.has(n) && vars[n]) vars[n].isWritableDerived = true
-            }
-          }
-          continue
-        }
-      }
-
-      // Anything else (call expression, assignment, template literal, etc.)
-      // is a $: auto-tracked side effect expression. Dependencies are detected
-      // from the reactive variables referenced in the expression body.
-      // The effect re-runs whenever any referenced reactive variable changes.
-      effects.push({
-        type: 'expression',
-        raw: raw.slice(body.start, body.end),
-        node: body,
-        debugName
-      })
     }
   }
+}
+
+/** Pass of analyzeScript: a `$: { }` block, an ordered watch group or an auto-tracked effect. */
+function collectLabelBlock(body, debugName, raw, st) {
+  const { watchGroups, effects, errors } = st
+
+  // Check if this looks like an ordered watch group:
+  // every statement is a SequenceExpression ending in a function.
+  // If any statement is a bare expression, treat the whole block as
+  // an auto-tracked side effect instead.
+  const allAreWatchPairs = body.body.every((stmt) => {
+    if (stmt.type !== 'ExpressionStatement') return false
+    const e = stmt.expression
+    if (e.type !== 'SequenceExpression') return false
+    const lastE = e.expressions[e.expressions.length - 1]
+    // Inside a block the handler must be an INLINE function. The bare form
+    // (`$: dep, syncFn`) still accepts a function reference, but in a block
+    // that shorthand is indistinguishable from a plain multi-value read:
+    // `{ a, syncFn }` and `{ a, b }` have identical ASTs. Requiring `() =>`
+    // here removes the ambiguity and costs one arrow per line in a form
+    // whose whole purpose is ordering several handlers.
+    return ['ArrowFunctionExpression', 'FunctionExpression'].includes(lastE.type)
+  })
+
+  // A block runs code. If its body provably does nothing — every statement
+  // is a bare read — the author reached for braces to express a watch and
+  // got silence instead: effects don't drive renders in Mesa, so an effect
+  // with no side effect is unobservable.
+  //
+  // This is a compile error rather than a warning because it is decidable,
+  // and because the previous behavior was worse than either: `$: { (a, b) }`
+  // compiled to orderedGroup([{ deps: [a], handler: <value of b> }]) and
+  // threw `fn is not a function` the first time `a` changed.
+  // `[].every()` is true, so an empty block reads as "all watch pairs" —
+  // check length explicitly.
+  const looksLikeGroup = body.body.length > 0 && allAreWatchPairs
+  if (!looksLikeGroup && _isInertBlock(body)) {
+    const inner = raw.slice(body.start + 1, body.end - 1).trim()
+
+    // Distinguish "you probably meant a handler" from "you probably meant
+    // a watch". An unparenthesized sequence with an identifier tail is the
+    // shape of an attempted `dep, handlerRef`, which blocks no longer take.
+    const looksLikeHandlerRef = body.body.some((stmt) => {
+      if (stmt.type !== 'ExpressionStatement') return false
+      const e = stmt.expression
+      if (e.type !== 'SequenceExpression') return false
+      if (raw[e.start - 1] === '(') return false
+      return e.expressions[e.expressions.length - 1].type === 'Identifier'
+    })
+
+    if (body.body.length === 0) {
+      errors.push(
+        `'$: { }' is empty. A '$: { }' block runs code; to watch values without a body, use '$: deps' instead.`
+      )
+    } else if (looksLikeHandlerRef) {
+      const tail = inner.split(',').pop().trim()
+      const head = inner.slice(0, inner.lastIndexOf(',')).trim()
+      errors.push(
+        `'$: { ${inner} }' does nothing. A handler inside a '$: { }' block must be an inline ` +
+        `function — the reference shorthand is only available on the unbraced form, because ` +
+        `'{ a, handler }' and '{ a, b }' are indistinguishable. ` +
+        `If '${tail}' is a handler, write '${head}, () => ${tail}()'. ` +
+        `If you meant to watch both values, drop the braces: '$: (${inner})'.`
+      )
+    } else {
+      errors.push(
+        `'$: { ${inner} }' does nothing — a '$: { }' block runs code, and this body only reads values. ` +
+        `To watch these and re-render, drop the braces: '$: ${inner}'. ` +
+        `To run something when they change, add a handler: '$: ${inner}, () => { ... }'.`
+      )
+    }
+    return
+  }
+
+  if (looksLikeGroup) {
+    // Ordered watch group — all entries are dep, handler pairs.
+    const entries = []
+    for (const stmt of body.body) {
+      const e = stmt.expression
+      const seqExprs = e.expressions
+      const lastE = seqExprs[seqExprs.length - 1]
+      const depExprs = seqExprs.slice(0, -1)
+      entries.push({
+        deps: watchDeps(depExprs),
+        isAsync: lastE.async || false,
+        handlerRaw: raw.slice(lastE.start, lastE.end),
+        depsRaw: depExprs.map((de) => raw.slice(de.start, de.end)).join(', ')
+      })
+    }
+    if (entries.length > 0) {
+      watchGroups.push({ entries, debugName })
+    }
+  } else {
+    // Auto-tracked block effect — re-runs when any reactive dep changes.
+    // `node` is what lets the emitter run rewriteAssignments over the
+    // body; without it, writes inside the block are emitted as
+    // `$$runtime.get($$sig_x) = …` and throw at runtime.
+    effects.push({
+      type: 'block',
+      raw: raw.slice(body.start, body.end),
+      node: body,
+      debugName
+    })
+  }
+}
+
+/** Pass of analyzeScript: a `$: a, b` sequence, a post-call hook, a watch with a handler or a multi-path watch. */
+function collectLabelSequence(node, expr, debugName, raw, st, importedNameSet) {
+  const { vars, watchPaths, watchHandlers, postCallHooks, errors } = st
+
+  const exprs = expr.expressions
+  const lastEx = exprs[exprs.length - 1]
+  const rest = exprs.slice(0, -1)
+  // An Identifier is a handler only if it's NOT a known reactive variable
+  // AND NOT an imported name. `$: dep, fn` is valid when fn is a locally-
+  // declared function. `$: (a, b)` where a/b are imports or local lets
+  // must go to Shape 3 (multi-path watch), not Shape 2 (watch+handler).
+  const identIsHandler = lastEx.type === 'Identifier' &&
+    !vars[lastEx.name] &&
+    !importedNameSet.has(lastEx.name)
+  const isHandler = [
+    'ArrowFunctionExpression',
+    'FunctionExpression',
+  ].includes(lastEx.type) || identIsHandler
+  // New shape: $: fn(), handler — post-execution hook
+  // First element is a CallExpression on a local function.
+  const firstEx = rest.length === 1 ? rest[0] : null
+  if (
+    isHandler &&
+    firstEx?.type === 'CallExpression' &&
+    firstEx.callee?.type === 'Identifier'
+  ) {
+    postCallHooks.push({
+      fnName: firstEx.callee.name,
+      handlerRaw: raw.slice(lastEx.start, lastEx.end),
+      isAsync: lastEx.async || false,
+      debugName,
+      nodeStart: node.start,
+      nodeEnd: node.end,
+    })
+    return
+  }
+
+  if (isHandler) {
+    // Shape 2: $: dep, handler  or  $: (dep1, dep2), handler
+    watchHandlers.push({
+      deps: watchDeps(rest),
+      isAsync: lastEx.async || false,
+      handlerRaw: raw.slice(lastEx.start, lastEx.end),
+      depsRaw: rest.map((e) => raw.slice(e.start, e.end)).join(', '),
+      debugName,
+      nodeStart: node.start,
+      nodeEnd: node.end
+    })
+  } else {
+    // Shape 3: $: (path1, path2)  — multi-path watch
+    //
+    // Everything here has to name a value. An element that names none is
+    // refused rather than dropped: `$: o.x, doThing()` reads as a
+    // watch+handler and is not one — a call is not a handler form (RULE
+    // 7) — so it used to compile clean, register the watch and silently
+    // discard the tail. `$: o.x, hits++` lost the author's statement
+    // outright (`FJS-846`'s sibling, `FJS-848`).
+    const flat = flattenSeq(exprs)
+    const unnamed = flat.filter((e) => !memberPath(e))
+    if (unnamed.length) {
+      unnamed.forEach((e) => {
+        const src = raw.slice(e.start, e.end)
+        const isLast = e === flat[flat.length - 1]
+        const deps = flat.slice(0, -1).map((d) => raw.slice(d.start, d.end)).join(', ')
+        errors.push({
+          message: isLast
+            ? `'${src}' is the last element of a '$:' watch, which is the handler, and ` +
+              `a handler must be a function (RULE 7). Write '$: ${deps}, () => ${src}'. ` +
+              `As written it is neither a value to watch nor something that can be called, ` +
+              `so nothing would run on a change.`
+            : `'$: …' watches values, and '${src}' names none. Every element before the ` +
+              `handler must be a variable or a dotted path.`,
+          pos: e.start
+        })
+      })
+      return
+    }
+    flat.forEach((e) => {
+      const p = memberPath(e)
+      watchPaths.push({
+        path: p,
+        soft: p.includes('?.'),
+        debugName,
+        nodeStart: node.start,
+        nodeEnd: node.end
+      })
+    })
+  }
+}
+
+/** Pass of analyzeScript: one top-level `$` label and the form it takes. */
+function collectReactiveLabel(node, raw, st, helpers, importedNameSet) {
+  const { vars, watchPaths, effects, errors } = st
+  const { expandPattern, patternSource, patternBindings } = helpers
+
+  const lbl = node.label.name
+
+  // Only process Mesa reactive labels.
+  if (!lbl.startsWith('$')) return
+
+  // $: and $_name: are valid.
+  // Any other $xxx: is reserved for future Mesa features — compiler error.
+  const isBase   = lbl === '$'
+  const isDebug  = lbl.startsWith('$_') && lbl.length > 2
+  if (!isBase && !isDebug) {
+    errors.push(
+      `'${lbl}:' is reserved for future Mesa use. ` +
+      `Use '$:' or '$_name:' (with underscore) for named effects.`
+    )
+    return
+  }
+
+  // The debug label name (without leading $_ ), or null for plain $:
+  const debugName = isDebug ? lbl.slice(2) : null
+  const body = node.body
+
+  // Block form — $: { dep, handler \n dep, handler \n ... }
+  // Each statement in the block must be a watch+handler expression statement.
+  // The entries are collected as an ordered group and emitted as a single
+  // orderedGroup() call — deps are subscribed individually but handlers run
+  // in declared order, batched, once per flush.
+  if (body.type === 'BlockStatement') {
+    collectLabelBlock(body, debugName, raw, st)
+    return
+  }
+
+  if (body.type !== 'ExpressionStatement') {
+    // $: if / $: for / $: while etc. are not valid Mesa forms.
+    // Use $: { if (...) { } } — the block form — for conditional side effects.
+    if (body.type !== 'BlockStatement') {
+      errors.push(
+        `'$: ${body.type.replace('Statement', '').toLowerCase()} ...' is not a valid Mesa reactive form. ` +
+        `Wrap it in a block: $: { ${raw.slice(body.start, body.end)} }`
+      )
+    }
+    return
+  }
+  const expr = body.expression
+
+  if (expr.type === 'SequenceExpression') {
+    collectLabelSequence(node, expr, debugName, raw, st, importedNameSet)
+    return
+  }
+
+  // Shape 4: $: path  or  $: identifier  — single path watch
+  const p = memberPath(expr) || (expr.type === 'Identifier' ? expr.name : null)
+  if (p) {
+    watchPaths.push({
+      path: p,
+      soft: p.includes('?.'),
+      debugName,
+      nodeStart: node.start,
+      nodeEnd: node.end
+    })
+    return
+  }
+
+  // Shape 5: $: myVar = expr  — writable derived assignment.
+  // Declares myVar as a writable signal whose value re-derives from expr
+  // whenever its deps change, but can also be overridden manually.
+  // myVar must not already be declared with let/const/var — the $: label
+  // IS the declaration.
+  if (
+    expr.type === 'AssignmentExpression' &&
+    expr.operator === '=' &&
+    expr.left.type === 'Identifier'
+  ) {
+    const name = expr.left.name
+    const rhsRaw = raw.slice(expr.right.start, expr.right.end)
+    if (vars[name]) {
+      errors.push({
+        message: `'$: ${name} = ...' — '${name}' is already declared. ` +
+          `Remove the existing let/const/var declaration.`,
+        pos: node.start
+      })
+    } else {
+      vars[name] = {
+        name,
+        kind: 'let',
+        initRaw: rhsRaw,
+        initNode: expr.right,
+        deps: [],
+        isExport: false,
+        isDerived: false,    // pass 2 will detect deps and set this
+        isAsync: false,
+        isProp: false,
+        isWritableDerived: true,  // flag for emitter to use createWritableSignal
+        nodeStart: node.start,
+        nodeEnd: node.end
+      }
+    }
+    return
+  }
+
+  // Shape 5b: $: ({ a, b } = obj) / $: ([a, b] = pair) — the pattern's names
+  // are the declaration, one writable derived each, expanded the way
+  // `const { a, b } = obj` is. Names that are all declared already keep
+  // the plain effect they always were.
+  if (
+    expr.type === 'AssignmentExpression' &&
+    expr.operator === '=' &&
+    (expr.left.type === 'ObjectPattern' || expr.left.type === 'ArrayPattern')
+  ) {
+    const { names, flat } = patternBindings(expr.left)
+    const declared = names.filter((n) => vars[n])
+    if (declared.length < names.length) {
+      const first = names.find((n) => !vars[n])
+      const rhs = raw.slice(expr.right.start, expr.right.end)
+      if (declared.length) {
+        errors.push(
+          `'$: ${raw.slice(expr.left.start, expr.left.end)} = ...' — '${declared[0]}' is already declared ` +
+          `but '${first}' is not. A '$:' pattern declares all of its names or none of them: ` +
+          `declare all with let, or remove the let for '${declared[0]}'.`
+        )
+      } else if (!flat) {
+        errors.push(
+          `'$: ${raw.slice(expr.left.start, expr.left.end)} = ...' cannot declare a rest element or a ` +
+          `computed key. Write one '$:' per name: '$: ${first} = ${rhs}.${first}'.`
+        )
+      } else {
+        const before = new Set(Object.keys(vars))
+        const rhsExpr = patternSource(expr.right, { kind: 'let', isWritableDerived: true }, node)
+        if (expandPattern(expr.left, rhsExpr, 'let', node)) {
+          for (const n of names) if (!before.has(n) && vars[n]) vars[n].isWritableDerived = true
+        }
+      }
+      return
+    }
+  }
+
+  // Anything else (call expression, assignment, template literal, etc.)
+  // is a $: auto-tracked side effect expression. Dependencies are detected
+  // from the reactive variables referenced in the expression body.
+  // The effect re-runs whenever any referenced reactive variable changes.
+  effects.push({
+    type: 'expression',
+    raw: raw.slice(body.start, body.end),
+    node: body,
+    debugName
+  })
+}
+
+/** Pass of analyzeScript: walks `ast.body` in source order, so a guard on one side sees what the other declared first. */
+function collectTopLevel(raw, ast, st, helpers, importedNameSet) {
+  for (const node of ast.body) {
+    if (node.type === 'LabeledStatement') collectReactiveLabel(node, raw, st, helpers, importedNameSet)
+    else collectDeclaration(node, raw, st, helpers)
+  }
+}
+
+/** Pass of analyzeScript: each var's raw references and the bindings that can move on their own. */
+function seedReactiveSet(ast, st) {
+  const { vars, watchPaths, watchHandlers, watchGroups, imports } = st
+
   // ── Pass 2: detect deps and async ──────────────────────────────────────────
   // Raw references first: the reactive set is a transitive closure over them, so
   // every var's refs have to exist before any membership question is answerable.
@@ -4326,6 +4358,11 @@ export function analyzeScript(raw, ast) {
     if (callsLocal(v.initNode, v.name)) { reactiveSet.add(v.name); opaqueLocalCall.add(v.name) }
   }
 
+  return { rawRefs, reactiveSet, opaqueLocalCall }
+}
+
+/** Pass of analyzeScript: the names a call's result was bound to. */
+function collectOpaqueValues(ast) {
   // Whether a name is PROMOTED and whether a binding over it is STATIC are two
   // decisions, and entangling them is what FJS-1070 was. `const list =
   // users.tethered()` is correctly not promoted — FJS-D212 keeps the initializer
@@ -4377,6 +4414,13 @@ export function analyzeScript(raw, ast) {
     for (const d of decl.declarations) if (yieldsCall(d.init)) bindNames(d.id, opaqueValues)
   }
 
+  return { opaqueValues, yieldsCall }
+}
+
+/** Pass of analyzeScript: promotes every var that reads a reactive one, then sets each var's deps. */
+function closeReactiveSet(st, rawRefs, reactiveSet, opaqueLocalCall) {
+  const { vars } = st
+
   // Closure: `const a = 1; const b = a; const c = b + page` promotes only `c`.
   for (let changed = true; changed;) {
     changed = false
@@ -4395,6 +4439,11 @@ export function analyzeScript(raw, ast) {
     // alone and its dependencies are whatever the memo tracks at runtime.
     v.isDerived = v.deps.length > 0 || opaqueLocalCall.has(v.name)
   }
+}
+
+/** Pass of analyzeScript: warns on a static const read through a call's handle. */
+function warnHandleReads(raw, ast, st, yieldsCall) {
+  const { vars, warnings } = st
 
   // A static `const` over a MEMBER of a call's handle is computed once, and the
   // handle's getters read signals: `const rows = [...list.rows]` under `const
@@ -4429,6 +4478,11 @@ export function analyzeScript(raw, ast) {
       `const { ${read.prop ?? '…'} } = ${call.length > 40 ? '…' : call} — when one read is meant.`
     )
   }
+}
+
+/** Pass of analyzeScript: refuses a const read in its own initializer. */
+function refuseSelfReads(st) {
+  const { vars, errors } = st
 
   // A `const` read in its own initializer, outside any function, is read
   // before it has a value — a TDZ throw when static and a memo computing from
@@ -4441,6 +4495,11 @@ export function analyzeScript(raw, ast) {
       `Read it inside a callback the initializer hands out, which runs once '${v.name}' exists.`
     )
   }
+}
+
+/** Pass of analyzeScript: refuses a `$:` assignment that reads a const declared below it. */
+function refuseDerivedBeforeDeclaration(st) {
+  const { vars, errors } = st
 
   // A `$: x = expr` computes expr where it is written, and a plain `const`
   // below it is still in its TDZ there. A derived const is read through a memo
@@ -4458,6 +4517,11 @@ export function analyzeScript(raw, ast) {
       )
     }
   }
+}
+
+/** Pass of analyzeScript: the reactive deps of each watch handler and group entry. */
+function annotateWatchDeps(st, reactiveSet) {
+  const { watchHandlers, watchGroups } = st
 
   // ── Pass 3: annotate handlers and effects ──────────────────────────────────
   // effects use createEffect which auto-tracks deps at runtime — no pre-annotation needed.
@@ -4469,6 +4533,11 @@ export function analyzeScript(raw, ast) {
       entry.reactiveDeps = entry.deps.filter((d) => reactiveSet.has(d.split('.')[0]))
     })
   })
+}
+
+/** Pass of analyzeScript: reports a circular dependency among vars. */
+function refuseCycles(st) {
+  const { vars, errors } = st
 
   // ── Pass 4: cycle detection ────────────────────────────────────────────────
   const reported = new Set()
@@ -4484,6 +4553,14 @@ export function analyzeScript(raw, ast) {
     visited.add(name)
     for (const dep of vars[name]?.deps || []) hasCycle(dep, new Set(visited), [...path, name])
   }
+
+  Object.keys(vars).forEach((n) => hasCycle(n))
+}
+
+/** Pass of analyzeScript: refuses `$context` inside a function. */
+function refuseContextInFunctions(ast, st) {
+  const { errors } = st
+
   // ── Pass 5: $context usage validation ────────────────────────────────────
   // $context.key = expr and let/const/var x = $context.key are only valid at
   // the top level of the script block. Usage inside functions is a compiler
@@ -4523,12 +4600,10 @@ export function analyzeScript(raw, ast) {
     }
   }
   ast.body.forEach(walkFnsForContext)
+}
 
-  Object.keys(vars).forEach((n) => hasCycle(n))
-
-  // `$` is one binding the author never owns (FJS-D132).
-  refuseDollarMisuse(ast)
-
+/** Pass of analyzeScript: refuses a top-level declaration of a reserved or builtin name. */
+function refuseReservedNames(ast) {
   // A top-level declaration naming something the compiler injects into the same
   // scope used to emit a duplicate binding and report nothing — see
   // BUILTIN_LOCALS. Walked off ast.body rather than `vars`, because `vars` does
@@ -4581,6 +4656,46 @@ export function analyzeScript(raw, ast) {
     else if (node.type === 'FunctionDeclaration') claim(node.id, 'function')
     else if (node.type === 'ClassDeclaration')    claim(node.id, 'class')
   }
+}
+
+export function analyzeScript(raw, ast) {
+  const vars = {}
+  const watchPaths = []
+  const watchHandlers = []
+  const watchGroups = []
+  const postCallHooks = []
+  const effects = []
+  const imports = []
+  const errors = []
+  const warnings = []
+  // Nodes that cannot be expanded (e.g. computed keys) — emitted verbatim.
+  const passthroughDeclStarts = new Set()
+  const contextProvides = []   // { key, initRaw, nodeStart }
+  const exportedMembers = []   // { name } — `export function` on the instance API
+  const st = {
+    vars, watchPaths, watchHandlers, watchGroups, postCallHooks, effects, imports,
+    errors, warnings, passthroughDeclStarts, contextProvides, exportedMembers
+  }
+
+  const importedNameSet = collectImportedNames(ast)
+  refuseNestedReactiveLabels(raw, ast)
+  const helpers = declarationHelpers(raw, st)
+  collectTopLevel(raw, ast, st, helpers, importedNameSet)
+
+  const { rawRefs, reactiveSet, opaqueLocalCall } = seedReactiveSet(ast, st)
+  const { opaqueValues, yieldsCall } = collectOpaqueValues(ast)
+  closeReactiveSet(st, rawRefs, reactiveSet, opaqueLocalCall)
+  warnHandleReads(raw, ast, st, yieldsCall)
+  refuseSelfReads(st)
+  refuseDerivedBeforeDeclaration(st)
+  annotateWatchDeps(st, reactiveSet)
+  refuseContextInFunctions(ast, st)
+  refuseCycles(st)
+
+  // `$` is one binding the author never owns (FJS-D132).
+  refuseDollarMisuse(ast)
+
+  refuseReservedNames(ast)
 
   return {
     vars,
@@ -8799,14 +8914,9 @@ function emitWatchGroups(ctx, requireWatchSig) {
   })
 }
 
-export function emitScript(ctx) {
-  const { vars, watchPaths, watchHandlers, watchGroups, imports } = ctx.analysis
-  const { module: mod, script } = ctx
-  const raw = script.source
-  const ast = script.ast
-
-  ctx.accessors = {} // varName  →  read expression (may include `()` call suffix)
-  ctx.setters = {} // varName  →  signal setter function name
+/** Phase of emitScript: implicit `$class` prop the template uses. */
+function declareImplicitClass(ctx) {
+  const { vars } = ctx.analysis
 
   // ── $class auto-declare ───────────────────────────────────────────────────
   // If the template uses $class (via bind:class, class shorthand, or explicit
@@ -8822,6 +8932,13 @@ export function emitScript(ctx) {
       }
     }
   }
+}
+
+/** Phase of emitScript: import passthrough. */
+function emitImports(ctx) {
+  const { module: mod, script } = ctx
+  const { imports } = ctx.analysis
+  const raw = script.source
 
   // ── 1. Imports (passthrough) ──────────────────────────────────────────────
   imports.forEach((node) => {
@@ -8830,6 +8947,11 @@ export function emitScript(ctx) {
     // reliably detect and strip/skip import lines.
     mod.top.push(xNode.raw(src.trimEnd().endsWith(';') ? src : src + ';'))
   })
+}
+
+/** Phase of emitScript: accessors for imports named in `config.externalSignals`. */
+function emitExternalSignals(ctx) {
+  const { imports } = ctx.analysis
 
   // ── 1.5. External signal accessors ───────────────────────────────────────
   // For named imports from modules listed in config.externalSignals, register
@@ -8871,10 +8993,11 @@ export function emitScript(ctx) {
       }
     }
   }
+}
 
-  _checkExternalReactivity(ctx, imports)
-  _checkUnreadDerived(ctx)
-  _checkDerivedAssigned(ctx)
+/** Phase of emitScript: which roots and paths need a watch proxy. */
+function planWatchProxies(ctx) {
+  const { vars, watchPaths, watchHandlers, watchGroups, imports } = ctx.analysis
 
   // ── 2. Watch proxies ──────────────────────────────────────────────────────
   // Two cases:
@@ -8981,38 +9104,53 @@ export function emitScript(ctx) {
     [...proxyRoots].filter((r) => !localProxyRoots.has(r) && !localVarRoots.has(r))
   )
 
+  return { importedNames, watchedPaths, localProxyRoots, localVarRoots, importProxyRoots }
+}
+
+/** Phase of emitScript: static proxies over imported stores. */
+function emitImportedWatchProxies(ctx, { importProxyRoots }) {
+  const { module: mod } = ctx
+
   // Imported store proxies — static, set up once
   importProxyRoots.forEach((root) => {
     mod.head.push(xNode.raw(`const $$proxy_${root} = $$runtime.watchProxy(${root});`))
     ctx.accessors[root] = `$$proxy_${root}`
   })
+}
+
+/** Phase of emitScript: warn on a path watch a whole-object watch subsumes. */
+function warnRedundantWatchPaths(ctx) {
+  const { watchPaths } = ctx.analysis
 
   // Warn about redundant path watches: if $: obj is declared alongside $: obj.prop,
   // the property watch is completely subsumed and can be removed.
   // Group declared paths by root and check for root+child conflicts.
-  {
-    const declaredByRoot = {}  // root → Set of dotPaths
-    watchPaths.forEach((p) => {
-      const norm = p.path.replace(/\?\./g, '.')
-      const dotIdx = norm.indexOf('.')
-      const root    = dotIdx >= 0 ? norm.slice(0, dotIdx) : norm
-      const dotPath = dotIdx >= 0 ? norm.slice(dotIdx + 1) : ''
-      if (!declaredByRoot[root]) declaredByRoot[root] = new Set()
-      declaredByRoot[root].add(dotPath)
-    })
-    for (const [root, paths] of Object.entries(declaredByRoot)) {
-      if (paths.has('')) {
-        // Whole-object watch declared. Any specific dotPath is redundant.
-        const redundant = [...paths].filter(p => p !== '')
-        redundant.forEach(dotPath => {
-          ctx.analysis.warnings.push(
-            `'$: ${root}.${dotPath}' is redundant because '$: ${root}' already watches the entire object. ` +
-            `Remove '$: ${root}.${dotPath}'.`
-          )
-        })
-      }
+  const declaredByRoot = {}  // root → Set of dotPaths
+  watchPaths.forEach((p) => {
+    const norm = p.path.replace(/\?\./g, '.')
+    const dotIdx = norm.indexOf('.')
+    const root    = dotIdx >= 0 ? norm.slice(0, dotIdx) : norm
+    const dotPath = dotIdx >= 0 ? norm.slice(dotIdx + 1) : ''
+    if (!declaredByRoot[root]) declaredByRoot[root] = new Set()
+    declaredByRoot[root].add(dotPath)
+  })
+  for (const [root, paths] of Object.entries(declaredByRoot)) {
+    if (paths.has('')) {
+      // Whole-object watch declared. Any specific dotPath is redundant.
+      const redundant = [...paths].filter(p => p !== '')
+      redundant.forEach(dotPath => {
+        ctx.analysis.warnings.push(
+          `'$: ${root}.${dotPath}' is redundant because '$: ${root}' already watches the entire object. ` +
+          `Remove '$: ${root}.${dotPath}'.`
+        )
+      })
     }
   }
+}
+
+/** Phase of emitScript: one `watchPath` signal per watched path on an imported store. */
+function emitWatchPathSignals(ctx, { importProxyRoots, watchedPaths }) {
+  const { module: mod } = ctx
 
   // Every `$$watch_*` this component declares, in the one spelling both
   // emitters build by hand. A reference to a name absent from this set is a
@@ -9067,6 +9205,16 @@ export function emitScript(ctx) {
     )
   }
 
+  return { requireWatchSig, watchSigVars }
+}
+
+/** Phase of emitScript: the callee set that follows watches (`$$watches`). */
+function emitWatchedCalls(ctx, importedNames, watchSigVars) {
+  const { vars } = ctx.analysis
+  const { module: mod } = ctx
+  const ast = ctx.script.ast
+
+
   // The calls that follow these watches (`FJS-D404`, `WATCHED_CALLS`): every
   // imported name, and every local function whose body reaches one, since
   // moving `money(r.total)` into a helper must not change what re-runs.
@@ -9109,6 +9257,11 @@ export function emitScript(ctx) {
     watchedCalls = { callees }
   }
 
+  return watchedCalls
+}
+
+/** Phase of emitScript: path metadata for local `let` and `const` roots. */
+function collectLocalProxyPaths(ctx, { watchedPaths, localProxyRoots, localVarRoots }) {
   // For local let roots: register path metadata so step 5 can emit re-proxy logic
   // after the signal is created.
   const localProxyPaths = {}   // root → [{ dotPath, sigVar }]
@@ -9142,55 +9295,61 @@ export function emitScript(ctx) {
   ctx.localProxyPaths = localProxyPaths
   // Expose localVarProxyPaths on ctx so step 5 can emit proxy setup after const/var decls
   ctx.localVarProxyPaths = localVarProxyPaths
+}
 
-  // A signal-backed root with `$:` path watches — a local `let` or a prop.
-  const emitLocalWatchProxy = (v, sigR, out) => {
-    // Option B — local let with $: path watches.
-    // Create standalone signals per path (keyed to variable, not object).
-    // localWatchProxy calls readFn() on property access (subscribing the
-    // current effect) and fireFn() on mutation (notifying subscribers).
-    // When the signal is replaced, re-proxy the new object with the SAME
-    // signal pairs so existing subscriptions stay live.
-    const paths = ctx.localProxyPaths?.[v.name]
-    if (!paths?.length) return
-    // Standalone signal per watched path — always-notify equality
-    const pathDecls = paths.map(({ sigVar, dotPath }) =>
-      `const ${sigVar} = $$runtime.track(undefined, void 0, void 0, true);\nconst $fire_${v.name}_${sigVar} = () => $$runtime.set(${sigVar}, undefined);`
-    ).join('\n')
-    out.push(xNode.raw(pathDecls))
+/** A signal-backed root with `$:` path watches — a local `let` or a prop. */
+function emitLocalWatchProxy(ctx, v, sigR, out) {
+  // Option B — local let with $: path watches.
+  // Create standalone signals per path (keyed to variable, not object).
+  // localWatchProxy calls readFn() on property access (subscribing the
+  // current effect) and fireFn() on mutation (notifying subscribers).
+  // When the signal is replaced, re-proxy the new object with the SAME
+  // signal pairs so existing subscriptions stay live.
+  const paths = ctx.localProxyPaths?.[v.name]
+  if (!paths?.length) return
+  // Standalone signal per watched path — always-notify equality
+  const pathDecls = paths.map(({ sigVar, dotPath }) =>
+    `const ${sigVar} = $$runtime.track(undefined, void 0, void 0, true);\nconst $fire_${v.name}_${sigVar} = () => $$runtime.set(${sigVar}, undefined);`
+  ).join('\n')
+  out.push(xNode.raw(pathDecls))
 
-    // signalMap: dotPath → [readFn, fireFn]
-    const signalMapEntries = paths.map(({ sigVar, dotPath }) =>
-      `'${dotPath}': [${sigVar}, $fire_${v.name}_${sigVar}]`
-    ).join(', ')
+  // signalMap: dotPath → [readFn, fireFn]
+  const signalMapEntries = paths.map(({ sigVar, dotPath }) =>
+    `'${dotPath}': [${sigVar}, $fire_${v.name}_${sigVar}]`
+  ).join(', ')
 
-    // A memo, not a `let` an effect reassigns: a read of the bare name — a prop
-    // pushed to a child, `{draft}` — touches no path signal, so under a `let`
-    // it subscribed to nothing and kept the object from before a reassignment.
-    // The child then wrote that stale object back through `bind:` (`FJS-2093`).
-    out.push(xNode.raw(
-      `const $$proxy_${v.name} = $$runtime.createMemo(() => $$runtime.localWatchProxy($$runtime.get(${sigR}), { ${signalMapEntries} }));`
-    ))
-    ctx.accessors[v.name] = `$$proxy_${v.name}()`
+  // A memo, not a `let` an effect reassigns: a read of the bare name — a prop
+  // pushed to a child, `{draft}` — touches no path signal, so under a `let`
+  // it subscribed to nothing and kept the object from before a reassignment.
+  // The child then wrote that stale object back through `bind:` (`FJS-2093`).
+  out.push(xNode.raw(
+    `const $$proxy_${v.name} = $$runtime.createMemo(() => $$runtime.localWatchProxy($$runtime.get(${sigR}), { ${signalMapEntries} }));`
+  ))
+  ctx.accessors[v.name] = `$$proxy_${v.name}()`
 
-    // Register the whole-object fire fn so rewriteAssignments can rewrite
-    // self-assignments (`connectedArr = connectedArr`) inside watch+handler
-    // bodies and regular functions the same way.
-    const wholePath = paths.find(({ dotPath }) => dotPath === '')
-    if (wholePath) {
-      ctx.proxyFireFns = ctx.proxyFireFns || {}
-      ctx.proxyFireFns[v.name] = `$fire_${v.name}_${wholePath.sigVar}`
-    }
-
-    // A reassignment is a change at every watched path. A watch group holds the
-    // path signal alone and reads no proxy, so it hears it only from here.
-    const fireCalls = paths.map(({ sigVar }) =>
-      `$fire_${v.name}_${sigVar}();`
-    ).join(' ')
-    out.push(xNode.raw(
-      `$$runtime.createEffect(() => { $$proxy_${v.name}(); ${fireCalls} });`
-    ))
+  // Register the whole-object fire fn so rewriteAssignments can rewrite
+  // self-assignments (`connectedArr = connectedArr`) inside watch+handler
+  // bodies and regular functions the same way.
+  const wholePath = paths.find(({ dotPath }) => dotPath === '')
+  if (wholePath) {
+    ctx.proxyFireFns = ctx.proxyFireFns || {}
+    ctx.proxyFireFns[v.name] = `$fire_${v.name}_${wholePath.sigVar}`
   }
+
+  // A reassignment is a change at every watched path. A watch group holds the
+  // path signal alone and reads no proxy, so it hears it only from here.
+  const fireCalls = paths.map(({ sigVar }) =>
+    `$fire_${v.name}_${sigVar}();`
+  ).join(' ')
+  out.push(xNode.raw(
+    `$$runtime.createEffect(() => { $$proxy_${v.name}(); ${fireCalls} });`
+  ))
+}
+
+/** Phase of emitScript: props: `export let`, `export const`, `export var`. */
+function emitProps(ctx) {
+  const { vars } = ctx.analysis
+  const { module: mod } = ctx
 
   // ── 3. Props (export let) — reactive, two-way bindable ────────────────────
   // Props are declared in mod.head so they're available for dependency sorting.
@@ -9252,7 +9411,7 @@ export function emitScript(ctx) {
     }
     ctx.accessors[v.name] = `$$runtime.get(${sigR})`
     ctx.setters[v.name] = sigW
-    emitLocalWatchProxy(v, sigR, mod.head)
+    emitLocalWatchProxy(ctx, v, sigR, mod.head)
   })
 
   // export const props — what `export let` compiles to, minus the setter
@@ -9295,7 +9454,7 @@ export function emitScript(ctx) {
       mod.head.push(xNode.raw(`$$runtime.__dev?.r(${sigR}, '${v.name}', 'prop');`))
     }
     ctx.accessors[v.name] = `$$runtime.get(${sigR})`
-    emitLocalWatchProxy(v, sigR, mod.head)
+    emitLocalWatchProxy(ctx, v, sigR, mod.head)
   })
   declareReadonlyProps(ctx.accessors, constProps.map((v) => v.name))
 
@@ -9321,6 +9480,14 @@ export function emitScript(ctx) {
       }
     })
 
+  return deferredPropDefaults
+}
+
+/** Phase of emitScript: the `$$async` container and per-function call state. */
+function emitAsyncContainer(ctx) {
+  const { vars } = ctx.analysis
+  const { module: mod } = ctx
+
   // ── 4. $$async container ───────────────────────────────────────────────────
   const asyncVars = Object.values(vars).filter((v) => v.isAsync)
   const asyncFns = ctx.analysis.asyncFns || new Map()
@@ -9339,6 +9506,14 @@ export function emitScript(ctx) {
       mod.code.push(xNode.raw(`$$async.${name} = $$async_${name};`))
     }
   }
+
+  return asyncFns
+}
+
+/** Phase of emitScript: declarations sorted into emit order. */
+function sortDeclarations(ctx) {
+  const { vars } = ctx.analysis
+  const ast = ctx.script.ast
 
   // ── 5. Variables (topologically sorted, props already emitted) ────────────
   //
@@ -9390,6 +9565,15 @@ export function emitScript(ctx) {
       seen.add(entry.name)
     }
   }
+
+  return { sorted, classEdges, emittedClassStarts }
+}
+
+/** Phase of emitScript: each declaration buffered as its own bucket of code. */
+function emitDeclarations(ctx, sorted, watchedCalls) {
+  const { vars } = ctx.analysis
+  const { module: mod, script } = ctx
+  const raw = script.source
 
   // Each declaration's code is BUFFERED rather than pushed, so it can be placed
   // at the position the author wrote it (`FJS-846`). The loop itself still runs
@@ -9593,7 +9777,7 @@ export function emitScript(ctx) {
       ctx.accessors[v.name] = `$$runtime.get(${sigR})`
       ctx.setters[v.name] = sigW
 
-      emitLocalWatchProxy(v, sigR, mod.code)
+      emitLocalWatchProxy(ctx, v, sigR, mod.code)
     }
     } finally {
       // Both in the `finally`: the class branch RETURNS out of the try, so a
@@ -9602,6 +9786,15 @@ export function emitScript(ctx) {
       declBuckets.set(v, _bucket)
     }
   })
+
+  return declBuckets
+}
+
+/** Phase of emitScript: declarations placed at source position, then the remaining statements. */
+function emitStatements(ctx, { sorted, classEdges, emittedClassStarts, declBuckets, asyncFns }) {
+  const { module: mod, script } = ctx
+  const raw = script.source
+  const ast = script.ast
 
   /**
    * Flush a declaration's buffered code, and whatever it needs, first.
@@ -9778,14 +9971,11 @@ export function emitScript(ctx) {
       mod.code.push(xNode.raw(rewritten))
     }
   }
+}
 
-
-  emitDeferredPropDefaults(ctx, deferredPropDefaults)
-  emitContextProvides(ctx)
-  emitEffects(ctx)
-  emitWatchHandlers(ctx, requireWatchSig)
-  emitPostCallHooks(ctx)
-  emitWatchGroups(ctx, requireWatchSig)
+/** Phase of emitScript: the instance API `bind:this` hands the parent. */
+function emitInstanceApi(ctx) {
+  const { module: mod } = ctx
 
   // ── The instance API — what `bind:this` on this component hands the parent ──
   // Exported props are already in the prop registry (makeExternalProperty), so
@@ -9796,6 +9986,42 @@ export function emitScript(ctx) {
     const entries = exportedMembers.map(m => m.name).join(', ')
     mod.code.push(xNode.raw(`$$runtime.registerExports({ ${entries} });`))
   }
+}
+
+export function emitScript(ctx) {
+  const { imports } = ctx.analysis
+
+  ctx.accessors = {} // varName  →  read expression (may include `()` call suffix)
+  ctx.setters = {} // varName  →  signal setter function name
+
+  declareImplicitClass(ctx)
+  emitImports(ctx)
+  emitExternalSignals(ctx)
+
+  _checkExternalReactivity(ctx, imports)
+  _checkUnreadDerived(ctx)
+  _checkDerivedAssigned(ctx)
+
+  const watch = planWatchProxies(ctx)
+  emitImportedWatchProxies(ctx, watch)
+  warnRedundantWatchPaths(ctx)
+  const { requireWatchSig, watchSigVars } = emitWatchPathSignals(ctx, watch)
+  const watchedCalls = emitWatchedCalls(ctx, watch.importedNames, watchSigVars)
+  collectLocalProxyPaths(ctx, watch)
+
+  const deferredPropDefaults = emitProps(ctx)
+  const asyncFns = emitAsyncContainer(ctx)
+  const { sorted, classEdges, emittedClassStarts } = sortDeclarations(ctx)
+  const declBuckets = emitDeclarations(ctx, sorted, watchedCalls)
+  emitStatements(ctx, { sorted, classEdges, emittedClassStarts, declBuckets, asyncFns })
+
+  emitDeferredPropDefaults(ctx, deferredPropDefaults)
+  emitContextProvides(ctx)
+  emitEffects(ctx)
+  emitWatchHandlers(ctx, requireWatchSig)
+  emitPostCallHooks(ctx)
+  emitWatchGroups(ctx, requireWatchSig)
+  emitInstanceApi(ctx)
 
   // The template is compiled after this, against the same map.
   if (watchedCalls) ctx.accessors[WATCHED_CALLS] = watchedCalls
@@ -10373,7 +10599,73 @@ function stripFrontmatter(source) {
   return { body: '\n'.repeat(blanks) + source.slice(match[0].length), frontmatter: fm }
 }
 
-export async function compile(source, config = {}) {
+function safeComponentIdent(name, ctx) {
+  // A JS identifier may not START with a digit, and the character sweep that
+  // produced `name` allows digits — every one of them is legal further along.
+  // So `404.mesa` came through untouched and emitted
+  // `export default function 404(__anchor, …)`, which the compiler reported
+  // as fine and esbuild refused with six parse errors about a file nobody
+  // wrote. That is Invariant 15's exact shape, and `404.mesa` is the ordinary
+  // name for a static site's not-found page rather than an odd one.
+  if (/^[0-9]/.test(name)) name = `_${name}`
+  if (!RESERVED_WORDS.has(name) && !moduleScopeNames(ctx).has(name)) return name
+  // Deterministic, and still legible in a stack trace: `new` → `new_Component`.
+  let candidate = `${name}_Component`
+  let n = 2
+  while (RESERVED_WORDS.has(candidate) || moduleScopeNames(ctx).has(candidate)) {
+    candidate = `${name}_Component${n++}`
+  }
+  return candidate
+}
+
+/**
+ * Top-level bindings the emitted module already has, so the component
+ * function can avoid them: everything <script module> declares, and the
+ * instance script's IMPORTS — hoisted to module scope, so a tree importing
+ * its own file (FJS-1751) or Form.mesa importing the kit's Form (FJS-2018)
+ * redeclared the component and failed only at `vite build`. The instance
+ * script's other declarations live inside the component function.
+ */
+function moduleScopeNames(ctx) {
+  if (ctx._moduleScopeNames) return ctx._moduleScopeNames
+  const names = new Set()
+  for (const imp of ctx.analysis?.imports ?? []) {
+    for (const sp of imp.specifiers ?? []) if (sp.local?.name) names.add(sp.local.name)
+  }
+  const src = ctx.scriptModuleNodes?.[0]?.content
+  if (src) {
+    let ast
+    try {
+      ast = acorn.parse(src, { sourceType: 'module', ecmaVersion: 'latest' })
+    } catch {
+      ast = null            // a module script that will not parse is reported elsewhere
+    }
+    for (const node of ast?.body ?? []) {
+      const collect = (d) => {
+        if (!d) return
+        if (d.type === 'Identifier') names.add(d.name)
+        else if (d.type === 'ObjectPattern') d.properties.forEach(p => collect(p.value ?? p.argument))
+        else if (d.type === 'ArrayPattern') d.elements.forEach(collect)
+        else if (d.type === 'AssignmentPattern') collect(d.left)
+        else if (d.type === 'RestElement') collect(d.argument)
+      }
+      if (node.type === 'VariableDeclaration') node.declarations.forEach(d => collect(d.id))
+      else if (node.type === 'FunctionDeclaration' || node.type === 'ClassDeclaration') collect(node.id)
+      else if (node.type === 'ImportDeclaration') node.specifiers.forEach(s => collect(s.local))
+      else if (node.type === 'ExportNamedDeclaration') {
+        const d = node.declaration
+        if (d?.type === 'VariableDeclaration') d.declarations.forEach(x => collect(x.id))
+        else if (d) collect(d.id)
+        node.specifiers?.forEach(s => collect(s.exported))
+      }
+    }
+  }
+  ctx._moduleScopeNames = names
+  return names
+}
+
+/** Stage of compile: strips frontmatter, merges the defaults into config and builds the compile context. */
+function createCompileContext(source, config) {
   // Strip before anything reads `source`: the parser would otherwise emit the
   // block as a static text node — `--- title: Catalog render: static ---`
   // rendered at the top of the page — which is what a prerendered Sierra route
@@ -10529,12 +10821,12 @@ export async function compile(source, config = {}) {
     result: null
   }
 
-  const hook = async (name) => {
-    for (const plugin of config.plugins) {
-      const fn = plugin[name]
-      if (fn) await use_context(ctx, () => fn.call(ctx, ctx))
-    }
-  }
+  return ctx
+}
+
+/** Stage of compile: parses the HTML into `ctx.DOM`, placing a parse error in the file. */
+async function parseTemplate(ctx, hook) {
+  const { source } = ctx
 
   // ── Parse HTML ────────────────────────────────────────────────────────────
   await hook('dom:before')
@@ -10554,73 +10846,10 @@ export async function compile(source, config = {}) {
     }
   })
   await hook('dom')
+}
 
-  // eslint-disable-next-line no-inner-declarations
-  function safeComponentIdent(name, ctx) {
-    // A JS identifier may not START with a digit, and the character sweep that
-    // produced `name` allows digits — every one of them is legal further along.
-    // So `404.mesa` came through untouched and emitted
-    // `export default function 404(__anchor, …)`, which the compiler reported
-    // as fine and esbuild refused with six parse errors about a file nobody
-    // wrote. That is Invariant 15's exact shape, and `404.mesa` is the ordinary
-    // name for a static site's not-found page rather than an odd one.
-    if (/^[0-9]/.test(name)) name = `_${name}`
-    if (!RESERVED_WORDS.has(name) && !moduleScopeNames(ctx).has(name)) return name
-    // Deterministic, and still legible in a stack trace: `new` → `new_Component`.
-    let candidate = `${name}_Component`
-    let n = 2
-    while (RESERVED_WORDS.has(candidate) || moduleScopeNames(ctx).has(candidate)) {
-      candidate = `${name}_Component${n++}`
-    }
-    return candidate
-  }
-
-  /**
-   * Top-level bindings the emitted module already has, so the component
-   * function can avoid them: everything <script module> declares, and the
-   * instance script's IMPORTS — hoisted to module scope, so a tree importing
-   * its own file (FJS-1751) or Form.mesa importing the kit's Form (FJS-2018)
-   * redeclared the component and failed only at `vite build`. The instance
-   * script's other declarations live inside the component function.
-   */
-  function moduleScopeNames(ctx) {
-    if (ctx._moduleScopeNames) return ctx._moduleScopeNames
-    const names = new Set()
-    for (const imp of ctx.analysis?.imports ?? []) {
-      for (const sp of imp.specifiers ?? []) if (sp.local?.name) names.add(sp.local.name)
-    }
-    const src = ctx.scriptModuleNodes?.[0]?.content
-    if (src) {
-      let ast
-      try {
-        ast = acorn.parse(src, { sourceType: 'module', ecmaVersion: 'latest' })
-      } catch {
-        ast = null            // a module script that will not parse is reported elsewhere
-      }
-      for (const node of ast?.body ?? []) {
-        const collect = (d) => {
-          if (!d) return
-          if (d.type === 'Identifier') names.add(d.name)
-          else if (d.type === 'ObjectPattern') d.properties.forEach(p => collect(p.value ?? p.argument))
-          else if (d.type === 'ArrayPattern') d.elements.forEach(collect)
-          else if (d.type === 'AssignmentPattern') collect(d.left)
-          else if (d.type === 'RestElement') collect(d.argument)
-        }
-        if (node.type === 'VariableDeclaration') node.declarations.forEach(d => collect(d.id))
-        else if (node.type === 'FunctionDeclaration' || node.type === 'ClassDeclaration') collect(node.id)
-        else if (node.type === 'ImportDeclaration') node.specifiers.forEach(s => collect(s.local))
-        else if (node.type === 'ExportNamedDeclaration') {
-          const d = node.declaration
-          if (d?.type === 'VariableDeclaration') d.declarations.forEach(x => collect(x.id))
-          else if (d) collect(d.id)
-          node.specifiers?.forEach(s => collect(s.exported))
-        }
-      }
-    }
-    ctx._moduleScopeNames = names
-    return names
-  }
-
+/** Stage of compile: splits the top-level script, module-script and style nodes out of the DOM and refuses what a block may not hold. */
+function collectBlocks(ctx) {
   ctx.scriptNodes = []
   ctx.scriptModuleNodes = []
   ctx.styleNodes = []
@@ -10703,12 +10932,24 @@ export async function compile(source, config = {}) {
       }
     }
   }
+}
+
+/** Stage of compile: compacts the DOM and lowers its slots; returns the slot reads. */
+async function lowerTemplateSlots(ctx, hook) {
+  const { config } = ctx
 
   await hook('dom:after')
 
   if (config.compact) compactDOM(ctx.DOM, config.compact === 'full')
   const { reads: slotReads, renders: slotRenders } = lowerSlots(ctx, ctx.DOM.body)
   ctx.slotRenders = slotRenders
+
+  return slotReads
+}
+
+/** Stage of compile: rewrites and parses the script, then records its root variables and functions. */
+async function parseScript(ctx, hook, slotReads) {
+  const { source } = ctx
 
   // ── Parse + analyze script ────────────────────────────────────────────────
   await hook('js:before')
@@ -10827,6 +11068,13 @@ export async function compile(source, config = {}) {
       })
   })
 
+  return { rawScript, scriptAST, scriptParseError, _scriptStart, _scriptEdits }
+}
+
+/** Stage of compile: analyzes the script and gathers every diagnostic found before the template build. */
+function runAnalysis(ctx, script) {
+  const { rawScript, scriptAST, scriptParseError, _scriptStart, _scriptEdits } = script
+
   ctx.analysis = analyzeScript(rawScript, scriptAST)
   // A script diagnostic may carry the offset it happened at. Only here are the
   // filename and the script's own start in scope, so the offset becomes a
@@ -10893,6 +11141,11 @@ export async function compile(source, config = {}) {
     }
   }
   _warnNestedBlock(ctx.DOM.body)
+}
+
+/** Stage of compile: requires the runtime pieces the script and template reach for through `$`. */
+function requireRuntimeFeatures(ctx, rawScript, scriptAST) {
+  const { source } = ctx
 
   // One spelling now, so one rule: a member is in use when the door is reached
   // for it. The five animation helpers used to be a hand-listed OR chain of
@@ -10956,6 +11209,11 @@ export async function compile(source, config = {}) {
       ctx.require('$context')
     }
   }
+}
+
+/** Stage of compile: refuses an `$async.<name>` read that names no async state and records the async functions. */
+function checkAsyncStateReads(ctx, scriptAST) {
+  const { source } = ctx
 
   // RULE 16: `$async.<name>` exists for an awaited top-level `const` and for a
   // top-level `async function`, and for nothing else. A read of any other name
@@ -10994,9 +11252,10 @@ export async function compile(source, config = {}) {
     }
     ctx.analysis.asyncFns = asyncFns
   }
+}
 
-  await hook('js:after')
-
+/** Stage of compile: marks a static component and collects the island components. */
+function detectStaticAndIslands(ctx) {
   // ── Detect static component ───────────────────────────────────────────────
   // A component is static when it has no reactive state, no event handlers,
   // no watch/effects, no context, and no async derivations.
@@ -11055,11 +11314,17 @@ export async function compile(source, config = {}) {
       walkForIslands(n.body)
     }
   })(ctx.DOM?.body)
+}
 
+/** Stage of compile: extracts and processes the component CSS. */
+function processStyles(ctx) {
   // ── Process CSS ───────────────────────────────────────────────────────────
   use_context(ctx, () => processCSS(ctx))
   if (ctx.css.active()) ctx.css.process()
+}
 
+/** Stage of compile: emits the instance script and its transforms. */
+function emitInstanceScript(ctx) {
   // ── Emit script ───────────────────────────────────────────────────────────
   // Must run BEFORE buildRuntime so ctx.accessors/setters are available when
   // buildBlock processes template expressions.
@@ -11067,11 +11332,19 @@ export async function compile(source, config = {}) {
     emitScript(ctx)
     emitTransforms(ctx)
   })
+}
 
+/** Stage of compile: lowers the template to the IR. */
+function lowerTemplate(ctx) {
   // ── Lower the template to the IR ─────────────────────────────────────────
   // Every target, every compile: a node with no lowering is named in the tree
   // rather than dropped, which is what a portability report reads.
   use_context(ctx, () => { ctx.ir = lower(ctx) })
+}
+
+/** Stage of compile: builds the template block for the target. */
+async function buildTemplate(ctx, hook) {
+  const { config } = ctx
 
   // ── Build runtime (the template block, per target) ────────────────────────
   await hook('runtime:before')
@@ -11092,6 +11365,11 @@ export async function compile(source, config = {}) {
     buildHost(ctx, target)
   })
   await hook('runtime')
+}
+
+/** Stage of compile: assembles the module text into `ctx.result`. */
+async function assembleOutput(ctx, hook) {
+  const { config } = ctx
 
   // ── Assemble output ───────────────────────────────────────────────────────
   await hook('build:before')
@@ -11193,7 +11471,10 @@ export async function compile(source, config = {}) {
   if (!config.sourceMarks) ctx.result = stripSourceMarks(ctx.result)
 
   await hook('build')
+}
 
+/** Stage of compile: reports the collected errors and warnings once, last. */
+function reportAnalysis(ctx) {
   // Report ONCE, and last. This loop used to run immediately after
   // `analyzeScript`, which is before `parseHTML`'s own errors were merged and
   // before the template build has run at all — so `{@attach}` in text content,
@@ -11223,6 +11504,35 @@ export async function compile(source, config = {}) {
 
   ctx.analysis.errors.forEach((e) => ctx.warning({ message: e }))
   ctx.analysis.warnings.forEach((w) => ctx.warning({ message: `Warning: ${w}` }))
+}
+
+export async function compile(source, config = {}) {
+  const ctx = createCompileContext(source, config)
+
+  const hook = async (name) => {
+    for (const plugin of ctx.config.plugins) {
+      const fn = plugin[name]
+      if (fn) await use_context(ctx, () => fn.call(ctx, ctx))
+    }
+  }
+
+  await parseTemplate(ctx, hook)
+  collectBlocks(ctx)
+  const slotReads = await lowerTemplateSlots(ctx, hook)
+
+  const script = await parseScript(ctx, hook, slotReads)
+  runAnalysis(ctx, script)
+  requireRuntimeFeatures(ctx, script.rawScript, script.scriptAST)
+  checkAsyncStateReads(ctx, script.scriptAST)
+  await hook('js:after')
+
+  detectStaticAndIslands(ctx)
+  processStyles(ctx)
+  emitInstanceScript(ctx)
+  lowerTemplate(ctx)
+  await buildTemplate(ctx, hook)
+  await assembleOutput(ctx, hook)
+  reportAnalysis(ctx)
 
   return ctx
 }

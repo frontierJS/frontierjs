@@ -12,7 +12,7 @@
 // finds `running` set and leaves.
 
 import { defineJob }           from '@frontierjs/caravan'
-import { runsAsApp }           from './context.ts'
+import { runsAsApp }           from '../domain/job/job-context.ts'
 import { localMachineRefusal } from '../core/env.ts'
 import { indexClaude }         from '../domain/claude/claude-index.ts'
 

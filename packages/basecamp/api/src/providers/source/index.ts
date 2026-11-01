@@ -2,14 +2,14 @@
 // Writing to a FORGE — the boundary, and who speaks it.
 //
 // The edge pattern, for the reason `FJS-D1571` gives: a GitHub token is a
-// workspace ACCOUNT, a `Secret` of kind `provider_key`, registered as the
+// workspace ACCOUNT, a `Secret` of kind `providerKey`, registered as the
 // conduit target `provider:<kind>:<accountId>` by `compute/accounts.ts`. What
 // lives here is what a target cannot carry — the two things an App's
 // repository is told at connect, the one file read from it, and what the
 // forge's answer means.
 //
 // The token is used at setup and to read a file a person asks for, never on
-// a release: a push arrives on the webhook's HMAC (`plugins/push.ts`) and the
+// a release: a push arrives on the webhook's HMAC (`plugins/git-push.ts`) and the
 // machine clones with the deploy key, so a revoked token is found at the next
 // connect or read, never at a push. A write goes through `sendVia` and so
 // meets its guard: a process pointed at the real forge by mistake rewrites a

@@ -138,7 +138,7 @@ Counts are `rg` over `IDEAS/`, the root registers, `packages/*/src`,
 | --- | --- | --- | --- |
 | **moving between pages** | sierra's router: `src/routes/`, `_module.mesa` layouts, `beforeNavigate` / `afterNavigate`, prefetch, `isActive`; auth's allow-listed `returnTo` after sign-in | sierra, auth | yes |
 | **a row's progress** | `<Steps steps={orders.fields.status.enum…} currentStep={order.status}>` in `example`'s order and subscription screens | `@@transitions` / the status enum, rendered by `@frontierjs/ui`'s `Steps` | yes |
-| **a setup checklist** | basecamp `/onboarding/`: six checks, each a count `infra.onboarding` reads fresh. **No model, by ruling** (`docs/SCREENS.md`, 2026-08-25): a stored `done` is a second answer that goes stale when the server it recorded is deleted | a service method returning a projection | yes |
+| **a setup checklist** | basecamp `/onboarding/`: six checks, each a count `infra.onboarding` reads fresh. **No model, by ruling** (`docs/screens.md`, 2026-08-25): a stored `done` is a second answer that goes stale when the server it recorded is deleted | a service method returning a projection | yes |
 | **a wizard** | ELA's `/intake/`: five panes, `let step`, a hand-written `order` array, `<Steps>`, one submit. SSTime folded its reference's six-step wizard into one form (`MissedShift.mesa`); basecamp folded the mock's `CreateProjectWizard` into one page | screen-local state. `FJS-D390`: no statechart until a screen's booleans cause a defect | ad hoc |
 | **a goal across pages** | *set up a server* = provision → enroll Outpost → attach a network → deploy (§ Where it gets hard) | none | no |
 

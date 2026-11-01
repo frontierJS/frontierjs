@@ -1,5 +1,5 @@
 <script>
-  // job_history — scheduled and one-shot jobs, with the outcome of their last
+  // jobHistory — scheduled and one-shot jobs, with the outcome of their last
   // run.
   //
   // `Job.lastRunAt` / `lastRunStatus` are columns the job run stamps, so this

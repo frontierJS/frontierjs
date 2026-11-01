@@ -117,9 +117,16 @@ function samAt(at, home) {
     if (!cells) return false
     for (let i = 1; i < cells.length; i++) {
       const a = cells[i - 1], b = cells[i]
-      term.shell.stdin.write(KEY[`${b.x - a.x},${b.y - a.y}`])
       const last = i === cells.length - 1
-      if (!await until(() => (last && arrived ? arrived() : cell(b.x, b.y, stage) === '@'), 3000)) return false
+      const there = () => (last && arrived ? arrived() : cell(b.x, b.y, stage) === '@')
+      // A firefly resting on the next cell refuses the step (`stepTo`), and the clock runs on, so the key is sent again while he is still on `a`.
+      let moved = false
+      for (let tries = 0; tries < 8 && !moved; tries++) {
+        term.shell.stdin.write(KEY[`${b.x - a.x},${b.y - a.y}`])
+        moved = await until(() => there() || cell(a.x, a.y, stage) !== '@', 700)
+        if (moved && !there()) moved = await until(there, 3000)
+      }
+      if (!moved) return false
     }
     return true
   }

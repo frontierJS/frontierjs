@@ -1,5 +1,5 @@
 <script>
-  // app_status — one app: what it is doing and what was last released to it.
+  // appStatus — one app: what it is doing and what was last released to it.
   //
   // `apps.get` already answers the app with its recent deployments, so this is
   // one request rather than two. What the mock also draws — uptime, CPU, a

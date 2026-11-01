@@ -17,7 +17,7 @@
 
 import { occurrenceKey }                  from '@frontierjs/toolbelt/history'
 import { employedAt, payAsAtMany, lastDayOf } from './employment.ts'
-import { allRatesAsAt }                   from './payrates.ts'
+import { allRatesAsAt }                   from './pay-rates.ts'
 import { postJournal }                    from '../ledger.ts'
 import { arrearsFor }                     from './arrears.ts'
 import { draftPayslip, withArrears, assertPayslipAddsUp } from './payslip.ts'

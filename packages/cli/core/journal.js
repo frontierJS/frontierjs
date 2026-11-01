@@ -40,7 +40,7 @@
  * A resumed transition replays rows an earlier version wrote, so a reader has to
  * be able to ask what wrote them before it parses any of them.
  */
-export const JOURNAL_FORMAT = 4
+export const JOURNAL_FORMAT = 5
 
 /**
  * The table names the DDL emits.
@@ -252,6 +252,13 @@ const MIGRATIONS = {
   3: ({ machine }) => [
     { name: 'host', sql: `UPDATE "${TABLE.journal}" SET "host" = ? WHERE "id" = 'journal'`, params: [machine] },
   ],
+  // Two Booleans renamed to is*/has* (`FJS-D1763`). Ordinary RENAME COLUMNs on
+  // tables the DDL leaves alone; the migration oracle holds a migrated journal
+  // and a fresh one to the same text.
+  4: () => [
+    { name: 'declared', sql: `ALTER TABLE "release" RENAME COLUMN "pivotDeclared" TO "isPivotDeclared"`, params: [] },
+    { name: 'crossing', sql: `ALTER TABLE "${TABLE.transition}" RENAME COLUMN "crossesPivot" TO "isCrossingPivot"`, params: [] },
+  ],
 }
 
 /**
@@ -351,7 +358,7 @@ export function readLiveTransition({ kind = 'deploy', app, environment } = {}) {
     name: 'live',
     sql: `SELECT t.*, r."digest" AS "r_digest", r."imageRef" AS "r_imageRef",
                  r."configurationHash" AS "r_configurationHash", r."schemaHash" AS "r_schemaHash",
-                 r."pivot" AS "r_pivot", r."pivotDeclared" AS "r_pivotDeclared",
+                 r."pivot" AS "r_pivot", r."isPivotDeclared" AS "r_isPivotDeclared",
                  r."audienceKey" AS "r_audienceKey", r."createdBy" AS "r_createdBy"
             FROM "${TABLE.transition}" t
             JOIN "${TABLE.release}" r ON r."id" = t."releaseId"
@@ -392,7 +399,7 @@ export function recordRelease(release, { now } = {}) {
     name: 'release',
     sql: `INSERT OR IGNORE INTO "${TABLE.release}"
           ("id","app","environment","digest","imageRef","configurationHash","generation",
-           "schemaHash","pivot","pivotDeclared","pivotFindings","retentionUntil",
+           "schemaHash","pivot","isPivotDeclared","pivotFindings","retentionUntil",
            "audienceKey","createdAt","createdBy")
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     params: [
@@ -403,7 +410,7 @@ export function recordRelease(release, { now } = {}) {
       // data boundary in its id, which is a weaker claim and must not be stored
       // as though it were a hash.
       release.schemaHash ?? '',
-      release.pivot ?? 'unknown', bool(release.pivotDeclared),
+      release.pivot ?? 'unknown', bool(release.isPivotDeclared),
       json(release.pivotFindings ?? []), release.retentionUntil ?? null,
       release.audienceKey ?? 'everyone', stamp(now), release.createdBy ?? null,
     ],
@@ -435,12 +442,12 @@ export function openTransition({ transition, steps = [], now } = {}) {
     name: 'transition',
     sql: `INSERT OR IGNORE INTO "${TABLE.transition}"
           ("id","kind","app","environment","releaseId","fromReleaseId","generation",
-           "status","crossesPivot","plan","actor","startedAt")
+           "status","isCrossingPivot","plan","actor","startedAt")
           VALUES (?,?,?,?,?,?,?,'running',?,?,?,?)`,
     params: [
       transition.id, transition.kind, transition.app, transition.environment,
       transition.releaseId, transition.fromReleaseId ?? null, transition.generation,
-      bool(transition.crossesPivot), json(transition.plan), transition.actor ?? null, at,
+      bool(transition.isCrossingPivot), json(transition.plan), transition.actor ?? null, at,
     ],
   }]
 
@@ -586,7 +593,7 @@ export function readHistory({ app, environment, limit = 10 }) {
   return [{
     name: 'history',
     sql: `SELECT t."id", t."kind", t."status", t."releaseId", t."fromReleaseId",
-                 t."generation", t."crossesPivot", t."actor", t."startedAt", t."finishedAt",
+                 t."generation", t."isCrossingPivot", t."actor", t."startedAt", t."finishedAt",
                  r."digest", r."pivot"
             FROM "${TABLE.transition}" t
             LEFT JOIN "${TABLE.release}" r ON r."id" = t."releaseId"
@@ -745,7 +752,7 @@ export function journalClient({ exec, db, ddl, machine = null, now = null } = {}
           digest: row.r_digest ?? null, imageRef: row.r_imageRef ?? null,
           configurationHash: row.r_configurationHash, generation: row.generation ?? 1,
           schemaHash: row.r_schemaHash ?? null, pivot: row.r_pivot ?? 'unknown',
-          pivotDeclared: !!row.r_pivotDeclared, pivotFindings: [],
+          isPivotDeclared: !!row.r_isPivotDeclared, pivotFindings: [],
           audienceKey: row.r_audienceKey ?? 'everyone', createdBy: row.r_createdBy ?? null,
         },
       }

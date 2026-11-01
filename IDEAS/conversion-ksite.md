@@ -1,12 +1,12 @@
 ---
 id: conversion-ksite
-status: assessment
+status: reading
 dated: 2026-09-09
 ---
 
 # Assessment — Converting a Svelte/Routify static-site template onto Sierra
 
-**Status: ASSESSMENT. It reads two trees and proposes nothing.** Dated
+**Status: READING. It reads two trees and proposes nothing.** Dated
 2026-09-09. Every count below was produced by running a command against
 `ksite` or against this tree on that date, and each
 command is given beside its number so a re-derive is a rerun rather than a second

@@ -7,7 +7,7 @@
  * here. What CAN be settled here is the part that decides what gets built at
  * all: which files are widgets, and what the generated entry says about them.
  *
- * Discovery is the one worth pinning. A flat glob over `src/Embeds/` would emit
+ * Discovery is the one worth pinning. A flat glob over `src/embeds/` would emit
  * a script per file, so a widget with parts — a directory holding an index and
  * its own components — would ship as five widgets, four of them half a form
  * with no host page and no way to notice.
@@ -220,11 +220,11 @@ describe('a widget with no <script module>', () => {
     rmSync(root, { recursive: true, force: true })
     try {
       cpSync(join(import.meta.dirname, '../bench/fixtures/floor-widget'), root, { recursive: true })
-      const config = createSierraViteConfig({ target: 'widget', widgets: { dir: 'src/Embeds', prefix: 'fjs-' } })
+      const config = createSierraViteConfig({ target: 'widget', widgets: { dir: 'src/embeds', prefix: 'fjs-' } })
       const warnings = []
       const customLogger = { info() {}, warn: m => warnings.push(m), warnOnce: m => warnings.push(m), error: m => warnings.push(m), clearScreen() {}, hasErrorLogged: () => false, hasWarned: false }
       await buildWidgets({
-        root, dir: 'src/Embeds', outDir: 'dist/embeds', prefix: 'fjs-', plugins: config.plugins ?? [],
+        root, dir: 'src/embeds', outDir: 'dist/embeds', prefix: 'fjs-', plugins: config.plugins ?? [],
         viteBuild: (cfg) => build({ ...cfg, customLogger }),
       })
       expect(warnings.join('\n')).not.toContain('IMPORT_IS_UNDEFINED')

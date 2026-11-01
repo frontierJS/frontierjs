@@ -5,7 +5,7 @@
 // and everything above is shared.
 //
 // This is a SURFACE — a peer of api/, web/, site/ and widgets/ — and it is
-// further from the SPA than any of them: the artefact is loaded unpacked into a
+// further from the SPA than any of them: the artifact is loaded unpacked into a
 // browser profile rather than served, its permissions live in a manifest, and
 // it ships to two web stores on a review cadence that is nobody else's.
 

@@ -55,7 +55,7 @@ type Client = Record<string, any>
 export type Levels = {
   variantId: number
   sku:       string
-  active:    boolean
+  isActive:  boolean
   /** What the shop is charging for it now. Public — it is on the shelf edge —
    *  and it is here because every caller asking what may be SOLD is about to
    *  show what it costs. */
@@ -117,11 +117,11 @@ export async function levelsFor(
 
   const variants = await client.productVariant.findMany({
     where: { id: { in: variantIds } },
-  }) as Array<{ id: number, sku: string, price: number, stock: number, active: boolean }>
+  }) as Array<{ id: number, sku: string, price: number, stock: number, isActive: boolean }>
 
   for (const v of variants) {
     out.set(v.id, {
-      variantId: v.id, sku: v.sku, active: !!v.active, price: v.price,
+      variantId: v.id, sku: v.sku, isActive: !!v.isActive, price: v.price,
       onHand: v.stock, held: 0, available: v.stock,
     })
   }
@@ -188,7 +188,7 @@ export async function hold(
 ): Promise<{ expiresAt: string, level: Levels }> {
   const level = await levelFor(client, variantId, { exceptCartId: cartId })
   if (!level)        throw stockError('That product is no longer on sale', 400)
-  if (!level.active) throw stockError(`${level.sku} is no longer on sale`, 400)
+  if (!level.isActive) throw stockError(`${level.sku} is no longer on sale`, 400)
 
   if (quantity > level.available) throw stockError(
     level.available === 0

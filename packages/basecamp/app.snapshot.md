@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-59 services · 46 routes · 24 plugins · prefix (none)
+60 services · 46 routes · 24 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -28,15 +28,15 @@ text, so a body that elevates through a helper is not listed.
 | `appBackups.upload` | standing 5 or above — declared `gate: 5` |
 | `apps.unplace` | standing 4 or above — declared `gate: 4` |
 | `apps.disablePush` | standing 5 or above — declared `gate: 5` |
-| `backups.take` | **any signed-in caller** — floor, read gate 5; standing not graded |
-| `channels.test` | standing 5 or above — declared `gate: 5` |
 | `claude.writes` | standing 5 or above — declared `gate: 5` |
 | `claude.mcp` | standing 5 or above — declared `gate: 5` |
 | `deployments.rollback` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `deployments.rebind` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `edge.syncStep` | anyone, a stranger included — declared `gate: 0` |
+| `hubBackups.take` | **any signed-in caller** — floor, read gate 5; standing not graded |
 | `hubConfig.dismissFound` | **any signed-in caller** — floor, read gate 7; standing not graded |
 | `infra.onboarding` | standing 2 or above — declared `gate: 2` |
+| `notificationChannels.test` | standing 5 or above — declared `gate: 5` |
 | `servers.metrics` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `servers.provision` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `servers.heartbeat` | anyone, a stranger included — declared `gate: 0` |
@@ -64,7 +64,7 @@ and what it does.
 | `notificationPreferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notificationPreferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (91)
+### A service hook runs in front of the body (89)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -72,13 +72,12 @@ name, and is as unread as the body.
 
 | Method | Who may call it | Hooks in front |
 | --- | --- | --- |
-| `alerts.events` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `alerts.unsnooze` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `alertRules.unsnooze` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `alertRules.attachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `alertRules.detachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `alertRules.snooze` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `alerts.acknowledge` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `alerts.resolve` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `alerts.attachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `alerts.detachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `alerts.snooze` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `apiKeys.revoke` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` |
 | `apiKeys.scopes` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` |
 | `apps.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
@@ -87,16 +86,7 @@ name, and is as unread as the body.
 | `apps.liveCheck` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `apps.fromBlueprint` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `backupDestinations.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `backups.take` | **any signed-in caller** — floor, read gate 5; standing not graded | `requireSystemAdmin` |
-| `backups.discard` | **any signed-in caller** — floor, read gate 5; standing not graded | `requireSystemAdmin` |
 | `blueprints.setParams` | **any signed-in caller** — floor, read gate 1; standing not graded | `requireSystemAdmin` |
-| `channels.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `channels.rules` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `cleanup.usage` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `cleanup.targets` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `cleanup.run` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `cleanup.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
-| `cleanup.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `dashboards.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `dashboards.kinds` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `dashboards.addTile` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
@@ -116,6 +106,8 @@ name, and is as unread as the body.
 | `flags.setOverride` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `flags.clearOverride` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `flags.resolve` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `hubBackups.take` | **any signed-in caller** — floor, read gate 5; standing not graded | `requireSystemAdmin` |
+| `hubBackups.discard` | **any signed-in caller** — floor, read gate 5; standing not graded | `requireSystemAdmin` |
 | `hubConfig.current` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
 | `hubConfig.save` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
 | `hubConfig.attestEscrow` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
@@ -124,6 +116,11 @@ name, and is as unread as the body.
 | `jobs.cancel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `jobs.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `jobs.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
+| `maintenanceRuns.usage` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `maintenanceRuns.targets` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `maintenanceRuns.run` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `maintenanceRuns.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
+| `maintenanceRuns.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `monitors.history` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `monitors.pause` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `monitors.resume` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
@@ -133,17 +130,18 @@ name, and is as unread as the body.
 | `networks.members` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `networks.attach` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `networks.detach` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `posture.latest` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `posture.fleet` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `posture.host` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireSystemAdmin` |
+| `notificationChannels.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `notificationChannels.rules` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `projects.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `recipes.restore` | **any signed-in caller** — floor, read gate 4; standing not graded | `sessionScope` |
 | `recipes.run` | **any signed-in caller** — floor, read gate 4; standing not graded | `sessionScope` |
 | `recipes.runs` | **any signed-in caller** — floor, read gate 4; standing not graded | `sessionScope` |
 | `recipes.startRun` | **any signed-in caller** — floor, read gate 4; standing not graded | `sessionScope` → `internalOnly` |
 | `recipes.finishRun` | **any signed-in caller** — floor, read gate 4; standing not graded | `sessionScope` → `internalOnly` |
-| `registry.repositories` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `registryImages.repositories` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `secrets.restore` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` |
+| `serverPostures.latest` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `serverPostures.fleet` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `servers.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `servers.events` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `servers.feed` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
@@ -224,18 +222,16 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 
-### `alerts` · model `AlertRule`
+### `alertRules` · model `AlertRule`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `events`, `unsnooze`, `acknowledge`, `resolve`, `attachChannel`, `detachChannel`, `snooze`
-- **custom methods** — `events`, `unsnooze`, `acknowledge`, `resolve`, `attachChannel`, `detachChannel`, `snooze`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `unsnooze`, `attachChannel`, `detachChannel`, `snooze`
+- **custom methods** — `unsnooze`, `attachChannel`, `detachChannel`, `snooze`
+- **also answers to** — `alert-rules`
 - **input** — `attachChannel` takes `AlertChannelRef`
 - **input** — `detachChannel` takes `AlertChannelRef`
 - **input** — `snooze` takes `AlertSnooze`
 - **who may call** —
-  - `events` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `unsnooze` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `acknowledge` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `resolve` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `attachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `detachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `snooze` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
@@ -254,6 +250,26 @@ name when it declares none.
 | before | `attachChannel` | `validateInput` |
 | before | `detachChannel` | `validateInput` |
 | before | `snooze` | `validateInput` |
+
+### `alerts` · model `Alert`
+
+- **methods** — `find`, `acknowledge`, `resolve`
+- **custom methods** — `acknowledge`, `resolve`
+- **who may call** —
+  - `acknowledge` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `resolve` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+- **broadcasts on** — `(computed)`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
 
 ### `apiKeys` · model `ApiKey`
 
@@ -393,9 +409,10 @@ name when it declares none.
 | before | `publish` | `validateInput` |
 | before | `readRepoDockerfile` | `validateInput` |
 
-### `audit` · model `AuditEvent`
+### `auditEvents` · model `AuditEvent`
 
 - **methods** — `find`, `get`, `aggregate`
+- **also answers to** — `audit-events`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -429,29 +446,6 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
-### `backups` · model `AppBackup`
-
-- **methods** — `find`, `get`, `take`, `discard`, `rescan`, `download`
-- **custom methods** — `take`, `discard`, `rescan`, `download`
-- **input** — `rescan` takes `BackupRescan`
-- **who may call** —
-  - `take` — **any signed-in caller** — floor, read gate 5; standing not graded; then `requireSystemAdmin`; body writes as the app
-  - `discard` — **any signed-in caller** — floor, read gate 5; standing not graded; then `requireSystemAdmin`
-  - `rescan` — standing 7 or above — declared `gate: 7`
-  - `download` — standing 7 or above — declared `gate: 7`
-
-| Phase | Method | Chain |
-| --- | --- | --- |
-| around | `all` | `gateAuth` |
-| before | `all` | `requireSystemAdmin` |
-| before | `find` | `autoFilter` → `autoSort` |
-| before | `get` | `autoFilter` |
-| before | `aggregate` | `autoFilter` |
-| before | `create` | `autoValidate` |
-| before | `patch` | `autoValidate` |
-| before | `update` | `autoValidate` |
-| before | `rescan` | `validateInput` |
-
 ### `blueprints` · model `Blueprint`
 
 - **methods** — `find`, `get`, `create`, `patch`, `remove`, `categories`, `setParams`
@@ -470,27 +464,6 @@ name when it declares none.
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
-| before | `update` | `autoValidate` |
-
-### `channels` · model `NotificationChannel`
-
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `rules`, `test`
-- **custom methods** — `rules`, `test`
-- **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `rules` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `test` — standing 5 or above — declared `gate: 5`; body writes as the app
-- **broadcasts on** — `(computed)`
-
-| Phase | Method | Chain |
-| --- | --- | --- |
-| around | `all` | `gateAuth` |
-| before | `all` | `sessionScope` |
-| before | `create` | `stampChannel` → `autoValidate` |
-| before | `find` | `autoFilter` → `autoSort` |
-| before | `get` | `autoFilter` |
-| before | `aggregate` | `autoFilter` |
-| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `claude` · model `claude`
@@ -525,32 +498,6 @@ name when it declares none.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `find` | `autoFilter` → `autoSort` |
-| before | `get` | `autoFilter` |
-| before | `aggregate` | `autoFilter` |
-| before | `create` | `autoValidate` |
-| before | `patch` | `autoValidate` |
-| before | `update` | `autoValidate` |
-
-### `cleanup` · model `MaintenanceRun`
-
-- **methods** — `find`, `get`, `usage`, `targets`, `run`, `startRun`, `finishRun`, `report`
-- **custom methods** — `usage`, `targets`, `run`, `startRun`, `finishRun`, `report`
-- **who may call** —
-  - `usage` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `targets` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `run` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `startRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
-  - `finishRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
-  - `report` — anyone, a stranger included — declared `gate: 0`
-- **broadcasts on** — `(computed)`
-
-| Phase | Method | Chain |
-| --- | --- | --- |
-| around | `all` | `gateAuth` |
-| before | `all` | `sessionScope` |
-| before | `startRun` | `internalOnly` |
-| before | `finishRun` | `internalOnly` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -784,7 +731,7 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
-### `flags` · model `FeatureFlag`
+### `flags` · model `Flag`
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `setOverride`, `clearOverride`, `resolve`
 - **custom methods** — `setOverride`, `clearOverride`, `resolve`
@@ -891,8 +838,8 @@ name when it declares none.
 
 ### `hub` · model `hub`
 
-- **methods** — `overview`, `environment`, `workspaces`, `accounts`, `users`, `flags`, `audit`, `fleet`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
-- **custom methods** — `overview`, `environment`, `workspaces`, `accounts`, `users`, `flags`, `audit`, `fleet`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
+- **methods** — `overview`, `environment`, `workspaces`, `accounts`, `users`, `flags`, `audit`, `fleet`, `hostPosture`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
+- **custom methods** — `overview`, `environment`, `workspaces`, `accounts`, `users`, `flags`, `audit`, `fleet`, `hostPosture`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
 - **input** — `createBot` takes `NewBot`
 - **input** — `setFlag` takes `FlagChange`
 - **input** — `setSystemAdmin` takes `SystemAdminChange`
@@ -907,6 +854,7 @@ name when it declares none.
   - `flags` — standing 7 or above — declared `gate: 7`
   - `audit` — standing 7 or above — declared `gate: 7`
   - `fleet` — standing 7 or above — declared `gate: 7`
+  - `hostPosture` — standing 7 or above — declared `gate: 7`
   - `setWorkspaceStatus` — standing 7 or above — declared `gate: 7`
   - `setUserStatus` — standing 7 or above — declared `gate: 7`
   - `setSystemAdmin` — standing 7 or above — declared `gate: 7`
@@ -927,6 +875,30 @@ name when it declares none.
 | before | `setSystemAdmin` | `validateInput` |
 | before | `createBot` | `validateInput` |
 | before | `setFlag` | `validateInput` |
+
+### `hubBackups` · model `AppBackup`
+
+- **methods** — `find`, `get`, `take`, `discard`, `rescan`, `download`
+- **custom methods** — `take`, `discard`, `rescan`, `download`
+- **also answers to** — `hub-backups`
+- **input** — `rescan` takes `BackupRescan`
+- **who may call** —
+  - `take` — **any signed-in caller** — floor, read gate 5; standing not graded; then `requireSystemAdmin`; body writes as the app
+  - `discard` — **any signed-in caller** — floor, read gate 5; standing not graded; then `requireSystemAdmin`
+  - `rescan` — standing 7 or above — declared `gate: 7`
+  - `download` — standing 7 or above — declared `gate: 7`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `requireSystemAdmin` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+| before | `rescan` | `validateInput` |
 
 ### `hubConfig` · model `HubConfig`
 
@@ -1017,6 +989,33 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
+### `maintenanceRuns` · model `MaintenanceRun`
+
+- **methods** — `find`, `get`, `usage`, `targets`, `run`, `startRun`, `finishRun`, `report`
+- **custom methods** — `usage`, `targets`, `run`, `startRun`, `finishRun`, `report`
+- **also answers to** — `maintenance-runs`
+- **who may call** —
+  - `usage` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `targets` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `run` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `startRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
+  - `finishRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
+  - `report` — anyone, a stranger included — declared `gate: 0`
+- **broadcasts on** — `(computed)`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
+| before | `startRun` | `internalOnly` |
+| before | `finishRun` | `internalOnly` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
 ### `metricsStore` · model `metricsStore`
 
 - **methods** — `find`, `read`
@@ -1088,6 +1087,28 @@ name when it declares none.
 | before | `update` | `autoValidate` |
 | before | `attach` | `validateInput` |
 | before | `detach` | `validateInput` |
+
+### `notificationChannels` · model `NotificationChannel`
+
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `rules`, `test`
+- **custom methods** — `rules`, `test`
+- **also answers to** — `notification-channels`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `rules` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `test` — standing 5 or above — declared `gate: 5`; body writes as the app
+- **broadcasts on** — `(computed)`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
+| before | `create` | `stampChannel` → `autoValidate` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
 
 ### `notificationPreferences` · model `NotificationPreference`
 
@@ -1207,30 +1228,6 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
-### `posture` · model `ServerPosture`
-
-- **methods** — `latest`, `fleet`, `host`, `check`, `report`
-- **custom methods** — `latest`, `fleet`, `host`, `check`, `report`
-- **who may call** —
-  - `latest` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `fleet` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `host` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireSystemAdmin`
-  - `check` — standing 4 or above — declared `gate: 4`
-  - `report` — anyone, a stranger included — declared `gate: 0`
-- **broadcasts on** — `(computed)`
-
-| Phase | Method | Chain |
-| --- | --- | --- |
-| around | `all` | `gateAuth` |
-| before | `all` | `sessionScope` |
-| before | `host` | `requireSystemAdmin` |
-| before | `find` | `autoFilter` → `autoSort` |
-| before | `get` | `autoFilter` |
-| before | `aggregate` | `autoFilter` |
-| before | `create` | `autoValidate` |
-| before | `patch` | `autoValidate` |
-| before | `update` | `autoValidate` |
-
 ### `projects` · model `Project`
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `fromRepo`
@@ -1302,10 +1299,11 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
-### `registry` · model `RegistryImage`
+### `registryImages` · model `RegistryImage`
 
 - **methods** — `find`, `get`, `repositories`
 - **custom methods** — `repositories`
+- **also answers to** — `registry-images`
 - **who may call** —
   - `repositories` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
 
@@ -1357,6 +1355,29 @@ name when it declares none.
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `serverPostures` · model `ServerPosture`
+
+- **methods** — `latest`, `fleet`, `check`, `report`
+- **custom methods** — `latest`, `fleet`, `check`, `report`
+- **also answers to** — `server-postures`
+- **who may call** —
+  - `latest` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `fleet` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `check` — standing 4 or above — declared `gate: 4`
+  - `report` — anyone, a stranger included — declared `gate: 0`
+- **broadcasts on** — `(computed)`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 

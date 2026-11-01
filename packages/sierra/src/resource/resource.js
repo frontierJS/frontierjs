@@ -128,10 +128,11 @@ import { defaultRegistry, serviceNameFor, resolveRef } from './schema-registry.j
 import {buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildCommitments, commitmentsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
   validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError, ResourceHookError,
-  toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, columnLabel, labelFieldFor, labelFieldInfo, matchesQuery, leavesAt, sealedFor, refusedFor, declinedFields, requiredFor, generatedFor, fromFor, previewOf, blankRefused, withheldFields,
+  toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, columnLabel, labelFieldFor, labelFieldInfo, matchesQuery, leavesAt, sealedFor, declinedFields, requiredFor, generatedFor, fromFor, previewOf, withheldFields,
   displayFor, defaultDisplayFor, registerDisplay, unregisterDisplay, registeredDisplays, filterOpFor,
   registerControl, unregisterControl, registeredControls, INTERACTION_TASKS, seedDetermined,
 } from './field-rules.js'
+import { createSchemaReaders } from './schema-readers.js'
 import { session, isRelayed } from './session.js'
 import { directiveParams } from '@frontierjs/toolbelt/directives'
 import { singularize } from '@frontierjs/toolbelt/inflect'
@@ -983,6 +984,271 @@ export function createResource(serviceName, opts = {}, ...extra) {
   }
 
   // ── _call — full 4-phase pipeline ──────────────────────────────────────────
+  // ── _call's phases — each one a step of `inner`, in the order it runs ────
+
+  // The payload as the server will see it: server columns off, pinned columns
+  // seeded, then coerce / blank / validate / version / members / minted key.
+  function _shapeWrite(method, ctx) {
+    const rules = rulesFor(method)
+
+    if (method === 'create' || method === 'patch') {
+      ctx.data = stripReadOnly(rules, ctx.data, { keep: versionOf ? [versionOf] : [] })
+    }
+
+    // A column the create policy pins to the caller is filled here, before the
+    // checks below see the payload: the form drew no control for it, and a
+    // hand-written save never named it (`FJS-1229`).
+    // The principal is the one THAT app sees, never this page's.
+    if (method === 'create') ctx.data = seedDetermined(rules, ctx.data, app ? app.user : session.user)
+
+    // Coercion first: '' must still look blank to normalize() below, and
+    // Number('') is 0 — so this deliberately leaves empty strings alone.
+    if (autoCoerce && (method === 'create' || method === 'patch')) {
+      ctx.data = coerceToSchema(rules, ctx.data)
+    }
+
+    if (autoBlank && (method === 'create' || method === 'patch')) {
+      ctx.data = normalizeBlanks(rules, ctx.data)
+    }
+
+    if (autoValidate && (method === 'create' || method === 'patch')) {
+      const problems = validateAgainstFields(rules, ctx.data, method === 'create' ? 'create' : 'patch')
+      if (problems.length) throw new ResourceValidationError(serviceName, problems)
+    }
+
+    // @version rides along on a patch. A caller who set it explicitly wins —
+    // that is someone doing their own concurrency control. With no remembered
+    // version the patch is refused HERE, before the queue (`FJS-D468`): sent,
+    // the server refused it in words about `asSystem()`, and held offline it
+    // was refused at the drain where nobody hears it (`FJS-1309`). Reading
+    // the row again first is no fix — that sends a version newer than what
+    // the person edited, the silent win the column exists to stop.
+    if (versionOf && method === 'patch' && ctx.data && typeof ctx.data === 'object'
+        && ctx.data[versionOf] == null) {
+      const known = _readVersion(ctx.id)
+      if (known == null) throw _versionUnread(model ?? serviceName, ctx.id)
+      ctx.data = { ...ctx.data, [versionOf]: known }
+    }
+
+    if (method === 'create' || method === 'patch') ctx.data = _memberWrite(method, ctx.id, ctx.data)
+
+    // ── the key, if the caller is the one who makes it ───────────────────
+    //
+    // Minted BEFORE the queue entry and before the send, and on every create
+    // rather than only on one that turns out to be held: the id is what a
+    // child write references, and a screen cannot know whether its parent
+    // reached the server before it needs one. Minting only when a send fails
+    // would make the id's origin depend on the network, which is the one
+    // thing an offline app may not have vary.
+    //
+    // A caller who stated the key keeps it. That is the same rule the server
+    // follows for a create that carries one.
+    if (mint && method === 'create' && ctx.data?.[mint.field] == null) {
+      const minted = mintId(mint.kind)
+      // Null is a generator this client does not have — a schema minted by a
+      // newer litestone than the bundle. The create goes on without a key and
+      // the server assigns one, which is what happens with no `x-mint` at all.
+      if (minted != null) ctx.data = { ...ctx.data, [mint.field]: minted }
+    }
+  }
+
+  // The write-ahead half: the queue entries a held write needs, written before
+  // the call goes out. Returns what `_send` settles or defers afterwards.
+  async function _hold(method, ctx) {
+    if (holdMode === 'append' && APPEND_REFUSES.has(method))
+      throw _appendOnly(model, method)
+
+    const files = holdMode && !NEVER_QUEUED.has(method) ? _filesIn(ctx.data) : {}
+    const rowId = ctx.id ?? (mint ? ctx.data?.[mint.field] : null)
+    const attachable = !Object.keys(files).length || rowId != null
+
+    // ── @@sync(field) — the row this write was made against ─────────────
+    // The comparison runs at the Data boundary and needs the row as the
+    // WRITER read it (`FJS-D334`), which is exactly what `_read` already
+    // holds for `@version`. Derived rather than declared: nothing a caller
+    // writes says what they were looking at, and the resource knows.
+    //
+    // Only a write against an EXISTING row has one — a create was made
+    // against nothing — and only `field` reads it, since litestone refuses a
+    // base on every other policy by name. Read off the DECLARATION rather
+    // than the device: a write that is never held still merges, so a view
+    // or another app's resource carries one too.
+    const heldBase = declaredSync === 'field' && ctx.id != null
+      ? _read.get(ctx.id) ?? null
+      : null
+
+    const held = holdMode && !NEVER_QUEUED.has(method) && attachable
+      ? await pendingQueue().add({
+          service: serviceName, model, method, id: ctx.id, idField,
+          data: _heldData(_withoutFiles(ctx.data, files), holdMode, versionOf),
+          ...(heldBase ? { base: heldBase } : {}),
+          callHeaders: client.callHeaders(),
+        })
+      : null
+
+    // Queue-first here too, and settled by the SAME acknowledgement that
+    // settles the row: the call below still carries the bytes, so a working
+    // network is one multipart request exactly as it was. The split is what
+    // happens when that request could not arrive.
+    // Loaded here and not at the top: an app that never holds a photograph
+    // never fetches the blob queue, and a static import would put it in the
+    // main chunk whatever `pending.js` does (`FJS-2752`). Every later use of
+    // `blobs` is inside a loop over `parked`, which is empty unless this ran.
+    const blobs = held && Object.keys(files).length
+      ? (await import('./attachments.js')).attachmentQueue()
+      : null
+    const parked = blobs
+      ? await Promise.all(Object.entries(files).map(([field, blob]) =>
+          blobs.add({ service: serviceName, model, id: rowId, field, blob, versionField: versionOf, callHeaders: held.callHeaders })))
+      : []
+    return { held, parked, blobs, files, rowId, heldBase }
+  }
+
+  // The network call, and what it does to the queue on each way it can end.
+  async function _send(method, ctx, kept) {
+    const { held, parked, blobs, files, rowId, heldBase } = kept
+    // network call
+    const proxy = client.service(serviceName)
+    // The base rides the live call as well as the held one. A write made
+    // while the network is up can still lose a race, and the merge is the
+    // same comparison either way — otherwise `field` would only ever resolve
+    // for a device that had been offline, which is not what it declares.
+    const callOpts = held || heldBase
+      ? { ...(held ? { idempotencyKey: held.key, callHeaders: held.callHeaders } : {}),
+          ...(heldBase ? { base: heldBase } : {}) }
+      : undefined
+    try {
+      switch (method) {
+        case 'find':    ctx.result = await proxy.find(ctx.query, ctx.directives);          break
+        case 'get':     ctx.result = await proxy.get(ctx.id ?? ctx.query, ctx.directives); break
+        case 'create':  ctx.result = await proxy.create(ctx.data, undefined, callOpts);       break
+        // A write's directives are only ever a template's reach (`_templateReach`).
+        case 'patch':   ctx.result = await proxy.patch(ctx.id, ctx.data, _some(ctx.directives), callOpts); break
+        case 'remove':  ctx.result = await proxy.remove(ctx.id, undefined, callOpts);         break
+        case 'restore': ctx.result = await proxy.restore(ctx.id, undefined, callOpts); break
+        // A custom service method — anything the server declared that is not
+        // CRUD. invoke() applies the same transport rule as every other service
+        // call: the socket when one is connected, HTTP when it is not.
+        //
+        // This used to call proxy.call(), the explicit WS escape hatch. That was
+        // WS-or-nothing by name, and with no socket it recursed inside the
+        // client and never settled. `call` is still on the proxy below for a
+        // caller that wants to force the socket.
+        default:        ctx.result = await proxy.invoke(method, ctx.id, ctx.data, ctx.query, callOpts); break
+      }
+    } catch (err) {
+      // The server ANSWERED and refused: this write will not get better by
+      // being sent again, so it leaves the queue and the caller hears the
+      // refusal it would have heard with no queue at all.
+      if (held && !unreachable(err)) {
+        await pendingQueue().reject(held.key, err)
+        // The bytes go with the refusal. They were parked against a row the
+        // boundary has declined, so replaying them would patch a row that
+        // does not exist — and `rejected` is where somebody can see it.
+        for (const a of parked) await blobs.reject(a.key, err)
+        throw err
+      }
+      // It never arrived, or it timed out and nobody can say. The entry
+      // stays and the next `connect` drains it. The caller is told — with
+      // `queued` on the error, so a screen can say *held on this device*
+      // rather than *failed* — because resolving successfully here would be
+      // claiming the server has a row it may not have (`FJS-D300`).
+      if (held) {
+        await pendingQueue().defer(held.key, err)
+        for (const a of parked) await blobs.defer(a.key, err)
+        // A held create is a row this device has read: it wrote every
+        // column, and litestone stamps a created row's `@version` at 1. With
+        // nothing remembered, the next held edit of it carried no version
+        // and no base, and replayed as a 400 whether the create landed or
+        // not (`FJS-1299`).
+        if (method === 'create' && versionOf && rowId != null && !_read.has(rowId)) {
+          _remember(rowId, { ..._withoutFiles(ctx.data, files), [versionOf]: 1 })
+        }
+        throw Object.assign(
+          new Error(
+            `[${serviceName}] ${method} could not reach the server and is held on this device` +
+            `${pendingQueue().durable ? '' : ' — in memory only, so a reload loses it'}.`
+          ),
+          // `data` is what was held, and for a create on a model that mints
+          // its own key that is the ROW — the only copy of it anywhere, since
+          // the server has never seen it. A screen whose next act references
+          // this row has nowhere else to read the key from.
+          // `attachments` is how many of this write's files are being held
+          // separately — a screen saying *1 write held* while a photograph is
+          // also waiting is understating what has not arrived.
+          { queued: true, key: held.key, data: ctx.data, attachments: parked.length,
+            durable: pendingQueue().durable, cause: err },
+        )
+      }
+      throw err
+    }
+
+    // The server acknowledged it. This is the ONLY place an entry clears: a
+    // call can leave on a socket that has not noticed the network is gone and
+    // arrive minutes later, so clearing on SEND would count that as delivered
+    // (measured — `example`'s `verify:offline`).
+    if (held) await pendingQueue().settle(held.key)
+    // The bytes travelled on that same request, so the acknowledgement covers
+    // them. Settling here and not on the send is the phase 1 rule applied to
+    // the other queue.
+    for (const a of parked) await blobs.settle(a.key)
+  }
+
+  // Local consequences of a write that landed, before the after-hooks run.
+  function _landed(method, ctx) {
+    // A removed row leaves the device as it leaves the tether. Left for the
+    // next whole answer, it answered every offline read until one came — and
+    // a list paged past its first window never brings one (`FJS-2256`).
+    if (method === 'remove' && syncMode && localDbConfigured()) {
+      const gone = ctx.id != null ? [ctx.id]
+        : (Array.isArray(ctx.result) ? ctx.result : []).map(r => r?.[idField])
+      dropRows(model, idField, gone).catch(() => {})
+    }
+
+    // Record before the after-hooks, so a hook that reads the version off the
+    // resource sees the one that just came back rather than the previous read.
+    _rememberRows(ctx.result)
+    if (ENTRY_WRITES.has(method)) _writeEntry(ctx.result)
+  }
+
+  // A failed pipeline: mark a post-commit failure, run the error hooks, and
+  // either recover with the result a hook set or rethrow.
+  async function _recover(err, method, ctx, committed) {
+    // A failure AFTER the row was written is a different failure, and the
+    // caller cannot tell them apart from the outside: an `after` hook whose
+    // analytics call throws once shows "save failed" over a row that exists,
+    // and the person presses Save again. Marked on the error so
+    // `toFieldErrors` can say which one it is and `<Form>` can stop offering
+    // the button.
+    if (committed && err && typeof err === 'object') {
+      err.committed = true
+      if (err.result === undefined) err.result = ctx.result
+    }
+
+    ctx.error = err
+
+    const errorList = [
+      ...(_hooks.error?.all     ?? []),
+      ...(_hooks.error?.[method] ?? []),
+    ]
+
+    if (errorList.length) {
+      for (const hook of errorList) await hook(ctx)
+      // error hook cleared ctx.error — treat as recovered
+      if (!ctx.error) {
+        // Recovered from what, though? A hook that clears the error and sets
+        // no result says the call succeeded and hands back the `null` the
+        // context was born with. The original failure is gone by then, so
+        // it is carried on `cause` — losing it is what makes this shape take
+        // an afternoon.
+        if (!answered(ctx)) throw new ResourceHookError(serviceName, method, 'error', err)
+        return ctx.result
+      }
+    }
+
+    throw ctx.error ?? err
+  }
+
 
   async function _call(method, id, data, query = {}, directives = {}) {
     if (method === 'get') directives = _withMembers(directives)
@@ -1017,269 +1283,9 @@ export function createResource(serviceName, opts = {}, ...extra) {
       // before
       await runPhase(_hooks, 'before', method, ctx)
 
-      // Blank → null and pre-flight validation — both opt-in, both after the
-      // before-hooks: a hook that stamps a tenant id or coerces a field is part
-      // of the payload, and acting on the pre-hook data would reject or rewrite
-      // records the server would have accepted.
-      //
-      // Normalization runs first so validation judges what will actually be
-      // sent, not an intermediate form of it.
-      // The server's own columns go first, so nothing below coerces, blanks or
-      // validates a value that is not going to be sent. An edit form is handed
-      // a row the server wrote, and that row carries every column the caller
-      // could READ — `@system`, `@generated`, `@from`, a tenancy stamp — which
-      // the Data boundary refuses by name. The person then sees a 403 about a
-      // column that is not on their screen.
-      //
-      // The version column is `readOnly` and is the one that must travel; the
-      // block below is what puts it back on when the caller did not state one.
-      //
-      // Judged against the rules for THIS method: `@immutable` is `readOnly` on
-      // a patch and writable on a create, so a create judged by the update
-      // table could not be made and a patch judged by the create table sends a
-      // column the boundary refuses by name (`FJS-807`).
-      const rules = rulesFor(method)
-
-      if (method === 'create' || method === 'patch') {
-        ctx.data = stripReadOnly(rules, ctx.data, { keep: versionOf ? [versionOf] : [] })
-      }
-
-      // A column the create policy pins to the caller is filled here, before the
-      // checks below see the payload: the form drew no control for it, and a
-      // hand-written save never named it (`FJS-1229`).
-      // The principal is the one THAT app sees, never this page's.
-      if (method === 'create') ctx.data = seedDetermined(rules, ctx.data, app ? app.user : session.user)
-
-      // Coercion first: '' must still look blank to normalize() below, and
-      // Number('') is 0 — so this deliberately leaves empty strings alone.
-      if (autoCoerce && (method === 'create' || method === 'patch')) {
-        ctx.data = coerceToSchema(rules, ctx.data)
-      }
-
-      if (autoBlank && (method === 'create' || method === 'patch')) {
-        ctx.data = normalizeBlanks(rules, ctx.data)
-      }
-
-      if (autoValidate && (method === 'create' || method === 'patch')) {
-        const problems = validateAgainstFields(rules, ctx.data, method === 'create' ? 'create' : 'patch')
-        if (problems.length) throw new ResourceValidationError(serviceName, problems)
-      }
-
-      // @version rides along on a patch. A caller who set it explicitly wins —
-      // that is someone doing their own concurrency control. With no remembered
-      // version the patch is refused HERE, before the queue (`FJS-D468`): sent,
-      // the server refused it in words about `asSystem()`, and held offline it
-      // was refused at the drain where nobody hears it (`FJS-1309`). Reading
-      // the row again first is no fix — that sends a version newer than what
-      // the person edited, the silent win the column exists to stop.
-      if (versionOf && method === 'patch' && ctx.data && typeof ctx.data === 'object'
-          && ctx.data[versionOf] == null) {
-        const known = _readVersion(ctx.id)
-        if (known == null) throw _versionUnread(model ?? serviceName, ctx.id)
-        ctx.data = { ...ctx.data, [versionOf]: known }
-      }
-
-      if (method === 'create' || method === 'patch') ctx.data = _memberWrite(method, ctx.id, ctx.data)
-
-      // ── the key, if the caller is the one who makes it ───────────────────
-      //
-      // Minted BEFORE the queue entry and before the send, and on every create
-      // rather than only on one that turns out to be held: the id is what a
-      // child write references, and a screen cannot know whether its parent
-      // reached the server before it needs one. Minting only when a send fails
-      // would make the id's origin depend on the network, which is the one
-      // thing an offline app may not have vary.
-      //
-      // A caller who stated the key keeps it. That is the same rule the server
-      // follows for a create that carries one.
-      if (mint && method === 'create' && ctx.data?.[mint.field] == null) {
-        const minted = mintId(mint.kind)
-        // Null is a generator this client does not have — a schema minted by a
-        // newer litestone than the bundle. The create goes on without a key and
-        // the server assigns one, which is what happens with no `x-mint` at all.
-        if (minted != null) ctx.data = { ...ctx.data, [mint.field]: minted }
-      }
-
-      // ── the queue, if this model asked for one ───────────────────────────
-      //
-      // Queue-FIRST: the entry is written before the call goes out, not in a
-      // catch after it fails (`IDEAS/homestead.md` phase 1). A catch-based
-      // queue has two routes to the server with a seam between them, and the
-      // seam is where a write goes twice or not at all.
-      //
-      // What is stored is what the hooks produced — coerced, blank-stripped,
-      // validated, version-stamped — because that is what a replay must send.
-      // Recording the caller's raw payload would replay a different write.
-      //
-      // ── and the bytes, which are not a row ───────────────────────────────
-      //
-      // `FJS-D301`: two queues. The row half replays WITHOUT the bytes, and a
-      // second queue owns each file as a patch naming the row it belongs to.
-      // A 4MB photograph behind a 200-byte correction in one FIFO makes the
-      // small write wait on exactly the connection that cannot carry the large
-      // one, and a refused row and a half-sent upload want different rules.
-      //
-      // The row has to EXIST before its bytes can name it, which is why this
-      // needs an id and why it only works on a model whose key the browser
-      // minted. Without one there is nothing to attach to, so the write is not
-      // queued at all and fails the way it did before any of this — the
-      // schema advisor is what says so ahead of time.
-      //
-      // ── and what the POLICY means, which is only ever about a HELD write ──
-      //
-      // `FJS-D304`. All three behave identically on a reachable network; what
-      // they decide is the write nobody is standing over when it lands.
-      //
-      // `append` — rows are only ever added, which is what makes the collision
-      // impossible rather than resolved. So a held `patch`, `remove` or
-      // `restore` is refused by name: each one is unambiguously *edit a row
-      // that is already there*, which the declaration says does not happen.
-      //
-      // **A CUSTOM method is not refused, and that is not laxity.** `example`
-      // writes its ledger through `adjust()` — a verb that computes a delta and
-      // APPENDS a movement — and refusing it broke the offline drive on the
-      // very model whose schema says `append` is a statement of fact. Sierra
-      // cannot see what a custom method does; a rule over one is a rule about
-      // something this layer does not know, which is the same error as an
-      // advisor rule guessing at a service. The built-in verbs are the ones
-      // whose meaning IS fixed, and those are the ones judged.
-      //
-      // (The attachment queue is untouched either way — it patches through the
-      // raw client, because the bytes of a row THIS device created arriving
-      // late are not a second writer. It still carries a version on a
-      // `@version` model, read at drain, since the boundary refuses one without.)
-      if (holdMode === 'append' && APPEND_REFUSES.has(method))
-        throw _appendOnly(model, method)
-
-      const files = holdMode && !NEVER_QUEUED.has(method) ? _filesIn(ctx.data) : {}
-      const rowId = ctx.id ?? (mint ? ctx.data?.[mint.field] : null)
-      const attachable = !Object.keys(files).length || rowId != null
-
-      // ── @@sync(field) — the row this write was made against ─────────────
-      // The comparison runs at the Data boundary and needs the row as the
-      // WRITER read it (`FJS-D334`), which is exactly what `_read` already
-      // holds for `@version`. Derived rather than declared: nothing a caller
-      // writes says what they were looking at, and the resource knows.
-      //
-      // Only a write against an EXISTING row has one — a create was made
-      // against nothing — and only `field` reads it, since litestone refuses a
-      // base on every other policy by name. Read off the DECLARATION rather
-      // than the device: a write that is never held still merges, so a view
-      // or another app's resource carries one too.
-      const heldBase = declaredSync === 'field' && ctx.id != null
-        ? _read.get(ctx.id) ?? null
-        : null
-
-      const held = holdMode && !NEVER_QUEUED.has(method) && attachable
-        ? await pendingQueue().add({
-            service: serviceName, model, method, id: ctx.id, idField,
-            data: _heldData(_withoutFiles(ctx.data, files), holdMode, versionOf),
-            ...(heldBase ? { base: heldBase } : {}),
-            callHeaders: client.callHeaders(),
-          })
-        : null
-
-      // Queue-first here too, and settled by the SAME acknowledgement that
-      // settles the row: the call below still carries the bytes, so a working
-      // network is one multipart request exactly as it was. The split is what
-      // happens when that request could not arrive.
-      // Loaded here and not at the top: an app that never holds a photograph
-      // never fetches the blob queue, and a static import would put it in the
-      // main chunk whatever `pending.js` does (`FJS-2752`). Every later use of
-      // `blobs` is inside a loop over `parked`, which is empty unless this ran.
-      const blobs = held && Object.keys(files).length
-        ? (await import('./attachments.js')).attachmentQueue()
-        : null
-      const parked = blobs
-        ? await Promise.all(Object.entries(files).map(([field, blob]) =>
-            blobs.add({ service: serviceName, model, id: rowId, field, blob, versionField: versionOf, callHeaders: held.callHeaders })))
-        : []
-
-      // network call
-      const proxy = client.service(serviceName)
-      // The base rides the live call as well as the held one. A write made
-      // while the network is up can still lose a race, and the merge is the
-      // same comparison either way — otherwise `field` would only ever resolve
-      // for a device that had been offline, which is not what it declares.
-      const callOpts = held || heldBase
-        ? { ...(held ? { idempotencyKey: held.key, callHeaders: held.callHeaders } : {}),
-            ...(heldBase ? { base: heldBase } : {}) }
-        : undefined
-      try {
-      switch (method) {
-        case 'find':    ctx.result = await proxy.find(ctx.query, ctx.directives);          break
-        case 'get':     ctx.result = await proxy.get(ctx.id ?? ctx.query, ctx.directives); break
-        case 'create':  ctx.result = await proxy.create(ctx.data, undefined, callOpts);       break
-        // A write's directives are only ever a template's reach (`_templateReach`).
-        case 'patch':   ctx.result = await proxy.patch(ctx.id, ctx.data, _some(ctx.directives), callOpts); break
-        case 'remove':  ctx.result = await proxy.remove(ctx.id, undefined, callOpts);         break
-        case 'restore': ctx.result = await proxy.restore(ctx.id, undefined, callOpts); break
-        // A custom service method — anything the server declared that is not
-        // CRUD. invoke() applies the same transport rule as every other service
-        // call: the socket when one is connected, HTTP when it is not.
-        //
-        // This used to call proxy.call(), the explicit WS escape hatch. That was
-        // WS-or-nothing by name, and with no socket it recursed inside the
-        // client and never settled. `call` is still on the proxy below for a
-        // caller that wants to force the socket.
-        default:        ctx.result = await proxy.invoke(method, ctx.id, ctx.data, ctx.query, callOpts); break
-      }
-      } catch (err) {
-        // The server ANSWERED and refused: this write will not get better by
-        // being sent again, so it leaves the queue and the caller hears the
-        // refusal it would have heard with no queue at all.
-        if (held && !unreachable(err)) {
-          await pendingQueue().reject(held.key, err)
-          // The bytes go with the refusal. They were parked against a row the
-          // boundary has declined, so replaying them would patch a row that
-          // does not exist — and `rejected` is where somebody can see it.
-          for (const a of parked) await blobs.reject(a.key, err)
-          throw err
-        }
-        // It never arrived, or it timed out and nobody can say. The entry
-        // stays and the next `connect` drains it. The caller is told — with
-        // `queued` on the error, so a screen can say *held on this device*
-        // rather than *failed* — because resolving successfully here would be
-        // claiming the server has a row it may not have (`FJS-D300`).
-        if (held) {
-          await pendingQueue().defer(held.key, err)
-          for (const a of parked) await blobs.defer(a.key, err)
-          // A held create is a row this device has read: it wrote every
-          // column, and litestone stamps a created row's `@version` at 1. With
-          // nothing remembered, the next held edit of it carried no version
-          // and no base, and replayed as a 400 whether the create landed or
-          // not (`FJS-1299`).
-          if (method === 'create' && versionOf && rowId != null && !_read.has(rowId)) {
-            _remember(rowId, { ..._withoutFiles(ctx.data, files), [versionOf]: 1 })
-          }
-          throw Object.assign(
-            new Error(
-              `[${serviceName}] ${method} could not reach the server and is held on this device` +
-              `${pendingQueue().durable ? '' : ' — in memory only, so a reload loses it'}.`
-            ),
-            // `data` is what was held, and for a create on a model that mints
-            // its own key that is the ROW — the only copy of it anywhere, since
-            // the server has never seen it. A screen whose next act references
-            // this row has nowhere else to read the key from.
-            // `attachments` is how many of this write's files are being held
-            // separately — a screen saying *1 write held* while a photograph is
-            // also waiting is understating what has not arrived.
-            { queued: true, key: held.key, data: ctx.data, attachments: parked.length,
-              durable: pendingQueue().durable, cause: err },
-          )
-        }
-        throw err
-      }
-
-      // The server acknowledged it. This is the ONLY place an entry clears: a
-      // call can leave on a socket that has not noticed the network is gone and
-      // arrive minutes later, so clearing on SEND would count that as delivered
-      // (measured — `example`'s `verify:offline`).
-      if (held) await pendingQueue().settle(held.key)
-      // The bytes travelled on that same request, so the acknowledgement covers
-      // them. Settling here and not on the send is the phase 1 rule applied to
-      // the other queue.
-      for (const a of parked) await blobs.settle(a.key)
+      _shapeWrite(method, ctx)
+      const kept = await _hold(method, ctx)
+      await _send(method, ctx, kept)
 
       // The write LANDED. Everything below this line can still throw, and a
       // caller told only that the call failed presses Save again and makes a
@@ -1287,19 +1293,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
       // because here is the only place that knows the difference.
       if (method !== 'find' && method !== 'get') committed = true
 
-      // A removed row leaves the device as it leaves the tether. Left for the
-      // next whole answer, it answered every offline read until one came — and
-      // a list paged past its first window never brings one (`FJS-2256`).
-      if (method === 'remove' && syncMode && localDbConfigured()) {
-        const gone = ctx.id != null ? [ctx.id]
-          : (Array.isArray(ctx.result) ? ctx.result : []).map(r => r?.[idField])
-        dropRows(model, idField, gone).catch(() => {})
-      }
-
-      // Record before the after-hooks, so a hook that reads the version off the
-      // resource sees the one that just came back rather than the previous read.
-      _rememberRows(ctx.result)
-      if (ENTRY_WRITES.has(method)) _writeEntry(ctx.result)
+      _landed(method, ctx)
 
       // after
       await runPhase(_hooks, 'after', method, ctx)
@@ -1308,39 +1302,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
     try {
       await runAroundHooks(aroundList, ctx, inner)
     } catch (err) {
-      // A failure AFTER the row was written is a different failure, and the
-      // caller cannot tell them apart from the outside: an `after` hook whose
-      // analytics call throws once shows "save failed" over a row that exists,
-      // and the person presses Save again. Marked on the error so
-      // `toFieldErrors` can say which one it is and `<Form>` can stop offering
-      // the button.
-      if (committed && err && typeof err === 'object') {
-        err.committed = true
-        if (err.result === undefined) err.result = ctx.result
-      }
-
-      ctx.error = err
-
-      const errorList = [
-        ...(_hooks.error?.all     ?? []),
-        ...(_hooks.error?.[method] ?? []),
-      ]
-
-      if (errorList.length) {
-        for (const hook of errorList) await hook(ctx)
-        // error hook cleared ctx.error — treat as recovered
-        if (!ctx.error) {
-          // Recovered from what, though? A hook that clears the error and sets
-          // no result says the call succeeded and hands back the `null` the
-          // context was born with. The original failure is gone by then, so
-          // it is carried on `cause` — losing it is what makes this shape take
-          // an afternoon.
-          if (!answered(ctx)) throw new ResourceHookError(serviceName, method, 'error', err)
-          return ctx.result
-        }
-      }
-
-      throw ctx.error ?? err
+      return _recover(err, method, ctx, committed)
     }
 
     // Nothing threw and nothing answered: an `around` hook returned without
@@ -1832,356 +1794,14 @@ export function createResource(serviceName, opts = {}, ...extra) {
     return _declaredPending
   }
 
-  /**
-   * Which columns a TABLE shows of this model, ranked, and what it left out.
-   *
-   * `formFields()`' counterpart, and not the same question: a form shows what
-   * is WRITABLE, a table what is READABLE and IDENTIFYING. So this reads the
-   * READ table — the only one carrying a `@computed` total or a `@generated`
-   * name — and ranks rather than takes the first few, because the order columns
-   * sit in a file is an order somebody chose for unrelated reasons.
-   *
-   * The model's own two answers travel with the call, so a hand-written table
-   * and a generated one cannot rank differently: `x-identify` is the business
-   * key a person recognizes and `x-label-field` the column that names the row.
-   *
-   * Answers `{ columns, omitted }` — every field not shown is named with a
-   * reason, for `formFields()`' reason exactly.
-   */
-  function columns(opts) {
-    return rankColumns({ ...columnDefaults, ...opts })
-  }
-
-  // The ranking with no `columns:` default under it. `summary()` asks a
-  // different question from a table — what a FORM cannot show — so a table's
-  // `only` narrowing it would drop columns from a detail screen in silence.
-  function rankColumns(opts) {
-    const answer = columnList({ ...readFields, ..._declaredRules() }, {
-      identify: modelDef?.['x-identify'],
-      label:    modelDef?.['x-label-field'],
-      ...opts,
-    })
-    // The renderer is resolved with the column rather than by the caller, for
-    // `formFields()`' reason: the model name has to travel so a registered
-    // display can claim `Order.total` rather than every money column in the
-    // app, and a caller assembling that context by hand is a caller who can get
-    // it wrong on one screen out of six.
-    return {
-      ...answer,
-      columns: answer.columns.map(c => {
-        const shown = displayFor(c.rule, { field: c.name, model })
-        return { ...c, ...shown, ...relationLabel(shown) }
-      }),
-    }
-  }
-
-  // A cell holds a foreign key and nobody recognizes one. What a person
-  // recognizes is that model's own label, the one a picker shows: its
-  // `labelField`, the conventional columns below it and a declared list with
-  // its hops. Without them on the answer `<Cell>` cannot read a loaded
-  // `row[relation]` and prints the id. A registered display that claims
-  // `relation` is handed the same three.
-  function relationLabel(shown) {
-    if (shown.display !== 'relation' || !shown.model) return null
-    const { labelField, labelAlt, labelParts } = relatedResource(serviceNameFor(shown.model) ?? shown.model, shown.model)
-    return { labelField, labelAlt, labelParts }
-  }
-
-  /**
-   * Which columns a filter bar may offer, and with which question.
-   *
-   * Two inputs and they answer different halves. **`x-filterable` says whether
-   * the Data boundary will take a `where` on this column at all** — absent
-   * means yes, a string says why not (`computed` · `transient` · `encrypted`),
-   * and it is the same function `$checkWhere` refuses with, so an offer here
-   * cannot outrun what the boundary accepts. **`filterOpFor(display)` says what
-   * a filter over that KIND asks**, which is why this is not a third registry:
-   * the column already has one kind and `displayFor` named it.
-   *
-   * A column that cannot be filtered is RETURNED with the reason rather than
-   * dropped, exactly as an unplaceable control and an unrenderable column are.
-   * A bar renders the ones with an `op`; anything else has an answer for why
-   * it is not there.
-   *
-   * Ranked and labelled by `columns()` under the same limit, so the bar offers
-   * what the table shows and in the same order — two lists derived from one is
-   * what stops a filter appearing for a column nobody can see. A page that pins
-   * its table with `columns({ only })` passes the same `only` here; a caller
-   * wanting a wider bar says `{ limit }`.
-   *
-   * **`search` is the third answer and it is the model's, not a column's.**
-   * `$search` is served by `table.search()`, which a Litestone client offers
-   * only under `@@fts` and refuses by name below it, so the question is *does
-   * this model answer at all* — one answer per model, where the other two are
-   * one per column. It carries the indexed columns and their labels, because a
-   * box that cannot say what it searches leaves a person to guess why a word
-   * they can SEE in the table did not match. Refused with a reason rather than
-   * answered `null`, for the same rule as a column with no `op`.
-   */
-  function filters(opts = {}) {
-    const { columns: cols, omitted } = columns(opts)
-    const joined = throughFilters()
-
-    const ftsFields = readModel?.['x-search']
-    const search    = ftsFields?.length
-      ? {
-          fields: ftsFields,
-          // The read schema is asked per field rather than the ranked column
-          // list, because `@@fts` may index a column the table does not show —
-          // one past the limit, or one no `columns()` tier ranks — and a label
-          // resolved off the list would come back undefined for exactly those.
-          labels: ftsFields.map(n => columnLabel(n, readModel?.properties?.[n])),
-        }
-      : { fields: null, reason: 'the model declares no @@fts, so the Data boundary refuses $search by name' }
-
-    // A bar cannot list a table past the cap, and the kit never calls a service,
-    // so a column whose options are FETCHED carries the asking, bound to its
-    // name: `Form.mesa`'s `optionsFor` one surface along. An enum carries none.
-    // `record` is `{ [name]: picks }`, so a pick beyond the first page still
-    // arrives labeled.
-    const asking = (f) => f.rule?.references || f.rule?.values
-      ? { ...f, optionsFor: (opts = {}) => options(f.name, opts) }
-      : f
-
-    return {
-      search,
-      filters: cols.map((c) => {
-        // The boundary's own answer first: a `@computed` column has no column
-        // to compare, and no display name makes it filterable.
-        const refused = readModel?.properties?.[c.name]?.['x-filterable'] ?? c.rule?.['x-filterable']
-        if (refused) return { ...c, op: null, kind: null, reason: refused }
-
-        // Amounts held in several currencies share no scale, so one range
-        // over them compares cents with yen. `FJS-D556`.
-        if (c.display === 'money' && !c.currency) {
-          return { ...c, op: null, kind: null, reason: `${c.name} holds amounts in the currency of each row, which share no range` }
-        }
-
-        const f = filterOpFor(c.display)
-        if (!f) return { ...c, op: null, kind: null, reason: `no filter for a ${c.display ?? 'column of unknown kind'}` }
-        // A Json or file column compares nothing by value, but an optional one
-        // can still be asked whether it holds anything — `IS NULL` is not a
-        // match against the serialized document.
-        if (!f.op && c.rule?.nullable) return { ...c, op: ['equals', 'not'], kind: 'empty' }
-        // A declared key is filtered through the column its slot generated,
-        // since the boundary takes no where on a key inside a Json blob.
-        return asking({ ...c, ...f, ...(c.rule?.['x-slot'] ? { queryKey: c.rule['x-slot'] } : {}) })
-      }).concat(joined.map(asking)),
-      omitted,
-    }
-  }
-
-  /**
-   * The to-manys this list can be filtered THROUGH — one entry per `hasMany`
-   * whose child is a join: a model with exactly one `belongsTo` back here and
-   * exactly one to somewhere else (a `@@relator`'s shape). *Contacts carrying
-   * any of these tags* is `{ tags: { some: { tagId: { in } } } }`, which the
-   * Data boundary answers and `list.apply()` carries in the URL; what a screen
-   * lacked was the offer.
-   *
-   * What to offer is the join's other end, and it is declared there already:
-   * `entry.rule` is the child's rule for that key, so a `@values` binding or a
-   * foreign key is read by `options(name)` exactly as it is for a column. A
-   * child that is not a join, or whose schema is not registered, offers nothing
-   * rather than a filter the bar could not populate.
-   */
-  function throughFilters() {
-    const out = []
-
-    for (const rel of Object.values(relations)) {
-      if (rel.type !== 'hasMany') continue
-
-      const childDef = registry.schemaFor(rel.model)
-      if (!childDef) continue
-
-      const kids = Object.values(buildRelations(childDef, registry.modelNameFor)).filter(r => r.type === 'belongsTo')
-      const back = kids.filter(r => r.model === model)
-      const away = kids.filter(r => r.model !== model)
-      if (kids.length !== 2 || back.length !== 1 || away.length !== 1 || away[0].foreignKeys?.length !== 1) continue
-
-      const field = away[0].foreignKeys[0]
-      const rule  = buildFieldRules(childDef, registry.resolveRef, registry.modelNameFor)[field]
-      if (!rule) continue
-
-      out.push({
-        name: rel.field, label: columnLabel(rel.field), display: 'relation',
-        op: 'in', kind: 'set', rule, through: { field, model: rel.model },
-      })
-    }
-
-    return out
-  }
-
-  /**
-   * The columns a FORM cannot show — what a detail screen puts above one.
-   *
-   * A form shows what is writable, so everything a server owns is missing from
-   * it BY RULE: a `@computed` total, a `@generated` name, a `@from` rollup, a
-   * `@system` timestamp, the `@version`. Those are most of what a person opens
-   * a record to read, and until the read schema reached the browser a detail
-   * screen could not render one of them.
-   *
-   * **Defined against the form rather than restated**, so the two cannot drift:
-   * a column belongs here exactly when `formFields()` offers no control for it.
-   * That is the same question `controlFor` answers when it refuses a read-only
-   * column and says the value wants the surface that did not exist yet.
-   *
-   * Answers `columns()`' shape — ranked, with a display resolved and `omitted`
-   * carrying whatever the limit cut — so a caller renders it with the same
-   * `<Cell>` a table uses.
-   */
-  function summary(opts = {}) {
-    const offered = new Set(
-      formFields().filter(f => f.control).map(f => f.name),
-    )
-    return rankColumns({ limit: 99, ...opts, except: [...offered, ...(opts.except ?? [])] })
-  }
-
-  /**
-   * This model's child collections, each with the column that points back.
-   *
-   * A detail view is a model PLUS its relations, and the to-many half is the
-   * one a screen cannot render from this model's schema alone: a `hasMany`
-   * entry names the child model and carries no foreign key, because the key is
-   * on the child. So the child's own schema is asked for the `belongsTo` that
-   * points back here, and that column is what filters its list.
-   *
-   * A child whose schema is not registered is REPORTED rather than skipped —
-   * usually a model with no service, which is the case a generated admin meets
-   * first and the one that is silent otherwise.
-   *
-   * @returns {{field, model, service, foreignKey, reason?}[]}
-   */
-  function children() {
-    const out = []
-
-    for (const rel of Object.values(relations)) {
-      if (rel.type !== 'hasMany') continue
-
-      const childDef = registry.schemaFor(rel.model)
-      if (!childDef) {
-        out.push({ field: rel.field, model: rel.model, service: null, foreignKey: null,
-                   reason: `no schema registered for ${rel.model}` })
-        continue
-      }
-
-      // The back-reference, by MODEL rather than by name: a child may call the
-      // relation anything, and two children of one parent is ordinary.
-      const back = Object.values(buildRelations(childDef, registry.modelNameFor))
-        .find(r => r.type === 'belongsTo' && r.model === model)
-
-      if (!back?.foreignKeys?.length) {
-        out.push({ field: rel.field, model: rel.model, service: serviceNameFor(rel.model), foreignKey: null,
-                   reason: `${rel.model} declares no belongsTo back to ${model}` })
-        continue
-      }
-
-      out.push({
-        field: rel.field, model: rel.model,
-        service: serviceNameFor(rel.model),
-        foreignKey: back.foreignKeys[0],
-      })
-    }
-
-    return out
-  }
-
-  /**
-   * Which columns are frozen FOR THIS ROW.
-   *
-   * Two ways a column gets here and they are one question — *may this row still
-   * accept a value for this field* — asked of the model's UPDATE schema:
-   *
-   *   `@immutable`            — frozen the moment the row exists
-   *   `@immutable` + `@seals` — frozen once the row reaches a sealing state
-   *
-   * The method keeps the narrower name it was given: `@frontierjs/ui` already
-   * calls it through `lockedBy(form, name)`, which is the general word, and
-   * renaming the resource verb is a cross-package edit. The seal was only ever
-   * the half that could not be answered from the schema alone.
-   *
-   * Until `FJS-807` this answered `[]` for every row of every model, because
-   * the build shipped the CREATE schema and neither marker exists in it.
-   *
-   * Reached through the resource rather than imported, like `formFields` and
-   * `options`, because `@frontierjs/ui` peers only on mesa and css and the rule
-   * belongs to `sealedFor`. Answering a LIST rather than a predicate is what
-   * keeps it one call per render instead of one per field.
-   *
-   * The row to ask about is the one that was READ, never the payload being
-   * assembled: a save that issues the document and edits it in the same
-   * submit is legitimate — the boundary grades against the STORED state — and
-   * reading the payload's own state column would drop that edit in silence.
-   *
-   * No record answers `[]`, deliberately: a create form is making a draft.
-   */
-  function sealedFields(record) {
-    // A column whose field write policy refuses THIS caller is frozen on a
-    // create as well as an edit, so it is asked before the record is
-    // (`FJS-1671`). The principal is the one this resource's app sees.
-    const out = []
-    const user = app ? app.user : session.user
-    for (const [name, rule] of Object.entries(fields)) {
-      if (refusedFor(rule, user)) out.push(name)
-    }
-    if (!record) return out
-    for (const [name, rule] of Object.entries(updateFields)) {
-      if (out.includes(name)) continue
-      // The version column is `readOnly` and is the one that MUST travel, which
-      // is the same exception `stripReadOnly`'s keep list exists for. A caller
-      // deleting it from the payload turns every optimistic write into one the
-      // server refuses for having no revision.
-      if (name === versionOf) continue
-
-      // Frozen because the column may be written once — `@immutable` on a model
-      // that does not seal, which the update schema marks `readOnly` outright.
-      // Read against the CREATE table so a column that was never writable at
-      // all (`@system`, `@generated`, `@computed`, `@from`, a tenancy stamp) is
-      // not reported here: those are not frozen for this row, they are the
-      // server's on every row, and a form never offered a box for them.
-      // A @@transitions field is read-only in an update for another reason: a
-      // move changes it, and it is no more frozen on one row than on another.
-      if (rule?.readOnly && !fields[name]?.readOnly && rule['x-litestone-kind'] !== 'transition') {
-        out.push(name); continue
-      }
-
-      // Frozen because the row has REACHED the state that seals it — the
-      // answer no schema can carry, which is why it is asked of the record.
-      if (sealedFor(rule, record)) out.push(name)
-    }
-    // A `@sealed` hasMany is frozen by the same state, and a relation has no
-    // field rule to carry it, so the seal rides on its `x-relations` entry.
-    for (const rel of modelDef?.['x-relations'] ?? []) {
-      if (rel?.seal && rel.seal.states.includes(record[rel.seal.field])) out.push(rel.field)
-    }
-    return out
-  }
-
-  /**
-   * Which columns need a value for the record as it stands NOW.
-   *
-   * `sealedFields`' opposite number: that one answers which columns this row
-   * has frozen, this one which it has made necessary. Both are questions no
-   * schema can answer, both are reached through the resource for the same
-   * reason (`@frontierjs/ui` peers only on mesa and css), and both answer a
-   * LIST rather than a predicate so a form asks once per render instead of once
-   * per field.
-   *
-   * The record being ASSEMBLED and not the one that was read — the opposite of
-   * `sealedFields`, and deliberately. A seal is graded against the STORED state
-   * because the boundary grades it there; this is graded against what is about
-   * to be written, because that is what the CHECK will see and because the
-   * person may have just picked the status that makes the column required.
-   *
-   * `mode` is the write the form will make. On a patch a non-null column with
-   * a default is necessary too, since blanking it is refused (`FJS-2065`).
-   */
-  function requiredFields(record, mode) {
-    const out = []
-    for (const [name, rule] of Object.entries(fields))
-      if ((rule?.['x-litestone-required-where'] || blankRefused(rule, mode)) && requiredFor(rule, record, mode)) out.push(name)
-    return out
-  }
+  // `options` is bound further down, so it is handed over as a call.
+  const { columns, summary, children, filters, throughFilters, sealedFields, requiredFields } = createSchemaReaders({
+    model, modelDef, readModel, fields, updateFields, readFields, relations, versionOf,
+    registry, columnDefaults, formFields, relatedResource,
+    declaredRules: _declaredRules,
+    options:       (...args) => options(...args),
+    currentUser:   () => app ? app.user : session.user,
+  })
 
   /**
    * What each column the server computes will hold once this draft is written,

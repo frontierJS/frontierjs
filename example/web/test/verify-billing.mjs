@@ -278,7 +278,7 @@ t('dunning.cancellingLeavesTheDebt',
 
 // ─── 5. The boundary ──────────────────────────────────────────────────────
 //
-// `cancelAtPeriodEnd` is what a person presses and the renewal job is the only
+// `isCancelingAtPeriodEnd` is what a person presses and the renewal job is the only
 // thing that acts on it. Two subscriptions of this run's own, identical but for
 // the flag, because a cancellation asserted alone cannot be told apart from a
 // renewal that failed for some other reason — the control is what makes the
@@ -293,14 +293,14 @@ t('dunning.cancellingLeavesTheDebt',
 
 const boundaryPeriodEnd = addToDate(TODAY, { days: -5 })
 
-const mkSub = (suffix, cancelAtPeriodEnd) => startSubscription(sys, {
+const mkSub = (suffix, isCancelingAtPeriodEnd) => startSubscription(sys, {
   reference:  `SUB-B${RUN}${suffix}`,
   customerId: customer.id,
   planVersionId: version.id,
   status:     'active',
   quantity:   1,
   userId:     customer.userId,
-  cancelAtPeriodEnd,
+  isCancelingAtPeriodEnd,
 }, { startsOn: addToDate(TODAY, { days: -35 }), endsOn: boundaryPeriodEnd })
 
 {
@@ -312,7 +312,7 @@ const mkSub = (suffix, cancelAtPeriodEnd) => startSubscription(sys, {
   // about `status` betrays it, and a person who has just pressed the button
   // would otherwise see no change at all.
   t('boundary.stoppingIsStillActiveUntilTheBoundary',
-    stopping.status === 'active' && stopping.cancelAtPeriodEnd === true)
+    stopping.status === 'active' && stopping.isCancelingAtPeriodEnd === true)
 
   await fire(await openPeriod(stopping.id))
   const stoppedRow = await sys.subscription.findFirst({ where: { id: stopping.id } })
@@ -339,7 +339,7 @@ const mkSub = (suffix, cancelAtPeriodEnd) => startSubscription(sys, {
   // the queue delivers twice. The flag is read only by a period that is still
   // owed its close, and this one is closed, so a subscription whose next
   // period has already been issued, and possibly paid, is not ended by it.
-  await sys.subscription.update({ where: { id: control.id }, data: { cancelAtPeriodEnd: true } })
+  await sys.subscription.update({ where: { id: control.id }, data: { isCancelingAtPeriodEnd: true } })
   const replay      = await fire(controlFirst)
   const afterReplay = await sys.subscription.findFirst({ where: { id: control.id } })
   t('boundary.staleDispatchDoesNotEndIt', replay === 'lapsed' && afterReplay.status === 'active')

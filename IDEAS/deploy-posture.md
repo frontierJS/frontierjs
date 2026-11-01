@@ -22,7 +22,7 @@ Every grader below exists. What is missing is a deploy that asks them.
 | --- | --- | --- |
 | Build check — refuses a build that bakes config or a credential into the image (`context-config`, `env-config`, `build-secret`), warns on `unpinned-base` | `packages/cli/core/build-check.js`, step `02b-build-check` | **Yes**, refuses on error. Off with `api.buildCheck: false`. |
 | Env check — the server's env file carries every declared key | step `01b-env-check` | Only when opted in, and it checks key presence only. |
-| `deploy:doctor` — `.env` gitignored, tree clean, commits pushed, … | `packages/cli/commands/deploy/doctor.md` | No. Run by hand. |
+| `deploy:doctor` — `.env` gitignored, tree clean, … | `packages/cli/commands/deploy/doctor.md` | No. Run by hand. |
 | `fli check` app rules — `gate-unreachable`, `service-as-system`, `battery-raw-secret`, `untrusted-upload-root`, … | `packages/cli/core/checks.js` | No. |
 | Dependency posture — `bun audit` filtered to what a published package's runtime closure reaches | `scripts/ci.mjs` `advisories()` | No. It grades this framework's packages and never an app's. |
 | Dependency check — OSV per installed version, notifies on new advisory (`FJS-2715`) | `packages/basecamp/api/src/core/dependencies.ts`, `dependency-check.job.ts` | No. Basecamp-managed apps only, and it runs after the fact. |

@@ -285,6 +285,65 @@ export function overlayHost() {
   return open[open.length - 1] ?? document.body
 }
 
+/**
+ * The keyboard walk of a menu level, one per level so each keeps its own
+ * type-ahead buffer: ArrowUp/Down wrap, Home and End name their ends, and
+ * letters typed within half a second narrow one match on the row's label
+ * (the same letter alone walks on to the next row starting with it).
+ *
+ *   const walk = menuWalk()
+ *   const step = walk(rows, cursor, e)     // rows: { el, disabled, label } getters
+ *   if (step) { e.preventDefault(); $.focus(step.next?.el()) }
+ *
+ * `undefined` means the key is not the walk's. Opening focuses the panel, so
+ * on the first press `cursor` is in no list and `indexOf` is -1: stepping from
+ * -1 arithmetically is right going down by accident and wrong going up, so
+ * both ends are named rather than computed.
+ */
+export function menuWalk() {
+  let ahead = ''
+  let timer
+
+  function jumpTo(items, cur, key) {
+    ahead += key.toLowerCase()
+    clearTimeout(timer)
+    timer = setTimeout(() => { ahead = '' }, 500)
+    const cycle  = [...ahead].every((c) => c === ahead[0])
+    const needle = cycle ? ahead[0] : ahead
+    const from   = cycle || cur === -1 ? cur + 1 : cur
+    for (let i = 0; i < items.length; i++) {
+      const item = items[(from + i) % items.length]
+      if (item.label().trim().toLowerCase().startsWith(needle)) return item
+    }
+    return undefined
+  }
+
+  return function walk(rows, cursor, e) {
+    const typed = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key !== ' ' || ahead)
+    if (!typed && !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return undefined
+
+    // Registration is mount order; a row behind an `{#if}` can mount after
+    // the rows below it, so a browser puts them back in document order.
+    const items = rows.filter((r) => r.el() && !r.disabled())
+    items.sort((a, b) => {
+      const pos = a.el().compareDocumentPosition?.(b.el())
+      return pos & 4 ? -1 : pos & 2 ? 1 : 0
+    })
+    if (!items.length) return { next: undefined }
+
+    const cur = items.indexOf(cursor)
+    let next
+    if (e.key === 'Home')     next = items[0]
+    else if (e.key === 'End') next = items[items.length - 1]
+    else if (typed)           next = jumpTo(items, cur, e.key)
+    else if (cur === -1)      next = e.key === 'ArrowDown' ? items[0] : items[items.length - 1]
+    else next = e.key === 'ArrowDown'
+      ? items[(cur + 1) % items.length]
+      : items[(cur - 1 + items.length) % items.length]
+    return { next }
+  }
+}
+
 /*
  * ── A list that was cut ───────────────────────────────────────────────
  */

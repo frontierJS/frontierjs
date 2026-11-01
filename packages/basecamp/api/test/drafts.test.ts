@@ -84,7 +84,7 @@ beforeAll(async () => {
   const environment = await sys.environment.create({ data: {
     workspaceId: ws.id, projectId: project.id, name: 'Production', slug: `e-${uniq()}` } })
   site = await sys.app.create({ data: {
-    workspaceId: ws.id, environmentId: environment.id, name: 'Spa', slug: `spa-${uniq()}`, type: 'static',
+    workspaceId: ws.id, environmentId: environment.id, name: 'Spa', slug: `spa-${uniq()}`, kind: 'static',
     source: { kind: 'git', repo: remote, path: 'site' } } })
   await sys.appEditor.create({ data: { appId: site.id, userId: e.id, role: 'edit' } })
 
@@ -346,7 +346,7 @@ describe('a draft\'s preview', () => {
   test('with the account, the App\'s placement is the builder, and the stub machine is said to have built nothing', async () => {
     const sys = env.system as any
     const secret = await sys.secret.create({ data: {
-      workspaceId: site.workspaceId, name: 'cf', kind: 'provider_key', providerKind: 'cloudflare', data: JSON.stringify({ token: 'cfat_devtoken' }) } })
+      workspaceId: site.workspaceId, name: 'cf', kind: 'providerKey', providerKind: 'cloudflare', data: JSON.stringify({ token: 'cfat_devtoken' }) } })
     await registerAccount(env.app, secret, { address: `http://localhost:${sink.port}/client/v4` })
     // The only account is the one, and its id is read off a zone it opens.
     expect(await cloudflareFor(env.app, site.workspaceId)).toEqual({ token: 'cfat_devtoken', accountId: SINK_ACCOUNT })

@@ -108,23 +108,23 @@ export function resolveOperations(parseResult, dbName, operations, { pluralize =
 }
 
 /**
- * Grade resolved operations against the migration HISTORY, the thing the
- * statements run on. The names are interpolated into SQL by `renameStatement`,
- * so what lets them in is that each one was read off a column that exists there
- * (Invariant 8).
+ * Grade resolved operations against the schema the statements run on: the
+ * migration HISTORY for `create`, the live database for `dry-run` (`what`).
+ * The names are interpolated into SQL by `renameStatement`, so what lets them
+ * in is that each one was read off a column that exists there (Invariant 8).
  *
  * @returns {string|null} a refusal, or null
  */
-export function checkAgainstHistory(ops, shadowSchema) {
+export function checkAgainstHistory(ops, shadowSchema, what = 'the migration history') {
   for (const o of ops) {
     const t = shadowSchema?.[o.table]
     const cols = new Set((t?.columns ?? []).map(c => c.name))
     const at = `${o.model}.${o.from} → ${o.to}`
-    if (!t) return `${at}: the migration history builds no table ${o.table}, so there is nothing to rename in`
+    if (!t) return `${at}: ${what} builds no table ${o.table}, so there is nothing to rename in`
     if (!cols.has(o.from))
-      return `${at}: the migration history has no column ${o.table}.${o.from}` +
+      return `${at}: ${what} has no column ${o.table}.${o.from}` +
              (cols.has(o.to) ? ` — but it already has ${o.to}, so the rename was made` : `. Its columns are ${[...cols].join(', ')}`)
-    if (cols.has(o.to)) return `${at}: the migration history already has ${o.table}.${o.to}, which a rename would overwrite`
+    if (cols.has(o.to)) return `${at}: ${what} already has ${o.table}.${o.to}, which a rename would overwrite`
   }
   return null
 }

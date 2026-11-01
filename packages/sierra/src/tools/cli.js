@@ -140,7 +140,7 @@ async function cmdWidgets() {
 
   const built = await buildWidgets({
     root:      resolve(viteConfig.root ?? process.cwd()),
-    dir:       w.dir    ?? 'src/Embeds',
+    dir:       w.dir    ?? 'src/embeds',
     outDir:    w.outDir ?? 'dist/embeds',
     prefix:    w.prefix ?? '',
     minify:    w.minify !== false,
@@ -326,7 +326,7 @@ if (cmd === 'routes') {
   console.log('Usage: sierra <routes|widgets|mcp|site> [--config config/sierra.config.js] [--check] [--stdout] [--out <path>]')
   console.log()
   console.log('  routes    write the route table snapshot (--check in CI)')
-  console.log('  widgets   build one embeddable script per widget in src/Embeds/')
+  console.log('  widgets   build one embeddable script per widget in src/embeds/')
   console.log('            --serve [--port N]  serve dist/embeds with the CORS + cache headers it deploys with')
   console.log('  mcp       --out <absolute dir>  build one HTML document per src/resources/ file')
   console.log('            for an agent host to draw; `fli mcp:build` supplies api/dist/mcp')

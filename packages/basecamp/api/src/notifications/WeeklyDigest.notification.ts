@@ -1,7 +1,7 @@
 // src/notifications/WeeklyDigest.notification.ts
 //
 // **`kinds.ts` promised deploys, alerts AND SPEND, and spend has no source.**
-// `cloudSpend` is a declared adapter with nothing behind it (`docs/ADAPTERS.md`),
+// `cloudSpend` is a declared adapter with nothing behind it (`docs/adapters.md`),
 // so a digest reporting a figure would be inventing one. The description in
 // `kinds.ts` says what this actually counts; the day the adapter is wired, the
 // payload grows a field and the description grows a word.

@@ -1,12 +1,12 @@
 ---
 id: operational-edge
-status: assessment
+status: reading
 dated: 2026-08-03
 ---
 
 # Idea — The operational edge: what Encore has that FJS does not
 
-**Status: ASSESSMENT + FUTURE WORK.** Dated 2026-08-03. Probed against the tree
+**Status: READING + FUTURE WORK.** Dated 2026-08-03. Probed against the tree
 (`VERIFYING.md`). Three items here are explicitly flagged by the maintainer as
 things to explore: **infrastructure provisioning**, **preview environments**, and
 the living architecture view.

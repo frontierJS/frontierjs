@@ -51,6 +51,8 @@ Styled: `cloudflare:dns`, `cloudflare:zones`, `cloudflare:workers`,
 `project:map`, `register:next`, `register:decisions`, `register:check`,
 `test:done`, `utils:outline`, `workspace:tidy`, `register:close/file/amend/archive/decide`,
 `test:snapshots`, `dev:tui`, `basecamp` (admin printout), `register:atlas`,
-`cloudflare:pages`, `project:intent`, and help. `test/output-style.test.js`
+`cloudflare:pages`, `project:intent`, `workspace:status/list/changed/seams/invariants/hazards/surface/atlas/graph/deps/terms/exports/npm/version`, `fli:check`, `fli:doctor`,
+`project:new`, `app:atlas`, `admin:generate`, `fli:setup`, `git:commit`,
+`github:create/prs/clone`, `make:resource/route/scaffold/command/shortcut/deploy/service/home`, `ports:proxy`, `env:list`, `fli:init`, `project:codegraph`, `deploy:status/doctor/vendor` and the setup and retire steps that print a report, and help. `test/output-style.test.js`
 holds the list that must stay styled. The commands not yet graded are named
-by `FJS-3682`.
+by `FJS-3814`.

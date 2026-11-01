@@ -113,15 +113,15 @@ export function releaseFindings({
   const spec = envSpec?.spec ?? null
   const set  = (key) => {
     const row = vars?.get(key)
-    return !!row && (row.secret || (row.value ?? '') !== '')
+    return !!row && (row.isSecret || (row.value ?? '') !== '')
   }
 
   /** What the container sees for `key`: `{ value, from }`, value undefined
    *  when the variable is a secret (its value is not readable) or unset. */
   const resolve = (key, fallback) => {
     const row = vars?.get(key)
-    if (row && (row.secret || (row.value ?? '') !== ''))
-      return { value: row.secret ? undefined : row.value, from: row.secret ? 'secret' : 'variable' }
+    if (row && (row.isSecret || (row.value ?? '') !== ''))
+      return { value: row.isSecret ? undefined : row.value, from: row.isSecret ? 'secret' : 'variable' }
     if (image.env[key] !== undefined) return { value: image.env[key], from: 'image' }
     const d = fallback ?? spec?.[key]?.default
     return d === undefined ? { value: undefined, from: 'unset' } : { value: String(d), from: 'default' }
@@ -146,7 +146,7 @@ export function releaseFindings({
         `Add ${key} to the App's Variables${/KEY|SECRET|TOKEN|PASSWORD/.test(key) ? ' as a secret' : ''}` +
         `${key === 'ENCRYPTION_KEY' ? ' (`openssl rand -hex 32`)' : ''}.`,
         // A credential is somebody's and cannot be invented; the app's own key can.
-        key === 'ENCRYPTION_KEY' ? { variables: [{ key, secret: true, generate: 'hex32' }] } : null)
+        key === 'ENCRYPTION_KEY' ? { variables: [{ key, isSecret: true, generate: 'hex32' }] } : null)
     }
   }
 
@@ -244,7 +244,7 @@ export function releaseFindings({
       `${unread.routes ?? 'No answer'} — so whether the static App's Domain reaches this App was not checked.`,
       /\b403\b/.test(unread.routes ?? '') ? 'Issue the key with domainRoutes:read.' : 'Run it again, or read the routes in Basecamp.')
 
-  if (!(app.domains ?? []).length && !app.exposesPort && !fronted && !(routes ?? []).some(r => r.appId === app.id))
+  if (!(app.domains ?? []).length && !app.hasExposedPort && !fronted && !(routes ?? []).some(r => r.appId === app.id))
     add('unrouted', 'warn', 'nothing routes to the App',
       'It has no Domain and its port is not exposed, so it answers no one outside the machine.',
       'Add a Domain to the App.',

@@ -182,8 +182,8 @@ interface ParamInput {
   label:         string
   hint?:         string | null
   defaultValue?: string | null
-  required?:     boolean
-  secret?:       boolean
+  isRequired?:   boolean
+  isSecret?:     boolean
   generate?:     string | null
 }
 
@@ -237,8 +237,8 @@ async function writeParams(blueprintId: string, params: ParamInput[]): Promise<v
         label:        p.label ?? p.key,
         hint:         p.hint ?? null,
         defaultValue: p.defaultValue ?? null,
-        required:     p.required === true,
-        secret:       p.secret   === true,
+        isRequired:   p.isRequired === true,
+        isSecret:     p.isSecret   === true,
         generate:     p.generate ?? null,
         position:     position++,
       },

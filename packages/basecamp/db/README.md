@@ -92,7 +92,7 @@ column would make user creation throw.
 
 | Was | Now | Why |
 |---|---|---|
-| `model service` | `App` | `Service` is the API realm's primary noun. `docs/VISION.md` §Vocabulary forbids the overload by name; the rest of the codebase already said App (`apps.service.ts`, `AppType`, `AppStatus`). Also renames `service_server` → `AppServer`, `service_network` → `AppNetwork` |
+| `model service` | `App` | `Service` is the API realm's primary noun. `docs/vision.md` §Vocabulary forbids the overload by name; the rest of the codebase already said App (`apps.service.ts`, `AppKind`, `AppStatus`). Also renames `service_server` → `AppServer`, `service_network` → `AppNetwork` |
 | `model credential` | `Secret` | `@frontierjs/auth` owns `Credential` and the `db.credential` accessor. The distinction is real: a **Credential** is how a *person* proves identity to Basecamp; a **Secret** is how *Basecamp* proves identity to a machine or provider (SSH keys, provider API keys, registry auth, TLS certs) |
 
 ## Access control
@@ -134,7 +134,7 @@ Server at all*, never *may they touch THAT server*. That is `@@allow`, and
 | --- | --- |
 | `Server` `Project` `Environment` `App` | the hierarchy every screen walks |
 | `Deployment` `Job` `Domain` | what a person does to an app |
-| `Network` `Recipe` `FeatureFlag` `NotificationChannel` `AlertRule` `Dashboard` | the workspace's own settings |
+| `Network` `Recipe` `Flag` `NotificationChannel` `AlertRule` `Dashboard` | the workspace's own settings |
 | `Secret` `ApiKey` | credential material |
 
 The two that carry `workspaceId` and are deliberately left out: `WorkspaceMember`,
@@ -292,7 +292,7 @@ carry it**, including `Secret`, `Credential`, `Session` and `Verification` —
 an access trail over a credential is the whole point of having one.
 
 The high-volume event tables are deliberately excluded (`ServerEvent`,
-`DeploymentStep`, `JobRun`, `AlertEvent`, `AuditEvent`, `AppServer`,
+`DeploymentStep`, `JobRun`, `Alert`, `AuditEvent`, `AppServer`,
 `AppNetwork`): they are already append-only records of things that happened, so
 logging them would just double the writes.
 
@@ -329,7 +329,7 @@ failing (`FJS-633`). So a command run by hand names both, and
 
 The `AuditEvent` model is a different thing and both are wanted: `@@trail(audit)`
 is automatic row-level change capture, `AuditEvent` is the application-level
-operational trail docs/VISION.md §Operate asks for ("every operational action
+operational trail docs/vision.md §Operate asks for ("every operational action
 attributable to a person") — deploys, provisions, rotations. One answers *what
 changed in the database*, the other *what an operator did*.
 

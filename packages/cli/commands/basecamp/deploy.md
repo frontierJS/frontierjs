@@ -191,7 +191,7 @@ async function readList(origin, key, path) {
  *  back one included. An unreadable history answers false, so a live App is
  *  never shown its gaps as a first setup. */
 async function neverReleased(origin, key, app) {
-  for (const status of ['success', 'rolled_back']) {
+  for (const status of ['success', 'rolledBack']) {
     const rows = await basecamp(origin, key, `/deployments?appId=${encodeURIComponent(app.id)}&status=${status}&$limit=1`).catch(() => null)
     if (!rows || rows.some(r => r.appId === app.id)) return false
   }
@@ -257,14 +257,14 @@ async function applyPlan({ origin, key, app, plan }) {
     await basecamp(origin, key, `/apps/${encodeURIComponent(app.id)}`, { method: 'PATCH', body: plan.app })
   for (const v of plan.variables)
     await basecamp(origin, key, '/variables', { method: 'POST', body: {
-      environmentId: app.environmentId, appId: app.id, key: v.key, secret: !!v.secret,
+      environmentId: app.environmentId, appId: app.id, key: v.key, isSecret: !!v.isSecret,
       value: v.generate === 'hex32' ? randomBytes(32).toString('hex') : v.value,
     } })
   let web = null
   if (plan.web) {
     const page = (id) => ({ kind: 'inline', files: [{ path: 'index.html', content: PLACEHOLDER(app.name, id) }] })
     web = await basecamp(origin, key, '/apps', { method: 'POST', body: {
-      environmentId: app.environmentId, name: WEB_NAME, slug: app.slug === WEB_NAME ? 'web' : WEB_NAME, type: 'static', source: page('<its id>'),
+      environmentId: app.environmentId, name: WEB_NAME, slug: app.slug === WEB_NAME ? 'web' : WEB_NAME, kind: 'static', source: page('<its id>'),
     } })
     // The page names the command that replaces it, and that needs the id just issued.
     await basecamp(origin, key, `/apps/${encodeURIComponent(web.id)}`, { method: 'PATCH', body: { source: page(web.id) } })

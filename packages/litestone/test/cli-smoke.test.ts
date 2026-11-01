@@ -895,6 +895,38 @@ model Vault {
     expect(tables).toEqual([])
   }, 30_000)
 
+  // FJS-3800: aimed at a scratch copy, `apply --db=<path>` migrated the declared
+  // file — the dev db. On a multi-database schema `--db` is a name.
+  test('migrate apply --db on a multi-database schema is a name: a path is refused, a name picks one', async () => {
+    const dir = makeFixtureDir('apply-db-multi', {
+      schema: `
+database main  { path "main.db" }
+database extra { path "extra.db" }
+model Widget { id Int @id  name String }
+model Note   { id Int @id  body String  @@db(extra) }
+`,
+      config: `export default { schema: './schema.lite', migrations: './migrations' }\n`,
+    })
+    await runCli(dir, ['migrate', 'create', 'init'])
+
+    const byPath = await runCli(dir, ['migrate', 'apply', `--db=${join(dir, 'copy.db')}`])
+    expect(byPath.exit).not.toBe(0)
+    expect(byPath.stdout + byPath.stderr).toMatch(/main, extra/)
+    const tables = (file: string) => {
+      const db = new Database(join(dir, file), { readonly: true })
+      const names = db.query(`SELECT name FROM sqlite_master WHERE name IN ('widget', 'note')`).all().map((r: any) => r.name)
+      db.close()
+      return names
+    }
+    expect(tables('main.db')).toEqual([])
+    expect(tables('extra.db')).toEqual([])
+
+    const byName = await runCli(dir, ['migrate', 'apply', '--db=extra'])
+    expect(byName.exit).toBe(0)
+    expect(tables('extra.db')).toEqual(['note'])
+    expect(tables('main.db')).toEqual([])
+  }, 30_000)
+
   test('migrate check and migrate create refuse a .js file in the history', async () => {
     const dir = makeFixtureDir('check-js', {
       schema: `model Post {\n  id    Int    @id\n  title String\n}\n`,
@@ -1476,6 +1508,45 @@ describe('migrate dev — a file that deletes values is created and not applied'
     const file = join(dir, 'migrations', readdirSync(join(dir, 'migrations')).filter(f => f.endsWith('_rename.sql'))[0])
     writeFileSync(file, readFileSync(file, 'utf8').replace('Accept data loss: no', 'Accept data loss: yes'))
     expect((await runCli(dir, ['migrate', 'apply'])).exit).toBe(0)
+  })
+})
+
+describe('migrate dry-run — previews the rename a --rename flag asks for', () => {
+  // dry-run diffed the live database with no operations, so it showed the
+  // drop-and-add that `migrate create` would not write (FJS-3801).
+  const V1 = `model Post {\n  id    Int    @id\n  title String\n}\n`
+  const V2 = `model Post {\n  id      Int    @id\n  heading String @default("")\n}\n`
+
+  test('shows the RENAME COLUMN create writes, and touches neither the database nor the migrations', async () => {
+    const dir = makeFixtureDir('dry-rename', { schema: V1 })
+    expect((await runCli(dir, ['migrate', 'dev', 'initial'])).exit).toBe(0)
+    const db = new Database(join(dir, 'test.db'))
+    db.run(`INSERT INTO post VALUES (1, 'Hello')`)
+    db.close()
+    writeFileSync(join(dir, 'schema.lite'), V2, 'utf8')
+
+    const plain = await runCli(dir, ['migrate', 'dry-run'])
+    expect(plain.stdout).not.toContain('RENAME COLUMN')
+
+    const r = await runCli(dir, ['migrate', 'dry-run', '--rename', 'Post.title=heading'])
+    expect(r.exit).toBe(0)
+    expect(r.stdout).toContain('RENAME COLUMN "title" TO "heading"')
+    expect(r.stdout).toContain('SELECT "id", "heading" FROM "post"')
+    expect(r.stdout).not.toContain('DESTRUCTIVE')
+
+    const kept = new Database(join(dir, 'test.db'), { readonly: true })
+    expect(kept.query('SELECT title FROM post').all()).toEqual([{ title: 'Hello' }])
+    kept.close()
+    expect(readdirSync(join(dir, 'migrations')).filter(f => f.endsWith('.sql')).length).toBe(1)
+  })
+
+  test('refuses a rename the live database cannot take, naming it', async () => {
+    const dir = makeFixtureDir('dry-rename-bad', { schema: V1 })
+    expect((await runCli(dir, ['migrate', 'dev', 'initial'])).exit).toBe(0)
+    writeFileSync(join(dir, 'schema.lite'), V2, 'utf8')
+    const r = await runCli(dir, ['migrate', 'dry-run', '--rename', 'Post.nope=heading'])
+    expect(r.exit).toBe(1)
+    expect(r.stdout + r.stderr).toContain('nope')
   })
 })
 

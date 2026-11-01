@@ -221,7 +221,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
       app.hooks({
         before: {
           all: [function secondFactorRequired(ctx: ServiceContext) {
-            if (!(ctx.user as SessionContext | null)?.enrollmentOnly) return
+            if (!(ctx.user as SessionContext | null)?.isEnrollmentOnly) return
             if (ctx.service === accountName && ENROLLMENT_METHODS.has(ctx.method)) return
             throw new Forbidden(
               'A second factor is required before this account can do anything else -- set one up with ' +
@@ -464,7 +464,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
         if (operator.support) throw new SupportEpisodeError('Already in a support session — end it before starting another')
         // A route is outside the hook above, and an episode would swap the held
         // session for the subject's, whose enrollment methods act on the subject.
-        if (operator.enrollmentOnly) throw new Forbidden('A second factor is required before this account can do anything else', { reason: 'second_factor_required' })
+        if (operator.isEnrollmentOnly) throw new Forbidden('A second factor is required before this account can do anything else', { reason: 'second_factor_required' })
         const { subjectId, reason, ttl } = body(ctx) as { subjectId?: string; reason?: string; ttl?: string }
         if (!subjectId) throw new BadRequest('subjectId is required')
         if (!reason)    throw new BadRequest('reason is required')

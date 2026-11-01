@@ -32,7 +32,7 @@ import { TILE_KINDS } from '../../api/src/services/dashboards/kinds.ts'
 // The reclaim vocabulary, for the same reason: the schema cannot hold it (an
 // enum array does not parse), so the test that keeps it a single home has to
 // read the one home rather than restate it.
-import { RECLAIM_TARGET_NAMES } from '../../api/src/services/cleanup/targets.ts'
+import { RECLAIM_TARGET_NAMES } from '../../api/src/services/maintenance-runs/targets.ts'
 // The hub's copy of the two status vocabularies. It exists so a bad value is
 // refused by name at the API rather than by a CHECK constraint message; this
 // import is what keeps it a copy of the schema rather than a second opinion.
@@ -53,6 +53,9 @@ const MIGRATIONS = join(import.meta.dir, '..', 'migrations')
 // rest of this file rests on, and was false in two ways at once (FJS-193).
 const MAIN_MIGRATIONS = join(MIGRATIONS, 'main')
 const MIGRATION       = join(MAIN_MIGRATIONS, listMigrationFiles(MAIN_MIGRATIONS)[0] ?? '')
+// The DDL the schema emits NOW. A migration is history and keeps the spelling an
+// enum value had when it was written, so a test of today's CHECK reads this.
+const CURRENT_DDL     = join(import.meta.dir, '..', 'ddl.snapshot.sql')
 const ENC_KEY    = '0'.repeat(64)
 
 // Every environment this file opens, so nothing is left holding a connection.
@@ -327,7 +330,7 @@ describe('generated migration', () => {
     // became a model so an app can answer on more than one hostname and carry
     // a certificate per hostname. 27 since `NotificationChannel` and the
     // `AlertRuleChannel` join replaced `AlertRule.channels`, a Json array of
-    // ids pointing at rows that did not exist. 29 since `FeatureFlag` and
+    // ids pointing at rows that did not exist. 29 since `Flag` and
     // `FlagOverride` — the mock keyed per-environment state by TIER NAME, and
     // an override now points at a real Environment row. 30 since `ApiKey`, the
     // token Basecamp issues rather than presents. 31 since `Volume` — the first
@@ -414,7 +417,7 @@ describe('generated migration', () => {
 })
 
 // ─── Field protection ────────────────────────────────────────────────────────
-// VISION.md constraint 7: secrets are held, never shown.
+// vision.md constraint 7: secrets are held, never shown.
 
 describe('Secret.data protection', () => {
   test('is encrypted at rest — the key is not in the database file', async () => {
@@ -423,7 +426,7 @@ describe('Secret.data protection', () => {
     const ws  = await seedWorkspace(sys)
     const KEY = JSON.stringify({ priv: 'SSH-PRIVATE-KEY-DO-NOT-LEAK' })
 
-    await sys.secret.create({ data: { workspaceId: ws.id, name: 'deploy-key', kind: 'ssh_key', data: KEY } })
+    await sys.secret.create({ data: { workspaceId: ws.id, name: 'deploy-key', kind: 'sshKey', data: KEY } })
     env.close()
 
     expect(readFileSync(env.path, 'latin1')).not.toContain('SSH-PRIVATE-KEY-DO-NOT-LEAK')
@@ -435,7 +438,7 @@ describe('Secret.data protection', () => {
     const ws  = await seedWorkspace(sys)
     const KEY = JSON.stringify({ priv: 'ROUND-TRIP' })
 
-    const s = await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'ssh_key', data: KEY } })
+    const s = await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'sshKey', data: KEY } })
     expect(s.data).toBe(KEY)
     db.$close()
   })
@@ -444,7 +447,7 @@ describe('Secret.data protection', () => {
     const db  = await client()
     const sys = db.asSystem()
     const ws  = await seedWorkspace(sys)
-    await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'ssh_key', data: '{"priv":"x"}' } })
+    await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'sshKey', data: '{"priv":"x"}' } })
 
     // An ADMINISTRATOR(5), which is the level Secret.read wants — so this is
     // the field policy refusing a caller the GATE let through. Two independent
@@ -479,7 +482,7 @@ describe('audit trail', () => {
     const ws  = await seedWorkspace(sys)
 
     const s = await sys.secret.create({
-      data: { workspaceId: ws.id, name: 'deploy-key', kind: 'ssh_key', data: '{"priv":"AUDIT-LEAK-CANARY"}' },
+      data: { workspaceId: ws.id, name: 'deploy-key', kind: 'sshKey', data: '{"priv":"AUDIT-LEAK-CANARY"}' },
     })
     await sys.secret.update({ where: { id: s.id }, data: { data: '{"priv":"ROTATED-CANARY"}' } })
 
@@ -536,7 +539,7 @@ describe('the gate ladder', () => {
     const db  = await client()
     const sys = db.asSystem()
     const ws  = await seedWorkspace(sys)
-    await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'ssh_key', data: '{}' } })
+    await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'sshKey', data: '{}' } })
 
     const dev = db.$setAuth(as('developer', { workspaceId: ws.id }))
     const created = await dev.project.create({ data: { workspaceId: ws.id, name: 'p', slug: 'p' } })
@@ -552,7 +555,7 @@ describe('the gate ladder', () => {
     const db  = await client()
     const sys = db.asSystem()
     const ws  = await seedWorkspace(sys)
-    await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'ssh_key', data: '{}' } })
+    await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'sshKey', data: '{}' } })
 
     const admin = db.$setAuth(as('admin', { workspaceId: ws.id }))
     expect((await admin.secret.findMany({ limit: 1 })).length).toBe(1)
@@ -571,7 +574,7 @@ describe('the gate ladder', () => {
     const db  = await client()
     const sys = db.asSystem()
     const ws  = await seedWorkspace(sys)
-    await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'ssh_key', data: '{}' } })
+    await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'sshKey', data: '{}' } })
 
     // No membership anywhere, so the workspace ladder gives nothing — the level
     // is standing alone. The workspace still has to be ON the principal:
@@ -646,7 +649,7 @@ describe('the gate ladder', () => {
   test('a person cannot change their own address or organization', async () => {
     const db  = await client()
     const sys = db.asSystem()
-    const acct = await sys.account.create({ data: { type: 'organization', status: 'active', slug: 'x', displayName: 'X' } })
+    const acct = await sys.account.create({ data: { kind: 'organization', status: 'active', slug: 'x', displayName: 'X' } })
     await sys.user.create({ data: { id: 'u1', email: 'u1@example.com', name: 'Me' } })
 
     await db.$setAuth(as('owner')).user.update({ where: { id: 'u1' }, data: {
@@ -677,7 +680,7 @@ describe('the gate ladder', () => {
     } })
     const row = await sys.user.findUnique({ where: { id: 'u1' } })
     expect(row.isSystemAdmin).toBe(false)
-    expect(row.status).toBe('pending_verification')
+    expect(row.status).toBe('pendingVerification')
     expect(row.kind).toBe('user')
     // A field write policy DROPS the field; the rest of the write lands, which
     // is why the assertion above is the one that matters.
@@ -931,7 +934,7 @@ describe('AppEditor — an editor reads their own grants, an admin writes them',
       const environment = await sys.environment.create({ data: {
         workspaceId: ws.id, projectId: project.id, name: 'prod', slug: 'prod' } })
       return sys.app.create({ data: { workspaceId: ws.id, environmentId: environment.id, name: 'site', slug: 'site',
-        type: 'static', source: { kind: 'git', repo: `git@example.com:${tag}.git` } } })
+        kind: 'static', source: { kind: 'git', repo: `git@example.com:${tag}.git` } } })
     }
     const appA = await site(a, 'a')
     const appB = await site(b, 'b')
@@ -1321,7 +1324,7 @@ describe('the workspace-owned six — the tenancy declared', () => {
   const SHAPES = [
     { accessor: 'network',             role: 'admin',     data: (t: string) => ({ name: `edge-${t}`, slug: `edge-${t}`, cidr: '10.0.0.0/16' }) },
     { accessor: 'recipe',              role: 'admin',     data: (t: string) => ({ name: `harden-${t}`, slug: `harden-${t}`, script: 'echo hi' }) },
-    { accessor: 'featureFlag',         role: 'developer', data: (t: string) => ({ key: `flag-${t}`, name: 'Flag' }) },
+    { accessor: 'flag',                role: 'developer', data: (t: string) => ({ key: `flag-${t}`, name: 'Flag' }) },
     { accessor: 'notificationChannel', role: 'admin',     data: (t: string) => ({ name: `#ops-${t}`, kind: 'slack', config: { channel: '#ops' } }) },
     { accessor: 'alertRule',           role: 'admin',     data: (t: string) => ({ name: `CPU high ${t}`, metricName: 'process.memoryMb', severity: 'critical', threshold: 90 }) },
     { accessor: 'dashboard',           role: 'developer', data: (t: string) => ({ name: `Overview ${t}`, slug: `overview-${t}` }) },
@@ -1400,9 +1403,9 @@ describe('the workspace-owned six — the tenancy declared', () => {
     const sys = db.asSystem()
     const { rows } = await twoWorkspaces(sys)
 
-    expect((await sys.featureFlag.findMany({})).length).toBe(2)
-    expect((await sys.featureFlag.update({
-      where: { id: rows.featureFlag.theirs.id }, data: { isEnabled: true } })).isEnabled).toBe(true)
+    expect((await sys.flag.findMany({})).length).toBe(2)
+    expect((await sys.flag.update({
+      where: { id: rows.flag.theirs.id }, data: { isEnabled: true } })).isEnabled).toBe(true)
     expect((await sys.recipe.update({
       where: { id: rows.recipe.theirs.id }, data: { lastRunAt: new Date().toISOString() } })).lastRunAt)
       .toBeTruthy()
@@ -1427,7 +1430,7 @@ describe('Secret · ApiKey — the tenancy declared over credential material', (
     } })
     const build = async (ws: any, tag: string) => ({
       secret: await sys.secret.create({ data: {
-        workspaceId: ws.id, name: `deploy-key-${tag}`, kind: 'ssh_key', data: 'PRIVATE', createdBy: 'u1' } }),
+        workspaceId: ws.id, name: `deploy-key-${tag}`, kind: 'sshKey', data: 'PRIVATE', createdBy: 'u1' } }),
       apiKey: await sys.apiKey.create({ data: {
         workspaceId: ws.id, userId: a.userId, name: `ci-${tag}`, tokenHint: `bc_${tag}` } }),
     })
@@ -1472,7 +1475,7 @@ describe('Secret · ApiKey — the tenancy declared over credential material', (
       workspaceId: b.id, name: 'smuggled', kind: 'generic', data: 'X', createdBy: 'u1' } }))
       .rejects.toThrow(/Outside your workspaceId|denied by @@allow/)
     await expect(caller.apiKey.create({ data: {
-      workspaceId: b.id, userId: a.userId, name: 'smuggled', tokenHint: 'bc_x' } }))
+      workspaceId: b.id, userId: a.userId, name: 'smuggled', tokenHint: 'bc_x' }, system: ['tokenHint'] }))
       .rejects.toThrow(/Outside your workspaceId|denied by @@allow/)
 
     for (const accessor of ACCESSORS) {
@@ -1796,7 +1799,7 @@ describe('Volume — observed, not declared', () => {
     const { server } = await seedServer(sys)
 
     const v = await sys.volume.create({
-      data: { serverId: server.id, name: 'redis-data', inUse: true, containers: ['redis', 'api'] },
+      data: { serverId: server.id, name: 'redis-data', isInUse: true, containers: ['redis', 'api'] },
     })
     expect(v.containers).toEqual(['redis', 'api'])
 
@@ -1804,7 +1807,7 @@ describe('Volume — observed, not declared', () => {
     // two characters rather than an empty list.
     const bare = await sys.volume.create({ data: { serverId: server.id, name: 'orphan' } })
     expect(bare.containers).toEqual([])
-    expect(bare.inUse).toBe(false)
+    expect(bare.isInUse).toBe(false)
     db.$close()
   })
 })
@@ -1835,7 +1838,7 @@ describe('Dashboard — a declared vocabulary, not a stored query', () => {
     // Against the DDL, because the point is what CANNOT be stored. A `query`
     // or `accessor` column added later would still make every read work, and
     // the policy it walks around would fail silently.
-    const ddl   = readFileSync(MIGRATION, 'utf8')
+    const ddl   = readFileSync(CURRENT_DDL, 'utf8')
     const start = ddl.indexOf('CREATE TABLE IF NOT EXISTS "dashboard_tile"')
     const table = ddl.slice(start, start + ddl.slice(start).indexOf(') STRICT;'))
 
@@ -1877,7 +1880,7 @@ describe('Dashboard — a declared vocabulary, not a stored query', () => {
       data: { workspaceId: ws.id, name: 'Ops', slug: `ops-${Math.random().toString(36).slice(2, 8)}` },
     })
     const tile = await sys.dashboardTile.create({
-      data: { dashboardId: board.id, kind: 'server_health', serverId: server.id },
+      data: { dashboardId: board.id, kind: 'serverHealth', serverId: server.id },
     })
 
     // SetNull, not Cascade. A card that vanishes with the machine takes the
@@ -1898,7 +1901,7 @@ describe('Dashboard — a declared vocabulary, not a stored query', () => {
     const board = await sys.dashboard.create({
       data: { workspaceId: ws.id, name: 'Ops', slug: `ops-${Math.random().toString(36).slice(2, 8)}` },
     })
-    await sys.dashboardTile.create({ data: { dashboardId: board.id, kind: 'server_fleet' } })
+    await sys.dashboardTile.create({ data: { dashboardId: board.id, kind: 'serverFleet' } })
 
     // Hard delete: Dashboard is @@softDelete, so `remove` leaves the tiles
     // pointing at a row that still exists — which is right, since restoring a
@@ -2122,7 +2125,7 @@ describe('the hub tier — suspension, and who may grant it', () => {
     // will read when FJS-007 lands.
     expect(user.isSystemAdmin).toBe(false)
     expect('role' in user).toBe(false)
-    expect(user.status).toBe('pending_verification')
+    expect(user.status).toBe('pendingVerification')
     db.$close()
   })
 })
@@ -2172,7 +2175,7 @@ describe('Deployment and Job declare their own state machines', () => {
       data: { projectId: proj.id, workspaceId: ws.id, name: 'Prod', slug: 'prod', tier: 'production' },
     })
     const app = await sys.app.create({
-      data: { environmentId: env.id, workspaceId: ws.id, name: 'web', slug: `web-${uniq()}`, type: 'container' },
+      data: { environmentId: env.id, workspaceId: ws.id, name: 'web', slug: `web-${uniq()}`, kind: 'container' },
     })
     // A Deployment is born `pending`, even for the system, so any other state is walked to.
     let d = await sys.deployment.create({ data: { appId: app.id, workspaceId: ws.id } })
@@ -2252,12 +2255,12 @@ describe('Deployment and Job declare their own state machines', () => {
     // Deployment's update gate is USER(4) and a developer passes it — this
     // refusal is the MOVE's own floor, which is the whole reason @gate exists
     // on a transition rather than only on the model.
-    await expect(as(db, ws, 'developer').deployment.update({ where: { id: d.id }, data: { status: 'rolled_back' } }))
+    await expect(as(db, ws, 'developer').deployment.update({ where: { id: d.id }, data: { status: 'rolledBack' } }))
       .rejects.toThrow()
 
     // …and an administrator makes the same move.
-    expect((await as(db, ws, 'admin').deployment.update({ where: { id: d.id }, data: { status: 'rolled_back' } })).status)
-      .toBe('rolled_back')
+    expect((await as(db, ws, 'admin').deployment.update({ where: { id: d.id }, data: { status: 'rolledBack' } })).status)
+      .toBe('rolledBack')
 
     db.$close()
   })
@@ -2418,18 +2421,18 @@ describe('the access and constraints this schema declares are enforced', () => {
 })
 
 // FJS-2771: "public" has two meanings that are already declared elsewhere — a
-// hostname is what Caddy serves, `exposesPort` is the raw port (FJS-D930). A
+// hostname is what Caddy serves, `hasExposedPort` is the raw port (FJS-D930). A
 // third boolean with no reader reads as a third idea.
 describe('App reachability', () => {
-  test('exposesPort is the one declared exposure; there is no isPublic beside it', () => {
+  test('hasExposedPort is the one declared exposure; there is no isPublic beside it', () => {
     const app = parseFile(SCHEMA).schema.models.find((m: any) => m.name === 'App')!
     const names = app.fields.map((f: any) => f.name)
-    expect(names).toContain('exposesPort')
+    expect(names).toContain('hasExposedPort')
     expect(names).not.toContain('isPublic')
   })
 })
 
-// A vendor narrowed out of ProviderKind is one a provider_key Secret cannot
+// A vendor narrowed out of ProviderKind is one a providerKey Secret cannot
 // name, so an AppPlatform naming it could never find its account (FJS-D1607).
 describe('vendor subsets', () => {
   test('every PlatformProvider and ComputeProvider is a ProviderKind', () => {
@@ -2508,8 +2511,8 @@ describe('a protected environment — a developer deploys to it and does not res
 describe('App runtime columns', () => {
   // Every other scalar App column, each one a thing a release does not hand to `docker run`.
   const NOT_RUNTIME = [
-    'id', 'workspaceId', 'environmentId', 'name', 'slug', 'type', 'status', 'source', 'exposesPort',
-    'deployOnPush', 'pushSecret', 'pushTokenHash', 'pushActorId', 'deployPublicKey', 'blueprintId',
+    'id', 'workspaceId', 'environmentId', 'name', 'slug', 'kind', 'status', 'source', 'hasExposedPort',
+    'isDeployedOnPush', 'pushSecret', 'pushTokenHash', 'pushActorId', 'deployPublicKey', 'blueprintId',
     'backupCron', 'backupDestinationId', 'replicaDestinationId', 'drillCron', 'replicaFoundAt',
     'replicaSyncedAt', 'createdAt', 'updatedAt', 'deletedAt',
   ]

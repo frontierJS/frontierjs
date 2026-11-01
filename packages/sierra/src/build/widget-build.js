@@ -23,7 +23,7 @@
  * every sub-project carries, and every path here is relative to it:
  *
  *     widgets/config/sierra.config.js   target: 'widget'
- *     widgets/src/Embeds/               the entries — this module's `dir`
+ *     widgets/src/embeds/               the entries — this module's `dir`
  *     widgets/test/                     host pages, one per widget
  *     widgets/dist/embeds/              the built scripts
  *     widgets/deploy/                   static hosting, its own release
@@ -36,8 +36,8 @@
  * ── What a widget IS ──────────────────────────────────────────────────────
  * A file, or a directory holding one:
  *
- *     src/Embeds/Booking.mesa              → Booking  → dist/embeds/Booking.js
- *     src/Embeds/CleaningLead/index.mesa   → CleaningLead
+ *     src/embeds/Booking.mesa              → Booking  → dist/embeds/Booking.js
+ *     src/embeds/CleaningLead/index.mesa   → CleaningLead
  *       CleaningLead/AddonCounter.mesa       …its own components, not widgets
  *
  * The directory form is what a widget with parts looks like, and it is why
@@ -285,7 +285,7 @@ ${embeds.join('\n')}
  * Serve `DEV_WIDGETS_ID` and route stylesheet imports to the shadow root.
  * Dev server only; a build never loads either.
  */
-export function widgetDevPlugin({ dir = 'src/Embeds', prefix = '' } = {}) {
+export function widgetDevPlugin({ dir = 'src/embeds', prefix = '' } = {}) {
   let root = process.cwd()
   const resolved = '\0' + DEV_WIDGETS_ID
   return {
@@ -357,7 +357,7 @@ function assertBuildableTags(widgets, prefix) {
  *
  * @param {object}   opts
  * @param {string}   opts.root       Vite root (the app's web root)
- * @param {string}   [opts.dir='src/Embeds']  relative to root
+ * @param {string}   [opts.dir='src/embeds']  relative to root
  * @param {string}   [opts.outDir='dist/embeds'] relative to root
  * @param {string}   [opts.prefix='']  tag/class prefix for every widget
  * @param {Array}    opts.plugins    the Sierra plugin list — the same Mesa
@@ -371,7 +371,7 @@ function assertBuildableTags(widgets, prefix) {
  */
 export async function buildWidgets(opts) {
   const {
-    root, dir = 'src/Embeds', outDir = 'dist/embeds', prefix = '',
+    root, dir = 'src/embeds', outDir = 'dist/embeds', prefix = '',
     plugins = [], viteBuild, minify = true, log = () => {},
   } = opts
 
@@ -445,7 +445,7 @@ export async function buildWidgets(opts) {
  * Name the scripts in `outDir` that no widget here claims.
  *
  * `emptyOutDir: false` is necessary — N builds write into one directory — so
- * nothing prunes, and a widget deleted from `src/Embeds/` keeps shipping
+ * nothing prunes, and a widget deleted from `src/embeds/` keeps shipping
  * forever. Keeping it is the right DEFAULT (a host page still has that URL
  * pasted into it), but it should be an answer rather than an accident, and
  * *what is on this origin and why* has to be askable.

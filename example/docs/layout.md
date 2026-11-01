@@ -9,7 +9,7 @@ example/
 ├── api/
 │   ├── index.ts            ← the entry. start(), the dev mail sink, and nothing else
 │   ├── *.snapshot.md       ← surface · jobs · principal · notifications. Four
-│   │                         committed artefacts about THIS surface, generated
+│   │                         committed artifacts about THIS surface, generated
 │   │                         from here and rechecked from here by CI
 │   ├── config/             ← junction.config.js — caravan, and where the services are
 │   └── src/
@@ -36,7 +36,7 @@ example/
     │   ├── verify-live.mjs ← the REAL-TIME drive. 14 — a watcher tab that never acts
     │   ├── verify-jobs.mjs ← the DEFERRED-WORK drive. 8 — no browser at all
     │   ├── verify-notify.mjs ← the OUTBOUND drive. 9 — mail at a real server
-    │   ├── preview.mjs     ← serves dist/ with the dev server's proxies
+    │   ├── verify-preview.mjs   ← serves dist/ with the dev server's proxies
     │   └── verify-build.mjs
     └── src/
         ├── stores/prefs.js       ← browser preferences; the only non-model state

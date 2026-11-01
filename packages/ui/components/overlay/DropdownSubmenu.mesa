@@ -1,0 +1,216 @@
+<script>
+  // DropdownSubmenu.mesa
+  // A row in a DropdownMenu that opens a second panel of rows beside it.
+  // ArrowRight, Enter or a press opens it and focuses its first row; hovering
+  // the row opens it and leaves focus where it is. ArrowLeft and Escape close
+  // it and give focus back to the row, and so does the pointer reaching another
+  // row of the menu. Choosing a row in it closes the whole menu, as it does one
+  // level up.
+  //
+  // Usage:
+  //   <DropdownMenu>
+  //     {#snippet trigger()}<Button>File</Button>{/snippet}
+  //     <DropdownItem>New</DropdownItem>
+  //     <DropdownSubmenu heading="Export">
+  //       {#snippet icon()}<IconDownload />{/snippet}
+  //       <DropdownItem onclick={asPdf}>PDF</DropdownItem>
+  //       <DropdownItem onclick={asCsv}>CSV</DropdownItem>
+  //     </DropdownSubmenu>
+  //   </DropdownMenu>
+  //
+  // keepOpen: the default for the rows inside, as on DropdownMenu.
+  //
+  // The panel is portaled like the menu's and placed against the ROW, on its
+  // right (flipping left at the viewport edge). The menu's click-away and
+  // arrow walk both stop at the panel's edge, so each level is registered with
+  // the one above it: rows through addRow, the panel through addPanel.
+
+  import { placeAgainst, overlayHost, menuWalk, tone as toTone, cx } from '../../utils.js'
+
+  export let heading   = ''
+  export let tone      = ''
+  export let disabled  = false
+  export let icon      = null        // snippet — leading icon
+  export let keepOpen  = undefined   // stated: this submenu's rows' default; unstated: the menu's
+  export let placement = 'right-start'
+  export let offset    = 2
+
+  const t = toTone(tone)
+
+  // Consumed from the level above, re-provided for the rows below. `const`
+  // tracks the provider; the same keys written below are what this component's
+  // own children see.
+  const parentAddRow   = $context.addRow
+  const parentRowFocus = $context.rowFocus
+  const parentAddPanel = $context.addPanel
+  const menuKeepsOpen  = $context.keepOpen
+
+  var rows   = []
+  var cursor = null
+  var subPanels = []
+
+  $context.keepOpen = keepOpen ?? menuKeepsOpen
+  $context.addRow = (row) => {
+    rows.push(row)
+    return () => { rows = rows.filter((r) => r !== row); if (cursor === row) cursor = null }
+  }
+  $context.rowFocus = (row, on) => { if (on) cursor = row; else if (cursor === row) cursor = null }
+  // A submenu nested in this one hands its panel up the chain, so this level's
+  // click-away and focus rule treat it as inside.
+  $context.addPanel = (get) => {
+    subPanels.push(get)
+    const withdrawUp = parentAddPanel?.(get)
+    return () => { subPanels = subPanels.filter((g) => g !== get); withdrawUp?.() }
+  }
+
+  let open   = false
+  let placed = false
+  let x      = 0
+  let y      = 0
+  let rowEl
+  let labelEl
+  let panelEl
+  let menuEl
+
+  const row = { el: () => rowEl, disabled: () => disabled, label: () => labelEl?.textContent ?? heading }
+  var withdrawRow
+  var withdrawPanel
+  $.onMount(() => {
+    withdrawRow   = parentAddRow?.(row)
+    withdrawPanel = parentAddPanel?.(() => panelEl)
+  })
+  $.onDestroy(() => { withdrawRow?.(); withdrawPanel?.() })
+
+  const walk = menuWalk()
+
+  const panelAnim = $.entrance({
+    in:  el => el.animate?.(
+      [{ opacity: 0, transform: 'scale(0.96)' }, { opacity: 1, transform: 'scale(1)' }],
+      { duration: 130, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'forwards' }
+    ),
+    out: el => el.animate?.(
+      [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(0.96)' }],
+      { duration: 90, fill: 'forwards' }
+    )?.finished,
+  })
+
+  function openSub(focusFirst) {
+    if (disabled) return
+    if (open) { if (focusFirst) focusRow(); return }
+    // Rendered hidden and shown by the frame that places it, so it never
+    // paints at the previous open's coordinates.
+    placed = false
+    open   = true
+    requestAnimationFrame(async () => {
+      const [tr, pr, vp] = await Promise.all([$.measure(rowEl), $.measure(panelEl), $.viewport()])
+      if (tr && pr) ({ x, y } = placeAgainst(tr, pr, vp, { placement, offset }))
+      placed = true
+      queueMicrotask(() => {
+        $.focus(menuEl)
+        if (focusFirst) focusRow()
+      })
+    })
+  }
+
+  function focusRow() {
+    const first = rows.filter((r) => r.el() && !r.disabled())
+      .sort((a, b) => (a.el().compareDocumentPosition?.(b.el()) & 4 ? -1 : 1))[0]
+    $.focus(first?.el())
+  }
+
+  function closeSub(restoreFocus = true) {
+    if (!open) return
+    open = false
+    if (restoreFocus) $.focus(rowEl)
+  }
+
+  function inside(node) {
+    if (!node) return false
+    return rowEl?.contains(node) || panelEl?.contains(node) || subPanels.some((get) => get()?.contains(node))
+  }
+
+  // A press elsewhere in the menu, or focus moving to another row of the level
+  // above, ends this one. A press outside the whole menu unmounts it anyway.
+  function onClickAway(e) {
+    if (open && !inside(e.target)) closeSub(false)
+  }
+  function onFocusIn(e) {
+    if (open && placed && !inside(e.target)) closeSub(false)
+  }
+  // Focus does not move on hover, so a pointer reaching a sibling row needs its
+  // own close. Only a target inside some menu counts: the gap between the row
+  // and its panel, and the page around the menu, leave the submenu open.
+  function onPointerOver(e) {
+    if (open && placed && !inside(e.target) && e.target?.closest?.('[role=menu]')) closeSub(false)
+  }
+
+  function onRowKeydown(e) {
+    if (e.key === 'ArrowRight') { e.preventDefault(); openSub(true) }
+    // Focus is on the row until the panel takes it, and Escape there ends the
+    // submenu, not the menu above it.
+    if (e.key === 'Escape' && open) { e.preventDefault(); e.stopPropagation(); closeSub() }
+  }
+
+  // On the panel, not the window: the menu's own handler listens on the window
+  // and would walk ITS rows. A key this level answers stops here.
+  function onPanelKeydown(e) {
+    if (e.key === 'Escape' || e.key === 'ArrowLeft') {
+      e.preventDefault(); e.stopPropagation(); closeSub()
+      return
+    }
+    const step = walk(rows, cursor, e)
+    if (!step) return
+    e.preventDefault(); e.stopPropagation()
+    $.focus(step.next?.el())
+  }
+</script>
+
+<mesa:window onclick|capture={onClickAway} onfocusin={onFocusIn} onpointerover={onPointerOver} />
+
+<div role="none" style:display="contents">
+  <button
+    type="button"
+    role="menuitem"
+    aria-haspopup="menu"
+    aria-expanded={open ? 'true' : 'false'}
+    tabindex="-1"
+    disabled={disabled}
+    class={cx('item', t)}
+    {class}
+    {...$attributes}
+    bind:this={rowEl}
+    onfocus={() => parentRowFocus?.(row, true)}
+    onblur={() => parentRowFocus?.(row, false)}
+    onkeydown={onRowKeydown}
+    onpointerenter={() => openSub(false)}
+    onclick={(e) => openSub(e.detail === 0)}
+  >
+    {#if icon}
+      {@render icon?.()}
+    {/if}
+    <span bind:this={labelEl} data-part="label" style:flex="1" style:text-align="start">{heading}</span>
+    <span aria-hidden="true" data-part="chevron" style:color="var(--ink-mute)">›</span>
+  </button>
+</div>
+
+{#if open}
+  <mesa:portal to={overlayHost()}>
+    <div
+      bind:this={panelEl}
+      class="popover"
+      style:position="fixed"
+      style:min-inline-size="10rem"
+      style:max-inline-size="16rem"
+      style:padding="0.25rem"
+      style:left="{x}px"
+      style:top="{y}px"
+      style:visibility="{placed ? 'visible' : 'hidden'}"
+      onkeydown={onPanelKeydown}
+      {@attach panelAnim}
+    >
+      <div bind:this={menuEl} class="items menu" role="menu" aria-label={heading} tabindex="-1">
+        <slot />
+      </div>
+    </div>
+  </mesa:portal>
+{/if}

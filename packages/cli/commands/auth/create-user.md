@@ -72,7 +72,7 @@ try {
 }
 
 // An operator made this person, so there is no address to prove.
-await db.asSystem().user.update({ where: { id: made.id }, data: { emailVerified: true } })
+await db.asSystem().user.update({ where: { id: made.id }, data: { isEmailVerified: true } })
 
 console.log(JSON.stringify({ id: made.id, email: made.email, role: made.role }))
 await db.$close()

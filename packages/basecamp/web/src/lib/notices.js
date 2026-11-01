@@ -169,7 +169,7 @@ export function noticeCounts(notices) {
 // ── What the mock computes that this cannot ────────────────────────────────
 //
 // Recorded here rather than dropped silently. Each is a DATA gap, not a UI one
-// (docs/SCREENS.md § Gaps found while building the shell):
+// (docs/screens.md § Gaps found while building the shell):
 //
 //   CPU / memory pressure IS implemented above, but on an undeclared shape.
 //   `Server.health` is `Json?` in the schema and `Record<string, unknown>` in

@@ -7,7 +7,7 @@
 // fixed needs no row remembering what was already sent.
 
 import { defineJob }    from '@frontierjs/caravan'
-import { runsAsApp }    from './context.ts'
+import { runsAsApp }    from '../domain/job/job-context.ts'
 import { gradeHubNow }  from '../domain/host/host-machine.ts'
 import { notifyPeople } from '../domain/notification/notify.ts'
 

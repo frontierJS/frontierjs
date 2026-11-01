@@ -29,7 +29,7 @@ machines.**
 | --- | --- |
 | Ring 0 | `fli deploy` installs Basecamp. It has run on one real box (the run behind `FJS-D1191`). It needs a framework checkout, because Basecamp is `private`. |
 | Basecamp's own box as a fleet machine | Built: `fli deploy` enrolls it by default (`FJS-D1202`, `FJS-D1241`) |
-| Ring 1 on DigitalOcean | `providers/compute/digitalocean.ts`: catalog, create with `user_data`, enroll, destroy, reconcile (`docs/PROVISIONING.md` P1–P5). **Driven only against the stand-in on 8122. Cloud-init has never run on a real droplet** (`FJS-1397`; step 0.3). |
+| Ring 1 on DigitalOcean | `providers/compute/digitalocean.ts`: catalog, create with `user_data`, enroll, destroy, reconcile (`docs/provisioning.md` P1–P5). **Driven only against the stand-in on 8122. Cloud-init has never run on a real droplet** (`FJS-1397`; step 0.3). |
 | Ring 2 | `/pull` → `/deploy` → `/health-check`, put-back on failure, Caddy routes, and a digest already on the machine skips the pull (`FJS-2645`). `verify:outpost` fails 4 of 48 checks on the loopback bind (`FJS-3325`). |
 | App release from a laptop | `fli basecamp:deploy`: build here, `docker save \| ssh docker load`, release that digest (`FJS-D942`). It needs an App id copied out of the UI. |
 | Cloudflare | Basecamp's `edge` service: the token is a workspace account, records are marked, a CNAME goes to the ingress record, `domain:dns` syncs it (`cloudflare-edge.md` Phases 1–5). There is no screen for the ingress zone. |
@@ -171,6 +171,6 @@ a restore drill with no hand SSH.
 
 ## See also
 
-`deploy-plane.md` (the rings) · `packages/basecamp/docs/PROVISIONING.md` (ring 1) ·
+`deploy-plane.md` (the rings) · `packages/basecamp/docs/provisioning.md` (ring 1) ·
 `cloudflare-edge.md` · `fleet-ingress.md` · `go-live.md` (what is checked before an app is live, by category) · `paas-parity.md` § Deploying an FJS app
 through the fleet · `frontier-cloud.md` (steps 4–7) · `server-posture.md`

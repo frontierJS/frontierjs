@@ -35,6 +35,48 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1765"></a>2026-11-01 · `FJS-D1765` — The status for a paper that reads the tree is `reading`, not `assessment`, so *Assessment* names only the tier.
+
+Asked in chat, through the question tool. **Rename the status** was picked over **add a clause** (the recommendation), **rename the tier** and **leave it**; `reading` was picked over `survey` and `audit`, each of which already names something else. *Assessment* named the tier holding every IDEAS paper and also one status inside it, so a `proposed` paper was an assessment and was not one. `IDEA_STATUS` in `packages/cli/core/registers.js` carries the new word, every paper's frontmatter and `**Status:**` line moved with it, and `IDEAS/overview.md`'s status cells follow.
+
+### <a id="fjs-d1764"></a>2026-11-01 · `FJS-D1764` — What are `PHILOSOPHY.md` § VII's four document categories called — *tiers*. Guiding, Register, Map and Assessment are tiers; *kind* stops naming them.
+
+Asked in chat, through the question tool, during a drift review of the root documents. **A** (tier) was picked over **B** (kind) and **C** (leave both). § VII said *four kinds* in its lead and *one tier down* two paragraphs later, the IDEAS frontmatter key is `Tier:` and `doc-audit.js` says *map tier*; precedence is a ranking, so the ranking word wins (Axiom 2, one name).
+
+The same pass placed the files § VII left out: `VOCABULARY.md` and `VERIFYING.md` are Guiding, `DRIVES.md`, `THREATS.md` and a `SKILL.md` are Map, and the root `CLAUDE.md` is Map except its Invariants, which are Guiding — the line `doc-status-stale` already drew. A register row is never deleted: it is amended in place and dated, and a closed one is archived verbatim; *append-only* described an aim the registers do not keep.
+
+### <a id="fjs-d1763"></a>2026-11-01 · `FJS-D1763` — The framework's remaining bare Booleans move too: cli `deploy.lite` `Release.pivotDeclared` → `isPivotDeclared`, `Transition.crossesPivot` → `isCrossingPivot`, haven `Vote.aye` → `isAye`.
+
+Asked in chat, through the question tool, at naming-conformance 5.1, after the new `boolean-prefix` rule was run by hand over framework schemas `fli check` does not read. **Rename all three** was picked over **leave them**. As recommended. `FJS-D1756` already moved auth's and orion's; these three were outside its list. The deploy journal is a package SQLite file, so no upgrade step (a broken one is deleted).
+
+### <a id="fjs-d1762"></a>2026-11-01 · `FJS-D1762` — A model whose `@id` defaults to a constant string is one row, and its service and Resource stay singular (`hubConfig`); `FJS-D1751`'s plural is for a model with many rows.
+
+Asked in chat, through the question tool, when `resource-export-name` flagged basecamp's `HubConfig` (id `"hub"`, a service of `current`/`save` and no CRUD verb). **Singular exemption** was picked over **rename to `hubConfigs`**. As recommended. A plural over one row names a collection that does not exist; Rails draws the same line with `resource :profile` beside `resources`. The rule reads the shape from the schema, so the exemption needs no list: cli `deploy.lite` `Journal` (`@default("journal")`) is the same case.
+
+### <a id="fjs-d1761"></a>2026-11-01 · `FJS-D1761` — `kind` names a closed enum the app owns; `type` names a value's data type or an open name set by code or a provider; `<x>Type` beside `<x>Id` is the polymorphic pair.
+
+Asked in chat, through the question tool, at naming-conformance 1.4, after the owner chose to give `kind` no framework meaning. **Rule plus renames** was picked over **rule only** and **no change**. As recommended. The split follows what the values are, not a word preference: `CustomField.type` (`text`, `number`) is a data type and litestone's `@@extensible` reads the column by name; `Notification.type` is a file name; `actorType`/`subjectType` pair with an id, as Rails' `*_type` does. Renamed: basecamp `Account`/`Workspace`/`Network`/`App` `.type` → `kind` with `AccountKind`/`WorkspaceKind`/`NetworkKind`/`AppKind`, `Blueprint.appType` → `appKind`; example `PaymentEvent.kind`, a free Stripe event name, → `type`. `Flag.type` (`boolean`, `variant`) is the value's shape and stays.
+
+### <a id="fjs-d1759"></a>2026-11-01 · `FJS-D1759` — A widget surface's embeds live in `src/embeds/`, lowercase like every other `src/` folder; sierra's and the cli's default moves from `src/Embeds/`.
+
+Asked in chat, through the question tool, after naming-conformance 4.1 renamed example's folder and the `widget-entry-name` check went blind to it. **Framework default to `embeds`** was picked over **revert example to `Embeds`**. As recommended. `resources/`, `components/` and `routes/` are lowercase though each holds PascalCase files, so the folder names the role and the files carry the case. Moves with it: sierra's build default and cli, the cli's widget surface, scaffold, `make:widget` and `widgets:build` docs, and the `ui`/`app` checks.
+
+### <a id="fjs-d1758"></a>2026-10-31 · `FJS-D1758` — The hub machine's own posture is `hub.hostPosture`, not a `serverPostures` method; junction's row-scope guard gains no opt-out.
+
+Asked in chat, through the question tool, after the `FJS-D1751` rename of `posture` → `serverPostures`. **Keep it in hub** was picked over **a junction opt-out**. As recommended. Once the service name matched the tenant model `ServerPosture`, junction's claim guard (`isRowScoped`, keyed on the service name) refused a system admin naming no workspace; the old name had escaped the guard only by matching no model. The host belongs to no workspace, so its reading moves to the system-admin-gated hub service, and a workspace owner now gets 403 where it got 404.
+
+### <a id="fjs-d1757"></a>2026-10-31 · `FJS-D1757` — The Outpost reports to the renamed services (`/maintenanceRuns`, `/serverPostures`) from the next Outpost version; basecamp keeps no route under the old names.
+
+Asked in chat, through the question tool, after the `FJS-D1751` renames moved the two report mounts. **Accept with a version bump** was picked over **old paths kept on basecamp**. As recommended. Pre-alpha, no alias: an enrolled Outpost at the old pin 404s its reports until its box takes the bumped build, which is the owner's to roll out.
+
+### <a id="fjs-d1756"></a>2026-10-31 · `FJS-D1756` — The `FJS-D1749` names for the fifteen Booleans with no obvious predicate are fixed by table, and the framework's own bare Booleans are renamed too.
+
+Asked in chat, through the question tool, after Phase 0's list. **Accept the table** was picked over **row by row**, and **add a plan step** over **apps only**. As recommended. example: `show` → `isVisible`, `cancelAtPeriodEnd` → `isCancelingAtPeriodEnd`, `reminded` → `isReminded`, `counts` → `isCounted`. basecamp: `gone` → `isGone`, `inUse` → `isInUse`, `exposesPort` → `hasExposedPort`, `deployOnPush` → `isDeployedOnPush` (model and input), `ignoreTls` → `isTlsIgnored`, `ok` → `isOk` (`isUp` would read as `MonitorStatus.up`), `requireTwoFactorForOwners` → `isTwoFactorRequiredForOwners`, `allowApiKeyAuth` → `isApiKeyAuthAllowed`, `allowBotUsers` → `isBotUserAllowed`, input `connect` → `isConnecting`, input `overwrite` → `isOverwriting`. The framework's `auth.lite` `linked`/`enrollmentOnly` and `orion.lite` `fromCache` move in step 4.4, so `FJS-D1754`'s check grades framework schemas clean too.
+
+### <a id="fjs-d1755"></a>2026-10-31 · `FJS-D1755` — An enum value that is another thing's name keeps that thing's spelling; `FJS-D1748` exempts it, and the framework's snake `api_key` becomes `apiKey`.
+
+Asked in chat, through the question tool, after Phase 0's list. **Exempt names and HTTP, fix `api_key`** was picked over **exempt all** and **rename everything**. As recommended. Exempt: a value that is a file name (basecamp `NotificationKind`, the `PascalCase.notification.ts` basename), a model name (`NotificationContext`, which still follows a model rename — `AlertEvent` → `Alert`), or a wire token (`HttpMethod`'s `GET`). Not exempt: litestone `ActorKind.api_key` and orion `FlowCredentialAuth.api_key`, which name nothing else; they move in step 4.4 with a migration for stored audit rows.
+
 ### <a id="fjs-d1754"></a>2026-10-31 · `FJS-D1754` — `fli check` grades `FJS-D1748`–`FJS-D1751` at warn level, added once example and basecamp are renamed.
 
 Asked in [`IDEAS/naming-conformance.md`](IDEAS/naming-conformance.md) § Open questions. **Yes, warn, after the renames** was picked over **error-level** and **doc-only**. As recommended. The two reference apps become the clean baseline the rules are proved against, so the first run grades the next app rather than these two.
@@ -4766,6 +4808,10 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d1760"></a>2026-11-01 · `FJS-D1760` — In basecamp, orion's three roots name the workspace as a relation, and a Flow soft-deletes with it; FlowCredential and KvEntry hard-cascade.
+
+Asked in chat, through the question tool, after the schema atlas showed orion's models joined to nothing: `extend model Flow { workspaceId String }` was a bare column, so a removed workspace left its flows live and orion's row-tenancy `tenants()` kept scheduling for it. **Fix it now** was picked over filing it, then **soft-delete with it** over a hard FK cascade alone. As recommended. Workspace is `@@softDelete(cascade)`, which only stamps a child that soft-deletes, so Flow gains `deletedAt` + `@@softDelete` and `Workspace.flows`; its versions and runs stay restorable with it. A credential and a store entry carry no history, so they stay untouched while the workspace is soft-deleted and go with the `onDelete: Cascade` its purge runs. Flow also names `owner User` over `ownerId`, cascading, so a purged user takes their flows. `litestone release` grades it a contract deploy, since a delete on Flow becomes a soft-delete; no basecamp install exists yet to cross it. Lives in `packages/basecamp/db/schema.lite` and migration `20261101083054_orion_workspace_relations`; proved in `api/test/automation.test.ts` § a removed workspace.
+
 ### <a id="fjs-d1729"></a>2026-11-01 · `FJS-D1729` — How does a tenant get a file placement: a named place declared in `tenancy {}`, a per-tenant `dir` in registry meta, or refuse the option and keep one dir per fleet — A named place in the seed: `tenancy { place eu "data/eu" }`, a tenant is created with `meta.place = 'eu'` (a name, never a path), `#dbPath` resolves it through the parsed map, an unknown name is refused at `create`. Backup, replicate, restore, studio and migrate enumerate `[default, ...places]` from the parse, as they read `dir` today. Adds one keyword (`place`) and one noun, and the registry stores the name so a moved directory is one edit of the schema.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a per-tenant `dir` in registry meta that `#dbPath` honors. No schema keyword and no new noun, but placement is runtime data: `litestone backup` from a bare schema cannot enumerate it without opening the registry, restore-from-nothing cannot find the files, and a caller-supplied path reaches `mkdirSync`/`openDatabase` (Invariant 8's neighbor), so it needs its own traversal guard), **C** (refuse the option: `create` throws on a `path`/`dir` meta key (ending the silent no-op) and residency is one fleet per jurisdiction, each its own schema or `tenancy { dir }`. Nothing to build beyond the refusal, but a mixed EU + US fleet in one app stays impossible and `FJS-3723`/`FJS-D1727` close as won't-build).
@@ -7193,7 +7239,7 @@ each turned out to need one nothing else could give. And the shared database
 grew a hazard nothing anticipated — a drive that leaves a paid pay run behind
 makes every later drive's arrears computation wrong, since a correction is a
 function of every paid period rather than of what changed. That is what
-`web/test/payroll-sweep.mjs` exists for, and it is the price of one app rather
+`web/test/verify-payroll-sweep.mjs` exists for, and it is the price of one app rather
 than two, paid once.
 
 **The counter-argument that did not survive.** *A newcomer can hold `example/` in
@@ -8846,7 +8892,7 @@ Asked by `IDEAS/git-deploy.md` 1.6, through `decision-rules`. Choice 1, how the 
 
 Asked in [`IDEAS/backups.md`](IDEAS/backups.md) § Open questions (Phase 4, step 4.7), through the question tool. **A** (recommended) was picked over **B** (not built: escrow is the answer and a lost key is lost data). The archive stays single-key, which is what `FJS-D1561` bought, and the one thing a passphrase-wrapped export offered that the archive did not — a hub that comes back under a key other than the one that leaked — is a CLI over a method the client already has.
 
-**Spelling, amended at the build (owner, through the question tool):** the ruling's `<new>` positional became the env pair `ENCRYPTION_KEY` already uses (`envSource`), and a positional is refused by name: `ps`, shell history and `docker exec` all show an argument. `--orphan=Model.field,…` is `$rotateKey`'s `{ orphan }`, and the client opens with the new key on its ring too, so a run that died between two databases is finished by running it again. Runbook: `packages/basecamp/docs/BACKUPS.md` § 7, *The hub, under a new key*.
+**Spelling, amended at the build (owner, through the question tool):** the ruling's `<new>` positional became the env pair `ENCRYPTION_KEY` already uses (`envSource`), and a positional is refused by name: `ps`, shell history and `docker exec` all show an argument. `--orphan=Model.field,…` is `$rotateKey`'s `{ orphan }`, and the client opens with the new key on its ring too, so a run that died between two databases is finished by running it again. Runbook: `packages/basecamp/docs/backups.md` § 7, *The hub, under a new key*.
 
 ### <a id="fjs-d1561"></a>2026-10-27 · `FJS-D1561` — Q8 — The file a hub is reinstalled from is its backup archive: downloaded from `/hub/backups/`, imported at `/setup` across a restart, with a manifest that refuses the wrong one.
 
@@ -8994,7 +9040,7 @@ The paper's recommendation, taken as written. B2 is the cheapest (about $0.28 a 
 - **Retention:** a B2 bucket keeps every version, so retention needs the native `daysFromHidingToDeleting` rule. Only `BACKUPS.md` step 2 guards this, and nothing catches a bucket that skipped it.
 - **Conditional PUT:** `If-None-Match` is unproved on B2 (`third-party.md` 1.4).
 
-*Lives in:* `packages/basecamp/docs/BACKUPS.md`.
+*Lives in:* `packages/basecamp/docs/backups.md`.
 
 ### <a id="fjs-d1505"></a>2026-10-24 · `FJS-D1505` — Q7 — Where an app's Litestream key comes from — `App.replicaDestinationId`, `@unique`, points at a `BackupDestination` the operator made with a key for that app alone. The replica path is `<prefix>/<appId>`. `BACKUPS.md` gets a recipe per vendor, and 1.8's probe adds a PUT outside the prefix that must be refused, where the vendor scopes by prefix. Snapshots keep `backupDestinationId`, whose key never leaves Basecamp.
 
@@ -12942,7 +12988,7 @@ paragraph asked for still cannot exist (SQLite forbids the subquery `json_each`
 would take), so the schema declaration buys the type, the JSON Schema `$def` and
 one home, not a database-enforced one. Moving basecamp's list into the schema is
 a live option and a migration; the decision above stands until someone takes it.
-*Lives in:* `packages/basecamp/api/src/services/cleanup/targets.ts`,
+*Lives in:* `packages/basecamp/api/src/services/maintenance-runs/targets.ts`,
 `api/src/services/recipes/recipes.service.ts`, `api/src/services/fleet/fleet.service.ts`,
 `db/schema.lite` § FLEET ACTIONS; tests in `db/test/schema.test.ts` § Recipe and
 CleanupRun.
@@ -13012,7 +13058,7 @@ by the system, not by a user"* — and the two want one answer, not two.
 
 That paragraph is what `@transient` was built from, and both halves now have
 their word: `@system` (2026-08-15) and `@transient` (2026-08-17).
-*Lives in:* `packages/basecamp/api/src/services/channels/channels.service.ts`
+*Lives in:* `packages/basecamp/api/src/services/notification-channels/notification-channels.service.ts`
 (where captureCredential was deleted), `packages/basecamp/CLAUDE.md` § What bites here,
 `CLAUDE.md` § Live hazards.
 
@@ -18131,7 +18177,7 @@ machine's check-in, which is the concentration `core/hooks.ts` already names as
 the limit of today's scheme. So this ruling does not merely move the install
 mechanism; it is what makes per-server credentials reachable at all.
 
-*Lives in:* `packages/basecamp/docs/PROVISIONING.md` § D4 · `IDEAS/deploy-plane.md`
+*Lives in:* `packages/basecamp/docs/provisioning.md` § D4 · `IDEAS/deploy-plane.md`
 § The bootstrap ring · `packages/basecamp/api/src/core/hooks.ts`
 § requireOutpostSignature
 
@@ -18800,6 +18846,8 @@ makes between a call naming no principal and one naming `null`.
 `packages/junction/test/webhook-payload.test.ts` · `FJS-724` · `FJS-D175`.
 
 ### <a id="fjs-d187"></a>2026-09-03 · `FJS-D187` — every document is one of four kinds, precedence is stated once, and a status is one of four words. `PHILOSOPHY.md` §VII holds the rule.
+
+**Status:** amended-by [`FJS-D1764`](#fjs-d1764) and [`FJS-D1765`](#fjs-d1765) — the categories are tiers, and a reading of the tree is `reading`.
 
 Every contradiction found reading the prose top-down had one shape: a sentence
 written before a fix or a ruling and never re-derived. `ARCHITECT.md` §5 called

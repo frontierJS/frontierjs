@@ -598,7 +598,7 @@ describe('a-standing-spelled-on-the-global-row', () => {
   // A rule reporting them fires on every app, `example` and `basecamp` included.
   test('silent on the lifecycle columns and on an ordinary one', () => {
     expect(found(TEN + `
-      model User { id Int @id  emailVerified Boolean @default(false)  name String  @@auth  @@tenant(none) }
+      model User { id Int @id  isEmailVerified Boolean @default(false)  name String  @@auth  @@tenant(none) }
       model Thing { id Int @id  workspaceId Int }`, ID)).toEqual([])
   })
 

@@ -1,6 +1,6 @@
 ---
 id: review-pros-and-cons
-status: assessment
+status: reading
 dated: 2026-08-03
 ---
 

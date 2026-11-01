@@ -128,7 +128,7 @@ const work = as === 'rings' && !flag.stdout ? workOf(wsRoot, model) : null
 let live = null
 if (flag.live) {
   const { collectLive } = await import(resolve(global.fliRoot, 'core/repo-live.js'))
-  echo(`  reading git${flag.offline ? '' : ' and the registry'}…`)
+  echo(chalk.dim(`  reading git${flag.offline ? '' : ' and the registry'}…`))
   live = collectLive({ root: wsRoot, packages: model.packages, registry: !flag.offline })
 }
 
@@ -168,12 +168,12 @@ if (flag.check) {
     return
   }
   const committed = readFileSync(outPath, 'utf8')
-  if (committed === body) { echo(`  ✓  ${shown} is current`); return }
+  if (committed === body) { echo(`  ${chalk.green('✓')}  ${shown} ${chalk.dim('is current')}`); return }
 
-  echo(`  ✗  ${shown} does not match the workspace\n`)
+  echo(`  ${chalk.red('✗')}  ${shown} ${chalk.dim('does not match the workspace')}\n`)
   echo(diffLines(committed, body))
   echo('')
-  echo(`  The workspace changed. Run \`${rerun}\` and review the diff before committing.`)
+  echo(chalk.dim(`  The workspace changed. Run \`${rerun}\` and review the diff before committing.`))
   process.exitCode = 1
   return
 }
@@ -188,18 +188,18 @@ writeFileSync(outPath, body, 'utf8')
 // the JSON is not committed, so neither needs it.
 if (!existed && !flag.live && as !== 'json' && as !== 'rings') writeFileSync(outPath, render(), 'utf8')
 
-echo(`  ✓  ${shown}`)
+echo(`  ${chalk.green('✓')}  ${shown}`)
 
 if (work) {
   writeFileSync(resolve(dirname(outPath), WORK_FILE), renderWork(model, work, { back: basename(outPath) }), 'utf8')
-  echo(`  ✓  ${resolve(dirname(outPath), WORK_FILE).replace(wsRoot + '/', '')}  linked from the rings`)
+  echo(`  ${chalk.green('✓')}  ${resolve(dirname(outPath), WORK_FILE).replace(wsRoot + '/', '')}  ${chalk.dim('linked from the rings')}`)
 }
 
 if (as === 'rings') {
   const { rings, unplaced, unknown } = placement(model)
   const { docs, unordered, missing } = docsOf(model)
-  echo(`  ${rings.filter(r => r.pkgs.length).length} ring(s) of packages · ${docs.length} root document(s)`)
-  echo('  Not a snapshot — nothing checks this file. Do not commit it.')
+  echo(chalk.dim(`  ${rings.filter(r => r.pkgs.length).length} ring(s) of packages · ${docs.length} root document(s)`))
+  echo(chalk.dim('  Not a snapshot — nothing checks this file. Do not commit it.'))
   for (const u of unknown) log.warn(`${u.folder}: ring "${u.ring}" is not one this page defines (${rings.filter(r => r.id !== 'seed' && r.id !== 'unplaced').map(r => r.id).join(', ')})`)
   const blank = unplaced.filter(f => !unknown.some(u => u.folder === f))
   if (blank.length) log.warn(`No ring in the root CLAUDE.md Packages table, so drawn as unplaced: ${blank.join(', ')}`)
@@ -212,15 +212,15 @@ if (as === 'rings') {
     model.ci        ? `${model.ci.phases.length} CI phase(s)`   : null,
     `${model.drives.length} drive(s)`,
   ].filter(Boolean)
-  echo(`  ${counts.join(' · ')}`)
+  echo(chalk.dim(`  ${counts.join(' · ')}`))
 } else {
-  echo(`  ${cards(model).length} plate(s)${flag.live && model.issues ? ` · ${model.issues.open} open issue(s) crossed in` : ''}`)
+  echo(chalk.dim(`  ${cards(model).length} plate(s)${flag.live && model.issues ? ` · ${model.issues.open} open issue(s) crossed in` : ''}`))
 }
 
 if (live) {
   const drift = live.rows.filter(r => r.ahead || r.behind)
-  echo(`  ${live.git.branch ?? '?'} @ ${live.git.head ?? '?'} · ${live.git.dirty} uncommitted · ${drift.length} package(s) differ from the registry`)
-  echo('  Not a snapshot — nothing checks this file. Do not commit it.')
+  echo(`  ${chalk.cyan(live.git.branch ?? '?')} ${chalk.dim(`@ ${live.git.head ?? '?'} · ${live.git.dirty} uncommitted ·`)} ${drift.length ? chalk.yellow(drift.length) : drift.length} ${chalk.dim('package(s) differ from the registry')}`)
+  echo(chalk.dim('  Not a snapshot — nothing checks this file. Do not commit it.'))
 }
 
 if (flag.open && !(await openUrl(outPath))) log.warn('Could not open a browser — the file is written')

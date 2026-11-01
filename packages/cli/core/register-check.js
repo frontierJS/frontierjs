@@ -35,7 +35,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { chalk } from './color.js'
 import { treePaths } from './tree.js'
 import { ideaQuestions } from './decisions.js'
-import { envCause, ENV_CAUSES, reproOf, seamOf } from './next.js'
+import { blockedBy, envCause, ENV_CAUSES, reproOf, seamOf } from './next.js'
 import { linkedTest } from './repro.js'
 import { readKeyList, identifierOf } from './seams.js'
 import { readRegisters, readOverviewRows, idPatterns, REGISTER_FILES, ISSUE_STATUS, IDEA_STATUS, RULING_STATUS, SEVERITY } from './registers.js'
@@ -75,6 +75,7 @@ export const RULES = [
   { id: 'missing-anchor',   level: 'warn',  what: 'an open row with no anchor — nothing can link it' },
   { id: 'stale-verified',   level: 'warn',  what: 'an open row nobody has re-checked in a long time', noted: true },
   { id: 'env-smell',        level: 'warn',  what: 'an open row whose title reads like an environment failure — a timeout, a hang, a port, a run that passes elsewhere — and names no `env:` cause and no `register:repro` measurement' },
+  { id: 'blocked-by-closed', level: 'warn',  what: 'an open row saying `blocked by` a closed row or a ruled question — `fli next` ranks it ready while the row tells a person it waits' },
   { id: 'timing-unmeasured', level: 'warn', what: 'an open row naming `env: timing` that `register:repro` never measured', noted: true },
 ]
 
@@ -408,6 +409,7 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
   // Matched the way `seam-listed` matches, by the identifier a name ends in, so
   // `seam: $setAuth` and `seam: $setAuth(user)` are one seam.
   const seamKeys = readKeyList(root)
+  const openIds  = new Set(doc.issues.filter(r => !r.closed).map(r => r.id))
 
   for (const row of doc.issues) {
     // ── does the row line up with the table it is in ──
@@ -546,6 +548,15 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
       add('seam-name', row, seamKeys
         ? `seam: "${seam}" is not in the CLAUDE.md § Bridge index key list`
         : `seam: "${seam}" — this root's CLAUDE.md has no § Bridge index to name a seam from`)
+    }
+
+    // `fli next` counts a blocker only while it is an open row, so a marker
+    // naming a closed row or a ruled question is dropped there in silence while
+    // the row still tells a person it waits. An id no register holds is
+    // `unknown-ref`'s.
+    for (const ref of new Set(blockedBy(row))) {
+      if (openIds.has(ref) || !known.has(ref.toLowerCase())) continue
+      add('blocked-by-closed', row, `says blocked by ${ref}, which is not open — drop the marker so fli next and the row agree`)
     }
 
     const age = staleDays > 0 && ISO.test(row.verified) ? daysBetween(row.verified, today) : null

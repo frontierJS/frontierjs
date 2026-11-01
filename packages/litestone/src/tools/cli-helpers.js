@@ -5,6 +5,7 @@
 
 import { existsSync, readFileSync, statSync }   from 'fs'
 import { resolve, relative, dirname }          from 'path'
+import { dbFilePath }                          from '../core/db-path.js'
 import { spawnSync }                           from 'child_process'
 import { parse, parseFile, inlineImports, resolveImportSpecifier } from '../core/parser.js'
 import { envSource, fileValue }               from '@frontierjs/toolbelt/env'
@@ -162,7 +163,7 @@ export function envKey(name) {
 // available here in every invocation; the client only learns it when a caller
 // passes `path:`, which is why the call sites above now do.
 export function resolveDbPath(pathDef, fallback, anchor = null) {
-  const against = v => anchor ? resolve(anchor, v) : resolve(v)
+  const against = v => anchor ? resolve(anchor, dbFilePath(v)) : resolve(dbFilePath(v))
   if (!pathDef) return fallback ? against(fallback) : null
   if (pathDef.var) {
     const envVal = process.env[pathDef.var]

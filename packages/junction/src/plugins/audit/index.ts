@@ -46,7 +46,7 @@ export interface AuditPluginOptions {
 }
 
 /** What `actorType` holds. A string column takes any; an enum must declare all four. */
-export const AUDIT_ACTOR_KINDS = ['user', 'api_key', 'support', 'system'] as const
+export const AUDIT_ACTOR_KINDS = ['user', 'apiKey', 'support', 'system'] as const
 
 /** The columns this plugin writes. `optional` ones are null for a system actor or a create with no diff. */
 export const AUDIT_COLUMNS: Readonly<Record<string, { types: readonly string[]; optional?: true }>> = {
@@ -250,7 +250,7 @@ export function auditPlugin({ model, except = [], columns = {} }: AuditPluginOpt
           actorId:      support?.operatorId ?? user?.id ?? null,
           onBehalfOfId: support ? user?.id ?? null : null,
           // No principal is a job or a machine acting for itself, not an anonymous person.
-          actorType:    user ? (support ? 'support' : user.authMethod === 'apiKey' ? 'api_key' : 'user') : 'system',
+          actorType:    user ? (support ? 'support' : user.authMethod === 'apiKey' ? 'apiKey' : 'user') : 'system',
           action:       `${ctx.service}.${ctx.method}`,
           subjectType:  ctx.service,
           subjectId:    String(result?.id ?? before?.id ?? ctx.id ?? 'unknown'),

@@ -257,19 +257,19 @@ if (flag.check) {
     return
   }
   const committed = readFileSync(outPath, 'utf8')
-  if (committed === body) { echo(`  ✓  exports.snapshot.md is current`); return }
+  if (committed === body) { echo(`  ${chalk.green('✓')}  exports.snapshot.md ${chalk.dim('is current')}`); return }
 
-  echo(`  ✗  exports.snapshot.md does not match the workspace\n`)
+  echo(`  ${chalk.red('✗')}  exports.snapshot.md ${chalk.dim('does not match the workspace')}\n`)
   echo(diffLines(committed, body))
   echo('')
-  echo('  The published surface changed. Run `fli ws:exports` and review the diff before committing.')
+  echo(chalk.dim('  The published surface changed. Run `fli ws:exports` and review the diff before committing.'))
   process.exitCode = 1
   return
 }
 
 writeFileSync(outPath, body, 'utf8')
-echo(`  ✓  exports.snapshot.md`)
-echo(`  ${sections.length} publishable package(s)${problems.length ? ` · ${problems.length} unpublished entry point(s)` : ''}`)
+echo(`  ${chalk.green('✓')}  exports.snapshot.md`)
+echo(`  ${chalk.dim(`${sections.length} publishable package(s)`)}${problems.length ? chalk.yellow(` · ${problems.length} unpublished entry point(s)`) : ''}`)
 ```
 
 ## What it writes

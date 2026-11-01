@@ -11,7 +11,7 @@
 import { openDatabase, currentEngine } from './engine.js'
 import { applyWal, applyBusyTimeout, applyIncrementalVacuum, applyPageSize, busyTimeoutFor } from './pragmas.js'
 import { resolve, dirname, envVar, existsSync, mkdirSync, mkdtempSync, join, tmpdir, extname, isAbsolute } from '#host'
-import { noteMintedDirectory } from './db-path.js'
+import { noteMintedDirectory, dbFilePath } from './db-path.js'
 import { ClientClosedError } from './errors.js'
 import { DERIVED_NOW_ARG } from './query.js'
 
@@ -468,11 +468,11 @@ const MIN_SAFE = -MAX_SAFE
 function resolveDbPath(pathDef, override, anchor = null) {
   // An override comes from code — `createClient({ db })`, `databases: {…}` —
   // and code is written against the process, not against the schema file.
-  if (override) return override === ':memory:' ? ':memory:' : resolve(override)
+  if (override) return override === ':memory:' ? ':memory:' : resolve(dbFilePath(override))
 
   const against = (/** @type {string} */ v) => v === ':memory:' ? ':memory:'
-                     : anchor            ? resolve(anchor, v)
-                     : resolve(v)
+                     : anchor            ? resolve(anchor, dbFilePath(v))
+                     : resolve(dbFilePath(v))
 
   return against(statedDbPath(pathDef))
 }

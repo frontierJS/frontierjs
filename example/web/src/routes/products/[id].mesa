@@ -10,14 +10,14 @@ title: Product
   // variants that arrived, in the order the schema declares for `size` and in
   // seeded order for `color`, so a fifth colorway appears here by being
   // created and not by anyone editing this file.
-  import { products }        from '../../resources/Product.mesa'
-  import { productVariants } from '../../resources/ProductVariant.mesa'
-  import { productImages }   from '../../resources/ProductImage.mesa'
+  import { products }        from '@/resources/Product.mesa'
+  import { productVariants } from '@/resources/ProductVariant.mesa'
+  import { productImages }   from '@/resources/ProductImage.mesa'
   // The default import IS the resource file's markup half — this model's own
   // form (repo Invariant 18). The named export beside it is the accessor the
   // gallery above reads from; one file, two halves, and neither restates the
   // other.
-  import ProductImageForm    from '../../resources/ProductImage.mesa'
+  import ProductImageForm    from '@/resources/ProductImage.mesa'
   import { cart, add } from '@/stores/cart.js'
   import { money }     from '@/lib/money.js'
   import { prefs }     from '@/stores/prefs.js'
@@ -188,7 +188,7 @@ title: Product
 
   $: reason =
       !chosen           ? 'That size is not cut in this color'
-    : !chosen.active    ? 'No longer on sale'
+    : !chosen.isActive    ? 'No longer on sale'
     // Sold out vs held. Both mean "you cannot have one", and they are different
     // sentences because one of them comes back on its own in twenty minutes and
     // the other does not — telling a shopper "sold out" about stock that is
@@ -238,7 +238,7 @@ title: Product
 
   <div class="cluster" style="gap: .5rem; margin-bottom: 1rem">
     <Pill tone="info">{product.brand}</Pill>
-    <Pill tone={product.active ? 'success' : 'muted'}>{product.active ? 'active' : 'retired'}</Pill>
+    <Pill tone={product.isActive ? 'success' : 'muted'}>{product.isActive ? 'active' : 'retired'}</Pill>
     <Mono>{product.slug}</Mono>
   </div>
 

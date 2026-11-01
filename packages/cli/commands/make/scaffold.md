@@ -353,15 +353,15 @@ if (!skipRoutes) {
 
 if (!flag.dry && created.length) {
   echo('')
-  echo(`  ${counted(created.length, 'file')} created for ${modelName}`)
+  echo(chalk`  {green ${counted(created.length, 'file')} created} for {bold ${modelName}}`)
   echo('')
   if (created.some(f => f.endsWith('schema.lite'))) {
-    echo(`  Next: ${schemaApplyStep($.paths.db, modelName).command} to apply the schema change`)
+    echo(chalk`  {dim Next:} ${schemaApplyStep($.paths.db, modelName).command} {dim to apply the schema change}`)
   }
   if (!skipRoutes) {
     const url = routeSegment(plural)
-    echo(`  Routes: /${url}/  ·  /${url}/create/  ·  /${url}/[id]/`)
-    if (linked === false) echo(`  No src/lib/nav.js with a \`groups\` table: link /${url}/ from where a person lands`)
+    echo(chalk`  {dim Routes:} {cyan /${url}/}  {dim ·}  {cyan /${url}/create/}  {dim ·}  {cyan /${url}/[id]/}`)
+    if (linked === false) echo(chalk.yellow(`  No src/lib/nav.js with a \`groups\` table: link /${url}/ from where a person lands`))
   }
   echo('')
 }

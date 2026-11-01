@@ -29,7 +29,7 @@
 /// **No `ip` or `userAgent`.** They belong to a REQUEST and most rows here are
 /// not written by one — a job, a cron fire, a replay. An app that wants them
 /// puts them in `meta`, where their absence is not a lie.
-enum ActorKind { user api_key system }
+enum ActorKind { user apiKey system }
 
 model AuditEvent {
   id           String     @id @default(uuid())

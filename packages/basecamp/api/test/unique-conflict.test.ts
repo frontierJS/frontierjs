@@ -75,7 +75,7 @@ describe('a duplicate under a @@unique is a 409 in the app\'s words', () => {
 describe('a secret another screen writes takes the next free name', () => {
   test('two channels whose names slug alike each keep a credential', async () => {
     const tag      = uniq()
-    const channels = () => env.as(owner).service('channels')
+    const channels = () => env.as(owner).service('notificationChannels')
     const config   = { url: 'https://hooks.example.test/x' }
     const a = await channels().create({ name: `Pager ${tag}`, kind: 'webhook', config, secret: 'tok-a' })
     const b = await channels().create({ name: `pager-${tag}`, kind: 'webhook', config, secret: 'tok-b' })

@@ -52,7 +52,7 @@ if (!changed.length) {
 }
 
 echo('')
-echo(`  ${changed.length} changed  ·  ${clean.length} clean\n`)
+echo(`  ${chalk.bold(`${changed.length} changed`)}${chalk.dim(`  ·  ${clean.length} clean`)}\n`)
 
 for (const r of changed) {
   const tag = r.lastTag ? `since ${r.lastTag}` : 'never released'
@@ -60,16 +60,16 @@ for (const r of changed) {
     r.commits.length ? plural(r.commits.length, 'commit') : '',
     r.files.length   ? `${r.files.length} uncommitted` : '',
   ].filter(Boolean).join(', ')
-  echo(`  ${r.name}@${r.version}  (${tag}${n ? ` — ${n}` : ''})`)
+  echo(`  ${chalk.bold(r.name)}${chalk.dim(`@${r.version}`)}  ${chalk.yellow(n || 'changed')}  ${chalk.dim(tag)}`)
   if (flag.verbose) {
-    for (const c of r.commits) echo(`    ${c.hash}  ${c.subject}`)
-    for (const f of r.files)   echo(`    ${f}`)
+    for (const c of r.commits) echo(`    ${chalk.dim(c.hash)}  ${c.subject}`)
+    for (const f of r.files)   echo(`    ${chalk.dim(f)}`)
   }
 }
 
 if (clean.length) {
   echo('')
-  for (const r of clean) echo(`  ${r.name}@${r.version}  ✓ clean`)
+  for (const r of clean) echo(`  ${r.name}${chalk.dim(`@${r.version}`)}  ${chalk.green('✓')} ${chalk.dim('clean')}`)
 }
 echo('')
 ```

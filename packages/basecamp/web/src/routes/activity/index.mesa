@@ -25,7 +25,7 @@ title: Activity
   // which table it came from — and a drain followed by the outpost confirming it
   // only reads as one story if they sit next to each other.
   import { session }    from '../../lib/session.js'
-  import { audit }      from '../../resources/AuditEvent.mesa'
+  import { auditEvents } from '../../resources/AuditEvent.mesa'
   import { workspaces } from '../../resources/Workspace.mesa'
   import { servers }    from '../../resources/Server.mesa'
   import { at }         from '../../lib/datetime.js'
@@ -77,7 +77,7 @@ title: Activity
     }
 
     try {
-      const trail = (await audit.service.find({}, { limit: FEED_CAP })).data
+      const trail = (await auditEvents.service.find({}, { limit: FEED_CAP })).data
 
       // The fleet's own events. Not fatal if refused — the trail alone is
       // still a feed, and a screen that blanks because half its data needs a

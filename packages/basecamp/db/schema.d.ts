@@ -36,17 +36,17 @@ export type FlowRunStatus = 'pending' | 'running' | 'waiting' | 'completed' | 'f
 
 export type FlowStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
 
-export type FlowCredentialAuth = 'none' | 'bearer' | 'api_key' | 'hmac'
+export type FlowCredentialAuth = 'none' | 'bearer' | 'apiKey' | 'hmac'
 
-export type AccountType = 'individual' | 'organization'
+export type AccountKind = 'individual' | 'organization'
 
-export type WorkspaceType = 'personal' | 'team' | 'enterprise' | 'demo'
+export type WorkspaceKind = 'personal' | 'team' | 'enterprise' | 'demo'
 
 export type WorkspaceRole = 'viewer' | 'billing' | 'developer' | 'admin' | 'owner'
 
 export type UserKind = 'user' | 'bot' | 'peer'
 
-export type UserStatus = 'pending_verification' | 'active' | 'suspended'
+export type UserStatus = 'pendingVerification' | 'active' | 'suspended'
 
 export type WorkspaceStatus = 'active' | 'suspended'
 
@@ -54,13 +54,13 @@ export type AccountStatus = 'active' | 'suspended'
 
 export type ProvisionStepName = 'start' | 'create' | 'poll' | 'timeout'
 
-export type SecretKind = 'ssh_key' | 'provider_key' | 'registry_auth' | 'tls_cert' | 'notification' | 'backup' | 'generic'
+export type SecretKind = 'sshKey' | 'providerKey' | 'registryAuth' | 'tlsCert' | 'notification' | 'backup' | 'generic'
 
 export type ServerStatus = 'pending' | 'provisioning' | 'installing' | 'online' | 'unreachable' | 'draining' | 'stopped' | 'destroying' | 'destroyed'
 
 export type ServerRole = 'general' | 'build' | 'database' | 'gateway' | 'worker'
 
-export type ServerEventKind = 'created' | 'removed' | 'reboot_requested' | 'drain_started' | 'drain_cancelled' | 'provision_requested' | 'provision_created' | 'provision_ready' | 'provision_timeout' | 'destroy_requested' | 'destroy_finished' | 'enrollment_issued' | 'sync_requested' | 'status_synced' | 'status_sync_ignored' | 'sync_failed' | 'sync_no_account' | 'sync_unsupported' | 'sync_unrecognized' | 'came_online' | 'unreachable' | 'recipe_ran' | 'recipe_failed' | 'cleanup_queued' | 'cleanup_ran' | 'cleanup_failed' | 'volume_removed' | 'volumes_pruned' | 'posture_failed' | 'posture_restored'
+export type ServerEventKind = 'created' | 'removed' | 'rebootRequested' | 'drainStarted' | 'drainCancelled' | 'provisionRequested' | 'provisionCreated' | 'provisionReady' | 'provisionTimeout' | 'destroyRequested' | 'destroyFinished' | 'enrollmentIssued' | 'syncRequested' | 'statusSynced' | 'statusSyncIgnored' | 'syncFailed' | 'syncNoAccount' | 'syncUnsupported' | 'syncUnrecognized' | 'cameOnline' | 'unreachable' | 'recipeRan' | 'recipeFailed' | 'cleanupQueued' | 'cleanupRan' | 'cleanupFailed' | 'volumeRemoved' | 'volumesPruned' | 'postureFailed' | 'postureRestored'
 
 export type ProviderKind = 'custom' | 'hetzner' | 'digitalocean' | 'cloudflare' | 'github'
 
@@ -72,29 +72,29 @@ export type PlatformBuild = 'outpost' | 'platform'
 
 export type RegisterMethod = 'imported' | 'provisioned'
 
-export type CertKind = 'acme' | 'origin_ca' | 'uploaded'
+export type CertKind = 'acme' | 'originCa' | 'uploaded'
 
-export type SslMode = 'off' | 'flexible' | 'full' | 'full_strict'
+export type SslMode = 'off' | 'flexible' | 'full' | 'fullStrict'
 
 export type ProjectStatus = 'active' | 'archived'
 
-export type NetworkType = 'mesh' | 'vpc'
+export type NetworkKind = 'mesh' | 'vpc'
 
 export type NetworkProvider = 'netbird' | 'tailscale' | 'wireguard'
 
 export type EnvironmentTier = 'development' | 'test' | 'preview' | 'staging' | 'production'
 
-export type AppType = 'container' | 'worker' | 'database' | 'daemon' | 'cron' | 'static' | 'function'
+export type AppKind = 'container' | 'worker' | 'database' | 'daemon' | 'cron' | 'static' | 'function'
 
 export type AppStatus = 'unknown' | 'stopped' | 'starting' | 'running' | 'stopping' | 'deploying' | 'error'
 
-export type DeployStatus = 'pending' | 'building' | 'success' | 'failed' | 'cancelled' | 'rolled_back'
+export type DeployStatus = 'pending' | 'building' | 'success' | 'failed' | 'cancelled' | 'rolledBack'
 
 export type DeployTrigger = 'button' | 'push' | 'laptop' | 'rollback' | 'rebind' | 'publish' | 'freeze' | 'observed'
 
 export type StepStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped'
 
-export type JobKind = 'one_shot' | 'scheduled' | 'triggered' | 'workflow'
+export type JobKind = 'oneShot' | 'scheduled' | 'triggered' | 'workflow'
 
 export type JobStatus = 'pending' | 'running' | 'failed' | 'cancelled'
 
@@ -114,15 +114,15 @@ export type ComparisonOp = 'gt' | 'gte' | 'lt' | 'lte'
 
 export type AlertStatus = 'firing' | 'resolved'
 
-export type ActorKind = 'user' | 'api_key' | 'system' | 'support'
+export type ActorKind = 'user' | 'apiKey' | 'system' | 'support'
 
 export type ChannelKind = 'slack' | 'pagerduty' | 'email' | 'webhook' | 'chat'
 
 export type FlagType = 'boolean' | 'variant'
 
-export type TileKind = 'server_fleet' | 'server_health' | 'app_status' | 'deploy_feed' | 'job_history' | 'activity_feed' | 'alert_status' | 'service_health' | 'stat_counter'
+export type TileKind = 'serverFleet' | 'serverHealth' | 'appStatus' | 'deployFeed' | 'jobHistory' | 'activityFeed' | 'alertStatus' | 'serviceHealth' | 'statCounter'
 
-export type ParamGenerator = 'random_hex_16' | 'random_hex_32' | 'random_hex_64'
+export type ParamGenerator = 'randomHex16' | 'randomHex32' | 'randomHex64'
 
 export type BackupKind = 'manual' | 'scheduled' | 'found' | 'release'
 
@@ -130,7 +130,7 @@ export type DrillKind = 'manual' | 'scheduled'
 
 export type DependencyKind = 'dependency' | 'dev' | 'peer' | 'optional'
 
-export type NotificationContext = 'Deployment' | 'AlertEvent' | 'JobRun' | 'Server' | 'Workspace' | 'Monitor'
+export type NotificationContext = 'Deployment' | 'Alert' | 'JobRun' | 'Server' | 'Workspace' | 'Monitor'
 
 export type NotificationKind = 'DeploySuccess' | 'DeployFailed' | 'AlertFiring' | 'AlertResolved' | 'ServerUnreachable' | 'MonitorDown' | 'MonitorUp' | 'PostureFailed' | 'HubPostureFailed' | 'DependencyVulnerable' | 'MemberJoined' | 'JobFailed' | 'WeeklyDigest' | 'ReplicaFound'
 
@@ -318,7 +318,7 @@ export interface AppFromBlueprint {
  * What `projects.fromRepo` accepts: a project, its production environment
  * and one App built from a repository, made together (`FJS-D1555`). No host
  * port: placing on `serverId` picks one (`FJS-D1557`). `dockerfile` is the
- * App's own copy, blank for the repository's. `deployOnPush` is on when a
+ * App's own copy, blank for the repository's. `isDeployedOnPush` is on when a
  * server is named and `false` turns it off (`FJS-D1558`); without a server it
  * is never on. `connect` writes the deploy key and the push hook at GitHub
  * with the workspace's token (`FJS-D1571`); it needs a server and a GitHub
@@ -332,8 +332,8 @@ export interface ProjectFromRepo {
   dockerfile?: string | null
   serverId?: string | null
   hostname?: string | null
-  deployOnPush?: boolean | null
-  connect?: boolean | null
+  isDeployedOnPush?: boolean | null
+  isConnecting?: boolean | null
 }
 
 /**
@@ -365,7 +365,7 @@ export interface AppVolumeRestore {
   serverId: string
   path?: string | null
   backupId?: string | null
-  overwrite?: boolean | null
+  isOverwriting?: boolean | null
 }
 
 /**
@@ -376,7 +376,7 @@ export interface AppVolumeRestore {
 export interface AppReplicaRestore {
   serverId: string
   at?: string | null
-  overwrite?: boolean | null
+  isOverwriting?: boolean | null
 }
 
 /**
@@ -499,7 +499,7 @@ export interface Credential {
    * row: an account a provider MADE has nothing but the provider securing it,
    * and one the mailbox made keeps the mailbox as a way in (`FJS-D1011`).
    */
-  linked?: boolean | null
+  isLinked?: boolean | null
   createdAt: string
 }
 
@@ -531,7 +531,7 @@ export interface CredentialCreate {
    * row: an account a provider MADE has nothing but the provider securing it,
    * and one the mailbox made keeps the mailbox as a way in (`FJS-D1011`).
    */
-  linked?: boolean | null
+  isLinked?: boolean | null
 }
 
 export interface CredentialUpdate {
@@ -545,7 +545,7 @@ export interface CredentialUpdate {
   tokenExpiresAt?: string | Date | null
   scope?: string | null
   totpLastStep?: number | null
-  linked?: boolean | null
+  isLinked?: boolean | null
 }
 
 export interface CredentialWhere extends WhereBase {
@@ -559,7 +559,7 @@ export interface CredentialWhere extends WhereBase {
   tokenExpiresAt?: string | Date | WhereOp<string | Date> | null
   scope?: string | WhereOp<string> | null
   totpLastStep?: number | WhereOp<number> | null
-  linked?: boolean | WhereOp<boolean> | null
+  isLinked?: boolean | WhereOp<boolean> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   AND?: CredentialWhere[]
   OR?:  CredentialWhere[]
@@ -590,7 +590,7 @@ export interface Session {
    * account owes a second. The plugin refuses every service call but the
    * enrollment three while it is set; `confirmTotp` clears it.
    */
-  enrollmentOnly: boolean
+  isEnrollmentOnly: boolean
   /**
    * When this session last proved the password (and the code, where a second
    * factor is live): at sign-in, and again at `account.reauthenticate`. The
@@ -632,7 +632,7 @@ export interface SessionCreate {
    * account owes a second. The plugin refuses every service call but the
    * enrollment three while it is set; `confirmTotp` clears it.
    */
-  enrollmentOnly?: boolean
+  isEnrollmentOnly?: boolean
   /**
    * When this session last proved the password (and the code, where a second
    * factor is live): at sign-in, and again at `account.reauthenticate`. The
@@ -669,7 +669,7 @@ export interface SessionUpdate {
   expiresAt?: string | Date
   ipAddress?: string | null
   userAgent?: string | null
-  enrollmentOnly?: boolean
+  isEnrollmentOnly?: boolean
   reauthenticatedAt?: string | Date | null
   impersonatingUserId?: string | null
   impersonationReason?: string | null
@@ -684,7 +684,7 @@ export interface SessionWhere extends WhereBase {
   ipAddress?: string | WhereOp<string> | null
   userAgent?: string | WhereOp<string> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
-  enrollmentOnly?: boolean | WhereOp<boolean> | null
+  isEnrollmentOnly?: boolean | WhereOp<boolean> | null
   reauthenticatedAt?: string | Date | WhereOp<string | Date> | null
   impersonatingUserId?: string | WhereOp<string> | null
   impersonationReason?: string | WhereOp<string> | null
@@ -1200,6 +1200,7 @@ export interface Flow {
   createdAt: string
   updatedAt: string
   workspaceId: string
+  deletedAt?: string | null
 }
 
 export interface FlowCreate {
@@ -1238,6 +1239,7 @@ export interface FlowWhere extends WhereBase {
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   workspaceId?: string | WhereOp<string> | null
+  deletedAt?: string | Date | WhereOp<string | Date> | null
   AND?: FlowWhere[]
   OR?:  FlowWhere[]
   NOT?: FlowWhere
@@ -1250,6 +1252,8 @@ export type FlowOrderBy =
 export interface FlowRelations {
   versions: FlowVersion[]
   layout: FlowLayout | null
+  workspace: Workspace | null
+  owner: User | null
 }
 
 // ─── FlowVersion ─────────────────────────────────────────────────
@@ -1421,7 +1425,7 @@ export interface RunStep {
   nodeId: string
   status: FlowStepStatus
   attempts: number
-  fromCache: boolean
+  isFromCache: boolean
   startedAt?: string | null
   durationMs?: number | null
   output?: unknown | null
@@ -1435,7 +1439,7 @@ export interface RunStepCreate {
   nodeId: string
   status: FlowStepStatus
   attempts?: number
-  fromCache?: boolean
+  isFromCache?: boolean
   startedAt?: string | Date | null
   durationMs?: number | null
   output?: unknown | null
@@ -1449,7 +1453,7 @@ export interface RunStepUpdate {
   nodeId?: string
   status?: FlowStepStatus
   attempts?: number
-  fromCache?: boolean
+  isFromCache?: boolean
   startedAt?: string | Date | null
   durationMs?: number | null
   output?: unknown | null
@@ -1463,7 +1467,7 @@ export interface RunStepWhere extends WhereBase {
   nodeId?: string | WhereOp<string> | null
   status?: FlowStepStatus | WhereOp<FlowStepStatus> | null
   attempts?: number | WhereOp<number> | null
-  fromCache?: boolean | WhereOp<boolean> | null
+  isFromCache?: boolean | WhereOp<boolean> | null
   startedAt?: string | Date | WhereOp<string | Date> | null
   durationMs?: number | WhereOp<number> | null
   output?: unknown | WhereOp<unknown> | null
@@ -1592,6 +1596,7 @@ export type FlowCredentialOrderBy =
   | Array<{ [K in keyof Omit<FlowCredential, never>]?: OrderDir }>
 
 export interface FlowCredentialRelations {
+  workspace: Workspace | null
 }
 
 // ─── KvEntry ─────────────────────────────────────────────────────
@@ -1642,6 +1647,7 @@ export type KvEntryOrderBy =
   | Array<{ [K in keyof Omit<KvEntry, never>]?: OrderDir }>
 
 export interface KvEntryRelations {
+  workspace: Workspace | null
 }
 
 // ─── AuditTrail ──────────────────────────────────────────────────
@@ -1784,7 +1790,7 @@ export interface User {
   id: string
   email: string
   name?: string | null
-  emailVerified: boolean
+  isEmailVerified: boolean
   accountId?: string | null
   kind: UserKind
   status: UserStatus
@@ -1801,7 +1807,7 @@ export interface UserCreate {
   id?: string
   email: string
   name?: string | null
-  emailVerified?: boolean
+  isEmailVerified?: boolean
   accountId?: string | null
   status?: UserStatus
   username?: string | null
@@ -1814,7 +1820,7 @@ export interface UserUpdate {
   id?: string
   email?: string
   name?: string | null
-  emailVerified?: boolean
+  isEmailVerified?: boolean
   accountId?: string | null
   status?: UserStatus
   username?: string | null
@@ -1831,7 +1837,7 @@ export interface UserWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   email?: string | WhereOp<string> | null
   name?: string | WhereOp<string> | null
-  emailVerified?: boolean | WhereOp<boolean> | null
+  isEmailVerified?: boolean | WhereOp<boolean> | null
   accountId?: string | WhereOp<string> | null
   kind?: UserKind | WhereOp<UserKind> | null
   status?: UserStatus | WhereOp<UserStatus> | null
@@ -1863,7 +1869,7 @@ export interface UserRelations {
 
 export interface Account {
   id: string
-  type: AccountType
+  kind: AccountKind
   status: AccountStatus
   slug: string
   displayName: string
@@ -1875,7 +1881,7 @@ export interface Account {
 
 export interface AccountCreate {
   id?: string
-  type?: AccountType
+  kind?: AccountKind
   status?: AccountStatus
   slug: string
   displayName: string
@@ -1884,7 +1890,7 @@ export interface AccountCreate {
 
 export interface AccountUpdate {
   id?: string
-  type?: AccountType
+  kind?: AccountKind
   status?: AccountStatus
   slug?: string
   displayName?: string
@@ -1893,7 +1899,7 @@ export interface AccountUpdate {
 
 export interface AccountWhere extends WhereBase {
   id?: string | WhereOp<string> | null
-  type?: AccountType | WhereOp<AccountType> | null
+  kind?: AccountKind | WhereOp<AccountKind> | null
   status?: AccountStatus | WhereOp<AccountStatus> | null
   slug?: string | WhereOp<string> | null
   displayName?: string | WhereOp<string> | null
@@ -1922,7 +1928,7 @@ export interface Workspace {
   accountId: string
   name: string
   slug: string
-  type: WorkspaceType
+  kind: WorkspaceKind
   settings: unknown
   status: WorkspaceStatus
   expiresAt?: string | null
@@ -1942,7 +1948,7 @@ export interface WorkspaceCreate {
   accountId: string
   name: string
   slug: string
-  type?: WorkspaceType
+  kind?: WorkspaceKind
   settings?: unknown
   status?: WorkspaceStatus
   ingressAccountId?: string | null
@@ -1955,7 +1961,7 @@ export interface WorkspaceUpdate {
   accountId?: string
   name?: string
   slug?: string
-  type?: WorkspaceType
+  kind?: WorkspaceKind
   settings?: unknown
   status?: WorkspaceStatus
   ingressAccountId?: string | null
@@ -1973,7 +1979,7 @@ export interface WorkspaceWhere extends WhereBase {
   accountId?: string | WhereOp<string> | null
   name?: string | WhereOp<string> | null
   slug?: string | WhereOp<string> | null
-  type?: WorkspaceType | WhereOp<WorkspaceType> | null
+  kind?: WorkspaceKind | WhereOp<WorkspaceKind> | null
   settings?: unknown | WhereOp<unknown> | null
   status?: WorkspaceStatus | WhereOp<WorkspaceStatus> | null
   expiresAt?: string | Date | WhereOp<string | Date> | null
@@ -2006,8 +2012,9 @@ export interface WorkspaceRelations {
   monitors: Monitor[]
   channels: NotificationChannel[]
   backupDestinations: BackupDestination[]
-  flags: FeatureFlag[]
+  flags: Flag[]
   auditEvents: AuditEvent[]
+  flows: Flow[]
 }
 
 // ─── WorkspaceMember ─────────────────────────────────────────────
@@ -2174,7 +2181,7 @@ export interface Secret {
   verifyError?: string | null
   createdBy?: string | null
   /**
-   * WHICH vendor a `provider_key` opens — a cloud, an edge or a forge. Null
+   * WHICH vendor a `providerKey` opens — a cloud, an edge or a forge. Null
    * for every other kind.
    * 
    * It is a column rather than a field inside `data` because a vendor name is
@@ -2210,7 +2217,7 @@ export interface SecretCreate {
   data?: string
   createdBy?: string | null
   /**
-   * WHICH vendor a `provider_key` opens — a cloud, an edge or a forge. Null
+   * WHICH vendor a `providerKey` opens — a cloud, an edge or a forge. Null
    * for every other kind.
    * 
    * It is a column rather than a field inside `data` because a vendor name is
@@ -2663,9 +2670,9 @@ export interface ClaudeTranscript {
   path: string
   sessionId: string
   cwd?: string | null
-  subagent: boolean
+  isSubagent: boolean
   agent?: string | null
-  headless: boolean
+  isHeadless: boolean
   title?: string | null
   firstPrompt?: string | null
   offset: number
@@ -2673,7 +2680,7 @@ export interface ClaudeTranscript {
   size: number
   startedAt?: string | null
   lastAt?: string | null
-  gone: boolean
+  isGone: boolean
   createdAt: string
   updatedAt: string
 }
@@ -2683,9 +2690,9 @@ export interface ClaudeTranscriptCreate {
   path: string
   sessionId: string
   cwd?: string | null
-  subagent?: boolean
+  isSubagent?: boolean
   agent?: string | null
-  headless?: boolean
+  isHeadless?: boolean
   title?: string | null
   firstPrompt?: string | null
   offset?: number
@@ -2693,7 +2700,7 @@ export interface ClaudeTranscriptCreate {
   size?: number
   startedAt?: string | Date | null
   lastAt?: string | Date | null
-  gone?: boolean
+  isGone?: boolean
 }
 
 export interface ClaudeTranscriptUpdate {
@@ -2701,9 +2708,9 @@ export interface ClaudeTranscriptUpdate {
   path?: string
   sessionId?: string
   cwd?: string | null
-  subagent?: boolean
+  isSubagent?: boolean
   agent?: string | null
-  headless?: boolean
+  isHeadless?: boolean
   title?: string | null
   firstPrompt?: string | null
   offset?: number
@@ -2711,7 +2718,7 @@ export interface ClaudeTranscriptUpdate {
   size?: number
   startedAt?: string | Date | null
   lastAt?: string | Date | null
-  gone?: boolean
+  isGone?: boolean
 }
 
 export interface ClaudeTranscriptWhere extends WhereBase {
@@ -2719,9 +2726,9 @@ export interface ClaudeTranscriptWhere extends WhereBase {
   path?: string | WhereOp<string> | null
   sessionId?: string | WhereOp<string> | null
   cwd?: string | WhereOp<string> | null
-  subagent?: boolean | WhereOp<boolean> | null
+  isSubagent?: boolean | WhereOp<boolean> | null
   agent?: string | WhereOp<string> | null
-  headless?: boolean | WhereOp<boolean> | null
+  isHeadless?: boolean | WhereOp<boolean> | null
   title?: string | WhereOp<string> | null
   firstPrompt?: string | WhereOp<string> | null
   offset?: number | WhereOp<number> | null
@@ -2729,7 +2736,7 @@ export interface ClaudeTranscriptWhere extends WhereBase {
   size?: number | WhereOp<number> | null
   startedAt?: string | Date | WhereOp<string | Date> | null
   lastAt?: string | Date | WhereOp<string | Date> | null
-  gone?: boolean | WhereOp<boolean> | null
+  isGone?: boolean | WhereOp<boolean> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   AND?: ClaudeTranscriptWhere[]
@@ -2760,7 +2767,7 @@ export interface ClaudeMessage {
   output: number
   tools: string
   skills: string
-  subagent: boolean
+  isSubagent: boolean
   agent?: string | null
 }
 
@@ -2778,7 +2785,7 @@ export interface ClaudeMessageCreate {
   output: number
   tools?: string
   skills?: string
-  subagent?: boolean
+  isSubagent?: boolean
   agent?: string | null
 }
 
@@ -2796,7 +2803,7 @@ export interface ClaudeMessageUpdate {
   output?: number
   tools?: string
   skills?: string
-  subagent?: boolean
+  isSubagent?: boolean
   agent?: string | null
 }
 
@@ -2814,7 +2821,7 @@ export interface ClaudeMessageWhere extends WhereBase {
   output?: number | WhereOp<number> | null
   tools?: string | WhereOp<string> | null
   skills?: string | WhereOp<string> | null
-  subagent?: boolean | WhereOp<boolean> | null
+  isSubagent?: boolean | WhereOp<boolean> | null
   agent?: string | WhereOp<string> | null
   AND?: ClaudeMessageWhere[]
   OR?:  ClaudeMessageWhere[]
@@ -2901,7 +2908,7 @@ export interface Volume {
   driver: string
   mountPoint?: string | null
   sizeBytes: number
-  inUse: boolean
+  isInUse: boolean
   containers: string[]
   createdOnServer?: string | null
   discoveredAt: string
@@ -2916,7 +2923,7 @@ export interface VolumeCreate {
   driver?: string
   mountPoint?: string | null
   sizeBytes?: number
-  inUse?: boolean
+  isInUse?: boolean
   containers?: string[]
   createdOnServer?: string | Date | null
   discoveredAt?: string | Date
@@ -2931,7 +2938,7 @@ export interface VolumeUpdate {
   driver?: string
   mountPoint?: string | null
   sizeBytes?: number
-  inUse?: boolean
+  isInUse?: boolean
   containers?: string[]
   createdOnServer?: string | Date | null
   discoveredAt?: string | Date
@@ -2946,7 +2953,7 @@ export interface VolumeWhere extends WhereBase {
   driver?: string | WhereOp<string> | null
   mountPoint?: string | WhereOp<string> | null
   sizeBytes?: number | WhereOp<number> | null
-  inUse?: boolean | WhereOp<boolean> | null
+  isInUse?: boolean | WhereOp<boolean> | null
   containers?: string[] | WhereOp<string[]> | null
   createdOnServer?: string | Date | WhereOp<string | Date> | null
   discoveredAt?: string | Date | WhereOp<string | Date> | null
@@ -2971,7 +2978,7 @@ export interface Network {
   workspaceId: string
   name: string
   slug: string
-  type: NetworkType
+  kind: NetworkKind
   cidr: string
   provider: NetworkProvider
   config: unknown
@@ -2987,7 +2994,7 @@ export interface NetworkCreate {
   workspaceId: string
   name: string
   slug: string
-  type?: NetworkType
+  kind?: NetworkKind
   cidr?: string
   provider?: NetworkProvider
   config?: unknown
@@ -2998,7 +3005,7 @@ export interface NetworkUpdate {
   workspaceId?: string
   name?: string
   slug?: string
-  type?: NetworkType
+  kind?: NetworkKind
   cidr?: string
   provider?: NetworkProvider
   config?: unknown
@@ -3010,7 +3017,7 @@ export interface NetworkWhere extends WhereBase {
   workspaceId?: string | WhereOp<string> | null
   name?: string | WhereOp<string> | null
   slug?: string | WhereOp<string> | null
-  type?: NetworkType | WhereOp<NetworkType> | null
+  kind?: NetworkKind | WhereOp<NetworkKind> | null
   cidr?: string | WhereOp<string> | null
   provider?: NetworkProvider | WhereOp<NetworkProvider> | null
   config?: unknown | WhereOp<unknown> | null
@@ -3221,7 +3228,7 @@ export interface App {
   environmentId: string
   name: string
   slug: string
-  type: AppType
+  kind: AppKind
   status: AppStatus
   source: unknown
   port?: number | null
@@ -3231,8 +3238,8 @@ export interface App {
   cpuLimit?: number | null
   memLimitMb?: number | null
   command: string[]
-  exposesPort: boolean
-  deployOnPush: boolean
+  hasExposedPort: boolean
+  isDeployedOnPush: boolean
   /** @encrypted */
   pushSecret?: string | null
   /** @guarded */
@@ -3257,7 +3264,7 @@ export interface AppCreate {
   environmentId: string
   name: string
   slug: string
-  type?: AppType
+  kind?: AppKind
   source?: unknown
   port?: number | null
   containerPort?: number | null
@@ -3266,7 +3273,7 @@ export interface AppCreate {
   cpuLimit?: number | null
   memLimitMb?: number | null
   command?: string[]
-  exposesPort?: boolean
+  hasExposedPort?: boolean
   backupCron?: string | null
   backupDestinationId?: string | null
   replicaDestinationId?: string | null
@@ -3279,7 +3286,7 @@ export interface AppUpdate {
   environmentId?: string
   name?: string
   slug?: string
-  type?: AppType
+  kind?: AppKind
   source?: unknown
   port?: number | null
   containerPort?: number | null
@@ -3288,7 +3295,7 @@ export interface AppUpdate {
   cpuLimit?: number | null
   memLimitMb?: number | null
   command?: string[]
-  exposesPort?: boolean
+  hasExposedPort?: boolean
   backupCron?: string | null
   backupDestinationId?: string | null
   replicaDestinationId?: string | null
@@ -3297,7 +3304,7 @@ export interface AppUpdate {
 
 export interface AppSystem {
   status?: AppStatus
-  deployOnPush?: boolean
+  isDeployedOnPush?: boolean
   pushSecret?: string | null
   pushTokenHash?: string | null
   pushActorId?: string | null
@@ -3313,7 +3320,7 @@ export interface AppWhere extends WhereBase {
   environmentId?: string | WhereOp<string> | null
   name?: string | WhereOp<string> | null
   slug?: string | WhereOp<string> | null
-  type?: AppType | WhereOp<AppType> | null
+  kind?: AppKind | WhereOp<AppKind> | null
   status?: AppStatus | WhereOp<AppStatus> | null
   source?: unknown | WhereOp<unknown> | null
   port?: number | WhereOp<number> | null
@@ -3323,8 +3330,8 @@ export interface AppWhere extends WhereBase {
   cpuLimit?: number | WhereOp<number> | null
   memLimitMb?: number | WhereOp<number> | null
   command?: string[] | WhereOp<string[]> | null
-  exposesPort?: boolean | WhereOp<boolean> | null
-  deployOnPush?: boolean | WhereOp<boolean> | null
+  hasExposedPort?: boolean | WhereOp<boolean> | null
+  isDeployedOnPush?: boolean | WhereOp<boolean> | null
   pushSecret?: string | WhereOp<string> | null
   pushTokenHash?: string | WhereOp<string> | null
   pushActorId?: string | WhereOp<string> | null
@@ -3375,7 +3382,7 @@ export interface Variable {
   environmentId: string
   appId?: string | null
   key: string
-  secret: boolean
+  isSecret: boolean
   value?: string | null
   /** @encrypted */
   secretValue?: string | null
@@ -3392,7 +3399,7 @@ export interface VariableCreate {
   environmentId?: string
   appId?: string | null
   key: string
-  secret?: boolean
+  isSecret?: boolean
   value?: string | null
   secretValue?: string | null
 }
@@ -3403,7 +3410,7 @@ export interface VariableUpdate {
   environmentId?: string
   appId?: string | null
   key?: string
-  secret?: boolean
+  isSecret?: boolean
   value?: string | null
   secretValue?: string | null
   version: number
@@ -3415,7 +3422,7 @@ export interface VariableWhere extends WhereBase {
   environmentId?: string | WhereOp<string> | null
   appId?: string | WhereOp<string> | null
   key?: string | WhereOp<string> | null
-  secret?: boolean | WhereOp<boolean> | null
+  isSecret?: boolean | WhereOp<boolean> | null
   value?: string | WhereOp<string> | null
   secretValue?: string | WhereOp<string> | null
   version?: number | WhereOp<number> | null
@@ -3446,7 +3453,7 @@ export interface Domain {
   isPrimary: boolean
   redirectTo?: string | null
   port: number
-  proxied: boolean
+  isProxied: boolean
   sslMode: SslMode
   certSecretId?: string | null
   certKind?: CertKind | null
@@ -3467,7 +3474,7 @@ export interface DomainCreate {
   isPrimary?: boolean
   redirectTo?: string | null
   port?: number
-  proxied?: boolean
+  isProxied?: boolean
   sslMode?: SslMode
 }
 
@@ -3479,7 +3486,7 @@ export interface DomainUpdate {
   isPrimary?: boolean
   redirectTo?: string | null
   port?: number
-  proxied?: boolean
+  isProxied?: boolean
   sslMode?: SslMode
   version: number
 }
@@ -3499,7 +3506,7 @@ export interface DomainWhere extends WhereBase {
   isPrimary?: boolean | WhereOp<boolean> | null
   redirectTo?: string | WhereOp<string> | null
   port?: number | WhereOp<number> | null
-  proxied?: boolean | WhereOp<boolean> | null
+  isProxied?: boolean | WhereOp<boolean> | null
   sslMode?: SslMode | WhereOp<SslMode> | null
   certSecretId?: string | WhereOp<string> | null
   certKind?: CertKind | WhereOp<CertKind> | null
@@ -4700,9 +4707,9 @@ export interface MaintenanceRunRelations {
   server: Server | null
 }
 
-// ─── FeatureFlag ─────────────────────────────────────────────────
+// ─── Flag ────────────────────────────────────────────────────────
 
-export interface FeatureFlag {
+export interface Flag {
   id: string
   workspaceId: string
   key: string
@@ -4720,7 +4727,7 @@ export interface FeatureFlag {
   deletedAt?: string | null
 }
 
-export interface FeatureFlagCreate {
+export interface FlagCreate {
   id?: string
   workspaceId: string
   key: string
@@ -4733,7 +4740,7 @@ export interface FeatureFlagCreate {
   createdBy?: string | null
 }
 
-export interface FeatureFlagUpdate {
+export interface FlagUpdate {
   id?: string
   workspaceId?: string
   key?: string
@@ -4747,7 +4754,7 @@ export interface FeatureFlagUpdate {
   version: number
 }
 
-export interface FeatureFlagWhere extends WhereBase {
+export interface FlagWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
   key?: string | WhereOp<string> | null
@@ -4762,16 +4769,16 @@ export interface FeatureFlagWhere extends WhereBase {
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
-  AND?: FeatureFlagWhere[]
-  OR?:  FeatureFlagWhere[]
-  NOT?: FeatureFlagWhere
+  AND?: FlagWhere[]
+  OR?:  FlagWhere[]
+  NOT?: FlagWhere
 }
 
-export type FeatureFlagOrderBy =
-  | { [K in keyof Omit<FeatureFlag, never>]?: OrderDir }
-  | Array<{ [K in keyof Omit<FeatureFlag, never>]?: OrderDir }>
+export type FlagOrderBy =
+  | { [K in keyof Omit<Flag, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<Flag, never>]?: OrderDir }>
 
-export interface FeatureFlagRelations {
+export interface FlagRelations {
   workspace: Workspace | null
   overrides: FlagOverride[]
 }
@@ -4826,7 +4833,7 @@ export type FlagOverrideOrderBy =
   | Array<{ [K in keyof Omit<FlagOverride, never>]?: OrderDir }>
 
 export interface FlagOverrideRelations {
-  flag: FeatureFlag | null
+  flag: Flag | null
   environment: Environment | null
 }
 
@@ -5067,7 +5074,7 @@ export type AlertRuleOrderBy =
 
 export interface AlertRuleRelations {
   workspace: Workspace | null
-  events: AlertEvent[]
+  alerts: Alert[]
   channels: AlertRuleChannel[]
 }
 
@@ -5111,9 +5118,9 @@ export interface AlertRuleChannelRelations {
   channel: NotificationChannel | null
 }
 
-// ─── AlertEvent ──────────────────────────────────────────────────
+// ─── Alert ───────────────────────────────────────────────────────
 
-export interface AlertEvent {
+export interface Alert {
   id: string
   ruleId: string
   status: AlertStatus
@@ -5128,7 +5135,7 @@ export interface AlertEvent {
   acknowledgedAt?: string | null
 }
 
-export interface AlertEventCreate {
+export interface AlertCreate {
   id?: string
   ruleId: string
   status?: AlertStatus
@@ -5143,7 +5150,7 @@ export interface AlertEventCreate {
   acknowledgedAt?: string | Date | null
 }
 
-export interface AlertEventUpdate {
+export interface AlertUpdate {
   id?: string
   ruleId?: string
   status?: AlertStatus
@@ -5158,7 +5165,7 @@ export interface AlertEventUpdate {
   acknowledgedAt?: string | Date | null
 }
 
-export interface AlertEventWhere extends WhereBase {
+export interface AlertWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   ruleId?: string | WhereOp<string> | null
   status?: AlertStatus | WhereOp<AlertStatus> | null
@@ -5171,16 +5178,16 @@ export interface AlertEventWhere extends WhereBase {
   resolvedAt?: string | Date | WhereOp<string | Date> | null
   acknowledgedBy?: string | WhereOp<string> | null
   acknowledgedAt?: string | Date | WhereOp<string | Date> | null
-  AND?: AlertEventWhere[]
-  OR?:  AlertEventWhere[]
-  NOT?: AlertEventWhere
+  AND?: AlertWhere[]
+  OR?:  AlertWhere[]
+  NOT?: AlertWhere
 }
 
-export type AlertEventOrderBy =
-  | { [K in keyof Omit<AlertEvent, never>]?: OrderDir }
-  | Array<{ [K in keyof Omit<AlertEvent, never>]?: OrderDir }>
+export type AlertOrderBy =
+  | { [K in keyof Omit<Alert, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<Alert, never>]?: OrderDir }>
 
-export interface AlertEventRelations {
+export interface AlertRelations {
   rule: AlertRule | null
 }
 
@@ -5195,14 +5202,14 @@ export interface Monitor {
   method: HttpMethod
   headers: unknown
   body?: string | null
-  intervalSec: number
+  intervalSeconds: number
   retries: number
-  retryIntervalSec: number
+  retryIntervalSeconds: number
   timeoutMs: number
   acceptedStatus: string
   maxRedirects: number
-  ignoreTls: boolean
-  invert: boolean
+  isTlsIgnored: boolean
+  isInverted: boolean
   resendEvery: number
   tags: unknown
   status: MonitorStatus
@@ -5223,14 +5230,14 @@ export interface MonitorCreate {
   method?: HttpMethod
   headers?: unknown
   body?: string | null
-  intervalSec?: number
+  intervalSeconds?: number
   retries?: number
-  retryIntervalSec?: number
+  retryIntervalSeconds?: number
   timeoutMs?: number
   acceptedStatus?: string
   maxRedirects?: number
-  ignoreTls?: boolean
-  invert?: boolean
+  isTlsIgnored?: boolean
+  isInverted?: boolean
   resendEvery?: number
   tags?: unknown
   status?: MonitorStatus
@@ -5245,14 +5252,14 @@ export interface MonitorUpdate {
   method?: HttpMethod
   headers?: unknown
   body?: string | null
-  intervalSec?: number
+  intervalSeconds?: number
   retries?: number
-  retryIntervalSec?: number
+  retryIntervalSeconds?: number
   timeoutMs?: number
   acceptedStatus?: string
   maxRedirects?: number
-  ignoreTls?: boolean
-  invert?: boolean
+  isTlsIgnored?: boolean
+  isInverted?: boolean
   resendEvery?: number
   tags?: unknown
   status?: MonitorStatus
@@ -5274,14 +5281,14 @@ export interface MonitorWhere extends WhereBase {
   method?: HttpMethod | WhereOp<HttpMethod> | null
   headers?: unknown | WhereOp<unknown> | null
   body?: string | WhereOp<string> | null
-  intervalSec?: number | WhereOp<number> | null
+  intervalSeconds?: number | WhereOp<number> | null
   retries?: number | WhereOp<number> | null
-  retryIntervalSec?: number | WhereOp<number> | null
+  retryIntervalSeconds?: number | WhereOp<number> | null
   timeoutMs?: number | WhereOp<number> | null
   acceptedStatus?: string | WhereOp<string> | null
   maxRedirects?: number | WhereOp<number> | null
-  ignoreTls?: boolean | WhereOp<boolean> | null
-  invert?: boolean | WhereOp<boolean> | null
+  isTlsIgnored?: boolean | WhereOp<boolean> | null
+  isInverted?: boolean | WhereOp<boolean> | null
   resendEvery?: number | WhereOp<number> | null
   tags?: unknown | WhereOp<unknown> | null
   status?: MonitorStatus | WhereOp<MonitorStatus> | null
@@ -5313,7 +5320,7 @@ export interface MonitorCheck {
   id: string
   monitorId: string
   at: string
-  ok: boolean
+  isOk: boolean
   statusCode?: number | null
   latencyMs?: number | null
   message: string
@@ -5323,7 +5330,7 @@ export interface MonitorCheckCreate {
   id?: string
   monitorId: string
   at?: string | Date
-  ok: boolean
+  isOk: boolean
   statusCode?: number | null
   latencyMs?: number | null
   message: string
@@ -5333,7 +5340,7 @@ export interface MonitorCheckUpdate {
   id?: string
   monitorId?: string
   at?: string | Date
-  ok?: boolean
+  isOk?: boolean
   statusCode?: number | null
   latencyMs?: number | null
   message?: string
@@ -5343,7 +5350,7 @@ export interface MonitorCheckWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   monitorId?: string | WhereOp<string> | null
   at?: string | Date | WhereOp<string | Date> | null
-  ok?: boolean | WhereOp<boolean> | null
+  isOk?: boolean | WhereOp<boolean> | null
   statusCode?: number | WhereOp<number> | null
   latencyMs?: number | WhereOp<number> | null
   message?: string | WhereOp<string> | null
@@ -5677,7 +5684,7 @@ export interface Blueprint {
   image: string
   icon?: string | null
   brandColor?: string | null
-  appType: AppType
+  appKind: AppKind
   port?: number | null
   volumePath?: string | null
   healthCheck?: string | null
@@ -5703,7 +5710,7 @@ export interface BlueprintCreate {
   image: string
   icon?: string | null
   brandColor?: string | null
-  appType?: AppType
+  appKind?: AppKind
   port?: number | null
   volumePath?: string | null
   healthCheck?: string | null
@@ -5725,7 +5732,7 @@ export interface BlueprintUpdate {
   image?: string
   icon?: string | null
   brandColor?: string | null
-  appType?: AppType
+  appKind?: AppKind
   port?: number | null
   volumePath?: string | null
   healthCheck?: string | null
@@ -5748,7 +5755,7 @@ export interface BlueprintWhere extends WhereBase {
   image?: string | WhereOp<string> | null
   icon?: string | WhereOp<string> | null
   brandColor?: string | WhereOp<string> | null
-  appType?: AppType | WhereOp<AppType> | null
+  appKind?: AppKind | WhereOp<AppKind> | null
   port?: number | WhereOp<number> | null
   volumePath?: string | WhereOp<string> | null
   healthCheck?: string | WhereOp<string> | null
@@ -5784,8 +5791,8 @@ export interface BlueprintParam {
   label: string
   hint?: string | null
   defaultValue?: string | null
-  required: boolean
-  secret: boolean
+  isRequired: boolean
+  isSecret: boolean
   generate?: ParamGenerator | null
   position: number
 }
@@ -5797,8 +5804,8 @@ export interface BlueprintParamCreate {
   label: string
   hint?: string | null
   defaultValue?: string | null
-  required?: boolean
-  secret?: boolean
+  isRequired?: boolean
+  isSecret?: boolean
   generate?: ParamGenerator | null
   position?: number
 }
@@ -5810,8 +5817,8 @@ export interface BlueprintParamUpdate {
   label?: string
   hint?: string | null
   defaultValue?: string | null
-  required?: boolean
-  secret?: boolean
+  isRequired?: boolean
+  isSecret?: boolean
   generate?: ParamGenerator | null
   position?: number
 }
@@ -5823,8 +5830,8 @@ export interface BlueprintParamWhere extends WhereBase {
   label?: string | WhereOp<string> | null
   hint?: string | WhereOp<string> | null
   defaultValue?: string | WhereOp<string> | null
-  required?: boolean | WhereOp<boolean> | null
-  secret?: boolean | WhereOp<boolean> | null
+  isRequired?: boolean | WhereOp<boolean> | null
+  isSecret?: boolean | WhereOp<boolean> | null
   generate?: ParamGenerator | WhereOp<ParamGenerator> | null
   position?: number | WhereOp<number> | null
   AND?: BlueprintParamWhere[]
@@ -5849,7 +5856,7 @@ export interface RegistryImage {
   tag: string
   digest: string
   sizeBytes: number
-  inUse: boolean
+  isInUse: boolean
   pushedAt?: string | null
   pushedBy?: string | null
   observedAt: string
@@ -5862,7 +5869,7 @@ export interface RegistryImageCreate {
   tag: string
   digest: string
   sizeBytes?: number
-  inUse?: boolean
+  isInUse?: boolean
   pushedAt?: string | Date | null
   pushedBy?: string | null
   observedAt?: string | Date
@@ -5875,7 +5882,7 @@ export interface RegistryImageUpdate {
   tag?: string
   digest?: string
   sizeBytes?: number
-  inUse?: boolean
+  isInUse?: boolean
   pushedAt?: string | Date | null
   pushedBy?: string | null
   observedAt?: string | Date
@@ -5888,7 +5895,7 @@ export interface RegistryImageWhere extends WhereBase {
   tag?: string | WhereOp<string> | null
   digest?: string | WhereOp<string> | null
   sizeBytes?: number | WhereOp<number> | null
-  inUse?: boolean | WhereOp<boolean> | null
+  isInUse?: boolean | WhereOp<boolean> | null
   pushedAt?: string | Date | WhereOp<string | Date> | null
   pushedBy?: string | WhereOp<string> | null
   observedAt?: string | Date | WhereOp<string | Date> | null
@@ -5974,7 +5981,7 @@ export interface DependencyUse {
   dependencyId: string
   member: string
   memberPath: string
-  published: boolean
+  isPublished: boolean
   kind: DependencyKind
   declared: string
   installed?: string | null
@@ -5988,7 +5995,7 @@ export interface DependencyUseCreate {
   dependencyId: string
   member: string
   memberPath?: string
-  published?: boolean
+  isPublished?: boolean
   kind: DependencyKind
   declared: string
   installed?: string | null
@@ -6002,7 +6009,7 @@ export interface DependencyUseUpdate {
   dependencyId?: string
   member?: string
   memberPath?: string
-  published?: boolean
+  isPublished?: boolean
   kind?: DependencyKind
   declared?: string
   installed?: string | null
@@ -6016,7 +6023,7 @@ export interface DependencyUseWhere extends WhereBase {
   dependencyId?: string | WhereOp<string> | null
   member?: string | WhereOp<string> | null
   memberPath?: string | WhereOp<string> | null
-  published?: boolean | WhereOp<boolean> | null
+  isPublished?: boolean | WhereOp<boolean> | null
   kind?: DependencyKind | WhereOp<DependencyKind> | null
   declared?: string | WhereOp<string> | null
   installed?: string | WhereOp<string> | null
@@ -6040,9 +6047,9 @@ export interface DependencyUseRelations {
 export interface HubConfig {
   id: string
   heartbeatTimeoutSeconds: number
-  requireTwoFactorForOwners: boolean
-  allowApiKeyAuth: boolean
-  allowBotUsers: boolean
+  isTwoFactorRequiredForOwners: boolean
+  isApiKeyAuthAllowed: boolean
+  isBotUserAllowed: boolean
   backupKeepLocalCount: number
   backupKeepLocalDays?: number | null
   backupKeepRemoteCount: number
@@ -6058,9 +6065,9 @@ export interface HubConfig {
 export interface HubConfigCreate {
   id?: string
   heartbeatTimeoutSeconds?: number
-  requireTwoFactorForOwners?: boolean
-  allowApiKeyAuth?: boolean
-  allowBotUsers?: boolean
+  isTwoFactorRequiredForOwners?: boolean
+  isApiKeyAuthAllowed?: boolean
+  isBotUserAllowed?: boolean
   backupKeepLocalCount?: number
   backupKeepLocalDays?: number | null
   backupKeepRemoteCount?: number
@@ -6070,9 +6077,9 @@ export interface HubConfigCreate {
 export interface HubConfigUpdate {
   id?: string
   heartbeatTimeoutSeconds?: number
-  requireTwoFactorForOwners?: boolean
-  allowApiKeyAuth?: boolean
-  allowBotUsers?: boolean
+  isTwoFactorRequiredForOwners?: boolean
+  isApiKeyAuthAllowed?: boolean
+  isBotUserAllowed?: boolean
   backupKeepLocalCount?: number
   backupKeepLocalDays?: number | null
   backupKeepRemoteCount?: number
@@ -6089,9 +6096,9 @@ export interface HubConfigSystem {
 export interface HubConfigWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   heartbeatTimeoutSeconds?: number | WhereOp<number> | null
-  requireTwoFactorForOwners?: boolean | WhereOp<boolean> | null
-  allowApiKeyAuth?: boolean | WhereOp<boolean> | null
-  allowBotUsers?: boolean | WhereOp<boolean> | null
+  isTwoFactorRequiredForOwners?: boolean | WhereOp<boolean> | null
+  isApiKeyAuthAllowed?: boolean | WhereOp<boolean> | null
+  isBotUserAllowed?: boolean | WhereOp<boolean> | null
   backupKeepLocalCount?: number | WhereOp<number> | null
   backupKeepLocalDays?: number | WhereOp<number> | null
   backupKeepRemoteCount?: number | WhereOp<number> | null
@@ -6329,13 +6336,13 @@ export interface ServiceTypes {
   diskUsages: DiskUsage
   serverPostures: ServerPosture
   maintenanceRuns: MaintenanceRun
-  featureFlags: FeatureFlag
+  flags: Flag
   flagOverrides: FlagOverride
   notificationChannels: NotificationChannel
   backupDestinations: BackupDestination
   alertRules: AlertRule
   alertRuleChannels: AlertRuleChannel
-  alertEvents: AlertEvent
+  alerts: Alert
   monitors: Monitor
   monitorChecks: MonitorCheck
   monitorEvents: MonitorEvent
@@ -6553,7 +6560,7 @@ type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient
 type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
-  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'claudeTranscript' | 'claudeMessage' | 'claudeWrite' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'domainRoute' | 'appEditor' | 'appServer' | 'appPlatform' | 'appBackup' | 'appDrill' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'maintenanceRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'backupDestination' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'monitor' | 'monitorCheck' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardTile' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
+  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'claudeTranscript' | 'claudeMessage' | 'claudeWrite' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'domainRoute' | 'appEditor' | 'appServer' | 'appPlatform' | 'appBackup' | 'appDrill' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'maintenanceRun' | 'flag' | 'flagOverride' | 'notificationChannel' | 'backupDestination' | 'alertRule' | 'alertRuleChannel' | 'alert' | 'monitor' | 'monitorCheck' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardTile' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
   readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere, CredentialRelations, never, 'value' | 'accessToken' | 'refreshToken' | '@@gate'>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'token' | '@@gate'>
   readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere, VerificationRelations, never, 'value' | 'secret' | 'code' | '@@gate'>
@@ -6589,7 +6596,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly serverNetwork: TableClient<ServerNetwork, ServerNetworkCreate, ServerNetworkUpdate, ServerNetworkWhere, ServerNetworkRelations, never, '@@gate'>
   readonly project: TableClient<Project, ProjectCreate, ProjectUpdate, ProjectWhere, ProjectRelations, never, '@@gate'>
   readonly environment: TableClient<Environment, EnvironmentCreate, EnvironmentUpdate, EnvironmentWhere, EnvironmentRelations, never, '@@gate'>
-  readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations, never, 'status' | 'deployOnPush' | 'pushSecret' | 'pushTokenHash' | 'pushActorId' | 'deployPublicKey' | 'blueprintId' | 'replicaFoundAt' | 'replicaSyncedAt' | '@@gate', AppSystem>
+  readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations, never, 'status' | 'isDeployedOnPush' | 'pushSecret' | 'pushTokenHash' | 'pushActorId' | 'deployPublicKey' | 'blueprintId' | 'replicaFoundAt' | 'replicaSyncedAt' | '@@gate', AppSystem>
   readonly variable: TableClient<Variable, VariableCreate, VariableUpdate, VariableWhere, VariableRelations, never, '@@gate'>
   readonly domain: TableClient<Domain, DomainCreate, DomainUpdate, DomainWhere, DomainRelations, never, 'certSecretId' | 'certKind' | 'certIssuedAt' | 'certExpiresAt' | '@@gate', DomainSystem>
   readonly domainRoute: TableClient<DomainRoute, DomainRouteCreate, DomainRouteUpdate, DomainRouteWhere, DomainRouteRelations, never, '@@gate'>
@@ -6608,13 +6615,13 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly diskUsage: TableClient<DiskUsage, DiskUsageCreate, DiskUsageUpdate, DiskUsageWhere, DiskUsageRelations, never, '@@gate'>
   readonly serverPosture: TableClient<ServerPosture, ServerPostureCreate, ServerPostureUpdate, ServerPostureWhere, ServerPostureRelations, never, '@@gate'>
   readonly maintenanceRun: TableClient<MaintenanceRun, MaintenanceRunCreate, MaintenanceRunUpdate, MaintenanceRunWhere, MaintenanceRunRelations, never, '@@gate'>
-  readonly featureFlag: TableClient<FeatureFlag, FeatureFlagCreate, FeatureFlagUpdate, FeatureFlagWhere, FeatureFlagRelations, never, '@@gate'>
+  readonly flag: TableClient<Flag, FlagCreate, FlagUpdate, FlagWhere, FlagRelations, never, '@@gate'>
   readonly flagOverride: TableClient<FlagOverride, FlagOverrideCreate, FlagOverrideUpdate, FlagOverrideWhere, FlagOverrideRelations, never, '@@gate'>
   readonly notificationChannel: TableClient<NotificationChannel, NotificationChannelCreate, NotificationChannelUpdate, NotificationChannelWhere, NotificationChannelRelations, never, 'secretId' | 'lastTestAt' | 'lastDeliveryAt' | '@@gate', NotificationChannelSystem>
   readonly backupDestination: TableClient<BackupDestination, BackupDestinationCreate, BackupDestinationUpdate, BackupDestinationWhere, BackupDestinationRelations, never, 'secretId' | 'lastTestAt' | '@@gate', BackupDestinationSystem>
   readonly alertRule: TableClient<AlertRule, AlertRuleCreate, AlertRuleUpdate, AlertRuleWhere, AlertRuleRelations, never, 'snoozedUntil' | '@@gate', AlertRuleSystem>
   readonly alertRuleChannel: TableClient<AlertRuleChannel, AlertRuleChannelCreate, AlertRuleChannelUpdate, AlertRuleChannelWhere, AlertRuleChannelRelations, never, '@@gate'>
-  readonly alertEvent: TableClient<AlertEvent, AlertEventCreate, AlertEventUpdate, AlertEventWhere, AlertEventRelations, never, '@@gate'>
+  readonly alert: TableClient<Alert, AlertCreate, AlertUpdate, AlertWhere, AlertRelations, never, '@@gate'>
   readonly monitor: TableClient<Monitor, MonitorCreate, MonitorUpdate, MonitorWhere, MonitorRelations, 'markUp' | 'markDown' | 'pause' | 'resume', 'failStreak' | 'lastCheckedAt' | 'nextCheckAt' | 'lastLatencyMs' | 'status' | '@@gate', MonitorSystem>
   readonly monitorCheck: TableClient<MonitorCheck, MonitorCheckCreate, MonitorCheckUpdate, MonitorCheckWhere, MonitorCheckRelations, never, '@@gate'>
   readonly monitorEvent: TableClient<MonitorEvent, MonitorEventCreate, MonitorEventUpdate, MonitorEventWhere, MonitorEventRelations, never, '@@gate'>

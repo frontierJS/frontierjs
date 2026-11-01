@@ -44,7 +44,7 @@ const registerAtSink = async (secret: any): Promise<string> => {
 }
 
 const cfAccount = (name: string, token: string) => (env.system as any).secret.create({ data: {
-  workspaceId: ws.id, name, kind: 'provider_key', providerKind: 'cloudflare',
+  workspaceId: ws.id, name, kind: 'providerKey', providerKind: 'cloudflare',
   data: JSON.stringify({ token }),
 }})
 
@@ -167,7 +167,7 @@ describe('a Cloudflare account', () => {
 
   test('the secrets service accepts it as a provider key', async () => {
     const made = await env.as(owner).service('secrets').create({
-      workspaceId: ws.id, name: 'cf-typed', kind: 'provider_key', providerKind: 'cloudflare', data: CF_TOKEN,
+      workspaceId: ws.id, name: 'cf-typed', kind: 'providerKey', providerKind: 'cloudflare', data: CF_TOKEN,
     }) as any
     expect(made.providerKind).toBe('cloudflare')
   })
@@ -220,7 +220,7 @@ describe('the edge service', () => {
 
     const mk = async (workspaceId: string, name: string, token: string) => {
       const s = await sys.secret.create({ data: {
-        workspaceId, name, kind: 'provider_key', providerKind: 'cloudflare', data: JSON.stringify({ token }),
+        workspaceId, name, kind: 'providerKey', providerKind: 'cloudflare', data: JSON.stringify({ token }),
       }})
       await registerAtSink(s)
       return s
@@ -432,7 +432,7 @@ describe('sync', () => {
     developer = session({ id: dev.id, workspaceId: site.id })
 
     good = await sys.secret.create({ data: {
-      workspaceId: site.id, name: 'cf-sync', kind: 'provider_key', providerKind: 'cloudflare', data: JSON.stringify({ token: CF_TOKEN }),
+      workspaceId: site.id, name: 'cf-sync', kind: 'providerKey', providerKind: 'cloudflare', data: JSON.stringify({ token: CF_TOKEN }),
     }})
     await registerAtSink(good)
 
@@ -469,7 +469,7 @@ describe('sync', () => {
 
     const domain = (appId: string, hostname: string, extra = {}) =>
       sys.domain.create({ data: { workspaceId: site.id, appId, hostname, ...extra } })
-    api   = await domain(web.id, 'API.example.test', { proxied: true })
+    api   = await domain(web.id, 'API.example.test', { isProxied: true })
     taken = await domain(web.id, 'www.shop.test')
     moved = await domain(web.id, 'go.example.test', { redirectTo: 'https://api.example.test' })
   })
@@ -587,7 +587,7 @@ describe('sync', () => {
 
   test('a change to it is pushed as well', async () => {
     const fresh = await (env.system as any).domain.findFirst({ where: { id: made.id } })
-    await env.as(admin).service('domains').patch(made.id, { proxied: true, version: fresh.version })
+    await env.as(admin).service('domains').patch(made.id, { isProxied: true, version: fresh.version })
     expect(await until(() => cnameAt('shop.example.test'), (r: any) => r?.proxied === true))
       .toMatchObject({ proxied: true })
   })
@@ -756,9 +756,10 @@ describe('sync', () => {
     }
 
     await lose(online1)
-    // FJS-3509: one full-suite run in three saw ['203.0.113.5'] here. A miss
-    // names the machines' statuses so the recurrence says which one left.
-    const left = await until(ingressAt, (v: string[]) => v.length === 1)
+    // Waits on the value, not the length: the sink pages two records at a time,
+    // so a read straddling this push's delete of .5 skips .6 and holds a set the
+    // zone never did (FJS-3509). A miss names the machines' statuses.
+    const left = await until(ingressAt, (v: string[]) => v.join() === '203.0.113.6')
     if (left.join() !== '203.0.113.6') {
       const rows = await sys.server.findMany({ select: { name: true, status: true, lastHeartbeatAt: true, updatedAt: true } })
       throw new Error(`FJS-3509: ingress held ${JSON.stringify(left)} after online1 went quiet; servers ${JSON.stringify(rows)}`)

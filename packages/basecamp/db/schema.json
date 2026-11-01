@@ -42,7 +42,7 @@
           ],
           "description": "TOTP only — the last step this secret was accepted at, which is what makes a code single-use. A code is valid for its whole 30-second window, so without this the window IS a replay window and nothing about the second code looks wrong. Null until the first successful login.  Beside `scope`, `accessToken` and `tokenExpiresAt`, which are OAuth-only in the same way: one table per KIND of credential would be four tables whose only difference is which columns are null."
         },
-        "linked": {
+        "isLinked": {
           "type": [
             "boolean",
             "null"
@@ -101,7 +101,7 @@
             "null"
           ]
         },
-        "enrollmentOnly": {
+        "isEnrollmentOnly": {
           "type": "boolean",
           "default": false,
           "description": "Signed in on a first factor alone, where `requireSecondFactor` says the account owes a second. The plugin refuses every service call but the enrollment three while it is set; `confirmTotp` clears it."
@@ -628,6 +628,32 @@
           "references": [],
           "onDelete": null,
           "optional": true
+        },
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "owner",
+          "model": "User",
+          "type": "belongsTo",
+          "fields": [
+            "ownerId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
         }
       ]
     },
@@ -949,7 +975,7 @@
           "type": "integer",
           "default": 0
         },
-        "fromCache": {
+        "isFromCache": {
           "type": "boolean",
           "default": false
         },
@@ -1168,7 +1194,22 @@
         "create": 5,
         "update": 5,
         "delete": 5
-      }
+      },
+      "x-relations": [
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
     },
     "KvEntry": {
       "type": "object",
@@ -1224,7 +1265,22 @@
         "create": 8,
         "update": 8,
         "delete": 8
-      }
+      },
+      "x-relations": [
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
     },
     "AuditTrail": {
       "type": "object",
@@ -1390,7 +1446,7 @@
             }
           ]
         },
-        "emailVerified": {
+        "isEmailVerified": {
           "type": "boolean",
           "default": false,
           "x-litestone-write-policy": true,
@@ -1416,7 +1472,7 @@
         },
         "status": {
           "$ref": "#/$defs/UserStatus",
-          "default": "pending_verification",
+          "default": "pendingVerification",
           "x-litestone-write-policy": true,
           "x-litestone-write-claims": {
             "isSystemAdmin": true
@@ -1534,8 +1590,8 @@
       "title": "Account",
       "x-litestone-kind": "model",
       "properties": {
-        "type": {
-          "$ref": "#/$defs/AccountType",
+        "kind": {
+          "$ref": "#/$defs/AccountKind",
           "default": "organization"
         },
         "status": {
@@ -1624,8 +1680,8 @@
           "minLength": 1,
           "maxLength": 64
         },
-        "type": {
-          "$ref": "#/$defs/WorkspaceType",
+        "kind": {
+          "$ref": "#/$defs/WorkspaceKind",
           "default": "team"
         },
         "settings": {
@@ -1794,7 +1850,7 @@
         },
         {
           "field": "flags",
-          "model": "FeatureFlag",
+          "model": "Flag",
           "type": "hasMany",
           "fields": [],
           "references": [],
@@ -1804,6 +1860,15 @@
         {
           "field": "auditEvents",
           "model": "AuditEvent",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "flows",
+          "model": "Flow",
           "type": "hasMany",
           "fields": [],
           "references": [],
@@ -2048,7 +2113,7 @@
               "type": "null"
             }
           ],
-          "description": "WHICH vendor a `provider_key` opens — a cloud, an edge or a forge. Null for every other kind.  It is a column rather than a field inside `data` because a vendor name is not a secret: `data` is `@encrypted`, so the key is absent from every read, and *which DigitalOcean accounts does this workspace have* would mean decrypting every secret in the workspace to answer. Here it filters, it indexes, and it reaches a picker as a set.  It is `ProviderKind`, the whole vendor catalogue, rather than a second vendor vocabulary on `SecretKind`: a key names a vendor whatever role it plays. `Server.providerKind` narrows it to `ComputeProvider` (FJS-D1607)."
+          "description": "WHICH vendor a `providerKey` opens — a cloud, an edge or a forge. Null for every other kind.  It is a column rather than a field inside `data` because a vendor name is not a secret: `data` is `@encrypted`, so the key is absent from every read, and *which DigitalOcean accounts does this workspace have* would mean decrypting every secret in the workspace to answer. Here it filters, it indexes, and it reaches a picker as a set.  It is `ProviderKind`, the whole vendor catalogue, rather than a second vendor vocabulary on `SecretKind`: a key names a vendor whatever role it plays. `Server.providerKind` narrows it to `ComputeProvider` (FJS-D1607)."
         }
       },
       "additionalProperties": false,
@@ -2703,7 +2768,7 @@
             "null"
           ]
         },
-        "subagent": {
+        "isSubagent": {
           "type": "boolean",
           "default": false
         },
@@ -2713,7 +2778,7 @@
             "null"
           ]
         },
-        "headless": {
+        "isHeadless": {
           "type": "boolean",
           "default": false
         },
@@ -2763,7 +2828,7 @@
             }
           ]
         },
-        "gone": {
+        "isGone": {
           "type": "boolean",
           "default": false
         }
@@ -2831,7 +2896,7 @@
           "type": "string",
           "default": ""
         },
-        "subagent": {
+        "isSubagent": {
           "type": "boolean",
           "default": false
         },
@@ -2968,7 +3033,7 @@
           "type": "integer",
           "default": 0
         },
-        "inUse": {
+        "isInUse": {
           "type": "boolean",
           "default": false
         },
@@ -3054,8 +3119,8 @@
             "trim"
           ]
         },
-        "type": {
-          "$ref": "#/$defs/NetworkType",
+        "kind": {
+          "$ref": "#/$defs/NetworkKind",
           "default": "mesh"
         },
         "cidr": {
@@ -3405,8 +3470,8 @@
           "minLength": 1,
           "maxLength": 64
         },
-        "type": {
-          "$ref": "#/$defs/AppType",
+        "kind": {
+          "$ref": "#/$defs/AppKind",
           "default": "container"
         },
         "status": {
@@ -3512,11 +3577,11 @@
           "x-aggregatable": "array",
           "x-sortable": "array"
         },
-        "exposesPort": {
+        "hasExposedPort": {
           "type": "boolean",
           "default": false
         },
-        "deployOnPush": {
+        "isDeployedOnPush": {
           "type": "boolean",
           "default": false,
           "readOnly": true,
@@ -3844,7 +3909,7 @@
             "pattern": "a variable name is up to 100 letters, digits and underscores, not starting with a digit"
           }
         },
-        "secret": {
+        "isSecret": {
           "type": "boolean",
           "default": false
         },
@@ -3960,13 +4025,13 @@
           "type": "integer",
           "default": 443
         },
-        "proxied": {
+        "isProxied": {
           "type": "boolean",
           "default": false
         },
         "sslMode": {
           "$ref": "#/$defs/SslMode",
-          "default": "full_strict"
+          "default": "fullStrict"
         },
         "certSecretId": {
           "type": [
@@ -5003,7 +5068,7 @@
             "from": [
               "success"
             ],
-            "to": "rolled_back",
+            "to": "rolledBack",
             "gate": 5,
             "system": false
           }
@@ -5173,7 +5238,7 @@
         },
         "kind": {
           "$ref": "#/$defs/JobKind",
-          "default": "one_shot"
+          "default": "oneShot"
         },
         "status": {
           "$ref": "#/$defs/JobStatus",
@@ -5897,9 +5962,9 @@
         }
       ]
     },
-    "FeatureFlag": {
+    "Flag": {
       "type": "object",
-      "title": "FeatureFlag",
+      "title": "Flag",
       "x-litestone-kind": "model",
       "properties": {
         "workspaceId": {
@@ -6040,7 +6105,7 @@
       "x-relations": [
         {
           "field": "flag",
-          "model": "FeatureFlag",
+          "model": "Flag",
           "type": "belongsTo",
           "fields": [
             "flagId"
@@ -6459,8 +6524,8 @@
           "optional": false
         },
         {
-          "field": "events",
-          "model": "AlertEvent",
+          "field": "alerts",
+          "model": "Alert",
           "type": "hasMany",
           "fields": [],
           "references": [],
@@ -6531,9 +6596,9 @@
         }
       ]
     },
-    "AlertEvent": {
+    "Alert": {
       "type": "object",
-      "title": "AlertEvent",
+      "title": "Alert",
       "x-litestone-kind": "model",
       "properties": {
         "ruleId": {
@@ -6669,7 +6734,7 @@
             "null"
           ]
         },
-        "intervalSec": {
+        "intervalSeconds": {
           "type": "integer",
           "minimum": 60,
           "maximum": 86400,
@@ -6681,7 +6746,7 @@
           "maximum": 10,
           "default": 2
         },
-        "retryIntervalSec": {
+        "retryIntervalSeconds": {
           "type": "integer",
           "minimum": 60,
           "default": 120
@@ -6707,11 +6772,11 @@
           "maximum": 20,
           "default": 10
         },
-        "ignoreTls": {
+        "isTlsIgnored": {
           "type": "boolean",
           "default": false
         },
-        "invert": {
+        "isInverted": {
           "type": "boolean",
           "default": false
         },
@@ -6877,7 +6942,7 @@
           "type": "string",
           "format": "date-time"
         },
-        "ok": {
+        "isOk": {
           "type": "boolean"
         },
         "statusCode": {
@@ -6899,7 +6964,7 @@
       "additionalProperties": false,
       "required": [
         "monitorId",
-        "ok",
+        "isOk",
         "message"
       ],
       "x-litestone-policies": true,
@@ -7379,8 +7444,8 @@
             }
           ]
         },
-        "appType": {
-          "$ref": "#/$defs/AppType",
+        "appKind": {
+          "$ref": "#/$defs/AppKind",
           "default": "container"
         },
         "port": {
@@ -7583,11 +7648,11 @@
             }
           ]
         },
-        "required": {
+        "isRequired": {
           "type": "boolean",
           "default": false
         },
-        "secret": {
+        "isSecret": {
           "type": "boolean",
           "default": false
         },
@@ -7675,7 +7740,7 @@
           "type": "integer",
           "default": 0
         },
-        "inUse": {
+        "isInUse": {
           "type": "boolean",
           "default": false
         },
@@ -7878,7 +7943,7 @@
           "maxLength": 300,
           "default": ""
         },
-        "published": {
+        "isPublished": {
           "type": "boolean",
           "default": false
         },
@@ -7972,15 +8037,15 @@
           "maximum": 3600,
           "default": 120
         },
-        "requireTwoFactorForOwners": {
+        "isTwoFactorRequiredForOwners": {
           "type": "boolean",
           "default": false
         },
-        "allowApiKeyAuth": {
+        "isApiKeyAuthAllowed": {
           "type": "boolean",
           "default": true
         },
-        "allowBotUsers": {
+        "isBotUserAllowed": {
           "type": "boolean",
           "default": true
         },
@@ -8306,20 +8371,20 @@
       "enum": [
         "none",
         "bearer",
-        "api_key",
+        "apiKey",
         "hmac"
       ],
       "title": "FlowCredentialAuth"
     },
-    "AccountType": {
+    "AccountKind": {
       "type": "string",
       "enum": [
         "individual",
         "organization"
       ],
-      "title": "AccountType"
+      "title": "AccountKind"
     },
-    "WorkspaceType": {
+    "WorkspaceKind": {
       "type": "string",
       "enum": [
         "personal",
@@ -8327,7 +8392,7 @@
         "enterprise",
         "demo"
       ],
-      "title": "WorkspaceType"
+      "title": "WorkspaceKind"
     },
     "WorkspaceRole": {
       "type": "string",
@@ -8352,7 +8417,7 @@
     "UserStatus": {
       "type": "string",
       "enum": [
-        "pending_verification",
+        "pendingVerification",
         "active",
         "suspended"
       ],
@@ -8387,10 +8452,10 @@
     "SecretKind": {
       "type": "string",
       "enum": [
-        "ssh_key",
-        "provider_key",
-        "registry_auth",
-        "tls_cert",
+        "sshKey",
+        "providerKey",
+        "registryAuth",
+        "tlsCert",
         "notification",
         "backup",
         "generic"
@@ -8428,34 +8493,34 @@
       "enum": [
         "created",
         "removed",
-        "reboot_requested",
-        "drain_started",
-        "drain_cancelled",
-        "provision_requested",
-        "provision_created",
-        "provision_ready",
-        "provision_timeout",
-        "destroy_requested",
-        "destroy_finished",
-        "enrollment_issued",
-        "sync_requested",
-        "status_synced",
-        "status_sync_ignored",
-        "sync_failed",
-        "sync_no_account",
-        "sync_unsupported",
-        "sync_unrecognized",
-        "came_online",
+        "rebootRequested",
+        "drainStarted",
+        "drainCancelled",
+        "provisionRequested",
+        "provisionCreated",
+        "provisionReady",
+        "provisionTimeout",
+        "destroyRequested",
+        "destroyFinished",
+        "enrollmentIssued",
+        "syncRequested",
+        "statusSynced",
+        "statusSyncIgnored",
+        "syncFailed",
+        "syncNoAccount",
+        "syncUnsupported",
+        "syncUnrecognized",
+        "cameOnline",
         "unreachable",
-        "recipe_ran",
-        "recipe_failed",
-        "cleanup_queued",
-        "cleanup_ran",
-        "cleanup_failed",
-        "volume_removed",
-        "volumes_pruned",
-        "posture_failed",
-        "posture_restored"
+        "recipeRan",
+        "recipeFailed",
+        "cleanupQueued",
+        "cleanupRan",
+        "cleanupFailed",
+        "volumeRemoved",
+        "volumesPruned",
+        "postureFailed",
+        "postureRestored"
       ],
       "title": "ServerEventKind"
     },
@@ -8506,7 +8571,7 @@
       "type": "string",
       "enum": [
         "acme",
-        "origin_ca",
+        "originCa",
         "uploaded"
       ],
       "title": "CertKind"
@@ -8517,7 +8582,7 @@
         "off",
         "flexible",
         "full",
-        "full_strict"
+        "fullStrict"
       ],
       "title": "SslMode"
     },
@@ -8529,13 +8594,13 @@
       ],
       "title": "ProjectStatus"
     },
-    "NetworkType": {
+    "NetworkKind": {
       "type": "string",
       "enum": [
         "mesh",
         "vpc"
       ],
-      "title": "NetworkType"
+      "title": "NetworkKind"
     },
     "NetworkProvider": {
       "type": "string",
@@ -8557,7 +8622,7 @@
       ],
       "title": "EnvironmentTier"
     },
-    "AppType": {
+    "AppKind": {
       "type": "string",
       "enum": [
         "container",
@@ -8568,7 +8633,7 @@
         "static",
         "function"
       ],
-      "title": "AppType"
+      "title": "AppKind"
     },
     "AppStatus": {
       "type": "string",
@@ -8591,7 +8656,7 @@
         "success",
         "failed",
         "cancelled",
-        "rolled_back"
+        "rolledBack"
       ],
       "title": "DeployStatus"
     },
@@ -8623,7 +8688,7 @@
     "JobKind": {
       "type": "string",
       "enum": [
-        "one_shot",
+        "oneShot",
         "scheduled",
         "triggered",
         "workflow"
@@ -8721,7 +8786,7 @@
       "type": "string",
       "enum": [
         "user",
-        "api_key",
+        "apiKey",
         "system",
         "support"
       ],
@@ -8749,24 +8814,24 @@
     "TileKind": {
       "type": "string",
       "enum": [
-        "server_fleet",
-        "server_health",
-        "app_status",
-        "deploy_feed",
-        "job_history",
-        "activity_feed",
-        "alert_status",
-        "service_health",
-        "stat_counter"
+        "serverFleet",
+        "serverHealth",
+        "appStatus",
+        "deployFeed",
+        "jobHistory",
+        "activityFeed",
+        "alertStatus",
+        "serviceHealth",
+        "statCounter"
       ],
       "title": "TileKind"
     },
     "ParamGenerator": {
       "type": "string",
       "enum": [
-        "random_hex_16",
-        "random_hex_32",
-        "random_hex_64"
+        "randomHex16",
+        "randomHex32",
+        "randomHex64"
       ],
       "title": "ParamGenerator"
     },
@@ -8802,7 +8867,7 @@
       "type": "string",
       "enum": [
         "Deployment",
-        "AlertEvent",
+        "Alert",
         "JobRun",
         "Server",
         "Workspace",
@@ -9414,13 +9479,13 @@
             "null"
           ]
         },
-        "deployOnPush": {
+        "isDeployedOnPush": {
           "type": [
             "boolean",
             "null"
           ]
         },
-        "connect": {
+        "isConnecting": {
           "type": [
             "boolean",
             "null"
@@ -9513,7 +9578,7 @@
             "null"
           ]
         },
-        "overwrite": {
+        "isOverwriting": {
           "type": [
             "boolean",
             "null"
@@ -9544,7 +9609,7 @@
             }
           ]
         },
-        "overwrite": {
+        "isOverwriting": {
           "type": [
             "boolean",
             "null"

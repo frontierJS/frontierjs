@@ -23,7 +23,7 @@ import { sys } from '../../../api/src/core/db.ts'
  */
 export async function load() {
   const products = await sys.product.findMany({
-    where:   { active: true },
+    where:   { isActive: true },
     limit:   6,
     orderBy: { createdAt: 'desc' },
   })

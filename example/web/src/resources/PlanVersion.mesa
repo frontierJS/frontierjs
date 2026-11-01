@@ -12,7 +12,7 @@
 
   import { createResource } from '@frontierjs/sierra/resource'
 
-  export const planVersions = createResource('plan-versions', { model: 'PlanVersion' })
+  export const planVersions = createResource('planVersions', { model: 'PlanVersion' })
 </script>
 
 <script>

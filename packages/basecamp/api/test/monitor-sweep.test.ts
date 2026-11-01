@@ -79,7 +79,7 @@ describe('the monitor sweep', () => {
   async function monitor(over: Record<string, unknown> = {}) {
     return sys().monitor.create({ data: {
       workspaceId: ws.id, name: `m-${Math.random().toString(36).slice(2, 8)}`,
-      url: `${base()}/`, retries: 1, retryIntervalSec: 60, intervalSec: 120,
+      url: `${base()}/`, retries: 1, retryIntervalSeconds: 60, intervalSeconds: 120,
       nextCheckAt: new Date(T0).toISOString(),
       ...over } })
   }
@@ -184,7 +184,7 @@ describe('the monitor sweep', () => {
 
   test('upside-down: a URL that must not answer is up while it fails', async () => {
     answer = 503
-    const m = await monitor({ invert: true, retries: 0 })
+    const m = await monitor({ isInverted: true, retries: 0 })
     await sweep({ at: T0, monitorId: m.id })
     expect((await row(m.id)).status).toBe('up')
   })
@@ -237,7 +237,7 @@ describe('the monitor sweep grades every destination', () => {
 
   test('loopback is refused before a request is sent', async () => {
     const check = await probeOf(`http://127.0.0.1:${target.port}/`)
-    expect(check.ok).toBe(false)
+    expect(check.isOk).toBe(false)
     expect(check.message).toBe('127.0.0.1 is a private address')
     expect(hits).toBe(0)
   })

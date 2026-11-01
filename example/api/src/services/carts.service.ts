@@ -26,7 +26,7 @@ const HANDOFF_MINUTES = 2
 
 type CartRow  = { id: number, status: string, discountId?: number | null, shippingMethodId?: number | null }
 type LineRow  = { id: number, variantId: number, quantity: number, unitPrice: number }
-type Variant  = { id: number, price: number, stock: number, active: boolean, sku: string }
+type Variant  = { id: number, price: number, stock: number, isActive: boolean, sku: string }
 
 /** A line as a BASKET SCREEN needs it. A row carrying `variantId: 7` is not a
  *  basket line to anybody looking at one, and the alternative to joining here
@@ -87,7 +87,7 @@ async function declaredFields(system: any): Promise<CustomField[]> {
  * `Customer.userId` is `@unique`, so a signed-in basket resolves to exactly one
  * person. A guest basket answers `{ customer: null }` and an audience code is
  * then refused by name — which is the honest answer: the shop cannot tell
- * whether a stranger is in the audience, and honouring the code because it
+ * whether a stranger is in the audience, and honoring the code because it
  * cannot tell is how an audience stops meaning anything.
  */
 async function audienceFor(system: any, userId: string | null | undefined) {
@@ -331,9 +331,9 @@ export default createService({
       // guest is not entitled to see.
       const method = await $.db.shippingMethod.findFirst({
         where: { id: Number(shippingMethodId) },
-      }) as { id: number, active: boolean } | null
+      }) as { id: number, isActive: boolean } | null
 
-      if (!method || !method.active) throw bad('That delivery option is no longer available')
+      if (!method || !method.isActive) throw bad('That delivery option is no longer available')
       chosen = method.id
     }
 

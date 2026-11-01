@@ -43,7 +43,7 @@ title: Dashboard
   let board     = null
   let kinds     = []
   let sources   = []          // what a counter may count
-  let adapters  = []         // portal ids a service_health tile may name
+  let adapters  = []         // portal ids a serviceHealth tile may name
   let error     = null
   let loadError = null
   let loading   = true
@@ -150,8 +150,8 @@ title: Dashboard
     cols    = spec.cols
     // The knobs this kind reads, blank. `config` keys the service does not
     // accept are refused by name, so this cannot send one it invented.
-    config  = spec.kind === 'stat_counter'   ? { source: sources[0] ?? 'servers', label: '' }
-            : spec.kind === 'service_health' ? { serviceId: '' }
+    config  = spec.kind === 'statCounter'   ? { source: sources[0] ?? 'servers', label: '' }
+            : spec.kind === 'serviceHealth' ? { serviceId: '' }
             : {}
   }
 
@@ -360,7 +360,7 @@ title: Dashboard
                   onchange={(e) => subject = e.target.value} />
         {/if}
 
-        {#if chosen.kind === 'stat_counter'}
+        {#if chosen.kind === 'statCounter'}
           <Select id="tile-source" label="Count" value={config.source} options={sources}
                   onchange={(e) => config = { ...config, source: e.target.value }} />
           <Input id="tile-label" label="Label" value={config.label}
@@ -368,7 +368,7 @@ title: Dashboard
                  oninput={(e) => config = { ...config, label: e.target.value }} />
         {/if}
 
-        {#if chosen.kind === 'service_health'}
+        {#if chosen.kind === 'serviceHealth'}
           <!-- The adapter ids come from the same answer as the kinds, so this
                cannot offer one the service would refuse. -->
           <Select id="tile-service" label="Service" value={config.serviceId} options={adapters}

@@ -205,7 +205,7 @@ reaches them:
 - `User` — identity. `@@gate(4.4.4.5)` — read, create and update USER(4),
   delete ADMINISTRATOR(5) — bounded by `@@allow(update, id == auth().id ||
   auth().isAdmin)` and `@allow(write, auth().isAdmin)` on `role` and
-  `emailVerified`. A level says what kind of caller, a policy says whose row, a
+  `isEmailVerified`. A level says what kind of caller, a policy says whose row, a
   field policy says which columns; identity needs all three, and the columns a
   gate is graded from are exactly the ones a caller must not write. `@@trail(audit)`
 - `Credential` — passwords + API keys (`@@gate(8)` — SYSTEM)
@@ -366,7 +366,7 @@ createLitestoneAuth(db, {
 
 An account it names that has a factor is unchanged: it owes its code. One with
 none **signs in to a session held to enrollment** (`FJS-D1008`): the login answers
-a token like any other, with `user.enrollmentOnly: true`, and the plugin refuses
+a token like any other, with `user.isEnrollmentOnly: true`, and the plugin refuses
 every service call but `account.get('me')`, `totpStatus`, `reauthenticate`,
 `setupTotp` and `confirmTotp` with a 403 whose `data.reason` is `second_factor_required`. `confirmTotp` releases the
 account's held sessions, so the same token carries on without a second sign-in.

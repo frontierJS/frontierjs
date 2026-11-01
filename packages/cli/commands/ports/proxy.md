@@ -63,7 +63,7 @@ if (!table.size) {
 if (flag.list) {
   echo('')
   for (const r of [...table.values()].sort((a, b) => a.host.localeCompare(b.host))) {
-    echo(`  ${r.host.padEnd(34)} :${String(r.port).padEnd(6)} ${r.name}`)
+    echo(chalk`  {bold ${r.host.padEnd(34)}} {cyan :${String(r.port).padEnd(6)}} {dim ${r.name}}`)
   }
   echo('')
   return
@@ -89,14 +89,14 @@ log.success(`serving ${table.size} name(s) on :${bound.port}`)
 if (!bound.privileged) {
   // Expected, not an error: 80 is a privileged bind on a project whose pitch is
   // that everything runs as a plain user process.
-  echo(`  (80 needs a privileged bind — using the reserved tooling slot instead)`)
+  echo(chalk.dim(`  (80 needs a privileged bind — using the reserved tooling slot instead)`))
 }
 echo('')
 for (const r of [...table.values()].sort((a, b) => a.host.localeCompare(b.host))) {
-  echo(`  http://${r.host}${suffix}`.padEnd(48) + `→ :${r.port}  ${r.name}`)
+  echo(chalk.bold.cyan(`  http://${r.host}${suffix}`.padEnd(48)) + chalk.dim(`→ :${r.port}  `) + r.name)
 }
 echo('')
-echo('  Ctrl-C to stop. Every port keeps working exactly as it did.')
+echo(chalk.dim('  Ctrl-C to stop. Every port keeps working exactly as it did.'))
 
 await new Promise(() => {})
 ```

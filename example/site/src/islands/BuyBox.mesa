@@ -31,7 +31,7 @@
   /** `[{ sku, color, size, price }]` — the baked grid. */
   export let variants  = []
 
-  let live   = new Map()   // sku → { variantId, available, price, active }
+  let live   = new Map()   // sku → { variantId, available, price, isActive }
   let state  = 'loading'   // loading | ready | offline
 
   let color = null
@@ -65,7 +65,7 @@
       // separate chunk with a separate reason to exist, and coupling them so
       // one waits for the other is how a price correction stops arriving
       // because the buy box failed.
-      const body = await getClient().service('product-variants')
+      const body = await getClient().service('productVariants')
         .invoke('availability', null, { productId })
 
       const rows = body?.variants ?? []
@@ -117,7 +117,7 @@
       state === 'loading' ? 'Checking with the shop…'
     : state === 'offline' ? 'The shop could not be reached'
     : !sku                ? 'That size is not cut in this color'
-    : !shelf?.active      ? 'No longer on sale'
+    : !shelf?.isActive      ? 'No longer on sale'
     : avail === 0         ? stockText(shelf)
     : qty > avail         ? `Only ${avail} left`
     : null

@@ -92,7 +92,7 @@ function toHook(h: Row): PushHook {
 }
 
 /** The body a push hook is written with. `content_type: json` because
- *  `plugins/push.ts` reads a JSON body, and the form encoding signs the same
+ *  `plugins/git-push.ts` reads a JSON body, and the form encoding signs the same
  *  bytes but delivers them as `payload=`. */
 function hookBody(url: string, secret: string) {
   return {

@@ -84,6 +84,10 @@ beforeAll(() => {
     // is not a key.
     '| <a id="fjs-048"></a>FJS-048 | cli | **Mount lost.** | open | 2026-08-17 | [d](src/real.js) · seam: stage.js |',
     '| <a id="fjs-049"></a>FJS-049 | cli | **Skill named.** | open | 2026-08-17 | [d](src/real.js) · seam: bridge-index |',
+    // `blocked by` is graded against the open rows: one naming a closed row
+    // says "waiting" while `fli next` ranks it ready, and an open one is true.
+    '| <a id="fjs-050"></a>FJS-050 | cli | **Waits on something done.** | open | 2026-08-17 | [d](src/real.js) · blocked by `FJS-003` · blocked by FJS-002 |',
+    '| <a id="fjs-051"></a>FJS-051 | cli | **Waits on something open.** | open | 2026-08-17 | [d](src/real.js) · blocked by FJS-002 |',
     '',
     '## Decisions awaiting a ruling',
     '| Id | Pkg | Question | Detail |',
@@ -265,6 +269,13 @@ describe('warnings', () => {
     expect(of(result, 'timing-unmeasured').map(h => h.id)).toEqual(['FJS-042', 'FJS-047'])
     expect(of(result, 'timing-unmeasured').find(h => h.id === 'FJS-042').message).toMatch(/register:repro cannot: the row links no \*\.test\.\* file/)
     expect(result.findings.filter(f => ['FJS-045', 'FJS-046'].includes(f.id) && f.rule.startsWith('env-'))).toHaveLength(0)
+  })
+
+  test('blocked by: an id that is no longer open warns once per id, an open one is silent', () => {
+    const hits = of(runRegisterCheck({ root: ROOT, staleDays: 0, today: TODAY }), 'blocked-by-closed')
+    expect(hits.map(h => h.id)).toEqual(['FJS-050'])
+    expect(hits[0].message).toContain('FJS-003')
+    expect(hits[0].message).not.toContain('FJS-002')
   })
 
   test('seam: a name outside the Bridge index key list errors, a listed one is silent', () => {

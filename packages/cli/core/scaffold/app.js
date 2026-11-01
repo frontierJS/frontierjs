@@ -94,7 +94,7 @@ export function makePackageJson(spec) {
   // Scripts — the surface table is core/app-config.js's (FJS-D1083).
   const surfaces = []
   if (useExtension) surfaces.push({ scripts: extensionScripts(), dev: 'dev:extension', build: 'build:extension' })
-  // A widget is its own library build, one per file in widgets/src/Embeds/,
+  // A widget is its own library build, one per file in widgets/src/embeds/,
   // so this is `sierra widgets` and not `vite build`. `serve:widgets` answers
   // with the CORS and cache headers the deployment sends.
   if (useWidgets)   surfaces.push({ scripts: widgetScripts(),    dev: 'dev:widgets',   build: 'build:widgets' })
@@ -416,7 +416,7 @@ ${useDb ? '        └── resources/          # One Resource per model — No
     │   ├── vite.config.js
     │   └── sierra.config.js    # target: 'widget'
     ├── index.html              # the dev harness
-    ├── src/Embeds/             # one component per embeddable script
+    ├── src/embeds/             # one component per embeddable script
     ├── test/                   # a host page per widget
     ├── deploy/                 # serve.js + Dockerfile — the widget origin
     └── dist/embeds/            # the built scripts

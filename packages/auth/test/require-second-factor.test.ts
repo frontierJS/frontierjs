@@ -48,7 +48,7 @@ describe('requireSecondFactor: true', () => {
     await h.auth.createUser({ email, password: PW })
     const login = await signIn(app, email)
     expect(typeof login.token).toBe('string')
-    expect(login.user.enrollmentOnly).toBe(true)
+    expect(login.user.isEnrollmentOnly).toBe(true)
 
     const refused = await request(app).get('/sessions').auth(login.token)
     expect(refused.status).toBe(403)
@@ -56,7 +56,7 @@ describe('requireSecondFactor: true', () => {
     // `me` answers, and says the session is held: it is how a reload learns it.
     const me = await request(app).get('/account/me').auth(login.token)
     expect(me.status).toBe(200)
-    expect((me.body as any).enrollmentOnly).toBe(true)
+    expect((me.body as any).isEnrollmentOnly).toBe(true)
 
     // The three it may call.
     expect((await call(app, login.token, 'totpStatus')).status).toBe(200)
@@ -71,7 +71,7 @@ describe('requireSecondFactor: true', () => {
 
     // The same token, no new sign-in.
     expect((await request(app).get('/sessions').auth(login.token)).status).toBe(200)
-    expect(((await request(app).get('/account/me').auth(login.token)).body as any).enrollmentOnly).toBeFalsy()
+    expect(((await request(app).get('/account/me').auth(login.token)).body as any).isEnrollmentOnly).toBeFalsy()
   })
 
   test('an enrolled account still owes a code, and its session is not held', async () => {
@@ -119,7 +119,7 @@ describe('requireSecondFactor unset', () => {
     const app = await mount(h)
     await h.auth.createUser({ email: 'free@example.com', password: PW })
     const login = await signIn(app, 'free@example.com')
-    expect(login.user.enrollmentOnly).toBeUndefined()
+    expect(login.user.isEnrollmentOnly).toBeUndefined()
     expect((await request(app).get('/sessions').auth(login.token)).status).toBe(200)
   })
 })

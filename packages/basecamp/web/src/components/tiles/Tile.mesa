@@ -29,7 +29,7 @@
   export let onmove   = null
 
   // What the card is pointed at, said in the header rather than inside each
-  // body: a board with four `app_status` cards is unreadable if only the body
+  // body: a board with four `appStatus` cards is unreadable if only the body
   // knows which app it is.
   $: subtitle = tile?.subjectMissing
     ? 'subject removed'
@@ -39,23 +39,23 @@
 <TileCard title={spec?.label ?? tile?.kind} subtitle={subtitle} needs={spec?.needs ?? ''}
             editing={editing} cols={tile?.cols ?? 1}
             onremove={onremove} onresize={onresize} onmove={onmove}>
-  {#if tile?.kind === 'server_fleet'}
+  {#if tile?.kind === 'serverFleet'}
     <FleetBody />
-  {:else if tile?.kind === 'server_health'}
+  {:else if tile?.kind === 'serverHealth'}
     <ServerHealthBody tile={tile} />
-  {:else if tile?.kind === 'app_status'}
+  {:else if tile?.kind === 'appStatus'}
     <AppStatusBody tile={tile} />
-  {:else if tile?.kind === 'deploy_feed'}
+  {:else if tile?.kind === 'deployFeed'}
     <DeployFeedBody tile={tile} />
-  {:else if tile?.kind === 'job_history'}
+  {:else if tile?.kind === 'jobHistory'}
     <JobHistoryBody />
-  {:else if tile?.kind === 'activity_feed'}
+  {:else if tile?.kind === 'activityFeed'}
     <ActivityBody />
-  {:else if tile?.kind === 'alert_status'}
+  {:else if tile?.kind === 'alertStatus'}
     <AlertsBody />
-  {:else if tile?.kind === 'service_health'}
+  {:else if tile?.kind === 'serviceHealth'}
     <ServiceHealthBody tile={tile} />
-  {:else if tile?.kind === 'stat_counter'}
+  {:else if tile?.kind === 'statCounter'}
     <CounterBody tile={tile} />
   {:else}
     <p class="text-sm text-muted">

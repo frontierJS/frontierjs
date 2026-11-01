@@ -89,7 +89,7 @@ describe('the fragment', () => {
     const [row] = await sys.release.findMany()
     expect(row.id).toBe('rel_1')
     expect(row.audienceKey).toBe('everyone')   // the column that exists before its feature
-    expect(row.pivotDeclared).toBe(false)
+    expect(row.isPivotDeclared).toBe(false)
   })
 
   // Two constraints say one rule, and each refuses a different mistake: the

@@ -15,7 +15,7 @@ leaving `online`, and `verify:dns` drives it with nobody pressing sync; D1–D6
 are ruled, and an App on no online machine keeps its record, `FJS-D567`). Not
 built: `adopt`, and a screen for the ingress zone or the sync button. Dated 2026-09-29. Basecamp declares
 `IEdge` with a stub behind it and `/dns/` renders a skeleton where the zone goes
-(`packages/basecamp/docs/ADAPTERS.md` § `edge`). This fills it with Cloudflare, and
+(`packages/basecamp/docs/adapters.md` § `edge`). This fills it with Cloudflare, and
 widens it from reading a zone to managing one — DNS is among the first connections
 an operator makes.
 

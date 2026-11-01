@@ -1,6 +1,6 @@
 ---
 id: review-coherence
-status: assessment
+status: reading
 dated: 2026-07-31
 ---
 

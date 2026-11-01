@@ -442,7 +442,7 @@ try {
 
   // ── 6. the ledger, and a redelivery ───────────────────────────────────
   const ledgerFor = async (paymentRef) =>
-    (await json(await fetch(`${API}/api/payment-events?paymentRef=${paymentRef}&$limit=100`, { headers: auth })))?.data ?? []
+    (await json(await fetch(`${API}/api/paymentEvents?paymentRef=${paymentRef}&$limit=100`, { headers: auth })))?.data ?? []
 
   const before = await ledgerFor(ref)
   const again  = await fetch(`${PSP}/v1/intents/${ref}/redeliver`, { method: 'POST' })
@@ -455,7 +455,7 @@ try {
     // order did not move twice, which the state machine would have refused
     // anyway. Both are true and they are true for different reasons.
     rowsAfter:  after.length,
-    kinds:      after.map(r => r.kind),
+    types:      after.map(r => r.type),
   })
 
   // One announcement for one payment. The redelivery must not queue a second
@@ -597,8 +597,8 @@ try {
   // is spelt with. Asserted as 405 because that is what a caller gets; the 9 is
   // asserted where it can be, in db/access.snapshot.md.
   const ledgerRow = (await ledgerFor(ref))[0]
-  const edited = await fetch(`${API}/api/payment-events/${ledgerRow?.id}`, {
-    method: 'PATCH', headers: auth, body: JSON.stringify({ kind: 'rewritten' }),
+  const edited = await fetch(`${API}/api/paymentEvents/${ledgerRow?.id}`, {
+    method: 'PATCH', headers: auth, body: JSON.stringify({ type: 'rewritten' }),
   })
   t('surface.isDeclared', { create: created.status, anonymousRead: anon.status, ledgerPatch: edited.status })
 
@@ -610,7 +610,7 @@ try {
   // which only a checkout writes. So this one is bought the way a shopper
   // buys it — open a basket, add a line, check out — and that is also the only
   // path that exercises `x-cart-token` as a declared per-call header.
-  const variants = await json(await fetch(`${API}/api/product-variants?active=true&$limit=20`))
+  const variants = await json(await fetch(`${API}/api/productVariants?isActive=true&$limit=20`))
   const variant  = (variants?.data ?? []).find(v => v.stock > 3)
   if (!variant) throw new Error('no variant with stock to buy — run `bun run reset`')
 
@@ -627,7 +627,7 @@ try {
   await cart('addLine', { variantId: variant.id, quantity: 2 })
   const bought = await json(await cart('checkout', { email: 'refunds@shop.test', name: 'Reva Fund' }))
 
-  const stockAfterSale = (await json(await fetch(`${API}/api/product-variants/${variant.id}`)))?.stock
+  const stockAfterSale = (await json(await fetch(`${API}/api/productVariants/${variant.id}`)))?.stock
 
   // The one start in this file that uses the code a SHOPPER was handed, off
   // `carts.checkout`'s own answer, rather than one staff asked for. That is the
@@ -650,7 +650,7 @@ try {
   const orderNow = async () =>
     (await json(await fetch(`${API}/api/orders/${bought.orderId}`, { headers: auth })))
   const stockNow = async () =>
-    (await json(await fetch(`${API}/api/product-variants/${variant.id}`)))?.stock
+    (await json(await fetch(`${API}/api/productVariants/${variant.id}`)))?.stock
 
   t('refund.setup', {
     soldTwo:  stockAfterSale === variant.stock - 2,
@@ -737,7 +737,7 @@ try {
   const rest = await json(await doRefund(auth, {}))
   const afterFull = await paymentNow()
   const returned = ((await json(await fetch(
-    `${API}/api/inventory?reference=${bought.reference}&kind=returned`, { headers: auth })))?.data ?? [])
+    `${API}/api/inventoryMovements?reference=${bought.reference}&kind=returned`, { headers: auth })))?.data ?? [])
   t('refund.wholeMovesTheOrderAndTheShelf', {
     answered:  rest?.refundedTotal,
     payment:   afterFull?.status,
@@ -820,7 +820,7 @@ const expected = {
     && have.reference === 'ORD-PAY-1' && Number.isInteger(have.id),
 
   'webhook.redeliveryIsDeduped': {
-    accepted: 200, rowsBefore: 1, rowsAfter: 1, kinds: ['payment.succeeded'],
+    accepted: 200, rowsBefore: 1, rowsAfter: 1, types: ['payment.succeeded'],
   },
   'outbox.oneAnnouncement': { count: 1, ranOk: true, statuses: ['done'] },
   'start.refusesASettledOrder': { status: 400 },

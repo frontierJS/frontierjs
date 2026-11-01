@@ -1,12 +1,12 @@
 ---
 id: mental-model-load
-status: assessment
+status: reading
 dated: 2026-09-27
 ---
 
 # Idea — mental-model load: where it lands, and that it lands differently on an agent
 
-**Status: ASSESSMENT. Nothing here is a plan.** Dated 2026-09-27. The counts
+**Status: READING. Nothing here is a plan.** Dated 2026-09-27. The counts
 are read off the tree that day and are leads, not facts. Nothing is built and
 nothing is enforced — see `VERIFYING.md`.
 

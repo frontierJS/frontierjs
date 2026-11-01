@@ -979,7 +979,7 @@ distinction:
 ```lite
 model User {
   id             Int      @id
-  emailVerified  Boolean  @default(false) @allow(write, auth().isAdmin)
+  isEmailVerified  Boolean  @default(false) @allow(write, auth().isAdmin)
   role           String   @default("user") @allow(write, auth().isAdmin)
 
   @@gate(4.4.4.5)

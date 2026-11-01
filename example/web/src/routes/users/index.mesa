@@ -32,7 +32,7 @@ title: Users
   //                            somebody else gets **404**, not 403 — a refusal
   //                            must never confirm a row exists.
   //
-  //   role / emailVerified / isStaff  @allow(write, auth().isAdmin)
+  //   role / isEmailVerified / isStaff  @allow(write, auth().isAdmin)
   //                            and this is the one worth reading twice. A field
   //                            write policy compiles to
   //                            `SET col = CASE WHEN … THEN ? ELSE col END`, so
@@ -236,9 +236,9 @@ title: Users
         <Switch
           id={'u-verified-' + u.id}
           label="Verified"
-          checked={u.emailVerified}
+          checked={u.isEmailVerified}
           disabled={!isAdmin || busy === u.id}
-          onchange={(on) => set(u, 'emailVerified', on)} />
+          onchange={(on) => set(u, 'isEmailVerified', on)} />
       </td>
       <td>
         <Switch

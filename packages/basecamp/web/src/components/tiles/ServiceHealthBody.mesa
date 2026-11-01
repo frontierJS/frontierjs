@@ -1,5 +1,5 @@
 <script>
-  // service_health — one shared provider, pinged live.
+  // serviceHealth — one shared provider, pinged live.
   //
   // `portal.get` pings the adapter, so the status is real and current. What the
   // mock draws beside it — a latency figure and a sparkline — needs readings

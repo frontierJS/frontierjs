@@ -20,7 +20,7 @@
  *
  * `--load-extension` no longer loads anything when a debugging port is open;
  * the page it names answers ERR_BLOCKED_BY_CLIENT, which reads as a broken
- * extension rather than as a flag Chrome stopped honouring. The way in is the
+ * extension rather than as a flag Chrome stopped honoring. The way in is the
  * CDP command — `Extensions.loadUnpacked`, behind
  * `--enable-unsafe-extension-debugging` — and it answers the extension's id,
  * which is the other thing there was no way to get: an unpacked extension's id
@@ -320,7 +320,7 @@ check('and the shipped order leaves the despatch queue — the STORE removes it'
 // it: this is staff looking at their own public site and seeing the shelf.
 
 const slug = await (async () => {
-  const r = await (await asAdmin('/products?active=true&$limit=1')).json()
+  const r = await (await asAdmin('/products?isActive=true&$limit=1')).json()
   return r.data[0]?.slug
 })()
 

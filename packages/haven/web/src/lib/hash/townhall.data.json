@@ -196,6 +196,26 @@
         "paper": "cloudflare-edge.md"
       },
       {
+        "id": "2.3k",
+        "title": "Package host — a published tarball at a URL bun install fetches with no registry",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "ring 0",
+        "realms": "R",
+        "status": "proposed",
+        "paper": "package-host.md"
+      },
+      {
+        "id": "2.3l",
+        "title": "Publish order — a release that cannot strand a tag",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "ring 0",
+        "realms": "R",
+        "status": "proposed",
+        "paper": "publish-order.md"
+      },
+      {
         "id": "2.4",
         "title": "Observability (lantern)",
         "effort": "M",
@@ -204,16 +224,6 @@
         "realms": "A D",
         "status": "idea",
         "paper": "lantern.md"
-      },
-      {
-        "id": "2.4b",
-        "title": "Traffic analysis (beacon)",
-        "effort": "M",
-        "payoff": 2,
-        "edge": "stakes",
-        "realms": "A R U",
-        "status": "idea",
-        "paper": "traffic-analysis.md"
       },
       {
         "id": "2.4c",
@@ -296,6 +306,26 @@
         "paper": "blueprint-catalog.md"
       },
       {
+        "id": "2.4k",
+        "title": "Posture at deploy — fli deploy refuses what the graders already know",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "stakes",
+        "realms": "R",
+        "status": "idea",
+        "paper": "deploy-posture.md"
+      },
+      {
+        "id": "2.4l",
+        "title": "Git deploy — a repository wired to an App, released by a push, a button or a laptop build",
+        "effort": "M",
+        "payoff": 4,
+        "edge": "parity",
+        "realms": "D A U",
+        "status": "partial",
+        "paper": "git-deploy.md"
+      },
+      {
         "id": "2.5",
         "title": "Billing (ledger)",
         "effort": "L",
@@ -364,16 +394,6 @@
         "realms": "—",
         "status": "partial",
         "paper": "ecosystem-gaps.md"
-      },
-      {
-        "id": "2.13",
-        "title": "Inbound integrations — and it is TWO features, not one",
-        "effort": "M",
-        "payoff": 3,
-        "edge": "stakes",
-        "realms": "A",
-        "status": "idea",
-        "paper": "inbound-integrations.md"
       },
       {
         "id": "2.14",
@@ -492,7 +512,7 @@
         "payoff": 2,
         "edge": "—",
         "realms": "UI",
-        "status": "assessment",
+        "status": "reading",
         "paper": "site-kit-parity.md"
       },
       {
@@ -524,6 +544,16 @@
         "realms": "U R",
         "status": "idea",
         "paper": "preview-branch.md"
+      },
+      {
+        "id": "2.24e",
+        "title": "Owner editing — a site's owner changes their own words",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "U R",
+        "status": "idea",
+        "paper": "owner-editing.md"
       }
     ]
   },
@@ -1076,6 +1106,26 @@
         "realms": "U",
         "status": "proposed",
         "paper": "browser-kit.md"
+      },
+      {
+        "id": "4.55",
+        "title": "A mirror app — an FJS app whose truth lives in a Provider, on purpose",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "D A",
+        "status": "proposed",
+        "paper": "mirror-apps.md"
+      },
+      {
+        "id": "4.56",
+        "title": "App peering — FJS apps that recognize each other's calls",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "A D",
+        "status": "proposed",
+        "paper": "app-peering.md"
       }
     ]
   },
@@ -1380,7 +1430,7 @@
         "payoff": 2,
         "edge": "—",
         "realms": "A",
-        "status": "assessment",
+        "status": "reading",
         "paper": "mental-model-load.md"
       },
       {
@@ -1432,6 +1482,16 @@
         "realms": "A U D",
         "status": "proposed",
         "paper": "one-console.md"
+      },
+      {
+        "id": "5.55",
+        "title": "A prompt inside the booted app",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "core",
+        "realms": "A D",
+        "status": "proposed",
+        "paper": "app-console.md"
       }
     ]
   }

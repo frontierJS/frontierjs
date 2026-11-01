@@ -996,7 +996,7 @@ Everything in `sierra.config.js`:
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `target` | `'spa'` | `'spa'` \| `'static'` \| `'widget'` |
-| `widgets` | — | `widget` target only — `{ dir, outDir, prefix, minify }`: where the widgets are (`src/Embeds`), where their scripts go (`dist/embeds`), the tag prefix |
+| `widgets` | — | `widget` target only — `{ dir, outDir, prefix, minify }`: where the widgets are (`src/embeds`), where their scripts go (`dist/embeds`), the tag prefix |
 | `dev.staticData` | `true` | run a `render: static` route's `load()` on the dev server, so dev shows the page with its data |
 | `islands` | `true` | `static` only — the island marker pass; `false` turns it off |
 | `db` | — | `static` only — a module exporting a Litestone client, used to grade what a prerendered route reads against `@@gate` |
@@ -1102,7 +1102,7 @@ for another OS, `--dir` for a `dist/` something else built. It needs bun to
 compile and nothing to run: `./bin/site --port 8080`, or `PORT`.
 
 **`widget`** — an embeddable script for a page this app does not own. One `.mesa` file
-in `src/Embeds/` becomes one self-contained IIFE: the component, the Mesa runtime and
+in `src/embeds/` becomes one self-contained IIFE: the component, the Mesa runtime and
 the CSS in a single file a host page loads with one `<script src>` and nothing else.
 
 **`widgets/` is a SURFACE, a peer of `api/` and `web/`** — not a folder inside the SPA
@@ -1116,7 +1116,7 @@ widgets/                      ← beside api/ and web/, never inside either
   config/
     vite.config.js            ← the Vite root is widgets/, port 8200
     sierra.config.js          ← target: 'widget'
-  src/Embeds/
+  src/embeds/
     Counter.mesa              → dist/embeds/Counter.js
     LeadForm/
       index.mesa              → dist/embeds/LeadForm.js
@@ -1156,7 +1156,7 @@ comes from the config:
 // config/sierra.config.js
 export default {
   target:  'widget',
-  widgets: { dir: 'src/Embeds', outDir: 'dist/embeds', prefix: 'mt-' },
+  widgets: { dir: 'src/embeds', outDir: 'dist/embeds', prefix: 'mt-' },
 }
 ```
 

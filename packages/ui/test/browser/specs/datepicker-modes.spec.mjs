@@ -206,4 +206,30 @@ export async function run(t) {
   await t.evaluate(`${dayNamed(9)}.click(); return true;`)
   await t.eventually(`document.querySelector('#stage input[type=hidden][name=dueOn]').value`, '2026-01-09',
     'and picking a day writes the value a form would submit')
+
+  /* ── an empty slot ────────────────────────────────────────────────────── */
+
+  // `FJS-1979`: with nothing in the slot the picker drew no way to open
+  // itself, so every caller wrote the same toggle button.
+  await t.mount('datepicker-bare', { todayISO: JAN })
+
+  const trigger = `#stage .fjs-dp > button.fjs-dp-trigger`
+  const panelShown = `document.querySelector('#stage .fjs-dp-panel').classList.contains('show')`
+  t.is(await t.evaluate(`return document.querySelector('${trigger}')?.textContent.trim();`), 'Select date',
+    'an empty slot draws a trigger that asks for a date')
+  t.is(await t.evaluate(`return !${panelShown};`), true, 'the calendar starts closed')
+
+  await t.clickAt(trigger)
+  await t.eventually(`${panelShown} && document.querySelector('${trigger}').getAttribute('aria-expanded')`, 'true',
+    'clicking it opens the calendar and says so')
+
+  await t.evaluate(`${dayNamed(9)}.click(); return true;`)
+  await t.eventually(`document.querySelector('${trigger}').textContent.trim()`,
+    new Date(2026, 0, 9).toLocaleDateString(undefined, { dateStyle: 'medium' }),
+    'a picked day is what the trigger reads, and the calendar closes')
+  t.is(await t.evaluate(`return !${panelShown};`), true, 'the pick closed the calendar')
+
+  await t.mount('datepicker-bare', { todayISO: JAN, disabled: true })
+  t.is(await t.evaluate(`return document.querySelector('${trigger}').disabled;`), true,
+    'a disabled picker disables its own trigger')
 }

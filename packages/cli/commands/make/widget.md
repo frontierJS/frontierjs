@@ -1,6 +1,6 @@
 ---
 title: make:widget
-description: Create an embeddable widget in widgets/src/Embeds/ — scaffolding the widgets/ surface on first use
+description: Create an embeddable widget in widgets/src/embeds/ — scaffolding the widgets/ surface on first use
 alias: mkw
 examples:
   - fli make:widget Booking
@@ -47,7 +47,7 @@ widgets/
   config/vite.config.js      the Vite root is widgets/, on this app's own
                              widgetDev port (8200 for a fresh scaffold)
   index.html                 the dev harness — vite dev, while a widget is written
-  src/Embeds/<Name>.mesa     the widget. A directory holding index.mesa also works,
+  src/embeds/<Name>.mesa     the widget. A directory holding index.mesa also works,
                              and a .mesa BESIDE that index is its part, not a widget
   test/<tag>.html            a host page per widget, with hostile CSS on purpose
   deploy/                    serve.js + Dockerfile — the widget origin, CORS and all
@@ -98,14 +98,14 @@ if (!fresh) {
   }
 }
 
-const target = join(surface, 'src/Embeds', `${name}.mesa`)
+const target = join(surface, 'src/embeds', `${name}.mesa`)
 if (existsSync(target)) {
-  log.error(`${dir}/src/Embeds/${name}.mesa already exists — edit it, or pick another name.`)
+  log.error(`${dir}/src/embeds/${name}.mesa already exists — edit it, or pick another name.`)
   return
 }
 
 if (flag.dry) {
-  log.dry(`Would ${fresh ? `create the ${dir}/ surface and ` : ''}write ${dir}/src/Embeds/${name}.mesa`)
+  log.dry(`Would ${fresh ? `create the ${dir}/ surface and ` : ''}write ${dir}/src/embeds/${name}.mesa`)
   return
 }
 

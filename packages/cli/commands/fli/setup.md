@@ -58,19 +58,19 @@ if (onPath) {
 }
 
 echo('')
-echo(`  Shell rc:  ${rcFile}`)
-echo(`  bun bin:   ${bunBin}`)
+echo(chalk`  {dim Shell rc:}  ${rcFile}`)
+echo(chalk`  {dim bun bin:}   ${bunBin}`)
 echo('')
 
 if (inRc) {
   log.info('PATH export already found in ' + rcFile)
 } else {
-  echo('  Add this to ' + rcFile + ':')
+  echo(chalk.bold('  Add this to ' + rcFile + ':'))
   echo('')
-  echo('    ' + line)
+  echo(chalk.cyan('    ' + line))
   echo('')
-  echo('  Then reload:')
-  echo('    source ' + rcFile)
+  echo(chalk.bold('  Then reload:'))
+  echo(chalk.cyan('    source ' + rcFile))
   echo('')
 }
 

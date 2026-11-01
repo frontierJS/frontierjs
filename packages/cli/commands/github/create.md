@@ -129,10 +129,10 @@ try {
 
   log.success(`Repository created`)
   echo('')
-  echo(`  ${repo.html_url}`)
+  echo(chalk.bold.cyan(`  ${repo.html_url}`))
   echo('')
-  echo(`  Clone with:  git clone ${repo.clone_url}`)
-  echo(`  Or run:      fli gh:clone ${owner}/${repoName}`)
+  echo(chalk`  {dim Clone with:}  git clone ${repo.clone_url}`)
+  echo(chalk`  {dim Or run:}      fli gh:clone ${owner}/${repoName}`)
 } catch (err) {
   log.error(`Failed to create repository: ${err.message}`)
   if (err.message.includes('404') || err.message.includes('Not Found')) {

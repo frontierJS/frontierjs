@@ -107,7 +107,7 @@ try {
     projectId: project.id, name: 'production', slug: 'production', tier: 'production',
   } })
   app = await basecamp(origin, key, '/apps', { method: 'POST', body: {
-    environmentId: environment.id, name, slug, type: 'container',
+    environmentId: environment.id, name, slug, kind: 'container',
   } })
   await basecamp(origin, key, `/apps/${encodeURIComponent(app.id)}`, {
     method: 'POST', headers: { 'x-service-method': 'place' }, body: { serverId: server.id },

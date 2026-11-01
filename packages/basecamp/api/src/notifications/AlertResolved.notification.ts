@@ -15,7 +15,7 @@ export default defineNotification<AlertPayload>({
     .title(`${p.ruleName} recovered`)
     .body(p.message)
     .action('View alerts', '/alerts/')
-    .context('AlertEvent', p.eventId)
+    .context('Alert', p.eventId)
     .data({ ruleName: p.ruleName, severity: p.severity, message: p.message }),
 
   email: (p) => mail()

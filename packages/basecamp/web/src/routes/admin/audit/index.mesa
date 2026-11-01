@@ -19,7 +19,7 @@ title: Audit trail
   // It was `service.find(…, { limit: 50 })` — a hard cap with nothing saying
   // rows were missing, which reads exactly like a trail that only has 50.
   import { session } from '../../../lib/session.js'
-  import { audit } from '../../../resources/AuditEvent.mesa'
+  import { auditEvents } from '../../../resources/AuditEvent.mesa'
   import { at } from '../../../lib/datetime.js'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
@@ -34,7 +34,7 @@ title: Audit trail
   // reuses the last load's directives, so a second number here would be a
   // window that grows in a different size than it started.
   const PAGE = 50
-  const list = audit.tethered({ state: 'local', directives: { limit: PAGE } })
+  const list = auditEvents.tethered({ state: 'local', directives: { limit: PAGE } })
   const rows = () => list.rows
 
   // The service filters; the browser does not. A page-local .filter() would

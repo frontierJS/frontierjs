@@ -8,7 +8,7 @@
 //
 // One map, keyed by the word, because copies keyed the same drifted apart:
 // `paid` was `info` on the orders table and `success` on the invoices one, so
-// the same word was two colours a click apart. `cancelled` is shared by
+// the same word was two colors a click apart. `cancelled` is shared by
 // `Order` and `Subscription` and reads one way on both.
 export const TONES = {
   // Order
@@ -32,5 +32,5 @@ export const TONES = {
 
 /** A tone, or `muted` for a state nobody has an opinion about yet. A missing
  *  entry is not an error — a schema may declare a state before anyone decides
- *  what it means, and a grey pill is the honest answer until they do. */
+ *  what it means, and a gray pill is the honest answer until they do. */
 export const toneFor = (state) => TONES[state] ?? 'muted'

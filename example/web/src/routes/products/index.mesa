@@ -56,7 +56,7 @@ title: Products
     { name: 'variants',label: 'Variants' },
     { name: 'price',   label: 'Price' },
     { name: 'stock',   label: 'Stock' },
-    { name: 'active',  label: 'Active' },
+    { name: 'isActive', label: 'Active' },
   ]
 
   // ── Derived, per product ─────────────────────────────────────────────────
@@ -97,7 +97,7 @@ title: Products
     const r = priceRange(p)
     return (!pick || p.name === pick)
         && (!brands.length   || brands.includes(p.brand))
-        && (!statuses.length || statuses.includes(p.active ? 'active' : 'retired'))
+        && (!statuses.length || statuses.includes(p.isActive ? 'active' : 'retired'))
         && (!widened || !r || (r.hi >= low && r.lo <= high))
   })
 
@@ -146,7 +146,7 @@ title: Products
     placeholder="Any status"
     options={['active', 'retired']}
     bind:value={statuses}
-    hint="derived from Product.active"
+    hint="derived from Product.isActive"
   />
 
   <Slider
@@ -194,7 +194,7 @@ title: Products
           {p.onHand}
         {/if}
       </td>
-      <td><Pill tone={p.active ? 'success' : 'muted'}>{p.active ? 'active' : 'retired'}</Pill></td>
+      <td><Pill tone={p.isActive ? 'success' : 'muted'}>{p.isActive ? 'active' : 'retired'}</Pill></td>
     </tr>
   {/snippet}
 

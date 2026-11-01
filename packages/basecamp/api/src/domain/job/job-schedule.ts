@@ -138,7 +138,7 @@ export async function fireBackup(app: App): Promise<void> {
   const queued = await queueBackup(app, {
     kind: 'scheduled', destinationId: hub.backupDestinationId ?? null, requestedBy: null,
   })
-  if ('inFlight' in queued) log.warn('scheduled backup skipped', { in_flight: queued.inFlight.status })
+  if ('inFlight' in queued) log.warn('scheduled backup skipped', { inFlight: queued.inFlight.status })
 }
 
 // ─── An app's backup ────────────────────────────────────────────────────────
@@ -224,7 +224,7 @@ export async function restoreSchedules(app: App): Promise<number> {
       // It is already refused on the way in, so reaching this means a row that
       // predates the check or was written around it.
       log.error('could not restore schedule', {
-        job_id: job.id, cron: job.cronExpression, error: (err as Error).message,
+        jobId: job.id, cron: job.cronExpression, error: (err as Error).message,
       })
     }
   }
@@ -237,7 +237,7 @@ export async function restoreSchedules(app: App): Promise<number> {
       syncAppBackupSchedule(app, row)
       restored++
     } catch (err) {
-      log.error('could not restore an app backup schedule', { app_id: row.id, cron: row.backupCron, error: (err as Error).message })
+      log.error('could not restore an app backup schedule', { appId: row.id, cron: row.backupCron, error: (err as Error).message })
     }
   }
   const drilled = await db.app.findMany({ where: { drillCron: { not: null }, deletedAt: null } })
@@ -246,7 +246,7 @@ export async function restoreSchedules(app: App): Promise<number> {
       syncAppDrillSchedule(app, row)
       restored++
     } catch (err) {
-      log.error('could not restore an app drill schedule', { app_id: row.id, cron: row.drillCron, error: (err as Error).message })
+      log.error('could not restore an app drill schedule', { appId: row.id, cron: row.drillCron, error: (err as Error).message })
     }
   }
   return restored

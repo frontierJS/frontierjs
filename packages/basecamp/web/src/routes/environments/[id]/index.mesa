@@ -119,13 +119,13 @@ title: Environment
   // than on a screen of its own — there is no useful "all apps" form.
   // `serverId: null` is "not chosen", which means the one online machine when
   // there is exactly one; '' is "Place it later", chosen.
-  const blankApp = () => ({ name: '', type: 'container', serverId: null })
+  const blankApp = () => ({ name: '', kind: 'container', serverId: null })
   let newApp  = blankApp()
   let adding  = false
 
-  $: (newApp.name, newApp.type, newApp.serverId)
+  $: (newApp.name, newApp.kind, newApp.serverId)
 
-  // The type list comes from `enum AppType` in db/schema.lite, through the
+  // The type list comes from `enum AppKind` in db/schema.lite, through the
   // JSON Schema the build generated. Adding a type to the schema adds it here.
   // A type the map does not name still shows, bare.
   const typeHints = {
@@ -137,7 +137,7 @@ title: Environment
     static:    'files served as-is',
     function:  'runs per request',
   }
-  $: appTypes = (apps.fields?.type?.enum ?? ['container', 'worker', 'cron', 'static'])
+  $: appKinds = (apps.fields?.kind?.enum ?? ['container', 'worker', 'cron', 'static'])
     .map(t => ({ value: t, label: typeHints[t] ? `${t} — ${typeHints[t]}` : t }))
 
   // Only an online machine is offered: `place` refuses a stopped or destroyed
@@ -157,7 +157,7 @@ title: Environment
         environmentId: environment.id,
         name:          newApp.name,
         slug:          slug(newApp.name, { max: 64 }),
-        type:          newApp.type,
+        kind:          newApp.kind,
       })
     } catch (e) {
       error = e.message
@@ -227,7 +227,7 @@ title: Environment
 
   const APP_COLUMNS = [
     { name: 'name',    label: 'Name' },
-    { name: 'type',    label: 'Type' },
+    { name: 'kind',    label: 'Kind' },
     { name: 'status',  label: 'Status' },
     { name: 'domain',  label: 'Domain' },
     { name: 'actions', label: 'Actions', hideLabel: true },
@@ -291,7 +291,7 @@ title: Environment
           <!-- An App has its own screen now: placement, hostnames and
                certificates, config, release history. -->
           <td><a href={`/apps/${app.id}/`}>{app.name}</a></td>
-          <td><code>{app.type}</code></td>
+          <td><code>{app.kind}</code></td>
           <!-- The tone is derived from the value, not chosen per row: a
                status is a fact, and 'error' is the only one that is bad
                news. No color is named here (invariant 13). -->
@@ -331,9 +331,9 @@ title: Environment
            expression. The callback is the way a field of a record is written. -->
       <Input label="App name" name="app-name" id="app-name" placeholder="web" required
              value={newApp.name} oninput={(e) => newApp.name = e.target.value} />
-      <Select label="Type" name="app-type" id="app-type" placeholder=""
-              options={appTypes} value={newApp.type}
-              onchange={(e) => newApp.type = e.target.value} />
+      <Select label="Kind" name="app-kind" id="app-kind" placeholder=""
+              options={appKinds} value={newApp.kind}
+              onchange={(e) => newApp.kind = e.target.value} />
       <Select label="Run it on" name="app-server" id="app-server" placeholder="Place it later"
               options={srvOptions} value={placeOn}
               onchange={(e) => newApp.serverId = e.target.value} />

@@ -27,11 +27,11 @@ export default createService({
   /** `{ ideas: { [id]: { aye, nay } }, mine: { [id]: aye } }` — every count the caller may read, and the caller's own votes. */
   async tally () {
     const me   = Number(($.user as { id?: string } | undefined)?.id)
-    const rows = await ($.db as any).vote.findMany({ select: { idea: true, aye: true, memberId: true } }) as Array<{ idea: string, aye: boolean, memberId: number }>
+    const rows = await ($.db as any).vote.findMany({ select: { idea: true, isAye: true, memberId: true } }) as Array<{ idea: string, isAye: boolean, memberId: number }>
     $.dispatch = false
     return {
       ideas: tallyOf(rows),
-      mine:  Object.fromEntries(rows.filter(r => r.memberId === me).map(r => [r.idea, r.aye])),
+      mine:  Object.fromEntries(rows.filter(r => r.memberId === me).map(r => [r.idea, r.isAye])),
     }
   },
 
@@ -46,8 +46,8 @@ export default createService({
     const db  = $.db as any
     const was = await db.vote.findFirst({ where: { idea, memberId: me }, select: { id: true } })
     if (aye === null) { if (was) await db.vote.delete({ where: { id: was.id } }) }
-    else if (was) await db.vote.update({ where: { id: was.id }, data: { aye } })
-    else await db.vote.create({ data: { idea, aye } })
+    else if (was) await db.vote.update({ where: { id: was.id }, data: { isAye: aye } })
+    else await db.vote.create({ data: { idea, isAye: aye } })
 
     // The hall is told by name below; the answer is no Vote row for the bus to announce.
     $.dispatch = false

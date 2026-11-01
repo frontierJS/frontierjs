@@ -31,7 +31,7 @@ if (busy) {
   process.exit(1)
 }
 
-const preview = spawn(process.execPath, [join(HERE, 'preview.mjs')], {
+const preview = spawn(process.execPath, [join(HERE, 'verify-preview.mjs')], {
   stdio: ['ignore', 'inherit', 'inherit'],
   env: { ...process.env, PREVIEW_PORT: PORT, FRONTIER_API_URL: API },
 })

@@ -57,11 +57,11 @@ if (flag.check) {
     return
   }
   const committed = readFileSync(outPath, 'utf8')
-  if (committed === body) { echo('  ✓  surface.snapshot.md is current'); return }
-  echo('  ✗  surface.snapshot.md does not match the workspace\n')
+  if (committed === body) { echo(`  ${chalk.green('✓')}  surface.snapshot.md ${chalk.dim('is current')}`); return }
+  echo(`  ${chalk.red('✗')}  surface.snapshot.md ${chalk.dim('does not match the workspace')}\n`)
   echo(diffLines(committed, body))
   echo('')
-  echo('  The reached surface changed. Run `fli ws:surface` and review the diff before committing.')
+  echo(chalk.dim('  The reached surface changed. Run `fli ws:surface` and review the diff before committing.'))
   process.exitCode = 1
   return
 }
@@ -69,29 +69,29 @@ if (flag.check) {
 writeFileSync(outPath, body, 'utf8')
 
 const sum = key => surface.packages.reduce((a, p) => a + p.totals[key], 0)
-echo('  ✓  surface.snapshot.md')
-echo(`  ${sum('entries')} entry point(s), ${sum('entriesUnimported')} imported by nothing outside their package`)
-echo(`  ${sum('value')} value export(s), ${sum('valueUnreached')} reached by nothing outside, ${sum('emitted')} emitted`)
-echo(`  ${sum('type')} type export(s), ${sum('typeUnreached')} reached by nothing outside`)
+echo(`  ${chalk.green('✓')}  surface.snapshot.md`)
+echo(`  ${chalk.bold(sum('entries'))} ${chalk.dim('entry point(s),')} ${chalk.yellow(sum('entriesUnimported'))} ${chalk.dim('imported by nothing outside their package')}`)
+echo(`  ${chalk.bold(sum('value'))} ${chalk.dim('value export(s),')} ${chalk.yellow(sum('valueUnreached'))} ${chalk.dim('reached by nothing outside,')} ${chalk.cyan(sum('emitted'))} ${chalk.dim('emitted')}`)
+echo(`  ${chalk.bold(sum('type'))} ${chalk.dim('type export(s),')} ${chalk.yellow(sum('typeUnreached'))} ${chalk.dim('reached by nothing outside')}`)
 const top = [...surface.packages]
   .filter(p => p.totals.valueUnreached + p.totals.entriesUnimported)
   .sort((a, b) => (b.totals.valueUnreached + b.totals.entriesUnimported) - (a.totals.valueUnreached + a.totals.entriesUnimported))
   .slice(0, 6)
-for (const p of top) echo(`     ${p.folder.padEnd(14)} ${p.totals.valueUnreached} unreached of ${p.totals.value} · ${p.totals.entriesUnimported} unimported of ${p.totals.entries}`)
+for (const p of top) echo(`     ${chalk.bold(p.folder.padEnd(14))} ${chalk.dim(`${p.totals.valueUnreached} unreached of ${p.totals.value} · ${p.totals.entriesUnimported} unimported of ${p.totals.entries}`)}`)
 
 if (flag.also) {
   const roots = flag.also.split(',').map(s => s.trim()).filter(Boolean).map(s => resolve(s))
   const hits  = reachOutside({ roots, surface })
   echo('')
-  if (!hits.length) { echo(`  nothing above is reached from ${roots.join(', ')}`); return }
+  if (!hits.length) { echo(chalk.dim(`  nothing above is reached from ${roots.join(', ')}`)); return }
   const byWhat = new Map()
   for (const h of hits) {
     const k = `${h.pkg} ${h.kind === 'entry' ? h.what : '`' + h.what + '`'}`
     if (!byWhat.has(k)) byWhat.set(k, new Set())
     byWhat.get(k).add(h.tree.split('/').pop())
   }
-  echo(`  live outside this repo (${byWhat.size}):`)
-  for (const [k, trees] of [...byWhat].sort()) echo(`     ${k} ← ${[...trees].sort().join(', ')}`)
+  echo(`  ${chalk.bold('live outside this repo')}  ${chalk.dim(`·  ${byWhat.size} name(s)`)}`)
+  for (const [k, trees] of [...byWhat].sort()) echo(`     ${k} ${chalk.dim(`← ${[...trees].sort().join(', ')}`)}`)
 }
 ```
 

@@ -10,7 +10,7 @@
 //
 // **Two things are deliberately NOT columns.**
 //
-// The certificate MATERIAL is a `Secret` of kind `tls_cert`, referenced by
+// The certificate MATERIAL is a `Secret` of kind `tlsCert`, referenced by
 // `certSecretId`. `Secret.data` is `@encrypted`, so the private key is written
 // once and never read back: it is absent from every response, and absent from
 // the database file in plaintext. A `keyPem` column here would have undone that
@@ -189,7 +189,7 @@ export default createService({
 
     const secret = await createSystemSecret(db(), 'tls', domain.hostname as string, {
       workspaceId: ws(),
-      kind:        'tls_cert',
+      kind:        'tlsCert',
       // One value, both halves. Splitting them across two Secrets would
       // let a rotation replace one and not the other.
       data:        JSON.stringify({ certPem, keyPem }),

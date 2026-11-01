@@ -57,7 +57,7 @@ const apps = () => env.as(admin).service('apps')
 async function aGitApp(branch: string | undefined = 'main') {
   const slug = `git-${uniq()}`
   const created: any = await apps().create({
-    workspaceId: ws.id, environmentId: environment.id, name: slug, slug, type: 'container',
+    workspaceId: ws.id, environmentId: environment.id, name: slug, slug, kind: 'container',
     source: { kind: 'git', repo: 'https://git.example.test/acme/shop.git', ...(branch ? { branch } : {}) },
   })
   await (env.system as any).appServer.create({ data: { appId: created.id, serverId: box.id, replicaIndex: 0 } })
@@ -158,18 +158,18 @@ describe('a push releases the App', () => {
     const row: any = await apps().get(app.id)
     expect(JSON.stringify(row)).not.toContain(on.secret)
     expect(JSON.stringify(row)).not.toContain(on.token)
-    expect(row.deployOnPush).toBe(true)
+    expect(row.isDeployedOnPush).toBe(true)
   })
 
   // Creation's door (FJS-D1558): the same mint as enablePush, so what it
   // answers verifies at the forge and releases; and an App with no machine is
-  // never deployOnPush, because the release it would queue fails at step one.
+  // never isDeployedOnPush, because the release it would queue fails at step one.
   test('a project made from a repository with a server answers a secret the forge can use', async () => {
     const made: any = await env.as(admin).service('projects').call('fromRepo', null, {
       name: `Made ${uniq()}`, repo: 'https://git.example.test/acme/made.git', branch: 'main', dockerfile: 'FROM oven/bun:1',
       serverId: box.id,
     })
-    expect(made.app.deployOnPush).toBe(true)
+    expect(made.app.isDeployedOnPush).toBe(true)
     const sha = uniq().padEnd(40, '3')
     const res = await forge(made.app.id, made.push.secret, push('refs/heads/main', sha))
     expect(res.status).toBe(200)
@@ -179,11 +179,11 @@ describe('a push releases the App', () => {
     expect((await env.http.post(`/hooks/git/${made.app.id}/${made.push.token}`).send({})).status).toBe(200)
   })
 
-  test('a project made from a repository with no server is never deployOnPush', async () => {
+  test('a project made from a repository with no server is never isDeployedOnPush', async () => {
     const made: any = await env.as(admin).service('projects').call('fromRepo', null, {
       name: `Alone ${uniq()}`, repo: 'https://git.example.test/acme/alone.git', dockerfile: 'FROM oven/bun:1',
     })
-    expect(made.app.deployOnPush).toBe(false)
+    expect(made.app.isDeployedOnPush).toBe(false)
     expect(made.push).toBeNull()
     expect((await forge(made.app.id, 'anything', push())).status).toBe(401)
   })
@@ -294,7 +294,7 @@ describe('a git container App publishes its site/ after the release', () => {
     try {
       const app: any = await aGitApp()
       await apps().patch(app.id, { volumePath: '/db' })
-      await (env.system as any).variable.create({ data: { workspaceId: ws.id, environmentId: environment.id, appId: app.id, key: 'SITE_SECRET', secret: true, secretValue: 's3' } })
+      await (env.system as any).variable.create({ data: { workspaceId: ws.id, environmentId: environment.id, appId: app.id, key: 'SITE_SECRET', isSecret: true, secretValue: 's3' } })
       const made: any = await deployments().create({ appId: app.id })
       const done = await settled(made.id)
 

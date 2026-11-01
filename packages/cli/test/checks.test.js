@@ -201,13 +201,13 @@ const CLEAN = {
   // It also renders a `<Table>`, so `table-column-key` RUNS over the clean tree
   // rather than skipping — a rule that only ever skips is what this file exists
   // to catch — and finds nothing, because a column names its field `name`, the
-  // spelling the schema and `resource.columns()` already use. The `ssh_key:`
+  // spelling the schema and `resource.columns()` already use. The `sshKey:`
   // beside it is the shape the rule must stay quiet on: an ordinary object key
   // that ENDS in `key`, which is why the match is on a word boundary.
   'web/src/routes/leads/index.mesa':    '<script>\n' +
                                         "  import Table from '@frontierjs/ui/components/display/Table.mesa'\n" +
                                         "  const columns = [{ name: 'ref', label: 'Reference', sortable: true }]\n" +
-                                        "  const LABELS = { ssh_key: 'SSH key' }\n" +
+                                        "  const LABELS = { sshKey: 'SSH key' }\n" +
                                         '</script>\n<Table {columns} rows={[]} />\n',
   'web/src/routes/leads/_leads.Row.mesa': '<tr></tr>\n',
   // A nav table and the route table it is graded against, so `nav-href-routes`
@@ -226,9 +226,9 @@ const CLEAN = {
   // here — a rule that only ever skips is the failure this file exists to
   // catch, and `widget-entry-name` skips wherever widgets/ is absent.
   'widgets/config/vite.config.js':      'export default { server: { port: 8200, strictPort: true } }\n',
-  'widgets/src/Embeds/Booking.mesa':    '<button>book</button>\n',
-  'widgets/src/Embeds/LeadForm/index.mesa': '<form></form>\n',
-  'widgets/src/Embeds/LeadForm/Field.mesa': '<input>\n',
+  'widgets/src/embeds/Booking.mesa':    '<button>book</button>\n',
+  'widgets/src/embeds/LeadForm/index.mesa': '<form></form>\n',
+  'widgets/src/embeds/LeadForm/Field.mesa': '<input>\n',
   // The deploy pair, here for the same reason the third surface is: every rule
   // must RUN over this tree. `migration-history` only applies to an app whose
   // container replays migrations on boot, so without a Dockerfile naming
@@ -717,11 +717,11 @@ describe('a <Table> column names its field (FJS-1081)', () => {
   })
 
   test('an ordinary property that ENDS in key is not a column', () => {
-    // `ssh_key:` and `provider_key:` are live in basecamp's own screens. The
+    // `sshKey:` and `providerKey:` are live in basecamp's own screens. The
     // word boundary is the whole of what tells them apart, so the control is a
     // page that carries both them and a correct column.
     const root = tree('tck-suffix', { 'web/src/routes/a.mesa':
-      page("const LABELS = { ssh_key: 'SSH key', provider_key: 'Provider key' }\n" +
+      page("const LABELS = { sshKey: 'SSH key', providerKey: 'Provider key' }\n" +
            "  const columns = [{ name: 'ref', label: 'Reference' }]") })
     expect(only(root, 'table-column-key').findings).toEqual([])
   })
@@ -1021,6 +1021,176 @@ describe('a nav link names a route (nav-href-routes)', () => {
 
   test('an app with no nav skips', () => {
     expect(only(tree('nhr-none', { 'web/routes.snapshot.md': ROUTES('/') }), 'nav-href-routes').skipped).toHaveLength(1)
+  })
+})
+
+describe('naming rulings (FJS-D1748 to FJS-D1751)', () => {
+  const schema = body => ({ ...CLEAN, 'db/schema.lite': SCHEMA + body })
+
+  describe('enum-value-case', () => {
+    test('a snake_case value is a warning at its own line, naming the camelCase spelling', () => {
+      const root = tree('ev-snake', schema('\nenum DeployStatus {\n  pending\n  rolled_back\n}\n'))
+      const { findings } = only(root, 'enum-value-case')
+      expect(findings).toHaveLength(1)
+      expect(findings[0].severity).toBe('warn')
+      expect(findings[0].message).toMatch(/DeployStatus value rolled_back.*rolledBack/)
+      const text = readFileSync(join(root, 'db/schema.lite'), 'utf8').split('\n')
+      expect(text[findings[0].line - 1]).toMatch(/rolled_back/)
+    })
+
+    test('an inline enum, an attribute and a nested transitions block are read as values only', () => {
+      const root = tree('ev-shapes', schema(
+        '\nenum Plan {\n  starter  @label("Starter Plan")\n  pro_plus // not_a_value\n  transitions {\n    starter -> pro_plus\n  }\n}\n' +
+        'enum Role { admin Member viewer }\n'))
+      const names = only(root, 'enum-value-case').findings.map(f => f.message.match(/value (\S+)/)[1])
+      expect(names).toEqual(['pro_plus', 'Member'])
+    })
+
+    test('camelCase, cancelled and a digit-bearing value pass', () => {
+      const root = tree('ev-camel', schema('\nenum S { pastDue cancelled sha256 v2 }\n'))
+      expect(only(root, 'enum-value-case').findings).toEqual([])
+    })
+
+    test('a model name, a notification file name and an HTTP method are exempt (FJS-D1755)', () => {
+      const root = tree('ev-exempt', {
+        ...schema('\nenum Subject { Lead Account }\nenum Kind { DeployFailed MonitorDown }\nenum HttpMethod { GET POST }\n'),
+        'api/src/notifications/DeployFailed.notification.ts': 'export default {}\n',
+      })
+      const names = only(root, 'enum-value-case').findings.map(f => f.message.match(/value (\S+)/)[1])
+      expect(names).toEqual(['MonitorDown'])
+    })
+  })
+
+  describe('boolean-prefix', () => {
+    test('a bare Boolean is a warning, on a model and on a type block', () => {
+      const root = tree('bp-bare', schema(
+        '\nmodel Flag {\n  id Int @id\n  active Boolean @default(true)\n  island Boolean?\n}\n' +
+        'type FlagChange {\n  proxied Boolean\n}\n'))
+      const { findings } = only(root, 'boolean-prefix')
+      expect(findings.map(f => f.message.match(/^(\S+) /)[1])).toEqual(['Flag.active', 'Flag.island', 'FlagChange.proxied'])
+      expect(findings[0].severity).toBe('warn')
+    })
+
+    test('is*, has*, a channel name, a non-Boolean and an @@external model pass', () => {
+      const root = tree('bp-ok', schema(
+        '\nmodel Flag {\n  id Int @id\n  isActive Boolean\n  hasReplica Boolean?\n  email Boolean?\n  inApp Boolean?\n  active String\n}\n' +
+        'model legacy_x {\n  id Int @id\n  active Boolean\n  @@external\n}\n'))
+      expect(only(root, 'boolean-prefix').findings).toEqual([])
+    })
+
+    test('the channel exemption mirrors the notifications package', () => {
+      const types = readFileSync(join(import.meta.dir, '../../notifications/types.ts'), 'utf8')
+      const shipped = types.match(/BUILT_IN_TRANSPORTS\s*=\s*\[([^\]]*)\]/)[1].match(/'(\w+)'/g).map(s => s.slice(1, -1))
+      const root = tree('bp-channels', schema(`\nmodel Pref {\n  id Int @id\n${shipped.map(c => `  ${c} Boolean?`).join('\n')}\n}\n`))
+      expect(only(root, 'boolean-prefix').findings).toEqual([])
+    })
+  })
+
+  describe('duration-unit-spelled', () => {
+    test('Sec, Secs, Mins and Hr endings are warnings that spell the unit', () => {
+      const root = tree('du-bad', schema(
+        '\nmodel Monitor {\n  id Int @id\n  intervalSec Int\n  retryMins Int\n  ttlHr Int\n}\n'))
+      const { findings } = only(root, 'duration-unit-spelled')
+      expect(findings).toHaveLength(3)
+      expect(findings[0].message).toMatch(/intervalSeconds/)
+      expect(findings[1].message).toMatch(/retryMinutes/)
+      expect(findings[2].message).toMatch(/ttlHours/)
+    })
+
+    test('spelled units, Ms, Mb, Gb and an ordinary name pass', () => {
+      const root = tree('du-ok', schema(
+        '\nmodel Monitor {\n  id Int @id\n  timeoutSeconds Int\n  retryMinutes Int\n  ageHours Int\n  latencyMs Int\n  sizeMb Int\n  quotaGb Int\n  isAdmin Boolean\n  minimum Int\n}\n'))
+      expect(only(root, 'duration-unit-spelled').findings).toEqual([])
+    })
+  })
+
+  describe('resource-export-name', () => {
+    test('the clean app passes', () => {
+      expect(only(tree('ren-clean', CLEAN), 'resource-export-name').findings).toEqual([])
+    })
+
+    test('a Resource over a model that exports the singular is a warning', () => {
+      const root = tree('ren-singular', {
+        ...CLEAN,
+        'web/src/resources/Lead.mesa': resource('lead'),
+      })
+      const { findings } = only(root, 'resource-export-name')
+      expect(findings).toHaveLength(1)
+      expect(findings[0].severity).toBe('warn')
+      expect(findings[0].message).toMatch(/exports lead, and the service for Lead is leads/)
+    })
+
+    test('a Resource that exports the plural but registers another name is a warning', () => {
+      const root = tree('ren-literal', {
+        ...CLEAN,
+        'web/src/resources/Lead.mesa':
+          "<script module>\n  import { createResource } from '@frontierjs/sierra/resource'\n" +
+          "  export const leads = createResource('leadList')\n</script>\n",
+      })
+      const { findings } = only(root, 'resource-export-name')
+      expect(findings).toHaveLength(1)
+      expect(findings[0].message).toMatch(/createResource\('leadList'\) over Lead/)
+    })
+
+    test('a kebab name is a warning anywhere in a surface src, not only in a resource file', () => {
+      const root = tree('ren-kebab', {
+        ...CLEAN,
+        'web/src/lib/notes.js': "import { createResource } from '@frontierjs/sierra/resource'\nexport const notes = createResource('lead-notes')\n",
+      })
+      const { findings } = only(root, 'resource-export-name')
+      expect(findings).toHaveLength(1)
+      expect(findings[0].line).toBe(2)
+      expect(findings[0].message).toMatch(/leadNotes/)
+    })
+
+    test('a Resource over no model, over model: null or over another model keeps its noun', () => {
+      const root = tree('ren-noun', {
+        ...CLEAN,
+        'web/src/resources/Hub.mesa': resource('hub', 'model: null'),
+        'web/src/resources/Pipeline.mesa': resource('pipeline'),
+        'web/src/resources/Door.mesa': resource('doors', "model: 'Account'"),
+      })
+      expect(only(root, 'resource-export-name').findings).toEqual([])
+    })
+
+    test('a Resource disagreeing with itself over no model is still a warning', () => {
+      const root = tree('ren-self', {
+        ...CLEAN,
+        'web/src/resources/Pipeline.mesa':
+          "<script module>\n  import { createResource } from '@frontierjs/sierra/resource'\n" +
+          "  export const stages = createResource('pipeline')\n</script>\n",
+      })
+      expect(only(root, 'resource-export-name').findings).toHaveLength(1)
+    })
+
+    test('a one-row model (a constant-string @id default) stays singular, and a uuid model does not', () => {
+      const body = '\nmodel SiteConfig {\n  id String @id @default("site")\n  name String\n}\n' +
+                   'model Thing {\n  id String @id @default(uuid())\n}\n'
+      const one = tree('ren-one', {
+        ...schema(body),
+        'web/src/resources/SiteConfig.mesa': resource('siteConfig'),
+      })
+      expect(only(one, 'resource-export-name').findings).toEqual([])
+
+      const plural = tree('ren-one-plural', {
+        ...schema(body),
+        'web/src/resources/SiteConfig.mesa': resource('siteConfigs'),
+      })
+      expect(only(plural, 'resource-export-name').findings[0].message).toMatch(/service for SiteConfig is siteConfig\b/)
+
+      const many = tree('ren-uuid', { ...schema(body), 'web/src/resources/Thing.mesa': resource('thing') })
+      expect(only(many, 'resource-export-name').findings[0].message).toMatch(/service for Thing is things/)
+    })
+
+    test('any surface src/resources/ is read, not only web', () => {
+      const root = tree('ren-site', {
+        ...CLEAN,
+        'site/src/resources/Account.mesa': resource('account'),
+      })
+      const { findings } = only(root, 'resource-export-name')
+      expect(findings).toHaveLength(1)
+      expect(findings[0].file).toMatch(/site\/src\/resources\/Account\.mesa$/)
+    })
   })
 })
 
@@ -2021,7 +2191,7 @@ describe('the widget surface', () => {
     const root = tree('w-only', {
       'db/schema.lite':                  SCHEMA,
       'widgets/config/vite.config.js':   'export default { server: { strictPort: true } }\n',
-      'widgets/src/Embeds/Booking.mesa': '<button>book</button>\n',
+      'widgets/src/embeds/Booking.mesa': '<button>book</button>\n',
     })
     expect(only(root, 'app-layout').findings).toEqual([])
     expect(only(root, 'widget-entry-name').findings).toEqual([])
@@ -2030,14 +2200,14 @@ describe('the widget surface', () => {
   test('widgets inside web/ are a surface in the wrong place', () => {
     // Silent when wrong: they build with the SPA, share its port and its
     // release, and the first symptom is a widget shipping when the app does.
-    const root = tree('w-nested', { ...CLEAN, 'web/src/Embeds/Booking.mesa': '<button>b</button>\n' })
+    const root = tree('w-nested', { ...CLEAN, 'web/src/embeds/Booking.mesa': '<button>b</button>\n' })
     const { findings } = only(root, 'app-layout')
     expect(findings).toHaveLength(1)
     expect(findings[0].message).toMatch(/peer of web\//)
   })
 
   test('a lowercase widget name is an error, because it is also the tag', () => {
-    const root = tree('w-case', { ...CLEAN, 'widgets/src/Embeds/booking.mesa': '<button>b</button>\n' })
+    const root = tree('w-case', { ...CLEAN, 'widgets/src/embeds/booking.mesa': '<button>b</button>\n' })
     const { findings } = only(root, 'widget-entry-name')
     expect(findings).toHaveLength(1)
     expect(findings[0].message).toMatch(/no dash/)
@@ -2046,7 +2216,7 @@ describe('the widget surface', () => {
   test('a directory of components with no index builds nothing, and says so', () => {
     // Discovery is per directory. Without an index this is another widget's
     // parts — correct for `Shared/`, and wrong for a widget half-written.
-    const root = tree('w-noindex', { ...CLEAN, 'widgets/src/Embeds/Chat/Bubble.mesa': '<p></p>\n' })
+    const root = tree('w-noindex', { ...CLEAN, 'widgets/src/embeds/Chat/Bubble.mesa': '<p></p>\n' })
     const { findings } = only(root, 'widget-entry-name')
     expect(findings).toHaveLength(1)
     expect(findings[0].message).toMatch(/no index\.mesa/)
@@ -5116,6 +5286,24 @@ describe('schema-runs', () => {
     expect(findings).toHaveLength(1)
     expect(findings[0].severity).toBe('error')
     expect(findings[0].message).toContain('non-decreasing')
+  })
+
+  // `litestone advise` exits 0 over its rules unless asked `--strict`, so the
+  // rule read the exit only and every advise rule, warning or error, missed the
+  // gate CI runs (FJS-3808). A suggestion nobody declared stays out: a word
+  // never failed anything.
+  test('an advise rule on a schema litestone opens is a warning naming its grade and id', () => {
+    const root = withLitestone('sr-advise', 'model Thing {\n  id Int @id\n  token String @guarded\n}\n')
+    const { findings } = only(root, 'schema-runs')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].severity).toBe('warn')
+    expect(findings[0].message).toContain('(error) required-guarded-uncreatable')
+    expect(findings[0].message).toContain('Thing.token')
+  })
+
+  test('a suggestion nobody declared is not a finding', () => {
+    const root = withLitestone('sr-opp', 'model Thing {\n  id Int @id\n  deletedAt DateTime?\n}\n')
+    expect(only(root, 'schema-runs').findings).toEqual([])
   })
 
   test('a schema litestone opens passes', () => {

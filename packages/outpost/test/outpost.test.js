@@ -2659,7 +2659,7 @@ describe('what this machine tells basecamp', () => {
     const stop = reporter.start()
     await new Promise(r => setTimeout(r, 50))
     stop()
-    expect(posted).toContain('/cleanup')
+    expect(posted).toContain('/maintenanceRuns')
   })
 
   test('a volume walk longer than the interval is not started again beside itself', async () => {

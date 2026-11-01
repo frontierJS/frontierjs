@@ -45,7 +45,7 @@ function contextOf(nodes: number, executionId: string): ExecutionContext {
   const states:  Record<string, NodeExecutionState> = {}
   for (let i = 0; i < nodes; i++) {
     outputs[`n${i}`] = output(i)
-    states[`n${i}`]  = { status: "completed", attempts: 1, fromCache: false, startedAt: 1, endedAt: 2, output: output(i), logs: [] }
+    states[`n${i}`]  = { status: "completed", attempts: 1, isFromCache: false, startedAt: 1, endedAt: 2, output: output(i), logs: [] }
   }
   return {
     executionId, flowId: "flow", version: "1", trigger: { body: {} },

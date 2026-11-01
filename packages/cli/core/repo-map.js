@@ -53,6 +53,7 @@ import { readProofs, resolveRun } from './proofs.js'
 import { readRegisters, registerLayout, readOverviewRows,
          plain, firstClaim, splitRow } from './registers.js'
 import { RULES }                from './checks.js'
+import { blockedBy, byHand, envCause } from './next.js'
 import { styleBundle }          from './assets.js'    
 import { PROJECTS, GLOBAL, ENV, CAT } from './ports.js'
 
@@ -720,6 +721,27 @@ function issues(root, doc) {
   const labels = {}
   let closed   = 0
 
+  // Who can move a row, read the way `fli next` reads it, so the page and the
+  // ranking agree on how many rows an agent could pick up today. A row waiting
+  // on a ruling is counted under the ruling too, so the two totals overlap.
+  const severityOf = new Map(doc.issues.filter(r => !r.closed).map(r => [r.id, r.severity]))
+  const holds      = new Map()
+  const waitsOn    = new Map()
+  for (const r of doc.issues) {
+    if (r.closed) continue
+    const blockers = blockedBy(r).filter(id => severityOf.has(id))
+    waitsOn.set(r.id, blockers)
+    for (const b of blockers) holds.set(b, (holds.get(b) ?? 0) + 1)
+  }
+  const moveOf = r => {
+    const blockers = waitsOn.get(r.id) ?? []
+    if (blockers.some(b => severityOf.get(b) === 'decision')) return 'ruling'
+    if (blockers.length) return 'row'
+    if (byHand(r)) return 'hand'
+    if (envCause(r)) return 'env'
+    return 'ready'
+  }
+
   for (const r of doc.issues) {
     if (basename(r.file) !== 'ISSUES.md') continue
     // `## S2 — high` names its severity in the register's own words.
@@ -734,6 +756,8 @@ function issues(root, doc) {
       verified: r.verified,
       severity: r.severity,
       files:    r.files,
+      move:     r.severity === 'decision' ? null : moveOf(r),
+      holds:    holds.get(r.id) ?? 0,
     })
   }
 

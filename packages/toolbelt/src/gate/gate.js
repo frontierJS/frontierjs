@@ -135,7 +135,7 @@ export const STANDING_FIELDS = Object.freeze([
  *
  * A caller who can WRITE the column they are graded from is a ladder that grades
  * nothing, which is why auth ships `@allow(write, auth().isAdmin)` on both
- * `role` and `emailVerified`.
+ * `role` and `isEmailVerified`.
  */
 export function gradeStanding(user) {
   if (!isIdentified(user)) return LEVELS.STRANGER

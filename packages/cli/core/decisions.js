@@ -56,6 +56,9 @@ const OPTION      =/^\s+[-*]\s+\*\*([A-Z])\*\*\s*[—–:-]\s*(.+)$/
 const RECOMMEND   = /^\s+[-*]\s+\*\*Recommend(?:ed)?\b:?\s*(.*?)\*\*\s*(?:[—–:-]\s*)?(.*)$/
 const REC_LETTER  = /^([A-Z])(?![A-Za-z])/
 export const QUESTION_ID = /\b[A-Z][A-Z0-9]*-D\d+\b/g
+// A paper that rules by hand writes `Ruled \`FJS-D…\`` right after the lead,
+// struck or not; read later in the prose it is a citation, not a ruling.
+const RULED_LEAD  = /^[\s.—–:-]*Ruled\s+`?[A-Z][A-Z0-9]*-D\d+/
 
 // ─── the read ─────────────────────────────────────────────────────────────────
 
@@ -237,7 +240,7 @@ export function paperQuestions(text, { paper, rel = paper.file } = {}) {
 
 function finish(q) {
   const body  = q.text.join(' ').trim()
-  const ruled = q.struck || /\*\*Answered\b/.test(body)
+  const ruled = q.struck || /\*\*Answered\b/.test(body) || RULED_LEAD.test(body)
   const state = ruled ? 'ruled' : q.options.length >= 2 ? 'decidable' : 'open'
   const { text, last, struck, ...rest } = q
   return { ...rest, body, state }
@@ -247,7 +250,7 @@ function finish(q) {
 // no bold lead is still a question; its first sentence stands in, so a paper
 // written in plainer prose is queued rather than dropped.
 function questionLead(text) {
-  const struck = text.match(/^~~\*\*(.+?)\*\*~~/)
+  const struck = text.match(/^~~\*\*(.+?)\*\*~~/) ?? text.match(/^~~(.+?)~~/)
   if (struck) return { question: struck[1].trim(), struck: true, rest: text.slice(struck[0].length) }
   const bold = text.match(/^\*\*(.+?)\*\*/)
   if (bold) return { question: bold[1].trim(), struck: false, rest: text.slice(bold[0].length) }

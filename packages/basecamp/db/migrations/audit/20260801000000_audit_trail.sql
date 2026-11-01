@@ -1,12 +1,13 @@
--- ============================================================
--- Basecamp — initial schema
---
--- Generated from db/schema.lite, then frozen: a database that applied this
--- file refuses to boot on a changed one, and migrations.snapshot.md fails CI.
--- A schema change is a new file:  bun run db:migrate <label>
--- ============================================================
+-- Litestone migration (database: audit)
+-- Created:   2026-11-01T18:47:45.546Z
+-- Changes:
+--     + AuditTrail  (new table)
 
-PRAGMA foreign_keys = ON;
+
+PRAGMA foreign_keys = OFF;
+BEGIN;
+
+-- ─── new tables ────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS "audit_trail" (
   "operation" TEXT NOT NULL,
@@ -34,3 +35,7 @@ CREATE INDEX IF NOT EXISTS "idx_audit_trail_actorId" ON "audit_trail" ("actorId"
 CREATE INDEX IF NOT EXISTS "idx_audit_trail_model" ON "audit_trail" ("model");
 CREATE INDEX IF NOT EXISTS "idx_audit_trail_correlationId" ON "audit_trail" ("correlationId");
 CREATE INDEX IF NOT EXISTS "idx_audit_trail_episodeId" ON "audit_trail" ("episodeId");
+CREATE INDEX IF NOT EXISTS "idx_audit_trail_createdAt" ON "audit_trail" ("createdAt");
+
+COMMIT;
+PRAGMA foreign_keys = ON;

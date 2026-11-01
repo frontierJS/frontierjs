@@ -131,7 +131,7 @@ class AppFactory extends Factory {
     if (name === 'counter') return {
       name,
       slug:     `${name}-${n}`,
-      type:     'static',
+      kind:     'static',
       status:   'running',
       source:   { kind: 'inline', files: [{ path: 'index.html', content: PASTED_PAGE }] },
       port:     null,
@@ -140,7 +140,7 @@ class AppFactory extends Factory {
     return {
       name,
       slug:     `${name}-${n}`,
-      type:     name === 'worker' ? 'worker' : name === 'scheduler' ? 'cron' : 'container',
+      kind:     name === 'worker' ? 'worker' : name === 'scheduler' ? 'cron' : 'container',
       status:   rng ? rng.pick(['running', 'running', 'running', 'stopped', 'error']) : 'running',
       source:   { kind: 'git', repo: `git@forgejo.local:acme/${name}.git`, branch: 'main' },
       port:     name === 'web' ? 3000 : null,
@@ -178,7 +178,7 @@ class DeploymentFactory extends Factory {
   definition(_seq, rng) {
     const seq    = uid()
     const status = rng
-      ? rng.pick(['success', 'success', 'success', 'failed', 'rolled_back', 'building'])
+      ? rng.pick(['success', 'success', 'success', 'failed', 'rolledBack', 'building'])
       : 'success'
     const sha = (rng ? rng.str(7) : 'abc1234')
     return {
@@ -206,7 +206,7 @@ class JobFactory extends Factory {
     const scheduled = seq % 2 === 0
     return {
       name:           ['Nightly backup', 'Prune images', 'Rotate logs', 'Sync DNS'][seq % 4],
-      kind:           scheduled ? 'scheduled' : 'one_shot',
+      kind:           scheduled ? 'scheduled' : 'oneShot',
       status:         rng ? rng.pick(['pending', 'pending', 'running', 'failed']) : 'pending',
       command:        ['/usr/local/bin/backup.sh', 'docker image prune -af',
                        'logrotate -f /etc/logrotate.conf', 'basecamp dns sync'][seq % 4],
@@ -224,11 +224,11 @@ class SecretFactory extends Factory {
   // key and grepping the raw file for it.
   definition() {
     const n     = uid()
-    const kinds = ['ssh_key', 'registry_auth', 'provider_key']
+    const kinds = ['sshKey', 'registryAuth', 'providerKey']
     const kind  = kinds[n % 3]
     // A provider key names the cloud it opens — the schema refuses one that
     // does not, because a key with no vendor cannot become a Conduit target.
-    const providerKind = kind === 'provider_key' ? 'digitalocean' : null
+    const providerKind = kind === 'providerKey' ? 'digitalocean' : null
     return {
       name:       ['deploy-key', 'registry-auth', 'digitalocean-token'][n % 3] + `-${n}`,
       kind,
@@ -238,10 +238,10 @@ class SecretFactory extends Factory {
       // now asks the vendor, so a seeded key that claimed to be verified would
       // be the one thing the flag is no longer allowed to be — an assertion
       // nobody made.
-      data:       kind === 'provider_key'
+      data:       kind === 'providerKey'
                     ? JSON.stringify({ token: 'seeded-example-not-a-real-token' })
                     : JSON.stringify({ note: 'seeded example — not a real credential', kind }),
-      verifiedAt: kind === 'provider_key' ? null : new Date().toISOString(),
+      verifiedAt: kind === 'providerKey' ? null : new Date().toISOString(),
     }
   }
 }
@@ -281,7 +281,7 @@ class VolumeFactory extends Factory {
       driver:     'local',
       mountPoint: `/var/lib/docker/volumes/${name}/_data`,
       sizeBytes:  rng ? rng.int(8 * 1024 ** 2, 12 * 1024 ** 3) : 512 * 1024 ** 2,
-      inUse,
+      isInUse: inUse,
       // Container NAMES, not App ids — mapping a container back to an App is a
       // guess, and a wrong join puts a volume under the wrong app.
       containers: inUse ? [`${names[n % names.length]}-svc`] : [],
@@ -332,7 +332,7 @@ export class BasecampSeeder extends Seeder {
     // does nothing rather than creating a second Acme with a colliding slug.
     await this.once(db, 'basecamp:example-fleet', async () => {
       const account = await sys.account.create({
-        data: { type: 'organization', status: 'active', slug: 'acme', displayName: 'Acme' },
+        data: { kind: 'organization', status: 'active', slug: 'acme', displayName: 'Acme' },
       })
 
       // ── People ────────────────────────────────────────────────────────
@@ -358,7 +358,7 @@ export class BasecampSeeder extends Seeder {
             accountId:     account.id,
             status:        'active',
             displayName:   person.name,
-            emailVerified: true,
+            isEmailVerified: true,
             // The hub tier, on the first person only — the same rule /setup
             // follows. A seeded fleet where everyone can suspend everyone else
             // would make the hub screens untestable by eye.
@@ -379,7 +379,7 @@ export class BasecampSeeder extends Seeder {
       const bot = await sys.user.create({
         data: {
           email: 'ci-deploy@bots.invalid', name: 'CI deploy', displayName: 'CI deploy',
-          kind: 'bot', status: 'active', accountId: account.id, emailVerified: false,
+          kind: 'bot', status: 'active', accountId: account.id, isEmailVerified: false,
         },
       })
 
@@ -387,7 +387,7 @@ export class BasecampSeeder extends Seeder {
       const workspaces = []
       for (const [name, slug] of [['Acme Platform', 'acme-platform'], ['Skunkworks', 'skunkworks']]) {
         const ws = await sys.workspace.create({
-          data: { accountId: account.id, name, slug, type: 'team' },
+          data: { accountId: account.id, name, slug, kind: 'team' },
         })
 
         // Everyone is in the first workspace; only the owner and one admin are
@@ -587,7 +587,7 @@ export class BasecampSeeder extends Seeder {
             name:        'crm',
             provider:    'example-crm',
             address:     'https://crm.example.test/api',
-            auth:        'api_key',
+            auth:        'apiKey',
             header:      'X-Api-Key',
             secret:      `seeded-not-a-real-key-${index}`,
           },
@@ -633,7 +633,7 @@ export class BasecampSeeder extends Seeder {
             // and an app's own that overrides the environment's of that key.
             const base = { workspaceId: ws.id, environmentId: environment.id }
             await sys.variable.create({ data: { ...base, key: 'LOG_LEVEL', value: environment.tier === 'production' ? 'warn' : 'debug' } })
-            await sys.variable.create({ data: { ...base, key: 'DATABASE_URL', secret: true,
+            await sys.variable.create({ data: { ...base, key: 'DATABASE_URL', isSecret: true,
               secretValue: `postgres://app:seed@db.${environment.slug}.local/app` } })
 
             const apps = await new AppFactory(sys)
@@ -745,19 +745,19 @@ export class BasecampSeeder extends Seeder {
         })
 
         const cards = [
-          { kind: 'server_fleet',  cols: 3, config: {} },
-          { kind: 'stat_counter',  cols: 1, config: { source: 'servers', label: 'Servers' } },
-          { kind: 'deploy_feed',   cols: 2, config: {} },
-          { kind: 'server_health', cols: 1, config: {}, serverId: servers[0]?.id ?? null },
-          { kind: 'app_status',    cols: 1, config: {}, appId: someApp?.id ?? null },
-          { kind: 'job_history',   cols: 2, config: {} },
+          { kind: 'serverFleet',  cols: 3, config: {} },
+          { kind: 'statCounter',  cols: 1, config: { source: 'servers', label: 'Servers' } },
+          { kind: 'deployFeed',   cols: 2, config: {} },
+          { kind: 'serverHealth', cols: 1, config: {}, serverId: servers[0]?.id ?? null },
+          { kind: 'appStatus',    cols: 1, config: {}, appId: someApp?.id ?? null },
+          { kind: 'jobHistory',   cols: 2, config: {} },
         ]
         for (const [position, card] of cards.entries()) {
           // A subject-required card with nothing to point at is left out rather
           // than seeded null: the service would refuse that payload, and a seed
           // that writes rows the API would not is a seed that hides a bug.
-          if (card.kind === 'server_health' && !card.serverId) continue
-          if (card.kind === 'app_status'    && !card.appId)    continue
+          if (card.kind === 'serverHealth' && !card.serverId) continue
+          if (card.kind === 'appStatus'    && !card.appId)    continue
           await sys.dashboardTile.create({ data: { dashboardId: board.id, position, ...card } })
         }
 
@@ -930,12 +930,12 @@ export class BasecampSeeder extends Seeder {
         const production = await sys.environment.findFirst({ where: { workspaceId: workspaces[0].id, tier: 'production' } })
         const site = await sys.app.create({ data: {
           workspaceId: workspaces[0].id, environmentId: production.id, name: 'Harbor Spa', slug: 'harbor-spa',
-          type: 'static', status: 'running',
+          kind: 'static', status: 'running',
           source: { kind: 'git', repo: 'git@forgejo.local:acme/harbor-spa.git', branch: 'main', path: 'site' },
         } })
         const client = await auth.createUser({ email: 'lee@example.com', name: 'Lee Carter', password: PASSWORD })
         await sys.user.update({ where: { id: client.id },
-          data: { status: 'active', displayName: 'Lee Carter', emailVerified: true } })
+          data: { status: 'active', displayName: 'Lee Carter', isEmailVerified: true } })
         await sys.appEditor.create({ data: { appId: site.id, userId: client.id, role: 'edit' } })
         await sys.appEditor.create({ data: { appId: site.id, userId: users[1].id, role: 'publish' } })
       }
@@ -969,8 +969,8 @@ async function seedInstallation(sys, owner, users) {
           label:        p.label,
           hint:         p.hint ?? null,
           defaultValue: p.defaultValue ?? null,
-          required:     p.required === true,
-          secret:       p.secret   === true,
+          isRequired:   p.isRequired === true,
+          isSecret:     p.isSecret   === true,
           generate:     p.generate ?? null,
           position,
         },
@@ -1085,20 +1085,20 @@ async function seedRegistry(sys, workspaceId, index) {
   for (const [repository, size] of repos) {
     const head = `sha256:${repository.replace(/[^a-z0-9]/g, '').slice(0, 12)}head`
     const rows = [
-      { tag: 'v2.14.1', digest: head, sizeBytes: size, inUse: true,  ageDays: 0 },
+      { tag: 'v2.14.1', digest: head, sizeBytes: size, isInUse: true,  ageDays: 0 },
       // The same bytes under a second name. Not a copy — the registry stores
       // these layers once, which is what the aggregate has to know.
-      { tag: 'latest',  digest: head, sizeBytes: size, inUse: false, ageDays: 0 },
-      { tag: 'v2.14.0', digest: `${head}-1`, sizeBytes: size - 1_000_000, inUse: false, ageDays: 1 },
-      { tag: 'v2.13.9', digest: `${head}-2`, sizeBytes: size - 3_000_000, inUse: false, ageDays: 3 },
-      { tag: 'dev',     digest: `${head}-d`, sizeBytes: size + 6_000_000, inUse: true,  ageDays: 0 },
+      { tag: 'latest',  digest: head, sizeBytes: size, isInUse: false, ageDays: 0 },
+      { tag: 'v2.14.0', digest: `${head}-1`, sizeBytes: size - 1_000_000, isInUse: false, ageDays: 1 },
+      { tag: 'v2.13.9', digest: `${head}-2`, sizeBytes: size - 3_000_000, isInUse: false, ageDays: 3 },
+      { tag: 'dev',     digest: `${head}-d`, sizeBytes: size + 6_000_000, isInUse: true,  ageDays: 0 },
     ]
 
     for (const r of rows) {
       await sys.registryImage.create({
         data: {
           workspaceId, repository, tag: r.tag, digest: r.digest,
-          sizeBytes: r.sizeBytes, inUse: r.inUse,
+          sizeBytes: r.sizeBytes, isInUse: r.isInUse,
           pushedAt:   new Date(Date.now() - r.ageDays * 86_400_000 - 840_000).toISOString(),
           pushedBy:   r.tag === 'dev' ? 'remy' : 'ci-bot',
           // The whole mirror was seen at once, which is what a sync is. A
@@ -1130,7 +1130,7 @@ async function seedDependencies(sys, workspaceId, projectId) {
     } })
     await sys.dependencyUse.create({ data: {
       workspaceId, projectId, dependencyId: dep.id, member: r.member, memberPath: r.member.replace('dashboard-', ''),
-      published: true, kind: r.kind ?? 'dependency', declared: r.declared, installed: r.installed, observedAt,
+      isPublished: true, kind: r.kind ?? 'dependency', declared: r.declared, installed: r.installed, observedAt,
     } })
   }
 }

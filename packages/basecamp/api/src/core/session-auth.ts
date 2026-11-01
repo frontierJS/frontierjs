@@ -125,21 +125,21 @@ export function refuseSuspendedLogin(auth: IAuth & { _sessionTtl: string }, db: 
  * say when no row was ever saved. Takes a SYSTEM client: the answer decides what
  * the caller may do, so it cannot be read through a client that caller scoped.
  */
-export async function hubPolicy(sys: any): Promise<{ requireTwoFactorForOwners: boolean; allowApiKeyAuth: boolean; allowBotUsers: boolean }> {
+export async function hubPolicy(sys: any): Promise<{ isTwoFactorRequiredForOwners: boolean; isApiKeyAuthAllowed: boolean; isBotUserAllowed: boolean }> {
   const row = await sys.hubConfig.findFirst({
     where:  { id: 'hub' },
-    select: { requireTwoFactorForOwners: true, allowApiKeyAuth: true, allowBotUsers: true },
+    select: { isTwoFactorRequiredForOwners: true, isApiKeyAuthAllowed: true, isBotUserAllowed: true },
   })
   return {
-    requireTwoFactorForOwners: row?.requireTwoFactorForOwners ?? false,
-    allowApiKeyAuth:           row?.allowApiKeyAuth ?? true,
-    allowBotUsers:             row?.allowBotUsers ?? true,
+    isTwoFactorRequiredForOwners: row?.isTwoFactorRequiredForOwners ?? false,
+    isApiKeyAuthAllowed:           row?.isApiKeyAuthAllowed ?? true,
+    isBotUserAllowed:             row?.isBotUserAllowed ?? true,
   }
 }
 
 /**
  * auth's `requireSecondFactor` predicate: an owner of any workspace owes a
- * second factor while `HubConfig.requireTwoFactorForOwners` is on.
+ * second factor while `HubConfig.isTwoFactorRequiredForOwners` is on.
  *
  * Auth asks only about an account with no confirmed factor, and what it does
  * with a yes is HOLD the session to enrollment, not refuse it. A refusal at
@@ -149,7 +149,7 @@ export async function hubPolicy(sys: any): Promise<{ requireTwoFactorForOwners: 
 export function ownerOwesSecondFactor(db: any) {
   return async function ownerOwesSecondFactor(user: Record<string, any>): Promise<boolean> {
     const sys = db.asSystem()
-    if (!(await hubPolicy(sys)).requireTwoFactorForOwners) return false
+    if (!(await hubPolicy(sys)).isTwoFactorRequiredForOwners) return false
     return sys.workspaceMember.exists({
       where: { userId: user.id, role: 'owner', acceptedAt: { not: null } },
     })

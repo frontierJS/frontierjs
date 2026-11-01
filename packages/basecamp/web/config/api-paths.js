@@ -16,7 +16,7 @@
 // ─── why this is read rather than written ────────────────────────────────
 //
 // It was a hand-kept copy of the service registry and it went stale six times:
-// `audit`, `channels`, `flags`, `api-keys`, `invitations`, and `connections`,
+// `auditEvents`, `notificationChannels`, `flags`, `api-keys`, `invitations`, and `connections`,
 // which was still missing when this was rewritten. Three of those six were
 // registered by a PLUGIN rather than by this app, which is the half no author
 // can be expected to remember — `connections` belongs to junction's channels

@@ -7,11 +7,11 @@
 // nothing. `api/test/services.test.ts` and outpost's own suite hold each name to
 // a flag.
 
-/** The App types a release starts as a container, so each needs an image to
+/** The App kinds a release starts as a container, so each needs an image to
  *  run and a host port to be reached on — the one list, read by the release's
  *  refusal and by `placeApp`'s allocation (`FJS-D1557`). A `static`, `worker`,
  *  `daemon` or `cron` App publishes nothing. */
-export const CONTAINER_TYPES: ReadonlySet<string> = new Set(['container', 'function', 'database'])
+export const CONTAINER_KINDS: ReadonlySet<string> = new Set(['container', 'function', 'database'])
 
 /** The columns, in `App`'s and `Blueprint`'s shared spelling (`containerPort` is `App`'s alone).
  *  The declared residual of `restated-fields` (`FJS-D1438`): `db/test/schema.test.ts`

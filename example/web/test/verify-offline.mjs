@@ -203,7 +203,7 @@ try {
 
   const token = await evaluate(`localStorage.getItem('shop_token')`)
   const auth  = { authorization: 'Bearer ' + token }
-  const ledger = async () => (await (await fetch(`${API}/api/inventory?$limit=1`, { headers: auth })).json()).total
+  const ledger = async () => (await (await fetch(`${API}/api/inventoryMovements?$limit=1`, { headers: auth })).json()).total
 
   await cmd('Page.navigate', { url: UI + '/inventory' })
   await until(`!!document.querySelector('#adjust-form #aj-submit')`, 'the adjustment form')
@@ -262,7 +262,7 @@ try {
 
   // The shelf with the most on it, so a -1 is never the one the service has to
   // refuse. Read from the API rather than from the select, which shows SKUs.
-  const allVariants = await (await fetch(`${API}/api/product-variants?$limit=500`, { headers: auth })).json()
+  const allVariants = await (await fetch(`${API}/api/productVariants?$limit=500`, { headers: auth })).json()
   const fattest = allVariants.data.reduce((a, b) => (b.stock > a.stock ? b : a))
   const fattestVariant = fattest.id
   console.log(`      (working on ${fattest.sku}, ${fattest.stock} on hand)`)
@@ -475,9 +475,9 @@ try {
   console.log('\n  offline — a sheet and its counts, neither of them sent')
 
   const sheetsTotal = async () =>
-    (await (await fetch(`${API}/api/stocktake-sheets?$limit=1`, { headers: auth })).json()).total
+    (await (await fetch(`${API}/api/stocktakeSheets?$limit=1`, { headers: auth })).json()).total
   const countsOf = async (id) =>
-    (await (await fetch(`${API}/api/stocktake-counts?sheetId=${encodeURIComponent(id)}`, { headers: auth })).json())
+    (await (await fetch(`${API}/api/stocktakeCounts?sheetId=${encodeURIComponent(id)}`, { headers: auth })).json())
 
   await cmd('Page.navigate', { url: UI + '/stocktake' })
   await until(`!!document.querySelector('#start-sheet')`, 'the stocktake screen')
@@ -494,7 +494,7 @@ try {
   // counted a fixed number passed once and then posted nothing on every later
   // run, because the close it had just made had moved the shelf to exactly the
   // number it counts — a green that means *this ran before*.
-  const nowVariants = await (await fetch(`${API}/api/product-variants?$limit=500`, { headers: auth })).json()
+  const nowVariants = await (await fetch(`${API}/api/productVariants?$limit=500`, { headers: auth })).json()
   const twoShelves  = nowVariants.data.filter(v => v.stock > 0).slice(0, 2)
     .map((v, i) => ({ id: v.id, stock: v.stock, counted: v.stock + 1 + i }))
   check('there are two shelves to count', twoShelves.length, 2)
@@ -606,7 +606,7 @@ try {
 
   check('the sheet and both counts reached the server', landed, v => v?.total === 2)
   check('a sheet exists under the key the browser made',
-        (await fetch(`${API}/api/stocktake-sheets/${walk.mintedId}`, { headers: auth })).status,
+        (await fetch(`${API}/api/stocktakeSheets/${walk.mintedId}`, { headers: auth })).status,
         200)
   check('the counts point at that sheet and not at a key the server invented',
         (landed?.data ?? []).map(c => c.sheetId),
@@ -672,7 +672,7 @@ try {
   // that would close a sheet counted at a desk closes this one.
 
   const ledgerBeforeClose = await ledger()
-  const closed = await fetch(`${API}/api/stocktake-sheets/${walk.mintedId}`, {
+  const closed = await fetch(`${API}/api/stocktakeSheets/${walk.mintedId}`, {
     method:  'POST',
     headers: { ...auth, 'content-type': 'application/json', 'x-service-method': 'close' },
     body:    '{}',
@@ -688,7 +688,7 @@ try {
   // The replay hazard, asserted rather than assumed: a device that held a close
   // would send it twice, and a stocktake posted twice is a shop that has
   // invented stock. The sheet refuses on its own state.
-  const twice = await fetch(`${API}/api/stocktake-sheets/${walk.mintedId}`, {
+  const twice = await fetch(`${API}/api/stocktakeSheets/${walk.mintedId}`, {
     method:  'POST',
     headers: { ...auth, 'content-type': 'application/json', 'x-service-method': 'close' },
     body:    '{}',
@@ -709,7 +709,7 @@ try {
 
   console.log('\n  offline — two writers, one row')
 
-  const variantUrl = (id) => `${API}/api/product-variants/${id}`
+  const variantUrl = (id) => `${API}/api/productVariants/${id}`
   // A single unwraps its envelope and a list keeps one, so both shapes are
   // read rather than guessed at.
   const unwrap = (b) => (b && typeof b === 'object' && 'data' in b && !Array.isArray(b.data))
@@ -724,7 +724,7 @@ try {
   })
 
   const firstVariant = (await (await fetch(
-    `${API}/api/product-variants?$limit=1`, { headers: auth })).json())?.data?.[0]
+    `${API}/api/productVariants?$limit=1`, { headers: auth })).json())?.data?.[0]
   const vid = firstVariant?.id
   check('a variant to contend over', typeof vid === 'number', true)
 

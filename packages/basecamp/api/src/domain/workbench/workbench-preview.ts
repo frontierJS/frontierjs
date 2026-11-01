@@ -115,7 +115,7 @@ export async function openPreview(app: App, settings: PreviewSettings,
   let appId: string
   try {
     const made = await svc('apps').create({
-      environmentId: env.id, name: 'web', slug: 'web', type: 'static', port: branch.port,
+      environmentId: env.id, name: 'web', slug: 'web', kind: 'static', port: branch.port,
       source: { kind: 'inline', files: [{ path: 'index.html', content: PLACEHOLDER(branch.branch) }] },
     }) as { id: string }
     appId = made.id

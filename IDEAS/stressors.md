@@ -1,12 +1,12 @@
 ---
 id: stressors
-status: assessment
+status: reading
 dated: 2026-09-21
 ---
 
 # Ideas — stressors: products worth trying to build here
 
-**Status: ASSESSMENT.** Dated 2026-09-21. A list of exercises, not a roadmap and
+**Status: READING.** Dated 2026-09-21. A list of exercises, not a roadmap and
 not behavior. Nothing here is committed to. See `VERIFYING.md`.
 
 **Why this is not `reference-library.md`.** That file is a corpus of schemas to

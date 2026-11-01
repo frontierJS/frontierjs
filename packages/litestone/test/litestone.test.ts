@@ -28737,3 +28737,46 @@ describe('@opaque', () => {
     db.$close()
   })
 })
+
+// ─── FJS-3802 — a `file:` URL in a database path env is its path ─────────────
+//
+// `DATABASE_URL=file:/tmp/x.db` is the Prisma/libSQL spelling. Resolved as a
+// relative path it became `<schema dir>/file:/tmp/x.db`, a directory tree named
+// `file:` beside the schema.
+describe('database path: file: URL', () => {
+  test('the client reads a file: URL from path env() as its path', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'litestone-fileurl-'))
+    const target = join(dir, 'x.db')
+    const prior = process.env.FJS3802_DB
+    try {
+      for (const spelling of [`file:${target}`, `file://${target}`]) {
+        process.env.FJS3802_DB = spelling
+        const db = await createClient({
+          schema: `database main { path env("FJS3802_DB", "./never.db") }\nmodel Thing { id Int @id  name String }`,
+          resolveFrom: dir,
+        })
+        db.$close()
+        expect(existsSync(target)).toBe(true)
+        expect(existsSync(join(dir, 'file:'))).toBe(false)
+        rmSync(target, { force: true })
+      }
+    } finally {
+      if (prior === undefined) delete process.env.FJS3802_DB; else process.env.FJS3802_DB = prior
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('the CLI resolver reads the same spellings the same way', async () => {
+    const { resolveDbPath } = await import('../src/tools/cli-helpers.js')
+    process.env.FJS3802_CLI = 'file:/tmp/x.db'
+    try {
+      expect(resolveDbPath({ var: 'FJS3802_CLI' }, null, '/app')).toBe('/tmp/x.db')
+      process.env.FJS3802_CLI = 'file:///tmp/x.db?mode=rwc'
+      expect(resolveDbPath({ var: 'FJS3802_CLI' }, null, '/app')).toBe('/tmp/x.db')
+      process.env.FJS3802_CLI = 'file:./local.db'
+      expect(resolveDbPath({ var: 'FJS3802_CLI' }, null, '/app')).toBe('/app/local.db')
+    } finally {
+      delete process.env.FJS3802_CLI
+    }
+  })
+})

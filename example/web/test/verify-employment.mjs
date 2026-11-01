@@ -45,7 +45,7 @@ import { payAsAt, payAsAtMany, employedAt, weeklyGross, annualGross }
 import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
 import { ratesAsAt, allRatesAsAt, applyBands, contributionsOn, PERCENT_SCALE }
   from '../../api/src/domain/payroll'
-import { sweepPayroll } from './payroll-sweep.mjs'
+import { sweepPayroll } from './verify-payroll-sweep.mjs'
 import { results, report } from './lib/report.mjs'
 
 const sys = db.asSystem()
@@ -60,7 +60,7 @@ const refused = async (fn) => { try { await fn(); return false } catch { return 
 
 // Everything this drive makes is registered here as it is made and swept in the
 // `finally` below — **on the failure path too**, which is the run whose
-// leftovers are hardest to recognize later. `payroll-sweep.mjs` owns the order
+// leftovers are hardest to recognize later. `verify-payroll-sweep.mjs` owns the order
 // and the one hatch under the boundary the books need.
 const fixtures = { runIds: [], employeeIds: [] }
 let failedEarly = null

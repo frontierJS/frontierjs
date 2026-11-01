@@ -716,7 +716,7 @@ try {
     return {
       w: r.width, want, left: r.left, top: r.top, h: r.height,
       screen: document.querySelector('.screen').getBoundingClientRect().left,
-      offCentre: Math.abs(icon.left + icon.width / 2 - (r.left + (r.width - border) / 2)),
+      offCenter: Math.abs(icon.left + icon.width / 2 - (r.left + (r.width - border) / 2)),
       text: getComputedStyle(n.querySelector('.navlink .navlink-text')).opacity,
       group: getComputedStyle(n.querySelector('.nav-group > summary')).opacity,
       groupText: getComputedStyle(n.querySelector('.nav-group > summary .navlink-text')).opacity,
@@ -738,7 +738,7 @@ try {
   const shut = await until(railGeometry, v => v && Math.abs(v.w - v.want) < 1,
     'the collapsed sidebar never settled at --rail-width')
   check('a collapsed sidebar is the kit\'s rail, --rail-width wide', true, JSON.stringify(shut))
-  check('its icons sit centred in it', shut.offCentre < 0.5, `${shut.offCentre.toFixed(2)}px off`)
+  check('its icons sit centered in it', shut.offCenter < 0.5, `${shut.offCenter.toFixed(2)}px off`)
   check('the labels fade and the group glyphs stay',
     shut.text === '0' && shut.groupText === '0' && shut.group === '1', JSON.stringify(shut))
 
@@ -1031,7 +1031,7 @@ try {
   // `drive.example.test` — the hostname created above, so it is the one the
   // screen must name as resolving nowhere.
   console.log('\n  /dns/ — a connected edge account')
-  const cf = await apiPost('/secrets', { name: 'cf-drive', kind: 'provider_key', providerKind: 'cloudflare', data: 'cfat_devtoken' })
+  const cf = await apiPost('/secrets', { name: 'cf-drive', kind: 'providerKey', providerKind: 'cloudflare', data: 'cfat_devtoken' })
   check('a Cloudflare token is accepted as a provider key', cf.status === 201 || cf.status === 200, JSON.stringify(cf.body).slice(0, 160))
   await goto('/dns/')
   await until(`document.querySelector('#edge-status')?.textContent.trim()`, v => v === 'healthy',
@@ -1693,7 +1693,7 @@ try {
   await goto('/secrets/')
   await until(`!!document.querySelector('[aria-label^="Rotate "]')`, v => v, 'no secret offers a rotation')
   const secretsBefore = (await apiGet('/secrets')).body?.data ?? []
-  const verifiedOne = secretsBefore.find(x => x.verifiedAt && x.kind === 'ssh_key')
+  const verifiedOne = secretsBefore.find(x => x.verifiedAt && x.kind === 'sshKey')
   await byLabel(`Rotate ${verifiedOne?.name}`)
   await until(`!!document.getElementById('value-privateKey')`, v => v, 'the rotate drawer never opened')
   await typeIn('#value-privateKey', 'ssh-ed25519 AAAAC3NzaC1ROTATED')
@@ -1728,7 +1728,7 @@ try {
   // rules that deliver through one listed.
   await goto('/channels/')
   await until(`!!document.getElementById('channel-rows')`, v => v, 'the channels screen never rendered')
-  const chans = (await apiGet('/channels')).body?.data ?? []
+  const chans = (await apiGet('/notificationChannels')).body?.data ?? []
   // The seed picks each workspace's kinds at random, so whichever carries a
   // credential — one already stored, or a kind that takes one.
   const slackCh = chans.find(c => c.secretId) ?? chans.find(c => ['slack', 'webhook', 'pagerduty'].includes(c.kind))
@@ -1738,7 +1738,7 @@ try {
   await typeIn('#edit-secret', 'rotated-credential-value')
   await click('#channel-edit-save')
   await until(`!document.getElementById('channel-edit-save')`, v => v, 'the channel drawer never closed')
-  const chAfter = (await apiGet(`/channels/${slackCh?.id}`)).body
+  const chAfter = (await apiGet(`/notificationChannels/${slackCh?.id}`)).body
   check('a channel is renamed from its drawer', chAfter?.name === `${slackCh?.name} ops`, chAfter?.name)
   if (slackCh?.secretId) {
     const chSecret = (await apiGet(`/secrets/${slackCh.secretId}`)).body
@@ -2031,7 +2031,7 @@ try {
   const fleetNow = (await apiGet('/servers')).body?.data ?? []
   const doomed = fleetNow.find(x => x.status !== 'online')
   const keeper = fleetNow.find(x => x.id !== doomed?.id)
-  await apiCall('POST', `/dashboards/${board?.id}`, { kind: 'server_health', serverId: doomed?.id, cols: 1 }, 'addTile')
+  await apiCall('POST', `/dashboards/${board?.id}`, { kind: 'serverHealth', serverId: doomed?.id, cols: 1 }, 'addTile')
   const gone = await apiCall('DELETE', `/servers/${doomed?.id}`)
   check('the tile\'s server is removed', gone.status < 300, `${gone.status}`)
   await goto(`/dashboards/${board?.id}/`)
@@ -2095,15 +2095,15 @@ try {
   await click('#param-add'); await click('#param-add')
   await typeIn('#param-key-0', 'API_TOKEN'); await typeIn('#param-label-0', 'API token')
   await evaluate(`document.querySelector('#param-secret-0')?.click()`)
-  await pickIn('#param-generate-0', 'random_hex_32')
+  await pickIn('#param-generate-0', 'randomHex32')
   await typeIn('#param-key-1', 'PORT'); await typeIn('#param-label-1', 'Port'); await typeIn('#param-default-1', '8080')
   await byLabel('Move parameter 2 up')
   await click('#params-save')
   const withParams = await eventually(async () => (await apiGet(`/blueprints/${bp?.id}`)).body, b => b?.params?.length === 2)
   check('its parameters are saved in the order arranged',
     withParams?.params?.map(p => p.key).join() === 'PORT,API_TOKEN', withParams?.params?.map(p => p.key).join())
-  check('with the secret flag and the generator', withParams?.params?.[1]?.secret === true
-    && withParams?.params?.[1]?.generate === 'random_hex_32', JSON.stringify(withParams?.params?.[1]))
+  check('with the secret flag and the generator', withParams?.params?.[1]?.isSecret === true
+    && withParams?.params?.[1]?.generate === 'randomHex32', JSON.stringify(withParams?.params?.[1]))
   await click('#blueprint-edit')
   await until(`!!document.querySelector('dialog[open] [name=description]')`, v => v, 'the blueprint edit never opened')
   check('the edit does not offer the slug', !(await present('dialog[open] [name=slug]')))
@@ -2320,7 +2320,7 @@ try {
   // Read back through the API each time: a badge that says *snoozed* over a
   // refused call looks exactly like a pass.
   console.log('\n  /alerts/ — snooze')
-  const snoozeRule = ((await apiGet('/alerts')).body?.data ?? [])[0]
+  const snoozeRule = ((await apiGet('/alertRules')).body?.data ?? [])[0]
   check('the seed has an alert rule to snooze', !!snoozeRule)
   await goto('/alerts/')
   await until(`!!document.querySelector('[data-snooze="${snoozeRule.id}"]')`, v => v, 'the rule card offers no Snooze')
@@ -2331,13 +2331,13 @@ try {
   const snoozedBadge = await until(`document.querySelector('[data-snoozed="${snoozeRule.id}"]')?.textContent ?? ''`, t => t,
     'the card never said it was snoozed')
   check('the card says until when', /snoozed until/.test(snoozedBadge), snoozedBadge)
-  const snoozedRow = (await apiGet(`/alerts/${snoozeRule.id}`)).body
+  const snoozedRow = (await apiGet(`/alertRules/${snoozeRule.id}`)).body
   const inMs = Date.parse(snoozedRow?.snoozedUntil ?? '') - Date.now()
   check('the rule is snoozed for an hour, by the server clock', inMs > 55 * 60_000 && inMs <= 60 * 60_000,
     snoozedRow?.snoozedUntil)
   await click(`[data-unsnooze="${snoozeRule.id}"]`)
   await until(`!document.querySelector('[data-snoozed="${snoozeRule.id}"]')`, v => v, 'Unsnooze left the badge up')
-  check('and Unsnooze clears it', (await apiGet(`/alerts/${snoozeRule.id}`)).body?.snoozedUntil === null)
+  check('and Unsnooze clears it', (await apiGet(`/alertRules/${snoozeRule.id}`)).body?.snoozedUntil === null)
 
   // ─── Deploying from a blueprint ────────────────────────────────────────
   // No machine is picked, so this is the app alone; `place` and a release are
@@ -2367,7 +2367,7 @@ try {
   const bpVars = (await apiGet(`/variables?appId=${bpAppId}`)).body
   const bpPw   = (bpVars?.data ?? []).find(v => v.key === 'REDIS_PASSWORD')
   check('the password is a secret variable on the app, and no read carries the value',
-    bpPw?.secret === true && bpPw.value === null
+    bpPw?.isSecret === true && bpPw.value === null
       && !JSON.stringify(bpVars).includes('drive-pw-7c1') && !JSON.stringify(bpApp).includes('drive-pw-7c1'),
     JSON.stringify(bpVars)?.slice(0, 200))
   const drawerGone = await until(`!document.getElementById('blueprint-deploy')`, v => v, 'the drawer stayed open').catch(() => false)
@@ -2403,12 +2403,12 @@ try {
   check('the token URL carries the minted token', (await text('#app-push-token-url')).includes('bcpt_'))
   const pushRow = (await apiGet(`/apps/${gitApp.id}`)).body
   check('the row says push is on and no read carries the secret',
-    pushRow?.deployOnPush === true && !JSON.stringify(pushRow).includes(pushSecret.trim()), String(pushRow?.deployOnPush))
+    pushRow?.isDeployedOnPush === true && !JSON.stringify(pushRow).includes(pushSecret.trim()), String(pushRow?.isDeployedOnPush))
   await until(`document.getElementById('app-push-off') !== null`, v => v, 'the card never offered Turn off')
   await evaluate(`document.getElementById('app-push-off').click()`)
   await until(`document.getElementById('app-push-enable') !== null && !document.getElementById('app-push-secret')`, v => v,
     'turning push off never cleared the keys')
-  check('turning it off clears the row', (await apiGet(`/apps/${gitApp.id}`)).body?.deployOnPush === false)
+  check('turning it off clears the row', (await apiGet(`/apps/${gitApp.id}`)).body?.isDeployedOnPush === false)
 
   // ─── Creation ends in Connect your repository (FJS-D1558) ──────────────
   // The credentials are in the create's answer and nowhere else, so the form
@@ -2440,7 +2440,7 @@ try {
     (await evaluate(`!document.getElementById('create-submit') && !!document.getElementById('connect-once')`)))
   const connectRow = (await apiGet(`/apps/${connectApp?.id}`)).body
   check('the row says push is on and no read carries the secret',
-    connectRow?.deployOnPush === true && !JSON.stringify(connectRow).includes(connectSecret.trim()), String(connectRow?.deployOnPush))
+    connectRow?.isDeployedOnPush === true && !JSON.stringify(connectRow).includes(connectSecret.trim()), String(connectRow?.isDeployedOnPush))
   check('and the machine picked its host port, which no other App there publishes',
     Number.isInteger(connectRow?.port) && connectRow.port >= 10000 && !(connectRow.portsTaken ?? []).includes(connectRow.port), String(connectRow?.port))
   await click('#connect-done')
@@ -2454,7 +2454,7 @@ try {
   // panel says done where it said add these. The seed's machine makes no key,
   // so the hook is the half written, and the sink holds what was sent.
   console.log('\n  /projects/create/ — connected at GitHub')
-  const gh = await apiPost('/secrets', { name: 'gh-drive', kind: 'provider_key', providerKind: 'github', data: 'github_pat_devtoken' })
+  const gh = await apiPost('/secrets', { name: 'gh-drive', kind: 'providerKey', providerKind: 'github', data: 'github_pat_devtoken' })
   check('a GitHub token is accepted as a provider key', gh.status === 201 || gh.status === 200, JSON.stringify(gh.body).slice(0, 160))
   await goto('/projects/create/')
   await until(`document.getElementById('from-repo') !== null`, v => v, 'the create page never offered From a repository')

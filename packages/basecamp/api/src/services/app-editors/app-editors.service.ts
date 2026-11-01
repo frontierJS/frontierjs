@@ -22,7 +22,7 @@ async function siteFromGit() {
   if (typeof appId !== 'string' || !appId) throw new BadRequest('An editor is added to an app — name one with appId')
   const app = await db().app.findFirst({ where: { id: appId } })
   if (!app) throw new NotFound(`App '${appId}' not found`)
-  if (app.type !== 'static' || !isGit(app.source))
+  if (app.kind !== 'static' || !isGit(app.source))
     throw new BadRequest(`App '${app.slug}' is not a static site built from git, so it has no words to edit`)
 }
 

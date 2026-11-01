@@ -291,9 +291,9 @@ export default createService({
     offered()
     const sessionId = body().sessionId
     if (typeof sessionId !== 'string' || !sessionId) throw new BadRequest('transcript needs a sessionId')
-    const row = await db().claudeTranscript.findFirst({ where: { sessionId, subagent: false }, select: { path: true, gone: true } })
+    const row = await db().claudeTranscript.findFirst({ where: { sessionId, isSubagent: false }, select: { path: true, isGone: true } })
     if (!row) throw new NotFound(`${sessionId}: not a session the index lists`)
-    if (row.gone) throw new NotFound(`${sessionId}: Claude Code has deleted this transcript; its spend is still counted`)
+    if (row.isGone) throw new NotFound(`${sessionId}: Claude Code has deleted this transcript; its spend is still counted`)
     const r = readTranscript(row.path)
     if (!r.ok) throw new NotFound(`${sessionId}: ${r.reason}`)
     return r.value

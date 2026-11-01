@@ -21,7 +21,7 @@
 // target `servers.heartbeat` registers — and only forget the row once the outpost
 // says it is gone. Nothing is registered for a server whose outpost has never
 // checked in, and that is a refusal in words rather than a silent local delete.
-// Same posture `channels.test` takes: an action that reported success without
+// Same posture `notificationChannels.test` takes: an action that reported success without
 // leaving the process would be worse than no action, because the row
 // disappearing is then read as evidence.
 //
@@ -92,7 +92,7 @@ const appOfBind = (name: string) => /\/([^/]+)\/data$/.exec(name)?.[1] ?? null
 /**
  * The ids of `bind` rows whose App is still placed on that server (`FJS-D1615`).
  *
- * A stopped App mounts nothing, so `inUse` is false — and removing its
+ * A stopped App mounts nothing, so `isInUse` is false — and removing its
  * directory is deleting its database before the next start.
  */
 async function placedData(volumes: Record<string, unknown>[]): Promise<Set<string>> {
@@ -186,7 +186,7 @@ export default createService({
     const search   = $.reserved.search   as string | undefined
     // The wire carries strings and the column is a boolean; comparing them
     // raw matches nothing and reports an empty list rather than an error.
-    const inUse    = $.query.inUse as string | boolean | undefined
+    const inUse    = $.query.isInUse as string | boolean | undefined
 
     const fleet = await serversOf()
     if (!fleet.size) return { total: 0, limit, offset, data: [] }
@@ -197,7 +197,7 @@ export default createService({
       where: {
         ...parseWhere($.query),
         serverId: { in: serverId ? [serverId] : [...fleet.keys()] },
-        ...(inUse !== undefined ? { inUse: inUse === true || inUse === 'true' } : {}),
+        ...(inUse !== undefined ? { isInUse: inUse === true || inUse === 'true' } : {}),
         ...(search ? { name: { contains: search } } : {}),
       },
       orderBy: callerOrder({ name: 'asc' }),
@@ -238,15 +238,15 @@ export default createService({
 
     const rows = await db().volume.findMany({
       where:  { serverId: { in: [...fleet.keys()] } },
-      select: { serverId: true, sizeBytes: true, inUse: true },
+      select: { serverId: true, sizeBytes: true, isInUse: true },
       limit:  5_000,
     })
 
     let inUse = 0, totalBytes = 0, reclaimableBytes = 0
     const perServer = new Map<string, number>()
-    for (const v of rows as { serverId: string; sizeBytes: number; inUse: boolean }[]) {
+    for (const v of rows as { serverId: string; sizeBytes: number; isInUse: boolean }[]) {
       totalBytes += v.sizeBytes
-      if (v.inUse) inUse++
+      if (v.isInUse) inUse++
       else reclaimableBytes += v.sizeBytes
       perServer.set(v.serverId, (perServer.get(v.serverId) ?? 0) + 1)
     }
@@ -303,7 +303,7 @@ export default createService({
         driver:     reported.driver     ?? 'local',
         mountPoint: reported.mountpoint ?? null,
         sizeBytes:  Math.max(0, Math.round(reported.size_bytes ?? 0)),
-        inUse:      reported.in_use === true,
+        isInUse:      reported.in_use === true,
         containers: Array.isArray(reported.containers) ? reported.containers : [],
         // Docker's own creation time, and the only one that answers "how long
         // has this been lying around" — `discoveredAt` is when Basecamp first
@@ -344,7 +344,7 @@ export default createService({
     // The one refusal that stops somebody deleting a database. Named
     // containers, not a count: "stop the container first" is only actionable
     // if it says which one.
-    if (volume.inUse) {
+    if (volume.isInUse) {
       const containers = (volume.containers as string[] | null) ?? []
       throw new Conflict(
         `'${name}' is mounted by ${containers.length ? containers.join(', ') : 'a running container'}` +
@@ -368,7 +368,7 @@ export default createService({
       throw new BadRequest(`The outpost on '${server}' could not remove '${name}' (${res.error.kind}): ${res.error.message}`)
 
     await db().volume.delete({ where: { id: volume.id } })
-    await recordEvent(volume.serverId as string, 'volume_removed',
+    await recordEvent(volume.serverId as string, 'volumeRemoved',
       `Volume '${name}' removed`, { requested_by: actor(), size_bytes: volume.sizeBytes })
 
     return volume
@@ -387,7 +387,7 @@ export default createService({
     if (serverId && !fleet.has(serverId)) throw new NotFound(`Server '${serverId}' not found`)
 
     const idle = await db().volume.findMany({
-      where: { serverId: { in: serverId ? [serverId] : [...fleet.keys()] }, inUse: false },
+      where: { serverId: { in: serverId ? [serverId] : [...fleet.keys()] }, isInUse: false },
       limit: 1_000,
     }) as Record<string, unknown>[]
     const placed = await placedData(idle)
@@ -433,7 +433,7 @@ export default createService({
         await db().volume.deleteMany({ where: { id: { in: gone.map(v => v.id as string) } } })
         freedBytes += gone.reduce((a, v) => a + ((v.sizeBytes as number) ?? 0), 0)
         forgotten.push(...gone.map(v => v.name as string))
-        await recordEvent(id, 'volumes_pruned',
+        await recordEvent(id, 'volumesPruned',
           `${gone.length} unused volume(s) pruned`, { requested_by: actor(), names: gone.map(v => v.name) })
       }
     }

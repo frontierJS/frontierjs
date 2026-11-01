@@ -1,7 +1,7 @@
 // api/src/domain/payroll/index.ts — the door into payroll.
 //
 // Five files with a strict internal order — `employment` is the leaf, then
-// `payrates`, then `payslip`, then `arrears`, and `payroll` composes all four —
+// `pay-rates`, then `payslip`, then `arrears`, and `payroll` composes all four —
 // and exactly ONE edge leaves the module: `payroll` posts to the books
 // (`../ledger.ts`). That closure is what makes this a module rather than a
 // shelf, and it is what this file exists to keep true.
@@ -22,7 +22,7 @@ export {
 export type { PlainDate, PayWindowRow } from './employment.ts'
 
 // ─── the numbers a payroll is computed FROM, and the band walk ────────────
-export { ratesAsAt, allRatesAsAt, applyBands, contributionsOn, PERCENT_SCALE } from './payrates.ts'
+export { ratesAsAt, allRatesAsAt, applyBands, contributionsOn, PERCENT_SCALE } from './pay-rates.ts'
 
 // ─── one payslip ──────────────────────────────────────────────────────────
 export { periodShare } from './payslip.ts'

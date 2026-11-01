@@ -10,7 +10,7 @@ title: Getting started
   // off, which is a record of somebody having pressed a button rather than of
   // the work being done — it survives the server being deleted, the key being
   // revoked and the project being removed. Every step here is a question the
-  // database already answers, asked fresh on load (SCREENS.md § Phase 11 is
+  // database already answers, asked fresh on load (screens.md § Phase 11 is
   // the ruling; api/src/services/infra/infra.service.ts is the read).
   //
   // So the only thing this screen can do about a step is take you to where the

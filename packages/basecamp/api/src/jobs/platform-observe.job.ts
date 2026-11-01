@@ -16,7 +16,7 @@
 // release, and not a stop.
 
 import { defineJob }      from '@frontierjs/caravan'
-import { runsAsApp }      from './context.ts'
+import { runsAsApp }      from '../domain/job/job-context.ts'
 import { platformConnectorFor } from '../providers/platform/index.ts'
 import { targetFor }      from '../providers/compute/index.ts'
 import { sendVia }        from '../providers/compute/accounts.ts'

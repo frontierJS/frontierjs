@@ -273,12 +273,12 @@ export async function releaseTarget({ root, fliRoot, target = 'default', app = n
     app:     relative(root, dir) || '.',
     serving: serving && {
       releaseId: serving.releaseId, id: serving.id, startedAt: serving.startedAt,
-      actor: serving.actor ?? null, crossesPivot: Boolean(serving.crossesPivot),
+      actor: serving.actor ?? null, isCrossingPivot: Boolean(serving.isCrossingPivot),
     },
     transitions: transitions.map(t => ({
       id: t.id, kind: t.kind, releaseId: t.releaseId, status: t.status,
       startedAt: t.startedAt ?? null, actor: t.actor ?? null,
-      crossesPivot: Boolean(t.crossesPivot),
+      isCrossingPivot: Boolean(t.isCrossingPivot),
       serving: t.id === serving?.id,
     })),
     // Both streams: a refusal is printed and the command may still exit 0

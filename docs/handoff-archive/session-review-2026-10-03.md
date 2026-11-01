@@ -1,6 +1,6 @@
 ---
 id: session-review-2026-10-03
-status: assessment
+status: reading
 dated: 2026-10-03
 ---
 

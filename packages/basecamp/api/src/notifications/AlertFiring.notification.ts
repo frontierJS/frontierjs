@@ -23,7 +23,7 @@ export default defineNotification<AlertPayload>({
     .title(`${p.ruleName} is firing`)
     .body(p.message)
     .action('View alerts', '/alerts/')
-    .context('AlertEvent', p.eventId)
+    .context('Alert', p.eventId)
     .data({ ruleName: p.ruleName, severity: p.severity, message: p.message }),
 
   push: (p) => push()

@@ -267,7 +267,7 @@ try {
   let posture = null
   check('the machine\'s own posture report landed and was graded',
     await until(async () => {
-      posture = await call(`/posture/${first.serverId}`, { ...auth, serviceMethod: 'latest' }).catch(() => null)
+      posture = await call(`/serverPostures/${first.serverId}`, { ...auth, serviceMethod: 'latest' }).catch(() => null)
       return posture?.reported === true
     }, 60_000))
   check('…every control answered, unknown where the box could not read',
@@ -278,7 +278,7 @@ try {
   const environment = (await call('/environments', auth))?.data?.[0]
   const slug = `pasted-${process.pid}`
   const app  = await call('/apps', { ...auth, body: {
-    environmentId: environment?.id, name: 'pasted', slug, type: 'static',
+    environmentId: environment?.id, name: 'pasted', slug, kind: 'static',
     source: { kind: 'inline', files: [
       { path: 'index.html', content: '<!doctype html><title>pasted</title><h1>served off this laptop</h1>' },
     ] },
@@ -341,7 +341,7 @@ try {
   // any path, so `/health` proves the path is asked, not that it is checked.
   const name = `whoami-${process.pid}`
   const box  = await call('/apps', { ...auth, body: {
-    environmentId: environment?.id, name, slug: name, type: 'container',
+    environmentId: environment?.id, name, slug: name, kind: 'container',
     source: { kind: 'image', image: IMAGE },
     port: APP_PORT, containerPort: 80, healthCheck: '/health', cpuLimit: 0.5, memLimitMb: 64,
   } })
@@ -436,7 +436,7 @@ try {
   // before a container holds them (`FJS-D943`), as plain files on the host
   // (`FJS-D1544`).
   const adopt = await call('/apps', { ...auth, body: {
-    environmentId: environment?.id, name: `adopt-${process.pid}`, slug: `adopt-${process.pid}`, type: 'container',
+    environmentId: environment?.id, name: `adopt-${process.pid}`, slug: `adopt-${process.pid}`, kind: 'container',
     source: { kind: 'image', image: IMAGE }, volumePath: '/data',
   } })
   const dataDir = join(OWN, 'apps', String(adopt?.id), 'data')
@@ -472,7 +472,7 @@ try {
   } })
   const archived = async (name) => {
     const made = await call('/apps', { ...auth, body: {
-      environmentId: environment?.id, name: `${name}-${process.pid}`, slug: `${name}-${process.pid}`, type: 'container',
+      environmentId: environment?.id, name: `${name}-${process.pid}`, slug: `${name}-${process.pid}`, kind: 'container',
       source: { kind: 'image', image: IMAGE }, volumePath: '/data', backupDestinationId: dest?.id,
     } })
     await call(`/apps/${made?.id}`, { ...auth, serviceMethod: 'place', body: { serverId: first.serverId, replicaIndex: 0 } })
@@ -511,7 +511,7 @@ try {
   writeFileSync(join(to.dataDir, 'upload.txt'), 'a file beside the database')
   const bare = await upload('app.db', readFileSync(join(from.dataDir, 'app.db')))
   check('a bare .db uploads as a wrapped archive', bare.status === 201 && /\.db\.tar\.gz$/.test(bare.row?.location ?? ''))
-  const swapped = await restoreTo({ backupId: bare.row?.id, overwrite: true })
+  const swapped = await restoreTo({ backupId: bare.row?.id, isOverwriting: true })
   check('…whose Restore replaces that database',
     swapped?.per_file === true && lines(to.dataDir).join() === 'written before the download,written after it')
   check('…and leaves the volume\'s other files', existsSync(join(to.dataDir, 'upload.txt')))
@@ -526,7 +526,7 @@ try {
     userId: me?.id ?? me?.user?.id, name: `deploy-${process.pid}`, scopes: ['apps:read', 'deployments:read', 'deployments:write'],
   } })
   const fliApp = await call('/apps', { ...auth, body: {
-    environmentId: environment?.id, name: `fli-${process.pid}`, slug: `fli-${process.pid}`, type: 'container',
+    environmentId: environment?.id, name: `fli-${process.pid}`, slug: `fli-${process.pid}`, kind: 'container',
     source: { kind: 'git', repo: 'https://git.invalid/nothing.git' },
   } })
   owned.push(fliApp?.id)

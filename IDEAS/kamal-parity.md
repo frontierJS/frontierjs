@@ -1,12 +1,12 @@
 ---
 id: kamal-parity
-status: assessment
+status: reading
 dated: 2026-10-28
 ---
 
 # Idea — Kamal parity: what `fli deploy` shares with Kamal 2, and where FJS leaves it
 
-**Status: ASSESSMENT.** Read 2026-10-28 against Kamal's command list
+**Status: READING.** Read 2026-10-28 against Kamal's command list
 ([view-all-commands](https://kamal-deploy.org/docs/commands/view-all-commands/),
 fetched) and this tree's `fli ? deploy`, `fli ? basecamp` output. Nothing was run on a
 box. Every Kamal claim past the command list comes from `paas-parity.md` § Deploying an

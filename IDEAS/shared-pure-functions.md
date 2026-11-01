@@ -1,12 +1,12 @@
 ---
 id: shared-pure-functions
-status: assessment
+status: reading
 dated: 2026-08-11
 ---
 
 # Idea — What actually belongs in `@frontierjs/toolbelt`
 
-**Status: ASSESSMENT + RANKED WORK.** Dated 2026-08-11. Every claim below was
+**Status: READING + RANKED WORK.** Dated 2026-08-11. Every claim below was
 grepped against the tree and the implementations were read side by side, not
 counted by name (`VERIFYING.md`). Two live defects were found while surveying
 and are filed as `FJS-191` and `FJS-192`; they are not proposals.

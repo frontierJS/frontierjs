@@ -75,7 +75,7 @@ describe('projects.fromRepo makes the five rows', () => {
     expect(made.environment).toMatchObject({ name: 'production', slug: 'production', tier: 'production', isProtected: false })
     // The container port is the seed's last EXPOSE.
     expect(made.app).toMatchObject({
-      name: 'Shop Front', slug: 'shop-front', type: 'container', environmentId: made.environment.id,
+      name: 'Shop Front', slug: 'shop-front', kind: 'container', environmentId: made.environment.id,
       volumePath: '/db', healthCheck: '/health', containerPort: 4100, port: 10000,
     })
     expect(made.app.source).toEqual({ kind: 'git', repo: 'git@github.com:acme/shop.git', branch: 'main', dockerfile: 'FROM oven/bun:1\nEXPOSE 3000\nEXPOSE 4100/tcp' })
@@ -90,7 +90,7 @@ describe('projects.fromRepo makes the five rows', () => {
     expect(by.AUDIT_PATH.value).toBe('/db/audit.db')
     expect(by.NODE_ENV.value).toBe('production')
     expect(by.FRONTIER_PORT_BE.value).toBe('4100')
-    expect(by.ENCRYPTION_KEY.secret).toBe(true)
+    expect(by.ENCRYPTION_KEY.isSecret).toBe(true)
     expect(by.ENCRYPTION_KEY.value).toBeNull()
     expect(by.ENCRYPTION_KEY.secretValue).toMatch(/^[0-9a-f]{64}$/)
     // No Secret row: one copy of the key, on the variable.
@@ -111,7 +111,7 @@ describe('projects.fromRepo makes the five rows', () => {
   })
 
   test('with a server, deploy on push is on and the answer carries the credentials once', async () => {
-    expect(made.app.deployOnPush).toBe(true)
+    expect(made.app.isDeployedOnPush).toBe(true)
     expect(made.push.url).toContain(`/hooks/git/${made.app.id}`)
     expect(made.push.tokenUrl).toBe(`${made.push.url}/${made.push.token}`)
     expect(made.push.secret).toBeTruthy()
@@ -120,12 +120,12 @@ describe('projects.fromRepo makes the five rows', () => {
     expect(JSON.stringify(row)).not.toContain(made.push.token)
   })
 
-  test('`deployOnPush: false` leaves it off, with a server', async () => {
+  test('`isDeployedOnPush: false` leaves it off, with a server', async () => {
     const off = await fromRepo(admin, {
       name: `Quiet ${uniq()}`, repo: 'git@github.com:acme/quiet.git', dockerfile: 'FROM oven/bun:1',
-      serverId: box.id, deployOnPush: false,
+      serverId: box.id, isDeployedOnPush: false,
     })
-    expect(off.app.deployOnPush).toBe(false)
+    expect(off.app.isDeployedOnPush).toBe(false)
     expect(off.push).toBeNull()
   })
 
@@ -224,12 +224,12 @@ describe('a host port is one App\'s on a machine', () => {
     expect(again.port).toBe(placed.port)
   })
 
-  test('every type the release starts as a container is given a port; a static App is not', async () => {
+  test('every kind the release starts as a container is given a port; a static App is not', async () => {
     const apps = env.as(admin).service('apps')
     const made: Record<string, any> = {}
-    for (const type of ['database', 'static']) {
-      const row: any = await apps.create({ environmentId: first.environment.id, name: `${type} ${uniq()}`, slug: `${type}-${uniq()}`, type })
-      made[type] = await apps.call('place', row.id, { serverId: box.id })
+    for (const kind of ['database', 'static']) {
+      const row: any = await apps.create({ environmentId: first.environment.id, name: `${kind} ${uniq()}`, slug: `${kind}-${uniq()}`, kind })
+      made[kind] = await apps.call('place', row.id, { serverId: box.id })
     }
     expect(made.database.port).toBeGreaterThanOrEqual(10000)
     expect(made.static.port).toBeNull()
@@ -287,7 +287,7 @@ describe('readRepoDockerfile', () => {
   })
 })
 
-describe('fromRepo `connect` writes at GitHub (FJS-D1571)', () => {
+describe('fromRepo `isConnecting` writes at GitHub (FJS-D1571)', () => {
   const sink = startGhSink(0)
   const repo = 'git@github.com:sink-owner/app.git'
   const made: any[] = []
@@ -298,7 +298,7 @@ describe('fromRepo `connect` writes at GitHub (FJS-D1571)', () => {
 
   const account = async (name: string, token: string) => {
     const s = await (env.system as any).secret.create({ data: {
-      workspaceId: ws.id, name, kind: 'provider_key', providerKind: 'github', data: JSON.stringify({ token }),
+      workspaceId: ws.id, name, kind: 'providerKey', providerKind: 'github', data: JSON.stringify({ token }),
     } })
     made.push(s)
     await registerAccount(env.app, s, { address: `http://localhost:${sink.port}` })
@@ -306,7 +306,7 @@ describe('fromRepo `connect` writes at GitHub (FJS-D1571)', () => {
   }
   const connect = (who: any, extra: Record<string, unknown> = {}) => {
     const name = `Linked ${uniq()}`
-    return { name, call: fromRepo(who, { name, repo, dockerfile: 'FROM oven/bun:1', serverId: box.id, connect: true, ...extra }) }
+    return { name, call: fromRepo(who, { name, repo, dockerfile: 'FROM oven/bun:1', serverId: box.id, isConnecting: true, ...extra }) }
   }
   const projects = (name: string) => (env.system as any).project.count({ where: { name } })
 

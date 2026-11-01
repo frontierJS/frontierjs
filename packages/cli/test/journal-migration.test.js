@@ -89,11 +89,11 @@ describe('migrationPlan', () => {
   test('every step ends by moving the format, guarded on the one it came from', () => {
     const plan = migrationPlan(1, { machine: MACHINE })
     const ends = plan.statements.filter(st => st.name.endsWith(':format'))
-    expect(ends.map(st => st.name)).toEqual(['1→2:format', '2→3:format', '3→4:format'])
+    expect(ends.map(st => st.name)).toEqual(['1→2:format', '2→3:format', '3→4:format', '4→5:format'])
     expect(plan.statements.at(-1)).toBe(ends.at(-1))
     for (const st of ends)
       expect(st.sql).toMatch(/UPDATE .* SET "formatVersion" = \? WHERE "id" = 'journal' AND "formatVersion" = \?/)
-    expect(ends.map(st => st.params)).toEqual([[2, 1], [3, 2], [4, 3]])
+    expect(ends.map(st => st.params)).toEqual([[2, 1], [3, 2], [4, 3], [5, 4]])
   })
 
   test('3 → 4 needs the machine it records, and refuses without one', () => {
@@ -128,7 +128,7 @@ describe('opening a journal that is behind', () => {
     const db = atFormat1(`${dir}/b.db`)
     await clientFor(db).open({ app: 'shop', host: 'deploy@prod' })
     const d = new Database(db)
-    d.exec(`INSERT INTO "${TABLE.transition}" ("id","kind","app","environment","releaseId","generation","status","crossesPivot","plan")
+    d.exec(`INSERT INTO "${TABLE.transition}" ("id","kind","app","environment","releaseId","generation","status","isCrossingPivot","plan")
             VALUES ('t2','pause','shop','production','r1',1,'running',0,'[]')`)
     d.close()
     expect(rows(db, `SELECT "kind" AS k FROM "${TABLE.transition}" WHERE "id" = 't2'`)[0].k).toBe('pause')

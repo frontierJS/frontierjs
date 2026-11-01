@@ -64,7 +64,7 @@ console.log(`
 
     curl http://localhost:${PORT}/api/products                # 200, the catalog reads at 0
     curl http://localhost:${PORT}/api/orders                  # 401, the ledger does not
-    curl http://localhost:${PORT}/api/shipping-methods        # 200, a storefront must offer these
+    curl http://localhost:${PORT}/api/shippingMethods        # 200, a storefront must offer these
     curl http://localhost:${PORT}/api/discounts               # 401, listing the codes IS the exploit
   ─────────────────────────────────────────────────────────────
 `)

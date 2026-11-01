@@ -422,17 +422,17 @@ export default createService({
   // browser's copy of these lists went stale.
   reboot: () => transition({
     name: 'reboot',
-    kind: 'reboot_requested', message: 'Reboot requested',
+    kind: 'rebootRequested', message: 'Reboot requested',
   }),
 
   drain: () => transition({
     name: 'drain',
-    kind: 'drain_started', message: 'Server drain initiated',
+    kind: 'drainStarted', message: 'Server drain initiated',
   }),
 
   undrain: () => transition({
     name: 'undrain',
-    kind: 'drain_cancelled', message: 'Server drain cancelled',
+    kind: 'drainCancelled', message: 'Server drain cancelled',
   }),
 
   // ── sync — POST /servers/:id  X-Service-Method: sync ─────────────
@@ -440,7 +440,7 @@ export default createService({
     const id     = $.id as string
     const server = await getScoped('server', 'Server')
 
-    await recordEvent(id, 'sync_requested', 'Status sync requested', { requested_by: actor() })
+    await recordEvent(id, 'syncRequested', 'Status sync requested', { requested_by: actor() })
 
     const connector = connectorFor(server.providerKind)
 
@@ -452,10 +452,10 @@ export default createService({
     // logs (`FJS-743`'s shape).
     if (!connector) {
       if (server.providerKind && server.providerKind !== 'custom')
-        await recordEvent(id, 'sync_unsupported',
+        await recordEvent(id, 'syncUnsupported',
           `Basecamp has no connector for ${server.providerKind}`, {})
     } else if (!server.providerId) {
-      await recordEvent(id, 'sync_no_account',
+      await recordEvent(id, 'syncNoAccount',
         'This machine names no provider account, so there is no token to ask with', {})
     } else {
       const targetId = targetFor(connector.kind, server.providerId as string)
@@ -471,8 +471,8 @@ export default createService({
       }
 
       if (failed) {
-        $.app.logger.error('conduit: provider sync failed', { target: targetId, server_id: id, error: failed })
-        await recordEvent(id, 'sync_failed', `Could not read this machine from ${connector.label}`,
+        $.app.logger.error('conduit: provider sync failed', { target: targetId, serverId: id, error: failed })
+        await recordEvent(id, 'syncFailed', `Could not read this machine from ${connector.label}`,
           { target: targetId })
       } else {
         // A vendor that no longer has the machine is an ANSWER and is the one
@@ -482,7 +482,7 @@ export default createService({
         const move     = reported === 'unknown' ? undefined : PROVIDER_MOVES[reported]
 
         if (reported === 'unknown')
-          await recordEvent(id, 'sync_unrecognized',
+          await recordEvent(id, 'syncUnrecognized',
             `${connector.label} reported a state this app does not recognize`, {})
 
         if (reported && move && PROVIDER_TARGET[move] !== server.status) {
@@ -507,11 +507,11 @@ export default createService({
             // caller pressed a button, and the gate, the row policies and the
             // audit actor all still apply to them.
             await db().server.transition(id, move, { system: true })
-            await recordEvent(id, 'status_synced',
+            await recordEvent(id, 'statusSynced',
               `Status synced from provider: ${PROVIDER_TARGET[move]}`,
               { provider_status: reported })
           } else {
-            await recordEvent(id, 'status_sync_ignored',
+            await recordEvent(id, 'statusSyncIgnored',
               `Provider reports '${reported}' — a server at '${server.status}' does not move to '${PROVIDER_TARGET[move]}'`,
               { provider_status: reported, server_status: server.status })
           }
@@ -640,7 +640,7 @@ export default createService({
     // The move, not an update naming the column: the from-list, the authority
     // and the compare-and-swap are one declaration.
     await db().server.transition(server.id, 'provision')
-    await recordEvent(server.id, 'provision_requested',
+    await recordEvent(server.id, 'provisionRequested',
       `Provisioning a ${size} in ${region} at ${connector.label}`,
       { requested_by: actor(), size, region, image })
 
@@ -697,7 +697,7 @@ export default createService({
         where: { id },
         data:  { providerServerId: made.providerServerId },
       })
-      await recordEvent(id, 'provision_created',
+      await recordEvent(id, 'provisionCreated',
         `${connector.label} is building the machine`, { provider_server_id: made.providerServerId })
       return updated
     }
@@ -714,7 +714,7 @@ export default createService({
         if (legal) {
           await db().server.update({ where: { id }, data: { ipAddress: seen.ipAddress } })
           await db().server.transition(id, 'reportProvisioned', { system: true })
-          await recordEvent(id, 'provision_ready',
+          await recordEvent(id, 'provisionReady',
             `The machine is up at ${seen.ipAddress} and is installing its outpost`,
             { ip_address: seen.ipAddress })
         }
@@ -723,7 +723,7 @@ export default createService({
     }
 
     if (step === 'timeout') {
-      await recordEvent(id, 'provision_timeout',
+      await recordEvent(id, 'provisionTimeout',
         'The machine did not come up inside the deadline — it may still exist at the provider',
         { provider_server_id: server.providerServerId })
       return server
@@ -742,7 +742,7 @@ export default createService({
   // `destroyed` — a machine this app believes is gone is one the cloud has
   // confirmed is gone, never one a button claimed.
   //
-  // **A typed confirmation** (`docs/VISION.md` constraint 5): the caller
+  // **A typed confirmation** (`docs/vision.md` constraint 5): the caller
   // sends the machine's name back. Not a checkbox — the friction is the
   // feature, and the thing typed is the thing destroyed, so a stale screen
   // cannot confirm the wrong row.
@@ -761,7 +761,7 @@ export default createService({
       throw new BadRequest('This machine was imported, not provisioned — remove it instead')
 
     await db().server.transition(id, 'destroy')
-    await recordEvent(id, 'destroy_requested',
+    await recordEvent(id, 'destroyRequested',
       `Asked ${connector.label} to destroy this machine`, { requested_by: actor() })
 
     await $.app.jobs.dispatch('server:destroy', { serverId: id, workspaceId: ws() },
@@ -782,7 +782,7 @@ export default createService({
     // the create never finished, and it is destroyed by saying so.
     if (!server.providerServerId) {
       await db().server.transition(id, 'reportDestroyed', { system: true })
-      await recordEvent(id, 'destroy_finished',
+      await recordEvent(id, 'destroyFinished',
         'No machine was ever created at the provider', {})
       return getScoped('server', 'Server', id)
     }
@@ -791,7 +791,7 @@ export default createService({
     await connector.destroy(send, String(server.providerServerId))
 
     await db().server.transition(id, 'reportDestroyed', { system: true })
-    await recordEvent(id, 'destroy_finished',
+    await recordEvent(id, 'destroyFinished',
       `${connector.label} has destroyed this machine`,
       { provider_server_id: server.providerServerId })
 
@@ -910,7 +910,7 @@ export default createService({
   // Not cached and not a table in this repo. The mock wrote DigitalOcean's
   // price list out as three JSX constants and they were wrong before anybody
   // read them — a catalog is the vendor's to state, and the only copy that
-  // cannot drift is the one that is not kept (`docs/PROVISIONING.md` § D3).
+  // cannot drift is the one that is not kept (`docs/provisioning.md` § D3).
   //
   // The account is named by the caller and CONFINED by the read above it:
   // `getScoped` on the secret runs at the caller's own standing, so an account
@@ -942,7 +942,7 @@ export default createService({
     // somewhere to provision, which the wizard can only fail on.
     const providers = computeProviders()
     const accounts = await db().secret.findMany({
-      where:   { kind: 'provider_key', providerKind: { in: providers.map(p => p.kind) } },
+      where:   { kind: 'providerKey', providerKind: { in: providers.map(p => p.kind) } },
       orderBy: { name: 'asc' },
     })
     return {
@@ -1002,7 +1002,7 @@ export default createService({
   // caller's own standing — the gate, the row policies and the workspace
   // tenancy all apply to it — and a server in another workspace answers 404
   // before a series is touched. Only then is the series read through
-  // `asSystem()`, which is the shape `jobs/context.ts` already names: a
+  // `asSystem()`, which is the shape `domain/job/job-context.ts` already names: a
   // system read whose confinement is the read above it, not a hook.
   async metrics() {
     const server = await getScoped('server', 'Server')
@@ -1134,8 +1134,8 @@ export default createService({
 
     if (newStatus !== server.status) {
       await sys.serverEvent.create({
-        data: { serverId: id, kind: 'came_online', message: 'Outpost connected',
-                metadata: { outpost_version: data.outpost_version } },
+        data: { serverId: id, kind: 'cameOnline', message: 'Outpost connected',
+                metadata: { outpostVersion: data.outpost_version } },
       })
     }
 
@@ -1167,7 +1167,7 @@ export default createService({
       // machine lost its pin would go on carrying commands in the clear.
       if (known) await conduit.deregister(target)
       $.app.logger.warn('conduit: outpost not registered — no https URL or no enrolled certificate', {
-        server_id: id, url: data.outpost_url, has_cert: !!server.outpostCert })
+        serverId: id, url: data.outpost_url, hasCert: !!server.outpostCert })
     } else if (pinnable && (known?.address !== data.outpost_url || known?.pinned_cert !== server.outpostCert
                             || known?.auth?.type !== 'signed'
                             || known?.resilience?.deadline_ms !== DEPLOY_TIMEOUT_MS)) {
@@ -1186,7 +1186,7 @@ export default createService({
         registered_at: Date.now(),
         last_seen_at:  Date.now(),
       } as TargetDescriptor)
-      $.app.logger.info('conduit: outpost registered', { server_id: id, url: data.outpost_url })
+      $.app.logger.info('conduit: outpost registered', { serverId: id, url: data.outpost_url })
     } else if (known) {
       // Touch last_seen_at on every other heartbeat (non-critical).
       conduit.register({ ...known, last_seen_at: Date.now() }).catch(() => {})

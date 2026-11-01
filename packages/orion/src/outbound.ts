@@ -43,7 +43,7 @@ interface CredentialTable {
 interface CredentialRow {
   name:      string
   address:   string
-  auth:      "none" | "bearer" | "api_key" | "hmac"
+  auth:      "none" | "bearer" | "apiKey" | "hmac"
   header:    string | null
   encoding:  string | null
   secret?:   string | null
@@ -135,7 +135,7 @@ export function conduitOutbound(opts: {
 function authFor(row: CredentialRow, ref: string) {
   switch (row.auth) {
     case "bearer":  return { type: "bearer", ref }
-    case "api_key": return { type: "api_key", ref, header: row.header ?? "x-api-key" }
+    case "apiKey":  return { type: "api_key", ref, header: row.header ?? "x-api-key" }
     case "hmac":    return { type: "hmac", ref, ...(row.header ? { header_prefix: row.header } : {}) }
     default:        return { type: "none" }
   }

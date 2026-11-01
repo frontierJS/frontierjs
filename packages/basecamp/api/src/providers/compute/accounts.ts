@@ -1,5 +1,5 @@
 // src/providers/compute/accounts.ts
-// A cloud ACCOUNT is a `Secret` of kind `provider_key`, and this file is what
+// A cloud ACCOUNT is a `Secret` of kind `providerKey`, and this file is what
 // turns one into a Conduit target.
 //
 // No model was minted for it. An account is a name, a vendor and a token, which
@@ -32,7 +32,7 @@ import type { ProviderKind }         from '#db/schema.d.ts'
  *  three readers — the write, the ref, and the check that a row is usable. */
 export const TOKEN_FIELD = 'token'
 
-/** `{"token": "…"}` — what a `provider_key` secret holds. A caller may type a
+/** `{"token": "…"}` — what a `providerKey` secret holds. A caller may type a
  *  bare token into a form, so the normalization is here and not in a screen. */
 export function tokenDocument(value: string): string {
   return JSON.stringify({ [TOKEN_FIELD]: value })
@@ -81,7 +81,7 @@ export async function registerAccount(
   app: App, secret: SecretRow, opts: { address?: string } = {},
 ): Promise<string | null> {
   if (!('conduit' in app))return null
-  if (secret.kind && secret.kind !== 'provider_key') return null
+  if (secret.kind && secret.kind !== 'providerKey') return null
 
   const connector = accountConnectorFor(secret.providerKind)
   if (!connector) return null
@@ -114,7 +114,7 @@ export async function registerAllAccounts(app: App, db: any): Promise<number> {
   if (!('conduit' in app))return 0
 
   const accounts = await db.asSystem().secret.findMany({
-    where:  { kind: 'provider_key' },
+    where:  { kind: 'providerKey' },
     select: { id: true, kind: true, providerKind: true },
   })
 
@@ -127,7 +127,7 @@ export async function registerAllAccounts(app: App, db: any): Promise<number> {
       // silent either — a fleet whose provider target is missing answers
       // `target_not_found` on a screen with no explanation otherwise.
       app.logger.warn('accounts: account not registered', {
-        secret_id: row.id, provider: row.providerKind, error: String(err),
+        secretId: row.id, provider: row.providerKind, error: String(err),
       })
     }
   }

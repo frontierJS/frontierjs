@@ -524,7 +524,7 @@ await page.close()
 | `windowSize` | `'1280,900'` | |
 | `args` | `[]` | Further Chrome flags, appended — `--enable-unsafe-extension-debugging` for a drive that loads an extension. `--remote-debugging-port` and `--user-data-dir` are the driver's and are refused |
 
-The handle is `{ navigate, evaluate, waitFor, clickAt, fill, press, type, key, shot, newPage, cmd, send, on, errors, failed, close }`.
+The handle is `{ navigate, evaluate, waitFor, clickAt, hoverAt, fill, press, type, key, shot, newPage, cmd, send, on, errors, failed, close }`.
 `errors` holds what the page threw, its `console.error` calls, and any console
 warning starting `[Mesa]` — a render the framework survived but corrupted.
 `failed` holds `'<status> <url>'` for each response of 400 and above, the

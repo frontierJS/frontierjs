@@ -519,9 +519,9 @@ try {
       .filter(m => String(m.subject ?? '').includes(`-${mint}`) && String(m.subject).startsWith('Invoice REM-'))
     const reminded = () => {
       const db4 = new DatabaseSync(`db/shops/${process.env.SHOP ?? 'flagship'}.db`)
-      const rows = db4.prepare(`SELECT id, reminded FROM invoice WHERE id IN (?, ?, ?)`).all(dueId, paidId, aheadId)
+      const rows = db4.prepare(`SELECT id, isReminded FROM invoice WHERE id IN (?, ?, ?)`).all(dueId, paidId, aheadId)
       db4.close()
-      return Object.fromEntries(rows.map(r => [r.id, r.reminded === 1]))
+      return Object.fromEntries(rows.map(r => [r.id, r.isReminded === 1]))
     }
 
     await sweep()

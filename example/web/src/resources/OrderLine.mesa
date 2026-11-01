@@ -16,5 +16,5 @@
 
   import { createResource } from '@frontierjs/sierra/resource'
 
-  export const orderLines = createResource('order-lines', { model: 'OrderLine' })
+  export const orderLines = createResource('orderLines', { model: 'OrderLine' })
 </script>

@@ -59,8 +59,8 @@ async function buildPage(name, target) {
 
 async function buildWidget(name) {
   const root   = await stage(name)
-  const config = createSierraViteConfig({ target: 'widget', widgets: { dir: 'src/Embeds', prefix: 'fjs-' } })
-  await buildWidgets({ root, dir: 'src/Embeds', outDir: 'dist/embeds', prefix: 'fjs-', plugins: config.plugins ?? [], viteBuild: build })
+  const config = createSierraViteConfig({ target: 'widget', widgets: { dir: 'src/embeds', prefix: 'fjs-' } })
+  await buildWidgets({ root, dir: 'src/embeds', outDir: 'dist/embeds', prefix: 'fjs-', plugins: config.plugins ?? [], viteBuild: build })
   return join(root, 'dist/embeds')
 }
 

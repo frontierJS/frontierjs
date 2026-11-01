@@ -35,6 +35,7 @@ function baseAssertions(rows, browser, allowed) {
     type:     browser.type,
     key:      browser.key,
     clickAt:  browser.clickAt,
+    hoverAt:  browser.hoverAt,
     ok:  (v, label) => rows.push({ name: label, ok: !!v, detail: `got ${JSON.stringify(v)}` }),
     /** Assert on a value that is REACHED rather than one already there. Mesa
      *  flushes its effects on a microtask, so the DOM behind a state change

@@ -90,7 +90,7 @@ export type DiscountRow = {
   endsAt:         string | null
   maxRedemptions: number | null
   redemptions:    number
-  active:         boolean
+  isActive:       boolean
 }
 
 export type ShippingMethodRow = {
@@ -100,7 +100,7 @@ export type ShippingMethodRow = {
   price:       number
   freeOver:    number | null
   position:    number
-  active:      boolean
+  isActive:    boolean
 }
 
 export type TaxRateRow = {
@@ -181,7 +181,7 @@ export function discountProblem(
   audience?: { customer?: Record<string, unknown> | null; declared?: CustomField[] | null },
 ): string | null {
   if (!discount)        return 'That code is not one this shop issued'
-  if (!discount.active) return `${discount.code} is no longer available`
+  if (!discount.isActive) return `${discount.code} is no longer available`
 
   const t = now.getTime()
   if (discount.startsAt && Date.parse(discount.startsAt) > t)
@@ -209,7 +209,7 @@ export function discountProblem(
   // Every branch below fails CLOSED, and each for a different reason:
   //   · no customer yet — a guest basket cannot be shown to be in the audience
   //   · a term on a field this shop no longer declares — the audience the
-  //     merchant wrote is not the audience this would apply, so honouring it
+  //     merchant wrote is not the audience this would apply, so honoring it
   //     would widen the code silently, which is the one failure nothing
   //     downstream can see
   //   · undecidable — the row came through a `select` that dropped a slot
@@ -265,7 +265,7 @@ export function discountAmount(discount: DiscountRow | null | undefined, subtota
  * question is answered once for every screen.
  */
 export function shippingAmount(method: ShippingMethodRow | null | undefined, afterDiscount: number): number {
-  if (!method || !method.active) return 0
+  if (!method || !method.isActive) return 0
   if (method.freeOver != null && afterDiscount >= method.freeOver) return 0
   return method.price
 }
@@ -307,7 +307,7 @@ export function priceBasket(lines: PricedLine[], ctx: MoneyContext = {}): Breakd
     // The label is the METHOD's, present whenever one is chosen — a `Standard`
     // against a zero is the free-over threshold having been met, and that reads
     // correctly without a fourth column saying so.
-    shippingLabel: ctx.shippingMethod?.active ? ctx.shippingMethod.name : null,
+    shippingLabel: ctx.shippingMethod?.isActive ? ctx.shippingMethod.name : null,
     tax,
     taxRate:       rate,
     taxLabel:      rate > 0 ? ctx.taxRate?.label ?? null : null,
@@ -328,7 +328,7 @@ export function priceBasket(lines: PricedLine[], ctx: MoneyContext = {}): Breakd
  */
 export async function defaultTaxRate(client: Client): Promise<TaxRateRow | null> {
   const rows = await client.taxRate.findMany({
-    where:   { active: true, isDefault: true },
+    where:   { isActive: true, isDefault: true },
     orderBy: { id: 'asc' },
     limit:   1,
   }) as TaxRateRow[]
@@ -338,7 +338,7 @@ export async function defaultTaxRate(client: Client): Promise<TaxRateRow | null>
 /** What a shopper may pick from, in the merchant's own order. */
 export async function shippingMethods(client: Client): Promise<ShippingMethodRow[]> {
   return await client.shippingMethod.findMany({
-    where:   { active: true },
+    where:   { isActive: true },
     orderBy: [{ position: 'asc' }, { id: 'asc' }],
   }) as ShippingMethodRow[]
 }

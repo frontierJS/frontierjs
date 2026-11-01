@@ -92,7 +92,7 @@ describe('the fleet sweep', () => {
     const uniq = () => Math.random().toString(36).slice(2, 8)
     const acct = await sys.account.create({ data: { slug: `a-${uniq()}`, displayName: 'A' } })
     // `status: 'active'` is stated, not defaulted: `User.status` defaults to
-    // `pending_verification` and `notifyPeople` skips anybody who is not active,
+    // `pendingVerification` and `notifyPeople` skips anybody who is not active,
     // silently and correctly — a fixture that left the default would assert the
     // absence of a notification and read as a passing test of the wrong thing.
     member = await sys.user.create({ data: {

@@ -101,7 +101,7 @@ describe('restoreSchedules — the clock is rebuilt from the rows', () => {
     const { app, jobs, db } = await makeApp()
     const workspaceId = await workspace(db)
 
-    await db.job.create({ data: { workspaceId, name: 'once', kind: 'one_shot', command: 'true' } })
+    await db.job.create({ data: { workspaceId, name: 'once', kind: 'oneShot', command: 'true' } })
     const stopped = await db.job.create({ data: { workspaceId, name: 'stopped', kind: 'scheduled',
                                                   cronExpression: '0 2 * * *', command: 'true' } })
     await db.job.transition(stopped.id, 'cancel')

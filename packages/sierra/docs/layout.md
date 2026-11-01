@@ -221,7 +221,7 @@ src/
                          skips JS minify and the gzip report — a third of a
                          site's build, spent on chunks the prune deletes. The
                          prune refuses if that prediction kept a chunk.
-    widget-build.js      one self-contained IIFE per widget in src/Embeds/
+    widget-build.js      one self-contained IIFE per widget in src/embeds/
     mcp-build.js         one HTML document per resource file in src/resources/ —
                          an MCP App view, the widget loop one host over: a boot
                          (schemas + relay client) imported FIRST by a generated

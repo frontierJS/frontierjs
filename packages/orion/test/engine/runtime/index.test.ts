@@ -595,7 +595,7 @@ describe("Resumability", () => {
         fetch: {
           status:    "completed",
           attempts:  1,
-          fromCache: false,
+          isFromCache: false,
           startedAt: Date.now() - 500,
           endedAt:   Date.now() - 400,
           output:    { leads: 5 },
@@ -604,7 +604,7 @@ describe("Resumability", () => {
         process: {
           status:    "pending",
           attempts:  0,
-          fromCache: false,
+          isFromCache: false,
           logs:      [],
         },
       },
@@ -975,7 +975,7 @@ describe("Scheduler — events", () => {
     expect(record.status).toBe("completed")
   })
 
-  test("node:completed carries fromCache flag", async () => {
+  test("node:completed carries isFromCache flag", async () => {
     const events: SchedulerEvent[] = []
     const plans = new InMemoryPlanCache()
     plans.set("flow_test", "1.0.0", makeSingleNodePlan())
@@ -990,7 +990,7 @@ describe("Scheduler — events", () => {
 
     const completed = events.find(e => e.type === "node:completed")
     if (completed?.type === "node:completed") {
-      expect(completed.fromCache).toBe(false)
+      expect(completed.isFromCache).toBe(false)
     }
   })
 })

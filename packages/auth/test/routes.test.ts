@@ -136,7 +136,7 @@ describe('POST /auth/register where the app mails a verification', () => {
     expect((await mh.auth.verifySession(session.token))?.email).toBe(address)
 
     const made = await mh.sys.user.findFirst({ where: { email: address } })
-    expect(made.emailVerified).toBe(true)
+    expect(made.isEmailVerified).toBe(true)
     expect(made.name).toBe('Click')
     expect(signedIn(await mh.auth.login(address, 'pw-9')).user.email).toBe(address)
 
@@ -594,7 +594,7 @@ describe('POST /auth/email/verify', () => {
     const after = await h.sys.verification.findMany({ where: { purpose: 'emailVerify' } })
     expect(after.length).toBe(pendingBefore.length)
     const victim = await h.sys.user.findFirst({ where: { email: email('ev-victim') } })
-    expect(victim.emailVerified).toBe(false)
+    expect(victim.isEmailVerified).toBe(false)
   })
 
   test('the real token still verifies, and is consumed', async () => {

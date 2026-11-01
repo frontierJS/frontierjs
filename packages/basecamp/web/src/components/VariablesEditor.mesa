@@ -69,7 +69,7 @@
     try {
       // An app's variable names the app alone; the schema takes the
       // environment from it (`@default(app.environmentId)`).
-      await variables.service.create({ ...(appId ? { appId } : { environmentId }), key: newKey, value: newValue, secret: newSecret })
+      await variables.service.create({ ...(appId ? { appId } : { environmentId }), key: newKey, value: newValue, isSecret: newSecret })
       newKey = ''; newValue = ''; newSecret = false
       await load()
     } catch (e) {
@@ -79,7 +79,7 @@
     }
   }
 
-  function startEdit(v) { editId = v.id; editValue = v.secret ? '' : (v.value ?? '') }
+  function startEdit(v) { editId = v.id; editValue = v.isSecret ? '' : (v.value ?? '') }
 
   async function save(v) {
     error = null; busyId = v.id
@@ -128,31 +128,31 @@
           {#if editId === v.id}
             <form class="cluster" onsubmit|preventDefault={() => save(v)}>
               <Input label="" aria-label={`Value of ${v.key}`} id={`${idPrefix}-edit-${v.key}`} value={editValue}
-                     type={v.secret ? 'password' : 'text'} autocomplete="off"
-                     placeholder={v.secret ? 'New value' : ''}
+                     type={v.isSecret ? 'password' : 'text'} autocomplete="off"
+                     placeholder={v.isSecret ? 'New value' : ''}
                      oninput={(e) => editValue = e.target.value} />
               <Button type="submit" tone="primary" disabled={busyId === v.id}>Save</Button>
               <Button treatment="ghost" onclick={() => editId = null}>Cancel</Button>
             </form>
-          {:else if v.secret && v.id in shown}
+          {:else if v.isSecret && v.id in shown}
             <span class="cluster">
               <code data-revealed>{shown[v.id]}</code>
               <CopyButton text={shown[v.id]} label="Copy" treatment="outlined" size="sm" />
               <Button treatment="ghost" onclick={() => hide(v)}>Hide</Button>
             </span>
-          {:else if v.secret}
+          {:else if v.isSecret}
             <span class="text-muted">secret · set</span>
           {:else}
             <code>{v.value}</code>
           {/if}
         </td>
         <td class="cluster">
-          {#if v.secret && mayReveal && !(v.id in shown) && editId !== v.id}
+          {#if v.isSecret && mayReveal && !(v.id in shown) && editId !== v.id}
             <Button treatment="ghost" data-reveal disabled={busyId === v.id}
                     onclick={() => reveal(v)}>Reveal</Button>
           {/if}
           {#if editId !== v.id}
-            <Button treatment="ghost" onclick={() => startEdit(v)}>{v.secret ? 'Replace' : 'Edit'}</Button>
+            <Button treatment="ghost" onclick={() => startEdit(v)}>{v.isSecret ? 'Replace' : 'Edit'}</Button>
           {/if}
           <Button treatment="ghost" tone="danger" disabled={busyId === v.id}
                   data-confirm={`${v.key} is removed; the next release runs without it.`}

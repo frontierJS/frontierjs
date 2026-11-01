@@ -118,7 +118,7 @@ the lessons' reach, which is the same loss that motivates the move.
 ## The nine (`decision-rules`)
 
 1. **Origin** — removes one: the log restated git, `ISSUES.md` and `DECISIONS.md`.
-2. **Concept** — removes a document kind; no new noun, every destination exists.
+2. **Concept** — removes a document tier; no new noun, every destination exists.
 3. **Complexity** — the volume was added by the `changes-entry` gate, not owed
    by the problem.
 4. **Predictability** — one fewer place a fact might be; each remaining home

@@ -16,7 +16,7 @@
 
   import { createResource } from '@frontierjs/sierra/resource'
 
-  export const payWindows = createResource('pay-windows', { model: 'PayWindow' })
+  export const payWindows = createResource('payWindows', { model: 'PayWindow' })
 </script>
 
 <script>

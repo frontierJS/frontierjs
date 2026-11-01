@@ -29,7 +29,8 @@ import { basecampGateLevel } from '../src/core/gate.ts'
 
 const ROOT      = join(import.meta.dir, '..', '..')
 const SCHEMA    = join(ROOT, 'db', 'schema.lite')
-const MIGRATION = join(ROOT, 'db', 'migrations', 'main', '20260801000000_initial_schema.sql')
+// The current DDL, not the first migration: a migration is history and keeps the spelling an enum had when it was written.
+const MIGRATION = join(ROOT, 'db', 'ddl.snapshot.sql')
 const SRC       = join(ROOT, 'api', 'src')
 
 /** The enum, read out of the schema rather than typed here — a second copy in
@@ -63,7 +64,7 @@ function walk(dir: string, out: string[] = []): string[] {
  * `recordEvent(id, 'x', …)`, the job seam's
  * `recordServerEvent(app, id, 'x', …)`, a direct
  * `serverEvent.create({ data: { kind: 'x' } })`, and a kind CHOSEN at the call
- * — `exitCode === 0 ? 'recipe_ran' : 'recipe_failed'`.
+ * — `exitCode === 0 ? 'recipeRan' : 'recipeFailed'`.
  *
  * The ternary is anchored to the call rather than matched on its own: there
  * are ten snake_case ternaries under `api/src/` and nine of them are about
@@ -83,17 +84,17 @@ function writtenKinds(): Map<string, string[]> {
     const text  = readFileSync(file, 'utf8')
     const short = file.slice(ROOT.length + 1)
 
-    for (const m of text.matchAll(/record(?:Server)?Event\(\s*[^,]+,\s*(?:[^,]+,\s*)?'([a-z_]+)'/g))
+    for (const m of text.matchAll(/record(?:Server)?Event\(\s*[^,]+,\s*(?:[^,]+,\s*)?'([A-Za-z_]+)'/g))
       note(m[1], short)
     for (const m of text.matchAll(
-      /record(?:Server)?Event\(\s*[^,]+,\s*(?:[^,]+,\s*)?[^,()]*\?\s*'([a-z_]+)'\s*:\s*'([a-z_]+)'/g,
+      /record(?:Server)?Event\(\s*[^,]+,\s*(?:[^,]+,\s*)?[^,()]*\?\s*'([A-Za-z_]+)'\s*:\s*'([A-Za-z_]+)'/g,
     )) { note(m[1], short); note(m[2], short) }
     // `serverEvent.create({ data: { serverId, kind: 'x', … } })`, where the
     // literal may be several lines down from the accessor.
-    for (const m of text.matchAll(/serverEvent\.create\(\{[\s\S]{0,240}?kind:\s*'([a-z_]+)'/g))
+    for (const m of text.matchAll(/serverEvent\.create\(\{[\s\S]{0,240}?kind:\s*'([A-Za-z_]+)'/g))
       note(m[1], short)
     // The two named-argument helpers, which pass a kind through an options bag.
-    for (const m of text.matchAll(/kind:\s*'([a-z_]+)',\s*message:/g))
+    for (const m of text.matchAll(/kind:\s*'([A-Za-z_]+)',\s*message:/g))
       note(m[1], short)
   }
   return found
@@ -135,9 +136,9 @@ describe('a machine\'s history is written in one vocabulary', () => {
     // The pair. A column that refused everything would satisfy the row above,
     // and it is one character away from what a bad enum looks like.
     const good = await sys.serverEvent.create({
-      data: { serverId: server.id, kind: 'provision_requested', message: 'fine' },
+      data: { serverId: server.id, kind: 'provisionRequested', message: 'fine' },
     })
-    expect(good.kind).toBe('provision_requested')
+    expect(good.kind).toBe('provisionRequested')
 
     await env.close()
   })

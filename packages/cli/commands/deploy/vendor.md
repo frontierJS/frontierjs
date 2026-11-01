@@ -51,7 +51,7 @@ if (flag.dry) {
   log.dry(`Would write ${GENERATED_DIR}/app-manifest.json`)
   if (linked.length) {
     log.dry(`Would pack ${linked.length} linked dependenc(ies) into ${GENERATED_DIR}/vendor:`)
-    for (const name of linked) echo(`    ${name}`)
+    for (const name of linked) echo(chalk.dim(`    ${name}`))
   } else {
     log.dry('Nothing linked — the manifest and the lockfile would be copied verbatim')
   }
@@ -63,7 +63,7 @@ const result = vendorApp(root, log)
 echo('')
 if (result.vendored.length) {
   log.success(`${GENERATED_DIR}/ written — ${result.packed.length} tarball(s), ${result.vendored.length} spec(s) rewritten`)
-  for (const name of result.vendored) echo(`    ${name}`)
+  for (const name of result.vendored) echo(chalk.dim(`    ${name}`))
 } else {
   log.success(`${GENERATED_DIR}/ written — nothing linked, manifest copied verbatim`)
 }

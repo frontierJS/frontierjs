@@ -67,7 +67,7 @@ title: Volumes
       // whatever fifty rows came back.
       const totals = await volumes.service.invoke('usage', null)
       list.apply({
-        ...(filter === 'all' ? {} : { inUse: filter === 'used' }),
+        ...(filter === 'all' ? {} : { isInUse: filter === 'used' }),
         ...(server ? { serverId: server } : {}),
       })
       if (mine !== inflight.seq) return
@@ -196,7 +196,7 @@ title: Volumes
         <div class="section-header">
           <h2 class="h4">{v.name}</h2>
           <span class="cluster">
-            <Pill tone={v.inUse ? 'success' : 'warning'}>{v.inUse ? 'in use' : 'unused'}</Pill>
+            <Pill tone={v.isInUse ? 'success' : 'warning'}>{v.isInUse ? 'in use' : 'unused'}</Pill>
             <Badge tone="muted">{size(v.sizeBytes)}</Badge>
             <Badge tone="muted">{v.driver}</Badge>
           </span>
@@ -213,7 +213,7 @@ title: Volumes
           <span class="text-sm text-muted">last seen {ago(v.lastSeenAt, 'unknown')}</span>
         </div>
 
-        {#if v.inUse && (v.containers ?? []).length}
+        {#if v.isInUse && (v.containers ?? []).length}
           <p class="text-sm text-muted">
             Mounted by {(v.containers ?? []).join(', ')}
           </p>

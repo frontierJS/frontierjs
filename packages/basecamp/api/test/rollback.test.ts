@@ -1,7 +1,7 @@
 /*
  * rollback.test.ts — putting back what a release replaced.
  *
- * `rollback: success -> rolled_back @gate(5)` was declared on `Deployment`,
+ * `rollback: success -> rolledBack @gate(5)` was declared on `Deployment`,
  * `previousDeploymentId` was chained on every create under a comment saying a
  * rollback would want it, `configSnapshot` recorded what the app looked like at
  * release time — and four screens carried a tone for a state no write in the
@@ -91,7 +91,7 @@ async function anAppWithHistory(runtime: Record<string, unknown> = { cpuLimit: 3
   const slug = `app-${uniq()}`
   const target = await sys.app.create({ data: {
     workspaceId: ws.id, environmentId: environment.id, name: slug, slug,
-    type: 'container', ...runtime } })
+    kind: 'container', ...runtime } })
   await sys.appServer.create({ data: { appId: target.id, serverId: box.id, replicaIndex: 0 } })
 
   const shipped = async (data: Record<string, unknown>) => releaseAt('success', {
@@ -124,7 +124,7 @@ describe('a release is put back', () => {
     const { first, current } = await anAppWithHistory()
     const replacement: any = await roll(admin, current.id)
 
-    expect(await statusOf(current.id)).toBe('rolled_back')
+    expect(await statusOf(current.id)).toBe('rolledBack')
     // A NEW release of the OLD bytes, never a rerun of the old row: a
     // Deployment records what shipped and when, and re-running one would
     // rewrite the fact that somebody rolled back.
@@ -157,7 +157,7 @@ describe('a release is put back', () => {
     const { app: target } = await anAppWithHistory()
     const vars = env.as(admin).service('variables')
     const level = await vars.create({ appId: target.id, key: 'LOG_LEVEL', value: 'debug' }) as any
-    await vars.create({ appId: target.id, key: 'API_TOKEN', value: 'tok-sealed', secret: true })
+    await vars.create({ appId: target.id, key: 'API_TOKEN', value: 'tok-sealed', isSecret: true })
 
     const made: any = await env.as(developer).service('deployments').create({ appId: target.id, toImage: `${target.slug}:v3` })
     const snap = (await (env.system as any).deployment.findUnique({ where: { id: made.id } })).configSnapshot
@@ -214,7 +214,7 @@ describe('what a rollback refuses, before it writes anything', () => {
 
     const theirs = await anAppWithHistory()
     await expect(roll(admin, theirs.current.id)).resolves.toBeTruthy()
-    expect(await statusOf(theirs.current.id)).toBe('rolled_back')
+    expect(await statusOf(theirs.current.id)).toBe('rolledBack')
   })
 
   test('a first release has nothing to go back to, and is LEFT ALONE', async () => {
@@ -226,7 +226,7 @@ describe('what a rollback refuses, before it writes anything', () => {
     const slug = `solo-${uniq()}`
     const target = await sys.app.create({ data: {
       workspaceId: ws.id, environmentId: environment.id, name: slug, slug,
-      type: 'container' } })
+      kind: 'container' } })
     await sys.appServer.create({ data: { appId: target.id, serverId: box.id, replicaIndex: 0 } })
     const only = await releaseAt('success', {
       appId: target.id, workspaceId: ws.id,
@@ -254,7 +254,7 @@ describe('what a rollback refuses, before it writes anything', () => {
     const slug = `noimg-${uniq()}`
     const target = await sys.app.create({ data: {
       workspaceId: ws.id, environmentId: environment.id, name: slug, slug,
-      type: 'container' } })
+      kind: 'container' } })
     await sys.appServer.create({ data: { appId: target.id, serverId: box.id, replicaIndex: 0 } })
     const blank = await releaseAt('success', {
       appId: target.id, workspaceId: ws.id })
@@ -278,7 +278,7 @@ describe('what a rollback refuses, before it writes anything', () => {
       workspaceId: other.id, projectId: otherProject.id, name: 'Production', slug: `e-${uniq()}` } })
     const target = await sys.app.create({ data: {
       workspaceId: other.id, environmentId: otherEnv.id, name: slug, slug,
-      type: 'container' } })
+      kind: 'container' } })
     const theirs = await releaseAt('success', {
       appId: target.id, workspaceId: other.id, toImage: 'x:v1' })
 

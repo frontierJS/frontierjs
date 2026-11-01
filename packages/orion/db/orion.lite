@@ -114,7 +114,9 @@ model FlowVersion {
 // Where the builder drew the nodes. Unversioned: moving a box is not an edit.
 model FlowLayout {
   id        String    @id @default(uuid())
-  flowId    String    @unique
+  // A layout belongs to the flow it was drawn for; the update policy reads
+  // that flow, so a moved key would be graded against the flow it left.
+  flowId    String    @unique @immutable
   flow      Flow      @relation(fields: [flowId], references: [id], onDelete: Cascade)
   layout    Json      @default("{}")
   updatedAt DateTime  @updatedAt
@@ -204,7 +206,7 @@ model RunStep {
   nodeId      String
   status      FlowStepStatus
   attempts    Int         @default(0)
-  fromCache   Boolean     @default(false)
+  isFromCache Boolean     @default(false)
   startedAt   DateTime?
   durationMs  Int?
   output      Json?
@@ -233,6 +235,7 @@ model Wait {
 
   @@gate(8)
   @@index([timeoutAt])
+  @@index([runId])
 }
 
 // ─── What a flow holds ───────────────────────────────────────────────────────
@@ -241,7 +244,7 @@ enum FlowCredentialAuth {
   // A public API: the credential is the address alone.
   none
   bearer
-  api_key
+  apiKey
   hmac
 }
 
@@ -258,7 +261,7 @@ model FlowCredential {
   // The base URL a request's path is joined to.
   address    String              @trim
   auth       FlowCredentialAuth  @default(none)
-  // The header an api_key is sent in, or an hmac signature's header prefix.
+  // The header an apiKey is sent in, or an hmac signature's header prefix.
   header     String?
   // How a request body goes on the wire: json, or form for the APIs that want it.
   encoding   String?             @default("json")

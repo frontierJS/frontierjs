@@ -20,7 +20,7 @@ Every hazard in this package, the full `What bites here`; `CLAUDE.md` keeps the 
   `Credential.totpLastStep` is the replay guard, compared with `<=` so the whole
   past closes rather than one code. The code that CONFIRMED enrollment is spent by
   that same rule, which is the one request where it is certainly still on screen.
-- **`requireSecondFactor` issues a session and holds it, rather than refusing the login** (`FJS-D1008`, `FJS-2554`). `firstFactorProven` is the one place that decides, so every first factor honors it; `Session.enrollmentOnly` rides `verifySession` onto the context and the plugin's `before` hook refuses all but `account.get('me')/totpStatus/reauthenticate/setupTotp/confirmTotp` — `me` because a reload restores the session through it. A new door that issues a session without `firstFactorProven` is a way past it. `test/require-second-factor.test.ts`.
+- **`requireSecondFactor` issues a session and holds it, rather than refusing the login** (`FJS-D1008`, `FJS-2554`). `firstFactorProven` is the one place that decides, so every first factor honors it; `Session.isEnrollmentOnly` rides `verifySession` onto the context and the plugin's `before` hook refuses all but `account.get('me')/totpStatus/reauthenticate/setupTotp/confirmTotp` — `me` because a reload restores the session through it. A new door that issues a session without `firstFactorProven` is a way past it. `test/require-second-factor.test.ts`.
 - **A new password is graded in ONE place, `requireStrongPassword`, and three doors call it first:** `createUser`, `confirmPasswordReset` and `changePassword` (`FJS-2349`). It runs before the token is spent or a row is read, so a refusal (`WeakPasswordError`, 400) leaves a reset link usable. `password: { min }` defaults to 8; an app does not restate the length in front of `createUser`. A password-less `createUser` (an invitation) skips it, an empty string does not. `test/harness.ts` sets `min: 1` so fixtures can sign in with `pw-1` -- `password-policy.test.ts` passes `password: undefined` to grade the real default.
 - **A refused proof inside a live session is 403, never 401.** A 401 is what the
   browser client reads as *this credential is not a session*, and sierra signs
@@ -123,7 +123,7 @@ Every hazard in this package, the full `What bites here`; `CLAUDE.md` keeps the 
   gate is per MODEL, so that alone says *any signed-in caller may write any user
   row*. The fragment ships the two declarations that bound it:
   `@@allow(update, id == auth().id || auth().isAdmin)` for whose row, and
-  `@allow(write, auth().isAdmin)` on `role` and `emailVerified`, the columns
+  `@allow(write, auth().isAdmin)` on `role` and `isEmailVerified`, the columns
   a resolver grades on, and on `email`, which a password reset is keyed by — a
   column the caller can write is not a column a level can be graded from. An
   app's tenant column is the app's, and polices itself the same way. Nothing in this package writes the row as a caller,
@@ -215,7 +215,7 @@ Every hazard in this package, the full `What bites here`; `CLAUDE.md` keeps the 
   `firstFactorProven` and answers `{ signedIn }`; for the other two purposes it
   answers `{ verified }` and issues no session.
 - **Only a `kind: user` signs in, and `issueSession` is where that is refused** (`FJS-D1198`). A `bot` or a `peer` holds API keys only. `toContext` states the kind as `userType`, never the role, and it is the trail's `actorType`. A way to mint a session that does not end in `issueSession` lets a bot sign in.
-- **`Credential.linked` is how "a provider made this account" is told from "the mailbox made it and a provider joined later"** (`FJS-D1011`). `oauthResolve` § 4 and `confirmOAuthLink` write the `oauth:*` row onto an EXISTING account with `linked: true`; § 3 and the proof path's new-user branch write it unmarked. `securedByProvider(creds)` counts only an unmarked `oauth:*` row, and `providerOnly` (magic link) and `confirmPasswordReset` both call it. A new place that attaches a provider to an existing account sets the flag, or that account loses magic-link sign-in and reset (`FJS-2545`).
+- **`Credential.isLinked` is how "a provider made this account" is told from "the mailbox made it and a provider joined later"** (`FJS-D1011`). `oauthResolve` § 4 and `confirmOAuthLink` write the `oauth:*` row onto an EXISTING account with `linked: true`; § 3 and the proof path's new-user branch write it unmarked. `securedByProvider(creds)` counts only an unmarked `oauth:*` row, and `providerOnly` (magic link) and `confirmPasswordReset` both call it. A new place that attaches a provider to an existing account sets the flag, or that account loses magic-link sign-in and reset (`FJS-2545`).
 - **`onRegistered({ user, db })` runs INSIDE the registration** (`FJS-D520`,
   `FJS-1458`): after the row and its credential, before the commit, at every
   door that makes an account, through `registerUser()`. It is where a row-tenanted app creates the Account and

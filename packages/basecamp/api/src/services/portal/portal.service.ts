@@ -61,21 +61,21 @@ const SERVICES: Array<{
   { id: 'search',        name: 'Typesense',  description: 'Full-text search',                config_key: 'providers.search.url',                ui_port: 8108 },
   { id: 'registry',      name: 'Zot',        description: 'Container image registry',        config_key: 'providers.registry.url',              ui_port: 5080 },
   { id: 'git',           name: 'Forgejo',    description: 'Git hosting',                     config_key: 'providers.git.url',                   ui_port: 3000 },
-  { id: 'observability', name: 'Grafana',    description: 'Metrics, logs & traces',          config_key: 'providers.observability.grafana_url', ui_port: 3030 },
+  { id: 'observability', name: 'Grafana',    description: 'Metrics, logs & traces',          config_key: 'providers.observability.grafanaUrl', ui_port: 3030 },
   { id: 'networking',    name: 'NetBird',    description: 'Private mesh networking',         config_key: 'providers.networking.url',            ui_port: 80   },
-  { id: 'integrations',  name: 'Nango',      description: '3rd-party OAuth & integrations',  config_key: 'providers.integrations.nango_url',    ui_port: 3003 },
+  { id: 'integrations',  name: 'Nango',      description: '3rd-party OAuth & integrations',  config_key: 'providers.integrations.nangoUrl',    ui_port: 3003 },
 
   // Hosted. No `ui_port` — there is no screen on this machine to open, and
   // what wires one is a token rather than a URL, which is why `url` reads null
   // for both of these even once they are wired.
   { id: 'edge',          name: 'Edge & DNS', description: 'Zones, records, TLS at the edge', hosted: true },
-  { id: 'cloudSpend',    name: 'Cloud spend', description: 'What the provider is billing',   config_key: 'providers.cloud_spend.api_token',  hosted: true },
+  { id: 'cloudSpend',    name: 'Cloud spend', description: 'What the provider is billing',   config_key: 'providers.cloudSpend.apiToken',  hosted: true },
 ]
 
 /**
  * The adapters a caller may name, for anything that stores one.
  *
- * A `service_health` tile holds a portal id in its config, and a tile
+ * A `serviceHealth` tile holds a portal id in its config, and a tile
  * pointing at an adapter that does not exist is a card that can only ever say
  * "not found". The dashboards service validates against this rather than
  * keeping a second list, which is the same reason an API key's scopes are

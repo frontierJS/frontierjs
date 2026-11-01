@@ -189,7 +189,7 @@ try {
 
   // ── Connected the way the screen connects it ──
   const secret = (await call('/secrets', { body: {
-    name: `cf-${process.pid}`, kind: 'provider_key', providerKind: 'cloudflare', data: CF_TOKEN } })).body
+    name: `cf-${process.pid}`, kind: 'providerKey', providerKind: 'cloudflare', data: CF_TOKEN } })).body
   check('a Cloudflare token is accepted as a workspace account', !!secret?.id, JSON.stringify(secret))
 
   const refused = await edge('sync', {}, 'nothing')
@@ -205,7 +205,7 @@ try {
   const environment = (await call('/environments')).body?.data?.[0]
   const name = `dns-${process.pid}`
   const app  = (await call('/apps', { body: {
-    environmentId: environment?.id, name, slug: name, type: 'container',
+    environmentId: environment?.id, name, slug: name, kind: 'container',
     source: { kind: 'image', image: 'nginx:alpine' }, port: 7129,
   } })).body
   if (!app?.id) throw new Error(`the app was not made: ${JSON.stringify(app)}`)
@@ -216,7 +216,7 @@ try {
   const ingress  = `${app.id}.shop.test`
   const cnameAt  = async () => (await zone('zone-example')).filter(r => r.name === hostname)
   const aAt      = async () => (await zone('zone-shop')).filter(r => r.name === ingress)
-  const domain   = (await call('/domains', { body: { appId: app.id, hostname, proxied: true } })).body
+  const domain   = (await call('/domains', { body: { appId: app.id, hostname, isProxied: true } })).body
   // The Domain's own push has run and been skipped — the app runs nowhere, so
   // there is nothing to point at. Waited out rather than raced.
   await sleep(1500)

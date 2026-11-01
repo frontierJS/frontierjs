@@ -14,5 +14,5 @@
 
   import { createResource } from '@frontierjs/sierra/resource'
 
-  export const invoiceLines = createResource('invoice-lines', { model: 'InvoiceLine' })
+  export const invoiceLines = createResource('invoiceLines', { model: 'InvoiceLine' })
 </script>

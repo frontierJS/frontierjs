@@ -9,7 +9,7 @@
 // boot must not wait on a bucket.
 
 import { defineJob }      from '@frontierjs/caravan'
-import { runsAsApp }      from './context.ts'
+import { runsAsApp }      from '../domain/job/job-context.ts'
 import { reconcileFound } from '../domain/backup/found-replicas.ts'
 import { queueAppArchiveRescan } from './app-archive-rescan.job.ts'
 

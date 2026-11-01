@@ -7,7 +7,7 @@ title: Disk cleanup
   // The pair to /recipes/. A recipe is a script and nothing can bound it; a
   // sweep names targets from a list the API owns, so the destructive thing an
   // operator does weekly needs no arbitrary code. The checkboxes are fetched
-  // from `cleanup.targets` rather than typed here, which is what stops this
+  // from `maintenanceRuns.targets` rather than typed here, which is what stops this
   // screen offering something the service would refuse.
   //
   // **Every number on this page was measured by Docker.** The mock multiplied a
@@ -19,7 +19,7 @@ title: Disk cleanup
   import { session } from '../../lib/session.js'
   import { ago }     from '../../lib/datetime.js'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
-  import { cleanup } from '../../resources/MaintenanceRun.mesa'
+  import { maintenanceRuns } from '../../resources/MaintenanceRun.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Bar        from '@frontierjs/ui/components/display/Bar.mesa'
@@ -42,7 +42,7 @@ title: Disk cleanup
   let loading = true
 
   // The trend the answer carries, and the list of what each line is called —
-  // both from `cleanup.usage`, never restated here. `readings` is the
+  // both from `maintenanceRuns.usage`, never restated here. `readings` is the
   // declaration and `s.trend` is what the store actually holds for this
   // machine, so a series nothing has written yet is a missing line rather than
   // a flat one at zero.
@@ -67,10 +67,10 @@ title: Disk cleanup
       // The vocabulary is fetched once and then reused — it is a property of
       // the deployment, not of the workspace.
       if (!targets.length) {
-        targets = (await cleanup.service.invoke('targets', null)).targets
+        targets = (await maintenanceRuns.service.invoke('targets', null)).targets
         picked  = targets.filter(t => t.defaultOn).map(t => t.target)
       }
-      const u = await cleanup.service.invoke('usage', null)
+      const u = await maintenanceRuns.service.invoke('usage', null)
       if (mine !== inflight.seq) return
       usage = u
     } catch (e) {
@@ -85,12 +85,12 @@ title: Disk cleanup
 
   // The last ten sweeps, live: a run the outpost finishes moves its row here.
   // `usage` is not rows of any table, so the handler below re-asks it.
-  const historyList = cleanup.tethered({ state: 'local', directives: { limit: 10, orderBy: '-createdAt' } })
+  const historyList = maintenanceRuns.tethered({ state: 'local', directives: { limit: 10, orderBy: '-createdAt' } })
   $: history = historyList.rows
 
   // A report from any outpost, and every step of a sweep, land here as a push.
   const READS = new Set(['get', 'find', 'usage', 'targets'])
-  const off = cleanup.service.on('*', (method) => {
+  const off = maintenanceRuns.service.on('*', (method) => {
     if (READS.has(method)) return
     load()
   })
@@ -120,7 +120,7 @@ title: Disk cleanup
   async function sweep(serverId) {
     error = null; busy = serverId ?? 'fleet'
     try {
-      const res = await cleanup.service.invoke('run', null, {
+      const res = await maintenanceRuns.service.invoke('run', null, {
         ...(serverId ? { serverId } : {}),
         targets: picked,
       })

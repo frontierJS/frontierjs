@@ -126,7 +126,7 @@ export function transitionId({ kind, app, environment, fromReleaseId, releaseId,
 /**
  * Build the journal rows. Writes nothing — that is 1e.
  *
- * `crossesPivot` is recorded rather than re-derived later, because what matters
+ * `isCrossingPivot` is recorded rather than re-derived later, because what matters
  * afterwards is the answer the operator was shown and agreed to, not the answer
  * a classifier gives once the schema has moved on. **Unknown counts as a
  * contract**, which is the fail-closed direction the whole Release design takes.
@@ -142,7 +142,7 @@ export function planTransition({
   // Stated only where the derivation below would be a claim about the wrong
   // thing: a pause moves no schema, so *unknown counts as a contract* would
   // record a pivot crossing that nothing crossed.
-  crossesPivot  = null,
+  isCrossingPivot  = null,
 } = {}) {
   if (!release?.id) throw new Error('planTransition needs a minted Release')
 
@@ -183,7 +183,7 @@ export function planTransition({
       fromReleaseId,
       generation,
       status:        'planned',
-      crossesPivot:  crossesPivot ?? release.pivot !== 'expand',
+      isCrossingPivot:  isCrossingPivot ?? release.pivot !== 'expand',
       plan: {
         formatVersion: PLAN_FORMAT,
         attempt,

@@ -326,7 +326,7 @@ check('a bad email is refused in the seed’s own words',
 check('the refusal did not place an order',
       await evaluate(`!document.querySelector('#receipt')`), true)
 
-const stockBefore = (await (await api('/product-variants?$limit=200')).json())
+const stockBefore = (await (await api('/productVariants?$limit=200')).json())
   .data.find(v => v.sku === chosenSku).stock
 
 // The browser's own basket, read before checkout closes it and cart.js drops
@@ -356,7 +356,7 @@ check('the order is placed and the reference shown',
 check('the basket is gone from the header',
       await evaluate(`!document.querySelector('#nav-basket-count')`), true)
 
-const stockAfter = (await (await api('/product-variants?$limit=200')).json())
+const stockAfter = (await (await api('/productVariants?$limit=200')).json())
   .data.find(v => v.sku === chosenSku).stock
 check('stock came down by what was bought', stockBefore - stockAfter, 2)
 
@@ -374,7 +374,7 @@ check('the guest became exactly one customer, lowercased',
 const reference = await evaluate(
   `document.querySelector('#receipt')?.innerText.match(/ORD-[A-Z0-9]{6}/)?.[0] ?? null`)
 const placed = (await (await asStaff(`/orders?reference=${reference}`)).json()).data?.[0]
-const billed = (await (await asStaff(`/order-lines?orderId=${placed?.id}&$orderBy=id`)).json()).data ?? []
+const billed = (await (await asStaff(`/orderLines?orderId=${placed?.id}&$orderBy=id`)).json()).data ?? []
 
 check('the order records what was bought', billed.length, 1)
 check('…the variant it was bought from', billed[0]?.sku, chosenSku)
@@ -394,7 +394,7 @@ check('…and the lines add up to the subtotal',
 // @@gate(0.8.8.8) and `order-lines` declares find and get — so there is no
 // door for a caller to add one through. 405 at the service, before the Data
 // boundary is ever asked.
-const forged = await api('/order-lines', {
+const forged = await api('/orderLines', {
   method:  'POST',
   headers: { 'content-type': 'application/json' },
   body:    JSON.stringify({ orderId: placed?.id, sku: 'FORGED', description: 'free',

@@ -28,7 +28,7 @@ title: Payroll
   import { day, span } from '@/lib/datetime.js'
   import { toneFor } from '@/lib/status-tone.js'
   import { session } from '@frontierjs/sierra/resource'
-  import { money } from '../../lib/money.js'
+  import { money } from '@/lib/money.js'
 
   import Alert               from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button              from '@frontierjs/ui/components/forms/Button.mesa'

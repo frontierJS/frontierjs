@@ -43,7 +43,7 @@
       //     100, which is an empty list and not an error (ISSUES FJS-109).
       // VARIANTS, not products: "can this be ordered today" is a question
       // about a shelf, and a product family has no stock of its own.
-      live  = await client.service('product-variants').findData({}, { limit: 500 })
+      live  = await client.service('productVariants').findData({}, { limit: 500 })
       console.log(live)
       state = 'ready'
     } catch {
@@ -55,7 +55,7 @@
 
   // Two reasons a row is not orderable and they are different facts: retired
   // is a decision, sold out is a count. Both fail the same test here.
-  const sellable = live.filter(v => v.active && v.stock > 0)
+  const sellable = live.filter(v => v.isActive && v.stock > 0)
 </script>
 
 <section class="stack" id="live-stock">

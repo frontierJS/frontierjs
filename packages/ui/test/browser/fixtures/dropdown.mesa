@@ -14,6 +14,7 @@
   import DropdownItem      from '../../../components/overlay/DropdownItem.mesa'
   import DropdownGroup     from '../../../components/overlay/DropdownGroup.mesa'
   import DropdownSeparator from '../../../components/overlay/DropdownSeparator.mesa'
+  import DropdownSubmenu   from '../../../components/overlay/DropdownSubmenu.mesa'
 
   export let placement = 'bottom-start'
   export let side      = 'bottom-center'   // the menu at the end of the page, scrolled to mid-viewport
@@ -150,3 +151,23 @@
 
 <!-- A focusable target for the click-away path: a click that dismisses the menu must leave focus on it. -->
 <input type="text" id="dd-outside-input" aria-label="Elsewhere field" style="position: fixed; top: 0; left: 0; width: 8rem">
+
+<!--
+  A menu with a submenu, which itself holds one: Export opens PDF/CSV, and
+  More inside it opens Zip. The panels sit beside their rows, so the spec
+  reads ArrowRight/ArrowLeft between levels and a press across all three.
+-->
+<DropdownMenu>
+  {#snippet trigger()}
+    <button type="button" class="btn" id="dd-sub">Sub</button>
+  {/snippet}
+  <DropdownItem id="sub-new" onclick={pick('new')}>New</DropdownItem>
+  <DropdownSubmenu heading="Export" id="sub-export">
+    <DropdownItem id="sub-pdf" onclick={pick('pdf')}>PDF</DropdownItem>
+    <DropdownItem id="sub-csv" onclick={pick('csv')}>CSV</DropdownItem>
+    <DropdownSubmenu heading="More" id="sub-more">
+      <DropdownItem id="sub-zip" onclick={pick('zip')}>Zip</DropdownItem>
+    </DropdownSubmenu>
+  </DropdownSubmenu>
+  <DropdownItem id="sub-last" onclick={pick('last')}>Last</DropdownItem>
+</DropdownMenu>

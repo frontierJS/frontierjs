@@ -125,26 +125,26 @@ if (flag.json) {
   return
 }
 
+// One tone per status, the same everywhere.
 const mark = {
-  level:       '✓ level',
-  ahead:       '↑ unreleased',
-  behind:      '↓ behind registry',
-  unpublished: '· never published',
-  'no-such-tag': `· no ${flag.tag} tag`,
-  error:       '! lookup failed',
+  level:       chalk.green('✓ level'),
+  ahead:       chalk.yellow('↑ unreleased'),
+  behind:      chalk.red('↓ behind registry'),
+  unpublished: chalk.dim('· never published'),
+  'no-such-tag': chalk.dim(`· no ${flag.tag} tag`),
+  error:       chalk.red('! lookup failed'),
 }
 
 const width = Math.max(...states.map(s => s.name.length))
 
 echo('')
-echo(`  Workspace: ${wsRoot}`)
-echo(`  dist-tag:  ${flag.tag}\n`)
+echo(`  ${chalk.bold('Workspace')}  ${chalk.dim(wsRoot)}  ${chalk.dim(`·  dist-tag ${flag.tag}`)}\n`)
 
 for (const s of states) {
   const local  = s.local.padEnd(10)
   const remote = (s.remote || '—').padEnd(10)
-  echo(`  ${s.name.padEnd(width)}  local ${local}  npm ${remote}  ${mark[s.status]}`)
-  if (s.error) echo(`  ${' '.repeat(width)}  ${s.error}`)
+  echo(`  ${chalk.bold(s.name.padEnd(width))}  ${chalk.dim('local')} ${local}  ${chalk.dim('npm')} ${remote}  ${mark[s.status]}`)
+  if (s.error) echo(`  ${' '.repeat(width)}  ${chalk.red(s.error)}`)
 }
 echo('')
 

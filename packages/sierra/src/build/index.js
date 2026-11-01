@@ -60,7 +60,7 @@ import { beginBuildImports, importAppModule } from './app-import.js'
  * @property {'spa'|'static'} [render='spa']
  * @property {string} [outDir='dist/client']
  * @property {{ dir?: string, outDir?: string, prefix?: string, minify?: boolean }} [widgets]
- *   — the `widget` target: where the widgets are (default `src/Embeds`), where
+ *   — the `widget` target: where the widgets are (default `src/embeds`), where
  *   their scripts go (default `dist/embeds`), and the tag/class prefix every
  *   one of them takes (e.g. `mt-`). Built by `sierra widgets`, not by `vite build`.
  * @property {{ staticData?: boolean }} [dev]

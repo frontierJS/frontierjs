@@ -22,7 +22,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | Model | Read | Create | Update | Delete |
 | --- | --- | --- | --- | --- |
 | `Account` | 6 OWNER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
-| `AlertEvent` | 2 READER | 8 SYSTEM | 4 USER | 8 SYSTEM |
+| `Alert` | 2 READER | 8 SYSTEM | 4 USER | 8 SYSTEM |
 | `AlertRule` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `AlertRuleChannel` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `ApiKey` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
@@ -52,7 +52,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `Domain` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `DomainRoute` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Environment` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
-| `FeatureFlag` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `Flag` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `FlagOverride` | 2 READER | 4 USER | 4 USER | 4 USER |
 | `fleetByProvider` *(view)* | 2 READER | — *no writes* | — *no writes* | — *no writes* |
 | `Flow` | 4 USER | 4 USER | 4 USER | 5 ADMINISTRATOR |
@@ -105,7 +105,7 @@ A policy compiles into the WHERE clause. It never raises — a wrong one is an
 empty result with a 200, so read these as "which rows", not "which callers".
 An operation with no `@@allow` is unrestricted at this layer.
 
-### `AlertEvent`
+### `Alert`
 
 - deny **read** — `!check(rule, tenancy)` — "Outside your workspaceId"
 - deny **create** — `!check(rule, tenancy)` — "Outside your workspaceId"
@@ -339,7 +339,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
-### `FeatureFlag`
+### `Flag`
 
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
@@ -671,7 +671,7 @@ rather than refusing the row.
 | `ApiKey` | `usageDate` | `@system` |
 | `ApiKey` | `usesOnDate` | `@system` |
 | `App` | `status` | `@system` |
-| `App` | `deployOnPush` | `@system` |
+| `App` | `isDeployedOnPush` | `@system` |
 | `App` | `pushSecret` | `@encrypted` |
 | `App` | `pushTokenHash` | `@guarded @system` |
 | `App` | `pushActorId` | `@system` |
@@ -729,7 +729,7 @@ rather than refusing the row.
 | `Server` | `enrollTokenHash` | `@guarded` |
 | `Session` | `token` | `@guarded` |
 | `User` | `email` | `@allow(write, auth().isSystemAdmin)` |
-| `User` | `emailVerified` | `@allow(write, auth().isAdmin)` |
+| `User` | `isEmailVerified` | `@allow(write, auth().isAdmin)` |
 | `User` | `accountId` | `@allow(write, auth().isSystemAdmin)` |
 | `User` | `kind` | `@system` |
 | `User` | `status` | `@allow(write, auth().isSystemAdmin)` |
@@ -772,7 +772,7 @@ caller at once. Everything reachable from the target seals with it.
 | `Deployment` | `status` | `succeed` | building → success | **application** | — | — |
 | `Deployment` | `status` | `fail` | pending, building → failed | **application** | — | — |
 | `Deployment` | `status` | `cancel` | pending, building → cancelled | caller | — | — |
-| `Deployment` | `status` | `rollback` | success → rolled_back | caller | 5 ADMINISTRATOR | — |
+| `Deployment` | `status` | `rollback` | success → rolledBack | caller | 5 ADMINISTRATOR | — |
 | `Flow` | `status` | `activate` | draft, paused → active | caller | 5 ADMINISTRATOR | — |
 | `Flow` | `status` | `pause` | active → paused | caller | — | — |
 | `Flow` | `status` | `archive` | draft, active, paused → archived | caller | — | — |

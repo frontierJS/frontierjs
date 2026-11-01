@@ -42,7 +42,7 @@
 
       // Every plan still on sale, with its open window's price — `currentPrice`
       // is `@from` on the model, so this is ONE request and no join.
-      const list = await client.service('plans').find({ active: true }, { limit: 50 })
+      const list = await client.service('plans').find({ isActive: true }, { limit: 50 })
       const rows = list?.data ?? []
 
       const seen = []

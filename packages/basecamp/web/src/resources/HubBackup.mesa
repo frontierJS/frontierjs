@@ -1,0 +1,13 @@
+<script module>
+  // src/resources/HubBackup.mesa — the Resource layer.
+  //
+  // `model:` is stated on purpose: the hub's archives are `AppBackup` rows on the
+  // hub App (`FJS-D1606`), the same model `appBackups` reads, and the two doors
+  // stand differently (this one is system-admin only).
+  //
+  // Hub tier, like Hub.mesa: an archive is of the whole installation, and the
+  // service is behind `requireSystemAdmin`.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const hubBackups = createResource('hubBackups', { model: 'AppBackup' })
+</script>

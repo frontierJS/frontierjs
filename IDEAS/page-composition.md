@@ -1,12 +1,12 @@
 ---
 id: page-composition
-status: assessment
+status: reading
 dated: 2026-08-09
 ---
 
 # Idea — Page composition: the tier `@frontierjs/css` never built
 
-**Status: ASSESSMENT + PROPOSAL. UNBUILT.** Dated 2026-08-09. The *exists today*
+**Status: READING + PROPOSAL. UNBUILT.** Dated 2026-08-09. The *exists today*
 claims were read off `packages/css/src/` and `vocabulary.js` on that date;
 everything under *Proposed* is a suggestion, not a ruling, and the names are
 placeholders. Do not cite the proposed sections as behavior — see `VERIFYING.md`.

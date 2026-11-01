@@ -51,6 +51,7 @@ flags:
 // module, so a free identifier parses clean and throws on the first run.
 const { resolve } = await import('node:path')
 
+const { plural } = await import(resolve(global.fliRoot, 'core/text.js'))
 const { RULES, runChecks, formatFindings, applyFixes,
         BASELINE_FILE, readBaseline, gradeBaseline, writeBaseline, workspaceChecks } =
   await import(resolve(global.fliRoot, 'core/checks.js'))
@@ -58,7 +59,8 @@ const { RULES, runChecks, formatFindings, applyFixes,
 if (flag.list) {
   echo('')
   for (const r of RULES) {
-    echo(`  ${r.severity === 'error' ? '✗' : '⚠'}  ${r.id.padEnd(22)} ${r.title}`)
+    const mark = r.severity === 'error' ? chalk.red('✗') : chalk.yellow('⚠')
+    echo(`  ${mark}  ${chalk.bold(r.id.padEnd(22))} ${chalk.dim(r.title)}`)
   }
   echo('')
   return
@@ -132,13 +134,13 @@ if (flag.json) {
 }
 
 echo('')
-echo(`  fli check${flag.fix ? ' --fix' : ''}\n`)
+echo(chalk`  {bold fli check${flag.fix ? ' --fix' : ''}}\n`)
 
 if (fixed.length) {
-  echo(`  ${fixed.length} fix(es) applied:`)
+  echo(chalk`  {green ${fixed.length} fix(es) applied}`)
   for (const f of fixed) {
     const where = f.file.startsWith(root) ? f.file.slice(root.length + 1) : f.file
-    echo(`     ${where}:${f.line}  ${f.edit.was || '(nothing)'} → ${f.edit.replacement.trim()}`)
+    echo(chalk`     {cyan ${where}:${f.line}}  {dim ${f.edit.was || '(nothing)'} →} ${f.edit.replacement.trim()}`)
   }
   echo('')
 }
@@ -151,10 +153,10 @@ if (findings.length) {
 // An excused finding is said out loud with its reason, and an excuse that no
 // longer excuses anything is named so it can be deleted.
 if (allowed.length) {
-  echo(`  ${allowed.length} finding(s) allowed by ${BASELINE_FILE}:`)
+  echo(chalk`  {bold ${plural(allowed.length, 'finding')} allowed} {dim by ${BASELINE_FILE}}`)
   for (const a of allowed) {
     const where = a.file.startsWith(root) ? a.file.slice(root.length + 1) : a.file
-    echo(`     ${a.rule}  ${where} — ${a.why}`)
+    echo(chalk`     {yellow ${a.rule}}  {cyan ${where}} {dim — ${a.why}}`)
   }
   echo('')
 }
@@ -165,8 +167,8 @@ for (const key of stale) log.warn(`${BASELINE_FILE} allows ${key}, which no long
 // covering the thing it was written for — see every green suite in this repo's
 // issue history.
 if (skipped.length) {
-  echo(`  ${skipped.length} rule(s) had nothing to check:`)
-  for (const s of skipped) echo(`     ${s.id ?? s.rule} — ${s.why}`)
+  echo(chalk`  {bold ${plural(skipped.length, 'rule')} had nothing to check}`)
+  for (const s of skipped) echo(chalk`     {yellow ${s.id ?? s.rule}} {dim — ${s.why}}`)
   echo('')
 }
 
@@ -181,7 +183,7 @@ if (grade) {
   // A rule with nothing to look at reports 0 findings, which is what a fixed one
   // reports. Its ceiling stands rather than ratcheting to nothing.
   for (const h of grade.held)
-    echo(`  ·  ${h.rule} did not run — its baseline of ${h.ceiling} stands, ungraded`)
+    echo(chalk`  {dim ·  ${h.rule} did not run — its baseline of ${h.ceiling} stands, ungraded}`)
 
   if (written) {
     const total = Object.values(written).reduce((a, b) => a + b, 0)

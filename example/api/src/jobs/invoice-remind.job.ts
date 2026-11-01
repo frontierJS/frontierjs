@@ -2,7 +2,7 @@
 //
 // Dispatched by the outbox relay, never by hand: the `Invoice.remind` hook
 // (`domain/billing/renewal.commitments.ts`) writes the row in the transaction that sets
-// `reminded`, so the move and the intent to send commit together and a crash
+// `isReminded`, so the move and the intent to send commit together and a crash
 // between them costs a delay rather than the email.
 //
 // Delivery is at least once. A retry after a send that reached the mailer and

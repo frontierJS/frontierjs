@@ -61,7 +61,7 @@ export default defineIsland({
     // `make()`, which is a screen that renders and validates against nothing.
     const app      = harborApp()
     const products = createResource('products', { app })
-    const variants = createResource('product-variants', { app, model: 'ProductVariant' })
+    const variants = createResource('productVariants', { app, model: 'ProductVariant' })
 
     ;(async () => {
       try {

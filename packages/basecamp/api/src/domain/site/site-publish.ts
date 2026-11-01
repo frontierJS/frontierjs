@@ -87,7 +87,7 @@ export async function runPublish(app: App, deploymentId: string): Promise<{ stat
   const snap  = deploy.configSnapshot as PublishSnapshot
   const site: GitSite = { id: deploy.appId, source: snap.source }
   const steps = new Map((opened.steps as { id: string, name: string }[]).map(s => [s.name, s.id]))
-  const row   = opened.app as { name?: string, type?: string, source?: unknown, environmentId?: string } | null
+  const row   = opened.app as { name?: string, kind?: string, source?: unknown, environmentId?: string } | null
   let current: string | undefined
 
   const run = async (name: string, fn: () => Promise<{ output: string, commit?: string }>) => {
@@ -99,7 +99,7 @@ export async function runPublish(app: App, deploymentId: string): Promise<{ stat
   }
 
   try {
-    if (!row || row.type !== 'static' || !isGit(row.source)) throw new Error('this App is no longer a static site built from git')
+    if (!row || row.kind !== 'static' || !isGit(row.source)) throw new Error('this App is no longer a static site built from git')
     let checked = ''
     await run('Validate', async () => {
       const released = await releasedCommit(app, deploy.appId)

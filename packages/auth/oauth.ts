@@ -72,7 +72,7 @@ export interface OAuthIdentity {
   providerId:    string
   email:         string | null
   /** The provider's claim, untranslated. What is DONE with it is auth.ts's. */
-  emailVerified: boolean
+  isEmailVerified: boolean
   name:          string | null
 }
 
@@ -86,7 +86,7 @@ export interface OAuthProvider {
   userinfoUrl:   string
   scope:         string
   /**
-   * May this provider's `emailVerified` be believed at all?
+   * May this provider's `isEmailVerified` be believed at all?
    *
    * Off for the generic OIDC preset: the issuer is whatever the app configured,
    * and an attacker who can stand one up can assert any address. Turning it on
@@ -138,7 +138,7 @@ const PRESETS: Record<string, Preset> = {
         // Present as a real boolean on Google and as the string 'true' on some
         // OIDC implementations. Compared rather than coerced: `Boolean('false')`
         // is true, which would turn every unverified address into a verified one.
-        emailVerified: raw?.email_verified === true || raw?.email_verified === 'true',
+        isEmailVerified: raw?.email_verified === true || raw?.email_verified === 'true',
         name:          raw?.name ?? null,
       }
     },
@@ -164,7 +164,7 @@ const PRESETS: Record<string, Preset> = {
       return {
         providerId:    String(raw?.id ?? ''),
         email:         primary?.email ?? null,
-        emailVerified: !!primary,
+        isEmailVerified: !!primary,
         name:          raw?.name ?? raw?.login ?? null,
       }
     },
@@ -184,7 +184,7 @@ const PRESETS: Record<string, Preset> = {
       return {
         providerId:    String(raw?.sub ?? ''),
         email:         raw?.email ?? null,
-        emailVerified: raw?.email_verified === true || raw?.email_verified === 'true',
+        isEmailVerified: raw?.email_verified === true || raw?.email_verified === 'true',
         name:          raw?.name ?? raw?.preferred_username ?? null,
       }
     },

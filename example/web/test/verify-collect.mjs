@@ -210,7 +210,7 @@ const cards = () => sys.paymentMethod.findMany({
 let filedCardId = null
 {
   const before = (await cards()).length
-  const setup  = await app.service('payment-methods').call('startSetup', null, {}, asShopper)
+  const setup  = await app.service('paymentMethods').call('startSetup', null, {}, asShopper)
   t('setup.mintsASetupIntent', typeof setup?.id === 'string' && setup.id.startsWith('seti_'))
 
   // Nothing is filed yet, and that is the point of the two steps: a shop that
@@ -231,7 +231,7 @@ let filedCardId = null
   // system reads it, and no response carries it. `brand` and `last4` are the
   // opposite — they exist to be shown. One model, two answers, which is what a
   // model-level gate can never express.
-  const mine = await app.service('payment-methods').call('find', null, {}, asShopper)
+  const mine = await app.service('paymentMethods').call('find', null, {}, asShopper)
   const row  = (mine?.data ?? [])[0]
   t('setup.theShopperSeesTheCard', row?.last4 === '4242' && row.brand === 'mastercard')
   t('setup.andNeverTheToken', row !== undefined && !('providerRef' in row))
@@ -241,7 +241,7 @@ let filedCardId = null
   // no constraint states here: the predicate is expressible since `FJS-603` and
   // the declaration collides with this model's own `@@index([customerId])`
   // (`FJS-614`). So this is the assertion standing in for a constraint.
-  const second = await app.service('payment-methods').call('startSetup', null, {}, asShopper)
+  const second = await app.service('paymentMethods').call('startSetup', null, {}, asShopper)
   await confirmCard(second.id)
   const all = await cards()
   t('setup.theNewestBecomesTheDefault',
@@ -554,7 +554,7 @@ async function settles(fn, ms = 20000) {
   // A card that files perfectly and then asks for the cardholder. That is the
   // shape worth testing: nothing is wrong with it until it is presented with
   // nobody there.
-  const setup = await app.service('payment-methods').call('startSetup', null, {}, asShopper)
+  const setup = await app.service('paymentMethods').call('startSetup', null, {}, asShopper)
   await confirmCard(setup.id, 'needs_action')
   const card = (await cards()).at(-1)
   t('sca.theCardFilesLikeAnyOther', card?.isDefault === true && card.last4 === '3155')

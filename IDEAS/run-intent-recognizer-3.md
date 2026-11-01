@@ -1,12 +1,12 @@
 ---
 id: run-intent-recognizer-3
-status: assessment
+status: reading
 dated: 2026-09-13
 ---
 
 # Assessment — the intent recognizer, run 3: three models as the support agent
 
-**Status: ASSESSMENT.** Dated 2026-09-13. It reads the tree and proposes nothing of
+**Status: READING.** Dated 2026-09-13. It reads the tree and proposes nothing of
 its own; what it changes is folded into `intent-recognizer.md`. Never cite this as
 behavior.
 

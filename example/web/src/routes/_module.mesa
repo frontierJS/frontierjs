@@ -30,7 +30,7 @@ siteName: Kitchen sink
 
   import { groups } from '@/lib/nav.js'
 
-  import { notifications, isUnread } from '../resources/Notification.mesa'
+  import { notifications, isUnread } from '@/resources/Notification.mesa'
 
   $: (session.oauthError, session.oauthMessage)
 

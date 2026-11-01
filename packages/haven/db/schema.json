@@ -460,14 +460,14 @@
             "pattern": "an idea is its row number, like 4.21a"
           }
         },
-        "aye": {
+        "isAye": {
           "type": "boolean"
         }
       },
       "additionalProperties": false,
       "required": [
         "idea",
-        "aye"
+        "isAye"
       ],
       "x-litestone-policies": true,
       "x-identify": [

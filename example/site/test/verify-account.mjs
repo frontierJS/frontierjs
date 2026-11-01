@@ -114,7 +114,7 @@ console.log('\n  the account — a shopper, on a static storefront\n')
 // boundary that answers everything is a screen that is right by accident.
 
 const anonOrders = await fetch(`${API}/api/orders`)
-const anonLines  = await fetch(`${API}/api/order-lines`)
+const anonLines  = await fetch(`${API}/api/orderLines`)
 const anonCust   = await fetch(`${API}/api/customers`)
 check('the sales ledger is not public', [anonOrders.status, anonLines.status, anonCust.status], [401, 401, 401])
 
@@ -473,7 +473,7 @@ check('the page tells them their bank is asking, and sends them to the provider'
 
 // What a person may do to their own arrangement, and it is NOT a move: all four
 // declared transitions are `@system`, so no request can ask for any of them.
-// `subscriptions.cancel` writes `cancelAtPeriodEnd`, and what lets a shopper do
+// `subscriptions.cancel` writes `isCancelingAtPeriodEnd`, and what lets a shopper do
 // it to their OWN row is `@@allow(update, userId == auth().id)` rather than
 // anything on this page.
 //

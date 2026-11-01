@@ -39,7 +39,7 @@ export interface NodeExecutionState {
   startedAt?: number
   endedAt?:   number
   attempts:   number
-  fromCache:  boolean
+  isFromCache:  boolean
   output?:    unknown    // written on completion — downstream nodes read from here
   error?:     string
   logs:       LogEntry[]

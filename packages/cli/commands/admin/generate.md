@@ -448,7 +448,7 @@ allModels      = allModels.filter(m => served.has(m.key))
 
 if (!allModels.length) {
   log.error('No model has a Junction service behind it — nothing to generate')
-  for (const m of unserved) echo(`    fli make:service ${m.name}`)
+  for (const m of unserved) echo(chalk.cyan(`    fli make:service ${m.name}`))
   return
 }
 
@@ -601,40 +601,40 @@ const missing = unserved
 echo('')
 
 if (flag.dry) {
-  echo('  Dry run — nothing written')
+  echo(chalk.yellow('  Dry run — nothing written'))
 } else if (created.length) {
-  echo(`  ${created.length} file${created.length !== 1 ? 's' : ''} written`)
+  echo(chalk.green(`  ${created.length} file${created.length !== 1 ? 's' : ''} written`))
 } else {
-  echo('  Nothing written — every file already exists (--force to overwrite)')
+  echo(chalk.dim('  Nothing written — every file already exists (--force to overwrite)'))
 }
 
 echo('')
-echo('  /admin/')
+echo(chalk.bold('  /admin/'))
 // Only the models that got pages. A model whose Resource could not be read is
 // reported below, and listing its URL here would say it was generated.
 for (const m of targets.filter(resourceFor)) {
-  echo(`  /admin/${routeSegment(m.key)}/`.padEnd(30) + `list · create · [id]`)
+  echo(chalk.cyan(`  /admin/${routeSegment(m.key)}/`.padEnd(30)) + chalk.dim('list · create · [id]'))
 }
 
 if (unreadable.length) {
   echo('')
   log.warn(`Skipped — a Resource file exists but exports no createResource():`)
-  for (const m of unreadable) echo(`    web/src/resources/${m.name}.mesa`.padEnd(40) + `→ /admin/${routeSegment(m.key)}/ not generated`)
+  for (const m of unreadable) echo(chalk.cyan(`    web/src/resources/${m.name}.mesa`.padEnd(40)) + chalk.dim(`→ /admin/${routeSegment(m.key)}/ not generated`))
   echo('')
-  echo('  The admin imports the app\'s own Resource rather than declaring a second')
-  echo('  one, so it needs a name to import. Add the export, or move the file.')
+  echo(chalk.dim('  The admin imports the app\'s own Resource rather than declaring a second'))
+  echo(chalk.dim('  one, so it needs a name to import. Add the export, or move the file.'))
 }
 
 if (missing.length) {
   echo('')
   log.warn(`No Junction service found for: ${missing.map(m => m.name).join(', ')}`)
-  for (const m of missing) echo(`    fli make:service ${m.name}`.padEnd(34) + `→ the admin calls '${m.key}'`)
+  for (const m of missing) echo(chalk.cyan(`    fli make:service ${m.name}`.padEnd(34)) + chalk.dim(`→ the admin calls '${m.key}'`))
   echo('')
-  echo('  If the service exists under another name — an irregular plural, say —')
-  echo('  correct the createResource() call in that model\'s web/src/resources/<Model>.mesa.')
+  echo(chalk.dim('  If the service exists under another name — an irregular plural, say —'))
+  echo(chalk.dim('  correct the createResource() call in that model\'s web/src/resources/<Model>.mesa.'))
 }
 
 echo('')
-echo('  Sierra rescans src/routes on the next build — restart fli dev:web if it is running.')
+echo(chalk.dim('  Sierra rescans src/routes on the next build — restart fli dev:web if it is running.'))
 echo('')
 ```

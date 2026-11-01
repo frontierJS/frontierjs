@@ -22,7 +22,7 @@ and which local S3 server to recommend.
   we run.
 - **Blueprint** is Basecamp's catalog of Docker software that a workspace deploys:
   8 rows in `packages/basecamp/db/blueprints.js`, `@@tenant(none)`
-  (`packages/basecamp/docs/SCREENS.md` § The five arguments). Its storage row
+  (`packages/basecamp/docs/screens.md` § The five arguments). Its storage row
   is SeaweedFS 4.48 (`FJS-D1511`), which replaced an archived `minio:latest`.
   Its `n8n` and `umami` rows still pin `latest`.
 - **Stand-in** is blessed and **Sidecar** refused (`FJS-D1509`). The middle kind

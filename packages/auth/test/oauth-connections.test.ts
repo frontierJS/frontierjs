@@ -27,7 +27,7 @@ beforeAll(async () => { h = await makeAuth({ oauthProviders: { google, okta } })
 afterAll(() => h.cleanup())
 
 async function userWith(email: string, kinds: string[]) {
-  const user = await h.sys.user.create({ data: { email, emailVerified: true } })
+  const user = await h.sys.user.create({ data: { email, isEmailVerified: true } })
   for (const type of kinds) {
     await h.sys.credential.create({
       data: { userId: user.id, type, value: `${type}-value-${email}` },

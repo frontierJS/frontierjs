@@ -50,7 +50,7 @@ import { defineJob }        from '@frontierjs/caravan'
 import { Database }         from 'bun:sqlite'
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import { runsAsApp }        from './context.ts'
+import { runsAsApp }        from '../domain/job/job-context.ts'
 import { jobsDatabasePath } from '../core/db.ts'
 import { keyUnder, sendFor } from '../providers/storage/index.ts'
 import { backupDir, dropWarmCopies, pruneBackups } from '../domain/backup/backup-archives.ts'
@@ -192,10 +192,10 @@ export async function takeBackup(app: App, backupId: string): Promise<void> {
       const sent = await upload(app, row.destinationId, path)
       if ('key' in sent) {
         await finish({ status: 'success', sizeBytes: sent.bytes, fileCount, location: sent.key, error: null })
-        log.info('backup uploaded', { id: backupId, destination_id: row.destinationId, key: sent.key, bytes: sent.bytes })
+        log.info('backup uploaded', { id: backupId, destinationId: row.destinationId, key: sent.key, bytes: sent.bytes })
       } else {
         await finish({ status: 'success', sizeBytes: treeSize(path), fileCount, location: path, error: sent.warning })
-        log.warn('backup kept local', { id: backupId, destination_id: row.destinationId, warning: sent.warning })
+        log.warn('backup kept local', { id: backupId, destinationId: row.destinationId, warning: sent.warning })
       }
     } else {
       const size = treeSize(path)

@@ -1,5 +1,5 @@
 <script>
-  // stat_counter — one number: how many of a thing this workspace has.
+  // statCounter — one number: how many of a thing this workspace has.
   //
   // The mock's counter is a value TYPED IN when the tile is added, which is a
   // dashboard displaying whatever it was told — the one thing a dashboard must
@@ -16,7 +16,7 @@
   import { deployments } from '../../resources/Deployment.mesa'
   import { jobs } from '../../resources/Job.mesa'
   import { volumes } from '../../resources/Volume.mesa'
-  import { alerts } from '../../resources/AlertRule.mesa'
+  import { alertRules } from '../../resources/AlertRule.mesa'
   import { onWrite } from './live.js'
   import Stat from '@frontierjs/ui/components/display/Stat.mesa'
 
@@ -32,7 +32,7 @@
     deployments: { resource: deployments, label: 'Deployments', href: '/deployments/' },
     jobs:        { resource: jobs,        label: 'Jobs',        href: '/jobs/' },
     volumes:     { resource: volumes,     label: 'Volumes',     href: '/volumes/' },
-    alerts:      { resource: alerts,      label: 'Alert rules', href: '/alerts/' },
+    alertRules:  { resource: alertRules,  label: 'Alert rules', href: '/alerts/' },
   }
 
   let total   = null

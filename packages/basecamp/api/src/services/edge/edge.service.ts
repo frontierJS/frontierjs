@@ -22,7 +22,7 @@
 // That makes the account lookup `asSystem()`, off the request's client. A scoped client below 5 is refused
 // the `Secret` read outright, and a screen at a developer's standing would then
 // say *no account connected* about a workspace that has one. The confinement is
-// the `where` — this workspace, `provider_key`, an edge vendor — and the
+// the `where` — this workspace, `providerKey`, an edge vendor — and the
 // `select`, which names no column but the four a picker needs.
 //
 // ─── What the vendor said stays the vendor's ─────────────────────────────
@@ -68,7 +68,7 @@ export const ingressName = (appId: string, zone: string) => `${appId}.${fqdn(zon
 interface ZoneAt { account: EdgeAccount; connector: EdgeConnector; send: AccountSend; zone: EdgeZone }
 
 /**
- * This workspace's edge accounts — the `provider_key` Secrets at a vendor this
+ * This workspace's edge accounts — the `providerKey` Secrets at a vendor this
  * app reads zones at. The one lookup the edge service and the portal's `edge`
  * entry share, so *is edge configured* and *which zones are there* cannot
  * disagree about which rows count.
@@ -78,7 +78,7 @@ export async function edgeAccounts(): Promise<EdgeAccount[]> {
   // The REQUEST's client elevated, not the app's: it keeps the caller's
   // tenant, where the app client's bypass would read every tenant.
   const rows  = await db().asSystem().secret.findMany({
-    where:   { workspaceId: ws(), kind: 'provider_key', providerKind: { in: kinds } },
+    where:   { workspaceId: ws(), kind: 'providerKey', providerKind: { in: kinds } },
     select:  { id: true, name: true, providerKind: true, verifiedAt: true },
     orderBy: { name: 'asc' },
   })
@@ -116,7 +116,7 @@ const why = (err: unknown) => err instanceof Error ? err.message : String(err)
  *  is a plain `Conflict` — that one a person has to act on. */
 class NotYet extends Conflict {}
 
-interface DomainRow { id: string; appId: string; hostname: string; redirectTo: string | null; proxied: boolean }
+interface DomainRow { id: string; appId: string; hostname: string; redirectTo: string | null; isProxied: boolean }
 
 const scoped = sessionScope()
 
@@ -192,7 +192,7 @@ async function zoneOf(accounts: EdgeAccount[], hostname: string): Promise<ZoneAt
 //
 // Its App's ingress record first — an A per address the App runs at — then,
 // for a proxied Domain, a Full (strict) rule for its host, then the Domain's
-// CNAME to it, carrying `Domain.proxied` (`FJS-D563`). In that order so a
+// CNAME to it, carrying `Domain.isProxied` (`FJS-D563`). In that order so a
 // CNAME never points at a name that is not there yet. Answers what it wrote.
 //
 // Every refusal is a 409 saying what to do, and is decided before anything
@@ -236,10 +236,10 @@ async function push(domain: DomainRow) {
     // Before the CNAME, so the edge never proxies this host under a zone left
     // at Flexible, where Caddy's HTTPS redirect loops forever (FJS-D1422 for
     // every Domain). The zone's own setting is never read or written.
-    if (domain.proxied)
+    if (domain.isProxied)
       await home.connector.strictOrigin(home.send, home.zone.id, host, domainMark(domain.id))
     const [record]= await home.connector.setRecords(home.send, home.zone.id, domainMark(domain.id),
-      [{ type: 'CNAME', name: host, content: name, proxied: domain.proxied }])
+      [{ type: 'CNAME', name: host, content: name, proxied: domain.isProxied }])
     return { domainId: domain.id, hostname: host, record, ingress: { name, addresses, records: ingressRecords } }
   } catch (err) {
     throw new BadGateway(why(err))

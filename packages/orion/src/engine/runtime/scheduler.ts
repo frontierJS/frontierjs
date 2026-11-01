@@ -18,7 +18,7 @@ export type SchedulerEvent =
   | { type: "execution:completed"; executionId: string; flowId: string; durationMs: number }
   | { type: "execution:failed";    executionId: string; flowId: string; error: string }
   | { type: "node:started";        executionId: string; nodeId: string }
-  | { type: "node:completed";      executionId: string; nodeId: string; durationMs: number; fromCache: boolean }
+  | { type: "node:completed";      executionId: string; nodeId: string; durationMs: number; isFromCache: boolean }
   | { type: "node:failed";         executionId: string; nodeId: string; error: string; routable: boolean }
   | { type: "node:skipped";        executionId: string; nodeId: string }
   | { type: "stage:completed";     executionId: string; stage: number }
@@ -177,10 +177,10 @@ export class Scheduler {
       }
 
       state.status    = "completed"
-      state.fromCache = outcome.fromCache
+      state.isFromCache = outcome.isFromCache
       state.output    = outcome.data
       ctx.nodes[nodeId] = outcome.data
-      this.emit({ type: "node:completed", executionId: ctx.executionId, nodeId, durationMs: outcome.durationMs, fromCache: outcome.fromCache })
+      this.emit({ type: "node:completed", executionId: ctx.executionId, nodeId, durationMs: outcome.durationMs, isFromCache: outcome.isFromCache })
     } else {
       state.status = "failed"
       state.error  = outcome.error
@@ -256,7 +256,7 @@ export class Scheduler {
 function makeContext(job: ExecutionJob, plan: ExecutionPlan): ExecutionContext {
   const nodeStates: Record<string, NodeExecutionState> = {}
   for (const nodeId of Object.keys(plan.nodes)) {
-    nodeStates[nodeId] = { status: "pending", attempts: 0, fromCache: false, logs: [] }
+    nodeStates[nodeId] = { status: "pending", attempts: 0, isFromCache: false, logs: [] }
   }
   return {
     executionId:    job.executionId,
@@ -285,7 +285,7 @@ function writesIn(ctx: ExecutionContext, plan: ExecutionPlan): number {
 
 function initNodeState(ctx: ExecutionContext, nodeId: string): NodeExecutionState {
   if (!ctx.nodeStates[nodeId]) {
-    ctx.nodeStates[nodeId] = { status: "pending", attempts: 0, fromCache: false, logs: [] }
+    ctx.nodeStates[nodeId] = { status: "pending", attempts: 0, isFromCache: false, logs: [] }
   }
   return ctx.nodeStates[nodeId]!
 }

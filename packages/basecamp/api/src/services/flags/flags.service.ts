@@ -243,7 +243,7 @@ async function flagWithOverrides(flag: Record<string, unknown>) {
 export default createService({
   name:  'flags',
   scope: keyScope('flags'),
-  model: 'FeatureFlag',
+  model: 'Flag',
   // Announced by the service DEFINITION, not by an after hook: `callService`
   // is junction's one announcement point and it excludes `find`/`get` by name,
   // where an `after: { all: [...] }` hook broadcast every read to every browser
@@ -263,7 +263,7 @@ export default createService({
     const type = $.query.type as string | undefined
     const tag  = $.query.tag  as string | undefined
 
-    const page = await findScoped('featureFlag', {
+    const page = await findScoped('flag', {
       where:   { ...(type ? { type } : {}) },
       orderBy: { key: 'asc' },
       limit, offset,
@@ -288,18 +288,18 @@ export default createService({
   },
 
   async get() {
-    return flagWithOverrides(await getScoped('featureFlag', 'Flag'))
+    return flagWithOverrides(await getScoped('flag', 'Flag'))
   },
 
   async create() {
     const data = $.data as Record<string, unknown>
     assertVariants((data.type as string) ?? 'boolean', data.variants)
 
-    return flagWithOverrides(await db().featureFlag.create({ data }))
+    return flagWithOverrides(await db().flag.create({ data }))
   },
 
   async patch() {
-    const flag = await getScoped('featureFlag', 'Flag')
+    const flag = await getScoped('flag', 'Flag')
     const data = $.data as Record<string, unknown>
 
     if ('variants' in data || 'type' in data)
@@ -311,7 +311,7 @@ export default createService({
     const patch = narrowPatch(data)
     if (changesNothing(patch)) return flagWithOverrides(flag)
 
-    return flagWithOverrides(await db().featureFlag.update({
+    return flagWithOverrides(await db().flag.update({
       where: { id: flag.id }, data: patch,
     }))
   },
@@ -322,7 +322,7 @@ export default createService({
     // of this flag's configuration, and the schema cascades it. What the two
     // refusals protect is a row somebody ELSE depends on; nothing depends on
     // an override but its flag.
-    return removeScoped('featureFlag', 'Flag')
+    return removeScoped('flag', 'Flag')
   },
 
   // ── setOverride ───────────────────────────────────────────────────
@@ -330,7 +330,7 @@ export default createService({
   // not have to know whether an override already exists there, and the
   // @@unique means a blind create is a 409 half the time.
   async setOverride() {
-    const flag = await getScoped('featureFlag', 'Flag')
+    const flag = await getScoped('flag', 'Flag')
     const { environmentId, isEnabled, rollout, variantKey } =
       ($.data ?? {}) as Record<string, unknown>
 
@@ -364,7 +364,7 @@ export default createService({
   // and clearing it means "follow whatever the flag says", including later
   // changes to the flag.
   async clearOverride() {
-    const flag = await getScoped('featureFlag', 'Flag')
+    const flag = await getScoped('flag', 'Flag')
     const { environmentId } = ($.data ?? {}) as Record<string, string>
 
     const existing = await db().flagOverride.findFirst({
@@ -394,7 +394,7 @@ export default createService({
     // answer a question about the wrong person entirely.
     const unitId = ($.query.unitId ?? ($.data as Record<string, string>)?.unitId) as string | undefined
 
-    const flags = await db().featureFlag.findMany({
+    const flags = await db().flag.findMany({
       where: { workspaceId: ws() }, orderBy: { key: 'asc' }, limit: 500,
     })
     if (!flags.length) return { total: 0, environmentId, ...(unitId ? { unitId } : {}), data: [] }
@@ -436,7 +436,7 @@ export default createService({
   },
 })
 
-/** FeatureFlag has no `slug` column, so the shared deriveSlug — which
+/** Flag has no `slug` column, so the shared deriveSlug — which
  *  derives one from `name` — would add a key autoValidate then strips. This
  *  model's identifier is `key`, and `@slug` in the schema is what shapes it. */
 function stampFlag(): void {

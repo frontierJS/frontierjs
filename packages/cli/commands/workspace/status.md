@@ -30,15 +30,15 @@ if (!packages.length) {
 
 const repo = $.wsRepo(packages)
 
-echo(`\nWorkspace: ${wsRoot}`)
+echo(`\n  ${chalk.bold('Workspace')}  ${chalk.dim(wsRoot)}`)
 if (repo) {
   const branch = $.git.branch(repo)
   const ahead  = $.git.ahead(repo)
   const behind = $.git.behind(repo)
-  echo(`Repo:      one at ${repo}`)
-  echo(`Branch:    ${branch}  ↑${ahead} ↓${behind}\n`)
+  echo(`  ${chalk.dim('Repo')}       one at ${chalk.dim(repo)}`)
+  echo(`  ${chalk.dim('Branch')}     ${chalk.cyan(branch)}  ${chalk.dim(`↑${ahead} ↓${behind}`)}\n`)
 } else {
-  echo(`Repo:      one per package\n`)
+  echo(`  ${chalk.dim('Repo')}       one per package\n`)
 }
 
 let anyDirty = false
@@ -50,16 +50,17 @@ for (const { dir, pkg } of packages) {
 
   // Per-package branch and sync counts only mean something when the package
   // IS its own repo.
+  const name = `${chalk.bold(pkg.name)}${chalk.dim(`@${pkg.version}`)}`
   const head = repo
-    ? `${pkg.name}@${pkg.version}`
-    : `${pkg.name}@${pkg.version}  ${$.git.branch(dir)} ↑${$.git.ahead(dir)} ↓${$.git.behind(dir)}`
+    ? name
+    : `${name}  ${chalk.cyan($.git.branch(dir))} ${chalk.dim(`↑${$.git.ahead(dir)} ↓${$.git.behind(dir)}`)}`
 
   if (flag.short) {
-    echo(`  ${head}${dirty ? `  [${lines.length} changed]` : '  [clean]'}`)
+    echo(`  ${head}${dirty ? chalk.yellow(`  ${lines.length} changed`) : chalk.green('  ✓ clean')}`)
   } else {
     echo(`  ${head}`)
     if (dirty) for (const line of lines) echo(`    ${line}`)
-    else echo(`    nothing to commit`)
+    else echo(`    ${chalk.dim('nothing to commit')}`)
     echo('')
   }
 }

@@ -73,7 +73,7 @@ describe('syncSchedule — the clock agrees with the row', () => {
     // BOTH directions — off the clock is the direction nothing did before.
     const { app, jobs } = makeApp()
     syncSchedule(app, row())
-    syncSchedule(app, row({ kind: 'one_shot' }))
+    syncSchedule(app, row({ kind: 'oneShot' }))
 
     expect(scheduled(jobs)).toEqual([])
   })
@@ -134,7 +134,7 @@ describe('nextRunAt — asked of the clock, never stored', () => {
     const { app } = makeApp()
     syncSchedule(app, row())
     syncSchedule(app, row({ status: 'cancelled' }))
-    syncSchedule(app, row({ id: 'job-2', kind: 'one_shot' }))
+    syncSchedule(app, row({ id: 'job-2', kind: 'oneShot' }))
 
     expect(nextRunAt(app, 'job-1')).toBeNull()
     expect(nextRunAt(app, 'job-2')).toBeNull()

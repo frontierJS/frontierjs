@@ -142,20 +142,20 @@ export async function buildProviders(
   // TODO: if (cfg.git?.url) → ForgejoGit(cfg.git)
   const git: IGit = new StubGit()
 
-  // TODO: if (cfg.observability?.grafana_url) → GrafanaObservability(...)
+  // TODO: if (cfg.observability?.grafanaUrl) → GrafanaObservability(...)
   const observability: IObservability = new StubObservability()
 
   // TODO: if (cfg.networking?.url) → NetBirdNetworking(cfg.networking)
   const networking: INetworking = new StubNetworking()
 
-  // TODO: if (cfg.integrations?.nango_url) → NangoIntegrations(...)
+  // TODO: if (cfg.integrations?.nangoUrl) → NangoIntegrations(...)
   const integrations: IIntegrations = new StubIntegrations()
 
   // Somebody else's service rather than an appliance: a `@frontierjs/conduit`
   // target when it lands, with its token held as a `Secret`, never a `fetch()`
   // in a service. The edge, the other hosted one, is a workspace ACCOUNT and not
   // in this container at all (`FJS-D558`, `providers/edge/`).
-  // TODO: if (cfg.cloud_spend?.api_token) → DigitalOceanSpend(cfg.cloud_spend)
+  // TODO: if (cfg.cloudSpend?.apiToken) → DigitalOceanSpend(cfg.cloudSpend)
   const cloudSpend: ICloudSpend = new StubCloudSpend()
 
   return {

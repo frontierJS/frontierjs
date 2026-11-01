@@ -334,7 +334,7 @@ different audience.
 - `IDEAS/lantern.md` — the third sibling: spans, and explaining a refusal
 - `IDEAS/operational-edge.md` — the surrounding argument about what happens
   between *written* and *running observably in production*
-- `packages/basecamp/docs/SCREENS.md` § D — the adapter tiers, and the mock's own
+- `packages/basecamp/docs/screens.md` § D — the adapter tiers, and the mock's own
   `log-analysis` entry
 - `packages/cli/commands/deploy/_steps-setup/05-nginx.md` — the vhost this all
   reads from

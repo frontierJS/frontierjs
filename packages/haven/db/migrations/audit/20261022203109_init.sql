@@ -1,5 +1,5 @@
 -- Litestone migration (database: audit)
--- Created:   2026-10-22T20:31:09.707Z
+-- Created:   2026-11-01T18:59:12.675Z
 -- Changes:
 --     + AuditTrail  (new table)
 
@@ -35,6 +35,7 @@ CREATE INDEX IF NOT EXISTS "idx_audit_trail_actorId" ON "audit_trail" ("actorId"
 CREATE INDEX IF NOT EXISTS "idx_audit_trail_model" ON "audit_trail" ("model");
 CREATE INDEX IF NOT EXISTS "idx_audit_trail_correlationId" ON "audit_trail" ("correlationId");
 CREATE INDEX IF NOT EXISTS "idx_audit_trail_episodeId" ON "audit_trail" ("episodeId");
+CREATE INDEX IF NOT EXISTS "idx_audit_trail_createdAt" ON "audit_trail" ("createdAt");
 
 COMMIT;
 PRAGMA foreign_keys = ON;

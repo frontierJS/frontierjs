@@ -3146,7 +3146,7 @@ async function readTarget() {
               <code class="gui-cmd">${esc(t.releaseId ?? '—')}</code>
               <span class="text-xs text-muted">${esc(t.kind ?? '')} ${esc(t.startedAt ?? '')}</span>
               ${t.serving ? '<span class="badge info text-xs">serving</span>' : ''}
-              ${t.crossesPivot ? '<span class="badge danger text-xs">crossed the pivot</span>' : ''}
+              ${t.isCrossingPivot ? '<span class="badge danger text-xs">crossed the pivot</span>' : ''}
             </div>
           </li>`).join('') || '<li class="list-row"><span class="text-xs text-muted">nothing recorded — no deploy has run against this target since the journal existed</span></li>'}
       </ul>

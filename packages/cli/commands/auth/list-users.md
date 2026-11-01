@@ -53,7 +53,7 @@ for (const u of users) {
     email:         u.email,
     name:          u.name ?? '',
     role:          u.role,
-    emailVerified: u.emailVerified,
+    isEmailVerified: u.isEmailVerified,
     createdAt:     u.createdAt,
   }
 
@@ -84,7 +84,7 @@ const userTable = (users, { sessions, chalk }) => {
       u.email.padEnd(email),
       u.name.padEnd(name),
       u.role.padEnd(12),
-      u.emailVerified ? chalk.green('✓'.padEnd(10)) : chalk.dim('✗'.padEnd(10)),
+      u.isEmailVerified ? chalk.green('✓'.padEnd(10)) : chalk.dim('✗'.padEnd(10)),
       sessions ? String(u.activeSessions ?? 0) : null,
     ])),
   ]

@@ -1,12 +1,12 @@
 ---
 id: rig-catalog
-status: assessment
+status: reading
 dated: 2026-10-15
 ---
 
 # Assessment — the rig catalog: which features the apps keep rebuilding
 
-**Status: ASSESSMENT.** A count of rig-shaped model clusters across every app
+**Status: READING.** A count of rig-shaped model clusters across every app
 schema in the two trees, set against the features most SaaS products ship.
 Nothing here is built, and no candidate below is a rig until it is a package.
 Do not cite this file as describing behavior — see `VERIFYING.md`.

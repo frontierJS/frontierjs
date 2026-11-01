@@ -59,9 +59,9 @@ name, and is as unread as the body.
 | --- | --- | --- |
 | `employees.setPay` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
 | `employees.payOn` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
-| `inventory.levels` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
-| `inventory.receive` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
-| `inventory.adjust` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
+| `inventoryMovements.levels` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
+| `inventoryMovements.receive` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
+| `inventoryMovements.adjust` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
 | `orders.pay` | **any signed-in caller** — floor, read gate 1; standing not graded | `transactionScope` |
 | `orders.ship` | **any signed-in caller** — floor, read gate 1; standing not graded | `transactionScope` |
 | `orders.refund` | **any signed-in caller** — floor, read gate 1; standing not graded | `transactionScope` |
@@ -346,10 +346,11 @@ name when it declares none.
 | after | `patch` | `anonymous` |
 | after | `remove` | `anonymous` |
 
-### `inventory` · model `InventoryMovement`
+### `inventoryMovements` · model `InventoryMovement`
 
 - **methods** — `find`, `get`, `levels`, `receive`, `adjust`
 - **custom methods** — `levels`, `receive`, `adjust`
+- **also answers to** — `inventory-movements`
 - **input** — `adjust` takes `StockAdjustment`
 - **input** — `receive` takes `StockReceipt`
 - **who may call** —

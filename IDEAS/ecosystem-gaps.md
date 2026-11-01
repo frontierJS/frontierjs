@@ -1,12 +1,12 @@
 ---
 id: ecosystem-gaps
-status: assessment
+status: reading
 dated: 2026-08-02
 ---
 
 # Idea — Ecosystem gaps: what is missing to compete with Laravel and the likes
 
-**Status: ASSESSMENT + FUTURE WORK.** Dated 2026-08-02; the headings carry what has
+**Status: READING + FUTURE WORK.** Dated 2026-08-02; the headings carry what has
 shipped since, struck where a gap closed. Claims were probed against
 the tree (`VERIFYING.md`); evidence is named inline. Each gap below is written so it
 can become a stub or a tracked issue — proposed home, what it attaches to, and why

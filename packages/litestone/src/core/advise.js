@@ -1191,14 +1191,32 @@ export const RULES = [
       const logged = models.filter(m => !m.attributes?.some(a => a.kind === 'anonymous') && logsWrites(m))
       if (!logged.length) return []
 
-      return models.filter(m => m.attributes?.some(a => a.kind === 'anonymous')).map(m => ({
-        model: m.name,
-        message: `${m.name}: @@anonymous, while ${logged.map(l => l.name).join(', ')} log${logged.length === 1 ? 's' : ''} ` +
-          `writes with the actor and a millisecond clock. A model written in the same request as a ${m.name} ` +
-          `row (a roster flipped when someone answers) re-attributes it by order, so the client refuses the ` +
-          `pair inside one transaction and cannot see a separate one. Drop the log from any such model, or ` +
-          `confirm none is written when a ${m.name} is.`,
-      }))
+      // The owning side of each relation a model holds: the models its foreign keys point at.
+      const parentsOf = m => new Set((m.fields ?? [])
+        .filter(f => f.type?.kind === 'relation' &&
+          (f.attributes ?? []).some(a => a.kind === 'relation' && a.fields?.length))
+        .map(f => f.type.name))
+
+      return models.filter(m => m.attributes?.some(a => a.kind === 'anonymous')).map(m => {
+        // A roster flipped when someone answers hangs off the same parent as the answer, or off
+        // the answer itself; auth's Session shares neither, so it goes in the note.
+        const mine  = parentsOf(m)
+        const near  = logged.filter(l => {
+          const theirs = parentsOf(l)
+          return theirs.has(m.name) || mine.has(l.name) || [...mine].some(p => theirs.has(p))
+        })
+        const named = near.length ? near : logged
+        const rest  = near.length ? logged.filter(l => !near.includes(l)) : []
+        return {
+          model: m.name,
+          message: `${m.name}: @@anonymous, while ${named.map(l => l.name).join(', ')} log${named.length === 1 ? 's' : ''} ` +
+            `writes with the actor and a millisecond clock. A model written in the same request as a ${m.name} ` +
+            `row (a roster flipped when someone answers) re-attributes it by order, so the client refuses the ` +
+            `pair inside one transaction and cannot see a separate one. Drop the log from any such model, or ` +
+            `confirm none is written when a ${m.name} is.` +
+            (rest.length ? ` Also logged: ${rest.map(l => l.name).join(', ')}.` : ''),
+        }
+      })
     },
   },
 

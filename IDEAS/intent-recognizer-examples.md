@@ -1,12 +1,12 @@
 ---
 id: intent-recognizer-examples
-status: assessment
+status: reading
 dated: 2026-09-12
 ---
 
 # Examples — synthetic support requests for the intent recognizer
 
-**Status: ASSESSMENT.** Dated 2026-09-12. A corpus of invented messages — who sent
+**Status: READING.** Dated 2026-09-12. A corpus of invented messages — who sent
 it, over which channel, and what they wrote — for the intent recognizer to resolve
 (`intent-recognizer.md`). Input to a run, never cited as behavior. Message 26 of
 the first set was repaired 2026-09-27 — messages 28 and 29 had been pasted into its

@@ -102,7 +102,7 @@ const booting = (status?: string) =>
 
 /** `4gb` is the cheapest x86 size with that much memory sold in the region; a
  *  vendor slug is taken as itself. The catalog is read, never a table here
- *  (`docs/PROVISIONING.md` § D3). One cloud still sells legacy sizes whose
+ *  (`docs/provisioning.md` § D3). One cloud still sells legacy sizes whose
  *  slug IS `4gb` at twice the price, so a memory size is never matched as a
  *  slug. An Arm size is refused: the app image is built amd64 on the laptop
  *  that releases it, and the cheapest 4 GB at Hetzner is Arm. */

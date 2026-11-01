@@ -165,7 +165,7 @@ export function mintRelease({
   generation   = 1,
   schemaHash   = null,
   pivot        = 'unknown',
-  pivotDeclared = false,
+  isPivotDeclared = false,
   pivotFindings = [],
   audienceKey  = 'everyone',
   createdBy    = null,
@@ -199,7 +199,7 @@ export function mintRelease({
     digest, imageRef,
     configurationHash, generation,
     schemaHash,
-    pivot, pivotDeclared, pivotFindings,
+    pivot, isPivotDeclared, pivotFindings,
     audienceKey,
     formatVersion: RELEASE_FORMAT,
     createdBy,
@@ -222,7 +222,7 @@ export function formatRelease(rel, { configuration } = {}) {
   row('configuration', `${short(rel.configurationHash)}  · generation ${rel.generation}` +
                        (configuration ? `  · ${configuration.count} key(s), ${Object.keys(configuration.secretRefs).length} secret ref(s)` : ''))
   row('schema',     rel.schemaHash ? short(rel.schemaHash) : '— no release.snapshot.md (run fli release:check)')
-  row('pivot',      rel.pivot + (rel.pivotDeclared ? '  (declared)' : ''))
+  row('pivot',      rel.pivot + (rel.isPivotDeclared ? '  (declared)' : ''))
   if (rel.pivot === 'contract')
     lines.push('', '  This deploy is the pivot: after it, only forward.')
   return lines.join('\n')

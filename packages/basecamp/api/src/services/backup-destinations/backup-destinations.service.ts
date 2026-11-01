@@ -1,7 +1,7 @@
 // src/services/backup-destinations/backup-destinations.service.ts
 // Backup destinations — the bucket an archive is sent to (`FJS-D1488`).
 //
-// Mounted at /backup-destinations. Workspace-scoped like /channels, because
+// Mounted at /backup-destinations. Workspace-scoped like /notificationChannels, because
 // the credential is a `Secret` and a `Secret` has a workspace (`FJS-D1491`);
 // the hub's own schedule points at one from above, `HubConfig.backupDestinationId`.
 //
@@ -124,7 +124,7 @@ export default createService({
   paginate: { default: 20, max: 200 },
   // `test` sends real traffic to a third party under the workspace's name,
   // so it is not a read, and no model's gate grades it — the same bar as
-  // `channels.test`.
+  // `notificationChannels.test`.
   methods: ['find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
     { method: 'test', gate: LEVELS.ADMINISTRATOR }],
   channel: workspaceChannel,

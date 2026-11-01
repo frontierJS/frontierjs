@@ -34,7 +34,7 @@
 
 import { defineJob }                                 from '@frontierjs/caravan'
 import { BadRequest, Conflict, NotFound }            from '@frontierjs/junction'
-import { runsAsApp }                                 from './context.ts'
+import { runsAsApp }                                 from '../domain/job/job-context.ts'
 import { resolveExecutor, isExecutor }               from '../providers/executor.ts'
 import type { Executor }                             from '../providers/executor.ts'
 import { createSecretResolver, secretRef }           from '../core/credentials.ts'
@@ -200,16 +200,16 @@ export async function fireAppBackup(app: App, appId: string): Promise<void> {
   if (!target || target.deletedAt || !target.backupCron) return
 
   const executor = await resolveExecutor(app, appId)
-  if (!isExecutor(executor)) { log.warn('scheduled app backup skipped', { app_id: appId, reason: executor.reason }); return }
+  if (!isExecutor(executor)) { log.warn('scheduled app backup skipped', { appId, reason: executor.reason }); return }
 
   try {
     const row = await takeAppBackup(app, {
       target, executor, destination: await destinationFor(app, target), kind: 'scheduled', requestedBy: null,
     })
-    if (row.status !== 'success') log.warn('scheduled app backup failed', { app_id: appId, error: row.error })
-    else if (row.error) log.warn('scheduled app backup kept on the machine', { app_id: appId, error: row.error })
+    if (row.status !== 'success') log.warn('scheduled app backup failed', { appId, error: row.error })
+    else if (row.error) log.warn('scheduled app backup kept on the machine', { appId, error: row.error })
   } catch (err) {
-    log.warn('scheduled app backup skipped', { app_id: appId, reason: (err as Error).message })
+    log.warn('scheduled app backup skipped', { appId, reason: (err as Error).message })
   }
 }
 

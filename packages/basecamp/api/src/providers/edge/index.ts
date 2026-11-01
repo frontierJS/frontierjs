@@ -2,7 +2,7 @@
 // Reading a vendor's DNS ZONES — the boundary, and who speaks it.
 //
 // The compute pattern, for the reason `FJS-D558` gives: a Cloudflare token is a
-// workspace ACCOUNT, a `Secret` of kind `provider_key`, registered as the
+// workspace ACCOUNT, a `Secret` of kind `providerKey`, registered as the
 // conduit target `provider:<kind>:<accountId>` by `compute/accounts.ts`. So the
 // target string, the send half and the registration are compute's and are
 // imported rather than written again; what lives here is the half a target

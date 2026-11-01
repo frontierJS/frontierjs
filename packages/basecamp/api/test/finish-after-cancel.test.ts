@@ -46,13 +46,13 @@ beforeAll(async () => {
     workspaceId: ws.id, projectId: project.id, name: 'Production', slug: `e-${uniq()}` } })
   const slug = `app-${uniq()}`
   target = await sys.app.create({ data: {
-    workspaceId: ws.id, environmentId: environment.id, name: slug, slug, type: 'container' } })
+    workspaceId: ws.id, environmentId: environment.id, name: slug, slug, kind: 'container' } })
 })
 
 describe('a job run that finishes after the job was cancelled', () => {
   async function running() {
     const sys = env.system as any
-    const job = await sys.job.create({ data: { workspaceId: ws.id, name: `j-${uniq()}`, kind: 'one_shot', command: 'true' } })
+    const job = await sys.job.create({ data: { workspaceId: ws.id, name: `j-${uniq()}`, kind: 'oneShot', command: 'true' } })
     const run = await env.as(admin).service('jobs').call('startRun', job.id, { trigger: 'manual' })
     return { job, runId: run.runId as string }
   }

@@ -3,17 +3,9 @@
   //
   // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18).
   // This block is module scope; the markup half below is the default form.
-  //
-  // `model:` is stated because this is the irregular case the registry warns
-  // about: the service is `alerts` and the model is `AlertRule`, which regular
-  // English pluralization does not bridge. Without it modelNameFor() looks for
-  // `Alert`, misses, warns, and degrades to a bare make() — validation, labels
-  // and field rules all silently stop being schema-derived.
   import { createResource } from '@frontierjs/sierra/resource'
 
-  export const alerts = createResource('alerts', {
-    model: 'AlertRule',
-  })
+  export const alertRules = createResource('alertRules')
 </script>
 
 <script>
@@ -40,7 +32,7 @@
   // rides $attributes onto <Form>, which is where those props are declared.
 </script>
 
-<Form resource={alerts} bind:record={record} {method} {actions} {...$attributes}>
+<Form resource={alertRules} bind:record={record} {method} {actions} {...$attributes}>
   <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
   <Button slot="actions" treatment="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
 </Form>

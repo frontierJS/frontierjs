@@ -13,7 +13,7 @@ anArrat: [12,2,4, "thisString"]
   // makes the file survive somebody renaming the service, and it is what every
   // other resource here does with an irregular.
   //
-  // Nothing below restates the schema. `emailVerified`, `role` and `isStaff`
+  // Nothing below restates the schema. `isEmailVerified`, `role` and `isStaff`
   // each carry `@allow(write, auth().isAdmin)` in the seed, and none of that
   // is written here or on the screen — the boundary answers it.
 
@@ -27,7 +27,7 @@ anArrat: [12,2,4, "thisString"]
   //
   // Every writable column of `User`, in schema order, with the control its type
   // implies. `id` and `createdAt` are not offered because they are not
-  // writable; `isStaff`, `role` and `emailVerified` ARE offered to everybody,
+  // writable; `isStaff`, `role` and `isEmailVerified` ARE offered to everybody,
   // and that is correct rather than lax: `x-gate` and a field policy reach the
   // client as affordances only, and this app has one form for two audiences.
   // What stops a shopper promoting themselves is the predicate compiled into

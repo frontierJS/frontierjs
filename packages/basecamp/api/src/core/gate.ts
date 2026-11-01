@@ -43,7 +43,7 @@
 //
 // ─── Two things it deliberately does not do ───────────────────────────────
 //
-//   • It does not grade `pending_verification` down. Whether an unverified
+//   • It does not grade `pendingVerification` down. Whether an unverified
 //     account may sign in at all is the login door's question, and today it
 //     may (core/session-auth.ts refuses `suspended` only). Grading it here
 //     would refuse a user the door had already admitted, in the middle of a

@@ -16,5 +16,5 @@
 
   import { createResource } from '@frontierjs/sierra/resource'
 
-  export const paymentEvents = createResource('payment-events', { model: 'PaymentEvent' })
+  export const paymentEvents = createResource('paymentEvents', { model: 'PaymentEvent' })
 </script>

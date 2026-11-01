@@ -89,7 +89,7 @@ if (!cred || !(await Bun.password.verify(input.password, cred.value))) {
 const data = {}
 if (has('name'))                       data.name = input.name
 if (has('displayName'))                data.displayName = input.name
-if (has('emailVerified', 'Boolean'))   data.emailVerified = true
+if (has('isEmailVerified', 'Boolean'))   data.isEmailVerified = true
 if (has('isSystemAdmin', 'Boolean'))   data.isSystemAdmin = true
 if (has('role', 'String'))             data.role = input.role
 await sys.user.update({ where: { id: user.id }, data })
@@ -119,7 +119,7 @@ a password or role changed, it puts them back. No running server needed.
 
 When the app has its own `db:seed:admin` script (or `db/seed-dev-admin.*`),
 that runs instead — it is the app's authority on what "top standing" means.
-Otherwise the generic upsert sets the password credential, `emailVerified`,
+Otherwise the generic upsert sets the password credential, `isEmailVerified`,
 `isSystemAdmin` and `role` where the User model has them, and makes no tenant
 or membership link.
 

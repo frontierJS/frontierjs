@@ -26,7 +26,7 @@
   // So this is warmed too, and **it is imported BEFORE the movements in
   // `main.js`**: the warm walks the declarations in the order they registered,
   // so on a device that order is the order the tables fill.
-  export const productVariants = createResource('product-variants', {
+  export const productVariants = createResource('productVariants', {
     model:        'ProductVariant',
     offlineQuery: { directives: { limit: 100, orderBy: '-id' } },
   })

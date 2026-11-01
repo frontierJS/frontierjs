@@ -71,7 +71,7 @@ describe('announce() — a system-read row, graded per recipient', () => {
   test('a member receives the row; a socket whose membership is gone does not', async () => {
     const sys = env.system as any
     const job = await sys.job.create({ data: {
-      workspaceId: ws.id, name: 'nightly', kind: 'one_shot', command: 'true' } })
+      workspaceId: ws.id, name: 'nightly', kind: 'oneShot', command: 'true' } })
 
     // `removed` holds no membership row: a person taken out of the workspace
     // after the socket joined, which is the case the per-frame claim exists for.

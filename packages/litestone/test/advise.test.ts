@@ -1238,6 +1238,34 @@ describe('anonymous-beside-logged', () => {
     expect(f[0].message).not.toContain('Note')
   })
 
+  // FJS-3706
+  test('names first the logged models that share a parent with the anonymous one, and notes the rest', () => {
+    const f = findings(`${TRAIL}
+      model Survey   { id Int @id  title String  responses Response[]  roster Eligibility[]  @@trail(audit) }
+      model Response { id String @id @default(uuid())  surveyId Int  survey Survey @relation(fields: [surveyId], references: [id])  @@anonymous }
+      model Eligibility { id Int @id  surveyId Int  survey Survey @relation(fields: [surveyId], references: [id])  answered Boolean @default(false)  @@trail(audit) }
+      model Session  { id Int @id  token String  @@trail(audit) }
+      model Org      { id Int @id  name String  @@trail(audit) }`, rule)
+    expect(f.length).toBe(1)
+    const [head, note] = f[0].message.split(' Also logged: ')
+    expect(head).toContain('Eligibility')
+    expect(head).not.toContain('Session')
+    expect(head).not.toContain('Org')
+    expect(note).toContain('Session')
+    expect(note).toContain('Org')
+  })
+
+  test('a logged model holding a relation to the anonymous one itself is named first', () => {
+    const f = findings(`${TRAIL}
+      model Vote   { id String @id @default(uuid())  @@anonymous }
+      model Ticket { id Int @id  voteId String  vote Vote @relation(fields: [voteId], references: [id])  @@trail(audit) }
+      model Other  { id Int @id  @@trail(audit) }`, rule)
+    const [head, note] = f[0].message.split(' Also logged: ')
+    expect(head).toContain('Ticket')
+    expect(head).not.toContain('Other')
+    expect(note).toContain('Other')
+  })
+
   test('a read-only log does not pair', () => {
     expect(findings(`${TRAIL}${BALLOT}
       model Roster { id Int @id  person String @trail(audit, writes: false) }`, rule)).toEqual([])

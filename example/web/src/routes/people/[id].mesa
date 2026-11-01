@@ -36,7 +36,7 @@ title: Person
   import { session } from '@frontierjs/sierra/resource'
   import { day, span } from '@/lib/datetime.js'
   import { page } from '@frontierjs/sierra/router'
-  import { money } from '../../lib/money.js'
+  import { money } from '@/lib/money.js'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge         from '@frontierjs/ui/components/display/Badge.mesa'

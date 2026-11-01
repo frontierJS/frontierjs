@@ -3,7 +3,7 @@
 The mental model and its vocabulary. This is the *what*; the layers around it:
 `PHILOSOPHY.md` (the axioms — why), `DECISIONS.md` (dated rulings — settled),
 `CLAUDE.md` (the map — where), `ISSUES.md` (the gap between this document and the
-code, one id at a time). `PHILOSOPHY.md` §VII says which kind of document this is
+code, one id at a time). `PHILOSOPHY.md` §VII says which tier of document this is
 and what a sentence in it may say.
 
 Do not paraphrase the vocabulary. Do not invent parallel terms.
@@ -162,8 +162,9 @@ Clarifications settled by the code:
   for a Bearer, a principal with no id whose actor is the grant row. A session,
   an API key and a Bearer are the principal's kinds. A **Tenant** is the unit of
   data isolation a `tenancy { }` block declares, never a customer. **User** is
-  auth's model. *Account* is an app's model name, usually an organization, and
-  *Party* is not coined.
+  auth's model. **Account** is auth's `account` service, the signed-in user's
+  own settings (`FJS-D680`); an app's own `Account` model, usually an
+  organization, is a separate sense, and *Party* is not coined.
 - Model naming: **PascalCase, singular — always**; `@@external` models exempt
   (`FJS-D42`).
 - **A Hook has three tiers and a new `on*` states its tier** (`FJS-D06`). A
@@ -221,14 +222,10 @@ vocabulary is mandatory for describing and fully open for challenging.
 
 ### Not yet named
 
-- **Audience** in the Deployment realm — the set of principals a Release is
-  served to, proposed in `IDEAS/release-transitions.md`. The word is `open`
-  because four senses already run (`FJS-D636`), litestone's `audience: 'client'`
-  among them; it is ruled when Phase 4 builds the routing.
 - **State only the browser has** — a reader's toggles, a basket, preferences,
   which device this browser is. It lives in `web/src/stores/`, which borrows the
   ecosystem's folder word without making *store* a noun here (`FJS-D625`).
-  Screen-local state is left open until it causes a defect (`FJS-D390`).
+  The noun is deferred: screen-local state waits for a defect (`FJS-D390`).
 
 ---
 
@@ -309,7 +306,9 @@ Placements outside the table: **toolbelt** (substrate, `FJS-D26`), **testing**
 (the Testing realm's API tier), **mcp** (the API realm's agent surface), **ui**,
 **email-kit**, **print-kit** and **site-kit** (UI kits, `FJS-D1257`), **jetty** (the
 `extension/` Surface's container — UI realm plus its own build and deploy),
-**css** (presentation — the UI realm's second concern), and
+**css** (presentation — the UI realm's second concern),
+**oracle** (the Data realm's step before `db/schema.lite`), **config** (the
+tooling opinion an app extends — tsconfig and Biome — in no domain), and
 **auth**, **notifications** and **orion** as rigs — a schema fragment, a
 service whose plugin attaches it, and a resource, installed by part.
 

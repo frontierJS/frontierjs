@@ -477,7 +477,7 @@ title: App
   // A static app with nothing in it yet is offered the editor too: the kind is
   // what somebody is about to choose, and a screen that hides the box until the
   // source already exists has no way of ever creating one.
-  const canPaste = () => isInline() || (app?.type === 'static' && !app?.source?.kind)
+  const canPaste = () => isInline() || (app?.kind === 'static' && !app?.source?.kind)
 
   /** Seed the draft from the row — but NEVER over something being typed. The
    *  record is live, so a push from anybody's write re-enters `load()`, and a
@@ -788,7 +788,7 @@ title: App
       <span class="cluster text-sm text-muted">
         <code id="app-source-line">{app.sourceLabel}</code>
         <Pill tone={STATUS_TONE[app.status] ?? 'muted'} id="app-status">{app.status}</Pill>
-        <Badge tone="muted">{app.type}</Badge>
+        <Badge tone="muted">{app.kind}</Badge>
       </span>
     </div>
     <span class="cluster">
@@ -1014,7 +1014,7 @@ title: App
     <aside class="stack" style:flex="0 1 17rem" id="app-details">
       <h2 class="h4">Details</h2>
       <dl class="facts">
-        <dt>Type</dt><dd>{app.type}</dd>
+        <dt>Kind</dt><dd>{app.kind}</dd>
         <dt>Port</dt><dd><code>{app.port ?? 'not set'}</code></dd>
         <dt>Hostname</dt><dd><code>{primaryHost ?? 'none'}</code></dd>
         <dt>Label</dt><dd><code>{app.slug}</code></dd>
@@ -1196,7 +1196,7 @@ title: App
           machine reported when it went live.
         </Callout>
       {/if}
-    {:else if app.type === 'container' || app.type === 'function'}
+    {:else if app.kind === 'container' || app.kind === 'function'}
       <Card>
         <h2 class="h4">Image</h2>
         <p class="text-sm text-muted">
@@ -1249,7 +1249,7 @@ title: App
           </p>
         {/if}
         <div class="cluster">
-          {#if app.deployOnPush}
+          {#if app.isDeployedOnPush}
             <Badge tone="success" id="app-push-on">on</Badge>
             <Button treatment="outlined" onclick={enablePush} disabled={busy} id="app-push-rotate">Rotate keys</Button>
             <Button treatment="outlined" tone="danger" onclick={disablePush} disabled={busy} id="app-push-off">Turn off</Button>

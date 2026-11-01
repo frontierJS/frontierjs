@@ -75,10 +75,10 @@ writeFileSync(filePath, resourceFile(model, service), 'utf8')
 log.success(`Created ${filePath}`)
 
 echo('')
-echo(`  Import it from a route through the @/ alias, which is the surface's src/:`)
-echo(`    import { ${service} } from '@/resources/${model}.mesa'`)
+echo(chalk.dim(`  Import it from a route through the @/ alias, which is the surface's src/:`))
+echo(chalk.cyan(`    import { ${service} } from '@/resources/${model}.mesa'`))
 echo('')
-echo(`  It calls the '${service}' service, so api/src/services/${service}.service.ts must register it.`)
+echo(chalk.dim(`  It calls the '${service}' service, so api/src/services/${service}.service.ts must register it.`))
 echo('')
 
 if (flag.open) { const e = process.env.EDITOR || 'vi'; $.exec({ command: `${e} "${filePath}"` }) }

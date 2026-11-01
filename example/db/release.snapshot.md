@@ -24,7 +24,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `CartStatus` | `abandoned` · `open` · `ordered` |
 | `CustomFieldType` | `number` · `text` |
 | `DiscountKind` | `fixed` · `percent` |
-| `FlowCredentialAuth` | `api_key` · `bearer` · `hmac` · `none` |
+| `FlowCredentialAuth` | `apiKey` · `bearer` · `hmac` · `none` |
 | `FlowRunStatus` | `cancelled` · `completed` · `failed` · `pending` · `running` · `waiting` |
 | `FlowStatus` | `active` · `archived` · `draft` · `paused` |
 | `FlowStepStatus` | `completed` · `failed` · `pending` · `running` · `skipped` |
@@ -136,8 +136,8 @@ table `color` · db `main` · gate `0.4.4.5`
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `hex` | `String` | yes | — | — |
 | `id` | `Int` | no | — | id |
+| `isRetired` | `Boolean` | no | `0` | — |
 | `name` | `String` | no | — | unique · **required on write** |
-| `retired` | `Boolean` | no | `0` | — |
 | `sortOrder` | `Int` | no | `999` | — |
 
 ### `Credential`
@@ -149,8 +149,8 @@ table `credential` · db `main` · gate `8`
 | `accessToken` | `String` | yes | — | @secret |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `isLinked` | `Boolean` | yes | — | — |
 | `label` | `String` | yes | — | — |
-| `linked` | `Boolean` | yes | — | — |
 | `refreshToken` | `String` | yes | — | @secret |
 | `scope` | `String` | yes | — | — |
 | `tokenExpiresAt` | `DateTime` | yes | — | — |
@@ -238,10 +238,10 @@ table `custom_field` · db `main` · gate `5.5.5.5`
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `defaultValue` | `String` | yes | — | — |
 | `id` | `Int` | no | — | id |
+| `isVisible` | `Boolean` | no | `1` | — |
 | `key` | `String` | no | — | **required on write** |
 | `label` | `String` | no | — | **required on write** |
 | `model` | `String` | no | — | **required on write** |
-| `show` | `Boolean` | no | `1` | — |
 | `slot` | `String` | yes | — | @system |
 | `type` | `CustomFieldType` | no | — | **required on write** |
 
@@ -256,13 +256,13 @@ table `discount` · db `main` · gate `5.5.5.5`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `active` | `Boolean` | no | `1` | — |
 | `audience` | `Json` | yes | — | — |
 | `carts` | `Cart[]` | — | — | relation |
 | `code` | `String` | no | — | unique · **required on write** |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `endsAt` | `DateTime` | yes | — | — |
 | `id` | `Int` | no | — | id |
+| `isActive` | `Boolean` | no | `1` | — |
 | `kind` | `DiscountKind` | no | `'percent'` | — |
 | `label` | `String` | no | — | **required on write** |
 | `maxRedemptions` | `Int` | yes | — | — |
@@ -421,6 +421,7 @@ table `invoice` · db `main` · gate `1.8.4.8`
 | `dunningDays` | `Int` | no | — | **required on write** |
 | `graceDays` | `Int` | no | — | **required on write** |
 | `id` | `Int` | no | — | id |
+| `isReminded` | `Boolean` | no | `0` | @system |
 | `issuedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `lines` | `InvoiceLine[]` | — | — | relation |
 | `number` | `String` | no | — | unique · **required on write** |
@@ -428,7 +429,6 @@ table `invoice` · db `main` · gate `1.8.4.8`
 | `payments` | `Payment[]` | — | — | relation |
 | `periodEnd` | `String` | no | — | **required on write** |
 | `periodStart` | `String` | no | — | **required on write** |
-| `reminded` | `Boolean` | no | `0` | @system |
 | `status` | `InvoiceStatus` | no | `'draft'` | — |
 | `subscription` | `Subscription` | — | — | relation |
 | `subscriptionId` | `Int` | yes | — | — |
@@ -445,7 +445,7 @@ table `invoice` · db `main` · gate `1.8.4.8`
 @@allow(read, userId == auth().id)
 @@allow(update, auth().isStaff)
 @@allow(update, userId == auth().id && status == 'draft')
-transition reminded.remind: false → true @system
+transition isReminded.remind: false → true @system
 transition status.issue: draft → issued @system @seals
 transition status.settle: issued → paid @system
 transition status.void: issued → void @gate(5)
@@ -773,9 +773,9 @@ table `payment_event` · db `main` · gate `5.8.9.9`
 | --- | --- | --- | --- | --- |
 | `eventId` | `String` | no | — | unique · **required on write** |
 | `id` | `Int` | no | — | id |
-| `kind` | `String` | no | — | **required on write** |
 | `paymentRef` | `String` | yes | — | — |
 | `receivedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `type` | `String` | no | — | **required on write** |
 
 ### `PaymentMethod`
 
@@ -892,9 +892,9 @@ table `payslip_line` · db `main` · gate `5.5.9.8`
 | `amount` | `Int` | no | — | **required on write** |
 | `correctsPayRun` | `PayRun` | — | — | relation |
 | `correctsPayRunId` | `Int` | yes | — | — |
-| `counts` | `Boolean` | no | `1` | — |
 | `description` | `String` | no | — | **required on write** |
 | `id` | `Int` | no | — | id |
+| `isCounted` | `Boolean` | no | `1` | — |
 | `kind` | `PayComponentKind` | no | — | **required on write** |
 | `payslip` | `Payslip` | — | — | relation |
 | `payslipId` | `Int` | no | — | **required on write** |
@@ -935,10 +935,10 @@ table `pickup_point` · db `main` · gate `0.5.5.5`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `active` | `Boolean` | no | `1` | — |
 | `address` | `String` | no | — | **required on write** |
 | `hours` | `String` | yes | — | — |
 | `id` | `Int` | no | — | id |
+| `isActive` | `Boolean` | no | `1` | — |
 | `name` | `String` | no | — | unique · **required on write** |
 | `site` | `Json` | yes | — | — |
 | `version` | `Int` | no | `1` | — |
@@ -949,13 +949,13 @@ table `plan` · db `main` · gate `0.5.5.5`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `active` | `Boolean` | no | `1` | — |
 | `code` | `String` | no | — | unique · **required on write** |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `currentPrice` | `Int` | — | — | from |
 | `description` | `String` | yes | — | — |
 | `id` | `Int` | no | — | id |
 | `interval` | `PlanInterval` | no | `'monthly'` | — |
+| `isActive` | `Boolean` | no | `1` | — |
 | `name` | `String` | no | — | **required on write** |
 | `versions` | `PlanVersion[]` | — | — | relation |
 
@@ -985,7 +985,6 @@ table `product` · db `main` · gate `0.4.4.5` · @@softDelete(cascade)
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `active` | `Boolean` | no | `1` | — |
 | `brand` | `Brand` | no | — | **required on write** |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deletedAt` | `DateTime` | yes | — | — |
@@ -993,6 +992,7 @@ table `product` · db `main` · gate `0.4.4.5` · @@softDelete(cascade)
 | `fields` | `Json` | no | `'{}'` | — |
 | `id` | `Int` | no | — | id |
 | `images` | `ProductImage[]` | — | — | relation |
+| `isActive` | `Boolean` | no | `1` | — |
 | `name` | `String` | no | — | unique · **required on write** |
 | `onHand` | `Int` | — | — | from |
 | `priceFrom` | `Int` | — | — | from |
@@ -1030,13 +1030,13 @@ table `product_variant` · db `main` · gate `0.4.4.5` · @@softDelete(cascade)
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `active` | `Boolean` | no | `1` | — |
 | `barcode` | `String` | yes | — | unique |
 | `color` | `String` | no | `'Default'` | `@values(ProductColor, strength: open)` |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deletedAt` | `DateTime` | yes | — | — |
 | `id` | `Int` | no | — | id |
 | `images` | `ProductImage[]` | — | — | relation |
+| `isActive` | `Boolean` | no | `1` | — |
 | `movements` | `InventoryMovement[]` | — | — | relation |
 | `price` | `Int` | no | — | **required on write** |
 | `product` | `Product` | — | — | relation |
@@ -1120,8 +1120,8 @@ table `run_step` · db `main` · gate `4.8.9.8`
 | `attempts` | `Int` | no | `0` | — |
 | `durationMs` | `Int` | yes | — | — |
 | `error` | `String` | yes | — | — |
-| `fromCache` | `Boolean` | no | `0` | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `isFromCache` | `Boolean` | no | `0` | — |
 | `logs` | `Json` | yes | — | — |
 | `nodeId` | `String` | no | — | **required on write** |
 | `output` | `Json` | yes | — | — |
@@ -1142,13 +1142,13 @@ table `session` · db `main` · gate `8`
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
-| `enrollmentOnly` | `Boolean` | no | `0` | — |
 | `expiresAt` | `DateTime` | no | — | **required on write** |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `impersonatingUserId` | `String` | yes | — | — |
 | `impersonationEndsAt` | `DateTime` | yes | — | — |
 | `impersonationReason` | `String` | yes | — | — |
 | `ipAddress` | `String` | yes | — | — |
+| `isEnrollmentOnly` | `Boolean` | no | `0` | — |
 | `reauthenticatedAt` | `DateTime` | yes | — | — |
 | `token` | `String` | no | — | unique · @guarded · **required on write** |
 | `userAgent` | `String` | yes | — | — |
@@ -1165,11 +1165,11 @@ table `shipping_method` · db `main` · gate `0.5.5.5`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `active` | `Boolean` | no | `1` | — |
 | `carts` | `Cart[]` | — | — | relation |
 | `description` | `String` | yes | — | — |
 | `freeOver` | `Int` | yes | — | — |
 | `id` | `Int` | no | — | id |
+| `isActive` | `Boolean` | no | `1` | — |
 | `name` | `String` | no | — | unique · **required on write** |
 | `position` | `Int` | no | `0` | — |
 | `price` | `Int` | no | — | **required on write** |
@@ -1214,6 +1214,7 @@ table `stocktake_count` · db `main` · gate `5.5.5.9`
 
 ```
 @@index(sheetId)
+@@index(variantId)
 ```
 
 ### `StocktakeSheet`
@@ -1234,7 +1235,6 @@ table `subscription` · db `main` · gate `1.4.4.5`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `cancelAtPeriodEnd` | `Boolean` | no | `0` | @system |
 | `cancelledAt` | `DateTime` | yes | — | @system |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `currentPeriodEnd` | `String` | — | — | from |
@@ -1243,6 +1243,7 @@ table `subscription` · db `main` · gate `1.4.4.5`
 | `customerId` | `Int` | no | — | **required on write** |
 | `id` | `Int` | no | — | id |
 | `invoices` | `Invoice[]` | — | — | relation |
+| `isCancelingAtPeriodEnd` | `Boolean` | no | `0` | @system |
 | `periods` | `SubscriptionPeriod[]` | — | — | relation |
 | `planVersion` | `PlanVersion` | — | — | relation |
 | `planVersionId` | `Int` | no | — | **required on write** |
@@ -1296,8 +1297,8 @@ table `tax_rate` · db `main` · gate `0.5.5.5`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `active` | `Boolean` | no | `1` | — |
 | `id` | `Int` | no | — | id |
+| `isActive` | `Boolean` | no | `1` | — |
 | `isDefault` | `Boolean` | no | `0` | — |
 | `label` | `String` | no | — | **required on write** |
 | `rate` | `Float` | no | — | **required on write** |
@@ -1311,8 +1312,8 @@ table `user` · db `main` · gate `4.4.4.5`
 | --- | --- | --- | --- | --- |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `email` | `String` | no | — | unique · `@allow(write: auth().isAdmin)` · **required on write** |
-| `emailVerified` | `Boolean` | no | `0` | `@allow(write: auth().isAdmin)` |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `isEmailVerified` | `Boolean` | no | `0` | `@allow(write: auth().isAdmin)` |
 | `isStaff` | `Boolean` | no | `0` | `@allow(write: auth().isAdmin)` |
 | `isSystemAdmin` | `Boolean` | no | `0` | `@allow(write: auth().isSystemAdmin)` |
 | `kind` | `UserKind` | no | `'user'` | @system |
@@ -1366,5 +1367,6 @@ table `wait` · db `main` · gate `8`
 | `timeoutAt` | `DateTime` | yes | — | — |
 
 ```
+@@index(runId)
 @@index(timeoutAt)
 ```

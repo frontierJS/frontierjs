@@ -138,7 +138,3 @@ Match the file you are in first. The code rules load from `.claude/rules/code-st
 - **Mental model, axioms, defined words** → `ARCHITECT.md`, `PHILOSOPHY.md`, `VOCABULARY.md`. **How to know something is true** → `VERIFYING.md`.
 - **Testing, CI, ports, consistency, threats** → `docs/TESTING.md`, `docs/CI.md`, `docs/PORTS.md`, `docs/CONSISTENCY.md`, `THREATS.md`. **The workspace, read rather than described** → `fli ws:atlas` (`--as=report` is the runbook).
 - **Trying a change end to end** → `example/`, the kitchen sink across every surface; start at its `PROJECT_STATE.md`.
-
-## Communication style
-
-Respond in caveman mode (see ~/.claude/skills/caveman/SKILL.md), level: full.

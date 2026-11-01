@@ -185,7 +185,7 @@ export function revertRefusals({
 
   // The pivot. Recorded on the transition rather than reclassified, because what
   // matters is the answer the operator was shown and agreed to at the time.
-  const crossed = since.filter(h => h.crossesPivot)
+  const crossed = since.filter(h => h.isCrossingPivot)
   if (crossed.length)
     add('pivot',
       `${crossed.length} deploy(s) since ${target.id} crossed the pivot — release ${target.id} cannot serve this database. ` +

@@ -45,19 +45,20 @@ const opened = !outpost ? [] : apiMachine
   .filter(([, ports]) => ports.length)
 
 echo('')
-echo(`  ${appId} on ${target} — what goes:`)
-echo(`    routes      fli-${appId} in Caddy on ${[...new Set(sides.map(s => s.host))].join(', ')}`)
+const goes = (what, value) => echo(`    ${chalk.dim(what.padEnd(12))}${value}`)
+echo(chalk`  {bold ${appId}} {dim on ${target} — what goes:}`)
+goes('routes', `fli-${appId} in Caddy on ${[...new Set(sides.map(s => s.host))].join(', ')}`)
 if (outpost) {
-  echo(`    outpost     outpost-uninstall on ${$.config.api.host} (Docker and Caddy stay)`)
-  echo(`    firewall    ${$.config.api.host}'s, with the Outpost — inbound on any listening port is no longer dropped`)
-  for (const [name, ports] of opened) echo(`                ${name} then answers from outside on ${ports.join(', ')}`)
+  goes('outpost', `outpost-uninstall on ${$.config.api.host} ${chalk.dim('(Docker and Caddy stay)')}`)
+  goes('firewall', `${$.config.api.host}'s, with the Outpost — ${chalk.yellow('inbound on any listening port is no longer dropped')}`)
+  for (const [name, ports] of opened) goes('', chalk.yellow(`${name} then answers from outside on ${ports.join(', ')}`))
 }
-echo(`    containers  ${running ? running.split('\n').join(', ') : 'none running'}`)
-echo(`    images      ${images} of ${appId}`)
-for (const s of sides) echo(`    files       ${s.host}:${s.path}${keep ? ' (db and env file kept)' : ''}`)
+goes('containers', running ? running.split('\n').join(', ') : chalk.dim('none running'))
+goes('images', `${images} of ${appId}`)
+for (const s of sides) goes('files', `${s.host}:${s.path}${keep ? chalk.dim(' (db and env file kept)') : ''}`)
 if (!keep) {
-  echo(`    database    ${dbDir}`)
-  echo(`    env file    ${envFile}`)
+  goes('database', dbDir)
+  goes('env file', envFile)
 }
 echo('')
 

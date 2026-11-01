@@ -1,8 +1,8 @@
 <script>
-  // alert_status — the workspace's alert rules and their severity.
+  // alertStatus — the workspace's alert rules and their severity.
   //
   // The mock's card is "what is firing right now", and it is a real question
-  // now: `alert-evaluate` runs every minute and writes `AlertEvent` rows
+  // now: `alert-evaluate` runs every minute and writes `Alert` rows
   // (`FJS-123`). Until it did, this card showed the RULES and said so on its
   // frame — a permanently empty "what is firing" reads as *all clear*, which is
   // the one wrong answer a monitoring tile can give.
@@ -10,7 +10,7 @@
   // The firing count comes from `get`, one call per rule and six rules at most:
   // `find` answers the rows and only `get` pays for the event history, which is
   // the same shape the alerts screen uses at a hundred.
-  import { alerts } from '../../resources/AlertRule.mesa'
+  import { alertRules } from '../../resources/AlertRule.mesa'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
   let rows    = []
@@ -19,7 +19,7 @@
 
   const TONE = { critical: 'danger', warning: 'warning', info: 'info' }
 
-  const list = alerts.tethered({ state: 'local', directives: { limit: 6 } })
+  const list = alertRules.tethered({ state: 'local', directives: { limit: 6 } })
   $: { rows = list.rows }
   $: loading = list.loading && !list.rows.length
   $: { if (list.error) error = list.error.message }
@@ -27,7 +27,7 @@
 
   async function loadFiring() {
     try {
-      const full = await Promise.all(list.rows.map(r => alerts.service.get(r.id)))
+      const full = await Promise.all(list.rows.map(r => alertRules.service.get(r.id)))
       // `status === 'firing'` and not *has any events*: a rule that fired last
       // week and recovered is not a rule that is firing, and counting history
       // as current is the same wrong answer from the other direction.

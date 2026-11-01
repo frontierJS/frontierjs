@@ -201,7 +201,7 @@ title: Networking
         <div class="section-header">
           <h2 class="h4">{n.name}</h2>
           <span class="cluster">
-            <Pill>{n.type}</Pill>
+            <Pill>{n.kind}</Pill>
             <code>{n.cidr}</code>
             <Badge tone="muted">{(members[n.id] ?? []).length} attached</Badge>
           </span>
@@ -254,6 +254,6 @@ title: Networking
 
 <Drawer open={!!editing} title={editing ? `Edit ${editing.name}` : ''} onclose={() => editing = null}>
   {#if editing}
-    <Network record={editing} only={['name', 'type', 'cidr']} oncancel={() => editing = null} ondone={saved} submitId="network-edit-save" />
+    <Network record={editing} only={['name', 'kind', 'cidr']} oncancel={() => editing = null} ondone={saved} submitId="network-edit-save" />
   {/if}
 </Drawer>

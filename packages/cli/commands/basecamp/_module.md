@@ -203,7 +203,7 @@ Enter, and `--yes` needs no `--admin`.
   - Zone › Config Rules › Edit — the per-host Full (strict) rule written before a record turns proxied (`FJS-D1422`); without it `--proxied` and the flip at install are refused by Cloudflare
   - Zone › Zone Settings › Read — reading a zone's SSL mode, where Flexible plus Caddy's HTTPS redirect is a redirect loop (zero-to-live 2.4)
 - **Zone Resources** names the zones it reaches; one zone is the narrowest, and every zone the account holds works
-- **For Basecamp too** — the same token as an edge account in Basecamp (Secrets, kind `provider_key`, provider `cloudflare`)
+- **For Basecamp too** — the same token as an edge account in Basecamp (Secrets, kind `providerKey`, provider `cloudflare`)
 - `fli eset CLOUDFLARE_TOKEN <token> --global`
 
 ## What it makes

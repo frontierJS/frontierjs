@@ -60,7 +60,7 @@ model Credential {
   /// `providerOnly` and the reset refusal count only an unmarked `oauth:*`
   /// row: an account a provider MADE has nothing but the provider securing it,
   /// and one the mailbox made keeps the mailbox as a way in (`FJS-D1011`).
-  linked          Boolean?
+  isLinked        Boolean?
   createdAt       DateTime   @default(now())
 
   @@db(main)
@@ -89,7 +89,7 @@ model Session {
   /// Signed in on a first factor alone, where `requireSecondFactor` says the
   /// account owes a second. The plugin refuses every service call but the
   /// enrollment three while it is set; `confirmTotp` clears it.
-  enrollmentOnly  Boolean  @default(false)
+  isEnrollmentOnly  Boolean  @default(false)
 
   /// When this session last proved the password (and the code, where a second
   /// factor is live): at sign-in, and again at `account.reauthenticate`. The

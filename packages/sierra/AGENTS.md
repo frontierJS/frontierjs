@@ -364,9 +364,9 @@ and `@` resolves to `widgets/src`.
 
 | Where | What it is |
 |---|---|
-| `src/Embeds/BuyButton.mesa` | one widget, one script. A directory holding `index.mesa` is a widget with parts |
-| `src/Embeds/BuyButton/Row.mesa` | a part of that widget, **not built** as a second script |
-| `src/lib/shop.js` | shared code. Anything under `Embeds/` that is not `.mesa`/`.js` is flagged by `widget-entry-name`, so helpers and stylesheets go beside the widget importing them or in `src/lib/`, imported as `@/lib/shop.js` |
+| `src/embeds/BuyButton.mesa` | one widget, one script. A directory holding `index.mesa` is a widget with parts |
+| `src/embeds/BuyButton/Row.mesa` | a part of that widget, **not built** as a second script |
+| `src/lib/shop.js` | shared code. Anything under `embeds/` that is not `.mesa`/`.js` is flagged by `widget-entry-name`, so helpers and stylesheets go beside the widget importing them or in `src/lib/`, imported as `@/lib/shop.js` |
 
 - **The tag is the file name, kebab-cased, under `widgets.prefix`.** `BuyButton.mesa`
   with `prefix: 'fjs-'` is `<fjs-buy-button>`. The prefix is *glued* on, so it ends in

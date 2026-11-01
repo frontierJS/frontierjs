@@ -110,9 +110,9 @@ export async function readStats(db: Db, days: number): Promise<Stats> {
     grouped(db, ['cwd'], where),
     db.claudeTranscript.groupBy({
       by: ['startedAt'], interval: { startedAt: 'day' }, timeZone: tz, fillGaps: false, orderBy: { startedAt: 'asc' }, _count: true,
-      where: { subagent: false, ...(from ? { startedAt: { gte: from.toISOString() } } : {}) },
+      where: { isSubagent: false, ...(from ? { startedAt: { gte: from.toISOString() } } : {}) },
     }) as Promise<Array<{ startedAt: string, _count: number }>>,
-    db.claudeTranscript.count({ where: { subagent: false, ...(from ? { lastAt: { gte: from.toISOString() } } : {}) } }) as Promise<number>,
+    db.claudeTranscript.count({ where: { isSubagent: false, ...(from ? { lastAt: { gte: from.toISOString() } } : {}) } }) as Promise<number>,
   ])
 
   const sessionsOn = new Map(started.map(r => [r.startedAt, r._count]))
@@ -208,7 +208,7 @@ export interface SessionRow extends Spend {
   startedAt:   string | null
   lastAt:      string | null
   /** The transcript file is gone from disk; the rows are all that is left. */
-  gone:        boolean
+  isGone:      boolean
   /** Transcript files of the agents this session spawned. */
   subagents:   number
 }
@@ -228,9 +228,9 @@ const chunks = <T>(xs: T[]) => Array.from({ length: Math.ceil(xs.length / KEYS) 
  */
 export async function readSessions(db: Db, { cwd, limit }: { cwd?: string, limit?: number } = {}): Promise<Sessions> {
   const rows: any[] = await db.claudeTranscript.findMany({
-    where: { subagent: false, ...(cwd ? { cwd } : {}) },
+    where: { isSubagent: false, ...(cwd ? { cwd } : {}) },
     orderBy: { lastAt: 'desc' }, limit: limit ?? 200,
-    select: { sessionId: true, cwd: true, title: true, firstPrompt: true, startedAt: true, lastAt: true, gone: true },
+    select: { sessionId: true, cwd: true, title: true, firstPrompt: true, startedAt: true, lastAt: true, isGone: true },
   })
   const ids = rows.map(r => r.sessionId as string)
   const spend = new Map<string, Spend>(), agents = new Map<string, number>()
@@ -238,7 +238,7 @@ export async function readSessions(db: Db, { cwd, limit }: { cwd?: string, limit
     for (const g of await grouped(db, ['sessionId'], { sessionId: { in: part } }))
       add(spend.get(String(g.sessionId)) ?? spend.set(String(g.sessionId), zero()).get(String(g.sessionId))!, spendOf(String(g.model), g))
     const subs: Array<{ sessionId: string, _count: number }> =
-      await db.claudeTranscript.groupBy({ by: ['sessionId'], where: { subagent: true, sessionId: { in: part } }, _count: true })
+      await db.claudeTranscript.groupBy({ by: ['sessionId'], where: { isSubagent: true, sessionId: { in: part } }, _count: true })
     for (const s of subs) agents.set(s.sessionId, s._count)
   }
 
@@ -249,7 +249,7 @@ export async function readSessions(db: Db, { cwd, limit }: { cwd?: string, limit
       sessionId: r.sessionId, title: r.title, firstPrompt: r.firstPrompt,
       startedAt: r.startedAt ? new Date(r.startedAt).toISOString() : null,
       lastAt: r.lastAt ? new Date(r.lastAt).toISOString() : null,
-      gone: !!r.gone, subagents: agents.get(r.sessionId) ?? 0,
+      isGone: !!r.isGone, subagents: agents.get(r.sessionId) ?? 0,
       ...(spend.get(r.sessionId) ?? zero()),
     }
     ;(out.get(key) ?? out.set(key, []).get(key)!).push(row)

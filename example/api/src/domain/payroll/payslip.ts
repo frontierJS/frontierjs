@@ -44,8 +44,8 @@
 
 import { allocate }      from '@frontierjs/toolbelt/units'
 import { annualGross }   from './employment.ts'
-import { contributionsOn, allRatesAsAt } from './payrates.ts'
-import type { BandPart } from './payrates.ts'
+import { contributionsOn, allRatesAsAt } from './pay-rates.ts'
+import type { BandPart } from './pay-rates.ts'
 
 export type PayslipDraft = {
   employeeId:   number
@@ -55,7 +55,7 @@ export type PayslipDraft = {
   net:          number
   employerCost: number
   lines: Array<{
-    kind: string, description: string, amount: number, counts: boolean, rateId: number | null,
+    kind: string, description: string, amount: number, isCounted: boolean, rateId: number | null,
     /** Set only on an arrears line — see `arrears.ts`. Absent on a period's own. */
     correctsPayRunId?: number | null,
   }>
@@ -72,7 +72,7 @@ export function periodShare(annual: number, periodsPerYear: number, periodIndex:
   return allocate(annual, Array(periodsPerYear).fill(1))[periodIndex]
 }
 
-/** Band parts → payslip lines, with the sign and the `counts` flag applied. */
+/** Band parts → payslip lines, with the sign and the `isCounted` flag applied. */
 function linesFromBands(
   parts: BandPart[], kind: string, label: string, { deduction = true } = {},
 ): PayslipDraft['lines'] {
@@ -81,9 +81,9 @@ function linesFromBands(
     description: `${label} at ${(p.percent / 100).toFixed(2)}%`,
     // Positive is an earning, negative a deduction — and an employer
     // contribution is neither, so it is carried positive and marked as not
-    // counting. `counts` is the whole reason the invariant needs a predicate.
+    // counting. `isCounted` is the whole reason the invariant needs a predicate.
     amount:  deduction ? -p.amount : p.amount,
-    counts:  deduction,
+    isCounted: deduction,
     rateId:  p.rateId,
   }))
 }
@@ -117,7 +117,7 @@ export function draftPayslip(
     description: window.basis === 'hourly'
       ? `Basic pay — ${window.hoursPerWeek} hours a week`
       : 'Basic pay',
-    amount: gross, counts: true, rateId: null,
+    amount: gross, isCounted: true, rateId: null,
   }]
 
   const scale = (parts: BandPart[]) => parts.map(p => ({ ...p, amount: share(p.amount) }))
@@ -144,17 +144,17 @@ export function draftPayslip(
 const EARNING_KINDS = new Set(['basicPay', 'overtime', 'bonus'])
 
 export function totalsFor(lines: PayslipDraft['lines']) {
-  const counting     = lines.filter(l => l.counts)
+  const counting     = lines.filter(l => l.isCounted)
   const gross        = counting.filter(l =>  EARNING_KINDS.has(l.kind)).reduce((n, l) => n + l.amount, 0)
   const deductions   = -counting.filter(l => !EARNING_KINDS.has(l.kind)).reduce((n, l) => n + l.amount, 0)
-  const employerCost = lines.filter(l => !l.counts).reduce((n, l) => n + l.amount, 0)
+  const employerCost = lines.filter(l => !l.isCounted).reduce((n, l) => n + l.amount, 0)
   return { gross, deductions, net: gross - deductions, employerCost }
 }
 
 /**
  * A period's draft with a correction folded onto it.
  *
- * The arrears are ordinary lines — same kinds, same `counts`, so they reach the
+ * The arrears are ordinary lines — same kinds, same `isCounted`, so they reach the
  * same ledger accounts with nothing taught to `payPayRun` — and the totals are
  * recomputed rather than added to, so there is one definition of what a payslip
  * says and it does not depend on which lines arrived first.
@@ -173,12 +173,12 @@ export function withArrears(draft: PayslipDraft, arrears: PayslipDraft['lines'])
  * to catch. A draft that does not add up never becomes a row.
  */
 export function assertPayslipAddsUp(draft: PayslipDraft, label: string): void {
-  const counting = draft.lines.filter(l => l.counts)
+  const counting = draft.lines.filter(l => l.isCounted)
   const sum      = counting.reduce((n, l) => n + l.amount, 0)
   if (sum !== draft.net) throw payrollError(
     `${label}: the lines that count sum to ${sum} and the net is ${draft.net}`,
   )
-  const employer = draft.lines.filter(l => !l.counts).reduce((n, l) => n + l.amount, 0)
+  const employer = draft.lines.filter(l => !l.isCounted).reduce((n, l) => n + l.amount, 0)
   if (employer !== draft.employerCost) throw payrollError(
     `${label}: the employer lines sum to ${employer} and the employer cost is ${draft.employerCost}`,
   )

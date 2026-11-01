@@ -1,6 +1,6 @@
 ---
 id: review-decisions
-status: assessment
+status: reading
 dated: 2026-10-03
 ---
 

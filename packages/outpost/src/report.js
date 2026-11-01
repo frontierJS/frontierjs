@@ -95,11 +95,11 @@ export function createReporter(config, {
     },
 
     async reportDisk() {
-      return post('/cleanup', 'report', { server_id: config.serverId, ...(await inspector.disk()) })
+      return post('/maintenanceRuns', 'report', { server_id: config.serverId, ...(await inspector.disk()) })
     },
 
     async reportPosture() {
-      return post('/posture', 'report', { server_id: config.serverId, ...(await inspector.posture()) })
+      return post('/serverPostures', 'report', { server_id: config.serverId, ...(await inspector.posture()) })
     },
 
     /** Both timers. Every tick is caught and logged rather than thrown: a

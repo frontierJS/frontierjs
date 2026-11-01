@@ -36,11 +36,11 @@ title: Hub accounts
 
   function search(value) { q = value; load() }
 
-  $: organizations = rows.filter(a => a.type === 'organization').length
+  $: organizations = rows.filter(a => a.kind === 'organization').length
   $: individuals   = rows.length - organizations
   const HUB_ACCOUNT_COLUMNS = [
     { name: 'account',    label: 'Account' },
-    { name: 'type',       label: 'Type' },
+    { name: 'kind',       label: 'Kind' },
     { name: 'status',     label: 'Status' },
     { name: 'users',      label: 'Users' },
     { name: 'workspaces', label: 'Workspaces' },
@@ -86,7 +86,7 @@ title: Hub accounts
           {a.displayName}
           <span class="text-sm text-muted"><code>{a.slug}</code></span>
         </td>
-        <td><Badge tone="muted">{a.type}</Badge></td>
+        <td><Badge tone="muted">{a.kind}</Badge></td>
         <td><Pill tone={a.status === 'active' ? 'success' : 'warning'}>{a.status}</Pill></td>
         <td>{a.users}</td>
         <td>{a.workspaces}</td>

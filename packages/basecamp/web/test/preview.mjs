@@ -33,7 +33,7 @@ const TYPES = {
 
 // Everything the API owns. Kept as one list rather than a prefix test because
 // Basecamp has no /api prefix — a service is mounted at its own name.
-const API_ROUTES = /^\/(auth|setup|session|health|metrics|manifest|conduit-targets|workspaces|projects|environments|apps|domains|servers|deployments|jobs|networks|alerts|channels|secrets|portal|audit)\b/
+const API_ROUTES = /^\/(auth|setup|session|health|metrics|manifest|conduit-targets|workspaces|projects|environments|apps|domains|servers|deployments|jobs|networks|alerts|alertRules|notificationChannels|secrets|portal|auditEvents)\b/
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`)

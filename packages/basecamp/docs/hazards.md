@@ -190,7 +190,7 @@ The full hazard catalog for `@frontierjs/basecamp`, moved out of `CLAUDE.md`. Th
   (`FJS-140`). An action answering rows keeps everything
   it sends, and a `find` that answers anything but a list throws rather than
   guessing. NAMED keys and no `data` is still the clearest shape for an action
-  that answers more than one thing — `volumes.usage`, `cleanup.targets`.
+  that answers more than one thing — `volumes.usage`, `maintenanceRuns.targets`.
 - **The three API snapshots are still at the PACKAGE ROOT here, and `example`'s
   four are in `api/` — but the reason is gone.** A snapshot belongs in the
   surface it describes, and the `snapshots` phase reruns each generator from the
@@ -290,9 +290,9 @@ The full hazard catalog for `@frontierjs/basecamp`, moved out of `CLAUDE.md`. Th
   `api/src/domain/release/app-source.ts` — and a source naming no kind is REFUSED rather
   than inferred from which keys happen to be present. Three things follow and
   each is a place a later change will want to shortcut. **`inline` forces
-  `type: static`**, because inline bytes through the container pipeline fail
+  `kind: static`**, because inline bytes through the container pipeline fail
   four steps in with a docker error about an image nobody named. **The step
-  list is read off the SOURCE, not the type** — `buildInitialSteps` — and a
+  list is read off the SOURCE, not the kind** — `buildInitialSteps` — and a
   rollback builds it from the TARGET's snapshot, or an app switched between
   kinds rolls an old release back through a pipeline its bytes cannot run.
   **A list carries `summarizeSource`, not the files**: fifty pasted pages on a
@@ -306,7 +306,7 @@ The full hazard catalog for `@frontierjs/basecamp`, moved out of `CLAUDE.md`. Th
   `failed`: no archive was taken. Restoring is `apps.restoreVolume` once the
   file is in the machine's restore directory.
 - **A git push is a conduit Receiver, and the release runs as the person who
-  enabled it** (`FJS-D884`, `plugins/push.ts`). Two doors on one apply: the
+  enabled it** (`FJS-D884`, `plugins/git-push.ts`). Two doors on one apply: the
   forge's HMAC at `/hooks/git/{appId}` and a per-App token URL at
   `/hooks/git/{appId}/{token}`; `apps.enablePush` mints both once (the secret
   `@encrypted`, the token a hash) and re-running it rotates them. A refusal is

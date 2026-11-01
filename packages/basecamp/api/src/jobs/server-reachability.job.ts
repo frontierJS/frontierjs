@@ -21,7 +21,7 @@
 // nothing can test at a chosen instant.
 
 import { defineJob }      from '@frontierjs/caravan'
-import { runsAsApp }      from './context.ts'
+import { runsAsApp }      from '../domain/job/job-context.ts'
 import { gradeReachability, heartbeatGraceMs } from '../domain/host/reachability.ts'
 import { notifyPeople, workspaceMembers }        from '../domain/notification/notify.ts'
 import type { App }         from '@frontierjs/junction'

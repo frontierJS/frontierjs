@@ -13,7 +13,7 @@ HivePaaS is a Go control plane with a gRPC agent, Docker Swarm, Traefik v3, Post
 Kopia and VictoriaLogs; it is Apache-2.0. It is the nearest current shape of what
 `VISION.md` calls "FJS's Coolify".
 
-**Before building any row, read `packages/basecamp/docs/VISION.md`.** Basecamp is "not a
+**Before building any row, read `packages/basecamp/docs/vision.md`.** Basecamp is "not a
 hosting platform" and "never grows a capability `fli` cannot also perform". So a build,
 a terminal or a log store is implemented in `fli` and Outpost first, and Basecamp calls it.
 A row that only fits as a Basecamp-only feature belongs in *Not taken*.

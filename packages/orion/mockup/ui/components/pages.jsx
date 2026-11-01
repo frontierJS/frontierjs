@@ -1025,12 +1025,12 @@ export const ExecutionDetail = ({ exec: execProp, onBack }) => {
                               height:"100%", width:`${pct}%`,
                               background: s?.status==="failed" ? "var(--red)55"
                                         : s?.status==="skipped" ? "var(--dim)"
-                                        : s?.fromCache ? "var(--purple)55"
+                                        : s?.isFromCache ? "var(--purple)55"
                                         : "var(--cyan)33",
                               borderRight: `2px solid ${
                                 s?.status==="failed" ? "var(--red)"
                                 : s?.status==="skipped" ? "var(--muted)"
-                                : s?.fromCache ? "var(--purple)"
+                                : s?.isFromCache ? "var(--purple)"
                                 : "var(--cyan)"}`,
                               transition:"width 0.3s ease",
                             }}/>
@@ -1135,8 +1135,8 @@ export const ExecutionDetail = ({ exec: execProp, onBack }) => {
                 },
                 { key:"cache", label:"Cache",
                   render:([, s]) => (
-                    <span style={{ fontFamily:"var(--font-mono)", fontSize:12, color: s.fromCache ? "var(--purple)" : "var(--muted)" }}>
-                      {s.fromCache ? "HIT" : "MISS"}
+                    <span style={{ fontFamily:"var(--font-mono)", fontSize:12, color: s.isFromCache ? "var(--purple)" : "var(--muted)" }}>
+                      {s.isFromCache ? "HIT" : "MISS"}
                     </span>
                   )
                 },
@@ -1166,7 +1166,7 @@ export const ExecutionDetail = ({ exec: execProp, onBack }) => {
                 {[
                   ["Duration",  exec.nodeTimings[selNode] ? fmt.duration(exec.nodeTimings[selNode]) : "—"],
                   ["Attempts",  nodeState.attempts],
-                  ["Cache",     nodeState.fromCache ? "HIT" : "MISS"],
+                  ["Cache",     nodeState.isFromCache ? "HIT" : "MISS"],
                   ["Logs",      nodeState.logs?.length ?? 0],
                 ].map(([k,v]) => (
                   <div key={k} style={{ background:"var(--surface)", borderRadius:5, padding:"8px 10px" }}>
@@ -1417,9 +1417,9 @@ export const ExecutionPreview = ({ exec: execProp, onClose, onDrilldown, onCance
                           height:"100%", width:`${pct}%`, transition:"width 0.3s ease",
                           background: s?.status==="failed"  ? "var(--red)55"
                                     : s?.status==="skipped" ? "var(--dim)"
-                                    : s?.fromCache          ? "var(--purple)55"
+                                    : s?.isFromCache          ? "var(--purple)55"
                                     : "var(--cyan)33",
-                          borderRight:`2px solid ${s?.status==="failed"?"var(--red)":s?.status==="skipped"?"var(--muted)":s?.fromCache?"var(--purple)":"var(--cyan)"}`,
+                          borderRight:`2px solid ${s?.status==="failed"?"var(--red)":s?.status==="skipped"?"var(--muted)":s?.isFromCache?"var(--purple)":"var(--cyan)"}`,
                         }}/>
                       </div>
                       <div style={{ fontFamily:"var(--font-mono)", fontSize:10, color:"var(--muted)", width:36, textAlign:"right", flexShrink:0 }}>
@@ -1445,7 +1445,7 @@ export const ExecutionPreview = ({ exec: execProp, onClose, onDrilldown, onCance
               {[
                 ["Duration", exec.nodeTimings[selNode] ? fmt.duration(exec.nodeTimings[selNode]) : "—"],
                 ["Attempts", nodeState.attempts ?? "—"],
-                ["Cache",    nodeState.fromCache ? "HIT" : "MISS"],
+                ["Cache",    nodeState.isFromCache ? "HIT" : "MISS"],
               ].map(([k,v]) => (
                 <div key={k} style={{ background:"var(--surface)", borderRadius:5, padding:"6px 8px" }}>
                   <div style={{ fontSize:10, color:"var(--muted)", marginBottom:2 }}>{k}</div>
@@ -1865,7 +1865,7 @@ export const ExecutionsPage = ({ filterFlowId, onClearFilter, onReviewExec }) =>
     if (filters.errorsOnly)  list = list.filter(e => e.error || Object.values(e.nodeStates).some(s => s.error))
     if (filters.replaysOnly) list = list.filter(e => !!e.replayOf)
     if (filters.slowOnly)    list = list.filter(e => e.slowNodes?.length > 0)
-    if (filters.cacheHits)   list = list.filter(e => Object.values(e.nodeStates).some(s => s.fromCache))
+    if (filters.cacheHits)   list = list.filter(e => Object.values(e.nodeStates).some(s => s.isFromCache))
 
     // Sort
     list.sort((a, b) => {

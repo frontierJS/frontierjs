@@ -355,9 +355,9 @@ const record = async () => {
   }
 
   const eventId = String(body.id ?? '')
-  const kind    = String(body.type ?? '')
+  const type    = String(body.type ?? '')
   const ref     = body.data?.paymentRef ? String(body.data.paymentRef) : null
-  if (!eventId || !kind) throw bad('A payment event needs an id and a type')
+  if (!eventId || !type) throw bad('A payment event needs an id and a type')
 
   const system = sys()
 
@@ -372,7 +372,7 @@ const record = async () => {
     return { status: 'duplicate', eventId }
   }
 
-  await system.paymentEvent.create({ data: { eventId, kind, paymentRef: ref } })
+  await system.paymentEvent.create({ data: { eventId, type, paymentRef: ref } })
 
   // ── A card being filed is not a payment ─────────────────────────────────
   //
@@ -384,7 +384,7 @@ const record = async () => {
   // the confirm: the browser that confirmed is on the person's own machine and
   // is not a caller this shop can believe about whose card was filed. The
   // signature is what makes this one believable.
-  if (kind === 'setup.succeeded') {
+  if (type === 'setup.succeeded') {
     const inst = body.data?.instrument
     const who  = String(body.data?.reference ?? '')
     const id   = Number(/^CUS-(\d+)$/.exec(who)?.[1] ?? NaN)
@@ -457,7 +457,7 @@ const record = async () => {
   // deadline is the same one every other unpaid invoice is measured against.
   // What must NOT happen is a lapse at once, and it does not, because that is
   // the hard-decline path and this is not a decline.
-  if (kind === 'payment.action_required') {
+  if (type === 'payment.action_required') {
     // Out of order, exactly as the failure path below: a challenge delivered
     // after the payment has already been settled or refused is a provider
     // retrying an event it thinks it owes, and acting on it would move a
@@ -476,7 +476,7 @@ const record = async () => {
              invoice: payment.invoiceId ?? null, action: 'required' }
   }
 
-  if (kind === 'payment.failed') {
+  if (type === 'payment.failed') {
     // The row is what goes on the wire, and it is the UPDATED row — the write
     // itself announces nothing, because callService is already announcing for
     // this service and the tap suppresses the double.
@@ -540,13 +540,13 @@ const record = async () => {
                decline: declineKind(body.data?.declineCode ?? null) }
     }
 
-    // The order stays `pending`. A declined card is not a cancelled order —
+    // The order stays `pending`. A declined card is not a canceled order —
     // the shopper is expected to try another one, and `start` will answer
     // because the status has not moved.
     return { status: 'recorded', eventId, payment: payment.id, order: null }
   }
 
-  if (kind === 'payment.refunded') {
+  if (type === 'payment.refunded') {
     const back  = Number(body.data?.refunded ?? 0)
     const total = Number(body.data?.refundedTotal ?? back)
 
@@ -584,9 +584,9 @@ const record = async () => {
     return { status: 'refunded', eventId, payment: payment.id, order: order.id, refunded: back }
   }
 
-  if (kind !== 'payment.succeeded') {
+  if (type !== 'payment.succeeded') {
     $.dispatch = false
-    return { status: 'ignored', eventId, kind }
+    return { status: 'ignored', eventId, type }
   }
 
   $.dispatch = await system.payment.update({ where: { id: payment.id }, data: {

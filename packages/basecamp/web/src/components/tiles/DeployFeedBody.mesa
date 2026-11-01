@@ -1,5 +1,5 @@
 <script>
-  // deploy_feed — recent deployments, for one app or the whole workspace.
+  // deployFeed — recent deployments, for one app or the whole workspace.
   //
   // The mock filters by PROJECT. A deployment belongs to an app and carries no
   // project id, so the subject here is the app: it is the filter the service

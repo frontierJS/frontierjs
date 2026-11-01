@@ -30,12 +30,12 @@ it re-resolved when it runs. Survives a restart.
 | `app-drill:run` | `fleet` | on dispatch | — | 1 | default | 5580000ms |
 | `backup:run` | `fleet` | on dispatch | — | 2 | 30000 | 600000ms |
 | `claude-index` | `default` | `*/5 * * * *` | — | 3 | default | 1800000ms |
-| `cleanup:run` | `fleet` | on dispatch | — | 2 | 10000 | **none** |
 | `dependency-check` | `sync` | `15 6 * * *` | — | 3 | 60000, 600000 | 300000ms |
 | `deployment:run` | `deployments` | on dispatch | — | 1 | default | **none** |
 | `domain:dns` | `dns` | on dispatch | — | 5 | 10000, 60000 | 120000ms |
 | `hub-posture` | `default` | `0 9 * * *` | — | 3 | default | **none** |
 | `job:run` | `jobs` | on dispatch | — | 3 | 5000, 30000, 120000 | **none** |
+| `maintenance:run` | `fleet` | on dispatch | — | 2 | 10000 | **none** |
 | `monitor-sweep` | `default` | `* * * * *` | — | 3 | default | **none** |
 | `orion.run` | `orion` | on dispatch | — | 3 | default | **none** |
 | `orion.sweep` | `orion` | `* * * * *` | — | 3 | default | **none** |

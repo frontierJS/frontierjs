@@ -127,7 +127,7 @@ type SeedProduct = {
   price:       number
   sizes:       readonly string[]
   colors:     Colorway[]
-  active?:     boolean
+  isActive?:   boolean
 }
 
 const CATALOG: SeedProduct[] = [
@@ -192,9 +192,9 @@ const CATALOG: SeedProduct[] = [
     description: 'Four die-cut vinyl stickers.',
     skuStem: 'JCT-STK', price: 6, sizes: ['one'],
     // Retired rather than deleted — the products screen filters on
-    // Product.active, and a filter with nothing on the far side of it is a
+    // Product.isActive, and a filter with nothing on the far side of it is a
     // control nobody can tell works.
-    active: false,
+    isActive: false,
     colors: [{ color: 'Parchment', code: 'PCH', stock: 0, image: 'junction-sticker.png' }],
   },
 
@@ -247,7 +247,7 @@ const COLORS = [
   { name: 'Coal',       hex: '#2b2b2b' },
   { name: 'Parchment',  hex: '#efe6d2' },
   { name: 'Black',      hex: '#111111' },
-  { name: 'Ochre',      hex: '#c98a1a', retired: true },
+  { name: 'Ochre',      hex: '#c98a1a', isRetired: true },
 ]
 
 /**
@@ -294,7 +294,7 @@ async function seedMoney() {
     // One rate, 20%, called what a UK receipt calls it. The label is seeded
     // rather than defaulted because a receipt reading `Tax` where the law says
     // `VAT` is a receipt a business customer cannot file.
-    await sys.taxRate.create({ data: { label: 'VAT', rate: 0.2, isDefault: true, active: true } })
+    await sys.taxRate.create({ data: { label: 'VAT', rate: 0.2, isDefault: true, isActive: true } })
   }
 
   if (await sys.shippingMethod.count() === 0) {
@@ -388,7 +388,7 @@ async function seedCatalog() {
       name:        p.name,
       brand:       p.brand,
       description: p.description,
-      active:      p.active ?? true,
+      isActive:    p.isActive ?? true,
     } })
 
     for (const c of p.colors) {
@@ -591,7 +591,7 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
     // every shopper the storefront registers arrives with the role Sam has.
     await sys.user.updateMany({
       where: { email: who.email },
-      data:  { emailVerified: true, isStaff: true, isSystemAdmin: who === DEMO.ops },
+      data:  { isEmailVerified: true, isStaff: true, isSystemAdmin: who === DEMO.ops },
     })
   }
 
@@ -601,7 +601,7 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
   // userId == auth().id)` on Order and Customer from a rule into a screen.
   if (!await sys.user.findFirst({ where: { email: DEMO.buyer.email } })) {
     await auth.createUser(DEMO.buyer)
-    await sys.user.updateMany({ where: { email: DEMO.buyer.email }, data: { emailVerified: true } })
+    await sys.user.updateMany({ where: { email: DEMO.buyer.email }, data: { isEmailVerified: true } })
   }
   const buyerUser = await sys.user.findFirst({ where: { email: DEMO.buyer.email } })
   const buyerCustomer = await reseed<any>(sys.customer, { email: DEMO.buyer.email })
@@ -698,7 +698,7 @@ async function seedBilling() {
   // `PRO` above carries the argument — two windows, a subscriber on the older
   // one — and these carry the PAGE: a pricing page with one row on it cannot
   // show a plan being compared to another, cannot show two intervals side by
-  // side, and cannot show that `active: false` is what retires a plan rather
+  // side, and cannot show that `isActive: false` is what retires a plan rather
   // than deleting the rows every past subscription points at.
   //
   // One version each and it is open, which is the state a price is in for
@@ -708,19 +708,19 @@ async function seedBilling() {
   // saying *charge something else from now on*, which needs a caller.
   for (const spec of [
     { code: 'STARTER', name: 'Starter',    interval: 'monthly' as const, price: cents(9),
-      description: 'One shelf, restocked when you ask.',            active: true },
+      description: 'One shelf, restocked when you ask.',            isActive: true },
     { code: 'SCALE',   name: 'Scale',      interval: 'monthly' as const, price: cents(49),
-      description: 'Every shelf, restocked weekly, with a buyer.',  active: true },
+      description: 'Every shelf, restocked weekly, with a buyer.',  isActive: true },
     { code: 'PROYEAR', name: 'Pro annual', interval: 'yearly'  as const, price: cents(240),
-      description: 'Pro, paid for the year — two months of it free.', active: true },
+      description: 'Pro, paid for the year — two months of it free.', isActive: true },
     { code: 'LEGACY',  name: 'Legacy',     interval: 'monthly' as const, price: cents(12),
-      description: 'Closed to new subscribers.',                    active: false },
+      description: 'Closed to new subscribers.',                    isActive: false },
   ]) {
     let row = await sys.plan.findFirst({ where: { code: spec.code } })
     if (!row) {
       row = await sys.plan.create({ data: {
         code: spec.code, name: spec.name, interval: spec.interval,
-        description: spec.description, active: spec.active,
+        description: spec.description, isActive: spec.isActive,
       } })
     }
     if (await sys.planVersion.count({ where: { planId: row.id } }) === 0) {
@@ -842,7 +842,7 @@ async function seedBilling() {
       await sys.invoice.delete({ where: { id: b.id } })
     }
     if (litter.length) await recoverIfClear(sys, sub.id)
-    if (sub.cancelAtPeriodEnd) await sys.subscription.update({ where: { id: sub.id }, data: { cancelAtPeriodEnd: false } })
+    if (sub.isCancelingAtPeriodEnd) await sys.subscription.update({ where: { id: sub.id }, data: { isCancelingAtPeriodEnd: false } })
 
     const windows = versions.slice(2).reverse()
     for (const v of windows) {
@@ -1007,7 +1007,7 @@ async function priceOrder(
     : null
   if (shipping && !method) throw new Error(`seed: no shipping method called ${shipping}`)
 
-  const taxRate = await sys.taxRate.findFirst({ where: { active: true, isDefault: true } })
+  const taxRate = await sys.taxRate.findFirst({ where: { isActive: true, isDefault: true } })
 
   return priceBasket(
     lines.map(l => ({ total: l.lineTotal })),

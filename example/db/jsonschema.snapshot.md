@@ -132,7 +132,7 @@ validates, and a select that silently drops an option.
 - `FlowStatus` — `draft`, `active`, `paused`, `archived`
 - `FlowRunStatus` — `pending`, `running`, `waiting`, `completed`, `failed`, `cancelled`
 - `FlowStepStatus` — `pending`, `running`, `completed`, `failed`, `skipped`
-- `FlowCredentialAuth` — `none`, `bearer`, `api_key`, `hmac`
+- `FlowCredentialAuth` — `none`, `bearer`, `apiKey`, `hmac`
 - `Brand` — `frontierjs`, `junction`, `litestone`
 - `Size` — `one`, `xs`, `s`, `m`, `l`, `xl`, `xxl`
 - `CustomFieldType` — `text`, `number`
@@ -173,7 +173,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `tokenExpiresAt` | `string`? | — | — | `format: "date-time"` | — |
 | `scope` | `string`? | — | — | — | — |
 | `totpLastStep` | `integer`? | — | — | — | — |
-| `linked` | `boolean`? | — | — | — | — |
+| `isLinked` | `boolean`? | — | — | — | — |
 
 **On create**: required — `userId`, `type` · not accepted — `id`
 
@@ -188,7 +188,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
 | `ipAddress` | `string`? | — | — | — | — |
 | `userAgent` | `string`? | — | — | — | — |
-| `enrollmentOnly` | `boolean` = `false` | — | — | — | — |
+| `isEnrollmentOnly` | `boolean` = `false` | — | — | — | — |
 | `reauthenticatedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `impersonatingUserId` | `string`? | — | — | — | — |
 | `impersonationReason` | `string`? | — | — | — | — |
@@ -392,7 +392,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `nodeId` | `string` | yes | — | — | — |
 | `status` | `FlowStepStatus` | yes | — | — | — |
 | `attempts` | `integer` = `0` | — | — | — | — |
-| `fromCache` | `boolean` = `false` | — | — | — | — |
+| `isFromCache` | `boolean` = `false` | — | — | — | — |
 | `startedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `durationMs` | `integer`? | — | — | — | — |
 | `output` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
@@ -461,7 +461,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `description` | `string`? | — | — | `minLength: 0` `maxLength: 2000` `x-litestone-required-where` | `required` |
 | `brand` | `Brand` | yes | — | — | — |
 | `fields` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
-| `active` | `boolean` = `true` | — | — | — | — |
+| `isActive` | `boolean` = `true` | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 | `variantCount` | `integer` | — | — | `x-aggregatable` `x-litestone-from` `x-litestone-kind` | — |
 | `priceFrom` | `integer` | — | — | `x-aggregatable` `x-litestone-from` `x-litestone-kind` `x-money` | — |
@@ -479,7 +479,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `integer` | — | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 30` | — |
 | `hex` | `string`? | — | — | `minLength: 4` `maxLength: 7` | — |
-| `retired` | `boolean` = `false` | — | — | — | — |
+| `isRetired` | `boolean` = `false` | — | — | — | — |
 | `sortOrder` | `integer` = `999` | — | — | — | — |
 
 **On create**: required — `name` · not accepted — `id`
@@ -503,7 +503,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `barcode` | `string`? | — | — | — | — |
 | `stock` | `integer` = `0` | — | — | `minimum: 0` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
-| `active` | `boolean` = `true` | — | — | — | — |
+| `isActive` | `boolean` = `true` | — | — | — | — |
 
 **On create**: required — `productId`, `sku`, `price` · not accepted — `id`, `version`
 
@@ -560,7 +560,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `label` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
 | `type` | `CustomFieldType` | yes | — | — | — |
 | `defaultValue` | `string`? | — | — | `minLength: 0` `maxLength: 200` | — |
-| `show` | `boolean` = `true` | — | — | — | — |
+| `isVisible` | `boolean` = `true` | — | — | — | — |
 | `slot` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `model`, `key`, `label`, `type` · not accepted — `id`
@@ -583,7 +583,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `endsAt` | `string`? | — | Ends | `format: "date-time"` | — |
 | `maxRedemptions` | `integer`? | — | Redemption limit | `minimum: 1` | — |
 | `redemptions` | `integer` = `0` | — | Times used | `minimum: 0` `x-litestone-kind` | — |
-| `active` | `boolean` = `true` | — | Active | — | — |
+| `isActive` | `boolean` = `true` | — | Active | — | — |
 
 **On create**: required — `code`, `label`, `value` · not accepted — `id`
 
@@ -598,7 +598,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `address` | `string` | yes | Address | `minLength: 1` `maxLength: 160` | — |
 | `site` | `json`? | — | Location | `x-sortable: "json"` `x-aggregatable` `x-geo` | — |
 | `hours` | `string`? | — | Hours | `minLength: 0` `maxLength: 80` | — |
-| `active` | `boolean` = `true` | — | Active | — | — |
+| `isActive` | `boolean` = `true` | — | Active | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `name`, `address` · not accepted — `id`, `version`
@@ -616,7 +616,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `price` | `integer` | yes | Price | `minimum: 0` `x-money` | — |
 | `freeOver` | `integer`? | — | Free over | `minimum: 0` `x-money` | — |
 | `position` | `integer` = `0` | — | Position | — | — |
-| `active` | `boolean` = `true` | — | Active | — | — |
+| `isActive` | `boolean` = `true` | — | Active | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `name`, `price` · not accepted — `id`, `version`
@@ -631,7 +631,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `label` | `string` | yes | Shown as | `minLength: 1` `maxLength: 30` | — |
 | `rate` | `number` | yes | Rate | `minimum: 0` `maximum: 1` | — |
 | `isDefault` | `boolean` = `false` | — | Default | — | — |
-| `active` | `boolean` = `true` | — | Active | — | — |
+| `isActive` | `boolean` = `true` | — | Active | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `label`, `rate` · not accepted — `id`, `version`
@@ -738,11 +738,11 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
 | `eventId` | `string` | yes | Event | `minLength: 3` `maxLength: 80` | — |
-| `kind` | `string` | yes | Type | `minLength: 1` `maxLength: 60` | — |
+| `type` | `string` | yes | Type | `minLength: 1` `maxLength: 60` | — |
 | `paymentRef` | `string`? | — | Payment | `minLength: 0` `maxLength: 64` | — |
 | `receivedAt` | `string` | — | — | `format: "date-time"` | — |
 
-**On create**: required — `eventId`, `kind` · not accepted — `id`
+**On create**: required — `eventId`, `type` · not accepted — `id`
 
 ### `Plan`
 
@@ -756,7 +756,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `name` | `string` | yes | Name | `minLength: 2` `maxLength: 80` | — |
 | `description` | `string`? | — | — | `minLength: 0` `maxLength: 400` | — |
 | `interval` | `PlanInterval` = `"monthly"` | — | — | — | — |
-| `active` | `boolean` = `true` | — | — | — | — |
+| `isActive` | `boolean` = `true` | — | — | — | — |
 | `currentPrice` | `integer`? | — | — | `x-aggregatable` `x-litestone-from` `x-litestone-kind` | — |
 
 **On create**: required — `code`, `name` · not accepted — `id`, `currentPrice`
@@ -798,7 +798,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `currentPeriodEnd` | `string`? | — | — | `x-aggregatable` `x-litestone-from` `x-litestone-kind` | — |
 | `trialEndsAt` | `string`? | — | — | `format: "date-time"` | — |
 | `cancelledAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
-| `cancelAtPeriodEnd` | `boolean` = `false` | — | Cancels at period end | `x-litestone-kind` | — |
+| `isCancelingAtPeriodEnd` | `boolean` = `false` | — | Cancels at period end | `x-litestone-kind` | — |
 | `userId` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `reference`, `customerId`, `planVersionId` · not accepted — `id`, `currentPeriodStart`, `currentPeriodEnd`
@@ -830,10 +830,10 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `creditNotes` — hasMany `CreditNote`
 - relation `payments` — hasMany `Payment`
 - transitions on `status` — `issue`: draft → issued @system · `settle`: issued → paid @system · `void`: issued → void @5
-- transitions on `reminded` — `remind`: false → true @system
+- transitions on `isReminded` — `remind`: false → true @system
 - commitment `subscription.lapse` — on `dueOn` + `graceDays` d (day) · moves `Subscription.status` from active · while `status == 'issued'`
 - commitment `subscription.cancel` — on `dueOn` + `dunningDays` d (day) · moves `Subscription.status` from trialing|active|pastDue · while `status == 'issued'`
-- commitment `remind` — on `dueOn` - 3d (day) · moves `Invoice.reminded` from false · while `status == 'issued'`
+- commitment `remind` — on `dueOn` - 3d (day) · moves `Invoice.isReminded` from false · while `status == 'issued'`
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -852,7 +852,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `graceDays` | `integer` | yes | — | `x-unit` | — |
 | `dunningDays` | `integer` | yes | — | `x-unit` | — |
 | `paidAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
-| `reminded` | `boolean` = `false` | — | — | `x-litestone-kind` | — |
+| `isReminded` | `boolean` = `false` | — | — | `x-litestone-kind` | — |
 | `userId` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `number`, `customerId`, `periodStart`, `periodEnd`, `dueOn`, `graceDays`, `dunningDays` · not accepted — `id`
@@ -1151,7 +1151,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `kind` | `PayComponentKind` | yes | Kind | — | — |
 | `description` | `string` | yes | Description | `minLength: 2` `maxLength: 120` | — |
 | `amount` | `integer` | yes | Amount | `x-money` | — |
-| `counts` | `boolean` = `true` | — | Counts toward net | — | — |
+| `isCounted` | `boolean` = `true` | — | Counts toward net | — | — |
 | `rateId` | `integer`? | — | Rate | — | — |
 | `correctsPayRunId` | `integer`? | — | Corrects | — | — |
 
@@ -1199,7 +1199,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `email` | `string` | yes | — | `format: "email"` `x-litestone-write-claims` `x-litestone-write-policy` `x-transforms` | — |
 | `name` | `string`? | — | — | `x-transforms` | — |
-| `emailVerified` | `boolean` = `false` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
+| `isEmailVerified` | `boolean` = `false` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 | `role` | `string` = `"user"` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 | `kind` | `UserKind` = `"user"` | — | — | `x-litestone-kind` | — |
 | `isStaff` | `boolean` = `false` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |

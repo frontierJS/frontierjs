@@ -38,7 +38,7 @@ database main  { path env("DATABASE_URL", "./db/haven.db") }
 
 database audit { path env("AUDIT_PATH", "./db/audit.db") retention 90d model AuditTrail }
 
-model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate(8) }
+model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate(8) @@index([createdAt]) }
 
 model Member {
   id        Int       @id
@@ -133,6 +133,7 @@ model Message {
   /// The tavern's history pane and the newest-line-per-member bubble both read
   /// a room in time order.
   @@index([roomId, createdAt])
+  @@index([memberId])
 
   /// Said by a member, rewritten by nothing, removed only by retention — a
   /// room's newest lines kept by count, `api/src/retention.ts`, and never a
@@ -198,7 +199,7 @@ model Vote {
   /// The idea's row number in the overview, `4.21a` -- kept while the row's
   /// words change, which is why a vote names it and not its title.
   idea      String   @immutable @regex("^[0-9]+[.][0-9]+[a-z]?$", "an idea is its row number, like 4.21a")
-  aye       Boolean
+  isAye     Boolean
   createdAt DateTime @default(now())
 
   @@unique([memberId, idea])
@@ -247,4 +248,5 @@ model Session {
   expiresAt DateTime @override
 
   @@gate(8)
+  @@index([memberId])
 }

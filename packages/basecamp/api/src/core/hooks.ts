@@ -435,7 +435,7 @@ export const workspaceChannel: import('@frontierjs/junction').ChannelFn = (data,
 
 // ─── outpostCredential · outpostScope ─────────────────────────────────────────────────
 // The three endpoints an OUTPOST calls, and the only ones exempted from
-// `sessionScope`: `servers.heartbeat`, `volumes.report`, `cleanup.report`. A
+// `sessionScope`: `servers.heartbeat`, `volumes.report`, `maintenanceRuns.report`. A
 // machine holds no session, so those exemptions are right — what was missing is
 // the credential that replaces one. It is `createApp({ credentials })`: the
 // transport verifies the signature and the machine becomes a principal
@@ -547,12 +547,12 @@ const OUTPOST_ENDPOINTS: Record<string, {
     fromRequest: req => addresses(req, 'report', 'volumes', 1) ? serverIdInBody(req.body) : null,
     fromCall:    ctx => ((ctx.data as { server_id?: string })?.server_id) ?? null,
   },
-  'cleanup.report': {
-    fromRequest: req => addresses(req, 'report', 'cleanup', 1) ? serverIdInBody(req.body) : null,
+  'maintenanceRuns.report': {
+    fromRequest: req => addresses(req, 'report', 'maintenanceRuns', 1) ? serverIdInBody(req.body) : null,
     fromCall:    ctx => ((ctx.data as { server_id?: string })?.server_id) ?? null,
   },
-  'posture.report': {
-    fromRequest: req => addresses(req, 'report', 'posture', 1) ? serverIdInBody(req.body) : null,
+  'serverPostures.report': {
+    fromRequest: req => addresses(req, 'report', 'serverPostures', 1) ? serverIdInBody(req.body) : null,
     fromCall:    ctx => ((ctx.data as { server_id?: string })?.server_id) ?? null,
   },
 }

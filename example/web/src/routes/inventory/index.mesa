@@ -24,8 +24,8 @@ title: Inventory
   // the level check below does is decide what to RENDER: a screen that offers
   // a form the server will refuse is a worse experience than one that says so,
   // and that is all it is. The server refuses regardless (Invariant 6).
-  import { movements }       from '../../resources/InventoryMovement.mesa'
-  import { productVariants } from '../../resources/ProductVariant.mesa'
+  import { inventoryMovements } from '@/resources/InventoryMovement.mesa'
+  import { productVariants } from '@/resources/ProductVariant.mesa'
   import { session, toFieldErrors } from '@frontierjs/sierra/resource'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -53,13 +53,13 @@ title: Inventory
   // `InventoryMovement` declares `@@sync(server)`, and a correction is made in a
   // stockroom with one bar of signal. The raw client is the escape hatch, and
   // taking it costs the queue along with the hooks.
-  const inventory = () => movements.service
+  const inventory = () => inventoryMovements.service
 
   // The ledger goes through the resource's tether — `find` over the model, live
   // like every other list in this app. The LEVELS do not and cannot: they are
   // not rows of any table, so there is nothing for a tether to hold or for a
   // channel to push. They are re-asked after every write on this screen.
-  const ledgerList = movements.tethered({ state: 'local', directives: { limit: 40, orderBy: '-id' } })
+  const ledgerList = inventoryMovements.tethered({ state: 'local', directives: { limit: 40, orderBy: '-id' } })
   const ledger     = () => ledgerList.rows
 
   let levels      = []

@@ -516,7 +516,7 @@ export const OPPORTUNITIES = [
       // The lifecycle stages the framework itself reads are not roles: absent
       // means the app does not model that stage, and they are per PERSON by
       // construction. A rule that reported them would fire on every app.
-      const LIFECYCLE = /^(emailVerified|verifiedAt|activatedAt|deletedAt)$/
+      const LIFECYCLE = /^(isEmailVerified|verifiedAt|activatedAt|deletedAt)$/
       const ROLE      = /^(role|isAdmin|isOwner|isStaff|isManager|isEditor|permissions|capabilities)$/i
 
       // The model carrying both the person and the tenant, if there is one.

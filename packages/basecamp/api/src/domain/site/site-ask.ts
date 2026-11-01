@@ -155,7 +155,7 @@ export async function askDraft(app: App, appId: string, draft: string,
   if (!key) return fail(NO_KEY)
 
   const row = await (app.db as any).asSystem().app.findFirst({ where: { id: appId } })
-  if (!row || row.type !== 'static' || !isGit(row.source)) return fail('this site is no longer a static site in git')
+  if (!row || row.kind !== 'static' || !isGit(row.source)) return fail('this site is no longer a static site in git')
   const site: GitSite = { id: row.id, source: row.source }
 
   const dir = mkdtempSync(join(tmpdir(), 'basecamp-ask-'))

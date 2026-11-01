@@ -336,7 +336,7 @@ my-app/
       vite.config.js         ← the Vite root is widgets/, port 8200
       sierra.config.js       ← target: 'widget'
     src/
-      Embeds/                ← one component per embeddable script
+      embeds/                ← one component per embeddable script
       styles/
     test/                    ← a host page per widget, hostile CSS on purpose
     deploy/                  ← serve.js + Dockerfile — the widget origin

@@ -95,11 +95,11 @@ const NOT_SEEDED: Record<string, string> = {
 
   // Empty because they describe something that has not happened.
   //
-  // `alert_event` is no longer *nothing evaluates a rule* — `alert-evaluate`
+  // `alert` is no longer *nothing evaluates a rule* — `alert-evaluate`
   // does, every minute (FJS-123). It is empty for `metric_point`'s reason one
   // step along: the evaluator reads a series, a seed run starts no process, so
   // there is nothing for a threshold to be crossed by.
-  alert_event:  'a threshold crossed by readings a seed run never took',
+  alert:         'a threshold crossed by readings a seed run never took',
   // The same line for monitors: the seeded monitor is paused, so nothing has
   // probed it and nothing has changed its state.
   monitor_check: 'a probe that was never made',
@@ -108,7 +108,7 @@ const NOT_SEEDED: Record<string, string> = {
   // Orion. The flow itself IS seeded — an operator authors it, and an
   // automations screen with no flow on it reads as a feature that was never
   // installed. What is exempt below is everything the ENGINE writes, which is
-  // the same line `alert_event` and `notification` sit on: a seed run starts no
+  // the same line `alert` and `notification` sit on: a seed run starts no
   // process, so nothing has fired.
   run:      'a flow that has fired, which a seed run makes nothing do',
   run_step: 'one stage of a run that has not happened',
@@ -140,8 +140,8 @@ const NOT_SEEDED: Record<string, string> = {
   network:       'the mesh is unconfigured, so ServerNetwork and AppNetwork are too',
   server_network: 'see network',
   app_network:    'see network',
-  feature_flag:   'no flag in the seeded fleet',
-  flag_override:  'see feature_flag',
+  flag:           'no flag in the seeded fleet',
+  flag_override:  'see flag',
 }
 
 /** Every table in the database, with its row count. Asked of the database

@@ -12,7 +12,7 @@
 // Both use a stated dispatch id, so a double-click is one job either way.
 
 import { defineJob }    from '@frontierjs/caravan'
-import { runsAsCaller } from './context.ts'
+import { runsAsCaller } from '../domain/job/job-context.ts'
 
 export default defineJob<{ serverId: string; workspaceId: string }>({
   name: 'server:destroy',

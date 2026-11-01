@@ -26,7 +26,7 @@ title: Registry
   // That is exactly the number somebody uses to decide what to delete.
   import { session } from '../../lib/session.js'
   import { ago }     from '../../lib/datetime.js'
-  import { registry } from '../../resources/RegistryImage.mesa'
+  import { registryImages } from '../../resources/RegistryImage.mesa'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -54,7 +54,7 @@ title: Registry
       // totals are computed on the server — there is no RegistryRepo model, and
       // a stored total would be a second answer to a question the rows already
       // answer — and the tag rows are only fetched for what is open.
-      summary = await registry.service.invoke('repositories', null)
+      summary = await registryImages.service.invoke('repositories', null)
     } catch (e) {
       error = e.message
     } finally {
@@ -63,7 +63,7 @@ title: Registry
   }
 
   // Every tag, not a page — the server refuses a page above its max.
-  const tagList = registry.tethered({ state: 'local', all: true })
+  const tagList = registryImages.tethered({ state: 'local', all: true })
   $: { tags = tagList.rows }
   $: { if (tagList.error) error = tagList.error.message }
 
@@ -179,7 +179,7 @@ title: Registry
                   {/if}
                 </td>
                 <td class="text-sm text-muted">{ago(t.pushedAt)}{t.pushedBy ? ` by ${t.pushedBy}` : ''}</td>
-                <td>{#if t.inUse}<Pill tone="success">deployed</Pill>{:else}<span class="text-sm text-muted">—</span>{/if}</td>
+                <td>{#if t.isInUse}<Pill tone="success">deployed</Pill>{:else}<span class="text-sm text-muted">—</span>{/if}</td>
               </tr>
             {/snippet}
           </Table>

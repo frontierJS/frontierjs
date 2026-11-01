@@ -14,7 +14,7 @@ config/
   sierra.config.js        target: 'widget', prefix, outDir
   vite.config.js          the Vite root is the SURFACE root, one level up
 src/
-  Embeds/
+  embeds/
     Counter.mesa          one file        → dist/embeds/Counter.js
     LeadForm/
       index.mesa          a directory     → dist/embeds/LeadForm.js

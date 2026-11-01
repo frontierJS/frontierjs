@@ -28,7 +28,7 @@ components/
               Shell (the app frame, drawn from a nav.js table; Sierra's
               page, session and isActive arrive as props)
   overlay/    Modal · Drawer · Popover · Tooltip · HoverCard · DropdownMenu(+Item/Group/
-              Separator) · ConfirmationPopover · ConfirmPanel · ConfirmProvider ·
+              Separator/Submenu) · ConfirmationPopover · ConfirmPanel · ConfirmProvider ·
               CommandPalette
   feedback/   Alert(+Provider) · Toast(+er) · Progress · Ring · Spinner · Skeleton
 stores/       alertStore · toastStore · commandPaletteStore

@@ -44,7 +44,7 @@ export async function issueEnrollmentFor(client: any, serverId: string, actor: s
     data:  { enrollTokenHash: enroll.hash, enrollExpiresAt: enroll.expiresAt },
   })
   await client.serverEvent.create({ data: {
-    serverId, kind: 'enrollment_issued',
+    serverId, kind: 'enrollmentIssued',
     message:  'An enrollment token was issued for this machine',
     metadata: { issued_by: actor, expires_at: enroll.expiresAt.toISOString() },
   } })

@@ -4,7 +4,8 @@
   // escapes overflow:hidden containers. Keyboard navigable via ArrowUp/Down, Home, End and
   // type-to-jump.
   //
-  // Compound component — compose with DropdownItem, DropdownSeparator, DropdownGroup.
+  // Compound component — compose with DropdownItem, DropdownSeparator, DropdownGroup,
+  // DropdownSubmenu.
   //
   // Usage:
   //   <DropdownMenu>
@@ -28,7 +29,7 @@
   // start | center | end. The side flips when the panel would overflow the
   // viewport there.
 
-  import { placeAgainst, FOCUSABLE, overlayHost } from '../../utils.js'
+  import { placeAgainst, FOCUSABLE, overlayHost, menuWalk } from '../../utils.js'
 
   export let placement = 'bottom-start'
   export let offset    = 4               // gap between trigger and panel in px
@@ -62,6 +63,13 @@
     return () => { rows = rows.filter((r) => r !== row); if (cursor === row) cursor = null }
   }
   $context.rowFocus = (row, on) => { if (on) cursor = row; else if (cursor === row) cursor = null }
+  // A DropdownSubmenu's panel is portaled beside this one, so a press inside
+  // it is outside `panelEl`. Each submenu hands over a getter for its panel.
+  var subPanels = []
+  $context.addPanel = (get) => {
+    subPanels.push(get)
+    return () => { subPanels = subPanels.filter((g) => g !== get) }
+  }
 
   const panelAnim = $.entrance({
     in:  el => el.animate?.(
@@ -122,6 +130,7 @@
   function onClickAway(e) {
     if (!open) return
     if (triggerEl?.contains(e.target) || panelEl?.contains(e.target)) return
+    if (subPanels.some((get) => get()?.contains(e.target))) return
     // A row asking `data-confirm` is answered in a panel outside this one.
     // Pressing its confirm button must not unmount the row, or the re-fired
     // click lands on a detached element and the guarded handler never runs.
@@ -130,64 +139,16 @@
     closeMenu(!e.target?.closest?.(FOCUSABLE))
   }
 
-  // Type-to-jump. Letters typed within half a second narrow one match; the
-  // same letter alone walks on to the next row starting with it. Matched on
-  // the row's label, since the row's text also holds a tick, a suffix and a
-  // shortcut hint.
-  let ahead = ''
-  let aheadTimer
-  function jumpTo(items, cur, key) {
-    ahead += key.toLowerCase()
-    clearTimeout(aheadTimer)
-    aheadTimer = setTimeout(() => { ahead = '' }, 500)
-    const cycle  = [...ahead].every((c) => c === ahead[0])
-    const needle = cycle ? ahead[0] : ahead
-    const from   = cycle || cur === -1 ? cur + 1 : cur
-    for (let i = 0; i < items.length; i++) {
-      const item = items[(from + i) % items.length]
-      if (item.label().trim().toLowerCase().startsWith(needle)) return item
-    }
-    return undefined
-  }
+  const walk = menuWalk()
 
   function handleKeydown(e) {
     if (!open) return
     if (e.key === 'Escape') { if (!e.defaultPrevented) { e.preventDefault(); closeMenu() } return }
     if (e.key === 'Tab')    { closeMenu(); return }
-    const typed = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key !== ' ' || ahead)
-    if (!typed && !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return
-
+    const step = walk(rows, cursor, e)
+    if (!step) return
     e.preventDefault()
-    // Registration is mount order; a row behind an `{#if}` can mount after
-    // the rows below it, so a browser puts them back in document order.
-    const items = rows.filter((r) => r.el() && !r.disabled())
-    items.sort((a, b) => {
-      const pos = a.el().compareDocumentPosition?.(b.el())
-      return pos & 4 ? -1 : pos & 2 ? 1 : 0
-    })
-    if (!items.length) return
-
-    // Opening focuses the PANEL, so on the first press nothing in this list
-    // holds focus and `indexOf` is -1. Stepping from -1 arithmetically gives
-    // the first item going down — which is right by accident — and the
-    // second-to-last going up, which is not right by anything. Both ends are
-    // named rather than computed.
-    const cur = items.indexOf(cursor)
-    let next
-    if (e.key === 'Home') {
-      next = items[0]
-    } else if (e.key === 'End') {
-      next = items[items.length - 1]
-    } else if (typed) {
-      next = jumpTo(items, cur, e.key)
-    } else if (cur === -1) {
-      next = e.key === 'ArrowDown' ? items[0] : items[items.length - 1]
-    } else {
-      next = e.key === 'ArrowDown'
-        ? items[(cur + 1) % items.length]
-        : items[(cur - 1 + items.length) % items.length]
-    }
-    $.focus(next?.el())
+    $.focus(step.next?.el())
   }
 
   // Keep the caller's control in sync with the menu's state.

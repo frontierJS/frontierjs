@@ -125,7 +125,7 @@
   /** Stop it renewing, or start again.
    *
    *  Not a move: every one of this model's four transitions is `@system`, so no
-   *  request can ask for any of them. `cancel` sets `cancelAtPeriodEnd` and the
+   *  request can ask for any of them. `cancel` sets `isCancelingAtPeriodEnd` and the
    *  arrangement ends when the period that has already been paid for
    *  closes — which is what the word means to somebody pressing it, and
    *  is why the button says so rather than saying *cancel*.
@@ -147,7 +147,7 @@
   async function show(order) {
     open = open === order.id ? null : order.id
     if (open === null || lines.has(order.id)) return
-    const got = await client.service('order-lines').find({ orderId: order.id }, { orderBy: 'id' })
+    const got = await client.service('orderLines').find({ orderId: order.id }, { orderBy: 'id' })
     lines = new Map(lines).set(order.id, got?.data ?? [])
   }
 
@@ -249,21 +249,21 @@
               <span class="ref">{sub.reference}</span>
               <span class="when text-muted">
                 {sub.status === 'cancelled' ? 'ended'
-                 : sub.cancelAtPeriodEnd    ? 'ends'
+                 : sub.isCancelingAtPeriodEnd    ? 'ends'
                  :                            'renews'} {when(sub.currentPeriodEnd)}
               </span>
               <!--
-                `cancelAtPeriodEnd` is a flag and not a state, so the row still
+                `isCancelingAtPeriodEnd` is a flag and not a state, so the row still
                 reads `active` while it is running out. That is correct and it
                 is also the whole reason it has to be SAID here: a status pill
                 alone tells somebody who has just pressed the button nothing
                 about what they pressed.
               -->
               <span class="status" data-sub-status={sub.status}
-                    data-sub-stopping={sub.cancelAtPeriodEnd ? '1' : ''}>{sub.status}</span>
+                    data-sub-stopping={sub.isCancelingAtPeriodEnd ? '1' : ''}>{sub.status}</span>
               <span class="total">
                 {#if sub.status === 'cancelled'}
-                {:else if sub.cancelAtPeriodEnd}
+                {:else if sub.isCancelingAtPeriodEnd}
                   <button class="btn ghost" data-resume={sub.reference}
                           disabled={working === sub.id}
                           onclick={() => setRenewal(sub, true)}>Keep it</button>

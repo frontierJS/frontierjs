@@ -256,7 +256,7 @@ export async function issueInvoice(
   if (!Number.isInteger(subtotal))
     throw new Error(`issueInvoice(${args.number}): lines must be whole minor units, got ${subtotal}`)
 
-  const rate = await client.taxRate.findFirst({ where: { isDefault: true, active: true } })
+  const rate = await client.taxRate.findFirst({ where: { isDefault: true, isActive: true } })
   const tax  = roundMinor(Math.max(0, subtotal) * (rate?.rate ?? 0))
 
   const issuedAt = args.issuedAt ?? new Date().toISOString()
@@ -549,7 +549,7 @@ export async function renewPeriod(
   // row, because the period had been paid for; this is the boundary the flag
   // names, so the arrangement ends here and nothing is issued for a period
   // nobody wanted.
-  if (sub.cancelAtPeriodEnd) {
+  if (sub.isCancelingAtPeriodEnd) {
     await client.subscription.transition(sub.id, 'cancel', { system: true })
     return null
   }

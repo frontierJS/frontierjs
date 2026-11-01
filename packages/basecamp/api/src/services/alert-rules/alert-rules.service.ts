@@ -1,0 +1,213 @@
+// src/services/alert-rules/alert-rules.service.ts
+// Alert rules: what to watch, where it delivers, and when it is silenced.
+//
+// Mounted at /alertRules. Custom methods dispatch on X-Service-Method:
+//   attachChannel · detachChannel · snooze · unsnooze
+//
+// This is the service, not the evaluator. What decides a rule has been breached
+// is `jobs/alert-evaluate.job.ts`, a cron reading the metric store — never a
+// browser, because a rule that fires from the browser's idea of the truth is
+// theater. The `Alert` rows it writes are `services/alerts/`'s to read.
+//
+// The split in the schema is the split in the services: a rule is authored by
+// a person (admin), an Alert is FIRED by the system and ACKNOWLEDGED by a person.
+
+import { createService, NotFound, BadRequest, Conflict, parseWhere, $, isStale } from '@frontierjs/junction'
+import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { db, findScoped, getScoped, narrowPatch, changesNothing, ws }
+  from '../../core/resource.ts'
+import { MAX_SNOOZE_MINUTES } from '../../domain/alert/alerting.ts'
+import { watchedSeries }      from '../../domain/alert/watched-series.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
+
+/** The metric models are `@@gate(8)` and `@@tenant(none)`, so a scoped client
+ *  has nothing to say to them and the bypass is written out. Which series a
+ *  rule may see is `watchedSeries`'s; nothing from one reaches the response
+ *  but its name, type and freshness. */
+const sys = (): any => $.db.asSystem()
+
+/** A rule with its firing history and where it delivers — the shape `get`
+ *  answers, so attach/detach can return the same record rather than a
+ *  projection of it. A plain function, not `this.get(ctx)`: a service's
+ *  methods are collected into a definition object and calling one through
+ *  `this` binds to whatever the pipeline happened to invoke it with, which
+ *  is not a contract. */
+async function ruleWithDelivery(rule: Record<string, unknown>) {
+  const recent_events = await db().alert.findMany({
+    where:   { ruleId: rule.id },
+    orderBy: { firedAt: 'desc' },
+    limit:   10,
+  })
+  // A rule with no channel reaches nobody, which is a thing the screen has to
+  // be able to say — and could not while `channels` was a Json array of ids
+  // pointing at rows no model declared.
+  const channels = await db().alertRuleChannel.findMany({
+    where:   { ruleId: rule.id },
+    include: { channel: true },
+    orderBy: { createdAt: 'asc' },
+  })
+  // WHETHER THE METRIC EXISTS, which is the one thing a rule cannot say
+  // about itself. `metricName` is not a foreign key — a series is minted by
+  // the first scrape that sees it, so a rule legitimately precedes the row it
+  // names — and the cost of that is a rule watching a typo, which never fires
+  // and looks exactly like a threshold nobody crossed. `null` here means the
+  // evaluator has nothing to read; `stale` means it has nothing NEW to read.
+  const found = await watchedSeries(sys(), rule.metricName as string, rule.workspaceId as string)
+  const series = found
+    ? { name: found.name, type: found.type, unit: found.unit,
+        lastSeenAt: found.lastSeenAt, stale: isStale(found.lastSeenAt) }
+    : null
+
+  return { ...rule, recent_events, channels, series }
+}
+
+export default createService({
+  name:  'alertRules',
+  scope: keyScope('alertRules'),
+  model: 'AlertRule',
+  // Announced by the service DEFINITION, not by an after hook: `callService`
+  // is junction's one announcement point and it excludes `find`/`get` by name,
+  // where an `after: { all: [...] }` hook broadcast every read to every browser
+  // in the workspace (FJS-031). Declaring both is refused at construction.
+  channel: workspaceChannel,
+  reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
+  methods: [
+    'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
+    'unsnooze',
+    { method: 'attachChannel', input: 'AlertChannelRef' },
+    { method: 'detachChannel', input: 'AlertChannelRef' },
+    { method: 'snooze',        input: 'AlertSnooze' },
+  ],
+
+  async find() {
+    const { limit, offset } = getPagination()
+    // The wire carries strings; the column is a boolean. Comparing them raw
+    // matches nothing and reports an empty list rather than an error — so the
+    // coercion is explicit, and `?isActive=false` means false rather than
+    // "any non-empty string is truthy".
+    const isActive = $.query.isActive as string | boolean | undefined
+
+    return findScoped('alertRule', {
+      where: {
+        ...parseWhere($.query),
+        ...(isActive !== undefined ? { isActive: isActive === true || isActive === 'true' } : {}),
+      },
+      limit, offset,
+    })
+  },
+
+  async get() {
+    // The firing history is what makes a rule legible — a rule with no alerts
+    // and a rule that fires nightly look identical without it.
+    return ruleWithDelivery(await getScoped('alertRule', 'Alert rule'))
+  },
+
+  async create() {
+    // Nothing is checked here, and every part of that is a declaration
+    // somewhere else. `severity` and `operator` are enums, so the column
+    // carries a CHECK and `autoValidate` refuses a bad value before this
+    // runs; `metricName` and `threshold` are required columns, so a missing
+    // one is refused by name. The UI builds its select from the same
+    // declarations. A service that owned any of these lists would be a second
+    // vocabulary — which is what this one was, disagreeing with the schema's
+    // own severity default until the enum landed.
+    return db().alertRule.create({ data: $.data as Record<string, unknown> })
+  },
+
+  async patch() {
+    await getScoped('alertRule', 'Alert rule')
+    const data  = $.data as Record<string, unknown>
+    const patch = narrowPatch(data)
+    if (changesNothing(patch)) return getScoped('alertRule', 'Alert rule')
+    return db().alertRule.update({ where: { id: $.id as string }, data: patch })
+  },
+
+  async remove() {
+    const rule = await getScoped('alertRule', 'Alert rule')
+    // AlertRule declares no @@softDelete, so this is a real delete — and the
+    // schema cascades its alerts with it. That is the right shape: an Alert
+    // is a firing OF a rule, not a record that outlives it. The audit trail
+    // keeps the fact that the rule was deleted.
+    await db().alertRule.remove({ where: { id: rule.id } })
+    return rule
+  },
+
+  // ── attachChannel / detachChannel ─────────────────────────────────
+  // Where this rule delivers. Both answer the RULE, not the join row: a
+  // custom method's return shape is load-bearing (junction FJS-020), and a
+  // client assigning the answer over the record it is rendering must get
+  // that record back.
+  async attachChannel() {
+    const rule = await getScoped('alertRule', 'Alert rule')
+    const { channelId } = $.data as { channelId: string }
+
+    // Scoped to the workspace, not merely to existence — an id from another
+    // workspace would otherwise route this workspace's pages elsewhere.
+    const channel = await db().notificationChannel.findFirst({
+      where: { id: channelId, workspaceId: ws() },
+    })
+    if (!channel) throw new NotFound(`Channel '${channelId}' not found in this workspace`)
+
+    if (await db().alertRuleChannel.exists({ where: { ruleId: rule.id, channelId } }))
+      throw new Conflict('That channel is already attached to this rule')
+
+    await db().alertRuleChannel.create({ data: { ruleId: rule.id, channelId } })
+    return ruleWithDelivery(rule)
+  },
+
+  async detachChannel() {
+    const rule = await getScoped('alertRule', 'Alert rule')
+    const { channelId } = $.data as { channelId: string }
+
+    const link = await db().alertRuleChannel.findFirst({ where: { ruleId: rule.id, channelId } })
+    if (!link) throw new NotFound('That channel is not attached to this rule')
+
+    await db().alertRuleChannel.remove({ where: { id: link.id } })
+    return ruleWithDelivery(rule)
+  },
+
+  // ── snooze / unsnooze ─────────────────────────────────────────────
+  // A snooze is a duration and never an instant, so the clock that decides
+  // when it ends is the server's — the same clock the evaluator compares it
+  // against. Both answer the rule the way attach/detach do. `snoozedUntil` is
+  // `@system`, so this is the only door, and it keeps the gate and the audit
+  // actor: who silenced the pager is exactly what the trail is for.
+  async snooze() {
+    const rule    = await getScoped('alertRule', 'Alert rule')
+    const minutes = Number(($.data as Record<string, unknown>)?.minutes)
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > MAX_SNOOZE_MINUTES)
+      throw new BadRequest(
+        `minutes must be a whole number from 1 to ${MAX_SNOOZE_MINUTES} — ` +
+        'a longer silence is a paused rule, and Pause says so')
+
+    const updated = await db().alertRule.update({
+      where:  { id: rule.id },
+      data:   { snoozedUntil: new Date(Date.now() + minutes * 60_000).toISOString(),
+                version: rule.version },
+      system: ['snoozedUntil'],
+    })
+    return ruleWithDelivery(updated)
+  },
+
+  async unsnooze() {
+    const rule = await getScoped('alertRule', 'Alert rule')
+    if (!rule.snoozedUntil) return ruleWithDelivery(rule)
+    const updated = await db().alertRule.update({
+      where:  { id: rule.id },
+      data:   { snoozedUntil: null, version: rule.version },
+      system: ['snoozedUntil'],
+    })
+    return ruleWithDelivery(updated)
+  },
+
+  hooks: {
+    before: {
+      all:    [sessionScope()],
+      // Authoring a rule is an admin act: a rule decides who gets woken up.
+      // No deriveSlug: `AlertRule` has no `slug` column.
+      // No hook on the custom methods: each writes through the caller's own
+      // client, so the model's gate grades it. Delivery and silencing are
+      // `AlertRule`/`AlertRuleChannel` writes (admin).
+    },
+  },
+})

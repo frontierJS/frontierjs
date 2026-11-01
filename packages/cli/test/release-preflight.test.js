@@ -27,16 +27,16 @@ const DATABASES = [
 ]
 const BARE = {
   id: 'a1', name: 'app', environmentId: 'e1', port: null, containerPort: null, volumePath: null,
-  healthCheck: null, exposesPort: false, domains: [],
+  healthCheck: null, hasExposedPort: false, domains: [],
   environment: { name: 'Preview', tier: 'preview', project: { name: 'NELA' } },
   placement: [{ server: { name: 'host', ipAddress: '10.0.0.1' } }],
 }
 const IMAGE = { workdir: '/app', env: {} }
 const HEALTH = { path: '/api/health', declared: true }
 
-const v = (key, value, extra = {}) => ({ key, value, appId: 'a1', secret: false, ...extra })
+const v = (key, value, extra = {}) => ({ key, value, appId: 'a1', isSecret: false, ...extra })
 const ANSWERED = [
-  v('ENCRYPTION_KEY', null, { secret: true }),
+  v('ENCRYPTION_KEY', null, { isSecret: true }),
   v('DATABASE_URL', '/db/app.db'), v('SYNC_PATH', '/db/sync.db'), v('JOBS_PATH', '/db/jobs.db'),
   v('PORT', '3000'), v('FRONTIER_APP_URL', 'https://ela.example.com'),
   v('NODE_ENV', 'production'), v('SA_URL', 'http://127.0.0.1:9'),
@@ -63,7 +63,7 @@ describe('the measured App', () => {
 
 describe('env-required', () => {
   test('a secret row counts as set, with no value to read', () => {
-    expect(run({ variables: [v('ENCRYPTION_KEY', null, { secret: true })] }).some(f => f.rule === 'env-required')).toBe(false)
+    expect(run({ variables: [v('ENCRYPTION_KEY', null, { isSecret: true })] }).some(f => f.rule === 'env-required')).toBe(false)
   })
 
   test('an environment-wide row reaches the App, and an empty value does not count', () => {
@@ -93,7 +93,7 @@ describe('state-off-volume', () => {
 
   test('a path set under the volume passes, and a secret path is not guessed at', () => {
     const app = { ...BARE, volumePath: '/db' }
-    const variables = [v('DATABASE_URL', null, { secret: true }), v('SYNC_PATH', '/db/sync.db'), v('JOBS_PATH', '/db/jobs.db')]
+    const variables = [v('DATABASE_URL', null, { isSecret: true }), v('SYNC_PATH', '/db/sync.db'), v('JOBS_PATH', '/db/jobs.db')]
     expect(off({ app, variables })).toBeUndefined()
   })
 
@@ -191,7 +191,7 @@ describe('the plan a never-released App yields (FJS-3525)', () => {
     expect(fixes['state-off-volume']).toEqual({ app: { volumePath: '/db' }, variables: [
       { key: 'DATABASE_URL', value: '/db/app.db' }, { key: 'SYNC_PATH', value: '/db/sync.db' }, { key: 'JOBS_PATH', value: '/db/jobs.db' },
     ] })
-    expect(fixes['env-required']).toEqual({ variables: [{ key: 'ENCRYPTION_KEY', secret: true, generate: 'hex32' }] })
+    expect(fixes['env-required']).toEqual({ variables: [{ key: 'ENCRYPTION_KEY', isSecret: true, generate: 'hex32' }] })
     expect(fixes['health-unchecked']).toEqual({ app: { healthCheck: '/api/health' } })
     expect(fixes['external-default']).toEqual({ variables: [{ key: 'SA_URL', value: 'https://my.serviceautopilot.com' }] })
     expect(fixes['local-default']).toEqual({ variables: [{ key: 'FRONTIER_APP_URL', derive: 'origin' }] })

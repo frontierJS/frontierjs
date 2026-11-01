@@ -83,6 +83,8 @@ A rule earns its place by being **silent when broken**:
 | Rule | Invariant | What it catches |
 | --- | --- | --- |
 | `model-name-case` · `model-name-plural` | 2 | A model that is not PascalCase singular. Three resolvers agree only because it is |
+| `enum-value-case` · `boolean-prefix` · `duration-unit-spelled` | — | A schema that spells a name two ways (`FJS-D1748`–`D1750`, warn): an enum value not camelCase (a model name, a `<Kind>.notification.ts` basename and an HTTP method are exempt, `FJS-D1755`), a Boolean field without `is`/`has` (a channel name, `email` and `inApp`, is exempt, `FJS-D1753`), a duration field ending `Sec`, `Min` or `Hr` |
+| `resource-export-name` | 19 | A Resource over a model that exports, or registers, anything but the model's camelCase plural (singular for a one-row model whose `@id` defaults to a constant, `FJS-D1762`), or any `createResource('kebab-name')` (`FJS-D1751`, warn) |
 | `resource-dir-mesa` · `resource-script` | 18 | A `src/resources/` file that is not `.mesa`, or has markup outside `<script module>` |
 | `resource-file-name` · `resource-one-per-file` | 19 | A Resource not named for its noun, or two in one file |
 | `vite-strict-port` | — | A Vite config without `strictPort` — vite otherwise hops to the next free port in silence and the second app's drive tests the first app's app |

@@ -31,7 +31,7 @@ title: Account
   import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
   import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
   import { toasts }    from '@frontierjs/ui/stores/toastStore'
-  import PushToggle    from '../../components/PushToggle.mesa'
+  import PushToggle    from '@/components/PushToggle.mesa'
 
   $: session.user
 

@@ -38,12 +38,12 @@ afterAll(() => h.cleanup())
 
 const lastToken = () => sent[sent.length - 1]!.token
 const id = (over: Record<string, unknown> = {}) => ({
-  providerId: 'sub-1', email: 'x@shop.test', emailVerified: true, name: 'X', ...over,
+  providerId: 'sub-1', email: 'x@shop.test', isEmailVerified: true, name: 'X', ...over,
 } as any)
 
 /** A local account with a password on it, verified or not. */
-async function account(email: string, emailVerified: boolean) {
-  const user = await h.sys.user.create({ data: { email, emailVerified } })
+async function account(email: string, isEmailVerified: boolean) {
+  const user = await h.sys.user.create({ data: { email, isEmailVerified } })
   await h.sys.credential.create({ data: { userId: user.id, type: 'password', value: 'planted-hash' } })
   return user
 }
@@ -82,7 +82,7 @@ describe('a refused link sends an invitation', () => {
     // with no mailer must still refuse rather than fall through to attaching.
     const silent = await makeAuth({ oauthProviders: { google: trusted } })
     try {
-      await silent.sys.user.create({ data: { email: 'nohook@shop.test', emailVerified: false } })
+      await silent.sys.user.create({ data: { email: 'nohook@shop.test', isEmailVerified: false } })
       const out = await silent.auth.oauthResolve('google', id({ providerId: 'n-1', email: 'nohook@shop.test' }))
       expect(out.outcome).toBe('proof-required')
     } finally { silent.cleanup() }
@@ -135,7 +135,7 @@ describe('confirmOAuthLink', () => {
   test('an identity attached while the account was unverified is evicted too', async () => {
     // An identity on an unverified row was never vouched for by anybody, so it
     // goes with the password.
-    const user = await h.sys.user.create({ data: { email: 'twodoor@shop.test', emailVerified: false } })
+    const user = await h.sys.user.create({ data: { email: 'twodoor@shop.test', isEmailVerified: false } })
     await h.sys.credential.create({ data: { userId: user.id, type: 'oauth:okta', value: 'okta-sub' } })
 
     await h.auth.oauthResolve('google', id({ providerId: 'g-sub', email: 'twodoor@shop.test' }))
@@ -153,7 +153,7 @@ describe('confirmOAuthLink', () => {
     await h.auth.oauthResolve('google', id({ providerId: 'v-1', email: 'verifyme@shop.test' }))
     await h.auth.confirmOAuthLink(lastToken(), 'google', id({ providerId: 'v-1' }))
 
-    expect((await h.sys.user.findUnique({ where: { id: user.id } })).emailVerified).toBe(true)
+    expect((await h.sys.user.findUnique({ where: { id: user.id } })).isEmailVerified).toBe(true)
   })
 
   test('a VERIFIED account keeps its credentials — the eviction is conditional', async () => {
@@ -268,13 +268,13 @@ describe('an unproven claim on an address nobody holds', () => {
   })
 
   test('the click makes a verified account holding that identity and signs in', async () => {
-    await h.auth.oauthResolve('google', id({ providerId: 'nh-2', email: 'later@shop.test', emailVerified: false }))
+    await h.auth.oauthResolve('google', id({ providerId: 'nh-2', email: 'later@shop.test', isEmailVerified: false }))
 
     const issued = signedIn(await h.auth.confirmOAuthLink(lastToken(), 'google', id({ providerId: 'nh-2', name: 'Later' })))
 
     const user = await h.sys.user.findFirst({ where: { email: 'later@shop.test' } })
     expect(issued.user.id).toBe(user.id)
-    expect(user.emailVerified).toBe(true)
+    expect(user.isEmailVerified).toBe(true)
     expect(user.name).toBe('Later')
     expect((await credsFor(user.id)).map((c: any) => [c.type, c.value])).toEqual([['oauth:google', 'nh-2']])
   })

@@ -31,7 +31,7 @@ title: Invoice
   import { session } from '@frontierjs/sierra/resource'
   import { day, span, today } from '@/lib/datetime.js'
   import { page } from '@frontierjs/sierra/router'
-  import { money } from '../../lib/money.js'
+  import { money } from '@/lib/money.js'
 
   import Alert               from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Breadcrumbs         from '@frontierjs/ui/components/display/Breadcrumbs.mesa'

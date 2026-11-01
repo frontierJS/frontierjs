@@ -7,6 +7,7 @@ db/       schema.lite (43 models declared, 50 with the two imported fragments;
           32 enums declared, 34 resolved) · generate.js · migrations/ · seed.js ·
           litestone.config.js · test/ · README.md (the depth doc)
 api/      index.ts (the entry — start() and nothing else) · config/
+tests/    the app's own suites, spanning surfaces (audit-gate-parity-*); each surface keeps its own test/
 api/src/  app.ts (builds the app, never starts it) · services/ ·
           jobs/ (*.job.ts) · notifications/ · providers/ · plugins/ · core/ · domain/
           notifications/ is one file per NotificationKind and the FILE NAME is
@@ -24,7 +25,7 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           monitor is `pending` until graded, and paused ones are never picked
           (`FJS-1557`)
           domain/notification/delivery.ts is the ONE owner of how a NotificationChannel is
-          reached; `channels.test`, the alert evaluator and the `basecamp.page`
+          reached; `notificationChannels.test`, the alert evaluator and the `basecamp.page`
           flow node are its callers
           plugins/automations.ts is what this app contributes to orion — one node,
           `basecamp.page`, which reads the channel as the FLOW'S OWNER and hands
@@ -250,8 +251,8 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           domain/api-key/scopes.ts, proved by verify:mcp
           jobs/ is what runs unattended — a file per job, autoloaded by
           caravan from beside the app root, and the default export is the dispatch handle
-          jobs/{recipe,cleanup}-run are both ways this app acts on a MACHINE —
-          one shape, opposite safeguards; jobs/outpost-run.ts is their half
+          jobs/{recipe,maintenance}-run are both ways this app acts on a MACHINE —
+          one shape, opposite safeguards; domain/job/outpost-run.ts is their half
           domain/backup/backup-archives.ts is an archive once it exists — the one
           delete (retention's and backups.discard's, FJS-D1494), the prune
           backup-run calls after a success, and the rescans that write
@@ -286,7 +287,7 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           two kinds, and it is there because *unconfigured* means different
           work for each: install it and set a URL, or open an account and hold
           a key. compute/, edge/ and source/ are the vendors held as a workspace
-          ACCOUNT — a `provider_key` Secret that compute/accounts.ts registers
+          ACCOUNT — a `providerKey` Secret that compute/accounts.ts registers
           as `provider:<kind>:<secretId>` through `accountConnectorFor`
           (`FJS-D558`); a *-sink.ts beside each connector is its stand-in.
           source/github.ts writes an App's deploy key and push hook to its
@@ -375,13 +376,13 @@ cli/      config/cli.config.js (name, tenant header, dev endpoint) · src/main.j
           src/routes/<service>/<method>.js — the hand-written commands; every other
           command is /mcp's tool list at the key's standing · test/verify-cli.mjs ·
           dist/bcamp — the binary, which carries the routes only when built by fli cli:build
-docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
+docs/     screens.md — the mock inventory, 41 of 41 built (FJS-153, closed
           2026-08-30). Four of them are a screen with a skeleton where a third
           party's numbers go — what is owed there is adapters, not UI
-          ADAPTERS.md — that debt, per adapter: every boundary declared,
+          adapters.md — that debt, per adapter: every boundary declared,
           nothing behind any of them, what wiring one costs and which drive
           assertions flip when you do
-          VISION.md · PROVISIONING.md
+          vision.md · provisioning.md
 ```
 
 ---

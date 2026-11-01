@@ -215,7 +215,7 @@ function describeField(field, access) {
     // its absence: adding one takes the column out of the answers the previous
     // release reads, or refuses the writes it makes. It is also where the
     // sharpest columns in this repo are guarded — `isSystemAdmin`, `role`,
-    // `emailVerified` — so a comparison that could not see it would be silent
+    // `isEmailVerified` — so a comparison that could not see it would be silent
     // on the one change a reviewer most needs to be shown.
     allows: (rules?.allows ?? [])
       .map(a => `${a.operations?.length === 1 ? a.operations[0] : 'all'}: ${a.expr}`)

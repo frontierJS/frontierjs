@@ -144,3 +144,32 @@ describe('the .dockerignore make:deploy writes', () => {
     }
   })
 })
+
+// FJS-3733: deploy ships `git archive HEAD` from the local tree and never pulls,
+// so an app with no remote read "the server pulls from origin" as a blocker.
+describe('deploy:doctor source-control checks match what ships', () => {
+  test('no remote: no upstream check, and the dirty warning does not name origin', () => {
+    const app = mkdtempSync(join(tmpdir(), 'fli-doctor-git-'))
+    try {
+      writeFileSync(join(app, 'package.json'), '{"name":"t","scripts":{}}')
+      writeFileSync(join(app, 'frontier.config.js'),
+        "export default { deploy: { server: 'example.test', path: '/srv/t', app_id: 't' } }\n")
+      const git = (...a) => spawnSync('git', ['-C', app, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { encoding: 'utf8' })
+      git('init', '-q', '-b', 'main')
+      git('add', '.')
+      git('commit', '-q', '-m', 'init')
+      writeFileSync(join(app, 'later.txt'), 'x')
+
+      const out = JSON.parse(doctor(app, '--json').stdout)
+      const names = out.checks.map(c => c.name)
+      expect(names).not.toContain('upstream tracking')
+      expect(names).not.toContain('commits pushed')
+      const dirty = out.checks.find(c => c.name === 'uncommitted changes')
+      expect(dirty.status).toBe('warn')
+      expect(dirty.hint).not.toContain('origin')
+      expect(dirty.hint).toContain('not in the shipped commit')
+    } finally {
+      rmSync(app, { recursive: true, force: true })
+    }
+  })
+})

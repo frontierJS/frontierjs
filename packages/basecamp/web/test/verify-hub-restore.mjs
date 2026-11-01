@@ -269,7 +269,7 @@ try {
   check('Litestream wrote both replicas to the bucket', streamed, streamer.out.slice(-1500))
   await stop(streamer)
 
-  // `BACKUPS.md` § 7's restore of the hub from its own replica, over `s3://`
+  // `backups.md` § 7's restore of the hub from its own replica, over `s3://`
   // as the runbook spells it, read back table by table.
   const q = new URLSearchParams({ endpoint: S3, region: 'us-east-1', 'force-path-style': 'true' })
   const pulled = spawnSync(litestream, ['restore', '-integrity-check', 'quick', '-o', join(SCRATCH, 'from-replica.db'),
@@ -284,10 +284,10 @@ try {
     pulled.status === 0 && counts(join(SCRATCH, 'from-replica.db')) === counts(join(hubVol, 'basecamp.db')),
     `${pulled.stderr}${pulled.stdout}`)
 
-  const backup = (await call('/backups', { serviceMethod: 'take', body: { destinationId: archives.id } })).body
+  const backup = (await call('/hubBackups', { serviceMethod: 'take', body: { destinationId: archives.id } })).body
   let row = null
   await until(async () => {
-    row = (await call(`/backups/${backup?.id}`)).body
+    row = (await call(`/hubBackups/${backup?.id}`)).body
     return ['success', 'failed', 'timeout'].includes(row?.status)
   }, 60_000)
   const archived = (await bucketObjects('hub/basecamp-')).filter(o => o.key.endsWith('.tar.gz'))
@@ -393,7 +393,7 @@ try {
   const hubCard = await seen(`!!document.getElementById('hub-found')`)
   const hubText = await textOf('#hub-found')
   check('/hub/backups/ shows the hub\'s Replica found and names the runbook',
-    hubCard && hubText?.includes('BACKUPS.md') && !hubText.includes('unknown time'), hubText)
+    hubCard && hubText?.includes('backups.md') && !hubText.includes('unknown time'), hubText)
 
   check('no console error or warning across the run', consoleErrors.length === 0, consoleErrors.join('\n'))
 } catch (err) {

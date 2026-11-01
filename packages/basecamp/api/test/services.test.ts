@@ -369,7 +369,7 @@ describe('the two transports answer the same app', () => {
       data: { accountId: acct.id, name: 'Parity', slug: `pw-${uniq()}` },
     })
     const user  = await invitedUser(penv, wsp.id, email, 'hunter2hunter2', 'Parity')
-    // Active, because a registered account starts `pending_verification` and
+    // Active, because a registered account starts `pendingVerification` and
     // `notifyPeople` pages nobody who is not.
     await sys.user.update({ where: { id: user.id }, data: { accountId: acct.id, status: 'active' } })
     await sys.workspaceMember.create({
@@ -623,9 +623,9 @@ describe('apps.find — the caller\'s $orderBy (FJS-2832)', () => {
 // key; `$select` is applied where the rows come back as the table read them.
 describe('hand-written finds apply the caller\'s directives (FJS-2469)', () => {
   // backups are the hub's: a sysadmin with no workspace. fleet is a view with no id column.
-  const asOwner = (name: string) => env.as(name === 'backups' ? sysadmin : owner).service(name)
+  const asOwner = (name: string) => env.as(name === 'hubBackups' ? sysadmin : owner).service(name)
 
-  test.each(['backups', 'blueprints', 'cleanup', 'deployments', 'fleet', 'volumes', 'workspaces'])(
+  test.each(['hubBackups', 'blueprints', 'maintenanceRuns', 'deployments', 'fleet', 'volumes', 'workspaces'])(
     '%s.find answers $orderBy rather than refusing it',
     async (name) => {
       await expect(asOwner(name).find({}, { directives: { orderBy: name === 'fleet' ? 'region' : 'id' } })).resolves.toBeDefined()
@@ -702,7 +702,7 @@ describe('windowed and computed finds apply the caller\'s directives (FJS-2904)'
     for (const n of ['p1', 'p2', 'p3']) {
       await svc().create({
         name: n, slug: `pg-${n}-${Math.random().toString(36).slice(2, 8)}`, category: 'Cache',
-        description: 'x', version: '1', image: 'x:1', appType: 'container', port: 1,
+        description: 'x', version: '1', image: 'x:1', appKind: 'container', port: 1,
       })
     }
 
@@ -728,11 +728,11 @@ describe('windowed and computed finds apply the caller\'s directives (FJS-2904)'
     for (const r of picked) expect(Object.keys(r)).toEqual(['name'])
   })
 
-  test('audit sorts its window by the caller\'s key and refuses $select by name', async () => {
-    const asc = (await find(owner, 'audit', { orderBy: 'createdAt' })).data.map((r: any) => r.createdAt)
+  test('auditEvents sorts its window by the caller\'s key and refuses $select by name', async () => {
+    const asc = (await find(owner, 'auditEvents', { orderBy: 'createdAt' })).data.map((r: any) => r.createdAt)
     expect(asc.length).toBeGreaterThan(1)
     expect(asc).toEqual([...asc].sort())
-    await expect(find(owner, 'audit', { select: 'id' })).rejects.toThrow(/\$select/)
+    await expect(find(owner, 'auditEvents', { select: 'id' })).rejects.toThrow(/\$select/)
   })
 
   test('metrics-store sorts and projects the series, `stale` included', async () => {
@@ -838,7 +838,7 @@ async function enrollMachine(serverId: string): Promise<string> {
 }
 
 // ─── The endpoints a MACHINE calls ───────────────────────────────────────────
-// `servers.heartbeat`, `volumes.report` and `cleanup.report` are exempted from
+// `servers.heartbeat`, `volumes.report` and `maintenanceRuns.report` are exempted from
 // sessionScope because an outpost holds no session. Until 2026-08-19 that
 // exemption was the whole of the authentication and a comment claimed the
 // transport verified an HMAC — nothing did (`FJS-349`). Measured against a
@@ -1456,7 +1456,7 @@ describe('a job runs as whoever asked for it', () => {
 // and helped itself to system — which is exactly how the old shape was built.
 describe('a handler declares who it runs as', () => {
   test('runsAsCaller refuses when the queue recorded no actor', async () => {
-    const { runsAsCaller } = await import('../src/jobs/context.ts')
+    const { runsAsCaller } = await import('../src/domain/job/job-context.ts')
 
     // No `runAs` around it: this is a dispatch made outside a request that
     // forgot to state an actor, which is the shape that used to run at SYSTEM
@@ -1466,7 +1466,7 @@ describe('a handler declares who it runs as', () => {
   })
 
   test('runsAsApp refuses when it recorded one', async () => {
-    const { runsAsApp } = await import('../src/jobs/context.ts')
+    const { runsAsApp } = await import('../src/domain/job/job-context.ts')
     const mine = await (env.system as any).workspaceMember.findFirst({
       where: { workspaceId: ws.id, role: 'owner' } })
 
@@ -1563,27 +1563,27 @@ describe('the catalog takes no workspace', () => {
     const made = await env.as(sysadmin).service('blueprints').create({
       name: 'Redis', slug: `redis-${Math.random().toString(36).slice(2, 8)}`,
       category: 'Cache', description: 'In-memory store', version: '7.2',
-      image: 'redis:7.2-alpine', appType: 'container', port: 6379,
+      image: 'redis:7.2-alpine', appKind: 'container', port: 6379,
     })
     expect(made.port).toBe(6379)
     expect(made.params).toEqual([])
 
     const bp = await env.as(sysadmin).service('blueprints').call('setParams', made.id, {
       params: [
-        { key: 'REDIS_PASSWORD', label: 'Password', secret: true },
+        { key: 'REDIS_PASSWORD', label: 'Password', isSecret: true },
         { key: 'MAXMEMORY',      label: 'Max memory', defaultValue: '256mb' },
       ],
     })
     expect(bp.params.map((p: any) => p.key)).toEqual(['REDIS_PASSWORD', 'MAXMEMORY'])
     expect(bp.params.map((p: any) => p.position)).toEqual([0, 1])
-    expect(bp.params[0].secret).toBe(true)
+    expect(bp.params[0].isSecret).toBe(true)
 
     // Replaced whole and REORDERED — the case a per-row patch cannot do without
     // racing every other row's position.
     const after = await env.as(sysadmin).service('blueprints').call('setParams', bp.id, {
       params: [
         { key: 'MAXMEMORY',      label: 'Max memory' },
-        { key: 'REDIS_PASSWORD', label: 'Password', secret: true },
+        { key: 'REDIS_PASSWORD', label: 'Password', isSecret: true },
       ],
     })
     expect(after.params.map((p: any) => p.key)).toEqual(['MAXMEMORY', 'REDIS_PASSWORD'])
@@ -1624,12 +1624,12 @@ describe('the registry mirror is a tenant service, unlike the catalog beside it'
 
     await sys.registryImage.create({ data: {
       workspaceId: ws.id, repository: 'acme/dashboard', tag: 'v1',
-      digest: 'sha256:aaa', sizeBytes: 100, inUse: true } })
+      digest: 'sha256:aaa', sizeBytes: 100, isInUse: true } })
     await sys.registryImage.create({ data: {
       workspaceId: other.id, repository: 'other/secret', tag: 'v1',
       digest: 'sha256:bbb', sizeBytes: 100 } })
 
-    const rows = await env.as(developer).service('registry').find()
+    const rows = await env.as(developer).service('registryImages').find()
     expect(rows.data.length).toBeGreaterThan(0)
     expect(rows.data.every((r: any) => r.workspaceId === ws.id)).toBe(true)
     expect(rows.data.some((r: any) => r.repository === 'other/secret')).toBe(false)
@@ -1644,12 +1644,12 @@ describe('the registry mirror is a tenant service, unlike the catalog beside it'
     // number an operator would use to decide what to delete.
     await sys.registryImage.create({ data: {
       workspaceId: ws.id, repository: repo, tag: 'v2.14.1',
-      digest: 'sha256:shared', sizeBytes: 1000, inUse: true } })
+      digest: 'sha256:shared', sizeBytes: 1000, isInUse: true } })
     await sys.registryImage.create({ data: {
       workspaceId: ws.id, repository: repo, tag: 'latest',
       digest: 'sha256:shared', sizeBytes: 1000 } })
 
-    const out  = await env.as(developer).service('registry').call('repositories')
+    const out  = await env.as(developer).service('registryImages').call('repositories')
     const mine = out.repositories.find((r: any) => r.repository === repo)
     expect(mine.tags).toBe(2)
     expect(mine.inUse).toBe(1)
@@ -1683,7 +1683,7 @@ describe('the installation settings are one row, behind the hub tier', () => {
     })).rejects.toThrow(/@system/)
     const made = await hub.call('save', null, { heartbeatTimeoutSeconds: 120 })
     expect([made.encryptionKeyEscrowedAt, made.encryptionKeyFingerprint]).toEqual([null, null])
-    const grade = async () => (await env.as(sysadmin).service('posture').call('host', undefined, {}))
+    const grade = async () => (await env.as(sysadmin).service('hub').call('hostPosture', undefined, {}))
       .controls.find((c: any) => c.id === 'hub.key-escrowed')
     expect((await grade()).ok).toBe(false)
 
@@ -1741,32 +1741,32 @@ describe('the installation settings are one row, behind the hub tier', () => {
     await sys.hubConfig.update({ where: { id: 'hub' }, data })
     try { await fn() } finally {
       await sys.hubConfig.update({ where: { id: 'hub' },
-        data: { requireTwoFactorForOwners: false, allowApiKeyAuth: true, allowBotUsers: true } })
+        data: { isTwoFactorRequiredForOwners: false, isApiKeyAuthAllowed: true, isBotUserAllowed: true } })
     }
   }
 
-  test('allowBotUsers off refuses a new bot, naming the setting', async () => {
-    await policy({ allowBotUsers: false }, async () => {
+  test('isBotUserAllowed off refuses a new bot, naming the setting', async () => {
+    await policy({ isBotUserAllowed: false }, async () => {
       await expect(env.as(sysadmin).service('hub').call('createBot', null, { workspaceId: ws.id, name: `bot-${uniq()}` }))
-        .rejects.toThrow(/allowBotUsers/)
+        .rejects.toThrow(/isBotUserAllowed/)
     })
   })
 
-  test('allowApiKeyAuth off refuses a request made with a key, and a session is unaffected', async () => {
+  test('isApiKeyAuthAllowed off refuses a request made with a key, and a session is unaffected', async () => {
     const made: any = await env.as(owner).service('apiKeys').create({
       name: `policy-${uniq()}`, scopes: ['servers:read'], expiresIn: '30d',
     })
     const get = () => env.http.get('/servers').set('Authorization', `Bearer ${made.token}`).set('X-Workspace-Id', ws.id)
     expect((await get()).status).toBe(200)
-    await policy({ allowApiKeyAuth: false }, async () => {
+    await policy({ isApiKeyAuthAllowed: false }, async () => {
       const res = await get()
       expect(res.status).toBe(403)
-      expect(JSON.stringify(res.body)).toMatch(/allowApiKeyAuth/)
+      expect(JSON.stringify(res.body)).toMatch(/isApiKeyAuthAllowed/)
       expect((await env.as(owner).service('servers').find()).data).toBeDefined()
     })
   })
 
-  test('requireTwoFactorForOwners holds an owner with no authenticator to enrollment, and off lets them in', async () => {
+  test('isTwoFactorRequiredForOwners holds an owner with no authenticator to enrollment, and off lets them in', async () => {
     const sys   = env.system as any
     const email = `owner2fa-${uniq()}@x.co`
     const made  = await invitedUser(env, ws.id, email, 'hunter2hunter2', 'Owner')
@@ -1780,12 +1780,12 @@ describe('the installation settings are one row, behind the hub tier', () => {
       env.http.get('/servers').set('Authorization', `Bearer ${token}`).set('X-Workspace-Id', ws.id)
 
     const open = await (env as any).app.auth.login(email, 'hunter2hunter2')
-    expect(open.user.enrollmentOnly).toBeFalsy()
+    expect(open.user.isEnrollmentOnly).toBeFalsy()
     expect((await servers(open.token)).status).toBe(200)
 
-    await policy({ requireTwoFactorForOwners: true }, async () => {
+    await policy({ isTwoFactorRequiredForOwners: true }, async () => {
       const held = await (env as any).app.auth.login(email, 'hunter2hunter2')
-      expect(held.user.enrollmentOnly).toBe(true)
+      expect(held.user.isEnrollmentOnly).toBe(true)
       const res = await servers(held.token)
       expect(res.status).toBe(403)
       expect(JSON.stringify(res.body)).toMatch(/second_factor_required|second factor is required/)
@@ -1827,7 +1827,7 @@ describe('the installation settings are one row, behind the hub tier', () => {
   test('the hub tier refuses a workspace owner as not found, never as a role', async () => {
     const refusals = await Promise.all([
       env.as(owner).service('hubConfig').call('current').catch((e: any) => e),
-      env.as(owner).service('backups').call('take', null, {}).catch((e: any) => e),
+      env.as(owner).service('hubBackups').call('take', null, {}).catch((e: any) => e),
       env.as(owner).service('blueprints').create({
         name: 'Nope', slug: 'nope', category: 'Database',
         description: 'x', version: '1', image: 'nope:1',
@@ -1894,14 +1894,14 @@ describe('a backup is asked for by a person and run by the app', () => {
   beforeAll(async () => { hubId = await ensureHub() })
 
   test('take writes a pending row and refuses a second one beside it', async () => {
-    const made = await env.as(sysadmin).service('backups').call('take', null, {})
+    const made = await env.as(sysadmin).service('hubBackups').call('take', null, {})
     expect(made.status).toBe('pending')
     expect(made.kind).toBe('manual')
     // Who asked is a COLUMN, because the job runs as the app: a hub action has
     // no tenant, so there is no membership for `runsAsCaller` to re-resolve.
     expect(made.requestedBy).toBeTruthy()
 
-    await expect(env.as(sysadmin).service('backups').call('take', null, {}))
+    await expect(env.as(sysadmin).service('hubBackups').call('take', null, {}))
       .rejects.toThrow(/already pending/)
 
     // The hub's archives are this door's alone (`FJS-D1606`): the app-volume
@@ -1913,7 +1913,7 @@ describe('a backup is asked for by a person and run by the app', () => {
 
   test('a destination nobody has declared is refused by name, not queued to fail', async () => {
     await (env.system as any).appBackup.deleteMany({ where: { appId: hubId } })
-    await expect(env.as(sysadmin).service('backups').call('take', null, { destinationId: 'no-such-bucket' }))
+    await expect(env.as(sysadmin).service('hubBackups').call('take', null, { destinationId: 'no-such-bucket' }))
       .rejects.toThrow(/No backup destination 'no-such-bucket'/)
   })
 
@@ -1924,7 +1924,7 @@ describe('a backup is asked for by a person and run by the app', () => {
       endpoint: 'https://s3.us-west-000.backblazeb2.com', region: 'us-west-000',
       bucket: 'frontier-basecamp', prefix: 'basecamp-', secret: 'keyid:applicationkey',
     })
-    const made = await env.as(sysadmin).service('backups').call('take', null, { destinationId: dest.id })
+    const made = await env.as(sysadmin).service('hubBackups').call('take', null, { destinationId: dest.id })
     expect(made.destinationId).toBe(dest.id)
     // Written at system, so the column is what says who asked.
     expect(made.requestedBy).toBe(sysadmin.id)
@@ -1959,12 +1959,12 @@ describe('a backup is asked for by a person and run by the app', () => {
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'main.db'), 'x')
     const row = await sys.appBackup.create({ data: { appId: hubId, status: 'success', location: dir } })
-    await env.as(sysadmin).service('backups').call('discard', row.id)
+    await env.as(sysadmin).service('hubBackups').call('discard', row.id)
     expect(existsSync(dir)).toBe(false)
     expect(await sys.appBackup.findFirst({ where: { id: row.id } })).toBeNull()
 
     const odd = await sys.appBackup.create({ data: { appId: hubId, status: 'success', location: env.app.sqlite.filename } })
-    await expect(env.as(sysadmin).service('backups').call('discard', odd.id)).rejects.toThrow(/was kept/)
+    await expect(env.as(sysadmin).service('hubBackups').call('discard', odd.id)).rejects.toThrow(/was kept/)
     expect(existsSync(env.app.sqlite.filename)).toBe(true)
     await sys.appBackup.deleteMany({ where: { appId: hubId } })
   })
@@ -1979,8 +1979,8 @@ describe('a backup is asked for by a person and run by the app', () => {
     writeFileSync(join(dir, 'main.db'), 'x')
     const row = await sys.appBackup.create({ data: { appId: hubId, status: 'success', location: dir } })
 
-    await expect(env.as(owner).service('backups').call('download', row.id)).rejects.toThrow()
-    const { url, name } = await env.as(sysadmin).service('backups').call('download', row.id) as any
+    await expect(env.as(owner).service('hubBackups').call('download', row.id)).rejects.toThrow()
+    const { url, name } = await env.as(sysadmin).service('hubBackups').call('download', row.id) as any
     expect(name).toBe('basecamp-2026-01-02T03-04-05-007Z.tar.gz')
     expect(url).toMatch(new RegExp(`^/backup-archive/${row.id}\\?expires=\\d+&sig=[0-9a-f]{64}$`))
 
@@ -1993,9 +1993,9 @@ describe('a backup is asked for by a person and run by the app', () => {
     expect((await env.http.get(mintArchiveUrl(row.id, Date.now() - 6 * 60_000))).status).toBe(403)
 
     const failed = await sys.appBackup.create({ data: { appId: hubId, status: 'failed', location: null } })
-    await expect(env.as(sysadmin).service('backups').call('download', failed.id)).rejects.toThrow(/is failed/)
+    await expect(env.as(sysadmin).service('hubBackups').call('download', failed.id)).rejects.toThrow(/is failed/)
     const gone = await sys.appBackup.create({ data: { appId: hubId, status: 'success', location: `${dir}-gone` } })
-    await expect(env.as(sysadmin).service('backups').call('download', gone.id)).rejects.toThrow(/no longer on this disk/)
+    await expect(env.as(sysadmin).service('hubBackups').call('download', gone.id)).rejects.toThrow(/no longer on this disk/)
 
     // A bucket answers no disposition of its own, so the GET signs the name.
     const dest = await env.as(owner).service('backupDestinations').create({
@@ -2003,7 +2003,7 @@ describe('a backup is asked for by a person and run by the app', () => {
       bucket: 'frontier-basecamp', prefix: 'hub', secret: 'keyid:applicationkey' }) as any
     const remote = await sys.appBackup.create({ data: { appId: hubId, status: 'success', destinationId: dest.id,
       location: 'hub/basecamp-2026-01-02T03-04-05-008Z.tar.gz' } })
-    const signed = await env.as(sysadmin).service('backups').call('download', remote.id) as any
+    const signed = await env.as(sysadmin).service('hubBackups').call('download', remote.id) as any
     expect(signed.name).toBe('basecamp-2026-01-02T03-04-05-008Z.tar.gz')
     expect(new URL(signed.url).searchParams.get('response-content-disposition')).toBe(`attachment; filename="${signed.name}"`)
     await sys.appBackup.delete({ where: { id: remote.id } })
@@ -2013,8 +2013,8 @@ describe('a backup is asked for by a person and run by the app', () => {
   })
 
   test('rescan is the sysadmin\'s, and names an unknown destination', async () => {
-    await expect(env.as(owner).service('backups').call('rescan', null, { destinationId: 'x' })).rejects.toThrow()
-    await expect(env.as(sysadmin).service('backups').call('rescan', null, { destinationId: 'no-such-bucket' }))
+    await expect(env.as(owner).service('hubBackups').call('rescan', null, { destinationId: 'x' })).rejects.toThrow()
+    await expect(env.as(sysadmin).service('hubBackups').call('rescan', null, { destinationId: 'no-such-bucket' }))
       .rejects.toThrow(/No backup destination 'no-such-bucket'/)
   })
 })
@@ -2204,7 +2204,7 @@ describe('a backup destination is an address, and its key is a Secret', () => {
   })
 
   test('and the handler refuses to run as somebody', async () => {
-    const { runsAsApp } = await import('../src/jobs/context.ts')
+    const { runsAsApp } = await import('../src/domain/job/job-context.ts')
     const mine = await (env.system as any).workspaceMember.findFirst({
       where: { workspaceId: ws.id, role: 'owner' } })
 
@@ -2306,7 +2306,7 @@ describe('Server.status is a declared machine', () => {
 
 // ─── the audit trail, at the Data boundary ───────────────────────────────
 // `AuditEvent` was `@@tenant(none)` and unpolicied, so the only thing keeping
-// one workspace's trail out of another's was `audit.service.ts` putting
+// one workspace's trail out of another's was `audit-events.service.ts` putting
 // `workspaceId: ws()` in its own where — one door, where a gate is every door
 // (`FJS-432`). It takes the declared tenancy now, and these read through the
 // scoped CLIENT rather than the service, because a service test cannot tell a
@@ -2376,7 +2376,7 @@ describe('an audited action files under the workspace that owns its subject', ()
     // workspace whose feed exists to show them.
     const sys = env.system as any
     const job = await sys.job.create({
-      data: { workspaceId: ws.id, name: 'nightly', kind: 'one_shot', command: 'true' },
+      data: { workspaceId: ws.id, name: 'nightly', kind: 'oneShot', command: 'true' },
     })
 
     await env.as(owner).service('jobs').call('startRun', job.id, { trigger: 'manual' })
@@ -2411,7 +2411,7 @@ describe('a job\'s next run is the clock\'s answer', () => {
 
   test('a job off the clock answers null', async () => {
     const job = await env.as(owner).service('jobs').create({
-      name: 'once', kind: 'one_shot', command: 'true',
+      name: 'once', kind: 'oneShot', command: 'true',
     }) as any
     const got = await env.as(owner).service('jobs').get(job.id) as any
     expect(got.nextRunAt).toBeNull()
@@ -2759,7 +2759,7 @@ describe('an alert rule says whether anything writes the metric it watches', () 
   })
 
   test('a rule over a real series answers it, live', async () => {
-    const r = await env.as(owner).service('alerts').get(live.id) as any
+    const r = await env.as(owner).service('alertRules').get(live.id) as any
     expect(r.series?.name).toBe('alertcheck.written')
     expect(r.series.stale).toBe(false)
   })
@@ -2769,7 +2769,7 @@ describe('an alert rule says whether anything writes the metric it watches', () 
     // `@@gate(8)` and `@@tenant(none)`, so the lookup is `asSystem()` and the
     // only thing that reaches the response is the name, the type and the
     // freshness — never a reading.
-    const r = await env.as(owner).service('alerts').get(typo.id) as any
+    const r = await env.as(owner).service('alertRules').get(typo.id) as any
     expect(r.series).toBe(null)
   })
 
@@ -2795,8 +2795,8 @@ describe('an alert rule says whether anything writes the metric it watches', () 
     const theirs = await watch(wsB.id)
     const mine   = await watch(ws.id)
 
-    expect((await env.as(owner).service('alerts').get(theirs.id) as any).series).toBe(null)
-    expect((await env.as(owner).service('alerts').get(mine.id) as any).series?.name).toBe('server.cpuPercent')
+    expect((await env.as(owner).service('alertRules').get(theirs.id) as any).series).toBe(null)
+    expect((await env.as(owner).service('alertRules').get(mine.id) as any).series?.name).toBe('server.cpuPercent')
   })
 })
 
@@ -2813,7 +2813,7 @@ describe('snoozing a rule silences it for a while, and the server keeps the cloc
 
   test('a snooze is minutes from NOW, and unsnooze clears it', async () => {
     const before = Date.now()
-    const r = await env.as(owner).service('alerts').call('snooze', rule.id, { minutes: 60 }) as any
+    const r = await env.as(owner).service('alertRules').call('snooze', rule.id, { minutes: 60 }) as any
     const until = Date.parse(r.snoozedUntil)
     expect(until).toBeGreaterThanOrEqual(before + 60 * 60_000)
     expect(until).toBeLessThan(Date.now() + 60 * 60_000 + 5_000)
@@ -2821,35 +2821,86 @@ describe('snoozing a rule silences it for a while, and the server keeps the cloc
     // assigning the answer keeps the sections it was drawing.
     expect(Array.isArray(r.channels)).toBe(true)
 
-    const cleared = await env.as(owner).service('alerts').call('unsnooze', rule.id) as any
+    const cleared = await env.as(owner).service('alertRules').call('unsnooze', rule.id) as any
     expect(cleared.snoozedUntil).toBe(null)
   })
 
   test('a snooze past a week is refused, and so is none at all', async () => {
-    await expect(env.as(owner).service('alerts').call('snooze', rule.id, { minutes: 7 * 24 * 60 + 1 }))
+    await expect(env.as(owner).service('alertRules').call('snooze', rule.id, { minutes: 7 * 24 * 60 + 1 }))
       .rejects.toThrow(/1 to 10080/)
-    await expect(env.as(owner).service('alerts').call('snooze', rule.id, { minutes: 0 }))
+    await expect(env.as(owner).service('alertRules').call('snooze', rule.id, { minutes: 0 }))
       .rejects.toThrow(/1 to 10080/)
-    await expect(env.as(owner).service('alerts').call('snooze', rule.id, {}))
+    await expect(env.as(owner).service('alertRules').call('snooze', rule.id, {}))
       .rejects.toThrow(/minutes/)
     // Paired: the ceiling itself is allowed.
-    const r = await env.as(owner).service('alerts').call('snooze', rule.id, { minutes: 7 * 24 * 60 }) as any
+    const r = await env.as(owner).service('alertRules').call('snooze', rule.id, { minutes: 7 * 24 * 60 }) as any
     expect(r.snoozedUntil).toBeTruthy()
-    await env.as(owner).service('alerts').call('unsnooze', rule.id)
+    await env.as(owner).service('alertRules').call('unsnooze', rule.id)
   })
 
   test('a developer cannot silence the pager, and a patch cannot write the column', async () => {
-    await expect(env.as(developer).service('alerts').call('snooze', rule.id, { minutes: 5 }))
+    await expect(env.as(developer).service('alertRules').call('snooze', rule.id, { minutes: 5 }))
       .rejects.toThrow(/Requires admin role in this workspace/)
     // `@system`: the ordinary edit is not a second door to the same silence.
     // It carries the version it read, so the refusal is the column's and not
     // the compare-and-swap's.
     const far = new Date(Date.now() + 365 * 24 * 60 * 60_000).toISOString()
     const { version } = await (env.system as any).alertRule.findFirst({ where: { id: rule.id } })
-    await expect(env.as(owner).service('alerts').patch(rule.id, { snoozedUntil: far, version }))
+    await expect(env.as(owner).service('alertRules').patch(rule.id, { snoozedUntil: far, version }))
       .rejects.toThrow(/snoozedUntil/)
     const row = await (env.system as any).alertRule.findFirst({ where: { id: rule.id } })
     expect(row.snoozedUntil).toBe(null)
+  })
+})
+
+describe('alerts — what a rule fired, read and answered by id', () => {
+  const tag = () => Math.random().toString(36).slice(2, 8)
+  let rule: any, firing: any, other: any
+
+  const fire = (ruleId: string) => (env.system as any).alert.create({ data: {
+    ruleId, severity: 'warning', subjectType: 'series', subjectId: `s-${tag()}`, message: 'm' } })
+
+  beforeAll(async () => {
+    const sys = env.system as any
+    rule   = await sys.alertRule.create({ data: { workspaceId: ws.id, name: `fired-${tag()}`,
+      metricName: 'fired.metric', severity: 'warning', operator: 'gt', threshold: 10 } })
+    firing = await fire(rule.id)
+    const otherWs = await sys.workspace.create({ data: { accountId: ws.accountId, name: 'Elsewhere', slug: `e-${tag()}` } })
+    const theirRule = await sys.alertRule.create({ data: { workspaceId: otherWs.id, name: `theirs-${tag()}`,
+      metricName: 'theirs.metric', severity: 'warning', operator: 'gt', threshold: 10 } })
+    other  = await fire(theirRule.id)
+  })
+
+  test('find lists one rule\'s alerts and never another workspace\'s', async () => {
+    const mine = await env.as(owner).service('alerts').find({ ruleId: rule.id }) as any
+    expect(mine.data.map((a: any) => a.id)).toEqual([firing.id])
+    const all = await env.as(owner).service('alerts').find({}) as any
+    expect(all.data.some((a: any) => a.id === other.id)).toBe(false)
+  })
+
+  test('acknowledge stamps the caller and does not resolve; twice is refused', async () => {
+    const r = await env.as(developer).service('alerts').call('acknowledge', firing.id) as any
+    expect(r.acknowledgedAt).toBeTruthy()
+    expect(r.status).toBe('firing')
+    await expect(env.as(developer).service('alerts').call('acknowledge', firing.id))
+      .rejects.toThrow(/Already acknowledged/)
+  })
+
+  test('resolve closes it; twice is refused; a foreign alert is not found', async () => {
+    const r = await env.as(developer).service('alerts').call('resolve', firing.id) as any
+    expect(r.status).toBe('resolved')
+    expect(r.resolvedAt).toBeTruthy()
+    await expect(env.as(developer).service('alerts').call('resolve', firing.id))
+      .rejects.toThrow(/Already resolved/)
+    await expect(env.as(owner).service('alerts').call('acknowledge', other.id))
+      .rejects.toThrow(/not found/i)
+  })
+
+  test('a rule is authored through alertRules, and the alerts service mounts no create', async () => {
+    const methods = Object.keys((env.app.services.get('alerts') as any).describe().inputs ?? {})
+    expect(methods).not.toContain('create')
+    await expect((env.as(owner).service('alerts') as any).create({ ruleId: rule.id, message: 'x' }))
+      .rejects.toThrow()
   })
 })
 
@@ -2861,14 +2912,14 @@ describe('an app made from a blueprint', () => {
     const sys = env.system as any
     bp = await sys.blueprint.create({ data: {
       slug: `kv-${tag()}`, name: 'KV', category: 'Data', description: 'A store', version: '7',
-      image: 'redis:7.2-alpine', appType: 'database', port: 6379,
+      image: 'redis:7.2-alpine', appKind: 'database', port: 6379,
       volumePath: '/data', healthCheck: '/ping', cpuLimit: 0.5, memLimitMb: 256,
       command: ['redis-server', '--save', '60 1'],
     } })
     for (const [i, p] of [
-      { key: 'KV_PASSWORD', label: 'Password',      required: true,  secret: true },
+      { key: 'KV_PASSWORD', label: 'Password',      isRequired: true,  isSecret: true },
       { key: 'KV_POLICY',   label: 'Policy',        defaultValue: 'allkeys-lru' },
-      { key: 'KV_KEY',      label: 'Encryption key', required: true, secret: true, generate: 'random_hex_16' },
+      { key: 'KV_KEY',      label: 'Encryption key', isRequired: true, isSecret: true, generate: 'randomHex16' },
       { key: 'KV_NOTE',     label: 'Note' },
     ].entries())
       await sys.blueprintParam.create({ data: { blueprintId: bp.id, position: i, ...p } })
@@ -2891,7 +2942,7 @@ describe('an app made from a blueprint', () => {
     }) as any
 
     expect(r.blueprintId).toBe(bp.id)
-    expect(r.type).toBe('database')
+    expect(r.kind).toBe('database')
     expect(r.port).toBe(6379)
     expect(r.source).toEqual({ kind: 'image', image: 'redis:7.2-alpine' })
     // Every setting the blueprint states lands on the column `domain/release/runtime.ts`
@@ -2902,7 +2953,7 @@ describe('an app made from a blueprint', () => {
     // Every parameter is a variable on the app. A default stands in for a
     // blank field; a blank optional one is absent.
     const vars = await env.as(developer).service('variables').find({ appId: r.id }) as any
-    expect(vars.data.map((v: any) => [v.key, v.secret, v.value])).toEqual([
+    expect(vars.data.map((v: any) => [v.key, v.isSecret, v.value])).toEqual([
       ['KV_KEY', true, null], ['KV_PASSWORD', true, null], ['KV_POLICY', false, 'allkeys-lru'],
     ])
 
@@ -2915,7 +2966,7 @@ describe('an app made from a blueprint', () => {
     const shipped = await releaseEnv(env.system, snap)
     expect(shipped.KV_PASSWORD).toBe('hunter2-kv')
     expect(shipped.KV_POLICY).toBe('allkeys-lru')
-    // `random_hex_16` is sixteen BYTES, the way `openssl rand -hex 16` reads.
+    // `randomHex16` is sixteen BYTES, the way `openssl rand -hex 16` reads.
     expect(shipped.KV_KEY).toMatch(/^[0-9a-f]{32}$/)
 
     // No Secret row: /secrets/ is the workspace's credentials, not an app's env.
@@ -2970,7 +3021,7 @@ describe('an app made from a blueprint', () => {
 
   test('where an app came from is not a column its editor writes', async () => {
     const plain = await env.as(developer).service('apps').create({
-      environmentId: environment.id, name: 'Plain', type: 'container',
+      environmentId: environment.id, name: 'Plain', kind: 'container',
       source: { kind: 'image', image: 'nginx:alpine' },
     }) as any
     await env.as(developer).service('apps').patch(plain.id, { blueprintId: bp.id })
@@ -2999,7 +3050,7 @@ describe('variables', () => {
 
   test("a release gets its environment's variables with its own on top", async () => {
     await vars().create({ environmentId: environment.id, key: 'LOG_LEVEL', value: 'debug' })
-    await vars().create({ environmentId: environment.id, key: 'DATABASE_URL', value: 'pg://shared-pw', secret: true })
+    await vars().create({ environmentId: environment.id, key: 'DATABASE_URL', value: 'pg://shared-pw', isSecret: true })
     await vars().create({ appId: web.id, key: 'LOG_LEVEL', value: 'info' })
     // The app's own plain value replaces the environment's secret of that key.
     await vars().create({ appId: web.id, key: 'DATABASE_URL', value: 'pg://web-only' })
@@ -3024,17 +3075,17 @@ describe('variables', () => {
   })
 
   test('a removed variable frees its key, and a secret stays secret on an edit', async () => {
-    const row = await vars().create({ appId: api.id, key: 'TOKEN', value: 'first', secret: true }) as any
+    const row = await vars().create({ appId: api.id, key: 'TOKEN', value: 'first', isSecret: true }) as any
     const edited = await vars().patch(row.id, { value: 'second', version: row.version }) as any
     expect(edited.value).toBe(null)
     const stored = await (env.system as any).variable.findFirst({ where: { id: row.id } })
     expect(stored.secretValue).toBe('second')
     // `secret` is set-once: the patch drops it and the value stays secret.
-    const kept = await vars().patch(row.id, { secret: false, version: edited.version }) as any
-    expect(kept.secret).toBe(true)
+    const kept = await vars().patch(row.id, { isSecret: false, version: edited.version }) as any
+    expect(kept.isSecret).toBe(true)
 
     await vars().remove(row.id)
-    await vars().create({ appId: api.id, key: 'TOKEN', value: 'third', secret: true })
+    await vars().create({ appId: api.id, key: 'TOKEN', value: 'third', isSecret: true })
   })
 
   test('a runtime setting the machine would refuse is refused at the write', async () => {
@@ -3096,7 +3147,7 @@ describe('infra.summary counts the fleet Home opens on', () => {
     const rule = await sys.alertRule.create({ data: { workspaceId: w.id, name: 'r', metricName: 'm',
       severity: 'warning', operator: 'gt', threshold: 1,
       snoozedUntil: new Date(Date.now() + 3_600_000).toISOString() } })
-    const ev = (acknowledgedAt: string | null, status = 'firing') => sys.alertEvent.create({ data: {
+    const ev = (acknowledgedAt: string | null, status = 'firing') => sys.alert.create({ data: {
       ruleId: rule.id, status, severity: 'warning', subjectType: 'series', subjectId: 's',
       message: 'm', acknowledgedAt } })
     await ev(null)
@@ -3405,7 +3456,7 @@ describe('a machine\'s disk is kept over time, folded', () => {
    *  directly would agree with a report that never reaches it. */
   async function reportDisk(body: Record<string, unknown>) {
     const payload = { server_id: box.id, ...body }
-    const path = '/cleanup'
+    const path = '/maintenanceRuns'
     const req  = env.http.post(path).set('x-service-method', 'report')
     for (const [k, v] of Object.entries(await signRequest({
       privateKey: KEY, serviceMethod: 'report', method: 'POST', path, body: JSON.stringify(payload),
@@ -3457,13 +3508,13 @@ describe('a machine\'s disk is kept over time, folded', () => {
   })
 
   test('a volume\'s bytes are NOT in the reclaimable sum', async () => {
-    // The same omission `cleanup.usage` makes for the fleet total: an unused
+    // The same omission `maintenanceRuns.usage` makes for the fleet total: an unused
     // volume's size comes from `Volume`, which owns per-disk sizes, so counting
     // it here too would double it the first time a report was missed.
     const sys = env.system as any
     await sys.volume.create({
       data: { serverId: box.id, name: `vol-${Math.random().toString(36).slice(2, 8)}`,
-              driver: 'local', sizeBytes: 5_000, inUse: false },
+              driver: 'local', sizeBytes: 5_000, isInUse: false },
     })
     await reportDisk(REPORT)
     const free = await newestPoint((await seriesOf('server.dockerReclaimableBytes')).id)
@@ -3471,7 +3522,7 @@ describe('a machine\'s disk is kept over time, folded', () => {
   })
 
   test('usage answers the declaration, not just the numbers', async () => {
-    const res = await env.as(owner).service('cleanup').call('usage', {}) as any
+    const res = await env.as(owner).service('maintenanceRuns').call('usage', {}) as any
     expect(res.readings.map((r: any) => r.name))
       .toEqual(['server.dockerBytes', 'server.dockerReclaimableBytes'])
     // `of` computes the sums and must not travel: it is a function, and what it
@@ -3483,7 +3534,7 @@ describe('a machine\'s disk is kept over time, folded', () => {
     // The assertion the whole read is shaped by, and it fails silently the other
     // way: raw is kept 48 hours, this graph spans seven days, and on a database
     // written a minute ago a raw read looks perfect.
-    const res = await env.as(owner).service('cleanup').call('usage', {}) as any
+    const res = await env.as(owner).service('maintenanceRuns').call('usage', {}) as any
     const mine = res.servers.find((s: any) => s.serverId === box.id)
     // Points exist — the reports above wrote them — and nothing has folded yet.
     expect(await (env.system as any).metricPoint.count({
@@ -3507,7 +3558,7 @@ describe('a machine\'s disk is kept over time, folded', () => {
         data: { seriesId: series.id, hour: now - ago * hour, min: max, max, sum: max, count: 1 },
       })
 
-    const res  = await env.as(owner).service('cleanup').call('usage', {}) as any
+    const res  = await env.as(owner).service('maintenanceRuns').call('usage', {}) as any
     const mine = res.servers.find((s: any) => s.serverId === box.id)
     // `max`, not the mean: a disk graph is read for its high-water mark, and
     // averaging an hour removes exactly the spike somebody is looking for.
@@ -3523,7 +3574,7 @@ describe('a machine\'s disk is kept over time, folded', () => {
       data: { seriesId: series.id, hour: old, min: 1, max: 1, sum: 1, count: 1 },
     })
 
-    const res  = await env.as(owner).service('cleanup').call('usage', {}) as any
+    const res  = await env.as(owner).service('maintenanceRuns').call('usage', {}) as any
     const mine = res.servers.find((s: any) => s.serverId === box.id)
     expect(mine.trend['server.dockerBytes']).toEqual([5_000, 6_000, 7_000])
   })
@@ -3537,7 +3588,7 @@ describe('a machine\'s disk is kept over time, folded', () => {
       data: { workspaceId: ws.id, name: 'quiet-box', slug: `qbox-${Math.random().toString(36).slice(2, 8)}`,
               status: 'pending' },
     })
-    const res  = await env.as(owner).service('cleanup').call('usage', {}) as any
+    const res  = await env.as(owner).service('maintenanceRuns').call('usage', {}) as any
     const mine = res.servers.find((s: any) => s.serverId === fresh.id)
     expect(mine.trend).toEqual({})
     expect(mine.reported).toBe(false)
@@ -3560,7 +3611,7 @@ describe('a machine\'s disk is kept over time, folded', () => {
 
 describe('the cleanup screen is told how full each disk is', () => {
   let box: any
-  const usage = async () => await env.as(owner).service('cleanup').call('usage', {}) as any
+  const usage = async () => await env.as(owner).service('maintenanceRuns').call('usage', {}) as any
   const mine  = async (id: string) => (await usage()).servers.find((s: any) => s.serverId === id)
 
   beforeAll(async () => {
@@ -3603,7 +3654,7 @@ describe('the cleanup screen is told how full each disk is', () => {
   })
 
   test('the two wires are independent — a heartbeat without a disk report', async () => {
-    // `box` has never sent a `cleanup.report`, so every Docker figure on its
+    // `box` has never sent a `maintenanceRuns.report`, so every Docker figure on its
     // card is absent while the bar draws. A screen that hung the bar off
     // `reported` would show nothing here, which is the arrangement this test
     // exists to refuse.
@@ -3691,8 +3742,8 @@ describe('a service over no model is graded by the level it declares (FJS-D408)'
     const acc   = await env.http.post('/invitations').set('x-service-method', 'accept')
       .send({ token: inv.token, name: 'Pager', password: 'correct-horse' })
     const asked: Array<[string, number]> = [
-      ['servers', 200], ['apps', 200], ['variables', 200], ['channels', 200], ['volumes', 200],
-      ['apiKeys', 200], ['recipes', 200], ['domains', 200], ['registry', 500],
+      ['servers', 200], ['apps', 200], ['variables', 200], ['notificationChannels', 200], ['volumes', 200],
+      ['apiKeys', 200], ['recipes', 200], ['domains', 200], ['registryImages', 500],
     ]
     for (const [name, limit] of asked) {
       const res = await env.http.get(`/${name}?$limit=${limit}`)
@@ -3859,7 +3910,7 @@ describe('a custom method grades its caller before a system read or a guarded wr
     const prod = await sys.environment.create({ data: { workspaceId: ws.id, projectId: proj.id, name: 'prod', slug: `prod-${Math.random().toString(36).slice(2, 8)}`, isProtected: true } })
     const vars = async () => (await sys.variable.findMany({ where: { environmentId: prod.id } })).map((v: any) => v.key)
     const set  = (who: any) => env.as(who).service('variables')
-      .create({ environmentId: prod.id, key: 'DATABASE_URL', value: 'postgres://real', secret: true })
+      .create({ environmentId: prod.id, key: 'DATABASE_URL', value: 'postgres://real', isSecret: true })
 
     await expect(set(developer)).rejects.toThrow(/Protected environments/)
     expect(await vars()).toEqual([])
@@ -3896,8 +3947,8 @@ describe('a custom method grades its caller before a system read or a guarded wr
 describe('a custom method that writes as the app declares the level it needs (FJS-2856)', () => {
   const DEVELOPER = 4, ADMIN = 5
   const declared: Array<[string, string, number]> = [
-    ['jobs', 'trigger', DEVELOPER], ['volumes', 'prune', ADMIN], ['posture', 'check', DEVELOPER],
-    ['channels', 'test', ADMIN], ['backupDestinations', 'test', ADMIN],
+    ['jobs', 'trigger', DEVELOPER], ['volumes', 'prune', ADMIN], ['serverPostures', 'check', DEVELOPER],
+    ['notificationChannels', 'test', ADMIN], ['backupDestinations', 'test', ADMIN],
     ['servers', 'sync', DEVELOPER], ['servers', 'catalog', DEVELOPER],
     ['servers', 'reconcile', DEVELOPER], ['servers', 'issueEnrollment', ADMIN],
     ['apps', 'place', DEVELOPER], ['apps', 'unplace', DEVELOPER], ['invitations', 'resend', ADMIN],
@@ -3935,8 +3986,8 @@ describe('the trash lists what was deleted, and each service brings its own back
     const sys  = env.system as any
     const proj = await sys.project.create({ data: { workspaceId: ws.id, name: `Tree ${uniq()}`, slug: `tree-${uniq()}` } })
     const e    = await sys.environment.create({ data: { workspaceId: ws.id, projectId: proj.id, name: 'staging', slug: 'staging' } })
-    const a    = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'Web', slug: `web-${uniq()}`, type: 'static' } })
-    const b    = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'Api', slug: `api-${uniq()}`, type: 'static' } })
+    const a    = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'Web', slug: `web-${uniq()}`, kind: 'static' } })
+    const b    = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'Api', slug: `api-${uniq()}`, kind: 'static' } })
     return { proj, e, a, b }
   }
 
@@ -4016,10 +4067,10 @@ describe('the trash lists what was deleted, and each service brings its own back
     const sys     = env.system as any
     const secret  = await sys.secret.create({ data: { workspaceId: ws.id, name: `hook-${uniq()}`, kind: 'notification' } })
     const channel = await sys.notificationChannel.create({ data: { workspaceId: ws.id, name: `Pager ${uniq()}`, kind: 'webhook', secretId: secret.id } })
-    await env.as(owner).service('channels').remove(channel.id)
+    await env.as(owner).service('notificationChannels').remove(channel.id)
     expect(await live('secret', secret.id)).toBe(false)
 
-    await env.as(owner).service('channels').restore(channel.id)
+    await env.as(owner).service('notificationChannels').restore(channel.id)
     expect(await live('notificationChannel', channel.id)).toBe(true)
     expect(await live('secret', secret.id)).toBe(true)
   })
@@ -4029,7 +4080,7 @@ describe('the trash lists what was deleted, and each service brings its own back
   // caller. A system write names no actor in the trail.
   test('a channel’s credential Secret is written as the caller, not as the system', async () => {
     const name = `Pager ${uniq()}`
-    await env.as(owner).service('channels').create({ name, kind: 'webhook', config: { url: 'https://hooks.example.test/x' }, secret: 'tok-2357' })
+    await env.as(owner).service('notificationChannels').create({ name, kind: 'webhook', config: { url: 'https://hooks.example.test/x' }, secret: 'tok-2357' })
 
     const secret = await (env.system as any).secret.findFirst({ where: { workspaceId: ws.id, name: `channel-${slug(name)}` } })
     expect(secret.workspaceId).toBe(ws.id)
@@ -4047,7 +4098,7 @@ describe('the trash lists what was deleted, and each service brings its own back
     const channel = await (env.system as any).notificationChannel.create({
       data: { workspaceId: ws.id, name: `Mail ${uniq()}`, kind: 'email', config: { to: 'ops@example.test' } },
     })
-    await expect(env.as(owner).service('channels').call('test', channel.id)).rejects.toThrow(/needs a mailer/)
+    await expect(env.as(owner).service('notificationChannels').call('test', channel.id)).rejects.toThrow(/needs a mailer/)
   })
 
   test('recipes, dashboards and secrets answer restore, and a row that is not deleted is a 404', async () => {
@@ -4084,7 +4135,7 @@ describe('infra.launch walks to the screen each step happens on', () => {
     const srv  = await serverAt('online', { workspaceId: w.id, name: 'box', slug: `box-${uniq}` })
     const proj = await sys.project.create({ data: { workspaceId: w.id, name: 'P', slug: `p-${uniq}` } })
     const e    = await sys.environment.create({ data: { workspaceId: w.id, projectId: proj.id, name: 'prod', slug: 'prod' } })
-    const a    = await sys.app.create({ data: { workspaceId: w.id, environmentId: e.id, name: 'Site', slug: 'site', type: 'static' } })
+    const a    = await sys.app.create({ data: { workspaceId: w.id, environmentId: e.id, name: 'Site', slug: 'site', kind: 'static' } })
 
     const half = await me.call('launch')
     expect(half.steps.find((s: any) => s.id === 'app')).toMatchObject({ done: true, href: `/environments/${e.id}/` })
@@ -4100,7 +4151,7 @@ describe('infra.launch walks to the screen each step happens on', () => {
     expect(unnamed.steps.find((s: any) => s.id === 'dns')).toMatchObject({ done: false, href: '/secrets/' })
 
     const cf = await sys.secret.create({ data: {
-      workspaceId: w.id, name: 'cf', kind: 'provider_key', providerKind: 'cloudflare', data: JSON.stringify({ token: 't' }),
+      workspaceId: w.id, name: 'cf', kind: 'providerKey', providerKind: 'cloudflare', data: JSON.stringify({ token: 't' }),
     } })
     expect((await me.call('launch')).steps.find((s: any) => s.id === 'dns')).toMatchObject({ done: false, href: '/dns/' })
     await sys.workspace.update({ where: { id: w.id }, data: { ingressAccountId: cf.id, ingressZoneId: 'zone-1' } })
@@ -4207,7 +4258,7 @@ describe('users — a person edits their own profile, at any standing', () => {
   test('the address, the organization and every graded column are dropped', async () => {
     const before = await sys().user.findUnique({ where: { id: developer.id } })
     await env.as(developer).service('users').patch('me', {
-      email: 'taken@x.co', accountId: null, emailVerified: true,
+      email: 'taken@x.co', accountId: null, isEmailVerified: true,
       isSystemAdmin: true, status: 'suspended', displayName: 'Dev',
       deletedAt: new Date().toISOString(), id: 'hijack', createdAt: '2000-01-01T00:00:00.000Z',
     })
@@ -4217,7 +4268,7 @@ describe('users — a person edits their own profile, at any standing', () => {
     const row = await sys().user.findUnique({ where: { id: developer.id } })
     expect(row.email).toBe(before.email)
     expect(row.accountId).toBe(before.accountId)
-    expect(row.emailVerified).toBe(before.emailVerified)
+    expect(row.isEmailVerified).toBe(before.isEmailVerified)
     expect([row.isSystemAdmin, row.status, row.kind]).toEqual([before.isSystemAdmin, before.status, before.kind])
     expect(row.displayName).toBe('Dev')
     expect(row.deletedAt).toBeNull()
@@ -4333,14 +4384,14 @@ describe('a list honors every filter it admits', () => {
     const proj = await sys.project.create({ data: { workspaceId: ws.id, name: 'Filters', slug: `filters-${uniq}` } })
     env1 = await sys.environment.create({ data: { workspaceId: ws.id, projectId: proj.id, name: 'one', slug: 'one' } })
     env2 = await sys.environment.create({ data: { workspaceId: ws.id, projectId: proj.id, name: 'two', slug: 'two' } })
-    placed    = await sys.app.create({ data: { workspaceId: ws.id, environmentId: env1.id, name: `placed-${uniq}`, slug: 'placed', type: 'static' } })
-    elsewhere = await sys.app.create({ data: { workspaceId: ws.id, environmentId: env2.id, name: `elsewhere-${uniq}`, slug: 'elsewhere', type: 'static' } })
+    placed    = await sys.app.create({ data: { workspaceId: ws.id, environmentId: env1.id, name: `placed-${uniq}`, slug: 'placed', kind: 'static' } })
+    elsewhere = await sys.app.create({ data: { workspaceId: ws.id, environmentId: env2.id, name: `elsewhere-${uniq}`, slug: 'elsewhere', kind: 'static' } })
     box = await serverAt('online', { workspaceId: ws.id, name: `box-${uniq}`, slug: `box-${uniq}` })
     await sys.appServer.create({ data: { appId: placed.id, serverId: box.id } })
     d1 = await sys.deployment.create({ data: { workspaceId: ws.id, appId: placed.id,    trigger: 'button', branch: `main-${uniq}` } })
     d2 = await sys.deployment.create({ data: { workspaceId: ws.id, appId: elsewhere.id, trigger: 'button', branch: `feat-${uniq}` } })
-    job = await sys.job.create({ data: { workspaceId: ws.id, appId: placed.id, name: `nightly-${uniq}`, kind: 'one_shot', command: 'true' } })
-    await sys.job.create({ data: { workspaceId: ws.id, appId: placed.id, name: `weekly-${uniq}`, kind: 'one_shot', command: 'true' } })
+    job = await sys.job.create({ data: { workspaceId: ws.id, appId: placed.id, name: `nightly-${uniq}`, kind: 'oneShot', command: 'true' } })
+    await sys.job.create({ data: { workspaceId: ws.id, appId: placed.id, name: `weekly-${uniq}`, kind: 'oneShot', command: 'true' } })
   })
 
   test('apps on one server, and not the app placed nowhere', async () => {
@@ -4399,8 +4450,8 @@ describe('a list honors every filter it admits', () => {
     ['networks',  'network',             (name, u) => ({ name, slug: `n-${u}` })],
     ['monitors',  'monitor',             (name)    => ({ name, url: 'https://example.test/up' })],
     ['secrets',   'secret',              (name)    => ({ name })],
-    ['alerts',    'alertRule',           (name)    => ({ name, metricName: 'cpu', threshold: 90 })],
-    ['channels',  'notificationChannel', (name)    => ({ name, kind: 'webhook' })],
+    ['alertRules', 'alertRule',            (name)    => ({ name, metricName: 'cpu', threshold: 90 })],
+    ['notificationChannels', 'notificationChannel', (name)    => ({ name, kind: 'webhook' })],
   ]
   for (const [service, model, make] of byName) {
     test(`${service} by name, and not the other one`, async () => {
@@ -4426,7 +4477,7 @@ describe('a list honors every filter it admits', () => {
     const img  = (tag: string) => sys.registryImage.create({ data: { workspaceId: ws.id, repository: `repo-${uniq}`, tag, digest: `sha256:${tag}-${uniq}` } })
     const want = await img(`v1-${uniq}`)
     await img(`v2-${uniq}`)
-    expect(ids(await env.as(owner).service('registry').find({ tag: want.tag }))).toEqual([want.id])
+    expect(ids(await env.as(owner).service('registryImages').find({ tag: want.tag }))).toEqual([want.id])
   })
 
   test('a key that is not a column is still refused by name', async () => {
@@ -4445,7 +4496,7 @@ describe('removing a server that is not online', () => {
       const server = await serverAt(status,
         { workspaceId: ws.id, name: `rm-${status}`, slug: `rm-${status}-${Math.random().toString(36).slice(2, 8)}` })
       const board = await sys.dashboard.create({ data: { workspaceId: ws.id, name: `board-${status}`, slug: `board-${status}` } })
-      await sys.dashboardTile.create({ data: { dashboardId: board.id, kind: 'server_health', serverId: server.id, cols: 1 } })
+      await sys.dashboardTile.create({ data: { dashboardId: board.id, kind: 'serverHealth', serverId: server.id, cols: 1 } })
 
       await env.as(owner).service('servers').remove(server.id)
 
@@ -4682,21 +4733,21 @@ describe('dashboard tile verbs and app placement declare their input', () => {
 // seed, so a missing field is a 400 naming it before the row is read.
 describe('alert and network verbs declare their input', () => {
   test('each names a type in the seed', () => {
-    const alerts = (env.app.services.get('alerts') as any).describe().inputs
-    expect(alerts.attachChannel).toBe('AlertChannelRef')
-    expect(alerts.detachChannel).toBe('AlertChannelRef')
-    expect(alerts.snooze).toBe('AlertSnooze')
+    const alertRules = (env.app.services.get('alertRules') as any).describe().inputs
+    expect(alertRules.attachChannel).toBe('AlertChannelRef')
+    expect(alertRules.detachChannel).toBe('AlertChannelRef')
+    expect(alertRules.snooze).toBe('AlertSnooze')
     const networks = (env.app.services.get('networks') as any).describe().inputs
     expect(networks.attach).toBe('NetworkAttach')
     expect(networks.detach).toBe('NetworkDetach')
   })
 
   test('a missing field is refused naming it', async () => {
-    await expect(env.as(owner).service('alerts').call('attachChannel', 'nope', {}))
+    await expect(env.as(owner).service('alertRules').call('attachChannel', 'nope', {}))
       .rejects.toThrow(/channelId/)
-    await expect(env.as(owner).service('alerts').call('detachChannel', 'nope', {}))
+    await expect(env.as(owner).service('alertRules').call('detachChannel', 'nope', {}))
       .rejects.toThrow(/channelId/)
-    await expect(env.as(owner).service('alerts').call('snooze', 'nope', {}))
+    await expect(env.as(owner).service('alertRules').call('snooze', 'nope', {}))
       .rejects.toThrow(/minutes/)
     await expect(env.as(owner).service('networks').call('attach', 'nope', {}))
       .rejects.toThrow(/serverId/)
@@ -4761,7 +4812,7 @@ describe('a CRUD verb is graded by the model gate alone (FJS-2353)', () => {
     const { readdirSync, readFileSync } = await import('node:fs')
     const dir = new URL('../src/services/', import.meta.url)
     const holders = readdirSync(dir)
-      .filter(d => !['audit', 'invitations'].includes(d))
+      .filter(d => !['audit-events', 'invitations'].includes(d))
       .flatMap(d => readdirSync(new URL(`${d}/`, dir)).filter(f => f.endsWith('.ts')).map(f => `${d}/${f}`))
       .filter(f => /requireWorkspaceRole\(/.test(readFileSync(new URL(f, dir), 'utf8')))
     expect(holders).toEqual([])
@@ -4804,7 +4855,7 @@ describe('monitors', () => {
   test('an admin authors one, born pending; a viewer reads it and cannot write', async () => {
     const m = await env.as(owner).service('monitors').create(fresh()) as any
     expect(m.status).toBe('pending')
-    expect(m.intervalSec).toBe(120)
+    expect(m.intervalSeconds).toBe(120)
 
     const seen = await env.as(viewer).service('monitors').get(m.id) as any
     expect(seen.id).toBe(m.id)
@@ -4824,8 +4875,8 @@ describe('monitors', () => {
     await expect(env.as(owner).service('monitors').patch(m.id, { failStreak: 9 })).rejects.toThrow()
     await expect(env.as(owner).service('monitors').create(fresh({ url: 'ftp://example.com/' })))
       .rejects.toThrow(/url/i)
-    await expect(env.as(owner).service('monitors').create(fresh({ intervalSec: 30 })))
-      .rejects.toThrow(/intervalSec/)
+    await expect(env.as(owner).service('monitors').create(fresh({ intervalSeconds: 30 })))
+      .rejects.toThrow(/intervalSeconds/)
   })
 
   test('pause and resume are the declared moves, and resume lands on pending', async () => {
@@ -4912,7 +4963,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
   // A static app is placed and has no data directory on its machine.
   test('an app with no volume path is refused before a row is written', async () => {
     const sys  = env.system as any
-    const bare = await sys.app.create({ data: { workspaceId: ws.id, environmentId: app.environmentId, name: 'bare', slug: `bare-${tag()}`, type: 'static' } })
+    const bare = await sys.app.create({ data: { workspaceId: ws.id, environmentId: app.environmentId, name: 'bare', slug: `bare-${tag()}`, kind: 'static' } })
     await sys.appServer.create({ data: { appId: bare.id, serverId: server.id, replicaIndex: 0, status: 'running' } })
     await expect(take(owner, { appId: bare.id, serverId: server.id })).rejects.toThrow(/no volume path/)
     expect(await sys.appBackup.count({ where: { appId: bare.id } })).toBe(0)

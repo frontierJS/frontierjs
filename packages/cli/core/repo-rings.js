@@ -209,8 +209,7 @@ export function dataOf(model, { root, ...opts } = {}) {
       test:  p.test ?? '',
     })),
     severities: present.map(k => ({ key: k, name: capital(labels[k] ?? k), tone: severityTone(k) })),
-    issues:      present.flatMap(k => issues.bySeverity[k].map(r => [r.id, r.pkg ?? '', k, clip(r.title, 170)])),
-    openCount:   issues?.open ?? 0,
+    issues:      present.flatMap(k => issues.bySeverity[k].map(r => [r.id, r.pkg ?? '', k, clip(r.title, 170), r.move ?? null, r.holds ?? 0])),
     closedCount: issues?.closed ?? 0,
     byPkg:       issues?.byPackage ?? [],
     decisions:   (model.decisions?.sections ?? []).map(s => ({ title: s.title, rows: s.rulings.map(r => [r.id, r.date ?? '', clip(r.claim, 200)]) })),
@@ -441,6 +440,9 @@ h1.pkh { display: flex; align-items: center; gap: .35em }
 .sev { font-family: var(--font-mono); font-size: .68rem; font-weight: 500; padding: 1px 5px; border-radius: 3px; color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); text-align: center; justify-self: start }
 .ilist .t { color: var(--ink); min-width: 0; overflow-wrap: anywhere }
 .ilist .pkg { font-family: var(--font-mono); font-size: .72rem; color: var(--ink-mute); margin-left: 6px }
+.ilist .mv { font-family: var(--font-mono); font-size: .68rem; color: var(--c); margin-left: 6px; white-space: nowrap }
+.sech { font-size: 1rem; margin: 26px 0 10px }
+.sech span { font-family: var(--font-mono); font-size: .74rem; font-weight: 400; color: var(--ink-mute); margin-left: 6px }
 .ilist.two li { grid-template-columns: minmax(0, 14em) minmax(0, 1fr) }
 .ilist.wave li { grid-template-columns: 3em 6.2em minmax(0, 1fr) }
 .ilist.two .id { overflow-wrap: anywhere }
@@ -663,11 +665,25 @@ function client(D) {
   const DOCS = D.docs.map((d, i) => ({ ...d, order: i + 1, id: d.file.replace(/\.md$/, '') }))
   const DOC = Object.fromEntries(DOCS.map(d => [d.id, d]))
   const SEV = Object.fromEntries(D.severities.map(s => [s.key, { ...s, c: `var(--color-${s.tone})` }]))
+  // Who can move a defect, in the order `fli next` removes rows from its ready
+  // list. A ruling row has no move; it is counted by whether it holds one up.
+  const MOVE = {
+    ready:  { name: 'An agent can take it', sub: 'Nothing blocks it and nobody has to be there. What <code>fix:loop</code> picks up.', c: 'var(--color-success)' },
+    hand:   { name: 'Needs a person', sub: 'Marked <code>by hand</code>: a real device, an account, a judgment a headless session cannot make.', c: 'var(--color-primary)' },
+    env:    { name: 'The machine, not the code', sub: 'Marked <code>env:</code> — a port, a shared db, timing. Fixing the symptom brings the row back.', c: 'var(--color-muted)' },
+    ruling: { name: 'Waits on a ruling', sub: 'Says <code>blocked by</code> an open question. Ruling on the question is what moves it.', c: 'var(--color-info)' },
+    row:    { name: 'Waits on another defect', sub: 'Says <code>blocked by</code> a row that is not a question.', c: 'var(--color-warning)' },
+    holds:  { name: 'Holds up a defect', sub: 'At least one defect says it is blocked by this question.', c: 'var(--color-info)', ruling: true },
+    idle:   { name: 'Holds up nothing', sub: 'No defect waits on it. Ruling on it closes a question and frees no work.', c: 'var(--color-muted)', ruling: true },
+  }
+  const moveOf = i => i[2] === 'decision' ? (i[5] ? 'holds' : 'idle') : i[4]
+  const DEFECTS = D.issues.filter(i => i[2] !== 'decision')
+  const RULINGS = D.issues.filter(i => i[2] === 'decision')
   const PROJ = [
     { id: 'core', name: 'Core files', color: 'var(--r-seed)', go: 'docs', count: () => DOCS.length, title: 'The documents at the root' },
     { id: 'invariants', name: 'Invariants & proof', color: 'var(--accent)', go: 'invariants', count: () => D.invariants.length, title: 'Rules nothing may break, and what proves the tree still holds them' },
     { id: 'decisions', name: 'Decisions', color: 'var(--dec)', go: 'decisions', count: () => D.decCount, title: 'Settled arguments' },
-    { id: 'issues', name: 'Issues', color: 'var(--s2)', go: 'issues', count: () => D.openCount, title: 'What is wrong right now' },
+    { id: 'issues', name: 'Issues', color: 'var(--s2)', go: 'issues', count: () => DEFECTS.length, title: 'What is wrong right now' },
     { id: 'ideas', name: 'Ideas', color: 'var(--r-tooling)', go: 'ideas', count: () => D.ideas.count, title: 'What is not started' },
   ]
   // What proves the invariants, smallest machine first: a rule over the tree, a
@@ -956,7 +972,7 @@ function client(D) {
           ${card({ go: 'docs', ico: 'docs', tag: 'Ring 1', num: DOCS.length, label: 'Key documents', sub: 'Which file answers which question, in the order to open them.', c: 'var(--r-seed)' })}
           ${card({ go: 'invariants', ico: 'invariants', tag: 'Ring 2', num: D.invariants.length, label: 'Invariants & proof', sub: 'What may never break without a ruling, and what proves it still holds.', c: 'var(--accent)', meta: PROOF.filter(g => g.rows.length).map(g => `${g.rows.length} ${g.title.toLowerCase()}`) })}
           ${card({ go: 'decisions', ico: 'decisions', tag: 'Ring 3', num: D.decCount, label: 'Decisions', sub: 'What is settled. <code>DECISIONS.md</code>', c: 'var(--dec)', meta: [`${D.decisions.length} topics`] })}
-          ${card({ go: 'issues', ico: 'issues', tag: 'Ring 4', num: D.openCount, label: 'Open issues', sub: 'What is wrong right now. <code>ISSUES.md</code>', c: 'var(--s2)', meta: [...(D.severities[0] ? [`${D.issues.filter(i => i[2] === D.severities[0].key).length} ${D.severities[0].name.toLowerCase()}`] : []), `${D.closedCount} closed recently`] })}
+          ${card({ go: 'issues', ico: 'issues', tag: 'Ring 4', num: DEFECTS.length, label: 'Open defects', sub: 'What is wrong right now. <code>ISSUES.md</code>', c: 'var(--s2)', meta: [`${RULINGS.length} questions owed a ruling`, `${D.closedCount} closed recently`] })}
           ${card({ go: 'ideas', ico: 'ideas', tag: 'Ring 5', num: D.ideas.count, label: 'Ideas', sub: 'What is not started. Never cited as behavior. <code>IDEAS/</code>', c: 'var(--r-tooling)', meta: D.ideas.byStatus.slice(0, 3).map(s => `${s.count} ${s.status}`) })}
         </div>`
       }
@@ -1196,21 +1212,33 @@ function client(D) {
 
     issues(arg) {
       const state = issueState
-      if (arg?.startsWith('at-')) { state.pkg = arg.slice(3); state.sev = 'all'; state.q = '' }
-      else if (arg && SEV[arg]) { state.sev = arg; state.pkg = '' }
-      const crumbs = [['The project', 'project'], ['Open issues', state.pkg || state.sev !== 'all' ? 'issues' : null]]
-      if (state.pkg) crumbs.push([state.pkg]); else if (state.sev !== 'all') crumbs.push([SEV[state.sev].name])
+      if (arg?.startsWith('at-')) { state.pkg = arg.slice(3); state.sev = 'all'; state.move = ''; state.q = '' }
+      else if (arg?.startsWith('move-') && MOVE[arg.slice(5)]) { state.move = arg.slice(5); state.sev = 'all'; state.pkg = '' }
+      else if (arg && SEV[arg]) { state.sev = arg; state.pkg = ''; state.move = '' }
+      const crumbs = [['The project', 'project'], ['Open issues', state.pkg || state.move || state.sev !== 'all' ? 'issues' : null]]
+      if (state.pkg) crumbs.push([state.pkg]); else if (state.move) crumbs.push([MOVE[state.move].name]); else if (state.sev !== 'all') crumbs.push([SEV[state.sev].name])
       if (!arg) {
         const maxP = Math.max(...D.byPkg.map(b => b.count))
+        const count = k => D.issues.filter(i => moveOf(i) === k).length
+        const defectKeys = Object.keys(MOVE).filter(k => !MOVE[k].ruling && count(k))
+        const rulingKeys = Object.keys(MOVE).filter(k => MOVE[k].ruling && count(k))
+        const held = RULINGS.filter(i => i[5]).length
         return {
           crumbs: [['The project', 'project'], ['Open issues']], ring: null,
           html: `
           <div class="eyebrow">Open issues</div>
-          <h1 class="pkh" style="--c:var(--s2)">${icon('issues', ' big')}${D.openCount} things are wrong. Most of them are small.</h1>
-          <p class="lede">Every defect, gap and open question lives in <code>ISSUES.md</code>. Start by severity, or by the package you are already reading.</p>
+          <h1 class="pkh" style="--c:var(--s2)">${icon('issues', ' big')}${DEFECTS.length} things are wrong. ${count('ready')} of them an agent can just fix.</h1>
+          <p class="lede"><code>ISSUES.md</code> holds two kinds of row: <strong>defects</strong>, something wrong in the tree, and <strong>questions</strong> that wait on a ruling. They overlap — ${count('ruling')} defects wait on ${held} of the ${RULINGS.length} questions — so adding the two counts double-counts the work, and a ruling is what moves most defects.</p>
+          <h2 class="sech">Defects · ${DEFECTS.length} <span>who can move each one</span></h2>
+          <div class="sevbar" style="height:14px">${defectKeys.map(k => `<i title="${MOVE[k].name}: ${count(k)}" style="width:${count(k) / DEFECTS.length * 100}%;background:${MOVE[k].c}"></i>`).join('')}</div>
+          <div class="cards">${defectKeys.map(k => card({ go: `issues-move-${k}`, num: count(k), label: MOVE[k].name, sub: MOVE[k].sub, c: MOVE[k].c })).join('')}</div>
+          <h2 class="sech">By severity <span>defects only</span></h2>
           <div class="cards">
-            ${Object.entries(SEV).map(([k, s]) => card({ go: `issues-${k}`, num: D.issues.filter(i => i[2] === k).length, label: s.name, c: s.c, meta: [k] })).join('')}
+            ${Object.entries(SEV).filter(([k]) => k !== 'decision').map(([k, s]) => card({ go: `issues-${k}`, num: DEFECTS.filter(i => i[2] === k).length, label: s.name, c: s.c, meta: [k] })).join('')}
           </div>
+          ${RULINGS.length ? `
+          <h2 class="sech">Questions · ${RULINGS.length} <span>owed a ruling, walked one at a time with <code>fli decide</code></span></h2>
+          <div class="cards">${rulingKeys.map(k => card({ go: `issues-move-${k}`, num: count(k), label: MOVE[k].name, sub: MOVE[k].sub, c: MOVE[k].c })).join('')}</div>` : ''}
           <div class="panel" style="margin-top:14px">
             <h2>By package</h2>
             <ul class="hbars">${D.byPkg.slice(0, 18).map(b => `<li><button type="button" data-go="issues-at-${esc(b.pkg)}" style="--c:${ringOf[b.pkg]?.color || 'var(--ink-mute)'}"><span class="n">${esc(b.pkg)}</span><span class="b"><i style="width:${(b.count / maxP * 100).toFixed(1)}%"></i></span><span class="f">${b.count}</span></button></li>`).join('')}</ul>
@@ -1259,7 +1287,7 @@ function client(D) {
     },
   }
 
-  const issueState = { sev: 'all', pkg: '', q: '' }
+  const issueState = { sev: 'all', pkg: '', move: '', q: '' }
   const REALM_C = { Data: 'var(--r-seed)', API: 'var(--accent)', UI: 'var(--dec)' }
   // A drive is filed under the surface whose test/ holds it, which is where it
   // lives, not everything it reaches: a browser drive in web/test/ proves the API too.
@@ -1319,7 +1347,7 @@ function client(D) {
   }
   function issueListHtml() {
     const pkgs = [...new Set(D.issues.flatMap(i => i[1].split(/\s*·\s*/)).filter(Boolean))].sort()
-    const title = issueState.pkg ? `Open in ${esc(issueState.pkg)}` : issueState.sev !== 'all' ? `${SEV[issueState.sev].name} severity` : 'Every open issue'
+    const title = issueState.pkg ? `Open in ${esc(issueState.pkg)}` : issueState.move ? MOVE[issueState.move].name : issueState.sev !== 'all' ? `${SEV[issueState.sev].name} severity` : 'Every open issue'
     return `
       <div class="eyebrow">Open issues</div>
       <h1>${title}</h1>
@@ -1327,20 +1355,23 @@ function client(D) {
         <input id="iq" type="search" placeholder="Filter by words in the title" value="${esc(issueState.q)}" aria-label="Filter issues">
         <div class="seg" role="group" aria-label="Severity">${['all', ...Object.keys(SEV)].map(k => `<button type="button" data-sev="${k}" aria-pressed="${issueState.sev === k}">${k === 'decision' ? 'ruling' : k}</button>`).join('')}</div>
         <select id="ipkg" aria-label="Package"><option value="">all packages</option>${pkgs.map(p => `<option ${p === issueState.pkg ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
+        <select id="imove" aria-label="Who can move it"><option value="">anyone</option>${Object.entries(MOVE).map(([k, m]) => `<option value="${k}" ${k === issueState.move ? 'selected' : ''}>${m.ruling ? 'question · ' : ''}${m.name.toLowerCase()}</option>`).join('')}</select>
         <span class="count" id="icount"></span>
       </div>
+      ${issueState.move ? `<p class="lede" style="margin-top:0">${MOVE[issueState.move].sub}</p>` : ''}
       <div class="panel"><ul class="ilist" id="ilist"></ul></div>
       ${issueState.pkg && PK[issueState.pkg] ? `<div class="next"><button class="rg-btn" type="button" data-go="pkg-${issueState.pkg}">← Back to ${esc(issueState.pkg)}</button></div>` : ''}`
   }
   function wireIssueList() {
     const draw = () => {
       const q = issueState.q.toLowerCase()
-      const rows = D.issues.filter(i => (issueState.sev === 'all' || i[2] === issueState.sev) && (!issueState.pkg || i[1].split(/\s*·\s*/).includes(issueState.pkg)) && (!q || (i[3] + ' ' + i[0]).toLowerCase().includes(q)))
+      const rows = D.issues.filter(i => (issueState.sev === 'all' || i[2] === issueState.sev) && (!issueState.move || moveOf(i) === issueState.move) && (!issueState.pkg || i[1].split(/\s*·\s*/).includes(issueState.pkg)) && (!q || (i[3] + ' ' + i[0]).toLowerCase().includes(q)))
       document.getElementById('icount').textContent = `${rows.length} shown`
       document.getElementById('ilist').innerHTML = rows.slice(0, 150).map(r => issueRow(r, true)).join('') || '<li><span></span><span></span><span class="none">No issue matches.</span></li>'
     }
     document.getElementById('iq').addEventListener('input', e => { issueState.q = e.target.value; draw() })
     document.getElementById('ipkg').addEventListener('change', e => { issueState.pkg = e.target.value; draw() })
+    document.getElementById('imove').addEventListener('change', e => { issueState.move = e.target.value; draw() })
     document.querySelectorAll('[data-sev]').forEach(b => b.addEventListener('click', () => {
       issueState.sev = b.dataset.sev
       document.querySelectorAll('[data-sev]').forEach(x => x.setAttribute('aria-pressed', x === b))
@@ -1351,7 +1382,8 @@ function client(D) {
 
   function issueRow(r, showPkg) {
     const s = SEV[r[2]]
-    return `<li><span class="id">${esc(r[0])}</span><span class="sev" style="--c:${s.c}">${r[2] === 'decision' ? 'rule' : r[2]}</span><span class="t">${md(r[3])}${showPkg && r[1] ? `<span class="pkg">${esc(r[1])}</span>` : ''}</span></li>`
+    const m = MOVE[moveOf(r)]
+    return `<li><span class="id">${esc(r[0])}</span><span class="sev" style="--c:${s.c}">${r[2] === 'decision' ? 'rule' : r[2]}</span><span class="t">${md(r[3])}${showPkg && r[1] ? `<span class="pkg">${esc(r[1])}</span>` : ''}${m ? `<span class="mv" style="--c:${m.c}">${r[2] === 'decision' && r[5] ? `holds ${r[5]}` : m.name.toLowerCase()}</span>` : ''}</span></li>`
   }
   function card({ go, num, label, sub, meta = [], c, tag, ico }) {
     return `<button type="button" class="rg-card" data-go="${go}" ${c ? `style="--c:${c}"` : ''}>
@@ -1405,7 +1437,7 @@ function client(D) {
   const PROJ_SPLIT = {
     invariants: () => groupSplit(PROOF, 'var(--accent)', i => `invariants-${PROOF[i].key}`, g => g.title),
     decisions: () => groupSplit(D.decisions, 'var(--dec)', i => `decisions-${i}`, g => g.title),
-    issues:    () => sevSplit(D.issues, true),
+    issues:    () => sevSplit(DEFECTS, true),
     ideas:     () => groupSplit(D.ideas.waves, 'var(--r-tooling)', i => `ideas-${i}`, g => g.blurb ? `${g.title} · ${g.blurb}` : g.title),
   }
 

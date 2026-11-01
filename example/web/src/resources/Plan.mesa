@@ -19,7 +19,7 @@
   // …and the markup half is this model's DEFAULT form (repo Invariant 18).
   //
   // What it offers is what `Plan` declares as writable: code, name,
-  // description, interval and active. **The price is not on it and cannot be**
+  // description, interval and isActive. **The price is not on it and cannot be**
   // — a price is a `PlanVersion` row with a lifetime, so `currentPrice` is
   // `@from` and reaches the browser `readOnly`. A form that offered a price box
   // here would be offering to edit a column that does not exist, and the shape

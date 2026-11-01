@@ -97,11 +97,11 @@ const content = homePage({ title, summary, areas, register: existsSync(join(page
 
 if (flag.dry) {
   log.dry(`Would write the home page:  ${target}`)
-  echo(`  Areas: ${areas.map(a => a.model).join(', ')}`)
+  echo(`  ${chalk.dim('Areas:')} ${areas.map(a => a.model).join(', ')}`)
   return
 }
 
 writeFileSync(target, content, 'utf8')
 log.success(`Wrote home page  ${target}`)
-echo(`  Areas: ${areas.map(a => a.model).join(', ')}`)
+echo(`  ${chalk.dim('Areas:')} ${areas.map(a => a.model).join(', ')}`)
 ```

@@ -261,7 +261,7 @@ describe('the journal, through the runner that ships to the target', () => {
   const TRANSITION = {
     id: 't1', kind: 'deploy', app: 'shop', environment: 'production',
     releaseId: RELEASE.id, fromReleaseId: null, generation: 1,
-    crossesPivot: false, plan: { formatVersion: 1, attempt: 1, steps: [] }, actor: 'jordan',
+    isCrossingPivot: false, plan: { formatVersion: 1, attempt: 1, steps: [] }, actor: 'jordan',
   }
 
   beforeEach(() => {
@@ -516,12 +516,12 @@ describe('the journal, through the runner that ships to the target', () => {
     await j.settle({ id: 't1', status: 'succeeded' })
     await j.begin({
       release: { ...RELEASE, id: 'r3bbbbbbbbbb', pivot: 'contract' },
-      transition: { ...TRANSITION, id: 't2', releaseId: 'r3bbbbbbbbbb', fromReleaseId: RELEASE.id, crossesPivot: true },
+      transition: { ...TRANSITION, id: 't2', releaseId: 'r3bbbbbbbbbb', fromReleaseId: RELEASE.id, isCrossingPivot: true },
       steps: steps('t2'),
     })
     const rows = await j.history({ app: 'shop', environment: 'production' })
     expect(rows.map(r => r.id)).toEqual(['t2', 't1'])
-    expect(rows[0]).toMatchObject({ crossesPivot: 1, pivot: 'contract', fromReleaseId: RELEASE.id })
+    expect(rows[0]).toMatchObject({ isCrossingPivot: 1, pivot: 'contract', fromReleaseId: RELEASE.id })
   })
 
   test('a runner failure is an error with a sentence, not a silent empty read', async () => {

@@ -110,7 +110,7 @@ replace.
 | INTEGRATION | `Webhook` · `Integration` · `Listener` · `Flow` | not written — no instance in this tree |
 | CAPTURE | `Form` · `Submission` · `Note` | not written |
 | READ SURFACES | `Report` · `Dashboard` · `View` | not written — basecamp has `Dashboard` + `DashboardTile` |
-| OPERATIONS | `Event` · `FeatureFlag` | not written — basecamp has `FeatureFlag` + `FlagOverride` |
+| OPERATIONS | `Event` · `FeatureFlag` | not written — basecamp has `Flag` + `FlagOverride` |
 | storage | an upload record | not written — open whether a row per file is machinery at all |
 
 **Not in this catalog, deliberately**: `Offer`, `Payment`, `Document`,

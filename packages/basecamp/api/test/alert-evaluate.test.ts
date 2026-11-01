@@ -265,7 +265,7 @@ describe('alert-evaluate — the job between a rule and an event', () => {
     const { rule }    = await fixture(db, { values: [600, 610, 620] })
 
     await run(app)
-    let events = await db.alertEvent.findMany({ where: { ruleId: rule.id } })
+    let events = await db.alert.findMany({ where: { ruleId: rule.id } })
     expect(events).toHaveLength(1)
     expect(events[0].status).toBe('firing')
     expect(events[0].valueAtTrigger).toBe(620)
@@ -274,7 +274,7 @@ describe('alert-evaluate — the job between a rule and an event', () => {
     expect(events[0].subjectType).toBe('series')
 
     await run(app)
-    events = await db.alertEvent.findMany({ where: { ruleId: rule.id } })
+    events = await db.alert.findMany({ where: { ruleId: rule.id } })
     expect(events).toHaveLength(1)
   })
 
@@ -283,13 +283,13 @@ describe('alert-evaluate — the job between a rule and an event', () => {
     const { rule, series: s } = await fixture(db, { values: [600, 610, 620] })
 
     await run(app)
-    const opened = (await db.alertEvent.findMany({ where: { ruleId: rule.id } }))[0]
+    const opened = (await db.alert.findMany({ where: { ruleId: rule.id } }))[0]
     expect(opened.status).toBe('firing')
 
     await db.metricPoint.create({ data: { seriesId: s.id, at: Date.now() + MINUTE, value: 100 } })
     await run(app)
 
-    const closed = await db.alertEvent.findFirst({ where: { id: opened.id } })
+    const closed = await db.alert.findFirst({ where: { id: opened.id } })
     expect(closed.status).toBe('resolved')
     expect(closed.resolvedAt).toBeTruthy()
   })
@@ -304,22 +304,22 @@ describe('alert-evaluate — the job between a rule and an event', () => {
 
     const stopped = await fixture(db, { values: [600, 610, 620], metricName: 'a.stopped' })
     await run(app)
-    const openA = (await db.alertEvent.findMany({ where: { ruleId: stopped.rule.id } }))[0]
+    const openA = (await db.alert.findMany({ where: { ruleId: stopped.rule.id } }))[0]
     expect(openA.status).toBe('firing')
 
     // Every point ages out of the window; nothing new arrives.
     await db.metricPoint.removeMany({ where: { seriesId: stopped.series.id } })
     await run(app)
-    expect((await db.alertEvent.findFirst({ where: { id: openA.id } })).status).toBe('firing')
+    expect((await db.alert.findFirst({ where: { id: openA.id } })).status).toBe('firing')
 
     const recovered = await fixture(db, { values: [600, 610, 620], metricName: 'b.recovered' })
     await run(app)
-    const openB = (await db.alertEvent.findMany({ where: { ruleId: recovered.rule.id } }))[0]
+    const openB = (await db.alert.findMany({ where: { ruleId: recovered.rule.id } }))[0]
     await db.metricPoint.create({
       data: { seriesId: recovered.series.id, at: Date.now() + MINUTE, value: 1 },
     })
     await run(app)
-    expect((await db.alertEvent.findFirst({ where: { id: openB.id } })).status).toBe('resolved')
+    expect((await db.alert.findFirst({ where: { id: openB.id } })).status).toBe('resolved')
   })
 
   it('a rule naming a series nothing has written fires nothing and throws nothing', async () => {
@@ -334,8 +334,8 @@ describe('alert-evaluate — the job between a rule and an event', () => {
     })
 
     await run(app)
-    expect(await db.alertEvent.count({ where: { ruleId: ghost.id } })).toBe(0)
-    expect(await db.alertEvent.count({ where: { ruleId: rule.id } })).toBe(1)
+    expect(await db.alert.count({ where: { ruleId: ghost.id } })).toBe(0)
+    expect(await db.alert.count({ where: { ruleId: rule.id } })).toBe(1)
   })
 
   it('a rule cannot watch another workspace\'s machine — paired with its own (FJS-3594)', async () => {
@@ -369,9 +369,9 @@ describe('alert-evaluate — the job between a rule and an event', () => {
     const unknown = await watch(mine.workspaceId, await boxSeries(mine.workspaceId, { tenantKey: 'x' }))
 
     await run(app)
-    expect(await db.alertEvent.count({ where: { ruleId: foreign.id } })).toBe(0)
-    expect(await db.alertEvent.count({ where: { ruleId: unknown.id } })).toBe(0)
-    expect(await db.alertEvent.count({ where: { ruleId: own.id } })).toBe(1)
+    expect(await db.alert.count({ where: { ruleId: foreign.id } })).toBe(0)
+    expect(await db.alert.count({ where: { ruleId: unknown.id } })).toBe(0)
+    expect(await db.alert.count({ where: { ruleId: own.id } })).toBe(1)
   })
 
   it('a paused rule is not evaluated — paired with the identical active one', async () => {
@@ -381,8 +381,8 @@ describe('alert-evaluate — the job between a rule and an event', () => {
     const twin = await fixture(db, { values: [600, 610], metricName: 'd.active' })
 
     await run(app)
-    expect(await db.alertEvent.count({ where: { ruleId: rule.id } })).toBe(0)
-    expect(await db.alertEvent.count({ where: { ruleId: twin.rule.id } })).toBe(1)
+    expect(await db.alert.count({ where: { ruleId: rule.id } })).toBe(0)
+    expect(await db.alert.count({ where: { ruleId: twin.rule.id } })).toBe(1)
   })
 
   it('a snoozed rule opens nothing, and fires once the snooze has run out', async () => {
@@ -396,13 +396,13 @@ describe('alert-evaluate — the job between a rule and an event', () => {
     const twin = await fixture(db, { values: [600, 610], metricName: 'm.awake' })
 
     await run(app)
-    expect(await db.alertEvent.count({ where: { ruleId: rule.id } })).toBe(0)
-    expect(await db.alertEvent.count({ where: { ruleId: twin.rule.id } })).toBe(1)
+    expect(await db.alert.count({ where: { ruleId: rule.id } })).toBe(0)
+    expect(await db.alert.count({ where: { ruleId: twin.rule.id } })).toBe(1)
 
     await db.alertRule.update({ where: { id: rule.id },
       data: { snoozedUntil: new Date(Date.now() - MINUTE).toISOString() } })
     await run(app)
-    expect(await db.alertEvent.count({ where: { ruleId: rule.id } })).toBe(1)
+    expect(await db.alert.count({ where: { ruleId: rule.id } })).toBe(1)
   })
 
   it('a snooze does not hold an open event open', async () => {
@@ -411,14 +411,14 @@ describe('alert-evaluate — the job between a rule and an event', () => {
     const { app, db } = await makeApp()
     const { rule, series: s } = await fixture(db, { values: [600, 610], metricName: 'n.resolves' })
     await run(app)
-    const open = (await db.alertEvent.findMany({ where: { ruleId: rule.id } }))[0]
+    const open = (await db.alert.findMany({ where: { ruleId: rule.id } }))[0]
     expect(open.status).toBe('firing')
 
     await db.alertRule.update({ where: { id: rule.id },
       data: { snoozedUntil: new Date(Date.now() + 60 * MINUTE).toISOString() } })
     await db.metricPoint.create({ data: { seriesId: s.id, at: Date.now() + MINUTE, value: 1 } })
     await run(app)
-    expect((await db.alertEvent.findFirst({ where: { id: open.id } })).status).toBe('resolved')
+    expect((await db.alert.findFirst({ where: { id: open.id } })).status).toBe('resolved')
   })
 
   it('a stale series cannot fire on the number it last wrote', async () => {
@@ -431,8 +431,8 @@ describe('alert-evaluate — the job between a rule and an event', () => {
     const fresh    = await fixture(db, { values: [600, 610], metricName: 'f.fresh' })
 
     await run(app)
-    expect(await db.alertEvent.count({ where: { ruleId: rule.id } })).toBe(0)
-    expect(await db.alertEvent.count({ where: { ruleId: fresh.rule.id } })).toBe(1)
+    expect(await db.alert.count({ where: { ruleId: rule.id } })).toBe(0)
+    expect(await db.alert.count({ where: { ruleId: fresh.rule.id } })).toBe(1)
   })
 
   it('the event REACHES the channel — paired with a rule attached to none', async () => {
@@ -460,7 +460,7 @@ describe('alert-evaluate — the job between a rule and an event', () => {
 
     // The rule with no channel still fired — reaching nobody is a legitimate
     // state, and swallowing the event would hide the rule from its own screen.
-    expect(await db.alertEvent.count({ where: { ruleId: silent.rule.id } })).toBe(1)
+    expect(await db.alert.count({ where: { ruleId: silent.rule.id } })).toBe(1)
 
     // The stamp means something arrived, which is why it is written after the
     // send and not beside it.
@@ -504,8 +504,8 @@ describe('alert-evaluate — the job between a rule and an event', () => {
     const later = await fixture(db, { values: [600, 610], metricName: 'k.later' })
 
     await run(app)
-    expect(await db.alertEvent.count({ where: { ruleId: rule.id } })).toBe(1)
-    expect(await db.alertEvent.count({ where: { ruleId: later.rule.id } })).toBe(1)
+    expect(await db.alert.count({ where: { ruleId: rule.id } })).toBe(1)
+    expect(await db.alert.count({ where: { ruleId: later.rule.id } })).toBe(1)
     expect(origin).toBeTruthy()
   })
 })

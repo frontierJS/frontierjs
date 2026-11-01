@@ -107,8 +107,8 @@ const offered = await evaluate(`
 // than a hardcoded one asserted — an `open` binding grows the table, so any
 // fixed expectation here goes stale on its own the first time a drive runs.
 const all     = (await (await fetch(`${API}/api/colors?$limit=100`)).json()).data
-const current = all.filter(c => !c.retired).map(c => c.name).sort()
-const retired = all.filter(c => c.retired).map(c => c.name)
+const current = all.filter(c => !c.isRetired).map(c => c.name).sort()
+const retired = all.filter(c => c.isRetired).map(c => c.name)
 
 t('scope.somethingToNarrow', retired.length > 0, true)
 t('offers.everyCurrentOne',  [...offered.labels].sort(), current)
@@ -123,7 +123,7 @@ t('offers.storesTheName',    offered.values, offered.labels)
 // then the merchandised row — and the negative control is the alphabetical list
 // beside it, which is what every picker in every app offered before a set could
 // state an order, and what the two assertions above still pass against.
-const live      = all.filter(c => !c.retired)
+const live      = all.filter(c => !c.isRetired)
 const byName    = new Map(live.map(c => [c.name, c]))
 const declared  = [...live]
   .sort((a, b) => (a.sortOrder - b.sortOrder) || a.name.localeCompare(b.name))
@@ -134,7 +134,7 @@ const alphabetical = [...declared].sort((a, b) => a.localeCompare(b))
 // typed here — the rank is derived, so an expectation that is not is a second
 // implementation of it that goes stale the first time the seed changes.
 const headFromDb = async () => {
-  const rows = (await (await fetch(`${API}/api/product-variants?$limit=500`)).json()).data
+  const rows = (await (await fetch(`${API}/api/productVariants?$limit=500`)).json()).data
   const last = new Map()
   for (const v of rows) {
     const at = String(v.createdAt ?? '')
@@ -221,9 +221,9 @@ t('dependent.emptyUntilChosen', awaiting, { count: 0, awaiting: 'productId' })
 
 // The offered list is compared against the API's own answer rather than a fixed
 // one — the seed grows, and a hardcoded list goes stale on its own.
-const anImage = (await (await fetch(`${API}/api/product-images?$limit=1`)).json()).data[0]
-const mine    = (await (await fetch(`${API}/api/product-variants?productId=${anImage.productId}&$limit=100`)).json()).data
-const foreign = (await (await fetch(`${API}/api/product-variants?$limit=100`)).json()).data
+const anImage = (await (await fetch(`${API}/api/productImages?$limit=1`)).json()).data[0]
+const mine    = (await (await fetch(`${API}/api/productVariants?productId=${anImage.productId}&$limit=100`)).json()).data
+const foreign = (await (await fetch(`${API}/api/productVariants?$limit=100`)).json()).data
   .find(v => v.productId !== anImage.productId)
 
 t('dependent.somethingToExclude', !!foreign, true)
@@ -261,12 +261,12 @@ t('dependent.takesOwn', depAccepted, mine[0].id)
 //
 // The three ways a stored value falls out of its own list are one problem
 // (`FJS-D225`), and this is the one a real shop hits: a colorway is retired
-// while variants are still holding it. `@@scope(current, retired == false)`
+// while variants are still holding it. `@@scope(current, isRetired == false)`
 // then excludes it from every picker, and a native <select> bound to a value it
 // does not contain shows the FIRST option instead — the wrong value, silently.
 //
 // The retire happens over HTTP rather than in the page, because no screen edits
-// a colour and inventing one here would test a fixture. It is put back
+// a color and inventing one here would test a fixture. It is put back
 // afterwards, so the seed is left as it was found.
 
 const staffToken = (await (await fetch(`${API}/api/auth/login`, {
@@ -278,9 +278,9 @@ const staffToken = (await (await fetch(`${API}/api/auth/login`, {
 const setRetired = (id, retired) => fetch(`${API}/api/colors/${id}`, {
   method:  'PATCH',
   headers: { 'content-type': 'application/json', authorization: `Bearer ${staffToken}` },
-  body:    JSON.stringify({ retired }),
+  body:    JSON.stringify({ isRetired: retired }),
 })
-const isRetiredNow = async (id) => (await (await fetch(`${API}/api/colors/${id}`)).json()).retired
+const isRetiredNow = async (id) => (await (await fetch(`${API}/api/colors/${id}`)).json()).isRetired
 
 const variant = await evaluate(`
   const v = (await window.variants.service.find({}, { limit: 1 })).data[0];
@@ -339,7 +339,7 @@ const askAgain = () => evaluate(`
   return { labels: r.options.map(o => o.label), recent: r.options.map(o => !!o.recent) };
 `)
 
-const variants = (await (await fetch(`${API}/api/product-variants?$limit=500`)).json()).data
+const variants = (await (await fetch(`${API}/api/productVariants?$limit=500`)).json()).data
 const newest   = variants.reduce((a, b) => (String(a.createdAt) >= String(b.createdAt) ? a : b))
 const taken    = new Set(variants
   .filter(v => v.productId === newest.productId && v.size === newest.size)
@@ -351,7 +351,7 @@ t('recent.somethingCold', typeof cold === 'string', true)
 // The newest row, because the rank is MAX(createdAt) per colorway: moving an
 // old variant would put the colorway in the list at the old row's instant,
 // which is exactly where it does not belong.
-const moved = await (await asStaff(`/api/product-variants/${newest.id}`, {
+const moved = await (await asStaff(`/api/productVariants/${newest.id}`, {
   method: 'PATCH', body: JSON.stringify({ color: cold }),
 })).json()
 
@@ -368,7 +368,7 @@ t('recent.appearsOnce',  afterCut.labels.filter(n => n === cold).length, 1)
 
 // And nothing was written down: putting the variant back where it was restores
 // the picker exactly, with no rank to invalidate and nothing to recompute.
-await asStaff(`/api/product-variants/${newest.id}`, {
+await asStaff(`/api/productVariants/${newest.id}`, {
   method: 'PATCH', body: JSON.stringify({ color: newest.color }),
 })
 const afterPull = await askAgain()

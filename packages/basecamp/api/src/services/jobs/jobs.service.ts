@@ -113,7 +113,7 @@ export default createService({
     const job  = await db().job.create({ data })
     const wsId = ws()
 
-    if (job.kind === 'one_shot')
+    if (job.kind === 'oneShot')
       await $.app.jobs.dispatch(jobRun, { id: job.id, workspace_id: wsId }, { queue: 'jobs' })
 
     syncSchedule($.app, job)

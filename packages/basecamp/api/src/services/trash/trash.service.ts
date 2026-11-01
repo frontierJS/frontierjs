@@ -54,8 +54,8 @@ const KINDS: Kind[] = [
   { service: 'servers',      accessor: 'server',      kind: 'Server',      href: r => `/servers/${r.id}/` },
   { service: 'networks',     accessor: 'network',     kind: 'Network',     href: () => '/networks/' },
   { service: 'recipes',      accessor: 'recipe',      kind: 'Recipe',      href: () => '/recipes/' },
-  { service: 'flags',        accessor: 'featureFlag', kind: 'Flag',        href: () => '/flags/', name: r => r.key },
-  { service: 'channels',     accessor: 'notificationChannel', kind: 'Channel', href: () => '/channels/' },
+  { service: 'flags',        accessor: 'flag', kind: 'Flag',        href: () => '/flags/', name: r => r.key },
+  { service: 'notificationChannels',     accessor: 'notificationChannel', kind: 'Channel', href: () => '/channels/' },
   { service: 'dashboards',   accessor: 'dashboard',   kind: 'Dashboard',   href: r => `/dashboards/${r.id}/` },
   { service: 'secrets',      accessor: 'secret',      kind: 'Secret',      href: () => '/secrets/' },
 ]

@@ -9,17 +9,43 @@
 import { readdirSync, readFileSync, existsSync }       from 'fs'
 import { join, relative, dirname, resolve, basename }  from 'path'
 import { spawnSync }                                   from 'child_process'
-import { modelName }                                   from '@frontierjs/toolbelt/inflect'
+import { modelName, camel }                            from '@frontierjs/toolbelt/inflect'
 import { dockerfileScripts }                           from '../utils.js'
 import { binCommand }                                  from '../snapshots.js'
 import { declaredLogDatabases, declaredDatabasePaths } from '../db-preflight.js'
 import { ignoredByGit }                                from '../gitignore.js'
-import { shippedSchemas }                              from '../app-schema.js'
+import { shippedSchemas, appSchemaModels }              from '../app-schema.js'
 import {
   schemaFile, models, looksPlural, sources, readCode, scripts,
   CLIENT_SURFACES, lineOf, servingServices, spanFrom, bodyOf, withoutComments,
+  SURFACES, SCRIPT_EXT,
 } from './lib.js'
 import { walk }                                        from '../fs.js'
+
+// The error and warn rules of `litestone advise --json`, as findings. Output
+// that is not the JSON document is no finding: the exit status already said the
+// schema opens.
+//
+// `required-system-unfilled` is left to the app rule of that name: advise reads
+// the schema alone and cannot see the service hook that fills the column, so
+// it fires on every app that does the filling the right way.
+//
+// Each is a warning whatever advise grades it: CI fails a per-finding error
+// outright, past `check-baseline.json`, and the ceiling is how an app takes
+// existing advise debt on while a new one still fails (ceiling 0).
+const ADVISE_GRADED_ELSEWHERE = new Set(['required-system-unfilled'])
+
+function adviseRules(stdout, file) {
+  let doc
+  try { doc = JSON.parse(stdout) } catch { return [] }
+  return (doc?.rules ?? [])
+    .filter(r => (r.severity === 'error' || r.severity === 'warn') && !ADVISE_GRADED_ELSEWHERE.has(r.id))
+    .map(r => ({
+      file, severity: 'warn',
+      message: `litestone advise (${r.severity}) ${r.id}${r.model ? ` — ${r.model}${r.field ? `.${r.field}` : ''}` : ''}: ${r.message ?? r.title} ` +
+               `\`fli advise\` prints the same rule.`,
+    }))
+}
 
 export const CHECKS = {
 
@@ -49,6 +75,71 @@ export const CHECKS = {
                `If this really is singular, this line is a false positive; if not, rename it now, because ` +
                `later it moves a migration too.`,
     })) }
+  },
+
+  // `FJS-D1748`: an enum value is camelCase, as every other identifier is. The
+  // three exemptions are values that are ANOTHER THING'S name (`FJS-D1755`) --
+  // rewriting one means renaming the thing, and a value that no longer matches
+  // its file or model fails at the join, not at the enum: a model name (an enum
+  // of the models a row can name), a notification kind that is the basename of a
+  // `<Kind>.notification.ts` the app has, and an HTTP method token.
+  'enum-value-case': ({ root }) => {
+    const schema = schemaFile(root)
+    if (!schema) return { skipped: 'no db/schema.lite' }
+    const named = new Set(appSchemaModels(root).map(m => m.name))
+    for (const f of sources(root, SCRIPT_EXT, ...SURFACES)) {
+      const kind = basename(f).match(/^(.+)\.notification\.[cm]?[jt]s$/)?.[1]
+      if (kind) named.add(kind)
+    }
+
+    const findings = []
+    for (const e of declaredEnums(schema)) for (const v of e.values) {
+      if (CAMEL_VALUE.test(v.name) || named.has(v.name) || HTTP_METHODS.has(v.name)) continue
+      findings.push({
+        file: schema.path, line: v.line,
+        message: `enum ${e.name} value ${v.name} — an enum value is camelCase (${camel(v.name)}), as every ` +
+                 `other identifier is. A value that is another thing's name keeps that spelling: a model, ` +
+                 `a <Kind>.notification.ts file or an HTTP method; this is none of them. A stored value ` +
+                 `moves by a migration.`,
+      })
+    }
+    return { findings }
+  },
+
+  // `FJS-D1749`: a Boolean is a predicate with its verb. `FJS-D1753` exempts a
+  // field named for a delivery channel, which reads as the channel's own
+  // `{ email: true, inApp: false }`; nothing else is exempt, the auth contract's
+  // `emailVerified` included (`FJS-D1752`).
+  'boolean-prefix': ({ root }) => {
+    const schema = schemaFile(root)
+    if (!schema) return { skipped: 'no db/schema.lite' }
+    return { findings: declaredFields(schema)
+      .filter(f => f.type === 'Boolean' && !/^(is|has)[A-Z]/.test(f.name) && !CHANNEL_NAMES.has(f.name))
+      .map(f => ({
+        file: schema.path, line: f.line,
+        message: `${f.block}.${f.name} — a Boolean field is a predicate with its verb: is${upperFirst(f.name)} ` +
+                 `or has${upperFirst(f.name)}, never a bare adjective. A field named for a notification ` +
+                 `channel (${[...CHANNEL_NAMES].join(', ')}) is the one exemption.`,
+      })) }
+  },
+
+  // `FJS-D1750`: a duration column spells its unit. `Ms`, `Mb` and `Gb` are
+  // symbols and stay; what is flagged is the abbreviation of a WORD, which two
+  // schemas then spell two ways (`timeoutSeconds` beside `intervalSec`).
+  'duration-unit-spelled': ({ root }) => {
+    const schema = schemaFile(root)
+    if (!schema) return { skipped: 'no db/schema.lite' }
+    return { findings: declaredFields(schema)
+      .filter(f => ABBREVIATED_UNIT.test(f.name))
+      .map(f => {
+        const unit = f.name.match(ABBREVIATED_UNIT)[1]
+        return {
+          file: schema.path, line: f.line,
+          message: `${f.block}.${f.name} — a duration column spells its unit: ` +
+                   `${f.name.slice(0, -unit.length)}${UNIT_WORD[unit.replace(/s$/, '')]}. ` +
+                   `\`Ms\`, \`Mb\` and \`Gb\` are symbols and stay.`,
+        }
+      }) }
   },
 
   // Vite injects the built <script> at the first TEXTUAL match for the body tag
@@ -664,7 +755,7 @@ export const CHECKS = {
   // machine is still enforced — it is a declaration nobody drives, which reads
   // exactly like a feature somebody has not got round to. Its first run found
   // three: basecamp's `Deployment` declares `push -> pushing`,
-  // `release -> deploying` and `rollback -> rolled_back @gate(5)`, and the
+  // `release -> deploying` and `rollback -> rolledBack @gate(5)`, and the
   // pipeline goes pending → building → success. All three states appear in the
   // UI's tone maps, so three screens render a color for a state that cannot
   // occur, and one of them carries an authority level for a move nothing makes.
@@ -842,6 +933,10 @@ export const CHECKS = {
   // answers the same in CI, where `app.db` does not exist — `litestone validate`
   // reads STORED rows and answers a different question. This rule runs it and
   // reports a nonzero exit; it re-implements nothing.
+  //
+  // Advise exits 0 over its rules unless asked `--strict`, so the rules it
+  // grades `error` and `warn` are read off the JSON instead; an opportunity
+  // (a word nobody declared) is a suggestion and never a finding (`FJS-3808`).
   'schema-runs': ({ root }) => {
     const schema = schemaFile(root)
     if (!schema) return { skipped: 'no db/schema.lite' }
@@ -852,7 +947,7 @@ export const CHECKS = {
     const run = spawnSync(`${command} advise --schema ${JSON.stringify(schema.path)} --json`, {
       cwd: root, shell: true, encoding: 'utf8', timeout: 120_000,
     })
-    if (run.status === 0) return { findings: [] }
+    if (run.status === 0) return { findings: adviseRules(run.stdout, schema.path) }
 
     // The refusal is a block of prose on stderr, wrapped in the CLI's own
     // decoration; strip the escape codes and keep the words.
@@ -1276,6 +1371,96 @@ function declaredGates({ text }) {
     for (const g of line.matchAll(/(?<!@)@gate\s*\(\s*(['"`]?[A-Za-z0-9_]+['"`]?)\s*\)/g)) {
       const n = level(g[1])
       if (n != null) out.push({ level: n, line: i + 1, what: `${where} transition @gate` })
+    }
+  }
+  return out
+}
+
+// ─── naming (FJS-D1748–D1751) ─────────────────────────────────────────────────
+
+const CAMEL_VALUE = /^[a-z][A-Za-z0-9]*$/
+
+// A wire token is the HTTP spec's spelling (`FJS-D1755`).
+const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'])
+
+// The delivery channels `@frontierjs/notifications` ships -- its
+// `BUILT_IN_TRANSPORTS` in `types.ts`. Mirrored, not imported: this package
+// depends on neither it nor a TypeScript loader, and a test reads `types.ts` to
+// fail when the two lists part.
+const CHANNEL_NAMES = new Set(['inApp', 'email'])
+
+const ABBREVIATED_UNIT = /(Secs?|Mins?|Hrs?)$/
+const UNIT_WORD        = { Sec: 'Seconds', Min: 'Minutes', Hr: 'Hours' }
+
+const upperFirst = word => word.charAt(0).toUpperCase() + word.slice(1)
+
+/**
+ * Every enum in a schema and its values: `{ name, line, values: [{ name, line }] }`.
+ *
+ * A line scan like `models()`, for its reason: `fli check` answers with no
+ * installed litestone. Two spellings of the grammar cost more than they look:
+ * the whole enum on one line (`enum Role { admin member }`) and a value carrying
+ * an attribute (`starter @label("Starter")`), whose arguments are not values. A
+ * nested `transitions { }` block is skipped whole, keyword included.
+ */
+function declaredEnums({ text }) {
+  const out   = []
+  const lines = text.split('\n')
+  let cur = null, depth = 0, inBlock = false
+
+  for (let i = 0; i < lines.length; i++) {
+    let [line, still] = withoutComments(lines[i], inBlock)
+    inBlock = still
+    if (!cur) {
+      const m = line.match(/^\s*enum\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{(.*)$/)
+      if (!m) continue
+      cur = { name: m[1], line: i + 1, values: [] }
+      depth = 1
+      line  = m[2]
+    }
+
+    let top = ''
+    for (const ch of line) {
+      if (ch === '{') { if (depth === 1) top = top.replace(/[A-Za-z_]\w*\s*$/, ' '); depth++ }
+      else if (ch === '}') { depth--; if (depth === 0) break }
+      else if (depth === 1) top += ch
+    }
+    for (const name of top.replace(/@\w+(\([^)]*\))?/g, ' ').split(/[\s,]+/).filter(Boolean))
+      cur.values.push({ name, line: i + 1 })
+    if (depth === 0) { out.push(cur); cur = null }
+  }
+  return out
+}
+
+/**
+ * Every field of every `model` and `type` block: `{ block, name, type, line }`.
+ * An `@@external` model is skipped as `models()` skips it: its columns belong to
+ * a table someone else named. A field is `name Type` at the start of a line; a
+ * block written on one line (`model X { id Int @id }`) is read by pairs.
+ */
+function declaredFields({ text }) {
+  const out   = []
+  const lines = text.split('\n')
+  let cur = null, depth = 0, inBlock = false
+
+  for (let i = 0; i < lines.length; i++) {
+    let [line, still] = withoutComments(lines[i], inBlock)
+    inBlock = still
+    let inline = false
+    if (!cur) {
+      const m = line.match(/^\s*(model|type)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{(.*)$/)
+      if (!m) continue
+      if (m[1] === 'model' && bodyOf(lines, i).includes('@@external')) continue
+      cur = m[2]; depth = 1; line = m[3]; inline = true
+    }
+
+    const pairs = inline ? [...line.matchAll(/(?:^|\s)([a-z]\w*)\s+([A-Z]\w*)[?\[\]]*(?=\s|$|\})/g)]
+                         : [line.match(/^\s*([a-z][A-Za-z0-9_]*)\s+([A-Z][A-Za-z0-9_]*)[?\[\]]*(?=\s|$)/)]
+    if (depth === 1) for (const f of pairs) if (f) out.push({ block: cur, name: f[1], type: f[2], line: i + 1 })
+
+    for (const ch of line) {
+      if (ch === '{') depth++
+      else if (ch === '}' && --depth === 0) { cur = null; break }
     }
   }
   return out

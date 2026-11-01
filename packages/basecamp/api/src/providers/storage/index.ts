@@ -82,7 +82,7 @@ export async function registerAllDestinations(app: App, db: any): Promise<number
       // One unregistrable destination must not stop the others, and must not
       // be silent either — a schedule whose target is missing answers
       // `target_not_found` at 02:00 with no explanation otherwise.
-      app.logger.warn('storage: destination not registered', { destination_id: row.id, error: String(err) })
+      app.logger.warn('storage: destination not registered', { destinationId: row.id, error: String(err) })
     }
   }
   return n

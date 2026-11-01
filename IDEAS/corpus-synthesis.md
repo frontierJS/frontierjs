@@ -1,12 +1,12 @@
 ---
 id: corpus-synthesis
-status: assessment
+status: reading
 dated: 2026-09-27
 ---
 
 # Idea — the corpus read as one document
 
-**Status: ASSESSMENT. Nothing here is a plan.** Dated 2026-09-27. It reads the other
+**Status: READING. Nothing here is a plan.** Dated 2026-09-27. It reads the other
 files in `IDEAS/` and the counts in it are true for an afternoon. Each move it names is
 owed its own paper or ruling before anything is built. See `VERIFYING.md`.
 

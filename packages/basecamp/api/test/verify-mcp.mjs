@@ -171,7 +171,7 @@ try {
   const pair = (tool, below, above, b, a) =>
     check(`${tool}: offered to the ${a}, not to the ${b}`, !below.has(tool) && above.has(tool))
   pair('servers_reboot',    list.viewer,    list.developer, 'viewer',    'developer')
-  pair('alerts_create',     list.developer, list.admin,     'developer', 'admin')
+  pair('alertRules_create',     list.developer, list.admin,     'developer', 'admin')
   pair('workspaces_remove', list.admin,     list.owner,     'admin',     'owner')
 
   check('the admin naming no workspace holds no role, and is offered less than the viewer who names one',

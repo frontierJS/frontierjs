@@ -82,7 +82,7 @@ const SKIP_FILE = /\.(db|db-wal|db-shm|jsonl|snapshot\.\w+)$/
 // which reported a freshly started app as serving code that is not in the tree.
 // What separates the two is already stated: the app's `.gitignore` hides it. So
 // the candidates go through `git check-ignore` in one call, which makes the next
-// generated artefact free rather than a name somebody has to remember to add.
+// generated artifact free rather than a name somebody has to remember to add.
 function dropIgnored(paths, root) {
   if (paths.length === 0) return paths
   const res = spawnSync('git', ['check-ignore', '--stdin'], {

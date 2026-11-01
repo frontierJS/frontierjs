@@ -1,0 +1,14 @@
+<script module>
+  // src/resources/Alert.mesa — the Resource layer.
+  //
+  // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18),
+  // named for the model and exporting the accessor (invariant 19). No markup:
+  // everything is module scope, which is what <script module> means.
+  //
+  // An Alert is a firing the system wrote and a person acknowledges or
+  // resolves, so this resource exists for the reads and the two custom
+  // methods; a rule is authored from `AlertRule.mesa`.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const alerts = createResource('alerts')
+</script>

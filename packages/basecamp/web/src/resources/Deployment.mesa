@@ -18,6 +18,6 @@
    *  three copies had drifted to three answers for `building` and `pending`. */
   export const DEPLOY_TONE = {
     success: 'success', failed: 'danger', cancelled: 'muted',
-    rolled_back: 'warning', building: 'info', pending: 'muted',
+    rolledBack: 'warning', building: 'info', pending: 'muted',
   }
 </script>

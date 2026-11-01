@@ -86,17 +86,17 @@ const CADDY_ADMIN_PORT     = 2019
  *
  * The static origin on 8181 binds loopback and Caddy fronts it (`FJS-D1459`),
  * so it is never expected; everything else on a public address is an app that
- * declared `exposesPort` (`FJS-D930`). An app with no hostname that does not
+ * declared `hasExposedPort` (`FJS-D930`). An app with no hostname that does not
  * declare it is an unexpected listener, because until every published port
  * binds loopback that is what it is.
  */
 export function declaredFor(input: {
   sshPort:   number | null | undefined
-  apps:      { type?: string | null; port?: number | null; exposesPort?: boolean | null }[]
+  apps:      { kind?: string | null; port?: number | null; hasExposedPort?: boolean | null }[]
   sshKeyData?: string | null
 }): Declared {
   const exposed = input.apps
-    .filter(a => a.exposesPort && typeof a.port === 'number')
+    .filter(a => a.hasExposedPort && typeof a.port === 'number')
     .map(a => a.port as number)
   const expected = new Set([input.sshPort || 22, 80, 443, OUTPOST_COMMAND_PORT, ...exposed])
 

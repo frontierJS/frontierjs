@@ -130,7 +130,7 @@ const ORIGIN = `http://localhost:${PORT}`
 
 // Read before a browser touches it, so every stock assertion below is a delta.
 // `ProductVariant` reads at level 0 — the storefront reads it with no session.
-const shelfAtStart = await (await fetch(`${API}/api/product-variants?sku=JCT-CAP-PCH-ONE`)).json()
+const shelfAtStart = await (await fetch(`${API}/api/productVariants?sku=JCT-CAP-PCH-ONE`)).json()
 const onHandAtStart = shelfAtStart?.data?.[0]?.stock ?? 0
 
 console.log('\n  the shop — buying something on the storefront\n')
@@ -329,7 +329,7 @@ try {
   const found = await (await asStaff(`/orders?reference=${encodeURIComponent(receipt.reference)}`)).json()
   const order = found?.data?.[0] ?? null
   const lines = order
-    ? (await (await asStaff(`/order-lines?orderId=${order.id}`)).json())?.data ?? []
+    ? (await (await asStaff(`/orderLines?orderId=${order.id}`)).json())?.data ?? []
     : []
 
   const buyer = order?.customerId
@@ -356,7 +356,7 @@ try {
   // The shelf moved, and it moved by what was actually SOLD — not by what was
   // held. A hold expires; a sale does not. Read against the on-hand this run
   // started from, for the same reason the availability check is a delta.
-  const shelf = await (await asStaff('/product-variants?sku=JCT-CAP-PCH-ONE')).json()
+  const shelf = await (await asStaff('/productVariants?sku=JCT-CAP-PCH-ONE')).json()
   check('…and the shelf came down by what was sold, not by what was held',
         onHandAtStart - (shelf?.data?.[0]?.stock ?? 0), 2)
 

@@ -1,12 +1,12 @@
 ---
 id: iii-borrowings
-status: assessment
+status: reading
 dated: 2026-10-03
 ---
 
 # Idea — Five things worth taking from iii
 
-**Status: ASSESSMENT.** Nothing here is built and nothing here is a dependency.
+**Status: READING.** Nothing here is built and nothing here is a dependency.
 [iii](https://iii.dev/docs) is a Rust coordination engine: polyglot Workers on a
 WebSocket, each registering Functions (`service::name`) and Triggers, with an Engine
 that routes every call. It overlaps Junction, caravan and jetty on transport, jobs

@@ -10,8 +10,8 @@ title: Settings
   // Everything here is a real preference the rest of the app reads, not a
   // control put on a page to be looked at.
   import { session } from '@frontierjs/sierra/resource'
-  import { orders } from '../../resources/Order.mesa'
-  import { customFields } from '../../resources/CustomField.mesa'
+  import { orders } from '@/resources/Order.mesa'
+  import { customFields } from '@/resources/CustomField.mesa'
   import { prefs, savePrefs } from '@/stores/prefs.js'
   import { CURRENCIES, BASE, rateNote } from '@/lib/money.js'
   import { theme as appTheme, setTheme, themes } from '@frontierjs/sierra/theme'

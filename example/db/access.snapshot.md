@@ -242,7 +242,7 @@ rather than refusing the row.
 | `Invoice` | `tax` | `@system` |
 | `Invoice` | `total` | `@system` |
 | `Invoice` | `paidAt` | `@system` |
-| `Invoice` | `reminded` | `@system` |
+| `Invoice` | `isReminded` | `@system` |
 | `Invoice` | `userId` | `@system` |
 | `InvoiceLine` | `userId` | `@system` |
 | `JournalEntry` | `postedAt` | `@system` |
@@ -280,12 +280,12 @@ rather than refusing the row.
 | `Run` | `context` | `@encrypted` |
 | `Session` | `token` | `@guarded` |
 | `Subscription` | `cancelledAt` | `@system` |
-| `Subscription` | `cancelAtPeriodEnd` | `@system` |
+| `Subscription` | `isCancelingAtPeriodEnd` | `@system` |
 | `Subscription` | `userId` | `@system` |
 | `SubscriptionPeriod` | `endsOn` | `@system` |
 | `SubscriptionPeriod` | `userId` | `@system` |
 | `User` | `email` | `@allow(write, auth().isAdmin)` |
-| `User` | `emailVerified` | `@allow(write, auth().isAdmin)` |
+| `User` | `isEmailVerified` | `@allow(write, auth().isAdmin)` |
 | `User` | `role` | `@allow(write, auth().isAdmin)` |
 | `User` | `kind` | `@system` |
 | `User` | `isStaff` | `@allow(write, auth().isAdmin)` |
@@ -327,7 +327,7 @@ caller at once. Everything reachable from the target seals with it.
 | `Invoice` | `status` | `issue` | draft → issued | **application** | — | **yes** |
 | `Invoice` | `status` | `settle` | issued → paid | **application** | — | — |
 | `Invoice` | `status` | `void` | issued → void | caller | 5 ADMINISTRATOR | — |
-| `Invoice` | `reminded` | `remind` | false → true | **application** | — | — |
+| `Invoice` | `isReminded` | `remind` | false → true | **application** | — | — |
 | `Order` | `status` | `pay` | pending → paid | caller | — | — |
 | `Order` | `status` | `ship` | paid → shipped | caller | — | — |
 | `Order` | `status` | `refund` | paid → refunded | caller | 5 ADMINISTRATOR | — |

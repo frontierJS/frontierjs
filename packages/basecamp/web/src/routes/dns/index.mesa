@@ -162,7 +162,7 @@ title: DNS & edge
     ? `${down.length === 1 ? 'An app runs' : `${down.length} apps run`} on no online machine`
     : 'An ingress record names machines its app no longer runs on'
 
-  $: proxied  = rows.filter(r => r.proxied).length
+  $: proxied  = rows.filter(r => r.isProxied).length
   $: expiring = rows.filter(r => r.cert_status === 'expiring_soon').length
   $: expired  = rows.filter(r => r.cert_status === 'expired').length
 
@@ -299,7 +299,7 @@ title: DNS & edge
               {/if}
             </td>
             <td><code>{d.sslMode}</code></td>
-            <td>{d.proxied ? 'proxied' : 'direct'} · :{d.port}</td>
+            <td>{d.isProxied ? 'proxied' : 'direct'} · :{d.port}</td>
             <td>
               <span class="cluster">
                 {#if NEEDS_CERT.has(d.cert_status)}
@@ -509,7 +509,7 @@ title: DNS & edge
 
 <Drawer open={!!editing}title={editing ? `Edit ${editing.hostname}` : ''} onclose={() => editing = null}>
   {#if editing}
-    <Domain record={editing} only={['redirectTo', 'port', 'proxied', 'sslMode']} oncancel={() => editing = null} ondone={saved} submitId="domain-edit-save" />
+    <Domain record={editing} only={['redirectTo', 'port', 'isProxied', 'sslMode']} oncancel={() => editing = null} ondone={saved} submitId="domain-edit-save" />
   {/if}
 </Drawer>
 

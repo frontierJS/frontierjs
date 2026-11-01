@@ -1,12 +1,12 @@
 ---
 id: app-conventions-audit
-status: assessment
+status: reading
 dated: 2026-08-21
 ---
 
 # Assessment — conventions from a pre-prototype app, and which of them FrontierJS should keep
 
-**Status: ASSESSMENT. Nothing here is built and nothing here is a defect.** It is a
+**Status: READING. Nothing here is built and nothing here is a defect.** It is a
 reading of one real application, kept so the reasoning survives the session that
 produced it. Where a finding is genuinely open it has an id in `ISSUES.md` and is
 named below; where it is settled it is in `DECISIONS.md`. **This file is not a

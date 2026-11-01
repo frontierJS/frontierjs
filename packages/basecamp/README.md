@@ -155,6 +155,7 @@ basecamp/
     src/
       routes/                ← file-tree routing (.mesa)
       resources/             ← one .mesa per service (invariant 18)
+  tests/                     ← the app's cross-surface suites (audit gate parity)
 ```
 
 **`db/schema.lite` is the single source of truth.** The SQL in `db/migrations/`
@@ -225,7 +226,7 @@ is the generated, checkable list of which model is which.
 - **Every provider is a stub.** Eight appliances until their env vars are set —
   Infisical, Unleash, Typesense, Zot, Forgejo, Grafana/Loki, NetBird, Nango — plus
   two hosted services reached with a token, `edge` and `cloudSpend`. Four screens
-  are waiting on one each and say so; `docs/ADAPTERS.md` is what wiring one costs.
+  are waiting on one each and say so; `docs/adapters.md` is what wiring one costs.
 
 ---
 
@@ -233,11 +234,11 @@ is the generated, checkable list of which model is which.
 
 | | |
 |---|---|
-| `docs/SCREENS.md` | The mock inventory — 41 of 41 built, and what each phase decided |
-| `docs/ADAPTERS.md` | **Picking the adapters back up? Start here.** Every boundary is declared and nothing is behind any of them; what each one costs, and what wiring it will break |
+| `docs/screens.md` | The mock inventory — 41 of 41 built, and what each phase decided |
+| `docs/adapters.md` | **Picking the adapters back up? Start here.** Every boundary is declared and nothing is behind any of them; what each one costs, and what wiring it will break |
 | `db/README.md` | The Data realm: conventions, identity, encryption, the audit trail, intended gates |
 | `PROJECT_STATE.md` | Current state in detail, and what each pass found |
-| `docs/VISION.md` | What Basecamp is *for*. Aspirational and says so at the top |
+| `docs/vision.md` | What Basecamp is *for*. Aspirational and says so at the top |
 
 ---
 

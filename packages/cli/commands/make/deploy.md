@@ -247,7 +247,7 @@ const editor   = process.env.EDITOR || 'vi'
 const created  = []
 const needs    = imageNeeds($.paths.root)
 
-echo(`\nScaffolding deploy artifacts for: ${appId}\n`)
+echo(chalk`\n{dim Scaffolding deploy artifacts for:} {bold ${appId}}\n`)
 
 // ─── 1. Dockerfile ────────────────────────────────────────────────────────────
 const dockerfileDir  = resolve($.paths.root, 'deploy')
@@ -382,9 +382,9 @@ echo('  1. Review deploy/Dockerfile and adjust for your app')
 echo(server || domain ? '  2. Review the deploy block in frontier.config.js' : '  2. Write the deploy block:  fli make:deploy --server <host> --domain <domain>')
 echo(`  3. Make sure something answers ${health.path} (plugins: { health: true })`)
 echo('  4. Create .env.example with your required env keys')
-echo('  5. Test locally:      fli deploy:local')
-echo('  6. Set up server:     fli deploy:setup')
-echo('  7. Deploy:            fli deploy')
+echo(`  5. Test locally:      ${chalk.cyan('fli deploy:local')}`)
+echo(`  6. Set up server:     ${chalk.cyan('fli deploy:setup')}`)
+echo(`  7. Deploy:            ${chalk.cyan('fli deploy')}`)
 echo('')
 
 if (flag.open && created.length && !flag.dry) {

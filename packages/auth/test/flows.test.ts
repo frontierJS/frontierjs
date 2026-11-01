@@ -169,7 +169,7 @@ describe('login', () => {
   test('reset: an OAuth-only account is refused, and loses nothing', async () => {
     const h = await makeAuth()
     // OAuth-only: a User row and one oauth credential, no password one.
-    const u = await h.sys.user.create({ data: { email: 'oauth@x.test', emailVerified: true } })
+    const u = await h.sys.user.create({ data: { email: 'oauth@x.test', isEmailVerified: true } })
     await h.sys.credential.create({ data: { userId: u.id, type: 'oauth:github', value: 'gh-1' } })
     const sess = await h.sys.session.create({
       data: { userId: u.id, token: 'live-session-token', expiresAt: new Date(Date.now() + 3600e3).toISOString() },
@@ -199,7 +199,7 @@ describe('login', () => {
     // with the OAuth-only refusal above, which is one credential away and must
     // stay refused, or this row passes against a reset that creates for anybody.
     const h = await makeAuth()
-    const u = await h.sys.user.create({ data: { email: 'invited@x.test', emailVerified: true } })
+    const u = await h.sys.user.create({ data: { email: 'invited@x.test', isEmailVerified: true } })
 
     await h.auth.login('invited@x.test', 'FirstPassw0rd!').then(
       () => { throw new Error('an account with no credential signed in') },
@@ -401,11 +401,11 @@ describe('operator invitation (FJS-3606)', () => {
 // ─── email verification ───────────────────────────────────────────────────
 
 describe('email verification', () => {
-  test('verifyEmail flips emailVerified and drops the verifiedAt objection', async () => {
+  test('verifyEmail flips isEmailVerified and drops the verifiedAt objection', async () => {
     const u    = await freshUser('ev-happy')
     const user = await h.sys.user.findFirst({ where: { email: u.email } })
 
-    // Before: emailVerified false → verifiedAt null → grades VISITOR
+    // Before: isEmailVerified false → verifiedAt null → grades VISITOR
     const before = await h.auth.verifySession((signedIn(await h.auth.login(u.email, u.password))).token)
     expect(before!.verifiedAt).toBeNull()
 
@@ -754,17 +754,17 @@ describe('the gate walls the credential tables off, and User is readable by a us
     expect((await h.sys.user.findUnique({ where: { id: me.id } }))!.name).toBe('renamed')
   })
 
-  test('a user cannot promote themselves — `role` and `emailVerified` are dropped', async () => {
+  test('a user cannot promote themselves — `role` and `isEmailVerified` are dropped', async () => {
     const me     = await h.sys.user.create({ data: { email: `climb-${Date.now()}@example.com`, name: 'Me' } })
     const scoped = h.db.$setAuth({ id: me.id, role: 'user' })
     await scoped.user.update({ where: { id: me.id }, data: {
-      role: 'admin', emailVerified: true, name: 'still lands',
+      role: 'admin', isEmailVerified: true, name: 'still lands',
     } })
     const after = await h.sys.user.findUnique({ where: { id: me.id } })
     // A field write policy drops the field and keeps the rest of the write,
     // which is why the name assertion is here: it proves the update ran.
     expect(after!.role).toBe('user')
-    expect(after!.emailVerified).toBe(false)
+    expect(after!.isEmailVerified).toBe(false)
     expect(after!.name).toBe('still lands')
   })
 
@@ -911,7 +911,7 @@ model User {
   id             String    @id @default(uuid())
   email          String    @email @unique @lower
   name           String?
-  emailVerified  Boolean   @default(false)
+  isEmailVerified  Boolean   @default(false)
   role           String    @default("user")
   createdAt      DateTime  @default(now())
 }

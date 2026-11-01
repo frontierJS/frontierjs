@@ -34,7 +34,7 @@ for (const r of routes) {
   const what = r['@id'] === routeId(appId, 'api') ? `every path → :${apiPort}`
     : edge.api.domain ? `${serverPath}/current`
     : `${serverPath}/current · ${paths?.prefix === null ? `${paths.roots.length} API paths (pages by Accept)` : `${paths?.prefix ?? '/api'}/`} and /ws → :${apiPort}`
-  echo(`  https://${r.match[0].host[0]}  ${what}`)
+  echo(`  ${chalk.cyan(`https://${r.match[0].host[0]}`)}  ${chalk.dim(what)}`)
 }
 echo('')
 

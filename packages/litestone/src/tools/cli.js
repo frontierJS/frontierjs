@@ -27,7 +27,8 @@ import { create, apply, status, verify,
          describeSkipped, appliedMigrations,
          baseline, historyGap, driftAgainstLive,
          unacceptedLoss, unresolvedBlocks, renameCandidates } from '../core/migrations.js'
-import { parseRenameFlag, readOperations, askRenames } from '../core/operations.js'
+import { parseRenameFlag, readOperations, askRenames, resolveOperations,
+         checkAgainstHistory, renameStatement, describeOperation } from '../core/operations.js'
 import { backupSqliteTo, writeBackupStamp }            from '../core/backup.js'
 import { schemaAnchor, noteMintedDirectory }          from '../core/db-path.js'
 import { resolveTenancy, placedTrails }                from '../core/tenancy.js'
@@ -442,9 +443,17 @@ function openSqliteDbs(parseResult, cfg) {
     return [{ name: 'main', rawDb: openDb(cfg.db), path: resolve(cfg.db), migrationsDir: cfg.migrations }]
   }
 
+  // `--db` names a declared database here (`clientDb`). Read as a path it was
+  // ignored, so a migration aimed at a scratch copy ran on the declared file.
+  const named  = getFlag('db')
+  const sqlite = schema.databases.filter(db => db.driver !== 'jsonl' && db.driver !== 'trail')
+  if (named && !sqlite.some(db => db.name === named))
+    fatal(`No database named '${named}' in ${rel(resolve(cfg.schema))} — --db names a declared database when the schema declares them, never a path.\n` +
+          `     Declared: ${sqlite.map(db => db.name).join(', ')}`)
+
   const result = []
-  for (const db of schema.databases) {
-    if (db.driver === 'jsonl' || db.driver === 'trail') continue  // no SQL schema
+  for (const db of sqlite) {
+    if (named && db.name !== named) continue
     const absPath = resolveDbPath(db.path, null, schemaAnchor(cfg.schema))
     if (!absPath) {
       console.log(`  ${yellow('⚠')}  database '${db.name}' has no resolvable path — skipping`)
@@ -627,8 +636,32 @@ function printLoss(result) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// The live schema as it stands once the given operations have happened, which
+// is the comparison `create` makes against its history. The statements run in a
+// transaction that is rolled back, so the preview leaves the database as it
+// found it; a name is graded against the live columns before it reaches SQL.
+function liveAfterOperations(rawDb, parseResult, name, cfg, given) {
+  const live     = introspect(rawDb)
+  const resolved = resolveOperations(parseResult, name, given, { pluralize: cfg.pluralize })
+  if (!resolved.ok) fatal(resolved.message)
+  const ops = resolved.ops
+  if (!ops.length) return { live, ops }
+
+  const refusal = checkAgainstHistory(ops, live, 'the live database')
+  if (refusal) fatal(refusal)
+
+  rawDb.run('BEGIN')
+  try {
+    for (const o of ops) rawDb.run(renameStatement(o))
+    return { live: introspect(rawDb), ops }
+  } finally {
+    rawDb.run('ROLLBACK')
+  }
+}
+
 async function cmdDryRun(label, cfg) {
   header('litestone migrate dry-run')
+  const given = givenOperations()
 
   const parseResult = loadSchema(cfg.schema)
   const dbs         = openSqliteDbs(parseResult, cfg)
@@ -644,10 +677,10 @@ async function cmdDryRun(label, cfg) {
         : buildPristine(pristineDb, parseResult)
       pristineDb.close()
 
-      const live       = introspect(rawDb)
-      const diffResult = diffSchemas(pristine, live, parseResult, name, { pluralize: cfg.pluralize })
+      const { live, ops } = liveAfterOperations(rawDb, parseResult, name, cfg, given)
+      const diffResult    = diffSchemas(pristine, live, parseResult, name, { pluralize: cfg.pluralize })
 
-      if (!diffResult.hasChanges) {
+      if (!diffResult.hasChanges && !ops.length) {
         console.log(`  ${green('✓')}  ${multi ? name + ': ' : ''}schema is in sync — no migration needed`)
         if (diffResult.residue.length)
           console.log(summarizeDiff(diffResult).split('\n').slice(1).map(l => `  ${yellow(l)}`).join('\n'))
@@ -655,11 +688,13 @@ async function cmdDryRun(label, cfg) {
         continue
       }
 
-      console.log(summarizeDiff(diffResult).split('\n').map(l => `  ${l}`).join('\n'))
+      const summary = [...ops.map(o => `  ~ ${o.table}  ${describeOperation(o)}`), diffResult.hasChanges ? summarizeDiff(diffResult) : '']
+        .filter(Boolean).join('\n')
+      console.log(summary.split('\n').map(l => `  ${l}`).join('\n'))
       console.log()
       console.log(`  ${dim('─── SQL preview (not written) ' + '─'.repeat(33))}`)
       console.log()
-      console.log(generateMigrationSQL(diffResult, parseResult)
+      console.log(generateMigrationSQL(diffResult, parseResult, { pluralize: cfg.pluralize, first: ops.map(renameStatement) })
         .split('\n').map(l => `  ${l}`).join('\n'))
       console.log()
     }

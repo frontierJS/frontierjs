@@ -50,7 +50,7 @@ import { payAsAt, assertEffectiveFrom }          from '../../api/src/domain/payr
 import { plainDateIn, addToDate }                from '@frontierjs/toolbelt/datetime'
 import { calculatePayslipFor, payPayRun, revertPayRun } from '../../api/src/domain/payroll'
 import { arrearsFor }                            from '../../api/src/domain/payroll'
-import { sweepPayroll }                          from './payroll-sweep.mjs'
+import { sweepPayroll }                          from './verify-payroll-sweep.mjs'
 import { results, report } from './lib/report.mjs'
 
 const sys = db.asSystem()
@@ -287,7 +287,7 @@ t('arrears.anOrdinaryBandLineStillDoes',
 
 // The payslip still adds up, on both rules — the one the database holds and the
 // one it cannot see.
-const counting = linesD.filter(l => l.counts)
+const counting = linesD.filter(l => l.isCounted)
 t('arrears.thePayslipStillAddsUp',
   counting.reduce((n, l) => n + l.amount, 0) === slipD.net)
 t('arrears.andTheDatabaseAgrees', slipD.net === slipD.gross - slipD.deductions)

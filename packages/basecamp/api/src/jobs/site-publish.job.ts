@@ -13,7 +13,7 @@
 // publishes of one site are refused by `drafts.publish`, on the release rows.
 
 import { defineJob }        from '@frontierjs/caravan'
-import { runsAsApp }        from './context.ts'
+import { runsAsApp }        from '../domain/job/job-context.ts'
 import { runPublish }       from '../domain/site/site-publish.ts'
 import { BUILD_TIMEOUT_MS } from '../providers/executor.ts'
 

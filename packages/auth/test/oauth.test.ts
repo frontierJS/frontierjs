@@ -275,7 +275,7 @@ describe('fetchIdentity', () => {
     const id = await fetchIdentity(google(), TOKENS)
     expect(id.providerId).toBe('10992')
     expect(id.email).toBe('ada@shop.test')
-    expect(id.emailVerified).toBe(true)
+    expect(id.isEmailVerified).toBe(true)
   })
 
   test("email_verified as the string 'false' does not become true", async () => {
@@ -285,17 +285,17 @@ describe('fetchIdentity', () => {
     stubFetch([['openidconnect.googleapis.com', { body: {
       sub: '1', email: 'x@y.z', email_verified: 'false',
     } }]])
-    expect((await fetchIdentity(google(), TOKENS)).emailVerified).toBe(false)
+    expect((await fetchIdentity(google(), TOKENS)).isEmailVerified).toBe(false)
   })
 
   test("email_verified as the string 'true' is honored", async () => {
     stubFetch([['openidconnect.googleapis.com', { body: { sub: '1', email: 'x@y.z', email_verified: 'true' } }]])
-    expect((await fetchIdentity(google(), TOKENS)).emailVerified).toBe(true)
+    expect((await fetchIdentity(google(), TOKENS)).isEmailVerified).toBe(true)
   })
 
   test('an absent claim is not verified', async () => {
     stubFetch([['openidconnect.googleapis.com', { body: { sub: '1', email: 'x@y.z' } }]])
-    expect((await fetchIdentity(google(), TOKENS)).emailVerified).toBe(false)
+    expect((await fetchIdentity(google(), TOKENS)).isEmailVerified).toBe(false)
   })
 
   test('a provider answering no subject is refused', async () => {
@@ -320,7 +320,7 @@ describe('fetchIdentity', () => {
     expect(id.providerId).toBe('42')
     // NOT the profile email, which carries no verification state at all.
     expect(id.email).toBe('ada@shop.test')
-    expect(id.emailVerified).toBe(true)
+    expect(id.isEmailVerified).toBe(true)
   })
 
   test('github: a primary address that is not verified is not taken', async () => {
@@ -330,7 +330,7 @@ describe('fetchIdentity', () => {
     ])
     const id = await fetchIdentity(github(), TOKENS)
     expect(id.email).toBeNull()
-    expect(id.emailVerified).toBe(false)
+    expect(id.isEmailVerified).toBe(false)
   })
 
   test('github: the sign-in still succeeds when the emails call fails', async () => {

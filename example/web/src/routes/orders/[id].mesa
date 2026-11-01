@@ -10,11 +10,11 @@ title: Order
   // As everywhere else in this app, no list of statuses or moves is written
   // here. The ladder comes from fields.status.enum and the offered moves from
   // orders.transitions(row, level) — both read out of db/schema.lite.
-  import { orders }    from '../../resources/Order.mesa'
-  import { customers } from '../../resources/Customer.mesa'
-  import { orderLines }    from '../../resources/OrderLine.mesa'
-  import { payments }      from '../../resources/Payment.mesa'
-  import { paymentEvents } from '../../resources/PaymentEvent.mesa'
+  import { orders }    from '@/resources/Order.mesa'
+  import { customers } from '@/resources/Customer.mesa'
+  import { orderLines }    from '@/resources/OrderLine.mesa'
+  import { payments }      from '@/resources/Payment.mesa'
+  import { paymentEvents } from '@/resources/PaymentEvent.mesa'
   import { session } from '@frontierjs/sierra/resource'
   import { day } from '@/lib/datetime.js'
   import { page, goto } from '@frontierjs/sierra/router'
@@ -582,7 +582,7 @@ title: Order
                 <ul class="stack" data-events={p.id}>
                   {#each eventsFor(p) as e}
                     <li class="cluster text-sm">
-                      <Mono>{e.kind}</Mono>
+                      <Mono>{e.type}</Mono>
                       <span class="text-muted">{e.receivedAt}</span>
                       <Mono class="text-muted">{e.eventId}</Mono>
                     </li>

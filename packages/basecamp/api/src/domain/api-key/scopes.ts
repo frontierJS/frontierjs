@@ -143,8 +143,8 @@ export function apiKeyGuard(): Hook {
 
     if (key.revokedAt) throw new Forbidden('This API key has been revoked')
 
-    if (!(await hubPolicy(sys)).allowApiKeyAuth)
-      throw new Forbidden('API key authentication is turned off for this installation (HubConfig.allowApiKeyAuth)')
+    if (!(await hubPolicy(sys)).isApiKeyAuthAllowed)
+      throw new Forbidden('API key authentication is turned off for this installation (HubConfig.isApiKeyAuthAllowed)')
 
     // The key belongs to a workspace and may not be pointed at another one.
     // The user behind it may well be a member of both — that is exactly the

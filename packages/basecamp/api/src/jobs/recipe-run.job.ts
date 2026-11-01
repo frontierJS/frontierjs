@@ -12,8 +12,8 @@
 
 import { defineJob } from '@frontierjs/caravan'
 import { outbound, outpostFor } from '../providers/outpost.ts'
-import { tail, recordServerEvent } from './outpost-run.ts'
-import { runsAsCaller } from './context.ts'
+import { tail, recordServerEvent } from '../domain/job/outpost-run.ts'
+import { runsAsCaller } from '../domain/job/job-context.ts'
 import type { App }         from '@frontierjs/junction'
 
 async function runRecipe(app: App, runId: string): Promise<void> {
@@ -77,7 +77,7 @@ async function runRecipe(app: App, runId: string): Promise<void> {
     // history needs to be able to tell those apart.
     const status = res.error.kind === 'timeout' ? 'timeout' : 'failed'
     await finish({ status, error: `${res.error.kind}: ${res.error.message}` })
-    await recordServerEvent(app, run.serverId, 'recipe_failed',
+    await recordServerEvent(app, run.serverId, 'recipeFailed',
       `Recipe '${recipe.name}' did not complete (${res.error.kind})`, { run_id: runId })
     throw new Error(res.error.message)
   }
@@ -94,11 +94,11 @@ async function runRecipe(app: App, runId: string): Promise<void> {
     error:    exitCode === 0 ? null : `exited ${exitCode}`,
   })
 
-  await recordServerEvent(app, run.serverId, exitCode === 0 ? 'recipe_ran' : 'recipe_failed',
+  await recordServerEvent(app, run.serverId, exitCode === 0 ? 'recipeRan' : 'recipeFailed',
     `Recipe '${recipe.name}' exited ${exitCode}`,
     { run_id: runId, requested_by: run.requestedBy })
 
-  log.info('recipe run finished', { run_id: runId, exit_code: exitCode })
+  log.info('recipe run finished', { runId, exitCode })
 }
 
 // ── The job ───────────────────────────────────────────────────────

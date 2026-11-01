@@ -19,7 +19,7 @@
 
   import { createResource } from '@frontierjs/sierra/resource'
 
-  export const payRuns = createResource('pay-runs', { model: 'PayRun' })
+  export const payRuns = createResource('payRuns', { model: 'PayRun' })
 </script>
 
 <script>

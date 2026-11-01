@@ -58,13 +58,13 @@ title: New project
   let seeding    = false
   // On by default once a server is picked (FJS-D1558); `false` is sent only
   // when somebody turned it off, so the server's own default stays the rule.
-  let deployOnPush = true
+  let isDeployedOnPush = true
   // Basecamp writes the key and the hook itself when the workspace holds a
   // GitHub token (FJS-D1571). Secrets are an administrator's to read, so a
   // member below that finds none and is shown no switch, as the server refuses.
   let connectOn = true
   let githubAccounts = []
-  secrets.service.find({ kind: 'provider_key' })
+  secrets.service.find({ kind: 'providerKey' })
     .then(r => { githubAccounts = (r.data ?? []).filter(a => a.providerKind === 'github') })
     .catch(() => { githubAccounts = [] })
   // A hint for showing the switch; the server's parse of the remote decides.
@@ -111,8 +111,8 @@ title: New project
       ...(serverId ? { serverId } : {}),
       ...(hostname.trim() ? { hostname: hostname.trim() } : {}),
       ...(dockerfile.trim() ? { dockerfile } : {}),
-      ...(serverId && !deployOnPush ? { deployOnPush: false } : {}),
-      ...(canConnect && connectOn ? { connect: true } : {}),
+      ...(serverId && !isDeployedOnPush ? { isDeployedOnPush: false } : {}),
+      ...(canConnect && connectOn ? { isConnecting: true } : {}),
     }
     const r = await fromRepo(input)
     // The app's toasts are the flash store, and it outlives the navigation.
@@ -247,7 +247,7 @@ title: New project
         {#if serverId}
           <Switch id="deploy-on-push" label="Deploy on push"
                   description="A push to the branch releases the app. The webhook address and secret are shown once, after Create."
-                  checked={deployOnPush} onchange={(on) => deployOnPush = on} />
+                  checked={isDeployedOnPush} onchange={(on) => isDeployedOnPush = on} />
         {/if}
         {#if canConnect}
           <Switch id="connect-github" label="Connect at GitHub"

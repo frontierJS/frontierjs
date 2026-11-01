@@ -81,13 +81,13 @@ title: Dependencies
   load()
   $: session.workspaceId, () => { projectId = ''; load() }
 
-  $: scoped = (report?.packages ?? []).filter(p => !publishedOnly || p.published)
+  $: scoped = (report?.packages ?? []).filter(p => !publishedOnly || p.isPublished)
   $: shown  = scoped.filter(p =>
     (!status || p.status === status) &&
     (!search || p.name.toLowerCase().includes(search.toLowerCase())))
   const countOf = (key) => scoped.filter(p => p.status === key).length
 
-  const visibleUses = (p) => p.uses.filter(u => !publishedOnly || u.published)
+  const visibleUses = (p) => p.uses.filter(u => !publishedOnly || u.isPublished)
 
   // Who declares it, folded to one line per member: a package three apps
   // declare is three lines, and the kind only when it is not a plain dependency.

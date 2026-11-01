@@ -1,12 +1,12 @@
 ---
 id: map-packages
-status: assessment
+status: reading
 dated: 2026-09-19
 ---
 
 # Idea — The package map: what exists, and what should
 
-**Status: ASSESSMENT + PROPOSAL.** Dated 2026-08-04, **re-graded against the tree
+**Status: READING + PROPOSAL.** Dated 2026-08-04, **re-graded against the tree
 2026-09-19** and restructured, because the original axis was wrong. What exists is
 not restated here — root `CLAUDE.md` § Packages is the state and
 `exports.snapshot.md` is what publishes. Everything under *Still proposed* is

@@ -222,7 +222,7 @@ if (seedCode !== 0) fail(`db/seed.js exited ${seedCode}\n${seedErr}`)
 {
   const { Database } = await import('bun:sqlite')
   const db = new Database(DB)
-  db.run("DELETE FROM secret WHERE kind = 'provider_key'")
+  db.run("DELETE FROM secret WHERE kind = 'providerKey'")
   db.close()
 }
 
@@ -486,7 +486,7 @@ try {
     await evaluate(`!!document.querySelector('#no-accounts a[href="/servers/import/"]')`))
 
   // ─── The account ───────────────────────────────────────────────────────
-  // An account is a `Secret` of kind `provider_key` that NAMES a cloud. Made
+  // An account is a `Secret` of kind `providerKey` that NAMES a cloud. Made
   // through the screen rather than written into the database, because the
   // schema's `@@check` refuses one that names no cloud and the field that
   // satisfies it has to exist on the form — a check with no way to answer it is
@@ -509,10 +509,10 @@ try {
   await instrument()
 
 
-  await evaluate(`document.querySelector('input[type=radio][name=kind][value=provider_key]').click()`)
+  await evaluate(`document.querySelector('input[type=radio][name=kind][value=providerKey]').click()`)
   await fill({ name: 'do-main' })
   await until(`!!document.getElementById('providerKind')`, v => v,
-    'choosing provider_key never revealed the cloud field')
+    'choosing providerKey never revealed the cloud field')
   ok('choosing "provider key" asks which cloud — the column the @@check requires')
 
   const clouds = await options('providerKind')
@@ -857,7 +857,7 @@ try {
   await until(`!!document.getElementById('new-secret')`, v => v, 'the secrets screen never rendered')
   await click('#new-secret')
   await until(`!!document.getElementById('name')`, v => v, 'the secret form never opened')
-  await evaluate(`document.querySelector('input[type=radio][name=kind][value=provider_key]').click()`)
+  await evaluate(`document.querySelector('input[type=radio][name=kind][value=providerKey]').click()`)
   await fill({ name: 'hz-main' })
   await until(`!!document.getElementById('providerKind')`, v => v, 'the cloud field never appeared')
 
@@ -1734,7 +1734,7 @@ try {
   check('…an Environment at the preview tier, its slug the branch\'s', envRow?.tier === 'preview' && envRow?.slug === 'wb-client', JSON.stringify(envRow))
   const appRow = (await call('GET', `/apps/${o.appId}`)).body
   check('…one static inline App on the branch\'s web port, placed on the machine',
-    appRow?.type === 'static' && appRow?.source?.kind === 'inline' && appRow?.port === o.port
+    appRow?.kind === 'static' && appRow?.source?.kind === 'inline' && appRow?.port === o.port
       && JSON.stringify(appRow).includes(serverId), JSON.stringify(appRow).slice(0, 300))
   const vars = (await call('GET', `/variables?environmentId=${o.environmentId}`)).body?.data ?? []
   check('…the frozen build\'s FRONTIER_PUBLIC_API_URL on that App', vars.some(v => v.key === 'FRONTIER_PUBLIC_API_URL' && v.value === 'https://api.example.test' && v.appId === o.appId), JSON.stringify(vars))

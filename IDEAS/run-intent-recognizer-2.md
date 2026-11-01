@@ -1,12 +1,12 @@
 ---
 id: run-intent-recognizer-2
-status: assessment
+status: reading
 dated: 2026-09-12
 ---
 
 # Assessment — the intent recognizer, run 2: a hundred messages through the built resolver
 
-**Status: ASSESSMENT.** Dated 2026-09-12. It reads the tree and proposes nothing of
+**Status: READING.** Dated 2026-09-12. It reads the tree and proposes nothing of
 its own; what it changes is folded into `intent-recognizer.md`. Never cite this as
 behavior.
 

@@ -17,7 +17,7 @@ import {
 // Newest first, as `readHistory` answers.
 const H = (...rows) => rows
 const t = (id, releaseId, status, extra = {}) =>
-  ({ id, releaseId, status, fromReleaseId: null, crossesPivot: 0, ...extra })
+  ({ id, releaseId, status, fromReleaseId: null, isCrossingPivot: 0, ...extra })
 
 const RELEASE = (id, extra = {}) =>
   ({ id, generation: 1, retentionUntil: null, createdAt: '2026-08-01T00:00:00.000Z', ...extra })
@@ -261,7 +261,7 @@ describe('the pivot', () => {
   // Recorded on the transition rather than reclassified: what matters afterwards
   // is the answer the operator was shown and agreed to at the time.
   test('a deploy since then that crossed it refuses, naming the releases', () => {
-    const r = check({ since: [t('t2', 'r2', 'succeeded', { crossesPivot: 1 })] })
+    const r = check({ since: [t('t2', 'r2', 'succeeded', { isCrossingPivot: 1 })] })
     expect(kinds(r)).toEqual(['pivot'])
     expect(r[0].message).toContain('r2')
     expect(r[0].message).toContain('forward, not back')
@@ -270,14 +270,14 @@ describe('the pivot', () => {
 
   test('several crossings are counted, not just the first', () => {
     const r = check({ since: [
-      t('t3', 'r3', 'succeeded', { crossesPivot: 1 }),
-      t('t2', 'r2', 'succeeded', { crossesPivot: 1 }),
+      t('t3', 'r3', 'succeeded', { isCrossingPivot: 1 }),
+      t('t2', 'r2', 'succeeded', { isCrossingPivot: 1 }),
     ] })
     expect(r[0].message).toContain('2 deploy(s)')
   })
 
   test('--past-pivot marks it forced and stops it blocking', () => {
-    const r = check({ since: [t('t2', 'r2', 'succeeded', { crossesPivot: 1 })], force: { pivot: true } })
+    const r = check({ since: [t('t2', 'r2', 'succeeded', { isCrossingPivot: 1 })], force: { pivot: true } })
     expect(r[0].forced).toBe(true)
     expect(blocking(r)).toEqual([])
   })
@@ -380,7 +380,7 @@ describe('the whole picture', () => {
   // mid-incident.
   test('every refusal is reported together', () => {
     const r = check({
-      since:      [t('t2', 'r2', 'succeeded', { crossesPivot: 1 })],
+      since:      [t('t2', 'r2', 'succeeded', { isCrossingPivot: 1 })],
       target:     RELEASE('r1', { generation: 2, retentionUntil: '2026-01-01T00:00:00.000Z' }),
       generation: 3,
       now:        '2026-08-26T00:00:00.000Z',
@@ -391,7 +391,7 @@ describe('the whole picture', () => {
 
   test('forcing three of four still blocks on the fourth', () => {
     const r = check({
-      since:      [t('t2', 'r2', 'succeeded', { crossesPivot: 1 })],
+      since:      [t('t2', 'r2', 'succeeded', { isCrossingPivot: 1 })],
       target:     RELEASE('r1', { generation: 2, retentionUntil: '2026-01-01T00:00:00.000Z' }),
       generation: 3, now: '2026-08-26T00:00:00.000Z', image: { image: null },
       force:      { pivot: true, retention: true, configuration: true },
@@ -401,7 +401,7 @@ describe('the whole picture', () => {
 
   test('every kind the checker can produce is in the catalog', () => {
     const produced = new Set([
-      ...kinds(check({ since: [t('t', 'r', 'succeeded', { crossesPivot: 1 })] })),
+      ...kinds(check({ since: [t('t', 'r', 'succeeded', { isCrossingPivot: 1 })] })),
       ...kinds(check({ target: RELEASE('r1', { retentionUntil: '2000-01-01T00:00:00.000Z' }) })),
       ...kinds(check({ target: RELEASE('r1', { generation: 9 }), generation: 1 })),
       ...kinds(check({ image: { image: null } })),
@@ -432,13 +432,13 @@ describe('what the operator reads', () => {
   })
 
   test('each refusal names its override, and the ones without say so', () => {
-    const out = rendered({ since: [t('t2', 'r2', 'succeeded', { crossesPivot: 1 })], image: { image: null } })
+    const out = rendered({ since: [t('t2', 'r2', 'succeeded', { isCrossingPivot: 1 })], image: { image: null } })
     expect(out).toContain('override with --past-pivot')
     expect(out).toContain('not a judgement call')
   })
 
   test('a forced refusal reads as overridden rather than as passing', () => {
-    const out = rendered({ since: [t('t2', 'r2', 'succeeded', { crossesPivot: 1 })], force: { pivot: true } })
+    const out = rendered({ since: [t('t2', 'r2', 'succeeded', { isCrossingPivot: 1 })], force: { pivot: true } })
     expect(out).toContain('overridden by --past-pivot')
   })
 })

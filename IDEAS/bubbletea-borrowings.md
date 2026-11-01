@@ -1,6 +1,6 @@
 ---
 id: bubbletea-borrowings
-status: assessment
+status: reading
 dated: 2026-10-22
 ---
 

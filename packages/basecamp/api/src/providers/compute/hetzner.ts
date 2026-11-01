@@ -3,7 +3,7 @@
 //
 // The second cloud, and it is here to answer a question one connector cannot:
 // is `ComputeConnector` a boundary, or is it DigitalOcean's shape wearing a
-// general name (`docs/PROVISIONING.md` § P4, `FJS-D153`)? It disagreed in four
+// general name (`docs/provisioning.md` § P4, `FJS-D153`)? It disagreed in four
 // ways that reached the interface and are recorded there rather than here:
 //
 //   · a price is per LOCATION, so `ComputeSize.prices` is a map;

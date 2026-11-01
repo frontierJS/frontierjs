@@ -14,5 +14,5 @@
 
   import { createResource } from '@frontierjs/sierra/resource'
 
-  export const counts = createResource('stocktake-counts', { model: 'StocktakeCount' })
+  export const stocktakeCounts = createResource('stocktakeCounts', { model: 'StocktakeCount' })
 </script>

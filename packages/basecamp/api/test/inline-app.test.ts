@@ -6,7 +6,7 @@
  * container pipeline's six steps describe what has to happen, and the two
  * claims this file carries are both about that.
  *
- * **`source` and `type` are one decision.** An inline source served through the
+ * **`source` and `kind` are one decision.** An inline source served through the
  * container pipeline fails four steps in with a docker error about an image
  * nobody named, so the service refuses the two words disagreeing at the create.
  *
@@ -74,7 +74,7 @@ async function anInlineApp(source: unknown = inline()) {
   const slug = `pasted-${uniq()}`
   const created: any = await apps().create({
     workspaceId: ws.id, environmentId: environment.id,
-    name: slug, slug, type: 'static', source,
+    name: slug, slug, kind: 'static', source,
   })
   await (env.system as any).appServer.create({ data: { appId: created.id, serverId: box.id, replicaIndex: 0 } })
   return created
@@ -95,7 +95,7 @@ describe('what a source may be', () => {
   test('a source with no kind is refused — nothing is inferred from which keys are present', async () => {
     await expect(apps().create({
       workspaceId: ws.id, environmentId: environment.id,
-      name: 'x', slug: `x-${uniq()}`, type: 'container', source: { repo: 'git@host:a/b.git' },
+      name: 'x', slug: `x-${uniq()}`, kind: 'container', source: { repo: 'git@host:a/b.git' },
     })).rejects.toThrow(/source\.kind/)
   })
 
@@ -110,18 +110,18 @@ describe('what a source may be', () => {
   })
 })
 
-describe('source and type are one decision', () => {
+describe('source and kind are one decision', () => {
 
   test('an inline source on a container app is refused, naming both words', async () => {
     await expect(apps().create({
       workspaceId: ws.id, environmentId: environment.id,
-      name: 'x', slug: `x-${uniq()}`, type: 'container', source: inline(),
+      name: 'x', slug: `x-${uniq()}`, kind: 'container', source: inline(),
     })).rejects.toThrow(/must be 'static'/)
   })
 
-  test('and the type cannot be moved out from under a source that is already inline', async () => {
+  test('and the kind cannot be moved out from under a source that is already inline', async () => {
     const created = await anInlineApp()
-    await expect(apps().patch(created.id, { type: 'container' })).rejects.toThrow(/must be 'static'/)
+    await expect(apps().patch(created.id, { kind: 'container' })).rejects.toThrow(/must be 'static'/)
   })
 })
 
@@ -129,7 +129,7 @@ describe('what the paste box refuses', () => {
 
   const bad = (files: unknown[]) => apps().create({
     workspaceId: ws.id, environmentId: environment.id,
-    name: 'x', slug: `x-${uniq()}`, type: 'static', source: { kind: 'inline', files },
+    name: 'x', slug: `x-${uniq()}`, kind: 'static', source: { kind: 'inline', files },
   })
 
   test('a release with no entry point — it would deploy green and answer 404 at its own address', async () => {
@@ -219,10 +219,10 @@ describe('the release pipeline an inline app runs', () => {
       .rejects.toThrow(/not a digest/)
   })
 
-  const aContainerApp = async (source: unknown, type = 'container') => {
+  const aContainerApp = async (source: unknown, appKind = 'container') => {
     const slug = `c-${uniq()}`
     const target: any = await apps().create({
-      workspaceId: ws.id, environmentId: environment.id, name: slug, slug, type, source,
+      workspaceId: ws.id, environmentId: environment.id, name: slug, slug, kind: appKind, source,
     })
     await (env.system as any).appServer.create({ data: { appId: target.id, serverId: box.id, replicaIndex: 0 } })
     return target
@@ -368,7 +368,7 @@ describe('the release pipeline an inline app runs', () => {
       configSnapshot: { source: inline(), runtime: {} } })
 
     await sys.app.update({ where: { id: target.id }, data: {
-      type: 'container', source: { kind: 'image', image: 'nginx:alpine' } } })
+      kind: 'container', source: { kind: 'image', image: 'nginx:alpine' } } })
 
     const replacement: any = await deployments().call('rollback', current.id, {})
     expect(await stepNames(replacement.id)).toEqual(['Validate', 'Upload files', 'Activate', 'Health check'])

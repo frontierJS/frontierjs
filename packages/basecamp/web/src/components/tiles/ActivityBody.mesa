@@ -1,5 +1,5 @@
 <script>
-  // activity_feed — the audit trail, most recent first.
+  // activityFeed — the audit trail, most recent first.
   //
   // The trail is admin/owner. A developer with this card on their board gets
   // told so rather than an empty feed: "you cannot read this" is a correct
@@ -10,7 +10,7 @@
   // card for the whole member list, which the full screen pays and a card three
   // inches wide should not — this is the catch-up glance, and the screen is the
   // narrative.
-  import { audit } from '../../resources/AuditEvent.mesa'
+  import { auditEvents } from '../../resources/AuditEvent.mesa'
   import { clock } from '../../lib/datetime.js'
   import Pill from '@frontierjs/ui/components/display/Pill.mesa'
 
@@ -18,7 +18,7 @@
   const TONE = { create: 'success', remove: 'danger', drain: 'warning', cancel: 'muted' }
   const verbOf = (action) => String(action).split('.')[1] ?? action
 
-  const list = audit.tethered({ state: 'local', directives: { limit: 5 } })
+  const list = auditEvents.tethered({ state: 'local', directives: { limit: 5 } })
   $: rows    = list.rows
   $: loading = list.loading && !list.rows.length
   $: denied  = list.error?.status === 403 || list.error?.status === 404

@@ -14,7 +14,7 @@
 
 import { defineJob }      from '@frontierjs/caravan'
 import { gradePublicUrl, pinTo, type PublicUrlOptions } from '@frontierjs/junction/public-url'
-import { runsAsApp }      from './context.ts'
+import { runsAsApp }      from '../domain/job/job-context.ts'
 import { gradeProbe, nextState, type ProbeOutcome } from '../domain/monitor/probe.ts'
 import { fanOutToChannels } from '../domain/notification/delivery.ts'
 import { notifyPeople, workspaceMembers } from '../domain/notification/notify.ts'
@@ -104,7 +104,7 @@ async function checkOne(
   await db.monitorCheck.create({ data: {
     monitorId:  monitor.id,
     at:         new Date(at).toISOString(),
-    ok:         grade.ok,
+    isOk:       grade.ok,
     statusCode: outcome.statusCode ?? null,
     latencyMs,
     message:    grade.message,
@@ -193,7 +193,7 @@ async function probe(
       // by `fetch` could answer loopback this time (`FJS-3357`).
       const graded = await gradePublicUrl(url, destinations)
       const pin    = graded.address ? pinTo(graded.url, graded.address) : null
-      const tls    = { ...pin?.tls, ...(monitor.ignoreTls ? { rejectUnauthorized: false } : {}) }
+      const tls    = { ...pin?.tls, ...(monitor.isTlsIgnored ? { rejectUnauthorized: false } : {}) }
       // `set`, not a spread: a monitor's own `Host` would be appended beside
       // the pin's and the server handed both.
       const headers = new Headers(monitor.headers ?? {})
@@ -233,7 +233,7 @@ export default defineJob({
     const { app } = runsAsApp(ctx, 'monitor-sweep')
     await sweepMonitors(app)
   },
-  // One minute is the interval floor: a monitor's `intervalSec` is at least 60,
+  // One minute is the interval floor: a monitor's `intervalSeconds` is at least 60,
   // so a slower sweep would add its whole period to every detection.
   cron: '* * * * *',
 })

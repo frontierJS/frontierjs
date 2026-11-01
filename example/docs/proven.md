@@ -60,7 +60,7 @@ README's *Verified* section — not a claim.
   created is a 404.
 - **The storefront's search asks the shop, and says when it could not.**
   `Product` declares `@@fts([name, description])`; the catalog island sends
-  `?$search=…&active=true` — a directive and a filter side by side, with no app
+  `?$search=…&isActive=true` — a directive and a filter side by side, with no app
   code between them — and junction routes it to Litestone's `search()`. What
   makes it worth having rather than a demo is what an island CANNOT do: the
   products are serialized into the page at build time and descriptions are not
@@ -132,7 +132,7 @@ README's *Verified* section — not a claim.
   a `@from` count and is what makes `@keep` VISIBLE rather than merely true: a
   removed customer still reads 2.
 
-  `deletedAt` is **not** a second `active`. `active: false` is *we are not
+  `deletedAt` is **not** a second `isActive`. `isActive: false` is *we are not
   selling this right now*; this is *it is not ours any more*. What proves they
   are different rather than differently spelled is `@unique` — a deleted product
   keeps its slug and a deleted customer keeps their email, deliberately, because

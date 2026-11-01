@@ -844,7 +844,7 @@ check('the app is listed',
   t => t.includes('web') && t.includes('container'))
 
 // ── 9b. The App's own screen ─────────────────────────────────────────
-// The largest single gap in docs/SCREENS.md until 2026-08-06: an App could be
+// The largest single gap in docs/screens.md until 2026-08-06: an App could be
 // created from an Environment and then never looked at again.
 const appOwnerEnvPath = await path()
 await evaluate(`document.querySelector('#app-rows a[href^="/apps/"]').click()`)
@@ -1216,7 +1216,7 @@ check('the step list is written up front',
 // code had.
 const live = await waitFor(
   `document.getElementById('deploy-status')?.textContent.trim()`,
-  v => ['success', 'failed', 'rolled_back', 'cancelled'].includes(v),
+  v => ['success', 'failed', 'rolledBack', 'cancelled'].includes(v),
   40_000)
 check('the release finishes on screen with no reload', live, 'success')
 // The job pushes on every step transition, so a six-step release produces
@@ -1314,7 +1314,7 @@ check('Stop following ends the command on the machine',
     (async () => {
       const m = await import('/src/resources/App.mesa')
       const created = await m.apps.service.create({
-        environmentId: ${JSON.stringify(envId)}, name: 'pasted', slug: 'pasted', type: 'static' })
+        environmentId: ${JSON.stringify(envId)}, name: 'pasted', slug: 'pasted', kind: 'static' })
       await m.apps.service.invoke('place', created.id, { serverId: ${JSON.stringify(serverId)} })
       return created.id
     })()
@@ -1365,7 +1365,7 @@ check('Stop following ends the command on the machine',
 
   check('the release finishes on screen',
     await waitFor(`document.getElementById('deploy-status')?.textContent.trim()`,
-      v => ['success', 'failed', 'rolled_back', 'cancelled'].includes(v), 40_000),
+      v => ['success', 'failed', 'rolledBack', 'cancelled'].includes(v), 40_000),
     'success')
 
   // The digest is the MACHINE's reading of the bytes it wrote, not a tag this
@@ -1588,7 +1588,7 @@ check('a notice can be dismissed',
 // the tenancy boundary working rather than a bug.
 const job = await apiCall('/jobs', {
   method: 'POST', workspace: secondWs.id,
-  body: { name: 'Nightly backup', kind: 'one_shot', command: '/usr/local/bin/backup.sh' },
+  body: { name: 'Nightly backup', kind: 'oneShot', command: '/usr/local/bin/backup.sh' },
 })
 
 await goto('/jobs/')
@@ -1602,7 +1602,7 @@ check('the job opens', await heading(), 'Nightly backup')
 check('the job shows what it will run',
   await evaluate(`document.body.textContent`), t => t.includes('/usr/local/bin/backup.sh'))
 
-// A one_shot job is dispatched ON CREATION — the queue picks up anything
+// A oneShot job is dispatched ON CREATION — the queue picks up anything
 // pending — so it has already run by the time this page loads. The run fails
 // with 'No server assigned and no local target registered', which is correct
 // for a fleet with nothing attached, and is exactly the kind of history this
@@ -1686,7 +1686,7 @@ check('…and the filter narrowed it to that subject',
 // hiding a button. Verified at the API, because the UI never offers it.
 let forged = null
 try {
-  await apiCall('/audit', {
+  await apiCall('/auditEvents', {
     method: 'POST', workspace: firstWs.id,
     body: { action: 'forged.event', subjectType: 'projects', subjectId: 'x' },
   })
@@ -1860,7 +1860,7 @@ check('the token it was given is nowhere on the page',
   await evaluate(`document.body.textContent.includes('WEBHOOKTOKENCANARY')`), false)
 check('…nor in what the channels API answers',
   await evaluate(`
-    fetch('/channels', { headers: {
+    fetch('/notificationChannels', { headers: {
       accept: 'application/json',
       authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
       'x-workspace-id': ${JSON.stringify(secondWs.id)},
@@ -1976,7 +1976,7 @@ check('secrets renders', await heading(), 'Secrets')
 await click('Add a secret')
 await sleep(800)
 // Kind comes first and decides the value fields: an SSH key is a private-key box.
-await evaluate(`document.querySelector('input[type=radio][name=kind][value=ssh_key]').click()`)
+await evaluate(`document.querySelector('input[type=radio][name=kind][value=sshKey]').click()`)
 await waitFor(`document.getElementById('value-privateKey') ? '1' : ''`, t => t === '1')
 await fill({ 'value-privateKey': 'ssh-ed25519 AAAAC3NzaC1PLAINTEXTCANARY', name: 'deploy-key' })
 await submit()
@@ -2369,7 +2369,7 @@ check('…and nothing at all for the one it never has',
 // The card no longer says it cannot draw a trend, because it can: the heartbeat
 // records `server.cpuPercent{serverId}` and the card reads it back (`FJS-956`).
 // What is asserted is that the FRAME still works for the one kind that
-// legitimately cannot — `service_health` needs latency history and nothing
+// legitimately cannot — `serviceHealth` needs latency history and nothing
 // records a ping — because a `needs` sentence nobody prints any more is a
 // mechanism that has quietly stopped, and the card that needs it looks fine.
 await click('Add tile')
@@ -2428,9 +2428,9 @@ const refuse = (body) => fetch(`http://localhost:${API_PORT}/dashboards/${boardI
 
 const badKind = await refuse({ kind: 'sql_query' })
 check('a kind outside the vocabulary is refused, and named', badKind.status, 400)
-check('…with the vocabulary in the message', badKind.body, t => t.includes('server_fleet'))
+check('…with the vocabulary in the message', badKind.body, t => t.includes('serverFleet'))
 
-const badConfig = await refuse({ kind: 'stat_counter', config: { source: 'servers', where: '1=1' } })
+const badConfig = await refuse({ kind: 'statCounter', config: { source: 'servers', where: '1=1' } })
 check('a tile cannot be given a query to run', badConfig.status, 400)
 check('…and the key it refused is named', badConfig.body, t => t.includes('where'))
 
@@ -2620,7 +2620,7 @@ const DISK = {
   containers:  { running: 1, stopped: 2, reclaimable_bytes: 40 * 1024 ** 2 },
   build_cache: { size_bytes: 8 * 1024 ** 3, reclaimable_bytes: 8 * 1024 ** 3 },
 }
-await apiCall('/cleanup', {
+await apiCall('/maintenanceRuns', {
   method: 'POST', outpost: true, header: { 'x-service-method': 'report' }, body: DISK,
 })
 check('an outpost with no session can report a disk', true, true)
@@ -2631,7 +2631,7 @@ check('an outpost with no session can report a disk', true, true)
 // — an unsigned POST wrote the fleet's disk picture, and the same door on
 // `servers.heartbeat` pointed every outbound command at an address the caller
 // named.
-const unsigned = await fetch(`http://localhost:${API_PORT}/cleanup`, {
+const unsigned = await fetch(`http://localhost:${API_PORT}/maintenanceRuns`, {
   method:  'POST',
   headers: { 'content-type': 'application/json', accept: 'application/json',
              'x-service-method': 'report' },
@@ -2669,7 +2669,7 @@ check('…and the picture is the one the outpost left behind',
   t => t.includes('0 B reclaimable'))
 
 // Two refusals the UI never offers, asked of the API directly.
-const unknownTarget = await fetch(`http://localhost:${API_PORT}/cleanup`, {
+const unknownTarget = await fetch(`http://localhost:${API_PORT}/maintenanceRuns`, {
   method: 'POST',
   headers: { accept: 'application/json', authorization: `Bearer ${token}`,
              'content-type': 'application/json', 'x-workspace-id': secondWs.id,
@@ -2680,7 +2680,7 @@ check('a target outside the vocabulary is refused by name', unknownTarget.status
 check('…and the refusal says what it does know',
   await unknownTarget.text(), t => t.includes('everything') && t.includes('dangling_images'))
 
-const inventedRun = await fetch(`http://localhost:${API_PORT}/cleanup`, {
+const inventedRun = await fetch(`http://localhost:${API_PORT}/maintenanceRuns`, {
   method: 'POST',
   headers: { accept: 'application/json', authorization: `Bearer ${token}`,
              'content-type': 'application/json', 'x-workspace-id': secondWs.id },

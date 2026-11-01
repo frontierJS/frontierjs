@@ -368,7 +368,7 @@ try {
   // asserted in the document it must land in: a drag survives a reload with no
   // version written, and a connection is an edge in the JSON the compiler reads.
 
-  const centre = (sel) => evaluate(`
+  const center = (sel) => evaluate(`
     const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   `)
@@ -382,7 +382,7 @@ try {
   t('canvas.andTheEdgeBetweenThem', await exists('[data-edge][data-from="t"][data-to="welcome"]'), true)
 
   const x0 = Number(await attr('[data-canvas-node="welcome"]', 'data-x'))
-  const grab = await centre('[data-canvas-node="welcome"] rect')
+  const grab = await center('[data-canvas-node="welcome"] rect')
   await pointer('[data-canvas-node="welcome"]', 'pointerdown', grab)
   await pointer('#flow-canvas svg', 'pointermove', { x: grab.x + 60, y: grab.y + 30 })
   await pointer('#flow-canvas svg', 'pointerup', { x: grab.x + 60, y: grab.y + 30 })
@@ -407,8 +407,8 @@ try {
     return JSON.parse(document.querySelector('#flow-definition').value).nodes.error1?.type ?? ''
   `), 'flow.error')
 
-  await pointer('[data-port="welcome"]', 'pointerdown', await centre('[data-port="welcome"]'))
-  await pointer('#flow-canvas svg', 'pointerup', await centre('[data-canvas-node="error1"] rect'))
+  await pointer('[data-port="welcome"]', 'pointerdown', await center('[data-port="welcome"]'))
+  await pointer('#flow-canvas svg', 'pointerup', await center('[data-canvas-node="error1"] rect'))
   t('canvas.aDragFromAPortIsAnEdge', await evaluate(`
     return JSON.parse(document.querySelector('#flow-definition').value).edges.some(e => e.from === 'welcome' && e.to === 'error1')
   `), true)

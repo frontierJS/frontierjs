@@ -1,12 +1,12 @@
 ---
 id: run-intent-recognizer-1
-status: assessment
+status: reading
 dated: 2026-09-12
 ---
 
 # Assessment — the intent recognizer, run 1: sixty synthetic requests against `example`
 
-**Status: ASSESSMENT.** Dated 2026-09-12. It reads the tree and proposes nothing;
+**Status: READING.** Dated 2026-09-12. It reads the tree and proposes nothing;
 the proposal is `intent-recognizer.md`, and the findings below are folded into it.
 Never cite this as behavior.
 

@@ -90,7 +90,7 @@ anonymous client and a `$setAuth`'d normal user alike. `User` was 8 too until
 reads at USER(4) with the two declarations that bound the level rather than
 raise it, and the suite asserts the refusals rather than the levels: a stranger
 is refused by level, one user cannot write another's row, nobody writes their
-own `role` or `emailVerified`, an ADMINISTRATOR does both. This is *not* the
+own `role` or `isEmailVerified`, an ADMINISTRATOR does both. This is *not* the
 "gates fail open" failure from `VERIFYING.md` — verified by running.
 
 **The CLI hand-copy is in sync, and a test says so now.** It has drifted

@@ -97,8 +97,8 @@ try {
 // what a merchant does between two builds.
 const { sys } = await import('../../api/src/core/db.ts')
 
-const activeProducts = await sys.product.findMany({ where: { active: true }, limit: 500 })
-const activePlans    = await sys.plan.findMany({ where: { active: true }, limit: 50 })
+const activeProducts = await sys.product.findMany({ where: { isActive: true }, limit: 500 })
+const activePlans    = await sys.plan.findMany({ where: { isActive: true }, limit: 50 })
 
 // ─── the server ───────────────────────────────────────────────────────────
 // Sierra's own, which is what `bun run serve:site` and the container run — so
@@ -361,7 +361,7 @@ try {
   //   the next one, which is what `plans.reprice` does and the only thing that
   //   can move a plan's price at all.
   //
-  //   The page must not offer what the shop stopped selling. `active: false`
+  //   The page must not offer what the shop stopped selling. `isActive: false`
   //   retires a plan without deleting the versions past subscriptions name.
   await cmd('Page.navigate', { url: `${ORIGIN}/pricing/` })
   await evaluate(HARNESS)
@@ -375,7 +375,7 @@ try {
   // Baked, and counted against the database rather than against a number here.
   t('pricing.onePerActivePlan', {
     emitted: (pricingHTML.match(/data-plan="/g) ?? []).length,
-    active:  (await sys.plan.findMany({ where: { active: true }, limit: 50 })).length,
+    active:  (await sys.plan.findMany({ where: { isActive: true }, limit: 50 })).length,
   })
 
   // The premise of `agreed` below. The web drive reprices PRO on every run and
@@ -479,7 +479,7 @@ try {
     };
   `))
   // A row links to the page that exists for it. The catalog and
-  // getStaticPaths() are two readings of `active: true`, and a link to a page
+  // getStaticPaths() are two readings of `isActive: true`, and a link to a page
   // the build did not emit is a 404 nothing here would otherwise catch.
   t('catalog.linksResolve', await evaluate(`
     const hrefs = [...document.querySelectorAll('#catalog-list li a')].map(a => a.getAttribute('href'));
@@ -635,7 +635,7 @@ const expected = {
   'stale.saidSo':          1,
 
   // ── the price list ──────────────────────────────────────────────────────
-  // A retired plan is in the DATABASE and not on the page: `active: false`
+  // A retired plan is in the DATABASE and not on the page: `isActive: false`
   // takes it off sale without deleting the versions past subscriptions name.
   'pricing.retiredAbsent':     { inFile: true, inTheDb: true },
   'pricing.onePerActivePlan':  { emitted: activePlans.length, active: activePlans.length },

@@ -382,10 +382,10 @@ export const CHECKS = {
     // own config, its own test shape, its own release — and folded into another
     // it inherits that one's build and ships when it ships.
     for (const inside of ['web', 'api']) {
-      if (has(inside, 'src', 'Embeds')) findings.push({
-        file: join(root, inside, 'src', 'Embeds'),
+      if (has(inside, 'src', 'embeds')) findings.push({
+        file: join(root, inside, 'src', 'embeds'),
         message: `widgets inside ${inside}/. A widget surface is a peer of ${inside}/, not a folder in ` +
-                 `it — widgets/src/Embeds/ — because its config, its host pages and its release are ` +
+                 `it — widgets/src/embeds/ — because its config, its host pages and its release are ` +
                  `its own. Here it inherits ${inside}/'s build and ships when ${inside}/ ships.`,
       })
       // `src/harbor/` is jetty's service-worker entry and belongs to nothing
@@ -612,7 +612,7 @@ export const WEB_SRC_KINDS = new Set(['routes', 'resources', 'components'])
 export const API_SRC_KINDS = new Set(['core', 'services', 'routes', 'plugins', 'jobs', 'notifications', 'providers', 'domain', 'components'])
 
 // A surface folded into web/ is reported once already, by name, above.
-const WEB_SRC_REPORTED = new Set(['Embeds', 'harbor'])
+const WEB_SRC_REPORTED = new Set(['embeds', 'harbor'])
 
 const LOADED_SUFFIX    = { services: /\.service\.(ts|js|mjs)$/, jobs: /\.job\.(ts|js|mjs)$/, notifications: /\.notification\.(ts|js|mjs)$/ }
 

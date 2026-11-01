@@ -42,7 +42,7 @@ const registerAtSink = async (secret: any): Promise<string> => {
 }
 
 const ghAccount = (name: string, token: string) => (env.system as any).secret.create({ data: {
-  workspaceId: ws.id, name, kind: 'provider_key', providerKind: 'github',
+  workspaceId: ws.id, name, kind: 'providerKey', providerKind: 'github',
   data: JSON.stringify({ token }),
 }})
 
@@ -192,7 +192,7 @@ describe('a GitHub account', () => {
 
   test('the secrets service accepts it as a provider key', async () => {
     const made = await env.as(owner).service('secrets').create({
-      workspaceId: ws.id, name: 'gh-typed', kind: 'provider_key', providerKind: 'github', data: GH_TOKEN,
+      workspaceId: ws.id, name: 'gh-typed', kind: 'providerKey', providerKind: 'github', data: GH_TOKEN,
     }) as any
     expect(made.providerKind).toBe('github')
   })

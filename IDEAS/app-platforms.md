@@ -384,7 +384,7 @@ refuses by name rather than pushing nothing (`decision-rules` Q9).
 - `IDEAS/site-hosting.md` — the build-side adapter and the four layers.
 - `IDEAS/cloudflare-edge.md` — the account, the `adopt` verb for DNS, `edge.sync`.
 - `IDEAS/git-deploy.md` — push → release, which a platform build reuses.
-- `packages/basecamp/docs/ADAPTERS.md` — the connector conventions.
+- `packages/basecamp/docs/adapters.md` — the connector conventions.
 
 Sources:
 [Waypoint plugin SDK (third-party fork)](https://github.com/swisscom/waypoint-plugin-sdk) ·

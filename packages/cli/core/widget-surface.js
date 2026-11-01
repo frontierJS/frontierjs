@@ -33,7 +33,7 @@ import {
 /** The six, minus the ones a build writes. `dist/` is output, never scaffolded. */
 export const WIDGET_SURFACE_DIRS = [
   'config',
-  'src/Embeds',
+  'src/embeds',
   'src/styles',
   'public',
   'test',
@@ -85,7 +85,7 @@ export default {
     // A widget is a .mesa file in here, or a directory holding index.mesa. A
     // .mesa BESIDE an index.mesa is that widget's own component and is not
     // built as a second script.
-    dir:    'src/Embeds',
+    dir:    'src/embeds',
     outDir: 'dist/embeds',
     // Every widget's tag and class take this, glued to the name with no
     // separator, so end it in a dash: 'mt-' gives <mt-basic-lead>, 'mt' gives
@@ -122,7 +122,7 @@ export function widgetDevEntry() {
   return `// widgets/src/dev.js — the dev harness entry, not part of any bundle.
 // \`sierra widgets\` generates its own entry per widget; this one is served by
 // Sierra's dev plugin and calls the same embed() for every widget in
-// src/Embeds/, with each stylesheet routed to its shadow root.
+// src/embeds/, with each stylesheet routed to its shadow root.
 
 import 'virtual:sierra-widgets'
 `
@@ -262,7 +262,7 @@ export function scaffoldWidgetSurface({
     ['config/vite.config.js',        widgetViteConfig({ port: devPort })],
     ['index.html',                   widgetIndexHtml({ appName, tag: scaffoldTag })],
     ['src/dev.js',                   widgetDevEntry()],
-    [`src/Embeds/${name}.mesa`,      widgetStarter({ name, prefix })],
+    [`src/embeds/${name}.mesa`,      widgetStarter({ name, prefix })],
     [`test/${scaffoldTag}.html`,     widgetHostPage({ name, prefix, appName, servePort })],
     ['deploy/serve.js',              widgetServeEntry({ servePort })],
     ['deploy/Dockerfile',            widgetDockerfile({ servePort })],

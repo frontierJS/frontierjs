@@ -2,7 +2,7 @@
  * test/argv.test.ts — every tool two real apps publish, read as a command line.
  *
  * The fixtures are `tools/list` captured over a real MCP client from `example`
- * (administrator) and `basecamp` (owner, with its workspace header) — 526 tools
+ * (administrator) and `basecamp` (owner, with its workspace header) — 636 tools
  * whose schemas nobody here wrote for this test. A hand-written schema agrees
  * with the parser it was written beside; these are what the generator actually
  * emits, `anyOf` nullables, operator branches, `$ref`s and all.
@@ -55,6 +55,14 @@ function sample(s: S, defs: S): unknown {
       if (s.format === 'email')     return 'a@b.co'
       if (s.format === 'date')      return '2026-01-01'
       if (s.format === 'date-time') return '2026-01-01T00:00:00Z'
+      if (s.format === 'uri')       return 'https://example.com/x'
+      // A pattern is the schema's own word on what a value looks like, so the
+      // sample is the first candidate it accepts, not a guess at its shape.
+      if (typeof s.pattern === 'string') {
+        const re = new RegExp(s.pattern)
+        const hit = ['x', '/x', 'x/x', 'https://x'].find(v => re.test(v))
+        if (hit) return hit
+      }
       return 'x'.repeat(Math.max(1, s.minLength ?? 1))
     case 'integer': return Math.max(1, s.minimum ?? 1)
     case 'number':  return Math.max(1, s.minimum ?? 1)
@@ -203,7 +211,7 @@ describe('an id and a payload', () => {
   })
 
   test('an undescribed payload is --data only: JSON, @file or stdin', () => {
-    const role = cmd('basecamp', 'workspaces_setMemberRole')
+    const role = cmd('basecamp', 'flows_save')
     expect(role.payload).toBe('undescribed')
     expect(parseArgs(role, ['ws-1', '--data', '{"role":"admin"}'])).toEqual({ id: 'ws-1', data: { role: 'admin' } })
     expect(parseArgs(role, ['ws-1', '--data', '@role.json'], { readFile: p => p === 'role.json' ? '{"role":"viewer"}' : '' }))
@@ -220,7 +228,7 @@ describe('an id and a payload', () => {
   })
 
   test('JSON that is not JSON is refused naming the flag', () => {
-    const role = cmd('basecamp', 'workspaces_setMemberRole')
+    const role = cmd('basecamp', 'flows_save')
     expect(() => parseArgs(role, ['ws-1', '--data', '{role:admin}'])).toThrow(/--data takes JSON/)
   })
 })

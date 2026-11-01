@@ -30,7 +30,7 @@
 // visible. Nothing on this side can be atomic with somebody else's API.
 
 import { defineJob }   from '@frontierjs/caravan'
-import { runsAsCaller } from './context.ts'
+import { runsAsCaller } from '../domain/job/job-context.ts'
 import type { App }         from '@frontierjs/junction'
 
 /** How long a machine has to reach `installing` before this gives up on it.
@@ -70,7 +70,7 @@ async function provision(app: App, serverId: string): Promise<void> {
   // Skipped where a previous attempt already got an id out of the vendor.
   if (!row.providerServerId) {
     row = await servers.call('provisionStep', serverId, { step: 'create' }) as Row
-    log.info('machine created at provider', { id: serverId, provider_server_id: row.providerServerId })
+    log.info('machine created at provider', { id: serverId, providerServerId: row.providerServerId })
   }
 
   // ── The wait ────────────────────────────────────────────────────────

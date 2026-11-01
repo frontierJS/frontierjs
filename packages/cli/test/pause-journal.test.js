@@ -90,7 +90,7 @@ describe('a pause through the journal', () => {
 
     expect(opened.error).toBeUndefined()
     expect(opened.refused).toBeUndefined()
-    expect(opened.transition).toMatchObject({ kind: 'pause', releaseId: 'r1', fromReleaseId: 'r1', crossesPivot: false })
+    expect(opened.transition).toMatchObject({ kind: 'pause', releaseId: 'r1', fromReleaseId: 'r1', isCrossingPivot: false })
 
     await complete(opened)
     const state = await j.state({ app: APP, environment: ENV })

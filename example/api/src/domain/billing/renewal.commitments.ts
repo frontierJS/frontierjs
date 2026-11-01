@@ -35,7 +35,7 @@ export default {
   } }),
 
   // The reminder email, as an outbox row on the move's transaction rather
-  // than an afterCommit: `reminded` is the record that it went, and a moved
+  // than an afterCommit: `isReminded` is the record that it went, and a moved
   // row is never due again, so a crash after the commit would lose the email
   // with the column saying otherwise.
   'Invoice.remind': defineCommitment({ after: async ({ record, enqueue }) => {

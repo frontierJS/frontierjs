@@ -342,7 +342,7 @@ export default createService({
       await sys().user.update({
         where: { id: userId },
         data:  { accountId: workspace.accountId, status: 'active',
-                 displayName: name, emailVerified: true },
+                 displayName: name, isEmailVerified: true },
       })
       const issued = await auth.login(email, password)
       // The account was created above with a password and nothing else, so it

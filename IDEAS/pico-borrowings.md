@@ -1,12 +1,12 @@
 ---
 id: pico-borrowings
-status: assessment
+status: reading
 dated: 2026-10-22
 ---
 
 # Idea — Six things worth taking from pico
 
-**Status: ASSESSMENT.** Nothing here is built and nothing here is a dependency.
+**Status: READING.** Nothing here is built and nothing here is a dependency.
 [pico](https://github.com/picosh/pico) is a Go monorepo of hosted developer
 services — pages, tunnels, pipes, a blog, pastes, RSS mail — with one design
 move under all of them: **ssh is the whole surface.** Each app is an ssh

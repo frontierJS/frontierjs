@@ -311,7 +311,7 @@ try {
   // the page is a `TypeError: Failed to fetch` that kills the run mid-way. The
   // drive has no such limit.
   t('products.manyNullBarcodes', await (async () => {
-    const r = await (await fetch(`${API}/api/product-variants?$limit=200`)).json()
+    const r = await (await fetch(`${API}/api/productVariants?$limit=200`)).json()
     return { nulls: r.data.filter(v => v.barcode === null).length,
              none:  r.data.every(v => v.barcode !== '') }
   })())
@@ -435,7 +435,7 @@ try {
     await waitFor(() => document.querySelector('form [name]'));
     const named = [...document.querySelectorAll('form [name]')].map(e => e.name);
     return {
-      writable: ['name','slug','description','brand','active'].filter(f => named.includes(f)),
+      writable: ['name','slug','description','brand','isActive'].filter(f => named.includes(f)),
       // A single list rather than a boolean, so a failure names the column that
       // leaked rather than saying 'false'.
       serverOwned: named.filter(n => ['id','createdAt','deletedAt','version','variantCount','priceFrom','priceTo','onHand'].includes(n)),
@@ -1011,7 +1011,7 @@ try {
   // to close puts the holder on the newest closed one, always listed.
   {
     const sub  = (await (await ledger('/subscriptions?reference=SUB-3001')).json()).data[0]
-    const open = (await (await ledger(`/plan-versions?planId=${proId}&effectiveTo=null`)).json()).data[0]
+    const open = (await (await ledger(`/planVersions?planId=${proId}&effectiveTo=null`)).json()).data[0]
     const res  = await fetch(`${API}/api/subscriptions/${sub.id}`, {
       method:  'PATCH',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${_staff}` },
@@ -1145,7 +1145,7 @@ try {
   //
   // The one set of buttons in this app that `transitions(row, level)` cannot
   // answer for. All four of this model's declared moves are `@system`, so what
-  // a person presses writes `cancelAtPeriodEnd` — a flag, not a state — and the
+  // a person presses writes `isCancelingAtPeriodEnd` — a flag, not a state — and the
   // assertion that matters is what does NOT happen: the status stays `active`,
   // because the period has been paid for and ending it today would be the
   // forfeit the flag exists to prevent.
@@ -1225,7 +1225,7 @@ try {
     const inv  = await (await ledger(`/invoices/${invId}`)).json()
     const want = {
       ...owedFor(subNow.status, inv.status === 'issued' ? [inv] : []),
-      remind: inv.status === 'issued' && inv.reminded === false ? plusDays(inv.dueOn, -3) : null,
+      remind: inv.status === 'issued' && inv.isReminded === false ? plusDays(inv.dueOn, -3) : null,
     }
     const n    = Object.values(want).filter(Boolean).length
     const shown = await evaluate(`
@@ -1496,7 +1496,7 @@ const expected = {
   'products.manyNullBarcodes': { nulls: 43, none: true },
 
   'productCreate.generatedFields': {
-    writable:     ['name', 'slug', 'description', 'brand', 'active'],
+    writable:     ['name', 'slug', 'description', 'brand', 'isActive'],
     serverOwned:  [],
     brandOptions: true,
   },
@@ -1629,7 +1629,7 @@ const expected = {
   ],
   // ── The recurring half ──────────────────────────────────────────────────
   //
-  // Five plans, one of them retired: `active: false` is what takes a plan off
+  // Five plans, one of them retired: `isActive: false` is what takes a plan off
   // sale, and it is not a delete — the versions stay, because every past
   // subscription names one.
   'plans.rows':    5,

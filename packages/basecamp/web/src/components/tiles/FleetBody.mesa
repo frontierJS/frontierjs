@@ -1,5 +1,5 @@
 <script>
-  // server_fleet — every server in the workspace, by status.
+  // serverFleet — every server in the workspace, by status.
   //
   // Reads the servers service with the reader's own session, which is the whole
   // shape of a tile here: a card can show exactly what the person could have

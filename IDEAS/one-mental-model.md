@@ -1,6 +1,6 @@
 ---
 id: one-mental-model
-status: assessment
+status: reading
 dated: 2026-08-02
 ---
 

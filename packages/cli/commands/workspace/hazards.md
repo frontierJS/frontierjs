@@ -41,7 +41,7 @@ const cov = hazardCoverage({ root, rules: RULES })
 
 if (!cov.hazards.length) {
   echo('')
-  echo('  ✗  no realm skill under .claude/skills/ lists a hazard — nothing to grade.')
+  echo(`  ${chalk.red('✗')}  ${chalk.dim('no realm skill under .claude/skills/ lists a hazard — nothing to grade.')}`)
   echo('')
   process.exitCode = 1
   return
@@ -49,7 +49,7 @@ if (!cov.hazards.length) {
 
 if (flag.gaps) {
   echo('')
-  for (const h of cov.hazards.filter(h => !h.rules.length)) echo(`  ⚠  ${h.realm} · ${h.section} · ${h.lead}`)
+  for (const h of cov.hazards.filter(h => !h.rules.length)) echo(`  ${chalk.yellow('⚠')}  ${chalk.cyan(h.realm)} ${chalk.dim(`· ${h.section} ·`)} ${h.lead}`)
   echo('')
   return
 }
@@ -61,13 +61,13 @@ if (flag.check) {
   const have = existsSync(file) ? readFileSync(file, 'utf8') : null
   echo('')
   if (have === null) {
-    echo('  ✗  hazards.snapshot.md is missing. Run `fli ws:hazards` to write it.')
+    echo(`  ${chalk.red('✗')}  hazards.snapshot.md ${chalk.dim('is missing. Run `fli ws:hazards` to write it.')}`)
     process.exitCode = 1
   } else if (have !== out) {
-    echo('  ✗  hazards.snapshot.md is stale. Run `fli ws:hazards`.')
+    echo(`  ${chalk.red('✗')}  hazards.snapshot.md ${chalk.dim('is stale. Run `fli ws:hazards`.')}`)
     process.exitCode = 1
   } else {
-    echo('  ✓  hazards.snapshot.md')
+    echo(`  ${chalk.green('✓')}  hazards.snapshot.md`)
   }
   echo('')
   return
@@ -77,9 +77,9 @@ writeFileSync(file, out)
 
 const graded = cov.hazards.filter(h => h.rules.length).length
 echo('')
-echo('  ✓  hazards.snapshot.md')
-echo(`  ${graded} of ${cov.hazards.length} hazard(s) have a rule`)
-for (const u of cov.unresolved) echo(`  ✗  rule \`${u.rule}\` names hazard '${u.key}', which matches ${u.matches} bullets — it must match one`)
+echo(`  ${chalk.green('✓')}  hazards.snapshot.md`)
+echo(`  ${chalk.bold(`${graded} of ${cov.hazards.length}`)} ${chalk.dim('hazard(s) have a rule')}`)
+for (const u of cov.unresolved) echo(`  ${chalk.red('✗')}  rule \`${u.rule}\` ${chalk.dim(`names hazard '${u.key}', which matches ${u.matches} bullets — it must match one`)}`)
 if (cov.unresolved.length) process.exitCode = 1
 echo('')
 ```

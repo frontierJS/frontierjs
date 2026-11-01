@@ -41,7 +41,7 @@
 // retry, which is no write when it is already true.
 
 import { defineJob }     from '@frontierjs/caravan'
-import { runsEitherWay } from './context.ts'
+import { runsEitherWay } from '../domain/job/job-context.ts'
 import { executorOn, isExecutor } from '../providers/executor.ts'
 import { routedHosts, routedPaths, routedRedirects } from '../domain/release/runtime.ts'
 import { isInline }      from '../domain/release/app-source.ts'

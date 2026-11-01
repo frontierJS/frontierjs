@@ -20,7 +20,7 @@ A developer facing five copies of the same fact doesn't just risk them
 disagreeing — they have to hold five pictures of the same thing in their
 head at once, and guess which one is authoritative. Protect the truth and
 you protect the mind trying to hold it. Everything below is a consequence
-of taking that seriously. Remember, we want a consistent unified mental model as best we can.
+of taking that seriously.
 
 ---
 
@@ -239,33 +239,38 @@ more from less knowledge.
 *(Axiom 1 pointed at the prose. `VERIFYING.md` records why: anything hand-maintained
 drifts, documents included.)*
 
-**Every document is one of four kinds, and the kind decides what a sentence may
-say.**
+**Every document sits on one of four tiers, and the tier decides what a sentence
+may say.**
 
-- **Guiding** — `PHILOSOPHY.md`, `ARCHITECT.md`, the Invariants. Principles and
+- **Guiding** — `PHILOSOPHY.md`, `ARCHITECT.md`, `VOCABULARY.md`, `VERIFYING.md`,
+  the Invariants. Principles and
   vocabulary. No counts, no dates, no maturity words, no defect ids — a ruling
   may be cited, since it is what settles a principle; a defect is what the
   principle is not yet true about, and belongs in the register. A principle
   is true on the day it is written and on the day the code catches up; a number
   is true for an afternoon.
-- **Register** — `DECISIONS.md`, `ISSUES.md`. Dated, cited, append-only.
-  What changed is git; why it changed is the ruling or the defect row.
-- **Map** — the root and package `CLAUDE.md`, a package `README.md`, the committed
-  snapshots. Live facts, each one backed by a generator or a check that fails when
-  it stops being true. A README is here rather than one tier down because a
-  consumer acts on it without reading anything else.
+- **Register** — `DECISIONS.md`, `ISSUES.md`. Dated and cited; a row is never
+  deleted — it is amended in place and dated, and a closed one is archived
+  verbatim. What changed is git; why it changed is the ruling or the defect row.
+- **Map** — the root and package `CLAUDE.md`, a package `README.md`, a `SKILL.md`,
+  `DRIVES.md`, `THREATS.md`, the committed snapshots. Live facts, each one backed
+  by a generator or a check that fails when it stops being true. The root
+  `CLAUDE.md`'s Invariants are the exception: that section is Guiding. A README
+  is here rather than one tier down because a consumer acts on it without
+  reading anything else.
   A map sentence that opens *it used to*, *until <date>* or *before FJS-*, or
   carries a calendar date, is history that escaped its register
   (`doc-map-narration`).
-- **Assessment** — `IDEAS/` (`review-pros-and-cons.md` among them), a package's design notes. Carries
-  a `status` and a date in its frontmatter and is never cited as behavior.
+- **Assessment** — `IDEAS/`, `HANDOFF.md`, a dated audit under `docs/`, a
+  package's design notes. Carries a `status` and a date in its frontmatter and
+  is never cited as behavior, whatever its status.
 
 **Precedence is stated once.** Invariant, then ruling, then map, then package
 document, then assessment. A ruling that must override an invariant amends the
-invariant in the same commit or does not land. Where two documents of one kind
+invariant in the same commit or does not land. Where two documents of one tier
 disagree, the one with the later date wins and the earlier is struck in place.
 
-**Status is a closed vocabulary, and what carries it differs by kind.** A ruling
+**Status is a closed vocabulary, and what carries it differs by tier.** A ruling
 in force says nothing: being in the register is the statement that it was
 decided, so a word is written only where that has stopped being the whole answer
 — `superseded-by`, `amended-by` or `withdrawn`, under the heading, naming what
@@ -273,19 +278,16 @@ replaced it (`FJS-D196`). A proposal is on a lifecycle and carries one word in
 its frontmatter: `proposed`, `partial`, `shipped`, `superseded-by` or
 `withdrawn` — the two build states between a decision and a fact, which a ruling
 does not need and a roadmap cannot do without. A document that READS the tree
-rather than proposing anything is `assessment`: it is on no lifecycle, it carries
+rather than proposing anything is a `reading`: it is on no lifecycle, it carries
 a date, and it is never cited as behavior. A file derived from the others and
-authoritative over none of them is `index`. *Parked*, *under review*, *not yet
-adopted*, *argued* and *idea* each meant one of these, and each let a settled
-question read as open. *Accepted* is retired for the opposite reason: it was true
-of nearly every ruling, and a word that is almost always the same word cannot
-mark the one that is not.
+authoritative over none of them is `index`. The retired words and why each went
+are in `FJS-D196`.
 
 **A number in prose is generated or absent.** Components, tests, rules, models,
 drives. A count that nothing regenerates is wrong by the next commit and reads as
 authoritative until then.
 
-**The delete test, for the sentence that is in the right kind of file and may
+**The delete test, for the sentence that is in the right tier of file and may
 still not belong**: if it vanished, could someone acting on this file make a
 mistake it would have prevented? *A `@@gate` refuses, a `@@allow` filters, so a
 wrong policy is an empty screen and not an error* stays — the mistake is

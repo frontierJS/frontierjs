@@ -24,11 +24,11 @@ export function hallIdeas (): Set<string> {
 }
 
 /** Each idea's count, aye and nay, over the rows a caller may read. */
-export function tallyOf (rows: Array<{ idea: string, aye: boolean }>): Record<string, { aye: number, nay: number }> {
+export function tallyOf (rows: Array<{ idea: string, isAye: boolean }>): Record<string, { aye: number, nay: number }> {
   const out: Record<string, { aye: number, nay: number }> = {}
   for (const r of rows) {
     const t = out[r.idea] ??= { aye: 0, nay: 0 }
-    if (r.aye) t.aye++
+    if (r.isAye) t.aye++
     else t.nay++
   }
   return out

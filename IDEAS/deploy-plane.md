@@ -515,5 +515,5 @@ was written to apply.
 - `IDEAS/release-transitions.md` — what a Release is, the pivot, and reversibility
 - `IDEAS/offline-first-and-release.md` — which artefact kinds a Release may be
 - `IDEAS/operational-edge.md` — the wider operational gap this sits inside
-- `packages/basecamp/docs/VISION.md` § Open Questions — the two this proposes to close
+- `packages/basecamp/docs/vision.md` § Open Questions — the two this proposes to close
 - `FJS-232` — the scaffolded Dockerfile does not match the scaffold

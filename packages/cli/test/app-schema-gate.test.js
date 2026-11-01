@@ -8,7 +8,7 @@ import { test, expect, afterAll } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir }                                        from 'node:os'
 import { join }                                          from 'node:path'
-import { appSchemaModels }                               from '../core/app-schema.js'
+import { appSchemaModels, serviceForModel }                from '../core/app-schema.js'
 
 const roots = []
 const gateOf = (decl) => {
@@ -28,4 +28,16 @@ test('a digit gate reads its first position', () => {
 test('the named forms FJS-D239 deleted declare nothing', () => {
   expect(gateOf('@@gate(read: USER)')).toBeNull()
   expect(gateOf('@@gate(SYSTEM)')).toBeNull()
+})
+
+// serviceForModel — a service that states no `model:` is matched on the name
+// Invariant 2 derives from its filename (FJS-1078), not on a hand-rolled regex.
+test('a derived service name reaches the model modelName answers', () => {
+  const services = ['addresses', 'journal-entries', 'product_variants', 'orders']
+    .map(name => ({ name, model: null, path: `${name}.service.ts` }))
+  const byModel = serviceForModel('unused', services)
+  expect(byModel.get('Address')).toBe('addresses')
+  expect(byModel.get('JournalEntry')).toBe('journal-entries')
+  expect(byModel.get('ProductVariant')).toBe('product_variants')
+  expect(byModel.get('Order')).toBe('orders')
 })

@@ -243,7 +243,7 @@ export async function restoreStaged(
   if (hubLivesAt(resolve(dbPath))) {
     bootResult = { state: 'refused', message:
       `${staged} is staged beside a database that holds an account, or could not be read, and was left in place. ` +
-      'Remove it, or restore by hand (docs/BACKUPS.md § 7).' }
+      'Remove it, or restore by hand (docs/backups.md § 7).' }
     log.error('staged restore refused', { staged })
     return bootResult
   }

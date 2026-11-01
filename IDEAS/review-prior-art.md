@@ -1,12 +1,12 @@
 ---
 id: review-prior-art
-status: assessment
+status: reading
 dated: 2026-08-26
 ---
 
 # Idea — Prior art: which projects to read, and what each one is evidence of
 
-**Status: ASSESSMENT. A reading list, not a plan, and nothing here is a
+**Status: READING. A reading list, not a plan, and nothing here is a
 commitment.** Dated 2026-08-26. **The confidence in each entry is stated
 inline and it is not uniform** — the Ash section is written from outside
 knowledge rather than from a probe of their tree, so treat every specific in it

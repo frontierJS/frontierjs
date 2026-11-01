@@ -1,5 +1,5 @@
 -- Litestone migration
--- Created:   2026-10-23T06:50:12.326Z
+-- Created:   2026-11-01T18:59:12.668Z
 -- Changes:
 --     + Member  (new table)
 --     + Room  (new table)
@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS "message" (
   FOREIGN KEY ("memberId") REFERENCES "member" ("id")
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_message_roomId_createdAt" ON "message" ("roomId", "createdAt");
+CREATE INDEX IF NOT EXISTS "idx_message_memberId" ON "message" ("memberId");
 
 -- The checkers a pair plays across their table (`api/src/checkers.ts`,
 -- `IDEAS/haven.md` 9.1b): one row per booth, begun again in place when a game
@@ -70,7 +71,7 @@ CREATE TABLE IF NOT EXISTS "vote" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "memberId" INTEGER NOT NULL,
   "idea" TEXT NOT NULL,
-  "aye" INTEGER NOT NULL,
+  "isAye" INTEGER NOT NULL,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   UNIQUE ("memberId", "idea"),
   FOREIGN KEY ("memberId") REFERENCES "member" ("id")
@@ -101,6 +102,7 @@ CREATE TABLE IF NOT EXISTS "session" (
   "expiresAt" TEXT NOT NULL,
   FOREIGN KEY ("memberId") REFERENCES "member" ("id")
 ) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_session_memberId" ON "session" ("memberId");
 
 COMMIT;
 PRAGMA foreign_keys = ON;

@@ -138,9 +138,9 @@ const file = flag.out ? resolve(root, flag.out) : resolve(root, metadata.pages[0
 writeFileSync(file, renderPage(model, styleBundle(root)))
 
 echo('')
-echo(`  ✓  ${file.replace(`${root}/`, '')}`)
-echo(`  ${model.counts.concept} concept(s) · ${model.counts.language} language word(s) · ${model.counts.api} identifier(s)`)
-echo(`  audit — ${model.audit.blessedUnused.length} blessed and unused · ${model.audit.unnamedCommon.length} widespread and unnamed · ${model.audit.undecidedButDefined.length} open here and answered by a package · ${model.audit.forbiddenUsed.length} forbidden word(s) in prose`)
-if (flag.open && !(await openUrl(file))) echo('  ⚠  could not open a browser')
+echo(`  ${chalk.green('✓')}  ${file.replace(`${root}/`, '')}`)
+echo(`  ${chalk.dim(`${model.counts.concept} concept(s) · ${model.counts.language} language word(s) · ${model.counts.api} identifier(s)`)}`)
+echo(`  ${chalk.bold('audit')} ${chalk.dim('—')} ${chalk.yellow(model.audit.blessedUnused.length)} ${chalk.dim('blessed and unused ·')} ${chalk.yellow(model.audit.unnamedCommon.length)} ${chalk.dim('widespread and unnamed ·')} ${chalk.yellow(model.audit.undecidedButDefined.length)} ${chalk.dim('open here and answered by a package ·')} ${chalk.yellow(model.audit.forbiddenUsed.length)} ${chalk.dim('forbidden word(s) in prose')}`)
+if (flag.open && !(await openUrl(file))) echo(`  ${chalk.yellow('⚠')}  ${chalk.dim('could not open a browser')}`)
 echo('')
 ```

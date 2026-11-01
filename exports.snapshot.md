@@ -444,7 +444,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./rowlist` | `rowlist.js` | yes |
 | exports | `./controls` | `controls.js` | yes |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 101 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 102 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

@@ -179,7 +179,7 @@ export class LitestoneExecutionStore implements IExecutionStore {
       nodeId,
       status:     s.status,
       attempts:   s.attempts,
-      fromCache:  s.fromCache,
+      isFromCache:  s.isFromCache,
       startedAt:  s.startedAt ? iso(s.startedAt) : null,
       durationMs: s.startedAt && s.endedAt ? s.endedAt - s.startedAt : null,
       output:     s.output ?? null,
@@ -306,7 +306,7 @@ export class LitestoneExecutionStore implements IExecutionStore {
       nodeStates[step.nodeId] = {
         status:    step.status,
         attempts:  step.attempts,
-        fromCache: step.fromCache,
+        isFromCache: step.isFromCache,
         startedAt,
         endedAt:   startedAt !== undefined && step.durationMs !== null ? startedAt + step.durationMs : undefined,
         output:    step.output ?? undefined,

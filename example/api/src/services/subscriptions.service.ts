@@ -8,7 +8,7 @@
 // *nobody may ask for this, ever* is a different sentence (`FJS-D150`).
 //
 // So what a person presses is here, and it is two methods over one `@system`
-// column rather than a move: `cancel` sets `cancelAtPeriodEnd` and `resume`
+// column rather than a move: `cancel` sets `isCancelingAtPeriodEnd` and `resume`
 // clears it. The row policy scopes both — staff act on any subscription, a
 // subscriber on their own — and the `@@allow(update, userId == auth().id)`
 // pair on the model is what says so, not a line of code here.
@@ -24,7 +24,7 @@ import { changePlan, openFirstPeriod } from '../domain/billing'
  *  the same line for the same reason. */
 const subs = () => $.db as Record<string, any>
 
-/** Set or clear `cancelAtPeriodEnd` on the subscription this call names.
+/** Set or clear `isCancelingAtPeriodEnd` on the subscription this call names.
  *
  *  One function for both verbs because they are one write with one refusal
  *  between them, and two copies of a state check is how the two ends up
@@ -49,8 +49,8 @@ async function setCancelling(on: boolean) {
 
   return await db.subscription.update({
     where:  { id: row.id },
-    data:   { cancelAtPeriodEnd: on },
-    system: ['cancelAtPeriodEnd'],
+    data:   { isCancelingAtPeriodEnd: on },
+    system: ['isCancelingAtPeriodEnd'],
   })
 }
 

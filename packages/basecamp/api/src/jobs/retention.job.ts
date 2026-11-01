@@ -12,7 +12,7 @@
 // the definition is when it runs.
 
 import { defineJob }  from '@frontierjs/caravan'
-import { runsAsApp }  from './context.ts'
+import { runsAsApp }  from '../domain/job/job-context.ts'
 
 const POSTURE_KEEP_MS = 30 * 86_400_000
 

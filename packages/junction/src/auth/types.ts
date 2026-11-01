@@ -40,7 +40,7 @@ export interface SessionContext {
    * call but enrollment (`@frontierjs/auth`'s `requireSecondFactor`); a UI reads
    * it to send the person to set one up.
    */
-  enrollmentOnly?: boolean
+  isEnrollmentOnly?: boolean
 
   /**
    * SUPPORT MODE — this session resolves to the subject, and an operator is

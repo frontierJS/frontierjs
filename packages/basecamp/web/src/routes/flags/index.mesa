@@ -19,7 +19,7 @@ title: Flags
   // owner of the only thing the service is for.
   import { session } from '../../lib/session.js'
   import { messageFor } from '../../lib/errors.js'
-  import { flags }   from '../../resources/FeatureFlag.mesa'
+  import { flags }   from '../../resources/Flag.mesa'
   import { environments } from '../../resources/Environment.mesa'
   import { projects }     from '../../resources/Project.mesa'
   import VariantsEditor   from '../../components/VariantsEditor.mesa'

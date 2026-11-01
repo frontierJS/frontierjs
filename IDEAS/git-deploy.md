@@ -25,7 +25,7 @@ What exists, and where (checked against the tree on 2026-10-27):
 - **Deploy on push** — `FJS-D884`, built under `FJS-1781`: a conduit Receiver
   at `/hooks/git/{appId}` taking GitHub/Forgejo/Gitea's HMAC, and
   `/hooks/git/{appId}/{token}` for a sender that signs nothing
-  (`api/src/plugins/push.ts`). A push to the App's branch releases; a delete, a
+  (`api/src/plugins/git-push.ts`). A push to the App's branch releases; a delete, a
   ping and every other event is answered 200 and ignored. `apps.enablePush`
   mints the pair and the App page shows the URL and secret once.
 - **The deploy script** — the App's own Dockerfile, `FJS-D1555`: seeded from

@@ -229,11 +229,11 @@ export function createLitestoneAuth(
       // Verification standing, in the vocabulary sessionGateLevel() grades on.
       // The User model carries a boolean, not a timestamp, so this is
       // deliberately null-or-absent rather than a fabricated date:
-      //   emailVerified false → null      → VISITOR (1)
-      //   emailVerified true  → undefined → no objection; grades USER (4)
+      //   isEmailVerified false → null      → VISITOR (1)
+      //   isEmailVerified true  → undefined → no objection; grades USER (4)
       // Absence means "nothing holding this user back", never "not yet".
       // A bot or a peer has no mailbox to prove, so it is never held there.
-      ...(user.emailVerified === false && (user.kind ?? 'user') === 'user' ? { verifiedAt: null } : {}),
+      ...(user.isEmailVerified === false && (user.kind ?? 'user') === 'user' ? { verifiedAt: null } : {}),
 
       authMethod,
 
@@ -327,7 +327,7 @@ export function createLitestoneAuth(
         token,
         expiresAt: expiresAt(sessionTtl, sys.$now()),
         reauthenticatedAt: sys.$now().toISOString(),
-        ...(held ? { enrollmentOnly: true } : {}),
+        ...(held ? { isEnrollmentOnly: true } : {}),
       }
     })
 
@@ -336,12 +336,12 @@ export function createLitestoneAuth(
     // records the EVENT and does.
     await audit('login.succeeded', {
       model: 'Session', records: [session.id], actorId: user.id, actorType: 'user',
-      ...(Object.keys(meta).length || held ? { meta: { ...meta, ...(held ? { enrollmentOnly: true } : {}) } } : {}),
+      ...(Object.keys(meta).length || held ? { meta: { ...meta, ...(held ? { isEnrollmentOnly: true } : {}) } } : {}),
     })
 
     return {
       token,
-      user: { ...toContext(user, authMethod), sessionId: String(session.id), ...(held ? { enrollmentOnly: true } : {}) },
+      user: { ...toContext(user, authMethod), sessionId: String(session.id), ...(held ? { isEnrollmentOnly: true } : {}) },
     }
   }
 
@@ -608,7 +608,7 @@ export function createLitestoneAuth(
 
     const made = await registerUser(async tx => {
       const user = await tx[person].create({
-        data: { email, name: row.registrant ?? null, emailVerified: true },
+        data: { email, name: row.registrant ?? null, isEmailVerified: true },
       })
       if (row.secret) await tx.credential.create({ data: { userId: user.id, type: 'password', value: row.secret } })
       return user
@@ -643,12 +643,12 @@ export function createLitestoneAuth(
 
     await sys[person].update({
       where: { id: user.id },
-      data:  { emailVerified: true },
+      data:  { isEmailVerified: true },
     })
 
     await sys.verification.delete({ where: { id: verification.id } })
 
-    return { verified: toContext({ ...user, emailVerified: true }, 'verified') }
+    return { verified: toContext({ ...user, isEmailVerified: true }, 'verified') }
   }
 
   /** The click on an `emailChange` link — `verifyEmail` finds the row and this spends it. */
@@ -669,7 +669,7 @@ export function createLitestoneAuth(
     }
 
     const from    = String(user.email)
-    const changed = await sys[person].update({ where: { id: user.id }, data: { email: to, emailVerified: true } })
+    const changed = await sys[person].update({ where: { id: user.id }, data: { email: to, isEmailVerified: true } })
     await sys.verification.delete({ where: { id: row.id } })
 
     // Every token still in flight for the old address. A magic link to it
@@ -769,11 +769,11 @@ export function createLitestoneAuth(
   // `confirmPasswordReset`'s test, and for its reason: a password account is
   // already one reset away from its mailbox, a provider-only one is not.
   //
-  // A provider attached to an account that already existed is marked `linked`
+  // A provider attached to an account that already existed is marked `isLinked`
   // and does not count: the mailbox vouched for that account first.
   const securedByProvider = (creds: any[]): boolean =>
     !creds.some(c => c.type === 'password')
-    && creds.some(c => String(c.type).startsWith('oauth:') && c.linked !== true)
+    && creds.some(c => String(c.type).startsWith('oauth:') && c.isLinked !== true)
 
   async function providerOnly(userId: string): Promise<boolean> {
     return securedByProvider(await sys.credential.findMany({ where: { userId } }))
@@ -864,7 +864,7 @@ export function createLitestoneAuth(
     const user  = await sys[person].findFirst({ where: { email } })
 
     if (!user) {
-      const made = await registerUser(tx => tx[person].create({ data: { email, emailVerified: true } }))
+      const made = await registerUser(tx => tx[person].create({ data: { email, isEmailVerified: true } }))
       await audit('magiclink.registered', {
         model: personModel, records: [String(made.id)], actorId: String(made.id), actorType: 'user',
         meta:  MAGIC_META,
@@ -877,11 +877,11 @@ export function createLitestoneAuth(
     if (await providerOnly(user.id)) return refuseMagicLink('no-password-credential', user.id, email)
 
     // The click is the same proof `verifyEmail` takes.
-    if (user.emailVerified !== true) {
-      await sys[person].update({ where: { id: user.id }, data: { emailVerified: true } })
+    if (user.isEmailVerified !== true) {
+      await sys[person].update({ where: { id: user.id }, data: { isEmailVerified: true } })
     }
 
-    return firstFactorProven({ ...user, emailVerified: true }, MAGIC_META)
+    return firstFactorProven({ ...user, isEmailVerified: true }, MAGIC_META)
   }
 
   // ─── IAuth ────────────────────────────────────────────────────────────────
@@ -962,7 +962,7 @@ export function createLitestoneAuth(
         // the caller's sessions is the one asking — without ever being handed
         // the token that would let it answer by comparison.
         return user
-          ? { ...toContext(user, 'session'), sessionId: String(session.id), ...(session.enrollmentOnly ? { enrollmentOnly: true } : {}) }
+          ? { ...toContext(user, 'session'), sessionId: String(session.id), ...(session.isEnrollmentOnly ? { isEnrollmentOnly: true } : {}) }
           : null
       }
 
@@ -1351,7 +1351,7 @@ export function createLitestoneAuth(
       // released: the same token carries on, with no second sign-in to type a
       // code that was spent a line ago.
       const sessionsRevoked = await endOtherSessions(userId, opts?.exceptSessionId)
-      await sys.session.updateMany({ where: { userId, enrollmentOnly: true }, data: { enrollmentOnly: false } })
+      await sys.session.updateMany({ where: { userId, isEnrollmentOnly: true }, data: { isEnrollmentOnly: false } })
 
       await credentialChanged('totp.enabled', userId, {
         model: 'Credential', records: [String(pending.id)],
@@ -1594,7 +1594,7 @@ export function createLitestoneAuth(
     //
     // Branch 4 is the one that gets written wrong. `CVE-2026-53516` (Better
     // Auth) and `CVE-2026-35511` (Authorizer) are both the same omission: the
-    // gate reads the PROVIDER's `emailVerified` and never the local row's. The
+    // gate reads the PROVIDER's `isEmailVerified` and never the local row's. The
     // attack is pre-registration — somebody signs up with the victim's address
     // and a password they control, the row is written unverified, the victim
     // later signs in with Google, and the two are fused with the attacker's
@@ -1657,7 +1657,7 @@ export function createLitestoneAuth(
       // second account for a person who already has one.
       const email    = identity.email.toLowerCase()
       const existing = await sys[person].findFirst({ where: { email } })
-      const proven   = provider.trustEmail && identity.emailVerified
+      const proven   = provider.trustEmail && identity.isEmailVerified
 
       // The one answer to an address nobody proved, whether or not a row
       // holds it: mail the address, and act on the click once the provider
@@ -1697,7 +1697,7 @@ export function createLitestoneAuth(
         try {
           made = await registerUser(async tx => {
             const row = await tx[person].create({
-              data: { email, name: identity.name ?? null, emailVerified: true },
+              data: { email, name: identity.name ?? null, isEmailVerified: true },
             })
             await tx.credential.create({ data: { userId: row.id, type, value: identity.providerId } })
             return row
@@ -1707,20 +1707,20 @@ export function createLitestoneAuth(
         }
         await audit('oauth.registered', {
           model: personModel, records: [made.id], actorId: made.id,
-          meta:  { provider: providerName, emailVerified: true },
+          meta:  { provider: providerName, isEmailVerified: true },
         })
         return oauthFirstFactor(made, { provider: providerName })
       }
 
       // ── 4. Somebody holds it → three conditions ───────────────────────
       //
-      // `existing.emailVerified` is the third, and it is the one the CVEs miss.
+      // `existing.isEmailVerified` is the third, and it is the one the CVEs miss.
       // An account that never proved it owns the address is not evidence of
       // anything, so there is nothing here to attach an identity to.
       const linkable =
         provider.trustEmail &&           // this issuer's claim means something
-        identity.emailVerified &&        // and it made one
-        existing.emailVerified === true  // and WE already established the same
+        identity.isEmailVerified &&        // and it made one
+        existing.isEmailVerified === true  // and WE already established the same
 
       if (!linkable) {
         await audit('oauth.link.refused', {
@@ -1728,15 +1728,15 @@ export function createLitestoneAuth(
           meta: {
             provider:         providerName,
             trustedProvider:  provider.trustEmail,
-            providerVerified: identity.emailVerified,
-            accountVerified:  existing.emailVerified === true,
+            providerVerified: identity.isEmailVerified,
+            accountVerified:  existing.isEmailVerified === true,
           },
         })
         return invite()
       }
 
       try {
-        await sys.credential.create({ data: { userId: existing.id, type, value: identity.providerId, linked: true } })
+        await sys.credential.create({ data: { userId: existing.id, type, value: identity.providerId, isLinked: true } })
       } catch (err) {
         return lostRace(err)
       }
@@ -1817,19 +1817,19 @@ export function createLitestoneAuth(
       if (!user) {
         const made = await registerUser(async tx => {
           const row = await tx[person].create({
-            data: { email: pending.identifier, name: identity.name ?? null, emailVerified: true },
+            data: { email: pending.identifier, name: identity.name ?? null, isEmailVerified: true },
           })
           await tx.credential.create({ data: { userId: row.id, type: `oauth:${pending.provider}`, value: pending.subject } })
           return row
         })
         await audit('oauth.registered', {
           model: personModel, records: [made.id], actorId: made.id,
-          meta:  { provider: pending.provider, emailVerified: true, viaProof: true },
+          meta:  { provider: pending.provider, isEmailVerified: true, viaProof: true },
         })
         return firstFactorProven(made, { provider: pending.provider })
       }
 
-      const wasUnverified = user.emailVerified !== true
+      const wasUnverified = user.isEmailVerified !== true
 
       if (wasUnverified) {
         await sys.credential.deleteMany({ where: { userId: user.id } })
@@ -1838,7 +1838,7 @@ export function createLitestoneAuth(
 
       // Already on this account and not evicted above: nothing to attach.
       if (!taken || wasUnverified) {
-        await sys.credential.create({ data: { userId: user.id, type, value: pending.subject, linked: true } })
+        await sys.credential.create({ data: { userId: user.id, type, value: pending.subject, isLinked: true } })
       }
 
       // The proof IS the verification — this is exactly what the address was
@@ -1846,7 +1846,7 @@ export function createLitestoneAuth(
       // next identity round the same loop.
       const verified = await sys[person].update({
         where: { id: user.id },
-        data:  { emailVerified: true },
+        data:  { isEmailVerified: true },
       })
 
       await credentialChanged('oauth.linked', user.id, {
@@ -2147,7 +2147,7 @@ export function createLitestoneAuth(
     async requestEmailVerification(userId: string): Promise<void> {
       const user = await sys[person].findUnique({ where: { id: userId } })
       if (!user) throw new UserNotFoundError()
-      if (user.emailVerified) return   // already verified — no-op
+      if (user.isEmailVerified) return   // already verified — no-op
 
       await sys.verification.deleteMany({
         where: { purpose: 'emailVerify', identifier: user.email }, ...PURGE,

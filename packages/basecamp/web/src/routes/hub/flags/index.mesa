@@ -9,7 +9,7 @@ title: Hub flags
   // audience is the operator of the platform rather than the team that shipped
   // the feature, and finding it means knowing which workspace it is in. Here
   // it is grouped by prefix the way the mock groups it, which is a CONVENTION
-  // in the key rather than a column — `FeatureFlag.type` distinguishes boolean
+  // in the key rather than a column — `Flag.type` distinguishes boolean
   // from variant and nothing in the schema says "killswitch". Reading the
   // prefix is honest as a grouping and would not be as a permission.
   //

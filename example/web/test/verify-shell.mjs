@@ -13,7 +13,7 @@
  * A service worker only exists in a BUILD. `verify:offline` drives the dev
  * server, where registering one would fight vite's HMR — and vite's own socket
  * is already the trap that drive spent two wrong conclusions on. So this one
- * builds, serves `dist/` through the same `preview.mjs` `verify:build` uses,
+ * builds, serves `dist/` through the same `verify-preview.mjs` `verify:build` uses,
  * and runs on the test tier (7011) so it cannot collide with a preview left
  * behind by a build run.
  *
@@ -103,7 +103,7 @@ execFileSync('npx', ['vite', 'build', '-c', 'web/config/vite.config.js'], { cwd:
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 
 start('bun', ['run', 'api/index.ts'], 'api', { API_PORT })
-start(process.execPath, [join(HERE, 'preview.mjs')], 'preview',
+start(process.execPath, [join(HERE, 'verify-preview.mjs')], 'preview',
       { PREVIEW_PORT: PORT, FRONTIER_API_URL: API })
 
 if (!await waitFor(`${API}/api/products`, 'api')) { stopAll(); process.exit(1) }
@@ -264,7 +264,7 @@ try {
             sock.send = (payload) => {
               try {
                 const f = JSON.parse(payload)
-                if (f && f.type === 'service_call' && f.service === 'inventory' && f.method === 'find') seen.asked = f.id
+                if (f && f.type === 'service_call' && f.service === 'inventoryMovements' && f.method === 'find') seen.asked = f.id
               } catch {}
               return pass(payload)
             }
@@ -282,7 +282,7 @@ try {
   await until(`!!document.querySelector('header button')`, 'the shell under the tap')
   await until(
     `!!globalThis.__fjsWarm && (__fjsWarm.done
-      || performance.getEntriesByType('resource').some(e => e.name.includes('/api/inventory')))`,
+      || performance.getEntriesByType('resource').some(e => e.name.includes('/api/inventoryMovements')))`,
     'the declared read to be warmed')
 
   // The ruling itself, in a real browser: one grain, and it is the device's.
@@ -295,7 +295,7 @@ try {
         if (!db.objectStoreNames.contains('lists')) return res(0)
         const tx  = db.transaction('lists', 'readonly')
         const all = tx.objectStore('lists').getAll()
-        all.onsuccess = () => res(all.result.filter(r => String(r.key).includes('inventory')).length)
+        all.onsuccess = () => res(all.result.filter(r => String(r.key).includes('inventoryMovements')).length)
         all.onerror   = () => res(-1)
       }
     })

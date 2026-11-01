@@ -41,7 +41,7 @@ const rows = seamOwnership({ root })
 
 if (!rows.length) {
   echo('')
-  echo(`  ✗  ${SKILL} holds no seam bullets — nothing to grade.`)
+  echo(`  ${chalk.red('✗')}  ${SKILL} ${chalk.dim('holds no seam bullets — nothing to grade.')}`)
   echo('')
   process.exitCode = 1
   return
@@ -50,8 +50,8 @@ if (!rows.length) {
 if (flag.gaps) {
   const gap = rows.filter(r => r.owner === null)
   echo('')
-  if (!gap.length) echo('  ✓  every seam names an owner')
-  for (const r of gap) echo(`  ⚠  ${r.names[0]} — ${r.section}`)
+  if (!gap.length) echo(`  ${chalk.green('✓')}  every seam names an owner`)
+  for (const r of gap) echo(`  ${chalk.yellow('⚠')}  ${r.names[0]} ${chalk.dim(`— ${r.section}`)}`)
   echo('')
   return
 }
@@ -65,13 +65,13 @@ if (flag.check) {
   const have = existsSync(file) ? readFileSync(file, 'utf8') : null
   echo('')
   if (have === null) {
-    echo('  ✗  seams.snapshot.md is missing. Run `fli ws:seams` to write it.')
+    echo(`  ${chalk.red('✗')}  seams.snapshot.md ${chalk.dim('is missing. Run `fli ws:seams` to write it.')}`)
     process.exitCode = 1
   } else if (have !== out) {
-    echo('  ✗  seams.snapshot.md is stale. Run `fli ws:seams`.')
+    echo(`  ${chalk.red('✗')}  seams.snapshot.md ${chalk.dim('is stale. Run `fli ws:seams`.')}`)
     process.exitCode = 1
   } else {
-    echo('  ✓  seams.snapshot.md')
+    echo(`  ${chalk.green('✓')}  seams.snapshot.md`)
   }
   echo('')
   return
@@ -81,12 +81,12 @@ writeFileSync(file, out)
 
 const owned = rows.filter(r => r.owner !== null).length
 echo('')
-echo('  ✓  seams.snapshot.md')
-echo(`  ${owned} of ${rows.length} seam(s) name an owner`)
-for (const r of broken)  echo(`  ✗  ${r.names[0]} names \`${r.owner}\`, which does not resolve`)
+echo(`  ${chalk.green('✓')}  seams.snapshot.md`)
+echo(`  ${chalk.bold(`${owned} of ${rows.length}`)} ${chalk.dim('seam(s) name an owner')}`)
+for (const r of broken)  echo(`  ${chalk.red('✗')}  ${r.names[0]} ${chalk.dim(`names \`${r.owner}\`, which does not resolve`)}`)
 for (const r of missing) echo(r.reexport
-  ? `  ⚠  ${r.names[0]} names \`${r.owner}\`, which only re-exports it from \`${r.reexport}\``
-  : `  ⚠  ${r.names[0]} names \`${r.owner}\`, which does not declare \`${r.id}\``)
+  ? `  ${chalk.yellow('⚠')}  ${r.names[0]} ${chalk.dim(`names \`${r.owner}\`, which only re-exports it from \`${r.reexport}\``)}`
+  : `  ${chalk.yellow('⚠')}  ${r.names[0]} ${chalk.dim(`names \`${r.owner}\`, which does not declare \`${r.id}\``)}`)
 if (broken.length) process.exitCode = 1
 echo('')
 ```

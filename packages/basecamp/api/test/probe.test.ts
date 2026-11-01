@@ -15,7 +15,7 @@ const NOW = Date.parse('2026-10-14T12:00:00.000Z')
 describe('accepted status', () => {
   test('ranges and single codes, inclusive at both ends', () => {
     expect(parseStatusRanges('200-299,301')).toEqual([[200, 299], [301, 301]])
-    const m = { acceptedStatus: '200-299,301', invert: false }
+    const m = { acceptedStatus: '200-299,301', isInverted: false }
     expect(gradeProbe(m, { statusCode: 299 }).ok).toBe(true)
     expect(gradeProbe(m, { statusCode: 301 }).ok).toBe(true)
     expect(gradeProbe(m, { statusCode: 300 }).ok).toBe(false)
@@ -26,19 +26,19 @@ describe('accepted status', () => {
     for (const bad of ['', 'ok', '299-200', '200-'])
       expect(parseStatusRanges(bad)).toBeNull()
     // Inverting a broken config would make the monitor pass.
-    const g = gradeProbe({ acceptedStatus: 'ok', invert: true }, { statusCode: 200 })
+    const g = gradeProbe({ acceptedStatus: 'ok', isInverted: true }, { statusCode: 200 })
     expect(g.ok).toBe(false)
     expect(g.message).toContain('is not a list')
   })
 
   test('a request that never got a status is a failure carrying its reason', () => {
-    const g = gradeProbe({ acceptedStatus: '200-299', invert: false }, { error: 'connect ECONNREFUSED' })
+    const g = gradeProbe({ acceptedStatus: '200-299', isInverted: false }, { error: 'connect ECONNREFUSED' })
     expect(g).toEqual({ ok: false, message: 'connect ECONNREFUSED' })
   })
 })
 
 describe('upside-down', () => {
-  const m = { acceptedStatus: '200-299', invert: true }
+  const m = { acceptedStatus: '200-299', isInverted: true }
 
   test('an answer that would pass is the failure', () => {
     expect(gradeProbe(m, { statusCode: 200 }).ok).toBe(false)
@@ -53,7 +53,7 @@ describe('upside-down', () => {
 describe('the state machine', () => {
   const base: StateSubject = {
     status: 'up', failStreak: 0, retries: 2,
-    intervalSec: 120, retryIntervalSec: 30, resendEvery: 0,
+    intervalSeconds: 120, retryIntervalSeconds: 30, resendEvery: 0,
   }
 
   test('failures inside the retries change nothing but the clock', () => {

@@ -14,7 +14,7 @@ title: Customer fields
   // is NOT an error: it stores and displays like any other and only a segment
   // naming it degrades. So the table shows the slot, and shows its absence,
   // because *why is this one slower* has to be answerable from the screen.
-  import { customFields } from '../../resources/CustomField.mesa'
+  import { customFields } from '@/resources/CustomField.mesa'
   import { session } from '@frontierjs/sierra/resource'
 
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'

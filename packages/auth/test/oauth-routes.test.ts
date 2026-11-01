@@ -272,9 +272,9 @@ describe('GET /auth/oauth/{provider}/callback', () => {
   }
 
   async function inviteFor(email: string, sub: string) {
-    const user = await h.sys.user.create({ data: { email, emailVerified: false } })
+    const user = await h.sys.user.create({ data: { email, isEmailVerified: false } })
     await h.sys.credential.create({ data: { userId: user.id, type: 'password', value: 'own-hash' } })
-    const out = await h.auth.oauthResolve('google', { providerId: sub, email, emailVerified: true } as any)
+    const out = await h.auth.oauthResolve('google', { providerId: sub, email, isEmailVerified: true } as any)
     expect(out.outcome).toBe('proof-required')
     const row = await h.sys.verification.findFirst({ where: { purpose: 'oauthLink', identifier: email } })
     return { user, token: row.value as string }
@@ -322,7 +322,7 @@ describe('GET /auth/oauth/{provider}/callback', () => {
 
   async function userWithTotp(email: string) {
     const made = await h.auth.createUser({ email, password: 'correct-horse-1' })
-    await h.sys.user.update({ where: { id: made.id }, data: { emailVerified: true } })
+    await h.sys.user.update({ where: { id: made.id }, data: { isEmailVerified: true } })
     const { secret } = await h.auth.setupTotp!(made.id)
     await h.auth.confirmTotp!(made.id, totp(secret, new Date()))
     return { userId: made.id, secret }

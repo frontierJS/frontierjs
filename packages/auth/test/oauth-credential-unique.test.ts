@@ -22,7 +22,7 @@ beforeAll(async () => {
 afterAll(() => h.cleanup())
 
 const identity = (sub: string, email: string) =>
-  ({ providerId: sub, email, emailVerified: true, name: 'Racer' } as any)
+  ({ providerId: sub, email, isEmailVerified: true, name: 'Racer' } as any)
 
 describe('Credential (type, value) for a subject-bearing type', () => {
 
@@ -57,7 +57,7 @@ describe('two concurrent callbacks for one new subject', () => {
   // Branch 4: a verified account holds the address, so neither callback
   // creates a user and nothing but Credential can refuse the second write.
   test('onto a verified account: one credential, and both sign in', async () => {
-    const user = await h.sys.user.create({ data: { email: 'race@shop.test', emailVerified: true } })
+    const user = await h.sys.user.create({ data: { email: 'race@shop.test', isEmailVerified: true } })
     const id   = identity('sub-race', 'race@shop.test')
     const [x, y] = await Promise.all([
       h.auth.oauthResolve('google', id),

@@ -11,13 +11,13 @@
 // and the payload is the whole of it.
 //
 // **Spend is not in it**, though `kinds.ts` promised it until now: `cloudSpend`
-// is a declared adapter with nothing behind it (`docs/ADAPTERS.md`), and a
+// is a declared adapter with nothing behind it (`docs/adapters.md`), and a
 // figure this app cannot source is one somebody would act on. The description
 // on the kind says what is actually counted; wiring the adapter adds a field
 // here and a word there.
 
 import { defineJob }  from '@frontierjs/caravan'
-import { runsAsApp }  from './context.ts'
+import { runsAsApp }  from '../domain/job/job-context.ts'
 import { notifyPeople, workspaceMembers } from '../domain/notification/notify.ts'
 
 const WEEK_MS = 7 * 24 * 60 * 60_000
@@ -77,14 +77,14 @@ export default defineJob<{ at?: number }>({
   cron: '0 9 * * 1',
 })
 
-/** `AlertEvent` carries no `workspaceId` — an event belongs to its rule and the
+/** `Alert` carries no `workspaceId` — an event belongs to its rule and the
  *  rule carries the workspace, which is the schema saying an event is
  *  meaningless without one. So the count is two reads rather than a join the
  *  accessor cannot express. */
 async function countAlerts(db: any, workspaceId: string, from: string, to: string): Promise<number> {
   const rules = await db.alertRule.findMany({ where: { workspaceId } })
   if (!rules.length) return 0
-  return db.alertEvent.count({
+  return db.alert.count({
     where: { ruleId: { in: rules.map((r: any) => r.id) }, firedAt: { gte: from, lt: to } },
   })
 }

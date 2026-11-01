@@ -112,7 +112,7 @@ title: Hub settings
         base   = {}
         draft  = {
           heartbeatTimeoutSeconds: 120,
-          requireTwoFactorForOwners: false, allowApiKeyAuth: true, allowBotUsers: true,
+          isTwoFactorRequiredForOwners: false, isApiKeyAuthAllowed: true, isBotUserAllowed: true,
           backupEnabled: false, backupCron: '0 2 * * *', backupDestinationId: null, replicaDestinationId: null,
           backupKeepLocalCount: 7, backupKeepLocalDays: null, backupKeepRemoteCount: 7, backupKeepRemoteDays: null,
         }
@@ -288,15 +288,15 @@ title: Hub settings
 
   <Card id="hub-settings-policy">
     <h3 class="h5">Policy</h3>
-    <Switch id="cfg-2fa" label="Require 2FA for owners" checked={draft.requireTwoFactorForOwners}
+    <Switch id="cfg-2fa" label="Require 2FA for owners" checked={draft.isTwoFactorRequiredForOwners}
             description="A workspace owner with no authenticator can sign in only to set one up; every other call is refused until they do."
-            onchange={(checked) => write('requireTwoFactorForOwners', checked)} />
-    <Switch id="cfg-api-keys" label="Allow API key authentication" checked={draft.allowApiKeyAuth}
+            onchange={(checked) => write('isTwoFactorRequiredForOwners', checked)} />
+    <Switch id="cfg-api-keys" label="Allow API key authentication" checked={draft.isApiKeyAuthAllowed}
             description="Off refuses every request made with an API key, the CLI and MCP clients included. Sign-in sessions and outposts are unaffected."
-            onchange={(checked) => write('allowApiKeyAuth', checked)} />
-    <Switch id="cfg-bots" label="Allow bot accounts" checked={draft.allowBotUsers}
+            onchange={(checked) => write('isApiKeyAuthAllowed', checked)} />
+    <Switch id="cfg-bots" label="Allow bot accounts" checked={draft.isBotUserAllowed}
             description="Off refuses creating a bot. Bots that exist keep their keys."
-            onchange={(checked) => write('allowBotUsers', checked)} />
+            onchange={(checked) => write('isBotUserAllowed', checked)} />
   </Card>
 
   <Card id="hub-settings-backup">

@@ -3,7 +3,7 @@
 // Vercel project or a Netlify site — the boundary, and who speaks it
 // (`IDEAS/app-platforms.md`, `FJS-D1629`).
 //
-// The account is edge's and compute's: a `Secret` of kind `provider_key`,
+// The account is edge's and compute's: a `Secret` of kind `providerKey`,
 // registered by `compute/accounts.ts` as the conduit target
 // `provider:<kind>:<accountId>`. Cloudflare's target is already registered for
 // DNS with the same address and bearer, so a platform connector carries no

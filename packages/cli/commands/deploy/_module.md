@@ -1151,7 +1151,7 @@ const openDeployJournal = async ($, flag, opts) => {
 // A pause names the Release ALREADY SERVING. There are no bytes to build, no
 // configuration to record and no pivot to classify: what moves is whether the bound
 // Release is answering, which is the kind on the row and never a column. So
-// `begin` is handed a null release and `crossesPivot` is stated false rather
+// `begin` is handed a null release and `isCrossingPivot` is stated false rather
 // than derived, or an `unknown` pivot on the serving Release would record a
 // crossing that nothing crossed.
 //
@@ -1218,7 +1218,7 @@ const openPauseJournal = async ($, flag, opts) => {
       fromReleaseId: intent.fromReleaseId,
       generation:    intent.generation,
       attempt,
-      crossesPivot:  false,
+      isCrossingPivot:  false,
       actor:         $.git.user?.() ?? null,
     })
 

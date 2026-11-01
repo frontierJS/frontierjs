@@ -108,7 +108,7 @@ database audit {
 // meant that a product which had ever sold could not be taken out of the
 // catalog AT ALL. The refusal was right and there was no other way out.
 //
-// It is NOT a second `active`. `active: false` is *we are not selling this right
+// It is NOT a second `isActive`. `isActive: false` is *we are not selling this right
 // now*: the row stays in the catalog, staff see it, it comes back for next
 // season. `deletedAt` is *this is not ours any more*. What makes them different
 // rather than merely differently spelled is `@unique` — a deleted product keeps
@@ -167,7 +167,7 @@ enum Size { one xs s m l xl xxl }
 // `@frontierjs/auth`'s machinery — Credential, Session, Verification, OauthFlow,
 // all `@@gate(8)` — and junction's OutboxMessage. Imported rather than pasted
 // so a package upgrade reaches this app, and imported rather than APPENDED IN
-// MEMORY so that the four committed artefacts describe the schema that actually
+// MEMORY so that the four committed artifacts describe the schema that actually
 // runs (`FJS-626`). They did not, for as long as the API assembled its own: 39
 // models ran and 32 were in `access.snapshot.md`, `release.snapshot.md`,
 // `ddl.snapshot.sql` and `jsonschema.snapshot.md` — the identity model and the
@@ -244,7 +244,7 @@ model Product {
   /// string satisfies the boundary while the browser's own `required` refuses
   /// it. The form is the stricter of the two here, in the direction that costs
   /// a keystroke rather than a refused write.
-  description String? @length(0, 2000) @required(where: active,
+  description String? @length(0, 2000) @required(where: isActive,
                        "A product on sale needs a description — the storefront prints it")
   brand       Brand
 
@@ -268,11 +268,11 @@ model Product {
   /// customer render through the same assembler and take the same form rule.
   @@extensible(fields, declaredBy: CustomField)
 
-  active    Boolean  @default(true)
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  /// Not a second `active`, and the difference is which question it answers.
-  /// `active: false` is *we are not selling this right now* — it stays in the
+  /// Not a second `isActive`, and the difference is which question it answers.
+  /// `isActive: false` is *we are not selling this right now* — it stays in the
   /// catalog, staff see it, it comes back for next season. This is *it is not
   /// ours any more*, and until it existed the catalog had no way to say so:
   /// `InventoryMovement.variant` is `onDelete: Restrict`, so a product that had
@@ -356,7 +356,7 @@ model Color {
   /// Out of the offered list, still on every variant that ran in it. This is
   /// what @@scope below reads, and it is why the set is a table and not an enum:
   /// retiring a colorway is a row edit rather than a deploy.
-  retired    Boolean   @default(false)
+  isRetired  Boolean   @default(false)
 
   /// Where the colorway sits in the swatch row. Merchandising, not alphabet —
   /// the range reads Default, Night Navy, Sandstone, Clay, and an alphabetical
@@ -376,7 +376,7 @@ model Color {
   
   /// The narrowing the value set names. It travels to the browser as a filter,
   /// so the list the picker offers is the list the Data boundary will accept.
-  @@scope(current, retired == false)
+  @@scope(current, isRetired == false)
   
   @@gate(0.4.4.5)
 }
@@ -444,7 +444,7 @@ model ProductVariant {
   /// wrong.
   version       Int                  @version
   
-  active        Boolean              @default(true)
+  isActive      Boolean              @default(true)
   createdAt     DateTime             @default(now())
   
   /// Stamped by `Product`'s cascade, and reachable on its own for a colorway
@@ -467,13 +467,13 @@ model ProductVariant {
   @@label(sku)
   
   /// The storefront never asks for a variant it cannot sell: the product page,
-  /// the buy box and the catalog all read `{ productId, active: true }`, and
+  /// the buy box and the catalog all read `{ productId, isActive: true }`, and
   /// the prerender runs that once per product. A plain index on `productId`
   /// carries every retired colorway the shop has ever run, which is the half
   /// nothing reads. The predicate is ANDed with `@@softDelete`'s own clause, so
   /// the index holds live active rows and the caller's query — which litestone
   /// narrows to live rows for them — matches it exactly.
-  @@index([productId], where: active == true)
+  @@index([productId], where: isActive == true)
 
   /// The one model here where two offline writers touch one row and touch
   /// DIFFERENT columns — which is the whole of `field`. A supervisor correcting
@@ -757,7 +757,7 @@ model CustomField {
   /// the value is readable by anyone who may read the row whatever this says,
   /// and a field hidden here is one screen's default rather than a permission
   /// (Invariant 6).
-  show   Boolean         @default(true)
+  isVisible Boolean         @default(true)
 
   /// Which pooled column carries it, or null when the pool for its type is
   /// full. Null is an ANSWER and not a failure: the field still stores and
@@ -916,7 +916,7 @@ model Discount {
   maxRedemptions Int? @gte(1) @label("Redemption limit")
   redemptions    Int  @default(0) @gte(0) @system @label("Times used")
 
-  active Boolean @default(true) @label("Active")
+  isActive Boolean @default(true) @label("Active")
 
   /// The baskets currently carrying it. Not the redemption count — a basket
   /// that is abandoned redeemed nothing, which is why `redemptions` is a
@@ -994,7 +994,7 @@ model PickupPoint {
   /// nothing on screen asks for.
   hours    String?  @length(0, 80) @label("Hours")
   
-  active   Boolean  @default(true) @label("Active")
+  isActive Boolean  @default(true) @label("Active")
   
   version  Int      @version
   
@@ -1030,7 +1030,7 @@ model ShippingMethod {
   /// top; alphabetical would put Express above Standard and change what most
   /// people pick.
   position     Int      @default(0) @label("Position")
-  active       Boolean  @default(true) @label("Active")
+  isActive     Boolean  @default(true) @label("Active")
   
   carts        Cart[]
   
@@ -1065,7 +1065,7 @@ model TaxRate {
   /// there is none, because a shop that has not configured tax is a shop that
   /// does not charge it — not one that should refuse to sell.
   isDefault  Boolean  @default(false) @label("Default")
-  active     Boolean  @default(true)  @label("Active")
+  isActive   Boolean  @default(true)  @label("Active")
   
   /// Same shape as `ShippingMethod`, and the stakes are higher: two people
   /// editing one rate and the second write winning silently is a shop charging
@@ -1471,7 +1471,7 @@ view revenueByStatus {
 /// than a flag because every reader has to grade it: a collection must not
 /// present again, dunning must not treat it as a card saying no, and a screen
 /// has to send somebody somewhere. That is the opposite of
-/// `Subscription.cancelAtPeriodEnd`, which one job reads and nothing else.
+/// `Subscription.isCancelingAtPeriodEnd`, which one job reads and nothing else.
 enum PaymentStatus { pending requiresAction succeeded failed refunded }
 
 /// One attempt to take money for one order.
@@ -1722,7 +1722,7 @@ model PaymentEvent {
   /// come after the first.
   eventId     String    @unique @length(3, 80) @label("Event")
   
-  kind        String    @length(1, 60) @label("Type")
+  type        String    @length(1, 60) @label("Type")
   
   /// Which payment it was about, as the provider spelt it. A plain string and
   /// not a relation: an event may name a payment this shop has no row for
@@ -1763,7 +1763,7 @@ model Plan {
   name        String        @length(2, 80) @label("Name")
   description String?       @length(0, 400)
   interval    PlanInterval  @default(monthly)
-  active      Boolean       @default(true)
+  isActive    Boolean       @default(true)
   versions    PlanVersion[]
   createdAt   DateTime      @default(now())
 
@@ -1888,7 +1888,7 @@ model Subscription {
   /// `@system`, because it is set through `subscriptions.cancel` and
   /// `subscriptions.resume` — which keep the gate and the row policies — and
   /// never by a caller naming the column on a patch.
-  cancelAtPeriodEnd  Boolean            @default(false) @system @label("Cancels at period end")
+  isCancelingAtPeriodEnd Boolean            @default(false) @system @label("Cancels at period end")
 
   invoices           Invoice[]
   periods            SubscriptionPeriod[]
@@ -1916,7 +1916,7 @@ model Subscription {
   /// `activate` is the trial converting. `lapse` is owed by an invoice unpaid
   /// past its grace, and `recover` by the last unpaid one leaving `issued` —
   /// both declared on `Invoice`, below. **`cancel` joined them**: what a
-  /// person presses is `cancelAtPeriodEnd` above, and the arrangement ends when
+  /// person presses is `isCancelingAtPeriodEnd` above, and the arrangement ends when
   /// its period closes with the flag set, or when an invoice passes its
   /// dunning deadline. Cancelling at
   /// the instant somebody asks would forfeit the rest of a period they have
@@ -2106,7 +2106,7 @@ model Invoice {
   /// Whether the customer has been told this invoice is coming due. A move of
   /// its own rather than a status: a reminder is not a stage the invoice passes
   /// through, and the column is the record that the email was queued.
-  reminded       Boolean         @default(false) @system
+  isReminded     Boolean         @default(false) @system
 
   lines          InvoiceLine[]   @sealed
   creditNotes    CreditNote[]
@@ -2173,7 +2173,7 @@ model Invoice {
   /// was given, so moving it may move reminders not yet sent. The email is an
   /// outbox row written with the move (`domain/billing/renewal.commitments.ts`), so the
   /// column cannot say it went when it did not.
-  @@transitions(reminded, remind: false -> true @system)
+  @@transitions(isReminded, remind: false -> true @system)
   @@commitment(remind, on: dueOn - 3d, while: status == 'issued')
 
   /// The ledger a shopper opens, and the run of invoices one arrangement has
@@ -2573,7 +2573,7 @@ model StockReservation {
 ///
 ///   read   5  an administrator; a movement names orders and quantities
 ///   create 5  receiving stock is an administrator's act, so the Data boundary
-///             is what refuses it — `inventory.receive` contains no check of
+///             is what refuses it — `inventoryMovements.receive` contains no check of
 ///             its own and needs none
 ///   update 9  LOCKED — nothing passes 9, `asSystem()` included
 ///   delete 9  LOCKED
@@ -2593,7 +2593,7 @@ model InventoryMovement {
   
   variantId    Int                @label("Variant")
   /// Restrict, not Cascade. A shelf that has ever moved cannot be deleted out
-  /// from under its own ledger — retiring a variant is `active: false`, which
+  /// from under its own ledger — retiring a variant is `isActive: false`, which
   /// is what a shop means by "we do not sell this any more". The alternative
   /// is an append-only table a DELETE on another table can empty.
   variant      ProductVariant     @relation(fields: [variantId], references: [id], onDelete: Restrict)
@@ -2738,6 +2738,7 @@ model StocktakeCount {
 
   /// The read: every count on one sheet.
   @@index([sheetId])
+  @@index([variantId])
 }
 
 /// Which side of the books a journal line lands on.
@@ -3063,7 +3064,7 @@ enum RateKind { incomeTax  employeePension  employerPension  employerNI }
 /// `fromAmount` and `toAmount` are ANNUAL and cumulative, so a rate applies to
 /// the slice of income between them and not to the whole. That is what makes a
 /// tax band a band; applying the top rate to the whole salary is the classic
-/// wrong answer, and `api/src/payrates.ts` is the only place the walk is
+/// wrong answer, and `api/src/domain/payroll/pay-rates.ts` is the only place the walk is
 /// written. `toAmount` null is *and everything above*, which every real band
 /// table has exactly one of per kind.
 model PayRate {
@@ -3234,7 +3235,7 @@ model PayRun {
 /// in application code (`Invoice.subtotal`, `JournalEntry`'s balance, this).
 ///
 /// **And this one carries the complication phase 0 found in a real payroll**:
-/// the sum is not over every line. `PayslipLine.counts` is false for the
+/// the sum is not over every line. `PayslipLine.isCounted` is false for the
 /// employer's contributions, which appear on the payslip and are not deductions
 /// from the person — so whatever spelling the language grows has to admit a
 /// PREDICATE over the child rather than only an aggregate over it.
@@ -3343,7 +3344,7 @@ model Payslip {
 /// totals cannot be summed, and summing is the only thing anybody wants to do
 /// with one.
 ///
-/// `counts` is the complication a real payroll has and a designed one does not.
+/// `isCounted` is the complication a real payroll has and a designed one does not.
 /// The employer's contributions belong ON the payslip — a person is entitled to
 /// see what their employment costs — and are not deductions from them, so the
 /// invariant is *the lines that count sum to net* rather than *the lines sum to
@@ -3361,7 +3362,7 @@ model PayslipLine {
   
   /// Whether it is part of what the person was actually paid. False for the
   /// employer's own contributions.
-  counts      Boolean          @default(true) @immutable @label("Counts toward net")
+  isCounted    Boolean          @default(true) @immutable @label("Counts toward net")
   
   /// Which band produced it, where one did. Null for basic pay, which comes
   /// from a pay window rather than from a rate table — so a payslip line can
@@ -3446,7 +3447,7 @@ type AsAtQuery {
   at String @date @label("As at")
 }
 
-/// What `inventory.receive` accepts — a delivery arriving at the warehouse.
+/// What `inventoryMovements.receive` accepts — a delivery arriving at the warehouse.
 ///
 /// A `type` and not a model for the reason `TrackingUpdate` and
 /// `CheckoutDetails` are: there is nothing to store. What gets stored is the
@@ -3462,7 +3463,7 @@ type StockReceipt {
   note      String? @length(0, 200) @label("Note")
 }
 
-/// What `inventory.adjust` accepts — a stocktake correction, a breakage, a
+/// What `inventoryMovements.adjust` accepts — a stocktake correction, a breakage, a
 /// return to the shelf.
 ///
 /// `quantity` is SIGNED here and required to be, because the three reasons go
@@ -3493,7 +3494,7 @@ type StockAdjustment {
 /// What a notification is ABOUT, for the row it links to. A pair like this
 /// carries no foreign key — nothing cascades, nothing joins, and a deleted
 /// order leaves its notifications behind as dead links, which is what this app
-/// wants (see `OrderPaid.ts`). What the pair CAN be told is which models it may
+/// wants (see `api/src/notifications/OrderPaid.notification.ts`). What the pair CAN be told is which models it may
 /// name, and this is it: a value outside the set is refused by a table CHECK,
 /// so a migration, a seed and `asSystem()` are all held to it too, and a
 /// generated form gets a picker instead of a text box.
@@ -3574,7 +3575,7 @@ enum UserKind { user bot peer }
 model User {
   id             String    @id @default(uuid())
   // The address a password reset is mailed to. Written by its owner it is an
-  // account taken over by whoever holds a session, with `emailVerified` still
+  // account taken over by whoever holds a session, with `isEmailVerified` still
   // true for an address nobody proved; a new one has to be verified before it
   // is kept, and a flow that does that writes through asSystem().
   email          String    @email @unique @lower @allow(write, auth().isAdmin) @personal(contact)
@@ -3586,7 +3587,7 @@ model User {
   // so the level that may delete a person is the level that may set their role
   // — one idea, not two. asSystem() writes all of them regardless, which is how
   // this package sets them.
-  emailVerified  Boolean   @default(false) @allow(write, auth().isAdmin)
+  isEmailVerified  Boolean   @default(false) @allow(write, auth().isAdmin)
   role           String    @default("user") @allow(write, auth().isAdmin)
   // Written once by the app, never by the caller. A person who could mark
   // themselves a bot would refile who did what, and a later change would make

@@ -23,7 +23,7 @@
 //
 // The table is `app`, not `service`. The old header here said "table name in
 // DB: service (legacy — kept for migration continuity)"; that name was the
-// exact overload VISION.md §Vocabulary forbids and it is gone — Service is the
+// exact overload vision.md §Vocabulary forbids and it is gone — Service is the
 // API realm's noun. See db/README.md §Two renames.
 //
 // The hand-rolled WITH_ENV JOIN is replaced by `include: { environment: true }`.
@@ -42,7 +42,7 @@ import { db, getScoped, removeScoped, restoreScoped, deriveSlug, narrowPatch, ch
   from '../../core/resource.ts'
 import { env }      from '../../core/env.ts'
 import { notHub }   from '../../domain/host/host-machine.ts'
-import { mintPush } from '../../plugins/push.ts'
+import { mintPush } from '../../plugins/git-push.ts'
 // The ONE definition of a certificate's condition, imported rather than
 // recomputed: an include returns raw Domain rows, so without this the app
 // detail screen received hostnames with no cert_status at all and every one of
@@ -59,7 +59,7 @@ import type { ProviderKind } from '#db/schema.d.ts'
 import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit, byteLength, DOCKERFILE_BYTES }
   from '../../domain/release/app-source.ts'
 import { fjsDockerfileTemplate, readRepoDockerfile, forgeRepo, DOCKERFILE_PATHS } from '../../domain/release/dockerfile-template.ts'
-import { runtimeOf, CONTAINER_TYPES, servingAddresses } from '../../domain/release/runtime.ts'
+import { runtimeOf, CONTAINER_KINDS, servingAddresses } from '../../domain/release/runtime.ts'
 import { runLiveCheck } from '../../domain/release/live-check.ts'
 import type { DnsAnswer, HttpsAnswer } from '../../domain/release/live-check.ts'
 import { ingressRefusal } from '../edge/edge.service.ts'
@@ -82,11 +82,11 @@ const VOLUME_RESTORE_TIMEOUT_MS = 61 * 60_000
 const STATIC_PUBLISH_TIMEOUT_MS = 120_000
 
 /** A value for a parameter that says how to mint one. The number is BYTES,
- *  read the way `openssl rand -hex 32` reads it — so `random_hex_32` is 64
+ *  read the way `openssl rand -hex 32` reads it — so `randomHex32` is 64
  *  characters, and a key a vendor documents by that command is the length it
  *  asked for. */
 function mint(generator: string): string {
-  const bytes = Number(/^random_hex_(\d+)$/.exec(generator)?.[1])
+  const bytes = Number(/^randomHex(\d+)$/.exec(generator)?.[1])
   if (!bytes) throw new BadRequest(`No generator named '${generator}'`)
   return randomBytes(bytes).toString('hex')
 }
@@ -129,7 +129,7 @@ export async function placeableServer(serverId: string) {
  */
 export async function placeApp(
   app: App,
-  target: { id: string, type: string, port?: number | null, replicaDestinationId?: string | null },
+  target: { id: string, kind: string, port?: number | null, replicaDestinationId?: string | null },
   server: { id: string, name: string },
   stated?: number,
 ): Promise<void> {
@@ -138,7 +138,7 @@ export async function placeApp(
   if (existing.some((p: any) => p.replicaIndex === replicaIndex))
     throw new BadRequest(`Replica ${replicaIndex} of this app is already on '${server.name}'`)
 
-  if (target.port == null && CONTAINER_TYPES.has(target.type))
+  if (target.port == null && CONTAINER_KINDS.has(target.kind))
     await db().app.update({ where: { id: target.id }, data: { port: await allocatePort(server.id, target.id) } })
 
   await $.db.asSystem().appServer.create({
@@ -167,8 +167,8 @@ export async function enablePushOn(appId: string): Promise<{ url: string, tokenU
   const { secret, token, tokenHash } = mintPush()
   await $.db.asSystem().app.update({
     where: { id: appId },
-    data:  { deployOnPush: true, pushSecret: secret, pushTokenHash: tokenHash, pushActorId: actor() },
-    system: ['deployOnPush', 'pushSecret', 'pushTokenHash', 'pushActorId'],
+    data:  { isDeployedOnPush: true, pushSecret: secret, pushTokenHash: tokenHash, pushActorId: actor() },
+    system: ['isDeployedOnPush', 'pushSecret', 'pushTokenHash', 'pushActorId'],
   })
   const base = `${env.FRONTIER_API_URL.replace(/\/$/, '')}/hooks/git/${appId}`
   return { url: base, tokenUrl: `${base}/${token}`, secret, token }
@@ -182,7 +182,7 @@ type SourceAccount = { id: string, name: string }
 async function workspaceAccounts(kind: ProviderKind): Promise<SourceAccount[]> {
   try {
     return await db().secret.findMany({
-      where:   { kind: 'provider_key', providerKind: kind },
+      where:   { kind: 'providerKey', providerKind: kind },
       select:  { id: true, name: true },
       orderBy: { name: 'asc' },
     })
@@ -344,10 +344,10 @@ export async function retireAppsIn(app: App, environmentIds: string[]): Promise<
 }
 
 /**
- * `source` and `type` are one decision, so they are checked together.
+ * `source` and `kind` are one decision, so they are checked together.
  *
  * An inline app has no image and no container — its release is files behind
- * a web server — and `AppType` already has the word for that. Letting the two
+ * a web server — and `AppKind` already has the word for that. Letting the two
  * disagree would produce an app whose deploy pipeline is the container one
  * and whose bytes are an HTML file, which fails four steps in with a docker
  * error about an image nobody named.
@@ -361,10 +361,10 @@ function checkSource(data: Record<string, unknown>, current?: Record<string, unk
   if ('source' in data) data.source = source ?? {}
 
   const kind = 'source' in data ? source?.kind : sourceKindOf(current?.source)
-  const type = (data.type ?? current?.type ?? 'container') as string
-  if (kind === 'inline' && type !== 'static')
+  const appKind = (data.kind ?? current?.kind ?? 'container') as string
+  if (kind === 'inline' && appKind !== 'static')
     throw new BadRequest(
-      `An inline source is served as files, so this app's type must be 'static' — it is '${type}'`)
+      `An inline source is served as files, so this app's kind must be 'static' — it is '${appKind}'`)
 }
 
 /** A health path is asked of the port the release publishes, so one with
@@ -523,7 +523,7 @@ function paramValues(params: any[], values: Record<string, unknown>) {
   if (unknown.length)
     throw new BadRequest(`This blueprint takes no parameter named ${unknown.map(k => `'${k}'`).join(', ')}`)
 
-  const out: Array<{ key: string; value: string; secret: boolean }> = []
+  const out: Array<{ key: string; value: string; isSecret: boolean }> = []
   const missing: string[] = []
   for (const p of params) {
     const given = values[p.key]
@@ -532,8 +532,8 @@ function paramValues(params: any[], values: Record<string, unknown>) {
     const value = (given as string | undefined)?.trim()
       || p.defaultValue
       || (p.generate ? mint(p.generate) : '')
-    if (!value) { if (p.required) missing.push(p.label); continue }
-    out.push({ key: p.key, value, secret: Boolean(p.secret) })
+    if (!value) { if (p.isRequired) missing.push(p.label); continue }
+    out.push({ key: p.key, value, isSecret: Boolean(p.isSecret) })
   }
   if (missing.length) throw new BadRequest(`Required: ${missing.join(', ')}`)
   return out
@@ -578,7 +578,7 @@ async function liveCheckOf(target: { id: string }) {
     ingressRefusal(),
     db().domain.findMany({
       where:   { appId: target.id },
-      select:  { hostname: true, redirectTo: true, proxied: true, isPrimary: true },
+      select:  { hostname: true, redirectTo: true, isProxied: true, isPrimary: true },
       orderBy: { hostname: 'asc' },
     }),
   ])
@@ -587,10 +587,10 @@ async function liveCheckOf(target: { id: string }) {
     release,
     addresses,
     ingress,
-    hosts: (domains as Array<{ hostname: string; redirectTo: string | null; proxied: boolean }>).map(d => ({
+    hosts: (domains as Array<{ hostname: string; redirectTo: string | null; isProxied: boolean }>).map(d => ({
       hostname:   d.hostname,
       redirectTo: d.redirectTo,
-      proxied:    d.proxied,
+      isProxied:    d.isProxied,
       dns:        () => publicLookup(d.hostname),
       https:      () => httpsRoot(d.hostname),
     })),
@@ -915,7 +915,7 @@ export default createService({
       const row = await tx.app.create({
         data: {
           environmentId, name: appName, slug,
-          type:   bp.appType,
+          kind:   bp.appKind,
           source: parseAppSource({ kind: 'image', image: bp.image }),
           ...runtimeOf(bp),
           blueprintId: bp.id,
@@ -924,8 +924,8 @@ export default createService({
       })
       for (const p of params)
         await tx.variable.create({
-          data: { environmentId, appId: row.id, key: p.key, secret: p.secret,
-                  ...(p.secret ? { secretValue: p.value } : { value: p.value }) },
+          data: { environmentId, appId: row.id, key: p.key, isSecret: p.isSecret,
+                  ...(p.isSecret ? { secretValue: p.value } : { value: p.value }) },
         })
       return row
     })
@@ -977,7 +977,7 @@ export default createService({
   // (`FJS-D1521`). The SERVER is named because the data is per machine, and
   // a replica elsewhere is handed nothing. Outpost refuses a path off its
   // restore directory, a data directory a container holds, and one with files
-  // in it unless `overwrite` is stated, each in its own words.
+  // in it unless `isOverwriting` is stated, each in its own words.
   async restoreVolume() {
     const data   = $.data as Record<string, unknown>
     const target = await getScoped('app', 'App')
@@ -989,7 +989,7 @@ export default createService({
     const executor = await executorOn($.app, placed.serverId, placed.server?.name)
     if (!isExecutor(executor)) throw new BadRequest(executor.reason)
     const reply = await executor.call('/volume/restore', {
-      app_id: target.id, ...from, overwrite: data.overwrite === true,
+      app_id: target.id, ...from, overwrite: data.isOverwriting === true,
     }, { timeoutMs: VOLUME_RESTORE_TIMEOUT_MS })
     if (reply.error) throw new BadRequest(`The data was not restored: ${reply.error.message}`)
     return { serverId: placed.serverId, ...(reply.data ?? {}) }
@@ -1002,7 +1002,7 @@ export default createService({
   // machine into `apps/<app id>/data`. The key goes in the body the way
   // `/replicate` already sends it to that machine. Only the `.db` files are
   // replaced — a replica carries nothing else — and Outpost refuses a held
-  // directory, and a database already there unless `overwrite`.
+  // directory, and a database already there unless `isOverwriting`.
   async restoreReplica() {
     const data   = $.data as Record<string, unknown>
     const target = await getScoped('app', 'App')
@@ -1021,7 +1021,7 @@ export default createService({
     const reply = await executor.call('/replica/restore', {
       app_id, replica: entry, databases,
       ...(data.at != null ? { at: new Date(data.at as string).toISOString() } : {}),
-      overwrite: data.overwrite === true,
+      overwrite: data.isOverwriting === true,
     }, { timeoutMs: VOLUME_RESTORE_TIMEOUT_MS })
     if (reply.error) throw new BadRequest(`The replica was not restored: ${reply.error.message}`)
     if (target.replicaFoundAt) await clearFound(target.id)
@@ -1087,8 +1087,8 @@ export default createService({
     const target = await getScoped('app', 'App')
     await $.db.asSystem().app.update({
       where: { id: target.id },
-      data:  { deployOnPush: false, pushSecret: null, pushTokenHash: null, pushActorId: null },
-      system: ['deployOnPush', 'pushSecret', 'pushTokenHash', 'pushActorId'],
+      data:  { isDeployedOnPush: false, pushSecret: null, pushTokenHash: null, pushActorId: null },
+      system: ['isDeployedOnPush', 'pushSecret', 'pushTokenHash', 'pushActorId'],
     })
     return detail(target.id)
   },

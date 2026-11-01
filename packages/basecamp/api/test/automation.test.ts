@@ -121,7 +121,7 @@ afterAll(async () => {
 async function placedApp() {
   const sys  = env.system as any
   const slug = `app-${uniq()}`
-  const made = await sys.app.create({ data: { workspaceId: ws.id, environmentId: environment.id, name: slug, slug, type: 'container' } })
+  const made = await sys.app.create({ data: { workspaceId: ws.id, environmentId: environment.id, name: slug, slug, kind: 'container' } })
   await sys.appServer.create({ data: { appId: made.id, serverId: box.id, replicaIndex: 0 } })
   return made
 }
@@ -287,5 +287,29 @@ describe('orion\'s own uniques are per workspace', () => {
     await mk(ws)
     await mk(other)
     await expect(mk(ws)).rejects.toThrow()
+  })
+})
+
+// ─── a removed workspace ─────────────────────────────────────────────────────
+
+describe('a removed workspace takes its flows with it', () => {
+
+  test('its flow is stamped deleted, and a live workspace\'s is not', async () => {
+    // Orion's scheduler lists its tenants from the flows it can find, so a
+    // flow that outlived its workspace kept firing for a workspace nobody
+    // could reach.
+    const sys   = env.system as any
+    const acct  = await sys.account.create({ data: { slug: `a-${uniq()}`, displayName: 'Gone' } })
+    const owner = await sys.user.create({ data: { email: `u-${uniq()}@x.co`, accountId: acct.id, status: 'active' } })
+    const gone  = await sys.workspace.create({ data: { accountId: acct.id, name: 'Gone', slug: `g-${uniq()}` } })
+    const flow  = await sys.flow.create({ data: { workspaceId: gone.id, ownerId: owner.id, name: 'Orphan' } })
+
+    await sys.workspace.remove({ where: { id: gone.id } })
+
+    const stamped = await sys.flow.findFirst({ where: { id: flow.id }, withDeleted: true })
+    expect(stamped.deletedAt).not.toBeNull()
+    const live = (await sys.flow.findMany({})).map((f: any) => f.id)
+    expect(live).not.toContain(flow.id)
+    expect(live).toContain(flowId)
   })
 })

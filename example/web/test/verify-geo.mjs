@@ -65,7 +65,7 @@ const refused = async (fn) => { try { await fn(); return false } catch { return 
 
 /** A list read the way a browser reads one: a query STRING, no session. */
 async function ask(query, directives = {}) {
-  const res  = await fetch(`${API}/api/pickup-points${encodeQueryString({ ...query, ...directives })}`)
+  const res  = await fetch(`${API}/api/pickupPoints${encodeQueryString({ ...query, ...directives })}`)
   const body = await res.json()
   return { status: res.status, rows: body?.data ?? [], body }
 }

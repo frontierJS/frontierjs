@@ -253,7 +253,7 @@ if (flag.component) {
 echo('')
 
 if (!flag.layout) {
-  echo(`  URL: ${routeUrl(rel.join('/'))}`)
+  echo(chalk`  {dim URL:} {cyan ${routeUrl(rel.join('/'))}}`)
 }
 
 // The route imports the resource whether or not it exists; say so rather than
@@ -261,11 +261,11 @@ if (!flag.layout) {
 if (flag.resource && !existsSync(resolve($.paths.webResources, `${model}.mesa`))) {
   echo('')
   log.warn(`The page imports resources/${model}.mesa, which does not exist yet:`)
-  echo(`    fli make:resource ${model}`)
+  echo(chalk.cyan(`    fli make:resource ${model}`))
 }
 
 echo('')
-echo('  Sierra rescans src/routes on the next build — restart the dev server if it is running.')
+echo(chalk.dim('  Sierra rescans src/routes on the next build — restart the dev server if it is running.'))
 echo('')
 
 if (flag.open && created.length && !flag.dry) {

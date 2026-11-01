@@ -351,13 +351,13 @@ const read = (cart) => api(`/carts/${cart.id}`, { headers: { 'x-cart-token': car
 
 // The two rows every arithmetic assertion below is built from, read rather than
 // typed: a price edited in the seed must move this drive's expectations with it.
-const methods = (await (await api('/shipping-methods?$orderBy=position')).json()).data ?? []
+const methods = (await (await api('/shippingMethods?$orderBy=position')).json()).data ?? []
 const STANDARD = methods.find(m => m.name === 'Standard')
 const EXPRESS  = methods.find(m => m.name === 'Express')
-const VAT      = (await (await api('/tax-rates?isDefault=true')).json()).data?.[0]
+const VAT      = (await (await api('/taxRates?isDefault=true')).json()).data?.[0]
 
-const variants = (await (await api('/product-variants?$limit=50&$orderBy=id')).json()).data ?? []
-const priced   = (want) => variants.find(v => v.price === want && v.active && v.stock > 5)
+const variants = (await (await api('/productVariants?$limit=50&$orderBy=id')).json()).data ?? []
+const priced   = (want) => variants.find(v => v.price === want && v.isActive && v.stock > 5)
 /** A hoodie and a mug: 83, which is over the free-delivery threshold of 75 and
  *  under it once a tenth is taken off. The whole crossing case is these two
  *  rows, so they are found by PRICE rather than by SKU — a catalog edit that
@@ -383,8 +383,8 @@ check('…and one of them is free over a threshold', STANDARD?.freeOver, cents(7
 
 console.log('\n  who may read what')
 
-check('a stranger reads the delivery options', (await api('/shipping-methods')).status, 200)
-check('a stranger reads the tax rate',         (await api('/tax-rates')).status,        200)
+check('a stranger reads the delivery options', (await api('/shippingMethods')).status, 200)
+check('a stranger reads the tax rate',         (await api('/taxRates')).status,        200)
 check('a stranger may NOT list the codes',     (await api('/discounts')).status,        401)
 check('staff may',                             (await asStaff('/discounts')).status,    200)
 
@@ -463,7 +463,7 @@ const tenth   = await mint({ kind: 'percent', value: scaled(10) })
 const fiver   = await mint({ kind: 'fixed',   value: scaled(5), minSubtotal: cents(200) })
 const expired = await mint({ kind: 'percent', value: scaled(50), endsAt: new Date(Date.now() - day).toISOString() })
 const future  = await mint({ kind: 'percent', value: scaled(50), startsAt: new Date(Date.now() + day).toISOString() })
-const off     = await mint({ kind: 'percent', value: scaled(50), active: false })
+const off     = await mint({ kind: 'percent', value: scaled(50), isActive: false })
 const huge    = await mint({ kind: 'fixed',   value: scaled(10_000) })
 
 await on(plain, 'setShipping', { shippingMethodId: STANDARD.id })
@@ -581,7 +581,7 @@ check('…and it is the figure the basket quoted', receipt.total, quoted.total)
 
 const order = await (await asStaff(`/orders?reference=${receipt.reference}`)).json()
 const row   = order.data?.[0]
-const lines = (await (await asStaff(`/order-lines?orderId=${row?.id}&$orderBy=id`)).json()).data ?? []
+const lines = (await (await asStaff(`/orderLines?orderId=${row?.id}&$orderBy=id`)).json()).data ?? []
 
 check('the order stores the subtotal',        row?.subtotal,      receipt.subtotal)
 check('…the code it was given',               row?.discountCode,  tenth.code)
@@ -598,11 +598,11 @@ check('…and the receipt adds up to the total',
 // The rate is COPIED and not joined. A merchant editing the rate tomorrow must
 // not reprice a sale from today, which is the whole reason nine columns exist
 // where two references would have done.
-await asStaff(`/tax-rates/${VAT.id}`, { method: 'PATCH', body: JSON.stringify({ rate: 0.05 }) })
+await asStaff(`/taxRates/${VAT.id}`, { method: 'PATCH', body: JSON.stringify({ rate: 0.05 }) })
 const later = (await (await asStaff(`/orders?reference=${receipt.reference}`)).json()).data?.[0]
 check('a rate edited afterwards does not reprice the sale',
       [later?.tax, later?.taxRate, later?.total], [row.tax, row.taxRate, row.total])
-await asStaff(`/tax-rates/${VAT.id}`, { method: 'PATCH', body: JSON.stringify({ rate: VAT.rate }) })
+await asStaff(`/taxRates/${VAT.id}`, { method: 'PATCH', body: JSON.stringify({ rate: VAT.rate }) })
 
 // ─── The books ────────────────────────────────────────────────────────────
 //
@@ -618,10 +618,10 @@ await asStaff(`/tax-rates/${VAT.id}`, { method: 'PATCH', body: JSON.stringify({ 
 
 console.log('\n  the books')
 
-const jrnls = (await (await asStaff(`/journal-entries?orderId=${row?.id}`)).json()).data ?? []
+const jrnls = (await (await asStaff(`/journalEntries?orderId=${row?.id}`)).json()).data ?? []
 check('the sale posted exactly one journal', jrnls.length, 1)
 
-const jrnl  = jrnls[0] ? await (await asStaff(`/journal-entries/${jrnls[0].id}`)).json() : null
+const jrnl  = jrnls[0] ? await (await asStaff(`/journalEntries/${jrnls[0].id}`)).json() : null
 const jl    = jrnl?.lines ?? []
 
 // The rule the language cannot say, asked of a real posting. `ledger.ts`
@@ -652,8 +652,8 @@ check('…and names the sale it came from', jrnl?.narrative, `Sale — ${receipt
 const bare     = await basket([{ variantId: MUG.id, quantity: 1 }])
 const plainRcp = await on(bare, 'checkout', { email: 'plain@drive.test', name: 'Pat Plain' })
 const plainRow = (await (await asStaff(`/orders?reference=${plainRcp.reference}`)).json()).data?.[0]
-const plainJ   = (await (await asStaff(`/journal-entries?orderId=${plainRow?.id}`)).json()).data ?? []
-const plainL   = plainJ[0] ? (await (await asStaff(`/journal-entries/${plainJ[0].id}`)).json()).lines ?? [] : []
+const plainJ   = (await (await asStaff(`/journalEntries?orderId=${plainRow?.id}`)).json()).data ?? []
+const plainL   = plainJ[0] ? (await (await asStaff(`/journalEntries/${plainJ[0].id}`)).json()).lines ?? [] : []
 check('an undiscounted sale posts no discount line',
       plainL.some(l => l.account === 'discountsAllowed'), false)
 check('…and it still balances', plainL.reduce((n, l) => n + l.amount, 0), 0)
@@ -672,10 +672,10 @@ check('…and it still balances', plainL.reduce((n, l) => n + l.amount, 0), 0)
 // `verify:payroll` asserts the second, where one exists. Asserting 403 here
 // named a rule that had never run — `FJS-351`'s shape, in a drive that had
 // itself never run.
-const amend = await asStaff(`/journal-entries/${jrnls[0].id}`,
+const amend = await asStaff(`/journalEntries/${jrnls[0].id}`,
   { method: 'PATCH', body: JSON.stringify({ narrative: 'restated' }) })
 check('the books offer no way to restate an entry', amend.status, 405)
-const erase = await asStaff(`/journal-entries/${jrnls[0].id}`, { method: 'DELETE' })
+const erase = await asStaff(`/journalEntries/${jrnls[0].id}`, { method: 'DELETE' })
 check('…nor to delete one', erase.status, 405)
 
 // ─── Chrome ────────────────────────────────────────────────────────────────

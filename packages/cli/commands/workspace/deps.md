@@ -101,8 +101,8 @@ if (flag.push) {
   }
 
   const r = answer?.data ?? answer
-  echo(`  ✓  pushed ${r.packages} package(s), ${r.uses} declaration(s) to ${origin} · project ${r.project?.slug ?? project}`)
-  echo(`     ${r.added} added · ${r.updated} updated · ${r.removed} removed · registry check ${r.check}`)
+  echo(`  ${chalk.green('✓')}  pushed ${r.packages} package(s), ${r.uses} declaration(s) to ${origin} ${chalk.dim(`· project ${r.project?.slug ?? project}`)}`)
+  echo(`     ${chalk.dim(`${r.added} added · ${r.updated} updated · ${r.removed} removed · registry check ${r.check}`)}`)
   return
 }
 
@@ -119,20 +119,20 @@ if (flag.check) {
     return
   }
   const committed = readFileSync(outPath, 'utf8')
-  if (committed === body) { echo(`  ✓  deps.snapshot.md is current`); return }
+  if (committed === body) { echo(`  ${chalk.green('✓')}  deps.snapshot.md ${chalk.dim('is current')}`); return }
 
-  echo(`  ✗  deps.snapshot.md does not match the workspace\n`)
+  echo(`  ${chalk.red('✗')}  deps.snapshot.md ${chalk.dim('does not match the workspace')}\n`)
   echo(diffLines(committed, body))
   echo('')
-  echo('  A declaration or an installed version changed. Run `fli ws:deps` and review the diff before committing.')
+  echo(chalk.dim('  A declaration or an installed version changed. Run `fli ws:deps` and review the diff before committing.'))
   process.exitCode = 1
   return
 }
 
 writeFileSync(outPath, body, 'utf8')
 const findings = depsFindings(report)
-echo(`  ✓  deps.snapshot.md`)
-echo(`  ${report.deps.length} package(s) · ${report.uses.length} declaration(s)${findings.length ? ` · ${findings.length} finding(s)` : ''}`)
+echo(`  ${chalk.green('✓')}  deps.snapshot.md`)
+echo(`  ${chalk.dim(`${report.deps.length} package(s) · ${report.uses.length} declaration(s)`)}${findings.length ? chalk.yellow(` · ${findings.length} finding(s)`) : ''}`)
 ```
 
 ## What it writes

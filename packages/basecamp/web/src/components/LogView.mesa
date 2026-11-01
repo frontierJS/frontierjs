@@ -1,8 +1,8 @@
 <script>
-  // LogView.mesa — a container's log, toned. The parsing is lib/logLines.js;
+  // LogView.mesa — a container's log, toned. The parsing is lib/log-lines.js;
   // this draws its parts as spans, never as HTML, because a log line is
   // whatever the app chose to print.
-  import { logLines, stripAnsi } from '../lib/logLines.js'
+  import { logLines, stripAnsi } from '../lib/log-lines.js'
 
   export let text   = ''
   export let raw    = false

@@ -16,7 +16,6 @@ title: Hub overview
   // here would be a second answer to one question. "Event subscribers" was the
   // other until the bus grew `stats()` (`FJS-143`).
   import { hub } from '../../resources/Hub.mesa'
-  import { postures } from '../../resources/ServerPosture.mesa'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
 
   import Badge   from '@frontierjs/ui/components/display/Badge.mesa'
@@ -48,7 +47,7 @@ title: Hub overview
   }
 
   load()
-  postures.service.invoke('host', null, {})
+  hub.service.invoke('hostPosture', null, {})
     .then(host => { owed = host.controls.filter(c => c.ok === false) })
     .catch(() => {})
 

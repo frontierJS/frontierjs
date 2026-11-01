@@ -1,12 +1,12 @@
 ---
 id: prompt-to-app
-status: assessment
+status: reading
 dated: 2026-10-06
 ---
 
 # Idea — Prompt-to-app: what the Base44 space is, and what it would take here
 
-**Status: ASSESSMENT.** Dated 2026-10-06. Prior-art research done from public
+**Status: READING.** Dated 2026-10-06. Prior-art research done from public
 sources on that date (listed at the end), with each FJS claim checked against the
 tree that day. Nothing is built. Stressor #22 in `stressors.md` points here. Do
 not cite this file as describing behavior — see `VERIFYING.md`.

@@ -1,0 +1,10 @@
+<script module>
+  // src/resources/Flag.mesa — the Resource layer.
+  //
+  // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18),
+  // named for the model and exporting the accessor (invariant 19). No markup:
+  // everything is module scope, which is what <script module> means.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const flags = createResource('flags')
+</script>

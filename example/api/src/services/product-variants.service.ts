@@ -103,7 +103,7 @@ export default createService({
           price:     lv?.price     ?? null,
           onHand:    lv?.onHand    ?? 0,
           available: lv?.available ?? 0,
-          active:    lv?.active    ?? false,
+          isActive:  lv?.isActive    ?? false,
         }
       }),
     }
@@ -168,7 +168,7 @@ export default createService({
       currency:  'USD',
       image:     photo?.file ?? null,
       alt:       photo?.alt  ?? null,
-      active:    !!variant.active,
+      isActive:  !!variant.isActive,
       onHand:    level?.onHand    ?? 0,
       available: level?.available ?? 0,
     }

@@ -10,7 +10,7 @@ servers, ship releases, install appliances. It is the largest thing FrontierJS
 has ever been used to build, which is why its divergences matter more than the
 usual drift note: **every one of them is evidence about the framework.**
 
-`docs/VISION.md` describes what Basecamp is meant to be and says so at the top.
+`docs/vision.md` describes what Basecamp is meant to be and says so at the top.
 This file describes what it currently does.
 
 ## Snapshot
@@ -51,7 +51,7 @@ an adapter** — one returning stub emptiness makes the screen render an empty
 table, which is indistinguishable from a vendor with nothing to report and is the
 exact failure those skeletons exist to avoid.
 
-`docs/ADAPTERS.md` is the pick-up doc: the ten, what each of the four costs, the
+`docs/adapters.md` is the pick-up doc: the ten, what each of the four costs, the
 decisions already made (money in minor units, `forServer` keyed on
 `providerServerId`, the job-not-vendor naming, stubs that answer empty) and the
 four drive assertions that go red the day one is wired — which is correct, and
@@ -82,7 +82,7 @@ PUTs and DELETEs a probe key through the registered target and stamps
 `lastTestAt` only when both answered; the hub screen runs it as a bucket is
 added and says the connector's failure kind in words (`forbidden`,
 `clock_skew`…), against `providers/storage/s3-sink.ts`, basecamp's lift of
-`conduit-s3`'s SigV4-verifying stand-in (1.8). The operator's recipe is `docs/BACKUPS.md` (1.9); the hand run against a real B2 bucket, with its result here, is still owed.
+`conduit-s3`'s SigV4-verifying stand-in (1.8). The operator's recipe is `docs/backups.md` (1.9); the hand run against a real B2 bucket, with its result here, is still owed.
 A dev database from before the tables has to be reset;
 there is no upgrade step pre-alpha.
 

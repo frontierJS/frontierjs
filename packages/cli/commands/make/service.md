@@ -80,7 +80,7 @@ if (flag.auto) {
     return
   }
 
-  log.info(`${models.length} model(s) in schema.lite: ${models.join(', ')}`)
+  echo(`${chalk.bold(`${models.length} model(s)`)} ${chalk.dim('·')} ${models.join(', ')}`)
   echo('')
 
   const created = []
@@ -123,7 +123,7 @@ if (flag.auto) {
 
       // Never clobber an existing service — report and move on.
       if (existsSync(servicePath)) {
-        log.info(`  ${model.padEnd(16)} ${file} exists — skipping`)
+        echo(chalk.dim(`  ${model.padEnd(16)} ${file} exists — skipping`))
         skipped++
         continue
       }
@@ -151,7 +151,7 @@ if (flag.auto) {
   echo('')
   log.success(`${created.length} service(s) created · ${skipped} skipped`)
   if (created.length) {
-    log.info('Services autoload from api/src/services/ (see api/config/junction.config.js).')
+    echo(chalk.dim('Services autoload from api/src/services/ (see api/config/junction.config.js).'))
   }
   if (flag.open && created.length) {
     for (const p of created) $.exec({ command: `${editor} "${p}"` })

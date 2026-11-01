@@ -126,10 +126,10 @@ const planned = planTransition({
   actor: $.git.user?.() ?? null,
 })
 
-// `crossesPivot` on a REVERT means the operator forced their way past one — the
+// `isCrossingPivot` on a REVERT means the operator forced their way past one — the
 // classifier's answer is about a deploy, and what matters afterwards is what was
 // agreed to here.
-planned.transition.crossesPivot = refusals.some(r => r.kind === 'pivot')
+planned.transition.isCrossingPivot = refusals.some(r => r.kind === 'pivot')
 
 await j.begin({ release: { ...targetRelease, app: appId, environment: target }, transition: planned.transition, steps: planned.steps })
 

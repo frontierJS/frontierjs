@@ -116,7 +116,7 @@ Done when: a scheduled Basecamp backup and a scheduled app backup each land in
 a bucket, retention prunes the oldest, and a failed upload keeps the local file
 with a warning — against `conduit-s3`'s sink in `verify:outpost` and
 `verify:screens`, and once by hand against a Backblaze B2 bucket following
-`packages/basecamp/docs/BACKUPS.md`, with the result in `PROJECT_STATE.md`.
+`packages/basecamp/docs/backups.md`, with the result in `PROJECT_STATE.md`.
 
 - [x] 1.1 `BackupDestination` (`FJS-D1488`, workspace-owned per `FJS-D1491`) becomes a model:
       `name`, `endpoint` (no bucket in it), `bucket`, `prefix`, `region`,
@@ -169,7 +169,7 @@ with a warning — against `conduit-s3`'s sink in `verify:outpost` and
       where a person is looking and not at 02:00. A `verify:screens` row against
       the sink.
   - Built 2026-10-23; the record moved to [`docs/plan-done.md`](../docs/plan-done.md#ideasbackupsmd).
-- [x] 1.9 `packages/basecamp/docs/BACKUPS.md`, the operator's recipe, B2 first:
+- [x] 1.9 `packages/basecamp/docs/backups.md`, the operator's recipe, B2 first:
       a private bucket; an application key restricted to that bucket with read,
       write, list and delete; the region read off the endpoint
       (`s3.us-west-004.backblazeb2.com` → `us-west-004`); lifecycle *keep only

@@ -11,7 +11,7 @@
  *   • a build that FAILS after Vite has already written that widget's chunk, so
  *     `dist/embeds` holds a broken script beside three good ones and the next
  *     `COPY dist/embeds` ships it.
- *   • a widget deleted from `src/Embeds/` that keeps shipping forever, because
+ *   • a widget deleted from `src/embeds/` that keeps shipping forever, because
  *     `emptyOutDir: false` is necessary (N builds, one directory) and nothing
  *     compensates for it.
  *
@@ -31,7 +31,7 @@ import { buildWidgets } from '../src/build/widget-build.js'
 import { tmpDir } from './tmp.js'
 
 let root
-const embeds = () => join(root, 'src/Embeds')
+const embeds = () => join(root, 'src/embeds')
 const out    = () => join(root, 'dist/embeds')
 
 /** A recorder standing in for Vite: what was asked for, and nothing built. */
@@ -129,7 +129,7 @@ describe('what the origin still serves', () => {
   test('a script no widget claims is named', async () => {
     widget('Counter')
     mkdirSync(out(), { recursive: true })
-    writeFileSync(join(out(), 'Ghost.js'), 'a widget deleted from src/Embeds')
+    writeFileSync(join(out(), 'Ghost.js'), 'a widget deleted from src/embeds')
     const lines = []
     await buildWidgets({ root, viteBuild: recorder(), prefix: 'mt-', log: m => lines.push(m) })
     expect(lines.join('\n')).toMatch(/Ghost\.js/)
