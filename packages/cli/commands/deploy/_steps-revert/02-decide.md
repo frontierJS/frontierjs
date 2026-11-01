@@ -88,7 +88,11 @@ if (stopping.length) {
 if (flag.plan) {
   log.info('--plan: nothing was written or run.')
   // `stop`, not `abort`: the six refusals above this line fail the command,
-  // and asking for a plan is not one of them (`FJS-589`).
+  // and asking for a plan is not one of them (`FJS-589`). A stop skips
+  // 05-cleanup with every other step, and 01-preflight took the lock, so a
+  // plan that left it would refuse the next deploy in its own name.
+  await releaseLocks($, $.config.hosts ?? [])
+  $.config.lockAcquired = false
   $.config.stop = true
   return
 }

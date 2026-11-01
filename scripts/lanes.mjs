@@ -220,6 +220,9 @@ function merge(was, main, now, path) {
 // lane's own index — and so its `git status` — stays as the main tree's is.
 // A linked register is the main tree's file and never part of the lane's change.
 function snapshot({ dir, linked = true }) {
+  // Only a claim creates the directory, and a patch is taken on a machine that
+  // never opened a lane — the runner's cli suite.
+  mkdirSync(LANES_DIR, { recursive: true })
   const index = join(LANES_DIR, `index-${process.pid}-${basename(dir)}`)
   copyFileSync(git(dir, 'rev-parse', '--path-format=absolute', '--git-path', 'index'), index)
   try {

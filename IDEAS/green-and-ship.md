@@ -138,8 +138,11 @@ main's tip.
   files cite), with their `blocked by` citations and the `owed-rulings.md`
   and `browser-kit.md` entries moved, and the `Recommend` line names `A`.
   `fli register:check` prints 0 errors (2026-11-01).
-- [ ] 1.2 Merge `dev` into `main` and push without `--no-verify`. Four minutes
+- [x] 1.2 Merge `dev` into `main` and push without `--no-verify`. Four minutes
   in the hook; a block names the sha and the detail file.
+  - 2026-11-01: `main` was an ancestor of `dev`, so `git push origin dev
+    dev:main` fast-forwarded it to `9bd4309a`; the hook graded the sha once
+    (118s, fast tier green) and the runner opened run `41349376207`.
 - [ ] 1.3 Read the runner: `gh run list --workflow ci.yml -L 1`, then `gh run
   download <id> -n ci-last`. The fast phases are ✓; the full-tier list is
   checked against 0.2.
@@ -149,15 +152,33 @@ main's tip.
 Goal: `bun run ci` exits 0 on the runner.
 Done when: a green run on main, and FJS-009 closed citing its run id.
 
-- [ ] 2.1 Sierra's bundle ratchet: find the raise or adopt it — `cd
+- [x] 2.1 Sierra's bundle ratchet: find the raise or adopt it — `cd
   packages/sierra && node bench/run.mjs --adopt`, reason in the commit.
-- [ ] 2.2 The deploy cycle's third deploy: why the lock is still held, by the
+  - 2026-11-01: already adopted on `dev` — `bench.baseline.json` moved in
+    three commits after `07817781`, and 0.2's sierra suite was green.
+- [x] 2.2 The deploy cycle's third deploy: why the lock is still held, by the
   runner's own user, in `02-decide`, zero seconds in — a journal dir reused
   between the second deploy and the third, or a lock the second never let go.
   Reproduced in the worktree under `FJS_CI_REQUIRE_DOCKER=1` first.
+  - 2026-11-01: the `deploy:revert --plan` between the second deploy and the
+    third. Its preflight takes the deploy lock, and a plan ends with
+    `$.config.stop`, which skips every later step — `05-cleanup`, the one
+    that releases it — so the lock stays at `step=02-decide`. Reproduced by
+    hand in a kept cycle directory: the pre-fix cli leaves that lock, the
+    fixed one none. The plan branch now releases before it stops; the cycle
+    alone passes here (`deployJournalCycle` from a scratch script — never
+    with `verbose`, which is `FJS-3826`).
 - [ ] 2.3 The three cli tests, per Q1: each run alone, then inside the suite,
   then inside the full run, to find which neighbor breaks it. FJS-3394 is one
   of them and already a row.
+  - 2026-11-01: not neighbors — the runner's home. `lanePatch` copies the
+    lane's index into `~/.fli/lanes`, which only a claimed lane creates, so a
+    machine that never opened a lane fails it (`ENOENT`, reproduced with a
+    fresh `HOME`); `snapshot()` now creates it. `resolveCommands` passes
+    under a fresh `HOME` here and the runner's report carries no error text
+    for it, so it waits for the next runner verdict. The docker case is
+    FJS-3394: the two builds' digests differ on the runner's BuildKit and
+    nothing here reproduces it.
 - [x] 2.4 Basecamp's three at `dev`: `cd packages/basecamp && bun run test`.
   The pinned-Outpost case reads the version this workspace carries, so a bump
   without the pin is the likely cause.
