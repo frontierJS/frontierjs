@@ -366,12 +366,15 @@ describe('autoFilter — unknown filter keys', () => {
     db.$close(); await app.stop()
   })
 
-  // The browser client serializes a nested filter as ?price={"$gte":0} — the
-  // KEY stays a real column, so operator filters must not trip this.
+  // The browser client serializes a nested filter as ?price[$gte]=0 — the
+  // KEY stays a real column, so operator filters must not trip this. A JSON
+  // document in the value is not the grammar (`FJS-D125`): it reaches the
+  // column as text, which a number column refuses (`FJS-3727`).
   test('an operator filter passes — the key is still a column', async () => {
     const { app, db } = await appWithProducts()
-    const res = await get(app, '/products?price=' + encodeURIComponent('{"$gte":0}'))
+    const res = await get(app, '/products?price[$gte]=0')
     expect(res.status).toBe(200)
+    expect((res.body as { data: unknown[] }).data).toHaveLength(2)
     db.$close(); await app.stop()
   })
 

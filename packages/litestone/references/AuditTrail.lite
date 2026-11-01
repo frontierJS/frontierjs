@@ -9,7 +9,7 @@
 ///
 /// database audit { path env("AUDIT_PATH", "./db/audit.db") retention 90d model AuditTrail }
 ///
-/// model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate(8) @@tenant(none) }
+/// model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate(8) @@tenant(none) @@index([createdAt]) }
 /// ```
 ///
 /// Naming the model `AuditTrail` keeps the accessor the jsonl trail had,

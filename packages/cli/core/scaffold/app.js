@@ -464,7 +464,7 @@ import "@frontierjs/litestone/references/AuditTrail.lite"
 
 database audit { path env("AUDIT_PATH", "./db/audit.db") retention 90d model AuditTrail announce inProcess }
 
-model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate(8) }
+model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate(8) @@index([createdAt]) }
 
 `
 }

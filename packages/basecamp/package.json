@@ -20,7 +20,7 @@
     "build": "bun run build:db && bun run build:web",
     "build:db": "cd db && bunx litestone migrate check",
     "build:web": "vite build -c web/config/vite.config.js",
-    "test": "node ../../scripts/tmp-run.mjs 'bun test'",
+    "test": "node ../../scripts/tmp-run.mjs 'ENCRYPTION_KEY=1111111111111111111111111111111111111111111111111111111111111111 bun test'",
     "verify": "bun web/test/verify.mjs",
     "verify:build": "vite build -c web/config/vite.config.js && bun web/test/verify-build.mjs",
     "image": "node deploy/build.mjs",

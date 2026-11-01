@@ -129,7 +129,11 @@ touching a gate, tenancy, a deploy, a channel or a notification.
 ## Proving a change
 
 `bun run test` + `bun run verify`, and `bun run verify:build` for anything that
-could change what the built page loads. A framework change that touches services,
+could change what the built page loads.
+`bun run test` hands the suite a fixed `ENCRYPTION_KEY`: `hub.key-escrowed` and
+`attestEscrow` grade the development placeholder as its own case, and the real
+key a laptop has is in the gitignored `.env`, so without one the runner and a
+worktree fail two tests that pass here. A framework change that touches services,
 auth or channels should be run here *as well as* in `example/` — the two apps
 fail differently.
 
