@@ -15,7 +15,7 @@ import { tmpdir }                                        from 'os'
 import { writeFileSync, readFileSync, existsSync,
          readdirSync, rmSync, mkdirSync, mkdtempSync }    from 'fs'
 
-import { vendorWorkspacePackages, linkedDeps, packPackage,
+import { vendorWorkspacePackages, linkedDeps, packPackage, withCheckout,
          resolvePackagesDir, GENERATED_DIR }              from '../core/vendor.js'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
@@ -396,4 +396,26 @@ describe('basecamp:deploy --dry on a plain repository', () => {
     expect(out).toContain('rebuilds a different tree')
     expect(out).toMatch(/Would build fjs-app-1:[0-9a-f]{12}-dirty/)
   }, 60_000)
+})
+
+describe('withCheckout', () => {
+  // The CI gate and the pack both read a commit, not the tree: a file edited
+  // after the commit must not reach `fn`, and the checkout must not outlive it.
+  test('hands fn the committed bytes and removes the checkout, even when fn throws', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'checkout-'))
+    const git = (...a) => spawnSync('git', a, { cwd: repo, encoding: 'utf8' })
+    git('init', '-q'); git('config', 'user.email', 'a@b.c'); git('config', 'user.name', 'a')
+    writeFileSync(join(repo, 'package.json'), '{"name":"x","version":"1.0.0"}')
+    git('add', '.'); git('commit', '-qm', 'one')
+    const sha = git('rev-parse', 'HEAD').stdout.trim()
+    writeFileSync(join(repo, 'package.json'), '{"name":"x","version":"2.0.0"}')
+    const scratch = mkdtempSync(join(tmpdir(), 'checkout-scratch-'))
+    let seen
+    const out = withCheckout({ repo, sha, scratch }, tree => { seen = tree; return JSON.parse(readFileSync(join(tree, 'package.json'), 'utf8')).version })
+    expect(out).toBe('1.0.0')
+    expect(existsSync(seen)).toBe(false)
+    expect(() => withCheckout({ repo, sha, scratch }, () => { throw new Error('red') })).toThrow('red')
+    expect(git('worktree', 'list').stdout.trim().split('\n')).toHaveLength(1)
+    rmSync(repo, { recursive: true, force: true }); rmSync(scratch, { recursive: true, force: true })
+  })
 })

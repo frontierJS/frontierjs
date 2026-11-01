@@ -1,7 +1,6 @@
 ---
 title: 02-push-all
-description: Push the release commit and tags, before anything ships
-skip: "flag.dry"
+description: Tag the graded commit, then push it and its tags, before anything ships
 ---
 
 <script>
@@ -9,13 +8,39 @@ import { execSync } from 'child_process'
 </script>
 
 ```js
-const { released, repo, interactive, prompts } = $.config
+const { released, repo, interactive, prompts, graded } = $.config
 if (!released?.length) return
 
-// Pushed BEFORE step 03 because a GitHub Release can only be made on a commit
-// GitHub has: `gh release create --target <local sha>` answers 422
-// `target_commitish is invalid` for every package (FJS-3616). A version pushed
-// and then not published is the in-flight case the next run already finishes.
+const git = (cwd, args) => execSync(`git ${args}`, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+
+// Tagged HERE, after the green run and never before: a tag written ahead of the
+// gate strands on the refused commit when fixes land (`FJS-D1720`). Each tag
+// goes on the graded sha, not HEAD, so a commit that landed mid-run is not
+// named by a tag it was never graded under.
+for (const { cwd, sha, tags } of graded) {
+  for (const tag of tags) {
+    if (flag.dry) { log.dry(`  Would tag ${tag} at ${sha.slice(0, 12)}`); continue }
+    if (git(cwd, `tag --list ${JSON.stringify(tag)}`) === tag) continue
+    git(cwd, `tag ${JSON.stringify(tag)} ${sha}`)
+    log.success(`  tagged ${tag} at ${sha.slice(0, 12)}`)
+  }
+}
+
+// What goes out: the graded sha to the branch HEAD is on, and these tags by
+// name. `git push origin HEAD --tags` would ship a commit nobody graded and
+// every stale local tag with it. `--no-verify` is the point of the order: CI
+// already passed on exactly this sha, so the hook's fast tier re-proves less.
+const pushArgs = ({ cwd, sha, tags }) => {
+  const branch = git(cwd, 'rev-parse --abbrev-ref HEAD')
+  if (branch === 'HEAD') throw new Error(`${cwd} is on a detached HEAD -- there is no branch to push ${sha.slice(0, 12)} to`)
+  return `push --no-verify origin ${sha}:refs/heads/${branch} ${tags.map(t => JSON.stringify(`refs/tags/${t}`)).join(' ')}`
+}
+
+if (flag.dry) {
+  for (const g of graded) log.dry(`  Would run in ${g.cwd}: git ${pushArgs(g)}`)
+  return
+}
+
 if (interactive && flag.push) {
   echo('')
   if (!await prompts.confirm('  Push the release commit and tags?', { default: true })) {
@@ -32,26 +57,16 @@ if (interactive && flag.push) {
 // follows is npm alone.
 if (!flag.push) {
   log.info('  --no-push: the release commit and tags stay local. Push with:')
-  log.info(`    git -C ${repo ?? released[0].dir} push origin HEAD --tags`)
+  for (const g of graded) log.info(`    git -C ${g.cwd} ${pushArgs(g)}`)
   return
 }
 
-// One repo means one push. The old per-package loop pushed the same branch
-// once per member, so a sixteen-package release was fifteen no-ops.
-const targets = repo
-  ? [{ label: 'workspace', dir: repo }]
-  : released.map(({ name, dir }) => ({ label: name, dir }))
-
 const failed = []
-for (const { label, dir } of targets) {
+for (const g of graded) {
+  const label = repo ? 'workspace' : g.tags[0]
   log.info(`  Pushing ${label}...`)
   try {
-    // Branch and tags in ONE invocation. `git push` then `git push --tags` runs
-    // the repo's pre-push hook twice, and in this workspace that hook is the
-    // fast CI tier — 49s of typecheck, paid twice per release for one push's
-    // worth of work. `--follow-tags` is not the answer: it carries annotated
-    // tags only, and the release tags above are lightweight.
-    execSync('git push origin HEAD --tags', { cwd: dir, stdio: 'inherit' })
+    execSync(`git ${pushArgs(g)}`, { cwd: g.cwd, stdio: 'inherit' })
     log.success(`  ✓ ${label}`)
   } catch (err) {
     failed.push(label)
@@ -59,8 +74,8 @@ for (const { label, dir } of targets) {
   }
 }
 
-// A refused push is most often the pre-push hook failing CI, which is a reason
-// not to publish, so nothing ships until it goes through.
+// A GitHub Release is made on a commit GitHub has, so nothing ships until the
+// push goes through (`FJS-3616`).
 if (failed.length) {
   log.error('  Nothing published. Fix the push and run `fli ws:pub` again: it finishes this release rather than bumping')
   throw new Error(`push failed: ${failed.join(', ')} — nothing published`)

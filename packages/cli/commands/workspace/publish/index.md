@@ -122,17 +122,23 @@ same bytes by construction. A destination left out today can be added tomorrow:
 the resume rule above asks each one. GitHub refuses a second asset under the same
 name, so a tag already released is refused the way npm refuses a spent version.
 
-**The push comes before the first publish.** A GitHub Release can only be made
-on a commit GitHub has (`FJS-3616`), and a refused push — this repo's
-`pre-push` hook is a CI tier — is a reason not to publish at all. A version
-pushed and not yet shipped is the in-flight case above.
+**The tag comes last, after a green CI run.** The bump is committed and nothing
+is tagged. The full `ci` then runs in a checkout of that commit, and only a green
+run tags it (`FJS-D1720`, `FJS-D1721`). A red run leaves a commit and no tag, so
+fixes land and the next run keeps the commit rather than moving a tag. The
+`deploy --source npm` branch is skipped by name: the bump raised the scaffold's
+pins to versions no host holds yet, and `04-verify-assets` grades the published
+framework afterwards (`FJS-D1726`).
 
-`--no-push` keeps the release commit and its tags local and ships to npm alone;
-beside `tarballs` it is refused, since the release has no commit to sit on.
-Worth reaching for when the `pre-push` hook is a CI tier — a release commit
-carries version bumps and nothing else, so re-running the checks that already
-passed on its parent costs about a minute and proves nothing new. The push
-command is printed for you to run when you mean to.
+**The push goes out before the first publish, for the graded sha.** A GitHub
+Release can only be made on a commit GitHub has (`FJS-3616`). The push names the
+sha CI graded and the release tags, never `HEAD`, and skips the pre-push hook
+because CI already passed on exactly that sha. A version pushed and not yet
+shipped is the in-flight case above.
+
+`--no-push` tags the graded commit and keeps it and its tags local, shipping to
+npm alone; beside `tarballs` it is refused, since the release has no commit to
+sit on. The push command is printed for you to run when you mean to.
 
 **One bump for the whole run, always.** `bun pm pack` rewrites a `workspace:*`
 dependency from the sibling's manifest in the tree it packs, so every version is

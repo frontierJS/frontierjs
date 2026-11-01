@@ -246,19 +246,34 @@ Goal: no failing gate can leave a tag behind.
 Done when: 0.1's scratch run, replayed, ends with the tag on the fixed HEAD and
 the packages shipped, with no hand step.
 
-- [ ] 2.1 01 commits without tagging; a new step runs CI (tier per Q1, place
+- [x] 2.1 01 commits without tagging; a new step runs CI (tier per Q1, place
   per Q2) on the release sha, skipping `deploy --source npm` and saying so
   (Q6).
-- [ ] 2.2 Tag only on green, then push **the graded sha** and its tags with
+  - 2026-10-31: 01 commits and records `$.config.graded` (cwd, sha, tags) but
+    tags nothing. New `_steps/01b-ci.md` runs `node scripts/ci.mjs` (the full tier)
+    inside `withCheckout` (`core/vendor.js`, factored out of `packAtCommit`:
+    worktree at the sha, frozen install, removed in `finally`), and a red run
+    throws before any tag. A tagged resume skips it. `deploy --source npm` needed
+    no new flag: ci.mjs already skips it by name when the scaffold pins are on
+    npm nowhere, which is true of every release sha. Proved by `--dry` (names the
+    sha, the install and the skip) and a `withCheckout` unit test; no real CI run.
+- [x] 2.2 Tag only on green, then push **the graded sha** and its tags with
   `--no-verify`, never `HEAD`. A commit landing mid-run would otherwise ship
   ungraded, with the hook's backstop already turned off.
+  - 2026-10-31: 02 tags each graded sha, then pushes
+    `git push --no-verify origin <sha>:refs/heads/<branch> refs/tags/<tag>...`,
+    naming tags rather than `--tags` so a stale local tag is not carried. A
+    resume pushes each tag's own commit. `--no-push` tags and prints that same
+    command. Proved by `--dry` output only; no real push.
 - [ ] 2.3 Resume: an untagged bumped version on no host means "tag HEAD after
   CI", with snapshots regenerated at HEAD first.
 - [ ] 2.4 After publish, 04 scaffolds and installs a fresh app from each
   host the run shipped to: `--source url` for `tarballs`, `--source npm` for
   `npm` (Q6).
-- [ ] 2.5 Update `PUBLISH_STEPS` so the GUI's `ci` and `push` steps describe
+- [x] 2.5 Update `PUBLISH_STEPS` so the GUI's `ci` and `push` steps describe
   the new order.
+  - 2026-10-31: the `commit`, `ci`, `publish` and `push` steps' text now
+    describes the new order. `publish-view.test.js` green (no text asserted).
 
 ## Phase 3 — Status
 
