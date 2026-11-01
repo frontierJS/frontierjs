@@ -9,7 +9,7 @@
 import { describe, test, expect } from 'bun:test'
 
 import { satisfiesRange, peerDrift, movedDependencies, publishOrder, writePins,
-         publishRefusals, formatRefusals, matchesSelector, unpublished } from '../core/publish-preflight.js'
+         publishRefusals, formatRefusals, matchesSelector, unpublished, untaggedBumps } from '../core/publish-preflight.js'
 
 describe('a version against a range', () => {
   // The trap this whole check exists for. Below 1.0 a caret pins the MINOR, so
@@ -301,6 +301,22 @@ describe('a release in flight', () => {
   test('a tag held by the remote with no commits since is plain pending', () => {
     expect(unpublished([{ name: 'a', version: '0.1.1', tagged: true, published: false, moved: false, pushed: true }]))
       .toEqual({ pending: ['a'], unknown: [], moved: [], fromTag: [] })
+  })
+})
+
+describe('an untagged bump', () => {
+  const m = (o) => ({ name: 'a', version: '0.1.2', lastTagVersion: '0.1.1', tagged: false, none: true, ...o })
+
+  test('a version ahead of the last tag that no host holds is resumed, not bumped over', () => {
+    expect(untaggedBumps([m({})])).toEqual(['a'])
+  })
+
+  test('a tagged version, a first release, or a host that holds it is not one', () => {
+    expect(untaggedBumps([m({ tagged: true }), m({ lastTagVersion: '' }), m({ none: false })])).toEqual([])
+  })
+
+  test('a version at or below the last tag is not a bump', () => {
+    expect(untaggedBumps([m({ version: '0.1.1' }), m({ version: '0.1.0' })])).toEqual([])
   })
 })
 

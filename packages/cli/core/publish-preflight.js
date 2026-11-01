@@ -332,6 +332,26 @@ export function unpublished(members = []) {
   return { pending, unknown, moved, fromTag }
 }
 
+/**
+ * The packages whose manifest holds a bumped version that was never tagged and
+ * that no destination holds: a release whose CI gate failed before the tag was
+ * written. Nothing public names that version, so the next run tags HEAD once it
+ * passes rather than bumping over it (`FJS-D1720`).
+ *
+ * A package with no tag at all is a first release and goes through the bump, and
+ * a version at or below its last tag is not a bump, so neither is listed.
+ *
+ * @param members  [{ name, version, lastTagVersion, tagged, none }] -- `none` is
+ *                 true only when every destination answered and holds nothing
+ */
+export function untaggedBumps(members = []) {
+  return members.filter(m => {
+    if (m.tagged || !m.none || !m.lastTagVersion) return false
+    const now = parseVersion(m.version), last = parseVersion(m.lastTagVersion)
+    return Boolean(now && last && gte(now, last) && !sameVersion(now, last))
+  }).map(m => m.name)
+}
+
 // ─── selecting packages ──────────────────────────────────────────────────────
 
 /**

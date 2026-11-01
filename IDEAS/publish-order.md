@@ -265,8 +265,17 @@ the packages shipped, with no hand step.
     naming tags rather than `--tags` so a stale local tag is not carried. A
     resume pushes each tag's own commit. `--no-push` tags and prints that same
     command. Proved by `--dry` output only; no real push.
-- [ ] 2.3 Resume: an untagged bumped version on no host means "tag HEAD after
+- [x] 2.3 Resume: an untagged bumped version on no host means "tag HEAD after
   CI", with snapshots regenerated at HEAD first.
+  - 2026-10-31: `untaggedBumps()` (pure, `core/publish-preflight.js`) names a
+    manifest version ahead of the last tag that every destination answered
+    "not held". `index.md` then plans the run at the current versions, no bump,
+    and `$.config.retag` makes 01 regenerate snapshots at HEAD and commit only
+    if something changed, so HEAD is the graded sha. Q5: a moved tag the remote
+    answered it lacks, on no host, is deleted by name and sha and resumes this
+    way; an unanswered remote still refuses. A shipped-tag release and an
+    untagged bump in one run is refused. Proved by 3 `untaggedBumps` unit
+    cases and `--dry` compile; the replay of 0.1's scratch run is not done.
 - [ ] 2.4 After publish, 04 scaffolds and installs a fresh app from each
   host the run shipped to: `--source url` for `tarballs`, `--source npm` for
   `npm` (Q6).

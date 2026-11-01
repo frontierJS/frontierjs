@@ -216,22 +216,45 @@ const repo = $.wsRepo(all)
 // release in flight is FINISHED rather than bumped: a bump over an unshipped
 // version skips it for good. Per destination, so a version that reached one
 // and not the other is completed, not bumped and not republished.
-const { unpublished } = await import(new URL('file://' + global.fliRoot + '/core/publish-preflight.js'))
+const { unpublished, untaggedBumps } = await import(new URL('file://' + global.fliRoot + '/core/publish-preflight.js'))
 
 const onHosts = await Promise.all(packages.map(async ({ dir, pkg }) => {
   const state  = $.git.pkgState(pkg.name, dir)
   const tagged = state.lastTag === releaseTag(pkg.name, pkg.version)
+  const lastTagVersion = state.lastTag ? state.lastTag.slice(pkg.name.length + 1) : ''
   const holds  = hosts(repo ?? dir)
-  const held   = tagged ? await Promise.all(to.map(d => holds[d](pkg.name, pkg.version))) : []
+  // An untagged version ahead of the last tag may be a bump whose CI gate failed
+  // before the tag was written, so the hosts are asked about it too.
+  const held   = tagged || (lastTagVersion && lastTagVersion !== pkg.version)
+    ? await Promise.all(to.map(d => holds[d](pkg.name, pkg.version))) : []
   const missing   = to.filter((d, i) => held[i] === false)
   const published = !tagged ? false : held.some(h => h === null) ? null : missing.length === 0
   // Asked only where the answer matters: a tag with commits since it that a
   // destination lacks. The remote, not the local tag list, says what is public.
   const needsRemote = tagged && state.affected && published === false
   const pushed = needsRemote ? await remoteHasTag(repo ?? dir, releaseTag(pkg.name, pkg.version)) : undefined
-  return { name: pkg.name, version: pkg.version, tagged, moved: state.affected, published, missing, pushed }
+  return { name: pkg.name, version: pkg.version, tagged, lastTagVersion, moved: state.affected, published, missing, pushed,
+           none: held.length > 0 && held.every(h => h === false) }
 }))
-const { pending, unknown, moved, fromTag } = unpublished(onHosts)
+const { pending, unknown, moved: movedAll, fromTag } = unpublished(onHosts)
+
+// A tag only this clone holds, with commits since it and on no host, was never
+// public and its sha is usually the commit the hook refused: deleted by name
+// and sha, and the version resumes as an untagged bump (`FJS-D1725`). The
+// remote must have ANSWERED that it lacks the tag, and no destination may hold
+// the version; anything else is refused below.
+const { execSync } = await import('child_process')
+const stale = onHosts.filter(m => movedAll.includes(m.name) && m.pushed === false && m.none)
+for (const m of stale) {
+  const tagName = releaseTag(m.name, m.version)
+  const dir     = repo ?? packages.find(p => p.pkg.name === m.name).dir
+  const sha     = execSync(`git rev-parse --short ${JSON.stringify(`refs/tags/${tagName}^{commit}`)}`, { cwd: dir, encoding: 'utf8' }).trim()
+  if (flag.dry) { log.dry(`  Would delete the local-only tag ${tagName} ${sha} and resume ${m.version} as an untagged bump`); m.tagged = false; continue }
+  execSync(`git tag -d ${JSON.stringify(tagName)}`, { cwd: dir, stdio: 'ignore' })
+  m.tagged = false
+  log.warn(`  deleted ${tagName} ${sha} -- only this clone held it, and no destination holds ${m.version}`)
+}
+const moved = movedAll.filter(n => !stale.some(m => m.name === n))
 
 if (moved.length) {
   const asked = onHosts.filter(m => moved.includes(m.name))
@@ -258,8 +281,21 @@ if (unknown.length) {
   return
 }
 
+// An untagged bump on no host: the CI gate failed before the tag was written.
+const retag = untaggedBumps(onHosts)
+if (retag.length && pending.length) {
+  log.error(`  ✗  a shipped-tag release (${pending.join(', ')}) and an untagged bump (${retag.join(', ')}) are both in flight`)
+  log.error('      finish the tagged one first, narrowing the run with --filter, then run again')
+  $.config.abort = true
+  return
+}
+
 const resume = pending.length > 0
-if (resume) {
+if (retag.length) {
+  packages = packages.filter(({ pkg }) => retag.includes(pkg.name))
+  log.info(`${retag.length} package(s) have a bumped version that was never tagged -- tagging it after CI, not bumping again`)
+  log.info(`  '${arg.bump}' is ignored: ${retag.join(', ')} already hold the version`)
+} else if (resume) {
   packages = packages.filter(({ pkg }) => pending.includes(pkg.name))
   // What each one still lacks, read by step 02 so a half-shipped version goes
   // only where it is missing.
@@ -291,7 +327,7 @@ if (!packages.length) {
 
 // Target versions are resolved here rather than in the version step, so the
 // preview below states the numbers a user is approving.
-let planned = packages.map(p => ({ ...p, newVersion: resume ? p.pkg.version : bumpVersion(p.pkg.version, arg.bump) }))
+let planned = packages.map(p => ({ ...p, newVersion: resume || retag.length ? p.pkg.version : bumpVersion(p.pkg.version, arg.bump) }))
 
 // ─── prompts ──────────────────────────────────────────────────────────────────
 // Constructed ONCE and carried to the steps on `$.config`. A step
@@ -323,6 +359,7 @@ $.config.members    = all
 $.config.planned    = planned
 $.config.bump       = arg.bump
 $.config.resume     = resume
+$.config.retag      = retag.length > 0
 $.config.tag        = flag.tag
 $.config.otp        = flag.otp
 $.config.to         = to

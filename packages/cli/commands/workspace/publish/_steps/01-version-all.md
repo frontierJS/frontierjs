@@ -136,13 +136,17 @@ if (repo) {
   // in the working tree is not part of this release.
   for (const { path } of released) execSync(`git add ${path}/package.json`, { cwd: repo })
   execSync('git add --ignore-errors -- bun.lock', { cwd: repo })
-  execSync(`git commit -m ${JSON.stringify(releaseSubject(released))}`, { cwd: repo, stdio: 'inherit' })
+  // An untagged bump is already committed: only what the snapshots regenerated
+  // at HEAD needs a commit, and nothing staged means HEAD is the release commit.
+  const nothing = $.config.retag && !git(repo, 'diff --cached --name-only')
+  if (!nothing) execSync(`git commit -m ${JSON.stringify(releaseSubject(released))}`, { cwd: repo, stdio: 'inherit' })
   $.config.graded = [{ cwd: repo, sha: git(repo, 'rev-parse HEAD'), tags: released.map(({ name, newVersion }) => releaseTag(name, newVersion)) }]
 } else {
   $.config.graded = []
   for (const { dir, name, newVersion } of released) {
     const tag = releaseTag(name, newVersion)
     execSync('git add package.json', { cwd: dir })
+    if ($.config.retag && !git(dir, 'diff --cached --name-only')) { $.config.graded.push({ cwd: dir, sha: git(dir, 'rev-parse HEAD'), tags: [tag] }); continue }
     execSync(`git commit -m ${JSON.stringify(`chore(release): ${tag}`)}`, { cwd: dir })
     $.config.graded.push({ cwd: dir, sha: git(dir, 'rev-parse HEAD'), tags: [tag] })
   }
