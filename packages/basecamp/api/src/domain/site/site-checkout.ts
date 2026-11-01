@@ -468,7 +468,7 @@ export function mergeDraft(site: GitSite, draft: string, author: Author, message
     if (!baseHead) throw new CheckoutError(`${site.source.repo} has no branch ${base}`)
     if (baseHead !== expectBase) throw new CheckoutError(`${base} moved to ${baseHead.slice(0, 7)} while the publish was checked — publish again`)
     const since = (await git(dir, ['merge-base', baseHead, head])).trim()
-    const paths = (await git(dir, ['diff', '--name-only', '-z', since, head])).split('\0').filter(Boolean)
+    const paths = (await git(dir, ['diff', '--name-only', '--no-renames', '-z', since, head])).split('\0').filter(Boolean)
     if (!paths.length) throw new CheckoutError(`the draft ${draft} changes nothing that ${base} does not already have`)
 
     const tmp = mkdtempSync(join(tmpdir(), 'basecamp-publish-'))
@@ -559,7 +559,7 @@ export function shipped(site: GitSite, ranges: { from: string | null, to: string
     const out: Shipped[] = []
     for (const { from, to } of ranges) {
       if (!from || !(await held(from)) || !(await held(to))) { out.push({ files: null, authors: [] }); continue }
-      const files   = (await git(dir, ['diff', '--name-only', '-z', from, to, ...scope])).split('\0').filter(Boolean)
+      const files   = (await git(dir, ['diff', '--name-only', '--no-renames', '-z', from, to, ...scope])).split('\0').filter(Boolean)
       const authors = (await git(dir, ['log', '--no-merges', '--format=%an', `${from}..${to}`, ...scope])).split('\n').filter(Boolean)
       out.push({ files: files.map(p => p.slice(prefix.length)), authors: [...new Set(authors)] })
     }
@@ -618,7 +618,7 @@ async function undoneTree(site: GitSite, dir: string, commit: string, { onto, na
   const parent = (await git(dir, ['rev-parse', '--verify', `${commit}^1`])).trim()
 
   const prefix = repoPath(site, '')
-  const paths  = (await git(dir, ['diff', '--name-only', '-z', parent, commit])).split('\0').filter(Boolean)
+  const paths  = (await git(dir, ['diff', '--name-only', '--no-renames', '-z', parent, commit])).split('\0').filter(Boolean)
   for (const p of paths) {
     const why = p.startsWith(prefix) ? refusal(p.slice(prefix.length)) : `${p} is outside the site`
     if (why) throw new CheckoutError(`undoing ${commit.slice(0, 7)} would change ${p.slice(prefix.length)}: ${why}`)
