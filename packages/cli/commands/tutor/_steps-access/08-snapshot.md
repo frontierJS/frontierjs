@@ -43,7 +43,7 @@ if (!await must($, probe.fileExists({ path: snap, name: 'db/access.snapshot.md' 
 for (const [needle, what] of [
   [/`Note`.*\|\s*4 USER/,                       'the raised read gate is in it'],
   [/allow \*\*read\*\* — `authorId == auth\(\)\.id`/, 'the row policy is in it'],
-  [/`Note` \| `done` \|.*isAdmin/,              'the field policy is in it'],
+  [/`Note` \| `isDone` \|.*isAdmin/,              'the field policy is in it'],
 ]) {
   if (!await must($, probe.fileContains({ path: snap, needle, name: what }), {
     likely:    'the snapshot was written before the schema change, or the format moved',

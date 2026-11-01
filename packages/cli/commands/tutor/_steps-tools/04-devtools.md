@@ -99,7 +99,7 @@ await probe.httpStatus({
   url:     apiUrl($, '/notes'),
   method:  'POST',
   headers: { 'content-type': 'application/json' },
-  body:    JSON.stringify({ title: 'refused', body: 'no session', done: false }),
+  body:    JSON.stringify({ title: 'refused', body: 'no session', isDone: false }),
   expect:  401,
   name:    'a write nobody anonymous may make',
 })

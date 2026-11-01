@@ -107,7 +107,7 @@ writeFileSync(file, [
   `  // Note reads at ${readsAt}, which is what db/schema.lite says today. No User`,
   '  // row exists for these callers and none is needed — that is the whole',
   '  // difference between the two doors.',
-  "  await env.system.note.create({ data: { title: 'public', body: 'b', done: false } })",
+  "  await env.system.note.create({ data: { title: 'public', body: 'b', isDone: false } })",
   ...belowNote,
   `  expect(await (await env.atLevel(${readsAt})).note.count()).toBe(1)`,
   '',

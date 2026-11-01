@@ -104,7 +104,7 @@ const refused = await probe.httpJson({
   url:      apiUrl($, '/notes'),
   method:   'POST',
   headers:  { 'content-type': 'application/json', authorization: `Bearer ${$.config.userToken}` },
-  body:     JSON.stringify({ title: 'sms please', body: 'written over HTTP', done: false }),
+  body:     JSON.stringify({ title: 'sms please', body: 'written over HTTP', isDone: false }),
   expect:   (j) => j.code === 500
                 && /does not implement toSms/.test(String(j.message))
                 && j.data?.committed === true,

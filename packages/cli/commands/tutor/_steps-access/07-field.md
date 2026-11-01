@@ -9,11 +9,11 @@ The third mechanism is per **column**, and it does a third thing. A gate
 refuses, a policy filters, and a field policy **drops**:
 
 ```text
-done  Boolean  @default(false)  @allow(write, auth().isAdmin)
+isDone  Boolean  @default(false)  @allow(write, auth().isAdmin)
 ```
 
-Both callers now send the identical body, `done: true`. Both are answered
-**201**. One of the two rows comes back with `done: false`, because the column
+Both callers now send the identical body, `isDone: true`. Both are answered
+**201**. One of the two rows comes back with `isDone: false`, because the column
 was not theirs to write and the value was dropped on the way in.
 
 That silence is deliberate. The same form body is legitimate one standing up, so
@@ -34,11 +34,11 @@ if (!needs($, ['appDir', 'userToken', 'adminToken'], { from: { appDir: '01-app',
 if (!await refreshTokens($)) return
 
 const edit = editSchema($,
-  '  done      Boolean',
-  "  done      Boolean   @default(false) @allow(write, auth().isAdmin)")
+  '  isDone    Boolean',
+  "  isDone    Boolean   @default(false) @allow(write, auth().isAdmin)")
 
 if (!edit.ok) {
-  log.error(`${edit.why} — this step puts a write policy on Note.done`)
+  log.error(`${edit.why} — this step puts a write policy on Note.isDone`)
   $.config.abort = true
   return
 }
@@ -48,16 +48,16 @@ pushSchema($)
 const api = await restartApi($)
 if (!await must($, api.up, { likely: 'the API did not come back', detail: serverLog(api) })) return
 
-const body = JSON.stringify({ title: `flag ${Date.now().toString(36)}`, body: 'same body, two callers', done: true })
+const body = JSON.stringify({ title: `flag ${Date.now().toString(36)}`, body: 'same body, two callers', isDone: true })
 
 const byUser = await probe.httpJson({
   url:      apiUrl($, '/notes'),
   method:   'POST',
   headers:  asCaller($.config.userToken),
   body,
-  expect:   (j) => typeof j.done === 'boolean',
+  expect:   (j) => typeof j.isDone === 'boolean',
   describe: 'a created note',
-  name:     'the ordinary caller sends done: true and is accepted',
+  name:     'the ordinary caller sends isDone: true and is accepted',
 })
 if (!await must($, byUser, {
   likely: 'the create was refused outright — a field policy drops the column, it does not refuse the row',
@@ -68,21 +68,21 @@ const byAdmin = await probe.httpJson({
   method:   'POST',
   headers:  asCaller($.config.adminToken),
   body,
-  expect:   (j) => typeof j.done === 'boolean',
+  expect:   (j) => typeof j.isDone === 'boolean',
   describe: 'a created note',
   name:     'the administrator sends the identical body and is accepted',
 })
 if (!await must($, byAdmin, { likely: 'the admin create was refused' })) return
 
 if (!await must($, {
-  ok:    byUser.json.done === false && byAdmin.json.done === true,
+  ok:    byUser.json.isDone === false && byAdmin.json.isDone === true,
   name:  'and only one of the two rows carries the value that was sent',
-  asked: 'done stored false for the ordinary caller and true for the administrator',
-  got:   `ordinary caller stored ${byUser.json.done}, administrator stored ${byAdmin.json.done}`,
+  asked: 'isDone stored false for the ordinary caller and true for the administrator',
+  got:   `ordinary caller stored ${byUser.json.isDone}, administrator stored ${byAdmin.json.isDone}`,
 }, {
-  likely: byUser.json.done === true
-    ? 'the column is writable by anyone — is the @allow on `done`, and is isAdmin really true for the admin?'
+  likely: byUser.json.isDone === true
+    ? 'the column is writable by anyone — is the @allow on `isDone`, and is isAdmin really true for the admin?'
     : 'neither caller could write it, which is a rule that refuses everybody',
-  reproduce: `grep -n "done" ${schemaFile($)}`,
+  reproduce: `grep -n "isDone" ${schemaFile($)}`,
 })) return
 ```

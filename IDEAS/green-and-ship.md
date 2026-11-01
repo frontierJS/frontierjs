@@ -161,9 +161,18 @@ main's tip.
   - 2026-11-01: `main` was an ancestor of `dev`, so `git push origin dev
     dev:main` fast-forwarded it to `9bd4309a`; the hook graded the sha once
     (118s, fast tier green) and the runner opened run `41349376207`.
-- [ ] 1.3 Read the runner: `gh run list --workflow ci.yml -L 1`, then `gh run
+- [x] 1.3 Read the runner: `gh run list --workflow ci.yml -L 1`, then `gh run
   download <id> -n ci-last`. The fast phases are ✓; the full-tier list is
   checked against 0.2.
+  - 2026-11-01: run `41350563144` on `52f78f92` (the 1.2 run was cancelled
+    by the next push). Every fast phase ✓, and `mutate` and `perf` with them.
+    Against 0.2: registers, haven, junction, mesa and sierra are clear;
+    basecamp is down to the pin (Q3) and cli to the docker digest
+    (FJS-3394), so 2.3's `lanePatch` and `resolveCommands` were the runner's
+    home. Still red: `tutor:tools` (`fli check` finds something in the
+    scaffold), `tutor:fleet` (red on the runner now too — the Outpost wrote
+    `/etc/outpost`), and print-kit, new (`Runtime.evaluate did not answer in
+    30s`). The deploy cycle is the same `--source npm` warning as 0.2.
 
 ## Phase 2 — The full tier green: FJS-009 closes
 
@@ -186,7 +195,7 @@ Done when: a green run on main, and FJS-009 closed citing its run id.
     fixed one none. The plan branch now releases before it stops; the cycle
     alone passes here (`deployJournalCycle` from a scratch script — never
     with `verbose`, which is `FJS-3826`).
-- [ ] 2.3 The three cli tests, per Q1: each run alone, then inside the suite,
+- [x] 2.3 The three cli tests, per Q1: each run alone, then inside the suite,
   then inside the full run, to find which neighbor breaks it. FJS-3394 is one
   of them and already a row.
   - 2026-11-01: not neighbors — the runner's home. `lanePatch` copies the
@@ -197,6 +206,8 @@ Done when: a green run on main, and FJS-009 closed citing its run id.
     for it, so it waits for the next runner verdict. The docker case is
     FJS-3394: the two builds' digests differ on the runner's BuildKit and
     nothing here reproduces it.
+  - Run `41350563144`: `lanePatch` and `resolveCommands` green on the runner;
+    the docker case is the one cli red left, and it is FJS-3394.
 - [x] 2.4 Basecamp's three at `dev`: `cd packages/basecamp && bun run test`.
   The pinned-Outpost case reads the version this workspace carries, so a bump
   without the pin is the likely cause.
@@ -204,6 +215,18 @@ Done when: a green run on main, and FJS-009 closed citing its run id.
     red until its answer.
 - [ ] 2.5 Push, runner verdict, close FJS-009 with the run id and the
   `ci-last` artifact's summary.
+- [x] 2.6 The runner's three new reds, from 1.3. `tutor:fleet`: the Outpost's
+  fixed layout (`FJS-D1544`) writes `/etc/outpost` and `/var/lib/outpost`,
+  which only root has, so the tutor now hands it systemd's two directory
+  variables pointing into the workspace; and the release lesson looked for
+  `fjs-<appId>`, a name the naming change retired, so it asks for the
+  `fjs.app` label and records the container for 08-finish, which had never
+  removed one. `tutor:tools`: the lessons scaffold `done:boolean`, which
+  `boolean-prefix` (`FJS-D1749`) warns on, so every lesson scaffolds `isDone`
+  (23 files, the access lesson's schema anchors and the jobs lesson's SQL with
+  them). CI's tutor phase runs green here, 13 lessons. print-kit: green here
+  (24 passing); the runner's `Runtime.evaluate` 30 s is the family of
+  FJS-1366 and FJS-2230, and gets a row if the next run repeats it.
 
 ## Phase 3 — Land the tag-last release
 

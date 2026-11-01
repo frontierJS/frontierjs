@@ -67,7 +67,7 @@ const mine = await probe.httpJson({
   url:      apiUrl($, '/notes'),
   method:   'POST',
   headers:  asCaller($.config.userToken),
-  body:     JSON.stringify({ title: `owned ${Date.now().toString(36)}`, body: 'mine', done: false }),
+  body:     JSON.stringify({ title: `owned ${Date.now().toString(36)}`, body: 'mine', isDone: false }),
   expect:   (j) => typeof j.authorId === 'string' && j.authorId.length > 0,
   describe: 'a note stamped with its author',
   name:     'the note records who wrote it, without being told',

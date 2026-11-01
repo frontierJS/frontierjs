@@ -9,7 +9,7 @@ One command writes a **vertical slice** — the stanza in the seed, the service,
 the Resource and three routes:
 
 ```console
-fli scaffold Note --fields "title:string body:text done:boolean"
+fli scaffold Note --fields "title:string body:text isDone:boolean"
 ```
 
 Six files, and the only one you would edit by hand is the first. Look at what it
@@ -36,7 +36,7 @@ $.config.__step = 6
 if (!needs($, ['appDir'], { from: '02-new' })) return
 
 $.exec({
-  command: `${$.fli} scaffold Note --fields "title:string body:text done:boolean"`,
+  command: `${$.fli} scaffold Note --fields "title:string body:text isDone:boolean"`,
   cwd:     $.config.appDir,
 })
 
@@ -49,7 +49,7 @@ for (const [path, what] of [
 ]) {
   if (!await must($, probe.fileExists({ path: join(app, path), name: `${path} — ${what}` }), {
     likely:    'fli scaffold stopped part way — its output is above',
-    reproduce: `cd ${app} && fli scaffold Note --fields "title:string body:text done:boolean"`,
+    reproduce: `cd ${app} && fli scaffold Note --fields "title:string body:text isDone:boolean"`,
   })) return
 }
 

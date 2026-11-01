@@ -11,7 +11,7 @@ lesson 1 walks through, run without commentary:
 
 ```console
 fli new <app> --auth
-fli scaffold Note --fields "title:string body:text done:boolean"
+fli scaffold Note --fields "title:string body:text isDone:boolean"
 fli db:push
 ```
 
@@ -37,7 +37,7 @@ if (!built) {
     cwd:     $.config.ws.dir,
   })
   $.exec({
-    command: `${$.fli} scaffold Note --fields "title:string body:text done:boolean"`,
+    command: `${$.fli} scaffold Note --fields "title:string body:text isDone:boolean"`,
     cwd:     dir,
   })
   $.exec({ command: `${$.fli} db:push`, cwd: dir })
@@ -53,7 +53,7 @@ if (!await must($, probe.fileContains({
   name:   'the app has a Note model to change',
 }), {
   likely:    'the scaffold did not finish — its output is above',
-  reproduce: `cd ${dir} && fli scaffold Note --fields "title:string body:text done:boolean"`,
+  reproduce: `cd ${dir} && fli scaffold Note --fields "title:string body:text isDone:boolean"`,
 })) return
 
 remember($, '01-app', { appDir: dir })

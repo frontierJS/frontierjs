@@ -46,7 +46,7 @@ await page.eval(fill('input[name=body]', 'and read back out of the database'))
 // events a real toggle fires, in the order a framework listens for them.
 // Assigning the property changes what is drawn and notifies nobody, which looks
 // identical on screen and stores the wrong value.
-await page.eval(`(() => { const el = document.querySelector('input[name=done]')
+await page.eval(`(() => { const el = document.querySelector('input[name=isDone]')
                           if (el.checked) return el.checked
                           el.click(); return el.checked })()`)
 
@@ -91,9 +91,9 @@ if (!await must($, await probe.pageEval({
 // on this column, and after that a plain caller's `true` is accepted and
 // dropped — deliberately, and in silence, which is the thing that lesson is
 // about. So the column is asked about only where this caller may write it.
-const guarded = /done .*@allow\(write/.test(readFileSync(schemaFile($), 'utf8'))
+const guarded = /isDone .*@allow\(write/.test(readFileSync(schemaFile($), 'utf8'))
 if (guarded)
-  log.info('  (done carries a field policy in this workspace, so it is not part of what follows)')
+  log.info('  (isDone carries a field policy in this workspace, so it is not part of what follows)')
 
 // The row, asked of the API rather than of the page. `?title=` is a filter the
 // Data boundary parses; a title nothing else wrote is the whole key.
@@ -102,7 +102,7 @@ if (!await must($, await probe.httpJson({
   headers:  asCaller($.config.userToken),
   expect:   (j) => j.total === 1
                 && j.data[0].body === 'and read back out of the database'
-                && (guarded || j.data[0].done === true),
+                && (guarded || j.data[0].isDone === true),
   describe: guarded
     ? 'exactly one row, with the text that was typed'
     : 'exactly one row — the two strings that were typed, and the box that was ticked',

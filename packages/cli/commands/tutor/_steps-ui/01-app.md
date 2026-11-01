@@ -44,7 +44,7 @@ if (!existsSync(join(dir, 'db', 'schema.lite'))) {
     cwd:     $.config.ws.dir,
   })
   $.exec({
-    command: `${$.fli} scaffold Note --fields "title:string body:text done:boolean"`,
+    command: `${$.fli} scaffold Note --fields "title:string body:text isDone:boolean"`,
     cwd:     dir,
   })
   $.exec({ command: `${$.fli} db:push`, cwd: dir })
@@ -59,7 +59,7 @@ if (!await must($, probe.fileExists({
   name: 'there is a create page to open',
 }), {
   likely:    'the scaffold did not write the routes — its output is above',
-  reproduce: `cd ${dir} && fli scaffold Note --fields "title:string body:text done:boolean"`,
+  reproduce: `cd ${dir} && fli scaffold Note --fields "title:string body:text isDone:boolean"`,
 })) return
 
 remember($, '01-app', { appDir: dir })

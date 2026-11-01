@@ -65,7 +65,7 @@ if (!await must($, probe.fileContains({
 // be a file somebody has to edit when the schema moves — and every other
 // assertion in this lesson would still pass.
 const text = readFileSync(file, 'utf8')
-const named = ['title', 'body', 'done'].filter((f) => new RegExp(`name=["']${f}|field=["']${f}`).test(text))
+const named = ['title', 'body', 'isDone'].filter((f) => new RegExp(`name=["']${f}|field=["']${f}`).test(text))
 
 if (!await must($, named.length === 0
   ? { ok: true,  name: 'no column of the model is named in the file', asked: 'no field names', got: 'none' }

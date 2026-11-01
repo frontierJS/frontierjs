@@ -559,6 +559,12 @@ const outpostUrl = ($, path = '') => `https://127.0.0.1:${$.config.outpostPort}$
 
 const startOutpost = async ($) => {
   const tls = await outpostTls($)
+  // systemd makes the unit's two directories (`layout.js`); without them the
+  // Outpost writes /etc/outpost and /var/lib/outpost, which only root has,
+  // and a deploy reports success having started nothing. The workspace stands
+  // in for both.
+  const dirs = { etc: join($.config.ws.dir, 'outpost-etc'), state: join($.config.ws.dir, 'outpost-state') }
+  for (const dir of Object.values(dirs)) mkdirSync(dir, { recursive: true })
   return startServer($, {
     name:   'outpost',
     script: 'start',
@@ -579,6 +585,8 @@ const startOutpost = async ($) => {
       OUTPOST_TLS_CERT:   tls.certPath,
       OUTPOST_TLS_KEY:    tls.keyPath,
       OUTPOST_WORK_DIR:   join($.config.ws.dir, 'outpost-work'),
+      CONFIGURATION_DIRECTORY: dirs.etc,
+      STATE_DIRECTORY:         dirs.state,
     },
     port:   $.config.outpostPort,
     path:   '/health',
@@ -751,7 +759,7 @@ const createNote = ($, title) => probe.httpJson({
   url:      apiUrl($, '/notes'),
   method:   'POST',
   headers:  { 'content-type': 'application/json', authorization: `Bearer ${$.config.userToken}` },
-  body:     JSON.stringify({ title, body: 'written over HTTP', done: false }),
+  body:     JSON.stringify({ title, body: 'written over HTTP', isDone: false }),
   expect:   (j) => typeof j.id !== 'undefined',
   describe: 'the note was created',
   name:     `POST /api/notes — ${title}`,

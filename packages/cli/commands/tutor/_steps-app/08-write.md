@@ -30,7 +30,7 @@ if (!await must($, await ensureApi($), {
 })) return
 
 const title = `First note ${Date.now().toString(36)}`
-const body  = JSON.stringify({ title, body: 'Written by the tutor.', done: false })
+const body  = JSON.stringify({ title, body: 'Written by the tutor.', isDone: false })
 
 const created = await probe.httpJson({
   url:     apiUrl($, '/notes'),

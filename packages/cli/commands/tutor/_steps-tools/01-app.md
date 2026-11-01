@@ -13,7 +13,7 @@ a model the migration history does not build is a finding:
 
 ```console
 fli new <app> --auth
-fli scaffold Note --fields "title:string body:text done:boolean"
+fli scaffold Note --fields "title:string body:text isDone:boolean"
 fli db:migrate add_note
 ```
 
@@ -42,7 +42,7 @@ if (!existsSync(join(dir, 'db', 'schema.lite'))) {
     cwd:     $.config.ws.dir,
   })
   $.exec({
-    command: `${$.fli} scaffold Note --fields "title:string body:text done:boolean"`,
+    command: `${$.fli} scaffold Note --fields "title:string body:text isDone:boolean"`,
     cwd:     dir,
   })
   $.exec({ command: `${$.fli} db:migrate add_note`, cwd: dir })
@@ -63,7 +63,7 @@ if (!await must($, probe.fileContains({
   name:   'the app has a Note model',
 }), {
   likely:    'the scaffold did not finish — its output is above',
-  reproduce: `cd ${dir} && fli scaffold Note --fields "title:string body:text done:boolean"`,
+  reproduce: `cd ${dir} && fli scaffold Note --fields "title:string body:text isDone:boolean"`,
 })) return
 
 remember($, '01-app', { appDir: dir })

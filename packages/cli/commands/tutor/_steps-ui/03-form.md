@@ -74,7 +74,7 @@ const byName   = Object.fromEntries(controls.map((c) => [c.name, c]))
 // The type each column implies. Asserted as a MAP rather than a count, because
 // three controls of the wrong kind is the same number as three of the right
 // kind.
-const wanted = { title: 'text', body: 'text', done: 'checkbox' }
+const wanted = { title: 'text', body: 'text', isDone: 'checkbox' }
 const wrong  = Object.entries(wanted).filter(([n, t]) => byName[n]?.type !== t)
 
 if (!await must($, wrong.length === 0

@@ -11,7 +11,7 @@ with the package included:
 
 ```console
 fli new <app> --auth --with notifications
-fli scaffold Note --fields "title:string body:text done:boolean"
+fli scaffold Note --fields "title:string body:text isDone:boolean"
 ```
 
 One model goes into `db/schema.lite` with it, because an in-app notification is
@@ -94,7 +94,7 @@ if (!built) {
     cwd:     $.config.ws.dir,
   })
   $.exec({
-    command: `${$.fli} scaffold Note --fields "title:string body:text done:boolean"`,
+    command: `${$.fli} scaffold Note --fields "title:string body:text isDone:boolean"`,
     cwd:     dir,
   })
 }

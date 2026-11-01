@@ -76,7 +76,7 @@ writeFileSync(join(jobsDir, 'finish-note.job.ts'), [
   '    // ctx.app is the running app. Going back through the service means this',
   '    // write is validated, announced and audited like any other — a job that',
   '    // reaches for the database directly is a write nothing can see.',
-  "    await ctx.app.service('notes').patch(ctx.data.id, { done: true })",
+  "    await ctx.app.service('notes').patch(ctx.data.id, { isDone: true })",
   '  },',
   '})',
   '',
@@ -155,10 +155,10 @@ if (!await must($, made, { likely: 'the write was refused — the body is above'
 // request: a re-read races the job and would make this flaky in the direction
 // that hides the bug.
 if (!await must($, {
-  ok:    made.json.done === false,
+  ok:    made.json.isDone === false,
   name:  'the response came back before the work was done',
-  asked: 'done: false in the created row',
-  got:   `done: ${JSON.stringify(made.json.done)}`,
+  asked: 'isDone: false in the created row',
+  got:   `isDone: ${JSON.stringify(made.json.isDone)}`,
 }, {
   likely: 'the hook is awaiting the work instead of queueing it',
 })) return
@@ -169,9 +169,9 @@ const db = join(app, 'db', 'app.db')
 // is a property of this question rather than of the probe.
 if (!await must($, probe.eventually(() => probe.sqliteRow({
   db,
-  sql:    'select done from note where id = ?',
+  sql:    'select isDone from note where id = ?',
   params: [String(made.json.id)],
-  expect: (rows) => Number(rows[0]?.done) === 1,
+  expect: (rows) => Number(rows[0]?.isDone) === 1,
   name:   'and then the job finished it',
 }), { retries: 16, everyMs: 500 }), {
   likely:    'the job never ran — api/src/jobs/ may not be loading, which is silent',

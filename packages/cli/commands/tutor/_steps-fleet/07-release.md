@@ -163,9 +163,11 @@ if (!await must($, probe.sqliteRow({
   likely: 'the executor answered without pulling — a stub reports digest: null, which is why this asks',
 })) return
 
-// And the machine agrees. `fjs-<appId>` is the name outpost gives a container,
-// deliberately stable so a machine cannot accumulate app-1, app-2.
-const container = `fjs-${appId}`
+// And the machine agrees. The container's name carries slugs a person can
+// rename, so the lookup asks for the `fjs.app` label, which carries the App's
+// id and is what outpost's own `docker.js` looks a container up by.
+const byLabel   = `label=fjs.app=${appId}`
+const container = probe.runArgv('docker', ['ps', '-aq', '--filter', byLabel]).stdout.split('\n')[0] || `(no container ${byLabel})`
 
 if (!await must($, probe.dockerRunning({
   container,
@@ -173,8 +175,10 @@ if (!await must($, probe.dockerRunning({
 }), {
   likely:    'the deploy reported success and started nothing — the outpost log is below',
   detail:    serverLog($.config.__servers?.outpost ?? { logPath: '' }, 20),
-  reproduce: `docker ps --filter name=${container}`,
+  reproduce: `docker ps -a --filter ${byLabel}`,
 })) return
+// 08-finish removes it by this name, on the way out of a refusal too.
+$.config.container = container
 
 // The pair. A digest in a row and a container on a machine are two facts, and
 // only their AGREEMENT says the row describes what is serving.
