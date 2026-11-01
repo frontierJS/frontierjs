@@ -418,6 +418,45 @@ describe('createTenantRegistry reads the block', () => {
     tenants.close()
   })
 
+  // The registry holds a place's NAME, never a path, so a bare schema says where
+  // every file is and a caller-supplied path reaches no mkdir (FJS-D1729).
+  it('creates a tenant in the place its meta names, and refuses a path or a move', async () => {
+    const dir  = tmp()
+    const text = `
+      tenancy {
+        strategy database
+        dir      "./fleet"
+        place eu "./data/eu"
+      }
+      model Post { id Int @id  title String }
+    `
+    await Bun.write(join(dir, 'schema.lite'), text)
+
+    const tenants: any = await createTenantRegistry({ path: join(dir, 'schema.lite') })
+    expect(tenants.tenancy.places).toEqual({ eu: join(dir, 'data', 'eu') })
+    await tenants.create('home')
+    await (await tenants.create('clinic', { place: 'eu' })).asSystem().post.create({ data: { title: 'x' } })
+    expect(existsSync(join(dir, 'data', 'eu', 'clinic.db'))).toBe(true)
+    expect(existsSync(join(dir, 'fleet', 'clinic.db'))).toBe(false)
+    expect(tenants.pathOf('home')).toBe(join(dir, 'fleet', 'home.db'))
+    tenants.close()
+
+    const again: any = await createTenantRegistry({ path: join(dir, 'schema.lite') })
+    expect(await (await again.get('clinic')).asSystem().post.count()).toBe(1)
+    await expect(again.create('mars', { place: 'mars' })).rejects.toThrow(`place "mars" is not declared`)
+    await expect(again.create('p', { path: join(dir, 'p.db') })).rejects.toThrow('meta.path does not place')
+    expect(() => again.meta.set('clinic', { place: null })).toThrow('cannot change')
+    again.meta.set('clinic', { plan: 'pro' })
+    expect(again.meta.get('clinic')).toEqual({ place: 'eu', plan: 'pro' })
+    again.close()
+  })
+
+  it('refuses a place outside strategy database, twice, or named default', () => {
+    expect(parse(`tenancy { strategy row  column w  place eu "x" }`).errors[0]).toContain(`'place' is not a property of strategy row`)
+    expect(parse(`tenancy { strategy database  place eu "a"  place eu "b" }`).errors[0]).toContain('declared twice')
+    expect(parse(`tenancy { strategy database  place default "a" }`).errors[0]).toContain(`'default' names the tenancy dir`)
+  })
+
   it('refuses a row schema instead of writing files nobody reads', async () => {
     await expect(createTenantRegistry({ schema: ROW_SCHEMA })).rejects.toThrow('strategy row')
   })

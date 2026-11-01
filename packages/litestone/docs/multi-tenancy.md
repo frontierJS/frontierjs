@@ -68,6 +68,38 @@ const tenants = await createTenantRegistry({
 `key` in the block is the one-key-for-everyone case, read as a value and never
 as a path.
 
+### A place
+
+A tenant whose file must live somewhere else — an EU clinic under `data/eu/` —
+is created in a **place**: a named directory the block declares, chosen by name
+when the tenant is created (`FJS-D1729`).
+
+```lite
+tenancy {
+  strategy database
+  dir      "./tenants"
+  place eu "./data/eu"
+}
+
+model Order { id Int @id  total Float }
+```
+
+```js
+import { createTenantRegistry } from '@frontierjs/litestone'
+
+const tenants = await createTenantRegistry({ path: './schema.lite' })
+await tenants.create('acme')                       // ./tenants/acme.db
+await tenants.create('clinic', { place: 'eu' })    // ./data/eu/clinic.db
+if (!tenants.pathOf('clinic').endsWith('data/eu/clinic.db')) throw new Error('expected the eu place')
+```
+
+The registry stores the NAME, so a moved directory is one edit of the schema.
+`backup`, `replicate`, `restore`, Studio and `migrate` read the places from the
+parse, and a backup holds each as `tenant-files-<place>/`. Refused by name: a
+place the block does not declare, a `meta.dir` or `meta.path` (neither places a
+file), and a change of `meta.place` after create, since moving a tenant is a file
+move. `default` names `dir` and cannot be a place.
+
 ### The fleet
 
 ```js

@@ -553,10 +553,6 @@ class TenantRegistry {
       return this.#open(id)
     }
 
-    // A place's directory is made on its first tenant, not at boot: a declared
-    // place nothing has been created in is an empty directory a reader would
-    // have to explain.
-    mkdirSync(dirname(path), { recursive: true })
     const raw = openWalDatabase(path, { busyTimeout: this.#busyTimeout })
     raw.run('PRAGMA foreign_keys = ON')
 
@@ -614,9 +610,6 @@ class TenantRegistry {
     return this.#open(id)
   }
 
-  /**
-   * Check if a tenant exists (in registry AND as a file).
-   */
   /**
    * Where a tenant's file is, in its place's directory.
    */
@@ -1012,6 +1005,9 @@ export async function createTenantRegistry({
     mkdirSync(absDir, { recursive: true })
     if (dir ? !isAbsolute(dir) : !schemaPath) noteMintedDirectory(absDir, registryPath)
   }
+  // A place is made at boot like `dir`: `replicate` watches it before its first
+  // tenant exists, and refuses a directory whose parent is missing.
+  if (!inMemory) for (const at of Object.values(declared?.places ?? {})) mkdirSync(at, { recursive: true })
 
   // Open registry DB
   const registryDb = openRegistry(registryPath, busyTimeoutFor(clientOptions?.busyTimeout, 'default'))

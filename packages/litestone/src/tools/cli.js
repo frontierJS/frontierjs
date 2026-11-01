@@ -1827,7 +1827,7 @@ async function cmdTenant(subCmd, args, cfg) {
         const metaArg  = getFlag('meta')
         const meta     = metaArg ? JSON.parse(metaArg) : {}
         await tenants.create(id, meta)
-        console.log(`  ${green('✓')}  Created tenant ${cyan(id)} → ${dim(resolve(dir, id + '.db'))}`)
+        console.log(`  ${green('✓')}  Created tenant ${cyan(id)} → ${dim(tenants.pathOf(id))}`)
         if (Object.keys(meta).length)
           console.log(`  ${dim('meta:')} ${JSON.stringify(meta)}`)
         console.log()
