@@ -77,6 +77,19 @@ This paper is the order between them, and the release at the end.
   **Recommend A** — it is one package of the run 4.2 makes anyway, and it ends
   with no allowance to retire.
 
+- **Q5 — FJS-3394 blocks FJS-009 on its own.** `packages/cli` test *a real
+  docker, from a cwd that is not the app root* builds the same context twice
+  and expects one digest; on the runner's BuildKit the two differ, and the
+  row is `env: real machine` with no measured cause — nothing here
+  reproduces it, two runs today included. **A** — chase it on the runner: a
+  one-off workflow step that builds twice and prints both images' histories
+  and `buildx` metadata, so the differing layer is named and the fix is a
+  deterministic build or a test that compares what a build controls. **B** —
+  `knownTestFailures` for `packages/cli` citing the row, which keeps the
+  ratchet but hides every other cli red until it is removed. **Recommend A**
+  — Q1's rule; an allowance for a 4214-test suite is the widest one CI would
+  hold.
+
 - **Q4 — Finishing a release in flight, after the branch moved on.** 4.1's
   dry run shows every public package finishing from its 2026-10-31 tag, and
   02 pushing that tag's sha to the branch head (`FJS-3827`). **A** — 02 pushes
@@ -215,6 +228,12 @@ Done when: a green run on main, and FJS-009 closed citing its run id.
     red until its answer.
 - [ ] 2.5 Push, runner verdict, close FJS-009 with the run id and the
   `ci-last` artifact's summary.
+  - 2026-11-01: run `41354648097` on `38bc01c5` (`main` = `dev`): every
+    phase ✓ but `tests`, and `tests` is exactly the two named reds — the
+    basecamp pin (Q3) and the cli docker digest (FJS-3394, Q5); print-kit
+    did not repeat. The deploy cycle is still the `--source npm` warning,
+    which 4.4 ends. FJS-009 closes on the first run after Q3 and Q5 are
+    answered.
 - [x] 2.6 The runner's three new reds, from 1.3. `tutor:fleet`: the Outpost's
   fixed layout (`FJS-D1544`) writes `/etc/outpost` and `/var/lib/outpost`,
   which only root has, so the tutor now hands it systemd's two directory
