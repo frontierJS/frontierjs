@@ -273,6 +273,11 @@ src/
                          `/<service>/<id>` lowercased, as the scanner
                          serves it, and may answer a promise, because a
                          hit carries no column a parent route could be read off
+    read-baseline.js     the rows a resource READ — the patch baseline, the
+                         `@version` handed back and the ids a caller-keyed
+                         model has seen; capped, never evicting a held row
+    options.js           a field's picker options — enum, value set or
+                         relation — keeping a stored value that fell off the list
     field-rules.js       schema → field rules; the control table and the
                          registry over it; toFieldErrors. LEAF: no client import
     schema-registry.js   modelNameFor / schemaFor, over `createSchemaRegistry()` —

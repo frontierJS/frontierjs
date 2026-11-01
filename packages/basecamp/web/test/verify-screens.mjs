@@ -608,6 +608,25 @@ try {
       && signed.searchParams.get('response-content-disposition') === `attachment; filename="${appTarball}"`,
     `${signed?.pathname ?? 'no request'} → ${appTarball ?? `nothing saved; ${await text('#app-backups-error')}`}`)
 
+  // Upload is two hops: `upload` signs a link, and the file is PUT to it
+  // through the dev proxy. A file that is not SQLite is refused by the stream
+  // route before anything reaches the bucket, so the refusal on screen is
+  // that route's, and the seeded bucket, a real host, is never asked.
+  check('an App with a backup destination offers Upload', !!(await evaluate(`!!document.querySelector('#app-backups-upload input[type=file]')`)))
+  await evaluate(`(() => {
+    const input = document.querySelector('#app-backups-upload input[type=file]')
+    const dt = new DataTransfer()
+    dt.items.add(new File(['not a database'], 'shop.db', { type: 'application/octet-stream' }))
+    input.files = dt.files
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+  await until(`!document.getElementById('app-backups-upload-send')?.disabled`, v => v, 'choosing a file never enabled Upload')
+  await click('#app-backups-upload-send')
+  const uploadRefused = await until(`document.getElementById('app-backups-error')?.textContent ?? ''`,
+    t => t.length > 0, 'Upload said nothing').catch(() => '')
+  check('Upload reaches the stream route, and its refusal of a .db that is not SQLite is shown',
+    /SQLite/.test(uploadRefused), uploadRefused.trim().slice(0, 160))
+
   // ─── Your settings ─────────────────────────────────────────────────────
   console.log('\n  /settings/ — the caller\'s own account')
   await goto('/settings/')

@@ -729,6 +729,81 @@ function _restoreHistory(index) {
 }
 
 /**
+ * Give up on the navigation in flight: nothing is pending and the router is
+ * idle. Left set, RouterView renders the app's loading snippet forever.
+ * Answers false so a failing exit is `return _abandon()`.
+ */
+function _abandon() {
+  _w().pending = null
+  _navigating = false
+  return false
+}
+
+/**
+ * Write the address bar and the history indices for a navigation about to
+ * commit. Throws what pushState throws: a target a browser reads as
+ * cross-origin raises SecurityError.
+ */
+function _writeHistory(href, { replace, isPopstate }) {
+  if (!isPopstate) {
+    _previousHistoryIndex = _currentHistoryIndex
+
+    if (replace) {
+      const idx = _hist().state?.index ?? _currentHistoryIndex
+      _hist().replaceState({ index: idx }, '', href)
+    } else {
+      _currentHistoryIndex++
+      _hist().pushState({ index: _currentHistoryIndex }, '', href)
+    }
+  } else {
+    _previousHistoryIndex = _currentHistoryIndex
+    _currentHistoryIndex = _hist().state?.index ?? 0
+  }
+}
+
+/**
+ * Commit a settled navigation to `page`. Written field by field rather than
+ * replacing the object, so each path watch fires only for what changed.
+ */
+function _commitPage({ toNode, normalized, search, hash, query, directives, params, loadedData }) {
+  const _meta = toNode.meta ?? {}
+  // A key the route before declared and this one does not is dropped first,
+  // or it outlives its route: one page's `frame: bare` reached every page a
+  // person went to next, and only a reload cleared it.
+  for (const k of Object.keys(page.meta ?? {})) {
+    if (!PAGE_RESERVED.includes(k) && !(k in _meta)) delete _w()[k]
+  }
+  for (const [k, v] of Object.entries(_meta)) {
+    if (PAGE_RESERVED.includes(k)) continue
+    if (page[k] !== v) _w()[k] = v
+  }
+
+  _w().meta    = _meta
+  _w().pathname = normalized
+  _w().search   = search
+  _w().hash     = hash
+  _w().params  = params
+  // Only when they changed. `page` fields are assigned every navigation, which
+  // is right for the ones a navigation always changes — but a LAYOUT outlives
+  // one, and a filter bar watching `page.query` would re-ask the server on
+  // every navigation under it if a fresh object arrived each time.
+  if (!_sameParams(page.query,      query))      _w().query      = query
+  if (!_sameParams(page.directives, directives)) _w().directives = directives
+  _w().route   = toNode
+  _w().data    = loadedData
+
+  // The tab, the bookmark, the history entry and what a screen reader announces
+  // on arrival. The static target has written a real <title> per page since it
+  // existed and the SPA wrote none at all, so every route of an app showed
+  // whatever index.html hardcoded — one string for the whole app, and the worst
+  // shape is an app that prerenders AND hydrates, where the title is right on
+  // first paint and stale from the first client navigation (FJS-389).
+  _w().pending = null
+  _w().slots   = {}   // cleared — the new page repopulates during its render
+  _navigating = false
+}
+
+/**
  * Core navigation function. All navigation goes through here.
  */
 async function _navigate(url, { replace = false, scroll = true, isPopstate = false, _hmr = false, _hops = 0 } = {}) {
@@ -739,9 +814,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
       `Redirect loop: more than ${MAX_REDIRECTS} redirects without landing, last to ${url}. ` +
       'Two guards redirecting to each other is the usual cause.',
     ))
-    _w().pending = null
-    _navigating = false
-    return false
+    return _abandon()
   }
 
   const seq = ++_navSeq
@@ -914,9 +987,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
       }
     } catch (err) {
       _reportError('component', toNode.file ?? toNode.id, err)
-      _w().pending = null
-      _navigating = false
-      return false
+      return _abandon()
     }
   }
 
@@ -931,9 +1002,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
     _reportError('component', toNode.file ?? toNode.id, new Error(
       `Route ${toNode.id} registered no component — a route file needs a default export.`,
     ))
-    _w().pending = null
-    _navigating = false
-    return false
+    return _abandon()
   }
 
   // Chain must be complete before activeRoute is committed below, or
@@ -990,8 +1059,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
           // this origin stays DATA — a load() returning a plain string is legal,
           // so this is a shape test rather than a refusal.
           if (_validRedirect(loadedData)) {
-            _w().pending = null
-            _navigating = false
+            _abandon()
             return _navigate(loadedData, { replace: true, scroll, _hops: _hops + 1 })
           }
         }
@@ -1024,25 +1092,10 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   // unwrapped throw left `pending` set, so RouterView rendered the app's loading
   // snippet forever and `goto` rejected with nothing catching it.
   try {
-    if (!isPopstate) {
-      _previousHistoryIndex = _currentHistoryIndex
-
-      if (replace) {
-        const idx = _hist().state?.index ?? _currentHistoryIndex
-        _hist().replaceState({ index: idx }, '', normalized + search + hash)
-      } else {
-        _currentHistoryIndex++
-        _hist().pushState({ index: _currentHistoryIndex }, '', normalized + search + hash)
-      }
-    } else {
-      _previousHistoryIndex = _currentHistoryIndex
-      _currentHistoryIndex = _hist().state?.index ?? 0
-    }
+    _writeHistory(normalized + search + hash, { replace, isPopstate })
   } catch (err) {
     _reportError('navigation', normalized + search + hash, err)
-    _w().pending = null
-    _navigating = false
-    return false
+    return _abandon()
   }
 
   // Commit all signals atomically
@@ -1053,41 +1106,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   // Frontmatter is spread first; the router's own fields are assigned after and
   // therefore win. PAGE_RESERVED lists them, and the scanner warns when a route
   // declares one.
-  const _meta = toNode.meta ?? {}
-  // A key the route before declared and this one does not is dropped first,
-  // or it outlives its route: one page's `frame: bare` reached every page a
-  // person went to next, and only a reload cleared it.
-  for (const k of Object.keys(page.meta ?? {})) {
-    if (!PAGE_RESERVED.includes(k) && !(k in _meta)) delete _w()[k]
-  }
-  for (const [k, v] of Object.entries(_meta)) {
-    if (PAGE_RESERVED.includes(k)) continue
-    if (page[k] !== v) _w()[k] = v
-  }
-
-  _w().meta    = _meta
-  _w().pathname = normalized
-  _w().search   = search
-  _w().hash     = hash
-  _w().params  = toContext.params
-  // Only when they changed. `page` fields are assigned every navigation, which
-  // is right for the ones a navigation always changes — but a LAYOUT outlives
-  // one, and a filter bar watching `page.query` would re-ask the server on
-  // every navigation under it if a fresh object arrived each time.
-  if (!_sameParams(page.query,      query))      _w().query      = query
-  if (!_sameParams(page.directives, directives)) _w().directives = directives
-  _w().route   = toNode
-  _w().data    = loadedData
-
-  // The tab, the bookmark, the history entry and what a screen reader announces
-  // on arrival. The static target has written a real <title> per page since it
-  // existed and the SPA wrote none at all, so every route of an app showed
-  // whatever index.html hardcoded — one string for the whole app, and the worst
-  // shape is an app that prerenders AND hydrates, where the title is right on
-  // first paint and stale from the first client navigation (FJS-389).
-  _w().pending = null
-  _w().slots   = {}   // cleared — the new page repopulates during its render
-  _navigating = false
+  _commitPage({ toNode, normalized, search, hash, query, directives, params: toContext.params, loadedData })
 
   // AFTER the navigation state is settled, not between the commit and it: this
   // awaits `head()`, and holding `pending` open across a dynamic import would

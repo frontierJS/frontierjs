@@ -57,6 +57,25 @@ export async function run(t) {
   await t.eventually(`document.querySelector('#closes').textContent`, '2',
     'the close button closes it too')
 
+  // FJS-3770: the dialog's `close` event lands a task after `dialog[open]` is
+  // gone, so a reopen in that window used to be answered by the late event
+  // writing `open = false`. Both clicks run before any task can fire.
+  await t.clickAt('#stage #open-drawer')
+  await t.evaluate(`await waitFor(() => document.querySelector('dialog.drawer').open); return true;`)
+  await t.evaluate(`
+    document.querySelector('dialog.drawer .dialog-close').click();
+    await Promise.resolve(); await Promise.resolve();
+    document.querySelector('#open-drawer').click();
+    await new Promise(r => setTimeout(r, 500));
+    return true;
+  `)
+  t.ok(await t.evaluate(`return document.querySelector('dialog.drawer').open;`),
+    'a reopen right after the close button survives the late close event')
+  t.is(await t.evaluate(`return document.querySelector('#state').textContent;`), 'open',
+    'bind:open still says open after the reopen')
+  await t.press('Escape')
+  await t.evaluate(`await waitFor(() => !document.querySelector('dialog.drawer').open); return true;`)
+
   /* ── every edge ──────────────────────────────────────────────────────
    *
    * `side` is snapshot at mount by design, so each edge is a fresh fixture.

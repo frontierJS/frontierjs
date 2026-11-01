@@ -225,16 +225,16 @@ const RESTORE_TIMEOUT_MS = 3_600_000
 // that exists is exit 3 unless overwrite. The copy lands as `.partial`, which
 // Litestream's `*.db` does not match, and takes the directory's owner, since the
 // app may run as its own uid. The last line is `<files> <bytes>`.
-const FILES_SCRIPT = `set -e
+const filesScript = (src) => `set -e
 owner=$(stat -c %u:%g /data)
 if [ "$FJS_OVERWRITE" != 1 ]; then
-  for f in /restore/*.db; do
+  for f in ${src}/*.db; do
     n=$(basename "$f")
     [ ! -e "/data/$n" ] || { echo "/data/$n already exists" >&2; exit 3; }
   done
 fi
 files=0; bytes=0
-for f in /restore/*.db; do
+for f in ${src}/*.db; do
   n=$(basename "$f")
   rm -f "/data/$n" "/data/$n-wal" "/data/$n-shm"
   cp "$f" "/data/$n.partial"
@@ -243,6 +243,19 @@ for f in /restore/*.db; do
   files=$((files + 1)); bytes=$((bytes + $(stat -c %s "/data/$n")))
 done
 echo "$files $bytes"`
+const FILES_SCRIPT = filesScript('/restore')
+// Exit 3 out of `filesScript`, naming the database it found.
+const holdsAlready = (dir, stderr) =>
+  new Error(`${dir} already holds ${(stderr ?? '').trim().replace(/^\/data\/| already exists$/g, '')} — send overwrite: true to replace it`)
+// A wrapped `.db` (`FJS-D1724`): the archive holds one database and the
+// volume holds others, so it unpacks inside the container and replaces only
+// the files it names. With no top-level `.db` the copy loop would see its own
+// unmatched glob.
+const ARCHIVE_FILES_SCRIPT = `set -e
+mkdir /unpacked
+tar -xf /restore -C /unpacked
+ls /unpacked/*.db >/dev/null 2>&1 || { echo "the archive holds no .db at its top level" >&2; exit 1; }
+${filesScript('/unpacked')}`
 
 // Where a drill's copy is mounted in the app's image: a path of its own, so
 // the image's `db/` and the schema in it stay visible.
@@ -676,7 +689,7 @@ export function createDocker({
 
   // The archive at `path` under the restore directory, extracted into the
   // app's stopped data directory. Both doors of `restore` end here.
-  async function extract({ appId, path, overwrite }) {
+  async function extract({ appId, path, overwrite, perFile }) {
     const relative = typeof path === 'string' && path.startsWith(`${restoreDir}/`) ? path.slice(restoreDir.length + 1) : path
     const bad = validRelativePath(relative)
     if (bad) throw new Error(`${bad} — name a file under ${restoreDir}`)
@@ -701,15 +714,16 @@ export function createDocker({
       '-e', `FJS_OVERWRITE=${overwrite === true ? 1 : 0}`,
       '--mount', `type=bind,src=${dir},dst=/data`,
       '--mount', `type=bind,src=${archive},dst=/restore,readonly`,
-      RESTORE_IMAGE, 'sh', '-c', RESTORE_SCRIPT,
+      RESTORE_IMAGE, 'sh', '-c', perFile === true ? ARCHIVE_FILES_SCRIPT : RESTORE_SCRIPT,
     ], { timeoutMs: RESTORE_TIMEOUT_MS })
+    if (result.exitCode === 3 && perFile === true) throw holdsAlready(dir, result.stderr)
     if (result.exitCode === 3) throw new Error(`${dir} already holds files — send overwrite: true to replace them`)
     if (result.exitCode !== 0) {
       const said = (result.stderr || result.stdout || '').trim().split('\n').slice(-3).join(' ')
       throw new Error(`restore into ${dir} failed (exit ${result.exitCode}): ${said}`)
     }
     const [files, bytes] = result.stdout.trim().split('\n').at(-1).split(/\s+/).map(Number)
-    return { data_dir: dir, archive, files, bytes, overwrite: overwrite === true }
+    return { data_dir: dir, archive, files, bytes, overwrite: overwrite === true, per_file: perFile === true }
   }
 
   return {
@@ -1036,10 +1050,14 @@ export function createDocker({
      * extracted the same way; the fetched copy is removed after. The check
      * comes before `tar`, since a swapped object would otherwise be written
      * into the app's data before anything could tell.
+     *
+     * `perFile` restores a wrapped `.db` (`FJS-D1724`): each top-level `.db`
+     * in the archive replaces its own file and that file's `-wal`/`-shm`, and
+     * the rest of the directory stays.
      */
-    async restore({ appId, path, url, sha256, overwrite = false }) {
+    async restore({ appId, path, url, sha256, overwrite = false, perFile = false }) {
       checkAppId(appId)
-      if (url === undefined) return extract({ appId, path, overwrite })
+      if (url === undefined) return extract({ appId, path, overwrite, perFile })
       if (path !== undefined) throw new Error('send path or url, not both')
       let parsed
       try { parsed = new URL(url) } catch { throw new Error('url is not a URL') }
@@ -1062,7 +1080,7 @@ export function createDocker({
         const got = hash.digest('hex')
         if (got !== sha256) throw new Error(`the archive fetched is not the one taken (sha256 ${got}, expected ${sha256}) — nothing was restored`)
         await rename(`${root}/${name}.partial`, `${root}/${name}`)
-        return { ...await extract({ appId, path: name, overwrite }), sha256 }
+        return { ...await extract({ appId, path: name, overwrite, perFile }), sha256 }
       } finally {
         await rm(`${root}/${name}.partial`, { force: true })
         await rm(`${root}/${name}`, { force: true })
@@ -1094,7 +1112,7 @@ export function createDocker({
         '--mount', `type=bind,src=${src},dst=/restore,readonly`,
         RESTORE_IMAGE, 'sh', '-c', FILES_SCRIPT,
       ], { timeoutMs: RESTORE_TIMEOUT_MS })
-      if (result.exitCode === 3) throw new Error(`${data} already holds ${(result.stderr ?? '').trim().replace(/^\/data\/| already exists$/g, '')} — send overwrite: true to replace it`)
+      if (result.exitCode === 3) throw holdsAlready(data, result.stderr)
       if (result.exitCode !== 0) {
         const said = (result.stderr || result.stdout || '').trim().split('\n').slice(-3).join(' ')
         throw new Error(`restore into ${data} failed (exit ${result.exitCode}): ${said}`)

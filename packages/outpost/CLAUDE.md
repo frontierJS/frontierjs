@@ -145,6 +145,8 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   cannot see (a snap docker and the host's `/tmp`) mounts an empty directory,
   and the restore extracts nothing and answers success. Overwrite EMPTIES the
   directory first — a `-wal` left beside a new database is replayed into it.
+  `per_file` (a wrapped `.db`, `FJS-D1724`) unpacks inside the container and
+  runs the replica's per-file copy instead, so the volume's other databases stay.
   With `url` (`FJS-D1521`) the archive is fetched INTO that directory and its
   sha256 checked before `tar`. The digest comes from the capture container,
   because the archive is root's 0600 and a non-root Outpost cannot read it.

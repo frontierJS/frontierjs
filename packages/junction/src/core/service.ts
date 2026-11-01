@@ -611,20 +611,11 @@ function watchDirectiveReads(ctx: ServiceContext, sent: string[]): (() => void) 
   }
 }
 
-async function _callService(
-  service:    Service,
-  ctx:        ServiceContext,
-  appHooks?:  HookMap,
-  events?:    EventEmitter,
-  telemetry?: EventEmitter
-): Promise<void> {
-
-  const start  = Date.now()
-  const method = ctx.method
-  const isCustom = !CRUD_METHOD_SET.has(method as string)
-  const isRead   = isReadMethod(service, method as string)
-  if (isCustom && isRead && ctx.locals) ctx.locals.readCall = true
-
+// Refusals that answer before the pipeline runs and before anything is
+// claimed: the method selection, the scope, a page past the max. Each is one
+// rule of "this call cannot proceed", and a hook run for it would run its side
+// effects for nothing.
+function admitCall(service: Service, ctx: ServiceContext, method: string, isCustom: boolean): void {
   // ── The method selection ────────────────────────────────────────────────
   // Enforced HERE because callService is the one path every caller takes —
   // HTTP, WebSocket, a job, and `app.service('audit').create()` from inside
@@ -684,6 +675,95 @@ async function _callService(
         { directive: '$limit', value: Number(stated), max }
       )
   }
+}
+
+function emitCallStart(t: EventEmitter, service: Service, ctx: ServiceContext): void {
+  ctx.telemetryId = crypto.randomUUID()
+  t.emit('junction.call.start', {
+    telemetryId: ctx.telemetryId,
+    ...(ctx.parentTelemetryId ? { parentTelemetryId: ctx.parentTelemetryId } : {}),
+    service:     service.name,
+    method:      ctx.method as string,
+    transport:   ctx.transport ?? 'internal',
+    userId:      ctx.user?.id ?? null,
+    id:          ctx.id,
+  } satisfies CallStartEvent)
+}
+
+// Fired after every call, success or error, so a thrown pipeline still emits.
+function emitCallEnd(
+  t: EventEmitter, service: Service, ctx: ServiceContext, start: number, pipelineError: unknown
+): void {
+  // `ctx.error` alone is not what failed. hooks.ts sets it inside runCore, so
+  // it covers a before hook, the method and an after hook — and an AROUND hook
+  // wraps all three, which means its throw never reaches that assignment.
+  // gateAuth is an around hook, so every auth refusal an app makes was emitted
+  // as `status: 'ok'`: the console whose whole job is what happened to this
+  // call agreed with the app that nothing had gone wrong, and a 401 was
+  // indistinguishable from a 200 in the feed.
+  const failed = ctx.error ?? (pipelineError ? toFrameworkError(pipelineError, ctx.app) : null)
+  const event: TelemetryEvent = {
+    telemetryId: ctx.telemetryId,
+    service:     service.name,
+    method:      ctx.method as string,
+    transport:   ctx.transport ?? 'internal',
+    userId:      ctx.user?.id ?? null,
+    id:          ctx.id,
+    durationMs:  Date.now() - start,
+    status:      failed ? 'error' : 'ok',
+    ...(failed ? {
+      error: {
+        name:    failed.name,
+        message: failed.message,
+        code:    failed.code,
+      }
+    } : {}),
+  }
+  t.emit('junction.call.end', event)
+}
+
+// What the method returned, as the call's result.
+function settleResult(ctx: ServiceContext, service: Service, raw: unknown): void {
+  // - null/undefined     → null (transport returns 204)
+  // - already an envelope → as-is (cache hit, hook-set result)
+  // - anything else       → wrap
+  //
+  // The passthrough test was `'object' in raw`, which is true of any record
+  // with a column called `object` — such a row was mistaken for an envelope
+  // and its (nonexistent) .data served instead. isServiceResult() checks
+  // the `kind` discriminant.
+  if (raw === null || raw === undefined) {
+    // A find promises a list, and nothing is not an empty list. Left to
+    // fall through it answered 204, which reaches the browser as an empty
+    // body — indistinguishable from a page with no rows, and the screen
+    // then renders nothing while the service is the thing at fault.
+    if (ctx.method === 'find') wrapResult(raw, service.name, 'find')
+    ctx.result = null
+  } else if (isServiceResult(raw)) {
+    ctx.result = raw
+  } else {
+    // `object` names the SERVICE, so a client can key a cache or a type off
+    // it without first working out which kind it is holding. The METHOD is
+    // what decides list vs single — see wrapResult.
+    ctx.result = wrapResult(raw, service.name, ctx.method)
+  }
+}
+
+async function _callService(
+  service:    Service,
+  ctx:        ServiceContext,
+  appHooks?:  HookMap,
+  events?:    EventEmitter,
+  telemetry?: EventEmitter
+): Promise<void> {
+
+  const start  = Date.now()
+  const method = ctx.method
+  const isCustom = !CRUD_METHOD_SET.has(method as string)
+  const isRead   = isReadMethod(service, method as string)
+  if (isCustom && isRead && ctx.locals) ctx.locals.readCall = true
+
+  admitCall(service, ctx, method as string, isCustom)
 
   // ── Idempotency-Key ──────────────────────────────────────────────────
   // Claimed HERE for the same reason the method selection is: callService is the
@@ -708,21 +788,9 @@ async function _callService(
     return
   }
 
-  // ── Telemetry: stamp correlation ID + emit start ───────────────────
   // Skipped entirely (no UUID, no allocations) when nothing subscribes.
   const t = telemetryEnabled(telemetry) ? telemetry : undefined
-  if (t) {
-    ctx.telemetryId = crypto.randomUUID()
-    t.emit('junction.call.start', {
-      telemetryId: ctx.telemetryId,
-      ...(ctx.parentTelemetryId ? { parentTelemetryId: ctx.parentTelemetryId } : {}),
-      service:     service.name,
-      method:      method as string,
-      transport:   ctx.transport ?? 'internal',
-      userId:      ctx.user?.id ?? null,
-      id:          ctx.id,
-    } satisfies CallStartEvent)
-  }
+  if (t) emitCallStart(t, service, ctx)
 
   // Before the pipeline, not inside it: a reserved key must be off ctx.query by
   // the time ANY hook reads it — the app's own leading hook as much as the
@@ -783,29 +851,7 @@ async function _callService(
       // detail: it made a rolled-back write announce, because the deferral
       // looked unnecessary.
       openScope = commitScope()
-      // - null/undefined     → null (transport returns 204)
-      // - already an envelope → as-is (cache hit, hook-set result)
-      // - anything else       → wrap
-      //
-      // The passthrough test was `'object' in raw`, which is true of any record
-      // with a column called `object` — such a row was mistaken for an envelope
-      // and its (nonexistent) .data served instead. isServiceResult() checks
-      // the `kind` discriminant.
-      if (raw === null || raw === undefined) {
-        // A find promises a list, and nothing is not an empty list. Left to
-        // fall through it answered 204, which reaches the browser as an empty
-        // body — indistinguishable from a page with no rows, and the screen
-        // then renders nothing while the service is the thing at fault.
-        if (ctx.method === 'find') wrapResult(raw, service.name, 'find')
-        ctx.result = null
-      } else if (isServiceResult(raw)) {
-        ctx.result = raw
-      } else {
-        // `object` names the SERVICE, so a client can key a cache or a type off
-        // it without first working out which kind it is holding. The METHOD is
-        // what decides list vs single — see wrapResult.
-        ctx.result = wrapResult(raw, service.name, ctx.method)
-      }
+      settleResult(ctx, service, raw)
     }, t))   // gated: undefined when no telemetry subscribers → per-hook fast path
     // Only the METHOD's answer went through wrapResult. A hook that assigned a
     // Response would leave over HTTP as itself, past every after hook that
@@ -823,38 +869,7 @@ async function _callService(
     }
   }
 
-  // ── Telemetry: emit end ────────────────────────────────────────────
-  // Fired after every call — success or error. MUST emit even on throw so
-  // observability tools see failed calls. (Was outside try/finally before;
-  // a thrown pipeline would skip the emit entirely.)
-  if (t) {
-    // `ctx.error` alone is not what failed. hooks.ts sets it inside runCore, so
-    // it covers a before hook, the method and an after hook — and an AROUND hook
-    // wraps all three, which means its throw never reaches that assignment.
-    // gateAuth is an around hook, so every auth refusal an app makes was emitted
-    // as `status: 'ok'`: the console whose whole job is what happened to this
-    // call agreed with the app that nothing had gone wrong, and a 401 was
-    // indistinguishable from a 200 in the feed.
-    const failed = ctx.error ?? (pipelineError ? toFrameworkError(pipelineError, ctx.app) : null)
-    const event: TelemetryEvent = {
-      telemetryId: ctx.telemetryId,
-      service:     service.name,
-      method:      method as string,
-      transport:   ctx.transport ?? 'internal',
-      userId:      ctx.user?.id ?? null,
-      id:          ctx.id,
-      durationMs:  Date.now() - start,
-      status:      failed ? 'error' : 'ok',
-      ...(failed ? {
-        error: {
-          name:    failed.name,
-          message: failed.message,
-          code:    failed.code,
-        }
-      } : {}),
-    }
-    t.emit('junction.call.end', event)
-  }
+  if (t) emitCallEnd(t, service, ctx, start, pipelineError)
 
   // ── Real-time: ONE origin ─────────────────────────────────────────
   // Every mutation announcement is decided here, once, and fans out to both

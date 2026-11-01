@@ -1,6 +1,7 @@
 <script>
   // AppBackups.mesa — an App's archives of its data volume: the rows, Back up
-  // now, Restore, Download and Rescan bucket (`IDEAS/backups.md` 5.3).
+  // now, Restore, Download, Rescan bucket (`IDEAS/backups.md` 5.3) and Upload
+  // (`IDEAS/app-archives.md` 3.2).
   //
   // Every action names a MACHINE, because the volume is per machine: *Back up
   // now* archives that placement's copy, and *Restore* extracts onto it. One
@@ -12,6 +13,7 @@
   // answered.
   import { appBackups } from '../resources/AppBackup.mesa'
   import { apps }       from '../resources/App.mesa'
+  import { getClient }  from '@frontierjs/sierra/resource'
   import { ago }        from '../lib/datetime.js'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
 
@@ -19,6 +21,7 @@
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Card       from '@frontierjs/ui/components/layout/Card.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import FileUpload from '@frontierjs/ui/components/forms/FileUpload.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import Table      from '@frontierjs/ui/components/display/Table.mesa'
@@ -32,6 +35,7 @@
   let busy    = null
   let chosen  = ''
   let listingUntil = 0
+  let files   = []
 
   $: placements = app?.placement ?? []
   $: machine = chosen || ((placements.find(p => p.server?.status === 'online') ?? placements[0])?.serverId ?? '')
@@ -129,6 +133,36 @@
     }
   }
 
+  // Bun refuses a request body over 128 MB before the route reads it
+  // (`FJS-3090`), so the control refuses one first and says so.
+  const UPLOAD_MB = 128
+
+  // Two hops: `upload` grades the caller and signs a link, and the bytes go to
+  // that link, because a service body is buffered and capped (`FJS-D1732`).
+  async function upload(file) {
+    error = null; busy = 'upload'
+    try {
+      const { url, method } = await appBackups.service.invoke('upload', null, { appId: app.id, name: file.name })
+      await getClient().fetch(url, {
+        method, body: file, headers: { accept: 'application/json', 'content-type': 'application/octet-stream' },
+      })
+      toasts.success(`${file.name} is in the bucket. Restore it from its row.`)
+      files = []
+      await load()
+    } catch (e) {
+      error = e.code === 413 ? `${file.name} is over ${UPLOAD_MB} MB; put it in the bucket and Rescan instead.` : e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  // A bare `.db` upload is wrapped under a `.db.tar.gz` key and restores per
+  // file (`FJS-D1724`), so its confirmation must not promise a whole volume.
+  const wrapped = (b) => !!b.location?.endsWith('.db.tar.gz')
+  const confirmText = (b) => wrapped(b)
+    ? `The database in this archive, and its -wal and -shm, are replaced in this app's volume on ${machineName}. Its other databases and files stay. Stop the app there first.`
+    : `The files in this app's volume on ${machineName} are replaced by this archive. Stop the app there first.`
+
   function tone(status) {
     if (status === 'success') return 'success'
     if (status === 'failed')  return 'danger'
@@ -186,6 +220,18 @@
     {:else}
       <p class="text-sm text-muted" id="app-backups-unplaced">It is placed nowhere, so there is no volume to archive or restore onto.</p>
     {/if}
+    {#if app.backupDestinationId}
+      <div class="stack" id="app-backups-upload">
+        <FileUpload label="Upload an archive" name="archive" accept=".gz,.db,application/gzip"
+                    maxSizeMB={UPLOAD_MB} bind:files={files}
+                    hint={`A .tar.gz from Download, or one .db, up to ${UPLOAD_MB} MB. It lands in the bucket as a row to Restore; a .db restores over that database only.`} />
+        <div class="cluster">
+          <Button treatment="outlined" id="app-backups-upload-send" disabled={!files.length || !!busy} onclick={() => upload(files[0])}>
+            {busy === 'upload' ? 'Uploading…' : 'Upload'}
+          </Button>
+        </div>
+      </div>
+    {/if}
   </Card>
 
   {#if loading}
@@ -211,7 +257,7 @@
             {/if}
             {#if restorable(b)}
               <Button treatment="ghost" disabled={!machine || !!busy} aria-label={`Restore the backup taken ${when(b)}`}
-                      data-confirm={`The files in this app's volume on ${machineName} are replaced by this archive. Stop the app there first.`}
+                      data-confirm={confirmText(b)}
                       data-confirm-title="Restore this backup?" data-confirm-label="Restore" data-confirm-tone="danger"
                       onclick={() => restore(b)}>Restore</Button>
             {/if}

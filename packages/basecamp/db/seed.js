@@ -1047,7 +1047,8 @@ async function seedInstallation(sys, owner, users) {
   const onDisk = (await sys.appBackup.findMany({ include: { app: true } }))
     .find(b => b.appId !== hubApp.id && b.app?.workspaceId === acme.id)
   if (onDisk) {
-    await sys.app.update({ where: { id: onDisk.appId }, data: { backupDestinationId: offBox.id } })
+    // An app with no volume path offers no Backups tab.
+    await sys.app.update({ where: { id: onDisk.appId }, data: { backupDestinationId: offBox.id, volumePath: '/data' } })
     const found = new Date(Date.now() - 30 * 3_600_000)
     await sys.appBackup.create({
       data: {

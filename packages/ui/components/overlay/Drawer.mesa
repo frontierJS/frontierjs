@@ -88,7 +88,11 @@
   $: open, () => sync()
   $.onMount(sync)
 
+  // The `close` event lands a task after `dialog[open]` is gone. A reopen in
+  // that window would be answered by the late event writing `open = false`,
+  // so our own close settles `open` itself and the event only handles Escape.
   function handleClose() {
+    if (dialogEl.open) return
     if (open) {
       // Chrome stops firing a cancelable `cancel` on the second Escape in a
       // row, so preventDefault alone lets a non-dismissible dialog close.
@@ -112,12 +116,14 @@
   }
   function handleClick(e) {
     if (!dismissible) return
-    if (e.target === dialogEl && pressedBackdrop) dialogEl.close()
+    if (e.target === dialogEl && pressedBackdrop) close()
     pressedBackdrop = false
   }
 
   function close() {
-    dialogEl?.close()
+    if (!dialogEl?.open) return
+    dialogEl.close()
+    handleClose()
   }
 </script>
 

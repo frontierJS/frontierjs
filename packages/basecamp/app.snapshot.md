@@ -180,7 +180,7 @@ a method — it applies to each one.
 
 | Phase | Method | Chain |
 | --- | --- | --- |
-| around | `all` | `anonymous` → `anonymous` → `anonymous` |
+| around | `all` | `anonymous` → `anonymous` |
 | before | `all` | `tenantClaimGuard` → `apiKeyGuard` → `agentGuard` → `refuseSuspended` → `outpostScope` → `auditPreImage` → `secondFactorRequired` |
 | after | `all` | `apiKeyUsage` → `auditRecord` |
 | error | `all` | `anonymous` |

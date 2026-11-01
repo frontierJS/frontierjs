@@ -9,7 +9,7 @@ dependency graph on the strength of it, so breaking purity costs the standing.
 
 **One kit per subpath.** `/aria`, `/bearer`, `/cells`, `/cron`, `/datetime`, `/devline`, `/docfences`, `/env`, `/frontier`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
 `/fill`, `/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/keys`, `/mailbox`, `/markdown`, `/match`, `/mime`,
-`/predicate`, `/query`, `/rank`, `/redact`, `/seal`, `/search`, `/signature`, `/sigv4`, `/sse`, `/sugar`, `/textbox`, `/textedit`, `/trace`, `/transforms`, `/tty` and `/units` today; a caller
+`/predicate`, `/query`, `/rank`, `/redact`, `/seal`, `/search`, `/share`, `/signature`, `/sigv4`, `/sse`, `/sugar`, `/textbox`, `/textedit`, `/trace`, `/transforms`, `/tty` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
 `bun run test` — `test/run.js` is the whole harness, no dependencies, runs
@@ -46,6 +46,7 @@ touching datetime, json, units, sigv4, inflect or glow.
 - **The sigv4 canonical string is six lines, the query is the third, and the scheme signs SECONDS** — a millisecond-shaped value is refused by name (`FJS-1001`): `now` THROWS, a header ANSWERS `{ok: false}`.
 - **`inflect`'s `-ses` list and irregular table are DATA ABOUT ENGLISH**; a spelling sweep eats them, and a round trip is not a correctness test.
 - **`directives` REPORTS the `$` names it does not know** rather than passing them on as filters (`FJS-988`).
+- **State read from a link is foreign** — `/share`'s `decodeShare` answers data, `readFields` keeps the good fields, and code in it never runs until the viewer asks (`FJS-3771`).
 - **A new subpath is invisible to a vite that is already running** — the exports map is read at server start.
 - **A highlighter fails silently or not at all**, and glow's output is elements, never classes; `encode()` escapes `&` FIRST.
 

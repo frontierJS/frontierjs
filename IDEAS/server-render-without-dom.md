@@ -364,7 +364,7 @@ happy-dom path, or each difference is a ruling.
 
 ## 5. Open questions
 
-- **Q1: the script half still reads browser globals.** A component's
+- ~~**Q1: the script half still reads browser globals.**~~ **Answered 2026-11-01 (`FJS-D1649`): the measured cost is nodes, not the window, and B is a second answer to a question `FJS-D214` settled. - **Ruled A** by the owner, 2026-10-29 (`FJS-D1649`).** A component's
   `<script>` runs on the server, and `docs/STATIC_RENDERING.md` § *What a
   browser global answers* records that it reads `window.innerWidth`,
   `matchMedia` and the others and gets answers. `FJS-D214` made that silence

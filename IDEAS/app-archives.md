@@ -162,7 +162,7 @@ row it wrote before the download.
       `.db.tar.gz` key too, which it skipped before. A request is capped at
       128 MB by Bun, below `MAX_UPLOAD_BYTES` (`FJS-3090`), the same ceiling
       `/setup/restore` has.
-- [ ] 3.1b A `.db.tar.gz` restores per file (`FJS-D1724`). `/volume/restore`'s
+- [x] 3.1b A `.db.tar.gz` restores per file (`FJS-D1724`). `/volume/restore`'s
       overwrite empties `/data`, which would delete the volume's other
       databases. Outpost's `restore` takes one more option, so its url door's
       fetch and sha256 check stay the only ones: the tar extracts into a temp
@@ -172,6 +172,12 @@ row it wrote before the download.
       a wrapped `.db` restored onto a volume holding two other databases and
       an uploads file leaves the others, and the target's `-wal`/`-shm` are
       gone.
+      **Built 2026-10-31.** `restore({ perFile })`, `per_file` on the wire,
+      runs `ARCHIVE_FILES_SCRIPT`: the tar unpacks to `/unpacked` in the
+      container, then `filesScript('/unpacked')`, the replica copy with its
+      source dir as an argument. `backupSource` sends `per_file` for a
+      `.db.tar.gz` location. `verify:docker`'s `volume.perFile*` rows pass;
+      its `/deploy` rows fail at HEAD (`FJS-3791`).
 - [ ] 3.2 An Upload control in `AppBackups.mesa` taking `.tar.gz` or `.db`;
       the row it makes offers Restore like any other, and a wrapped `.db`'s
       confirmation says it replaces that database only.

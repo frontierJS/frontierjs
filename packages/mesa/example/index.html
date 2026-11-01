@@ -4,7 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mesa REPL</title>
-    <script src="./vendor/lz-string.min.js"></script>
     <!-- @frontierjs/css — the design system @frontierjs/ui is written in.
          Reachable only when the server root is the monorepo root (npm run
          serve). It is FULLY layered — every rule sits inside @layer — so it
@@ -1363,6 +1362,7 @@
           "@codemirror/autocomplete": "./vendor/codemirror-autocomplete.js",
           "@lezer/highlight": "./vendor/lezer-highlight.js",
           "@replit/codemirror-vim": "./vendor/replit-codemirror-vim.js",
+          "@frontierjs/toolbelt/share": "../node_modules/@frontierjs/toolbelt/src/share/share.js",
           "@frontierjs/toolbelt/tty": "../node_modules/@frontierjs/toolbelt/src/tty/tty.js"
         }
       }
@@ -1383,6 +1383,7 @@
       import { html } from '@codemirror/lang-html'
       import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete'
       import { vim, Vim } from '@replit/codemirror-vim'
+      import { encodeShare, decodeShare, shareParam, readFields } from '@frontierjs/toolbelt/share'
 
       // Mesa token highlight style — maps CM token classes to Mesa colors
       import { HighlightStyle } from '@codemirror/language'
@@ -3464,45 +3465,40 @@ __MesaComponent(anchor, {}, null)
 
       // ─── Shareable URL — encode/decode file state in URL hash ─────────────────────
       //
-      // State: { files: [{name, content},...], activeFileIdx: number }
-      // Encoding: JSON → LZString.compressToEncodedURIComponent → #s=<encoded>
-      // LZString keeps hashes short — typical Mesa component compresses 5-10x.
+      // State: { files: [{name, content},...], activeFileIdx: number }, carried
+      // as `#s=` by toolbelt/share. A link is foreign data: it is read field by
+      // field and never compiled until the viewer's page boots on it.
 
-      function encodeState() {
-        const state = {
+      const readSharedFile = (f) => {
+        const read = readFields(f, { name: (v) => typeof v === 'string' ? v : undefined, content: (v) => typeof v === 'string' ? v : undefined })
+        return read && 'name' in read && 'content' in read ? read : undefined
+      }
+
+      async function encodeState() {
+        return encodeShare({
           files: files.map(f => ({ name: f.name, content: f.content })),
           activeFileIdx
-        }
-        return LZString.compressToEncodedURIComponent(JSON.stringify(state))
+        })
       }
 
-      function decodeState(encoded) {
-        try {
-          const json = LZString.decompressFromEncodedURIComponent(encoded)
-          if (!json) return null
-          const state = JSON.parse(json)
-          if (!Array.isArray(state.files) || !state.files.length) return null
-          return state
-        } catch { return null }
+      async function getHashState() {
+        const encoded = shareParam(location.hash)
+        const state = encoded && readFields(await decodeShare(encoded), {
+          files: (v) => Array.isArray(v) ? v.map(readSharedFile).filter(Boolean) : undefined,
+          activeFileIdx: (v) => Number.isInteger(v) ? v : undefined,
+        })
+        return state?.files?.length ? state : null
       }
 
-      function getHashState() {
-        const hash = location.hash
-        const m = hash.match(/[#&]s=([^&]*)/)
-        return m ? decodeState(m[1]) : null
-      }
-
-      function pushHashState() {
-        const encoded = encodeState()
-        const newHash = '#s=' + encoded
+      async function pushHashState() {
         // Use replaceState to avoid polluting browser history on every keystroke
-        window.history.replaceState(null, '', newHash)
+        window.history.replaceState(null, '', '#s=' + await encodeState())
       }
 
-      function copyShareLink() {
+      async function copyShareLink() {
         // Sync current editor content to files before encoding
         files[activeFileIdx].content = getEditorValue()
-        pushHashState()
+        try { await pushHashState() } catch (e) { return setStatus('red', e.message) }
         const url = location.href
         navigator.clipboard.writeText(url).then(() => {
           const btn = document.getElementById('share-btn')
@@ -3574,7 +3570,7 @@ __MesaComponent(anchor, {}, null)
       renderFileTabs()
 
       // Restore from URL hash if present, otherwise load default example
-      const _hashState = getHashState()
+      const _hashState = await getHashState()
       if (_hashState) {
         files = _hashState.files
         activeFileIdx = Math.min(_hashState.activeFileIdx ?? 0, files.length - 1)

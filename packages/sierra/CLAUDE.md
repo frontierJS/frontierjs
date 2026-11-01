@@ -17,7 +17,7 @@ this list does not name. The owners that matter on most turns:
 
 - `src/index.js` public entry — the router and the theme, nothing else · `src/scanner/` routes dir → route tree (`walk.js`, `classify.js`, `build-tree.js`, `generate-route-table.js` writes the committed `config/routes.js`).
 - `src/router/index.js` is the runtime router and owns `page`; `match.js`, `prefetch.js`, `page-fields.js`, `memory-history.js` (the terminal's address).
-- `src/resource/resource.js` is `createResource` — coerce → blankToNull → validate; `tethered.js` is the one door a screen lists rows through; `session.js` who the browser thinks you are; `field-rules.js` is a deliberate leaf; `index.js` is `connectApp()`.
+- `src/resource/resource.js` is `createResource` — coerce → blankToNull → validate; `options.js` is a field's picker options and `read-baseline.js` the rows a resource read (the patch baseline and `@version`); `tethered.js` is the one door a screen lists rows through; `session.js` who the browser thinks you are; `field-rules.js` is a deliberate leaf; `index.js` is `connectApp()`.
 - `src/build/index.js` is `createSierraViteConfig` — start there; `mesa-plugin.js`, `app-alias-plugin.js`, `auto-import-plugin.js`, `schema-plugin.js`, `prerender.js`, `static-safety.js`, `widget-build.js`, `mcp-build.js`.
 - `src/postbuild/` is sitemap, redirects, llms.txt, 404, theme, `manifest.js`, `headers.js`, `hashed-asset.js`, `offline-shell.js`, `functions.js` + `function-handler.js`.
 - Surfaces with their own origin: `src/site/` (`serve.js`), `src/widget/`, `src/mcp/`, `src/terminal/` (`loader.js`, `shell.js`, `Shell.mesa`); `src/serve/` is what the two static servers share; `src/tools/` is the `sierra` bin and `tui.js`.

@@ -6231,7 +6231,7 @@ not ruled here.
 
 *Lives in:* `packages/litestone/src/core/parser.js` (`parseValueSet`'s `order`
 key, `orderColumnRefusal`), `src/jsonschema.js` (`x-values.order`),
-`packages/sierra/src/resource/resource.js` (`optionsOrder`, the one owner of a
+`packages/sierra/src/resource/options.js` (`optionsOrder`, the one owner of a
 question three call sites answered separately). 11 tests in
 `test/valueset-order.test.ts` (23 with the head), 7 in `test/options-order.test.js`
 (3 red with the resolver stubbed), 10 in `test/options-recent.test.js` (5 red

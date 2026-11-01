@@ -272,10 +272,10 @@ the dev road first.
 - [ ] 4.1 `fli ws:publish --channel dev`: a closed set (`dev` only), refused
   with `--to npm` by name. The dev version string is
   `<manifest version>-dev.<short sha>` of HEAD; no manifest is written, no
-  commit, no git tag. `00-preflight` refuses a dirty tree on this channel
-  regardless of `--allow-dirty` — the sha in the filename is the one origin
-  and a dirty tree makes it a lie. The pack is 1.1's `packPackage` over a
-  manifest copy with the dev version, so the tarball's own name carries it.
+  commit, no git tag. The pack is `packAtCommit` (`core/vendor.js`) at HEAD,
+  with the dev version written into the temporary checkout's manifest. So the
+  sha in the filename is the bytes' one origin, and an uncommitted edit in the
+  main tree reaches no tarball (`publish-order` 1.1–1.2).
 - [ ] 4.2 Upload to ONE rolling GitHub Release named `dev` (`gh release
   upload dev <tgz>`, created once with `--prerelease --latest=false`); the
   release's tag is never cited, the filename is. Same name twice is refused

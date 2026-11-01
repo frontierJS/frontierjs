@@ -40,4 +40,24 @@ export async function run(t) {
   await t.evaluate(`await waitFor(() => !document.querySelector('.fjs-cp-panel')); return true;`)
   t.is(await t.evaluate(`return document.querySelectorAll('.fjs-cp-panel').length;`), 0,
     'the palette closes anyway')
+
+  // FJS-1139: an item's `tone` reaches the sub line as a tone class that the
+  // package's tint ramp colors; a raw `color` is not a word the palette reads.
+  await t.mount('palette', { toned: true })
+  await t.press('k', 2)
+  await t.evaluate(`return await waitVisible('.fjs-cp-panel');`)
+  await t.type('wipe')
+  await t.eventually(`${rows}.length`, 1, 'the toned command is found')
+  const sub = `document.querySelector('.fjs-cp-row .item-sub')`
+  t.ok(await t.evaluate(`return ${sub}.classList.contains('danger');`), 'tone="danger" puts the tone class on the sub line')
+  t.is(await t.evaluate(`return ${sub}.getAttribute('style');`), null, 'and writes no inline style')
+  t.is(await t.evaluate(`const cs = getComputedStyle(${sub}); return cs.color !== getComputedStyle(document.querySelector('.fjs-cp-input')).color;`), true,
+    'the sub line reads in the tone, not the muted ink')
+  await t.press('Escape')
+  await t.evaluate(`await waitFor(() => !document.querySelector('.fjs-cp-panel')); return true;`)
+  await t.press('k', 2)
+  await t.evaluate(`return await waitVisible('.fjs-cp-panel');`)
+  await t.type('paint')
+  await t.eventually(`${rows}.length`, 1, 'the colored command is found')
+  t.is(await t.evaluate(`return ${sub}.getAttribute('style');`), null, 'a raw color writes no inline style')
 }

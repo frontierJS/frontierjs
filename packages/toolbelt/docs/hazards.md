@@ -371,3 +371,11 @@ The full hazard catalog for `@frontierjs/toolbelt`, moved out of `CLAUDE.md`. Th
 - **`fill` leaves what it cannot fill AS WRITTEN** -- a name the context lacks, a
   value that is not a scalar, a brace that holds no readable expression -- so a
   gap shows. `check` is where an unknown name is refused, at save.
+- **A state that arrived in a link is foreign data, and `/share` is where that
+  is written (`FJS-3771`).** `decodeShare` answers parsed JSON and nothing
+  more: read it with `readFields`, field by field, a malformed field dropped,
+  and code in it (a transform, a formula, a handler) arrives OFF and runs only
+  when the viewer asks. SRC compiled a link's transform on open, in the page's
+  origin. The two numbers are the codec's too: a link past `SHARE_MAX` is
+  refused with a sentence rather than copied broken, and an inflate past
+  `SHARE_INFLATED_MAX` is null, since a 108 KB link inflates to 80 MB.

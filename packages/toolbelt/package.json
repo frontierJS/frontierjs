@@ -97,6 +97,10 @@
     },
     "./seal": "./src/seal/seal.js",
     "./search": "./src/search/search.js",
+    "./share": {
+      "types": "./src/share/share.d.ts",
+      "default": "./src/share/share.js"
+    },
     "./signature": "./src/signature/signature.js",
     "./sigv4": {
       "types": "./src/sigv4/sigv4.d.ts",

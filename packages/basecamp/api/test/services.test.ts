@@ -4879,7 +4879,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
     const sys     = env.system as any
     const project = await sys.project.create({ data: { workspaceId: ws.id, name: 'Bk', slug: `bk-${tag()}` } })
     const e       = await sys.environment.create({ data: { workspaceId: ws.id, projectId: project.id, name: 'E', slug: `e-${tag()}` } })
-    app    = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'bk', slug: `bk-${tag()}` } })
+    app    = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'bk', slug: `bk-${tag()}`, volumePath: '/db' } })
     server = await serverAt('online', { workspaceId: ws.id, name: 'bk-host', slug: `bk-host-${tag()}` })
     await sys.appServer.create({ data: { appId: app.id, serverId: server.id, replicaIndex: 0, status: 'running' } })
   })
@@ -4907,6 +4907,15 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
     await expect(env.as(developer).service('appBackups').find()).rejects.toThrow()
     await expect(env.as(owner).service('appBackups').create({ appId: app.id, serverId: server.id, status: 'success' }))
       .rejects.toThrow()
+  })
+
+  // A static app is placed and has no data directory on its machine.
+  test('an app with no volume path is refused before a row is written', async () => {
+    const sys  = env.system as any
+    const bare = await sys.app.create({ data: { workspaceId: ws.id, environmentId: app.environmentId, name: 'bare', slug: `bare-${tag()}`, type: 'static' } })
+    await sys.appServer.create({ data: { appId: bare.id, serverId: server.id, replicaIndex: 0, status: 'running' } })
+    await expect(take(owner, { appId: bare.id, serverId: server.id })).rejects.toThrow(/no volume path/)
+    expect(await sys.appBackup.count({ where: { appId: bare.id } })).toBe(0)
   })
 
   test('another workspace cannot name the app, and an unplaced server is refused', async () => {

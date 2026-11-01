@@ -339,7 +339,8 @@ export function createOutpostServer(config, {
       .then(async result => ({ ...result, usage: await inspector.disk() })),
     'POST /volumes/prune': (body) => inspector.pruneVolumes(body.names ?? []),
     // An archive on the machine, or a backup fetched by a pre-signed GET, into the app's stopped volume.
-    'POST /volume/restore': (body) => docker.restore({ appId: body.app_id, path: body.path, url: body.url, sha256: body.sha256, overwrite: body.overwrite }),
+    // `per_file` replaces only the databases the archive holds (`FJS-D1724`).
+    'POST /volume/restore': (body) => docker.restore({ appId: body.app_id, path: body.path, url: body.url, sha256: body.sha256, overwrite: body.overwrite, perFile: body.per_file }),
     // An app's databases out of its Litestream replica, at an instant or the
     // latest, into its stopped volume. The key rides in the body like
     // `/replicate`'s, so the machine holds nothing it was not already handed.

@@ -742,6 +742,9 @@ title: App
   // Only the tabs with something behind them. See the note at the foot.
   const TABS = ['overview', 'domains', 'source', 'config', 'releases', 'backups', 'live', 'logs', 'log-analysis']
   if (!TABS.includes(tab)) tab = 'overview'
+  // An app with no volume path has no data directory on any machine.
+  $: tabs = app?.volumePath ? TABS : TABS.filter(t => t !== 'backups')
+  $: { if (app && !tabs.includes(tab)) tab = 'overview' }
   const APP_RELEASES_COLUMNS = [
     { name: 'queued',  label: 'Queued' },
     { name: 'status',  label: 'Status' },
@@ -825,7 +828,7 @@ title: App
        panels rather than four routes, and a screen reader is told which is
        current by the attribute the stylesheet already keys off. -->
   <div class="cluster" role="tablist" aria-label="App sections" id="app-tabs">
-    {#each TABS as t}
+    {#each tabs as t}
       <Button treatment={tab === t ? 'outlined' : 'ghost'} role="tab"
               aria-selected={tab === t ? 'true' : 'false'}
               onclick={() => tab = t}>{t}</Button>

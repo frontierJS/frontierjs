@@ -33,7 +33,7 @@ Everything else works from any server root. Those two degrade to a console
 warning and unstyled components — the warning names the fix.
 
 The page loads nothing from the network: `vendor/` holds the CodeMirror,
-acorn, unified and lz-string bundles, and `index.html`'s importmap names them.
+acorn and unified bundles, and `index.html`'s importmap names them.
 After a devDependency moves, `bun example/build-vendor.mjs` rewrites it.
 
 ## How it works

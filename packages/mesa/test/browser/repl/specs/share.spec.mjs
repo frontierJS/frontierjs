@@ -1,11 +1,10 @@
 /*
  * share — a link that carries the code, and the standalone export.
  *
- * The share hash is `JSON → LZString.compressToEncodedURIComponent → #s=…`,
+ * The share hash is `toolbelt/share`'s `#s=…`,
  * and the only assertion worth making about a codec is the ROUND TRIP through
  * a real navigation: encoding alone proves nothing, and a stub on either side
- * would agree with itself. That is also why lz-string wants vendoring rather
- * than stubbing when the CDNs go (`FJS-326`).
+ * would agree with itself.
  *
  * Nothing the REPL defines is reachable from the page's global scope — it is
  * all inside one module script — so this drives the button rather than calling
@@ -56,6 +55,15 @@ export async function run(t) {
     return { hash: location.hash };
   `)
   t.match(shared.hash, /^#s=.+/, 'Share writes a state hash into the URL')
+
+  // The link is `toolbelt/share`'s, so a link made here reads in any page that
+  // uses it (`FJS-3788`).
+  const codec = await t.evaluate(`
+    const { decodeShare, shareParam } = await import('@frontierjs/toolbelt/share');
+    const state = await decodeShare(shareParam(location.hash));
+    return { files: Array.isArray(state?.files) ? state.files.length : -1 };
+  `)
+  t.ok(codec.files > 0, 'the hash is toolbelt/share text and holds the files')
 
   // The round trip. A fresh navigation re-reads the hash, decodes it and
   // compiles what it found.

@@ -56,7 +56,7 @@ const STALE_AFTER_MS = BACKUP_TIMEOUT_MS + 60_000
  *  that expired mid-upload is a 403 the machine reports as a kept archive. */
 const UPLOAD_URL_TTL_S = 3 * 3600
 
-type Target = Pick<AppRow, 'id' | 'workspaceId' | 'backupDestinationId'>
+type Target = Pick<AppRow, 'id' | 'name' | 'workspaceId' | 'backupDestinationId' | 'volumePath'>
 
 /** The pre-signed GET a restore fetches by. The fetch is bounded at an hour
  *  on the machine; the URL outlives it so a slow one does not read as a 403. */
@@ -133,6 +133,9 @@ export async function takeAppBackup(app: App, opts: {
   const sys      = app.db!.asSystem() as any
 
   await refuseHubVolume(sys, target.id)
+  // The machine mounts a data directory only at a volume path, so without one
+  // it answers "does not exist" after a failed row is already on screen.
+  if (!target.volumePath) throw new BadRequest(`App '${target.name}' has no volume path, so it keeps no data to back up`)
 
   const inFlight = await sys.appBackup.findFirst({
     where: {

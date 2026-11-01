@@ -3397,25 +3397,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return createPlan({ ...scalarNoEdge, ...(await processBelongsToNested(nested)) }, { ...c, hasNested, edgeWrites, bare: false })
   }
 
-  // Everything an update decides before its unit opens, and the planner its
-  // unit runs: `plan(extraFKs)` takes the foreign keys a belongsTo nested
-  // write made and answers the plan, or null for a row outside the caller's
-  // read scope. Returns the updated row, or null in these cases:
-  //   • No row matched the where clause
-  //   • A @@allow/@@deny policy blocked the update
-  //   • A post-update policy rollback was triggered
-  // Callers that need to distinguish can check count() before/after,
-  // or enable policyDebug to see which policy blocked.
-  async function prepareUpdate({ where, data, include, select, scopedBy, system, _bypassVersion, _move, base,
-                                 withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
-    refuseSoftDeleteWrite(data, 'update')
-    refuseSystemEntries(system, ['update'])
-    if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, include, select, system }, ctx)
-    await enforceValueSets(modelName, [data], ctx, { where })
-    const stamped = new Set()
-    data = stampFromAuth(data, shape.updatedBy, ctx.auth, stamped)
-    const [_upHidden] = await hiddenParents([data], [stamped], system)
-
+  // The caller's expected version, taken off an update's payload. Answers the
+  // payload without it and the number to compare against (null: no check).
+  function takeExpectedVersion(data, { _bypassVersion, _move }) {
     // ── @version — take the caller's expected version off the payload ───────
     // It is a precondition, not a value to write: the column is bumped by SQL
     // below, never SET to what arrived. asSystem() may leave it out, since a
@@ -3439,8 +3423,12 @@ function makeTable(readDb, writeDb, shape, ctx) {
       }
       if (data && _versionField in data) { data = { ...data }; delete data[_versionField] }
     }
+    return { data, expectVersion: _expectVersion }
+  }
 
-    // ── @@sync(field) — the base row a per-column merge compares against ────
+  // A base row is read only by @@sync(field), and only for columns whose stored
+  // form is their value form. Refused by name where nothing would read it.
+  function refuseBaseWithoutSync(base, data) {
     // Refused by name where nothing would read it, rather than dropped. A
     // base that is silently ignored looks exactly like a merge that found no
     // conflict, which is the one failure this mechanism cannot afford to make
@@ -3468,6 +3456,32 @@ function makeTable(readDb, writeDb, shape, ctx) {
         `which @@sync(field) cannot compare: the stored value is an encoding, not the value. ` +
         `Write those columns in a call of their own, without a base.`)
     }
+  }
+
+  // Everything an update decides before its unit opens, and the planner its
+  // unit runs: `plan(extraFKs)` takes the foreign keys a belongsTo nested
+  // write made and answers the plan, or null for a row outside the caller's
+  // read scope. Returns the updated row, or null in these cases:
+  //   • No row matched the where clause
+  //   • A @@allow/@@deny policy blocked the update
+  //   • A post-update policy rollback was triggered
+  // Callers that need to distinguish can check count() before/after,
+  // or enable policyDebug to see which policy blocked.
+  async function prepareUpdate({ where, data, include, select, scopedBy, system, _bypassVersion, _move, base,
+                                 withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
+    refuseSoftDeleteWrite(data, 'update')
+    refuseSystemEntries(system, ['update'])
+    if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, include, select, system }, ctx)
+    await enforceValueSets(modelName, [data], ctx, { where })
+    const stamped = new Set()
+    data = stampFromAuth(data, shape.updatedBy, ctx.auth, stamped)
+    const [_upHidden] = await hiddenParents([data], [stamped], system)
+
+    // ── @version — the expected version is a precondition, not a value to write ──
+    const _versionField = shape.version
+    let _expectVersion
+    ;({ data, expectVersion: _expectVersion } = takeExpectedVersion(data, { _bypassVersion, _move }))
+    refuseBaseWithoutSync(base, data)
 
     // ── Everything that touches the database, as one unit ────────────────
     //
@@ -3898,6 +3912,185 @@ function makeTable(readDb, writeDb, shape, ctx) {
     remove: planRemove, delete: planDelete, create: planCreate, update: planUpdate, upsert: planUpsert,
   }
 
+  // ── findMany({ recursive }): the recursive CTE path ──────────────────
+  // A tree read is a read: the plugin door, the row policy and the
+  // soft-delete filter all apply, and they apply at every level. The walk
+  // carries the same visibility predicate as the anchor, so a row the
+  // caller cannot see hides its whole subtree — the alternative hands back
+  // the children of a row the caller was refused. The CTE resolves ids
+  // only and the rows come back through findMany, so select / include /
+  // @computed / @from keep one owner instead of a second copy here.
+  // `table` is the wrapped table, so the second read goes back through the hooks.
+  async function findManyRecursive(table, args) {
+    if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
+
+    const rec = args.recursive === true
+      ? { direction: 'descendants' }
+      : { direction: 'descendants', ...args.recursive }
+
+    // The option arrives from a wire as well as from code (`$recursive`), so
+    // a key or a value it does not hold is refused by name: a misspelt
+    // `maxdepth` otherwise walks to the 1000-level ceiling and answers 200.
+    const badRecursive = (key, message) => { throw new ValidationError([{ path: ['recursive', key], message }]) }
+    for (const k of Object.keys(rec))
+      if (!RECURSIVE_KEYS.includes(k)) badRecursive(k, `recursive takes ${RECURSIVE_KEYS.join(', ')}; '${k}' is not one of them`)
+    if (rec.direction !== 'descendants' && rec.direction !== 'ancestors')
+      badRecursive('direction', `recursive.direction is 'descendants' or 'ancestors', not ${JSON.stringify(rec.direction)}`)
+    if (rec.maxDepth != null && !(Number.isInteger(rec.maxDepth) && rec.maxDepth >= 1))
+      badRecursive('maxDepth', `recursive.maxDepth is a whole number of 1 or more, not ${JSON.stringify(rec.maxDepth)}`)
+    if (rec.nested != null && typeof rec.nested !== 'boolean')
+      badRecursive('nested', `recursive.nested is true or false, not ${JSON.stringify(rec.nested)}`)
+    if (rec.via != null && typeof rec.via !== 'string')
+      badRecursive('via', `recursive.via names a relation field or its foreign key, not ${JSON.stringify(rec.via)}`)
+
+    const selfRels = shape.selfRelations
+    if (!selfRels?.length) {
+      const composite = Object.entries(shape.relations)
+        .find(([, r]) => r.kind === 'belongsTo' && r.targetModel === modelName && r.foreignKeys.length > 1)
+      if (composite)
+        throw new Error(`findMany({ recursive }) — '${modelName}.${composite[0]}' relates over (${composite[1].foreignKeys.join(', ')}), and a tree walk follows a single column`)
+      throw new Error(`findMany({ recursive }) — model '${tableName}' has no self-referential relation`)
+    }
+
+    // The CTE names four columns of its own; a model column of the same
+    // name would resolve to the CTE inside the walk and answer nonsense.
+    const reserved = ['_id', '_pid', '_depth', '_path']
+    for (const f of shape.model.fields)
+      if (reserved.includes(f.name))
+        throw new Error(`findMany({ recursive }) — '${tableName}' declares a field named '${f.name}', which the tree query uses for itself`)
+
+    let relsToUse = selfRels
+    if (rec.via) {
+      const found = selfRels.find(r => r.relationField === rec.via || r.fkField === rec.via)
+      if (!found) throw new Error(`findMany({ recursive }) — 'via: "${rec.via}"' not found on model '${tableName}'`)
+      relsToUse = [found]
+    }
+    if (rec.nested && (args.limit != null || args.offset != null))
+      throw new ValidationError([{ path: ['recursive'], message:
+        `recursive: { nested: true } cannot take limit or offset — they would cut branches out of the tree. Use maxDepth, or take the flat result and page that` }])
+
+    const multiRel = relsToUse.length > 1
+    const maxDepth = rec.maxDepth ?? 1000
+
+    // Built once, bound at every level it appears in: the anchor SELECT and
+    // each step of the walk. Folded as `recursive`: its row in READ_RULES
+    // says which rules the walk applies, and which it does not.
+    const visParams = []
+    const { where: visWhere, policy: readPolicy } = visibleWhere('recursive', null, args)
+    let   visSql    = visWhere ? buildWhereWithEncryption(visWhere, visParams) : null
+    if (readPolicy) {
+      visSql = visSql ? `(${visSql}) AND (${readPolicy.sql})` : readPolicy.sql
+      visParams.push(...readPolicy.params)
+    }
+
+    const idField = relsToUse[0].referencedField
+    const found   = new Map()   // id → { depth, via }
+
+    for (const rel of relsToUse) {
+      const { fkField, referencedField } = rel
+
+      const anchorParams = []
+      const anchorSql    = args.where ? buildWhereWithEncryption(args.where, anchorParams) : null
+      let   anchorFilter = anchorSql ?? ''
+      if (visSql) {
+        anchorFilter = anchorFilter ? `(${anchorFilter}) AND (${visSql})` : visSql
+        anchorParams.push(...visParams)
+      }
+
+      // SQLite has no CYCLE clause. The GROUP BY below already dedupes the
+      // ANSWER, so _path is about the walk: without it a stored cycle is
+      // ended only by the depth ceiling, so a two-row loop scans maxDepth
+      // rows — 1000 by default, and whatever a caller raised it to.
+      const step = rec.direction === 'ancestors'
+        ? `"${tableName}"."${referencedField}" = _t._pid`
+        : `"${tableName}"."${fkField}" = _t._id`
+
+      const cteSql = `
+WITH RECURSIVE _t(_id, _pid, _depth, _path) AS (
+  SELECT "${referencedField}", "${fkField}", 0, ',' || "${referencedField}" || ','
+  FROM "${tableName}"${anchorFilter ? `\n  WHERE ${anchorFilter}` : ''}
+  UNION ALL
+  SELECT "${tableName}"."${referencedField}", "${tableName}"."${fkField}", _t._depth + 1,
+     _t._path || "${tableName}"."${referencedField}" || ','
+  FROM "${tableName}" JOIN _t ON ${step}
+  WHERE _t._depth < ${Number(maxDepth)}
+AND instr(_t._path, ',' || "${tableName}"."${referencedField}" || ',') = 0${visSql ? `\n    AND (${visSql})` : ''}
+)
+SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
+
+      const cteParams = visSql ? [...anchorParams, ...visParams] : anchorParams
+      const _nt  = needsTiming()
+      const _t0  = _nt ? performance.now() : 0
+      const hits = readDb.query(cteSql).all(...cteParams)
+      if (_nt) fireQuery({ operation: 'findMany', args, sql: cteSql, params: cteParams, duration: performance.now() - _t0, rowCount: hits.length })
+
+      for (const h of hits) {
+        const prev = found.get(h._id)
+        if (!prev || h._depth < prev.depth) found.set(h._id, { depth: h._depth, via: rel.fkField })
+      }
+    }
+
+    // Depth 0 is the anchor itself. It is not part of its own subtree, and
+    // it is only fetched at all so `nested` can tell a root from a child.
+    const wanted = [...found.entries()].filter(([, v]) => rec.nested || v.depth > 0).map(([id]) => id)
+    if (!wanted.length) return []
+
+    const obList      = args.orderBy ? (Array.isArray(args.orderBy) ? args.orderBy : [args.orderBy]) : []
+    const byDepth     = obList.some(o => '_depth' in o)
+    const obColumns   = obList.map(o => { const c = { ...o }; delete c._depth; return c }).filter(o => Object.keys(o).length)
+
+    // The rows themselves come back through the ordinary read, which is
+    // what applies the gate, the select, the includes and the derived fields.
+    let rows = await table.findMany({
+      ...args,
+      recursive: undefined,
+      where:     { [idField]: { in: wanted } },
+      orderBy:   byDepth ? undefined : (obColumns.length ? obColumns : undefined),
+      limit:     byDepth || rec.nested ? undefined : args.limit,
+      offset:    byDepth || rec.nested ? undefined : args.offset,
+    })
+
+    for (const row of rows) {
+      const hit = found.get(row[idField])
+      row._depth = hit?.depth ?? 0
+      if (multiRel) row._via = hit?.via
+    }
+
+    if (byDepth) {
+      rows = [...rows].sort((a, b) => {
+        for (const o of obList) {
+          for (const [k, v] of Object.entries(o)) {
+            const av = k === '_depth' ? a._depth : a[k]
+            const bv = k === '_depth' ? b._depth : b[k]
+            if (av === bv) continue
+            const dir = (typeof v === 'object' ? v?.dir : v) === 'desc' ? -1 : 1
+            return (av > bv ? 1 : -1) * dir
+          }
+        }
+        return 0
+      })
+      if (!rec.nested) {
+        const from = args.offset ?? 0
+        rows = rows.slice(from, args.limit != null ? from + args.limit : undefined)
+      }
+    }
+
+    if (!rec.nested) return rows
+
+    // Nested — the anchor is the frame, not a node, so its children are the
+    // roots and it does not appear in the result.
+    const byId  = new Map(rows.map(r => [r[idField], Object.assign(r, { children: [] })]))
+    const fkKey = relsToUse[0].fkField
+    const roots = []
+    for (const node of byId.values()) {
+      if (node._depth === 0) continue
+      const parent = byId.get(node[fkKey])
+      if (parent && parent._depth > 0) parent.children.push(node)
+      else roots.push(node)
+    }
+    return roots
+  }
+
   // installHooks wraps this object — see its header. Hooks are the OUTERMOST
   // layer: a before hook sees the arguments as the caller wrote them, ahead of
   // the plugin door and of any stamping this file does.
@@ -3960,183 +4153,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
     // ── findMany ────────────────────────────────────────────────────────────
     async findMany(args = {}) {
-      // ── Recursive CTE path ───────────────────────────────────────────────
-      // A tree read is a read: the plugin door, the row policy and the
-      // soft-delete filter all apply, and they apply at every level. The walk
-      // carries the same visibility predicate as the anchor, so a row the
-      // caller cannot see hides its whole subtree — the alternative hands back
-      // the children of a row the caller was refused. The CTE resolves ids
-      // only and the rows come back through findMany, so select / include /
-      // @computed / @from keep one owner instead of a second copy here.
-      if (args.recursive) {
-        if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
-
-        const rec = args.recursive === true
-          ? { direction: 'descendants' }
-          : { direction: 'descendants', ...args.recursive }
-
-        // The option arrives from a wire as well as from code (`$recursive`), so
-        // a key or a value it does not hold is refused by name: a misspelt
-        // `maxdepth` otherwise walks to the 1000-level ceiling and answers 200.
-        const badRecursive = (key, message) => { throw new ValidationError([{ path: ['recursive', key], message }]) }
-        for (const k of Object.keys(rec))
-          if (!RECURSIVE_KEYS.includes(k)) badRecursive(k, `recursive takes ${RECURSIVE_KEYS.join(', ')}; '${k}' is not one of them`)
-        if (rec.direction !== 'descendants' && rec.direction !== 'ancestors')
-          badRecursive('direction', `recursive.direction is 'descendants' or 'ancestors', not ${JSON.stringify(rec.direction)}`)
-        if (rec.maxDepth != null && !(Number.isInteger(rec.maxDepth) && rec.maxDepth >= 1))
-          badRecursive('maxDepth', `recursive.maxDepth is a whole number of 1 or more, not ${JSON.stringify(rec.maxDepth)}`)
-        if (rec.nested != null && typeof rec.nested !== 'boolean')
-          badRecursive('nested', `recursive.nested is true or false, not ${JSON.stringify(rec.nested)}`)
-        if (rec.via != null && typeof rec.via !== 'string')
-          badRecursive('via', `recursive.via names a relation field or its foreign key, not ${JSON.stringify(rec.via)}`)
-
-        const selfRels = shape.selfRelations
-        if (!selfRels?.length) {
-          const composite = Object.entries(shape.relations)
-            .find(([, r]) => r.kind === 'belongsTo' && r.targetModel === modelName && r.foreignKeys.length > 1)
-          if (composite)
-            throw new Error(`findMany({ recursive }) — '${modelName}.${composite[0]}' relates over (${composite[1].foreignKeys.join(', ')}), and a tree walk follows a single column`)
-          throw new Error(`findMany({ recursive }) — model '${tableName}' has no self-referential relation`)
-        }
-
-        // The CTE names four columns of its own; a model column of the same
-        // name would resolve to the CTE inside the walk and answer nonsense.
-        const reserved = ['_id', '_pid', '_depth', '_path']
-        for (const f of shape.model.fields)
-          if (reserved.includes(f.name))
-            throw new Error(`findMany({ recursive }) — '${tableName}' declares a field named '${f.name}', which the tree query uses for itself`)
-
-        let relsToUse = selfRels
-        if (rec.via) {
-          const found = selfRels.find(r => r.relationField === rec.via || r.fkField === rec.via)
-          if (!found) throw new Error(`findMany({ recursive }) — 'via: "${rec.via}"' not found on model '${tableName}'`)
-          relsToUse = [found]
-        }
-        if (rec.nested && (args.limit != null || args.offset != null))
-          throw new ValidationError([{ path: ['recursive'], message:
-            `recursive: { nested: true } cannot take limit or offset — they would cut branches out of the tree. Use maxDepth, or take the flat result and page that` }])
-
-        const multiRel = relsToUse.length > 1
-        const maxDepth = rec.maxDepth ?? 1000
-
-        // Built once, bound at every level it appears in: the anchor SELECT and
-        // each step of the walk. Folded as `recursive`: its row in READ_RULES
-        // says which rules the walk applies, and which it does not.
-        const visParams = []
-        const { where: visWhere, policy: readPolicy } = visibleWhere('recursive', null, args)
-        let   visSql    = visWhere ? buildWhereWithEncryption(visWhere, visParams) : null
-        if (readPolicy) {
-          visSql = visSql ? `(${visSql}) AND (${readPolicy.sql})` : readPolicy.sql
-          visParams.push(...readPolicy.params)
-        }
-
-        const idField = relsToUse[0].referencedField
-        const found   = new Map()   // id → { depth, via }
-
-        for (const rel of relsToUse) {
-          const { fkField, referencedField } = rel
-
-          const anchorParams = []
-          const anchorSql    = args.where ? buildWhereWithEncryption(args.where, anchorParams) : null
-          let   anchorFilter = anchorSql ?? ''
-          if (visSql) {
-            anchorFilter = anchorFilter ? `(${anchorFilter}) AND (${visSql})` : visSql
-            anchorParams.push(...visParams)
-          }
-
-          // SQLite has no CYCLE clause. The GROUP BY below already dedupes the
-          // ANSWER, so _path is about the walk: without it a stored cycle is
-          // ended only by the depth ceiling, so a two-row loop scans maxDepth
-          // rows — 1000 by default, and whatever a caller raised it to.
-          const step = rec.direction === 'ancestors'
-            ? `"${tableName}"."${referencedField}" = _t._pid`
-            : `"${tableName}"."${fkField}" = _t._id`
-
-          const cteSql = `
-WITH RECURSIVE _t(_id, _pid, _depth, _path) AS (
-  SELECT "${referencedField}", "${fkField}", 0, ',' || "${referencedField}" || ','
-  FROM "${tableName}"${anchorFilter ? `\n  WHERE ${anchorFilter}` : ''}
-  UNION ALL
-  SELECT "${tableName}"."${referencedField}", "${tableName}"."${fkField}", _t._depth + 1,
-         _t._path || "${tableName}"."${referencedField}" || ','
-  FROM "${tableName}" JOIN _t ON ${step}
-  WHERE _t._depth < ${Number(maxDepth)}
-    AND instr(_t._path, ',' || "${tableName}"."${referencedField}" || ',') = 0${visSql ? `\n    AND (${visSql})` : ''}
-)
-SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
-
-          const cteParams = visSql ? [...anchorParams, ...visParams] : anchorParams
-          const _nt  = needsTiming()
-          const _t0  = _nt ? performance.now() : 0
-          const hits = readDb.query(cteSql).all(...cteParams)
-          if (_nt) fireQuery({ operation: 'findMany', args, sql: cteSql, params: cteParams, duration: performance.now() - _t0, rowCount: hits.length })
-
-          for (const h of hits) {
-            const prev = found.get(h._id)
-            if (!prev || h._depth < prev.depth) found.set(h._id, { depth: h._depth, via: rel.fkField })
-          }
-        }
-
-        // Depth 0 is the anchor itself. It is not part of its own subtree, and
-        // it is only fetched at all so `nested` can tell a root from a child.
-        const wanted = [...found.entries()].filter(([, v]) => rec.nested || v.depth > 0).map(([id]) => id)
-        if (!wanted.length) return []
-
-        const obList      = args.orderBy ? (Array.isArray(args.orderBy) ? args.orderBy : [args.orderBy]) : []
-        const byDepth     = obList.some(o => '_depth' in o)
-        const obColumns   = obList.map(o => { const c = { ...o }; delete c._depth; return c }).filter(o => Object.keys(o).length)
-
-        // The rows themselves come back through the ordinary read, which is
-        // what applies the gate, the select, the includes and the derived fields.
-        let rows = await this.findMany({
-          ...args,
-          recursive: undefined,
-          where:     { [idField]: { in: wanted } },
-          orderBy:   byDepth ? undefined : (obColumns.length ? obColumns : undefined),
-          limit:     byDepth || rec.nested ? undefined : args.limit,
-          offset:    byDepth || rec.nested ? undefined : args.offset,
-        })
-
-        for (const row of rows) {
-          const hit = found.get(row[idField])
-          row._depth = hit?.depth ?? 0
-          if (multiRel) row._via = hit?.via
-        }
-
-        if (byDepth) {
-          rows = [...rows].sort((a, b) => {
-            for (const o of obList) {
-              for (const [k, v] of Object.entries(o)) {
-                const av = k === '_depth' ? a._depth : a[k]
-                const bv = k === '_depth' ? b._depth : b[k]
-                if (av === bv) continue
-                const dir = (typeof v === 'object' ? v?.dir : v) === 'desc' ? -1 : 1
-                return (av > bv ? 1 : -1) * dir
-              }
-            }
-            return 0
-          })
-          if (!rec.nested) {
-            const from = args.offset ?? 0
-            rows = rows.slice(from, args.limit != null ? from + args.limit : undefined)
-          }
-        }
-
-        if (!rec.nested) return rows
-
-        // Nested — the anchor is the frame, not a node, so its children are the
-        // roots and it does not appear in the result.
-        const byId  = new Map(rows.map(r => [r[idField], Object.assign(r, { children: [] })]))
-        const fkKey = relsToUse[0].fkField
-        const roots = []
-        for (const node of byId.values()) {
-          if (node._depth === 0) continue
-          const parent = byId.get(node[fkKey])
-          if (parent && parent._depth > 0) parent.children.push(node)
-          else roots.push(node)
-        }
-        return roots
-      }
+      if (args.recursive) return findManyRecursive(this, args)
 
       // ── Inline fast path: findMany() / findMany({}) ──
       // A plugin's beforeRead may rewrite the args, so the shape is asked again

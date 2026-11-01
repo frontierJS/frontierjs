@@ -438,6 +438,24 @@ try {
     saved.status === 200 && saved.body.files === 1 && saved.body.path.startsWith(`${backupDir}/${APP}-`) && /fresh\.db/.test(listing))
   t('backup.refusesAnAppWithNoData', (await call('/backup', { app_id: `${APP}-absent` })).status === 500)
 
+  // A wrapped `.db`, the shape Basecamp's upload makes of a bare file
+  // (`FJS-D1724`), onto a volume holding two other databases and an upload.
+  archive('volume', { 'shop.db': 'old', 'shop.db-wal': 'w', 'shop.db-shm': 's', 'other.db': 'o', 'third.db': 't', 'sub/upload.png': 'png' })
+  const wrapped = join(restoreDir, 'wrapped.src')
+  mkdirSync(wrapped, { recursive: true })
+  writeFileSync(join(wrapped, 'shop.db'), 'restored')
+  if (sh('tar', '-czf', join(restoreDir, 'shop.db.tar.gz'), '-C', wrapped, '.').status !== 0) throw new Error('could not tar shop.db')
+  const laid = await call('/volume/restore', { app_id: APP, path: 'volume.tar.gz', overwrite: true })
+  if (laid.status !== 200) console.log(laid.body)
+  const kept = await call('/volume/restore', { app_id: APP, path: 'shop.db.tar.gz', per_file: true })
+  t('volume.perFileRefusesTheDatabaseByName', kept.status === 500 && /holds shop\.db — send overwrite: true/.test(kept.body?.error) && onHost('shop.db') === 'old')
+  const one = await call('/volume/restore', { app_id: APP, path: 'shop.db.tar.gz', per_file: true, overwrite: true })
+  if (one.status !== 200) console.log(one.body)
+  t('volume.perFileReplacesOnlyItsDatabase',
+    one.status === 200 && one.body?.files === 1 && one.body?.per_file === true && onHost('shop.db') === 'restored'
+    && onHost('other.db') === 'o' && onHost('third.db') === 't' && onHost('sub/upload.png') === 'png'
+    && onHost('shop.db-wal') === null && onHost('shop.db-shm') === null)
+
   // ─── reports ────────────────────────────────────────────────────────────
   //
   // The volume report walks every volume, two docker calls each: 35s on a
@@ -517,6 +535,7 @@ const expected = [
   'volume.restoresIntoTheVolume', 'volume.refusesANonEmptyOne', 'volume.refusesAPathOffTheRoot',
   'volume.refusesWhileHeld', 'volume.overwriteReplacesTheFiles',
   'backup.tarsTheVolumeToTheMachine', 'backup.refusesAnAppWithNoData',
+  'volume.perFileRefusesTheDatabaseByName', 'volume.perFileReplacesOnlyItsDatabase',
   'reports.areSigned', 'reports.heartbeatRegistersTheUrl', 'reports.heartbeatCarriesVitals',
   'reports.volumesAreEveryVolume', 'reports.volumesHaveMountpoints', 'reports.diskCountsTheImages', 'reports.diskIsInBytes',
 ]

@@ -1,6 +1,6 @@
 <script>
   // CommandPalette.mesa
-  // Full ⌘K command palette. Converted from React. Dark-themed, keyboard navigable,
+  // Full ⌘K command palette: keyboard navigable, themed by the design system,
   // grouped results, fuzzy search across label + sub + group + keywords, word by word.
   //
   // ITEM SHAPE:
@@ -14,7 +14,7 @@
   //                                 ("save export download"); one string, not a list
   //     kbd?:    string           — shortcut hint shown on row ("⌘ D")
   //     badge?:  string           — accent badge ("New", "Beta")
-  //     color?:  string           — CSS color for sub text
+  //     tone?:   string           — one of the css tones; reads the sub text in it
   //     action:  () => void       — called on select
   //   }
   //
@@ -60,7 +60,7 @@
   // Reading the box off the DOM instead misses the ✕, which empties it
   // without an `input` event, and breaks on any rename of the palette's classes.
 
-  import { uid, overlayHost } from '../../utils.js'
+  import { uid, overlayHost, tone as toTone, cx } from '../../utils.js'
   import { rank, segments } from '@frontierjs/toolbelt/search'
 
   export let items        = []      // Item[]
@@ -413,10 +413,7 @@
                   <!-- One line: a break here renders whitespace inside the word. -->
                   <span class="item-title fjs-cp-rowlabel {isActive ? 'fjs-cp-rowlabel--active' : ''}">{#each segments(row.label, marksOf.get(row)?.label ?? []) as part, i (i)}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>
                   {#if row.sub}
-                    <span
-                      class="item-sub"
-                      style:color={row.color || undefined}
-                    >{#each segments(row.sub, marksOf.get(row)?.sub ?? []) as part, i (i)}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>
+                    <span class={cx('item-sub', toTone(row.tone), toTone(row.tone) && 'fjs-cp-sub--toned')}>{#each segments(row.sub, marksOf.get(row)?.sub ?? []) as part, i (i)}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>
                   {/if}
                 </span>
                 {/if}
@@ -713,6 +710,8 @@
     color:        var(--tint-ink);
     font-size:    var(--text-2xs);
   }
+
+  .fjs-cp-sub--toned { color: var(--tone-ink); }
 
   .fjs-cp-rowkbd {
     flex-shrink: 0;

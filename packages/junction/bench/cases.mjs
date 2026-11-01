@@ -102,10 +102,14 @@ export const cases = [
   },
 ]
 
+// A string body gets no content-length from \`new Request\`, and a request
+// without one takes the chunked bounded read a browser or curl never sends.
 function post() {
+  const body = JSON.stringify({ name: 'x', qty: 1 })
   return new Request(`${BASE}/items`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'x', qty: 1 }),
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(body)) },
+    body,
   })
 }
 

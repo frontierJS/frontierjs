@@ -409,7 +409,7 @@ async function checkBackup(data: Record<string, unknown>, selfId?: string): Prom
  * failed is a path on the machine it was taken on, under the backup directory
  * rather than the restore one, so it is refused here naming where it is.
  */
-async function backupSource(appId: string, backupId: string): Promise<{ url: string; sha256: string }> {
+async function backupSource(appId: string, backupId: string): Promise<{ url: string; sha256: string; per_file?: true }> {
   const backup = await db().appBackup.findFirst({ where: { id: backupId, appId } })
   if (!backup) throw new NotFound(`No backup '${backupId}' of this app`)
   if (backup.status !== 'success') throw new BadRequest(`Backup '${backupId}' is ${backup.status}, so there is no archive to restore`)
@@ -418,7 +418,10 @@ async function backupSource(appId: string, backupId: string): Promise<{ url: str
   if (!backup.sha256) throw new BadRequest(`Backup '${backupId}' records no sha256, so the machine has nothing to check the fetched copy against`)
   const dest = await db().backupDestination.findFirst({ where: { id: backup.destinationId } })
   if (!dest) throw new NotFound(`No backup destination '${backup.destinationId}'`)
-  return { url: await mintDownload($.app, dest, backup.location), sha256: backup.sha256 }
+  // A wrapped `.db` replaces that database only (`FJS-D1724`); a whole
+  // archive's restore would empty the volume around it.
+  const perFile = backup.location.endsWith('.db.tar.gz') ? { per_file: true as const } : {}
+  return { url: await mintDownload($.app, dest, backup.location), sha256: backup.sha256, ...perFile }
 }
 
 /** The post-restore offer (`domain/backup/found-replicas.ts`) is answered. */

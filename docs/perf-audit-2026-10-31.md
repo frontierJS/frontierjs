@@ -2,7 +2,7 @@
 
 Three read-only agents traced one verb end to end per realm and measured where a number was cheap: Litestone `findMany`/`findUnique`/`create`/`update`, Junction `GET /api/leads?status=open&$limit=10` and `PATCH /api/leads/:id`, Mesa a signal write into a 1000-row keyed list, Sierra a Form keystroke and a route navigation. Scope was the per-call path only; parser, migrate, studio and the compiler were out, and the 2026-09 audits (`FJS-2309`–`2317`, `FJS-634`–`639`, `FJS-781`–`888`) were not re-reported.
 
-**Every finding is a register row** — this file is the argument, `ISSUES.md` is what is open. Six were fixed in the same change and closed; one is a ruling; the rest are open. Numbers were taken on a box at load average 6–12 (Bun 1.4.4, happy-dom for the UI), so ratios are reliable and absolute µs are ±2x.
+**Every finding is a register row** — this file is the argument, `ISSUES.md` is what is open. Six were fixed in the same change and closed; one is a ruling. **Closed 2026-10-31:** every row is now fixed or refuted. Numbers were taken on a box at load average 6–12 (Bun 1.4.4, happy-dom for the UI), so ratios are reliable and absolute µs are ±2x.
 
 ## Baselines
 
@@ -48,11 +48,13 @@ Proof: litestone, mesa, sierra and ui suites green after the change; `count.mjs`
 10. ~~**FJS-3755**~~ — closed: `$checkWhere` rebuilt the key sets the table guard caches; it reads `whereKeysFor` now, 2.6 → 0.86 µs a two-key filter. The id-write `parseQuery` measured ~0.35 µs and was left.
 11. ~~**FJS-3757**~~ — closed: an update that keeps every key syncs the blocks and returns before the key count, and the blocks are kept beside `prevKeys`; same keys 121 → ~30 µs at a thousand rows. The middle-only key count was left: a repeated tail key must become the stand-in.
 12. ~~**FJS-3760**~~ — closed: `_recompute` keeps `errors` when the new map holds the same messages, so `$context.form` is not rebuilt per keystroke. 20 fields: 80 schema reads per keystroke to 0, ~1450 to ~400 µs in Chrome.
-13. **FJS-3761** — an app-wide `around` hook exists only to stamp `locals.__channels`.
-14. **FJS-3762** — delegated handler defines/deletes `currentTarget` on the Event per node; needs a Chrome bench before acting.
-15. **FJS-3759** — the junction bench sends no `content-length`, so it measures a path browsers never take.
+13. ~~**FJS-3761**~~ — closed: the app-wide `around` hook is gone; `announce()` reads the manager through `channelsOf(ctx)` in `core/service.ts`. The WS handler still stamps `locals.__channels` on its own context.
+14. ~~**FJS-3762**~~ — refuted: 200k real Chrome clicks through a nested root cost 4–5 µs with a handler, 2–3 µs without; a define-once, lazy-Set rewrite left the handler path unchanged. No change to `runtime.js`; see § Refuted.
+15. ~~**FJS-3759**~~ — closed: the bench `post()` sets `content-length`; a create is ~11% cheaper on the path a browser takes (73 → 65 µs, paired in one process).
 
 ## Smells — FJS-3758
+
+Closed: each function below hands its named jobs to helpers. What is still long — `createResource`, its `_call`, and mesa's three — is `FJS-3790`.
 
 | Function | Lines | Jobs |
 | -------- | ----- | ---- |

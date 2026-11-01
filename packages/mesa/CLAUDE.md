@@ -17,9 +17,9 @@ that are runner artifacts, not defects.
 in a real browser.
 
 **The REPL drive is `repl/`, in `test` and offline.** Its third-party code is
-`example/vendor/` — committed bundles of acorn, the unified chain and CodeMirror,
-plus lz-string — and `index.html`'s importmap names them, so the page that ships
-is the page tested. `bun example/build-vendor.mjs` rewrites the directory when a
+`example/vendor/` — committed bundles of acorn, the unified chain and CodeMirror —
+and `index.html`'s importmap names them, so the page that ships
+is the page tested. Its share link is `@frontierjs/toolbelt/share`, named in the same importmap. `bun example/build-vendor.mjs` rewrites the directory when a
 devDependency moves; one `Bun.build` with splitting, because a second copy of
 `@codemirror/state` fails on an `instanceof` that no message explains.
 

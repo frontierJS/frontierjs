@@ -12,7 +12,7 @@
  * CodeMirror packages share `@codemirror/state`, and a second copy of it in the
  * page fails on an `instanceof` that no error message explains.
  */
-import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 
@@ -68,12 +68,6 @@ if (!out.success) {
   process.exit(1)
 }
 await rm(ENTRY, { recursive: true, force: true })
-
-// A classic script, not a module: the page reads the global `LZString`.
-await copyFile(
-  fileURLToPath(import.meta.resolve('lz-string/libs/lz-string.min.js')),
-  join(VENDOR, 'lz-string.min.js'),
-)
 
 const importmap = Object.fromEntries(SPECIFIERS.map((s) => [s, `./vendor/${fileOf(s)}`]))
 console.log(JSON.stringify({ imports: importmap }, null, 2))

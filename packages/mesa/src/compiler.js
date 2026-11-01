@@ -7468,12 +7468,22 @@ function checkComponentTagsBound(ctx, instanceSrc) {
     ...ctx.scriptModuleNodes.map((s) => s.content),
     ...headers,
   ].filter((s) => typeof s === 'string').join('\n')
+  // Every word not read off a `.`, gathered in one pass: a RegExp built per tag
+  // and run over the whole source read a page of forty components forty times,
+  // and again for each repeat of a tag that was bound.
+  const words = new Set()
+  for (const m of haystack.matchAll(/[\w$]+/g)) {
+    if (haystack[m.index - 1] !== '.') words.add(m[0])
+  }
+  const bound = (root) => /^[\w$]+$/.test(root)
+    ? words.has(root)
+    : new RegExp(`(^|[^\\w$.])${root.replace(/\$/g, '\\$')}(?![\\w$])`).test(haystack)
   const seen = new Set()
   for (const n of tags) {
     const root = n.name.split('.')[0]
     if (seen.has(n.name)) continue
-    if (new RegExp(`(^|[^\\w$.])${root.replace(/\$/g, '\\$')}(?![\\w$])`).test(haystack)) continue
     seen.add(n.name)
+    if (bound(root)) continue
     const at = n.start != null ? ctx.posOf(n.start) : null
     ctx.analysis.errors.push(
       `<${n.name}> names nothing in this file. Bind it with \`import ${root} from './${root}.mesa'\` ` +
@@ -8543,6 +8553,252 @@ function _isInertBlock(blockNode) {
   )
 }
 
+/** Phase of emitScript: Props whose defaults read reactive vars. */
+function emitDeferredPropDefaults(ctx, deferredPropDefaults) {
+  const { module: mod } = ctx
+  // ── 5b. Deferred prop defaults ────────────────────────────────────────────
+  // Props whose defaults reference reactive vars are set here, after all
+  // vars/memos have been emitted. Wrapped in untrack so reading the default
+  // expression doesn't create a subscription on the prop's own signal.
+  Object.entries(deferredPropDefaults).forEach(([name, { sigR, sigW, varName, initRaw }]) => {
+    const defaultExpr = rewriteExpr(initRaw, ctx.accessors)
+    const value = `$$runtime.untrack(() => (${defaultExpr}))`
+    const write = varName
+      ? `${varName} = ${value}`
+      : sigW ? `${sigW}(${value})` : `$$runtime.set(${sigR}, ${value})`
+    mod.code.push(
+      xNode.raw(`if ($$option.props?.${name} === undefined) ${write};`)
+    )
+    if (!varName) mod.code.push(xNode.raw(`$$runtime.propDefault('${name}', () => (${defaultExpr}));`))
+  })
+}
+
+/** Phase of emitScript: `$context.key = expr`. */
+function emitContextProvides(ctx) {
+  const { module: mod } = ctx
+  // ── 5c. Context provides ─────────────────────────────────────────────────
+  // $context.key = expr  — emitted after all vars so reactive expressions resolve.
+  // Each provide wraps the expression in a getter so consumers auto-subscribe
+  // when they call it inside a reactive scope.
+  ctx.analysis.contextProvides.forEach(({ key, initRaw, initNode }) => {
+    // rewriteAssignments FIRST — see the derived-const and $: emitters. Providing
+    // a mutator through context (`$context.toggle = (id) => { open = … }`) is the
+    // normal way a compound component shares its state, and it emitted an invalid
+    // assignment target until this was added.
+    const rewritten = rewriteExpr(
+      initNode ? rewriteAssignments(initRaw, initNode, ctx) : initRaw,
+      ctx.accessors
+    )
+    // If the rewritten expression is a signal read (ends with ()), expose it
+    // directly as the getter. Otherwise wrap in a memo so it's reactive.
+    const isSigRead = /^\$\$sig_\w+\(\)$/.test(rewritten.trim())
+    if (isSigRead) {
+      // Plain signal — extract the getter function (strip the ())
+      const sigFn = rewritten.trim().slice(0, -2)
+      mod.code.push(xNode.raw(`$$ctxProvide('${key}', ${sigFn});`))
+    } else {
+      // Derived expression — wrap in a memo so descendants stay reactive
+      const memo = `$$ctxMemo_${key}`
+      mod.code.push(xNode.raw(`const ${memo} = $$runtime.createMemo(() => (${rewritten}));`))
+      mod.code.push(xNode.raw(`$$ctxProvide('${key}', ${memo});`))
+    }
+  })
+}
+
+/** Phase of emitScript: `$:` auto-tracked effects. */
+function emitEffects(ctx) {
+  const { module: mod } = ctx
+  // ── 6. $: effects — auto-tracked expression and block side effects ──────────
+  // $: expr       — re-runs when any reactive variable read inside it changes
+  // $: { block }  — same, multi-statement form
+  // Dependencies are tracked automatically at runtime via the reactive graph.
+  ctx.analysis.effects.forEach((ef) => {
+    // rewriteAssignments FIRST, exactly as the script-statement and watch-handler
+    // emitters do. Skipping it here meant `$: { count = count + 1 }` compiled to
+    // `$$runtime.get($$sig_count) = …` — an invalid assignment target that the
+    // compiler accepted without complaint and that threw "Invalid left-hand side
+    // in assignment" the moment the effect ran. Any write to a top-level `let`
+    // inside a `$: { }` block was affected; member writes (`obj.n = …`) went
+    // through the proxy and were never broken, which is why this survived.
+    const src = ef.node ? rewriteAssignments(ef.raw, ef.node, ctx) : ef.raw
+    const rewritten = rewriteExpr(src, ctx.accessors)
+    if (ef.type === 'expression') {
+      mod.code.push(xNode.raw(`$$runtime.createEffect(() => { ${rewritten}; }, { user: true });`))
+    } else {
+      // block — raw already includes the { }
+      mod.code.push(xNode.raw(`$$runtime.createEffect(() => ${rewritten}, { user: true });`))
+    }
+  })
+}
+
+/** Phase of emitScript: `$: deps, handler` watches. */
+function emitWatchHandlers(ctx, requireWatchSig) {
+  const { module: mod } = ctx
+  const { watchHandlers } = ctx.analysis
+  // ── 7. $: watch + handler ─────────────────────────────────────────────────
+  // Pattern: read each dep to subscribe, then run the handler untracked so
+  // the handler body itself doesn't accidentally add extra subscriptions.
+  watchHandlers.forEach((wh, whIdx) => {
+    // Each dep needs two expressions:
+    //   subscribe — what to read so the effect is notified
+    //   value     — what the handler should receive
+    // For a local signal these are the same. For a path on a proxied import
+    // they are NOT: the watch signal is a bare change notification carrying
+    // `undefined`, so the value has to be read off the proxy separately.
+    const depInfo = wh.deps
+      .map((dep) => {
+        const { root } = splitWatchPath(dep)
+        const acc = ctx.accessors[root]
+        if (isProxyAccessor(acc, root)) {
+          const sigVar = watchSigName(dep)
+          // $$runtime.get(), not `sigVar()`. A watch signal is a read FUNCTION when
+          // the root is a proxied import or a local const/var (watchPath), and a
+          // TRACKED OBJECT when the root is a local `let` (track). Calling it
+          // directly threw "$$watch_o_a is not a function" on mount for every
+          // local-let path watch — get() already reads both shapes.
+          //
+          // The value is read untracked: through a `let`'s proxy memo it would
+          // subscribe the memo as well, and a reassignment, which also fires
+          // the path signal, ran the handler twice.
+          const declared = requireWatchSig(sigVar, dep)
+          const value = rewriteExpr(dep, ctx.accessors)
+          return declared
+            ? { subscribe: `$$runtime.get(${declared})`, value: acc.endsWith('()') ? `$$runtime.untrack(() => ${value})` : value }
+            : { subscribe: null, value }
+        }
+        if (acc) return { subscribe: acc, value: acc }
+        return { subscribe: null, value: dep }
+      })
+      .filter(Boolean)
+
+    const depReads = depInfo.map((d) => d.subscribe).filter(Boolean).join('; ')
+
+    const rewrittenHandler = rewriteExpr(wh.handlerRaw, ctx.accessors, ctx.setters, ctx.proxyFireFns)
+    const depPart = depReads ? `${depReads}; ` : ''
+
+    // Single dep → the handler receives (value, prev).
+    // Multiple deps → arrays: ([a, b], [prevA, prevB]), as Solid's on() does.
+    const valueExpr = depInfo.length === 1
+      ? depInfo[0].value
+      : `[${depInfo.map((d) => d.value).join(', ')}]`
+
+    const prevVar  = `$$prev_wh${whIdx}`
+    const firstVar = `$$first_wh${whIdx}`
+
+    // Deferred: the handler does NOT run on mount, only on change.
+    //
+    // "when X changes, do Y" reads as change-triggered, and firing on mount is
+    // both surprising and usually wrong — `$: userId, () => { count = 0 }`
+    // resetting on first render is a no-op at best. The eager case is already
+    // owned by $$onMount, and the "initialize then keep in sync" shape is
+    // usually a `const` memo wearing an effect's clothes.
+    //
+    // Deferring is only possible because the deps are explicit: the effect
+    // still reads them on the first run to subscribe, and withholds only the
+    // handler. An auto-tracked `$: { }` block cannot do this — it discovers its
+    // dependencies BY running, so skipping the body would subscribe to nothing.
+    //
+    // It also makes `prev` well defined: the first invocation is the first
+    // change, so there is always a real previous value rather than undefined.
+    const debugComment = wh.debugName ? `/* $_${wh.debugName} */ ` : ''
+    mod.code.push(xNode.raw(`let ${prevVar}; let ${firstVar} = true;`))
+    mod.code.push(
+      xNode.raw(
+        `${debugComment}$$runtime.createEffect(() => { ${depPart}` +
+        `const $$v = ${valueExpr}; ` +
+        `if (${firstVar}) { ${firstVar} = false; ${prevVar} = $$v; return; } ` +
+        `const $$p = ${prevVar}; ${prevVar} = $$v; ` +
+        `return $$runtime.untrack(() => (${rewrittenHandler})($$v, $$p)); }, { user: true });`
+      )
+    )
+  })
+}
+
+/** Phase of emitScript: `$: fn(), handler` post-call hooks. */
+function emitPostCallHooks(ctx) {
+  const { module: mod } = ctx
+  const { postCallHooks } = ctx.analysis
+  // ── 7b-post. $: fn(), handler — post-execution hooks ─────────────────────
+  // Wraps a locally-declared function so the handler runs after every call.
+  ;(postCallHooks ?? []).forEach((hook) => {
+    const { fnName, handlerRaw, isAsync } = hook
+    const origVar = `__orig_${fnName}`
+
+    // The hook works by REPLACING the binding — `fn = (...args) => { … }` — so
+    // the name has to be assignable. A `const` (very often a destructured one,
+    // `const { get: row } = r.record(id)`) compiled fine and threw
+    // `Assignment to constant variable` on mount, before anything rendered.
+    // Say so at compile time instead.
+    const target = ctx.analysis?.vars?.[fnName]
+    if (target && (target.kind === 'const' || target.isImport)) {
+      ctx.analysis.errors.push(
+        `$: ${fnName}(), handler — '${fnName}' is a ${target.isImport ? 'import' : 'const'} and cannot be ` +
+        `wrapped. A post-call hook replaces the binding, so it needs a \`function\` ` +
+        `declaration or a \`let\`. To react to a VALUE instead, watch it: \`$: ${fnName}(), …\` ` +
+        `becomes \`$: someValue, () => { … }\`.`
+      )
+      return
+    }
+
+    const rewrittenHandler = rewriteExpr(handlerRaw, ctx.accessors, ctx.setters, ctx.proxyFireFns)
+
+    if (isAsync) {
+      mod.code.push(xNode.raw(
+        `const ${origVar} = ${fnName}; ` +
+        `${fnName} = async (...__args) => { const __r = await ${origVar}(...__args); (${rewrittenHandler})(); return __r; };`
+      ))
+    } else {
+      mod.code.push(xNode.raw(
+        `const ${origVar} = ${fnName}; ` +
+        `${fnName} = (...__args) => { const __r = ${origVar}(...__args); (${rewrittenHandler})(); return __r; };`
+      ))
+    }
+  })
+}
+
+/** Phase of emitScript: `$: { }` ordered watch groups. */
+function emitWatchGroups(ctx, requireWatchSig) {
+  const { module: mod } = ctx
+  const { watchGroups } = ctx.analysis
+  // ── 7b. $: { } ordered watch groups ─────────────────────────────────────────
+  // Each group emits a single $$runtime.orderedGroup([...entries]) call.
+  // Each entry is { deps: [readFn, ...], handler: fn }.
+  // The runtime runs entries in declared order, once per flush, batched.
+  watchGroups.forEach((group) => {
+    const debugComment = group.debugName ? `/* $_${group.debugName} */ ` : ''
+
+    const entryStrings = group.entries.map((entry) => {
+      // Resolve dep reads — same logic as step 7
+      const depReads = entry.deps
+        .map((dep) => {
+          const { root } = splitWatchPath(dep)
+          const acc = ctx.accessors[root]
+          if (isProxyAccessor(acc, root)) {
+            return requireWatchSig(watchSigName(dep), dep)
+          }
+          // New accessor format: $$runtime.get($$sig_x) → extract $$sig_x as fn ref
+          if (acc) {
+            const getM = acc.match(/^\$\$runtime\.get\((\S+)\)$/)
+            if (getM) return getM[1]  // pass the signal object itself
+            if (acc.endsWith('()')) return acc.slice(0, -2)  // memo fn ref
+          }
+          return null
+        })
+        .filter(Boolean)
+
+      const rewrittenHandler = rewriteExpr(entry.handlerRaw, ctx.accessors, ctx.setters, ctx.proxyFireFns)
+      const depsArray = `[${depReads.join(', ')}]`
+      return `{ deps: ${depsArray}, handler: ${rewrittenHandler} }`
+    })
+
+    mod.code.push(
+      xNode.raw(
+        `${debugComment}$$runtime.orderedGroup([${entryStrings.join(', ')}]);`
+      )
+    )
+  })
+}
+
 export function emitScript(ctx) {
   const { vars, watchPaths, watchHandlers, watchGroups, postCallHooks, imports } = ctx.analysis
   const { module: mod, script } = ctx
@@ -9524,224 +9780,13 @@ export function emitScript(ctx) {
   }
 
 
-  // ── 5b. Deferred prop defaults ────────────────────────────────────────────
-  // Props whose defaults reference reactive vars are set here, after all
-  // vars/memos have been emitted. Wrapped in untrack so reading the default
-  // expression doesn't create a subscription on the prop's own signal.
-  Object.entries(deferredPropDefaults).forEach(([name, { sigR, sigW, varName, initRaw }]) => {
-    const defaultExpr = rewriteExpr(initRaw, ctx.accessors)
-    const value = `$$runtime.untrack(() => (${defaultExpr}))`
-    const write = varName
-      ? `${varName} = ${value}`
-      : sigW ? `${sigW}(${value})` : `$$runtime.set(${sigR}, ${value})`
-    mod.code.push(
-      xNode.raw(`if ($$option.props?.${name} === undefined) ${write};`)
-    )
-    if (!varName) mod.code.push(xNode.raw(`$$runtime.propDefault('${name}', () => (${defaultExpr}));`))
-  })
+  emitDeferredPropDefaults(ctx, deferredPropDefaults)
+  emitContextProvides(ctx)
+  emitEffects(ctx)
+  emitWatchHandlers(ctx, requireWatchSig)
+  emitPostCallHooks(ctx)
+  emitWatchGroups(ctx, requireWatchSig)
 
-  // ── 5c. Context provides ─────────────────────────────────────────────────
-  // $context.key = expr  — emitted after all vars so reactive expressions resolve.
-  // Each provide wraps the expression in a getter so consumers auto-subscribe
-  // when they call it inside a reactive scope.
-  ctx.analysis.contextProvides.forEach(({ key, initRaw, initNode }) => {
-    // rewriteAssignments FIRST — see the derived-const and $: emitters. Providing
-    // a mutator through context (`$context.toggle = (id) => { open = … }`) is the
-    // normal way a compound component shares its state, and it emitted an invalid
-    // assignment target until this was added.
-    const rewritten = rewriteExpr(
-      initNode ? rewriteAssignments(initRaw, initNode, ctx) : initRaw,
-      ctx.accessors
-    )
-    // If the rewritten expression is a signal read (ends with ()), expose it
-    // directly as the getter. Otherwise wrap in a memo so it's reactive.
-    const isSigRead = /^\$\$sig_\w+\(\)$/.test(rewritten.trim())
-    if (isSigRead) {
-      // Plain signal — extract the getter function (strip the ())
-      const sigFn = rewritten.trim().slice(0, -2)
-      mod.code.push(xNode.raw(`$$ctxProvide('${key}', ${sigFn});`))
-    } else {
-      // Derived expression — wrap in a memo so descendants stay reactive
-      const memo = `$$ctxMemo_${key}`
-      mod.code.push(xNode.raw(`const ${memo} = $$runtime.createMemo(() => (${rewritten}));`))
-      mod.code.push(xNode.raw(`$$ctxProvide('${key}', ${memo});`))
-    }
-  })
-
-  // ── 6. $: effects — auto-tracked expression and block side effects ──────────
-  // $: expr       — re-runs when any reactive variable read inside it changes
-  // $: { block }  — same, multi-statement form
-  // Dependencies are tracked automatically at runtime via the reactive graph.
-  ctx.analysis.effects.forEach((ef) => {
-    // rewriteAssignments FIRST, exactly as the script-statement and watch-handler
-    // emitters do. Skipping it here meant `$: { count = count + 1 }` compiled to
-    // `$$runtime.get($$sig_count) = …` — an invalid assignment target that the
-    // compiler accepted without complaint and that threw "Invalid left-hand side
-    // in assignment" the moment the effect ran. Any write to a top-level `let`
-    // inside a `$: { }` block was affected; member writes (`obj.n = …`) went
-    // through the proxy and were never broken, which is why this survived.
-    const src = ef.node ? rewriteAssignments(ef.raw, ef.node, ctx) : ef.raw
-    const rewritten = rewriteExpr(src, ctx.accessors)
-    if (ef.type === 'expression') {
-      mod.code.push(xNode.raw(`$$runtime.createEffect(() => { ${rewritten}; }, { user: true });`))
-    } else {
-      // block — raw already includes the { }
-      mod.code.push(xNode.raw(`$$runtime.createEffect(() => ${rewritten}, { user: true });`))
-    }
-  })
-
-  // ── 7. $: watch + handler ─────────────────────────────────────────────────
-  // Pattern: read each dep to subscribe, then run the handler untracked so
-  // the handler body itself doesn't accidentally add extra subscriptions.
-  watchHandlers.forEach((wh, whIdx) => {
-    // Each dep needs two expressions:
-    //   subscribe — what to read so the effect is notified
-    //   value     — what the handler should receive
-    // For a local signal these are the same. For a path on a proxied import
-    // they are NOT: the watch signal is a bare change notification carrying
-    // `undefined`, so the value has to be read off the proxy separately.
-    const depInfo = wh.deps
-      .map((dep) => {
-        const { root } = splitWatchPath(dep)
-        const acc = ctx.accessors[root]
-        if (isProxyAccessor(acc, root)) {
-          const sigVar = watchSigName(dep)
-          // $$runtime.get(), not `sigVar()`. A watch signal is a read FUNCTION when
-          // the root is a proxied import or a local const/var (watchPath), and a
-          // TRACKED OBJECT when the root is a local `let` (track). Calling it
-          // directly threw "$$watch_o_a is not a function" on mount for every
-          // local-let path watch — get() already reads both shapes.
-          //
-          // The value is read untracked: through a `let`'s proxy memo it would
-          // subscribe the memo as well, and a reassignment, which also fires
-          // the path signal, ran the handler twice.
-          const declared = requireWatchSig(sigVar, dep)
-          const value = rewriteExpr(dep, ctx.accessors)
-          return declared
-            ? { subscribe: `$$runtime.get(${declared})`, value: acc.endsWith('()') ? `$$runtime.untrack(() => ${value})` : value }
-            : { subscribe: null, value }
-        }
-        if (acc) return { subscribe: acc, value: acc }
-        return { subscribe: null, value: dep }
-      })
-      .filter(Boolean)
-
-    const depReads = depInfo.map((d) => d.subscribe).filter(Boolean).join('; ')
-
-    const rewrittenHandler = rewriteExpr(wh.handlerRaw, ctx.accessors, ctx.setters, ctx.proxyFireFns)
-    const depPart = depReads ? `${depReads}; ` : ''
-
-    // Single dep → the handler receives (value, prev).
-    // Multiple deps → arrays: ([a, b], [prevA, prevB]), as Solid's on() does.
-    const valueExpr = depInfo.length === 1
-      ? depInfo[0].value
-      : `[${depInfo.map((d) => d.value).join(', ')}]`
-
-    const prevVar  = `$$prev_wh${whIdx}`
-    const firstVar = `$$first_wh${whIdx}`
-
-    // Deferred: the handler does NOT run on mount, only on change.
-    //
-    // "when X changes, do Y" reads as change-triggered, and firing on mount is
-    // both surprising and usually wrong — `$: userId, () => { count = 0 }`
-    // resetting on first render is a no-op at best. The eager case is already
-    // owned by $$onMount, and the "initialize then keep in sync" shape is
-    // usually a `const` memo wearing an effect's clothes.
-    //
-    // Deferring is only possible because the deps are explicit: the effect
-    // still reads them on the first run to subscribe, and withholds only the
-    // handler. An auto-tracked `$: { }` block cannot do this — it discovers its
-    // dependencies BY running, so skipping the body would subscribe to nothing.
-    //
-    // It also makes `prev` well defined: the first invocation is the first
-    // change, so there is always a real previous value rather than undefined.
-    const debugComment = wh.debugName ? `/* $_${wh.debugName} */ ` : ''
-    mod.code.push(xNode.raw(`let ${prevVar}; let ${firstVar} = true;`))
-    mod.code.push(
-      xNode.raw(
-        `${debugComment}$$runtime.createEffect(() => { ${depPart}` +
-        `const $$v = ${valueExpr}; ` +
-        `if (${firstVar}) { ${firstVar} = false; ${prevVar} = $$v; return; } ` +
-        `const $$p = ${prevVar}; ${prevVar} = $$v; ` +
-        `return $$runtime.untrack(() => (${rewrittenHandler})($$v, $$p)); }, { user: true });`
-      )
-    )
-  })
-
-  // ── 7b-post. $: fn(), handler — post-execution hooks ─────────────────────
-  // Wraps a locally-declared function so the handler runs after every call.
-  ;(postCallHooks ?? []).forEach((hook) => {
-    const { fnName, handlerRaw, isAsync } = hook
-    const origVar = `__orig_${fnName}`
-
-    // The hook works by REPLACING the binding — `fn = (...args) => { … }` — so
-    // the name has to be assignable. A `const` (very often a destructured one,
-    // `const { get: row } = r.record(id)`) compiled fine and threw
-    // `Assignment to constant variable` on mount, before anything rendered.
-    // Say so at compile time instead.
-    const target = ctx.analysis?.vars?.[fnName]
-    if (target && (target.kind === 'const' || target.isImport)) {
-      ctx.analysis.errors.push(
-        `$: ${fnName}(), handler — '${fnName}' is a ${target.isImport ? 'import' : 'const'} and cannot be ` +
-        `wrapped. A post-call hook replaces the binding, so it needs a \`function\` ` +
-        `declaration or a \`let\`. To react to a VALUE instead, watch it: \`$: ${fnName}(), …\` ` +
-        `becomes \`$: someValue, () => { … }\`.`
-      )
-      return
-    }
-
-    const rewrittenHandler = rewriteExpr(handlerRaw, ctx.accessors, ctx.setters, ctx.proxyFireFns)
-
-    if (isAsync) {
-      mod.code.push(xNode.raw(
-        `const ${origVar} = ${fnName}; ` +
-        `${fnName} = async (...__args) => { const __r = await ${origVar}(...__args); (${rewrittenHandler})(); return __r; };`
-      ))
-    } else {
-      mod.code.push(xNode.raw(
-        `const ${origVar} = ${fnName}; ` +
-        `${fnName} = (...__args) => { const __r = ${origVar}(...__args); (${rewrittenHandler})(); return __r; };`
-      ))
-    }
-  })
-
-  // ── 7b. $: { } ordered watch groups ─────────────────────────────────────────
-  // Each group emits a single $$runtime.orderedGroup([...entries]) call.
-  // Each entry is { deps: [readFn, ...], handler: fn }.
-  // The runtime runs entries in declared order, once per flush, batched.
-  watchGroups.forEach((group) => {
-    const debugComment = group.debugName ? `/* $_${group.debugName} */ ` : ''
-
-    const entryStrings = group.entries.map((entry) => {
-      // Resolve dep reads — same logic as step 7
-      const depReads = entry.deps
-        .map((dep) => {
-          const { root } = splitWatchPath(dep)
-          const acc = ctx.accessors[root]
-          if (isProxyAccessor(acc, root)) {
-            return requireWatchSig(watchSigName(dep), dep)
-          }
-          // New accessor format: $$runtime.get($$sig_x) → extract $$sig_x as fn ref
-          if (acc) {
-            const getM = acc.match(/^\$\$runtime\.get\((\S+)\)$/)
-            if (getM) return getM[1]  // pass the signal object itself
-            if (acc.endsWith('()')) return acc.slice(0, -2)  // memo fn ref
-          }
-          return null
-        })
-        .filter(Boolean)
-
-      const rewrittenHandler = rewriteExpr(entry.handlerRaw, ctx.accessors, ctx.setters, ctx.proxyFireFns)
-      const depsArray = `[${depReads.join(', ')}]`
-      return `{ deps: ${depsArray}, handler: ${rewrittenHandler} }`
-    })
-
-    mod.code.push(
-      xNode.raw(
-        `${debugComment}$$runtime.orderedGroup([${entryStrings.join(', ')}]);`
-      )
-    )
-  })
   // ── The instance API — what `bind:this` on this component hands the parent ──
   // Exported props are already in the prop registry (makeExternalProperty), so
   // only the methods need declaring. One call, after the statements: function

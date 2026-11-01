@@ -209,6 +209,12 @@ src/seal/            a value only one key can open — `seal(publicKey, data)`,
                      only for a private key that does not parse. Pony
                      Express's letters are the caller (`FJS-D1400`,
                      `FJS-D1402`)
+src/share/           page state carried in a URL's fragment — `encodeShare` (JSON,
+                     deflated, base64url; throws a sentence past `SHARE_MAX`),
+                     `decodeShare` (null past `SHARE_INFLATED_MAX`, or for
+                     anything that is not a link), `shareParam`, `readFields`
+                     (a foreign object read field by field, malformed dropped).
+                     The rule it carries is in `docs/hazards.md` (`FJS-3771`)
 src/sigv4/           AWS Signature V4 — sign, presign, `deriveSigningKey`, and
                      the canonical-URI rules AWS's own suite grades. Litestone's
                      `File` columns and `conduit-s3` sign the same requests, and

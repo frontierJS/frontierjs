@@ -26,7 +26,16 @@
 
   const BOOM = { id: 'boom', group: 'Settings', label: 'Explode', icon: '✖', action: () => { ran = 'boom'; runs++; throw new Error('boom') } }
 
-  let list = throwing ? [...COMMANDS, BOOM] : COMMANDS
+  // `toned` appends two sub-lined rows: one by tone, one by a raw `color` the
+  // palette has no business honoring (`FJS-1139`).
+  export let toned = false
+
+  const TONED = [
+    { id: 'wipe',  group: 'Settings', label: 'Wipe data',   sub: 'Cannot be undone', tone: 'danger', action: () => {} },
+    { id: 'paint', group: 'Settings', label: 'Paint it',    sub: 'Raw color',        color: 'rgb(255, 0, 0)', action: () => {} },
+  ]
+
+  let list = throwing ? [...COMMANDS, BOOM] : toned ? [...COMMANDS, ...TONED] : COMMANDS
   window.kitShrink = (n) => { list = COMMANDS.slice(0, n) }
 
   // The store outlives a fixture, so a run must not inherit the previous one.
