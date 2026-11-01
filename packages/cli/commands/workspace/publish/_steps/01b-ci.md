@@ -4,9 +4,20 @@ description: Grade the release commit in a checkout of it, before any tag exists
 ---
 
 <script>
-import { existsSync } from 'fs'
+import { existsSync, readdirSync, mkdirSync, copyFileSync } from 'fs'
 import { join } from 'path'
 import { spawnSync } from 'child_process'
+
+// The run's record lives in the checkout and goes with it, so it is copied to
+// the tree `--status` reads before teardown. Only `ci-runs/`: `ci-last.txt` is
+// the working tree's last run, and a release run over it would misreport that.
+function keepRunRecord(tree, cwd) {
+  const from = join(tree, '.cache', 'ci-runs')
+  if (!existsSync(from)) return
+  const to = join(cwd, '.cache', 'ci-runs')
+  mkdirSync(to, { recursive: true })
+  for (const f of readdirSync(from)) copyFileSync(join(from, f), join(to, f))
+}
 </script>
 
 ```js
@@ -42,8 +53,11 @@ for (const { cwd, sha } of graded) {
     continue
   }
   log.info(`  CI: full run on ${sha.slice(0, 12)} -- a checkout of it, not the working tree`)
-  const status = withCheckout({ repo: cwd, sha, scratch }, tree =>
-    spawnSync('node', ['scripts/ci.mjs'], { cwd: tree, stdio: 'inherit' }).status)
+  const status = withCheckout({ repo: cwd, sha, scratch }, tree => {
+    const { status } = spawnSync('node', ['scripts/ci.mjs'], { cwd: tree, stdio: 'inherit' })
+    keepRunRecord(tree, cwd)
+    return status
+  })
   if (status !== 0) {
     log.error(`  CI failed on ${sha.slice(0, 12)} -- nothing tagged, nothing pushed`)
     log.error('  Commit the fix and run `fli ws:pub` again: the release commit is kept and tagged once a run is green')

@@ -257,6 +257,8 @@ the packages shipped, with no hand step.
     no new flag: ci.mjs already skips it by name when the scaffold pins are on
     npm nowhere, which is true of every release sha. Proved by `--dry` (names the
     sha, the install and the skip) and a `withCheckout` unit test; no real CI run.
+    The run's `.cache/ci-runs/` record is copied to the main tree before the
+    checkout goes, for Phase 3 (`FJS-D1738`).
 - [x] 2.2 Tag only on green, then push **the graded sha** and its tags with
   `--no-verify`, never `HEAD`. A commit landing mid-run would otherwise ship
   ungraded, with the hook's backstop already turned off.
@@ -289,7 +291,10 @@ the packages shipped, with no hand step.
     npm` fails at `bun install` on the versions npm lacks (`FJS-3774`), naming
     them. `--dry --filter @frontierjs/config` prints `--source npm` for `--to
     npm` and `--source url` for `--to tarballs`. A failed install throws after
-    the asset check, as a bad asset does; that verdict is not ruled.
+    the asset check, as a bad asset does (`FJS-D1736`). `pinsBehind()` prints
+    *pins behind* when the app installed a shipped package at another version,
+    as a release without cli does (`FJS-D1737`); toolbelt 0.1.9 alone installs
+    0.1.8 from the host today.
 - [x] 2.5 Update `PUBLISH_STEPS` so the GUI's `ci` and `push` steps describe
   the new order.
   - 2026-10-31: the `commit`, `ci`, `publish` and `push` steps' text now

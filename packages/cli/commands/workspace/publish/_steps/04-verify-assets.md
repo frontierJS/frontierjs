@@ -36,7 +36,7 @@ function shippedTo(host, { released, uploaded = [], published = [], to, missing 
 const config = $.config
 if (!config.released?.length) return
 
-const { freshAppChecks, installFreshApp } = await import(new URL('file://' + global.fliRoot + '/core/publish-hosts.js'))
+const { freshAppChecks, installFreshApp, pinsBehind } = await import(new URL('file://' + global.fliRoot + '/core/publish-hosts.js'))
 const { FJS_PACKAGES, APP_DEV_DEPS, FJS_TRANSITIVE } = await import(new URL('file://' + global.fliRoot + '/core/app-config.js'))
 
 // Step 01 raises the scaffold pins to versions no host holds until this run has
@@ -85,7 +85,12 @@ function installFreshApps() {
 
     echo(chalk`  {dim fresh app from ${from} (--source ${source})…}`)
     const got = installFreshApp({ from: source, fli })
-    if (got.ok) { echo(chalk`  {green ✓} fresh app installed from ${from} {dim · ${got.detail}}`); continue }
+    if (got.ok) {
+      echo(chalk`  {green ✓} fresh app installed from ${from} {dim · ${got.detail}}`)
+      const behind = pinsBehind(shippedTo(host, config, false), got.versions)
+      echo.lines(behind.map(b => chalk`    {yellow pins behind} ${b.name} installed ${b.installed}, this run shipped ${b.shipped} {dim — release @frontierjs/cli with it to move the scaffold}`))
+      continue
+    }
 
     failed.push(from)
     log.error(`  ✗ fresh app from ${from} failed at ${got.step}:\n${got.detail}`)

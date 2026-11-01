@@ -95,6 +95,21 @@ export function freshAppChecks({ uploaded = [], published = [], pinned }) {
     .map(host => ({ host, source: FRESH_APP_SOURCE[host] }))
 }
 
+/**
+ * Shipped packages the fresh app installed at some other version. A release
+ * without `@frontierjs/cli` leaves the scaffold's pins where they were, so the
+ * app installs the previous versions and its green says nothing about what
+ * this run shipped.
+ *
+ * `shipped` is a `<name>@<version>` list; `installed` is `{ name: version }`.
+ */
+export function pinsBehind(shipped = [], installed = {}) {
+  return shipped
+    .map(entry => ({ name: entry.slice(0, entry.lastIndexOf('@')), shipped: entry.slice(entry.lastIndexOf('@') + 1) }))
+    .filter(({ name, shipped }) => name in installed && installed[name] !== shipped)
+    .map(p => ({ ...p, installed: installed[p.name] }))
+}
+
 // `--no-install`: the install is run by installFreshApp so its exit status is
 // read, where `fli new` turns a failed install into a warning and exits 0.
 export const freshAppArgs = (name, from) =>
@@ -131,7 +146,9 @@ export function installFreshApp({ from, fli, timeoutMs = 300_000, base = tmpdir(
 
     const absent = wanted.filter(name => !existsSync(join(app, 'node_modules', name, 'package.json')))
     if (absent.length) return { ok: false, step: 'bun install', detail: `installed without ${absent.join(', ')}` }
-    return { ok: true, step: 'bun install', detail: `${wanted.length} @frontierjs package(s)` }
+    const versions = Object.fromEntries(wanted.map(name =>
+      [name, JSON.parse(readFileSync(join(app, 'node_modules', name, 'package.json'), 'utf8')).version]))
+    return { ok: true, step: 'bun install', detail: `${wanted.length} @frontierjs package(s)`, versions }
   } finally {
     rmSync(work, { recursive: true, force: true })
   }
