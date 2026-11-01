@@ -71,6 +71,7 @@ import { extractSegments, splitFrontmatter } from './compiler.js'
 
 import { GLOBAL } from './ports.js'
 import { ownStyleBundle, glowSource, CDN_STYLESHEET } from './assets.js'
+import { themesFor, embedJson } from './html-page.js'
 import { isConsolePath, handleConsole } from './console.js'
 const PORT = parseInt(process.env.FLI_PORT, 10) || GLOBAL.gui
 
@@ -1113,9 +1114,13 @@ async function handleEnvSave(req, res) {
 
 // ─── GET / ───────────────────────────────────────────────────────────────────
 
+// The theme picker offers what /fli.css defines, read off the same bundle, so
+// a theme added to @frontierjs/css reaches the GUI with no edit here.
 function handleStatic(res) {
   try {
+    if (_stylesheet === undefined) _stylesheet = ownStyleBundle()
     const html = readFileSync(resolve(__dir, '../web/index.html'), 'utf8')
+      .replace('/*fli:themes*/[]', embedJson(themesFor(_stylesheet || null)))
     res.writeHead(200, { 'Content-Type': 'text/html' })
     res.end(html)
   } catch {

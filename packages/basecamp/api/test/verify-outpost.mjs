@@ -34,6 +34,10 @@
  *     never calls a prune route: on a workstation those delete somebody
  *     else's images. The one app data directory it fills is the restore's,
  *     under this run's own `.outpost`, and goes with it.
+ *   - The bucket an archive round-trips through is `s3-sink.ts` in this
+ *     process, on a port of its own picking. The Outpost runs as this user
+ *     on a root daemon, so its take uploads only because the capture hands
+ *     the archive back to it (FJS-3793).
  */
 
 // What `fli prove` queues on: this checkout's ports.
@@ -45,7 +49,10 @@ import { tmpdir }                                             from 'node:os'
 import { dirname, join }                                      from 'node:path'
 import { fileURLToPath }                                      from 'node:url'
 import { createConnection }                                   from 'node:net'
+import { createHash }                                         from 'node:crypto'
+import { Database }                                           from 'bun:sqlite'
 import { portFor }                                            from '@frontierjs/cli/core/ports.js'
+import { startS3Sink }                                        from '../src/providers/storage/s3-sink.ts'
 
 const ROOT     = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const API_PORT = await portFor(import.meta.url, 'be')
@@ -128,7 +135,8 @@ function startCaddy() {
     return answer(400, { error: `unexpected ${req.method} ${path}` })
   } })
 }
-let caddy = null
+let caddy  = null
+let bucket = null
 
 // ─── Harness ─────────────────────────────────────────────────────────────
 
@@ -194,6 +202,7 @@ async function released(appId, auth) {
 async function cleanup() {
   for (const c of children) { try { process.kill(-c.pid, 'SIGTERM') } catch {} }
   caddy?.stop(true)
+  bucket?.stop()
   await sleep(3000)
   for (const c of children) { try { process.kill(-c.pid, 'SIGKILL') } catch {} }
   for (const id of owned)
@@ -453,6 +462,59 @@ try {
   check('…and the archive holds the file the directory did',
     taken?.location && sh('docker', 'run', '--rm', '--mount', `type=bind,src=${join(OWN, 'backups')},dst=/out,readonly`, 'busybox:1.36',
       'tar', '-tzf', `/out/${taken.location.split('/').pop()}`).stdout.includes('app.db'))
+
+  // ── An app's archive downloaded, uploaded to another app, restored there ──
+  // The bucket is the S3 stand-in in this process; the Outpost fetches and
+  // PUTs on the host, so 127.0.0.1 reaches it.
+  bucket = startS3Sink()
+  const dest = await call('/backup-destinations', { ...auth, body: {
+    name: `archives-${process.pid}`, endpoint: bucket.url, region: bucket.region, bucket: 'archives', secret: bucket.credential,
+  } })
+  const archived = async (name) => {
+    const made = await call('/apps', { ...auth, body: {
+      environmentId: environment?.id, name: `${name}-${process.pid}`, slug: `${name}-${process.pid}`, type: 'container',
+      source: { kind: 'image', image: IMAGE }, volumePath: '/data', backupDestinationId: dest?.id,
+    } })
+    await call(`/apps/${made?.id}`, { ...auth, serviceMethod: 'place', body: { serverId: first.serverId, replicaIndex: 0 } })
+    return { ...made, dataDir: join(OWN, 'apps', String(made?.id), 'data') }
+  }
+  const from = await archived('from')
+  mkdirSync(from.dataDir, { recursive: true })
+  const write = (dir, line) => { const d = new Database(join(dir, 'app.db')); d.run('CREATE TABLE IF NOT EXISTS note (line TEXT)'); d.run('INSERT INTO note VALUES (?)', [line]); d.close() }
+  const lines = (dir) => { const d = new Database(join(dir, 'app.db'), { readonly: true }); try { return d.query('SELECT line FROM note').all().map(r => r.line) } finally { d.close() } }
+  write(from.dataDir, 'written before the download')
+  const sent = await call('/app-backups', { ...auth, serviceMethod: 'take', body: { appId: from.id, serverId: first.serverId, destinationId: dest?.id } })
+  check('an app with a destination is archived into its bucket by an Outpost that is not root (FJS-3793)',
+    sent?.status === 'success' && !!sent?.location && !sent.location.startsWith('/') && !sent?.error)
+  const link  = await call(`/app-backups/${sent?.id}`, { ...auth, serviceMethod: 'download' })
+  const bytes = link?.url ? new Uint8Array(await (await fetch(link.url)).arrayBuffer()) : new Uint8Array()
+  check('…and downloads by its link as the bytes the machine took',
+    bytes.byteLength > 0 && createHash('sha256').update(bytes).digest('hex') === sent?.sha256 && link?.name?.startsWith(`${from.slug}-`))
+
+  const to = await archived('to')
+  const upload = async (name, body) => {
+    const signed = await call('/app-backups', { ...auth, serviceMethod: 'upload', body: { appId: to.id, name } })
+    const res = await fetch(API + signed?.url, { method: 'PUT', body })
+    return { status: res.status, row: await res.json().catch(() => null) }
+  }
+  const landed = await upload(link?.name, bytes)
+  check('that archive uploaded to a second app lands as a row of its own',
+    landed.status === 201 && landed.row?.appId === to.id && landed.row?.kind === 'found' && landed.row?.sha256 === sent?.sha256)
+  const restoreTo = (body) => call(`/apps/${to.id}`, { ...auth, serviceMethod: 'restoreVolume', body: { serverId: first.serverId, ...body } })
+  const restoredTo = await restoreTo({ backupId: landed.row?.id })
+  check('…which Restore puts on the machine', restoredTo?.data_dir === to.dataDir && restoredTo?.files === 1)
+  check('…holding the row the first app wrote before the download',
+    existsSync(join(to.dataDir, 'app.db')) && lines(to.dataDir).join() === 'written before the download')
+
+  // A bare `.db` is wrapped on the way in and replaces that database only (`FJS-D1724`).
+  write(from.dataDir, 'written after it')
+  writeFileSync(join(to.dataDir, 'upload.txt'), 'a file beside the database')
+  const bare = await upload('app.db', readFileSync(join(from.dataDir, 'app.db')))
+  check('a bare .db uploads as a wrapped archive', bare.status === 201 && /\.db\.tar\.gz$/.test(bare.row?.location ?? ''))
+  const swapped = await restoreTo({ backupId: bare.row?.id, overwrite: true })
+  check('…whose Restore replaces that database',
+    swapped?.per_file === true && lines(to.dataDir).join() === 'written before the download,written after it')
+  check('…and leaves the volume\'s other files', existsSync(join(to.dataDir, 'upload.txt')))
 
   // ── An image built where the workspace is, released by digest (`FJS-D942`) ──
   // `fli basecamp:deploy` from an app root: build here, load onto the machine

@@ -347,6 +347,7 @@ class Parser {
   //   maxOpen  100
   //   key      env("TENANT_KEY")
   //   resolve  subdomain
+  //   place eu "./data/eu"
   // }
   //
   // tenancy {
@@ -364,6 +365,11 @@ class Parser {
   // `resolve` is the only line about the API realm: how a REQUEST names its
   // tenant. It is here because the answer has to agree with the strategy, and
   // an app that spells it twice is an app that can spell it two ways.
+  //
+  // `place` is a second directory a tenant may be created in, by NAME
+  // (`create(id, { place: 'eu' })`). A name rather than a path so the registry
+  // never holds a caller-supplied path, and so every copy path can enumerate the
+  // places from a bare schema without opening the registry (`FJS-D1729`).
 
   parseTenancy() {
     const start = this.peek()
@@ -378,6 +384,7 @@ class Parser {
     let column   = null
     let claim    = null
     let resolve  = null
+    const places = []
 
     while (!this.check(TK.RBRACE)) {
       const keyTok = this.eat(TK.IDENT)
@@ -402,9 +409,20 @@ class Parser {
         case 'column':   column = this.eat(TK.IDENT).value; break
         case 'claim':    claim  = this.eat(TK.IDENT).value; break
         case 'resolve':  resolve = this.parseTenantResolve(); break
+        case 'place': {
+          const nameTok = this.eat(TK.IDENT)
+          // `default` is the name copy paths give `dir`, so a place called that
+          // would be two directories answering to one name.
+          if (nameTok.value === 'default')
+            throw new ParseError(`tenancy: 'default' names the tenancy dir and cannot be a place`, nameTok)
+          if (places.some(p => p.name === nameTok.value))
+            throw new ParseError(`tenancy: place '${nameTok.value}' is declared twice`, nameTok)
+          places.push({ name: nameTok.value, dir: this.parseEnvOrString() })
+          break
+        }
         default:
           throw new ParseError(
-            `tenancy: unknown property '${keyTok.value}' — expected strategy, dir, registry, key, maxOpen, column, claim or resolve`,
+            `tenancy: unknown property '${keyTok.value}' — expected strategy, dir, registry, key, maxOpen, column, claim, resolve or place`,
             this.peek(),
           )
       }
@@ -432,7 +450,7 @@ class Parser {
     // block exists to make impossible.
     const wrong = strategy === 'database'
       ? [['column', column], ['claim', claim]]
-      : [['dir', dir], ['registry', registry], ['key', key], ['maxOpen', maxOpen]]
+      : [['dir', dir], ['registry', registry], ['key', key], ['maxOpen', maxOpen], ['place', places[0]]]
     for (const [name, value] of wrong) {
       if (value != null)
         throw new ParseError(
@@ -449,6 +467,7 @@ class Parser {
       column,
       claim: claim ?? column,
       resolve,
+      places,
     }
   }
 

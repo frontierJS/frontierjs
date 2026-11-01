@@ -17,7 +17,7 @@ const SCRIPTED = {
   active: {
     id: 'live', at: NOW - 90_000, lastAt: NOW - 1000, status: 'running', ms: null, scope: 'full', argv: [],
     planned: ['hygiene', 'tests'], done: 1, phase: 'tests', phaseAt: NOW - 60_000,
-    current: { phase: 'tests', key: 'packages/b', at: NOW - 20_000 }, failures: [], commit: 'abc1234', dirty: true,
+    running: [{ phase: 'tests', key: 'packages/b', at: NOW - 20_000 }], failures: [], commit: 'abc1234', dirty: true,
   },
   selected: {
     id: 'live', status: 'running', argv: [], notes: ['registry offline — skipped'],

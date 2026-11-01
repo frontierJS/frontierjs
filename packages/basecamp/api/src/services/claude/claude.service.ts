@@ -198,6 +198,7 @@ function pluginServer(root: string, name: string): Record<string, unknown> | nul
 /** A program a hook calls, found: a path checked as executable, a bare name looked up on PATH. */
 function findTool(tool: string, vars: Record<string, string | undefined>): { found: string | null, unknown: string | null } {
   if (!tool.includes('/')) return { found: Bun.which(tool) ?? null, unknown: null }
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: the replacement spells $VAR as the ${VAR} form expandMcpVars reads
   const path = expandMcpVars(tool.replace(/\$([A-Za-z_]\w*)/g, '${$1}'), vars).replace(/^~(?=\/)/, homedir())
   if (/\$\{/.test(path)) return { found: null, unknown: `${path.match(/\$\{(\w+)/)![1]} is set per session` }
   try { accessSync(path, constants.X_OK); return { found: path, unknown: null } }

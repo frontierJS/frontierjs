@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 4068 source file(s) read
-249 entry point(s), 36 imported by nothing outside their package, 16 emitted
-1696 value export(s), 642 reached by nothing outside, 179 emitted
+26 package(s) · 4069 source file(s) read
+249 entry point(s), 35 imported by nothing outside their package, 16 emitted
+1696 value export(s), 640 reached by nothing outside, 179 emitted
 459 type export(s), 349 reached by nothing outside
 ```
 
@@ -38,8 +38,8 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `junction` | 27 | 4 | 271 | 121 | 13 | 269 | 212 |
 | `mesa` | 19 | 4 | 313 | 110 | 77 | 0 | 0 |
 | `sierra` | 25 | 6 | 200 | 84 | 21 | 0 | 0 |
-| `toolbelt` | 66 | 1 | 316 | 39 | 12 | 0 | 0 |
 | `auth` | 6 | 1 | 52 | 37 | 3 | 15 | 13 |
+| `toolbelt` | 66 | 0 | 316 | 37 | 12 | 0 | 0 |
 | `jetty` | 7 | 4 | 43 | 29 | 3 | 0 | 0 |
 | `ui` | 9 | 0 | 53 | 33 | 3 | 0 | 0 |
 | `conduit` | 4 | 2 | 26 | 15 | 1 | 60 | 41 |
@@ -305,11 +305,9 @@ Every entry is imported and every name reached.
 
 `packages/toolbelt` · 66 entry point(s) · 316 value, 0 type export(s)
 
-**Entries imported by nothing outside (1):** `./share`
-
 **Entries not source (22, not graded):** `./bearer` `./cells` `./cron` `./datetime` `./devline` `./directives` `./fill` `./gate` `./geo` `./env` `./hooks` `./ids` `./mailbox` `./mime` `./qr` `./query` `./rank` `./redact` `./share` `./sigv4` `./sse` `./trace`
 
-**Unreached values (39):** `assertValues` `baseUnit` `canonicalRequest` `compileQuery` `CONTENT_TYPES` `decodeShare` `DIGITS` `divRound` `encodePairs` `encodeShare` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `getIn` `invalidDirectives` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `listedDirectives` `matchesFingerprint` `mergeKeys` `mergeRanges` `parseChord` `parseKeys` `patchText` `qrMatrix` `qrTerminal` `resolveWall` `RUNNABLE_LANGS` `sealFile` `SECRET_KEY_NAMES` `SHARE_INFLATED_MAX` `SHARE_MAX` `shareParam` `signMessage` `TRANSFORM_NAMES` `transportFlags`
+**Unreached values (37):** `assertValues` `baseUnit` `canonicalRequest` `compileQuery` `CONTENT_TYPES` `DIGITS` `divRound` `encodePairs` `encodeShare` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `getIn` `invalidDirectives` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `listedDirectives` `matchesFingerprint` `mergeKeys` `mergeRanges` `parseChord` `parseKeys` `patchText` `qrMatrix` `qrTerminal` `resolveWall` `RUNNABLE_LANGS` `sealFile` `SECRET_KEY_NAMES` `SHARE_INFLATED_MAX` `SHARE_MAX` `signMessage` `TRANSFORM_NAMES` `transportFlags`
 
 **Emitted (12):** `CRON_FIELDS` `dayHeader` `FILE_PLAIN_MAX` `formatChord` `fromWall` `inBoxes` `OPERATORS` `parseRow` `pointInPolygon` `polygonArea` `renderRow` `SIGNATURE_VERSION`
 

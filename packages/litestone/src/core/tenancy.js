@@ -56,7 +56,8 @@ function readValue(def, what) {
  * @param {object}  [opts.overrides]  explicit values that beat the declaration
  * @returns {object|null} null when the schema declares no tenancy
  *
- * database → { strategy, dir, registry, maxOpen, key, resolve }
+ * database → { strategy, dir, registry, maxOpen, key, resolve, places }
+ *            places is { [name]: absolute dir }, empty when none is declared
  * row      → { strategy, column, claim, admission }
  */
 export function resolveTenancy(schema, { schemaPath = null, overrides = {} } = {}) {
@@ -92,6 +93,7 @@ export function resolveTenancy(schema, { schemaPath = null, overrides = {} } = {
     // hex string into an absolute filename.
     key:      overrides.key ?? readValue(t.key, 'key'),
     resolve:  resolution,
+    places:   Object.fromEntries((t.places ?? []).map(p => [p.name, at(readValue(p.dir, `place ${p.name}`))])),
   }
 }
 

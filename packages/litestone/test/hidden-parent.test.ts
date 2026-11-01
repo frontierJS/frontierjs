@@ -470,3 +470,92 @@ describe('a template parent is not a hidden one', () => {
     expect(shape(e)).toEqual(shape(await refusal(alice.task.create({ data: { ownerId: 'alice', title: 'x', parentId: 999, isTemplate: true } }))))
   })
 })
+
+// A grant row names the parent its own existence opens: a glass break opens
+// the chart its writer is outside the care team of (FJS-3707, FJS-D1705).
+// Such a key is graded after the write, inside the unit, so the rule is *a
+// parent you can read once your row exists*. One the row does not open is
+// refused as a missing one, and the trial row is rolled back.
+describe('a parent the row being written opens', () => {
+  const GLASS = `
+    tenancy { strategy row  column clinicId  claim clinicId }
+    model Patient {
+      id          Int          @id
+      clinicId    Int
+      carerId     Int
+      ward        String       @default("a")
+      glassBreaks GlassBreak[]
+      @@allow(read, carerId == auth().id || glassBreaks.some(actorId == auth().id))
+    }
+    model GlassBreak {
+      id        Int     @id
+      clinicId  Int
+      patientId Int
+      patient   Patient @relation(fields: [patientId], references: [id])
+      actorId   Int
+      @@allow(read, true)
+      @@allow(create, auth().clinician == true)
+    }
+  `
+  const seed = async () => {
+    const db: any = await createClient({ db: ':memory:', schema: GLASS })
+    await db.asSystem().patient.createMany({ data: [
+      { id: 1, clinicId: 10, carerId: 7 },
+      { id: 2, clinicId: 20, carerId: 7 },
+    ] })
+    return { db, me: db.$setAuth({ id: 1, clinicId: 10, clinician: true }) }
+  }
+  const brk = (id: number, patientId: number, actorId = 1) => ({ id, clinicId: 10, patientId, actorId })
+
+  test('the row that opens the parent is written, and the parent is read', async () => {
+    const { db, me } = await seed()
+    expect(await me.patient.findUnique({ where: { id: 1 } })).toBe(null)
+    expect((await me.glassBreak.create({ data: brk(9, 1) })).patientId).toBe(1)
+    expect((await me.patient.findUnique({ where: { id: 1 } })).id).toBe(1)
+    db.$close()
+  })
+
+  test('a row that does not open it is the missing-parent refusal, and nothing is left', async () => {
+    const { db, me } = await seed()
+    const hidden  = await refusal(me.glassBreak.create({ data: brk(9, 1, 2) }))
+    const missing = await refusal(me.glassBreak.create({ data: brk(9, 999, 2) }))
+    expect(hidden).toBeInstanceOf(ForeignKeyError)
+    expect(shape(hidden)).toEqual(shape(missing))
+    expect(await db.asSystem().glassBreak.count()).toBe(0)
+    db.$close()
+  })
+
+  // The trial INSERT meets a duplicate id where SQLite meets it for a missing
+  // parent, ahead of the key, so the two answer alike there too.
+  test('a duplicate id answers alike for a hidden parent and a missing one', async () => {
+    const { db, me } = await seed()
+    await me.glassBreak.create({ data: brk(9, 1) })
+    const hidden  = await refusal(me.glassBreak.create({ data: { ...brk(9, 1, 2), clinicId: 10 } }))
+    const missing = await refusal(me.glassBreak.create({ data: brk(9, 999, 2) }))
+    expect(hidden.name).toBe(missing.name)
+    expect(hidden.status).toBe(409)
+    db.$close()
+  })
+
+  test('createMany grades each row once the batch is written', async () => {
+    const { db, me } = await seed()
+    const e = await refusal(me.glassBreak.createMany({ data: [brk(8, 1, 2), brk(9, 1, 3)] }))
+    expect(e).toBeInstanceOf(ForeignKeyError)
+    expect(e.batchIndex).toBe(0)
+    expect(await db.asSystem().glassBreak.count()).toBe(0)
+    // A later row of the batch may open the parent an earlier one names.
+    expect((await me.glassBreak.createMany({ data: [brk(8, 1, 2), brk(9, 1)] })).count).toBe(2)
+    db.$close()
+  })
+
+  // No row of this tenant opens another's, so the key is refused before
+  // anything is written: a duplicate id never reaches the INSERT.
+  test("another tenant's parent is refused before the write", async () => {
+    const { db, me } = await seed()
+    await me.glassBreak.create({ data: brk(9, 1) })
+    expect(await refusal(me.glassBreak.create({ data: brk(9, 2) }))).toBeInstanceOf(ForeignKeyError)
+    expect(await refusal(me.glassBreak.create({ data: brk(10, 2) }))).toBeInstanceOf(ForeignKeyError)
+    expect(await db.asSystem().glassBreak.count()).toBe(1)
+    db.$close()
+  })
+})

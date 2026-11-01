@@ -415,6 +415,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./redact (default)` | `src/redact/redact.js` | yes |
 | exports | `./seal` | `src/seal/seal.js` | yes |
 | exports | `./search` | `src/search/search.js` | yes |
+| exports | `./share (types)` | `src/share/share.d.ts` | yes |
+| exports | `./share (default)` | `src/share/share.js` | yes |
 | exports | `./signature` | `src/signature/signature.js` | yes |
 | exports | `./sigv4 (types)` | `src/sigv4/sigv4.d.ts` | yes |
 | exports | `./sigv4 (default)` | `src/sigv4/sigv4.js` | yes |

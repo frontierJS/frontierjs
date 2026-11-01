@@ -50,7 +50,7 @@ git(['config', 'core.hooksPath', HOOKS_DIR])
 
 console.log(`[hooks] core.hooksPath = ${HOOKS_DIR}`)
 console.log(`[hooks] installed: ${readdirSync(join(ROOT, HOOKS_DIR)).join(', ')}`)
-console.log(`[hooks] pre-push runs \`node scripts/ci.mjs --fast\` — bypass with \`git push --no-verify\`, remove with \`bun run hooks:install -- --uninstall\``)
+console.log(`[hooks] pre-push runs \`node scripts/ci.mjs --fast\` on the pushed commit, in a worktree beside this checkout — bypass with \`git push --no-verify\`, remove with \`bun run hooks:install -- --uninstall\``)
 
 // ─── helpers ────────────────────────────────────────────────
 

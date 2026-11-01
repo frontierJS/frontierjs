@@ -269,6 +269,8 @@ const VERIFY_TIMEOUT_MS = 1_800_000
 // written under a `.partial` name and renamed, so a tar that dies partway never
 // leaves a file that reads as a finished backup; `umask 077` because the
 // archive holds whatever the app keeps, including secrets it stored itself.
+// The container runs as root, so the archive is handed to `FJS_OWNER`, the
+// Outpost's own uid, or an Outpost that is not root cannot read it to upload.
 // The container the app runs in keeps writing, and a write landing while tar
 // reads can leave the database from one moment beside a `-wal` from another.
 // The file list (name, size, mtime) is taken before and after each tar, and a
@@ -287,6 +289,7 @@ while :; do
   [ "$tries" -lt 5 ] || { rm -f "/out/$FJS_NAME.partial"; echo "the data kept changing under the tar" >&2; exit 4; }
 done
 mv "/out/$FJS_NAME.partial" "/out/$FJS_NAME"
+[ -z "\${FJS_OWNER:-}" ] || chown "$FJS_OWNER" "/out/$FJS_NAME"
 echo "$(stat -c %s "/out/$FJS_NAME") $(find /data -type f | wc -l) $(sha256sum "/out/$FJS_NAME" | cut -d ' ' -f 1)"`
 const BACKUP_TIMEOUT_MS = 3_600_000
 // The archive streams off disk; an hour covers a multi-GB one on a slow link,
@@ -1194,6 +1197,7 @@ export function createDocker({
       const result = await run([
         'docker', 'run', '--rm', '--network', 'none',
         '-e', `FJS_NAME=${name}`,
+        '-e', `FJS_OWNER=${process.getuid()}:${process.getgid()}`,
         '--mount', `type=bind,src=${dir},dst=/data,readonly`,
         '--mount', `type=bind,src=${root},dst=/out`,
         RESTORE_IMAGE, 'sh', '-c', BACKUP_SCRIPT,
@@ -1202,9 +1206,8 @@ export function createDocker({
         const said = (result.stderr || result.stdout || '').trim().split('\n').slice(-3).join(' ')
         throw new Error(`backup of ${dir} failed (exit ${result.exitCode}): ${said}`)
       }
-      // The digest is the capture container's, which wrote the archive as
-      // root under umask 077; it is what a restore by URL checks the fetched
-      // copy against (`FJS-D1521`).
+      // The digest is the capture container's; it is what a restore by URL
+      // checks the fetched copy against (`FJS-D1521`).
       const [size, count, digest] = result.stdout.trim().split('\n').at(-1).split(/\s+/)
       const bytes  = Number(size), files = Number(count)
       const sha256 = SHA256.test(digest ?? '') ? digest : null

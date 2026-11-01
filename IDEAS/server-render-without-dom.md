@@ -375,7 +375,7 @@ happy-dom path, or each difference is a ruling.
   - **Recommend A**: the measured cost is nodes, not the window, and B is a
     second answer to a question `FJS-D214` settled.
   - **Ruled A** by the owner, 2026-10-29 (`FJS-D1649`).
-- **Q2: `{@html}`.** A raw string has to be pushed as-is. That is the one
+- ~~**Q2: `{@html}`.**~~ **Answered 2026-11-01 (`FJS-D1642`): D1642 ruled B: the string is parsed through the installed document and its serialization pushed.** A raw string has to be pushed as-is. That is the one
   place the escaping owner is deliberately bypassed, so it needs its own test.
   - **A** — push the string verbatim. Fastest, but the client parses the same
     string through a `<template>`'s `innerHTML`
@@ -393,7 +393,7 @@ happy-dom path, or each difference is a ruling.
     second escaping path. A's verbatim output disagrees with `runtime.js:6107`
     on any malformed string; C is the fallback if B's parse is measured as the
     cost.
-- **Q3: `{#await}`.** The DOM path renders the pending branch and
+- ~~**Q3: `{#await}`.**~~ **Answered 2026-11-01 (`FJS-D1647`): D1647 ruled B: a server render waits on every await and writes the settled branch on both paths.** The DOM path renders the pending branch and
   `flushSync` serializes before the promise settles.
   - **A** — write the pending branch. Parity with the DOM path as it is.
   - **B** — await the promise and write the resolved branch; `renderToHTML` is

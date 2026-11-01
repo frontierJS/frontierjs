@@ -43,8 +43,9 @@
  *   on the host (`FJS-D1544`), refuses a second one into a directory with
  *   files unless told to overwrite, refuses a path off that directory, and
  *   refuses while a container holds it (`FJS-D943`).
- *   `backup.*` — `/backup` tars that directory into the backup directory and
- *   refuses an app the machine holds no data for (`FJS-1782`).
+ *   `backup.*` — `/backup` tars that directory into the backup directory, an
+ *   archive this process owns and nobody else reads, and refuses an app the
+ *   machine holds no data for (`FJS-1782`).
  *   The directories are under `$HOME`, because a snap-packaged docker cannot
  *   bind-mount the host's `/tmp`.
  *
@@ -429,13 +430,13 @@ try {
   t('volume.overwriteReplacesTheFiles', over.status === 200 && readdirSync(dataDir, { recursive: true }).filter(f => statSync(join(dataDir, f)).isFile()).join(' ') === 'fresh.db' && onHost('fresh.db') === 'replaced')
   const saved = await call('/backup', { app_id: APP })
   if (saved.status !== 200) console.log(saved.body)
-  // The archive is the daemon's (root, mode 0600), so it is read back through the daemon.
-  const listing = saved.status === 200
-    ? sh('docker', 'run', '--rm', '--mount', `type=bind,src=${backupDir},dst=/out,readonly`, BUSYBOX,
-        'tar', '-tzf', `/out/${saved.body.path.split('/').pop()}`).stdout
-    : ''
+  // Read on the host, as this Outpost's upload reads it: an archive left the
+  // daemon's root could not be (FJS-3793).
+  const listing = saved.status === 200 ? sh('tar', '-tzf', saved.body.path).stdout : ''
   t('backup.tarsTheVolumeToTheMachine',
     saved.status === 200 && saved.body.files === 1 && saved.body.path.startsWith(`${backupDir}/${APP}-`) && /fresh\.db/.test(listing))
+  const taken = saved.status === 200 ? statSync(saved.body.path) : null
+  t('backup.archiveIsTheOutpostsOwn', taken?.uid === process.getuid() && (taken.mode & 0o777) === 0o600)
   t('backup.refusesAnAppWithNoData', (await call('/backup', { app_id: `${APP}-absent` })).status === 500)
 
   // A wrapped `.db`, the shape Basecamp's upload makes of a bare file
@@ -534,7 +535,7 @@ const expected = [
   'route.unknownIs404',
   'volume.restoresIntoTheVolume', 'volume.refusesANonEmptyOne', 'volume.refusesAPathOffTheRoot',
   'volume.refusesWhileHeld', 'volume.overwriteReplacesTheFiles',
-  'backup.tarsTheVolumeToTheMachine', 'backup.refusesAnAppWithNoData',
+  'backup.tarsTheVolumeToTheMachine', 'backup.archiveIsTheOutpostsOwn', 'backup.refusesAnAppWithNoData',
   'volume.perFileRefusesTheDatabaseByName', 'volume.perFileReplacesOnlyItsDatabase',
   'reports.areSigned', 'reports.heartbeatRegistersTheUrl', 'reports.heartbeatCarriesVitals',
   'reports.volumesAreEveryVolume', 'reports.volumesHaveMountpoints', 'reports.diskCountsTheImages', 'reports.diskIsInBytes',

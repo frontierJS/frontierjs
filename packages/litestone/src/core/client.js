@@ -424,6 +424,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   const {
     asConstraintError, parentRefusal, movesOnto, requireParentGrants, isArchivedParent, hiddenParents,
+    deferrable, settleDeferred,
     checkCreate, firstRefusal, refuseLockedCascade, refusedDelete, refusedChildDelete, nameBlockerForCaller,
     asBatchRowError,
   } = makeConstraintRefusals(shape, ctx, {
@@ -1581,7 +1582,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     writeDb, T, col, plugins, computedFns, hasFieldPolicy, _hasEnumFields,
     _extensible, _sealSelf, _tableTransitions, _fieldsByName, _authDefaultOf, _authFillsNull,
     allocateExtSlot, mirrorExtSlots, remirrorMovedRow, pathWriteRefusal, requiredFailure, storesWhatOmissionStores,
-    keys: _writeKeys,
+    parentRefusal, keys: _writeKeys,
   })
 
   // Hydration for the grouped and aggregated paths, which return SQLite's own
@@ -3255,10 +3256,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
     }
     const hidden = await hiddenParents(data, pathStamped, system)
     const parent = ctx.hasPolicies ? data.map((row, i) => checkCreate(authStamped(row, modelName, ctx), hidden[i])) : []
+    // As prepareCreate's: taken up only by createMany().
+    const deferred = new Map()
+    for (const [i, h] of hidden.entries())
+      if (!parent[i] && deferrable(h)) deferred.set(i, { refusal: h, row: authStamped(data[i], modelName, ctx) })
     for (const [i, r] of parent.entries()) hidden[i] = firstRefusal(r, hidden[i])
     // A logged model already takes RETURNING, so opting in costs it nothing.
     // A plugin's onAfterWrite is told each row (FJS-1725).
-    return { data, system, hidden, mode, needRows: tableHasLogWork || wantRows || !!plugins?.hearsWrites }
+    return { data, system, hidden, deferred, mode, needRows: tableHasLogWork || wantRows || !!plugins?.hearsWrites }
   }
 
   // The rows as they will be written, and one statement per row. Runs INSIDE
@@ -3373,6 +3378,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const [_crHid] = await hiddenParents([data], [stamped], system)
     // After the auth stamps, never before — see authStamped (FJS-1402).
     const _crParent = ctx.hasPolicies ? checkCreate(data, _crHid) : undefined
+    // Taken up only by create(), which asks again inside its unit; every other
+    // reader of this plan throws the refusal ahead of the INSERT.
+    const deferred = !_crParent && deferrable(_crHid) ? { refusal: _crHid, row: data } : null
     // A new row is version 1, whatever the payload says. Honouring a supplied
     // version would let a client start a row at 500 and make the first real
     // editor's read look stale.
@@ -3383,7 +3391,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     data = applyFieldRefDefaults(data, stamped)
     extractWriteOps(data, { where: 'create' })
     const refusal = firstRefusal(_crParent, _crHid)
-    return { data, stamped, refusal, select, include, system, scopedBy }
+    return { data, stamped, refusal, deferred, select, include, system, scopedBy }
   }
 
   // The seam's view of create: the decomposition the unit does, with no unit
@@ -4526,8 +4534,9 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       // decision below and the statement, or a transaction can open in the gap
       // and the insert joins it.
       let plan
+      const { deferred } = _cr
       const insertRow = (hasNested, edgeWrites, bare) => {
-        plan = createPlan(data, { hasNested, edgeWrites, select, include, system, stamped, refusal: _cr.refusal, bare })
+        plan = createPlan(data, { hasNested, edgeWrites, select, include, system, stamped, refusal: deferred ? null : _cr.refusal, bare })
         return writeUnit(plan)
       }
 
@@ -4545,7 +4554,8 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       // child inserted through it is never graded at all (`FJS-969`'s shape one
       // realm over: the fast paths are the ones a rule misses). Asked of the
       // MODEL, so a schema declaring no bound keeps the path (`FJS-1106`).
-      if (_crEdges && !_crEdges.edgeWrites.length && tx.state.depth === 0 && !_cardNotes && !_exclNotes) {
+      // A deferred parent is asked after the INSERT, which needs a unit to roll back.
+      if (_crEdges && !_crEdges.edgeWrites.length && tx.state.depth === 0 && !_cardNotes && !_exclNotes && !deferred) {
         data   = _crEdges.data
         _crOut = insertRow(false, _crEdges.edgeWrites, true)
       } else {
@@ -4569,13 +4579,19 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
           const inserted = insertRow(hasNested, edgeWrites, false)
           // `select: false` with nothing nested skips the RETURNING, so there is
           // no row to hang children on — and none were asked for.
-          if (!inserted.row) return inserted
-          const created = inserted.row
-          // hasMany ops after — children need parent PK + parent row (for co-FK propagation)
-          const pkField = _pkField ?? 'id'
-          await processHasManyNested(nested, created[pkField], created)
-          applyEdgeWrites(edgeWrites, created[pkField], scopedBy)
-          return hasNested || edgeWrites.length ? rehydrateAfterChildren(inserted) : inserted
+          let out = inserted
+          if (inserted.row) {
+            const created = inserted.row
+            // hasMany ops after — children need parent PK + parent row (for co-FK propagation)
+            const pkField = _pkField ?? 'id'
+            await processHasManyNested(nested, created[pkField], created)
+            applyEdgeWrites(edgeWrites, created[pkField], scopedBy)
+            if (hasNested || edgeWrites.length) out = rehydrateAfterChildren(inserted)
+          }
+          // The throw is the rollback.
+          const owed = deferred && await settleDeferred(deferred.refusal, deferred.row)
+          if (owed) throw owed
+          return out
         })
       }
       // ── Committed from here ──────────────────────────────────────────────
@@ -4590,7 +4606,22 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       // stamp is a write (see createManyPlan): the one verb that takes the
       // lock itself, and it runs the same unit the executor would.
       let plan
-      const outcome = await tx.wrapExclusive(() => { plan = createManyPlan(prepared); return writeUnit(plan) })
+      const { deferred } = prepared
+      if (!deferred.size) {
+        const outcome = await tx.wrapExclusive(() => { plan = createManyPlan(prepared); return writeUnit(plan) })
+        return finishWrite(plan, outcome)
+      }
+      // A deferred parent is asked once the whole batch is written, which
+      // awaits; the throw is the rollback.
+      const outcome = await tx.exclusive(async () => {
+        plan = createManyPlan({ ...prepared, hidden: prepared.hidden.map((r, i) => deferred.has(i) ? null : r) })
+        const out = writeUnit(plan)
+        for (const [i, d] of deferred) {
+          const owed = await settleDeferred(d.refusal, d.row)
+          if (owed) throw asBatchRowError(owed, i, plan.statements.length, plan.statements[i].data)
+        }
+        return out
+      })
       return finishWrite(plan, outcome)
     },
 

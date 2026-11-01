@@ -1629,6 +1629,8 @@ export interface DatabaseTenancy {
   maxOpen:  number
   key:      string | null
   resolve:  TenantResolution | null
+  /** `place <name> "<dir>"` lines, each dir absolute. A tenant created with `meta.place` lives there. */
+  places:   Record<string, string>
 }
 
 export interface RowTenancy {
@@ -1684,6 +1686,8 @@ export declare function createTenantRegistry(options: TenantRegistryOptions): Pr
   create(id: string, meta?: Record<string, unknown>): Promise<void>
   delete(id: string): Promise<void>
   exists(id: string): boolean
+  /** The tenant's file, in the directory of the place it was created in. */
+  pathOf(id: string): string
   list(): string[]
   meta:  Map<string, Record<string, unknown>>
   migrate(opts?: { only?: string[]; concurrency?: number }): Promise<{ tenants: number; migrations: number; failed: Array<{ tenantId: string; error: string }> }>

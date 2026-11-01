@@ -55,7 +55,7 @@ Graded: **13 of 186**.
 | A field `@allow` is a PREDICATE and it is compiled into SQL, both ways | **none** |
 | `@guarded` is not a level | **none** |
 | A column your `getLevel` reads must not be writable by the caller being graded. | **none** |
-| A foreign key is a read: a parent the caller cannot read answers as missing | **none** |
+| A foreign key is a read: a parent the caller cannot read once the row exists answers as missing | **none** |
 | A `9`-gated table cannot be tidied up, by anything | **none** |
 
 ### `@@transitions`

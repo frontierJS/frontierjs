@@ -2997,7 +2997,8 @@ input[type="file"]:disabled::file-selector-button {
   border-radius:   var(--card-radius);
   border-collapse: separate;
   border-spacing:  0;
-  overflow:        hidden;
+  
+  overflow:        clip;
   font-family:     var(--font-primary);
   font-size:       var(--text-md);
   color:           var(--ink);
@@ -4927,7 +4928,7 @@ try {
     <div class="ord">12</div>
     <div>
       <div class="phase-name"><b>deploy</b><span class="chip c-warn">full run</span></div>
-      <p>`fli new` → `fli make:deploy` → `fli deploy:local`: does the deploy pipeline containerize a real app? ~30s and it needs a Docker daemon, so it sits in the full tier rather than the pre-push one.</p>
+      
     </div>
   </div><div class="phase" data-row>
     <div class="ord">13</div>

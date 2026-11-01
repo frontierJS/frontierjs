@@ -1554,6 +1554,15 @@ export function withLiteralDefaults(data, list) {
   return out
 }
 
+// Whether a row sits in the caller's tenant, by its generated tenancy denies
+// alone. Its whole read rule cannot answer it: a private row of the caller's
+// own tenant fails that too (FJS-1319).
+export function inCallerTenant(modelName, row, ctx) {
+  ctx = atOneInstant(ctx)
+  const rules = rulesFor(modelName, 'read', ctx, true)
+  return !rules || !rules.denies.some(({ expr }) => denyFires(evalJs(expr, ctx, row, modelName, 'read')))
+}
+
 // Evaluates a post-update policy against a row object in JS.
 // Call after the write, inside a transaction — throw to trigger rollback.
 export function checkPostUpdatePolicy(modelName, row, ctx) {

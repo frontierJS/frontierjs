@@ -1681,14 +1681,19 @@ async function tenantOptions(cfg) {
 //
 // A DIRECTORY and a PATTERN rather than a list of ids: a replica started before
 // a tenant exists has to cover it, so the unit is "every tenant file there".
+//
+// A declared `place` is a directory of its own, named `tenant-files-<place>`, so
+// a tenant created there is copied from where it lives (`FJS-D1729`).
 async function tenantStorage(parseResult, cfg) {
   if (parseResult.schema.tenancy?.strategy !== 'database') return null
-  const { dir, registry } = await tenantOptions(cfg)
-  const files = { name: 'tenant-files', dir: resolve(dir), pattern: '*.db' }
-  const reg   = resolve(registry ?? join(dir, 'registry.db'))
+  const { dir, registry, declared } = await tenantOptions(cfg)
+  const files  = { name: 'tenant-files', dir: resolve(dir), pattern: '*.db' }
+  const places = Object.entries(declared?.places ?? {})
+    .map(([place, at]) => ({ name: `tenant-files-${place}`, dir: at, pattern: '*.db', place }))
+  const reg    = resolve(registry ?? join(dir, 'registry.db'))
   // A registry inside the tenant directory is already one of its `*.db` files.
-  if (dirname(reg) === files.dir && reg.endsWith('.db')) return [files]
-  return [files, { name: 'tenant-registry', dir: dirname(reg), pattern: basename(reg) }]
+  if (dirname(reg) === files.dir && reg.endsWith('.db')) return [files, ...places]
+  return [files, ...places, { name: 'tenant-registry', dir: dirname(reg), pattern: basename(reg) }]
 }
 
 // What `backup`, `replicate` and `restore` copy, resolved from the schema
@@ -1802,7 +1807,8 @@ async function cmdTenant(subCmd, args, cfg) {
         header('litestone tenant list')
         const ids = tenants.list()
         if (!ids.length) { console.log(`  ${dim('No tenants found in')} ${cyan(dir)}`); break }
-        console.log(`  ${dim(`${ids.length} tenant${ids.length !== 1 ? 's' : ''} in`)} ${cyan(dir)}\n`)
+        const places = Object.keys(tenants.tenancy?.places ?? {})
+        console.log(`  ${dim(`${ids.length} tenant${ids.length !== 1 ? 's' : ''} in`)} ${cyan(dir)}${places.length ? dim(` and place ${places.join(', ')}`) : ''}\n`)
         for (const id of ids) {
           const meta = tenants.meta.get(id)
           const metaStr = Object.keys(meta).length
@@ -1861,7 +1867,7 @@ async function cmdTenant(subCmd, args, cfg) {
         if (!tenants.exists(id)) fatal(`Tenant "${id}" not found`)
         const meta = tenants.meta.get(id)
         const _db   = await tenants.get(id)
-        console.log(`  ${dim('path:')}    ${cyan(resolve(dir, id + '.db'))}`)
+        console.log(`  ${dim('path:')}    ${cyan(tenants.pathOf(id))}`)
         console.log(`  ${dim('meta:')}    ${JSON.stringify(meta)}`)
         console.log()
         break
@@ -4506,9 +4512,12 @@ async function cmdRestore(cfg) {
     staging.push(stage(regDest))
     if (!got.ok) { discard(); fatal(`The tenant registry did not come back — nothing was restored.\n     ${regUrl}\n     ${got.error}`) }
 
-    const { registryIds } = await import('../tenant.js')
-    for (const id of registryIds(stage(regDest)))
-      jobs.push({ kind: 'tenant', id, name: `tenant ${id}`, url: `${replicaUrl(url, 'tenant-files')}/${id}.db`, dest: join(files.dir, `${id}.db`) })
+    const { registryTenants } = await import('../tenant.js')
+    for (const { id, place } of registryTenants(stage(regDest))) {
+      const at = place == null ? files : dirs.find(d => d.place === place)
+      if (!at) { discard(); fatal(`Tenant ${cyan(id)} was created in place ${cyan(place)}, which this schema's ${cyan('tenancy { }')} no longer declares — nothing was restored.`) }
+      jobs.push({ kind: 'tenant', id, name: `tenant ${id}`, url: `${replicaUrl(url, at.name)}/${id}.db`, dest: join(at.dir, `${id}.db`) })
+    }
     jobs.push({ kind: 'registry', name: 'tenant-registry', url: regUrl, dest: regDest, staged: true })
   } else if (reg) {
     jobs.push({ kind: 'registry', name: 'tenant-registry', url: `${replicaUrl(url, 'tenant-registry')}/${reg.pattern}`, dest: join(reg.dir, reg.pattern) })

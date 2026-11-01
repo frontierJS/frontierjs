@@ -33,6 +33,7 @@ export const holds = ['ports']
 import { spawn, spawnSync } from 'node:child_process'
 import { readdir, rm } from 'node:fs/promises'
 import { randomBytes } from 'node:crypto'
+import { Database } from 'bun:sqlite'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../../mesa/src/drive.js'
@@ -626,6 +627,50 @@ try {
     t => t.length > 0, 'Upload said nothing').catch(() => '')
   check('Upload reaches the stream route, and its refusal of a .db that is not SQLite is shown',
     /SQLite/.test(uploadRefused), uploadRefused.trim().slice(0, 160))
+
+  // A real `.db` lands, so the app is pointed at the stand-in bucket added on
+  // /hub/settings/ above. The machine half of the round trip, a Restore that
+  // reads the row back, is `verify:outpost`'s: no Outpost runs here.
+  const asOwner = (method, path, payload) => evaluate(`
+    fetch(${JSON.stringify(path)}, { method: ${JSON.stringify(method)}, headers: {
+      'content-type': 'application/json', accept: 'application/json',
+      authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
+      'x-workspace-id': localStorage.getItem('basecamp_workspace'),
+    }, ${payload ? `body: JSON.stringify(${JSON.stringify(payload)}),` : ''} })
+    .then(async r => ({ status: r.status, body: await r.json().catch(() => null) }))`)
+  const standIn = (await asOwner('GET', '/backup-destinations'))?.body?.data?.find(d => d.name === 'Stand-in bucket')
+  const archiveApp = (await asOwner('GET', `/apps/${foundArchive?.appId}`))?.body
+  const moved = await asOwner('PATCH', `/apps/${foundArchive?.appId}`, { backupDestinationId: standIn?.id, version: archiveApp?.version })
+  check('the archive\'s app moves onto the stand-in bucket', moved.status < 300 && !!standIn, JSON.stringify(moved).slice(0, 160))
+  const sqlite = new Database(':memory:')
+  sqlite.run('CREATE TABLE note (line TEXT)')
+  const dbBytes = Buffer.from(sqlite.serialize()).toString('base64')
+  sqlite.close()
+  await goto(`/apps/${foundArchive?.appId}/?tab=backups`)
+  await until(`!!document.querySelector('#app-backups-upload input[type=file]')`, v => v, 'the Backups tab lost Upload')
+  await evaluate(`(() => {
+    const input = document.querySelector('#app-backups-upload input[type=file]')
+    const dt = new DataTransfer()
+    dt.items.add(new File([Uint8Array.from(atob(${JSON.stringify(dbBytes)}), c => c.charCodeAt(0))], 'shop.db'))
+    input.files = dt.files
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+  await until(`!document.getElementById('app-backups-upload-send')?.disabled`, v => v, 'choosing a file never enabled Upload')
+  await click('#app-backups-upload-send')
+  const wrappedRow = await until(`[...document.querySelectorAll('#app-backups-history tbody tr[data-backup]')]
+      .find(tr => tr.querySelector('[aria-label^="Restore "]')?.dataset.confirm?.includes('-wal'))?.dataset.backup ?? ''`,
+    id => id.length > 0, 'the uploaded .db never listed a row offering Restore').catch(() => '')
+  const sinkKeys = (await fetch(`${S3_SINK}/_sink/seen`).then(r => r.json())).keys
+  check('a SQLite .db uploads into the bucket and lists as a row offering Restore',
+    !!wrappedRow && sinkKeys.some(k => k.endsWith('.db.tar.gz')),
+    `${wrappedRow || 'no row'} · ${sinkKeys.join(' ')} · ${await text('#app-backups-error')}`)
+  await evaluate(`document.querySelector('tr[data-backup="${wrappedRow}"] [aria-label^="Restore "]')?.click()`)
+  await until(`!!document.querySelector('[role=dialog][aria-modal=false]')`, v => v, 'Restore on the upload asked nothing').catch(() => {})
+  const wrappedWarned = await text('[role=dialog][aria-modal=false]')
+  check('its Restore says only that database and its -wal and -shm are replaced',
+    /-wal and -shm, are replaced/.test(wrappedWarned ?? '') && /other databases and files stay/.test(wrappedWarned ?? ''),
+    (wrappedWarned ?? '').slice(0, 200))
+  await evaluate(`document.querySelector('[role=dialog][aria-modal=false] .cluster button:first-child')?.click()`)
 
   // ─── Your settings ─────────────────────────────────────────────────────
   console.log('\n  /settings/ — the caller\'s own account')

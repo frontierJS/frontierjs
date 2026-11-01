@@ -178,10 +178,30 @@ row it wrote before the download.
       source dir as an argument. `backupSource` sends `per_file` for a
       `.db.tar.gz` location. `verify:docker`'s `volume.perFile*` rows pass;
       its `/deploy` rows fail at HEAD (`FJS-3791`).
-- [ ] 3.2 An Upload control in `AppBackups.mesa` taking `.tar.gz` or `.db`;
+- [x] 3.2 An Upload control in `AppBackups.mesa` taking `.tar.gz` or `.db`;
       the row it makes offers Restore like any other, and a wrapped `.db`'s
       confirmation says it replaces that database only.
-- [ ] 3.3 The round trip in `verify-screens.mjs`.
+      **Built 2026-10-31.** A `FileUpload` capped at 128 MB (a 413 says to
+      use the bucket and Rescan), shown only with a destination; `upload`
+      signs the link and `client.fetch` PUTs the file. A `.db.tar.gz` row's
+      Restore confirmation names the database, its `-wal`/`-shm`, and that
+      the volume's other files stay. `verify-screens` drives the control to
+      the stream route's refusal of a non-SQLite `.db`; the seeded bucket is
+      a real host, so a landed upload and the wrapped confirmation are 3.3's
+      to prove. The seed's found-archive app gained `volumePath: '/data'`,
+      since the Backups tab now hides without one.
+- [x] 3.3 The round trip, split across two drives because only
+      `verify:outpost` runs a real Outpost (`FJS-D1735`).
+      **Built 2026-10-31.** `verify:outpost` starts the s3-sink in process,
+      takes app A's archive into it, downloads it by `download`'s link (the
+      sha256 is the take's), uploads it to app B, restores it there by
+      `backupId`, and reads back the row A wrote. A bare `.db` of A, uploaded
+      after a second write, restores per file with `overwrite` and leaves a
+      file beside it. `verify-screens` points the archive's app at its
+      stand-in bucket and uploads a real SQLite `.db` through the control;
+      the row lands offering Restore, with the wrapped confirmation. The take
+      needed `FJS-3793`: an Outpost run as a user could not read the archive
+      its capture wrote as root.
 
 ## After this (not in this plan)
 

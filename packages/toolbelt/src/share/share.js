@@ -76,7 +76,7 @@ export function readFields(value, readers) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
   const out = {}
   for (const [key, read] of Object.entries(readers)) {
-    if (!Object.prototype.hasOwnProperty.call(value, key)) continue
+    if (!Object.hasOwn(value, key)) continue
     let kept
     try { kept = read(value[key]) } catch { continue }
     if (kept !== undefined) Object.defineProperty(out, key, { value: kept, enumerable: true, writable: true, configurable: true })

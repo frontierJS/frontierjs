@@ -703,7 +703,7 @@ The column name in SQL, where it differs from the field name. Litestone emits ca
 firstName String @map("first_name")
 ```
 
-#### `@default` (value | [value, …] | now() | uuid() | ulid() | cuid() | nanoid() | auth().<claim> | <sibling> | <relation>.<column> | autoincrement())
+#### `@default` (value | [value, …] | now() | now() + 4h | uuid() | ulid() | cuid() | nanoid() | auth().<claim> | <sibling> | <relation>.<column> | autoincrement())
 
 tier: **essential** · legal in: on a model's field, on a type's field, on a trait's field
 
@@ -1768,7 +1768,7 @@ The rows are a Provider's: a third party is the system of record, and the named 
 
 tier: **situational** · legal in: in a model, in a trait · also called: unattributed, ballot, survey, confidential · see also: `trail`, `createdBy`, `date`
 
-No row of this model may be attributed. Refused on the model: @@trail, @trail, @createdBy/@updatedBy/auth(), and @updatedAt/now() (a millisecond is a join key; store a String @date). Refused at runtime: a logged write in the same transaction as one of these rows, because the trail's clock in order lines the two up. It closes the join by refusing the other end, and does not hide insertion order: raw SQL still reads the rowids, and a log written in a separate transaction still correlates.
+No row of this model may be attributed. Refused on the model: @@trail, @trail, @createdBy/@updatedBy/auth(), and @updatedAt/now() (a millisecond is a join key; store a String @date), and a ulid() or autoincrement() id or a lone Int @id (write order; use uuid()). Refused at runtime: a logged write in the same transaction as one of these rows, because the trail's clock in order lines the two up. It closes the join by refusing the other end, and does not hide insertion order: raw SQL still reads the rowids, and a log written in a separate transaction still correlates.
 
 ```lite
 @@anonymous

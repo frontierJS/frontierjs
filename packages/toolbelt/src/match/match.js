@@ -124,7 +124,7 @@ function _inList(rule, list) {
 // returns nothing for.
 // A string with nothing past U+007F folds the same under `toLowerCase`, which
 // is several times cheaper than the replace a graded document would pay per cell.
-const _ASCII_ONLY = /^[\x00-\x7f]*$/
+const _ASCII_ONLY = /^[^\u0080-\uffff]*$/
 const _ascii = s => {
   const str = String(s)
   return _ASCII_ONLY.test(str) ? str.toLowerCase() : str.replace(/[A-Z]+/g, m => m.toLowerCase())

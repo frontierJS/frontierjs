@@ -81,6 +81,9 @@
 .gui-home:not([data-view="home"]) [data-panel]:not(.gui-open),
 .gui-home:not([data-view="home"]) #home-tiles { display: none; }
 
+/* A group's header says when to look, so eleven tiles read as four questions. */
+.gui-group-head { align-items: baseline; }
+
 .gui-tiles {
   --tile-min: 15rem;
   gap:        var(--space-md);
@@ -404,7 +407,7 @@ button[data-health] {
 
         <!-- Home is one tile per panel and a tile opens its panel alone. Every
              panel below at once was a page of lists nobody could take in. -->
-        <div class="tiles gui-tiles" id="home-tiles"></div>
+        <div class="stack gap-lg" id="home-tiles"></div>
         <div class="empty" id="panel-empty" hidden>
           <div class="empty-title">nothing here right now</div>
           <div class="empty-text" id="panel-empty-text"></div>
@@ -1932,11 +1935,20 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
 // A row's text is the register's markdown; a tile has room for the words only.
 const plain  = text => String(text ?? '').replace(/\*\*|`/g, '')
 
+// A group is when to look. Nine tiles in one grid gave no hint which of them
+// the moment calls for; a heading per moment does.
+const TILE_GROUPS = [
+  { key: 'now',    title: 'right now',   when: 'is this machine ready, and what is up' },
+  { key: 'change', title: 'this change', when: 'while you work — what moved, what proves it, did ci pass' },
+  { key: 'ship',   title: 'shipping',    when: 'when the change is done — deploy the apps, publish the packages' },
+  { key: 'next',   title: 'what next',   when: 'between tasks — what waits on your pick, what is ready to start' },
+]
+
 // A read answers `null` until its panel has loaded. An optional tile is left
 // off home while its panel is hidden with nothing loaded — a project with no
 // scripts/ci.mjs has no ci, and a tile saying so on every load is noise.
 const TILES = [
-  { key: 'run', label: 'what can run here', read() {
+  { key: 'run', group: 'now', label: 'what can run here', read() {
     if (!dashRows.length) return null
     const up = dashState ? dashRows.filter(r => dashState[r.id]?.state === 'up').length : '…'
     const byKind = {}
@@ -1946,7 +1958,7 @@ const TILES = [
       sub: Object.entries(byKind).map(([k, n]) => `${n} ${KIND_TITLE[k] ?? k}`).join(' · '),
     }
   } },
-  { key: 'tree', label: 'what you have changed', read() {
+  { key: 'tree', group: 'change', label: 'what you have changed', read() {
     if (!treeBody) return null
     const zones = treeBody.zones ?? []
     if (!zones.length) return { value: 'clean', word: 'nothing changed', tone: 'success', sub: treeBody.branch }
@@ -1957,7 +1969,7 @@ const TILES = [
       sub: `${treeBody.branch} · ${zones.map(z => z.zone).join(', ')}`,
     }
   } },
-  { key: 'proves', label: 'what proves it', read() {
+  { key: 'proves', group: 'change', label: 'what proves it', read() {
     if (provesFiles == null) return null
     if (!provesFiles) return { value: '—', word: 'nothing changed to prove', tone: 'muted' }
     if (!provesRows.length) return { value: 0, word: 'no proof row covers this change', tone: 'warning' }
@@ -1966,7 +1978,7 @@ const TILES = [
       sub: provesRows.slice(0, 2).map(r => r.changed).join(' · '),
     }
   } },
-  { key: 'ci', label: 'ci', optional: true, read() {
+  { key: 'ci', group: 'change', label: 'ci', optional: true, read() {
     if (!ciBody) return null
     const { active, lastFull } = ciBody
     if (active) return {
@@ -1984,7 +1996,7 @@ const TILES = [
         : `last full run: ${lastFull ? `${lastFull.status} ${ago(lastFull.at)}` : 'never'}`,
     }
   } },
-  { key: 'checks', label: 'checks', read() {
+  { key: 'checks', group: 'now', label: 'checks', read() {
     if (!checksBody) return null
     const { errors, warns, machineOk } = checksBody
     return {
@@ -1994,7 +2006,7 @@ const TILES = [
       sub: machineOk ? 'this machine can run fli' : 'this machine needs setup',
     }
   } },
-  { key: 'release', label: 'release', read() {
+  { key: 'release', group: 'ship', label: 'release', read() {
     if (!releaseWorst) return null
     const word = { contract: 'only forward after a deploy', unknown: 'counts as contract', expand: 'N-1 keeps working', nothing: 'no app declares a schema' }
     const byVerdict = {}
@@ -2006,7 +2018,7 @@ const TILES = [
       sub: `${word[releaseWorst]} · ${Object.entries(byVerdict).map(([v, n]) => `${plural(n, 'app')} ${v}`).join(' · ')}`,
     }
   } },
-  { key: 'publish', label: 'publish packages', optional: true, read() {
+  { key: 'publish', group: 'ship', label: 'publish packages', optional: true, read() {
     if (!publishBody) return null
     const n = goingOut().length
     return {
@@ -2015,7 +2027,7 @@ const TILES = [
       sub: n ? `${publishSummary()} — ${goingOut().slice(0, 4).map(p => p.name.replace(/^@[^/]+\//, '')).join(', ')}${n > 4 ? '…' : ''}` : 'nothing has commits since its release tag',
     }
   } },
-  { key: 'decisions', label: 'waiting on you', optional: true, read() {
+  { key: 'decisions', group: 'next', label: 'waiting on you', optional: true, read() {
     if (!decisionsBody.sections.length && !decisionsBody.decidable.length) return null
     const n = decisionsBody.decidable.length
     return {
@@ -2023,7 +2035,7 @@ const TILES = [
       sub: decisionsBody.decidable[0]?.question ?? `${decisionsBody.open.length} still need options written`,
     }
   } },
-  { key: 'next', label: 'next up', optional: true, read() {
+  { key: 'next', group: 'next', label: 'next up', optional: true, read() {
     if (!nextBody) return null
     const top = nextBody.ready[0]
     return {
@@ -2035,23 +2047,36 @@ const TILES = [
 
 let tilesHtml = ''
 
+function renderTile(tile) {
+  const panel = document.querySelector(`[data-panel="${tile.key}"]`)
+  const s = tile.read()
+  if (!s && tile.optional && panel.hidden) return ''
+  // Nothing read yet, or the read failed: the panel's own note says which.
+  const note = panel.querySelector('[id$="-note"]')?.textContent ?? ''
+  const { value = '…', word = '', tone = 'muted', sub = note } = s ?? {}
+  // Only a reason to look tints the whole tile; a good answer is the delta's tone alone.
+  const loud = tone === 'danger' || tone === 'warning' ? ` ${tone}` : ''
+  return `
+    <button class="tile gui-tile${loud}" type="button" data-tile="${tile.key}" onclick="openPanel('${tile.key}')">
+      <div class="tile-label">${esc(tile.label)}</div>
+      <div class="tile-value">${esc(String(value))}</div>
+      <div class="tile-delta ${tone}">${esc(word)}</div>
+      ${sub ? `<div class="text-xs text-muted gui-clamp">${esc(plain(sub))}</div>` : ''}
+    </button>`
+}
+
 function renderTiles() {
-  const html = TILES.map(tile => {
-    const panel = document.querySelector(`[data-panel="${tile.key}"]`)
-    const s = tile.read()
-    if (!s && tile.optional && panel.hidden) return ''
-    // Nothing read yet, or the read failed: the panel's own note says which.
-    const note = panel.querySelector('[id$="-note"]')?.textContent ?? ''
-    const { value = '…', word = '', tone = 'muted', sub = note } = s ?? {}
-    // Only a reason to look tints the whole tile; a good answer is the delta's tone alone.
-    const loud = tone === 'danger' || tone === 'warning' ? ` ${tone}` : ''
+  const html = TILE_GROUPS.map(g => {
+    const tiles = TILES.filter(t => t.group === g.key).map(renderTile).join('')
+    if (!tiles) return ''
     return `
-      <button class="tile gui-tile${loud}" type="button" data-tile="${tile.key}" onclick="openPanel('${tile.key}')">
-        <div class="tile-label">${esc(tile.label)}</div>
-        <div class="tile-value">${esc(String(value))}</div>
-        <div class="tile-delta ${tone}">${esc(word)}</div>
-        ${sub ? `<div class="text-xs text-muted gui-clamp">${esc(plain(sub))}</div>` : ''}
-      </button>`
+      <section class="stack gap-sm" data-tile-group="${g.key}">
+        <div class="cluster gap-sm gui-group-head">
+          <strong class="text-sm">${esc(g.title)}</strong>
+          <span class="text-xs text-muted">${esc(g.when)}</span>
+        </div>
+        <div class="tiles gui-tiles">${tiles}</div>
+      </section>`
   }).join('')
   // Redrawn on every state poll; an unchanged grid is left alone so a focused
   // tile keeps its focus.
@@ -4046,9 +4071,10 @@ document.addEventListener('keydown', e => {
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 //
-// The names are @frontierjs/css's own — the class is the whole of a theme, so
-// this list is the only place the GUI states which of them it offers.
-const THEMES = ['field', 'default', 'dark', 'midnight', 'forest', 'sunset', 'elite', 'basecamp', 'notebook', 'press']
+// The names are @frontierjs/css's own — the class is the whole of a theme. The
+// server writes the list off the stylesheet it serves at /fli.css, because a
+// hand-kept list here offered ten themes while the bundle defined fifteen.
+const THEMES = /*fli:themes*/[]
 const DEFAULT_THEME = 'field'
 
 function setTheme(name) {

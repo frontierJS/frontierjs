@@ -128,7 +128,7 @@ export function makeWriteData(shape, ctx, {
   writeDb, T, col, plugins, computedFns, hasFieldPolicy, _hasEnumFields,
   _extensible, _sealSelf, _tableTransitions, _fieldsByName, _authDefaultOf, _authFillsNull,
   allocateExtSlot, mirrorExtSlots, remirrorMovedRow, pathWriteRefusal, requiredFailure, storesWhatOmissionStores,
-  keys,
+  parentRefusal, keys,
 }) {
   const { _allowedWriteKeys, _virtualWriteKeys, _guardedWriteKeys, _systemWriteKeys, _immutableWriteKeys,
           _sequenceWriteKeys, _capabilityWriteKeys, _grantColumns, _edgeNamespaces } = keys
@@ -266,8 +266,9 @@ export function makeWriteData(shape, ctx, {
 
   // `@default(relation.column)`: copy a column of the parent the row names,
   // read through the caller's own accessor so a parent she cannot read fills
-  // nothing — the parent refusal, not a leaked value, is then the answer. A
-  // stated value wins, as with every default.
+  // nothing. A required column left unfilled is the parent refusal, for a
+  // hidden parent and a missing one alike: past here it is SQLite's NOT NULL,
+  // which names no relation. A stated value wins, as with every default.
   async function applyPathDefaults(data, stamped) {
     const paths = shape.pathDefaults
     if (!paths?.length) return data
@@ -280,7 +281,9 @@ export function makeWriteData(shape, ctx, {
       const where = Object.fromEntries(p.references.map((r, i) => [r, out[p.foreignKeys[i]]]))
       let parent
       try { parent = await tbl.findFirst(untrailed({ where, select: { [p.sourceField]: true } })) }
-      catch (e) { if (e instanceof AccessDeniedError) continue; throw e }
+      catch (e) { if (!(e instanceof AccessDeniedError)) throw e }
+      if (!parent && !_fieldsByName.get(p.field)?.type.optional)
+        throw parentRefusal(p.relation, p.foreignKeys, p.foreignKeys.map(k => out[k]), p.target)
       if (parent?.[p.sourceField] == null) continue
       noteStamp(stamped, out, p.field)
       out = { ...(out ?? {}), [p.field]: parent[p.sourceField] }

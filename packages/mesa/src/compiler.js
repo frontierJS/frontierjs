@@ -8800,7 +8800,7 @@ function emitWatchGroups(ctx, requireWatchSig) {
 }
 
 export function emitScript(ctx) {
-  const { vars, watchPaths, watchHandlers, watchGroups, postCallHooks, imports } = ctx.analysis
+  const { vars, watchPaths, watchHandlers, watchGroups, imports } = ctx.analysis
   const { module: mod, script } = ctx
   const raw = script.source
   const ast = script.ast

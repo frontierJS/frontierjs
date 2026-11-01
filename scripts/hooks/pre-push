@@ -1,37 +1,73 @@
 #!/bin/sh
 # ============================================================
-# pre-push — the fast CI tier, before anything leaves the machine
+# pre-push — the fast CI tier, on the commit being pushed
 #
-# Installed by `bun run hooks:install`, which links it into .git/hooks.
-# Edit THIS file, not the copy in .git/hooks — the installer symlinks, so a
-# change here is live, and .git/hooks is not in git.
+# Installed by `bun run hooks:install`, which points core.hooksPath here.
+# Edit THIS file — the hook git runs is the one in the repo.
+#
+# Grades each pushed branch tip, not this working tree. Other sessions keep the
+# tree dirty, so a green tree shipped a red commit, and a package.json moved
+# without its bun.lock passed here and died at the runner's Install (FJS-009).
+# The tip is checked out into one shared worktree beside the main checkout,
+# installed with --frozen-lockfile as the runner does, and graded there. It sits
+# at the same depth as the checkout so a ../ sibling probe resolves the same.
 #
 # Runs the fast tier: hygiene, lint, structure, registers, snapshots, access,
-# coverage, registry, advisories, scaffold and typecheck. What it does NOT run
-# is deploy, tutor and the suites — those take minutes and drive a real browser,
-# and blocking every push on them trains people to reach for --no-verify, which
-# disables the cheap checks too. They belong in the workflow, where they cost
-# nobody's attention.
+# coverage, registry, advisories, scaffold and typecheck. Deploy, tutor and the
+# suites take minutes and drive a real browser; blocking every push on them
+# trains people to reach for --no-verify, which disables the cheap checks too.
 #
-# `snapshots` is in this tier on purpose: a committed generated file that no
-# longer matches its source is exactly the thing a person cannot see in their
-# own diff. `fli test:snapshots --fix` rewrites every one of them.
+# `fli test:snapshots --fix` rewrites every generated snapshot.
 #
 # Bypass: git push --no-verify
 # ============================================================
 
 root=$(git rev-parse --show-toplevel) || exit 0
 
-if ! command -v node >/dev/null 2>&1; then
-  echo "[pre-push] node not on PATH — skipping CI checks"
-  exit 0
-fi
+for bin in node bun; do
+  if ! command -v "$bin" >/dev/null 2>&1; then
+    echo "[pre-push] $bin not on PATH — skipping CI checks"
+    exit 0
+  fi
+done
 
-# The base ref decides what a RAISED typecheck baseline is measured against.
-# A push is against the remote's main, not the local one, which may be behind.
-FJS_CI_BASE_REF="${FJS_CI_BASE_REF:-origin/main}" \
-  node "$root/scripts/ci.mjs" --fast || {
+# A tag or a deleted branch carries no commit the runner builds on its own.
+shas=$(while read -r _local_ref local_sha remote_ref _remote_sha; do
+  case "$remote_ref" in refs/heads/*) ;; *) continue ;; esac
+  case "$local_sha" in *[!0]*) echo "$local_sha" ;; esac
+done | sort -u)
+[ -n "$shas" ] || exit 0
+
+common=$(git rev-parse --path-format=absolute --git-common-dir)
+tree="$(dirname "$common")-prepush"
+
+blocked() {
   echo ""
-  echo "[pre-push] blocked. Fix the above, or push with --no-verify if you mean it."
+  echo "[pre-push] blocked: $1"
+  echo "[pre-push] Fix it, or push with --no-verify if you mean it."
   exit 1
 }
+
+if [ ! -e "$tree/.git" ]; then
+  git worktree prune
+  git worktree add --detach --quiet "$tree" || blocked "could not create $tree"
+fi
+
+for sha in $shas; do
+  short=$(git rev-parse --short "$sha")
+  echo "[pre-push] grading $short in $tree"
+  git -C "$tree" checkout --detach --force --quiet "$sha" || blocked "could not check out $short"
+  # node_modules survives so an install is seconds; anything else left behind is
+  # a file a fresh clone would not have.
+  git -C "$tree" clean -ffdxq -e node_modules
+
+  said=$(cd "$tree" && bun install --frozen-lockfile 2>&1) || {
+    echo "$said"
+    blocked "$short does not install with --frozen-lockfile — run bun install and commit bun.lock"
+  }
+
+  # The base ref decides what a RAISED typecheck baseline is measured against.
+  # A push is against the remote's main, not the local one, which may be behind.
+  (cd "$tree" && FJS_CI_BASE_REF="${FJS_CI_BASE_REF:-origin/main}" node scripts/ci.mjs --fast) ||
+    blocked "$short is red — detail in $tree/.cache/ci-last.txt"
+done

@@ -268,12 +268,16 @@ function openRegistry(path, busyTimeout) {
 
 const LIST_IDS = `SELECT id FROM tenants ORDER BY createdAt`
 
-// The ids a registry file names, read without opening the fleet: a restore
-// has to learn which tenants to fetch from a registry it has not moved into
-// place yet, and `openRegistry` would write to it.
-export function registryIds(path) {
+// The tenants a registry file names, and the place each was created in, read
+// without opening the fleet: a restore has to learn which tenants to fetch, and
+// into which directory, from a registry it has not moved into place yet, and
+// `openRegistry` would write to it.
+export function registryTenants(path) {
   const db = openDatabase(path, { readonly: true })
-  try { return db.prepare(LIST_IDS).all().map(r => r.id) }
+  try {
+    return db.prepare(`SELECT id, meta FROM tenants ORDER BY createdAt`).all()
+      .map(r => ({ id: r.id, place: JSON.parse(r.meta).place ?? null }))
+  }
   finally { db.close() }
 }
 
@@ -282,6 +286,7 @@ export function registryIds(path) {
 
 class TenantRegistry {
   #dir
+  #places
   #parseResult
   #registryDb
   #pool
@@ -293,9 +298,10 @@ class TenantRegistry {
   #tenancy
   #busyTimeout
 
-  constructor({ dir, registryDb, maxOpen, encryptionKey, migrationsDir, inMemory, clientOptions, tenancy }) {
+  constructor({ dir, places, registryDb, maxOpen, encryptionKey, migrationsDir, inMemory, clientOptions, tenancy }) {
     this.#tenancy       = tenancy ?? null
     this.#dir           = dir
+    this.#places        = places ?? {}
     this.#registryDb    = registryDb
     this.#pool          = new LRUPool(maxOpen, this.#defaultConcurrency)
     this.#encryptionKey = encryptionKey ?? null
@@ -358,8 +364,53 @@ class TenantRegistry {
 
   // ── Tenant DB path ──────────────────────────────────────────────────────────
 
-  #dbPath(id) {
-    return join(this.#dir, `${id}.db`)
+  // A tenant's file is in its place's directory, and the registry row holds
+  // the place's NAME — so the path is the schema's to say, and a moved
+  // directory is one edit of `tenancy { place }` (`FJS-D1729`).
+  #dbPath(id, place = this.#placeOf(id)) {
+    return join(this.#dirFor(place), `${id}.db`)
+  }
+
+  #placeOf(id) {
+    const row = this.#registryDb.prepare(`SELECT meta FROM tenants WHERE id = ?`).get(id)
+    return row ? (JSON.parse(row.meta).place ?? null) : null
+  }
+
+  #dirFor(place) {
+    if (place == null) return this.#dir
+    const dir = Object.hasOwn(this.#places, place) ? this.#places[place] : null
+    if (!dir) throw new Error(`Tenant place "${place}" is not declared — ${this.#placeHint()}`)
+    return dir
+  }
+
+  #placeHint() {
+    const names = Object.keys(this.#places)
+    return names.length
+      ? `the schema's tenancy { } declares ${names.map(n => `'${n}'`).join(', ')}`
+      : `declare one in the schema: tenancy { place eu "./data/eu" }`
+  }
+
+  // A tenant's meta is the app's own, but three keys are the file's address.
+  // `place` is checked against the declaration, and `dir`/`path` are refused
+  // because they read as a placement and were stored and ignored (`FJS-3722`).
+  #assertMeta(id, meta, current = null, written = meta) {
+    for (const key of ['dir', 'path'])
+      if (written && Object.hasOwn(written, key))
+        throw new Error(
+          `Tenant "${id}": meta.${key} does not place a tenant's file — name a declared place instead, ` +
+          `meta.place = 'eu' (${this.#placeHint()})`
+        )
+    const place = meta?.place ?? null
+    if (place != null && typeof place !== 'string')
+      throw new Error(`Tenant "${id}": meta.place must be a place name, got ${typeof place}`)
+    // Moving a tenant is a file move, and a changed name alone would leave the
+    // file where it is and open a missing one.
+    if (current && place !== (current.place ?? null))
+      throw new Error(
+        `Tenant "${id}": meta.place is set at create and cannot change ` +
+        `(${JSON.stringify(current.place ?? null)} → ${JSON.stringify(place)})`
+      )
+    this.#dirFor(place)
   }
 
   // ── Get encryption options for a tenant ────────────────────────────────────
@@ -492,8 +543,9 @@ class TenantRegistry {
     assertSafeId(id)
     if (this.exists(id))
       throw new Error(`Tenant "${id}" already exists`)
+    this.#assertMeta(id, meta)
 
-    const path = this.#dbPath(id)
+    const path = this.#dbPath(id, meta.place ?? null)
 
     // Initialize schema (skip file creation in inMemory mode — createClient handles it)
     if (this.#inMemory) {
@@ -501,6 +553,10 @@ class TenantRegistry {
       return this.#open(id)
     }
 
+    // A place's directory is made on its first tenant, not at boot: a declared
+    // place nothing has been created in is an empty directory a reader would
+    // have to explain.
+    mkdirSync(dirname(path), { recursive: true })
     const raw = openWalDatabase(path, { busyTimeout: this.#busyTimeout })
     raw.run('PRAGMA foreign_keys = ON')
 
@@ -561,6 +617,17 @@ class TenantRegistry {
   /**
    * Check if a tenant exists (in registry AND as a file).
    */
+  /**
+   * Where a tenant's file is, in its place's directory.
+   */
+  pathOf(id) {
+    assertSafeId(id)
+    return this.#dbPath(id)
+  }
+
+  /**
+   * Check if a tenant exists (in registry AND as a file).
+   */
   exists(id) {
     assertSafeId(id)
     const row = this.#registryDb.prepare(`SELECT 1 FROM tenants WHERE id = ?`).get(id)
@@ -612,10 +679,15 @@ class TenantRegistry {
         const current = JSON.parse(
           db.prepare(`SELECT meta FROM tenants WHERE id = ?`).get(id)?.meta ?? '{}'
         )
+        this.#assertMeta(id, { ...current, ...patch }, current, patch)
         db.prepare(`UPDATE tenants SET meta = ? WHERE id = ?`)
           .run(JSON.stringify({ ...current, ...patch }), id)
       },
       replace: (id, meta) => {
+        const current = JSON.parse(
+          db.prepare(`SELECT meta FROM tenants WHERE id = ?`).get(id)?.meta ?? '{}'
+        )
+        this.#assertMeta(id, meta, current)
         db.prepare(`UPDATE tenants SET meta = ? WHERE id = ?`)
           .run(JSON.stringify(meta), id)
       },
@@ -946,6 +1018,7 @@ export async function createTenantRegistry({
 
   const reg = new TenantRegistry({
     dir:           absDir,
+    places:        declared?.places ?? {},
     registryDb,
     maxOpen:       maxOpen ?? declared?.maxOpen ?? 100,
     encryptionKey: encryptionKey ?? declared?.key ?? null,

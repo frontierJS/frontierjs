@@ -13,7 +13,7 @@ import { keyIn, tuplesOf } from './query.js'
 import { ValidationError } from './validate.js'
 import { AccessDeniedError } from './plugin.js'
 import { requireGrantSubset } from '../plugins/capability.js'
-import { checkCreatePolicy } from './policy.js'
+import { checkCreatePolicy, inCallerTenant } from './policy.js'
 import { untrailed } from './trail-entries.js'
 import {
   SoftDeletedUniqueError, UniqueConflictError, uniqueConflictColumns, isUniqueConflict,
@@ -406,13 +406,60 @@ export function makeConstraintRefusals(shape, ctx, deps) {
           requireParentGrants(p.target, p.fields, p.references, values)
           continue
         }
-        if (out[i]) { out[i].hidden.add(p.relation); continue }
+        const found = { ...p, values }
+        if (out[i]) { out[i].hidden.add(p.relation); out[i].parents.push(found); continue }
         const archived = await isArchivedParent(tbl, p.target, Object.fromEntries(p.references.map((r, j) => [r, values[j]])))
         out[i] = parentRefusal(p.relation, p.fields, values, p.target, archived)
         Object.defineProperty(out[i], 'hidden', { value: new Set([p.relation]), enumerable: false })
+        Object.defineProperty(out[i], 'parents', { value: [found], enumerable: false })
       }
     }
     return out
+  }
+
+  // ── a hidden parent the row itself may open (FJS-D1705) ───────────────────
+  //
+  // A grant row — a glass break, an access request — names the parent its own
+  // existence opens, so grading the key before the write refused the very
+  // caller the row exists for (FJS-3707). Such a key is graded after the
+  // write instead: the row lands inside the unit, each parent is asked again
+  // under the caller, and one still hidden throws the refusal it would have
+  // got, which rolls the unit back. The rule becomes *a parent you can read
+  // once your row exists*, which tells the caller no more than that read.
+  //
+  // A parent in another tenant is never deferred: no row of this tenant opens
+  // it, and it is refused before anything is written.
+  function deferrable(refusal) {
+    return !!refusal?.parents && refusal.parents.every(p => {
+      const sink = ctx.cascadeSinkFor?.(p.target)
+      const [row] = sink ? parentRows(sink, p.references, p.values) : []
+      return !!row && inCallerTenant(p.target, row, ctx)
+    })
+  }
+
+  // Inside the unit, once the row is written: what the caller is owed, or
+  // null. A parent still hidden answers before the create rule is asked
+  // again, as SQLite's refusal of a missing one would; with every parent
+  // readable, the rule is graded on them for real (FJS-1712).
+  async function settleDeferred(refusal, row) {
+    const still = []
+    for (const p of refusal.parents) {
+      const where = Object.fromEntries(p.references.map((r, j) => [r, p.values[j]]))
+      const tbl   = ctx.tables?.[modelToAccessor(p.target)]
+      if (await canRead(tbl, where, ctx.shapes?.[p.target]?.hasTemplates != null))
+        requireParentGrants(p.target, p.fields, p.references, p.values)
+      else still.push(p)
+    }
+    if (still.length === refusal.parents.length) return refusal
+    if (still.length) {
+      const [p] = still
+      const tbl = ctx.tables?.[modelToAccessor(p.target)]
+      const archived = await isArchivedParent(tbl, p.target, Object.fromEntries(p.references.map((r, j) => [r, p.values[j]])))
+      const out = parentRefusal(p.relation, p.fields, p.values, p.target, archived)
+      Object.defineProperty(out, 'hidden', { value: new Set(still.map(s => s.relation)), enumerable: false })
+      return out
+    }
+    return ctx.hasPolicies ? checkCreate(row, null) ?? null : null
   }
 
   // checkCreatePolicy, with one answer for a parent the create names. Under row
@@ -623,6 +670,7 @@ export function makeConstraintRefusals(shape, ctx, deps) {
 
   return {
     asConstraintError, parentRefusal, movesOnto, requireParentGrants, isArchivedParent, hiddenParents,
+    deferrable, settleDeferred,
     checkCreate, firstRefusal, refuseLockedCascade, refusedDelete, refusedChildDelete, nameBlockerForCaller,
     asBatchRowError,
   }
