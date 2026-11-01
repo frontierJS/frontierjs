@@ -23,6 +23,7 @@ export function makeUpsertMany(shape, ctx, deps) {
     _bulkTransitionField, refuseSoftDeleteWrite, refuseOffEntry, refuseBulkNested,
     refuseSystemEntries, extractWriteOps, idField, plugins, tx, writeDb, col, stampSets, _ranks,
     applyFieldRefDefaults, applyPathDefaults, applyRanks, writeData, hasTemplatesField, hiddenParents, checkCreate,
+    deferrable, holdDenial, heldFor, settleDeferred,
     firstRefusal, _sealInsertSql, sealInsertGuard, sealRefusal, asBatchRowError, asConstraintError,
     noteExclusion, needsTiming, fireQuery, tableHasLogWork, emitLogs, read, announceFor,
     announceBulk,
@@ -111,6 +112,11 @@ export function makeUpsertMany(shape, ctx, deps) {
       data = out
     }
     const _usHidden = await hiddenParents(data, _usPathStamped, system)
+    // A row of the insert half whose hidden parent it may open is asked again
+    // once the batch is written, as createMany's is (FJS-D1705). Which rows
+    // insert is known only under the lock, so the unit awaits when any could.
+    const _usDeferrable = _usHidden.map((h, i) => deferrable(h) || ctx.hasPolicies && _usHidden.absent.has(i))
+    const _usDeferred   = new Map()
 
     const autoId       = shape.autoId
     const genDefaults  = shape.generatedDefaults
@@ -147,7 +153,7 @@ export function makeUpsertMany(shape, ctx, deps) {
     // conflicts keeps its own unless the conflict moves it to another scope.
     const _usRankMemo = _ranks.length ? new Map() : null
     const _usMinted   = []
-    await tx.wrapExclusive(() => {
+    const unit = () => {
       const rows = data.map((item, i) => {
         let d = item
         const stamped = new Set()   // per row — see createMany
@@ -218,8 +224,17 @@ export function makeUpsertMany(shape, ctx, deps) {
       if (ctx.hasPolicies) {
         for (const [i, row] of rows.entries()) {
           if (present.has(keyOf(row))) continue
-          try { _usHidden[i] = firstRefusal(checkCreate(authStamped(data[i], modelName, ctx), _usHidden[i]), _usHidden[i]) }
-          catch (e) { throw asBatchRowError(e, i, rows.length, data[i]) }
+          const graded = authStamped(data[i], modelName, ctx)
+          let parent, denied = null, trial
+          try { parent = checkCreate(graded, _usHidden[i]) }
+          catch (e) {
+            try { trial = holdDenial(e, _usHidden[i], _usHidden.absent.has(i)) }
+            catch (e2) { throw asBatchRowError(e2, i, rows.length, data[i]) }
+            denied = e
+          }
+          trial ??= !parent && deferrable(_usHidden[i])
+          if (trial) { _usDeferred.set(i, { refusal: _usHidden[i] ?? null, denied, row: graded }); _usHidden[i] = null }
+          else _usHidden[i] = denied ?? firstRefusal(parent, _usHidden[i])
         }
       }
 
@@ -327,7 +342,7 @@ export function makeUpsertMany(shape, ctx, deps) {
             stmt.run(...args)
             if (_usSeal || _usGuardSql) _usWrote = rowsChanged(writeDb) > 0
           }
-        } catch (e) { throw asBatchRowError(asConstraintError(e, row), _i, rows.length, row) }
+        } catch (e) { throw asBatchRowError(heldFor(asConstraintError(e, row), _usDeferred.get(_i)), _i, rows.length, row) }
         // Named like a constraint failure rather than counted: a batch that
         // reports writing a row it did not write is worse than one that stops,
         // and `ON CONFLICT DO NOTHING` is the only other way to get here.
@@ -343,6 +358,16 @@ export function makeUpsertMany(shape, ctx, deps) {
         if (_usWrote) { noteExclusion(row); count++ }
       }
       sql = [...stmts.values()].map(e => e.sql).join('\n')
+      return rows
+    }
+    if (!_usDeferrable.some(Boolean)) await tx.wrapExclusive(unit)
+    // The throw is the rollback.
+    else await tx.exclusive(async () => {
+      const rows = unit()
+      for (const [i, d] of _usDeferred) {
+        const owed = await settleDeferred(d)
+        if (owed) throw asBatchRowError(owed, i, rows.length, rows[i])
+      }
     })
     fireQuery({ operation: 'upsertMany', args: { data, conflictTarget, update: updateFields }, sql, params: null, duration: _nt ? performance.now() - _usT0 : 0, rowCount: count })
     if (tableHasLogWork) {

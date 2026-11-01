@@ -35,7 +35,7 @@ import { generateDDL, generateDDLForDatabase } from './core/ddl.js'
 import { apply }           from './core/migrations.js'
 import { splitStatements } from './core/migrate.js'
 import { parse, parseFile } from './core/parser.js'
-import { resolveTenancy, tenantFrom } from './core/tenancy.js'
+import { resolveTenancy, tenantFrom, placedTrails } from './core/tenancy.js'
 import { noteMintedDirectory }  from './core/db-path.js'
 
 // ─── Tenant ID sanitization ───────────────────────────────────────────────────
@@ -328,17 +328,19 @@ class TenantRegistry {
   async _init(parseResult) {
     this.#parseResult = parseResult
 
-    // Warn if schema has jsonl/trail databases — these are global, not per-tenant.
-    // All tenants will write to the same log/audit files unless you handle this
-    // separately in your application layer.
+    // Every tenant in one place writes the same jsonl/trail files, and an app
+    // reading the trail as per-tenant would be wrong about whose entries it holds.
     const sharedDbs = parseResult.schema.databases
       .filter(d => d.driver === 'jsonl' || d.driver === 'trail')
     if (sharedDbs.length) {
+      const placed = Object.keys(this.#places).length > 0
       console.warn(
         `[litestone:tenants] Schema has ${sharedDbs.length} shared database(s): ` +
         sharedDbs.map(d => `${d.name} (${d.driver})`).join(', ') +
-        '. These are global — all tenants share the same files. ' +
-        'Handle per-tenant logging separately if needed.'
+        (placed
+          ? '. A trail is one file per place, shared by its tenants; a jsonl database is one for the fleet.'
+          : '. These are global — all tenants share the same files. ' +
+            'Handle per-tenant logging separately if needed.')
       )
     }
 
@@ -458,21 +460,25 @@ class TenantRegistry {
     // send EVERY tenant to the same shared files — a cross-tenant isolation
     // hole. Override every sqlite database to this tenant's own file (all of a
     // tenant's sqlite databases live in one file, per the documented layout).
-    // jsonl/trail databases stay schema-global by design.
-    const sqliteOverrides = {}
+    // A placed tenant's trail is its place's (`FJS-D1727`); jsonl stays global.
+    const owned = {}
     if (!this.#inMemory) {
       for (const d of (this.#parseResult.schema.databases ?? [])) {
-        if (!d.driver || d.driver === 'sqlite') sqliteOverrides[d.name] = { path }
+        if (!d.driver || d.driver === 'sqlite') owned[d.name] = { path }
       }
+      const place = this.#placeOf(id)
+      if (place != null)
+        for (const t of placedTrails(this.#parseResult.schema, this.#places))
+          if (t.place === place) owned[t.database] = { path: t.path }
     }
 
     // A caller's own `databases` still applies, and it reaches exactly the ones
-    // this registry does not decide: the shared jsonl/trail files. Merging
-    // rather than replacing, because a declared `path` on one of those is
-    // relative to the process CWD and an app that assembles its schema in
-    // memory has no other way to pin it. The tenant file wins for every sqlite
-    // database — that is the isolation, and it is not negotiable from options.
-    const databases = { ...this.#clientOptions.databases, ...sqliteOverrides }
+    // this registry does not decide: the jsonl files and an unplaced tenant's
+    // trail. Merging rather than replacing, because a declared `path` on one of
+    // those is relative to the process CWD and an app that assembles its schema
+    // in memory has no other way to pin it. The tenant file and a place's trail
+    // win — that is the isolation, and it is not negotiable from options.
+    const databases = { ...this.#clientOptions.databases, ...owned }
 
     const db  = await createClient({
       ...this.#clientOptions,

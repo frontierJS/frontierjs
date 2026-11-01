@@ -119,6 +119,25 @@
 
   const hasError = !!resolveError(form, name, error, errors)
 
+  // A value no <option> carries draws a blank box, the same as nothing chosen,
+  // and is how a handler that stores an Event (`onchange` is native) presents.
+  // Said once per distinct value; an empty list is a fetch in flight, not a
+  // mismatch.
+  const allOptions = isGrouped ? groupedOptions.flatMap(g => g.options) : flatOptions
+  let _warned
+  function warnUnmatched(v) {
+    if (multiple || v == null || v === '' || !allOptions.length || Object.is(v, _warned)) return
+    if (allOptions.some(o => String(o.value) === String(v))) return
+    _warned = v
+    console.warn(
+      `[Select]${name ? ` ${name}` : ''} was given value ${typeof v === 'object' ? Object.prototype.toString.call(v) : JSON.stringify(String(v))} ` +
+      `and none of its ${allOptions.length} options carries it, so it draws blank. ` +
+      '`onchange` is the native event: read event.target.value, not the first argument.',
+    )
+  }
+  warnUnmatched(value)
+  $: value, () => warnUnmatched(value)
+
   let el
   export function focus() { return $.focus(el) }
   // Opens the list from the press that called it, as the native method does:

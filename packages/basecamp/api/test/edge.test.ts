@@ -756,7 +756,13 @@ describe('sync', () => {
     }
 
     await lose(online1)
-    expect(await until(ingressAt, (v: string[]) => v.length === 1)).toEqual(['203.0.113.6'])
+    // FJS-3509: one full-suite run in three saw ['203.0.113.5'] here. A miss
+    // names the machines' statuses so the recurrence says which one left.
+    const left = await until(ingressAt, (v: string[]) => v.length === 1)
+    if (left.join() !== '203.0.113.6') {
+      const rows = await sys.server.findMany({ select: { name: true, status: true, lastHeartbeatAt: true, updatedAt: true } })
+      throw new Error(`FJS-3509: ingress held ${JSON.stringify(left)} after online1 went quiet; servers ${JSON.stringify(rows)}`)
+    }
 
     // The last one. What its own job does is this call, answered as not-yet.
     await lose(online2)

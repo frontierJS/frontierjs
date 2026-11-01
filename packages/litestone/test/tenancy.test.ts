@@ -16,7 +16,7 @@
 //      declaration, then default — is asserted rather than repeated.
 
 import { describe, it, expect, afterAll } from 'bun:test'
-import { mkdtempSync, rmSync, existsSync } from 'fs'
+import { mkdtempSync, rmSync, existsSync, readFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { parse } from '../src/core/parser.js'
@@ -493,6 +493,37 @@ describe('createTenantRegistry reads the block', () => {
     // …and the tenant's own file is still the tenant's own file.
     expect(paths.main.path).toBe(join(dir, 'fleet', 'acme.db'))
     tenants.close()
+  })
+
+  // A placed tenant's read history names a patient, an actor and an ip, so it
+  // is resident data as much as the tenant's file is (`FJS-D1727`, `FJS-3724`).
+  it('writes a placed tenant\'s trail in its place, and an unplaced one at the root', async () => {
+    const dir  = tmp()
+    const text = `
+      tenancy { strategy database  dir "./fleet"  registry "./fleet-index.db"  place eu "./data/eu" }
+      database main  { path "./main.db" }
+      database audit { path "./audit.db"  driver trail }
+      model Patient { id Int @id  name String  @@trail(audit) }
+    `
+    await Bun.write(join(dir, 'schema.lite'), text)
+    const tenants = await createTenantRegistry({
+      path:          join(dir, 'schema.lite'),
+      clientOptions: { databases: { audit: { path: join(dir, 'audit.db') } } },
+    })
+    await tenants.create('us1')
+    await tenants.create('eu1', { place: 'eu' })
+    const us: any = await tenants.get('us1')
+    const eu: any = await tenants.get('eu1')
+
+    expect(us.$databases.audit.path).toBe(join(dir, 'audit.db'))
+    expect(eu.$databases.audit.path).toBe(join(dir, 'data', 'eu', 'audit.db'))
+
+    await eu.asSystem().patient.create({ data: { id: 1, name: 'Ana' } })
+    await us.asSystem().patient.create({ data: { id: 1, name: 'Bo' } })
+    await tenants.close()
+    const lines = (p: string) => existsSync(p) ? readFileSync(p, 'utf8').trim().split('\n').length : 0
+    expect(lines(join(dir, 'data', 'eu', 'audit.db', 'AuditTrail.jsonl'))).toBe(1)
+    expect(lines(join(dir, 'audit.db', 'AuditTrail.jsonl'))).toBe(1)
   })
 
   // Spreading a string yields one key per character, so the merge would have

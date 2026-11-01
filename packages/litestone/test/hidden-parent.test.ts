@@ -558,4 +558,53 @@ describe('a parent the row being written opens', () => {
     expect(await db.asSystem().glassBreak.count()).toBe(1)
     db.$close()
   })
+
+  test('upsert and upsertMany grade the create half once the row is written', async () => {
+    const { db, me } = await seed()
+    const up = (patientId: number, actorId: number) =>
+      me.glassBreak.upsert({ where: { id: 9 }, create: brk(9, patientId, actorId), update: {} })
+    const many = (patientId: number, actorId: number) =>
+      me.glassBreak.upsertMany({ data: [brk(9, patientId, actorId)], conflictTarget: ['id'] })
+    expect(shape(await refusal(up(1, 2)))).toEqual(shape(await refusal(up(999, 2))))
+    expect(shape(await refusal(many(1, 2)))).toEqual(shape(await refusal(many(999, 2))))
+    expect(await db.asSystem().glassBreak.count()).toBe(0)
+    expect((await many(1, 1)).count).toBe(1)
+    const { db: db2, me: me2 } = await seed()
+    expect((await me2.glassBreak.upsert({ where: { id: 9 }, create: brk(9, 1), update: {} })).patientId).toBe(1)
+    db.$close(); db2.$close()
+  })
+
+  // The create rule reads the parent the row opens, so it is graded once the
+  // parent is readable; a row that leaves it hidden answers as a missing one.
+  const WARD = GLASS.replace('@@allow(create, auth().clinician == true)', '@@allow(create, patient.ward == auth().ward)')
+  const seedWard = async (ward: string) => {
+    const db: any = await createClient({ db: ':memory:', schema: WARD })
+    await db.asSystem().patient.createMany({ data: [
+      { id: 1, clinicId: 10, carerId: 7, ward: 'a' },
+      { id: 3, clinicId: 10, carerId: 7, ward: 'b' },
+    ] })
+    return { db, me: db.$setAuth({ id: 1, clinicId: 10, ward }) }
+  }
+
+  test('a create rule reading the parent the row opens admits it', async () => {
+    const { db, me } = await seedWard('a')
+    expect((await me.glassBreak.create({ data: brk(9, 1) })).patientId).toBe(1)
+    expect((await me.glassBreak.createMany({ data: [brk(10, 1)] })).count).toBe(1)
+    db.$close()
+  })
+
+  test('a create rule the opened parent fails refuses, and a hidden parent answers as missing', async () => {
+    const { db, me } = await seedWard('a')
+    const wrongWard = await refusal(me.glassBreak.create({ data: brk(9, 3) }))
+    expect(wrongWard.name).toBe('AccessDeniedError')
+    const said = (e: any) => [e.name, e.status, e.message]
+    const hidden  = await refusal(me.glassBreak.create({ data: brk(9, 1, 2) }))
+    const missing = await refusal(me.glassBreak.create({ data: brk(9, 999, 2) }))
+    expect(said(hidden)).toEqual(said(missing))
+    const many = await refusal(me.glassBreak.upsertMany({ data: [brk(9, 1, 2)], conflictTarget: ['id'] }))
+    const manyMissing = await refusal(me.glassBreak.upsertMany({ data: [brk(9, 999, 2)], conflictTarget: ['id'] }))
+    expect(said(many)).toEqual(said(manyMissing))
+    expect(await db.asSystem().glassBreak.count()).toBe(0)
+    db.$close()
+  })
 })

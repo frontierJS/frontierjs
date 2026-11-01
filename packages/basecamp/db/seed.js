@@ -29,6 +29,7 @@ import { rmSync } from 'node:fs'
 import { Factory, Seeder, runSeeder } from '@frontierjs/litestone'
 import { apply } from '@frontierjs/litestone/migrations'
 import { createLitestoneAuth } from '@frontierjs/auth'
+import { slug as slugify } from '@frontierjs/toolbelt/inflect'
 
 import { createBasecampDb } from '../api/src/core/db.ts'
 import { openSqlite }       from '../api/src/core/sqlite.ts'
@@ -1186,10 +1187,6 @@ async function seedRuns(db, job) {
       },
     })
   }
-}
-
-function slugify(s) {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────

@@ -204,6 +204,16 @@ test('keys: browserOwned — a key a browser uses but lets a page cancel is not 
   assert.deepEqual(browserOwned(keymap({ gg: 'top', '<Esc>': 'close', '<C-w>': 'x' })).map((r) => r.chord), ['<C-w>'], '<C-w> on a Mac is Ctrl, which a page receives')
 })
 
+// FJS-3768
+test('keys: browserOwned — the macOS app-menu keys are listed on a Mac, and are plain keys off one', function () {
+  const mac = (k) => browserOwned(keymap({ [k]: 'x' })).filter((r) => r.chord.startsWith('<') && r.reason.includes(' on a Mac')).map((r) => r.chord)
+  assert.deepEqual(mac('<Mod-h>'), ['<D-h>'], 'Hide')
+  assert.deepEqual(mac('<Mod-A-h>'), ['<A-D-h>'], 'Hide Others')
+  assert.deepEqual(mac('<Mod-m>'), ['<D-m>'], 'Minimize')
+  assert.deepEqual(browserOwned(keymap({ '<Mod-S-h>': 'replace' })), [], 'Shift-Cmd-H is the page\'s')
+  assert.deepEqual(browserOwned(keymap({ '<C-h>': 'x' })), [], 'Ctrl-H is the page\'s everywhere')
+})
+
 test('keys: browserOwned — a sequence is listed by the chord in it, and Cmd off a Mac is the Windows key', function () {
   assert.deepEqual(browserOwned(keymap({ 'g<C-PageUp>': 'prev' })).map((r) => r.chord), ['<C-PageUp>', '<C-PageUp>'])
   const [win] = browserOwned(keymap({ '<D-j>': 'jump' }))

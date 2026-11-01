@@ -5849,6 +5849,13 @@ function validate(schema) {
         .map(a => ({ a, at: `Model '${model.name}', field '${f.name}': @check` }))),
     ]
     for (const { a, at } of checks) {
+      // SQLite refuses a subquery in a CHECK at migrate create without naming
+      // the model; a threshold read off another row is a policy's job.
+      if (/\bselect\b/i.test(a.expr.replace(/'(?:[^']|'')*'|"[^"]*"/g, ''))) {
+        errors.push(`${at}(${JSON.stringify(a.expr)}) holds a subquery, which SQLite refuses in a CHECK — ` +
+                    `a CHECK reads only this row. Read another row's value in an @@allow/@@deny policy, which may reach one relation`)
+        continue
+      }
       const named = new Set()
       const marked = mapIdentifiers(a.expr, id => { named.add(id); return `\0${id}\0` })
       // `person.scheduleId` is a relation path, which a one-row CHECK can never

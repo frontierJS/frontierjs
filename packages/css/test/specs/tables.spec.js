@@ -219,3 +219,37 @@ test('table: FJS-3773 .table is not a scroll container, so a sticky th inside it
   var ov = style(t, 'overflow-x');
   assert.ok(ov !== 'hidden' && ov !== 'auto' && ov !== 'scroll', '.table overflow-x is ' + ov);
 });
+
+/* ── Cell tones (FJS-3764) ───────────────────────────────────────────*/
+
+test('table: a tone on a <td> tints that cell only', function () {
+  var t = el(ROWS.replace('<td>2</td>', '<td class="danger" id="c2">2</td>'));
+  var cell = t.querySelector('#c2');
+  assert.differentColor(style(cell, 'background-color'), rootProp('--surface'), 'a .danger cell was not tinted');
+  assert.sameColor(cellBg(t, 'r1'), rootProp('--surface'), 'a toned cell tinted its neighbour row');
+});
+
+test('table: a toned cell wins over a toned row', function () {
+  var t = el(ROWS.replace('<tr id="r2"><td>2</td>', '<tr id="r2" class="success"><td class="danger" id="c2">2</td>'));
+  var plain = el(ROWS.replace('<tr id="r2"><td>2</td>', '<tr id="r2" class="danger"><td>2</td>'));
+  assert.sameColor(style(t.querySelector('#c2'), 'background-color'), cellBg(plain, 'r2'), 'cell tone did not override the row tone');
+});
+
+test('table: a .field inside a toned cell takes the cell fill', function () {
+  var t = el(ROWS.replace('<td>2</td>', '<td class="danger" id="c2"><input class="field" id="f2"></td>'));
+  assert.sameColor(
+    style(t.querySelector('#f2'), 'background-color'),
+    style(t.querySelector('#c2'), 'background-color'),
+    'a .field in a toned cell kept the untoned surface'
+  );
+});
+
+test('table: a .field in an untoned cell keeps the surface', function () {
+  var t = el(ROWS.replace('<td>2</td>', '<td id="c2"><input class="field" id="f2"></td>'));
+  assert.sameColor(style(t.querySelector('#f2'), 'background-color'), rootProp('--surface'), 'untoned field lost the surface');
+});
+
+test('table: a .field in a toned row takes the row tint, not the surface', function () {
+  var t = el(ROWS.replace('<tr id="r2"><td>2</td>', '<tr id="r2" class="danger"><td id="c2"><input class="field" id="f2"></td>'));
+  assert.differentColor(style(t.querySelector('#f2'), 'background-color'), rootProp('--surface'), 'a .field in a toned row kept the surface');
+});

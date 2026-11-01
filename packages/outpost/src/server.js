@@ -394,15 +394,23 @@ export function createOutpostServer(config, {
     if (req.method === 'GET' && path === '/health')
       return json({ ok: true, version: config.version, server_id: config.serverId })
 
-    const body    = await req.text()
-    const checked = await verifyRequest({
+    const verify = (body, nonces) => verifyRequest({
       // Recomputed from the RAW request URL: the query is part of the canonical
       // string since `FJS-678`, and reading a path the router already stripped
       // would sign a different request than the one that arrived.
       publicKey: config.hubKey, method: req.method, path, query: url.search, body, headers: req.headers,
       // This machine's clock, stated: the kit takes no ambient state.
-      toleranceSeconds: TOLERANCE_S, now: Math.floor(Date.now() / 1000), seenNonce,
+      toleranceSeconds: TOLERANCE_S, now: Math.floor(Date.now() / 1000), seenNonce: nonces,
     })
+
+    // Missing headers, a stale timestamp and a wrong scheme are decided without
+    // the body, so they are answered before it is buffered (`FJS-1861`). With the
+    // body unread the digest cannot match; that one reason is the real check's.
+    // No nonce store here: a nonce is spent only by the check that reads the body.
+    const early = await verify('', null)
+    const unsigned = !early.ok && early.reason !== 'signature does not match'
+    const body     = unsigned ? '' : await req.text()
+    const checked  = unsigned ? early : await verify(body, seenNonce)
     if (!checked.ok) {
       // Logged with the reason, answered without it: a caller learns it was
       // refused, not whether the clock or the key was wrong.

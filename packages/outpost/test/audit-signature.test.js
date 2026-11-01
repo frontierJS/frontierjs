@@ -176,3 +176,32 @@ describe('HOLDS — what a page on 8181 can do to the command port (FJS-D345)', 
     }
   })
 })
+
+describe('FJS-1861 — an unsigned body is not read', () => {
+
+  /** A POST whose body stream records whether anyone pulled from it. */
+  function watched() {
+    const pulled = { n: 0 }
+    const body = new ReadableStream({
+      pull(controller) { pulled.n++; controller.enqueue(new Uint8Array(1024)); if (pulled.n > 50) controller.close() },
+    })
+    return { pulled, req: (headers = {}) => new Request('http://outpost.test/exec', { method: 'POST', headers, body, duplex: 'half' }) }
+  }
+
+  test('a POST with no signature headers is refused before its body is pulled', async () => {
+    const { handle } = server()
+    const { pulled, req } = watched()
+    expect((await handle(req())).status).toBe(401)
+    expect(pulled.n).toBeLessThan(5)  // the Request primes one chunk; a read-through pulls all 51
+  })
+
+  test('a stale timestamp is refused before the body is pulled', async () => {
+    const T0 = 1_800_000_000
+    setSystemTime(new Date(T0 * 1000))
+    const { handle } = server()
+    const signed = await signRequest({ privateKey: HUB.privateKey, method: 'POST', path: '/exec', body: '', timestamp: T0 - 4000, nonce: 'stale-1' })
+    const { pulled, req } = watched()
+    expect((await handle(req(signed))).status).toBe(401)
+    expect(pulled.n).toBeLessThan(5)  // the Request primes one chunk; a read-through pulls all 51
+  })
+})

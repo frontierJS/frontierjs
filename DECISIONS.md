@@ -16123,6 +16123,18 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1738"></a>2026-10-31 · `FJS-D1738` — The release CI's run record, from a checkout deleted after the run — It is copied into the main tree's `.cache/ci-runs/` before the checkout is removed.
+
+Asked during [`IDEAS/publish-order.md`](IDEAS/publish-order.md) box 2.1, through the question tool. **Copy the log out first** was picked, as recommended. `01b-ci` runs `ci.mjs` in a checkout of the release sha (`FJS-D1721`), and the record went with it. Phase 3's `--status` reads "CI green on that sha" from those records. Only `ci-runs/` is copied: `ci-last.txt` describes the working tree's last run, and a release run written over it would misreport that. **Status reads tags only** would also work, since a tag is written only after a green run, but it cannot show a red run that left no tag.
+
+### <a id="fjs-d1737"></a>2026-10-31 · `FJS-D1737` — Step 04's fresh app installs pins older than what the run shipped — It compares versions and prints *pins behind*. It does not refuse.
+
+Asked during [`IDEAS/publish-order.md`](IDEAS/publish-order.md) box 2.4, through the question tool. **Check versions, flag behind** was picked, as recommended. A release without `@frontierjs/cli` leaves the scaffold's pins where they were. The fresh app then installs the previous versions, and its green says nothing about this run: shipping toolbelt 0.1.9 alone installed 0.1.8. `pinsBehind()` in `core/publish-hosts.js` names each shipped package installed at another version, and the note says to release cli with it. **Refuse at preflight** would make every partial release include cli. **Leave as is** keeps a green that grades nothing the run shipped.
+
+### <a id="fjs-d1736"></a>2026-10-31 · `FJS-D1736` — A fresh app from a host fails to install after publish — The run fails, the same as an asset the host does not serve.
+
+Asked during [`IDEAS/publish-order.md`](IDEAS/publish-order.md) box 2.4, through the question tool. **Fail the run** was picked, as recommended. By then the packages have shipped and cannot be taken back. The non-zero exit is what says the release does not install, which is the thing a release exists to do. **Warn only** passes a release nobody can install. **Fail tarballs, warn npm** grades npm less because it is opt-in, but a version on npm is a promise made in public.
+
 ### <a id="fjs-d1728"></a>2026-10-31 · `FJS-D1728` — `ws:pub --changed-only` — Removed, with no alias.
 
 Asked during [`IDEAS/publish-order.md`](IDEAS/publish-order.md) box 1.2, through the question tool, after `decision-rules`. **Remove** was picked, as recommended. The flag picked packages with uncommitted files. Since box 1.1, `03-publish-all` packs from the release commit, and `01-version-all` commits only manifests and `bun.lock`, so the edits that picked a package never reach its tarball. A package that is dirty and has commits since its tag is already in the default set. One that is dirty and has none would spend a version on bytes equal to its tag, which the default hold-back exists to prevent. Selection has one owner: commits since the package's own tag, with `--all` as its off switch (Invariant 4). `ws:changed` still reports uncommitted packages. **Redefine as commits since tag** is the default under a second name. **Keep** ships a tarball without the edits that selected it. Reopen path: a wish to publish named packages is `--filter`, not a dirty-state selector.

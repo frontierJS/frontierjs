@@ -9,6 +9,7 @@ title: Environment
   import { servers } from '../../../resources/Server.mesa'
   import { deployments, DEPLOY_TONE } from '../../../resources/Deployment.mesa'
   import { at } from '../../../lib/datetime.js'
+  import { slug } from '@frontierjs/toolbelt/inflect'
   import Pill from '@frontierjs/ui/components/display/Pill.mesa'
   import { goto } from '@frontierjs/sierra/router'
   import { toasts } from '@frontierjs/ui/stores/toastStore'
@@ -155,7 +156,7 @@ title: Environment
       made = await apps.service.create({
         environmentId: environment.id,
         name:          newApp.name,
-        slug:          slugify(newApp.name),
+        slug:          slug(newApp.name, { max: 64 }),
         type:          newApp.type,
       })
     } catch (e) {
@@ -177,10 +178,6 @@ title: Environment
       }
     }
     adding = false
-  }
-
-  function slugify(v) {
-    return v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64)
   }
 
   // ── The environment itself ────────────────────────────────────────────

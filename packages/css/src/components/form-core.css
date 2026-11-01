@@ -6,7 +6,9 @@
  */
 
 .field {
-  --field-bg:     var(--surface);
+  /* --cell-fill is a toned table cell's tint (tables.css); anywhere else
+     it is guaranteed-invalid and the field keeps the surface. */
+  --field-bg:     var(--cell-fill, var(--surface));
   --field-color:  var(--ink);
 
   /* Any tone class sets the border; untoned falls back to the rule color.

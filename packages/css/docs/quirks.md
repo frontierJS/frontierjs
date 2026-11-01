@@ -25,7 +25,7 @@ The cost is that a descendant can no longer read its ancestor's tone. Two
 places needed that, and both now derive the value on the toned element and pass
 it down as a normal (inheriting) property:
 
-- **tables.css** — the `<tr>` computes `--row-tint`; the `<td>` reads it.
+- **tables.css** — the `<tr>` computes `--row-tint`; the `<td>` reads it. A `<td>` toned itself derives `--cell-fill` from its own `--bg-mix`, and a `.field` inside reads that (`form-core.css`).
 - **dialogs.css** — the `.dialog` computes `--dialog-header-*`; the header reads them.
 
 Any new pattern that tints a child from a parent's tone must follow the same

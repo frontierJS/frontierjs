@@ -164,12 +164,18 @@ Cold entries are the eviction victim before any hot one, within a ring sized to
 the fan-out's concurrency (capped at half the pool) — Postgres uses a ring
 buffer for sequential scans and MySQL midpoint insertion for the same reason.
 
-### JSONL and trail databases are NOT per-tenant
+### Where a tenant's audit trail lives
 
-A tenant's file holds every **sqlite** database the schema declares. `jsonl` and
-`trail` databases stay schema-global — one audit trail for the fleet — and the
-registry says so at startup. Per-tenant audit is an application decision, not a
-default.
+A tenant's file holds every **sqlite** database the schema declares, so a
+SQLite trail (`database audit { path "./audit.db"  model AuditRow }`) is a table
+inside each tenant's own file and moves with its place.
+
+A `driver trail` database is one directory per place (`FJS-D1727`): a tenant in
+no place writes the declared path, and every tenant created in `place eu` writes
+`data/eu/audit.db`, the declared name inside the place's directory. `backup` and
+`restore` copy each as `<database>-<place>` (`audit-eu`) beside
+`tenant-files-eu`. A `jsonl` database stays one for the fleet, and the registry
+says so at startup.
 
 ---
 

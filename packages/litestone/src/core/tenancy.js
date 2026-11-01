@@ -16,7 +16,7 @@
 // beats the declaration, which beats the default. A caller passing nothing gets
 // what the seed says.
 
-import { resolve, dirname, envVar } from '#host'
+import { resolve, dirname, basename, envVar } from '#host'
 
 const DEFAULTS = {
   dir:      'tenants',
@@ -95,6 +95,30 @@ export function resolveTenancy(schema, { schemaPath = null, overrides = {} } = {
     resolve:  resolution,
     places:   Object.fromEntries((t.places ?? []).map(p => [p.name, at(readValue(p.dir, `place ${p.name}`))])),
   }
+}
+
+/**
+ * Every trail database's copy inside each declared place: a placed tenant's
+ * trail entries name a record, an actor and an ip, so they live where its file
+ * does, under the declared trail's own name (`FJS-D1727`). The registry opens a
+ * placed tenant on these and `backup`/`restore` copy them, so the two cannot
+ * disagree about where one is. A tenant in no place keeps the declared path.
+ *
+ * `name` is `<database>-<place>`: a hyphen no declared database name can hold.
+ *
+ * @param {object} schema                  parsed schema (parseResult.schema)
+ * @param {Record<string, string>} places  `resolveTenancy(...).places`
+ * @returns {Array<{ name: string, database: string, place: string, driver: 'trail', path: string }>}
+ */
+export function placedTrails(schema, places) {
+  const trails = (schema?.databases ?? []).filter(d => d.driver === 'trail' && d.path)
+  return Object.entries(places ?? {}).flatMap(([place, dir]) => trails.map(d => ({
+    name:     `${d.name}-${place}`,
+    database: d.name,
+    place,
+    driver:   /** @type {'trail'} */ ('trail'),
+    path:     resolve(dir, basename(String(readValue(d.path, `database ${d.name} path`)).replace(/[\\/]+$/, ''))),
+  })))
 }
 
 /**

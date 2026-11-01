@@ -532,7 +532,7 @@ database logs {
 
 tier: **situational** · also called: multi-tenant, saas · see also: `tenant`
 
-How this app separates tenants, declared once. `strategy database` is one SQLite file per tenant plus a registry; `strategy row` is one database and a tenant column, desugared into @@deny plus a @default(auth().<claim>) stamp. One block per schema — a second is refused rather than merged.
+How this app separates tenants, declared once. `strategy database` is one SQLite file per tenant plus a registry; `strategy row` is one database and a tenant column, desugared into @@deny plus a @default(auth().<claim>) stamp. Under `strategy database`, `place eu "./data/eu"` is a second directory a tenant is created in by name (`meta.place`); every copy path reads it. One block per schema — a second is refused rather than merged.
 
 ```lite
 tenancy {

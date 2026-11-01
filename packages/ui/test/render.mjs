@@ -418,6 +418,38 @@ const TRIGGER = `<script>
   }
 }
 
+// FJS-1231: a Select handed a value no option carries draws a blank box, the
+// same as nothing chosen. It names itself once on the console; a matching value,
+// an empty value, and a list still being fetched stay silent.
+{
+  const SELECT_WARN = [
+    ['unmatched',      { options: ['a', 'b'], value: 'zz' },                 true],
+    ['unmatched NaN',  { options: [{ value: 1, label: 'One' }], value: NaN }, true],
+    ['matched',        { options: ['a', 'b'], value: 'a' },                  false],
+    ['number vs text', { options: [{ value: 1, label: 'One' }], value: 1 },  false],
+    ['grouped match',  { options: [{ group: 'G', options: ['a'] }], value: 'a' }, false],
+    ['empty value',    { options: ['a'], value: '' },                        false],
+    ['null value',     { options: ['a'], value: null },                      false],
+    ['no options yet', { options: [], value: 'zz' },                         false],
+  ]
+  for (const [label, data, warns] of SELECT_WARN) {
+    const seen = []
+    const real = console.warn
+    console.warn = (...a) => { seen.push(a.join(' ')) }
+    try {
+      await renderComponent(readFileSync(join(ROOT, 'components/forms/Select.mesa'), 'utf8'), {
+        data, cwd: ROOT, filename: 'components/forms/Select.mesa', styleTag: false,
+        tmpDir: join(ROOT, 'components', '.mesa-tmp'),
+      })
+    } finally { console.warn = real }
+    const got = seen.filter(m => m.includes('[Select]'))
+    if (warns ? got.length !== 1 : got.length !== 0) {
+      console.error(`✗ Select value warning (${label})\n    expected ${warns ? 'one [Select] warning' : 'none'}, got ${JSON.stringify(got)}`)
+      failed++
+    }
+  }
+}
+
 const passed = CASES.length - failed
 console.log(`${passed}/${CASES.length} render cases carry the @frontierjs/css vocabulary`)
 if (failed) process.exit(1)

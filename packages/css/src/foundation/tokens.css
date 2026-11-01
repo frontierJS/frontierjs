@@ -817,6 +817,8 @@
   --table-head-bg:       initial;
   --row-base:            initial;
   --row-tint:            initial;
+  --cell-tint:           initial;
+  --cell-fill:           initial;
 
   --dialog-header-bg:     initial;
   --dialog-header-color:  initial;

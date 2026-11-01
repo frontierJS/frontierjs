@@ -176,3 +176,19 @@ model Shift { id Int @id
     expect(parse(schema(`label String @check("label != 'adults'")`)).valid).toBe(true)
   })
 })
+
+// FJS-3695 — SQLite refuses a subquery in a CHECK at migrate create, naming no
+// model or line; the parser refuses it first, by model and check.
+describe('a @@check holding a subquery', () => {
+  test('refuses @@check and @check by model, check and the cure', () => {
+    const q = `n < (SELECT t FROM Event WHERE Event.id = eventId)`
+    const a = parse(schema(`@@check("${q}")`))
+    expect(a.valid).toBe(false)
+    expect(a.errors.join('\n')).toMatch(/Model 'Shift': @@check\(.*\) holds a subquery.*@@allow/)
+    const b = parse(schema(`n Int @check("${q}")`))
+    expect(b.errors.join('\n')).toMatch(/Model 'Shift', field 'n': @check\(.*\) holds a subquery/)
+  })
+  test('accepts the word select inside a string or a quoted column', () => {
+    expect(parse(schema(`label String @check("label != 'select 1'")`)).valid).toBe(true)
+  })
+})

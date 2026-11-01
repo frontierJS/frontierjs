@@ -230,6 +230,12 @@ main tree at the same sha, and `--allow-dirty` is gone.
   this clone holds was never public, and its sha is usually the one the hook
   refused (0.1), so it is not published from (Q5).
 
+**1.3 and Phase 2 are built on branch `publish-order-integ`, held off `dev`
+until [FJS-009](../ISSUES.md#fjs-009) closes** (owner, 2026-10-31). Its CI gate
+has no bypass, and full CI is red on a clean sha, so landing it blocks every
+real release. Merge that branch; do not rebuild these boxes. Its open item is
+Phase 2's done-when: the 0.1 scratch replay.
+
 ## Phase 2 — Tag last
 
 Goal: no failing gate can leave a tag behind.

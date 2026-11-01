@@ -381,8 +381,13 @@ export function makeConstraintRefusals(shape, ctx, deps) {
   //
   // A parent holding a `Capability[]` is graded here too, only once the caller
   // can read it: a hidden one answers as hidden, and naming its list would read it.
+  //
+  // `absent` on the answer holds the rows naming a parent that is not there,
+  // which a deferred create rule needs alike with a hidden one (FJS-D1705).
   async function hiddenParents(rows, stamped = [], system = null) {
     const out = []
+    const absent = new Set()
+    Object.defineProperty(out, 'absent', { value: absent, enumerable: false })
     if (ctx.isSystem || !_parentKeys.length) return out
     const lifted = new Set(system == null ? [] : [system].flat())
     for (const p of _parentKeys) {
@@ -399,10 +404,13 @@ export function makeConstraintRefusals(shape, ctx, deps) {
         const values = p.fields.map(f => row[f])
         if (values.some(v => v == null || typeof v === 'object')) continue
         const key = JSON.stringify(values)
-        if (!verdict.has(key)) verdict.set(key, blind ||
-          await canRead(tbl, Object.fromEntries(p.references.map((r, j) => [r, values[j]])), ctx.shapes?.[p.target]?.hasTemplates != null) ||
-          !parentRows(sink, p.references, values).length)
-        if (verdict.get(key)) {
+        if (!verdict.has(key)) {
+          const seen = blind ||
+            await canRead(tbl, Object.fromEntries(p.references.map((r, j) => [r, values[j]])), ctx.shapes?.[p.target]?.hasTemplates != null)
+          verdict.set(key, seen ? 'read' : parentRows(sink, p.references, values).length ? 'hidden' : 'absent')
+        }
+        if (verdict.get(key) === 'absent') { absent.add(i); continue }
+        if (verdict.get(key) === 'read') {
           requireParentGrants(p.target, p.fields, p.references, values)
           continue
         }
@@ -437,20 +445,40 @@ export function makeConstraintRefusals(shape, ctx, deps) {
     })
   }
 
+  // A create rule refusing a row that names a parent the caller cannot read,
+  // hidden or missing alike, is held the same way: graded with that parent as
+  // missing it refuses even the row that would open it. `denied` is that
+  // refusal. Both take the trial INSERT, where a missing parent's FK failure
+  // is answered with it (`heldFor`); a hidden one in another tenant takes
+  // none, and its refusal is thrown just before the INSERT. Answers whether
+  // the refusal may be held, or rethrows it.
+  function holdDenial(err, hidden, absent) {
+    if (!(err instanceof AccessDeniedError) || !(hidden || absent)) throw err
+    return !hidden || deferrable(hidden)
+  }
+
+  // The answer a trial INSERT's refusal is owed: a parent it found missing is
+  // the held create rule's refusal, as it would have been before the write.
+  function heldFor(err, deferred) {
+    return deferred?.denied && err instanceof ForeignKeyError && !err.child ? deferred.denied : err
+  }
+
   // Inside the unit, once the row is written: what the caller is owed, or
   // null. A parent still hidden answers before the create rule is asked
   // again, as SQLite's refusal of a missing one would; with every parent
   // readable, the rule is graded on them for real (FJS-1712).
-  async function settleDeferred(refusal, row) {
+  async function settleDeferred(deferred) {
+    const { refusal, denied, row } = deferred
     const still = []
-    for (const p of refusal.parents) {
+    for (const p of refusal?.parents ?? []) {
       const where = Object.fromEntries(p.references.map((r, j) => [r, p.values[j]]))
       const tbl   = ctx.tables?.[modelToAccessor(p.target)]
       if (await canRead(tbl, where, ctx.shapes?.[p.target]?.hasTemplates != null))
         requireParentGrants(p.target, p.fields, p.references, p.values)
       else still.push(p)
     }
-    if (still.length === refusal.parents.length) return refusal
+    if (still.length && denied) return denied
+    if (still.length === refusal?.parents.length) return refusal
     if (still.length) {
       const [p] = still
       const tbl = ctx.tables?.[modelToAccessor(p.target)]
@@ -670,7 +698,7 @@ export function makeConstraintRefusals(shape, ctx, deps) {
 
   return {
     asConstraintError, parentRefusal, movesOnto, requireParentGrants, isArchivedParent, hiddenParents,
-    deferrable, settleDeferred,
+    deferrable, holdDenial, heldFor, settleDeferred,
     checkCreate, firstRefusal, refuseLockedCascade, refusedDelete, refusedChildDelete, nameBlockerForCaller,
     asBatchRowError,
   }

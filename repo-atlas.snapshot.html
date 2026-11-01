@@ -358,6 +358,8 @@ html {
   --table-head-bg:       initial;
   --row-base:            initial;
   --row-tint:            initial;
+  --cell-tint:           initial;
+  --cell-fill:           initial;
 
   --dialog-header-bg:     initial;
   --dialog-header-color:  initial;
@@ -2729,7 +2731,8 @@ dialog.drawer[open]::backdrop {
 }
 @layer components {
 .field {
-  --field-bg:     var(--surface);
+  
+  --field-bg:     var(--cell-fill, var(--surface));
   --field-color:  var(--ink);
 
   
@@ -3067,8 +3070,12 @@ input[type="file"]:disabled::file-selector-button {
 .table tbody tr {
   --row-tint: color-mix(in srgb, var(--bg-mix) 8%, var(--row-base));
 }
+
+
 .table tbody td {
-  background: var(--row-tint, var(--row-base));
+  --cell-tint: color-mix(in srgb, var(--bg-mix) 8%, var(--row-base));
+  --cell-fill: var(--cell-tint, var(--row-tint));
+  background:  var(--cell-fill, var(--row-base));
 }
 
 

@@ -3806,7 +3806,15 @@ function tablesPage() {
    untoned row --bg-mix is guaranteed-invalid, so --row-tint is too and
    the cell falls back to the base. All seven tones work. */
 .table tbody tr { --row-tint: color-mix(in srgb, var(--bg-mix) 8%, var(--row-base)); }
-.table tbody td { background: var(--row-tint, var(--row-base)); }`),
+
+/* Cell tones — a tone on a <td> reads its own --bg-mix and wins over its
+   row. --cell-fill is passed down so a .field in the cell takes the tint;
+   untoned it is guaranteed-invalid and the field keeps the surface. */
+.table tbody td {
+  --cell-tint: color-mix(in srgb, var(--bg-mix) 8%, var(--row-base));
+  --cell-fill: var(--cell-tint, var(--row-tint));
+  background:  var(--cell-fill, var(--row-base));
+}`),
       )}
     `;
 }

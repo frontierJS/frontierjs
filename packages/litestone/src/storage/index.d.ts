@@ -30,6 +30,8 @@ export declare function FileStorage(options?: FileStorageOptions): LitestonePlug
 export declare const FILES_ENV: Readonly<Record<'provider' | 'bucket' | 'endpoint' | 'accessKeyId' | 'secretAccessKey' | 'publicBase', string>>
 /** A File column value read from the server's disk. A string is never read as a path. */
 export declare function fromPath(path: string): { readonly path: string }
+/** A stored ref as the object: a ref passes through, its JSON text is parsed, anything else is null. */
+export declare function parseRef(value: FileRef | string | null | undefined): FileRef | null
 export declare function fileUrl(ref: FileRef | string | null | undefined): string | null
 export declare function fileUrls(refs: (FileRef | string)[] | string | null | undefined): string[]
 export declare function useStorage(options: FileStorageOptions): {

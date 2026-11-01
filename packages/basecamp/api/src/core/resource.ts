@@ -14,6 +14,7 @@ import { NotFound, $, findWindow, serviceAccessor, accessorCandidates } from '@f
 import type { ServiceContext } from '@frontierjs/junction'
 import { actsAsApp } from './gate.ts'
 import { generateJsonSchema } from '@frontierjs/litestone'
+import { slug } from '@frontierjs/toolbelt/inflect'
 import { normalizeOrderBy, normalizeSelect, comparatorFor, type SortParam, type SelectParam } from '@frontierjs/toolbelt/query'
 
 // ─── Reading the call ────────────────────────────────────────────────────
@@ -50,8 +51,9 @@ export function actor(): string {
   return actsAsApp($.me) ? 'system' : ($.me as { id?: string } | null | undefined)?.id ?? 'system'
 }
 
+/** toolbelt's slug() with this app's 64-character column width. */
 export function slugify(s: string): string {
-  return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64)
+  return slug(s, { max: 64 })
 }
 
 // ─── Reads ───────────────────────────────────────────────────────────────

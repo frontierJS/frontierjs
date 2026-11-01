@@ -141,8 +141,22 @@
 .table tbody tr {
   --row-tint: color-mix(in srgb, var(--bg-mix) 8%, var(--row-base));
 }
+
+/*
+ * ── Cell tones — a tone class on a <td> tints that cell ────────
+ *
+ * The cell is the toned element here, so it reads its own --bg-mix and
+ * wins over a tone on its row. --cell-fill is the tint a toned cell (or
+ * a cell in a toned row) paints, passed down as a normal inheriting
+ * property: it is guaranteed-invalid in an untoned cell, which is how a
+ * .field inside reads it (form-core.css) and keeps its own surface
+ * otherwise. The cell never falls back to --row-base inside --cell-fill,
+ * or a field in a striped row would take the stripe.
+ */
 .table tbody td {
-  background: var(--row-tint, var(--row-base));
+  --cell-tint: color-mix(in srgb, var(--bg-mix) 8%, var(--row-base));
+  --cell-fill: var(--cell-tint, var(--row-tint));
+  background:  var(--cell-fill, var(--row-base));
 }
 
 /*

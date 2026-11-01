@@ -424,7 +424,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   const {
     asConstraintError, parentRefusal, movesOnto, requireParentGrants, isArchivedParent, hiddenParents,
-    deferrable, settleDeferred,
+    deferrable, holdDenial, heldFor, settleDeferred,
     checkCreate, firstRefusal, refuseLockedCascade, refusedDelete, refusedChildDelete, nameBlockerForCaller,
     asBatchRowError,
   } = makeConstraintRefusals(shape, ctx, {
@@ -3255,12 +3255,18 @@ function makeTable(readDb, writeDb, shape, ctx) {
       data = out
     }
     const hidden = await hiddenParents(data, pathStamped, system)
-    const parent = ctx.hasPolicies ? data.map((row, i) => checkCreate(authStamped(row, modelName, ctx), hidden[i])) : []
-    // As prepareCreate's: taken up only by createMany().
+    // As prepareCreate's: a held refusal and a deferred parent are taken up
+    // only by createMany(); planCreateMany throws them ahead of the INSERT.
     const deferred = new Map()
-    for (const [i, h] of hidden.entries())
-      if (!parent[i] && deferrable(h)) deferred.set(i, { refusal: h, row: authStamped(data[i], modelName, ctx) })
-    for (const [i, r] of parent.entries()) hidden[i] = firstRefusal(r, hidden[i])
+    for (const [i, row] of data.entries()) {
+      const graded = authStamped(row, modelName, ctx)
+      let parent, denied = null, trial
+      try { parent = ctx.hasPolicies ? checkCreate(graded, hidden[i]) : undefined }
+      catch (e) { trial = holdDenial(e, hidden[i], hidden.absent.has(i)); denied = e }
+      trial ??= !parent && deferrable(hidden[i])
+      if (trial) deferred.set(i, { refusal: hidden[i] ?? null, denied, row: graded })
+      hidden[i] = denied ?? firstRefusal(parent, hidden[i])
+    }
     // A logged model already takes RETURNING, so opting in costs it nothing.
     // A plugin's onAfterWrite is told each row (FJS-1725).
     return { data, system, hidden, deferred, mode, needRows: tableHasLogWork || wantRows || !!plugins?.hearsWrites }
@@ -3375,12 +3381,16 @@ function makeTable(readDb, writeDb, shape, ctx) {
     data = applyAuthDefaults(data, shape.authDefaults, ctx.auth, stamped)
     data = stampFromAuth(data, shape.createdBy, ctx.auth, stamped)
     data = await applyPathDefaults(data, stamped)
-    const [_crHid] = await hiddenParents([data], [stamped], system)
+    const _crGraded = await hiddenParents([data], [stamped], system)
+    const [_crHid] = _crGraded
     // After the auth stamps, never before — see authStamped (FJS-1402).
-    const _crParent = ctx.hasPolicies ? checkCreate(data, _crHid) : undefined
+    let _crParent, denied = null, trial
+    try { _crParent = ctx.hasPolicies ? checkCreate(data, _crHid) : undefined }
+    catch (e) { trial = holdDenial(e, _crHid, _crGraded.absent.has(0)); denied = e }
+    trial ??= !_crParent && deferrable(_crHid)
     // Taken up only by create(), which asks again inside its unit; every other
     // reader of this plan throws the refusal ahead of the INSERT.
-    const deferred = !_crParent && deferrable(_crHid) ? { refusal: _crHid, row: data } : null
+    const deferred = trial ? { refusal: _crHid ?? null, denied, row: data } : null
     // A new row is version 1, whatever the payload says. Honouring a supplied
     // version would let a client start a row at 500 and make the first real
     // editor's read look stale.
@@ -3390,7 +3400,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     }
     data = applyFieldRefDefaults(data, stamped)
     extractWriteOps(data, { where: 'create' })
-    const refusal = firstRefusal(_crParent, _crHid)
+    const refusal = denied ?? firstRefusal(_crParent, _crHid)
     return { data, stamped, refusal, deferred, select, include, system, scopedBy }
   }
 
@@ -4125,6 +4135,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
     _bulkTransitionField, refuseSoftDeleteWrite, refuseOffEntry, refuseBulkNested,
     refuseSystemEntries, extractWriteOps, idField, plugins, tx, writeDb, col, stampSets, _ranks,
     applyFieldRefDefaults, applyPathDefaults, applyRanks, writeData, hasTemplatesField, hiddenParents, checkCreate,
+    deferrable, holdDenial, heldFor, settleDeferred,
     firstRefusal, _sealInsertSql, sealInsertGuard, sealRefusal, asBatchRowError, asConstraintError,
     noteExclusion, needsTiming, fireQuery, tableHasLogWork, emitLogs, read, announceFor,
     announceBulk,
@@ -4576,7 +4587,9 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
           const extraFKs = await processBelongsToNested(nested)
           data = { ..._scalarNoEdge, ...extraFKs }
 
-          const inserted = insertRow(hasNested, edgeWrites, false)
+          let inserted
+          try { inserted = insertRow(hasNested, edgeWrites, false) }
+          catch (e) { throw heldFor(e, deferred) }
           // `select: false` with nothing nested skips the RETURNING, so there is
           // no row to hang children on — and none were asked for.
           let out = inserted
@@ -4589,7 +4602,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
             if (hasNested || edgeWrites.length) out = rehydrateAfterChildren(inserted)
           }
           // The throw is the rollback.
-          const owed = deferred && await settleDeferred(deferred.refusal, deferred.row)
+          const owed = deferred && await settleDeferred(deferred)
           if (owed) throw owed
           return out
         })
@@ -4615,9 +4628,11 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       // awaits; the throw is the rollback.
       const outcome = await tx.exclusive(async () => {
         plan = createManyPlan({ ...prepared, hidden: prepared.hidden.map((r, i) => deferred.has(i) ? null : r) })
-        const out = writeUnit(plan)
+        let out
+        try { out = writeUnit(plan) }
+        catch (e) { throw e?.batchIndex != null ? asBatchRowError(heldFor(e, deferred.get(e.batchIndex)), e.batchIndex, plan.statements.length, plan.statements[e.batchIndex]?.data) : e }
         for (const [i, d] of deferred) {
-          const owed = await settleDeferred(d.refusal, d.row)
+          const owed = await settleDeferred(d)
           if (owed) throw asBatchRowError(owed, i, plan.statements.length, plan.statements[i].data)
         }
         return out

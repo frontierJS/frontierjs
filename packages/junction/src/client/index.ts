@@ -440,6 +440,18 @@ export class ServiceProxy<
     return `${this._base}/${encodeURIComponent(segment)}`
   }
 
+  // `invoke(name, id, data)` takes the id second, so `invoke('file', { path })`
+  // puts the payload in the id slot. Sent, it is `[object Object]` over HTTP
+  // and a refused frame over the socket; either way the caller learns nothing
+  // about its own argument order.
+  private _checkId(method: string, id: unknown): void {
+    if (id == null || typeof id === 'string' || typeof id === 'number') return
+    throw Object.assign(
+      new TypeError(`${this.name}.${method}: id must be a string or a number, got ${Array.isArray(id) ? 'an array' : typeof id}; the id comes before the data`),
+      { code: 400 }
+    )
+  }
+
   // ── CRUD ────────────────────────────────────────────────────────────
   // Prefer WS when connected. Files always use HTTP.
 
@@ -690,6 +702,7 @@ export class ServiceProxy<
     // Files are the documented exception: multipart cannot travel over the
     // socket, so a payload carrying one goes over HTTP exactly as create and
     // patch do.
+    this._checkId(name, id)
     if (this._client._wsReady && !_hasFiles(data ?? {})) {
       return this._client._wsCall(this.name, name, id ?? null, data ?? null, query, opts)
     }
@@ -728,12 +741,13 @@ export class ServiceProxy<
     data?: Record<string, unknown> | null,
     opts?: CallOptions
   ): Promise<unknown>
-  call(
+  async call(
     method: string,
     id?: string | number | null,
     data?: Record<string, unknown> | null,
     opts?: CallOptions
   ): Promise<unknown> {
+    this._checkId(method, id)
     return this._client._wsCall(this.name, method, id ?? null, data ?? null, null, opts)
   }
 
@@ -2697,6 +2711,22 @@ export class JunctionClient extends EventEmitter {
       // ── Auth error ────────────────────────────────────────────────
       if (type === 'error' && msg.code === 401) {
         this.emit('unauthorized')
+        return
+      }
+
+      // ── Refused frame ─────────────────────────────────────────────
+      // The server names the call it refused (`invalid_id`), and a call nobody
+      // answers is a 408 after the whole timeout. A refusal with no id was
+      // about no call, so there is nothing to settle.
+      if (type === 'protocol_error' && msg.id != null) {
+        const pending = this._wsCallMap.get(String(msg.id))
+        if (pending) {
+          this._wsCallMap.delete(String(msg.id))
+          const err = msg.error as Record<string, unknown> | undefined
+          pending.reject(
+            Object.assign(new Error(String(err?.message ?? 'Frame refused')), { code: 400, data: err })
+          )
+        }
         return
       }
 

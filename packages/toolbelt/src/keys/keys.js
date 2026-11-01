@@ -345,6 +345,8 @@ const BROWSER_OWNS = {
     '<D-Space>': 'opens Spotlight in macOS', '<A-D-Esc>': 'opens Force Quit in macOS',
     '<C-D-q>': 'locks the screen in macOS', '<D-S-q>': 'logs out of macOS',
     '<A-D-d>': 'hides the Dock in macOS',
+    '<D-h>': 'hides the app in macOS', '<A-D-h>': 'hides the other apps in macOS',
+    '<D-m>': 'minimizes the window in macOS',
     '<C-Up>': 'opens Mission Control in macOS', '<C-Down>': 'shows the app\'s windows in macOS',
   },
   other: {

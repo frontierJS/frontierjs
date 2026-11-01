@@ -30,7 +30,7 @@ import { create, apply, status, verify,
 import { parseRenameFlag, readOperations, askRenames } from '../core/operations.js'
 import { backupSqliteTo, writeBackupStamp }            from '../core/backup.js'
 import { schemaAnchor, noteMintedDirectory }          from '../core/db-path.js'
-import { resolveTenancy }                              from '../core/tenancy.js'
+import { resolveTenancy, placedTrails }                from '../core/tenancy.js'
 import { modelToAccessor }           from '../core/ddl.js'
 import { findPrincipal }                               from './principal.js'
 import { c, bold, dim, green, yellow, red, cyan, args, positional, flag, getFlag, getFlags,
@@ -1711,7 +1711,11 @@ async function copyTargets(parseResult, cfg, onlyDb = null) {
     name: d.name, driver: d.driver ?? 'sqlite', path: resolveDbPath(d.path, null, anchor),
   }))
   if (!declaresDatabases(parseResult)) declared.unshift({ name: 'main', driver: 'sqlite', path: resolve(cfg.db) })
-  const wanted = t => !onlyDb || t.name === onlyDb
+  // A place's trail is copied as its own database, `<name>-<place>`, so an EU
+  // tenant's read history is not left out of the backup its file is in.
+  if (parseResult.schema.tenancy?.strategy === 'database')
+    declared.push(...placedTrails(parseResult.schema, (await tenantOptions(cfg)).declared?.places))
+  const wanted = t => !onlyDb || t.name === onlyDb || t.database === onlyDb
   const dirs   = (await tenantStorage(parseResult, cfg)) ?? []
   return {
     sqlite: declared.filter(d => d.driver === 'sqlite' && wanted(d)).map(({ name, path }) => ({ name, path })),
@@ -1777,8 +1781,9 @@ function layoutFiles(cfg, declared, dirs) {
 
 // The files a directory target covers right now. The dot-prefixed entries are
 // litestream's own `.<db>-litestream` state, which it writes beside every file.
+// Files only: a place's trail is a directory named `audit.db` beside its tenants.
 const matchingFiles = ({ dir, pattern }) =>
-  !existsSync(dir) ? [] : readdirSync(dir).filter(f =>
+  !existsSync(dir) ? [] : readdirSync(dir, { withFileTypes: true }).filter(e => e.isFile()).map(e => e.name).filter(f =>
     !f.startsWith('.') && (pattern === '*.db' ? f.endsWith('.db') : f === pattern))
 
 async function cmdTenant(subCmd, args, cfg) {

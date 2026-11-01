@@ -74,6 +74,7 @@ import { connect }      from 'node:net'
 import { networkInterfaces } from 'node:os'
 import { signRequest, verifyRequest, generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { ensureCert }   from '../src/cert.js'
+import { routeId }      from '../src/ingress.js'
 
 const ROOT     = join(dirname(fileURLToPath(import.meta.url)), '..')
 const PORT     = 7180
@@ -91,7 +92,11 @@ const ALSO     = 'also.verify-docker.test'
 const IMAGE    = 'traefik/whoami:v1.10.3'
 const BUSYBOX  = 'busybox:1.36'
 const APP      = 'verify-docker'
-const NAME     = `fjs-${APP}`
+// The container is named for the slugs and found by its `fjs.app` label;
+// Caddy's route keeps `fjs-<app>` (`FJS-D1716`).
+const SLUGS    = { project: 'verify', environment: 'drive', app_slug: 'docker' }
+const ROUTE    = routeId(APP)
+const HOLDER   = 'fjs-verify-docker-holder'
 const HUB      = await generateSigningKeys()
 const MACHINE  = await generateSigningKeys()
 const OUTPOST  = `https://127.0.0.1:${PORT}`
@@ -99,7 +104,9 @@ const OUTPOST  = `https://127.0.0.1:${PORT}`
 const fail  = (msg) => { console.error(`verify-docker: ${msg}`); process.exit(1) }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 const sh    = (...argv) => spawnSync(argv[0], argv.slice(1), { encoding: 'utf8' })
-const volumeNames = () => new Set(sh('docker', 'volume', 'ls', '-q').stdout.trim().split('\n').filter(Boolean))
+const appContainers = () => sh('docker', 'ps', '-a', '--filter', `label=fjs.app=${APP}`, '--format', '{{.Names}}').stdout.trim().split('\n').filter(Boolean)
+const live        = () => appContainers().find(n => !n.endsWith('_replaced')) ?? null
+const volumeNames = () =>new Set(sh('docker', 'volume', 'ls', '-q').stdout.trim().split('\n').filter(Boolean))
 
 // ─── Preflight ────────────────────────────────────────────────────────────
 
@@ -112,8 +119,9 @@ const answers = (port, address = '127.0.0.1') => new Promise(done => {
 // A port that answers is not evidence the right process holds it.
 for (const p of [PORT, STATIC, SINK, APP_PORT, CADDY_HTTP, CADDY_HTTPS, CADDY_ADMIN, HELD])
   if (await answers(p)) fail(`port ${p} already answers — refusing to test whatever holds it`)
-for (const n of [NAME, CADDY])
+for (const n of [HOLDER, CADDY])
   if (sh('docker', 'inspect', n).status === 0) fail(`a container named ${n} already exists`)
+if (appContainers().length) fail(`a container labelled fjs.app=${APP} already exists: ${appContainers().join(', ')}`)
 // "Off the machine" is any address of this host that is not loopback: a port
 // published on every interface answers on each of them.
 const offLoopback = Object.values(networkInterfaces()).flat()
@@ -135,7 +143,7 @@ const call = async (path, body = {}, { key = HUB.privateKey, signed = true } = {
   return { status: res.status, body: await res.json().catch(() => null) }
 }
 
-const inspect = (format) => sh('docker', 'inspect', '--format', format, NAME).stdout.trim()
+const inspect = (format) => { const name = live(); return name ? sh('docker', 'inspect', '--format', format, name).stdout.trim() : '' }
 
 const ADMIN = `http://127.0.0.1:${CADDY_ADMIN}`
 const admin = (path, init) => fetch(`${ADMIN}${path}`, init)
@@ -263,12 +271,13 @@ try {
   // ─── deploy ─────────────────────────────────────────────────────────────
 
   const deploy = () => call('/deploy', {
-    app_id: APP, image: IMAGE, digest: pulled.body?.digest, hosts: [HOST],
+    app_id: APP, ...SLUGS, image: IMAGE, digest: pulled.body?.digest, hosts: [HOST],
     config: { port: APP_PORT, containerPort: 80, env: { WHOAMI_NAME: 'fjs-drive' } },
   })
   const first = await deploy()
   if (first.status !== 200) console.log(first.body)
   t('deploy.startsAContainer',       first.status === 200 && /^[0-9a-f]{64}$/.test(first.body?.containerId ?? ''))
+  t('deploy.namesItForTheSlugs',     live() === `fjs--verify-drive-docker-${APP.slice(0, 8)}`)
   t('deploy.runsTheDigestItWasGiven', inspect('{{.Image}}') === imageId)
   t('deploy.passesTheEnv',           inspect('{{json .Config.Env}}').includes('WHOAMI_NAME=fjs-drive'))
   t('deploy.capsTheLog',             inspect('{{json .HostConfig.LogConfig}}').includes('"max-size":"10m"'))
@@ -282,7 +291,7 @@ try {
 
   // ─── ingress ────────────────────────────────────────────────────────────
 
-  const route = await admin(`/id/${NAME}`).then(r => r.ok ? r.json() : null, () => null)
+  const route = await admin(`/id/${ROUTE}`).then(r => r.ok ? r.json() : null, () => null)
   t('ingress.routeNamesTheHost', first.body?.hosts?.[0] === HOST && route?.match?.[0]?.host?.[0] === HOST)
   const ca = await admin('/pki/ca/local').then(r => r.json(), () => null)
   await Bun.write(rootPath, ca?.root_certificate ?? '')
@@ -296,7 +305,7 @@ try {
   // own file, one JSON line per request carrying the host traffic analysis splits on.
   let accessLine = ''
   for (let i = 0; i < 20 && !accessLine; i++) {
-    accessLine = sh('docker', 'exec', CADDY, 'cat', `/var/log/caddy/${NAME}.access.log`).stdout.split('\n').find(l => l.includes(`"host":"${HOST}`)) ?? ''
+    accessLine = sh('docker', 'exec', CADDY, 'cat', `/var/log/caddy/${ROUTE}.access.log`).stdout.split('\n').find(l => l.includes(`"host":"${HOST}`)) ?? ''
     if (!accessLine) await sleep(250)
   }
   t('ingress.writesItsOwnAccessLog', accessLine !== '')
@@ -317,24 +326,24 @@ try {
   t('exec.runsOnTheMachine', ran)
 
   const second = await deploy()
-  const named  = sh('docker', 'ps', '-a', '--filter', `name=^${NAME}$`, '--format', '{{.ID}}').stdout.trim().split('\n').filter(Boolean)
+  const named  = appContainers()
   t('deploy.replacesRatherThanAdds', second.status === 200 && second.body?.containerId !== first.body?.containerId && named.length === 1)
   const routes = await admin('/config/apps/http/servers/ingress/routes').then(r => r.json(), () => null)
-  t('ingress.redeployKeepsOneRoute', routes?.length === 1 && routes[0]['@id'] === NAME)
+  t('ingress.redeployKeepsOneRoute', routes?.length === 1 && routes[0]['@id'] === ROUTE)
 
   // ─── a release that fails puts the old one back (FJS-1765) ──────────────
 
-  const dial = async () => (await admin(`/id/${NAME}`).then(r => r.json(), () => null))?.handle?.[0]?.upstreams?.[0]?.dial
+  const dial = async () => (await admin(`/id/${ROUTE}`).then(r => r.json(), () => null))?.handle?.[0]?.upstreams?.[0]?.dial
   const putBack = async () => inspect('{{.Id}}') === second.body?.containerId
     && inspect('{{.State.Running}}') === 'true'
-    && sh('docker', 'inspect', `${NAME}_replaced`).status !== 0
+    && appContainers().length === 1
     && /Name: fjs-drive/.test(await fetch(`http://127.0.0.1:${APP_PORT}/`).then(r => r.text(), () => ''))
 
   // Docker's own refusal, after the old container has stopped: the port the
   // release asks for is held by something else on the machine.
   const squatter = Bun.serve({ hostname: '127.0.0.1', port: HELD, fetch: () => new Response('not the app') })
   const refused  = await call('/deploy', {
-    app_id: APP, image: IMAGE, digest: pulled.body?.digest, hosts: [HOST],
+    app_id: APP, ...SLUGS, image: IMAGE, digest: pulled.body?.digest, hosts: [HOST],
     config: { port: HELD, containerPort: 80, env: { WHOAMI_NAME: 'fjs-drive' } },
   })
   squatter.stop(true)
@@ -345,7 +354,7 @@ try {
 
   // Started, and never answers: whoami listens on 81 inside, and 80 is mapped.
   const sick = await call('/deploy', {
-    app_id: APP, image: IMAGE, digest: pulled.body?.digest, hosts: [HOST],
+    app_id: APP, ...SLUGS, image: IMAGE, digest: pulled.body?.digest, hosts: [HOST],
     config: { port: APP_PORT, containerPort: 80, healthCheck: '/', env: { WHOAMI_NAME: 'fjs-drive', WHOAMI_PORT_NUMBER: '81' } },
   })
   if (sick.status !== 500) console.log(sick.body)
@@ -363,7 +372,7 @@ try {
   t('route.restartsNothing',       inspect('{{.Id}}') === second.body?.containerId)
   t('route.answersTheNewName',     await untilHttps(ALSO))
   const unrouted = await call('/route', { app_id: APP, hosts: [] })
-  t('route.emptyTakesTheRoute',    (await admin(`/id/${NAME}`)).status === 404 && /loopback/.test(unrouted.body?.rebind ?? ''))
+  t('route.emptyTakesTheRoute',    (await admin(`/id/${ROUTE}`)).status === 404 && /loopback/.test(unrouted.body?.rebind ?? ''))
   // A redirect is Caddy's own answer, no upstream: Caddy has to ACCEPT the
   // subroute and expand the request-uri placeholder in the Location (FJS-1615).
   const GO = 'go.verify-docker.test'
@@ -374,7 +383,7 @@ try {
     `https://${GO}:${CADDY_HTTPS}/cart?x=1`).stdout
   t('redirect.answers308WithTheRequestUri', /^HTTP\/\S+ 308/.test(hop) && new RegExp(`^location: https://${HOST}/cart\\?x=1\\r?$`, 'im').test(hop))
   await call('/route', { app_id: APP, hosts: [HOST] })
-  t('redirect.droppedWithTheLastOne', (await admin(`/id/${NAME}-redirects`)).status === 404)
+  t('redirect.droppedWithTheLastOne', (await admin(`/id/${ROUTE}-redirects`)).status === 404)
 
   // Two apps on one hostname (FJS-D1040): Caddy has to accept the path matcher,
   // keep it ahead of the whole-host route that was there first, and answer
@@ -384,7 +393,7 @@ try {
   const pathed = await call('/route', { app_id: SPLIT, port: 7199, paths: [{ host: HOST, prefix: '/api/' }] })
   if (pathed.status !== 200) console.log(pathed.body)
   const order = await admin('/config/apps/http/servers/ingress/routes').then(r => r.json(), () => [])
-  t('path.sitsAheadOfTheWholeHost', order.map(r => r['@id']).join() === `fjs-${SPLIT}-path-0,${NAME}`)
+  t('path.sitsAheadOfTheWholeHost', order.map(r => r['@id']).join() === `fjs-${SPLIT}-path-0,${ROUTE}`)
   const status = (path) => sh('curl', '-s', '-o', '/dev/null', '-w', '%{http_code}', '--max-time', '5',
     '--resolve', `${HOST}:${CADDY_HTTPS}:127.0.0.1`, '--cacert', rootPath, `https://${HOST}:${CADDY_HTTPS}${path}`).stdout
   t('path.prefixGoesToItsApp',     status('/api/users') === '502' && status('/api') === '502')
@@ -395,8 +404,8 @@ try {
   // ─── stop ───────────────────────────────────────────────────────────────
 
   const stopped = await call('/stop', { app_id: APP })
-  t('stop.removesTheContainer',  stopped.body?.stopped === true && sh('docker', 'inspect', NAME).status !== 0)
-  t('stop.takesTheRoute',        stopped.body?.unrouted === true && (await admin(`/id/${NAME}`)).status === 404)
+  t('stop.removesTheContainer',  stopped.body?.stopped === true && appContainers().length === 0)
+  t('stop.takesTheRoute',        stopped.body?.unrouted === true && (await admin(`/id/${ROUTE}`)).status === 404)
   t('health.saysNotRunning',     (await call('/health-check', { app_id: APP })).body?.healthy === false)
   t('logs.sayNoSuchContainer',   (await call('/logs', { app_id: APP })).body?.running === false)
   t('route.unknownIs404',        (await call('/no-such-route')).status === 404)
@@ -422,10 +431,10 @@ try {
   t('volume.refusesANonEmptyOne',      twice.status === 500 && /overwrite: true/.test(twice.body?.error) && readdirSync(dataDir).sort().join(' ') === 'app.db sub')
   const off = await call('/volume/restore', { app_id: APP, path: '/etc/passwd' })
   t('volume.refusesAPathOffTheRoot',   off.status === 500 && /under/.test(off.body?.error))
-  sh('docker', 'create', '--name', NAME, '--mount', `type=bind,src=${dataDir},dst=/data`, BUSYBOX)
+  sh('docker', 'create', '--name', HOLDER, '--mount', `type=bind,src=${dataDir},dst=/data`, BUSYBOX)
   const held = await call('/volume/restore', { app_id: APP, path: 'again.tar.gz', overwrite: true })
-  sh('docker', 'rm', '-f', NAME)
-  t('volume.refusesWhileHeld',         held.status === 500 && held.body?.error?.includes(`held by ${NAME}`))
+  sh('docker', 'rm', '-f', HOLDER)
+  t('volume.refusesWhileHeld',         held.status === 500 && held.body?.error?.includes(`held by ${HOLDER}`))
   const over = await call('/volume/restore', { app_id: APP, path: 'again.tar.gz', overwrite: true })
   t('volume.overwriteReplacesTheFiles', over.status === 200 && readdirSync(dataDir, { recursive: true }).filter(f => statSync(join(dataDir, f)).isFile()).join(' ') === 'fresh.db' && onHost('fresh.db') === 'replaced')
   const saved = await call('/backup', { app_id: APP })
@@ -500,8 +509,7 @@ try {
 } finally {
   outpost?.kill('SIGTERM')
   sink.stop(true)
-  sh('docker', 'rm', '-f', NAME)
-  sh('docker', 'rm', '-f', `${NAME}_replaced`)
+  for (const name of [...appContainers(), HOLDER]) sh('docker', 'rm', '-f', name)
   sh('docker', 'rm', '-f', CADDY)
   if (!hadImage) sh('docker', 'rmi', IMAGE)
   if (!hadCaddy) sh('docker', 'rmi', CADDY_IMAGE)
@@ -520,7 +528,7 @@ const expected = [
   'signature.healthAnswersUnsigned', 'signature.refusesAnUnsignedCommand', 'signature.refusesAnotherKey',
   'tls.plainHttpGetsNoAnswer',
   'pull.answersTheDaemonsDigest',
-  'deploy.startsAContainer', 'deploy.runsTheDigestItWasGiven', 'deploy.passesTheEnv', 'deploy.capsTheLog',
+  'deploy.startsAContainer', 'deploy.namesItForTheSlugs', 'deploy.runsTheDigestItWasGiven', 'deploy.passesTheEnv', 'deploy.capsTheLog',
   'deploy.answersOnItsPort',
   'ingress.routeNamesTheHost', 'ingress.answersOverHttpsByName', 'ingress.plainHttpRedirects',
   'ingress.portRefusesOffLoopback', 'ingress.writesItsOwnAccessLog', 'ingress.survivesACaddyRestart',

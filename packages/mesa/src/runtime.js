@@ -176,6 +176,7 @@ function _drain() {
     //
     // Propagation is unaffected: a memo that survives is still recomputed and
     // still notifies its consumers, one pass later.
+    let yielded = false
     for (;;) {
       gen = ++_pendGen
       for (const node of _queue) node._pendGen = gen
@@ -193,6 +194,19 @@ function _drain() {
       }
       if (!derived) break
 
+      // A derivation inside a block waits for any DOM-building node SHALLOWER
+      // than it. A child's props arrive through a parent effect that only
+      // queues once the parent's own derivations have settled, so a cell memo
+      // woken directly by a parent value runs ahead of the `{#each}` that the
+      // same flush is about to tell its list changed, against the new function
+      // prop and the old key (`FJS-3766`). The derived nodes stay queued.
+      if (minDepth > 0) {
+        for (const node of _queue) {
+          if (!node._isDerived && !node._isUserEffect && _domDepth(node) < minDepth) { yielded = true; break }
+        }
+        if (yielded) break
+      }
+
       // …and within that level, nothing whose owning block is itself waiting.
       // By now the block HAS been queued — it was woken by the shallower
       // derivation that ran in the previous turn — so this is decidable, where
@@ -207,8 +221,16 @@ function _drain() {
     }
     if (_halted) break
 
-    const pending = [..._queue]
-    _queue.clear()
+    const pending = []
+    for (const node of _queue) if (!(yielded && node._isDerived)) pending.push(node)
+    for (const node of pending) _queue.delete(node)
+    // Shallowest first, so a prop push that queues a block runs before the
+    // block's own cells, which `_ownerPending` below then holds back.
+    if (yielded && pending.length > 1) {
+      const depthOf = new Map()
+      for (const node of pending) depthOf.set(node, _domDepth(node))
+      pending.sort((a, b) => depthOf.get(a) - depthOf.get(b))
+    }
 
     // The same rule for the DOM-building tier, and it is needed here for a
     // second reason: a node re-subscribes on every run, which moves it to the
@@ -2997,9 +3019,19 @@ export function $$virtualEach(anchor, getItems, keyFn, makeRow, options = {}) {
     }
   }
 
-  function measure(node) {
-    if (measured) return
-    const h = node.getBoundingClientRect?.()?.height
+  // The pitch is the distance between row tops, not one row's height: a margin
+  // or gap counts, and the first row (often a different one) does not set it.
+  // The first drawn row is left out of the span for that reason.
+  function measure(els) {
+    if (measured || !els.length) return
+    let h
+    if (els.length >= 3) {
+      const a = els[1].getBoundingClientRect?.()
+      const b = els[els.length - 1].getBoundingClientRect?.()
+      if (a && b) h = (b.top - a.top) / (els.length - 2)
+    } else {
+      h = els[els.length - 1].getBoundingClientRect?.()?.height
+    }
     if (h && h > 0) { rowHeight = h; measured = true }
   }
 
@@ -3055,6 +3087,7 @@ export function $$virtualEach(anchor, getItems, keyFn, makeRow, options = {}) {
     // lands where it belongs without disturbing rows already in position.
     const container = botSpacer.parentNode
     let cursor = topSpacer.nextSibling
+    const drawn = []
     for (let i = start; i < end; i++) {
       const key = keys[i - start]
       let block = renderedBlocks.get(key)
@@ -3069,8 +3102,9 @@ export function $$virtualEach(anchor, getItems, keyFn, makeRow, options = {}) {
       if (nodes[0] === cursor) cursor = nodes[nodes.length - 1].nextSibling
       else for (const n of nodes) container.insertBefore(n, cursor)
       const el = nodes.find(n => n.nodeType === 1)
-      if (!measured && el) measure(el)
+      if (el) drawn.push(el)
     }
+    measure(drawn)
 
     // Update spacers
     topSpacer.style.height = (start * rowHeight) + 'px'

@@ -928,6 +928,26 @@ function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJson
   return clauses
 }
 
+// An Int or Float column compared with text that is not a number. SQLite
+// converts numeric text by column affinity (`?qty=5` works) and compares
+// anything else by storage class, so `{ not: '@me' }` matches every row and
+// `{ gt: 'abc' }` answers by class rather than value -- a 200 with the wrong
+// rows (FJS-3727). Numeric text stays valid.
+const NUMERIC_TEXT = /^\s*[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?\s*$/
+
+/** @param {string} key @param {any} val @param {string} op */
+function refuseNonNumber(key, val, op) {
+  if (typeof val === 'string') {
+    if (NUMERIC_TEXT.test(val)) return
+    throw new ValidationError([{ path: ['where', key], message:
+      `'${key}' is a number column (Int or Float) and ${JSON.stringify(val.slice(0, 40))} is not a number, ` +
+      `so '${op}' would compare it by storage class and answer the wrong rows -- a token such as @me is resolved before the query` }])
+  }
+  if (Array.isArray(val)) { for (const v of val) refuseNonNumber(key, v, op === 'equals' ? 'in' : op); return }
+  if (val !== null && typeof val === 'object' && !(val instanceof Date))
+    for (const [o, operand] of Object.entries(val)) if (DATE_COMPARE_OPS.has(o)) refuseNonNumber(key, operand, o)
+}
+
 // ─── Where clause ─────────────────────────────────────────────────────────────
 //
 // Supports:
@@ -1176,6 +1196,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
 
     const dateKind = fieldKinds?.get(key)
     if (dateKind === 'instant' || dateKind === 'day') refuseNonDate(key, dateKind, val, 'equals')
+    else if (dateKind === 'number' && !isFromExpr) refuseNonNumber(key, val, 'equals')
 
     // A long list binds as one JSON array (`inList`). Only where the column is
     // known: the cast it needs is wrong for an `Any` column and for a @from
