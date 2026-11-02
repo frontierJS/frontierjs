@@ -4,8 +4,8 @@ description: Grade the release commit in a checkout of it, before any tag exists
 ---
 
 <script>
-import { existsSync, readdirSync, mkdirSync, copyFileSync } from 'fs'
-import { join } from 'path'
+import { existsSync, readdirSync, mkdirSync, copyFileSync, rmSync, rmdirSync } from 'fs'
+import { join, dirname } from 'path'
 import { spawnSync } from 'child_process'
 
 // The run's record lives in the checkout and goes with it, so it is copied to
@@ -29,8 +29,10 @@ if (!released?.length) return
 if (resume) { log.info('  CI: skipped -- these tags were written after a green run'); return }
 
 const { withCheckout } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
-const { fliTmpRoot }   = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
-const scratch = join(fliTmpRoot(global.fliRoot), 'publish-ci', String($.config.startTime))
+// Beside the repo, as the pre-push hook's worktree is: a checkout under it sits
+// in `.fli-tmp`, a path biome.json ignores, and the lint phase then checks no
+// file and fails the gate (FJS-3830).
+const scratchFor = (cwd) => join(`${cwd.replace(/\/+$/, '')}-publish-ci`, String($.config.startTime))
 
 // The full tier, in a checkout of the release sha rather than the working tree:
 // a push is the one thing that cannot be taken back once npm has the package,
@@ -53,11 +55,18 @@ for (const { cwd, sha } of graded) {
     continue
   }
   log.info(`  CI: full run on ${sha.slice(0, 12)} -- a checkout of it, not the working tree`)
-  const status = withCheckout({ repo: cwd, sha, scratch }, tree => {
-    const { status } = spawnSync('node', ['scripts/ci.mjs'], { cwd: tree, stdio: 'inherit' })
-    keepRunRecord(tree, cwd)
-    return status
-  })
+  const scratch = scratchFor(cwd)
+  let status
+  try {
+    status = withCheckout({ repo: cwd, sha, scratch }, tree => {
+      const { status } = spawnSync('node', ['scripts/ci.mjs'], { cwd: tree, stdio: 'inherit' })
+      keepRunRecord(tree, cwd)
+      return status
+    })
+  } finally {
+    rmSync(scratch, { recursive: true, force: true })
+    try { rmdirSync(dirname(scratch)) } catch { /* another run's checkout is in it */ }
+  }
   if (status !== 0) {
     log.error(`  CI failed on ${sha.slice(0, 12)} -- nothing tagged, nothing pushed`)
     log.error('  Commit the fix and run `fli ws:pub` again: the release commit is kept and tagged once a run is green')

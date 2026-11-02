@@ -73,6 +73,7 @@ exists to name, wearing the other label.
 
 | Id | Pkg | Title | Status | Verified | Detail |
 | --- | --- | --- | --- | --- | --- |
+| <a id="fjs-3830"></a>FJS-3830 | cli | **ws:pub's CI checkout sits under packages/cli/.fli-tmp, which biome.json ignores, so 01b lints zero files and every real publish is red at the gate** | open | 2026-11-02 | First real run 2026-11-01 after FJS-009: 01b's checkout at packages/cli/.fli-tmp/publish-ci/<start>/tree-<sha> runs ci.mjs, whose lint phase runs biome from that root; biome matches the root's own path against the !**/.fli-tmp include and answers 'No files were processed' with exit 1, so the full tier is red and no tag is written. The same sha checked out beside the repo lints 3460 files clean. Fix: the graded checkout lives beside the repo as <repo>-publish-ci, the pre-push hook's own convention (scripts/hooks/pre-push: <repo>-prepush) · [01b-ci.md](packages/cli/commands/workspace/publish/_steps/01b-ci.md) |
 | <a id="fjs-3827"></a>FJS-3827 | cli | **ws:pub finishing a release in flight pushes each tag's sha to the branch head, which the remote rejects as non-fast-forward once the branch has moved on** | open | 2026-11-01 | fli ws:pub patch --to npm --to tarballs --dry at fb515f22: 02-push-all would run git push --no-verify origin 07817781:refs/heads/dev for a tag the remote already holds, and git push --dry-run of that line answers rejected, tip is behind · [02-push-all.md](packages/cli/commands/workspace/publish/_steps/02-push-all.md) · found at green-and-ship 4.1 |
 
 ---
