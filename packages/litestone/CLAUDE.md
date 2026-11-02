@@ -167,7 +167,7 @@ jsonl-index.js jsonl.js jsonschema-snapshot.js jsonschema.js local.js locks.js m
 migrations.js mutate.js nested-writes.js node.js none.js operations.js opportunities.js 
 parser.js personal.js plugin.js policy.js polymorphic.js pragmas.js principal.js prisma.js 
 query.js rails.js reach.js ref-url.js release.js repl.js replicate.js restore.js retention.js run.js 
-runner.js s3.js scale-schema.mjs schema-maps.js seal.js search.js seeder.js sigv4.js 
+runner.js s3.js scale-schema.mjs schema-layers.js schema-maps.js seal.js search.js seeder.js sigv4.js 
 split-worker.js split-worker.source.js sql.js sqlite-wasm.js stamps.js state-guards.js 
 statements.mjs studio-queries.js studio.html studio.js tenancy.js tenant.js testdb.js 
 testing.d.ts testing.js three-way.js tiers.js tmp-dirs.js transaction.js typegen.js upsert-many.js 

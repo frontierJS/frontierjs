@@ -15,6 +15,7 @@ import { CATALOG, GROUPS, POSITIONS, positionsOf, docFor, synonymsFor, tierFor }
 import { modelToAccessor, modelToTableName }        from '../core/ddl.js'
 import { csvCell }                                  from '@frontierjs/toolbelt/cells'
 import { authModelOf }                              from './principal.js'
+import { schemaLayers }                             from './schema-layers.js'
 import { openSavedQueries, sidecarFor }           from './studio-queries.js'
 import { bold, dim, green, red, cyan, rel, header, flag, getFlag,
          loadSchema, getEncKey, resolveDbPath, clientDb, loadGateResolver,
@@ -1146,6 +1147,11 @@ export async function cmdStudio(cfg) {
           const { deriveAccess } = await import('../access.js')
           return json(deriveAccess(currentSchemaParse().schema))
         }
+
+        // The Models view's Layers tab: groups, depths and all three floors,
+        // computed here so the page carries no layout code of its own.
+        if (path === '/api/schema-layers')
+          return json(schemaLayers(currentSchemaParse().schema))
 
         // ── GET /api/seed · POST /api/seed/run ──────────────────────────
         //

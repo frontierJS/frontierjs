@@ -882,6 +882,67 @@ circle.er-link-fam { fill: hsl(var(--er-family) 62% 52%); stroke: none }
 .log-line.dim   { color: var(--ink-mute) }
 .log-line.head  { color: var(--ink); font-weight: 600; margin-block-start: var(--space-sm) }
 
+/* ─── Models — Layers ──────────────────────────────────────────────────── */
+
+/* Each tab's body fills what the tablist leaves; the ER diagram's legend and
+   controls are positioned against this box. */
+.schema-pane:not([hidden]) { position: relative; flex: 1; min-block-size: 0; overflow: hidden }
+.ly:not([hidden]) { display: flex; flex-direction: column }
+.ly-bar {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-sm) var(--space-2xl);
+  padding: var(--space-md) var(--space-2xl);
+  border-block-end: 1px solid var(--rule); background: var(--surface);
+}
+.ly-seg { display: flex; flex-direction: column; gap: var(--space-2xs) }
+.ly-seg > span {
+  display: flex; justify-content: space-between; gap: var(--space-sm);
+  font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-mute);
+}
+.ly-seg output { font-family: var(--font-mono); text-transform: none; letter-spacing: 0; color: var(--ink) }
+.ly-seg input[type=range] { inline-size: 9rem; accent-color: var(--color-primary); margin-block: var(--space-2xs) }
+.ly-check { display: inline-flex; align-items: center; gap: var(--space-xs); font-size: var(--text-sm); color: var(--ink); cursor: pointer }
+.ly-check input { accent-color: var(--color-primary); margin: 0 }
+.ly-facts { margin-inline-start: auto; font-size: var(--text-xs); font-family: var(--font-mono) }
+.ly-facts b { color: var(--ink) }
+.ly-main { flex: 1; min-block-size: 0; display: grid; grid-template-columns: minmax(0, 1fr) 20rem }
+.ly-stage { position: relative; min-block-size: 0; min-inline-size: 0; background: var(--surface-sunken); overflow: hidden }
+.ly-stage canvas { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; display: block; cursor: grab }
+.ly-stage canvas.dragging { cursor: grabbing }
+.ly-reset { position: absolute; inset-block-start: var(--space-md); inset-inline-end: var(--space-md) }
+.ly-panel {
+  min-block-size: 0; overflow-y: auto; background: var(--surface); border-inline-start: 1px solid var(--rule);
+  padding: var(--space-lg) var(--space-xl); display: flex; flex-direction: column; gap: var(--space-lg);
+}
+.ly-panel p { margin: 0; color: var(--ink-mute); font-size: var(--text-md) }
+.ly-panel p b { color: var(--ink) }
+.ly-eyebrow { font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: 0.08em }
+.ly-sect { display: flex; flex-direction: column; gap: var(--space-xs) }
+.ly-title { margin: 0; font-size: var(--text-xl); overflow-wrap: anywhere }
+.ly-title.mono { font-family: var(--font-mono) }
+.ly-back { align-self: flex-start; background: none; border: 0; padding: 0; cursor: pointer; font: inherit; font-size: var(--text-sm); color: var(--color-primary) }
+.ly-glist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px }
+.ly-glist button {
+  inline-size: 100%; display: grid; grid-template-columns: 0.75rem minmax(0, 1fr) auto; gap: var(--space-xs) var(--space-sm);
+  align-items: baseline; text-align: start; background: none; border: 0; border-radius: var(--field-radius);
+  padding: var(--space-xs); cursor: pointer; color: var(--ink); font: inherit;
+}
+.ly-glist button:hover { background: var(--surface-raised) }
+.ly-sw { inline-size: 0.625rem; block-size: 0.625rem; border-radius: 50%; align-self: center }
+.ly-gname { font-weight: 600; font-size: var(--text-md); overflow-wrap: anywhere }
+.ly-gcount { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--ink-mute) }
+.ly-stats { display: grid; grid-template-columns: auto 1fr; gap: var(--space-xs) var(--space-lg); margin: 0; font-size: var(--text-md) }
+.ly-stats dt { color: var(--ink-mute) }
+.ly-stats dd { margin: 0; font-family: var(--font-mono); font-size: var(--text-sm); overflow-wrap: anywhere }
+.ly-chips { display: flex; flex-wrap: wrap; gap: var(--space-xs) }
+.ly-chip {
+  font: inherit; font-family: var(--font-mono); font-size: var(--text-sm); color: var(--ink); background: var(--surface-sunken);
+  border: 1px solid var(--rule-strong); border-radius: var(--field-radius); padding: 0.125rem var(--space-sm);
+  cursor: pointer; display: inline-flex; align-items: center; gap: var(--space-xs);
+}
+.ly-chip:hover { border-color: var(--color-primary) }
+.ly-chip i { inline-size: 0.45rem; block-size: 0.45rem; border-radius: 50%; display: inline-block }
+.ly-none { font-size: var(--text-sm); color: var(--ink-mute) }
+
 /* ─── Performance ──────────────────────────────────────────────────────── */
 
 /* A View is a column; this one is the exception — a list beside its detail.
@@ -1416,6 +1477,11 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
        realm's noun and this panel is one card per model. Ids are unchanged —
        #schema still opens it — so every existing link still lands. -->
   <article class="view relative" id="panelSchema" hidden>
+    <div class="tablist" role="tablist" aria-label="Models views">
+      <button class="tab" role="tab" id="erTabDiagram" aria-selected="true" aria-controls="erView" onclick="erShowTab('diagram')">Diagram</button>
+      <button class="tab" role="tab" id="erTabLayers" tabindex="-1" aria-selected="false" aria-controls="lyView" onclick="erShowTab('layers')">Layers</button>
+    </div>
+    <div class="schema-pane" id="erView" role="tabpanel" aria-labelledby="erTabDiagram">
     <div class="er-wrap" id="erWrap">
       <div class="er-canvas" id="erCanvas" onclick="if (event.target === this) erPin(null)">
         <svg class="er-svg" id="erSvg"></svg>
@@ -1438,6 +1504,39 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
       <button class="btn outlined" onclick="erFitAll()">⊡ Fit all</button>
       <button class="btn outlined" onclick="erExport('svg')" title="Download the diagram as SVG">⬇ SVG</button>
       <button class="btn outlined" onclick="erExport('png')" title="Download the diagram as PNG">⬇ PNG</button>
+    </div>
+    </div>
+
+    <!-- Layers: the same models as floors of foreign-key clusters, depth as
+         height. Built by the Layers block in the script. -->
+    <div class="schema-pane ly" id="lyView" role="tabpanel" aria-labelledby="erTabLayers" hidden>
+      <div class="ly-bar">
+        <div class="ly-seg"><span>Floor</span>
+          <div class="cluster" role="group" aria-label="Floor layout">
+            <button class="pill primary" id="lyF-hub" type="button" aria-pressed="true">Hub</button>
+            <button class="pill muted" id="lyF-ring" type="button" aria-pressed="false">Ring</button>
+            <button class="pill muted" id="lyF-map" type="button" aria-pressed="false">Map</button>
+          </div></div>
+        <div class="ly-seg"><span>Links</span>
+          <div class="cluster" role="group" aria-label="Links">
+            <button class="pill primary" id="lyL-clusters" type="button" aria-pressed="true">Clusters</button>
+            <button class="pill muted" id="lyL-models" type="button" aria-pressed="false">Models</button>
+          </div></div>
+        <label class="ly-seg"><span>Depth <output id="lyDepthOut"></output></span>
+          <input id="lyDepth" type="range" min="0" step="1" value="0"></label>
+        <label class="ly-seg"><span>More per group <output id="lyReachOut"></output></span>
+          <input id="lyReach" type="range" min="0" step="1" value="0"></label>
+        <label class="ly-check"><input id="lyFade" type="checkbox" checked> Fade links into hubs</label>
+        <label class="ly-check"><input id="lyLabels" type="checkbox"> All names</label>
+        <span class="ly-facts text-muted" id="lyFacts"></span>
+      </div>
+      <div class="ly-main">
+        <section class="ly-stage" id="lyStage" aria-label="Schema layers">
+          <canvas id="lyCanvas" aria-label="Models in 3D: groups on the floor, dependency depth as height"></canvas>
+          <button class="btn outlined compact ly-reset" id="lyReset" type="button">Reset view</button>
+        </section>
+        <aside class="ly-panel" id="lyPanel" aria-live="polite"></aside>
+      </div>
     </div>
   </article>
 
@@ -7975,6 +8074,421 @@ function perfRenderPlan(res) {
     </article>`).join('')
 
   return html
+}
+// ─── Models — Layers ──────────────────────────────────────────────────────────
+//
+// The schema as floors: foreign-key clusters laid on the ground, dependency depth
+// as height. /api/schema-layers does the grouping and every position (the page
+// lays nothing out); this draws them with a hand-rolled perspective on a 2D
+// canvas. Positions come from the full schema, so the sliders only hide and show
+// models and never move one.
+
+const Layers = (() => {
+  const LEVEL = 160
+  const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches
+  const $ = id => document.getElementById(id)
+  const cv = $('lyCanvas'), g2 = cv.getContext('2d')
+  const state = { floor: 'hub', links: 'clusters', fade: true, labels: false, sel: null, depth: 0, reach: 0 }
+  const cam = { yaw: -0.55, pitch: 0.36, zoom: 1.1 }
+  const T = {}
+  let D = null, M = {}, OUT = {}, IN = {}, GM = new Map(), HUBS = new Set(), CORE = new Set(), HUE = {}
+  let MAXD = 0, REACH_MAX = 0, SHOWN = new Set(), P3 = {}, CEN = {}, SCENE_R = 400
+  let W = 0, H = 0, DPR = 1, proj = {}, spinning = !REDUCED, hover = null, active = false, looping = false, loadedAt = null
+
+  const groupOf = n => M[n].g
+  const label = k => GM.get(k).label
+  const members = k => GM.get(k).members
+  const byIn = k => members(k).slice().sort((a, b) => M[b].in - M[a].in || a.localeCompare(b))
+
+  function readTheme() {
+    // Studio's palette lives on .theme-studio; :root still holds the light defaults.
+    const cs = getComputedStyle(document.getElementById('lyCanvas'))
+    const v = name => cs.getPropertyValue(name).trim()
+    Object.assign(T, { bg: v('--surface-sunken'), ink: v('--ink'), mute: v('--ink-mute'), line: v('--rule-strong'),
+      mono: v('--font-mono') || 'monospace', sans: v('--font-primary') || 'sans-serif' })
+  }
+  // Group hues step around the wheel by the golden angle, so neighbors in the
+  // list never share one; the group with no keys is grey.
+  function assignHues() {
+    HUE = {}
+    D.groups.forEach((gr, i) => { HUE[gr.key] = gr.key === 'unlinked' ? null : (196 + i * 137.508) % 360 })
+  }
+  function color(k, a = 1) {
+    const h = HUE[k]
+    return h == null ? `hsla(190, 8%, 63%, ${a})` : `hsla(${h.toFixed(1)}, 62%, 63%, ${a})`
+  }
+
+  // ── selection ──────────────────────────────────────────────────────────────
+  const neighborsOf = n => new Set([...OUT[n], ...IN[n]])
+  function litModels() {
+    const s = state.sel
+    if (!s) return null
+    if (s.type === 'model') return new Set([s.id, ...neighborsOf(s.id)])
+    return new Set(GM.has(s.id) ? members(s.id) : [])
+  }
+  function select(sel) { state.sel = sel; draw(); renderPanel() }
+
+  // ── scene ──────────────────────────────────────────────────────────────────
+  // Only a group's core shows until "More per group" asks for the rest, so a
+  // crowded group reads as its few key models first.
+  function computeShown() {
+    SHOWN = new Set(); REACH_MAX = 0
+    for (const gr of D.groups) {
+      REACH_MAX = Math.max(REACH_MAX, gr.members.length - gr.core)
+      for (const n of gr.members.slice(0, gr.core + state.reach)) if (M[n].d <= state.depth) SHOWN.add(n)
+    }
+  }
+  function layout() {
+    P3 = {}; CEN = {}
+    computeShown()
+    const fl = D.floors[state.floor]
+    for (const gr of D.groups) {
+      const c = fl.centers[gr.key]
+      CEN[gr.key] = { x: c.x, y: c.y, r: gr.r, maxD: 0, minD: Infinity }
+      for (const n of gr.members) {
+        if (!SHOWN.has(n)) continue
+        P3[n] = { x: fl.at[n][0], y: fl.at[n][1], z: M[n].d * LEVEL }
+        CEN[gr.key].maxD = Math.max(CEN[gr.key].maxD, M[n].d); CEN[gr.key].minD = Math.min(CEN[gr.key].minD, M[n].d)
+      }
+    }
+    SCENE_R = Math.max(...D.groups.map(gr => Math.hypot(CEN[gr.key].x, CEN[gr.key].y) + gr.r))
+  }
+  function project(p) {
+    const zMid = MAXD * LEVEL / 2
+    const x = p.x, y = p.y, z = p.z - zMid
+    const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw)
+    const x1 = x * cy - y * sy, y1 = x * sy + y * cy
+    const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch)
+    const ys = -z * cp - y1 * sp
+    const dep = y1 * cp - z * sp
+    const fit = 0.86 * Math.min(W / (2 * SCENE_R + 200), H / (2 * SCENE_R * sp + MAXD * LEVEL * cp + 230))
+    // Perspective scales with the scene, or a wider floor bulges off the near edge.
+    const f = 4 * SCENE_R, s = f / (f + dep) * fit * cam.zoom
+    return { X: W / 2 + x1 * s, Y: H / 2 + ys * s - 34, s, dep }
+  }
+  function sizeCanvas() {
+    const r = cv.getBoundingClientRect()
+    DPR = Math.min(2, devicePixelRatio || 1); W = r.width; H = r.height
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR)
+  }
+
+  function draw() {
+    if (!D || !W) return
+    const ctx = g2
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0)
+    ctx.clearRect(0, 0, W, H)
+    const lit = litModels()
+
+    // Level rings: one per depth, the floor solid.
+    for (let d = 0; d <= state.depth; d++) {
+      ctx.beginPath()
+      for (let i = 0; i <= 64; i++) {
+        const a = i / 64 * 2 * Math.PI
+        const p = project({ x: Math.cos(a) * SCENE_R, y: Math.sin(a) * SCENE_R, z: d * LEVEL })
+        i ? ctx.lineTo(p.X, p.Y) : ctx.moveTo(p.X, p.Y)
+      }
+      ctx.strokeStyle = T.line; ctx.lineWidth = d === 0 ? 1.4 : 1
+      ctx.setLineDash(d === 0 ? [] : [2, 5]); ctx.stroke(); ctx.setLineDash([])
+      let best = null
+      for (let i = 0; i < 64; i++) {
+        const a = i / 64 * 2 * Math.PI
+        const p = project({ x: Math.cos(a) * SCENE_R, y: Math.sin(a) * SCENE_R, z: d * LEVEL })
+        if (!best || p.X < best.X) best = p
+      }
+      ctx.fillStyle = T.mute; ctx.font = `500 10.5px ${T.mono}`; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'
+      ctx.fillText(d === 0 ? 'depth 0' : String(d), best.X - 8, best.Y)
+    }
+
+    // Group discs on the floor.
+    for (const [k, c] of Object.entries(CEN)) {
+      const on = !lit || members(k).some(n => lit.has(n))
+      ctx.beginPath()
+      for (let i = 0; i <= 40; i++) {
+        const a = i / 40 * 2 * Math.PI
+        const p = project({ x: c.x + Math.cos(a) * c.r, y: c.y + Math.sin(a) * c.r, z: 0 })
+        i ? ctx.lineTo(p.X, p.Y) : ctx.moveTo(p.X, p.Y)
+      }
+      if (c.minD === 0) { ctx.fillStyle = color(k, on ? 0.13 : 0.04); ctx.fill() }
+      // A group with nothing shown yet stays in the background.
+      const mute = c.minD === Infinity ? 0.25 : 1
+      ctx.strokeStyle = color(k, (on ? 0.6 : 0.15) * mute); ctx.lineWidth = 1.2; ctx.stroke()
+    }
+
+    proj = {}
+    for (const n in P3) proj[n] = project(P3[n])
+
+    // Only a group's lead stands on a stem; the rest hang off it by their foreign
+    // keys. A stem per model buried the keys, and one to the group's deepest level
+    // ended in air.
+    for (const n in P3) {
+      if (!M[n].d || members(groupOf(n))[0] !== n) continue
+      const on = !lit || lit.has(n), b = project({ ...P3[n], z: 0 })
+      ctx.beginPath(); ctx.moveTo(b.X, b.Y); ctx.lineTo(proj[n].X, proj[n].Y)
+      ctx.strokeStyle = color(groupOf(n), on ? 0.22 : 0.05); ctx.lineWidth = 1; ctx.stroke()
+    }
+
+    // Foreign keys. The ones crossing between groups are the point, so they are
+    // drawn last and loudest; a group's own wiring sits underneath, faint.
+    const edgeOrder = D.edges.filter(([a, b]) => proj[a] && proj[b]).sort(([a1, b1], [a2, b2]) => (groupOf(a2) === groupOf(b2)) - (groupOf(a1) === groupOf(b1)))
+    // A bundle counts every key within the depth, drawn or not: its lines are how
+    // the groups relate while the small models stay hidden.
+    const bundles = new Map()
+    if (state.links === 'clusters') for (const [a, b] of D.edges) {
+      if (groupOf(a) === groupOf(b) || M[a].d > state.depth || M[b].d > state.depth) continue
+      const pair = [groupOf(a), groupOf(b)].sort(), key = pair.join('\n')
+      const bu = bundles.get(key) || bundles.set(key, { pair, n: 0, touch: false }).get(key)
+      bu.n++; bu.touch ||= !!lit && (state.sel.type === 'model' ? (a === state.sel.id || b === state.sel.id) : (lit.has(a) || lit.has(b)))
+    }
+    for (const [a, b] of edgeOrder) {
+      const pa = proj[a], pb = proj[b]
+      const sameG = groupOf(a) === groupOf(b)
+      if (!sameG && state.links === 'clusters') continue
+      const hubby = state.fade && HUBS.has(b)
+      let alpha = sameG ? 0.12 : hubby ? 0.3 : 0.85
+      let w = sameG ? 0.8 : hubby ? 1.2 : 2.2
+      if (lit) {
+        const touch = state.sel.type === 'model' ? (a === state.sel.id || b === state.sel.id) : (lit.has(a) || lit.has(b))
+        alpha = touch ? 0.9 : 0.04; if (touch) w = 1.8
+      }
+      ctx.beginPath(); ctx.moveTo(pa.X, pa.Y); ctx.lineTo(pb.X, pb.Y)
+      ctx.strokeStyle = color(groupOf(a), alpha); ctx.lineWidth = w; ctx.stroke()
+    }
+
+    // One line per pair of groups, lead to lead, as thick as the keys it stands for.
+    const anchor = k => { const lead = members(k)[0]; return proj[lead] || project({ x: CEN[k].x, y: CEN[k].y, z: 0 }) }
+    for (const { pair: [g1, g2], n, touch } of bundles.values()) {
+      const p1 = anchor(g1), p2 = anchor(g2), a = lit ? (touch ? 0.9 : 0.05) : 0.75
+      const grad = ctx.createLinearGradient(p1.X, p1.Y, p2.X, p2.Y)
+      grad.addColorStop(0, color(g1, a)); grad.addColorStop(1, color(g2, a))
+      ctx.beginPath(); ctx.moveTo(p1.X, p1.Y); ctx.lineTo(p2.X, p2.Y)
+      ctx.strokeStyle = grad; ctx.lineWidth = Math.min(12, 1 + 2.2 * (n - 1)); ctx.lineCap = 'round'; ctx.stroke(); ctx.lineCap = 'butt'
+      if (lit && !touch) continue
+      const mx = (p1.X + p2.X) / 2, my = (p1.Y + p2.Y) / 2
+      ctx.font = `600 11px ${T.mono}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+      ctx.lineWidth = 4; ctx.strokeStyle = T.bg; ctx.strokeText(String(n), mx, my); ctx.fillStyle = T.ink; ctx.fillText(String(n), mx, my)
+    }
+
+    // Models, far to near.
+    const order = Object.keys(proj).sort((a, b) => proj[b].dep - proj[a].dep)
+    for (const n of order) {
+      const p = proj[n], on = !lit || lit.has(n)
+      const r = (3.2 + 1.9 * Math.sqrt(M[n].in)) * Math.max(0.6, p.s) * 1.6
+      ctx.beginPath(); ctx.arc(p.X, p.Y, r, 0, 2 * Math.PI)
+      ctx.fillStyle = color(groupOf(n), on ? 1 : 0.18); ctx.fill()
+      ctx.strokeStyle = T.bg; ctx.lineWidth = 1.3; ctx.stroke()
+      if (n === hover || (state.sel?.type === 'model' && state.sel.id === n)) {
+        ctx.beginPath(); ctx.arc(p.X, p.Y, r + 4, 0, 2 * Math.PI); ctx.strokeStyle = T.ink; ctx.lineWidth = 1.5; ctx.stroke()
+      }
+      p.r = r
+    }
+
+    // Names: the core always; with a selection, whatever it lights. A name that
+    // would land on one already drawn is dropped, most-referenced first, unless
+    // it is the one being pointed at or "All names" asked for every one.
+    // Group names are painted last, so their boxes go in first or they would
+    // cover a model name sitting under them.
+    ctx.font = `600 9px ${T.sans}`
+    const gnames = Object.entries(CEN).map(([k, c]) => {
+      let front = null
+      for (let i = 0; i < 24; i++) {
+        const a = i / 24 * 2 * Math.PI
+        const p = project({ x: c.x + Math.cos(a) * c.r, y: c.y + Math.sin(a) * c.r, z: 0 })
+        if (!front || p.Y > front.Y) front = p
+      }
+      const w = ctx.measureText(label(k)).width + 4
+      return { k, front, box: { x: front.X - w / 2, y: front.Y + 4, w, h: 12 } }
+    })
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
+    const pinned = n => n === hover || (state.sel?.type === 'model' && state.sel.id === n)
+    const want = order.filter(n => state.labels || pinned(n) || (lit ? lit.has(n) : M[n].in >= 3 || CORE.has(n)))
+      .sort((a, b) => pinned(b) - pinned(a) || M[b].in - M[a].in)
+    const placed = gnames.map(gn => gn.box)
+    for (const n of want) {
+      const p = proj[n]
+      ctx.font = `${M[n].in >= 3 ? 600 : 500} 13px ${T.mono}`
+      const w = ctx.measureText(n).width + 4
+      const hits = box => placed.some(q => box.x < q.x + q.w && q.x < box.x + box.w && box.y < q.y + q.h && q.y < box.y + box.h)
+      const right = { x: p.X + p.r + 4, y: p.Y - 10, w, h: 20 }
+      const spots = [right, { ...right, x: p.X - p.r - 4 - w }, { ...right, y: p.Y - p.r - 20 }, { ...right, y: p.Y + p.r }]
+      let box = spots.find(b => !hits(b))
+      if (!box) { if (!pinned(n) && !state.labels) continue; box = right }
+      placed.push(box)
+      ctx.lineWidth = 3.5; ctx.strokeStyle = T.bg; ctx.lineJoin = 'round'
+      ctx.strokeText(n, box.x + 1, box.y + 10); ctx.fillStyle = T.ink; ctx.fillText(n, box.x + 1, box.y + 10)
+    }
+
+    // Group names at the front of each disc.
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top'
+    for (const { k, front } of gnames) {
+      const on = !lit || members(k).some(n => lit.has(n))
+      ctx.font = `600 9px ${T.sans}`
+      ctx.lineWidth = 3.5; ctx.strokeStyle = T.bg
+      ctx.strokeText(label(k), front.X, front.Y + 5)
+      ctx.fillStyle = color(k, (on ? 1 : 0.3) * (CEN[k].minD === Infinity ? 0.25 : 1)); ctx.fillText(label(k), front.X, front.Y + 5)
+    }
+  }
+
+  // ── pointer ────────────────────────────────────────────────────────────────
+  function pick(x, y) {
+    let best = null, bd = Infinity
+    for (const n in proj) {
+      const p = proj[n], d = Math.hypot(p.X - x, p.Y - y)
+      if (d < (p.r ?? 5) + 5 && d < bd) { bd = d; best = n }
+    }
+    return best
+  }
+  let drag = null
+  cv.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, yaw: cam.yaw, pitch: cam.pitch, moved: false }; cv.setPointerCapture(e.pointerId) })
+  cv.addEventListener('pointermove', e => {
+    const r = cv.getBoundingClientRect()
+    if (drag) {
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y
+      if (Math.abs(dx) + Math.abs(dy) > 3) { drag.moved = true; spinning = false; cv.classList.add('dragging') }
+      cam.yaw = drag.yaw + dx * 0.008
+      cam.pitch = Math.max(0.08, Math.min(1.45, drag.pitch + dy * 0.006))
+      draw(); return
+    }
+    const h = pick(e.clientX - r.left, e.clientY - r.top)
+    if (h !== hover) { hover = h; cv.style.cursor = h ? 'pointer' : ''; if (!spinning) draw() }
+  })
+  cv.addEventListener('pointerup', e => {
+    cv.classList.remove('dragging')
+    if (drag && !drag.moved) {
+      const r = cv.getBoundingClientRect(), n = pick(e.clientX - r.left, e.clientY - r.top)
+      spinning = false
+      select(n ? { type: 'model', id: n } : null)
+    }
+    drag = null
+  })
+  cv.addEventListener('wheel', e => { e.preventDefault(); cam.zoom = Math.max(0.5, Math.min(6, cam.zoom * Math.exp(-e.deltaY * 0.0012))); draw() }, { passive: false })
+  function spin() {
+    if (!active) { looping = false; return }
+    if (spinning) { cam.yaw += 0.0016; draw() }
+    requestAnimationFrame(spin)
+  }
+
+  // ── side panel ─────────────────────────────────────────────────────────────
+  const chip = n => `<button class="ly-chip" type="button" data-model="${esc(n)}"><i style="background:${color(groupOf(n))}"></i>${esc(n)}</button>`
+  function renderPanel() {
+    const el = $('lyPanel'), s = state.sel
+    if (!D) { el.innerHTML = ''; return }
+    if (s?.type === 'model') {
+      const m = M[s.id]
+      el.innerHTML = `
+        <button class="ly-back" type="button" data-back>← All groups</button>
+        <div class="ly-sect"><p class="ly-eyebrow">Model</p><h2 class="ly-title mono">${esc(m.n)}</h2></div>
+        <dl class="ly-stats">
+          <dt>Group</dt><dd>${esc(label(m.g))}</dd>
+          <dt>Depth</dt><dd>${m.d} ${m.d === 0 ? '(points at nothing)' : 'link' + (m.d > 1 ? 's' : '') + ' above the floor'}</dd>
+          <dt>Fields</dt><dd>${m.f} plus ${m.out} foreign key${m.out === 1 ? '' : 's'}</dd>
+        </dl>
+        <div class="ly-sect"><p class="ly-eyebrow">Points at · ${OUT[m.n].length}</p>
+          ${OUT[m.n].length ? `<div class="ly-chips">${OUT[m.n].map(chip).join('')}</div>` : '<span class="ly-none">Nothing. This model stands on the floor.</span>'}</div>
+        <div class="ly-sect"><p class="ly-eyebrow">Pointed at by · ${IN[m.n].length}</p>
+          ${IN[m.n].length ? `<div class="ly-chips">${IN[m.n].map(chip).join('')}</div>` : '<span class="ly-none">No model refers to this one.</span>'}</div>`
+    } else if (s?.type === 'group' && GM.has(s.id)) {
+      const cross = D.edges.filter(([a, b]) => (groupOf(a) === s.id) !== (groupOf(b) === s.id)).length
+      const inside = D.edges.filter(([a, b]) => groupOf(a) === s.id && groupOf(b) === s.id).length
+      el.innerHTML = `
+        <button class="ly-back" type="button" data-back>← All groups</button>
+        <div class="ly-sect"><p class="ly-eyebrow">Group</p>
+          <h2 class="ly-title" style="color:${color(s.id)}">${esc(label(s.id))}</h2></div>
+        <dl class="ly-stats">
+          <dt>Models</dt><dd>${members(s.id).length}</dd>
+          <dt>Keys inside</dt><dd>${inside}</dd>
+          <dt>Keys crossing out</dt><dd>${cross}</dd>
+        </dl>
+        <div class="ly-sect"><p class="ly-eyebrow">Members, most referenced first</p>
+          <div class="ly-chips">${byIn(s.id).map(chip).join('')}</div></div>`
+    } else {
+      const unl = GM.get('unlinked')?.members.length ?? 0
+      const inside = D.edges.filter(([a, b]) => groupOf(a) === groupOf(b)).length
+      el.innerHTML = `
+        <div class="ly-sect"><p class="ly-eyebrow">${D.groups.length} groups</p>
+          <p>Found from foreign keys alone, with links into much-referenced models weighted down so they don't swallow everything.${unl ? ` ${unl} models have no foreign key either way and can't be placed.` : ''}</p>
+          <p>Arranged around ${D.hubs.map(esc).join(', ')}.</p>
+          <p><b>${inside} of ${D.edges.length}</b> foreign keys stay inside a group; ${D.edges.length - inside} cross between groups.</p></div>
+        <ul class="ly-glist">${D.groups.map(gr => `<li><button type="button" data-group="${esc(gr.key)}">
+          <span class="ly-sw" style="background:${color(gr.key)}"></span>
+          <span class="ly-gname">${esc(gr.label)}</span><span class="ly-gcount">${gr.members.length}</span></button></li>`).join('')}</ul>`
+    }
+  }
+  $('lyPanel').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return
+    if (b.dataset.back != null) return select(null)
+    if (b.dataset.model) return select({ type: 'model', id: b.dataset.model })
+    if (b.dataset.group) { spinning = false; select({ type: 'group', id: b.dataset.group }) }
+  })
+
+  // ── controls ───────────────────────────────────────────────────────────────
+  const setPressed = (id, on) => { const b = $(id); b.setAttribute('aria-pressed', String(on)); b.classList.toggle('primary', on); b.classList.toggle('muted', !on) }
+  function showRanges() {
+    $('lyDepthOut').textContent = state.depth === MAXD ? 'all' : '0–' + state.depth
+    $('lyReachOut').textContent = (state.reach === REACH_MAX ? 'all' : '+' + state.reach) + ` · ${SHOWN.size} of ${D.models.length}`
+  }
+  function setFloor(f) { state.floor = f; for (const k of ['hub', 'ring', 'map']) setPressed('lyF-' + k, f === k); layout(); draw() }
+  function setLinks(l) { state.links = l; setPressed('lyL-models', l === 'models'); setPressed('lyL-clusters', l === 'clusters'); draw() }
+  function setRange(key, v) { state[key] = v; layout(); showRanges(); draw() }
+  for (const f of ['hub', 'ring', 'map']) $('lyF-' + f).onclick = () => setFloor(f)
+  $('lyL-clusters').onclick = () => setLinks('clusters')
+  $('lyL-models').onclick = () => setLinks('models')
+  $('lyDepth').oninput = e => setRange('depth', +e.target.value)
+  $('lyReach').oninput = e => setRange('reach', +e.target.value)
+  $('lyFade').onchange = e => { state.fade = e.target.checked; draw() }
+  $('lyLabels').onchange = e => { state.labels = e.target.checked; draw() }
+  $('lyReset').onclick = () => { cam.yaw = -0.55; cam.pitch = 0.36; cam.zoom = 1.1; spinning = !REDUCED; draw() }
+  new ResizeObserver(() => { if (active) { sizeCanvas(); draw() } }).observe($('lyStage'))
+
+  // ── data ───────────────────────────────────────────────────────────────────
+  function build(data) {
+    D = data
+    M = Object.fromEntries(D.models.map(m => [m.n, m]))
+    GM = new Map(D.groups.map(gr => [gr.key, gr]))
+    HUBS = new Set(D.hubs)
+    CORE = new Set(D.groups.flatMap(gr => gr.members.slice(0, gr.core)))
+    OUT = {}; IN = {}
+    for (const m of D.models) { OUT[m.n] = []; IN[m.n] = [] }
+    for (const [a, b] of D.edges) { OUT[a].push(b); IN[b].push(a) }
+    MAXD = Math.max(0, ...D.models.map(m => m.d))
+    state.sel = null; state.depth = MAXD; state.reach = 0
+    $('lyDepth').max = MAXD; $('lyDepth').value = MAXD; $('lyReach').value = 0
+    assignHues(); layout()
+    $('lyReach').max = REACH_MAX; showRanges()
+    $('lyFacts').innerHTML = `<b>${D.models.length}</b> models · <b>${D.edges.length}</b> foreign keys · <b>${MAXD}</b> levels deep`
+    renderPanel(); draw()
+  }
+  async function load() {
+    const data = await api('/schema-layers')
+    if (data.error) { $('lyPanel').innerHTML = `<p class="ly-none">${esc(data.error)}</p>`; return }
+    build(data)
+  }
+
+  return {
+    // Called when the tab opens: the canvas measures 0 while hidden, and a
+    // schema edited since the last look is fetched again.
+    show() {
+      active = true
+      readTheme(); sizeCanvas()
+      if (_rev === null || loadedAt !== _rev) { loadedAt = _rev; load().catch(() => { loadedAt = null }) } else draw()
+      if (!looping) { looping = true; requestAnimationFrame(spin) }
+    },
+    hide() { active = false },
+  }
+})()
+
+// The selected tab is aria-selected, never a class: tabs.css styles the attribute.
+function erShowTab(tab) {
+  for (const [name, tabId, viewId] of [
+    ['diagram', 'erTabDiagram', 'erView'],
+    ['layers',  'erTabLayers',  'lyView'],
+  ]) {
+    const on = name === tab
+    const t  = document.getElementById(tabId)
+    t.setAttribute('aria-selected', String(on))
+    t.tabIndex = on ? 0 : -1
+    document.getElementById(viewId).hidden = !on
+  }
+  if (tab === 'layers') Layers.show(); else Layers.hide()
 }
 </script>
 </body>
