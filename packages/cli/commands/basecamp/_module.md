@@ -105,17 +105,34 @@ const runFli = async (argv) => {
 // The deploy runs `--no-outpost`: a fresh Basecamp has no workspace until
 // `/setup`, so its enrollment step finds nothing to enroll into. `joinFleet`
 // enrolls once the admin is made.
+//
+// The API's two public addresses are pushed between the two, because the box's
+// env file starts without them and the API defaults both to localhost: every
+// emailed link and every provisioned machine's enrollment then names the box
+// itself. `env:push` adds what the file lacks and leaves, and names, a value
+// the operator already set, so a re-run never overwrites a copy that is theirs.
 const ringZero = async (dest, domain, say = () => {}) => {
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { resolve } = await import('node:path')
+  const tmp  = mkdtempSync(resolve(tmpdir(), 'fli-basecamp-urls-'))
+  const urls = resolve(tmp, 'env')
+  writeFileSync(urls, `FRONTIER_APP_URL=https://${domain}\nFRONTIER_API_URL=https://${domain}\n`)
   const steps = [
     { argv: ['deploy:setup', '--auto-install', '--no-next-steps', '--server', dest, '--domain', domain], what: 'docker and caddy on the box — a few minutes on a fresh one' },
+    { argv: ['env:push', '--file', urls, '--server', dest], what: 'the addresses people and machines reach Basecamp at' },
     { argv: ['deploy', '--no-outpost', '--server', dest, '--domain', domain], what: 'build the image, ship it, start Basecamp' },
   ]
-  for (const [i, step] of steps.entries()) {
-    say(step, i + 1, steps.length)
-    const status = await runFli(step.argv)
-    if (status !== 0) return { argv: step.argv, status }
+  try {
+    for (const [i, step] of steps.entries()) {
+      say(step, i + 1, steps.length)
+      const status = await runFli(step.argv)
+      if (status !== 0) return { argv: step.argv, status }
+    }
+    return null
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
   }
-  return null
 }
 
 // Basecamp's box as a machine of its own fleet, so apps can run beside it

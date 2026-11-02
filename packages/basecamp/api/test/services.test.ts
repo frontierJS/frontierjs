@@ -4593,28 +4593,30 @@ describe('pages', () => {
   })
 })
 
-describe('registers', () => {
+describe('atlas', () => {
   test('a developer is refused a ruling by the declared gate', async () => {
-    await expect(env.as(developer).service('registers').call('decide', 'FJS-D1', { pick: 'A' }))
+    await expect(env.as(developer).service('atlas').call('decide', 'FJS-D1', { pick: 'A' }))
       .rejects.toThrow(/Requires admin role in this workspace to decide/)
   })
 
   test('an owner is told it is not offered here, before anything is read or sent', async () => {
-    await expect(env.as(owner).service('registers').call('overview', undefined))
+    await expect(env.as(owner).service('atlas').call('overview', undefined))
       .rejects.toThrow(/LOCAL_MACHINE=1/)
-    await expect(env.as(owner).service('registers').call('discuss', undefined, { text: 'FJS-1' }))
+    await expect(env.as(owner).service('atlas').call('rings', undefined))
+      .rejects.toThrow(/LOCAL_MACHINE=1/)
+    await expect(env.as(owner).service('atlas').call('discuss', undefined, { text: 'FJS-1' }))
       .rejects.toThrow(/LOCAL_MACHINE=1/)
   })
 
   // A discuss is a workbench send. Asserted before the LOCAL_MACHINE refusal is
   // reached, as the workbench's is.
   test('an agent is refused it at any standing, and no key reaches it', async () => {
-    for (const method of ['overview', 'record', 'discuss', 'decide'])
-      await expect(env.as(owner).service('registers').call(method, 'FJS-1', { text: 'FJS-1' }, { transport: 'mcp' }))
+    for (const method of ['overview', 'rings', 'record', 'discuss', 'decide'])
+      await expect(env.as(owner).service('atlas').call(method, 'FJS-1', { text: 'FJS-1' }, { transport: 'mcp' }))
         .rejects.toThrow(/not offered to an agent/)
     const key = { authMethod: 'apiKey', scopes: [] }
-    expect(narrowForAgent({ service: 'registers', method: 'discuss' }, { authMethod: 'session' })).toBe(false)
-    expect(keyAllows(key, 'registers')).toBe(false)
+    expect(narrowForAgent({ service: 'atlas', method: 'discuss' }, { authMethod: 'session' })).toBe(false)
+    expect(keyAllows(key, 'atlas')).toBe(false)
   })
 })
 

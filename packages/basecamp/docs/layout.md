@@ -320,16 +320,16 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           pages commands declare, and fli's tools — behind the workbench's
           refusal and off-limits to agents and keys. /pages/ opens a page as a
           blob, and a link between two pages is posted back to that tab
-          services/registers/ is the workspace's ISSUES.md, DECISIONS.md and
-          IDEAS/ through fli's `collectRegisterAtlas` (domain/register/registers.ts caches
+          services/atlas/ is the workspace's ISSUES.md, DECISIONS.md and
+          IDEAS/ through fli's `collectRegisterAtlas` (domain/atlas/atlas.ts caches
           it on the files' mtimes), behind the same refusal. It writes one
           thing itself — a ruling, through fli's `decide` under the register
           guard; everything else is `discuss`, a send to `app.workbench`
           (owned in app.ts, ONE instance, because a queued message lives in
           the instance that started the run) with the prompt
-          domain/register/registers.ts composes per intent — `fix` and `frame` are the
+          domain/atlas/atlas.ts composes per intent — `fix` and `frame` are the
           repo's `/fix-next` and `/frame-next`, never a restatement of them.
-          /registers/decide/ is `fli decide`'s walk on a phone — `queue` is
+          /atlas/decide/ is `fli decide`'s walk on a phone — `queue` is
           fli's `openDecisions` (the walk's order, with each question's prose),
           a swipe is the same `decide`, held five seconds in the BROWSER for
           Undo; `explain` is fli's read-only `runAsk`, not the workbench, kept

@@ -4,7 +4,7 @@
 //
 // Groups come from foreign keys alone (Louvain over the model graph), with each
 // key weighted down by how many models point at its target so the models
-// everything references do not swallow the rest into one cluster. Three floors
+// everything references do not swallow the rest into one cluster. Both floors
 // are laid out here, in the full membership of every group, so the page's
 // sliders only hide and show models and never move one.
 
@@ -146,70 +146,17 @@ function hubCenters(keys, rad, hubCount) {
   return out
 }
 
-// Groups that share more foreign keys pull harder toward the middle, so the
-// ones everything points at land in the center. A fixed number of ticks from a
-// fixed start: the same schema is the same map.
-function mapCenters(keys, rad, groupOf, edges) {
-  const ns = keys.map((k, i) => {
-    const a = i * Math.PI * (3 - Math.sqrt(5)), r = 10 * Math.sqrt(0.5 + i)
-    return { id: k, x: r * Math.cos(a), y: r * Math.sin(a), vx: 0, vy: 0 }
-  })
-  const byId = new Map(ns.map(n => [n.id, n]))
-  const lm = new Map(), deg = {}
+// The depth the page opens at: the shallowest at which every pair of clusters a
+// key ever joins is already joined. A deeper level only thickens links already
+// drawn and adds leaf models, so opening at the full depth buries the clusters.
+function settledDepth(edges, depth, group) {
+  const first = new Map()
   for (const [a, b] of edges) {
-    const s = groupOf(a), t = groupOf(b)
-    if (s === t) continue
-    const key = s < t ? s + '|' + t : t + '|' + s
-    let l = lm.get(key)
-    if (!l) lm.set(key, l = { source: byId.get(s), target: byId.get(t), w: 0 })
-    l.w++; deg[s] = (deg[s] ?? 0) + 1; deg[t] = (deg[t] ?? 0) + 1
+    if (group[a] === group[b]) continue
+    const pair = [group[a], group[b]].sort().join('|'), d = Math.max(depth[a], depth[b])
+    first.set(pair, Math.min(first.get(pair) ?? Infinity, d))
   }
-  const links = [...lm.values()], count = new Map(ns.map(n => [n, 0]))
-  for (const l of links) { count.set(l.source, count.get(l.source) + 1); count.set(l.target, count.get(l.target) + 1) }
-  const pull = n => 0.02 + 0.035 * (deg[n.id] ?? 0)
-  const TICKS = 400, alphaDecay = 1 - Math.pow(0.001, 1 / 300)
-  let alpha = 1
-  for (let t = 0; t < TICKS; t++) {
-    alpha -= alpha * alphaDecay
-    for (const l of links) {
-      const { source: s, target: g } = l
-      let x = g.x + g.vx - s.x - s.vx, y = g.y + g.vy - s.y - s.vy
-      const len = Math.hypot(x, y) || 1e-6
-      const dist = rad(s.id) + rad(g.id) + 460, str = Math.min(1, 0.15 * l.w)
-      const f = (len - dist) / len * alpha * str
-      x *= f; y *= f
-      const bias = count.get(s) / (count.get(s) + count.get(g))
-      g.vx -= x * bias; g.vy -= y * bias
-      s.vx += x * (1 - bias); s.vy += y * (1 - bias)
-    }
-    for (const a of ns) for (const b of ns) {
-      if (a === b) continue
-      const x = b.x - a.x, y = b.y - a.y
-      const l = Math.max(1, x * x + y * y)
-      a.vx += x * -4200 * alpha / l; a.vy += y * -4200 * alpha / l
-    }
-    for (let it = 0; it < 4; it++) for (let i = 0; i < ns.length; i++) for (let j = i + 1; j < ns.length; j++) {
-      const a = ns[i], b = ns[j], ra = rad(a.id) + 300, rb = rad(b.id) + 300
-      let x = a.x + a.vx - b.x - b.vx, y = a.y + a.vy - b.y - b.vy
-      const r = ra + rb
-      let l = x * x + y * y
-      if (l >= r * r) continue
-      if (l === 0) { x = 1e-6; y = 1e-6; l = x * x + y * y }
-      l = Math.sqrt(l)
-      const k = (r - l) / l
-      x *= k; y *= k
-      const share = rb * rb / (ra * ra + rb * rb)
-      a.vx += x * share; a.vy += y * share
-      b.vx -= x * (1 - share); b.vy -= y * (1 - share)
-    }
-    for (const n of ns) { n.vx += -n.x * pull(n) * alpha; n.vy += -n.y * pull(n) * alpha }
-    for (const n of ns) { n.vx *= 0.6; n.vy *= 0.6; n.x += n.vx; n.y += n.vy }
-  }
-  // Centered on the groups' extent, not on the busiest group: the ring is sized
-  // to the farthest disc, so an off-center origin leaves half the floor empty.
-  const ext = (f, sign) => Math[sign > 0 ? 'max' : 'min'](...ns.map(d => d[f] + sign * rad(d.id)))
-  const cx = (ext('x', 1) + ext('x', -1)) / 2, cy = (ext('y', 1) + ext('y', -1)) / 2
-  return Object.fromEntries(ns.map(d => [d.id, { x: d.x - cx, y: d.y - cy }]))
+  return first.size ? Math.max(...first.values()) : Math.max(0, ...Object.values(depth))
 }
 
 const round = n => Math.round(n * 10) / 10
@@ -221,7 +168,8 @@ const round = n => Math.round(n * 10) / 10
  *   edges: Array<[string, string]>,
  *   groups: Array<{ key: string, label: string, members: string[], core: number, r: number }>,
  *   hubs: string[],
- *   floors: Record<'ring'|'hub'|'map', { centers: Record<string, { x: number, y: number }>, at: Record<string, [number, number]> }>,
+ *   depth: number,
+ *   floors: Record<'ring'|'hub', { centers: Record<string, { x: number, y: number }>, at: Record<string, [number, number]> }>,
  * }}
  */
 export function schemaLayers(schema) {
@@ -269,7 +217,6 @@ export function schemaLayers(schema) {
   const centers = {
     ring: ringCenters(keys, rad),
     hub: hubCenters(keys, rad, hubCount),
-    map: mapCenters(keys, rad, n => group[n], g.edges),
   }
   const floors = {}
   for (const [name, at] of Object.entries(centers)) {
@@ -298,6 +245,7 @@ export function schemaLayers(schema) {
       r: round(rad(k)),
     })),
     hubs,
+    depth: settledDepth(g.edges, depth, group),
     floors,
   }
 }

@@ -1,6 +1,6 @@
-// src/domain/register/registers.ts
+// src/domain/atlas/atlas.ts
 // The workspace's registers — `ISSUES.md`, `DECISIONS.md`, `IDEAS/` — as the
-// /registers/ screen reads and writes them, and what is handed to Claude Code
+// /atlas/ screen reads and writes them, and what is handed to Claude Code
 // when a person brings one of them to the workbench.
 //
 // Nothing here parses a register. The records are fli's `collectRegisterAtlas`
@@ -64,12 +64,32 @@ type Fli = {
   rulingSections: (root: string) => string[]
   runAsk: (o: { root: string, prompt: string, session?: string | null, bin?: string, onEvent: (e: AskEvent) => void }) =>
     { error: string } | { child: unknown, done: Promise<number | null> }
+  collect: (o: { root: string }) => unknown
+  dataOf:  (model: unknown, o: { root: string }) => RingsData
 }
+
+type Row = Array<string | number | boolean | null>
+type RingsData = {
+  base: string | null
+  docs: Array<{ file: string, claim: string, outline: Array<[string, string]> }>
+  invariants: Row[], checks: Row[], snapshots: Row[], drives: Row[], proves: Row[], ciPhases: Row[]
+  decisions: Array<{ title: string, rows: Row[] }>
+  decCount: number
+  severities: Array<{ key: string, name: string, tone: string }>
+  issues: Row[]
+  closedCount: number
+  byPkg: unknown[]
+  ideas: { count: number, byStatus: Array<{ status: string, count: number }>, waves: unknown[] }
+}
+/** The project half of `fli ws:atlas --as=rings`, each document with the link that opens it. */
+export type Rings = Omit<RingsData, 'docs'> & { docs: Array<RingsData['docs'][number] & { edit: string }> }
 
 // The cli is a devDependency and the image installs none, so it is reached
 // only on a machine where the screen is offered at all.
 let fli: Promise<Fli> | null = null
 export const loadFli = () => fli ??= Promise.all([
+  import('@frontierjs/cli/core/repo-map.js'),
+  import('@frontierjs/cli/core/repo-rings.js'),
   import('@frontierjs/cli/core/register-atlas.js'),
   import('@frontierjs/cli/core/registers.js'),
   import('@frontierjs/cli/core/decide.js'),
@@ -115,11 +135,41 @@ export async function readAtlas(root: string): Promise<Atlas> {
   return atlas
 }
 
-export function forgetAtlas() { cached = null }
+// The rings read the whole tree (~1s), and ride the same signature: a document
+// edited outside the registers shows when the TTL lapses.
+let ringsCached: { sig: string, at: number, rings: Rings } | null = null
+
+export async function readRings(root: string): Promise<Rings> {
+  const f   = await loadFli()
+  const sig = signature(root, join(root, f.registerLayout(root).dir))
+  if (ringsCached && ringsCached.sig === sig && Date.now() - ringsCached.at < RANK_TTL_MS) return ringsCached.rings
+  const d = f.dataOf(f.collect({ root }), { root })
+  const rings: Rings = {
+    base:        d.base,
+    docs:        d.docs.map(doc => ({ ...doc, edit: `vscode://file${join(root, doc.file)}` })),
+    invariants:  d.invariants,
+    checks:      d.checks,
+    snapshots:   d.snapshots,
+    drives:      d.drives,
+    proves:      d.proves,
+    ciPhases:    d.ciPhases,
+    decisions:   d.decisions.filter(s => s.rows.length),
+    decCount:    d.decCount,
+    severities:  d.severities,
+    issues:      d.issues,
+    closedCount: d.closedCount,
+    byPkg:       d.byPkg,
+    ideas:       { count: d.ideas.count, byStatus: d.ideas.byStatus, waves: d.ideas.waves },
+  }
+  ringsCached = { sig, at: Date.now(), rings }
+  return rings
+}
+
+export function forgetAtlas() { cached = null; ringsCached = null }
 
 // ─── the queue ────────────────────────────────────────────────────────────────
 //
-// /registers/decide/ is `fli decide`'s walk on a phone: the questions with
+// /atlas/decide/ is `fli decide`'s walk on a phone: the questions with
 // lettered options, in the walk's order, one card each. Read off fli's
 // `openDecisions` rather than the atlas, because a card needs the prose the
 // question is argued in and the atlas's ranking (3s, git history) is nothing
@@ -319,7 +369,7 @@ export function composePrompt(atlas: Atlas, input: { text?: unknown, intent?: un
     text,
     '',
     '---',
-    `Sent from Basecamp's Registers screen. The text above is about this workspace's registers — ISSUES.md, DECISIONS.md and IDEAS/ — and may be a row that exists or one that does not yet.`,
+    `Sent from Basecamp's Atlas screen. The text above is about this workspace's registers — ISSUES.md, DECISIONS.md and IDEAS/ — and may be a row that exists or one that does not yet.`,
     ...(named.length ? ['', 'Records it names:', ...named] : []),
     '',
     'First place it: an existing row (read it at its line), a ruling that already settles it, or new. Search with `fli register:find <terms>` before calling it new — a duplicate is the likeliest outcome.',

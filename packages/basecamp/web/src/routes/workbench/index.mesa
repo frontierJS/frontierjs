@@ -204,7 +204,7 @@ title: Workbench
     } catch {}
   }
 
-  // `#workbench-<id>` names a card — the Registers screen links to the chat it
+  // `#workbench-<id>` names a card — the Atlas screen links to the chat it
   // sent to — and it may be docked, so the link puts it on stage.
   function reveal() {
     const id = location.hash.startsWith('#workbench-') && decodeURIComponent(location.hash.slice('#workbench-'.length))

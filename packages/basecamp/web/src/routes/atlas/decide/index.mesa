@@ -8,7 +8,7 @@ title: Decide
   // "Explain" asks Claude, read-only, on the card, and keeps working while you
   // swipe on; it is there when the question comes round again.
   //
-  // A ruling is fli's `decide` (api services/registers), the same refusals and
+  // A ruling is fli's `decide` (api services/atlas), the same refusals and
   // the same register:check put-back as the terminal. It is held for
   // UNDO_MS before it is sent, because a swipe is easier to make by accident
   // than a keypress and a sent ruling is two edited files.
@@ -19,7 +19,7 @@ title: Decide
   // `?ids=a,b,c` walks only those questions, in that order — a triage tier
   // that lives outside the registers. An id already ruled drops out.
   import { page }      from '@frontierjs/sierra/router'
-  import { registers } from '../../../resources/Register.mesa'
+  import { atlas } from '../../../resources/Atlas.mesa'
 
   import Badge    from '@frontierjs/ui/components/display/Badge.mesa'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
@@ -27,8 +27,8 @@ title: Decide
   import Markdown from '@frontierjs/ui/components/display/Markdown.mesa'
   import Pill     from '@frontierjs/ui/components/display/Pill.mesa'
 
-  const SECTION_KEY  = 'basecamp.registers.section'   // shared with /registers/
-  const SKIPPED_KEY  = 'basecamp.registers.skipped'
+  const SECTION_KEY  = 'basecamp.atlas.section'   // shared with /atlas/
+  const SKIPPED_KEY  = 'basecamp.atlas.skipped'
   const UNDO_MS      = 5000
   const EXPLAIN_POLL = 2000
   const SWIPE_AT     = 0.28   // of the card's width
@@ -47,7 +47,7 @@ title: Decide
 
   async function load() {
     try {
-      queue = await registers.service.invoke('queue', null)
+      queue = await atlas.service.invoke('queue', null)
       error = null
     } catch (err) {
       if (err.code === 404) offered = false
@@ -220,7 +220,7 @@ title: Decide
     ruled = [...ruled, { id: p.q.id, question: p.q.question, pick: p.pick, ruling: null, closed: null, state: 'writing' }]
     chain = chain.then(async () => {
       try {
-        const out = await registers.service.invoke('decide', p.q.id, { pick: p.pick, why: p.why, section: p.section })
+        const out = await atlas.service.invoke('decide', p.q.id, { pick: p.pick, why: p.why, section: p.section })
         ruled = ruled.map(r => r.id === p.q.id ? { ...r, ruling: out.ruling, closed: out.closed, state: 'done' } : r)
         skipped = skipped.filter(id => id !== p.q.id)
         remember(SKIPPED_KEY, skipped)
@@ -260,7 +260,7 @@ title: Decide
   async function tick() {
     const q = current()
     if (q && (explained[q.id] === undefined || explained[q.id]?.state === 'working')) {
-      try { explained = { ...explained, [q.id]: await registers.service.invoke('explanation', q.id) } } catch {}
+      try { explained = { ...explained, [q.id]: await atlas.service.invoke('explanation', q.id) } } catch {}
     }
     if (!destroyed && offered) explainTimer = setTimeout(tick, EXPLAIN_POLL)
   }
@@ -270,7 +270,7 @@ title: Decide
     explaining = true
     error = null
     try {
-      explained = { ...explained, [q.id]: await registers.service.invoke('explain', q.id, ask ? { ask } : {}) }
+      explained = { ...explained, [q.id]: await atlas.service.invoke('explain', q.id, ask ? { ask } : {}) }
       follow = ''
     } catch (err) {
       error = err.message
@@ -306,10 +306,10 @@ title: Decide
 
 <div class="decide stack gap-md" id="decide">
   <header class="decide-head">
-    <a href="/registers/" class="text-sm">← Registers</a>
+    <a href="/atlas/" class="text-sm">← Atlas</a>
     {#if queue}
       <span class="text-sm text-muted" id="decide-count">
-        {#if only().length}<a href="/registers/decide/" id="decide-all">your list</a> · {/if}{remaining().length} left{#if ruled.length} · {ruled.length} ruled{/if}{#if skipped.length} · {skipped.filter(id => remaining().some(q => q.id === id)).length} skipped{/if}
+        {#if only().length}<a href="/atlas/decide/" id="decide-all">your list</a> · {/if}{remaining().length} left{#if ruled.length} · {ruled.length} ruled{/if}{#if skipped.length} · {skipped.filter(id => remaining().some(q => q.id === id)).length} skipped{/if}
       </span>
     {/if}
   </header>
@@ -422,9 +422,9 @@ title: Decide
       <section class="stack gap-sm" id="decide-done">
         <h2 class="h4">{ruled.length ? 'That is every question.' : 'Nothing is waiting on a ruling.'}</h2>
         <p class="text-sm text-muted">
-          {queue.open ? `${queue.open} more ${queue.open === 1 ? 'question has' : 'questions have'} no lettered options yet — frame them from Registers first.` : 'Every open question has been ruled.'}
+          {queue.open ? `${queue.open} more ${queue.open === 1 ? 'question has' : 'questions have'} no lettered options yet — frame them from Atlas first.` : 'Every open question has been ruled.'}
         </p>
-        <Button treatment="outlined" href="/registers/">Back to Registers</Button>
+        <Button treatment="outlined" href="/atlas/">Back to Atlas</Button>
       </section>
     {/each}
 

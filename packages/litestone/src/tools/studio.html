@@ -1515,7 +1515,6 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
           <div class="cluster" role="group" aria-label="Floor layout">
             <button class="pill primary" id="lyF-hub" type="button" aria-pressed="true">Hub</button>
             <button class="pill muted" id="lyF-ring" type="button" aria-pressed="false">Ring</button>
-            <button class="pill muted" id="lyF-map" type="button" aria-pressed="false">Map</button>
           </div></div>
         <div class="ly-seg"><span>Links</span>
           <div class="cluster" role="group" aria-label="Links">
@@ -8401,16 +8400,13 @@ const Layers = (() => {
         <div class="ly-sect"><p class="ly-eyebrow">Members, most referenced first</p>
           <div class="ly-chips">${byIn(s.id).map(chip).join('')}</div></div>`
     } else {
-      const unl = GM.get('unlinked')?.members.length ?? 0
       const inside = D.edges.filter(([a, b]) => groupOf(a) === groupOf(b)).length
       el.innerHTML = `
-        <div class="ly-sect"><p class="ly-eyebrow">${D.groups.length} groups</p>
-          <p>Found from foreign keys alone, with links into much-referenced models weighted down so they don't swallow everything.${unl ? ` ${unl} models have no foreign key either way and can't be placed.` : ''}</p>
-          <p>Arranged around ${D.hubs.map(esc).join(', ')}.</p>
-          <p><b>${inside} of ${D.edges.length}</b> foreign keys stay inside a group; ${D.edges.length - inside} cross between groups.</p></div>
+        <div class="ly-sect"><p class="ly-eyebrow">${D.groups.length} groups</p></div>
         <ul class="ly-glist">${D.groups.map(gr => `<li><button type="button" data-group="${esc(gr.key)}">
           <span class="ly-sw" style="background:${color(gr.key)}"></span>
-          <span class="ly-gname">${esc(gr.label)}</span><span class="ly-gcount">${gr.members.length}</span></button></li>`).join('')}</ul>`
+          <span class="ly-gname">${esc(gr.label)}</span><span class="ly-gcount">${gr.members.length}</span></button></li>`).join('')}</ul>
+        <div class="ly-sect"><p><b>${inside} of ${D.edges.length}</b> foreign keys stay inside a group; ${D.edges.length - inside} cross between groups.</p></div>`
     }
   }
   $('lyPanel').addEventListener('click', e => {
@@ -8426,10 +8422,10 @@ const Layers = (() => {
     $('lyDepthOut').textContent = state.depth === MAXD ? 'all' : '0–' + state.depth
     $('lyReachOut').textContent = (state.reach === REACH_MAX ? 'all' : '+' + state.reach) + ` · ${SHOWN.size} of ${D.models.length}`
   }
-  function setFloor(f) { state.floor = f; for (const k of ['hub', 'ring', 'map']) setPressed('lyF-' + k, f === k); layout(); draw() }
+  function setFloor(f) { state.floor = f; for (const k of ['hub', 'ring']) setPressed('lyF-' + k, f === k); layout(); draw() }
   function setLinks(l) { state.links = l; setPressed('lyL-models', l === 'models'); setPressed('lyL-clusters', l === 'clusters'); draw() }
   function setRange(key, v) { state[key] = v; layout(); showRanges(); draw() }
-  for (const f of ['hub', 'ring', 'map']) $('lyF-' + f).onclick = () => setFloor(f)
+  for (const f of ['hub', 'ring']) $('lyF-' + f).onclick = () => setFloor(f)
   $('lyL-clusters').onclick = () => setLinks('clusters')
   $('lyL-models').onclick = () => setLinks('models')
   $('lyDepth').oninput = e => setRange('depth', +e.target.value)
@@ -8450,8 +8446,8 @@ const Layers = (() => {
     for (const m of D.models) { OUT[m.n] = []; IN[m.n] = [] }
     for (const [a, b] of D.edges) { OUT[a].push(b); IN[b].push(a) }
     MAXD = Math.max(0, ...D.models.map(m => m.d))
-    state.sel = null; state.depth = MAXD; state.reach = 0
-    $('lyDepth').max = MAXD; $('lyDepth').value = MAXD; $('lyReach').value = 0
+    state.sel = null; state.depth = Math.min(D.depth, MAXD); state.reach = 0
+    $('lyDepth').max = MAXD; $('lyDepth').value = state.depth; $('lyReach').value = 0
     assignHues(); layout()
     $('lyReach').max = REACH_MAX; showRanges()
     $('lyFacts').innerHTML = `<b>${D.models.length}</b> models · <b>${D.edges.length}</b> foreign keys · <b>${MAXD}</b> levels deep`

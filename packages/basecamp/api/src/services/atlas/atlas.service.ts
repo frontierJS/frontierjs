@@ -1,21 +1,22 @@
-// src/services/registers/registers.service.ts
+// src/services/atlas/atlas.service.ts
 // The workspace's registers — what is wrong, what is settled, what is waiting
 // on the owner — read on one screen, ruled on there, and handed to Claude Code
 // in the workbench to be discussed, filed, framed or fixed.
 //
 // No model and nothing in the database: the records are fli's own readers over
-// the workspace this API runs in (`domain/register/registers.ts`). Offered where the
+// the workspace this API runs in (`domain/atlas/atlas.ts`). Offered where the
 // workbench is (LOCAL_MACHINE=1, never under NODE_ENV=production) and at
 // ADMINISTRATOR like it — `decide` writes two tracked files and `discuss` runs
 // Claude Code with every permission in that checkout.
 //
-//   GET  /registers          overview  every open row, open question and ruling, without bodies
-//   GET  /registers/:id      record    every record holding that id, whole
-//   POST /registers          discuss   { text, intent, branch? } — a workbench send to this checkout or a new branch of it
-//   POST /registers/:id      decide    { pick, why?, section } — fli's own `decide`
-//   GET  /registers          queue     every question with lettered options, in `fli decide`'s order, with its prose
-//   POST /registers/:id      explain   { ask? } — Claude, read-only, on one of them; a follow-up resumes its session
-//   GET  /registers/:id      explanation  what that run has said so far
+//   GET  /atlas          overview  every open row, open question and ruling, without bodies
+//   GET  /atlas          rings     the project half of `fli ws:atlas --as=rings`: documents, invariants and proof, ring counts
+//   GET  /atlas/:id      record    every record holding that id, whole
+//   POST /atlas          discuss   { text, intent, branch? } — a workbench send to this checkout or a new branch of it
+//   POST /atlas/:id      decide    { pick, why?, section } — fli's own `decide`
+//   GET  /atlas          queue     every question with lettered options, in `fli decide`'s order, with its prose
+//   POST /atlas/:id      explain   { ask? } — Claude, read-only, on one of them; a follow-up resumes its session
+//   GET  /atlas/:id      explanation  what that run has said so far
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { LEVELS }                  from '@frontierjs/litestone'
@@ -23,11 +24,11 @@ import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { env, localMachineRefusal } from '../../core/env.ts'
 import { branchName }              from '../../domain/workbench/workbench-branch.ts'
 import {
-  loadFli, registerRoot, readAtlas, forgetAtlas, recordsFor, composePrompt, branchSlug,
+  loadFli, registerRoot, readAtlas, readRings, forgetAtlas, recordsFor, composePrompt, branchSlug,
   readQueue, explain, explanationOf,
-} from '../../domain/register/registers.ts'
+} from '../../domain/atlas/atlas.ts'
 
-const READS  = ['overview', 'record', 'queue', 'explanation']
+const READS  = ['overview', 'rings', 'record', 'queue', 'explanation']
 const WRITES = ['discuss', 'decide', 'explain']
 
 async function workspace() {
@@ -41,13 +42,17 @@ async function workspace() {
 const body = () => ($.data ?? {}) as Record<string, unknown>
 
 export default createService({
-  name: 'registers',
+  name: 'atlas',
   reservedQuery: [...WORKSPACE_QUERY],
 
   methods: [
     ...READS.map(method => ({ method, read: true, gate: LEVELS.ADMINISTRATOR })),
     ...WRITES.map(method => ({ method, gate: LEVELS.ADMINISTRATOR })),
   ],
+
+  async rings() {
+    return readRings(await workspace())
+  },
 
   async overview() {
     const root  = await workspace()

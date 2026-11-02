@@ -356,7 +356,7 @@ Done when: example's and basecamp's drives pass, and basecamp's ⌘K offers `/se
   (no sidebar), the rail toggle at the head of the sidebar, and the workspace switcher
   and primary links at the head of the drawer. Each has one caller, so none went into
   the kit; a second caller for any of them is the reason to revisit. `/git-activity/`
-  became `exact`, as `/registers/` already was, because `/git-activity/local/` lit
+  became `exact`, as `/atlas/` already was, because `/git-activity/local/` lit
   both. `nav-href-routes` grades basecamp with no findings. `verify:screens` 167/169;
   the two failures are `FJS-2870`, and every rail and sidebar check passes. `verify` stops 190 checks in at `FJS-2932`, a `POST /volumes` 400 from HEAD's
   validator, before its Hub nav check; the ⌘K rows were probed instead: none signed
@@ -469,7 +469,5 @@ app it writes builds.
   - **B** — nothing renders: `reset` on a `_module.mesa` makes every page beneath
     bare, the declaring layout's own markup included, so the file exists only to
     carry the key.
-  - **Recommend A** — a page's `reset` already means *drop what is above me*, and
-    A gives a layout's `reset` the same meaning, so knowing one predicts the
-    other. B leaves a `_module.mesa` whose markup never draws, which is a key that
-    does something nobody sees. Confidence 2.
+  - **Recommend A** — a page's `reset` already means *drop what is above me*, and A gives a layout's `reset` the same meaning, so knowing one predicts the other. B leaves a `_module.mesa` whose markup never draws, which is a key that does something nobody sees. SvelteKit's `+layout@` agrees in its documented example. Confidence 3.
+  - **Prior art** (read 2026-11-01) — SvelteKit lets a layout break out of its parents with `+layout@.svelte`, and the docs say it "would reset the hierarchy for all its child routes" ([docs](https://svelte.dev/docs/kit/advanced-routing)). Its example shows `item/+layout@.svelte` inheriting from the root layout and skipping `(app)/+layout.svelte`, so the layout still sits in its children's chain *(inference from the example, the page does not say so in words)*. No product found makes a resetting layout vanish. This supports A.

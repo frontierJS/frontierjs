@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// web/test/verify-registers.mjs — /registers/ reads the workspace's registers,
+// web/test/verify-atlas.mjs — /atlas/ reads the workspace's registers,
 // rules on a question, and hands a row to Claude in the workbench; and
-// /registers/decide/ walks the open questions on a phone-sized screen.
+// /atlas/decide/ walks the open questions on a phone-sized screen.
 //
-//   bun web/test/verify-registers.mjs
-//   API_PORT=7120 UI_PORT=7020 bun web/test/verify-registers.mjs   # beside a dev server
+//   bun web/test/verify-atlas.mjs
+//   API_PORT=7120 UI_PORT=7020 bun web/test/verify-atlas.mjs   # beside a dev server
 //
 // Starts and stops its own database, API, web server and Chrome. The registers
 // are the REAL workspace's — the screen exists to describe the tree it runs in
@@ -14,7 +14,8 @@
 //
 // ─── What only this can ask ──────────────────────────────────────────────
 //
-//   The counts are fli's: each tile is held against `collectRegisterAtlas`
+//   The counts are fli's: each tile is held against `collectRegisterAtlas`,
+//   and each ring card, document and invariant against `dataOf(collect())`,
 //   read here, in this process, over the same tree.
 //
 //   A send is a real workbench run — the checkout pinned under a scratch
@@ -49,6 +50,8 @@ import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../../mesa/src/drive.js'
 import { collectRegisterAtlas } from '../../../cli/core/register-atlas.js'
 import { openDecisions }       from '../../../cli/core/decisions.js'
+import { collect }             from '../../../cli/core/repo-map.js'
+import { dataOf }              from '../../../cli/core/repo-rings.js'
 import { portFor }              from '@frontierjs/cli/core/ports.js'
 
 const HERE     = dirname(fileURLToPath(import.meta.url))
@@ -86,7 +89,7 @@ for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT]]) {
   if (answered) fail(`Something already answers on :${port} (${name}). Stop it — this drive would test it instead.`)
 }
 
-const SCRATCH   = mkdtempSync(join(tmpdir(), 'basecamp-registers-'))
+const SCRATCH   = mkdtempSync(join(tmpdir(), 'basecamp-atlas-'))
 const DB        = join(SCRATCH, 'basecamp.db')
 const WORKBENCH = join(SCRATCH, 'workbench')
 const PROMPT    = join(SCRATCH, 'prompt.txt')
@@ -183,90 +186,137 @@ try {
   await until(`location.pathname`, p => p === '/', 'sign-in never landed on the overview')
   ok('signed in as the seeded owner')
 
-  console.log('\n  /registers/ — the counts are fli\'s')
-  await goto('/registers/')
-  await until(`!!document.getElementById('registers-tiles')`, v => v, 'the tiles never rendered', 30_000)
+  console.log('\n  /atlas/ — the counts are fli\'s')
+  await goto('/atlas/')
+  await until(`!!document.getElementById('atlas-tiles')`, v => v, 'the tiles never rendered', 30_000)
   for (const sev of ['S2', 'S3', 'S4', 'decision']) {
     const tile = await textOf(`[data-severity="${sev}"]`)
     check(`the ${sev} tile reads ${count(sev)}, as collectRegisterAtlas does`, new RegExp(`\\b${count(sev)}\\b`).test(tile ?? ''), tile)
   }
-  const headline = await textOf('.registers-headline')
-  check('the headline counts every open defect', headline?.startsWith(`${open.filter(i => i.severity !== 'decision').length} things are wrong`), headline)
+  const headline = await textOf('.atlas-wrong')
+  check('the Issues tab opens on every open defect counted', headline?.startsWith(`${open.filter(i => i.severity !== 'decision').length} things are wrong`), headline)
+
+  console.log('\n  The rings — the project half of fli ws:atlas --as=rings')
+  const rings   = dataOf(collect({ root: ROOT }), { root: ROOT })
+  const defects = rings.issues.filter(i => i[2] !== 'decision')
+  const owed    = rings.issues.filter(i => i[2] === 'decision')
+  const tabExpr = `document.querySelector('[role=tab][aria-selected=true]')?.textContent.trim() ?? ''`
+  await until(`!!document.getElementById('atlas-cards')`, v => v, 'the ring cards never rendered', 30_000)
   if (process.env.FJS_DRIVE_SHOT) {
     const { data } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true })
     await Bun.write(process.env.FJS_DRIVE_SHOT, Buffer.from(data, 'base64'))
   }
+  check('the headline is the rings page\'s', (await textOf('.atlas-headline')) === 'How the work is run.')
+  const cards = { core: rings.docs.length, invariants: rings.invariants.length, decisions: rings.decCount, issues: defects.length, ideas: rings.ideas.count }
+  for (const [id, n] of Object.entries(cards)) {
+    const card = await textOf(`#atlas-cards [data-ring="${id}"]`)
+    check(`the ${id} card reads ${n.toLocaleString()}, as dataOf does`, card?.includes(n.toLocaleString()), card)
+  }
+  const ring3 = await textOf('#atlas-cards [data-ring="decisions"]')
+  check('Ring 3 counts its topics', ring3?.includes(`${rings.decisions.filter(s => s.rows.length).length} topics`), ring3)
+  const ring4 = await textOf('#atlas-cards [data-ring="issues"]')
+  check('Ring 4 names the questions owed a ruling and the rows closed',
+    ring4?.includes(`${owed.length} questions owed a ruling`) && ring4.includes(`${rings.closedCount} closed recently`), ring4)
+  const map = await evaluate(`[...document.querySelectorAll('.atlas-rings-map circle')].map(c => c.dataset.ring)`)
+  check('the map draws the five rings, center out', JSON.stringify(map) === JSON.stringify(Object.keys(cards)), map)
+
+  await evaluate(`document.querySelector('#atlas-cards [data-ring="core"]').click()`)
+  await until(tabExpr, t => t.startsWith('Documents'), 'the Ring 1 card never opened Documents')
+  ok('the Ring 1 card opens the Documents tab')
+  const docs = await evaluate(`[...document.querySelectorAll('#atlas-docs [data-file]')].map(e => e.dataset.file)`)
+  check(`the Documents tab lists every root document, ${rings.docs.length}, in reading order`,
+    JSON.stringify(docs) === JSON.stringify(rings.docs.map(d => d.file)), docs)
+  const edit = await evaluate(`document.querySelector('#atlas-docs [data-file] a')?.getAttribute('href')`)
+  check('a document opens in VS Code', edit === `vscode://file${join(ROOT, rings.docs[0].file)}`, edit)
+
+  await evaluate(`document.querySelector('#atlas-legend [data-ring="invariants"]').click()`)
+  await until(tabExpr, t => t.startsWith('Invariants'), 'the map\'s key never opened Invariants')
+  ok('the map\'s Invariants key opens the Invariants tab')
+  const invs = await evaluate(`[...document.querySelectorAll('#atlas-invariants [data-n]')].map(e => Number(e.dataset.n))`)
+  check(`the Invariants tab lists every invariant, ${rings.invariants.length}`,
+    JSON.stringify(invs) === JSON.stringify(rings.invariants.map(i => Number(i[0]))), invs)
+  const groups = await evaluate(`Object.fromEntries([...document.querySelectorAll('#atlas-proof [data-group]')]
+    .map(g => [g.dataset.group, [g.querySelector('.atlas-proof-count').textContent, g.querySelectorAll('li').length]]))`)
+  for (const [key, rows] of Object.entries({ checks: rings.checks, snapshots: rings.snapshots, drives: rings.drives, ci: rings.ciPhases }))
+    check(`the ${key} group counts ${rows.length} and lists each`, groups[key]?.[0] === String(rows.length) && groups[key][1] === rows.length, groups[key])
+
+  await evaluate(`document.querySelector('.atlas-rings-map circle[data-ring="decisions"]').dispatchEvent(new MouseEvent('click', { bubbles: true }))`)
+  await until(tabExpr, t => t.startsWith('Rulings'), 'the Decisions ring never opened Rulings')
+  ok('a click on the Decisions ring opens Rulings')
+  await evaluate(`document.querySelector('#atlas-cards [data-ring="issues"]').click()`)
+  await until(tabExpr, t => t.startsWith('Issues'), 'the Ring 4 card never opened Issues')
+  ok('the Ring 4 card opens Issues')
 
   console.log('\n  Narrowing — a tile, a package, a search')
   await evaluate(`document.querySelector('[data-severity="S2"]').click()`)
-  const s2 = await until(`[...document.querySelectorAll('#registers-issues [data-id]')].map(e => e.querySelector('.pill')?.textContent.trim())`,
+  const s2 = await until(`[...document.querySelectorAll('#atlas-issues [data-id]')].map(e => e.querySelector('.pill')?.textContent.trim())`,
     v => v.length > 0 && v.every(s => s === 'S2'), 'the S2 tile never narrowed the list')
   check('the S2 tile leaves only S2 rows', s2.length === Math.min(count('S2'), 150), `${s2.length}`)
   await evaluate(`document.querySelector('[data-severity="S2"]').click()`)
   const pkg = top.pkg[0]
-  await evaluate(`[...document.querySelectorAll('.registers-pkg')].find(b => b.querySelector('.text-sm').textContent === ${JSON.stringify(pkg)}).click()`)
-  const inPkg = await until(`document.querySelectorAll('#registers-issues [data-id]').length`, n => n > 0, 'the package bar never narrowed')
+  await evaluate(`[...document.querySelectorAll('.atlas-pkg')].find(b => b.querySelector('.text-sm').textContent === ${JSON.stringify(pkg)}).click()`)
+  const inPkg = await until(`document.querySelectorAll('#atlas-issues [data-id]').length`, n => n > 0, 'the package bar never narrowed')
   const want  = open.filter(i => i.pkg.includes(pkg)).length
   check(`a package bar leaves ${pkg}'s ${want} rows`, inPkg === Math.min(want, 150), `${inPkg}`)
-  await fill({ 'registers-search': top.id })
-  const ids = await until(`[...document.querySelectorAll('#registers-issues [data-id]')].map(e => e.dataset.id)`,
+  await fill({ 'atlas-search': top.id })
+  const ids = await until(`[...document.querySelectorAll('#atlas-issues [data-id]')].map(e => e.dataset.id)`,
     v => v.includes(top.id), `searching ${top.id} never found it`)
   check(`a search for ${top.id} finds it`, ids.includes(top.id), ids.join(', '))
 
   console.log('\n  A row — read whole, then handed to Claude')
-  await evaluate(`document.querySelector('[data-id=${JSON.stringify(top.id)}] .registers-open').click()`)
-  const record = await until(`document.getElementById('registers-record')?.textContent ?? ''`, t => t.includes(top.title.slice(0, 40)), 'the row never opened')
+  await evaluate(`document.querySelector('[data-id=${JSON.stringify(top.id)}] .atlas-open').click()`)
+  const record = await until(`document.getElementById('atlas-record')?.textContent ?? ''`, t => t.includes(top.title.slice(0, 40)), 'the row never opened')
   check('the drawer shows the row\'s title', record.includes(top.title.slice(0, 40)))
   check('and where it lives', record.includes(`${top.at.file}:${top.at.line}`), top.at.file)
-  await clickText('#registers-record button', 'Discuss with Claude')
-  const text = await until(`document.getElementById('registers-text')?.value ?? ''`, v => v.startsWith(top.id), 'Discuss never filled the box')
+  await clickText('#atlas-record button', 'Discuss with Claude')
+  const text = await until(`document.getElementById('atlas-text')?.value ?? ''`, v => v.startsWith(top.id), 'Discuss never filled the box')
   check('Discuss fills the box with the id and title', text.startsWith(`${top.id} — `), text.slice(0, 80))
-  check('and the id is recognized as a chip', ((await textOf('#registers-known')) ?? '').includes(top.id))
+  check('and the id is recognized as a chip', ((await textOf('#atlas-known')) ?? '').includes(top.id))
   check('with Discuss as the intent', await evaluate(`document.querySelector('input[name=intent]:checked')?.value`) === 'discuss')
 
-  await evaluate(`document.getElementById('registers-send').click()`)
-  const working = await until(`document.getElementById('registers-run')?.dataset.state ?? null`, s => !!s, 'the send never showed a run')
+  await evaluate(`document.getElementById('atlas-send').click()`)
+  const working = await until(`document.getElementById('atlas-run')?.dataset.state ?? null`, s => !!s, 'the send never showed a run')
   check('the send shows the run working', working === 'working', working)
   const prompt = await (async () => { for (let i = 0; i < 80 && !existsSync(PROMPT); i++) await sleep(250); return existsSync(PROMPT) ? readFileSync(PROMPT, 'utf8') : '' })()
   check('Claude was handed the text', prompt.startsWith(`${top.id} — `), prompt.slice(0, 80))
   check('with the row cited at its line', prompt.includes(`- ${top.id} — issue, ${top.severity}`) && prompt.includes(`${top.at.file}:${top.at.line}`), prompt.slice(0, 400))
   check('and told to change no file', prompt.includes('Change no file'))
-  const done = await until(`document.getElementById('registers-run')?.dataset.state ?? null`, s => s === 'done', 'the run never finished on screen', 30_000)
+  const done = await until(`document.getElementById('atlas-run')?.dataset.state ?? null`, s => s === 'done', 'the run never finished on screen', 30_000)
   check('the screen follows the run to done, without being asked', done === 'done')
-  check('with what it cost', /\$0\.12 · 2 turns/.test((await textOf('#registers-run')) ?? ''))
+  check('with what it cost', /\$0\.12 · 2 turns/.test((await textOf('#atlas-run')) ?? ''))
 
-  const href = await evaluate(`[...document.querySelectorAll('#registers-run a')].find(a => /Open the chat/.test(a.textContent))?.getAttribute('href')`)
+  const href = await evaluate(`[...document.querySelectorAll('#atlas-run a')].find(a => /Open the chat/.test(a.textContent))?.getAttribute('href')`)
   check('Open the chat names the card', /^\/workbench\/#workbench-/.test(href ?? ''), href)
 
   console.log('\n  Refusals — said, not guessed')
-  await fill({ 'registers-text': 'a toast stacks forever' })
+  await fill({ 'atlas-text': 'a toast stacks forever' })
   await evaluate(`[...document.querySelectorAll('input[name=intent]')].find(i => i.value === 'fix').click()`)
-  await evaluate(`document.getElementById('registers-send').click()`)
+  await evaluate(`document.getElementById('atlas-send').click()`)
   const refusal = await until(`document.getElementById('screen-error')?.textContent ?? ''`, t => !!t, 'a fix with no id was never refused')
   check('Fix with no row is refused by name', /fix takes the id of an open row/.test(refusal), refusal)
 
   if (question) {
     console.log(`\n  A ruling — ${question.id}, nothing preselected`)
-    await goto(`/registers/#${encodeURIComponent(question.id)}`)
-    await until(`!!document.getElementById('registers-decide')`, v => v, 'the question never opened from the hash', 30_000)
-    check('no option is checked to start', await evaluate(`!document.querySelector('#registers-decide input[name=pick]:checked')`))
-    const rule = () => evaluate(`document.querySelector('#registers-decide button[type=submit]').disabled`)
+    await goto(`/atlas/#${encodeURIComponent(question.id)}`)
+    await until(`!!document.getElementById('atlas-decide')`, v => v, 'the question never opened from the hash', 30_000)
+    check('no option is checked to start', await evaluate(`!document.querySelector('#atlas-decide input[name=pick]:checked')`))
+    const rule = () => evaluate(`document.querySelector('#atlas-decide button[type=submit]').disabled`)
     check('and Rule cannot be pressed', await rule())
     const other = question.options.find(o => o.letter !== question.recommend.letter).letter
-    await evaluate(`document.querySelector('#registers-decide [data-letter="${other}"] input').click()`)
-    await evaluate(`(() => { const s = document.getElementById('registers-section'); s.value = ${JSON.stringify(atlas.sections[0])}; s.dispatchEvent(new Event('change', { bubbles: true })) })()`)
-    check(`picking ${other} against the recommendation asks why first`, await rule() && /required/.test((await textOf('#registers-decide')) ?? ''))
+    await evaluate(`document.querySelector('#atlas-decide [data-letter="${other}"] input').click()`)
+    await evaluate(`(() => { const s = document.getElementById('atlas-section'); s.value = ${JSON.stringify(atlas.sections[0])}; s.dispatchEvent(new Event('change', { bubbles: true })) })()`)
+    check(`picking ${other} against the recommendation asks why first`, await rule() && /required/.test((await textOf('#atlas-decide')) ?? ''))
 
     // The select offers only real sections; one more is planted so the press
     // goes through the screen and is refused by fli's decide, writing nothing.
-    await evaluate(`document.querySelector('#registers-decide [data-letter="${question.recommend.letter}"] input').click()`)
+    await evaluate(`document.querySelector('#atlas-decide [data-letter="${question.recommend.letter}"] input').click()`)
     await evaluate(`(() => {
-      const s = document.getElementById('registers-section')
+      const s = document.getElementById('atlas-section')
       s.add(new Option('No such section', 'No such section')); s.value = 'No such section'
       s.dispatchEvent(new Event('change', { bubbles: true }))
     })()`)
     check('the recommendation needs no reason', !(await rule()))
-    await evaluate(`document.querySelector('#registers-decide button[type=submit]').click()`)
+    await evaluate(`document.querySelector('#atlas-decide button[type=submit]').click()`)
     const refused = await until(`document.getElementById('screen-error')?.textContent ?? ''`, t => /section/.test(t), 'the ruling was never refused')
     check('a section DECISIONS.md lacks is refused by fli\'s decide', /no section named/.test(refused), refused)
   } else {
@@ -290,15 +340,15 @@ try {
 }
 
 async function decideScreen() {
-  console.log('\n  /registers/decide/ — one question at a time, on a phone')
+  console.log('\n  /atlas/decide/ — one question at a time, on a phone')
   const queued = openDecisions(ROOT).decidable
   if (queued.length < 2) return bad('fewer than two questions with options to walk', `${queued.length}`)
   const [first, second] = queued
 
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true })
   await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 })
-  await evaluate(`localStorage.removeItem('basecamp.registers.section'); localStorage.removeItem('basecamp.registers.skipped')`)
-  await goto('/registers/decide/')
+  await evaluate(`localStorage.removeItem('basecamp.atlas.section'); localStorage.removeItem('basecamp.atlas.skipped')`)
+  await goto('/atlas/decide/')
   const id = () => evaluate(`document.getElementById('decide-card')?.dataset.id ?? null`)
   await until(`document.getElementById('decide-card')?.dataset.id ?? null`, v => !!v, 'no card rendered', 30_000)
   check(`the first card is fli decide's first question, ${first.id}`, await id() === first.id, await id())
@@ -312,11 +362,11 @@ async function decideScreen() {
     `${await evaluate('document.documentElement.scrollWidth')}px`)
   check('the buttons sit inside the screen', await evaluate(`document.getElementById('decide-bar').getBoundingClientRect().bottom <= innerHeight + 1`))
 
-  await goto(`/registers/decide/?ids=${encodeURIComponent(`${second.id},not-a-question,${first.id}`)}`)
+  await goto(`/atlas/decide/?ids=${encodeURIComponent(`${second.id},not-a-question,${first.id}`)}`)
   await until(`document.getElementById('decide-card')?.dataset.id ?? null`, v => v === second.id, '?ids= did not lead with its first id', 30_000)
   check(`?ids= walks its own order, ${second.id} first`, await id() === second.id, await id())
   check('and only those, an unknown id dropped', (await textOf('#decide-count'))?.includes('2 left'), await textOf('#decide-count'))
-  await goto('/registers/decide/')
+  await goto('/atlas/decide/')
   await until(`document.getElementById('decide-card')?.dataset.id ?? null`, v => v === first.id, 'the plain walk did not come back', 30_000)
 
   if (first.recommend) {
@@ -352,7 +402,7 @@ async function decideScreen() {
 
   await swipe(-260)
   check(`a swipe left skips to ${second.id}`, await id() === second.id, await id())
-  check('and the skip is remembered', (await evaluate(`localStorage.getItem('basecamp.registers.skipped')`))?.includes(first.id))
+  check('and the skip is remembered', (await evaluate(`localStorage.getItem('basecamp.atlas.skipped')`))?.includes(first.id))
   check('the count says one skipped', /1 skipped/.test((await textOf('#decide-count')) ?? ''), await textOf('#decide-count'))
 
   console.log('\n  Explain — Claude, read-only, on the card')

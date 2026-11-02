@@ -37,7 +37,7 @@ const OFF_LIMITS = new Set([
   // machine, and a view reads a file there.
   'pages',
   // A discuss is a workbench send, and a decide writes two tracked files.
-  'registers',
+  'atlas',
 ])
 
 /**
@@ -46,10 +46,10 @@ const OFF_LIMITS = new Set([
  * The workbench: a send is `claude -p` with permissions bypassed in a checkout
  * on this machine, so an agent holding the tool reaches the operator's shell,
  * which no level in a workspace describes. Pages: a start runs a command on
- * that machine. Registers: a discuss is a workbench send. `agentGuard` refuses the call and `narrowForAgent` withholds
+ * that machine. Atlas: a discuss is a workbench send. `agentGuard` refuses the call and `narrowForAgent` withholds
  * the tool, off this one set.
  */
-const NOT_FOR_AGENTS = new Set(['workbench', 'claude', 'pages', 'registers'])
+const NOT_FOR_AGENTS = new Set(['workbench', 'claude', 'pages', 'atlas'])
 
 /** The scope a workspace service declares: read for `find`, `get` and a declared read, write for the rest. */
 export const keyScope = (service: string) => ({ read: `${service}:read`, write: `${service}:write` })

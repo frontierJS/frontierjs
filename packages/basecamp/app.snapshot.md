@@ -409,6 +409,31 @@ name when it declares none.
 | before | `publish` | `validateInput` |
 | before | `readRepoDockerfile` | `validateInput` |
 
+### `atlas` · model `atlas`
+
+- **methods** — `overview`, `rings`, `record`, `queue`, `explanation`, `discuss`, `decide`, `explain`
+- **custom methods** — `overview`, `rings`, `record`, `queue`, `explanation`, `discuss`, `decide`, `explain`
+- **who may call** —
+  - `overview` — standing 5 or above — declared `gate: 5`
+  - `rings` — standing 5 or above — declared `gate: 5`
+  - `record` — standing 5 or above — declared `gate: 5`
+  - `queue` — standing 5 or above — declared `gate: 5`
+  - `explanation` — standing 5 or above — declared `gate: 5`
+  - `discuss` — standing 5 or above — declared `gate: 5`
+  - `decide` — standing 5 or above — declared `gate: 5`
+  - `explain` — standing 5 or above — declared `gate: 5`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
 ### `auditEvents` · model `AuditEvent`
 
 - **methods** — `find`, `get`, `aggregate`
@@ -1272,30 +1297,6 @@ name when it declares none.
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
-| before | `patch` | `autoValidate` |
-| before | `update` | `autoValidate` |
-
-### `registers` · model `registers`
-
-- **methods** — `overview`, `record`, `queue`, `explanation`, `discuss`, `decide`, `explain`
-- **custom methods** — `overview`, `record`, `queue`, `explanation`, `discuss`, `decide`, `explain`
-- **who may call** —
-  - `overview` — standing 5 or above — declared `gate: 5`
-  - `record` — standing 5 or above — declared `gate: 5`
-  - `queue` — standing 5 or above — declared `gate: 5`
-  - `explanation` — standing 5 or above — declared `gate: 5`
-  - `discuss` — standing 5 or above — declared `gate: 5`
-  - `decide` — standing 5 or above — declared `gate: 5`
-  - `explain` — standing 5 or above — declared `gate: 5`
-
-| Phase | Method | Chain |
-| --- | --- | --- |
-| around | `all` | `gateAuth` |
-| before | `all` | `sessionScope` |
-| before | `find` | `autoFilter` → `autoSort` |
-| before | `get` | `autoFilter` |
-| before | `aggregate` | `autoFilter` |
-| before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 

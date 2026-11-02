@@ -26,7 +26,7 @@ flags:
 
 The install half of `fli basecamp:create`, for a box that already exists — one an
 earlier `fli basecamp:create` bought, or one made by hand. It runs
-`fli deploy:setup --auto-install` and then `fli deploy` in `packages/basecamp`, with the box as
+`fli deploy:setup --auto-install`, `fli env:push` of the two addresses (`FRONTIER_APP_URL`, `FRONTIER_API_URL` as `https://<hostname>`, added when the box lacks them, never replaced) and then `fli deploy` in `packages/basecamp`, with the box as
 `--server` and the hostname as `--domain`, so it works from any directory and
 writes nothing into `frontier.config.js`. Those two are the only deploy values
 asked for: every other one in Basecamp's deploy block is what its Dockerfile

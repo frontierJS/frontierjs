@@ -32,6 +32,8 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/api-keys/` | `src/routes/api-keys/index.mesa` | `src/routes/_module.mesa` | — |
 | `/apps/` | `src/routes/apps/index.mesa` | `src/routes/_module.mesa` | — |
 | `/apps/:id/` | `src/routes/apps/[id]/index.mesa` | `src/routes/_module.mesa` | `id` |
+| `/atlas/` | `src/routes/atlas/index.mesa` | `src/routes/_module.mesa` | — |
+| `/atlas/decide/` | `src/routes/atlas/decide/index.mesa` | `src/routes/_module.mesa` | — |
 | `/blueprints/` | `src/routes/blueprints/index.mesa` | `src/routes/_module.mesa` | — |
 | `/channels/` | `src/routes/channels/index.mesa` | `src/routes/_module.mesa` | — |
 | `/cleanup/` | `src/routes/cleanup/index.mesa` | `src/routes/_module.mesa` | — |
@@ -72,8 +74,6 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/projects/:id/` | `src/routes/projects/[id]/index.mesa` | `src/routes/_module.mesa` | `id` |
 | `/projects/create/` | `src/routes/projects/create.mesa` | `src/routes/_module.mesa` | — |
 | `/recipes/` | `src/routes/recipes/index.mesa` | `src/routes/_module.mesa` | — |
-| `/registers/` | `src/routes/registers/index.mesa` | `src/routes/_module.mesa` | — |
-| `/registers/decide/` | `src/routes/registers/decide/index.mesa` | `src/routes/_module.mesa` | — |
 | `/registry/` | `src/routes/registry/index.mesa` | `src/routes/_module.mesa` | — |
 | `/reset-password/` | `src/routes/reset-password/index.mesa` | `src/routes/_module.mesa` | — |
 | `/secrets/` | `src/routes/secrets/index.mesa` | `src/routes/_module.mesa` | — |
@@ -109,6 +109,8 @@ this section exists to show.
 - `/api-keys/` — siteName: `Basecamp` · title: `API keys`
 - `/apps/` — siteName: `Basecamp` · title: `Apps`
 - `/apps/:id/` — siteName: `Basecamp` · title: `App`
+- `/atlas/` — siteName: `Basecamp` · title: `Atlas`
+- `/atlas/decide/` — siteName: `Basecamp` · title: `Decide`
 - `/blueprints/` — siteName: `Basecamp` · title: `Blueprints`
 - `/channels/` — siteName: `Basecamp` · title: `Channels`
 - `/cleanup/` — siteName: `Basecamp` · title: `Disk cleanup`
@@ -149,8 +151,6 @@ this section exists to show.
 - `/projects/:id/` — siteName: `Basecamp` · title: `Project`
 - `/projects/create/` — siteName: `Basecamp` · title: `New project`
 - `/recipes/` — siteName: `Basecamp` · title: `Recipes`
-- `/registers/` — siteName: `Basecamp` · title: `Registers`
-- `/registers/decide/` — siteName: `Basecamp` · title: `Decide`
 - `/registry/` — siteName: `Basecamp` · title: `Registry`
 - `/reset-password/` — siteName: `Basecamp` · title: `Reset password`
 - `/secrets/` — siteName: `Basecamp` · title: `Secrets`
@@ -174,6 +174,6 @@ this section exists to show.
 Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
-- `src/routes/_module.mesa` — 55 routes: `/`, `/activity/`, `/alerts/`, `/api-keys/`, `/apps/`, `/apps/:id/`, `/blueprints/`, `/channels/`, `/cleanup/`, `/cloud-spend/`, `/dashboards/`, `/dashboards/:id/`, `/dependencies/`, `/deployments/`, `/deployments/:id/`, `/dns/`, `/environments/:id/`, `/flags/`, `/git-activity/`, `/git-activity/local/`, `/infra-graph/`, `/invite/:token/`, `/jobs/`, `/jobs/:id/`, `/login/`, `/networks/`, `/notifications/`, `/observability/`, `/onboarding/`, `/pages/`, `/portal/`, `/portal/:id/`, `/projects/`, `/projects/:id/`, `/projects/create/`, `/recipes/`, `/registers/`, `/registers/decide/`, `/registry/`, `/reset-password/`, `/secrets/`, `/security/`, `/servers/`, `/servers/:id/`, `/servers/import/`, `/servers/provision/`, `/settings/`, `/setup/`, `/sites/`, `/sites/:id/`, `/sites/:id/edit/`, `/trash/`, `/verify-email/`, `/volumes/`, `/workbench/`
+- `src/routes/_module.mesa` — 55 routes: `/`, `/activity/`, `/alerts/`, `/api-keys/`, `/apps/`, `/apps/:id/`, `/atlas/`, `/atlas/decide/`, `/blueprints/`, `/channels/`, `/cleanup/`, `/cloud-spend/`, `/dashboards/`, `/dashboards/:id/`, `/dependencies/`, `/deployments/`, `/deployments/:id/`, `/dns/`, `/environments/:id/`, `/flags/`, `/git-activity/`, `/git-activity/local/`, `/infra-graph/`, `/invite/:token/`, `/jobs/`, `/jobs/:id/`, `/login/`, `/networks/`, `/notifications/`, `/observability/`, `/onboarding/`, `/pages/`, `/portal/`, `/portal/:id/`, `/projects/`, `/projects/:id/`, `/projects/create/`, `/recipes/`, `/registry/`, `/reset-password/`, `/secrets/`, `/security/`, `/servers/`, `/servers/:id/`, `/servers/import/`, `/servers/provision/`, `/settings/`, `/setup/`, `/sites/`, `/sites/:id/`, `/sites/:id/edit/`, `/trash/`, `/verify-email/`, `/volumes/`, `/workbench/`
 - `src/routes/admin/_module.mesa` — 4 routes: `/admin/`, `/admin/adapters/`, `/admin/audit/`, `/admin/workspace/`
 - `src/routes/hub/_module.mesa` — 10 routes: `/hub/`, `/hub/accounts/`, `/hub/audit/`, `/hub/backups/`, `/hub/flags/`, `/hub/fleet/`, `/hub/security/`, `/hub/settings/`, `/hub/users/`, `/hub/workspaces/`

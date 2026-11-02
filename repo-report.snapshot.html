@@ -7187,6 +7187,10 @@ try {
     <td class="m sub">bun api/test/verify-advisories.mjs</td>
   </tr><tr data-row>
     <td class="m">packages/basecamp</td>
+    <td class="m">verify:atlas</td>
+    <td class="m sub">bun web/test/verify-atlas.mjs</td>
+  </tr><tr data-row>
+    <td class="m">packages/basecamp</td>
     <td class="m">verify:build</td>
     <td class="m sub">vite build -c web/config/vite.config.js &amp;&amp; bun web/test/verify-build.mjs</td>
   </tr><tr data-row>
@@ -7225,10 +7229,6 @@ try {
     <td class="m">packages/basecamp</td>
     <td class="m">verify:provision</td>
     <td class="m sub">bun web/test/verify-provision.mjs</td>
-  </tr><tr data-row>
-    <td class="m">packages/basecamp</td>
-    <td class="m">verify:registers</td>
-    <td class="m sub">bun web/test/verify-registers.mjs</td>
   </tr><tr data-row>
     <td class="m">packages/basecamp</td>
     <td class="m">verify:screens</td>
@@ -7372,7 +7372,7 @@ try {
   </tr></tbody></table></div>
 </section>
 <section id="proofs">
-  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">177 rows · 295 targets · 0 not found</span></div>
+  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">177 rows · 295 targets · 1 not found</span></div>
   <p class="note">Parsed from <code>DRIVES.md</code>, never restated. The third column is each target resolved against the tree — <code>not found</code> is a row naming a drive that has been renamed, which in the markdown reads exactly like a row that is right. Half these rows are not import edges: <em>a gate on a model a screen reads</em> is a statement about what a drive can SEE, so this is a parse and not a build graph.</p><div class="panel scroll"><table><thead><tr><th>Changed</th><th>Run</th><th>Resolved</th></tr></thead><tbody><tr data-row>
       <td>the app prompt — junction/tools/call.ts, litestone/src/tools/repl.js, fli app:repl / deploy:repl, runAs(null, { operator }), or what an app declares as createApp({ system })</td>
       <td>example: verify:repl — the only thing that runs the prompt over a real app&#39;s gate; junction&#39;s call-tool.test.ts asks a fixture</td>
@@ -7808,7 +7808,7 @@ try {
     </tr><tr data-row>
       <td>the registers screen — basecamp&#39;s api/src/domain/register/registers.ts, api/src/services/registers/, web/src/routes/registers/, or what register-atlas.js&#39;s collectRegisterAtlas answers</td>
       <td>packages/basecamp: bun run test (api/test/registers.test.ts, the prompt per intent) + packages/basecamp: verify:registers — the only place a register record reaches a screen, is ruled on there, and is handed to a workbench run</td>
-      <td><span class="tally"><b>packages/basecamp</b>bun run test</span><span class="tally"><b>packages/basecamp</b>verify:registers</span></td>
+      <td><span class="tally"><b>packages/basecamp</b>bun run test</span><span class="tally bad"><b>packages/basecamp</b>verify:registers — not found</span></td>
     </tr><tr data-row>
       <td>a preview — basecamp&#39;s api/src/domain/workbench/workbench-preview.ts, the workbench&#39;s fork with preview, freeze, thaw and a preview&#39;s archive; a release that names a digest (deployments.create with builtImage); outpost&#39;s /route with a port, /static/activate with hosts, /static/retire</td>
       <td>packages/basecamp: api/test/workbench.test.ts + api/test/inline-app.test.ts + verify:provision — the unit files hold the settings, the marker, the port claimed at the cut, and a digest release&#39;s three steps and empty snapshot; the drive is the only place the rows are written by the real services, the machine is outpost&#39;s own server and static store on a TLS port, and the hostname is answered by the static origin with the Host the route sets: Open dials the dev server, Freeze serves the built page with FRONTIERPUBLICAPIURL in its bundle, Thaw dials back, Archive leaves the hostname unrouted and the files gone. Dropping the job&#39;s hosts reds the two serving checks. packages/outpost: bun run test for /route&#39;s port and the static routes, incl. a second app taking the same slug</td>

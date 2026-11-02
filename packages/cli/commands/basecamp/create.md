@@ -89,7 +89,9 @@ warns, and the run goes on with the box's own address.
 `--admin <email>` installs without asking, which is how a run with no terminal
 gets past the bare box: `deploy:setup --auto-install` asks nothing, makes the
 `ENCRYPTION_KEY` into your local `.env.production` when there is none, and
-`fli deploy` follows. Basecamp's first admin is then made through its own
+`fli deploy` follows. Between them `fli env:push` gives the box's env file
+`FRONTIER_APP_URL` and `FRONTIER_API_URL` as `https://<hostname>`: a value the
+file already holds is left alone and named, never replaced. Basecamp's first admin is then made through its own
 `POST /setup`, over ssh on the box, so no DNS is needed yet. At a terminal the
 password is asked; Enter, or no terminal, generates one and prints it once.
 **An install always makes the admin**, since `/setup` makes the workspace too:
@@ -245,7 +247,7 @@ if (asking) {
   row('key', keyPath.replace(home, '~'))
   row('address', flag['reserved-ip'] ? `reserved IP ${chalk.dim(points ? `— ${points} if it is a spare in ${flag.region || 'the region'}, else a new one` : '— a new one, kept when the box goes')}` : chalk.dim('the box\'s own'))
   row('ssh', addHost ? `Host ${name} in ~/.ssh/config` : chalk.dim('print the Host block'))
-  row('install', install ? `yes ${chalk.dim('— deploy:setup --auto-install, then deploy')}` : chalk.dim('no — fli basecamp:install later'))
+  row('install', install ? `yes ${chalk.dim('— deploy:setup --auto-install, the addresses, then deploy')}` : chalk.dim('no — fli basecamp:install later'))
   if (admin) row('admin', `${admin} ${chalk.dim(password ? '' : '— password generated')}`)
   if (install) row('outpost', outpost ? `yes ${chalk.dim('— fli deploy:outpost once the admin is made')}` : chalk.dim('no'))
   echo('')

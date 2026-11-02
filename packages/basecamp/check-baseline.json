@@ -2,7 +2,7 @@
   "//": "One number per fli check rule id — the count that may never rise. Absent = 0 = clean. `fli check --update` locks in an improvement and cannot raise; `fli check --adopt` records what is there, which is the verb for taking debt on. The findings still print either way.",
   "//app-layout": "One: GET /backup-archive/{id} is a raw route in api/src/plugins/backup-archive.ts and not a routes/ file, because a route file is handed only the TransportContext and this handler needs the app's system client, logger and sqlite path (FJS-3596). Debt, not a defence: it moves when a route file can reach the app.",
   "app-layout": 1,
-  "//css-class-collision": "Adopted when CI first graded the rule (FJS-D1009), and each is a rename, not a defence: .topbar, .cluster and .sidebar in routes/_module.mesa, .cluster in routes/workbench/index.mesa, .field in routes/registers/decide/index.mesa. Each takes the kit's rules as well as its own, so a kit change restyles the shell. A ceiling that falls as they are renamed.",
+  "//css-class-collision": "Adopted when CI first graded the rule (FJS-D1009), and each is a rename, not a defence: .topbar, .cluster and .sidebar in routes/_module.mesa, .cluster in routes/workbench/index.mesa, .field in routes/atlas/decide/index.mesa. Each takes the kit's rules as well as its own, so a kit change restyles the shell. A ceiling that falls as they are renamed.",
   "css-class-collision": 5,
   "schema-runs": 7,
   "allow": {
