@@ -36,7 +36,7 @@ function shippedTo(host, { released, uploaded = [], published = [], to, missing 
 const config = $.config
 if (!config.released?.length) return
 
-const { freshAppChecks, installFreshApp, pinsBehind } = await import(new URL('file://' + global.fliRoot + '/core/publish-hosts.js'))
+const { freshAppChecks, installFreshApp, pinsBehind, REGISTRY_LAG } = await import(new URL('file://' + global.fliRoot + '/core/publish-hosts.js'))
 const { FJS_PACKAGES, APP_DEV_DEPS, FJS_TRANSITIVE } = await import(new URL('file://' + global.fliRoot + '/core/app-config.js'))
 
 // Step 01 raises the scaffold pins to versions no host holds until this run has
@@ -83,7 +83,8 @@ function installFreshApps() {
     const from = host === 'npm' ? 'npm' : 'packages.frontierjs.com'
     if (flag.dry) { log.dry(`  Would scaffold a fresh app with --source ${source} and bun install it from ${from}`); continue }
 
-    echo(chalk`  {dim fresh app from ${from} (--source ${source})…}`)
+    const settle = REGISTRY_LAG[source]?.settleMs ?? 0
+    echo(chalk`  {dim fresh app from ${from} (--source ${source})${settle ? `, after ${settle / 1000}s for the registry to serve it` : ''}…}`)
     const got = installFreshApp({ from: source, fli })
     if (got.ok) {
       echo(chalk`  {green ✓} fresh app installed from ${from} {dim · ${got.detail}}`)

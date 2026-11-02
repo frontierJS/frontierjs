@@ -117,6 +117,35 @@ export const freshAppArgs = (name, from) =>
 
 const tail = (text, lines = 12) => text.trim().split('\n').slice(-lines).join('\n')
 
+const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+
+// npm accepts a publish minutes before its registry serves it: the 2026-11-02
+// release's fresh app installed seconds after 03 and read the lag as a host
+// that does not serve what it published (`FJS-3831`). So an npm install waits
+// out the usual lag first, then asks again on that miss alone. The package host
+// serves an asset the moment it is uploaded, and asks once.
+export const REGISTRY_LAG = {
+  npm: { settleMs: 120_000, retryMs: [30_000, 30_000] },
+  url: { settleMs: 0, retryMs: [] },
+}
+
+export const servedNotYet = (text) => /No version matching/.test(text)
+
+/**
+ * Run `attempt` (a spawnSync-shaped install) until it passes, fails some other
+ * way, or `retryMs` runs out, sleeping each wait before the next ask. Only the
+ * registry's miss is retried: any other failure is the host's answer.
+ */
+export function untilServed(attempt, { retryMs = [], sleep = sleepSync } = {}) {
+  let got = attempt(0)
+  for (const [i, ms] of retryMs.entries()) {
+    if (got.status === 0 || !servedNotYet(`${got.stdout ?? ''}${got.stderr ?? ''}`)) break
+    sleep(ms)
+    got = attempt(i + 1)
+  }
+  return got
+}
+
 /**
  * Scaffold an app from `from` (`url` or `npm`) into a throwaway directory and
  * `bun install` it with a cache of its own: bun keys a tarball by name and
@@ -126,7 +155,7 @@ const tail = (text, lines = 12) => text.trim().split('\n').slice(-lines).join('\
  *
  * `fli` is the path of the cli's `bin/fli.js`.
  */
-export function installFreshApp({ from, fli, timeoutMs = 300_000, base = tmpdir() }) {
+export function installFreshApp({ from, fli, timeoutMs = 300_000, base = tmpdir(), sleep = sleepSync }) {
   const work = mkdtempSync(join(base, 'fjs-fresh-'))
   const app  = join(work, 'freshapp')
   const run  = (args, cwd) => spawnSync('bun', args, { cwd, encoding: 'utf8', timeout: timeoutMs })
@@ -136,7 +165,11 @@ export function installFreshApp({ from, fli, timeoutMs = 300_000, base = tmpdir(
     const made = run([fli, ...freshAppArgs('freshapp', from)], work)
     if (made.status !== 0 || !existsSync(app)) return fail('fli new', made)
 
-    const installed = run(['install', '--cache-dir', join(work, '.bun-cache')], app)
+    // A cache per attempt: bun keeps the registry's manifest too, so a retry
+    // over the first cache would read the same stale version list.
+    const lag = REGISTRY_LAG[from] ?? REGISTRY_LAG.url
+    if (lag.settleMs) sleep(lag.settleMs)
+    const installed = untilServed(n => run(['install', '--cache-dir', join(work, `.bun-cache-${n}`)], app), { retryMs: lag.retryMs, sleep })
     if (installed.status !== 0) return fail('bun install', installed)
 
     const manifest = JSON.parse(readFileSync(join(app, 'package.json'), 'utf8'))

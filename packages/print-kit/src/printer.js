@@ -153,13 +153,17 @@ export function createPrinter({ windowSize = '1280,900', find = findChrome } = {
   }
 
   /** Put `html` in the page and wait for what it draws with: fonts and images
-   *  that are data: URLs, and the refusal of any that are not. */
+   *  that are data: URLs, and the refusal of any that are not.
+   *  The tab runs no script, so no event handler fires in it: a wait on an
+   *  image's `onerror` that began before the refusal landed waited for ever,
+   *  and a loaded machine is where it begins first (`FJS-3829`). `decode()`
+   *  is settled by the browser, as `fonts.ready` is. */
   async function load(/** @type {any} */ b, /** @type {string} */ html) {
     const { frameTree } = await b.cmd('Page.getFrameTree')
     await b.cmd('Page.setDocumentContent', { frameId: frameTree.frame.id, html })
     await b.evaluate(`
       await document.fonts.ready;
-      await Promise.all([...document.images].map(i => i.complete ? 0 : new Promise(r => { i.onload = i.onerror = r })));
+      await Promise.all([...document.images].map(i => i.decode().catch(() => {})));
       return true;
     `)
   }

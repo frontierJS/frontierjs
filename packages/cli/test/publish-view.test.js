@@ -28,7 +28,7 @@ import {
   PUBLISH_STEPS, PUBLISH_STAGES, describePublish, pubArgv, runPublishStep,
   publishLocal, workspaceMembers, displayArgv,
 } from '../core/publish-view.js'
-import { DESTINATIONS, DEFAULT_TO, freshAppChecks, freshAppArgs, pinsBehind } from '../core/publish-hosts.js'
+import { DESTINATIONS, DEFAULT_TO, freshAppChecks, freshAppArgs, pinsBehind, untilServed } from '../core/publish-hosts.js'
 
 const CLI = resolve(fileURLToPath(new URL('.', import.meta.url)), '..')
 
@@ -262,4 +262,25 @@ test('freshAppArgs leaves the install to the caller, who reads its exit status',
   const args = freshAppArgs('probe', 'url')
   expect(args).toContain('--no-install')
   expect(args.slice(args.indexOf('--source'))).toEqual(['--source', 'url'])
+})
+
+test('untilServed asks again on the registry miss alone, and stops when the waits run out', () => {
+  const miss  = { status: 1, stdout: '', stderr: 'error: No version matching "0.16.8" found for specifier "@frontierjs/css" (but package exists)' }
+  const other = { status: 1, stdout: '', stderr: 'error: ConnectionRefused' }
+  const asks  = (...answers) => { const seen = []; return { seen, attempt: n => { seen.push(n); return answers[n] } } }
+  const slept = []
+  const sleep = ms => slept.push(ms)
+
+  const lagging = asks(miss, miss, { status: 0 })
+  expect(untilServed(lagging.attempt, { retryMs: [30, 30], sleep }).status).toBe(0)
+  expect(lagging.seen).toEqual([0, 1, 2])
+  expect(slept).toEqual([30, 30])
+
+  const broken = asks(other, { status: 0 })
+  expect(untilServed(broken.attempt, { retryMs: [30, 30], sleep })).toBe(other)
+  expect(broken.seen).toEqual([0])
+
+  const absent = asks(miss, miss, miss, { status: 0 })
+  expect(untilServed(absent.attempt, { retryMs: [30, 30], sleep })).toBe(miss)
+  expect(absent.seen).toEqual([0, 1, 2])
 })

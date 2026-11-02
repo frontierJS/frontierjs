@@ -35,6 +35,10 @@ test/            print-kit.test.js (no browser) · run.mjs + specs/ (a real Chro
   (`FJS-2230`). The job queued behind a wedge still waits the 30 s.
 - **The print page is offline under `createNetwork`** — a template that
   fetches a font or an image from a URL gets nothing, by design. Inline it.
+- **The print page runs no script, so no handler or timer fires in it.** A
+  wait the printer runs there awaits a promise the browser settles
+  (`img.decode()`, `fonts.ready`); one on `onerror` waited for ever whenever
+  the refusal landed after it began (`FJS-3829`).
 - **`printer` must not import junction at runtime.** It exports the plugin
   protocol's shape and takes its name with `app.own('printer', …)`, and
   `index.d.ts` types it by augmenting junction's `App` (Invariant 5). Junction

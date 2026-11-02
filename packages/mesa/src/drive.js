@@ -311,23 +311,48 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
   // Bounded, because a service worker or a database worker that takes the
   // renderer down with it leaves every renderer-bound call unanswered, and an
   // unbounded one is a drive that sits silent forever — a renderer crash filed
-  // as a hang (`FJS-1179`). The message says which.
+  // as a hang (`FJS-1179`).
   //
   // A browser that is GONE answers nothing either, and waiting out the bound
   // for it held a cancelled run 30s per call in flight (`FJS-3249`): once the
   // socket closes, every pending call and every later one is refused at once.
   let gone = null
-  function send(method, params = {}, sessionId) {
+  function call(method, params = {}, sessionId, ms = 30000) {
     if (gone) return Promise.reject(new Error(`${method}: ${gone}`))
     const id = nextId++
     browser.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }))
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         if (!pending.delete(id)) return
-        reject(new Error(`${method} did not answer in 30s — the renderer is gone or wedged`))
-      }, 30000)
+        reject(Object.assign(new Error(`${method} did not answer in ${ms / 1000}s`), { unanswered: true }))
+      }, ms)
       pending.set(id, { method, timer, resolve, reject })
     })
+  }
+
+  function send(method, params = {}, sessionId) {
+    return call(method, params, sessionId).catch(async (e) => {
+      if (!e.unanswered) throw e
+      throw new Error(`${e.message} — ${await whyUnanswered(method, params, sessionId)}`)
+    })
+  }
+
+  // Which side stopped answering decides the fix, and a bare timeout named
+  // none: the print page's own wait on an event its disabled scripts never
+  // fire read as a wedged renderer (`FJS-3829`).
+  async function whyUnanswered(method, params, sessionId) {
+    const answers = (p) => p.then(() => true, () => false)
+    const [browserUp, rendererUp] = await Promise.all([
+      answers(call('Browser.getVersion', {}, undefined, 3000)),
+      sessionId ? answers(call('Runtime.evaluate', { expression: '1' }, sessionId, 3000)) : null,
+    ])
+    if (!browserUp) return 'the browser itself answers nothing: stopped, gone, or starved of CPU'
+    // Asked first: a page mid-navigation answers no evaluate either.
+    const doc = documents.get(sessionId)
+    if (method === 'Page.navigate' && doc) return `the browser answers and ${doc.url} has had no response from its server`
+    if (rendererUp === false) return "the browser answers and this page's renderer does not: busy or hung"
+    if (params.awaitPromise) return 'the renderer answers, so the promise the page was asked to await never settled'
+    return 'the browser and the renderer both answer, so this one call stalled'
   }
 
   function refuseAll(why) {
@@ -345,6 +370,8 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
   const errors = []
   const failed = []
   const listeners = new Map()
+  // Each page's document request still waiting on its server, by session.
+  const documents = new Map()
 
   /** Hear a CDP event — `on('Network.webSocketFrameReceived', (params) => …)`.
    *  An Observer: it receives the event and cannot change what the page does.
@@ -368,6 +395,11 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
       return
     }
     for (const fn of listeners.get(msg.method) ?? []) fn(msg.params, msg.sessionId)
+    if (msg.method === 'Network.requestWillBeSent' && msg.params.type === 'Document')
+      documents.set(msg.sessionId, { id: msg.params.requestId, url: msg.params.request.url })
+    if ((msg.method === 'Network.responseReceived' || msg.method === 'Network.loadingFailed')
+      && documents.get(msg.sessionId)?.id === msg.params.requestId)
+      documents.delete(msg.sessionId)
     if (msg.method === 'Runtime.exceptionThrown') {
       const d = msg.params.exceptionDetails
       errors.push('exception: ' + (d?.exception?.description ?? d?.text))
