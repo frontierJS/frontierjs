@@ -26,9 +26,25 @@ const zoneRefusal = async ({ domain, log, echo, chalk }) => {
     return { refusal: null, points: null }
   }
   const found = await hostRecord({ host: domain, check: true })
-  if (found.error) return { refusal: `Cloudflare: ${found.error.replace(/^Cloudflare:\s*/, '')}`, points: null }
+  if (found.error) return { refusal: `Cloudflare: ${found.error.replace(/^Cloudflare:\s*/, '')}`, points: null, rejected: /HTTP 40[13]|invalid access token/i.test(found.error) }
   echo(`  ${chalk.green('✓')} ${chalk.dim(`${found.zone} is at Cloudflare`)}\n`)
   return { refusal: null, points: found.points ?? null }
+}
+
+// After a refusal that says the token itself is wrong: where it is read from
+// and where a new one is made, in blue under the error. The page and what to
+// pick on it come off `basecamp:dns`'s `requires:`, as `cloudflareToken` reads them.
+const tokenHint = async ({ echo, chalk }) => {
+  const { resolve }                = await import('node:path')
+  const { loadModuleFile }         = await import(resolve(global.fliRoot, 'core/registry.js'))
+  const { requiresOf }             = await import(resolve(global.fliRoot, 'core/requires.js'))
+  const { esetHint, globalEnvPath } = await import(resolve(global.fliRoot, 'core/global-env.js'))
+  const need = requiresOf(loadModuleFile(resolve(global.fliRoot, 'commands/basecamp/dns.md')).meta).find(r => r.key === 'CLOUDFLARE_TOKEN')
+  const home = process.env.HOME ?? ''
+  echo(chalk.blue(`  ℹ Check CLOUDFLARE_TOKEN in this project's .env or the global one (${globalEnvPath().replace(home, '~')})`))
+  echo(chalk.blue(`    OR make a new one: ${need?.url ?? 'https://dash.cloudflare.com/profile/api-tokens'}`))
+  if (need?.note) echo(chalk.blue(`    ${need.note}`))
+  echo(chalk.blue(`    Then set it: ${esetHint('CLOUDFLARE_TOKEN')}`))
 }
 
 // Basecamp's own record, written once Basecamp answers on the box — the
@@ -88,21 +104,71 @@ const offerProxy = async ({ record, configured, log, yes }) => {
 // `fli deploy:setup` and `fli deploy` as child runs of this fli, in the Basecamp
 // checkout, on this terminal. Not imported: each is a command with its own
 // steps, journal and lock, and running it as a process is what keeps that so.
-const runFli = async (argv) => {
-  const { spawnSync } = await import('node:child_process')
-  const { resolve }   = await import('node:path')
+// Async so the stage bar's clock ticks, and inside an aside: this run's raw-mode
+// keyboard would otherwise take the keys the child's questions wait for.
+const runFli = async (argv, tty) => {
+  const { spawn }   = await import('node:child_process')
+  const { resolve } = await import('node:path')
   const { root } = provisionScript()
-  const r = spawnSync(process.execPath, [resolve(global.fliRoot, 'bin/fli.js'), ...argv],
-    { cwd: root, stdio: 'inherit', env: process.env })
-  return r.status ?? 1
+  return await tty.aside(() => new Promise((done) => {
+    const child = spawn(process.execPath, [resolve(global.fliRoot, 'bin/fli.js'), ...argv],
+      { cwd: root, stdio: 'inherit', env: process.env })
+    child.on('close', (code, signal) => done(code ?? (signal === 'SIGINT' ? 130 : 1)))
+    child.on('error', () => done(1))
+  }))
 }
+
+// ─── The run's stages ─────────────────────────────────────────────────────────
+// Each stage opens with an `n/of` header in the scrollback, and a line pinned to
+// the terminal's foot says which one is running and for how long: deploy:setup
+// is minutes of apt with long stretches where nothing prints.
+const clock = (ms) => {
+  const s = Math.floor(ms / 1000)
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+const stageBar = ({ tty, echo, chalk, quiet = false }, stages) => {
+  if (quiet) return { at() {}, stop() {} }
+  const began = Date.now()
+  let at = -1
+  let since = began
+  const pin = tty.pin(() => {
+    const s = stages[at]
+    if (!s) return null
+    return [
+      chalk`{cyan ▸ ${at + 1}/${stages.length}} {bold ${s.name}}  ${clock(Date.now() - since)}`,
+      chalk.dim(s.what),
+      chalk.dim(`${clock(Date.now() - began)} in all`),
+    ]
+  })
+  return {
+    at(name) {
+      at = stages.findIndex(s => s.name === name)
+      since = Date.now()
+      const s = stages[at]
+      echo(chalk`\n  {cyan ${at + 1}/${stages.length}} {bold ${s.name}}  {dim ${s.what}}\n`)
+      pin.update()
+    },
+    stop: pin.stop,
+  }
+}
+
+// What every Basecamp install runs on the box, in order. `create` puts its buy
+// and wait for ssh before them; an install with no Outpost drops the last.
+const INSTALL_STAGES = [
+  { name: 'deploy:setup',   what: 'docker and caddy on the box — a few minutes on a fresh one' },
+  { name: 'env:push',       what: 'the addresses people and machines reach Basecamp at' },
+  { name: 'deploy',         what: 'build the image, ship it, start Basecamp' },
+  { name: 'dns',            what: 'mark the box as Basecamp\'s host and point the hostname at it' },
+  { name: 'admin',          what: 'the first admin and the workspace, over ssh' },
+  { name: 'deploy:outpost', what: 'enroll the box in Basecamp\'s own fleet' },
+]
+const installStages = (outpost) => INSTALL_STAGES.filter(s => outpost || s.name !== 'deploy:outpost')
 
 // ─── Basecamp on a box ────────────────────────────────────────────────────────
 // `fli basecamp:create` runs these on the box it just bought and `basecamp:install`
 // on one that already answers ssh, so the two cannot install differently.
-// Answers the first run that failed, or null. `say` hears each step as it
-// starts: deploy:setup is minutes of apt with nothing printed for long stretches.
-// The deploy runs `--no-outpost`: a fresh Basecamp has no workspace until
+// Answers the first run that failed, or null. `stage` hears each step's name
+// as it starts. The deploy runs `--no-outpost`: a fresh Basecamp has no workspace until
 // `/setup`, so its enrollment step finds nothing to enroll into. `joinFleet`
 // enrolls once the admin is made.
 //
@@ -111,7 +177,7 @@ const runFli = async (argv) => {
 // emailed link and every provisioned machine's enrollment then names the box
 // itself. `env:push` adds what the file lacks and leaves, and names, a value
 // the operator already set, so a re-run never overwrites a copy that is theirs.
-const ringZero = async (dest, domain, say = () => {}) => {
+const ringZero = async (dest, domain, { tty, stage }) => {
   const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
   const { resolve } = await import('node:path')
@@ -119,15 +185,15 @@ const ringZero = async (dest, domain, say = () => {}) => {
   const urls = resolve(tmp, 'env')
   writeFileSync(urls, `FRONTIER_APP_URL=https://${domain}\nFRONTIER_API_URL=https://${domain}\n`)
   const steps = [
-    { argv: ['deploy:setup', '--auto-install', '--no-next-steps', '--server', dest, '--domain', domain], what: 'docker and caddy on the box — a few minutes on a fresh one' },
-    { argv: ['env:push', '--file', urls, '--server', dest], what: 'the addresses people and machines reach Basecamp at' },
-    { argv: ['deploy', '--no-outpost', '--server', dest, '--domain', domain], what: 'build the image, ship it, start Basecamp' },
+    ['deploy:setup', '--auto-install', '--no-next-steps', '--server', dest, '--domain', domain],
+    ['env:push', '--file', urls, '--server', dest],
+    ['deploy', '--no-outpost', '--server', dest, '--domain', domain],
   ]
   try {
-    for (const [i, step] of steps.entries()) {
-      say(step, i + 1, steps.length)
-      const status = await runFli(step.argv)
-      if (status !== 0) return { argv: step.argv, status }
+    for (const argv of steps) {
+      stage(argv[0])
+      const status = await runFli(argv, tty)
+      if (status !== 0) return { argv, status }
     }
     return null
   } finally {
@@ -139,7 +205,7 @@ const ringZero = async (dest, domain, say = () => {}) => {
 // (`FJS-D1191`). After `makeAdmin`: enrollment files the box under the one
 // workspace `/setup` made, and with none yet `deploy:outpost` says so and exits 0.
 const OUTPOST_QUESTION = 'Make the box an Outpost too, so apps can run beside Basecamp on it?'
-const joinFleet = async (dest, domain) => await runFli(['deploy:outpost', '--server', dest, '--domain', domain]) === 0
+const joinFleet = async (dest, domain, tty) => await runFli(['deploy:outpost', '--server', dest, '--domain', domain], tty) === 0
 
 const EMAIL = /^[^\s@]+@[^\s@]+$/
 
@@ -196,12 +262,15 @@ const makeAdmin = async ({ dest, identity, workspace, admin, password, log, echo
 // `/setup` made, so when that failed the enrollment is printed rather than run.
 // `later` is the `--server`/`--domain` tail a person types from packages/basecamp.
 // Answers false when either failed.
-const adminThenFleet = async ({ outpost, domain, later, ...admin }) => {
+const adminThenFleet = async ({ outpost, domain, later, tty, stage, ...admin }) => {
+  stage('admin')
   if (!await makeAdmin(admin)) {
     if (outpost) admin.log.info(`  Once the admin is made at https://${domain}/setup, from packages/basecamp: fli deploy:outpost${later}`)
     return false
   }
-  return !outpost || await joinFleet(admin.dest, domain)
+  if (!outpost) return true
+  stage('deploy:outpost')
+  return await joinFleet(admin.dest, domain, tty)
 }
 
 </script>

@@ -16211,6 +16211,42 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1781"></a>2026-11-02 · `FJS-D1781` — Q6 — What an idea a step turns up becomes — A `fli file --sev decision` question with options, `--area <app>`, so it sits in `fli decisions` under the filed-rows cap.
+
+Asked in [`IDEAS/autopilot.md`](IDEAS/autopilot.md) § Open questions. **C** was picked over **A** (A new step at the end of the app's current phase, plus a `## Ideas found` list in its `PLAN.md`; promotion to `IDEAS/` is a person's), **B** (A new `IDEAS/` paper per idea).
+
+The paper's recommendation, taken as written: A lets the session grow its own work and moves the review gate; B gives every idea a paper and a lifecycle; C is the one sink the owner already reads. Reopen path: A as the list only, if questions swamp the council.
+
+### <a id="fjs-d1780"></a>2026-11-02 · `FJS-D1780` — Q5 — Where an app says it may be run — The apps listed by name under `stressors.apps` in `~/.fli/autopilot.json`; the check is `bun run check`, which every app has.
+
+Asked in [`IDEAS/autopilot.md`](IDEAS/autopilot.md) § Open questions. **C** was picked over **A** (Frontmatter in the app's `PLAN.md`: `autopilot: on`, and the check script named beside it), **B** (A `.project/autopilot.json` per app).
+
+The paper's recommendation, taken as written: consent to spend and to boot an app is the machine owner's, beside the caps; A puts it in the file the session ticks, so the session could grant itself the run, and B is a second origin in forty repos. Reopen path: A, once apps should self-declare, the check still derived.
+
+### <a id="fjs-d1779"></a>2026-11-02 · `FJS-D1779` — Q4 — Landing — Patches stay on the Dock and the owner applies each with the lane tool.
+
+Asked in [`IDEAS/autopilot.md`](IDEAS/autopilot.md) § Open questions. **B** was picked over **A** (One commit per closed row on `autopilot/<day>`, from the patch, with the register edit in it; the owner merges).
+
+Against the recommendation (**A**): applying each patch with the lane tool is the moment it is read; a branch would invite a bulk merge.
+
+### <a id="fjs-d1778"></a>2026-11-02 · `FJS-D1778` — Q3 — V1 caps and their defaults — No defaults: every cap set by hand before Turn On is offered.
+
+Asked in [`IDEAS/autopilot.md`](IDEAS/autopilot.md) § Open questions. **B** was picked over **A** (20 attempts, $20, 2 lanes, S3, Sonnet; Opus only by the ladder's second rung).
+
+The paper's recommendation, taken as written: the toggle is refused until the owner has written each number once; a default is a number nobody chose.
+
+### <a id="fjs-d1777"></a>2026-11-02 · `FJS-D1777` — Q2 — What counts as *due* — A cron line per entry, read by the tick job; the owner writes the file.
+
+Asked in [`IDEAS/autopilot.md`](IDEAS/autopilot.md) § Open questions. **A** was picked over **B** (One window (`after 22:00, before 07:00`) and the entries run in order inside it).
+
+The paper's recommendation, taken as written: it is the shape every scheduler reader already knows and the window is one cron line.
+
+### <a id="fjs-d1776"></a>2026-11-02 · `FJS-D1776` — Q1 — Can the shipped Basecamp reach `scripts/` — V1 is local dev only: the job refuses with the same message the atlas screen gives when not offered.
+
+Asked in [`IDEAS/autopilot.md`](IDEAS/autopilot.md) § Open questions. **A** was picked over **B** (Move the three loop scripts under `packages/cli/core/` now, so a `fli loop` command can ship them).
+
+The paper's recommendation, taken as written: the reopen path is named; moving the scripts is a ruling for the day a second machine needs them.
+
 ### <a id="fjs-d1775"></a>2026-11-02 · `FJS-D1775` — `fli studio` run in a project is that project's studio: two past its GUI in the project's tooling row — 8512 for example, 8502 dev · 7502 `--test` · 9502 `--production` for project 0, plus a scaffolded app's slot. 5502 is studio only where there is no project.
 
 Extends `FJS-D983`, which moved only `fli gui` into the project. Asked through the question tool. **85x2, accepting the collision** was picked over **an own row in category 9** (`[env]9[project][slot]`, no collision, but it spends the last free category digit and is not beside the GUI) and **served by the GUI** (studio at a path on the GUI's port, which mounts litestone's studio inside the fli server). The cost is taken knowingly: a scaffolded app's row is every scaffolded app's GUIs, so slot 0's studio 8502 is slot 2's GUI, and slot 8 and 9 wrap to 8500 and 8501. The listen throws EADDRINUSE, so the meeting fails loudly. Studio claims no `fli dev` slot as `fli gui` does: an app with none takes slot 0's 8502. Lives in `packages/cli/core/ports.js` (`studioPort()`), `packages/cli/commands/db/studio.md`, `packages/cli/core/runnables.js` (the GUI's studio tile), `docs/PORTS.md`, `packages/cli/README.md`.

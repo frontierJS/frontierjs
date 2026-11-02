@@ -51,6 +51,7 @@ export const groups = [
     { href: '/pages/',              label: 'Pages',           icon: 'pages',         sub: 'the pages fli writes about this workspace, and its tools' },
     { href: '/atlas/',              label: 'Atlas',           icon: 'atlas',         sub: 'issues, open questions and rulings — and Claude to talk one through', exact: true },
     { href: '/atlas/decide/',       label: 'Decide',          icon: 'atlas',         sub: 'the open questions one card at a time — swipe to rule, Claude to explain' },
+    { href: '/atlas/autopilot/',    label: 'Autopilot',       icon: 'atlas',         sub: 'the project\'s loops as a town — lanes, the Dock, the Switch, and a replay of the day' },
     { href: '/dependencies/',       label: 'Dependencies',    icon: 'dependencies',  sub: 'packages each project depends on, and which need an update' },
     { href: '/observability/',      label: 'Observability',   icon: 'observability', sub: 'metrics and logs' },
     { href: '/channels/',           label: 'Channels',        icon: 'channels',      sub: 'where alerts land' },

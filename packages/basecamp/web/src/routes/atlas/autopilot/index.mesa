@@ -1,0 +1,508 @@
+---
+title: Autopilot
+---
+<script>
+  // The project's loops as a town (IDEAS/autopilot.md): the Registry, the
+  // Council, five fix-loop lanes, the Dock, the Plan office and the Switch,
+  // drawn from the atlas service's `autopilot` read, with a scrubber that
+  // replays the last day on the same roads.
+  //
+  // The screen holds no state of its own beyond the scrubber: every count is
+  // the registers' or the logs', read again every POLL_MS. The scrubber's
+  // live position is the window's end, and it follows the end across a poll
+  // until somebody moves it off.
+  //
+  // The Switch is drawn, not wired: Phase 3 writes ~/.fli/autopilot.json, so
+  // Turn On is disabled and nothing on this screen starts a loop.
+  import { goto } from '@frontierjs/sierra/router'
+  import { atlas } from '../../../resources/Atlas.mesa'
+
+  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout  from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card     from '@frontierjs/ui/components/layout/Card.mesa'
+  import Tabs     from '@frontierjs/ui/components/layout/Tabs.mesa'
+  import TabList  from '@frontierjs/ui/components/layout/TabList.mesa'
+  import Tab      from '@frontierjs/ui/components/layout/Tab.mesa'
+  import TabPanel from '@frontierjs/ui/components/layout/TabPanel.mesa'
+  import AtlasTown from '../../../components/AtlasTown.mesa'
+  import { B, TRAVEL_REAL, bOf, dotsAt, histogram, nameOf, officeSites, stateAt, withTime } from '../../../lib/town.js'
+
+  const POLL_MS = 15_000
+  const SPEEDS  = [['15 min/s', 900], ['1 h/s', 3600], ['4 h/s', 14400]]
+  const KINDS   = ['all', 'row', 'question', 'paper']
+
+  // A building that is a register opens that register's tab on /atlas/.
+  const OPENS = { registry: ['issues', 'Issues'], council: ['questions', 'Questions'], plans: ['ideas', 'Ideas'] }
+
+  let data    = null
+  let error   = null
+  let offered = true
+  let polledAt = null
+
+  let tab     = 'town'
+  let kind    = 'all'
+  let sel     = 'registry'
+  let t       = 0
+  let rate    = 3600
+  let playing = false
+
+  // ─── the read ───────────────────────────────────────────────────────
+
+  let timer = null
+  let raf   = 0
+  let destroyed = false
+
+  async function load() {
+    let next
+    try {
+      next = await atlas.service.invoke('autopilot', null)
+    } catch (err) {
+      if (err.code === 404) offered = false
+      error = err.message
+      return
+    }
+    // Live means the scrubber sat on the old end; it rides to the new one.
+    const live = !data || t >= Date.parse(data.window.end)
+    data = next
+    error = null
+    polledAt = Date.now()
+    if (live) t = Date.parse(next.window.end)
+    else t = Math.min(Math.max(t, Date.parse(next.window.start)), Date.parse(next.window.end))
+  }
+
+  function schedule() {
+    if (destroyed || !offered) return
+    timer = setTimeout(() => load().then(schedule), POLL_MS)
+  }
+
+  load().then(schedule)
+  $.onDestroy(() => { destroyed = true; clearTimeout(timer); cancelAnimationFrame(raf) })
+
+  // ─── the day at the scrubber ────────────────────────────────────────
+
+  $: events = withTime(data?.events)
+  $: t0 = data ? Date.parse(data.window.start) : 0
+  $: t1 = data ? Date.parse(data.window.end) : 0
+  $: moment = data ? stateAt(events, t) : null
+  $: dots   = data ? dotsAt(events, t, rate) : []
+
+  const fmtT = (ms) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+  const fmtD = (ms) => new Date(ms).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })
+  const money = (n) => '$' + (n ?? 0).toFixed(2)
+  const stamp = (iso) => iso ? iso.slice(0, 16).replace('T', ' ') : '—'
+
+  const position = () => t1 > t0 ? Math.round((t - t0) / (t1 - t0) * 10000) : 0
+  const isLive   = () => !!data && t >= t1
+
+  function scrub(e) {
+    playing = false
+    t = t0 + (t1 - t0) * e.target.value / 10000
+  }
+
+  let last = 0
+  function frame(now) {
+    if (!playing) return
+    const dt = Math.min(100, now - (last || now))
+    last = now
+    t += dt * rate
+    if (t >= t1) { t = t1; playing = false }
+    if (playing) raf = requestAnimationFrame(frame)
+  }
+  function toggle() {
+    playing = !playing
+    if (!playing) return
+    if (t >= t1) t = t0
+    last = 0
+    raf = requestAnimationFrame(frame)
+  }
+
+  const bins = () => histogram(events, t0, t1)
+
+  // ─── the place card ─────────────────────────────────────────────────
+
+  function placeOf(id, d, m) {
+    const b = B[id]
+    const R = d.registry, C = d.council
+    const sev = (o) => Object.entries(o).map(([k, v]) => k + ' ' + v).join(' · ') || 'none'
+    const card = { name: b.name, tag: b.later ? 'later' : id.startsWith('lane.') ? 'workshop' : 'building', stands: b.stands, reads: b.reads, facts: [], kv: [], list: [], listH: '', open: OPENS[id] ?? null }
+
+    if (id === 'registry') {
+      card.facts = [['ready', R.ready.count], ['blocked', R.blocked.count], ['busy', R.busy.count]]
+      card.kv = [['ready by sev', sev(R.ready.bySeverity)], ['blocked by sev', sev(R.blocked.bySeverity)], ['closed today', m.closed + ' by ' + fmtT(t)], ['crate', '1 crate = 4 rows']]
+      card.list = R.ready.top.slice(0, 8).map(r => [r.severity, r.id + ' ' + r.title])
+      card.listH = 'Top of the ready table'
+    } else if (id === 'council') {
+      card.facts = [['open', C.open], ['decidable', C.decidable], ['ruled', C.ruled]]
+      card.kv = [['filed today', m.filed + ' by blocked rows'], ['tile', 'hall 1 = 5 · bench, wall 1 = 10']]
+      card.list = C.bench.slice(0, 6).map(q => ['★' + q.recommend, q.id])
+      card.listH = 'First at the bench'
+    } else if (id.startsWith('lane.')) {
+      const n = +id.slice(5), L = m.lanes[n], info = d.lanes[n - 1]
+      card.facts = [['tries', L.attempts], ['closed', L.closed], ['spent', money(L.spend)]]
+      card.kv = [
+        ['tree', '~/.fli/lanes/' + info.dir + (info.exists ? '' : ' (not made)')],
+        ['on the bench', L.cur ? `${L.cur.row} · ${L.cur.sev} · ${L.cur.model}·${L.cur.effort}` : 'nothing'],
+        ['last outcome', info.last ? `${info.last.row} ${info.last.outcome} · ${stamp(info.last.at)}` : 'none'],
+      ]
+    } else if (id === 'framing') {
+      card.facts = [['today', d.frame.linesToday], ['framed', d.frame.framedAllTime], ['lines', d.frame.total]]
+      card.kv = [['last run', stamp(d.frame.lastAt)]]
+    } else if (id === 'plans') {
+      const o = officeSites(d.plans)
+      card.facts = [['drawn', o.sites.length], ['stressors', d.plans.stressors.length], ['papers', d.plans.papers.length]]
+      card.kv = [['rule', 'every stressor, then the papers nearest completion, eight in all']]
+      card.list = o.rest.map(p => [`${p.done}/${p.steps}`, `${p.id}${p.phase ? ' · ' + p.phase : ''}`])
+      card.listH = o.rest.length ? `${o.rest.length} more, not drawn` : ''
+    } else if (id === 'proving') {
+      const ci = d.ci
+      card.facts = [['phases', ci?.phases.length ?? 0], ['failed', ci?.failures.length ?? 0], ['gate', !ci ? 'none' : ci.green ? 'green' : 'red']]
+      card.kv = [['last run', ci?.header ?? 'no CI run on file']]
+      card.list = (ci?.failures ?? []).map(l => ['✗', l.replace(/^✗\s*/, '')])
+      card.listH = ci?.failures.length ? 'Failures' : ''
+    } else if (id === 'dock') {
+      card.facts = [['harvests', m.harvests.length], ['patches', d.dock.patches.length], ['files', d.dock.filesHarvestedToday]]
+      card.kv = [['patch files', d.dock.patches.map(p => p.file).join(', ') || 'none'], ['other dirs', d.dock.dirs.join(', ') || 'none']]
+    } else if (id === 'review') {
+      card.kv = [['written', stamp(d.review?.modified)]]
+      card.list = (d.review?.head ?? []).filter(l => l.startsWith('| ') && !l.includes('---')).slice(1, 7).map(l => ['·', l.replace(/\|/g, ' ').trim()])
+      card.listH = card.list.length ? 'Outcomes table' : ''
+    } else if (id === 'switch') {
+      card.facts = [['state', d.switch.on ? 'on' : 'off'], ['entries', d.switch.entries.length], ['spent', money(m.spend)]]
+      card.kv = [['file', d.switch.file + (d.switch.exists ? '' : ' (not written yet)')]]
+    } else if (id === 'post') {
+      card.kv = [['phase', '4.3, its own ruling first']]
+    }
+    return card
+  }
+
+  $: place = data && moment && B[sel] ? placeOf(sel, data, moment) : null
+
+  const pick = (id) => { sel = id }
+  const openRegister = (what) => goto('/atlas/?tab=' + what[0])
+
+  // ─── the day ────────────────────────────────────────────────────────
+
+  const kindCount = (k) => k === 'all' ? events.length : events.filter(e => e.kind === k).length
+  const shown     = () => kind === 'all' ? events : events.filter(e => e.kind === kind)
+  const recent    = () => (moment?.past ?? []).slice(-5).reverse()
+  const where     = (e) => nameOf(e.from) + (e.from.startsWith('registry.') ? '·' + e.from.slice(9) : '') + ' → ' + nameOf(e.to)
+
+  function replay(e) {
+    t = e.ms + TRAVEL_REAL * rate * 0.4
+    sel = bOf(e.to)
+    playing = false
+    tab = 'town'
+  }
+
+  // ─── the schedule ───────────────────────────────────────────────────
+
+  const lastRun = (loop) => {
+    if (!data) return '—'
+    const ms = loop === 'frame' ? Date.parse(data.frame.lastAt)
+      : loop === 'review' ? Date.parse(data.review?.modified)
+      : Date.parse(events.filter(e => e.kind === 'row').at(-1)?.t)
+    return Number.isFinite(ms) ? fmtD(ms) : 'never'
+  }
+  const capsOf = (e) => e?.caps && typeof e.caps === 'object' ? Object.entries(e.caps).map(([k, v]) => `${k} ${v}`).join(' · ') || 'none' : 'none'
+</script>
+
+<div class="section-header">
+  <h1>Autopilot</h1>
+  <span class="cluster">
+    <Button href="/atlas/">Atlas</Button>
+    <Button treatment="ghost" href="/atlas/decide/">Decide</Button>
+  </span>
+</div>
+
+{#if !offered}
+  <Callout tone="muted" title="Not offered on this Basecamp">
+    <p class="text-body">
+      The town is drawn from the loops' logs and the registers of the workspace Basecamp runs in, so it is
+      only offered by a Basecamp on your own machine, started with <code>LOCAL_MACHINE=1</code>
+      (<code>bun run api</code> sets it) and never under <code>NODE_ENV=production</code>.
+    </p>
+    <p class="text-sm text-muted">{error}</p>
+  </Callout>
+{:else}
+  {#if error}
+    <article class="alert danger" id="screen-error">
+      <div class="alert-content">{error}</div>
+    </article>
+  {/if}
+
+  {#if !data || !moment}
+    <p class="text-muted" aria-busy="true">Reading the logs…</p>
+  {:else}
+    <div class="stack gap-lg" id="autopilot">
+      <header class="stack gap-2xs">
+        <p class="text-body text-muted">
+          The project's loops drawn as a town. Rows leave the Registry for a lane and go on to the Dock, a blocked
+          row sends its question to the Council, and papers go from the Plan office to the Proving ground.
+          The scrubber replays the last day from the logs.
+        </p>
+        <p class="text-sm text-muted ap-serial" id="ap-serial">
+          {fmtD(t0)} → {fmtD(t1)} · {data.events.length} events · {data.counts.started} attempts · {money(data.spend)}
+        </p>
+      </header>
+
+      <Tabs activeId={tab} onchange={(id) => tab = id}>
+        <TabList>
+          <Tab id="town">Town</Tab>
+          <Tab id="schedule">Schedule · {data.switch.on ? 'on' : 'off'}</Tab>
+          <Tab id="day">Day · {data.events.length}</Tab>
+        </TabList>
+
+        <TabPanel id="town">
+          <div class="ap-layout">
+            <div class="stack gap-sm ap-main">
+              <div class="ap-mapbox">
+                <AtlasTown {data} {moment} {dots} {sel} onselect={pick} />
+              </div>
+
+              <div class="ap-player">
+                <Button id="ap-play" onclick={toggle} aria-label={playing ? 'Pause the day' : 'Play the day'}>{playing ? 'Pause' : 'Play'}</Button>
+                <div class="cluster gap-3xs" role="group" aria-label="Replay speed">
+                  {#each SPEEDS as s (s[1])}
+                    <button type="button" class="pill ap-speed" aria-pressed={rate === s[1]} onclick={() => rate = s[1]}>{s[0]}</button>
+                  {/each}
+                </div>
+                <div class="ap-scrub">
+                  <svg class="ap-hist" viewBox="0 0 1000 18" preserveAspectRatio="none" aria-hidden="true">
+                    {#each bins() as b (b.i)}
+                      <rect x={b.i * 1000 / 96 + 0.5} y={18 - 18 * b.h} width={1000 / 96 - 1} height={18 * b.h} />
+                    {/each}
+                  </svg>
+                  <input type="range" id="ap-scrub" min="0" max="10000" value={position()} aria-label="Time of day" oninput={scrub} />
+                </div>
+                <span class="ap-clock" id="ap-clock">{fmtT(t)}</span>
+                <button type="button" class="pill ap-live {isLive() ? 'success' : 'muted'}" id="ap-live"
+                        onclick={() => { playing = false; t = t1 }}>{isLive() ? 'live' : 'go live'}</button>
+              </div>
+
+              <div class="ap-key text-sm text-muted">
+                <span><i class="ap-k ap-k-row"></i>row</span>
+                <span><i class="ap-k ap-k-question"></i>question</span>
+                <span><i class="ap-k ap-k-paper"></i>paper</span>
+                <span><i class="ap-k ap-k-hi"></i>S1–S2 crate</span>
+                <span><i class="ap-k ap-k-mid"></i>S3 crate</span>
+                <span><i class="ap-k ap-k-lo"></i>S4 crate</span>
+                <span><i class="ap-k ap-k-patch"></i>harvest on the Dock</span>
+                <span><i class="ap-k ap-k-led"></i>lane at work</span>
+              </div>
+              <p class="text-xs text-muted">
+                Registry and Council counts are the registers now; lanes, Dock and spend replay the window.
+                Crates are 1 per 4 rows, Council tiles 1 per 5 (hall) or 10. A dot carries the log line that moved it.
+              </p>
+            </div>
+
+            <div class="ap-side">
+              {#if place}
+                <Card>
+                  <section class="stack gap-xs" id="ap-place" data-place={sel} aria-live="polite">
+                    <div class="ap-mh"><h2 class="ap-h">{place.name}</h2><span class="text-xs text-muted">{place.tag}</span></div>
+                    <p class="text-sm">{place.stands}</p>
+                    <div class="text-xs text-muted ap-reads">reads {place.reads}</div>
+                    {#if place.facts.length}
+                      <dl class="ap-stats">
+                        {#each place.facts as f (f[0])}
+                          <div><dt>{f[0]}</dt><dd>{f[1]}</dd></div>
+                        {/each}
+                      </dl>
+                    {/if}
+                    {#if place.kv.length}
+                      <dl class="ap-kv text-sm">
+                        {#each place.kv as k (k[0])}<dt>{k[0]}</dt><dd>{k[1] ?? '—'}</dd>{/each}
+                      </dl>
+                    {/if}
+                    {#if place.list.length}
+                      <div class="text-sm text-muted">{place.listH}</div>
+                      <ul class="ap-list text-sm">
+                        {#each place.list as li, i (i)}<li><code>{li[0]}</code><span>{li[1]}</span></li>{/each}
+                      </ul>
+                    {/if}
+                    {#if place.open}
+                      <div><Button id="ap-open" onclick={() => openRegister(place.open)}>Open {place.open[1]} in the Atlas</Button></div>
+                    {/if}
+                  </section>
+                </Card>
+              {/if}
+
+              <Card>
+                <section class="stack gap-xs">
+                  <div class="ap-mh"><h2 class="ap-h">Last moved</h2><span class="text-xs text-muted">{moment.past.length} of {events.length} by {fmtT(t)}</span></div>
+                  <ul class="ap-ticker text-sm" id="ap-ticker">
+                    {#each recent() as e (e.i)}
+                      <li>
+                        <i class="ap-k ap-k-{e.kind}"></i>
+                        <div>
+                          <div>{fmtT(e.ms)} {e.id} · {where(e)} · {e.label}</div>
+                          <div class="ap-log">{e.log}</div>
+                        </div>
+                      </li>
+                    {/each}
+                    {#if !recent().length}<li>Nothing has moved yet. Press Play.</li>{/if}
+                  </ul>
+                </section>
+              </Card>
+            </div>
+          </div>
+        </TabPanel>
+
+        <TabPanel id="schedule">
+          <div class="stack gap-lg">
+            <Card>
+              <section class="stack gap-xs" id="ap-switch">
+                <div class="ap-mh"><h2 class="ap-h">The Switch</h2><span class="text-xs text-muted"><code>{data.switch.file}</code> · {data.switch.exists ? 'present' : 'not written yet'}</span></div>
+                <div class="ap-sw">
+                  <div class="ap-state" id="ap-sw-state" data-on={data.switch.on}>{data.switch.on ? 'ON' : 'OFF'}<small class="text-xs text-muted">{data.switch.on ? 'the schedule below runs' : 'nothing starts on its own'}</small></div>
+                  <button type="button" class="ap-toggle" role="switch" aria-checked={data.switch.on} disabled aria-describedby="ap-sw-why">
+                    <span class="ap-track {data.switch.on ? 'on' : ''}"></span>{data.switch.on ? 'Turn Off' : 'Turn On'}
+                  </button>
+                  <span class="text-sm text-muted" id="ap-sw-why">The switch is read here and not yet written: Phase 3 turns it, with every cap set first.</span>
+                </div>
+                <p class="text-sm text-muted">Spend in the window: {money(data.spend)} across {data.counts.started} attempts. Cap: not set.</p>
+              </section>
+            </Card>
+
+            <Card>
+              <section class="stack gap-xs">
+                <div class="ap-mh"><h2 class="ap-h">Schedule</h2><span class="text-xs text-muted">a loop, a cron line, its caps</span></div>
+                <div class="table-wrap">
+                  <table class="table" id="ap-schedule">
+                    <thead><tr><th>Loop</th><th>Cron</th><th>Caps (the script's own flags)</th><th>Last run</th></tr></thead>
+                    <tbody>
+                      {#each data.switch.entries as e, i (i)}
+                        <tr data-entry={e.loop}><td>{e.loop}</td><td><code>{e.cron}</code></td><td>{capsOf(e)}</td><td>{lastRun(e.loop)}</td></tr>
+                      {/each}
+                      {#if !data.switch.entries.length}
+                        <tr id="ap-schedule-empty"><td colspan="4" class="text-muted">No entry is written. <code>{data.switch.file}</code> {data.switch.exists ? 'is present and lists none' : 'does not exist yet'}; every run in the window was started by hand.</td></tr>
+                      {/if}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </Card>
+
+            <Card>
+              <section class="stack gap-xs">
+                <div class="ap-mh"><h2 class="ap-h">Stressors</h2><span class="text-xs text-muted">the feeder: apps the schedule file lists</span></div>
+                {#if data.plans.stressors.length}
+                  <ul class="ap-list text-sm" id="ap-stressors">
+                    {#each data.plans.stressors as s (s.id)}
+                      <li><code>{s.done}/{s.steps}</code><span>{s.id} · {s.phase ?? 'no open phase'}{s.next ? ` · next ${s.next.id}: ${s.next.title}` : ''}</span></li>
+                    {/each}
+                  </ul>
+                {:else}
+                  <p class="text-sm text-muted" id="ap-stressors">No stressor is listed. Apps are named under <code>stressors</code> in <code>{data.switch.file}</code>, and the list is the consent to read their plans.</p>
+                {/if}
+              </section>
+            </Card>
+          </div>
+        </TabPanel>
+
+        <TabPanel id="day">
+          <div class="stack gap-sm">
+            <div class="cluster gap-xs">
+              {#each KINDS as k (k)}
+                <button type="button" class="pill ap-filter" aria-pressed={kind === k} onclick={() => kind = k}>{k} <b>{kindCount(k)}</b></button>
+              {/each}
+            </div>
+            <div class="table-wrap">
+              <table class="table" id="ap-day">
+                <thead><tr><th>Time</th><th>Thing</th><th>Id</th><th>From → To</th><th>What</th><th>Cost</th><th>Turns</th></tr></thead>
+                <tbody>
+                  {#each shown() as e (e.i)}
+                    <tr class="ap-event" data-event={e.i} title={e.log} onclick={() => replay(e)}>
+                      <td>{fmtT(e.ms)}</td>
+                      <td><i class="ap-k ap-k-{e.kind}"></i> {e.kind}</td>
+                      <td><code>{e.id}</code></td>
+                      <td>{where(e)}</td>
+                      <td>{e.label}</td>
+                      <td>{e.cost != null ? money(e.cost) : ''}</td>
+                      <td>{e.turns ?? ''}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+            <p class="text-xs text-muted">
+              Each row is one line of <code>~/.fli/fix-loop.jsonl</code> or <code>frame-loop.jsonl</code>; a blocked attempt
+              makes two, its row to the blocked table and its filed question to the Council. A row opens that moment on the map.
+            </p>
+          </div>
+        </TabPanel>
+      </Tabs>
+    </div>
+  {/if}
+{/if}
+
+<style>
+  .ap-layout { display: grid; gap: var(--space-lg); }
+  .ap-side { display: grid; grid-template-columns: repeat(auto-fit, minmax(var(--grid-min, 16rem), 1fr)); gap: var(--space-sm); align-items: start; }
+  .ap-main, .ap-side { min-inline-size: 0; }
+  .ap-mapbox { overflow-x: auto; border: 1px solid var(--rule); border-radius: var(--card-radius); }
+
+  .ap-player {
+    display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; gap: var(--space-sm); align-items: center;
+    padding: var(--space-sm) var(--space-lg); border: 1px solid var(--rule); border-radius: var(--card-radius); background: var(--surface-raised);
+  }
+  @media (max-width: 40rem) { .ap-player { grid-template-columns: auto auto 1fr; } .ap-scrub { grid-column: 1 / -1; order: 3; } }
+  .ap-speed[aria-pressed='true'] { background: var(--color-primary); color: var(--surface); }
+  .ap-scrub { display: grid; gap: var(--space-3xs); min-inline-size: 0; }
+  .ap-scrub input { inline-size: 100%; accent-color: var(--color-primary); }
+  .ap-hist { display: block; inline-size: 100%; block-size: var(--space-3xl); }
+  .ap-hist rect { fill: var(--ink-mute); opacity: 0.5; }
+  .ap-clock { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ap-live { cursor: pointer; border: 0; font: inherit; }
+
+  .ap-key { display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-xl); }
+  .ap-key span { display: inline-flex; align-items: center; gap: var(--space-xs); }
+  .ap-k { inline-size: var(--space-md); block-size: var(--space-md); border-radius: 50%; display: inline-block; flex: none; border: 1px solid var(--ink); }
+  .ap-k-row { background: var(--surface-raised); }
+  .ap-k-question { background: var(--color-info); }
+  .ap-k-paper { background: var(--color-warning); }
+  .ap-k-hi, .ap-k-mid, .ap-k-lo, .ap-k-patch { border-radius: 2px; }
+  .ap-k-hi { background: var(--color-danger); }
+  .ap-k-mid { background: var(--color-primary); }
+  .ap-k-lo { background: var(--ink-mute); }
+  .ap-k-patch { background: var(--color-warning); }
+  .ap-k-led { background: var(--color-success); border-color: var(--color-success); }
+
+  .ap-mh { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-sm); flex-wrap: wrap; }
+  .ap-h { margin: 0; font-size: var(--text-sm, 0.875rem); text-transform: uppercase; letter-spacing: var(--tracking-wide, 0.08em); }
+  .ap-reads { font-family: var(--font-mono); overflow-wrap: anywhere; }
+  .ap-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-sm); margin: 0; }
+  .ap-stats dt { font-size: var(--text-xs, 0.75rem); text-transform: uppercase; color: var(--ink-mute); }
+  .ap-stats dd { margin: 0; font-family: var(--font-mono); font-size: var(--text-lg, 1.125rem); font-variant-numeric: tabular-nums; }
+  .ap-kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-2xs) var(--space-lg); margin: 0; }
+  .ap-kv dt { color: var(--ink-mute); font-family: var(--font-mono); }
+  .ap-kv dd { margin: 0; overflow-wrap: anywhere; }
+  .ap-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2xs); }
+  .ap-list li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-sm); align-items: baseline; }
+  .ap-list code { white-space: nowrap; }
+
+  .ap-ticker { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-xs); }
+  .ap-ticker li { display: grid; grid-template-columns: var(--space-md) minmax(0, 1fr); gap: var(--space-sm); align-items: start; }
+  .ap-ticker .ap-k { margin-block-start: var(--space-2xs); }
+  .ap-log {
+    font-family: var(--font-mono); font-size: var(--text-xs, 0.75rem); color: var(--ink-mute); overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  }
+
+  .ap-sw { display: flex; flex-wrap: wrap; gap: var(--space-2xl); align-items: center; }
+  .ap-state { font-family: var(--font-display, var(--font-primary)); font-size: var(--text-xl, 1.25rem); letter-spacing: var(--tracking-wide, 0.08em); }
+  .ap-state small { display: block; letter-spacing: 0; }
+  .ap-toggle {
+    display: inline-flex; align-items: center; gap: var(--space-lg); padding: var(--space-xs) var(--space-2xl) var(--space-xs) var(--space-xs);
+    border: 1px solid var(--rule); border-radius: var(--pill-radius); background: var(--surface-sunken); color: var(--ink-mute); font: inherit; cursor: not-allowed;
+  }
+  .ap-track { inline-size: var(--space-6xl); block-size: var(--space-4xl); border-radius: var(--pill-radius); background: var(--rule-strong); position: relative; flex: none; }
+  .ap-track::after { content: ''; position: absolute; inset-block: var(--space-3xs); inset-inline-start: var(--space-3xs); aspect-ratio: 1; border-radius: 50%; background: var(--surface-raised); }
+  .ap-track.on { background: var(--color-success); }
+  .ap-track.on::after { inset-inline-start: auto; inset-inline-end: var(--space-3xs); }
+
+  .ap-filter { cursor: pointer; border: 1px solid var(--rule); background: none; font: inherit; }
+  .ap-filter[aria-pressed='true'] { border-color: var(--color-primary); }
+  .ap-event { cursor: pointer; }
+  .ap-event:hover { background: var(--surface-sunken); }
+</style>

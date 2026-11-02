@@ -4599,10 +4599,20 @@ describe('atlas', () => {
       .rejects.toThrow(/Requires admin role in this workspace to decide/)
   })
 
+  test('autopilot is a read at the same standing as the rest of the screen', async () => {
+    const methods = (env.app.services.get('atlas') as any).describe().methods
+    const names = Array.isArray(methods) ? methods.map((m: any) => m.method ?? m.name ?? m) : Object.keys(methods ?? {})
+    expect(names).toContain('autopilot')
+    await expect(env.as(developer).service('atlas').call('autopilot', undefined))
+      .rejects.toThrow(/Requires admin role/)
+  })
+
   test('an owner is told it is not offered here, before anything is read or sent', async () => {
     await expect(env.as(owner).service('atlas').call('overview', undefined))
       .rejects.toThrow(/LOCAL_MACHINE=1/)
     await expect(env.as(owner).service('atlas').call('rings', undefined))
+      .rejects.toThrow(/LOCAL_MACHINE=1/)
+    await expect(env.as(owner).service('atlas').call('autopilot', undefined))
       .rejects.toThrow(/LOCAL_MACHINE=1/)
     await expect(env.as(owner).service('atlas').call('discuss', undefined, { text: 'FJS-1' }))
       .rejects.toThrow(/LOCAL_MACHINE=1/)
@@ -4611,7 +4621,7 @@ describe('atlas', () => {
   // A discuss is a workbench send. Asserted before the LOCAL_MACHINE refusal is
   // reached, as the workbench's is.
   test('an agent is refused it at any standing, and no key reaches it', async () => {
-    for (const method of ['overview', 'rings', 'record', 'discuss', 'decide'])
+    for (const method of ['overview', 'rings', 'autopilot', 'record', 'discuss', 'decide'])
       await expect(env.as(owner).service('atlas').call(method, 'FJS-1', { text: 'FJS-1' }, { transport: 'mcp' }))
         .rejects.toThrow(/not offered to an agent/)
     const key = { authMethod: 'apiKey', scopes: [] }

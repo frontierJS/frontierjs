@@ -33,7 +33,7 @@ widened one).
 | Rows get researched and batched | skill `rule-next` | an interactive session |
 | Rows get fixed in lanes, harvested into the main tree | `fix-loop.mjs`, `lanes.mjs`, `headless.mjs` | someone starts it; the harvest sits uncommitted |
 | What repeats gets named | `loop-review.mjs` (`--ask` proposes) | someone applies it |
-| New rows | audits, stressor passes | CI red and a stalled stranger build file nothing |
+| New rows, questions and ideas | audits, stressor passes (`docs/STRESSOR-UPGRADE.md`: a framework gap is filed, never worked around) | someone opens the app and takes its plan's next box; CI red and a stalled stranger build file nothing |
 
 Autopilot takes the first column's *someone starts it* and the morning after.
 It never rules, never commits to `main`, and never files more than its cap.
@@ -50,7 +50,7 @@ draws state; it holds none.
 | **Lanes** (workshops 1–5) | one `fix-loop` lane each: the row on the bench, the model and effort, cost and turns ticking | `~/.fli/lanes`, `~/.fli/fix-loop.jsonl` |
 | **Framing desk** | `frame-loop` at work on one paper | `~/.fli/frame-loop.jsonl` |
 | **Review** | `loop-review`'s last report — what repeated | `~/.fli/fix-loop-review.md` |
-| **Plan office** | the `IDEAS/` papers with an open box, a stressor as a site under construction with its phase on the hoarding | `fli plan <paper>` |
+| **Plan office** | the `IDEAS/` papers with an open box, and every opted-in stressor as a site under construction with its phase on the hoarding | `fli plan <paper>`, `fli plan <stressors.dir>/<app>/PLAN.md` |
 | **Proving ground** | drives and stressor checks running; CI's last run as the gate at the edge of town | `.cache/ci-last.txt`, `fli proves` |
 | **Dock** | harvested fixes waiting to land — a patch per closed row | `~/.fli/lanes/patches` |
 | **Post** | rulings asked of the owner, and answers back (Phase 4; `IDEAS/phone-ping.md`) | the ntfy topic |
@@ -71,6 +71,17 @@ moved it is the tooltip.
   host from a Basecamp (the workbench's `WORKBENCH_DIR` settled the same shape).
   A typed shape, an unknown loop kind refused by name, and a hard cap the
   script reads itself, so the caps hold with Basecamp down.
+- **The stressors are the feeder, and the schedule file points at them.**
+  `stressors: { dir: '../fjs-prototypes', apps: ['serpgrid', …] }`, the dir
+  resolved against the framework root (the sibling `fli ws:surface --also`
+  already spells), the apps a list the owner writes. An app is a feeder
+  because its `PLAN.md` is Phases of Steps that `fli plan` already reads and
+  its doctrine already says where a gap goes: a defect is `fli file --area
+  <app>`, a question is `fli file --sev decision` with its options, or a
+  question under the plan's own bullet ruled with `fli decide … --file
+  PLAN.md`. Nothing new is parsed. The list is consent (Q5), and it lives
+  beside the caps because an agent in the app's checkout must not be able to
+  grant itself the run.
 - **Basecamp spawns the existing scripts.** A caravan job
   (`api/src/jobs/autopilot-tick.job.ts`, `cron: '*/5 * * * *'`, the shape of
   `claude-index.job.ts`) fires whatever the schedule says is due, the way
@@ -93,7 +104,15 @@ moved it is the tooltip.
 A run that cannot be stopped by a cap is not scheduled. V1 caps: attempts per
 day, dollars per day, lanes at once, a severity floor for anything it files,
 and a model ceiling. A row the loop filed about the loop (FJS-3264 is one) is
-the failure to watch: the per-day cap on filed rows is what stops the spiral.
+the failure to watch: the per-day cap on filed rows is what stops the spiral,
+and the stressor loop, the largest feeder, sits under the same cap.
+
+A stressor step runs in a worktree of the app's repo, never in its working
+tree, the rule the fix loop already keeps for this one. An app whose boot can
+reach outside — a dev db that is prod data, a cron that polls a live service
+(`docs/STRESSOR-UPGRADE.md` § 0 names the check) — is listed only after the
+owner has pinned every such variable to a stand-in; the loop cannot attest
+that, which is why the list is the owner's.
 
 ## Phases
 
@@ -102,13 +121,29 @@ the failure to watch: the per-day cap on filed rows is what stops the spiral.
 Goal: the vocabulary above settled on real motion before any API is written.
 Done when: the owner walks the mockup and the building list needs no new word.
 
-- [ ] 0.1 A scratch builder reads `~/.fli/fix-loop.jsonl`, `frame-loop.jsonl`,
+- [x] 0.1 A scratch builder reads `~/.fli/fix-loop.jsonl`, `frame-loop.jsonl`,
       `fli next --json`, `fli decisions --json` and the stressor plans into one
       JSON day — the last 24 hours of attempts as events with a time, a thing
       (row, question, paper) and a from/to building.
-- [ ] 0.2 An artifact in the Rig's style: the town, a replay scrubber over the
+- [x] 0.2 An artifact in the Rig's style: the town, a replay scrubber over the
       day, dots on roads, the Switch drawn Off with the schedule table and caps.
+  - Published 2026-11-02: https://claude.ai/code/artifact/1c3228de-8366-4ecc-8d0a-6fbd5ed1cfd5
+    — one real day (2026-10-31 10:54 → 11-01 10:54), 333 events, 106 attempts,
+    81 closed, $50.48, lanes 1–2 only. What the building list could not say,
+    for 0.3: harvests write the MAIN TREE and only trial patches reach the
+    Dock; 20 of 104 harvests were a blocked row's register edit; `corrected`
+    (6) has no table; `fli next --json` has no busy table and ignores
+    `--limit`; the Council has a fourth state (settled by a ruling) and its
+    text header and JSON disagree by one; the Framing desk was idle all day
+    (every question came from a blocked row); none of the 13 overview papers
+    has an open box, so which papers the Plan office shows needs a rule; the
+    ELA plan reads 0/24 (its boxes do not parse); nothing logs a drive run, so
+    no paper ever moves; `~/.fli` holds other checkouts' lanes, `merge`,
+    `holds/` and a trial log with no building; cost arrives only at an
+    attempt's end, so a ticking cost is interpolation.
 - [ ] 0.3 The owner names what is missing or misnamed; this file is amended.
+  - Deferred 2026-11-02: the owner sleeps on it and will use the live town
+    first; Phase 1 proceeds and the walk happens on the real route.
 
 ### Phase 1 — The reader
 
@@ -116,15 +151,25 @@ Goal: the town drawn live from the real logs and registers, polled.
 Done when: `verify-atlas.mjs` holds the town's counts against the logs read
 in-process, as it holds the ring cards against `dataOf`.
 
-- [ ] 1.1 a new `loop-log.js` beside the other readers in `packages/cli/core/` — one reader of the jsonl logs and the
+- [x] 1.1 a new `loop-log.js` beside the other readers in `packages/cli/core/` — one reader of the jsonl logs and the
       lanes directory, shared by `loop-review.mjs` and the API (today the review
       script parses them alone).
-- [ ] 1.2 `autopilot` method on the `atlas` service: the town state — lanes and
+- [x] 1.2 `autopilot` method on the `atlas` service: the town state — lanes and
       their rows, attempts in the last day, Registry tables, Council benches,
       papers with an open box, the Dock, the last CI run — under the same
       LOCAL_MACHINE and agent refusals as `overview`.
-- [ ] 1.3 `web/src/routes/atlas/autopilot/index.mesa` draws the town from that
+  - Built 2026-11-02. Council counts are the atlas's question states, not
+    `fli decisions`' headline; every paper with an open box is returned (45
+    today), so which the office draws is the route's rule.
+- [x] 1.3 `web/src/routes/atlas/autopilot/index.mesa` draws the town from that
       state; a building opens its register tab on `/atlas/`.
+  - Built 2026-11-02, `verify:atlas` holds it against the log read in-process.
+    A building is selected first and its place card opens the tab, by
+    `/atlas/?tab=<name>`. For 0.3: the Registry's *ready* table is
+    `collectRegisterAtlas`'s 138 (ready, by hand and env together), where the
+    rings page's strict *ready* is 21; the Framing desk always reads idle
+    because no loop writes a live framing state; the Switch's Turn On is drawn
+    disabled until Phase 3 writes the file.
 
 ### Phase 2 — The schedule, run by hand
 
@@ -137,7 +182,10 @@ town shows the crate move, with `source: 'autopilot'` in the log line.
       unknown loop refused by name, an over-cap entry refused at read time
       (script test).
 - [ ] 2.2 `fix-loop.mjs` and `frame-loop.mjs` take `--source autopilot` and
-      write it; `loop-review.mjs` still reads the log (test).
+      write it, and `fix-loop` writes `lane` on the `started` line too: today
+      only the finishing line names the lane, so the reader draws an
+      unfinished start on lane 1 and reads *busy* off the lane's lock file
+      alone; `loop-review.mjs` still reads the log (test).
 - [ ] 2.3 The Switch's schedule table on the route, read-only, with *Run now*
       per entry: the API spawns the script the way `workbench-run.ts` spawns
       `fli dev`, and the run shows in its lane.
@@ -153,8 +201,9 @@ a report.
       that is due and whose lanes are free; refuse when the day's cap is spent.
 - [ ] 3.2 The toggle, refused until every cap is set; Off stops nothing running
       and starts nothing new.
-- [ ] 3.3 Landing — a closed row's patch becomes one commit on
-      `autopilot/<day>`, never `main`; its own ruling first (Q4).
+- [ ] 3.3 Landing — a closed row's patch stays on the Dock (`FJS-D1779`):
+      the route lists each with its row and the lane command that applies it,
+      and applying is the owner's read; nothing is committed.
 - [ ] 3.4 The morning report as a Basecamp notification: ran, closed, blocked,
       framed, spent, and what the Review says repeated.
 
@@ -163,8 +212,14 @@ a report.
 Goal: the entries the first three phases did not need.
 Done when: each has its own ruling and its own cap.
 
-- [ ] 4.1 Stressor steps — a paper's next open box run as a workbench pin, the
-      site on the map under construction.
+- [ ] 4.1 Stressor steps — a `stress` entry and a `stress-next` skill beside
+      `fix-next` and `frame-next`: of the listed apps, the one whose first open
+      box has waited longest; that one box in a headless session in a worktree
+      of the app's repo; every framework gap filed (`fli file --area <app>`, or
+      `--sev decision` with options), the box ticked, stop. Outcome read off
+      the box and the registers, never the session; the site on the map under
+      construction. Refuses an app not in the list and a run over the
+      filed-rows cap (script test).
 - [ ] 4.2 Feeders — CI red files a row; a stranger build from the npm packages
       files what stalls it; each under the filed-rows cap.
 - [ ] 4.3 Post — rulings asked over `IDEAS/phone-ping.md`'s topic, a one-letter
@@ -173,7 +228,7 @@ Done when: each has its own ruling and its own cap.
 
 ## Open questions
 
-- **Q1 — Can the shipped Basecamp reach `scripts/`?** In local dev the checkout
+- ~~**Q1 — Can the shipped Basecamp reach `scripts/`?**~~ **Answered 2026-11-02 (`FJS-D1776`): A — V1 is local dev only: the job refuses with the same message the atlas screen gives when not offered.** In local dev the checkout
   is this repo and the route is only offered on `LOCAL_MACHINE`, so the scripts
   are beside it; the image installs none.
   - **A** — V1 is local dev only: the job refuses with the same message the
@@ -182,24 +237,49 @@ Done when: each has its own ruling and its own cap.
     `fli loop` command can ship them.
   - **Recommend A** — the reopen path is named; moving the scripts is a ruling
     for the day a second machine needs them.
-- **Q2 — What counts as *due*?** A cron line per entry, or one nightly window.
+- ~~**Q2 — What counts as *due*?**~~ **Answered 2026-11-02 (`FJS-D1777`): A — A cron line per entry, read by the tick job; the owner writes the file.** A cron line per entry, or one nightly window.
   - **A** — A cron line per entry, read by the tick job; the owner writes the
     file.
   - **B** — One window (`after 22:00, before 07:00`) and the entries run in
     order inside it.
   - **Recommend A** — it is the shape every scheduler reader already knows and
     the window is one cron line.
-- **Q3 — V1 caps and their defaults.** Attempts/day, dollars/day, lanes, the
+- ~~**Q3 — V1 caps and their defaults.**~~ **Answered 2026-11-02 (`FJS-D1778`): B — No defaults: every cap set by hand before Turn On is offered.** Attempts/day, dollars/day, lanes, the
   severity floor for filed rows, the model ceiling.
   - **A** — 20 attempts, $20, 2 lanes, S3, Sonnet; Opus only by the ladder's
     second rung.
   - **B** — No defaults: every cap set by hand before Turn On is offered.
   - **Recommend B** — the toggle is refused until the owner has written each
     number once; a default is a number nobody chose.
-- **Q4 — Landing.** What a closed row on the patch path becomes.
+- ~~**Q4 — Landing.**~~ **Answered 2026-11-02 (`FJS-D1779`): B — Patches stay on the Dock and the owner applies each with the lane tool.** What a closed row on the patch path becomes.
   - **A** — One commit per closed row on `autopilot/<day>`, from the patch,
     with the register edit in it; the owner merges.
   - **B** — Patches stay on the Dock and the owner applies each with the lane
     tool.
   - **Recommend A** — a branch is the thing a person reviews; a pile of patches
     is a chore.
+- ~~**Q5 — Where an app says it may be run.**~~ **Answered 2026-11-02 (`FJS-D1780`): C — The apps listed by name under `stressors.apps` in `~/.fli/autopilot.json`; the check is `bun run check`, which every app has.** Forty plans in `../fjs-prototypes`,
+  statuses free text, no two alike.
+  - **A** — Frontmatter in the app's `PLAN.md`: `autopilot: on`, and the check
+    script named beside it.
+  - **B** — A `.project/autopilot.json` per app.
+  - **C** — The apps listed by name under `stressors.apps` in
+    `~/.fli/autopilot.json`; the check is `bun run check`, which every app
+    has.
+  - **Recommend C** — consent to spend and to boot an app is the machine
+    owner's, beside the caps; A puts it in the file the session ticks, so the
+    session could grant itself the run, and B is a second origin in forty
+    repos. Reopen path: A, once apps should self-declare, the check still
+    derived.
+- ~~**Q6 — What an idea a step turns up becomes.**~~ **Answered 2026-11-02 (`FJS-D1781`): C — A `fli file --sev decision` question with options, `--area <app>`, so it sits in `fli decisions` under the filed-rows cap.** A stressor finds things that
+  are neither a defect nor its own next box.
+  - **A** — A new step at the end of the app's current phase, plus a
+    `## Ideas found` list in its `PLAN.md`; promotion to `IDEAS/` is a
+    person's.
+  - **B** — A new `IDEAS/` paper per idea.
+  - **C** — A `fli file --sev decision` question with options, `--area <app>`,
+    so it sits in `fli decisions` under the filed-rows cap.
+  - **Recommend C** — A lets the session grow its own work and moves the
+    review gate; B gives every idea a paper and a lifecycle; C is the one sink
+    the owner already reads. Reopen path: A as the list only, if questions
+    swamp the council.

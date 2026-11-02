@@ -50,6 +50,7 @@ title: Workbench
   import { slug }      from '@frontierjs/toolbelt/inflect'
   import { page }      from '@frontierjs/sierra/router'
   import { workbench } from '../../resources/Workbench.mesa'
+  import { pastedImages, shrinkImage } from '../../lib/pasted-images.js'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -73,6 +74,7 @@ title: Workbench
 
   const POLL_MS   = 2000
   const SHOW_TOOLS = 4
+  const MAX_IMAGES = 5
 
   let pins        = []
   let status      = {}
@@ -563,18 +565,43 @@ title: Workbench
   async function send(p, e) {
     e?.preventDefault()
     const prompt = composed(p.id)
-    if (!prompt) return
+    if (!prompt || pending(p.id)) return
+    const images = (shots[p.id] ?? []).map(({ type, data }) => ({ type, data }))
+    shots    = { ...shots, [p.id]: [] }
     drafts   = { ...drafts, [p.id]: '' }
     comments = { ...comments, [p.id]: [] }
     tabs     = { ...tabs, [p.id]: 'chat' }
     document.getElementById(`workbench-draft-${p.id}`)?.style.removeProperty('block-size')
     scrollToEnd(p.id)
-    if (await act('send', p, { prompt, chat: status[p.id]?.chat })) {
+    if (await act('send', p, { prompt, chat: status[p.id]?.chat, ...(images.length ? { images } : {}) })) {
       lastState[p.id] = 'working'
       status = { ...status, [p.id]: { ...status[p.id], state: 'working', running: status[p.id]?.chat } }
     }
     askNotifications()
   }
+
+  // ─── pasted images ───────────────────────────────────────────────────
+  // Each goes with the next send, shrunk first; the tray over the message box
+  // shows them, and one still shrinking holds Send.
+
+  let shots = {}
+  const pending = (id) => (shots[id] ?? []).some(s => s.pending)
+
+  function paste(p, e) {
+    const { files, only } = pastedImages(e)
+    if (!files.length) return
+    if (only) e.preventDefault()
+    for (const f of files) {
+      if ((shots[p.id] ?? []).length >= MAX_IMAGES) { error = `${p.name}: ${MAX_IMAGES} images is the most one message takes`; break }
+      const slot = { key: Math.random().toString(36).slice(2), pending: true }
+      shots = { ...shots, [p.id]: [...(shots[p.id] ?? []), slot] }
+      shrinkImage(f).then(
+        (done) => { shots = { ...shots, [p.id]: (shots[p.id] ?? []).map(s => s.key === slot.key ? { ...slot, ...done, pending: false } : s) } },
+        (err)  => { shots = { ...shots, [p.id]: (shots[p.id] ?? []).filter(s => s.key !== slot.key) }; error = `${p.name}: could not read the pasted image — ${err?.message ?? err}` },
+      )
+    }
+  }
+  const dropShot = (p, key) => { shots = { ...shots, [p.id]: (shots[p.id] ?? []).filter(s => s.key !== key) } }
 
   // textarea.field grows with its text through field-sizing; a browser
   // without it (Firefox) holds a long prompt in a four-line box. The CSS
@@ -1396,6 +1423,7 @@ title: Workbench
                             <span class="workbench-chevron" aria-hidden="true">{folded(p.id, it, i) ? '▸' : '▾'}</span>
                           </button>
                           <div class={`workbench-text${folded(p.id, it, i) ? ' clamp-2' : ''}`}>{it.text}</div>
+                          {#if it.images}<div class="text-xs text-muted">+ {plural(it.images, 'image')}</div>{/if}
                         </div>
                       {:else if it.kind === 'text'}
                         <div class="workbench-msg workbench-ai muted" id={`chat-${p.id}-${i}`}>
@@ -1828,14 +1856,27 @@ title: Workbench
             {#if !p.missing}
             <form class="stack workbench-composer" onsubmit={(e) => send(p, e)}>
               <label class="visually-hidden" for={`workbench-draft-${p.id}`}>Message to Claude in {p.name}</label>
+              {#if shots[p.id]?.length}
+                <div class="cluster workbench-shots" aria-label={`Images going with the next message in ${p.name}`}>
+                  {#each shots[p.id] as s, k (s.key)}
+                    <span class="workbench-shot" data-shot={k}>
+                      {#if s.pending}<span class="text-xs text-muted">…</span>
+                      {:else}<img src={s.thumb} alt={`pasted image ${k + 1}`} />{/if}
+                      <button type="button" class="workbench-shot-drop" aria-label={`Leave image ${k + 1} out`}
+                              title="Leave this image out" onclick={() => dropShot(p, s.key)}>×</button>
+                    </span>
+                  {/each}
+                </div>
+              {/if}
               <textarea class="field" rows="3" id={`workbench-draft-${p.id}`}
                         placeholder={elsewhere(p.id) ? 'Another chat here is working — one run at a time in a checkout'
                           : status[p.id]?.state === 'working' ? 'Queue a follow-up…' : 'Ask Claude to do something… (Ctrl+Enter)'}
                         value={drafts[p.id] ?? ''}
                         oninput={(e) => { drafts = { ...drafts, [p.id]: e.target.value }; fit(e.target) }}
-                        onkeydown={(e) => keydown(p, e)}></textarea>
+                        onkeydown={(e) => keydown(p, e)}
+                        onpaste={(e) => paste(p, e)}></textarea>
               <div class="cluster">
-                <Button type="submit" disabled={!composed(p.id) || elsewhere(p.id)}>
+                <Button type="submit" disabled={!composed(p.id) || elsewhere(p.id) || pending(p.id)}>
                   {status[p.id]?.state === 'working' && !elsewhere(p.id) ? 'Queue' : 'Send'}
                 </Button>
                 {#if status[p.id]?.state === 'working' && !elsewhere(p.id)}
@@ -2099,6 +2140,31 @@ title: Workbench
   .workbench-terminal-panel { display: flex; flex-direction: column; overflow: hidden; }
   .workbench-chat-panel { display: flex; flex-direction: column; gap: var(--space-xs); overflow: hidden; }
   .workbench-composer textarea { resize: vertical; inline-size: 100%; max-block-size: 30vh; }
+  .workbench-shots { gap: var(--space-xs); }
+  .workbench-shot {
+    position: relative;
+    display: grid;
+    place-items: center;
+    inline-size: 4rem;
+    block-size: 4rem;
+    overflow: hidden;
+    border: var(--border-width) solid var(--tint-rule);
+    border-radius: var(--card-radius);
+    background: var(--surface-sunken);
+  }
+  .workbench-shot img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+  .workbench-shot-drop {
+    position: absolute;
+    inset-block-start: 2px;
+    inset-inline-end: 2px;
+    padding: 0 var(--space-xs);
+    border: 0;
+    border-radius: var(--pill-radius);
+    background: var(--surface-raised);
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
 
   /* Under the message box, like a spreadsheet's sheets: every chat sends
      from the one box, into the one tree. */

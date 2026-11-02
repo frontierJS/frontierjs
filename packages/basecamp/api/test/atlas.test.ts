@@ -3,7 +3,7 @@
 // kind their skill works on. Pure: the atlas is a literal, no fli, no disk.
 
 import { describe, expect, test } from 'bun:test'
-import { composePrompt, namedIds, branchSlug, explainPrompt, type Atlas, type Queued } from '../src/domain/atlas/atlas.ts'
+import { composePrompt, namedIds, branchSlug, explainPrompt, readAutopilot, registerRoot, type Atlas, type Queued } from '../src/domain/atlas/atlas.ts'
 
 const at = (file: string, line: number) => ({ file, line, href: file, edit: '' })
 
@@ -104,4 +104,25 @@ describe('explainPrompt', () => {
   test('a question with no recommendation says so rather than inventing one', () => {
     expect(explainPrompt({ ...q, recommend: null })).toContain('No recommendation is written.')
   })
+})
+
+// The town reads the real logs and registers, so its shape is asserted off this
+// workspace and not a literal; skipped where the cli is not installed beside the API.
+describe('readAutopilot', async () => {
+  const root = await registerRoot().catch(() => null)
+
+  test.skipIf(!root)('answers every key the town draws, and the counts agree with the lists', async () => {
+    const t = await readAutopilot(root!)
+    expect(Object.keys(t).sort()).toEqual([
+      'attempts', 'ci', 'council', 'counts', 'dock', 'events', 'frame', 'lanes', 'plans', 'registry', 'review', 'spend', 'switch', 'window',
+    ])
+    expect(t.lanes.map(l => l.id)).toEqual(['lane.1', 'lane.2', 'lane.3', 'lane.4', 'lane.5'])
+    expect(t.registry.ready.top.length).toBeLessThanOrEqual(40)
+    expect(t.registry.ready.top.length).toBeLessThanOrEqual(t.registry.ready.count)
+    expect(t.registry.busy.count).toBe(t.lanes.filter(l => l.busy).length)
+    expect(t.council.bench.length).toBeLessThanOrEqual(12)
+    expect(t.plans.papers.every(p => p.next !== null)).toBe(true)
+    expect(Date.parse(t.window.end) - Date.parse(t.window.start)).toBe(864e5)
+    expect(t.switch).toMatchObject({ file: '~/.fli/autopilot.json', on: expect.any(Boolean), entries: expect.any(Array) })
+  }, 30_000)
 })

@@ -23,6 +23,11 @@
 //   prompt it was handed and answers in stream-json — followed on the screen
 //   from working to done, and the chat it names is the card the link opens.
 //
+//   The Autopilot town is held against the loops' logs read in this process
+//   (`readLoopLog`): five lanes, the Dock's patches, the Registry's tables
+//   against the rings data, the CI gate against .cache/ci-last.txt, the
+//   Switch against ~/.fli/autopilot.json, and one DAY row per event.
+//
 //   The decide screen's queue is `openDecisions`' order, swiped with real
 //   touch events at 390px wide; Explain is the read-only ask (its argv is
 //   recorded), a follow-up resumes its session, and a ruling waits out its
@@ -44,7 +49,7 @@ export const holds = ['ports']
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../../mesa/src/drive.js'
@@ -52,6 +57,7 @@ import { collectRegisterAtlas } from '../../../cli/core/register-atlas.js'
 import { openDecisions }       from '../../../cli/core/decisions.js'
 import { collect }             from '../../../cli/core/repo-map.js'
 import { dataOf }              from '../../../cli/core/repo-rings.js'
+import { readLoopLog }         from '../../../cli/core/loop-log.js'
 import { portFor }              from '@frontierjs/cli/core/ports.js'
 
 const HERE     = dirname(fileURLToPath(import.meta.url))
@@ -332,11 +338,12 @@ try {
   check('the workbench draws the card the link names', card.includes('Placed it.'), card.slice(0, 120))
 
   await decideScreen()
+  await autopilotScreen()
 
   check('DECISIONS.md is still untouched', hash('DECISIONS.md') === decisionsBefore)
   check('no console errors on the screens', !consoleErrors.length, consoleErrors.join(' | ').slice(0, 300))
 } catch (e) {
-  bad('the drive stopped', e.message)
+  bad('the drive stopped', e.message + (consoleErrors.length ? ` | console: ${consoleErrors.join(' | ').slice(0, 400)}` : ''))
 }
 
 async function decideScreen() {
@@ -462,6 +469,70 @@ async function decideScreen() {
 
   await send('Emulation.setTouchEmulationEnabled', { enabled: false })
   await send('Emulation.clearDeviceMetricsOverride', {})
+}
+
+async function autopilotScreen() {
+  console.log('\n  /atlas/autopilot/ — the town is the logs\'')
+  // Lines land while the screen loads and the window slides with the clock, so
+  // the log is read on both sides of the screen's read and a count may sit
+  // anywhere between the two.
+  const before = readLoopLog({ root: ROOT })
+  await goto('/atlas/autopilot/')
+  await until(`document.querySelectorAll('[data-lane]').length`, v => v === 5, 'the five lanes never drew', 30_000)
+  const after = readLoopLog({ root: ROOT })
+
+  if (process.env.FJS_DRIVE_SHOT_TOWN) {
+    const { data } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true })
+    await Bun.write(process.env.FJS_DRIVE_SHOT_TOWN, Buffer.from(data, 'base64'))
+  }
+  check('five lanes are drawn', await evaluate(`document.querySelectorAll('[data-lane]').length`) === 5)
+  const dock = await evaluate(`Number(document.getElementById('ap-dock-patches')?.dataset.count)`)
+  const patches = [before.dock.patches.length, after.dock.patches.length]
+  check(`the Dock holds the patches directory's ${patches[1]}`, dock >= Math.min(...patches) && dock <= Math.max(...patches), String(dock))
+
+  const rings = dataOf(collect({ root: ROOT }), { root: ROOT })
+  const moves = rings.issues.filter(i => i[2] !== 'decision').map(i => i[4])
+  const ready = moves.filter(m => ['ready', 'hand', 'env'].includes(m)).length
+  const blocked = moves.filter(m => ['ruling', 'row'].includes(m)).length
+  const reg = async name => Number(await textOf(`#ap-reg-${name}`))
+  check(`the Registry's ready table reads ${ready}, the rings' ready + by hand + env`, await reg('ready') === ready, String(await reg('ready')))
+  check(`and its blocked table ${blocked}, the rings' ruling + row`, await reg('blocked') === blocked, String(await reg('blocked')))
+  check(`and its ready table is collectRegisterAtlas's ${atlas.ready.length}`, await reg('ready') === atlas.ready.length)
+
+  let ci = 'none'
+  try { ci = /CI passed/.test(readFileSync(join(ROOT, '.cache', 'ci-last.txt'), 'utf8')) ? 'green' : 'red' } catch {}
+  const gate = await evaluate(`document.getElementById('ap-ci')?.dataset.ci`)
+  check(`the CI gate is ${ci}, as .cache/ci-last.txt says`, gate === ci, gate)
+
+  let on = false
+  try { on = JSON.parse(readFileSync(join(homedir(), '.fli', 'autopilot.json'), 'utf8')).on === true } catch {}
+  check(`the Switch on the map reads ${on ? 'ON' : 'OFF'}`, (await textOf('#ap-sw-map')) === (on ? 'ON' : 'OFF'), await textOf('#ap-sw-map'))
+
+  await clickText('[role=tab]', 'Schedule')
+  await until(`document.getElementById('ap-sw-state')?.offsetParent !== null`, v => v, 'the Schedule tab never showed')
+  check('the Schedule tab reads the Switch the same way', (await textOf('#ap-sw-state'))?.startsWith(on ? 'ON' : 'OFF'), await textOf('#ap-sw-state'))
+  check('and its Turn On is disabled until Phase 3 writes the file', await evaluate(`document.querySelector('[role=switch]').disabled`) === true)
+
+  await clickText('[role=tab]', 'Day')
+  await until(`document.querySelectorAll('tr[data-event]').length`, v => v > 0 || before.events.length === 0, 'the Day tab listed no events', 30_000)
+  const rows = await evaluate(`document.querySelectorAll('tr[data-event]').length`)
+  const events = [before.events.length, after.events.length]
+  check(`the Day tab lists the log's ${events[1]} events`, rows >= Math.min(...events) && rows <= Math.max(...events), String(rows))
+
+  await clickText('[role=tab]', 'Town')
+  await evaluate(`document.querySelector('[data-b="registry"]').dispatchEvent(new MouseEvent('click', { bubbles: true }))`)
+  await until(`document.getElementById('ap-place')?.dataset.place`, v => v === 'registry', 'a click on the Registry never opened its place card')
+  await evaluate(`document.getElementById('ap-open').click()`)
+  await until(`location.pathname`, p => p === '/atlas/', 'the Registry never opened /atlas/', 15_000)
+  const opened = await until(`document.querySelector('[role=tab][aria-selected=true]')?.textContent.trim() ?? ''`, v => v !== '', 'the Atlas showed no tab', 30_000)
+  check('a click on the Registry lands on /atlas/ with the Issues tab active', opened.startsWith('Issues'), opened)
+
+  await goto('/atlas/autopilot/')
+  await until(`!!document.querySelector('[data-b="council"]')`, v => v, 'the town never drew again', 30_000)
+  await evaluate(`document.querySelector('[data-b="council"]').dispatchEvent(new MouseEvent('click', { bubbles: true }))`)
+  await evaluate(`document.getElementById('ap-open').click()`)
+  const council = await until(`location.pathname === '/atlas/' ? (document.querySelector('[role=tab][aria-selected=true]')?.textContent.trim() ?? '') : ''`, v => v !== '', 'the Council never opened /atlas/', 30_000)
+  check('and the Council lands there with the Questions tab active', council.startsWith('Questions'), council)
 }
 
 await cleanup()

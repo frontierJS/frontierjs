@@ -411,11 +411,12 @@ name when it declares none.
 
 ### `atlas` · model `atlas`
 
-- **methods** — `overview`, `rings`, `record`, `queue`, `explanation`, `discuss`, `decide`, `explain`
-- **custom methods** — `overview`, `rings`, `record`, `queue`, `explanation`, `discuss`, `decide`, `explain`
+- **methods** — `overview`, `rings`, `autopilot`, `record`, `queue`, `explanation`, `discuss`, `decide`, `explain`
+- **custom methods** — `overview`, `rings`, `autopilot`, `record`, `queue`, `explanation`, `discuss`, `decide`, `explain`
 - **who may call** —
   - `overview` — standing 5 or above — declared `gate: 5`
   - `rings` — standing 5 or above — declared `gate: 5`
+  - `autopilot` — standing 5 or above — declared `gate: 5`
   - `record` — standing 5 or above — declared `gate: 5`
   - `queue` — standing 5 or above — declared `gate: 5`
   - `explanation` — standing 5 or above — declared `gate: 5`

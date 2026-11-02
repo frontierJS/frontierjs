@@ -36,8 +36,9 @@ import { readdirSync, readFileSync, statSync, writeFileSync, openSync, readSync,
 import { homedir }                                   from 'node:os'
 import { join }                                      from 'node:path'
 
-import { ROOT, LOG_DIR, readLog, sentBack, writes, atRoot, runSession, parseArgs, printHelp } from './headless.mjs'
+import { ROOT, LOG_DIR, sentBack, writes, atRoot, runSession, parseArgs, printHelp } from './headless.mjs'
 import { readRegisters }                                                             from '../packages/cli/core/registers.js'
+import { readLog, finishedAttempts }                                                 from '../packages/cli/core/loop-log.js'
 import { hazardCoverage }                                                            from '../packages/cli/core/hazards.js'
 import { RULES }                                                                     from '../packages/cli/core/checks.js'
 
@@ -55,12 +56,7 @@ const TRANS       = transcripts(ROOT)
 // ─── the attempts ───────────────────────────────────────────
 
 const entries  = readLog(LOG)
-const attempts = []
-for (const [i, e] of entries.entries()) {
-  if (e.outcome === 'started' || e.cost === undefined) continue
-  const start = entries.slice(0, i).findLast(s => s.id === e.id && s.outcome === 'started')
-  attempts.push({ ...e, startedAt: start?.at })
-}
+const attempts = finishedAttempts(entries)
 const recent = attempts.slice(-last)
 if (!recent.length) { console.log(`[loop-review] no finished attempts in ${LOG}`); process.exit(0) }
 

@@ -285,14 +285,76 @@ Done when: `verify:portable` runs in CI.
 
 - **Q1 — A folder or one file.** One file needs wall 1's root-from-process plus a
   generated manifest of services, routes and jobs; the folder needs neither.
+  The manifest is `single-binary.md` item 3, which that paper calls the real work.
+  - **A** — a folder: the launcher with `app/` and `web/` on disk beside it, as
+    the prototype ships. Cost: an upgrade replaces `app/` and `web/` whole, and
+    the app's files are editable in the install.
+  - **B** — one file: wall 1's root-from-process across `createApp`, the
+    scaffold's `core/paths.ts` and `db.ts`, plus the generated manifest. Cost:
+    three packages and the unbuilt work `single-binary.md` already scopes.
+  - **Recommend A** — Phase 2 can start without wall 1, and B has its own paper,
+    so it is this question's reopen path rather than its answer. The local-server
+    apps that ship to a desktop ship a program and a data directory, not one file
+    (Syncthing, [docs](https://docs.syncthing.net/users/config.html), read
+    2026-11-02). Confidence 2.
 - **Q2 — Ship Chromium or require one.** 262 MB on the drive, or
   `apt install chromium`, which is a snap on Ubuntu; `FJS_CHROME` already lets
   either work. The installable kind requires one and refuses by name at install;
   Google Chrome's `.deb` is tested there, snap Chromium is not.
+  - **A** — require one: the installer refuses by name and prints the fix, and
+    `FJS_CHROME` stays the override `findChrome` reads
+    (`packages/mesa/src/drive.js:53`). Cost: on Ubuntu the easy answer is a snap
+    nobody has run here.
+  - **B** — ship `chrome-headless-shell`, pinned from Chrome for Testing and cached
+    (2.4). Cost: about 90 MB, and a redistribution license nobody has read
+    first-hand.
+  - **C** — ship it only for an app that imports print-kit, and require nothing
+    otherwise. Cost: a second build path, decided by the import list 2.2 derives.
+  - **Recommend A, with C as the reopen path** — print-kit already says it wants
+    "Chrome or Chromium on the machine" (`packages/print-kit/README.md:29`), and
+    the browser-driving tools split the same way: Playwright and Puppeteer
+    download a browser by default and their `-core` packages take an
+    `executablePath` ([Playwright](https://playwright.dev/docs/browsers), read
+    2026-11-02). The paper's *Chrome for Testing is redistributable* (§ What a
+    real version still needs) is unconfirmed. The Chrome for Testing repo says
+    nothing on it, and the one reading found (a third party's) calls branded
+    Chrome for Testing not redistributable and `chrome-headless-shell`
+    BSD-3-Clause ([gominimal/pkgs#718](https://github.com/gominimal/pkgs/pull/718)).
+    Read the shell's own license before B or C. Confidence 2.
 - **Q3 — A browser tab or the `desktop/` shell.** `FJS-D263`'s shell with its API
   started beside it is the same folder plus WebKitGTK and Rust at build time.
+  - **A** — a browser tab: the launcher serves on `127.0.0.1` and opens the
+    person's browser, and the XDG entry runs `<app> open` (prototyped). Cost: no
+    window of its own, and a closed tab leaves the server running.
+  - **B** — the `desktop/` Tauri shell with the API started beside it. Cost: Rust
+    at build time, WebKitGTK 4.1 on the build machine and likely on the target,
+    a glibc floor set by the build machine
+    ([Tauri](https://v2.tauri.app/distribute/appimage/), read 2026-11-02), and
+    a shell that starts its own API, a case `FJS-D263` ("always another origin")
+    did not rule.
+  - **Recommend A** — `fli desktop:install` already writes a
+    `~/.local/share/applications` entry
+    (`packages/cli/commands/desktop/install.md:28`), so A adds no convention.
+    Syncthing serves its UI on localhost and opens the browser (`startBrowser`).
+    Actual Budget ships both, an Electron app and a server reached in a browser
+    ([docs](https://actualbudget.org/docs/install/)). B is the reopen path.
+    Confidence 2.
 - **Q4 — Where the data lives.** Beside the binary (the prototype) or
   `~/.local/share/<app>` with the binary elsewhere.
+  - **A** — beside the binary, in `<install>/app/db/`. Cost: every upgrade
+    carries `db/` and `encryption.key` across a swap, and deleting the folder
+    deletes the data.
+  - **B** — under XDG: `$XDG_DATA_HOME/<app>` (default `~/.local/share/<app>`)
+    holds the databases and the key, and the program lives elsewhere. Cost: the
+    launcher takes a data root apart from its code root, through the same
+    `core/paths.ts` and `db.ts` wall 1 touches.
+  - **Recommend B** — `FJS-D1544` already keeps a fleet box's app data
+    (`/var/lib/outpost`) apart from the program, and B is that split on a
+    desktop. The XDG spec puts user data in `$XDG_DATA_HOME`
+    ([spec](https://specifications.freedesktop.org/basedir/latest/), read
+    2026-11-02), and Flatpak gives each app `~/.var/app/<id>/data`
+    ([docs](https://docs.flatpak.org/en/latest/conventions.html)). An upgrade
+    then replaces the program and never touches the data. Confidence 2.
 - **Q5 — Bun inside, or bun required.** The compiled kind is 55 MB zipped and
   needs nothing on the target; the plain kind is 2.6 MB and needs bun. Installing
   bun is `curl -fsSL https://bun.sh/install | bash`, which needs the internet,
@@ -301,6 +363,21 @@ Done when: `verify:portable` runs in CI.
   inside (2.7); only 1.4.4 was run. Both kinds, one flag apart, is a third
   answer: plain for a machine that has bun, compiled for one that does not.
   Either way print-kit's Chromium is the larger half until Q2 is ruled.
+  - **A** — bun inside: the compiled kind only. Cost: about 55 MB zipped, nearly
+    all of it bun.
+  - **B** — bun required: the plain kind only. Cost: the target needs bun, which
+    needs the internet or bun's zip on the drive, and the drive is tied to one bun
+    minor (2.7).
+  - **C** — both, one flag apart (`make-drive.ts --plain`, as prototyped). Cost:
+    `verify:portable` (3.1) runs twice, and two kinds to document and support.
+  - **Recommend A, with C as the reopen path** — the ask is *no bun, no node, no
+    internet* on the target, which only A meets, and an app's own CLI already
+    ships as a `bun build --compile` binary (`FJS-D397`). A runtime switch saves
+    nothing: a compiled hello-world is about 81 MB under Bun, 105 MB under Deno and
+    150 MB as a Node single executable on Linux
+    ([comparison](https://flaviocopes.com/javascript-single-executable/), read
+    2026-11-02). C keeps a flag and a second drive leg for a target that already
+    has bun, which nobody has asked for yet. Confidence 2.
 
 ## Reproduce it
 

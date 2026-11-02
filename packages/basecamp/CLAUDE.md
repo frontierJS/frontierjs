@@ -149,5 +149,5 @@ outpost.ts package.json probe.ts provision-host.ts provisioning.md git-push.ts j
 atlas.ts release-record.ts runtime.ts schema.d.ts schema.lite scopes.ts screens.md seed.js 
 server-metrics.ts session-auth.ts session.js site-ask.ts site-checkout.ts site-photo.ts 
 site-preview.ts site-publish.ts Terminal.mesa variables.ts vision.md workbench-branch.ts 
-workbench-check.ts workbench-diff.ts workbench-preview.ts workbench-run.ts workbench-shell.ts workbench-terminal.ts 
+workbench-check.ts workbench-context.ts workbench-diff.ts workbench-preview.ts workbench-run.ts workbench-shell.ts workbench-terminal.ts 
 workbench.ts -->

@@ -15,6 +15,7 @@ title: Atlas
   //
   // The overview is polled slowly: a row Claude files in the workbench lands
   // here on the next read without a reload.
+  import { page } from '@frontierjs/sierra/router'
   import { atlas } from '../../resources/Atlas.mesa'
   import { workbench } from '../../resources/Workbench.mesa'
 
@@ -58,7 +59,9 @@ title: Atlas
   let error   = null
   let offered = true
 
-  let tab      = 'issues'
+  // /atlas/autopilot/ opens a register by name: `?tab=questions`.
+  const TABS   = ['documents', 'invariants', 'issues', 'questions', 'rulings', 'ideas']
+  let tab      = TABS.includes(page.query?.tab) ? page.query.tab : 'issues'
   let search   = ''
   let severity = ''
   let pkg      = ''

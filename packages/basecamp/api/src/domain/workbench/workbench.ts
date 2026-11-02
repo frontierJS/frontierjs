@@ -101,6 +101,7 @@ import { addWorktree, branchName, copyIgnored, land as landBranch, pendingFiles,
 import { previewLabelRefusal, previewSettings, type Opened, type PreviewSettings } from './workbench-preview.ts'
 import { inventory, resolveArgv, servedBy, tail, type RunRecord, type Served } from './workbench-run.ts'
 import { endShell }                    from './workbench-shell.ts'
+import { workbenchContext }            from './workbench-context.ts'
 
 export type Chat = {
   id:      string
@@ -192,7 +193,7 @@ export type FiledRow = {
 }
 
 export type Item =
-  | { kind: 'you',    text: string, at: string }
+  | { kind: 'you',    text: string, at: string, images?: number }
   | { kind: 'text',   text: string }
   | { kind: 'tool',   text: string }
   | { kind: 'result', ok: boolean, stop: string | null, cost: number | null, turns: number | null }
@@ -347,7 +348,9 @@ let previewMod: Promise<Preview> | null = null
 const loadPreview = () => previewMod ??= import('@frontierjs/cli/core/preview.js') as Promise<Preview>
 
 type AskClaude = {
-  askArgv:       (o?: { session?: string | null, fork?: boolean, edit?: string, work?: { budget?: number, hooks?: boolean } }) => string[]
+  askArgv:       (o?: { session?: string | null, fork?: boolean, edit?: string, work?: { budget?: number, hooks?: boolean }, images?: boolean }) => string[]
+  askInput:      (prompt: string, images?: Image[]) => string
+  readImages:    (list: unknown) => Image[] | { error: string }
   buildPlanPrompt: (o: { goal: string, path: string }) => string
   readAskEvent:  (event: unknown) => Array<Record<string, any>>
   resumeCommand: (root: string, session: string) => string | null
@@ -355,6 +358,8 @@ type AskClaude = {
   stepPrompt:    (o: { path: string, step: Record<string, any>, phase?: Record<string, any> | null }) => string
   nextHandoff:   (o: { path: string, step: Record<string, any>, phase?: Record<string, any> | null, lastResult?: string }) => string
 }
+/** A pasted image as the API takes it: a media type and base64 with no `data:` prefix. */
+export type Image = { type: string, data: string }
 let askClaude: Promise<AskClaude> | null = null
 const loadAskClaude = () => askClaude ??= import('@frontierjs/cli/core/ask-claude.js') as Promise<AskClaude>
 type PlanMod = {
@@ -416,7 +421,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
   const checksFile = (id: string) => join(root, 'logs', `${id}.checks.json`)
   const runFile    = (id: string, row: string) => join(root, 'logs', `${id}.run.${createHash('sha1').update(row).digest('hex').slice(0, 10)}.log`)
   const folds    = new Map<string, Folded>()
-  const queues   = new Map<string, string[]>()
+  const queues   = new Map<string, Array<{ text: string, images: Image[] }>>()
 
   // ─── pins ─────────────────────────────────────────────────────────────
 
@@ -729,7 +734,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     }
     if (event.type === 'prompt') {
       const at = String(event.at ?? '')
-      push(f, { kind: 'you', text: String(event.text ?? ''), at })
+      push(f, { kind: 'you', text: String(event.text ?? ''), at, ...(event.images ? { images: Number(event.images) } : {}) })
       f.title ??= titleOf(String(event.text ?? ''))
       f.run = { state: 'working', tool: null, cost: null, turns: null, at }
       f.runs.push({ at, cost: null, turns: null })
@@ -934,15 +939,17 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
    * O_APPEND keeps its lines and the `exit` line whole. `onEnd` runs once,
    * on `exit` or on a spawn that fails and never exits.
    */
-  function launch(file: string, cwd: string, argv: string[], prompt: string, onEnd: (code: number | null, signal: string | null) => void) {
-    appendLine(file, { type: 'prompt', text: prompt, at: new Date().toISOString() })
+  function launch(file: string, cwd: string, argv: string[], prompt: string, onEnd: (code: number | null, signal: string | null) => void,
+                  { input = prompt, images = 0 }: { input?: string, images?: number } = {}) {
+    // The log keeps the count, not the bytes: it is reread on every poll.
+    appendLine(file, { type: 'prompt', text: prompt, ...(images ? { images } : {}), at: new Date().toISOString() })
     const fd = openSync(file, 'a')
     let child
     try {
       child = spawn(bin, argv, { cwd, detached: true, env: childEnv(env), stdio: ['pipe', fd, fd] })
     } finally { closeSync(fd) }
     child.stdin?.on('error', () => {})
-    child.stdin?.end(prompt)
+    child.stdin?.end(input)
     child.unref()
 
     let ended = false
@@ -962,11 +969,14 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
   }
 
   /** A run in a chat — a work session unless `argv` says otherwise. */
-  async function start(p: Pin, chat: Chat, prompt: string, argv?: string[]) {
-    const { askArgv } = await loadAskClaude()
+  async function start(p: Pin, chat: Chat, prompt: string, argv?: string[], images: Image[] = []) {
+    const { askArgv, askInput } = await loadAskClaude()
     cancelFollowUps(p)
     const forking = !chat.session && !!chat.forkOf
-    argv ??= askArgv({ session: chat.session ?? chat.forkOf, fork: forking, work: { budget: p.budget, hooks: p.hooks } })
+    argv ??= [
+      ...askArgv({ session: chat.session ?? chat.forkOf, fork: forking, work: { budget: p.budget, hooks: p.hooks }, images: images.length > 0 }),
+      '--append-system-prompt', workbenchContext(p),
+    ]
     const file    = logFile(p.id, chat.id)
     const child = launch(file, p.path, argv, prompt, async (code, signal) => {
       const still = getPin(p.id)
@@ -982,9 +992,9 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
       })
       const next = queues.get(p.id)?.shift()
       const same = chatIn(now, chat.id)
-      if (next !== undefined && same) { await start(now, same, next); return }
+      if (next !== undefined && same) { await start(now, same, next.text, undefined, next.images); return }
       if (!stopped) await followUp(p.id, f.run.state)
-    })
+    }, { input: askInput(prompt, images), images: images.length })
     updatePin(p.id, { pid: child.pid ?? null, runChat: chat.id })
   }
 
@@ -1395,23 +1405,25 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
 
   /** Send a message to a chat, the one shown unless another is named. The
    *  chat already working queues it behind the run; any other is refused. */
-  async function send(id: string, prompt: string, chat?: unknown): Promise<{ queued: number } | { refused: string }> {
+  async function send(id: string, prompt: string, chat?: unknown, pasted?: unknown): Promise<{ queued: number } | { refused: string }> {
     const p = getPin(id)
     if (!p) return { refused: `no pinned checkout '${id}'` }
     const c = chatIn(p, chat)
     if (!c) return { refused: `${p.name} has no chat '${chat}'` }
     const text = prompt.trim()
     if (!text) return { refused: 'say something' }
+    const images = (await loadAskClaude()).readImages(pasted)
+    if ('error' in images) return { refused: images.error }
     const gone = goneRefusal(p)
     if (gone) return gone
     if (alive(p.pid)) {
       if (p.runChat !== c.id) return { refused: `another chat in ${p.name} is working — one run at a time in a checkout; Fork for a second` }
       const q = queues.get(id) ?? []
-      q.push(text)
+      q.push({ text, images })
       queues.set(id, q)
       return { queued: q.length }
     }
-    await start(p, c, text)
+    await start(p, c, text, undefined, images)
     return { queued: 0 }
   }
 

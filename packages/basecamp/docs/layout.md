@@ -192,6 +192,10 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           upgrade. domain/workbench/workbench-shell.ts names the shell: a tmux session on
           basecamp's OWN tmux server (`-L basecamp`), so a closed socket
           detaches rather than ends it; Unpin and Archive end it.
+          domain/workbench/workbench-context.ts is what a work run is told about
+          where it is, appended to the system prompt on every run: a browser
+          pane, not a terminal. Not a file in the checkout, which is the
+          person's repository and is resumed in a real terminal too.
           A pin may carry PLANS (`plans: [{ path, steps }]`, IDEAS/shipped/workbench-plans.md),
           and `plan` is the path of the SHOWN one, as `chat` is for chats — Go,
           Next, tick and decide act on it; `openPlan` shows one, adding a file
@@ -334,6 +338,10 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           a swipe is the same `decide`, held five seconds in the BROWSER for
           Undo; `explain` is fli's read-only `runAsk`, not the workbench, kept
           in this process's memory per question and resumed for a follow-up
+          /atlas/autopilot/ draws the same service's `autopilot` read as a town —
+          routes/atlas/autopilot/, components/AtlasTown.mesa, and lib/town.js for the
+          roads and the replay; it writes nothing, and a register's building opens
+          that tab on /atlas/ as `?tab=`
           services/infra/ takes one and has no MODEL — `graph` and
           `onboarding`, two projections assembled from several tables, where
           storing either would be a second answer that goes stale

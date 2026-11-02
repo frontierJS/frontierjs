@@ -13,11 +13,11 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { ASK_EFFORT, EDIT_KINDS, editEffort, EDIT_MAX_HTML, PANEL_EFFORTS, EDIT_RULES, EDIT_SCOPES, askArgv, editPrompt, readAskEvent, resumeCommand, shareBudget } from '../core/ask-claude.js'
+import { ASK_EFFORT, EDIT_KINDS, editEffort, EDIT_MAX_HTML, PANEL_EFFORTS, EDIT_RULES, EDIT_SCOPES, askArgv, editPrompt, readImages, readAskEvent, resumeCommand, shareBudget } from '../core/ask-claude.js'
 
 const SESSION = '5acea7bb-3850-44cf-81dc-97688510acda'
 import { markerPath } from '../core/preview.js'
-import { admitCaller, askPlugin, createLedger, dirtyPaths, lineDiff, readAdmit, readImages, sameOrigin, submission, undoEdits } from '../core/vite-ask.js'
+import { admitCaller, askPlugin, createLedger, dirtyPaths, lineDiff, readAdmit, sameOrigin, submission, undoEdits } from '../core/vite-ask.js'
 
 const dir = mkdtempSync(join(tmpdir(), 'fli-vite-ask-'))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))

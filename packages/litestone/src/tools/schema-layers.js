@@ -29,7 +29,7 @@ function graphOf(schema) {
       if (!rel?.fields) continue
       const t = f.type.name
       if (t === m.name || seen.has(t) || inDeg[t] == null) continue
-      seen.add(t); out[m.name].push(t); outDeg[m.name]++; inDeg[t]++; edges.push([m.name, t])
+      seen.add(t); out[m.name].push(t); outDeg[m.name]++; inDeg[t]++; edges.push([m.name, t, f.name])
     }
   }
   return { names: models.map(m => m.name), edges, inDeg, outDeg, out, fields }
@@ -192,7 +192,7 @@ const round = n => Math.round(n * 10) / 10
  * @param {object} schema parsed schema (parseResult.schema)
  * @returns {{
  *   models: Array<{ n: string, in: number, out: number, d: number, f: number, g: string }>,
- *   edges: Array<[string, string]>,
+ *   edges: Array<[from: string, to: string, field: string]>,
  *   groups: Array<{ key: string, label: string, members: string[], core: number, r: number }>,
  *   hubs: string[],
  *   depth: number,

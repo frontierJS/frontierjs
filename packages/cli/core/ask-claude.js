@@ -192,6 +192,9 @@ export const EDIT_TOOLS = ['Read', 'Grep', 'Glob', 'Edit', 'Write']
 
 // The media types the API takes as an image block; anything else is refused there.
 export const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
+export const MAX_IMAGES  = 5
+export const MAX_IMAGE   = 5 * 1024 * 1024
+const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/
 
 // What the browser's picker sends with an element: the page renders as narrow
 // a reply as the console does, and the file and line are where to start, not a
@@ -390,6 +393,22 @@ function askFlags({ session, edit, reads, work, agent, draw, fork }) {
 export function resumeCommand(root, session) {
   if (!SESSION_ID.test(String(session))) return null
   return `cd ${shellWord(root)} && claude --resume ${session}`
+}
+
+/** `[{ type, data }]`, data base64 with no `data:` prefix, or `{ error }`. */
+export function readImages(list) {
+  if (list == null) return []
+  if (!Array.isArray(list)) return { error: 'images is a list' }
+  if (list.length > MAX_IMAGES) return { error: `at most ${MAX_IMAGES} images in one message` }
+  const out = []
+  for (const [i, img] of list.entries()) {
+    const type = String(img?.type ?? ''), data = img?.data
+    if (!IMAGE_TYPES.includes(type)) return { error: `image ${i + 1} is ${type.slice(0, 40) || 'of no type'} — paste a PNG, JPEG, GIF or WebP` }
+    if (typeof data !== 'string' || !BASE64.test(data)) return { error: `image ${i + 1} is not base64` }
+    if (data.length > MAX_IMAGE) return { error: `image ${i + 1} is over ${MAX_IMAGE >> 20}MB` }
+    out.push({ type, data })
+  }
+  return out
 }
 
 /** What goes on stdin: the prompt as is, or with images one stream-json message. */

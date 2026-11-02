@@ -49,7 +49,7 @@ import { fileURLToPath } from 'node:url'
 import { locateText } from '@frontierjs/toolbelt/textedit'
 import { LEVELS } from '@frontierjs/toolbelt/gate'
 
-import { ASK_EFFORT, EDIT_KINDS, EDIT_SCOPES, IMAGE_TYPES, PANEL_EFFORTS, buildPlanPrompt, editEffort, editPrompt, resumeCommand, runAsk } from './ask-claude.js'
+import { ASK_EFFORT, EDIT_KINDS, EDIT_SCOPES, MAX_IMAGE, MAX_IMAGES, PANEL_EFFORTS, buildPlanPrompt, editEffort, editPrompt, readImages, resumeCommand, runAsk } from './ask-claude.js'
 import { askContext, findAppRoot, findGuides } from './ask-context.js'
 import { previewScope } from './preview.js'
 
@@ -61,10 +61,7 @@ const LOC         = /^[\w./-]+\.(mesa|md):\d+:\d+$/
 const MAX_PICKS   = 10
 const MAX_INNER   = 60
 const MAX_TEXT    = 2000
-const MAX_IMAGES  = 5
-const MAX_IMAGE   = 5 * 1024 * 1024
 const ASK_BODY    = MAX_BODY + MAX_IMAGES * MAX_IMAGE
-const BASE64      = /^[A-Za-z0-9+/]+={0,2}$/
 const PLAN_FILE   = 'PLAN.md'
 
 /** True when the request came from a page this dev server served. */
@@ -356,22 +353,6 @@ function readChips(body) {
 export function panelConfig(tokenKey) {
   const kinds = Object.fromEntries(Object.entries(EDIT_KINDS).map(([k, v]) => [k, v.effort]))
   return { tokenKey, efforts: PANEL_EFFORTS, effort: ASK_EFFORT, kinds }
-}
-
-/** `[{ type, data }]`, data base64 with no `data:` prefix, or `{ error }`. */
-export function readImages(list) {
-  if (list == null) return []
-  if (!Array.isArray(list)) return { error: 'images is a list' }
-  if (list.length > MAX_IMAGES) return { error: `at most ${MAX_IMAGES} images in one ask` }
-  const out = []
-  for (const [i, img] of list.entries()) {
-    const type = String(img?.type ?? ''), data = img?.data
-    if (!IMAGE_TYPES.includes(type)) return { error: `image ${i + 1} is ${type.slice(0, 40) || 'of no type'} — paste a PNG, JPEG, GIF or WebP` }
-    if (typeof data !== 'string' || !BASE64.test(data)) return { error: `image ${i + 1} is not base64` }
-    if (data.length > MAX_IMAGE) return { error: `image ${i + 1} is over ${MAX_IMAGE >> 20}MB` }
-    out.push({ type, data })
-  }
-  return out
 }
 
 function readJson(req, limit = MAX_BODY) {

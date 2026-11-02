@@ -57,6 +57,9 @@ setTimeout(() => {
   return { bin, seen }
 }
 
+// What askArgv built, before the workbench's context goes on the end.
+const own = (argv: string[]) => argv.includes('--append-system-prompt') ? argv.slice(0, argv.indexOf('--append-system-prompt')) : argv
+
 async function until(fn: () => Promise<boolean>, ms = 5000) {
   const end = Date.now() + ms
   while (Date.now() < end) { if (await fn()) return; await Bun.sleep(25) }
@@ -113,6 +116,7 @@ describe('runs', () => {
     expect(call.input).toBe('fix the tests')
     expect(call.argv).toContain('bypassPermissions')
     expect(call.argv).not.toContain('--resume')
+    expect(call.argv[call.argv.indexOf('--append-system-prompt') + 1]).toContain("Basecamp's Workbench, not a terminal")
     // This API's own PORT stays out of a run, or a dev server it starts takes it.
     expect(call.port).toBeNull()
 
@@ -121,7 +125,7 @@ describe('runs', () => {
 
     await wb.send(id, 'again')
     await until(async () => seen().length === 2 && !wb.getPin(id)!.pid)
-    expect(seen()[1].argv.slice(-2)).toEqual(['--resume', SESSION])
+    expect(own(seen()[1].argv).slice(-2)).toEqual(['--resume', SESSION])
   })
 
   test('a message sent while working queues, and runs when the first ends', async () => {
@@ -220,7 +224,7 @@ describe('runs', () => {
     expect(wb.select(id, 'nope')).toEqual({ refused: expect.stringContaining("no chat 'nope'") })
     await wb.send(id, 'third')
     await until(async () => seen().length === 3 && !wb.getPin(id)!.pid)
-    expect(seen()[2].argv.slice(-2)).toEqual(['--resume', SESSION])
+    expect(own(seen()[2].argv).slice(-2)).toEqual(['--resume', SESSION])
   })
 
   test('one run at a time in a checkout: another chat is refused, the running one queues', async () => {
@@ -1005,8 +1009,8 @@ describe('branches', () => {
 
     const [, first, second] = seen()
     expect(first.cwd).toBe(b.path)
-    expect(first.argv.slice(-3)).toEqual(['--resume', SESSION, '--fork-session'])
-    expect(second.argv.slice(-2)).toEqual(['--resume', SESSION])
+    expect(own(first.argv).slice(-3)).toEqual(['--resume', SESSION, '--fork-session'])
+    expect(own(second.argv).slice(-2)).toEqual(['--resume', SESSION])
     expect(second.argv).not.toContain('--fork-session')
 
     // A new chat in a branch forks nothing.

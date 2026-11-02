@@ -9,8 +9,9 @@
 // — so this screen, `fli next`, `fli decide` and `register:check` cannot
 // disagree about what a row says.
 
-import { readdirSync, statSync } from 'node:fs'
-import { dirname, join }         from 'node:path'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { homedir }               from 'node:os'
+import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath }         from 'node:url'
 
 // ─── fli ──────────────────────────────────────────────────────────────────────
@@ -66,6 +67,36 @@ type Fli = {
     { error: string } | { child: unknown, done: Promise<number | null> }
   collect: (o: { root: string }) => unknown
   dataOf:  (model: unknown, o: { root: string }) => RingsData
+  readLoopLog: (o: { logDir?: string, root: string, since?: number | string, until?: number | string }) => LoopLog
+  parsePlan:   (text: string, o: { file: string }) => ParsedPlan
+  phaseOf:     (plan: ParsedPlan, step: PlanStep) => { n: string, title: string } | null
+}
+
+type LoopEvent = {
+  t: string, kind: 'row' | 'question' | 'paper', id: string, from: string, to: string, label: string,
+  cost: number | null, log: string, turns?: number | null, minutes?: number | null,
+  sev?: string, model?: string, effort?: string, source?: string,
+}
+type LoopLane = {
+  id: string, dir: string, exists: boolean, attemptsToday: number, closedToday: number, spendToday: number, busy: boolean,
+  last: { row: string, outcome: string, at: string, model?: string, effort?: string, cost?: number, turns?: number } | null,
+}
+/** `loop-log.js`'s read of the fix-loop and frame-loop logs and the lanes directory. */
+export type LoopLog = {
+  window: { start: string, end: string }
+  attempts: Array<Record<string, unknown> & { id: string, outcome: string, startedAt?: string }>
+  events: LoopEvent[]
+  counts: Record<string, number>
+  spend: number
+  lanes: LoopLane[]
+  frame: { linesToday: number, lastAt: string | null, lastDay: string | null, total: number, framedAllTime: number }
+  dock: { patches: Array<{ file: string, row: string | null, at: string | null }>, dirs: string[], harvestsToday: number, filesHarvestedToday: number }
+  review: { modified: string, head: string[] } | null
+}
+type PlanStep = { id: string, title: string, box: 'open' | 'done' | 'dropped', phase: string }
+type ParsedPlan = {
+  title: string | null, status: string | null, steps: PlanStep[], next: PlanStep | null,
+  phases: Array<{ n: string, title: string }>,
 }
 
 type Row = Array<string | number | boolean | null>
@@ -95,6 +126,8 @@ export const loadFli = () => fli ??= Promise.all([
   import('@frontierjs/cli/core/decide.js'),
   import('@frontierjs/cli/core/decisions.js'),
   import('@frontierjs/cli/core/ask-claude.js'),
+  import('@frontierjs/cli/core/loop-log.js'),
+  import('@frontierjs/cli/core/plan.js'),
 ]).then(mods => Object.assign({}, ...mods) as unknown as Fli)
 
 /** The register root this Basecamp sits in, found from this file rather than the cwd. */
@@ -165,7 +198,144 @@ export async function readRings(root: string): Promise<Rings> {
   return rings
 }
 
-export function forgetAtlas() { cached = null; ringsCached = null }
+// ─── the town ─────────────────────────────────────────────────────────────────
+//
+// IDEAS/autopilot.md draws the project's loops as a town. Nothing here holds
+// state: the logs are `loop-log.js`'s, the Registry and Council are the Atlas
+// the cache above already holds (not `fli next`, which would rank again), and
+// a paper's boxes are `plan.js`'s. The logs move on every attempt, so they are
+// read on every call; the papers move with the register signature, and read
+// only when it does.
+
+type Crate = { id: string, pkg: string, severity: string, title: string }
+type Table = { count: number, bySeverity: Record<string, number>, top: Crate[] }
+export type PlanCard = {
+  id: string, title: string | null, status: string | null, steps: number, done: number,
+  next: { id: string, title: string } | null, phase: string | null,
+}
+export type Autopilot = LoopLog & {
+  registry: { ready: Table, blocked: Table, busy: { count: number }, closedToday: number }
+  council: {
+    open: number, decidable: number, ruled: number,
+    bench: Array<{ id: string, question: string, recommend: string, paper: string | null }>,
+  }
+  plans: { papers: PlanCard[], stressors: PlanCard[] }
+  ci: { header: string, verdict: string, green: boolean, phases: string[], failures: string[] } | null
+  switch: { file: string, exists: boolean, on: boolean, entries: unknown[] }
+}
+
+const FLI_DIR   = () => join(homedir(), '.fli')
+const READY_TOP = 40
+const BENCH_TOP = 12
+
+function planCard(f: Fli, file: string, id: string): PlanCard | null {
+  let plan: ParsedPlan
+  try { plan = f.parsePlan(readFileSync(file, 'utf8'), { file }) } catch { return null }
+  const phase = plan.next ? f.phaseOf(plan, plan.next) : null
+  return {
+    id, title: plan.title, status: plan.status, steps: plan.steps.length,
+    done: plan.steps.filter(x => x.box !== 'open').length,
+    next:  plan.next ? { id: plan.next.id, title: String(plan.next.title).slice(0, 140) } : null,
+    phase: phase ? `Phase ${phase.n} — ${phase.title}` : null,
+  }
+}
+
+let papersCached: { sig: string, papers: PlanCard[] } | null = null
+
+function readPapers(f: Fli, root: string, atlas: Atlas): PlanCard[] {
+  const sig = signature(root, join(root, atlas.dir))
+  if (papersCached?.sig === sig) return papersCached.papers
+  const papers = atlas.ideas
+    .filter(i => !i.at.file.includes('/shipped/'))
+    .map(i => planCard(f, join(root, i.at.file), i.id))
+    .filter((p): p is PlanCard => !!p?.next)
+  papersCached = { sig, papers }
+  return papers
+}
+
+/** `~/.fli/autopilot.json` as written, or null when it is absent or not JSON. */
+function readSwitch(): Record<string, unknown> | null {
+  try { return JSON.parse(readFileSync(join(FLI_DIR(), 'autopilot.json'), 'utf8')) } catch { return null }
+}
+
+/** The stressors the switch file lists, each `<dir>/<app>/PLAN.md`; an unlisted or missing app is skipped. */
+function readStressors(f: Fli, root: string, config: Record<string, unknown> | null): PlanCard[] {
+  const s = config?.stressors as { dir?: unknown, apps?: unknown } | undefined
+  if (!s || typeof s.dir !== 'string' || !Array.isArray(s.apps)) return []
+  const dir = isAbsolute(s.dir) ? s.dir : join(root, s.dir)
+  const out: PlanCard[] = []
+  for (const app of s.apps) {
+    if (typeof app !== 'string' || !/^[\w.-]+$/.test(app)) continue
+    const file = join(dir, app, 'PLAN.md')
+    if (!existsSync(file)) continue
+    const card = planCard(f, file, app)
+    if (card) out.push(card)
+  }
+  return out
+}
+
+/** `.cache/ci-last.txt` as `fli ci` leaves it. */
+function readCi(root: string): Autopilot['ci'] {
+  let lines: string[]
+  try { lines = readFileSync(join(root, '.cache', 'ci-last.txt'), 'utf8').split('\n') } catch { return null }
+  const verdict = lines.find(l => /CI (failed|passed)/.test(l)) ?? ''
+  return {
+    header:   (lines.find(l => l.startsWith('#')) ?? '').replace(/^#\s*/, ''),
+    verdict:  verdict.trim(),
+    green:    /passed/.test(verdict),
+    phases:   lines.filter(l => /^\s+[✓✗]\s/.test(l)).map(l => l.trim()),
+    failures: lines.filter(l => /^✗ /.test(l)).map(l => l.trim()),
+  }
+}
+
+export async function readAutopilot(root: string): Promise<Autopilot> {
+  const f     = await loadFli()
+  const atlas = await readAtlas(root)
+  const loop  = f.readLoopLog({ root })
+
+  const byId  = new Map(atlas.issues.map(i => [i.id, i]))
+  const table = (ids: string[], top: number): Table => {
+    const rows = ids.map(id => byId.get(id)).filter((r): r is Issue => !!r)
+    const bySeverity: Record<string, number> = {}
+    for (const r of rows) bySeverity[r.severity] = (bySeverity[r.severity] ?? 0) + 1
+    return {
+      count: rows.length, bySeverity,
+      top: rows.slice(0, top).map(r => ({ id: r.id, pkg: r.pkg.join(', '), severity: r.severity, title: r.title })),
+    }
+  }
+
+  const asked = (state: Question['state']) => atlas.questions.filter(q => q.state === state)
+  const decidable = asked('decidable')
+  const config = readSwitch()
+
+  // A transcript's usage and report ride on every log line; the town needs
+  // neither, and forty of them would be most of the payload.
+  const attempts = loop.attempts.map(({ usage, report, sessionId, ...rest }) => rest)
+
+  return {
+    ...loop,
+    attempts,
+    registry: {
+      ready:       table(atlas.ready, READY_TOP),
+      blocked:     table(atlas.blocked, READY_TOP),
+      busy:        { count: loop.lanes.filter(l => l.busy).length },
+      closedToday: loop.events.filter(e => e.label === 'closed').length,
+    },
+    council: {
+      open: asked('open').length, decidable: decidable.length, ruled: asked('ruled').length,
+      bench: decidable.filter(q => q.recommend).slice(0, BENCH_TOP)
+        .map(q => ({ id: q.id, question: q.question, recommend: q.recommend!.letter, paper: q.paper })),
+    },
+    plans: { papers: readPapers(f, root, atlas), stressors: readStressors(f, root, config) },
+    ci:    readCi(root),
+    switch: {
+      file: '~/.fli/autopilot.json', exists: config !== null,
+      on: config?.on === true, entries: Array.isArray(config?.entries) ? config.entries : [],
+    },
+  }
+}
+
+export function forgetAtlas() { cached = null; ringsCached = null; papersCached = null }
 
 // ─── the queue ────────────────────────────────────────────────────────────────
 //

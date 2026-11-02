@@ -15,7 +15,7 @@
 //   POST /workbench/:id           output      { row } — the tail of what a started row wrote
 //   POST /workbench/:id           plan        the shown plan — its path, the steps Go started with what each cost, and the file parsed now (null until written)
 //   POST /workbench               pin         { path }
-//   POST /workbench/:id           send        { prompt, chat? } — queued behind a run in the same chat, refused while another chat runs
+//   POST /workbench/:id           send        { prompt, chat?, images? } — queued behind a run in the same chat, refused while another chat runs
 //   POST /workbench/:id           check       the checkout's own `fli done`, now
 //   POST /workbench/:id           review      a read-only Claude Code session over the tree, now
 //   POST /workbench/:id           buildPlan   { goal, path } — a new chat writing the plan at path, allowed to edit that file and no other; that plan shown
@@ -324,7 +324,7 @@ export default createService({
 
   async send() {
     const p = pinned()
-    const r = await wb().send(p.id, String(body().prompt ?? ''), body().chat)
+    const r = await wb().send(p.id, String(body().prompt ?? ''), body().chat, body().images)
     if ('refused' in r) throw new BadRequest(r.refused)
     return r
   },

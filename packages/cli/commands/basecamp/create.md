@@ -189,6 +189,7 @@ if (domain) {
   points = zone.points
   if (zone.refusal) {
     log.error(`${zone.refusal}. Nothing was bought`)
+    if (zone.rejected) await tokenHint({ echo, chalk })
     process.exitCode = 1
     return
   }
@@ -255,6 +256,11 @@ if (asking) {
   echo('')
 }
 
+const stages = stageBar({ tty, echo, chalk, quiet: flag.json }, [
+  { name: 'buy', what: `the box at ${vendor} — about a minute` },
+  ...install ? [{ name: 'ssh', what: 'wait for the fresh box to answer ssh' }, ...installStages(outpost)] : [],
+])
+stages.at('buy')
 const bought = await buyBox({
   cloud, name, size: flag.size, region: flag.region, image: flag.image, keyPath,
   reservedIp: flag['reserved-ip'], reuse: points, sole: true, addHost, json: flag.json, log, echo, chalk,
@@ -277,19 +283,20 @@ if (!install) {
 // Ring 0 on the box it just made, named as `root@ip` so nothing has to be in
 // ~/.ssh/config yet. Each command runs on this terminal: what it asks, it asks
 // the person, and what fails, fails with its own words.
-log.info(`Waiting for ssh on ${dest} — a fresh box answers in about a minute`)
+stages.at('ssh')
 if (!await waitForSsh(dest, { identity })) {
   log.error(`${dest} did not answer ssh in four minutes. When it does: ${installLine}`)
   process.exitCode = 1
   return
 }
-const failed = await ringZero(dest, domain)
+const failed = await ringZero(dest, domain, { tty, stage: stages.at })
 if (failed) {
   log.error(`fli ${failed.argv.join(' ')} exited ${failed.status}. Fix what it said and run ${installLine}`)
   process.exitCode = failed.status || 1
   return
 }
 log.success(`Basecamp is on ${made.name} (${made.ip})`)
+stages.at('dns')
 await markHost({ cloud, id: made.id, log })
 
 const record = await pointHost({ host: domain, ip: made.ip, configured, log })
@@ -299,5 +306,5 @@ echo`
     fli deploy${later}
 `
 
-if (!await adminThenFleet({ dest, identity, workspace: made.name, admin, password, log, echo, chalk, outpost, domain, later })) process.exitCode = 1
+if (!await adminThenFleet({ dest, identity, workspace: made.name, admin, password, log, echo, chalk, outpost, domain, later, tty, stage: stages.at })) process.exitCode = 1
 ```

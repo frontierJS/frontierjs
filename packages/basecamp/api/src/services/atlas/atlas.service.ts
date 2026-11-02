@@ -11,6 +11,7 @@
 //
 //   GET  /atlas          overview  every open row, open question and ruling, without bodies
 //   GET  /atlas          rings     the project half of `fli ws:atlas --as=rings`: documents, invariants and proof, ring counts
+//   GET  /atlas          autopilot the project's loops as a town: lanes, attempts in the last day, Registry and Council tables, papers with an open box, the Dock, the last CI run
 //   GET  /atlas/:id      record    every record holding that id, whole
 //   POST /atlas          discuss   { text, intent, branch? } — a workbench send to this checkout or a new branch of it
 //   POST /atlas/:id      decide    { pick, why?, section } — fli's own `decide`
@@ -24,11 +25,11 @@ import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { env, localMachineRefusal } from '../../core/env.ts'
 import { branchName }              from '../../domain/workbench/workbench-branch.ts'
 import {
-  loadFli, registerRoot, readAtlas, readRings, forgetAtlas, recordsFor, composePrompt, branchSlug,
+  loadFli, registerRoot, readAtlas, readRings, readAutopilot, forgetAtlas, recordsFor, composePrompt, branchSlug,
   readQueue, explain, explanationOf,
 } from '../../domain/atlas/atlas.ts'
 
-const READS  = ['overview', 'rings', 'record', 'queue', 'explanation']
+const READS  = ['overview', 'rings', 'autopilot', 'record', 'queue', 'explanation']
 const WRITES = ['discuss', 'decide', 'explain']
 
 async function workspace() {
@@ -52,6 +53,10 @@ export default createService({
 
   async rings() {
     return readRings(await workspace())
+  },
+
+  async autopilot() {
+    return readAutopilot(await workspace())
   },
 
   async overview() {
