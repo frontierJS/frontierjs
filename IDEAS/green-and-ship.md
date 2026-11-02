@@ -234,7 +234,7 @@ Done when: a green run on main, and FJS-009 closed citing its run id.
   without the pin is the likely cause.
   - 2026-11-01: two were the missing `.env` (0.3); the pin is Q3 and stays
     red until its answer.
-- [ ] 2.5 Push, runner verdict, close FJS-009 with the run id and the
+- [x] 2.5 Push, runner verdict, close FJS-009 with the run id and the
   `ci-last` artifact's summary.
   - 2026-11-01: run `41354648097` on `38bc01c5` (`main` = `dev`): every
     phase ✓ but `tests`, and `tests` is exactly the two named reds — the
@@ -248,6 +248,12 @@ Done when: a green run on main, and FJS-009 closed citing its run id.
     millisecond and `restore()` matches it, so a user removed in the same
     millisecond as its account came back with it (`FJS-3828`, 260 of 300
     here too). The example waits a tick; the framework fix is the row's.
+  - 2026-11-02: run `41372122943` on `30ca1f6e` (the studio commit) was red
+    on the pin and two snapshot drifts, regenerated as `f734b343`; run
+    `41375068360` on it added mesa's cold-error teardown, a Chromium call
+    unanswered for 30 s (`FJS-3829`, print-kit's twin from 1.3); its rerun
+    (attempt 2) is red on the pin alone, every phase green. FJS-009 closed
+    citing it; the pin is Q3-B's named red until 4.2.
 - [x] 2.6 The runner's three new reds, from 1.3. `tutor:fleet`: the Outpost's
   fixed layout (`FJS-D1544`) writes `/etc/outpost` and `/var/lib/outpost`,
   which only root has, so the tutor now hands it systemd's two directory
