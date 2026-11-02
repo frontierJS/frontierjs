@@ -27,6 +27,7 @@ export default {
       'theme-basecamp', 'theme-default', 'theme-dark', 'theme-midnight',
       'theme-forest', 'theme-sunset', 'theme-elite', 'theme-dracula',
       'theme-twilight', 'theme-notebook', 'theme-press', 'theme-field',
+      'theme-expedition', 'theme-catppuccin', 'theme-survey',
     ],
     default: 'theme-basecamp',
   },

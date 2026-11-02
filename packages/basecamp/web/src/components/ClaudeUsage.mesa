@@ -5,6 +5,7 @@
   import { ago }    from '../lib/datetime.js'
   import { count, usd, tilde } from '../lib/claude-format.js'
   import { claude } from '../resources/Claude.mesa'
+  import ClaudeIndexBuild from './ClaudeIndexBuild.mesa'
 
   import Callout from '@frontierjs/ui/components/display/Callout.mesa'
   import Select  from '@frontierjs/ui/components/forms/Select.mesa'
@@ -57,6 +58,7 @@
     <p class="text-sm text-muted">Reading…</p>
   {:else}
     {#if error}<Callout tone="warning" title="Refresh failed, showing the last read">{error}</Callout>{/if}
+    {#if !stats.indexedAt}<ClaudeIndexBuild onbuilt={() => load(range)} />{/if}
     <div class="grid" id="claude-usage-totals">
       <Stat label="Sessions" value={count(stats.totals.sessions)} />
       <Stat label="Messages" value={count(stats.totals.messages)} />
@@ -94,11 +96,7 @@
     <p class="text-sm text-muted" id="claude-usage-source">
       Estimated at list price, read {stats.pricing.readOn} from
       <a href={stats.pricing.sourceUrl} target="_blank" rel="noreferrer">{stats.pricing.sourceUrl}</a>.
-      {#if stats.indexedAt}
-        Indexed {ago(stats.indexedAt)}.
-      {:else}
-        The index has not run yet; the job runs every 5 minutes.
-      {/if}
+      {#if stats.indexedAt}Indexed {ago(stats.indexedAt)}.{/if}
     </p>
   {/if}
 </div>

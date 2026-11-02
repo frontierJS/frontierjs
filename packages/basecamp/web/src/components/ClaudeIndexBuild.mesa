@@ -1,0 +1,63 @@
+<script>
+  // Shown where the usage index is empty (api services/claude: index). The
+  // first pass reads every transcript on the machine and the job never starts
+  // it on its own, so the screen asks, then polls until the pass it asked for
+  // has finished. `asked` is the server's clock, so a skewed browser cannot
+  // mistake an older pass for this one.
+  import { claude } from '../resources/Claude.mesa'
+
+  import Button  from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout from '@frontierjs/ui/components/display/Callout.mesa'
+
+  export let onbuilt = () => {}
+
+  const POLL_MS = 2000
+
+  let asked     = null
+  let building  = false
+  let error     = null
+  let timer     = null
+  let destroyed = false
+
+  function settle(s) {
+    const done = !s.running && s.last && asked && s.last.finishedAt >= asked
+    if (done && s.last.error) { building = false; error = s.last.error; return }
+    if (done) { building = false; onbuilt(); return }
+    building = s.running || !!asked
+    if (building && !destroyed) timer = setTimeout(poll, POLL_MS)
+  }
+
+  async function poll() {
+    try { settle(await claude.service.invoke('index', null, {})) }
+    catch (err) { building = false; error = err.message }
+  }
+
+  async function build() {
+    error = null
+    building = true
+    try {
+      const s = await claude.service.invoke('index', null, { build: true })
+      asked = s.asked
+      settle(s)
+    } catch (err) { building = false; error = err.message }
+  }
+
+  // A pass another tab started shows as under way, not as a button.
+  $.onMount(async () => {
+    try { const s = await claude.service.invoke('index', null, {}); if (s.running) { asked = s.asked; settle(s) } } catch {}
+  })
+  $.onDestroy(() => { destroyed = true; clearTimeout(timer) })
+</script>
+
+<div class="stack" id="claude-index-build">
+  {#if error}<Callout tone="danger" title="The index pass failed">{error}</Callout>{/if}
+  <p class="text-sm text-muted">
+    The usage index is empty. Building it reads every Claude Code transcript on this machine once — about a minute
+    for a few thousand — and after that the job keeps it current every 5 minutes.
+  </p>
+  <div>
+    <Button tone="primary" onclick={build} disabled={building}>
+      {building ? 'Reading transcripts…' : 'Build the usage index'}
+    </Button>
+  </div>
+</div>

@@ -13,6 +13,8 @@
 //                           estimated cost (30 days by default, 0 = all); with when the index last moved
 //   POST /claude   insights { window: '24h' | '7d' } — the share of cost-weighted use per project, model,
 //                           tool, skill and subagent, a message's cost split evenly across the tools it called
+//   POST /claude   index    { build? } — whether a pass is under way and how the last ended; build queues the
+//                           first pass, which the five-minute job never starts on an empty index
 //   POST /claude   sessions { cwd?, limit? } — sessions per project, newest first, with their spend
 //   POST /claude   transcript { sessionId } — one session folded into turns, read from the file the index lists
 //   POST /claude   context  { cwd } — what the project's newest session sent before its first prompt, per part
@@ -77,6 +79,8 @@ import { contextFor, countContext } from '../../domain/claude/claude-context.ts'
 import { fetchUsage }              from '../../domain/claude/claude-quota.ts'
 import { readTranscript }          from '../../domain/claude/claude-transcript.ts'
 import { claudeAuthStatus, readDoctor, readMcpList, runClaude } from '../../domain/local/local-claude.ts'
+import { indexState }            from '../../domain/claude/claude-index.ts'
+import { dispatchIndex }         from '../../jobs/claude-index.job.ts'
 import { INSIGHT_WINDOWS, readInsights, readSessions, readStats, type InsightWindow } from '../../domain/claude/claude-spend.ts'
 
 function offered() {
@@ -222,6 +226,7 @@ export default createService({
     { method: 'config', read: true, gate: LEVELS.ADMINISTRATOR },
     { method: 'file',   read: true, gate: LEVELS.ADMINISTRATOR },
     { method: 'stats',    read: true, gate: LEVELS.ADMINISTRATOR },
+    { method: 'index',    gate: LEVELS.ADMINISTRATOR },
     { method: 'insights', read: true, gate: LEVELS.ADMINISTRATOR },
     { method: 'sessions', read: true, gate: LEVELS.ADMINISTRATOR },
     { method: 'transcript', read: true, gate: LEVELS.ADMINISTRATOR },
@@ -269,6 +274,13 @@ export default createService({
     const days = body().days === undefined ? 30 : Number(body().days)
     if (!Number.isInteger(days) || days < 0 || days > 3650) throw new BadRequest('days is a whole number of days, 0 for all of it')
     return readStats(db(), days)
+  },
+
+  async index() {
+    offered()
+    const asked = new Date().toISOString()
+    if (body().build === true) await dispatchIndex($.app)
+    return { ...indexState(), asked }
   },
 
   async insights() {

@@ -136,12 +136,39 @@ function ringCenters(keys, rad, minR = 180) {
   return out
 }
 
+// Groups that share keys side by side. In size order linked groups land across
+// the floor from each other and every link between them cuts through the hub.
+// Reversals and swaps from the size order until neither shortens the keys'
+// total length: a local optimum, and the same one for the same schema.
+function ringOrder(keys, rad, links, minR) {
+  const cost = order => {
+    const at = ringCenters(order, rad, minR)
+    let c = 0
+    for (const [a, b, w] of links) if (at[a] && at[b]) c += w * Math.hypot(at[a].x - at[b].x, at[a].y - at[b].y)
+    return c
+  }
+  let best = keys.slice(), bestCost = cost(best), better = true
+  while (better) {
+    better = false
+    for (let i = 0; i < best.length; i++) for (let j = i + 1; j < best.length; j++) {
+      const swapped = best.slice();
+      [swapped[i], swapped[j]] = [swapped[j], swapped[i]]
+      for (const next of [[...best.slice(0, i), ...best.slice(i, j + 1).reverse(), ...best.slice(j + 1)], swapped]) {
+        const c = cost(next)
+        if (c < bestCost - 1e-6) { best = next; bestCost = c; better = true }
+      }
+    }
+  }
+  return best
+}
+
 // The group holding the most hubs in the middle, the rest the ring around it,
 // far enough out that no disc touches the center one.
-function hubCenters(keys, rad, hubCount) {
+function hubCenters(keys, rad, hubCount, links) {
   const hub = keys.reduce((a, b) => hubCount(b) > hubCount(a) ? b : a)
   const rest = keys.filter(k => k !== hub)
-  const out = ringCenters(rest, rad, rad(hub) + Math.max(0, ...rest.map(rad)) + 260)
+  const minR = rad(hub) + Math.max(0, ...rest.map(rad)) + 260
+  const out = ringCenters(ringOrder(rest, rad, links, minR), rad, minR)
   out[hub] = { x: 0, y: 0 }
   return out
 }
@@ -214,9 +241,16 @@ export function schemaLayers(schema) {
 
   const rad = k => DISC_PER_ROOT * Math.sqrt(byKey.get(k).length) + 44
   const hubCount = k => byKey.get(k).filter(n => hubSet.has(n)).length
+  const between = new Map()
+  for (const [a, b] of g.edges) {
+    if (group[a] === group[b]) continue
+    const pair = [group[a], group[b]].sort().join('|')
+    between.set(pair, (between.get(pair) ?? 0) + 1)
+  }
+  const links = [...between].map(([pair, w]) => [...pair.split('|'), w])
   const centers = {
-    ring: ringCenters(keys, rad),
-    hub: hubCenters(keys, rad, hubCount),
+    ring: ringCenters(ringOrder(keys, rad, links), rad),
+    hub: hubCenters(keys, rad, hubCount, links),
   }
   const floors = {}
   for (const [name, at] of Object.entries(centers)) {

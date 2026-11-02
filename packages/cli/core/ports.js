@@ -167,13 +167,26 @@ export function isReservedToolingPort(p) {
  * A branch moves it like every other port of the checkout.
  */
 export function guiPort(appRoot, { env = 'dev', lockFile = LOCK_FILE } = {}) {
-  if (!appRoot) return GLOBAL.gui
+  return appRoot ? toolingPort(appRoot, { env, lockFile, offset: 0 }) : GLOBAL.gui
+}
+
+/**
+ * Where `fli studio` listens: in a project, two past its GUI in the same row —
+ * 8512 for example, 8502 for a scaffolded app on slot 0. A scaffolded app's
+ * row is every scaffolded app's GUIs, so slot 0's studio is slot 2's GUI;
+ * strictPort makes that meeting loud.
+ */
+export function studioPort(appRoot, { env = 'dev', lockFile = LOCK_FILE } = {}) {
+  return appRoot ? toolingPort(appRoot, { env, lockFile, offset: 2 }) : GLOBAL.studio
+}
+
+function toolingPort(appRoot, { env, lockFile, offset }) {
   let manifest = {}
   try { manifest = JSON.parse(readFileSync(join(appRoot, 'package.json'), 'utf8')) } catch {}
   const projectId = projectIdFor(manifest.name, basename(appRoot))
   const slot      = projectId === PROJECTS.scaffold ? slotFor(appRoot, { env, lockFile }) ?? 0 : 0
   const branch    = branchFor(appRoot, { lockFile }) ?? 0
-  return port('tooling', { env, projectId, serviceId: slot }) + branch * BRANCH_STEP
+  return port('tooling', { env, projectId, serviceId: (slot + offset) % 10 }) + branch * BRANCH_STEP
 }
 
 // ─── Which ports does THIS app use ────────────────────────────────────────────

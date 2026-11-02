@@ -141,8 +141,8 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           never a wrong number; claude-scan.ts is the fs half and the one
           `claudeConfigDir()`. claude-index.ts keeps the usage index
           (`ClaudeTranscript`, `ClaudeMessage`, `FJS-D1714`) by byte offset from
-          `jobs/claude-index.job.ts` every five minutes, never in a request (the
-          first fill is ~100 s); claude-spend.ts reads it back, priced by
+          `jobs/claude-index.job.ts` every five minutes, never in a request; the
+          first fill (about a minute) waits for the tab's button; claude-spend.ts reads it back, priced by
           claude-pricing.ts (list price, its page and read date beside it).
           claude-context.ts measures a session's first request from its
           transcript; claude-transcript.ts folds one into turns and refuses a

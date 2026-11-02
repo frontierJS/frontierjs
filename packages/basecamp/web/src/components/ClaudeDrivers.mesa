@@ -6,6 +6,7 @@
   import { ago }    from '../lib/datetime.js'
   import { count, usd, share, tilde } from '../lib/claude-format.js'
   import { claude } from '../resources/Claude.mesa'
+  import ClaudeIndexBuild from './ClaudeIndexBuild.mesa'
 
   import Callout from '@frontierjs/ui/components/display/Callout.mesa'
   import Select  from '@frontierjs/ui/components/forms/Select.mesa'
@@ -54,6 +55,7 @@
     <p class="text-sm text-muted">Reading…</p>
   {:else}
     {#if error}<Callout tone="warning" title="Refresh failed, showing the last read">{error}</Callout>{/if}
+    {#if !result.indexedAt}<ClaudeIndexBuild onbuilt={() => load(span)} />{/if}
     <div class="grid" id="claude-drivers-totals">
       <Stat label="Messages" value={count(result.messages)} />
       <Stat label="Estimated cost" value={usd(result.cost)} sub="the shares divide this" />
@@ -101,7 +103,7 @@
       A message's cost is split evenly across the tools it called. A skill's share is the whole cost of the turns it
       loaded in, so skills overlap; a subagent's is the cost of its own messages. Estimated at list price, read {result.pricing.readOn} from
       <a href={result.pricing.sourceUrl} target="_blank" rel="noreferrer">{result.pricing.sourceUrl}</a>.
-      {#if result.indexedAt}Indexed {ago(result.indexedAt)}.{:else}The index has not run yet; the job runs every 5 minutes.{/if}
+      {#if result.indexedAt}Indexed {ago(result.indexedAt)}.{/if}
     </p>
   {/if}
 </div>

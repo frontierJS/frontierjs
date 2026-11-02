@@ -1,0 +1,205 @@
+---
+id: autopilot
+status: proposed
+dated: 2026-11-02
+---
+
+# Autopilot — the project's loops as a town, with a switch that runs them
+
+**Status: PROPOSED.** Dated 2026-11-02. Nothing here is built. Do not cite this
+file as describing behavior — see `VERIFYING.md`.
+
+A Basecamp route, `/atlas/autopilot`, that draws what the loops do to this
+repo as a town — rows moving between tables, questions walking to the council,
+lanes fixing, apps being built and proved, the gate going red and green — and
+ends in one toggle, **Turn On**, that schedules those loops so nobody has to
+start them. It is the Claude Rig picture (the 2026-10-31 artifact) with the
+project in the middle instead of Claude.
+
+**Autopilot** is a mode, not a thing: the loops the repo already has
+(`scripts/fix-loop.mjs`, `frame-loop.mjs`, `loop-review.mjs`) running on a
+schedule with the owner as the only human touch. It coins no other noun. Each
+scheduled entry is *a loop's schedule* — a loop kind, a cron line and caps —
+and the caps are the scripts' own arguments (`--lanes`, `--rows`, `--budget`,
+`--sev`), never a new flag (`decision-rules`, 2026-11-02: paved road over a
+widened one).
+
+## What already exists, and what is still hand-cranked
+
+| Exists | Where | Still a person |
+| --- | --- | --- |
+| Open questions become decidable | `frame-loop.mjs`, skill `frame-next` | someone starts it |
+| Owner rules | `fli decide`, `/atlas/decide/` | stays the owner's, by doctrine |
+| Rows get researched and batched | skill `rule-next` | an interactive session |
+| Rows get fixed in lanes, harvested into the main tree | `fix-loop.mjs`, `lanes.mjs`, `headless.mjs` | someone starts it; the harvest sits uncommitted |
+| What repeats gets named | `loop-review.mjs` (`--ask` proposes) | someone applies it |
+| New rows | audits, stressor passes | CI red and a stalled stranger build file nothing |
+
+Autopilot takes the first column's *someone starts it* and the morning after.
+It never rules, never commits to `main`, and never files more than its cap.
+
+## The town
+
+Every building is a place the registers or the logs already describe. The map
+draws state; it holds none.
+
+| Building | Stands for | Read from |
+| --- | --- | --- |
+| **Registry** | `ISSUES.md` — crates on three tables: *ready*, *blocked*, *busy*; a crate closed today leaves by the door | `fli next --json` |
+| **Council** | `DECISIONS.md` and every paper's open questions — *open* in the hall, *decidable* at the bench, *ruled* on the wall | `fli decisions --json` |
+| **Lanes** (workshops 1–5) | one `fix-loop` lane each: the row on the bench, the model and effort, cost and turns ticking | `~/.fli/lanes`, `~/.fli/fix-loop.jsonl` |
+| **Framing desk** | `frame-loop` at work on one paper | `~/.fli/frame-loop.jsonl` |
+| **Review** | `loop-review`'s last report — what repeated | `~/.fli/fix-loop-review.md` |
+| **Plan office** | the `IDEAS/` papers with an open box, a stressor as a site under construction with its phase on the hoarding | `fli plan <paper>` |
+| **Proving ground** | drives and stressor checks running; CI's last run as the gate at the edge of town | `.cache/ci-last.txt`, `fli proves` |
+| **Dock** | harvested fixes waiting to land — a patch per closed row | `~/.fli/lanes/patches` |
+| **Post** | rulings asked of the owner, and answers back (Phase 4; `IDEAS/phone-ping.md`) | the ntfy topic |
+| **Switch** | Turn On / Off, the schedule table, today's spend against the cap | `~/.fli/autopilot.json`, the logs |
+
+Roads carry the three things that move: a **row** (Registry → a lane → the
+Dock, or Registry → Council when it files a question), a **question** (Council
+hall → bench → wall, with a trip to Post), and a **paper** (Plan office → the
+Proving ground). A dot on a road is one of them in flight; the log line that
+moved it is the tooltip.
+
+## Where things live, and who runs what
+
+- **The schedule is a file on the machine, beside the logs** —
+  `~/.fli/autopilot.json`, fli's, read by `scripts/headless.mjs` (which already
+  owns `LOG_DIR` and the session), never a Litestone model and never a Basecamp
+  setting: loop state is machine-local, and a checkout can sit on a different
+  host from a Basecamp (the workbench's `WORKBENCH_DIR` settled the same shape).
+  A typed shape, an unknown loop kind refused by name, and a hard cap the
+  script reads itself, so the caps hold with Basecamp down.
+- **Basecamp spawns the existing scripts.** A caravan job
+  (`api/src/jobs/autopilot-tick.job.ts`, `cron: '*/5 * * * *'`, the shape of
+  `claude-index.job.ts`) fires whatever the schedule says is due, the way
+  `workbench-run.ts` spawns `fli dev`. No new command, no second log: an
+  autopilot run is a hand run in the log plus one field, `source: 'autopilot'`.
+  Reopen path: `fli loop`, a command wrapping the scripts, if a Basecamp ever
+  needs to spawn from outside the repo.
+- **A scheduled fix never harvests into the main tree.** Nobody is there, and
+  other sessions may share the tree. It runs on the patch path (`--trial`'s
+  `~/.fli/lanes/patches`), and landing is Phase 3's own step with its own
+  ruling.
+- **Frame runs first and alone** in the earliest phase: `frame-next` writes only
+  under a paper's bullets and never rules, so it is the loop safe to schedule
+  before anything else.
+- **The town is one route over the `atlas` service** — severable, drawn from
+  readers that already exist, polled like the overview.
+
+## Guards
+
+A run that cannot be stopped by a cap is not scheduled. V1 caps: attempts per
+day, dollars per day, lanes at once, a severity floor for anything it files,
+and a model ceiling. A row the loop filed about the loop (FJS-3264 is one) is
+the failure to watch: the per-day cap on filed rows is what stops the spiral.
+
+## Phases
+
+### Phase 0 — Mock the town
+
+Goal: the vocabulary above settled on real motion before any API is written.
+Done when: the owner walks the mockup and the building list needs no new word.
+
+- [ ] 0.1 A scratch builder reads `~/.fli/fix-loop.jsonl`, `frame-loop.jsonl`,
+      `fli next --json`, `fli decisions --json` and the stressor plans into one
+      JSON day — the last 24 hours of attempts as events with a time, a thing
+      (row, question, paper) and a from/to building.
+- [ ] 0.2 An artifact in the Rig's style: the town, a replay scrubber over the
+      day, dots on roads, the Switch drawn Off with the schedule table and caps.
+- [ ] 0.3 The owner names what is missing or misnamed; this file is amended.
+
+### Phase 1 — The reader
+
+Goal: the town drawn live from the real logs and registers, polled.
+Done when: `verify-atlas.mjs` holds the town's counts against the logs read
+in-process, as it holds the ring cards against `dataOf`.
+
+- [ ] 1.1 a new `loop-log.js` beside the other readers in `packages/cli/core/` — one reader of the jsonl logs and the
+      lanes directory, shared by `loop-review.mjs` and the API (today the review
+      script parses them alone).
+- [ ] 1.2 `autopilot` method on the `atlas` service: the town state — lanes and
+      their rows, attempts in the last day, Registry tables, Council benches,
+      papers with an open box, the Dock, the last CI run — under the same
+      LOCAL_MACHINE and agent refusals as `overview`.
+- [ ] 1.3 `web/src/routes/atlas/autopilot/index.mesa` draws the town from that
+      state; a building opens its register tab on `/atlas/`.
+
+### Phase 2 — The schedule, run by hand
+
+Goal: a schedule file a person edits and a loop a button starts.
+Done when: *Run now* on the fix entry closes a row on the patch path and the
+town shows the crate move, with `source: 'autopilot'` in the log line.
+
+- [ ] 2.1 `~/.fli/autopilot.json` and its reader in `headless.mjs`: entries of
+      `{ loop, cron, caps }`, the caps mapped to the scripts' own flags, an
+      unknown loop refused by name, an over-cap entry refused at read time
+      (script test).
+- [ ] 2.2 `fix-loop.mjs` and `frame-loop.mjs` take `--source autopilot` and
+      write it; `loop-review.mjs` still reads the log (test).
+- [ ] 2.3 The Switch's schedule table on the route, read-only, with *Run now*
+      per entry: the API spawns the script the way `workbench-run.ts` spawns
+      `fli dev`, and the run shows in its lane.
+
+### Phase 3 — Turn On
+
+Goal: the toggle, and a morning the owner wakes up to.
+Done when: Turn On runs one night with the API up, and the morning shows
+patches on the Dock, a decidable list at the Council, spend under the cap, and
+a report.
+
+- [ ] 3.1 `autopilot-tick.job.ts`: every five minutes, when On, start each entry
+      that is due and whose lanes are free; refuse when the day's cap is spent.
+- [ ] 3.2 The toggle, refused until every cap is set; Off stops nothing running
+      and starts nothing new.
+- [ ] 3.3 Landing — a closed row's patch becomes one commit on
+      `autopilot/<day>`, never `main`; its own ruling first (Q4).
+- [ ] 3.4 The morning report as a Basecamp notification: ran, closed, blocked,
+      framed, spent, and what the Review says repeated.
+
+### Phase 4 — More loops, later
+
+Goal: the entries the first three phases did not need.
+Done when: each has its own ruling and its own cap.
+
+- [ ] 4.1 Stressor steps — a paper's next open box run as a workbench pin, the
+      site on the map under construction.
+- [ ] 4.2 Feeders — CI red files a row; a stranger build from the npm packages
+      files what stalls it; each under the filed-rows cap.
+- [ ] 4.3 Post — rulings asked over `IDEAS/phone-ping.md`'s topic, a one-letter
+      reply ruling; a new write path into `DECISIONS.md`, so its ruling first.
+- [ ] 4.4 Review applied — `loop-review --ask`'s suggestions as a frame entry.
+
+## Open questions
+
+- **Q1 — Can the shipped Basecamp reach `scripts/`?** In local dev the checkout
+  is this repo and the route is only offered on `LOCAL_MACHINE`, so the scripts
+  are beside it; the image installs none.
+  - **A** — V1 is local dev only: the job refuses with the same message the
+    atlas screen gives when not offered.
+  - **B** — Move the three loop scripts under `packages/cli/core/` now, so a
+    `fli loop` command can ship them.
+  - **Recommend A** — the reopen path is named; moving the scripts is a ruling
+    for the day a second machine needs them.
+- **Q2 — What counts as *due*?** A cron line per entry, or one nightly window.
+  - **A** — A cron line per entry, read by the tick job; the owner writes the
+    file.
+  - **B** — One window (`after 22:00, before 07:00`) and the entries run in
+    order inside it.
+  - **Recommend A** — it is the shape every scheduler reader already knows and
+    the window is one cron line.
+- **Q3 — V1 caps and their defaults.** Attempts/day, dollars/day, lanes, the
+  severity floor for filed rows, the model ceiling.
+  - **A** — 20 attempts, $20, 2 lanes, S3, Sonnet; Opus only by the ladder's
+    second rung.
+  - **B** — No defaults: every cap set by hand before Turn On is offered.
+  - **Recommend B** — the toggle is refused until the owner has written each
+    number once; a default is a number nobody chose.
+- **Q4 — Landing.** What a closed row on the patch path becomes.
+  - **A** — One commit per closed row on `autopilot/<day>`, from the patch,
+    with the register edit in it; the owner merges.
+  - **B** — Patches stay on the Dock and the owner applies each with the lane
+    tool.
+  - **Recommend A** — a branch is the thing a person reviews; a pile of patches
+    is a chore.

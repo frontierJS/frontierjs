@@ -493,12 +493,13 @@ name when it declares none.
 
 ### `claude` · model `claude`
 
-- **methods** — `config`, `file`, `stats`, `insights`, `sessions`, `transcript`, `context`, `account`, `quota`, `writes`, `rev`, `mcpHealth`, `mcpTools`, `hookTools`, `doctor`, `undo`, `plugin`, `marketplace`, `mcp`, `settings`, `permissions`, `save`, `trash`
-- **custom methods** — `config`, `file`, `stats`, `insights`, `sessions`, `transcript`, `context`, `account`, `quota`, `writes`, `rev`, `mcpHealth`, `mcpTools`, `hookTools`, `doctor`, `undo`, `plugin`, `marketplace`, `mcp`, `settings`, `permissions`, `save`, `trash`
+- **methods** — `config`, `file`, `stats`, `index`, `insights`, `sessions`, `transcript`, `context`, `account`, `quota`, `writes`, `rev`, `mcpHealth`, `mcpTools`, `hookTools`, `doctor`, `undo`, `plugin`, `marketplace`, `mcp`, `settings`, `permissions`, `save`, `trash`
+- **custom methods** — `config`, `file`, `stats`, `index`, `insights`, `sessions`, `transcript`, `context`, `account`, `quota`, `writes`, `rev`, `mcpHealth`, `mcpTools`, `hookTools`, `doctor`, `undo`, `plugin`, `marketplace`, `mcp`, `settings`, `permissions`, `save`, `trash`
 - **who may call** —
   - `config` — standing 5 or above — declared `gate: 5`
   - `file` — standing 5 or above — declared `gate: 5`
   - `stats` — standing 5 or above — declared `gate: 5`
+  - `index` — standing 5 or above — declared `gate: 5`
   - `insights` — standing 5 or above — declared `gate: 5`
   - `sessions` — standing 5 or above — declared `gate: 5`
   - `transcript` — standing 5 or above — declared `gate: 5`

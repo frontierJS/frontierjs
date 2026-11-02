@@ -184,6 +184,46 @@ describe('gate-over-own-standing', () => {
       }`, 'gate-over-own-standing')).toEqual([])
   })
 
+  test('silent on a column no caller can move after create — @immutable or @system', () => {
+    for (const attr of ['@immutable', '@system'])
+      expect(findings(`
+        model User {
+          id      Int     @id
+          isAdmin Boolean @default(false) ${attr}
+          @@auth
+          @@gate(4.4.4.5)
+        }`, 'gate-over-own-standing')).toEqual([])
+  })
+
+  // Both are writable while the row is a draft, so another draft row's column still moves.
+  test('still fires on @immutable(after: …) and on bare @immutable on a sealing model', () => {
+    const states = `enum DocState { draft  issued  paid }`
+    const sealing = findings(`${states}
+      model Assignment {
+        id    Int      @id
+        state DocState @default(draft)
+        role  String   @immutable
+        @@gate(2.4.4.5)
+        @@transitions(state, issue: draft -> issued @seals, settle: issued -> paid)
+      }`, 'gate-over-own-standing')
+    const after = findings(`${states}
+      model Assignment {
+        id    Int      @id
+        state DocState @default(draft)
+        role  String   @immutable(after: settle)
+        @@gate(2.4.4.5)
+        @@transitions(state, issue: draft -> issued, settle: issued -> paid)
+      }`, 'gate-over-own-standing')
+    expect(sealing.map(f => f.field)).toEqual(['role'])
+    expect(after.map(f => f.field)).toEqual(['role'])
+  })
+
+  test('the fix names @immutable as the other answer', () => {
+    const f = findings(`model User { id Int @id  isAdmin Boolean @default(false)  @@auth  @@gate(4.4.4.5) }`,
+      'gate-over-own-standing')
+    expect(f[0].message).toContain('@immutable')
+  })
+
   test('silent when the model is system-only for update', () => {
     expect(findings(`model User { id Int @id  isAdmin Boolean @default(false)  @@auth  @@gate(2.4.8.8) }`,
       'gate-over-own-standing')).toEqual([])

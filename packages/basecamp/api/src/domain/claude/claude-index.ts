@@ -26,8 +26,12 @@
 // **A vanished file is marked, not deleted.** Claude Code removes transcripts
 // after `cleanupPeriodDays`, and these rows are then the only record.
 //
-// The first fill reads gigabytes, so this runs from `jobs/claude-index.job.ts`
-// and never inside a request. It writes through `asSystem()`.
+// The first fill reads gigabytes (about a minute for ~5,000 files), so it runs
+// from `jobs/claude-index.job.ts` and never inside a request, and only when the
+// Claude Code tab's button asks: a cron fire on an empty index starting it on
+// its own held a fresh hub's /setup for that minute. It runs in the API's own
+// process, so a pass yields between files or every request waits on it. It
+// writes through `asSystem()`.
 
 import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync, type Dirent } from 'node:fs'
 import { basename, dirname, join, sep } from 'node:path'
@@ -150,6 +154,29 @@ async function writeMessages(db: any, msgs: Msg[], subagent: boolean, agent: str
   return added
 }
 
+let running = false
+let last: (IndexResult & { finishedAt: string, error: string | null }) | null = null
+
+/** Whether a pass is under way in this process, and how the last one ended — what the button polls. */
+export const indexState = () => ({ running, last })
+
+/** One pass, unless one is under way; null when it was. A pass outlasting the cron's five minutes is not started over. */
+export async function indexOnce(db: any, opts: { configDir?: string } = {}): Promise<IndexResult | null> {
+  if (running) return null
+  running = true
+  try {
+    const r = await indexClaude(db, opts)
+    last = { ...r, finishedAt: new Date().toISOString(), error: null }
+    return r
+  } catch (e) {
+    last = { files: 0, read: 0, seen: 0, added: 0, gone: 0, bytes: 0, ms: 0, finishedAt: new Date().toISOString(), error: (e as Error).message }
+    throw e
+  } finally { running = false }
+}
+
+/** Whether a pass has ever written a row — an empty index waits for the button. */
+export const hasIndex = async (db: any): Promise<boolean> => !!await db.claudeTranscript.findFirst({ select: { id: true } })
+
 /**
  * One pass over the transcripts. `db` is the SYSTEM client — the index is the
  * installation's own history and nothing a caller may write.
@@ -172,6 +199,7 @@ export async function indexClaude(db: any, opts: { configDir?: string } = {}): P
     try { size = statSync(path).size } catch { continue }
     const row = rows.get(path)
     if (row && row.size === size && row.offset === size && !row.isGone) continue
+    await new Promise(r => setImmediate(r))
 
     const rewritten = !!row && size < row.offset
     const from = !row || rewritten ? 0 : row.offset

@@ -21,6 +21,7 @@
 import { parseGateString } from '../plugins/gate.js'
 import { authClaimsUsed, buildClaimSet, pickWhere } from './policy.js'
 import { ID_GENERATORS }   from './ids.js'
+import { sealingModels }   from './seal.js'
 import { VALIDATOR_KINDS, ITEM_COUNT_RULES } from './validate.js'
 
 // ─── The visibility table ─────────────────────────────────────────────────────
@@ -268,6 +269,7 @@ export const RULES = [
               'whether the column is one a caller may write.',
     run(schema) {
       const out = []
+      const sealing = sealingModels(schema)
       for (const model of schema.models ?? []) {
         const gate = gateOf(model)
         if (!gate || gate.update >= 8) continue
@@ -280,13 +282,17 @@ export const RULES = [
           const fieldPolicy = (f.attributes ?? []).some(a =>
             a.kind === 'fieldAllow' && a.operations?.some(op => op === 'write' || op === 'all'))
           if (fieldPolicy) continue
+          // A caller cannot move it after create. Not `@immutable(after: …)`, and not bare
+          // `@immutable` on a sealing model: both stay writable while the row is a draft.
+          const frozen = (f.attributes ?? []).some(a => a.kind === 'immutable' && !a.after) && !sealing.has(model.name)
+          if (frozen || has(f, 'system')) continue
 
           const head = why
             ? `${model.name} is ${why === 'auth' ? 'the @@auth model' : 'where the tenancy claim is read from'}, is gated at update=${gate.update}, and carries '${f.name}'.`
             : `${model.name} is gated at update=${gate.update} and carries '${f.name}', which is a name a gate ladder is often graded from — and often is not, so this is a question rather than a finding.`
           const fix = rowPolicy
-            ? `A row policy decides WHOSE row; add @allow(write, …) on the column to decide WHICH columns.`
-            : `Add @@allow(update, id == auth().id || auth().isAdmin) for whose row, and @allow(write, auth().isAdmin) on the column.`
+            ? `A row policy decides WHOSE row; add @allow(write, …) on the column to decide WHICH columns, or @immutable if it is set once at create.`
+            : `Add @@allow(update, id == auth().id || auth().isAdmin) for whose row, and @allow(write, auth().isAdmin) on the column — or @immutable on it if it is set once at create.`
           const nudge = why ? '' : ` If a getLevel is graded from it, declare @@auth on the identity model and this becomes decidable rather than guessed.`
 
           out.push({

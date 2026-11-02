@@ -8595,6 +8595,12 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1054"></a>2026-11-02 · `FJS-D1054` — How does a `read: true` custom method make the one write it owns — Portal re-scopes for that one write: `spend` calls `$.db.$setAuth(<the request's claims>)` and creates the Pass through the result, a walk past the guard that `FJS-D581` already calls the author's explicit choice. No framework change, and the schema's create policy still decides forged against valid; a later guard that covers the claimed client breaks it again.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (the method names the writes it owns: `{ method: 'search', read: true, writes: ['Pass'] }` lets those accessors through the guard and still keeps no answer and announces nothing, and the guard is moved after the claim lift so it covers the claimed client too. One new option on the method declaration, and it states in the seed what the spend does), **C** (Portal drops `read: true` from the three methods. The guard has nothing to refuse, and an Idempotency-Key then keeps a signed-in retry's answer, which echoes the query (`FJS-D505`, the Q3 canary in `usages.service.ts`)).
+
+The paper's recommendation, taken as written: the write is one line in one function, `FJS-D581` ruled that a walk past is the author's to make, and A adds a seed option for a single caller; C undoes the query-privacy reason `read: true` is there.
+
 ### <a id="fjs-d1732"></a>2026-10-31 · `FJS-D1732` — An app archive uploads by a link `appBackups.upload` signs; the stream route checks only the signature.
 
 Box 3.1 of [`IDEAS/app-archives.md`](IDEAS/app-archives.md). Junction buffers a service body under `maxBodySize` (10 MB in basecamp), so the archive has to arrive on a raw `{ body: 'stream' }` route, and that route runs no pipeline. **A** was taken after `decision-rules`: the method holds the gate (`ADMINISTRATOR`, `appBackups:write`, the app proved in the caller's scope, the hub refused, `FJS-D1718`'s destination required) and mints a five-minute HMAC link over the app, the file name, the uploader and the expiry, the shape `plugins/backup-archive.ts` uses for a hub download. `PUT /app-archive-upload/{appId}` checks that signature and nothing else. **B**, the route reading `ctx.user` and grading the level itself as `plugins/machine-stream.ts` does, was refused: it writes the gate a second time and refuses API keys. Cost: two calls per upload, and the link is a bearer credential until it expires. Reopen B only for a one-call client, and then through a grade function the service shares.
@@ -16204,6 +16210,10 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1775"></a>2026-11-02 · `FJS-D1775` — `fli studio` run in a project is that project's studio: two past its GUI in the project's tooling row — 8512 for example, 8502 dev · 7502 `--test` · 9502 `--production` for project 0, plus a scaffolded app's slot. 5502 is studio only where there is no project.
+
+Extends `FJS-D983`, which moved only `fli gui` into the project. Asked through the question tool. **85x2, accepting the collision** was picked over **an own row in category 9** (`[env]9[project][slot]`, no collision, but it spends the last free category digit and is not beside the GUI) and **served by the GUI** (studio at a path on the GUI's port, which mounts litestone's studio inside the fli server). The cost is taken knowingly: a scaffolded app's row is every scaffolded app's GUIs, so slot 0's studio 8502 is slot 2's GUI, and slot 8 and 9 wrap to 8500 and 8501. The listen throws EADDRINUSE, so the meeting fails loudly. Studio claims no `fli dev` slot as `fli gui` does: an app with none takes slot 0's 8502. Lives in `packages/cli/core/ports.js` (`studioPort()`), `packages/cli/commands/db/studio.md`, `packages/cli/core/runnables.js` (the GUI's studio tile), `docs/PORTS.md`, `packages/cli/README.md`.
 
 ### <a id="fjs-d1774"></a>2026-11-02 · `FJS-D1774` — Where does fli's rings project view live in Basecamp, and under what name — Evolve `/registers/` into `/atlas/`, named for the command it mirrors: ring map and five ring cards on top, Key documents and Invariants & proof as new sections, the existing tabs as Rings 3–5, the decide walk at `/atlas/decide/`; every caller moves, nothing stays duplicated, and the Packages half of the same atlas has a home later.
 

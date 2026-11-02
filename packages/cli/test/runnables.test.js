@@ -20,7 +20,7 @@ import { fileURLToPath } from 'url'
 
 import { runnables, probeState, KINDS, appDirs, driveRows, readCommands, readPage, tasks } from '../core/runnables.js'
 import { WORK_FILE } from '../core/repo-work.js'
-import { guiPort } from '../core/ports.js'
+import { guiPort, studioPort } from '../core/ports.js'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 
@@ -194,14 +194,14 @@ describe('tools', () => {
     expect(tools().find(t => t.name === 'devtools').start).toBeNull()
   })
 
-  test('studio is startable, because its command and the schema agree on 5502', () => {
+  test('studio is startable, because its command and the schema agree on 5502, and it sits in the project\'s row', () => {
     // This assertion is the whole of `FJS-557`. The reserved slot answered
     // nothing and the tool ran on 5001, which the scheme had never heard of —
     // so the documented port was free and the tool was outside the range. The
     // symptom was this tile having no start button, and it is the only thing
     // that noticed.
     const studio = tools().find(t => t.name === 'studio')
-    expect(studio.port).toBe(5502)
+    expect(studio.port).toBe(studioPort(REPO))
     expect(studio.start).toBe('fli studio')
     expect(studio.source).toMatch(/commands\/db\/studio\.md$/)
   })

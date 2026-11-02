@@ -6,6 +6,7 @@
   import { at, ago } from '../lib/datetime.js'
   import { count, usd, tokensOf, tilde } from '../lib/claude-format.js'
   import { claude }  from '../resources/Claude.mesa'
+  import ClaudeIndexBuild from './ClaudeIndexBuild.mesa'
 
   import Badge    from '@frontierjs/ui/components/display/Badge.mesa'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
@@ -96,6 +97,7 @@
     <p class="text-sm text-muted">Reading…</p>
   {:else}
     {#if error}<Callout tone="warning" title="Refresh failed, showing the last read">{error}</Callout>{/if}
+    {#if !result.indexedAt}<ClaudeIndexBuild onbuilt={() => load(cwd)} />{/if}
     {#each groups as g}
       <h3><code class="wrap">{g.label}</code> <span class="text-sm text-muted">{g.rows.length} {g.rows.length === 1 ? 'session' : 'sessions'}</span></h3>
       <Table id={`claude-sessions-${g.cwd ? 'project' : 'none'}`} class="claude-session-table" columns={COLUMNS} rows={g.rows} compact striped hover={false} emptyText="No sessions">
@@ -118,7 +120,7 @@
       <p class="text-sm text-muted" id="claude-sessions-empty">No sessions are indexed{cwd ? ' for this project' : ''} yet.</p>
     {/each}
     <p class="text-sm text-muted">
-      {#if result.indexedAt}Indexed {ago(result.indexedAt)}.{:else}The index has not run yet; the job runs every 5 minutes.{/if}
+      {#if result.indexedAt}Indexed {ago(result.indexedAt)}.{/if}
       Costs are estimated at list price, read {result.pricing.readOn}.
     </p>
   {/if}
