@@ -374,7 +374,7 @@ host.
   after CI, not bumping again*: `css 0.16.8 → 0.16.8` and so on down the
   nineteen, each tagged at this tree's sha once 01b grades it. 4.2 is that
   run.
-- [ ] 4.2 The real run: `fli ws:pub patch --to npm --to tarballs --yes < /dev/null`
+- [x] 4.2 The real run: `fli ws:pub patch --to npm --to tarballs --yes < /dev/null`
   with a granular npm token (Bypass 2FA) in `~/.npmrc`, or `--interactive`
   and nineteen browser prompts after the gate. Under the landed gate:
   01 bumps and commits, 01b runs the full tier on that sha (about 30
@@ -391,8 +391,20 @@ host.
     with its tarball packed and a dry publish of it clean — the re-run ships
     css alone. `OUTPOST_VERSION` moved to the published `0.1.9` by hand
     (`FJS-D1773`), basecamp 1130 green.
-- [ ] 4.3 From outside this tree: `fli new --source npm` under a scratch
+  - Third run: `css@0.16.8 → npm` and its Release in 42.5s, all nineteen
+    shipped. 04's fresh app from npm then failed at `bun install` — npm's
+    replication lag, seconds after the publish (FJS-3831); a minute later the
+    registry held it and 4.3 installed clean. Done 2026-11-02.
+- [x] 4.3 From outside this tree: `fli new --source npm` under a scratch
   `HOME` on this box, and once on another. A published litestone refusing a
   keyword the scaffold writes (`FJS-2084`'s shape) shows only here.
-- [ ] 4.4 `ci`'s registry note goes to zero packages differing between tree
+  - Done 2026-11-02 on this box: `fli new probenpm --source npm --full --yes`
+    under a scratch `HOME` in the session scratchpad — 14 `@frontierjs`
+    packages installed at the released versions, `bun run check` clean
+    (typecheck, 6 tests). The other-box run is the owner's.
+- [x] 4.4 `ci`'s registry note goes to zero packages differing between tree
   and registry; the release's `ci-runs` record is kept (`FJS-D1738`).
+  - Done 2026-11-02: the pre-push grade of `e90cb58e` (the pin at `0.1.9`)
+    is green through `registry` with no note, where the grade before css
+    landed named `@frontierjs/cli@0.1.11 → @frontierjs/css@0.16.8` as
+    unresolvable. Both release runs' `ci-runs` records are in `.cache/`.
