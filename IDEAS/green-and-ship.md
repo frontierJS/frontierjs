@@ -386,6 +386,11 @@ host.
     red in 01b on biome (FJS-3830, fixed 44c9894f), cli's stack test (the same
     nest), print-kit (FJS-3829) and the pin test (Q6 → `FJS-D1773`, deleted).
     Nothing tagged; the release commit stays and the next run resumes from it.
+  - Second run: 18 of 19 on npm with their Releases (release commit
+    `c352bb0d`, tags pushed); `@frontierjs/css@0.16.8` failed at `bun publish`
+    with its tarball packed and a dry publish of it clean — the re-run ships
+    css alone. `OUTPOST_VERSION` moved to the published `0.1.9` by hand
+    (`FJS-D1773`), basecamp 1130 green.
 - [ ] 4.3 From outside this tree: `fli new --source npm` under a scratch
   `HOME` on this box, and once on another. A published litestone refusing a
   keyword the scaffold writes (`FJS-2084`'s shape) shows only here.
