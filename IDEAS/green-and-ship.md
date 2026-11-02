@@ -115,6 +115,43 @@ This paper is the order between them, and the release at the end.
     deletion is a one-off with no test, and the ruling says so; and under B,
     Q3 is B too — the Outpost pin moves to the version 4.2 mints. The push
     fix itself (`FJS-3827`) is independent of the answer and lands now.
+- ~~**Q6 — The pin against the gate.**~~ **Answered 2026-11-02 (`FJS-D1773`): D — delete the pin test. The pin names a version npm HOLDS and is moved by hand after a publish, never ahead of one: the pin cannot name an unpublished version by construction, which is the whole of FJS-3534, so the twenty-plus enrollment tests that ask npm (probed 2026-11-02 with the pin at `0.1.9`) stay green without a stub, and 01 writes nothing. `outpostUnpublished()` and `fli done`'s `tagsNpmLacks` stay as the guard against a hand-move that gets ahead. What is lost: nothing forces the pin forward, so a fleet can enroll on an older Outpost until someone moves it — a product choice, not a defect.** The first real 4.2 run (2026-11-02,
+  `ci-runs/…2591624`) stopped red in 01b on three suites: cli (its stack test
+  refuses a `.fli-tmp` path, and the whole checkout sat under one — the same
+  nest as FJS-3830, fixed with it), print-kit (the Chromium wedge, FJS-3829)
+  and basecamp on the pin test alone. The gate is CI exit 0 with no
+  allowance, and `OUTPOST_VERSION` restates outpost's version by hand, so
+  EVERY release that bumps outpost is red at its own gate: 01 raises the
+  scaffold pins in `core/app-config.js` and leaves this one behind, though
+  `INSTALL_PINS` (`core/tags-on-npm.js`) already names it. Q3-B's "move the
+  pin in 4.2" has no mechanical path. Five enrollment tests also ask the
+  real registry through `outpostUnpublished()`, so a pin npm lacks is red
+  either way (`FJS-D1598` says CI never depends on the registry).
+  - **A** — 01 moves every `INSTALL_PINS` entry in the release commit
+    beside the scaffold pins (staged from the repo root, not under the cli
+    branch), and the enrollment tests pass a stubbed fetcher. The pin equals
+    the workspace at every graded commit; `outpostUnpublished()` at
+    enrollment and `fli done`'s `tagsNpmLacks` keep asking npm. This release
+    then raises `0.1.8 → 0.1.9` in 01 (the file's pin against the planned
+    version, so the untagged-bump path moves it too).
+  - **B** — the pin test tolerates a pin one unpublished release behind the
+    workspace; nothing else moves.
+  - **C** — a `knownTestFailures` entry for basecamp, for this release only.
+  - **D** — delete the pin test. The pin names a version npm HOLDS and is
+    moved by hand after a publish, never ahead of one: the pin cannot name
+    an unpublished version by construction, which is the whole of FJS-3534,
+    so the twenty-plus enrollment tests that ask npm (probed 2026-11-02 with
+    the pin at `0.1.9`) stay green without a stub, and 01 writes nothing.
+    `outpostUnpublished()` and `fli done`'s `tagsNpmLacks` stay as the
+    guard against a hand-move that gets ahead. What is lost: nothing
+    forces the pin forward, so a fleet can enroll on an older Outpost until
+    someone moves it — a product choice, not a defect.
+  - **Recommend D** (the owner asked for the simplest) — A automates the
+    pin's chase of the bump; D removes the chase. The test held the pin to
+    the one version that is unpublished at every graded commit, which is
+    the hazard the runtime guard was built against. B adds a rule for what
+    a pin may be; C is what `FJS-D1772` ruled out.
+
 
 ## Phase 0 — Know what dev is
 
@@ -337,12 +374,18 @@ host.
   after CI, not bumping again*: `css 0.16.8 → 0.16.8` and so on down the
   nineteen, each tagged at this tree's sha once 01b grades it. 4.2 is that
   run.
-- [ ] 4.2 The real run, `--interactive` for npm's 2FA. Under the landed gate:
+- [ ] 4.2 The real run: `fli ws:pub patch --to npm --to tarballs --yes < /dev/null`
+  with a granular npm token (Bypass 2FA) in `~/.npmrc`, or `--interactive`
+  and nineteen browser prompts after the gate. Under the landed gate:
   01 bumps and commits, 01b runs the full tier on that sha (about 30
   minutes), the tag is written on green, the graded sha and its tags are
   pushed with `--no-verify`, 03 packs each from its tag's worktree, 04
   scaffolds a fresh app from each host and fails the run if one does not
   install (`FJS-D1736`).
+  - 2026-11-02, first run (release commit `6a52b563`, the nineteen `x → x`):
+    red in 01b on biome (FJS-3830, fixed 44c9894f), cli's stack test (the same
+    nest), print-kit (FJS-3829) and the pin test (Q6 → `FJS-D1773`, deleted).
+    Nothing tagged; the release commit stays and the next run resumes from it.
 - [ ] 4.3 From outside this tree: `fli new --source npm` under a scratch
   `HOME` on this box, and once on another. A published litestone refusing a
   keyword the scaffold writes (`FJS-2084`'s shape) shows only here.

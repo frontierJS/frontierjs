@@ -752,16 +752,10 @@ describe('a machine claims its own credential', () => {
       expect(line).toContain('--batch --yes')
   })
 
-  // The pin is a value Basecamp holds, so it must move with the package it
-  // names rather than drift to a version nobody published.
-  test('the pinned Outpost is the version this workspace carries', async () => {
-    const { OUTPOST_VERSION } = await import('../src/providers/compute/enrollment.ts')
-    const pkg = await Bun.file(new URL('../../../outpost/package.json', import.meta.url)).json()
-    expect(OUTPOST_VERSION).toBe(pkg.version)
-  })
-
-  // …and a version the workspace carries can still be one npm never got
-  // (FJS-3534), so an enrollment asks before a machine is billed for.
+  // The pin is moved by hand after a publish and never held to the workspace
+  // (FJS-D1773): the tree's version is the one npm lacks at every graded commit.
+  // A hand-move that gets ahead is still possible (FJS-3534), so an enrollment
+  // asks before a machine is billed for.
   test('an enrollment is refused by name when npm lacks the pinned Outpost, and let through when npm cannot be asked', async () => {
     const { outpostUnpublished } = await import('../src/providers/compute/enrollment.ts')
     const answering = (status: number) => (async () => new Response('', { status })) as unknown as typeof fetch
