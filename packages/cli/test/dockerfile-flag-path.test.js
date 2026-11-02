@@ -93,7 +93,13 @@ describe.skipIf(!hasDocker)('a real docker, from a cwd that is not the app root'
     try {
       const out = execFileSync('docker', ['build', '-q', '-t', tag, '-f', dashF, app],
         { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-      return { ok: true, digest: out.trim() }
+      // Under the containerd image store the id is an index digest that takes
+      // in BuildKit's provenance attestation, which records the Dockerfile path
+      // and the cwd — so two builds of one context differ by construction
+      // (FJS-3394). The layers are what the build controls.
+      const layers = execFileSync('docker', ['image', 'inspect', '--format', '{{json .RootFS.Layers}}', out.trim()],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+      return { ok: true, layers: layers.trim() }
     } catch (e) {
       return { ok: false, err: `${e.stderr ?? ''}${e.stdout ?? ''}` }
     }
@@ -124,10 +130,10 @@ describe.skipIf(!hasDocker)('a real docker, from a cwd that is not the app root'
     expect(r.err).toMatch(/lstat deploy|no such file/)
   })
 
-  test('the absolute form builds from anywhere, and to the SAME image', () => {
+  test('the absolute form builds from anywhere, and to the SAME filesystem', () => {
     const root_ = build(app, 'deploy/Dockerfile', T('fli-dff-root'))
     const abs = build(elsewhere, join(app, 'deploy', 'Dockerfile'), T('fli-dff-abs'))
     if (!root_.ok || !abs.ok) return
-    expect(abs.digest).toBe(root_.digest)
+    expect(abs.layers).toBe(root_.layers)
   })
 })

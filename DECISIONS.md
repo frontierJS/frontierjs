@@ -16205,6 +16205,24 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1772"></a>2026-11-02 · `FJS-D1772` — Q3 — The Outpost pin and the release in flight — Leave the pin, close FJS-009 with the pin test as the one named red (never a `knownTestFailures` entry), move the pin in 4.2.
+
+Asked in [`IDEAS/green-and-ship.md`](IDEAS/green-and-ship.md) § Open questions. **B** was picked over **A** (finish outpost alone on npm first (`fli ws:pub --to npm` over that one package, `--interactive` for 2FA), move the pin to `0.1.9`, then the Phase 2 push).
+
+Against the recommendation (**A**): Q4 ruled B deletes the outpost@0.1.9 tag A would ship; the pin stays 0.1.8 and moves to the version 4.2 mints. FJS-009 closes with the pin test (basecamp compute.test.ts) as the one named red, never a knownTestFailures entry.
+
+### <a id="fjs-d1771"></a>2026-11-02 · `FJS-D1771` — Q4 — Finishing a release in flight, after the branch moved on — Delete the 19 tags npm lacks, by name and sha, and the GitHub Release each one carries, so a version number names one set of bytes; 4.2 then re-tags the same numbers at one graded sha through `ws:pub`'s untagged-bump path (the workspace already carries them), no patch number spent.
+
+Asked in [`IDEAS/green-and-ship.md`](IDEAS/green-and-ship.md) § Open questions. **B** was picked over **A** (02 pushes the branch ref only when the graded sha is this run's HEAD, and for a tag the remote already holds pushes nothing; then 4.2 ships the 19 as tagged, from `347c0a3e` and its neighbors, which no runner graded).
+
+As recommended: Overrides FJS-D1722 (an unshipped pushed tag is finished from its worktree) and FJS-D1725 (a version on one host keeps its tag) for these nineteen only: a tag absent from npm is deleted with the GitHub Release that carried it, so one version number names one set of bytes, and 4.2 re-tags the same numbers at one graded sha by ws:pub's untagged-bump path. Deleted by name and sha, each confirmed absent from npm by the 4.1 dry run and equal on origin: at 07817781559e css@0.16.8, outpost@0.1.9, ui@0.1.9, auth@1.0.10, cli@0.1.11; toolbelt@0.1.8 at e00322699819; sierra@0.1.10 at 9a5d19c11d44; litestone@1.1.13 at 8f1fca45c03f; at 347c0a3ed2ad conduit@0.1.7, mcp@0.0.5, caravan@0.1.8, testing@0.1.10, notifications@0.1.8, mesa@0.1.9, jetty@0.0.9, junction@0.1.11, print-kit@0.1.3, email-kit@0.1.8, config@0.1.6 (all @frontierjs/). The deletion is hand-run once and has no test; the npm-absent check is the dry run's. Owner answered 'tags and releases, same numbers' 2026-11-01.
+
+### <a id="fjs-d1770"></a>2026-11-02 · `FJS-D1770` — Q5 — FJS-3394 blocks FJS-009 on its own — Chase it on the runner: a one-off workflow step that builds twice and prints both images' histories and `buildx` metadata, so the differing layer is named and the fix is a deterministic build or a test that compares what a build controls.
+
+Asked in [`IDEAS/green-and-ship.md`](IDEAS/green-and-ship.md) § Open questions. **A** was picked over **B** (`knownTestFailures` for `packages/cli` citing the row, which keeps the ratchet but hides every other cli red until it is removed).
+
+As recommended: The probe (workflow probe-fjs-3394.yml, run 41367088483) named it: on the runner's Docker 29 with the containerd image store, both builds give identical RootFS layers, Created and history, and only the image id differs — it is an index digest that takes in BuildKit's provenance attestation, which records the Dockerfile path and cwd. The test now compares RootFS.Layers, what a build controls; the probe workflow is one-off and stays until FJS-3394 closes on a runner run.
+
 ### <a id="fjs-d1738"></a>2026-10-31 · `FJS-D1738` — The release CI's run record, from a checkout deleted after the run — It is copied into the main tree's `.cache/ci-runs/` before the checkout is removed.
 
 Asked during [`IDEAS/publish-order.md`](IDEAS/publish-order.md) box 2.1, through the question tool. **Copy the log out first** was picked, as recommended. `01b-ci` runs `ci.mjs` in a checkout of the release sha (`FJS-D1721`), and the record went with it. Phase 3's `--status` reads "CI green on that sha" from those records. Only `ci-runs/` is copied: `ci-last.txt` describes the working tree's last run, and a release run written over it would misreport that. **Status reads tags only** would also work, since a tag is written only after a green run, but it cannot show a red run that left no tag.

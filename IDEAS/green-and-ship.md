@@ -48,7 +48,7 @@ This paper is the order between them, and the release at the end.
   ratchet rose by four numbers nobody adopted. Basecamp's three — key escrow,
   the host row, the pinned Outpost version — have not been run at `dev`.
 
-## Questions
+## Open questions
 
 - **Q1 — A cli test red only in the full run and green alone: fix the
   isolation, file it `env:`, or name it in `scripts/ci-allowances.json`?**
@@ -63,50 +63,58 @@ This paper is the order between them, and the release at the end.
   finished on npm from its tag's worktree (`FJS-D1722`). Nothing red is
   promoted and nothing is published twice.
 
-- **Q3 — The Outpost pin and the release in flight.** Basecamp pins
+- ~~**Q3 — The Outpost pin and the release in flight.**~~ **Answered 2026-11-02 (`FJS-D1772`): B — leave the pin, close FJS-009 with the pin test as the one named red (never a `knownTestFailures` entry), move the pin in 4.2.** Basecamp pins
   `OUTPOST_VERSION = '0.1.8'`, npm's newest; the workspace carries `0.1.9`,
   tagged 2026-10-31 and on the tarball host alone. `compute.test.ts` holds the
   pin to the workspace (red now), and `outpostUnpublished()` asks the real npm
   on every enrollment, so a pin of `0.1.9` turns every enrollment test red
   instead (five, probed 2026-11-01) and refuses a real machine by name
   (`FJS-3534`). One of the two is red until `@frontierjs/outpost@0.1.9` is on
-  npm, which is Phase 4's finish-in-flight. **A** — finish outpost alone on npm
-  first (`fli ws:pub --to npm` over that one package, `--interactive` for
-  2FA), move the pin to `0.1.9`, then the Phase 2 push. **B** — leave the pin,
-  close FJS-009 with the pin test as the one named red, move the pin in 4.2.
-  **Recommend A** — it is one package of the run 4.2 makes anyway, and it ends
-  with no allowance to retire.
+  npm, which is Phase 4's finish-in-flight.
+  - **A** — finish outpost alone on npm first (`fli ws:pub --to npm` over that
+    one package, `--interactive` for 2FA), move the pin to `0.1.9`, then the
+    Phase 2 push.
+  - **B** — leave the pin, close FJS-009 with the pin test as the one named
+    red (never a `knownTestFailures` entry), move the pin in 4.2.
+  - **Recommend A** — it is one package of the run 4.2 makes anyway, and it
+    ends with no allowance to retire. Under Q4-B the recommendation is B: the
+    `0.1.9` tag A would ship is one of the nineteen deleted.
 
-- **Q5 — FJS-3394 blocks FJS-009 on its own.** `packages/cli` test *a real
+- ~~**Q5 — FJS-3394 blocks FJS-009 on its own.**~~ **Answered 2026-11-02 (`FJS-D1770`): A — chase it on the runner: a one-off workflow step that builds twice and prints both images' histories and `buildx` metadata, so the differing layer is named and the fix is a deterministic build or a test that compares what a build controls.** `packages/cli` test *a real
   docker, from a cwd that is not the app root* builds the same context twice
   and expects one digest; on the runner's BuildKit the two differ, and the
   row is `env: real machine` with no measured cause — nothing here
-  reproduces it, two runs today included. **A** — chase it on the runner: a
-  one-off workflow step that builds twice and prints both images' histories
-  and `buildx` metadata, so the differing layer is named and the fix is a
-  deterministic build or a test that compares what a build controls. **B** —
-  `knownTestFailures` for `packages/cli` citing the row, which keeps the
-  ratchet but hides every other cli red until it is removed. **Recommend A**
-  — Q1's rule; an allowance for a 4214-test suite is the widest one CI would
-  hold.
+  reproduces it, two runs today included.
+  - **A** — chase it on the runner: a one-off workflow step that builds twice
+    and prints both images' histories and `buildx` metadata, so the differing
+    layer is named and the fix is a deterministic build or a test that
+    compares what a build controls.
+  - **B** — `knownTestFailures` for `packages/cli` citing the row, which keeps
+    the ratchet but hides every other cli red until it is removed.
+  - **Recommend A** — Q1's rule; an allowance for a 4214-test suite is the
+    widest one CI would hold.
 
-- **Q4 — Finishing a release in flight, after the branch moved on.** 4.1's
+- ~~**Q4 — Finishing a release in flight, after the branch moved on.**~~ **Answered 2026-11-02 (`FJS-D1771`): B — delete the 19 tags npm lacks, by name and sha, and the GitHub Release each one carries, so a version number names one set of bytes; 4.2 then re-tags the same numbers at one graded sha through `ws:pub`'s untagged-bump path (the workspace already carries them), no patch number spent.** 4.1's
   dry run shows every public package finishing from its 2026-10-31 tag, and
-  02 pushing that tag's sha to the branch head (`FJS-3827`). **A** — 02 pushes
-  the branch ref only when the graded sha is this run's HEAD, and for a tag
-  the remote already holds pushes nothing; then 4.2 ships the 19 as tagged,
-  from `347c0a3e` and its neighbors, which no runner graded. **B** — delete
-  the 19 unshipped-on-npm tags by name (they are on the tarball host only)
-  and let 4.2 bump every package fresh under the gate, one graded sha for
-  all. **Recommend B** — Q2 wanted "nothing red is promoted", and A promotes
-  tags on an ungraded sha; B costs one patch number per package and the
-  tarball host's 2026-10-31 assets stay as history.
-  `decision-rules` (2026-11-01) agrees, with conditions: B overrides
-  `FJS-D1722` (an unshipped pushed tag is finished from its worktree) and
-  `FJS-D1725` (a version on one host keeps its tag), so its ruling names
-  both and deletes by name and sha, only tags absent from npm; and under B,
-  Q3 is B too — the Outpost pin moves to the version 4.2 mints. The push
-  fix itself (`FJS-3827`) is independent of the answer and lands now.
+  02 pushing that tag's sha to the branch head (`FJS-3827`).
+  - **A** — 02 pushes the branch ref only when the graded sha is this run's
+    HEAD, and for a tag the remote already holds pushes nothing; then 4.2
+    ships the 19 as tagged, from `347c0a3e` and its neighbors, which no
+    runner graded.
+  - **B** — delete the 19 tags npm lacks, by name and sha, and the GitHub
+    Release each one carries, so a version number names one set of bytes;
+    4.2 then re-tags the same numbers at one graded sha through `ws:pub`'s
+    untagged-bump path (the workspace already carries them), no patch number
+    spent.
+  - **Recommend B** — Q2 wanted "nothing red is promoted", and A promotes
+    tags on an ungraded sha. `decision-rules` (2026-11-01, twice) agrees,
+    with conditions: B overrides `FJS-D1722` (an unshipped pushed tag is
+    finished from its worktree) and `FJS-D1725` (a version on one host keeps
+    its tag), so its ruling names both and lists each tag with its sha, only
+    tags absent from npm, deleted in the run that re-tags; a hand-run
+    deletion is a one-off with no test, and the ruling says so; and under B,
+    Q3 is B too — the Outpost pin moves to the version 4.2 mints. The push
+    fix itself (`FJS-3827`) is independent of the answer and lands now.
 
 ## Phase 0 — Know what dev is
 
@@ -247,6 +255,15 @@ Done when: a green run on main, and FJS-009 closed citing its run id.
   (24 passing); the runner's `Runtime.evaluate` 30 s is the family of
   FJS-1366 and FJS-2230, and gets a row if the next run repeats it.
 
+- [x] 2.7 FJS-3394 on the runner, per Q5 (`FJS-D1770`). The probe workflow
+  (`dd70ef0b`, run `41367088483`) built the test's context twice on the
+  runner's Docker 29 and found identical RootFS layers, Created and history
+  under two image ids: with the containerd image store the id is an index
+  digest that takes in BuildKit's provenance attestation, which records the
+  Dockerfile path and the cwd, so the two differ by construction. The test
+  now compares `RootFS.Layers`, what a build controls; the row closes on the
+  next runner run and the probe workflow goes with it.
+
 ## Phase 3 — Land the tag-last release
 
 Goal: `publish-order` 1.3 and Phase 2 on `dev`, proved in scratch.
@@ -301,6 +318,13 @@ host.
     `FJS-3827`: 02 would push each tag's sha to `refs/heads/dev`, which git
     rejects as non-fast-forward (`--dry-run` says *tip is behind*), so the
     real run stops in 02 before 03 ships anything.
+- [x] 4.1b Per Q4 (`FJS-D1771`), 2026-11-01: the 19 tags npm lacks and the
+  GitHub Release each carried are deleted, locally, on origin and on GitHub;
+  the ruling lists every tag with its sha. The dry run afterward reads
+  *19 package(s) have a bumped version that was never tagged -- tagging it
+  after CI, not bumping again*: `css 0.16.8 → 0.16.8` and so on down the
+  nineteen, each tagged at this tree's sha once 01b grades it. 4.2 is that
+  run.
 - [ ] 4.2 The real run, `--interactive` for npm's 2FA. Under the landed gate:
   01 bumps and commits, 01b runs the full tier on that sha (about 30
   minutes), the tag is written on green, the graded sha and its tags are
