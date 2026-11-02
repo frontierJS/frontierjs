@@ -177,18 +177,35 @@ Goal: a schedule file a person edits and a loop a button starts.
 Done when: *Run now* on the fix entry closes a row on the patch path and the
 town shows the crate move, with `source: 'autopilot'` in the log line.
 
-- [ ] 2.1 `~/.fli/autopilot.json` and its reader in `headless.mjs`: entries of
+- [x] 2.1 `~/.fli/autopilot.json` and its reader in `core/autopilot.js`: entries of
       `{ loop, cron, caps }`, the caps mapped to the scripts' own flags, an
       unknown loop refused by name, an over-cap entry refused at read time
-      (script test).
-- [ ] 2.2 `fix-loop.mjs` and `frame-loop.mjs` take `--source autopilot` and
+      (script test). *Built 2026-11-02: the reader is
+      `packages/cli/core/autopilot.js` (`readSchedule`, `flagsOf`,
+      `worstCost`, `spentToday`, `overDayCap`), which `headless.mjs` wraps and
+      the Atlas API imports as 1.1 did `loop-log.js` — one reader for both. The
+      file's own cap is `day: { attempts, dollars }`; `model` is a ceiling
+      (`sonnet` pins the rung, `opus` keeps the ladder). A cap not set is
+      listed in `missing`, never defaulted (FJS-D1778).
+      `packages/cli/test/autopilot.test.js`.*
+- [x] 2.2 `fix-loop.mjs` and `frame-loop.mjs` take `--source autopilot` and
       write it, and `fix-loop` writes `lane` on the `started` line too: today
       only the finishing line names the lane, so the reader draws an
       unfinished start on lane 1 and reads *busy* off the lane's lock file
-      alone; `loop-review.mjs` still reads the log (test).
-- [ ] 2.3 The Switch's schedule table on the route, read-only, with *Run now*
+      alone; `loop-review.mjs` still reads the log (test). *Built 2026-11-02:
+      a scheduled fix run is the third landing, `dock` — lanes required, the
+      register copied, every outcome kept as a patch and never harvested
+      (FJS-D1779) — and both scripts refuse a start past the day cap with
+      Basecamp down. `loop-log.test.js` draws the start on its lane.*
+- [x] 2.3 The Switch's schedule table on the route, read-only, with *Run now*
       per entry: the API spawns the script the way `workbench-run.ts` spawns
-      `fli dev`, and the run shows in its lane.
+      `fli dev`, and the run shows in its lane. *Built 2026-11-02:
+      `POST /atlas/:n run` (`api/src/domain/atlas/autopilot-run.ts`), the
+      entry's number 1-based, refused past the day cap, while that entry runs,
+      or where the script is not beside the registers. A starter file is
+      written on this machine with `on: false`. The hand proof in* Done when
+      *— Run now on the fix entry — is the owner's click, since one costs a
+      session; the drive proves the table and never clicks.*
 
 ### Phase 3 — Turn On
 
@@ -197,10 +214,24 @@ Done when: Turn On runs one night with the API up, and the morning shows
 patches on the Dock, a decidable list at the Council, spend under the cap, and
 a report.
 
-- [ ] 3.1 `autopilot-tick.job.ts`: every five minutes, when On, start each entry
+- [x] 3.1 `autopilot-tick.job.ts`: every five minutes, when On, start each entry
       that is due and whose lanes are free; refuse when the day's cap is spent.
-- [ ] 3.2 The toggle, refused until every cap is set; Off stops nothing running
-      and starts nothing new.
+      *Built 2026-11-02: `tick()` in `api/src/domain/atlas/autopilot-run.ts`,
+      the job a thin caller. Due is a cron minute since the last tick's
+      persisted record, `~/.fli/autopilot/tick.json` (`FJS-D1783`); the Switch
+      reads it as* Last tick. *Held lanes and the day cap are skipped by name
+      in the record. Off, the job returns at once. The job's handler is proved
+      by the API booting with it and `tick()` by `api/test/atlas.test.ts`; the
+      night run is this phase's* Done when.*
+- [x] 3.2 The toggle, refused until every cap is set; Off stops nothing running
+      and starts nothing new. *Built 2026-11-02: `writeSwitch` beside the
+      reader in `core/autopilot.js`, the file's one writer, re-reads the file
+      and writes `on` back and nothing else (FJS-D1778: On waits on `missing`);
+      `POST /atlas/:id turn` with on|off; the route's toggle is held with its
+      reason in `#ap-sw-why`. The tick job returns at once on false, so Off
+      stops nothing. The drive asserts held or live and never clicks: a turn
+      writes the owner's file, and On would let the drive's own API start a
+      loop. `packages/cli/test/autopilot.test.js`.*
 - [ ] 3.3 Landing — a closed row's patch stays on the Dock (`FJS-D1779`):
       the route lists each with its row and the lane command that applies it,
       and applying is the owner's read; nothing is committed.

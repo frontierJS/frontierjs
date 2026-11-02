@@ -4616,12 +4616,16 @@ describe('atlas', () => {
       .rejects.toThrow(/LOCAL_MACHINE=1/)
     await expect(env.as(owner).service('atlas').call('discuss', undefined, { text: 'FJS-1' }))
       .rejects.toThrow(/LOCAL_MACHINE=1/)
+    await expect(env.as(owner).service('atlas').call('run', '1', {}))
+      .rejects.toThrow(/LOCAL_MACHINE=1/)
+    await expect(env.as(owner).service('atlas').call('turn', 'on', {}))
+      .rejects.toThrow(/LOCAL_MACHINE=1/)
   })
 
   // A discuss is a workbench send. Asserted before the LOCAL_MACHINE refusal is
   // reached, as the workbench's is.
   test('an agent is refused it at any standing, and no key reaches it', async () => {
-    for (const method of ['overview', 'rings', 'autopilot', 'record', 'discuss', 'decide'])
+    for (const method of ['overview', 'rings', 'autopilot', 'record', 'discuss', 'decide', 'run', 'turn'])
       await expect(env.as(owner).service('atlas').call(method, 'FJS-1', { text: 'FJS-1' }, { transport: 'mcp' }))
         .rejects.toThrow(/not offered to an agent/)
     const key = { authMethod: 'apiKey', scopes: [] }

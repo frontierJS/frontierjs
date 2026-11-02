@@ -58,6 +58,7 @@ import { openDecisions }       from '../../../cli/core/decisions.js'
 import { collect }             from '../../../cli/core/repo-map.js'
 import { dataOf }              from '../../../cli/core/repo-rings.js'
 import { readLoopLog }         from '../../../cli/core/loop-log.js'
+import { readSchedule }        from '../../../cli/core/autopilot.js'
 import { portFor }              from '@frontierjs/cli/core/ports.js'
 
 const HERE     = dirname(fileURLToPath(import.meta.url))
@@ -511,7 +512,24 @@ async function autopilotScreen() {
   await clickText('[role=tab]', 'Schedule')
   await until(`document.getElementById('ap-sw-state')?.offsetParent !== null`, v => v, 'the Schedule tab never showed')
   check('the Schedule tab reads the Switch the same way', (await textOf('#ap-sw-state'))?.startsWith(on ? 'ON' : 'OFF'), await textOf('#ap-sw-state'))
-  check('and its Turn On is disabled until Phase 3 writes the file', await evaluate(`document.querySelector('[role=switch]').disabled`) === true)
+
+  // The Schedule table is the file's, through the same reader: one row per
+  // entry with Run now, which is never clicked here — a click opens a lane and
+  // pays for a session. A file the reader refuses is drawn as its refusal.
+  let schedule = null, refusedFile = null
+  try { schedule = readSchedule() } catch (err) { refusedFile = err.message }
+  const entries = schedule?.entries.length ?? 0
+  const sched = await evaluate(`document.querySelectorAll('#ap-schedule tr[data-entry]').length`)
+  check(`the Schedule table lists the file's ${entries} entries`, sched === entries, String(sched))
+  if (entries) check('and each has Run now, or says it is running', await evaluate(`[...document.querySelectorAll('#ap-schedule tr[data-entry]')].every(r => r.querySelector('button') || r.dataset.running === 'true')`) === true)
+  const day = await textOf('#ap-day')
+  check(`the day line reads today's scheduled spend${schedule?.day ? ' against the day cap' : ', with no cap set'}`, day?.startsWith('Today:') && day.includes(schedule?.day?.attempts != null ? `${schedule.day.attempts} attempts` : 'unset'), day)
+  check('the last tick line reads the job\'s own record, or says there is none', (await textOf('#ap-tick'))?.startsWith('Last tick:'), await textOf('#ap-tick'))
+  // Never clicked: a turn writes the owner's own file, and On would let this API's tick job start a loop.
+  const held = !!refusedFile || !schedule?.exists || (!on && schedule.missing.length > 0)
+  check(`and its toggle is ${held ? 'held' : 'live'}, as the file ${held ? 'is not whole' : 'has every cap set'}`, await evaluate(`document.querySelector('[role=switch]').disabled`) === held, await textOf('#ap-sw-why'))
+  if (refusedFile) check('a refused schedule file is said on the Switch', (await textOf('#ap-refused'))?.includes(refusedFile.slice(-40)), await textOf('#ap-refused'))
+  if (schedule?.missing.length) check(`and the ${schedule.missing.length} caps not set are listed`, (await textOf('#ap-missing'))?.includes(schedule.missing[0]), await textOf('#ap-missing'))
 
   await clickText('[role=tab]', 'Day')
   await until(`document.querySelectorAll('tr[data-event]').length`, v => v > 0 || before.events.length === 0, 'the Day tab listed no events', 30_000)

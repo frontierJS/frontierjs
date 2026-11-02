@@ -85,7 +85,7 @@ Mail between members of the Frontier network (`FJS-D1392`). Who a
 member is — the key, the chain, the nick — is `frontier:` (`commands/frontier/`,
 `core/frontier-member.js`); these verbs only read it.
 
-- `tell:send <nick> <words>`, alias `tell` — a letter left at the post for a member, signed, and sealed to them once they have a sealing key. `--env KEY...` sends env values instead, and only sealed.
+- `tell:send <nick> <words>`, alias `tell` — a letter left at the post for a member, signed, and sealed to them once they have a sealing key. `--env KEY...` sends env values instead, and only sealed; `--clip` sends the clipboard.
 - `tell:inbox`, alias `inbox` — the letters waiting, oldest first, opened; reading deletes them. `-f` stays open and prints each as it arrives.
 - `tell:upload <path>` — a file sealed on this machine and left at the post; prints a link anyone can download it from, with its limits, and the page shows the sender's crest. A folder goes as one zip, `-` reads stdin, `--qr` prints the link as a QR code, `--to <nick>` sends the link as a sealed letter.
 - `tell:download <link>` — a link's file fetched, opened and written under its own name. No membership needed; a browser opens the same link.

@@ -215,7 +215,7 @@
  * aria-current="page" and not aria-selected, because role="tab" on a route
  * link would announce a tabpanel that is not there. A plain strip underlines
  * the current tab; a divided one has no baseline to underline, so the current
- * tab is the accent colour with no fill and each tab carries a rule BEFORE
+ * tab is the accent color with no fill and each tab carries a rule BEFORE
  * it. The first one's rule is what separates the strip from the title ahead
  * of it, so a divided strip is for a place a title sits ahead of it.
  */

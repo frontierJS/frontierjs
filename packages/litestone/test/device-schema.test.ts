@@ -32,7 +32,7 @@ const EXAMPLE = resolve(import.meta.dir, '../../../example/db/schema.lite')
 // one enum each side of the line, and a `type` reached only through a field.
 const SOURCE = `
 enum Kind { counted  estimated }
-enum Colour { red  blue }
+enum Color { red  blue }
 
 type Position {
   aisle String
@@ -67,7 +67,7 @@ model Count {
 /// Prose on a model that does not cross.
 model Variant {
   id     Int     @id
-  colour Colour
+  color Color
   counts Count[]
   @@gate(5.5.5.9)
 }

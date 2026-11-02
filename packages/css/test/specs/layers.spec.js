@@ -101,6 +101,7 @@ test('layers: a .text-* utility beats a component that sets its own font-size', 
    * fix has to be layer-wide rather than a rule aimed at buttons.
    */
   var steps = [
+    ['text-2xs', '11px'],
     ['text-xs', '12px'],
     ['text-sm', '13px'],
     ['text-md', '14px'],

@@ -80,6 +80,8 @@ describe('readLoopLog', () => {
     const find = (kind, label) => events.find(e => e.kind === kind && e.label.startsWith(label))
     expect(find('row', 'closed')).toMatchObject({ id: 'FJS-2', from: 'lane.2', to: 'dock', cost: 0.5, source: 'schedule' })
     expect(find('row', 'started')).toMatchObject({ from: 'registry.ready', to: 'lane.2' })
+    // A start naming its lane is drawn there even with nothing finishing it; one naming none is read off its finish.
+    expect(events.find(e => e.id === 'FJS-4')).toMatchObject({ from: 'registry.ready', to: 'lane.3', label: 'started · S4 · sonnet·high' })
     expect(find('row', 'harvest 2 files')).toMatchObject({ from: 'lane.2', to: 'dock' })
     expect(find('question', 'filed a ruling')).toMatchObject({ id: 'FJS-3', from: 'registry.blocked', to: 'council.open' })
     expect(find('paper', 'framing 2')).toMatchObject({ id: 'paper-a', from: 'plans', to: 'framing' })

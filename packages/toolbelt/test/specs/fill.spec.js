@@ -163,7 +163,7 @@ test('mergeFields: a malformed declaration is refused when declared, by name', f
   assert.throws(() => mergeFields([{ key: 'name', label: 'x', type: 'text' }]), /owner\.field/)
   assert.throws(() => mergeFields([{ key: 'a.b.c', label: 'x', type: 'text' }]), /owner\.field/)
   assert.throws(() => mergeFields([{ key: '__proto__.x', label: 'x', type: 'text' }]), /__proto__/)
-  assert.throws(() => mergeFields([{ key: 'a.b', label: 'x', type: 'colour' }]), /colour/)
+  assert.throws(() => mergeFields([{ key: 'a.b', label: 'x', type: 'color' }]), /color/)
   assert.throws(() => mergeFields([{ key: 'a.b', type: 'text' }]), /label/)
   assert.throws(() => mergeFields([{ key: 'a.b', label: 'x', type: 'text', example: {} }]), /a\.b/)
   assert.throws(() => mergeFields([{ key: 'a.b', label: 'x', type: 'text' }, { key: 'a.b', label: 'y', type: 'text' }]), /a\.b/)

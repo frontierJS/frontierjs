@@ -100,7 +100,7 @@ const fail = () => failed++
 const warn = () => warned++
 
 // A failed check fails the command: a script or a go-live screen reads the
-// exit code, and the checklist's colour is not an interface.
+// exit code, and the checklist's color is not an interface.
 const finishJson = () => {
   if (failed > 0) $.config.abort = true
   echo(JSON.stringify({ ok: failed === 0, target, failed, warned, checks: rows }, null, 2))

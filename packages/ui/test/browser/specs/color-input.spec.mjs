@@ -1,5 +1,5 @@
 /*
- * color-input.spec.mjs — ColorInput picks a stored data colour: a radiogroup
+ * color-input.spec.mjs — ColorInput picks a stored data color: a radiogroup
  * of swatches and a native picker for anything else.
  *
  * Every app drew this by hand, a row of <button>s with no radio keys beside a
@@ -31,12 +31,12 @@ export async function run(t) {
   await t.eventually(text('#picked'), '#22c55e', 'an arrow moves to the previous swatch and picks it')
   await t.eventually(text('#calls'), '2', 'onchange once per pick')
 
-  // A colour outside the set: no swatch is checked, the picker owns it.
+  // A color outside the set: no swatch is checked, the picker owns it.
   await t.eventually(checked('#custom'), null, 'a value outside the swatches checks none')
   await t.eventually(`document.querySelector('#custom input[type=color]').value`, '#abcdef', 'and sits in the custom picker')
   await t.eventually(`document.querySelector('#custom .fjs-color-custom').classList.contains('is-active')`, true,
     'which reads as the chosen one')
-  await t.eventually(`document.querySelector('#custom [role=radiogroup]').getAttribute('aria-label')`, 'Brand colour', 'label names the group')
+  await t.eventually(`document.querySelector('#custom [role=radiogroup]').getAttribute('aria-label')`, 'Brand color', 'label names the group')
 
   await t.evaluate(`
     const el = document.querySelector('#custom input[type=color]');
@@ -48,7 +48,7 @@ export async function run(t) {
   await t.eventually(text('#custom-value'), '#123456', 'the custom picker writes the bound value')
 
   await t.clickAt('#custom .fjs-color-option:nth-of-type(1)')
-  await t.eventually(text('#custom-value'), '#ef4444', 'a swatch replaces a custom colour')
+  await t.eventually(text('#custom-value'), '#ef4444', 'a swatch replaces a custom color')
   await t.eventually(`document.querySelector('#custom .fjs-color-custom').classList.contains('is-active')`, false,
     'and the picker stops reading as chosen')
 

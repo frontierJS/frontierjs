@@ -58,8 +58,8 @@ const EXCLUDE = LINKED.map(f => `:(exclude)${f}`)
 const SCRATCH_PATHSPEC = ':(exclude,glob)**/.sierra-fresh-*'
 const SCRATCH = /(^|\/)\.sierra-fresh-[^/]*$/
 
-/** ports.js has five port blocks for linked worktrees. */
-export const MAX_LANES = 5
+import { MAX_LANES }  from '../packages/cli/core/autopilot.js'
+export { MAX_LANES }
 
 /** The first `count` lanes no other running loop holds, each opened. */
 export function openLanes(count) {

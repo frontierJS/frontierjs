@@ -272,7 +272,7 @@ outranks the component of the same name:
 | Class | Uno makes it | Fix |
 | --- | --- | --- |
 | `container` | `width:100%` + breakpoint max-widths, so `.container.narrow` stops narrowing | blocklist `container`, or use Uno's |
-| `text-xs…xl` | Uno's scale (14/18px) replaces this package's (13/16px) | **retune the tokens** — see below — or blocklist |
+| `text-2xs…xl` | Uno's scale (14/18px) replaces this package's (13/16px) | **retune the tokens** — see below — or blocklist |
 | `table`, `tab` | `display:table`, `tab-size:4` | harmless — that is what those elements already are |
 
 ```ts fragment
@@ -356,7 +356,7 @@ never a class
 
 **Page** `band` (+ `band-media`) · `bleed` — a full-width stripe, and the escape it shares
 
-**Type** `h1`–`h6` · `text-xs` `text-sm` `text-md` `text-lg` `text-xl` ·
+**Type** `h1`–`h6` · `text-2xs` `text-xs` `text-sm` `text-md` `text-lg` `text-xl` ·
 `text-body` `text-muted` `text-primary` … 
 &nbsp;&nbsp;— size and color are separate axes and chain: `class="text-sm text-muted"`
 

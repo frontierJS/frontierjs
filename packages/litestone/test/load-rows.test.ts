@@ -153,7 +153,7 @@ describe('loadRows', () => {
 
   it('a mapping mistake throws before any row: an unknown column, a required one missing, a computed one named', async () => {
     const db = await open()
-    await expect(loadRows(db, 'Order', 'id,colour\no1,red\n')).rejects.toThrow("'colour' is not a column of Order")
+    await expect(loadRows(db, 'Order', 'id,color\no1,red\n')).rejects.toThrow("'color' is not a column of Order")
     await expect(loadRows(db, 'Order', 'id,customerId\no1,c01\n')).rejects.toThrow('the file has no column for placedAt, status, currency, amount, items')
     await expect(loadRows(db, 'Order', [], { mode: 'upsert' })).rejects.toThrow('needs a key')
     await expect(loadRows(db, 'Nope', [])).rejects.toThrow("'Nope' is not a model")

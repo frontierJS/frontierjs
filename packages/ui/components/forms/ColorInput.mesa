@@ -1,7 +1,7 @@
 <script>
   // ColorInput.mesa
-  // A stored data colour -- a client's avatar hex, a tag's colour -- picked
-  // from a row of swatches or, for anything else, a native colour picker.
+  // A stored data color -- a client's avatar hex, a tag's color -- picked
+  // from a row of swatches or, for anything else, a native color picker.
   //
   // The swatches are real radios in a role="radiogroup", as in ThemePicker and
   // RadioGroup: one tab stop and the arrow keys are the platform's, which a
@@ -149,7 +149,7 @@
     background:    var(--data-accent, var(--surface-sunken));
     box-shadow:    inset 0 0 0 var(--border-width) var(--rule);
   }
-  /* No stored custom colour yet: a spectrum says "pick any". */
+  /* No stored custom color yet: a spectrum says "pick any". */
   .fjs-color-custom:not(.is-active) .fjs-color-fill {
     background: conic-gradient(red, yellow, lime, aqua, blue, magenta, red);
   }

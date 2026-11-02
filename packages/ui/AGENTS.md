@@ -71,7 +71,7 @@ the package has no root entry.
 | a stepper with its own formatting · a range | `@frontierjs/ui/components/forms/NumberInput.mesa` · `@frontierjs/ui/components/forms/Slider.mesa` |
 | the cut points of a banded scale — a heat ramp, alert levels, price tiers — tuned against the distribution they cut | `@frontierjs/ui/components/forms/Thresholds.mesa`. The band of a value is `bandIndex()` from `@frontierjs/ui/utils`, which is what the plot colors itself by, so the picture and whatever it is tuning cannot disagree |
 | a `Json` column | `@frontierjs/ui/components/forms/JsonInput.mesa` |
-| a stored data colour (a hex) picked from swatches or a custom picker | `@frontierjs/ui/components/forms/ColorInput.mesa` (`bind:value`, `swatches`, `custom={false}` for the swatches alone; real radios, so arrows work) |
+| a stored data color (a hex) picked from swatches or a custom picker | `@frontierjs/ui/components/forms/ColorInput.mesa` (`bind:value`, `swatches`, `custom={false}` for the swatches alone; real radios, so arrows work) |
 | a `String[]` or `Int[]` column, a list a person types item by item | `@frontierjs/ui/components/forms/MultiSelect.mesa` with `allowNew` and no options — what a generated form draws; Enter adds the typed item |
 | source text edited in its own syntax — a template, a query, a snippet | `@frontierjs/ui/components/forms/CodeInput.mesa` — `language` is glow's, `numbered` draws a gutter. It is a real `<textarea>` over a highlighted `<pre>`, so style the box through `@frontierjs/css`'s `--code-*` variables and never by restating the text metrics on one layer |
 | a `File` column · a free-standing dropzone | `@frontierjs/ui/components/forms/FileField.mesa` · `@frontierjs/ui/components/forms/FileUpload.mesa` |

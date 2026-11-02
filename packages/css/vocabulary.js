@@ -746,7 +746,7 @@ const NOT_ANATOMY = {
   'align-start': 'The align axis (tokens.css), beside tone, treatment and density, and like density it inherits. `start` is the default, so this is how a region undoes an ancestor\u2019s alignment',
   'align-center': 'The align axis (tokens.css): text-align, plus the --align that Stack, Cluster, Group, Bar and Toolbar read to place their children. Inherits',
   'align-end': 'The align axis (tokens.css). On a Popover inside .popover-anchor it aligns the POPOVER, opening it against the trigger\u2019s end edge; an Overlay does not inherit a region\u2019s alignment',
-  'text-xs': 'A size utility', 'text-sm': 'A size utility', 'text-md': 'A size utility',
+  'text-2xs': 'A size utility', 'text-xs': 'A size utility', 'text-sm': 'A size utility', 'text-md': 'A size utility',
   'text-lg': 'A size utility', 'text-xl': 'A size utility',
   'gap-0': 'A gap utility', 'gap-3xs': 'A gap utility', 'gap-2xs': 'A gap utility',
   'gap-xs': 'A gap utility', 'gap-sm': 'A gap utility', 'gap-md': 'A gap utility',

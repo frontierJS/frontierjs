@@ -250,7 +250,7 @@ t('panel.rendersBothVerdictsSeparately', await probe(`
 
 // A verdict that stops a deploy must not be rendered in the tone of one that
 // does not. The tone comes off a table keyed by verdict, so this asserts the
-// lookup ran rather than that a particular colour is on screen.
+// lookup ran rather than that a particular color is on screen.
 // The expected verdict comes from the server for the ref the panel selected:
 // the panel opens on the second ref, not on the first one graded above, and
 // two refs rarely share a verdict.

@@ -17,6 +17,8 @@ import { dirname, join }                                        from 'node:path'
 import { createInterface }                                      from 'node:readline'
 import { fileURLToPath }                                        from 'node:url'
 
+import { SOURCE, readSchedule, spentToday, overDayCap }         from '../packages/cli/core/autopilot.js'
+
 export const ROOT    = dirname(dirname(fileURLToPath(import.meta.url)))
 export const LOG_DIR = join(homedir(), '.fli')
 
@@ -247,6 +249,26 @@ export function citation(id) {
     return `${said.slice(0, 220)}${said.length > 220 ? '…' : ''} (${file})`
   }
   return null
+}
+
+// ─── --source ───────────────────────────────────────────────
+
+/** `--source autopilot` or nothing: a scheduled run is a hand run in the log plus this field, and any other value is refused by name. */
+export function sourceOf(args) {
+  if (args.source === undefined) return undefined
+  if (args.source !== SOURCE) { console.error(`--source takes '${SOURCE}' and nothing else; a hand run names no source`); process.exit(1) }
+  return SOURCE
+}
+
+// A scheduled run holds the day's cap itself, off the schedule file and the
+// logs, so the cap holds with the Basecamp that started it down. Answers why
+// one more attempt is refused, or null; a hand run is never refused.
+export function dayCapRefusal(source, logs = [join(LOG_DIR, 'fix-loop.jsonl'), join(LOG_DIR, 'frame-loop.jsonl')]) {
+  if (source !== SOURCE) return null
+  let schedule
+  try { schedule = readSchedule() } catch (err) { return err.message }
+  if (!schedule.exists) return `${schedule.file} does not exist, and a scheduled run reads its day cap there`
+  return overDayCap(schedule.day, spentToday(logs.flatMap(readLog)))
 }
 
 // ─── arguments ──────────────────────────────────────────────

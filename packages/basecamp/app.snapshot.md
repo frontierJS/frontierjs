@@ -411,8 +411,8 @@ name when it declares none.
 
 ### `atlas` · model `atlas`
 
-- **methods** — `overview`, `rings`, `autopilot`, `record`, `queue`, `explanation`, `discuss`, `decide`, `explain`
-- **custom methods** — `overview`, `rings`, `autopilot`, `record`, `queue`, `explanation`, `discuss`, `decide`, `explain`
+- **methods** — `overview`, `rings`, `autopilot`, `record`, `queue`, `explanation`, `discuss`, `decide`, `explain`, `run`, `turn`
+- **custom methods** — `overview`, `rings`, `autopilot`, `record`, `queue`, `explanation`, `discuss`, `decide`, `explain`, `run`, `turn`
 - **who may call** —
   - `overview` — standing 5 or above — declared `gate: 5`
   - `rings` — standing 5 or above — declared `gate: 5`
@@ -423,6 +423,8 @@ name when it declares none.
   - `discuss` — standing 5 or above — declared `gate: 5`
   - `decide` — standing 5 or above — declared `gate: 5`
   - `explain` — standing 5 or above — declared `gate: 5`
+  - `run` — standing 5 or above — declared `gate: 5`
+  - `turn` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

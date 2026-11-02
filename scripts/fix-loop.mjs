@@ -9,6 +9,7 @@
 //   bun run fix:loop -- --budget 3 --dry-run
 //   bun run fix:loop -- --rows 8 --lanes 3   # three rows at a time
 //   bun run fix:loop -- --trial s4 --model haiku --ids FJS-1,FJS-2 --lanes 5
+//   bun run fix:loop -- --rows 6 --lanes 2 --sev S3,S4 --source autopilot   # a scheduled run
 //
 // Each row runs `/fix-next <id>` in a FRESH `claude -p` session on the first
 // rung of FIX_LADDER, and a row that does not close is retried once on the next —
@@ -80,6 +81,16 @@
 // tree, and no attempt is told of an earlier one, since the earlier one is the
 // other model's. --model pins one rung (effort --effort, default high) with no
 // retry on another, and --ids runs exactly those rows.
+//
+// --source autopilot is a run the schedule started (IDEAS/autopilot.md): the
+// same log, each line plus `source`. Nobody is there to read a merge, so it
+// lands on the DOCK: lanes required, the register COPIED into the lane as a
+// trial's is, and every outcome kept as ~/.fli/lanes/patches/<id>.patch with
+// the register edit inside — the owner applies it with the lane tool
+// (FJS-D1779). A row whose patch is on the Dock after a close or a block is
+// skipped by every later run until that patch is applied or removed. The
+// day's cap in ~/.fli/autopilot.json is read before each row, so a scheduled
+// run stops itself with the Basecamp that started it down.
 // ============================================================
 
 import { spawnSync }                from 'node:child_process'
@@ -87,7 +98,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { dirname, join }            from 'node:path'
 import { pathToFileURL }            from 'node:url'
 
-import { ROOT, LOG_DIR, runSession, printAttempt, appendLog, lastEntry, readLog, sentBack, fli, rg, citation, parseArgs, printHelp, trace, planUsage, printPlanUsage } from './headless.mjs'
+import { ROOT, LOG_DIR, runSession, printAttempt, appendLog, lastEntry, readLog, sentBack, fli, rg, citation, parseArgs, printHelp, trace, planUsage, printPlanUsage, sourceOf, dayCapRefusal } from './headless.mjs'
 import { LANES_DIR, LINKED, MAX_LANES, openLanes, syncLane, applyPatch, lanePatch, harvest } from './lanes.mjs'
 
 // Not `LADDER`: frame-loop shares that one and stays on Opus.
@@ -110,7 +121,7 @@ const REALMS = {
 
 const given      = parseArgs(process.argv.slice(2))
 // A command line naming its rows (the taskmaster's --pkg, a mod's --ids) is never mixed with the menu: its --sev would filter rows somebody named.
-const menu       = given.ids || given.pkg || given.sev || given.trial || given.help ? null : MENU?.readMenu() ?? null
+const menu       = given.ids || given.pkg || given.sev || given.trial || given.source || given.help ? null : MENU?.readMenu() ?? null
 const args       = { ...menu?.flags, ...given }
 const budget     = Number(args.budget ?? 5)
 const permission = args['permission-mode'] ?? 'auto'
@@ -120,6 +131,9 @@ const ids        = args.ids ? String(args.ids).split(',').map(s => s.trim()).fil
 const rows       = Number(args.rows ?? ids?.length ?? 4)
 const pinned     = args.model ? [{ model: String(args.model), effort: String(args.effort ?? 'high') }] : null
 const trial      = args.trial ? String(args.trial) : null
+const source     = sourceOf(args)
+// Where a row's edits go when it ends: the main tree, a trial's patch per model, or the Dock.
+const landing    = trial ? 'trial' : source ? 'dock' : 'tree'
 const LOG        = join(LOG_DIR, trial ? `fix-trial-${trial}.jsonl` : 'fix-loop.jsonl')
 
 if (args.help) { printHelp(import.meta.url); process.exit(0) }
@@ -127,6 +141,8 @@ if (menu) console.log(`[fix-loop] menu: ${menu.menu} ${MENU.flagsLine(menu.flags
 // Without a lane a trial session edits the main tree, and the first model's fix is the second model's starting point.
 if (trial && !(/^[\w-]+$/.test(trial) && lanes)) { console.error('[fix-loop] --trial takes a name of letters, digits, - and _, and needs --lanes'); process.exit(1) }
 if (!Number.isInteger(lanes) || lanes < 0 || lanes > MAX_LANES) { console.error('[fix-loop] --lanes takes 1–5: a lane is a worktree, and there are five branch port blocks'); process.exit(1) }
+if (landing === 'dock' && !lanes) { console.error('[fix-loop] --source autopilot lands on the Dock and needs --lanes: without a lane the session edits the main tree, which nobody is there to read'); process.exit(1) }
+{ const refused = dayCapRefusal(source); if (refused) { console.error(`[fix-loop] refused: ${refused}`); process.exit(1) } }
 
 // ─── the loop ───────────────────────────────────────────────
 
@@ -154,6 +170,8 @@ console.log(`[fix-loop] finished ${new Date().toLocaleString()}`)
 async function worker(lane) {
   const tag = lane ? `fix-loop:${lane.n}` : 'fix-loop'
   while (!stopped && started < rows) {
+    const over = dayCapRefusal(source)
+    if (over) { console.log(`[${tag}] stopping: ${over}`); stopped = true; return }
     const row = nextRow()
     if (row === WAIT) { await Promise.race([...inFlight.values()].map(f => f.done)); continue }
     if (!row) { console.log(`[${tag}] nothing ready`); return }
@@ -177,9 +195,9 @@ async function work(row, n, lane, tag) {
   const patch   = trial
     ? join(LANES_DIR, 'patches', trial, `${row.id}.${ladder[0].model}.patch`)
     : join(LANES_DIR, 'patches', `${row.id}.patch`)
-  const base    = lane && syncLane(lane, { linked: !trial })
-  const carried = lane && !trial ? applyPatch(lane, patch) : false
-  const root    = trial ? lane.dir : ROOT
+  const base    = lane && syncLane(lane, { linked: landing === 'tree' })
+  const carried = lane && landing !== 'trial' ? applyPatch(lane, patch) : false
+  const root    = landing === 'tree' ? ROOT : lane.dir
   let outcome
   let retried = false
   for (let rung = 0; rung < ladder.length; rung++) {
@@ -190,18 +208,18 @@ async function work(row, n, lane, tag) {
       ? `/fix-next ${row.id} — an earlier fix-loop attempt at this row did not close it; the edits under its packages in the working tree are that attempt's, so read git diff and build on them`
       : `/fix-next ${row.id}`
 
-    appendLog(LOG, { id: row.id, severity: row.severity, model, effort, outcome: 'started' })
+    appendLog(LOG, { id: row.id, severity: row.severity, model, effort, outcome: 'started', ...(lane && { lane: lane.n }), ...(source && { source }) })
     const run = await runSession(`${prompt}\n\n${brief}${lane ? laneNote() : ''}`, {
       model, effort, permission, cap: model === 'opus' ? budget * 2 : budget,
       tag, where: `${row.id} [${n}/${rows}]`, phases: { orient: 0, fix: 0, prove: 0, close: 0 }, phaseOf,
-      ...(lane && { cwd: lane.dir, addDirs: trial ? [] : [ROOT], env: lane.env }),
+      ...(lane && { cwd: lane.dir, addDirs: landing === 'tree' ? [ROOT] : [], env: lane.env }),
     })
     const status = /fix-next: \S+ (closed|blocked|ruling|corrected|busy|failed)\s*$/.exec(run.report)?.[1]
     outcome   = isClosed(row.id, root) ? 'closed' : isBlocked(row.id, root) ? 'blocked' : status === 'blocked' ? 'failed' : status ?? 'failed'
     spent    += run.cost
 
     const dirty = outcome === 'busy' ? dirtyUnder(row) : undefined
-    appendLog(LOG, { id: row.id, severity: row.severity, model, effort, cost: run.cost, turns: run.turns, minutes: run.minutes, phases: run.phases, outcome, stop: run.stop, denied: run.denied, edited: run.edited, transient: run.transient, dirty, ...(lane && { cwd: lane.dir }), ...trace(run) })
+    appendLog(LOG, { id: row.id, severity: row.severity, model, effort, cost: run.cost, turns: run.turns, minutes: run.minutes, phases: run.phases, outcome, stop: run.stop, denied: run.denied, edited: run.edited, transient: run.transient, dirty, ...(lane && { cwd: lane.dir }), ...(source && { source }), ...trace(run) })
     printAttempt(tag, { model, effort }, outcome, run)
 
     // A safety check that gave no verdict failed the attempt, not the row, and the next rung costs five times as much.
@@ -227,7 +245,15 @@ async function work(row, n, lane, tag) {
 
 // A row that ended carries its edits into the main tree; one that did not keeps
 // them as a patch, so a half-built fix never reaches the tree other lanes copy.
+// On the Dock every outcome is a patch, since the lane's register is a copy and
+// the close rides in the diff.
 function settle(lane, base, row, outcome, patch, tag) {
+  if (landing === 'dock') {
+    const diff = lanePatch(lane, base)
+    if (diff.length) { mkdirSync(dirname(patch), { recursive: true }); writeFileSync(patch, diff) }
+    console.log(diff.length ? `[${tag}] ${row.id} ${outcome} — on the Dock, not merged: ${patch}` : `[${tag}] ${row.id} ${outcome} — nothing edited, nothing kept`)
+    return
+  }
   if (trial) {
     const diff = lanePatch(lane, base)
     mkdirSync(dirname(patch), { recursive: true })
@@ -254,7 +280,7 @@ function settle(lane, base, row, outcome, patch, tag) {
 }
 
 function laneNote() {
-  if (trial) return ['', '', '## Lane',
+  if (landing !== 'tree') return ['', '', '## Lane',
     '',
     `This session runs in a lane: a worktree of the main tree, holding everything that tree holds, uncommitted work included. ${LINKED.join(', ')} are this lane's own copies, so \`fli close\`, \`fli file\` and \`fli amend\` write here. Nothing is merged into the main tree: your edits are kept as a patch and reviewed. Work only inside this worktree.`,
     loadNote(),
@@ -288,6 +314,7 @@ function nextRow() {
     if (skipped.has(r.id) || inFlight.has(r.id) || r.byHand || r.env || (ids && !ids.includes(r.id))) continue
     if (r.pkg.some(p => running.includes(p))) { wait = true; continue }
     if (stillBusy(r, log)) { console.log(`[fix-loop] ${r.id} skipped — busy last time, and the files that made it so are still dirty`); skipped.add(r.id); continue }
+    if (!ids && onDock(r.id, log)) { console.log(`[fix-loop] ${r.id} skipped — its patch is on the Dock, waiting to be applied (${join(LANES_DIR, 'patches', `${r.id}.patch`)})`); skipped.add(r.id); continue }
     const verdicts = ids ? null : sentBack(r.id, log)
     if (verdicts) { console.log(`[fix-loop] ${r.id} skipped — ${verdicts.length} attempts ended ${verdicts.join(', ')} and it is still open`); skipped.add(r.id); dodged.push({ id: r.id, verdicts }); continue }
     return r
@@ -301,6 +328,15 @@ function nextRow() {
 function stillBusy(row, log) {
   const last = log.filter(e => e.id === row.id && e.cost !== undefined).at(-1)
   return last?.outcome === 'busy' && last.dirty?.length > 0 && last.dirty.join('\n') === dirtyUnder(row).join('\n')
+}
+
+// A row closed or blocked on the Dock is closed in its patch and still open in
+// the main register until the owner applies it (FJS-D1779); a tree run's close
+// that conflicted sits there the same way. Picking it again pays a session to
+// close it twice.
+function onDock(id, log) {
+  const last = log.filter(e => e.id === id && e.cost !== undefined).at(-1)
+  return ['closed', 'blocked'].includes(last?.outcome) && existsSync(join(LANES_DIR, 'patches', `${id}.patch`))
 }
 
 function dirtyUnder(row) {

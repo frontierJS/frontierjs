@@ -12,8 +12,11 @@ title: Autopilot
   // live position is the window's end, and it follows the end across a poll
   // until somebody moves it off.
   //
-  // The Switch is drawn, not wired: Phase 3 writes ~/.fli/autopilot.json, so
-  // Turn On is disabled and nothing on this screen starts a loop.
+  // The Switch turns through the service's `turn`, which writes `on` into
+  // ~/.fli/autopilot.json and nothing else: Turn On is refused until every cap
+  // is set, and Off stops no run already going. Run now on a schedule entry starts that loop once,
+  // through the service's `run`; whether it is running is the API's pid, and
+  // what it did is the log lines that land in its lane.
   import { goto } from '@frontierjs/sierra/router'
   import { atlas } from '../../../resources/Atlas.mesa'
 
@@ -167,8 +170,8 @@ title: Autopilot
       card.list = (d.review?.head ?? []).filter(l => l.startsWith('| ') && !l.includes('---')).slice(1, 7).map(l => ['·', l.replace(/\|/g, ' ').trim()])
       card.listH = card.list.length ? 'Outcomes table' : ''
     } else if (id === 'switch') {
-      card.facts = [['state', d.switch.on ? 'on' : 'off'], ['entries', d.switch.entries.length], ['spent', money(m.spend)]]
-      card.kv = [['file', d.switch.file + (d.switch.exists ? '' : ' (not written yet)')]]
+      card.facts = [['state', d.switch.on ? 'on' : 'off'], ['entries', d.switch.entries.length], ['today', `${d.switch.spent.attempts} tries · ${money(d.switch.spent.dollars)}`]]
+      card.kv = [['file', d.switch.file + (d.switch.exists ? '' : ' (not written yet)')], ['day cap', dayCap()]]
     } else if (id === 'post') {
       card.kv = [['phase', '4.3, its own ruling first']]
     }
@@ -196,14 +199,54 @@ title: Autopilot
 
   // ─── the schedule ───────────────────────────────────────────────────
 
+  // An entry's last run is the newest scheduled line of its loop in the window.
   const lastRun = (loop) => {
     if (!data) return '—'
-    const ms = loop === 'frame' ? Date.parse(data.frame.lastAt)
-      : loop === 'review' ? Date.parse(data.review?.modified)
-      : Date.parse(events.filter(e => e.kind === 'row').at(-1)?.t)
-    return Number.isFinite(ms) ? fmtD(ms) : 'never'
+    const mine = data.events.filter(e => e.source === 'autopilot' && (loop === 'frame' ? e.from === 'framing' || e.to === 'framing' : e.kind === 'row'))
+    const last = mine.at(-1)
+    return last ? `${fmtD(Date.parse(last.t))} · ${last.id} ${last.label}` : 'never in the window'
   }
   const capsOf = (e) => e?.caps && typeof e.caps === 'object' ? Object.entries(e.caps).map(([k, v]) => `${k} ${v}`).join(' · ') || 'none' : 'none'
+  // The five-minute job's own record: what it started and why it did not.
+  const tickLine = () => {
+    const t = data.switch.tick
+    if (!t) return 'none yet — the job ticks every five minutes while the Switch is on'
+    const started = t.started.map(s => `entry ${s.entry} (${s.loop})`).join(', ')
+    const skipped = t.skipped.map(s => `entry ${s.entry} (${s.loop}) — ${s.why}`).join('; ')
+    return `${fmtD(Date.parse(t.at))} · started ${started || 'nothing'}${skipped ? ` · not started: ${skipped}` : ''}`
+  }
+
+  const dayCap = () => {
+    const d = data?.switch.day
+    return `${d?.attempts ?? 'unset'} attempts · ${d?.dollars != null ? money(d.dollars) : 'unset'}`
+  }
+
+  // Why the toggle is held, or null when it may be turned. Off is never held
+  // by a cap: a file that lost one turns off the same as any other.
+  const switchHeld = () => {
+    const sw = data.switch
+    if (sw.refused) return 'The file is refused, so there is no switch to turn.'
+    if (!sw.exists) return `Write ${sw.file} first, with every cap set.`
+    if (!sw.on && sw.missing.length) return `Turn On waits on ${sw.missing.length} cap${sw.missing.length === 1 ? '' : 's'} not set.`
+    return null
+  }
+  let swErr = null
+  async function turn() {
+    swErr = null
+    try { await atlas.service.invoke('turn', data.switch.on ? 'off' : 'on', {}) }
+    catch (err) { swErr = err.message }
+    await load()
+  }
+
+  let runOut = null
+  let runErr = null
+  async function runNow(i) {
+    runOut = null
+    runErr = null
+    try { runOut = await atlas.service.invoke('run', String(i + 1), {}) }
+    catch (err) { runErr = err.message }
+    await load()
+  }
 </script>
 
 <div class="section-header">
@@ -355,12 +398,19 @@ title: Autopilot
                 <div class="ap-mh"><h2 class="ap-h">The Switch</h2><span class="text-xs text-muted"><code>{data.switch.file}</code> · {data.switch.exists ? 'present' : 'not written yet'}</span></div>
                 <div class="ap-sw">
                   <div class="ap-state" id="ap-sw-state" data-on={data.switch.on}>{data.switch.on ? 'ON' : 'OFF'}<small class="text-xs text-muted">{data.switch.on ? 'the schedule below runs' : 'nothing starts on its own'}</small></div>
-                  <button type="button" class="ap-toggle" role="switch" aria-checked={data.switch.on} disabled aria-describedby="ap-sw-why">
+                  <button type="button" class="ap-toggle" role="switch" aria-checked={data.switch.on} disabled={!!switchHeld()} aria-describedby="ap-sw-why" onclick={turn}>
                     <span class="ap-track {data.switch.on ? 'on' : ''}"></span>{data.switch.on ? 'Turn Off' : 'Turn On'}
                   </button>
-                  <span class="text-sm text-muted" id="ap-sw-why">The switch is read here and not yet written: Phase 3 turns it, with every cap set first.</span>
+                  <span class="text-sm text-muted" id="ap-sw-why">{switchHeld() ?? (data.switch.on ? 'Off stops nothing running and starts nothing new.' : 'On runs the schedule below: every five minutes, each entry that is due.')}</span>
                 </div>
-                <p class="text-sm text-muted">Spend in the window: {money(data.spend)} across {data.counts.started} attempts. Cap: not set.</p>
+                {#if swErr}<Callout tone="danger" title="The switch did not turn"><p class="text-sm" id="ap-sw-err">{swErr}</p></Callout>{/if}
+                <p class="text-sm text-muted" id="ap-day">Today: {data.switch.spent.attempts} attempts · {money(data.switch.spent.dollars)} by the schedule — day cap {dayCap()}{data.switch.cap ? ` — ${data.switch.cap}` : ''}. In the window: {money(data.spend)} across {data.counts.started} attempts, by hand and by the schedule.</p>
+                <p class="text-sm text-muted" id="ap-tick">Last tick: {tickLine()}</p>
+                {#if data.switch.refused}
+                  <Callout tone="danger" title="The schedule file is refused, so nothing in it runs"><p class="text-sm" id="ap-refused">{data.switch.refused}</p></Callout>
+                {:else if data.switch.missing.length}
+                  <p class="text-sm text-muted" id="ap-missing">Not set, and no cap has a default: {data.switch.missing.join(', ')}. Turn On waits on every one.</p>
+                {/if}
               </section>
             </Card>
 
@@ -369,17 +419,34 @@ title: Autopilot
                 <div class="ap-mh"><h2 class="ap-h">Schedule</h2><span class="text-xs text-muted">a loop, a cron line, its caps</span></div>
                 <div class="table-wrap">
                   <table class="table" id="ap-schedule">
-                    <thead><tr><th>Loop</th><th>Cron</th><th>Caps (the script's own flags)</th><th>Last run</th></tr></thead>
+                    <thead><tr><th>Loop</th><th>Cron</th><th>Caps (the script's own flags)</th><th>Worst run</th><th>Last scheduled run</th><th></th></tr></thead>
                     <tbody>
                       {#each data.switch.entries as e, i (i)}
-                        <tr data-entry={e.loop}><td>{e.loop}</td><td><code>{e.cron}</code></td><td>{capsOf(e)}</td><td>{lastRun(e.loop)}</td></tr>
+                        <tr data-entry={e.loop} data-running={!!e.running}>
+                          <td>{e.loop}</td><td><code>{e.cron}</code></td><td>{capsOf(e)}</td>
+                          <td>{e.worst != null ? money(e.worst) : 'unset'}</td>
+                          <td>{lastRun(e.loop)}</td>
+                          <td>
+                            {#if e.running}
+                              <span class="text-sm">running · pid {e.running.pid} · since {fmtD(Date.parse(e.running.at))}</span>
+                            {:else}
+                              <Button size="sm" treatment="outlined" id={`ap-run-${i + 1}`} onclick={() => runNow(i)}>Run now</Button>
+                            {/if}
+                          </td>
+                        </tr>
                       {/each}
                       {#if !data.switch.entries.length}
-                        <tr id="ap-schedule-empty"><td colspan="4" class="text-muted">No entry is written. <code>{data.switch.file}</code> {data.switch.exists ? 'is present and lists none' : 'does not exist yet'}; every run in the window was started by hand.</td></tr>
+                        <tr id="ap-schedule-empty"><td colspan="6" class="text-muted">No entry is written. <code>{data.switch.file}</code> {data.switch.exists ? 'is present and lists none' : 'does not exist yet'}; every run in the window was started by hand.</td></tr>
                       {/if}
                     </tbody>
                   </table>
                 </div>
+                {#if runOut}
+                  <Callout tone="success" title={`Started entry ${runOut.entry}: ${runOut.loop}`}><p class="text-sm">pid {runOut.pid} · what it prints is in <code>{runOut.log}</code> · it shows in its lane as its log lines land. It lands on the Dock, never in the main tree.</p></Callout>
+                {/if}
+                {#if runErr}
+                  <Callout tone="danger" title="Not started"><p class="text-sm" id="ap-run-err">{runErr}</p></Callout>
+                {/if}
               </section>
             </Card>
 

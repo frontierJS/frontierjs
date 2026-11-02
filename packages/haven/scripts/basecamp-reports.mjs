@@ -16,7 +16,7 @@
 // leaders  who checked off the most to-dos in fourteen days, against the fourteen before
 // team     each teammate's open to-dos: how many, how many late, what falls due this week
 // daily    the newest daily check posted in the Kobami chat, each item a link
-// daily-dev  the same check less the 📣 ads / SEO section and what Vlad holds alone
+// daily-dev  the same check less the 📣 ads / SEO section, only what Jordan holds alone
 // plans    open to-dos per client plan (the Daily Checklist doc's table), project by project
 import { execFile } from 'node:child_process'
 
@@ -440,12 +440,13 @@ const REPORTS = {
     run: () => dailyReport(),
   },
 
-  // The 📣 section is the marketing lane's, and a `who` of exactly "Vlad" is a
-  // to-do he holds alone; one he shares ("Colin/Vlad") stays.
+  // The 📣 section is the marketing lane's. A `who` is the assignees' first
+  // names joined by "/", so exactly "Jordan" is a to-do he holds alone; a
+  // shared one ("Colin/Jordan") or a chat line ("unassigned") is cut.
   'daily-dev': {
-    help: 'the daily check without the 📣 ads / SEO section or what Vlad holds alone',
+    help: 'the daily check less the 📣 ads / SEO section, only what Jordan holds alone',
     run: () => dailyReport((item, section) =>
-      section.includes('📣') ? 'in 📣 ads / SEO' : item.who === 'Vlad' ? "Vlad's alone" : null),
+      section.includes('📣') ? 'in 📣 ads / SEO' : item.who !== 'Jordan' ? "not Jordan's alone" : null),
   },
 }
 

@@ -86,6 +86,12 @@ describe('email driver — body rendering', () => {
     expect(html).toContain('a=1&amp;b=2')
   })
 
+  it('a line of several rows renders each row, not one collapsed paragraph', () => {
+    const html = renderHtml([{ type: 'line', text: 'a: first\nb: <second>' }])
+    expect(html).toMatch(/<td[^>]*>a: first<\/td>/)
+    expect(html).toMatch(/<td[^>]*>b: &lt;second&gt;<\/td>/)
+  })
+
   it('renders an empty line list without throwing', () => {
     expect(renderText([])).toBe('')
     expect(renderHtml([])).toContain('<div')

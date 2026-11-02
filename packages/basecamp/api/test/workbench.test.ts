@@ -594,13 +594,13 @@ describe('the plan', () => {
     writeFileSync(join(dir, 'PLAN.md'), [
       ...PLAN.slice(0, -1), '- [ ] 0.3 Tell people', '',
       '## Open questions (owner)', '',
-      '- **Q1 — Which colour is the widget?**', '  - **A** — red.', '  - **B** — blue.', '  - **Recommend A** — it shows.',
+      '- **Q1 — Which color is the widget?**', '  - **A** — red.', '  - **B** — blue.', '  - **Recommend A** — it shows.',
       '- ~~**Q2 — Does it ship?**~~ **Answered 2026-10-13: A — yes.**', '',
     ].join('\n'))
 
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'next', registers: { prefix: 'NX' } }))
     writeFileSync(join(dir, 'DECISIONS.md'), '# Decisions\n\n## Widgets\n\n## Open (discussed, not yet ruled)\n')
-    const Q1 = 'PLAN:q1-which-colour-is-the-widget'
+    const Q1 = 'PLAN:q1-which-color-is-the-widget'
 
     expect(await wb.go(id)).toMatchObject({ step: '0.2' })
     expect(await wb.next(id)).toEqual({ refused: expect.stringContaining('Next starts the next step once it is done') })
@@ -610,13 +610,13 @@ describe('the plan', () => {
 
     // The step ended on a question: the status carries it, and seeing the
     // chat does not take it away — only a ruling does.
-    const asked = { plan: 'PLAN.md', id: Q1, question: 'Q1 — Which colour is the widget?' }
+    const asked = { plan: 'PLAN.md', id: Q1, question: 'Q1 — Which color is the widget?' }
     expect((await wb.status(wb.getPin(id)!)).questions).toEqual([asked])
     wb.seen(id)
     expect(await wb.status(wb.getPin(id)!)).toMatchObject({ unread: false, questions: [asked] })
 
     const chats = wb.getPin(id)!.chats.length
-    expect(await wb.next(id)).toEqual({ refused: 'PLAN.md has an open question — rule it before Next: Q1 — Which colour is the widget?' })
+    expect(await wb.next(id)).toEqual({ refused: 'PLAN.md has an open question — rule it before Next: Q1 — Which color is the widget?' })
     expect(wb.getPin(id)!.chats.length).toBe(chats)
     expect(shownPlan(wb.getPin(id)!)!.steps['0.3']).toBeUndefined()
 
@@ -627,8 +627,8 @@ describe('the plan', () => {
     expect(await wb.decide(id, { question: Q1, pick: 'B', section: 'Widgets' })).toEqual({ refused: expect.stringContaining('not the recommendation') })
     expect(await wb.decide(id, { question: Q1, pick: 'A', section: 'Nope' })).toEqual({ refused: expect.stringContaining('no section named') })
     expect(await wb.decide(id, { question: Q1, pick: 'A', section: 'Widgets' })).toEqual({ ruling: 'NX-D1', pick: 'A', files: ['DECISIONS.md', 'PLAN.md'] })
-    expect(readFileSync(join(dir, 'PLAN.md'), 'utf8')).toContain('- ~~**Q1 — Which colour is the widget?**~~ **Answered ')
-    expect(readFileSync(join(dir, 'DECISIONS.md'), 'utf8')).toContain('`NX-D1` — Q1 — Which colour is the widget — Red.')
+    expect(readFileSync(join(dir, 'PLAN.md'), 'utf8')).toContain('- ~~**Q1 — Which color is the widget?**~~ **Answered ')
+    expect(readFileSync(join(dir, 'DECISIONS.md'), 'utf8')).toContain('`NX-D1` — Q1 — Which color is the widget — Red.')
     expect(await wb.decide(id, { question: Q1, pick: 'A', section: 'Widgets' })).toEqual({ refused: `${Q1} is already ruled` })
     expect((await wb.status(wb.getPin(id)!)).questions).toEqual([])
     // By number the ruling is 0.2's: it answers the question that step stopped on.
@@ -646,7 +646,7 @@ describe('the plan', () => {
     expect(run.input).toStartWith('This is a fresh session continuing the plan at `PLAN.md`.')
     // The stand-in's reply to the Go is `did: ` and the prompt it was sent.
     expect(run.input).toContain("The last session's reply:\n\ndid: Carry out step 0.2 of the plan at `PLAN.md`")
-    expect(run.input).not.toContain('Which colour is the widget?')
+    expect(run.input).not.toContain('Which color is the widget?')
     expect(run.input).not.toContain('Does it ship?')
     expect(run.input).toContain('Carry out step 0.3 of the plan at `PLAN.md`: Tell people')
     expect(shownPlan(wb.getPin(id)!)!.steps['0.3']).toEqual({ chat: next.chat, startedAt: expect.any(String), registerHigh: { issue: 0, decision: 1 } })

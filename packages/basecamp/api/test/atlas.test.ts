@@ -3,7 +3,12 @@
 // kind their skill works on. Pure: the atlas is a literal, no fli, no disk.
 
 import { describe, expect, test } from 'bun:test'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join }   from 'node:path'
+
 import { composePrompt, namedIds, branchSlug, explainPrompt, readAutopilot, registerRoot, type Atlas, type Queued } from '../src/domain/atlas/atlas.ts'
+import { startEntry, runningOf, dueAt, tickSince, tick, readTick, TICK_MS } from '../src/domain/atlas/autopilot-run.ts'
 
 const at = (file: string, line: number) => ({ file, line, href: file, edit: '' })
 
@@ -123,6 +128,82 @@ describe('readAutopilot', async () => {
     expect(t.council.bench.length).toBeLessThanOrEqual(12)
     expect(t.plans.papers.every(p => p.next !== null)).toBe(true)
     expect(Date.parse(t.window.end) - Date.parse(t.window.start)).toBe(864e5)
-    expect(t.switch).toMatchObject({ file: '~/.fli/autopilot.json', on: expect.any(Boolean), entries: expect.any(Array) })
+    expect(t.switch).toMatchObject({ file: '~/.fli/autopilot.json', on: expect.any(Boolean), entries: expect.any(Array), spent: { attempts: expect.any(Number), dollars: expect.any(Number) }, missing: expect.any(Array) })
+    expect(t.switch.refused === null || t.switch.entries.length === 0).toBe(true)
   }, 30_000)
+})
+
+// A Run now is a spawn of the entry's script with its flags; the script here
+// is a stand-in that prints its argv, since the real one opens a lane and pays
+// for a session.
+describe('startEntry', () => {
+  test('spawns the script beside the registers with the entry\'s flags, refuses a second start while it runs, and names what is missing', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'autopilot-run-'))
+    mkdirSync(join(root, 'scripts'))
+    writeFileSync(join(root, 'scripts', 'echo-loop.mjs'), 'console.log(process.argv.slice(2).join(" ")); await new Promise(r => setTimeout(r, 300))\n')
+    const loops   = { fix: { script: 'scripts/echo-loop.mjs' }, frame: { script: 'scripts/none.mjs' } }
+    const entries = [
+      { loop: 'fix',   cron: '* * * * *', caps: { rows: 1 }, flags: ['--rows', '1', '--source', 'autopilot'], worst: null },
+      { loop: 'frame', cron: '* * * * *', caps: {},          flags: ['--source', 'autopilot'],               worst: null },
+    ]
+    try {
+      const out = startEntry(root, loops, entries, 0, process.env, { outDir: join(root, 'out') })
+      if (!('started' in out)) throw new Error(out.refused)
+      // On a copy: bun's toMatchObject writes an expect.any matcher into the object it matched, and this one is the module's own record.
+      expect({ ...out.started }).toMatchObject({ loop: 'fix', pid: expect.any(Number), log: join(root, 'out', 'fix-1.log') })
+      expect(runningOf(0)?.pid).toBe(out.started.pid)
+      expect(startEntry(root, loops, entries, 0, process.env, { outDir: join(root, 'out') })).toMatchObject({ refused: expect.stringMatching(/entry 1 \(fix\) is already running \(pid \d+\)/) })
+      expect(startEntry(root, loops, entries, 1, process.env, { outDir: join(root, 'out') })).toMatchObject({ refused: expect.stringContaining('scripts/none.mjs is not beside the registers') })
+      expect(startEntry(root, loops, entries, 5, process.env, { outDir: join(root, 'out') })).toMatchObject({ refused: 'the schedule has no entry 6; it lists 2' })
+      const end = Date.now() + 5_000
+      while (runningOf(0) && Date.now() < end) await new Promise(r => setTimeout(r, 50))
+      expect(runningOf(0)).toBeNull()
+      const log = readFileSync(out.started.log, 'utf8')
+      expect(log.split('\n')[0]).toContain('$ bun scripts/echo-loop.mjs --rows 1 --source autopilot')
+      expect(log).toContain('\n--rows 1 --source autopilot\n')
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  }, 10_000)
+})
+
+describe('tick', () => {
+  const local = (h: number, m: number) => { const d = new Date(2026, 10, 2, h, m, 0, 0); return d }
+
+  test('an entry is due when its cron names a local minute after the last tick and up to now, and not before', () => {
+    expect(dueAt('0 1 * * *', local(0, 55), local(1, 0))).toBe(true)
+    expect(dueAt('0 1 * * *', local(0, 55), local(0, 59))).toBe(false)
+    expect(dueAt('0 1 * * *', local(1, 0), local(1, 5))).toBe(false)
+    expect(dueAt('*/5 * * * *', local(1, 1), local(1, 6))).toBe(true)
+    expect(dueAt('0 1 * * 0', local(0, 55), local(1, 0))).toBe(false)
+  })
+
+  test('the window starts at the last tick, or five minutes ago with none or a stale one', () => {
+    const now = local(1, 0)
+    expect(tickSince(null, now).getTime()).toBe(now.getTime() - TICK_MS)
+    expect(tickSince({ at: local(0, 55).toISOString(), since: '', started: [], skipped: [] }, now).getTime()).toBe(local(0, 55).getTime())
+    expect(tickSince({ at: new Date(2026, 9, 1).toISOString(), since: '', started: [], skipped: [] }, now).getTime()).toBe(now.getTime() - TICK_MS)
+  })
+
+  test('a pass starts what is due, skips the cap and held lanes by name, and writes its record', () => {
+    const outDir  = mkdtempSync(join(tmpdir(), 'autopilot-tick-'))
+    const entries = [
+      { loop: 'fix',   cron: '0 1 * * *', caps: { rows: 1, lanes: 2 }, flags: [], worst: null },
+      { loop: 'frame', cron: '0 1 * * *', caps: { rows: 1 },           flags: [], worst: null },
+      { loop: 'fix',   cron: '0 3 * * *', caps: { rows: 1, lanes: 1 }, flags: [], worst: null },
+    ]
+    const starts: number[] = []
+    const start = ((_root: string, _loops: unknown, _entries: unknown, i: number) => { starts.push(i); return { started: { loop: 'x', pid: 100 + i, at: '', log: '' } } }) as typeof startEntry
+    const base = { root: '/r', loops: {}, entries, env: {}, since: local(0, 55), now: local(1, 0), start, outDir }
+    try {
+      const out = tick({ ...base, cap: null, freeLanes: 1 })
+      expect(out.started).toEqual([{ entry: 2, loop: 'frame', pid: 101 }])
+      expect(out.skipped).toEqual([{ entry: 1, loop: 'fix', why: '2 lanes asked, 1 free' }])
+      expect(starts).toEqual([1])
+      expect(readTick(outDir)).toEqual(out)
+
+      const capped = tick({ ...base, cap: "today's $20 reaches the day's cap of $20", freeLanes: 5 })
+      expect(capped.started).toEqual([])
+      expect(capped.skipped.map(s => s.entry)).toEqual([1, 2])
+      expect(capped.skipped[0].why).toMatch(/day's cap/)
+    } finally { rmSync(outDir, { recursive: true, force: true }) }
+  })
 })

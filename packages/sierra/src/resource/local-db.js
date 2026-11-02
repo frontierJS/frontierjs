@@ -157,16 +157,50 @@ function accessorFor(db, model) {
   return models.find(m => m.toLowerCase() === lower) ?? null
 }
 
+// ─── what a removal took off ────────────────────────────────────────────────────
+
+// A write-through is not awaited and the warm reads every service before it
+// writes any, so an answer read before a remove can land after the remove took
+// its row off, and put it back for every offline read until the next whole
+// answer (`FJS-3838`). A read takes a mark when it is SENT; a removal records
+// what it took off under a later one.
+let _mark = 0
+const _taken   = new Map()   // `${model}|${id}` → the mark of the removal that took it off
+const _takenAt = new Map()   // model → the mark of its latest removal
+// A read in flight is seconds old and a removal past this many is not.
+const TAKEN_KEPT = 5000
+
+/** Taken when a read is sent, and handed to the write its answer makes. */
+export const readMark = () => _mark
+
+function _take(model, ids) {
+  if (!ids.length) return
+  const mark = ++_mark
+  _takenAt.set(model, mark)
+  for (const id of ids) {
+    const k = `${model}|${id}`
+    _taken.delete(k)
+    _taken.set(k, mark)
+  }
+  for (const k of _taken.keys()) {
+    if (_taken.size <= TAKEN_KEPT) break
+    _taken.delete(k)
+  }
+}
+
+const _staleFor   = (model, since) => since != null && (_takenAt.get(model) ?? 0) > since
+const _takenSince = (model, id, since) => since != null && id != null && (_taken.get(`${model}|${id}`) ?? 0) > since
+
 /**
  * Keep what the server just answered.
  *
  * Failure is silent on purpose — this is a side effect of a read that already
  * succeeded, and a screen must not fail because a device could not write.
  */
-export async function writeThrough(model, rows, whole = null) {
+export async function writeThrough(model, rows, whole = null, since = null) {
   const at = _cleared
   try {
-    return await writeRows(model, rows, whole)
+    return await writeRows(model, rows, whole, since)
   } catch (err) {
     // Once per MODEL. Whatever makes one write-through of a model fail usually
     // makes every one of them fail, so a warning per read is a console nobody
@@ -195,10 +229,16 @@ export async function writeThrough(model, rows, whole = null) {
  * question, stayed on the device and answered offline reads for good
  * (`FJS-2256`). An empty whole answer is written for the same reason.
  *
+ * **`since` is the `readMark()` taken when the read was sent.** A row a removal
+ * took off after it is not this answer's to put back, and an answer older than
+ * a removal is not the whole of anything. Answers true when that leaves nothing
+ * to write: the device has decided, and a list-cache slot of the stale rows
+ * would answer the offline read the table no longer does.
+ *
  * Answers false where there is nothing to write to: no config, no rows and no
  * whole answer, no database, or a model the device does not hold.
  */
-export async function writeRows(model, rows, whole = null) {
+export async function writeRows(model, rows, whole = null, since = null) {
   if (!_config || !Array.isArray(rows)) return false
   if (rows.length === 0 && !whole) return false
   const at = _cleared
@@ -208,11 +248,21 @@ export async function writeRows(model, rows, whole = null) {
   if (!accessor) return false
 
   const table = db.asSystem()[accessor]
-  if (rows.length) {
-    const shape = _shapeOf(model)
-    await _land(table, shape ? rows.map(r => _writable(r, shape)) : rows, shape)
+  const shape = _shapeOf(model)
+  const id    = whole?.idField ?? (shape?.key.length === 1 ? shape.key[0] : null)
+  if (_staleFor(model, since)) {
+    whole = null
+    rows  = rows.filter(r => !_takenSince(model, r?.[id], since))
+    if (!rows.length) return true
   }
-  if (whole) await _dropAbsent(model, table, rows, whole, at)
+  if (rows.length) {
+    await _land(table, shape ? rows.map(r => _writable(r, shape)) : rows, shape)
+    // Asked again once landed: one upsert is several trips to the worker, so a
+    // removal sent after the filter above can still run before it.
+    const back = rows.map(r => r?.[id]).filter(v => _takenSince(model, v, since))
+    if (back.length) await table.deleteMany({ where: { [id]: { in: back } } })
+  }
+  if (whole && !_staleFor(model, since)) await _dropAbsent(model, table, rows, whole, at)
   return true
 }
 
@@ -324,15 +374,12 @@ export function answeredWhole(res, directives) {
 async function _dropAbsent(model, table, rows, { where, idField }, at) {
   // A `select` that left the key out names no row, and every held row would
   // read as one the answer did not name.
-  // A `select` that left the key out names no row, and every held row would
-  // read as one the answer did not name.
-  // A `select` that left the key out names no row, and every held row would
-  // read as one the answer did not name.
   if (!idField || rows.some(r => r?.[idField] == null)) return
   try {
     const named = new Set(rows.map(r => String(r?.[idField])))
     const held  = await table.findMany({ where: where ?? {}, select: { [idField]: true } })
     const gone  = held.map(r => r?.[idField]).filter(id => id != null && !named.has(String(id)))
+    _take(model, gone)
     if (gone.length) await table.deleteMany({ where: { [idField]: { in: gone } } })
   } catch (err) {
     // A delete gate of 9 refuses the system client as an update gate does, and
@@ -350,6 +397,8 @@ async function _dropAbsent(model, table, rows, { where, idField }, at) {
 export async function dropRows(model, idField, ids) {
   const keys = (ids ?? []).filter(id => id != null)
   if (!_config || !idField || !keys.length) return false
+  // Before the open is awaited: a write that checks in between must see it.
+  _take(model, keys)
   const at = _cleared
   try {
     const db = await localDb()
@@ -447,7 +496,7 @@ export async function clearLocalDb() {
 }
 
 /** Test seam: forget the configuration and the open client. */
-export function _resetLocalDb() { _config = null; _client = null; _schema = null; _shapes.clear(); _opening = null; _closing = null; _leaving = false; _watching = false; _warned.clear() }
+export function _resetLocalDb() { _config = null; _client = null; _schema = null; _shapes.clear(); _taken.clear(); _takenAt.clear(); _mark = 0; _opening = null; _closing = null; _leaving = false; _watching = false; _warned.clear() }
 
 /**
  * Test seam: stand a client in for the one a worker would have opened.

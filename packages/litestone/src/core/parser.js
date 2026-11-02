@@ -8189,7 +8189,7 @@ function validate(schema) {
 
   // ── @syntax validation ──────────────────────────────────────────────────────
   // The language itself is not graded: glow highlights any name, so a typo
-  // costs colour and nothing else. What is refused is a declaration with no
+  // costs color and nothing else. What is refused is a declaration with no
   // text under it — the editor and the highlighting both need one string.
   for (const owner of [...schema.models.map(m => ['Model', m]), ...(schema.types ?? []).map(t => ['Type', t])]) {
     const [kind, model] = owner

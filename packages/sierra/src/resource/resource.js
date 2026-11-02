@@ -147,7 +147,7 @@ import { listCache, listKey } from './list-cache.js'
 import { makeOptions } from './options.js'
 import { readBaseline } from './read-baseline.js'
 import { declareOffline }      from './offline.js'
-import { writeThrough, readLocal, dropRows, answeredWhole, localDbConfigured } from './local-db.js'
+import { writeThrough, readLocal, readMark, dropRows, answeredWhole, localDbConfigured } from './local-db.js'
 
 /**
  * The methods a queue may NOT hold. A read has nothing to replay, and replaying
@@ -1431,6 +1431,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
       // rows a gate let this caller read onto disk outlives the session, so it is
       // the app's word rather than the framework's default (`list-cache.js`).
       const key = syncMode ? listKey(serviceName, query ?? {}, directives ?? null) : null
+      const since = readMark()
       try {
         const rows = await live.load(query ?? {}, directives)
         if (stamp === _loadIssued) {
@@ -1447,7 +1448,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
           if (key && localDbConfigured()) {
             const whole = answeredWhole({ data: rows, hasMore: live.hasMore?.() === true }, directives)
               ? { where: query ?? {}, idField } : null
-            writeThrough(model, rows, whole).catch(() => {})
+            writeThrough(model, rows, whole, since).catch(() => {})
           }
         }
         return rows

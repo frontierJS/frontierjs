@@ -458,7 +458,9 @@
   const keydown = (e) => {
     // An Enter the box did not take says the line, and never types a newline:
     // keys arriving in one read reach the box before `idle` follows `draft`.
-    if (e.key === 'Enter' && !e.defaultPrevented) { e.preventDefault(); say(); return }
+    // An open mode (Tab's stops, the list) takes its Enter first, or an empty
+    // line says nothing and the walk never starts.
+    if (e.key === 'Enter' && !e.defaultPrevented && !commands.mode) { e.preventDefault(); say(); return }
     // Shift+Y in NORMAL copies the art and whatever pane is open over it as
     // text, before any mode can take the key; never the rows under the art.
     if (e.key === 'Y' && e.defaultPrevented && !e.ctrlKey && !e.altKey && !e.metaKey) {

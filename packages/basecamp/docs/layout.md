@@ -340,8 +340,18 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           in this process's memory per question and resumed for a follow-up
           /atlas/autopilot/ draws the same service's `autopilot` read as a town —
           routes/atlas/autopilot/, components/AtlasTown.mesa, and lib/town.js for the
-          roads and the replay; it writes nothing, and a register's building opens
-          that tab on /atlas/ as `?tab=`
+          roads and the replay; a register's building opens that tab on /atlas/
+          as `?tab=`. The Switch is ~/.fli/autopilot.json through fli's
+          `core/autopilot.js`, and Run now is `run`: domain/atlas/autopilot-run.ts
+          spawns the entry's loop script with its caps as flags and
+          `--source autopilot`, detached, the way the workbench's Run tab spawns
+          `fli dev`; the run is read back off the loop's own log lines.
+          jobs/autopilot-tick.job.ts is the Switch's clock: every five minutes
+          while the file says On it starts each entry whose cron fell since the
+          last tick (`tick` in autopilot-run.ts, its record tick.json beside
+          the run logs), refusing the pass at the day cap or on held lanes;
+          `turn` writes the file's `on` through fli's `writeSwitch`, refused
+          until every cap is set
           services/infra/ takes one and has no MODEL — `graph` and
           `onboarding`, two projections assembled from several tables, where
           storing either would be a second answer that goes stale

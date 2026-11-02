@@ -15532,6 +15532,10 @@ hash is the only thing keeping one component's rules off another's markup.
 
 ## Design system (`@frontierjs/css`)
 
+### <a id="fjs-d1782"></a>2026-11-02 · `FJS-D1782` — A kit component's `size` is its own scale and stays; on a component whose size is only a font size (Button, Badge, Pill, Kbd, Mono) it writes a `.text-*` class, never an inline `font-size`, so a caller's `class="text-*"` overrides it.
+
+Asked in chat, through the question tool. **Keep `size`, write the rule down** was picked over **drop `size` on the five** (every caller rewritten to `class="text-*"`, a leftover `size=` warning by name) and **keep it as an unstated shorthand**. The prompt was a Basecamp filter chip: `<Button size="sm">` wrote `style="font-size: var(--text-sm)"`, which no class can beat, so `class="text-xs"` on a Button did nothing. `size` is the kit-wide prop — on Avatar, Spinner, Modal and nine others it sets dimensions no class names — and on Badge, Pill and Kbd `size="md"` is `text-sm`, a step relative to the component's own default rather than a rung name. `.text-2xs` joined `utilities.css` so `size="xs"` there has a class to write (the name matches `--text-2xs` and the `2xl`–`4xl` rungs). `display-fixes.mjs` fails a sized component that renders any inline `font-size`. Reopen path: drop `size` on the five, if two spellings start to disagree in practice.
+
 ### <a id="fjs-d1697"></a>2026-10-30 · `FJS-D1697` — A realm has one color, read from one table: `REALM_ACCENT` in `packages/cli/console/map-model.js`, each realm `var(--realm-<id>, <oklab mix of tone tokens>)`. A theme may name a realm outright; no surface keeps its own copy, and no realm takes a bare `success`, `warning` or `danger`.
 
 Asked through the question tool after a `decision-rules` run. Four tables disagreed: the console's `REALM_TONE` (data primary, api info, ui secondary), `website/packages.js` (ui `success`, tooling `warning`), the atlas's private table (api `success`, ui `warning`, app `danger`) and a hand-drawn spectrum in hex. The owner wanted one locked in and changed later, over each surface choosing again.
@@ -16210,6 +16214,12 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1783"></a>2026-11-02 · `FJS-D1783` — *Due* is a cron minute inside the window since the last persisted tick; a window over a day old is cut to the last five minutes.
+
+A follow-on to `FJS-D1777`, which made a cron line per entry the shape of a schedule and left what *due* means to the tick job. **A** was picked over **B** (in memory only: due is a match in the last five minutes, so an API restart can fire an entry twice inside one window and a fire during downtime is lost) and **C** (register each entry as a caravan cron job: a second reader of the file to keep the registrations in step, and caravan's registrations are in memory too, so downtime fires are lost the same way).
+
+`jobs/autopilot-tick.job.ts` writes its record to `~/.fli/autopilot/tick.json` — `at`, `since`, what it started and why it did not — and the next tick's window opens at that `at`. The record is a log of what the tick did, never a setting: the schedule's one origin stays `~/.fli/autopilot.json`. The one-day cut is cron's own rule for a machine that slept: it asked for none of those fires. A double start after a record that failed to write is held by the lane lock and the entry's in-memory run. The minute walk restates caravan's `CronScheduler._tickFixed` on the host clock, said at `dueAt`; the reopen path is caravan gaining persisted catch-up, when the window moves there whole.
 
 ### <a id="fjs-d1781"></a>2026-11-02 · `FJS-D1781` — Q6 — What an idea a step turns up becomes — A `fli file --sev decision` question with options, `--area <app>`, so it sits in `fli decisions` under the filed-rows cap.
 

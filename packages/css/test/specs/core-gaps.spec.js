@@ -173,7 +173,7 @@ test('text: the size scale exists and is monotonic', function () {
    * half of it; the demo hand-wrote `font-size: .8125rem` fourteen times
    * before this landed.
    */
-  var steps = ['text-xs', 'text-sm', 'text-md', 'text-lg', 'text-xl'];
+  var steps = ['text-2xs', 'text-xs', 'text-sm', 'text-md', 'text-lg', 'text-xl'];
   var last = 0;
   steps.forEach(function (cls) {
     var p = el('<p class="' + cls + '">Text</p>');

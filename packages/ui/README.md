@@ -54,6 +54,10 @@ component here draws itself with the css vocabulary and adds only behavior.
 `tokens.css`. A component that wants to be red does not carry a red — it takes
 a tone.
 
+A `size` prop is the component's own scale. Where it only sets a font size
+(Button, Badge, Pill, Kbd, Mono) it writes a `.text-*` class, so
+`class="text-xs"` from the caller overrides it (`FJS-D1782`).
+
 ## Tones
 
 Seven, from the css package, and they work on everything:

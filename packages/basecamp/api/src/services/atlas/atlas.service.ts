@@ -18,19 +18,25 @@
 //   GET  /atlas          queue     every question with lettered options, in `fli decide`'s order, with its prose
 //   POST /atlas/:id      explain   { ask? } — Claude, read-only, on one of them; a follow-up resumes its session
 //   GET  /atlas/:id      explanation  what that run has said so far
+//   POST /atlas/:id      run       entry :id (1-based) of ~/.fli/autopilot.json started now, its caps as the script's flags
+//   POST /atlas/:id      turn      :id `on` or `off` — the file's switch; On is refused until every cap is set
+
+import { homedir }                 from 'node:os'
+import { join }                    from 'node:path'
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { LEVELS }                  from '@frontierjs/litestone'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { env, localMachineRefusal } from '../../core/env.ts'
 import { branchName }              from '../../domain/workbench/workbench-branch.ts'
+import { startEntry }              from '../../domain/atlas/autopilot-run.ts'
 import {
   loadFli, registerRoot, readAtlas, readRings, readAutopilot, forgetAtlas, recordsFor, composePrompt, branchSlug,
   readQueue, explain, explanationOf,
 } from '../../domain/atlas/atlas.ts'
 
 const READS  = ['overview', 'rings', 'autopilot', 'record', 'queue', 'explanation']
-const WRITES = ['discuss', 'decide', 'explain']
+const WRITES = ['discuss', 'decide', 'explain', 'run', 'turn']
 
 async function workspace() {
   const refused = localMachineRefusal()
@@ -109,6 +115,32 @@ export default createService({
   async explanation() {
     await workspace()
     return explanationOf(String($.id ?? ''))
+  },
+
+  // The loop holds the day's cap itself (`scripts/headless.mjs`); asking here
+  // first turns a run that would exit on its first line into a refusal with
+  // the reason, before a lane is opened for it.
+  async run() {
+    const root = await workspace()
+    const f    = await loadFli()
+    const n    = Number($.id)
+    if (!Number.isInteger(n) || n < 1) throw new BadRequest(`'${$.id}' is not an entry number; the first entry is 1`)
+    let schedule
+    try { schedule = f.readSchedule() } catch (err) { throw new Conflict((err as Error).message) }
+    if (!schedule.exists) throw new Conflict(`${schedule.file} does not exist, so there is no entry to run`)
+    const over = f.overDayCap(schedule.day, f.spentToday([...f.readLog(join(homedir(), '.fli', 'fix-loop.jsonl')), ...f.readLog(join(homedir(), '.fli', 'frame-loop.jsonl'))]))
+    if (over) throw new Conflict(`Refused: ${over}`)
+    const out = startEntry(root, f.LOOPS, schedule.entries, n - 1, $.app.workbench.shellEnv())
+    if ('refused' in out) throw new Conflict(out.refused)
+    return { entry: n, ...out.started }
+  },
+
+  async turn() {
+    await workspace()
+    const f = await loadFli()
+    if ($.id !== 'on' && $.id !== 'off') throw new BadRequest(`'${$.id}' is not a switch position; it is on or off`)
+    try { return { on: f.writeSwitch({ on: $.id === 'on' }).on } }
+    catch (err) { throw new Conflict((err as Error).message) }
   },
 
   async discuss() {

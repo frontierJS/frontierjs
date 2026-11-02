@@ -8,11 +8,13 @@
 //
 // ── What a line means ────────────────────────────────────────────────────────
 //
-// A `started` line carries the row and no lane: the lane is known only from
-// the line that finishes it (`cwd` is the lane's worktree). A `harvest` line
-// carries `lane` and `row` and no outcome. A row started and never finished
-// (a killed run) stays a `started` line forever, so "busy" is read from the
-// lane's lock, whose pid is alive, and not from the log alone.
+// A `started` line names its `lane`; one written before the loops did carries
+// the row alone, and its lane is known only from the line that finishes it
+// (`cwd` is the lane's worktree). A `harvest` line carries `lane` and `row`
+// and no outcome. A row started and never finished (a killed run) stays a
+// `started` line forever, so "busy" is read from the lane's lock, whose pid
+// is alive, and not from the log alone. `source: 'autopilot'` marks a
+// scheduled run; a hand run names none.
 //
 // Plain ESM, node or bun. Imports nothing from `scripts/`: this package is
 // published and `scripts/` imports from it.

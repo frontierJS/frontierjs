@@ -356,7 +356,7 @@ const PKGS = [
       r:['a useEffect with a timer per form'] },
     { k:'Style', v:'A tone and a treatment, never a color',
       why:'danger and outlined are what a button is; blue is what it happens to look like this theme. A kit component may not style a class the design system owns, so the two cannot fight.',
-      r:['colour props','className overrides'] },
+      r:['color props','className overrides'] },
     { k:'Destructive', v:'A destructive action confirms itself',
       why:'The confirmation is part of the component rather than a modal you remember to wire, so the dangerous path is the one with a guard on it by default.',
       r:['a confirm modal copied per screen'] },

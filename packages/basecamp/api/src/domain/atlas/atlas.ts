@@ -14,6 +14,8 @@ import { homedir }               from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath }         from 'node:url'
 
+import { runningOf, readTick, type Entry, type Running, type Tick } from './autopilot-run.ts'
+
 // ─── fli ──────────────────────────────────────────────────────────────────────
 
 export type Link = { label: string, href: string, edit: string }
@@ -68,6 +70,12 @@ type Fli = {
   collect: (o: { root: string }) => unknown
   dataOf:  (model: unknown, o: { root: string }) => RingsData
   readLoopLog: (o: { logDir?: string, root: string, since?: number | string, until?: number | string }) => LoopLog
+  readLog:      (file: string) => LogLine[]
+  readSchedule: (o?: { file?: string }) => Schedule
+  writeSwitch: (o: { on: boolean }) => Schedule
+  spentToday:   (lines: LogLine[], o?: { now?: Date }) => Spent
+  overDayCap:   (day: Schedule['day'], spent: Spent) => string | null
+  LOOPS:        Record<string, { script: string }>
   parsePlan:   (text: string, o: { file: string }) => ParsedPlan
   phaseOf:     (plan: ParsedPlan, step: PlanStep) => { n: string, title: string } | null
 }
@@ -92,6 +100,15 @@ export type LoopLog = {
   frame: { linesToday: number, lastAt: string | null, lastDay: string | null, total: number, framedAllTime: number }
   dock: { patches: Array<{ file: string, row: string | null, at: string | null }>, dirs: string[], harvestsToday: number, filesHarvestedToday: number }
   review: { modified: string, head: string[] } | null
+}
+type LogLine = Record<string, unknown>
+type Spent   = { attempts: number, dollars: number }
+/** `autopilot.js`'s read of ~/.fli/autopilot.json, every cap checked. */
+type Schedule = {
+  file: string, exists: boolean, on: boolean, missing: string[]
+  day: { attempts: number | null, dollars: number | null } | null
+  entries: Entry[]
+  stressors: { dir: string, apps: string[] } | null
 }
 type PlanStep = { id: string, title: string, box: 'open' | 'done' | 'dropped', phase: string }
 type ParsedPlan = {
@@ -128,6 +145,7 @@ export const loadFli = () => fli ??= Promise.all([
   import('@frontierjs/cli/core/ask-claude.js'),
   import('@frontierjs/cli/core/loop-log.js'),
   import('@frontierjs/cli/core/plan.js'),
+  import('@frontierjs/cli/core/autopilot.js'),
 ]).then(mods => Object.assign({}, ...mods) as unknown as Fli)
 
 /** The register root this Basecamp sits in, found from this file rather than the cwd. */
@@ -221,7 +239,12 @@ export type Autopilot = LoopLog & {
   }
   plans: { papers: PlanCard[], stressors: PlanCard[] }
   ci: { header: string, verdict: string, green: boolean, phases: string[], failures: string[] } | null
-  switch: { file: string, exists: boolean, on: boolean, entries: unknown[] }
+  switch: {
+    file: string, exists: boolean, on: boolean, refused: string | null, missing: string[]
+    day: Schedule['day'], spent: Spent, cap: string | null
+    entries: Array<Entry & { running: Running | null }>
+    tick: Tick | null
+  }
 }
 
 const FLI_DIR   = () => join(homedir(), '.fli')
@@ -253,19 +276,17 @@ function readPapers(f: Fli, root: string, atlas: Atlas): PlanCard[] {
   return papers
 }
 
-/** `~/.fli/autopilot.json` as written, or null when it is absent or not JSON. */
-function readSwitch(): Record<string, unknown> | null {
-  try { return JSON.parse(readFileSync(join(FLI_DIR(), 'autopilot.json'), 'utf8')) } catch { return null }
+/** The schedule through its one reader; a file it refuses is the refusal and no entries, drawn as such. */
+function readSwitch(f: Fli): { schedule: Schedule | null, refused: string | null } {
+  try { return { schedule: f.readSchedule(), refused: null } } catch (err) { return { schedule: null, refused: (err as Error).message } }
 }
 
-/** The stressors the switch file lists, each `<dir>/<app>/PLAN.md`; an unlisted or missing app is skipped. */
-function readStressors(f: Fli, root: string, config: Record<string, unknown> | null): PlanCard[] {
-  const s = config?.stressors as { dir?: unknown, apps?: unknown } | undefined
-  if (!s || typeof s.dir !== 'string' || !Array.isArray(s.apps)) return []
+/** The stressors the schedule lists, each `<dir>/<app>/PLAN.md`; a missing one is skipped. */
+function readStressors(f: Fli, root: string, s: Schedule['stressors']): PlanCard[] {
+  if (!s) return []
   const dir = isAbsolute(s.dir) ? s.dir : join(root, s.dir)
   const out: PlanCard[] = []
   for (const app of s.apps) {
-    if (typeof app !== 'string' || !/^[\w.-]+$/.test(app)) continue
     const file = join(dir, app, 'PLAN.md')
     if (!existsSync(file)) continue
     const card = planCard(f, file, app)
@@ -306,7 +327,8 @@ export async function readAutopilot(root: string): Promise<Autopilot> {
 
   const asked = (state: Question['state']) => atlas.questions.filter(q => q.state === state)
   const decidable = asked('decidable')
-  const config = readSwitch()
+  const { schedule, refused } = readSwitch(f)
+  const spent = f.spentToday([...f.readLog(join(FLI_DIR(), 'fix-loop.jsonl')), ...f.readLog(join(FLI_DIR(), 'frame-loop.jsonl'))])
 
   // A transcript's usage and report ride on every log line; the town needs
   // neither, and forty of them would be most of the payload.
@@ -326,11 +348,18 @@ export async function readAutopilot(root: string): Promise<Autopilot> {
       bench: decidable.filter(q => q.recommend).slice(0, BENCH_TOP)
         .map(q => ({ id: q.id, question: q.question, recommend: q.recommend!.letter, paper: q.paper })),
     },
-    plans: { papers: readPapers(f, root, atlas), stressors: readStressors(f, root, config) },
+    plans: { papers: readPapers(f, root, atlas), stressors: readStressors(f, root, schedule?.stressors ?? null) },
     ci:    readCi(root),
     switch: {
-      file: '~/.fli/autopilot.json', exists: config !== null,
-      on: config?.on === true, entries: Array.isArray(config?.entries) ? config.entries : [],
+      file:    '~/.fli/autopilot.json',
+      exists:  schedule?.exists ?? refused !== null,
+      on:      schedule?.on === true,
+      refused, missing: schedule?.missing ?? [],
+      day:     schedule?.day ?? null,
+      spent,
+      cap:     schedule ? f.overDayCap(schedule.day, spent) : null,
+      entries: (schedule?.entries ?? []).map((e, i) => ({ ...e, running: runningOf(i) })),
+      tick:    readTick(),
     },
   }
 }

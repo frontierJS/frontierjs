@@ -51,8 +51,8 @@ describe('reading a wireframe', () => {
   })
 
   test('an unknown key is refused, not dropped', () => {
-    const bad = { screen: 'X', tree: { term: 'Card', colour: 'red' } }
-    try { readWireframe(bad, vocab); throw new Error('accepted') } catch (e) { expect(e.problems[0]).toContain('unknown key "colour"') }
+    const bad = { screen: 'X', tree: { term: 'Card', color: 'red' } }
+    try { readWireframe(bad, vocab); throw new Error('accepted') } catch (e) { expect(e.problems[0]).toContain('unknown key "color"') }
   })
 })
 

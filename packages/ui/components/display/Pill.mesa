@@ -10,7 +10,7 @@
   //   <Pill plan="pro" />          ← plan shorthand
   //   <Pill plan="enterprise" />
 
-  import { tone as toTone, cx } from '../../utils.js'
+  import { tone as toTone, cx, sizeClass } from '../../utils.js'
 
   export let tone  = ''      // one of the 7 css tones; '' is muted
   export let size  = ''      // '' | 'xs' | 'md'
@@ -29,11 +29,10 @@
   const planLabel    = resolvedPlan?.label ?? ''
   const t            = resolvedPlan?.tone ?? toTone(tone)
 
-  const sizeMap = { xs: 'var(--text-2xs)', sm: '', md: 'var(--text-sm)' }
-  const fontSize = sizeMap[size] ?? ''
+  const SIZES = { xs: 'text-2xs', md: 'text-sm' }
 </script>
 
-<span class={cx('pill', t)} style:font-size={fontSize || null} {class} {...$attributes}>
+<span class={cx('pill', t, sizeClass(SIZES, size, $class))} {class} {...$attributes}>
   {#if dot}
     <!--
       currentColor, so it tracks the auto-contrast text color chip.css

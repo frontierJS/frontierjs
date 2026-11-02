@@ -6,6 +6,7 @@ effects: leaves a letter at the post for the named member
 examples:
   - fli tell sam "deploy is green"
   - fli tell sam the build is red again
+  - fli tell sam --clip
   - fli tell sam --env STRIPE_KEY DATABASE_URL
   - fli tell sam --env -g CLOUDFLARE_TOKEN
 args:
@@ -14,9 +15,14 @@ args:
     description: Who it is for — a member's nick, as `fli frontier:stake` gave it
   -
     name: words
-    description: The letter, at most 4000 characters — with --env, the keys to send (the whole file when none)
+    description: The letter, at most 4000 characters — with --env, the keys to send (the whole file when none); none with --clip
     variadic: true
 flags:
+  clip:
+    char: c
+    type: boolean
+    description: Send what is on the clipboard as the letter
+    defaultValue: false
   env:
     type: boolean
     description: Send env values instead of words, sealed to the member — refused when they have no sealing key
@@ -48,12 +54,20 @@ sender.
 `--env` picks keys the way `fli env:send` does (`--file`, `-g`) and sends
 their lines, read once and gone like any letter — only sealed, never plain.
 
+`--clip` sends the clipboard's text as the letter, exactly as it is held; an
+empty clipboard, or one no tool could read, sends nothing.
+
 ```js
 const { pickEnv } = await import(resolve(global.fliRoot, 'core/global-env.js'))
 
 const to = String(arg.nick ?? '').trim().toLowerCase()
 const words = String(arg.words ?? '').trim()
-if (!to || (!words && !flag.env)) {
+if (flag.clip && (words || flag.env)) {
+  log.error('--clip sends the clipboard as the letter, so it takes no words and no --env.')
+  process.exitCode = 1
+  return
+}
+if (!to || (!words && !flag.env && !flag.clip)) {
   log.error('A letter names who it is for, then says something — fli tell <nick> <words>.')
   process.exitCode = 1
   return
@@ -68,6 +82,12 @@ if (flag.env) {
     })
     payload = { env: body, source, count }
   } catch (e) { log.error(e.message); process.exitCode = 1; return }
+} else if (flag.clip) {
+  const { readClipboard, clipboardTools } = await import(resolve(global.fliRoot, 'core/clipboard.js'))
+  const text = readClipboard()
+  if (text === null) { log.error(`Could not read the clipboard — is ${clipboardTools() ?? 'a clipboard tool'} installed?`); process.exitCode = 1; return }
+  if (!text.trim()) { log.error('The clipboard is empty, so there is nothing to send.'); process.exitCode = 1; return }
+  payload = { text }
 } else {
   payload = { text: words }
 }

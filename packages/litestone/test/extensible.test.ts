@@ -110,7 +110,7 @@ describe('the declaration', () => {
   })
 
   test('max: is keyed by the declaring model’s own enum', () => {
-    refuses('model C { id Int @id  fields Json  @@extensible(fields, declaredBy: CustomField, max: { colour: 4 }) }',
+    refuses('model C { id Int @id  fields Json  @@extensible(fields, declaredBy: CustomField, max: { color: 4 }) }',
             /not a member of FieldKind/)
     expect(ok('model C { id Int @id  fields Json  @@extensible(fields, declaredBy: CustomField, max: { number: 4 }) }').valid).toBe(true)
   })

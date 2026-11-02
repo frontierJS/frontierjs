@@ -866,7 +866,7 @@ td    { background: var(--zebra); }`)}`,
               </td>
             </tr>
             <tr>
-              <td><code>text-xs…xl</code></td>
+              <td><code>text-2xs…xl</code></td>
               <td>
                 Uno's scale (14/18px) instead of this package's (13/16px)
               </td>
@@ -1429,12 +1429,13 @@ function variablesPage() {
 
 function buttonsPage() {
   /*
-   * The real scale is xs/sm/md/lg/xl. This list used to read
+   * The real scale is 2xs/xs/sm/md/lg/xl. This list used to read
    * sm/base/lg/xl/2xl — `text-base` and `text-2xl` have never existed in the
    * package, and until v0.10.1 the other three were inert on a button anyway,
    * so all five rendered identically.
    */
   const sizes = [
+    ["text-2xs", "2XS"],
     ["text-xs", "XS"],
     ["text-sm", "Small"],
     ["text-md", "Body"],
@@ -5037,12 +5038,19 @@ function behaviourPage() {
 
 function typographyPage() {
   /*
-   * The five steps the package actually ships, in utilities.css. This table
+   * The six steps the package actually ships, in utilities.css. This table
    * used to list eight Tailwind-shaped tokens (text-base, text-2xl … up to
    * text-4xl) at Tailwind's pixel values — a leftover from the UnoCSS era.
    * Five of the eight had no rule behind them at all.
    */
   const typeScale = [
+    {
+      token: 'text-2xs',
+      va: '--text-2xs',
+      size: 11,
+      rem: '0.6875rem',
+      usage: 'Overline: table head, nav group label'
+    },
     {
       token: 'text-xs',
       va: '--text-xs',
@@ -5405,6 +5413,7 @@ function cheatSheetPage() {
   }
 
   const sizes = [
+    ['text-2xs', '2XS'],
     ['text-xs', 'XS'],
     ['text-sm', 'Small'],
     ['text-md', 'Body'],
@@ -8438,6 +8447,7 @@ function iconsPage() {
         ${preview(`
           <div class="cluster" style="align-items: center">
             ${[
+              ["text-2xs", "2xs"],
               ["text-xs", "xs"],
               ["text-sm", "sm"],
               ["text-md", "md"],

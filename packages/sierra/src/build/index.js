@@ -260,7 +260,12 @@ function buildBaseConfig(config, sierraPlugins, userPlugins) {
       // a module. The app is a blank screen. Nothing in this repo can see it,
       // because an app here resolves sierra to packages/ and Vite does not
       // pre-bundle a linked dependency at all.
-      exclude: ['@frontierjs/sierra'],
+      //
+      // Mesa and UI for the same blindness, a different failure: pre-bundled,
+      // UI's plain-JS entries carry their own copy of mesa/runtime while its
+      // .mesa files import the raw one, so a store write reaches no {#if} and
+      // ⌘K opens no palette (FJS-3837).
+      exclude: ['@frontierjs/sierra', '@frontierjs/mesa', '@frontierjs/ui'],
     },
     plugins: [
       ...sierraPlugins,
