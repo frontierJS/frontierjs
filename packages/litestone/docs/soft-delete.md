@@ -90,6 +90,7 @@ await db.user.create({ data: { id: 2, accountId: 1 } })
 await db.session.create({ data: { id: 1, accountId: 1 } })
 
 await db.user.remove({ where: { id: 2 } })        // deleted on their own, before the account
+await new Promise(r => setTimeout(r, 2))          // a tick later: the stamp is a millisecond, and restore() matches it
 await db.account.remove({ where: { id: 1 } })
 
 if (await db.user.count() !== 0) throw new Error('the cascade stamps every live user')
@@ -100,7 +101,7 @@ const live = await db.user.findMany()
 if (live.length !== 1 || live[0].id !== 1) throw new Error('user 2 was deleted before the account and stays deleted')
 ```
 
-`restore()` reverses the cascade — restores the account and the children that cascade stamped. The cascade stamps every child with the parent's own timestamp and leaves a child that was already deleted with its older one, so `restore()` matches the stamp: a user deleted on their own before the account stays deleted when the account comes back. Hard-deleted children cannot be restored.
+`restore()` reverses the cascade — restores the account and the children that cascade stamped. The cascade stamps every child with the parent's own timestamp and leaves a child that was already deleted with its older one, so `restore()` matches the stamp: a user deleted on their own before the account stays deleted when the account comes back. The stamp is a millisecond, so a child removed on its own in the same millisecond as its parent carries the parent's stamp and comes back with it (`FJS-3828`). Hard-deleted children cannot be restored.
 
 ## @hardDelete on a relation field
 

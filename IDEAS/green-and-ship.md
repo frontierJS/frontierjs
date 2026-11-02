@@ -242,6 +242,12 @@ Done when: a green run on main, and FJS-009 closed citing its run id.
     did not repeat. The deploy cycle is still the `--source npm` warning,
     which 4.4 ends. FJS-009 closes on the first run after Q3 and Q5 are
     answered.
+  - 2026-11-02: run `41368243668` on `40425483`: cli docker green, so
+    FJS-3394 closed and the probe workflow is gone; `tests` red on the pin
+    and on one new red, `docs/soft-delete.md:86` — the cascade stamp is a
+    millisecond and `restore()` matches it, so a user removed in the same
+    millisecond as its account came back with it (`FJS-3828`, 260 of 300
+    here too). The example waits a tick; the framework fix is the row's.
 - [x] 2.6 The runner's three new reds, from 1.3. `tutor:fleet`: the Outpost's
   fixed layout (`FJS-D1544`) writes `/etc/outpost` and `/var/lib/outpost`,
   which only root has, so the tutor now hands it systemd's two directory
