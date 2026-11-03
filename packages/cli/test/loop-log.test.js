@@ -34,6 +34,17 @@ const frameLines = [
   { at: at(4), id: 'paper-a', model: 'opus', effort: 'low', cost: 0.4, turns: 9, minutes: 2, outcome: 'framed settled', outcomes: { 'paper-a:q1': 'framed', 'paper-a:q2': 'settled' } },
 ]
 
+const stressLines = [
+  { at: at(40), app: 'thod', step: '3.1', id: 'thod 3.1', model: 'sonnet', effort: 'high', cost: 2, outcome: 'ticked', filed: [] },
+  { at: at(3), app: 'serpgrid', step: '1.2', id: 'serpgrid 1.2', model: 'sonnet', effort: 'high', outcome: 'started', branch: 'stress/1.2' },
+  { at: at(2), app: 'serpgrid', step: '1.2', id: 'serpgrid 1.2', model: 'sonnet', effort: 'high', cost: 0.6, turns: 20, minutes: 6, outcome: 'blocked', filed: ['FJS-20', 'FJS-D21'], branch: 'stress/1.2' },
+]
+
+const feedLines = [
+  { at: at(1.5), feeder: 'ci', id: 'ci', outcome: 'started', source: 'autopilot' },
+  { at: at(1), feeder: 'ci', id: 'ci', outcome: 'red', minutes: 21, filed: ['FJS-30'], amended: ['FJS-2'], env: ['CI red: tests · packages/x'], held: 0, run: 'r1', source: 'autopilot' },
+]
+
 beforeAll(() => {
   DIR  = mkdtempSync(join(tmpdir(), 'loop-log-'))
   LOGS = join(DIR, '.fli')
@@ -41,6 +52,8 @@ beforeAll(() => {
   mkdirSync(join(LOGS, 'lanes', 'ws-1'))
   writeFileSync(join(LOGS, 'fix-loop.jsonl'), fixLines.map(l => JSON.stringify(l)).join('\n') + '\nnot json\n')
   writeFileSync(join(LOGS, 'frame-loop.jsonl'), frameLines.map(l => JSON.stringify(l)).join('\n') + '\n')
+  writeFileSync(join(LOGS, 'stress-loop.jsonl'), stressLines.map(l => JSON.stringify(l)).join('\n') + '\n')
+  writeFileSync(join(LOGS, 'feed-loop.jsonl'), feedLines.map(l => JSON.stringify(l)).join('\n') + '\n')
   writeFileSync(join(LOGS, 'lanes', 'patches', 'FJS-9.patch'), 'diff --git a/x.js b/x.js\n--- a/x.js\n+++ b/x.js\n@@ -1,2 +1,2 @@\n-old\n+new\n+more\ndiff --git a/y.js b/y.js\n--- a/y.js\n+++ b/y.js\n@@ -1 +1 @@\n-gone\n')
   utimesSync(join(LOGS, 'lanes', 'patches', 'FJS-9.patch'), new Date('2026-11-02T08:00:00Z'), new Date('2026-11-02T08:00:00Z'))
   writeFileSync(join(LOGS, 'fix-loop-review.md'), '# review\n\nrepeats\n\n## Cost\n\n- not a repeat\n\n## Calls that fail\n\n- `Edit` — 2× in 1 session(s)\n  - call: a.js\n- `Bash` — 1×\n- `Read` — 1×\n\n## Denied tool calls\n\n- Bash ×1\n')
@@ -71,8 +84,8 @@ describe('readLoopLog', () => {
     expect(t.window).toEqual({ start: at(24), end: at(0) })
     expect(t.attempts.map(a => a.id)).toEqual(['FJS-2', 'FJS-3'])
     expect(t.attempts[0].source).toBe('schedule')
-    expect(t.spend).toBe(1.15)
-    expect(t.counts).toMatchObject({ closed: 1, blocked: 1, started: 3, harvest: 1, fixLines: 6, frameLines: 2 })
+    expect(t.spend).toBe(1.75)
+    expect(t.counts).toMatchObject({ closed: 1, blocked: 1, started: 3, harvest: 1, fixLines: 6, frameLines: 2, stressLines: 2, feedLines: 2 })
   })
 
   test('a row, a question and a paper each become an event, with the building names the town uses', () => {
@@ -107,6 +120,27 @@ describe('readLoopLog', () => {
     expect(dock.patches).toEqual([{ file: 'FJS-9.patch', row: 'FJS-9', at: '2026-11-02T08:00:00.000Z', files: 2, added: 2, removed: 2 }])
     expect(dock).toMatchObject({ harvestsToday: 1, filesHarvestedToday: 2 })
     expect(frame).toMatchObject({ linesToday: 2, total: 2, framedAllTime: 0 })
+  })
+
+  test('a stress step is a site out to the Proving ground and back, and each row it filed a crate to the Registry or a question to the Council', () => {
+    const t = read()
+    const site = t.events.filter(e => e.kind === 'paper' && e.id === 'serpgrid 1.2')
+    expect(site.map(e => [e.from, e.to, e.label])).toEqual([['plans', 'proving', 'stress serpgrid 1.2 · sonnet·high'], ['proving', 'plans', 'blocked']])
+    expect(site[1]).toMatchObject({ cost: 0.6, turns: 20 })
+    expect(t.events.filter(e => e.label === 'filed by stress serpgrid 1.2').map(e => [e.kind, e.id, e.to]))
+      .toEqual([['row', 'FJS-20', 'registry.ready'], ['question', 'FJS-D21', 'council.open']])
+    expect(t.stress).toEqual({ linesToday: 2, lastAt: at(2), total: 3, tickedAllTime: 1, filedToday: 2 })
+  })
+
+  test('a feeder moves nothing on the map but the rows it filed, each a crate from the Proving ground; it costs nothing', () => {
+    const t = read()
+    expect(t.events.filter(e => e.label === 'filed by the ci feeder').map(e => [e.kind, e.id, e.from, e.to, e.source])).toEqual([['row', 'FJS-30', 'proving', 'registry.ready', 'autopilot']])
+    expect(t.events.some(e => e.id === 'ci')).toBe(false)
+    expect(t.spend).toBe(1.75)
+  })
+
+  test('the review\'s head and what repeated', () => {
+    const { review } = read()
     expect(review.head.slice(0, 2)).toEqual(['# review', 'repeats'])
     // Top-level bullets under a repeat heading only, two per heading; Cost's bullet and a sub-bullet are not repeats.
     expect(review.repeated).toEqual(['Calls that fail: `Edit` — 2× in 1 session(s)', 'Calls that fail: `Bash` — 1×', 'Denied tool calls: Bash ×1'])

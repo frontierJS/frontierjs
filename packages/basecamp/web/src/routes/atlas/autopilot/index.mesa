@@ -526,7 +526,7 @@ title: Autopilot
               </table>
             </div>
             <p class="text-xs text-muted">
-              Each row is one line of <code>~/.fli/fix-loop.jsonl</code> or <code>frame-loop.jsonl</code>; a blocked attempt
+              Each row is one line of <code>~/.fli/fix-loop.jsonl</code>, <code>frame-loop.jsonl</code>, <code>stress-loop.jsonl</code> or <code>feed-loop.jsonl</code>; a blocked attempt
               makes two, its row to the blocked table and its filed question to the Council. A row opens that moment on the map.
             </p>
           </div>
@@ -561,7 +561,7 @@ title: Autopilot
   .ap-k-row { background: var(--surface-raised); }
   .ap-k-question { background: var(--color-info); }
   .ap-k-paper { background: var(--color-warning); }
-  .ap-k-hi, .ap-k-mid, .ap-k-lo, .ap-k-patch { border-radius: 2px; }
+  .ap-k-hi, .ap-k-mid, .ap-k-lo, .ap-k-patch { border-radius: 0; }
   .ap-k-hi { background: var(--color-danger); }
   .ap-k-mid { background: var(--color-primary); }
   .ap-k-lo { background: var(--ink-mute); }

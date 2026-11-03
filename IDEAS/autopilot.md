@@ -263,16 +263,36 @@ a report.
 Goal: the entries the first three phases did not need.
 Done when: each has its own ruling and its own cap.
 
-- [ ] 4.1 Stressor steps — a `stress` entry and a `stress-next` skill beside
+- [x] 4.1 Stressor steps — a `stress` entry and a `stress-next` skill beside
       `fix-next` and `frame-next`: of the listed apps, the one whose first open
       box has waited longest; that one box in a headless session in a worktree
       of the app's repo; every framework gap filed (`fli file --area <app>`, or
       `--sev decision` with options), the box ticked, stop. Outcome read off
       the box and the registers, never the session; the site on the map under
       construction. Refuses an app not in the list and a run over the
-      filed-rows cap (script test).
-- [ ] 4.2 Feeders — CI red files a row; a stranger build from the npm packages
+      filed-rows cap (script test). *Built 2026-11-03: `scripts/stress-loop.mjs`
+      (its pure half `scripts/stressors.mjs`, held by
+      `packages/cli/test/stressors.test.js`) and `.claude/skills/stress-next`.
+      The entry's caps are `rows`, `filed`, `budget`, `model`; `filed` is the
+      rows one day of stress runs may file, counted off the loop's own log
+      lines, hand runs included. The list refuses by name on a hand run too,
+      `--app` choosing among the listed. Waited longest is the later of the box
+      line's last commit (`git blame`; the file's mtime when uncommitted) and
+      the loop's last attempt at it, ties in list order. The step runs in
+      `~/.fli/stress/<app>` on the branch `stress/<step>`, the app's
+      uncommitted work committed there as a base and the session's work
+      committed on top, the app's own tree never written; a step ticked on an
+      unmerged branch is passed over until the owner merges it. The session's
+      cwd is the framework root with the worktree as `--add-dir`, so `fli
+      file` finds the registers. Every loop's log is named once, in
+      `LOOPS[*].log` / `LOG_NAMES` (`core/autopilot.js`), and a test refuses a
+      second spelling; the town draws a step as a site to the Proving ground
+      and each filed row as a crate to the Registry. Proved end to end with a
+      stand-in `claude` against a scratch app repo; a real step costs a
+      session and is the owner's run.*
+- [x] 4.2 Feeders — CI red files a row; a stranger build from the npm packages
       files what stalls it; each under the filed-rows cap.
+  Built 2026-11-03 (`FJS-D1789`): one `feed` loop, `scripts/feed-loop.mjs` with the pure half in `scripts/feeders.mjs` (`packages/cli/test/feeders.test.js`); caps `feeder: ci | stranger` and `filed`, one log `feed-loop.jsonl` and one filed count over both; a feed entry's worst run is $0. `ci` resets a worktree at HEAD (`~/.fli/feed/ci`), `bun install`s and runs `node scripts/ci.mjs` (`--fast` by hand), reads the run back through `core/ci-log.js`; a run already going is `busy`. `stranger` is the README's line, `bunx @frontierjs/cli@<latest> new demo --full --yes --source npm` in a temp dir, then `bun run check` and `bun run build`; the first non-zero exit is the stall, `npm view` unanswered is `offline`. A red unit files S3 under a fixed title — `CI red: <phase> · <key, or label without its counts>`, `A stranger's build from npm stalls at <step>` — an open row with the title is amended once a day (`core/amend.js`), a closed one is cited, an `envSmells` title is logged `env` and never filed (`issuesTitled` in `core/registers.js`). The town draws each filed row as a crate from the Proving ground. Proved: `--help`, refusals by name (feeder, cap, source), `--feeder ci --dry-run` off the last recorded run, stranger dry run green from `@frontierjs/cli@0.1.11` (the first stalled on `--no-install`, whose app has no first migration and fails its own `migration-history` check — by design, so the stranger installs), and a real `--feeder ci --fast --filed 1` under a scratch HOME that filed `FJS-3840` and held the registers red past the cap. Two schedule entries in `~/.fli/autopilot.json` (`0 4` ci, `0 5` stranger, filed 3 each), `on: false`. Owner's call on record: CI runs on a worktree at HEAD, not the dirty main tree.
 - [ ] 4.3 Post — rulings asked over `IDEAS/phone-ping.md`'s topic, a one-letter
       reply ruling; a new write path into `DECISIONS.md`, so its ruling first.
 - [ ] 4.4 Review applied — `loop-review --ask`'s suggestions as a frame entry.

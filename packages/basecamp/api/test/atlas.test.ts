@@ -121,7 +121,7 @@ describe('readAutopilot', async () => {
   test.skipIf(!root)('answers every key the town draws, and the counts agree with the lists', async () => {
     const t = await readAutopilot(root!)
     expect(Object.keys(t).sort()).toEqual([
-      'attempts', 'ci', 'council', 'counts', 'dock', 'events', 'frame', 'lanes', 'plans', 'registry', 'review', 'spend', 'switch', 'window',
+      'attempts', 'ci', 'council', 'counts', 'dock', 'events', 'frame', 'lanes', 'plans', 'registry', 'review', 'spend', 'stress', 'switch', 'window',
     ])
     expect(t.lanes.map(l => l.id)).toEqual(['lane.1', 'lane.2', 'lane.3', 'lane.4', 'lane.5'])
     expect(t.registry.ready.top.length).toBeLessThanOrEqual(40)
@@ -148,6 +148,7 @@ describe('reportOf', () => {
     attempts: [], events: [], spend: 0, lanes: [],
     counts: { events: 0, fixLines: 0, frameLines: 0, started: 0, closed: 0, blocked: 0, failed: 0, busy: 0, corrected: 0, harvest: 0, other: 0, spend: 0 },
     frame: { linesToday: 0, lastAt: null, lastDay: null, total: 0, framedAllTime: 0 },
+    stress: { linesToday: 0, lastAt: null, total: 0, tickedAllTime: 0, filedToday: 0 },
     dock: { patches: [], dirs: [], harvestsToday: 0, filesHarvestedToday: 0 },
     review: null,
   }
@@ -166,7 +167,7 @@ describe('reportOf', () => {
     const loop = {
       ...quiet, spend: 7.5,
       counts: { ...quiet.counts, fixLines: 9, frameLines: 2, started: 5, closed: 3, blocked: 1, failed: 1, busy: 1, corrected: 0, other: 0 },
-      events: [ev('paper', 'framing 3 question(s)'), ev('question', 'framed'), ev('question', 'framed'), ev('question', 'settled'), ev('row', 'closed')],
+      events: [ev('paper', 'framing 3 question(s)', { from: 'plans' }), ev('question', 'framed'), ev('question', 'framed'), ev('question', 'settled'), ev('row', 'closed')],
       dock: { ...quiet.dock, patches: [{ file: 'FJS-1.patch', row: 'FJS-1', at: null, files: 1, added: 1, removed: 0 }] },
       review: { modified: '2026-11-02T20:00:00.000Z', head: ['# review'], repeated: ['Calls that fail: `Edit` — 2× in 1 session(s)'] },
     }

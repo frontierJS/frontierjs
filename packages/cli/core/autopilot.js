@@ -16,7 +16,9 @@
 //     "entries": [
 //       { "loop": "fix",   "cron": "0 1 * * *", "caps": { "rows": 6, "lanes": 2, "budget": 5, "sev": "S3,S4", "model": "sonnet" } },
 //       { "loop": "frame", "cron": "0 0 * * *", "caps": { "rows": 2, "max": 4, "budget": 5 } },
-//       { "loop": "stress", "cron": "0 2 * * *", "caps": { "rows": 1, "filed": 3, "budget": 5, "model": "sonnet" } }
+//       { "loop": "stress", "cron": "0 2 * * *", "caps": { "rows": 1, "filed": 3, "budget": 5, "model": "sonnet" } },
+//       { "loop": "feed",   "cron": "0 4 * * *", "caps": { "feeder": "ci", "filed": 3 } },
+//       { "loop": "feed",   "cron": "0 5 * * *", "caps": { "feeder": "stranger", "filed": 3 } }
 //     ],
 //     "stressors": { "dir": "../fjs-prototypes", "apps": ["serpgrid"] }
 //   }
@@ -33,6 +35,13 @@
 // since a list a flag can bypass is advisory. The loop's `filed` cap is the
 // rows one day of stress runs may file, counted off its own log lines, hand
 // runs included: the cap guards the registers, not the schedule's wallet.
+//
+// `feed` runs no session: `feeder` names what it runs — `ci`, the whole of
+// `scripts/ci.mjs` on a worktree at HEAD, or `stranger`, a `fli new` from the
+// published packages built the way a beta tester would — and files what is
+// red, one row per failing unit, verbatim. Its `filed` cap is one count over
+// both feeders' lines in the one log, so a red storm in one cannot spend the
+// other's rows; a feed entry's worst run is $0.
 //
 // Every loop's log is named here and nowhere else, so a reader summing the
 // day's spend reads all of them: a log a reader does not know is spend the
@@ -61,6 +70,9 @@ const int    = (v, min = 1) => Number.isInteger(v) && v >= min
 const money  = v => typeof v === 'number' && Number.isFinite(v) && v > 0
 const SEV    = /^S[1-4](,S[1-4])*$/
 const MODELS = ['sonnet', 'opus']
+
+/** What a `feed` entry runs: `ci` is `scripts/ci.mjs` on a worktree at HEAD, `stranger` a `fli new` from the published packages. */
+export const FEEDERS = ['ci', 'stranger']
 
 /**
  * The loops autopilot runs, each with the caps its script takes. `check`
@@ -101,6 +113,15 @@ export const LOOPS = {
     },
     rungs: caps => caps.model === 'sonnet' ? 1 : 3,
   },
+  feed: {
+    script: 'scripts/feed-loop.mjs',
+    log:    'feed-loop.jsonl',
+    caps: {
+      feeder: { check: v => FEEDERS.includes(v) ? null : `one of ${FEEDERS.join(', ')}` },
+      filed:  { check: v => int(v) ? null : 'a whole number of rows a day of feeders may file, at least 1' },
+    },
+    rungs: () => 0,
+  },
 }
 
 /** The loops' log file names under ~/.fli, one per loop. */
@@ -127,11 +148,13 @@ export function flagsOf(entry) {
   return [...out, '--source', SOURCE]
 }
 
-/** The most one run of the entry can spend: rows × budget × the rungs a row may climb. */
+/** The most one run of the entry can spend: rows × budget × the rungs a row may climb; $0 for a loop that runs no session. */
 export function worstCost(entry) {
+  const rungs = LOOPS[entry.loop].rungs(entry.caps)
+  if (rungs === 0) return 0
   const { rows, budget } = entry.caps ?? {}
   if (!int(rows) || !money(budget)) return null
-  return +(rows * budget * LOOPS[entry.loop].rungs(entry.caps)).toFixed(2)
+  return +(rows * budget * rungs).toFixed(2)
 }
 
 /**
@@ -216,8 +239,8 @@ export function spentToday(lines, { now = new Date() } = {}) {
 }
 
 /**
- * The rows the stress loop filed today, off its own log: a finished line
- * carries `filed`, the register ids its session added. Hand runs count too.
+ * The rows a loop filed today, off its own log: a finished line carries
+ * `filed`, the register ids the run added. Hand runs count too.
  */
 export function filedToday(lines, { now = new Date() } = {}) {
   const today = now.toDateString()
@@ -232,10 +255,10 @@ export function listedRefusal(stressors, app) {
   return null
 }
 
-/** Why one more stress run is over the day's filed-rows cap, or null while it is under. */
-export function overFiledCap(cap, filed) {
-  if (!int(cap)) return 'no filed cap is set; --filed is the rows a day of stress runs may file'
-  if (filed >= cap) return `today's stress runs filed ${filed} row${filed === 1 ? '' : 's'}, reaching the cap of ${cap}`
+/** Why one more run is over the day's filed-rows cap, or null while it is under; `runs` names whose runs for the message. */
+export function overFiledCap(cap, filed, runs = 'stress runs') {
+  if (!int(cap)) return `no filed cap is set; --filed is the rows a day of ${runs} may file`
+  if (filed >= cap) return `today's ${runs} filed ${filed} row${filed === 1 ? '' : 's'}, reaching the cap of ${cap}`
   return null
 }
 

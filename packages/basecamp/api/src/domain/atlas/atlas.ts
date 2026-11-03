@@ -100,6 +100,7 @@ export type LoopLog = {
   spend: number
   lanes: LoopLane[]
   frame: { linesToday: number, lastAt: string | null, lastDay: string | null, total: number, framedAllTime: number }
+  stress: { linesToday: number, lastAt: string | null, total: number, tickedAllTime: number, filedToday: number }
   dock: { patches: Array<{ file: string, row: string | null, at: string | null, files: number, added: number, removed: number }>, dirs: string[], harvestsToday: number, filesHarvestedToday: number }
   review: { modified: string, head: string[], repeated: string[] } | null
 }

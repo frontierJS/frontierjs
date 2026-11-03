@@ -16215,6 +16215,55 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1789"></a>2026-11-03 · `FJS-D1789` — The two reds nobody files are one `feed` loop with `feeder` as a cap: `ci` runs the whole of `scripts/ci.mjs` on a worktree at HEAD, `stranger` builds a `fli new --full --source npm` from the published packages, and each red unit is filed mechanically under a fixed title, amended once a day, never when it reads as the environment.
+
+`IDEAS/autopilot.md` § 4.2, beside `FJS-D1784`'s stress loop. Seven choices, each the cheaper of the two it was priced against:
+
+1. **One loop, two entries.** `feed` with `feeder: ci | stranger` as a cap the way `model` is, so the two cadences are two schedule lines and the two feeders share one log, `feed-loop.jsonl`, and one `filed` count: a CI red storm cannot spend the stranger build's rows, and the spiral guard is one number. Priced against two loops (two logs and two caps for one kind of thing) and a new `args` field on `LOOPS` (a convention for one use; `flagsOf` already emits `--feeder ci`). A loop that runs no session has `rungs` 0 and a worst run of $0, never null, so the Switch shows a price rather than *unset*.
+2. **Mechanical, not a session.** A row is one failing unit in CI's own words — the step's label, detail and output as `core/ci-log.js` recorded them — at S3, under the package its key names. A Sonnet triage would write a better title for a dollar a night, and the fix loop's session reads the row anyway; a wrong row costs one S3 and the cap bounds the total.
+3. **A fixed title per unit is the dedupe key.** `CI red: <phase> · <key, or the label without its numbers>` and `A stranger's build from npm stalls at <step>`, so the same red finds its own row: an open row is amended (`amendIssue`, once a calendar day, read off the log's `amended`), a closed one is cited by the new row, none files. `issuesTitled` in `core/registers.js` is the lookup, beside `findIssue`, since `file.js` had no duplicate check and the feeder is not where one belongs. The first real run filed `FJS-3840` as `… — 1 rule(s) above check-baseline.json`, a title that would have filed again the night the count changed; a label-built title now drops its counts and exit codes.
+4. **A smell is `env`, never a row.** The title goes through `envSmells`, the check `fileIssue` already makes; a timeout, a held port or no Chrome is logged as `env` and filed by nobody, because a row the loop files about the machine is the spiral.
+5. **CI runs on a worktree at HEAD**, `~/.fli/feed/ci`, reset to the main tree's HEAD and `bun install`ed each run: a red on HEAD is a defect and a red on somebody's half-edited working tree is noise, and this tree is never clean. The run is read back through `ci-log.js`'s `readRuns`, a `fail` step red and a `warn` the known failure CI already names; a run still going there is `busy`. The agent's call, with the alternative on record for the owner: refusing a dirty main tree would never run, and running in it would file other sessions' edits.
+6. **The stranger is the README's own line.** `bunx @frontierjs/cli@<latest> new demo --full --yes --source npm` in a temp directory with nothing of this checkout on the path, then `bun run check` and `bun run build`; the first non-zero exit is the stall, under `cli`. `new` installs as it scaffolds because `fli new` writes the first migration only when it installed, and an app scaffolded `--no-install` fails its own `migration-history` check before any framework code ran — the first dry run stalled on exactly that false red. The registry is asked first (`npm view`), and no answer is `offline`, not red.
+7. **A feed line costs nothing and moves nothing on the map but what it filed**: each row a crate from the Proving ground, where CI's gate stands, to the Registry; no `feeders` summary on the town. No session, so no skill; `scripts/feed-loop.mjs` carries its own doc and `scripts/feeders.mjs` the pure half `packages/cli/test/feeders.test.js` holds.
+
+### <a id="fjs-d1788"></a>2026-11-03 · `FJS-D1788` — Q4 — Where it sits — `packages/workbench`, an app beside `basecamp` and `haven`.
+
+Asked in [`IDEAS/workbench-package.md`](IDEAS/workbench-package.md) § Open questions. **A** was picked over **B** (A `web/` surface of `packages/cli`, since `atlas.ts` already imports fli's readers by path).
+
+The paper's recommendation, taken as written: `cli` ships to npm; a private app with a database inside it breaks publishing and severability. `cli/core/ask-claude.js` stays in cli and Workbench imports it, as `atlas.ts` does today.
+
+### <a id="fjs-d1787"></a>2026-11-03 · `FJS-D1787` — Q3 — The desktop shell — Both apps keep a shell.
+
+Asked in [`IDEAS/workbench-package.md`](IDEAS/workbench-package.md) § Open questions. **B** was picked over **A** (The shell moves to `packages/workbench/desktop/`; Basecamp is a browser tab to a box).
+
+Against the recommendation (**A**): Basecamp on a box is still opened from a laptop, so its shell stays; Workbench gets its own desktop/ surface.
+
+### <a id="fjs-d1786"></a>2026-11-03 · `FJS-D1786` — Q2 — Auth — Haven's door: an own `Member` + `Session` pair, no `@frontierjs/auth`.
+
+Asked in [`IDEAS/workbench-package.md`](IDEAS/workbench-package.md) § Open questions. **B** was picked over **A** (Single user, still gated: keep `User` and the level ladder, drop `Workspace` and `WorkspaceMember`, seed one owner at first run. Services keep their gate lines unchanged), **C** (No sign-in: a loopback-only listener with a local token).
+
+Against the recommendation (**A**): Haven already owns a Member and Session pair that works for a private app on this machine; a second private app takes the same door rather than a trimmed copy of the workspace ladder.
+
+### <a id="fjs-d1785"></a>2026-11-03 · `FJS-D1785` — Q1 — The noun — The package is `Workbench`; Atlas, Decide, Autopilot and the Claude tab are its screens, and the chat screen is renamed (`Chats`, `Checkouts`).
+
+Asked in [`IDEAS/workbench-package.md`](IDEAS/workbench-package.md) § Open questions. **A** was picked over **B** (The package takes a new noun (`Bench`, `Desk`) and every screen keeps its name).
+
+The paper's recommendation, taken as written: `FJS-D1176`, `D1073` and `D1708` already use the word, and it is the field's word (Conductor, Vibe Kanban). Reopen as B if `/workbench/` inside Workbench reads as a collision.
+
+### <a id="fjs-d1784"></a>2026-11-03 · `FJS-D1784` — A stressor step runs in a worktree of the app's repo at `~/.fli/stress/<app>` on `stress/<step>`, the app's uncommitted work committed there as its base; the loop's caps are `rows`, `filed`, `budget` and `model`; every loop's log is named once, in `LOOPS`.
+
+The `stress` entry of `IDEAS/autopilot.md` § 4.1, under `FJS-D1780` (the listed apps are the owner's consent) and `FJS-D1781` (an idea a step turns up is a question with options). Six choices, each the cheaper of the two it was priced against:
+
+1. **Where the step builds.** A worktree of the app's repo, never its working tree: the prototypes hold the owner's uncommitted work, and a headless session writing beside it is a collision nobody sees until the diff. The uncommitted tree is committed onto the branch as `stress base: …` so the session builds on what the owner has, and the session's work lands as one commit on top for the owner to merge a box at a time. A step the log says is ticked on an unmerged branch is passed over, because the app's own plan still shows the box open and the step would build twice.
+2. **Which app runs.** The one whose first open box has waited longest, *waited* being the later of the box line's last commit (`git blame`; the plan file's mtime when the line is uncommitted) and the loop's last attempt at that step. A line's blame, not the file's, so an edit elsewhere in the plan does not reset an app's turn; the last attempt, so an app tried this morning goes behind one that was not. A tie keeps the list's order, which is the owner's.
+3. **The caps.** `rows`, `filed`, `budget` and the `model` ceiling, flags with no defaults like every entry's (`FJS-D1778`). `filed` is the rows one day of stress runs may file, counted off the stress log's own lines whatever their source, because a cap on what a loop files is a cap on the register's growth and a hand run grows it the same. The session is told how many remain; past the count a gap goes as a line under the step's bullet and the step ends blocked.
+4. **A hand run refuses an unlisted app too.** `--app` chooses among the listed, never adds to them: the list is consent, and a flag that bypasses it is consent the flag's author gave.
+5. **Where `fli file` runs.** The session's cwd is the framework root, the worktree an `--add-dir`: the gaps belong in this tree's registers, and a `fli file` from the app would look for registers the app does not have.
+6. **One spelling of a log's name.** `LOOPS[*].log` and `LOG_NAMES` in `core/autopilot.js`; `headless.mjs`, the tick job, the Atlas domain and service, the report, `loop-log.js` and `repo-work.js` read them, and a test refuses a second spelling in those trees. Six two-file lists had already drifted apart once.
+
+Priced against: building in the app's checkout with a stash (the stash is the owner's work in a place they do not look); an app's plan-wide mtime (one edit anywhere resets every app's turn); a `filed` cap off the registers' dates (a hand-filed row would count against the night); a default `filed` of 3 (`FJS-D1778` says a cap the owner did not write is one they did not agree to).
+
 ### <a id="fjs-d1783"></a>2026-11-02 · `FJS-D1783` — *Due* is a cron minute inside the window since the last persisted tick; a window over a day old is cut to the last five minutes.
 
 A follow-on to `FJS-D1777`, which made a cron line per entry the shape of a schedule and left what *due* means to the tick job. **A** was picked over **B** (in memory only: due is a match in the last five minutes, so an API restart can fire an entry twice inside one window and a fire during downtime is lost) and **C** (register each entry as a caravan cron job: a second reader of the file to keep the registrations in step, and caravan's registrations are in memory too, so downtime fires are lost the same way).

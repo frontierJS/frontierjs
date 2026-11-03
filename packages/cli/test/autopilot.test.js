@@ -12,7 +12,9 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'fs'
 import { join }   from 'path'
 import { tmpdir } from 'os'
 
-import { readSchedule, writeSwitch, flagsOf, worstCost, cronShape, spentToday, overDayCap, LOOPS, MAX_LANES } from '../core/autopilot.js'
+import { spawnSync } from 'child_process'
+
+import { readSchedule, writeSwitch, flagsOf, worstCost, cronShape, spentToday, overDayCap, filedToday, listedRefusal, overFiledCap, LOOPS, LOG_NAMES, logFiles, MAX_LANES } from '../core/autopilot.js'
 
 let DIR
 beforeAll(() => { DIR = mkdtempSync(join(tmpdir(), 'autopilot-')) })
@@ -28,6 +30,8 @@ const read = body => readSchedule({ file: file(body) })
 
 const FIX   = { loop: 'fix',   cron: '0 1 * * *', caps: { rows: 4, lanes: 2, budget: 5, sev: 'S3,S4', model: 'sonnet' } }
 const FRAME = { loop: 'frame', cron: '30 0 * * 1-5', caps: { rows: 2, max: 4, budget: 5 } }
+const STRESS = { loop: 'stress', cron: '0 2 * * *', caps: { rows: 1, filed: 3, budget: 5, model: 'sonnet' } }
+const FEED   = { loop: 'feed', cron: '0 4 * * *', caps: { feeder: 'ci', filed: 3 } }
 
 describe('readSchedule', () => {
   test('a missing file is a schedule with nothing set', () => {
@@ -37,10 +41,13 @@ describe('readSchedule', () => {
   })
 
   test('a whole file reads with each entry carrying its flags and worst run, and nothing missing', () => {
-    const s = read({ on: true, day: { attempts: 20, dollars: 40 }, entries: [FIX, FRAME], stressors: { dir: '../apps', apps: ['serpgrid', 'thod'] } })
-    expect(s).toMatchObject({ exists: true, on: true, day: { attempts: 20, dollars: 40 }, missing: [], stressors: { dir: '../apps', apps: ['serpgrid', 'thod'] } })
+    const s = read({ on: true, day: { attempts: 20, dollars: 60 }, entries: [FIX, FRAME, STRESS, FEED], stressors: { dir: '../apps', apps: ['serpgrid', 'thod'] } })
+    expect(s).toMatchObject({ exists: true, on: true, day: { attempts: 20, dollars: 60 }, missing: [], stressors: { dir: '../apps', apps: ['serpgrid', 'thod'] } })
     expect(s.entries[0]).toEqual({ ...FIX, flags: ['--rows', '4', '--lanes', '2', '--budget', '5', '--sev', 'S3,S4', '--model', 'sonnet', '--source', 'autopilot'], worst: 20 })
     expect(s.entries[1]).toEqual({ ...FRAME, flags: ['--rows', '2', '--max', '4', '--budget', '5', '--source', 'autopilot'], worst: 30 })
+    expect(s.entries[2]).toEqual({ ...STRESS, flags: ['--rows', '1', '--filed', '3', '--budget', '5', '--model', 'sonnet', '--source', 'autopilot'], worst: 5 })
+    // A feeder runs no session, so its worst run is $0 rather than unknown.
+    expect(s.entries[3]).toEqual({ ...FEED, flags: ['--feeder', 'ci', '--filed', '3', '--source', 'autopilot'], worst: 0 })
   })
 
   test('a cap not set is listed by path, never defaulted', () => {
@@ -51,12 +58,16 @@ describe('readSchedule', () => {
   })
 
   test('an unknown loop is refused by name, with the loops it runs', () => {
-    expect(() => read({ entries: [FIX, { loop: 'stress', cron: '* * * * *' }] })).toThrow(/entry 2: 'stress' is not a loop autopilot runs; it runs fix, frame/)
+    expect(() => read({ entries: [FIX, { loop: 'bake', cron: '* * * * *' }] })).toThrow(/entry 2: 'bake' is not a loop autopilot runs; it runs fix, frame, stress, feed/)
   })
 
   test('an unknown cap is refused by name, and so is one of the wrong shape', () => {
     expect(() => read({ entries: [{ ...FIX, caps: { ...FIX.caps, turns: 40 } }] })).toThrow(/entry 1 \(fix\): 'turns' is not a cap fix takes; it takes rows, lanes, budget, sev, model/)
     expect(() => read({ entries: [{ ...FRAME, caps: { ...FRAME.caps, lanes: 2 } }] })).toThrow(/'lanes' is not a cap frame takes/)
+    expect(() => read({ entries: [{ ...STRESS, caps: { ...STRESS.caps, lanes: 2 } }] })).toThrow(/'lanes' is not a cap stress takes; it takes rows, filed, budget, model/)
+    expect(() => read({ entries: [{ ...STRESS, caps: { ...STRESS.caps, filed: 0 } }] })).toThrow(/filed is 0, not a whole number of rows a day of stress runs may file/)
+    expect(() => read({ entries: [{ ...FEED, caps: { feeder: 'bake', filed: 3 } }] })).toThrow(/entry 1 \(feed\): feeder is "bake", not one of ci, stranger/)
+    expect(() => read({ entries: [{ ...FEED, caps: { ...FEED.caps, budget: 5 } }] })).toThrow(/'budget' is not a cap feed takes; it takes feeder, filed/)
     expect(() => read({ entries: [{ ...FIX, caps: { ...FIX.caps, lanes: MAX_LANES + 1 } }] })).toThrow(new RegExp(`lanes is ${MAX_LANES + 1}, not a whole number of lanes, 1 to ${MAX_LANES}`))
     expect(() => read({ entries: [{ ...FIX, caps: { ...FIX.caps, sev: 'S5' } }] })).toThrow(/sev is "S5", not severities/)
     expect(() => read({ entries: [{ ...FIX, caps: { ...FIX.caps, model: 'haiku' } }] })).toThrow(/model is "haiku", not one of sonnet, opus/)
@@ -90,8 +101,19 @@ describe('flagsOf and worstCost', () => {
     expect(worstCost({ loop: 'frame', caps: { rows: 1 } })).toBeNull()
   })
 
-  test('every loop names a script under scripts/', () => {
+  test('every loop names a script under scripts/ and a log of its own', () => {
     for (const l of Object.values(LOOPS)) expect(l.script).toMatch(/^scripts\/[a-z-]+\.mjs$/)
+    expect(LOG_NAMES).toEqual(['fix-loop.jsonl', 'frame-loop.jsonl', 'stress-loop.jsonl', 'feed-loop.jsonl'])
+    expect(logFiles('/x')).toEqual(['/x/fix-loop.jsonl', '/x/frame-loop.jsonl', '/x/stress-loop.jsonl', '/x/feed-loop.jsonl'])
+  })
+
+  // A reader summing the day's spend from a list of its own misses the log it
+  // never learned, so the names live in LOOPS and every reader takes them from there.
+  test('no source but autopilot.js spells a loop log by name', () => {
+    const root = join(import.meta.dir, '..', '..', '..')
+    const out  = spawnSync('rg', ['--no-config', '-l', String.raw`['"][a-z]+-loop\.jsonl['"]`,
+      'scripts', 'packages/cli/core', 'packages/basecamp/api/src', 'packages/basecamp/web/src', '-g', '*.{js,mjs,ts,mesa}'], { cwd: root, encoding: 'utf8' })
+    expect(out.stdout.trim().split('\n').filter(Boolean).sort()).toEqual(['packages/cli/core/autopilot.js'])
   })
 })
 
@@ -127,6 +149,33 @@ describe('spentToday and overDayCap', () => {
     expect(overDayCap({ attempts: 10, dollars: 2 }, { attempts: 2, dollars: 2 })).toMatch(/today's \$2 reaches the day's cap of \$2/)
     expect(overDayCap({ attempts: 10, dollars: null }, { attempts: 0, dollars: 0 })).toMatch(/the day's dollars cap is not set/)
     expect(overDayCap(null, { attempts: 0, dollars: 0 })).toBe('no day cap is set')
+  })
+})
+
+describe('the stress loop\'s own refusals', () => {
+  const now = new Date('2026-11-02T15:00:00')
+  const at  = h => new Date(now.getTime() - h * 36e5).toISOString()
+
+  test('an app is refused by the list, hand run or scheduled, and nothing listed refuses every run', () => {
+    expect(listedRefusal(null, 'serpgrid')).toMatch(/names no stressors/)
+    expect(listedRefusal({ dir: '../apps', apps: [] })).toMatch(/stressors.apps is empty/)
+    expect(listedRefusal({ dir: '../apps', apps: ['serpgrid'] }, 'thod')).toBe("'thod' is not listed under stressors.apps; listed: serpgrid")
+    expect(listedRefusal({ dir: '../apps', apps: ['serpgrid'] }, 'serpgrid')).toBeNull()
+    expect(listedRefusal({ dir: '../apps', apps: ['serpgrid'] })).toBeNull()
+  })
+
+  test('the day\'s filed rows are counted off every stress line of the day, hand runs included, and the cap refuses at the count', () => {
+    const lines = [
+      { at: at(1), app: 'a', step: '1.1', outcome: 'started', source: 'autopilot' },
+      { at: at(0.5), app: 'a', step: '1.1', outcome: 'blocked', filed: ['FJS-10', 'FJS-D11'], source: 'autopilot' },
+      { at: at(3), app: 'b', step: '2.1', outcome: 'ticked', filed: ['FJS-9'] },
+      { at: at(30), app: 'b', step: '2.0', outcome: 'blocked', filed: ['FJS-1', 'FJS-2'] },
+    ]
+    expect(filedToday(lines, { now })).toBe(3)
+    expect(overFiledCap(3, 3)).toMatch(/filed 3 rows, reaching the cap of 3/)
+    expect(overFiledCap(4, 3)).toBeNull()
+    expect(overFiledCap(undefined, 0)).toMatch(/no filed cap is set/)
+    expect(overFiledCap(2, 2, 'feeders')).toBe("today's feeders filed 2 rows, reaching the cap of 2")
   })
 })
 

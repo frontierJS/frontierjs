@@ -31,7 +31,7 @@ export function reportOf({ loop, on, day, spent, tick }: ReportInput): Autopilot
     from:    loop.window.start,
     to:      loop.window.end,
     on,
-    ran:     (c.started ?? 0) + loop.events.filter(e => e.kind === 'paper').length,
+    ran:     (c.started ?? 0) + loop.events.filter(e => e.kind === 'paper' && e.from === 'plans').length,
     closed:  c.closed ?? 0,
     blocked: c.blocked ?? 0,
     failed:  (c.failed ?? 0) + (c.busy ?? 0) + (c.corrected ?? 0) + (c.other ?? 0),

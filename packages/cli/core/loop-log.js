@@ -1,6 +1,6 @@
 // ─── loop-log.js — the loops' logs and the lanes directory, read once ────────
 //
-// `fix-loop`, `frame-loop` and `stress-loop` append one jsonl line per event
+// `fix-loop`, `frame-loop`, `stress-loop` and `feed-loop` append one jsonl line per event
 // to ~/.fli (the names are `autopilot.js`'s `LOOPS`), and `fix-loop --lanes`
 // keeps a worktree, a lock and a patch directory per lane beside them. `scripts/loop-review.mjs` and the Basecamp Atlas API both read
 // them, and two readers pairing a finished attempt with its `started` line
@@ -14,7 +14,11 @@
 // and no outcome. A row started and never finished (a killed run) stays a
 // `started` line forever, so "busy" is read from the lane's lock, whose pid
 // is alive, and not from the log alone. `source: 'autopilot'` marks a
-// scheduled run; a hand run names none.
+// scheduled run; a hand run names none. A stress line names `app` and `step`
+// (its `id` is the two joined) and a finished one carries `filed`, the
+// register ids its session added, which is how the day's filed rows are
+// counted against the stress cap. A feed line names its `feeder` and, when
+// finished, `filed` and `amended` the same way; it costs nothing.
 //
 // Plain ESM, node or bun. Imports nothing from `scripts/`: this package is
 // published and `scripts/` imports from it.
@@ -22,6 +26,8 @@
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs'
 import { basename, join }                                  from 'node:path'
 import { homedir }                                         from 'node:os'
+
+import { LOOPS } from './autopilot.js'
 
 const DAY_MS = 864e5
 const LANES  = 5
@@ -101,8 +107,10 @@ export function readLoopLog({ logDir = join(homedir(), '.fli'), root, since, unt
   const start = ms(since, end - DAY_MS)
   const within = e => { const t = Date.parse(e.at); return t > start && t <= end }
 
-  const fix   = readLog(join(logDir, 'fix-loop.jsonl'))
-  const frame = readLog(join(logDir, 'frame-loop.jsonl'))
+  const fix    = readLog(join(logDir, LOOPS.fix.log))
+  const frame  = readLog(join(logDir, LOOPS.frame.log))
+  const stress = readLog(join(logDir, LOOPS.stress.log))
+  const feed   = readLog(join(logDir, LOOPS.feed.log))
   const lanesDir = join(logDir, 'lanes')
 
   const laneOf = e => {
@@ -153,12 +161,33 @@ export function readLoopLog({ logDir = join(homedir(), '.fli'), root, since, unt
       events.push(withSource(e, { t: e.at, kind: 'question', id: q, from: 'framing', to: out === 'framed' ? 'council.bench' : out === 'settled' ? 'council.wall' : 'council.open', label: out, cost: e.cost ?? null, log: short(e) }))
     }
   }
+
+  // ── stress-loop lines → site and filed-row events ──
+  // A step goes from the Plan office to the Proving ground and back; each row
+  // its session filed is a crate from the ground to the Registry, or a question
+  // to the Council when the id is a D.
+  const stressDay = stress.filter(within)
+  const isQ = row => /-D\d+$/.test(row)
+  for (const e of stressDay) {
+    const id = e.id ?? `${e.app} ${e.step}`
+    if (e.outcome === 'started') { events.push(withSource(e, { t: e.at, kind: 'paper', id, from: 'plans', to: 'proving', label: `stress ${id} · ${e.model}·${e.effort}`, cost: null, log: short(e) })); continue }
+    events.push(withSource(e, { t: e.at, kind: 'paper', id, from: 'proving', to: 'plans', label: e.outcome, cost: e.cost ?? null, turns: e.turns ?? null, minutes: e.minutes ?? null, log: short(e) }))
+    for (const row of e.filed ?? []) events.push(withSource(e, { t: e.at, kind: isQ(row) ? 'question' : 'row', id: row, from: 'proving', to: isQ(row) ? 'council.open' : 'registry.ready', label: `filed by stress ${id}`, cost: null, log: short(e) }))
+  }
+
+  // ── feed-loop lines → filed-row events ──
+  // A feeder runs no session and moves nothing on the map but what it filed:
+  // each row a crate from the Proving ground, where CI's gate stands, to the Registry.
+  const feedDay = feed.filter(within)
+  for (const e of feedDay) {
+    for (const row of e.filed ?? []) events.push(withSource(e, { t: e.at, kind: isQ(row) ? 'question' : 'row', id: row, from: 'proving', to: isQ(row) ? 'council.open' : 'registry.ready', label: `filed by the ${e.feeder} feeder`, cost: null, log: short(e) }))
+  }
   events.sort((a, b) => a.t.localeCompare(b.t))
 
   // A frame line's cost repeats on each of its question events, so spend is
   // summed from the lines: summing events would count a four-question line four times.
   const attempts = finishedAttempts(fix).filter(within)
-  const spend    = +[...attempts, ...frameDay.filter(e => e.outcome !== 'started')].reduce((s, e) => s + (e.cost ?? 0), 0).toFixed(2)
+  const spend    = +[...attempts, ...frameDay.filter(e => e.outcome !== 'started'), ...stressDay.filter(e => e.outcome !== 'started')].reduce((s, e) => s + (e.cost ?? 0), 0).toFixed(2)
 
   // ── lanes ──
   const dirs = existsSync(lanesDir) ? readdirSync(lanesDir) : []
@@ -213,10 +242,15 @@ export function readLoopLog({ logDir = join(homedir(), '.fli'), root, since, unt
     window: { start: new Date(start).toISOString(), end: new Date(end).toISOString() },
     attempts,
     events,
-    counts: { events: events.length, fixLines: day.length, frameLines: frameDay.length, ...counts, spend },
+    counts: { events: events.length, fixLines: day.length, frameLines: frameDay.length, stressLines: stressDay.length, feedLines: feedDay.length, ...counts, spend },
     spend,
     lanes,
     frame: { linesToday: frameDay.length, lastAt: lastFrameAt, lastDay: lastFrameAt ? lastFrameAt.slice(0, 10) : null, total: frame.length, framedAllTime: frame.filter(e => e.outcome === 'framed').length },
+    stress: {
+      linesToday: stressDay.length, lastAt: stress.at(-1)?.at ?? null, total: stress.length,
+      tickedAllTime: stress.filter(e => e.outcome === 'ticked').length,
+      filedToday: stressDay.reduce((s, e) => s + (e.filed?.length ?? 0), 0),
+    },
     dock: {
       patches, dirs: all.filter(f => !f.endsWith('.patch')),
       harvestsToday: counts.harvest,
