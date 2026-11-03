@@ -47,6 +47,7 @@ import { existsSync, readFileSync, writeFileSync, readdirSync, rmSync, mkdtempSy
 import { join, dirname, relative, basename, resolve } from 'node:path'
 import { fileURLToPath }                   from 'node:url'
 import { tmpdir, availableParallelism }    from 'node:os'
+import { stripVTControlCharacters }        from 'node:util'
 
 // The SAME module `fli check` runs against a client app. Imported by relative
 // path rather than reimplemented, because a framework that breaks its own stated
@@ -939,7 +940,7 @@ function access() {
   const ref = resolveRef(baseRef)
   if (!ref) {
     note(`access not compared — \`${baseRef}\` does not resolve here. Pass --base-ref, or set FJS_CI_BASE_REF.`)
-    console.log(`  ! no baseline — \`${baseRef}\` does not resolve here`)
+    console.log(`  ${yellow(`⚠ no baseline — \`${baseRef}\` does not resolve here`)}`)
     return
   }
 
@@ -1757,7 +1758,7 @@ function perf() {
   begin('perf')
   const t0    = Date.now()
   const model = benchCompare({ root: ROOT, ref, only: only ?? null })
-  console.log(benchFormat(model).replace(/^/gm, '    '))
+  console.log(benchFormat(model).replace(/^/gm, '    ').replace(/OVER CEILING \S+/g, yellow))
 
   for (const p of model.packages) {
     for (const f of p.failures) fail(`${p.pkg} — ${f}\n      Run \`node scripts/bench-ab.mjs --only ${p.pkg}\`.`, '', { key: `perf:${p.pkg}` })
@@ -2358,10 +2359,24 @@ function gitShow(spec) {
 
 // ─── reporting ──────────────────────────────────────────────
 
+// Color reaches a terminal only: .cache/ci-last.txt is parsed by its marks
+// (workbench atlas.ts), so report() strips what it writes there.
+const COLOR  = process.env.NO_COLOR ? false
+  : process.env.FORCE_COLOR ? process.env.FORCE_COLOR !== '0'
+  : !!process.stdout.isTTY
+const paint  = (code) => (s) => COLOR ? `\x1b[${code}m${s}\x1b[0m` : s
+const green  = paint('32')
+const yellow = paint('33')
+const red    = paint('31')
+const bold   = paint('1')
+const dim    = paint('2')
+const plain  = stripVTControlCharacters
+const took   = (ms) => ms ? dim(` (${(ms / 1000).toFixed(1)}s)`) : ''
+
 // Returns the failure count at the start of the phase, so a phase can ask
 // whether it is still clean before printing a summary that says so.
 function phase(name) {
-  console.log(`\n─── ${name} ${'─'.repeat(Math.max(0, 50 - name.length))}`)
+  console.log(`\n${dim('───')} ${bold(name)} ${dim('─'.repeat(Math.max(0, 50 - name.length)))}`)
   return problems.length
 }
 
@@ -2372,7 +2387,7 @@ function clean(from) {
 // `meta.key` names the thing a step is about — a suite's directory, a lesson's
 // id — so its result can be found across runs; the message is prose and moves.
 function ok(message, ms, meta = {}) {
-  console.log(`  ✓ ${message}${ms ? ` (${(ms / 1000).toFixed(1)}s)` : ''}`)
+  console.log(`  ${green('✓')} ${message}${took(ms)}`)
   step('ok', message, { ms, ...meta })
 }
 
@@ -2380,7 +2395,7 @@ let warnings = 0
 
 function warn(message, ms, meta = {}) {
   warnings++
-  console.log(`  ! ${message}${ms ? ` (${(ms / 1000).toFixed(1)}s)` : ''}`)
+  console.log(`  ${yellow(`⚠ ${message}`)}${took(ms)}`)
   step('warn', message, { ms, ...meta })
 }
 
@@ -2390,7 +2405,7 @@ function warn(message, ms, meta = {}) {
 // page can run itself — by kind, never as argv, so the server decides what runs.
 function fail(message, output, meta = {}) {
   problems.push({ message, output })
-  console.log(`  ✗ ${message}`)
+  console.log(`  ${red(`✗ ${message}`)}`)
   const [label, ...rest] = message.split('\n')
   const detail = rest.map(l => l.trim()).filter(Boolean).join(' ') || undefined
   const text   = outputText(output)
@@ -2441,12 +2456,13 @@ function report() {
   const seconds = ((Date.now() - started) / 1000).toFixed(1)
   const inline  = !!process.env.GITHUB_ACTIONS
   const lines = []
-  const say = line => { console.log(line); lines.push(line) }
+  const say = line => { console.log(line); lines.push(plain(line)) }
+  const rule = (name, width) => `\n${dim('───')} ${bold(name)} ${dim('─'.repeat(width))}`
 
   if (notes.length) {
-    say(`\n─── notes ${'─'.repeat(45)}`)
+    say(rule('notes', 45))
     for (const n of notes) {
-      say(`  · ${n.message}`)
+      say(`  ${dim('·')} ${n.message}`)
       for (const d of n.detail) { lines.push(`      ${d}`); if (inline) console.log(`      ${d}`) }
       annotate('notice', [n.message, ...n.detail].join('\n'))
     }
@@ -2473,25 +2489,26 @@ function report() {
 
   // The last thing on screen is what to do: every phase's verdict, and each
   // failure's first line under the phase that raised it.
-  say(`\n─── summary ${'─'.repeat(43)}`)
-  const green = outcomes.filter(o => !o.failed.length && !o.warned)
-  if (green.length) say(`  ✓ ${green.map(o => o.name).join(' · ')}`)
+  say(rule('summary', 43))
+  const passed = outcomes.filter(o => !o.failed.length && !o.warned)
+  if (passed.length) say(`  ${green('✓')} ${passed.map(o => o.name).join(' · ')}`)
   for (const o of outcomes) {
     if (!o.failed.length && !o.warned) continue
-    const mark = o.failed.length ? '✗' : '!'
+    const tint  = o.failed.length ? red : yellow
+    const mark  = o.failed.length ? '✗' : '⚠'
     const tally = [o.failed.length && `${o.failed.length} failure(s)`, o.warned && `${o.warned} warning(s)`].filter(Boolean).join(', ')
-    say(`  ${mark} ${o.name.padEnd(11)} ${tally}`)
+    say(`  ${tint(`${mark} ${o.name.padEnd(11)}`)} ${tally}`)
     for (const p of o.failed) say(`      ${p.message.split('\n')[0]}`)
   }
-  if (notes.length) say(`  · ${notes.length} note(s) — advisory, do not fail the run`)
+  if (notes.length) say(`  ${dim('·')} ${notes.length} note(s) — advisory, do not fail the run`)
 
   if (!problems.length) {
-    say(`\n✓ CI passed in ${seconds}s${fast ? ' (fast tier — suites not run)' : ''}\n`)
+    say(`\n${bold(green(`✓ CI passed in ${seconds}s`))}${fast ? ' (fast tier — suites not run)' : ''}\n`)
     saveLast(lines)
     process.exit(0)
   }
 
-  say(`\n✗ CI failed in ${seconds}s — ${problems.length} failure(s)\n`)
+  say(`\n${bold(red(`✗ CI failed in ${seconds}s`))} — ${problems.length} failure(s)\n`)
   if (!inline) console.log(`  detail: ${relative(ROOT, lastFile)} (failures and notes in full)\n`)
   saveLast(lines)
   process.exit(1)

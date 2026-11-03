@@ -299,7 +299,12 @@ export async function runFetch({
   }
 
   const { default: TurndownService } = await import('turndown')
-  const { parseHTML } = await import('linkedom')
+  const { Window } = await import('happy-dom')
+  // A fetched page is someone else's. happy-dom's DOMParser, unlike a
+  // browser's, requests a parsed page's stylesheets and iframes, so without
+  // these a scrape sends a request to every URL the page names.
+  const win = new Window({ settings: { disableJavaScriptFileLoading: true, disableCSSFileLoading: true, disableIframePageLoading: true } })
+  const parser = new win.DOMParser()
   const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced', bulletListMarker: '-' })
 
   log.info(`processing ${urls.length} url(s) into ${opts.routesDir}`)
@@ -308,7 +313,7 @@ export async function runFetch({
   for (const [i, url] of urls.entries()) {
     log.info(`(${i + 1}/${urls.length}) ${url}`)
     try {
-      const doc = parseHTML(await fetchHtml(url, fetchOpts)).document
+      const doc = parser.parseFromString(await fetchHtml(url, fetchOpts), 'text/html')
       const meta = extractMeta(doc)
       const el = doc.querySelector(scope) || doc.querySelector('body') || doc
       const file = routeFileFor(url, opts)
@@ -340,5 +345,6 @@ export async function runFetch({
     }
     if (i < urls.length - 1 && delay > 0) await new Promise((r) => setTimeout(r, delay))
   }
+  await win.happyDOM.close()
   return { written, skipped }
 }

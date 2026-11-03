@@ -25,7 +25,8 @@ beforeAll(() => {
                           devDependencies: { typescript: '^5.9.3' } })
   write('packages/kit/package.json', { name: '@x/kit', version: '1.0.0',
     dependencies: { '@x/core': 'workspace:*', 'css-tree': '^2.3.1' },
-    peerDependencies: { typescript: '>=5.0.0', vite: '^8.0.0' } })
+    peerDependencies: { typescript: '>=5.0.0', vite: '^8.0.0' },
+    peerDependenciesMeta: { typescript: { optional: true } } })
   write('packages/core/package.json', { name: '@x/core', version: '1.0.0', dependencies: { 'local-thing': 'file:../thing' } })
   // Edited after the last install: the lock below has no entry for `left-pad`.
   write('app/package.json', { name: 'app', private: true,
@@ -90,11 +91,12 @@ describe('depsFindings', () => {
   })
 })
 
-test('runtime is any non-dev declaration; dev only is every declaration dev', () => {
+test('runtime is any declaration a consumer installs; an optional peer is not one', () => {
   const r  = collectDeps(ROOT)
   const of = Object.fromEntries(r.deps.map(d => [d.name, d.runtime]))
-  // typescript is a root devDependency AND a peer of @x/kit — a consumer of the kit brings it.
-  expect(of).toEqual({ 'css-tree': true, 'left-pad': true, typescript: true, vite: true })
+  // vite is a required peer of @x/kit; typescript is a root devDependency and an OPTIONAL peer.
+  expect(of).toEqual({ 'css-tree': true, 'left-pad': true, typescript: false, vite: true })
+  expect(renderDepsSnapshot(r)).toContain('@x/kit (optional peer) `>=5.0.0`')
 
   const solo = mkdtempSync(join(tmpdir(), 'fli-deps-dev-'))
   writeFileSync(join(solo, 'package.json'), JSON.stringify({ name: 'solo', devDependencies: { vitest: '^5' }, dependencies: { zod: '^4' } }))

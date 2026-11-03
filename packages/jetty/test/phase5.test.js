@@ -255,13 +255,14 @@ group('DevServer — lifecycle + broadcast')
 
 group('Mesa HMR registry')
 {
-  const { JSDOM } = await import('jsdom')
-  const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>')
+  const { Window } = await import('happy-dom')
+  const win = new Window()
+  win.document.body.innerHTML = '<div id="host"></div>'
 
   const saved = { window: globalThis.window, document: globalThis.document, Node: globalThis.Node }
-  globalThis.window   = dom.window
-  globalThis.document = dom.window.document
-  globalThis.Node     = dom.window.Node
+  globalThis.window   = win
+  globalThis.document = win.document
+  globalThis.Node     = win.Node
 
   // Importing the module installs the registry — the same top-level side effect
   // the injected dev client has in a page.
@@ -275,7 +276,7 @@ group('Mesa HMR registry')
   console.debug = () => {}
   console.error = () => {}
 
-  const doc  = dom.window.document
+  const doc  = win.document
   const host = doc.getElementById('host')
 
   /** What a mounted Mesa component leaves behind: mark, its render, anchor. */

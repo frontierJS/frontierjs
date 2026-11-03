@@ -10,55 +10,53 @@ left out. The latest version and any advisory are NOT here: they change with
 no commit, so they live in Basecamp, which `fli ws:deps --push` feeds.
 
 ```
-54 package(s) · 26 runtime · 28 dev only · 115 declaration(s) · 31 member(s) · 0 finding(s)
+51 package(s) · 21 runtime · 30 dev only · 112 declaration(s) · 31 member(s) · 0 finding(s)
 ```
 
 ## Findings
 
 None — one installed copy and one range per package, and every declaration installed.
 
-## Runtime (26)
+## Runtime (21)
 
-Installed by anyone who installs the declaring package — a dependency, a peer
-or an optional one. A package also declared as dev somewhere is here, with
-that declaration listed beside the others.
+Installed by anyone who installs the declaring package — a dependency, a
+required peer or an optionalDependency. A package also declared as dev or as
+an optional peer somewhere is here, with that declaration listed beside the
+others.
 
 | Package | Installed | Declared by |
 | --- | --- | --- |
-| `@biomejs/biome` | `2.5.8` | @frontierjs/config (peer) `>=2.2.0`<br>frontierjs (dev) `2.5.8` |
 | `@modelcontextprotocol/client` | `2.3.1` | @frontierjs/basecamp `^2.3.1`<br>@frontierjs/example (dev) `^2.3.1`<br>@frontierjs/mcp `^2.3.1`<br>@frontierjs/workbench `^2.3.1` |
 | `@modelcontextprotocol/ext-apps` | `2.0.3` | @frontierjs/example (dev) `^2.0.3`<br>@frontierjs/mcp `^2.0.3` |
 | `@modelcontextprotocol/server` | `2.3.1` | @frontierjs/mcp `^2.3.1` |
-| `@opentui/core` | `0.5.17` | @frontierjs/haven `0.5.17`<br>@frontierjs/mesa (dev) `0.5.17`<br>@frontierjs/mesa (peer) `0.5.17` |
+| `@opentui/core` | `0.5.17` | @frontierjs/haven `0.5.17`<br>@frontierjs/mesa (dev) `0.5.17`<br>@frontierjs/mesa (optional peer) `0.5.17` |
 | `@sqlite.org/sqlite-wasm` | `3.53.4-build1` | @frontierjs/example `^3.53.4-build1`<br>@frontierjs/litestone (dev) `^3.53.4-build1` |
 | `@xterm/addon-fit` | `0.11.0` | @frontierjs/basecamp `0.11.0`<br>@frontierjs/workbench `0.11.0` |
 | `@xterm/xterm` | `6.0.0` | @frontierjs/basecamp `6.0.0`<br>@frontierjs/workbench `6.0.0` |
 | `acorn` | `8.18.0` | @frontierjs/mesa `^8.0.0`<br>@frontierjs/site-kit (dev) `^8.0.0`<br>@frontierjs/ui (dev) `^8.0.0` |
-| `css-tree` | `2.3.1` | @frontierjs/email-kit (dev) `^2.0.0`<br>@frontierjs/email-kit (peer) `^2.0.0`<br>@frontierjs/mesa (dev) `^2.0.0`<br>@frontierjs/mesa (peer) `^2.0.0` |
-| `happy-dom` | `20.11.6` | @frontierjs/email-kit (dev) `^20.11.6`<br>@frontierjs/email-kit (peer) `^20.11.6`<br>@frontierjs/mesa (dev) `^20.11.6`<br>@frontierjs/mesa (peer) `^20.11.6`<br>@frontierjs/sierra (dev) `^20.11.6`<br>@frontierjs/site-kit `^20.11.6` |
-| `linkedom` | `0.18.13` | @frontierjs/site-kit `^0.18.12` |
-| `rehype-slug` | `6.0.0` | @frontierjs/mesa (dev) `^6.0.0`<br>@frontierjs/mesa (peer) `^6.0.0`<br>@frontierjs/site-kit `^6.0.0` |
-| `rehype-stringify` | `10.0.1` | @frontierjs/mesa (dev) `^10.0.1`<br>@frontierjs/mesa (peer) `^10.0.1`<br>@frontierjs/site-kit `^10.0.1` |
-| `remark-gfm` | `4.0.1` | @frontierjs/mesa (dev) `^4.0.1`<br>@frontierjs/mesa (peer) `^4.0.1`<br>@frontierjs/site-kit `^4.0.1` |
-| `remark-parse` | `11.0.0` | @frontierjs/mesa (dev) `^11.0.0`<br>@frontierjs/mesa (peer) `^11.0.0`<br>@frontierjs/site-kit `^11.0.0` |
-| `remark-rehype` | `11.1.2` | @frontierjs/mesa (dev) `^11.1.2`<br>@frontierjs/mesa (peer) `^11.1.2`<br>@frontierjs/site-kit `^11.1.2` |
-| `tslib` | `2.8.1` | @frontierjs/mesa (dev) `^2.8.1`<br>@frontierjs/mesa (peer) `^2.8.1` |
+| `css-tree` | `2.3.1` | @frontierjs/email-kit (dev) `^2.0.0`<br>@frontierjs/email-kit (peer) `^2.0.0`<br>@frontierjs/mesa (dev) `^2.0.0`<br>@frontierjs/mesa (optional peer) `^2.0.0` |
+| `happy-dom` | `20.11.6` | @frontierjs/email-kit (dev) `^20.11.6`<br>@frontierjs/email-kit (peer) `^20.11.6`<br>@frontierjs/jetty (dev) `^20.11.6`<br>@frontierjs/mesa (dev) `^20.11.6`<br>@frontierjs/mesa (optional peer) `^20.11.6`<br>@frontierjs/sierra (dev) `^20.11.6`<br>@frontierjs/site-kit `^20.11.6` |
+| `rehype-slug` | `6.0.0` | @frontierjs/mesa (dev) `^6.0.0`<br>@frontierjs/mesa (optional peer) `^6.0.0`<br>@frontierjs/site-kit `^6.0.0` |
+| `rehype-stringify` | `10.0.1` | @frontierjs/mesa (dev) `^10.0.1`<br>@frontierjs/mesa (optional peer) `^10.0.1`<br>@frontierjs/site-kit `^10.0.1` |
+| `remark-gfm` | `4.0.1` | @frontierjs/mesa (dev) `^4.0.1`<br>@frontierjs/mesa (optional peer) `^4.0.1`<br>@frontierjs/site-kit `^4.0.1` |
+| `remark-parse` | `11.0.0` | @frontierjs/mesa (dev) `^11.0.0`<br>@frontierjs/mesa (optional peer) `^11.0.0`<br>@frontierjs/site-kit `^11.0.0` |
+| `remark-rehype` | `11.1.2` | @frontierjs/mesa (dev) `^11.1.2`<br>@frontierjs/mesa (optional peer) `^11.1.2`<br>@frontierjs/site-kit `^11.1.2` |
 | `turndown` | `7.2.4` | @frontierjs/site-kit `^7.2.4` |
-| `typescript` | `5.9.3` | @frontierjs/config (peer) `>=5.0.0`<br>frontierjs (dev) `^5.9.3`<br>vscode-frontierjs (dev) `^5.9.3` |
-| `unified` | `11.0.5` | @frontierjs/mesa (dev) `^11.0.5`<br>@frontierjs/mesa (peer) `^11.0.5`<br>@frontierjs/site-kit `^11.0.5` |
-| `vite` | `8.3.2` | @frontierjs/basecamp (dev) `^8.3.2`<br>@frontierjs/example (dev) `^8.3.2`<br>@frontierjs/haven (dev) `^8.3.2`<br>@frontierjs/jetty (dev) `^8.3.2`<br>@frontierjs/jetty (peer) `^8.3.2`<br>@frontierjs/mesa (dev) `^8.3.2`<br>@frontierjs/mesa (peer) `^8.3.2`<br>@frontierjs/sierra (dev) `^8.3.2`<br>@frontierjs/sierra (peer) `^8.3.2`<br>@frontierjs/sierra-example (dev) `^8.3.2`<br>@frontierjs/site-kit (peer) `^8.3.2`<br>@frontierjs/website (dev) `^8.3.2`<br>@frontierjs/workbench (dev) `^8.3.2` |
+| `unified` | `11.0.5` | @frontierjs/mesa (dev) `^11.0.5`<br>@frontierjs/mesa (optional peer) `^11.0.5`<br>@frontierjs/site-kit `^11.0.5` |
+| `vite` | `8.3.2` | @frontierjs/basecamp (dev) `^8.3.2`<br>@frontierjs/example (dev) `^8.3.2`<br>@frontierjs/haven (dev) `^8.3.2`<br>@frontierjs/jetty (dev) `^8.3.2`<br>@frontierjs/jetty (optional peer) `^8.3.2`<br>@frontierjs/mesa (dev) `^8.3.2`<br>@frontierjs/mesa (optional peer) `^8.3.2`<br>@frontierjs/sierra (dev) `^8.3.2`<br>@frontierjs/sierra (optional peer) `^8.3.2`<br>@frontierjs/sierra-example (dev) `^8.3.2`<br>@frontierjs/site-kit (peer) `^8.3.2`<br>@frontierjs/website (dev) `^8.3.2`<br>@frontierjs/workbench (dev) `^8.3.2` |
 | `vscode-languageclient` | `9.0.1` | vscode-frontierjs `^9.0.1` |
 | `vscode-languageserver` | `9.0.1` | vscode-frontierjs `^9.0.1` |
 | `vscode-languageserver-textdocument` | `1.0.12` | vscode-frontierjs `^1.0.11` |
-| `ws` | `8.21.1` | @frontierjs/example (dev) `^8.20.0`<br>@frontierjs/jetty (dev) `^8.20.0`<br>@frontierjs/jetty (peer) `^8.20.0` |
 
-## Dev only (28)
+## Dev only (30)
 
-Every declaration is a devDependency: building, testing and tooling, and
-never installed by a consumer.
+Every declaration is a devDependency or an optional peer: building, testing
+and tooling, or something a consumer brings only if it wants the feature.
+Never installed for a consumer.
 
 | Package | Installed | Declared by |
 | --- | --- | --- |
+| `@biomejs/biome` | `2.5.8` | @frontierjs/config (optional peer) `>=2.2.0`<br>frontierjs (dev) `2.5.8` |
 | `@codemirror/autocomplete` | `6.20.3` | @frontierjs/mesa (dev) `^6` |
 | `@codemirror/commands` | `6.11.1` | @frontierjs/mesa (dev) `^6` |
 | `@codemirror/lang-html` | `6.4.12` | @frontierjs/mesa (dev) `^6` |
@@ -81,9 +79,10 @@ never installed by a consumer.
 | `concurrently` | `8.2.2` | vscode-frontierjs (dev) `^8.2.0` |
 | `esbuild` | `0.28.2` | vscode-frontierjs (dev) `^0.28.2` |
 | `fake-indexeddb` | `6.2.5` | @frontierjs/jetty (dev) `^6.2.5` |
-| `jsdom` | `29.1.1` | @frontierjs/jetty (dev) `^29.1.1` |
 | `playwright-core` | `1.62.1` | @frontierjs/sierra (dev) `1.62.1` |
+| `typescript` | `5.9.3` | @frontierjs/config (optional peer) `>=5.0.0`<br>frontierjs (dev) `^5.9.3`<br>vscode-frontierjs (dev) `^5.9.3` |
 | `vitest` | `5.0.3` | @frontierjs/email-kit (dev) `^5.0.3`<br>@frontierjs/mesa (dev) `^5.0.3`<br>@frontierjs/sierra (dev) `^5.0.3` |
 | `vscode-oniguruma` | `2.0.1` | vscode-frontierjs (dev) `^2.0.1` |
 | `vscode-textmate` | `9.3.2` | vscode-frontierjs (dev) `^9.3.2` |
 | `wrangler` | `4.145.0` | @frontierjs/website (dev) `^4.145.0` |
+| `ws` | `8.21.1` | @frontierjs/example (dev) `^8.20.0`<br>@frontierjs/jetty (dev) `^8.20.0`<br>@frontierjs/jetty (optional peer) `^8.20.0` |

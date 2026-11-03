@@ -4814,7 +4814,7 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
-### <a id="fjs-d1810"></a>2026-11-03 · `FJS-D1810` — A one-row update stays on the one update path: there is no fast path beside `prepareUpdate`. What the path skips is what the model's shape already decides: the hasMany call runs only when something is nested, the select-all text is built only when a reader needs it, `gradesParents()` is asked before `hiddenParents`, and nothing is allocated for a seal or a move the model does not have. `bench/cases.mjs` `update-by-id` holds it to 6x the raw statement.
+### <a id="fjs-d1810"></a>2026-11-03 · `FJS-D1810` — A one-row update stays on the one update path: there is no fast path beside `prepareUpdate`. What the path skips is what the model's shape already decides: the hasMany call runs only when something is nested, the select-all text is built only when a reader needs it, `gradesParents()` is asked before `hiddenParents`, and nothing is allocated for a seal or a move the model does not have. `bench/cases.mjs` `update-by-id` holds it to 14x the raw statement: the round harness reports 8–12x across runs, since the raw statement is ~2 µs and noise moves the ratio, and the ~5x below is a min-of-chunks figure that harness does not reproduce.
 
 Asked in chat, through the question tool, closing `FJS-3911`. Measured in one process, min of chunks, at load average 15–27. The trims save 1.6–4.9 µs of 16–21 µs, which puts the update at about 5x raw. A throwaway fast path for a plain model (pk-only where, scalar patch, no plugins, policies, logs or listeners; `writeData`, one `UPDATE … RETURNING *`, `read`, the query event) took ~8.5 µs against ~16 µs for the trimmed path, about 2.2x raw. **Trims only** was picked over **a fast path gated by a write-rule registry** and **trims with the row left open**, as recommended. The nine: owner — update has one owner, and a fast path would be a second whose gate restates about fifteen stages of `prepareUpdate` (Invariant 4); failure — a rule the gate misses is skipped silently, as `@map` was on the read fast paths (`FJS-969`); silence — `update-by-id` reports a regression. Reopen if a profiled app shows single-row updates dominating its time. Then build the registry form, where each stage declares when it is idle and is refused at load when it does not (as `READ_RULES` `narrows` is), proved against `update-by-id` and a rule-by-rule parity test. Never build a hand-written eligibility list.
 
@@ -16255,6 +16255,10 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1819"></a>2026-11-03 · `FJS-D1819` — `ws:pub --no-ci` skips the release CI, and only for the release host: beside `--to npm` it is refused
+
+The owner's call, asked in chat: a release to the package host should not wait on the full CI every time. Amends [`FJS-D1720`](#fjs-d1720) for the release host only; npm keeps the gate, because an npm version is spent for good and a GitHub Release can be deleted. `--no-ci` tags the release commit ungraded, and the push still skips the pre-push hook. Preflight refuses it beside npm as `no-ci-npm`. Lives in `packages/cli/commands/workspace/publish/` (`_steps/00-preflight.md`, `_steps/01b-ci.md`).
 
 ### <a id="fjs-d1814"></a>2026-11-03 · `FJS-D1814` — Q10 — Who can rule on public ntfy.sh — Ruling buttons only on rung 1 (own server, token and ACL on both topics); rung 3 asks carry **Open** only.
 

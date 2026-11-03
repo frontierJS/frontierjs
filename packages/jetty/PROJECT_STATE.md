@@ -52,7 +52,7 @@ stale prose rather than a hole in coverage.
 - **The UnoCSS pair predates Invariant 13.** `src/build/uno-plugin.js` and
   `src/island/unocss-mirror.js` are reached from four more files under `src/`;
   removing them is in scope and nobody has.
-- **The full HMR flow through jsdom is untested.** `phase9` covers the
+- **The full HMR flow through a DOM is untested.** `phase9` covers the
   wrapper's output alone; the two harnesses that tried the whole flow never ran
   here and were deleted (`FJS-481`).
 - **There is no forward plan document here.** The one refused option, a

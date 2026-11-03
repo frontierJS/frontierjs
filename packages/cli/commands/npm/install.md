@@ -4,7 +4,7 @@ description: Install dependencies (or add new ones)
 alias: ni
 examples:
   - fli ni
-  - fli ni linkedom turndown
+  - fli ni happy-dom turndown
   - fli ni lodash --save-dev
   - fli ni --frozen
   - fli ni --dry

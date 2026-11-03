@@ -28,6 +28,10 @@ if (!released?.length) return
 // resume has nothing to run.
 if (resume) { log.info('  CI: skipped -- these tags were written after a green run'); return }
 
+// Preflight refuses --no-ci beside npm, so what is skipped here reaches the
+// release host alone (FJS-D1819).
+if (!flag.ci) { log.warn(`  CI: skipped (--no-ci) -- ${graded.map(g => g.sha.slice(0, 12)).join(', ')} is tagged ungraded`); return }
+
 const { withCheckout } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
 // Beside the repo, as the pre-push hook's worktree is: a checkout under it sits
 // in `.fli-tmp`, a path biome.json ignores, and the lint phase then checks no

@@ -644,14 +644,29 @@ model Vault {
   // The refusal above is the piped half; a person at a terminal is asked, as
   // Prisma asks (`FJS-1926`). `script` is the terminal — a pipe cannot be one.
   const hasScript = execFileSync('sh', ['-c', 'command -v script || true'], { encoding: 'utf8' }).trim() !== ''
-  const pushAtTerminal = (dir: string, answer: string) => {
+  // The answer is typed once the prompt is on screen: typed on a timer, it
+  // reached a CLI still booting on a loaded run, which then read end of input.
+  const pushAtTerminal = async (dir: string, answer: string) => {
     const env = { ...process.env, NO_COLOR: '1' } as Record<string, string>
     delete env.FORCE_COLOR
-    try {
-      return { out: execFileSync('sh', ['-c',
-        `(sleep 1; printf '${answer}\\r'; sleep 1) | script -qec "${process.execPath} ${CLI} db push" /dev/null`],
-        { cwd: dir, encoding: 'utf8', env, timeout: 15_000 }), exit: 0 }
-    } catch (err: any) { return { out: String(err.stdout), exit: err.status as number } }
+    const proc = Bun.spawn(['script', '-qec', `${process.execPath} ${CLI} db push`, '/dev/null'],
+      { cwd: dir, env, stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' })
+    const killer = setTimeout(() => { try { proc.kill('SIGKILL') } catch {} }, 15_000)
+    const decoder = new TextDecoder()
+    let out = ''
+    let typed = false
+    for await (const chunk of proc.stdout) {
+      out += decoder.decode(chunk, { stream: true })
+      if (!typed && out.includes('[y/N]')) {
+        proc.stdin.write(`${answer}\r`)
+        proc.stdin.flush()
+        typed = true
+      }
+    }
+    const exit = await proc.exited
+    clearTimeout(killer)
+    proc.stdin.end()
+    return { out, exit }
   }
 
   test.skipIf(!hasScript)('db push at a terminal asks before dropping, and a no leaves the database alone', async () => {
@@ -662,13 +677,13 @@ model Vault {
     writeFileSync(join(dir, 'schema.lite'),
       `model Post { id Int @id @default(autoincrement())  content String?  keep String? }`, 'utf8')
 
-    const no = pushAtTerminal(dir, 'n')
+    const no = await pushAtTerminal(dir, 'n')
     expect(no.out).toContain('apply anyway? [y/N]')
     expect(no.out).toContain('post.body')
     expect(no.out).toContain('DB not pushed')
     expect(no.exit).toBe(1)
 
-    const yes = pushAtTerminal(dir, 'y')
+    const yes = await pushAtTerminal(dir, 'y')
     expect(yes.out).toContain('DB pushed')
     expect(yes.exit).toBe(0)
     expect((await runCli(dir, ['db', 'push'])).stdout).toContain('already in sync')

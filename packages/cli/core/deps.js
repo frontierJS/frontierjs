@@ -92,13 +92,17 @@ export function collectDeps(root) {
     for (const [field, kind] of DEP_KINDS) {
       for (const [name, range] of Object.entries(pkg[field] ?? {})) {
         if (isInternal(range, memberNames, name)) continue
-        uses.push({
+        const use = {
           name,
           member:    pkg.name ?? (path || '(root)'),
           kind,
           range:     String(range),
           installed: lock ? installedFor(lock, pkg.name, name) : null,
-        })
+        }
+        // Basecamp's DependencyKind has no optional-peer value and its ingest
+        // refuses an unknown kind, so this rides beside `kind`, not in it.
+        if (kind === 'peer' && pkg.peerDependenciesMeta?.[name]?.optional) use.optional = true
+        uses.push(use)
       }
     }
   }
@@ -114,9 +118,9 @@ export function collectDeps(root) {
 
   const deps = [...byName].map(([name, list]) => ({
     name,
-    // Installed by anyone who installs the declaring package — a dependency,
-    // a peer or an optional one. Dev only when every declaration is dev.
-    runtime:   list.some(u => u.kind !== 'dev'),
+    // An optional peer is not installed for a consumer — bun and npm add a
+    // required peer and skip an optional one — so it counts as dev here.
+    runtime:   list.some(u => u.kind !== 'dev' && !u.optional),
     installed: [...new Set(list.map(u => u.installed).filter(Boolean))].sort(),
     ranges:    [...new Set(list.map(u => u.range))].sort(),
     uses:      list,
@@ -209,7 +213,8 @@ export function renderDepsSnapshot(report, { command = 'fli ws:deps' } = {}) {
     out.push('| --- | --- | --- |')
     for (const d of deps) {
       const installed = d.installed.length ? d.installed.map(v => `\`${v}\``).join(' · ') : '—'
-      const by = d.uses.map(u => `${u.member} ${u.kind === 'dependency' ? '' : `(${u.kind}) `}\`${u.range}\``).join('<br>')
+      const label = u => u.optional ? 'optional peer' : u.kind
+      const by = d.uses.map(u => `${u.member} ${u.kind === 'dependency' ? '' : `(${label(u)}) `}\`${u.range}\``).join('<br>')
       out.push(`| \`${d.name}\` | ${installed} | ${by} |`)
     }
     out.push('')
@@ -220,16 +225,18 @@ export function renderDepsSnapshot(report, { command = 'fli ws:deps' } = {}) {
 
   out.push(`## Runtime (${runtime.length})`)
   out.push('')
-  out.push('Installed by anyone who installs the declaring package — a dependency, a peer')
-  out.push('or an optional one. A package also declared as dev somewhere is here, with')
-  out.push('that declaration listed beside the others.')
+  out.push('Installed by anyone who installs the declaring package — a dependency, a')
+  out.push('required peer or an optionalDependency. A package also declared as dev or as')
+  out.push('an optional peer somewhere is here, with that declaration listed beside the')
+  out.push('others.')
   out.push('')
   if (runtime.length) table(runtime); else { out.push('None.'); out.push('') }
 
   out.push(`## Dev only (${dev.length})`)
   out.push('')
-  out.push('Every declaration is a devDependency: building, testing and tooling, and')
-  out.push('never installed by a consumer.')
+  out.push('Every declaration is a devDependency or an optional peer: building, testing')
+  out.push('and tooling, or something a consumer brings only if it wants the feature.')
+  out.push('Never installed for a consumer.')
   out.push('')
   if (dev.length) table(dev); else { out.push('None.'); out.push('') }
 

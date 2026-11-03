@@ -47,6 +47,17 @@ if (refusals.some(r => !r.note)) {
   return
 }
 
+// An npm version is spent for good, so it is never shipped ungraded; the
+// release host is the one destination a skipped CI may reach (FJS-D1819).
+if (!flag.ci && $.config.to?.includes('npm')) {
+  log.error('  ✗  no-ci-npm')
+  log.error('      --no-ci tags the release commit ungraded, and an npm version cannot be taken back')
+  log.error('      Drop --no-ci, or drop `--to npm` to ship to the release host alone')
+  $.config.abort = true
+  $.config.prompts?.close()
+  return
+}
+
 // A GitHub Release is made on a commit GitHub has, so a release host in a run
 // that keeps the commit local cannot ship (FJS-3616).
 if (!flag.push && $.config.to?.includes('tarballs')) {

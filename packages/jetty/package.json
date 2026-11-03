@@ -97,7 +97,7 @@
     "@frontierjs/mesa": "workspace:*",
     "@frontierjs/sierra": "workspace:*",
     "fake-indexeddb": "^6.2.5",
-    "jsdom": "^29.1.1",
+    "happy-dom": "^20.11.6",
     "vite": "^8.3.2",
     "ws": "^8.20.0"
   },

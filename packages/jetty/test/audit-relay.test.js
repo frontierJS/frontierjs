@@ -13,7 +13,7 @@
 // Runs under plain node like the phase files.
 //
 
-import { JSDOM } from 'jsdom'
+import { Window } from 'happy-dom'
 
 let pass = 0
 let fail = 0
@@ -78,15 +78,14 @@ group('handleConnect — what a port is believed to be')
   else bad('an island port from a tab was refused')
 }
 
-// ─── jsdom for the two DOM seams ──────────────────────────────────────────
+// ─── happy-dom for the two DOM seams ──────────────────────────────────────────
 
-const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', { url: 'https://host.example/' })
-globalThis.window           = dom.window
-globalThis.document         = dom.window.document
-globalThis.MutationObserver = dom.window.MutationObserver
-globalThis.HTMLElement      = dom.window.HTMLElement
-globalThis.Element          = dom.window.Element
-globalThis.MessageEvent     = dom.window.MessageEvent
+const win = new Window({ url: 'https://host.example/' })
+globalThis.window           = win
+globalThis.document         = win.document
+globalThis.MutationObserver = win.MutationObserver
+globalThis.HTMLElement      = win.HTMLElement
+globalThis.Element          = win.Element
 globalThis.chrome           = { runtime: { id: 'mock-ext-id' } }
 globalThis.browser          = undefined
 
@@ -99,29 +98,23 @@ group('makePageBridge — who may speak to the content script')
   const received = []
   cs.on((payload) => received.push(payload))
 
-  // The HOST PAGE's own script, not jetty's injected one. In a browser a
-  // same-window postMessage arrives with `source === window`; jsdom leaves
-  // `source` unset, so the event is built with the value the browser would
-  // give it.
+  // The HOST PAGE's own script, not jetty's injected one: same window, same
+  // origin, so nothing but the nonce tells the two apart. postMessage
+  // delivers on a later task, so each send waits for happy-dom to drain.
   const spoof = { __jetty: true, channel: 'sdk', direction: 'page→cs', payload: { cmd: 'drain', to: 'evil' } }
-  window.dispatchEvent(new MessageEvent('message', { data: spoof, origin: 'https://host.example', source: window }))
+  window.postMessage(spoof, '*')
+  await win.happyDOM.waitUntilComplete()
   if (received.length === 0) ok('a bridge message without the nonce the content script minted is ignored')
   else bad('a host-page script spoofed the content-script side', JSON.stringify(received))
 
-  const guessed = { ...spoof, nonce: 'guess' }
-  window.dispatchEvent(new MessageEvent('message', { data: guessed, origin: 'https://host.example', source: window }))
+  window.postMessage({ ...spoof, nonce: 'guess' }, '*')
+  await win.happyDOM.waitUntilComplete()
   if (received.length === 0) ok('a wrong nonce is ignored')
   else bad('a wrong nonce was accepted', JSON.stringify(received))
 
-  // jsdom delivers a postMessage with no `source`, so the page side's own
-  // send() is re-dispatched with the source a browser would give it.
   const page = makePageBridge('sdk', { side: 'page', nonce: cs.nonce })
-  const sent = []
-  const realPost = window.postMessage
-  window.postMessage = (data) => sent.push(data)
   page.send({ cmd: 'hello' })
-  window.postMessage = realPost
-  window.dispatchEvent(new MessageEvent('message', { data: sent[0], origin: 'https://host.example', source: window }))
+  await win.happyDOM.waitUntilComplete()
   if (received.length === 1 && received[0].cmd === 'hello') ok('the page side holding the nonce reaches the content-script side')
   else bad('the page side with the nonce did not arrive', JSON.stringify(received))
 

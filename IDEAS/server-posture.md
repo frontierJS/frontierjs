@@ -532,6 +532,42 @@ returned 7 (Q9).
 - [ ] 7.5 The Posture tab lists each component's version with its advisory ids,
   and the `/security/` machine row counts them.
 
+### Phase 8 — Known exploited, beside severity
+
+Goal: an advisory being exploited in the wild reads differently from one that
+is only severe, on both the codebase and the machine side.
+Done when: a `Dependency` at a version whose advisory aliases a CVE in CISA's
+Known Exploited Vulnerabilities catalog shows it as exploited on
+`/dependencies/`, and its notification says so in the subject.
+
+Severity and exploitation are two signals, and the OSV check carries only the
+first (prompted by Cloudflare's Zero Wire, 2026-11-03, which grades briefings
+on both). KEV is a free JSON feed of CVE ids, so this is a join against the
+`aliases` each stored `Advisory` already carries (`core/dependencies.ts`), not a
+new scanner. Zero Wire itself has no API, so it is a source to link to, never
+one to read.
+
+**`exploited` is `true`, `false` or `unknown`**, and `unknown` whenever the KEV
+list has never answered or the advisory has no CVE alias (a GHSA-only id, or a
+7.1 source that carries none). A missed exploit is a missed urgent patch, so a
+gap reads `unknown` — the same guard `advisoriesUnknown` keeps for OSV.
+
+- [ ] 8.0 Probe the KEV feed's shape (`vulnerabilities[].cveID`, `dateAdded`)
+  and size.
+- [ ] 8.1 A `provider:kev` row in `dependencyTargets()` and a daily fetch beside
+  the OSV check. The last good list is kept in one named row with its
+  `checkedAt`, so a failed fetch serves it and says how old it is.
+- [ ] 8.2 Each stored advisory gains `exploited` and KEV's `dateAdded`, on
+  `Dependency.advisories` and on 7.4's component findings alike, after 7.3
+  gives OSV one caller. Stored rather than derived on read because it is the
+  snapshot 8.3's before/after diff compares, as `advisories` is today.
+- [ ] 8.3 A known advisory turning exploited notifies once more, through the
+  diff in `refreshDependencies` and the existing `DependencyVulnerable`, since
+  that change is the one a person acts on.
+- [ ] 8.4 What fails when it stops: a unit test (`unknown` on a KEV outage,
+  `true` on an alias hit, a re-notify only on false → true) and a live shape
+  check beside 7.1's `verify:advisories`.
+
 ## Open questions (owner)
 
 - ~~**Q1 — Host firewall: nftables directly, or ufw?**~~ **Answered 2026-10-12 (`FJS-D928`): A — nftables directly: one ruleset written by `installScript()`, read by the Outpost as `nft -j list ruleset`.** **Recommend nftables**: one ruleset

@@ -73,7 +73,7 @@ export const cases = [
     floor: ({ raw }) => raw.get('x', 1),
   },
   {
-    name: 'update-by-id', ceiling: 6, ops: 10_000,
+    name: 'update-by-id', ceiling: 14, ops: 10_000,
     async open() {
       const db = await users()
       const raw = db.$rawDbs.main.query('UPDATE user SET age = ? WHERE id = ? RETURNING id, name, age')

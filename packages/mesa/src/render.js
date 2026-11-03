@@ -39,7 +39,7 @@
  */
 
 import { setRenderEnvironment, createRoot, flushSync, settleAwaits } from './runtime.js'
-import { missingPeer } from './optional-peer.js'
+import { missingPeer, NO_LOADING } from './optional-peer.js'
 import { isAnchorComment, settle } from './runtime-server.js'
 
 const { Window } = await import('happy-dom').catch(missingPeer('happy-dom', 'renderToHTML'))
@@ -77,9 +77,10 @@ export function initRenderer(options = {}) {
   if (_win && !options.window) return   // already initialized
 
   _win = options.window ?? new Window({
-    url:    options.url ?? 'http://localhost',
-    width:  1280,
-    height: 800,
+    url:      options.url ?? 'http://localhost',
+    width:    1280,
+    height:   800,
+    settings: NO_LOADING,
   })
 
   // Install all browser globals into the Node.js process so compiled

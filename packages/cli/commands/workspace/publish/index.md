@@ -10,6 +10,7 @@ examples:
   - fli ws:pub patch --all
   - fli ws:pub patch --dry
   - fli ws:pub patch --no-push
+  - fli ws:pub patch --no-ci
   - fli ws:pub --interactive
 args:
   -
@@ -54,6 +55,10 @@ flags:
     type: boolean
     description: Publish even though a sibling range (peer or dependency) would no longer resolve, or could not be decided
     defaultValue: false
+  ci:
+    type: boolean
+    description: Run the full CI before tagging; --no-ci tags the release commit ungraded, refused beside --to npm
+    defaultValue: true
   push:
     type: boolean
     description: Version, tag and publish, but leave the commit and tags local
@@ -129,6 +134,11 @@ fixes land and the next run keeps the commit rather than moving a tag. The
 `deploy --source npm` branch is skipped by name: the bump raised the scaffold's
 pins to versions no host holds yet, and `04-verify-assets` grades the published
 framework afterwards (`FJS-D1726`).
+
+`--no-ci` tags the release commit without that run, and the push still skips the
+pre-push hook, so nothing grades it. It is for the release host alone: a
+GitHub Release can be deleted, an npm version is spent for good, so beside
+`--to npm` it is refused (`FJS-D1819`).
 
 **The push goes out before the first publish, for the graded sha.** A GitHub
 Release can only be made on a commit GitHub has (`FJS-3616`). The push names the

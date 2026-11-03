@@ -136,9 +136,12 @@ function installWindowMock(initial) {
   globalThis.MutationObserver = class { observe() {} disconnect() {} }
 }
 
-// A load is a fetch and a tether write, several microtasks deep.
+// A load is a fetch and a tether write, several microtasks deep. A debounce row
+// runs on fake timers: on a loaded run five real ticks outlast a 40ms debounce,
+// and the "not sent yet" check reads the request that was meant to wait.
+const tick = () => vi.isFakeTimers() ? vi.advanceTimersByTimeAsync(0) : new Promise(r => setTimeout(r, 0))
 const settle = async () => {
-  for (let i = 0; i < 5; i++) { flushSync(); await new Promise(r => setTimeout(r, 0)) }
+  for (let i = 0; i < 5; i++) { flushSync(); await tick() }
   flushSync()
 }
 
@@ -175,6 +178,7 @@ beforeEach(() => {
 
 afterEach(() => {
   while (lists.length) lists.pop().destroy()
+  vi.useRealTimers()
   delete globalThis.window
   delete globalThis.document
 })
@@ -361,13 +365,14 @@ describe('apply and sort', () => {
     const list = track(invoicesResource().tethered({ state: 'local', debounce: 40 }))
     await settle()
     const before = sent.length
+    vi.useFakeTimers()
 
     list.apply({}, { ...list.directives, search: 'a' })
     list.apply({}, { ...list.directives, search: 'ac' })
     await settle()
     expect(sent.length).toBe(before)
 
-    await new Promise(r => setTimeout(r, 60))
+    await vi.advanceTimersByTimeAsync(60)
     await settle()
     expect(sent.length).toBe(before + 1)
     expect(last().get('$search')).toBe('ac')
@@ -382,20 +387,21 @@ describe('apply and sort', () => {
     const list = track(invoicesResource().tethered({ state: 'local', debounce: 40 }))
     await settle()
     const before = sent.length
+    vi.useFakeTimers()
 
     list.apply({ number: { contains: 'I' } }, list.directives)
     list.apply({ number: { contains: 'IN' } }, list.directives)
     await settle()
     expect(sent.length).toBe(before)
 
-    await new Promise(r => setTimeout(r, 60))
+    await vi.advanceTimersByTimeAsync(60)
     await settle()
     expect(sent.length).toBe(before + 1)
 
     list.apply({}, list.directives)
     await settle()
     expect(sent.length).toBe(before + 1)
-    await new Promise(r => setTimeout(r, 60))
+    await vi.advanceTimersByTimeAsync(60)
     await settle()
     expect(sent.length).toBe(before + 2)
 

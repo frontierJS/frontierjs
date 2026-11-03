@@ -24,3 +24,17 @@ export function missingPeer(name, feature, install = name) {
     )
   }
 }
+
+// ─── happy-dom without the network ─────────────────────────────────────────
+
+/**
+ * Every happy-dom Window the server half opens takes these settings. Unlike a
+ * browser parsing a string, happy-dom requests each stylesheet, script and
+ * iframe the markup names, so a rendered page or an email body (which may be
+ * one somebody stored) would reach whatever host its URLs point at.
+ */
+export const NO_LOADING = {
+  disableJavaScriptFileLoading: true,
+  disableCSSFileLoading:        true,
+  disableIframePageLoading:     true,
+}

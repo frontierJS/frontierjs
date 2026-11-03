@@ -12,7 +12,7 @@ list it yet.
 Mesa compiles Markdown and Sierra prerenders through `unified`, the
 remark/rehype five and `happy-dom`, all optional peers of mesa; a workspace
 link supplied them from the repo, and a registry install has nothing else
-that names them (`FJS-2842`). `linkedom` and `turndown` are `fetch`'s.
+that names them (`FJS-2842`). `turndown` is `fetch`'s; it parses with the same `happy-dom`.
 
 **Two consumers, one engine.** `website/site/`, and `fjs-prototypes/ksite`,
 which names `@kobami/ksite` as its preset. A generic piece here and a ksite fork of

@@ -12,10 +12,10 @@
 //   - UnoCSS DOM-mirror under real Vite/UnoCSS (dependency-heavy)
 //   - Page-script bridge w/ real document.head + window.postMessage
 //
-// We use a fake DOM (jsdom) for the mount tests so we can verify shadow
+// We use a fake DOM (happy-dom) for the mount tests so we can verify shadow
 // root creation, host placement, and shell teardown.
 
-import { JSDOM } from 'jsdom'
+import { Window } from 'happy-dom'
 
 let pass = 0
 let fail = 0
@@ -229,15 +229,13 @@ group('registerAllIslands')
 
 group('island runtime — shadow DOM mount')
 {
-  // Set up jsdom; install on globalThis.
-  const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
-    url: 'https://app.example.com/',
-  })
-  globalThis.window   = dom.window
-  globalThis.document = dom.window.document
-  globalThis.MutationObserver = dom.window.MutationObserver
-  globalThis.HTMLElement = dom.window.HTMLElement
-  globalThis.Element = dom.window.Element
+  // Set up happy-dom; install on globalThis.
+  const win = new Window({ url: 'https://app.example.com/' })
+  globalThis.window   = win
+  globalThis.document = win.document
+  globalThis.MutationObserver = win.MutationObserver
+  globalThis.HTMLElement = win.HTMLElement
+  globalThis.Element = win.Element
   // Stub chrome.runtime (presence indicates ISOLATED world). connectHarbor
   // returns an inert port if connect() isn't a function.
   globalThis.chrome = {
@@ -345,8 +343,9 @@ group('island runtime — shadow DOM mount')
     }, { id: 'closed', type: 'island' })
 
     const host = document.body.querySelector('[data-jetty-island="closed"]')
-    // jsdom doesn't fully support closed shadow roots — but mount didn't crash
-    if (host) ok('closed shadow: host element exists')
+    // the root is closed, so a host exists and nothing reaches through it
+    if (host && host.shadowRoot === null) ok('closed shadow: host element exists, root unreachable')
+    else bad('closed shadow: root reachable or host missing')
     handle.destroy()
   }
 
@@ -372,7 +371,7 @@ group('island runtime — shadow DOM mount')
     globalThis.chrome = savedChrome
   }
 
-  // Cleanup jsdom
+  // Cleanup happy-dom
   delete globalThis.window
   delete globalThis.document
   delete globalThis.MutationObserver

@@ -21,7 +21,7 @@
  *   const html = await inlineCSS(htmlString, cssString, options)
  */
 
-import { missingPeer } from './optional-peer.js'
+import { missingPeer, NO_LOADING } from './optional-peer.js'
 
 const PEERS = 'happy-dom css-tree'
 const { Window } = await import('happy-dom').catch(missingPeer('happy-dom', 'inlineCSS', PEERS))
@@ -230,7 +230,7 @@ export function inlineCSS(html, extraCSS = '', options = {}) {
   if (!inlineableRules.length && !preservedCSS) return html
 
   // ── 3. Build a DOM from the HTML string ──────────────────────────────────
-  const win = new Window({ url: 'http://localhost' })
+  const win = new Window({ url: 'http://localhost', settings: NO_LOADING })
   const doc = win.document
   doc.body.innerHTML = html
 
