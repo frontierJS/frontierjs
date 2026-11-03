@@ -205,6 +205,19 @@ export function findIssue(doc, id) {
   return doc.issues.find(r => r.id.toUpperCase() === want || (r.aliases ?? []).some(a => a.toUpperCase() === want)) ?? null
 }
 
+/**
+ * Every issue row whose title is `title`, case and surrounding space aside,
+ * open rows first. A feeder files a failing unit under one fixed title and asks
+ * this before filing: an open row is amended, a closed one cited, none filed.
+ */
+export function issuesTitled(doc, title) {
+  const want = fold(title)
+  const hits = doc.issues.filter(r => fold(r.title) === want)
+  return [...hits.filter(r => !r.closed), ...hits.filter(r => r.closed)]
+}
+
+const fold = s => String(s ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+
 export function readRegisters(root) {
   const layout    = registerLayout(root)
   const issues    = readIssues(layout)

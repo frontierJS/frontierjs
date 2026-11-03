@@ -26,28 +26,28 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 4082 source file(s) read
+27 package(s) · 4189 source file(s) read
 249 entry point(s), 35 imported by nothing outside their package, 16 emitted
-1697 value export(s), 641 reached by nothing outside, 178 emitted
-459 type export(s), 348 reached by nothing outside
+1702 value export(s), 642 reached by nothing outside, 180 emitted
+459 type export(s), 346 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `litestone` | 28 | 5 | 267 | 131 | 39 | 1 | 1 |
-| `junction` | 27 | 4 | 271 | 121 | 13 | 269 | 211 |
+| `litestone` | 28 | 5 | 268 | 131 | 40 | 1 | 1 |
+| `junction` | 27 | 3 | 271 | 119 | 13 | 269 | 210 |
 | `mesa` | 19 | 4 | 313 | 110 | 77 | 0 | 0 |
 | `sierra` | 25 | 6 | 200 | 84 | 20 | 0 | 0 |
 | `auth` | 6 | 1 | 52 | 37 | 3 | 15 | 13 |
 | `toolbelt` | 66 | 0 | 316 | 37 | 12 | 0 | 0 |
-| `ui` | 9 | 0 | 54 | 34 | 3 | 0 | 0 |
+| `ui` | 9 | 0 | 55 | 35 | 3 | 0 | 0 |
 | `jetty` | 7 | 4 | 43 | 29 | 3 | 0 | 0 |
 | `conduit` | 4 | 2 | 26 | 15 | 1 | 60 | 41 |
+| `outpost` | 9 | 2 | 28 | 13 | 2 | 0 | 0 |
 | `site-kit` | 9 | 4 | 38 | 11 | 1 | 0 | 0 |
-| `outpost` | 9 | 1 | 25 | 11 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 7 | 0 | 36 | 21 |
 | `email-kit` | 3 | 0 | 10 | 4 | 1 | 0 | 0 |
-| `notifications` | 3 | 0 | 16 | 4 | 0 | 30 | 24 |
+| `notifications` | 3 | 0 | 16 | 4 | 0 | 30 | 23 |
 | `oracle` | 1 | 0 | 19 | 3 | 2 | 0 | 0 |
 | `print-kit` | 4 | 1 | 6 | 1 | 1 | 0 | 0 |
 | `testing` | 2 | 1 | 10 | 1 | 0 | 16 | 13 |
@@ -60,6 +60,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `frontierjs-vscode` | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `haven` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `orion` | 3 | 0 | 2 | 0 | 0 | 8 | 3 |
+| `workbench` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 
 ## `@frontierjs/auth`
 
@@ -169,19 +170,19 @@ Every entry is imported and every name reached.
 
 `packages/junction` · 27 entry point(s) · 271 value, 269 type export(s)
 
-**Entries imported by nothing outside (4):** `./cache` `./openapi` `./otlp` `./webhooks`
+**Entries imported by nothing outside (3):** `./cache` `./otlp` `./webhooks`
 
 **Entries not source (3, not graded):** `./outbox.lite` `./backfill.lite` `./metrics.lite`
 
-**Unreached values (121):** `accessorIfModel` `AIBuilder` `announcementPayload` `applyClaims` `assertAuditModel` `assertBackfillField` `AuthClient` `autoloadServices` `autoSort` `backfillSchemaFragment` `bearerOf` `bodyLimit` `BULK_FAILURES` `CacheValueError` `checkPrincipalSetting` `checkUnknownKeys` `circuitBreaker` `collectMethodInputs` `collectMethodOutputs` `collectMetrics` `combineOrigins` `COMMITMENT_SWEEP_JOB` `consoleWriter` `createChannelManager` `createEventBus` `createLitestoneBase` `createMemoryCache` `createMessage` `createSchema` `createSmtpMailer` `createSqliteCache` `createStats` `cronMatcher` `currentCall` `customMethodNames` `dataRealmFacts` `declaredCallHeaders` `declaredTransitionMethods` `declaresNoSoftDelete` `decodeValue` `deriveModelName` `describeDataRealm` `describedOf` `describePrincipalRealm` `encodeValue` `errorResponse` `extractIP` `fieldError` `fromStatusCode` `generateEnvExample` `inAfterCommitDrain` `installLogContext` `installMadeAt` `installQueryTelemetry` `isCrudGatedMethod` `isCustomMethod` `isDeclaredTransition` `isDerivedHook` `isMethodAllowed` `isServiceResult` `jsonResponse` `jsonSchemaToJunctionSchema` `JunctionClient` `liftReservedQuery` `loadServiceFile` `logTiming` `markDerived` `mergeHookMaps` `methodEntryName` `methodGateBasis` `mirrorClaimFor` `multiWriter` `nextDelayMs` `noopLogger` `NotImplemented` `outboxSchemaFragment` `parseAggregate` `parseBody` `parseCookies` `parseLitestoneQuery` `parseQuery` `partitionBulk` `PaymentRequired` `printEnvExample` `PublicUrlError` `READ_ONLY_METHODS` `readGateLevel` `readReplyTag` `redirectResponse` `refuseStream` `registerAuditMetrics` `renderPrometheus` `replyAddress` `requiredScope` `resetAnnouncementWarnings` `resetReservedQueryChecks` `resolveAccessor` `resolveDefsKey` `resolveMethodSelection` `resolvePipelines` `ResultShapeError` `runPipeline` `serializeHookMap` `serveStatic` `SERVICE_OPTION_KEYS` `SERVICE_RUNTIME_KEYS` `ServiceProxy` `ServiceRegistry` `splitAddress` `TENANT_CLIENT_OBSERVERS` `TENANT_REGISTRY` `tenantClaimGuard` `toBulkFailure` `toMime` `traceIdOf` `unknownKeys` `unwrapResult` `validateInput` `watchFilterReads` `withTenantDb` `WRITE_VERBS`
+**Unreached values (119):** `accessorIfModel` `AIBuilder` `announcementPayload` `applyClaims` `assertAuditModel` `assertBackfillField` `AuthClient` `autoloadServices` `autoSort` `backfillSchemaFragment` `bearerOf` `bodyLimit` `BULK_FAILURES` `CacheValueError` `checkPrincipalSetting` `checkUnknownKeys` `collectMethodInputs` `collectMethodOutputs` `collectMetrics` `combineOrigins` `COMMITMENT_SWEEP_JOB` `consoleWriter` `createChannelManager` `createEventBus` `createLitestoneBase` `createMemoryCache` `createMessage` `createSchema` `createSmtpMailer` `createSqliteCache` `createStats` `cronMatcher` `currentCall` `customMethodNames` `dataRealmFacts` `declaredCallHeaders` `declaredTransitionMethods` `declaresNoSoftDelete` `decodeValue` `deriveModelName` `describeDataRealm` `describedOf` `describePrincipalRealm` `encodeValue` `errorResponse` `extractIP` `fieldError` `fromStatusCode` `generateEnvExample` `inAfterCommitDrain` `installLogContext` `installMadeAt` `installQueryTelemetry` `isCrudGatedMethod` `isCustomMethod` `isDeclaredTransition` `isDerivedHook` `isMethodAllowed` `isServiceResult` `jsonResponse` `jsonSchemaToJunctionSchema` `JunctionClient` `liftReservedQuery` `loadServiceFile` `logTiming` `markDerived` `mergeHookMaps` `methodEntryName` `methodGateBasis` `mirrorClaimFor` `multiWriter` `nextDelayMs` `noopLogger` `NotImplemented` `outboxSchemaFragment` `parseAggregate` `parseBody` `parseCookies` `parseLitestoneQuery` `parseQuery` `partitionBulk` `PaymentRequired` `printEnvExample` `PublicUrlError` `READ_ONLY_METHODS` `readGateLevel` `readReplyTag` `redirectResponse` `refuseStream` `registerAuditMetrics` `renderPrometheus` `replyAddress` `requiredScope` `resetAnnouncementWarnings` `resetReservedQueryChecks` `resolveAccessor` `resolveDefsKey` `resolveMethodSelection` `resolvePipelines` `ResultShapeError` `runPipeline` `serializeHookMap` `serveStatic` `SERVICE_OPTION_KEYS` `SERVICE_RUNTIME_KEYS` `ServiceProxy` `ServiceRegistry` `splitAddress` `TENANT_CLIENT_OBSERVERS` `TENANT_REGISTRY` `tenantClaimGuard` `toBulkFailure` `toMime` `traceIdOf` `unknownKeys` `validateInput` `watchFilterReads` `withTenantDb` `WRITE_VERBS`
 
 **Emitted (13):** `allowedMethodNames` `appJsonSchema` `assertContentId` `assertMailbox` `AUDIT_ACTOR_KINDS` `createSqliteWebhookStore` `describeShape` `fireDue` `generateOpenAPI` `LOCAL_PART_MAX` `otlp` `serviceMethodNames` `SUBSCRIPTION_PATH`
 
-**Unreached types (211):** `AnnounceFn` `AnyMethod` `AppAI` `AppCache` `AppCommitments` `AppMail` `AppManifest` `AppMeta` `AppOptions` `AppOutbox` `AppScheduler` `AppWebhooks` `AroundHook` `AuditColumn` `AuditPluginOptions` `AuthChallenge` `AuthResult` `AuthServiceNames` `BackfillApi` `BackfillDefinition` `BackfillOptions` `BackfillPluginOptions` `BackfillRow` `BearerSource` `BridgeHook` `BulkFailure` `CacheDeclaration` `CacheStats` `CallContext` `CallStartEvent` `ChannelClaimsFn` `ChannelManifest` `ChunkResult` `CircuitBreakerOptions` `CombinedOrigins` `CommitmentAround` `CommitmentHook` `CommitmentHookContext` `CommitmentsApi` `CommitmentsPluginOptions` `CommitmentSweepResult` `CompiledSchema` `ConnectionEntry` `CorrelationIdOptions` `CorsOptions` `CredentialAnswer` `CredentialSource` `CsrfOptions` `CustomMethodGrade` `DeepPartial` `DeliverOptions` `DeliverResult` `DeliveryStatus` `DescribedResolver` `DevService` `DevtoolsOptions` `EmailVerified` `EnqueueOnOptions` `EnqueueOptions` `EnqueueRef` `EnvFieldSpec` `EnvOutput` `ErrorMapper` `EventEntry` `EventHandler` `ExportPluginOptions` `FieldDef` `FieldError` `FieldErrorBuilder` `FireDueOptions` `FireDueResult` `FireOutcome` `FirePayload` `GateOp` `GradableUser` `GradedUrl` `HealthPluginOptions` `HealthResponse` `HelmetOptions` `HookManifest` `HookMap` `HookTelemetryEvent` `IAIModel` `ICache` `IEventBus` `IWebhookStore` `JobFn` `JobsView` `JunctionCaravanConfig` `JunctionClientOptions` `JunctionConfig` `JunctionMiddlewareConfig` `JunctionPluginsConfig` `KnownMethod` `KnownService` `ListResult` `LitestoneClientApi` `LitestoneJsonSchema` `LitestoneQueryEvent` `LitestoneServiceOptions` `LitestoneWriteEvent` `LoggerOptions` `LogLevel` `LogWriter` `ManifestPluginOptions` `MembershipClaimOptions` `MemoryCacheOptions` `MethodAnswer` `MethodContext` `MethodEntry` `MethodSelection` `MetricsApi` `MetricsPluginOptions` `MetricsResponse` `MiddlewareFn` `MintedGrant` `NoClaim` `OAuthConnection` `OpenAPIOptions` `OriginList` `OtlpOptions` `OtlpStats` `OutboxApi` `OutboxCounts` `OutboxPluginOptions` `OutboxRow` `PaginateResponse` `ParsedQuery` `PinnedRequest` `PluginFn` `PresenceMember` `PrincipalClaims` `PrincipalDescription` `PrincipalRealm` `PrincipalSetting` `QueryDirectives` `RateLimitOptions` `RawRequest` `ReceivedMail` `ReceivedWebhook` `ReceiveHandler` `ReceiveOutcome` `RecordError` `RecordOptions` `RecordResult` `RedeemContext` `RedeemOptions` `RegistrationPending` `RelayedCall` `ReplyReading` `RequestEntry` `RequestMeta` `ResendOptions` `ResolvedBearer` `ResolvedPipeline` `ResolvedTenancy` `ResourceOptions` `ResourceResult` `ResultKind` `RouteHandler` `RouteManifest` `ScalarOptions` `SchedulerStats` `SchemaOptions` `SearchHit` `SearchServiceOptions` `SeedTypeName` `SelfDescribedResolver` `ServiceContextLocals` `ServiceDefinitionValue` `ServiceEvent` `ServiceManifest` `ServiceMethod` `ServiceMethods` `ServiceResult` `ServiceSchemas` `ServiceScope` `SessionVerifier` `SignedRequestOptions` `SignInResult` `SingleResult` `SmtpMailerOptions` `SqliteCacheOptions` `SseEvent` `SseSendFn` `StubUser` `TelemetryEvent` `TenantRegistryLike` `TenantResolution` `TestApp` `TestAppOptions` `TestRequest` `TestResponse` `TetherBinding` `TokenStore` `TotpStatus` `TransportStats` `UnwrapOptions` `ValidationResult` `WebhookDelivery` `WebhookDeliveryResult` `WebhookManager` `WebhookOptions` `WebhookReceipt` `WebhookRegistration` `WebhookSubscription` `WindowResult` `WsContext` `WsHandlerSet` `WSMessage` `WsRouteOptions`
+**Unreached types (210):** `AnnounceFn` `AnyMethod` `AppAI` `AppCache` `AppCommitments` `AppMail` `AppManifest` `AppMeta` `AppOptions` `AppOutbox` `AppScheduler` `AppWebhooks` `AroundHook` `AuditColumn` `AuditPluginOptions` `AuthChallenge` `AuthResult` `AuthServiceNames` `BackfillApi` `BackfillDefinition` `BackfillOptions` `BackfillPluginOptions` `BackfillRow` `BearerSource` `BridgeHook` `BulkFailure` `CacheDeclaration` `CacheStats` `CallContext` `CallStartEvent` `ChannelClaimsFn` `ChannelManifest` `ChunkResult` `CircuitBreakerOptions` `CombinedOrigins` `CommitmentAround` `CommitmentHook` `CommitmentHookContext` `CommitmentsApi` `CommitmentsPluginOptions` `CommitmentSweepResult` `CompiledSchema` `ConnectionEntry` `CorrelationIdOptions` `CorsOptions` `CredentialAnswer` `CredentialSource` `CsrfOptions` `CustomMethodGrade` `DeepPartial` `DeliverOptions` `DeliverResult` `DeliveryStatus` `DescribedResolver` `DevService` `DevtoolsOptions` `EmailVerified` `EnqueueOnOptions` `EnqueueOptions` `EnqueueRef` `EnvFieldSpec` `EnvOutput` `ErrorMapper` `EventEntry` `EventHandler` `ExportPluginOptions` `FieldDef` `FieldError` `FieldErrorBuilder` `FireDueOptions` `FireDueResult` `FireOutcome` `FirePayload` `GateOp` `GradableUser` `GradedUrl` `HealthPluginOptions` `HealthResponse` `HelmetOptions` `HookManifest` `HookMap` `HookTelemetryEvent` `ICache` `IEventBus` `IWebhookStore` `JobFn` `JobsView` `JunctionCaravanConfig` `JunctionClientOptions` `JunctionConfig` `JunctionMiddlewareConfig` `JunctionPluginsConfig` `KnownMethod` `KnownService` `ListResult` `LitestoneClientApi` `LitestoneJsonSchema` `LitestoneQueryEvent` `LitestoneServiceOptions` `LitestoneWriteEvent` `LoggerOptions` `LogLevel` `LogWriter` `ManifestPluginOptions` `MembershipClaimOptions` `MemoryCacheOptions` `MethodAnswer` `MethodContext` `MethodEntry` `MethodSelection` `MetricsApi` `MetricsPluginOptions` `MetricsResponse` `MiddlewareFn` `MintedGrant` `NoClaim` `OAuthConnection` `OpenAPIOptions` `OriginList` `OtlpOptions` `OtlpStats` `OutboxApi` `OutboxCounts` `OutboxPluginOptions` `OutboxRow` `PaginateResponse` `ParsedQuery` `PinnedRequest` `PluginFn` `PresenceMember` `PrincipalClaims` `PrincipalDescription` `PrincipalRealm` `PrincipalSetting` `QueryDirectives` `RateLimitOptions` `RawRequest` `ReceivedMail` `ReceivedWebhook` `ReceiveHandler` `ReceiveOutcome` `RecordError` `RecordOptions` `RecordResult` `RedeemContext` `RedeemOptions` `RegistrationPending` `RelayedCall` `ReplyReading` `RequestEntry` `RequestMeta` `ResendOptions` `ResolvedBearer` `ResolvedPipeline` `ResolvedTenancy` `ResourceOptions` `ResourceResult` `ResultKind` `RouteHandler` `RouteManifest` `ScalarOptions` `SchedulerStats` `SchemaOptions` `SearchHit` `SearchServiceOptions` `SeedTypeName` `SelfDescribedResolver` `ServiceContextLocals` `ServiceDefinitionValue` `ServiceEvent` `ServiceManifest` `ServiceMethod` `ServiceMethods` `ServiceResult` `ServiceSchemas` `ServiceScope` `SessionVerifier` `SignedRequestOptions` `SignInResult` `SingleResult` `SmtpMailerOptions` `SqliteCacheOptions` `SseEvent` `SseSendFn` `StubUser` `TelemetryEvent` `TenantRegistryLike` `TenantResolution` `TestApp` `TestAppOptions` `TestRequest` `TestResponse` `TetherBinding` `TokenStore` `TotpStatus` `TransportStats` `UnwrapOptions` `ValidationResult` `WebhookDelivery` `WebhookDeliveryResult` `WebhookManager` `WebhookOptions` `WebhookReceipt` `WebhookRegistration` `WebhookSubscription` `WindowResult` `WsContext` `WsHandlerSet` `WSMessage` `WsRouteOptions`
 
 ## `@frontierjs/litestone`
 
-`packages/litestone` · 28 entry point(s) · 267 value, 1 type export(s)
+`packages/litestone` · 28 entry point(s) · 268 value, 1 type export(s)
 
 **Entries imported by nothing outside (5):** `./engines/sqlite-wasm` `./device-schema` `./import` `./transform` `./external-ref`
 
@@ -189,7 +190,7 @@ Every entry is imported and every name reached.
 
 **Unreached values (131):** `appliedMigrations` `arcDefaultMessage` `blockedRefusal` `buildEdgeMap` `buildFKGraph` `buildNamedAggExpr` `buildPristine` `buildPristineForDatabase` `buildShadow` `buildWindowCols` `canStoreBesideReplica` `clearEngine` `collectEdges` `columnDefaultExpr` `columnMapFor` `compactJsonl` `compileFormat` `createForDatabase` `createProvider` `createSearchIndex` `createSqliteWasmEngine` `currentEngine` `declarationCollisions` `declaredRedactColumns` `deriveAccess` `describeStanding` `detectFormat` `detectM2MPairs` `driftAgainstLive` `expectedVerdict` `ExternalRefPlugin` `extractNamedAggs` `fakeFor` `fileHeader` `FILES_ENV` `findLitestream` `ForeignKeyError` `gateLadder` `generateEdgeSideTableDDL` `generateFactory` `generateGateMatrix` `generateJoinTableDDL` `generateLiteSchema` `generateMigrationSQL` `generateModelDDL` `generateTableDDL` `generateValidationCases` `generateViewDDL` `getReplicaFile` `gradedKinds` `indexPredicate` `inlineImportsFromDisk` `introspectSQL` `isSearchModel` `isSoftDeleteCascade` `isStrict` `isUpdatedAtField` `jsRefusal` `labelColumn` `layoutManifest` `LITESTREAM_MIN` `LITESTREAM_PIN` `litestreamVersion` `loadSource` `lossRefusal` `mapIdentifiers` `migrationStatements` `modifiedRefusal` `mutationScore` `nextMigrationName` `normalizeTableDdl` `normalizeTriggerSql` `ON_DELETE_ACTIONS` `openDatabase` `OverlapConflictError` `parseChecks` `parseCollations` `parseDuration` `parseGateString` `parseGeneratedColumns` `parseIndexColumns` `parseIndexSorts` `parseLayoutManifest` `parseLimit` `parseRef` `parseScales` `parseSize` `planEdgeStorage` `PluginRunner` `pointColumns` `pointDefaultMessage` `putReplicaFile` `REACHABLE_LEVELS` `readScaleConstraint` `recordReplayed` `renameCandidates` `renderAccessSnapshot` `REPEATABLE_FIELD_ATTRS` `REPEATABLE_MODEL_ATTRS` `replCommands` `requireLitestream` `resolveAllRowCounts` `resolveRedactColumns` `resolveRowCount` `restoreFile` `runSqliteRetention` `scaleConstraintName` `schemaForDatabase` `schemaMutants` `searchBackfillSql` `searchColumnsFor` `searchModels` `searchTriggerNames` `shadowRefusal` `stripParens` `summarizeDiff` `SYNC_NEEDS_VERSION` `tenantAdmission` `TIERS` `TRAIT_FORBIDDEN_FIELD_ATTRS` `TRAIT_FORBIDDEN_MODEL_ATTRS` `TransitionSystemError` `TYPE_DEFAULT_FORBIDDEN_KINDS` `TYPE_FORBIDDEN_FIELD_ATTRS` `TYPE_FORBIDDEN_FIELD_TYPES` `unacceptedLoss` `unmatchedMigrationFiles` `unresolvedBlocks` `updatedAtFields` `useStorage` `ValueSetExtendError`
 
-**Emitted (39):** `ALLOWED_TOKENIZERS` `arcCheckExpr` `BulkTransitionError` `COLLATIONS` `defineFactory` `describeSkipped` `factoryFrom` `fieldToColumnName` `FORMATS` `FrontierGateGetLevel` `generateIndexDDL` `isIndexExpression` `isNamedAgg` `isSoftDelete` `isStoredField` `LAYOUT_FILE` `levelLabel` `loadFixture` `makeTestClient` `mapCol` `mapExprCols` `maskStrategies` `modelToTableName` `normalizeDdl` `pointColumnNames` `policyExprToString` `predicateToLite` `rescaleUpdate` `SEARCH_COLUMNS` `SEARCH_TABLE` `SEARCH_WEIGHTS` `searchRankExpr` `setEngine` `sqlType` `SYNC_POLICIES` `TransitionConflictError` `typedAttr` `VersionRequiredError` `VIEW_COLUMN_ATTRS`
+**Emitted (40):** `ALLOWED_TOKENIZERS` `arcCheckExpr` `BulkTransitionError` `COLLATIONS` `defineFactory` `describeSkipped` `factoryFrom` `fieldToColumnName` `FORMATS` `fromStream` `FrontierGateGetLevel` `generateIndexDDL` `isIndexExpression` `isNamedAgg` `isSoftDelete` `isStoredField` `LAYOUT_FILE` `levelLabel` `loadFixture` `makeTestClient` `mapCol` `mapExprCols` `maskStrategies` `modelToTableName` `normalizeDdl` `pointColumnNames` `policyExprToString` `predicateToLite` `rescaleUpdate` `SEARCH_COLUMNS` `SEARCH_TABLE` `SEARCH_WEIGHTS` `searchRankExpr` `setEngine` `sqlType` `SYNC_POLICIES` `TransitionConflictError` `typedAttr` `VersionRequiredError` `VIEW_COLUMN_ATTRS`
 
 **Unreached types (1):** `CursorResult`
 
@@ -225,7 +226,7 @@ Every entry is imported and every name reached.
 
 **Unreached values (4):** `generateVapidKeys` `NotificationDeliveryError` `NotificationDriverNotFoundError` `NotificationRecipientError`
 
-**Unreached types (24):** `BuiltInTransport` `Formatter` `InAppAction` `InAppMessage` `MailLine` `NotificationDefinition` `NotificationDriver` `NotificationFactory` `NotificationReceipts` `NotificationRecord` `NotificationsPluginOptions` `NtfyOptions` `OutgoingMail` `PushAction` `PushMessage` `PushSubscription` `PushSubscriptions` `PushSubscriptionsService` `SendableNotification` `SubscribeToPushOptions` `TransportError` `UnsubscribeFromPushOptions` `VapidKeys` `WebPushOptions`
+**Unreached types (23):** `BuiltInTransport` `Formatter` `InAppAction` `InAppMessage` `MailLine` `NotificationDefinition` `NotificationDriver` `NotificationFactory` `NotificationReceipts` `NotificationRecord` `NotificationsPluginOptions` `NtfyOptions` `OutgoingMail` `PushMessage` `PushSubscription` `PushSubscriptions` `PushSubscriptionsService` `SendableNotification` `SubscribeToPushOptions` `TransportError` `UnsubscribeFromPushOptions` `VapidKeys` `WebPushOptions`
 
 ## `@frontierjs/oracle`
 
@@ -247,13 +248,13 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/outpost`
 
-`packages/outpost` · 9 entry point(s) · 25 value, 0 type export(s)
+`packages/outpost` · 9 entry point(s) · 28 value, 0 type export(s)
 
-**Entries imported by nothing outside (1):** `.`
+**Entries imported by nothing outside (2):** `.` `./static`
 
-**Unreached values (11):** `BACKUP_SCRIPT` `checkRunConfig` `containerName` `createInspector` `digestOfFiles` `followLines` `isDigest` `spawnRun` `spawnStream` `validName` `validRelativePath`
+**Unreached values (13):** `BACKUP_SCRIPT` `checkRunConfig` `containerName` `createInspector` `createStatic` `digestOfFiles` `DRAIN_MS` `followLines` `isDigest` `spawnRun` `spawnStream` `validName` `validRelativePath`
 
-**Emitted (1):** `ROOTS`
+**Emitted (2):** `MAX_BODY_BYTES` `ROOTS`
 
 ## `@frontierjs/print-kit`
 
@@ -313,10 +314,16 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/ui`
 
-`packages/ui` · 9 entry point(s) · 54 value, 0 type export(s)
+`packages/ui` · 9 entry point(s) · 55 value, 0 type export(s)
 
 **Entries emitted (5):** `./utils` `./dnd` `./drag` `./selection` `./rowlist`
 
-**Unreached values (34):** `bandIndex` `createSelection` `defaultControlProps` `defaultDisplayProps` `defaultFilterProps` `displayComponent` `fileNameOf` `filePreviews` `filterComponent` `formControl` `lockedBy` `menuWalk` `nativeValidationGuard` `optionsNote` `placeAgainst` `plotRuns` `plotValue` `RECENT_GROUP` `registeredDisplayComponents` `registeredFilterComponents` `registeredFormControls` `resolveError` `resolveRule` `REST_GROUP` `ruleLabel` `sectionFor` `SHADOW_ITEM_MARKER` `SHADOW_PLACEHOLDER_ITEM_ID` `splitRecent` `truncationNote` `unregisterDisplayComponent` `unregisterFilterComponent` `unregisterFormControl` `withheldBy`
+**Unreached values (35):** `bandIndex` `createSelection` `defaultControlProps` `defaultDisplayProps` `defaultFilterProps` `displayComponent` `fileNameOf` `filePreviews` `filterComponent` `formControl` `lockedBy` `menuWalk` `nativeValidationGuard` `optionsNote` `placeAgainst` `plotRuns` `plotValue` `RECENT_GROUP` `registeredDisplayComponents` `registeredFilterComponents` `registeredFormControls` `resolveError` `resolveRule` `REST_GROUP` `ruleLabel` `sectionFor` `SHADOW_ITEM_MARKER` `SHADOW_PLACEHOLDER_ITEM_ID` `sizeClass` `splitRecent` `truncationNote` `unregisterDisplayComponent` `unregisterFilterComponent` `unregisterFormControl` `withheldBy`
 
 **Emitted (3):** `dndzone` `registerFilterComponent` `rowlist`
+
+## `@frontierjs/workbench`
+
+`packages/workbench` · 0 entry point(s) · 0 value, 0 type export(s)
+
+Every entry is imported and every name reached.

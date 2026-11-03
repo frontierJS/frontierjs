@@ -1397,6 +1397,9 @@ function applyValidators(schema, attributes) {
       case 'accept':
         schema['x-litestone-accept'] = attr.types
         break
+      case 'digest':
+        schema['x-litestone-digest'] = attr.column
+        break
       case 'date':
         schema.format = 'date'
         break

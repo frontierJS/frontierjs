@@ -1,0 +1,105 @@
+---
+title: Litestone — the schema that enforces itself — FrontierJS
+description: Litestone is a schema-first SQLite layer for Bun. One .lite file declares your data, who may touch it and what happens to it over its life, and the types, validators, migrations and access rules all follow.
+render: static
+---
+<!--
+  The Litestone page: the Data realm, argued in five sections. Prerendered,
+  no script beyond the layout's theme swatches. Same shape as
+  routes/basecamp.mesa; the shared structure is components/ProductFrame.mesa.
+
+  ── Section contract ───────────────────────────────────────────────────
+  Each section is a component in components/litestone/, and its root is
+  `<section id=… class="bc-section">` holding a `.container.stack`:
+
+    p.eyebrow                       the topic's name
+    h2                              the claim, in the reader's words
+    p.lede                          one or two sentences, one idea
+    .bc-split
+      ul.bc-points > li             <strong>head.</strong> ONE or TWO sentences,
+                                    3–4 of them; a point over four lines is cut
+      figure.bc-proof               ONE proof: real schema lines, real output of
+                                    a run, or a .flow of real steps, with a
+                                    figcaption saying where it came from
+    p.bc-more                       "Read more:" links into the repo docs
+
+  Every claim and every code line is lifted from the package docs or code, or
+  from a run, and is something that works TODAY. Litestone is shipped, so the
+  page can say so, but a claim still needs a doc fence, a test or a run behind
+  it. Direction is labeled as direction. No comparison with another ORM unless
+  the cell was re-verified.
+-->
+<script>
+  import ProductFrame from '../components/ProductFrame.mesa'
+  import Derived from '../components/litestone/Derived.mesa'
+  import Access  from '../components/litestone/Access.mesa'
+  import Tenants from '../components/litestone/Tenants.mesa'
+  import Life    from '../components/litestone/Life.mesa'
+  import Operate from '../components/litestone/Operate.mesa'
+  import Speed   from '../components/litestone/Speed.mesa'
+</script>
+
+<ProductFrame>
+
+<section id="top" class="bc-hero">
+  <div class="container stack">
+    <p class="eyebrow">Litestone · shipped</p>
+    <h1>Declare the data once.<br>Everything else follows.</h1>
+    <p class="lede">
+      Litestone is a schema-first SQLite layer for Bun. One <code>.lite</code> file says what
+      your data is, who may touch it and what happens to it over its life — and the types,
+      validators, migrations and access rules are derived from it, not written again in
+      five other places.
+    </p>
+    <div class="cluster" style="gap:.75rem">
+      <a class="btn primary raised" href="/start/">Start with a schema</a>
+      <a class="btn outlined" href="#access">See the access rules</a>
+    </div>
+    <nav class="bc-jump" aria-label="On this page">
+      <a href="#one-file">One schema</a>
+      <a href="#access">Access</a>
+      <a href="#tenants">Tenants</a>
+      <a href="#life">Lifecycle</a>
+      <a href="#operate">Production</a>
+      <a href="#speed">Speed</a>
+    </nav>
+  </div>
+</section>
+
+<Derived />
+<Access />
+<Tenants />
+<Life />
+<Operate />
+<Speed />
+
+<section id="start" class="bc-section">
+  <div class="container stack">
+    <p class="eyebrow">Start</p>
+    <h2>A schema is the whole setup.</h2>
+    <p class="lede">
+      Install it on its own or inside a FrontierJS app, where the same file also seeds the
+      API and the UI.
+    </p>
+    <div class="cluster" style="gap:.75rem">
+      <a class="btn primary raised" href="/start/">Quickstart</a>
+      <a class="btn outlined" href="https://github.com/frontierjs/frontierjs/tree/main/packages/litestone">Read the source</a>
+    </div>
+    <p class="text-sm text-muted">
+      <code>@frontierjs/litestone</code> on npm, MIT licensed, Bun 1.0 or later. No server to
+      run beside your app: the database is one file.
+    </p>
+  </div>
+</section>
+
+</ProductFrame>
+
+<style>
+  .bc-hero { padding: 5rem 0 3rem; }
+  .bc-hero .lede { max-width: 52ch; }
+  h1 { font-size: clamp(2.25rem, 6vw, 3.5rem); line-height: 1.05; letter-spacing: -.03em; margin: .4em 0 .3em; }
+  .bc-jump { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+  .bc-jump a { padding: .3rem .8rem; border: 1px solid var(--rule-strong); border-radius: 999px; font-size: .85rem; color: var(--ink-soft); text-decoration: none; }
+  .bc-jump a:hover { background: var(--surface-sunken); color: var(--ink); }
+  .btn.outlined { color: var(--ink); border-color: var(--rule-strong); }
+</style>

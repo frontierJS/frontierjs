@@ -12,20 +12,24 @@ export const provisionScript = () => {
 }
 
 // `host-record.ts` beside it is the Cloudflare half, for `basecamp:dns` and `pointHost`.
+// Not spawnSync: a buy is a minute, and a blocked loop freezes a pinned tty line's clock.
 export const runProvision = async (input, file = 'provision-host.ts', env = {}) => {
-  const { spawnSync }  = await import('node:child_process')
+  const { spawn }      = await import('node:child_process')
   const { existsSync } = await import('node:fs')
   const { root } = provisionScript()
   const script = root + 'api/src/domain/host/' + file
   if (!existsSync(script))
     return { error: `no Basecamp checkout at ${root}: the server and basecamp commands run from the framework repository` }
 
-  const run = spawnSync('bun', [script, JSON.stringify(input)], {
-    cwd: root, encoding: 'utf8', env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'inherit'],
+  const run = spawn('bun', [script, JSON.stringify(input)], {
+    cwd: root, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'inherit'],
   })
-  const last = (run.stdout || '').trim().split('\n').pop()
+  let out = ''
+  run.stdout.setEncoding('utf8').on('data', (d) => { out += d })
+  const status = await new Promise((r) => { run.on('close', r); run.on('error', () => r(null)) })
+  const last = out.trim().split('\n').pop()
   try { return JSON.parse(last) }
-  catch { return { error: `${file} answered no JSON (exit ${run.status})` } }
+  catch { return { error: `${file} answered no JSON (exit ${status})` } }
 }
 
 // ─── Clouds ──────────────────────────────────────────────────────────────────
@@ -170,7 +174,7 @@ export const cloudflareToken = async ({ interactive, write = true, say }) => {
   return !left.length
 }
 
-// spawnSync hands the child the environment bun STARTED with, so a token
+// A child is handed the environment bun STARTED with, so a token
 // pasted just now goes on the call itself.
 export const hostRecord = (input) => runProvision(input, 'host-record.ts', { CLOUDFLARE_TOKEN: process.env.CLOUDFLARE_TOKEN })
 

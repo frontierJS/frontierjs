@@ -210,6 +210,37 @@ async function main() {
       scopesOf(tk, 'count').join(' '))
   }
 
+  // ── Directive values ──────────────────────────────────────────────────────
+  //
+  // A directive matched its whole value in one regex, `\{[^}]*\}`, so
+  // style:w={`calc(${sz} * 2)`} ended at the brace of `${sz}`, left the rest
+  // unscoped and the closing brace unpaired. The value is now handed to
+  // source.js the way attr={expr} is; the stub cannot nest, so what is asserted
+  // is that it IS embedded JS, paired with the quoted shapes that are not.
+
+  section('mesa: a directive value is embedded JS')
+  for (const attr of ['style:width={w}', 'class:on={a}', 'bind:value={v}', 'onclick|once={go}']) {
+    const tk = tokenize(mesa, `<div ${attr} title="t"></div>\n`)
+    const value = tk.find(t => t.text === attr.slice(attr.indexOf('{') + 1, -1))
+    ok(`${attr}: the value is embedded JS`,
+      value && value.scopes.includes('source.js.embedded.mesa'),
+      value ? value.scopes.join(' ') : 'no token')
+    ok(`${attr}: the next attribute is still an attribute`,
+      scopesOf(tk, 'title').includes('entity.other.attribute-name.html'),
+      scopesOf(tk, 'title').join(' '))
+  }
+  {
+    const tk = tokenize(mesa, `<svg style:--icon-size="0.6em" style:color='red' aria-hidden="true"/>\n`)
+    ok('a custom property is a style directive',
+      scopesOf(tk, '--icon-size').includes('entity.other.attribute-name.style-directive.mesa'),
+      scopesOf(tk, '--icon-size').join(' '))
+    for (const [text, scope] of [['0.6em', 'string.quoted.double.html'], ["'red'", 'string.quoted.single.html'], ['true', 'string.quoted.double.html']]) {
+      ok(`${text} is a string, not JS`,
+        scopesOf(tk, text).includes(scope) && !scopesOf(tk, text).includes('source.js.embedded.mesa'),
+        scopesOf(tk, text).join(' '))
+    }
+  }
+
   // ── Every real .mesa file in the workspace ────────────────────────────────
   //
   // The corpus is the assertion the hand-written cases cannot make: the defect
@@ -314,6 +345,23 @@ async function main() {
     for (const word of ['type', 'view']) {
       ok(`a field named ${word} is a field`,
         scopesOf(tk, word).includes('variable.other.field.litestone'),
+        scopesOf(tk, word).join(' '))
+    }
+  }
+  // An enum body was one any-word rule, so `label` in `@label` and every word
+  // of its string rendered as a member. Paired with a bare member, and a brace
+  // in the label that closed the enum while strings were not read there.
+  {
+    const tk = tokenize(lite, 'enum Channel {\n  google_ads @label("Google {Ads}")\n  bing\n}\n')
+    ok('@label in an enum is an attribute',
+      scopesOf(tk, '@label').some(s => s.startsWith('entity.other.attribute-name')),
+      scopesOf(tk, '@label').join(' '))
+    ok('the label is a string',
+      scopesOf(tk, 'Google').includes('string.quoted.double.litestone'),
+      scopesOf(tk, 'Google').join(' '))
+    for (const word of ['google_ads', 'bing']) {
+      ok(`${word} is a member`,
+        scopesOf(tk, word).includes('variable.other.enummember.litestone'),
         scopesOf(tk, word).join(' '))
     }
   }

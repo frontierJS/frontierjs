@@ -23,7 +23,7 @@ import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel } from '../../core/hooks.ts'
 import { db, ws }   from '../../core/resource.ts'
-import { declaredFor, gradePosture, gradeReplication, postureChanges, postureRank, POSTURE_INTERVAL_MS } from '../../domain/host/posture.ts'
+import { declaredFor, gradePosture, gradeReplication, lastKnownControls, postureChanges, postureRank, POSTURE_INTERVAL_MS } from '../../domain/host/posture.ts'
 import type { Control, PostureReadings } from '../../domain/host/posture.ts'
 import { notifyPeople, workspaceMembers } from '../../domain/notification/notify.ts'
 import { statusOf } from '../../core/dependencies.ts'
@@ -48,13 +48,18 @@ const sys = (): any => $.db.asSystem()
  * the apps placed on the machine NOW, the key it was given NOW — so a
  * placement made since the last report is not a stranger on the next.
  */
+/** How far back a control's last known grade is looked for. */
+const PRIOR_REPORTS = 50
+
 async function ingest(server: any, data: ReportData) {
   const apps = await sys().app.findMany({
     where:  { appServers: { some: { serverId: server.id } } },
     select: { kind: true, port: true, hasExposedPort: true },
   })
   const key = server.sshKeyId
-    ? await sys().secret.findFirst({ where: { id: server.sshKeyId } })
+    // Scoped to the machine's own workspace: `sshKeyId` is a caller-written
+    // reference, and a key from another workspace must not be graded here (`FJS-3845`).
+    ? await sys().secret.findFirst({ where: { id: server.sshKeyId, workspaceId: server.workspaceId } })
     : null
   const declared = declaredFor({ sshPort: server.sshPort, apps, sshKeyData: key?.data ?? null })
 
@@ -65,8 +70,10 @@ async function ingest(server: any, data: ReportData) {
   const failing  = controls.filter(c => c.ok === false).length
   const unknown  = controls.filter(c => c.ok === 'unknown').length
 
-  const prior = await sys().serverPosture.findFirst({
-    where: { serverId: server.id }, orderBy: { at: 'desc' },
+  // Recent reports, not just the last: a move is graded against the last
+  // KNOWN true/false per control, so an unknown report in between hides nothing.
+  const recent = await sys().serverPosture.findMany({
+    where: { serverId: server.id }, orderBy: { at: 'desc' }, limit: PRIOR_REPORTS,
   })
   const row = await sys().serverPosture.create({ data: {
     serverId: server.id, at, readings: readings ?? {}, controls, failing, unknown,
@@ -74,7 +81,7 @@ async function ingest(server: any, data: ReportData) {
 
   // The history that answers *when did this stop holding*. Unknown on either
   // side is not a move: a box whose sshd -T failed once did not get fixed.
-  const { failed, restored } = postureChanges((prior?.controls as Control[] | undefined) ?? null, controls)
+  const { failed, restored } = postureChanges(recent.length ? lastKnownControls(recent.map((r: any) => r.controls as Control[])) : null, controls)
   for (const c of failed)
     await sys().serverEvent.create({ data: { serverId: server.id, kind: 'postureFailed',
       message: `${c.id}: ${c.message}`, metadata: { control: c.id, severity: c.severity, posture_id: row.id } } })

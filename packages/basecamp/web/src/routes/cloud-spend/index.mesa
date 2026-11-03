@@ -18,7 +18,7 @@ title: Cloud spend
   // screen happened to fetch — a report over a fleet has to be right about the
   // fleet, and a `limit` is not a fact about it. The money is a skeleton, and whether an adapter exists
   // is ASKED — `ICloudSpend` is declared with a stub behind it and `/portal/`
-  // reports which, the same read /admin/adapters/ makes.
+  // reports which, the same read /admin/providers/ makes.
   //
   // Named for the job rather than the vendor, for the same reason /dns/ is:
   // whichever provider gains an adapter first, this is the screen it fills.
@@ -200,7 +200,7 @@ title: Cloud spend
           <code>@frontierjs/conduit</code> target per provider, its API token as a
           <a href="/secrets/">Secret</a>, and a service mapping a
           <code>providerServerId</code> onto the vendor's own billing line — which is what
-          makes the two halves join at all. <a href="/admin/adapters/">All adapters</a>.
+          makes the two halves join at all. <a href="/admin/providers/">All providers</a>.
         </p>
       </Callout>
     {/if}

@@ -1481,6 +1481,7 @@ class Parser {
       // so knowing how one is declared teaches all of them.
       case 'syntax':     return this.parseSyntax()
       case 'accept':     return { kind: 'accept', types: this.parseParenString() }   // e.g. @accept("image/*")
+      case 'digest':     return this.parseDigest()
       case 'date':       return { kind: 'date',       ...this.parseOptMessage() }
       case 'datetime':   return { kind: 'datetime',   ...this.parseOptMessage() }
       // `@zone` — the column holds an IANA zone name. `@zoned(path)` — this
@@ -3057,6 +3058,20 @@ class Parser {
       : this.eat(TK.IDENT).value
     this.eat(TK.RPAREN)
     return { kind: 'unit', symbol: String(symbol) }
+  }
+
+  // `@digest(sha256)` -- the sibling String column that follows the SHA-256 of a
+  // File column's bytes (FJS-D1292). The argument is a column and never an
+  // algorithm; a bare word that named an algorithm would read as a choice there
+  // is none of.
+  parseDigest() {
+    const t = this.peek()
+    if (!this.check(TK.LPAREN))
+      throw new ParseError('@digest names the column that holds the hash -- file File @digest(sha256)', { line: t.line, col: t.col })
+    this.eat(TK.LPAREN)
+    const column = this.eat(TK.IDENT).value
+    this.eat(TK.RPAREN)
+    return { kind: 'digest', column }
   }
 
   parseZoned() {
@@ -8187,9 +8202,37 @@ function validate(schema) {
     }
   }
 
+  // ── @digest validation ──────────────────────────────────────────────────────
+  // The hash is of one file's bytes, written into one String column beside it.
+  // A column that is missing, is not a String or is the File column itself
+  // would leave the declaration with nothing to fill or to compare.
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      const digest = field.attributes.find(a => a.kind === 'digest')
+      if (!digest) continue
+      const at = `Model '${model.name}', field '${field.name}'`
+      if (field.type.name !== 'File') {
+        errors.push(`${at}: @digest requires a File field, got ${field.type.name}${field.type.array ? '[]' : ''} -- it names the column holding the hash of the file's bytes`)
+        continue
+      }
+      if (field.type.array) {
+        errors.push(`${at}: @digest cannot be on a File[] -- one column cannot hold the hash of several files; use a File field`)
+        continue
+      }
+      if (digest.column === field.name) {
+        errors.push(`${at}: @digest(${digest.column}) names the File column itself -- name a String column beside it`)
+        continue
+      }
+      const sibling = model.fields.find(f => f.name === digest.column)
+      if (!sibling) errors.push(`${at}: @digest(${digest.column}) -- no field '${digest.column}' on this model`)
+      else if (sibling.type.name !== 'String' || sibling.type.array)
+        errors.push(`${at}: @digest(${digest.column}) -- '${digest.column}' must be a String, got ${sibling.type.name}${sibling.type.array ? '[]' : ''}`)
+    }
+  }
+
   // ── @syntax validation ──────────────────────────────────────────────────────
   // The language itself is not graded: glow highlights any name, so a typo
-  // costs colour and nothing else. What is refused is a declaration with no
+  // costs color and nothing else. What is refused is a declaration with no
   // text under it — the editor and the highlighting both need one string.
   for (const owner of [...schema.models.map(m => ['Model', m]), ...(schema.types ?? []).map(t => ['Type', t])]) {
     const [kind, model] = owner

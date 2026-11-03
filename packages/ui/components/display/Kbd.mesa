@@ -11,11 +11,12 @@
   // The `keys` prop splits into individual badges joined by a thin plus.
   // The children form renders the whole thing as one badge.
 
+  import { cx, sizeClass } from '../../utils.js'
+
   export let keys = []     // string[] — each key gets its own badge
   export let size = ''     // '' | 'xs' | 'md'
 
-  const sizeMap = { xs: 'var(--text-2xs)', sm: '', md: 'var(--text-sm)' }
-  const fontSize = sizeMap[size] ?? ''
+  const SIZES = { xs: 'text-2xs', md: 'text-sm' }
 </script>
 
 {#if keys.length}
@@ -24,11 +25,11 @@
       {#if i > 0}
         <span class="text-muted text-xs" aria-hidden="true">+</span>
       {/if}
-      <kbd class="kbd" style:font-size={fontSize || null}>{key}</kbd>
+      <kbd class={cx('kbd', SIZES[size])}>{key}</kbd>
     {/each}
   </span>
 {:else}
-  <kbd class="kbd" style:font-size={fontSize || null} {class} {...$attributes}>
+  <kbd class={cx('kbd', sizeClass(SIZES, size, $class))} {class} {...$attributes}>
     <slot />
   </kbd>
 {/if}

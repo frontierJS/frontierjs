@@ -14,10 +14,14 @@ import { createService, NotFound, Conflict, parseWhere, $ } from '@frontierjs/ju
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
+import { resolveDownMonitor } from '../../domain/monitor/resolve.ts'
 import { keyScope }         from '../../domain/api-key/scopes.ts'
 
 /** The heartbeat bar's length: the newest checks `get` carries. */
 const RECENT_CHECKS = 50
+
+/** The rolled-up days `get` carries: a year of history. */
+const UPTIME_DAYS = 365
 
 /** A monitor with where it pages and what it last saw — the shape `get`
  *  answers, so attach/detach and pause/resume return the record the client is
@@ -39,7 +43,13 @@ async function withDetail(monitor: Record<string, unknown>) {
     orderBy: { at: 'desc' },
     limit:   10,
   })
-  return { ...monitor, channels, recent_checks, recent_events }
+  // Days past the check window, which `retention.job.ts` rolled up and deleted (`FJS-D1800`).
+  const uptime_days = await db().monitorUptimeDay.findMany({
+    where:   { monitorId: monitor.id },
+    orderBy: { day: 'desc' },
+    limit:   UPTIME_DAYS,
+  })
+  return { ...monitor, channels, recent_checks, recent_events, uptime_days }
 }
 
 export default createService({
@@ -79,6 +89,8 @@ export default createService({
 
   async remove() {
     const monitor = await getScoped('monitor', 'Monitor')
+    // Before the delete: the cascade takes the channel links the resolve goes through.
+    await resolveDownMonitor($.app, $.db.asSystem(), monitor as never, 'Monitor deleted')
     // A real delete: the schema cascades the checks, events and channel links.
     await db().monitor.remove({ where: { id: monitor.id } })
     return monitor
@@ -104,12 +116,22 @@ export default createService({
   // monitor comes back `pending`, not `up`: nothing has graded it since.
   async pause() {
     const monitor = await getScoped('monitor', 'Monitor')
-    return withDetail(await db().monitor.transition(monitor.id, 'pause'))
+    const paused = await db().monitor.transition(monitor.id, 'pause')
+    await resolveDownMonitor($.app, $.db.asSystem(), monitor as never, 'Monitor paused')
+    return withDetail(paused)
   },
 
   async resume() {
     const monitor = await getScoped('monitor', 'Monitor')
-    return withDetail(await db().monitor.transition(monitor.id, 'resume'))
+    const resumed = await db().monitor.transition(monitor.id, 'resume')
+    // `failStreak` is @system and survives the pause: without the reset, the
+    // first failed probe after resume would count on top of the old streak and
+    // page at once. `nextCheckAt` now so the first probe is the next sweep's.
+    await ($.db.asSystem() as any).monitor.update({
+      where: { id: monitor.id },
+      data:  { failStreak: 0, nextCheckAt: new Date().toISOString() },
+    })
+    return withDetail({ ...resumed, failStreak: 0 })
   },
 
   // ── attachChannel / detachChannel ─────────────────────────────────

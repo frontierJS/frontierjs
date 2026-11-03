@@ -49,9 +49,9 @@
     <DropdownGroup heading="Unread">
       {#each unread.slice(0, BELL_MAX) as n}
         <DropdownItem onclick={() => openNote(n)}>
-          <span class="stack">
+          <span class="stack bell-note" title={bodyOf(n) ? `${titleOf(n)} — ${bodyOf(n)}` : titleOf(n)}>
             <strong>{titleOf(n)}</strong>
-            {#if bodyOf(n)}<span class="text-sm text-muted">{bodyOf(n)}</span>{/if}
+            {#if bodyOf(n)}<span class="bell-body text-sm text-muted">{bodyOf(n)}</span>{/if}
           </span>
         </DropdownItem>
       {/each}
@@ -64,3 +64,17 @@
   {/if}
   <DropdownItem onclick={() => goto('/notifications/')}>All notifications</DropdownItem>
 </DropdownMenu>
+
+<style>
+  /* A posture failure's body is every failing control joined; unclamped it
+     fills the screen. The row's title attribute carries the whole text. */
+  .bell-note { min-width: 0; }
+  .bell-body {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+</style>

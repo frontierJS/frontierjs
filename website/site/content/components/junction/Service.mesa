@@ -1,0 +1,120 @@
+<!--
+  Junction page § Service. Facts: packages/junction/README.md (Litestone ORM:
+  createService generates find/get/create/patch/remove, validation from the
+  schema, paginate { default, max }, methods: narrows the surface and the spec;
+  OpenAPI), AGENTS.md (the one rule: the schema grades the caller, the file
+  name is the service name), test/openapi-round-trip.test.ts (every operation
+  the spec documents is one the wire answers, 14 pass on 2026-11-03).
+  The proof is a real run: a scratch app over packages/junction and
+  packages/litestone (db/schema.lite 8 lines, services/tasks.service.ts 3
+  lines, a stub auth for sign-in), driven with curl on 2026-11-03. Responses
+  are abridged where marked.
+  Not claimed: that the OpenAPI document carries the model's field schemas.
+  Without a declared schemas: entry or input: type, the request body of a
+  create is not in the spec (probed: the POST operation has no requestBody).
+-->
+<script>
+  const CODE = `// db/schema.lite
+model Task {
+  id        Int      @id
+  title     String   @length(1, 80) @trim
+  done      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@gate(0.4.4.5)   // read: anyone · create, update: signed in · delete: level 5
+}
+
+// api/src/services/tasks.service.ts
+import { createService } from '@frontierjs/junction'
+
+export default createService({ paginate: { default: 3, max: 50 } })`
+
+  const RUN = `POST /api/tasks  {"title":"  Ship the docs  "}      (signed in)
+  201  {"id":1,"title":"Ship the docs","done":false,"createdAt":"…"}
+POST /api/tasks  {"title":""}
+  400  {"message":"title: title must be at least 1 character",
+        "data":[{"field":"title", …}]}
+POST /api/tasks  {"title":"anon"}                          (no token)
+  401  {"message":"Authentication required"}
+DELETE /api/tasks/1                                        (signed in)
+  403  {"message":"\\"Task.delete\\" requires level 5, user has level 4"}
+
+GET /api/tasks
+  200  {"data":[{"id":1, …},{"id":2, …},{"id":3, …}],
+        "total":6,"limit":3,"offset":0,"hasMore":true,"endCursor":"…"}
+GET /api/tasks?$limit=2&$offset=1&$orderBy=-id
+  200  {"data":[{"id":5, …},{"id":4, …}],
+        "total":6,"limit":2,"offset":1,"hasMore":true}
+GET /api/tasks?$limit=500
+  400  {"message":"$limit 500 is above this service's maximum page of 50. …"}
+GET /api/tasks?nope=1
+  400  {"message":"Unknown filter key 'nope' — did you mean 'done'?. Filterable
+        fields on Task: createdAt, done, id, title. …"}
+
+GET /api/openapi.json
+  openapi 3.1.0
+  /api/tasks        get, post
+  /api/tasks/{id}   get, patch, delete`
+</script>
+
+<section id="service" class="bc-section">
+  <div class="container stack">
+    <p class="eyebrow">A service from a model</p>
+    <h2>The CRUD, the checks and the paging are already written.</h2>
+    <p class="lede">
+      A service file over a Litestone model answers find, get, create, patch and remove, and
+      grades every call by the model's own rules. You write only what the model cannot say.
+    </p>
+
+    <div class="bc-split">
+      <ul class="bc-points">
+        <li>
+          <strong>The file name picks the model.</strong>
+          <code>tasks.service.ts</code> is the service <code>tasks</code> over <code>Task</code>,
+          autoloaded, and the OpenAPI document lists exactly what it answers, so narrowing
+          <code>methods:</code> narrows the spec too.
+        </li>
+        <li>
+          <strong>Validation is the field's own rules.</strong>
+          <code>@length(1, 80) @trim</code> is the 400 on create, and a filter on a column that
+          does not exist is refused by name instead of ignored.
+        </li>
+        <li>
+          <strong>Authorization is the gate, not a hook.</strong>
+          <code>@@gate</code> answers 401 to a stranger and 403 to a caller a level short, in
+          the schema where every other path meets it too.
+        </li>
+        <li>
+          <strong>A page has a ceiling.</strong>
+          <code>paginate: &#123; default, max &#125;</code> sets the size, the answer carries
+          <code>total</code> and <code>hasMore</code>, and a request over the max is refused
+          with the number it may ask for.
+        </li>
+      </ul>
+
+      <figure class="bc-proof">
+        <pre class="code">{CODE}</pre>
+        <pre class="code">{RUN}</pre>
+        <figcaption>
+          A scratch app on this repo's Junction and Litestone, run with curl on 2026-11-03: the
+          schema and the 3-line service file above (import path shortened to the package name),
+          with a stub auth for sign-in and the OpenAPI plugin around it. Responses are abridged,
+          cut to the status and the lines that matter, and <code>…</code> marks what was cut.
+        </figcaption>
+      </figure>
+    </div>
+
+    <p class="bc-more">
+      Read more:
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/junction/README.md#litestone-orm">createService over a Litestone model</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/junction/README.md#methods--the-surface-declared">narrowing the surface with methods</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/junction/README.md#openapi">OpenAPI</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/junction/AGENTS.md">the schema grades the caller</a>
+    </p>
+  </div>
+</section>
+
+<style>
+  .bc-proof pre.code { overflow-x: auto; font-size: .82rem; }
+  .bc-proof pre.code + pre.code { margin-top: .75rem; }
+</style>

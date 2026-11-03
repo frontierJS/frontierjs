@@ -11,7 +11,7 @@ const { generateSigningKeys, signMessage, verifyMessage } = await import('@front
 const { generateSealingKeys, seal, open: openSealed } = await import('@frontierjs/toolbelt/seal')
 const { FRONTIER_DIR, KEY_FILE, CONFIG_FILE, PEERS_FILE, CHAIN_FILE, readConfig, readPeers, tellSign, tellFetch, writeWaiting, pinPeer, fingerprint, rootPrint, safetyWords, postOrigin } =
   await import(new URL('file://' + global.fliRoot + '/core/tell.js'))
-const { readChain, rootLink, linkHash, extendsSeen, boxClaim } = await import('@frontierjs/toolbelt/frontier')
+const { readChain, rootLink, linkHash, extendsSeen, boxClaim, sealFile, fileLimits } = await import('@frontierjs/toolbelt/frontier')
 const { plural } = await import(new URL('file://' + global.fliRoot + '/core/text.js'))
 const { NICK, writeMemberConfig, machineKeys, writeKeys, completeKeys, ownChain, ownRoot, writeOwnChain, syncChain, publishOwn, meetMember, pickNick, currentMember } =
   await import(new URL('file://' + global.fliRoot + '/core/frontier-member.js'))
@@ -79,13 +79,34 @@ const meetForLetter = async (member, to) => {
   if (met.met) notes.push(['info', `First letter to ${to}: pinned their chain ${met.met}.`])
   return { own, met, notes }
 }
+
+/**
+ * `file` — `{ name, type, bytes }` — sealed on this machine with a fresh key
+ * and left at the post: `{ link, limits }`, or `{ refused }`. `ask` is
+ * `{ downloads, seconds }`; the post owns the defaults, so one not given is
+ * left out (FJS-D1564, FJS-D1565).
+ */
+const putFile = async (member, file, ask = {}) => {
+  const { sealed, key } = await sealFile(file)
+  let asked, put
+  try {
+    asked = await tellFetch(member.api, member.keys, 'POST', '/file', { size: sealed.length, ...ask })
+    if (asked.status !== 201) return { refused: `The post refused the file (${asked.status}): ${asked.json?.message ?? 'no reason given'}` }
+    put = await fetch(new URL(`/file/${asked.json.id}`, member.api), { method: 'PUT', body: sealed, headers: { 'x-file-token': asked.json.putToken } })
+  } catch (e) { return { refused: `${member.api} did not answer (${e.message}).` } }
+  if (put.status !== 201) {
+    const said = await put.json().catch(() => null)
+    return { refused: `The post refused the upload (${put.status}): ${said?.message ?? 'no reason given'}` }
+  }
+  return { link: `${new URL(`/file/${asked.json.id}`, member.api)}#${key}`, limits: fileLimits(asked.json, Math.floor(Date.now() / 1000)) }
+}
 </script>
 
 Mail between members of the Frontier network (`FJS-D1392`). Who a
 member is — the key, the chain, the nick — is `frontier:` (`commands/frontier/`,
 `core/frontier-member.js`); these verbs only read it.
 
-- `tell:send <nick> <words>`, alias `tell` — a letter left at the post for a member, signed, and sealed to them once they have a sealing key. `--env KEY...` sends env values instead, and only sealed.
+- `tell:send <nick> <words>`, alias `tell` — a letter left at the post for a member, signed, and sealed to them once they have a sealing key. `--env KEY...` sends env values instead, and only sealed; `--clip` sends the clipboard, a copied image as a sealed file link.
 - `tell:inbox`, alias `inbox` — the letters waiting, oldest first, opened; reading deletes them. `-f` stays open and prints each as it arrives.
 - `tell:upload <path>` — a file sealed on this machine and left at the post; prints a link anyone can download it from, with its limits, and the page shows the sender's crest. A folder goes as one zip, `-` reads stdin, `--qr` prints the link as a QR code, `--to <nick>` sends the link as a sealed letter.
 - `tell:download <link>` — a link's file fetched, opened and written under its own name. No membership needed; a browser opens the same link.

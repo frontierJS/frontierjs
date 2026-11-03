@@ -1,0 +1,5 @@
+node_modules/
+data/
+generated/
+# zen generate output; the schema.zmodel beside it is the source
+zenstack/*.ts

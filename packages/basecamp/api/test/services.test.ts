@@ -32,6 +32,7 @@ import { trafficOf, unavailableOf } from '../src/domain/host/traffic.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor, grantsWithin } from '../src/core/capabilities.ts'
 import { refuseGrantAboveOwn }    from '../src/core/hooks.ts'
+import { invitationPresented }    from '../src/core/session-auth.ts'
 import { keyAllows, narrowForAgent } from '../src/domain/api-key/scopes.ts'
 import { MEMBERSHIP }             from '@frontierjs/junction'
 import { SERVER_READINGS, readingOf } from '../src/domain/host/server-metrics.ts'
@@ -74,7 +75,9 @@ async function invitedUser(tenv: any, workspaceId: string, email: string, passwo
   const sys = tenv.system as any
   const inv = await sys.invitation.create({ data: { workspaceId, email, role: 'viewer', token: crypto.randomUUID(),
     expiresAt: new Date(Date.now() + 3_600_000).toISOString() } })
-  const made = await tenv.app.auth.createUser({ email, password, name })
+  // The accept door's own frame: an invited address is made only under the
+  // token it verified (`FJS-3870`).
+  const made = await invitationPresented.run(email.toLowerCase(), () => tenv.app.auth.createUser({ email, password, name }))
   await sys.invitation.delete({ where: { id: inv.id } })
   return made
 }
@@ -284,7 +287,7 @@ describe('optimistic locking — the lost update, executed', () => {
     const dev  = () => env.as(developer).service('servers')
     const made = await dev().create({
       name: 'edge-1', slug: slug(), role: 'general',
-      providerKind: 'custom', ipAddress: '203.0.113.10',
+      ipAddress: '203.0.113.10',
     })
     expect(made.version).toBeUndefined()
 
@@ -1958,14 +1961,23 @@ describe('a backup is asked for by a person and run by the app', () => {
     const dir = join(dirname(env.app.sqlite.filename), 'backups', 'basecamp-2026-01-02T03-04-05-006Z')
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'main.db'), 'x')
-    const row = await sys.appBackup.create({ data: { appId: hubId, status: 'success', location: dir } })
+    // Older than the archive below: the newest good one is not discardable (FJS-3902).
+    const row = await sys.appBackup.create({ data: { appId: hubId, status: 'success', location: dir, createdAt: '2026-01-01T00:00:00.000Z' } })
+    const odd = await sys.appBackup.create({ data: { appId: hubId, status: 'success', location: env.app.sqlite.filename, createdAt: '2026-01-02T00:00:00.000Z' } })
+    const newest = await sys.appBackup.create({ data: { appId: hubId, status: 'success', location: `${dir}-newest`, createdAt: '2026-01-03T00:00:00.000Z' } })
     await env.as(sysadmin).service('hubBackups').call('discard', row.id)
     expect(existsSync(dir)).toBe(false)
     expect(await sys.appBackup.findFirst({ where: { id: row.id } })).toBeNull()
 
-    const odd = await sys.appBackup.create({ data: { appId: hubId, status: 'success', location: env.app.sqlite.filename } })
     await expect(env.as(sysadmin).service('hubBackups').call('discard', odd.id)).rejects.toThrow(/was kept/)
     expect(existsSync(env.app.sqlite.filename)).toBe(true)
+
+    // The newest good archive, and so the only way back, is refused by name.
+    await expect(env.as(sysadmin).service('hubBackups').call('discard', newest.id)).rejects.toThrow(/newest good backup/)
+    expect(await sys.appBackup.findFirst({ where: { id: newest.id } })).not.toBeNull()
+    // A newer failed row does not take its place: the good one is still the last way back.
+    await sys.appBackup.create({ data: { appId: hubId, status: 'failed', createdAt: '2026-01-04T00:00:00.000Z' } })
+    await expect(env.as(sysadmin).service('hubBackups').call('discard', newest.id)).rejects.toThrow(/newest good backup/)
     await sys.appBackup.deleteMany({ where: { appId: hubId } })
   })
 
@@ -3239,10 +3251,23 @@ describe('accepting an invitation puts somebody in the workspace', () => {
     expect(await env.system.user.findFirst({ where: { email } })).toBeNull()
   })
 
-  test('an invited address gets one', async () => {
+  // An invitation names an address; knowing the address is not holding the
+  // link, and a register ahead of the click held the invitee's account (`FJS-3870`).
+  test('an invited address gets none without its token, over /auth/register too', async () => {
     const email = `invited-${Math.random().toString(36).slice(2, 8)}@x.co`
     await env.as(owner).service('invitations').create({ email, role: 'viewer' })
-    const made = await env.app.auth.createUser({ email, password: 'correct-horse', name: 'Invited' })
+    await expect(env.app.auth.createUser({ email, password: 'correct-horse', name: 'Invited' }))
+      .rejects.toThrow(/open the link/)
+    // Register answers alike for every address (no oracle), so the proof is the row.
+    await env.http.post('/auth/register').send({ email, password: 'correct-horse', name: 'Squatter' })
+    expect(await env.system.user.findFirst({ where: { email } })).toBeNull()
+  })
+
+  test('an invited address gets one under the token accept verified', async () => {
+    const email = `invited-${Math.random().toString(36).slice(2, 8)}@x.co`
+    await env.as(owner).service('invitations').create({ email, role: 'viewer' })
+    const made = await invitationPresented.run(email, () =>
+      env.app.auth.createUser({ email, password: 'correct-horse', name: 'Invited' }))
     expect(made.id ?? made.userId).toBeTruthy()
   })
 })
@@ -4414,11 +4439,15 @@ describe('a list honors every filter it admits', () => {
     expect(got).toEqual([d2.id])
   })
 
-  test('a hand patch of a release writes its run columns and drops its set-once ones', async () => {
-    const patched = await env.as(owner).service('deployments').patch(d1.id, { trigger: 'rollback', author: 'someone else', durationMs: 42 })
-    expect(patched.durationMs).toBe(42)
+  test('a hand patch of a release drops its set-once columns and refuses what it recorded (FJS-3863)', async () => {
+    const patched = await env.as(owner).service('deployments').patch(d1.id, { trigger: 'rollback', author: 'someone else' })
     expect(patched.trigger).toBe('button')
     expect(patched.author).toBeNull()
+    for (const data of [{ durationMs: 42 }, { builtImage: 'sha256:' + 'f'.repeat(64) }, { commitSha: 'abc' }, { branch: 'main' }, { finishedAt: '2026-01-01T00:00:00.000Z' }])
+      await expect(env.as(owner).service('deployments').patch(d1.id, data)).rejects.toThrow(/@system/)
+    const after = await (env.system as any).deployment.findFirst({ where: { id: d1.id } })
+    expect(after.durationMs).not.toBe(42)
+    expect(after.builtImage).not.toBe('sha256:' + 'f'.repeat(64))
   })
 
   test('jobs by name', async () => {
@@ -4505,6 +4534,104 @@ describe('removing a server that is not online', () => {
   }
 })
 
+// ─── A Server's Secret references stay in its workspace (`FJS-3845`) ─────────
+describe('a server names only its own workspace\'s secrets', () => {
+  const uniq = () => Math.random().toString(36).slice(2, 8)
+  let theirs: any, mine: any
+
+  beforeAll(async () => {
+    const sys = env.system as any
+    const elsewhere = await sys.workspace.create({ data: { accountId: ws.accountId, name: 'Elsewhere', slug: `else-${uniq()}` } })
+    theirs = await sys.secret.create({ data: { workspaceId: elsewhere.id, name: `their-token-${uniq()}`, kind: 'generic' } })
+    mine   = await sys.secret.create({ data: { workspaceId: ws.id, name: `my-token-${uniq()}`, kind: 'generic' } })
+  })
+
+  test('a create or patch naming a provider column is refused by name, and no row is made', async () => {
+    const slug = `foreign-${uniq()}`
+    await expect(env.as(owner).service('servers').create({ name: slug, slug, providerKind: 'digitalocean', providerId: theirs.id }))
+      .rejects.toThrow(/@system/)
+    await expect(env.as(owner).service('servers').create({ name: slug, slug, providerServerId: '42' }))
+      .rejects.toThrow(/@system/)
+    await expect(env.as(owner).service('servers').create({ name: `${slug}-k`, slug: `${slug}-k`, sshKeyId: theirs.id }))
+      .rejects.toThrow(/sshKeyId names no secret in this workspace/)
+    expect(await (env.system as any).server.findFirst({ where: { slug } })).toBeNull()
+  })
+
+  test('a patch cannot move a machine onto another workspace\'s secret, or onto a key of the caller\'s own', async () => {
+    const slug = `patched-${uniq()}`
+    const box: any = await (env.system as any).server.create({ data: {
+      workspaceId: ws.id, name: slug, slug, providerKind: 'digitalocean', providerId: mine.id } })
+    await expect(env.as(owner).service('servers').patch(box.id, { providerId: theirs.id }))
+      .rejects.toThrow(/@system/)
+    await expect(env.as(owner).service('servers').patch(box.id, { outpostPublicKey: 'AAAA', outpostCert: 'x' }))
+      .rejects.toThrow(/@system/)
+    const after = await (env.system as any).server.findFirst({ where: { id: box.id } })
+    expect(after.providerId).toBe(mine.id)
+    expect(after.outpostPublicKey).toBeNull()
+    expect(after.outpostCert).toBeNull()
+    await expect(env.as(owner).service('servers').patch(box.id, { sshKeyId: theirs.id }))
+      .rejects.toThrow(/names no secret in this workspace/)
+  })
+
+  test('a machine\'s archives are not taken with it: removing one succeeds and leaves them listed (FJS-3902)', async () => {
+    const sys  = env.system as any
+    const slug = `kept-${uniq()}`
+    const box: any = await sys.server.create({ data: { workspaceId: ws.id, name: slug, slug } })
+    const proj: any = await sys.project.create({ data: { workspaceId: ws.id, name: 'Kept', slug: `kept-p-${uniq()}` } })
+    const envi: any = await sys.environment.create({ data: { workspaceId: ws.id, projectId: proj.id, name: 'E', slug: `kept-e-${uniq()}` } })
+    const app: any = await sys.app.create({ data: { workspaceId: ws.id, environmentId: envi.id, name: 'kept', slug: `kept-a-${uniq()}` } })
+    const arch: any = await sys.appBackup.create({ data: { appId: app.id, serverId: box.id, status: 'success' } })
+    await env.as(owner).service('servers').remove(box.id)
+    expect(await sys.appBackup.findFirst({ where: { id: arch.id } })).not.toBeNull()
+    await sys.appBackup.delete({ where: { id: arch.id } })
+  })
+
+  test('the enrollment columns are not the caller\'s on create either', async () => {
+    const slug = `enrolled-${uniq()}`
+    await expect(env.as(owner).service('servers').create({ name: slug, slug, outpostPublicKey: 'AAAA' }))
+      .rejects.toThrow(/@system/)
+    await expect(env.as(owner).service('servers').create({ name: slug, slug, outpostCert: 'x' }))
+      .rejects.toThrow(/@system/)
+    await expect(env.as(owner).service('servers').create({ name: slug, slug, enrollTokenHash: 'h' }))
+      .rejects.toThrow(/@guarded|@system/)
+    expect(await (env.system as any).server.findFirst({ where: { slug } })).toBeNull()
+  })
+
+  test('a row already holding a foreign account is refused at sync and destroy, before any call goes out', async () => {
+    const slug = `held-${uniq()}`
+    const box: any = await (env.system as any).server.create({ data: {
+      workspaceId: ws.id, name: slug, slug, providerKind: 'digitalocean', providerId: theirs.id, providerServerId: '42' } })
+    await expect(env.as(owner).service('servers').call('sync', box.id, {}))
+      .rejects.toThrow(/outside its workspace/)
+    await expect(env.as(owner).service('servers').call('destroy', box.id, { confirm: slug }))
+      .rejects.toThrow(/outside its workspace/)
+    expect((await (env.system as any).server.findFirst({ where: { id: box.id } })).status).not.toBe('destroying')
+  })
+})
+
+// ─── A key is graded in the workspace it is pointed at (`FJS-3869`) ──────────
+describe('an API key reaches only its own workspace, on the workspaces service too', () => {
+  test('a key from one workspace cannot patch another its owner also owns, by naming it in the path', async () => {
+    const sys = env.system as any
+    const uniq = () => Math.random().toString(36).slice(2, 8)
+    const other = await sys.workspace.create({ data: { accountId: ws.accountId, name: 'Owned too', slug: `own2-${uniq()}` } })
+    await sys.workspaceMember.create({ data: {
+      workspaceId: other.id, userId: owner.id, role: 'owner',
+      capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString(),
+    } })
+    const made: any = await env.as(owner).service('apiKeys').create({
+      name: `bound-${uniq()}`, scopes: ['workspaces:read', 'workspaces:write'], expiresIn: '30d',
+    })
+    const patch = (id: string, name: string) =>
+      env.http.patch(`/workspaces/${id}`).set('Authorization', `Bearer ${made.token}`).send({ name })
+
+    const res = await patch(other.id, 'Taken')
+    expect(res.status).toBe(403)
+    expect(JSON.stringify(res.body)).toMatch(/different workspace/)
+    expect((await sys.workspace.findFirst({ where: { id: other.id } })).name).toBe('Owned too')
+  })
+})
+
 // ─── The local ssh listing ───────────────────────────────────────────────────
 // A development affordance on the servers service (`domain/local/local-ssh.ts`). Off
 // unless LOCAL_MACHINE=1, which this process does not set, so the owner hears it
@@ -4525,49 +4652,6 @@ describe('the local ssh listing', () => {
   })
 })
 
-describe('the local repository listing', () => {
-  test('a developer is refused by the declared gate, before anything reads a folder', async () => {
-    await expect(env.as(developer).service('git').call('localRepos', undefined, { root: '~' }))
-      .rejects.toThrow(/Requires admin role in this workspace to localRepos/)
-  })
-
-  test('an owner is told it is not offered here, rather than handed an empty list', async () => {
-    await expect(env.as(owner).service('git').call('localRepos', undefined, { root: '~' }))
-      .rejects.toThrow(/LOCAL_MACHINE=1/)
-  })
-})
-
-describe('the workbench', () => {
-  test('a developer is refused a run by the declared gate', async () => {
-    await expect(env.as(developer).service('workbench').call('send', 'abc', { prompt: 'hi' }))
-      .rejects.toThrow(/Requires admin role in this workspace to send/)
-  })
-
-  test('an owner is told it is not offered here, before anything is pinned or run', async () => {
-    await expect(env.as(owner).service('workbench').call('pins', undefined))
-      .rejects.toThrow(/LOCAL_MACHINE=1/)
-    await expect(env.as(owner).service('workbench').call('pin', undefined, { path: '~' }))
-      .rejects.toThrow(/LOCAL_MACHINE=1/)
-  })
-
-  // A send is `claude -p` with every permission bypassed, on the operator's
-  // machine. Asserted before the LOCAL_MACHINE refusal is reached, so a test
-  // env with no LOCAL_MACHINE cannot pass this by refusing for the other reason.
-  test('an agent is refused it at any standing, over /mcp', async () => {
-    for (const method of ['pins', 'send', 'transcript', 'diff', 'check', 'review', 'fork', 'land', 'archive'])
-      await expect(env.as(owner).service('workbench').call(method, 'abc', { prompt: 'hi' }, { transport: 'mcp' }))
-        .rejects.toThrow(/not offered to an agent/)
-  })
-
-  test('and is never listed to one, nor reachable by any key', () => {
-    const owns = { authMethod: 'session' }
-    const key  = { authMethod: 'apiKey', scopes: [] }
-    expect(narrowForAgent({ service: 'workbench', method: 'send' }, owns)).toBe(false)
-    expect(narrowForAgent({ service: 'servers',   method: 'find' }, owns)).toBe(true)
-    expect(keyAllows(key, 'workbench')).toBe(false)
-  })
-})
-
 describe('pages', () => {
   test('a developer is refused a start by the declared gate', async () => {
     await expect(env.as(developer).service('pages').call('start', 'page:repo-rings.html', undefined))
@@ -4582,7 +4666,7 @@ describe('pages', () => {
   })
 
   // A start runs a command on the operator's machine. Asserted before the
-  // LOCAL_MACHINE refusal is reached, as the workbench's is.
+  // LOCAL_MACHINE refusal is reached.
   test('an agent is refused it at any standing, and no key reaches it', async () => {
     for (const method of ['list', 'view', 'output', 'start', 'stop'])
       await expect(env.as(owner).service('pages').call(method, 'page:repo-rings.html', undefined, { transport: 'mcp' }))
@@ -4590,31 +4674,6 @@ describe('pages', () => {
     const key = { authMethod: 'apiKey', scopes: [] }
     expect(narrowForAgent({ service: 'pages', method: 'start' }, { authMethod: 'session' })).toBe(false)
     expect(keyAllows(key, 'pages')).toBe(false)
-  })
-})
-
-describe('registers', () => {
-  test('a developer is refused a ruling by the declared gate', async () => {
-    await expect(env.as(developer).service('registers').call('decide', 'FJS-D1', { pick: 'A' }))
-      .rejects.toThrow(/Requires admin role in this workspace to decide/)
-  })
-
-  test('an owner is told it is not offered here, before anything is read or sent', async () => {
-    await expect(env.as(owner).service('registers').call('overview', undefined))
-      .rejects.toThrow(/LOCAL_MACHINE=1/)
-    await expect(env.as(owner).service('registers').call('discuss', undefined, { text: 'FJS-1' }))
-      .rejects.toThrow(/LOCAL_MACHINE=1/)
-  })
-
-  // A discuss is a workbench send. Asserted before the LOCAL_MACHINE refusal is
-  // reached, as the workbench's is.
-  test('an agent is refused it at any standing, and no key reaches it', async () => {
-    for (const method of ['overview', 'record', 'discuss', 'decide'])
-      await expect(env.as(owner).service('registers').call(method, 'FJS-1', { text: 'FJS-1' }, { transport: 'mcp' }))
-        .rejects.toThrow(/not offered to an agent/)
-    const key = { authMethod: 'apiKey', scopes: [] }
-    expect(narrowForAgent({ service: 'registers', method: 'discuss' }, { authMethod: 'session' })).toBe(false)
-    expect(keyAllows(key, 'registers')).toBe(false)
   })
 })
 
@@ -5441,7 +5500,8 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       const dest = await own()
       await pointHub(dest.id)
       expect(await hostReplicaFor(env.app, box.id)).toEqual({
-        bucket: dest.bucket, path: 'apps/basecamp', endpoint: dest.endpoint, region: 'auto',
+        bucket: dest.bucket, path: `apps/hub-${(await sys.hubConfig.findFirst({ where: { id: 'hub' } })).installId}`,
+        endpoint: dest.endpoint, region: 'auto',
         access_key_id: 'AKID', secret_access_key: 'se:cr/et',
       })
       // A tenant may name a server `basecamp-host`; it is not sent the key.

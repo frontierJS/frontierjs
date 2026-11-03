@@ -24,7 +24,7 @@
  *   bun run verify
  *
  * The API runs against a scratch directory -- the database, the jobs queue
- * beside it, the audit trail, the site clones and the workbench -- removed at
+ * beside it, the audit trail and the site clones -- removed at
  * the end, so the dev database in db/ is never opened. It starts the API and
  * the web server itself and stops them at the end, so it needs both ports free. Needs Chrome on PATH (or $FJS_CHROME), the same
  * requirement the css package's harness has.
@@ -101,7 +101,6 @@ const SCRATCH_ENV = {
   DATABASE_URL:  join(SCRATCH, 'basecamp.db'),
   AUDIT_PATH:    join(SCRATCH, 'audit.db'),
   SITES_DIR:     join(SCRATCH, 'sites'),
-  WORKBENCH_DIR: join(SCRATCH, 'workbench'),
 }
 // The command port's certificate. The sink below serves it, enrollment hands
 // it over, and Basecamp's conduit target pins it — the TLS a fleet machine
@@ -263,6 +262,27 @@ const SINK_DIGEST = 'sha256:' + 'a1'.repeat(32)
 // shipped ones, so a change to either side of the protocol shows up here.
 let realOutpost = null
 
+// The containers `docker run` made, by name, with the App each is labelled for.
+// Outpost finds an App's container with `docker ps --filter label=fjs.app=…`
+// before it grades it healthy, so a runner that lists none fails every deploy
+// as not running.
+const ranContainers = new Map()
+function dockerContainers(argv) {
+  const [, verb, ...rest] = argv
+  if (verb === 'run') {
+    const name  = rest[rest.indexOf('--name') + 1]
+    const label = rest.find(a => a.startsWith('fjs.app='))
+    if (name && label) ranContainers.set(name, label.slice('fjs.app='.length))
+    return null
+  }
+  if (verb === 'rename') { const app = ranContainers.get(rest[0]); ranContainers.delete(rest[0]); if (app) ranContainers.set(rest[1], app); return null }
+  if (verb === 'rm')     { for (const n of rest) ranContainers.delete(n); return null }
+  const filter = verb === 'ps' && rest.find(a => a.startsWith('label=fjs.app='))
+  if (!filter) return null
+  const appId = filter.slice('label=fjs.app='.length)
+  return [...ranContainers].filter(([, app]) => app === appId).map(([n]) => n).join('\n')
+}
+
 /** Build the real Outpost around the key this machine made and the hub's key
  *  the exchange answered, so it cannot exist before the exchange. */
 const buildOutpost = (signingKey) => createOutpostServer(
@@ -275,6 +295,8 @@ const buildOutpost = (signingKey) => createOutpostServer(
     docker: createDocker({
       run: async (argv) => {
         outpostSaw.docker.push(argv.join(' '))
+        const listed = dockerContainers(argv)
+        if (listed != null) return { exitCode: 0, stdout: listed, stderr: '' }
         // Outpost parses this one as JSON, and a digest is not JSON.
         if (argv.includes('{{json .Config.User}}')) return { exitCode: 0, stdout: '""', stderr: '' }
         if (argv.slice(0, 3).join(' ') === 'docker image inspect') return { exitCode: 0, stdout: SINK_DIGEST, stderr: '' }
@@ -1696,16 +1718,16 @@ try {
 }
 check('the trail refuses to be written to', forged, t => t.includes('405'))
 
-await goto('/admin/adapters/')
-check('the adapters are listed',
-  await evaluate(`document.getElementById('adapter-tiles')?.textContent ?? ''`),
+await goto('/admin/providers/')
+check('the providers are listed',
+  await evaluate(`document.getElementById('provider-tiles')?.textContent ?? ''`),
   t => t.includes('Infisical') && t.includes('Forgejo'))
 check('…and unconfigured ones say so, rather than reading as broken',
-  await evaluate(`document.getElementById('adapter-tiles')?.textContent ?? ''`),
+  await evaluate(`document.getElementById('provider-tiles')?.textContent ?? ''`),
   t => t.includes('unconfigured'))
 
 // ── 13b. Portal — the same appliances, measured rather than declared ──
-// /admin/adapters/ asks whether an adapter is WIRED and pings nothing; this
+// /admin/providers/ asks whether an adapter is WIRED and pings nothing; this
 // screen asks whether it answers RIGHT NOW. The service splits the same way:
 // find() is the declaration, get(id) is the ping.
 await goto('/portal/')
@@ -2838,10 +2860,14 @@ check('a bot cannot be made a system administrator', botAdmin, t => t.includes('
 // then pays for.
 //
 // account-mail.ts mails a verification, so register answers 202 and makes no
-// account; the link in the mail makes it and signs in (`FJS-D1310`). The link
-// is read from the sink, which is where the mail actually went. The click makes
-// the account only for an invited address (`FJS-3685`), so Pat is invited first.
-await apiCall('/invitations', { method: 'POST', workspace: firstWs.id, body: { email: 'pat@example.com', role: 'viewer' } })
+// account until the link in the mail is followed (`FJS-D1310`). The link is
+// read from the sink, which is where the mail actually went. An invited address
+// is made only by its invitation (`FJS-3870`): a register for it would carry
+// the registrant's password into the account the invitee's click made, so the
+// click is refused and Pat comes in through the invitation link.
+// A workspace of its own: the checks below need Pat a stranger to the other two.
+const patWs     = await apiCall('/workspaces', { method: 'POST', workspace: firstWs.id, body: { name: 'Pat lobby', slug: 'pat-lobby' } })
+const patInvite = await apiCall('/invitations', { method: 'POST', workspace: patWs.id, body: { email: 'pat@example.com', role: 'viewer' } })
 const patMailFrom = mailbox.length
 const patAsked = await fetch(`http://localhost:${API_PORT}/auth/register`, {
   method: 'POST',
@@ -2856,12 +2882,19 @@ for (let waited = 0; waited < 5000 && !patMail; waited += 100) {
 }
 const patLink = /#token=([^\s"&<]+)/.exec(`${patMail?.text ?? ''} ${patMail?.html ?? ''}`)?.[1]
 check('…and mails the address a verification link', patLink, t => typeof t === 'string' && t.length > 0)
-const pat = await fetch(`http://localhost:${API_PORT}/auth/email/verify`, {
+const patClicked = await fetch(`http://localhost:${API_PORT}/auth/email/verify`, {
   method: 'POST',
   headers: { 'content-type': 'application/json', accept: 'application/json' },
   body: JSON.stringify({ token: decodeURIComponent(patLink ?? '') }),
+})
+check('…and following it for an invited address makes no account', patClicked.ok, false)
+const pat = await fetch(`http://localhost:${API_PORT}/invitations`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', accept: 'application/json', 'x-service-method': 'accept' },
+  // The token is a protected column the wire drops; the link carries it.
+  body: JSON.stringify({ token: /\/invite\/([^/]+)\//.exec(patInvite?.acceptUrl ?? '')?.[1], name: 'Pat', password: 'hunter2hunter2' }),
 }).then(r => r.json())
-check('following the link makes the account and signs it in', pat?.user?.email, 'pat@example.com')
+check('the invitation link makes the account and signs it in', pat?.user?.email, 'pat@example.com')
 
 const patLogin = () => fetch(`http://localhost:${API_PORT}/auth/login`, {
   method: 'POST',
@@ -3222,7 +3255,7 @@ for (const route of [appDetailPath, boardPath, '/', '/dashboards/', '/projects/'
                      '/deployments/', '/jobs/', '/networks/', '/volumes/', '/cleanup/', '/recipes/',
                      '/alerts/', '/channels/', '/flags/', '/secrets/',
                      '/api-keys/', '/activity/', '/portal/',
-                     '/admin/', '/admin/audit/', '/admin/adapters/',
+                     '/admin/', '/admin/audit/', '/admin/providers/',
                      '/hub/', '/hub/workspaces/', '/hub/users/', '/hub/flags/']) {
   await goto(route)
   const issues = [...await evaluate(PAGE_AUDIT), ...await evaluate(AUDIT)]

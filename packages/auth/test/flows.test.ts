@@ -96,7 +96,7 @@ describe('login', () => {
 
     expect(unknownEmail).toBeGreaterThan(wrongPassword * 0.5)
     expect(noCredential).toBeGreaterThan(wrongPassword * 0.5)
-  })
+  }, 30000) // ten bcrypt rounds at BCRYPT_COST: past bun's 5s default under CI's parallel load
 
   // The dummy hash is a literal, so it carries its own cost and cannot follow
   // hashPassword's. Raise BCRYPT_COST without regenerating it and the gap

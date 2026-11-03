@@ -12,10 +12,10 @@
  * route and a window and gets numbers back, never a line of the log.
  */
 
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir }          from 'node:fs/promises'
 import { createReadStream }   from 'node:fs'
 import { createInterface }    from 'node:readline'
-import { gunzipSync, createGunzip } from 'node:zlib'
+import { createGunzip }     from 'node:zlib'
 import { join, basename }    from 'node:path'
 import { ROOTS }             from './layout.js'
 import { validName }         from './static.js'
@@ -115,6 +115,36 @@ function panels(host, t) {
 
 /** A file's first access-line `ts`. Streamed and stopped there, so the depth
  *  of a gigabyte roll costs a few lines, not a decompress of the oldest file. */
+/** A file's last `keep` non-empty lines, oldest first, streamed through a ring
+ *  of that size (`FJS-3885`). Read whole and gunzipped in one buffer, a month
+ *  of rolled logs was held in memory before the line cap applied; the bytes
+ *  are still all read, since a gzip has no tail to seek to, but no more than
+ *  `keep` lines are ever held. */
+async function lastLines(file, keep) {
+  const raw   = createReadStream(file.path)
+  const input = file.gzip ? raw.pipe(createGunzip()) : raw
+  const ring  = new Array(keep)
+  let seen = 0
+  for await (const line of createInterface({ input, crlfDelay: Infinity })) {
+    if (!line) continue
+    ring[seen++ % keep] = line
+  }
+  if (seen <= keep) return ring.slice(0, seen)
+  const at = seen % keep
+  return [...ring.slice(at), ...ring.slice(0, at)]
+}
+
+/** Whether a file holds any line, read no further than the first. */
+async function hasLine(file) {
+  const raw   = createReadStream(file.path)
+  const input = file.gzip ? raw.pipe(createGunzip()) : raw
+  const lines = createInterface({ input, crlfDelay: Infinity })
+  try {
+    for await (const line of lines) if (line) return true
+    return false
+  } finally { lines.close(); raw.destroy() }
+}
+
 async function firstTs(file) {
   const raw   = createReadStream(file.path)
   const input = file.gzip ? raw.pipe(createGunzip()) : raw
@@ -183,9 +213,9 @@ export function createAnalytics({ dir = ROOTS.logs } = {}) {
     const hosts = new Map()
     let lines = 0, skipped = 0, read = 0, oldest = null, truncated = false
     reading: for (const file of files) {
-      const raw  = await readFile(file.path)
-      const text = (file.gzip ? gunzipSync(raw) : raw).toString('utf8')
-      const all  = text.split('\n')
+      if (read === MAX_LINES) { if (await hasLine(file)) truncated = true; break }
+      // One past what the cap leaves, so a file holding more says so.
+      const all = await lastLines(file, MAX_LINES - read + 1)
       for (let i = all.length - 1; i >= 0; i--) {
         const line = all[i]
         if (!line) continue

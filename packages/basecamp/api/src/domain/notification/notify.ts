@@ -124,15 +124,17 @@ export async function notifyPeople(
     if (!userId || seen.has(userId)) continue
     seen.add(userId)
 
-    const transports = await transportsFor(app, userId, kind)
-    if (!transports.length) continue
-
-    const user = await sys.user.findFirst({ where: { id: userId } })
-    // A suspended account is still a person with rows; it is not somebody to
-    // page. Deleted is the same answer for a different reason.
-    if (!user || user.status !== 'active' || user.deletedAt) continue
-
+    // One person's lookup failing is that person's notice lost, not everyone's
+    // after them: all of it is inside the try.
     try {
+      const transports = await transportsFor(app, userId, kind)
+      if (!transports.length) continue
+
+      const user = await sys.user.findFirst({ where: { id: userId } })
+      // A suspended account is still a person with rows; it is not somebody to
+      // page. Deleted is the same answer for a different reason.
+      if (!user || user.status !== 'active' || user.deletedAt) continue
+
       await (app as any).notify(
         { id: user.id, email: user.email, name: user.name, transports },
         factory(payload),

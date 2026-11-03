@@ -73,7 +73,7 @@ was false in four places. What is true:
   transparent, `.btn` padding → 0. **Load order does not help** — layer
   priority ignores it. Import the reset `layer(reset)`.
 - **Three name collisions:** `container` (breaks `.container.narrow`),
-  `text-xs…xl` (Uno's scale replaces this one), and `fixed` (now renamed).
+  `text-2xs…xl` (Uno's scale replaces this one), and `fixed` (now renamed).
   `table`/`tab` collide harmlessly.
 - The verified recipe — layer order and a `blocklist` — is in README.md under
   *Using it with UnoCSS*, and on the guide's Install page.

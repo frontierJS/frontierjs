@@ -18,6 +18,7 @@
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { join }                   from 'node:path'
 import { createTestEnv, session } from '@frontierjs/testing'
+import { withTestMeta }           from '@frontierjs/junction/testing'
 import { GatePlugin }             from '@frontierjs/litestone'
 import { basecampGateLevel }      from '../src/core/gate.ts'
 import { buildBasecampApp }       from '../src/app.ts'
@@ -177,21 +178,49 @@ describe('variables.reveal', () => {
     expect(rows.length).toBe(1)
     expect(JSON.stringify(rows[0])).not.toContain(keyVar.secretValue)
   })
+
+  // Under a key junction keeps the answer to replay it, and this answer is the
+  // plaintext (`FJS-D1794`).
+  test('an Idempotency-Key is refused, and nothing is kept to replay', async () => {
+    const call = () => withTestMeta({ idempotencyKey: `reveal-${uniq()}` },
+      () => env.as(admin).service('variables').call('reveal', keyVar.id))
+    await expect(call()).rejects.toMatchObject({ code: 400, message: expect.stringContaining('Idempotency-Key') })
+  })
+})
+
+// FJS-3842: the repo and the branch reach `git clone` on a machine as
+// arguments, and one starting with `-` is read there as an option.
+describe('a git source is a repository and a branch git reads as such', () => {
+  test('https, ssh and git@host:path are admitted', () => {
+    for (const repo of ['https://github.com/a/b.git', 'ssh://git@host:22/a/b.git', 'git@github.com:a/b.git'])
+      expect(parseAppSource({ kind: 'git', repo })).toEqual({ kind: 'git', repo })
+  })
+
+  test('an option, a local path, ext:: and file:// are refused, naming the field', () => {
+    for (const repo of ['--upload-pack=touch /tmp/x', '/srv/repo', 'ext::sh -c x', 'file:///etc', 'ssh://-oProxyCommand=x/a', 'git@-oX:a', 'http://h/a.git'])
+      expect(() => parseAppSource({ kind: 'git', repo })).toThrow(/source\.repo/)
+  })
+
+  test('a branch git check-ref-format --branch refuses is refused', () => {
+    expect(parseAppSource({ kind: 'git', repo: 'git@h:a/b', branch: 'feature/x-1' })).toMatchObject({ branch: 'feature/x-1' })
+    for (const branch of ['-b', '--upload-pack=x', 'a..b', 'a b', 'a~1', 'a:b', '.hidden', 'x.lock', 'a/', 'a//b', 'a@{1}', 'HEAD', 'a.'])
+      expect(() => parseAppSource({ kind: 'git', repo: 'git@h:a/b', branch })).toThrow(/source\.branch/)
+  })
 })
 
 describe('source.dockerfile', () => {
   test('accepted when a non-empty string, trimmed, and absent when blank', () => {
-    expect(parseAppSource({ kind: 'git', repo: 'r', dockerfile: '\n FROM x \n' })).toEqual({ kind: 'git', repo: 'r', dockerfile: 'FROM x' })
-    expect(parseAppSource({ kind: 'git', repo: 'r', dockerfile: '   ' })).toEqual({ kind: 'git', repo: 'r' })
-    expect(parseAppSource({ kind: 'git', repo: 'r', dockerfile: 7 })).toEqual({ kind: 'git', repo: 'r' })
+    expect(parseAppSource({ kind: 'git', repo: 'https://git.example/r.git', dockerfile: '\n FROM x \n' })).toEqual({ kind: 'git', repo: 'https://git.example/r.git', dockerfile: 'FROM x' })
+    expect(parseAppSource({ kind: 'git', repo: 'https://git.example/r.git', dockerfile: '   ' })).toEqual({ kind: 'git', repo: 'https://git.example/r.git' })
+    expect(parseAppSource({ kind: 'git', repo: 'https://git.example/r.git', dockerfile: 7 })).toEqual({ kind: 'git', repo: 'https://git.example/r.git' })
   })
 
   test('capped', () => {
-    expect(() => parseAppSource({ kind: 'git', repo: 'r', dockerfile: 'x'.repeat(DOCKERFILE_BYTES + 1) })).toThrow(/bytes/)
+    expect(() => parseAppSource({ kind: 'git', repo: 'https://git.example/r.git', dockerfile: 'x'.repeat(DOCKERFILE_BYTES + 1) })).toThrow(/bytes/)
   })
 
   test('a list carries its size, not its text', () => {
-    expect(summarizeSource({ kind: 'git', repo: 'r', dockerfile: 'FROM x' })).toEqual({ kind: 'git', repo: 'r', dockerfileBytes: 6 })
+    expect(summarizeSource({ kind: 'git', repo: 'https://git.example/r.git', dockerfile: 'FROM x' })).toEqual({ kind: 'git', repo: 'https://git.example/r.git', dockerfileBytes: 6 })
   })
 })
 
@@ -212,6 +241,15 @@ describe('a host port is one App\'s on a machine', () => {
     const held = (await env.system.appServer.findMany({ where: { serverId: box.id }, include: { app: true } }))
       .map((r: any) => r.app.port).filter((p: any) => p != null)
     expect(new Set(held).size).toBe(held.length)
+  })
+
+  test('Apps placed at the same moment each get a port of their own (FJS-3884)', async () => {
+    const apps  = env.as(admin).service('apps')
+    const loose = await Promise.all([1, 2, 3, 4].map(n => fromRepo(admin, { name: `Race ${n} ${uniq()}`, repo: `https://gitlab.com/acme/race-${n}.git` })))
+    const placed = await Promise.all(loose.map(l => apps.call('place', l.app.id, { serverId: box.id }))) as any[]
+    const ports = placed.map(p => p.port)
+    expect(ports.every(p => p >= 10000)).toBe(true)
+    expect(new Set(ports).size).toBe(ports.length)
   })
 
   test('an App no machine holds publishes nothing until it is placed, then takes a port it keeps', async () => {
@@ -362,6 +400,13 @@ describe('fromRepo `isConnecting` writes at GitHub (FJS-D1571)', () => {
   test('importDockerfile reads the forge before any build, the refused token passed over', async () => {
     const r = await connect(admin, { dockerfile: '' }).call
     expect(await importDockerfile(admin, r.app.id)).toEqual({ path: 'Dockerfile', content: 'FROM oven/bun:1\nEXPOSE 3000\n', from: 'forge' })
+  })
+
+  test('a stored repo that is not a git URL is refused naming the App and the fix (FJS-D1804)', async () => {
+    const r = await fromRepo(admin, { name: `Stored ${uniq()}`, repo: 'https://gitlab.com/acme/stored.git', dockerfile: '', serverId: box.id })
+    await (env.system as any).app.update({ where: { id: r.app.id }, data: { source: { kind: 'git', repo: '/srv/repo' } } })
+    await expect(importDockerfile(admin, r.app.id))
+      .rejects.toThrow(new RegExp(`App '${r.app.name}' has a stored repo that is not a git URL.*set the repo to a git URL in the App's source settings`))
   })
 
   test('a repository no account sees falls to the machine, and the note says both', async () => {

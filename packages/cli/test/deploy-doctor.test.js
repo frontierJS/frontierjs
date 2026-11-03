@@ -1,7 +1,7 @@
 // deploy-doctor.test.js — `fli deploy:doctor` answers a program, not only a person.
 //
 // FJS-2553: the summary counted failures and the command ended 0 anyway, and
-// the only way to learn whether an app was ready was to scrape the coloured
+// the only way to learn whether an app was ready was to scrape the colored
 // ✓/✗ lines. Each case runs the real command over a real app directory.
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'

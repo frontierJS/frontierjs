@@ -26,7 +26,7 @@ flags:
 
 The install half of `fli basecamp:create`, for a box that already exists — one an
 earlier `fli basecamp:create` bought, or one made by hand. It runs
-`fli deploy:setup --auto-install` and then `fli deploy` in `packages/basecamp`, with the box as
+`fli deploy:setup --auto-install`, `fli env:push` of the two addresses (`FRONTIER_APP_URL`, `FRONTIER_API_URL` as `https://<hostname>`, added when the box lacks them, never replaced) and then `fli deploy` in `packages/basecamp`, with the box as
 `--server` and the hostname as `--domain`, so it works from any directory and
 writes nothing into `frontier.config.js`. Those two are the only deploy values
 asked for: every other one in Basecamp's deploy block is what its Dockerfile
@@ -107,9 +107,10 @@ if (asking) password = await tty.secret(`${question(`Password for ${admin}`, 'En
 const yes = async (q) => await tty.keys(question(q), { y: 'yes', n: 'no' }) === 'y'
 const outpost = flag.outpost && (!asking || await yes(OUTPOST_QUESTION))
 
-const { refusal: refused } = await zoneRefusal({ domain, log, echo, chalk })
+const { refusal: refused, rejected } = await zoneRefusal({ domain, log, echo, chalk })
 if (refused) {
   log.error(`${refused}. Nothing was installed`)
+  if (rejected) await tokenHint({ echo, chalk })
   process.exitCode = 1
   return
 }
@@ -124,13 +125,15 @@ if (asking) {
 }
 
 log.info(`Installing Basecamp on ${dest} as ${domain}`)
-const failed = await ringZero(dest, domain, (step, n, of) => echo(`\n  ${chalk.cyan(`${n}/${of}`)} ${chalk.bold(`fli ${step.argv[0]}`)}  ${chalk.dim(step.what)}\n`))
+const stages = stageBar({ tty, echo, chalk }, installStages(outpost))
+const failed = await ringZero(dest, domain, { tty, stage: stages.at })
 if (failed) {
   log.error(`fli ${failed.argv.join(' ')} exited ${failed.status}. Fix what it said and run this again`)
   process.exitCode = failed.status || 1
   return
 }
 log.success(`Basecamp is on ${dest}`)
+stages.at('dns')
 const ip = await boxAddress(dest)
 await markHost({ ip, log })
 
@@ -146,5 +149,5 @@ echo`
 // An alias names the workspace after the box; a bare address has no name to give.
 const host = dest.split('@').pop()
 const workspace = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) ? 'basecamp' : host
-if (!await adminThenFleet({ dest, workspace, admin, password, log, echo, chalk, outpost, domain, later: ` --server ${dest}${named}` })) process.exitCode = 1
+if (!await adminThenFleet({ dest, workspace, admin, password, log, echo, chalk, outpost, domain, later: ` --server ${dest}${named}`, tty, stage: stages.at })) process.exitCode = 1
 ```

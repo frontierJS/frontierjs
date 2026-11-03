@@ -48,6 +48,9 @@ export default {
     queues: {
       default:     { concurrency: 2 },
       deployments: { concurrency: 3 },
+      // Draft previews and Claude asks: builds of up to ninety minutes. Apart from
+      // `default` so they cannot hold the monitoring crons' slots.
+      site:        { concurrency: 2 },
       jobs:        { concurrency: 5 },
       sync:        { concurrency: 2 },
       // Recipes and disk sweeps. Held low on purpose: both run a command on a

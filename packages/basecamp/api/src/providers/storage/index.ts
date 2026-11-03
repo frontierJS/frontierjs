@@ -41,6 +41,12 @@ export function keyUnder(row: Pick<DestinationRow, 'prefix'>, name: string): str
   return prefix ? `${prefix}/${name}` : name
 }
 
+/** Where the hub's own Litestream replica lands: its install id in the path,
+ *  so two hubs on one prefix never write the same files (`FJS-D1797`). */
+export function hubReplicaKey(row: Pick<DestinationRow, 'prefix'>, installId: string): string {
+  return keyUnder(row, `hub-${installId}`)
+}
+
 /**
  * Register one destination. A row with no credential is not registered — a
  * target whose ref resolves to nothing fails closed at send as `auth_failed`,

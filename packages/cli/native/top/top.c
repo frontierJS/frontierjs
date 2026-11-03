@@ -19,7 +19,7 @@
 #include <time.h>
 #include <unistd.h>
 
-// blessed's 256-colour matches for parallax's #a537fd and #00ebbe, so fli top looks
+// blessed's 256-color matches for parallax's #a537fd and #00ebbe, so fli top looks
 // like vtop does on the same terminal rather than like the theme's hex values
 #define PURPLE 135
 #define TEAL 43

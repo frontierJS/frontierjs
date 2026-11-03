@@ -5,6 +5,7 @@
 //   bun run frame:loop                        # up to 3 papers
 //   bun run frame:loop -- --rows 5 --max 4    # 5 papers, at most 4 questions each
 //   bun run frame:loop -- --paper rigs --dry-run
+//   bun run frame:loop -- --rows 2 --source autopilot   # a scheduled run (IDEAS/autopilot.md)
 //
 // A question is OPEN until its bullet carries lettered options and a
 // recommendation (`core/decisions.js`); then it is DECIDABLE and the owner rules
@@ -33,6 +34,10 @@
 // A session that writes DECISIONS.md, runs `fli decide`, or strikes a question
 // has crossed the line the skill exists to hold, and the loop stops there.
 //
+// --source autopilot marks a run the schedule started: the log line carries
+// `source`, and the day's cap in ~/.fli/autopilot.json is read before each
+// paper, so a scheduled run stops itself with the Basecamp that started it down.
+//
 // The session, its log and the ladder are `headless.mjs`. One line per attempt
 // goes to ~/.fli/frame-loop.jsonl with the outcome of each question; a question
 // with any outcome but `failed` there is not queued again.
@@ -42,9 +47,9 @@ import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { pathToFileURL }  from 'node:url'
 
-import { ROOT, LOG_DIR, LADDER, runSession, printAttempt, appendLog, readLog, citation, parseArgs, printHelp, trace, writes } from './headless.mjs'
+import { ROOT, logOf, LADDER, runSession, printAttempt, appendLog, readLog, citation, parseArgs, printHelp, trace, writes, sourceOf, dayCapRefusal } from './headless.mjs'
 
-const LOG      = join(LOG_DIR, 'frame-loop.jsonl')
+const LOG      = logOf('frame')
 const DECIDING = import(pathToFileURL(join(ROOT, 'packages', 'cli', 'core', 'decisions.js')).href)
 const REGISTER = import(pathToFileURL(join(ROOT, 'packages', 'cli', 'core', 'registers.js')).href)
 
@@ -54,8 +59,10 @@ const max        = Number(args.max ?? 5)
 const budget     = Number(args.budget ?? 5)
 const permission = args['permission-mode'] ?? 'auto'
 const dryRun     = Boolean(args['dry-run'])
+const source     = sourceOf(args)
 
 if (args.help) { printHelp(import.meta.url); process.exit(0) }
+{ const refused = dayCapRefusal(source); if (refused) { console.error(`[frame-loop] refused: ${refused}`); process.exit(1) } }
 
 const { readDecisions, settledBy, liveRulings } = await DECIDING
 const { readRegisters } = await REGISTER
@@ -67,6 +74,8 @@ const tally   = { framed: 0, settled: 0, unclear: 0, busy: 0, failed: 0 }
 let spent     = 0
 
 for (let n = 0; n < rows; n++) {
+  const over = dayCapRefusal(source)
+  if (over) { console.log(`[frame-loop] stopping: ${over}`); break }
   const item = nextPaper()
   if (!item) { console.log('[frame-loop] no open question left to frame'); break }
   const { paper, questions } = item
@@ -87,7 +96,7 @@ for (let n = 0; n < rows; n++) {
       preBrief(paper, pending),
     ].filter(Boolean).join('\n\n')
 
-    appendLog(LOG, { id: paper.id, questions: pending.map(q => q.id), model, effort, outcome: 'started' })
+    appendLog(LOG, { id: paper.id, questions: pending.map(q => q.id), model, effort, outcome: 'started', ...(source && { source }) })
     const lines = []
     const notes = {}
     const run   = await runSession(prompt, {
@@ -108,7 +117,7 @@ for (let n = 0; n < rows; n++) {
     }
 
     const summary = Object.values(outcomes).join(' ')
-    appendLog(LOG, { id: paper.id, model, effort, cost: run.cost, turns: run.turns, minutes: run.minutes, phases: run.phases, outcome: summary, outcomes: { ...outcomes }, notes, stop: run.stop, denied: run.denied, crossed , ...trace(run) })
+    appendLog(LOG, { id: paper.id, model, effort, cost: run.cost, turns: run.turns, minutes: run.minutes, phases: run.phases, outcome: summary, outcomes: { ...outcomes }, notes, stop: run.stop, denied: run.denied, crossed, ...(source && { source }), ...trace(run) })
     printAttempt('frame-loop', { model, effort }, summary, run)
     for (const l of lines) console.log(`[frame-loop]   ${l}`)
 

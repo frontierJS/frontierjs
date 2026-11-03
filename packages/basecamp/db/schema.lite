@@ -402,6 +402,13 @@ type AppVolumeRestore {
   isOverwriting Boolean?
 }
 
+/// What `deployments.rollback` accepts. A rollback keeps the volume as it is;
+/// `isRestoringVolume` puts back the copy taken before the release it undoes
+/// instead, discarding what the app has written since (`FJS-D1796`).
+type DeploymentRollback {
+  isRestoringVolume Boolean?
+}
+
 /// What `apps.restoreReplica` accepts: the machine whose volume takes the
 /// app's databases out of its Litestream replica, and the instant to bring
 /// them back to — the latest when absent.
@@ -704,6 +711,8 @@ enum NotificationKind {
   JobFailed
   WeeklyDigest
   ReplicaFound
+  MonitorCertExpiring
+  AppBackupFailed
 }
 
 // ============================================================
@@ -788,7 +797,7 @@ model User {
   // your own row only: this model spans workspaces, so a level earned in one
   // is no standing over a person who is in another, and a roster reads its
   // people through the membership (`workspaces.members`, asSystem()). A BOT
-  // is readable to whoever may issue it a key — level 5 in a workspace it is
+  // or a PEER is readable to whoever may issue it a key — level 5 in a workspace it is
   // in, ApiKey's own gate — because the key's `userId` is a write graded as a
   // read of its parent (`FJS-D576`). A human row never comes along with it,
   // so the test is on `kind`. The field policies above keep the columns a
@@ -798,6 +807,7 @@ model User {
   @@gate(1.8.1.5)
   @@allow(read,   id == auth().id)
   @@allow(read,   kind == 'bot' && auth().level >= 5 && memberships.some(workspaceId == auth().workspaceId))
+  @@allow(read,   kind == 'peer' && auth().level >= 5 && memberships.some(workspaceId == auth().workspaceId))
   @@allow(update, id == auth().id)
   @@softDelete
   @@trail(audit)
@@ -1178,7 +1188,7 @@ model Invitation {
 // to a machine or a provider.
 //
 // vision.md constraint 7 says Basecamp holds secrets but never shows them —
-// `@guarded` is that constraint enforced at the Data boundary, so the
+// `@encrypted` is that constraint enforced at the Data boundary, so the
 // value cannot be read out even by a caller allowed to list the secret.
 
 model Secret {
@@ -1279,6 +1289,13 @@ model ApiKey {
   // where `asSystem()` would drop all three to set one value.
   credentialId String?   @system
 
+  // A peer's key (`FJS-D1604`): the public half of an Ed25519 pair the peer
+  // generated and holds alone, as `generateSigningKeys` emits it. A row holds
+  // this or `credentialId`, never both — a receiver that kept a secret able to
+  // sign as its dialer is the breach the key pair exists to rule out. Written
+  // once at enrollment; a rotation is a revoke and a second enrollment.
+  publicKey    String?   @system @immutable
+
   name         String    @trim @length(1, 200)
 
   // The whole of what a list can show. Nothing in this app can reproduce the
@@ -1351,9 +1368,14 @@ model Server {
   //
   // `providerServerId` is the machine's id at the vendor, which means something
   // only THERE: no key to point at and nothing to cascade.
-  providerKind     ComputeProvider @default(custom)
-  providerId       String?
-  providerServerId String?
+  //
+  // All three are `@system`: `sync` and `destroy` spend `providerId` as the
+  // application, so a caller who could write it would point a machine at
+  // another workspace's token (`FJS-3845`). `provision` is the writer, and the
+  // job records `providerServerId` the moment the vendor answers.
+  providerKind     ComputeProvider @default(custom) @system
+  providerId       String?         @system
+  providerServerId String?         @system
   registerMethod   RegisterMethod @default(imported)
 
   region           String       @default("custom")
@@ -1396,7 +1418,10 @@ model Server {
   /// it is refused (`outpostKeyFor` in `core/hooks.ts`). Nullable because the
   /// row exists before the machine does: provisioned or imported, it is
   /// created first and enrolls after.
-  outpostPublicKey String?
+  ///
+  /// `@system`: a caller who could write it would sign as `outpost:<id>` with
+  /// a key of their own, without enrolling (`FJS-3904`). Enrollment is the writer.
+  outpostPublicKey String?   @system
 
   /// The certificate this machine's command port answers with, PEM, handed
   /// over in the enrollment exchange and pinned on its Conduit target — the
@@ -1404,7 +1429,9 @@ model Server {
   /// nature, so no protection. Null means no command can reach the machine:
   /// no target is registered without it, and the only way to change it is to
   /// enroll again.
-  outpostCert      String?
+  ///
+  /// `@system` for the reason `outpostPublicKey` is.
+  outpostCert      String?   @system
 
   plan             Json         @default("{}")
   actualSpecs      Json?
@@ -1552,8 +1579,16 @@ model ServerEvent {
   metadata  Json     @default("{}")
   createdAt DateTime @default(now())
 
+  // When this move began owing its notice, cleared once the people were told
+  // and every channel delivered or holds a queued retry. Written in the move's
+  // own transaction, so a crash between the move and the send leaves a row the
+  // next sweep re-drives rather than a state nobody was told about. Null is
+  // the default because most rows owe nothing (`FJS-D1801`).
+  noticeOwedAt DateTime? @system
+
   @@gate(2.4.8.8)
   @@index([serverId])
+  @@index([noticeOwedAt])
 }
 
 // A nonce an OUTPOST has already spent, kept exactly as long as the signature
@@ -1582,119 +1617,6 @@ model OutpostNonce {
   @@gate(8)
   @@tenant(none)
   @@index([seenAt])
-}
-
-
-// ── Claude Code's usage on THIS machine, indexed (`FJS-D1714`) ───────────────
-//
-// History, not state: `domain/claude/claude-index.ts` reads the transcripts under
-// `<config dir>/projects/` and these two tables are what it learned. They are
-// rebuildable from the files still on disk and are the ONLY record of those
-// Claude Code has since deleted (`cleanupPeriodDays`), which is why a message row
-// carries its own `sessionId` and `cwd` and names no transcript: a relation with
-// a cascade would take the history with the file.
-//
-// @@gate(5.8): the Workbench's ADMINISTRATOR reads, and only the job writes
-// (`asSystem()`). @@tenant(none): the machine's `~/.claude` belongs to no
-// workspace. No @@trail(audit): one row per assistant message would bury the
-// human trail, and the rows are derived.
-
-// One row per transcript FILE — where the indexer stopped reading it. A
-// subagent's transcript is its own file under a `subagents/` folder and carries
-// its PARENT's `sessionId`, so a session's subagent count is a count here.
-// `agent` is a subagent's type, from the `.meta.json` beside its file.
-model ClaudeTranscript {
-  id          String    @id @default(uuid())
-  path        String    @unique
-  sessionId   String
-  cwd         String?
-  isSubagent  Boolean   @default(false)
-  agent       String?
-  isHeadless  Boolean   @default(false)
-  title       String?
-  firstPrompt String?
-  // Bytes read to, always at a newline. Equal to `size` → nothing to read;
-  // larger `size` → read [offset, size); smaller → the file was rewritten, from 0.
-  offset      Int       @default(0)
-  // The skills loaded in the turn still open at `offset`, which the next read's
-  // messages carry until a prompt closes it.
-  turnSkills  String    @default("")
-  size        Int       @default(0)
-  startedAt   DateTime?
-  lastAt      DateTime?
-  // The file is no longer on disk; this row and its messages are the record.
-  isGone      Boolean   @default(false)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @default(now()) @updatedAt
-
-  @@gate(5.8)
-  @@tenant(none)
-  @@index([sessionId])
-  @@index([cwd])
-}
-
-// One row per assistant MESSAGE, unique on the id Claude Code writes — a streamed
-// reply's several lines, a resumed session's repeats and a re-read file all
-// collapse onto it. `cacheWrite` is the whole write and `cacheWrite1h` the part
-// of it written to the one-hour cache, which is priced differently.
-// `tools` is the sorted, comma-joined names of the tools the message called;
-// `skills` the same of the skills loaded in its turn, and `agent` its subagent's
-// type, copied from the transcript row so a spend read groups on it.
-model ClaudeMessage {
-  id           String   @id @default(uuid())
-  messageId    String   @unique
-  sessionId    String
-  cwd          String?
-  model        String
-  at           DateTime
-  input        Int
-  cacheWrite   Int
-  cacheWrite1h Int      @default(0)
-  cacheRead    Int
-  output       Int
-  tools        String   @default("")
-  skills       String   @default("")
-  isSubagent   Boolean  @default(false)
-  agent        String?
-
-  @@gate(5.8)
-  @@tenant(none)
-  @@index([at])
-  @@index([cwd])
-  @@index([sessionId])
-}
-
-// One change Basecamp made to Claude Code's configuration, and what taking it
-// back needs (`domain/claude/claude-write.ts`, the one writer). The call trail
-// records `claude.<method>` naming this row; this row names the file and the
-// top-level keys changed, never a value (Invariant 7).
-//
-// `before` is a file's whole text before the write, or a removed MCP server's
-// config — `settings.json` `env` and an MCP server's env and headers carry
-// tokens, so it is `@encrypted`. `digest` is the sha256 of the file as written:
-// a running `claude` edits these files too, and an undo that replayed `before`
-// over its edit would lose it, so undo is refused once the file has moved.
-//
-// @@gate(5.8): the Workbench's ADMINISTRATOR reads; the claude service writes
-// through `asSystem()`. @@tenant(none), as the usage index.
-model ClaudeWrite {
-  id        String    @id @default(uuid())
-  // `file.save`, `file.trash`, `settings`, `permissions`, `plugin.enable`, `mcp.disable`...
-  action    String
-  // A file path, `name@marketplace`, a marketplace name or an MCP server name.
-  target    String
-  // The project a project- or local-scope change belongs to.
-  project   String?
-  scope     String?
-  keys      String    @default("")
-  before    String?   @encrypted
-  digest    String?
-  undoneAt  DateTime?
-  createdAt DateTime  @default(now())
-
-  @@gate(5.8)
-  @@tenant(none)
-  @@index([createdAt])
 }
 
 
@@ -2267,11 +2189,15 @@ model AppPlatform {
 model AppBackup {
   id          String    @id @default(uuid())
   appId       String
-  app         App       @relation(fields: [appId], references: [id], onDelete: Cascade)
+  // `Restrict` on both: an archive is the way back from losing the App or the
+  // machine, so a hard delete of either must not take it along (`FJS-3902`).
+  // Both are @@softDelete, which never reaches an FK, so a removal still
+  // succeeds and the archive stays listed.
+  app         App       @relation(fields: [appId], references: [id], onDelete: Restrict)
   // The machine that took it; null on a `found` row, whose object key names
   // none (`FJS-D1572`).
   serverId    String?
-  server      Server?   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  server      Server?   @relation(fields: [serverId], references: [id], onDelete: Restrict)
 
   // Where the machine sent the archive, by a pre-signed PUT Basecamp minted
   // (`FJS-D1485`); null is the machine's own disk. `Restrict`: a row whose
@@ -2392,23 +2318,29 @@ model Deployment {
   trigger              DeployTrigger @default(button) @immutable
   fromImage            String?      @immutable
   toImage              String?      @immutable
-  commitSha            String?
+  // `@system` on what shipped and when: `patch` is reachable by a developer,
+  // and `rebind` redeploys `builtImage`, so a writable one rewrites the history
+  // and the next release (`FJS-3863`). A create states `builtImage`, `commitSha`
+  // and `branch` by naming them in `system`; the job writes the rest.
+  commitSha            String?      @system
   commitMessage        String?      @immutable
-  branch               String?
+  branch               String?      @system
   author               String?      @immutable
-  builtImage           String?
+  builtImage           String?      @system
   // The vendor's version id on a platform release, as the vendor answered it.
   // A rollback promotes it, so a caller who could write it picks what goes live.
   platformVersion      String?      @system
-  previousDeploymentId String?      @immutable
+  // Chosen by the service, never the payload: a rollback ships its target's
+  // configSnapshot, secrets included (`FJS-3862`).
+  previousDeploymentId String?      @system @immutable
   configSnapshot       Json         @default("{}") @immutable
   triggeredBy          String?      @immutable
   triggeredByUser      User?        @relation(fields: [triggeredBy], references: [id])
 
   queuedAt             DateTime     @default(now()) @immutable
-  startedAt            DateTime?
-  finishedAt           DateTime?
-  durationMs           Int?
+  startedAt            DateTime?    @system
+  finishedAt           DateTime?    @system
+  durationMs           Int?         @system
 
   createdAt            DateTime     @default(now())
   updatedAt            DateTime     @default(now()) @updatedAt
@@ -2895,8 +2827,18 @@ model NotificationChannel {
   secret      String?     @transient @length(1, 4096) @label("Credential")
 
   isActive    Boolean     @default(true)
+  // Whether a machine going quiet pages this channel. On by default: a lost
+  // machine nobody was paged about is the failure, and a channel that wants
+  // only alert rules opts out rather than the fleet opting each one in.
+  isPagedForFleet  Boolean     @default(true)
   lastTestAt      DateTime? @system
   lastDeliveryAt  DateTime? @system
+  // The newest refusal, kept beside the last success rather than cleared by it:
+  // a page that failed at 03:00 and a test that passed at 09:00 are both true,
+  // and the screen says *last delivery failed* only while the error is newer.
+  // Without it a Slack 500 was a console line and nothing an operator could see.
+  lastError       String?   @system
+  lastErrorAt     DateTime? @system
   createdBy   String? @immutable
 
   version     Int         @version
@@ -3003,6 +2945,15 @@ model AlertRule {
   // actually be covered, so a rule cannot fire off the first reading after a
   // restart. This is the column that separates an alert from a spike.
   forMinutes  Int       @default(0) @gte(0) @lte(1440)
+
+  // How long readings must hold INSIDE the threshold before an open event
+  // resolves — `forMinutes` mirrored for the way back. Zero resolves on the
+  // first good reading, which is how a gauge oscillating at its threshold
+  // opened and closed an incident on every crossing.
+  clearForMinutes    Int  @default(0) @gte(0) @lte(1440)
+  // The least time between one event firing and the next. Zero lets a rule
+  // fire again the pass after it resolved.
+  refireAfterMinutes Int  @default(0) @gte(0) @lte(10080)
 
   isActive    Boolean   @default(true)
 
@@ -3134,12 +3085,19 @@ model Monitor {
   lastCheckedAt DateTime? @system
   nextCheckAt   DateTime? @system
   lastLatencyMs Int?      @system
+  // The certificate the last read of the host saw, and the tightest threshold
+  // (14, 7 or 3 days) already warned of for it. Together they make one warning
+  // per threshold instead of one a sweep; a renewed certificate resets the
+  // warned threshold (`domain/monitor/probe.ts` `certWarning`).
+  certExpiresAt  DateTime? @system
+  certWarnedDays Int?      @system
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @default(now()) @updatedAt
 
   checks      MonitorCheck[]
   events      MonitorEvent[]
+  uptimeDays  MonitorUptimeDay[]
   channels    MonitorChannel[]
 
   // `markUp` and `markDown` are the sweep's; the from-lists are what keep a
@@ -3172,6 +3130,25 @@ model MonitorCheck {
   @@index([monitorId, at])
 }
 
+// A day of MonitorCheck, kept after the rows themselves are pruned
+// (`FJS-D1800`). One per monitor per UTC day, written by `retention.job.ts`
+// just before it deletes that day's checks, so a day is rolled up once and
+// from the whole of its rows. `day` is the UTC midnight it starts at.
+model MonitorUptimeDay {
+  id           String   @id @default(uuid())
+  monitorId    String
+  monitor      Monitor  @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  day          DateTime
+  checks       Int
+  okChecks     Int
+  avgLatencyMs Int?
+  maxLatencyMs Int?
+
+  @@gate(2.8)
+  @@unique([monitorId, day])
+}
+
 // One per STATE CHANGE: the incidents table.
 model MonitorEvent {
   id         String        @id @default(uuid())
@@ -3183,8 +3160,16 @@ model MonitorEvent {
   toStatus   MonitorStatus
   message    String
 
+  // When this move began owing its notice, cleared once the people were told
+  // and every channel delivered or holds a queued retry. Written in the move's
+  // own transaction, so a crash between the move and the send leaves a row the
+  // next sweep re-drives rather than a state nobody was told about. Null is
+  // the default because most rows owe nothing (`FJS-D1801`).
+  noticeOwedAt DateTime? @system
+
   @@gate(2.8)
   @@index([monitorId, at])
+  @@index([noticeOwedAt])
 }
 
 // Which channels a monitor pages. `AlertRuleChannel`'s shape.
@@ -3654,6 +3639,14 @@ model HubConfig {
   // silent fork where two screens disagree about the installation.
   id                        String   @id @default("hub")
 
+  // Which Basecamp this is, minted once with the row and never written again
+  // (`FJS-D1797`). The archive key, the manifest, the claim marker and the
+  // Litestream replica path all carry it, so two hubs on one bucket prefix
+  // each see the other's objects as foreign instead of adopting and pruning
+  // them. A restore brings the archive's id back with its row: the restored
+  // hub IS that install.
+  installId                 String   @unique @default(uuid()) @system @immutable
+
   // No name: the one place it would show is the sign-in screen, which is read
   // before anyone is signed in, and that is a public endpoint for a label
   // (`FJS-D1591`).
@@ -3689,6 +3682,16 @@ model HubConfig {
   backupKeepLocalDays       Int?     @gte(1) @lte(3650)
   backupKeepRemoteCount     Int      @default(7) @gte(1) @lte(1000)
   backupKeepRemoteDays      Int?     @gte(1) @lte(3650)
+
+  // How long a monitoring row is kept (`FJS-D1800`), by days. `retention.job.ts`
+  // prunes them daily. A MonitorCheck is one row a minute per monitor, so it
+  // goes first and is rolled up into MonitorUptimeDay before it does; the
+  // rest are incident history. Only a RESOLVED Alert and a READ Notification
+  // are pruned -- a firing alert and an unread notice are still owed to somebody.
+  retentionCheckDays        Int      @default(30) @gte(1) @lte(3650)
+  retentionEventDays        Int      @default(90) @gte(1) @lte(3650)
+  retentionAlertDays        Int      @default(90) @gte(1) @lte(3650)
+  retentionNotificationDays Int      @default(90) @gte(1) @lte(3650)
 
   // A copy of ENCRYPTION_KEY kept OFF this box, attested by a person. Nothing
   // here can see that copy — `fli deploy:setup` leaves it in the operator's

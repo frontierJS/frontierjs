@@ -1,5 +1,5 @@
 <script>
-  // color-input.mesa — a stored data colour picked from swatches or a custom
+  // color-input.mesa — a stored data color picked from swatches or a custom
   // picker.
   import ColorInput from '../../../components/forms/ColorInput.mesa'
 
@@ -15,7 +15,7 @@
 </div>
 
 <div id="custom">
-  <ColorInput label="Brand colour" swatches={SET} bind:value={custom} />
+  <ColorInput label="Brand color" swatches={SET} bind:value={custom} />
 </div>
 
 <div id="bare">

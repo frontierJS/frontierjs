@@ -1470,6 +1470,25 @@ describe('@syntax', () => {
     expect(r.errors.join('\n')).toMatch(/@syntax cannot be an array/)
   })
 
+  test('@digest names a String column beside a File and refuses everything else (FJS-D1292)', () => {
+    const ok = parse(`model P {\n id Int @id\n file File? @digest(sha256)\n sha256 String?\n}`)
+    expect(ok.errors).toEqual([])
+    expect(ok.schema.models[0].fields[1].attributes.find((a: any) => a.kind === 'digest').column).toBe('sha256')
+    const refusals: Array<[string, RegExp]> = [
+      ['file File? @digest(sha256)', /no field 'sha256' on this model/],
+      ['file File? @digest(sha256)\n sha256 Int?', /'sha256' must be a String, got Int/],
+      ['file File? @digest(file)', /names the File column itself/],
+      ['file File[] @digest(sha256)\n sha256 String?', /cannot be on a File\[\]/],
+      ['name String @digest(sha256)\n sha256 String?', /@digest requires a File field, got String/],
+    ]
+    for (const [body, message] of refusals) {
+      const r = parse(`model P {\n id Int @id\n ${body}\n}`)
+      expect(r.valid).toBe(false)
+      expect(r.errors.join('\n')).toMatch(message)
+    }
+    expect(parse(`model P {\n id Int @id\n file File? @digest\n}`).valid).toBe(false)
+  })
+
   test('JSON Schema emits x-syntax and the registered type: md → text/markdown', () => {
     const { schema } = parse(MD_SCHEMA)
     const js = generateJsonSchema(schema, { mode: 'full' })

@@ -85,7 +85,9 @@ Basecamp acts on **many projects, from outside them.** It assumes nothing about 
 
 The rule between them: **Basecamp never grows a capability `fli` cannot also perform.** Where the two overlap, `fli` is the implementation and Basecamp is the caller. This keeps the escape hatch real rather than theoretical.
 
-### The Domain Question — Open
+### The Domain Question — Closed (`FJS-D1790`)
+
+Basecamp is the tool of **Domain 7 — Observability & Operations** (`ARCHITECT.md` § domains). The question below was closed by subtraction on 2026-11-03: the developer's own desk — workbench chats, atlas, decide, autopilot, the Claude tab, local git — left for its own private app, `packages/workbench` (`IDEAS/workbench-package.md`), and what remains here observes or operates a running system. Basecamp absorbs the former; the developer's desk goes to Workbench; between them only a signed call. The argument, kept for the record:
 
 Basecamp began as the primary tool of **Domain 7 — Observability**. It has outgrown that.
 
@@ -98,6 +100,8 @@ Three candidate resolutions, none chosen:
 3. **Leave it.** Basecamp is the operational face of several domains at once and does not belong to one. Domains describe concerns; tools may span them.
 
 Option 3 is the most honest description of the current state and the least useful as a design constraint. This should be settled before Basecamp's feature surface grows further, because the answer determines what Basecamp is allowed to absorb.
+
+Settled as option 1, which `ARCHITECT.md` had already written, once the desk left (`FJS-D1790`).
 
 ---
 
@@ -196,7 +200,6 @@ Basecamp orchestrates the secrets appliance. It does not become a second store o
 
 Recorded honestly rather than resolved prematurely.
 
-- **Domain placement.** Rename Domain 7, split it, or accept that Basecamp spans domains. Determines what Basecamp may absorb next.
 - **The appliance noun.** Blocking, because it appears in the UI the moment installs ship.
 - **Self-hosted or managed.** Basecamp is a tool developers run themselves — but a fleet tool that is itself part of the fleet has a bootstrapping problem. Who deploys Basecamp?
 - **Outpost or SSH-only.** Does Basecamp push over SSH, or does each server run an **Outpost** that reports back? Push is simpler and keeps servers dumb; an Outpost makes health and logs far better. This choice constrains everything in the Know group. **The name is settled and the architecture is not** (`FJS-D29`): *Outpost* is reserved for the resident process if there is one, and the word *agent* is retired here because FJS will have AI agents. `IDEAS/deploy-plane.md` argues for keeping both — Outpost as the design, SSH as the degrade path — and notes that the schema (`outpostVersion`, `lastHeartbeatAt`, `installing`) and both engines have already chosen.

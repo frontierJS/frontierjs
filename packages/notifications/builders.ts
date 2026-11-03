@@ -282,6 +282,12 @@ class PushBuilder {
     return this
   }
 
+  /** One `http` button: the phone POSTs `body` to `url` and the notification clears. No header is sent, so `url` must take an anonymous write. ntfy only. */
+  post(label: string, url: string, body: string): this {
+    this._actions.push({ label, url, body })
+    return this
+  }
+
   build(): PushMessage {
     return {
       title: this._title,

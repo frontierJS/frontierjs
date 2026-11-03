@@ -32,6 +32,8 @@ const BASECAMP_VERSION: string =
 export type ArchiveManifest = {
   basecamp:                 string
   takenAt:                  string
+  /** The install that took it (`HubConfig.installId`); absent on a pre-id archive. */
+  installId?:               string
   /** sha256 of the key the archived `@encrypted` columns need; null for the
    *  development placeholder (`encryptionKeyFingerprint`). */
   encryptionKeyFingerprint: string | null
@@ -39,7 +41,7 @@ export type ArchiveManifest = {
   files:                    { path: string; bytes: number; sha256: string }[]
 }
 
-async function sha256Of(path: string): Promise<string> {
+export async function sha256Of(path: string): Promise<string> {
   const hasher = new Bun.CryptoHasher('sha256')
   for await (const chunk of createReadStream(path)) hasher.update(chunk)
   return hasher.digest('hex')
@@ -59,10 +61,11 @@ async function listFiles(dir: string): Promise<ArchiveManifest['files']> {
 
 /** Write `manifest.json` into a finished archive directory. Last, so every
  *  file it lists is the file the tarball carries. */
-export async function writeManifest(dir: string, takenAt: string): Promise<ArchiveManifest> {
+export async function writeManifest(dir: string, takenAt: string, installId: string): Promise<ArchiveManifest> {
   const manifest: ArchiveManifest = {
     basecamp:                 BASECAMP_VERSION,
     takenAt,
+    installId,
     encryptionKeyFingerprint: encryptionKeyFingerprint(),
     files:                    await listFiles(dir),
   }
@@ -82,7 +85,7 @@ const short = (fp: string | null) => fp ? fp.slice(0, 12) : 'the development pla
  */
 export async function archiveRefusals(
   dir:  string,
-  opts: { migrationsRoot: string; keyFingerprint?: string | null },
+  opts: { migrationsRoot: string; keyFingerprint?: string | null; installId?: string },
 ): Promise<string[]> {
   const path = join(dir, MANIFEST_FILE)
   if (!existsSync(path)) return [`The archive has no ${MANIFEST_FILE}, so nothing says which key its secrets need.`]
@@ -93,6 +96,11 @@ export async function archiveRefusals(
   if (!Array.isArray(manifest?.files)) return [`${MANIFEST_FILE} lists no files.`]
 
   const reasons: string[] = []
+
+  // Only a caller that knows its own id asks: a restore onto a fresh box has
+  // none yet and takes the archive's.
+  if (opts.installId && manifest.installId && manifest.installId !== opts.installId)
+    reasons.push(`The archive was taken by another Basecamp (${manifest.installId}), not this one (${opts.installId}).`)
 
   const key = opts.keyFingerprint === undefined ? encryptionKeyFingerprint() : opts.keyFingerprint
   if ((manifest.encryptionKeyFingerprint ?? null) !== key)

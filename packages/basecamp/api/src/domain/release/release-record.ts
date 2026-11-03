@@ -41,19 +41,92 @@ export async function pushRow(app: App, id: string): Promise<Row | null> {
   return row
 }
 
+export const INTERRUPTED = 'interrupted — Basecamp restarted mid-release'
+
 /** The release moved to `building`, with its steps and its App — or why it is not runnable. */
 export async function startRelease(app: App, deploy: Row) {
+  // A row already `building` is a run that died: caravan reclaims a job whose
+  // worker stopped and replays it, and a second run of half a release on the
+  // machine is not a retry (`FJS-3850`). It is failed rather than resumed.
+  if (deploy.status === 'building') {
+    await finishRelease(app, deploy, { status: 'failed', error: INTERRUPTED, stepId: await runningStep(app, deploy.id) })
+    return { runnable: false as const, status: 'failed', interrupted: true }
+  }
   // Not runnable is not an error: a release already terminal has been
   // retried, cancelled or finished by another attempt.
-  if (!['pending', 'building'].includes(deploy.status))
+  if (deploy.status !== 'pending')
     return { runnable: false as const, status: deploy.status as string }
 
+  // A compare-and-swap from `pending`, the model's `build` move: two runs of
+  // one release that both read `pending` start it once, and a cancel that
+  // landed since the read wins.
   const startedAt = new Date().toISOString()
-  await sys(app).deployment.update({ where: { id: deploy.id }, data: { status: 'building', startedAt } })
+  const moved = await sys(app).deployment.update({ where: { id: deploy.id, status: 'pending' }, data: { status: 'building', startedAt } })
+    .catch(() => null)
+  if (!moved) {
+    const now = await sys(app).deployment.findFirst({ where: { id: deploy.id }, select: { status: true } })
+    return { runnable: false as const, status: (now?.status ?? 'gone') as string }
+  }
   const steps  = await sys(app).deploymentStep.findMany({ where: { deploymentId: deploy.id }, orderBy: { position: 'asc' } })
   const target = await sys(app).app.findUnique({ where: { id: deploy.appId } })
   await pushRow(app, deploy.id)
   return { runnable: true as const, deploy, steps, app: target, startedAt }
+}
+
+async function runningStep(app: App, deploymentId: string): Promise<string | undefined> {
+  const step = await sys(app).deploymentStep.findFirst({ where: { deploymentId, status: 'running' }, select: { id: true } })
+  return step?.id
+}
+
+/** The release's status as it stands, read past the caller's own copy of the row. */
+export async function releaseStatus(app: App, id: string): Promise<string | null> {
+  const row = await sys(app).deployment.findFirst({ where: { id }, select: { status: true } })
+  return row?.status ?? null
+}
+
+/** The App's release that is queued or building, if it has one. */
+export async function inFlightRelease(app: App, appId: string): Promise<{ id: string, status: string } | null> {
+  return await sys(app).deployment.findFirst({
+    where: { appId, status: { in: ['pending', 'building'] } }, select: { id: true, status: true } })
+}
+
+/**
+ * The longest a release can legitimately run: each long Outpost command's own
+ * bound end to end, and a margin for the short steps between them. A release
+ * `pending` or `building` past it with no live job behind it has nothing that
+ * will ever finish it.
+ */
+export const RELEASE_BOUND_MS = 15 * 60_000 + 30_000 + 30 * 60_000 + 30_000 + 32 * 60_000 + 15 * 60_000
+
+/**
+ * Fail every release stuck `pending` or `building` that caravan holds no live
+ * job for (`FJS-3861`): a job given up on, a dispatch that never landed, a
+ * queue file lost with a restore. Without this the row reads as in flight
+ * forever, and `create` refuses every release of the App behind it.
+ */
+export async function sweepStuckReleases(app: App, now = Date.now()): Promise<string[]> {
+  const cutoff = new Date(now - RELEASE_BOUND_MS).toISOString()
+  const stuck = await sys(app).deployment.findMany({
+    where: { status: { in: ['pending', 'building'] }, queuedAt: { lt: cutoff } } }) as Row[]
+  if (!stuck.length) return []
+
+  const jobs = (app as any).jobs
+  const live = new Set<string>()
+  for (const status of ['pending', 'running'])
+    for (const job of jobs.list({ queue: 'deployments', status, limit: 10_000 }) as { data: string }[]) {
+      try { live.add(JSON.parse(job.data).deployment_id) } catch { /* not a release's job */ }
+    }
+
+  const failed: string[] = []
+  for (const row of stuck) {
+    if (live.has(row.id)) continue
+    await finishRelease(app, row, {
+      status: 'failed', stepId: await runningStep(app, row.id),
+      error: 'No job was left running this release, so it was failed — start another',
+    })
+    failed.push(row.id)
+  }
+  return failed
 }
 
 /** One step's status. `digest` and `commit` are what the machine reported

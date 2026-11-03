@@ -690,10 +690,10 @@ title: App
 
   /** Put back what `d` replaced — a new release of the old bytes. The service
    *  names why when it cannot: a first release, or a predecessor that is gone. */
-  async function rollback(d) {
+  async function rollback(d, isRestoringVolume = false) {
     error = null; busy = d.id
     try {
-      const replacement = await deployments.service.invoke('rollback', d.id, {})
+      const replacement = await deployments.service.invoke('rollback', d.id, isRestoringVolume ? { isRestoringVolume } : {})
       toasts.success('Rolling back')
       goto(`/deployments/${replacement.id}/`)
     } catch (e) {
@@ -710,6 +710,16 @@ title: App
   $: latest      = app?.recent_deployments?.[0] ?? null
   $: rollbackIt  = latest ? deployments.transitions(latest, session.level).find(m => m.name === 'rollback') : null
   $: canRetry    = latest && (latest.status === 'failed' || latest.status === 'cancelled')
+  // A rollback keeps the volume unless asked (`FJS-D1796`); restoring is
+  // offered only where the service found the copy taken before that release.
+  let restore    = null
+  let restoreFor = null
+  async function loadRestore(id) {
+    restoreFor = id
+    try { restore = await deployments.service.invoke('rollbackCopy', id, {}) }
+    catch { restore = null }
+  }
+  $: { if (latest && rollbackIt && restoreFor !== latest.id) loadRestore(latest.id) }
   $: primaryHost = app?.domains?.find(d => d.isPrimary)?.hostname ?? null
   // Deploy ships the Source tab, so over a sent build the app goes back to
   // what that tab names. The live row's trigger says which door it came
@@ -895,6 +905,12 @@ title: App
                         data-confirm="A new release puts back the bytes and config this one replaced."
                         data-confirm-title="Roll back this release?" data-confirm-label="Roll back"
                         onclick={() => rollback(latest)}>Roll back</Button>
+                {#if restore?.available}
+                  <Button treatment="ghost" tone="danger" id="app-rollback-restore" disabled={!rollbackIt.allowed || busy === latest.id}
+                          data-confirm={`The previous build replaces what is live, and the app's volume goes back to the copy taken ${ago(restore.copy.takenAt)}. Everything written since then is lost.`}
+                          data-confirm-title="Roll back with data?" data-confirm-label="Roll back and restore"
+                          onclick={() => rollback(latest, true)}>Roll back with data</Button>
+                {/if}
               {/if}
               {#if canRetry}
                 <Button treatment="ghost" id="app-retry" disabled={!!busy} onclick={deploy}>Retry</Button>

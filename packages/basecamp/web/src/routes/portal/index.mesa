@@ -4,10 +4,10 @@ title: Portal
 <script>
   // The operator's view of the shared appliances — is it up, where is it, open it.
   //
-  // Not the same question as /admin/adapters/, which asks whether an adapter is
+  // Not the same question as /admin/providers/, which asks whether an adapter is
   // WIRED (configured vs stub, and which env var activates it). The service
   // splits the same way and that split is the reason both screens exist:
-  // `find()` reports wiring and pings nothing, `get(id)` pings live. Adapters
+  // `find()` reports wiring and pings nothing, `get(id)` pings live. Providers
   // reads the first, this screen reads the second.
   import { portal } from '../../resources/Portal.mesa'
   import { session } from '../../lib/session.js'
@@ -43,7 +43,7 @@ title: Portal
   $: session.workspaceId, () => load()
 
   // One appliance, pinged for real. `get` is the live path — it is why this
-  // screen is not a second rendering of the adapters list.
+  // screen is not a second rendering of the providers list.
   async function check(entry) {
     error = null; busy = entry.id
     try {
@@ -91,7 +91,7 @@ title: Portal
   Health here is measured, not remembered — <strong>Check</strong> pings the appliance
   through its adapter. An <strong>unconfigured</strong> one is a stub waiting for its
   environment variables, which is a state rather than a fault; whether one is wired at all
-  is <a href="/admin/adapters/">Adapters</a>.
+  is <a href="/admin/providers/">Providers</a>.
 </p>
 
 {#if error}

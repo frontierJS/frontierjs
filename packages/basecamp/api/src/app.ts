@@ -28,8 +28,6 @@ import { mcp }         from '@frontierjs/mcp'
 
 import { env }                       from './core/env.ts'
 import { buildProviders }            from './providers/index.ts'
-import { createWorkbench }           from './domain/workbench/workbench.ts'
-import { workbenchTerminal }         from './plugins/workbench-terminal.ts'
 import { machineStream }             from './plugins/machine-stream.ts'
 import { backupArchive }             from './plugins/backup-archive.ts'
 import { appArchiveUpload }          from './plugins/app-archive-upload.ts'
@@ -41,6 +39,7 @@ import { createLitestoneAuth, auth as authPlugin, defineProvider } from '@fronti
 import { ssoFromEnv }                            from './core/sso-env.ts'
 import { createBasecampDb, jobsDatabasePath } from './core/db.ts'
 import { openSqlite }                    from './core/sqlite.ts'
+import { copyBeforeMigrating }           from './domain/backup/pre-migrate.ts'
 import { createSecretResolver, hubSigningKeys } from './core/credentials.ts'
 import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts'
 import { registerPushReceivers } from './plugins/git-push.ts'
@@ -53,7 +52,7 @@ import { S3_SIGNER, s3Signer }    from './providers/storage/s3.ts'
 import { enrollTokenMatches, installScript, isCertificate, isSigningPublicKey } from './providers/compute/enrollment.ts'
 import { notifications, ntfy } from '@frontierjs/notifications'
 import { resolvePush, PUBLIC_NTFY } from './push.ts'
-import { outpostCredential, outpostScope, workspaceOrKeys } from './core/hooks.ts'
+import { peerCredential, outpostCredential, outpostScope, workspaceOrKeys } from './core/hooks.ts'
 import { auditPlugin }           from '@frontierjs/junction/audit'
 import { grantsFor } from './core/capabilities.ts'
 import { basecampSessionFields, ownerOwesSecondFactor, refuseSuspendedLogin, refuseSuspended, refuseUninvited } from './core/session-auth.ts'
@@ -62,6 +61,8 @@ import { slugify }                        from './core/resource.ts'
 import { basecampGateLevel, roleForLevel, SYSTEM, workspaceClaim } from './core/gate.ts'
 import { basecampNodes }                  from './plugins/automations.ts'
 import { restoreSchedules }          from './domain/job/job-schedule.ts'
+import { isSweepFresh }              from './domain/monitor/sweep-heartbeat.ts'
+import { sweepStuckReleases }        from './domain/release/release-record.ts'
 import restoreReconcile              from './jobs/restore-reconcile.job.ts'
 import { pushAppsOn }                from './jobs/domain-dns.job.ts'
 import { syncReplicasOn }            from './jobs/replicate-sync.job.ts'
@@ -134,6 +135,7 @@ export async function buildBasecampApp(
   // replaces. An injected client already holds them, so it is never swapped under.
   const restored      = opts.db ? null : await restoreStaged(dbPath, logger)
   const rawDb         = openSqlite(dbPath)
+  copyBeforeMigrating(rawDb, dbPath, migrationsDir, logger)
   const migrated      = await apply(rawDb, migrationsDir)
   if (migrated.unmatched || migrated.error)
     throw new Error(`[basecamp] ${migrated.message ?? migrated.error} — db/migrations/main`)
@@ -241,7 +243,8 @@ export async function buildBasecampApp(
     // registered with no subscriber would be graded SYSADMIN, not the stranger
     // `FJS-D193` falls back to, should this app ever take the webhooks plugin.
     system: SYSTEM,
-    credentials: [outpostCredential({ db, logger })],
+    // The peer door first: the outpost one claims every signed request.
+    credentials: [peerCredential({ db, logger }), outpostCredential({ db, logger })],
     principal: membershipClaim({
       tenantFrom:  workspaceOrKeys,
       model:       'workspaceMember',
@@ -332,10 +335,6 @@ export async function buildBasecampApp(
   app.own('providers', await buildProviders(
     ((config as Record<string, unknown>).providers ?? {}) as Record<string, Record<string, unknown>>
   ))
-  // One instance for every service that sends to it: a message sent while a
-  // run is working waits in this instance's memory, and only the instance that
-  // started the run drains it when the run ends.
-  app.own('workbench', createWorkbench({ dir: env.WORKBENCH_DIR || undefined, bin: env.CLAUDE_BIN, env }))
 
   // ── Conduit — integrations ────────────────────────────────────────────
   // Plugin augments app with app.conduit, wires /metrics, and registers
@@ -463,7 +462,9 @@ export async function buildBasecampApp(
   // ── Health + metrics ──────────────────────────────────────────────────
   // GET /health  → liveness + readiness (503 if DB unreachable; createApp({ db }) registers that check)
   // GET /metrics → conduit + caravan stats merged in via registerMetricsSource
-  app.configure(health())
+  // `monitor-sweep` fails the readiness answer once the queue has stopped
+  // running the sweep, so a stalled queue is visible on /health.
+  app.configure(health({ checks: { 'monitor-sweep': () => isSweepFresh() } }))
 
   // What /metrics says, KEPT. Every source above answers on request, and until
   // this the merged value lived for the duration of one response — so no
@@ -489,7 +490,7 @@ export async function buildBasecampApp(
   //
   // `narrow`: a key is offered what its scopes reach, not everything its bot's
   // role does — the same reading apiKeyGuard refuses a call by (`FJS-1349`) —
-  // and nobody is offered the workbench, which agentGuard refuses.
+  // and nobody is offered `pages`, which agentGuard refuses.
   app.configure(mcp({ name: 'basecamp', version: '1.0.0', keepAliveMs: 5_000, narrow: narrowForAgent }))
 
   // ── Devtools ──────────────────────────────────────────────────────────
@@ -669,6 +670,12 @@ export async function buildBasecampApp(
   restoreSchedules(app)
     .then(n => logger.info('schedules restored', { count: n }))
     .catch(err => logger.error('could not restore schedules', { error: (err as Error).message }))
+
+  // A release the last process left in flight with no job behind it is
+  // failed now, not a minute after boot (`FJS-3861`).
+  sweepStuckReleases(app)
+    .then(ids => { if (ids.length) logger.warn('releases failed at boot — no job was left running them', { ids }) })
+    .catch(err => logger.error('could not sweep stuck releases', { error: (err as Error).message }))
 
   // The restored rows are as old as the archive; which replicas the bucket
   // still holds is asked once, off the boot path (`IDEAS/backups.md` 4.5).
@@ -889,6 +896,13 @@ export async function buildBasecampApp(
     a.delete('/setup', async (ctx) => {
       if (env.NODE_ENV === 'production')
         return ctx.json({ message: 'Reset not available in production' }, 403)
+      // Outside production this still wipes every account, and it was open to
+      // anyone who could reach the port (`FJS-3860`): only a signed-in hub
+      // administrator may, and a key is not a sign-in.
+      const resetBy = ctx.user as { isSystemAdmin?: boolean; sessionId?: string } | undefined
+      if (!resetBy) return ctx.json({ message: 'Not authenticated' }, 401)
+      if (resetBy.isSystemAdmin !== true || !resetBy.sessionId)
+        return ctx.json({ message: 'Only a signed-in system administrator may reset setup' }, 403)
 
       // Order matters: children before parents, since FKs are ON.
       // Indexed by name: the accessors are known, the LOOP is what makes this
@@ -968,7 +982,7 @@ export async function buildBasecampApp(
       // A machine enrolling AGAIN, reinstalled or its key lost, replaces the
       // key it had: the burned token is the proof of authority, and whoever
       // held the previous pair does not hold this one.
-      await sys.server.update({ where: { id }, data: { outpostCert: cert, outpostPublicKey: publicKey } })
+      await sys.server.update({ where: { id }, data: { outpostCert: cert, outpostPublicKey: publicKey }, system: ['outpostCert', 'outpostPublicKey'] })
 
       logger.info('outpost enrolled', { serverId: id })
 
@@ -997,10 +1011,6 @@ export async function buildBasecampApp(
       headers: { 'content-type': 'text/x-shellscript; charset=utf-8' },
     }))
   })
-
-  // The workbench's Terminal tab — a shell in a pinned checkout, behind the
-  // same refusal as the workbench service (plugins/workbench-terminal.ts).
-  app.configure(function terminalRoute() { workbenchTerminal(app) })
 
   // A machine's output as it is written — a container's log today
   // (plugins/machine-stream.ts).

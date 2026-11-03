@@ -150,3 +150,45 @@ export function nextState(m: StateSubject, ok: boolean, at: number): NextState {
     page:        entering ? 'down' : resend ? 'resend' : null,
   }
 }
+
+// ─── Certificate expiry ──────────────────────────────────────────────────
+
+/** Days before expiry a warning goes out, widest first. Constants, not settings (`FJS-D1795`). */
+export const CERT_WARN_DAYS = [14, 7, 3] as const
+
+const DAY_MS = 86_400_000
+
+export interface CertWarning {
+  /** The threshold to warn of now, or null where none is owed. */
+  warn:       number | null
+  /** Whole days left, zero or less once expired. */
+  daysLeft:   number
+  /** What to store as `certWarnedDays`: the tightest threshold warned of, null when none is crossed. */
+  warnedDays: number | null
+}
+
+/**
+ * Which warning, if any, a certificate expiring at `expiresAt` is owed.
+ *
+ * One per threshold: `prior.warnedDays` is the tightest already sent for the
+ * certificate in `prior.expiresAt`. A certificate first seen at 5 days warns
+ * once as 7, not as 14 and 7 together. A different expiry is a renewed
+ * certificate, so its warnings start over; without that a renewal would leave
+ * next year's 14-day warning silenced by this year's.
+ */
+export function certWarning(
+  expiresAt: number,
+  prior:     { expiresAt: number | null; warnedDays: number | null },
+  now:       number,
+): CertWarning {
+  const daysLeft = Math.floor((expiresAt - now) / DAY_MS)
+  const crossed  = CERT_WARN_DAYS.filter(d => daysLeft <= d)
+  if (!crossed.length) return { warn: null, daysLeft, warnedDays: null }
+
+  const tightest = Math.min(...crossed)
+  const renewed  = prior.expiresAt !== null && Math.abs(expiresAt - prior.expiresAt) > DAY_MS
+  const warned   = renewed ? null : prior.warnedDays
+  return warned !== null && warned <= tightest
+    ? { warn: null,     daysLeft, warnedDays: warned }
+    : { warn: tightest, daysLeft, warnedDays: tightest }
+}

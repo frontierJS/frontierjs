@@ -42,6 +42,8 @@ they drift, they drift in opposite directions, which is what this plan closes:
 - ~~**Q3** — should `fli check` grade the four rulings?~~ Answered `FJS-D1754`:
   yes, warn-level, after Phases 1–2 so the two apps are the clean baseline.
 
+## Plan
+
 ### Phase 0 — Scope measured
 
 Goal: every name each phase moves is listed before anything moves.

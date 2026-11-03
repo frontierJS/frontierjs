@@ -44,7 +44,7 @@ function plugin() {
   CTX.models = Object.fromEntries(schema.models.map((m: any) => [m.name, m]))
   p.onInit(schema, CTX)
   p._provider = {
-    async put(key: string, _bytes: unknown, opts: any) { puts.push({ key, ...opts }) },
+    async put(key: string, body: any, opts: any) { await new Response(body).arrayBuffer(); puts.push({ key, ...opts }) },
     async get() { return null },
     async delete() {},
     async sign(key: string) { return `https://cdn.test/${key}` },
@@ -249,7 +249,7 @@ describe('a parameter is not part of the type', () => {
     const schema = parse(`model Doc { id Int @id; note File? @accept("text/plain") }`).schema
     CTX.models = { Doc: schema.models[0] }
     p.onInit(schema, CTX)
-    p._provider = { async put(k: string, _b: unknown, o: any) { puts.push({ key: k, ...o }) },
+    p._provider = { async put(k: string, b: any, o: any) { await new Response(b).arrayBuffer(); puts.push({ key: k, ...o }) },
       async get() { return null }, async delete() {}, async sign(k: string) { return k } }
 
     const ref = await p.serialize(f, { field: 'note', model: 'Doc', id: 1, ctx: CTX })

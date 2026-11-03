@@ -143,6 +143,25 @@ await db.document.create({ data: { id: 1, name: 'Spec', ownerId: 1 } })
 await db.document.update({ where: { id: 1 }, data: { attachments: [png] } })
 ```
 
+A request body larger than memory goes in as a stream. `fromStream` reads the
+head, answers `@accept`, and pipes the rest; give it the `size` the request
+states, which a remote provider needs (see [file-storage.md](../file-storage.md)):
+
+```js
+import { FileStorage, fromStream } from '@frontierjs/litestone/storage'
+const db = await createClient({ path: './schema.lite', db: './app.db', plugins: [FileStorage({ provider: 'local', publicBase: 'http://localhost:3001/storage' })] })
+const pdf = new TextEncoder().encode('%PDF-1.4 …')
+await db.document.create({ data: { id: 1, name: 'Spec', ownerId: 1 } })
+const doc = await db.document.update({
+  where: { id: 1 },
+  data:  { attachments: [fromStream(new Blob([pdf]).stream(), { name: 'spec.pdf', size: pdf.length })] },
+})
+```
+
+Every stored reference records `sha256`. To keep the hash in a column of its own,
+mark the file `@digest(sha256)` beside a `String` column of that name: the column
+is filled from the bytes, a different value is refused, and it clears with the file.
+
 ---
 
 ## Presigned download URLs

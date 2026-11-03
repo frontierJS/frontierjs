@@ -109,6 +109,21 @@ export function redirectsOf(list) {
  *  prefix length, which a route holding two prefixes cannot have. */
 export const pathRouteId = (appId) => `${routeId(appId)}-path-`
 
+/** Is `id` one of THIS app's path routes. Matched whole: a prefix test took
+ *  `fjs-a-path-0`, app `a-path-0`'s own route, for app `a`'s path route. */
+const isPathRouteOf = (appId, id) =>
+  typeof id === 'string' && id.startsWith(pathRouteId(appId)) && /^[0-9]+$/.test(id.slice(pathRouteId(appId).length))
+
+/** An app id a route may be written for: a plain name, and not one that spells
+ *  another app's `-redirects` or `-path-<n>` route id, which would be that
+ *  app's route to Caddy. */
+export function checkRouteAppId(appId) {
+  if (typeof appId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(appId))
+    throw new Error(`app_id '${appId}' is not a plain name`)
+  if (/-redirects$|-path-[0-9]+$/.test(appId))
+    throw new Error(`app_id '${appId}' ends the way a route id does and would collide with another app's route`)
+}
+
 /** A path prefix: segments of URL-safe characters, no wildcard, no trailing
  *  slash. Caddy's path matcher expands `*` and `{…}`, so a prefix holding
  *  either would match more than the Domain's owner wrote. */
@@ -284,6 +299,7 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
      */
     route({ appId, hosts = [], port, host = null, redirects = [], paths = [] }) {
       return serially(async () => {
+        checkRouteAppId(appId)
         if (!hosts.length && !redirects.length && !paths.length) throw new Error('a route needs at least one hostname')
         if ((hosts.length || paths.length) && !(Number.isInteger(Number(port)) && Number(port) > 0))
           throw new Error(`a route needs the port the app is published on — got '${port}'`)
@@ -297,7 +313,7 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
         const wanted = paths.map(p => p.host + p.prefix)
         for (const other of live?.routes ?? []) {
           const otherId = other['@id']
-          if (otherId === id || otherId === redirectsId(appId) || otherId?.startsWith(pathId)) continue
+          if (otherId === id || otherId === redirectsId(appId) || isPathRouteOf(appId, otherId)) continue
           const taken = (other.match ?? []).flatMap(m => m.path
             ? (m.host ?? []).flatMap(h => m.path.slice(0, 1).map(p => h + p)).filter(k => wanted.includes(k))
             : (m.host ?? []).filter(h => named.includes(h)))
@@ -339,7 +355,7 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
         else await drop(id)
 
         const ids = paths.map((_, i) => `${pathId}${i}`)
-        for (const stale of (live?.routes ?? []).map(r => r['@id']).filter(i => i?.startsWith(pathId) && !ids.includes(i)))
+        for (const stale of (live?.routes ?? []).map(r => r['@id']).filter(i => isPathRouteOf(appId, i) && !ids.includes(i)))
           await drop(stale)
         for (const [i, p] of paths.entries()) await put({
           '@id':    ids[i],
@@ -396,6 +412,7 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
      */
     unroute({ appId }) {
       return serially(async () => {
+        checkRouteAppId(appId)
         let removed = false
         let listed
         try {
@@ -404,7 +421,7 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
           if (!err.unreachable) throw err
           return { removed: false }
         }
-        const paths = (listed.status < 300 ? listed.data ?? [] : []).map(r => r['@id']).filter(i => i?.startsWith(pathRouteId(appId)))
+        const paths = (listed.status < 300 ? listed.data ?? [] : []).map(r => r['@id']).filter(i => isPathRouteOf(appId, i))
         for (const id of [routeId(appId), redirectsId(appId), ...paths]) {
           let reply
           try {

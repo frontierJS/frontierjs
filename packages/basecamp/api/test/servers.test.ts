@@ -111,3 +111,28 @@ describe('the heartbeat writes App.deployPublicKey', () => {
     expect(await keyOf(placed.id)).toBe(KEY)
   })
 })
+
+describe('a machine coming back closes the page its going opened', () => {
+  test('a check-in after unreachable resolves on the fleet channels; one from an online machine sends nothing', async () => {
+    const sys = env.system as any
+    const got: any[] = []
+    const hook = Bun.serve({ port: 0, async fetch(req) { got.push(await req.json()); return new Response('ok') } })
+    try {
+      await sys.notificationChannel.create({ data: {
+        workspaceId: machine.workspaceId, name: `hook-${uniq()}`, kind: 'webhook',
+        config: { url: `http://localhost:${hook.port}/fleet` } } })
+
+      // Online first, so the next check-in is a plain one.
+      expect((await heartbeat({ outpost_version: '0.5.0', health: { cpu: 1 } })).status).toBe(200)
+      expect(got.length).toBe(0)
+
+      await sys.server.transition(machine.id, 'loseContact')
+      expect((await heartbeat({ outpost_version: '0.5.0', health: { cpu: 1 } })).status).toBe(200)
+
+      expect(got.length).toBe(1)
+      expect(got[0].title).toBe(`[recovered] ${machine.name}`)
+      expect(got[0].severity).toBe('info')
+      expect(got[0].event).toBe('basecamp.resolved')
+    } finally { hook.stop(true) }
+  })
+})

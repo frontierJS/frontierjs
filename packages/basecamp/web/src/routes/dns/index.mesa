@@ -490,7 +490,7 @@ title: DNS & edge
           its API token as a provider key on <a href="/secrets/">Secrets</a> — an account-owned Cloudflare
           token with Zone › Zone › Read, Zone › DNS › Edit and Zone › Config Rules › Edit — and its zones appear here beside the hostnames above.
         </p>
-        <p class="text-body"><a href="/admin/adapters/">All adapters</a>.</p>
+        <p class="text-body"><a href="/admin/providers/">All providers</a>.</p>
       </Callout>
       <div aria-busy="true" class="stack" aria-label="Zone DNS records, not connected">
         <Skeleton variant="text" width="70%" />

@@ -1,0 +1,2431 @@
+---
+title: Workbench
+---
+<script>
+  // A Claude Code chat per pinned checkout, all on one screen.
+  //
+  // Each message is a `claude -p` run in that checkout with every permission,
+  // resumed from the last one (api domain/workbench/workbench.ts). The run belongs to the
+  // API, not to this tab: closing the tab does not stop it, and every open tab
+  // reads the same status.
+  //
+  // The status is POLLED. A run writes its log on the API's disk and the poll
+  // reads only what is new, so a second is cheap; a transcript is refetched
+  // only when its `rev` moved — the log, the review, or the checks.
+  //
+  // When a run ends the card grows what came after it: the checks strip (the
+  // checkout's own `fli done`), a reviewer's reply, and the diff, whose line
+  // comments ride along with the next message.
+  //
+  // A checkout holds several CHATS and shows one; the strip under the message
+  // box switches between them. They share the checkout's tree, so one runs at
+  // a time and the others wait -- Fork is how two run at once.
+  //
+  // The Run tab starts what the checkout declares -- `fli dev` per app and its
+  // package.json scripts (api domain/workbench/workbench-run.ts) -- and leaves it running
+  // on the API's machine; what is up comes on the same poll.
+  //
+  // The Plan tab is one of the pin's Phases-of-Steps files in the checkout
+  // (fli's core/plan.js), the one the API shows and Go acts on, reread
+  // whenever the card's rev moves while it shows. With no plan it is the
+  // Build plan form: a goal and a path, written by a new
+  // chat that may edit that one file. File issue and Ask question write a
+  // row into the checkout's ISSUES.md (fli's core/file.js); a letter on a
+  // plan question rules it (fli's core/decide.js) and lifts Next's hold.
+  //
+  // A BRANCH is a pin forked from another (api domain/workbench/workbench-branch.ts): a
+  // worktree of its own, drawn right after its parent, with Land and Archive
+  // where the parent has Fork.
+  //
+  // The screen is a STAGE, a grid of panes, and a DOCK of tiles for the rest.
+  // A tile is the same chat, folded to what it is doing now; its run keeps
+  // going there. Layout (Alt+L) folds the stage's panes to cards and draws
+  // the grid one column wider and one row taller: a tile dragged into a
+  // box, or a checkout picked in one, takes that cell, and dropping into the
+  // extra column or row grows the grid. The grid, which cell holds which
+  // chat and which one is zoomed are this browser's own, kept in
+  // localStorage.
+  import { ago }       from '../../lib/datetime.js'
+  import { markdownText } from '@frontierjs/toolbelt/markdown'
+  import { slug }      from '@frontierjs/toolbelt/inflect'
+  import { page }      from '@frontierjs/sierra/router'
+  import { getClient } from '@frontierjs/sierra/resource'
+  import { workbench } from '../../resources/Workbench.mesa'
+  import { pastedImages, shrinkImage } from '../../lib/pasted-images.js'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import Checkbox   from '@frontierjs/ui/components/forms/Checkbox.mesa'
+  import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
+  import Dot        from '@frontierjs/ui/components/display/Dot.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Markdown   from '@frontierjs/ui/components/display/Markdown.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import Tab        from '@frontierjs/ui/components/layout/Tab.mesa'
+  import TabList    from '@frontierjs/ui/components/layout/TabList.mesa'
+  import TabPanel   from '@frontierjs/ui/components/layout/TabPanel.mesa'
+  import Tabs       from '@frontierjs/ui/components/layout/Tabs.mesa'
+  import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
+  import Terminal   from '../../components/Terminal.mesa'
+  import ClaudeCode from '../../components/ClaudeCode.mesa'
+
+  const POLL_MS   = 2000
+  const SHOW_TOOLS = 4
+  const MAX_IMAGES = 5
+
+  let pins        = []
+  let status      = {}
+  let transcripts = {}
+  let drafts      = {}
+  let path        = ''
+  let error       = null
+  let notice      = null
+  let offered     = true
+  let loaded      = false
+  let pinning     = false
+
+  // Checkouts is per pin, Claude Code is the machine's; `?tab=claude` opens the
+  // second. The checkouts stay mounted while hidden, or a pane's terminal and
+  // scroll are gone on the way back, and Claude Code is read the first time it opens.
+  let pageTab     = page.query?.tab === 'claude' ? 'claude' : 'checkouts'
+  let claudeSeen  = pageTab === 'claude'
+  function onView(id) {
+    if (id === 'claude') claudeSeen = true
+    else afterDraw(place)
+  }
+
+  // The revs the transcripts were fetched at; a poll answering another is the
+  // cue to fetch again.
+  const fetchedAt = {}
+  const lastState = {}
+  // When this tab saw each run end, so the next one waiting is the oldest.
+  const endedAt   = {}
+
+  async function loadPins() {
+    try {
+      const answer = await workbench.service.invoke('pins', null)
+      pins = answer.pins
+      status = Object.fromEntries(pins.map(p => [p.id, p.status]))
+      for (const p of pins) lastState[p.id] ??= p.status.state
+      settle()
+      error = null
+    } catch (err) {
+      if (err.code === 404) offered = false
+      error = err.message
+    } finally {
+      loaded = true
+      afterDraw(place)
+    }
+    await Promise.all([
+      ...pins.map(p => refreshTranscript(p.id)),
+      ...pins.filter(p => !p.missing && !runnables[p.id]).map(p => loadRunnables(p.id)),
+    ])
+  }
+
+  async function refreshTranscript(id, rev = status[id]?.rev ?? '') {
+    if (fetchedAt[id] === rev && transcripts[id]) return
+    fetchedAt[id] = rev
+    try {
+      // Read before the redraw: a reader who scrolled up to an earlier turn is
+      // not yanked to the bottom by every log line a working run adds.
+      const log   = document.getElementById(`chat-log-${id}`)
+      const stuck = !log || log.scrollHeight - log.scrollTop - log.clientHeight < 48
+      const t = await workbench.service.invoke('transcript', id)
+      transcripts = { ...transcripts, [id]: t }
+      if (stuck) scrollToEnd(id)
+      else measure(id)
+    } catch {}
+  }
+
+  function scrollToEnd(id) {
+    afterDraw(() => {
+      const log = document.getElementById(`chat-log-${id}`)
+      if (log) log.scrollTop = log.scrollHeight
+      measure(id)
+    })
+  }
+
+  const afterDraw = (fn) => queueMicrotask(() => requestAnimationFrame(fn))
+
+  // ─── the poll ────────────────────────────────────────────────────────
+
+  // A poll in flight when the page goes outlives clearTimeout and would
+  // reschedule itself forever -- one zombie loop per navigation or HMR swap.
+  let timer = null
+  let destroyed = false
+  function schedule() { if (!destroyed) timer = setTimeout(poll, POLL_MS) }
+  async function poll() {
+    try {
+      const answer = await workbench.service.invoke('status', null)
+      const next = Object.fromEntries(answer.status.map(s => [s.id, s]))
+      let ended = false
+      for (const s of answer.status) {
+        if (lastState[s.id] === 'working' && s.state !== 'working') { ended = true; endedAt[s.id] = Date.now(); announce(s) }
+        lastState[s.id] = s.state
+      }
+      // The chat first: a card that says done before its answer is drawn reads
+      // as a run that finished with nothing to say.
+      await Promise.all(answer.status.map(s => refreshTranscript(s.id, s.rev)))
+      const was = status
+      status = next
+      retitle()
+      // A log is reread while its server writes, and once more as it ends.
+      for (const [key, open] of Object.entries(logOpen)) {
+        const [id, row] = key.split(' ')
+        if (open && shows(id, 'run') && (runOf(id, row)?.running || was[id]?.runs?.find(r => r.id === row)?.running)) refreshLog(id, row)
+      }
+      // The plan is read while its session writes it: the file is small and
+      // a box ticked mid-run is the progress worth showing.
+      for (const s of answer.status) {
+        const p = pins.find(x => x.id === s.id)
+        if (p && shows(s.id, 'plan') && planRev[s.id] !== s.rev) loadPlan(p, s.rev)
+      }
+      // A diff is not re-read while a run is still moving the tree under it.
+      for (const s of answer.status)
+        if (shows(s.id, 'diff') && s.state !== 'working' && diffRev[s.id] !== s.rev) loadDiff(s.id)
+      // A finished run changed the tree; the branch and dirty count follow.
+      if (ended) loadPins()
+    } catch {}
+    schedule()
+  }
+
+  function announce(s) {
+    const p = pins.find(x => x.id === s.id)
+    if (!p || document.hasFocus()) return
+    const q = s.questions?.[0]
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted')
+        new Notification(`${p.name}: ${q ? 'needs you' : s.state === 'done' ? 'done' : 'stopped with an error'}`, {
+          body: q ? markdownText(q.question) + (s.questions.length > 1 ? ` (+${s.questions.length - 1} more)` : '')
+            : s.cost != null ? `$${s.cost.toFixed(2)} · ${s.turns} turns` : '',
+          tag:  `workbench-${s.id}`,
+        })
+    } catch {}
+  }
+
+  // `#workbench-<id>` names a card — the Atlas screen links to the chat it
+  // sent to — and it may be docked, so the link puts it on stage.
+  function reveal() {
+    const id = location.hash.startsWith('#workbench-') && decodeURIComponent(location.hash.slice('#workbench-'.length))
+    if (id && pins.some(p => p.id === id)) stageOn(id)
+  }
+
+  loadPins().then(() => { reveal(); schedule() })
+
+  // The key Basecamp's "Add a peer" form takes, and whether its id is set here.
+  let peer = null
+  loadPeer()
+  async function loadPeer() {
+    try {
+      // Accept is what the dev proxy routes on; without it the SPA shell answers.
+      const res = await getClient().fetch('/door/peer', { headers: { accept: 'application/json' } })
+      if (res.ok) peer = await res.json()
+    } catch { /* the dock shows no Peer block */ }
+  }
+  window.addEventListener('keydown', onKey)
+  window.addEventListener('resize', place)
+  $.onDestroy(() => {
+    destroyed = true; clearTimeout(timer); document.title = baseTitle
+    window.removeEventListener('keydown', onKey)
+    window.removeEventListener('resize', place)
+  })
+
+  // The tab says how many are working, how many wait on a question and how
+  // many finished unread, so it reads from another tab.
+  const baseTitle = document.title
+  function retitle() {
+    const all     = Object.values(status)
+    const working = all.filter(s => s.state === 'working').length
+    const asking  = all.filter(s => needsYou(s)).length
+    const unread  = all.filter(s => s.unread && !needsYou(s)).length
+    document.title = (working ? `● ${working} · ` : '') + (asking ? `? ${asking} · ` : '') + (unread ? `(${unread}) ` : '') + baseTitle
+  }
+
+  // ─── the stage and the dock ──────────────────────────────────────────
+
+  const STAGE_KEY = 'workbench.workbench.stage'
+  // What a stage never chosen fills with, side by side.
+  const FIRST     = 2
+
+  // Null until this browser has chosen; then what it chose, even an empty
+  // stage. `cells` is the grid read row by row, a pin id or null per cell.
+  let stage = null
+  let zoom  = null
+  try {
+    const kept = JSON.parse(localStorage.getItem(STAGE_KEY))
+    if (Array.isArray(kept?.cells) && Number.isInteger(kept.cols) && kept.cols > 0) {
+      stage = { cols: kept.cols, cells: kept.cells.map(id => typeof id === 'string' ? id : null) }
+      if (typeof kept.zoom === 'string') zoom = kept.zoom
+    }
+  } catch {}
+
+  // When each pane was last clicked; a chat with no empty cell to take sends
+  // the stalest one back.
+  const touched = {}
+
+  const cells   = () => stage?.cells ?? []
+  const cols    = () => stage?.cols ?? 1
+  const rows    = () => Math.max(1, Math.ceil(cells().length / cols()))
+  const cellOf  = (id) => { const i = cells().indexOf(id); return i < 0 ? null : { r: Math.floor(i / cols()), c: i % cols() } }
+  const staged  = () => cells().map(id => pins.find(p => p.id === id)).filter(Boolean)
+  // Zoomed, one pane fills the stage and the others wait in the dock as
+  // tiles. They are still staged, so un-zooming brings them back.
+  const zoomed  = () => staged().length > 1 && cells().includes(zoom) ? zoom : null
+  const visible = () => zoomed() ? staged().filter(p => p.id === zoom) : staged()
+  const docked  = () => ordered(pins).filter(p => !visible().some(v => v.id === p.id))
+
+  function keep() {
+    try { localStorage.setItem(STAGE_KEY, JSON.stringify({ ...stage, zoom })) } catch {}
+  }
+
+  const grid = () => Array.from({ length: rows() }, (_, r) => Array.from({ length: cols() }, (_, c) => cells()[r * cols() + c] ?? null))
+
+  // An empty trailing row or column is not kept: the grid is as big as what
+  // is in it, and a stage with nothing in it is empty rather than one box.
+  function setGrid(g) {
+    while (g.length > 1 && g.at(-1).every(x => x === null)) g.pop()
+    let w = g[0]?.length ?? 1
+    while (w > 1 && g.every(row => row[w - 1] === null)) w--
+    const flat = g.flatMap(row => row.slice(0, w))
+    stage = flat.some(Boolean) ? { cols: w, cells: flat } : { cols: 1, cells: [] }
+    if (zoom && !cells().includes(zoom)) zoom = null
+    keep()
+  }
+
+  // Puts a chat in a cell, growing the grid to reach it. One it already holds
+  // moves; one it does not takes the cell, and whoever held it goes to the
+  // dock -- or, when the mover was on the stage, to the mover's old cell.
+  function put(id, r, c) {
+    const g    = grid()
+    const from = cellOf(id)
+    if (from) g[from.r][from.c] = null
+    while (g.length <= r) g.push(Array(g[0].length).fill(null))
+    if (c >= g[0].length) for (const row of g) while (row.length <= c) row.push(null)
+    const was = g[r][c]
+    g[r][c] = id
+    if (was && from) g[from.r][from.c] = was
+    setGrid(g)
+  }
+
+  // A pin that went drops out; a stage that emptied that way, or was never
+  // chosen, is refilled with what most wants a look — running or unread first.
+  function settle() {
+    const ids = new Set(pins.map(p => p.id))
+    if (stage !== null) {
+      const kept = cells().map(id => ids.has(id) ? id : null)
+      if (kept.some(Boolean) || !cells().length) {
+        if (kept.some((id, i) => id !== cells()[i])) setGrid(grid().map(row => row.map(id => ids.has(id) ? id : null)))
+        return
+      }
+    }
+    const wants = (p) => p.status.state === 'working' || p.status.unread ? 0 : 1
+    const top = ordered(pins).map((p, i) => ({ p, i })).sort((a, b) => wants(a.p) - wants(b.p) || a.i - b.i)
+      .slice(0, FIRST).map(x => x.p.id)
+    stage = { cols: Math.max(1, top.length), cells: top }
+    keep()
+  }
+
+  function stageOn(id) {
+    const p = pins.find(x => x.id === id)
+    if (!p) return
+    const wasZoomed = !!zoomed()
+    if (!cells().includes(id)) {
+      const empty = cells().indexOf(null)
+      if (empty >= 0) put(id, Math.floor(empty / cols()), empty % cols())
+      else if (cells().length < FIRST) put(id, 0, cells().length)
+      else {
+        const stalest = cells().reduce((a, b) => (touched[b] ?? 0) < (touched[a] ?? 0) ? b : a)
+        const { r, c } = cellOf(stalest)
+        put(id, r, c)
+      }
+      scrollToEnd(id)
+      if (tabOf(p) === 'diff') loadDiff(id)
+    }
+    // A chat asked for while zoomed takes the whole stage, as the one it
+    // replaced had.
+    if (wasZoomed && zoom !== id) { zoom = id; keep(); scrollToEnd(id) }
+    touched[id] = Date.now()
+    markSeen(p)
+  }
+
+  function dock(p) {
+    const at = cellOf(p.id)
+    if (!at) return
+    const g = grid()
+    g[at.r][at.c] = null
+    zoom = null
+    setGrid(g)
+  }
+
+  // The panes that stay are redrawn at their new size; the one coming back
+  // was not drawn at all, so it opens at its newest line.
+  function toggleZoom(id) {
+    zoom = zoomed() === id ? null : id
+    keep()
+    touched[id] = Date.now()
+    for (const p of staged()) p.id === id ? measure(p.id) : scrollToEnd(p.id)
+  }
+
+  const freshest = () => [...staged()].sort((a, b) => (touched[b.id] ?? 0) - (touched[a.id] ?? 0))[0]
+
+  // ─── the layout ──────────────────────────────────────────────────────
+  // Arranging, every pane is a card and the grid has one more column and
+  // one more row than it holds, each empty cell a box to drop a tile in or
+  // start a chat in. `asking` is the box asking which checkout.
+
+  let arranging = false
+  let dragging  = null
+  let over      = null
+  let asking    = null
+
+  // Slim folds every pane to its header. The bar's button sets them all;
+  // a click on a pane's own header overrides just that one.
+  let slim    = false
+  let slimmed = {}
+  const isSlim = (id) => id in slimmed ? slimmed[id] : slim
+  const toggleSlim = () => { slim = !slim; slimmed = {} }
+  function slimPane(id, e) {
+    if (e.target.closest('button, a, summary')) return
+    slimmed = { ...slimmed, [id]: !isSlim(id) }
+  }
+
+  function arrange(on = !arranging) {
+    arranging = on
+    asking    = null
+    if (on && zoom) { zoom = null; keep() }
+    if (!on) for (const p of visible()) scrollToEnd(p.id)
+  }
+
+  const area = (r, c) => `${r + 1} / ${c + 1}`
+  const areaOf = (id) => { const at = zoomed() ? { r: 0, c: 0 } : cellOf(id); return at ? area(at.r, at.c) : 'auto' }
+  const shownCols = () => zoomed() && !arranging ? 1 : cells().length ? cols() + (arranging ? 1 : 0) : 1
+  const shownRows = () => zoomed() && !arranging ? 1 : cells().length ? rows() + (arranging ? 1 : 0) : 1
+
+  // The empty cells: the grid's own, plus the extra column and row while
+  // arranging; one box when nothing is staged; none while zoomed.
+  function empties() {
+    if (zoomed() && !arranging) return []
+    const out = []
+    for (let r = 0; r < shownRows(); r++) for (let c = 0; c < shownCols(); c++) {
+      const id = r < rows() && c < cols() ? cells()[r * cols() + c] ?? null : null
+      if (!id) out.push({ key: `${r},${c}`, r, c, phantom: r >= rows() || c >= cols() })
+    }
+    return out
+  }
+
+  function dragStart(e, id) {
+    dragging = id
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', id)
+  }
+  function dragOver(e, cell) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    over = cell.key
+  }
+  function drop(e, cell) {
+    e.preventDefault()
+    const id = dragging ?? e.dataTransfer.getData('text/plain')
+    dragging = null; over = null
+    if (!pins.some(p => p.id === id)) return
+    put(id, cell.r, cell.c)
+    touched[id] = Date.now()
+  }
+
+  // A box starts a NEW chat in a checkout not yet on the stage; one already
+  // there has its pane.
+  const startable = () => docked()
+  async function startIn(cell, pid) {
+    const p = pins.find(x => x.id === pid)
+    asking = null
+    if (!p) return
+    put(p.id, cell.r, cell.c)
+    touched[p.id] = Date.now()
+    if (!blank(p.id)) await fresh(p)
+    else scrollToEnd(p.id)
+  }
+
+  const shows = (id, tab) => {
+    const p = pins.find(x => x.id === id)
+    return !!p && visible().some(v => v.id === id) && tabOf(p) === tab
+  }
+
+  // A question first, then the oldest finish nobody has looked at; one this
+  // tab did not see end counts as older than any it did.
+  function waiting() {
+    const asks = (p) => needsYou(status[p.id]) ? 0 : 1
+    return ordered(pins).filter(p => status[p.id]?.unread || needsYou(status[p.id]))
+      .sort((a, b) => asks(a) - asks(b) || (endedAt[a.id] ?? 0) - (endedAt[b.id] ?? 0))
+  }
+
+  // Lands where the owner acts: on the question, where that is why it waits.
+  function openWaiting(p) {
+    stageOn(p.id)
+    if (needsYou(status[p.id])) toQuestion(p)
+  }
+
+  // Alt and a code rather than a key: on a Mac, Alt+1 types ¡.
+  function onKey(e) {
+    if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || pageTab !== 'checkouts') return
+    const digit = /^Digit([1-9])$/.exec(e.code)?.[1]
+    if (digit) {
+      const p = ordered(pins)[Number(digit) - 1]
+      if (p) { e.preventDefault(); stageOn(p.id) }
+    } else if (e.code === 'KeyJ') {
+      const next = waiting()[0]
+      if (next) { e.preventDefault(); openWaiting(next) }
+    } else if (e.code === 'KeyZ') {
+      const target = zoomed() ?? freshest()?.id
+      if (target && staged().length > 1) { e.preventDefault(); toggleZoom(target) }
+    } else if (e.code === 'KeyL') {
+      if (pins.length) { e.preventDefault(); arrange() }
+    }
+  }
+
+  // The stage fills the window under the header, so each pane scrolls its own
+  // log; the document scrolls in this shell, so the top is measured.
+  function place() {
+    const el = document.getElementById('workbench-grid')
+    if (el) el.style.setProperty('--workbench-top', `${Math.max(0, el.getBoundingClientRect().top + scrollY)}px`)
+  }
+
+  const keyOf = (p) => {
+    const n = ordered(pins).findIndex(x => x.id === p.id) + 1
+    return n >= 1 && n <= 9 ? `Alt+${n}` : ''
+  }
+
+  // ─── tabs ────────────────────────────────────────────────────────────
+  // A pane at half width cannot hold the chat, the diff and the reports one
+  // under another, so it shows one of them. Checks and Review exist only
+  // while their report is current; the message box stays under every tab.
+
+  let tabs = {}
+
+  function tabsOf(p) {
+    const out = [{ key: 'chat', label: 'Chat' }]
+    if (!p.missing) out.push({ key: 'diff', label: diffs[p.id] ? `Diff · ${diffs[p.id].total}` : 'Diff' })
+    if (!p.missing) out.push({ key: 'run', tone: serving(p.id).length ? 'success' : '',
+                               label: serving(p.id).length ? `Run · ${serving(p.id).length} up` : 'Run' })
+    if (!p.missing) out.push({ key: 'plan', label: planLabel(p) })
+    if (!p.missing) out.push({ key: 'terminal', label: 'Terminal' })
+    const c = status[p.id]?.checks
+    if (c) out.push({ key: 'checks', tone: CHECKS_TONE[c.state],
+                      label: checksLabel(c) + (c.drives ? ` · ${plural(c.drives, 'drive')} to run` : '') })
+    const r = transcripts[p.id]?.review
+    if (r) out.push({ key: 'review', tone: r.state === 'error' ? 'danger' : '',
+                      label: r.state === 'working' ? 'Review…' : `Review${status[p.id]?.review?.cost != null ? ` ${money(status[p.id].review.cost)}` : ''}` })
+    out.push({ key: 'settings', label: 'Settings' })
+    return out
+  }
+
+  const tabOf = (p) => tabsOf(p).some(t => t.key === tabs[p.id]) ? tabs[p.id] : 'chat'
+
+  // role="tab" promises the arrow keys: they move along the strip and select.
+  function arrowTab(p, e) {
+    const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key]
+    if (!step) return
+    const keys = tabsOf(p).map(t => t.key)
+    const next = keys[(keys.indexOf(tabOf(p)) + step + keys.length) % keys.length]
+    e.preventDefault()
+    setTab(p, next)
+    afterDraw(() => document.getElementById(`workbench-tab-${next}-${p.id}`)?.focus())
+  }
+
+  function setTab(p, key) {
+    tabs = { ...tabs, [p.id]: key }
+    if (key === 'diff')  loadDiff(p.id)
+    if (key === 'run')   loadRunnables(p.id)
+    if (key === 'plan')  loadPlan(p)
+    if (key === 'chat')  scrollToEnd(p.id)
+  }
+
+  // What a run is doing, in the words a tile has room for.
+  function doing(id) {
+    const s = status[id]
+    if (s?.state === 'working') return s.tool ? `› ${s.tool}` : 'thinking…'
+    if (s?.state === 'done')    return `done ${money(s.cost)}${s.turns ? ` · ${s.turns} turns` : ''}`
+    if (s?.state === 'error')   return 'stopped with an error'
+    return 'idle'
+  }
+
+  // ─── actions ─────────────────────────────────────────────────────────
+
+  async function pin(e) {
+    e?.preventDefault()
+    pinning = true
+    try {
+      const pinned = await workbench.service.invoke('pin', null, { path })
+      path = ''
+      error = null
+      await loadPins()
+      stageOn(pinned.id)
+    } catch (err) { error = err.message } finally { pinning = false }
+  }
+
+  async function act(method, p, data) {
+    try {
+      const out = await workbench.service.invoke(method, p.id, data)
+      error = null
+      return out
+    } catch (err) { error = `${p.name}: ${err.message}`; return null }
+  }
+
+  async function send(p, e) {
+    e?.preventDefault()
+    const prompt = composed(p.id)
+    if (!prompt || pending(p.id)) return
+    const images = (shots[p.id] ?? []).map(({ type, data }) => ({ type, data }))
+    shots    = { ...shots, [p.id]: [] }
+    drafts   = { ...drafts, [p.id]: '' }
+    comments = { ...comments, [p.id]: [] }
+    tabs     = { ...tabs, [p.id]: 'chat' }
+    document.getElementById(`workbench-draft-${p.id}`)?.style.removeProperty('block-size')
+    scrollToEnd(p.id)
+    if (await act('send', p, { prompt, chat: status[p.id]?.chat, ...(images.length ? { images } : {}) })) {
+      lastState[p.id] = 'working'
+      status = { ...status, [p.id]: { ...status[p.id], state: 'working', running: status[p.id]?.chat } }
+    }
+    askNotifications()
+  }
+
+  // ─── pasted images ───────────────────────────────────────────────────
+  // Each goes with the next send, shrunk first; the tray over the message box
+  // shows them, and one still shrinking holds Send.
+
+  let shots = {}
+  const pending = (id) => (shots[id] ?? []).some(s => s.pending)
+
+  function paste(p, e) {
+    const { files, only } = pastedImages(e)
+    if (!files.length) return
+    if (only) e.preventDefault()
+    for (const f of files) {
+      if ((shots[p.id] ?? []).length >= MAX_IMAGES) { error = `${p.name}: ${MAX_IMAGES} images is the most one message takes`; break }
+      const slot = { key: Math.random().toString(36).slice(2), pending: true }
+      shots = { ...shots, [p.id]: [...(shots[p.id] ?? []), slot] }
+      shrinkImage(f).then(
+        (done) => { shots = { ...shots, [p.id]: (shots[p.id] ?? []).map(s => s.key === slot.key ? { ...slot, ...done, pending: false } : s) } },
+        (err)  => { shots = { ...shots, [p.id]: (shots[p.id] ?? []).filter(s => s.key !== slot.key) }; error = `${p.name}: could not read the pasted image — ${err?.message ?? err}` },
+      )
+    }
+  }
+  const dropShot = (p, key) => { shots = { ...shots, [p.id]: (shots[p.id] ?? []).filter(s => s.key !== key) } }
+
+  // textarea.field grows with its text through field-sizing; a browser
+  // without it (Firefox) holds a long prompt in a four-line box. The CSS
+  // max-height still caps what this sets.
+  const SIZES_ITSELF = typeof CSS === 'undefined' || CSS.supports('field-sizing', 'content')
+  function fit(el) {
+    if (SIZES_ITSELF) return
+    el.style.blockSize = 'auto'
+    el.style.blockSize = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`
+  }
+
+  function keydown(p, e) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send(p, e)
+  }
+
+  async function markSeen(p) {
+    if (!status[p.id]?.unread) return
+    status = { ...status, [p.id]: { ...status[p.id], unread: false } }
+    retitle()
+    await act('seen', p)
+  }
+
+  // ─── chats ───────────────────────────────────────────────────────────
+
+  const chatsOf   = (id) => status[id]?.chats ?? []
+  const shownOf   = (id) => chatsOf(id).find(c => c.id === status[id]?.chat)
+  const chatTitle = (c) => c.title ?? 'New chat'
+  // Nothing sent and nothing resumed: New chat would open its twin.
+  const blank     = (id) => !shownOf(id)?.title && !shownOf(id)?.session
+  // The checkout is working in a chat other than the one shown, so a message
+  // here would be refused rather than queued.
+  const elsewhere = (id) => status[id]?.state === 'working' && !!status[id]?.running && status[id].running !== status[id].chat
+
+  async function selectChat(p, chat) {
+    if (chat === status[p.id]?.chat) return
+    if (!await act('select', p, { chat })) return
+    status = { ...status, [p.id]: { ...status[p.id], chat } }
+    flips  = { ...flips, [p.id]: {} }
+    fetchedAt[p.id] = -1
+    await refreshTranscript(p.id)
+    scrollToEnd(p.id)
+  }
+
+  // Working, finished and waiting on the next message, or never run. A finish
+  // not yet seen counts as new, as it does on the pane's own dot.
+  const chatTone  = (c) => c.unread ? 'success' : TONE[c.state]
+  const chatLabel = (c) => c.state === 'working' ? 'working' : c.state === 'error' ? 'stopped with an error'
+    : c.state === 'done' ? (c.unread ? 'finished, unread — your turn' : 'waiting on you') : 'idle'
+
+  // From a slim header: there is nothing to read or type into folded, so
+  // picking a chat, or adding one, opens the pane on it.
+  function openChat(p, chat) {
+    slimmed = { ...slimmed, [p.id]: false }
+    setTab(p, 'chat')
+    selectChat(p, chat)
+  }
+  async function addChat(p) {
+    slimmed = { ...slimmed, [p.id]: false }
+    if (!blank(p.id)) return fresh(p)
+    setTab(p, 'chat')
+    afterDraw(() => document.getElementById(`workbench-draft-${p.id}`)?.focus())
+  }
+
+  async function closeChat(p, c) {
+    if (c.title && !confirm(`Close "${c.title}"? Its transcript here goes; Claude Code keeps the session, and its cost stays in the total.`)) return
+    if (await act('close', p, { chat: c.id })) { fetchedAt[p.id] = -1; await loadPins() }
+  }
+
+  // ─── branches ────────────────────────────────────────────────────────
+
+  // Each parent followed by its branches, so a branch is drawn beside the
+  // checkout it lands in.
+  function ordered(list) {
+    const ids = new Set(list.map(p => p.id))
+    const out = []
+    for (const p of list) {
+      if (p.from && ids.has(p.from)) continue
+      out.push(p, ...list.filter(b => b.from === p.id))
+    }
+    return out
+  }
+
+  const branchesOf = (p) => pins.filter(b => b.from === p.id)
+  const parentOf   = (p) => pins.find(x => x.id === p.from)
+  const plural     = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+  // A parent's total is what it and its branches spent.
+  const totalOf = (p) => [p, ...branchesOf(p)].reduce((n, x) => n + (status[x.id]?.spent?.total ?? 0), 0)
+
+  async function fork(p) {
+    const slug = prompt(`Fork ${p.name} into a branch of its own. Name it (wb/…), or leave blank for the next free one.`, '')
+    if (slug === null) return
+    const out = await act('fork', p, { slug: slug.trim() || undefined })
+    if (!out) return
+    const set = out.setup?.install === 'failed' ? ' Its install failed — the chat says why.' : ''
+    notice = `${out.name} is ${out.branch}${out.carried?.total ? `, carrying ${plural(out.carried.total, 'uncommitted file')}` : ''}.${set}`
+    await loadPins()
+    // Beside its parent: the parent is touched last, so the other pane goes.
+    if (cells().includes(p.id)) touched[p.id] = Date.now()
+    if (zoom) { zoom = null; keep() }
+    stageOn(out.id)
+  }
+
+  async function land(p) {
+    const out = await act('land', p)
+    if (!out) return
+    notice = `Landed ${plural(out.landed.length, 'file')} from ${p.name} into ${parentOf(p)?.name ?? 'its parent'}, uncommitted.`
+    fetchedAt[p.id] = -1
+    if (shows(p.id, 'diff')) loadDiff(p.id)
+    await loadPins()
+  }
+
+  async function archive(p) {
+    let out
+    try { out = await workbench.service.invoke('archive', p.id) }
+    catch (err) {
+      // The refusal's body is on err.data; the count it carries is err.data.data.
+      if (err.code !== 409 || !err.data?.data?.pending) { error = `${p.name}: ${err.message}`; return }
+      if (!confirm(`${err.message}. Archive anyway? The worktree goes; ${p.branch} keeps only what was committed there.`)) return
+      out = await act('archive', p, { discard: true })
+      if (!out) return
+    }
+    error  = null
+    notice = `Archived ${p.name}; ${out.archived} is still in the repository.`
+    await loadPins()
+  }
+
+  async function stop(p)   { await act('stop', p) }
+  async function check(p)  { if (await act('check', p)) fetchedAt[p.id] = -1 }
+  async function review(p) { if (await act('review', p)) fetchedAt[p.id] = -1 }
+  async function fresh(p)  {
+    if (!await act('fresh', p)) return
+    fetchedAt[p.id] = -1
+    tabs = { ...tabs, [p.id]: 'chat' }
+    await loadPins()
+    document.getElementById(`workbench-draft-${p.id}`)?.focus()
+  }
+  async function unpin(p)  {
+    if (!confirm(`Unpin ${p.name}? Its chats here are forgotten; Claude Code keeps the sessions.`)) return
+    if (await act('unpin', p)) await loadPins()
+  }
+  async function configure(p, form) {
+    const out = await act('configure', p, {
+      budget: Number(form.budget.value),
+      hooks:  form.hooks.checked,
+      review: form.review.checked,
+      ...(form.copy ? { copy: form.copy.value } : {}),
+    })
+    if (out) await loadPins()
+  }
+
+  // Asked on the first send, so the prompt comes from a click the person made.
+  function askNotifications() {
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default') Notification.requestPermission()
+    } catch {}
+  }
+
+  // ─── drawing ─────────────────────────────────────────────────────────
+
+  const TONE  = { idle: 'muted', working: 'info', done: 'success', error: 'danger' }
+  const LABEL = { idle: 'idle', working: 'working', done: 'done', error: 'error' }
+
+  // A step stops on a `Q`; a run is no longer the thing to wait for once it
+  // has, and seeing the chat does not answer it.
+  const needsYou = (s) => !!s?.questions?.length && s.state !== 'working'
+  const dotTone  = (id) => needsYou(status[id]) ? 'warning' : status[id]?.unread ? 'success' : TONE[status[id]?.state ?? 'idle']
+  const dotLabel = (id) => needsYou(status[id]) ? 'needs you' : LABEL[status[id]?.state ?? 'idle']
+  const asksOf   = (id) => (status[id]?.questions ?? []).map(q => `${q.plan}: ${markdownText(q.question)}`).join('\n')
+
+  // A run is mostly tool calls; the chat shows the last few in a row and how
+  // many came before them, so the words are not lost between the calls.
+  function grouped(items = []) {
+    const out = []
+    for (const it of items) {
+      const last = out[out.length - 1]
+      if (it.kind === 'tool' && last?.kind === 'tools') { last.calls.push(it.text); continue }
+      out.push(it.kind === 'tool' ? { kind: 'tools', calls: [it.text] } : it)
+    }
+    return out
+  }
+
+  const money = (n) => n == null ? '' : `$${n.toFixed(2)}`
+
+  // Across every card, so the header answers what today has cost so far.
+  const spentToday = () => Object.values(status).reduce((n, s) => n + (s.spent?.today ?? 0), 0)
+
+  // ─── after a run: checks and review ──────────────────────────────────
+
+  const CHECKS_TONE  = { running: 'info', pass: 'success', fail: 'danger', error: 'danger' }
+  function checksLabel(c) {
+    if (c.state === 'running') return 'checking…'
+    if (c.state === 'error')   return 'checks failed to run'
+    if (c.state === 'pass')    return `checks ✓ · ${c.changed} changed`
+    return `${c.unfinished} unfinished · ${c.changed} changed`
+  }
+
+  const reviewReply = (id) => (transcripts[id]?.review?.items ?? [])
+    .filter(it => it.kind === 'text').map(it => it.text).join('\n\n')
+
+  // Into the draft rather than sent, so the reply can be cut down first.
+  function useReview(p) {
+    const reply = reviewReply(p.id)
+    if (!reply) return
+    drafts = { ...drafts, [p.id]: `A read-only reviewer read the change and said:\n\n${reply}` }
+    document.getElementById(`workbench-draft-${p.id}`)?.focus()
+  }
+
+  // ─── the diff ────────────────────────────────────────────────────────
+  // Read when its tab opens, and again when the card's rev moves while it is
+  // showing. A click on a line opens a comment on it; the comments wait above
+  // the message box and go with the next message.
+
+  let diffs      = {}
+  let comments   = {}
+  let commenting = {}
+  const diffRev  = {}
+
+  async function loadDiff(id) {
+    diffRev[id] = status[id]?.rev
+    try { diffs = { ...diffs, [id]: await workbench.service.invoke('diff', id) } } catch (err) { error = err.message }
+  }
+
+  const SIGN = { add: '+', del: '−', ctx: ' ' }
+  const LINE_TONE = { add: 'success', del: 'danger', ctx: '' }
+
+  function openComment(p, f, l, key) {
+    commenting = { ...commenting, [p.id]: { key, path: f.path, line: l.new ?? l.old, code: l.text, text: '' } }
+    afterDraw(() => document.getElementById(`workbench-comment-${p.id}`)?.focus())
+  }
+
+  function addComment(p, e) {
+    e?.preventDefault()
+    const c = commenting[p.id]
+    if (!c?.text.trim()) return
+    comments   = { ...comments, [p.id]: [...(comments[p.id] ?? []), { ...c, text: c.text.trim() }] }
+    commenting = { ...commenting, [p.id]: null }
+  }
+
+  function dropComment(p, i) {
+    comments = { ...comments, [p.id]: (comments[p.id] ?? []).filter((_, k) => k !== i) }
+  }
+
+  function composed(id) {
+    const draft = (drafts[id] ?? '').trim()
+    const list  = comments[id] ?? []
+    if (!list.length) return draft
+    const lines = list.map(c => `- ${c.path}:${c.line} — \`${c.code.trim().slice(0, 120)}\`\n  ${c.text}`)
+    return [`My comments on the diff:\n\n${lines.join('\n')}`, draft].filter(Boolean).join('\n\n')
+  }
+
+  // ─── the commit ──────────────────────────────────────────────────────
+  // Off the Diff tab, on a checkout; a branch lands first. Every file the
+  // panel lists is chosen until it is unticked, and each goes up with the blob
+  // the panel read — the tree is shared, so a file written since is refused
+  // rather than committed with lines nobody saw.
+
+  let unchosen   = {}
+  let messages   = {}
+  let committing = {}
+
+  const chosenOf = (id) => (diffs[id]?.files ?? []).filter(f => !unchosen[id]?.[f.path])
+  const choose   = (id, path, on) => unchosen = { ...unchosen, [id]: { ...unchosen[id], [path]: !on } }
+  const chooseAll = (id, on) =>
+    unchosen = { ...unchosen, [id]: on ? {} : Object.fromEntries((diffs[id]?.files ?? []).map(f => [f.path, true])) }
+
+  async function commit(p, e) {
+    e?.preventDefault()
+    const files = chosenOf(p.id).map(f => ({ path: f.path, blob: f.blob }))
+    committing = { ...committing, [p.id]: true }
+    const out  = await act('commit', p, { message: messages[p.id] ?? '', files })
+    committing = { ...committing, [p.id]: false }
+    // Refused or not, the panel shows the tree as it is now.
+    loadDiff(p.id)
+    if (!out) return
+    notice   = `Committed ${out.commit.slice(0, 7)} on ${p.name}: ${plural(out.files.length, 'file')}.`
+    messages = { ...messages, [p.id]: '' }
+    unchosen = { ...unchosen, [p.id]: {} }
+    await loadPins()
+  }
+
+  // ─── the Run tab ─────────────────────────────────────────────────────
+  // The rows are read when the pins are and again when the tab opens, since a
+  // chat may have added a script. A row is named by id; the API looks up the
+  // command.
+
+  let runnables = {}
+  let logs      = {}
+  let logOpen   = {}
+  let starting  = {}
+
+  const rowKey  = (id, row) => `${id} ${row}`
+  const runOf   = (id, row) => status[id]?.runs?.find(r => r.id === row)
+  const RUN_GROUPS = [{ of: 'app', heading: 'Apps' }, { of: 'script', heading: 'Scripts' }]
+  const rowsOf  = (id, of) => (runnables[id] ?? []).filter(r => r.kind === of)
+  const appsOf  = (id) => rowsOf(id, 'app')
+  const serving = (id) => (status[id]?.runs ?? []).filter(r => r.running)
+  const servingApps = (id) => serving(id).filter(r => r.id.startsWith('app:'))
+
+  async function loadRunnables(id) {
+    try { runnables = { ...runnables, [id]: (await workbench.service.invoke('runnables', id)).rows } } catch {}
+  }
+
+  async function refreshLog(id, row) {
+    try {
+      const out = await workbench.service.invoke('output', id, { row })
+      logs = { ...logs, [rowKey(id, row)]: out.lines }
+      afterDraw(() => {
+        const pre = document.querySelector(`[data-log="${CSS.escape(rowKey(id, row))}"]`)
+        if (pre) pre.scrollTop = pre.scrollHeight
+      })
+    } catch {}
+  }
+
+  function toggleLog(id, row, open) {
+    logOpen = { ...logOpen, [rowKey(id, row)]: open }
+    if (open) refreshLog(id, row)
+  }
+
+  async function startRow(p, row) {
+    const key = rowKey(p.id, row.id)
+    starting = { ...starting, [key]: true }
+    const out = await act('run', p, { row: row.id })
+    starting = { ...starting, [key]: false }
+    if (!out) return
+    // Drawn as running now rather than at the next poll, with its log open.
+    const runs = (status[p.id]?.runs ?? []).filter(r => r.id !== row.id)
+    status = { ...status, [p.id]: { ...status[p.id], runs: [...runs, { id: row.id, name: row.name, running: true, stopped: false, exit: null, ports: [] }] } }
+    logs = { ...logs, [key]: [] }
+    toggleLog(p.id, row.id, true)
+  }
+
+  // A one-app checkout starts from the card; one holding several asks which.
+  function startApp(p) {
+    const apps = appsOf(p.id)
+    if (apps.length === 1) startRow(p, apps[0])
+    else setTab(p, 'run')
+  }
+
+  async function haltRow(p, row) {
+    const out = await act('halt', p, { row: row.id })
+    if (!out) return
+    const runs = status[p.id]?.runs ?? []
+    status = { ...status, [p.id]: { ...status[p.id], runs: out.stopped
+      ? runs.map(r => r.id === row.id ? { ...r, stopped: true } : r)
+      : runs.filter(r => r.id !== row.id) } }
+    if (!out.stopped) logOpen = { ...logOpen, [rowKey(p.id, row.id)]: false }
+  }
+
+  function ended(r) {
+    if (r.stopped)     return { tone: 'text-muted',   text: 'stopped' }
+    if (r.exit === 0)  return { tone: 'text-success', text: '✓ exited 0' }
+    if (r.exit != null) return { tone: 'text-danger', text: `✗ exited ${r.exit}` }
+    return { tone: 'text-muted', text: 'ended' }
+  }
+
+  // ─── the Plan tab ────────────────────────────────────────────────────
+  // The position is the first open box (`next`), derived by the parser and
+  // marked here. Go runs that box in the shown chat, and the API records when.
+  // The session ticks the box (`FJS-D969`); a Go'd step whose run ended with
+  // its box still open gets Tick, the one write this screen makes to the file.
+
+  let plans     = {}
+  let planDraft = {}
+  let building  = {}
+  let going     = {}
+  let ticking   = {}
+  const planRev = {}
+
+  async function loadPlan(p, rev = status[p.id]?.rev) {
+    planRev[p.id] = rev
+    if (!p.plan) { plans = { ...plans, [p.id]: null }; return }
+    try { plans = { ...plans, [p.id]: await workbench.service.invoke('plan', p.id) } } catch (err) { error = `${p.name}: ${err.message}` }
+  }
+
+  const parsedOf = (id) => plans[id]?.parsed ?? null
+
+  function planLabel(p) {
+    const parsed = parsedOf(p.id)
+    if (!p.plan || !parsed) return 'Plan'
+    return parsed.next ? `Plan · ${parsed.next.id}` : 'Plan ✓'
+  }
+
+  // The path follows the goal until it is typed in; after that it is the
+  // owner's.
+  const defaultPlanPath = (p, goal) => p.hasIdeas ? `IDEAS/${slug(goal, { max: 48 }) || 'plan'}.md` : 'PLAN.md'
+  const draftOf  = (p) => planDraft[p.id] ?? { goal: '', path: null, open: false }
+  const pathOf   = (p) => draftOf(p).path ?? defaultPlanPath(p, draftOf(p).goal)
+  const drafting = (p) => !p.plan || draftOf(p).open
+  function setDraft(p, patch) { planDraft = { ...planDraft, [p.id]: { ...draftOf(p), ...patch } } }
+
+  async function buildPlan(p, e) {
+    e?.preventDefault()
+    const goal = draftOf(p).goal.trim()
+    if (!goal) return
+    building = { ...building, [p.id]: true }
+    try {
+      if (!await act('buildPlan', p, { goal, path: pathOf(p) })) return
+      planDraft = { ...planDraft, [p.id]: null }
+      lastState[p.id] = 'working'
+      fetchedAt[p.id] = -1
+      await loadPins()
+      const now = pins.find(x => x.id === p.id)
+      if (now) await loadPlan(now)
+    } finally { building = { ...building, [p.id]: false } }
+  }
+
+  // Go runs the next box in the shown chat; Next opens a new chat and hands
+  // it the plan and the last reply, held while a question is open.
+  async function go(p, method = 'go') {
+    going = { ...going, [p.id]: true }
+    try {
+      const started = await act(method, p)
+      if (!started) return
+      lastState[p.id] = 'working'
+      fetchedAt[p.id] = -1
+      status = { ...status, [p.id]: { ...status[p.id], state: 'working', chat: started.chat, running: started.chat } }
+      await loadPins()
+      const now = pins.find(x => x.id === p.id)
+      if (now) await loadPlan(now)
+    } finally { going = { ...going, [p.id]: false } }
+  }
+
+  async function tick(p, st) {
+    ticking = { ...ticking, [p.id]: st.id }
+    try {
+      if (!await act('tick', p, { step: st.id })) return
+      await loadPlan(p)
+    } finally { ticking = { ...ticking, [p.id]: null } }
+  }
+
+  // Open plan shows a file already in the checkout, or one on the pin; Close
+  // plan forgets the shown one and its steps here, and the file stays.
+  let opening = {}
+  const openingOf = (p) => opening[p.id] ?? null
+  function setOpening(p, v) { opening = { ...opening, [p.id]: v && { ...openingOf(p), ...v } } }
+
+  // The plan holding the first open question, shown on its Plan tab.
+  async function toQuestion(p) {
+    const q = status[p.id]?.questions?.[0]
+    if (!q) return
+    if (q.plan !== p.plan) await openPlan(p, q.plan)
+    setTab(p, 'plan')
+  }
+
+  async function openPlan(p, path, e) {
+    e?.preventDefault()
+    if (!await act('openPlan', p, { path })) return
+    setOpening(p, null)
+    closeRuling(p)
+    await loadPins()
+    const now = pins.find(x => x.id === p.id)
+    if (now) await loadPlan(now)
+  }
+
+  async function closePlan(p) {
+    if (!await act('closePlan', p, { path: p.plan })) return
+    closeRuling(p)
+    await loadPins()
+    const now = pins.find(x => x.id === p.id)
+    if (now) await loadPlan(now)
+  }
+
+  // File issue and Ask question write a row into the checkout's ISSUES.md
+  // through fli's fileIssue; by number it is the step running, or the last
+  // one started, and shows under it on the reread.
+  let filing = {}
+  let filed  = {}
+  const filingOf = (p) => filing[p.id] ?? null
+  function openFiling(p, kind) {
+    filing = { ...filing, [p.id]: { kind, severity: 'S3', area: '', title: '', detail: '' } }
+    filed  = { ...filed, [p.id]: null }
+  }
+  function closeFiling(p) { filing = { ...filing, [p.id]: null } }
+  function setFiling(p, patch) { filing = { ...filing, [p.id]: { ...filingOf(p), ...patch } } }
+  const fileReady = (f) => !!(f && f.area.trim() && f.title.trim() && f.detail.trim() && !f.busy)
+
+  async function fileRow(p, e) {
+    e?.preventDefault()
+    const f = filingOf(p)
+    if (!fileReady(f)) return
+    setFiling(p, { busy: true })
+    const out = await act('file', p, {
+      severity: f.kind === 'question' ? 'decision' : f.severity,
+      area: f.area, title: f.title, detail: f.detail,
+    })
+    if (!out) { setFiling(p, { busy: false }); return }
+    closeFiling(p)
+    filed  = { ...filed, [p.id]: out }
+    await loadPlan(p)
+  }
+
+  // A letter on an open plan question is fli's decide, the plan named as
+  // the file it is argued in. decide refuses a pick against the
+  // recommendation with no reason, and a qualified recommendation's letter
+  // likewise, so the reason box is required exactly there. The section is
+  // the owner's each time; the last one picked in this checkout is offered.
+  let ruling      = {}
+  let ruled       = {}
+  let lastSection = {}
+  const rulingOf  = (p) => ruling[p.id] ?? null
+  const followsRec = (q, pick) => q.recommend?.letter === pick && !q.recommend.qualifier
+  // Another letter on the same question keeps what was typed beside it.
+  function openRuling(p, q, pick) {
+    const was = rulingOf(p)?.question === q.id ? rulingOf(p) : null
+    ruling = { ...ruling, [p.id]: { question: q.id, pick, why: was?.why ?? '', section: was?.section || lastSection[p.id] || '' } }
+    ruled  = { ...ruled, [p.id]: null }
+  }
+  function closeRuling(p) { ruling = { ...ruling, [p.id]: null } }
+  function setRuling(p, patch) { ruling = { ...ruling, [p.id]: { ...rulingOf(p), ...patch } } }
+  const ruleReady = (q, r) => !!(r && r.section && (followsRec(q, r.pick) || r.why.trim()) && !r.busy)
+
+  async function rule(p, q, e) {
+    e?.preventDefault()
+    const r = rulingOf(p)
+    if (!ruleReady(q, r)) return
+    setRuling(p, { busy: true })
+    const out = await act('decide', p, { question: q.id, pick: r.pick, why: r.why, section: r.section })
+    if (!out) { setRuling(p, { busy: false }); return }
+    lastSection = { ...lastSection, [p.id]: r.section }
+    closeRuling(p)
+    ruled = { ...ruled, [p.id]: { ...out, question: q.question } }
+    await loadPlan(p)
+  }
+
+  // A step Go started whose run is over and whose box the session left open.
+  // What the step's runs cost, summed by the API off its chat; nothing until
+  // one has finished.
+  const stepCost = (r) => r.cost == null ? '' : ` · ${money(r.cost)}${r.turns ? ` · ${plural(r.turns, 'turn')}` : ''}`
+  const leftOpen = (p, st) => st.box === 'open' && !!plans[p.id]?.steps?.[st.id] && status[p.id]?.state !== 'working'
+
+  const BOX = { open: '☐', done: '☑', dropped: '⊘' }
+  // A question still waiting is the row that holds the plan up; an S1/S2 is
+  // the one that outranks the next step.
+  const filedLabel = (r) => r.kind === 'issue' ? (r.severity ?? 'issue') : r.kind === 'ruling' ? 'ruling' : r.status === 'needs a ruling' ? 'question' : 'ruled'
+  const filedTone  = (r) => r.kind === 'question' && r.status === 'needs a ruling' ? 'warning'
+    : r.kind === 'issue' && /^S[12]$/.test(r.severity ?? '') && !/closed/.test(r.status) ? 'danger'
+    : r.kind === 'ruling' ? 'success' : ''
+
+  // ─── folding ─────────────────────────────────────────────────────────
+  // The card's mode folds a side; a click on one message flips it against
+  // the mode, and changing the mode forgets the flips.
+
+  const FOLDS = [
+    { key: 'none', label: 'None'   },
+    { key: 'you',  label: 'Mine'   },
+    { key: 'ai',   label: 'Claude' },
+    { key: 'both', label: 'Both'   },
+  ]
+  let folds = {}
+  let flips = {}
+
+  const foldOf = (id) => folds[id] ?? 'none'
+  const side   = (it) => it.kind === 'you' ? 'you' : 'ai'
+  function folded(id, it, i) {
+    const mode = foldOf(id)
+    return (mode === 'both' || mode === side(it)) !== !!flips[id]?.[i]
+  }
+  function setFold(id, key) {
+    folds = { ...folds, [id]: key }
+    flips = { ...flips, [id]: {} }
+    measure(id)
+  }
+  function flip(id, i) {
+    flips = { ...flips, [id]: { ...flips[id], [i]: !flips[id]?.[i] } }
+    measure(id)
+  }
+
+  // ─── the jump rail ───────────────────────────────────────────────────
+  // A notch per message you sent, placed where it sits in the log, so a fold
+  // that shortens the log moves the notches with it. The thumb is the part of
+  // the log on screen.
+
+  let rails = {}
+
+  function measure(id) {
+    afterDraw(() => {
+      const log = document.getElementById(`chat-log-${id}`)
+      if (!log) return
+      const h = log.scrollHeight || 1
+      const notches = [...log.querySelectorAll('[data-turn]')].map(el => ({
+        i:     Number(el.dataset.turn),
+        top:   (el.offsetTop / h) * 100,
+        label: el.querySelector('.workbench-text')?.textContent.slice(0, 80) ?? '',
+      }))
+      rails = { ...rails, [id]: { notches, ...view(log) } }
+    })
+  }
+
+  const view = (log) => ({
+    thumbTop: (log.scrollTop / (log.scrollHeight || 1)) * 100,
+    thumbH:   (log.clientHeight / (log.scrollHeight || 1)) * 100,
+  })
+
+  let spying = false
+  function spy(id, log) {
+    if (spying) return
+    spying = true
+    requestAnimationFrame(() => {
+      spying = false
+      if (rails[id]) rails = { ...rails, [id]: { ...rails[id], ...view(log) } }
+    })
+  }
+
+  // The turn being read: the last one starting above the upper third of
+  // what is on screen.
+  function current(id) {
+    const r = rails[id]
+    if (!r) return -1
+    let at = -1
+    for (const n of r.notches) if (n.top <= r.thumbTop + r.thumbH / 3) at = n.i
+    return at
+  }
+
+  function jump(id, i) {
+    const log = document.getElementById(`chat-log-${id}`)
+    const el  = document.getElementById(`chat-${id}-${i}`)
+    if (log && el) log.scrollTo({ top: el.offsetTop - 8, behavior: 'smooth' })
+  }
+</script>
+
+<div class="section-header">
+  <h1>Workbench</h1>
+  <span class="cluster">
+    {#if spentToday() > 0}<span class="text-sm text-muted" id="workbench-today">today {money(spentToday())}</span>{/if}
+    <Button treatment="ghost" href="/git-activity/local/">Local repos</Button>
+  </span>
+</div>
+
+<Tabs bind:activeId={pageTab} onchange={onView}>
+<TabList label="What the workbench shows">
+  <Tab id="checkouts">Checkouts</Tab>
+  <Tab id="claude">Claude Code</Tab>
+</TabList>
+<TabPanel id="checkouts">
+{#if !offered}
+  <Callout tone="muted" title="Not available">
+    <p class="text-body">
+      This screen reads this machine\'s checkouts and files and cannot reach them right now.
+    </p>
+    <p class="text-sm text-muted">{error}</p>
+  </Callout>
+{:else}
+  <div class="workbench" id="workbench-grid">
+    <div class="workbench-stage">
+      {#if error}
+        <article class="alert danger" id="screen-error">
+          <div class="alert-content">{error}</div>
+        </article>
+      {/if}
+      {#if notice}
+        <article class="alert success" id="workbench-notice">
+          <div class="alert-content cluster">
+            <span>{notice}</span>
+            <Button size="xs" treatment="ghost" aria-label="Dismiss" onclick={() => notice = null}>×</Button>
+          </div>
+        </article>
+      {/if}
+
+      {#if loaded && !pins.length}
+        <EmptyState title="Nothing pinned">
+          Pin a checkout from the dock, or star one on <a href="/git-activity/local/">Local repos</a>.
+        </EmptyState>
+      {:else if loaded}
+      <div class="cluster workbench-bar">
+        <span class="cluster">
+          <Button size="sm" treatment="outlined" id="workbench-slim" onclick={toggleSlim} aria-pressed={slim ? 'true' : 'false'}
+                  title="Slim: every pane shrinks to its header; click a pane's header to flip just that one">{slim ? 'Full' : 'Slim'}</Button>
+          <Button size="xs" treatment={arranging ? '' : 'outlined'} id="workbench-layout" onclick={() => arrange()} aria-pressed={arranging ? 'true' : 'false'}
+                  title={arranging ? 'Back to the panes (Alt+L)' : 'Fold the panes to cards and arrange the grid: drag a tile into a box, or start a chat in one (Alt+L)'}>{arranging ? 'Done' : 'Layout'}</Button>
+        </span>
+      </div>
+      <div class="workbench-panes" data-arranging={arranging ? '' : null} style:--cols={String(shownCols())} style:--rows={String(shownRows())}>
+      {#if arranging}
+        {#each staged() as p (p.id)}
+          <div class="workbench-tile workbench-card" id={`workbench-${p.id}`} data-state={status[p.id]?.state} data-branch={p.branch ?? null}
+               style:grid-area={areaOf(p.id)} draggable="true"
+               ondragstart={(e) => dragStart(e, p.id)} ondragend={() => { dragging = null; over = null }}>
+            <span class="cluster">
+              <Dot tone={dotTone(p.id)} pulse={status[p.id]?.state === 'working'} label={dotLabel(p.id)} />
+              <strong class="workbench-tile-name">{p.from ? '↳ ' : ''}{p.name}</strong>
+              {#if needsYou(status[p.id])}<Badge tone="warning" class="workbench-needs">needs you</Badge>
+              {:else if status[p.id]?.unread}<Badge tone="success">new</Badge>{/if}
+              <Button size="xs" treatment="ghost" onclick={() => dock(p)} aria-label={`Move ${p.name} to the dock`} title="To the dock — a run there keeps going">⇥</Button>
+            </span>
+            <span class="text-sm text-muted workbench-now">{doing(p.id)}</span>
+          </div>
+        {/each}
+      {:else}
+      {#each visible() as p (p.id)}
+          <article class="card workbench-pane" id={`workbench-${p.id}`} data-state={status[p.id]?.state} style:grid-area={areaOf(p.id)}
+                   data-slim={isSlim(p.id) ? '' : null} data-branch={p.branch ?? null} onclick={() => { touched[p.id] = Date.now(); markSeen(p) }}>
+            <div class="section-header workbench-head" onclick={(e) => slimPane(p.id, e)}>
+              <h2 class="h5 cluster">
+                <Dot tone={dotTone(p.id)}
+                     pulse={status[p.id]?.state === 'working'}
+                     label={dotLabel(p.id)} />
+                {p.name}
+              </h2>
+              {#if isSlim(p.id) && !p.missing}
+                <div class="text-sm workbench-head-chats" role="group" aria-label={`Chats in ${p.name}`}>
+                  {#each chatsOf(p.id) as c (c.id)}
+                    <button type="button" class="workbench-head-chat" data-chat={c.id} data-unread={c.unread ? '' : null}
+                            aria-current={c.id === status[p.id]?.chat ? 'true' : null}
+                            onclick={() => openChat(p, c.id)} title={`${c.title ?? 'Nothing sent here yet'} — ${chatLabel(c)}`}>
+                      <Dot tone={chatTone(c)} pulse={c.state === 'working'} label={chatLabel(c)} />
+                      <span class="workbench-chat-title">{chatTitle(c)}</span>
+                    </button>
+                  {/each}
+                  <Button size="xs" treatment="ghost" class="workbench-head-add" onclick={() => addChat(p)}
+                          aria-label={`New chat in ${p.name}`} title="Another chat in this checkout, opened">+ New</Button>
+                </div>
+              {/if}
+              <span class="cluster">
+                {#if needsYou(status[p.id])}
+                  <Button size="xs" treatment="outlined" tone="warning" class="workbench-needs" onclick={() => toQuestion(p)}
+                          title={asksOf(p.id)}>needs you · {status[p.id].questions.length}</Button>
+                {:else if status[p.id]?.unread}<Badge tone="success">new</Badge>{/if}
+                {#if status[p.id]?.queued}<Badge tone="info">{status[p.id].queued} queued</Badge>{/if}
+                {#if staged().length > 1}
+                  <Button size="xs" treatment="ghost" onclick={() => toggleZoom(p.id)} aria-pressed={zoomed() === p.id ? 'true' : 'false'}
+                          aria-label={zoomed() === p.id ? 'Show every pane' : `Zoom ${p.name} to the whole stage`}
+                          title={zoomed() === p.id ? 'Every pane (Alt+Z)' : 'The whole stage — the other panes wait in the dock (Alt+Z)'}>{zoomed() === p.id ? '⊟' : '⊞'}</Button>
+                {/if}
+                <Button size="xs" treatment="ghost" onclick={() => dock(p)}
+                        aria-label={`Move ${p.name} to the dock`} title="To the dock — a run there keeps going">⇥</Button>
+              </span>
+            </div>
+
+            {#if p.missing}
+              <Callout tone="warning" class="workbench-gone" title="Folder is gone">
+                <p class="text-sm"><code>{p.path}</code> is no longer there, so nothing runs here.
+                  {p.from ? 'Archive the branch to forget it.' : 'Unpin it, or pin the checkout where it went.'}</p>
+                {#if p.from}<Button size="xs" treatment="ghost" tone="danger" onclick={() => archive(p)}>Archive</Button>{/if}
+              </Callout>
+            {/if}
+
+            {#if p.from}
+              <div class="text-sm text-muted workbench-from">
+                ↳ branch of <strong>{parentOf(p)?.name ?? 'a checkout no longer pinned'}</strong>{p.chats?.some(c => c.id === p.chat && c.forkOf && !c.session) ? ' — the first message forks its chat' : ''}
+                {#if p.carried?.total}
+                  <details class="workbench-carried">
+                    <summary>carried {plural(p.carried.total, 'uncommitted file')}</summary>
+                    <p>Cut from the parent's tree as it stood, so a file another session was halfway through came too.</p>
+                    {#each p.carried.files as f}<div><code>{f}</code></div>{/each}
+                    {#if p.carried.total > p.carried.files.length}<div>… {p.carried.total - p.carried.files.length} more</div>{/if}
+                  </details>
+                {/if}
+                {#if p.setup}
+                  <details class="workbench-carried">
+                    <summary>copied {plural(p.setup.copied.length, 'ignored path')} · {p.setup.install === 'ran' ? 'installed' : p.setup.install === 'failed' ? 'install failed' : 'no install'}</summary>
+                    <p>What the parent's copy list named, which git does not carry into a worktree.</p>
+                    {#each p.setup.copied as f}<div><code>{f}</code></div>{/each}
+                  </details>
+                {/if}
+              </div>
+            {/if}
+
+            <div class="cluster text-sm workbench-meta">
+              {#if p.git}
+                {#if p.git.branch}<code>{p.git.branch}</code>{:else}<Pill tone="warning">detached</Pill>{/if}
+                {#if p.git.changes}<Pill tone="warning">{p.git.changes} changed</Pill>{:else}<Pill tone="success">clean</Pill>{/if}
+                {#if p.git.ahead}<Pill tone="info">↑{p.git.ahead}</Pill>{/if}
+                {#if p.git.lastCommitAt}<span class="text-muted">{ago(p.git.lastCommitAt)}</span>{/if}
+              {/if}
+              {#each servingApps(p.id) as r (r.id)}
+                {#each r.ports as s}
+                  <a class="text-success" href={`http://localhost:${s.port}`} target="_blank" rel="noopener"
+                     title={`${r.name}'s ${s.label}, started from the Run tab`}>{s.label} :{s.port} ↗</a>
+                {/each}
+                {#if !r.ports.length}<span class="text-info">{r.name} starting…</span>{/if}
+              {/each}
+              {#if !p.missing && appsOf(p.id).length && !servingApps(p.id).length}
+                <Button size="xs" treatment="ghost" class="workbench-start-app" onclick={() => startApp(p)}
+                        title={appsOf(p.id).length === 1 ? `fli dev in ${p.name}, left running on this machine` : 'Choose which app to start'}>▶ Start app</Button>
+              {/if}
+              <span class="text-muted workbench-now" aria-live="polite">
+                {doing(p.id)}
+                {#if totalOf(p)}
+                  <span title={branchesOf(p).length ? 'Every run and review in this checkout and its branches' : 'Every run and review in this checkout'}>· {money(totalOf(p))} total</span>
+                {/if}
+              </span>
+            </div>
+
+            <div class="tablist workbench-tabs" role="tablist" aria-label={`What ${p.name} shows`}
+                 onkeydown={(e) => arrowTab(p, e)}>
+              {#each tabsOf(p) as t (t.key)}
+                <button type="button" class={`tab ${t.tone ?? ''}`} role="tab" data-tab={t.key}
+                        id={`workbench-tab-${t.key}-${p.id}`}
+                        aria-selected={tabOf(p) === t.key ? 'true' : 'false'}
+                        tabindex={tabOf(p) === t.key ? '0' : '-1'}
+                        onclick={() => setTab(p, t.key)}>{t.label}</button>
+              {/each}
+            </div>
+
+            {#if tabOf(p) === 'chat'}
+              <div class="workbench-panel workbench-chat-panel" role="tabpanel" aria-labelledby={`workbench-tab-chat-${p.id}`}>
+                {#if transcripts[p.id]?.items?.length}
+                  <div class="text-xs workbench-folds" role="group" aria-label={`Collapse messages in ${p.name}`}>
+                    <span class="text-muted">Collapse</span>
+                    {#each FOLDS as f}
+                      <button type="button" class="workbench-fold" aria-pressed={foldOf(p.id) === f.key ? 'true' : 'false'}
+                              onclick={() => setFold(p.id, f.key)}>{f.label}</button>
+                    {/each}
+                  </div>
+                {/if}
+
+                <div class="workbench-chat">
+                  <div class="workbench-log" id={`chat-log-${p.id}`} onscroll={(e) => spy(p.id, e.target)}>
+                    {#each grouped(transcripts[p.id]?.items) as it, i}
+                      {#if it.kind === 'you'}
+                        <div class="workbench-msg workbench-you info" id={`chat-${p.id}-${i}`} data-turn={i}>
+                          <button type="button" class="workbench-msg-head text-sm" aria-expanded={folded(p.id, it, i) ? 'false' : 'true'}
+                                  onclick={() => flip(p.id, i)}>
+                            <strong>You</strong>
+                            <span class="text-muted">{it.at ? ago(it.at) : ''}</span>
+                            <span class="workbench-chevron" aria-hidden="true">{folded(p.id, it, i) ? '▸' : '▾'}</span>
+                          </button>
+                          <div class={`workbench-text${folded(p.id, it, i) ? ' clamp-2' : ''}`}>{it.text}</div>
+                          {#if it.images}<div class="text-xs text-muted">+ {plural(it.images, 'image')}</div>{/if}
+                        </div>
+                      {:else if it.kind === 'text'}
+                        <div class="workbench-msg workbench-ai muted" id={`chat-${p.id}-${i}`}>
+                          <button type="button" class="workbench-msg-head text-sm" aria-expanded={folded(p.id, it, i) ? 'false' : 'true'}
+                                  onclick={() => flip(p.id, i)}>
+                            <strong>Claude</strong>
+                            <span class="workbench-chevron" aria-hidden="true">{folded(p.id, it, i) ? '▸' : '▾'}</span>
+                          </button>
+                          {#if folded(p.id, it, i)}
+                            <div class="workbench-text clamp-2">{markdownText(it.text)}</div>
+                          {:else}
+                            <div class="workbench-md"><Markdown text={it.text} headingBase={3} /></div>
+                          {/if}
+                        </div>
+                      {:else if it.kind === 'tools'}
+                        <div class="text-sm text-muted workbench-tools" id={`chat-${p.id}-${i}`}>
+                          {#if folded(p.id, it, i)}
+                            <button type="button" class="workbench-msg-head" aria-expanded="false" onclick={() => flip(p.id, i)}>
+                              <code>› {it.calls.length} tool call{it.calls.length === 1 ? '' : 's'}</code>
+                            </button>
+                          {:else}
+                            {#if it.calls.length > SHOW_TOOLS}<div>… {it.calls.length - SHOW_TOOLS} more</div>{/if}
+                            {#each it.calls.slice(-SHOW_TOOLS) as call}<div><code>› {call}</code></div>{/each}
+                          {/if}
+                        </div>
+                      {:else if it.kind === 'result'}
+                        <div class="text-sm text-muted workbench-result">{it.ok ? '✓' : '✗'} {it.stop ?? ''} {money(it.cost)}{it.turns ? ` · ${it.turns} turns` : ''}</div>
+                      {:else if it.kind === 'error'}
+                        <div class="alert danger"><div class="alert-content text-sm">{it.text}</div></div>
+                      {/if}
+                    {/each}
+                  </div>
+
+                  {#if rails[p.id]?.notches.length}
+                    <nav class="workbench-rail" aria-label={`Jump to a message in ${p.name}`}>
+                      {#if rails[p.id].thumbH < 99}
+                        <span class="workbench-rail-thumb" aria-hidden="true"
+                              style:top={`${rails[p.id].thumbTop}%`} style:height={`${rails[p.id].thumbH}%`}></span>
+                      {/if}
+                      {#each rails[p.id].notches as n, k}
+                        <button type="button" class="workbench-notch info" style:top={`${n.top}%`}
+                                title={n.label} aria-label={`Message ${k + 1}: ${n.label}`}
+                                aria-current={current(p.id) === n.i ? 'true' : null}
+                                onclick={() => jump(p.id, n.i)}></button>
+                      {/each}
+                    </nav>
+                  {/if}
+                </div>
+              </div>
+
+            {:else if tabOf(p) === 'diff'}
+              <div class="workbench-panel text-sm workbench-diff-panel" role="tabpanel" aria-labelledby={`workbench-tab-diff-${p.id}`}>
+                {#if diffs[p.id]}
+                  {#if p.from}
+                    <p class="text-muted">The branch's tree against what it was cut from, or last landed — what Land would carry. Click a line to comment on it.</p>
+                  {:else}
+                    <p class="text-muted">The working tree against HEAD — another session's edits show here too. Click a line to comment on it.</p>
+                  {/if}
+                  {#if !diffs[p.id].files.length}<p class="text-muted">Nothing changed.</p>{/if}
+                  {#if !p.from && diffs[p.id].files.length}
+                    <form class="stack workbench-commit" id={`workbench-commit-${p.id}`} onsubmit={(e) => commit(p, e)}>
+                      <Checkbox label={`Every file listed (${chosenOf(p.id).length} of ${diffs[p.id].files.length} chosen)`} name="all"
+                                checked={chosenOf(p.id).length === diffs[p.id].files.length}
+                                indeterminate={chosenOf(p.id).length > 0 && chosenOf(p.id).length < diffs[p.id].files.length}
+                                onchange={(e) => chooseAll(p.id, e.target.checked)} />
+                      <Textarea label="Commit message" name="message" rows={2} value={messages[p.id] ?? ''}
+                                hint="The chosen files as the panel shows them, committed on HEAD with the checkout's own hooks. What anyone else staged stays staged."
+                                oninput={(e) => messages = { ...messages, [p.id]: e.target.value }} />
+                      <div class="cluster">
+                        <Button type="submit" disabled={!chosenOf(p.id).length || !(messages[p.id] ?? '').trim() || committing[p.id] || status[p.id]?.state === 'working'}
+                                title={status[p.id]?.state === 'working' ? 'A chat here is working — commit when the run ends' : null}>
+                          Commit {plural(chosenOf(p.id).length, 'file')}
+                        </Button>
+                      </div>
+                    </form>
+                  {/if}
+                  {#each diffs[p.id].files as f, fi (f.path)}
+                    <details class="workbench-file">
+                      <summary class="cluster">
+                        {#if !p.from}
+                          <input type="checkbox" class="workbench-choose" aria-label={`Commit ${f.path}`}
+                                 checked={!unchosen[p.id]?.[f.path]} onchange={(e) => choose(p.id, f.path, e.target.checked)} />
+                        {/if}
+                        <code>{f.path}</code>
+                        <span class="text-success">+{f.adds}</span>
+                        <span class="text-danger">−{f.dels}</span>
+                        {#if f.status !== 'modified'}<span class="text-muted">{f.status}</span>{/if}
+                      </summary>
+                      <div class="workbench-diff">
+                        {#each f.hunks as h, hi}
+                          <div class="workbench-hunk text-muted">{h.header}</div>
+                          {#each h.lines as l, li}
+                            <button type="button" class={`workbench-line ${LINE_TONE[l.kind]}`}
+                                    title="Comment on this line" onclick={() => openComment(p, f, l, `${fi}:${hi}:${li}`)}>
+                              <span class="workbench-ln">{l.new ?? l.old}</span><span>{SIGN[l.kind]}</span><span class="workbench-code">{l.text}</span>
+                            </button>
+                            {#if commenting[p.id]?.key === `${fi}:${hi}:${li}`}
+                              <form class="cluster workbench-comment" onsubmit={(e) => addComment(p, e)}>
+                                <label class="visually-hidden" for={`workbench-comment-${p.id}`}>Comment on {f.path} line {l.new ?? l.old}</label>
+                                <input class="field" id={`workbench-comment-${p.id}`} placeholder="Comment for Claude…"
+                                       value={commenting[p.id].text}
+                                       oninput={(e) => commenting = { ...commenting, [p.id]: { ...commenting[p.id], text: e.target.value } }}
+                                       onkeydown={(e) => { if (e.key === 'Escape') commenting = { ...commenting, [p.id]: null } }} />
+                                <Button size="xs" type="submit">Add</Button>
+                              </form>
+                            {/if}
+                          {/each}
+                        {/each}
+                        {#if f.cut}<div class="text-muted">… more lines than the panel shows</div>{/if}
+                      </div>
+                    </details>
+                  {/each}
+                  {#if diffs[p.id].cut && diffs[p.id].files.length < diffs[p.id].total}
+                    <p class="text-muted">{diffs[p.id].total - diffs[p.id].files.length} more file(s) not listed.</p>
+                  {/if}
+                {:else}
+                  <p class="text-muted">Reading the tree…</p>
+                {/if}
+              </div>
+
+            {:else if tabOf(p) === 'run'}
+              <div class="workbench-panel stack text-sm workbench-run" id={`workbench-run-${p.id}`} role="tabpanel" aria-labelledby={`workbench-tab-run-${p.id}`}>
+                <p class="text-muted">Started in this checkout and left running on the API's machine. A new message does not stop one; {p.from ? 'Archive does' : 'Unpin does'}.</p>
+                {#if !runnables[p.id]}
+                  <p class="text-muted">Reading the checkout…</p>
+                {:else if !runnables[p.id].length}
+                  <p class="text-muted">Nothing to run — no app here and no package.json scripts.</p>
+                {/if}
+                {#each RUN_GROUPS as group (group.of)}
+                  {#if rowsOf(p.id, group.of).length}
+                    <h3 class="text-sm">{group.heading}</h3>
+                    {#each rowsOf(p.id, group.of) as row (row.id)}
+                      <div class="workbench-runrow" data-row={row.id}>
+                        <div class="cluster">
+                          <strong>{row.name}</strong>
+                          <code title={row.script ?? row.start}>{row.start}</code>
+                          {#if row.dir !== '.'}<span class="text-muted">in {row.dir}</span>{/if}
+                          <span class="cluster workbench-runrow-end">
+                            {#if runOf(p.id, row.id)?.running}
+                              {#each runOf(p.id, row.id).ports as s}
+                                <a href={`http://localhost:${s.port}`} target="_blank" rel="noopener">{s.label} :{s.port} ↗</a>
+                              {/each}
+                              <Badge tone="info">{runOf(p.id, row.id).stopped ? 'stopping…' : 'running'}</Badge>
+                              <Button size="xs" treatment="outlined" tone="danger" onclick={() => haltRow(p, row)}>Stop</Button>
+                            {:else}
+                              {#if runOf(p.id, row.id)}
+                                <span class={ended(runOf(p.id, row.id)).tone}>{ended(runOf(p.id, row.id)).text}</span>
+                              {/if}
+                              <Button size="xs" treatment={row.kind === 'app' ? '' : 'outlined'} onclick={() => startRow(p, row)}
+                                      disabled={starting[rowKey(p.id, row.id)]}>{row.kind === 'app' ? '▶ Start' : 'Run'}</Button>
+                              {#if runOf(p.id, row.id)}
+                                <Button size="xs" treatment="ghost" aria-label={`Forget ${row.name}'s last run`} title="Forget this run and its output"
+                                        onclick={() => haltRow(p, row)}>×</Button>
+                              {/if}
+                            {/if}
+                          </span>
+                        </div>
+                        {#if runOf(p.id, row.id)}
+                          <details class="workbench-runlog" open={logOpen[rowKey(p.id, row.id)] ? true : null}
+                                   ontoggle={(e) => { if (e.target.open !== !!logOpen[rowKey(p.id, row.id)]) toggleLog(p.id, row.id, e.target.open) }}>
+                            <summary class="text-muted">Output</summary>
+                            <pre data-log={rowKey(p.id, row.id)}>{(logs[rowKey(p.id, row.id)] ?? []).join('\n')}</pre>
+                          </details>
+                        {/if}
+                      </div>
+                    {/each}
+                  {/if}
+                {/each}
+              </div>
+
+            {:else if tabOf(p) === 'plan'}
+              <div class="workbench-panel stack text-sm workbench-plan" id={`workbench-plan-${p.id}`} role="tabpanel" aria-labelledby={`workbench-tab-plan-${p.id}`}>
+                {#if drafting(p)}
+                  <form class="stack workbench-plan-build" onsubmit={(e) => buildPlan(p, e)}>
+                    <p class="text-muted">A new chat reads the checkout and writes the plan — it may edit that one file and nothing else, so it cannot start building.</p>
+                    <Textarea label="Goal" name="goal" rows={3} value={draftOf(p).goal}
+                              placeholder="What the plan is for, in a sentence or a paragraph"
+                              oninput={(e) => setDraft(p, { goal: e.target.value })} />
+                    <Input label="Path in the checkout" name="path" value={pathOf(p)}
+                           hint={p.hasIdeas ? 'Beside the other papers in IDEAS/.' : 'This checkout has no IDEAS/, so the plan sits at its root.'}
+                           oninput={(e) => setDraft(p, { path: e.target.value })} />
+                    <div class="cluster">
+                      <Button type="submit" disabled={!draftOf(p).goal.trim() || building[p.id] || status[p.id]?.state === 'working'}
+                              title={status[p.id]?.state === 'working' ? 'A chat here is working — one run at a time in a checkout' : null}>Build plan</Button>
+                      {#if p.plan}
+                        <Button treatment="ghost" onclick={() => setDraft(p, { open: false })}>Cancel</Button>
+                      {/if}
+                    </div>
+                  </form>
+                {:else}
+                  <div class="cluster">
+                    {#if p.plans.length > 1}
+                      <Select label="Plan" name="plan" placeholder="" value={p.plan} options={p.plans.map(x => x.path)}
+                              onchange={(e) => openPlan(p, e.target.value)} />
+                    {:else}
+                      <code>{p.plan}</code>
+                    {/if}
+                    {#if parsedOf(p.id)?.title}<strong>{markdownText(parsedOf(p.id).title)}</strong>{/if}
+                    <span class="cluster workbench-runrow-end">
+                      <Button size="xs" treatment="ghost" onclick={() => openFiling(p, 'issue')}
+                              title="A defect, as a row in this checkout's ISSUES.md">File issue</Button>
+                      <Button size="xs" treatment="ghost" onclick={() => openFiling(p, 'question')}
+                              title="A question for a ruling, in § Needs a decision of this checkout's ISSUES.md">Ask question</Button>
+                      <Button size="xs" treatment="ghost" onclick={() => setDraft(p, { open: true })}
+                              title="Write a new plan; this one stays on the pin">New plan</Button>
+                      <Button size="xs" treatment="ghost" onclick={() => setOpening(p, { path: '' })}
+                              title="Show a plan already written in this checkout">Open plan</Button>
+                      <Button size="xs" treatment="ghost" onclick={() => closePlan(p)} disabled={status[p.id]?.state === 'working'}
+                              title={status[p.id]?.state === 'working' ? 'A chat here is working — close it once it stops' : `Forget ${p.plan} here; the file stays`}>Close plan</Button>
+                    </span>
+                  </div>
+                  {#if openingOf(p)}
+                    <form class="cluster workbench-plan-open" onsubmit={(e) => openPlan(p, openingOf(p).path, e)} aria-label="Open plan">
+                      <Input label="Path in the checkout" name="open-path" value={openingOf(p).path} placeholder="IDEAS/<slug>.md or PLAN.md"
+                             oninput={(e) => setOpening(p, { path: e.target.value })} />
+                      <Button type="submit" disabled={!openingOf(p).path.trim()}>Open</Button>
+                      <Button treatment="ghost" onclick={() => setOpening(p, null)}>Cancel</Button>
+                    </form>
+                  {/if}
+                  {#if filingOf(p)}
+                    <form class="stack workbench-plan-file" data-filing={filingOf(p).kind} onsubmit={(e) => fileRow(p, e)}
+                          aria-label={filingOf(p).kind === 'question' ? 'Ask question' : 'File issue'}>
+                      <p class="text-muted">{filingOf(p).kind === 'question'
+                        ? 'A row in § Needs a decision, under the id its ruling will carry.'
+                        : 'A row at the top of its severity\'s table, open and verified today.'}</p>
+                      {#if filingOf(p).kind === 'issue'}
+                        <Select label="Severity" name="severity" placeholder="" value={filingOf(p).severity}
+                                options={['S1', 'S2', 'S3', 'S4']}
+                                onchange={(e) => setFiling(p, { severity: e.target.value })} />
+                      {/if}
+                      <Input label="Area" name="area" value={filingOf(p).area} placeholder="The package or surface — web, cli, litestone"
+                             oninput={(e) => setFiling(p, { area: e.target.value })} />
+                      <Input label={filingOf(p).kind === 'question' ? 'Question' : 'Title'} name="title" value={filingOf(p).title}
+                             oninput={(e) => setFiling(p, { title: e.target.value })} />
+                      <Textarea label="Detail" name="detail" rows={3} value={filingOf(p).detail}
+                                oninput={(e) => setFiling(p, { detail: e.target.value })} />
+                      <div class="cluster">
+                        <Button type="submit" disabled={!fileReady(filingOf(p))}>{filingOf(p).kind === 'question' ? 'Ask' : 'File'}</Button>
+                        <Button treatment="ghost" onclick={() => closeFiling(p)}>Cancel</Button>
+                      </div>
+                    </form>
+                  {/if}
+                  {#if filed[p.id]}
+                    <p class="text-success workbench-filed-note" data-filed-note={filed[p.id].id}>Filed <code>{filed[p.id].id}</code> at {filed[p.id].file}:{filed[p.id].line}</p>
+                  {/if}
+                  {#if !plans[p.id]}
+                    <p class="text-muted">Reading the plan…</p>
+                  {:else if !parsedOf(p.id)}
+                    <p class="text-muted">{status[p.id]?.state === 'working' ? 'The plan session is writing it…' : `Nothing at ${p.plan} yet.`}</p>
+                  {:else}
+                    {#if ruled[p.id]}
+                      <p class="text-success workbench-ruled-note" data-ruled-note={ruled[p.id].ruling}>Ruled <code>{ruled[p.id].ruling}</code>: {ruled[p.id].pick} on {markdownText(ruled[p.id].question)}</p>
+                    {/if}
+                    {#if parsedOf(p.id).blocking?.length}
+                      <Callout tone="warning" title={plural(parsedOf(p.id).blocking.length, 'open question')}>
+                        {#each parsedOf(p.id).blocking as q}
+                          <div class="stack workbench-question" data-question={q.id}>
+                            <div>{markdownText(q.question)}</div>
+                            {#if q.state === 'decidable'}
+                              {#each q.options as o}
+                                <div class="cluster">
+                                  <Button size="xs" treatment={rulingOf(p)?.question === q.id && rulingOf(p).pick === o.letter ? '' : 'outlined'}
+                                          data-pick={o.letter} onclick={() => openRuling(p, q, o.letter)}
+                                          disabled={status[p.id]?.state === 'working'}
+                                          title={status[p.id]?.state === 'working' ? 'A chat here is working — answer once it stops' : `Rule ${o.letter}`}>{o.letter}</Button>
+                                  <span>{markdownText(o.text)}</span>
+                                  {#if q.recommend?.letter === o.letter}<Badge tone="info">{q.recommend.qualifier ? `recommended: ${q.recommend.qualifier}` : 'recommended'}</Badge>{/if}
+                                </div>
+                              {/each}
+                              {#if rulingOf(p)?.question === q.id}
+                                <form class="stack workbench-plan-rule" onsubmit={(e) => rule(p, q, e)} aria-label={`Rule ${rulingOf(p).pick}`}>
+                                  <Select label="Section" name="section" placeholder="The DECISIONS.md section it goes under" value={rulingOf(p).section}
+                                          options={plans[p.id]?.sections ?? []}
+                                          onchange={(e) => setRuling(p, { section: e.target.value })} />
+                                  <Textarea label={followsRec(q, rulingOf(p).pick) ? 'Why (optional — the recommendation is the reason)' : `Why — ${q.recommend ? (q.recommend.letter === rulingOf(p).pick ? 'what of it is ruled' : `${rulingOf(p).pick} is not the recommendation`) : 'there is no recommendation'}`}
+                                            name="why" rows={2} value={rulingOf(p).why}
+                                            oninput={(e) => setRuling(p, { why: e.target.value })} />
+                                  <div class="cluster">
+                                    <Button type="submit" disabled={!ruleReady(q, rulingOf(p)) || status[p.id]?.state === 'working'}>Rule {rulingOf(p).pick}</Button>
+                                    <Button treatment="ghost" onclick={() => closeRuling(p)}>Cancel</Button>
+                                  </div>
+                                </form>
+                              {/if}
+                            {:else}
+                              <p class="text-muted">No lettered options yet — write them under it in {p.plan} to answer it here.</p>
+                            {/if}
+                          </div>
+                        {/each}
+                      </Callout>
+                    {/if}
+                    {#if !parsedOf(p.id).phases.length}
+                      <p class="text-muted">No <code>### Phase N</code> heading in it yet.</p>
+                    {/if}
+                    {#each parsedOf(p.id).phases as ph (ph.n)}
+                      <section class="stack workbench-phase" data-phase={ph.n}>
+                        <h3 class="text-sm">Phase {ph.n}{ph.title ? ` — ${ph.title}` : ''}</h3>
+                        {#if ph.goal}<div class="text-muted">Goal: {markdownText(ph.goal)}</div>{/if}
+                        {#if ph.doneWhen}<div class="text-muted">Done when: {markdownText(ph.doneWhen)}</div>{/if}
+                        <ol class="workbench-steps">
+                          {#each ph.steps as st (st.id)}
+                            <li class={`workbench-step ${st.box}`} data-step={st.id} data-box={st.box}
+                                aria-current={parsedOf(p.id).next?.id === st.id ? 'step' : null}>
+                              <div class="cluster">
+                                <span class="workbench-box" aria-label={st.box}>{BOX[st.box]}</span>
+                                <strong>{st.id}</strong>
+                                <span class="workbench-step-title">{markdownText(st.title)}</span>
+                                {#if parsedOf(p.id).next?.id === st.id}
+                                  <Badge tone="info">next</Badge>
+                                  <span class="cluster workbench-runrow-end">
+                                    <Button size="xs" onclick={() => go(p)} disabled={going[p.id] || status[p.id]?.state === 'working'}
+                                            title={status[p.id]?.state === 'working' ? 'A chat here is working — Go starts the next step once it is done' : `Run ${st.id} in the shown chat`}>Go</Button>
+                                    <Button size="xs" treatment="outlined" onclick={() => go(p, 'next')} disabled={going[p.id] || status[p.id]?.state === 'working' || !!parsedOf(p.id).blocking?.length}
+                                            title={status[p.id]?.state === 'working' ? 'A chat here is working — Next starts the next step once it is done' : parsedOf(p.id).blocking?.length ? `Rule the open question before Next: ${parsedOf(p.id).blocking[0].question}` : `Run ${st.id} in a new chat, handed the plan and the last reply`}>Next</Button>
+                                  </span>
+                                {/if}
+                              </div>
+                              {#if plans[p.id].steps?.[st.id]}
+                                <div class="text-muted workbench-step-ran">Started {new Date(plans[p.id].steps[st.id].startedAt).toLocaleString()}{stepCost(plans[p.id].steps[st.id])}</div>
+                                {#if plans[p.id].steps[st.id].filed?.length}
+                                  <ul class="workbench-filed" aria-label={`Filed during ${st.id}`}>
+                                    {#each plans[p.id].steps[st.id].filed as r (r.id)}
+                                      <li class="cluster" data-filed={r.id} title={`${r.file}:${r.line}`}>
+                                        <code>{r.id}</code>
+                                        <Badge tone={filedTone(r)}>{filedLabel(r)}</Badge>
+                                        <span class="workbench-step-title">{markdownText(r.title)}</span>
+                                      </li>
+                                    {/each}
+                                  </ul>
+                                {/if}
+                              {/if}
+                              {#if leftOpen(p, st)}
+                                <div class="cluster workbench-step-open">
+                                  <span class="text-warning">The run ended and the box is still open.</span>
+                                  <Button size="xs" treatment="outlined" onclick={() => tick(p, st)} disabled={ticking[p.id] === st.id}
+                                          title={`Mark ${st.id} done in ${p.plan}`}>Tick</Button>
+                                </div>
+                              {/if}
+                              {#if st.reason}<div class="text-muted">dropped: {markdownText(st.reason)}</div>{/if}
+                              {#if st.notes.length}
+                                <details class="workbench-notes">
+                                  <summary class="text-muted">{plural(st.notes.length, 'finding')}</summary>
+                                  <ul>{#each st.notes as n}<li>{markdownText(n)}</li>{/each}</ul>
+                                </details>
+                              {/if}
+                            </li>
+                          {/each}
+                        </ol>
+                        {#if ph.done}<div class="text-success">{markdownText(ph.done)}</div>{/if}
+                      </section>
+                    {/each}
+                  {/if}
+                {/if}
+              </div>
+
+            {:else if tabOf(p) === 'checks'}
+              <div class="workbench-panel text-sm workbench-checks" id={`workbench-checks-${p.id}`} role="tabpanel" aria-labelledby={`workbench-tab-checks-${p.id}`}>
+                <p class="text-muted">This checkout's own <code>fli done</code>, run when the last message finished.</p>
+                {#if transcripts[p.id]?.checks?.error}
+                  <p class="text-danger">{transcripts[p.id].checks.error}</p>
+                {/if}
+                {#each transcripts[p.id]?.checks?.report?.items ?? [] as item}
+                  <div class={item.ok ? 'text-muted' : 'text-danger'}>{item.ok ? '✓' : '✗'} <strong>{item.check}</strong> {item.message}</div>
+                {/each}
+                {#each transcripts[p.id]?.checks?.report?.drives ?? [] as d}
+                  <div class="workbench-drive">
+                    <div>{d.changed}</div>
+                    {#each d.run as cmd}<code>{cmd}</code>{/each}
+                  </div>
+                {/each}
+              </div>
+
+            {:else if tabOf(p) === 'review'}
+              <div class="workbench-panel stack text-sm workbench-review" id={`workbench-review-${p.id}`} role="tabpanel" aria-labelledby={`workbench-tab-review-${p.id}`}>
+                {#if transcripts[p.id].review.state === 'working'}
+                  <p class="text-muted">A read-only reviewer is reading the change…</p>
+                {:else if transcripts[p.id].review.state === 'error'}
+                  <p class="text-danger">The review stopped with an error.</p>
+                {/if}
+                {#if reviewReply(p.id)}
+                  <div class="workbench-md"><Markdown text={reviewReply(p.id)} headingBase={3} /></div>
+                  <div><Button size="xs" treatment="outlined" onclick={() => useReview(p)}>Use as message</Button></div>
+                {/if}
+                {#each (transcripts[p.id].review.items ?? []).filter(it => it.kind === 'error') as it}
+                  <div class="text-danger">{it.text}</div>
+                {/each}
+              </div>
+
+            {:else if tabOf(p) === 'terminal'}
+              <div class="workbench-panel workbench-terminal-panel" role="tabpanel" aria-labelledby={`workbench-tab-terminal-${p.id}`}>
+                <Terminal pin={p.id} />
+              </div>
+
+            {:else if tabOf(p) === 'settings'}
+              <div class="workbench-panel text-sm workbench-settings" role="tabpanel" aria-labelledby={`workbench-tab-settings-${p.id}`}>
+                <p class="text-muted"><code>{p.path}</code></p>
+                <form class="stack" onsubmit={(e) => { e.preventDefault(); configure(p, e.target) }}>
+                  <Input label="Budget per message (USD)" name="budget" type="number" min="1" max="500" step="1" value={String(p.budget)} />
+                  <Checkbox label="Run this checkout's own hooks" name="hooks" checked={p.hooks}
+                            description="Off by default: a Stop hook that blocks spends the run's turns on itself." />
+                  <Checkbox label="Review each finished run" name="review" checked={p.review}
+                            description="A fresh read-only Claude Code session reads the change, up to $2 a review." />
+                  {#if !p.from}
+                    <Textarea label="Copied into a new branch" name="copy" rows={2} value={(p.copy ?? []).join('\n')}
+                              hint="One glob per line, over the files git ignores here — a worktree has none of them. A dev database is yours to add or to seed." />
+                  {/if}
+                  <div class="cluster">
+                    <Button type="submit" treatment="outlined">Save</Button>
+                    {#if !p.from}
+                      <Button treatment="ghost" tone="danger" onclick={() => unpin(p)}
+                              disabled={branchesOf(p).length > 0}
+                              title={branchesOf(p).length ? 'Archive its branches first' : `Unpin ${p.name}`}>Unpin</Button>
+                    {/if}
+                  </div>
+                </form>
+              </div>
+            {/if}
+
+            {#if comments[p.id]?.length}
+              <div class="stack text-sm workbench-comments" aria-label={`Comments going with the next message to ${p.name}`}>
+                {#each comments[p.id] as c, i}
+                  <div class="cluster">
+                    <code>{c.path}:{c.line}</code>
+                    <span>{c.text}</span>
+                    <Button size="xs" treatment="ghost" aria-label="Remove this comment" onclick={() => dropComment(p, i)}>×</Button>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+
+            {#if !p.missing}
+            <form class="stack workbench-composer" onsubmit={(e) => send(p, e)}>
+              <label class="visually-hidden" for={`workbench-draft-${p.id}`}>Message to Claude in {p.name}</label>
+              {#if shots[p.id]?.length}
+                <div class="cluster workbench-shots" aria-label={`Images going with the next message in ${p.name}`}>
+                  {#each shots[p.id] as s, k (s.key)}
+                    <span class="workbench-shot" data-shot={k}>
+                      {#if s.pending}<span class="text-xs text-muted">…</span>
+                      {:else}<img src={s.thumb} alt={`pasted image ${k + 1}`} />{/if}
+                      <button type="button" class="workbench-shot-drop" aria-label={`Leave image ${k + 1} out`}
+                              title="Leave this image out" onclick={() => dropShot(p, s.key)}>×</button>
+                    </span>
+                  {/each}
+                </div>
+              {/if}
+              <textarea class="field" rows="3" id={`workbench-draft-${p.id}`}
+                        placeholder={elsewhere(p.id) ? 'Another chat here is working — one run at a time in a checkout'
+                          : status[p.id]?.state === 'working' ? 'Queue a follow-up…' : 'Ask Claude to do something… (Ctrl+Enter)'}
+                        value={drafts[p.id] ?? ''}
+                        oninput={(e) => { drafts = { ...drafts, [p.id]: e.target.value }; fit(e.target) }}
+                        onkeydown={(e) => keydown(p, e)}
+                        onpaste={(e) => paste(p, e)}></textarea>
+              <div class="cluster">
+                <Button type="submit" disabled={!composed(p.id) || elsewhere(p.id) || pending(p.id)}>
+                  {status[p.id]?.state === 'working' && !elsewhere(p.id) ? 'Queue' : 'Send'}
+                </Button>
+                {#if status[p.id]?.state === 'working' && !elsewhere(p.id)}
+                  <Button treatment="outlined" tone="danger" onclick={() => stop(p)}>Stop</Button>
+                {/if}
+                <Button treatment="ghost" onclick={() => fresh(p)} disabled={blank(p.id)}
+                        title="Another chat in this checkout, in a tab below this one">New chat</Button>
+                {#if status[p.id]?.state !== 'working'}
+                  {#if p.checkable}
+                    <Button treatment="ghost" onclick={() => check(p)}
+                            disabled={status[p.id]?.checks?.state === 'running'}>Check</Button>
+                  {/if}
+                  <Button treatment="ghost" onclick={() => review(p)}
+                          disabled={status[p.id]?.review?.state === 'working'}>Review</Button>
+                  {#if p.from}
+                    <Button treatment="outlined" onclick={() => land(p)}
+                            title={`Apply this branch's work to ${parentOf(p)?.name ?? 'its parent'}'s tree, uncommitted`}>Land</Button>
+                    <Button treatment="ghost" tone="danger" onclick={() => archive(p)}>Archive</Button>
+                  {:else}
+                    <Button treatment="ghost" onclick={() => fork(p)}
+                            title="A branch in a worktree of its own, with this chat forked into it">Fork</Button>
+                  {/if}
+                {/if}
+                {#if transcripts[p.id]?.resume}
+                  <CopyButton text={transcripts[p.id].resume} label="Copy resume" />
+                {/if}
+              </div>
+            </form>
+            {#if chatsOf(p.id).length > 1}
+              <div class="text-sm workbench-chats" role="group" aria-label={`Chats in ${p.name}`}>
+                {#each chatsOf(p.id) as c (c.id)}
+                  <span class="workbench-chat-tab" data-chat={c.id}>
+                    <button type="button" class="workbench-chat-open" onclick={() => selectChat(p, c.id)}
+                            aria-current={c.id === status[p.id]?.chat ? 'true' : null}
+                            title={c.title ?? 'Nothing sent here yet'}>
+                      <Dot tone={chatTone(c)} pulse={c.state === 'working'} label={chatLabel(c)} />
+                      <span class="workbench-chat-title">{chatTitle(c)}</span>
+                    </button>
+                    {#if c.state !== 'working'}
+                      <button type="button" class="workbench-chat-close" aria-label={`Close ${chatTitle(c)}`}
+                              title="Close — Claude Code keeps the session" onclick={() => closeChat(p, c)}>×</button>
+                    {/if}
+                  </span>
+                {/each}
+              </div>
+            {/if}
+            {/if}
+          </article>
+      {/each}
+      {/if}
+        {#each empties() as cell (cell.key)}
+          <div class="workbench-slot" data-phantom={cell.phantom ? '' : null} data-over={over === cell.key ? '' : null} style:grid-area={area(cell.r, cell.c)}
+               ondragover={(e) => dragOver(e, cell)} ondragleave={() => { if (over === cell.key) over = null }} ondrop={(e) => drop(e, cell)}>
+            {#if asking === cell.key}
+              {#if startable().length}
+                <form class="stack workbench-slot-pick" onsubmit={(e) => { e.preventDefault(); startIn(cell, e.target.elements.pin.value) }}>
+                  <Select label="Checkout" name="pin" placeholder="" value={startable()[0].id}
+                          options={startable().map(p => ({ value: p.id, label: `${p.from ? '↳ ' : ''}${p.name}` }))} />
+                  <div class="cluster">
+                    <Button size="sm" type="submit">Start</Button>
+                    <Button size="sm" treatment="ghost" onclick={() => asking = null}>Cancel</Button>
+                  </div>
+                </form>
+              {:else}
+                <div class="stack text-sm workbench-slot-pick">
+                  <span class="text-muted">Every pinned checkout is on the stage. Pin another from the dock.</span>
+                  <Button size="sm" treatment="ghost" onclick={() => asking = null}>Cancel</Button>
+                </div>
+              {/if}
+            {:else}
+              <button type="button" class="workbench-slot-new" onclick={() => asking = cell.key}
+                      title="A new chat here, in a checkout you pick — or drop a tile from the dock">+ New Session</button>
+            {/if}
+          </div>
+        {/each}
+      </div>
+      {/if}
+    </div>
+
+    <aside class="workbench-dock" aria-label="Docked chats">
+      {#if waiting().length}
+        <Button size="sm" treatment="outlined" tone={needsYou(status[waiting()[0].id]) ? 'warning' : 'success'} id="workbench-next" onclick={() => openWaiting(waiting()[0])}
+                title="A plan's open question first, then the oldest finished chat nobody has looked at (Alt+J)">Next waiting · {waiting().length}</Button>
+      {/if}
+      {#each docked() as p (p.id)}
+        <div class="workbench-tile" id={`workbench-${p.id}`} data-state={status[p.id]?.state} data-branch={p.branch ?? null}
+             draggable="true" ondragstart={(e) => dragStart(e, p.id)} ondragend={() => { dragging = null; over = null }}>
+          <button type="button" class="workbench-tile-open" onclick={() => stageOn(p.id)}
+                  title={`Put ${p.name} on the stage${keyOf(p) ? ` (${keyOf(p)})` : ''}`}>
+            <span class="cluster">
+              <Dot tone={dotTone(p.id)}
+                   pulse={status[p.id]?.state === 'working'}
+                   label={dotLabel(p.id)} />
+              <strong class="workbench-tile-name">{p.from ? '↳ ' : ''}{p.name}</strong>
+              {#if needsYou(status[p.id])}<Badge tone="warning" class="workbench-needs" title={asksOf(p.id)}>needs you</Badge>
+              {:else if status[p.id]?.unread}<Badge tone="success">new</Badge>{/if}
+              {#if keyOf(p)}<kbd class="text-xs text-muted">{keyOf(p)}</kbd>{/if}
+            </span>
+            <span class="text-sm text-muted workbench-now">{doing(p.id)}</span>
+          </button>
+          {#if p.missing}
+            <div class="cluster text-sm workbench-gone">
+              <span class="text-danger">Folder is gone</span>
+              {#if p.from}
+                <Button size="xs" treatment="ghost" tone="danger" onclick={() => archive(p)}>Archive</Button>
+              {:else}
+                <Button size="xs" treatment="ghost" tone="danger" onclick={() => unpin(p)}
+                        disabled={branchesOf(p).length > 0}>Unpin</Button>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      {/each}
+
+      <details class="text-sm workbench-pin" open={loaded && !pins.length ? true : null}>
+        <summary>Pin a checkout</summary>
+        <form class="stack" id="workbench-pin-form" onsubmit={pin}>
+          <Input label="Folder" name="path" id="workbench-path" placeholder="~/code/my-app"
+                 value={path} oninput={(e) => path = e.target.value}
+                 hint="A git checkout on this machine — or star one on Local repos." />
+          <Button size="sm" type="submit" disabled={pinning || !path.trim()}>{pinning ? 'Pinning…' : 'Pin'}</Button>
+        </form>
+      </details>
+
+      {#if peer}
+        <details class="text-sm workbench-peer" data-peer-enrolled={peer.keyId ? 'yes' : 'no'}>
+          <summary>Peer</summary>
+          <div class="stack">
+            <p>Previews are cut in the Basecamp at <code>{peer.basecampUrl}</code>, as this machine's key.</p>
+            <code class="workbench-peer-key">{peer.publicKey}</code>
+            <CopyButton text={peer.publicKey} label="Copy public key" />
+            {#if peer.keyId}
+              <p class="text-muted">Enrolled as <code>{peer.keyId}</code>.</p>
+            {:else}
+              <p class="text-muted">Not enrolled: paste this key into Basecamp's "Add a peer" form, then set <code>BASECAMP_KEY_ID</code> to the id it answers.</p>
+            {/if}
+          </div>
+        </details>
+      {/if}
+    </aside>
+  </div>
+{/if}
+</TabPanel>
+<TabPanel id="claude">
+  {#if claudeSeen}<ClaudeCode />{/if}
+</TabPanel>
+</Tabs>
+
+<style>
+  .workbench-peer-key { overflow-wrap: anywhere; }
+  /* The stage is the window under the header, so a long run scrolls inside
+     its pane and the message box never leaves the screen. */
+  .workbench {
+    --workbench-min-block: 34rem;
+    --workbench-pane-max: 48rem;
+    --workbench-slot-min: 6rem;
+    --workbench-tab-size: 12rem;
+    --workbench-tab-min: 5rem;
+    --workbench-rail-size: 0.75rem;
+    --workbench-tail-radius: 2px;
+    --workbench-gutter: 3.5em;
+    --workbench-sign: 1.2em;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--aside-width);
+    gap: var(--space-lg);
+    block-size: max(var(--workbench-min-block), calc(100dvh - var(--workbench-top, 10rem) - var(--screen-pad, 1rem)));
+  }
+  .workbench-stage { display: flex; flex-direction: column; gap: var(--space-sm); min-block-size: 0; }
+  .workbench-bar { justify-content: space-between; flex-shrink: 0; }
+  /* Every cell the same size: a pane's log scrolls inside it, so a row is a
+     share of the stage rather than as tall as its longest chat. */
+  .workbench-panes {
+    flex: 1;
+    min-block-size: 0;
+    display: grid;
+    grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
+    grid-template-rows: repeat(var(--rows, 1), minmax(0, 1fr));
+    gap: var(--space-lg);
+  }
+  .workbench-slot {
+    display: grid;
+    place-items: center;
+    min-block-size: var(--workbench-slot-min);
+    border: calc(var(--border-width) * 2) dashed var(--tint-rule);
+    border-radius: var(--card-radius);
+    color: var(--ink-mute);
+  }
+  .workbench-slot[data-phantom] { opacity: 0.6; }
+  .workbench-slot[data-over] { border-color: var(--rule-strong); background: var(--surface-sunken); opacity: 1; }
+  .workbench-slot-new {
+    inline-size: 100%;
+    block-size: 100%;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  .workbench-slot-new:hover { color: inherit; background: var(--surface-sunken); }
+  .workbench-slot-pick { padding: var(--space-md); }
+  .workbench-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    padding: var(--space-sm);
+    font-size: inherit;
+    cursor: grab;
+  }
+  .workbench-card:active { cursor: grabbing; }
+
+  .workbench-pane {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    min-block-size: 0;
+    padding: var(--space-md) var(--space-lg);
+  }
+  /* A Card spaces its children with a flow margin; the pane is a flex
+     column and spaces them with its gap, so the margin would come twice. */
+  .workbench-pane > * { margin-block-start: 0; }
+  .workbench-pane[data-branch] { border-inline-start: var(--stroke-width) solid var(--rule-strong); }
+  /* Slim: a pane folds to its header; clicking the header flips it. */
+  .workbench-pane[data-slim] { align-self: start; }
+  .workbench-pane[data-slim] > :not(.workbench-head) { display: none; }
+  .workbench-head { cursor: pointer; }
+  .workbench-meta { row-gap: 0; }
+  /* A narrow pane wraps the buttons under the name rather than clipping them. */
+  .workbench-head { flex-wrap: wrap; }
+  .workbench-head > .cluster { flex-shrink: 0; margin-inline-start: auto; }
+  .workbench-head-chats {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: var(--space-xs);
+    min-inline-size: 0;
+    overflow-x: auto;
+  }
+  .workbench-head-chat {
+    display: flex;
+    flex: 0 1 var(--workbench-tab-size);
+    align-items: center;
+    gap: var(--space-xs);
+    min-inline-size: var(--workbench-tab-min);
+    padding: 0 var(--space-sm);
+    border: var(--border-width) solid var(--tint-rule);
+    border-radius: var(--pill-radius);
+    background: none;
+    color: var(--ink-mute);
+    font: inherit;
+    cursor: pointer;
+  }
+  .workbench-head-chat[aria-current='true'] { background: var(--surface-sunken); color: inherit; }
+  .workbench-head-chat[data-unread] { color: inherit; font-weight: 600; }
+  .workbench-head-chats :global(.workbench-head-add) { flex-shrink: 0; }
+  .workbench-tabs { flex-shrink: 0; }
+  .workbench-folds {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-xs);
+  }
+  .workbench-fold {
+    padding: 0 var(--space-xs);
+    border: var(--border-width) solid transparent;
+    border-radius: var(--pill-radius);
+    background: none;
+    color: var(--ink-mute);
+    font: inherit;
+    cursor: pointer;
+  }
+  .workbench-fold[aria-pressed='true'] { border-color: var(--tint-rule); color: inherit; }
+  .workbench-panel {
+    flex: 1;
+    min-block-size: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .workbench-terminal-panel { display: flex; flex-direction: column; overflow: hidden; }
+  .workbench-chat-panel { display: flex; flex-direction: column; gap: var(--space-xs); overflow: hidden; }
+  .workbench-composer textarea { resize: vertical; inline-size: 100%; max-block-size: 30vh; }
+  .workbench-shots { gap: var(--space-xs); }
+  .workbench-shot {
+    position: relative;
+    display: grid;
+    place-items: center;
+    inline-size: 4rem;
+    block-size: 4rem;
+    overflow: hidden;
+    border: var(--border-width) solid var(--tint-rule);
+    border-radius: var(--card-radius);
+    background: var(--surface-sunken);
+  }
+  .workbench-shot img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+  .workbench-shot-drop {
+    position: absolute;
+    inset-block-start: 2px;
+    inset-inline-end: 2px;
+    padding: 0 var(--space-xs);
+    border: 0;
+    border-radius: var(--pill-radius);
+    background: var(--surface-raised);
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  /* Under the message box, like a spreadsheet's sheets: every chat sends
+     from the one box, into the one tree. */
+  .workbench-chats {
+    display: flex;
+    flex-shrink: 0;
+    gap: var(--space-xs);
+    overflow-x: auto;
+    border-block-start: var(--border-width) solid var(--tint-rule);
+  }
+  .workbench-chat-tab {
+    display: flex;
+    align-items: center;
+    flex: 0 1 var(--workbench-tab-size);
+    min-inline-size: var(--workbench-tab-min);
+    border: var(--border-width) solid transparent;
+    border-block-start: 0;
+    border-radius: 0 0 var(--card-radius) var(--card-radius);
+  }
+  .workbench-chat-tab:has([aria-current='true']) { border-color: var(--tint-rule); background: var(--surface-sunken); }
+  .workbench-chat-open {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: var(--space-xs);
+    min-inline-size: 0;
+    padding: var(--space-xs) var(--space-sm);
+    border: 0;
+    background: none;
+    color: var(--ink-mute);
+    font: inherit;
+    cursor: pointer;
+  }
+  .workbench-chat-open[aria-current='true'] { color: inherit; }
+  .workbench-chat-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .workbench-chat-close {
+    padding: 0 var(--space-xs);
+    border: 0;
+    background: none;
+    color: var(--ink-mute);
+    font: inherit;
+    cursor: pointer;
+  }
+  .workbench-chat-close:hover { color: inherit; }
+
+  .workbench-chat {
+    flex: 1;
+    min-block-size: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-xs);
+  }
+  .workbench-log {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    min-block-size: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-inline-end: var(--space-xs);
+  }
+
+  .workbench-dock {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    min-block-size: 0;
+    overflow-y: auto;
+  }
+  .workbench-tile {
+    border: var(--border-width) solid var(--tint-rule);
+    border-radius: var(--card-radius);
+    background: var(--tint-surface);
+    box-shadow: var(--shadow-sm, none);
+    /* Little windows: the dock reads at a glance, so the type shrinks with them. */
+    font-size: var(--text-2xs);
+    line-height: 1.3;
+  }
+  .workbench-tile .text-sm,
+  .workbench-tile .text-xs { font-size: inherit; }
+  .workbench-tile[data-branch] { margin-inline-start: var(--space-md); }
+  .workbench-tile[data-state='working'] { border-color: var(--rule-strong); }
+  .workbench-tile-open {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    inline-size: 100%;
+    padding: var(--space-sm);
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .workbench-tile-open:hover { background: var(--surface-sunken); }
+  .workbench-tile-name { overflow-wrap: anywhere; }
+  .workbench-tile kbd { margin-inline-start: auto; }
+  .workbench-tile .workbench-now { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .workbench-tile .workbench-gone { padding: 0 var(--space-sm) var(--space-xs); }
+  .workbench-pin { margin-block-start: auto; padding-block-start: var(--space-sm); border-block-start: var(--border-width) solid var(--tint-rule); }
+  .workbench-pin > summary { cursor: pointer; }
+
+  /* Too narrow for two panes and a dock: the dock goes on top as a strip and
+     the panes stack, each its own height. */
+  @media (max-width: 64rem) {
+    .workbench { display: flex; flex-direction: column-reverse; block-size: auto; }
+    .workbench-dock { flex-direction: row; flex-wrap: wrap; overflow: visible; }
+    .workbench-tile { flex: 1 1 var(--tile-min, 12rem); }
+    .workbench-pin { flex: 1 1 100%; }
+    /* One column: the cell each pane was given is an inline style, so only
+       !important takes it back. */
+    .workbench-panes { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
+    .workbench-panes > * { grid-area: auto !important; }
+    .workbench-pane { block-size: min(85dvh, var(--workbench-pane-max)); }
+  }
+
+  .workbench-msg {
+    max-inline-size: 88%;
+    padding: var(--space-xs) var(--space-sm);
+    border: var(--border-width) solid var(--tint-rule);
+    border-radius: var(--card-radius);
+    background: var(--tint-surface);
+  }
+  .workbench-you { align-self: flex-end; border-end-end-radius: var(--workbench-tail-radius); }
+  .workbench-ai  { align-self: flex-start; border-end-start-radius: var(--workbench-tail-radius); }
+  .workbench-msg-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-xs);
+    inline-size: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font-family: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .workbench-chevron { margin-inline-start: auto; color: var(--ink-mute); }
+  .workbench-tools, .workbench-result { align-self: flex-start; padding-inline: var(--space-sm); }
+  .workbench-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* A long path or URL in a reply must wrap inside the bubble, and a fence
+     scrolls in its own box rather than widening the log. */
+  .workbench-md { min-inline-size: 0; overflow-wrap: anywhere; }
+  .workbench-md :global(pre) { max-inline-size: 100%; overflow-x: auto; }
+  .workbench-tools code { overflow-wrap: anywhere; }
+
+  .workbench-rail {
+    position: relative;
+    inline-size: var(--workbench-rail-size);
+    border-radius: var(--pill-radius);
+    background: var(--surface-sunken);
+  }
+  .workbench-rail-thumb {
+    position: absolute;
+    inset-inline: 0;
+    border-radius: var(--pill-radius);
+    background: var(--rule-strong);
+    pointer-events: none;
+  }
+  .workbench-notch {
+    position: absolute;
+    inset-inline: -2px;
+    block-size: calc(var(--stroke-width) * 2);
+    padding: 0;
+    border: 0;
+    border-radius: var(--pill-radius);
+    background: var(--tint-rule);
+    cursor: pointer;
+  }
+  /* A notch is too thin to hit; the hit area is taller than the mark. */
+  .workbench-notch::before { content: ''; position: absolute; inset: -5px 0; }
+  .workbench-notch:hover,
+  .workbench-notch[aria-current='true'] { background: var(--tone-ink); block-size: calc(var(--stroke-width) * 3); }
+  .workbench-now { overflow-wrap: anywhere; }
+
+  .workbench-runrow { padding-block: var(--space-2xs); border-block-end: var(--border-width) solid var(--tint-rule); }
+  .workbench-runrow code { overflow-wrap: anywhere; }
+  .workbench-runrow-end { margin-inline-start: auto; }
+  .workbench-runlog > summary { cursor: pointer; }
+  .workbench-runlog pre {
+    max-block-size: 40vh;
+    overflow: auto;
+    margin: var(--space-xs) 0 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: var(--text-xs);
+  }
+
+  .workbench-plan code { overflow-wrap: anywhere; }
+  .workbench-phase { padding-block: var(--space-xs); border-block-end: var(--border-width) solid var(--tint-rule); }
+  .workbench-steps { list-style: none; margin: 0; padding: 0; }
+  .workbench-step { padding: var(--space-2xs) var(--space-xs); border-radius: var(--field-radius); }
+  .workbench-step[aria-current='step'] { background: var(--surface-sunken); outline: var(--border-width) solid var(--tint-rule); }
+  .workbench-step.dropped .workbench-step-title { text-decoration: line-through; }
+  .workbench-step-title { flex: 1; min-inline-size: 0; overflow-wrap: anywhere; }
+  .workbench-box { font-family: var(--font-mono); }
+  .workbench-notes > summary { cursor: pointer; }
+  .workbench-filed { list-style: none; margin: var(--space-2xs) 0 0; padding-inline-start: var(--space-md); }
+  .workbench-notes ul { margin: var(--space-2xs) 0 0; padding-inline-start: var(--space-md); }
+
+  .workbench-drive { margin-block-start: var(--space-xs); }
+  .workbench-drive code { display: block; overflow-wrap: anywhere; }
+
+  .workbench-file > summary { cursor: pointer; }
+  .workbench-commit { padding-block-end: var(--space-sm); border-block-end: var(--border-width) solid var(--tint-rule); }
+  .workbench-file code { overflow-wrap: anywhere; }
+  .workbench-diff {
+    max-block-size: 50vh;
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
+  .workbench-hunk { padding-block: var(--space-3xs); }
+  .workbench-line {
+    display: grid;
+    grid-template-columns: var(--workbench-gutter) var(--workbench-sign) 1fr;
+    inline-size: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .workbench-line.success, .workbench-line.danger { background: var(--tint-surface); }
+  .workbench-line:hover { outline: var(--border-width) solid var(--tint-rule); }
+  .workbench-ln { color: var(--ink-mute); text-align: end; padding-inline-end: var(--space-xs); }
+  .workbench-code { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .workbench-comment { padding-block: var(--space-xs); }
+  .workbench-comment input { flex: 1; }
+  .workbench-carried summary { cursor: pointer; }
+  .workbench-carried code { overflow-wrap: anywhere; }
+</style>

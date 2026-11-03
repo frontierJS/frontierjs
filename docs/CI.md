@@ -6,7 +6,7 @@
 
 | Phase | What fails it |
 | ----- | -------------- |
-| `hygiene` | a source file `.gitignore` hides, and **a dependency or a clock inside the substrate package** — `@frontierjs/toolbelt` may be imported by litestone and mesa only because it depends on nothing, so a non-relative import under its `src/` fails the build |
+| `hygiene` | a source file `.gitignore` hides, and **a dependency or a clock inside the substrate package** — `@frontierjs/toolbelt` may be imported by litestone and mesa only because it depends on nothing, so a non-relative import under its `src/` fails the build; and **an import between `packages/basecamp` and `packages/workbench`** in either direction, by path or by package name — the two apps are strangers and cross only by a signed call (`IDEAS/workbench-package.md`) |
 | `lint` | any Biome finding, warnings included — the whole tree, under the root `biome.json`, which extends `@frontierjs/config/biome` and adds only what this repo vendors or tests on purpose (`vendor`, `mockup`, `.html`, `.svelte`; a few rules off under `test/`). An intentional exception is a `biome-ignore` comment with its reason; `packages/config/README.md` says why each rule the shipped set turns off is off |
 | `structure` | an architecture rule broken in this repo's own apps, or a rule above its ceiling in an app's `check-baseline.json` (the exit `fli check` gives). It runs `packages/cli/core/checks.js`, the same engine `fli check` gives a client app, because two implementations of one rule is how a framework ends up breaking rules it publishes |
 | `registers` | an id a register issued twice, a citation pointing at nothing, a ruling nobody named — `packages/cli/core/register-check.js`, the engine behind `fli register:check` |

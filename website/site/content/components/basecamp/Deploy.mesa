@@ -1,0 +1,91 @@
+<!--
+  Deploy pipeline and rollback. Facts: packages/cli/commands/basecamp/deploy.md
+  (the laptop path, preflight, docker save | ssh docker load, the -dirty mark),
+  packages/cli/commands/deploy/index.md (BASECAMP_APP_ID hands fli deploy to
+  basecamp:deploy), buildInitialSteps and rollback() in
+  packages/basecamp/api/src/services/deployments/deployments.service.ts, the
+  step runner in api/src/jobs/deployment-run.job.ts, and the swap and putBack
+  in packages/outpost/src/docker.js. Step names are the strings
+  buildInitialSteps writes, pinned by api/test/inline-app.test.ts.
+  No zero-downtime claim: Outpost stops the live container before the new one
+  starts, because a SQLite file takes one writer.
+-->
+<section id="deploy" class="bc-section">
+  <div class="container stack">
+    <p class="eyebrow">Deploy pipeline</p>
+    <h2>Ship with one command. Take it back with one button.</h2>
+    <p class="lede">
+      A deploy becomes a release: built, loaded onto your machines, started, health-checked
+      and written down. If the new container will not come up, the old one keeps serving.
+    </p>
+
+    <div class="bc-split">
+      <ul class="bc-points">
+        <li>
+          <strong>Three ways to ship, one release.</strong>
+          Run <code>fli deploy</code>, press Deploy on the App's page, or push to the branch
+          it follows. Each is recorded with who shipped it, the commit and the image digest.
+          From your laptop the image streams over ssh with <code>docker save | docker load</code>,
+          so you need no registry.
+        </li>
+        <li>
+          <strong>Checked before anything is built.</strong>
+          A required variable set nowhere, a database inside the container, a port the app
+          does not listen on, or an env file baked into the image stops the release before the
+          build. Whatever the App is missing is offered as one plan and applied when you say yes.
+        </li>
+        <li>
+          <strong>A bad release leaves the good one serving.</strong>
+          Outpost sets the live container aside, starts the new image by digest, and checks its
+          health ten times, three seconds apart. If it never answers, the old one goes back.
+          An app with a data volume gets a copy of it before the swap.
+        </li>
+        <li>
+          <strong>Rollback ships the old release again.</strong>
+          Roll back starts the image the previous release recorded, with the settings it shipped
+          with, and rebuilds nothing. It takes an admin, and it does not rewind your data:
+          restore the volume from the copy taken before the swap.
+        </li>
+      </ul>
+
+      <figure class="bc-proof">
+        <div class="flow" role="list">
+          <span class="hop" role="listitem"><strong>fli deploy</strong> preflight, then docker build on your machine</span>
+          <span class="arrow">→</span>
+          <span class="hop" role="listitem"><strong>docker save | ssh … docker load</strong> onto every machine the App is placed on</span>
+          <span class="arrow">→</span>
+          <span class="hop" role="listitem"><strong>POST /deployments</strong> one release, named by the image digest the machine reports</span>
+          <span class="arrow">→</span>
+          <span class="hop" role="listitem"><strong>Validate · Back up volume</strong> the data volume is copied before the swap</span>
+          <span class="arrow">→</span>
+          <span class="hop" role="listitem"><strong>Start container</strong> Outpost sets the live one aside and starts the digest</span>
+          <span class="arrow">→</span>
+          <span class="hop" role="listitem"><strong>Health check</strong> healthy, the old container is removed; otherwise it is put back</span>
+        </div>
+        <figcaption>
+          A laptop release of a container App with a data volume, from
+          <code>packages/cli/commands/basecamp/deploy.md</code>. The step names are the ones
+          <code>buildInitialSteps</code> in <code>deployments.service.ts</code> writes, and the
+          ones the release page lists. A Deploy press on a git App runs Build image on the
+          machine instead, and an image App runs Pull image. The swap and put-back are
+          <code>packages/outpost/src/docker.js</code>.
+        </figcaption>
+      </figure>
+    </div>
+
+    <p class="bc-more">
+      Read more:
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/cli/commands/basecamp/deploy.md">fli basecamp:deploy</a>,
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/basecamp/api/src/services/deployments/deployments.service.ts">releases and rollback</a>,
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/outpost/README.md">Outpost</a>,
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/basecamp/docs/hazards.md">the deploy hazards</a>.
+    </p>
+  </div>
+</section>
+
+<style>
+  .flow { display: flex; flex-direction: column; align-items: stretch; gap: .3rem; font-size: .9rem; }
+  .flow .hop { display: flex; flex-direction: column; gap: .1rem; border: 1px solid var(--rule-strong); border-radius: .75rem; padding: .5rem .9rem; background: var(--surface-raised); color: var(--ink-soft); }
+  .flow .hop strong { color: var(--ink); overflow-wrap: anywhere; }
+  .flow .arrow { color: var(--ink-mute); text-align: center; line-height: 1; }
+</style>

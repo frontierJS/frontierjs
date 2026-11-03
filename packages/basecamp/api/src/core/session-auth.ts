@@ -27,6 +27,7 @@
 // Credential, not a Session, and would keep working. One rule at the door
 // beats two cleanup passes.
 
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { Forbidden } from '@frontierjs/junction'
 import type { IAuth, ServiceContext, Hook } from '@frontierjs/junction'
 
@@ -168,11 +169,25 @@ export function ownerOwesSecondFactor(db: any) {
  */
 export async function refuseUninvited({ user, db }: { user: Record<string, any>; db: any }): Promise<void> {
   if (await db.user.count({ where: { status: 'active' } }) === 0) return
+  const email   = String(user.email).toLowerCase()
   const invited = await db.invitation.exists({
-    where: { email: String(user.email).toLowerCase(), expiresAt: { gt: new Date().toISOString() } },
+    where: { email, expiresAt: { gt: new Date().toISOString() } },
   })
   if (!invited) throw new Forbidden('Basecamp accounts are made by invitation — ask a workspace admin for one')
+  // A live invitation names an address, not a person: anyone who knew the
+  // address could register it before the invitee clicked, and hold the account
+  // the invitation then joined (`FJS-3870`). Only the accept that verified the
+  // token makes it.
+  if (invitationPresented.getStore() !== email)
+    throw new Forbidden('This address has an invitation — open the link in it to make the account')
 }
+
+/**
+ * The address whose invitation token `invitations.accept` verified, for the
+ * length of the account it makes. Async-local rather than a flag on the row, so
+ * a `/auth/register` racing an accept for the same address is not let through.
+ */
+export const invitationPresented = new AsyncLocalStorage<string>()
 
 /**
  * App-level before hook: a suspended principal acts on nothing.

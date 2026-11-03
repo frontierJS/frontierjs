@@ -38,6 +38,8 @@ import { buildWhere }         from '../core/query.js'
 import { ValidationError }    from '../core/validate.js'
 import { extname, basename }  from 'path'
 import { existsSync, openAsBlob } from 'fs'
+import { createHash }         from 'crypto'
+import { Readable }           from 'stream'
 
 // ─── MIME type matching ───────────────────────────────────────────────────────
 
@@ -104,6 +106,32 @@ class FromPath {
 
 /** Upload a file from the server's disk into a File column. Code only — a request body cannot spell it. */
 export function fromPath(path) { return new FromPath(path) }
+
+// ─── Uploading from a stream ──────────────────────────────────────────────────
+
+// A request body larger than memory arrives as a stream and is never one Blob.
+// `type` is a claim like any other and the head of the bytes wins (resolveType).
+// `size` is what the sender says it will send: a remote provider needs it before
+// the first byte, and the count of what arrived is checked against it
+// (FJS-D1808).
+class FromStream {
+  constructor(readable, { name, type, size } = {}) {
+    if (readable && typeof readable.getReader !== 'function' && typeof readable.pipe === 'function')
+      readable = Readable.toWeb(readable)
+    if (!readable || typeof readable.getReader !== 'function')
+      throw new Error('fromStream(readable): readable must be a ReadableStream or a Node Readable')
+    if (size != null && !(Number.isSafeInteger(size) && size >= 0))
+      throw new Error('fromStream(readable, { size }): size must be a non-negative integer')
+    this.readable = readable
+    this.name     = name
+    this.type     = type
+    this.size     = size ?? null
+    Object.freeze(this)
+  }
+}
+
+/** Upload a stream (a request's `req.body`) into a File column. Code only — a request body cannot spell it. */
+export function fromStream(readable, options) { return new FromStream(readable, options) }
 
 // ─── A file over JSON ─────────────────────────────────────────────────────────
 
@@ -176,6 +204,7 @@ function isFileValue(v) {
   if (v instanceof Uint8Array)  return true
   if (v instanceof ArrayBuffer) return true
   if (v instanceof FromPath)    return true
+  if (v instanceof FromStream)  return true
   if (isInlineFile(v))          return true
   if (typeof v === 'string' && !v.trimStart().startsWith('{')) return true
   return false
@@ -208,7 +237,41 @@ function bytesValue(bytes, fields) {
   return { body: bytes, head: bytes, size: bytes.length, ...fields }
 }
 
+// The first SNIFF_HEAD bytes are read and held, and the body handed on replays
+// them before it continues with the rest, so the type is known and @accept has
+// answered before anything is written.
+async function streamValue(value, fieldName) {
+  const reader = value.readable.getReader()
+  const held   = []
+  let   total  = 0
+  while (total < SNIFF_HEAD) {
+    const { done, value: chunk } = await reader.read()
+    if (done) break
+    held.push(chunk)
+    total += chunk.length
+  }
+  const head = Buffer.concat(held).subarray(0, SNIFF_HEAD)
+  let replay = 0
+  const body = new ReadableStream({
+    async pull(controller) {
+      if (replay < held.length) return controller.enqueue(held[replay++])
+      const { done, value: chunk } = await reader.read()
+      if (done) controller.close()
+      else controller.enqueue(chunk)
+    },
+    cancel: reason => reader.cancel(reason),
+  })
+  return {
+    body, head, size: value.size ?? undefined,
+    mime:     value.type || 'application/octet-stream',
+    filename: displayName(value.name) ?? fieldName,
+    name:     displayName(value.name),
+    cancel:   reason => body.cancel(reason),
+  }
+}
+
 async function readValue(value, fieldName, model) {
+  if (value instanceof FromStream) return streamValue(value, fieldName)
   if (typeof File !== 'undefined' && value instanceof File)
     return blobValue(value, { mime: value.type || 'application/octet-stream', filename: value.name || fieldName, name: displayName(value.name) })
   if (value instanceof Blob)
@@ -293,9 +356,11 @@ class FileStoragePlugin extends ExternalRefPlugin {
   // Extract per-field options from schema (keepVersions, accept)
   _fieldOptions(field) {
     const acceptAttr = field.attributes.find(a => a.kind === 'accept')
+    const digestAttr = field.attributes.find(a => a.kind === 'digest')
     return {
       keepVersions: !!field.attributes.find(a => a.kind === 'keepVersions'),
       accept:       acceptAttr ? acceptAttr.types : null,
+      digest:       digestAttr ? digestAttr.column : null,
     }
   }
 
@@ -348,18 +413,25 @@ class FileStoragePlugin extends ExternalRefPlugin {
 
   // ── ExternalRefPlugin contract ────────────────────────────────────────────
 
-  // serialize: Buffer/File/fromPath → upload → return ref object
+  // serialize: Buffer/File/fromPath/fromStream → upload → return ref object
   async serialize(value, { field, model, id, ctx }) {
     const fieldOpts = this._maps(ctx).fieldMap[model]?.[field] ?? {}
-    const { body, head, mime, filename, name, size } = await readValue(value, field, model)
-    // The stored type is the evidence and never the claim: `mime` is what the
-    // client or the filename SAID, and it is also what gets persisted on the ref
-    // and handed to the provider as `contentType`, which is what a public bucket
-    // later serves under. Both must be the same answer, so it is resolved once.
-    const { type, evidence } = resolveType(mime, head)
-    checkAccept(type, fieldOpts.accept, model, field, evidence ? mime : null)
-    const key = resolveKey(this.config.keyPattern, { model, field, filename, type })
-    await this._provider.put(key, body, { contentType: type, size })
+    const { body, head, mime, filename, name, size: stated, cancel } = await readValue(value, field, model)
+    let key, type
+    try {
+      // The stored type is the evidence and never the claim: `mime` is what the
+      // client or the filename SAID, and it is also what gets persisted on the ref
+      // and handed to the provider as `contentType`, which is what a public bucket
+      // later serves under. Both must be the same answer, so it is resolved once.
+      const resolved = resolveType(mime, head)
+      type = resolved.type
+      checkAccept(type, fieldOpts.accept, model, field, resolved.evidence ? mime : null)
+      key = resolveKey(this.config.keyPattern, { model, field, filename, type })
+    } catch (err) {
+      await cancel?.(err)
+      throw err
+    }
+    const { sha256, size } = await this._store(key, body, { contentType: type, size: stated, model, field })
     return {
       key,
       ...(name ? { name } : {}),
@@ -367,9 +439,49 @@ class FileStoragePlugin extends ExternalRefPlugin {
       provider:   this.config.provider ?? 'local',
       endpoint:   this.config.endpoint ?? null,
       size,
+      sha256,
       mime: type,
       uploadedAt: new Date().toISOString(),
     }
+  }
+
+  // The one pass over the bytes: whatever the provider is handed is the bytes'
+  // only read, and the hash and the count are taken from that read. A second
+  // read of a Blob or a stream is its size again in heap or a stream that is
+  // already gone (FJS-3094). The length check lives here and not in a provider
+  // (FJS-D1808), and an object that is partial or the wrong length is deleted.
+  async _store(key, body, { contentType, size: stated, model, field }) {
+    // A Blob to a provider that signs the payload was always read whole; as a
+    // stream it would be refused, which is fromStream's rule and not a File's.
+    if (body instanceof Blob && this._provider.signsPayload) body = new Uint8Array(await body.arrayBuffer())
+    if (!(body instanceof Blob) && !(body instanceof ReadableStream)) {
+      await this._provider.put(key, body, { contentType, size: stated })
+      return { sha256: createHash('sha256').update(body).digest('hex'), size: stated }
+    }
+    const hash  = createHash('sha256')
+    let   count = 0
+    const tap   = new TransformStream({
+      transform(chunk, controller) { hash.update(chunk); count += chunk.length; controller.enqueue(chunk) },
+    })
+    const source = body instanceof Blob ? body.stream() : body
+    const stream = source.pipeThrough(tap)
+    const size   = stated ?? (body instanceof Blob ? body.size : undefined)
+    try {
+      await this._provider.put(key, stream, { contentType, size })
+    } catch (err) {
+      // A remote provider that refused before reading owns no object, and asking
+      // it to delete one is a request for nothing; a local one has already
+      // opened the file it would write, so an empty one is left behind.
+      if (count > 0 || this._provider instanceof LocalProvider) await this._provider.delete(key).catch(() => {})
+      else await stream.cancel(err).catch(() => {})
+      throw err
+    }
+    if (size != null && count !== size) {
+      await this._provider.delete(key).catch(() => {})
+      throw refuse(model, field,
+        `the file's ${count} bytes disagree with its stated size of ${size}; nothing was kept`)
+    }
+    return { sha256: hash.digest('hex'), size: count }
   }
 
   // resolve: ref object → public URL string
@@ -465,7 +577,50 @@ class FileStoragePlugin extends ExternalRefPlugin {
         }
       }
     }
-    return super.onBeforeCreate(model, args, ctx)
+    if (!fields || !args.data) return super.onBeforeCreate(model, args, ctx)
+    const raw = this._rawDigested(fields, args.data)
+    await super.onBeforeCreate(model, args, ctx)
+    this._followBytes(model, fields, args.data, raw, false)
+  }
+
+  // ── @digest: the sibling column follows the bytes ──────────────────────────
+
+  // Which @digest File columns of each row this write hands bytes to, read
+  // before serialize replaces the value with the ref.
+  _rawDigested(fields, data) {
+    return [].concat(data ?? []).map(row => Object.entries(fields)
+      .filter(([field, opts]) => opts.digest && isFileValue(row?.[field]))
+      .map(([field]) => field))
+  }
+
+  // The sibling is the hash of the bytes this write stored. Left out it is
+  // filled; stated and different it is refused, naming both columns -- the
+  // client's word for what it sent is the value the never-send-twice check
+  // rests on (FJS-3051). Without the file, or clearing it, the sibling cannot
+  // be set to anything but nothing (Invariant 9: key presence, not `??`).
+  _followBytes(model, fields, data, raw, isUpdate) {
+    const rows = [].concat(data ?? [])
+    rows.forEach((row, i) => {
+      if (!row) return
+      for (const [field, opts] of Object.entries(fields)) {
+        const sibling = opts.digest
+        if (!sibling) continue
+        const stated = row[sibling]
+        if (raw[i]?.includes(field)) {
+          const sha256 = this._parseRef(row[field])?.sha256
+          if (stated === undefined) row[sibling] = sha256
+          else if (stated !== sha256)
+            throw refuse(model, sibling,
+              `${sibling} states ${stated === null ? 'null' : `"${stated}"`} and the bytes written to ${field} hash to "${sha256}"`)
+        } else if (row[field] === null) {
+          if (stated != null)
+            throw refuse(model, sibling, `${sibling} is the hash of ${field}, which this write clears, so it cannot be set to a value`)
+          if (isUpdate || stated === undefined) row[sibling] = null
+        } else if (row[field] === undefined && stated !== undefined) {
+          throw refuse(model, sibling, `${sibling} is the hash of ${field} and cannot be set without a ${field} in the same write`)
+        }
+      }
+    })
   }
 
   // ── Override onBeforeUpdate to handle keepVersions ────────────────────────
@@ -474,6 +629,12 @@ class FileStoragePlugin extends ExternalRefPlugin {
   async onBeforeUpdate(model, args, ctx) {
     const fields = this._maps(ctx).fieldMap[model]
     if (!fields || !args.data) return
+    const raw = this._rawDigested(fields, args.data)
+    await this._storeUpdate(model, args, ctx, fields)
+    this._followBytes(model, fields, args.data, raw, true)
+  }
+
+  async _storeUpdate(model, args, ctx, fields) {
     this._refuseRefText(model, args.data, fields, ctx)
 
     for (const [field, opts] of Object.entries(fields)) {

@@ -1202,7 +1202,7 @@ test('tabs: .divided rules the tabs off from each other and from the title befor
   assert.differentColor(
     style(first, 'color'),
     style(document.getElementById('l2'), 'color'),
-    'the current divided tab is not set apart by colour'
+    'the current divided tab is not set apart by color'
   );
 });
 

@@ -120,6 +120,48 @@ function parseInlineFiles(raw: unknown): InlineFile[] {
 }
 
 /**
+ * A repository the machine may clone: `https://…`, `ssh://…` or `git@host:path`.
+ * Anything else reaches `git clone` as an argument it reads differently — a
+ * leading `-` is an option (`--upload-pack=…` runs a command on the machine),
+ * `ext::` runs one by design, and a bare path or `file://` clones the
+ * machine's own disk (`FJS-3842`).
+ */
+export function refuseRepo(repo: string, field = 'repo'): void {
+  const hostOk = (host: string) => /^[A-Za-z0-9.-]+$/.test(host) && !host.startsWith('-') && !host.startsWith('.')
+  if (/^(https|ssh):\/\//.test(repo)) {
+    let url: URL | null = null
+    try { url = new URL(repo) } catch { url = null }
+    if (url && hostOk(url.hostname) && url.pathname.length > 1 && !/[\s\0]/.test(repo)) return
+  } else {
+    const scp = /^git@([^:/]+):(.+)$/.exec(repo)
+    if (scp && hostOk(scp[1]) && !scp[2].startsWith('-') && !/[\s\0]/.test(scp[2])) return
+  }
+  throw new BadRequest(`${field} must be an https://, ssh:// or git@host:path repository — got '${repo}'`)
+}
+
+/**
+ * A branch name as `git check-ref-format --branch` admits one. Checked here
+ * rather than by running git: the name is handed to `git clone --branch` on a
+ * machine, and one starting with `-` is read there as an option (`FJS-3842`).
+ */
+export function refuseBranch(branch: unknown, field = 'branch'): void {
+  const name = typeof branch === 'string' ? branch : ''
+  const bad =
+    !name ? 'is empty'
+    : name.startsWith('-') ? 'starts with -'
+    : name === 'HEAD' || name === '@' ? `is '${name}', which git reserves`
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: the control characters are what this pattern refuses
+    : /[\x00-\x20\x7f~^:?*[\\]/.test(name) ? 'holds a space, a control character or one of ~ ^ : ? * [ \\'
+    : name.includes('..') ? "holds '..'"
+    : name.includes('@{') ? "holds '@{'"
+    : name.startsWith('/') || name.endsWith('/') || name.includes('//') ? 'starts or ends with /, or holds //'
+    : name.endsWith('.') ? 'ends with .'
+    : name.split('/').some(c => c.startsWith('.') || c.endsWith('.lock')) ? "has a part starting with '.' or ending '.lock'"
+    : null
+  if (bad) throw new BadRequest(`${field} is not a branch name git accepts: it ${bad}`)
+}
+
+/**
  * Read a `source` payload into the one shape the rest of the app reads.
  *
  * `{}` is a real answer: an app that has been created and not yet pointed at
@@ -142,6 +184,8 @@ export function parseAppSource(raw: unknown): AppSource | null {
   if (kind === 'git') {
     if (typeof source.repo !== 'string' || !source.repo.trim())
       throw new BadRequest('A git source needs a repo')
+    refuseRepo(source.repo.trim(), 'source.repo')
+    if (source.branch != null && source.branch !== '') refuseBranch(source.branch, 'source.branch')
     // Blank is the repository's own Dockerfile, so it is absent rather than ''.
     const dockerfile = typeof source.dockerfile === 'string' ? source.dockerfile.trim() : ''
     if (byteLength(dockerfile) > DOCKERFILE_BYTES)

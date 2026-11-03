@@ -67,8 +67,10 @@ export function previewLabelRefusal(slug: string): string | null {
     : `'${slug}' cannot name a preview — its hostname label takes lowercase letters, digits and inner '-' only`
 }
 
-/** The settings a checkout's pin carries, or why not. `root` is the checkout. */
-export function previewSettings(input: unknown, root: string): PreviewSettings | { refused: string } {
+/** The settings a checkout's pin carries, or why not. `root` is the checkout;
+ *  null where the caller is a peer on another machine, whose checkout this
+ *  process cannot see and whose own parser checked it. */
+export function previewSettings(input: unknown, root: string | null): PreviewSettings | { refused: string } {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return { refused: 'preview is an object of projectId, app, domain, apiUrl and serverId' }
   const raw = input as Record<string, unknown>
   const projectId = String(raw.projectId ?? '').trim()
@@ -76,7 +78,7 @@ export function previewSettings(input: unknown, root: string): PreviewSettings |
 
   const app = normalize(String(raw.app ?? '.').trim() || '.')
   if (isAbsolute(app) || app.split('/').includes('..')) return { refused: `'${raw.app}' is not a directory inside the checkout` }
-  if (!existsSync(join(root, app, 'web'))) return { refused: `${join(root, app)} has no web/ for a preview to edit` }
+  if (root !== null && !existsSync(join(root, app, 'web'))) return { refused: `${join(root, app)} has no web/ for a preview to edit` }
 
   const domain = String(raw.domain ?? '').trim().toLowerCase().replace(/^\*\./, '')
   if (!DOMAIN(domain)) return { refused: `'${raw.domain}' is not a domain a preview's hostname can sit under` }

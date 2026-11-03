@@ -103,7 +103,7 @@ screens reading hardcoded arrays — which is exactly what the mock already is.
 | `ServerDetailView` | 491 | `routes/servers/[id]/index.mesa` |
 | `JobsView` | 111 | `routes/jobs/index.mesa` |
 | `AuditLogView` | 61 | `routes/admin/audit/index.mesa` |
-| `AdaptersView` | 65 | `routes/admin/adapters/index.mesa` |
+| `ProvidersView` | 65 | `routes/admin/providers/index.mesa` |
 | `MembersView` | 230 | inside `routes/admin/index.mesa` — members, plus invite / pending / resend / revoke since `FJS-032` |
 | `CreateAppModal` | 137 | inside `routes/environments/[id]/index.mesa` |
 
@@ -288,7 +288,7 @@ will need revisiting when it lands is flagged below.
 
 The portal service was mounted, and `web/src/resources/Portal.mesa` was consumed
 by exactly one route. It now has its own screen, and the split with
-`/admin/adapters/` is the service's own: **`find()` declares (wired or stub, no
+`/admin/providers/` is the service's own: **`find()` declares (wired or stub, no
 ping), `get(id)` measures (a live ping through the adapter)**. Adapters answers
 "is this wired"; Portal answers "does it answer right now". The detail route
 pings on open, so what is on screen was true a moment ago.
@@ -1341,7 +1341,7 @@ whose vendor has nothing to report, so none of them does that:
 - **The reason is on the page**, in the same voice the hub overview uses about
   CPU — what is not measured, and what closing it would take.
 - **All four ask rather than assert.** Each reads its own adapter's state off
-  `/portal/`, which is the read `/admin/adapters/` already makes, so there is one
+  `/portal/`, which is the read `/admin/providers/` already makes, so there is one
   answer to *is this wired* and the word on the page changes the day it is. A
   screen that hardcoded "not connected" would pass a test on its own text and be
   wrong later — which two of them did until the `edge` and `cloudSpend`
@@ -1426,7 +1426,7 @@ the one screen whose whole audience is somebody who has just arrived.
 
 ## Related
 
-- `docs/adapters.md` — the debt § Phase 14 left: what each of the four adapters
+- `docs/providers.md` — the debt § Phase 14 left: what each of the four adapters
   costs to wire, the decisions already made, and what goes red when one is
 - `app.snapshot.md` — the API contract the screens are written against
 - `docs/vision.md` — what Basecamp is meant to be

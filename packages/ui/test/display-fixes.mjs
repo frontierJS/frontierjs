@@ -50,7 +50,8 @@ const PAGINATION = 'components/display/Pagination.mesa'
 }
 
 // FJS-2120: a size writes a type-scale rung, never a literal rem -- a theme that
-// rescales --text-* has to reach a sized control.
+// rescales --text-* has to reach a sized control. The rung is a .text-* class,
+// never an inline font-size, which no caller's class could override.
 {
   const SIZED = [
     ['components/forms/Button.mesa',   ['xs', 'sm', 'lg']],
@@ -62,10 +63,16 @@ const PAGINATION = 'components/display/Pagination.mesa'
   for (const [file, sizes] of SIZED) {
     for (const size of sizes) {
       const html = await render(file, { size })
-      const style = html.match(/style="([^"]*)"/)?.[1] ?? ''
-      check(/font-size:\s*var\(--text-[a-z0-9]+\)/.test(style) && !/font-size:\s*[\d.]+r?em/.test(style),
-        `${file} size=${size} reads the type scale: ${style || html.slice(0, 80)}`)
+      const cls  = html.match(/class="([^"]*)"/)?.[1] ?? ''
+      const rung = cls.split(/\s+/).some(c => /^text-(2xs|xs|sm|md|lg|xl)$/.test(c))
+      check(rung && !/font-size/.test(html),
+        `${file} size=${size} reads the type scale: ${html.slice(0, 80)}`)
     }
+    // FJS-D1782: two rungs in one class list tie, and the larger wins.
+    const html = await render(file, { size: sizes[0], $class: 'text-xl' })
+    const cls  = (html.match(/class="([^"]*)"/)?.[1] ?? '').split(/\s+/)
+    check(cls.includes('text-xl') && !cls.some(c => /^text-(2xs|xs|sm|md|lg)$/.test(c)),
+      `${file} size=${sizes[0]} class="text-xl" keeps only the caller's rung: ${html.slice(0, 80)}`)
   }
 }
 
@@ -106,7 +113,7 @@ const PAGINATION = 'components/display/Pagination.mesa'
 }
 
 // FJS-3603: initials come from the words of a name, not its whitespace runs; the
-// image names the person only where the avatar stands alone; a stored colour
+// image names the person only where the avatar stands alone; a stored color
 // is --data-accent, which the fill reads before the tone.
 {
   const AVATAR = 'components/display/Avatar.mesa'

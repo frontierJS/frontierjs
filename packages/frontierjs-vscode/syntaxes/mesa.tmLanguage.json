@@ -432,46 +432,84 @@
     },
 
     "directive-attributes": {
+      "comment": "The name alone; the value is #directive-value. A value matched inside one regex as {[^}]*} ends at the first brace it meets, so a template literal's ${x} cut it in half and left the closing brace unpaired.",
       "patterns": [
         {
           "comment": "bind:this  bind:value  bind:group  bind:xxx",
-          "match": "\\b(bind):([a-zA-Z][a-zA-Z0-9-]*)(?:(=)(\"[^\"]*\"|'[^']*'|\\{[^}]*\\}))?",
-          "captures": {
+          "begin": "\\b(bind):([a-zA-Z][a-zA-Z0-9-]*)",
+          "end": "(?=[\\s/>])",
+          "beginCaptures": {
             "1": { "name": "keyword.operator.directive.bind.mesa" },
-            "2": { "name": "entity.other.attribute-name.directive.mesa" },
-            "3": { "name": "punctuation.separator.key-value.html" },
-            "4": { "name": "string.quoted.attribute.html" }
-          }
+            "2": { "name": "entity.other.attribute-name.directive.mesa" }
+          },
+          "patterns": [{ "include": "#directive-value" }]
         },
         {
           "comment": "class:name={expr}  class:name (shorthand)",
-          "match": "\\b(class):([a-zA-Z_][a-zA-Z0-9_-]*)(?:(=)(\"[^\"]*\"|'[^']*'|\\{[^}]*\\}))?",
-          "captures": {
+          "begin": "\\b(class):([a-zA-Z_][a-zA-Z0-9_-]*)",
+          "end": "(?=[\\s/>])",
+          "beginCaptures": {
             "1": { "name": "keyword.operator.directive.class.mesa" },
-            "2": { "name": "entity.other.attribute-name.class-directive.mesa" },
-            "3": { "name": "punctuation.separator.key-value.html" },
-            "4": { "name": "string.quoted.attribute.html" }
-          }
+            "2": { "name": "entity.other.attribute-name.class-directive.mesa" }
+          },
+          "patterns": [{ "include": "#directive-value" }]
         },
         {
           "comment": "style:font-size=\"{n}px\"  style:color={expr}  style:prop (shorthand)",
-          "match": "\\b(style):([a-zA-Z][a-zA-Z0-9-]*)(?:(=)(\"[^\"]*\"|'[^']*'|\\{[^}]*\\}))?",
-          "captures": {
+          "begin": "\\b(style):([a-zA-Z-][a-zA-Z0-9-]*)",
+          "end": "(?=[\\s/>])",
+          "beginCaptures": {
             "1": { "name": "keyword.operator.directive.style.mesa" },
-            "2": { "name": "entity.other.attribute-name.style-directive.mesa" },
-            "3": { "name": "punctuation.separator.key-value.html" },
-            "4": { "name": "string.quoted.attribute.html" }
-          }
+            "2": { "name": "entity.other.attribute-name.style-directive.mesa" }
+          },
+          "patterns": [{ "include": "#directive-value" }]
         },
         {
           "comment": "onclick|debounce(300)|once={handler}",
-          "match": "(?<=\\s)(on)([a-z][a-zA-Z0-9-]*)((?:\\|[a-zA-Z][a-zA-Z0-9]*(?:\\([^)]*\\))?)*)(?:(=)(\"[^\"]*\"|'[^']*'|\\{[^}]*\\}))?",
-          "captures": {
+          "begin": "(?<=\\s)(on)([a-z][a-zA-Z0-9-]*)((?:\\|[a-zA-Z][a-zA-Z0-9]*(?:\\([^)]*\\))?)*)",
+          "end": "(?=[\\s/>])",
+          "beginCaptures": {
             "1": { "name": "keyword.operator.directive.event.mesa" },
             "2": { "name": "entity.other.attribute-name.event.mesa" },
-            "3": { "name": "keyword.operator.modifier.event.mesa" },
-            "4": { "name": "punctuation.separator.key-value.html" },
-            "5": { "name": "string.quoted.attribute.html" }
+            "3": { "name": "keyword.operator.modifier.event.mesa" }
+          },
+          "patterns": [{ "include": "#directive-value" }]
+        }
+      ]
+    },
+
+    "directive-value": {
+      "patterns": [
+        {
+          "comment": "={expr}",
+          "begin": "(=)(\\{)",
+          "end": "(\\})",
+          "beginCaptures": {
+            "1": { "name": "punctuation.separator.key-value.html" },
+            "2": { "name": "punctuation.section.embedded.begin.mesa" }
+          },
+          "endCaptures": { "1": { "name": "punctuation.section.embedded.end.mesa" } },
+          "contentName": "source.js.embedded.mesa",
+          "patterns": [{ "include": "source.js" }]
+        },
+        {
+          "comment": "=\"...{expr}...\"",
+          "begin": "(=)(\")",
+          "end": "(\")",
+          "beginCaptures": {
+            "1": { "name": "punctuation.separator.key-value.html" },
+            "2": { "name": "punctuation.definition.string.begin.html" }
+          },
+          "endCaptures": { "1": { "name": "punctuation.definition.string.end.html" } },
+          "contentName": "string.quoted.double.html",
+          "patterns": [{ "include": "#template-expression" }]
+        },
+        {
+          "comment": "='value'",
+          "match": "(=)('[^']*')",
+          "captures": {
+            "1": { "name": "punctuation.separator.key-value.html" },
+            "2": { "name": "string.quoted.single.html" }
           }
         }
       ]
@@ -553,6 +591,7 @@
             "3": { "name": "punctuation.definition.string.begin.html" }
           },
           "endCaptures": { "1": { "name": "punctuation.definition.string.end.html" } },
+          "contentName": "string.quoted.double.html",
           "patterns": [{ "include": "#template-expression" }]
         },
         {

@@ -209,3 +209,35 @@ class VideoPlugin extends ExternalRefPlugin {
 ```
 
 The `cacheKey` method enables per-field response caching — return `null` to disable caching for that ref.
+
+### A stream, and the hash of the bytes
+
+`fromStream(readable, { name, type, size })` stores a request body without holding it: the head (4096 bytes) is read first, the type is sniffed and `@accept` answers before anything is written, and the rest is piped to the provider. A refusal cancels the stream and stores nothing. `type` is a claim, as it is for a `File`; the bytes' head wins. `readable` is a web `ReadableStream` (a Bun request's `req.body`) or a Node `Readable`.
+
+`size` is what the sender says it will send. The local provider needs none. An S3-compatible provider sends one PUT with `Content-Length`, so it refuses a stream with no `size` by name, and over plain `http://` it refuses a stream outright, since a signed payload would buffer the file. A byte count that disagrees with a stated `size` is refused and the partial object deleted, as is any stream that fails part-way. An object past S3's 5 GB single-PUT ceiling, or of unknown length, is not stored remotely (`FJS-3905`).
+
+Every stored ref records `sha256`, the lowercase hex SHA-256 of its bytes, taken in the pass that writes them, whichever way they arrived. `@digest(column)` on a `File` field names a `String` column beside it that follows that hash:
+
+```lite
+model Upload {
+  id     Int     @id
+  file   File?   @digest(sha256)
+  sha256 String?
+  @@allow(all, true)
+}
+```
+
+A write that leaves `sha256` out has it filled from the bytes; one that states a different hash is refused as a `ValidationError` on `sha256`, naming both columns. The column follows the file: setting it without a file in the same write is refused, and clearing the file clears it. The argument is a column and never an algorithm. `@digest` needs a single `File` field, not `File[]`, and a `String` sibling that is not the `File` column itself; the parser refuses the rest.
+
+```js
+import { FileStorage, fromStream } from '@frontierjs/litestone/storage'
+
+const db = await createClient({
+  path: './schema.lite', db: ':memory:',
+  plugins: [FileStorage({ provider: 'local', localPath: './storage' })],
+})
+const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
+const body = new Blob([bytes]).stream()   // a request's req.body, in a handler
+const row = await db.upload.create({ data: { id: 1, file: fromStream(body, { name: 'a.png', size: bytes.length }) } })
+if (row.sha256 !== new Bun.CryptoHasher('sha256').update(bytes).digest('hex')) throw new Error(`sha256 is ${row.sha256}`)
+```

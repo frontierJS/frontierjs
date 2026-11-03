@@ -1,0 +1,88 @@
+<!--
+  Basecamp page § Outpost: the process on each box. Every claim is lifted from
+  packages/outpost (README.md, CLAUDE.md, src/server.js, src/docker.js,
+  src/ingress.js, src/replicate.js, src/report.js) and runs today. The proof is
+  the order POST /deploy runs in, read off server.js and docker.js's swap.
+  Not claimed, because it is not built: certificate expiry reported back, and
+  build-once-promote-a-digest (IDEAS/deploy-plane.md).
+-->
+<section id="outpost" class="bc-section">
+  <div class="container stack">
+    <p class="eyebrow">Outpost agent</p>
+    <h2>Every box runs its own apps, certificates and replicas.</h2>
+    <p class="lede">
+      Outpost is the one process Basecamp installs on each server. It does what a
+      signed command asks and reports back on a timer, so the box keeps serving
+      while Basecamp is down.
+    </p>
+
+    <div class="bc-split">
+      <ul class="bc-points">
+        <li>
+          <strong>It runs your containers.</strong>
+          It pulls an image by digest or builds your repository on the box, swaps the
+          new container in, and puts the old one back when the release does not answer.
+        </li>
+        <li>
+          <strong>Caddy serves HTTPS, and Outpost tells it what.</strong>
+          Name a hostname and Outpost writes the app's route through Caddy's admin API,
+          Caddy fetches the certificate, and the app's port moves to loopback.
+        </li>
+        <li>
+          <strong>Your SQLite data streams off the box.</strong>
+          Outpost turns Basecamp's list into the machine's Litestream config, one bucket
+          key per app, and every heartbeat carries Litestream's position so a stalled
+          replica shows up as lag.
+        </li>
+        <li>
+          <strong>Small on purpose.</strong>
+          It is plain JavaScript on Bun with no schema, no ORM and no migrations,
+          because its job is running Docker and reporting on volumes and disk, and it
+          refuses every command Basecamp did not sign.
+        </li>
+      </ul>
+
+      <figure class="bc-proof">
+        <div class="flow">
+          <span class="hop"><strong>Build</strong> on the box, or <strong>pull</strong> by digest</span>
+          <span class="arrow" aria-hidden="true">↓</span>
+          <span class="hop"><strong>Route</strong> the hostnames in Caddy</span>
+          <span class="arrow" aria-hidden="true">↓</span>
+          <span class="hop"><strong>Stop</strong> the live container, kept as <code>_replaced</code></span>
+          <span class="arrow" aria-hidden="true">↓</span>
+          <span class="hop"><strong>Start</strong> the new one</span>
+          <span class="arrow" aria-hidden="true">↓</span>
+          <span class="hop"><strong>Health-check</strong> for up to 30 seconds</span>
+          <span class="arrow" aria-hidden="true">↓</span>
+          <div class="fork">
+            <span class="hop"><strong>Healthy:</strong> answer the release</span>
+            <span class="hop muted"><strong>Not:</strong> the old container comes back</span>
+          </div>
+        </div>
+        <figcaption>
+          What <code>POST /deploy</code> does on the box, in order:
+          <code>packages/outpost/src/server.js</code> and the swap in
+          <code>src/docker.js</code>. The old container is stopped first because a
+          SQLite file takes one writer.
+        </figcaption>
+      </figure>
+    </div>
+
+    <p class="bc-more">
+      Read more:
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/outpost/README.md">Outpost and its protocol</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/outpost/CLAUDE.md">what bites on a box</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/basecamp/docs/backups.md">backups and live replicas</a>
+    </p>
+  </div>
+</section>
+
+<style>
+  /* .hop, not .step: @frontierjs/css owns .step as a stepper item. */
+  .flow { display: grid; justify-items: start; gap: .35rem; font-size: .9rem; }
+  .flow .hop { border: 1px solid var(--rule-strong); border-radius: 999px; padding: .3rem .8rem; background: var(--surface-raised); color: var(--ink-soft); }
+  .flow .hop strong { color: var(--ink); }
+  .flow .hop.muted { border-style: dashed; color: var(--ink-mute); }
+  .flow .arrow { color: var(--ink-mute); padding-left: 1rem; }
+  .fork { display: flex; flex-wrap: wrap; gap: .5rem; }
+</style>

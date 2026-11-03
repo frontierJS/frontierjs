@@ -26,7 +26,7 @@ const SRC = join(import.meta.dir, '../src')
 // the window's and pass.
 const HOST_GLOBALS = new Set([
   'console', 'URL', 'TextEncoder', 'TextDecoder', 'atob', 'btoa', 'crypto', 'CryptoKey',
-  'fetch', 'Response', 'ReadableStream', 'Blob', 'File', 'Worker', 'performance',
+  'fetch', 'Response', 'ReadableStream', 'TransformStream', 'Blob', 'File', 'Worker', 'performance',
   'setTimeout', 'setInterval', 'clearInterval', 'addEventListener',
   // a server's
   'process', 'Buffer', 'setImmediate', 'Bun',

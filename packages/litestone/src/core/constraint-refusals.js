@@ -384,11 +384,15 @@ export function makeConstraintRefusals(shape, ctx, deps) {
   //
   // `absent` on the answer holds the rows naming a parent that is not there,
   // which a deferred create rule needs alike with a hidden one (FJS-D1705).
+  // A one-row write asks first and skips the call, whose answer it never
+  // mutates: this is an await and an allocation on every update otherwise.
+  const gradesParents = () => !ctx.isSystem && _parentKeys.length > 0
+
   async function hiddenParents(rows, stamped = [], system = null) {
     const out = []
     const absent = new Set()
     Object.defineProperty(out, 'absent', { value: absent, enumerable: false })
-    if (ctx.isSystem || !_parentKeys.length) return out
+    if (!gradesParents()) return out
     const lifted = new Set(system == null ? [] : [system].flat())
     for (const p of _parentKeys) {
       const tbl  = ctx.tables?.[modelToAccessor(p.target)]
@@ -697,7 +701,7 @@ export function makeConstraintRefusals(shape, ctx, deps) {
   }
 
   return {
-    asConstraintError, parentRefusal, movesOnto, requireParentGrants, isArchivedParent, hiddenParents,
+    asConstraintError, parentRefusal, movesOnto, requireParentGrants, isArchivedParent, hiddenParents, gradesParents,
     deferrable, holdDenial, heldFor, settleDeferred,
     checkCreate, firstRefusal, refuseLockedCascade, refusedDelete, refusedChildDelete, nameBlockerForCaller,
     asBatchRowError,

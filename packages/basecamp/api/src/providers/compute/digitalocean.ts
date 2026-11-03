@@ -14,7 +14,7 @@
 // ─── Money ───────────────────────────────────────────────────────────────
 //
 // `price_monthly` is `24.0` — dollars, as a JSON number. It crosses this
-// boundary as minor units plus a currency, which is `docs/adapters.md`'s rule
+// boundary as minor units plus a currency, which is `docs/providers.md`'s rule
 // and `@money`'s: the divisor belongs to the currency, so `* 100` is wrong for
 // the yen by a hundred. `minorUnits('USD')` is asked rather than assumed even
 // though the answer is 2, because the day a vendor bills in another currency

@@ -13,8 +13,7 @@
 // and nowhere else; it is never stored on the status.
 //
 // **A preview's state is a file beside the clone**, `<SITES_DIR>/<appId>.previews.json`,
-// as a workbench run's is under WORKBENCH_DIR: what was last built, its link,
-// and why the last attempt failed. Losing it loses only the link, which the
+// holding what was last built, its link, and why the last attempt failed. Losing it loses only the link, which the
 // next save makes again; the branch is the draft and the Worker holds the bytes.
 //
 // **A recorded preview's origin is one the editor may write from** (`FJS-D1357`):

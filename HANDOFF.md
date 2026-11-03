@@ -31,7 +31,10 @@ the same blocker first, ahead of the deploy-for-outsiders gaps. Alongside: a
 per-call perf audit (`docs/perf-audit-2026-10-31.md`, `FJS-3742`–`3762`,
 ruling `FJS-D1713`) closed every row fixed or refuted; app archives closed
 (`FJS-D1735`, `FJS-3793`); the Claude Code Workbench tab reached Phase 4
-(`FJS-D1708`–`D1714`, `D1733`, `D1734`); the clinical, expenses and pulse
+(`FJS-D1708`–`D1714`, `D1733`, `D1734`); the laptop wing (workbench, atlas, decide,
+autopilot, Claude tab, local git) left Basecamp for its own private app `packages/workbench`
+on 5501/5508, dialing Basecamp's `apps.preview` as a signed peer (`IDEAS/workbench-package.md`,
+`FJS-D1785`–`D1788`, uncommitted 2026-11-03); the clinical, expenses and pulse
 stressors ran to their briefs (`FJS-D1698`–`D1700`) and seven more Tier 1
 stressors got a `PLAN.md` each. ALONGSIDE.md and `alongside/` were deleted.
 

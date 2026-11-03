@@ -70,7 +70,10 @@ export function readInvariants(root) {
 export const ENFORCERS = {
   1: [{ kind: 'phase', at: 'hygiene',
         covers: 'the substrate package only — that `@frontierjs/toolbelt` declares no dependency. ' +
-                'Nothing grades `Litestone ← Junction ← Sierra` itself' }],
+                'Nothing grades `Litestone ← Junction ← Sierra` itself' },
+      { kind: 'phase', at: 'hygiene',
+        covers: 'the two apps are strangers — `packages/basecamp` imports nothing under `packages/workbench` ' +
+                'and the reverse, by path or by name; what crosses is a signed call (`IDEAS/workbench-package.md`)' }],
 
   5: [{ kind: 'test', at: 'packages/junction/test/plugin-contract.test.ts',
         covers: 'a second `app.own(name)` throws naming the holder' }],

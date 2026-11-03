@@ -36,7 +36,7 @@ import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, actor }
   from '../../core/resource.ts'
-import { KINDS, deliverToChannel, testMessage } from '../../domain/notification/delivery.ts'
+import { KINDS, deliverToChannel, mailerOf, testMessage } from '../../domain/notification/delivery.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /** A channel plus how many rules deliver through it. The count is what makes
@@ -242,7 +242,7 @@ export default createService({
     const channel = await getScoped('notificationChannel', 'Channel')
 
     const res = await deliverToChannel(
-      { conduit: $.app.conduit as never, sys: (): any => $.db.asSystem() },
+      { conduit: $.app.conduit as never, sys: (): any => $.db.asSystem(), mail: mailerOf($.app) },
       channel,
       testMessage(channel.name as string),
     )

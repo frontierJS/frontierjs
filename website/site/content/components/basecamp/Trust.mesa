@@ -1,0 +1,111 @@
+<!--
+  Basecamp page § Auth and trust. Every claim is lifted from packages/basecamp
+  (db/schema.lite, api/src/domain/api-key/scopes.ts, services/api-keys,
+  services/secrets, services/invitations, providers/compute/enrollment.ts, the
+  enroll route in api/src/app.ts, core/hooks.ts, core/credentials.ts,
+  docs/provisioning.md, docs/backups.md) and packages/outpost/src/server.js.
+  The proof is the schema's own lines, so the sample sits in a const: a brace
+  in markup opens a Mesa expression.
+  Not claimed: two-factor for owners is a hub switch that defaults off, and an
+  Outpost's nonce memory does not survive its restart, so "never replayed" is
+  stated as "refused if stale or replayed".
+-->
+<script>
+  const SCHEMA = `// packages/basecamp/db/schema.lite, abridged
+tenancy { strategy row  column workspaceId  claim workspaceId }
+
+model Invitation {
+  token        String        @unique(global) @secret @hashed
+  @@gate(5)
+}
+
+model Secret {
+  data        String     @default("{}") @encrypted
+  @@gate(5)
+  @@trail(audit)
+}
+
+model ApiKey {
+  userId       String @immutable @default(auth().id)
+  credentialId String?   @system
+  scopes       String[]  @default([]) @immutable
+  revokedAt    DateTime? @system
+  @@gate(5)
+  @@trail(audit)
+}
+
+model Server {
+  enrollTokenHash  String?   @guarded
+  enrollExpiresAt  DateTime?
+  outpostPublicKey String?
+  outpostCert      String?
+  @@gate(2.4.4.5)
+}`
+</script>
+
+<section id="trust" class="bc-section">
+  <div class="container stack">
+    <p class="eyebrow">Auth and trust</p>
+    <h2>Built for the day a token leaks.</h2>
+    <p class="lede">
+      Who may read and change what is declared in the schema and enforced where the
+      data is read, not left to each code path to remember. It rests on one value you
+      keep yourself: lose <code>ENCRYPTION_KEY</code> and every encrypted column, in
+      every backup taken under it, cannot be read back.
+    </p>
+
+    <div class="bc-split">
+      <ul class="bc-points">
+        <li>
+          <strong>A workspace is a wall.</strong>
+          One <code>tenancy</code> line scopes every workspace-owned row, and your role
+          is read per request from your membership in the workspace you are addressing,
+          so the same person can own one workspace and only view the next.
+        </li>
+        <li>
+          <strong>An API key is narrower than you.</strong>
+          It belongs to one workspace, reaches only the services it was issued for
+          (<code>servers:read</code>, <code>projects:write</code>), can never mint
+          another key, and is kept only as an HMAC, so it is shown once and refused on
+          its next request after you revoke it.
+        </li>
+        <li>
+          <strong>A machine proves it is that machine.</strong>
+          It enrolls once with a single-use token that expires in 15 minutes and makes
+          its own Ed25519 key pair, and from then on every report it sends and every
+          command it accepts is signed and refused if stale or replayed, with no
+          fleet-wide key to steal.
+        </li>
+        <li>
+          <strong>Secrets go in and do not come out.</strong>
+          A secret's value is encrypted with AES-256-GCM and left out of every read, an
+          admin's included, so only Basecamp decrypts it at the moment it is used, and
+          the audit trail records that it changed, never what it holds.
+        </li>
+      </ul>
+
+      <figure class="bc-proof">
+        <pre class="code">{SCHEMA}</pre>
+        <figcaption>
+          The lines that do it, from <code>packages/basecamp/db/schema.lite</code>.
+          <code>@@gate(5)</code> means an admin or owner of the workspace;
+          <code>2.4.4.5</code> is the role each of read, create, update and delete needs. <code>@encrypted</code>, <code>@guarded</code>
+          and <code>@hashed</code> are enforced by Litestone at the data layer, and the
+          trail logs them as <code>[redacted]</code>.
+        </figcaption>
+      </figure>
+    </div>
+
+    <p class="bc-more">
+      Read more:
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/basecamp/db/schema.lite">the schema and its access ladder</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/basecamp/docs/provisioning.md">enrollment and signed commands</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/encryption.md">how fields are encrypted</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/basecamp/docs/backups.md#6-the-encryption-key">keeping the encryption key</a>
+    </p>
+  </div>
+</section>
+
+<style>
+  .bc-proof pre.code { overflow-x: auto; font-size: .82rem; }
+</style>

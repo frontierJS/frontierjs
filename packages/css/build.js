@@ -30,7 +30,7 @@
  * the bottom refuses to write a bundle without it.
  */
 
-import { rmSync, mkdirSync, readFileSync, writeFileSync, statSync, copyFileSync } from 'node:fs';
+import { renameSync, mkdirSync, readFileSync, writeFileSync, statSync, copyFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -51,7 +51,11 @@ if (!layerDecl) {
   process.exit(1);
 }
 
-rmSync(dist, { recursive: true, force: true });
+/*
+ * Replace each file in place rather than clearing dist/: a pack (prepack runs
+ * this) in one package races a reader in another, and CI's exports check once
+ * read an empty dist/ and reported both bundle exports as unpublished.
+ */
 mkdirSync(dist, { recursive: true });
 
 const BANNER = `/*! @frontierjs/css — bundled. Source: src/. */\n`;
@@ -65,7 +69,6 @@ async function build(outName, minify) {
   }
 
   let css = readFileSync(tmp, 'utf8');
-  rmSync(tmp);
 
   /*
    * Prepend rather than replace: bun emits no statement of its own, so this
@@ -74,7 +77,8 @@ async function build(outName, minify) {
   css = BANNER + layerDecl[0] + '\n\n' + css;
 
   const out = join(dist, outName);
-  writeFileSync(out, css);
+  writeFileSync(tmp, css);
+  renameSync(tmp, out);
   return out;
 }
 

@@ -38,7 +38,9 @@ export async function backupSqliteTo(rawDb, destPath, { vacuum = false, maxSeria
   if (!vacuum && typeof rawDb.serialize === 'function' && databaseBytes(rawDb) <= maxSerializeBytes) {
     writeFileSync(destPath, rawDb.serialize())
   } else {
-    rawDb.run(`PRAGMA wal_checkpoint(TRUNCATE)`)
+    // No checkpoint first: under Litestream's read lock a TRUNCATE never
+    // completes and holds every writer for the whole busy timeout, and
+    // `VACUUM INTO` copies one consistent snapshot without it.
     rawDb.prepare(`VACUUM INTO ?`).run(destPath)
   }
   const copy = openDatabase(destPath)

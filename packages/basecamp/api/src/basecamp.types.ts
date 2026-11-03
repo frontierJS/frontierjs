@@ -2,7 +2,6 @@
 // The provider interfaces, and the slots this app adds to junction's App.
 
 import type { BasecampDb } from './core/db.ts'
-import type { Workbench }  from './domain/workbench/workbench.ts'
 
 // ─── Provider interfaces ──────────────────────────────────────────────────────
 // Junction covers: cache, events, scheduler, workers, mail, ai
@@ -176,7 +175,6 @@ declare module '@frontierjs/junction' {
     // not an ORM.
     sqlite:    import('bun:sqlite').Database
     providers: BasecampProviders
-    workbench: Workbench
     /** Which ntfy server a ping leaves through, resolved once at boot by `push.ts`. */
     push:      import('./push.ts').PushServer
   }

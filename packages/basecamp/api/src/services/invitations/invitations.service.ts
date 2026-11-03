@@ -42,6 +42,7 @@ import { ws, actor, findScoped, getScoped } from '../../core/resource.ts'
 import { env } from '../../core/env.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 import { keyScope } from '../../domain/api-key/scopes.ts'
+import { invitationPresented } from '../../core/session-auth.ts'
 
 /** How long a link is good for. Long enough to survive a weekend, short enough
  *  that a forwarded mail from six months ago is not a way in. */
@@ -331,7 +332,7 @@ export default createService({
       if (!auth?.createUser || !auth?.login)
         throw new BadRequest('This deployment cannot create accounts')
 
-      const created = await auth.createUser({ email, name, password })
+      const created = await invitationPresented.run(email.toLowerCase(), () => auth.createUser!({ email, name, password }))
       userId = created.id as string
 
       // The workspace's account, not a new one: an invited person joins the

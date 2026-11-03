@@ -1814,6 +1814,10 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1791"></a>2026-11-03 · `FJS-D1791` — In Basecamp an invited address is made only by its invitation: the verify click of a `/auth/register` for it is refused.
+
+Asked on [`FJS-3870`](ISSUES.md#fjs-3870) once the fix met the browser drive. Register is verify-first (`FJS-D1310`), so the mailbox has to answer before any row exists — but the password is the registrant's, so somebody who knew an invited address could register it and wait for the invitee to click a *verify your address* mail, then sign in with the password they chose. **Keep the refusal** was picked over reverting it (the click proves the mailbox, accept the planted password) and over dropping the password from the click (an auth change). `refuseUninvited` admits an invited address only inside `invitationPresented`, the frame `invitations.accept` opens after it verified the token; register still answers 202 for every address. `web/test/verify.mjs` signs Pat in through the invitation link, and asserts the verify click for an invited address makes no account.
+
 ### <a id="fjs-d1705"></a>2026-11-01 · `FJS-D1705` — May a create name a parent the caller cannot read when the row being written is what opens that parent's read policy — A (confidence 2).
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked as the recommendation qualifies it (*A (confidence 2)*) over **B** (static exemption: a parent whose read policy reads this model's back-relation is not graded for this create. Simple, but it leaves a permanent existence oracle for every caller the create rule admits (`expiresAt` in the past still learns the id is real). Postgres takes this oracle on every FK, since RI checks bypass RLS (CREATE POLICY notes), and `FJS-1454`/`FJS-1712` already refused it here), **C** (a schema word on the relation (`@relation(..., opens: read)`-style) where the author declares the key may name a hidden parent. It restates what the policy already says. It is the reopen path if a row must name a parent it does NOT open), **D** (keep it and close as accepted: the app lifts the key with `system: ['patientId']` (`FJS-1953`). That is app code beside the gate (Invariant 6), and it contradicts `FJS-D1698`).
@@ -2283,6 +2287,8 @@ The costs carried forward, all measured in plan 0.3. The account is a person's a
 The nine: 1 origin — the credential lives once, as auth's `Credential` on the receiver; the dialer holds only the secret · 2 concept — no new noun · 3 complexity — the problem's · 4 predictability — graded like any user, by the same gate · 5 derived — standing from the account's own columns and the key's scopes · 6 owner — auth's key issue and `verifySession`; `bearerClaim` unchanged · 7 boundary — the dialer knows a secret and an endpoint, nothing of the receiver's account shape · 8 failure — a revoked key or a removed account refuses · 9 must stay true: an app's write is never filed as a person. What fails when it stops: **`none`** until 1.3 — today it IS filed as a person. § IV: none of the seven is in tension; both shapes have outside precedent and the tree's own is B. Tier: Register.
 
 *Lives in:* `IDEAS/app-peering.md` Q3 and Phase 1.
+
+**Amended 2026-11-03** (`IDEAS/workbench-package.md` 3.1a, through the question tool): a peer enrolled by `apiKeys.enrollPeer` joins as **`admin`, narrowed by its key's scopes**, picked as recommended over a `role` argument on `enrollPeer`. `openPreview` creates an Environment, which needs admin anyway, so a role argument would add an option no caller could use below admin; and `ApiKey.scopes` is `@immutable`, so a peer key cannot be widened after enrollment. *Lives in:* `packages/basecamp/api/src/services/api-keys/api-keys.service.ts` `enrollPeer`.
 
 ### <a id="fjs-d1194"></a>2026-10-17 · `FJS-D1194` — Q4 — The ASVS level targeted — L2 throughout, L3 for the Authentication chapter and tenant isolation.
 
@@ -4808,7 +4814,19 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
-### <a id="fjs-d1774"></a>2026-11-01 · `FJS-D1774` — A soft-delete cascade's stamp stays a millisecond: a child removed on its own in the same millisecond as its parent comes back with the parent's restore(), and that is a documented limit, not a defect.
+### <a id="fjs-d1810"></a>2026-11-03 · `FJS-D1810` — A one-row update stays on the one update path: there is no fast path beside `prepareUpdate`. What the path skips is what the model's shape already decides: the hasMany call runs only when something is nested, the select-all text is built only when a reader needs it, `gradesParents()` is asked before `hiddenParents`, and nothing is allocated for a seal or a move the model does not have. `bench/cases.mjs` `update-by-id` holds it to 6x the raw statement.
+
+Asked in chat, through the question tool, closing `FJS-3911`. Measured in one process, min of chunks, at load average 15–27. The trims save 1.6–4.9 µs of 16–21 µs, which puts the update at about 5x raw. A throwaway fast path for a plain model (pk-only where, scalar patch, no plugins, policies, logs or listeners; `writeData`, one `UPDATE … RETURNING *`, `read`, the query event) took ~8.5 µs against ~16 µs for the trimmed path, about 2.2x raw. **Trims only** was picked over **a fast path gated by a write-rule registry** and **trims with the row left open**, as recommended. The nine: owner — update has one owner, and a fast path would be a second whose gate restates about fifteen stages of `prepareUpdate` (Invariant 4); failure — a rule the gate misses is skipped silently, as `@map` was on the read fast paths (`FJS-969`); silence — `update-by-id` reports a regression. Reopen if a profiled app shows single-row updates dominating its time. Then build the registry form, where each stage declares when it is idle and is refused at load when it does not (as `READ_RULES` `narrows` is), proved against `update-by-id` and a rule-by-rule parity test. Never build a hand-written eligibility list.
+
+### <a id="fjs-d1808"></a>2026-11-03 · `FJS-D1808` — `fromStream` to a remote provider takes a stated size: `fromStream(readable, { name, type, size })`. The S3 provider refuses a stream with no `size` by name and sends it as one unsigned PUT over https; over plain http it refuses a stream by name, since a signed payload would buffer the file. The local provider needs no size. A stream whose byte count disagrees with a stated `size` is refused and its partial object deleted, by one check in `file-storage.js` and not one per provider (Invariant 4). Multipart, for an object past S3's 5 GB single-PUT ceiling or of unknown length, is `FJS-3905`.
+
+Asked in chat, through the question tool, while starting `FJS-D1159`'s Data half: a plain S3 PUT carries Content-Length and a chunked request body has none. **Require size, single PUT** was picked over **multipart upload for streams** (one ~8 MB part buffered at a time, no size and no 5 GB cap, but create/part/complete/abort, part signing and retries in the provider) and **spool to disk, then PUT** (no size needed and no new S3 code, at the file's size in disk and a second write, the 5 GB cap kept). As recommended. A route has the size in its Content-Length; immich's library is local, so no current app reaches the cap. The nine: owner — the provider keeps what its wire needs; failure — every refusal names the provider and the missing size; silence — no stored object's length disagrees with its stated size, and the mismatch, missing-size and plain-http refusals are tested on both providers. Reopen if an app develops against MinIO on `http://localhost`: allow a stream over plain http to a loopback host only.
+
+### <a id="fjs-d1292"></a>2026-11-03 · `FJS-D1292` — How does a File column state the hash of its bytes — A File attribute naming its sibling column, `file File @digest(checksum)` — the argument is a column, never an algorithm; the hash is always SHA-256, so immich's `@digest(sha256)` names its column `sha256`. `serialize` hashes the bytes in the pass that writes them, on every read path (`fromStream`, `fromPath`, a File, Blob, bytes or inline value), and every stored ref records `sha256` (SHA-256, lowercase hex), so one File column never carries two ref shapes. On a column marked `@digest(col)`, the named `String` sibling is filled from the bytes when the write leaves it out and refused by name, a `ValidationError` on the sibling, when it disagrees. The sibling follows the bytes: a write that sets it without the file is refused by name, and clearing the file clears it. The parser refuses a `@digest` naming a missing column, a non-`String` one, or the File column itself. Closes `FJS-3051` when built; litestone's file-storage tests prove fill, refusal and every read path, and the parser tests the three refusals.
+
+Asked in chat, through the question tool, while starting `FJS-D1159`'s Data half, which "hashes on the way" and had no ruled place to put the hash. **A** was picked over always recording `ref.sha256` with the attribute left open (the chat recommendation), and **hash only in `fromStream`** (two ref shapes by arrival path). Against the chat recommendation, with the paper's (**A**, [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions, which also weighed **B** — `ref.sha256` read by a policy term the grammar does not have — and **C** — the service check as the spelling). Prior art there: S3 validates a claimed checksum server-side before storing; Rails Active Storage checksums every blob. The nine: origin — the attribute, once, on the File column; concept — no noun, a File attribute beside `@accept`; owner — the Data boundary grades what `serialize` saw (Invariant 6); failure — a disagreeing sibling is refused naming both columns; silence — the invariant is that `ref.sha256` and the sibling equal the hash of the stored bytes, and the tests above are what fail when it stops holding. `FJS-D1293`'s `@shared` keys by this digest and stays open.
+
+### <a id="fjs-d1817"></a>2026-11-01 · `FJS-D1817` — A soft-delete cascade's stamp stays a millisecond: a child removed on its own in the same millisecond as its parent comes back with the parent's restore(), and that is a documented limit, not a defect.
 
 Asked in chat, through the question tool, from [`FJS-3828`](ISSUES.md#fjs-3828). **Leave it documented** was picked over **A** (the remove unit walks the children its cascade will take under the write lock and moves the stamp 1 ms forward while one already carries it, so two removes on one family never share a stamp) and **B** (a second column on every `@@softDelete(cascade)` child naming the remove that took it, which `restore()` matches instead). Against the recommendation (A): A puts another walk of the cascade's children, and the code that owns it, on every cascade remove. B adds a column and its migration. Both pay in speed and complexity on every remove for a distinction nobody has asked to see. `restore()` keeps matching `deletedAt` = the root's stamp ([restore.js](packages/litestone/src/core/restore.js)), and [docs/soft-delete.md](packages/litestone/docs/soft-delete.md) says so and waits a tick in its example. Reopen with A if a same-millisecond pair turns up outside a test.
 
@@ -8598,6 +8616,31 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d1809"></a>2026-11-03 · `FJS-D1809` — How a backup bucket survives a stolen hub — a vendor lock is the floor and the hub keeps its delete key: the bucket carries a compliance-mode Object Lock (B2, S3, Hetzner, MinIO) or an R2 bucket lock of N days, retention stays the hub's count and age, and a prune the vendor refuses as locked is kept, not failed. Graded by a hub posture check, not required.
+
+Asked in session after `FJS-3907`/`FJS-3908`, when the owner asked for the options. **C** was picked over **A** (record the risk in `THREATS.md` and change nothing), **B** (a key without delete and a bucket lifecycle rule doing retention, the restic-on-B2 setup in [restic#2398](https://github.com/restic/restic/pull/2398): retention by count goes, so a hub whose backups stop ages out its last good archive, and R2 has no versions to soft-delete into, so the hub could not prune there at all) and **D** (a write-only hub key and a prune key off the box, on a laptop or a Worker: the strongest, and a second thing that grows the bill silently when it stops). On enforcement, **graded** was picked over **required** (saving a destination refuses an unlocked bucket, which also refuses every vendor with no lock).
+
+C is the only option that keeps keep-last-N, which is what protects the last archive when backups stop, and the vendor enforces it rather than the hub. A stolen hub can still prune everything older than N days, and the last N days survive it. Two costs are accepted:
+- **Recovery is the vendor's console.** On a versioned bucket a delete without a version id writes a delete marker, so after an attack the archives are there but hidden from the hub's list.
+- **An R2 lock can be removed by whoever can log into the account**; B2 compliance mode cannot be shortened or disabled ([B2](https://www.backblaze.com/docs/cloud-storage-enable-object-lock-with-the-s3-compatible-api), [R2](https://developers.cloudflare.com/r2/buckets/bucket-locks/)).
+
+How it holds, settled when the hearing found the first wording never fired:
+- **The hub deletes by version id.** A plain DELETE on a versioned bucket writes a marker and succeeds, so a prune would say `pruned` while the object stayed locked and billed. Retention lists versions and deletes the one it means; inside N days the vendor refuses, and `deleteArchive` (the one owner, which `backups.discard` shares) records it kept, why `locked`. A refusal it cannot name stays an error.
+- **The probe checks delete permission with a plain DELETE**, which writes a marker on a locked bucket and is refused for a key without delete, so a write-only key still fails at test time. The probe's own version stays until its lock ends.
+- **A locked bucket holds archives only.** B2 and S3 default retention is bucket-wide and would pin every replica generation, so a replica destination on a locked bucket is refused by the scope check. An R2 lock may instead be scoped to the archive prefix.
+- **The grade is derived where the vendor answers `GetObjectLockConfiguration`, attested where it does not**, by the button `hub.key-escrowed` already uses, so an R2 hub is not a permanent unknown.
+- **The hub key never holds a retention-writing permission**: not `writeBucketRetentions`, `writeFileRetentions` or `bypassGovernance` on B2, not `PutObjectRetention`, `PutBucketObjectLockConfiguration` or `BypassGovernanceRetention` on S3. With one it could upload under a one-second retention and step under the default. The mode is compliance, never governance.
+
+What fails when it stops: `verify:hub-restore` asserts that a delete inside N days comes back kept, against an Object Lock bucket in its container. N above the cron interval and at most the remote age retention is the operator's, said in `packages/basecamp/docs/backups.md` and not checked. Error codes per vendor, and whether R2 answers the lock read, are unprobed. DigitalOcean Spaces is unchecked. Built under `FJS-3913`.
+
+*Lives in:* `packages/basecamp/docs/backups.md`, `api/src/providers/storage/s3.ts`, `api/src/domain/backup/backup-archives.ts`, `api/src/services/backup-destinations/backup-destinations.service.ts`, `api/src/domain/host/posture.ts`.
+
+### <a id="fjs-d1054"></a>2026-11-02 · `FJS-D1054` — How does a `read: true` custom method make the one write it owns — Portal re-scopes for that one write: `spend` calls `$.db.$setAuth(<the request's claims>)` and creates the Pass through the result, a walk past the guard that `FJS-D581` already calls the author's explicit choice. No framework change, and the schema's create policy still decides forged against valid; a later guard that covers the claimed client breaks it again.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (the method names the writes it owns: `{ method: 'search', read: true, writes: ['Pass'] }` lets those accessors through the guard and still keeps no answer and announces nothing, and the guard is moved after the claim lift so it covers the claimed client too. One new option on the method declaration, and it states in the seed what the spend does), **C** (Portal drops `read: true` from the three methods. The guard has nothing to refuse, and an Idempotency-Key then keeps a signed-in retry's answer, which echoes the query (`FJS-D505`, the Q3 canary in `usages.service.ts`)).
+
+The paper's recommendation, taken as written: the write is one line in one function, `FJS-D581` ruled that a walk past is the author's to make, and A adds a seed option for a single caller; C undoes the query-privacy reason `read: true` is there.
 
 ### <a id="fjs-d1732"></a>2026-10-31 · `FJS-D1732` — An app archive uploads by a link `appBackups.upload` signs; the stream route checks only the signature.
 
@@ -15530,6 +15573,10 @@ hash is the only thing keeping one component's rules off another's markup.
 
 ## Design system (`@frontierjs/css`)
 
+### <a id="fjs-d1782"></a>2026-11-02 · `FJS-D1782` — A kit component's `size` is its own scale and stays; on a component whose size is only a font size (Button, Badge, Pill, Kbd, Mono) it writes a `.text-*` class, never an inline `font-size`, so a caller's `class="text-*"` overrides it.
+
+Asked in chat, through the question tool. **Keep `size`, write the rule down** was picked over **drop `size` on the five** (every caller rewritten to `class="text-*"`, a leftover `size=` warning by name) and **keep it as an unstated shorthand**. The prompt was a Basecamp filter chip: `<Button size="sm">` wrote `style="font-size: var(--text-sm)"`, which no class can beat, so `class="text-xs"` on a Button did nothing. `size` is the kit-wide prop — on Avatar, Spinner, Modal and nine others it sets dimensions no class names — and on Badge, Pill and Kbd `size="md"` is `text-sm`, a step relative to the component's own default rather than a rung name. `.text-2xs` joined `utilities.css` so `size="xs"` there has a class to write (the name matches `--text-2xs` and the `2xl`–`4xl` rungs). `display-fixes.mjs` fails a sized component that renders any inline `font-size`. Reopen path: drop `size` on the five, if two spellings start to disagree in practice.
+
 ### <a id="fjs-d1697"></a>2026-10-30 · `FJS-D1697` — A realm has one color, read from one table: `REALM_ACCENT` in `packages/cli/console/map-model.js`, each realm `var(--realm-<id>, <oklab mix of tone tokens>)`. A theme may name a realm outright; no surface keeps its own copy, and no realm takes a bare `success`, `warning` or `danger`.
 
 Asked through the question tool after a `decision-rules` run. Four tables disagreed: the console's `REALM_TONE` (data primary, api info, ui secondary), `website/packages.js` (ui `success`, tooling `warning`), the atlas's private table (api `success`, ui `warning`, app `danger`) and a hand-drawn spectrum in hex. The owner wanted one locked in and changed later, over each surface choosing again.
@@ -16209,6 +16256,199 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1814"></a>2026-11-03 · `FJS-D1814` — Q10 — Who can rule on public ntfy.sh — Ruling buttons only on rung 1 (own server, token and ACL on both topics); rung 3 asks carry **Open** only.
+
+Asked in [`IDEAS/autopilot.md`](IDEAS/autopilot.md) § Open questions. **A** was picked over **B** (Rung 3 too, with a one-shot nonce per ask kept under `~/.fli`), **C** (Rung 3 too; the suffix is the secret, as it is for the pings).
+
+The paper's recommendation, taken as written: a nonce rides in the ask anyone reading the topic sees, so it stops only replays; a forged ruling is a binding record written by someone else. On this machine Post rings but cannot rule until `NTFY_BASE_URL` points at an own server (`push.awe.dev` on thod is one).
+
+### <a id="fjs-d1813"></a>2026-11-03 · `FJS-D1813` — Q9 — Which `DECISIONS.md` section a phone ruling goes under — A `section` cap on the `post` schedule entry, checked against `rulingSections` when the file loads.
+
+Asked in [`IDEAS/autopilot.md`](IDEAS/autopilot.md) § Open questions. **A** was picked over **B** (Derived from the paper), **C** (Whatever `/atlas/decide/` last remembered in the browser).
+
+The paper's recommendation, taken as written: explicit and refused at load rather than at 3am; B guesses and C is a second origin in a browser. Reopen path: a per-question `section:` line in the paper.
+
+### <a id="fjs-d1812"></a>2026-11-03 · `FJS-D1812` — Q8 — What one tap may rule — Only the recommended, unqualified letter is a button, beside **Open** (a `view` link to `/atlas/decide/`); any other question or pick stays at the bench.
+
+Asked in [`IDEAS/autopilot.md`](IDEAS/autopilot.md) § Open questions. **A** was picked over **B** (Every letter a button; a pick that needs a reason is parked until one is written), **C** (Every letter rules, with the reason "ruled from the phone").
+
+The paper's recommendation, taken as written: `decide`'s guard stays untouched, nothing half-ruled is stored, and C writes a reason nobody gave. The poll re-reads the recommendation from the paper; the tap carries only `{id, letter}`.
+
+### <a id="fjs-d1811"></a>2026-11-03 · `FJS-D1811` — Q7 — How a tap on the phone comes back — The button POSTs `{id, letter}` to a reply topic, `<topic>-reply`, on the same ntfy server; the five-minute autopilot tick polls it outbound.
+
+Asked in [`IDEAS/autopilot.md`](IDEAS/autopilot.md) § Open questions. **A** was picked over **B** (The button POSTs straight to Workbench's `POST /atlas/:id`), **C** (The owner types the letter as a message into the topic).
+
+The paper's recommendation, taken as written: outbound only, so it works with the laptop off the LAN and needs no second route; B dies off the LAN, and C is ambiguous with two asks open. Reopen path: B, the day a Workbench is reachable from outside.
+
+### <a id="fjs-d1807"></a>2026-11-03 · `FJS-D1807` — A restoring rollback whose restore fails before touching the volume starts the live release again; one that failed partway stays stopped.
+
+Follow-up to `FJS-D1796`. Outpost's restore fetches and checks the copy before its extract touches the data directory, and its error says which side of that line it failed on. Untouched: the stopped release is started again and the rollback fails saying the volume is unchanged. Touched: the app stays stopped and the step names the copy to restore by hand, because starting either build on a half-restored volume is worse than an outage someone can see. Leaving every failure stopped was declined.
+
+### <a id="fjs-d1806"></a>2026-11-03 · `FJS-D1806` — `/health` fails readiness when no monitor sweep has finished for six minutes.
+
+Raised by [`FJS-3896`](ISSUES.md#fjs-3896). A Basecamp whose monitoring stopped is not healthy, and a restart is the usual cure for a stalled queue; the dead-man ping is the witness for the case a restart does not cure. A process younger than six minutes passes. Reporting the time without gating was declined.
+
+### <a id="fjs-d1805"></a>2026-11-03 · `FJS-D1805` — A machine going unreachable pages every workspace channel with `isPagedForFleet`, default on.
+
+[`FJS-3895`](ISSUES.md#fjs-3895). A Server has no channel join the way a Monitor has `MonitorChannel`. `NotificationChannel.isPagedForFleet` defaults true, so a lost machine pages the workspace unless a channel opts out; the machine's next check-in resolves the same incident (`basecamp:server:<id>`). Every channel with no setting was declined (pages a client's monitor channel with fleet noise), and a `ServerChannel` join was declined as a model nobody yet needs; it is the move if per-machine routing is asked for.
+
+### <a id="fjs-d1804"></a>2026-11-03 · `FJS-D1804` — An App row whose stored repo is not a git URL is refused with a 400 that names the App and the fix.
+
+Raised by [`FJS-3842`](ISSUES.md#fjs-3842): `apps.service.ts` re-reads a stored source with `parseAppSource`, so a row saved before the check refuses at its next release. Grandfathering stored rows was declined; pre-alpha keeps no upgrade path, and a refusal nobody re-saves past must say which App and what to set.
+
+### <a id="fjs-d1803"></a>2026-11-03 · `FJS-D1803` — Variables the docker CLI itself reads stay inline in `docker run`'s argv; an App's own env goes by private file.
+
+Raised by the FJS-3891 pass. `PATH`, `DOCKER_HOST` and the like are visible in the process list while the command runs; they are not secrets and an Outpost machine runs no other users. A temporary 0600 `--env-file` for them was declined. Recorded in `THREATS.md`; reopen if a secret is ever read by the CLI from its environment.
+
+### <a id="fjs-d1802"></a>2026-11-03 · `FJS-D1802` — The stuck-release sweep is a job of its own, and Outpost's static origin stays in Outpost's one process.
+
+The sweep (`FJS-3861`) moves from `server-reachability` to `release-sweep.job.ts` on the same minute, every caller moving with it; it is about releases and should be found from that side. Splitting the static origin into its own process was declined: the linear `_headers` matcher (`FJS-3843`) removes the known event-loop stall, and the split is the structural option if a second one appears.
+
+### <a id="fjs-d1801"></a>2026-11-03 · `FJS-D1801` — A state move and the delivery it owes are written together, and one owed-delivery record serves both the retry and the crash.
+
+[`FJS-3858`](ISSUES.md#fjs-3858) and [`FJS-3857`](ISSUES.md#fjs-3857). A monitor or server move writes what it owes in the same transaction; a `notify:deliver` job with backoff drains it, records `lastError`/`lastErrorAt` on the channel, and the next sweep re-drives anything still owed. One owed-delivery concept, a column on the move's own event row rather than an outbox table: `noticeOwedAt` on `MonitorEvent` and `ServerEvent`, set in the move's transaction and cleared on delivery (`domain/notification/owed.ts`). Owed-at, not delivered-at, so every historical row and every kind that owes nothing reads as settled. Delivery is at-least-once: a crash between the send and the clear sends again. A stuck delivery shows on the channel screen as *last delivery failed*.
+
+### <a id="fjs-d1800"></a>2026-11-03 · `FJS-D1800` — Monitoring-row retention is a per-install setting beside `backupKeep*`.
+
+[`FJS-3877`](ISSUES.md#fjs-3877), owner picked configurable over fixed. `HubConfig` gains retention days with `@gte/@lte` bounds like `backupKeep*`: `MonitorCheck` defaults 30 days and is rolled up daily into an uptime table the screens read instead of `MonitorCheck` past that; `MonitorEvent`, `ServerEvent`, resolved `Alert`s and read `Notification`s default 90. `retention.job.ts` owns the pruning.
+
+### <a id="fjs-d1799"></a>2026-11-03 · `FJS-D1799` — Outpost refuses a signed request stamped before its process started, rather than persisting nonces.
+
+[`FJS-3890`](ISSUES.md#fjs-3890). The nonce store is in memory, so a restart reopened the 300 s replay window. Refusing pre-boot stamps closes it with no stored state; the cost is that a call signed just before a restart is refused and retried, and the refusal says so. Persisting nonces and accepting the risk were declined.
+
+### <a id="fjs-d1798"></a>2026-11-03 · `FJS-D1798` — Enrolling a machine is refused while the hub runs on the placeholder `ENCRYPTION_KEY`; the listen address is unchanged.
+
+[`FJS-3860`](ISSUES.md#fjs-3860). The hub signing key is HKDF over `ENCRYPTION_KEY`, so a machine enrolled against the all-zeros key trusts a key anyone can compute. `issueEnrollment` refuses under it in every environment, widening `core/db.ts`'s production-only refusal to the boundary where the key gets pinned. Defaulting `HOST` to 127.0.0.1 outside production was declined to keep LAN and phone testing; `DELETE /setup` is fixed separately.
+
+### <a id="fjs-d1797"></a>2026-11-03 · `FJS-D1797` — Two hubs on one bucket prefix: archives carry the hub's install id, and a prefix another hub has claimed is refused.
+
+[`FJS-3880`](ISSUES.md#fjs-3880). The install id is minted once and stored on `HubConfig`; the archive key, the manifest and the Litestream replica path all read it. The rescan that adopts archives and the refusal of a claimed prefix (a marker object) share one `isForeign(key)` predicate in `backup-archives.ts`, so adoption and deletion cannot disagree. Proved by a test with two install ids on one prefix.
+
+### <a id="fjs-d1796"></a>2026-11-03 · `FJS-D1796` — A rollback keeps the volume by default and offers restoring the copy taken before the release it undoes.
+
+[`FJS-3864`](ISSUES.md#fjs-3864). A rollback runs the older image on a volume the newer release may have migrated forward. Restoring is a choice on the rollback, naming the pre-release copy (`FJS-D1496`'s *way back*) and what is written since that it would discard; nothing is dropped unless asked. Always restoring and image-only-with-a-warning were declined.
+
+### <a id="fjs-d1795"></a>2026-11-03 · `FJS-D1795` — Alert rules gain a clear-for duration and a minimum re-fire interval; the hub gains an optional dead-man ping; certificate expiry warns at fixed days.
+
+[`FJS-3875`](ISSUES.md#fjs-3875), [`FJS-3896`](ISSUES.md#fjs-3896), [`FJS-3897`](ISSUES.md#fjs-3897). Two `AlertRule` columns default to 0, so a rule nobody edits behaves as before. The dead-man URL is one hub setting (env or `HubConfig`), not a per-monitor row, hit by `monitor-sweep`, with last-sweep-at on `/health`. The 14/7/3-day certificate thresholds are constants in `monitor-sweep`, not settings.
+
+### <a id="fjs-d1794"></a>2026-11-03 · `FJS-D1794` — `variables.reveal` refuses an Idempotency-Key rather than becoming `read: true`.
+
+[`FJS-3893`](ISSUES.md#fjs-3893), option **B**. Under a key junction keeps the answer for a day to replay it, and reveal's answer is the plaintext; `read: true` keeps nothing but would drop the trail entry a reveal files under who asked (`FJS-D505`). Reveal answers 400 when a key is sent, and a failed call releases its key, so nothing is stored (`from-repo.test.ts` § variables.reveal). A second method whose answer is a secret is the moment for a per-method replay opt-out in junction, not a second copy of this refusal; reopen if a client that cannot drop the header has to reveal.
+
+### <a id="fjs-d1793"></a>2026-11-03 · `FJS-D1793` — A release landing on one machine takes the App's other placements out of the ingress record until a release lands on them.
+
+[`FJS-3851`](ISSUES.md#fjs-3851). Placement on two machines is failover (`FJS-D567`, `verify:dns`): drain one and the next release lands on the other. The defect was the machine left behind keeping `running`, so DNS kept it and, once undrained, it served the release before. **Mark the others stale** was picked over refusing a release while two placements are online (an undrained old machine still re-enters DNS) and over one machine per App (removes failover). `markRunning` sets every other `running` placement of the App to `unknown`; `servingAddresses` reads `running`, so they leave the record and rejoin on their next release. `FJS-D567` stands: a successful release leaves its own machine in the record, so the record is never emptied, and failover is now a release onto the other machine rather than a placement left `running`. Enforced by `edge.test.ts` (*a release landing on one machine takes the app's other machines out of its addresses*) and `verify-dns.mjs` § undrain.
+
+### <a id="fjs-d1792"></a>2026-11-03 · `FJS-D1792` — A push that arrives while its App has a release in flight queues one follow-up release instead of failing.
+
+Asked after [`FJS-3849`](ISSUES.md#fjs-3849) made `deployments.create` answer 409 while a release is pending or building, which the push receiver turned into a 500 and a forge retry. **Queue a follow-up** was picked over answering `ignored` and over leaving the 500, because the newest commit must ship. `jobs/release-follow-up.job.ts` (`release:follow-up`, `unique: followup:<appId>`) waits on caravan's retry ladder until nothing is in flight, then releases through the receiver's own `startPushRelease`; every push during one release collapses into it, and it gives up past `RELEASE_BOUND_MS` plus ten minutes. A git release builds the branch head, so the follow-up's commit, author and message are the first queued push's and only display hints. The receiver answers 200 `applied`, because conduit's `Receiver.apply` has no queued outcome. The receiver queues on any `Conflict` from `deployments.create`, and both it throws today mean *in flight*; a third `Conflict` with another meaning must take a different error or this catch narrows, or a refusal is silently queued. Enforced by `push.test.ts` and `finish-after-cancel.test.ts`.
+
+### <a id="fjs-d1790"></a>2026-11-03 · `FJS-D1790` — Basecamp's domain placement — Domain 7 is *Observability & Operations* and Basecamp is its tool; the developer's desk is Workbench, outside the World's domains.
+
+Asked in `packages/basecamp/docs/vision.md` § The Domain Question (three candidates: rename the domain *Operations*, split Observability from Operations, or let Basecamp span domains) and closed by `IDEAS/workbench-package.md` 4.3 **by subtraction**: `ARCHITECT.md` § domains already names 7 as *Observability & Operations* with Basecamp and Outpost as its tools, and the one thing in Basecamp that was neither — the developer's own desk (workbench chats, atlas, decide, autopilot, the Claude tab, local git) — left for `packages/workbench` (`FJS-D1785`–`D1788`). What remains in Basecamp is signals and control over a fleet, one concern seen and acted on, so candidate 1 holds as `ARCHITECT.md` already wrote it and no split is needed. The constraint the question asked for: Basecamp absorbs what observes or operates a running system; what serves the developer at their own machine goes to Workbench, and what crosses between them crosses as a signed call (`FJS-D1188`), never an import.
+
+### <a id="fjs-d1789"></a>2026-11-03 · `FJS-D1789` — The two reds nobody files are one `feed` loop with `feeder` as a cap: `ci` runs the whole of `scripts/ci.mjs` on a worktree at HEAD, `stranger` builds a `fli new --full --source npm` from the published packages, and each red unit is filed mechanically under a fixed title, amended once a day, never when it reads as the environment.
+
+`IDEAS/autopilot.md` § 4.2, beside `FJS-D1784`'s stress loop. Seven choices, each the cheaper of the two it was priced against:
+
+1. **One loop, two entries.** `feed` with `feeder: ci | stranger` as a cap the way `model` is, so the two cadences are two schedule lines and the two feeders share one log, `feed-loop.jsonl`, and one `filed` count: a CI red storm cannot spend the stranger build's rows, and the spiral guard is one number. Priced against two loops (two logs and two caps for one kind of thing) and a new `args` field on `LOOPS` (a convention for one use; `flagsOf` already emits `--feeder ci`). A loop that runs no session has `rungs` 0 and a worst run of $0, never null, so the Switch shows a price rather than *unset*.
+2. **Mechanical, not a session.** A row is one failing unit in CI's own words — the step's label, detail and output as `core/ci-log.js` recorded them — at S3, under the package its key names. A Sonnet triage would write a better title for a dollar a night, and the fix loop's session reads the row anyway; a wrong row costs one S3 and the cap bounds the total.
+3. **A fixed title per unit is the dedupe key.** `CI red: <phase> · <key, or the label without its numbers>` and `A stranger's build from npm stalls at <step>`, so the same red finds its own row: an open row is amended (`amendIssue`, once a calendar day, read off the log's `amended`), a closed one is cited by the new row, none files. `issuesTitled` in `core/registers.js` is the lookup, beside `findIssue`, since `file.js` had no duplicate check and the feeder is not where one belongs. The first real run filed `FJS-3840` as `… — 1 rule(s) above check-baseline.json`, a title that would have filed again the night the count changed; a label-built title now drops its counts and exit codes.
+4. **A smell is `env`, never a row.** The title goes through `envSmells`, the check `fileIssue` already makes; a timeout, a held port or no Chrome is logged as `env` and filed by nobody, because a row the loop files about the machine is the spiral.
+5. **CI runs on a worktree at HEAD**, `~/.fli/feed/ci`, reset to the main tree's HEAD and `bun install`ed each run: a red on HEAD is a defect and a red on somebody's half-edited working tree is noise, and this tree is never clean. The run is read back through `ci-log.js`'s `readRuns`, a `fail` step red and a `warn` the known failure CI already names; a run still going there is `busy`. The agent's call, with the alternative on record for the owner: refusing a dirty main tree would never run, and running in it would file other sessions' edits.
+6. **The stranger is the README's own line.** `bunx @frontierjs/cli@<latest> new demo --full --yes --source npm` in a temp directory with nothing of this checkout on the path, then `bun run check` and `bun run build`; the first non-zero exit is the stall, under `cli`. `new` installs as it scaffolds because `fli new` writes the first migration only when it installed, and an app scaffolded `--no-install` fails its own `migration-history` check before any framework code ran — the first dry run stalled on exactly that false red. The registry is asked first (`npm view`), and no answer is `offline`, not red.
+7. **A feed line costs nothing and moves nothing on the map but what it filed**: each row a crate from the Proving ground, where CI's gate stands, to the Registry; no `feeders` summary on the town. No session, so no skill; `scripts/feed-loop.mjs` carries its own doc and `scripts/feeders.mjs` the pure half `packages/cli/test/feeders.test.js` holds.
+
+### <a id="fjs-d1788"></a>2026-11-03 · `FJS-D1788` — Q4 — Where it sits — `packages/workbench`, an app beside `basecamp` and `haven`.
+
+Asked in [`IDEAS/workbench-package.md`](IDEAS/workbench-package.md) § Open questions. **A** was picked over **B** (A `web/` surface of `packages/cli`, since `atlas.ts` already imports fli's readers by path).
+
+The paper's recommendation, taken as written: `cli` ships to npm; a private app with a database inside it breaks publishing and severability. `cli/core/ask-claude.js` stays in cli and Workbench imports it, as `atlas.ts` does today.
+
+### <a id="fjs-d1787"></a>2026-11-03 · `FJS-D1787` — Q3 — The desktop shell — Both apps keep a shell.
+
+Asked in [`IDEAS/workbench-package.md`](IDEAS/workbench-package.md) § Open questions. **B** was picked over **A** (The shell moves to `packages/workbench/desktop/`; Basecamp is a browser tab to a box).
+
+Against the recommendation (**A**): Basecamp on a box is still opened from a laptop, so its shell stays; Workbench gets its own desktop/ surface.
+
+### <a id="fjs-d1786"></a>2026-11-03 · `FJS-D1786` — Q2 — Auth — Haven's door: an own `Member` + `Session` pair, no `@frontierjs/auth`.
+
+Asked in [`IDEAS/workbench-package.md`](IDEAS/workbench-package.md) § Open questions. **B** was picked over **A** (Single user, still gated: keep `User` and the level ladder, drop `Workspace` and `WorkspaceMember`, seed one owner at first run. Services keep their gate lines unchanged), **C** (No sign-in: a loopback-only listener with a local token).
+
+Against the recommendation (**A**): Haven already owns a Member and Session pair that works for a private app on this machine; a second private app takes the same door rather than a trimmed copy of the workspace ladder.
+
+### <a id="fjs-d1785"></a>2026-11-03 · `FJS-D1785` — Q1 — The noun — The package is `Workbench`; Atlas, Decide, Autopilot and the Claude tab are its screens, and the chat screen is renamed (`Chats`, `Checkouts`).
+
+Asked in [`IDEAS/workbench-package.md`](IDEAS/workbench-package.md) § Open questions. **A** was picked over **B** (The package takes a new noun (`Bench`, `Desk`) and every screen keeps its name).
+
+The paper's recommendation, taken as written: `FJS-D1176`, `D1073` and `D1708` already use the word, and it is the field's word (Conductor, Vibe Kanban). Reopen as B if `/workbench/` inside Workbench reads as a collision.
+
+### <a id="fjs-d1784"></a>2026-11-03 · `FJS-D1784` — A stressor step runs in a worktree of the app's repo at `~/.fli/stress/<app>` on `stress/<step>`, the app's uncommitted work committed there as its base; the loop's caps are `rows`, `filed`, `budget` and `model`; every loop's log is named once, in `LOOPS`.
+
+The `stress` entry of `IDEAS/autopilot.md` § 4.1, under `FJS-D1780` (the listed apps are the owner's consent) and `FJS-D1781` (an idea a step turns up is a question with options). Six choices, each the cheaper of the two it was priced against:
+
+1. **Where the step builds.** A worktree of the app's repo, never its working tree: the prototypes hold the owner's uncommitted work, and a headless session writing beside it is a collision nobody sees until the diff. The uncommitted tree is committed onto the branch as `stress base: …` so the session builds on what the owner has, and the session's work lands as one commit on top for the owner to merge a box at a time. A step the log says is ticked on an unmerged branch is passed over, because the app's own plan still shows the box open and the step would build twice.
+2. **Which app runs.** The one whose first open box has waited longest, *waited* being the later of the box line's last commit (`git blame`; the plan file's mtime when the line is uncommitted) and the loop's last attempt at that step. A line's blame, not the file's, so an edit elsewhere in the plan does not reset an app's turn; the last attempt, so an app tried this morning goes behind one that was not. A tie keeps the list's order, which is the owner's.
+3. **The caps.** `rows`, `filed`, `budget` and the `model` ceiling, flags with no defaults like every entry's (`FJS-D1778`). `filed` is the rows one day of stress runs may file, counted off the stress log's own lines whatever their source, because a cap on what a loop files is a cap on the register's growth and a hand run grows it the same. The session is told how many remain; past the count a gap goes as a line under the step's bullet and the step ends blocked.
+4. **A hand run refuses an unlisted app too.** `--app` chooses among the listed, never adds to them: the list is consent, and a flag that bypasses it is consent the flag's author gave.
+5. **Where `fli file` runs.** The session's cwd is the framework root, the worktree an `--add-dir`: the gaps belong in this tree's registers, and a `fli file` from the app would look for registers the app does not have.
+6. **One spelling of a log's name.** `LOOPS[*].log` and `LOG_NAMES` in `core/autopilot.js`; `headless.mjs`, the tick job, the Atlas domain and service, the report, `loop-log.js` and `repo-work.js` read them, and a test refuses a second spelling in those trees. Six two-file lists had already drifted apart once.
+
+Priced against: building in the app's checkout with a stash (the stash is the owner's work in a place they do not look); an app's plan-wide mtime (one edit anywhere resets every app's turn); a `filed` cap off the registers' dates (a hand-filed row would count against the night); a default `filed` of 3 (`FJS-D1778` says a cap the owner did not write is one they did not agree to).
+
+### <a id="fjs-d1783"></a>2026-11-02 · `FJS-D1783` — *Due* is a cron minute inside the window since the last persisted tick; a window over a day old is cut to the last five minutes.
+
+A follow-on to `FJS-D1777`, which made a cron line per entry the shape of a schedule and left what *due* means to the tick job. **A** was picked over **B** (in memory only: due is a match in the last five minutes, so an API restart can fire an entry twice inside one window and a fire during downtime is lost) and **C** (register each entry as a caravan cron job: a second reader of the file to keep the registrations in step, and caravan's registrations are in memory too, so downtime fires are lost the same way).
+
+`jobs/autopilot-tick.job.ts` writes its record to `~/.fli/autopilot/tick.json` — `at`, `since`, what it started and why it did not — and the next tick's window opens at that `at`. The record is a log of what the tick did, never a setting: the schedule's one origin stays `~/.fli/autopilot.json`. The one-day cut is cron's own rule for a machine that slept: it asked for none of those fires. A double start after a record that failed to write is held by the lane lock and the entry's in-memory run. The minute walk restates caravan's `CronScheduler._tickFixed` on the host clock, said at `dueAt`; the reopen path is caravan gaining persisted catch-up, when the window moves there whole.
+
+### <a id="fjs-d1781"></a>2026-11-02 · `FJS-D1781` — Q6 — What an idea a step turns up becomes — A `fli file --sev decision` question with options, `--area <app>`, so it sits in `fli decisions` under the filed-rows cap.
+
+Asked in [`IDEAS/autopilot.md`](IDEAS/autopilot.md) § Open questions. **C** was picked over **A** (A new step at the end of the app's current phase, plus a `## Ideas found` list in its `PLAN.md`; promotion to `IDEAS/` is a person's), **B** (A new `IDEAS/` paper per idea).
+
+The paper's recommendation, taken as written: A lets the session grow its own work and moves the review gate; B gives every idea a paper and a lifecycle; C is the one sink the owner already reads. Reopen path: A as the list only, if questions swamp the council.
+
+### <a id="fjs-d1780"></a>2026-11-02 · `FJS-D1780` — Q5 — Where an app says it may be run — The apps listed by name under `stressors.apps` in `~/.fli/autopilot.json`; the check is `bun run check`, which every app has.
+
+Asked in [`IDEAS/autopilot.md`](IDEAS/autopilot.md) § Open questions. **C** was picked over **A** (Frontmatter in the app's `PLAN.md`: `autopilot: on`, and the check script named beside it), **B** (A `.project/autopilot.json` per app).
+
+The paper's recommendation, taken as written: consent to spend and to boot an app is the machine owner's, beside the caps; A puts it in the file the session ticks, so the session could grant itself the run, and B is a second origin in forty repos. Reopen path: A, once apps should self-declare, the check still derived.
+
+### <a id="fjs-d1779"></a>2026-11-02 · `FJS-D1779` — Q4 — Landing — Patches stay on the Dock and the owner applies each with the lane tool.
+
+Asked in [`IDEAS/autopilot.md`](IDEAS/autopilot.md) § Open questions. **B** was picked over **A** (One commit per closed row on `autopilot/<day>`, from the patch, with the register edit in it; the owner merges).
+
+Against the recommendation (**A**): applying each patch with the lane tool is the moment it is read; a branch would invite a bulk merge.
+
+### <a id="fjs-d1778"></a>2026-11-02 · `FJS-D1778` — Q3 — V1 caps and their defaults — No defaults: every cap set by hand before Turn On is offered.
+
+Asked in [`IDEAS/autopilot.md`](IDEAS/autopilot.md) § Open questions. **B** was picked over **A** (20 attempts, $20, 2 lanes, S3, Sonnet; Opus only by the ladder's second rung).
+
+The paper's recommendation, taken as written: the toggle is refused until the owner has written each number once; a default is a number nobody chose.
+
+### <a id="fjs-d1777"></a>2026-11-02 · `FJS-D1777` — Q2 — What counts as *due* — A cron line per entry, read by the tick job; the owner writes the file.
+
+Asked in [`IDEAS/autopilot.md`](IDEAS/autopilot.md) § Open questions. **A** was picked over **B** (One window (`after 22:00, before 07:00`) and the entries run in order inside it).
+
+The paper's recommendation, taken as written: it is the shape every scheduler reader already knows and the window is one cron line.
+
+### <a id="fjs-d1776"></a>2026-11-02 · `FJS-D1776` — Q1 — Can the shipped Basecamp reach `scripts/` — V1 is local dev only: the job refuses with the same message the atlas screen gives when not offered.
+
+Asked in [`IDEAS/autopilot.md`](IDEAS/autopilot.md) § Open questions. **A** was picked over **B** (Move the three loop scripts under `packages/cli/core/` now, so a `fli loop` command can ship them).
+
+The paper's recommendation, taken as written: the reopen path is named; moving the scripts is a ruling for the day a second machine needs them.
+
+### <a id="fjs-d1775"></a>2026-11-02 · `FJS-D1775` — `fli studio` run in a project is that project's studio: two past its GUI in the project's tooling row — 8512 for example, 8502 dev · 7502 `--test` · 9502 `--production` for project 0, plus a scaffolded app's slot. 5502 is studio only where there is no project.
+
+Extends `FJS-D983`, which moved only `fli gui` into the project. Asked through the question tool. **85x2, accepting the collision** was picked over **an own row in category 9** (`[env]9[project][slot]`, no collision, but it spends the last free category digit and is not beside the GUI) and **served by the GUI** (studio at a path on the GUI's port, which mounts litestone's studio inside the fli server). The cost is taken knowingly: a scaffolded app's row is every scaffolded app's GUIs, so slot 0's studio 8502 is slot 2's GUI, and slot 8 and 9 wrap to 8500 and 8501. The listen throws EADDRINUSE, so the meeting fails loudly. Studio claims no `fli dev` slot as `fli gui` does: an app with none takes slot 0's 8502. Lives in `packages/cli/core/ports.js` (`studioPort()`), `packages/cli/commands/db/studio.md`, `packages/cli/core/runnables.js` (the GUI's studio tile), `docs/PORTS.md`, `packages/cli/README.md`.
+
+### <a id="fjs-d1774"></a>2026-11-02 · `FJS-D1774` — Where does fli's rings project view live in Basecamp, and under what name — Evolve `/registers/` into `/atlas/`, named for the command it mirrors: ring map and five ring cards on top, Key documents and Invariants & proof as new sections, the existing tabs as Rings 3–5, the decide walk at `/atlas/decide/`; every caller moves, nothing stays duplicated, and the Packages half of the same atlas has a home later.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (A new `/atlas/` beside `/registers/` holding only the ring map, the cards, documents and invariants, its Issues/Decisions/Ideas cards linking into `/registers/` tabs. Less churn; one mental model on two screens), **C** (A *Project* tab on each pinned checkout in the workbench, so the rings read any checkout rather than the tree Basecamp runs in. The most work, and the registers screen stays apart from it).
+
+The paper's recommendation, taken as written: the evolution policy, and the rings page is itself one page whose cards jump to sections.
+
 ### <a id="fjs-d1773"></a>2026-11-02 · `FJS-D1773` — Q6 — The pin against the gate — Delete the pin test. The pin names a version npm HOLDS and is moved by hand after a publish, never ahead of one: the pin cannot name an unpublished version by construction, which is the whole of FJS-3534, so the twenty-plus enrollment tests that ask npm (probed 2026-11-02 with the pin at `0.1.9`) stay green without a stub, and 01 writes nothing. `outpostUnpublished()` and `fli done`'s `tagsNpmLacks` stay as the guard against a hand-move that gets ahead. What is lost: nothing forces the pin forward, so a fleet can enroll on an older Outpost until someone moves it — a product choice, not a defect.
 
 Asked in [`IDEAS/green-and-ship.md`](IDEAS/green-and-ship.md) § Open questions. **D** was picked over **A** (01 moves every `INSTALL_PINS` entry in the release commit beside the scaffold pins (staged from the repo root, not under the cli branch), and the enrollment tests pass a stubbed fetcher. The pin equals the workspace at every graded commit; `outpostUnpublished()` at enrollment and `fli done`'s `tagsNpmLacks` keep asking npm. This release then raises `0.1.8 → 0.1.9` in 01 (the file's pin against the planned version, so the untagged-bump path moves it too)), **B** (the pin test tolerates a pin one unpublished release behind the workspace; nothing else moves), **C** (a `knownTestFailures` entry for basecamp, for this release only).
@@ -16235,7 +16475,7 @@ As recommended: The probe (workflow probe-fjs-3394.yml, run 41367088483) named i
 
 ### <a id="fjs-d1769"></a>2026-11-01 · `FJS-D1769` — Where does the schema layers view live, and what groups it — A Layers tab in Studio's Models view, grouped by foreign-key clusters alone; no CLI verb, no offline export, no source-file tracking in the parser.
 
-Asked in chat, through the question tool. **Studio tab only** was picked over **`litestone diagram --layers`** with an `--html` export (the recommendation) and **a new verb**; **clusters only** was picked over **recording each model's source `.lite` file** (the recommendation). The view was prototyped as a claude.ai page over basecamp's schema, and every number on it is derived — foreign keys, in/out degree, depth as the longest outgoing key path, Louvain clusters weighted down at much-referenced targets, rank inside a cluster — so nothing in it needs a model at runtime. `src/tools/schema-layers.js` computes all of it, positions for the Hub, Ring and Map floors included, and `GET /api/schema-layers` serves it; the Map floor's force layout is hand-rolled and deterministic, since litestone takes no runtime dependency past toolbelt ([`FJS-D26`](#fjs-d26)). The core a cluster is arranged around is read off the schema — the tenancy root, the principal (`authModelOf`), and every model the principal keys to — never named, and the single most-referenced model only when the schema declares none of those; by in-degree alone basecamp's `App` and `Server` outrank `User`. A principal keyed to several models makes all of them core; if that reads noisy, required keys only is the reopening. The parser still drops which file declared a model, so the panel has no *Declared in* row.
+Asked in chat, through the question tool. **Studio tab only** was picked over **`litestone diagram --layers`** with an `--html` export (the recommendation) and **a new verb**; **clusters only** was picked over **recording each model's source `.lite` file** (the recommendation). The view was prototyped as a claude.ai page over basecamp's schema, and every number on it is derived — foreign keys, in/out degree, depth as the longest outgoing key path, Louvain clusters weighted down at much-referenced targets, rank inside a cluster — so nothing in it needs a model at runtime. `src/tools/schema-layers.js` computes all of it, positions for the Hub and Ring floors included, and `GET /api/schema-layers` serves it. The prototype's force-laid Map floor was cut at the owner's word. The tab opens at the shallowest depth where every pair of clusters a key ever joins is already joined; deeper levels only thicken those links. Across eight schemas this was the only rule tried that needed no tuned threshold, and on tpm it lands on 4, the depth the owner chose by eye. A model-share cutoff, the knee of the model curve and 90% of the pairs each gave 3 there. The core a cluster is arranged around is read off the schema — the tenancy root, the principal (`authModelOf`), and every model the principal keys to — never named, and the single most-referenced model only when the schema declares none of those; by in-degree alone basecamp's `App` and `Server` outrank `User`. A principal keyed to several models makes all of them core; if that reads noisy, required keys only is the reopening. The parser still drops which file declared a model, so the panel has no *Declared in* row.
 
 ### <a id="fjs-d1738"></a>2026-10-31 · `FJS-D1738` — The release CI's run record, from a checkout deleted after the run — It is copied into the main tree's `.cache/ci-runs/` before the checkout is removed.
 
@@ -16853,7 +17093,7 @@ The nine, before any edit: 1 origin — none new; `state` is folded from the run
 
 Adjudication: *familiarity vs. precision* — the shape is stolen, the words rejected because each half-fits a word this tree already uses.
 
-*Lives in:* `packages/basecamp/api/src/domain/workbench/workbench.ts` (`status`), `packages/basecamp/web/src/routes/workbench/index.mesa` (`announce`, the stage sort); `IDEAS/workbench.md` § Ranked rows 5, 7 and 13.
+*Lives in:* `packages/workbench/api/src/domain/workbench/workbench.ts` (`status`), `packages/workbench/web/src/routes/workbench/index.mesa` (`announce`, the stage sort); `IDEAS/workbench.md` § Ranked rows 5, 7 and 13.
 
 ### <a id="fjs-d1156"></a>2026-10-16 · `FJS-D1156` — A renamed slug's redirect: one mechanism or two — One, the build: the `Slug` rows a rename writes become `_redirects` lines in the build the rename already owes, through Sierra's one writer of `_redirects` (`FJS-D961`, `FJS-D920`). No runtime lookup.
 

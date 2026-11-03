@@ -101,7 +101,7 @@ const live = await db.user.findMany()
 if (live.length !== 1 || live[0].id !== 1) throw new Error('user 2 was deleted before the account and stays deleted')
 ```
 
-`restore()` reverses the cascade — restores the account and the children that cascade stamped. The cascade stamps every child with the parent's own timestamp and leaves a child that was already deleted with its older one, so `restore()` matches the stamp: a user deleted on their own before the account stays deleted when the account comes back. The stamp is a millisecond, so a child removed on its own in the same millisecond as its parent carries the parent's stamp and comes back with it, a limit ruled in `FJS-D1774`. Hard-deleted children cannot be restored.
+`restore()` reverses the cascade — restores the account and the children that cascade stamped. The cascade stamps every child with the parent's own timestamp and leaves a child that was already deleted with its older one, so `restore()` matches the stamp: a user deleted on their own before the account stays deleted when the account comes back. The stamp is a millisecond, so a child removed on its own in the same millisecond as its parent carries the parent's stamp and comes back with it, a limit ruled in `FJS-D1817`. Hard-deleted children cannot be restored.
 
 ## @hardDelete on a relation field
 

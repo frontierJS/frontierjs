@@ -344,4 +344,29 @@ describe('the built-in ed25519 signer', () => {
       expect(verdicts).toEqual([true, false])
     } finally { v.stop() }
   })
+
+  it('signs the X-Service-Method a custom-method call carries, which the verifier reads', async () => {
+    const { generateSigningKeys, verifyRequest } = await import('@frontierjs/toolbelt/signature')
+    const keys = await generateSigningKeys()
+    const verdicts: boolean[] = []
+    const v = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        const url = new URL(req.url)
+        const out = await verifyRequest({
+          publicKey: keys.publicKey, method: req.method, path: url.pathname, query: url.search,
+          body: await req.text(), headers: Object.fromEntries(req.headers), now: Math.floor(Date.now() / 1000),
+        })
+        verdicts.push(out.ok)
+        return Response.json({ ok: true })
+      },
+    })
+    try {
+      const c = createConduit({ credentials: createStaticResolver({ HUB: keys.privateKey }) })
+      await c.register(target({ type: 'signed', ref: 'HUB', signer: 'ed25519' }, { address: `http://127.0.0.1:${v.port}` }))
+      const r = await c.send({ target: 'provider:vendor', method: 'POST', path: '/apps', headers: { 'X-Service-Method': 'preview' }, body: {} })
+      expect(r.error).toBeNull()
+      expect(verdicts).toEqual([true])
+    } finally { v.stop() }
+  })
 })

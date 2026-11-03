@@ -8,7 +8,7 @@
  */
 
 import { test, expect, describe } from 'bun:test'
-import { gradeProbe, nextState, parseStatusRanges, type StateSubject } from '../src/domain/monitor/probe.ts'
+import { certWarning, gradeProbe, nextState, parseStatusRanges, type StateSubject } from '../src/domain/monitor/probe.ts'
 
 const NOW = Date.parse('2026-10-14T12:00:00.000Z')
 
@@ -105,5 +105,35 @@ describe('the state machine', () => {
     // streak 3 paged; 4 and 5 are the two checks after it, 6 is the third.
     const pages = [4, 5, 6, 7, 8, 9].map(s => nextState({ ...down, failStreak: s - 1 }, false, NOW).page)
     expect(pages).toEqual([null, null, 'resend', null, null, 'resend'])
+  })
+})
+
+describe('certificate expiry warnings', () => {
+  const DAY = 86_400_000
+  const NOW = Date.parse('2099-01-01T00:00:00.000Z')
+  const none = { expiresAt: null, warnedDays: null }
+
+  test('nothing inside 14 days is owed nothing; each threshold is warned once', () => {
+    expect(certWarning(NOW + 30 * DAY, none, NOW)).toMatchObject({ warn: null, warnedDays: null })
+    const first = certWarning(NOW + 13 * DAY + 1000, none, NOW)
+    expect(first).toMatchObject({ warn: 14, warnedDays: 14 })
+    const exp = NOW + 13 * DAY + 1000
+    // The next minute's read: already warned at 14.
+    expect(certWarning(exp, { expiresAt: exp, warnedDays: 14 }, NOW + 60_000).warn).toBeNull()
+    expect(certWarning(exp, { expiresAt: exp, warnedDays: 14 }, NOW + 7 * DAY).warn).toBe(7)
+    expect(certWarning(exp, { expiresAt: exp, warnedDays: 7 }, NOW + 10 * DAY).warn).toBe(3)
+    expect(certWarning(exp, { expiresAt: exp, warnedDays: 3 }, NOW + 12 * DAY).warn).toBeNull()
+  })
+
+  test('first seen late warns once at the tightest threshold, and an expired certificate still warns', () => {
+    expect(certWarning(NOW + 5 * DAY, none, NOW)).toMatchObject({ warn: 7, daysLeft: 5 })
+    expect(certWarning(NOW - 2 * DAY, none, NOW)).toMatchObject({ warn: 3, daysLeft: -2 })
+  })
+
+  test('a renewed certificate starts its warnings over', () => {
+    const old = NOW + 2 * DAY
+    const renewed = NOW + 12 * DAY
+    expect(certWarning(renewed, { expiresAt: old, warnedDays: 3 }, NOW).warn).toBe(14)
+    expect(certWarning(NOW + 90 * DAY, { expiresAt: old, warnedDays: 3 }, NOW)).toMatchObject({ warn: null, warnedDays: null })
   })
 })

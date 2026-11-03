@@ -6,7 +6,7 @@
 // for ~1.3% and ~2 MB, and nearly all of that is the kernel generating
 // /proc/<pid>/stat for every process on each 2 s scan.
 //
-// Layout, column widths and the 256-colour codes copy what blessed renders for
+// Layout, column widths and the 256-color codes copy what blessed renders for
 // vtop, so a change here is checked against a vtop screen, not the theme file.
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -107,7 +107,7 @@ mod sys {
 
 // ─── model ──────────────────────────────────────────────────────────────────
 
-// blessed's 256-colour matches for parallax's #a537fd and #00ebbe: the hex
+// blessed's 256-color matches for parallax's #a537fd and #00ebbe: the hex
 // values themselves render visibly different from the vtop people know.
 const PURPLE: i16 = 135;
 const TEAL: i16 = 43;

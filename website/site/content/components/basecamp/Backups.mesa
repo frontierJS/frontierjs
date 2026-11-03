@@ -1,0 +1,93 @@
+<!--
+  Backups and recovery. Facts: packages/basecamp/docs/backups.md, the header of
+  api/src/jobs/backup-run.job.ts and app-drill-run.job.ts, HubConfig in
+  db/schema.lite, and web/test/verify-hub-restore.mjs for the proof's hops.
+  Retention is stated for the hub's archives only: that is the one prune
+  that exists.
+-->
+<section id="backups" class="bc-section">
+  <div class="container stack">
+    <p class="eyebrow">Backups and recovery</p>
+    <h2>Lose the box. Get the data back.</h2>
+    <p class="lede">
+      Basecamp archives itself and every app it runs into a bucket you own, prunes the
+      pile for you, and restores a hub from the setup page of a fresh install. You can
+      run that restore on a scratch box today, before the day you need it.
+    </p>
+
+    <div class="bc-split">
+      <ul class="bc-points">
+        <li>
+          <strong>Two kinds of archive, both off the machine.</strong>
+          The hub's archive holds every database its schema declares, the audit trail
+          and the job queue, each taken with <code>VACUUM INTO</code> so a write in
+          flight cannot tear it. An app's archive is its data volume, tarred by the
+          Outpost on its machine, on a cron per app and before any release of an
+          app that has a volume.
+        </li>
+        <li>
+          <strong>A bucket you own, checked when you save it.</strong>
+          Any S3-compatible bucket works; Backblaze B2 is the worked example and
+          Cloudflare R2 the runner-up. Adding one writes and deletes a probe key at
+          once, so a wrong key fails at the form, in words, not at 2 a.m. The hub
+          keeps seven archives on disk and seven in the bucket by default, with an
+          optional age limit, and never prunes the newest good one.
+        </li>
+        <li>
+          <strong>Restore is a page, not a runbook you write during the outage.</strong>
+          On a new box with the old <code>ENCRYPTION_KEY</code>, <code>/setup</code> lists
+          the archives in your bucket. Pick one and it is checked before a file is
+          touched: a wrong key, a damaged file or a schema this version cannot carry
+          on from is refused with its reason. Restart, and the old hub's owner signs in.
+          The key is not in the archive, so Basecamp grades the hub red until you
+          attest that you kept a copy off the box.
+        </li>
+        <li>
+          <strong>A drill that opens the copy, not just counts its bytes.</strong>
+          An app with a live replica can be drilled on a schedule or by hand: the
+          machine restores the replica into a scratch directory and runs the app's own
+          release image over it, with no network, to verify it. The app's volume is
+          never touched, and each answer is kept as a row.
+        </li>
+      </ul>
+
+      <figure class="bc-proof">
+        <div class="flow" role="list">
+          <span class="hop" role="listitem"><strong>Back up</strong> hub archive lands in the bucket</span>
+          <span class="arrow">→</span>
+          <span class="hop" role="listitem"><strong>Lose it</strong> new box, same key</span>
+          <span class="arrow">→</span>
+          <span class="hop" role="listitem"><strong>/setup</strong> List archives</span>
+          <span class="arrow">→</span>
+          <span class="hop" role="listitem"><strong>Restore this</strong> checked, then staged</span>
+          <span class="arrow">→</span>
+          <span class="hop" role="listitem"><strong>Restart</strong> the page notices, you sign in</span>
+          <span class="arrow">→</span>
+          <span class="hop" role="listitem"><strong>Replicas found</strong> each app offers its restore</span>
+        </div>
+        <figcaption>
+          The path <code>bun run verify:hub-restore</code> drives in a browser: a hub backed up
+          to a SeaweedFS bucket, restored at <code>/setup</code> across a restart, then its
+          app and its own replicas found. From
+          <code>packages/basecamp/web/test/verify-hub-restore.mjs</code> and
+          <code>docs/backups.md</code> § 7. Proved against a local S3 stand-in; a live run
+          on a real bucket is still owed.
+        </figcaption>
+      </figure>
+    </div>
+
+    <p class="bc-more">
+      Read more:
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/basecamp/docs/backups.md">the backups recipe</a>,
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/basecamp/api/src/jobs/app-drill-run.job.ts">what a drill proves</a>,
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/basecamp/web/test/verify-hub-restore.mjs">the restore drive</a>.
+    </p>
+  </div>
+</section>
+
+<style>
+  .flow { display: flex; flex-direction: column; align-items: stretch; gap: .3rem; font-size: .9rem; }
+  .flow .hop { display: flex; flex-direction: column; gap: .1rem; border: 1px solid var(--rule-strong); border-radius: .75rem; padding: .5rem .9rem; background: var(--surface-raised); color: var(--ink-soft); }
+  .flow .hop strong { color: var(--ink); }
+  .flow .arrow { color: var(--ink-mute); text-align: center; line-height: 1; }
+</style>

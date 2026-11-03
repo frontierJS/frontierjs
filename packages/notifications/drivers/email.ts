@@ -53,18 +53,46 @@ export function renderText(lines: MailLine[]): string {
   ).join('\n\n')
 }
 
-/** Render builder lines to a minimal, client-safe HTML body. */
-export function renderHtml(lines: MailLine[]): string {
+const FONT = `-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif`
+const P    = 'margin:0 0 16px;font-size:15px;line-height:1.6;color:#27272a'
+
+/**
+ * A line holding several rows — `.line(failed.join('\n'))` — is a list. HTML
+ * collapses the newlines, so it rendered as one run-on paragraph; each row
+ * gets its own cell instead.
+ */
+function rows(text: string): string {
+  const cells = text.split('\n').filter(r => r.trim()).map((r, i) =>
+    `<tr><td style="padding:12px 16px;font-size:14px;line-height:1.5;color:#27272a;` +
+    `${i ? 'border-top:1px solid #e4e4e7;' : ''}">${esc(r)}</td></tr>`
+  ).join('')
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" ` +
+         `style="margin:0 0 16px;background:#fafafa;border:1px solid #e4e4e7;border-radius:6px">${cells}</table>`
+}
+
+/** Render builder lines to a client-safe HTML body — table layout, inline styles. */
+export function renderHtml(lines: MailLine[], subject?: string): string {
   const body = lines.map(l => {
     if (l.type === 'action')
-      return `<p><a href="${esc(l.url ?? '')}" style="display:inline-block;padding:10px 18px;` +
-             `background:#111;color:#fff;text-decoration:none;border-radius:4px">${esc(l.label ?? '')}</a></p>`
+      return `<p style="margin:24px 0 0"><a href="${esc(l.url ?? '')}" style="display:inline-block;padding:12px 22px;` +
+             `background:#18181b;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;border-radius:6px">` +
+             `${esc(l.label ?? '')}</a></p>`
     if (l.type === 'greeting')
-      return `<p><strong>${esc(l.text ?? '')}</strong></p>`
-    return `<p>${esc(l.text ?? '')}</p>`
+      return `<p style="${P}"><strong>${esc(l.text ?? '')}</strong></p>`
+    return (l.text ?? '').includes('\n') ? rows(l.text!) : `<p style="${P}">${esc(l.text ?? '')}</p>`
   }).join('\n')
 
-  return `<div style="font-family:system-ui,-apple-system,sans-serif;line-height:1.5">\n${body}\n</div>`
+  const heading = subject
+    ? `<h1 style="margin:0 0 20px;font-size:20px;line-height:1.3;font-weight:600;color:#18181b">${esc(subject)}</h1>\n`
+    : ''
+
+  return `<div style="margin:0;padding:32px 16px;background:#f4f4f5;font-family:${FONT}">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto">
+<tr><td style="padding:32px;background:#ffffff;border:1px solid #e4e4e7;border-radius:8px">
+${heading}${body}
+</td></tr>
+</table>
+</div>`
 }
 export async function sendEmail(
   recipient: Recipient,
@@ -99,7 +127,7 @@ export async function sendEmail(
     to,
     subject: message.subject,
     text:    message.text ?? renderText(lines),
-    html:    message.html ?? renderHtml(lines),
+    html:    message.html ?? renderHtml(lines, message.subject),
     ...(message.attachments?.length ? { attachments: message.attachments } : {}),
   })
 }

@@ -176,6 +176,9 @@ describe('a push releases the App', () => {
     const rows = await releases(made.app.id)
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ trigger: 'push', commitSha: sha, triggeredBy: userId })
+    // A release in flight refuses the next one (FJS-3849), so the first is
+    // cancelled before the token door is tried.
+    await env.as(admin).service('deployments').remove(rows[0].id)
     expect((await env.http.post(`/hooks/git/${made.app.id}/${made.push.token}`).send({})).status).toBe(200)
   })
 
@@ -186,6 +189,69 @@ describe('a push releases the App', () => {
     expect(made.app.isDeployedOnPush).toBe(false)
     expect(made.push).toBeNull()
     expect((await forge(made.app.id, 'anything', push())).status).toBe(401)
+  })
+})
+
+// A push during a release is queued behind it, not refused: the newest code
+// ships once the release in flight ends, however it ends.
+describe('a push while a release is in flight', () => {
+
+  const followUps = (appId: string) =>
+    (env.app.jobs.list({ queue: 'deployments', status: 'pending', limit: 10_000 }) as any[])
+      .filter(j => j.name === 'release:follow-up' && JSON.parse(j.data).appId === appId)
+
+  /** What caravan does when it runs the job: the handler, handed the payload and the app. */
+  const runFollowUp = async (appId: string) => {
+    const job = followUps(appId)[0]
+    const { default: followUp } = await import('../src/jobs/release-follow-up.job.ts')
+    return (followUp as any).handler({ app: env.app, data: JSON.parse(job.data), attempts: 1 })
+  }
+
+  async function pushedTwiceBehindARelease() {
+    const app: any = await aGitApp()
+    const on: any  = await apps().call('enablePush', app.id, {})
+    expect((await forge(app.id, on.secret, push())).status).toBe(200)
+    const first = (await releases(app.id))[0]
+    return { app, on, first }
+  }
+
+  test('is answered 200 and queues one follow-up, however many pushes arrive', async () => {
+    const { app, on } = await pushedTwiceBehindARelease()
+    expect((await forge(app.id, on.secret, push())).status).toBe(200)
+    expect((await forge(app.id, on.secret, push())).status).toBe(200)
+    expect(await releases(app.id)).toHaveLength(1)
+    expect(followUps(app.id)).toHaveLength(1)
+  })
+
+  test('once the release ends the follow-up makes exactly one new release as the push\'s actor', async () => {
+    const { app, on, first } = await pushedTwiceBehindARelease()
+    const sha = uniq().padEnd(40, '0')
+    expect((await forge(app.id, on.secret, push('refs/heads/main', sha))).status).toBe(200)
+    await env.as(admin).service('deployments').remove(first.id)
+
+    await runFollowUp(app.id)
+    const made = (await releases(app.id)).filter(r => r.id !== first.id)
+    expect(made).toHaveLength(1)
+    expect(made[0]).toMatchObject({ trigger: 'push', branch: 'main', triggeredBy: userId, status: 'pending' })
+  })
+
+  test('a follow-up whose App is still in flight waits and makes nothing', async () => {
+    const { app, on, first } = await pushedTwiceBehindARelease()
+    expect((await forge(app.id, on.secret, push())).status).toBe(200)
+    await expect(runFollowUp(app.id)).rejects.toThrow(`release ${first.id} is still pending`)
+    expect(await releases(app.id)).toHaveLength(1)
+    // The retry leaves the row pending, so the lock holds and a third push still collapses into it.
+    expect((await forge(app.id, on.secret, push())).status).toBe(200)
+    expect(followUps(app.id)).toHaveLength(1)
+  })
+
+  test('a follow-up for an App that turned push off releases nothing', async () => {
+    const { app, on, first } = await pushedTwiceBehindARelease()
+    expect((await forge(app.id, on.secret, push())).status).toBe(200)
+    await env.as(admin).service('deployments').remove(first.id)
+    await apps().call('disablePush', app.id, {})
+    await runFollowUp(app.id)
+    expect(await releases(app.id)).toHaveLength(1)
   })
 })
 
@@ -272,6 +338,7 @@ describe('a git container App publishes its site/ after the release', () => {
     const bare: any = await aGitApp()
     expect(await stepNames((await deployments().create({ appId: bare.id })).id)).not.toContain('Publish site')
 
+    await deployments().remove((await (env.system as any).deployment.findFirst({ where: { appId: withVolume.id } })).id)
     const laptop: any = await deployments().create({
       appId: withVolume.id, trigger: 'laptop', commitSha: uniq().padEnd(40, '3'), branch: 'main',
       toImage: `fjs-${withVolume.id}:laptop`, builtImage: `sha256:${'b'.repeat(64)}`,

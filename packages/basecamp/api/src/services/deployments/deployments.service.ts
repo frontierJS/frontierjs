@@ -11,13 +11,14 @@
 // `include: { app: { include: { environment: true } } }` — declared in the
 // schema rather than spelled out as SQL.
 
-import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict, parseWhere, $ } from '@frontierjs/junction'
+import { releaseCopyOf, restoreSourceOf } from '../../jobs/app-backup-run.job.ts'
 import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, getScoped, narrowPatch, changesNothing, ws, actor, callerOrder } from '../../core/resource.ts'
 import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
-import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow, SITE_STEP } from '../../domain/release/release-record.ts'
-import { isInline, isGit, imageOf, inlineFilesFor } from '../../domain/release/app-source.ts'
+import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow, SITE_STEP, inFlightRelease } from '../../domain/release/release-record.ts'
+import { isInline, isGit, imageOf, inlineFilesFor, refuseBranch } from '../../domain/release/app-source.ts'
 import { snapshotVariables } from '../../domain/release/variables.ts'
 import { runtimeOf, type Runtime, CONTAINER_KINDS } from '../../domain/release/runtime.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
@@ -65,17 +66,25 @@ const WITH_APP = { app: { include: { environment: true } } }
  * off the release's own runtime snapshot, as every other step is — a rollback
  * puts back a release whose snapshot differs from the app.
  *
+ * A rollback that asks to restore the volume (`FJS-D1796`) swaps `Back up
+ * volume` for `Stop container` and `Restore volume`, which puts back the copy
+ * the release it undoes took before its own swap.
+ *
  * A git container build with a volume ends with `SITE_STEP`: the commit's
  * `site/`, if it has one, built against that database and published. A
  * rollback has none, since its clone is the branch as it is now.
  */
-function buildInitialSteps(target: { kind: string; source?: unknown; runtime?: Runtime }, built = false): string[] {
+function buildInitialSteps(target: { kind: string; source?: unknown; runtime?: Runtime }, built = false, restoring = false): string[] {
   if (target.kind === 'static' && isGit(target.source)) return ['Validate', 'Build and deploy']
   if (isInline(target.source))
     return inlineFilesFor(target.source).length
       ? ['Validate', 'Upload files', 'Activate', 'Health check']
       : ['Validate', 'Activate', 'Health check']
-  const copy = target.runtime?.volumePath ? ['Back up volume'] : []
+  // A rollback that restores puts the volume back instead of copying it: the
+  // container is stopped first because Outpost refuses a data directory a
+  // container holds (`FJS-D1796`).
+  const copy = !target.runtime?.volumePath ? []
+    : restoring ? ['Stop container', 'Restore volume'] : ['Back up volume']
   if ((target.kind === 'container' || target.kind === 'function') && isGit(target.source))
     return built
       ? ['Validate', ...copy, 'Start container', 'Health check']
@@ -110,6 +119,11 @@ async function deployInScope(id: string) {
   return row as Record<string, any>
 }
 
+/** The `@system` columns a release row is created with, named so the call says
+ *  so: what shipped is recorded at create and the patch door is closed on it. */
+const RELEASE_RECORD = ['builtImage', 'commitSha', 'branch', 'previousDeploymentId'] as const
+const systemKeys = (data: Record<string, unknown>) => RELEASE_RECORD.filter(k => k in data)
+
 /**
  * A release of `target` with the app's own settings, its steps, and the job
  * that runs it — `create` and `rebind` both. `built` names bytes an earlier
@@ -132,9 +146,13 @@ async function queueRelease(target: { id: string; environmentId: string; kind: s
     where:   { appId: target.id, status: 'success' },
     orderBy: { finishedAt: 'desc' },
   })
+  // The chain is the service's, and the timings are the job's: a payload
+  // naming either is dropped, not trusted (`FJS-3862`, `FJS-3863`).
+  delete data.previousDeploymentId
+  for (const k of ['startedAt', 'finishedAt', 'durationMs']) delete data[k]
   if (prev) data.previousDeploymentId = prev.id
 
-  const deployment = await db().deployment.create({ data })
+  const deployment = await db().deployment.create({ data, system: systemKeys(data) })
 
   await db().deploymentStep.createMany({
     data: buildInitialSteps({ kind: target.kind, ...(data.configSnapshot as { source: unknown; runtime: Runtime }) }, built).map((name, position) => ({
@@ -142,22 +160,70 @@ async function queueRelease(target: { id: string; environmentId: string; kind: s
     })),
   })
 
-  // Durable hand-off — survives a restart mid-release.
-  // The actor and the tenant are carried by the dispatch: caravan reads
-  // both off the request in scope, and the handler declares
-  // `runsAsCaller` — so this work runs as the person who asked for it,
-  // in the workspace they asked in (`FJS-384`).
-  await $.app.jobs.dispatch(deploymentRun, {
-    deployment_id: deployment.id,
-    app_id:        target.id,
-    workspace_id:  ws(),
-  }, { queue: 'deployments', priority: 5 })
+  await dispatchRelease(deployment.id, target.id)
 
   return deployment
 }
 
+/**
+ * Refused while the App has a release queued or building. Two releases of one
+ * App race each other on the machine — the second stops the container the
+ * first is waiting on — and the App's status ends as whichever finished last
+ * (`FJS-3849`).
+ */
+async function refuseInFlight(appId: string): Promise<void> {
+  const inFlight = await inFlightRelease($.app, appId)
+  if (inFlight) throw new Conflict(
+    `Release ${inFlight.id} of this app is already ${inFlight.status} — cancel it or wait for it to finish`)
+}
+
+/**
+ * The durable hand-off, one per App at a time. `refuseInFlight` is the
+ * message; `unique` is the lock that settles two clicks racing past it. A
+ * dispatch answering another job's id lost that race, and its row would sit
+ * `pending` with nothing to run it, so it is failed and the caller told.
+ */
+async function dispatchRelease(deploymentId: string, appId: string): Promise<void> {
+  const id = `deployment:${deploymentId}`
+  // The actor and the tenant are carried by the dispatch: caravan reads
+  // both off the request in scope, and the handler declares `runsAsCaller` —
+  // so this work runs as the person who asked for it, in the workspace they
+  // asked in (`FJS-384`).
+  const queued = await $.app.jobs.dispatch(deploymentRun, {
+    deployment_id: deploymentId,
+    app_id:        appId,
+    workspace_id:  ws(),
+  }, { queue: 'deployments', priority: 5, id, unique: `deploy:${appId}` })
+  if (queued === id) return
+  await db().asSystem().deployment.transition(deploymentId, 'fail')
+  throw new Conflict('Another release of this app was queued at the same moment — this one was not started')
+}
+
 
 const pushRow = (id: string) => pushReleaseRow($.app, id)
+
+/**
+ * The copy a rollback of `being` would restore, or why there is none.
+ *
+ * Named for the person pressing the button: what is put back, from when, and
+ * that everything the app wrote to its volume after the release went live is
+ * discarded. A copy that never left its machine, or was taken on another
+ * machine than the one that serves the app now, cannot be sent to it.
+ */
+async function copyBefore(being: Record<string, any>, serverId: string | null) {
+  const copy = await releaseCopyOf($.app, being.appId, being.id)
+  if (!copy) return { available: false as const, reason: `No copy was taken before this release, so there is nothing to restore — a first release has none, and neither has an app with no volume.` }
+  if (serverId && copy.serverId !== serverId) return { available: false as const, reason: `The copy before this release was taken on another machine than the one serving the app now.` }
+  try { await restoreSourceOf($.app, being.appId, copy.id) } catch (err) {
+    return { available: false as const, reason: (err as Error).message }
+  }
+  const takenAt = copy.finishedAt ?? copy.createdAt
+  return {
+    available: true as const,
+    copy: { id: copy.id, takenAt, sizeBytes: copy.sizeBytes ?? null, location: copy.location ?? null, serverId: copy.serverId ?? null },
+    discards: `Everything the app has written to its volume since ${takenAt} is replaced by the copy taken then.`,
+  }
+}
 
 export default createService({
   name:  'deployments',
@@ -168,6 +234,15 @@ export default createService({
   // where an `after: { all: [...] }` hook broadcast every read to every browser
   // in the workspace (FJS-031). Declaring both is refused at construction.
   channel: workspaceChannel,
+  // The whole surface (`FJS-D1796`): `rollback` states its input, and a
+  // `methods:` list is the surface or a narrowing of it.
+  methods: [
+    'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
+    'rebind', 'startRun', 'stepStatus', 'finishRun',
+    { method: 'rollback', input: 'DeploymentRollback' },
+    // What `rollback` with `isRestoringVolume` would put back. Writes nothing.
+    { method: 'rollbackCopy', read: true },
+  ],
   // `?environmentId=` is the app's column, not this model's, so it is reserved
   // rather than graded as a filter, and read below.
   reservedQuery: [...WORKSPACE_QUERY, 'environmentId'],
@@ -215,6 +290,7 @@ export default createService({
     // the missing placement tells them what to do (FJS-257).
     const executor = await resolveExecutor($.app, appId)
     if (!isExecutor(executor)) throw new BadRequest(executor.reason)
+    if (data.branch != null) refuseBranch(data.branch, 'branch')
 
     // A source that is neither an image nor something that builds one leaves
     // the start step asking docker to pull the app's NAME from a public
@@ -242,6 +318,7 @@ export default createService({
     if (named && !/^sha256:[0-9a-f]{64}$/.test(String(data.builtImage)))
       throw new BadRequest(`'${data.builtImage}' is not a digest — a release of bytes the machine holds names them as sha256:<64 hex>`)
     const held = named && isInline(target.source)
+    await refuseInFlight(target.id)
     return queueRelease(target, data, { held, built: named && !held })
   },
 
@@ -306,7 +383,12 @@ export default createService({
     const updated = await db().deployment.update({
       where: { id: deployment.id },
       data:  { status: 'cancelled', finishedAt: new Date().toISOString() },
+      system: ['finishedAt'],
     })
+    // The queued job holds the App's `deploy:` lock until it runs, so the next
+    // release would be refused behind a release nobody wants. A job already
+    // running stops itself at its next step (`FJS-3848`).
+    await $.app.jobs.cancel(`deployment:${deployment.id}`).catch(() => false)
     return updated
   },
 
@@ -371,6 +453,20 @@ export default createService({
       ? await db().deployment.findUnique({ where: { id: being.previousDeploymentId } })
       : null
 
+    // `previousDeploymentId` is a column a caller can write, so the row it
+    // names is not trusted to be this App's: another App's bytes and settings
+    // would be started under this one's name (`FJS-3862`).
+    if (target && target.appId !== being.appId) throw new BadRequest(
+      `The release this one names as its predecessor belongs to another app, so it cannot be put back here.`)
+
+    // Only what is live can be withdrawn. Rolling back an older success puts
+    // ITS predecessor on the machine over the release actually serving.
+    const newer = being.finishedAt ? await db().asSystem().deployment.findFirst({
+      where: { appId: being.appId, status: 'success', finishedAt: { gt: being.finishedAt }, id: { not: being.id } },
+      select: { id: true } }) : null
+    if (newer) throw new BadRequest(
+      `A later release of this app is live — only the one currently serving can be rolled back.`)
+
     // Nothing to go back to. Named rather than answered with an empty
     // release: the first deploy of an app has no predecessor, and that is a
     // different sentence from a predecessor that has gone.
@@ -395,12 +491,28 @@ export default createService({
     // app is broken where this tells them what to do.
     const executor = await resolveExecutor($.app, being.appId)
     if (!isExecutor(executor)) throw new BadRequest(executor.reason)
+    await refuseInFlight(being.appId)
+
+    // The volume is kept unless the caller asks for the copy back, and a
+    // request that cannot be met is refused before anything moves (`FJS-D1796`).
+    const restoring = (($.data ?? {}) as Record<string, unknown>).isRestoringVolume === true
+    if (restoring) {
+      if (!((target.configSnapshot as any)?.runtime?.volumePath ?? runtimeOf(into).volumePath))
+        throw new BadRequest(`This app has no volume, so there is no copy to restore.`)
+      const plan = await copyBefore(being, executor.serverId ?? null)
+      if (!plan.available) throw new BadRequest(plan.reason)
+    }
 
     // The move, and the enforcement: `success -> rolledBack @gate(5)` is the
     // model's and so is the level. Everything above this line was a read.
-    await db().deployment.transition(being.id, 'rollback')
+    //
+    // The move and the replacement are one transaction: a create that failed
+    // after the move left the App with its live release withdrawn and nothing
+    // queued to replace it (`FJS-3882`).
+    const replacement = await db().$transaction(async (tx: any) => {
+    await tx.deployment.transition(being.id, 'rollback')
 
-    const replacement = await db().deployment.create({ data: {
+    const created = await tx.deployment.create({ data: {
       appId:         being.appId,
       workspaceId:   ws(),
       trigger:       'rollback',
@@ -418,9 +530,9 @@ export default createService({
       // the column: the one that was current before it.
       previousDeploymentId: being.id,
       triggeredBy:    actor() === 'system' ? null : actor(),
-    } })
+    }, system: ['builtImage', 'commitSha', 'branch', 'previousDeploymentId'] })
 
-    await db().deploymentStep.createMany({
+    await tx.deploymentStep.createMany({
       // The step list the TARGET's source needs, not the app's current one.
       // An app switched from inline to a container since that release would
       // otherwise be rolled back through a pipeline its old bytes cannot run.
@@ -428,16 +540,14 @@ export default createService({
         kind:    into.kind,
         source:  (target.configSnapshot as any)?.source ?? into.source,
         runtime: (target.configSnapshot as any)?.runtime ?? runtimeOf(into),
-      }, true).map((name, position) => ({
-        deploymentId: replacement.id, position, name, status: 'pending',
+      }, true, restoring).map((name, position) => ({
+        deploymentId: created.id, position, name, status: 'pending',
       })),
     })
+    return created
+    })
 
-    await $.app.jobs.dispatch(deploymentRun, {
-      deployment_id: replacement.id,
-      app_id:        being.appId,
-      workspace_id:  ws(),
-    }, { queue: 'deployments', priority: 5 })
+    await dispatchRelease(replacement.id, being.appId)
 
     await pushRow(being.id)
 
@@ -458,6 +568,15 @@ export default createService({
   //
   // All four are `internalOnly`: a person moving a release through its own
   // steps by hand is a fabricated history, and the screen reads these rows.
+
+  // ── rollbackCopy — GET /deployments/:id  X-Service-Method: rollbackCopy ──
+  //
+  // The question the rollback screen asks before offering the restore.
+  async rollbackCopy() {
+    const being = await deployInScope(String($.id))
+    const executor = await resolveExecutor($.app, being.appId)
+    return copyBefore(being, isExecutor(executor) ? executor.serverId ?? null : null)
+  },
 
   async startRun() {
     return startRelease($.app, await deployInScope(String($.id)))

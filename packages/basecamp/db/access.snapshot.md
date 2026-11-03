@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-76 models · 1 view · 77 gated · 0 unrestricted
-59 with row policies · 29 with protected fields · 35 declared moves · 15 @system · 0 @seals
+74 models · 1 view · 75 gated · 0 unrestricted
+60 with row policies · 30 with protected fields · 35 declared moves · 15 @system · 0 @seals
 ```
 
 ## Gates
@@ -38,9 +38,6 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `BackupDestination` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Blueprint` | 1 VISITOR | 7 SYSADMIN | 7 SYSADMIN | 7 SYSADMIN |
 | `BlueprintParam` | 1 VISITOR | 7 SYSADMIN | 7 SYSADMIN | 7 SYSADMIN |
-| `ClaudeMessage` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
-| `ClaudeTranscript` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
-| `ClaudeWrite` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Credential` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Dashboard` | 2 READER | 4 USER | 4 USER | 4 USER |
 | `DashboardTile` | 2 READER | 4 USER | 4 USER | 4 USER |
@@ -73,6 +70,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `MonitorChannel` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `MonitorCheck` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `MonitorEvent` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `MonitorUptimeDay` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Network` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Notification` | 0 STRANGER | 8 SYSTEM | 1 VISITOR | 8 SYSTEM |
 | `NotificationChannel` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
@@ -484,6 +482,14 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **postUpdate** — `!check(monitor, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(monitor, tenancy)` — "Outside your workspaceId"
 
+### `MonitorUptimeDay`
+
+- deny **read** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+
 ### `Network`
 
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
@@ -617,6 +623,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 - allow **read** — `id == auth().id`
 - allow **read** — `kind == 'bot' && auth().level >= 5 && memberships.some(workspaceId == auth().workspaceId)`
+- allow **read** — `kind == 'peer' && auth().level >= 5 && memberships.some(workspaceId == auth().workspaceId)`
 - allow **update** — `id == auth().id`
 
 ### `Variable`
@@ -664,6 +671,7 @@ rather than refusing the row.
 | --- | --- | --- |
 | `AlertRule` | `snoozedUntil` | `@system` |
 | `ApiKey` | `credentialId` | `@system` |
+| `ApiKey` | `publicKey` | `@system` |
 | `ApiKey` | `tokenHint` | `@system` |
 | `ApiKey` | `revokedAt` | `@system` |
 | `ApiKey` | `lastUsedAt` | `@system` |
@@ -686,7 +694,6 @@ rather than refusing the row.
 | `AppPlatform` | `observedAt` | `@system` |
 | `BackupDestination` | `secretId` | `@system` |
 | `BackupDestination` | `lastTestAt` | `@system` |
-| `ClaudeWrite` | `before` | `@encrypted` |
 | `Credential` | `value` | `@guarded` |
 | `Credential` | `accessToken` | `@secret` |
 | `Credential` | `refreshToken` | `@secret` |
@@ -695,13 +702,21 @@ rather than refusing the row.
 | `Dependency` | `advisories` | `@system` |
 | `Dependency` | `checkedAt` | `@system` |
 | `Dependency` | `checkError` | `@system` |
+| `Deployment` | `commitSha` | `@system` |
+| `Deployment` | `branch` | `@system` |
+| `Deployment` | `builtImage` | `@system` |
 | `Deployment` | `platformVersion` | `@system` |
+| `Deployment` | `previousDeploymentId` | `@system` |
+| `Deployment` | `startedAt` | `@system` |
+| `Deployment` | `finishedAt` | `@system` |
+| `Deployment` | `durationMs` | `@system` |
 | `Domain` | `certSecretId` | `@system` |
 | `Domain` | `certKind` | `@system` |
 | `Domain` | `certIssuedAt` | `@system` |
 | `Domain` | `certExpiresAt` | `@system` |
 | `Flow` | `currentVersion` | `@allow(write, status == null || status != 'active')` |
 | `FlowCredential` | `secret` | `@encrypted` |
+| `HubConfig` | `installId` | `@system` |
 | `HubConfig` | `encryptionKeyEscrowedAt` | `@system` |
 | `HubConfig` | `encryptionKeyFingerprint` | `@system` |
 | `HubConfig` | `appId` | `@system` |
@@ -714,9 +729,14 @@ rather than refusing the row.
 | `Monitor` | `lastCheckedAt` | `@system` |
 | `Monitor` | `nextCheckAt` | `@system` |
 | `Monitor` | `lastLatencyMs` | `@system` |
+| `Monitor` | `certExpiresAt` | `@system` |
+| `Monitor` | `certWarnedDays` | `@system` |
+| `MonitorEvent` | `noticeOwedAt` | `@system` |
 | `NotificationChannel` | `secretId` | `@system` |
 | `NotificationChannel` | `lastTestAt` | `@system` |
 | `NotificationChannel` | `lastDeliveryAt` | `@system` |
+| `NotificationChannel` | `lastError` | `@system` |
+| `NotificationChannel` | `lastErrorAt` | `@system` |
 | `OauthFlow` | `state` | `@guarded` |
 | `OauthFlow` | `verifier` | `@guarded` |
 | `OauthFlow` | `invitation` | `@guarded` |
@@ -726,7 +746,13 @@ rather than refusing the row.
 | `Secret` | `data` | `@encrypted` |
 | `Secret` | `verifiedAt` | `@system` |
 | `Secret` | `verifyError` | `@system` |
+| `Server` | `providerKind` | `@system` |
+| `Server` | `providerId` | `@system` |
+| `Server` | `providerServerId` | `@system` |
 | `Server` | `enrollTokenHash` | `@guarded` |
+| `Server` | `outpostPublicKey` | `@system` |
+| `Server` | `outpostCert` | `@system` |
+| `ServerEvent` | `noticeOwedAt` | `@system` |
 | `Session` | `token` | `@guarded` |
 | `User` | `email` | `@allow(write, auth().isSystemAdmin)` |
 | `User` | `isEmailVerified` | `@allow(write, auth().isAdmin)` |

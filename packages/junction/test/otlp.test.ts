@@ -124,9 +124,12 @@ describe('spans', () => {
     expect(queries.every(q => q.parentSpanId)).toBe(true)
   })
 
+  // Its own trace: the previous test's audit write can end after that test's
+  // flush, and its span then lands in this window carrying TRACE.
   test('a caller that sampled the trace out gets no spans, and its log still exports', async () => {
-    await place({ traceparent: `00-${TRACE}-${PARENT}-00` })
-    expect(spans()).toEqual([])
+    const OUT = 'a1b2c3d4e5f60718293a4b5c6d7e8f90'
+    await place({ traceparent: `00-${OUT}-${PARENT}-00` })
+    expect(spans().filter(s => s.traceId === OUT)).toEqual([])
     expect(logs().some(l => l.body.stringValue === 'placing')).toBe(true)
   })
 

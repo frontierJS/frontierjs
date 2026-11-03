@@ -1,6 +1,6 @@
 /*
  * no-legacy-aliases.mjs
- * FJS-1140: one name for one thing. `tone` is the colour prop and `square` the
+ * FJS-1140: one name for one thing. `tone` is the color prop and `square` the
  * icon-only shape; a component that also declares `color`, `type`, `variant`
  * or `icon` for the same job keeps a second spelling alive that only training
  * data can reach, since AGENTS.md teaches the first.

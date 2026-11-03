@@ -17,7 +17,7 @@
 
 import type { JunctionActor, INodeImplementation, NodeContext, NodeResult, PluginManifest } from '@frontierjs/orion'
 import type { App }         from '@frontierjs/junction'
-import { deliverToChannel, type Message } from '../domain/notification/delivery.ts'
+import { deliverToChannel, mailerOf, stampDelivery, type Message } from '../domain/notification/delivery.ts'
 
 const SEVERITIES = ['info', 'warning', 'critical'] as const
 
@@ -55,16 +55,13 @@ export function basecampNodes(app: App): { manifest: PluginManifest; implementat
         title, text: String(text), severity: severity as Message['severity'], action: 'trigger',
         ...(typeof dedupKey === 'string' && dedupKey ? { dedupKey } : {}),
       }
-      const res = await deliverToChannel({ conduit: app.conduit as never, sys: () => sys }, channel, msg)
+      const res = await deliverToChannel({ conduit: app.conduit as never, sys: () => sys, mail: mailerOf(app) }, channel, msg)
       // A refused delivery is the receiver's answer and is not retried here —
       // conduit already retried the transport, and a flow wanting another try
       // says so on an error edge.
       if (!res.ok) return { ok: false, error: res.error }
 
-      await sys.notificationChannel.update({
-        where: { id: channel.id },
-        data:  { lastDeliveryAt: new Date().toISOString(), version: channel.version },
-      })
+      await stampDelivery(() => sys, channel.id as string)
       return { ok: true, data: { channel: channel.name, sent: true } }
     },
   }

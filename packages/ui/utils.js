@@ -216,6 +216,20 @@ export function cx(...parts) {
   return parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
 }
 
+const TEXT_RUNG = /(?:^|\s)text-(?:2xs|xs|sm|md|lg|xl)(?:\s|$)/
+
+/**
+ * The `.text-*` class a `size` prop writes, or nothing when the caller's own
+ * class already names a rung (`FJS-D1782`). Both in one class list tie on
+ * layer and specificity, so the rung later in utilities.css wins whichever
+ * the caller meant.
+ *
+ *   sizeClass({ sm: 'text-sm' }, 'sm', 'text-xs')  → ''
+ */
+export function sizeClass(map, size, callerClass) {
+  return TEXT_RUNG.test(callerClass || '') ? '' : (map[size] ?? '')
+}
+
 /**
  * Where a portaled `position: fixed` panel sits against its trigger.
  *

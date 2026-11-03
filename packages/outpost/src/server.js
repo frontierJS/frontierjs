@@ -18,7 +18,7 @@
 import { verifyRequest, nonceMemory } from '@frontierjs/toolbelt/signature'
 import { createDocker, createInspector, checkRunConfig } from './docker.js'
 import { createStatic, validName } from './static.js'
-import { createIngress, hostsOf, pathsOf, redirectsOf } from './ingress.js'
+import { createIngress, checkRouteAppId, hostsOf, pathsOf, redirectsOf } from './ingress.js'
 import { createReplicator } from './replicate.js'
 import { createAnalytics } from './analytics.js'
 
@@ -28,6 +28,12 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), { status
 // Each open stream holds a process on this machine for as long as somebody
 // watches, so the count is capped here rather than trusted to the caller.
 const MAX_STREAMS = 16
+// The largest request body. The biggest honest one is a static publish: 24 MiB
+// of files travels base64-encoded (x4/3 = 32 MiB) inside JSON, so 40 MiB leaves
+// room for paths and keys. Bun's default is 128 MiB and the body is buffered
+// whole before the signature can fail, so an unbounded one is memory for anyone
+// who can reach the port.
+export const MAX_BODY_BYTES = 40 * 1024 * 1024
 // Bun.serve closes a connection idle for 10s, and a quiet container writes
 // nothing for minutes. A comment line keeps it open and SSE readers drop it.
 const KEEPALIVE_MS = 5_000
@@ -64,7 +70,7 @@ function eventStream(events, abort, done) {
 
 export function createOutpostServer(config, {
   docker    = createDocker({ workDir: config.workDir, appsDir: config.appsDir, restoreDir: config.restoreDir, backupDir: config.backupDir, deployKeyDir: config.deployKeyDir }),
-  inspector = createInspector({ appsDir: config.appsDir }),
+  inspector = createInspector({ appsDir: config.appsDir, exclusive: docker.exclusive }),
   statics   = createStatic({ staticDir: config.staticDir, staticUrl: config.staticUrl }),
   ingress   = createIngress({ admin: config.caddyAdmin }),
   analytics = createAnalytics(),
@@ -73,11 +79,17 @@ export function createOutpostServer(config, {
 } = {}) {
 
   const TOLERANCE_S = 300
+  const exclusive   = docker.exclusive ?? ((_appId, fn) => fn())
   // Per process, like basecamp's own: a captured signature is dead in five
   // minutes either way, and a shared store is the change to make when an
   // Outpost runs more than once on a machine. Twice the tolerance: a timestamp
   // accepted at the limit ahead stays fresh for another full tolerance, and a
   // nonce forgotten sooner replays (FJS-1833).
+  // The first second this process answers in. The nonce store above dies with
+  // the process, so a request captured before a restart could be sent again
+  // inside its 300 s window; a signature stamped before this second is refused
+  // instead of remembered (`FJS-D1799`).
+  const BOOT_S    = Math.floor(Date.now() / 1000)
   const seen      = nonceMemory()
   const seenNonce = (nonce) => seen(nonce, Math.floor(Date.now() / 1000), 2 * TOLERANCE_S)
 
@@ -174,44 +186,51 @@ export function createOutpostServer(config, {
       if (fronted && !port) throw new Error('hosts need a published port to route to — config.port is not set')
       checkRunConfig(body.config)
 
-      const image = body.image ?? `fjs-${body.deployment_id}`
-      let built   = { digest: body.digest ?? null }
-      if (body.source?.kind === 'git' && body.source.repo && !body.digest)
-        built = await docker.build({ appId, source: body.source, image })
+      // The build and the route are this app's too, not only the swap: a
+      // `/stop` or a second release landing between them acts on a route or a
+      // clone this one is changing (`FJS-3849`). `held` tells `docker.deploy`
+      // the chain is already taken.
+      return exclusive(appId, async () => {
+        const image = body.image ?? `fjs-${body.deployment_id}`
+        let built   = { digest: body.digest ?? null }
+        if (body.source?.kind === 'git' && body.source.repo && !body.digest)
+          built = await docker.build({ appId, source: body.source, image })
 
-      // A release that dropped its last hostname drops its route too.
-      if (fronted || redirects.length) await ingress.route({ appId, hosts, port, redirects, paths })
-      else await ingress.unroute({ appId })
+        // A release that dropped its last hostname drops its route too.
+        if (fronted || redirects.length) await ingress.route({ appId, hosts, port, redirects, paths })
+        else await ingress.unroute({ appId })
 
-      let started
-      try {
-        started = await docker.deploy({
-          appId,
-          project:     body.project,
-          environment: body.environment,
-          appSlug:     body.app_slug,
-          image,
-          digest:   built.digest ?? body.digest,
-          config:   body.config ?? {},
-          port,
-          loopback:    fronted,
-          exposesPort: body.exposes_port === true,
-        })
-      } catch (err) {
-        await syncExposed()
-        // The route already moved to the new port. A put-back container
-        // answers on the port IT published, so a route left dialing the new
-        // one sends the restored app's hostnames a 502.
-        if (err.restored && fronted) {
-          const live = await docker.published({ appId }).catch(() => null)
-          if (live?.port && live.port !== port)
-            await ingress.route({ appId, hosts, port: live.port, redirects, paths })
-              .catch(e => log.error?.(`outpost: re-routing app ${appId} to the restored container failed — ${e.message}`))
+        let started
+        try {
+          started = await docker.deploy({
+            appId,
+            project:     body.project,
+            environment: body.environment,
+            appSlug:     body.app_slug,
+            image,
+            digest:   built.digest ?? body.digest,
+            config:   body.config ?? {},
+            port,
+            loopback:    fronted,
+            exposesPort: body.exposes_port === true,
+            held:        true,
+          })
+        } catch (err) {
+          await syncExposed()
+          // The route already moved to the new port. A put-back container
+          // answers on the port IT published, so a route left dialing the new
+          // one sends the restored app's hostnames a 502.
+          if (err.restored && fronted) {
+            const live = await docker.published({ appId }).catch(() => null)
+            if (live?.port && live.port !== port)
+              await ingress.route({ appId, hosts, port: live.port, redirects, paths })
+                .catch(e => log.error?.(`outpost: re-routing app ${appId} to the restored container failed — ${e.message}`))
+          }
+          throw err
         }
-        throw err
-      }
-      await syncExposed()
-      return { ...started, hosts, paths, commit_sha: built.commitSha ?? null }
+        await syncExposed()
+        return { ...started, hosts, paths, commit_sha: built.commitSha ?? null }
+      })
     },
 
     // The app's hostnames, changed between releases (`FJS-1610`): a Domain
@@ -231,6 +250,8 @@ export function createOutpostServer(config, {
     'POST /route': async (body) => {
       const appId = body.app_id
       if (!appId) throw new Error('a route needs the app_id it is for')
+      // Before `docker.published`, whose own check a `.catch` below swallows.
+      checkRouteAppId(appId)
       const hosts     = hostsOf(body.hosts)
       const redirects = redirectsOf(body.redirects)
       const paths     = pathsOf(body.paths)
@@ -409,6 +430,8 @@ export function createOutpostServer(config, {
     // No nonce store here: a nonce is spent only by the check that reads the body.
     const early = await verify('', null)
     const unsigned = !early.ok && early.reason !== 'signature does not match'
+    if (!unsigned && Number(req.headers.get('content-length') ?? 0) > MAX_BODY_BYTES)
+      return json({ error: `body is over the ${MAX_BODY_BYTES} bytes this machine accepts` }, 413)
     const body     = unsigned ? '' : await req.text()
     const checked  = unsigned ? early : await verify(body, seenNonce)
     if (!checked.ok) {
@@ -416,6 +439,14 @@ export function createOutpostServer(config, {
       // refused, not whether the clock or the key was wrong.
       log.warn?.(`outpost: refused ${req.method} ${path} — ${checked.reason}`)
       return json({ error: 'signature required' }, 401)
+    }
+
+    // Only a request that verified gets this sentence, so an unsigned caller
+    // learns nothing about when this process started. The caller signs afresh
+    // on every send, so retrying is the whole remedy.
+    if (Number(req.headers.get('X-Fjs-Timestamp')) < BOOT_S) {
+      log.warn?.(`outpost: refused ${req.method} ${path} — signed before this process started`)
+      return json({ error: 'this request was signed before the Outpost restarted — it predates the restart, so send it again' }, 409)
     }
 
     let payload = {}
@@ -455,8 +486,10 @@ export function createOutpostServer(config, {
     } catch (err) {
       log.error?.(`outpost: ${req.method} ${path} failed — ${err.message}`)
       // The machine's own words, back to the operator. A generic 500 here is
-      // how a deploy fails with nothing on screen but a red pill.
-      return json({ error: err.message }, 500)
+      // how a deploy fails with nothing on screen but a red pill. A flag on the
+      // error rides with them: `volume_touched` is how a caller that failed a
+      // restore knows whether the data directory is still what it was.
+      return json({ error: err.message, ...(err.volumeTouched ? { volume_touched: true } : {}) }, 500)
     }
   }
 

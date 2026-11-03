@@ -14,8 +14,8 @@ import { execFileSync } from 'child_process'
 import { tmpdir } from 'os'
 import { join, basename } from 'path'
 import { pathToFileURL } from 'url'
-import { appPorts, devPorts, scriptsRunBy, projectIdFor, PROJECTS, port, ENV, CAT,
-         GLOBAL, GLOBAL_RANGE, isGlobalPort, isReservedToolingPort, guiPort,
+import { appPorts, devPorts, scriptsRunBy, projectIdFor, toolingAppFor, PROJECTS, port, ENV, CAT,
+         GLOBAL, GLOBAL_RANGE, isGlobalPort, isReservedToolingPort, guiPort, studioPort,
          apiContainerName, claimSession, getSessionStatus, releaseSession,
          readLock, readsPortVar, decode, worktreeOf, portFor, composedSurfaces,
          portStatus, parseDockerPorts, slotConflicts } from '../core/ports.js'
@@ -93,6 +93,16 @@ describe('appPorts — what this app is about to bind', () => {
     // change here renames a port two apps have hard-coded.
     expect(example.map(p => p.port).sort()).toEqual([8010, 8110])
     expect(basecamp.map(p => p.port).sort()).toEqual([8020, 8120])
+  })
+
+  test('an app in the global block answers its reserved ports, not a slot', () => {
+    // haven and workbench are one per machine: their configs hold 5505/5506 and
+    // 5501/5508, and a slot would send the preflight to a port they never bind.
+    const haven     = appPorts('/x/haven',     { name: '@frontierjs/haven',     exists: treeOf('web', 'api'), slot: 3 })
+    const workbench = appPorts('/x/workbench', { name: '@frontierjs/workbench', exists: treeOf('web', 'api'), slot: 3, branch: 2 })
+    expect(haven.map(p => p.port).sort()).toEqual([5505, 5506])
+    expect(workbench.map(p => p.port).sort()).toEqual([5501, 5508])
+    expect(toolingAppFor('@frontierjs/example', 'example')).toBeNull()
   })
 
   test('only the surfaces that EXIST are probed', () => {
@@ -731,6 +741,28 @@ describe('where fli gui listens', () => {
       expect(guiPort(root, { env: 'test' })).toBe(7520)
       expect(guiPort(root, { env: 'prod' })).toBe(9520)
     } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+})
+
+describe('where fli studio listens', () => {
+  test('outside a project it is the global slot', () => {
+    expect(studioPort(null)).toBe(GLOBAL.studio)
+  })
+
+  test('in a project it is two past the GUI in the same row, a scaffolded slot included', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'studio-'))
+    const lockFile = join(dir, 'sessions.lock')
+    try {
+      const a = join(dir, 'a'), b = join(dir, 'b')
+      for (const r of [a, b]) { mkdirSync(r); writeFileSync(join(r, 'package.json'), JSON.stringify({ name: basename(r) })) }
+      writeFileSync(lockFile, JSON.stringify({ [a]: { env: 'dev', slot: 0 }, [b]: { env: 'dev', slot: 9 } }))
+      expect(studioPort(a, { lockFile })).toBe(8502)
+      expect(studioPort(a, { lockFile, env: 'test' })).toBe(7502)
+      // Slot 9 wraps rather than leave the row.
+      expect(studioPort(b, { lockFile })).toBe(8501)
+      writeFileSync(join(b, 'package.json'), JSON.stringify({ name: 'basecamp' }))
+      expect(studioPort(b, { lockFile })).toBe(8522)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })
 

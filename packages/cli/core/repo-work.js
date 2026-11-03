@@ -36,6 +36,7 @@ import { homedir } from 'node:os'
 import { htmlPage, embedJson } from './html-page.js'
 import { rankNext }      from './next.js'
 import { openDecisions } from './decisions.js'
+import { LOOPS }         from './autopilot.js'
 
 export const WORK_FILE = 'repo-work.html'
 
@@ -44,7 +45,7 @@ const OUTCOMES = ['closed', 'blocked', 'busy', 'failed', 'corrected']
 // ─── the page's data ──────────────────────────────────────────────────────────
 
 /** The counts the map draws, or null when the project does not run the loops. */
-export function workOf(root, model, { today = new Date().toISOString().slice(0, 10), log = join(homedir(), '.fli', 'fix-loop.jsonl') } = {}) {
+export function workOf(root, model, { today = new Date().toISOString().slice(0, 10), log = join(homedir(), '.fli', LOOPS.fix.log) } = {}) {
   if (!existsSync(join(root, '.claude', 'skills', 'fix-next', 'SKILL.md'))) return null
 
   let pkg = {}

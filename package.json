@@ -20,6 +20,8 @@
     "hooks:install": "node scripts/install-hooks.mjs",
     "fix:loop": "bun scripts/fix-loop.mjs",
     "frame:loop": "bun scripts/frame-loop.mjs",
+    "stress:loop": "bun scripts/stress-loop.mjs",
+    "feed:loop": "bun scripts/feed-loop.mjs",
     "loop:review": "bun scripts/loop-review.mjs",
     "skills:reach": "bun scripts/skill-reach.mjs"
   },

@@ -89,7 +89,9 @@ warns, and the run goes on with the box's own address.
 `--admin <email>` installs without asking, which is how a run with no terminal
 gets past the bare box: `deploy:setup --auto-install` asks nothing, makes the
 `ENCRYPTION_KEY` into your local `.env.production` when there is none, and
-`fli deploy` follows. Basecamp's first admin is then made through its own
+`fli deploy` follows. Between them `fli env:push` gives the box's env file
+`FRONTIER_APP_URL` and `FRONTIER_API_URL` as `https://<hostname>`: a value the
+file already holds is left alone and named, never replaced. Basecamp's first admin is then made through its own
 `POST /setup`, over ssh on the box, so no DNS is needed yet. At a terminal the
 password is asked; Enter, or no terminal, generates one and prints it once.
 **An install always makes the admin**, since `/setup` makes the workspace too:
@@ -187,6 +189,7 @@ if (domain) {
   points = zone.points
   if (zone.refusal) {
     log.error(`${zone.refusal}. Nothing was bought`)
+    if (zone.rejected) await tokenHint({ echo, chalk })
     process.exitCode = 1
     return
   }
@@ -245,7 +248,7 @@ if (asking) {
   row('key', keyPath.replace(home, '~'))
   row('address', flag['reserved-ip'] ? `reserved IP ${chalk.dim(points ? `— ${points} if it is a spare in ${flag.region || 'the region'}, else a new one` : '— a new one, kept when the box goes')}` : chalk.dim('the box\'s own'))
   row('ssh', addHost ? `Host ${name} in ~/.ssh/config` : chalk.dim('print the Host block'))
-  row('install', install ? `yes ${chalk.dim('— deploy:setup --auto-install, then deploy')}` : chalk.dim('no — fli basecamp:install later'))
+  row('install', install ? `yes ${chalk.dim('— deploy:setup --auto-install, the addresses, then deploy')}` : chalk.dim('no — fli basecamp:install later'))
   if (admin) row('admin', `${admin} ${chalk.dim(password ? '' : '— password generated')}`)
   if (install) row('outpost', outpost ? `yes ${chalk.dim('— fli deploy:outpost once the admin is made')}` : chalk.dim('no'))
   echo('')
@@ -253,6 +256,11 @@ if (asking) {
   echo('')
 }
 
+const stages = stageBar({ tty, echo, chalk, quiet: flag.json }, [
+  { name: 'buy', what: `the box at ${vendor} — about a minute` },
+  ...install ? [{ name: 'ssh', what: 'wait for the fresh box to answer ssh' }, ...installStages(outpost)] : [],
+])
+stages.at('buy')
 const bought = await buyBox({
   cloud, name, size: flag.size, region: flag.region, image: flag.image, keyPath,
   reservedIp: flag['reserved-ip'], reuse: points, sole: true, addHost, json: flag.json, log, echo, chalk,
@@ -275,19 +283,20 @@ if (!install) {
 // Ring 0 on the box it just made, named as `root@ip` so nothing has to be in
 // ~/.ssh/config yet. Each command runs on this terminal: what it asks, it asks
 // the person, and what fails, fails with its own words.
-log.info(`Waiting for ssh on ${dest} — a fresh box answers in about a minute`)
+stages.at('ssh')
 if (!await waitForSsh(dest, { identity })) {
   log.error(`${dest} did not answer ssh in four minutes. When it does: ${installLine}`)
   process.exitCode = 1
   return
 }
-const failed = await ringZero(dest, domain)
+const failed = await ringZero(dest, domain, { tty, stage: stages.at })
 if (failed) {
   log.error(`fli ${failed.argv.join(' ')} exited ${failed.status}. Fix what it said and run ${installLine}`)
   process.exitCode = failed.status || 1
   return
 }
 log.success(`Basecamp is on ${made.name} (${made.ip})`)
+stages.at('dns')
 await markHost({ cloud, id: made.id, log })
 
 const record = await pointHost({ host: domain, ip: made.ip, configured, log })
@@ -297,5 +306,5 @@ echo`
     fli deploy${later}
 `
 
-if (!await adminThenFleet({ dest, identity, workspace: made.name, admin, password, log, echo, chalk, outpost, domain, later })) process.exitCode = 1
+if (!await adminThenFleet({ dest, identity, workspace: made.name, admin, password, log, echo, chalk, outpost, domain, later, tty, stage: stages.at })) process.exitCode = 1
 ```

@@ -16,12 +16,14 @@ import { createTestEnv }     from '@frontierjs/testing'
 import { GatePlugin }        from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
-import { takeBackup }        from '../src/jobs/backup-run.job.ts'
-import { placeHub }          from '../src/domain/host/host-machine.ts'
+import { takeBackup, queueBackup, failStaleBackups, checkStaged, STALE_AFTER_MS } from '../src/jobs/backup-run.job.ts'
+import { placeHub, lastBackupAt } from '../src/domain/host/host-machine.ts'
 import { registerDestination } from '../src/providers/storage/index.ts'
-import { pruneBackups, rescanDestination } from '../src/domain/backup/backup-archives.ts'
-import { archiveRefusals, MANIFEST_FILE } from '../src/domain/backup/archive-manifest.ts'
-import { encryptionKeyFingerprint } from '../src/core/db.ts'
+import { deleteArchive, isForeign, pruneBackups, rescanDestination } from '../src/domain/backup/backup-archives.ts'
+import { archiveRefusals, MANIFEST_FILE, sha256Of } from '../src/domain/backup/archive-manifest.ts'
+import { drillHubArchive } from '../src/domain/backup/archive-drill.ts'
+import { verifyHubBackup } from '../src/jobs/backup-verify.job.ts'
+import { encryptionKeyFingerprint, jobsDatabasePath } from '../src/core/db.ts'
 import { fetchHubArchive, listHubArchives, readBucket, restoreStaged, stageHubArchive, stagedDir } from '../src/domain/backup/hub-restore.ts'
 
 let env: any
@@ -257,6 +259,19 @@ describe('a hub archive is staged at /setup and swapped in at the next boot', ()
     try { expect(raw.query('SELECT id FROM account').all()).toEqual([{ id: 'live' }]) } finally { raw.close() }
   })
 
+  test('a crash between the swap and the rename is finished at the next boot, not refused (FJS-3901)', async () => {
+    const box = freshBox()
+    await stageHubArchive(tarball, box.dbPath, { migrationsRoot: MIGRATIONS })
+    // The swap happened: the live file is the archive's own bytes, and the
+    // staged directory is still there because the rename did not.
+    cpSync(join(stagedDir(box.dbPath), 'main.db'), box.dbPath)
+
+    const r = await withAudit(box.audit, () => restoreStaged(box.dbPath, log))
+    expect(r?.state).toBe('done')
+    expect(existsSync(stagedDir(box.dbPath))).toBe(false)
+    expect(readdirSync(dirname(box.dbPath)).some(f => f.startsWith('restore-done-'))).toBe(true)
+  })
+
   test('a live file that cannot be read counts as a hub, so --force never runs over it', async () => {
     const box = freshBox()
     await stageHubArchive(tarball, box.dbPath, { migrationsRoot: MIGRATIONS })
@@ -349,7 +364,10 @@ describe('a backup naming a destination is uploaded, and a failed upload keeps t
     server = Bun.serve({ port: 0, async fetch(req) {
       if (refuse) return new Response('<Error><Code>AccessDenied</Code><Message>no</Message></Error>', { status: 403 })
       const body = new Uint8Array(await req.arrayBuffer())
-      puts.push({ path: new URL(req.url).pathname, auth: req.headers.get('authorization') ?? '', bytes: body.length })
+      // The archive goes by a pre-signed URL (the credential is in the query);
+      // the claim marker goes through conduit (the credential is a header).
+      const url = new URL(req.url)
+      puts.push({ path: url.pathname, auth: req.headers.get('authorization') ?? url.searchParams.get('X-Amz-Credential') ?? '', bytes: body.length })
       return new Response(null, { headers: { etag: '"stand-in"' } })
     } })
 
@@ -384,10 +402,19 @@ describe('a backup naming a destination is uploaded, and a failed upload keeps t
     expect(done.error).toBeNull()
     expect(done.status).toBe('success')
     expect(done.location).toMatch(/^basecamp-\/basecamp-.+\.tar\.gz$/)
-    expect(puts.length).toBe(1)
-    expect(puts[0].path).toBe(`/frontier-basecamp/${done.location}`)
-    expect(puts[0].auth).toStartWith('AWS4-HMAC-SHA256 Credential=keyid/')
-    expect(done.sizeBytes).toBe(puts[0].bytes)
+    const archives = puts.filter(p => p.path.endsWith('.tar.gz'))
+    expect(archives.length).toBe(1)
+    expect(archives[0].path).toBe(`/frontier-basecamp/${done.location}`)
+    expect(archives[0].auth).toStartWith('keyid/')
+    expect(done.sizeBytes).toBe(archives[0].bytes)
+    expect(done.sha256).toHaveLength(64)
+
+    // The key carries this install's id, and the prefix is claimed once.
+    const installId = (await (env.system as any).hubConfig.findFirst({ where: { id: 'hub' } })).installId
+    expect(done.location).toStartWith(`basecamp-/basecamp-${installId}-`)
+    const claims = puts.filter(p => p.path.includes('basecamp-claim-'))
+    expect(claims.map(c => c.path)).toEqual([`/frontier-basecamp/basecamp-/basecamp-claim-${installId}`])
+    expect(claims[0].auth).toStartWith('AWS4-HMAC-SHA256 Credential=keyid/')
 
     expect(existsSync(join(localOf(done.location), 'main.db'))).toBe(true)
     expect(existsSync(`${localOf(done.location)}.tar.gz`)).toBe(false)
@@ -408,7 +435,9 @@ describe('a backup naming a destination is uploaded, and a failed upload keeps t
     refuse = false
 
     expect(done.status).toBe('success')
-    expect(done.error).toContain('forbidden')
+    // FJS-3846: a kept-local result is not a backup that reached its destination.
+    expect(await lastBackupAt(env.system, hubId)).not.toBe(done.finishedAt)
+    expect(done.error).toContain('403')
     expect(done.error).toContain('AccessDenied')
     expect(existsSync(join(done.location, 'main.db'))).toBe(true)
     expect(existsSync(`${done.location}.tar.gz`)).toBe(false)
@@ -526,6 +555,21 @@ describe('retention prunes by count and age, local and remote apart, and a resca
     expect(await sys.appBackup.findFirst({ where: { id: local.id } })).toBeTruthy()
   })
 
+  test('the newest of each group is spared, so no destination ages out behind a run of local archives (FJS-3847)', async () => {
+    const sys = env.system as any
+    await sys.appBackup.deleteMany({ where: {} })
+    await keep({ backupKeepLocalCount: 10, backupKeepLocalDays: null, backupKeepRemoteCount: 10, backupKeepRemoteDays: 30 })
+    const local  = await plantLocal(1)
+    const remote = await plantRemote(90)
+    expect((await pruneBackups(env.app, NOW)).pruned).toEqual([])
+    expect(await sys.appBackup.findFirst({ where: { id: remote.id } })).toBeTruthy()
+    expect(existsSync(local.location)).toBe(true)
+    // A second, older remote row in the same group is still aged out.
+    const older = await plantRemote(120)
+    expect((await pruneBackups(env.app, NOW)).pruned).toEqual([older.id])
+    await keep({ backupKeepRemoteDays: null })
+  })
+
   test('a rescan gives a found row to an archive no row names, and nothing else', async () => {
     const sys = env.system as any
     await sys.appBackup.deleteMany({ where: {} })
@@ -544,5 +588,198 @@ describe('retention prunes by count and age, local and remote apart, and a resca
     expect(Date.parse(found.startedAt)).toBe(NOW - 3 * DAY)
 
     expect(await rescanDestination(env.app, dest.id)).toEqual({ listed: 4, found: 0 })
+  })
+
+  test('two hubs on one prefix: the other hub\'s archives are not adopted or deleted, and its claim refuses this one (FJS-D1797)', async () => {
+    const sys   = env.system as any
+    await sys.appBackup.deleteMany({ where: {} })
+    const mine  = (await sys.hubConfig.findFirst({ where: { id: 'hub' } })).installId as string
+    const other = crypto.randomUUID()
+    const stamp = (d: number) => nameAt(d).slice('basecamp-'.length)
+    const theirs = `basecamp-/basecamp-${other}-${stamp(2)}.tar.gz`
+    const ours   = `basecamp-/basecamp-${mine}-${stamp(3)}.tar.gz`
+    const legacy = `basecamp-/${nameAt(5)}.tar.gz`
+
+    expect(isForeign(theirs, mine)).toBe(true)
+    expect(isForeign(ours, mine)).toBe(false)
+    // A pre-id archive is nobody's, so this hub does not treat it as foreign.
+    expect(isForeign(legacy, mine)).toBe(false)
+    expect(isForeign(`basecamp-/basecamp-claim-${other}`, mine)).toBe(true)
+
+    listing = [{ key: theirs, size: 1 }, { key: ours, size: 2 }, { key: legacy, size: 3 }]
+    expect(await rescanDestination(env.app, dest.id)).toEqual({ listed: 3, found: 2, foreign: 1 })
+    expect(await sys.appBackup.findFirst({ where: { location: theirs } })).toBeNull()
+    expect(await sys.appBackup.findFirst({ where: { location: ours } })).toBeTruthy()
+
+    // A row that names the other hub's object (adopted by an earlier build) is
+    // kept by the same predicate, and the bucket is not asked to delete it.
+    const adopted = await sys.appBackup.create({ data: { appId: hubId, status: 'success', destinationId: dest.id,
+      location: theirs, startedAt: new Date(NOW - 2 * DAY).toISOString() } })
+    deletes.length = 0
+    const done = await deleteArchive(env.app, adopted)
+    expect(done).toEqual({ kept: expect.stringContaining('another Basecamp') })
+    expect(deletes).toEqual([])
+
+    // Another hub's claim marker on the prefix: this hub is refused it.
+    listing.push({ key: `basecamp-/basecamp-claim-${other}`, size: 0 })
+    const refused = await rescanDestination(env.app, dest.id)
+    expect(refused).toEqual({ error: expect.stringContaining('already claimed by another Basecamp') })
+    listing = []
+  })
+})
+
+// ─── FJS-3881: a restore drill of the newest remote archive ──────────────────
+
+describe('the newest remote hub archive is read back and graded', () => {
+  let server: ReturnType<typeof Bun.serve>
+  let served = new Uint8Array()
+  let dest: any
+  let remote: any
+
+  beforeAll(async () => {
+    server = Bun.serve({ port: 0, fetch(req) {
+      return req.method === 'GET' && new URL(req.url).pathname.endsWith('.tar.gz')
+        ? new Response(served) : new Response('<ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>')
+    } })
+    const sys  = env.system as any
+    const uniq = Math.random().toString(36).slice(2, 8)
+    const acct = await sys.account.create({ data: { slug: `dr-${uniq}`, displayName: 'Drill' } })
+    await sys.user.create({ data: { email: `dr-${uniq}@example.com` } })
+    const ws   = await sys.workspace.create({ data: { accountId: acct.id, name: 'Drill', slug: `dr-${uniq}` } })
+    const key  = await sys.secret.create({ data: { workspaceId: ws.id, name: 'backup-drill', kind: 'backup', data: 'keyid:applicationkey' } })
+    dest = await sys.backupDestination.create({ data: {
+      workspaceId: ws.id, name: 'Drill', endpoint: `http://127.0.0.1:${server.port}`,
+      region: 'us-west-000', bucket: 'frontier-basecamp', prefix: 'drill-', secretId: key.id,
+    } })
+    await registerDestination(env.app, dest)
+
+    // A real archive, tarred the way the job tars one.
+    await sys.appBackup.deleteMany({ where: {} })
+    const row = await sys.appBackup.create({ data: { appId: hubId } })
+    await takeBackup(env.app, row.id)
+    const dir = (await sys.appBackup.findUnique({ where: { id: row.id } })).location as string
+    const tar = join(tmpdir(), `${basename(dir)}.tar.gz`)
+    expect(await Bun.spawn(['tar', '-czf', tar, '-C', dirname(dir), basename(dir)]).exited).toBe(0)
+    served = await Bun.file(tar).bytes()
+    remote = await sys.appBackup.create({ data: { appId: hubId, status: 'success', destinationId: dest.id,
+      location: `drill-/${basename(dir)}.tar.gz`, sha256: await sha256Of(tar), startedAt: new Date().toISOString() } })
+  })
+
+  afterAll(() => server?.stop(true))
+
+  test('an archive that restores is graded success and leaves nothing behind', async () => {
+    const drill = await drillHubArchive(env.app, { kind: 'scheduled' }) as any
+    expect(drill.error).toBeNull()
+    expect(drill.status).toBe('success')
+    expect(drill.kind).toBe('scheduled')
+    expect(drill.report).toMatchObject({ backupId: remote.id, reasons: [] })
+    expect(readdirSync(dirname(env.app.sqlite.filename)).filter(n => n.startsWith('.drill-'))).toEqual([])
+    expect(await verifyHubBackup(env.app, env.system)).toBe('success')
+  })
+
+  test('bytes that do not match the recorded sha256 fail the drill, and the failure is reported', async () => {
+    await (env.system as any).appBackup.update({ where: { id: remote.id }, data: { sha256: 'f'.repeat(64) } })
+    const drill = await drillHubArchive(env.app) as any
+    expect(drill.status).toBe('failed')
+    expect(drill.error).toContain('does not match the sha256')
+    expect(await verifyHubBackup(env.app, env.system)).toBe('failed')
+  })
+
+  test('with no uploaded archive there is nothing to drill, and no row is written', async () => {
+    const sys = env.system as any
+    await sys.appBackup.deleteMany({ where: { destinationId: dest.id } })
+    const before = await sys.appDrill.count()
+    expect(await drillHubArchive(env.app)).toEqual({ skipped: expect.stringContaining('nothing to drill') })
+    expect(await sys.appDrill.count()).toBe(before)
+  })
+
+  test('a manifest from another install is refused when the caller knows its own id', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bc-foreign-manifest-'))
+    writeFileSync(join(dir, MANIFEST_FILE), JSON.stringify({
+      basecamp: 'x', takenAt: new Date().toISOString(), installId: crypto.randomUUID(),
+      encryptionKeyFingerprint: encryptionKeyFingerprint(), files: [],
+    }))
+    const migrationsRoot = join(import.meta.dir, '..', '..', 'db', 'migrations')
+    expect(await archiveRefusals(dir, { migrationsRoot })).toEqual([])
+    expect(await archiveRefusals(dir, { migrationsRoot, installId: crypto.randomUUID() }))
+      .toEqual([expect.stringContaining('another Basecamp')])
+  })
+})
+
+// ─── FJS-3859, FJS-3881, FJS-3900, FJS-3901 ─────────────────────────────────
+
+describe('an interrupted hub backup does not block the next one', () => {
+  test('a running row past the stale window is failed, and a fresh one still blocks', async () => {
+    const sys = env.system as any
+    await sys.appBackup.deleteMany({ where: {} })
+    const old = await sys.appBackup.create({ data: { appId: hubId, status: 'running',
+      startedAt: new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString() } })
+    const q = await queueBackup(env.app, { kind: 'manual', destinationId: null, requestedBy: null })
+    expect('backup' in q).toBe(true)
+    const failed = await sys.appBackup.findUnique({ where: { id: old.id } })
+    expect(failed.status).toBe('failed')
+    expect(failed.error).toContain('interrupted')
+
+    // The one just queued is fresh, so it is what the next ask answers.
+    const again = await queueBackup(env.app, { kind: 'manual', destinationId: null, requestedBy: null })
+    expect('inFlight' in again).toBe(true)
+  })
+
+  test('a restore fails every in-flight row, whatever its age', async () => {
+    const sys = env.system as any
+    await sys.appBackup.deleteMany({ where: {} })
+    await sys.appBackup.create({ data: { appId: hubId, status: 'running', startedAt: new Date().toISOString() } })
+    await sys.appBackup.create({ data: { appId: hubId, status: 'pending' } })
+    expect(await failStaleBackups(env.app, 0)).toBe(2)
+    expect(await failStaleBackups(env.app, 0)).toBe(0)
+  })
+})
+
+describe('a staged copy that is not a database is refused', () => {
+  test('integrity_check passes a real database and names a damaged file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bc-integrity-'))
+    const ok  = new Database(join(dir, 'ok.db')); ok.run('CREATE TABLE t (a)'); ok.close()
+    expect(checkStaged(dir)).toBeNull()
+    writeFileSync(join(dir, 'bad.db'), 'SQLite format 3\0' + 'x'.repeat(4096))
+    expect(checkStaged(dir)).toContain('bad.db')
+  })
+})
+
+describe('the queue database path', () => {
+  test('only a trailing .db is replaced, and a path with none is suffixed', () => {
+    expect(jobsDatabasePath('/data/basecamp.db')).toBe('/data/basecamp-jobs.db')
+    expect(jobsDatabasePath('/data.db/app.db')).toBe('/data.db/app-jobs.db')
+    expect(jobsDatabasePath('/data.db/app')).toBe('/data.db/app-jobs.db')
+    expect(jobsDatabasePath('/data/basecamp')).not.toBe('/data/basecamp')
+  })
+})
+
+// ─── FJS-3908 ───────────────────────────────────────────────────────────────
+
+describe('a backup is refused when the disk cannot hold the copy', () => {
+  const GB = 1024 ** 3
+  const volume = (free: number) => ({ statfs: () => ({ bavail: free / 4096, bsize: 4096, blocks: 100 * GB / 4096 }) })
+
+  test('nothing is staged, the row is failed with the sentence, and the error is thrown for the retry', async () => {
+    const sys    = env.system as any
+    const dir    = join(dirname(env.app.sqlite.filename), 'backups')
+    const before = existsSync(dir) ? readdirSync(dir).sort() : []
+    const row    = await sys.appBackup.create({ data: { appId: hubId } })
+
+    // 1 GB free of 100: under both the database multiple and a tenth of the volume.
+    await expect(takeBackup(env.app, row.id, volume(GB))).rejects.toThrow('Nothing was staged')
+
+    const done = await sys.appBackup.findUnique({ where: { id: row.id } })
+    expect(done.status).toBe('failed')
+    expect(done.error).toContain('free on')
+    expect(done.error).toContain('Nothing was staged')
+    expect(existsSync(dir) ? readdirSync(dir).sort() : []).toEqual(before)
+  })
+
+  test('a disk with room takes the backup', async () => {
+    const sys = env.system as any
+    const row = await sys.appBackup.create({ data: { appId: hubId } })
+    await takeBackup(env.app, row.id, volume(50 * GB))
+    expect((await sys.appBackup.findUnique({ where: { id: row.id } })).status).toBe('success')
   })
 })

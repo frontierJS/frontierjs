@@ -16,7 +16,10 @@ import type { App, NotificationDriver, PushMessage, Recipient } from '../types.t
  * Title, Priority, Tags, Click and Actions headers; `data`, `ttl`, `urgency`,
  * `topic` and `always` are web push's and are dropped here. A payload carries titles and
  * links, never a secret -- the `push:` formatter is where `@guarded` columns are
- * kept out, as it is for `webPush()`.
+ * kept out, as it is for `webPush()`. That holds for an `http` action too: the
+ * phone makes that POST itself, so the action carries a method and a body but
+ * no `Authorization` header, and the topic it posts to must accept an anonymous
+ * write.
  */
 
 export interface NtfyOptions {
@@ -77,7 +80,9 @@ export function ntfy(options: NtfyOptions): NotificationDriver {
     // JSON, not ntfy's comma-and-semicolon shorthand: a label with a comma or
     // a quote in it mis-parsed there and the publish was refused.
     if (m.actions?.length) headers.Actions = headerValue(JSON.stringify(
-      m.actions.slice(0, ACTIONS_MAX).map(a => ({ action: 'view', label: a.label, url: a.url })),
+      m.actions.slice(0, ACTIONS_MAX).map(a => a.body === undefined
+        ? { action: 'view', label: a.label, url: a.url }
+        : { action: 'http', label: a.label, url: a.url, method: 'POST', body: a.body, clear: true }),
     ))
 
     const res = await deliver(`${server.base}/${encodeURIComponent(topic)}`, {

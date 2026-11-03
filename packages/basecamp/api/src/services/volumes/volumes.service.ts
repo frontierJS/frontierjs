@@ -55,7 +55,7 @@ interface ReportedVolume {
   driver?:     string
   mountpoint?: string
   size_bytes?: number
-  in_use?:     boolean
+  in_use?:     boolean | null
   containers?: string[]
   created_at?: string
 }
@@ -298,22 +298,26 @@ export default createService({
     let added = 0, updated = 0
     for (const reported of data.volumes) {
       if (!reported?.name) continue
+      const found = byName.get(reported.name) as { id: string; isInUse?: boolean; containers?: string[] } | undefined
+      // `in_use: null` is a machine that could not ask docker (`FJS-3844`). Read
+      // as false it offers a live app's data for deletion, so the last known
+      // answer stands, and a disk never seen before counts as held.
+      const known = typeof reported.in_use === 'boolean'
       const row = {
         kind:       reported.kind === 'bind' ? 'bind' : 'volume',
         driver:     reported.driver     ?? 'local',
         mountPoint: reported.mountpoint ?? null,
         sizeBytes:  Math.max(0, Math.round(reported.size_bytes ?? 0)),
-        isInUse:      reported.in_use === true,
-        containers: Array.isArray(reported.containers) ? reported.containers : [],
+        isInUse:    known ? reported.in_use === true : (found?.isInUse ?? true),
+        containers: Array.isArray(reported.containers) ? reported.containers : (found?.containers ?? []),
         // Docker's own creation time, and the only one that answers "how long
         // has this been lying around" — `discoveredAt` is when Basecamp first
         // saw it, which for an old disk on a new install is today.
         createdOnServer: reported.created_at ?? null,
         lastSeenAt:      now,
       }
-      const found = byName.get(reported.name)
       if (found) {
-        await sys().volume.update({ where: { id: (found as { id: string }).id }, data: row })
+        await sys().volume.update({ where: { id: found.id }, data: row })
         updated++
       } else {
         await sys().volume.create({ data: { serverId, name: reported.name, discoveredAt: now, ...row } })

@@ -18,6 +18,7 @@ const REGION_DEFAULTS = {
 
 export class S3Provider {
   constructor(config) {
+    this._provider   = config.provider ?? 'r2'
     this._bucket     = config.bucket
     this._endpoint   = config.endpoint?.replace(/\/$/, '')
     this._region     = config.region ?? REGION_DEFAULTS[config.provider] ?? 'auto'
@@ -36,6 +37,10 @@ export class S3Provider {
     return `https://${this._bucket}.s3.${this._region}.amazonaws.com/${path}`
   }
 
+  // Over plain http the signature covers every byte, so the bytes must all be
+  // in hand before the request starts; a caller holding a Blob reads it once.
+  get signsPayload() { return !this._objectUrl('k').startsWith('https:') }
+
   _opts() {
     return {
       accessKeyId:     this._access,
@@ -52,10 +57,19 @@ export class S3Provider {
     const headers = { 'content-type': contentType }
     if (size != null) headers['content-length'] = String(size)
 
+    // A plain S3 PUT carries Content-Length and a chunked body has none, so a
+    // stream states its size up front (FJS-D1808).
+    const streamed = body instanceof ReadableStream
+    if (streamed && size == null)
+      throw new Error(`fromStream to provider ${this._provider} needs size -- an S3 PUT carries Content-Length`)
+
     // A signed payload is a hash of every byte, so a Blob would cost its size in
     // heap to send. Over https it goes unsigned and fetch streams it; over plain
-    // http the body stays in the signature, because there TLS is not covering it.
-    const unsignedPayload = body instanceof Blob && url.startsWith('https:')
+    // http the body stays in the signature, because there TLS is not covering it
+    // -- and a stream cannot be hashed before it is sent without being buffered.
+    const unsignedPayload = (streamed || body instanceof Blob) && url.startsWith('https:')
+    if (streamed && !unsignedPayload)
+      throw new Error(`fromStream to provider ${this._provider} needs https -- signing a body over plain http would buffer the whole file`)
     if (body instanceof Blob && !unsignedPayload) body = new Uint8Array(await body.arrayBuffer())
 
     const signed = await signRequest('PUT', url, headers, body, { ...this._opts(), unsignedPayload })
@@ -64,6 +78,7 @@ export class S3Provider {
       method:  'PUT',
       headers: { ...headers, ...signed },
       body,
+      ...(streamed ? { duplex: 'half' } : {}),
     })
 
     if (!res.ok) {

@@ -8,7 +8,7 @@ These pages are read in different situations rather than in order.
   the tree rather than remembered. It was the map of what is unbuilt and, for
   each one, of what actually blocks it; since 2026-08-30 it is 41 of 41 and the
   phases are the record of what each one decided
-- [adapters.md](adapters.md) — what SCREENS left: ten providers, every boundary
+- [providers.md](providers.md) — what SCREENS left: ten providers, every boundary
   declared, nothing behind any of them. Four screens are each waiting on one, and
   this is what wiring one costs — the decisions already made, and which drive
   assertions go red the day you do. **Start here if you are picking up a

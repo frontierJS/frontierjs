@@ -6,6 +6,7 @@ import { GatePlugin }  from '@frontierjs/litestone'
 import { basecampGateLevel } from '../api/src/core/gate.ts'
 import { buildBasecampApp }  from '../api/src/app.ts'
 import { grantsFor }         from '../api/src/core/capabilities.ts'
+import { invitationPresented } from '../api/src/core/session-auth.ts'
 
 const ROOT       = join(import.meta.dir, '..')
 export const SCHEMA     = join(ROOT, 'db', 'schema.lite')
@@ -42,7 +43,8 @@ export async function build(): Promise<Fixture> {
     // The app makes an account only for an invited address (`FJS-3685`).
     const inv = await sys.invitation.create({ data: { workspaceId: ws.id, email, role: 'viewer', token: crypto.randomUUID(),
       expiresAt: new Date(Date.now() + 3_600_000).toISOString() } })
-    const u = await env.app.auth.createUser({ email, password: PW, name: who })
+    // ...and only under the token accept verified (`FJS-3870`).
+    const u = await invitationPresented.run(email, () => env.app.auth.createUser({ email, password: PW, name: who }))
     await sys.invitation.delete({ where: { id: inv.id } })
     const id = u.id
     await sys.user.update({ where: { id }, data: { accountId: acct.id, status: 'active', ...(opts.sysadmin ? { isSystemAdmin: true } : {}) } })

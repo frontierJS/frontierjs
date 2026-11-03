@@ -17,6 +17,7 @@
 // an App with push off read alike to a stranger.
 
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { Conflict } from '@frontierjs/junction'
 import type { App } from '@frontierjs/junction'
 import type { Delivery, Dialect, Receiver, ReceivedEvent } from '@frontierjs/conduit'
 
@@ -85,9 +86,16 @@ function parsePush(d: Delivery): PushEvent | null {
 const branchOf = (ev: PushEvent, source: { branch?: string }) =>
   ev.payload.ref?.replace(/^refs\/heads\//, '') ?? source.branch ?? ev.payload.defaultBranch ?? null
 
-// One delivery id per App: the same id could never name two Apps' pushes, but a
-// sha pushed to two Apps' repos should release both.
-const dedupeKey = (d: Delivery, ev: PushEvent) => `${d.route.appId}:${ev.id}`
+// Keyed on the bytes the signature covers, per App: the delivery-id header is
+// outside the HMAC, so a replayed push with a fresh id released again
+// (`FJS-3894`). A sha pushed to two Apps' repos still releases both.
+const signedKey = (d: Delivery, _ev: PushEvent) =>
+  `${d.route.appId}:${createHash('sha256').update(d.rawBody).digest('hex')}`
+
+// The token door signs nothing and a script's hook may send the same empty body
+// every time, so a body hash would refuse its second deploy; the URL token is
+// its credential, and the delivery id stays its dedupe.
+const deliveryKey = (d: Delivery, ev: PushEvent) => `${d.route.appId}:${ev.id}`
 
 /** The forge's HMAC over the exact bytes it sent, keyed by the App's `pushSecret`. */
 export const forgeDialect: Dialect<string, PushEvent> = {
@@ -98,7 +106,7 @@ export const forgeDialect: Dialect<string, PushEvent> = {
     return same(sent.slice('sha256='.length), want) ? { ok: true } : { ok: false, reason: 'signature does not match' }
   },
   parse:  parsePush,
-  dedupeKey,
+  dedupeKey: signedKey,
 }
 
 /** The URL token, compared by hash to the App's `pushTokenHash`. */
@@ -108,7 +116,48 @@ export const tokenDialect: Dialect<string, PushEvent> = {
     return sent && same(hashPushToken(sent), tokenHash) ? { ok: true } : { ok: false, reason: 'token does not match' }
   },
   parse:  parsePush,
-  dedupeKey,
+  dedupeKey: deliveryKey,
+}
+
+// ─── What a push does ──────────────────────────────────────────────────
+
+/** What the push says about itself; the build step reports the sha it really built. */
+export interface PushHints { branch: string | null, commitSha?: string, author?: string, commitMessage?: string }
+
+function pushHints(ev: PushEvent, source: { branch?: string }): PushHints {
+  const { after, author, message } = ev.payload
+  return {
+    branch: branchOf(ev, source),
+    ...(after && !/^0+$/.test(after) ? { commitSha: after } : {}),
+    ...(author  ? { author } : {}),
+    ...(message ? { commitMessage: message } : {}),
+  }
+}
+
+/**
+ * The release a push asks for, made at the standing of whoever enabled push,
+ * read again now: a person removed since is refused. The row names its door
+ * and the payload's commit; these are what the history says until the build
+ * step reports the sha it built. The follow-up job calls this too, so a
+ * queued push is released exactly as an immediate one.
+ */
+export function startPushRelease(app: App, row: { id: string, workspaceId: string, pushActorId: string }, hints: PushHints) {
+  return app.runAs(row.pushActorId, { tenant: row.workspaceId }, () =>
+    (app.service('deployments') as any).create({ appId: row.id, trigger: 'push', ...hints }))
+}
+
+/**
+ * A push that arrived while the App's last release was still queued or
+ * building. `create` refuses a second release in flight (`FJS-3849`), and a
+ * 500 left the newest code unshipped until somebody pushed again. `unique` is
+ * a lock on work in flight, so every push during one release collapses into
+ * one follow-up, which builds the branch HEAD whenever it runs; the hints it
+ * carries are the FIRST push's.
+ */
+async function queueFollowUp(app: App, row: { id: string, workspaceId: string }, hints: PushHints) {
+  await (app as any).jobs.dispatch('release:follow-up', { appId: row.id, queuedAt: Date.now(), hints }, {
+    queue: 'deployments', unique: `followup:${row.id}`, actor: null, tenant: row.workspaceId,
+  })
 }
 
 // ─── The receivers ─────────────────────────────────────────────────────
@@ -146,19 +195,16 @@ function receiver(app: App, path: string, dialect: Dialect<string, PushEvent>, c
       const source = (row.source ?? {}) as { branch?: string }
       if (!pushesBranch(ev, source)) return 'ignored'
 
-      // The release is made at the standing of whoever enabled push, read
-      // again now. A throw is a 500, so the forge's delivery shows red and its
-      // retry gets a clean run. The row names its door and the payload's
-      // commit: the build step reports the sha it built, and these are what
-      // the history says until it does.
-      const { after, author, message } = ev.payload
-      await app.runAs(row.pushActorId, { tenant: row.workspaceId }, () =>
-        (app.service('deployments') as any).create({
-          appId: row.id, trigger: 'push', branch: branchOf(ev, source),
-          ...(after && !/^0+$/.test(after) ? { commitSha: after } : {}),
-          ...(author  ? { author } : {}),
-          ...(message ? { commitMessage: message } : {}),
-        }))
+      // A throw is a 500, so the forge's delivery shows red and its retry gets
+      // a clean run. A release already in flight is not a failure: the push
+      // is queued behind it, because the newest code has to ship once it ends.
+      const hints = pushHints(ev, source)
+      try {
+        await startPushRelease(app, row, hints)
+      } catch (err) {
+        if (!(err instanceof Conflict)) throw err
+        await queueFollowUp(app, row, hints)
+      }
       return 'applied'
     },
   }

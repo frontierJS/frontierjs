@@ -197,7 +197,8 @@ export function createStatic({ staticDir = layout().static, staticUrl = '' } = {
    *  the live release can sort past the keep window and survive as one extra. */
   async function digests(dir, prefer = null) {
     const found = await fsp.readdir(dir, { withFileTypes: true }).catch(() => [])
-    const dirs  = found.filter(e => e.isDirectory() && e.name.startsWith('sha256:'))
+    // The whole name, or a dead publish's `.partial.*` reads as a release.
+    const dirs  = found.filter(e => e.isDirectory() && /^sha256:[0-9a-f]{64}$/.test(e.name))
     const timed = await Promise.all(dirs.map(async e => ({
       name: e.name,
       at:   await fsp.stat(join(dir, e.name)).then(s => s.mtimeMs, () => 0),
@@ -247,15 +248,20 @@ export function createStatic({ staticDir = layout().static, staticUrl = '' } = {
       // removing it before the rename is a window in which the app serves 404.
       if (live !== digest) {
         const staging = `${release}.partial.${process.pid}.${Date.now()}`
-        await fsp.rm(staging, { recursive: true, force: true })
-        for (const { path, bytes } of entries) {
-          const target = join(staging, path)
-          await fsp.mkdir(dirname(target), { recursive: true })
-          await fsp.writeFile(target, bytes)
+        try {
+          for (const { path, bytes } of entries) {
+            const target = join(staging, path)
+            await fsp.mkdir(dirname(target), { recursive: true })
+            await fsp.writeFile(target, bytes)
+          }
+          await fsp.rm(release, { recursive: true, force: true })
+          await fsp.mkdir(dirname(release), { recursive: true })
+          await fsp.rename(staging, release)
+        } finally {
+          // A full disk mid-write leaves the staging directory, which held the
+          // space the next publish needs (`FJS-3887`).
+          await fsp.rm(staging, { recursive: true, force: true })
         }
-        await fsp.rm(release, { recursive: true, force: true })
-        await fsp.mkdir(dirname(release), { recursive: true })
-        await fsp.rename(staging, release)
       }
 
       // The release just written is the newest whatever its mtime ties with.

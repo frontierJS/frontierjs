@@ -44,10 +44,13 @@
 // ran says `null` rather than a plausible-looking tag (IDEAS/deploy-plane.md §a).
 //
 // Reliability: jobs are persisted in Caravan's SQLite store before execution.
-// A Basecamp restart resets in-flight jobs to pending — no stuck deploys.
+// A run a restart cut off is replayed by caravan, and the replay finds its
+// release `building` and fails it rather than running half a release again
+// (`FJS-3850`); a release nothing is left running is failed by
+// `sweepStuckReleases` (`FJS-3861`).
 
 import { defineJob }       from '@frontierjs/caravan'
-import { resolveExecutor, isExecutor, PULL_TIMEOUT_MS, BUILD_TIMEOUT_MS, DEPLOY_TIMEOUT_MS } from '../providers/executor.ts'
+import { resolveExecutor, isExecutor, PULL_TIMEOUT_MS, BUILD_TIMEOUT_MS, DEPLOY_TIMEOUT_MS, ACTIVATE_TIMEOUT_MS } from '../providers/executor.ts'
 import type { Executor }    from '../providers/executor.ts'
 import { notifyPeople, workspaceMembers } from '../domain/notification/notify.ts'
 import { runsAsCaller }         from '../domain/job/job-context.ts'
@@ -57,10 +60,10 @@ import { isInline, isGit, inlineFilesFor } from '../domain/release/app-source.ts
 import { siteBranch } from '../domain/site/site-checkout.ts'
 import { releaseSite } from '../domain/site/site-publish.ts'
 import { cloudflareFor } from '../domain/site/site-preview.ts'
-import { SITE_STEP } from '../domain/release/release-record.ts'
+import { SITE_STEP, releaseStatus } from '../domain/release/release-record.ts'
 import { releaseEnv } from '../domain/release/variables.ts'
 import { runtimeOf, routedHosts, routedPaths, routedRedirects, markRunning, type Runtime } from '../domain/release/runtime.ts'
-import { takeAppBackup, destinationFor } from './app-backup-run.job.ts'
+import { takeAppBackup, destinationFor, releaseCopyOf, restoreSourceOf, VOLUME_RESTORE_TIMEOUT_MS } from './app-backup-run.job.ts'
 import type { App }         from '@frontierjs/junction'
 import type { StepStatus } from '#db/schema.d.ts'
 
@@ -186,7 +189,7 @@ function runner(app: App) {
     // One call for the row, its steps and its app — and the refusal. A release
     // this actor may not reach, or one that has gone, throws here rather than
     // being advanced.
-    let opened: { runnable: boolean; status?: string
+    let opened: { runnable: boolean; status?: string; interrupted?: boolean
                   deploy?: DeploymentRow; steps?: StepRow[]; app?: ServiceRow }
     try {
       opened = await deployments.call('startRun', deploymentId) as typeof opened
@@ -196,7 +199,7 @@ function runner(app: App) {
     }
 
     if (!opened.runnable) {
-      log.warn('deployment not in runnable state', { id: deploymentId, status: opened.status })
+      log.warn('deployment not in runnable state', { id: deploymentId, status: opened.status, ...(opened.interrupted ? { interrupted: true } : {}) })
       return
     }
 
@@ -239,6 +242,12 @@ function runner(app: App) {
     // The step a throw belongs to, read by the catch below. Cleared once it
     // lands, so a failure after the last step does not rewrite one that succeeded.
     let current: string | undefined
+    let siteFailed: string | undefined
+
+    // A cancel only writes the row; this is where it stops the run. Asked
+    // before every step, because each one acts on the machine and a release
+    // somebody cancelled must not go on to swap what is serving (`FJS-3848`).
+    const cancelled = async () => (await releaseStatus(app, deploymentId)) === 'cancelled'
 
     try {
       // The digest travels down the steps: whatever /pull reported is what
@@ -246,9 +255,12 @@ function runner(app: App) {
       let digest: string | null = asDigest(deploy.builtImage)
       // The commit the image was built from, which is the site's.
       let commit: string | null = null
-      let siteFailed: string | undefined
 
       for (const s of steps) {
+        if (await cancelled()) {
+          log.info('deployment cancelled — stopping before its next step', { id: deploymentId, step: s.name })
+          return
+        }
         current = s.id
         await step(deploymentId, s.id, 'running')
 
@@ -273,27 +285,89 @@ function runner(app: App) {
         current = undefined
       }
 
-      await deployments.call('finishRun', deploymentId, {
+      const finished = await deployments.call('finishRun', deploymentId, {
         status: 'success',
         startedAt: new Date(startedAt).toISOString(),
-      })
-      // The one write saying WHERE the app now runs — the ingress record's
-      // addresses are read off it (`servingAddresses`), and a placement never
-      // marked is a machine DNS must not send anybody to.
-      await markRunning(app.db, deploy.appId, executor.serverId)
-      await toZones(deploy.appId, deploymentId)
-      // A first release is what makes the volume a replica list skips until
-      // it exists, so the machine is sent its list again.
-      if (service?.replicaDestinationId) await syncReplicasOn(app, [executor.serverId])
-      log.info('deployment succeeded', { id: deploymentId, durationMs: Date.now() - startedAt, ...(siteFailed ? { site: siteFailed } : {}) })
-      await tellThem('DeploySuccess', deploy, service, siteFailed ? { siteFailed } : {})
+      }) as { status?: string }
+      // Cancelled during the last step: the row stays cancelled, and nothing
+      // below may announce it as live.
+      if (finished?.status === 'cancelled') {
+        log.info('deployment cancelled — its last step finished after the cancel', { id: deploymentId })
+        return
+      }
 
     } catch (err: unknown) {
       const msg = (err as Error).message ?? 'unknown error'
-      await failDeploy(deploymentId, startedAt, msg, current)
+      const status = await failDeploy(deploymentId, startedAt, msg, current)
       log.error('deployment failed', { id: deploymentId, error: msg })
-      await tellThem('DeployFailed', deploy, service, { reason: msg })
+      if (status !== 'cancelled') await afterward('notify', () => tellThem('DeployFailed', deploy, service, { reason: msg }))
+      return
     }
+
+    // After the release is recorded a success, and outside the try that fails
+    // it: each of these is its own fact, and one throwing used to rewrite a
+    // release that shipped as `failed` (`FJS-3852`).
+    //
+    // The one write saying WHERE the app now runs — the ingress record's
+    // addresses are read off it (`servingAddresses`), and a placement never
+    // marked is a machine DNS must not send anybody to.
+    await afterward('mark running', () => markRunning(app.db, deploy.appId, executor.serverId))
+    await toZones(deploy.appId, deploymentId)
+    // A first release is what makes the volume a replica list skips until
+    // it exists, so the machine is sent its list again.
+    if (service?.replicaDestinationId) await afterward('sync replicas', () => syncReplicasOn(app, [executor.serverId]))
+    log.info('deployment succeeded', { id: deploymentId, durationMs: Date.now() - startedAt, ...(siteFailed ? { site: siteFailed } : {}) })
+    await afterward('notify', () => tellThem('DeploySuccess', deploy, service, siteFailed ? { siteFailed } : {}))
+
+    async function afterward(what: string, fn: () => Promise<unknown>): Promise<void> {
+      try { await fn() } catch (err) {
+        log.warn(`release recorded, but ${what} failed`, { id: deploymentId, error: (err as Error).message })
+      }
+    }
+  }
+
+  // The `/deploy` body a release starts with. One builder for the release's own
+  // Start step and for the put-back of the release a failed restore stopped, so
+  // the two cannot start a container two ways.
+  async function startBody(
+    rel: DeploymentRow, config: Record<string, unknown>, service: ServiceRow,
+    image: string, digest: string | null,
+  ): Promise<Record<string, unknown>> {
+    return {
+      deployment_id: rel.id,
+      // The container is found by the APP, and this line is what makes that
+      // true: outpost falls back to the deployment id when it is absent, so
+      // every release started a container for the deployment while `/stop`,
+      // `/health-check` and `/logs` — which all send `app_id` — asked about
+      // the app's. The health check then failed on every release, the next
+      // deploy stopped nothing and the containers accumulated one per
+      // release (`FJS-920`). The slugs only spell its name for `docker ps`.
+      app_id:        rel.appId,
+      ...await containerSlugs(service),
+      image,
+      digest,
+      // The snapshot, not the app. `rollback` exists to put back the config
+      // that shipped with those bytes, and reading the live row here undid
+      // exactly that — the old image with the new config is neither release.
+      // Secrets become values here and nowhere earlier: the snapshot keeps
+      // their ids, so a release record never holds the credential it shipped with.
+      config: {
+        ...runtimeFor(config, service),
+        env: await releaseEnv(app.db as never, config as never),
+      },
+      source:        config.source ?? service.source ?? {},
+      hosts:         await routedHosts(app.db, rel.appId),
+      paths:         await routedPaths(app.db, rel.appId),
+      redirects:     await routedRedirects(app.db, rel.appId),
+      // The live App, as the hosts are: a rollback puts back old bytes, never
+      // an exposure somebody has since withdrawn. The machine's firewall
+      // drops a forwarded port this does not declare (FJS-D930).
+      exposes_port:  service.hasExposedPort === true,
+    }
+  }
+
+  function imageOf(rel: DeploymentRow, source: unknown, service: ServiceRow): string {
+    return rel.toImage ?? (isGit(source) ? `fjs-${rel.appId}:${rel.id}`.toLowerCase() : service.name)
   }
 
   // One step. Answers what to write on the row — the output a person reads,
@@ -325,8 +399,7 @@ function runner(app: App) {
     // registry still needs a name to pull by, so both travel.
     // A git release is named for itself: two builds of one app share nothing
     // but the repository, and a tag both write is a tag the older one loses.
-    const image = deploy.toImage
-      ?? (isGit(source) ? `fjs-${deploy.appId}:${deploy.id}`.toLowerCase() : service.name)
+    const image = imageOf(deploy, source, service)
 
     // Said on every step of a stubbed release rather than once on the row: a
     // step list where each line reads 'no /deploy was issued' cannot be mistaken
@@ -390,38 +463,65 @@ function runner(app: App) {
       }
       return { output: row.error ? `${row.location} — ${row.error}` : `copied to ${row.location}`, digest }
 
+    } else if (name.includes('stop')) {
+      // A rollback that restores the volume: Outpost refuses a data directory
+      // a container holds, so the app stops here and `Start container` brings
+      // it back (`FJS-D1796`).
+      const reply = await executor.call('/stop', { app_id: deploy.appId })
+      if (reply.error) throw new Error(`Stop failed: ${reply.error.message}`)
+      return { output: note(reply) ?? 'the app is stopped so its volume can be put back', digest }
+
+    } else if (name.includes('restore')) {
+      // The copy the release this one undoes took before its own swap, found
+      // by that release (`releaseCopyOf`), and put back over the volume.
+      //
+      // The app was stopped for this. A failure BEFORE the data directory was
+      // written leaves the volume as it was, so the release that was live starts
+      // again; one after it began leaves the volume half-restored, and starting
+      // anything on it would run a release against files neither of them wrote.
+      const undone = deploy.previousDeploymentId
+      const copy = undone ? await releaseCopyOf(app, deploy.appId, undone) : null
+      if (!copy) return restoreFailed('the copy taken before the release this undoes is gone', false)
+      let reply
+      try {
+        const from = await restoreSourceOf(app, deploy.appId, copy.id)
+        reply = await executor.call('/volume/restore', { app_id: deploy.appId, ...from, overwrite: true },
+          { timeoutMs: VOLUME_RESTORE_TIMEOUT_MS })
+      } catch (err) {
+        return restoreFailed((err as Error).message, false)
+      }
+      if (reply.error) return restoreFailed(reply.error.message, reply.error.volumeTouched === true)
+      return { output: note(reply) ?? `put back the copy taken ${copy.finishedAt ?? copy.createdAt} (${copy.location})`, digest }
+
+      async function restoreFailed(why: string, touched: boolean): Promise<never> {
+        if (touched)
+          throw new Error(`Restore volume failed partway: ${why}. The volume is in an unknown state and the app stays stopped — put back the copy by hand: ${copy ? `${copy.location} (taken ${copy.finishedAt ?? copy.createdAt})` : 'the one taken before the release this undoes'}`)
+        const back = await startLive()
+        throw new Error(`Restore volume failed: ${why}. The volume is unchanged and ${back}`)
+      }
+
+      // What was live is the release this rollback undoes, started from its own
+      // record: its image, its digest and the config it shipped with.
+      async function startLive(): Promise<string> {
+        try {
+          const live = undone
+            ? await (app.db as any).asSystem().deployment.findFirst({ where: { id: undone } }) : null
+          if (!live) return 'the app is stopped: the release that was live has no record to start it from'
+          const liveConfig = (live.configSnapshot ?? {}) as Record<string, unknown>
+          const liveSource = liveConfig.source ?? service.source ?? {}
+          const started = await executor.call('/deploy', await startBody(
+            live, liveConfig, service, imageOf(live, liveSource, service), asDigest(live.builtImage)),
+            { timeoutMs: DEPLOY_TIMEOUT_MS })
+          if (started.error) return `starting it again failed (${started.error.message}) — the app is stopped`
+          return 'the previous release is running again'
+        } catch (err) {
+          return `starting the previous release again failed (${(err as Error).message}) — the app is stopped`
+        }
+      }
+
     } else if (name.includes('start') || name.includes('deploy')) {
-      const reply = await executor.call('/deploy', {
-        deployment_id: deploy.id,
-        // The container is found by the APP, and this line is what makes that
-        // true: outpost falls back to the deployment id when it is absent, so
-        // every release started a container for the deployment while `/stop`,
-        // `/health-check` and `/logs` — which all send `app_id` — asked about
-        // the app's. The health check then failed on every release, the next
-        // deploy stopped nothing and the containers accumulated one per
-        // release (`FJS-920`). The slugs only spell its name for `docker ps`.
-        app_id:        deploy.appId,
-        ...await containerSlugs(service),
-        image,
-        digest,
-        // The snapshot, not the app. `rollback` exists to put back the config
-        // that shipped with those bytes, and reading the live row here undid
-        // exactly that — the old image with the new config is neither release.
-        // Secrets become values here and nowhere earlier: the snapshot keeps
-        // their ids, so a release record never holds the credential it shipped with.
-        config: {
-          ...runtimeFor(ctx.config, service),
-          env: await releaseEnv(app.db as never, ctx.config as never),
-        },
-        source:        ctx.config.source ?? service.source ?? {},
-        hosts:         await routedHosts(app.db, deploy.appId),
-        paths:         await routedPaths(app.db, deploy.appId),
-        redirects:     await routedRedirects(app.db, deploy.appId),
-        // The live App, as the hosts are: a rollback puts back old bytes, never
-        // an exposure somebody has since withdrawn. The machine's firewall
-        // drops a forwarded port this does not declare (FJS-D930).
-        exposes_port:  service.hasExposedPort === true,
-      }, { timeoutMs: DEPLOY_TIMEOUT_MS })
+      const reply = await executor.call('/deploy', await startBody(deploy, ctx.config, service, image, digest),
+        { timeoutMs: DEPLOY_TIMEOUT_MS })
       if (reply.error) throw new Error(`Deploy failed: ${reply.error.message}`)
       return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest }
 
@@ -516,7 +616,7 @@ function runner(app: App) {
         hosts:         await routedHosts(app.db, deploy.appId),
         paths:         await routedPaths(app.db, deploy.appId),
         redirects:     await routedRedirects(app.db, deploy.appId),
-      })
+      }, { timeoutMs: ACTIVATE_TIMEOUT_MS })
       if (reply.error) throw new Error(`Activate failed: ${reply.error.message}`)
 
       // The address the MACHINE says it is serving at, written into the step
@@ -602,10 +702,11 @@ function runner(app: App) {
   // The release, the steps it left behind, the app's status and the event —
   // one call, because they are one fact and four writes that used to be able
   // to half-happen.
-  async function failDeploy(id: string, startedAt: number, error: string, stepId?: string): Promise<void> {
-    await deployments.call('finishRun', id, {
+  async function failDeploy(id: string, startedAt: number, error: string, stepId?: string): Promise<string | undefined> {
+    const out = await deployments.call('finishRun', id, {
       status: 'failed', error, stepId, startedAt: new Date(startedAt).toISOString(),
-    })
+    }) as { status?: string }
+    return out?.status
   }
 
   return { runDeployment }

@@ -271,11 +271,18 @@ try {
   const after = await edge('records', { accountId: secret?.id, zoneId: 'zone-shop' })
   check('…and no drift is left', !(after.body?.stale ?? []).some(s => s.appId === app.id), JSON.stringify(after.body?.stale))
 
-  // ── The first machine comes back with no release: the record takes it again ──
+  // ── The first machine comes back with no release: it still runs the old one ──
+  // The release went to the second machine, so the first is serving the version
+  // before it and stays out of the record until a release lands there (`FJS-3851`).
   await call(`/servers/${one.id}`, { serviceMethod: 'undrain', body: {} })
-  const both = await until(async () => (await aAt()).length === 2, 15_000)
-  check('undraining the first machine puts it back in the record, with no release and nobody pressing sync', !!both,
-    JSON.stringify(await aAt()))
+  await sleep(1500)
+  const onlyTwo = await aAt()
+  check('undraining the first machine leaves it out of the record — it never got the release',
+    onlyTwo.length === 1 && onlyTwo[0].content === two.ipAddress, JSON.stringify(onlyTwo))
+  const back = await released(app.id)
+  check('…and the next release lands on it', back?.status === 'success', JSON.stringify(back?.error ?? back))
+  const rejoined = await until(async () => { const a = await aAt(); return a.length === 1 && a[0].content === one.ipAddress }, 15_000)
+  check('…which moves the record to it, and the machine it left drops out', !!rejoined, JSON.stringify(await aAt()))
 
   // ── Somebody else's record at the name: refused, left, named ──
   const before = await zone('zone-shop')
@@ -299,7 +306,7 @@ try {
   check('…and its CNAME leaves Cloudflare', cleared, JSON.stringify(await cnameAt()))
   const left = await edge('records', { accountId: secret?.id, zoneId: 'zone-example' })
   check('…leaving no orphan behind', !(left.body?.orphans ?? []).some(r => r.name === hostname), JSON.stringify(left.body?.orphans))
-  check('…and the app\'s ingress record stays, for its other hostnames', (await aAt()).length === 2)
+  check('…and the app\'s ingress record stays, for its other hostnames', (await aAt()).length === 1, JSON.stringify(await aAt()))
 } catch (err) {
   failed++
   console.log(`  FAIL  ${err.message}`)

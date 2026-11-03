@@ -17,6 +17,9 @@
 //                     every write would otherwise land on the footer's own line.
 //                     console is patched apart because Bun's writes to the fd
 //                     and never reaches process.stdout.write.
+//   pin(render)       one line on the terminal's last row, the rows above it a
+//                     scroll region. live() cannot hold a line under a child on
+//                     this terminal: the child writes to the fd, past the patch.
 //   aside(fn)         the screen for somebody else — $EDITOR. Raw mode off,
 //                     this process's output held until fn returns, and Ctrl-C
 //                     left to the child, since the terminal sends it to both.
@@ -148,6 +151,7 @@ export function createTty({
   const hooks  = []
   let restored = false
   let closing  = null
+  let unpin    = null  // pin()'s stop, so an exit hands the whole screen back
 
   // ─── the footer ─────────────────────────────────────────────────────────────
 
@@ -420,6 +424,53 @@ export function createTty({
       }
     },
 
+    /**
+     * A line pinned to the terminal's last row from `render()`, a string or parts
+     * as live() takes them; everything printed scrolls in the rows above it.
+     * Repainted every `every` ms, so a clock in it ticks and a child that clears
+     * the screen wipes it for a second at most. A full-screen aside paints over
+     * it: stop() it first. Nothing without a terminal, or one under four rows.
+     */
+    pin(fn, { every = 1000, sep: joiner = ' · ' } = {}) {
+      if (!interactive || restored || unpin || (output.rows || 0) < 4) return { update() {}, stop() {} }
+      enlist()
+      let rows = output.rows
+      // Setting a scroll region homes the cursor, hence the save and restore round
+      // it. A cursor on the last row would sit outside the region, where output
+      // overwrites the bar instead of scrolling: one index down (a scroll at the
+      // foot) and one row up moves it in and keeps its column.
+      const region = () => outWrite(`\x1b7\x1b[r\x1b8\x1bD\x1b[1A\x1b7\x1b[1;${rows - 1}r\x1b8`)
+      const clear  = () => outWrite(`\x1b7\x1b[${rows};1H\x1b[2K\x1b8`)
+      const paint  = () => {
+        const r = fn()
+        const text = r == null || r === false ? '' : Array.isArray(r) ? fit(r, joiner, cols()) : truncate(r, cols())
+        outWrite(`\x1b7\x1b[${rows};1H\x1b[2K${text}\x1b8`)
+      }
+      // A terminal drops the region on a resize, and its reflow has put the bar
+      // at the foot already, so the old last row now holds output: never clear it.
+      const resize = () => {
+        rows = output.rows
+        if (rows < 4) return stop()
+        region()
+        paint()
+      }
+      const stop = () => {
+        if (unpin !== stop) return
+        unpin = null
+        clearInterval(timer)
+        output.off('resize', resize)
+        outWrite('\x1b7\x1b[r\x1b8')
+        clear()
+      }
+      region()
+      paint()
+      const timer = setInterval(paint, every)
+      timer.unref?.()
+      output.on('resize', resize)
+      unpin = stop
+      return { update: () => { if (unpin === stop) paint() }, stop }
+    },
+
     async aside(fn) {
       if (!interactive) return fn()
       enlist()
@@ -452,6 +503,7 @@ export function createTty({
     /** The terminal as it was found. Synchronous — the `exit` event allows nothing else. */
     restore() {
       if (restored) return
+      unpin?.()
       restored = true
       render = null
       waiting.length = 0

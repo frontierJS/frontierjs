@@ -544,6 +544,31 @@
         "@frontierjs/mesa": "^0.1.0",
       },
     },
+    "packages/workbench": {
+      "name": "@frontierjs/workbench",
+      "version": "0.1.0",
+      "dependencies": {
+        "@frontierjs/caravan": "workspace:*",
+        "@frontierjs/conduit": "workspace:*",
+        "@frontierjs/css": "workspace:*",
+        "@frontierjs/junction": "workspace:*",
+        "@frontierjs/litestone": "workspace:*",
+        "@frontierjs/mesa": "workspace:*",
+        "@frontierjs/notifications": "workspace:*",
+        "@frontierjs/sierra": "workspace:*",
+        "@frontierjs/toolbelt": "workspace:*",
+        "@frontierjs/ui": "workspace:*",
+        "@modelcontextprotocol/client": "^2.3.1",
+        "@xterm/addon-fit": "0.11.0",
+        "@xterm/xterm": "6.0.0",
+      },
+      "devDependencies": {
+        "@frontierjs/cli": "workspace:*",
+        "@frontierjs/testing": "workspace:*",
+        "bun-types": "^1.3.14",
+        "vite": "^8.3.2",
+      },
+    },
     "website": {
       "name": "@frontierjs/website",
       "version": "0.1.0",
@@ -777,6 +802,8 @@
     "@frontierjs/ui": ["@frontierjs/ui@workspace:packages/ui"],
 
     "@frontierjs/website": ["@frontierjs/website@workspace:website"],
+
+    "@frontierjs/workbench": ["@frontierjs/workbench@workspace:packages/workbench"],
 
     "@img/colour": ["@img/colour@1.1.0", "", {}, "sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ=="],
 

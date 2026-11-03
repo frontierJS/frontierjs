@@ -40,6 +40,11 @@ machines.**
 account in the picker reaches someone else's credential (`PROVISIONING.md` § Four
 things the drive found), so choose the account by name.
 
+**Basecamp's own distribution is `FJS-D1526`**: a published image pulled by
+digest, through the same `fli deploy` mode build-once uses. Not built; until it
+is, ring 0 runs from a framework checkout, and an npm-installed `fli` cannot run
+`basecamp:create`.
+
 ## The target
 
 ```
@@ -164,10 +169,6 @@ a restore drill with no hand SSH.
   - **B** — flip only when the zone is already Full (strict), and otherwise stay DNS-only and say why. Never changes the zone; needs *Zone Settings* read.
   - **C** — set the zone to Full (strict), as `FJS-D1380` is written.
   - **Recommend A** — strict for exactly the host whose certificate was just proven, and nothing else in the zone moves. Confidence 3.
-- Basecamp's own distribution is `FJS-D1526`: a published image pulled by
-  digest, through the same `fli deploy` mode build-once uses. Not built; until
-  it is, ring 0 runs from a framework checkout, and an npm-installed `fli`
-  cannot run `basecamp:create`.
 
 ## See also
 

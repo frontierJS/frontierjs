@@ -1,0 +1,67 @@
+<script module>
+  // src/components/AtlasRings.mesa — the project side of `fli ws:atlas
+  // --as=rings` as one drawing: five concentric bands, the root documents at
+  // the center and the ideas outermost, each band's count on it.
+  //
+  // A band takes its color from a tone class, never a color of its own
+  // (Invariant 13): `--tone-ink` is derived per element from the class's
+  // `--bg-mix`, so it is set on the circle itself. A band is a mouse target
+  // only; the legend beside it is the keyboard's way to the same tab.
+  const CX = 100, CY = 100, HOLE = 8, GAP = 1.2
+</script>
+
+<script>
+  export let rings    = []          // [{ id, name, count, tone, tab }], innermost first
+  export let active   = ''          // the ring id whose tab is open
+  export let onselect = () => {}    // (tab) => void
+
+  const band   = () => (97 - HOLE - GAP * rings.length) / Math.max(rings.length, 1)
+  const radius = (i) => HOLE + GAP * (i + 1) + band() * (i + 0.5)
+</script>
+
+<div class="atlas-rings">
+  <svg class="atlas-rings-map" viewBox="0 0 200 200" role="img"
+       aria-label={rings.map(r => `${r.name}: ${r.count.toLocaleString()}`).join(', ')}>
+    {#each rings as r, i (r.id)}
+      <circle class="atlas-ring-band {r.tone}" data-ring={r.id} data-on={active === r.id}
+              cx={CX} cy={CY} r={radius(i).toFixed(2)}
+              stroke-width={(active === r.id ? band() : band() - 3).toFixed(2)}
+              onclick={() => onselect(r.tab)}>
+        <title>{r.name}: {r.count.toLocaleString()}</title>
+      </circle>
+      <text class="atlas-ring-count" data-on={active === r.id} x={CX} y={(CY - radius(i) + 2).toFixed(2)}
+            text-anchor="middle" font-size="5">{r.count.toLocaleString()}</text>
+    {/each}
+  </svg>
+
+  <ol class="atlas-rings-legend stack gap-3xs" id="atlas-legend">
+    {#each rings as r (r.id)}
+      <li>
+        <button type="button" class="atlas-rings-key" data-ring={r.id} aria-pressed={active === r.id}
+                onclick={() => onselect(r.tab)}>
+          <span class="atlas-rings-dot {r.tone}"></span>
+          <span class="text-sm">{r.name}</span>
+          <span class="text-xs text-muted">{r.count.toLocaleString()}</span>
+        </button>
+      </li>
+    {/each}
+  </ol>
+</div>
+
+<style>
+  .atlas-rings { display: flex; flex-wrap: wrap; gap: var(--space-md); align-items: center; }
+  .atlas-rings-map { inline-size: min(100%, var(--grid-min, 16rem)); block-size: auto; flex: none; }
+  .atlas-ring-band { fill: none; stroke: var(--tone-ink); stroke-opacity: 0.45; cursor: pointer; }
+  .atlas-ring-band:hover { stroke-opacity: 0.75; }
+  .atlas-ring-band[data-on='true'] { stroke-opacity: 1; }
+  .atlas-ring-count { fill: var(--ink); pointer-events: none; }
+  .atlas-ring-count[data-on='true'] { fill: var(--surface); font-weight: 600; }
+  .atlas-rings-legend { list-style: none; margin: 0; padding: 0; }
+  .atlas-rings-key {
+    display: grid; grid-template-columns: auto 1fr auto; gap: var(--space-2xs); align-items: center;
+    inline-size: 100%; min-inline-size: var(--tile-min, 12rem); padding: var(--space-3xs) var(--space-xs);
+    border: 0; border-radius: var(--card-radius); background: none; font: inherit; color: inherit; cursor: pointer; text-align: start;
+  }
+  .atlas-rings-key[aria-pressed='true'] { background: var(--tint-surface); font-weight: 600; }
+  .atlas-rings-dot { inline-size: var(--space-xs); block-size: var(--space-xs); border-radius: 50%; background: var(--tone-ink); }
+</style>

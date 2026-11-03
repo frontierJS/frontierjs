@@ -18,6 +18,8 @@ import { basecampGateLevel }       from '../src/core/gate.ts'
 import { buildBasecampApp }        from '../src/app.ts'
 import { grantsFor }               from '../src/core/capabilities.ts'
 import { sweepMonitors }           from '../src/jobs/monitor-sweep.job.ts'
+import { pruneMonitoring }         from '../src/jobs/retention.job.ts'
+import { isSweepFresh, pingDeadman, SWEEP_OVERDUE_MS } from '../src/domain/monitor/sweep-heartbeat.ts'
 
 const SECOND = 1_000
 // Far in the future, and every fixture is due AT it: the test app boots caravan
@@ -110,6 +112,8 @@ describe('the monitor sweep', () => {
     expect(ev[0].fromStatus).toBe('pending')
     expect(ev[0].toStatus).toBe('down')
     expect(ev[0].message).toBe('Request failed with status code 502')
+    // The move owed its page in the same write and the page was paid (FJS-3858).
+    expect(ev[0].noticeOwedAt).toBeNull()
 
     // The pair: still failing is not a second page.
     await sweep({ at: T0 + 180 * SECOND, monitorId: m.id })
@@ -128,6 +132,30 @@ describe('the monitor sweep', () => {
     expect(r.failStreak).toBe(0)
     expect(r.lastLatencyMs).toBeGreaterThanOrEqual(0)
     expect(await told()).toBe(before + 2)
+  })
+
+  test('a page a crash left owed is re-driven by the next sweep — paired with one inside the grace', async () => {
+    // A crash between the move and the send leaves the monitor already `down`,
+    // so no sweep would move it again; the event row owing is what is left.
+    const m = await monitor({ status: 'pending', nextCheckAt: new Date(T0 + 3_600 * SECOND).toISOString() })
+    const owed = await sys().monitorEvent.create({ data: {
+      monitorId: m.id, at: new Date(T0).toISOString(), fromStatus: 'up', toStatus: 'down',
+      message: 'left owed', noticeOwedAt: new Date(T0).toISOString() } })
+    const fresh = await sys().monitorEvent.create({ data: {
+      monitorId: m.id, at: new Date(T0 + 299 * SECOND).toISOString(), fromStatus: 'up', toStatus: 'down',
+      message: 'still in flight', noticeOwedAt: new Date(T0 + 299 * SECOND).toISOString() } })
+    const queued: any[] = []
+    const jobs = (env.app as any).jobs
+    const dispatch = jobs.dispatch
+    jobs.dispatch = async (name: string, data: any, o: any) => { queued.push({ name, data, o }) }
+    try { await sweep({ at: T0 + 300 * SECOND }) }
+    finally { jobs.dispatch = dispatch }
+
+    const mine = queued.filter(q => q.data.eventId === owed.id || q.data.eventId === fresh.id)
+    expect(mine).toHaveLength(1)
+    expect(mine[0].name).toBe('notify:deliver')
+    expect(mine[0].data).toEqual({ owed: 'monitor', eventId: owed.id })
+    expect(mine[0].o.unique).toBe(`notice:monitor:${owed.id}`)
   })
 
   test('a monitor that is not due, or is paused, is not probed', async () => {
@@ -180,6 +208,42 @@ describe('the monitor sweep', () => {
     expect((await row(dead.id)).status).toBe('down')
     // The monitor after the broken ones still got its check.
     expect((await row(fine.id)).status).toBe('up')
+  })
+
+  test('when Basecamp\'s own network fails its canary, a failed request moves nothing', async () => {
+    const dead = await monitor({ url: 'http://127.0.0.1:1/', retries: 0 })
+    const bad  = await monitor({ retries: 0 })
+    answer = 502
+
+    const out = await sweep({ at: T0, canary: async () => false })
+
+    // No answer at all is the case the canary explains away; a 502 is an answer.
+    expect(out.suppressed).toBe(1)
+    const after = await row(dead.id)
+    expect([after.status, after.failStreak, after.lastCheckedAt]).toEqual(['pending', 0, null])
+    expect(after.nextCheckAt).toBe(new Date(T0).toISOString())
+    expect(await sys().monitorCheck.count({ where: { monitorId: dead.id } })).toBe(0)
+    expect((await row(bad.id)).status).toBe('down')
+    answer = 200
+
+    // The same failure with a working canary is the site's.
+    const again = await sweep({ at: T0, canary: async () => true })
+    expect(again.suppressed).toBe(0)
+    expect((await row(dead.id)).status).toBe('down')
+  })
+
+  test('the canary is asked once per sweep, and not at all when every request answered', async () => {
+    await monitor({ url: 'http://127.0.0.1:1/', retries: 0 })
+    await monitor({ url: 'http://127.0.0.1:2/', retries: 0 })
+    let asked = 0
+    await sweep({ at: T0 + 1_000, canary: async () => { asked++; return true } })
+    expect(asked).toBe(1)
+
+    const fine = await monitor({ retries: 0 })
+    answer = 200
+    asked = 0
+    await sweep({ at: T0 + 1_000, monitorId: fine.id, canary: async () => { asked++; return true } })
+    expect(asked).toBe(0)
   })
 
   test('upside-down: a URL that must not answer is up while it fails', async () => {
@@ -246,5 +310,71 @@ describe('the monitor sweep grades every destination', () => {
     expect((await probeOf(`http://localhost:${target.port}/`)).message).toMatch(/resolves to a private address/)
     expect((await probeOf('http://169.254.169.254/latest/meta-data/')).message).toBe('169.254.169.254 is a private address')
     expect(hits).toBe(0)
+  })
+})
+
+describe('the sweep heartbeat', () => {
+  test('/health reads a sweep that has stopped, and a fresh boot is not one', () => {
+    const now = 10_000_000
+    expect(isSweepFresh(now, now - 60_000, null)).toBe(true)
+    expect(isSweepFresh(now, now - SWEEP_OVERDUE_MS - 1, null)).toBe(false)
+    expect(isSweepFresh(now, 0, now - 120_000)).toBe(true)
+    expect(isSweepFresh(now, 0, now - SWEEP_OVERDUE_MS - 1)).toBe(false)
+  })
+
+  test('the dead-man ping is best-effort: no url sends nothing, a throw is swallowed', async () => {
+    const seen: string[] = []
+    const ok   = (async (url: string) => { seen.push(url); return new Response('ok') }) as unknown as typeof fetch
+    expect(await pingDeadman(undefined, ok)).toBe(false)
+    expect(seen).toEqual([])
+    expect(await pingDeadman('https://ping.test/abc', ok)).toBe(true)
+    expect(seen).toEqual(['https://ping.test/abc'])
+    const boom = (async () => { throw new Error('refused') }) as unknown as typeof fetch
+    expect(await pingDeadman('https://ping.test/abc', boom)).toBe(false)
+  })
+})
+
+describe('retention of monitoring rows', () => {
+  test('old checks are rolled up into a day, then deleted; events and read notices go on their own clock', async () => {
+    // Data only: `buildBasecampApp` applies db/migrations itself, which holds no
+    // MonitorUptimeDay until the migration for this schema is landed.
+    const env = await createTestEnv({
+      schema:        join(import.meta.dir, '..', '..', 'db', 'schema.lite'),
+      encryptionKey: '0'.repeat(64),
+      plugins:       [new GatePlugin({ getLevel: basecampGateLevel })],
+    })
+    const sys  = env.system as any
+    const uniq = () => Math.random().toString(36).slice(2, 8)
+    const acct = await sys.account.create({ data: { slug: `a-${uniq()}`, displayName: 'A' } })
+    const ws   = await sys.workspace.create({ data: { accountId: acct.id, name: 'F', slug: `f-${uniq()}` } })
+    const mon  = await sys.monitor.create({ data: { workspaceId: ws.id, name: 'm', url: 'http://x.test/' } })
+    const now  = Date.parse('2099-06-30T12:00:00.000Z')
+    const at   = (daysAgo: number, hour = 6) => new Date(Date.UTC(2099, 5, 30 - daysAgo, hour)).toISOString()
+    const check = (when: string, isOk: boolean, latencyMs: number | null) =>
+      sys.monitorCheck.create({ data: { monitorId: mon.id, at: when, isOk, latencyMs, message: 'x' } })
+
+    // 40 days ago: three checks, one failed. 2 days ago: inside the window.
+    await check(at(40, 1), true, 100)
+    await check(at(40, 2), true, 300)
+    await check(at(40, 3), false, null)
+    await check(at(2), true, 50)
+    await sys.monitorEvent.create({ data: { monitorId: mon.id, at: at(100), fromStatus: 'up', toStatus: 'down', message: 'old' } })
+    await sys.monitorEvent.create({ data: { monitorId: mon.id, at: at(10), fromStatus: 'down', toStatus: 'up', message: 'new' } })
+
+    const removed = await pruneMonitoring(sys, now)
+    expect(removed.monitorCheck).toBe(3)
+    expect(await sys.monitorCheck.count({ where: { monitorId: mon.id } })).toBe(1)
+    const [day] = await sys.monitorUptimeDay.findMany({ where: { monitorId: mon.id } })
+    expect(day).toMatchObject({ checks: 3, okChecks: 2, avgLatencyMs: 200, maxLatencyMs: 300 })
+    expect(removed.monitorEvent).toBe(1)
+    expect(await sys.monitorEvent.count({ where: { monitorId: mon.id } })).toBe(1)
+
+    // A second pass finds nothing to do and does not double the day.
+    await pruneMonitoring(sys, now)
+    expect((await sys.monitorUptimeDay.findMany({ where: { monitorId: mon.id } }))[0].checks).toBe(3)
+
+    // The install's own setting wins over the default.
+    await sys.hubConfig.create({ data: { retentionEventDays: 5 } })
+    expect((await pruneMonitoring(sys, now)).monitorEvent).toBe(1)
   })
 })

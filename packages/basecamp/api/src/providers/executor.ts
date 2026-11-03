@@ -34,13 +34,23 @@ import type { App }         from '@frontierjs/junction'
 export const PULL_TIMEOUT_MS   = 15 * 60_000 + 30_000
 export const BUILD_TIMEOUT_MS  = 30 * 60_000 + 30_000
 export const DEPLOY_TIMEOUT_MS = 32 * 60_000
+/**
+ * `/static/activate` moves the Caddy route, then swaps a symlink. The route is
+ * up to eight admin calls, each of which Outpost bounds at 10 s, so conduit's
+ * own 10 s default read a slow Caddy as a failed activation while the swap was
+ * still to come (`FJS-3883`).
+ */
+export const ACTIVATE_TIMEOUT_MS = 2 * 60_000
 
 /** Set to '1' to allow the stub. Refused under NODE_ENV=production regardless. */
 const STUB_ENV = 'BASECAMP_STUB_OUTPOST'
 
 export interface ExecutorReply {
   data?:  Record<string, unknown>
-  error?: { message: string }
+  /** `volumeTouched` is the machine saying a failed volume restore got as far as
+   *  writing the data directory. Absent means it did not say so, not that the
+   *  directory is safe -- only a restore reply carries it. */
+  error?: { message: string; volumeTouched?: boolean }
 }
 
 export interface Executor {
@@ -117,7 +127,10 @@ function outpostExecutor(app: App, serverId: string, target: string): Executor {
         ...(opts?.timeoutMs ? { timeout_ms: opts.timeoutMs } : {}),
       })
       if (!sent.error) return { data: sent.data as Record<string, unknown> }
-      return { error: { message: machineSaid(sent.error.raw) ?? sent.error.message } }
+      return { error: {
+        message: machineSaid(sent.error.raw) ?? sent.error.message,
+        ...(machineFlag(sent.error.raw, 'volume_touched') ? { volumeTouched: true } : {}),
+      } }
     },
     async *stream(path, body, { signal }) {
       try {
@@ -148,6 +161,12 @@ export function machineSaid(raw: unknown): string | null {
   } catch {
     return null
   }
+}
+
+/** A boolean the machine put beside its sentence, `true` only when it said so. */
+export function machineFlag(raw: unknown, key: string): boolean {
+  if (typeof raw !== 'string' || !raw) return false
+  try { return JSON.parse(raw)?.[key] === true } catch { return false }
 }
 
 /** The outpost on this one machine, when it holds a pinned target. */

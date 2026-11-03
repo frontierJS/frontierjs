@@ -124,7 +124,7 @@ SSH sentence is struck in place in `IDEAS/deploy-plane.md`.
 
 **D1 — a compute connector is a conduit target, and `providers/index.ts` does not
 grow.** `example/api/src/providers/stripe/index.ts` (306 lines) is the worked
-example and `docs/adapters.md` already rules it: a connector is a declared target
+example and `docs/providers.md` already rules it: a connector is a declared target
 with a credential **ref**, never a `fetch()` in a service. A vendor lives at
 `api/src/providers/digitalocean/` — `index.ts` for the descriptor and the
 translation, `sink.ts` for the local stand-in.
@@ -141,7 +141,7 @@ the column exists and holds nothing today.
 **D3 — the catalog is read, never listed here.** One service method,
 `servers.catalog`, answering regions, sizes and images for an account, straight off
 the vendor. Money in it crosses as minor units plus a currency, which is
-`docs/adapters.md`'s rule and `@frontierjs/toolbelt/units`'s.
+`docs/providers.md`'s rule and `@frontierjs/toolbelt/units`'s.
 
 **D4 — a machine gets its credential by enrolling, not by being told one.**
 `user_data` carries a **single-use, short-lived enrollment token**, never the fleet

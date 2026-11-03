@@ -130,9 +130,39 @@ export function loadSchema(schemaPath) {
     console.error()
     process.exit(1)
   }
-  for (const w of result.warnings ?? [])
-    console.warn(`  ${yellow('⚠')}  ${w}`)
+  for (const w of result.warnings ?? []) console.warn(formatWarning(w))
   return result
+}
+
+// A parser warning is one string, and the tenancy ones name every model they
+// cover: a terminal hard-wraps a line of 1,500 characters at column 0, under
+// the icon and under nothing. Shape is `lead — list. advice`, so the lead, the
+// list and the advice each get a block, wrapped to the terminal with a hanging
+// indent. A warning without that shape is only wrapped.
+export function formatWarning(w, columns = process.stderr.columns || 100) {
+  const width = Math.min(columns, 110) - 5
+  const wrap  = (text, indent) => {
+    const lines = []
+    let line = ''
+    for (const word of text.split(/\s+/)) {
+      if (line && line.length + 1 + word.length > width - indent.length) { lines.push(line); line = word }
+      else line = line ? `${line} ${word}` : word
+    }
+    if (line) lines.push(line)
+    return lines.map(l => indent + l).join('\n')
+  }
+  const split = w.indexOf(' — ')
+  if (split < 0) return `  ${yellow('⚠')}  ${wrap(w, '').trimStart().replace(/\n/g, '\n     ')}`
+  const lead = w.slice(0, split)
+  const rest = w.slice(split + 3)
+  const stop = rest.search(/\.(\s|$)/)
+  const list = stop < 0 ? rest : rest.slice(0, stop)
+  const tail = stop < 0 ? '' : rest.slice(stop + 1).trim()
+  return [
+    `  ${yellow('⚠')}  ${wrap(lead, '').replace(/\n/g, '\n     ')}`,
+    wrap(list, '       '),
+    ...(tail ? [dim(wrap(tail, '     '))] : []),
+  ].join('\n')
 }
 
 // Resolve encryption key from env for CLI commands that open createClient.

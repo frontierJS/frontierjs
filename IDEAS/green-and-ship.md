@@ -50,12 +50,17 @@ This paper is the order between them, and the release at the end.
 
 ## Open questions
 
-- **Q1 — A cli test red only in the full run and green alone: fix the
-  isolation, file it `env:`, or name it in `scripts/ci-allowances.json`?**
+- ~~**Q1 — A cli test red only in the full run and green alone: fix the
+  isolation, file it `env:`, or name it in `scripts/ci-allowances.json`?**~~
+  **Overtaken 2026-11-01 by step 2.3, which applied the recommendation** (no
+  ruling was written): each test was chased to its cause, none allowed.
   **Recommend fix the isolation** — an allowance hides the next one, and
   `env:` is for a cause that lives in the machine, which "passes alone" is not.
-- **Q2 — Ship the 2026-10-31 tags to npm as they stand, or bump fresh under
-  the new gate?** The tags point at `347c0a3e`, which no runner graded green,
+- ~~**Q2 — Ship the 2026-10-31 tags to npm as they stand, or bump fresh under
+  the new gate?**~~ **Overtaken 2026-11-01** (no ruling was written): its premise
+  was wrong (the Phase 4 note, a package with commits since its tag is not
+  bumped while the tag is unshipped), and the tags it asked about were deleted
+  under Q4 (`FJS-D1771`). The tags point at `347c0a3e`, which no runner graded green,
   and `FJS-D1720` with `FJS-D1723` already bar a tag on an ungraded sha, so
   this asks only about the tags that exist.
   **Recommend one run of `ws:pub patch --to npm --to tarballs` after Phase 3**:

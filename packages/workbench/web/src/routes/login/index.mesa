@@ -1,0 +1,58 @@
+---
+title: Sign in
+---
+<script>
+  import { goto, page } from '@frontierjs/sierra/router'
+  import Form   from '@frontierjs/ui/components/forms/Form.mesa'
+  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Alert  from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import { session, signIn } from '../../lib/session.js'
+
+  $: (session.error)
+
+  let key = ''
+  let attempted = false
+
+  // Where to land: a same-origin PATH only -- an open redirect on a sign-in
+  // screen is how a phishing link borrows a real domain.
+  function landing() {
+    const next = page.query?.next
+    return typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') ? next : '/workbench/'
+  }
+
+  async function submit() {
+    attempted = true
+    await signIn(key)
+    goto(landing())
+  }
+
+  // 401 is a wrong key, not a broken app; anything else keeps the server's own
+  // message, "API not reachable" included.
+  function mapErrors(err) {
+    const status = err.code ?? err.status
+    return { fields: {}, message: status === 401 ? 'That is not this machine\'s key.' : err.message }
+  }
+</script>
+
+<div class="section-header">
+  <h1>Sign in</h1>
+  <span class="text-sm text-muted">Workbench</span>
+</div>
+
+<div class="container narrow" style="max-width:36rem">
+  {#if session.error && !attempted}
+    <Alert tone="warning" id="session-error" title="Could not reach the server">
+      {session.error}
+    </Alert>
+  {/if}
+
+  <Form class="card stack" onsubmit={submit} {mapErrors} errorTitle="Sign in failed">
+    <p class="text-sm text-muted">The key is <code>WORKBENCH_KEY</code> in the environment the API runs in.</p>
+    <Input id="key" name="key" label="Key" type="password" autocomplete="current-password"
+           required bind:value={key} />
+    <div class="cluster">
+      <Button type="submit" tone="primary">Sign in</Button>
+    </div>
+  </Form>
+</div>

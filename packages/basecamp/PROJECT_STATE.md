@@ -51,7 +51,7 @@ an adapter** — one returning stub emptiness makes the screen render an empty
 table, which is indistinguishable from a vendor with nothing to report and is the
 exact failure those skeletons exist to avoid.
 
-`docs/adapters.md` is the pick-up doc: the ten, what each of the four costs, the
+`docs/providers.md` is the pick-up doc: the ten, what each of the four costs, the
 decisions already made (money in minor units, `forServer` keyed on
 `providerServerId`, the job-not-vendor naming, stubs that answer empty) and the
 four drive assertions that go red the day one is wired — which is correct, and
@@ -93,7 +93,7 @@ there is no upgrade step pre-alpha.
 | `bun run test` | the data layer (schema, gates, who may write the columns the gate is graded from, encryption, auth compatibility) and the API tier through `@frontierjs/testing`, which is where the standing rules are graded: schema, gates, who may write the columns the gate is graded from, encryption, auth compatibility, the alert-delivery join, what an API key's table may not contain, where a volume's tenancy comes from, that the tile vocabulary is one list rather than two, and that a recipe run keeps the script it ran while the reclaim vocabulary has exactly one home |
 | `bun run verify` | browser checks across all three realms, incl. an a11y pass on every screen |
 | `bun run verify:build` | the PRODUCTION build — the tags survive comment-stripping, and the page comes up in a real browser |
-| `bun run verify:screens` | browser checks on a database it seeds in a temp directory — the Phase 13 and 14 screens, the audit window, and the adapter states `/admin/adapters/` reports |
+| `bun run verify:screens` | browser checks on a database it seeds in a temp directory — the Phase 13 and 14 screens, the audit window, and the adapter states `/admin/providers/` reports |
 | `bun run db:check` | fails if the migration history does not build `db/schema.lite`, or a file `db/migrations.snapshot.md` locks was edited |
 | `bun run typecheck` | at the committed baseline (`scripts/typecheck-baselines.json`) |
 | `bun run db:types` | regenerates `db/schema.d.ts` from the schema (`audience=system`). `bun run test` fails if the committed file is stale |

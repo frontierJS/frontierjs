@@ -7,7 +7,8 @@
   // freely, so `tone="danger" treatment="outlined"` is a red outline button.
   // With neither given the button is primary; a treatment alone takes no tone.
   //
-  // Sizes are a font-size: `.btn` is sized in em, so the padding scales.
+  // A size is a `.text-*` class, never an inline font-size, and a caller's own
+  // `class="text-*"` replaces it (FJS-D1782).
   //
   // Icon-only:
   //   <Button square aria-label="Delete"><IconTrash /></Button>
@@ -18,7 +19,7 @@
   //     Add item
   //   </Button>
 
-  import { tone as toTone, cx } from '../../utils.js'
+  import { tone as toTone, cx, sizeClass } from '../../utils.js'
 
   export let tone      = ''
   export let treatment = ''         // '' | 'outlined' | 'ghost' | 'link' | 'raised' | 'glass'
@@ -34,8 +35,7 @@
 
   const t = toTone(tone) || (treatment ? '' : 'primary')
 
-  const sizeMap = { xs: 'var(--text-xs)', sm: 'var(--text-sm)', md: '', lg: 'var(--text-lg)' }
-  const fontSize = sizeMap[size] ?? ''
+  const SIZES = { xs: 'text-xs', sm: 'text-sm', lg: 'text-lg' }
 
   const isSquare = square
 
@@ -61,8 +61,7 @@
        otherwise breaks the user's expectation of where it will go. -->
   <a
     href={href}
-    class={cx('btn', t, treatment, isSquare && 'square')}
-    style:font-size={fontSize || null}
+    class={cx('btn', t, treatment, isSquare && 'square', sizeClass(SIZES, size, $class))}
     aria-busy={isLoading || null}
     {class}
     {...$attributes}
@@ -81,8 +80,7 @@
     type={type}
     disabled={isOff || isLoading}
     aria-busy={isLoading || null}
-    class={cx('btn', t, treatment, isSquare && 'square')}
-    style:font-size={fontSize || null}
+    class={cx('btn', t, treatment, isSquare && 'square', sizeClass(SIZES, size, $class))}
     {class}
     {...$attributes}
     onclick={handleClick}

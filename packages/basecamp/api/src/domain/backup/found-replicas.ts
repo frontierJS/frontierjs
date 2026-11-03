@@ -15,7 +15,7 @@
 //
 // Basecamp's replica can be newer than the archive just restored, which is the
 // one case where the runbook beats the archive. It is recorded on the hub
-// App's row the same way, under `<prefix>/basecamp` rather than its id, and
+// App's row the same way, under `<prefix>/hub-<installId>` rather than its id, and
 // nobody is told: `/hub/backups/` names the runbook, because the hub cannot
 // replace itself while serving.
 //
@@ -23,7 +23,8 @@
 // is that app's line in the answer and the log; the others still run.
 
 import { replicaOf, replicaDatabases } from '../../jobs/replicate-sync.job.ts'
-import { keyUnder, sendFor }           from '../../providers/storage/index.ts'
+import { hubReplicaKey, sendFor } from '../../providers/storage/index.ts'
+import { hubInstallId }                from './backup-archives.ts'
 import { listObjects }                 from '../../providers/storage/s3.ts'
 import { notifyPeople, workspaceMembers } from '../notification/notify.ts'
 import { hubApp }                      from '../host/host-machine.ts'
@@ -97,7 +98,7 @@ export async function reconcileFound(app: App): Promise<Finding[]> {
     : null
   if (dest) {
     const f = dest.secretId
-      ? await probe(app, null, dest, keyUnder(dest, 'basecamp'))
+      ? await probe(app, null, dest, hubReplicaKey(dest, await hubInstallId(sys)))
       : { appId: null, error: `destination '${dest.name}' holds no credential` }
     out.push(f)
     if (!('error' in f) && f.databases.length)

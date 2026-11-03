@@ -8,12 +8,13 @@
   //   <Mono size="xs">user_8x92ka</Mono>
   //   The config lives at <Mono>~/.config/fjs.json</Mono>
 
+  import { sizeClass } from '../../utils.js'
+
   export let size = ''    // '' | 'xs' | 'md'
 
-  const sizeMap = { xs: 'var(--text-2xs)', sm: '', md: 'var(--text-md)' }
-  const fontSize = sizeMap[size] ?? ''
+  const SIZES = { xs: 'text-2xs', md: 'text-md' }
 </script>
 
-<code style:font-size={fontSize || null} {class} {...$attributes}>
+<code class={sizeClass(SIZES, size, $class) || null} {class} {...$attributes}>
   <slot />
 </code>

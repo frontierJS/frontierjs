@@ -12,6 +12,7 @@ import { defineJob }      from '@frontierjs/caravan'
 import { runsAsApp }      from '../domain/job/job-context.ts'
 import { reconcileFound } from '../domain/backup/found-replicas.ts'
 import { queueAppArchiveRescan } from './app-archive-rescan.job.ts'
+import { failStaleBackups }     from './backup-run.job.ts'
 
 export default defineJob({
   name:        'restore:reconcile',
@@ -20,8 +21,13 @@ export default defineJob({
   retryDelay:  [30_000, 120_000],
   handler: async (ctx) => {
     const { app } = runsAsApp(ctx, 'restore:reconcile')
-    const findings = await reconcileFound(app)
     const log = app.logger.child('restore-reconcile')
+    // The restored database carries whatever hub backup rows were in flight
+    // when the archive was taken; nothing is running them now, and one would
+    // refuse every later backup as "already in flight".
+    const interrupted = await failStaleBackups(app, 0)
+    if (interrupted) log.warn('in-flight hub backups from the archive marked interrupted', { count: interrupted })
+    const findings = await reconcileFound(app)
     for (const f of findings) {
       if ('error' in f) log.warn('replica not listed', f)
       else              log.info(f.databases.length ? 'replica found' : 'replica empty', f)

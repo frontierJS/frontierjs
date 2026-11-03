@@ -30,7 +30,7 @@ async function client() {
   await autoMigrate(db)
   const puts: Array<{ key: string, bytes: Buffer, type: string }> = []
   files._provider = {
-    async put(key: string, bytes: Uint8Array, { contentType }: { contentType: string }) { puts.push({ key, bytes: Buffer.from(bytes), type: contentType }) },
+    async put(key: string, body: any, { contentType }: { contentType: string }) { puts.push({ key, bytes: Buffer.from(body instanceof Uint8Array ? body : await new Response(body).arrayBuffer()), type: contentType }) },
     async get() { return null },
     async delete() {},
   }

@@ -28,8 +28,8 @@
  * are half of that promise; this is the other half,
  *
  * The scale is deliberately shallow. `.text-md` is the package's own body
- * size, so the useful range is two steps down and two up — a caption, a
- * meta line, body, a lead paragraph, a subhead. Anything louder than
+ * size, so the useful range is three steps down and two up — an overline,
+ * a caption, a meta line, body, a lead paragraph, a subhead. Anything louder than
  * `.text-xl` is a heading and should say so with an <h*>.
  *
  * These set size only. Color is the `.text-*` color utilities below,
@@ -39,6 +39,7 @@
  * so `.text-xl` and an `<h4>` are one number. A theme retunes the ladder;
  * nothing here needs editing to follow it.
  */
+.text-2xs { font-size: var(--text-2xs); line-height: var(--leading-snug);   }
 .text-xs { font-size: var(--text-xs); line-height: var(--leading-snug);    }
 .text-sm { font-size: var(--text-sm); line-height: var(--leading-normal);  }
 .text-md { font-size: var(--text-md); line-height: var(--leading-body);    }

@@ -4,7 +4,7 @@
 //
 // Groups come from foreign keys alone (Louvain over the model graph), with each
 // key weighted down by how many models point at its target so the models
-// everything references do not swallow the rest into one cluster. Three floors
+// everything references do not swallow the rest into one cluster. Both floors
 // are laid out here, in the full membership of every group, so the page's
 // sliders only hide and show models and never move one.
 
@@ -29,7 +29,7 @@ function graphOf(schema) {
       if (!rel?.fields) continue
       const t = f.type.name
       if (t === m.name || seen.has(t) || inDeg[t] == null) continue
-      seen.add(t); out[m.name].push(t); outDeg[m.name]++; inDeg[t]++; edges.push([m.name, t])
+      seen.add(t); out[m.name].push(t); outDeg[m.name]++; inDeg[t]++; edges.push([m.name, t, f.name])
     }
   }
   return { names: models.map(m => m.name), edges, inDeg, outDeg, out, fields }
@@ -93,6 +93,14 @@ function louvain(nodes, edges) {
   return Object.values(member)
 }
 
+// Whole PascalCase words, so Ad is not read inside AdCampaign.
+const words = n => n.match(/[A-Z][a-z0-9]*|[a-z0-9]+/g) ?? [n]
+function builtFrom(name, lead) {
+  const w = words(name), l = words(lead)
+  for (let i = 0; i + l.length <= w.length; i++) if (l.every((x, j) => w[i + j] === x)) return true
+  return false
+}
+
 // The models the layers are arranged around, named by the schema rather than by
 // a count: in-degree alone ranks the models every table points at (an App, a
 // Server) above the tenant and the person. The tenancy root is what the row
@@ -136,80 +144,112 @@ function ringCenters(keys, rad, minR = 180) {
   return out
 }
 
+// Groups that share keys side by side. In size order linked groups land across
+// the floor from each other and every link between them cuts through the hub.
+// Reversals and swaps from the size order until neither shortens the keys'
+// total length: a local optimum, and the same one for the same schema.
+function ringOrder(keys, rad, links, minR) {
+  const cost = order => {
+    const at = ringCenters(order, rad, minR)
+    let c = 0
+    for (const [a, b, w] of links) if (at[a] && at[b]) c += w * Math.hypot(at[a].x - at[b].x, at[a].y - at[b].y)
+    return c
+  }
+  let best = keys.slice(), bestCost = cost(best), better = true
+  while (better) {
+    better = false
+    for (let i = 0; i < best.length; i++) for (let j = i + 1; j < best.length; j++) {
+      const swapped = best.slice();
+      [swapped[i], swapped[j]] = [swapped[j], swapped[i]]
+      for (const next of [[...best.slice(0, i), ...best.slice(i, j + 1).reverse(), ...best.slice(j + 1)], swapped]) {
+        const c = cost(next)
+        if (c < bestCost - 1e-6) { best = next; bestCost = c; better = true }
+      }
+    }
+  }
+  return best
+}
+
 // The group holding the most hubs in the middle, the rest the ring around it,
 // far enough out that no disc touches the center one.
-function hubCenters(keys, rad, hubCount) {
+function hubCenters(keys, rad, hubCount, links) {
   const hub = keys.reduce((a, b) => hubCount(b) > hubCount(a) ? b : a)
   const rest = keys.filter(k => k !== hub)
-  const out = ringCenters(rest, rad, rad(hub) + Math.max(0, ...rest.map(rad)) + 260)
+  const minR = rad(hub) + Math.max(0, ...rest.map(rad)) + 260
+  const out = ringCenters(ringOrder(rest, rad, links, minR), rad, minR)
   out[hub] = { x: 0, y: 0 }
   return out
 }
 
-// Groups that share more foreign keys pull harder toward the middle, so the
-// ones everything points at land in the center. A fixed number of ticks from a
-// fixed start: the same schema is the same map.
-function mapCenters(keys, rad, groupOf, edges) {
-  const ns = keys.map((k, i) => {
-    const a = i * Math.PI * (3 - Math.sqrt(5)), r = 10 * Math.sqrt(0.5 + i)
-    return { id: k, x: r * Math.cos(a), y: r * Math.sin(a), vx: 0, vy: 0 }
-  })
-  const byId = new Map(ns.map(n => [n.id, n]))
-  const lm = new Map(), deg = {}
+// The depth the page opens at: the shallowest at which every pair of clusters a
+// key ever joins is already joined. A deeper level only thickens links already
+// drawn and adds leaf models, so opening at the full depth buries the clusters.
+function settledDepth(edges, depth, group) {
+  const first = new Map()
   for (const [a, b] of edges) {
-    const s = groupOf(a), t = groupOf(b)
-    if (s === t) continue
-    const key = s < t ? s + '|' + t : t + '|' + s
-    let l = lm.get(key)
-    if (!l) lm.set(key, l = { source: byId.get(s), target: byId.get(t), w: 0 })
-    l.w++; deg[s] = (deg[s] ?? 0) + 1; deg[t] = (deg[t] ?? 0) + 1
+    if (group[a] === group[b]) continue
+    const pair = [group[a], group[b]].sort().join('|'), d = Math.max(depth[a], depth[b])
+    first.set(pair, Math.min(first.get(pair) ?? Infinity, d))
   }
-  const links = [...lm.values()], count = new Map(ns.map(n => [n, 0]))
-  for (const l of links) { count.set(l.source, count.get(l.source) + 1); count.set(l.target, count.get(l.target) + 1) }
-  const pull = n => 0.02 + 0.035 * (deg[n.id] ?? 0)
-  const TICKS = 400, alphaDecay = 1 - Math.pow(0.001, 1 / 300)
-  let alpha = 1
-  for (let t = 0; t < TICKS; t++) {
-    alpha -= alpha * alphaDecay
-    for (const l of links) {
-      const { source: s, target: g } = l
-      let x = g.x + g.vx - s.x - s.vx, y = g.y + g.vy - s.y - s.vy
-      const len = Math.hypot(x, y) || 1e-6
-      const dist = rad(s.id) + rad(g.id) + 460, str = Math.min(1, 0.15 * l.w)
-      const f = (len - dist) / len * alpha * str
-      x *= f; y *= f
-      const bias = count.get(s) / (count.get(s) + count.get(g))
-      g.vx -= x * bias; g.vy -= y * bias
-      s.vx += x * (1 - bias); s.vy += y * (1 - bias)
+  return first.size ? Math.max(...first.values()) : Math.max(0, ...Object.values(depth))
+}
+
+// How knotted a group is: every key it holds past a spanning tree is a knot,
+// sorted by what it costs a reader. A loop (a model keyed to itself) is a
+// hierarchy and a pair (a second key to a model already keyed) is a second role.
+// A diamond is two routes between the same models, and it asks what the schema
+// never says: must both routes arrive at the same row? Often yes (an
+// AppDrill's App and its Deployment's App), sometimes no (an AppBackup's
+// destination and its App's replica destination). Nearly every
+// diamond in a group passes through its core (AppBackup reaches App directly and
+// through Deployment), so those sort after the diamonds that do not.
+function knotsOf(schema, members, core) {
+  const S = new Set(members), loops = [], pairs = [], simple = []
+  const seen = new Set()
+  for (const m of schema.models) {
+    if (!S.has(m.name)) continue
+    for (const f of m.fields) {
+      const rel = f.type.kind === 'relation' && f.attributes.find(a => a.kind === 'relation')
+      if (!rel?.fields || !S.has(f.type.name)) continue
+      const key = { from: m.name, field: f.name, to: f.type.name }
+      const pair = [m.name, f.type.name].sort().join('\n')
+      if (m.name === f.type.name) loops.push({ kind: 'loop', ...key, route: [m.name] })
+      else if (seen.has(pair)) pairs.push({ kind: 'pair', ...key, route: [m.name, f.type.name] })
+      else { seen.add(pair); simple.push(key) }
     }
-    for (const a of ns) for (const b of ns) {
-      if (a === b) continue
-      const x = b.x - a.x, y = b.y - a.y
-      const l = Math.max(1, x * x + y * y)
-      a.vx += x * -4200 * alpha / l; a.vy += y * -4200 * alpha / l
-    }
-    for (let it = 0; it < 4; it++) for (let i = 0; i < ns.length; i++) for (let j = i + 1; j < ns.length; j++) {
-      const a = ns[i], b = ns[j], ra = rad(a.id) + 300, rb = rad(b.id) + 300
-      let x = a.x + a.vx - b.x - b.vx, y = a.y + a.vy - b.y - b.vy
-      const r = ra + rb
-      let l = x * x + y * y
-      if (l >= r * r) continue
-      if (l === 0) { x = 1e-6; y = 1e-6; l = x * x + y * y }
-      l = Math.sqrt(l)
-      const k = (r - l) / l
-      x *= k; y *= k
-      const share = rb * rb / (ra * ra + rb * rb)
-      a.vx += x * share; a.vy += y * share
-      b.vx -= x * (1 - share); b.vy -= y * (1 - share)
-    }
-    for (const n of ns) { n.vx += -n.x * pull(n) * alpha; n.vy += -n.y * pull(n) * alpha }
-    for (const n of ns) { n.vx *= 0.6; n.vy *= 0.6; n.x += n.vx; n.y += n.vy }
   }
-  // Centered on the groups' extent, not on the busiest group: the ring is sized
-  // to the farthest disc, so an off-center origin leaves half the floor empty.
-  const ext = (f, sign) => Math[sign > 0 ? 'max' : 'min'](...ns.map(d => d[f] + sign * rad(d.id)))
-  const cx = (ext('x', 1) + ext('x', -1)) / 2, cy = (ext('y', 1) + ext('y', -1)) / 2
-  return Object.fromEntries(ns.map(d => [d.id, { x: d.x - cx, y: d.y - cy }]))
+  // Kruskal with the keys clear of the core first: a key rejected in that pass
+  // closes a cycle the core takes no part in.
+  const parent = Object.fromEntries(members.map(n => [n, n]))
+  const root = x => parent[x] === x ? x : (parent[x] = root(parent[x]))
+  const offCore = k => !core.has(k.from) && !core.has(k.to)
+  const diamonds = []
+  for (const k of [...simple.filter(offCore), ...simple.filter(k => !offCore(k))]) {
+    const a = root(k.from), b = root(k.to)
+    if (a !== b) parent[a] = b
+    else diamonds.push({ kind: 'diamond', ...k, viaCore: !offCore(k) })
+  }
+  // The other route shown is the shortest one without the key itself, not the
+  // spanning tree's path, which wanders (AppDrill through AppBackup and
+  // BackupDestination to App, when Deployment reaches App in one step).
+  const routeOf = d => {
+    const back = { [d.from]: null }, q = [d.from]
+    while (q.length && !(d.to in back)) {
+      const x = q.shift()
+      for (const k of simple) {
+        if (k.from === d.from && k.field === d.field) continue
+        const y = k.from === x ? k.to : k.to === x ? k.from : null
+        if (y == null || y in back || (!d.viaCore && core.has(y))) continue
+        back[y] = x; q.push(y)
+      }
+    }
+    const path = []
+    for (let x = d.to; x != null; x = back[x]) path.unshift(x)
+    return path
+  }
+  for (const d of diamonds) d.route = routeOf(d)
+  const list = [...diamonds.sort((a, b) => a.viaCore - b.viaCore), ...pairs, ...loops]
+  return { all: list.length, list }
 }
 
 const round = n => Math.round(n * 10) / 10
@@ -218,10 +258,11 @@ const round = n => Math.round(n * 10) / 10
  * @param {object} schema parsed schema (parseResult.schema)
  * @returns {{
  *   models: Array<{ n: string, in: number, out: number, d: number, f: number, g: string }>,
- *   edges: Array<[string, string]>,
- *   groups: Array<{ key: string, label: string, members: string[], core: number, r: number }>,
+ *   edges: Array<[from: string, to: string, field: string]>,
+ *   groups: Array<{ key: string, label: string, members: string[], core: number, r: number, knots: { all: number, list: Array<{ kind: 'diamond'|'pair'|'loop', from: string, field: string, to: string, route: string[], viaCore?: boolean }> } }>,
  *   hubs: string[],
- *   floors: Record<'ring'|'hub'|'map', { centers: Record<string, { x: number, y: number }>, at: Record<string, [number, number]> }>,
+ *   depth: number,
+ *   floors: Record<'ring'|'hub', { centers: Record<string, { x: number, y: number }>, at: Record<string, [number, number]> }>,
  * }}
  */
 export function schemaLayers(schema) {
@@ -236,6 +277,20 @@ export function schemaLayers(schema) {
     if (c.length === 1) { group[c[0]] = 'unlinked'; continue }
     const lead = c.slice().sort((a, b) => g.inDeg[b] - g.inDeg[a] || g.outDeg[b] - g.outDeg[a])[0]
     for (const n of c) group[n] = 'around ' + lead
+  }
+
+  // A model keyed into two groups as often lands by a near tie in the weights;
+  // the group its name is built from wins (ClientAdBudget beside Client, not
+  // User). More keys into its own group is no tie (ClientRequest stays with
+  // Project and Deliverable).
+  for (const n of g.names) {
+    const own = group[n]
+    if (own === 'unlinked' || builtFrom(n, own.slice(7))) continue
+    const keysInto = k => g.out[n].filter(t => group[t] === k).length
+    const named = g.out[n].map(t => group[t])
+      .filter(k => k !== 'unlinked' && k !== own && builtFrom(n, k.slice(7)) && keysInto(k) >= keysInto(own))
+      .sort((a, b) => b.length - a.length)[0]
+    if (named) group[n] = named
   }
 
   const byKey = new Map()
@@ -266,10 +321,16 @@ export function schemaLayers(schema) {
 
   const rad = k => DISC_PER_ROOT * Math.sqrt(byKey.get(k).length) + 44
   const hubCount = k => byKey.get(k).filter(n => hubSet.has(n)).length
+  const between = new Map()
+  for (const [a, b] of g.edges) {
+    if (group[a] === group[b]) continue
+    const pair = [group[a], group[b]].sort().join('|')
+    between.set(pair, (between.get(pair) ?? 0) + 1)
+  }
+  const links = [...between].map(([pair, w]) => [...pair.split('|'), w])
   const centers = {
-    ring: ringCenters(keys, rad),
-    hub: hubCenters(keys, rad, hubCount),
-    map: mapCenters(keys, rad, n => group[n], g.edges),
+    ring: ringCenters(ringOrder(keys, rad, links), rad),
+    hub: hubCenters(keys, rad, hubCount, links),
   }
   const floors = {}
   for (const [name, at] of Object.entries(centers)) {
@@ -296,8 +357,10 @@ export function schemaLayers(schema) {
       members: ranked.get(k),
       core: ranked.get(k).filter(n => core.has(n)).length,
       r: round(rad(k)),
+      knots: k === 'unlinked' ? { all: 0, list: [] } : knotsOf(schema, byKey.get(k), core),
     })),
     hubs,
+    depth: settledDepth(g.edges, depth, group),
     floors,
   }
 }

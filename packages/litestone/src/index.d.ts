@@ -258,6 +258,8 @@ export interface FileRef {
   provider:   string
   endpoint:   string | null
   size:       number
+  /** SHA-256 of the stored bytes, lowercase hex, taken in the pass that wrote them. */
+  sha256:     string
   mime:       string
   uploadedAt: string
 }

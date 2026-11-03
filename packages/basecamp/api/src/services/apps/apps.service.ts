@@ -20,6 +20,7 @@
 //   connectableAccounts · connectRepository — the key and the hook written at the forge (FJS-D1571)
 //   readForgeDockerfile — the repository's Dockerfile now, public or through an account
 //   readRepoDockerfile · dockerfileTemplate — the two seeds the create form offers
+//   preview        — a Workbench branch's preview opened, frozen, thawed or retired, called by a peer (collection-level)
 //
 // The table is `app`, not `service`. The old header here said "table name in
 // DB: service (legacy — kept for migration continuity)"; that name was the
@@ -63,20 +64,20 @@ import { runtimeOf, CONTAINER_KINDS, servingAddresses } from '../../domain/relea
 import { runLiveCheck } from '../../domain/release/live-check.ts'
 import type { DnsAnswer, HttpsAnswer } from '../../domain/release/live-check.ts'
 import { ingressRefusal } from '../edge/edge.service.ts'
-import { portHolders, serversOf, assertPortFree, allocatePort } from '../../domain/release/host-port.ts'
-import { mintDownload } from '../../jobs/app-backup-run.job.ts'
+import { portHolders, serversOf, assertPortFree, allocatePort, withPortLock } from '../../domain/release/host-port.ts'
+import { restoreSourceOf, VOLUME_RESTORE_TIMEOUT_MS } from '../../jobs/app-backup-run.job.ts'
 import { cronProblem, syncAppBackupSchedule, syncAppDrillSchedule } from '../../domain/job/job-schedule.ts'
 import { syncReplicasOn, syncReplicasOf, replicaHolder, replicaOf, replicaDatabases } from '../../jobs/replicate-sync.job.ts'
 import type { App }            from '@frontierjs/junction'
 import { keyScope } from '../../domain/api-key/scopes.ts'
+import { previewSettings, previewLabelRefusal, openPreview, freezePreview, thawPreview, retirePreview }
+  from '../../domain/workbench/workbench-preview.ts'
+import type { PreviewSettings, Opened } from '../../domain/workbench/workbench-preview.ts'
 import { replicaLag } from '../../domain/host/posture.ts'
 import { outpostRouteId, trafficOf, unavailable, unavailableOf } from '../../domain/host/traffic.ts'
 
 const _WITH_ENV = { environment: true }
 
-/** Outpost bounds the extract at an hour; a multi-GB archive sent at conduit's
- *  10s default reads as a failure while the machine is still writing it. */
-const VOLUME_RESTORE_TIMEOUT_MS = 61 * 60_000
 
 /** A build is up to 24 MB written file by file; conduit's 10s default fails it mid-write. */
 const STATIC_PUBLISH_TIMEOUT_MS = 120_000
@@ -138,11 +139,15 @@ export async function placeApp(
   if (existing.some((p: any) => p.replicaIndex === replicaIndex))
     throw new BadRequest(`Replica ${replicaIndex} of this app is already on '${server.name}'`)
 
-  if (target.port == null && CONTAINER_KINDS.has(target.kind))
-    await db().app.update({ where: { id: target.id }, data: { port: await allocatePort(server.id, target.id) } })
+  // Pick, write and place under one lock: the port is only taken once the
+  // App's own row says so, and the next allocation reads that row (`FJS-3884`).
+  await withPortLock(server.id, async () => {
+    if (target.port == null && CONTAINER_KINDS.has(target.kind))
+      await db().app.update({ where: { id: target.id }, data: { port: await allocatePort(server.id, target.id) } })
 
-  await $.db.asSystem().appServer.create({
-    data: { appId: target.id, serverId: server.id, replicaIndex, status: 'unknown' },
+    await $.db.asSystem().appServer.create({
+      data: { appId: target.id, serverId: server.id, replicaIndex, status: 'unknown' },
+    })
   })
   if (target.replicaDestinationId) await syncReplicasOn(app, [server.id])
 }
@@ -367,6 +372,20 @@ function checkSource(data: Record<string, unknown>, current?: Record<string, unk
       `An inline source is served as files, so this app's kind must be 'static' — it is '${appKind}'`)
 }
 
+/** A stored source re-read. A row saved before the repo check (`FJS-3842`)
+ *  refuses here, and nobody is re-saving it, so the refusal names the App and
+ *  where the fix is rather than echoing a bare 'source.repo must be…'
+ *  (`FJS-D1804`). */
+function storedSource(app: { name?: unknown, source?: unknown }): ReturnType<typeof parseAppSource> {
+  try {
+    return parseAppSource(app.source)
+  } catch (err) {
+    if (!(err instanceof BadRequest)) throw err
+    throw new BadRequest(
+      `App '${app.name}' has a stored repo that is not a git URL (${err.message}) — set the repo to a git URL in the App's source settings`)
+  }
+}
+
 /** A health path is asked of the port the release publishes, so one with
  *  no port could only fail — after the old container is already gone. */
 function checkRuntime(data: Record<string, unknown>, current?: Record<string, unknown>) {
@@ -410,18 +429,7 @@ async function checkBackup(data: Record<string, unknown>, selfId?: string): Prom
  * rather than the restore one, so it is refused here naming where it is.
  */
 async function backupSource(appId: string, backupId: string): Promise<{ url: string; sha256: string; per_file?: true }> {
-  const backup = await db().appBackup.findFirst({ where: { id: backupId, appId } })
-  if (!backup) throw new NotFound(`No backup '${backupId}' of this app`)
-  if (backup.status !== 'success') throw new BadRequest(`Backup '${backupId}' is ${backup.status}, so there is no archive to restore`)
-  if (!backup.destinationId || !backup.location || backup.location.startsWith('/'))
-    throw new BadRequest(`Backup '${backupId}' never left its machine (${backup.location ?? 'no archive'}) — copy it under the restore directory and restore by path`)
-  if (!backup.sha256) throw new BadRequest(`Backup '${backupId}' records no sha256, so the machine has nothing to check the fetched copy against`)
-  const dest = await db().backupDestination.findFirst({ where: { id: backup.destinationId } })
-  if (!dest) throw new NotFound(`No backup destination '${backup.destinationId}'`)
-  // A wrapped `.db` replaces that database only (`FJS-D1724`); a whole
-  // archive's restore would empty the volume around it.
-  const perFile = backup.location.endsWith('.db.tar.gz') ? { per_file: true as const } : {}
-  return { url: await mintDownload($.app, dest, backup.location), sha256: backup.sha256, ...perFile }
+  return restoreSourceOf($.app, appId, backupId)
 }
 
 /** The post-restore offer (`domain/backup/found-replicas.ts`) is answered. */
@@ -605,6 +613,65 @@ const RETRY_LIVE_GAP_MS = 5000
 const httpsFailing = (check: { hosts: { steps: { key: string; status: string }[] }[] }) =>
   check.hosts.some(h => h.steps.some(s => s.key === 'https' && s.status === 'fail'))
 
+// ─── preview ─────────────────────────────────────────────────────────────
+// The Basecamp half of a Workbench preview, over the wire (`FJS-D1188`). The
+// body is `{ action, settings, branch?, opened? }`; each action is the
+// function of that name in domain/workbench/workbench-preview.ts.
+
+const PREVIEW_ACTIONS = ['open', 'freeze', 'thaw', 'retire'] as const
+type PreviewAction = typeof PREVIEW_ACTIONS[number]
+
+const text = (v: unknown, what: string): string => {
+  if (typeof v !== 'string' || !v.trim()) throw new BadRequest(`${what} is required`)
+  return v.trim()
+}
+
+function openBranch(raw: unknown): { slug: string, branch: string, port: number } {
+  const b = (raw ?? {}) as Record<string, unknown>
+  const slug = text(b.slug, 'branch.slug')
+  const refused = previewLabelRefusal(slug)
+  if (refused) throw new BadRequest(refused)
+  const port = Number(b.port)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new BadRequest('branch.port is the dev server\'s port, 1–65535')
+  return { slug, branch: text(b.branch, 'branch.branch'), port }
+}
+
+function frozenBranch(raw: unknown): { path: string, branch: string, appId: string } {
+  const b = (raw ?? {}) as Record<string, unknown>
+  return { path: text(b.path, 'branch.path'), branch: text(b.branch, 'branch.branch'), appId: text(b.appId, 'branch.appId') }
+}
+
+function openedOf(raw: unknown): Opened {
+  const o = (raw ?? {}) as Record<string, unknown>
+  return { ...o, environmentId: text(o.environmentId, 'opened.environmentId'), appId: text(o.appId, 'opened.appId') } as Opened
+}
+
+/** The parser shapes the settings; whether they name this workspace's rows is
+ *  read here, through the caller's client, so another tenant's project is
+ *  one this caller cannot find. */
+async function assertPreviewTargets(settings: PreviewSettings): Promise<void> {
+  if (!(await db().project.findFirst({ where: { id: settings.projectId }, select: { id: true } })))
+    throw new BadRequest(`settings.projectId '${settings.projectId}' is not a project in this workspace`)
+  if (settings.serverId && !(await db().server.findFirst({ where: { id: settings.serverId }, select: { id: true } })))
+    throw new BadRequest(`settings.serverId '${settings.serverId}' is not a machine in this workspace`)
+}
+
+async function preview(body: Record<string, unknown>): Promise<unknown> {
+  const action = body.action as PreviewAction
+  if (!PREVIEW_ACTIONS.includes(action)) throw new BadRequest(`action must be one of ${PREVIEW_ACTIONS.join(', ')}`)
+  // Freeze builds the worktree, so its checkout is a path on this machine and
+  // its web/ is checked; the other three never read the checkout.
+  const branch   = action === 'freeze' ? frozenBranch(body.branch) : null
+  const settings = previewSettings(body.settings, branch ? branch.path : null)
+  if ('refused' in settings) throw new BadRequest(settings.refused)
+  await assertPreviewTargets(settings)
+
+  if (action === 'open')   return openPreview($.app, settings, openBranch(body.branch))
+  if (action === 'freeze') return freezePreview($.app, settings, branch!)
+  if (action === 'thaw')   return thawPreview($.app, settings, openedOf(body.opened))
+  return retirePreview($.app, openedOf(body.opened))
+}
+
 export default createService({
   name:  'apps',
   scope: keyScope('apps'),
@@ -643,6 +710,10 @@ export default createService({
     // of the collection, at the level that may create one.
     { method: 'readRepoDockerfile', gate: LEVELS.USER, read: true, input: 'AppRepoDockerfile' },
     { method: 'dockerfileTemplate', gate: LEVELS.USER, read: true },
+    // Each action writes Environments, Apps, Variables and Domains through
+    // their own services, which grade each row; the level is the least of
+    // theirs. A scope of its own, so a peer's key reaches this and nothing else.
+    { method: 'preview', gate: LEVELS.USER, scope: 'apps:preview' },
   ],
   // Announced by the service DEFINITION, not by an after hook: `callService`
   // is junction's one announcement point and it excludes `find`/`get` by name,
@@ -1109,7 +1180,7 @@ export default createService({
   // `source.dockerfile`.
   async importDockerfile() {
     const target = await getScoped('app', 'App')
-    const source = parseAppSource(target.source)
+    const source = storedSource(target)
     if (source?.kind !== 'git')
       throw new BadRequest(`App '${target.name}' is not built from a git repository`)
     const forge = await readForgeDockerfile($.app, source)
@@ -1135,6 +1206,12 @@ export default createService({
 
   async dockerfileTemplate() {
     return { content: fjsDockerfileTemplate() }
+  },
+
+  // ── preview ───────────────────────────────────────────────────────
+  // Collection-level: `open` makes the App it would be addressed by.
+  async preview() {
+    return preview(($.data ?? {}) as Record<string, unknown>)
   },
 
   hooks: {

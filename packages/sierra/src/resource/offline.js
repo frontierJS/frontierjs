@@ -68,7 +68,7 @@
  */
 
 import { listCache, listKey }              from './list-cache.js'
-import { writeRows, answeredWhole, localDbConfigured } from './local-db.js'
+import { writeRows, readMark, answeredWhole, localDbConfigured } from './local-db.js'
 import { getClient }                       from '@frontierjs/sierra/resource'
 
 /**
@@ -132,12 +132,13 @@ export async function warmOffline() {
   const read = []
   for (const { service, model, find, query, directives, idField } of _declared.values()) {
     try {
+      const since = readMark()
       const res   = await find(query, directives)
       const rows  = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : []
       const whole = idField && answeredWhole(res, directives) ? { where: query, idField } : null
       const entry = { service, rows: rows.length, kept: false }
       out.push(entry)
-      read.push({ entry, service, model, query, directives, rows, whole })
+      read.push({ entry, service, model, query, directives, rows, whole, since })
     } catch (err) {
       out.push({ service, error: err?.message ?? String(err) })
     }
@@ -152,7 +153,7 @@ export async function warmOffline() {
     const again = []
     for (const r of left) {
       try {
-        r.entry.kept = await writeRows(r.model, r.rows, r.whole)
+        r.entry.kept = await writeRows(r.model, r.rows, r.whole, r.since)
         refused.delete(r)
       } catch (err) {
         refused.set(r, err)

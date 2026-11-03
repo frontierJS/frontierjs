@@ -91,10 +91,57 @@ describe('a release that finishes after it was cancelled', () => {
     expect((await sys.app.findUnique({ where: { id: target.id } })).status).not.toBe('running')
   })
 
+  // A follow-up queued behind this release (`jobs/release-follow-up.job.ts`)
+  // creates the next one only when no release reads in flight.
+  test('is no longer in flight, so a queued follow-up may release', async () => {
+    const { inFlightRelease } = await import('../src/domain/release/release-record.ts')
+    const sys = env.system as any
+    const d = await building()
+    expect((await inFlightRelease(env.app, target.id))?.id).toBe(d.id)
+    await sys.deployment.transition(d.id, 'cancel')
+    await env.as(admin).service('deployments').call('finishRun', d.id, { status: 'success' })
+    expect(await inFlightRelease(env.app, target.id)).toBeNull()
+  })
+
   test('an uncancelled release succeeds', async () => {
     const sys = env.system as any
     const d = await building()
     await env.as(admin).service('deployments').call('finishRun', d.id, { status: 'success' })
     expect((await sys.deployment.findUnique({ where: { id: d.id } })).status).toBe('success')
+  })
+})
+
+describe('a release run a second time', () => {
+  const pending = async () => (env.system as any).deployment.create({ data: { workspaceId: ws.id, appId: target.id, toImage: `x:${uniq()}` } })
+  const statusOf = async (id: string) => (await (env.system as any).deployment.findUnique({ where: { id } })).status
+
+  // FJS-3850: caravan replays a job whose worker stopped, and the replay
+  // found the row `building` and ran the whole release again.
+  test('a release already building at start is failed as interrupted, not run', async () => {
+    const d = await pending()
+    const first = await env.as(admin).service('deployments').call('startRun', d.id)
+    expect(first.runnable).toBe(true)
+    const again = await env.as(admin).service('deployments').call('startRun', d.id)
+    expect(again).toMatchObject({ runnable: false, interrupted: true })
+    expect(await statusOf(d.id)).toBe('failed')
+  })
+
+  test('a cancelled release does not start', async () => {
+    const d = await pending()
+    await (env.system as any).deployment.transition(d.id, 'cancel')
+    const out = await env.as(admin).service('deployments').call('startRun', d.id)
+    expect(out).toMatchObject({ runnable: false, status: 'cancelled' })
+  })
+
+  // FJS-3861: a release no job is left running reads as in flight forever.
+  test('the sweep fails an old release with no live job, and leaves a fresh one', async () => {
+    const { sweepStuckReleases, RELEASE_BOUND_MS } = await import('../src/domain/release/release-record.ts')
+    const sys = env.system as any
+    const d = await pending()
+    expect(await sweepStuckReleases(env.app)).not.toContain(d.id)
+    expect(await statusOf(d.id)).toBe('pending')
+    expect(await sweepStuckReleases(env.app, Date.now() + RELEASE_BOUND_MS + 60_000)).toContain(d.id)
+    expect(await statusOf(d.id)).toBe('failed')
+    void sys
   })
 })

@@ -25,7 +25,7 @@ function plugin(config: Record<string, unknown> = {}) {
   CTX.models = Object.fromEntries(schema.models.map((m: any) => [m.name, m]))
   p.onInit(schema, CTX)
   p._provider = {
-    async put(key: string) { puts.push(key) },
+    async put(key: string, body: any) { await new Response(body).arrayBuffer(); puts.push(key) },
     async get() { return null },
     async delete() {},
     async sign(key: string) { return `https://cdn.test/${key}` },

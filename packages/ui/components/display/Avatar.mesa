@@ -17,7 +17,7 @@
   // avatar bug in both directions: a wall of unlabelled images, or a screen
   // reader repeating a name it just read.
   //
-  // A stored colour (a client's own hex) is `--data-accent` in `style`, which
+  // A stored color (a client's own hex) is `--data-accent` in `style`, which
   // the fill reads before the tone and keeps readable text on.
   //   <Avatar name={c.name} style={`--data-accent: ${c.avatarColor}`} />
   //

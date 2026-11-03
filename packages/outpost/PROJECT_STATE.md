@@ -1,6 +1,6 @@
 # Project state — @frontierjs/outpost
 
-**v0.1.1 · 40 tests, 0 fail · published.**
+**v0.1.9 · 351 tests, 0 fail · published.**
 
 Written 2026-08-19 to close the half of `FJS-257` that had no code: basecamp
 spoke a complete Outpost protocol to a process that did not exist, so a release
@@ -35,8 +35,9 @@ resolved no executor and every step passed having issued nothing.
   `IDEAS/deploy-plane.md` §b.
 - **Ingress is Caddy's, driven from here** (`FJS-D564`): a `/deploy` naming
   `hosts` gets a route and a Let's Encrypt certificate, and its port binds to
-  loopback (`FJS-D565`). Not yet: an `inline` app behind Caddy, a redirecting
-  `Domain`, a route pushed when a `Domain` changes between releases, and the
+  loopback (`FJS-D565`). An `inline` app is routed too (`static: true` on `/route`,
+  `/static/activate`, to the static origin), and `redirects` is a Caddy-answered
+  308. Not yet: a route pushed when a `Domain` changes between releases, and the
   certificate's expiry reported back (`IDEAS/fleet-ingress.md` Phases 3–5).
 - No metric endpoint.
   Log streaming is built (`POST /logs`), which is what `FJS-123`'s alert

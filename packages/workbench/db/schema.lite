@@ -1,0 +1,199 @@
+/// Workbench — Litestone schema
+///
+/// THE SEED. The developer's own machine: one person, one laptop, the Claude
+/// Code history indexed from `~/.claude` and the changes Workbench made to it.
+/// Nothing here is a fleet noun, and no model of Basecamp is read.
+///
+/// ACCESS — every model declares @@gate, read as R.C.U.D. There is no workspace
+/// and no level ladder (`FJS-D1786`): a Member is somebody who signed in at the
+/// door (`api/src/login.ts`), graded CREATOR(3) by the stock grader.
+///
+///   0 STRANGER   no principal: sees nothing
+///   3 CREATOR    the signed-in Member
+///   8 SYSTEM     asSystem(): the login, the session it mints, the indexer
+///   9 LOCKED     nothing
+
+import "@frontierjs/litestone/references/Grant.lite"
+
+database main {
+  path     env("DATABASE_URL", "./db/workbench.db")
+  announce inProcess    // one API process on one laptop; the channels plugin warns on an unstated database
+}
+
+/// Whoever signed in at the door. One row on a laptop; a table so the principal
+/// is read the way every other app's is, and so a second person is a row.
+model Member {
+  id        Int       @id
+  nick      String    @unique @trim @lower @length(2, 16) @regex("^[a-z0-9_-]+$", "letters, digits, - and _")
+  createdAt DateTime  @default(now())
+
+  sessions       Session[]
+  notifications  Notification[]
+
+  @@auth
+
+  /// Created by the login; a member reads their own row and edits nothing.
+  @@gate(3.8.8.8)
+  @@allow(read, id == auth().id)
+}
+
+/// What the login mints (`api/src/login.ts`), and what `verifySession` reads a
+/// token back to. A Grant: the token leaves in the login's answer and only its
+/// digest is stored. Nothing below the system reads or writes one.
+model Session {
+  id        Int      @id
+  memberId  Int
+  member    Member   @relation(fields: [memberId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@trait(Grant)
+
+  /// Required where the trait leaves it open: a session that never expires buys
+  /// nothing and is a standing hole for a token that leaked.
+  expiresAt DateTime @override
+
+  @@gate(8)
+  @@index([memberId])
+}
+
+// ── Claude Code's usage on THIS machine, indexed (`FJS-D1714`) ───────────────
+//
+// History, not state: `domain/claude/claude-index.ts` reads the transcripts under
+// `<config dir>/projects/` and these two tables are what it learned. They are
+// rebuildable from the files still on disk and are the ONLY record of those
+// Claude Code has since deleted (`cleanupPeriodDays`), which is why a message row
+// carries its own `sessionId` and `cwd` and names no transcript: a relation with
+// a cascade would take the history with the file.
+//
+// @@gate(5.8): the Workbench's ADMINISTRATOR reads, and only the job writes
+// (`asSystem()`). There is no tenancy block: the machine's `~/.claude` belongs
+// to nobody but its owner. No @@trail(audit): one row per assistant message would bury the
+// human trail, and the rows are derived.
+
+// One row per transcript FILE — where the indexer stopped reading it. A
+// subagent's transcript is its own file under a `subagents/` folder and carries
+// its PARENT's `sessionId`, so a session's subagent count is a count here.
+// `agent` is a subagent's type, from the `.meta.json` beside its file.
+model ClaudeTranscript {
+  id          String    @id @default(uuid())
+  path        String    @unique
+  sessionId   String
+  cwd         String?
+  isSubagent  Boolean   @default(false)
+  agent       String?
+  isHeadless  Boolean   @default(false)
+  title       String?
+  firstPrompt String?
+  // Bytes read to, always at a newline. Equal to `size` → nothing to read;
+  // larger `size` → read [offset, size); smaller → the file was rewritten, from 0.
+  offset      Int       @default(0)
+  // The skills loaded in the turn still open at `offset`, which the next read's
+  // messages carry until a prompt closes it.
+  turnSkills  String    @default("")
+  size        Int       @default(0)
+  startedAt   DateTime?
+  lastAt      DateTime?
+  // The file is no longer on disk; this row and its messages are the record.
+  isGone      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+
+  @@gate(5.8)
+  @@index([sessionId])
+  @@index([cwd])
+}
+
+// One row per assistant MESSAGE, unique on the id Claude Code writes — a streamed
+// reply's several lines, a resumed session's repeats and a re-read file all
+// collapse onto it. `cacheWrite` is the whole write and `cacheWrite1h` the part
+// of it written to the one-hour cache, which is priced differently.
+// `tools` is the sorted, comma-joined names of the tools the message called;
+// `skills` the same of the skills loaded in its turn, and `agent` its subagent's
+// type, copied from the transcript row so a spend read groups on it.
+model ClaudeMessage {
+  id           String   @id @default(uuid())
+  messageId    String   @unique
+  sessionId    String
+  cwd          String?
+  model        String
+  at           DateTime
+  input        Int
+  cacheWrite   Int
+  cacheWrite1h Int      @default(0)
+  cacheRead    Int
+  output       Int
+  tools        String   @default("")
+  skills       String   @default("")
+  isSubagent   Boolean  @default(false)
+  agent        String?
+
+  @@gate(5.8)
+  @@index([at])
+  @@index([cwd])
+  @@index([sessionId])
+}
+
+// One change Basecamp made to Claude Code's configuration, and what taking it
+// back needs (`domain/claude/claude-write.ts`, the one writer). The call trail
+// records `claude.<method>` naming this row; this row names the file and the
+// top-level keys changed, never a value (Invariant 7).
+//
+// `before` is a file's whole text before the write, or a removed MCP server's
+// config — `settings.json` `env` and an MCP server's env and headers carry
+// tokens, so it is `@encrypted`. `digest` is the sha256 of the file as written:
+// a running `claude` edits these files too, and an undo that replayed `before`
+// over its edit would lose it, so undo is refused once the file has moved.
+//
+// @@gate(5.8): the Workbench's ADMINISTRATOR reads; the claude service writes
+// through `asSystem()`. No tenancy, as the usage index.
+model ClaudeWrite {
+  id        String    @id @default(uuid())
+  // `file.save`, `file.trash`, `settings`, `permissions`, `plugin.enable`, `mcp.disable`...
+  action    String
+  // A file path, `name@marketplace`, a marketplace name or an MCP server name.
+  target    String
+  // The project a project- or local-scope change belongs to.
+  project   String?
+  scope     String?
+  keys      String    @default("")
+  before    String?   @encrypted
+  digest    String?
+  undoneAt  DateTime?
+  createdAt DateTime  @default(now())
+
+  @@gate(5.8)
+  @@index([createdAt])
+}
+
+// ── Notification — the in-app half of `@frontierjs/notifications` ───────────
+//
+// Copied from the package's db/notification.lite (`fli check`'s
+// `package-model-drift` grades it), with `userId` an Int and a relation to
+// Member: the fragment's String is for auth's uuid ids, and the package
+// writes whatever `recipient.id` is, so a Member's Int goes in as it is.
+// PushSubscription is NOT copied: the push transport is ntfy, which has no
+// device rows (`api/src/push.ts`), and the plugin registers its subscribe
+// door only where that model exists. NotificationPreference is not copied
+// either -- one member, no screen, and `AutopilotReport.via` is the whole
+// choice.
+//
+// `subjectType` is unconstrained: the one notification has no subject, so
+// there is no set of models to name.
+model Notification {
+  id          Int       @id
+  userId      Int
+  member      Member    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String
+  data        Json
+  subjectType String?
+  subjectId   String?
+  deliveryKey String?
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@db(main)
+  @@gate(0.8.4.8)
+  @@unique([userId, type, deliveryKey], nullsDistinct: true)
+  @@allow(read,   userId == auth().id)
+  @@allow(update, userId == auth().id)
+}

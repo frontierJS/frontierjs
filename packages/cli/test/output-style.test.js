@@ -35,14 +35,14 @@ for (const args of OFFLINE) {
     expect(piped).not.toMatch(ESC)
     // Same words either way: color is the only difference.
     expect(colored.replace(/\x1b\[[0-9;]*m/g, '')).toBe(piped)
-  })
+  }, 30000) // two cold fli spawns reading every register, ~2s each idle: over bun's 5s default under CI's parallel load
 }
 
 test('--json stays plain even under FORCE_COLOR', () => {
   const out = run(['register:next', '--json'], { FORCE_COLOR: '1' })
   expect(out).not.toMatch(ESC)
   expect(() => JSON.parse(out)).not.toThrow()
-})
+}, 30000)
 
 const STYLED = [
   'cloudflare/dns', 'cloudflare/zones', 'cloudflare/workers', 'project/map',

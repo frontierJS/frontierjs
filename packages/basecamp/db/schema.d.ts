@@ -132,7 +132,7 @@ export type DependencyKind = 'dependency' | 'dev' | 'peer' | 'optional'
 
 export type NotificationContext = 'Deployment' | 'Alert' | 'JobRun' | 'Server' | 'Workspace' | 'Monitor'
 
-export type NotificationKind = 'DeploySuccess' | 'DeployFailed' | 'AlertFiring' | 'AlertResolved' | 'ServerUnreachable' | 'MonitorDown' | 'MonitorUp' | 'PostureFailed' | 'HubPostureFailed' | 'DependencyVulnerable' | 'MemberJoined' | 'JobFailed' | 'WeeklyDigest' | 'ReplicaFound'
+export type NotificationKind = 'DeploySuccess' | 'DeployFailed' | 'AlertFiring' | 'AlertResolved' | 'ServerUnreachable' | 'MonitorDown' | 'MonitorUp' | 'PostureFailed' | 'HubPostureFailed' | 'DependencyVulnerable' | 'MemberJoined' | 'JobFailed' | 'WeeklyDigest' | 'ReplicaFound' | 'MonitorCertExpiring' | 'AppBackupFailed'
 
 export type VolumeKind = 'volume' | 'bind'
 
@@ -366,6 +366,15 @@ export interface AppVolumeRestore {
   path?: string | null
   backupId?: string | null
   isOverwriting?: boolean | null
+}
+
+/**
+ * What `deployments.rollback` accepts. A rollback keeps the volume as it is;
+ * `isRestoringVolume` puts back the copy taken before the release it undoes
+ * instead, discarding what the app has written since (`FJS-D1796`).
+ */
+export interface DeploymentRollback {
+  isRestoringVolume?: boolean | null
 }
 
 /**
@@ -2283,6 +2292,7 @@ export interface ApiKey {
   workspaceId: string
   userId: string
   credentialId?: string | null
+  publicKey?: string | null
   name: string
   tokenHint: string
   scopes: string[]
@@ -2319,6 +2329,7 @@ export interface ApiKeyUpdate {
 
 export interface ApiKeySystem {
   credentialId?: string | null
+  publicKey?: string | null
   tokenHint?: string
   revokedAt?: string | Date | null
   lastUsedAt?: string | Date | null
@@ -2332,6 +2343,7 @@ export interface ApiKeyWhere extends WhereBase {
   workspaceId?: string | WhereOp<string> | null
   userId?: string | WhereOp<string> | null
   credentialId?: string | WhereOp<string> | null
+  publicKey?: string | WhereOp<string> | null
   name?: string | WhereOp<string> | null
   tokenHint?: string | WhereOp<string> | null
   scopes?: string[] | WhereOp<string[]> | null
@@ -2412,6 +2424,9 @@ export interface Server {
    * it is refused (`outpostKeyFor` in `core/hooks.ts`). Nullable because the
    * row exists before the machine does: provisioned or imported, it is
    * created first and enrolls after.
+   * 
+   * `@system`: a caller who could write it would sign as `outpost:<id>` with
+   * a key of their own, without enrolling (`FJS-3904`). Enrollment is the writer.
    */
   outpostPublicKey?: string | null
   /**
@@ -2421,6 +2436,8 @@ export interface Server {
    * nature, so no protection. Null means no command can reach the machine:
    * no target is registered without it, and the only way to change it is to
    * enroll again.
+   * 
+   * `@system` for the reason `outpostPublicKey` is.
    */
   outpostCert?: string | null
   plan: unknown
@@ -2441,9 +2458,6 @@ export interface ServerCreate {
   slug: string
   status?: ServerStatus
   role?: ServerRole
-  providerKind?: ComputeProvider
-  providerId?: string | null
-  providerServerId?: string | null
   registerMethod?: RegisterMethod
   region?: string
   ipAddress?: string | null
@@ -2476,26 +2490,6 @@ export interface ServerCreate {
    */
   enrollTokenHash?: string | null
   enrollExpiresAt?: string | Date | null
-  /**
-   * The public half of the Ed25519 pair THIS machine made at enrollment,
-   * base64url (`FJS-D1604`). The private half never leaves the machine, so
-   * the column is public by nature: nothing here can sign as it.
-   * 
-   * Null means the machine has not enrolled, and every signed request about
-   * it is refused (`outpostKeyFor` in `core/hooks.ts`). Nullable because the
-   * row exists before the machine does: provisioned or imported, it is
-   * created first and enrolls after.
-   */
-  outpostPublicKey?: string | null
-  /**
-   * The certificate this machine's command port answers with, PEM, handed
-   * over in the enrollment exchange and pinned on its Conduit target — the
-   * one certificate a command to it will accept (`FJS-1603`). Public by
-   * nature, so no protection. Null means no command can reach the machine:
-   * no target is registered without it, and the only way to change it is to
-   * enroll again.
-   */
-  outpostCert?: string | null
   plan?: unknown
   actualSpecs?: unknown | null
   health?: unknown | null
@@ -2511,9 +2505,6 @@ export interface ServerUpdate {
   slug?: string
   status?: ServerStatus
   role?: ServerRole
-  providerKind?: ComputeProvider
-  providerId?: string | null
-  providerServerId?: string | null
   registerMethod?: RegisterMethod
   region?: string
   ipAddress?: string | null
@@ -2525,14 +2516,20 @@ export interface ServerUpdate {
   lastHeartbeatAt?: string | Date | null
   enrollTokenHash?: string | null
   enrollExpiresAt?: string | Date | null
-  outpostPublicKey?: string | null
-  outpostCert?: string | null
   plan?: unknown
   actualSpecs?: unknown | null
   health?: unknown | null
   dockerState?: unknown | null
   replication?: unknown | null
   labels?: unknown
+}
+
+export interface ServerSystem {
+  providerKind?: ComputeProvider
+  providerId?: string | null
+  providerServerId?: string | null
+  outpostPublicKey?: string | null
+  outpostCert?: string | null
 }
 
 export interface ServerWhere extends WhereBase {
@@ -2593,6 +2590,7 @@ export interface ServerEvent {
   message: string
   metadata: unknown
   createdAt: string
+  noticeOwedAt?: string | null
 }
 
 export interface ServerEventCreate {
@@ -2611,6 +2609,10 @@ export interface ServerEventUpdate {
   metadata?: unknown
 }
 
+export interface ServerEventSystem {
+  noticeOwedAt?: string | Date | null
+}
+
 export interface ServerEventWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   serverId?: string | WhereOp<string> | null
@@ -2618,6 +2620,7 @@ export interface ServerEventWhere extends WhereBase {
   message?: string | WhereOp<string> | null
   metadata?: unknown | WhereOp<unknown> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
+  noticeOwedAt?: string | Date | WhereOp<string | Date> | null
   AND?: ServerEventWhere[]
   OR?:  ServerEventWhere[]
   NOT?: ServerEventWhere
@@ -2661,241 +2664,6 @@ export type OutpostNonceOrderBy =
   | Array<{ [K in keyof Omit<OutpostNonce, never>]?: OrderDir }>
 
 export interface OutpostNonceRelations {
-}
-
-// ─── ClaudeTranscript ────────────────────────────────────────────
-
-export interface ClaudeTranscript {
-  id: string
-  path: string
-  sessionId: string
-  cwd?: string | null
-  isSubagent: boolean
-  agent?: string | null
-  isHeadless: boolean
-  title?: string | null
-  firstPrompt?: string | null
-  offset: number
-  turnSkills: string
-  size: number
-  startedAt?: string | null
-  lastAt?: string | null
-  isGone: boolean
-  createdAt: string
-  updatedAt: string
-}
-
-export interface ClaudeTranscriptCreate {
-  id?: string
-  path: string
-  sessionId: string
-  cwd?: string | null
-  isSubagent?: boolean
-  agent?: string | null
-  isHeadless?: boolean
-  title?: string | null
-  firstPrompt?: string | null
-  offset?: number
-  turnSkills?: string
-  size?: number
-  startedAt?: string | Date | null
-  lastAt?: string | Date | null
-  isGone?: boolean
-}
-
-export interface ClaudeTranscriptUpdate {
-  id?: string
-  path?: string
-  sessionId?: string
-  cwd?: string | null
-  isSubagent?: boolean
-  agent?: string | null
-  isHeadless?: boolean
-  title?: string | null
-  firstPrompt?: string | null
-  offset?: number
-  turnSkills?: string
-  size?: number
-  startedAt?: string | Date | null
-  lastAt?: string | Date | null
-  isGone?: boolean
-}
-
-export interface ClaudeTranscriptWhere extends WhereBase {
-  id?: string | WhereOp<string> | null
-  path?: string | WhereOp<string> | null
-  sessionId?: string | WhereOp<string> | null
-  cwd?: string | WhereOp<string> | null
-  isSubagent?: boolean | WhereOp<boolean> | null
-  agent?: string | WhereOp<string> | null
-  isHeadless?: boolean | WhereOp<boolean> | null
-  title?: string | WhereOp<string> | null
-  firstPrompt?: string | WhereOp<string> | null
-  offset?: number | WhereOp<number> | null
-  turnSkills?: string | WhereOp<string> | null
-  size?: number | WhereOp<number> | null
-  startedAt?: string | Date | WhereOp<string | Date> | null
-  lastAt?: string | Date | WhereOp<string | Date> | null
-  isGone?: boolean | WhereOp<boolean> | null
-  createdAt?: string | Date | WhereOp<string | Date> | null
-  updatedAt?: string | Date | WhereOp<string | Date> | null
-  AND?: ClaudeTranscriptWhere[]
-  OR?:  ClaudeTranscriptWhere[]
-  NOT?: ClaudeTranscriptWhere
-}
-
-export type ClaudeTranscriptOrderBy =
-  | { [K in keyof Omit<ClaudeTranscript, never>]?: OrderDir }
-  | Array<{ [K in keyof Omit<ClaudeTranscript, never>]?: OrderDir }>
-
-export interface ClaudeTranscriptRelations {
-}
-
-// ─── ClaudeMessage ───────────────────────────────────────────────
-
-export interface ClaudeMessage {
-  id: string
-  messageId: string
-  sessionId: string
-  cwd?: string | null
-  model: string
-  at: string
-  input: number
-  cacheWrite: number
-  cacheWrite1h: number
-  cacheRead: number
-  output: number
-  tools: string
-  skills: string
-  isSubagent: boolean
-  agent?: string | null
-}
-
-export interface ClaudeMessageCreate {
-  id?: string
-  messageId: string
-  sessionId: string
-  cwd?: string | null
-  model: string
-  at: string | Date
-  input: number
-  cacheWrite: number
-  cacheWrite1h?: number
-  cacheRead: number
-  output: number
-  tools?: string
-  skills?: string
-  isSubagent?: boolean
-  agent?: string | null
-}
-
-export interface ClaudeMessageUpdate {
-  id?: string
-  messageId?: string
-  sessionId?: string
-  cwd?: string | null
-  model?: string
-  at?: string | Date
-  input?: number
-  cacheWrite?: number
-  cacheWrite1h?: number
-  cacheRead?: number
-  output?: number
-  tools?: string
-  skills?: string
-  isSubagent?: boolean
-  agent?: string | null
-}
-
-export interface ClaudeMessageWhere extends WhereBase {
-  id?: string | WhereOp<string> | null
-  messageId?: string | WhereOp<string> | null
-  sessionId?: string | WhereOp<string> | null
-  cwd?: string | WhereOp<string> | null
-  model?: string | WhereOp<string> | null
-  at?: string | Date | WhereOp<string | Date> | null
-  input?: number | WhereOp<number> | null
-  cacheWrite?: number | WhereOp<number> | null
-  cacheWrite1h?: number | WhereOp<number> | null
-  cacheRead?: number | WhereOp<number> | null
-  output?: number | WhereOp<number> | null
-  tools?: string | WhereOp<string> | null
-  skills?: string | WhereOp<string> | null
-  isSubagent?: boolean | WhereOp<boolean> | null
-  agent?: string | WhereOp<string> | null
-  AND?: ClaudeMessageWhere[]
-  OR?:  ClaudeMessageWhere[]
-  NOT?: ClaudeMessageWhere
-}
-
-export type ClaudeMessageOrderBy =
-  | { [K in keyof Omit<ClaudeMessage, never>]?: OrderDir }
-  | Array<{ [K in keyof Omit<ClaudeMessage, never>]?: OrderDir }>
-
-export interface ClaudeMessageRelations {
-}
-
-// ─── ClaudeWrite ─────────────────────────────────────────────────
-
-export interface ClaudeWrite {
-  id: string
-  action: string
-  target: string
-  project?: string | null
-  scope?: string | null
-  keys: string
-  /** @encrypted */
-  before?: string | null
-  digest?: string | null
-  undoneAt?: string | null
-  createdAt: string
-}
-
-export interface ClaudeWriteCreate {
-  id?: string
-  action: string
-  target: string
-  project?: string | null
-  scope?: string | null
-  keys?: string
-  before?: string | null
-  digest?: string | null
-  undoneAt?: string | Date | null
-}
-
-export interface ClaudeWriteUpdate {
-  id?: string
-  action?: string
-  target?: string
-  project?: string | null
-  scope?: string | null
-  keys?: string
-  before?: string | null
-  digest?: string | null
-  undoneAt?: string | Date | null
-}
-
-export interface ClaudeWriteWhere extends WhereBase {
-  id?: string | WhereOp<string> | null
-  action?: string | WhereOp<string> | null
-  target?: string | WhereOp<string> | null
-  project?: string | WhereOp<string> | null
-  scope?: string | WhereOp<string> | null
-  keys?: string | WhereOp<string> | null
-  before?: string | WhereOp<string> | null
-  digest?: string | WhereOp<string> | null
-  undoneAt?: string | Date | WhereOp<string | Date> | null
-  createdAt?: string | Date | WhereOp<string | Date> | null
-  AND?: ClaudeWriteWhere[]
-  OR?:  ClaudeWriteWhere[]
-  NOT?: ClaudeWriteWhere
-}
-
-export type ClaudeWriteOrderBy =
-  | { [K in keyof Omit<ClaudeWrite, never>]?: OrderDir }
-  | Array<{ [K in keyof Omit<ClaudeWrite, never>]?: OrderDir }>
-
-export interface ClaudeWriteRelations {
 }
 
 // ─── Volume ──────────────────────────────────────────────────────
@@ -4038,18 +3806,11 @@ export interface DeploymentCreate {
   trigger?: DeployTrigger
   fromImage?: string | null
   toImage?: string | null
-  commitSha?: string | null
   commitMessage?: string | null
-  branch?: string | null
   author?: string | null
-  builtImage?: string | null
-  previousDeploymentId?: string | null
   configSnapshot?: unknown
   triggeredBy?: string | null
   queuedAt?: string | Date
-  startedAt?: string | Date | null
-  finishedAt?: string | Date | null
-  durationMs?: number | null
 }
 
 export interface DeploymentUpdate {
@@ -4060,22 +3821,22 @@ export interface DeploymentUpdate {
   trigger?: DeployTrigger
   fromImage?: string | null
   toImage?: string | null
-  commitSha?: string | null
   commitMessage?: string | null
-  branch?: string | null
   author?: string | null
-  builtImage?: string | null
-  previousDeploymentId?: string | null
   configSnapshot?: unknown
   triggeredBy?: string | null
   queuedAt?: string | Date
-  startedAt?: string | Date | null
-  finishedAt?: string | Date | null
-  durationMs?: number | null
 }
 
 export interface DeploymentSystem {
+  commitSha?: string | null
+  branch?: string | null
+  builtImage?: string | null
   platformVersion?: string | null
+  previousDeploymentId?: string | null
+  startedAt?: string | Date | null
+  finishedAt?: string | Date | null
+  durationMs?: number | null
 }
 
 export interface DeploymentWhere extends WhereBase {
@@ -4847,8 +4608,11 @@ export interface NotificationChannel {
   config: unknown
   secretId?: string | null
   isActive: boolean
+  isPagedForFleet: boolean
   lastTestAt?: string | null
   lastDeliveryAt?: string | null
+  lastError?: string | null
+  lastErrorAt?: string | null
   createdBy?: string | null
   /** @version */
   version: number
@@ -4865,6 +4629,7 @@ export interface NotificationChannelCreate {
   config?: unknown
   secret?: string | null
   isActive?: boolean
+  isPagedForFleet?: boolean
   createdBy?: string | null
 }
 
@@ -4876,6 +4641,7 @@ export interface NotificationChannelUpdate {
   config?: unknown
   secret?: string | null
   isActive?: boolean
+  isPagedForFleet?: boolean
   createdBy?: string | null
   version: number
 }
@@ -4884,6 +4650,8 @@ export interface NotificationChannelSystem {
   secretId?: string | null
   lastTestAt?: string | Date | null
   lastDeliveryAt?: string | Date | null
+  lastError?: string | null
+  lastErrorAt?: string | Date | null
 }
 
 export interface NotificationChannelWhere extends WhereBase {
@@ -4894,8 +4662,11 @@ export interface NotificationChannelWhere extends WhereBase {
   config?: unknown | WhereOp<unknown> | null
   secretId?: string | WhereOp<string> | null
   isActive?: boolean | WhereOp<boolean> | null
+  isPagedForFleet?: boolean | WhereOp<boolean> | null
   lastTestAt?: string | Date | WhereOp<string | Date> | null
   lastDeliveryAt?: string | Date | WhereOp<string | Date> | null
+  lastError?: string | WhereOp<string> | null
+  lastErrorAt?: string | Date | WhereOp<string | Date> | null
   createdBy?: string | WhereOp<string> | null
   version?: number | WhereOp<number> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
@@ -5009,6 +4780,8 @@ export interface AlertRule {
   operator: ComparisonOp
   threshold: number
   forMinutes: number
+  clearForMinutes: number
+  refireAfterMinutes: number
   isActive: boolean
   snoozedUntil?: string | null
   /** @version */
@@ -5027,6 +4800,8 @@ export interface AlertRuleCreate {
   operator?: ComparisonOp
   threshold: number
   forMinutes?: number
+  clearForMinutes?: number
+  refireAfterMinutes?: number
   isActive?: boolean
 }
 
@@ -5040,6 +4815,8 @@ export interface AlertRuleUpdate {
   operator?: ComparisonOp
   threshold?: number
   forMinutes?: number
+  clearForMinutes?: number
+  refireAfterMinutes?: number
   isActive?: boolean
   version: number
 }
@@ -5058,6 +4835,8 @@ export interface AlertRuleWhere extends WhereBase {
   operator?: ComparisonOp | WhereOp<ComparisonOp> | null
   threshold?: number | WhereOp<number> | null
   forMinutes?: number | WhereOp<number> | null
+  clearForMinutes?: number | WhereOp<number> | null
+  refireAfterMinutes?: number | WhereOp<number> | null
   isActive?: boolean | WhereOp<boolean> | null
   snoozedUntil?: string | Date | WhereOp<string | Date> | null
   version?: number | WhereOp<number> | null
@@ -5217,6 +4996,8 @@ export interface Monitor {
   lastCheckedAt?: string | null
   nextCheckAt?: string | null
   lastLatencyMs?: number | null
+  certExpiresAt?: string | null
+  certWarnedDays?: number | null
   createdAt: string
   updatedAt: string
 }
@@ -5270,6 +5051,8 @@ export interface MonitorSystem {
   lastCheckedAt?: string | Date | null
   nextCheckAt?: string | Date | null
   lastLatencyMs?: number | null
+  certExpiresAt?: string | Date | null
+  certWarnedDays?: number | null
 }
 
 export interface MonitorWhere extends WhereBase {
@@ -5296,6 +5079,8 @@ export interface MonitorWhere extends WhereBase {
   lastCheckedAt?: string | Date | WhereOp<string | Date> | null
   nextCheckAt?: string | Date | WhereOp<string | Date> | null
   lastLatencyMs?: number | WhereOp<number> | null
+  certExpiresAt?: string | Date | WhereOp<string | Date> | null
+  certWarnedDays?: number | WhereOp<number> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   AND?: MonitorWhere[]
@@ -5311,6 +5096,7 @@ export interface MonitorRelations {
   workspace: Workspace | null
   checks: MonitorCheck[]
   events: MonitorEvent[]
+  uptimeDays: MonitorUptimeDay[]
   channels: MonitorChannel[]
 }
 
@@ -5367,6 +5153,59 @@ export interface MonitorCheckRelations {
   monitor: Monitor | null
 }
 
+// ─── MonitorUptimeDay ────────────────────────────────────────────
+
+export interface MonitorUptimeDay {
+  id: string
+  monitorId: string
+  day: string
+  checks: number
+  okChecks: number
+  avgLatencyMs?: number | null
+  maxLatencyMs?: number | null
+}
+
+export interface MonitorUptimeDayCreate {
+  id?: string
+  monitorId: string
+  day: string | Date
+  checks: number
+  okChecks: number
+  avgLatencyMs?: number | null
+  maxLatencyMs?: number | null
+}
+
+export interface MonitorUptimeDayUpdate {
+  id?: string
+  monitorId?: string
+  day?: string | Date
+  checks?: number
+  okChecks?: number
+  avgLatencyMs?: number | null
+  maxLatencyMs?: number | null
+}
+
+export interface MonitorUptimeDayWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  monitorId?: string | WhereOp<string> | null
+  day?: string | Date | WhereOp<string | Date> | null
+  checks?: number | WhereOp<number> | null
+  okChecks?: number | WhereOp<number> | null
+  avgLatencyMs?: number | WhereOp<number> | null
+  maxLatencyMs?: number | WhereOp<number> | null
+  AND?: MonitorUptimeDayWhere[]
+  OR?:  MonitorUptimeDayWhere[]
+  NOT?: MonitorUptimeDayWhere
+}
+
+export type MonitorUptimeDayOrderBy =
+  | { [K in keyof Omit<MonitorUptimeDay, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<MonitorUptimeDay, never>]?: OrderDir }>
+
+export interface MonitorUptimeDayRelations {
+  monitor: Monitor | null
+}
+
 // ─── MonitorEvent ────────────────────────────────────────────────
 
 export interface MonitorEvent {
@@ -5376,6 +5215,7 @@ export interface MonitorEvent {
   fromStatus: MonitorStatus
   toStatus: MonitorStatus
   message: string
+  noticeOwedAt?: string | null
 }
 
 export interface MonitorEventCreate {
@@ -5396,6 +5236,10 @@ export interface MonitorEventUpdate {
   message?: string
 }
 
+export interface MonitorEventSystem {
+  noticeOwedAt?: string | Date | null
+}
+
 export interface MonitorEventWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   monitorId?: string | WhereOp<string> | null
@@ -5403,6 +5247,7 @@ export interface MonitorEventWhere extends WhereBase {
   fromStatus?: MonitorStatus | WhereOp<MonitorStatus> | null
   toStatus?: MonitorStatus | WhereOp<MonitorStatus> | null
   message?: string | WhereOp<string> | null
+  noticeOwedAt?: string | Date | WhereOp<string | Date> | null
   AND?: MonitorEventWhere[]
   OR?:  MonitorEventWhere[]
   NOT?: MonitorEventWhere
@@ -6046,6 +5891,7 @@ export interface DependencyUseRelations {
 
 export interface HubConfig {
   id: string
+  installId: string
   heartbeatTimeoutSeconds: number
   isTwoFactorRequiredForOwners: boolean
   isApiKeyAuthAllowed: boolean
@@ -6054,6 +5900,10 @@ export interface HubConfig {
   backupKeepLocalDays?: number | null
   backupKeepRemoteCount: number
   backupKeepRemoteDays?: number | null
+  retentionCheckDays: number
+  retentionEventDays: number
+  retentionAlertDays: number
+  retentionNotificationDays: number
   encryptionKeyEscrowedAt?: string | null
   encryptionKeyFingerprint?: string | null
   appId?: string | null
@@ -6072,6 +5922,10 @@ export interface HubConfigCreate {
   backupKeepLocalDays?: number | null
   backupKeepRemoteCount?: number
   backupKeepRemoteDays?: number | null
+  retentionCheckDays?: number
+  retentionEventDays?: number
+  retentionAlertDays?: number
+  retentionNotificationDays?: number
 }
 
 export interface HubConfigUpdate {
@@ -6084,10 +5938,15 @@ export interface HubConfigUpdate {
   backupKeepLocalDays?: number | null
   backupKeepRemoteCount?: number
   backupKeepRemoteDays?: number | null
+  retentionCheckDays?: number
+  retentionEventDays?: number
+  retentionAlertDays?: number
+  retentionNotificationDays?: number
   version: number
 }
 
 export interface HubConfigSystem {
+  installId?: string
   encryptionKeyEscrowedAt?: string | Date | null
   encryptionKeyFingerprint?: string | null
   appId?: string | null
@@ -6095,6 +5954,7 @@ export interface HubConfigSystem {
 
 export interface HubConfigWhere extends WhereBase {
   id?: string | WhereOp<string> | null
+  installId?: string | WhereOp<string> | null
   heartbeatTimeoutSeconds?: number | WhereOp<number> | null
   isTwoFactorRequiredForOwners?: boolean | WhereOp<boolean> | null
   isApiKeyAuthAllowed?: boolean | WhereOp<boolean> | null
@@ -6103,6 +5963,10 @@ export interface HubConfigWhere extends WhereBase {
   backupKeepLocalDays?: number | WhereOp<number> | null
   backupKeepRemoteCount?: number | WhereOp<number> | null
   backupKeepRemoteDays?: number | WhereOp<number> | null
+  retentionCheckDays?: number | WhereOp<number> | null
+  retentionEventDays?: number | WhereOp<number> | null
+  retentionAlertDays?: number | WhereOp<number> | null
+  retentionNotificationDays?: number | WhereOp<number> | null
   encryptionKeyEscrowedAt?: string | Date | WhereOp<string | Date> | null
   encryptionKeyFingerprint?: string | WhereOp<string> | null
   appId?: string | WhereOp<string> | null
@@ -6309,9 +6173,6 @@ export interface ServiceTypes {
   servers: Server
   serverEvents: ServerEvent
   outpostNonces: OutpostNonce
-  claudeTranscripts: ClaudeTranscript
-  claudeMessages: ClaudeMessage
-  claudeWrites: ClaudeWrite
   volumes: Volume
   networks: Network
   serverNetworks: ServerNetwork
@@ -6345,6 +6206,7 @@ export interface ServiceTypes {
   alerts: Alert
   monitors: Monitor
   monitorChecks: MonitorCheck
+  monitorUptimeDays: MonitorUptimeDay
   monitorEvents: MonitorEvent
   monitorChannels: MonitorChannel
   dashboards: Dashboard
@@ -6393,6 +6255,7 @@ export interface SeedTypes {
   AppPlace: AppPlace
   AppUnplace: AppUnplace
   AppVolumeRestore: AppVolumeRestore
+  DeploymentRollback: DeploymentRollback
   AppReplicaRestore: AppReplicaRestore
   AppDrillRun: AppDrillRun
   AppPublish: AppPublish
@@ -6560,7 +6423,7 @@ type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient
 type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
-  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'claudeTranscript' | 'claudeMessage' | 'claudeWrite' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'domainRoute' | 'appEditor' | 'appServer' | 'appPlatform' | 'appBackup' | 'appDrill' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'maintenanceRun' | 'flag' | 'flagOverride' | 'notificationChannel' | 'backupDestination' | 'alertRule' | 'alertRuleChannel' | 'alert' | 'monitor' | 'monitorCheck' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardTile' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
+  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'domainRoute' | 'appEditor' | 'appServer' | 'appPlatform' | 'appBackup' | 'appDrill' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'maintenanceRun' | 'flag' | 'flagOverride' | 'notificationChannel' | 'backupDestination' | 'alertRule' | 'alertRuleChannel' | 'alert' | 'monitor' | 'monitorCheck' | 'monitorUptimeDay' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardTile' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
   readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere, CredentialRelations, never, 'value' | 'accessToken' | 'refreshToken' | '@@gate'>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'token' | '@@gate'>
   readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere, VerificationRelations, never, 'value' | 'secret' | 'code' | '@@gate'>
@@ -6584,13 +6447,10 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly workspaceMember: TableClient<WorkspaceMember, WorkspaceMemberCreate, WorkspaceMemberUpdate, WorkspaceMemberWhere, WorkspaceMemberRelations, never, 'userId' | '@@gate', WorkspaceMemberSystem>
   readonly invitation: TableClient<Invitation, InvitationCreate, InvitationUpdate, InvitationWhere, InvitationRelations, never, 'token' | '@@gate'>
   readonly secret: TableClient<Secret, SecretCreate, SecretUpdate, SecretWhere, SecretRelations, never, 'verifiedAt' | 'verifyError' | '@@gate', SecretSystem>
-  readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere, ApiKeyRelations, never, 'credentialId' | 'tokenHint' | 'revokedAt' | 'lastUsedAt' | 'totalUses' | 'usageDate' | 'usesOnDate' | '@@gate', ApiKeySystem>
-  readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere, ServerRelations, 'reboot' | 'drain' | 'undrain' | 'provision' | 'destroy' | 'checkIn' | 'loseContact' | 'reportProvisioned' | 'reportRunning' | 'reportStopped' | 'reportRebuilding' | 'reportDestroyed', 'enrollTokenHash' | 'status' | '@@gate'>
-  readonly serverEvent: TableClient<ServerEvent, ServerEventCreate, ServerEventUpdate, ServerEventWhere, ServerEventRelations, never, '@@gate'>
+  readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere, ApiKeyRelations, never, 'credentialId' | 'publicKey' | 'tokenHint' | 'revokedAt' | 'lastUsedAt' | 'totalUses' | 'usageDate' | 'usesOnDate' | '@@gate', ApiKeySystem>
+  readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere, ServerRelations, 'reboot' | 'drain' | 'undrain' | 'provision' | 'destroy' | 'checkIn' | 'loseContact' | 'reportProvisioned' | 'reportRunning' | 'reportStopped' | 'reportRebuilding' | 'reportDestroyed', 'providerKind' | 'providerId' | 'providerServerId' | 'enrollTokenHash' | 'outpostPublicKey' | 'outpostCert' | 'status' | '@@gate', ServerSystem>
+  readonly serverEvent: TableClient<ServerEvent, ServerEventCreate, ServerEventUpdate, ServerEventWhere, ServerEventRelations, never, 'noticeOwedAt' | '@@gate', ServerEventSystem>
   readonly outpostNonce: TableClient<OutpostNonce, OutpostNonceCreate, OutpostNonceUpdate, OutpostNonceWhere, OutpostNonceRelations, never, '@@gate'>
-  readonly claudeTranscript: TableClient<ClaudeTranscript, ClaudeTranscriptCreate, ClaudeTranscriptUpdate, ClaudeTranscriptWhere, ClaudeTranscriptRelations, never, '@@gate'>
-  readonly claudeMessage: TableClient<ClaudeMessage, ClaudeMessageCreate, ClaudeMessageUpdate, ClaudeMessageWhere, ClaudeMessageRelations, never, '@@gate'>
-  readonly claudeWrite: TableClient<ClaudeWrite, ClaudeWriteCreate, ClaudeWriteUpdate, ClaudeWriteWhere, ClaudeWriteRelations, never, '@@gate'>
   readonly volume: TableClient<Volume, VolumeCreate, VolumeUpdate, VolumeWhere, VolumeRelations, never, '@@gate'>
   readonly network: TableClient<Network, NetworkCreate, NetworkUpdate, NetworkWhere, NetworkRelations, never, '@@gate'>
   readonly serverNetwork: TableClient<ServerNetwork, ServerNetworkCreate, ServerNetworkUpdate, ServerNetworkWhere, ServerNetworkRelations, never, '@@gate'>
@@ -6606,7 +6466,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly appBackup: TableClient<AppBackup, AppBackupCreate, AppBackupUpdate, AppBackupWhere, AppBackupRelations, never, '@@gate'>
   readonly appDrill: TableClient<AppDrill, AppDrillCreate, AppDrillUpdate, AppDrillWhere, AppDrillRelations, never, '@@gate'>
   readonly appNetwork: TableClient<AppNetwork, AppNetworkCreate, AppNetworkUpdate, AppNetworkWhere, AppNetworkRelations, never, '@@gate'>
-  readonly deployment: TableClient<Deployment, DeploymentCreate, DeploymentUpdate, DeploymentWhere, DeploymentRelations, 'build' | 'succeed' | 'fail' | 'cancel' | 'rollback', 'platformVersion' | 'status' | '@@gate', DeploymentSystem>
+  readonly deployment: TableClient<Deployment, DeploymentCreate, DeploymentUpdate, DeploymentWhere, DeploymentRelations, 'build' | 'succeed' | 'fail' | 'cancel' | 'rollback', 'commitSha' | 'branch' | 'builtImage' | 'platformVersion' | 'previousDeploymentId' | 'startedAt' | 'finishedAt' | 'durationMs' | 'status' | '@@gate', DeploymentSystem>
   readonly deploymentStep: TableClient<DeploymentStep, DeploymentStepCreate, DeploymentStepUpdate, DeploymentStepWhere, DeploymentStepRelations, never, '@@gate'>
   readonly job: TableClient<Job, JobCreate, JobUpdate, JobWhere, JobRelations, 'start' | 'idle' | 'fail' | 'cancel', 'retryCount' | 'lastRunAt' | 'lastRunStatus' | 'status' | '@@gate', JobSystem>
   readonly jobRun: TableClient<JobRun, JobRunCreate, JobRunUpdate, JobRunWhere, JobRunRelations, never, '@@gate'>
@@ -6617,14 +6477,15 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly maintenanceRun: TableClient<MaintenanceRun, MaintenanceRunCreate, MaintenanceRunUpdate, MaintenanceRunWhere, MaintenanceRunRelations, never, '@@gate'>
   readonly flag: TableClient<Flag, FlagCreate, FlagUpdate, FlagWhere, FlagRelations, never, '@@gate'>
   readonly flagOverride: TableClient<FlagOverride, FlagOverrideCreate, FlagOverrideUpdate, FlagOverrideWhere, FlagOverrideRelations, never, '@@gate'>
-  readonly notificationChannel: TableClient<NotificationChannel, NotificationChannelCreate, NotificationChannelUpdate, NotificationChannelWhere, NotificationChannelRelations, never, 'secretId' | 'lastTestAt' | 'lastDeliveryAt' | '@@gate', NotificationChannelSystem>
+  readonly notificationChannel: TableClient<NotificationChannel, NotificationChannelCreate, NotificationChannelUpdate, NotificationChannelWhere, NotificationChannelRelations, never, 'secretId' | 'lastTestAt' | 'lastDeliveryAt' | 'lastError' | 'lastErrorAt' | '@@gate', NotificationChannelSystem>
   readonly backupDestination: TableClient<BackupDestination, BackupDestinationCreate, BackupDestinationUpdate, BackupDestinationWhere, BackupDestinationRelations, never, 'secretId' | 'lastTestAt' | '@@gate', BackupDestinationSystem>
   readonly alertRule: TableClient<AlertRule, AlertRuleCreate, AlertRuleUpdate, AlertRuleWhere, AlertRuleRelations, never, 'snoozedUntil' | '@@gate', AlertRuleSystem>
   readonly alertRuleChannel: TableClient<AlertRuleChannel, AlertRuleChannelCreate, AlertRuleChannelUpdate, AlertRuleChannelWhere, AlertRuleChannelRelations, never, '@@gate'>
   readonly alert: TableClient<Alert, AlertCreate, AlertUpdate, AlertWhere, AlertRelations, never, '@@gate'>
-  readonly monitor: TableClient<Monitor, MonitorCreate, MonitorUpdate, MonitorWhere, MonitorRelations, 'markUp' | 'markDown' | 'pause' | 'resume', 'failStreak' | 'lastCheckedAt' | 'nextCheckAt' | 'lastLatencyMs' | 'status' | '@@gate', MonitorSystem>
+  readonly monitor: TableClient<Monitor, MonitorCreate, MonitorUpdate, MonitorWhere, MonitorRelations, 'markUp' | 'markDown' | 'pause' | 'resume', 'failStreak' | 'lastCheckedAt' | 'nextCheckAt' | 'lastLatencyMs' | 'certExpiresAt' | 'certWarnedDays' | 'status' | '@@gate', MonitorSystem>
   readonly monitorCheck: TableClient<MonitorCheck, MonitorCheckCreate, MonitorCheckUpdate, MonitorCheckWhere, MonitorCheckRelations, never, '@@gate'>
-  readonly monitorEvent: TableClient<MonitorEvent, MonitorEventCreate, MonitorEventUpdate, MonitorEventWhere, MonitorEventRelations, never, '@@gate'>
+  readonly monitorUptimeDay: TableClient<MonitorUptimeDay, MonitorUptimeDayCreate, MonitorUptimeDayUpdate, MonitorUptimeDayWhere, MonitorUptimeDayRelations, never, '@@gate'>
+  readonly monitorEvent: TableClient<MonitorEvent, MonitorEventCreate, MonitorEventUpdate, MonitorEventWhere, MonitorEventRelations, never, 'noticeOwedAt' | '@@gate', MonitorEventSystem>
   readonly monitorChannel: TableClient<MonitorChannel, MonitorChannelCreate, MonitorChannelUpdate, MonitorChannelWhere, MonitorChannelRelations, never, '@@gate'>
   readonly dashboard: TableClient<Dashboard, DashboardCreate, DashboardUpdate, DashboardWhere, DashboardRelations, never, '@@gate'>
   readonly dashboardTile: TableClient<DashboardTile, DashboardTileCreate, DashboardTileUpdate, DashboardTileWhere, DashboardTileRelations, never, '@@gate'>
@@ -6634,7 +6495,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly registryImage: TableClient<RegistryImage, RegistryImageCreate, RegistryImageUpdate, RegistryImageWhere, RegistryImageRelations, never, '@@gate'>
   readonly dependency: TableClient<Dependency, DependencyCreate, DependencyUpdate, DependencyWhere, DependencyRelations, never, 'latest' | 'deprecated' | 'advisories' | 'checkedAt' | 'checkError' | '@@gate', DependencySystem>
   readonly dependencyUse: TableClient<DependencyUse, DependencyUseCreate, DependencyUseUpdate, DependencyUseWhere, DependencyUseRelations, never, '@@gate'>
-  readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere, HubConfigRelations, never, 'encryptionKeyEscrowedAt' | 'encryptionKeyFingerprint' | 'appId' | '@@gate', HubConfigSystem>
+  readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere, HubConfigRelations, never, 'installId' | 'encryptionKeyEscrowedAt' | 'encryptionKeyFingerprint' | 'appId' | '@@gate', HubConfigSystem>
   readonly notification: TableClient<Notification, NotificationCreate, NotificationUpdate, NotificationWhere, NotificationRelations, never, '@@gate'>
   readonly notificationPreference: TableClient<NotificationPreference, NotificationPreferenceCreate, NotificationPreferenceUpdate, NotificationPreferenceWhere, NotificationPreferenceRelations, never, '@@gate'>
   readonly fleetByProvider: ViewClient<FleetByProvider, FleetByProviderWhere>

@@ -942,6 +942,12 @@ circle.er-link-fam { fill: hsl(var(--er-family) 62% 52%); stroke: none }
 .ly-chip:hover { border-color: var(--color-primary) }
 .ly-chip i { inline-size: 0.45rem; block-size: 0.45rem; border-radius: 50%; display: inline-block }
 .ly-none { font-size: var(--text-sm); color: var(--ink-mute) }
+.ly-find input { --field-inline-size: 11rem; --control-padding-block: var(--space-2xs); font-size: var(--text-sm) }
+.ly-go { display: flex; flex-wrap: wrap; gap: var(--space-xs) }
+.ly-keys { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-xs) }
+.ly-keys li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); font-family: var(--font-mono); font-size: var(--text-sm); color: var(--ink-mute) }
+.ly-keys li.ly-also { padding-inline-start: var(--space-md); margin-block: calc(-1 * var(--space-2xs)) var(--space-xs) }
+tr.ac-hit > td { background: color-mix(in oklab, var(--color-primary) 18%, transparent) }
 
 /* ─── Performance ──────────────────────────────────────────────────────── */
 
@@ -1511,11 +1517,13 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
          height. Built by the Layers block in the script. -->
     <div class="schema-pane ly" id="lyView" role="tabpanel" aria-labelledby="erTabLayers" hidden>
       <div class="ly-bar">
+        <label class="ly-seg ly-find"><span>Find</span>
+          <input class="field" id="lyFind" type="search" list="lyFindList" placeholder="Model name" autocomplete="off"></label>
+        <datalist id="lyFindList"></datalist>
         <div class="ly-seg"><span>Floor</span>
           <div class="cluster" role="group" aria-label="Floor layout">
             <button class="pill primary" id="lyF-hub" type="button" aria-pressed="true">Hub</button>
             <button class="pill muted" id="lyF-ring" type="button" aria-pressed="false">Ring</button>
-            <button class="pill muted" id="lyF-map" type="button" aria-pressed="false">Map</button>
           </div></div>
         <div class="ly-seg"><span>Links</span>
           <div class="cluster" role="group" aria-label="Links">
@@ -1528,6 +1536,8 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
           <input id="lyReach" type="range" min="0" step="1" value="0"></label>
         <label class="ly-check"><input id="lyFade" type="checkbox" checked> Fade links into hubs</label>
         <label class="ly-check"><input id="lyLabels" type="checkbox"> All names</label>
+        <label class="ly-check"><input id="lyKnots" type="checkbox"> Knots</label>
+        <label class="ly-check"><input id="lySize" type="checkbox"> Size on disk</label>
         <span class="ly-facts text-muted" id="lyFacts"></span>
       </div>
       <div class="ly-main">
@@ -4276,19 +4286,35 @@ function cmpDrift(drift) {
   </article>`
 }
 
+// Shared while in flight: showTool and acFocus both call it on one click.
+let _acLoading = null
 async function acInit() {
   if (_access) { acRender(); return }
-  const panel = document.getElementById('acPanel')
-  try {
-    _access = await api('/access')
-    if (_access.error) throw new Error(_access.error)
-    acRender()
-  } catch (e) {
-    panel.innerHTML = `<div class="alert danger"><div class="alert-content">${esc(e.message)}</div></div>`
-  }
+  _acLoading ??= (async () => {
+    const panel = document.getElementById('acPanel')
+    try {
+      _access = await api('/access')
+      if (_access.error) throw new Error(_access.error)
+      acRender()
+    } catch (e) {
+      panel.innerHTML = `<div class="alert danger"><div class="alert-content">${esc(e.message)}</div></div>`
+    }
+  })().finally(() => { _acLoading = null })
+  return _acLoading
 }
 
-function acShow(view) { _acView = view; acRender() }
+// Layers' Access button: the Gates grid with the model's row lit. The mark is
+// state, not a class added after, because the hash change re-renders the grid.
+// A model with no gate has no row; the warning above the grid names it.
+let _acHit = null
+async function acFocus(name) {
+  _acHit = name; _acView = 'gates'
+  showTool('access')
+  await acInit()
+  document.querySelector(`#acPanel tr[data-model="${CSS.escape(name)}"]`)?.scrollIntoView({ block: 'center' })
+}
+
+function acShow(view) { _acHit = null; _acView = view; acRender() }
 
 function acRender() {
   if (!_access) return
@@ -4320,7 +4346,7 @@ function acGates() {
   const open  = _access.models.filter(m => !m.gate)
 
   const rows = gated.map(m => `
-    <tr>
+    <tr data-model="${esc(m.name)}"${m.name === _acHit ? ' class="ac-hit"' : ''}>
       <td><b>${esc(m.name)}</b></td>
       ${AC_OPS.map(op => {
         const n = m.gate[op]
@@ -8088,17 +8114,33 @@ const Layers = (() => {
   const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches
   const $ = id => document.getElementById(id)
   const cv = $('lyCanvas'), g2 = cv.getContext('2d')
-  const state = { floor: 'hub', links: 'clusters', fade: true, labels: false, sel: null, depth: 0, reach: 0 }
+  const state = { floor: 'hub', links: 'clusters', fade: true, labels: false, showKnots: false, size: false, sel: null, depth: 0, reach: 0 }
   const cam = { yaw: -0.55, pitch: 0.36, zoom: 1.1 }
   const T = {}
   let D = null, M = {}, OUT = {}, IN = {}, GM = new Map(), HUBS = new Set(), CORE = new Set(), HUE = {}
   let MAXD = 0, REACH_MAX = 0, SHOWN = new Set(), P3 = {}, CEN = {}, SCENE_R = 400
+  let HITS = [], SIZES = null
   let W = 0, H = 0, DPR = 1, proj = {}, spinning = !REDUCED, hover = null, active = false, looping = false, loadedAt = null
 
   const groupOf = n => M[n].g
   const label = k => GM.get(k).label
   const members = k => GM.get(k).members
   const byIn = k => members(k).slice().sort((a, b) => M[b].in - M[a].in || a.localeCompare(b))
+  const knots = k => GM.get(k).knots.all
+  const knotLine = k => state.showKnots && k !== 'unlinked'
+    ? `${knots(k)} knot${knots(k) === 1 ? '' : 's'}` : null
+  const sizeOf = k => state.size && SIZES?.[k] ? `${fmtBytes(SIZES[k].bytes)} · ${SIZES[k].rows.toLocaleString()} rows` : null
+  // A group's outline goes from circle toward triangle as its knots rise. The
+  // scale is absolute, not the schema's own maximum, so the same count draws
+  // the same shape in every schema and the knottiest group is not always a
+  // triangle; one off-core diamond is rare enough to show plainly. The shape
+  // shows only with the score beside it, or a triangle explains nothing.
+  function rimAt(k, a) {
+    if (!state.showKnots) return CEN[k].r
+    const t = knots(k) / (knots(k) + 2), side = 2 * Math.PI / 3
+    const tri = Math.cos(side / 2) / Math.cos(((a + Math.PI / 2) % side + side) % side - side / 2)
+    return CEN[k].r * (1 + t * (1.3 * tri - 1))
+  }
 
   function readTheme() {
     // Studio's palette lives on .theme-studio; :root still holds the light defaults.
@@ -8120,13 +8162,24 @@ const Layers = (() => {
 
   // ── selection ──────────────────────────────────────────────────────────────
   const neighborsOf = n => new Set([...OUT[n], ...IN[n]])
+  const pairOf = (a, b) => [groupOf(a), groupOf(b)].sort().join('\n')
+  // The keys a cluster link counts: between its two groups, within the depth.
+  const keysOf = id => D.edges.filter(([a, b]) =>
+    groupOf(a) !== groupOf(b) && pairOf(a, b) === id && M[a].d <= state.depth && M[b].d <= state.depth)
   function litModels() {
     const s = state.sel
     if (!s) return null
     if (s.type === 'model') return new Set([s.id, ...neighborsOf(s.id)])
+    if (s.type === 'link') return new Set(keysOf(s.id).flatMap(([a, b]) => [a, b]))
     return new Set(GM.has(s.id) ? members(s.id) : [])
   }
-  function select(sel) { state.sel = sel; draw(); renderPanel() }
+  function touches(a, b, lit) {
+    const s = state.sel
+    if (s.type === 'model') return a === s.id || b === s.id
+    if (s.type === 'link') return groupOf(a) !== groupOf(b) && pairOf(a, b) === s.id
+    return lit.has(a) || lit.has(b)
+  }
+  function select(sel) { state.sel = sel; layout(); showRanges(); draw(); renderPanel() }
 
   // ── scene ──────────────────────────────────────────────────────────────────
   // Only a group's core shows until "More per group" asks for the rest, so a
@@ -8137,6 +8190,9 @@ const Layers = (() => {
       REACH_MAX = Math.max(REACH_MAX, gr.members.length - gr.core)
       for (const n of gr.members.slice(0, gr.core + state.reach)) if (M[n].d <= state.depth) SHOWN.add(n)
     }
+    // A selection shows what it names even where the sliders hide it, or picking
+    // a model from a list or the find box lights nothing.
+    if (state.sel?.type === 'model' || state.sel?.type === 'link') for (const n of litModels()) SHOWN.add(n)
   }
   function layout() {
     P3 = {}; CEN = {}
@@ -8203,9 +8259,10 @@ const Layers = (() => {
     for (const [k, c] of Object.entries(CEN)) {
       const on = !lit || members(k).some(n => lit.has(n))
       ctx.beginPath()
-      for (let i = 0; i <= 40; i++) {
-        const a = i / 40 * 2 * Math.PI
-        const p = project({ x: c.x + Math.cos(a) * c.r, y: c.y + Math.sin(a) * c.r, z: 0 })
+      // A multiple of three, so each triangle corner lands on a vertex.
+      for (let i = 0; i <= 60; i++) {
+        const a = i / 60 * 2 * Math.PI, r = rimAt(k, a)
+        const p = project({ x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r, z: 0 })
         i ? ctx.lineTo(p.X, p.Y) : ctx.moveTo(p.X, p.Y)
       }
       if (c.minD === 0) { ctx.fillStyle = color(k, on ? 0.13 : 0.04); ctx.fill() }
@@ -8237,17 +8294,17 @@ const Layers = (() => {
       if (groupOf(a) === groupOf(b) || M[a].d > state.depth || M[b].d > state.depth) continue
       const pair = [groupOf(a), groupOf(b)].sort(), key = pair.join('\n')
       const bu = bundles.get(key) || bundles.set(key, { pair, n: 0, touch: false }).get(key)
-      bu.n++; bu.touch ||= !!lit && (state.sel.type === 'model' ? (a === state.sel.id || b === state.sel.id) : (lit.has(a) || lit.has(b)))
+      bu.n++; bu.touch ||= !!lit && touches(a, b, lit)
     }
     for (const [a, b] of edgeOrder) {
       const pa = proj[a], pb = proj[b]
       const sameG = groupOf(a) === groupOf(b)
-      if (!sameG && state.links === 'clusters') continue
+      if (!sameG && state.links === 'clusters' && !(state.sel?.type === 'link' && touches(a, b, lit))) continue
       const hubby = state.fade && HUBS.has(b)
       let alpha = sameG ? 0.12 : hubby ? 0.3 : 0.85
       let w = sameG ? 0.8 : hubby ? 1.2 : 2.2
       if (lit) {
-        const touch = state.sel.type === 'model' ? (a === state.sel.id || b === state.sel.id) : (lit.has(a) || lit.has(b))
+        const touch = touches(a, b, lit)
         alpha = touch ? 0.9 : 0.04; if (touch) w = 1.8
       }
       ctx.beginPath(); ctx.moveTo(pa.X, pa.Y); ctx.lineTo(pb.X, pb.Y)
@@ -8256,8 +8313,10 @@ const Layers = (() => {
 
     // One line per pair of groups, lead to lead, as thick as the keys it stands for.
     const anchor = k => { const lead = members(k)[0]; return proj[lead] || project({ x: CEN[k].x, y: CEN[k].y, z: 0 }) }
-    for (const { pair: [g1, g2], n, touch } of bundles.values()) {
+    HITS = []
+    for (const [id, { pair: [g1, g2], n, touch }] of bundles) {
       const p1 = anchor(g1), p2 = anchor(g2), a = lit ? (touch ? 0.9 : 0.05) : 0.75
+      HITS.push({ id, p1, p2, w: Math.min(12, 1 + 2.2 * (n - 1)) })
       const grad = ctx.createLinearGradient(p1.X, p1.Y, p2.X, p2.Y)
       grad.addColorStop(0, color(g1, a)); grad.addColorStop(1, color(g2, a))
       ctx.beginPath(); ctx.moveTo(p1.X, p1.Y); ctx.lineTo(p2.X, p2.Y)
@@ -8291,12 +8350,13 @@ const Layers = (() => {
     const gnames = Object.entries(CEN).map(([k, c]) => {
       let front = null
       for (let i = 0; i < 24; i++) {
-        const a = i / 24 * 2 * Math.PI
-        const p = project({ x: c.x + Math.cos(a) * c.r, y: c.y + Math.sin(a) * c.r, z: 0 })
+        const a = i / 24 * 2 * Math.PI, r = rimAt(k, a)
+        const p = project({ x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r, z: 0 })
         if (!front || p.Y > front.Y) front = p
       }
-      const w = ctx.measureText(label(k)).width + 4
-      return { k, front, box: { x: front.X - w / 2, y: front.Y + 4, w, h: 12 } }
+      const lines = [knotLine(k), sizeOf(k)].filter(Boolean)
+      const w = Math.max(...[label(k), ...lines].map(t => ctx.measureText(t).width)) + 4
+      return { k, front, lines, box: { x: front.X - w / 2, y: front.Y + 4, w, h: 12 + 12 * lines.length } }
     })
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
     const pinned = n => n === hover || (state.sel?.type === 'model' && state.sel.id === n)
@@ -8319,12 +8379,17 @@ const Layers = (() => {
 
     // Group names at the front of each disc.
     ctx.textAlign = 'center'; ctx.textBaseline = 'top'
-    for (const { k, front } of gnames) {
+    for (const { k, front, lines } of gnames) {
       const on = !lit || members(k).some(n => lit.has(n))
       ctx.font = `600 9px ${T.sans}`
       ctx.lineWidth = 3.5; ctx.strokeStyle = T.bg
       ctx.strokeText(label(k), front.X, front.Y + 5)
       ctx.fillStyle = color(k, (on ? 1 : 0.3) * (CEN[k].minD === Infinity ? 0.25 : 1)); ctx.fillText(label(k), front.X, front.Y + 5)
+      ctx.font = `500 9px ${T.mono}`
+      lines.forEach((line, i) => {
+        ctx.strokeText(line, front.X, front.Y + 17 + 12 * i)
+        ctx.fillStyle = on ? T.mute : color(k, 0.3); ctx.fillText(line, front.X, front.Y + 17 + 12 * i)
+      })
     }
   }
 
@@ -8334,6 +8399,16 @@ const Layers = (() => {
     for (const n in proj) {
       const p = proj[n], d = Math.hypot(p.X - x, p.Y - y)
       if (d < (p.r ?? 5) + 5 && d < bd) { bd = d; best = n }
+    }
+    return best
+  }
+  function pickLink(x, y) {
+    let best = null, bd = Infinity
+    for (const h of HITS) {
+      const dx = h.p2.X - h.p1.X, dy = h.p2.Y - h.p1.Y
+      const t = Math.max(0, Math.min(1, ((x - h.p1.X) * dx + (y - h.p1.Y) * dy) / (dx * dx + dy * dy || 1)))
+      const d = Math.hypot(x - h.p1.X - t * dx, y - h.p1.Y - t * dy)
+      if (d < h.w / 2 + 4 && d < bd) { bd = d; best = h.id }
     }
     return best
   }
@@ -8348,15 +8423,17 @@ const Layers = (() => {
       cam.pitch = Math.max(0.08, Math.min(1.45, drag.pitch + dy * 0.006))
       draw(); return
     }
-    const h = pick(e.clientX - r.left, e.clientY - r.top)
-    if (h !== hover) { hover = h; cv.style.cursor = h ? 'pointer' : ''; if (!spinning) draw() }
+    const x = e.clientX - r.left, y = e.clientY - r.top, h = pick(x, y)
+    cv.style.cursor = h || pickLink(x, y) ? 'pointer' : ''
+    if (h !== hover) { hover = h; if (!spinning) draw() }
   })
   cv.addEventListener('pointerup', e => {
     cv.classList.remove('dragging')
     if (drag && !drag.moved) {
-      const r = cv.getBoundingClientRect(), n = pick(e.clientX - r.left, e.clientY - r.top)
+      const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top
+      const n = pick(x, y), l = n ? null : pickLink(x, y)
       spinning = false
-      select(n ? { type: 'model', id: n } : null)
+      select(n ? { type: 'model', id: n } : l ? { type: 'link', id: l } : null)
     }
     drag = null
   })
@@ -8377,6 +8454,10 @@ const Layers = (() => {
       el.innerHTML = `
         <button class="ly-back" type="button" data-back>← All groups</button>
         <div class="ly-sect"><p class="ly-eyebrow">Model</p><h2 class="ly-title mono">${esc(m.n)}</h2></div>
+        <div class="ly-go">
+          <button class="btn outlined compact" type="button" data-go="diagram">Diagram</button>
+          <button class="btn outlined compact" type="button" data-go="browse">Browse rows</button>
+          <button class="btn outlined compact" type="button" data-go="access">Access</button></div>
         <dl class="ly-stats">
           <dt>Group</dt><dd>${esc(label(m.g))}</dd>
           <dt>Depth</dt><dd>${m.d} ${m.d === 0 ? '(points at nothing)' : 'link' + (m.d > 1 ? 's' : '') + ' above the floor'}</dd>
@@ -8386,6 +8467,13 @@ const Layers = (() => {
           ${OUT[m.n].length ? `<div class="ly-chips">${OUT[m.n].map(chip).join('')}</div>` : '<span class="ly-none">Nothing. This model stands on the floor.</span>'}</div>
         <div class="ly-sect"><p class="ly-eyebrow">Pointed at by · ${IN[m.n].length}</p>
           ${IN[m.n].length ? `<div class="ly-chips">${IN[m.n].map(chip).join('')}</div>` : '<span class="ly-none">No model refers to this one.</span>'}</div>`
+    } else if (s?.type === 'link') {
+      const [g1, g2] = s.id.split('\n'), keys = keysOf(s.id)
+      el.innerHTML = `
+        <button class="ly-back" type="button" data-back>← All groups</button>
+        <div class="ly-sect"><p class="ly-eyebrow">Link · ${keys.length} key${keys.length === 1 ? '' : 's'}</p>
+          <h2 class="ly-title"><span style="color:${color(g1)}">${esc(label(g1))}</span> ↔ <span style="color:${color(g2)}">${esc(label(g2))}</span></h2></div>
+        <ul class="ly-keys">${keys.map(([a, b, f]) => `<li>${chip(a)}<span>.${esc(f)} →</span>${chip(b)}</li>`).join('')}</ul>`
     } else if (s?.type === 'group' && GM.has(s.id)) {
       const cross = D.edges.filter(([a, b]) => (groupOf(a) === s.id) !== (groupOf(b) === s.id)).length
       const inside = D.edges.filter(([a, b]) => groupOf(a) === s.id && groupOf(b) === s.id).length
@@ -8397,28 +8485,80 @@ const Layers = (() => {
           <dt>Models</dt><dd>${members(s.id).length}</dd>
           <dt>Keys inside</dt><dd>${inside}</dd>
           <dt>Keys crossing out</dt><dd>${cross}</dd>
+          <dt>Knots</dt><dd>${GM.get(s.id).knots.all}</dd>
+          ${sizeOf(s.id) ? `<dt>On disk</dt><dd>${sizeOf(s.id)}</dd>` : ''}
         </dl>
+        ${knotList(GM.get(s.id).knots.list)}
         <div class="ly-sect"><p class="ly-eyebrow">Members, most referenced first</p>
           <div class="ly-chips">${byIn(s.id).map(chip).join('')}</div></div>`
     } else {
-      const unl = GM.get('unlinked')?.members.length ?? 0
       const inside = D.edges.filter(([a, b]) => groupOf(a) === groupOf(b)).length
       el.innerHTML = `
-        <div class="ly-sect"><p class="ly-eyebrow">${D.groups.length} groups</p>
-          <p>Found from foreign keys alone, with links into much-referenced models weighted down so they don't swallow everything.${unl ? ` ${unl} models have no foreign key either way and can't be placed.` : ''}</p>
-          <p>Arranged around ${D.hubs.map(esc).join(', ')}.</p>
-          <p><b>${inside} of ${D.edges.length}</b> foreign keys stay inside a group; ${D.edges.length - inside} cross between groups.</p></div>
+        <div class="ly-sect"><p class="ly-eyebrow">${D.groups.length} groups</p></div>
         <ul class="ly-glist">${D.groups.map(gr => `<li><button type="button" data-group="${esc(gr.key)}">
           <span class="ly-sw" style="background:${color(gr.key)}"></span>
-          <span class="ly-gname">${esc(gr.label)}</span><span class="ly-gcount">${gr.members.length}</span></button></li>`).join('')}</ul>`
+          <span class="ly-gname">${esc(gr.label)}</span><span class="ly-gcount" title="Models · knots">${gr.members.length}${knotLine(gr.key) ? ' · ' + knots(gr.key) : ''}</span></button></li>`).join('')}</ul>
+        <div class="ly-sect"><p><b>${inside} of ${D.edges.length}</b> foreign keys stay inside a group; ${D.edges.length - inside} cross between groups.</p></div>`
     }
+  }
+  // A diamond is the point of the list: the key, then the other route to the
+  // same model, each hop's arrow pointing the way its key does.
+  function knotList(list) {
+    const route = r => r.map((n, i) => i ? `<span>${OUT[r[i - 1]].includes(n) ? '→' : '←'}</span>${chip(n)}` : chip(n)).join('')
+    const key = k => `${chip(k.from)}<span>.${esc(k.field)} →</span>${chip(k.to)}`
+    // Where both routes arrive is the row the question is about, and it is
+    // often not the key's target: SurveyScore.inspection and SurveyScore.survey
+    // meet at the Job the Inspection and the Survey each name.
+    const meet = ({ route: r }) => r.filter((n, i) => {
+      const fromLeft = i === 0 ? false : OUT[r[i - 1]].includes(n)
+      const fromRight = i === r.length - 1 ? true : OUT[r[i + 1]].includes(n)
+      return fromLeft && fromRight
+    })
+    const diamond = k => `<li>${key(k)}</li><li class="ly-also"><span>and</span>${route(k.route)}</li>
+      <li class="ly-also"><span>both reach</span>${meet(k).map(chip).join('')}</li>`
+    const kinds = [
+      ['Two routes, off the core', k => k.kind === 'diamond' && !k.viaCore, diamond],
+      ['Two routes, through the core', k => k.kind === 'diamond' && k.viaCore, diamond],
+      ['A second key to one model', k => k.kind === 'pair', k => `<li>${key(k)}</li>`],
+      ['Keyed to itself', k => k.kind === 'loop', k => `<li>${key(k)}</li>`],
+    ]
+    return kinds.map(([title, is, row]) => {
+      const these = list.filter(is)
+      return these.length ? `<div class="ly-sect"><p class="ly-eyebrow">${title} · ${these.length}</p><ul class="ly-keys">${these.map(row).join('')}</ul></div>` : ''
+    }).join('')
   }
   $('lyPanel').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return
     if (b.dataset.back != null) return select(null)
+    if (b.dataset.go) return go(b.dataset.go, state.sel.id)
     if (b.dataset.model) return select({ type: 'model', id: b.dataset.model })
     if (b.dataset.group) { spinning = false; select({ type: 'group', id: b.dataset.group }) }
   })
+
+  // The same model elsewhere in Studio.
+  function go(where, name) {
+    if (where === 'browse') { selectTable(name); showTool('browse'); return }
+    if (where === 'access') { acFocus(name); return }
+    erShowTab('diagram'); erPin(name)
+    document.querySelector(`#erCanvas .er-table[data-model="${CSS.escape(name)}"]`)?.scrollIntoView({ block: 'center', inline: 'center' })
+  }
+
+  // The closest name wins: exact, then prefix, then anywhere in it, the most
+  // referenced first.
+  function findModel(q) {
+    q = q.trim().toLowerCase()
+    if (!q) return null
+    const rank = n => { const l = n.toLowerCase(); return l === q ? 0 : l.startsWith(q) ? 1 : l.includes(q) ? 2 : 3 }
+    return D.models.map(m => m.n).filter(n => rank(n) < 3)
+      .sort((a, b) => rank(a) - rank(b) || M[b].in - M[a].in || a.localeCompare(b))[0] ?? null
+  }
+  $('lyFind').addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.target.value = ''; return select(null) }
+    const n = e.key === 'Enter' && D && findModel(e.target.value)
+    if (n) { spinning = false; select({ type: 'model', id: n }) }
+  })
+  // A pick from the suggestions arrives as input with the whole name and no key.
+  $('lyFind').addEventListener('input', e => { if (D && M[e.target.value]) { spinning = false; select({ type: 'model', id: e.target.value }) } })
 
   // ── controls ───────────────────────────────────────────────────────────────
   const setPressed = (id, on) => { const b = $(id); b.setAttribute('aria-pressed', String(on)); b.classList.toggle('primary', on); b.classList.toggle('muted', !on) }
@@ -8426,16 +8566,30 @@ const Layers = (() => {
     $('lyDepthOut').textContent = state.depth === MAXD ? 'all' : '0–' + state.depth
     $('lyReachOut').textContent = (state.reach === REACH_MAX ? 'all' : '+' + state.reach) + ` · ${SHOWN.size} of ${D.models.length}`
   }
-  function setFloor(f) { state.floor = f; for (const k of ['hub', 'ring', 'map']) setPressed('lyF-' + k, f === k); layout(); draw() }
+  function setFloor(f) { state.floor = f; for (const k of ['hub', 'ring']) setPressed('lyF-' + k, f === k); layout(); draw() }
   function setLinks(l) { state.links = l; setPressed('lyL-models', l === 'models'); setPressed('lyL-clusters', l === 'clusters'); draw() }
   function setRange(key, v) { state[key] = v; layout(); showRanges(); draw() }
-  for (const f of ['hub', 'ring', 'map']) $('lyF-' + f).onclick = () => setFloor(f)
+  for (const f of ['hub', 'ring']) $('lyF-' + f).onclick = () => setFloor(f)
   $('lyL-clusters').onclick = () => setLinks('clusters')
   $('lyL-models').onclick = () => setLinks('models')
   $('lyDepth').oninput = e => setRange('depth', +e.target.value)
   $('lyReach').oninput = e => setRange('reach', +e.target.value)
   $('lyFade').onchange = e => { state.fade = e.target.checked; draw() }
   $('lyLabels').onchange = e => { state.labels = e.target.checked; draw() }
+  // Measured, not derived from the schema: rows and bytes come and go with the
+  // data, so each switch-on reads them again.
+  async function loadSizes() {
+    const data = await api('/schema-layers/sizes')
+    if (data.error || !state.size) { SIZES = null; $('lySize').title = data.error ?? ''; draw(); return }
+    SIZES = {}
+    for (const gr of D.groups) SIZES[gr.key] = gr.members.reduce((t, n) => {
+      const m = data.models[n]
+      return m ? { rows: t.rows + m.rows, bytes: t.bytes + m.bytes } : t
+    }, { rows: 0, bytes: 0 })
+    draw(); renderPanel()
+  }
+  $('lyKnots').onchange = e => { state.showKnots = e.target.checked; draw(); renderPanel() }
+  $('lySize').onchange = e => { state.size = e.target.checked; if (state.size && D) loadSizes(); else { draw(); renderPanel() } }
   $('lyReset').onclick = () => { cam.yaw = -0.55; cam.pitch = 0.36; cam.zoom = 1.1; spinning = !REDUCED; draw() }
   new ResizeObserver(() => { if (active) { sizeCanvas(); draw() } }).observe($('lyStage'))
 
@@ -8450,11 +8604,13 @@ const Layers = (() => {
     for (const m of D.models) { OUT[m.n] = []; IN[m.n] = [] }
     for (const [a, b] of D.edges) { OUT[a].push(b); IN[b].push(a) }
     MAXD = Math.max(0, ...D.models.map(m => m.d))
-    state.sel = null; state.depth = MAXD; state.reach = 0
-    $('lyDepth').max = MAXD; $('lyDepth').value = MAXD; $('lyReach').value = 0
+    state.sel = null; state.depth = Math.min(D.depth, MAXD); state.reach = 0
+    $('lyDepth').max = MAXD; $('lyDepth').value = state.depth; $('lyReach').value = 0
     assignHues(); layout()
     $('lyReach').max = REACH_MAX; showRanges()
     $('lyFacts').innerHTML = `<b>${D.models.length}</b> models · <b>${D.edges.length}</b> foreign keys · <b>${MAXD}</b> levels deep`
+    $('lyFindList').innerHTML = D.models.map(m => `<option value="${esc(m.n)}">`).join('')
+    SIZES = null; if (state.size) loadSizes()
     renderPanel(); draw()
   }
   async function load() {

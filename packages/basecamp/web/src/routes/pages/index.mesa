@@ -171,9 +171,6 @@ title: Pages
 
 <div class="section-header">
   <h1>Pages</h1>
-  <span class="cluster">
-    <Button treatment="ghost" href="/workbench/">Workbench</Button>
-  </span>
 </div>
 
 {#if !offered}

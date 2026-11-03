@@ -31,6 +31,7 @@ import { notifications } from '@frontierjs/notifications'
 import { basecampGateLevel }   from '../src/core/gate.ts'
 import { NOTIFICATION_KINDS }  from '../src/domain/notification/kinds.ts'
 import { transportsFor, notifyPeople, workspaceMembers } from '../src/domain/notification/notify.ts'
+import { deliverToChannel, stampDelivery } from '../src/domain/notification/delivery.ts'
 import type { App }            from '@frontierjs/junction'
 
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
@@ -313,5 +314,30 @@ describe('who a workspace tells', () => {
     })
 
     expect(await workspaceMembers(app, ws.id)).toEqual([user.id])
+  })
+})
+
+describe('an email channel delivers through the app mailer (FJS-3857)', () => {
+  const msg = { title: 'T', text: 'body', severity: 'info' as const, action: 'trigger' as const }
+  const channel = { kind: 'email', config: { to: ['ops@example.com'] } }
+
+  test('with a mailer the message is sent to the channel recipients', async () => {
+    const sent: any[] = []
+    const res = await deliverToChannel(
+      { conduit: undefined, sys: () => ({}), mail: { send: async (m) => { sent.push(m) } } }, channel, msg)
+    expect(res).toEqual({ ok: true })
+    expect(sent).toEqual([{ to: ['ops@example.com'], subject: 'T', text: 'body' }])
+  })
+
+  test('without one it still refuses by name, and a send that throws is an answer', async () => {
+    const none = await deliverToChannel({ conduit: undefined, sys: () => ({}) }, channel, msg)
+    expect(none.ok).toBe(false)
+    const boom = await deliverToChannel(
+      { conduit: undefined, sys: () => ({}), mail: { send: async () => { throw new Error('smtp down') } } }, channel, msg)
+    expect(boom).toEqual({ ok: false, error: 'Delivery failed (mail): smtp down' })
+  })
+
+  test('a stamp that cannot be written does not throw out of the loop (FJS-3856)', async () => {
+    await expect(stampDelivery(() => { throw new Error('version conflict') }, 'x')).resolves.toBeUndefined()
   })
 })

@@ -1,0 +1,275 @@
+<script module>
+  // src/components/AtlasTown.mesa — the Autopilot town as one drawing: the
+  // buildings, the roads between them, and the dots in flight at the moment
+  // the scrubber names (IDEAS/autopilot.md § The town).
+  //
+  // It holds nothing: `data` is the atlas service's `autopilot`, `moment` and
+  // `dots` are lib/town.js's reading of the day at the scrubber's time.
+  //
+  // Color is a token of @frontierjs/css, never a value (Invariant 13). An SVG
+  // font-size is an attribute in map units, because a CSS length here would
+  // be a raw size no theme or density reaches, and the map scales as one.
+  import { B, LANE_Y, ROADS, nameOf, nodeAt, officeSites } from '../lib/town.js'
+
+  const LANES = [1, 2, 3, 4, 5]
+  const SEV   = { S1: 'hi', S2: 'hi', S3: 'mid', S4: 'lo', decision: 'q' }
+
+  // One crate per `per` rows, ordered worst first.
+  const crates = (bySev, per) =>
+    Object.keys(SEV).flatMap(s => Array(Math.ceil(((bySev ?? {})[s] ?? 0) / per)).fill('t-' + SEV[s]))
+
+  const tiles = (x, y, cols, size, list) =>
+    list.map((cls, i) => ({ i, cls, x: x + (i % cols) * (size + 2), y: y + Math.floor(i / cols) * (size + 2) }))
+
+  const road = (r) => 'M' + r.map(k => nodeAt(k).join(',')).join(' L')
+  const spurs = Object.values(B).flatMap(b => b.doors.map(d => `M${d[0]},${d[1]} L${nodeAt(d[2]).join(',')}`))
+
+  // fli ci's phase lines: a green one lists its phases after a check mark, a
+  // red one names the phase first.
+  const phasesOf = (ci) => (ci?.phases ?? []).flatMap(l =>
+    l.startsWith('✓') ? l.slice(2).split('·').map(s => ['t-ok', s.trim()]) : [['t-bad', l.slice(2).trim().split(/\s+/)[0]]])
+</script>
+
+<script>
+  export let data     = null
+  export let moment   = null
+  export let dots     = []
+  export let sel      = ''
+  export let onselect = () => {}
+
+  $: office = officeSites(data?.plans)
+
+  const ci    = () => data?.ci ?? null
+  const tick  = (e) => { const g = e.target.closest?.('[data-b]'); if (g) onselect(g.dataset.b) }
+  const press = (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.dataset?.b) { e.preventDefault(); onselect(e.target.dataset.b) }
+  }
+  const money = (n) => '$' + (n ?? 0).toFixed(2)
+  const hm = (ms) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+  const clip = (s, n) => s.length > n ? s.slice(0, n - 1) + '…' : s
+  const dotTitle = (e) => `${hm(e.ms)} · ${e.kind} ${e.id} · ${nameOf(e.from)} → ${nameOf(e.to)}\n${e.log}`
+</script>
+
+<svg class="ap-map" viewBox="0 0 1100 730" role="group" aria-label="Town map of the project's loops"
+     onclick={tick} onkeydown={press}>
+  <rect class="ap-ground" x="0" y="0" width="1100" height="730" />
+  <text class="ap-tiny" font-size="9.5" x="20" y="24">TOWN LAW · CLAUDE.md invariants · autopilot never rules, never commits to main, never files past its cap</text>
+  <rect class="ap-district" x="14" y="32" width="1076" height="690" rx="18" />
+
+  <g>
+    {#each ROADS as r, i (i)}<path class="ap-road" d={road(r)} />{/each}
+    {#each spurs as d, i (i)}<path class="ap-spur" d={d} />{/each}
+  </g>
+  <text class="ap-tiny" font-size="9.5" x="1040" y="474" text-anchor="end">edge of town</text>
+
+  <g class="ap-b" tabindex="0" role="button" data-b="proving" aria-label="CI gate" id="ap-ci"
+     data-ci={!ci() ? 'none' : ci().green ? 'green' : 'red'}>
+    <rect class="ap-post" x="1062" y="466" width="6" height="38" />
+    <rect class="ap-post" x="1080" y="466" width="6" height="38" />
+    <line class="ap-bar {ci()?.green ? 'ok' : 'bad'}" x1="1066" y1={ci()?.green ? 470 : 485} x2={ci()?.green ? 1066 : 1084} y2={ci()?.green ? 438 : 485} />
+    <text class="ap-tiny" font-size="9.5" x="1074" y="518" text-anchor="middle">{!ci() ? 'no CI run' : ci().green ? 'CI green' : 'CI red'}</text>
+  </g>
+
+  <!-- Registry -->
+  <g class="ap-b {sel === 'registry' ? 'sel' : ''}" tabindex="0" role="button" data-b="registry" aria-label="Registry">
+    <rect class="ap-shell" x={B.registry.x} y={B.registry.y} width={B.registry.w} height={B.registry.h} rx="4" />
+    <text class="ap-lab" font-size="10.5" letter-spacing="1.2" x="300" y="276">REGISTRY</text>
+    <text class="ap-sub" font-size="11" x="690" y="276" text-anchor="end" id="ap-reg-closed">{moment.closed} left by the door today</text>
+    {#each [['ready', 300, data.registry.ready], ['blocked', 435, data.registry.blocked], ['busy', 570, data.registry.busy]] as tbl (tbl[0])}
+      <rect class="ap-room" x={tbl[1]} y="288" width="120" height="158" rx="3" />
+      <text class="ap-tiny" font-size="9.5" x={tbl[1] + 8} y="302">{tbl[0].toUpperCase()}</text>
+      <text class="ap-val" font-size="13" x={tbl[1] + 112} y="303" text-anchor="end" id={'ap-reg-' + tbl[0]}>{tbl[2].count}</text>
+      {#each tiles(tbl[1] + 8, 312, 11, 8, crates(tbl[2].bySeverity, 4)) as c (c.i)}
+        <rect class={c.cls} x={c.x} y={c.y} width="8" height="8" rx="1" />
+      {/each}
+      {#if !tbl[2].count}<text class="ap-tiny" font-size="9.5" x={tbl[1] + 60} y="380" text-anchor="middle">empty table</text>{/if}
+    {/each}
+  </g>
+
+  <!-- Council -->
+  <g class="ap-b {sel === 'council' ? 'sel' : ''}" tabindex="0" role="button" data-b="council" aria-label="Council">
+    <rect class="ap-shell" x={B.council.x} y={B.council.y} width={B.council.w} height={B.council.h} rx="4" />
+    <text class="ap-lab" font-size="10.5" letter-spacing="1.2" x="300" y="58">COUNCIL</text>
+    {#each [['open', 'hall · open', 300, data.council.open, 't-open', 5], ['decidable', 'bench · decidable', 437, data.council.decidable, 't-q', 10], ['ruled', 'wall · ruled', 574, data.council.ruled, 't-ruled', 10]] as rm (rm[0])}
+      <rect class="ap-room" x={rm[2]} y="66" width="117" height="128" rx="3" />
+      <text class="ap-tiny" font-size="9.5" x={rm[2] + 7} y="80">{rm[1].toUpperCase()}</text>
+      <text class="ap-val" font-size="13" x={rm[2] + 110} y="98" text-anchor="end" id={'ap-cn-' + rm[0]}>{rm[3]}</text>
+      {#each tiles(rm[2] + 7, 106, 13, 6, Array(Math.ceil(rm[3] / rm[5])).fill(rm[4])) as c (c.i)}
+        <rect class={c.cls} x={c.x} y={c.y} width="6" height="6" rx="1" />
+      {/each}
+    {/each}
+  </g>
+
+  <!-- Lanes -->
+  {#each LANES as n (n)}
+    <g class="ap-b {sel === 'lane.' + n ? 'sel' : ''} {data.lanes[n - 1].attemptsToday ? '' : 'idle'}" tabindex="0" role="button"
+       data-b={'lane.' + n} data-lane={n} aria-label={'Lane ' + n}>
+      <rect class="ap-shell" x={B['lane.' + n].x} y={B['lane.' + n].y} width="190" height="100" rx="4" />
+      <text class="ap-lab" font-size="10.5" letter-spacing="1.2" x="40" y={LANE_Y[n - 1] + 18}>LANE {n}</text>
+      <text class="ap-tiny" font-size="9.5" x="210" y={LANE_Y[n - 1] + 18} text-anchor="end">{data.lanes[n - 1].dir}</text>
+      <rect class="ap-bench {moment.lanes[n].cur ? 'on' : ''}" x="40" y={LANE_Y[n - 1] + 28} width="170" height="30" rx="3" />
+      <circle class="ap-led {moment.lanes[n].cur ? 'on' : ''}" cx="52" cy={LANE_Y[n - 1] + 43} r="4" />
+      <text class="ap-val" font-size="13" x="62" y={LANE_Y[n - 1] + 47}>{moment.lanes[n].cur ? moment.lanes[n].cur.row : (moment.lanes[n].last ? 'empty' : '—')}</text>
+      <text class="ap-sub" font-size="11" x="202" y={LANE_Y[n - 1] + 47} text-anchor="end">{moment.lanes[n].cur ? `${moment.lanes[n].cur.model}·${moment.lanes[n].cur.effort}` : ''}</text>
+      <text class="ap-sub" font-size="11" x="40" y={LANE_Y[n - 1] + 76}>{moment.lanes[n].cur
+        ? `${moment.lanes[n].cur.cost != null ? money(moment.lanes[n].cur.cost) : '$…'} · ${moment.lanes[n].cur.turns ?? '…'} turns · ${moment.lanes[n].cur.min.toFixed(1)} min`
+        : (moment.lanes[n].last ? `last ${moment.lanes[n].last.id} ${moment.lanes[n].last.label}` : 'no attempt today')}</text>
+      <text class="ap-tiny" font-size="9.5" x="40" y={LANE_Y[n - 1] + 92}>{moment.lanes[n].attempts
+        ? `${moment.lanes[n].attempts} tries · ${moment.lanes[n].closed} closed · ${money(moment.lanes[n].spend)}`
+        : `idle · last ${data.lanes[n - 1].last?.at.slice(0, 10) ?? 'never'}`}</text>
+    </g>
+  {/each}
+
+  <!-- Framing desk -->
+  <g class="ap-b {sel === 'framing' ? 'sel' : ''}" tabindex="0" role="button" data-b="framing" aria-label="Framing desk">
+    <rect class="ap-shell" x={B.framing.x} y={B.framing.y} width={B.framing.w} height={B.framing.h} rx="4" />
+    <text class="ap-lab" font-size="10.5" letter-spacing="1.2" x="750" y="58">FRAMING DESK</text>
+    <rect class="ap-bench" x="750" y="64" width="140" height="26" rx="3" />
+    <text class="ap-val" font-size="13" x="760" y="82">idle</text>
+    <text class="ap-sub" font-size="11" x="750" y="108">{data.frame.linesToday} frames today</text>
+    <text class="ap-tiny" font-size="9.5" x="750" y="124">last {data.frame.lastDay ?? 'never'}</text>
+    <text class="ap-tiny" font-size="9.5" x="750" y="140">{data.frame.total} log lines, {data.frame.framedAllTime} framed</text>
+  </g>
+
+  <!-- Post -->
+  <g class="ap-b later {sel === 'post' ? 'sel' : ''}" tabindex="0" role="button" data-b="post" aria-label="Post">
+    <rect class="ap-shell" x={B.post.x} y={B.post.y} width={B.post.w} height={B.post.h} rx="4" />
+    <text class="ap-lab" font-size="10.5" letter-spacing="1.2" x="930" y="58">POST</text>
+    <text class="ap-sub" font-size="11" x="930" y="80">Phase 4</text>
+    <text class="ap-tiny" font-size="9.5" x="930" y="98">rulings asked by phone,</text>
+    <text class="ap-tiny" font-size="9.5" x="930" y="112">answers back</text>
+  </g>
+
+  <!-- Plan office: the stressors first, then the papers nearest completion -->
+  <g class="ap-b {sel === 'plans' ? 'sel' : ''}" tabindex="0" role="button" data-b="plans" aria-label="Plan office" id="ap-plans">
+    <rect class="ap-shell" x={B.plans.x} y={B.plans.y} width={B.plans.w} height={B.plans.h} rx="4" />
+    <text class="ap-lab" font-size="10.5" letter-spacing="1.2" x="750" y="268">PLAN OFFICE</text>
+    <text class="ap-tiny" font-size="9.5" x="1070" y="268" text-anchor="end">{office.sites.length} of {office.total} sites drawn</text>
+    {#each office.sites as p, i (p.id)}
+      <g data-site={p.id}>
+        <rect class="ap-lot" x={750 + (i % 4) * 82} y={278 + Math.floor(i / 4) * 62} width="76" height="56" rx="2" />
+        {#if p.stressor}<rect class="ap-hoard" x={753 + (i % 4) * 82} y={281 + Math.floor(i / 4) * 62} width="70" height="50" />{/if}
+        <text class="ap-tiny ink" font-size="9.5" x={755 + (i % 4) * 82} y={291 + Math.floor(i / 4) * 62}>{clip(p.id, 12)}</text>
+        <rect class="ap-lot-bar" x={755 + (i % 4) * 82} y={298 + Math.floor(i / 4) * 62} width="66" height="4" />
+        <rect class="ap-lot-done" x={755 + (i % 4) * 82} y={298 + Math.floor(i / 4) * 62} width={Math.max(1, 66 * p.done / (p.steps || 1))} height="4" />
+        <text class="ap-tiny" font-size="9.5" x={755 + (i % 4) * 82} y={315 + Math.floor(i / 4) * 62}>{p.done}/{p.steps}</text>
+        <text class="ap-tiny" font-size="9.5" x={755 + (i % 4) * 82} y={328 + Math.floor(i / 4) * 62}>{p.next ? 'next ' + p.next.id : 'complete'}</text>
+        <title>{p.stressor ? 'stressor · ' : ''}{p.title} · {p.phase ?? 'no open phase'}{p.next ? ` · next ${p.next.id}: ${p.next.title}` : ''}</title>
+      </g>
+    {/each}
+    {#if !office.sites.length}<text class="ap-tiny" font-size="9.5" x="750" y="300">no stressor listed and no paper started</text>{/if}
+  </g>
+
+  <!-- Proving ground -->
+  <g class="ap-b {sel === 'proving' ? 'sel' : ''}" tabindex="0" role="button" data-b="proving" aria-label="Proving ground">
+    <rect class="ap-shell" x={B.proving.x} y={B.proving.y} width={B.proving.w} height={B.proving.h} rx="4" />
+    <text class="ap-lab" font-size="10.5" letter-spacing="1.2" x="750" y="533">PROVING GROUND</text>
+    <text class="ap-tiny" font-size="9.5" x="752" y="546">{(ci()?.header ?? '').replace(/\.\d+Z/, 'Z')}</text>
+    {#each phasesOf(ci()) as ph, i (i)}
+      <rect class={ph[0]} x={752 + (i % 3) * 96} y={556 + Math.floor(i / 3) * 20} width="9" height="9" rx="1" />
+      <text class="ap-tiny" font-size="9.5" x={766 + (i % 3) * 96} y={564.5 + Math.floor(i / 3) * 20}>{ph[1]}</text>
+    {/each}
+    <text class="ap-sub" font-size="11" x="752" y="645">{ci()?.verdict ? ci().verdict.replace(/^✗\s*/, '') : 'no CI run on file'}</text>
+  </g>
+
+  <!-- Dock -->
+  <g class="ap-b {sel === 'dock' ? 'sel' : ''}" tabindex="0" role="button" data-b="dock" aria-label="Dock">
+    <rect class="ap-shell" x={B.dock.x} y={B.dock.y} width={B.dock.w} height={B.dock.h} rx="4" />
+    <text class="ap-lab" font-size="10.5" letter-spacing="1.2" x="340" y="533">DOCK</text>
+    <text class="ap-sub" font-size="11" x="650" y="533" text-anchor="end">{moment.harvests.length} harvests · {moment.files} files</text>
+    {#each tiles(340, 540, 30, 7, Array(moment.harvests.length).fill('t-patch')) as c (c.i)}
+      <rect class={c.cls} x={c.x} y={c.y} width="7" height="7" rx="1" />
+    {/each}
+    <text class="ap-tiny" font-size="9.5" x="340" y="596" id="ap-dock-patches" data-count={data.dock.patches.length}>patches dir: {data.dock.patches.length}{data.dock.patches.length ? ` (${data.dock.patches.map(p => p.file).join(', ')})` : ''}</text>
+  </g>
+
+  <!-- Review -->
+  <g class="ap-b {sel === 'review' ? 'sel' : ''}" tabindex="0" role="button" data-b="review" aria-label="Review">
+    <rect class="ap-shell" x={B.review.x} y={B.review.y} width={B.review.w} height={B.review.h} rx="4" />
+    <text class="ap-lab" font-size="10.5" letter-spacing="1.2" x="300" y="663">REVIEW</text>
+    <text class="ap-sub" font-size="11" x="300" y="686">{data.review ? 'report ' + data.review.modified.slice(0, 10) : 'no report'}</text>
+    <text class="ap-tiny" font-size="9.5" x="300" y="702">{data.review ? (data.review.head[0] ?? '').replace(/^#\s*fix-loop review\s*—\s*/, '').replace(/\s*\(.*$/, '') : ''}</text>
+  </g>
+
+  <!-- Switch -->
+  <g class="ap-b {sel === 'switch' ? 'sel' : ''}" tabindex="0" role="button" data-b="switch" aria-label="Switch">
+    <rect class="ap-shell" x={B.switch.x} y={B.switch.y} width={B.switch.w} height={B.switch.h} rx="4" />
+    <text class="ap-lab" font-size="10.5" letter-spacing="1.2" x="500" y="663">SWITCH</text>
+    <rect class="ap-track {data.switch.on ? 'on' : ''}" x="500" y="672" width="36" height="18" rx="9" />
+    <circle class="ap-knob" cx={data.switch.on ? 527 : 509} cy="681" r="6" />
+    <text class="ap-val" font-size="13" x="544" y="686" id="ap-sw-map">{data.switch.on ? 'ON' : 'OFF'}</text>
+    <text class="ap-sub" font-size="11" x="690" y="686" text-anchor="end">{money(moment.spend)} today</text>
+    <text class="ap-tiny" font-size="9.5" x="500" y="706">{data.switch.entries.length} entries scheduled</text>
+  </g>
+
+  <g>
+    {#each dots as d (d.i)}
+      <circle class="ap-dot {d.kind}" cx={d.x} cy={d.y} r={d.kind === 'row' ? 5 : 5.5} data-i={d.i}>
+        <title>{dotTitle(d.e)}</title>
+      </circle>
+    {/each}
+  </g>
+  <g pointer-events="none">
+    {#each LANES as n (n)}
+      {#if moment.lanes[n].cur}<circle class="ap-pulse" cx="52" cy={LANE_Y[n - 1] + 43} r="4" />{/if}
+    {/each}
+  </g>
+</svg>
+
+<style>
+  .ap-map { display: block; inline-size: 100%; min-inline-size: 90ch; block-size: auto; }
+  .ap-map text { fill: var(--ink); font-family: var(--font-mono); }
+  .ap-map text.ink { fill: var(--ink); }
+  .ap-ground { fill: var(--surface-sunken); }
+  .ap-lab { font-family: var(--font-primary); }
+  .ap-sub, .ap-tiny { fill: var(--ink-mute); }
+  .ap-val { font-weight: 500; font-variant-numeric: tabular-nums; }
+  .ap-road { stroke: var(--rule-strong); stroke-width: 14; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .ap-spur { stroke: var(--rule-strong); stroke-width: 8; fill: none; stroke-linecap: round; }
+  .ap-district { fill: none; stroke: var(--ink-mute); stroke-width: 1.5; stroke-dasharray: 3 6; }
+
+  .ap-b { cursor: pointer; }
+  .ap-b:focus { outline: none; }
+  .ap-shell { fill: var(--surface-raised); stroke: var(--ink); stroke-width: 1.5; }
+  .ap-b:hover .ap-shell, .ap-b:focus-visible .ap-shell { stroke: var(--color-primary); stroke-width: 2.5; }
+  .ap-b.sel .ap-shell { stroke: var(--color-primary); stroke-width: 3; }
+  .ap-b.later { opacity: 0.45; }
+  .ap-b.later .ap-shell { stroke-dasharray: 4 4; }
+  .ap-b.idle .ap-shell { stroke: var(--ink-mute); }
+  .ap-room { fill: var(--surface); stroke: var(--rule); stroke-width: 1; }
+  .ap-bench { fill: var(--surface-sunken); stroke: var(--rule); stroke-width: 1; }
+  .ap-bench.on { fill: color-mix(in srgb, var(--color-primary) 14%, var(--surface)); stroke: var(--color-success); stroke-width: 1.6; }
+
+  .t-hi { fill: var(--color-danger); }
+  .t-mid { fill: var(--color-primary); }
+  .t-lo { fill: var(--ink-mute); }
+  .t-q { fill: var(--color-info); }
+  .t-ruled { fill: var(--ink-mute); opacity: 0.55; }
+  .t-open { fill: none; stroke: var(--color-info); stroke-width: 1.2; }
+  .t-patch { fill: var(--color-warning); stroke: var(--ink); stroke-width: 0.6; }
+  .t-ok { fill: var(--color-success); }
+  .t-bad { fill: var(--color-danger); }
+
+  .ap-lot { fill: var(--surface); stroke: var(--ink); stroke-width: 1; }
+  .ap-lot-bar { fill: var(--rule); }
+  .ap-lot-done { fill: var(--color-success); }
+  .ap-hoard { fill: none; stroke: var(--color-warning); stroke-width: 2; stroke-dasharray: 5 3; }
+  .ap-post { fill: var(--ink); }
+  .ap-bar { stroke-width: 5; stroke-linecap: round; }
+  .ap-bar.ok { stroke: var(--color-success); }
+  .ap-bar.bad { stroke: var(--color-danger); }
+  .ap-led { fill: var(--rule-strong); }
+  .ap-led.on { fill: var(--color-success); }
+  .ap-track { fill: var(--rule-strong); }
+  .ap-track.on { fill: var(--color-success); }
+  .ap-knob { fill: var(--surface-raised); }
+
+  .ap-dot { stroke-width: 1.5; cursor: help; }
+  .ap-dot.row { fill: var(--surface-raised); stroke: var(--ink); }
+  .ap-dot.question { fill: var(--color-info); stroke: var(--surface-raised); }
+  .ap-dot.paper { fill: var(--color-warning); stroke: var(--surface-raised); }
+
+  @keyframes ap-pulse { from { transform: scale(1); opacity: 0.9; } to { transform: scale(3.5); opacity: 0; } }
+  .ap-pulse { fill: none; stroke: var(--color-success); stroke-width: 2; transform-box: fill-box; transform-origin: center; animation: ap-pulse 1.6s infinite; }
+  @media (prefers-reduced-motion: reduce) { .ap-pulse { animation: none; } }
+</style>

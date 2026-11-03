@@ -17,6 +17,7 @@ import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
 import { MAX_SNOOZE_MINUTES } from '../../domain/alert/alerting.ts'
+import { closeOpenAlerts } from '../../domain/alert/deliver.ts'
 import { watchedSeries }      from '../../domain/alert/watched-series.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 
@@ -115,15 +116,22 @@ export default createService({
   },
 
   async patch() {
-    await getScoped('alertRule', 'Alert rule')
-    const data  = $.data as Record<string, unknown>
-    const patch = narrowPatch(data)
+    const before = await getScoped('alertRule', 'Alert rule')
+    const data   = $.data as Record<string, unknown>
+    const patch  = narrowPatch(data)
     if (changesNothing(patch)) return getScoped('alertRule', 'Alert rule')
-    return db().alertRule.update({ where: { id: $.id as string }, data: patch })
+    const updated = await db().alertRule.update({ where: { id: $.id as string }, data: patch })
+    // The evaluator reads active rules only, so an event left open on a rule
+    // switched off would never resolve.
+    if (before.isActive && patch.isActive === false)
+      await closeOpenAlerts($.app, sys(), before, 'Rule deactivated')
+    return updated
   },
 
   async remove() {
     const rule = await getScoped('alertRule', 'Alert rule')
+    // Before the cascade, which takes the channel links the resolve goes through.
+    await closeOpenAlerts($.app, sys(), rule, 'Rule deleted')
     // AlertRule declares no @@softDelete, so this is a real delete — and the
     // schema cascades its alerts with it. That is the right shape: an Alert
     // is a firing OF a rule, not a record that outlives it. The audit trail

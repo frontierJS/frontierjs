@@ -1,0 +1,22 @@
+<script>
+  import { RouterView, beforeNavigate } from '@frontierjs/sierra/router'
+  import { session, ready } from './lib/session.js'
+
+  // Registered here, in component setup, on purpose. Sierra defers its boot
+  // navigation by a microtask precisely so guards registered during mount are in
+  // place before the first route commits; register this anywhere later and a
+  // direct load of a protected URL goes through unguarded while client-side
+  // navigation to the same URL is stopped.
+  beforeNavigate(async ({ to }) => {
+    await ready
+
+    const path = to.pathname
+    // `next` brings the person back to the link they followed.
+    if (!session.user) return path === '/login/' ? undefined
+      : `/login/?next=${encodeURIComponent(path + (to.search ?? ''))}`
+    if (path === '/login/') return '/workbench/'
+    if (path === '/') return '/workbench/'
+  })
+</script>
+
+<RouterView />

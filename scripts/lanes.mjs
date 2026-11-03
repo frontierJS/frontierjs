@@ -58,8 +58,8 @@ const EXCLUDE = LINKED.map(f => `:(exclude)${f}`)
 const SCRATCH_PATHSPEC = ':(exclude,glob)**/.sierra-fresh-*'
 const SCRATCH = /(^|\/)\.sierra-fresh-[^/]*$/
 
-/** ports.js has five port blocks for linked worktrees. */
-export const MAX_LANES = 5
+import { MAX_LANES, applyArgv }  from '../packages/cli/core/autopilot.js'
+export { MAX_LANES }
 
 /** The first `count` lanes no other running loop holds, each opened. */
 export function openLanes(count) {
@@ -121,7 +121,8 @@ export function syncLane(lane, { linked = true } = {}) {
 
   const patch = run('git', ['-C', ROOT, 'diff', 'HEAD', '--binary', '--no-color', '--no-ext-diff', '--', '.', ...EXCLUDE], ROOT, { raw: true })
   if (patch.length) {
-    const out = spawnSync('git', ['-C', dir, 'apply', '--whitespace=nowarn', '-'], { input: patch })
+    const [cmd, ...argv] = applyArgv(dir, '-')
+    const out = spawnSync(cmd, argv, { input: patch })
     if (out.status !== 0) throw new Error(`the main tree's uncommitted diff does not apply in ${dir}: ${out.stderr}`)
   }
   for (const f of run('git', ['-C', ROOT, 'ls-files', '--others', '--exclude-standard', '-z'], ROOT).split('\0').filter(f => f && !SCRATCH.test(f))) {
@@ -164,7 +165,8 @@ export function copyIfPresent(src, dest) {
 /** Lay a saved patch onto the lane; false when it no longer applies. */
 export function applyPatch({ dir }, file) {
   if (!existsSync(file)) return false
-  return spawnSync('git', ['-C', dir, 'apply', '--whitespace=nowarn', file]).status === 0
+  const [cmd, ...argv] = applyArgv(dir, file)
+  return spawnSync(cmd, argv).status === 0
 }
 
 /** What the lane changed since `base`, as a patch `applyPatch` takes. */

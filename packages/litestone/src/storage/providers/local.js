@@ -30,8 +30,11 @@ export class LocalProvider {
   async put(key, body, { contentType } = {}) {
     const path = this._filePath(key)
     mkdirSync(dirname(path), { recursive: true })
-    // A Blob is an upload or a file on disk, and is piped rather than read
-    // whole -- an upload's size again in heap per concurrent request (FJS-3094).
+    // A Blob or a stream is an upload or a file on disk, and is piped rather
+    // than read whole -- an upload's size again in heap per concurrent request
+    // (FJS-3094). A stream that fails part-way leaves the bytes written so far;
+    // FileStorage deletes them.
+    if (body instanceof ReadableStream) return pipeline(Readable.fromWeb(body), createWriteStream(path))
     if (body instanceof Blob) return pipeline(Readable.fromWeb(body.stream()), createWriteStream(path))
     const buf = body instanceof Uint8Array ? body
       : body instanceof ArrayBuffer        ? Buffer.from(body)

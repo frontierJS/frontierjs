@@ -543,6 +543,39 @@ describe('a row the server no longer answers leaves the device', () => {
     expect(console.warn).toHaveBeenCalledTimes(1)
   })
 
+  // FJS-3838: the write-through is not awaited, so an answer read before the
+  // remove landed after it and put the row back.
+  test('an answer read before a remove does not put its row back', async () => {
+    const d = makeDevice({ rows: [{ id: 'S1', name: 'a' }, { id: 'S2', name: 'b' }] })
+    useDevice(d)
+    const r = sheets()
+    let answer
+    _proxy.find = () => new Promise(res => { answer = res })
+    const reading = tetherOf(r).load({})
+    await r.service.remove('S1')
+    await tick()
+    answer({ data: [{ id: 'S1', name: 'a' }, { id: 'S2', name: 'b' }], total: 2 })
+    await reading
+    await tick()
+    expect(d.held()).toEqual(['S2'])
+  })
+
+  // The warm reads every service before it writes any.
+  test('nor does the warm, and the stale rows get no list-cache slot', async () => {
+    const d = makeDevice({ rows: [{ id: 'S1' }] })
+    useDevice(d)
+    const r = sheets({ offlineQuery: { query: {} } })
+    let answer
+    _proxy.find = () => new Promise(res => { answer = res })
+    const warming = warmOffline()
+    await tick()
+    await r.service.remove('S1')
+    answer({ data: [{ id: 'S1' }], total: 1 })
+    expect(await warming).toEqual([{ service: 'sheets', rows: 1, kept: true }])
+    expect(d.held()).toEqual([])
+    expect(await listCache().recall(listKey('sheets', {}, null))).toBe(null)
+  })
+
   test('a held remove, replayed and acknowledged, takes the row off', async () => {
     const d = makeDevice({ rows: [{ id: 'S1' }, { id: 'S2' }] })
     useDevice(d)

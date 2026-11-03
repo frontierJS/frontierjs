@@ -52,7 +52,7 @@ The shape is adapted from Matt Pocock's `ask-matt` ([mattpocock/skills](https://
 ## On-ramps
 
 - **A new app for a client, with no `db/schema.lite` yet.** The `discovery` skill turns the conversation, brief or existing database into the schema. It is installed per user under `~/.claude/skills` rather than in this repo, so it is absent on a machine that has not added it.
-- **Working down the open register.** `fix-next` picks the top `fli next` row and carries it through this path to `fli close`; one row per session, so a batch is `bun run fix:loop`.
+- **Working down the open register.** `fix-next` picks the top `fli next` row and carries it through this path to `fli close`; one row per session, so a batch is `bun run fix:loop`. `frame-next` makes a paper's open questions decidable (`bun run frame:loop`), and `stress-next` builds one open step of a listed stressor app in a worktree of its repo, filing every framework gap it meets (`bun run stress:loop`).
 - **Something is broken.** `VERIFYING.md` first: reproduce with one command that goes red on this defect, before theorizing. Then the realm's hazard skill, since half of what reads as a bug is correct-but-surprising behavior already written down there.
 - **A screen needs styling.** `ui-hazards`, then `packages/css/README.md` for the vocabulary — a tone and a treatment, never a color (Invariant 13).
 - **A document an agent reads is growing.** `doc-hygiene` before adding, since the cut is usually a pointer rather than a paragraph.

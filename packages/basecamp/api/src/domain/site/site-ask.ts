@@ -3,7 +3,7 @@
 //
 // **The run is the ask panel's.** `askArgv({ edit })` and the stream reader are
 // `@frontierjs/cli/core/ask-claude.js`, the one owner of how this repo talks to
-// Claude Code, imported as the workbench imports it. The scope is a folder: the
+// Claude Code, imported by path. The scope is a folder: the
 // draft's `content/**.md` written out to a temp directory, `Edit`/`Write`
 // allowed there and denied everywhere else, every settings source and hook
 // off. The run never sees the clone, so nothing it does reaches git until a

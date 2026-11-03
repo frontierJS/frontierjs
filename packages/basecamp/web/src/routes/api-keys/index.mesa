@@ -32,6 +32,7 @@ title: API keys
   import Mono       from '@frontierjs/ui/components/display/Mono.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
   import StatCard   from '@frontierjs/ui/components/display/StatCard.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
@@ -51,6 +52,11 @@ title: API keys
   let expiry   = 'never'
   let minted   = null
   let draft    = apiKeys.make()
+  // Another app enrolled by its public key. No token is minted, so nothing is
+  // shown once: the peer holds its private half and Basecamp never sees it.
+  let enrolling = false
+  let peerName  = ''
+  let peerKey   = ''
   // ⌘K's New … entries land here with ?new, on this route or from another;
   // an App's laptop-release card adds ?name= and ?scopes= for the key its
   // command needs.
@@ -118,6 +124,20 @@ title: API keys
 
   function toggleScope(id, on) {
     picked = on ? [...new Set([...picked, id])] : picked.filter(s => s !== id)
+  }
+
+  async function enrollPeer(e) {
+    e.preventDefault()
+    error = null
+    try {
+      await apiKeys.service.invoke('enrollPeer', null, { name: peerName, publicKey: peerKey }, {})
+      enrolling = false
+      peerName  = ''
+      peerKey   = ''
+      await load()
+    } catch (err) {
+      error = err.message
+    }
   }
 
   async function create(data) {
@@ -207,6 +227,9 @@ title: API keys
   <Button tone="primary" id="new-key" onclick={() => creating = !creating}>
     {creating ? 'Cancel' : 'New key'}
   </Button>
+  <Button id="add-peer" onclick={() => enrolling = !enrolling}>
+    {enrolling ? 'Cancel' : 'Add a peer'}
+  </Button>
 </div>
 
 <div class="tiles" id="key-stats">
@@ -253,6 +276,20 @@ title: API keys
       {minted.expiresAt ? `expires ${day(minted.expiresAt)}` : 'no expiry'}
     </p>
     <Button id="minted-done" onclick={() => minted = null}>Done — I have saved it</Button>
+  </Card>
+{/if}
+
+{#if enrolling}
+  <Card>
+    <form id="peer-form" class="stack" onsubmit={enrollPeer}>
+      <Input name="peerName" id="peer-name" label="Name" value={peerName}
+             hint="The app that will call Basecamp — 'Workbench on my laptop'."
+             oninput={(e) => peerName = e.target.value} />
+      <Textarea name="peerKey" id="peer-key" label="Public key" rows={2} value={peerKey}
+                hint="The 43-character Ed25519 key the peer shows. Its key here reaches a preview and nothing else."
+                oninput={(e) => peerKey = e.target.value} />
+      <Button type="submit" tone="primary" id="enroll-peer">Add peer</Button>
+    </form>
   </Card>
 {/if}
 
@@ -340,6 +377,7 @@ title: API keys
           <div class="cluster">
             <span>{k.name}</span>
             <Badge tone={TONE[k.status] ?? 'muted'}>{k.status}</Badge>
+            {#if k.publicKey}<Badge tone="info">peer</Badge>{/if}
           </div>
         </td>
         <td><Mono>{k.tokenHint}</Mono></td>
