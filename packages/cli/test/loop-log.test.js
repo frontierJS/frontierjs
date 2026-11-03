@@ -41,9 +41,9 @@ beforeAll(() => {
   mkdirSync(join(LOGS, 'lanes', 'ws-1'))
   writeFileSync(join(LOGS, 'fix-loop.jsonl'), fixLines.map(l => JSON.stringify(l)).join('\n') + '\nnot json\n')
   writeFileSync(join(LOGS, 'frame-loop.jsonl'), frameLines.map(l => JSON.stringify(l)).join('\n') + '\n')
-  writeFileSync(join(LOGS, 'lanes', 'patches', 'FJS-9.patch'), 'diff')
+  writeFileSync(join(LOGS, 'lanes', 'patches', 'FJS-9.patch'), 'diff --git a/x.js b/x.js\n--- a/x.js\n+++ b/x.js\n@@ -1,2 +1,2 @@\n-old\n+new\n+more\ndiff --git a/y.js b/y.js\n--- a/y.js\n+++ b/y.js\n@@ -1 +1 @@\n-gone\n')
   utimesSync(join(LOGS, 'lanes', 'patches', 'FJS-9.patch'), new Date('2026-11-02T08:00:00Z'), new Date('2026-11-02T08:00:00Z'))
-  writeFileSync(join(LOGS, 'fix-loop-review.md'), '# review\n\nrepeats\n')
+  writeFileSync(join(LOGS, 'fix-loop-review.md'), '# review\n\nrepeats\n\n## Cost\n\n- not a repeat\n\n## Calls that fail\n\n- `Edit` — 2× in 1 session(s)\n  - call: a.js\n- `Bash` — 1×\n- `Read` — 1×\n\n## Denied tool calls\n\n- Bash ×1\n')
 })
 
 afterAll(() => rmSync(DIR, { recursive: true, force: true }))
@@ -104,10 +104,12 @@ describe('readLoopLog', () => {
 
   test('a patch names its row and the time it was written', () => {
     const { dock, frame, review } = read()
-    expect(dock.patches).toEqual([{ file: 'FJS-9.patch', row: 'FJS-9', at: '2026-11-02T08:00:00.000Z' }])
+    expect(dock.patches).toEqual([{ file: 'FJS-9.patch', row: 'FJS-9', at: '2026-11-02T08:00:00.000Z', files: 2, added: 2, removed: 2 }])
     expect(dock).toMatchObject({ harvestsToday: 1, filesHarvestedToday: 2 })
     expect(frame).toMatchObject({ linesToday: 2, total: 2, framedAllTime: 0 })
-    expect(review.head).toEqual(['# review', 'repeats'])
+    expect(review.head.slice(0, 2)).toEqual(['# review', 'repeats'])
+    // Top-level bullets under a repeat heading only, two per heading; Cost's bullet and a sub-bullet are not repeats.
+    expect(review.repeated).toEqual(['Calls that fail: `Edit` — 2× in 1 session(s)', 'Calls that fail: `Bash` — 1×', 'Denied tool calls: Bash ×1'])
   })
 
   test('a missing logDir reads as an empty town', () => {

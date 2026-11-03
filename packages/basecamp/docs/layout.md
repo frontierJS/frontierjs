@@ -351,7 +351,14 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           last tick (`tick` in autopilot-run.ts, its record tick.json beside
           the run logs), refusing the pass at the day cap or on held lanes;
           `turn` writes the file's `on` through fli's `writeSwitch`, refused
-          until every cap is set
+          until every cap is set; jobs/autopilot-report.job.ts is the morning
+          after — at eight it sends every system admin an `AutopilotReport`
+          counted off the last 24 hours by domain/atlas/autopilot-report.ts
+          (ran, closed, blocked, framed, spend, the day against its cap, the
+          Dock, the Review's repeat lines), silent only when Off and nothing
+          ran; the Dock tab lists each patch under
+          ~/.fli/lanes/patches with its row and the `git apply` that lands it,
+          which the owner runs (FJS-D1779) — the route applies nothing
           services/infra/ takes one and has no MODEL — `graph` and
           `onboarding`, two projections assembled from several tables, where
           storing either would be a second answer that goes stale

@@ -9,6 +9,8 @@ import { join }   from 'node:path'
 
 import { composePrompt, namedIds, branchSlug, explainPrompt, readAutopilot, registerRoot, type Atlas, type Queued } from '../src/domain/atlas/atlas.ts'
 import { startEntry, runningOf, dueAt, tickSince, tick, readTick, TICK_MS } from '../src/domain/atlas/autopilot-run.ts'
+import { reportOf } from '../src/domain/atlas/autopilot-report.ts'
+import { summary }  from '../src/notifications/AutopilotReport.notification.ts'
 
 const at = (file: string, line: number) => ({ file, line, href: file, edit: '' })
 
@@ -125,12 +127,59 @@ describe('readAutopilot', async () => {
     expect(t.registry.ready.top.length).toBeLessThanOrEqual(40)
     expect(t.registry.ready.top.length).toBeLessThanOrEqual(t.registry.ready.count)
     expect(t.registry.busy.count).toBe(t.lanes.filter(l => l.busy).length)
+    for (const p of t.dock.patches) {
+      expect(p.apply).toBe(`git -C ${root} apply --whitespace=nowarn ~/.fli/lanes/patches/${p.file}`)
+      expect(typeof p.files).toBe('number')
+      expect(p.title === null || typeof p.title === 'string').toBe(true)
+    }
     expect(t.council.bench.length).toBeLessThanOrEqual(12)
     expect(t.plans.papers.every(p => p.next !== null)).toBe(true)
     expect(Date.parse(t.window.end) - Date.parse(t.window.start)).toBe(864e5)
     expect(t.switch).toMatchObject({ file: '~/.fli/autopilot.json', on: expect.any(Boolean), entries: expect.any(Array), spent: { attempts: expect.any(Number), dollars: expect.any(Number) }, missing: expect.any(Array) })
     expect(t.switch.refused === null || t.switch.entries.length === 0).toBe(true)
   }, 30_000)
+})
+
+// The morning report is counted off `readLoopLog`'s answer; the town's shape
+// here is the smallest one that carries every number the report names.
+describe('reportOf', () => {
+  const quiet = {
+    window: { start: '2026-11-02T08:00:00.000Z', end: '2026-11-03T08:00:00.000Z' },
+    attempts: [], events: [], spend: 0, lanes: [],
+    counts: { events: 0, fixLines: 0, frameLines: 0, started: 0, closed: 0, blocked: 0, failed: 0, busy: 0, corrected: 0, harvest: 0, other: 0, spend: 0 },
+    frame: { linesToday: 0, lastAt: null, lastDay: null, total: 0, framedAllTime: 0 },
+    dock: { patches: [], dirs: [], harvestsToday: 0, filesHarvestedToday: 0 },
+    review: null,
+  }
+  const base = { day: { attempts: 20, dollars: 20 }, spent: { attempts: 0, dollars: 0 }, tick: null }
+
+  test('Off with nothing in the window is silent; On and quiet names the tick, so a dead tick job is not a quiet night', () => {
+    expect(reportOf({ ...base, loop: quiet, on: false })).toBeNull()
+    const on = reportOf({ ...base, loop: quiet, on: true, tick: '2026-11-03T07:55:00.000Z' })!
+    expect(on).toMatchObject({ on: true, ran: 0, closed: 0, patches: 0, tick: '2026-11-03T07:55:00.000Z', review: null })
+    expect(summary(on)).toMatch(/^Nothing ran\. Last tick /)
+    expect(summary({ ...on, tick: null })).toBe('Nothing ran, and the tick job has never run.')
+  })
+
+  test('a hand run while Off still reports, and every number is the log\'s: starts, outcomes, framed questions, spend, the day against its cap', () => {
+    const ev = (kind: 'row' | 'question' | 'paper', label: string, extra: object = {}) => ({ t: '2026-11-03T01:00:00.000Z', id: 'x', from: 'a', to: 'b', cost: null, log: '', kind, label, ...extra })
+    const loop = {
+      ...quiet, spend: 7.5,
+      counts: { ...quiet.counts, fixLines: 9, frameLines: 2, started: 5, closed: 3, blocked: 1, failed: 1, busy: 1, corrected: 0, other: 0 },
+      events: [ev('paper', 'framing 3 question(s)'), ev('question', 'framed'), ev('question', 'framed'), ev('question', 'settled'), ev('row', 'closed')],
+      dock: { ...quiet.dock, patches: [{ file: 'FJS-1.patch', row: 'FJS-1', at: null, files: 1, added: 1, removed: 0 }] },
+      review: { modified: '2026-11-02T20:00:00.000Z', head: ['# review'], repeated: ['Calls that fail: `Edit` — 2× in 1 session(s)'] },
+    }
+    const r = reportOf({ loop, on: false, day: { attempts: 20, dollars: null }, spent: { attempts: 2, dollars: 3.25 }, tick: null })!
+    expect(r).toEqual({
+      from: quiet.window.start, to: quiet.window.end, on: false,
+      ran: 6, closed: 3, blocked: 1, failed: 2, framed: 2, spend: 7.5,
+      day: { attempts: 2, dollars: 3.25, capAttempts: 20, capDollars: null },
+      patches: 1, tick: null,
+      review: { modified: '2026-11-02T20:00:00.000Z', repeated: ['Calls that fail: `Edit` — 2× in 1 session(s)'] },
+    })
+    expect(summary(r)).toBe('6 runs · 3 closed · 1 blocked · 2 failed · 2 framed · $7.50')
+  })
 })
 
 // A Run now is a spawn of the entry's script with its flags; the script here

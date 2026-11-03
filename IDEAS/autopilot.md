@@ -232,11 +232,31 @@ a report.
       stops nothing. The drive asserts held or live and never clicks: a turn
       writes the owner's file, and On would let the drive's own API start a
       loop. `packages/cli/test/autopilot.test.js`.*
-- [ ] 3.3 Landing — a closed row's patch stays on the Dock (`FJS-D1779`):
+- [x] 3.3 Landing — a closed row's patch stays on the Dock (`FJS-D1779`):
       the route lists each with its row and the lane command that applies it,
-      and applying is the owner's read; nothing is committed.
-- [ ] 3.4 The morning report as a Basecamp notification: ran, closed, blocked,
-      framed, spent, and what the Review says repeated.
+      and applying is the owner's read; nothing is committed. *Built
+      2026-11-02: a Dock tab on the route, one row per patch under
+      `~/.fli/lanes/patches` with its register row, the newest attempt off the
+      log, its size (`loop-log.js` counts it) and the apply command, which the
+      page copies and never runs. The command's one spelling is `applyArgv` in
+      `core/autopilot.js`; the lanes apply through it too. The drive asserts
+      the list and that no button but Copy exists.*
+- [x] 3.4 The morning report as a Basecamp notification: ran, closed, blocked,
+      framed, spent, and what the Review says repeated. *Built 2026-11-03: a
+      fifteenth `NotificationKind`, `AutopilotReport`, email and in-app to the
+      system admins and never push, sent by `jobs/autopilot-report.job.ts` at
+      eight on the host's clock — the loops' cron lines are host-clock too, so
+      the night is inside the window. Counted at send time by
+      `domain/atlas/autopilot-report.ts` over `readLoopLog`'s last 24 hours,
+      nothing stored (the weekly digest's shape): starts, closed, blocked, the
+      rest as failed, framed questions, the window's spend, today's scheduled
+      spend against the day cap, patches on the Dock, the last tick, and the
+      Review's top-level bullets under its four repeat headings
+      (`loop-log.js` reads them as* review.repeated*). Silent only when Off
+      with nothing in the window; On and quiet sends, naming the last tick, so
+      a dead tick job cannot pass for a quiet night. Local dev only
+      (FJS-D1776). Migration `20261103002231_autopilot_report`, applied by the
+      API at boot.*
 
 ### Phase 4 — More loops, later
 

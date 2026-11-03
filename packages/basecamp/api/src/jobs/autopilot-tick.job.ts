@@ -12,8 +12,6 @@
 // installation's own.
 
 import { defineJob }           from '@frontierjs/caravan'
-import { homedir }             from 'node:os'
-import { join }                from 'node:path'
 import { runsAsApp }           from '../domain/job/job-context.ts'
 import { localMachineRefusal } from '../core/env.ts'
 import { loadFli, registerRoot } from '../domain/atlas/atlas.ts'
@@ -38,7 +36,7 @@ export default defineJob({
     if (!schedule.on) return
 
     const now   = new Date()
-    const logs  = ['fix-loop.jsonl', 'frame-loop.jsonl'].flatMap(l => f.readLog(join(homedir(), '.fli', l)))
+    const logs  = f.logFiles().flatMap(l => f.readLog(l))
     const cap   = f.overDayCap(schedule.day, f.spentToday(logs))
     const free  = f.readLoopLog({ root }).lanes.filter(l => !l.busy).length
     const since = tickSince(readTick(), now)

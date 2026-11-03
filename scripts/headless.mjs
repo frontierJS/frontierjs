@@ -17,10 +17,13 @@ import { dirname, join }                                        from 'node:path'
 import { createInterface }                                      from 'node:readline'
 import { fileURLToPath }                                        from 'node:url'
 
-import { SOURCE, readSchedule, spentToday, overDayCap }         from '../packages/cli/core/autopilot.js'
+import { SOURCE, LOOPS, logFiles, readSchedule, spentToday, overDayCap } from '../packages/cli/core/autopilot.js'
 
 export const ROOT    = dirname(dirname(fileURLToPath(import.meta.url)))
 export const LOG_DIR = join(homedir(), '.fli')
+
+/** A loop's own log under LOG_DIR; the names are the schedule reader's (`LOG_NAMES`). */
+export const logOf = loop => join(LOG_DIR, LOOPS[loop].log)
 
 // An item that does not finish is retried once on the next rung. The outcome is
 // checkable, so paying for high effort only where low failed is cheaper per
@@ -263,7 +266,7 @@ export function sourceOf(args) {
 // A scheduled run holds the day's cap itself, off the schedule file and the
 // logs, so the cap holds with the Basecamp that started it down. Answers why
 // one more attempt is refused, or null; a hand run is never refused.
-export function dayCapRefusal(source, logs = [join(LOG_DIR, 'fix-loop.jsonl'), join(LOG_DIR, 'frame-loop.jsonl')]) {
+export function dayCapRefusal(source, logs = logFiles(LOG_DIR)) {
   if (source !== SOURCE) return null
   let schedule
   try { schedule = readSchedule() } catch (err) { return err.message }

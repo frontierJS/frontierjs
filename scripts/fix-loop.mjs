@@ -98,7 +98,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { dirname, join }            from 'node:path'
 import { pathToFileURL }            from 'node:url'
 
-import { ROOT, LOG_DIR, runSession, printAttempt, appendLog, lastEntry, readLog, sentBack, fli, rg, citation, parseArgs, printHelp, trace, planUsage, printPlanUsage, sourceOf, dayCapRefusal } from './headless.mjs'
+import { ROOT, LOG_DIR, logOf, runSession, printAttempt, appendLog, lastEntry, readLog, sentBack, fli, rg, citation, parseArgs, printHelp, trace, planUsage, printPlanUsage, sourceOf, dayCapRefusal } from './headless.mjs'
 import { LANES_DIR, LINKED, MAX_LANES, openLanes, syncLane, applyPatch, lanePatch, harvest } from './lanes.mjs'
 
 // Not `LADDER`: frame-loop shares that one and stays on Opus.
@@ -134,7 +134,7 @@ const trial      = args.trial ? String(args.trial) : null
 const source     = sourceOf(args)
 // Where a row's edits go when it ends: the main tree, a trial's patch per model, or the Dock.
 const landing    = trial ? 'trial' : source ? 'dock' : 'tree'
-const LOG        = join(LOG_DIR, trial ? `fix-trial-${trial}.jsonl` : 'fix-loop.jsonl')
+const LOG        = trial ? join(LOG_DIR, `fix-trial-${trial}.jsonl`) : logOf('fix')
 
 if (args.help) { printHelp(import.meta.url); process.exit(0) }
 if (menu) console.log(`[fix-loop] menu: ${menu.menu} ${MENU.flagsLine(menu.flags) || '(no flags)'} — ${MENU.MENU_FILE}`)

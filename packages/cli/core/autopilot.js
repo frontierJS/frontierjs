@@ -15,7 +15,8 @@
 //     "day": { "attempts": 20, "dollars": 20 },
 //     "entries": [
 //       { "loop": "fix",   "cron": "0 1 * * *", "caps": { "rows": 6, "lanes": 2, "budget": 5, "sev": "S3,S4", "model": "sonnet" } },
-//       { "loop": "frame", "cron": "0 0 * * *", "caps": { "rows": 2, "max": 4, "budget": 5 } }
+//       { "loop": "frame", "cron": "0 0 * * *", "caps": { "rows": 2, "max": 4, "budget": 5 } },
+//       { "loop": "stress", "cron": "0 2 * * *", "caps": { "rows": 1, "filed": 3, "budget": 5, "model": "sonnet" } }
 //     ],
 //     "stressors": { "dir": "../fjs-prototypes", "apps": ["serpgrid"] }
 //   }
@@ -26,6 +27,16 @@
 // by the script before each attempt and by the tick job before each start. No
 // cap has a default (FJS-D1778): one not set is listed in `missing`, and Turn
 // On is refused while anything is.
+//
+// `stressors.apps` is the owner's consent (FJS-D1780): the stress loop runs a
+// step of a listed app and refuses any other by name, hand run or scheduled,
+// since a list a flag can bypass is advisory. The loop's `filed` cap is the
+// rows one day of stress runs may file, counted off its own log lines, hand
+// runs included: the cap guards the registers, not the schedule's wallet.
+//
+// Every loop's log is named here and nowhere else, so a reader summing the
+// day's spend reads all of them: a log a reader does not know is spend the
+// cap never sees.
 //
 // Plain ESM, node or bun; imports nothing from `scripts/`.
 
@@ -39,6 +50,9 @@ export const SCHEDULE_FILE = join(homedir(), '.fli', 'autopilot.json')
 
 /** The one value `--source` takes: a scheduled run is a hand run in the log plus this field. */
 export const SOURCE = 'autopilot'
+
+/** The one spelling of laying a patch onto a tree: the lanes use it, and the Dock shows it for the owner to run. */
+export const applyArgv = (dir, file) => ['git', '-C', dir, 'apply', '--whitespace=nowarn', file]
 
 /** A lane is a linked worktree, and ports.js has this many port blocks for them. */
 export const MAX_LANES = MAX_BRANCH
@@ -56,6 +70,7 @@ const MODELS = ['sonnet', 'opus']
 export const LOOPS = {
   fix: {
     script: 'scripts/fix-loop.mjs',
+    log:    'fix-loop.jsonl',
     caps: {
       rows:   { check: v => int(v) ? null : 'a whole number of rows, at least 1' },
       lanes:  { check: v => int(v) && v <= MAX_LANES ? null : `a whole number of lanes, 1 to ${MAX_LANES}` },
@@ -67,6 +82,7 @@ export const LOOPS = {
   },
   frame: {
     script: 'scripts/frame-loop.mjs',
+    log:    'frame-loop.jsonl',
     caps: {
       rows:   { check: v => int(v) ? null : 'a whole number of papers, at least 1' },
       max:    { check: v => int(v) ? null : 'a whole number of questions per paper, at least 1' },
@@ -74,7 +90,24 @@ export const LOOPS = {
     },
     rungs: () => 3,
   },
+  stress: {
+    script: 'scripts/stress-loop.mjs',
+    log:    'stress-loop.jsonl',
+    caps: {
+      rows:   { check: v => int(v) ? null : 'a whole number of steps, at least 1' },
+      filed:  { check: v => int(v) ? null : 'a whole number of rows a day of stress runs may file, at least 1' },
+      budget: { check: v => money(v) ? null : 'dollars per session, above 0' },
+      model:  { check: v => MODELS.includes(v) ? null : `one of ${MODELS.join(', ')}` },
+    },
+    rungs: caps => caps.model === 'sonnet' ? 1 : 3,
+  },
 }
+
+/** The loops' log file names under ~/.fli, one per loop. */
+export const LOG_NAMES = Object.values(LOOPS).map(l => l.log)
+
+/** The loops' log files, in full, under `dir`. */
+export const logFiles = (dir = join(homedir(), '.fli')) => LOG_NAMES.map(n => join(dir, n))
 
 const CRON_FIELD = /^(\*|[0-9]+)(-[0-9]+)?(\/[0-9]+)?(,(\*|[0-9]+)(-[0-9]+)?(\/[0-9]+)?)*$/
 
@@ -180,6 +213,30 @@ export function spentToday(lines, { now = new Date() } = {}) {
     attempts: mine.filter(e => e.outcome === 'started').length,
     dollars:  +mine.reduce((s, e) => s + (typeof e.cost === 'number' ? e.cost : 0), 0).toFixed(2),
   }
+}
+
+/**
+ * The rows the stress loop filed today, off its own log: a finished line
+ * carries `filed`, the register ids its session added. Hand runs count too.
+ */
+export function filedToday(lines, { now = new Date() } = {}) {
+  const today = now.toDateString()
+  return lines.filter(e => e.at && new Date(e.at).toDateString() === today).reduce((s, e) => s + (Array.isArray(e.filed) ? e.filed.length : 0), 0)
+}
+
+/** Why a stress run of `app` is refused by the list, or null: no list, nothing listed, or an app not on it. */
+export function listedRefusal(stressors, app) {
+  if (!stressors) return 'the schedule file names no stressors, and the list is the owner\'s consent (FJS-D1780)'
+  if (!stressors.apps.length) return 'stressors.apps is empty: no app has been listed for a stress run'
+  if (app !== undefined && !stressors.apps.includes(app)) return `'${app}' is not listed under stressors.apps; listed: ${stressors.apps.join(', ')}`
+  return null
+}
+
+/** Why one more stress run is over the day's filed-rows cap, or null while it is under. */
+export function overFiledCap(cap, filed) {
+  if (!int(cap)) return 'no filed cap is set; --filed is the rows a day of stress runs may file'
+  if (filed >= cap) return `today's stress runs filed ${filed} row${filed === 1 ? '' : 's'}, reaching the cap of ${cap}`
+  return null
 }
 
 /** Why one more attempt is over the day's cap, or null while it is under. */

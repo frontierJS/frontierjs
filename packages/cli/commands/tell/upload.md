@@ -54,7 +54,7 @@ the post.
 ```js
 const { readFileSync, statSync } = await import('node:fs')
 const { basename, resolve } = await import('node:path')
-const { FILE_PLAIN_MAX, sealFile, fileLimits } = await import('@frontierjs/toolbelt/frontier')
+const { FILE_PLAIN_MAX } = await import('@frontierjs/toolbelt/frontier')
 
 const path = String(arg.path ?? '')
 const piped = path === '-'
@@ -108,34 +108,24 @@ const readStdin = async () => {
   return new Uint8Array(Buffer.concat(chunks))
 }
 
-let sealed, key
+let file
 try {
   const { zipFolder } = await import(resolve(global.fliRoot, 'core/zip.js'))
   const bytes = piped ? await readStdin() : stat.isDirectory() ? zipFolder(path, { max: FILE_PLAIN_MAX }) : readFileSync(path)
   const type  = piped ? '' : stat.isDirectory() ? 'application/zip' : Bun.file(path).type
-  ;({ sealed, key } = await sealFile({ name, type, bytes }))
+  file = { name, type, bytes }
 } catch (e) { log.error(e.message); process.exitCode = 1; return }
 
-// The post owns the defaults and the ranges; a flag not given is left out of the ask.
-const ask = { size: sealed.length }
+const ask = {}
 if (flag.downloads !== undefined) ask.downloads = Number(flag.downloads)
 if (flag.hours !== undefined) ask.seconds = Math.round(Number(flag.hours) * 3600)
 
-let asked, put
-try {
-  asked = await tellFetch(member.api, member.keys, 'POST', '/file', ask)
-  if (asked.status !== 201) { log.error(`The post refused the file (${asked.status}): ${asked.json?.message ?? 'no reason given'}`); process.exitCode = 1; return }
-  put = await fetch(new URL(`/file/${asked.json.id}`, member.api), { method: 'PUT', body: sealed, headers: { 'x-file-token': asked.json.putToken } })
-} catch (e) { log.error(`${member.api} did not answer (${e.message}).`); process.exitCode = 1; return }
-if (put.status !== 201) {
-  const said = await put.json().catch(() => null)
-  log.error(`The post refused the upload (${put.status}): ${said?.message ?? 'no reason given'}`)
-  process.exitCode = 1
-  return
-}
+let left
+try { left = await putFile(member, file, ask) }
+catch (e) { log.error(e.message); process.exitCode = 1; return }
+if (left.refused) { log.error(left.refused); process.exitCode = 1; return }
+const { link, limits } = left
 
-const link = `${new URL(`/file/${asked.json.id}`, member.api)}#${key}`
-const limits = fileLimits(asked.json, Math.floor(Date.now() / 1000))
 echo(link)
 if (flag.qr) {
   const { qrTerminal } = await import('@frontierjs/toolbelt/qr')

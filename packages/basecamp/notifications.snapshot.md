@@ -22,6 +22,7 @@ on the definition is what holds it still.
 | --- | --- |
 | `AlertFiring` | `inApp` · `push` · `email` |
 | `AlertResolved` | `inApp` · `email` |
+| `AutopilotReport` | `inApp` · `email` |
 | `DependencyVulnerable` | `inApp` · `email` |
 | `DeployFailed` | `inApp` · `push` · `email` |
 | `DeploySuccess` | `inApp` · `email` |
@@ -35,7 +36,7 @@ on the definition is what holds it still.
 | `ServerUnreachable` | `inApp` · `push` · `email` |
 | `WeeklyDigest` | `inApp` · `email` |
 
-14 notification(s).
+15 notification(s).
 
 Which transports a given send *uses* is not here: `via` is a function of the
 payload and the recipient, so it is a runtime answer. This is the set each

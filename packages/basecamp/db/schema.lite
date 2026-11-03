@@ -704,6 +704,7 @@ enum NotificationKind {
   JobFailed
   WeeklyDigest
   ReplicaFound
+  AutopilotReport
 }
 
 // ============================================================

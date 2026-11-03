@@ -531,6 +531,14 @@ async function autopilotScreen() {
   if (refusedFile) check('a refused schedule file is said on the Switch', (await textOf('#ap-refused'))?.includes(refusedFile.slice(-40)), await textOf('#ap-refused'))
   if (schedule?.missing.length) check(`and the ${schedule.missing.length} caps not set are listed`, (await textOf('#ap-missing'))?.includes(schedule.missing[0]), await textOf('#ap-missing'))
 
+  // The Dock tab lists each patch with the command that applies it; the command is copied, never run here.
+  await clickText('[role=tab]', 'Dock')
+  await until(`document.getElementById('ap-dock')?.offsetParent !== null`, v => v, 'the Dock tab never showed')
+  const dockRows = await evaluate(`document.querySelectorAll('#ap-dock tr[data-patch]').length`)
+  check(`the Dock tab lists the ${patches[1]} patches`, dockRows >= Math.min(...patches) && dockRows <= Math.max(...patches), String(dockRows))
+  if (dockRows) check('and each names the git apply that lands it in this tree', await evaluate(`[...document.querySelectorAll('#ap-dock tr[data-patch]')].every(r => { const c = r.querySelector('.ap-apply code')?.textContent ?? ''; return c.startsWith('git -C ') && c.includes(' apply ') && c.endsWith(r.dataset.patch) })`) === true)
+  check('and nothing on it applies a patch', await evaluate(`[...document.querySelectorAll('#ap-dock button')].every(b => b.textContent.trim() === 'Copy')`) === true)
+
   await clickText('[role=tab]', 'Day')
   await until(`document.querySelectorAll('tr[data-event]').length`, v => v > 0 || before.events.length === 0, 'the Day tab listed no events', 30_000)
   const rows = await evaluate(`document.querySelectorAll('tr[data-event]').length`)

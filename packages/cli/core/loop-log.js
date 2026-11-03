@@ -1,8 +1,8 @@
 // ─── loop-log.js — the loops' logs and the lanes directory, read once ────────
 //
-// `fix-loop` and `frame-loop` append one jsonl line per event to ~/.fli, and
-// `fix-loop --lanes` keeps a worktree, a lock and a patch directory per lane
-// beside them. `scripts/loop-review.mjs` and the Basecamp Atlas API both read
+// `fix-loop`, `frame-loop` and `stress-loop` append one jsonl line per event
+// to ~/.fli (the names are `autopilot.js`'s `LOOPS`), and `fix-loop --lanes`
+// keeps a worktree, a lock and a patch directory per lane beside them. `scripts/loop-review.mjs` and the Basecamp Atlas API both read
 // them, and two readers pairing a finished attempt with its `started` line
 // disagree the day one of them learns a new field. This is the only one.
 //
@@ -68,6 +68,27 @@ const short = e => {
 const withSource = (e, ev) => e.source ? { ...ev, source: e.source } : ev
 
 const alive = pid => { try { process.kill(pid, 0); return true } catch (err) { return err.code === 'EPERM' } }
+
+// The headings under which scripts/loop-review.mjs names what repeats across
+// sessions; the rest of its report is cost and outcome tables. Renaming one
+// there drops its lines here silently, which packages/cli/test/loop-log.test.js
+// is the only check on.
+const REPEAT_HEADINGS = ['Files most sessions read', 'Calls that fail', 'The same call twice in one session', 'Denied tool calls']
+const REPEAT_LINES_PER_HEADING = 2
+
+/** The review's top-level bullets under each repeat heading, as `heading: bullet`, two per heading. */
+export function repeatedIn(text) {
+  const out = []
+  let heading = null, taken = 0
+  for (const line of text.split('\n')) {
+    const h = /^##+ (.+)$/.exec(line)
+    if (h) { heading = REPEAT_HEADINGS.includes(h[1].trim()) ? h[1].trim() : null; taken = 0; continue }
+    if (!heading || taken >= REPEAT_LINES_PER_HEADING || !line.startsWith('- ')) continue
+    out.push(`${heading}: ${line.slice(2).trim()}`)
+    taken++
+  }
+  return out
+}
 
 /**
  * The town's raw material: the last 24 hours ending at `until` (default now),
@@ -171,14 +192,21 @@ export function readLoopLog({ logDir = join(homedir(), '.fli'), root, since, unt
   const patchDir = join(lanesDir, 'patches')
   const all = existsSync(patchDir) ? readdirSync(patchDir) : []
   const patches = all.filter(f => f.endsWith('.patch')).map(file => {
-    let at = null
-    try { at = statSync(join(patchDir, file)).mtime.toISOString() } catch {}
-    return { file, row: /[A-Za-z]+-D?\d+/.exec(file)?.[0] ?? null, at }
+    let at = null, text = ''
+    try { at = statSync(join(patchDir, file)).mtime.toISOString(); text = readFileSync(join(patchDir, file), 'utf8') } catch {}
+    const lines = text.split('\n')
+    return {
+      file, row: /[A-Za-z]+-D?\d+/.exec(file)?.[0] ?? null, at,
+      files:   lines.filter(l => l.startsWith('diff --git ')).length,
+      added:   lines.filter(l => l.startsWith('+') && !l.startsWith('+++')).length,
+      removed: lines.filter(l => l.startsWith('-') && !l.startsWith('---')).length,
+    }
   })
   const reviewFile = join(logDir, 'fix-loop-review.md')
   let review = null
   if (existsSync(reviewFile)) {
-    review = { modified: statSync(reviewFile).mtime.toISOString(), head: readFileSync(reviewFile, 'utf8').split('\n').filter(l => l.trim()).slice(0, 14) }
+    const text = readFileSync(reviewFile, 'utf8')
+    review = { modified: statSync(reviewFile).mtime.toISOString(), head: text.split('\n').filter(l => l.trim()).slice(0, 14), repeated: repeatedIn(text) }
   }
 
   return {

@@ -54,7 +54,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `NetworkKind` | `mesh` · `vpc` |
 | `NetworkProvider` | `netbird` · `tailscale` · `wireguard` |
 | `NotificationContext` | `Alert` · `Deployment` · `JobRun` · `Monitor` · `Server` · `Workspace` |
-| `NotificationKind` | `AlertFiring` · `AlertResolved` · `DependencyVulnerable` · `DeployFailed` · `DeploySuccess` · `HubPostureFailed` · `JobFailed` · `MemberJoined` · `MonitorDown` · `MonitorUp` · `PostureFailed` · `ReplicaFound` · `ServerUnreachable` · `WeeklyDigest` |
+| `NotificationKind` | `AlertFiring` · `AlertResolved` · `AutopilotReport` · `DependencyVulnerable` · `DeployFailed` · `DeploySuccess` · `HubPostureFailed` · `JobFailed` · `MemberJoined` · `MonitorDown` · `MonitorUp` · `PostureFailed` · `ReplicaFound` · `ServerUnreachable` · `WeeklyDigest` |
 | `ParamGenerator` | `randomHex16` · `randomHex32` · `randomHex64` |
 | `PlatformBuild` | `outpost` · `platform` |
 | `PlatformProvider` | `cloudflare` |

@@ -238,6 +238,12 @@ title: Autopilot
     await load()
   }
 
+  // The apply command is the owner's to run; the page only hands it over.
+  let copied = null
+  async function copy(cmd) {
+    try { await navigator.clipboard.writeText(cmd); copied = cmd } catch { copied = null }
+  }
+
   let runOut = null
   let runErr = null
   async function runNow(i) {
@@ -292,6 +298,7 @@ title: Autopilot
         <TabList>
           <Tab id="town">Town</Tab>
           <Tab id="schedule">Schedule · {data.switch.on ? 'on' : 'off'}</Tab>
+          <Tab id="dock">Dock · {data.dock.patches.length}</Tab>
           <Tab id="day">Day · {data.events.length}</Tab>
         </TabList>
 
@@ -467,6 +474,32 @@ title: Autopilot
           </div>
         </TabPanel>
 
+        <TabPanel id="dock">
+          <div class="stack gap-sm">
+            <p class="text-sm text-muted" id="ap-dock-lead">A scheduled fix never merges: each closed row's diff waits here as a patch until you apply it in the main tree (FJS-D1779). Applying is your read of the diff, and nothing is committed by anybody.</p>
+            <div class="table-wrap">
+              <table class="table" id="ap-dock">
+                <thead><tr><th>Row</th><th>Title</th><th>Last attempt</th><th>Size</th><th>Written</th><th>Apply</th></tr></thead>
+                <tbody>
+                  {#each data.dock.patches as p (p.file)}
+                    <tr data-patch={p.file}>
+                      <td><code>{p.row ?? p.file}</code>{#if p.severity} <span class="text-xs text-muted">{p.severity}</span>{/if}</td>
+                      <td>{p.title ?? 'not a register row'}{#if p.status === 'closed'} <span class="text-xs text-muted">closed in the lane's copy</span>{/if}</td>
+                      <td>{p.last ? `${p.last.outcome}${p.last.model ? ` · ${p.last.model}` : ''}${p.last.cost != null ? ` · ${money(p.last.cost)}` : ''}` : 'not in the window'}</td>
+                      <td>{p.files} file{p.files === 1 ? '' : 's'} · +{p.added} −{p.removed}</td>
+                      <td>{p.at ? fmtD(Date.parse(p.at)) : ''}</td>
+                      <td class="ap-apply"><code>{p.apply}</code> <Button size="sm" treatment="outlined" onclick={() => copy(p.apply)}>Copy</Button></td>
+                    </tr>
+                  {:else}
+                    <tr><td colspan="6" class="text-muted">Nothing on the Dock: no scheduled fix has closed a row since the last apply.</td></tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+            {#if copied}<p class="text-sm text-muted" id="ap-copied">Copied: <code>{copied}</code></p>{/if}
+          </div>
+        </TabPanel>
+
         <TabPanel id="day">
           <div class="stack gap-sm">
             <div class="cluster gap-xs">
@@ -556,6 +589,7 @@ title: Autopilot
     display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
   }
 
+  .ap-apply code { white-space: nowrap; }
   .ap-sw { display: flex; flex-wrap: wrap; gap: var(--space-2xl); align-items: center; }
   .ap-state { font-family: var(--font-display, var(--font-primary)); font-size: var(--text-xl, 1.25rem); letter-spacing: var(--tracking-wide, 0.08em); }
   .ap-state small { display: block; letter-spacing: 0; }

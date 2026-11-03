@@ -21,8 +21,6 @@
 //   POST /atlas/:id      run       entry :id (1-based) of ~/.fli/autopilot.json started now, its caps as the script's flags
 //   POST /atlas/:id      turn      :id `on` or `off` — the file's switch; On is refused until every cap is set
 
-import { homedir }                 from 'node:os'
-import { join }                    from 'node:path'
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { LEVELS }                  from '@frontierjs/litestone'
@@ -128,7 +126,7 @@ export default createService({
     let schedule
     try { schedule = f.readSchedule() } catch (err) { throw new Conflict((err as Error).message) }
     if (!schedule.exists) throw new Conflict(`${schedule.file} does not exist, so there is no entry to run`)
-    const over = f.overDayCap(schedule.day, f.spentToday([...f.readLog(join(homedir(), '.fli', 'fix-loop.jsonl')), ...f.readLog(join(homedir(), '.fli', 'frame-loop.jsonl'))]))
+    const over = f.overDayCap(schedule.day, f.spentToday(f.logFiles().flatMap(l => f.readLog(l))))
     if (over) throw new Conflict(`Refused: ${over}`)
     const out = startEntry(root, f.LOOPS, schedule.entries, n - 1, $.app.workbench.shellEnv())
     if ('refused' in out) throw new Conflict(out.refused)

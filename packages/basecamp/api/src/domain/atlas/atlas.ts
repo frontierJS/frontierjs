@@ -73,9 +73,11 @@ type Fli = {
   readLog:      (file: string) => LogLine[]
   readSchedule: (o?: { file?: string }) => Schedule
   writeSwitch: (o: { on: boolean }) => Schedule
+  applyArgv: (dir: string, file: string) => string[]
   spentToday:   (lines: LogLine[], o?: { now?: Date }) => Spent
   overDayCap:   (day: Schedule['day'], spent: Spent) => string | null
-  LOOPS:        Record<string, { script: string }>
+  logFiles:     (dir?: string) => string[]
+  LOOPS:        Record<string, { script: string, log: string }>
   parsePlan:   (text: string, o: { file: string }) => ParsedPlan
   phaseOf:     (plan: ParsedPlan, step: PlanStep) => { n: string, title: string } | null
 }
@@ -98,8 +100,8 @@ export type LoopLog = {
   spend: number
   lanes: LoopLane[]
   frame: { linesToday: number, lastAt: string | null, lastDay: string | null, total: number, framedAllTime: number }
-  dock: { patches: Array<{ file: string, row: string | null, at: string | null }>, dirs: string[], harvestsToday: number, filesHarvestedToday: number }
-  review: { modified: string, head: string[] } | null
+  dock: { patches: Array<{ file: string, row: string | null, at: string | null, files: number, added: number, removed: number }>, dirs: string[], harvestsToday: number, filesHarvestedToday: number }
+  review: { modified: string, head: string[], repeated: string[] } | null
 }
 type LogLine = Record<string, unknown>
 type Spent   = { attempts: number, dollars: number }
@@ -231,7 +233,14 @@ export type PlanCard = {
   id: string, title: string | null, status: string | null, steps: number, done: number,
   next: { id: string, title: string } | null, phase: string | null,
 }
-export type Autopilot = LoopLog & {
+/** A Dock patch with its register row and the command that applies it in the main tree (FJS-D1779). */
+export type DockPatch = LoopLog['dock']['patches'][number] & {
+  title: string | null, severity: string | null, status: string | null
+  last: { outcome: string, model?: string, cost?: number, at: string } | null
+  apply: string
+}
+export type Autopilot = Omit<LoopLog, 'dock'> & {
+  dock: LoopLog['dock'] & { patches: DockPatch[] }
   registry: { ready: Table, blocked: Table, busy: { count: number }, closedToday: number }
   council: {
     open: number, decidable: number, ruled: number,
@@ -328,15 +337,29 @@ export async function readAutopilot(root: string): Promise<Autopilot> {
   const asked = (state: Question['state']) => atlas.questions.filter(q => q.state === state)
   const decidable = asked('decidable')
   const { schedule, refused } = readSwitch(f)
-  const spent = f.spentToday([...f.readLog(join(FLI_DIR(), 'fix-loop.jsonl')), ...f.readLog(join(FLI_DIR(), 'frame-loop.jsonl'))])
+  const spent = f.spentToday(f.logFiles(FLI_DIR()).flatMap(l => f.readLog(l)))
 
   // A transcript's usage and report ride on every log line; the town needs
   // neither, and forty of them would be most of the payload.
   const attempts = loop.attempts.map(({ usage, report, sessionId, ...rest }) => rest)
 
+  // The newest finished attempt at the row, which is what the patch holds.
+  const lastOf = (row: string | null) => {
+    const a = row ? loop.attempts.filter(x => x.id === row && x.outcome !== 'started').at(-1) : null
+    return a ? { outcome: a.outcome, model: a.model as string | undefined, cost: a.cost as number | undefined, at: a.at as string } : null
+  }
+  const patches: DockPatch[] = loop.dock.patches.map(p => {
+    const issue = p.row ? byId.get(p.row) : null
+    return {
+      ...p, title: issue?.title ?? null, severity: issue?.severity ?? null, status: issue?.status ?? null, last: lastOf(p.row),
+      apply: f.applyArgv(root, `~/.fli/lanes/patches/${p.file}`).join(' '),
+    }
+  })
+
   return {
     ...loop,
     attempts,
+    dock: { ...loop.dock, patches },
     registry: {
       ready:       table(atlas.ready, READY_TOP),
       blocked:     table(atlas.blocked, READY_TOP),

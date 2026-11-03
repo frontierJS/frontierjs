@@ -8891,7 +8891,8 @@
         "MemberJoined",
         "JobFailed",
         "WeeklyDigest",
-        "ReplicaFound"
+        "ReplicaFound",
+        "AutopilotReport"
       ],
       "title": "NotificationKind"
     },

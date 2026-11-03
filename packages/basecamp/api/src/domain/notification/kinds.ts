@@ -103,6 +103,12 @@ export const NOTIFICATION_KINDS: NotificationKindDef[] = [
   { kind: 'WeeklyDigest',  label: 'Weekly digest',
     description: 'A summary of the week — deploys, alerts and job failures.',
     email: true,  inApp: false, push: false },
+
+  // Local dev only, like the town it reports on (FJS-D1776): a deployed
+  // Basecamp has no loops beside it and never sends one.
+  { kind: 'AutopilotReport', label: 'Autopilot morning report',
+    description: 'Each morning after the loops ran, or while Autopilot is On: what ran, closed, blocked and framed, what it spent against the day cap, and what the Review says repeated. Sent to system admins.',
+    email: true,  inApp: true, push: false },
 ]
 
 /** The enum's words, for validating what a caller sent. */

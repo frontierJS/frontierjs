@@ -47,9 +47,9 @@ import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { pathToFileURL }  from 'node:url'
 
-import { ROOT, LOG_DIR, LADDER, runSession, printAttempt, appendLog, readLog, citation, parseArgs, printHelp, trace, writes, sourceOf, dayCapRefusal } from './headless.mjs'
+import { ROOT, logOf, LADDER, runSession, printAttempt, appendLog, readLog, citation, parseArgs, printHelp, trace, writes, sourceOf, dayCapRefusal } from './headless.mjs'
 
-const LOG      = join(LOG_DIR, 'frame-loop.jsonl')
+const LOG      = logOf('frame')
 const DECIDING = import(pathToFileURL(join(ROOT, 'packages', 'cli', 'core', 'decisions.js')).href)
 const REGISTER = import(pathToFileURL(join(ROOT, 'packages', 'cli', 'core', 'registers.js')).href)
 
