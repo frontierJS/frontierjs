@@ -12,7 +12,7 @@
 import { defineNotification, inApp, push } from '@frontierjs/notifications'
 
 /** A phone opens the link somewhere else, so it is absolute. */
-const appUrl = (path: string) => `${(process.env.FRONTIER_APP_URL ?? 'http://localhost:5508').replace(/\/+$/, '')}${path}`
+export const appUrl = (path: string) => `${(process.env.FRONTIER_APP_URL ?? 'http://localhost:5508').replace(/\/+$/, '')}${path}`
 
 export interface AutopilotReportPayload {
   /** ISO instants, inclusive start and exclusive end. */

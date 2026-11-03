@@ -202,7 +202,7 @@ title: Autopilot
   // An entry's last run is the newest scheduled line of its loop in the window.
   const lastRun = (loop) => {
     if (!data) return '—'
-    const mine = data.events.filter(e => e.source === 'autopilot' && (loop === 'frame' ? e.from === 'framing' || e.to === 'framing' : e.kind === 'row'))
+    const mine = data.events.filter(e => e.source === 'autopilot' && (loop === 'frame' ? e.from === 'framing' || e.to === 'framing' : loop === 'post' ? e.from === 'post' || e.to === 'post' : e.kind === 'row'))
     const last = mine.at(-1)
     return last ? `${fmtD(Date.parse(last.t))} · ${last.id} ${last.label}` : 'never in the window'
   }
@@ -433,7 +433,7 @@ title: Autopilot
                           <td>{lastRun(e.loop)}</td>
                           <td>
                             {#if e.running}
-                              <span class="text-sm">running · pid {e.running.pid} · since {fmtD(Date.parse(e.running.at))}</span>
+                              <span class="text-sm">running · {e.running.pid ? 'pid ' + e.running.pid : 'in the API'} · since {fmtD(Date.parse(e.running.at))}</span>
                             {:else}
                               <Button size="sm" treatment="outlined" id={`ap-run-${i + 1}`} onclick={() => runNow(i)}>Run now</Button>
                             {/if}
@@ -447,7 +447,7 @@ title: Autopilot
                   </table>
                 </div>
                 {#if runOut}
-                  <Callout tone="success" title={`Started entry ${runOut.entry}: ${runOut.loop}`}><p class="text-sm">pid {runOut.pid} · what it prints is in <code>{runOut.log}</code> · it shows in its lane as its log lines land. It lands on the Dock, never in the main tree.</p></Callout>
+                  <Callout tone="success" title={`Started entry ${runOut.entry}: ${runOut.loop}`}><p class="text-sm">{#if runOut.pid}pid {runOut.pid} · what it prints is in <code>{runOut.log}</code> · it shows in its lane as its log lines land. It lands on the Dock, never in the main tree.{:else}Running inside the API: the Post shows each question it asks as its log line lands.{/if}</p></Callout>
                 {/if}
                 {#if runErr}
                   <Callout tone="danger" title="Not started"><p class="text-sm" id="ap-run-err">{runErr}</p></Callout>

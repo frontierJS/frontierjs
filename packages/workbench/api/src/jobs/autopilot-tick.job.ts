@@ -13,9 +13,11 @@ import { defineJob }           from '@frontierjs/caravan'
 import { runsAsApp }           from '../domain/job/job-context.ts'
 import { loadFli, registerRoot } from '../domain/atlas/atlas.ts'
 import { tick, readTick, tickSince } from '../domain/atlas/autopilot-run.ts'
+import { inProcess, pollReplies }    from '../domain/atlas/autopilot-post.ts'
 
 /** What the last pass said, so a pass that says it again is silent. */
 let lastReported = ''
+let lastPollError = ''
 
 export default defineJob({
   name:    'autopilot-tick',
@@ -27,8 +29,21 @@ export default defineJob({
     if (!root) return
     const f = await loadFli()
 
+    const push = (app as any).push
+    if (push?.rung === 1 && push.token) {
+      try {
+        const r = await pollReplies({ root, push })
+        if (r.ruled || r.refused) console.log(`[autopilot-tick] replies: ${r.ruled} ruled, ${r.refused} refused`)
+        lastPollError = ''
+      } catch (err) {
+        const line = `reply poll failed: ${(err as Error).message}`
+        if (line !== lastPollError) console.warn(`[autopilot-tick] ${line}`)
+        lastPollError = line
+      }
+    }
+
     let schedule
-    try { schedule = f.readSchedule() } catch (err) { report(`refused: ${(err as Error).message}`); return }
+    try { schedule = f.readSchedule({ root }) } catch (err) { report(`refused: ${(err as Error).message}`); return }
     if (!schedule.on) return
 
     const now   = new Date()
@@ -36,9 +51,9 @@ export default defineJob({
     const cap   = f.overDayCap(schedule.day, f.spentToday(logs))
     const free  = f.readLoopLog({ root }).lanes.filter(l => !l.busy).length
     const since = tickSince(readTick(), now)
-    const out   = tick({ root, loops: f.LOOPS, entries: schedule.entries, env: app.workbench.shellEnv(), cap, freeLanes: free, since, now })
+    const out   = tick({ root, loops: f.LOOPS, entries: schedule.entries, env: app.workbench.shellEnv(), cap, freeLanes: free, since, now, inProcess: inProcess(app, root) })
 
-    for (const s of out.started) console.log(`[autopilot-tick] started entry ${s.entry} (${s.loop}), pid ${s.pid}`)
+    for (const s of out.started) console.log(`[autopilot-tick] started entry ${s.entry} (${s.loop}), ${s.pid ? `pid ${s.pid}` : 'in the API'}`)
     report(out.skipped.map(s => `entry ${s.entry} (${s.loop}) not started: ${s.why}`).join('; '))
   },
 })

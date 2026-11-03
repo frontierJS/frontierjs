@@ -8,7 +8,7 @@
 // day cap compared against every hand run in the log rather than the scheduled ones.
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs'
 import { join }   from 'path'
 import { tmpdir } from 'os'
 
@@ -32,6 +32,7 @@ const FIX   = { loop: 'fix',   cron: '0 1 * * *', caps: { rows: 4, lanes: 2, bud
 const FRAME = { loop: 'frame', cron: '30 0 * * 1-5', caps: { rows: 2, max: 4, budget: 5 } }
 const STRESS = { loop: 'stress', cron: '0 2 * * *', caps: { rows: 1, filed: 3, budget: 5, model: 'sonnet' } }
 const FEED   = { loop: 'feed', cron: '0 4 * * *', caps: { feeder: 'ci', filed: 3 } }
+const POST   = { loop: 'post', cron: '0 8 * * *', caps: { asks: 3, section: 'Repo conventions' } }
 
 describe('readSchedule', () => {
   test('a missing file is a schedule with nothing set', () => {
@@ -48,6 +49,28 @@ describe('readSchedule', () => {
     expect(s.entries[2]).toEqual({ ...STRESS, flags: ['--rows', '1', '--filed', '3', '--budget', '5', '--model', 'sonnet', '--source', 'autopilot'], worst: 5 })
     // A feeder runs no session, so its worst run is $0 rather than unknown.
     expect(s.entries[3]).toEqual({ ...FEED, flags: ['--feeder', 'ci', '--filed', '3', '--source', 'autopilot'], worst: 0 })
+  })
+
+  test('a post entry has no script to flag and costs nothing, and its caps are checked', () => {
+    const s = read({ day: { attempts: 20, dollars: 60 }, entries: [POST] })
+    expect(s.entries[0]).toEqual({ ...POST, flags: ['--asks', '3', '--section', 'Repo conventions', '--source', 'autopilot'], worst: 0 })
+    expect(s.missing).toEqual([])
+    expect(() => read({ entries: [{ ...POST, caps: { ...POST.caps, asks: 0 } }] })).toThrow(/entry 1 \(post\): asks is 0, not a whole number of questions/)
+    expect(() => read({ entries: [{ ...POST, caps: { ...POST.caps, section: ' ' } }] })).toThrow(/entry 1 \(post\): section is " ", not the DECISIONS.md section/)
+    expect(read({ entries: [{ ...POST, caps: { asks: 1 } }] }).missing).toContain('entries[0].caps.section')
+  })
+
+  test('with a root, a post section that DECISIONS.md does not have is refused at load, not at the 8 a.m. run', () => {
+    const root = join(DIR, 'paper-root')
+    mkdirSync(root, { recursive: true })
+    writeFileSync(join(root, 'DECISIONS.md'), '# Decisions\n\n## Repo conventions\n\n## Open (discussed, not yet ruled)\n')
+    const at = (section) => readSchedule({ file: file({ entries: [{ ...POST, caps: { asks: 1, section } }] }), root })
+    expect(at('Repo conventions').entries[0].caps.section).toBe('Repo conventions')
+    expect(() => at('Repo convention')).toThrow(/entry 1 \(post\): section "Repo convention" is not a section of DECISIONS.md; the rulings go under Repo conventions/)
+    // The Open queue is where a ruling comes FROM.
+    expect(() => at('Open (discussed, not yet ruled)')).toThrow(/is not a section of DECISIONS.md/)
+    // Without a root, nothing is read: the Switch's own read does not need a checkout.
+    expect(read({ entries: [{ ...POST, caps: { asks: 1, section: 'Anything' } }] }).entries).toHaveLength(1)
   })
 
   test('a cap not set is listed by path, never defaulted', () => {
@@ -102,9 +125,10 @@ describe('flagsOf and worstCost', () => {
   })
 
   test('every loop names a script under scripts/ and a log of its own', () => {
-    for (const l of Object.values(LOOPS)) expect(l.script).toMatch(/^scripts\/[a-z-]+\.mjs$/)
-    expect(LOG_NAMES).toEqual(['fix-loop.jsonl', 'frame-loop.jsonl', 'stress-loop.jsonl', 'feed-loop.jsonl'])
-    expect(logFiles('/x')).toEqual(['/x/fix-loop.jsonl', '/x/frame-loop.jsonl', '/x/stress-loop.jsonl', '/x/feed-loop.jsonl'])
+    // `post` is the one loop with no script: Workbench's tick job runs it in-process.
+    for (const [name, l] of Object.entries(LOOPS)) name === 'post' ? expect(l.script).toBeNull() : expect(l.script).toMatch(/^scripts\/[a-z-]+\.mjs$/)
+    expect(LOG_NAMES).toEqual(['fix-loop.jsonl', 'frame-loop.jsonl', 'stress-loop.jsonl', 'feed-loop.jsonl', 'post-loop.jsonl'])
+    expect(logFiles('/x')).toEqual(['/x/fix-loop.jsonl', '/x/frame-loop.jsonl', '/x/stress-loop.jsonl', '/x/feed-loop.jsonl', '/x/post-loop.jsonl'])
   })
 
   // A reader summing the day's spend from a list of its own misses the log it

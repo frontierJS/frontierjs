@@ -12,6 +12,10 @@
 // loop's own record and a frame run has none — so a Run now on an entry still
 // running is refused, and one started before a restart is not known here and
 // is refused by the lane lock instead.
+//
+// A loop with no script (`post`) runs in this process through a callback the
+// caller hands in, and its Running has no pid: the callback's promise is the
+// thing still going, so it is forgotten when that settles.
 
 import { spawn }                                                                   from 'node:child_process'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
@@ -20,9 +24,12 @@ import { join }                                                                 
 import { parseCron, cronMatches }                                                  from '@frontierjs/toolbelt/cron'
 
 export type Entry   = { loop: string, cron: string, caps: Record<string, unknown>, flags: string[], worst: number | null }
-export type Running = { loop: string, pid: number, at: string, log: string }
-export type Tick    = { at: string, since: string, started: Array<{ entry: number, loop: string, pid: number }>, skipped: Array<{ entry: number, loop: string, why: string }> }
-type Loops = Record<string, { script: string }>
+/** `pid` and `log` are null for a loop that runs inside this API. */
+export type Running = { loop: string, pid: number | null, at: string, log: string | null }
+export type Tick    = { at: string, since: string, started: Array<{ entry: number, loop: string, pid: number | null }>, skipped: Array<{ entry: number, loop: string, why: string }> }
+type Loops = Record<string, { script: string | null }>
+/** Runs a script-less entry's loop in this process; a rejection is the caller's to log, since nothing awaits the run. */
+export type InProcess = (entry: Entry) => Promise<unknown>
 
 const running = new Map<number, Running>()
 
@@ -34,17 +41,25 @@ export const OUT_DIR = () => join(homedir(), '.fli', 'autopilot')
 export function runningOf(i: number): Running | null {
   const r = running.get(i)
   if (!r) return null
-  if (alive(r.pid)) return r
+  if (r.pid === null || alive(r.pid)) return r
   running.delete(i)
   return null
 }
 
 /** Start entry `i` (0-based) of the schedule at `root`, the loops' scripts being `loops`. */
-export function startEntry(root: string, loops: Loops, entries: Entry[], i: number, env: NodeJS.ProcessEnv, { outDir = OUT_DIR() } = {}): { started: Running } | { refused: string } {
+export function startEntry(root: string, loops: Loops, entries: Entry[], i: number, env: NodeJS.ProcessEnv, { outDir = OUT_DIR(), inProcess }: { outDir?: string, inProcess?: InProcess } = {}): { started: Running } | { refused: string } {
   const entry = entries[i]
   if (!entry) return { refused: `the schedule has no entry ${i + 1}; it lists ${entries.length}` }
   const had = runningOf(i)
-  if (had) return { refused: `entry ${i + 1} (${entry.loop}) is already running (pid ${had.pid}) since ${had.at}` }
+  if (had) return { refused: `entry ${i + 1} (${entry.loop}) is already running${had.pid === null ? '' : ` (pid ${had.pid})`} since ${had.at}` }
+  if (loops[entry.loop] && loops[entry.loop].script === null) {
+    if (!inProcess) return { refused: `${entry.loop} runs inside this API and was handed no way to run it` }
+    const run: Running = { loop: entry.loop, pid: null, at: new Date().toISOString(), log: null }
+    running.set(i, run)
+    const forget = () => { if (running.get(i) === run) running.delete(i) }
+    inProcess(entry).then(forget, (err) => { forget(); console.error(`[autopilot] entry ${i + 1} (${entry.loop}) failed: ${(err as Error).message}`) })
+    return { started: run }
+  }
   const rel    = loops[entry.loop]?.script
   const script = rel ? join(root, rel) : null
   if (!script || !existsSync(script)) return { refused: `${rel ?? entry.loop} is not beside the registers at ${root}: the loops run from a checkout of frontierjs (FJS-D1776)` }
@@ -108,7 +123,7 @@ export function tickSince(last: Tick | null, now: Date): Date {
 type TickInput = {
   root: string, loops: Loops, entries: Entry[], env: NodeJS.ProcessEnv
   cap: string | null, freeLanes: number, since: Date, now: Date
-  start?: typeof startEntry, outDir?: string
+  start?: typeof startEntry, outDir?: string, inProcess?: InProcess
 }
 
 /**
@@ -117,7 +132,7 @@ type TickInput = {
  * started and why the rest were not is the tick's record, written beside the
  * run logs so the Switch and the next tick read it.
  */
-export function tick({ root, loops, entries, env, cap, freeLanes, since, now, start = startEntry, outDir = OUT_DIR() }: TickInput): Tick {
+export function tick({ root, loops, entries, env, cap, freeLanes, since, now, start = startEntry, outDir = OUT_DIR(), inProcess }: TickInput): Tick {
   const out: Tick = { at: now.toISOString(), since: since.toISOString(), started: [], skipped: [] }
   entries.forEach((e, i) => {
     const entry = i + 1
@@ -125,7 +140,7 @@ export function tick({ root, loops, entries, env, cap, freeLanes, since, now, st
     if (cap) { out.skipped.push({ entry, loop: e.loop, why: cap }); return }
     const lanes = typeof e.caps.lanes === 'number' ? e.caps.lanes : 0
     if (lanes > freeLanes) { out.skipped.push({ entry, loop: e.loop, why: `${lanes} lanes asked, ${freeLanes} free` }); return }
-    const r = start(root, loops, entries, i, env, { outDir })
+    const r = start(root, loops, entries, i, env, { outDir, inProcess })
     if ('refused' in r) out.skipped.push({ entry, loop: e.loop, why: r.refused })
     else { out.started.push({ entry, loop: e.loop, pid: r.started.pid }); freeLanes -= lanes }
   })

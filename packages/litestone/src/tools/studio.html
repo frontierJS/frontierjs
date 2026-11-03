@@ -1530,11 +1530,6 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
             <button class="pill primary" id="lyL-clusters" type="button" aria-pressed="true">Clusters</button>
             <button class="pill muted" id="lyL-models" type="button" aria-pressed="false">Models</button>
           </div></div>
-        <div class="ly-seg"><span>Knots</span>
-          <div class="cluster" role="group" aria-label="Which knots a group's score counts">
-            <button class="pill primary" id="lyK-offCore" type="button" aria-pressed="true" title="Two routes between models, neither through the group's core">Off core</button>
-            <button class="pill muted" id="lyK-all" type="button" aria-pressed="false" title="Every key past a tree: diamonds through the core, second keys and self-references too">All</button>
-          </div></div>
         <label class="ly-seg"><span>Depth <output id="lyDepthOut"></output></span>
           <input id="lyDepth" type="range" min="0" step="1" value="0"></label>
         <label class="ly-seg"><span>More per group <output id="lyReachOut"></output></span>
@@ -8119,7 +8114,7 @@ const Layers = (() => {
   const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches
   const $ = id => document.getElementById(id)
   const cv = $('lyCanvas'), g2 = cv.getContext('2d')
-  const state = { floor: 'hub', links: 'clusters', knots: 'offCore', fade: true, labels: false, showKnots: false, size: false, sel: null, depth: 0, reach: 0 }
+  const state = { floor: 'hub', links: 'clusters', fade: true, labels: false, showKnots: false, size: false, sel: null, depth: 0, reach: 0 }
   const cam = { yaw: -0.55, pitch: 0.36, zoom: 1.1 }
   const T = {}
   let D = null, M = {}, OUT = {}, IN = {}, GM = new Map(), HUBS = new Set(), CORE = new Set(), HUE = {}
@@ -8131,9 +8126,9 @@ const Layers = (() => {
   const label = k => GM.get(k).label
   const members = k => GM.get(k).members
   const byIn = k => members(k).slice().sort((a, b) => M[b].in - M[a].in || a.localeCompare(b))
-  const knots = k => GM.get(k).knots[state.knots]
+  const knots = k => GM.get(k).knots.all
   const knotLine = k => state.showKnots && k !== 'unlinked'
-    ? `${knots(k)} knot${knots(k) === 1 ? '' : 's'} ${state.knots === 'offCore' ? 'off core' : 'in all'}` : null
+    ? `${knots(k)} knot${knots(k) === 1 ? '' : 's'}` : null
   const sizeOf = k => state.size && SIZES?.[k] ? `${fmtBytes(SIZES[k].bytes)} · ${SIZES[k].rows.toLocaleString()} rows` : null
   // A group's outline goes from circle toward triangle as its knots rise. The
   // scale is absolute, not the schema's own maximum, so the same count draws
@@ -8490,7 +8485,7 @@ const Layers = (() => {
           <dt>Models</dt><dd>${members(s.id).length}</dd>
           <dt>Keys inside</dt><dd>${inside}</dd>
           <dt>Keys crossing out</dt><dd>${cross}</dd>
-          <dt>Knots</dt><dd>${GM.get(s.id).knots.offCore} off core · ${GM.get(s.id).knots.all} in all</dd>
+          <dt>Knots</dt><dd>${GM.get(s.id).knots.all}</dd>
           ${sizeOf(s.id) ? `<dt>On disk</dt><dd>${sizeOf(s.id)}</dd>` : ''}
         </dl>
         ${knotList(GM.get(s.id).knots.list)}
@@ -8573,10 +8568,8 @@ const Layers = (() => {
   }
   function setFloor(f) { state.floor = f; for (const k of ['hub', 'ring']) setPressed('lyF-' + k, f === k); layout(); draw() }
   function setLinks(l) { state.links = l; setPressed('lyL-models', l === 'models'); setPressed('lyL-clusters', l === 'clusters'); draw() }
-  function setKnots(k) { state.knots = k; setPressed('lyK-offCore', k === 'offCore'); setPressed('lyK-all', k === 'all'); draw(); renderPanel() }
   function setRange(key, v) { state[key] = v; layout(); showRanges(); draw() }
   for (const f of ['hub', 'ring']) $('lyF-' + f).onclick = () => setFloor(f)
-  for (const k of ['offCore', 'all']) $('lyK-' + k).onclick = () => setKnots(k)
   $('lyL-clusters').onclick = () => setLinks('clusters')
   $('lyL-models').onclick = () => setLinks('models')
   $('lyDepth').oninput = e => setRange('depth', +e.target.value)

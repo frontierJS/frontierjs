@@ -45,6 +45,12 @@ const feedLines = [
   { at: at(1), feeder: 'ci', id: 'ci', outcome: 'red', minutes: 21, filed: ['FJS-30'], amended: ['FJS-2'], env: ['CI red: tests · packages/x'], held: 0, run: 'r1', source: 'autopilot' },
 ]
 
+const postLines = [
+  { at: at(1.4), source: 'autopilot', outcome: 'asked', id: 'FJS-D50', section: 'Repo conventions', rung: 1, buttons: true },
+  { at: at(1.2), source: 'autopilot', outcome: 'ruled', id: 'FJS-D50', ruling: 'FJS-D60', reply: 'm1' },
+  { at: at(1.1), source: 'autopilot', outcome: 'refused', id: 'FJS-D51', why: 'B is not the recommendation', reply: 'm2' },
+]
+
 beforeAll(() => {
   DIR  = mkdtempSync(join(tmpdir(), 'loop-log-'))
   LOGS = join(DIR, '.fli')
@@ -54,6 +60,7 @@ beforeAll(() => {
   writeFileSync(join(LOGS, 'frame-loop.jsonl'), frameLines.map(l => JSON.stringify(l)).join('\n') + '\n')
   writeFileSync(join(LOGS, 'stress-loop.jsonl'), stressLines.map(l => JSON.stringify(l)).join('\n') + '\n')
   writeFileSync(join(LOGS, 'feed-loop.jsonl'), feedLines.map(l => JSON.stringify(l)).join('\n') + '\n')
+  writeFileSync(join(LOGS, 'post-loop.jsonl'), postLines.map(l => JSON.stringify(l)).join('\n') + '\n')
   writeFileSync(join(LOGS, 'lanes', 'patches', 'FJS-9.patch'), 'diff --git a/x.js b/x.js\n--- a/x.js\n+++ b/x.js\n@@ -1,2 +1,2 @@\n-old\n+new\n+more\ndiff --git a/y.js b/y.js\n--- a/y.js\n+++ b/y.js\n@@ -1 +1 @@\n-gone\n')
   utimesSync(join(LOGS, 'lanes', 'patches', 'FJS-9.patch'), new Date('2026-11-02T08:00:00Z'), new Date('2026-11-02T08:00:00Z'))
   writeFileSync(join(LOGS, 'fix-loop-review.md'), '# review\n\nrepeats\n\n## Cost\n\n- not a repeat\n\n## Calls that fail\n\n- `Edit` — 2× in 1 session(s)\n  - call: a.js\n- `Bash` — 1×\n- `Read` — 1×\n\n## Denied tool calls\n\n- Bash ×1\n')
@@ -130,6 +137,14 @@ describe('readLoopLog', () => {
     expect(t.events.filter(e => e.label === 'filed by stress serpgrid 1.2').map(e => [e.kind, e.id, e.to]))
       .toEqual([['row', 'FJS-20', 'registry.ready'], ['question', 'FJS-D21', 'council.open']])
     expect(t.stress).toEqual({ linesToday: 2, lastAt: at(2), total: 3, tickedAllTime: 1, filedToday: 2 })
+  })
+
+  test('an ask is a question from the bench to the Post; a ruling goes on to the wall and a refusal back to the bench', () => {
+    const t = read()
+    expect(t.events.filter(e => e.label === 'asked' || e.label === 'ruled' || e.label === 'refused').map(e => [e.kind, e.id, e.from, e.to, e.label, e.cost]))
+      .toEqual([['question', 'FJS-D50', 'council.bench', 'post', 'asked', null], ['question', 'FJS-D50', 'post', 'council.wall', 'ruled', null], ['question', 'FJS-D51', 'post', 'council.bench', 'refused', null]])
+    expect(t.counts.postLines).toBe(3)
+    expect(t.spend).toBe(1.75)
   })
 
   test('a feeder moves nothing on the map but the rows it filed, each a crate from the Proving ground; it costs nothing', () => {

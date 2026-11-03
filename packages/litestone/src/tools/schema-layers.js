@@ -202,8 +202,7 @@ function settledDepth(edges, depth, group) {
 // AppDrill's App and its Deployment's App), sometimes no (an AppBackup's
 // destination and its App's replica destination). Nearly every
 // diamond in a group passes through its core (AppBackup reaches App directly and
-// through Deployment), so those are counted apart; the score is the diamonds
-// that do not, and a raw count only measured how big a group and its hub were.
+// through Deployment), so those sort after the diamonds that do not.
 function knotsOf(schema, members, core) {
   const S = new Set(members), loops = [], pairs = [], simple = []
   const seen = new Set()
@@ -250,7 +249,7 @@ function knotsOf(schema, members, core) {
   }
   for (const d of diamonds) d.route = routeOf(d)
   const list = [...diamonds.sort((a, b) => a.viaCore - b.viaCore), ...pairs, ...loops]
-  return { offCore: diamonds.filter(d => !d.viaCore).length, all: list.length, list }
+  return { all: list.length, list }
 }
 
 const round = n => Math.round(n * 10) / 10
@@ -260,7 +259,7 @@ const round = n => Math.round(n * 10) / 10
  * @returns {{
  *   models: Array<{ n: string, in: number, out: number, d: number, f: number, g: string }>,
  *   edges: Array<[from: string, to: string, field: string]>,
- *   groups: Array<{ key: string, label: string, members: string[], core: number, r: number, knots: { offCore: number, all: number, list: Array<{ kind: 'diamond'|'pair'|'loop', from: string, field: string, to: string, route: string[], viaCore?: boolean }> } }>,
+ *   groups: Array<{ key: string, label: string, members: string[], core: number, r: number, knots: { all: number, list: Array<{ kind: 'diamond'|'pair'|'loop', from: string, field: string, to: string, route: string[], viaCore?: boolean }> } }>,
  *   hubs: string[],
  *   depth: number,
  *   floors: Record<'ring'|'hub', { centers: Record<string, { x: number, y: number }>, at: Record<string, [number, number]> }>,
@@ -358,7 +357,7 @@ export function schemaLayers(schema) {
       members: ranked.get(k),
       core: ranked.get(k).filter(n => core.has(n)).length,
       r: round(rad(k)),
-      knots: k === 'unlinked' ? { offCore: 0, all: 0, list: [] } : knotsOf(schema, byKey.get(k), core),
+      knots: k === 'unlinked' ? { all: 0, list: [] } : knotsOf(schema, byKey.get(k), core),
     })),
     hubs,
     depth: settledDepth(g.edges, depth, group),

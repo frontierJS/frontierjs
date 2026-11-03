@@ -50,7 +50,7 @@ type Decided = { ok: true, ruling: string, pick: string, closed: string | null, 
 
 type Option    = { letter: string, text: string }
 type Recommend = { letter: string, qualifier: string | null, why: string }
-type Asked = {
+export type Asked = {
   id: string, file: string, line: number, question: string, body: string,
   options: Option[], recommend: Recommend | null, paper: { id: string, status: string } | null,
 }
@@ -58,7 +58,7 @@ type AskEvent =
   | { type: 'session', id: string } | { type: 'text', text: string } | { type: 'tool', text: string }
   | { type: 'result', ok: boolean, stop: string | null, cost: number | null } | { type: 'error', text: string }
 
-type Fli = {
+export type Fli = {
   collectRegisterAtlas: (root: string) => Atlas
   findRegisterRoot:     (start: string) => string | null
   registerLayout:       (root: string) => { dir: string }
@@ -71,13 +71,13 @@ type Fli = {
   dataOf:  (model: unknown, o: { root: string }) => RingsData
   readLoopLog: (o: { logDir?: string, root: string, since?: number | string, until?: number | string }) => LoopLog
   readLog:      (file: string) => LogLine[]
-  readSchedule: (o?: { file?: string }) => Schedule
+  readSchedule: (o?: { file?: string, root?: string }) => Schedule
   writeSwitch: (o: { on: boolean }) => Schedule
   applyArgv: (dir: string, file: string) => string[]
   spentToday:   (lines: LogLine[], o?: { now?: Date }) => Spent
   overDayCap:   (day: Schedule['day'], spent: Spent) => string | null
   logFiles:     (dir?: string) => string[]
-  LOOPS:        Record<string, { script: string, log: string }>
+  LOOPS:        Record<string, { script: string | null, log: string }>
   parsePlan:   (text: string, o: { file: string }) => ParsedPlan
   phaseOf:     (plan: ParsedPlan, step: PlanStep) => { n: string, title: string } | null
 }
@@ -257,7 +257,7 @@ export type Autopilot = Omit<LoopLog, 'dock'> & {
   }
 }
 
-const FLI_DIR   = () => join(homedir(), '.fli')
+export const FLI_DIR = () => join(homedir(), '.fli')
 const READY_TOP = 40
 const BENCH_TOP = 12
 
@@ -287,8 +287,8 @@ function readPapers(f: Fli, root: string, atlas: Atlas): PlanCard[] {
 }
 
 /** The schedule through its one reader; a file it refuses is the refusal and no entries, drawn as such. */
-function readSwitch(f: Fli): { schedule: Schedule | null, refused: string | null } {
-  try { return { schedule: f.readSchedule(), refused: null } } catch (err) { return { schedule: null, refused: (err as Error).message } }
+function readSwitch(f: Fli, root: string): { schedule: Schedule | null, refused: string | null } {
+  try { return { schedule: f.readSchedule({ root }), refused: null } } catch (err) { return { schedule: null, refused: (err as Error).message } }
 }
 
 /** The stressors the schedule lists, each `<dir>/<app>/PLAN.md`; a missing one is skipped. */
@@ -337,7 +337,7 @@ export async function readAutopilot(root: string): Promise<Autopilot> {
 
   const asked = (state: Question['state']) => atlas.questions.filter(q => q.state === state)
   const decidable = asked('decidable')
-  const { schedule, refused } = readSwitch(f)
+  const { schedule, refused } = readSwitch(f, root)
   const spent = f.spentToday(f.logFiles(FLI_DIR()).flatMap(l => f.readLog(l)))
 
   // A transcript's usage and report ride on every log line; the town needs

@@ -72,6 +72,8 @@ export interface MailMessage {
 export interface PushAction {
   label: string
   url:   string
+  /** Present, the button is an ntfy `http` action: the PHONE POSTs this body to `url`. Absent, a `view` link. ntfy only. */
+  body?: string
 }
 
 /**

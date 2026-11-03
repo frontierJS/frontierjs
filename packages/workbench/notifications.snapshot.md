@@ -20,9 +20,10 @@ on the definition is what holds it still.
 
 | Type | Transports |
 | --- | --- |
+| `AutopilotAsk` | `inApp` · `push` |
 | `AutopilotReport` | `inApp` · `push` |
 
-1 notification(s).
+2 notification(s).
 
 Which transports a given send *uses* is not here: `via` is a function of the
 payload and the recipient, so it is a runtime answer. This is the set each

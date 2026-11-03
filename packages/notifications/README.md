@@ -507,7 +507,7 @@ push: (monitor) => push()
   .build()
 ```
 
-**The topic is the recipient's address**, `recipient.pushTopic`, and a recipient without one is refused by name: on a public server a guessable name is readable by anyone, so an app mints `<slug>-critical-<random>` once and shows it as a subscribe link. `title`, `body`, `priority`, `tags`, `url` (sent as `Click`) and `actions` go on the wire; `data`, `ttl`, `urgency` and `topic` are web push's and are dropped. ntfy's own limits are applied rather than refused: a body is cut to 4095 bytes with an ellipsis, since 4096 makes it a file attachment, and only the first three actions are sent. A payload carries titles and links, never a secret — the `push:` formatter is where `@guarded` columns stay out, for both drivers.
+**The topic is the recipient's address**, `recipient.pushTopic`, and a recipient without one is refused by name: on a public server a guessable name is readable by anyone, so an app mints `<slug>-critical-<random>` once and shows it as a subscribe link. `title`, `body`, `priority`, `tags`, `url` (sent as `Click`) and `actions` go on the wire; `data`, `ttl`, `urgency` and `topic` are web push's and are dropped. ntfy's own limits are applied rather than refused: a body is cut to 4095 bytes with an ellipsis, since 4096 makes it a file attachment, and only the first three actions are sent. `.action(label, url)` adds a `view` button; `.post(label, url, body)` adds an `http` one the phone POSTs itself (`clear: true`), with no `Authorization` header, so the topic behind `url` must accept an anonymous write. `webPush()` sends no actions. A payload carries titles and links, never a secret — the `push:` formatter is where `@guarded` columns stay out, for both drivers.
 
 ---
 

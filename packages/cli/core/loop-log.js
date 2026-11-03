@@ -1,6 +1,6 @@
 // ─── loop-log.js — the loops' logs and the lanes directory, read once ────────
 //
-// `fix-loop`, `frame-loop`, `stress-loop` and `feed-loop` append one jsonl line per event
+// `fix-loop`, `frame-loop`, `stress-loop`, `feed-loop` and Workbench's `post` append one jsonl line per event
 // to ~/.fli (the names are `autopilot.js`'s `LOOPS`), and `fix-loop --lanes`
 // keeps a worktree, a lock and a patch directory per lane beside them. `scripts/loop-review.mjs` and the Basecamp Atlas API both read
 // them, and two readers pairing a finished attempt with its `started` line
@@ -17,7 +17,9 @@
 // scheduled run; a hand run names none. A stress line names `app` and `step`
 // (its `id` is the two joined) and a finished one carries `filed`, the
 // register ids its session added, which is how the day's filed rows are
-// counted against the stress cap. A feed line names its `feeder` and, when
+// counted against the stress cap. A post line names the question `id` and is
+// `asked`, then `ruled` or `refused` (a ruling carries `ruling`, a refusal
+// `why`); it costs nothing. A feed line names its `feeder` and, when
 // finished, `filed` and `amended` the same way; it costs nothing.
 //
 // Plain ESM, node or bun. Imports nothing from `scripts/`: this package is
@@ -111,6 +113,7 @@ export function readLoopLog({ logDir = join(homedir(), '.fli'), root, since, unt
   const frame  = readLog(join(logDir, LOOPS.frame.log))
   const stress = readLog(join(logDir, LOOPS.stress.log))
   const feed   = readLog(join(logDir, LOOPS.feed.log))
+  const post   = readLog(join(logDir, LOOPS.post.log))
   const lanesDir = join(logDir, 'lanes')
 
   const laneOf = e => {
@@ -182,6 +185,15 @@ export function readLoopLog({ logDir = join(homedir(), '.fli'), root, since, unt
   for (const e of feedDay) {
     for (const row of e.filed ?? []) events.push(withSource(e, { t: e.at, kind: isQ(row) ? 'question' : 'row', id: row, from: 'proving', to: isQ(row) ? 'council.open' : 'registry.ready', label: `filed by the ${e.feeder} feeder`, cost: null, log: short(e) }))
   }
+  // ── post-loop lines → question events ──
+  // An ask is a question out of the Council's bench to the Post, and what comes
+  // back is a ruling to the wall or a refusal to the bench it left.
+  const postDay = post.filter(within)
+  for (const e of postDay) {
+    if (typeof e.id !== 'string') continue // a refused reply that named no question
+    const [from, to] = e.outcome === 'asked' ? ['council.bench', 'post'] : e.outcome === 'ruled' ? ['post', 'council.wall'] : ['post', 'council.bench']
+    events.push(withSource(e, { t: e.at, kind: 'question', id: e.id, from, to, label: e.outcome, cost: null, log: short(e) }))
+  }
   events.sort((a, b) => a.t.localeCompare(b.t))
 
   // A frame line's cost repeats on each of its question events, so spend is
@@ -242,7 +254,7 @@ export function readLoopLog({ logDir = join(homedir(), '.fli'), root, since, unt
     window: { start: new Date(start).toISOString(), end: new Date(end).toISOString() },
     attempts,
     events,
-    counts: { events: events.length, fixLines: day.length, frameLines: frameDay.length, stressLines: stressDay.length, feedLines: feedDay.length, ...counts, spend },
+    counts: { events: events.length, fixLines: day.length, frameLines: frameDay.length, stressLines: stressDay.length, feedLines: feedDay.length, postLines: postDay.length, ...counts, spend },
     spend,
     lanes,
     frame: { linesToday: frameDay.length, lastAt: lastFrameAt, lastDay: lastFrameAt ? lastFrameAt.slice(0, 10) : null, total: frame.length, framedAllTime: frame.filter(e => e.outcome === 'framed').length },

@@ -187,6 +187,25 @@ describe('reportOf', () => {
 // is a stand-in that prints its argv, since the real one opens a lane and pays
 // for a session.
 describe('startEntry', () => {
+  test('a script-less loop runs through the callback, is running until it settles, and is refused without one', async () => {
+    const loops   = { post: { script: null } }
+    const entries = [{ loop: 'post', cron: '* * * * *', caps: { asks: 1, section: 'S' }, flags: [], worst: 0 }]
+    expect(startEntry('/x', loops, entries, 0, process.env)).toMatchObject({ refused: expect.stringContaining('post runs inside this API') })
+
+    let finish!: () => void
+    const ran: string[] = []
+    const inProcess = (e: { loop: string }) => { ran.push(e.loop); return new Promise<void>(r => { finish = r }) }
+    const out = startEntry('/x', loops, entries, 0, process.env, { inProcess })
+    if (!('started' in out)) throw new Error(out.refused)
+    expect({ ...out.started }).toMatchObject({ loop: 'post', pid: null, log: null })
+    expect(ran).toEqual(['post'])
+    expect(runningOf(0)).not.toBeNull()
+    expect(startEntry('/x', loops, entries, 0, process.env, { inProcess })).toMatchObject({ refused: expect.stringMatching(/entry 1 \(post\) is already running since/) })
+    finish()
+    await new Promise(r => setTimeout(r, 10))
+    expect(runningOf(0)).toBeNull()
+  })
+
   test('spawns the script beside the registers with the entry\'s flags, refuses a second start while it runs, and names what is missing', async () => {
     const root = mkdtempSync(join(tmpdir(), 'autopilot-run-'))
     mkdirSync(join(root, 'scripts'))

@@ -18,7 +18,8 @@
 //       { "loop": "frame", "cron": "0 0 * * *", "caps": { "rows": 2, "max": 4, "budget": 5 } },
 //       { "loop": "stress", "cron": "0 2 * * *", "caps": { "rows": 1, "filed": 3, "budget": 5, "model": "sonnet" } },
 //       { "loop": "feed",   "cron": "0 4 * * *", "caps": { "feeder": "ci", "filed": 3 } },
-//       { "loop": "feed",   "cron": "0 5 * * *", "caps": { "feeder": "stranger", "filed": 3 } }
+//       { "loop": "feed",   "cron": "0 5 * * *", "caps": { "feeder": "stranger", "filed": 3 } },
+//       { "loop": "post",   "cron": "0 8 * * *", "caps": { "asks": 3, "section": "Process & tooling" } }
 //     ],
 //     "stressors": { "dir": "../fjs-prototypes", "apps": ["serpgrid"] }
 //   }
@@ -43,6 +44,13 @@
 // both feeders' lines in the one log, so a red storm in one cannot spend the
 // other's rows; a feed entry's worst run is $0.
 //
+// `post` has no script and runs no session: Workbench's tick job runs it in its
+// own process, pinging each decidable question the log has not yet asked
+// (`asks` of them a run) to the owner's phone and, between ticks, ruling the
+// replies. `section` is the `DECISIONS.md` section a phone ruling is filed
+// under (FJS-D1813), checked against the file's own `##` headings when `root`
+// is given: a heading renamed would otherwise fail at 3am, not at load.
+//
 // Every loop's log is named here and nowhere else, so a reader summing the
 // day's spend reads all of them: a log a reader does not know is spend the
 // cap never sees.
@@ -54,6 +62,7 @@ import { homedir }      from 'node:os'
 import { join }         from 'node:path'
 
 import { MAX_BRANCH } from './ports.js'
+import { rulingSections } from './decisions.js'
 
 export const SCHEDULE_FILE = join(homedir(), '.fli', 'autopilot.json')
 
@@ -122,6 +131,16 @@ export const LOOPS = {
     },
     rungs: () => 0,
   },
+  // No script: `domain/atlas/autopilot-post.ts` in Workbench runs it in-process.
+  post: {
+    script: null,
+    log:    'post-loop.jsonl',
+    caps: {
+      asks:    { check: v => int(v) ? null : 'a whole number of questions one run may ask, at least 1' },
+      section: { check: v => typeof v === 'string' && v.trim() ? null : 'the DECISIONS.md section a phone ruling is filed under' },
+    },
+    rungs: () => 0,
+  },
 }
 
 /** The loops' log file names under ~/.fli, one per loop. */
@@ -162,9 +181,11 @@ export function worstCost(entry) {
  * each entry with its `flags` and `worst`. A missing file is one with nothing
  * set. A file that is not JSON, an unknown loop or cap, a cap of the wrong
  * shape, or an entry whose worst run is over the day's cap THROWS, naming the
- * entry: a schedule half read would run half of what was written.
+ * entry: a schedule half read would run half of what was written. With `root`,
+ * a `post` entry whose `section` is not one of that checkout's ruling sections
+ * throws too.
  */
-export function readSchedule({ file = SCHEDULE_FILE } = {}) {
+export function readSchedule({ file = SCHEDULE_FILE, root } = {}) {
   let text
   try { text = readFileSync(file, 'utf8') }
   catch { return { file, exists: false, on: false, day: null, entries: [], stressors: null, missing: ['day.attempts', 'day.dollars'] } }
@@ -201,6 +222,8 @@ export function readSchedule({ file = SCHEDULE_FILE } = {}) {
       const why = known.check(value)
       if (why) throw new Error(`${where} (${e.loop}): ${cap} is ${JSON.stringify(value)}, not ${why}`)
     }
+    if (e.loop === 'post' && root && typeof caps.section === 'string' && !rulingSections(root).includes(caps.section))
+      throw new Error(`${where} (post): section ${JSON.stringify(caps.section)} is not a section of DECISIONS.md; the rulings go under ${rulingSections(root).join(', ') || '(none found)'}`)
     for (const cap of Object.keys(loop.caps)) if (!(cap in caps)) missing.push(`entries[${i}].caps.${cap}`)
 
     const entry = { loop: e.loop, cron: e.cron.trim(), caps: { ...caps } }

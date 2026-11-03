@@ -26,6 +26,7 @@ import { LEVELS }                  from '@frontierjs/litestone'
 import { env } from '../../core/env.ts'
 import { branchName }              from '../../domain/workbench/workbench-branch.ts'
 import { startEntry }              from '../../domain/atlas/autopilot-run.ts'
+import { inProcess }               from '../../domain/atlas/autopilot-post.ts'
 import {
   loadFli, registerRoot, readAtlas, readRings, readAutopilot, forgetAtlas, recordsFor, composePrompt, branchSlug,
   readQueue, explain, explanationOf,
@@ -119,11 +120,11 @@ export default createService({
     const n    = Number($.id)
     if (!Number.isInteger(n) || n < 1) throw new BadRequest(`'${$.id}' is not an entry number; the first entry is 1`)
     let schedule
-    try { schedule = f.readSchedule() } catch (err) { throw new Conflict((err as Error).message) }
+    try { schedule = f.readSchedule({ root }) } catch (err) { throw new Conflict((err as Error).message) }
     if (!schedule.exists) throw new Conflict(`${schedule.file} does not exist, so there is no entry to run`)
     const over = f.overDayCap(schedule.day, f.spentToday(f.logFiles().flatMap(l => f.readLog(l))))
     if (over) throw new Conflict(`Refused: ${over}`)
-    const out = startEntry(root, f.LOOPS, schedule.entries, n - 1, $.app.workbench.shellEnv())
+    const out = startEntry(root, f.LOOPS, schedule.entries, n - 1, $.app.workbench.shellEnv(), { inProcess: inProcess($.app, root) })
     if ('refused' in out) throw new Conflict(out.refused)
     return { entry: n, ...out.started }
   },
