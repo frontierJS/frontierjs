@@ -1641,6 +1641,84 @@ describe('what the machine is asked to do', () => {
       })
     })
 
+    // A Download of an archive no bucket holds: Basecamp mints a PUT and asks
+    // this machine to send one of its own archives there. The path is a
+    // caller's string, so what it may name is fixed here.
+    describe('/backup/send — an archive sent to a minted URL', () => {
+      const url  = 'https://hub.example.test/app-archive-pull/b1?expires=1&sig=abc'
+      const send_ = async (server, body) => {
+        const res = await send(server, 'POST', '/backup/send', body)
+        return { status: res.status, body: await res.json() }
+      }
+      const kept = (name, text = 'archive-bytes') => {
+        mkdirSync(backupDir, { recursive: true })
+        const path = join(realpathSync(backupDir), name)
+        writeFileSync(path, text)
+        return path
+      }
+
+      test('PUTs the file to the URL and answers its size and digest', async () => {
+        const path = kept('ela-2026-11-03T00-00-00-000Z.tar.gz')
+        const puts = []
+        const { server } = backing({}, async (u, init) => { puts.push({ u, init }); return new Response(null, { status: 200 }) })
+        const { status, body } = await send_(server, { app_id: 'ela', path, upload_url: url })
+        expect(status).toBe(200)
+        expect(body).toEqual({ bytes: 13, sha256: createHash('sha256').update('archive-bytes').digest('hex') })
+        expect(puts).toHaveLength(1)
+        expect(puts[0].u).toBe(url)
+        expect(puts[0].init.method).toBe('PUT')
+        expect(puts[0].init.body.name).toBe(path)
+      })
+
+      test('a path outside the backup directory is refused and nothing is sent', async () => {
+        const outside = join(mkdtempSync(join(tmpdir(), 'outpost-outside-')), 'ela-x.tar.gz')
+        writeFileSync(outside, 'x')
+        kept('ela-keep.tar.gz')
+        const { server } = backing({}, async () => { throw new Error('must not be called') })
+        for (const path of [outside, '/etc/passwd', join(backupDir, '..', 'ela-x.tar.gz'), join(backupDir, '../../../../etc/passwd')]) {
+          const { status, body } = await send_(server, { app_id: 'ela', path, upload_url: url })
+          expect(status).toBe(500)
+          expect(body.error).toContain('is not a backup of ela on this machine')
+        }
+      })
+
+      test('another app\'s archive, or a file that is not an archive, is refused', async () => {
+        const other = kept('rival-2026.tar.gz')
+        const plain = kept('ela-notes.txt')
+        const { server } = backing({}, async () => { throw new Error('must not be called') })
+        for (const path of [other, plain]) {
+          const { status, body } = await send_(server, { app_id: 'ela', path, upload_url: url })
+          expect(status).toBe(500)
+          expect(body.error).toContain('is not a backup of ela')
+        }
+      })
+
+      test('a symlink out of the directory is followed to where it lands, and refused', async () => {
+        const target = join(mkdtempSync(join(tmpdir(), 'outpost-outside-')), 'secret')
+        writeFileSync(target, 'secret')
+        const link = join(realpathSync(backupDir), 'ela-link.tar.gz')
+        symlinkSync(target, link)
+        const { server } = backing({}, async () => { throw new Error('must not be called') })
+        expect((await send_(server, { app_id: 'ela', path: link, upload_url: url })).status).toBe(500)
+      })
+
+      test('a URL that is not http(s) is refused', async () => {
+        const path = kept('ela-2026-11-03T00-00-00-000Z.tar.gz')
+        const { server } = backing({}, async () => { throw new Error('must not be called') })
+        const { status, body } = await send_(server, { app_id: 'ela', path, upload_url: 'ftp://x/y' })
+        expect(status).toBe(500)
+        expect(body.error).toContain('not http(s)')
+      })
+
+      test('a PUT the far side refuses is an error in its words, not a success', async () => {
+        const path = kept('ela-2026-11-03T00-00-00-000Z.tar.gz')
+        const { server } = backing({}, async () => new Response('link has expired', { status: 403 }))
+        const { status, body } = await send_(server, { app_id: 'ela', path, upload_url: url })
+        expect(status).toBe(500)
+        expect(body.error).toContain('403 link has expired')
+      })
+    })
+
     // The script itself, run by the host's sh over temp directories, with a
     // `tar` ahead of the real one on PATH that writes to the database's -wal
     // while it runs -- the write landing mid-tar (FJS-3178).
@@ -2918,7 +2996,7 @@ describe('what this machine tells basecamp', () => {
 
 /** `/proc` and `statfs` as canned text, so a reading can be asserted rather
  *  than compared to whatever the test machine happens to be doing. */
-function fakeOs({ stat = [], meminfo = '', loadavg = '', statfs } = {}) {
+function fakeOs({ stat = [], meminfo = '', loadavg = '', statfs, cgroup = null, apps = null } = {}) {
   const reads = []
   const stats = [...stat]
   const readText = async (path) => {
@@ -2926,9 +3004,18 @@ function fakeOs({ stat = [], meminfo = '', loadavg = '', statfs } = {}) {
     if (path === '/proc/stat')     return stats.length > 1 ? stats.shift() : stats[0]
     if (path === '/proc/meminfo')  return meminfo
     if (path === '/proc/loadavg')  return loadavg
+    // `cgroup` is { 'system.slice/docker.service': anonBytes, ... } under the v2 root.
+    const unit = /^\/sys\/fs\/cgroup\/(.+)\/memory\.stat$/.exec(path)?.[1]
+    if (cgroup && unit in cgroup) return `file 4096\nanon ${cgroup[unit]}\nkernel 12\n`
     throw new Error(`unexpected read ${path}`)
   }
-  return { reads, vitals: createVitals({ readText, statfs, sampleMs: 0 }) }
+  // Never the real /sys: an unset tree is a box with no cgroup v2.
+  const readDir = async (path) => {
+    const parent = path.replace('/sys/fs/cgroup/', '')
+    if (!cgroup) throw new Error('ENOENT')
+    return Object.keys(cgroup).filter(k => k.startsWith(`${parent}/`)).map(k => k.slice(parent.length + 1))
+  }
+  return { reads, vitals: createVitals({ readText, statfs, readDir, apps, sampleMs: 0 }) }
 }
 
 const STAT_A = 'cpu  100 0 100 800 0 0 0 0 0 0\ncpu0 1 2 3 4 5\n'
@@ -2995,6 +3082,63 @@ describe('what the machine feels like', () => {
     expect('disk' in health).toBe(false)
     expect(health.cpu).toBe(20)
     expect(health.memory).toBe(75)
+  })
+
+  // ─── where the memory went (FJS-D1824) ────────────────────────────────────
+  // MEMINFO is 1000 kB total and 250 kB available, so 750 kB used.
+  const ID = 'a'.repeat(64)
+  const CGROUP = {
+    [`system.slice/docker-${ID}.scope`]: 100 * 1024,
+    'system.slice/docker.service':        200 * 1024,
+    'system.slice/caddy-api.service':      50 * 1024,
+    'system.slice/outpost.service':        40 * 1024,
+    'system.slice/basecamp-litestream.service': 10 * 1024,
+    'system.slice/fwupd.service':          20 * 1024,
+    'user.slice': 30 * 1024,
+    'init.scope': 10 * 1024,
+  }
+  const breakdownOf = async (os) => (await fakeOs({ stat: [STAT_A, STAT_B], meminfo: MEMINFO, loadavg: LOADAVG, statfs: STATFS, ...os }).vitals.read()).memory_breakdown
+
+  test('memory is broken down per unit and grouped, an app by its container\'s App', async () => {
+    const b = await breakdownOf({ cgroup: CGROUP, apps: async () => new Map([[ID, 'app_1']]) })
+    const row = unit => b.rows.find(r => r.unit === unit)
+    expect(row(`docker-${ID}.scope`)).toEqual({ group: 'apps', unit: `docker-${ID}.scope`, bytes: 100 * 1024, app_id: 'app_1' })
+    expect(row('docker.service').group).toBe('runtime')
+    expect(row('caddy-api.service').group).toBe('runtime')
+    expect(row('outpost.service').group).toBe('outpost')
+    expect(row('basecamp-litestream.service').group).toBe('outpost')
+    expect(['fwupd.service', 'user.slice', 'init.scope'].map(u => row(u).group)).toEqual(['os', 'os', 'os'])
+    expect(b.rows[0].bytes).toBe(200 * 1024)   // largest first, kernel last
+    expect(b.rows.at(-1).group).toBe('kernel')
+  })
+
+  test('kernel is the headline\'s used less the units\' sum, so the table adds up to the bar', async () => {
+    const b = await breakdownOf({ cgroup: CGROUP })
+    const units = b.rows.filter(r => r.group !== 'kernel').reduce((n, r) => n + r.bytes, 0)
+    expect(b.used_bytes).toBe(750 * 1024)
+    expect(b.rows.at(-1).bytes).toBe(750 * 1024 - units)
+    expect(b.rows.reduce((n, r) => n + r.bytes, 0)).toBe(b.used_bytes)
+    // A container with no App to name it is still counted, under its scope.
+    expect(b.rows.find(r => r.group === 'apps').app_id).toBeUndefined()
+  })
+
+  test('no cgroup tree is an absent breakdown, and the other readings still land', async () => {
+    const health = await fakeOs({ stat: [STAT_A, STAT_B], meminfo: MEMINFO, loadavg: LOADAVG, statfs: STATFS }).vitals.read()
+    expect('memory_breakdown' in health).toBe(false)
+    expect(health.memory).toBe(75)
+  })
+
+  test('a unit that cannot be read is left out, not zero', async () => {
+    const readText = async (path) => {
+      if (path === '/proc/meminfo') return MEMINFO
+      if (path.includes('docker.service')) throw new Error('EACCES')
+      if (path.endsWith('memory.stat')) return 'anon 2048\n'
+      throw new Error('unexpected')
+    }
+    const vitals = createVitals({ readText, statfs: STATFS, sampleMs: 0, readDir: async () => ['docker.service', 'fwupd.service'] })
+    const b = (await vitals.read()).memory_breakdown
+    expect(b.rows.map(r => r.unit)).not.toContain('docker.service')
+    expect(b.rows.find(r => r.unit === 'fwupd.service').bytes).toBe(2048)
   })
 
   test('a counter that went backwards is a reboot, and no reading at all', async () => {

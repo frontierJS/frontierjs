@@ -51,6 +51,11 @@ found by its address among the boxes every stored cloud token reaches, so a
 later `fli basecamp:create` does not read it as one an earlier run left behind.
 A box made by hand is at no such cloud and is left unmarked.
 
+It is also asked whether to turn off fwupd and multipathd (`FJS-D1825`), yes by
+default and yes with no terminal: `turnOffUnneeded` runs the install script's own
+lines over ssh once Basecamp is up. A box that joins the fleet has them turned
+off by the Outpost install regardless of the answer.
+
 A rerun on the same box is a redeploy: `deploy:setup` installs only what is
 missing, the record is moved to the box's address if it changed, and
 `POST /setup` refuses a second admin.
@@ -106,6 +111,8 @@ if (asking) password = await tty.secret(`${question(`Password for ${admin}`, 'En
 
 const yes = async (q) => await tty.keys(question(q), { y: 'yes', n: 'no' }) === 'y'
 const outpost = flag.outpost && (!asking || await yes(OUTPOST_QUESTION))
+const unneeded = !asking || await yes(UNNEEDED_QUESTION)
+unneededKept(unneeded, outpost, log)
 
 const { refusal: refused, rejected } = await zoneRefusal({ domain, log, echo, chalk })
 if (refused) {
@@ -121,6 +128,7 @@ if (asking) {
   row('hostname', domain)
   row('admin', `${admin} ${chalk.dim(password ? '' : '— password generated')}`)
   row('outpost', outpost ? `yes ${chalk.dim('— fli deploy:outpost once the admin is made')}` : chalk.dim('no'))
+  row('services', unneededRow(unneeded, chalk))
   echo('')
 }
 
@@ -133,6 +141,7 @@ if (failed) {
   return
 }
 log.success(`Basecamp is on ${dest}`)
+if (unneeded) await turnOffUnneeded(dest, '', log)
 stages.at('dns')
 const ip = await boxAddress(dest)
 await markHost({ ip, log })

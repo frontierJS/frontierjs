@@ -940,13 +940,30 @@ circle.er-link-fam { fill: hsl(var(--er-family) 62% 52%); stroke: none }
   cursor: pointer; display: inline-flex; align-items: center; gap: var(--space-xs);
 }
 .ly-chip:hover { border-color: var(--color-primary) }
-.ly-chip i { inline-size: 0.45rem; block-size: 0.45rem; border-radius: 50%; display: inline-block }
+.ly-chip i { inline-size: 0.45rem; block-size: 0.45rem; border-radius: 50%; display: inline-block; flex: none }
+.ly-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .ly-none { font-size: var(--text-sm); color: var(--ink-mute) }
 .ly-find input { --field-inline-size: 11rem; --control-padding-block: var(--space-2xs); font-size: var(--text-sm) }
 .ly-go { display: flex; flex-wrap: wrap; gap: var(--space-xs) }
 .ly-keys { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-xs) }
 .ly-keys li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); font-family: var(--font-mono); font-size: var(--text-sm); color: var(--ink-mute) }
-.ly-keys li.ly-also { padding-inline-start: var(--space-md); margin-block: calc(-1 * var(--space-2xs)) var(--space-xs) }
+.ly-keygrid { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); align-items: start; gap: var(--space-xs) var(--space-sm) }
+.ly-keygrid li { display: contents }
+.ly-keygrid li > span { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); min-inline-size: 0 }
+.ly-keygrid .ly-chip, .ly-diamond .ly-chip, .ly-members .ly-chip { max-inline-size: 100%; justify-self: start }
+.ly-diamonds { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-sm) }
+.ly-diamond {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2xs) var(--space-sm);
+  padding: var(--space-sm); border: 1px solid var(--rule); border-radius: var(--card-radius); background: var(--surface-sunken);
+}
+.ly-top, .ly-bottom { grid-column: 1 / -1; display: flex; justify-content: center; min-inline-size: 0 }
+.ly-side { display: flex; flex-direction: column; align-items: center; gap: var(--space-2xs); min-inline-size: 0 }
+.ly-hop { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-mute); overflow-wrap: anywhere; text-align: center }
+.ly-side:first-of-type .ly-hop:first-child { color: var(--ink) }
+.ly-cols { display: flex; justify-content: space-between }
+.ly-members { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2xs) var(--space-md); align-items: center }
+.ly-members li { display: contents }
+.ly-members li > span { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--ink-mute); text-align: end }
 tr.ac-hit > td { background: color-mix(in oklab, var(--color-primary) 18%, transparent) }
 
 /* ─── Performance ──────────────────────────────────────────────────────── */
@@ -8135,6 +8152,11 @@ const Layers = (() => {
   // the same shape in every schema and the knottiest group is not always a
   // triangle; one off-core diamond is rare enough to show plainly. The shape
   // shows only with the score beside it, or a triangle explains nothing.
+  // A two-model group drawn as loud as a fifteen-model one reads as noise, so a
+  // group's ring and name carry weight by its size, on the same absolute scale
+  // in every schema: 0.4 at two models, full at ten.
+  const weight = k => Math.min(1, 0.4 + 0.6 * (members(k).length - 2) / 8)
+  const gnameFont = k => `600 ${(8 + 3 * weight(k)).toFixed(1)}px ${T.sans}`
   function rimAt(k, a) {
     if (!state.showKnots) return CEN[k].r
     const t = knots(k) / (knots(k) + 2), side = 2 * Math.PI / 3
@@ -8265,10 +8287,11 @@ const Layers = (() => {
         const p = project({ x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r, z: 0 })
         i ? ctx.lineTo(p.X, p.Y) : ctx.moveTo(p.X, p.Y)
       }
-      if (c.minD === 0) { ctx.fillStyle = color(k, on ? 0.13 : 0.04); ctx.fill() }
+      const w = weight(k)
+      if (c.minD === 0) { ctx.fillStyle = color(k, (on ? 0.13 : 0.04) * w); ctx.fill() }
       // A group with nothing shown yet stays in the background.
       const mute = c.minD === Infinity ? 0.25 : 1
-      ctx.strokeStyle = color(k, (on ? 0.6 : 0.15) * mute); ctx.lineWidth = 1.2; ctx.stroke()
+      ctx.strokeStyle = color(k, (on ? 0.6 : 0.15) * mute * w); ctx.lineWidth = 0.8 + 0.8 * w; ctx.stroke()
     }
 
     proj = {}
@@ -8346,7 +8369,6 @@ const Layers = (() => {
     // it is the one being pointed at or "All names" asked for every one.
     // Group names are painted last, so their boxes go in first or they would
     // cover a model name sitting under them.
-    ctx.font = `600 9px ${T.sans}`
     const gnames = Object.entries(CEN).map(([k, c]) => {
       let front = null
       for (let i = 0; i < 24; i++) {
@@ -8355,6 +8377,7 @@ const Layers = (() => {
         if (!front || p.Y > front.Y) front = p
       }
       const lines = [knotLine(k), sizeOf(k)].filter(Boolean)
+      ctx.font = gnameFont(k)
       const w = Math.max(...[label(k), ...lines].map(t => ctx.measureText(t).width)) + 4
       return { k, front, lines, box: { x: front.X - w / 2, y: front.Y + 4, w, h: 12 + 12 * lines.length } }
     })
@@ -8381,10 +8404,10 @@ const Layers = (() => {
     ctx.textAlign = 'center'; ctx.textBaseline = 'top'
     for (const { k, front, lines } of gnames) {
       const on = !lit || members(k).some(n => lit.has(n))
-      ctx.font = `600 9px ${T.sans}`
+      ctx.font = gnameFont(k)
       ctx.lineWidth = 3.5; ctx.strokeStyle = T.bg
       ctx.strokeText(label(k), front.X, front.Y + 5)
-      ctx.fillStyle = color(k, (on ? 1 : 0.3) * (CEN[k].minD === Infinity ? 0.25 : 1)); ctx.fillText(label(k), front.X, front.Y + 5)
+      ctx.fillStyle = color(k, (on ? 1 : 0.3) * (CEN[k].minD === Infinity ? 0.25 : 1) * (0.5 + 0.5 * weight(k))); ctx.fillText(label(k), front.X, front.Y + 5)
       ctx.font = `500 9px ${T.mono}`
       lines.forEach((line, i) => {
         ctx.strokeText(line, front.X, front.Y + 17 + 12 * i)
@@ -8445,7 +8468,7 @@ const Layers = (() => {
   }
 
   // ── side panel ─────────────────────────────────────────────────────────────
-  const chip = n => `<button class="ly-chip" type="button" data-model="${esc(n)}"><i style="background:${color(groupOf(n))}"></i>${esc(n)}</button>`
+  const chip = n => `<button class="ly-chip" type="button" data-model="${esc(n)}"><i style="background:${color(groupOf(n))}"></i><span>${esc(n)}</span></button>`
   function renderPanel() {
     const el = $('lyPanel'), s = state.sel
     if (!D) { el.innerHTML = ''; return }
@@ -8489,8 +8512,8 @@ const Layers = (() => {
           ${sizeOf(s.id) ? `<dt>On disk</dt><dd>${sizeOf(s.id)}</dd>` : ''}
         </dl>
         ${knotList(GM.get(s.id).knots.list)}
-        <div class="ly-sect"><p class="ly-eyebrow">Members, most referenced first</p>
-          <div class="ly-chips">${byIn(s.id).map(chip).join('')}</div></div>`
+        <div class="ly-sect"><p class="ly-eyebrow ly-cols"><span>Members</span><span>keys in</span></p>
+          <ul class="ly-members">${byIn(s.id).map(n => `<li>${chip(n)}<span>${M[n].in}</span></li>`).join('')}</ul></div>`
     } else {
       const inside = D.edges.filter(([a, b]) => groupOf(a) === groupOf(b)).length
       el.innerHTML = `
@@ -8501,30 +8524,41 @@ const Layers = (() => {
         <div class="ly-sect"><p><b>${inside} of ${D.edges.length}</b> foreign keys stay inside a group; ${D.edges.length - inside} cross between groups.</p></div>`
     }
   }
-  // A diamond is the point of the list: the key, then the other route to the
-  // same model, each hop's arrow pointing the way its key does.
+  // A diamond is drawn as one: the key's model on top, the two routes down
+  // either side, and the model both reach at the bottom.
   function knotList(list) {
-    const route = r => r.map((n, i) => i ? `<span>${OUT[r[i - 1]].includes(n) ? '→' : '←'}</span>${chip(n)}` : chip(n)).join('')
-    const key = k => `${chip(k.from)}<span>.${esc(k.field)} →</span>${chip(k.to)}`
+    const key = k => `${chip(k.from)}<span>.${esc(k.field)} → ${chip(k.to)}</span>`
     // Where both routes arrive is the row the question is about, and it is
     // often not the key's target: SurveyScore.inspection and SurveyScore.survey
     // meet at the Job the Inspection and the Survey each name.
-    const meet = ({ route: r }) => r.filter((n, i) => {
-      const fromLeft = i === 0 ? false : OUT[r[i - 1]].includes(n)
-      const fromRight = i === r.length - 1 ? true : OUT[r[i + 1]].includes(n)
-      return fromLeft && fromRight
-    })
-    const diamond = k => `<li>${key(k)}</li><li class="ly-also"><span>and</span>${route(k.route)}</li>
-      <li class="ly-also"><span>both reach</span>${meet(k).map(chip).join('')}</li>`
+    const meetAt = r => r.findIndex((n, i) => i > 0 && OUT[r[i - 1]].includes(n) && (i === r.length - 1 || OUT[r[i + 1]].includes(n)))
+    // A route is found without regard to direction, so a hop can point back up;
+    // the arrow says which, and the field is the key that hop rides.
+    const hop = (a, b, field) => {
+      const down = OUT[a].includes(b), [x, y] = down ? [a, b] : [b, a]
+      const f = field ?? [...new Set(D.edges.filter(e => e[0] === x && e[1] === y).map(e => e[2]))].join(' / ')
+      return `<span class="ly-hop">${down ? '↓' : '↑'} .${esc(f)}</span>`
+    }
+    const side = (path, field) => path.slice(1).map((n, i) =>
+      hop(path[i], n, i === 0 ? field : null) + (i < path.length - 2 ? chip(n) : '')).join('')
+    const diamond = k => {
+      const r = k.route, m = meetAt(r) < 0 ? r.length - 1 : meetAt(r)
+      const left = [k.from, ...r.slice(m).reverse()], right = r.slice(0, m + 1)
+      return `<li class="ly-diamond">
+        <div class="ly-top">${chip(k.from)}</div>
+        <div class="ly-side">${side(left, k.field)}</div>
+        <div class="ly-side">${side(right)}</div>
+        <div class="ly-bottom">${chip(r[m])}</div></li>`
+    }
     const kinds = [
-      ['Two routes, off the core', k => k.kind === 'diamond' && !k.viaCore, diamond],
-      ['Two routes, through the core', k => k.kind === 'diamond' && k.viaCore, diamond],
-      ['A second key to one model', k => k.kind === 'pair', k => `<li>${key(k)}</li>`],
-      ['Keyed to itself', k => k.kind === 'loop', k => `<li>${key(k)}</li>`],
+      ['Two routes to one model, off the core', k => k.kind === 'diamond' && !k.viaCore, diamond, 'ly-diamonds'],
+      ['Two routes to one model, through the core', k => k.kind === 'diamond' && k.viaCore, diamond, 'ly-diamonds'],
+      ['A second key to one model', k => k.kind === 'pair', k => `<li>${key(k)}</li>`, 'ly-keys ly-keygrid'],
+      ['Keyed to itself', k => k.kind === 'loop', k => `<li>${key(k)}</li>`, 'ly-keys ly-keygrid'],
     ]
-    return kinds.map(([title, is, row]) => {
+    return kinds.map(([title, is, row, cls]) => {
       const these = list.filter(is)
-      return these.length ? `<div class="ly-sect"><p class="ly-eyebrow">${title} · ${these.length}</p><ul class="ly-keys">${these.map(row).join('')}</ul></div>` : ''
+      return these.length ? `<div class="ly-sect"><p class="ly-eyebrow">${title} · ${these.length}</p><ul class="${cls}">${these.map(row).join('')}</ul></div>` : ''
     }).join('')
   }
   $('lyPanel').addEventListener('click', e => {

@@ -23,15 +23,33 @@
  * series (`domain/host/server-metrics.ts`); the rest land in `Server.health` and are
  * read on the server's own screen. `load` is deliberately in the second group:
  * it is not comparable between machines without a core count, so it is a number
- * to look at and not one to draw a threshold across.
+ * to look at and not one to draw a threshold across. `memory_breakdown` is a
+ * table, not a series (`FJS-D1824`). A caller that sits in a private cgroup
+ * namespace (Basecamp in its container) reads the totals with `breakdown: false`
+ * and takes the table from the host's heartbeat.
  */
 
-import { statfs as nodeStatfs } from 'node:fs/promises'
+import { statfs as nodeStatfs, readdir as nodeReaddir } from 'node:fs/promises'
 
 /** The mount the percentage is about. `/` rather than Docker's root dir, which
  *  costs a `docker info` on every heartbeat; a separate `/var/lib/docker` is
  *  reported by `cleanup.report` on the slow clock instead. */
 const DISK_PATH = '/'
+
+/** Where systemd keeps a unit's cgroup. Every unit's `memory.stat` is read here
+ *  and nowhere else; a box on cgroup v1 has no such file, and the breakdown is
+ *  then absent rather than a table of zeros. */
+const CGROUP_ROOT = '/sys/fs/cgroup'
+
+/** The slices whose children are units, and the single cgroups read whole. */
+const UNIT_PARENTS = ['system.slice']
+const UNIT_WHOLES  = ['user.slice', 'init.scope']
+
+/** The Outpost's own units and the container runtime's. Everything else on the
+ *  box that is not a container scope is the OS (`FJS-D1824`). */
+const OUTPOST_UNITS = new Set(['outpost.service', 'basecamp-litestream.service'])
+const RUNTIME_UNIT  = /^(docker|containerd|caddy[\w.-]*)\.service$/
+const CONTAINER_SCOPE = /^docker-([0-9a-f]{12,64})\.scope$/
 
 /** Long enough for the jiffy counters to move on an idle machine, short enough
  *  that it is paid once at startup and never again. */
@@ -47,11 +65,17 @@ const FIRST_SAMPLE_MS = 100
  * @param {object}                                [deps]
  * @param {(path: string) => Promise<string>}     [deps.readText]
  * @param {(path: string) => Promise<Blocks>}     [deps.statfs]
+ * @param {(path: string) => Promise<string[]>}   [deps.readDir]   a directory's entry names
+ * @param {() => Promise<Map<string, string>|null>} [deps.apps]     full container id -> App id
+ * @param {boolean}                               [deps.breakdown]  false for a reader that cannot see the cgroup tree
  * @param {number}                                [deps.sampleMs]
  */
 export function createVitals({
   readText = (path) => Bun.file(path).text(),
   statfs   = nodeStatfs,
+  readDir  = (path) => nodeReaddir(path),
+  apps     = null,
+  breakdown = true,
   sampleMs = FIRST_SAMPLE_MS,
 } = {}) {
   let previous = null
@@ -117,6 +141,62 @@ export function createVitals({
     return Number.isFinite(first) ? first : null
   }
 
+  /** `anon` out of one cgroup's `memory.stat`: private memory, which is what
+   *  the unit alone would give back by exiting. Not RSS, which counts bun's
+   *  mapped binary once per process and read Outpost at 58 MB for 10 of its own
+   *  (`FJS-D1824`). A unit that cannot be read is skipped, never zero. */
+  async function anonBytes(dir) {
+    try {
+      const match = /^anon (\d+)$/m.exec(await readText(`${dir}/memory.stat`))
+      return match ? Number(match[1]) : null
+    } catch {
+      return null
+    }
+  }
+
+  /** Where the machine's memory went, one row per systemd unit and a `kernel`
+   *  row for what no unit holds. `kernel` is the headline's own number — used
+   *  is MemTotal - MemAvailable — less the units' sum, so the table adds up to
+   *  the bar above it. Null when the cgroup tree cannot be read at all: a table
+   *  of whatever happened to open would add up to a kernel figure that is
+   *  wrong by the units it missed. */
+  async function memoryBreakdown() {
+    const text = await readText('/proc/meminfo')
+    const kb   = name => Number(/(\d+)/.exec(text.split('\n').find(l => l.startsWith(name)) ?? '')?.[1] ?? 0)
+    const total = kb('MemTotal') * 1024, used = total - kb('MemAvailable') * 1024
+    if (!(total > 0)) return null
+
+    const names = []
+    for (const parent of UNIT_PARENTS)
+      for (const name of await readDir(`${CGROUP_ROOT}/${parent}`))
+        if (/\.(service|scope|mount|slice)$/.test(name)) names.push([`${CGROUP_ROOT}/${parent}/${name}`, name])
+    for (const name of UNIT_WHOLES) names.push([`${CGROUP_ROOT}/${name}`, name])
+
+    let byContainer = null
+    if (apps) { try { byContainer = await apps() } catch { /* the rows stay unnamed */ } }
+
+    const read = await Promise.all(names.map(async ([dir, unit]) => [unit, await anonBytes(dir)]))
+    const rows = []
+    for (const [unit, bytes] of read) {
+      if (bytes === null) continue
+      const container = CONTAINER_SCOPE.exec(unit)?.[1]
+      if (container) {
+        const full = [...(byContainer?.keys() ?? [])].find(id => id.startsWith(container))
+        rows.push({ group: 'apps', unit, bytes, ...(full ? { app_id: byContainer.get(full) } : {}) })
+      } else {
+        rows.push({ group: OUTPOST_UNITS.has(unit) ? 'outpost' : RUNTIME_UNIT.test(unit) ? 'runtime' : 'os', unit, bytes })
+      }
+    }
+    // Not one unit answered: a cgroup v1 box, or a tree this build cannot see.
+    if (!rows.length) return null
+
+    // Never negative: the table is read a few milliseconds after /proc/meminfo,
+    // and a process that grew in between must not draw a kernel of minus a MB.
+    const kernel = Math.max(0, used - rows.reduce((sum, r) => sum + r.bytes, 0))
+    rows.sort((a, b) => b.bytes - a.bytes)
+    return { total_bytes: total, used_bytes: used, rows: [...rows, { group: 'kernel', unit: null, bytes: kernel }] }
+  }
+
   return {
     /**
      * One reading of each. Every value is asked for independently and a failure
@@ -126,6 +206,7 @@ export function createVitals({
      * draws the same line one layer up: a missing reading is silence).
      */
     async read() {
+      /** @type {Record<string, any>} */
       const health = {}
       const ask = async (key, fn) => {
         try {
@@ -139,6 +220,12 @@ export function createVitals({
       await ask('memory', memoryPercent)
       await ask('disk',   diskPercent)
       await ask('load',   loadAverage)
+      try {
+        const table = breakdown ? await memoryBreakdown() : null
+        if (table) health.memory_breakdown = table
+      } catch {
+        // The key stays absent.
+      }
       return health
     },
   }

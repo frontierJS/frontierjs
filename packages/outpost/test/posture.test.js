@@ -77,7 +77,7 @@ describe('the dev-host capture, replayed', () => {
     expect(new Date(at).toISOString()).toBe(at)
     expect(Object.keys(readings).sort()).toEqual([
       'auto_updates', 'cert', 'containers', 'docker_group', 'files', 'firewall', 'kernel', 'listening', 'nopasswd',
-      'os', 'outpost_unit', 'privileged', 'reboot', 'ssh', 'ssh_keys', 'time', 'uid0', 'updates', 'versions',
+      'os', 'outpost_unit', 'privileged', 'reboot', 'ssh', 'ssh_keys', 'time', 'uid0', 'unneeded', 'updates', 'versions',
     ])
   })
 
@@ -155,6 +155,16 @@ describe('the dev-host capture, replayed', () => {
   test('time is synced, and the offset is unknown without chrony', async () => {
     const { readings } = await reading
     expect(readings.time).toEqual({ synced: true, offset_s: null })
+  })
+
+  // is-active prints one state per unit and exits 0 when any is active, so the
+  // lines are the reading and the exit code is not (FJS-D1825).
+  test('the unneeded units name the ones that are active', async () => {
+    const { readings } = await reading
+    expect(readings.unneeded).toEqual({ active: ['fwupd.service', 'fwupd-refresh.timer'] })
+    const off = await postureOf({ 'systemctl is-active': { exitCode: 3, stdout: 'inactive\ninactive\ninactive\ninactive\n' } })
+    expect(off.unneeded).toEqual({ active: [] })
+    expect((await postureOf({ 'systemctl is-active': 'ENOENT' })).unneeded).toBe(null)
   })
 })
 

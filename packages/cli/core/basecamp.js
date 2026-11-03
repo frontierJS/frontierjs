@@ -2,12 +2,15 @@
 // owner, and the one enrollment command a box runs to join its fleet.
 // `basecamp:app`, `basecamp:deploy`, `outpost:install` and `deploy`'s
 // `08b-outpost` step share these, so a box cannot be enrolled two ways; an
-// enrolled box's Outpost is read here for `outpost:status`, and an app's
-// archive is fetched for `basecamp:backup` and the `db:` verbs.
+// enrolled box's Outpost is read here for `outpost:status`, an app's
+// archive is fetched for `basecamp:backup` and the `db:` verbs, and each
+// machine's stored grade for `basecamp:posture`.
 
 import { spawnSync }                from 'node:child_process'
 import { mkdirSync, rmSync }        from 'node:fs'
 import { basename, join, resolve }  from 'node:path'
+import { chalk }                    from './color.js'
+import { ageOf }                    from './cloud.js'
 
 // The dev API's port in basecamp's own CLAUDE.md, as `fli ws:deps --push` has it.
 export const LOCAL_BASECAMP = 'http://localhost:8120'
@@ -122,6 +125,103 @@ function fallbackOf(machine) {
     units:  value('unit').map(l => { const [unit, active = ''] = l.split(' '); return { unit, active: active || 'unknown' } }),
     health,
   }
+}
+
+// ─── A machine's posture, as Basecamp graded it ───────────────────────────────
+// `basecamp:posture` prints these and IDEAS/deploy-posture.md 4.2 reads them.
+// `posture.ts` in Basecamp is the one grader: nothing here grades a control, and
+// Basecamp grades staleness on the read, so an old report arrives as `unknown`.
+// Basecamp's own box is `hub.hostPosture`, which only a system admin's key
+// reaches (`FJS-D1751`); any other key reads that box as a fleet row, without
+// its `hub.*` controls.
+
+const postureCall = (origin, key, path, method) =>
+  basecamp(origin, key, path, { method: 'POST', headers: { 'x-service-method': method }, body: {} })
+
+async function hostPosture(origin, key) {
+  try { return await postureCall(origin, key, '/hub', 'hostPosture') }
+  catch (err) {
+    if (/\(403\)/.test(err.message)) return null
+    throw err
+  }
+}
+
+/** Every machine in the key's workspace, worst first, as `{ servers }`. The
+ *  host, when the key reaches it, carries `host: true` and its `hub.*` controls,
+ *  and with no host row it is a row named for Basecamp with no `serverId`. */
+export async function readPostures(origin, key) {
+  const [{ servers }, host] = await Promise.all([
+    postureCall(origin, key, '/serverPostures', 'fleet'),
+    hostPosture(origin, key),
+  ])
+  if (!host) return { servers }
+  const { enrolled, readings, ...view } = host
+  const row = { ...view, serverName: view.serverName ?? 'Basecamp (not enrolled)', host: true }
+  const at  = enrolled ? servers.findIndex(s => s.serverId === host.serverId) : -1
+  return { servers: at < 0 ? [row, ...servers] : servers.map((s, i) => i === at ? { ...s, ...row } : s) }
+}
+
+/** One machine by id or name, with its readings, or null when the key's
+ *  workspace has none of either. A Server's name is not unique, so a name two
+ *  rows share is refused rather than answered with either one's grade. */
+export async function readPosture(origin, key, server) {
+  const { servers } = await readPostures(origin, key)
+  const named = servers.filter(s => s.serverName === server && s.serverId)
+  if (!servers.some(s => s.serverId === server) && named.length > 1)
+    throw new Error(`${named.length} servers are named '${server}' — pass one's id: ${named.map(s => s.serverId).join(', ')}`)
+  const row = servers.find(s => s.serverId === server) ?? named[0]
+  if (!row?.serverId) return null
+  if (row.host) return { ...await hostPosture(origin, key), host: true }
+  return await postureCall(origin, key, `/serverPostures/${encodeURIComponent(row.serverId)}`, 'latest')
+}
+
+const SEVERITIES = ['high', 'medium', 'low']
+const SEVERITY_TONE = { high: 'red', medium: 'yellow', low: 'dim' }
+
+/** Failing controls by severity, `{ high: 2, low: 1 }`. */
+export const failingBySeverity = (view) => {
+  const out = {}
+  for (const c of view.controls) if (c.ok === false) out[c.severity] = (out[c.severity] ?? 0) + 1
+  return out
+}
+
+const reportAge = (view) =>
+  !view.reported ? 'no report yet' : `report ${ageOf(view.at)} ago${view.stale ? ', stale' : ''}`
+
+// A box with no report, or a stale one, is unknown, never ok: Basecamp keeps a
+// replica control graded off the heartbeat, which can pass with nothing else read.
+const verdictOf = (view) => {
+  const failing = failingBySeverity(view)
+  if (Object.keys(failing).length)
+    return { mark: chalk.red('✗'), text: SEVERITIES.filter(s => failing[s]).map(s => chalk[SEVERITY_TONE[s]](`${failing[s]} ${s}`)).join(chalk.dim(' · ')) }
+  if (!view.reported || view.stale) return { mark: chalk.yellow('?'), text: chalk.yellow('unknown') }
+  if (view.unknown) return { mark: chalk.yellow('?'), text: chalk.yellow(`${view.unknown} unknown`) }
+  return { mark: chalk.green('✓'), text: chalk.green('ok') }
+}
+
+/** `basecamp:posture`'s line per machine. Padded before it is painted: an
+ *  escape code counts toward padEnd. */
+export const postureLine = (view) => {
+  const { mark, text } = verdictOf(view)
+  const name = `${view.serverName}${view.host ? ' ⛺' : ''}`
+  return `  ${mark} ${chalk.bold(name.padEnd(24))} ${text}  ${chalk.dim(reportAge(view))}`
+}
+
+const STATE_ORDER = (ok) => ok === false ? 0 : ok === 'unknown' ? 1 : 2
+
+/** One machine's every control, failing first, each with its fix where it carries one. */
+export const postureDetail = (view) => {
+  const marks = { false: chalk.red('✗'), unknown: chalk.yellow('?'), true: chalk.green('✓') }
+  const updates = view.readings?.updates
+  return [
+    `  ${chalk.bold(view.serverName)}${view.host ? chalk.dim("  ⛺ Basecamp's own box") : ''}  ${chalk.dim(reportAge(view))}`,
+    ...(updates ? [chalk.dim(`  ${updates.pending ?? '?'} updates pending, ${updates.security ?? '?'} of them security`)] : []),
+    '',
+    ...[...view.controls].sort((a, b) => STATE_ORDER(a.ok) - STATE_ORDER(b.ok)).flatMap(c => [
+      `  ${marks[String(c.ok)]} ${c.id.padEnd(26)} ${chalk.dim(c.severity.padEnd(6))} ${c.message}`,
+      ...(c.fix ? [chalk.dim(`    ${''.padEnd(26)} ${''.padEnd(6)} fix: ${c.fix}`)] : []),
+    ]),
+  ]
 }
 
 // ─── An app's archive, fetched────────────────────────────────────────────────

@@ -21,6 +21,8 @@ title: Hub overview
   import Badge   from '@frontierjs/ui/components/display/Badge.mesa'
   import Callout from '@frontierjs/ui/components/display/Callout.mesa'
   import Card  from '@frontierjs/ui/components/layout/Card.mesa'
+  import Bar   from '@frontierjs/ui/components/display/Bar.mesa'
+  import MemoryBreakdown from '../../components/MemoryBreakdown.mesa'
   import Pill  from '@frontierjs/ui/components/display/Pill.mesa'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
 
@@ -119,8 +121,34 @@ title: Hub overview
         <!-- The main file plus its write-ahead log. In WAL mode the main file
              alone reads 4 KB for a database with half a megabyte pending. -->
         <div class="cluster"><dt class="text-sm text-muted">Database size</dt><dd>{size(info.runtime.dbSizeBytes)}</dd></div>
-        <div class="cluster"><dt class="text-sm text-muted">Memory</dt><dd>{info.runtime.memoryMb} MB resident · {info.runtime.heapUsedMb} MB heap</dd></div>
       </dl>
+    </Card>
+
+    <!-- This box, as its own Outpost reads it (`FJS-D1824`). The three bars are
+         read here; the memory table is the host Server's last heartbeat, because
+         this process runs in a container whose cgroup tree is not the host's. -->
+    <Card>
+      <div class="section-header">
+        <h2 class="h4">Health</h2>
+        {#if info.health.host}<Badge tone="muted">{info.health.host.name}</Badge>{/if}
+      </div>
+      <div class="stack" id="hub-health">
+        {#each [['CPU', info.health.cpu], ['Memory', info.health.memory], ['Disk', info.health.disk]] as [label, value]}
+          {#if typeof value === 'number'}<Bar {label} {value} unit="%" />{/if}
+        {/each}
+        {#if info.health.breakdown}
+          <MemoryBreakdown id="hub-memory" rows={info.health.breakdown.rows}
+                           total={info.health.breakdown.totalBytes} names={info.health.breakdown.names} />
+        {:else}
+          <p class="text-sm text-muted" id="hub-memory-owed">
+            {#if info.health.host}
+              The memory table needs the Outpost on {info.health.host.name} to report it; it has not yet.
+            {:else}
+              The memory table needs Outpost enrolled on this box.
+            {/if}
+          </p>
+        {/if}
+      </div>
     </Card>
 
     <Card>
@@ -153,10 +181,6 @@ title: Hub overview
       <p class="text-body">
         <strong>Adapter health</strong> lives on <a href="/portal/">the portal</a>, which pings each
         appliance. Repeating it here would be a second answer to one question.
-      </p>
-      <p class="text-body">
-        <strong>CPU</strong> is not measured. Nothing in this process samples it, and a figure
-        derived from one reading would be noise printed beside numbers that are real.
       </p>
     </Card>
   </div>

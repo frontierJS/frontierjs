@@ -40,6 +40,8 @@ export interface PostureReadings {
   nopasswd?:     string[] | null
   docker_group?: string[] | null
   time?:        { synced: boolean; offset_s: number | null } | null
+  // Which of multipathd and fwupd's units are active: the ones the install turns off.
+  unneeded?:    { active: string[] } | null
   outpost_unit?: { exposure: number; predicate: string | null } | null
   privileged?:   { name: string; privileged: boolean; docker_sock: boolean }[] | null
   files?:        { path: string; mode: string; owner: string; group: string }[] | null
@@ -61,7 +63,8 @@ export interface Control {
   ok:       ControlState
   severity: Severity
   message:  string
-  /** What a person does about it; a failing hub control carries one. */
+  /** What a person does about it: a failing control carries one, and an
+   *  unknown one where a person can make it known. */
   fix?:     string
 }
 
@@ -71,7 +74,8 @@ export interface Declared {
   expectedPorts: number[]
   /** Ports an app on this machine publishes on every interface by declaration. */
   exposedPorts:  number[]
-  /** SHA256 fingerprints of the keys Basecamp gave it; null when it holds none. */
+  /** SHA256 fingerprints of the keys Basecamp gave it: null when no Secret is
+   *  named, empty when the named one holds no public half Basecamp can read. */
   sshKeys:       string[] | null
   /** The Outpost version this Basecamp installs, and the one the machine last reported. */
   outpost:       { expected: string | null; running: string | null }
@@ -109,19 +113,43 @@ export function declaredFor(input: {
   return {
     expectedPorts: [...expected].sort((a, b) => a - b),
     exposedPorts:  exposed,
-    sshKeys:       input.sshKeyData ? publicKeyFingerprints(input.sshKeyData) : null,
+    sshKeys:       input.sshKeyData ? publicKeyFingerprints(input.sshKeyData) ?? [] : null,
     outpost:       { expected: input.expectedOutpostVersion ?? null, running: input.outpostVersion ?? null },
   }
 }
 
+const OPENSSH_MAGIC = 'openssh-key-v1\0'
+
+/** The public blobs an `openssh-key-v1` private key keeps in its header, which
+ *  stays unencrypted under a passphrase. A PEM key carries none. */
+function privateKeyBlobs(data: string): Buffer[] {
+  const blobs: Buffer[] = []
+  for (const m of data.matchAll(/-----BEGIN OPENSSH PRIVATE KEY-----([\s\S]*?)-----END OPENSSH PRIVATE KEY-----/g)) {
+    // A Secret's data may hold the key JSON-quoted, so its newlines are a literal \n.
+    const raw = Buffer.from(m[1].replace(/\\n|\s/g, ''), 'base64')
+    if (raw.subarray(0, OPENSSH_MAGIC.length).toString('latin1') !== OPENSSH_MAGIC) continue
+    let at = OPENSSH_MAGIC.length
+    const u32 = () => { if (at + 4 > raw.length) throw new RangeError('truncated'); const n = raw.readUInt32BE(at); at += 4; return n }
+    const str = () => { const n = u32(); if (at + n > raw.length) throw new RangeError('truncated'); const b = raw.subarray(at, at + n); at += n; return b }
+    try {
+      str(); str(); str()   // cipher, kdf, kdf options
+      for (let i = u32(); i > 0; i--) blobs.push(str())
+    } catch { /* a truncated key names nothing */ }
+  }
+  return blobs
+}
+
 /**
- * Every OpenSSH public key named anywhere in a Secret's data, as the
- * `SHA256:…` fingerprint `ssh-keygen -lf` prints. A private key alone yields
- * none, which grades `ssh.unknown-key` unknown rather than failing every key.
+ * Every OpenSSH public key in a Secret's data, as the `SHA256:…` fingerprint
+ * `ssh-keygen -lf` prints: each public key line, and the public half of each
+ * OpenSSH private key. None found grades `ssh.unknown-key` unknown rather than
+ * failing every key.
  */
 export function publicKeyFingerprints(data: string): string[] | null {
-  const found = [...data.matchAll(/(?:ssh-(?:ed25519|rsa|dss)|ecdsa-sha2-nistp\d+|sk-[\w@.-]+) (AAAA[0-9A-Za-z+/]+=*)/g)]
-    .map(m => 'SHA256:' + createHash('sha256').update(Buffer.from(m[1], 'base64')).digest('base64').replace(/=+$/, ''))
+  const found = [
+    ...[...data.matchAll(/(?:ssh-(?:ed25519|rsa|dss)|ecdsa-sha2-nistp\d+|sk-[\w@.-]+) (AAAA[0-9A-Za-z+/]+=*)/g)].map(m => Buffer.from(m[1], 'base64')),
+    ...privateKeyBlobs(data),
+  ].map(blob => 'SHA256:' + createHash('sha256').update(blob).digest('base64').replace(/=+$/, ''))
   return found.length ? [...new Set(found)] : null
 }
 
@@ -155,7 +183,7 @@ const series = (kernel: string) => /^(\d+\.\d+)/.exec(kernel)?.[1] ?? kernel
 const days = (ms: number) => Math.floor(ms / 86_400_000)
 
 type Grade = { ok: ControlState; message: string; fix?: string }
-const unknown = (why: string): Grade => ({ ok: 'unknown', message: why })
+const unknown = (why: string, fix?: string): Grade => ({ ok: 'unknown', message: why, ...(fix ? { fix } : {}) })
 
 /**
  * Each control: its id, group, severity, and a grade of the readings.
@@ -166,15 +194,15 @@ const unknown = (why: string): Grade => ({ ok: 'unknown', message: why })
  * holds the two sets equal, so a step dropped from the install cannot leave a
  * box graded against it as though it ran.
  */
-const CONTROLS: { id: string; group: string; severity: Severity; hardenedAtInstall?: true; grade: (r: PostureReadings, d: Declared, now: number) => Grade }[] = [
-  { id: 'ssh.password-off', group: 'ssh', severity: 'high', hardenedAtInstall: true, grade: (r) => {
+const CONTROLS: { id: string; group: string; severity: Severity; hardenedAtInstall?: true; fix?: string; grade: (r: PostureReadings, d: Declared, now: number) => Grade }[] = [
+  { id: 'ssh.password-off', group: 'ssh', severity: 'high', hardenedAtInstall: true, fix: 'Set PasswordAuthentication no in /etc/ssh/sshd_config.d/10-basecamp.conf on the machine, then run systemctl reload ssh', grade: (r) => {
     if (!r.ssh) return unknown('sshd -T could not be read')
     return r.ssh.password_authentication === 'no'
       ? { ok: true,  message: 'Password authentication is off' }
       : { ok: false, message: `PasswordAuthentication is ${r.ssh.password_authentication}` }
   } },
 
-  { id: 'ssh.root-key-only', group: 'ssh', severity: 'high', hardenedAtInstall: true, grade: (r) => {
+  { id: 'ssh.root-key-only', group: 'ssh', severity: 'high', hardenedAtInstall: true, fix: 'Set PermitRootLogin prohibit-password in /etc/ssh/sshd_config.d/10-basecamp.conf on the machine, then run systemctl reload ssh', grade: (r) => {
     if (!r.ssh) return unknown('sshd -T could not be read')
     const v = r.ssh.permit_root_login
     return ['no', 'prohibit-password', 'without-password'].includes(v)
@@ -182,9 +210,12 @@ const CONTROLS: { id: string; group: string; severity: Severity; hardenedAtInsta
       : { ok: false, message: `PermitRootLogin is ${v} — root may log in with a password` }
   } },
 
-  { id: 'ssh.unknown-key', group: 'ssh', severity: 'high', grade: (r, d) => {
+  { id: 'ssh.unknown-key', group: 'ssh', severity: 'high', fix: 'Delete each key named from that user\'s ~/.ssh/authorized_keys unless you added it', grade: (r, d) => {
     if (!r.ssh_keys) return unknown('authorized_keys could not be read')
-    if (!d.sshKeys)  return unknown('Basecamp holds no public key for this machine (Server.sshKeyId)')
+    if (!d.sshKeys)  return unknown('No SSH key is named for this machine, so no key on it can be told from a stranger\'s',
+      'Press Edit on this machine and pick its SSH key: a Secret holding the private key Basecamp uses, or the public key line of each person who reaches the box')
+    if (!d.sshKeys.length) return unknown('The SSH key Secret named holds no public key Basecamp can read',
+      'Store the key in OpenSSH format, or add its public key line (ssh-ed25519 AAAA…) to the Secret')
     const known    = new Set(d.sshKeys)
     const strangers = r.ssh_keys.filter(k => !known.has(k.fingerprint))
     return strangers.length
@@ -192,14 +223,14 @@ const CONTROLS: { id: string; group: string; severity: Severity; hardenedAtInsta
       : { ok: true,  message: `${r.ssh_keys.length} authorized key(s), all issued by Basecamp` }
   } },
 
-  { id: 'net.firewall-default-deny', group: 'network', severity: 'high', hardenedAtInstall: true, grade: (r) => {
+  { id: 'net.firewall-default-deny', group: 'network', severity: 'high', hardenedAtInstall: true, fix: 'On the machine, run systemctl enable --now basecamp-firewall.service and check nft list table inet basecamp', grade: (r) => {
     if (!r.firewall) return unknown('The firewall ruleset could not be read')
     return r.firewall.input_policy === 'drop'
       ? { ok: true,  message: 'Inbound policy is drop' }
       : { ok: false, message: r.firewall.input_policy ? `Inbound policy is ${r.firewall.input_policy}` : 'No inbound filter chain' }
   } },
 
-  { id: 'net.unexpected-listener', group: 'network', severity: 'high', grade: (r, d) => {
+  { id: 'net.unexpected-listener', group: 'network', severity: 'high', fix: 'Stop the process named or bind it to 127.0.0.1; a port an app must serve publicly is declared on that App', grade: (r, d) => {
     if (!r.listening) return unknown('Listening sockets could not be read')
     const expected = new Set(d.expectedPorts)
     const strays   = r.listening.filter(l => !isLoopback(l.address) && !expected.has(l.port))
@@ -209,7 +240,7 @@ const CONTROLS: { id: string; group: string; severity: Severity; hardenedAtInsta
       : { ok: true,  message: 'Nothing unexpected listens on a public address' }
   } },
 
-  { id: 'net.container-public', group: 'network', severity: 'high', grade: (r, d) => {
+  { id: 'net.container-public', group: 'network', severity: 'high', fix: 'Publish the container\'s port on 127.0.0.1 only, or declare it on the App that needs it public', grade: (r, d) => {
     if (!r.containers) return unknown('Published container ports could not be read')
     const exposed = new Set(d.exposedPorts)
     const open    = r.containers.flatMap(c => c.published
@@ -230,7 +261,7 @@ const CONTROLS: { id: string; group: string; severity: Severity; hardenedAtInsta
       : { ok: false, message: `Published on every interface with no forward drop: ${named}` }
   } },
 
-  { id: 'net.caddy-admin-loopback', group: 'network', severity: 'high', grade: (r) => {
+  { id: 'net.caddy-admin-loopback', group: 'network', severity: 'high', fix: 'Set Caddy\'s global admin option to localhost:2019 and restart Caddy', grade: (r) => {
     if (!r.listening) return unknown('Listening sockets could not be read')
     const admin = r.listening.filter(l => l.port === CADDY_ADMIN_PORT)
     if (!admin.length) return { ok: true, message: 'Caddy\'s admin API is not listening' }
@@ -239,21 +270,21 @@ const CONTROLS: { id: string; group: string; severity: Severity; hardenedAtInsta
       : { ok: false, message: `Caddy's admin API listens on ${admin.filter(l => !isLoopback(l.address)).map(l => l.address).join(', ')}` }
   } },
 
-  { id: 'patch.security-pending', group: 'patching', severity: 'medium', hardenedAtInstall: true, grade: (r) => {
+  { id: 'patch.security-pending', group: 'patching', severity: 'medium', hardenedAtInstall: true, fix: 'On the machine, run systemctl start apt-daily-upgrade.service, or wait a day for its timer; then see patch.reboot-pending', grade: (r) => {
     if (!r.updates) return unknown('Pending updates could not be read')
     return r.updates.security === 0
       ? { ok: true,  message: `No security updates pending (${r.updates.pending} other)` }
       : { ok: false, message: `${r.updates.security} security update(s) pending` }
   } },
 
-  { id: 'patch.auto-updates-on', group: 'patching', severity: 'medium', hardenedAtInstall: true, grade: (r) => {
+  { id: 'patch.auto-updates-on', group: 'patching', severity: 'medium', hardenedAtInstall: true, fix: 'On the machine, run systemctl enable --now apt-daily.timer apt-daily-upgrade.timer and check /etc/apt/apt.conf.d/20auto-upgrades', grade: (r) => {
     if (!r.auto_updates) return unknown('unattended-upgrades could not be read')
     return r.auto_updates.enabled
       ? { ok: true,  message: r.auto_updates.last_run ? `Automatic updates on, last run ${r.auto_updates.last_run}` : 'Automatic updates on' }
       : { ok: false, message: 'Automatic security updates are off' }
   } },
 
-  { id: 'patch.reboot-pending', group: 'patching', severity: 'medium', grade: (r, _d, now) => {
+  { id: 'patch.reboot-pending', group: 'patching', severity: 'medium', fix: 'Reboot the machine at a quiet hour', grade: (r, _d, now) => {
     if (!r.reboot) return unknown('reboot-required could not be read')
     if (!r.reboot.required) return { ok: true, message: 'No reboot required' }
 
@@ -278,7 +309,7 @@ const CONTROLS: { id: string; group: string; severity: Severity; hardenedAtInsta
       : { ok: false, message: `Reboot required for ${age} days` }
   } },
 
-  { id: 'os.eol', group: 'os', severity: 'medium', grade: (r, _d, now) => {
+  { id: 'os.eol', group: 'os', severity: 'medium', fix: 'Run do-release-upgrade on the machine, or provision a new one and move its apps there', grade: (r, _d, now) => {
     if (!r.os) return unknown('/etc/os-release could not be read')
     const eol = EOL[`${r.os.id} ${r.os.version}`]
     if (!eol) return unknown(`No support date known for ${r.os.id} ${r.os.version}`)
@@ -287,14 +318,26 @@ const CONTROLS: { id: string; group: string; severity: Severity; hardenedAtInsta
       : { ok: false, message: `${r.os.id} ${r.os.version} left support on ${eol}` }
   } },
 
-  { id: 'time.synced', group: 'runtime', severity: 'low', hardenedAtInstall: true, grade: (r) => {
+  { id: 'time.synced', group: 'runtime', severity: 'low', hardenedAtInstall: true, fix: 'On the machine, run systemctl restart chrony and check chronyc tracking', grade: (r) => {
     if (!r.time) return unknown('Time sync could not be read')
     return r.time.synced
       ? { ok: true,  message: r.time.offset_s === null ? 'Clock synchronized' : `Clock synchronized, offset ${r.time.offset_s}s` }
       : { ok: false, message: 'The clock is not synchronized' }
   } },
 
-  { id: 'outpost.sandbox', group: 'outpost', severity: 'low', hardenedAtInstall: true, grade: (r) => {
+  // multipathd and fwupd have no work on a cloud machine, and fwupd wakes on
+  // D-Bus to poll for firmware (FJS-D1825). Off at install; one turned back on
+  // by a person or a package upgrade shows here.
+  { id: 'host.unneeded-services', group: 'runtime', severity: 'low', hardenedAtInstall: true,
+    fix: 'As root on this box: systemctl disable --now multipathd.service multipathd.socket; systemctl mask --now fwupd.service fwupd-refresh.timer',
+    grade: (r) => {
+    if (!r.unneeded) return unknown('The state of multipathd and fwupd could not be read')
+    return r.unneeded.active.length
+      ? { ok: false, message: `Running, and not needed on this box: ${r.unneeded.active.join(', ')}` }
+      : { ok: true,  message: 'multipathd and fwupd are off' }
+  } },
+
+  { id: 'outpost.sandbox', group: 'outpost', severity: 'low', hardenedAtInstall: true, fix: 'Press Re-enroll this machine on its screen: the install rewrites outpost.service with its sandbox', grade: (r) => {
     if (!r.outpost_unit) return unknown('systemd-analyze security could not score the outpost unit')
     return r.outpost_unit.exposure <= SANDBOX_MAX
       ? { ok: true,  message: `outpost.service exposure ${r.outpost_unit.exposure}` }
@@ -323,7 +366,7 @@ const CONTROLS: { id: string; group: string; severity: Severity; hardenedAtInsta
           fix: 'Press Re-enroll this machine on its screen, and run the command it gives on the machine' }
   } },
 
-  { id: 'accounts.extra-uid0', group: 'accounts', severity: 'high', grade: (r) => {
+  { id: 'accounts.extra-uid0', group: 'accounts', severity: 'high', fix: 'Unless you made the account, treat the machine as compromised: rebuild it rather than clean it', grade: (r) => {
     if (!r.uid0) return unknown('/etc/passwd could not be read')
     const extra = r.uid0.filter(u => u !== 'root')
     return extra.length
@@ -335,14 +378,14 @@ const CONTROLS: { id: string; group: string; severity: Severity; hardenedAtInsta
   // asked for, so a member is root, and reads every secret a file mode or an
   // env file was meant to keep from them (`FJS-3359`). The Outpost runs as
   // root and needs nobody in it.
-  { id: 'accounts.docker-group', group: 'accounts', severity: 'high', grade: (r) => {
+  { id: 'accounts.docker-group', group: 'accounts', severity: 'high', fix: 'On the machine, run gpasswd -d <user> docker for each user named', grade: (r) => {
     if (!r.docker_group) return unknown('The docker group could not be read')
     return r.docker_group.length
       ? { ok: false, message: `In the docker group, which is root on this box: ${r.docker_group.join(', ')}` }
       : { ok: true,  message: 'The docker group has no members' }
   } },
 
-  { id: 'docker.privileged', group: 'runtime', severity: 'high', grade: (r) => {
+  { id: 'docker.privileged', group: 'runtime', severity: 'high', fix: 'Redeploy the container without privileged mode or the docker.sock mount; if no app of yours runs it, find who started it', grade: (r) => {
     if (!r.privileged) return unknown('Containers could not be inspected')
     const bad = r.privileged.filter(c => c.privileged || c.docker_sock)
     return bad.length
@@ -369,13 +412,13 @@ export function gradePosture(
   const taken = typeof at === 'number' ? at : Date.parse(at)
   const stale = !Number.isFinite(taken) || now - taken > 2 * intervalMs
 
-  return CONTROLS.map(({ id, group, severity, grade }) => {
+  return CONTROLS.map(({ id, group, severity, fix, grade }) => {
     if (stale || !readings) return { id, group, severity, ok: 'unknown' as const,
       message: stale ? 'The last report is stale' : 'No report' }
     let g: Grade
     try { g = grade(readings, declared, now) }
     catch { g = unknown('The reading was not in the shape the grader expects') }
-    return { id, group, severity, ...g }
+    return { id, group, severity, ...g, ...(g.ok === false && fix ? { fix } : {}) }
   })
 }
 

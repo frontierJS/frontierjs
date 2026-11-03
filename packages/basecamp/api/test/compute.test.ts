@@ -676,11 +676,22 @@ describe('a machine claims its own credential', () => {
     expect(unit).toMatch(/^ReadWritePaths=.*\/etc\/outpost/m)
     expect(unit).toContain('ConfigurationDirectory=outpost')
     expect(unit).toContain('ConfigurationDirectoryMode=0700')
-    expect(unit).toMatch(/^ReadWritePaths=.*\$BUN_INSTALL/m)
+    // The program is read, never written, once installed (FJS-D1826).
+    expect(unit).not.toMatch(/^ReadWritePaths=.*(BUN_INSTALL|\/usr\/local\/lib\/outpost)/m)
     // These carried bct's systemd-analyze score from 7.9 to 5.3, under SANDBOX_MAX.
     for (const directive of ['ProtectKernelLogs=yes', 'ProtectClock=yes', 'PrivateDevices=yes', 'RestrictNamespaces=yes', 'SystemCallArchitectures=native'])
       expect(unit).toContain(directive)
     expect(unit).toMatch(/^RestrictAddressFamilies=.*AF_NETLINK/m)
+  })
+
+  // FJS-D1825: multipathd and fwupd have no work on a cloud machine. fwupd is
+  // static on Ubuntu 24.04, so disable does nothing and it is masked.
+  test('the install turns multipathd and fwupd off, from the one snippet the cli reuses', async () => {
+    const { installScript, UNNEEDED_SERVICES_OFF } = await import('../src/providers/compute/enrollment.ts')
+    expect(UNNEEDED_SERVICES_OFF).toContain('systemctl disable --now multipathd.service multipathd.socket')
+    expect(UNNEEDED_SERVICES_OFF).toContain('systemctl mask --now fwupd.service fwupd-refresh.timer')
+    for (const line of UNNEEDED_SERVICES_OFF.split('\n')) expect(line).toMatch(/\|\| true$/)
+    expect(installScript()).toContain(UNNEEDED_SERVICES_OFF)
   })
 
   test('the install is a script bash can parse', async () => {
@@ -726,7 +737,13 @@ describe('a machine claims its own credential', () => {
     expect(script).toContain('download.docker.com/linux/$ID/gpg')
     expect(script).toContain('signed-by=/etc/apt/keyrings/docker.asc')
     expect(script).toContain(`bash -s "bun-v${BUN_VERSION}"`)
-    expect(script).toContain(`/bin/bun x --bun @frontierjs/outpost@${OUTPOST_VERSION}`)
+    // FJS-D1826: installed once into the program directory, so a restart finds
+    // its code on disk instead of unpacking into the unit's private /tmp.
+    expect(script).toContain(`(cd /usr/local/lib/outpost && bun add --exact @frontierjs/outpost@${OUTPOST_VERSION})`)
+    const unit = /cat > \/etc\/systemd\/system\/outpost\.service <<UNITEOF\n([\s\S]*?)\nUNITEOF/.exec(script)?.[1] ?? ''
+    expect(unit).not.toMatch(/bun x|bunx/)
+    expect(unit).toMatch(/^ExecStart=\$BUN_INSTALL\/bin\/bun \/usr\/local\/lib\/outpost\/node_modules\/\.bin\/outpost$/m)
+    expect(script.indexOf('bun add --exact')).toBeLessThan(script.indexOf('cat > /etc/systemd/system/outpost.service'))
     expect(BUN_VERSION).toMatch(/^\d+\.\d+\.\d+$/)
   })
 
@@ -792,13 +809,13 @@ describe('a machine claims its own credential', () => {
     const { installScript } = await import('../src/providers/compute/enrollment.ts')
     const { layout }        = await import('@frontierjs/outpost/layout')
     const box     = layout()
-    const roots   = [box.config, box.state, box.links, box.logs]
+    const roots   = [box.config, box.state, box.links, box.logs, box.program]
     const UNITS   = ['/etc/systemd/system/outpost.service', '/usr/local/sbin/outpost-uninstall']
     const named   = [...installScript().matchAll(/(?<=^|[\s='"])\/[\w./-]*(?:outpost|litestream\.yml|firewall\.nft)[\w./-]*/gm)]
       .map(m => m[0])
     expect(named.length).toBeGreaterThan(10)
     expect(named.filter(p => !UNITS.includes(p) && !roots.some(r => p === r || p.startsWith(`${r}/`)))).toEqual([])
-    const links = { config: box.config, data: box.state, logs: box.logs }
+    const links = { config: box.config, data: box.state, logs: box.logs, program: box.program }
     for (const [name, target] of Object.entries(links))
       expect(installScript()).toContain(`ln -sfn ${target} ${box.links}/${name}`)
   })

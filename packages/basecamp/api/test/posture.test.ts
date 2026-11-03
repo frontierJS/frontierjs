@@ -21,7 +21,7 @@ import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor }         from '../src/core/capabilities.ts'
 import { declaredFor, gradeHub, gradePosture, gradeReplication, HUB_CONTROL_IDS, lastKnownControls, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/domain/host/posture.ts'
-import { HOST_SLUG, placeHub } from '../src/domain/host/host-machine.ts'
+import { HOST_SLUG, hubApp, placeHub } from '../src/domain/host/host-machine.ts'
 import type { HostDeclared, PostureReadings } from '../src/domain/host/posture.ts'
 import { componentById, matchGithub, rangeOf, versionOf } from '../src/domain/host/components.ts'
 import { prunePosture } from '../src/jobs/retention.job.ts'
@@ -51,6 +51,7 @@ const CLEAN: PostureReadings = {
   nopasswd:     [],
   docker_group: [],
   time:         { synced: true, offset_s: 0.0004 },
+  unneeded:     { active: [] },
   outpost_unit: { exposure: 4.2, predicate: 'OK' },
   privileged:   [{ name: '/fjs-web', privileged: false, docker_sock: false }],
   files:        [],
@@ -90,6 +91,17 @@ describe('the grader', () => {
     expect(c.ok).toBe(false)
     expect(c.message).toContain('deploy, j')
     expect(byId({ ...CLEAN, docker_group: null })['accounts.docker-group'].ok).toBe('unknown')
+  })
+
+  test('multipathd or fwupd running fails host.unneeded-services by name, with the commands that fix it', () => {
+    expect(byId(CLEAN)['host.unneeded-services'].ok).toBe(true)
+    const c = byId({ ...CLEAN, unneeded: { active: ['fwupd.service', 'fwupd-refresh.timer'] } })['host.unneeded-services']
+    expect(c.ok).toBe(false)
+    expect(c.severity).toBe('low')
+    expect(c.message).toContain('fwupd.service, fwupd-refresh.timer')
+    expect(grade({ ...CLEAN, unneeded: { active: ['multipathd.socket'] } }).find(x => x.id === 'host.unneeded-services')?.fix)
+      .toContain('systemctl mask --now fwupd.service fwupd-refresh.timer')
+    expect(byId({ ...CLEAN, unneeded: null })['host.unneeded-services'].ok).toBe('unknown')
   })
 
   test('a reading the box could not take is unknown, never passing', () => {
@@ -172,6 +184,32 @@ describe('the grader', () => {
       declared, { at: NOW, now: NOW }).map(c => [c.id, c]))['ssh.unknown-key']
     expect(keys([fp]).ok).toBe(true)
     expect(keys([fp, 'SHA256:somebody-else']).ok).toBe(false)
+  })
+
+  test('an OpenSSH private key names its public half; a PEM key or none named grades unknown with a fix', () => {
+    const str  = (b: Buffer) => Buffer.concat([Buffer.from([0, 0, 0, b.length]), b])
+    const pub  = Buffer.concat([str(Buffer.from('ssh-ed25519')), str(Buffer.alloc(32, 9))])
+    const fp   = 'SHA256:' + createHash('sha256').update(pub).digest('base64').replace(/=+$/, '')
+    // The header stays unencrypted under a passphrase, so an aes256-ctr key names it too.
+    const key  = Buffer.concat([Buffer.from('openssh-key-v1\0'), str(Buffer.from('aes256-ctr')), str(Buffer.from('bcrypt')),
+      str(Buffer.alloc(24)), Buffer.from([0, 0, 0, 1]), str(pub), str(Buffer.alloc(64, 1))]).toString('base64')
+    const pem  = (body: string) => `-----BEGIN OPENSSH PRIVATE KEY-----\n${body.match(/.{1,70}/g)!.join('\n')}\n-----END OPENSSH PRIVATE KEY-----\n`
+    expect(publicKeyFingerprints(pem(key))).toEqual([fp])
+    expect(publicKeyFingerprints(JSON.stringify(pem(key)))).toEqual([fp])
+    expect(publicKeyFingerprints(pem(key.slice(0, 40)))).toBeNull()
+
+    const grade = (sshKeyData: string | null) => Object.fromEntries(gradePosture({ ...CLEAN, ssh_keys: [{ user: 'root', fingerprint: fp }] },
+      declaredFor({ sshPort: 22, apps: [], sshKeyData }), { at: NOW, now: NOW }).map(c => [c.id, c]))['ssh.unknown-key']
+    expect(grade(pem(key)).ok).toBe(true)
+    expect(grade(null)).toMatchObject({ ok: 'unknown', fix: expect.stringContaining('pick its SSH key') })
+    expect(grade('-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----')).toMatchObject({ ok: 'unknown', fix: expect.stringContaining('OpenSSH format') })
+  })
+
+  test('every failing machine control says what to do about it', () => {
+    const failing = gradePosture({ ...CLEAN, ssh: { ...CLEAN.ssh!, password_authentication: 'yes' } }, DECLARED, { at: NOW, now: NOW })
+      .find(c => c.id === 'ssh.password-off')!
+    expect(failing.fix).toContain('PasswordAuthentication no')
+    expect(gradePosture(CLEAN, DECLARED, { at: NOW, now: NOW }).filter(c => c.ok === true && c.fix)).toEqual([])
   })
 
   test('a move is passing to failing, or back; unknown on either side is none', () => {
@@ -467,6 +505,15 @@ describe('the host row on /hub/security/', () => {
     expect(c['hub.db-mode'].ok).toBe('unknown')
   })
 
+  test('/hub always has the totals, and the memory table only from a host Server (FJS-D1824)', async () => {
+    const { health, runtime } = await env.as(admin).service('hub').call('overview', undefined, {})
+    // Read here with Outpost's vitals; the one notion of memory is the card's, not an RSS figure.
+    expect(typeof health.memory).toBe('number')
+    expect(health.host).toBeNull()
+    expect(health.breakdown).toBeNull()
+    expect('memoryMb' in runtime).toBe(false)
+  })
+
   test('a failing hub control is sent to the system admins and nobody else', async () => {
     const { notifyHubPosture } = await import('../src/jobs/hub-posture.job.ts')
     // No backup has ever finished in this database, so hub.backup-recent fails.
@@ -509,10 +556,46 @@ describe('the host row on /hub/security/', () => {
     expect(c['hub.db-mode'].ok).toBe(true)
     expect(c['ssh.password-off'].ok).toBe(true)
 
+    // The host Server's heartbeat carries the memory table; /hub names each container by its App.
+    const app = await hubApp(sys)
+    await sys.server.update({ where: { id: machine.id }, data: { health: { memory_breakdown: {
+      total_bytes: 1000, used_bytes: 600,
+      rows: [{ group: 'apps', unit: `docker-${'a'.repeat(64)}.scope`, bytes: 400, app_id: app.id },
+             { group: 'kernel', unit: null, bytes: 200 }],
+    } } } })
+    const { health } = await env.as(admin).service('hub').call('overview', undefined, {})
+    expect(health.host).toMatchObject({ id: machine.id, name: 'hub-host' })
+    expect(health.breakdown).toMatchObject({ totalBytes: 1000, usedBytes: 600, names: { [app.id]: app.name } })
+    expect(health.breakdown.rows.map((r: any) => r.group)).toEqual(['apps', 'kernel'])
+
     // A workspace owner reaches the row through `latest`, never the hub's view.
     expect((await env.as(owner).service('hub').call('hostPosture', undefined, {}).catch((e: any) => e)).code ?? 404).toBe(403)
     await sys.hubConfig.update({ where: { id: 'hub' }, data: { appId: null } })
     ;({ machine, KEY } = drifted)
+  })
+
+  // `fli basecamp:posture` reads all three with the BASECAMP_API_KEY `basecamp:key` mints.
+  test('an admin key reads the fleet and one machine, and a system admin\'s reads the host', async () => {
+    const sys = env.system as any
+    await sys.workspaceMember.create({ data: {
+      workspaceId: ws.id, userId: admin.id, role: 'admin', capabilities: grantsFor('admin'), acceptedAt: new Date().toISOString(),
+    } })
+    const keyOf = async (who: any) => (await env.as(who).service('apiKeys').create({
+      name: `posture-${Math.random().toString(36).slice(2, 8)}`, scopes: ['admin'], expiresIn: '30d',
+    })).token
+    const call = (token: string, path: string, method: string) =>
+      env.http.post(path).set('Authorization', `Bearer ${token}`).set('x-service-method', method).send({})
+
+    const owners = await keyOf(owner)
+    const fleet  = await call(owners, '/serverPostures', 'fleet')
+    expect(fleet.status).toBe(200)
+    expect(fleet.body.servers.map((s: any) => s.serverName)).toContain('quiet-02')
+    expect((await call(owners, `/serverPostures/${machine.id}`, 'latest')).body.serverId).toBe(machine.id)
+    expect((await call(owners, '/hub', 'hostPosture')).status).toBe(403)
+
+    const host = await call(await keyOf({ ...admin, workspaceId: ws.id }), '/hub', 'hostPosture')
+    expect(host.status).toBe(200)
+    expect(host.body.controls.map((c: any) => c.id)).toContain('hub.backup-recent')
   })
 
   test('a report naming no machine is refused, whatever signs it', async () => {

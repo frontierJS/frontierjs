@@ -10,7 +10,7 @@ description: Basecamp itself — make its box at a cloud, install it, point its 
 const { CLOUDS, cloudLabel, pickCloud, cloudsToRead, listBoxes, cloudOf, runProvision, provisionScript, markHost,
   cloudflareToken, hostRecord, withHosts, boxAddress, waitForSsh, publicKey, boxName, buyBox, machineLine }
   = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
-const { basecamp, basecampAll, pullAppArchive, LOCAL_BASECAMP } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
+const { basecamp, basecampAll, pullAppArchive, readPostures, readPosture, postureLine, postureDetail, failingBySeverity, LOCAL_BASECAMP, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 
 // Basecamp's own hostname, the one `pointHost` points at the box.
 const webDomain = async () =>
@@ -207,6 +207,30 @@ const ringZero = async (dest, domain, { tty, stage }) => {
 const OUTPOST_QUESTION = 'Make the box an Outpost too, so apps can run beside Basecamp on it?'
 const joinFleet = async (dest, domain, tty) => await runFli(['deploy:outpost', '--server', dest, '--domain', domain], tty) === 0
 
+// fwupd and multipathd off on the box Basecamp is installed on (`FJS-D1825`).
+// The lines are the install script's own, `UNNEEDED_SERVICES_OFF` in Basecamp's
+// enrollment.ts, run over ssh: a box Basecamp only installs on never runs that
+// script, and a second copy of the commands would drift from the posture
+// control that grades them. A box that joins the fleet runs the script too, so
+// a no there turns them off at the enrollment regardless; `unneededKept` says
+// so rather than leaving a no that does nothing.
+const UNNEEDED_QUESTION = 'Turn off fwupd and multipathd? Neither has work on a cloud machine'
+const unneededRow = (on, chalk) => on ? `yes ${chalk.dim('— disable multipathd, mask fwupd')}` : chalk.dim('no')
+const unneededKept = (on, outpost, log) => {
+  if (!on && outpost) log.warn('The Outpost install turns fwupd and multipathd off on every machine it enrolls; --no-outpost leaves them as they are')
+}
+const turnOffUnneeded = async (dest, identity, log) => {
+  const { spawnSync }  = await import('node:child_process')
+  const { existsSync } = await import('node:fs')
+  const { UNNEEDED_SERVICES_OFF } = await import(provisionScript().root + 'api/src/providers/compute/enrollment.ts')
+  const run = spawnSync('ssh', ['-o', 'BatchMode=yes', ...(identity && existsSync(identity) ? ['-i', identity] : []), dest, 'sh -s'], {
+    encoding: 'utf8',
+    input: `${SUDO}\nsudo sh -s <<'FLI_UNNEEDED_EOF'\n${UNNEEDED_SERVICES_OFF}\nFLI_UNNEEDED_EOF\n`,
+  })
+  if (run.status === 0) log.success('fwupd and multipathd are off')
+  else log.warn(`Could not turn off fwupd and multipathd on ${dest}${run.stderr.trim() ? `: ${run.stderr.trim()}` : ''}. As root there: ${UNNEEDED_SERVICES_OFF.split('\n').join('; ')}`)
+}
+
 const EMAIL = /^[^\s@]+@[^\s@]+$/
 
 // The first admin's email, asked with `ME` (global fli env) as what Enter takes.
@@ -393,3 +417,7 @@ set (`FJS-D1717`).
 its machine, then each hostname's zone, DNS and HTTPS — and `--retry` reloads
 Caddy on its machines so a certificate waiting out its backoff is asked for
 now (`FJS-D1715`).
+
+`fli basecamp:posture` prints each machine's security grade as Basecamp
+stored it, with the report's age, and `fli basecamp:posture <server>` every
+control of one with its fix. A server with no report reads `unknown`.

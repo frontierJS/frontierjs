@@ -994,6 +994,7 @@ try {
   await click('#server-edit')
   await until(`!!document.querySelector('#server-edit-save')`, v => v, 'the edit drawer never opened')
   check('the edit offers how it is reached', await evaluate(`!!document.querySelector('dialog[open] [name=sshUser]')`))
+  check('the edit offers the SSH key ssh.unknown-key grades against', await evaluate(`!!document.querySelector('dialog[open] [name=sshKeyId]')`))
   // No vendor reports an imported box's address, so nothing but this box ever
   // corrects it, and a Domain on a box with none is never pushed (FJS-3516).
   check('…its address included, on a box no provider reports',

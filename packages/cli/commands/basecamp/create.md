@@ -215,6 +215,7 @@ let install = !!admin
 let outpost = flag.outpost
 let addHost = false
 let apiKey  = false
+let unneeded = true
 if (asking) {
   name ||= await ask('Server name', `Enter: ${fallbackName}`) || fallbackName
   addHost = await yes(`Add Host ${name} to ~/.ssh/config once it has an address?`, true)
@@ -222,6 +223,8 @@ if (asking) {
   if (install && !admin) admin = await askAdmin(ask)
   if (install && outpost) outpost = await yes(OUTPOST_QUESTION, true)
   if (install) apiKey = await yes(KEY_QUESTION, true)
+  if (install) unneeded = await yes(UNNEEDED_QUESTION, true)
+  if (install) unneededKept(unneeded, outpost, log)
   if (admin) password = await tty.secret(`${question(`Password for ${admin}`, 'Enter generates one')}\n  ${chalk.cyan('›')}`)
   if (install && flag.key && !addHost)
     log.warn(`ssh offers your default identity, not ${keyPath}: if the install cannot connect, add the Host block it prints and run it from packages/basecamp`)
@@ -262,6 +265,7 @@ if (asking) {
   if (admin) row('admin', `${admin} ${chalk.dim(password ? '' : '— password generated')}`)
   if (install) row('outpost', outpost ? `yes ${chalk.dim('— fli deploy:outpost once the admin is made')}` : chalk.dim('no'))
   if (install) row('api key', apiKey ? `admin ${chalk.dim('— shown once, stored as BASECAMP_API_KEY')}` : chalk.dim('no — fli basecamp:key later'))
+  if (install) row('services', unneededRow(unneeded, chalk))
   echo('')
   if (!await yes(`Buy the box at ${vendor}?`, true)) { log.info('Nothing was bought'); return }
   echo('')
@@ -308,6 +312,7 @@ if (failed) {
   return
 }
 log.success(`Basecamp is on ${made.name} (${made.ip})`)
+if (unneeded) await turnOffUnneeded(dest, identity, log)
 stages.at('dns')
 await markHost({ cloud, id: made.id, log })
 

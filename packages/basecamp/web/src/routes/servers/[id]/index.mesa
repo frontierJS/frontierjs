@@ -14,6 +14,7 @@ title: Server
   import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import NoRecord   from '../../../components/NoRecord.mesa'
   import ServerHealthBody from '../../../components/tiles/ServerHealthBody.mesa'
+  import MemoryBreakdown  from '../../../components/MemoryBreakdown.mesa'
   import { offerUndo } from '../../../resources/Trash.mesa'
   import { serverPostures }  from '../../../resources/ServerPosture.mesa'
 
@@ -30,11 +31,11 @@ title: Server
   // The edit form's `only=` is what a person may correct about a machine: how it is named and grouped,
   // and how it is reached. The rest of the row is the machine's own report or
   // the provider's, and a box for it would be overwritten by the next
-  // heartbeat or Sync. `sshKeyId` is out because nothing reads it.
+  // heartbeat or Sync. `sshKeyId` names the keys `ssh.unknown-key` expects on the box.
   // `ipAddress` is offered only where no vendor reports it: Sync overwrites it
   // on a provider machine, and on Basecamp's own box or an imported one nothing
   // else ever writes it, so without the box a Domain there is never pushed (FJS-3516).
-  $: editable = ['name', 'role', 'region', 'sshUser', 'sshPort', 'labels',
+  $: editable = ['name', 'role', 'region', 'sshUser', 'sshPort', 'sshKeyId', 'labels',
                  ...(server?.providerServerId ? [] : ['ipAddress'])]
 
   function saved() {
@@ -321,6 +322,12 @@ title: Server
   // JSON.parse'ing a string, which is what the old raw-SQL services had to do.
   const entries = (obj) => Object.entries(obj ?? {})
 
+  // The Outpost's per-unit memory table (`FJS-D1824`) is drawn as a table under
+  // the bars, so the raw dump below leaves it out rather than print an object.
+  $: breakdown = server?.health?.memory_breakdown ?? null
+  $: reported  = entries(server?.health).filter(([key]) => key !== 'memory_breakdown')
+  $: appNames  = Object.fromEntries((placed ?? []).map(a => [a.id, a.name]))
+
   // Which actions the current status permits — ASKED, not restated. The three
   // from-lists that used to be written out here were a copy of the service's,
   // which were a copy of nothing: the machine now lives in `@@transitions` on
@@ -523,11 +530,15 @@ title: Server
     <article class="card stack" id="server-health">
       <h2 class="h4">Health</h2>
       <ServerHealthBody tile={{ serverId: server.id }} />
-      {#if entries(server.health).length}
+      {#if breakdown?.rows?.length}
+        <h3 class="h5">Memory</h3>
+        <MemoryBreakdown id="server-memory" rows={breakdown.rows} total={breakdown.total_bytes} names={appNames} />
+      {/if}
+      {#if reported.length}
         <details>
           <summary class="text-sm">Everything it reported</summary>
           <dl class="facts">
-            {#each entries(server.health) as [key, value]}
+            {#each reported as [key, value]}
               <dt>{key}</dt><dd>{value}</dd>
             {/each}
           </dl>
@@ -570,7 +581,7 @@ title: Server
             <tr data-control={c.id}>
               <td><span class="badge {POSTURE_TONE[String(c.ok)]}">{c.ok === true ? 'pass' : c.ok === false ? 'fail' : 'unknown'}</span></td>
               <td><code>{c.id}</code></td>
-              <td class="text-sm">{c.message}{#if c.fix && c.ok === false}<br><strong>Fix:</strong> {c.fix}{/if}</td>
+              <td class="text-sm">{c.message}{#if c.fix}<br><strong>Fix:</strong> {c.fix}{/if}</td>
             </tr>
           {/each}
         </tbody>

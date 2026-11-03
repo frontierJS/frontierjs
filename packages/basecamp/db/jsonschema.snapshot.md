@@ -757,7 +757,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `ipv6Address` | `string`? | — | — | — | — |
 | `sshPort` | `integer` = `22` | — | — | — | — |
 | `sshUser` | `string` = `"root"` | — | — | — | — |
-| `sshKeyId` | `string`? | — | — | — | — |
+| `sshKeyId` | `string`? | — | SSH key | `x-values` | — |
 | `outpostVersion` | `string`? | — | — | — | — |
 | `lastHeartbeatAt` | `string`? | — | — | `format: "date-time"` | — |
 | `enrollExpiresAt` | `string`? | — | — | `format: "date-time"` | — |

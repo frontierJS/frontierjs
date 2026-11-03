@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-74 model(s) · 57 enum(s) · 2 database(s)
+74 model(s) · 57 enum(s) · 2 database(s) · 1 value set(s)
 audit → sqlite · main → sqlite
 ```
 
@@ -77,6 +77,15 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `WorkspaceKind` | `demo` · `enterprise` · `personal` · `team` |
 | `WorkspaceRole` | `admin` · `billing` · `developer` · `owner` · `viewer` |
 | `WorkspaceStatus` | `active` · `suspended` |
+
+## Value sets
+
+The list a `@values` binding resolves against. Narrowing one narrows every
+column bound to it, so it is a fact about the set rather than about a field.
+
+| Set | Source | Value | Scope | Where |
+| --- | --- | --- | --- | --- |
+| `SshKeys` | `Secret` | `id` | — | `kind = 'sshKey'` |
 
 ## Models
 
@@ -2038,7 +2047,7 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 | `role` | `ServerRole` | no | `'general'` | — |
 | `serverNetworks` | `ServerNetwork[]` | — | — | relation |
 | `slug` | `String` | no | — | **required on write** |
-| `sshKeyId` | `String` | yes | — | — |
+| `sshKeyId` | `String` | yes | — | `@values(SshKeys, strength: required)` |
 | `sshPort` | `Int` | no | `22` | — |
 | `sshUser` | `String` | no | `'root'` | — |
 | `status` | `ServerStatus` | no | `'pending'` | — |

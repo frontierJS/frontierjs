@@ -22,10 +22,13 @@ directories follow FHS under Outpost's name and are made by systemd, and
   apps/<app>/data/            bind-mounted at the App's volumePath (.db files)
   builds/                     checkouts and build caches (today's apps/, FJS-D1614)
   static/ · backups/ · restore/ · replica-restore/ · deploy-keys/ · uids.json
+/usr/local/lib/outpost/       the installed @frontierjs/outpost (FJS-D1826)
+  node_modules/.bin/outpost   what the unit's ExecStart runs
 /frontier-outpost/            links only, read by people, never by code
-  config -> /etc/outpost
-  data   -> /var/lib/outpost
-  logs   -> /var/log/caddy     per-app access logs (FJS-D1617)
+  config  -> /etc/outpost
+  data    -> /var/lib/outpost
+  logs    -> /var/log/caddy    per-app access logs (FJS-D1617)
+  program -> /usr/local/lib/outpost   the code, so `ls program` says which version runs (FJS-D1826)
 ```
 
 **Not in this plan.** `fli deploy` over SSH keeps `/apps/<app>/db` (`FJS-D1120`);

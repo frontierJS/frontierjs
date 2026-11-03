@@ -55,7 +55,8 @@ import { envReport } from '../../core/env.ts'
 import { hubPolicy } from '../../core/session-auth.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 import { postureView } from '../server-postures/server-postures.service.ts'
-import { gradeHubNow } from '../../domain/host/host-machine.ts'
+import { gradeHubNow, hostServer } from '../../domain/host/host-machine.ts'
+import { createVitals } from '@frontierjs/outpost/vitals'
 
 /** A bot's address. `.invalid` is reserved by RFC 2606 and resolves nowhere,
  *  which is the point: `User.email` is required and unique, a bot has no
@@ -78,6 +79,32 @@ const STARTED_AT = Date.now()
  *  its accessors exist only at runtime, so a typed handle would be a fiction
  *  maintained by hand. */
 const sys = (): any => $.app.db!.asSystem()
+
+/** This box's CPU, memory and disk, read the way an Outpost reads them. Held
+ *  for the process because CPU is a delta between reads. No breakdown: in
+ *  Basecamp's container `/proc` is the host's but the cgroup tree is its own,
+ *  so the per-unit table comes from the host Server's heartbeat (`FJS-D1824`). */
+const vitals = createVitals({ breakdown: false })
+
+/** The Health card: totals read here, and the host Outpost's last breakdown,
+ *  with each container named by its App. `breakdown` is null with no host
+ *  Server or an Outpost that has not reported one. */
+async function hubHealth() {
+  const totals = await vitals.read()
+  const host   = await hostServer(sys())
+  const table  = (host?.health as any)?.memory_breakdown ?? null
+  const names: Record<string, string> = {}
+  if (table?.rows) {
+    const ids  = [...new Set<string>(table.rows.map((r: any) => r.app_id).filter(Boolean))]
+    const apps = ids.length ? await sys().app.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }) : []
+    for (const a of apps) names[a.id] = a.name
+  }
+  return {
+    cpu: totals.cpu ?? null, memory: totals.memory ?? null, disk: totals.disk ?? null, load: totals.load ?? null,
+    host: host ? { id: host.id, name: host.name, lastHeartbeatAt: host.lastHeartbeatAt ?? null } : null,
+    breakdown: table?.rows ? { totalBytes: table.total_bytes, usedBytes: table.used_bytes, rows: table.rows, names } : null,
+  }
+}
 
 /** The acting sysadmin, for the two self-lockout guards. */
 function actor(): string {
@@ -144,7 +171,6 @@ export default createService({
     const raw     = $.app.sqlite
     const dbPath  = ($.app.config as { database?: { url?: string } }).database?.url
       || process.env.DATABASE_URL || './db/basecamp.db'
-    const mem     = process.memoryUsage()
 
     const [workspaces, users, servers, apps, projects] = await Promise.all([
       sys().workspace.count(), sys().user.count(), sys().server.count(),
@@ -166,9 +192,8 @@ export default createService({
         // for a path that does not exist, which is what a database with no
         // pending WAL correctly contributes.
         dbSizeBytes:   Bun.file(dbPath).size + Bun.file(`${dbPath}-wal`).size,
-        memoryMb:      +(mem.rss / 1024 / 1024).toFixed(1),
-        heapUsedMb:    +(mem.heapUsed / 1024 / 1024).toFixed(1),
       },
+      health:          await hubHealth(),
       // Live WebSocket clients, counted off the channel manager rather than
       // off `authenticated`'s membership: a connection joins that channel
       // only once it carries a session, so the channel's own length under-

@@ -120,10 +120,10 @@ exported, and it is where the tests go.
   the static origin is on), plus the port of each app on this server that **declares raw-port
   exposure** (`FJS-D930`). Every other app must be on loopback only. Anything else listening on a public address is a finding by name.
 - **The command port's allowed source** = Basecamp's own egress address.
-- **Authorized keys** = the `ssh_key` `Secret` that `Server.sshKeyId` names. A key
-  on the box Basecamp does not know is a finding. The column holds one key, so
-  a box several people reach needs either more of them or a way to acknowledge a
-  key, which phase 1 settles by reading what is actually there.
+- **Authorized keys** = every public key in the `sshKey` `Secret` that
+  `Server.sshKeyId` names: its public key lines, and the public half of an
+  OpenSSH private key. A key on the box Basecamp does not know is a finding. A
+  box several people reach holds each person's public key line in that Secret.
 
 Controls start as a short list, each a line in the code with its CIS or dev-sec id
 in a comment:
@@ -604,28 +604,54 @@ fallback goes on the same command, not a new one.
     through that route, then checks Re-enroll hands over a fresh command. That
     run also fixed the drive's backup delete, which had picked the newest good
     backup that 2202d14ed now refuses.
-- [ ] 9.1 `outpost.version-behind` in `posture.ts`, beside `outpost.cert-expiry`.
+- [x] 9.1 `outpost.version-behind` in `posture.ts`, beside `outpost.cert-expiry`.
   Its `fix:` names 9.0b's action.
   `declaredFor` takes the expected version (`OUTPOST_VERSION`, `enrollment.ts`)
   and the Server's stored `outpostVersion`. Behind is false and names both
   versions, equal or ahead is true, and no stored version is `unknown`. It fires
   through `posture_failed`, not a new kind.
-- [ ] 9.2 `posture.test.ts` rows for behind, equal and missing.
-- [ ] 9.3 One posture reader in `packages/cli/core/basecamp.js`. It reads
+  - Done 2026-11-03: severity medium, compared with `Bun.semver.order`. A fleet
+    control may now carry `fix`, and the server screen's posture table shows it
+    on a failing row, as `/hub/security/` does.
+- [x] 9.2 `posture.test.ts` rows for behind, equal and missing.
+- [x] 9.3 One posture reader in `packages/cli/core/basecamp.js`. It reads
   `serverPostures.latest` and `fleet` for fleet machines and `hub.hostPosture`
   for Basecamp's own box, which is not a `serverPostures` method (`FJS-D1751`).
   Check that a `BASECAMP_API_KEY` caller passes both gates.
   `IDEAS/deploy-posture.md` 4.2 reuses this reader.
-- [ ] 9.4 `fli basecamp:posture [server-id]`. With no id it prints one line per
+  - Done 2026-11-03: `readPostures` and `readPosture`. A workspace admin's key
+    reads `fleet` and `latest` and is answered 403 by `hub.hostPosture`; a
+    system admin's key reads all three. The host's view replaces its fleet row,
+    with `host: true` and the `hub.*` controls, only when the key reaches it.
+    `posture.test.ts` asserts the gates over HTTP with a minted key.
+- [x] 9.4 `fli basecamp:posture [server-id]`. With no id it prints one line per
   server with its failing count by severity. With an id it prints every control's
   state, message and fix. Both print the report's age, and a server with no
   report reads `unknown`, never ok. It takes `--url`, else `BASECAMP_URL`, as
   `basecamp:backup` and `basecamp:live` do, plus `--json`. Add the line to
   `commands/basecamp/_module.md`.
-- [ ] 9.5 What fails when it stops: a cli test that an unreported server prints
+  - Done 2026-11-03: the argument takes an id or a name, and a name two
+    Servers share is refused naming their ids, since `Server.name` is not
+    unique. Exit 1 when any control fails, as `basecamp:live` does on `down`.
+    An unreported box exits 0, so a new server's first minutes fail no script.
+    The detail view prints the report's pending update count.
+- [x] 9.5 What fails when it stops: a cli test that an unreported server prints
   `unknown`, plus 9.2's rows.
+  - Done 2026-11-03: `test/basecamp-posture.test.js`, against a stand-in
+    answering the three methods, also covers a stale report, the host merge,
+    a shared name and the exit code.
 - [ ] 9.6 Drive it against yuma's Basecamp once 4.2 in `IDEAS/box-layout.md`
   has reinstalled it.
+  - Read side proved 2026-11-03 with the key already in `~/.config/fli/.env`.
+    The list prints `✗ Basecamp host ⛺  2 high · 1 medium  report 1h ago` and
+    exits 1. The detail view merges the `hub.*` controls, so the key is a system
+    admin's, and prints 14 pending updates, 5 of them security. `--json` answers
+    the rows. The `unknown` clause is not live: this Basecamp has one Server,
+    so the cli test is its proof.
+  - Owed: `outpost.version-behind` is absent live. The serving container was
+    built at 20:43 UTC, before 5099012ad added the control. yuma runs Outpost
+    0.1.9, the same as `OUTPOST_VERSION`, so after a redeploy that row grades
+    true. Only 9.2's test rows prove the behind case.
 
 ## Open questions (owner)
 
@@ -739,6 +765,23 @@ fallback goes on the same command, not a new one.
     the same call, and it loosens the refusal that stops twin rows. C is a new
     channel by which a compromised Basecamp rewrites root units on every box. D
     is A with an extra uninstall step.
+- ~~**Q12 — How does a person name the keys a machine is expected to hold?**~~ **Answered 2026-11-03 (`FJS-D1834`): A — `sshKeyId` on the edit form, bound by `@values(SshKeys)` to the workspace's `sshKey` Secrets. The grader also reads the public half an OpenSSH private key keeps in its unencrypted header, and the Secret may hold public key lines for each person who reaches the box.**
+  `ssh.unknown-key` grades every key in `authorized_keys` against the
+  `Server.sshKeyId` Secret, but nothing writes that column and the server's edit
+  form leaves it out, so the control reads `unknown` on every box. An `sshKey`
+  Secret holds a private key, and the grader reads public key lines only. On
+  Basecamp's own box the keys present are the owner's, which Basecamp never issued.
+  - **A** — `sshKeyId` on the edit form, bound by `@values(SshKeys)` to the
+    workspace's `sshKey` Secrets. The grader also reads the public half an
+    OpenSSH private key keeps in its unencrypted header, and the Secret may hold
+    public key lines for each person who reaches the box.
+  - **B** — An *Accept these keys* action that stores today's fingerprints in a
+    new Server column, so a key added later fails.
+  - **C** — No door yet. The `unknown` row's `fix:` says nothing sets it.
+  - **Recommend A** — The column already names the keys and `servers.service`
+    already refuses another workspace's Secret, so A adds no noun. B blesses
+    whatever is on the box today, including a stranger's key, and changes the
+    control from *keys Basecamp did not issue* to *keys changed since a click*.
 
 ## See also
 

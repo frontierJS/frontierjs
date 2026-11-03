@@ -15,6 +15,7 @@
  */
 
 import { stripVTControlCharacters } from 'node:util'
+import { dirname }              from 'node:path'
 import { mkdir, readdir, readFile, realpath, rename, rm, stat } from 'node:fs/promises'
 import { existsSync, readFileSync, writeFileSync, renameSync, createWriteStream } from 'node:fs'
 import { createHash, randomBytes } from 'node:crypto'
@@ -320,6 +321,13 @@ function bucketSaid(status, text) {
   return `${status}${said ? ` ${said}` : ''}`
 }
 
+/** A pre-signed URL a body is PUT to: http(s) and nothing else. */
+function checkUploadUrl(uploadUrl) {
+  let parsed
+  try { parsed = new URL(uploadUrl) } catch { throw new Error('upload_url is not a URL') }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error(`upload_url is ${parsed.protocol}, not http(s)`)
+}
+
 export function createDocker({
   run = spawnRun, stream = spawnStream, fetch: fetchFn = globalThis.fetch, workDir = '/var/lib/outpost/builds', health = HEALTH,
   appsDir = layout().apps,
@@ -355,6 +363,21 @@ export function createDocker({
     if (/[,:]/.test(dir)) throw new Error(`'${dir}' has a ':' or ',' that a mount cannot carry`)
     if (make) await mkdir(dir, { recursive: true, mode: 0o700 })
     return dir
+  }
+
+  /** PUT one file to a pre-signed URL, streamed. Answered, never thrown: the
+   *  file exists whether or not the far side took it. */
+  async function putFile(uploadUrl, path) {
+    try {
+      const res = await fetchFn(uploadUrl, {
+        method: 'PUT', body: Bun.file(path), headers: { 'content-type': 'application/gzip' },
+        signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+      })
+      if (res.ok) return { uploaded: true }
+      return { uploaded: false, upload_error: bucketSaid(res.status, await res.text().catch(() => '')) }
+    } catch (err) {
+      return { uploaded: false, upload_error: err?.message ?? String(err) }
+    }
   }
 
   // A container holding the directory is a SQLite writer with the file open,
@@ -1251,11 +1274,7 @@ export function createDocker({
      */
     async backup({ appId, uploadUrl }) {
       const dir = await dataDir(appId)
-      if (uploadUrl !== undefined) {
-        let parsed
-        try { parsed = new URL(uploadUrl) } catch { throw new Error('upload_url is not a URL') }
-        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error(`upload_url is ${parsed.protocol}, not http(s)`)
-      }
+      if (uploadUrl !== undefined) checkUploadUrl(uploadUrl)
       if (!await stat(dir).then(s => s.isDirectory(), () => false))
         throw new Error(`${dir} does not exist on this machine — the app has no data here to back up`)
 
@@ -1287,16 +1306,36 @@ export function createDocker({
 
       // Answered, never thrown: the archive exists and the path is the answer.
       // A throw here would read as a backup that failed.
-      try {
-        const res = await fetchFn(uploadUrl, {
-          method: 'PUT', body: Bun.file(path), headers: { 'content-type': 'application/gzip' },
-          signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
-        })
-        if (res.ok) return { data_dir: dir, path, bytes, files, sha256, uploaded: true }
-        return { data_dir: dir, path, bytes, files, sha256, uploaded: false, upload_error: bucketSaid(res.status, await res.text().catch(() => '')) }
-      } catch (err) {
-        return { data_dir: dir, path, bytes, files, sha256, uploaded: false, upload_error: err?.message ?? String(err) }
-      }
+      return { data_dir: dir, path, bytes, files, sha256, ...await putFile(uploadUrl, path) }
+    },
+
+    /**
+     * One archive already on this machine, PUT to a URL Basecamp minted: the
+     * pull behind a Download button, for an archive no bucket holds. `path`
+     * is a caller's string and the request is signed, but a signature proves
+     * Basecamp sent it, not that the path is one to read, so it must be a
+     * file `backup` wrote for this app, directly under `backupDir`
+     * (`FJS-D943`'s fixed root). Throws a sentence for a refusal, and for a
+     * PUT that did not land, since there is nothing else to answer.
+     */
+    async sendBackup({ appId, path, uploadUrl }) {
+      checkAppId(appId)
+      if (typeof path !== 'string' || !path) throw new Error('path is required')
+      if (typeof uploadUrl !== 'string') throw new Error('upload_url is required')
+      checkUploadUrl(uploadUrl)
+      const root = await realpath(backupDir).catch(() => null)
+      if (!root) throw new Error(`${backupDir} does not exist on this machine — it holds no backups`)
+      const file = await realpath(path).catch(() => null)
+      if (!file || dirname(file) !== root || !file.slice(root.length + 1).startsWith(`${appId}-`) || !file.endsWith('.tar.gz'))
+        throw new Error(`${path} is not a backup of ${appId} on this machine`)
+      const info = await stat(file)
+      if (!info.isFile()) throw new Error(`${path} is not a file`)
+
+      const hash = createHash('sha256')
+      for await (const chunk of Bun.file(file).stream()) hash.update(chunk)
+      const sent = await putFile(uploadUrl, file)
+      if (!sent.uploaded) throw new Error(`the upload of ${path} failed: ${sent.upload_error}`)
+      return { bytes: info.size, sha256: hash.digest('hex') }
     },
 
     /** An operator's script, as root over the box. The unit is sandboxed and the
@@ -1403,6 +1442,9 @@ export function createDocker({
 const UPGRADE_STAMP = '/var/lib/apt/periodic/upgrade-stamp'
 
 const BOX = layout()
+// The units `host.unneeded-services` wants off (`FJS-D1825`); Basecamp's
+// enrollment.ts holds the commands that turn them off.
+const UNNEEDED_UNITS = ['multipathd.service', 'multipathd.socket', 'fwupd.service', 'fwupd-refresh.timer']
 const POSTURE = {
   os:              ['cat', '/etc/os-release'],
   kernelRunning:   ['uname', '-r'],
@@ -1429,6 +1471,7 @@ const POSTURE = {
   dockerGroup:     ['getent', 'group', 'docker'],
   timeSync:        ['timedatectl', 'show'],
   timeTracking:    ['chronyc', '-c', 'tracking'],
+  unneeded:        ['systemctl', 'is-active', ...UNNEEDED_UNITS],
   unitJson:        ['systemd-analyze', 'security', 'outpost', '--json=short'],
   containerIds:    ['docker', 'ps', '-q'],
   files:           ['stat', '-c', '%a %U %G %n', BOX.config, BOX.tlsKey, BOX.envFile],
@@ -1626,6 +1669,14 @@ function readTime(sync, tracking) {
   // `chronyc -c tracking`, field 5: the system clock's offset in seconds.
   const offset = ok(tracking) ? Number(tracking.stdout.trim().split(',')[4]) : NaN
   return { synced: /^NTPSynchronized=yes$/m.test(sync.stdout), offset_s: Number.isFinite(offset) ? offset : null }
+}
+
+/** `systemctl is-active` prints one state per unit, in the order asked, and
+ *  exits non-zero when any is not active, which is the answer and not a failure. */
+function readUnneeded(r) {
+  const states = lines(r?.stdout)
+  if (states.length !== UNNEEDED_UNITS.length) return null
+  return { active: UNNEEDED_UNITS.filter((_, i) => /^(active|activating|reloading)$/.test(states[i])) }
 }
 
 function unitFromJson(r) {
@@ -1846,6 +1897,15 @@ export function createInspector({ run = spawnRun, hostFiles = null, appsDir = la
       }))
     },
 
+    /** Running containers' full ids, to the App each belongs to — what names a
+     *  `docker-<id>.scope` cgroup in the memory breakdown (`FJS-D1824`). The
+     *  scope carries the full id and `docker ps` truncates it by default. */
+    async appContainers() {
+      const { exitCode, stdout } = await run(['docker', 'ps', '--no-trunc', '--filter', `label=${APP_LABEL}`, '--format', `{{.ID}}\t{{.Label "${APP_LABEL}"}}`])
+      if (exitCode !== 0) return null
+      return new Map(lines(stdout).map(line => line.split('\t')).filter(([id, app]) => id && app))
+    },
+
     /** A reclaim sweep. Answers what it FREED and what it removed, and
      *  basecamp forgets exactly the volumes named here — never the ones it
      *  asked about, because a partial sweep leaves the rest on disk. */
@@ -1957,6 +2017,7 @@ export function createInspector({ run = spawnRun, hostFiles = null, appsDir = la
           return ok(primary) ? [...new Set([...group.members, ...lines(primary.stdout)])].sort() : null
         }),
         time:         await guard(() => readTime(r.timeSync, r.timeTracking)),
+        unneeded:     await guard(() => readUnneeded(r.unneeded)),
         outpost_unit: await guard(async () => unitFromJson(r.unitJson) ?? unitFromText(await read(UNIT_TEXT))),
         privileged:   await guard(async () => {
           if (!ok(r.containerIds)) return null

@@ -48,8 +48,8 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   it. A new per-app operation either joins the chain or says why it need not.
 
 - **The unit is sandboxed and `/exec` is not** (`FJS-1761`, `FJS-D602`).
-  `installScript()`'s unit writes only `/var/lib/outpost`, `/etc/outpost` and
-  bun's install dir, and `exec` runs its command as `systemd-run --pipe --wait`,
+  `installScript()`'s unit writes only `/var/lib/outpost` and `/etc/outpost`
+  (its code is installed once into `/usr/local/lib/outpost`, `FJS-D1826`), and `exec` runs its command as `systemd-run --pipe --wait`,
   a transient unit outside that namespace — `--user` when the Outpost is not
   root, since the system manager refuses that caller through polkit (`FJS-3353`). A new write path in this package
   goes in `layout.js` under one of its roots, or it fails on a machine and in no test.

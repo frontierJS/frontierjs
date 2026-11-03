@@ -31,6 +31,7 @@ import { buildProviders }            from './providers/index.ts'
 import { machineStream }             from './plugins/machine-stream.ts'
 import { backupArchive }             from './plugins/backup-archive.ts'
 import { appArchiveUpload }          from './plugins/app-archive-upload.ts'
+import { appArchivePull }            from './plugins/app-archive-pull.ts'
 import { bucketFromEnv, fetchHubArchive, listHubArchives, readBucket, receiveUpload, restoreStaged, restoreState, scratchTarball, stageHubArchive } from './domain/backup/hub-restore.ts'
 import { LEVELS }                                from '@frontierjs/litestone'
 import { apply }                                 from '@frontierjs/litestone/migrations'
@@ -1023,6 +1024,10 @@ export async function buildBasecampApp(
   // An app archive a person uploads, behind a link `appBackups.upload` signed
   // (plugins/app-archive-upload.ts).
   app.configure(function appArchiveUploadRoute() { appArchiveUpload(app) })
+
+  // A machine-kept app archive, pulled through the hub behind links
+  // `appBackups.download` signed (plugins/app-archive-pull.ts).
+  app.configure(function appArchivePullRoute() { appArchivePull(app) })
 
   app.configure(function staticRoutes(a) {
     a.get('/', () => Bun.file(new URL('../../web/index.html', import.meta.url).pathname))

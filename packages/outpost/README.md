@@ -68,7 +68,7 @@ Basecamp that enrolled it. `sudo outpost-uninstall` removes the Outpost, its
 credential, its firewall and its Litestream unit, and leaves the apps it placed
 running, unreplicated. `--purge` also removes those apps and every Docker
 volume, `/var/lib/outpost` with its backups, Docker, Caddy, their apt sources,
-the Litestream binary and the Outpost's bun.
+the Litestream binary, the Outpost's program directory and the Outpost's bun.
 It asks you to type `purge`, or takes `--yes` when there's no terminal. Both
 end by listing what they left on purpose: the sshd drop-in (removing it can
 turn password login back on), chrony, security updates, and the Server row,
@@ -105,6 +105,7 @@ process's user, so the default is refuse and a route opts out rather than in.
 | `POST /volumes/prune` | `{ names }` → `{ removed }` |
 | `DELETE /volumes/<name>` | → `{ removed }`, or 409 with the container holding it |
 | `POST /backup` | `{ app_id, upload_url? }` → `{ volume, path, bytes, files, sha256, uploaded?, upload_error? }`; `fjs-<app>-data` tarred (gzip) into `OUTPOST_BACKUP_DIR` by a throwaway container holding the volume read-only. The archive stays on the machine and the answer is its path and digest. With `upload_url`, a pre-signed PUT Basecamp minted, the archive is streamed to it from the Outpost process and `uploaded` says whether it landed, `upload_error` the bucket's words when not; the machine holds no bucket key. Refused for a volume the machine does not hold |
+| `POST /backup/send` | `{ app_id, path, upload_url }` → `{ bytes, sha256 }`; one archive `/backup` kept, PUT to a pre-signed URL Basecamp minted (its Download of a machine-kept archive). `path` must be a `<app_id>-*.tar.gz` directly under `OUTPOST_BACKUP_DIR`; anything else, and a PUT that does not land, is refused in words |
 | `POST /volume/restore` | `{ app_id, path \| url + sha256, overwrite?, per_file? }` → `{ data_dir, archive, files, bytes, overwrite, per_file, sha256? }`; a tar (gzip or not) under `OUTPOST_RESTORE_DIR`, extracted into the app's data directory. With `url`, a pre-signed GET Basecamp minted, the archive is fetched there first and refused unless its sha256 matches; the copy is removed after. Refused while any container holds the directory, and into one with files unless `overwrite: true`, which empties it first. With `per_file: true` (a wrapped `.db`, `FJS-D1724`) each top-level `.db` replaces its own file and that file's `-wal`/`-shm`, the rest stays, and `overwrite` is asked per database |
 | `POST /replica/restore` | `{ app_id, replica, databases, at?, overwrite? }` → `{ volume, files, bytes, overwrite, databases, replication }`; each named database restored out of the app's Litestream replica, at `at` or the latest, replacing only those `.db` files in the stopped volume; Litestream is restarted so it picks them up |
 | `POST /replica/drill` | `{ app_id, replica, databases, at?, image, digest?, env }` → `{ databases, verified, verify }`; each named database restored out of the replica into a staging directory, never the volume, then `litestone restore --verify-only` run over it in the app's own image (`--network none`, `env` passed by name); `verified: false` is a 200 with the report, and an image that answers no report is a 500 (`FJS-D1524`) |

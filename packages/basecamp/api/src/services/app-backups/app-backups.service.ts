@@ -28,8 +28,39 @@ import { takeAppBackup }                                     from '../../jobs/ap
 import { queueAppArchiveRescan }                             from '../../jobs/app-archive-rescan.job.ts'
 import { bucketDownload, isRemote }                          from '../../domain/backup/backup-archives.ts'
 import { mintUploadUrl }                                     from '../../plugins/app-archive-upload.ts'
+import { mintPullUrls }                                      from '../../plugins/app-archive-pull.ts'
+import { BODY_CEILING_BYTES }                                from '../../plugins/signed-link.ts'
+import { env }                                               from '../../core/env.ts'
 import { keyScope }                                          from '../../domain/api-key/scopes.ts'
 import { hubIds, refuseHubVolume }                           from '../../domain/host/host-machine.ts'
+import type { AppBackup }                                  from '#db/schema.d.ts'
+
+/** A 128 MB archive over a slow uplink takes minutes; the GET link is minted
+ *  after the send returns, so this bounds the wait, not the link. */
+const PULL_TIMEOUT_MS = 10 * 60_000
+
+/** The machine-kept half of `download`: ask the machine to send the file to a
+ *  hub route, wait for it to land, answer the link that reads it. */
+async function pullFromMachine(row: AppBackup, app: { id: string }, name: string): Promise<{ url: string; name: string }> {
+  const server = row.serverId ? await db().asSystem().server.findFirst({ where: { id: row.serverId } }) : null
+  const where  = server?.name ?? 'its machine'
+  // Bun refuses a body over the ceiling before the route reads it, so the hub
+  // could not receive it however the machine sent it (`FJS-3090`).
+  if ((row.sizeBytes ?? 0) > BODY_CEILING_BYTES)
+    throw new BadRequest(`That backup is ${Math.ceil(row.sizeBytes! / 1024 ** 2)} MB, over the ${BODY_CEILING_BYTES / 1024 ** 2} MB the hub can pull from ${where} — give the app a backup destination, or copy it off the machine with scp`)
+  if (!server || server.status !== 'online')
+    throw new BadRequest(`${where} is ${server?.status ?? 'gone'}, so its archive cannot be fetched — try again when it is online`)
+  const executor = await executorOn($.app, server.id, server.name)
+  if (!isExecutor(executor)) throw new BadRequest(executor.reason)
+
+  const urls = mintPullUrls(crypto.randomUUID(), name)
+  const sent = await executor.call('/backup/send', {
+    app_id: app.id, path: row.location, upload_url: `${env.FRONTIER_API_URL.replace(/\/$/, '')}${urls.put}`,
+  }, { timeoutMs: PULL_TIMEOUT_MS })
+  if (sent.error) throw new BadRequest(`${where} could not send that archive: ${sent.error.message}`)
+  if (executor.kind === 'stub') throw new BadRequest(`${where} is a stub — no archive was sent`)
+  return { url: urls.get, name }
+}
 
 export default createService({
   name:  'appBackups',
@@ -107,23 +138,25 @@ export default createService({
   },
 
   // ── download — POST /app-backups/{id}  X-Service-Method: download ──
-  /** The bucket's pre-signed GET for one archive, saving as
-   *  `<slug>-<stamp>.tar.gz`. A machine-kept archive has no URL: no bytes
-   *  cross the command port (`FJS-D1485`), the rule Restore follows. */
+  /** One archive as `<slug>-<stamp>.tar.gz`. A bucket's is its pre-signed GET.
+   *  A machine-kept one is PULLED THROUGH THE HUB (`FJS-D1833`): the hub mints
+   *  a PUT to `plugins/app-archive-pull.ts`, the machine's Outpost sends the
+   *  file to it (`/backup/send`) and this answers a GET for that copy once it
+   *  has landed. The bytes still do not cross the command port (`FJS-D1485`)
+   *  -- they go over the minted PUT, as `/backup`'s `upload_url` does. */
   async download() {
     const row = await db().appBackup.findFirst({ where: { id: $.id as string } })
     const hub = (await hubIds(db().asSystem())).app
     if (!row || row.appId === hub) throw new NotFound(`App backup '${$.id}' not found`)
     if (row.status !== 'success') throw new BadRequest(`That backup is ${row.status}, so there is no archive to download`)
-    if (!isRemote(row)) {
-      const server = row.serverId ? await db().asSystem().server.findFirst({ where: { id: row.serverId } }) : null
-      throw new BadRequest(`That backup is kept on ${server?.name ?? 'its machine'} — give the app a backup destination to download its archives`)
-    }
+    const keptOnMachine = !isRemote(row) && !!row.location?.startsWith('/')
+    if (!isRemote(row) && !keptOnMachine) throw new BadRequest('That backup has no archive to download')
     const app  = await getScoped('app', 'App', row.appId)
     const base = row.location!.split('/').pop()!.replace(/\.tar\.gz$/, '')
     const name = `${base.startsWith(`${app.id}-`) ? `${app.slug}-${base.slice(app.id.length + 1)}` : base}.tar.gz`
     // The URL is the credential and nobody follows it through here.
     $.app.logger.info('app backup link minted', { backupId: row.id, appId: app.id, by: actor() })
+    if (keptOnMachine) return pullFromMachine(row, app, name)
     return bucketDownload($.app, row, name)
   },
 

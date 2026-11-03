@@ -5,7 +5,7 @@
  * `ConfigurationDirectory=outpost` is /etc/outpost, `StateDirectory=outpost`
  * is /var/lib/outpost. `/frontier-outpost` holds only links to them, for a
  * person at a shell; nothing here reads through it, because `du` and `tar`
- * do not follow a link and a copy of that folder is a copy of three links.
+ * do not follow a link and a copy of that folder is a copy of four links.
  *
  * The install script and this process both derive their paths from here. When
  * each restated its own, the unit's `ReadWritePaths` and the process drifted
@@ -20,6 +20,10 @@ export const ROOTS = {
    *  is journald's (`FJS-D1617`). */
   logs:   '/var/log/caddy',
   links:  '/frontier-outpost',
+  /** The installed `@frontierjs/outpost` (`FJS-D1826`): `bun add --exact` runs
+   *  here, so a restart finds its code on disk. Under `bun x` the unit's private
+   *  /tmp threw the unpack away and every start asked npm again. */
+  program: '/usr/local/lib/outpost',
   /** The Litestream unit's own StateDirectory, kept outside every app's data
    *  so a restore never carries another box's position. */
   litestreamState: '/var/lib/litestream',

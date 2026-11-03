@@ -1814,6 +1814,24 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1832"></a>2026-11-03 · `FJS-D1832` — Q2 — Is the release's encryption key passed in — No. Studio gains `--without-key`, as `restore --verify-only` has: `@encrypted` and `@secret` read as `[redacted]` instead of the client refusing. The key never enters a viewer's container.
+
+Asked in [`IDEAS/basecamp-studio.md`](IDEAS/basecamp-studio.md) § Open questions. **A** was picked over **B** (yes, as the drill does, and Q6's mask hides the plaintext Studio then holds).
+
+The paper's recommendation, taken as written: B's safety is one masking path being right on every route, and 0.6 found that path wrong today (`FJS-3939`: the JSON dump writes plaintext under a header that says it withheld it). A keyless client cannot leak what it cannot decrypt. It costs a `createClient` mode whose reads answer a mask where they now refuse.
+
+### <a id="fjs-d1831"></a>2026-11-03 · `FJS-D1831` — Q6 — What does an ADMINISTRATOR see of protected columns — Studio gains `--redact`: browse, row detail and dump answer Invariant 7's masks (`[redacted]`, `[personal]`, `[opaque:<digest>]`) for every protected kind, and `/api/query` is refused, because raw SQL cannot be masked by column. Basecamp always passes it.
+
+Asked in [`IDEAS/basecamp-studio.md`](IDEAS/basecamp-studio.md) § Open questions. **B** was picked over **A** (what `fli studio` shows today), **C** (open as a principal with no standing. It drops the sealed kinds and `@guarded`, but shows `@personal` and `@opaque`, and an ungated model refuses to browse at all).
+
+The paper's recommendation, taken as written: a fleet viewer of production rows shows no more than the audit trail does. C fails on ungated models, and A leaves `@guarded` plaintext even with Q2 = A. A test asserts no protected value in the clear on any route.
+
+### <a id="fjs-d1821"></a>2026-11-03 · `FJS-D1821` — Q3 — How is the Studio document kept apart from Basecamp's origin — A `Content-Security-Policy: sandbox allow-scripts allow-forms allow-downloads allow-popups` header on the document. It runs at an opaque origin and sends no cookies; its `api/*` calls are cross-origin, carried by the session id in the path, and the relay answers CORS for them.
+
+Asked in [`IDEAS/basecamp-studio.md`](IDEAS/basecamp-studio.md) § Open questions. **A** was picked over **B** (a hostname of its own, e.g. `studio.<basecamp host>`. Real origin separation; needs DNS and a certificate, which `IDEAS/ingress-name.md` has not settled).
+
+The paper's recommendation, taken as written: one header and a CORS answer, no new name, and B stays open once the ingress name lands.
+
 ### <a id="fjs-d1791"></a>2026-11-03 · `FJS-D1791` — In Basecamp an invited address is made only by its invitation: the verify click of a `/auth/register` for it is refused.
 
 Asked on [`FJS-3870`](ISSUES.md#fjs-3870) once the fix met the browser drive. Register is verify-first (`FJS-D1310`), so the mailbox has to answer before any row exists — but the password is the registrant's, so somebody who knew an invited address could register it and wait for the invitee to click a *verify your address* mail, then sign in with the password they chose. **Keep the refusal** was picked over reverting it (the click proves the mailbox, accept the planted password) and over dropping the password from the click (an auth change). `refuseUninvited` admits an invited address only inside `invitationPresented`, the frame `invitations.accept` opens after it verified the token; register still answers 202 for every address. `web/test/verify.mjs` signs Pat in through the invitation link, and asserts the verify click for an invited address makes no account.
@@ -8616,6 +8634,16 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d1833"></a>2026-11-03 · `FJS-D1833` — How a person downloads an app backup kept on its machine — pull it through the hub: *Download* mints a signed PUT to a hub stream route, the machine's Outpost sends the archive there on a new signed `POST /backup/send`, and the browser gets the five-minute signed GET `backup-archive.ts` already uses. Up to 128 MB; larger is refused by name.
+
+Asked in session from the app Backups tab, where a machine-kept row (`FJS-D679`, no destination) showed no *Download*. **A** was picked over **B** (*Send to bucket* on the row: a minted PUT to the app's destination, after which the bucket's own Download answers. Fits `FJS-D1485` exactly, but it is no answer for an app with no bucket, which is the row in question), **C** (Outpost serves a signed GET the browser follows to the machine: the machine's port answers browsers, and `FJS-D679`'s *no bytes cross the command port* is reversed) and **D** (leave it: the archive leaves only by `scp`). As recommended.
+
+The bytes still never cross the command port: they ride a URL Basecamp mints per transfer, as `/backup`'s `upload_url` does under `FJS-D1485`, aimed at `FRONTIER_API_URL` — the address the machine already reports to. `download` awaits the send and mints the GET only once the PUT has landed, so the click waits on the machine's uplink. `/backup/send` reads only a file under the backup directory named for the app, the fixed-root rule `FJS-D943` set for restore. The ceiling is Bun's request-body limit (`FJS-3090`), one named constant the upload shares; past it the refusal names a destination or `scp`. The three archive routes sign their links through one helper rather than a copy each.
+
+The nine, answered before the code: 1 origin — the archive stays the machine's; the hub's copy is transient · 2 concept — no new noun · 3 complexity — the problem's: a row with no bucket needs a path for its bytes · 4 predictability — the click waits on the send · 5 derived — the ceiling is Bun's limit, named once · 6 owner — one signer for the three archive links · 7 boundary — signed route, fixed root, the app's own file · 8 failure — five-minute links, a bounded size · 9 silence — what must stay true: *the hub holds the copy only until it is fetched or ten minutes pass*, swept at start as well, since a restart voids the links; what fails when it stops: the sweep test in `services.test.ts`. § IV: *ergonomics vs. strictness* — a failed download destroys nothing, so a loud refusal is enough.
+
+*Lives in:* `packages/basecamp/api/src/services/app-backups/app-backups.service.ts` (`download`), `packages/basecamp/api/src/plugins/app-archive-pull.ts`, `packages/outpost/src/server.js` and `docker.js` (`/backup/send`), `packages/basecamp/web/src/components/AppBackups.mesa`.
 
 ### <a id="fjs-d1809"></a>2026-11-03 · `FJS-D1809` — How a backup bucket survives a stolen hub — a vendor lock is the floor and the hub keeps its delete key: the bucket carries a compliance-mode Object Lock (B2, S3, Hetzner, MinIO) or an R2 bucket lock of N days, retention stays the hub's count and age, and a prune the vendor refuses as locked is kept, not failed. Graded by a hub posture check, not required.
 
@@ -16255,6 +16283,60 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1834"></a>2026-11-03 · `FJS-D1834` — Q12 — How does a person name the keys a machine is expected to hold — `sshKeyId` on the edit form, bound by `@values(SshKeys)` to the workspace's `sshKey` Secrets. The grader also reads the public half an OpenSSH private key keeps in its unencrypted header, and the Secret may hold public key lines for each person who reaches the box.
+
+Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions. **A** was picked over **B** (An *Accept these keys* action that stores today's fingerprints in a new Server column, so a key added later fails), **C** (No door yet. The `unknown` row's `fix:` says nothing sets it).
+
+The paper's recommendation, taken as written: The column already names the keys and `servers.service` already refuses another workspace's Secret, so A adds no noun. B blesses whatever is on the box today, including a stranger's key, and changes the control from *keys Basecamp did not issue* to *keys changed since a click*.
+
+### <a id="fjs-d1830"></a>2026-11-03 · `FJS-D1830` — Q1 — How does Outpost reach Studio inside a container with no network — A unix socket in the staging mount. `--network none` holds; needs 1.2, so an image built before it cannot open Studio until redeployed.
+
+Asked in [`IDEAS/basecamp-studio.md`](IDEAS/basecamp-studio.md) § Open questions. **A** was picked over **B** (a bridge network with `-p 127.0.0.1:<port>`. Works with every image today; the container gains outbound network while holding production data), **C** (Outpost runs its own litestone as a host process, with the schema copied out of the image. No image change; the litestone reading the data is no longer the release's own, which is the agreement `FJS-D1524` bought), **D** (Studio on the container's own loopback (it exists under `--network none`), each request relayed by `docker exec`. No image change and no network; an exec per call), **E** (D through one persistent `docker exec -i` per session, a JSON line per request on its stdin. No litestone flag; a framing protocol of its own, and a dump cannot stream through it).
+
+The paper's recommendation, taken as written: 0.2 measured A at 6–9 ms, E at 12–17 ms after a 231 ms start, and D at ~230 ms per call. E's one advantage was no image change, and 0.2 and 0.6 found that every image built today needs new litestone anyway (the page's absolute `/api`, the keyless refusal). Given that floor, A is plain HTTP and can stream a dump.
+
+### <a id="fjs-d1829"></a>2026-11-03 · `FJS-D1829` — Q3 — Destroy in the first version — No destroy yet; it stays `fli server:destroy`.
+
+Asked in [`IDEAS/workbench-basecamps.md`](IDEAS/workbench-basecamps.md) § Open questions. **C** was picked over **A** (Take and verify a fresh backup, require the name typed, then `server:destroy`; DNS and the bucket kept), **B** (A, plus removing the DNS record and the backup bucket).
+
+Against the recommendation (**A**): the owner keeps destroy as fli server:destroy until the index, backup and restart are in use; a screen-side destroy needs its own ring-0 path anyway, since server-destroy.job runs inside the Basecamp that made the box.
+
+### <a id="fjs-d1828"></a>2026-11-03 · `FJS-D1828` — Q2 — Where the index lives — A fli-owned file, `~/.config/fli/basecamps.json`, read by Workbench through `cli/core`.
+
+Asked in [`IDEAS/workbench-basecamps.md`](IDEAS/workbench-basecamps.md) § Open questions. **A** was picked over **B** (A model in `packages/workbench/db/schema.lite`).
+
+The paper's recommendation, taken as written: fli and the screen read one list; under B fli cannot see it and the two drift.
+
+### <a id="fjs-d1827"></a>2026-11-03 · `FJS-D1827` — Q1 — How Workbench authenticates to each Basecamp — Ssh is the root; an admin API key per Basecamp is minted over ssh as `basecamp:key` does, and restart uses ssh.
+
+Asked in [`IDEAS/workbench-basecamps.md`](IDEAS/workbench-basecamps.md) § Open questions. **A** was picked over **B** (Widen the signed peer to system-admin calls), **C** (ssh for everything; a backup is a command run on the box).
+
+The paper's recommendation, taken as written: ring 0 already trusts ssh, and the peer door stays as narrow as `FJS-D1188` left it. C skips Basecamp's own record of its backups.
+
+### <a id="fjs-d1826"></a>2026-11-03 · `FJS-D1826` — Where the Outpost program lives on a box — `/usr/local/lib/outpost`. The install runs `bun add --exact @frontierjs/outpost@<pin>` there once and `ExecStart` runs the installed bin, so a restart never resolves a package, the directory is read-only to the running unit, and an upgrade is the same `bun add` with a new pin. `/frontier-outpost/program` links to it beside `config`, `data` and `logs`.
+
+Asked in chat 2026-11-03, after yuma showed the unit's `bun x --bun @frontierjs/outpost@0.1.9` unpacking into `/tmp/systemd-private-*-outpost.service-*/tmp/.bunx-0`: `PrivateTmp=yes` discards that directory on every restart, so each start re-ran the install. `FJS-D1544` placed config, data and logs and never the program. **A** was picked over **B** (`/opt/outpost/<version>/` plus a `current` link: rollback is a relink, at the cost of a cleanup rule for old versions) and **C** (keep `bun x` and give it `CacheDirectory=outpost`: smallest change, but a cold cache still makes a start depend on npm). FHS puts software installed outside the distro's package manager under `/usr/local`.
+
+### <a id="fjs-d1825"></a>2026-11-03 · `FJS-D1825` — fwupd and multipathd on a box Frontier sets up — Off. `fli basecamp:create` and `fli basecamp:install` ask, and `--yes` answers yes; a fleet box's enrollment turns both off without asking. A posture control grades a box where either still runs and names the fix. A cloud VM has no firmware for fwupd to update and no multipath storage for multipathd to manage.
+
+Asked in chat 2026-11-03. On yuma the two hold about 23 MB of private memory (cgroup `anon`: multipathd 17, fwupd 6), so the reason is fewer running services, not memory. **A** (always off on fleet boxes) was picked over **B** (a default-checked box on New Server and a `--keep-services` flag on `outpost:install`) and **C** (only the interactive installs; fleet boxes keep both).
+
+### <a id="fjs-d1824"></a>2026-11-03 · `FJS-D1824` — The memory breakdown on a Health card, and where /hub's comes from — Memory is broken down per systemd unit from cgroup v2 `memory.stat` `anon`, grouped as apps (a `docker-<id>.scope`, named by its container's App), Outpost (`outpost.service`, `basecamp-litestream.service`), runtime (`docker`, `containerd`, `caddy*`), the OS (every other unit) and the kernel (used minus the units' sum). Outpost's heartbeat carries the breakdown, which replaces the RSS reading on `/hub`, and the headline stays `MemAvailable`'s percentage. Basecamp reads CPU, memory and disk totals for its own host with Outpost's vitals reader, so `/hub` always has the card, and takes the table from the host Server's heartbeat. With no Outpost enrolled, the card says the table needs one.
+
+Asked in chat 2026-11-03. RSS was ruled out by measurement on yuma: it counts bun's mapped binary once per process, reporting Outpost at about 58 MB where its private memory is 10 MB. A first pick, Basecamp reading the whole breakdown itself, was re-asked after a probe of yuma. Inside Basecamp's container `/proc` is the host's, but the cgroup namespace is private and there is no Docker socket to name an App. **Totals from Basecamp, table from Outpost** was picked over **mount the host's `/sys/fs/cgroup` read-only into Basecamp's container** (Basecamp reads the table itself, but App containers show by short id and the container can read the host's unit list).
+
+### <a id="fjs-d1823"></a>2026-11-03 · `FJS-D1823` — Q5 — Replica only, or also a snapshot of the live volume — Replica only, as the drill. An App with no replica destination gets the refusal "set a replica destination to open Studio".
+
+Asked in [`IDEAS/basecamp-studio.md`](IDEAS/basecamp-studio.md) § Open questions. **A** was picked over **B** (also a point-in-time copy of the volume for Apps without one).
+
+The paper's recommendation, taken as written: B is a second staging path with its own consistency problem (a live WAL), for Apps that should have a replica anyway.
+
+### <a id="fjs-d1822"></a>2026-11-03 · `FJS-D1822` — Q4 — Where does an open session live — In Basecamp's process memory, as `backup-archive.ts` keeps its key: a restart voids every session (one click to reopen), and each open is one audit line.
+
+Asked in [`IDEAS/basecamp-studio.md`](IDEAS/basecamp-studio.md) § Open questions. **A** was picked over **B** (a model, e.g. `AppStudioSession`, with `@@log(audit)`: who, when, which machine, closed or expired; shown on the App page).
+
+The paper's recommendation, taken as written: one level simpler, and the audit line answers "who looked"; B is the step if the App page should list sessions.
 
 ### <a id="fjs-d1820"></a>2026-11-03 · `FJS-D1820` — Q11 — How does a person move an enrolled Outpost to `OUTPOST_VERSION` — A *Re-enroll this machine* action on the Servers page for every enrolled box. It is the same block, behind `issueEnrollment`'s administrator gate, and its copy says the command restarts the Outpost and replaces its key. The `fix:` line names it.
 

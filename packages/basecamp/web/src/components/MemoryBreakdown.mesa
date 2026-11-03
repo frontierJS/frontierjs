@@ -1,0 +1,80 @@
+<script>
+  // MemoryBreakdown — where a machine's memory went, grouped (`FJS-D1824`).
+  //
+  // The rows are the Outpost's `memory_breakdown`: one per systemd unit, each
+  // an `anon` byte count (private memory, not RSS), plus a `kernel` row that is
+  // the headline's used figure less the units' sum — so the table adds up to the
+  // bar above it. A group shows its total and opens to its units.
+  //
+  // An App's container is named by `names` (App id -> name), which the caller
+  // reads; a container with no App to name it shows its short id, so a stopped
+  // or foreign container is still counted and never silently dropped.
+  import Table  from '@frontierjs/ui/components/display/Table.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let rows  = []
+  export let total = 0        // MemTotal in bytes: the denominator of "share of RAM"
+  export let names = {}
+  export let id    = 'memory-breakdown'
+
+  const GROUPS = [
+    ['apps',    'Apps'],
+    ['outpost', 'Outpost'],
+    ['runtime', 'Runtime'],
+    ['os',      'OS'],
+    ['kernel',  'Kernel'],
+  ]
+  const COLUMNS = [
+    { name: 'group', label: 'Group' },
+    { name: 'mb',    label: 'MB' },
+    { name: 'share', label: 'Share of RAM' },
+  ]
+
+  let open = {}
+  const toggle = (group) => { open = { ...open, [group]: !open[group] } }
+
+  const mb    = (bytes) => (bytes / 1048576).toFixed(bytes < 10 * 1048576 ? 1 : 0)
+  const share = (bytes) => total > 0 ? `${((bytes / total) * 100).toFixed(1)}%` : ''
+
+  // A scope is `docker-<64 hex>.scope`; twelve of them is the id `docker ps` prints.
+  const label = (row) => {
+    if (row.app_id && names[row.app_id]) return names[row.app_id]
+    const short = /^docker-([0-9a-f]{12})/.exec(row.unit ?? '')?.[1]
+    if (short) return `container ${short}`
+    return row.unit ?? ''
+  }
+
+  $: groups = GROUPS
+    .map(([key, name]) => {
+      const members = rows.filter(r => r.group === key)
+      return { key, name, bytes: members.reduce((n, r) => n + r.bytes, 0), members }
+    })
+    .filter(g => g.members.length)
+</script>
+
+<Table {id} columns={COLUMNS} rows={groups} striped hover={false}>
+  {#snippet row(g)}
+    <tr data-group={g.key}>
+      <td>
+        {#if g.key === 'kernel'}
+          {g.name}
+        {:else}
+          <Button treatment="ghost" size="sm" aria-expanded={!!open[g.key]} onclick={() => toggle(g.key)}>
+            {open[g.key] ? '▾' : '▸'} {g.name} ({g.members.length})
+          </Button>
+        {/if}
+      </td>
+      <td>{mb(g.bytes)}</td>
+      <td>{share(g.bytes)}</td>
+    </tr>
+    {#if open[g.key]}
+      {#each g.members as m}
+        <tr data-unit={m.unit} class="text-sm text-muted">
+          <td><code>{label(m)}</code></td>
+          <td>{mb(m.bytes)}</td>
+          <td>{share(m.bytes)}</td>
+        </tr>
+      {/each}
+    {/if}
+  {/snippet}
+</Table>

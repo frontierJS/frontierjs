@@ -166,7 +166,7 @@
         "json"
       ],
       "exitCode": 0,
-      "stdout": "{\"Command\":\"\\\"/docker-entrypoint.…\\\"\",\"CreatedAt\":\"2026-10-03 21:03:38 -0700 MST\",\"HealthStatus\":\"none\",\"ID\":\"f9fb9796f486\",\"Image\":\"3dd08163706a\",\"Labels\":\"maintainer=NGINX Docker Maintainers \\u003cdocker-maint@nginx.com\\u003e\",\"LocalVolumes\":\"0\",\"Mounts\":\"\",\"Names\":\"fjs-12ec1da7-ac83-459d-980d-f95eea84a8d6\",\"Networks\":\"bridge\",\"Platform\":null,\"Ports\":\"0.0.0.0:8090-\\u003e80/tcp, [::]:8090-\\u003e80/tcp\",\"RunningFor\":\"9 days ago\",\"Size\":\"0B\",\"State\":\"running\",\"Status\":\"Up 25 hours\"}\n",
+      "stdout": "{\"Command\":\"\\\"/docker-entrypoint.\u2026\\\"\",\"CreatedAt\":\"2026-10-03 21:03:38 -0700 MST\",\"HealthStatus\":\"none\",\"ID\":\"f9fb9796f486\",\"Image\":\"3dd08163706a\",\"Labels\":\"maintainer=NGINX Docker Maintainers \\u003cdocker-maint@nginx.com\\u003e\",\"LocalVolumes\":\"0\",\"Mounts\":\"\",\"Names\":\"fjs-12ec1da7-ac83-459d-980d-f95eea84a8d6\",\"Networks\":\"bridge\",\"Platform\":null,\"Ports\":\"0.0.0.0:8090-\\u003e80/tcp, [::]:8090-\\u003e80/tcp\",\"RunningFor\":\"9 days ago\",\"Size\":\"0B\",\"State\":\"running\",\"Status\":\"Up 25 hours\"}\n",
       "stderr": ""
     },
     "net.ruleset": {
@@ -241,6 +241,19 @@
       "stdout": "",
       "stderr": "",
       "spawnError": "ENOENT"
+    },
+    "services.unneeded": {
+      "argv": [
+        "systemctl",
+        "is-active",
+        "multipathd.service",
+        "multipathd.socket",
+        "fwupd.service",
+        "fwupd-refresh.timer"
+      ],
+      "exitCode": 0,
+      "stdout": "inactive\ninactive\nactive\nactive\n",
+      "stderr": ""
     },
     "runtime.outpostUnit": {
       "argv": [

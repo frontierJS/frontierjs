@@ -19,7 +19,7 @@
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { dirname, join } from 'node:path'
 import { ensureCert }  from '@frontierjs/outpost/cert'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir }      from 'node:os'
 import { Database }    from 'bun:sqlite'
 import { createTestEnv, session } from '@frontierjs/testing'
@@ -44,6 +44,8 @@ import { appBackupSchedule, appDrillSchedule, fireBackup, restoreSchedules } fro
 import { mintDownload } from '../src/jobs/app-backup-run.job.ts'
 import { mintArchiveUrl } from '../src/plugins/backup-archive.ts'
 import { mintUploadUrl } from '../src/plugins/app-archive-upload.ts'
+import { mintPullUrls, pullDir, sweepPulls } from '../src/plugins/app-archive-pull.ts'
+import { BODY_CEILING_BYTES } from '../src/plugins/signed-link.ts'
 import { replicasFor, syncReplicas, hostReplicaFor } from '../src/jobs/replicate-sync.job.ts'
 import { reconcileFound } from '../src/domain/backup/found-replicas.ts'
 import { rescanAppArchives, hashFoundArchives } from '../src/domain/backup/backup-archives.ts'
@@ -5148,13 +5150,111 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
 
       await expect(download(developer, good.id)).rejects.toThrow()
       await expect(download(outsider, good.id)).rejects.toThrow()
-      const kept = await row({ location: '/var/lib/outpost/backups/x.tar.gz', error: 'Upload failed: 403' })
-      await expect(download(owner, kept.id)).rejects.toThrow(/kept on bk-host — give the app a backup destination/)
+      const nowhere = await row({ location: null })
+      await expect(download(owner, nowhere.id)).rejects.toThrow(/no archive to download/)
       const failed = await row({ status: 'failed', location: null })
       await expect(download(owner, failed.id)).rejects.toThrow(/is failed/)
       const hubs = await sys.appBackup.create({ data: { appId: await ensureHub(), status: 'success', destinationId: dest.id, location: 'hub/basecamp-x.tar.gz' } })
       await expect(download(owner, hubs.id)).rejects.toThrow(/not found/)
       await sys.appBackup.delete({ where: { id: hubs.id } })
+    })
+
+    // FJS-D1833: a machine-kept archive is pulled through the hub. A fake
+    // conduit stands in for the Outpost and does what `/backup/send` does --
+    // PUTs the bytes to the URL it was handed -- so the whole hop runs here.
+    test('a machine-kept archive is pulled through the hub: the machine PUTs it, the link serves it once, and the copy is gone', async () => {
+      const sys  = env.system as any
+      const kept = (over: Record<string, unknown> = {}) => sys.appBackup.create({ data: {
+        appId: app.id, serverId: server.id, destinationId: null, status: 'success', sizeBytes: 11,
+        location: `/var/lib/outpost/backups/${app.id}-2026-01-02T03-04-05-006Z.tar.gz`, ...over,
+      } })
+      const download = (who: any, id: string) => env.as(who).service('appBackups').call('download', id) as Promise<{ url: string; name: string }>
+      const toHub = (url: string) => { const u = new URL(url); return new Request(`http://basecamp.test${u.pathname}${u.search}`) }
+      const hub = async (url: string, init?: RequestInit) => {
+        if (!env.app.http.router.isBuilt) await env.http.get('/setup/probe')
+        const r = toHub(url)
+        return env.app.http.fetch(new Request(r.url, init))
+      }
+
+      const sent: any[] = []
+      let landed = 0
+      const fake = {
+        resolve: async () => ({ pinned_cert: true }),
+        send: async (call: any) => {
+          sent.push(call)
+          const put = await hub(call.body.upload_url, { method: 'PUT', body: 'archive-data' })
+          landed = put.status
+          return { data: { bytes: 12, sha256: 'a'.repeat(64) } }
+        },
+      }
+      const real = (env.app as any).conduit
+      ;(env.app as any).conduit = fake
+      try {
+        const row = await kept()
+        const { url, name } = await download(owner, row.id)
+        expect(name).toBe(`${app.slug}-2026-01-02T03-04-05-006Z.tar.gz`)
+        expect(landed).toBe(201)
+        expect(sent).toHaveLength(1)
+        expect(sent[0]).toMatchObject({ path: '/backup/send', body: { app_id: app.id, path: row.location } })
+        expect(sent[0].body.upload_url).toStartWith(`${new URL(process.env.FRONTIER_API_URL ?? 'http://localhost:8120').origin}/app-archive-pull/`)
+        expect(url).toStartWith('/app-archive-pull/')
+
+        const got = await hub(url)
+        expect(got.status).toBe(200)
+        expect(got.headers.get('content-disposition')).toBe(`attachment; filename="${name}"`)
+        expect(await got.text()).toBe('archive-data')
+        // Read once: the temp copy went with the first GET.
+        expect((await hub(url)).status).toBe(404)
+
+        // Nobody else can use the link, forged, expired or for the wrong purpose.
+        const again = await download(owner, row.id)
+        expect((await hub(again.url.replace(/sig=\w+/, `sig=${'0'.repeat(64)}`))).status).toBe(403)
+        expect((await hub(mintPullUrls(crypto.randomUUID(), name, Date.now() - 6 * 60_000).get)).status).toBe(403)
+        const put = mintPullUrls(crypto.randomUUID(), name)
+        expect((await hub(put.put, { method: 'PUT', body: 'x' })).status).toBe(201)
+        const forged = mintPullUrls(crypto.randomUUID(), name, Date.now() - 6 * 60_000)
+        expect((await hub(forged.put, { method: 'PUT', body: 'x' })).status).toBe(403)
+        // A write link is no read link: same id, the other purpose's signature.
+        const id = put.put.split('?')[0].split('/').pop()!
+        const cross = `/app-archive-pull/${id}?name=${name}&expires=${put.put.match(/expires=(\d+)/)![1]}&sig=${put.put.match(/sig=(\w+)/)![1]}`
+        expect((await hub(cross)).status).toBe(403)
+
+        // Another workspace, a developer, a machine that is not online, a body over the ceiling.
+        await expect(download(developer, row.id)).rejects.toThrow()
+        await expect(download(outsider, row.id)).rejects.toThrow()
+        const big = await kept({ sizeBytes: BODY_CEILING_BYTES + 1 })
+        await expect(download(owner, big.id)).rejects.toThrow(/over the 128 MB the hub can pull from bk-host — give the app a backup destination/)
+        const before = sent.length
+        await sys.server.update({ where: { id: server.id }, data: { status: 'offline' } })
+        await expect(download(owner, row.id)).rejects.toThrow(/bk-host is offline/)
+        await sys.server.update({ where: { id: server.id }, data: { status: 'online' } })
+        expect(sent).toHaveLength(before)
+
+        // A machine that refuses is its own words, and no link is minted.
+        fake.send = async () => ({ error: { message: 'x is not a backup of y on this machine' } }) as any
+        await expect(download(owner, row.id)).rejects.toThrow(/bk-host could not send that archive: x is not a backup/)
+      } finally { (env.app as any).conduit = real }
+    })
+
+    // A pull abandoned after the PUT (or across a restart, which voids its
+    // links) must not keep an archive on the hub's disk.
+    test('a stale pull copy is swept the next time either route runs, and at registration', async () => {
+      const dir = pullDir(env.app as any)
+      mkdirSync(dir, { recursive: true })
+      const stale = join(dir, `${crypto.randomUUID()}.tar.gz`), fresh = join(dir, `${crypto.randomUUID()}.tar.gz`)
+      writeFileSync(stale, 'old'); writeFileSync(fresh, 'new')
+      const old = new Date(Date.now() - 11 * 60_000)
+      utimesSync(stale, old, old)
+      expect(sweepPulls(env.app as any)).toBe(1)
+      expect(existsSync(stale)).toBe(false)
+      expect(existsSync(fresh)).toBe(true)
+
+      writeFileSync(stale, 'old'); utimesSync(stale, old, old)
+      if (!env.app.http.router.isBuilt) await env.http.get('/setup/probe')
+      const u = mintPullUrls(crypto.randomUUID(), 'x.tar.gz')
+      await env.app.http.fetch(new Request(`http://basecamp.test${u.put}`, { method: 'PUT', body: 'x' }))
+      expect(existsSync(stale)).toBe(false)
+      rmSync(fresh, { force: true })
     })
 
     // IDEAS/app-archives.md 3.1: the method grades the caller and signs a

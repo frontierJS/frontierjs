@@ -27,7 +27,7 @@ export function createReporter(config, {
   replicator     = null,
   fetch: doFetch = fetch,
   log            = console,
-  vitals         = createVitals(),
+  vitals         = createVitals({ apps: () => inspector.appContainers() }),
 } = {}) {
 
   /**

@@ -52,6 +52,7 @@ const READINGS = {
   'accounts.dockerGroup': ['getent', 'group', 'docker'],
   'time.sync':           ['timedatectl', 'show'],
   'time.tracking':       ['chronyc', '-c', 'tracking'],
+  'services.unneeded':   ['systemctl', 'is-active', 'multipathd.service', 'multipathd.socket', 'fwupd.service', 'fwupd-refresh.timer'],
   'runtime.outpostUnit': ['systemd-analyze', 'security', 'outpost', '--json=short'],
   // systemd 249 refuses `--json`, and the text form's last line carries the
   // overall score on every version.

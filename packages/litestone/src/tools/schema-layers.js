@@ -10,7 +10,11 @@
 
 import { authModelOf } from './principal.js'
 
-const DISC_PER_ROOT = 66
+// A disc's radius grows as models^0.57 (Flannery's correction), not the root: an
+// eye reads a circle's area short, so with true-area discs and a floor added a
+// 14-model cluster drew barely twice the width of a 2-model one.
+const DISC_SCALE = 65
+const DISC_EXPONENT = 0.57
 const GOLDEN = 2.39996
 
 // Relation fields that carry a key, one edge per target. A self-reference or a
@@ -319,7 +323,7 @@ export function schemaLayers(schema) {
   const ranked = new Map(keys.map(k => [k, byKey.get(k).slice().sort((a, b) =>
     (core.has(b) - core.has(a)) || (hop[a] ?? Infinity) - (hop[b] ?? Infinity) || g.inDeg[b] - g.inDeg[a] || a.localeCompare(b))]))
 
-  const rad = k => DISC_PER_ROOT * Math.sqrt(byKey.get(k).length) + 44
+  const rad = k => DISC_SCALE * byKey.get(k).length ** DISC_EXPONENT
   const hubCount = k => byKey.get(k).filter(n => hubSet.has(n)).length
   const between = new Map()
   for (const [a, b] of g.edges) {

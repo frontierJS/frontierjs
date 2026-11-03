@@ -1342,6 +1342,12 @@ model ApiKey {
 // SERVERS
 // ============================================================
 
+/// The SSH key Secrets a Server may name as the keys it is expected to hold.
+valueset SshKeys {
+  source Secret
+  where  "kind = 'sshKey'"
+}
+
 model Server {
   id               String       @id @default(uuid())
   workspaceId      String
@@ -1383,7 +1389,9 @@ model Server {
   ipv6Address      String?
   sshPort          Int          @default(22)
   sshUser          String       @default("root")
-  sshKeyId         String?
+  // Every public key in this Secret is one the machine may hold; any other key in
+  // its authorized_keys fails `ssh.unknown-key`, and none named grades it unknown.
+  sshKeyId         String?      @values(SshKeys) @label("SSH key")
 
   outpostVersion     String?
   lastHeartbeatAt  DateTime?

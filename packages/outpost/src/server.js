@@ -388,6 +388,9 @@ export function createOutpostServer(config, {
     // An app's data volume, tarred into this machine's backup directory and,
     // given a pre-signed URL, uploaded from there.
     'POST /backup':        (body) => docker.backup({ appId: body.app_id, uploadUrl: body.upload_url }),
+    // One of those archives sent to a URL, for a Download of an archive no
+    // bucket holds; the path must be a backup of this app under backupDir.
+    'POST /backup/send':   (body) => docker.sendBackup({ appId: body.app_id, path: body.path, uploadUrl: body.upload_url }),
     // Every app this machine replicates, each with its own key; the list
     // replaces the last one whole, so an app left out stops replicating.
     'POST /replicate':     (body) => replicator.apply({ replicas: body.replicas, host: body.host }),

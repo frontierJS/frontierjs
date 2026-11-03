@@ -26,7 +26,7 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4192 source file(s) read
+27 package(s) · 4194 source file(s) read
 249 entry point(s), 35 imported by nothing outside their package, 16 emitted
 1702 value export(s), 642 reached by nothing outside, 180 emitted
 459 type export(s), 345 reached by nothing outside

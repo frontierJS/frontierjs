@@ -99,7 +99,7 @@ export async function readStatus({ env = process.env } = {}) {
     take(() => inspector.containers()),
     take(() => ingress.routes()),
     take(() => replicator.status()),
-    take(() => createVitals().read()),
+    take(() => createVitals({ apps: () => inspector.appContainers() }).read()),
     take(() => inspector.disk()),
     take(() => inspector.posture()),
   ])

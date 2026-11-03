@@ -45,6 +45,21 @@ export const OUTPOST_VERSION = '0.1.9'
  *  unit's sandbox and the process cannot name two places (`FJS-D1544`). */
 const box = layout()
 
+/**
+ * Services a fleet machine has no use for, off (`FJS-D1825`): multipathd grabs
+ * block devices a single-disk cloud machine never multipaths, and fwupd wakes on
+ * D-Bus to poll for firmware a VM cannot take. fwupd is a static unit on Ubuntu
+ * 24.04, so disable does nothing and it is masked. A unit the image lacks is
+ * skipped, not an error. The one writer of these lines: the install script runs
+ * it, and so does `fli basecamp:install` for the machine it installs Basecamp
+ * on, which holds no enrollment. The `host.unneeded-services` posture control
+ * grades it.
+ */
+export const UNNEEDED_SERVICES_OFF = [
+  'systemctl disable --now multipathd.service multipathd.socket 2>/dev/null || true',
+  'systemctl mask --now fwupd.service fwupd-refresh.timer 2>/dev/null || true',
+].join('\n')
+
 const onNpm = new Map<string, boolean>()
 
 /**
@@ -52,8 +67,8 @@ const onNpm = new Map<string, boolean>()
  * install runs; null otherwise.
  *
  * A pin moved ahead of the publish: with `0.1.6` tagged and never published,
- * every unit's `bun x` failed its first start and the machine never enrolled,
- * with nothing naming why (`FJS-3534`).
+ * the install's `bun add` failed and the machine never enrolled, with nothing
+ * naming why (`FJS-3534`).
  * Asked here and not at boot, so an npm outage takes no Basecamp down, and a
  * registry it could not ask lets the enrollment through: the machine's own
  * install is then the check.
@@ -495,10 +510,19 @@ UNITEOF
 systemctl daemon-reload
 systemctl enable --now basecamp-litestream.service
 
+# posture: host.unneeded-services
+${UNNEEDED_SERVICES_OFF}
+
 # Bun, which the Outpost is written for, at the version Basecamp holds.
 curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}"
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
+
+# The Outpost, installed once where the unit finds it (FJS-D1826). Idempotent: a
+# re-run with a new pin is the upgrade. Before the unit exists, so the first
+# start never races an install.
+install -d -m 0755 ${box.program}
+(cd ${box.program} && bun add --exact @frontierjs/outpost@${OUTPOST_VERSION})
 
 # The command port's certificate. Made before the exchange because it rides in
 # it: Basecamp pins this one, and a command reaches no port holding any other.
@@ -561,7 +585,7 @@ ENVEOF
 chmod 0600 ${box.envFile}
 
 # The sandbox bounds what a flaw in any route can write to the Outpost's own
-# directories (its apps and static origin, the cert, bun's cache) and keeps it
+# directories (its apps and static origin, the cert) and keeps it
 # from gaining privilege. It is root still, because Docker access is
 # root-equivalent and a non-root User= would buy nothing. The /exec route leaves
 # the unit through systemd-run (FJS-D602), so a recipe is not confined by it.
@@ -572,8 +596,12 @@ chmod 0600 ${box.envFile}
 # StateDirectory and ConfigurationDirectory make their directories before the
 # namespace is built: a ReadWritePaths entry that does not exist yet fails the
 # start on a fresh box. systemd keeps the mode of one the install already made.
-# ExecStart is bun x, never bunx: bun's installer writes the bun binary alone,
-# and a unit naming a file that is not there exits 203/EXEC on every restart.
+# ExecStart runs the installed bin by path (FJS-D1826): under bun x the unit's
+# PrivateTmp threw the unpack away on every restart and each start asked npm
+# again. It names bun and the file, never bunx: bun's installer writes the bun
+# binary alone, and a unit naming a file that is not there exits 203/EXEC on
+# every restart. Nothing the unit does writes under bun's directory, so it is
+# not in ReadWritePaths.
 # posture: outpost.sandbox
 cat > /etc/systemd/system/outpost.service <<UNITEOF
 [Unit]
@@ -583,14 +611,14 @@ Wants=network-online.target
 
 [Service]
 EnvironmentFile=${box.envFile}
-ExecStart=$BUN_INSTALL/bin/bun x --bun @frontierjs/outpost@${OUTPOST_VERSION}
+ExecStart=$BUN_INSTALL/bin/bun ${box.program}/node_modules/.bin/outpost
 Restart=always
 RestartSec=5
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=yes
-ReadWritePaths=${box.state} ${box.config} $BUN_INSTALL -$HOME/.docker
+ReadWritePaths=${box.state} ${box.config} -$HOME/.docker
 StateDirectory=outpost
 ConfigurationDirectory=outpost
 ConfigurationDirectoryMode=0700
@@ -626,6 +654,7 @@ install -d -m 0755 ${box.links}
 ln -sfn ${box.config} ${box.links}/config
 ln -sfn ${box.state} ${box.links}/data
 ln -sfn ${box.logs} ${box.links}/logs
+ln -sfn ${box.program} ${box.links}/program
 
 # restart, not enable --now: on a box re-enrolling with its Outpost running,
 # --now is a no-op and the old process keeps the old version and the key
@@ -647,7 +676,8 @@ systemctl restart outpost.service
  * placed keep running. `--purge` takes the rest: those apps and their volumes,
  * `/var/lib/outpost` with its backups, Docker, Caddy with every route and
  * certificate, the Docker and Caddy apt sources, the Litestream binary and the
- * Outpost's bun.
+ * Outpost's bun. The Outpost's program directory (`FJS-D1826`) goes with the
+ * bare uninstall, as it is only the Outpost's code.
  *
  * What would be worse undone stays, and the script ends by naming it: the sshd
  * drop-in (gone, cloud-init's password login comes back), chrony (gone, the
@@ -700,7 +730,7 @@ systemctl disable --now basecamp-firewall.service 2>/dev/null || true
 nft delete table inet basecamp 2>/dev/null || true
 rm -f $UNIT /etc/systemd/system/basecamp-litestream.service /etc/systemd/system/basecamp-firewall.service
 rm -rf /etc/systemd/system/basecamp-litestream.service.d
-rm -rf ${box.config} ${box.links}
+rm -rf ${box.config} ${box.links} ${box.program}
 systemctl daemon-reload
 echo "Outpost removed: its unit, its credential, its firewall and its Litestream, so no app here replicates."
 
