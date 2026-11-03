@@ -8502,7 +8502,7 @@ const Layers = (() => {
         <div class="ly-sect"><p class="ly-eyebrow">${D.groups.length} groups</p></div>
         <ul class="ly-glist">${D.groups.map(gr => `<li><button type="button" data-group="${esc(gr.key)}">
           <span class="ly-sw" style="background:${color(gr.key)}"></span>
-          <span class="ly-gname">${esc(gr.label)}</span><span class="ly-gcount" title="Models · knots">${gr.members.length}${gr.key === 'unlinked' ? '' : ' · ' + knots(gr.key)}</span></button></li>`).join('')}</ul>
+          <span class="ly-gname">${esc(gr.label)}</span><span class="ly-gcount" title="Models · knots">${gr.members.length}${knotLine(gr.key) ? ' · ' + knots(gr.key) : ''}</span></button></li>`).join('')}</ul>
         <div class="ly-sect"><p><b>${inside} of ${D.edges.length}</b> foreign keys stay inside a group; ${D.edges.length - inside} cross between groups.</p></div>`
     }
   }
@@ -8595,7 +8595,7 @@ const Layers = (() => {
     }, { rows: 0, bytes: 0 })
     draw(); renderPanel()
   }
-  $('lyKnots').onchange = e => { state.showKnots = e.target.checked; draw() }
+  $('lyKnots').onchange = e => { state.showKnots = e.target.checked; draw(); renderPanel() }
   $('lySize').onchange = e => { state.size = e.target.checked; if (state.size && D) loadSizes(); else { draw(); renderPanel() } }
   $('lyReset').onclick = () => { cam.yaw = -0.55; cam.pitch = 0.36; cam.zoom = 1.1; spinning = !REDUCED; draw() }
   new ResizeObserver(() => { if (active) { sizeCanvas(); draw() } }).observe($('lyStage'))
