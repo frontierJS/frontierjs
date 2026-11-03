@@ -1,3 +1,4 @@
+// @ts-check
 // wide-int.js — what a 64-bit source integer becomes, and which ones are worth
 // saying out loud.
 //
@@ -50,7 +51,7 @@ export const BIGINT_EMITTED =
 // An unconstrained `*_id` that names a table present in the same source. Used
 // only by the readers whose sources may declare no foreign keys at all; a
 // Prisma schema always declares its relations and never asks.
-export function namesATable(column, tableExists, singularize) {
+export function namesATable(/** @type {string} */ column, /** @type {(name: string) => boolean} */ tableExists, /** @type {(name: string) => string} */ singularize) {
   const m = /^(.+)_id$/.exec(column)
   if (!m) return false
   const base = m[1]

@@ -1,3 +1,4 @@
+// @ts-check
 // watch.js — puts the schema files into a watching runtime's module graph.
 //
 // createClient reads a schema with `fs`, and `bun --watch` / `--hot` restart on

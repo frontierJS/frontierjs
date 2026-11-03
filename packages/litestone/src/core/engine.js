@@ -1,3 +1,4 @@
+// @ts-check
 // core/engine.js — what a SQL engine is, stated once.
 //
 // Nine files under `src/` opened a database, and each one of them imported
@@ -130,7 +131,7 @@ import { applyWal }   from './pragmas.js'
 // The registered engine. There is one, because a client holding connections
 // from two engines would be one transaction manager over two implementations
 // of what a transaction is.
-let current = null
+let current = /** @type {any} */ (null)
 
 const REQUIRED = ['open']
 
@@ -138,7 +139,7 @@ const REQUIRED = ['open']
 
 // An engine is `{ name, sync, open }`. `name` is what a refusal quotes, so it
 // is required — an engine that will not say what it is cannot be reported.
-export function setEngine(engine) {
+export function setEngine(/** @type {any} */ engine) {
   if (!engine || typeof engine !== 'object')
     throw new Error('setEngine: expected an engine object — { name, sync, open }')
   if (typeof engine.name !== 'string' || !engine.name)
@@ -197,7 +198,7 @@ export function clearEngine() {
 
 if (defaultEngine) setEngine(defaultEngine)
 
-export function openDatabase(path, options = {}) {
+export function openDatabase(/** @type {string} */ path, options = {}) {
   if (!current)
     throw new Error(
       'no SQL engine is registered.\n' +
@@ -209,7 +210,7 @@ export function openDatabase(path, options = {}) {
 // A file more than one process writes. The wait-then-WAL order and the retry
 // on a fresh file are `applyWal`'s, so a handle opened outside the client gets
 // the rule the client's own connections get (`FJS-655`, `FJS-729`, `FJS-D646`).
-export function openWalDatabase(path, { busyTimeout, ...options } = {}) {
+export function openWalDatabase(/** @type {string} */ path, /** @type {{ busyTimeout?: number, [k: string]: any }} */ { busyTimeout, ...options } = {}) {
   const db = openDatabase(path, options)
   applyWal(db, busyTimeout)
   return db

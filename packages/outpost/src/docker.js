@@ -1435,6 +1435,10 @@ const POSTURE = {
   cert:            ['openssl', 'x509', '-enddate', '-noout', '-in', BOX.tlsCert],
 }
 const STAT = ['stat', '-c', '%a %U %G %n']
+/** The units the install puts on a box, in the order `outpost status` prints
+ *  them. `docker.service` is the package's own, named because every app stops
+ *  with it. */
+const UNITS = ['outpost.service', 'caddy-api.service', 'basecamp-litestream.service', 'basecamp-firewall.service', 'docker.service']
 // systemd 249 refuses `--json`, and the text form's last line carries the
 // overall score on every version. Asked only when the JSON gave none.
 const UNIT_TEXT = ['systemd-analyze', 'security', '--no-pager', 'outpost']
@@ -1813,6 +1817,33 @@ export function createInspector({ run = spawnRun, hostFiles = null, appsDir = la
           reclaimable_bytes: bytes(String(cache.Reclaimable ?? '').split(' ')[0]),
         },
       }
+    },
+
+    /** Each of `UNITS` as systemd states it. A unit the box lacks reads
+     *  `load: 'not-found'`, which is what an install that stopped partway
+     *  leaves; a `systemctl` that failed is `null`, unknown. */
+    async units() {
+      const { exitCode, stdout } = await run(['systemctl', 'show', '--property=Id,LoadState,ActiveState,SubState,ActiveEnterTimestamp', ...UNITS])
+      if (exitCode !== 0) return null
+      return String(stdout ?? '').trim().split(/\n\s*\n/).map(block => {
+        const v = Object.fromEntries(lines(block).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]))
+        return { unit: v.Id ?? null, load: v.LoadState ?? null, active: v.ActiveState ?? null, sub: v.SubState ?? null, since: /^\w{3} \d/.test(v.ActiveEnterTimestamp ?? '') ? v.ActiveEnterTimestamp : null }
+      })
+    },
+
+    /** Every container an App has here, stopped ones too: a `_replaced` beside
+     *  a live one is a swap's set-aside, and one alone is an unfinished swap's
+     *  last good release (`FJS-1765`). By the `fjs.app` label, never the name. */
+    async containers() {
+      const { exitCode, stdout } = await run(['docker', 'ps', '-a', '--filter', `label=${APP_LABEL}`, '--format', 'json'])
+      if (exitCode !== 0) return null
+      return lines(stdout).map(line => JSON.parse(line)).map(c => ({
+        name:   c.Names ?? null,
+        app_id: String(c.Labels ?? '').split(',').find(l => l.startsWith(`${APP_LABEL}=`))?.slice(APP_LABEL.length + 1) ?? null,
+        image:  c.Image ?? null,
+        state:  c.State ?? null,
+        status: c.Status ?? null,
+      }))
     },
 
     /** A reclaim sweep. Answers what it FREED and what it removed, and

@@ -1,3 +1,4 @@
+// @ts-check
 // engines/bun-sqlite.js — the server engine, and the only file in this package
 // that names `bun:sqlite`.
 //
@@ -36,7 +37,7 @@ import { createRequire } from 'node:module'
 
 // `undefined` until the first open asks; `null` once asked and not found, so a
 // missing package is looked for once rather than on every connection.
-let vec
+let vec = /** @type {any} */ (undefined)
 
 function findVec() {
   if (vec !== undefined) return vec
@@ -85,7 +86,7 @@ export default {
       // Idempotent and cheap on repeat, because the caller cannot reasonably
       // track which connection it is on — `wrapDb` hands out a statement cache,
       // not a database.
-      arm(db) {
+      arm(/** @type {any} */ db) {
         if (armed.has(db)) return
         db.loadExtension(findVec().entry)
         armed.add(db)
@@ -93,7 +94,7 @@ export default {
     }
   },
 
-  open(path, { readonly = false } = {}) {
+  open(/** @type {string} */ path, { readonly = false } = {}) {
     return readonly ? new Database(path, { readonly: true }) : new Database(path)
   },
 }

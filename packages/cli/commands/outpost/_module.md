@@ -4,7 +4,7 @@ description: The Outpost — the process a fleet machine runs for its Basecamp
 ---
 
 <script>
-const { basecamp, installOutpost } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
+const { basecamp, installOutpost, readOutpost } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 const { boxAddress, markServer }   = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
 const { createMachine }            = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
 </script>
@@ -20,3 +20,6 @@ A box an app already runs on, whose deploy block says `outpost: true`, enrolls
 itself at the end of `fli deploy` instead (`FJS-D1191`), and `fli
 deploy:outpost` is that step alone: the install is the same, reached from inside
 the serving container rather than through an API key.
+
+`fli outpost:status` reads an enrolled box back over ssh, from its own
+Outpost: no key and no Basecamp needed.

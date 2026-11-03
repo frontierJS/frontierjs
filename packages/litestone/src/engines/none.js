@@ -1,3 +1,4 @@
+// @ts-check
 // engines/none.js — what `#sql-engine` resolves to where `bun:sqlite` does not
 // exist, so that a bundler building litestone for a browser never follows an
 // import into a runtime builtin it would fail on.

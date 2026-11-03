@@ -1,3 +1,4 @@
+// @ts-check
 // untrusted.js — a schema the app did not write, held to one file (FJS-1633).
 //
 // `createClient({ schema: text, db, untrusted: true })` is for schema text that
@@ -39,10 +40,10 @@ const TOP_LEVEL_REFUSED = {
 }
 
 /** Every reason this schema may not be built from untrusted text, or []. */
-export function untrustedSchemaOffenses(schema) {
+export function untrustedSchemaOffenses(/** @type {any} */ schema) {
   const out = []
-  const refuse = (key, name) => {
-    const [word, why] = TOP_LEVEL_REFUSED[key]
+  const refuse = (/** @type {string} */ key, /** @type {string} */ name) => {
+    const [word, why] = /** @type {Record<string, string[]>} */ (TOP_LEVEL_REFUSED)[key]
     out.push(`\`${word}${name ? ` ${name}` : ''}\` ${why}`)
   }
   for (const i of schema.imports ?? [])   refuse('imports', JSON.stringify(i.path))
@@ -53,11 +54,11 @@ export function untrustedSchemaOffenses(schema) {
   if (schema.tenancy) refuse('tenancy', '')
   for (const m of [...(schema.models ?? []), ...(schema.views ?? [])]) {
     for (const a of m.attributes ?? []) {
-      if (a.kind in MODEL_ATTRS_REFUSED) out.push(`${m.name}: \`@@${a.kind}\` ${MODEL_ATTRS_REFUSED[a.kind]}`)
+      if (a.kind in MODEL_ATTRS_REFUSED) out.push(`${m.name}: \`@@${a.kind}\` ${/** @type {Record<string, string>} */ (MODEL_ATTRS_REFUSED)[a.kind]}`)
     }
     if (m.db && m.db !== 'main') out.push(`${m.name}: \`@@db(${m.db})\` ${MODEL_ATTRS_REFUSED.db}`)
     for (const f of m.fields ?? []) {
-      const kinds = new Set((f.attributes ?? []).map(a => a.kind))
+      const kinds = new Set((f.attributes ?? []).map((/** @type {any} */ a) => a.kind))
       if (kinds.has('secret'))
         out.push(`${m.name}.${f.name}: \`@secret\` logs to a trail database, which a row cannot declare — spell it \`@encrypted @guarded\``)
       else if (kinds.has('trail'))
@@ -67,7 +68,7 @@ export function untrustedSchemaOffenses(schema) {
   return out
 }
 
-export function refuseUntrustedSchema(schema) {
+export function refuseUntrustedSchema(/** @type {any} */ schema) {
   const offenses = untrustedSchemaOffenses(schema)
   if (offenses.length)
     throw new Error(

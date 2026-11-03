@@ -2,7 +2,8 @@
 // owner, and the one enrollment command a box runs to join its fleet.
 // `basecamp:app`, `basecamp:deploy`, `outpost:install` and `deploy`'s
 // `08b-outpost` step share these, so a box cannot be enrolled two ways; an
-// app's archive is fetched here for `basecamp:backup` and the `db:` verbs.
+// enrolled box's Outpost is read here for `outpost:status`, and an app's
+// archive is fetched for `basecamp:backup` and the `db:` verbs.
 
 import { spawnSync }                from 'node:child_process'
 import { mkdirSync, rmSync }        from 'node:fs'
@@ -69,7 +70,61 @@ export function installOutpost(machine, command, { host, log }) {
   }
 }
 
-// ─── An app's archive, fetched ────────────────────────────────────────────────
+// ─── A box's Outpost, read over ssh ──────────────────────────────────────────
+//
+// `outpost status` on the box, through the unit's own ExecStart, so the
+// version that answers is the one serving. Under `env -i` because an Outpost
+// that predates the entry ignores the word and starts serving, and with no
+// OUTPOST_* in its environment it refuses at its config instead, so an old
+// box answers `{ old }` and never a second Outpost.
+
+const OUTPOST_UNIT  = '/etc/systemd/system/outpost.service'
+const OUTPOST_UNITS = 'outpost.service caddy-api.service basecamp-litestream.service basecamp-firewall.service docker.service'
+const CLEAN_ENV     = 'env -i HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+
+const STATUS_SCRIPT = `${SUDO}
+[ -f ${OUTPOST_UNIT} ] || { echo "no outpost.service on this box" >&2; exit 3; }
+CMD=$(sed -n 's/^ExecStart=//p' ${OUTPOST_UNIT})
+sudo ${CLEAN_ENV} timeout 120 $CMD status`
+
+// What an old Outpost's box still says without it: the pinned version, the
+// units and the unsigned /health. The port is the env file's, at either path
+// an install has written.
+const FALLBACK_SCRIPT = `${SUDO}
+echo "pinned $(sed -n 's/.*@frontierjs\\/outpost@\\([^ ]*\\).*/\\1/p' ${OUTPOST_UNIT})"
+for u in ${OUTPOST_UNITS}; do echo "unit $u $(systemctl is-active $u 2>/dev/null)"; done
+PORT=$(sudo cat /etc/outpost/outpost.env /etc/basecamp/outpost.env 2>/dev/null | sed -n 's/^OUTPOST_PORT=//p' | head -1)
+echo "health $(curl -sk --max-time 5 https://127.0.0.1:\${PORT:-8180}/health)"`
+
+/** Answers `{ status }`, the box's own reading; `{ old, said }` for an
+ *  Outpost without `status`; or `{ error }` where there is no Outpost. */
+export function readOutpost(machine) {
+  let out
+  try { out = machine.capture(STATUS_SCRIPT) } catch (err) {
+    // An old Outpost's refusal is bun's stack trace with its own sentence inside.
+    const lines = String(err.stderr ?? '').trim().split('\n').filter(Boolean)
+    const said  = lines.find(l => /\boutpost: /.test(l))?.replace(/^error: /, '') ?? lines.at(-1) ?? ''
+    if (err.status === 3) return { error: said }
+    return { old: fallbackOf(machine), said: /must be set/.test(said) ? null : said }
+  }
+  let status = null
+  try { status = JSON.parse(out) } catch {}
+  return status?.shape === 1 ? { status } : { old: fallbackOf(machine), said: `outpost status printed no reading this fli knows (shape ${status?.shape ?? 'none'})` }
+}
+
+function fallbackOf(machine) {
+  const lines = machine.capture(FALLBACK_SCRIPT).split('\n')
+  const value = (key) => lines.filter(l => l.startsWith(`${key} `)).map(l => l.slice(key.length + 1))
+  let health = null
+  try { health = JSON.parse(value('health')[0] ?? '') } catch {}
+  return {
+    pinned: value('pinned')[0] || null,
+    units:  value('unit').map(l => { const [unit, active = ''] = l.split(' '); return { unit, active: active || 'unknown' } }),
+    health,
+  }
+}
+
+// ─── An app's archive, fetched────────────────────────────────────────────────
 // `basecamp:backup`, `db:download` and `db:import` fetch through this one
 // (`FJS-D1717`). Only an archive in a bucket has a URL: no bytes cross the
 // command port (`FJS-D1485`), so one kept on its machine is refused, never

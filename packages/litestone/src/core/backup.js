@@ -1,3 +1,4 @@
+// @ts-check
 // backup.js — how a live SQLite file is copied, and the only place that answers it.
 //
 // Two callers hold different handles: the client's `$backup`, which copies a
@@ -14,6 +15,7 @@ import { openDatabase } from './engine.js'
 // size the copy takes the streaming arm, which also compacts.
 const MAX_SERIALIZE_BYTES = 256 * 1024 * 1024
 
+/** @param {any} rawDb */
 function databaseBytes(rawDb) {
   const pages = rawDb.prepare('PRAGMA page_count').get().page_count
   const pageSize = rawDb.prepare('PRAGMA page_size').get().page_size
@@ -33,6 +35,11 @@ const TAKEN_AT_KEY = 'backup.takenAt'
 // back from it has rewound every row written since — an outbox row's delivered
 // mark among them — and the stamp is how a reader of the restored file learns
 // which of its rows the world may have moved past.
+/**
+ * @param {any} rawDb
+ * @param {string} destPath
+ * @param {{ vacuum?: boolean, maxSerializeBytes?: number }} [options]
+ */
 export async function backupSqliteTo(rawDb, destPath, { vacuum = false, maxSerializeBytes = MAX_SERIALIZE_BYTES } = {}) {
   const takenAt = new Date().toISOString()
   if (!vacuum && typeof rawDb.serialize === 'function' && databaseBytes(rawDb) <= maxSerializeBytes) {
@@ -49,14 +56,14 @@ export async function backupSqliteTo(rawDb, destPath, { vacuum = false, maxSeria
 }
 
 /** `{ takenAt }` when this database came out of a backup, otherwise null. */
-export function readBackupStamp(rawDb) {
+export function readBackupStamp(/** @type {any} */ rawDb) {
   try {
     const takenAt = rawDb.query(`SELECT value FROM "_litestone_meta" WHERE key = ?`).get(TAKEN_AT_KEY)?.value
     return takenAt ? { takenAt } : null
   } catch { return null }   // no meta table: never written by a backup
 }
 
-export function writeBackupStamp(rawDb, takenAt) {
+export function writeBackupStamp(/** @type {any} */ rawDb, /** @type {string} */ takenAt) {
   rawDb.run(`CREATE TABLE IF NOT EXISTS "_litestone_meta" (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
   rawDb.run(
     `INSERT INTO "_litestone_meta" (key, value) VALUES (?, ?)
@@ -65,7 +72,7 @@ export function writeBackupStamp(rawDb, takenAt) {
   )
 }
 
-export function clearBackupStamp(rawDb) {
+export function clearBackupStamp(/** @type {any} */ rawDb) {
   try { rawDb.run(`DELETE FROM "_litestone_meta" WHERE key = ?`, TAKEN_AT_KEY) }
   catch { /* no meta table: nothing stamped */ }
 }

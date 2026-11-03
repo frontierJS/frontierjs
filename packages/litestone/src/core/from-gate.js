@@ -1,3 +1,4 @@
+// @ts-check
 // from-gate.js — which @from fields a caller may not see (FJS-1646).
 //
 // Its own module, with no driver beneath it, because plugins/gate.js imports it
@@ -24,7 +25,7 @@ import { levelPasses } from '@frontierjs/toolbelt/gate'
 // Synchronous on purpose: the level is cached per model per request and a
 // getLevel may not return a promise (makeLevelCache), so this is a map lookup.
 // Answers the names to hide, or null when there are none.
-export function gatedFromFields(fromFields, ctx) {
+export function gatedFromFields(/** @type {any} */ fromFields, /** @type {any} */ ctx) {
   if (!fromFields || !ctx?.gateFor || !ctx.levelFor || ctx.isSystem) return null
   let out = null
   for (const [name, f] of Object.entries(fromFields)) {

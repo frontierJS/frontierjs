@@ -1,3 +1,4 @@
+// @ts-check
 // schema-gaps.js — does the database a client opened hold the tables its schema declares?
 //
 // Nothing at start compares the two, and a migration is a file (`FJS-D123`), so
@@ -25,13 +26,13 @@ const META_KEYS = new Set(['__views', '__triggers', '__fts', '__search', '__sql'
  */
 export function schemaGaps(parseResult, dbRegistry, { pluralize = false } = {}) {
   const sqliteNames = parseResult.schema.databases
-    .filter(d => !d.driver || d.driver === 'sqlite')
-    .map(d => d.name)
+    .filter((/** @type {any} */ d) => !d.driver || d.driver === 'sqlite')
+    .map((/** @type {any} */ d) => d.name)
   const names = sqliteNames.length ? sqliteNames : ['main']
   if (!names.includes('main') && dbRegistry.main) names.push('main')
 
-  const modelOf = new Map(parseResult.schema.models.map(m => [modelToTableName(m, pluralize), m.name]))
-  const gaps = []
+  const modelOf = new Map(parseResult.schema.models.map((/** @type {any} */ m) => [modelToTableName(m, pluralize), m.name]))
+  const gaps = /** @type {any[]} */ ([])
 
   for (const name of names) {
     const conn   = dbRegistry[name]
@@ -40,17 +41,17 @@ export function schemaGaps(parseResult, dbRegistry, { pluralize = false } = {}) 
 
     const pristineDb = openDatabase(':memory:')
     try {
-      const pristine = sqliteNames.length > 1
+      const pristine = /** @type {Record<string, any>} */ (sqliteNames.length > 1
         ? buildPristineForDatabase(pristineDb, parseResult, name)
-        : buildPristine(pristineDb, parseResult)
-      const live = introspect(handle)
+        : buildPristine(pristineDb, parseResult))
+      const live = /** @type {Record<string, any>} */ (introspect(handle))
 
       for (const table of Object.keys(pristine)) {
         if (META_KEYS.has(table)) continue
         const model = modelOf.get(table) ?? table
         if (!live[table]) { gaps.push({ db: name, model, table, missing: 'table' }); continue }
-        const have    = new Set(live[table].columns.map(c => c.name))
-        const missing = pristine[table].columns.map(c => c.name).filter(c => !have.has(c))
+        const have    = new Set(live[table].columns.map((/** @type {any} */ c) => c.name))
+        const missing = pristine[table].columns.map((/** @type {any} */ c) => c.name).filter((/** @type {string} */ c) => !have.has(c))
         if (missing.length) gaps.push({ db: name, model, table, missing })
       }
     } finally {

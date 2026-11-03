@@ -1,3 +1,4 @@
+// @ts-check
 // src/tmp-dirs.js — temp directories a test run can never remove itself.
 //
 // A harness that makes a database in os.tmpdir() has no moment at which it can
@@ -38,7 +39,7 @@ const swept = new Set()
 /** Remove leftovers of previous runs. `prefixes` is a string or an array of
  *  them; a name must START with one, so `ls-onlog-` does not reach `ls-onlog-
  *  plain-`'s siblings unless you ask for the shorter prefix. */
-export function reapTempDirs(prefixes, { olderThanMs = REAP_AFTER_MS, root = tmpdir(), force = false } = {}) {
+export function reapTempDirs(/** @type {string | string[]} */ prefixes, { olderThanMs = REAP_AFTER_MS, root = tmpdir(), force = false } = {}) {
   const list = (Array.isArray(prefixes) ? prefixes : [prefixes]).filter(p => {
     if (!force && swept.has(p)) return false
     swept.add(p)
@@ -66,7 +67,7 @@ export function reapTempDirs(prefixes, { olderThanMs = REAP_AFTER_MS, root = tmp
 /** A fresh temp directory, with the previous runs' already swept. The prefix is
  *  what the sweep matches on, so it must identify the harness and nothing
  *  else — a bare `test-` would reap a stranger's directory. */
-export function tempDir(prefix, opts) {
+export function tempDir(/** @type {string} */ prefix, /** @type {any} */ opts) {
   if (!prefix || prefix.length < 4)
     throw new Error(`tempDir: refusing the prefix ${JSON.stringify(prefix)} — it must identify one harness`)
   reapTempDirs(prefix, opts)

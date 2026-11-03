@@ -1,3 +1,4 @@
+// @ts-check
 // core/db-path.js — where a relative `database { path }` lands, and what is
 // said when landing there mints something.
 //
@@ -23,7 +24,7 @@ import { existsSync, statSync, dirname, basename, resolve, fileURLToPath } from 
 // own directory, or its parent when that directory is named `db`. A schema kept
 // anywhere else anchors to its own directory, which is what a flat single-file
 // example wants and is what it already got from the CWD.
-export function schemaAnchor(schemaFilePath) {
+export function schemaAnchor(/** @type {string | undefined | null} */ schemaFilePath) {
   if (!schemaFilePath) return null
   const dir = dirname(resolve(schemaFilePath))
   return basename(dir) === 'db' ? dirname(dir) : dir
@@ -34,7 +35,7 @@ export function schemaAnchor(schemaFilePath) {
 // one they became a directory literally named `file:` beside the schema
 // (`FJS-3802`). Plain string work, since the browser host has no
 // `fileURLToPath`; a `?query` or `#fragment` is the URL's, not the file's.
-export function dbFilePath(stated) {
+export function dbFilePath(/** @type {any} */ stated) {
   if (typeof stated !== 'string' || !stated.startsWith('file:')) return stated
   let rest = stated.slice('file:'.length).replace(/[?#].*$/, '')
   if (rest.startsWith('//')) rest = rest.slice(2).replace(/^localhost(?=\/)/, '')
@@ -69,7 +70,7 @@ export function dbFilePath(stated) {
  * A stated anchor that is not a directory throws. It is a statement, and a
  * statement that quietly reverts to the CWD is the failure this exists to end.
  */
-export function resolveAnchor(resolveFrom, schemaFilePath) {
+export function resolveAnchor(/** @type {any} */ resolveFrom, /** @type {string | undefined | null} */ schemaFilePath) {
   if (!resolveFrom || resolveFrom === 'cwd') return null
   if (resolveFrom === 'schema') return schemaAnchor(schemaFilePath)
 
@@ -95,12 +96,12 @@ export function resolveAnchor(resolveFrom, schemaFilePath) {
 }
 
 // A URL ending in `/` names the directory; anything else names a file in it.
-function urlDir(url) {
+function urlDir(/** @type {URL} */ url) {
   const p = fileURLToPath(url)
   return url.pathname.endsWith('/') ? p : dirname(p)
 }
 
-function isDir(p) {
+function isDir(/** @type {string} */ p) {
   try { return existsSync(p) && statSync(p).isDirectory() } catch { return false }
 }
 
@@ -119,7 +120,7 @@ function isDir(p) {
  * went wrong: `db/shop.db` from the app root and from a surface root print the
  * same relative string and name different files.
  */
-export function noteMintedDirectory(dir, absPath) {
+export function noteMintedDirectory(/** @type {string} */ dir, /** @type {string} */ absPath) {
   const cwd = typeof process === 'undefined' ? '(none)' : process.cwd()
   console.warn(
     `[litestone] Created ${dir} for a database that was not there.\n` +

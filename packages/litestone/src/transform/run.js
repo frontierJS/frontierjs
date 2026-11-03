@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+// @ts-check
 import { main }    from './runner.js'
 import { preview } from './framework.js'
 

@@ -1,3 +1,4 @@
+// @ts-check
 // tiers.js — how faithful was the reading, graded.
 //
 // Every converter in this package produces a `.lite` file that is NOT the whole
@@ -143,11 +144,11 @@ const TIER = Object.fromEntries([
 ])
 
 export const TIERS = ['changed', 'lost', 'noted']
-export const tierOf   = (kind) => TIER[kind] ?? 'changed'
+export const tierOf   = (/** @type {string} */ kind) => /** @type {Record<string, string>} */ (TIER)[kind] ?? 'changed'
 export const gradedKinds = () => Object.keys(TIER)
 
-export function summarize(gaps) {
-  const counts = { changed: 0, lost: 0, noted: 0 }
+export function summarize(/** @type {any[]} */ gaps) {
+  const counts = /** @type {Record<string, number>} */ ({ changed: 0, lost: 0, noted: 0 })
   const byKind = new Map()
   for (const g of gaps) {
     const tier = tierOf(g.kind)

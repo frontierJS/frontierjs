@@ -8,7 +8,9 @@
  * a network.
  *
  * It refuses to start without a server id, its keys and a control-plane URL —
- * see `config.js` for why each of the three has no safe default.
+ * see `config.js` for why each of the three has no safe default. `outpost
+ * status` is the other entry: one reading of the box, printed, and no server
+ * (`status.js`).
  */
 
 import { readConfig }            from './config.js'
@@ -17,8 +19,6 @@ import { createReporter }        from './report.js'
 import { createDocker, createInspector } from './docker.js'
 import { createStaticServer }         from './serve.js'
 import { createReplicator }           from './replicate.js'
-
-const config    = readConfig()
 
 function serveMachine(config) {
   const docker    = createDocker({ workDir: config.workDir, appsDir: config.appsDir, restoreDir: config.restoreDir, backupDir: config.backupDir, uidFile: config.uidFile, deployKeyDir: config.deployKeyDir })
@@ -80,4 +80,9 @@ function serveMachine(config) {
   }
 }
 
-serveMachine(config)
+if (process.argv[2] === 'status') {
+  const { readStatus } = await import('./status.js')
+  console.log(JSON.stringify(await readStatus(), null, 2))
+} else {
+  serveMachine(readConfig())
+}

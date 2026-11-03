@@ -1,3 +1,4 @@
+// @ts-check
 // polymorphic.js — find the (typeName, id) pairs in converted output, and
 // refuse to guess what they mean.
 //
@@ -36,13 +37,13 @@
 
 const TYPE_SUFFIX = /^(.*?)(Type|Kind|Class)$/
 
-export function detectPolymorphic(lite, gap) {
+export function detectPolymorphic(/** @type {string} */ lite, /** @type {(...args: any[]) => void} */ gap) {
   return scan(lite, gap)
 }
 
-function scan(lite, gap) {
-  const models = new Map()
-  let cur = null
+function scan(/** @type {string} */ lite, /** @type {(...args: any[]) => void} */ gap) {
+  const models = /** @type {Map<string, any>} */ (new Map())
+  let cur = /** @type {any} */ (null)
 
   for (const line of lite.split('\n')) {
     const open = line.match(/^model (\w+) \{/)
@@ -65,13 +66,13 @@ function scan(lite, gap) {
     // is no spelling — the column stays an ordinary String and the fact that it
     // partitions the table is lost. Detected here rather than in one reader so
     // every front-end sees it; a dump carries no hint that its source was Rails.
-    const sti = model.fields.find(f => f.name === 'type' && f.type === 'String' && !f.rest.includes('@relation'))
+    const sti = model.fields.find((/** @type {any} */ f) => f.name === 'type' && f.type === 'String' && !f.rest.includes('@relation'))
     if (sti)
       gap('sti-candidate', model.name, 'type',
           'a string `type` column — the Rails STI shape, one table holding several classes — CANDIDATE, a plain category column looks identical',
           'emitted as an ordinary String; where it IS inheritance, .lite has no way to say the table is partitioned by it')
 
-    const byName = new Map(model.fields.map(f => [f.name, f]))
+    const byName = new Map(model.fields.map((/** @type {any} */ f) => [f.name, f]))
     for (const f of model.fields) {
       const m = f.name.match(TYPE_SUFFIX)
       if (!m || f.type !== 'String') continue

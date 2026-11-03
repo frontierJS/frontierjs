@@ -1,3 +1,4 @@
+// @ts-check
 // personal.js — what the schema says about people (FJS-D657)
 //
 // `@personal(category?)` marks a column about a person and `@@person(child?)` a
@@ -36,13 +37,13 @@ export const PERSONAL_CATEGORIES = Object.freeze({
 // ─── Person models ────────────────────────────────────────────────────────────
 
 /** Whether a model's rows are people. An `@@auth` model is one by derivation. */
-export function isPersonModel(model) {
-  return (model?.attributes ?? []).some(a => a.kind === 'person' || a.kind === 'auth')
+export function isPersonModel(/** @type {any} */ model) {
+  return (model?.attributes ?? []).some((/** @type {any} */ a) => a.kind === 'person' || a.kind === 'auth')
 }
 
 /** Whether a person model's rows are children in the legal sense. */
-export function isChildModel(model) {
-  return (model?.attributes ?? []).some(a => a.kind === 'person' && a.child)
+export function isChildModel(/** @type {any} */ model) {
+  return (model?.attributes ?? []).some((/** @type {any} */ a) => a.kind === 'person' && a.child)
 }
 
 // ─── Names that look personal ─────────────────────────────────────────────────
@@ -71,6 +72,6 @@ export const PERSONAL_NAMES = Object.freeze({
 })
 
 /** The category a column's name suggests, or null. */
-export function personalNameCategory(fieldName) {
-  return PERSONAL_NAMES[String(fieldName).toLowerCase()] ?? null
+export function personalNameCategory(/** @type {any} */ fieldName) {
+  return /** @type {Record<string, string>} */ (PERSONAL_NAMES)[String(fieldName).toLowerCase()] ?? null
 }

@@ -1,3 +1,4 @@
+// @ts-check
 // host/node.js — what Litestone needs from the runtime that is NOT SQL.
 //
 // The engine seam (`core/engine.js`) answers *what runs the SQL*. This answers
@@ -21,7 +22,7 @@
 export { resolve, join, dirname, basename, extname, isAbsolute } from 'path'
 
 // ─── the environment, for `path env(...)` ─────────────────────────────────
-export const envVar = (name) => process.env[name]
+export const envVar = (/** @type {string} */ name) => process.env[name]
 
 // ─── the filesystem ───────────────────────────────────────────────────────
 export {
@@ -57,7 +58,7 @@ export { AsyncLocalStorage } from 'node:async_hooks'
 // retry has nowhere to await. One buffer for the process: allocating per call
 // is a SharedArrayBuffer per retry.
 const SLEEP = new Int32Array(new SharedArrayBuffer(4))
-export const sleepSync = (ms) => { Atomics.wait(SLEEP, 0, 0, ms) }
+export const sleepSync = (/** @type {number} */ ms) => { Atomics.wait(SLEEP, 0, 0, ms) }
 
 // ─── who is writing ───────────────────────────────────────────────────────
 //
