@@ -627,8 +627,12 @@ ln -sfn ${box.config} ${box.links}/config
 ln -sfn ${box.state} ${box.links}/data
 ln -sfn ${box.logs} ${box.links}/logs
 
+# restart, not enable --now: on a box re-enrolling with its Outpost running,
+# --now is a no-op and the old process keeps the old version and the key
+# Basecamp just replaced, so the box goes dark (FJS-3935).
 systemctl daemon-reload
-systemctl enable --now outpost.service
+systemctl enable outpost.service
+systemctl restart outpost.service
 `
 }
 

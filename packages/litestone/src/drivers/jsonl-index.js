@@ -1,3 +1,4 @@
+// @ts-check
 // drivers/jsonl-index.js — the SQLite sidecar beside a .jsonl file, and the
 // lock that says who may change that file.
 //
@@ -66,20 +67,20 @@ const ENCODER = new TextEncoder()
 const DECODER = new TextDecoder('utf-8', { ignoreBOM: true })   // a BOM is data in a file
 
 /** The UTF-8 bytes of `text`, as a writable chunk. */
-export const utf8Bytes  = (text) => ENCODER.encode(text)
+export const utf8Bytes  = (/** @type {any} */ text) => ENCODER.encode(text)
 /** How many bytes `text` takes on disk. */
-export const utf8Length = (text) => ENCODER.encode(text).length
+export const utf8Length = (/** @type {any} */ text) => ENCODER.encode(text).length
 /** Text from a byte range, which may be a Uint8Array or a subarray of one. */
-export const utf8Text   = (bytes) => DECODER.decode(bytes)
+export const utf8Text   = (/** @type {any} */ bytes) => DECODER.decode(bytes)
 
 /** SQLite type per `.lite` scalar, for the index's own columns. */
-export const FIELD_TYPES = {
+export const FIELD_TYPES = /** @type {Record<string, string>} */ ({
   String: 'TEXT', Int: 'INTEGER', Float: 'REAL', Boolean: 'INTEGER',
   DateTime: 'TEXT', Json: 'TEXT', Any: 'ANY',
-}
+})
 
 /** The sidecar's path. One definition, because two modules open it. */
-export const indexPathFor = (filePath) => filePath + '.index.db'
+export const indexPathFor = (/** @type {any} */ filePath) => filePath + '.index.db'
 
 /**
  * What this model's index is made of.
@@ -89,18 +90,18 @@ export const indexPathFor = (filePath) => filePath + '.index.db'
  * disagree before this existed only because compaction did not write rows at
  * all — it deleted the file.
  */
-export function indexShapeFor(model) {
-  const storedFields = model.fields.filter(f =>
+export function indexShapeFor(/** @type {any} */ model) {
+  const storedFields = model.fields.filter((/** @type {any} */ f) =>
     f.type.kind !== 'relation' &&
-    !f.attributes.some(a => a.kind === 'computed' || a.kind === 'transient')
+    !f.attributes.some((/** @type {any} */ a) => a.kind === 'computed' || a.kind === 'transient')
   )
-  const idName     = model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? null
-  const indexAttrs = model.attributes.filter(a => a.kind === 'index')
+  const idName     = model.fields.find((/** @type {any} */ f) => f.attributes.some((/** @type {any} */ a) => a.kind === 'id'))?.name ?? null
+  const indexAttrs = model.attributes.filter((/** @type {any} */ a) => a.kind === 'index')
   // With an `@id` the index can upsert by it; without one — an audit trail — the
   // offset is the key, since every appended line is at a distinct byte.
   const indexedFieldNames = idName
-    ? [...new Set([idName, ...indexAttrs.flatMap(a => a.fields)])]
-    : [...new Set(indexAttrs.flatMap(a => a.fields))]
+    ? [...new Set([idName, ...indexAttrs.flatMap((/** @type {any} */ a) => a.fields)])]
+    : [...new Set(indexAttrs.flatMap((/** @type {any} */ a) => a.fields))]
   return { storedFields, idName, indexAttrs, indexedFieldNames, hasIndex: indexAttrs.length > 0 }
 }
 
@@ -116,7 +117,7 @@ export function indexShapeFor(model) {
  * process crash and only risks the last transactions on a power loss, which is
  * the right trade for a row that is fire-and-forget by construction.
  */
-export function openIndexDb(indexPath, busyTimeout = null) {
+export function openIndexDb(/** @type {any} */ indexPath, busyTimeout = null) {
   const db = openDatabase(indexPath)
 
   // ── The upgrade, and why it may fail without failing the open ────────────
@@ -156,7 +157,7 @@ export function openIndexDb(indexPath, busyTimeout = null) {
  * passes through, because `BEGIN` inside a transaction is an error and the
  * outer holder's lock is the one that matters.
  */
-export function withWriteLock(db, fn) {
+export function withWriteLock(/** @type {any} */ db, /** @type {any} */ fn) {
   if (db.inTransaction) return fn()
   db.run('BEGIN IMMEDIATE')
   try {
@@ -192,18 +193,18 @@ export function withWriteLock(db, fn) {
  * and running DDL on every open is what killed 2 of 8 concurrent processes
  * outright. A read-only pragma query needs no write lock at all.
  */
-export function ensureIndexTable(db, model, shape, filePath) {
+export function ensureIndexTable(/** @type {any} */ db, /** @type {any} */ model, /** @type {any} */ shape, /** @type {any} */ filePath) {
   const { storedFields, idName, indexAttrs, indexedFieldNames } = shape
   const table = `${model.name}_idx`
 
-  const declared = new Map(indexedFieldNames.map(name => {
-    const f = storedFields.find(f => f.name === name)
+  const declared = new Map(indexedFieldNames.map((/** @type {any} */ name) => {
+    const f = storedFields.find((/** @type {any} */ f) => f.name === name)
     return [name, f ? (FIELD_TYPES[f.type.name] ?? 'TEXT') : 'TEXT']
   }))
   const existing = db.query(`SELECT name, type FROM pragma_table_info(?)`).all(table)
-  const have     = new Set(existing.map(col => col.name))
+  const have     = new Set(existing.map((/** @type {any} */ col) => col.name))
   const drifted  = existing.length > 0 && (
-    existing.some(col => declared.has(col.name) && declared.get(col.name) !== col.type) ||
+    existing.some((/** @type {any} */ col) => declared.has(col.name) && declared.get(col.name) !== col.type) ||
     [...declared.keys()].some(name => !have.has(name))
   )
   // Already right, and every index present. Nothing to lock for.
@@ -216,7 +217,7 @@ export function ensureIndexTable(db, model, shape, filePath) {
   // trail reached the first night its retention elapsed.
   const stale = existing.length === 0 && existsSync(filePath)
 
-  const colDefs = indexedFieldNames.map(name => `  "${name}" ${declared.get(name)}`)
+  const colDefs = indexedFieldNames.map((/** @type {any} */ name) => `  "${name}" ${declared.get(name)}`)
   colDefs.push(`  "_offset" INTEGER NOT NULL`)
   const pk = idName ? `PRIMARY KEY ("${idName}")` : `PRIMARY KEY ("_offset")`
 
@@ -224,7 +225,7 @@ export function ensureIndexTable(db, model, shape, filePath) {
     if (drifted) db.run(`DROP TABLE "${table}"`)
     db.run(`CREATE TABLE IF NOT EXISTS "${table}" (\n${colDefs.join(',\n')},\n  ${pk}\n) STRICT;`)
     for (const attr of indexAttrs) {
-      const cols = attr.fields.map(f => `"${f}"`).join(', ')
+      const cols = attr.fields.map((/** @type {any} */ f) => `"${f}"`).join(', ')
       db.run(`CREATE INDEX IF NOT EXISTS "idx_${model.name}_${attr.fields.join('_')}" ON "${table}" (${cols});`)
     }
     // A dropped index is refilled from the .jsonl, which has every line and
@@ -245,7 +246,7 @@ export function ensureIndexTable(db, model, shape, filePath) {
  * Takes the lock, so a concurrent append cannot land between the clear and the
  * refill and be missed.
  */
-export function rebuildIndex(db, model, filePath) {
+export function rebuildIndex(/** @type {any} */ db, /** @type {any} */ model, /** @type {any} */ filePath) {
   const shape = indexShapeFor(model)
   if (!shape.hasIndex && !shape.idName) return
   // Compaction runs inside `makeJsonlTable` BEFORE the driver has opened its
@@ -261,7 +262,7 @@ export function rebuildIndex(db, model, filePath) {
 }
 
 /** The refill itself. Caller holds the lock. */
-function refill(db, model, shape, filePath) {
+function refill(/** @type {any} */ db, /** @type {any} */ model, /** @type {any} */ shape, /** @type {any} */ filePath) {
   if (!existsSync(filePath)) return
   const { indexedFieldNames } = shape
   const cols = [...indexedFieldNames, '_offset']
@@ -275,7 +276,7 @@ function refill(db, model, shape, filePath) {
     if (line.trim()) {
       try {
         const record = JSON.parse(line)
-        stmt.run(...indexedFieldNames.map(c => record[c] ?? null), offset)
+        stmt.run(...indexedFieldNames.map((/** @type {any} */ c) => record[c] ?? null), offset)
       } catch { /* a torn last line — skip it, the file is append-only */ }
     }
     offset += bytes

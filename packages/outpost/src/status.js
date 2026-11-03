@@ -13,6 +13,7 @@
  */
 
 import { readFileSync }    from 'node:fs'
+import { readdir, stat }   from 'node:fs/promises'
 import { version }         from '../package.json' with { type: 'json' }
 import { readConfig }      from './config.js'
 import { layout }          from './layout.js'
@@ -20,6 +21,7 @@ import { createInspector } from './docker.js'
 import { createReplicator } from './replicate.js'
 import { createIngress }   from './ingress.js'
 import { createVitals }    from './vitals.js'
+import { createAnalytics } from './analytics.js'
 
 /** What `fli outpost:status` checks before it renders. A change that renames
  *  or removes a key moves this; one that only adds a key does not. */
@@ -34,6 +36,41 @@ function envFile(path) {
   } catch (err) {
     return { error: err.code === 'EACCES' ? `${path} is root's: run as root` : `${path}: ${err.code ?? err.message}` }
   }
+}
+
+/** An app's whole-host route, the one Caddy logs under (`FJS-1928`); its
+ *  `-redirects` and `-path-<n>` routes have no access log of their own. */
+const LOGGED_ROUTE = /^fjs-(?!.*-(?:redirects|path-\d+)$)(.+)$/
+
+/** Requests per app over the last day, off each route's access log. A route
+ *  with no log yet is left out, not counted as zero. */
+async function trafficOf(routes, analytics, now) {
+  const from = new Date(now - 86_400_000).toISOString()
+  const out  = []
+  for (const r of routes?.routes ?? []) {
+    const app = LOGGED_ROUTE.exec(r.id ?? '')?.[1]
+    if (!app) continue
+    const report = await analytics.report({ routeId: r.id, from }).catch(() => null)
+    if (report) out.push({ app_id: app, window_s: 86_400, requests: report.hosts.reduce((n, h) => n + h.requests, 0), truncated: report.truncated })
+  }
+  return out
+}
+
+/** The newest archive `/backup` left for each app, named `<app>-<instant>.tar.gz`
+ *  by `docker.js`. An archive that was uploaded stays here too. */
+async function backupsOf(dir) {
+  const names = await readdir(dir).catch(err => { if (err.code === 'ENOENT') return []; throw err })
+  const newest = new Map()
+  for (const name of names) {
+    const m = /^(.+)-(\d{4}-\d{2}-\d{2}T[\d-]+Z)\.tar\.gz$/.exec(name)
+    if (m && !(newest.get(m[1])?.name > name)) newest.set(m[1], { name, at: m[2] })
+  }
+  // The instant is the name's, put back into ISO: a copied archive's mtime is the copy's.
+  const iso = (stamp) => stamp.replace(/T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/, 'T$1:$2:$3.$4Z')
+  return Promise.all([...newest].map(async ([app, { name, at }]) => {
+    const info = await stat(`${dir}/${name}`).catch(() => null)
+    return { app_id: app, name, size_bytes: info?.size ?? null, at: iso(at), count: names.filter(n => n.startsWith(`${app}-`)).length }
+  }))
 }
 
 /**
@@ -67,6 +104,11 @@ export async function readStatus({ env = process.env } = {}) {
     take(() => inspector.posture()),
   ])
 
+  const [traffic, backups] = await Promise.all([
+    take(() => trafficOf(routes, createAnalytics(), Date.now())),
+    take(() => backupsOf(config?.backupDir ?? box.backups)),
+  ])
+
   return {
     shape: STATUS_SHAPE,
     at:    new Date().toISOString(),
@@ -78,6 +120,6 @@ export async function readStatus({ env = process.env } = {}) {
       ...(configError ? { error: configError } : {}),
     },
     paths: { links: box.links, config: box.config, state: box.state, logs: box.logs },
-    units, containers, routes, replication, vitals, disk, posture,
+    units, containers, routes, replication, vitals, disk, posture, traffic, backups,
   }
 }

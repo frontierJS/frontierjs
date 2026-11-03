@@ -1,3 +1,4 @@
+// @ts-check
 // upsert-many.js — the upsertMany verb: one INSERT … ON CONFLICT over every
 // row, so a bulk write that is a create for some rows and an update for others
 // costs one statement. Graded as both at once (FJS-720): the insert half
@@ -17,7 +18,7 @@ import {
 import { enforceValueSets } from './valuesets.js'
 import { rowsChanged } from './databases.js'
 
-export function makeUpsertMany(shape, ctx, deps) {
+export function makeUpsertMany(/** @type {any} */ shape, /** @type {any} */ ctx, /** @type {any} */ deps) {
   const { tableName, modelName, softDelete } = shape
   const {
     _bulkTransitionField, refuseSoftDeleteWrite, refuseOffEntry, refuseBulkNested,
@@ -47,6 +48,7 @@ export function makeUpsertMany(shape, ctx, deps) {
   //     update: ['title'],   // only update these fields on conflict
   //   })
 
+  /** @param {{ data?: any, conflictTarget?: any, update?: any, system?: any, announce?: any }} [args] */
   async function upsertMany({ data, conflictTarget, update: updateFields, system, announce } = {}) {
     // The `update:` half is an ON CONFLICT SET over rows nobody read, which is
     // `updateMany`'s problem exactly. The insert half is a create, graded
@@ -54,7 +56,7 @@ export function makeUpsertMany(shape, ctx, deps) {
     const _upMove = _bulkTransitionField(updateFields, 'upsertMany')
     if (_upMove) throw new BulkTransitionError(modelName, _upMove, 'upsertMany')
     // No `update:` list sets every key the rows carry on a conflict.
-    refuseSoftDeleteWrite(updateFields == null ? data?.find(d => d?.deletedAt !== undefined) : [updateFields].flat(), 'upsertMany')
+    refuseSoftDeleteWrite(updateFields == null ? data?.find((/** @type {any} */ d) => d?.deletedAt !== undefined) : [updateFields].flat(), 'upsertMany')
     if (!data?.length) return { count: 0 }
     // Under row tenancy a `@unique` was built as (tenant, field) (`FJS-D310`),
     // so a target naming the field alone matches no index and SQLite refuses
@@ -68,10 +70,10 @@ export function makeUpsertMany(shape, ctx, deps) {
         : [idField]
       const t = ctx.schema?.tenancy
       if (t?.strategy !== 'row' || named.includes(t.column)) return named
-      const scoped = shape.model.attributes?.some(a =>
+      const scoped = shape.model.attributes?.some((/** @type {any} */ a) =>
         (a.kind === 'uniqueIndex' || a.kind === 'partialUnique') && a.generated === 'tenancy' &&
         a.fields.length === named.length + 1 && a.fields[0] === t.column &&
-        named.every((c, i) => a.fields[i + 1] === c))
+        named.every((/** @type {any} */ c, /** @type {number} */ i) => a.fields[i + 1] === c))
       return scoped ? [t.column, ...named] : named
     })()
     refuseBulkNested(data, 'upsertMany')
@@ -97,9 +99,9 @@ export function makeUpsertMany(shape, ctx, deps) {
     if (plugins?.hasPlugins && !(Array.isArray(updateFields) && !updateFields.length)) {
       const _usKeys = updateFields
         ? [updateFields].flat()
-        : [...new Set(data.flatMap(d => Object.keys(d)))]
-            .filter(k => !target.includes(k))
-      await plugins.beforeUpdate(modelName, { data: Object.fromEntries(_usKeys.map(k => [k, undefined])), system }, ctx)
+        : [...new Set(data.flatMap((/** @type {any} */ d) => Object.keys(d)))]
+            .filter((/** @type {any} */ k) => !target.includes(k))
+      await plugins.beforeUpdate(modelName, { data: Object.fromEntries(_usKeys.map((/** @type {any} */ k) => [k, undefined])), system }, ctx)
     }
     await enforceValueSets(modelName, data, ctx)
     data = refuseOffEntry(data)
@@ -107,6 +109,7 @@ export function makeUpsertMany(shape, ctx, deps) {
     // rather than inside it with the other stamps — see createMany.
     const _usPathStamped = data.map(() => new Set())
     if (shape.pathDefaults.length) {
+      /** @type {any[]} */
       const out = []
       for (const [i, row] of data.entries()) out.push(await applyPathDefaults(row, _usPathStamped[i]))
       data = out
@@ -115,7 +118,7 @@ export function makeUpsertMany(shape, ctx, deps) {
     // A row of the insert half whose hidden parent it may open is asked again
     // once the batch is written, as createMany's is (FJS-D1705). Which rows
     // insert is known only under the lock, so the unit awaits when any could.
-    const _usDeferrable = _usHidden.map((h, i) => deferrable(h) || ctx.hasPolicies && _usHidden.absent.has(i))
+    const _usDeferrable = _usHidden.map((/** @type {any} */ h, /** @type {number} */ i) => deferrable(h) || ctx.hasPolicies && _usHidden.absent.has(i))
     const _usDeferred   = new Map()
 
     const autoId       = shape.autoId
@@ -135,26 +138,29 @@ export function makeUpsertMany(shape, ctx, deps) {
     for (const item of data) for (const k of Object.keys(item ?? {})) supplied.add(k)
     const authorCols = new Set(
       [...(createdBys ?? []), ...(authDefaults ?? [])]
-        .map(s => s.field).filter(f => !supplied.has(f)))
+        .map((/** @type {any} */ s) => s.field).filter((/** @type {any} */ f) => !supplied.has(f)))
 
     let sql
     let count = 0
     // Split for the audit trail — an upsert is a create for some rows and an
     // update for others, and the log entry says which. Only computed on a
     // logged model: it costs one SELECT over the batch's conflict keys.
-    let _usCreated = null, _usUpdated = null
+    /** @type {any} */
+    let _usCreated = null, /** @type {any} */ _usUpdated = null
     // What each logged row was given, aligned with the two lists above: the
     // bound row for an insert, the columns ON CONFLICT set for an update.
-    let _usCreatedW = null, _usUpdatedW = null
+    /** @type {any} */
+    let _usCreatedW = null, /** @type {any} */ _usUpdatedW = null
     const _nt = needsTiming()
     const _usT0 = _nt ? performance.now() : 0
     // Whole batch (incl. @sequence bumps) inside one transaction — see createMany.
     // A key minted for the insert half is not the caller's, so a row that
     // conflicts keeps its own unless the conflict moves it to another scope.
     const _usRankMemo = _ranks.length ? new Map() : null
+    /** @type {any[]} */
     const _usMinted   = []
     const unit = () => {
-      const rows = data.map((item, i) => {
+      const rows = data.map((/** @type {any} */ item, /** @type {number} */ i) => {
         let d = item
         const stamped = new Set()   // per row — see createMany
         if (autoId && (d == null || d[autoId.field] == null)) {
@@ -169,7 +175,7 @@ export function makeUpsertMany(shape, ctx, deps) {
         if (usVersion) { noteStamp(stamped, d, usVersion); d = { ...(d ?? {}), [usVersion]: 1 } }
         d = applySequences(d, modelName, shape.sequences, writeDb, stamped)
         d = applyRanks(d, stamped, _usRankMemo)
-        _usMinted[i] = _ranks.filter(r => stamped.has(r.field))
+        _usMinted[i] = _ranks.filter((/** @type {any} */ r) => stamped.has(r.field))
         try { return writeData(d, { requireAll: true, system, stamped, creating: true }) }
         catch (e) { throw asBatchRowError(e, i, data.length, null) }
       })
@@ -183,13 +189,13 @@ export function makeUpsertMany(shape, ctx, deps) {
       // write has already happened.
       if (softDelete) {
         for (const [i, row] of rows.entries()) {
-          if (target.some(c => row[c] === undefined)) continue
+          if (target.some((/** @type {any} */ c) => row[c] === undefined)) continue
           const hit = writeDb.query(
-            `SELECT * FROM "${tableName}" WHERE ${target.map(c => `"${col(c)}" = ?`).join(' AND ')} ` +
+            `SELECT * FROM "${tableName}" WHERE ${target.map((/** @type {any} */ c) => `"${col(c)}" = ?`).join(' AND ')} ` +
             `AND "${col('deletedAt')}" IS NOT NULL LIMIT 1`
-          ).get(...target.map(c => row[c] ?? null))
+          ).get(...target.map((/** @type {any} */ c) => row[c] ?? null))
           if (hit) throw asBatchRowError(new SoftDeletedUniqueError(
-            modelName, target, target.map(c => row[c]), hit[idField], idField), i, rows.length, row)
+            modelName, target, target.map((/** @type {any} */ c) => row[c]), hit[idField], idField), i, rows.length, row)
         }
       }
 
@@ -207,14 +213,15 @@ export function makeUpsertMany(shape, ctx, deps) {
       // The lookup is what the CREATE half needs, so it is paid for policies
       // alone: the template guard rides the statement's own WHERE and knows
       // nothing about which rows already exist.
+      /** @type {any} */
       let present = null
-      const keyOf = row => JSON.stringify(target.map(c => row[c] ?? null))
+      const keyOf = (/** @type {any} */ row) => JSON.stringify(target.map((/** @type {any} */ c) => row[c] ?? null))
       if (_usNeedRows || ctx.hasPolicies) {
-        const clause = target.map(c => `"${c}" = ?`).join(' AND ')
+        const clause = target.map((/** @type {any} */ c) => `"${c}" = ?`).join(' AND ')
         const lookup = writeDb.prepare(`SELECT 1 FROM "${tableName}" WHERE ${clause} LIMIT 1`)
         present = new Set()
         for (const row of rows) {
-          if (lookup.get(...target.map(c => row[c] ?? null))) present.add(keyOf(row))
+          if (lookup.get(...target.map((/** @type {any} */ c) => row[c] ?? null))) present.add(keyOf(row))
         }
         if (_usNeedRows) { _usCreated = []; _usUpdated = []; _usCreatedW = []; _usUpdatedW = [] }
       }
@@ -260,8 +267,8 @@ export function makeUpsertMany(shape, ctx, deps) {
       // derived from the shape's own columns, so a row carrying a column the
       // batch's first row omitted updates it on conflict rather than losing it.
       const stmts = new Map()
-      const stmtFor = (cols, minted = []) => {
-        const key = cols.join(' ') + (minted.length ? ' | ' + minted.map(r => r.field).join(' ') : '')
+      const stmtFor = (/** @type {any} */ cols, /** @type {any[]} */ minted = []) => {
+        const key = cols.join(' ') + (minted.length ? ' | ' + minted.map((/** @type {any} */ r) => r.field).join(' ') : '')
         let entry = stmts.get(key)
         if (entry) return entry
 
@@ -269,28 +276,28 @@ export function makeUpsertMany(shape, ctx, deps) {
         // An explicit `update:` list still wins outright — naming an author
         // column there is a deliberate request to move it on conflict.
         const updateCols = updateFields
-          ? (Array.isArray(updateFields) ? updateFields : [updateFields]).filter(c => cols.includes(c))
-          : cols.filter(c => !target.includes(c) && !authorCols.has(c))
+          ? (Array.isArray(updateFields) ? updateFields : [updateFields]).filter((/** @type {any} */ c) => cols.includes(c))
+          : cols.filter((/** @type {any} */ c) => !target.includes(c) && !authorCols.has(c))
 
         let s = _sealInsertSql
-          ? `INSERT INTO "${tableName}" (${cols.map(c => `"${col(c)}"`).join(', ')}) SELECT ${cols.map(() => '?').join(', ')} WHERE ${_sealInsertSql}`
-          : `INSERT INTO "${tableName}" (${cols.map(c => `"${col(c)}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`
+          ? `INSERT INTO "${tableName}" (${cols.map((/** @type {any} */ c) => `"${col(c)}"`).join(', ')}) SELECT ${cols.map(() => '?').join(', ')} WHERE ${_sealInsertSql}`
+          : `INSERT INTO "${tableName}" (${cols.map((/** @type {any} */ c) => `"${col(c)}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`
 
         // The SET speaks columns, as the INSERT above does: a field name on a
         // @map model is `no such column: excluded.<field>`.
         const _qt = quoteIdent(tableName)
         const _qc = (/** @type {string} */ c) => quoteIdent(col(c))
-        const _mintedRank = c => minted.find(r => r.field === c)
-        const _rankSet = (r) => {
-          const same = r.scope.map(f => `${_qt}.${_qc(f)} IS excluded.${_qc(f)}`).join(' AND ')
+        const _mintedRank = (/** @type {any} */ c) => minted.find((/** @type {any} */ r) => r.field === c)
+        const _rankSet = (/** @type {any} */ r) => {
+          const same = r.scope.map((/** @type {any} */ f) => `${_qt}.${_qc(f)} IS excluded.${_qc(f)}`).join(' AND ')
           return `${_qc(r.field)} = CASE WHEN ${same} THEN ${_qt}.${_qc(r.field)} ELSE excluded.${_qc(r.field)} END`
         }
         // @version rides the INSERT at 1 and is BUMPED on conflict, never taken
         // from `excluded` — that would reset an existing row to 1 and make every
         // stale editor's version look current again.
         const setPairs = updateCols
-          .filter(c => c !== usVersion)
-          .map(c => _mintedRank(c) ? _rankSet(_mintedRank(c)) : `${_qc(c)} = excluded.${_qc(c)}`)
+          .filter((/** @type {any} */ c) => c !== usVersion)
+          .map((/** @type {any} */ c) => _mintedRank(c) ? _rankSet(_mintedRank(c)) : `${_qc(c)} = excluded.${_qc(c)}`)
         if (usVersion) setPairs.push(`${_qc(usVersion)} = ${_qt}.${_qc(usVersion)} + 1`)
         // A conflict is an update, so it stamps. `setPairs.length` is what
         // decides whether this row updates at all, so the stamp is added
@@ -320,7 +327,7 @@ export function makeUpsertMany(shape, ctx, deps) {
         // The guard's params bind LAST, because `ON CONFLICT … WHERE` is the
         // tail of the statement — after the VALUES and after the seal's own
         // WHERE on the `INSERT … SELECT` form.
-        const args = [...cols.map(c => row[c] ?? null), ...(_usSeal?.params ?? []), ..._usGuardParams]
+        const args = [...cols.map((/** @type {any} */ c) => row[c] ?? null), ...(_usSeal?.params ?? []), ..._usGuardParams]
         // A conflict TARGET is handled by ON CONFLICT; anything else — a second
         // @unique, a NOT NULL, an FK — still reaches here as SQLite's message.
         let _usWrote = true
@@ -330,7 +337,7 @@ export function makeUpsertMany(shape, ctx, deps) {
             const _usUpd  = written && present.has(keyOf(row))
             if (written) {
               (_usUpd ? _usUpdated : _usCreated).push(written)
-              ;(_usUpd ? _usUpdatedW : _usCreatedW).push(_usUpd ? Object.fromEntries(updateCols.map(c => [c, true])) : row)
+              ;(_usUpd ? _usUpdatedW : _usCreatedW).push(_usUpd ? Object.fromEntries(updateCols.map((/** @type {any} */ c) => [c, true])) : row)
             }
             else if (_usSeal || _usGuardSql) _usWrote = false
             // A later row repeating this key conflicts with the row just written.
@@ -357,7 +364,7 @@ export function makeUpsertMany(shape, ctx, deps) {
         }
         if (_usWrote) { noteExclusion(row); count++ }
       }
-      sql = [...stmts.values()].map(e => e.sql).join('\n')
+      sql = [...stmts.values()].map((/** @type {any} */ e) => e.sql).join('\n')
       return rows
     }
     if (!_usDeferrable.some(Boolean)) await tx.wrapExclusive(unit)

@@ -27,7 +27,7 @@ import { suggestKey, pointFieldsOf, liftNearOrders, sortHopFor, _guardedNames, _
 import { applyFieldPolicyTo } from './field-policy.js'
 import { trailMarksOf, markOf, untrailed } from './trail-entries.js'
 
-export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
+export function makeIntrospection(/** @type {any} */ ctx, { schemaFilePath, asSystem }) {
   const { shapes, schema, now } = ctx
 
   // ─── $checkWhere ────────────────────────────────────────────────────────
@@ -48,7 +48,7 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   // signed-in caller, in every app, with a message about a table nobody named.
   // Which filter keys are valid is a question about the SCHEMA — auth and scope
   // have no bearing on it, so every flavor of client answers it identically.
-  function $checkWhere(accessor, where) {
+  function $checkWhere(/** @type {any} */ accessor, /** @type {any} */ where) {
     const model = modelForAccessor(accessor)
     if (!model?.fields) return []
     // An empty filter names no key to grade, and junction asks on every read.
@@ -66,7 +66,7 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
         // The HTTP path: junction's autoFilter answers a 400 built from these.
         const hidden = _guardedNames({ name: p.model ?? model.name }, ctx)
         if (!hidden) return { ...p, message: p.message.replace('%MODEL%', p.model ?? model.name) }
-        const allowed = (p.allowed ?? []).filter(n => !hidden.has(n))
+        const allowed = (p.allowed ?? []).filter(/** @type {any} */ (/** @type {any} */ n) => !hidden.has(n))
         return {
           ...p,
           allowed,
@@ -80,7 +80,7 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   // `$checkWhere` validates a `$scope` against — asked rather than copied, so a
   // UI offering scopes and the client refusing one cannot disagree. A schema
   // fact, so it is on every flavor of client, like both $check* helpers.
-  function $scopes(accessor) {
+  function $scopes(/** @type {any} */ accessor) {
     const model = modelForAccessor(accessor)
     if (!model) return {}
     const out = {}
@@ -105,7 +105,7 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
     accessorIndex[modelToAccessor(m.name)] = m
     accessorIndex[m.name] = m
   }
-  function modelForAccessor(accessor) {
+  function modelForAccessor(/** @type {any} */ accessor) {
     return accessorIndex[accessor]
   }
 
@@ -140,7 +140,7 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   // `reason` is 'computed', 'opaque' or 'unknown' — a boundary wants to say
   // different sentences for "no such field", "that field is derived in JS" and
   // "that column stores a serialization, so its text is not the value".
-  function $checkOrderBy(accessor, orderBy, opts = {}) {
+  function $checkOrderBy(/** @type {any} */ accessor, /** @type {any} */ orderBy, opts = {}) {
     const model = modelForAccessor(accessor)
     if (!model?.fields) return []
 
@@ -190,7 +190,7 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   // value from a non-system reader and stays writable, and `hashed` has no
   // plaintext to reveal at all. A caller that only wants the names takes the
   // keys.
-  function $protectedFields(accessor) {
+  function $protectedFields(/** @type {any} */ accessor) {
     const model = modelForAccessor(accessor)
     if (!model?.fields) return {}
     const out = {}
@@ -212,11 +212,11 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   // value is readable and still must not outlive the person in a trail. An
   // app writing its own trail asks here, so it keeps what litestone's keeps.
   // Unknown accessor answers {}.
-  function $trailMarks(accessor) {
+  function $trailMarks(/** @type {any} */ accessor) {
     const model = modelForAccessor(accessor)
     if (!model?.fields) return {}
     const out = {}
-    for (const [field, mark] of trailMarksOf(shapes[model.name].fieldPolicy)) out[field] = value => markOf(mark, value)
+    for (const [field, mark] of trailMarksOf(shapes[model.name].fieldPolicy)) out[field] = (/** @type {any} */ value) => markOf(mark, value)
     return out
   }
 
@@ -235,12 +235,12 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   // order — and the key's own order, which is what the implicit index is
   // prefix-matched on, is stated only on the model attribute. A caller reading
   // it off the fields gets a plausible wrong answer (`FJS-694`).
-  function $primaryKey(accessor) {
+  function $primaryKey(/** @type {any} */ accessor) {
     const model = modelForAccessor(accessor)
     if (!model) return []
-    const composite = model.attributes?.find(a => a.kind === 'id')
+    const composite = model.attributes?.find(/** @type {any} */ (/** @type {any} */ a) => a.kind === 'id')
     if (composite?.fields?.length) return [...composite.fields]
-    const single = model.fields?.find(f => f.attributes.some(a => a.kind === 'id'))
+    const single = model.fields?.find(/** @type {any} */ (/** @type {any} */ f) => f.attributes.some(/** @type {any} */ (/** @type {any} */ a) => a.kind === 'id'))
     return single ? [single.name] : []
   }
 
@@ -253,8 +253,8 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   // The layer above lands a Provider's object on the row this column matches,
   // so it must never guess the column from a name like `externalId`: a model
   // with that column and no `@@mirror` is an app's own row (`FJS-D1125`).
-  function $mirrorKey(accessor) {
-    return modelForAccessor(accessor)?.attributes?.find(a => a.kind === 'mirror')?.key ?? null
+  function $mirrorKey(/** @type {any} */ accessor) {
+    return modelForAccessor(accessor)?.attributes?.find(/** @type {any} */ (/** @type {any} */ a) => a.kind === 'mirror')?.key ?? null
   }
 
   // ─── $declaresAccessRules ────────────────────────────────────────────
@@ -310,7 +310,7 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   // this design unaffordable. What that gives up is a `@from` or a `@computed`
   // value the writer's own read resolved — the recipient gets the writer's, not
   // one derived under their own policies.
-  async function $readAs(accessor, row, principal) {
+  async function $readAs(/** @type {any} */ accessor, /** @type {any} */ row, /** @type {any} */ principal) {
     if (!row) return null
     const model = modelForAccessor(accessor)
     if (!model?.name) return null
@@ -355,7 +355,7 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   // needs only the context the rules read, which is what makes grading a
   // recipient affordable at all.
   const _gradeCtxs = new WeakMap()
-  function ctxForPrincipal(principal) {
+  function ctxForPrincipal(/** @type {any} */ principal) {
     if (principal == null) return { ...ctx, auth: null }
     if (typeof principal !== 'object') return { ...ctx, auth: principal }
     let c = _gradeCtxs.get(principal)
@@ -409,7 +409,7 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   // `effectiveMap`, so the rule has one origin and two evaluators. A string
   // compare is sound for both kinds: an ISO instant and a `YYYY-MM-DD` day both
   // order lexicographically the way they order in time.
-  function $inWindow(accessor, row, asOf) {
+  function $inWindow(/** @type {any} */ accessor, /** @type {any} */ row, /** @type {any} */ asOf) {
     const model = modelForAccessor(accessor)
     const win   = model?.name ? shapes[model.name].effective : null
     if (!win || !row) return true
@@ -430,7 +430,7 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
     return true
   }
 
-  function $readGrading(accessor) {
+  function $readGrading(/** @type {any} */ accessor) {
     const model = modelForAccessor(accessor)
     if (!model?.name) return 'graded'          // unknown: fail closed
     const modelName = model.name
@@ -451,7 +451,7 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   // grades a row someone was SENT; this says when a row someone already HOLDS
   // must be asked again — a write to a Share changes no Page row and still
   // takes the page from its reader. An unknown accessor reaches nothing.
-  function $readReach(accessor) {
+  function $readReach(/** @type {any} */ accessor) {
     const model = modelForAccessor(accessor)
     return model?.name ? readReach(model.name, ctx) : []
   }
@@ -460,7 +460,7 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   // a read verdict reads, as { Model: [column] }. A write to a reached model that
   // changes none of its listed columns cannot move who may read (`FJS-3127`).
   // An unknown accessor answers {}.
-  function $readColumns(accessor) {
+  function $readColumns(/** @type {any} */ accessor) {
     const model = modelForAccessor(accessor)
     return model?.name ? readColumns(model.name, ctx) : {}
   }
@@ -468,7 +468,7 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   // $fromReach(accessor) → the model names an `@from` on this one is computed
   // off. A write to one moves a value on a row the write never touched, so a
   // holder of that row asks again. An unknown accessor reaches nothing.
-  function $fromReach(accessor) {
+  function $fromReach(/** @type {any} */ accessor) {
     const model = modelForAccessor(accessor)
     return model?.name ? fromReach(model.name, ctx) : []
   }
@@ -508,8 +508,8 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   // getter over the call in progress (`FJS-722`) and refuses outside a table
   // method — so the omitted-principal form has nothing to read unless the
   // flavor states it.
-  function $levelOfAs(ownCtx) {
-    return function $levelOf(accessor, ...principal) {
+  function $levelOfAs(/** @type {any} */ ownCtx) {
+    return function $levelOf(/** @type {any} */ accessor, ...principal) {
       const modelName = modelForAccessor(accessor)?.name ?? null
       const forCtx    = principal.length ? ctxForPrincipal(principal[0]) : ownCtx
       if (typeof forCtx.levelFor !== 'function') return null
@@ -541,8 +541,8 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   // does this; a refusal is a verdict, never a throw, so an affordance can ask.
   // Off this flavor's own ctx, as `$levelOf` is, because `ctx.auth` refuses
   // outside a table method.
-  function $checkWriteAs(ownCtx) {
-    return async function $checkWrite(accessor, op, row, changes = null) {
+  function $checkWriteAs(/** @type {any} */ ownCtx) {
+    return async function $checkWrite(/** @type {any} */ accessor, /** @type {any} */ op, /** @type {any} */ row, changes = null) {
       const modelName = modelForAccessor(accessor)?.name
       if (!modelName) throw new Error(`$checkWrite: '${accessor}' is not a model accessor`)
       if (op !== 'create' && op !== 'update' && op !== 'delete')
@@ -592,7 +592,7 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   // answerable here and no argument makes it so: the roles have changed, so it
   // can only come from what the audit trail recorded at the moment of the
   // decision (`IDEAS/compliance-from-the-seed.md`).
-  function $capabilitiesFor(principal) {
+  function $capabilitiesFor(/** @type {any} */ principal) {
     const raw = Array.isArray(principal) || principal instanceof Set
       ? principal
       : principal?.capabilities
@@ -627,7 +627,7 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
   // caller with no row gets null for each claim, which is the statement *holds
   // none*, and reads the same in both policy interpreters (`FJS-668`). One read
   // per (model, subject), however many claims come off that row.
-  async function $claimsFor(principal) {
+  async function $claimsFor(/** @type {any} */ principal) {
     const sources = Object.entries(schema.claimSources ?? {})
     const id      = principal?.id ?? null
     if (id == null || !sources.length) return {}
@@ -643,7 +643,7 @@ export function makeIntrospection(ctx, { schemaFilePath, asSystem }) {
     const sys = asSystem()
     const out = {}
     for (const { model, subject, claims } of reads.values()) {
-      const select = Object.fromEntries(claims.map(c => [c.column, true]))
+      const select = Object.fromEntries(claims.map(/** @type {any} */ (/** @type {any} */ c) => [c.column, true]))
       const row    = await sys[modelToAccessor(model)].findFirst(untrailed({ where: { [subject]: id }, select }))
       for (const c of claims) out[c.name] = row?.[c.column] ?? null
     }

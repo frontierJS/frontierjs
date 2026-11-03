@@ -1,3 +1,4 @@
+// @ts-check
 // ─── cross-process.js — a write announced past this process ──────────────────
 //
 // `$tapEvents` is a callback list on one client, so a second process announces
@@ -54,12 +55,12 @@ export const DEFAULT_RETENTION_MS = 10 * 60 * 1000
 // coalesces. Slow on purpose: it is a safety net, not the mechanism.
 export const DEFAULT_POLL_MS = 2000
 
-export function ensureEventsTable(db) {
+export function ensureEventsTable(/** @type {any} */ db) {
   // A table from before the column was renamed has no `writer` column, so
   // every announcement would fail to record and only warn. The table is
   // litestone's own and holds minutes of history, so it is dropped (`FJS-D781`).
   const cols = db.prepare(`PRAGMA table_info(${EVENTS})`).all()
-  if (cols.some(c => c.name === 'origin')) db.run(`DROP TABLE ${EVENTS}`)
+  if (cols.some((/** @type {any} */ c) => c.name === 'origin')) db.run(`DROP TABLE ${EVENTS}`)
   db.run(`
     CREATE TABLE IF NOT EXISTS ${EVENTS} (
       id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,18 +84,18 @@ export function ensureEventsTable(db) {
  * The writer. Prepared once per client and called on every announced write, so
  * it takes the statement rather than the database.
  */
-export function makeEventRecorder(db, writer, now) {
+export function makeEventRecorder(/** @type {any} */ db, /** @type {any} */ writer, /** @type {any} */ now) {
   const stmt = db.prepare(
     `INSERT INTO ${EVENTS} (writer, event, model, scope, count, recordId, detail, at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
 
-  return function record({ event, model, scope, count, recordId, detail }) {
+  return function record(/** @type {any} */ { event, model, scope, count, recordId, detail }) {
     try {
       stmt.run(writer, event, model, scope ?? 'row', count ?? 1,
         recordId == null ? null : String(recordId),
         detail ? JSON.stringify(detail) : null,
         now().toISOString())
-    } catch (err) {
+    } catch (/** @type {any} */ err) {
       // An Observer may not fail the write that announced it (`FJS-D06`), and
       // this runs after that write has committed — throwing here would report a
       // write that succeeded as having failed.
@@ -112,12 +113,12 @@ export function makeEventRecorder(db, writer, now) {
  * *something changed, re-read*. It is the one case that degrades to the coarse
  * signal, and it is reported rather than hidden.
  */
-export function createEventWatcher({
+export function createEventWatcher(/** @type {any} */ {
   db, file, writer, onEvent, onGap,
   pollMs = DEFAULT_POLL_MS,
   retentionMs = DEFAULT_RETENTION_MS,
   now = () => new Date(),
-  onError = (err) => console.warn(`[litestone] cross-process watcher: ${err?.message ?? err}`),
+  onError = (/** @type {any} */ err) => console.warn(`[litestone] cross-process watcher: ${err?.message ?? err}`),
 }) {
   // Start at the end: an app that has just opened has not missed anything, and
   // replaying the table's history would announce every write since the last
@@ -226,7 +227,7 @@ export function createEventWatcher({
   }
 }
 
-function decode(row) {
+function decode(/** @type {any} */ row) {
   return {
     event:    row.event,
     model:    row.model,

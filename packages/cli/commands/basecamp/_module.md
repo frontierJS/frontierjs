@@ -273,6 +273,72 @@ const adminThenFleet = async ({ outpost, domain, later, tty, stage, ...admin }) 
   return await joinFleet(admin.dest, domain, tty)
 }
 
+// ─── An API key, minted over ssh ──────────────────────────────────────────────
+// `deploy:repl -e` in the Basecamp checkout: the answer is the child's stdout
+// alone, the boot's chatter its stderr — held, and shown only when it fails.
+// `extra` is the argv tail; `--server` there names a box frontier.config.js
+// does not, which is every box `create` made.
+const replLine = async (code, extra = []) => {
+  const { spawnSync } = await import('node:child_process')
+  const { resolve }   = await import('node:path')
+  const { root } = provisionScript()
+  const r = spawnSync(process.execPath, [resolve(global.fliRoot, 'bin/fli.js'), 'deploy:repl', '-e', code, ...extra],
+    { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', env: process.env })
+  if (r.status !== 0) {
+    const said = (r.stderr || '').trim().split('\n').filter(l => !l.startsWith('{"level"')).slice(-4).join('\n')
+    throw new Error(`deploy:repl exited ${r.status ?? 'on a signal'}${said ? `:\n${said}` : ''}`)
+  }
+  try { return JSON.parse(r.stdout) }
+  catch { throw new Error(`deploy:repl answered something that is not JSON: ${r.stdout.trim().slice(0, 200)}`) }
+}
+
+// Who may hold the key: a person, not a bot, who is an owner or admin of a
+// workspace. A `sys` read, so it needs no --force.
+const holders = async (extra = []) =>
+  (await replLine(`sys.workspaceMember.findMany({ where: { role: { in: ['owner', 'admin'] } }, select: { role: true, workspaceId: true, workspace: { select: { name: true } }, user: { select: { email: true, kind: true } } } })`, extra))
+    .filter(m => m.user?.kind === 'user')
+    .map(m => ({ email: m.user.email, role: m.role, workspaceId: m.workspaceId, workspace: m.workspace?.name }))
+
+// The service's own create, called as the holder in their workspace, so the
+// mint is the one the API keys screen runs. Answers the token, or `{ error }`.
+const mint = async (key, holder, extra = []) => {
+  const made = await replLine(`call('api-keys.create', ${JSON.stringify(key)})`, ['--as', holder.email, '--tenant', holder.workspaceId, ...extra])
+  return typeof made?.token === 'string'
+    ? made
+    : { error: 'Basecamp made the key but answered no token — revoke it on the API keys screen' }
+}
+
+const keyName = async () =>
+  `fli ${(await import('node:os')).hostname()} ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`
+
+// `create`'s key for the admin `/setup` just made, stored as `basecamp:key`
+// stores one. The token is printed only to a terminal: a run piped into a CI
+// log would keep a never-expiring admin credential in it. `yes` is create's
+// own, so `--yes` copies without asking. Answers false when none was minted.
+const KEY_QUESTION = `Mint an admin API key for the first admin, stored as BASECAMP_API_KEY?`
+const adminKey = async ({ dest, admin, yes, log, echo, chalk }) => {
+  const extra  = ['--server', dest]
+  const later  = `fli basecamp:key --server ${dest} --as ${admin}`
+  const made   = await (async () => {
+    const holder = (await holders(extra)).find(p => p.email === admin)
+    if (!holder) return { error: `${admin} is no owner or admin on the new Basecamp` }
+    return await mint({ name: await keyName(), scopes: ['admin'], expiresIn: 'never' }, holder, extra)
+  })().catch(e => ({ error: e.message }))
+  if (made.error) { log.error(`${made.error}. Mint one later: ${later}`); return false }
+
+  const { storeGlobal } = await import(new URL('file://' + global.fliRoot + '/core/global-env.js'))
+  const file = storeGlobal('BASECAMP_API_KEY', made.token)
+  echo`  {green ✓} {bold BASECAMP_API_KEY} {dim ${made.tokenHint ?? ''}} → ${file}`
+  if (!process.stdout.isTTY) return true
+
+  echo`  {dim api key } {bold ${made.token}}   {dim shown once — revoke it on the API keys screen if it leaks}\n`
+  if (!await yes('Copy it to the clipboard?', true)) return true
+  const { copyToClipboard, clipboardTools } = await import(new URL('file://' + global.fliRoot + '/core/clipboard.js'))
+  if (copyToClipboard(made.token)) echo`  {green ✓} copied`
+  else log.warn(`Could not copy — is ${clipboardTools() ?? 'a clipboard tool'} installed?`)
+  return true
+}
+
 </script>
 
 ## Setup
@@ -315,7 +381,8 @@ needs a `BASECAMP_API_KEY` from the running Basecamp, not a cloud token.
 
 `fli basecamp:key` mints that key over ssh — `api-keys.create` called as an
 owner through `fli deploy:repl` — and stores it in the global env, with no
-browser and no password.
+browser and no password. `fli basecamp:create` offers one for the first admin
+once the install is done.
 
 `fli basecamp:backup` fetches an App's newest bucket archive, or takes one
 first with `--take`, and unpacks it under `db/backups/<stamp>/`; `fli

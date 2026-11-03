@@ -1,3 +1,4 @@
+// @ts-check
 // encryption.js — how a value becomes the bytes a column holds, and back
 //
 // One owner for that translation, because two callers need it and they are in
@@ -71,11 +72,13 @@ const KID_LEN         = 8
 // comes from `#host`'s crypto, which names @encrypted and says why.
 
 const salt = (() => {
+  /** @type {Record<string, Buffer>} */
   const cache = {}
-  return (name) => (cache[name] ??= Buffer.from(`litestone/${name}/v1`))
+  return (/** @type {string} */ name) => (cache[name] ??= Buffer.from(`litestone/${name}/v1`))
 })()
 
 /** Which key this is, said in a way that is not the key. */
+/** @param {any} key */
 export function keyId(key) {
   return createHmac(HMAC_ALG, Buffer.concat([Buffer.from(key), salt('kid')]))
     .digest('hex').slice(0, KID_LEN)
@@ -103,7 +106,7 @@ const PREFIXES = [
  * does, which is why the write path asks `verifies()` and the read path lets
  * GCM's tag answer.
  */
-export function parseEnvelope(value) {
+export function parseEnvelope(/** @type {any} */ value) {
   if (value == null) return null
   const s = String(value)
   for (const { p, mode, kidded } of PREFIXES) {
@@ -119,7 +122,7 @@ export function parseEnvelope(value) {
   return null
 }
 
-export function encryptField(plaintext, key) {
+export function encryptField(/** @type {any} */ plaintext, /** @type {any} */ key) {
   if (plaintext == null) return plaintext
   const iv         = randomBytes(GCM_IV_LEN)
   const cipher     = createCipheriv('aes-256-gcm', key, iv)
@@ -129,7 +132,7 @@ export function encryptField(plaintext, key) {
   return ENC_PREFIX_2 + keyId(key) + '.' + payload.toString('base64url')
 }
 
-function openGcm(payloadB64, key) {
+function openGcm(/** @type {string} */ payloadB64, /** @type {any} */ key) {
   const payload    = Buffer.from(payloadB64, 'base64url')
   const iv         = payload.subarray(0, GCM_IV_LEN)
   const tag        = payload.subarray(GCM_IV_LEN, GCM_IV_LEN + GCM_TAG_LEN)
@@ -150,14 +153,14 @@ function openGcm(payloadB64, key) {
  * the kid buys is the ORDER — the right key first, and a resumable rotation,
  * which is a question about which rows are still on the old kid.
  */
-export function decryptField(ciphertext, key) {
+export function decryptField(/** @type {any} */ ciphertext, /** @type {any} */ key) {
   if (ciphertext == null) return ciphertext
   const env = parseEnvelope(ciphertext)
   if (!env || env.mode === 'hash') return ciphertext   // not encrypted, or one-way
 
   const ring   = asKeyring(key)
   const named  = env.kid ? ring.byKid.get(env.kid) : null
-  const order  = named ? [named, ...ring.all.filter(k => k !== named)] : ring.all
+  const order  = named ? [named, ...ring.all.filter((/** @type {any} */ k) => k !== named)] : ring.all
 
   let last = null
   for (const k of order) {
@@ -165,9 +168,10 @@ export function decryptField(ciphertext, key) {
   }
   // Every held key was tried and GCM refused each — the value is authentic
   // under a key this process does not have, or it is not a value at all.
+  /** @type {Error & { kid?: any }} */
   const err = new Error(
     `Cannot decrypt: the value names key '${env.kid ?? '(v1, unnamed)'}' and this client holds ` +
-    `${ring.all.length === 1 ? `'${keyId(ring.current)}'` : ring.all.map(k => `'${keyId(k)}'`).join(', ')}. ` +
+    `${ring.all.length === 1 ? `'${keyId(ring.current)}'` : ring.all.map((/** @type {any} */ k) => `'${keyId(k)}'`).join(', ')}. ` +
     `A key that has been rotated away from is passed as previousEncryptionKeys: ['<hex>'].`)
   err.name  = 'DecryptionFailedError'
   err.kid   = env.kid
@@ -188,7 +192,7 @@ export function decryptField(ciphertext, key) {
  * this repo could see it, because every one of them builds a fresh database
  * (`FJS-714`, `FJS-251`'s shape).
  */
-export function legacyForm(encoded) {
+export function legacyForm(/** @type {any} */ encoded) {
   const env = parseEnvelope(encoded)
   if (!env || env.version !== 2) return null
   const v1 = env.mode === 'det' ? ENC_D_PREFIX : env.mode === 'hash' ? HASH_PREFIX : ENC_PREFIX
@@ -196,14 +200,14 @@ export function legacyForm(encoded) {
 }
 
 /** One key, several keys, or a ring already built — one shape out. */
-export function makeKeyring(current, previous = []) {
-  const all = [current, ...previous].filter(Boolean).map(k => Buffer.from(k))
+export function makeKeyring(/** @type {any} */ current, /** @type {any[]} */ previous = []) {
+  const all = [current, ...previous].filter(Boolean).map((/** @type {any} */ k) => Buffer.from(k))
   const byKid = new Map()
   for (const k of all) if (!byKid.has(keyId(k))) byKid.set(keyId(k), k)
   return { current: all[0] ?? null, byKid, all }
 }
 
-function asKeyring(key) {
+function asKeyring(/** @type {any} */ key) {
   if (key && key.byKid instanceof Map) return key
   return makeKeyring(key)
 }
@@ -217,7 +221,7 @@ function asKeyring(key) {
  * because the decrypt then failed (`FJS-715`). GCM's tag is the real answer and
  * a forgery cannot produce one.
  */
-export function verifiesAs(value, key, mode) {
+export function verifiesAs(/** @type {any} */ value, /** @type {any} */ key, /** @type {any} */ mode) {
   const env = parseEnvelope(value)
   if (!env) return false
   if (mode === 'hash') return env.mode === 'hash'   // an HMAC has no inverse to check
@@ -239,12 +243,12 @@ export function verifiesAs(value, key, mode) {
 // column to anyone holding the database. That is true of every searchable-encryption
 // scheme — a blind index leaks exactly the same fact — and it is why this is opt-in
 // per field rather than the default.
-function deriveIv(plaintext, key) {
+function deriveIv(/** @type {any} */ plaintext, /** @type {any} */ key) {
   return createHmac(HMAC_ALG, Buffer.concat([Buffer.from(key), salt('iv')]))
     .update(String(plaintext)).digest().subarray(0, GCM_IV_LEN)
 }
 
-export function encryptDeterministic(plaintext, key) {
+export function encryptDeterministic(/** @type {any} */ plaintext, /** @type {any} */ key) {
   if (plaintext == null) return plaintext
   const iv         = deriveIv(plaintext, key)
   const cipher     = createCipheriv('aes-256-gcm', key, iv)
@@ -256,20 +260,20 @@ export function encryptDeterministic(plaintext, key) {
 
 // @hashed. One way, by construction and by name — there is no inverse of an HMAC,
 // so nothing here has a partner function elsewhere in this file.
-export function hashField(plaintext, key) {
+export function hashField(/** @type {any} */ plaintext, /** @type {any} */ key) {
   if (plaintext == null) return plaintext
   const hmac = createHmac(HMAC_ALG, Buffer.concat([Buffer.from(key), salt('hash')]))
     .update(String(plaintext)).digest('base64url')
   return HASH_PREFIX_2 + keyId(key) + '.' + hmac
 }
 
-export function isCiphertext(value) {
+export function isCiphertext(/** @type {any} */ value) {
   const s = String(value ?? '')
   return s.startsWith(ENC_PREFIX) || s.startsWith(ENC_D_PREFIX) || s.startsWith(HASH_PREFIX)
 }
 
 // Normalize key: hex string, Buffer, or Uint8Array → 32-byte Buffer
-export function normalizeKey(raw) {
+export function normalizeKey(/** @type {any} */ raw) {
   if (!raw || (typeof raw === 'string' && !raw.trim())) return null
   // No Buffer means a device. Everything after this line is Buffer arithmetic,
   // so the first thing a given key reaches would be a ReferenceError; asking
@@ -289,7 +293,7 @@ export function normalizeKey(raw) {
 // compared against — plain @encrypted stores a random IV, so no encoding of the
 // operand reproduces the stored value. That is a refusal, not an absence, which
 // is why it is not the same answer as `null`.
-export function comparisonEncoderFor(policy) {
+export function comparisonEncoderFor(/** @type {any} */ policy) {
   if (!policy) return null
   if (policy.hashed) return {
     encode: hashField,
@@ -330,8 +334,8 @@ const SHA_H0 = Uint32Array.from({ length: 8 }, (_, i) => {
 })
 const B64URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
 
-function sha256(bytes) {
-  const rotr = (x, n) => (x >>> n) | (x << (32 - n))
+function sha256(/** @type {Uint8Array} */ bytes) {
+  const rotr = (/** @type {number} */ x, /** @type {number} */ n) => (x >>> n) | (x << (32 - n))
   const padded = new Uint8Array(((bytes.length + 9 + 63) >> 6) << 6)
   padded.set(bytes)
   padded[bytes.length] = 0x80
@@ -361,7 +365,7 @@ function sha256(bytes) {
   return new Uint8Array(out.buffer)
 }
 
-export function opaqueMark(value) {
+export function opaqueMark(/** @type {any} */ value) {
   const text = typeof value === 'string' || value instanceof Uint8Array ? value : JSON.stringify(value)
   const enc = new TextEncoder()
   const body = typeof text === 'string' ? enc.encode(text) : text

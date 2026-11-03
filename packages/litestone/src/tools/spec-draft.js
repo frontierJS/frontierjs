@@ -1,3 +1,4 @@
+// @ts-check
 // spec-draft.js — litestone as built, filed under the spec entries it would fill
 //
 // A working draft, not a ruling. `IDEAS/specifications.md` lists the entries a
@@ -31,36 +32,37 @@ import { PIVOT_RANK, ACCESS_RANK } from '../release.js'
 const TEST_DIR = resolve(import.meta.dirname, '../../test')
 const SRC_DIR  = resolve(import.meta.dirname, '..')
 
-const keyOf = row => `${row.level}/${row.word}`
+const keyOf = (/** @type {any} */ row) => `${row.level}/${row.word}`
 
 // Words that belong to an entry the catalog's groups do not name. A group says
 // what a word does to a row; these say which lifecycle, tenancy or audit rule it
 // is part of.
-const PLACED = new Map([
+const PLACED = new Map(/** @type {[string, string][]} */ ([
   ...['model/transitions', 'field/version', 'field/sealed', 'model/softDelete',
-      'field/hardDelete', 'field/keep'].map(k => [k, 'lifecycle']),
-  ...['schema/tenancy', 'schema/claim', 'model/tenant'].map(k => [k, 'tenancy']),
-  ...['field/trail', 'model/trail'].map(k => [k, 'audit']),
-])
+      'field/hardDelete', 'field/keep'].map((/** @type {string} */ k) => [k, 'lifecycle']),
+  ...['schema/tenancy', 'schema/claim', 'model/tenant'].map((/** @type {string} */ k) => [k, 'tenancy']),
+  ...['field/trail', 'model/trail'].map((/** @type {string} */ k) => [k, 'audit']),
+]))
 
-const inGroups = (...groups) => row => !PLACED.has(keyOf(row)) && row.level !== 'transition' && groups.includes(row.group)
+const inGroups = (/** @type {string[]} */ ...groups) => (/** @type {any} */ row) => !PLACED.has(keyOf(row)) && row.level !== 'transition' && groups.includes(row.group)
 
 // Host terms, case-sensitive where the word is also English.
+/** @type {[RegExp, string][]} */
 const HOST_TERMS = [
   [/\bsqlite-vec\b/i, 'sqlite-vec'], [/\bsqlite\b/i, 'SQLite'], [/\bBun\b/, 'Bun'], [/\bFTS5\b/, 'FTS5'],
   [/\bWAL\b/, 'WAL'], [/\bPRAGMA\b/, 'PRAGMA'], [/\bjson_extract\b/i, 'json_extract'],
   [/\bSTRICT\b/, 'STRICT'], [/\browid\b/i, 'rowid'],
 ]
 
-const mdText = text =>
+const mdText = (/** @type {any} */ text) =>
   String(text).split(/(`[^`]*`)/).map((p, i) => i % 2 ? p : p.replace(/</g, '&lt;').replace(/>/g, '&gt;')).join('')
 
-const firstSentence = text => {
+const firstSentence = (/** @type {any} */ text) => {
   const flat = String(text).replace(/\s+/g, ' ').trim()
   return flat.split(/(?<=[.!?])\s(?=[A-Z`@(])/)[0]
 }
 
-const cell = text => String(text).replace(/\|/g, '\\|')
+const cell = (/** @type {any} */ text) => String(text).replace(/\|/g, '\\|')
 
 // ─── JSON-form readers ─────────────────────────────────────────────────────────
 
@@ -75,7 +77,7 @@ function jsonSchemaKeywords() {
 // it accepts, so a field added there appears here.
 function trailEntryFields() {
   const entry = buildLogEntry({ operation: 'create', model: 'M', records: [] },
-                              { auth: null, isSystem: false, _logContext: null }, undefined)
+                              /** @type {any} */ ({ auth: null, isSystem: false, _logContext: null }), undefined)
   return Object.keys(entry)
 }
 
@@ -84,7 +86,7 @@ function redactionMarks() {
   return [...marks.values()].map(m => markOf(m, 'x').replace(/^(\[opaque:).*\]$/, '$1<digest>]'))
 }
 
-const code = list => list.map(w => `\`${w}\``).join(' · ')
+const code = (/** @type {string[]} */ list) => list.map((/** @type {string} */ w) => `\`${w}\``).join(' · ')
 
 // ─── the entries ───────────────────────────────────────────────────────────────
 
@@ -125,7 +127,7 @@ const SECTIONS = [
   },
   {
     id: 'audit', n: 9, title: 'Audit trail',
-    has: row => PLACED.get(keyOf(row)) === 'audit',
+    has: (/** @type {any} */ row) => PLACED.get(keyOf(row)) === 'audit',
     json: () => ({
       name: 'the trail entry',
       lines: [`Entry fields: ${code(trailEntryFields())} (\`buildLogEntry\`, \`src/core/audit-log.js\`, called with the smallest input it accepts)`],
@@ -145,7 +147,7 @@ const SECTIONS = [
   },
   {
     id: 'lifecycle', n: 6, title: 'Lifecycle semantics',
-    has: row => PLACED.get(keyOf(row)) === 'lifecycle' || row.level === 'transition',
+    has: (/** @type {any} */ row) => PLACED.get(keyOf(row)) === 'lifecycle' || row.level === 'transition',
     json: () => null,
     tests: ['audit-transition.test.ts', 'bulk-transitions.test.ts', 'system-transitions.test.ts',
             'transition-visibility.test.ts', 'transitions-declared-by.test.ts', 'transition-entry.test.ts',
@@ -153,7 +155,7 @@ const SECTIONS = [
   },
   {
     id: 'tenancy', n: 7, title: 'Tenancy',
-    has: row => PLACED.get(keyOf(row)) === 'tenancy',
+    has: (/** @type {any} */ row) => PLACED.get(keyOf(row)) === 'tenancy',
     json: () => null,
     tests: ['tenancy.test.ts', 'tenant-isolation.test.ts', 'tenant-create.test.ts', 'tenancy-delegation.test.ts'],
   },
@@ -161,7 +163,7 @@ const SECTIONS = [
 
 const HOST = {
   id: 'host', title: 'Host wiring (stays implementation)',
-  has: row => !PLACED.has(keyOf(row)) && row.group === 'operate',
+  has: (/** @type {any} */ row) => !PLACED.has(keyOf(row)) && row.group === 'operate',
 }
 
 /**
@@ -169,7 +171,7 @@ const HOST = {
  */
 function partition() {
   const all  = [...SECTIONS, HOST]
-  const rows = new Map(all.map(s => [s.id, []]))
+  const rows = /** @type {Map<string, any>} */ (new Map(all.map(s => [s.id, []])))
   for (const row of CATALOG) {
     const hits = all.filter(s => s.has(row))
     if (hits.length !== 1)
@@ -181,7 +183,8 @@ function partition() {
   return rows
 }
 
-function hostLeaks(rows) {
+function hostLeaks(/** @type {any[]} */ rows) {
+  /** @type {{ row: any, terms: string[] }[]} */
   const out = []
   for (const row of rows) {
     const hay = [row.blurb, row.arity, row.note].filter(Boolean).join('\n')
@@ -191,17 +194,17 @@ function hostLeaks(rows) {
   return out
 }
 
-function vocabulary(rows, push) {
+function vocabulary(/** @type {any[]} */ rows, /** @type {(...l: any[]) => void} */ push) {
   if (!rows.length) { push('*No catalog row belongs to this entry: it is stated by behavior, not by a `.lite` word.*', ''); return }
   push('| word | where legal | accepts | meaning |', '| --- | --- | --- | --- |')
   for (const row of rows)
-    push(`| \`${typed(row)}\` | ${positionsOf(row).map(p => POSITIONS[p] ?? p).join(' · ')} | ` +
+    push(`| \`${typed(row)}\` | ${positionsOf(row).map((/** @type {string} */ p) => /** @type {any} */ (POSITIONS)[p] ?? p).join(' · ')} | ` +
          `${row.arity ? `\`${cell(row.arity)}\`` : '—'} | ${cell(mdText(firstSentence(row.blurb)))} |`)
   push('')
-  const valued = rows.filter(r => r.values)
+  const valued = rows.filter((/** @type {any} */ r) => r.values)
   for (const row of valued)
     for (const v of row.values)
-      push(`- \`${typed(row)}\` **\`${v.arg}\`** takes ${v.of.map(e => `\`${typeof e === 'string' ? e : e.value}\``).join(' · ')}`)
+      push(`- \`${typed(row)}\` **\`${v.arg}\`** takes ${v.of.map((/** @type {any} */ e) => `\`${typeof e === 'string' ? e : e.value}\``).join(' · ')}`)
   if (valued.length) push('')
 }
 
@@ -215,8 +218,9 @@ function commitOf() {
 }
 
 export function renderSpecDraft() {
+  /** @type {any[]} */
   const out  = []
-  const push = (...l) => out.push(...l)
+  const push = (/** @type {any[]} */ ...l) => out.push(...l)
   const rowsOf = partition()
 
   push('# Litestone — specification working draft', '')
@@ -230,7 +234,7 @@ export function renderSpecDraft() {
   push(`**${CATALOG.length} catalog rows** placed across ${SECTIONS.length} entries and host wiring.`, '')
 
   for (const s of SECTIONS) {
-    const rows  = rowsOf.get(s.id)
+    const rows  = /** @type {any[]} */ (rowsOf.get(s.id))
     const leaks = hostLeaks(rows)
     const json  = s.json()
     const tests = s.tests.map(t => {
@@ -262,7 +266,7 @@ export function renderSpecDraft() {
          '[ ] second implementation (none)', '')
   }
 
-  const host = rowsOf.get(HOST.id)
+  const host = /** @type {any[]} */ (rowsOf.get(HOST.id))
   push(`## ${HOST.title}`, '',
        'The `operate` group. These wire litestone to an app and a runtime, and are listed so that none is lost,',
        'not because a spec would state them.', '')

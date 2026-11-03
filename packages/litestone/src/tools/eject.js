@@ -1,3 +1,4 @@
+// @ts-check
 // eject.js — promote an @edge / @scoped field group into a real model.
 //
 // The side table backing an edge is byte-for-byte the explicit join model you'd
@@ -12,11 +13,11 @@ import { pascal, camel } from '@frontierjs/toolbelt/inflect'
 import { buildEdgeMap } from '../core/ddl.js'
 
 
-function renderType(t) {
+function renderType(/** @type {any} */ t) {
   return `${t.name}${t.array ? '[]' : ''}${t.optional ? '?' : ''}`
 }
 
-function renderDefault(defAttr) {
+function renderDefault(/** @type {any} */ defAttr) {
   if (!defAttr) return ''
   const v = defAttr.value
   if (v == null) return ''
@@ -36,23 +37,23 @@ function renderDefault(defAttr) {
 
 /**
  * Compute the eject plan for an edge field group.
- * @param schema  parsed schema (parseResult.schema)
- * @param target  "Model.field" or "Model.namespace"
+ * @param {any} schema  parsed schema (parseResult.schema)
+ * @param {any} target  "Model.field" or "Model.namespace"
  */
 export function ejectEdge(schema, target, { pluralize = false } = {}) {
   const [modelName, fieldOrNs] = String(target).split('.')
   if (!modelName || !fieldOrNs)
     throw new Error(`eject target must be "Model.field" or "Model.namespace", got "${target}"`)
-  const hostModel = schema.models.find(m => m.name === modelName)
+  const hostModel = schema.models.find((/** @type {any} */ m) => m.name === modelName)
   if (!hostModel) throw new Error(`Model "${modelName}" not found`)
 
-  const edges = buildEdgeMap(schema, pluralize)[modelName] ?? {}
-  const targetDesc = edges[fieldOrNs] ?? Object.values(edges).find(d => d.as === fieldOrNs)
+  const edges = /** @type {any} */ (buildEdgeMap(schema, pluralize))[modelName] ?? {}
+  const targetDesc = edges[fieldOrNs] ?? Object.values(edges).find((/** @type {any} */ d) => d.as === fieldOrNs)
   if (!targetDesc)
     throw new Error(`No @edge/@scoped field or namespace "${fieldOrNs}" on model "${modelName}"`)
 
   // The whole group sharing this side table ejects together.
-  const group = Object.values(edges).filter(d => d.table === targetDesc.table)
+  const group = Object.values(edges).filter((/** @type {any} */ d) => d.table === targetDesc.table)
   const { table: oldTable, hostCol, dimCol, ref, storage } = targetDesc
 
   const newModelName = pascal(oldTable.replace(/^_/, ''))   // _project_task → ProjectTask
@@ -70,8 +71,8 @@ export function ejectEdge(schema, target, { pluralize = false } = {}) {
   for (const k of keyCols) lines.push(`  ${k.col} Int @id`)
   for (const k of keyCols) lines.push(`  ${k.rel} ${k.model} @relation(fields: [${k.col}], references: [id], onDelete: Cascade)`)
   for (const d of group) {
-    const f = hostModel.fields.find(fl => fl.name === d.field)
-    lines.push(`  ${d.field} ${renderType(f.type)}${renderDefault(f?.attributes.find(a => a.kind === 'default'))}`)
+    const f = hostModel.fields.find((/** @type {any} */ fl) => fl.name === d.field)
+    lines.push(`  ${d.field} ${renderType(f.type)}${renderDefault(f?.attributes.find((/** @type {any} */ a) => a.kind === 'default'))}`)
   }
   // An edge is class-1 by construction — its side table keys both dimensions —
   // so the promotion already knows the answer that a model, once ejected, can no
@@ -105,19 +106,19 @@ export function ejectEdge(schema, target, { pluralize = false } = {}) {
 }
 
 /** Run the physical rename against a live raw DB (the no-data-migration step). */
-export function applyEject(rawDb, plan) {
+export function applyEject(/** @type {any} */ rawDb, /** @type {any} */ plan) {
   rawDb.run(plan.rename)
   return { renamed: `${plan.oldTable} → ${plan.newTable}` }
 }
 
 /** Human-readable plan for the CLI. */
-export function formatEjectPlan(plan) {
+export function formatEjectPlan(/** @type {any} */ plan) {
   return [
     `Eject ${plan.host}.{${plan.fields.join(', ')}} → model ${plan.newModelName}  (${plan.storage})`,
     ``,
     `1. Add this model to your schema:`,
     ``,
-    plan.model.split('\n').map(l => `   ${l}`).join('\n'),
+    plan.model.split('\n').map((/** @type {string} */ l) => `   ${l}`).join('\n'),
     ``,
     `2. Remove the edge field(s) from ${plan.host}: ${plan.fields.join(', ')}`,
     ``,

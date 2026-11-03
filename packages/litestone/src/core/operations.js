@@ -1,3 +1,4 @@
+// @ts-check
 // operations.js — the row-keeping operations a migration is asked to carry.
 //
 // A schema diff is a name-set diff: `description` leaving a table and `brief`
@@ -24,7 +25,11 @@
 import { modelToTableName, fieldToColumnName, isStoredField } from './ddl.js'
 import { quoteIdent } from './query.js'
 
-/** The operations this build can write, and what each one promises. */
+/**
+ * The operations this build can write, and what each one promises.
+ *
+ * @type {Record<string, string>}
+ */
 export const OPERATIONS = {
   rename: 'a column keeps its values under a new name',
 }
@@ -49,7 +54,7 @@ export function parseRenameFlag(text) {
  * by position and name; what an entry MEANS against a schema is
  * `resolveOperations`'s.
  *
- * @param {unknown} doc
+ * @param {any} doc
  * @returns {object[]}
  */
 export function readOperations(doc) {
@@ -70,12 +75,17 @@ export function readOperations(doc) {
  * database is left for that database's pass, because `migrate create` runs once
  * per database and is handed the whole document each time.
  *
+ * @param {any} parseResult
+ * @param {string} dbName
+ * @param {any[] | null | undefined} operations
+ * @param {{ pluralize?: boolean }} [opts]
  * @returns {{ ok: true, ops: object[] } | { ok: false, message: string }}
  */
 export function resolveOperations(parseResult, dbName, operations, { pluralize = false } = {}) {
   const models = parseResult.schema.models
   const ops = []
   const seen = new Set()
+  /** @type {(message: string) => { ok: false, message: string }} */
   const refuse = (message) => ({ ok: false, message })
 
   for (const [i, o] of (operations ?? []).entries()) {
@@ -84,16 +94,16 @@ export function resolveOperations(parseResult, dbName, operations, { pluralize =
     for (const key of ['model', 'from', 'to'])
       if (typeof o[key] !== 'string' || !IDENT.test(o[key])) return refuse(`${at}: \`${key}\` is a name`)
 
-    const model = models.find(m => m.name === o.model)
-    if (!model) return refuse(`${at}: the schema declares no model ${o.model}. Its models are ${models.map(m => m.name).join(', ')}`)
-    if (model.attributes?.some(a => a.kind === 'external')) return refuse(`${at}: ${o.model} is @@external, so no migration of its owns its columns`)
-    const home = model.attributes?.find(a => a.kind === 'db')?.name ?? 'main'
+    const model = models.find((/** @type {any} */ m) => m.name === o.model)
+    if (!model) return refuse(`${at}: the schema declares no model ${o.model}. Its models are ${models.map((/** @type {any} */ m) => m.name).join(', ')}`)
+    if (model.attributes?.some((/** @type {any} */ a) => a.kind === 'external')) return refuse(`${at}: ${o.model} is @@external, so no migration of its owns its columns`)
+    const home = model.attributes?.find((/** @type {any} */ a) => a.kind === 'db')?.name ?? 'main'
     if (home !== dbName) continue
 
-    const field = model.fields.find(f => f.name === o.to)
-    if (!field || !isStoredField(field)) return refuse(`${at}: ${o.model} declares no stored field \`${o.to}\`, so nothing holds the values. Its fields are ${model.fields.filter(isStoredField).map(f => f.name).join(', ')}`)
+    const field = model.fields.find((/** @type {any} */ f) => f.name === o.to)
+    if (!field || !isStoredField(field)) return refuse(`${at}: ${o.model} declares no stored field \`${o.to}\`, so nothing holds the values. Its fields are ${model.fields.filter(isStoredField).map((/** @type {any} */ f) => f.name).join(', ')}`)
     const toCol = fieldToColumnName(field)
-    if (model.fields.some(f => isStoredField(f) && fieldToColumnName(f) === o.from))
+    if (model.fields.some((/** @type {any} */ f) => isStoredField(f) && fieldToColumnName(f) === o.from))
       return refuse(`${at}: ${o.model} still declares \`${o.from}\`. A rename removes the old name from the schema; remove it, or this is a second column and not a rename`)
     if (o.from === toCol) return refuse(`${at}: the old and the new name are the same`)
 
@@ -113,12 +123,15 @@ export function resolveOperations(parseResult, dbName, operations, { pluralize =
  * The names are interpolated into SQL by `renameStatement`, so what lets them
  * in is that each one was read off a column that exists there (Invariant 8).
  *
+ * @param {any[]} ops
+ * @param {any} shadowSchema
+ * @param {string} [what]
  * @returns {string|null} a refusal, or null
  */
 export function checkAgainstHistory(ops, shadowSchema, what = 'the migration history') {
   for (const o of ops) {
     const t = shadowSchema?.[o.table]
-    const cols = new Set((t?.columns ?? []).map(c => c.name))
+    const cols = new Set((t?.columns ?? []).map((/** @type {any} */ c) => c.name))
     const at = `${o.model}.${o.from} → ${o.to}`
     if (!t) return `${at}: ${what} builds no table ${o.table}, so there is nothing to rename in`
     if (!cols.has(o.from))
@@ -129,12 +142,20 @@ export function checkAgainstHistory(ops, shadowSchema, what = 'the migration his
   return null
 }
 
-/** One operation as the statement the file carries. */
+/**
+ * One operation as the statement the file carries.
+ *
+ * @param {any} o
+ */
 export function renameStatement(o) {
   return `ALTER TABLE ${quoteIdent(o.table)} RENAME COLUMN ${quoteIdent(o.from)} TO ${quoteIdent(o.to)};`
 }
 
-/** The line a header and a summary say it with. */
+/**
+ * The line a header and a summary say it with.
+ *
+ * @param {any} o
+ */
 export function describeOperation(o) {
   return `${o.op} ${o.model}.${o.from} → ${o.to}  (the values stay)`
 }
@@ -144,6 +165,9 @@ export function describeOperation(o) {
  * the only such on that table. Far more often a rename than a coincidence, and
  * only ever a QUESTION: the guess changes a sentence or a prompt, never a file.
  *
+ * @param {any[] | null | undefined} tableDiffs
+ * @param {any} parseResult
+ * @param {{ pluralize?: boolean }} [opts]
  * @returns {{ model: string, table: string, from: string, to: string, field: string, type: string }[]}
  */
 export function guessRenames(tableDiffs, parseResult, { pluralize = false } = {}) {
@@ -151,13 +175,13 @@ export function guessRenames(tableDiffs, parseResult, { pluralize = false } = {}
   for (const d of tableDiffs ?? []) {
     const dropped = d.cols?.dropped ?? []
     const added   = d.cols?.added ?? []
-    const model   = parseResult.schema.models.find(m => modelToTableName(m, pluralize) === d.name)
+    const model   = parseResult.schema.models.find((/** @type {any} */ m) => modelToTableName(m, pluralize) === d.name)
     if (!model) continue
     for (const gone of dropped) {
-      const sameKind = (c, side) => side.filter(x => x.type === c.type)
+      const sameKind = (/** @type {any} */ c, /** @type {any[]} */ side) => side.filter((/** @type {any} */ x) => x.type === c.type)
       const arrived = sameKind(gone, added)
       if (arrived.length !== 1 || sameKind(arrived[0], dropped).length !== 1) continue
-      const field = model.fields.find(f => isStoredField(f) && fieldToColumnName(f) === arrived[0].name)
+      const field = model.fields.find((/** @type {any} */ f) => isStoredField(f) && fieldToColumnName(f) === arrived[0].name)
       if (!field) continue
       out.push({ model: model.name, table: d.name, from: gone.name, to: field.name, field: field.name, type: gone.type })
     }
@@ -171,6 +195,8 @@ export function guessRenames(tableDiffs, parseResult, { pluralize = false } = {}
  * values into another, silently, and a wrong no leaves the DESTRUCTIVE box that
  * stops apply.
  *
+ * @param {any[]} guesses
+ * @param {(question: string) => any} ask
  * @returns {Promise<object[]>} the accepted guesses as rename operations
  */
 export async function askRenames(guesses, ask) {

@@ -1,3 +1,4 @@
+// @ts-check
 // frappe.js — Frappe/ERPNext DocType JSON, read into .lite.
 //
 // Here for one construct the other three readers cannot supply: **polymorphism
@@ -20,6 +21,7 @@ import { detectPolymorphic } from './polymorphic.js'
 
 const LAYOUT = new Set(['Section Break', 'Column Break', 'Tab Break', 'HTML', 'Button', 'Heading', 'Fold', 'Image'])
 
+/** @type {Record<string, string>} */
 const TYPES = {
   Data: 'String', 'Small Text': 'String', 'Long Text': 'String', Text: 'String',
   'Text Editor': 'String', 'HTML Editor': 'String', 'Markdown Editor': 'String',
@@ -33,9 +35,10 @@ const TYPES = {
 }
 
 
-export function convert(docs, label = 'schema') {
+export function convert(/** @type {any} */ docs, label = 'schema') {
+  /** @type {any[]} */
   const gaps = []
-  const gap = (kind, model, field, detail, emitted) =>
+  const gap = (/** @type {any} */ kind, /** @type {any} */ model, /** @type {any} */ field, /** @type {any} */ detail, /** @type {any} */ emitted) =>
     gaps.push({ source: label, kind, model, field, detail, emitted })
 
   const byName = new Map()
@@ -59,17 +62,17 @@ export function convert(docs, label = 'schema') {
   // A member that is not a bare identifier is quoted — the stored value is the
   // string either way, and a legal identifier stays bare so the output reads
   // like something a person wrote.
-  const member = (v) => /^[A-Za-z_]\w*$/.test(v) ? v : `"${v.replace(/(["\\])/g, '\\$1')}"`
-  for (const [name, values] of enums) head.push(`enum ${name} {`, ...values.map(v => '  ' + member(v)), '}', '')
+  const member = (/** @type {string} */ v) => /^[A-Za-z_]\w*$/.test(v) ? v : `"${v.replace(/(["\\])/g, '\\$1')}"`
+  for (const [name, values] of enums) head.push(`enum ${name} {`, ...values.map((/** @type {string} */ v) => '  ' + member(v)), '}', '')
 
   const lite = head.concat(out).join('\n')
   detectPolymorphic(lite, gap)
   return { lite, gaps, models: [...models.keys()] }
 }
 
-function emitDoc(model, doc, byName, models, enums, gap) {
-  const fields = (doc.fields || []).filter(f => f && f.fieldname && !LAYOUT.has(f.fieldtype))
-  const byField = new Map(fields.map(f => [f.fieldname, f]))
+function emitDoc(/** @type {any} */ model, /** @type {any} */ doc, /** @type {any} */ byName, /** @type {any} */ models, /** @type {any} */ enums, /** @type {any} */ gap) {
+  const fields = (doc.fields || []).filter((/** @type {any} */ f) => f && f.fieldname && !LAYOUT.has(f.fieldtype))
+  const byField = new Map(fields.map((/** @type {any} */ f) => [f.fieldname, f]))
   const lines = []
   const taken = new Set(['id'])
 
@@ -104,7 +107,7 @@ function emitDoc(model, doc, byName, models, enums, gap) {
   return [`model ${model} {`, ...lines, '}', '']
 }
 
-function emitField(model, f, byField, byName, models, enums, gap, taken) {
+function emitField(/** @type {any} */ model, /** @type {any} */ f, /** @type {any} */ byField, /** @type {any} */ byName, /** @type {any} */ models, /** @type {any} */ enums, /** @type {any} */ gap, /** @type {any} */ taken) {
   const name = camel(f.fieldname)
   if (taken.has(name)) {
     gap('field-name-collision', model, f.fieldname, `${f.fieldname} collides with ${name}`, 'dropped')

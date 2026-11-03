@@ -293,6 +293,7 @@ title: Server
   let enrollCommand  = null
   let enrollWindowMs = 15 * 60 * 1000
   let enrollError    = null
+  let reenrolling    = false
 
   async function issueEnrollment() {
     enrollError = null; busy = 'enroll'
@@ -399,18 +400,28 @@ title: Server
     </article>
   {/if}
 
-  {#if server.outpostPublicKey === null}
+  {#if server.outpostPublicKey === null || reenrolling}
     <!-- A machine with no credential of its own. Provisioned machines get one
          from cloud-init, which nobody types; an imported machine has no install
          to be handed anything at, so this is that moment.
 
          Shown for every such machine rather than only for unreachable ones: a
          box that is checking in on nothing at all is exactly the case somebody
-         needs to fix and has no other sign of. -->
-    <article class="alert info" id="needs-enrollment">
+         needs to fix and has no other sign of.
+
+         An enrolled machine reaches the same command through Re-enroll: it is
+         the only path that moves a running Outpost to a new version
+         (FJS-D1820). -->
+    <article class="alert info" id={server.outpostPublicKey === null ? 'needs-enrollment' : 'reenroll'}>
       <div class="alert-content">
-        <strong>This machine has no credential of its own.</strong>
-        Run one command on it and it gets one, after which it signs its own check-ins.
+        {#if server.outpostPublicKey === null}
+          <strong>This machine has no credential of its own.</strong>
+          Run one command on it and it gets one, after which it signs its own check-ins.
+        {:else}
+          <strong>Re-enroll this machine.</strong>
+          The command reinstalls its Outpost at the version this Basecamp runs and restarts it,
+          and the key it enrolls with replaces the one it holds now. Nothing changes until it runs.
+        {/if}
         {#if enrollError}
           <p class="text-sm" id="enroll-error">{enrollError}</p>
         {/if}
@@ -432,6 +443,9 @@ title: Server
             <Button tone="primary" disabled={busy === 'enroll'} onclick={issueEnrollment}>
               {busy === 'enroll' ? 'Issuing…' : 'Get the install command'}
             </Button>
+            {#if reenrolling}
+              <Button treatment="ghost" onclick={() => reenrolling = false}>Cancel</Button>
+            {/if}
           </div>
         {/if}
       </div>
@@ -451,6 +465,9 @@ title: Server
     {/if}
     {#if moves.has('reboot')}
       <Button treatment="outlined" disabled={busy === 'reboot'} onclick={() => act('reboot')}>Reboot</Button>
+    {/if}
+    {#if server.outpostPublicKey !== null && !reenrolling}
+      <Button treatment="outlined" id="server-reenroll" onclick={() => reenrolling = true}>Re-enroll this machine</Button>
     {/if}
     {#if cloudMade}
       <Button treatment="ghost" disabled={busy === 'sync'} onclick={() => act('sync')}>
@@ -553,7 +570,7 @@ title: Server
             <tr data-control={c.id}>
               <td><span class="badge {POSTURE_TONE[String(c.ok)]}">{c.ok === true ? 'pass' : c.ok === false ? 'fail' : 'unknown'}</span></td>
               <td><code>{c.id}</code></td>
-              <td class="text-sm">{c.message}</td>
+              <td class="text-sm">{c.message}{#if c.fix && c.ok === false}<br><strong>Fix:</strong> {c.fix}{/if}</td>
             </tr>
           {/each}
         </tbody>

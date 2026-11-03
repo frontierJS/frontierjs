@@ -1,3 +1,4 @@
+// @ts-check
 // capability.js — the grid the ladder cannot express, enforced.
 //
 // A `@@gate` grades WHO is asking on one axis; a capability grades WHAT is being
@@ -37,7 +38,7 @@ import { capabilityDeclarations } from '../core/capabilities.js'
 // bug in the resolver that built it, and it is thrown for rather than read as
 // nothing: an empty set looks exactly like *this person was granted nothing*, and
 // that is a refusal somebody would spend an afternoon debugging in the data.
-function heldBy(auth, model) {
+function heldBy(/** @type {any} */ auth, /** @type {any} */ model) {
   const held = auth?.capabilities
   if (held == null) return EMPTY
   if (held instanceof Set)  return held
@@ -54,11 +55,11 @@ export class CapabilityPlugin extends LitestonePlugin {
   // forwards one plugin to every client it opens, and a second onInit on `this`
   // replaced the FIRST client's grid with the second schema's (`FJS-1380`). The
   // declarations live on the client's ctx, which every hook is handed.
-  onInit(schema, ctx) {
+  onInit(/** @type {any} */ schema, /** @type {any} */ ctx) {
     ctx.capabilityDecls = capabilityDeclarations(schema)
   }
 
-  _check(model, op, ctx) {
+  _check(/** @type {any} */ model, /** @type {any} */ op, /** @type {any} */ ctx) {
     const decl = ctx.capabilityDecls[model]
     if (!decl) return                       // no grid declared, nothing to hold
     if (ctx.isSystem) return                // permission, not scope
@@ -85,7 +86,7 @@ export class CapabilityPlugin extends LitestonePlugin {
    * of the payload is exactly what that grant is about. A write naming NO
    * columns at all (a bare touch) is an ordinary update.
    */
-  _checkUpdate(model, args, ctx) {
+  _checkUpdate(/** @type {any} */ model, /** @type {any} */ args, /** @type {any} */ ctx) {
     const decl = ctx.capabilityDecls[model]
     if (!decl) return
     if (ctx.isSystem) return
@@ -110,25 +111,25 @@ export class CapabilityPlugin extends LitestonePlugin {
     if (ungraded.length || (!graded.length && !machineKeys.length)) requireCapability(model, 'update', ctx)
   }
 
-  async onBeforeRead(model, args, ctx) {
+  async onBeforeRead(/** @type {any} */ model, /** @type {any} */ args, /** @type {any} */ ctx) {
     this._check(model, 'read', ctx)
     for (const target of collectIncludedModels(args, model, ctx.shapes))
       this._check(target, 'read', ctx)
   }
 
-  async onBeforeCreate(model, args, ctx) {
+  async onBeforeCreate(/** @type {any} */ model, /** @type {any} */ args, /** @type {any} */ ctx) {
     this._check(model, 'create', ctx)
     for (const { model: m, op } of collectNestedOps(args?.data, model, ctx.shapes))
       this._check(m, op, ctx)
   }
 
-  async onBeforeUpdate(model, args, ctx) {
+  async onBeforeUpdate(/** @type {any} */ model, /** @type {any} */ args, /** @type {any} */ ctx) {
     this._checkUpdate(model, args, ctx)
     for (const { model: m, op } of collectNestedOps(args?.data, model, ctx.shapes))
       this._check(m, op, ctx)
   }
 
-  async onBeforeDelete(model, args, ctx) {
+  async onBeforeDelete(/** @type {any} */ model, /** @type {any} */ args, /** @type {any} */ ctx) {
     this._check(model, 'delete', ctx)
   }
 }
@@ -143,7 +144,7 @@ export class CapabilityPlugin extends LitestonePlugin {
  * does not have to parse the sentence. `required` stays the gate's numeric level
  * and is left absent here.
  */
-export function requireCapability(model, action, ctx) {
+export function requireCapability(/** @type {any} */ model, /** @type {any} */ action, /** @type {any} */ ctx) {
   const name = `${model}.${action}`
   if (heldBy(ctx.auth, model).has(name)) return
   throw new AccessDeniedError(
@@ -173,7 +174,7 @@ export function requireCapability(model, action, ctx) {
  * that would generalize it and is deliberately not shipped: a blunt off-switch on a
  * security rule is the worse of the two.
  */
-export function requireGrantSubset(model, field, values, ctx) {
+export function requireGrantSubset(/** @type {any} */ model, /** @type {any} */ field, /** @type {any} */ values, /** @type {any} */ ctx) {
   const held   = heldBy(ctx.auth, model)
   const wanted = Array.isArray(values) ? values : values == null ? [] : [values]
   const over   = wanted.filter(v => !held.has(String(v)))

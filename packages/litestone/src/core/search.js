@@ -1,3 +1,4 @@
+// @ts-check
 // search.js — the search verb: full-text search over the model's @@fts index
 // in two steps, the hits on the index and then the rows from the base table,
 // with the global filter, the plugin read filters and the row policy folded
@@ -11,7 +12,7 @@ import { CapabilityNotDeclaredError } from './errors.js'
 import { buildOrderBy, ftsWords, inList, pageSql, quoteIdent } from './query.js'
 import { fromSelectExpr } from './include.js'
 
-export function makeSearch(shape, ctx, deps) {
+export function makeSearch(/** @type {any} */ shape, /** @type {any} */ ctx, /** @type {any} */ deps) {
   const { tableName, modelName, ftsFields, fromFields, columnMap } = shape
   const {
     readDb, plugins, col, visibleWhere, buildWhereWithEncryption, needsTiming, fireQuery,
@@ -60,7 +61,7 @@ export function makeSearch(shape, ctx, deps) {
   // can page a base-column order without knowing what matched. The relevance
   // path is untouched and stays the default.
 
-  async function search(query, {
+  async function search(/** @type {any} */ query, /** @type {any} */ {
     raw         = false,
     prefix      = false,
     limit       = 20,
@@ -92,7 +93,7 @@ export function makeSearch(shape, ctx, deps) {
     }
     // Nothing left to find once the punctuation is gone — a lone `"` — answers
     // no rows; FTS5 would refuse the empty MATCH as a syntax error.
-    const trigram = shape.model.attributes.find(a => a.kind === 'fts')?.tokenize === 'trigram'
+    const trigram = shape.model.attributes.find((/** @type {any} */ a) => a.kind === 'fts')?.tokenize === 'trigram'
     const words   = raw ? { match: query, scan: [] } : ftsWords(query, { prefix, trigram })
     if (words == null) return []
 
@@ -147,6 +148,7 @@ export function makeSearch(shape, ctx, deps) {
     const { where: searchWhere, policy: searchPolicy } = visibleWhere('search', where,
       { withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf })
 
+    /** @type {any[]} */
     const filterParams = []
     let   filterSql    = buildWhereWithEncryption(searchWhere, filterParams)
     if (searchPolicy) {
@@ -161,7 +163,7 @@ export function makeSearch(shape, ctx, deps) {
     // (`ftsWords`), required like any other word. The content table holds the
     // same columns under the same names, so a GLOB reads either.
     const globsOver  = (/** @type {string} */ table) => words.scan.map(() =>
-      '(' + ftsFields.map(f => `${quoteIdent(table)}.${quoteIdent(col(f))} GLOB ?`).join(' OR ') + ')')
+      '(' + ftsFields.map((/** @type {any} */ f) => `${quoteIdent(table)}.${quoteIdent(col(f))} GLOB ?`).join(' OR ') + ')')
     const globParams = words.scan.flatMap(glob => ftsFields.map(() => glob))
 
     if (words.match != null) {
@@ -209,16 +211,18 @@ export function makeSearch(shape, ctx, deps) {
     // ── Step 2: fetch full rows from base table for the matching IDs ───────
     // Preserve FTS rank order by using a CASE WHEN expression.
 
-    const rowids      = ftsRows.map(r => r.rowid)
-    const rankByRowid = new Map(ftsRows.map(r => [r.rowid, r.rank]))
-    const hlByRowid   = highlight ? new Map(ftsRows.map(r => [r.rowid, r._highlight])) : null
-    const snipByRowid = snippet   ? new Map(ftsRows.map(r => [r.rowid, r._snippet]))   : null
+    const rowids      = ftsRows.map((/** @type {any} */ r) => r.rowid)
+    const rankByRowid = new Map(ftsRows.map((/** @type {any} */ r) => [r.rowid, r.rank]))
+    const hlByRowid   = highlight ? new Map(ftsRows.map((/** @type {any} */ r) => [r.rowid, r._highlight])) : null
+    const snipByRowid = snippet   ? new Map(ftsRows.map((/** @type {any} */ r) => [r.rowid, r._snippet]))   : null
 
     // Build base query — the same fold as step 1, bound again
+    /** @type {any[]} */
     const baseParams   = []
     let whereSql = buildWhereWithEncryption(searchWhere, baseParams)
     // The index is keyed on the source rowid, not `id` (a String id cannot be
     // an FTS5 rowid), so the hits are rejoined on rowid.
+    /** @type {any[]} */
     const rowidBinds = []
     const rowidSql   = inList('rowid', rowids, rowidBinds)
     whereSql = whereSql && whereSql !== '1=1' ? `${rowidSql} AND (${whereSql})` : rowidSql
@@ -269,7 +273,7 @@ export function makeSearch(shape, ctx, deps) {
     // walked and the rows looked up. Under a caller's order step 2 already
     // sorted AND paged, so walking the hits would put rank back — the rows
     // are walked instead and the per-row extras looked up by rowid.
-    const result = [], rids = []
+    const result = [], rids = /** @type {any[]} */ ([])
 
     if (ordered) {
       for (const row of baseRows) {
@@ -278,7 +282,7 @@ export function makeSearch(shape, ctx, deps) {
         result.push(row)
       }
     } else {
-      const rowById = new Map(baseRows.map(r => { const rid = r.__fts_rowid; delete r.__fts_rowid; return [rid, r] }))
+      const rowById = new Map(baseRows.map((/** @type {any} */ r) => { const rid = r.__fts_rowid; delete r.__fts_rowid; return [rid, r] }))
       for (const ftsRow of ftsRows) {
         const row = rowById.get(ftsRow.rowid)
         if (!row) continue  // filtered out by where clause or soft delete
@@ -292,7 +296,7 @@ export function makeSearch(shape, ctx, deps) {
     // `search(q, { select })` answered without `_rank` and said nothing
     // (FJS-1694).
     withIncludes(result, ps, include)
-    return finalize(result, ps).map((row, i) => {
+    return finalize(result, ps).map((/** @type {any} */ row, /** @type {any} */ i) => {
       const rid = rids[i]
       if (withRank)    row._rank      = rankByRowid.get(rid)
       if (hlByRowid)   row._highlight = hlByRowid.get(rid)

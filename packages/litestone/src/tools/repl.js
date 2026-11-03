@@ -1,3 +1,4 @@
+// @ts-check
 // src/tools/repl.js — the console, and the standing it runs at
 //
 // Every framework ships one of these and every one of them is god-mode by
@@ -78,7 +79,7 @@ export function describeStanding({ label = null, graded = 0, synthetic = false }
 const BUILT_IN     = ['help', 'standing', 'exit']
 const COMMAND_NAME = /^[A-Za-z][\w-]*$/
 
-export function replCommands(mod, file = 'db/repl.js') {
+export function replCommands(/** @type {any} */ mod, file = 'db/repl.js') {
   const table = mod?.default
   if (!table || typeof table !== 'object' || Array.isArray(table))
     throw new Error(`${file} must export default an object of commands — { resetPasswords: { help, run } }`)
@@ -110,6 +111,7 @@ export function replCommands(mod, file = 'db/repl.js') {
 // Resolves when the session ends. `out` is injectable so a test can read what a
 // session printed without a terminal.
 
+/** @param {any} [opts] */
 export function startRepl({
   binds, names = {}, standing, prompt = standing, accessors = [], commands = {}, tenant = null,
   hints = [], history = HISTORY, commandsFrom = 'db/repl.js', out = console.log,
@@ -128,7 +130,7 @@ export function startRepl({
 
   for (const line of hints) out(line)
 
-  return new Promise((resolve) => {
+  return new Promise((/** @type {(value?: any) => void} */ resolve) => {
     // A promise CHAIN, not `rl.pause()`. Pausing does not hold back lines that
     // are already buffered — a pasted block or a piped heredoc emits every line
     // synchronously — so the handlers overlap and the statements complete in
@@ -164,7 +166,7 @@ export function startRepl({
       chain.then(() => { out(''); resolve() })
     })
 
-    async function handleLine(raw) {
+    async function handleLine(/** @type {string} */ raw) {
       const line = raw.trim()
 
       if (!line)                 return showPrompt()
@@ -185,7 +187,7 @@ export function startRepl({
         }
         try {
           await commands[name].run({ ...binds, args, out, tenant })
-        } catch (err) {
+        } catch (/** @type {any} */ err) {
           out(`  ${err.name}: ${err.message}`)
         }
         return showPrompt()
@@ -193,7 +195,7 @@ export function startRepl({
 
       try {
         out(format(await evaluate(line, binds)))
-      } catch (err) {
+      } catch (/** @type {any} */ err) {
         // The message alone. A stack from inside the client names our files and
         // says nothing about the expression that asked, which is what a person
         // at a prompt is debugging.
@@ -216,6 +218,7 @@ export function startRepl({
 // `err` with the exit code — a caller running this once has no next prompt to
 // read an error off, and an exit of 0 after a refusal reads as the answer.
 
+/** @param {any} [opts] */
 export async function evalOnce({ code, binds, commands = {}, tenant = null, commandsFrom = 'db/repl.js', out = console.log, err = console.error } = {}) {
   const line = String(code ?? '').trim()
   if (!line) { err('  Nothing to evaluate.'); return 1 }
@@ -232,7 +235,7 @@ export async function evalOnce({ code, binds, commands = {}, tenant = null, comm
     }
     out(format(await evaluate(line, binds), ''))
     return 0
-  } catch (e) {
+  } catch (/** @type {any} */ e) {
     err(`  ${e.name}: ${e.message}`)
     return 1
   }
@@ -247,7 +250,7 @@ export async function evalOnce({ code, binds, commands = {}, tenant = null, comm
 
 const BODY = /^(const|let|var|if|for|while|function|class|try|switch|do|return|import|throw)\b/
 
-function evaluate(code, binds) {
+function evaluate(/** @type {string} */ code, /** @type {any} */ binds) {
   const body = code.includes('\n') || code.includes(';') || BODY.test(code)
   const src  = body ? `return (async () => { ${code} })()`
                     : `return (async () => (${code}))()`
@@ -257,7 +260,7 @@ function evaluate(code, binds) {
 // A row is the thing being looked at, so it is printed whole. `JSON.stringify`
 // is not enough on its own — a Date and a BigInt are both routine in an answer
 // here and neither survives it, one silently and one as a throw.
-function format(value, pad = '  ') {
+function format(/** @type {any} */ value, pad = '  ') {
   if (value === undefined) return `${pad}undefined`
   if (value === null)      return `${pad}null`
 
@@ -289,22 +292,22 @@ const METHODS = [
   'remove', 'removeMany', 'delete', 'deleteMany', 'restore', 'transitions', 'due',
 ]
 
-function completerFor(accessors, commandNames = [], bindNames = []) {
+function completerFor(/** @type {string[]} */ accessors, /** @type {string[]} */ commandNames = [], /** @type {string[]} */ bindNames = []) {
   const roots = [
-    ...accessors.flatMap(a => [`db.${a}.`, `sys.${a}.`]),
+    ...accessors.flatMap((/** @type {string} */ a) => [`db.${a}.`, `sys.${a}.`]),
     ...bindNames,
     '.help', '.standing', '.exit',
     ...commandNames.map(n => `.${n}`),
   ]
 
-  return (line) => {
+  return (/** @type {string} */ line) => {
     const at = Math.max(line.lastIndexOf(' '), line.lastIndexOf('('), line.lastIndexOf(',')) + 1
     const word = line.slice(at)
 
     const dot = word.lastIndexOf('.')
     const stem = dot === -1 ? '' : word.slice(0, dot + 1)
 
-    const candidates = accessors.some(a => stem.endsWith(`${a}.`))
+    const candidates = accessors.some((/** @type {string} */ a) => stem.endsWith(`${a}.`))
       ? METHODS.map(m => stem + m)
       : roots
 
@@ -318,25 +321,25 @@ function completerFor(accessors, commandNames = [], bindNames = []) {
 // Appended rather than rewritten, so two sessions open at once do not truncate
 // each other's. readline wants it newest-first.
 
-function loadHistory(file) {
+function loadHistory(/** @type {string} */ file) {
   if (!existsSync(file)) return []
   try {
     return readFileSync(file, 'utf8').split('\n').filter(Boolean).slice(-MAX_KEPT).reverse()
   } catch { return [] }
 }
 
-function remember(file, line) {
+function remember(/** @type {string} */ file, /** @type {string} */ line) {
   try { appendFileSync(file, `${line}\n`) } catch { /* a read-only home is not a reason to refuse a session */ }
 }
 
 // ─── help ─────────────────────────────────────────────────────────────────────
 
-function helpLines(binds, names, accessors, commands = {}, commandsFrom = null) {
+function helpLines(/** @type {any} */ binds, /** @type {any} */ names, /** @type {string[]} */ accessors, /** @type {any} */ commands = {}, commandsFrom = null) {
   const own   = Object.entries(commands)
   const width = Math.max(10, ...own.map(([n]) => n.length + 2))
   return [
     '',
-    ...Object.keys(binds).map(n => `  ${n.padEnd(10)}  ${names[n] ?? NAMES[n] ?? ''}`.trimEnd()),
+    ...Object.keys(binds).map(n => `  ${n.padEnd(10)}  ${names[n] ?? /** @type {any} */ (NAMES)[n] ?? ''}`.trimEnd()),
     '',
     ...(accessors.length ? [`  accessors   ${accessors.join(', ')}`, ''] : []),
     '  .standing   what this session is running as',
@@ -349,4 +352,4 @@ function helpLines(binds, names, accessors, commands = {}, commandsFrom = null) 
   ]
 }
 
-function dim(s) { return process.stdout.isTTY ? `\x1b[2m${s}\x1b[22m` : s }
+function dim(/** @type {string} */ s) { return process.stdout.isTTY ? `\x1b[2m${s}\x1b[22m` : s }

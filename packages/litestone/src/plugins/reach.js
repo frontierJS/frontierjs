@@ -1,3 +1,4 @@
+// @ts-check
 // reach.js — which models does this call touch, beyond the one it names?
 //
 // A rule declared on a model has to fire for every model the CALL reaches, not
@@ -15,12 +16,12 @@
 // and a second one there would disagree on what reaches the gate.
 const NESTED_WRITE_OPS = new Set(['create', 'connect', 'connectOrCreate', 'disconnect', 'delete', 'update', 'set'])
 
-export function isNestedWrite(value) {
+export function isNestedWrite(/** @type {any} */ value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     && Object.keys(value).some(op => NESTED_WRITE_OPS.has(op))
 }
 
-export function collectNestedOps(data, tableName, shapes, ops = []) {
+export function collectNestedOps(/** @type {any} */ data, /** @type {any} */ tableName, /** @type {any} */ shapes, /** @type {any} */ ops = []) {
   if (!data || typeof data !== 'object') return ops
   const rels = shapes[tableName].relations
 
@@ -62,7 +63,7 @@ export function collectNestedOps(data, tableName, shapes, ops = []) {
 // which is a read of it too. Deduped by model: the answer is per model, so a
 // tree that mentions the same one ten times asks once.
 
-function pushRelationTargets(spec, model, shapes, out, seenPaths) {
+function pushRelationTargets(/** @type {any} */ spec, /** @type {any} */ model, /** @type {any} */ shapes, /** @type {any} */ out, /** @type {any} */ seenPaths) {
   if (!spec || typeof spec !== 'object') return out
 
   const rels = shapes[model].relations
@@ -106,7 +107,7 @@ function pushRelationTargets(spec, model, shapes, out, seenPaths) {
   return out
 }
 
-export function collectIncludedModels(args, model, shapes) {
+export function collectIncludedModels(/** @type {any} */ args, /** @type {any} */ model, /** @type {any} */ shapes) {
   if (!args) return []
   const out   = new Set()
   const paths = new Set()

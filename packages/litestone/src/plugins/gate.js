@@ -1,3 +1,4 @@
+// @ts-check
 // src/plugins/gate.js — Official Litestone Gate Plugin
 //
 // Schema-defined numeric access control. Each model declares the minimum
@@ -79,7 +80,7 @@ export { LEVELS, levelPasses, levelName }
 // "2.4.5.6" → { read: 2, create: 4, update: 5, delete: 6 }
 // Missing positions cascade from left (less dangerous → more dangerous)
 
-export function parseGateString(str) {
+export function parseGateString(/** @type {any} */ str) {
   const raw = String(str).split('.')
 
   // Number('') is 0, so an empty position would read as PUBLIC: "4..6" booted
@@ -113,9 +114,9 @@ export function parseGateString(str) {
 // refusal names the model instead of a policy filtering to an empty 200.
 // SYSTEM(8) and LOCKED(9) are sentinels and can appear anywhere.
 
-function isSentinel(n) { return n === 8 || n === 9 }
+function isSentinel(/** @type {any} */ n) { return n === 8 || n === 9 }
 
-export function validateGate(gate, modelName) {
+export function validateGate(/** @type {any} */ gate, /** @type {any} */ modelName) {
   let prev = 0
   for (const op of ['read', 'update', 'delete']) {
     const n = gate[op]
@@ -144,15 +145,15 @@ export function validateGate(gate, modelName) {
 // installed by hand on a plain schema, as `env.atLevel()` does, leaves it open.
 const UNDECLARED = Object.freeze({ read: 8, create: 8, update: 8, delete: 8, undeclared: true })
 
-function buildAccessMap(schema) {
-  const map = {}
+function buildAccessMap(/** @type {any} */ schema) {
+  const map = /** @type {any} */ ({})
   const closed = schemaDeclaresAccessRules(schema)
   // Views are in the walk because a view is a read path onto rows a model
   // guards: leaving them out is a gate that stops at the projection.
   for (const model of [...schema.models, ...(schema.views ?? [])]) {
-    const gateAttr = model.attributes?.find(a => a.kind === 'gate')
+    const gateAttr = model.attributes?.find((/** @type {any} */ a) => a.kind === 'gate')
     if (!gateAttr) {
-      if (closed && !model.attributes?.some(a => a.kind === 'allow' || a.kind === 'deny')) map[model.name] = UNDECLARED
+      if (closed && !model.attributes?.some((/** @type {any} */ a) => a.kind === 'allow' || a.kind === 'deny')) map[model.name] = UNDECLARED
       continue
     }
     const gate = parseGateString(gateAttr.value)
@@ -182,13 +183,13 @@ const SYSTEM_RESOLVER = () => 8
 // the session at 8.
 export const GATE_LIFT = '@@gate'
 
-export function liftsGate(system) {
+export function liftsGate(/** @type {any} */ system) {
   return Array.isArray(system) ? system.includes(GATE_LIFT) : system === GATE_LIFT
 }
 
-function makeLevelCache(getLevel, auth) {
+function makeLevelCache(/** @type {any} */ getLevel, /** @type {any} */ auth) {
   const cache = new Map()
-  return (model) => {
+  return (/** @type {any} */ model) => {
     if (!cache.has(model)) {
       const level = getLevel(auth, model)
       if (level != null && typeof level.then === 'function')
@@ -206,9 +207,9 @@ function makeLevelCache(getLevel, auth) {
 
 // The names in `among` that a read's `where` (through AND / OR / NOT) or
 // `orderBy` mentions at the model's own level.
-function namedIn(args, among) {
+function namedIn(/** @type {any} */ args, /** @type {any} */ among) {
   const out = new Set()
-  const walkWhere = (w) => {
+  const walkWhere = (/** @type {any} */ w) => {
     if (Array.isArray(w)) return w.forEach(walkWhere)
     if (!w || typeof w !== 'object') return
     for (const [k, v] of Object.entries(w)) {
@@ -226,7 +227,7 @@ function namedIn(args, among) {
 
 // ─── Access check ─────────────────────────────────────────────────────────────
 
-function checkLevel(required, userLevel, model, operation, undeclared = false) {
+function checkLevel(/** @type {any} */ required, /** @type {any} */ userLevel, /** @type {any} */ model, /** @type {any} */ operation, undeclared = false) {
   if (levelPasses(required, userLevel)) return
 
   if (required === 9)
@@ -258,7 +259,7 @@ function checkLevel(required, userLevel, model, operation, undeclared = false) {
 // ─── GatePlugin ───────────────────────────────────────────────────────────────
 
 export class GatePlugin extends LitestonePlugin {
-  constructor({ getLevel } = {}) {
+  constructor({ getLevel } = /** @type {any} */ ({})) {
     super()
     // The default is the shipped grader, and it used to be a second one written
     // here: `user ? USER : STRANGER`, which read nothing but *is there a user*
@@ -282,7 +283,7 @@ export class GatePlugin extends LitestonePlugin {
   // one module, so a second onInit on `this` re-bound the FIRST client's ladder
   // to the second schema's — and a loosened gate there admitted callers here
   // (`FJS-1267`). The maps live on the client's ctx, which every hook is handed.
-  onInit(schema, ctx) {
+  onInit(/** @type {any} */ schema, /** @type {any} */ ctx) {
     const accessMap = buildAccessMap(schema)
     // Publish the level resolver onto ctx. GatePlugin owns the 0–7 scale and
     // the per-request cache; anything else that needs a level (the @@transitions
@@ -291,20 +292,20 @@ export class GatePlugin extends LitestonePlugin {
     //
     // The caller passes its own ctx: asSystem() spreads this ctx into a new
     // object, and _resolver keys its cache on identity.
-    ctx.levelFor = (model, forCtx) => this._resolver(forCtx ?? ctx)(model)
+    ctx.levelFor = (/** @type {any} */ model, /** @type {any} */ forCtx) => this._resolver(forCtx ?? ctx)(model)
 
     // The DECLARED level beside the caller's own, for the same reason: a second
     // reading of `@@gate` is how an artefact comes to certify access the plugin
     // does not grant. `$readAs` is the caller — it grades a row for somebody who
     // is not this client's principal, so it needs both halves and may spell
     // neither. `null` where the model declares no gate for that operation.
-    ctx.gateFor = (model, op) => accessMap[model]?.[op] ?? null
-    ctx.gateUndeclared = model => accessMap[model]?.undeclared === true
+    ctx.gateFor = (/** @type {any} */ model, /** @type {any} */ op) => accessMap[model]?.[op] ?? null
+    ctx.gateUndeclared = (/** @type {any} */ model) => accessMap[model]?.undeclared === true
 
     // The refusal itself, for a caller that must answer it before a validation
     // message can name a column: a below-gate caller is told "denied" and never
     // which keys the model has (`FJS-914`).
-    ctx.gateCheck = (model, op, forCtx) => this._check(model, op, forCtx ?? ctx)
+    ctx.gateCheck = (/** @type {any} */ model, /** @type {any} */ op, /** @type {any} */ forCtx) => this._check(model, op, forCtx ?? ctx)
   }
 
   // ── Resolve level for this request's auth user ──────────────────────────────
@@ -312,7 +313,7 @@ export class GatePlugin extends LitestonePlugin {
   // If auth is null (no $setAuth called), getLevel receives null → typically 0.
   // User getLevel() return values are clamped to 0–7 (SYSADMIN max).
 
-  _resolver(ctx) {
+  _resolver(/** @type {any} */ ctx) {
     if (ctx.isSystem) return SYSTEM_RESOLVER  // SYSTEM level
     // Keyed on the FLAVOR, falling back to the ctx object for a ctx that is not
     // the shared one. A table's ctx is shared across every flavor since
@@ -338,7 +339,7 @@ export class GatePlugin extends LitestonePlugin {
 
   // `lifted` grades this one check at SYSTEM. A 9 still refuses, and a nested
   // write in the same payload is graded at the caller's own level below.
-  async _check(model, op, ctx, lifted = false) {
+  async _check(/** @type {any} */ model, /** @type {any} */ op, /** @type {any} */ ctx, lifted = false) {
     const required  = ctx.gateFor(model, op)
     if (required == null) return
     const userLevel = lifted ? SYSTEM_RESOLVER() : this._resolver(ctx)(model)
@@ -347,7 +348,7 @@ export class GatePlugin extends LitestonePlugin {
 
   // ── Read ────────────────────────────────────────────────────────────────────
 
-  async onBeforeRead(model, args, ctx) {
+  async onBeforeRead(/** @type {any} */ model, /** @type {any} */ args, /** @type {any} */ ctx) {
     await this._check(model, 'read', ctx)
     for (const target of collectIncludedModels(args, model, ctx.shapes))
       await this._check(target, 'read', ctx)
@@ -363,7 +364,7 @@ export class GatePlugin extends LitestonePlugin {
 
   // ── Create ──────────────────────────────────────────────────────────────────
 
-  async onBeforeCreate(model, args, ctx) {
+  async onBeforeCreate(/** @type {any} */ model, /** @type {any} */ args, /** @type {any} */ ctx) {
     await this._check(model, 'create', ctx, liftsGate(args?.system))
     const nested  = collectNestedOps(args?.data, model, ctx.shapes)
     const resolve = this._resolver(ctx)
@@ -376,7 +377,7 @@ export class GatePlugin extends LitestonePlugin {
 
   // ── Update ──────────────────────────────────────────────────────────────────
 
-  async onBeforeUpdate(model, args, ctx) {
+  async onBeforeUpdate(/** @type {any} */ model, /** @type {any} */ args, /** @type {any} */ ctx) {
     await this._check(model, 'update', ctx, liftsGate(args?.system))
     const nested  = collectNestedOps(args?.data, model, ctx.shapes)
     const resolve = this._resolver(ctx)
@@ -389,7 +390,7 @@ export class GatePlugin extends LitestonePlugin {
 
   // ── Delete ──────────────────────────────────────────────────────────────────
 
-  async onBeforeDelete(model, args, ctx) {
+  async onBeforeDelete(/** @type {any} */ model, /** @type {any} */ args, /** @type {any} */ ctx) {
     await this._check(model, 'delete', ctx)
   }
 }

@@ -1,3 +1,4 @@
+// @ts-check
 // storage/providers/local.js — local filesystem provider.
 // Stores files in a directory; junction serves it, and only to a URL this
 // provider signed (FJS-D1703).
@@ -14,28 +15,28 @@ const HOUR = 3600
 export class LocalProvider {
   // The config is held, not copied: junction sets publicBase and signingKey on
   // it after the client is built, when it knows the origin it serves from.
-  constructor(config) {
+  constructor(/** @type {any} */ config) {
     this._config  = config
     this._root    = resolve(config.localPath ?? './storage')
     this._urlBase = config.localUrl ?? `http://localhost:${config.localPort ?? 3001}/storage`
   }
 
-  _filePath(key) {
+  _filePath(/** @type {string} */ key) {
     const abs = join(this._root, key)
     // Guard against path traversal
     if (!abs.startsWith(this._root)) throw new Error(`Invalid key: ${key}`)
     return abs
   }
 
-  async put(key, body, { contentType } = {}) {
-    const path = this._filePath(key)
+  async put(/** @type {string} */ key, /** @type {any} */ body, { contentType } = /** @type {{ contentType?: string }} */ ({})) {
+    const path = this._filePath(/** @type {string} */ key)
     mkdirSync(dirname(path), { recursive: true })
     // A Blob or a stream is an upload or a file on disk, and is piped rather
     // than read whole -- an upload's size again in heap per concurrent request
     // (FJS-3094). A stream that fails part-way leaves the bytes written so far;
     // FileStorage deletes them.
-    if (body instanceof ReadableStream) return pipeline(Readable.fromWeb(body), createWriteStream(path))
-    if (body instanceof Blob) return pipeline(Readable.fromWeb(body.stream()), createWriteStream(path))
+    if (body instanceof ReadableStream) return pipeline(Readable.fromWeb(/** @type {any} */ (body)), createWriteStream(path))
+    if (body instanceof Blob) return pipeline(Readable.fromWeb(/** @type {any} */ (body.stream())), createWriteStream(path))
     const buf = body instanceof Uint8Array ? body
       : body instanceof ArrayBuffer        ? Buffer.from(body)
       : typeof body === 'string'           ? Buffer.from(body, 'utf8')
@@ -43,22 +44,22 @@ export class LocalProvider {
     writeFileSync(path, buf)
   }
 
-  async get(key) {
-    const path = this._filePath(key)
+  async get(/** @type {string} */ key) {
+    const path = this._filePath(/** @type {string} */ key)
     if (!existsSync(path)) throw new Error(`File not found: ${key}`)
     return readFileSync(path)
   }
 
-  async delete(key) {
-    const path = this._filePath(key)
+  async delete(/** @type {string} */ key) {
+    const path = this._filePath(/** @type {string} */ key)
     try { unlinkSync(path) } catch {}  // ignore if not found
   }
 
   // The expiry is rounded up to the hour, so every read within one hour prints
   // the same URL and a browser's cache of it holds. With no signingKey nothing
   // serves this directory, and the URL is the plain one.
-  async sign(key, { expiresIn = HOUR, now = Date.now() } = {}) {
-    const url    = this.publicUrl(key)
+  async sign(/** @type {string} */ key, { expiresIn = HOUR, now = Date.now() } = {}) {
+    const url    = this.publicUrl(/** @type {string} */ key)
     const secret = this._config.signingKey
     if (!secret) return url
     const exp = Math.ceil((now / 1000 + expiresIn) / HOUR) * HOUR
@@ -66,7 +67,7 @@ export class LocalProvider {
   }
 
   // True when `sig` is this store's signature of `key` and `exp` has not passed.
-  verify(key, { exp, sig } = {}, now = Date.now()) {
+  verify(/** @type {string} */ key, { exp, sig } = /** @type {{ exp?: string, sig?: string }} */ ({}), now = Date.now()) {
     const secret = this._config.signingKey
     if (!secret || typeof sig !== 'string' || typeof exp !== 'string' || !/^\d{1,12}$/.test(exp)) return false
     if (Number(exp) * 1000 <= now) return false
@@ -75,12 +76,12 @@ export class LocalProvider {
     return got.length === want.length && timingSafeEqual(got, want)
   }
 
-  publicUrl(key) {
+  publicUrl(/** @type {string} */ key) {
     return refUrl({ publicBase: this._config.publicBase ?? this._urlBase, key })
   }
 }
 
 // A newline joins the parts, so ('a/b', 1) and ('a', '/b1') sign different strings.
-function mac(secret, key, exp) {
+function mac(/** @type {string} */ secret, /** @type {string} */ key, /** @type {string | number} */ exp) {
   return createHmac('sha256', secret).update(`${key}\n${exp}`).digest('base64url')
 }

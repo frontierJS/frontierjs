@@ -1,3 +1,4 @@
+// @ts-check
 // valuesets.js — a `@values` binding, enforced at the Data boundary.
 //
 // A value set is a NAME for a scoped list of rows (`FJS-D120`). The declaration
@@ -33,7 +34,7 @@ import { untrailed } from './trail-entries.js'
  * what has to be SAID about it.
  */
 export class ValueSetExtendError extends Error {
-  constructor(bind, value, cause) {
+  constructor(/** @type {any} */ bind, /** @type {any} */ value, /** @type {any} */ cause) {
     super(`Could not add ${JSON.stringify(value)} to ${bind.set}: creating a ${bind.source} ` +
           `for it failed — ${cause?.message ?? cause}`)
     this.name       = 'ValueSetExtendError'
@@ -52,15 +53,16 @@ export class ValueSetExtendError extends Error {
  * Built once at client construction. A model with none is absent, so the check
  * is a map lookup for every schema that does not use the feature.
  */
-export function buildValueSetMap(schema) {
-  const sets = new Map((schema.valuesets ?? []).map(v => [v.name, v]))
+export function buildValueSetMap(/** @type {any} */ schema) {
+  const sets = new Map((schema.valuesets ?? []).map((/** @type {any} */ v) => [v.name, v]))
   if (!sets.size) return {}
 
+  /** @type {Record<string, any>} */
   const out = {}
   for (const model of schema.models) {
     const binds = []
     for (const field of model.fields) {
-      const bind = field.attributes?.find(a => a.kind === 'values')
+      const bind = field.attributes?.find((/** @type {any} */ a) => a.kind === 'values')
       if (!bind) continue
       const vs = sets.get(bind.set)
       if (!vs) continue                       // the parser already said so
@@ -94,7 +96,7 @@ export function buildValueSetMap(schema) {
 // ─── the check ────────────────────────────────────────────────────────────────
 
 /** Every value this payload offers for one binding, flattened and deduped. */
-function offered(rows, bind) {
+function offered(/** @type {any} */ rows, /** @type {any} */ bind) {
   const seen = new Set()
   for (const row of rows) {
     if (!row || typeof row !== 'object') continue
@@ -110,7 +112,7 @@ function offered(rows, bind) {
 }
 
 /** The narrowing every read of a set applies, as declared scope names. */
-function setFilter(bind, values) {
+function setFilter(/** @type {any} */ bind, /** @type {any} */ values) {
   return {
     [bind.valueField]: { in: values },
     ...(bind.scopes.length ? { $scope: bind.scopes } : {}),
@@ -132,13 +134,15 @@ function setFilter(bind, values) {
  * Answers undefined, not a promise, for a model binding no set — which is every
  * write to most models, and an async function allocates its promise before its
  * first line runs (`FJS-1108`).
+ *
+ * @param {any} [opts]
  */
-export function enforceValueSets(modelName, rows, ctx, opts) {
+export function enforceValueSets(/** @type {any} */ modelName, /** @type {any} */ rows, /** @type {any} */ ctx, opts) {
   if (!ctx.shapes[modelName].valueSets.length) return
   return enforceBoundValueSets(modelName, rows, ctx, opts)
 }
 
-async function enforceBoundValueSets(modelName, rows, ctx, { where = null } = {}) {
+async function enforceBoundValueSets(/** @type {any} */ modelName, /** @type {any} */ rows, /** @type {any} */ ctx, { where = null } = {}) {
   const binds = ctx.shapes[modelName].valueSets
 
   const list   = Array.isArray(rows) ? rows : [rows]
@@ -162,7 +166,7 @@ async function enforceBoundValueSets(modelName, rows, ctx, { where = null } = {}
       where:  setFilter(bind, values),
       select: { [bind.valueField]: true },
     }))
-    const have    = new Set(found.map(r => r[bind.valueField]))
+    const have    = new Set(found.map((/** @type {any} */ r) => r[bind.valueField]))
     const missing = values.filter(v => !have.has(v))
     if (!missing.length) continue
 
@@ -192,7 +196,7 @@ async function enforceBoundValueSets(modelName, rows, ctx, { where = null } = {}
         select: { [bind.valueField]: true },
       }))
       if (exists.length) {
-        const names = exists.map(r => r[bind.valueField])
+        const names = exists.map((/** @type {any} */ r) => r[bind.valueField])
         errors.push({
           path:    [bind.field],
           message: names.length === 1
@@ -253,14 +257,14 @@ async function enforceBoundValueSets(modelName, rows, ctx, { where = null } = {}
  * The read is through the caller's own accessor, like every other read here: a
  * row they cannot see is not a row they can be told about.
  */
-async function enforceDependent(modelName, bind, list, ctx, where, errors) {
+async function enforceDependent(/** @type {any} */ modelName, /** @type {any} */ bind, /** @type {any} */ list, /** @type {any} */ ctx, /** @type {any} */ where, /** @type {any} */ errors) {
   const table = ctx.tables?.[bind.accessor]
   const own   = ctx.tables?.[modelToAccessor(modelName)]
   if (!table) return
 
   // What this write says about each half.
-  const names   = list.some(r => r && typeof r === 'object' && bind.field in r)
-  const namesCtl = list.some(r => r && typeof r === 'object' && bind.dependsOn in r)
+  const names   = list.some((/** @type {any} */ r) => r && typeof r === 'object' && bind.field in r)
+  const namesCtl = list.some((/** @type {any} */ r) => r && typeof r === 'object' && bind.dependsOn in r)
   if (!names && !namesCtl) return
 
   // The pairs to grade, as [value, controllingValue].
@@ -281,8 +285,8 @@ async function enforceDependent(modelName, bind, list, ctx, where, errors) {
     }))
     const seen = new Set()
     for (const row of stored) {
-      const v   = names   ? list.find(r => r?.[bind.field] != null)?.[bind.field] : row[bind.field]
-      const ctl = namesCtl ? list.find(r => r?.[bind.dependsOn] !== undefined)?.[bind.dependsOn] : row[bind.dependsOn]
+      const v   = names   ? list.find((/** @type {any} */ r) => r?.[bind.field] != null)?.[bind.field] : row[bind.field]
+      const ctl = namesCtl ? list.find((/** @type {any} */ r) => r?.[bind.dependsOn] !== undefined)?.[bind.dependsOn] : row[bind.dependsOn]
       if (v == null) continue
       const key = `${v}\u0000${ctl}`
       if (seen.has(key)) continue

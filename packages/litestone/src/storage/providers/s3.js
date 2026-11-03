@@ -1,3 +1,4 @@
+// @ts-check
 // storage/providers/s3.js — S3-compatible provider
 // Handles Cloudflare R2, AWS S3, Backblaze B2, MinIO — all use the S3 API.
 
@@ -7,17 +8,17 @@ import { refUrl } from '../ref-url.js'
 
 // ─── Provider map ─────────────────────────────────────────────────────────────
 
-const REGION_DEFAULTS = {
+const REGION_DEFAULTS = /** @type {Record<string, string>} */ ({
   r2:    'auto',
   s3:    'us-east-1',
   b2:    'us-west-002',
   minio: 'us-east-1',
-}
+})
 
 // ─── S3Provider ───────────────────────────────────────────────────────────────
 
 export class S3Provider {
-  constructor(config) {
+  constructor(/** @type {any} */ config) {
     this._provider   = config.provider ?? 'r2'
     this._bucket     = config.bucket
     this._endpoint   = config.endpoint?.replace(/\/$/, '')
@@ -31,8 +32,8 @@ export class S3Provider {
   // The key is encoded here, per segment. Joined in raw, a `?` or `#` in it ends
   // the path, so the object written is a prefix of the one asked for, and the
   // signature agrees with the truncated request, so nothing refuses it.
-  _objectUrl(key) {
-    if (this._endpoint) return refUrl({ endpoint: this._endpoint, bucket: this._bucket, key })
+  _objectUrl(/** @type {string} */ key) {
+    if (this._endpoint) return /** @type {string} */ (refUrl({ endpoint: this._endpoint, bucket: this._bucket, key }))
     const path = key.split('/').map(uriEncode).join('/')
     return `https://${this._bucket}.s3.${this._region}.amazonaws.com/${path}`
   }
@@ -52,9 +53,9 @@ export class S3Provider {
 
   // ── Upload ────────────────────────────────────────────────────────────────
 
-  async put(key, body, { contentType = 'application/octet-stream', size } = {}) {
+  async put(/** @type {string} */ key, /** @type {any} */ body, { contentType = 'application/octet-stream', size } = /** @type {{ contentType?: string, size?: number }} */ ({})) {
     const url     = this._objectUrl(key)
-    const headers = { 'content-type': contentType }
+    const headers = /** @type {Record<string, string>} */ ({ 'content-type': contentType })
     if (size != null) headers['content-length'] = String(size)
 
     // A plain S3 PUT carries Content-Length and a chunked body has none, so a
@@ -89,7 +90,7 @@ export class S3Provider {
 
   // ── Download ──────────────────────────────────────────────────────────────
 
-  async get(key) {
+  async get(/** @type {string} */ key) {
     const url    = this._objectUrl(key)
     const signed = await signRequest('GET', url, {}, null, this._opts())
 
@@ -103,7 +104,7 @@ export class S3Provider {
 
   // ── Delete ────────────────────────────────────────────────────────────────
 
-  async delete(key) {
+  async delete(/** @type {string} */ key) {
     const url    = this._objectUrl(key)
     const signed = await signRequest('DELETE', url, {}, null, this._opts())
 
@@ -117,14 +118,14 @@ export class S3Provider {
 
   // ── Presigned URL ─────────────────────────────────────────────────────────
 
-  async sign(key, { expiresIn = 3600 } = {}) {
+  async sign(/** @type {string} */ key, { expiresIn = 3600 } = {}) {
     const url = this._objectUrl(key)
     return presignUrl('GET', url, this._opts(), expiresIn)
   }
 
   // ── Public URL ────────────────────────────────────────────────────────────
 
-  publicUrl(key) {
+  publicUrl(/** @type {string} */ key) {
     if (this._publicBase) return refUrl({ publicBase: this._publicBase, key })
     return this._objectUrl(key)
   }

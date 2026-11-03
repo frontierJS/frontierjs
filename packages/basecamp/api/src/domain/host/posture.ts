@@ -73,6 +73,8 @@ export interface Declared {
   exposedPorts:  number[]
   /** SHA256 fingerprints of the keys Basecamp gave it; null when it holds none. */
   sshKeys:       string[] | null
+  /** The Outpost version this Basecamp installs, and the one the machine last reported. */
+  outpost:       { expected: string | null; running: string | null }
 }
 
 /** The Outpost's own clock for this report (`OUTPOST_POSTURE_MS`). */
@@ -96,6 +98,8 @@ export function declaredFor(input: {
   sshPort:   number | null | undefined
   apps:      { kind?: string | null; port?: number | null; hasExposedPort?: boolean | null }[]
   sshKeyData?: string | null
+  expectedOutpostVersion?: string | null
+  outpostVersion?:         string | null
 }): Declared {
   const exposed = input.apps
     .filter(a => a.hasExposedPort && typeof a.port === 'number')
@@ -106,6 +110,7 @@ export function declaredFor(input: {
     expectedPorts: [...expected].sort((a, b) => a - b),
     exposedPorts:  exposed,
     sshKeys:       input.sshKeyData ? publicKeyFingerprints(input.sshKeyData) : null,
+    outpost:       { expected: input.expectedOutpostVersion ?? null, running: input.outpostVersion ?? null },
   }
 }
 
@@ -149,7 +154,7 @@ const series = (kernel: string) => /^(\d+\.\d+)/.exec(kernel)?.[1] ?? kernel
 
 const days = (ms: number) => Math.floor(ms / 86_400_000)
 
-type Grade = { ok: ControlState; message: string }
+type Grade = { ok: ControlState; message: string; fix?: string }
 const unknown = (why: string): Grade => ({ ok: 'unknown', message: why })
 
 /**
@@ -303,6 +308,19 @@ const CONTROLS: { id: string; group: string; severity: Severity; hardenedAtInsta
     return left > CERT_WARN_DAYS
       ? { ok: true,  message: `Certificate valid for ${left} days` }
       : { ok: false, message: left < 0 ? `Certificate expired ${-left} day(s) ago` : `Certificate expires in ${left} day(s)` }
+  } },
+
+  // Re-enrolling is the one path that moves a running Outpost to a new version
+  // (FJS-D1820): the unit pins it, and an install against an online row runs nothing.
+  { id: 'outpost.version-behind', group: 'outpost', severity: 'medium', grade: (_r, d) => {
+    const { expected, running } = d.outpost
+    if (!running || !expected) return unknown('The Outpost has not reported its version')
+    let order: number
+    try { order = Bun.semver.order(running, expected) } catch { return unknown(`Unreadable version: ${running}`) }
+    return order >= 0
+      ? { ok: true,  message: `Outpost ${running}` }
+      : { ok: false, message: `Outpost ${running} runs here; this Basecamp installs ${expected}`,
+          fix: 'Press Re-enroll this machine on its screen, and run the command it gives on the machine' }
   } },
 
   { id: 'accounts.extra-uid0', group: 'accounts', severity: 'high', grade: (r) => {

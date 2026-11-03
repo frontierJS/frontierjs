@@ -1,3 +1,4 @@
+// @ts-check
 // cardinality.js — how many children a parent must and may have
 //
 // `lines OrderLine[] @minItems(1) @maxItems(50)`. The declaration is read into
@@ -37,41 +38,42 @@ import { ValidationError } from './validate.js'
 // truncates it to a mark, exactly as the announcement queue beside it does —
 // a rolled-back savepoint that left its parent in the ledger would grade a row
 // the transaction no longer holds.
-export function createCardinalityLedger(map, readRow) {
+export function createCardinalityLedger(/** @type {any} */ map, /** @type {any} */ readRow) {
+  /** @type {any[]} */
   const dirty = []
 
-  const push = (rule, key) => {
-    if (key.some(v => v == null)) return        // an unparented child is nobody's count
+  const push = (/** @type {any} */ rule, /** @type {any} */ key) => {
+    if (key.some((/** @type {any} */ v) => v == null)) return        // an unparented child is nobody's count
     dirty.push({ rule, key })
   }
 
   return {
     get length() { return dirty.length },
-    truncate(mark) { dirty.length = mark },
+    truncate(/** @type {any} */ mark) { dirty.length = mark },
 
     // A parent row was written. Its own id is what the bound is graded against.
-    noteParent(model, row) {
+    noteParent(/** @type {any} */ model, /** @type {any} */ row) {
       for (const rule of map.byParent[model] ?? [])
-        push(rule, rule.refFields.map(f => row?.[f]))
+        push(rule, rule.refFields.map((/** @type {any} */ f) => row?.[f]))
     },
 
     // A child row was written, or is about to be. The parent it names is the
     // one whose count moved; `before` carries the parent it named BEFORE an
     // update, because moving a line between two orders changes two counts.
-    noteChild(model, row, before = null) {
+    noteChild(/** @type {any} */ model, /** @type {any} */ row, before = null) {
       for (const rule of map.byChild[model] ?? []) {
-        push(rule, rule.fkFields.map(f => row?.[f]))
-        if (before) push(rule, rule.fkFields.map(f => before?.[f]))
+        push(rule, rule.fkFields.map((/** @type {any} */ f) => row?.[f]))
+        if (before) push(rule, rule.fkFields.map((/** @type {any} */ f) => before?.[f]))
       }
     },
 
     // A bulk write matched rows by a WHERE, so the parents are whatever those
     // rows name — which only the database knows, and only before the write.
-    noteChildRows(model, rows) {
+    noteChildRows(/** @type {any} */ model, /** @type {any} */ rows) {
       for (const row of rows ?? []) this.noteChild(model, row)
     },
 
-    grade(db) {
+    grade(/** @type {any} */ db) {
       if (!dirty.length) return
       // One COUNT per distinct (rule, parent), not per row: a createMany of 500
       // lines on one order is one query.
@@ -87,7 +89,7 @@ export function createCardinalityLedger(map, readRow) {
         if (!readRow(db, rule, key)) continue
 
         const where = [
-          ...rule.fkColumns.map(c => `"${c}" = ?`),
+          ...rule.fkColumns.map((/** @type {any} */ c) => `"${c}" = ?`),
           ...rule.filters,
         ].join(' AND ')
         const n = db.query(`SELECT COUNT(*) AS n FROM "${rule.childTable}" WHERE ${where}`).get(...key)?.n ?? 0
@@ -99,7 +101,7 @@ export function createCardinalityLedger(map, readRow) {
   }
 }
 
-function refusal(rule, key, n, which) {
+function refusal(/** @type {any} */ rule, /** @type {any} */ key, /** @type {any} */ n, /** @type {any} */ which) {
   const bound = which === 'min' ? rule.min : rule.max
   const word  = which === 'min' ? 'at least' : 'at most'
   const id    = key.join(', ')
@@ -118,7 +120,7 @@ function refusal(rule, key, n, which) {
 // fast path (`FJS-1106`) for every model that declares no bound: a create of a
 // bounded model either carries children, and has already left that path, or is
 // this refusal.
-export function refuseChildlessCreate(rules, data) {
+export function refuseChildlessCreate(/** @type {any} */ rules, /** @type {any} */ data) {
   for (const rule of rules) {
     const nested = data?.[rule.field]
     const n = Array.isArray(nested?.create) ? nested.create.length

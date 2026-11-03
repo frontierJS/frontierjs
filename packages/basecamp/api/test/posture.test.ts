@@ -57,7 +57,8 @@ const CLEAN: PostureReadings = {
   cert:         { expires_at: '2027-10-01T00:00:00Z' },
 }
 
-const DECLARED = declaredFor({ sshPort: 22, apps: [{ kind: 'container', port: 8090, hasExposedPort: false }], sshKeyData: null })
+const DECLARED = declaredFor({ sshPort: 22, apps: [{ kind: 'container', port: 8090, hasExposedPort: false }], sshKeyData: null,
+  expectedOutpostVersion: '0.1.9', outpostVersion: '0.1.9' })
 const grade    = (r: PostureReadings | null, at: number | string = NOW) => gradePosture(r, DECLARED, { at, now: NOW })
 const byId     = (r: PostureReadings | null, at?: number) => Object.fromEntries(grade(r, at).map(c => [c.id, c]))
 
@@ -97,6 +98,20 @@ describe('the grader', () => {
     expect(c['net.firewall-default-deny'].ok).toBe('unknown')
     expect(c['net.unexpected-listener'].ok).toBe('unknown')
     expect(c['net.caddy-admin-loopback'].ok).toBe('unknown')
+  })
+
+  test('an Outpost behind the version this Basecamp installs fails, naming both, with Re-enroll as the fix', () => {
+    const at = (running: string | null) => gradePosture(CLEAN,
+      declaredFor({ sshPort: 22, apps: [], expectedOutpostVersion: '0.1.9', outpostVersion: running }), { at: NOW, now: NOW })
+      .find(c => c.id === 'outpost.version-behind')!
+    const behind = at('0.1.8')
+    expect(behind.ok).toBe(false)
+    expect(behind.message).toContain('0.1.8')
+    expect(behind.message).toContain('0.1.9')
+    expect(behind.fix).toContain('Re-enroll this machine')
+    expect(at('0.1.9').ok).toBe(true)
+    expect(at('0.2.0').ok).toBe(true)
+    expect(at(null).ok).toBe('unknown')
   })
 
   test('a report older than twice its interval grades every control unknown', () => {

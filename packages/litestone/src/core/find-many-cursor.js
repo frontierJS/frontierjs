@@ -1,3 +1,4 @@
+// @ts-check
 // find-many-cursor.js — the findManyCursor verb: keyset pagination, one
 // SELECT ordered by the cursor fields and bounded by the previous page's last
 // values, answered as { items, nextCursor, hasMore }. A verb and not a helper,
@@ -10,7 +11,7 @@ import {
   buildCursorWhere, cursorOrderSql, decodeCursor, encodeCursor, extractCursorValues, trimAllToSelect,
 } from './query.js'
 
-export function makeFindManyCursor(shape, ctx, deps) {
+export function makeFindManyCursor(/** @type {any} */ shape, /** @type {any} */ ctx, /** @type {any} */ deps) {
   const { tableName, modelName, fromFields, columnMap } = shape
   const {
     readDb, plugins, refuseRecursive, cursorFields, visibleWhere, buildWhereWithEncryption,
@@ -36,7 +37,7 @@ export function makeFindManyCursor(shape, ctx, deps) {
   // All findMany options work: where, include, select, withDeleted, onlyDeleted.
   // The orderBy fields must be present in the SELECT — they're injected automatically.
 
-  async function findManyCursor(args = {}) {
+  async function findManyCursor(/** @type {any} */ args = {}) {
     refuseRecursive('findManyCursor', args)
     // The gate lives in a plugin's beforeRead, and this path did not call it —
     // so a model gated at SYSADMIN answered a level-4 caller in full, and the
@@ -69,6 +70,7 @@ export function makeFindManyCursor(shape, ctx, deps) {
     // another tenant's included. Composed in the same ORDER as buildSQL, and
     // the policy is appended last as raw SQL with its params after the
     // cursor's — positional binds, so the order is the correctness (FJS-262).
+    /** @type {any[]} */
     const params = []
 
     const { where: htWhere, policy: policyResult } = visibleWhere('findManyCursor', where, args)
@@ -114,7 +116,7 @@ export function makeFindManyCursor(shape, ctx, deps) {
     if (_hasFrom) {
       if (sqlCols === '*') {
         sqlCols = `"${tableName}".*, ` +
-          _fromEntries.map(([n, { subquerySql }]) => `${subquerySql} AS "${n}"`).join(', ')
+          _fromEntries.map((/** @type {[string, any]} */ [n, { subquerySql }]) => `${subquerySql} AS "${n}"`).join(', ')
       } else if (ps?.requestedFrom?.size) {
         sqlCols += ', ' + [...ps.requestedFrom]
           .map(n => `${fromFields[n].subquerySql} AS "${n}"`).join(', ')

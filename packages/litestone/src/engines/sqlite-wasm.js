@@ -1,3 +1,4 @@
+// @ts-check
 // engines/sqlite-wasm.js — SQLite's own WASM build, over OPFS, as an engine.
 //
 // The second implementation of `core/engine.js`'s contract, and the one phase 4
@@ -48,7 +49,7 @@ const DEFAULT_CAPACITY = 6
  * @param {string}  [opts.vfs]      VFS name. Two clients in one worker share it.
  * @param {number}  [opts.capacity] File handles to pre-open.
  */
-export async function createSqliteWasmEngine({ load, vfs = DEFAULT_VFS, capacity = DEFAULT_CAPACITY } = {}) {
+export async function createSqliteWasmEngine({ load, vfs = DEFAULT_VFS, capacity = DEFAULT_CAPACITY } = /** @type {any} */ ({})) {
   if (typeof load !== 'function')
     throw new Error("createSqliteWasmEngine: pass load: () => import('@sqlite.org/sqlite-wasm')")
 
@@ -74,7 +75,7 @@ export async function createSqliteWasmEngine({ load, vfs = DEFAULT_VFS, capacity
   let pool
   try {
     pool = await sqlite3.installOpfsSAHPoolVfs({ name: vfs, initialCapacity: capacity })
-  } catch (err) {
+  } catch (/** @type {any} */ err) {
     if (err?.name !== 'NoModificationAllowedError') throw err
     throw new Error(
       `[Litestone] the OPFS pool '${vfs}' is held by something else in this origin.\n` +
@@ -118,7 +119,7 @@ export async function createSqliteWasmEngine({ load, vfs = DEFAULT_VFS, capacity
     // instead of a fallback.
     vector: null,
 
-    open(path, { readonly = false } = {}) {
+    open(/** @type {string} */ path, { readonly = false } = {}) {
       // ':memory:' is SQLite's own spelling and needs no pool handle. Litestone
       // uses it for every pristine schema it builds to diff against, so it is
       // reached during migration long before an app opens its own database.
@@ -149,18 +150,18 @@ export async function createSqliteWasmEngine({ load, vfs = DEFAULT_VFS, capacity
 // the caller did. `core/client.js` caches statements for the life of the
 // connection, which is what makes that a certainty rather than a risk.
 
-function wrap(db, capi) {
-  const prepare = (sql) => {
+function wrap(/** @type {any} */ db, /** @type {any} */ capi) {
+  const prepare = (/** @type {string} */ sql) => {
     const stmt = db.prepare(sql)
     let wide = false
     return {
-      get(...params) {
+      get(/** @type {any[]} */ ...params) {
         try {
           bind(stmt, params)
           return stmt.step() ? rowReader(stmt, capi, wide, false)() : undefined
         } finally { stmt.reset() }
       },
-      all(...params) {
+      all(/** @type {any[]} */ ...params) {
         try {
           bind(stmt, params)
           let read
@@ -170,7 +171,7 @@ function wrap(db, capi) {
         } finally { stmt.reset() }
       },
       // An EXPLAIN reads its plan positionally, so a row is an array here.
-      values(...params) {
+      values(/** @type {any[]} */ ...params) {
         try {
           bind(stmt, params)
           let read
@@ -186,7 +187,7 @@ function wrap(db, capi) {
         wide = !!on
         return this
       },
-      run(...params) {
+      run(/** @type {any[]} */ ...params) {
         try {
           bind(stmt, params)
           while (stmt.step()) { /* a RETURNING clause still has rows to drain */ }
@@ -200,7 +201,7 @@ function wrap(db, capi) {
   return {
     prepare,
     query: prepare,
-    run(sql, ...params) {
+    run(/** @type {string} */ sql, /** @type {any[]} */ ...params) {
       // Not cached and not prepared: this path carries the pragmas and the
       // transaction control, and `db.exec` is the only thing that takes SQL
       // holding several statements — which `PRAGMA` setup does.
@@ -218,7 +219,7 @@ function wrap(db, capi) {
 // positional arguments, and passing an empty array binds nothing — which is
 // different from binding an empty object, the one value SQLite reads as a bag
 // of named parameters matching none of the statement's `?`.
-function bind(stmt, params) {
+function bind(/** @type {any} */ stmt, /** @type {any[]} */ params) {
   stmt.clearBindings()
   if (params.length) stmt.bind(params)
 }
@@ -235,12 +236,12 @@ function bind(stmt, params) {
 // after its first row, and the rows of that execution are built from them. Per
 // execution rather than per prepared statement, because a cached `SELECT *`
 // is re-prepared by SQLite after an ALTER and answers different names.
-function rowReader(stmt, capi, wide, positional) {
+function rowReader(/** @type {any} */ stmt, /** @type {any} */ capi, /** @type {boolean} */ wide, /** @type {boolean} */ positional) {
   if (positional && !wide) return () => stmt.get([])
   const n     = stmt.columnCount
   const names = positional ? null : stmt.getColumnNames()
   return () => {
-    const row = positional ? new Array(n) : {}
+    const row = /** @type {any} */ (positional ? new Array(n) : {})
     for (let i = 0; i < n; i++) {
       row[positional ? i : names[i]] = wide && capi.sqlite3_column_type(stmt.pointer, i) === capi.SQLITE_INTEGER
         ? capi.sqlite3_column_int64(stmt.pointer, i)

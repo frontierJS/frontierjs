@@ -100,6 +100,14 @@ An install also asks whether the box is an Outpost of Basecamp's own fleet —
 yes by default, `--no-outpost` to leave it out — and enrolls it with `fli
 deploy:outpost` after the admin, as `fli basecamp:install` does.
 
+An install then offers an admin API key for that admin — yes by default —
+minted over ssh as `fli basecamp:key` mints one and written to your global
+fli env as `BASECAMP_API_KEY`, so `fli basecamp:deploy` and `fli
+basecamp:app` reach the new Basecamp at once. At a terminal the key is
+printed once, and one more question copies it to the clipboard; a run whose
+output is not a terminal stores it and never prints it. A key already in the
+global env is replaced, not revoked.
+
 The box and the hostname reach the install as `--server` and `--domain`, and
 every deploy line the run prints carries both, so nothing is written into
 `packages/basecamp/frontier.config.js`. Installing needs a hostname, and a run
@@ -114,7 +122,7 @@ terminal takes the paste, and a run with no terminal warns, installs, and prints
 the `fli basecamp:dns` line instead of writing the record.
 
 `--yes` answers every question for you: each yes/no is yes — installing,
-the Outpost and the purchase included — and each typed answer is what Enter
+the Outpost, the API key, its copy and the purchase included — and each typed answer is what Enter
 takes. It refuses without `--domain`, since a run that asks nothing
 names the box on the command line (`--name` defaults to the hostname's first
 label), and without `--cloud` unless exactly one
@@ -206,12 +214,14 @@ let password = ''
 let install = !!admin
 let outpost = flag.outpost
 let addHost = false
+let apiKey  = false
 if (asking) {
   name ||= await ask('Server name', `Enter: ${fallbackName}`) || fallbackName
   addHost = await yes(`Add Host ${name} to ~/.ssh/config once it has an address?`, true)
   install ||= await yes('Install Basecamp on it once it is up?', false)
   if (install && !admin) admin = await askAdmin(ask)
   if (install && outpost) outpost = await yes(OUTPOST_QUESTION, true)
+  if (install) apiKey = await yes(KEY_QUESTION, true)
   if (admin) password = await tty.secret(`${question(`Password for ${admin}`, 'Enter generates one')}\n  ${chalk.cyan('›')}`)
   if (install && flag.key && !addHost)
     log.warn(`ssh offers your default identity, not ${keyPath}: if the install cannot connect, add the Host block it prints and run it from packages/basecamp`)
@@ -251,6 +261,7 @@ if (asking) {
   row('install', install ? `yes ${chalk.dim('— deploy:setup --auto-install, the addresses, then deploy')}` : chalk.dim('no — fli basecamp:install later'))
   if (admin) row('admin', `${admin} ${chalk.dim(password ? '' : '— password generated')}`)
   if (install) row('outpost', outpost ? `yes ${chalk.dim('— fli deploy:outpost once the admin is made')}` : chalk.dim('no'))
+  if (install) row('api key', apiKey ? `admin ${chalk.dim('— shown once, stored as BASECAMP_API_KEY')}` : chalk.dim('no — fli basecamp:key later'))
   echo('')
   if (!await yes(`Buy the box at ${vendor}?`, true)) { log.info('Nothing was bought'); return }
   echo('')
@@ -259,6 +270,7 @@ if (asking) {
 const stages = stageBar({ tty, echo, chalk, quiet: flag.json }, [
   { name: 'buy', what: `the box at ${vendor} — about a minute` },
   ...install ? [{ name: 'ssh', what: 'wait for the fresh box to answer ssh' }, ...installStages(outpost)] : [],
+  ...apiKey ? [{ name: 'api key', what: 'the first admin\'s API key, over ssh' }] : [],
 ])
 stages.at('buy')
 const bought = await buyBox({
@@ -306,5 +318,8 @@ echo`
     fli deploy${later}
 `
 
-if (!await adminThenFleet({ dest, identity, workspace: made.name, admin, password, log, echo, chalk, outpost, domain, later, tty, stage: stages.at })) process.exitCode = 1
+if (!await adminThenFleet({ dest, identity, workspace: made.name, admin, password, log, echo, chalk, outpost, domain, later, tty, stage: stages.at })) { process.exitCode = 1; return }
+if (!apiKey) return
+stages.at('api key')
+if (!await adminKey({ dest, admin, yes, log, echo, chalk })) process.exitCode = 1
 ```

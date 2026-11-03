@@ -9,3 +9,4 @@ export declare function create(db: unknown, parseResult: ParseResult, label?: st
 export declare function apply(db: unknown, dir?: string): Promise<ApplyResult>
 export declare function status(db: unknown, dir?: string): MigrationRow[]
 export declare function verify(db: unknown, parseResult: ParseResult, dir?: string, opts?: { pluralize?: boolean; dbName?: string }): VerifyResult
+export { autoMigrate, listMigrationFiles, unmatchedMigrationFiles, describeSkipped } from '../index.js'

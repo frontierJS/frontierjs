@@ -1,3 +1,4 @@
+// @ts-check
 // src/mutate.js — schema mutation testing.
 //
 // Mutate the SCHEMA, not the code: drop a `@@gate`, grade one down, remove a
@@ -38,6 +39,7 @@ import { parse } from './core/parser.js'
 const GATE_RE = /@@gate\(\s*([\d.]+)\s*\)/
 const RELATOR_RE = /@@relator\(\s*\[([^\]]*)\]\s*,\s*(once|many)(?:\s*,\s*by\s*:\s*(\w+))?\s*\)/
 
+/** @type {{ kind: string, describe: (m: any) => string, apply: (line: string) => any[] }[]} */
 const MUTATIONS = [
   {
     kind: 'gate-drop',
@@ -159,6 +161,7 @@ const MUTATIONS = [
     kind: 'validator-widen',
     describe: (m) => `@${m.rule} widened to accept anything`,
     apply(line) {
+      /** @type {[RegExp, string, string][]} */
       const widen = [
         [/@length\(\s*\d+\s*,\s*\d+/, '@length(0, 1000000', 'length'],
         [/@gte\(\s*-?\d+(\.\d+)?/,     '@gte(-1000000',       'gte'],
@@ -189,7 +192,7 @@ const MUTATIONS = [
 // inside a doc comment explaining what `@guarded` is not. Editing prose produces
 // a mutant identical in behavior to the original, which survives everything, so
 // every documented attribute name was quietly costing a point.
-export function _commentAt(line) {
+export function _commentAt(/** @type {string} */ line) {
   let quote = null
   for (let i = 0; i < line.length; i++) {
     const c = line[i]
@@ -208,7 +211,8 @@ export function _commentAt(line) {
 // expression contains `auth()`, so the lazy form stopped at the inner `)` and
 // left `.id)` behind — a mutant that fails to parse, which counts as a kill, so
 // the whole `allow-drop` family looked covered while nothing had run.
-function _dropToken(line, name) {
+function _dropToken(/** @type {string} */ line, /** @type {string} */ name) {
+  /** @type {any[]} */
   const out = []
   const at  = new RegExp(`(?<![\\w@])${name.startsWith('@@') ? '@@' : '@'}${name.replace(/^@+/, '')}\\b`, 'g')
   let hit
@@ -230,7 +234,7 @@ function _dropToken(line, name) {
 
 // Index of the `)` matching the `(` at `open`, or -1. Quote-aware: a paren
 // inside `@regex("a(b")` is not structure.
-export function _closingParen(line, open) {
+export function _closingParen(/** @type {string} */ line, /** @type {number} */ open) {
   let depth = 0
   let quote = null
   for (let i = open; i < line.length; i++) {
@@ -256,7 +260,7 @@ export function _closingParen(line, open) {
  * `skip` names models whose attributes are not this schema's to test — the ones
  * an imported package shipped, which that package's own suite grades.
  */
-export function schemaMutants(schemaText, { kinds = null, skip = null } = {}) {
+export function schemaMutants(/** @type {string} */ schemaText, /** @type {{ kinds?: string[] | null, skip?: Set<string> | null }} */ { kinds = null, skip = null } = {}) {
   const lines   = schemaText.split('\n')
   const mutants = []
   let model = null
@@ -344,13 +348,13 @@ export function schemaMutants(schemaText, { kinds = null, skip = null } = {}) {
  * `suite: 'killed'` and counted in `suiteKilled`; `score` stays the derived
  * checks' alone, since scripts/mutate-baselines.json floors it.
  */
-export async function mutationScore({ schema, build, check, suite = null, kinds = null, skip = null, onMutant = null }) {
+export async function mutationScore(/** @type {any} */ { schema, build, check, suite = null, kinds = null, skip = null, onMutant = null }) {
   const original = parse(schema)
   if (!original.valid) throw new Error(`mutationScore: the original schema does not parse:\n${original.errors.join('\n')}`)
 
   // The three executed checks. Every one of them was added because a mutant
   // survived without it — which is the loop this exists to close.
-  const runCheck = check ?? (async (env, orig) => [
+  const runCheck = check ?? (async (/** @type {any} */ env, /** @type {any} */ orig) => [
     ...await env.verifyGateLadder({ against: orig.schema }),
     ...await env.verifyConstraints(null, { against: orig.schema }),
     ...await env.verifyFieldProtection({ against: orig.schema }),
@@ -377,17 +381,17 @@ export async function mutationScore({ schema, build, check, suite = null, kinds 
   let control
   try {
     control = await build(schema)
-  } catch (err) {
+  } catch (/** @type {any} */ err) {
     throw new Error(
       `mutationScore: the ORIGINAL schema does not build, so nothing can be graded ` +
       `— every mutant would be reported killed by a refusal that is not about the mutation.\n${err.message}`)
   }
   try {
-    const before = (await runCheck(control, original)).filter(m => !INCONCLUSIVE.has(m.got))
+    const before = (await runCheck(control, original)).filter((/** @type {any} */ m) => !INCONCLUSIVE.has(m.got))
     if (before.length) throw new Error(
       `mutationScore: the ORIGINAL schema already fails ${before.length} check${before.length === 1 ? '' : 's'}, so nothing can be graded ` +
       `— every mutant would be reported killed by a mismatch that is not about the mutation.\n` +
-      before.map(m => `  ${m.message ?? JSON.stringify(m)}`).join('\n'))
+      before.map((/** @type {any} */ m) => `  ${m.message ?? JSON.stringify(m)}`).join('\n'))
   } finally {
     try { control.close?.() } catch { /* nothing to close */ }
   }
@@ -402,6 +406,7 @@ export async function mutationScore({ schema, build, check, suite = null, kinds 
   }
 
   const mutants  = schemaMutants(schema, { kinds, skip })
+  /** @type {any[]} */
   const survived = []
   let suiteKilled = 0
   const errored  = []
@@ -419,7 +424,7 @@ export async function mutationScore({ schema, build, check, suite = null, kinds 
     let env, outcome
     try {
       env = await build(mutant.text)
-    } catch (err) {
+    } catch (/** @type {any} */ err) {
       killed++
       onMutant?.({ ...mutant, outcome: 'refused', thrown: err.message })
       refused.push({ ...mutant, thrown: err.message })
@@ -443,11 +448,11 @@ export async function mutationScore({ schema, build, check, suite = null, kinds 
       // rows had. No schema in this repo has one of these AND a mutant that
       // would otherwise survive, so this is the argument rather than a measured
       // regression; the argument is the same one already written above it.
-      const verdicts = mismatches.filter(m => !INCONCLUSIVE.has(m.got))
+      const verdicts = mismatches.filter((/** @type {any} */ m) => !INCONCLUSIVE.has(m.got))
       outcome = verdicts.length ? 'killed' : 'survived'
       if (outcome === 'killed') killed++
       else survived.push({ ...mutant, noise: mismatches.length })
-    } catch (err) {
+    } catch (/** @type {any} */ err) {
       // The suite itself fell over — that says nothing about the mutant either
       // way, so it is not graded. Counting it as a kill is how a mutation score
       // flatters itself.

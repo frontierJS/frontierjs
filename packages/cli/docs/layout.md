@@ -162,6 +162,9 @@ core/
                 destination (npm, the GitHub Release at the package's tag),
                 each answering true, false or null; `ws:pub` asks it before a
                 bump and the publish walk asks it beside the registry column
+  pin-bump.js   an app's hosted pins raised to the newest SERVED release —
+                read from the repo's tags, since the host has no `latest`;
+                `fli install --force` asks and `--bump` does not
   latency.js    request latency as a tail at a constant arrival rate, counted from the
                 scheduled instant so a stall lengthens it. A case with a failed request
                 or no samples is an error, never a fast p99. Reported, never gated;

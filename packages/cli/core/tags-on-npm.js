@@ -38,6 +38,16 @@ export async function onRegistry(name, version) {
   } catch { return null }
 }
 
+/** The version npm's `latest` tag names, or null where it could not be asked:
+ *  `outpost:status` says a box's pin is behind it, never that it is current. */
+export async function latestOn(name) {
+  try {
+    const res = await fetch(`https://registry.npmjs.org/${name.replace('/', '%2F')}/latest`,
+      { signal: AbortSignal.timeout(TIMEOUT) })
+    return res.ok ? (await res.json())?.version ?? null : null
+  } catch { return null }
+}
+
 /**
  * Every `<name>@<version>` tag on a member's current version that neither npm
  * nor the release host holds, and every install pin npm does not hold. A tag

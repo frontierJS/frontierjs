@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * three-way.js — which columns two writers actually contend over.
  *
@@ -47,6 +48,10 @@
  * different order read as a conflict, and that is the honest answer here, since
  * nothing at this layer knows the column holds an object rather than a string.
  */
+/**
+ * @param {any} a
+ * @param {any} b
+ */
 function sameValue(a, b) {
   if (a === b) return true
   if (a == null || b == null) return a == null && b == null
@@ -68,11 +73,14 @@ function sameValue(a, b) {
  * @returns {{ apply: Record<string, unknown>, conflicts: Array<{ column: string, base: unknown, local: unknown, remote: unknown }>, outcomes: Record<string, 'unchanged'|'taken'|'agreed'|'conflicted'> }}
  */
 export function threeWay({ base, local, remote }) {
+  /** @type {Record<string, any>} */
   const apply     = {}
+  /** @type {Array<{ column: string, base: unknown, local: unknown, remote: unknown }>} */
   const conflicts = []
+  /** @type {Record<string, 'unchanged'|'taken'|'agreed'|'conflicted'>} */
   const outcomes  = {}
   for (const column of Object.keys(local ?? {})) {
-    const want = local[column]
+    const want = /** @type {any} */ (local)[column]
     const was  = base?.[column]
     const now  = remote?.[column]
     // A column the base does not mention cannot be compared, so it is taken at

@@ -1,3 +1,4 @@
+// @ts-check
 // core/tenancy.js — what a `tenancy { }` block MEANS, resolved once.
 //
 // The block is parsed in parser.js and desugared there for strategy row; this
@@ -32,10 +33,10 @@ const DEFAULTS = {
 // roster, a share-link holder. A policy saying `workspaceId == auth().workspaceId`
 // reads only the first, so admission never widens the common policy by accident
 // and the app grants a guest something narrower on purpose (`FJS-D1100`).
-export const tenantAdmission = (claim) => `${claim}Admitted`
+export const tenantAdmission = (/** @type {any} */ claim) => `${claim}Admitted`
 
 // { kind:'literal', value } | { kind:'env', var, default } → string | null
-function readValue(def, what) {
+function readValue(/** @type {any} */ def, /** @type {any} */ what) {
   if (def == null) return null
   if (def.kind === 'env') {
     const val = envVar(def.var) ?? def.default
@@ -48,13 +49,13 @@ function readValue(def, what) {
 /**
  * The tenancy declaration, resolved.
  *
- * @param {object}  schema           parsed schema (parseResult.schema)
+ * @param {any}  schema           parsed schema (parseResult.schema)
  * @param {object}  [opts]
- * @param {string}  [opts.schemaPath] the .lite file, when the caller has one — relative
+ * @param {string|null}  [opts.schemaPath] the .lite file, when the caller has one — relative
  *                                    paths in the block resolve against ITS directory,
  *                                    the same rule the CLI applies to `migrations`
- * @param {object}  [opts.overrides]  explicit values that beat the declaration
- * @returns {object|null} null when the schema declares no tenancy
+ * @param {any}  [opts.overrides]  explicit values that beat the declaration
+ * @returns {any} null when the schema declares no tenancy
  *
  * database → { strategy, dir, registry, maxOpen, key, resolve, places }
  *            places is { [name]: absolute dir }, empty when none is declared
@@ -65,7 +66,7 @@ export function resolveTenancy(schema, { schemaPath = null, overrides = {} } = {
   if (!t) return null
 
   const base = schemaPath ? dirname(resolve(schemaPath)) : process.cwd()
-  const at   = (p) => (p == null ? null : resolve(base, p))
+  const at   = (/** @type {any} */ p) => (p == null ? null : resolve(base, p))
 
   // Row tenancy has no `resolve`: the tenant is a claim on the principal, and
   // where a request names it is the app resolver's `tenantFrom` (`FJS-D360`).
@@ -93,7 +94,7 @@ export function resolveTenancy(schema, { schemaPath = null, overrides = {} } = {
     // hex string into an absolute filename.
     key:      overrides.key ?? readValue(t.key, 'key'),
     resolve:  resolution,
-    places:   Object.fromEntries((t.places ?? []).map(p => [p.name, at(readValue(p.dir, `place ${p.name}`))])),
+    places:   Object.fromEntries((t.places ?? []).map((/** @type {any} */ p) => [p.name, at(readValue(p.dir, `place ${p.name}`))])),
   }
 }
 
@@ -106,13 +107,13 @@ export function resolveTenancy(schema, { schemaPath = null, overrides = {} } = {
  *
  * `name` is `<database>-<place>`: a hyphen no declared database name can hold.
  *
- * @param {object} schema                  parsed schema (parseResult.schema)
+ * @param {any} schema                  parsed schema (parseResult.schema)
  * @param {Record<string, string>} places  `resolveTenancy(...).places`
  * @returns {Array<{ name: string, database: string, place: string, driver: 'trail', path: string }>}
  */
 export function placedTrails(schema, places) {
-  const trails = (schema?.databases ?? []).filter(d => d.driver === 'trail' && d.path)
-  return Object.entries(places ?? {}).flatMap(([place, dir]) => trails.map(d => ({
+  const trails = (schema?.databases ?? []).filter((/** @type {any} */ d) => d.driver === 'trail' && d.path)
+  return Object.entries(places ?? {}).flatMap(([place, dir]) => trails.map((/** @type {any} */ d) => ({
     name:     `${d.name}-${place}`,
     database: d.name,
     place,
@@ -129,8 +130,8 @@ export function placedTrails(schema, places) {
  * Junction has two transports whose shapes differ, so the caller supplies the
  * three things any of them can produce.
  *
- * @param {object} resolution  { kind: 'subdomain'|'header'|'claim', name }
- * @param {object} from        { host, headers, principal }
+ * @param {any} resolution  { kind: 'subdomain'|'header'|'claim', name }
+ * @param {any} from        { host, headers, principal }
  * @returns {string|null}
  */
 export function tenantFrom(resolution, { host = null, headers = null, principal = null } = {}) {

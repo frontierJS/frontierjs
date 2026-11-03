@@ -1,3 +1,4 @@
+// @ts-check
 // src/export.js — the governed extract.
 //
 // `FJS-D228` phase 1. Before this, the only way data left an FJS app was a
@@ -48,14 +49,14 @@ const FORMATS = new Set(['ndjson', 'csv'])
  * Every dataset this schema says may leave, model and view alike.
  * The CLI lists these; nothing else derives the set.
  */
-export function exportableDatasets(schema) {
+export function exportableDatasets(/** @type {any} */ schema) {
   const out = []
   for (const model of schema.models ?? []) {
-    const ex = (model.attributes ?? []).find(a => a.kind === 'export')
+    const ex = (model.attributes ?? []).find((/** @type {any} */ a) => a.kind === 'export')
     if (ex) out.push({ name: model.name, accessor: modelToAccessor(model.name), kind: 'model', decl: model, export: ex })
   }
   for (const view of schema.views ?? []) {
-    const ex = (view.attributes ?? []).find(a => a.kind === 'export')
+    const ex = (view.attributes ?? []).find((/** @type {any} */ a) => a.kind === 'export')
     if (ex) out.push({ name: view.name, accessor: modelToAccessor(view.name), kind: 'view', decl: view, export: ex })
   }
   return out.sort((a, b) => a.name.localeCompare(b.name))
@@ -71,15 +72,15 @@ export function exportableDatasets(schema) {
  */
 const NOT_STORED_LABELS = new Set(['computed', 'from', 'derived', 'transient', 'edge'])
 
-function notStoredReason(f) {
+function notStoredReason(/** @type {any} */ f) {
   if (f.type?.kind === 'relation')    return 'relation'
   if (f.type?.kind === 'implicitM2M') return 'implicitM2M'
-  const a = (f.attributes ?? []).find(x => NOT_STORED_LABELS.has(x.kind))
+  const a = (f.attributes ?? []).find((/** @type {any} */ x) => NOT_STORED_LABELS.has(x.kind))
   return a ? a.kind : 'not stored'
 }
 
 /** The columns that leave, and the ones that do not — with the reason. */
-export function columnPlan(decl, { includeProtected = false } = {}) {
+export function columnPlan(/** @type {any} */ decl, { includeProtected = false } = {}) {
   const columns = []
   const omitted = []
   const policy  = fieldPolicyOf(decl)
@@ -96,7 +97,7 @@ export function columnPlan(decl, { includeProtected = false } = {}) {
     }
 
     const protectedBy = isProtected(policy[f.name])
-      ? PROTECTION_WORDS.find(w => f.attributes.some(a => a.kind === w))
+      ? PROTECTION_WORDS.find(w => f.attributes.some((/** @type {any} */ a) => a.kind === w))
       : null
     if (protectedBy && !includeProtected) { omitted.push({ name: f.name, reason: 'protected', by: `@${protectedBy}` }); continue }
 
@@ -118,16 +119,16 @@ export function columnPlan(decl, { includeProtected = false } = {}) {
 // rather than by type. Text a spreadsheet would run as a formula is guarded
 // (`csvCell`, `FJS-D571`), so ndjson is the format a re-import reads exactly.
 
-function makeSerializer(format, columns) {
+function makeSerializer(/** @type {any} */ format, /** @type {any[]} */ columns) {
   if (format === 'ndjson') {
     return {
       header: () => null,
-      row: (row) => JSON.stringify(Object.fromEntries(columns.map(c => [c.name, row[c.name] ?? null]))),
+      row: (/** @type {any} */ row) => JSON.stringify(Object.fromEntries(columns.map(c => [c.name, row[c.name] ?? null]))),
     }
   }
   return {
     header: () => columns.map(c => csvCell(c.name)).join(','),
-    row:    (row) => columns.map(c => csvCell(row[c.name])).join(','),
+    row:    (/** @type {any} */ row) => columns.map(c => csvCell(row[c.name])).join(','),
   }
 }
 
@@ -145,6 +146,9 @@ function makeSerializer(format, columns) {
  * a file, a socket or an HTTP response. Nothing here holds the rows: a ten
  * million row extract must not be a value, which is why the read is
  * `findManyCursor` and never `findMany`.
+ * @param {any} db
+ * @param {any} name
+ * @param {any} [opts]
  */
 export async function runExport(db, name, opts = {}) {
   const {
@@ -219,7 +223,7 @@ export async function runExport(db, name, opts = {}) {
     ...(withDeleted ? { withDeleted: true } : {}),
   }
 
-  const take = (row) => {
+  const take = (/** @type {any} */ row) => {
     rows++
     if (cursorColumn && row[cursorColumn] !== undefined) last = row[cursorColumn]
   }
@@ -228,6 +232,7 @@ export async function runExport(db, name, opts = {}) {
     // `cursor:` and not `$after:` — the `$` spelling is the transport's, and no
     // `$`-prefixed key survives the bridge (Invariant 10). This is the client.
     for (;;) {
+      /** @type {any} */
       const page = await table.findManyCursor({
         ...common,
         orderBy: orderColumns.map(c => ({ [c]: 'asc' })),
@@ -306,7 +311,7 @@ export async function runExport(db, name, opts = {}) {
  * every column of it goes into the ORDER BY: dropping the second one would page
  * an order that is not total and serve some rows twice.
  */
-function safePrimaryKey(db, accessor) {
+function safePrimaryKey(/** @type {any} */ db, /** @type {any} */ accessor) {
   try {
     const k = db.$primaryKey(accessor)
     return Array.isArray(k) ? k : (k ? [k] : [])
@@ -314,14 +319,14 @@ function safePrimaryKey(db, accessor) {
 }
 
 /** The gate a read of this dataset declares — a fact about the dataset, checkable later. */
-function declaredReadGate(dataset) {
-  const attr = (dataset.decl.attributes ?? []).find(a => a.kind === 'gate')
+function declaredReadGate(/** @type {any} */ dataset) {
+  const attr = (dataset.decl.attributes ?? []).find((/** @type {any} */ a) => a.kind === 'gate')
   if (!attr) return null
   try { return parseGateString(attr.value).read } catch { return null }
 }
 
 /** Whether anything graded this read at all. An ungraded read is not a low one. */
-function safeReadGrading(db, accessor) {
+function safeReadGrading(/** @type {any} */ db, /** @type {any} */ accessor) {
   try { return typeof db.$readGrading === 'function' ? db.$readGrading(accessor) : null }
   catch { return null }
 }
@@ -331,7 +336,7 @@ function safeReadGrading(db, accessor) {
  * declares — the same rendering `access.js` commits, so a manifest and the
  * access snapshot cannot describe one rule two ways.
  */
-function policyTextFor(schema, dataset) {
+function policyTextFor(/** @type {any} */ schema, /** @type {any} */ dataset) {
   const out = []
   for (const attr of dataset.decl.attributes ?? []) {
     if (attr.kind !== 'allow' && attr.kind !== 'deny') continue

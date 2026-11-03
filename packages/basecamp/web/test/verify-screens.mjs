@@ -2066,10 +2066,11 @@ try {
   check('a dashboard is deleted from its own screen', (await apiGet(`/dashboards/${board?.id}`)).status === 404)
 
   // Backups — Delete says the archive goes, then the row does (FJS-D1494).
+  // The OLDEST row: the newest good backup is refused, as the hub's only restore.
   await goto('/hub/backups/')
   await until(`!!document.querySelector('[aria-label^="Delete "]')`, v => v, 'no settled backup offers Delete')
   const kept = await evaluate(`document.querySelectorAll('#backup-history tbody tr').length`)
-  await evaluate(`document.querySelector('[aria-label^="Delete "]').click()`)
+  await evaluate(`[...document.querySelectorAll('[aria-label^="Delete "]')].at(-1).click()`)
   const warned = await until(`document.querySelector('[role=dialog][aria-modal=false]')?.textContent ?? ''`, t => t,
     'deleting asked nothing')
   check('deleting a backup says the archive is deleted', /is deleted|from this list/.test(warned), warned.slice(0, 120))
@@ -2209,6 +2210,41 @@ try {
       v => !!v, 'the server screen never listed its apps')
     check('the server screen lists exactly the apps placed on it',
       shown === hosted.map(x => `/apps/${x.id}/`).sort().join(), shown)
+  }
+
+  // ─── An enrolled machine can be enrolled again ─────────────────────────
+  // Re-enrolling is the only path that moves a running Outpost to a new
+  // version (FJS-D1820), and the screen offered the command only to a machine
+  // with no key. Enrolled through the real route, on a box no later section
+  // deploys to: an enrolled row is one Basecamp sends commands to.
+  console.log('\n  re-enrolling a machine')
+  const spare = ((await apiGet('/servers?$limit=100')).body?.data ?? [])
+    .find(s => !s.outpostPublicKey && !['online', 'destroyed'].includes(s.status) && s.id !== host?.id)
+  check('the seed has a machine with no key to enroll', !!spare)
+  if (spare) {
+    await goto(`/servers/${spare.id}/`)
+    await until(`!!document.getElementById('needs-enrollment')`, v => v, 'a machine with no key was not offered enrollment')
+    await click('#needs-enrollment button')
+    const token = (await until(`document.getElementById('enroll-command')?.textContent ?? ''`, v => !!v,
+      'the install command never appeared')).match(/bcen_[0-9a-f]{64}/)?.[0]
+    const { publicKey } = await (await import('@frontierjs/toolbelt/signature')).generateSigningKeys()
+    const enrolled = await fetch(`http://localhost:${API_PORT}/servers/${spare.id}/enroll`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token, publicKey,
+        cert: (await import('@frontierjs/outpost/cert')).ensureCert(join(SCRATCH, 'outpost-tls')).cert }),
+    })
+    check('the machine enrolls with the token the screen handed over', enrolled.status === 200, enrolled.status)
+
+    await goto(`/servers/${spare.id}/`)
+    await until(`!!document.getElementById('server-reenroll')`, v => v, 'an enrolled machine offered no Re-enroll')
+    check('an enrolled machine is not told it has no credential',
+      await evaluate(`!document.getElementById('needs-enrollment')`))
+    await click('#server-reenroll')
+    await click('#reenroll button')
+    const again = await until(`document.getElementById('enroll-command')?.textContent ?? ''`, v => !!v,
+      'Re-enroll never handed over a command')
+    check('Re-enroll hands over the same install command, with a fresh token',
+      /curl -fsSL .*\/install\.sh; \} \| sudo bash$/.test(again.trim()) && !again.includes(token), again.trim().slice(0, 120))
   }
 
   // A release's environment is its App's; the Deployment row carries none.

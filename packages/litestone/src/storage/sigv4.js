@@ -1,3 +1,4 @@
+// @ts-check
 // storage/sigv4.js — the clock and the signing-key cache for @frontierjs/toolbelt/sigv4.
 //
 // The scheme is toolbelt's (`FJS-D892`); a kit there is pure, so the instant and
@@ -12,7 +13,7 @@ import { amzDate, deriveSigningKey, signRequest as sign, presignUrl as presign }
 const _signingKeyCache = new Map()   // scope string → Promise<CryptoKey>
 const SIGNING_KEY_CACHE_MAX = 16     // (secret, date, region, service) tuples
 
-function signingKey(secret, now, region, service) {
+function signingKey(/** @type {string} */ secret, /** @type {Date} */ now, /** @type {string} */ region, /** @type {string} */ service) {
   const dateStamp = amzDate(now).slice(0, 8)
   const cacheKey  = `${dateStamp}/${region}/${service}/${secret.length}/${secret.slice(0, 4)}/${secret.slice(-4)}`
   let hit = _signingKeyCache.get(cacheKey)
@@ -29,16 +30,16 @@ function signingKey(secret, now, region, service) {
   return hit
 }
 
-async function withClock(opts) {
+async function withClock(/** @type {any} */ opts) {
   const { secretAccessKey, region = 'auto', service = 's3' } = opts
   const now = new Date()
   return { ...opts, now, signingKey: await signingKey(secretAccessKey, now, region, service) }
 }
 
-export async function signRequest(method, url, headers, body, opts) {
+export async function signRequest(/** @type {string} */ method, /** @type {string} */ url, /** @type {any} */ headers, /** @type {any} */ body, /** @type {any} */ opts) {
   return sign(method, url, headers, body, await withClock(opts))
 }
 
-export async function presignUrl(method, url, opts, expiresIn = 3600) {
+export async function presignUrl(/** @type {string} */ method, /** @type {string} */ url, /** @type {any} */ opts, expiresIn = 3600) {
   return presign(method, url, await withClock(opts), expiresIn)
 }

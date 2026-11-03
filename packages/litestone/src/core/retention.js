@@ -1,3 +1,4 @@
+// @ts-check
 // retention.js — data retention helpers
 //
 // Handles two kinds of retention:
@@ -32,6 +33,7 @@ import { reclaimFreePages } from './pragmas.js'
 // Accepts: 30d, 90d, 1y, 24h, 60m, 3600s
 // Returns: milliseconds
 
+/** @type {Record<string, number>} */
 const DURATION_UNITS = {
   ms: 1,
   s:  1_000,
@@ -48,7 +50,7 @@ const DURATION_UNITS = {
 // A clock option is `() => Date | ISO string`, a bare `Date`, or absent. One
 // reading, because both passes take it and a second interpretation is how the
 // jsonl half ends up sweeping to a different instant than the SQLite half.
-function nowMs(now) {
+function nowMs(/** @type {any} */ now) {
   const raw = typeof now === 'function' ? now() : now
   if (raw == null)            return Date.now()
   if (typeof raw === 'number') return raw
@@ -56,7 +58,7 @@ function nowMs(now) {
   return Number.isNaN(t) ? Date.now() : t
 }
 
-export function parseDuration(str, what = 'retention') {
+export function parseDuration(/** @type {any} */ str, what = 'retention') {
   if (!str) return null
   const match = String(str).match(/^(\d+(?:\.\d+)?)(ms|s|m|h|d|w|y)$/)
   if (!match) throw new Error(`Invalid ${what} duration '${str}' — expected format: 30d, 24h, 1y, 60m`)
@@ -67,6 +69,7 @@ export function parseDuration(str, what = 'retention') {
 // Accepts: 500mb, 1gb, 100kb, 4096b
 // Returns: bytes
 
+/** @type {Record<string, number>} */
 const SIZE_UNITS = {
   b:  1,
   kb: 1_024,
@@ -74,7 +77,7 @@ const SIZE_UNITS = {
   gb: 1_073_741_824,
 }
 
-export function parseSize(str) {
+export function parseSize(/** @type {any} */ str) {
   if (!str) return null
   const match = String(str).match(/^(\d+(?:\.\d+)?)(b|kb|mb|gb)$/i)
   if (!match) throw new Error(`Invalid size '${str}' — expected format: 500mb, 1gb, 100kb`)
@@ -117,7 +120,7 @@ export function parseSize(str) {
 
 export const RETENTION_BATCH = 1000
 
-export async function runSqliteRetention(rawWriteDb, models, retention, {
+export async function runSqliteRetention(/** @type {any} */ rawWriteDb, /** @type {any} */ models, /** @type {any} */ retention, /** @type {any} */ {
   pluralize = false, now = Date.now, hears = null, onRemoved = null, doomedUnder = null,
   batches = Infinity, stopped = null,
 } = {}) {
@@ -135,7 +138,7 @@ export async function runSqliteRetention(rawWriteDb, models, retention, {
     if (stopped?.()) break
     // Only models with a createdAt DateTime field
     const createdAt = model.fields.find(
-      f => f.name === 'createdAt' && f.type.name === 'DateTime'
+      (/** @type {any} */ f) => f.name === 'createdAt' && f.type.name === 'DateTime'
     )
     // Said, not dropped: a model dated by another name (`fetchedAt`) keeps every
     // row under a declared window, and a report with no line for it cannot be
@@ -174,15 +177,17 @@ export async function runSqliteRetention(rawWriteDb, models, retention, {
     const listens = !!onRemoved && (hears?.(model.name) ?? true)
     const these   = `FROM ${quoteIdent(table)} WHERE rowid IN (SELECT value FROM json_each(?))`
     let removed = 0
+    /** @type {string | null} */
     let error   = null
     for (let n = 0; n < batches && !stopped?.(); n++) {
+      /** @type {any} */
       let ids, rows = null, doomed = null
       // The pick, the read and the DELETE run with no await between them, so
       // no other write lands inside a batch and no row is handed over twice.
       try {
         ids = rawWriteDb
           .prepare(`SELECT rowid AS r FROM ${quoteIdent(table)} WHERE ${quoteIdent(fieldToColumnName(createdAt))} < ? LIMIT ${RETENTION_BATCH}`)
-          .all(cutoff).map(x => x.r)
+          .all(cutoff).map((/** @type {any} */ x) => x.r)
         if (!ids.length) break
         const list = JSON.stringify(ids)
         if (listens) {
@@ -197,7 +202,7 @@ export async function runSqliteRetention(rawWriteDb, models, retention, {
         // The freed pages are returned with the batch that freed them, so the
         // file never holds more than one batch of dead space (FJS-2290).
         reclaimFreePages(rawWriteDb)
-      } catch (err) {
+      } catch (/** @type {any} */ err) {
         // A table that exists and will not sweep is worth saying out loud: the
         // whole point of the declaration is rows going away.
         error = String((err && err.message) || err)
@@ -236,7 +241,7 @@ export async function runSqliteRetention(rawWriteDb, models, retention, {
 // @returns          { removed, remaining, reason } or null if nothing to do
 
 // Read just the first line of a file (bounded chunks, no full-file decode).
-function readFirstLine(filePath) {
+function readFirstLine(/** @type {any} */ filePath) {
   const fd  = openSync(filePath, 'r')
   const buf = new Uint8Array(8192)
   const chunks = []
@@ -257,7 +262,7 @@ function readFirstLine(filePath) {
   return chunks.join('').trim()
 }
 
-export function compactJsonl(filePath, model, retention, maxSize, now = Date.now) {
+export function compactJsonl(/** @type {any} */ filePath, /** @type {any} */ model, /** @type {any} */ retention, /** @type {any} */ maxSize, now = Date.now) {
   if (!existsSync(filePath)) return null
   if (!retention && !maxSize) return null
 
@@ -266,8 +271,8 @@ export function compactJsonl(filePath, model, retention, maxSize, now = Date.now
   const cutoff   = ms ? new Date(nowMs(now) - ms).toISOString() : null
   // Find the timestamp field — prefer createdAt, fall back to first DateTime
   const tsField  = ms
-    ? (model.fields.find(f => f.name === 'createdAt' && f.type.name === 'DateTime')?.name ??
-       model.fields.find(f => f.type.name === 'DateTime')?.name)
+    ? (model.fields.find((/** @type {any} */ f) => f.name === 'createdAt' && f.type.name === 'DateTime')?.name ??
+       model.fields.find((/** @type {any} */ f) => f.type.name === 'DateTime')?.name)
     : null
 
   // ── Cheap pre-checks — skip the full-file read on the common no-op path ────
@@ -283,7 +288,7 @@ export function compactJsonl(filePath, model, retention, maxSize, now = Date.now
       // Append-only files are oldest-first: if the FIRST line is fresh, all are.
       try {
         const ts = JSON.parse(readFirstLine(filePath))?.[tsField]
-        timeOk = !ts || String(ts) >= cutoff
+        timeOk = !ts || String(ts) >= /** @type {string} */ (cutoff)
       } catch { /* malformed first line — fall through to the full pass */ }
     }
     if (timeOk) return null
@@ -311,7 +316,7 @@ export function compactJsonl(filePath, model, retention, maxSize, now = Date.now
     try { db?.close() } catch { /* the rewrite is done; a stuck handle is not */ }
   }
 
-  function rewrite(db) {
+  function rewrite(/** @type {any} */ db) {
   const raw   = readFileSync(filePath, 'utf8')
   let   lines = raw.split('\n').filter(l => l.trim())
 

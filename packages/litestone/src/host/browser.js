@@ -1,3 +1,4 @@
+// @ts-check
 // host/browser.js — the same surface as `host/node.js`, answered by a browser.
 //
 // Three kinds of answer, and the kinds matter more than the count.
@@ -22,8 +23,8 @@
 // drops such a column from a `@@sync` model and grades it `lost` (`FJS-D893`),
 // and a schema that still carries one is refused at `createClient`.
 
-const no = (what, instead) => () => {
-  const e = new Error(`[Litestone] ${what} is not available in a browser. ${instead}`)
+const no = (/** @type {string} */ what, /** @type {string} */ instead) => () => {
+  const e = /** @type {any} */ (new Error(`[Litestone] ${what} is not available in a browser. ${instead}`))
   e.code = 'HOST_UNAVAILABLE'
   throw e
 }
@@ -33,10 +34,10 @@ const no = (what, instead) => () => {
 // POSIX only. A database name in OPFS is an opaque key that happens to look
 // like a path, and there is no drive letter in a browser to get wrong.
 
-export const isAbsolute = (p) => p.startsWith('/')
+export const isAbsolute = (/** @type {string} */ p) => p.startsWith('/')
 
-const normalize = (parts) => {
-  const out = []
+const normalize = (/** @type {string[]} */ parts) => {
+  const out = /** @type {string[]} */ ([])
   for (const part of parts) {
     if (!part || part === '.') continue
     if (part === '..') { if (out.length && out[out.length - 1] !== '..') out.pop(); else out.push('..') }
@@ -45,7 +46,7 @@ const normalize = (parts) => {
   return out
 }
 
-export function join(...segments) {
+export function join(/** @type {string[]} */ ...segments) {
   const parts = segments.filter(Boolean).join('/').split('/')
   const lead  = segments[0]?.startsWith('/') ? '/' : ''
   return (lead + normalize(parts).join('/')) || '.'
@@ -53,8 +54,8 @@ export function join(...segments) {
 
 // No `process.cwd()` to resolve against, so the root IS the root. An app that
 // wanted a path relative to something has to say what.
-export function resolve(...segments) {
-  let out = []
+export function resolve(/** @type {string[]} */ ...segments) {
+  let out = /** @type {string[]} */ ([])
   for (const seg of segments) {
     if (!seg) continue
     if (seg.startsWith('/')) out = seg.split('/')
@@ -63,19 +64,23 @@ export function resolve(...segments) {
   return '/' + normalize(out).join('/')
 }
 
-export function dirname(p) {
+export function dirname(/** @type {string} */ p) {
   const i = p.lastIndexOf('/')
   if (i === -1) return '.'
   if (i === 0)  return '/'
   return p.slice(0, i)
 }
 
+/**
+ * @param {string} p
+ * @param {string} [ext]
+ */
 export function basename(p, ext) {
   const b = p.slice(p.lastIndexOf('/') + 1)
   return ext && b.endsWith(ext) && b !== ext ? b.slice(0, -ext.length) : b
 }
 
-export function extname(p) {
+export function extname(/** @type {string} */ p) {
   const b = basename(p)
   const i = b.lastIndexOf('.')
   return i <= 0 ? '' : b.slice(i)
@@ -131,7 +136,7 @@ export const createHmac       = no('createHmac', KEYS)
 // synchronous statement. What reaches for it is the migration journal, which is
 // a server's record of files on a disk — neither of which a device has.
 export const createHash       = no('createHash', 'A migration digest is taken where the migration files are.')
-export const randomBytes      = (n) => crypto.getRandomValues(new Uint8Array(n))
+export const randomBytes      = (/** @type {number} */ n) => crypto.getRandomValues(new Uint8Array(n))
 
 // ─── the call in progress ─────────────────────────────────────────────────
 //
@@ -157,7 +162,7 @@ export class AsyncLocalStorage {
   // running — and the next read of `ctx.isSystem` finds nothing and throws the
   // refusal meant for a floating promise. Caught by the conformance drive on
   // the first run after this file existed.
-  run(store, fn, ...args) {
+  run(/** @type {any} */ store, /** @type {Function} */ fn, /** @type {any[]} */ ...args) {
     const previous = this.#store
     this.#store = store
     let result
@@ -169,15 +174,15 @@ export class AsyncLocalStorage {
     }
     if (result && typeof result.then === 'function') {
       return result.then(
-        (value) => { this.#store = previous; return value },
-        (err)   => { this.#store = previous; throw err },
+        (/** @type {any} */ value) => { this.#store = previous; return value },
+        (/** @type {any} */ err)   => { this.#store = previous; throw err },
       )
     }
     this.#store = previous
     return result
   }
 
-  enterWith(store) { this.#store = store }
+  enterWith(/** @type {any} */ store) { this.#store = store }
 }
 
 // ─── waiting ──────────────────────────────────────────────────────────────
@@ -186,7 +191,7 @@ export class AsyncLocalStorage {
 // device database is opened without that. Without it the wait is a spin to the
 // deadline: the worker blocks either way, and the holder is another context
 // that keeps running.
-export function sleepSync(ms) {
+export function sleepSync(/** @type {number} */ ms) {
   if (typeof SharedArrayBuffer === 'function') {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
     return

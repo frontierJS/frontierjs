@@ -1,3 +1,4 @@
+// @ts-check
 // ddl-snapshot.js — schema → the DDL SQLite is actually given, as a committed file
 //
 // The access snapshot's sibling, for the opposite problem. Access is a rule
@@ -14,13 +15,13 @@ import { generateDDLForDatabase } from '../core/ddl.js'
 
 const WIDTH = 76
 
-function rule(label) {
+function rule(/** @type {string} */ label) {
   const head = `-- ─── ${label} `
   return head + '─'.repeat(Math.max(3, WIDTH - head.length))
 }
 
-const dbOf       = (model) => model.attributes.find(a => a.kind === 'db')?.name ?? 'main'
-const isExternal = (model) => model.attributes.some(a => a.kind === 'external')
+const dbOf       = (/** @type {any} */ model) => model.attributes.find((/** @type {any} */ a) => a.kind === 'db')?.name ?? 'main'
+const isExternal = (/** @type {any} */ model) => model.attributes.some((/** @type {any} */ a) => a.kind === 'external')
 
 // ─── renderDdlSnapshot ────────────────────────────────────────────────────────
 //
@@ -29,7 +30,7 @@ const isExternal = (model) => model.attributes.some(a => a.kind === 'external')
 // driver with no tables is named and skipped: absent DDL and an absent database
 // have to read differently.
 
-export function renderDdlSnapshot(schema, { source = 'schema.lite', pluralize = false } = {}) {
+export function renderDdlSnapshot(/** @type {any} */ schema, { source = 'schema.lite', pluralize = false } = {}) {
   const databases = schema.databases?.length
     ? schema.databases
     : [{ name: 'main', driver: 'sqlite' }]
@@ -52,7 +53,7 @@ export function renderDdlSnapshot(schema, { source = 'schema.lite', pluralize = 
 
   for (const database of databases) {
     const driver = database.driver ?? 'sqlite'
-    const models = schema.models.filter(m => dbOf(m) === database.name)
+    const models = schema.models.filter((/** @type {any} */ m) => dbOf(m) === database.name)
 
     out.push(rule(`database ${database.name} · ${driver}`))
 
@@ -60,14 +61,14 @@ export function renderDdlSnapshot(schema, { source = 'schema.lite', pluralize = 
       // jsonl and trail have no tables at all — an empty section here would
       // read as "litestone stopped emitting these".
       out.push(`-- No DDL — a ${driver} database has no schema. ${models.length} model(s)` +
-               (models.length ? `: ${models.map(m => m.name).join(', ')}` : ''))
+               (models.length ? `: ${models.map((/** @type {any} */ m) => m.name).join(', ')}` : ''))
       out.push('')
       continue
     }
 
     const external = models.filter(isExternal)
     if (external.length)
-      out.push(`-- @@external, managed outside litestone: ${external.map(m => m.name).join(', ')}`)
+      out.push(`-- @@external, managed outside litestone: ${external.map((/** @type {any} */ m) => m.name).join(', ')}`)
 
     if (!models.length) {
       out.push('-- No models declare this database.')

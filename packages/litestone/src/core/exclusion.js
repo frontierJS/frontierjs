@@ -1,3 +1,4 @@
+// @ts-check
 // exclusion.js — no two rows sharing a scope's key may overlap on their range
 //
 // `scope person(employeeId)` declared once; `@@exclude(person, range: [a, b])`
@@ -39,25 +40,26 @@ import { quoteIdent }           from './query.js'
 
 // The ledger is an ARRAY for the reason cardinality's is: a SAVEPOINT rollback
 // truncates it to a mark, and a key noted by a rolled-back write must go with it.
-export function createExclusionLedger(map, connFor) {
+export function createExclusionLedger(/** @type {any} */ map, /** @type {any} */ connFor) {
+  /** @type {any[]} */
   const dirty = []
 
   return {
     get length() { return dirty.length },
-    truncate(mark) { dirty.length = mark },
+    truncate(/** @type {number} */ mark) { dirty.length = mark },
 
     // A row was written, is about to be, or was removed. Its key is the one
     // whose members are graded; a removal grades clean, and costs one read.
-    note(model, row) {
+    note(/** @type {any} */ model, /** @type {any} */ row) {
       if (!row) return
       for (const name of map.byModel[model] ?? []) {
-        const member = map.scopes[name].members.find(m => m.model === model)
-        const key = member.keyFields.map((f, i) => row[f] ?? row[member.keyColumns[i]])
-        if (key.some(v => v == null)) continue    // a row with no person excludes nothing
+        const member = map.scopes[name].members.find((/** @type {any} */ m) => m.model === model)
+        const key = member.keyFields.map((/** @type {any} */ f, /** @type {number} */ i) => row[f] ?? row[member.keyColumns[i]])
+        if (key.some((/** @type {any} */ v) => v == null)) continue    // a row with no person excludes nothing
         // An operator payload (`{ increment: 1 }`) is not the stored key, and an
         // object bound into a statement voids every binding in it (FJS-199).
         // The key the row held before is noted from the table instead.
-        if (key.some(v => typeof v === 'object')) continue
+        if (key.some((/** @type {any} */ v) => typeof v === 'object')) continue
         dirty.push({ scope: name, key, model })
       }
     },
@@ -65,15 +67,15 @@ export function createExclusionLedger(map, connFor) {
     // A parent row whose range a member reads through `@from` moved: every key
     // its children hold is graded. `refs` are the parent rows' referenced
     // values, read before the write by the caller's own WHERE.
-    noteThrough(edge, refs) {
+    noteThrough(/** @type {any} */ edge, /** @type {any} */ refs) {
       const conn = connFor(edge.member)
       if (!conn || !refs.length) return
-      const sel = edge.keyColumns.map((c, i) => `${quoteIdent(c)} AS ${quoteIdent(edge.keyFields[i])}`).join(', ')
-      const sql = `SELECT DISTINCT ${sel} FROM ${quoteIdent(edge.table)} WHERE ${edge.pairs.map(([c]) => `${quoteIdent(c)} = ?`).join(' AND ')}`
+      const sel = edge.keyColumns.map((/** @type {any} */ c, /** @type {number} */ i) => `${quoteIdent(c)} AS ${quoteIdent(edge.keyFields[i])}`).join(', ')
+      const sql = `SELECT DISTINCT ${sel} FROM ${quoteIdent(edge.table)} WHERE ${edge.pairs.map((/** @type {any} */ [c]) => `${quoteIdent(c)} = ?`).join(' AND ')}`
       const stmt = conn.query(sql)
       for (const ref of refs) {
-        const vals = edge.refFields.map(f => ref[f])
-        if (vals.some(v => v == null || typeof v === 'object')) continue
+        const vals = edge.refFields.map((/** @type {any} */ f) => ref[f])
+        if (vals.some((/** @type {any} */ v) => v == null || typeof v === 'object')) continue
         for (const row of stmt.all(...vals)) this.note(edge.member, row)
       }
     },
@@ -82,7 +84,7 @@ export function createExclusionLedger(map, connFor) {
       if (!dirty.length) return
       const touched = new Map()
       for (const { scope, key, model } of dirty) {
-        const sig = `${scope}\u0000${key.map(v => `${typeof v}:${v}`).join('\u0000')}`
+        const sig = `${scope}\u0000${key.map((/** @type {any} */ v) => `${typeof v}:${v}`).join('\u0000')}`
         if (!touched.has(sig)) touched.set(sig, { scope, key, models: new Set() })
         touched.get(sig).models.add(model)
       }
@@ -92,7 +94,7 @@ export function createExclusionLedger(map, connFor) {
   }
 }
 
-function gradeKey(scope, key, connFor, written) {
+function gradeKey(/** @type {any} */ scope, /** @type {any} */ key, /** @type {any} */ connFor, /** @type {any} */ written) {
   // One field's key is that value; a pair's is the pair.
   const shown = key.length === 1 ? key[0] : key
   const spans = []
@@ -101,7 +103,7 @@ function gradeKey(scope, key, connFor, written) {
     if (!conn) continue
     const id  = m.idColumn ? `"${m.idColumn}"` : 'rowid'
     const sql = `SELECT ${id} AS "id", ${m.reads[0]} AS "a", ${m.reads[1]} AS "b" ` +
-                `FROM "${m.table}" WHERE ${[...m.keyColumns.map(c => `"${c}" = ?`), ...m.filters].join(' AND ')}`
+                `FROM "${m.table}" WHERE ${[...m.keyColumns.map((/** @type {any} */ c) => `"${c}" = ?`), ...m.filters].join(' AND ')}`
     for (const r of conn.query(sql).all(...key)) {
       const start = toPoint(r.a, m.kinds[0], -Infinity)
       const end   = toPoint(r.b, m.kinds[1],  Infinity)
@@ -132,17 +134,17 @@ function gradeKey(scope, key, connFor, written) {
 
 // The other row may be on a model the caller cannot read, so it is named by
 // model and id and nothing of it is quoted.
-function overlap(scope, key, mine, other) {
+function overlap(/** @type {any} */ scope, /** @type {any} */ key, /** @type {any} */ mine, /** @type {any} */ other) {
   const m = mine.member, o = other.member
-  const range = (x) => `[${x.range.join(', ')}]`
+  const range = (/** @type {any} */ x) => `[${x.range.join(', ')}]`
   return new OverlapConflictError(m.model,
     `${m.model} ${mine.id} overlaps ${o.model} ${other.id} on ${range(m)}` +
     (o.model === m.model ? '' : ` against ${range(o)}`) +
     ` — @@exclude(${scope.name}) allows no two rows with the same ${scope.fields.join(' and ')} ${JSON.stringify(key)} to overlap`,
-    { scope: scope.name, key, field: m.range[0], with: { model: o.model, id: other.id } })
+    { scope: scope.name, key, field: m.range[0], with: /** @type {any} */ ({ model: o.model, id: other.id }) })
 }
 
-function toPoint(v, kind, none) {
+function toPoint(/** @type {any} */ v, /** @type {any} */ kind, /** @type {number} */ none) {
   if (v == null) return none
   if (kind === 'number' || typeof v === 'number') return Number(v)
   if (kind === 'clock') return clockSeconds(v)
@@ -153,7 +155,7 @@ function toPoint(v, kind, none) {
 // A time of day as seconds past midnight. `@time` is HH:MM, or HH:MM:SS where
 // the column admits seconds; comparing the text would put '12:00' before
 // '12:00:00' and call equal points different.
-function clockSeconds(v) {
+function clockSeconds(/** @type {any} */ v) {
   const m = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(String(v))
   return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3] ?? 0) : NaN
 }

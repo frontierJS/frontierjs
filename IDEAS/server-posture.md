@@ -584,10 +584,28 @@ six-hour-old report with live `/proc` numbers. `decision-rules` 2026-11-03 ran
 this at confidence 2. If a box ever cannot reach its Basecamp, a `--ssh`
 fallback goes on the same command, not a new one.
 
-- [ ] 9.0 Find what moves a running Outpost to a new `OUTPOST_VERSION`: the
+- [x] 9.0 Find what moves a running Outpost to a new `OUTPOST_VERSION`: the
   unit's `ExecStart` pins it, and `fli outpost:install` answers an `online` row
   with nothing run. That path is the control's `fix:` line.
+  - Done 2026-11-03: re-enrolling moves it. `issueEnrollment` takes any row,
+    and the install it hands back rewrites the unit at the pinned version.
+    The install ended in `enable --now`, which left a running Outpost on the
+    old version holding the key Basecamp had just replaced (`FJS-3935`, fixed:
+    `enable` then `restart`). No person could reach it for an enrolled box: the
+    Servers page offered the command only while `outpostPublicKey` is null.
+    `FJS-D1820` opens that door (9.0b).
+- [x] 9.0b A *Re-enroll this machine* action on `servers/[id]/index.mesa` for
+  every enrolled box (`FJS-D1820`): the same command block, its copy saying the
+  command restarts the Outpost and replaces its key. A `verify:screens` step
+  that an enrolled row shows it is what fails when it stops.
+  - Done 2026-11-03: `#server-reenroll` in the actions row opens the block as
+    `#reenroll`. Issuing changes nothing on the row, because the key is replaced
+    only when the token is redeemed at `/enroll`. The drive enrolls a seeded box
+    through that route, then checks Re-enroll hands over a fresh command. That
+    run also fixed the drive's backup delete, which had picked the newest good
+    backup that 2202d14ed now refuses.
 - [ ] 9.1 `outpost.version-behind` in `posture.ts`, beside `outpost.cert-expiry`.
+  Its `fix:` names 9.0b's action.
   `declaredFor` takes the expected version (`OUTPOST_VERSION`, `enrollment.ts`)
   and the Server's stored `outpostVersion`. Behind is false and names both
   versions, equal or ahead is true, and no stored version is `unknown`. It fires
@@ -701,6 +719,26 @@ fallback goes on the same command, not a new one.
     either way. NVD is the reopen path if a SQLite CVE ever reaches
     `bun:sqlite` before Bun ships the fix.
 - ~~**Q10 — Where do Docker's advisories come from?**~~ **Answered 2026-10-27 (`FJS-D1546`): A — GitHub's `moby/moby` repository advisories, graded from each advisory's Docker Engine row.** (Phase 7, 7.1.) OSV's `github.com/docker/docker` froze at 28.x and read 6 never-fixed advisories against every 29.x.
+- ~~**Q11 — How does a person move an enrolled Outpost to `OUTPOST_VERSION`?**~~ **Answered 2026-11-03 (`FJS-D1820`): A — A *Re-enroll this machine* action on the Servers page for every enrolled box. It is the same block, behind `issueEnrollment`'s administrator gate, and its copy says the command restarts the Outpost and replaces its key. The `fix:` line names it.** (Phase 9, 9.0.)
+  Re-enrolling does it: the install rewrites the unit at the pinned version and
+  restarts it (`FJS-3935`). But the Servers page offers the install command only
+  while `outpostPublicKey` is null, and `fli outpost:install` refuses an `online`
+  row, so an enrolled box has no door to it.
+  - **A** — A *Re-enroll this machine* action on the Servers page for every
+    enrolled box. It is the same block, behind `issueEnrollment`'s
+    administrator gate, and its copy says the command restarts the Outpost and
+    replaces its key. The `fix:` line names it.
+  - **B** — `fli outpost:install <box> --again`, which issues an enrollment for
+    an `online` row.
+  - **C** — A signed upgrade command: the Outpost rewrites its own unit and
+    restarts, with no shell on the box.
+  - **D** — No door. The `fix:` line says to run `outpost-uninstall`, then enroll
+    again.
+  - **Recommend A** — `issueEnrollment` already takes any row, so the page offers
+    what the service permits, with no new owner or channel. B is a second door to
+    the same call, and it loosens the refusal that stops twin rows. C is a new
+    channel by which a compromised Basecamp rewrites root units on every box. D
+    is A with an extra uninstall step.
 
 ## See also
 

@@ -1,3 +1,4 @@
+// @ts-check
 // nested-writes.js — the relation half of one row's write: the nested ops a
 // create or update carries under a relation name, split from the scalar
 // fields and run around the parent's own statement. belongsTo ops run BEFORE
@@ -20,7 +21,7 @@ import { untrailed } from './trail-entries.js'
 // list filtered by that relation kept the row until a reload (`FJS-2013`).
 export const JOINED = Symbol.for('litestone.joined')
 
-export function makeNestedWrites(shape, ctx, deps) {
+export function makeNestedWrites(/** @type {any} */ shape, /** @type {any} */ ctx, /** @type {any} */ deps) {
   const { modelName } = shape
   const { writeDb, idField, parentRefusal, requireParentGrants, isArchivedParent } = deps
 
@@ -46,10 +47,10 @@ export function makeNestedWrites(shape, ctx, deps) {
   // is falsy, so three guards spelled that way all read *there are no nested
   // writes* and all three were wrong. It cost a create with `select: false`
   // every one of its children, silently (`FJS-615`).
-  function extractNestedWrites(data) {
+  function extractNestedWrites(/** @type {any} */ data) {
     if (!data) return { scalar: {}, nested: {}, hasNested: false }
     const rels = shape.relations
-    const scalar = {}, nested = {}
+    const scalar = /** @type {Record<string, any>} */ ({}), nested = /** @type {Record<string, any>} */ ({})
     for (const [k, v] of Object.entries(data)) {
       if (k in rels && isNestedWrite(v)) {
         nested[k] = v
@@ -64,17 +65,18 @@ export function makeNestedWrites(shape, ctx, deps) {
   // children on. Left to the column checks, `{ connect: [...] }` on a relation
   // was reported as "messages: must be an array" -- a complaint about a value
   // the caller meant as a nested write (FJS-2040).
-  function refuseBulkNested(rows, verb) {
+  function refuseBulkNested(/** @type {any} */ rows, /** @type {any} */ verb) {
     const named = new Set()
     for (const row of rows) for (const k of Object.keys(extractNestedWrites(row).nested)) named.add(k)
-    if (named.size) throw new ValidationError([...named].map(k => ({
+    if (named.size) throw new (/** @type {any} */ (ValidationError))([...named].map(k => ({
       path: [k],
       message: `${verb} takes no nested writes. Write ${k} with ${verb === 'updateMany' ? 'update()' : 'create()'}, one row at a time.`,
     })), { model: modelName, operation: verb === 'updateMany' ? 'update' : 'create' })
   }
 
   // belongsTo ops — run BEFORE parent insert/update, return FK fields to inject
-  async function processBelongsToNested(nested) {
+  async function processBelongsToNested(/** @type {any} */ nested) {
+    /** @type {Record<string, any>} */
     const extra = {}
     const rels = shape.relations
     for (const [fieldName, ops] of Object.entries(nested)) {
@@ -87,16 +89,16 @@ export function makeNestedWrites(shape, ctx, deps) {
       const { foreignKeys: fks, referencedKeys: refs } = rel
       // Every column of the key comes from the parent, so a composite one
       // cannot keep a leading column the payload named and point elsewhere.
-      const keyFrom = (target) => { for (let i = 0; i < fks.length; i++) extra[fks[i]] = target[refs[i]] }
-      const grantsOf = (target) => requireParentGrants(rel.targetModel, fks, refs, refs.map(r => target[r]))
+      const keyFrom = (/** @type {any} */ target) => { for (let i = 0; i < fks.length; i++) extra[fks[i]] = target[refs[i]] }
+      const grantsOf = (/** @type {any} */ target) => requireParentGrants(rel.targetModel, fks, refs, refs.map((/** @type {any} */ r) => target[r]))
       if (ops.connect) {
         const target = await tbl.findFirst(untrailed({ where: ops.connect }))
         // The same answer the foreign key itself gets, hidden or missing.
         if (!target) {
           const named = Object.keys(ops.connect)
-          const byKey = named.length === refs.length && refs.every(r => r in ops.connect)
+          const byKey = named.length === refs.length && refs.every((/** @type {any} */ r) => r in ops.connect)
           throw byKey
-            ? parentRefusal(fieldName, fks, refs.map(r => ops.connect[r]), rel.targetModel,
+            ? parentRefusal(fieldName, fks, refs.map((/** @type {any} */ r) => ops.connect[r]), rel.targetModel,
                 await isArchivedParent(tbl, rel.targetModel, ops.connect))
             : parentRefusal(fieldName, fks.length === 1 ? fks : [fieldName], [ops.connect], rel.targetModel)
         }
@@ -116,7 +118,7 @@ export function makeNestedWrites(shape, ctx, deps) {
   }
 
   // hasMany ops — run AFTER parent insert/update
-  async function processHasManyNested(nested, parentPk, parentRow) {
+  async function processHasManyNested(/** @type {any} */ nested, /** @type {any} */ parentPk, /** @type {any} */ parentRow) {
     const rels = shape.relations
     // Pre-resolve co-FK fields keyed by child model — used below to copy
     // parent's tenantId/accountId/etc into child rows during nested writes.
@@ -124,7 +126,7 @@ export function makeNestedWrites(shape, ctx, deps) {
 
     // Helper: merge parent's co-FK values into a child create payload.
     // Strict by default (parent wins), opt-out via allowChildFkOverride.
-    function applyCoFk(childModel, childRow) {
+    function applyCoFk(/** @type {any} */ childModel, /** @type {any} */ childRow) {
       const cols = coFkForParent[childModel]
       if (!cols || !cols.length || !parentRow) return childRow
       const result = { ...childRow }
@@ -163,7 +165,7 @@ export function makeNestedWrites(shape, ctx, deps) {
         const joined = new Set()
         // A join row hands whichever side holds a `Capability[]` to the other,
         // so either side's list is a grant here.
-        const requireJoinGrants = (target) => {
+        const requireJoinGrants = (/** @type {any} */ target) => {
           requireParentGrants(rel.targetModel, [fieldName], [tpk], [keyOf(target)])
           requireParentGrants(modelName, [fieldName], [idField], [parentPk])
         }
@@ -173,7 +175,7 @@ export function makeNestedWrites(shape, ctx, deps) {
         // refused. Reading the target's key by the literal name `id` therefore
         // produced a connect that reported success and wrote nothing on any
         // model keyed by something else. Refuse the undefined instead.
-        const keyOf = (row) => {
+        const keyOf = (/** @type {any} */ row) => {
           const v = row?.[tpk]
           if (v == null)
             throw new Error(`m2m on "${fieldName}": "${rel.targetModel}" row has no "${tpk}" to join on`)
@@ -183,7 +185,7 @@ export function makeNestedWrites(shape, ctx, deps) {
         if (ops.set) {
           // Replace the relation FIRST, so a create or connect beside it adds to
           // the new set rather than being deleted by it.
-          const before = new Set(writeDb.query(`SELECT ${ident(tk).sql} AS k FROM ${ident(jt).sql} WHERE ${ident(sk).sql} = ?`).all(parentPk).map(r => r.k))
+          const before = new Set(writeDb.query(`SELECT ${ident(tk).sql} AS k FROM ${ident(jt).sql} WHERE ${ident(sk).sql} = ?`).all(parentPk).map((/** @type {any} */ r) => r.k))
           writeDb.run(`DELETE FROM "${jt}" WHERE "${sk}" = ?`, parentPk)
           const wheres = Array.isArray(ops.set) ? ops.set : [ops.set]
           const after = new Set()
@@ -241,7 +243,7 @@ export function makeNestedWrites(shape, ctx, deps) {
       if (rel.kind !== 'hasMany') continue
       // Every column of the child's key comes from this row: a composite one
       // filled from the primary key alone points at nothing, or at a sibling.
-      const fk = Object.fromEntries(rel.foreignKeys.map((f, i) => {
+      const fk = Object.fromEntries(rel.foreignKeys.map((/** @type {any} */ f, /** @type {any} */ i) => {
         const ref = rel.referencedKeys[i]
         return [f, parentRow?.[ref] ?? (ref === idField ? parentPk : undefined)]
       }))
@@ -249,8 +251,8 @@ export function makeNestedWrites(shape, ctx, deps) {
       // the row's scope stays, and a key with no nullable column is refused by
       // name as required.
       const childFields = ctx.shapes[rel.targetModel].model.fields
-      const clearable = rel.foreignKeys.filter(f => childFields.find(x => x.name === f)?.type.optional)
-      const cleared = Object.fromEntries((clearable.length ? clearable : rel.foreignKeys).map(f => [f, null]))
+      const clearable = rel.foreignKeys.filter((/** @type {any} */ f) => childFields.find((/** @type {any} */ x) => x.name === f)?.type.optional)
+      const cleared = Object.fromEntries((clearable.length ? clearable : rel.foreignKeys).map((/** @type {any} */ f) => [f, null]))
 
       if (ops.create) {
         const rows = Array.isArray(ops.create) ? ops.create : [ops.create]

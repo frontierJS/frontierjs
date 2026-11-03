@@ -1,3 +1,4 @@
+// @ts-check
 // @frontierjs/litestone — public API
 
 export { createClient, ValidationError,

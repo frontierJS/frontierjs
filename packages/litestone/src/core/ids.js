@@ -1,3 +1,4 @@
+// @ts-check
 // core/ids.js — who assigns an `@id`, and the generators that fill one
 //
 // **The generators themselves are `@frontierjs/toolbelt/ids` and are re-exported
@@ -46,11 +47,15 @@ export { generateUlid, generateCuid, generateNanoid, ID_GENERATORS, GENERATED_DE
  * back as a raw `NOT NULL constraint failed` naming a physical table, which is
  * the error shape every other required field exists to avoid.
  */
+/**
+ * @param {any} field
+ * @param {any} [model]
+ */
 export function isServerAssignedId(field, model) {
-  if (!field.attributes?.some(a => a.kind === 'id')) return false
-  if (field.attributes.some(a => a.kind === 'default')) return true
+  if (!field.attributes?.some((/** @type {any} */ a) => a.kind === 'id')) return false
+  if (field.attributes.some((/** @type {any} */ a) => a.kind === 'default')) return true
   if (field.type?.name !== 'Int') return false
-  const keyWidth = (model?.fields ?? []).filter(f => f.attributes?.some(a => a.kind === 'id')).length
+  const keyWidth = (model?.fields ?? []).filter((/** @type {any} */ f) => f.attributes?.some((/** @type {any} */ a) => a.kind === 'id')).length
   return keyWidth === 1
 }
 
@@ -72,14 +77,18 @@ const SERVER_FILLED = new Set([
  * still STATE one of these — an explicit `@sequence` value is honored — so the
  * answer is *not required*, never *not writable*.
  */
+/**
+ * @param {any} field
+ * @param {any} [model]
+ */
 export function isServerFilled(field, model = null) {
   // A declared machine's state column takes its scope's one entry when a
   // create names none (`FJS-D365`); the attribute is the model's, not the field's.
-  if (model?.attributes?.some(a => a.kind === 'transitions' && a.declaredBy && a.field === field.name)) return true
+  if (model?.attributes?.some((/** @type {any} */ a) => a.kind === 'transitions' && a.declaredBy && a.field === field.name)) return true
   // An array column is filled with no attribute at all: ddl.js gives it
   // DEFAULT '[]', the empty list being its null state. The client's pre-flight
   // skipped arrays and the schema did not, so a browser create that omitted
   // `tags` was refused by name (FJS-1956).
   if (field.type?.array && field.type.kind !== 'relation' && field.type.kind !== 'implicitM2M') return true
-  return (field.attributes ?? []).some(a => SERVER_FILLED.has(a.kind))
+  return (field.attributes ?? []).some((/** @type {any} */ a) => SERVER_FILLED.has(a.kind))
 }

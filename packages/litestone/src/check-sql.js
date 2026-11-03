@@ -1,3 +1,4 @@
+// @ts-check
 // check-sql.js — the SQL subset a `@@check` is written in, read as SQL.
 //
 // The seeder reads a rule's shape to decide which parents a row needs, and the
@@ -5,8 +6,9 @@
 // expression that disagreed would build a row one of them refuses.
 
 // The SQL subset, as a tree. Booleans are 1/0 and NULL is null, as SQLite has them.
-export function parseSql(src) {
+export function parseSql(/** @type {string} */ src) {
   const re = /\s*(?:("[^"]*")|('(?:[^']|'')*')|(\d+(?:\.\d+)?)|([A-Za-z_]\w*)|(<>|!=|<=|>=|[=<>+\-*\/(),]))/y
+  /** @type {any[]} */
   const toks = []
   let m
   while (re.lastIndex < src.length && (m = re.exec(src))) {
@@ -20,25 +22,29 @@ export function parseSql(src) {
 
   let i = 0
   const peek = () => toks[i]
-  const word = w => peek()?.k === 'word' && peek().v.toUpperCase() === w
-  const op   = o => peek()?.k === 'op' && peek().v === o
+  const word = (/** @type {string} */ w) => peek()?.k === 'word' && peek().v.toUpperCase() === w
+  const op   = (/** @type {string} */ o) => peek()?.k === 'op' && peek().v === o
   const eat  = () => toks[i++]
-  const need = o => { if (!op(o)) throw new Error(`expected ${o}`); i++ }
+  const need = (/** @type {string} */ o) => { if (!op(o)) throw new Error(`expected ${o}`); i++ }
 
+  /** @type {() => any} */
   const orExpr = () => {
     let a = andExpr()
     while (word('OR')) { eat(); a = { t: 'or', a, b: andExpr() } }
     return a
   }
+  /** @type {() => any} */
   const andExpr = () => {
     let a = notExpr()
     while (word('AND')) { eat(); a = { t: 'and', a, b: notExpr() } }
     return a
   }
+  /** @type {() => any} */
   const notExpr = () => {
     if (word('NOT')) { eat(); return { t: 'not', a: notExpr() } }
     return cmpExpr()
   }
+  /** @type {() => any} */
   const cmpExpr = () => {
     const a = addExpr()
     if (word('IS')) {
@@ -64,20 +70,24 @@ export function parseSql(src) {
     }
     return a
   }
+  /** @type {() => any} */
   const addExpr = () => {
     let a = mulExpr()
     while (op('+') || op('-')) { const o = eat().v; a = { t: 'bin', op: o, a, b: mulExpr() } }
     return a
   }
+  /** @type {() => any} */
   const mulExpr = () => {
     let a = unary()
     while (op('*') || op('/')) { const o = eat().v; a = { t: 'bin', op: o, a, b: unary() } }
     return a
   }
+  /** @type {() => any} */
   const unary = () => {
     if (op('-')) { eat(); return { t: 'neg', a: unary() } }
     return primary()
   }
+  /** @type {() => any} */
   const primary = () => {
     const t = eat()
     if (!t) throw new Error('unexpected end')
@@ -99,7 +109,7 @@ export function parseSql(src) {
   return ast
 }
 
-function sqlCompare(a, b) {
+function sqlCompare(/** @type {any} */ a, /** @type {any} */ b) {
   const na = typeof a === 'number', nb = typeof b === 'number'
   if (na && nb) return a < b ? -1 : a > b ? 1 : 0
   if (na) return -1          // SQLite orders every number before every text
@@ -108,8 +118,13 @@ function sqlCompare(a, b) {
   return x < y ? -1 : x > y ? 1 : 0
 }
 
+/**
+ * @param {any} n
+ * @param {any} row
+ * @returns {any}
+ */
 export function evalSql(n, row) {
-  const T = v => v != null && v !== 0
+  const T = (/** @type {any} */ v) => v != null && v !== 0
   switch (n.t) {
     case 'num':  return n.v
     case 'str':  return n.v

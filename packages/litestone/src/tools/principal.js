@@ -1,3 +1,4 @@
+// @ts-check
 // tools/principal.js
 // Who `--as <who>` names, for every tool that boots as somebody.
 //
@@ -8,10 +9,10 @@
 
 import { modelToAccessor } from '../core/ddl.js'
 
-/** The @@auth model, or the one every app calls User. Studio picks it the same way. */
-export function authModelOf(schema) {
-  return schema.models.find(m => m.attributes?.some(a => a.kind === 'auth'))
-      ?? schema.models.find(m => m.name === 'User' || m.name === 'users')
+/** The `@@auth` model, or the one every app calls User. Studio picks it the same way. */
+export function authModelOf(/** @type {any} */ schema) {
+  return schema.models.find((/** @type {any} */ m) => m.attributes?.some((/** @type {any} */ a) => a.kind === 'auth'))
+      ?? schema.models.find((/** @type {any} */ m) => m.name === 'User' || m.name === 'users')
       ?? null
 }
 
@@ -24,19 +25,19 @@ export function authModelOf(schema) {
 // It returns what it tried as well as what it found — "no row matches" and
 // "there is no such model" send a person to two different places, and a console
 // that conflates them sends them to the wrong one.
-export async function findPrincipal(sys, schema, spec) {
+export async function findPrincipal(/** @type {any} */ sys, /** @type {any} */ schema, /** @type {string} */ spec) {
   const colon  = spec.indexOf(':')
   const named  = colon > 0 ? spec.slice(0, colon) : null
   const needle = colon > 0 ? spec.slice(colon + 1) : spec
 
   const model = named
-    ? schema.models.find(m => m.name === named || modelToAccessor(m.name) === named)
+    ? schema.models.find((/** @type {any} */ m) => m.name === named || modelToAccessor(m.name) === named)
     : authModelOf(schema)
 
   if (!model) return { row: null, model: null, needle, tried: [] }
 
   const accessor = modelToAccessor(model.name)
-  const declared = new Set((model.fields ?? []).map(f => f.name))
+  const declared = new Set((model.fields ?? []).map((/** @type {any} */ f) => f.name))
   const tried    = ['email', 'username', 'name'].filter(c => declared.has(c))
 
   for (const column of tried) {

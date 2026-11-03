@@ -1,3 +1,4 @@
+// @ts-check
 // rails.js — a Rails `db/schema.rb`, read into .lite.
 //
 // Here for the constructs Prisma cannot express at all: single-table
@@ -19,6 +20,7 @@ import { predicateToLite } from '../core/migrate.js'
 
 // Rails column type → .lite type. `decimal` is handled separately (it carries a
 // scale), and anything absent here is recorded rather than guessed.
+/** @type {Record<string, string>} */
 const TYPES = {
   string: 'String', text: 'String', citext: 'String', uuid: 'String',
   inet: 'String', cidr: 'String', macaddr: 'String', xml: 'String',
@@ -30,24 +32,26 @@ const TYPES = {
 }
 
 
-export function convert(src, label = 'schema') {
+export function convert(/** @type {string} */ src, label = 'schema') {
+  /** @type {any[]} */
   const gaps = []
-  const gap = (kind, model, field, detail, emitted) =>
+  const gap = (/** @type {any} */ kind, /** @type {any} */ model, /** @type {any} */ field, /** @type {any} */ detail, /** @type {any} */ emitted) =>
     gaps.push({ source: label, kind, model, field, detail, emitted })
 
   const tables = readTables(src, gap)
   readForeignKeys(src, tables, gap)
 
-  const lite = [...tables.values()].map(t => emitTable(t, tables, gap)).join('\n')
+  const lite = [...tables.values()].map((/** @type {any} */ t) => emitTable(t, tables, gap)).join('\n')
   detectPolymorphic(lite, gap)
-  return { lite, gaps, models: [...tables.values()].map(t => t.model) }
+  return { lite, gaps, models: [...tables.values()].map((/** @type {any} */ t) => t.model) }
 }
 
 // ─── reading ─────────────────────────────────────────────────────────────────
 
-function readTables(src, gap) {
+function readTables(/** @type {string} */ src, /** @type {any} */ gap) {
   const tables = new Map()
   const lines  = src.split('\n')
+  /** @type {any} */
   let cur = null
 
   for (const raw of lines) {
@@ -82,7 +86,7 @@ function readTables(src, gap) {
   return tables
 }
 
-function readForeignKeys(src, tables, gap) {
+function readForeignKeys(/** @type {string} */ src, /** @type {any} */ tables, /** @type {any} */ gap) {
   for (const line of src.split('\n')) {
     const m = line.trim().match(/^add_foreign_key "([^"]+)", "([^"]+)"(?:, (.*))?$/)
     if (!m) continue
@@ -101,7 +105,7 @@ function readForeignKeys(src, tables, gap) {
 
 // ─── emitting ────────────────────────────────────────────────────────────────
 
-function emitTable(t, tables, gap) {
+function emitTable(/** @type {any} */ t, /** @type {any} */ tables, /** @type {any} */ gap) {
   const out = [`model ${t.model} {`]
   const byColumn = new Map()
 
@@ -110,7 +114,7 @@ function emitTable(t, tables, gap) {
     : t.idType === 'Int' ? '  id Int @id @default(autoincrement())'
     : '  id String @id @default(cuid())')
 
-  const fkByColumn = new Map(t.fks.map(f => [f.column, f]))
+  const fkByColumn = new Map(t.fks.map((/** @type {any} */ f) => [f.column, f]))
 
   for (const raw of t.cols) {
     const col = readColumn(raw, t, gap)
@@ -133,7 +137,7 @@ function emitTable(t, tables, gap) {
     // above and never reaches this loop, so a foreign key is the only exemption
     // left to make — see wide-int.js for why that is the line.
     if (col.railsType === 'bigint' && !col.relation &&
-        !namesATable(col.name, (n) => tables.has(n), singularize)) {
+        !namesATable(col.name, (/** @type {any} */ n) => tables.has(n), singularize)) {
       // Before `renderColumn(col)`, or the attribute is reported and not
       // emitted. An array of them is not a @big — the column is JSON text and
       // JSON's number is the double, so the array keeps its known limit.
@@ -172,7 +176,7 @@ function emitTable(t, tables, gap) {
   return out.join('\n')
 }
 
-function readColumn(raw, t, gap) {
+function readColumn(/** @type {string} */ raw, /** @type {any} */ t, /** @type {any} */ gap) {
   // t.string "name", default: "", null: false, array: true
   const m = raw.match(/^t\.(\w+)\s+"([^"]+)"(?:,\s*(.*))?$/)
   if (!m) { gap('unparsed-line', t.model, null, raw.slice(0, 80), 'dropped'); return null }
@@ -217,10 +221,10 @@ function readColumn(raw, t, gap) {
 
   // The source spelling travels: whether a `t.bigint` is worth reporting turns
   // on whether it is a foreign key, which is a fact about the TABLE.
-  return { name, type, optional, isArray, extra, relation: null, railsType }
+  return { name, type, optional, isArray, extra, relation: /** @type {any} */ (null), railsType }
 }
 
-function railsDefault(def, type) {
+function railsDefault(/** @type {string} */ def, /** @type {string} */ type) {
   if (type === 'Boolean') return def === 'true' ? 'true' : 'false'
   if (type === 'DateTime' && /now|current_timestamp/i.test(def)) return 'now()'
   if (/^".*"$/.test(def)) return def
@@ -228,7 +232,7 @@ function railsDefault(def, type) {
   return JSON.stringify(def.replace(/^"|"$/g, ''))
 }
 
-function renderColumn(col) {
+function renderColumn(/** @type {any} */ col) {
   const name = camel(col.name)
   const bits = [...col.extra]
   if (name !== col.name) bits.unshift(`@map("${col.name}")`)
@@ -236,12 +240,12 @@ function renderColumn(col) {
   return `  ${name} ${t}${bits.length ? ' ' + bits.join(' ') : ''}`
 }
 
-function emitIndex(raw, t, byColumn, gap) {
+function emitIndex(/** @type {string} */ raw, /** @type {any} */ t, /** @type {any} */ byColumn, /** @type {any} */ gap) {
   const cols = raw.match(/^t\.index \[([^\]]*)\]/)?.[1]
   if (!cols) return null
 
-  const names = cols.split(',').map(c => c.trim().replace(/^"|"$/g, ''))
-    .filter(c => byColumn.has(c)).map(camel)
+  const names = cols.split(',').map((/** @type {string} */ c) => c.trim().replace(/^"|"$/g, ''))
+    .filter((/** @type {string} */ c) => byColumn.has(c)).map(camel)
   if (!names.length) return null
 
   // `unique … where deleted_at IS NULL` is uniqueness among LIVE rows, which
@@ -255,8 +259,8 @@ function emitIndex(raw, t, byColumn, gap) {
   // refuses rows the source permits.
   const where = raw.match(/where:\s*"((?:[^"\\]|\\.)*)"/)?.[1]
   const unique = /unique:\s*true/.test(raw)
-  const nullableCols = names.filter(n => {
-    const src = [...byColumn.values()].find(c => camel(c.name) === n)
+  const nullableCols = names.filter((/** @type {string} */ n) => {
+    const src = [...byColumn.values()].find((/** @type {any} */ c) => camel(c.name) === n)
     return src?.optional
   })
   let whereLite = null

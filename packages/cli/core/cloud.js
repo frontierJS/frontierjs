@@ -213,6 +213,23 @@ export const boxAddress = async (dest) => {
   catch { return null }
 }
 
+// The ~/.ssh/config Host whose HostName is `ip`, or null. The reverse of
+// boxAddress, for a box known by its address: Basecamp's Server rows name an
+// IP, and an alias is how the person reads it and how ssh finds its key.
+export const aliasOf = async (ip) => {
+  const { readFileSync } = await import('node:fs')
+  const { homedir }      = await import('node:os')
+  let text = ''
+  try { text = readFileSync(`${homedir()}/.ssh/config`, 'utf8') } catch { return null }
+  let names = []
+  for (const line of text.split('\n')) {
+    const [key, ...rest] = line.trim().split(/\s+/)
+    if (/^host$/i.test(key)) names = rest.filter(n => !/[*?!]/.test(n))
+    else if (/^hostname$/i.test(key) && rest[0] === ip && names.length) return names[0]
+  }
+  return null
+}
+
 // A box has an address before it has an sshd. BatchMode, so nothing here
 // can wait on a password; accept-new records the host key once, so the runs
 // after it meet a known host and ask nothing.

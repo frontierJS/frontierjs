@@ -1,3 +1,4 @@
+// @ts-check
 // core/vector.js — what a vector IS, and the JS half of comparing two.
 //
 // `FJS-1193` builds `Bytes @vector(n)` (`FJS-D332`) with retrieval as an
@@ -55,7 +56,7 @@ export const DISTANCE_FIELD = '_distance'
  * reads the wrong bytes with no error — a silently wrong distance, which is the
  * failure this whole file is careful about.
  */
-export function readVector(bytes, dim) {
+export function readVector(/** @type {any} */ bytes, /** @type {any} */ dim) {
   if (!(bytes instanceof Uint8Array))
     throw new TypeError(`@vector: expected stored bytes, got ${typeOf(bytes)}`)
   if (bytes.byteLength !== dim * BYTES_PER_DIM)
@@ -70,7 +71,7 @@ export function readVector(bytes, dim) {
  * Refuses three things, and the third is the one that matters — see
  * `refuseUnstorable` for why a zero vector is not a value.
  */
-export function toVectorBytes(values, dim, label = '@vector') {
+export function toVectorBytes(/** @type {any} */ values, /** @type {any} */ dim, label = '@vector') {
   const floats = values instanceof Float32Array ? values : Float32Array.from(values ?? [])
   refuseUnstorable(floats, dim, label)
   // A fresh buffer: `Float32Array.from` already made one, but a caller passing
@@ -93,12 +94,12 @@ export function toVectorBytes(values, dim, label = '@vector') {
 // blob and it is the DISTANCE that is null. The only place the shape can be
 // refused is the write, which is why this is here and not in the read path.
 
-export function isZeroVector(floats) {
+export function isZeroVector(/** @type {any} */ floats) {
   for (let i = 0; i < floats.length; i++) if (floats[i] !== 0) return false
   return true
 }
 
-export function refuseUnstorable(floats, dim, label = '@vector') {
+export function refuseUnstorable(/** @type {any} */ floats, /** @type {any} */ dim, label = '@vector') {
   if (floats.length !== dim)
     throw new RangeError(
       `${label}(${dim}): got ${floats.length} dimension${floats.length === 1 ? '' : 's'}. ` +
@@ -132,7 +133,7 @@ export function refuseUnstorable(floats, dim, label = '@vector') {
  * what the extension answers and the oracle compares the two. Writes are
  * refused above, so a stored null is a bug and not a shape.
  */
-export function cosineDistance(a, b) {
+export function cosineDistance(/** @type {any} */ a, /** @type {any} */ b) {
   if (a.length !== b.length)
     throw new RangeError(
       `@vector: cannot compare ${a.length} dimensions to ${b.length}`)
@@ -169,7 +170,7 @@ export function cosineDistance(a, b) {
  * filtered set, which is why the record calls the caller's `where` the prune
  * rather than an optimization.
  */
-export function scoreByDistance(rows, query, { column, dim, take = Infinity, skip = 0, dir = 'asc', as = DISTANCE_FIELD }) {
+export function scoreByDistance(/** @type {any} */ rows, /** @type {any} */ query, /** @type {any} */ { column, dim, take = Infinity, skip = 0, dir = 'asc', as = DISTANCE_FIELD }) {
   const q = query instanceof Float32Array ? query : Float32Array.from(query ?? [])
   refuseUnstorable(q, dim, 'orderBy.near')
 
@@ -195,7 +196,7 @@ export function scoreByDistance(rows, query, { column, dim, take = Infinity, ski
   return out
 }
 
-function typeOf(v) {
+function typeOf(/** @type {any} */ v) {
   if (v === null) return 'null'
   if (Array.isArray(v)) return 'an array'
   return typeof v

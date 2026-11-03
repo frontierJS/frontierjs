@@ -1,3 +1,4 @@
+// @ts-check
 // locks.js — `$lock`: the one advisory-lock primitive every flavor of the client
 // shares. Lives beside the connection, not inside access, so `asSystem()` does
 // not bypass it.
@@ -35,11 +36,12 @@ import { LockNotAcquiredError, LockReleasedByOtherError, LockExpiredError } from
 // (FJS-1217). The index.d.ts typed `timeout` while this read `wait`.
 const LOCK_OPTIONS = ['ttl', 'wait', 'retryEvery', 'owner']
 
+/** @type {Record<string, string>} */
 const LOCK_OPTION_ANSWERS = {
   timeout: 'is not an option — `wait` is the milliseconds to keep retrying before refusing, and `ttl` is how long the lock lives once held',
 }
 
-export function assertLockOptions(rest) {
+export function assertLockOptions(/** @type {any} */ rest) {
   const unknown = Object.keys(rest)
   if (!unknown.length) return
   const lines = unknown.map(k => {
@@ -54,7 +56,7 @@ export function assertLockOptions(rest) {
   )
 }
 
-export function makeLockPrimitive(rawWriteDb) {
+export function makeLockPrimitive(/** @type {any} */ rawWriteDb) {
   const LOCKS_TABLE = '_locks'
   let _ensured = false
 
@@ -78,7 +80,7 @@ export function makeLockPrimitive(rawWriteDb) {
   // Returns true if acquired, false if lock is held by another owner.
   // Cleans up expired locks before attempting.
 
-  function tryAcquireOnce(key, owner, ttl) {
+  function tryAcquireOnce(/** @type {any} */ key, /** @type {any} */ owner, /** @type {any} */ ttl) {
     const now       = Date.now()
     const expiresAt = now + ttl
 
@@ -95,7 +97,7 @@ export function makeLockPrimitive(rawWriteDb) {
     return result.changes === 1
   }
 
-  function getCurrentHolder(key) {
+  function getCurrentHolder(/** @type {any} */ key) {
     return rawWriteDb.prepare(
       `SELECT "owner", "expires_at" FROM "${LOCKS_TABLE}" WHERE "key" = ?`
     ).get(key)
@@ -103,7 +105,7 @@ export function makeLockPrimitive(rawWriteDb) {
 
   // ── $locks API ────────────────────────────────────────────────────────────
 
-  async function acquire(key, opts = {}) {
+  async function acquire(/** @type {any} */ key, /** @type {any} */ opts = {}) {
     ensureTable()
     const {
       ttl        = 30_000,
@@ -153,7 +155,7 @@ export function makeLockPrimitive(rawWriteDb) {
     }
   }
 
-  async function release(key, owner) {
+  async function release(/** @type {any} */ key, /** @type {any} */ owner) {
     ensureTable()
     if (owner) {
       rawWriteDb.run(`DELETE FROM "${LOCKS_TABLE}" WHERE "key" = ? AND "owner" = ?`, key, owner)
@@ -163,7 +165,7 @@ export function makeLockPrimitive(rawWriteDb) {
     // Idempotent — no error if already released
   }
 
-  async function heartbeat(key, owner, ttl = 30_000) {
+  async function heartbeat(/** @type {any} */ key, /** @type {any} */ owner, ttl = 30_000) {
     ensureTable()
     rawWriteDb.run(
       `UPDATE "${LOCKS_TABLE}" SET "expires_at" = ?, "heartbeat_at" = ? WHERE "key" = ? AND "owner" = ?`,
@@ -171,7 +173,7 @@ export function makeLockPrimitive(rawWriteDb) {
     )
   }
 
-  function isHeld(key) {
+  function isHeld(/** @type {any} */ key) {
     ensureTable()
     const row = rawWriteDb.prepare(
       `SELECT "expires_at" FROM "${LOCKS_TABLE}" WHERE "key" = ?`
@@ -186,7 +188,7 @@ export function makeLockPrimitive(rawWriteDb) {
     const rows = rawWriteDb.prepare(
       `SELECT * FROM "${LOCKS_TABLE}" WHERE "expires_at" > ? ORDER BY "acquired_at" ASC`
     ).all(now)
-    return rows.map(r => ({
+    return rows.map((/** @type {any} */ r) => ({
       key:         r.key,
       owner:       r.owner,
       acquiredAt:  new Date(r.acquired_at),
@@ -197,7 +199,7 @@ export function makeLockPrimitive(rawWriteDb) {
 
   // ── $lock(key, fn, opts) — main convenience API ──────────────────────────
 
-  async function $lock(key, fn, opts = {}) {
+  async function $lock(/** @type {any} */ key, /** @type {any} */ fn, opts = {}) {
     const lock = await acquire(key, opts)
     try {
       return await fn()

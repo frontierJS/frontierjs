@@ -1,3 +1,4 @@
+// @ts-check
 // browser/client.js — the page's half of the browser client.
 //
 // `createBrowserClient()` answers something that looks like a Litestone client
@@ -52,8 +53,11 @@ const _CLIENT_KEYS = new Set(['asSystem', '$setAuth', '$scopedBy', '$close', '$s
  *                                   gets the models it needs without the prose
  *                                   (`FJS-D204`) or the policies (`FJS-D303`).
  * @param {string} [opts.db]         The database's name in OPFS.
+ * @param {any} [opts.vfs]
+ * @param {any} [opts.capacity]
+ * @param {any} [opts.options]
  */
-export async function createBrowserClient({ worker, wasmUrl, schema, db = DEFAULT_DB, vfs, capacity, options } = {}) {
+export async function createBrowserClient({ worker, wasmUrl, schema, db = DEFAULT_DB, vfs, capacity, options } = /** @type {any} */ ({})) {
   if (!worker)  throw new Error('createBrowserClient: pass worker: new URL(…, import.meta.url)')
   if (!wasmUrl) throw new Error('createBrowserClient: pass wasmUrl: the URL of the SQLite wasm module')
   if (!schema)  throw new Error('createBrowserClient: pass schema: the .lite source as text')
@@ -78,7 +82,7 @@ export async function createBrowserClient({ worker, wasmUrl, schema, db = DEFAUL
     waiting.clear()
   }
 
-  const post = (op, payload = {}) => new Promise((resolve, reject) => {
+  const post = (/** @type {string} */ op, payload = {}) => new Promise((resolve, reject) => {
     // A terminated worker answers nothing, so a call made after the document
     // let it go would wait for all time rather than fail.
     if (closed) return reject(new Error(GONE))
@@ -113,7 +117,7 @@ export async function createBrowserClient({ worker, wasmUrl, schema, db = DEFAUL
   const opened = await post('open', { schema, db, wasmUrl, vfs, capacity, options })
   const models = new Set(opened.models)
 
-  const make = (flavor) => new Proxy({}, {
+  const make = (/** @type {any} */ flavor) => new Proxy({}, {
     get(_, key) {
       if (typeof key !== 'string') return undefined
 
@@ -124,9 +128,9 @@ export async function createBrowserClient({ worker, wasmUrl, schema, db = DEFAUL
       if (key === '$models')   return [...models]
       if (key === '$engine')   return opened.engine
       if (key === 'asSystem')  return () => make({ kind: 'system' })
-      if (key === '$setAuth')  return (user) => make({ kind: 'auth', user })
+      if (key === '$setAuth')  return (/** @type {any} */ user) => make({ kind: 'auth', user })
       if (key === '$close')    return async () => { try { await post('close') } finally { release() } }
-      if (key === '$search')      return (...args) => post('search', { flavor, args })
+      if (key === '$search')      return (/** @type {any[]} */ ...args) => post('search', { flavor, args })
       if (key === '$transaction') return () => { throw new Error(REFUSAL) }
       if (key === '$backup')      return () => { throw new Error(BACKUP_REFUSAL) }
 
@@ -136,7 +140,7 @@ export async function createBrowserClient({ worker, wasmUrl, schema, db = DEFAUL
       return new Proxy({}, {
         get(_t, method) {
           if (typeof method !== 'string' || method === 'then') return undefined
-          return (...args) => post('call', { flavor, model: key, method, args })
+          return (/** @type {any[]} */ ...args) => post('call', { flavor, model: key, method, args })
         },
       })
     },
@@ -164,8 +168,8 @@ const BACKUP_REFUSAL =
 // The worker sends a plain object because an Error loses its own properties to
 // structuredClone. Rebuilt here so that `err.code === 'ACCESS_DENIED'` is the
 // same expression a caller writes on the server.
-function rebuild(shape) {
-  const err = new Error(shape.message)
+function rebuild(/** @type {any} */ shape) {
+  const err = /** @type {any} */ (new Error(shape.message))
   err.name = shape.name ?? 'Error'
   for (const [key, value] of Object.entries(shape))
     if (key !== 'message' && key !== 'name') err[key] = value

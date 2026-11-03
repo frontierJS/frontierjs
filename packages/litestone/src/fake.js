@@ -1,3 +1,4 @@
+// @ts-check
 // src/fake.js — deterministic value catalog for generated test data
 //
 // Not a faker clone. Just enough vocabulary that a generated row reads like a row
@@ -63,14 +64,15 @@ const TITLE_TAIL = ['review', 'report', 'summary', 'notes', 'plan', 'brief', 'pr
 
 const TLDS = ['example.com', 'example.org', 'test.dev', 'sample.io']
 
-const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1)
+const cap = (/** @type {string} */ s) => s.charAt(0).toUpperCase() + s.slice(1)
 
 /** Sentence of `n` words from the catalog. */
-function sentence(rng, n = 8) {
+function sentence(/** @type {any} */ rng, n = 8) {
   const words = Array.from({ length: n }, () => rng.pick(WORDS))
   return cap(words.join(' ')) + '.'
 }
 
+/** @type {Record<string, (rng: any, ...rest: any[]) => any>} */
 export const FAKE = {
   firstName: (rng) => rng.pick(FIRST_NAMES),
   lastName:  (rng) => rng.pick(LAST_NAMES),
@@ -90,6 +92,7 @@ export const FAKE = {
 // Field names that map to a catalog entry. Matched case-insensitively against
 // the field name with separators stripped, so `first_name`, `firstName` and
 // `FirstName` all land on the same generator.
+/** @type {Record<string, (rng: any) => any>} */
 const FIELD_MAP = {
   firstname:    FAKE.firstName,
   givenname:    FAKE.firstName,
@@ -133,7 +136,7 @@ const FIELD_MAP = {
  * falls back to its own `Label seq` output. Returns null without an rng, which is
  * what keeps unseeded factories deterministic and unchanged.
  */
-export function fakeFor(fieldName, rng) {
+export function fakeFor(/** @type {any} */ fieldName, /** @type {any} */ rng) {
   if (!rng) return null
   const key = String(fieldName).replace(/[\s_-]/g, '').toLowerCase()
   const fn  = FIELD_MAP[key]
@@ -141,7 +144,7 @@ export function fakeFor(fieldName, rng) {
 }
 
 /** Human-readable email built from the catalog — `ada.silva3@example.com`. */
-export function fakeEmail(rng, seq) {
+export function fakeEmail(/** @type {any} */ rng, /** @type {any} */ seq) {
   if (!rng) return null
   return `${FAKE.firstName(rng).toLowerCase()}.${FAKE.lastName(rng).toLowerCase()}${seq}@${FAKE.tld(rng)}`
 }

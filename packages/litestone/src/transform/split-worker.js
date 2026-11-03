@@ -1,3 +1,4 @@
+// @ts-check
 // Bun worker — handles one split file
 // Receives: { srcPath, outPath, splitPipeline, configPath }
 // Replies:  { ok, outPath, elapsed, warnings } | { ok: false, error }
@@ -7,7 +8,7 @@ import { copyFileSync, statSync } from 'fs'
 import { introspectSQL, plan } from './framework.js'
 import { run } from './runner.js'
 
-function applyPragmas(db) {
+function applyPragmas(/** @type {any} */ db) {
   db.run(`PRAGMA journal_mode = OFF`)
   db.run(`PRAGMA synchronous = OFF`)
   db.run(`PRAGMA cache_size = -65536`)
@@ -45,7 +46,7 @@ self.onmessage = ({ data }) => {
 
     const sizeBytes = statSync(outPath).size
     self.postMessage({ ok: true, outPath, elapsed, sizeBytes, warnings, lines })
-  } catch (err) {
+  } catch (/** @type {any} */ err) {
     self.postMessage({ ok: false, outPath, error: err.message })
   }
 }

@@ -29,6 +29,7 @@ import { notifyPeople, workspaceMembers } from '../../domain/notification/notify
 import { statusOf } from '../../core/dependencies.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 import { hostReplicaDestination } from '../../jobs/replicate-sync.job.ts'
+import { OUTPOST_VERSION } from '../../providers/compute/enrollment.ts'
 
 // ─── The outpost's wire contract ───────────────────────────────────────────
 // `inspector.posture()` in packages/outpost, snake_case and relayed as-is.
@@ -61,7 +62,8 @@ async function ingest(server: any, data: ReportData) {
     // reference, and a key from another workspace must not be graded here (`FJS-3845`).
     ? await sys().secret.findFirst({ where: { id: server.sshKeyId, workspaceId: server.workspaceId } })
     : null
-  const declared = declaredFor({ sshPort: server.sshPort, apps, sshKeyData: key?.data ?? null })
+  const declared = declaredFor({ sshPort: server.sshPort, apps, sshKeyData: key?.data ?? null,
+    expectedOutpostVersion: OUTPOST_VERSION, outpostVersion: server.outpostVersion })
 
   const now      = Date.now()
   const at       = typeof data.at === 'string' && Number.isFinite(Date.parse(data.at)) ? data.at : new Date(now).toISOString()

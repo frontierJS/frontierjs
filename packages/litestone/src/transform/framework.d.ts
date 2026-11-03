@@ -17,6 +17,7 @@ export declare const $: Record<string, {
 }>
 
 export declare function params(values: Record<string, unknown>): void
+export declare function plan(pipeline: unknown[], schema: unknown): { valid: boolean, errors: string[], warnings: string[] }
 export declare function preview(configPath: string): Promise<void>
 export declare function execute(config: string | { db: string, pipeline?: unknown[], [key: string]: unknown }, opts?: unknown, run?: unknown): Promise<unknown>
 export declare function introspectSQL(db: unknown): Record<string, unknown>

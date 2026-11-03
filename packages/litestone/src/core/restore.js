@@ -1,3 +1,4 @@
+// @ts-check
 // restore.js — the restore verb: un-delete on a @@softDelete table, which
 // clears the stamp and walks the cascade back down to the children that
 // carried the root's stamp. Graded as an UPDATE of deletedAt, so the update
@@ -10,7 +11,7 @@
 import { CapabilityNotDeclaredError } from './errors.js'
 import { ident, keyIn } from './query.js'
 
-export function makeRestore(shape, ctx, deps) {
+export function makeRestore(/** @type {any} */ shape, /** @type {any} */ ctx, /** @type {any} */ deps) {
   const { tableName, modelName, softDelete, softDeleteCascade } = shape
   const {
     plugins, tx, readDb, writeDb, col, visibleWhere, buildWhereWithEncryption, stampSets, _stampCols,
@@ -27,10 +28,11 @@ export function makeRestore(shape, ctx, deps) {
   // not restored and not reported — § Rule one. The cascade walks from the
   // rows that scope admits, never from the caller's where alone, or a refused
   // parent's children come back without it (`FJS-1096`).
-  async function restore({ where } = {}) {
+  async function restore(/** @type {any} */ { where } = {}) {
     if (!softDelete) throw new CapabilityNotDeclaredError(modelName, 'restore()', '@@softDelete',
       'A row here is either present or gone — delete() is the only removal, and it has no way back.')
     if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data: { deletedAt: null } }, ctx)
+    /** @type {any[]} */
     const params   = []
     // Restore targets deleted rows: `onlyDeleted` is the verb's own mode,
     // not a caller flag.
@@ -42,7 +44,8 @@ export function makeRestore(shape, ctx, deps) {
     // The children and the parent come back together, or neither does — the
     // walk below is many statements and used to be that many auto-commits
     // (`FJS-638`).
-    let restored, trashed = null
+    /** @type {any} */
+    let restored, trashed = /** @type {any} */ (null)
     await tx.wrapExclusive(() => {
     // The stamp the restore clears is the one fact the trail's `before` needs
     // and RETURNING cannot carry.
@@ -73,10 +76,11 @@ export function makeRestore(shape, ctx, deps) {
     fireQuery({ operation: 'restore', args: { where }, sql: _rsSql, params, duration: _nt ? performance.now() - _rsT0 : 0, rowCount: restored.length })
 
     for (const [stamp, rootRows] of byStamp) {
-      walkCascade(rootRows, ({ childModel, childTable, foreignKeys, hardDelete }, keys) => {
+      walkCascade(rootRows, (/** @type {any} */ { childModel, childTable, foreignKeys, hardDelete }, /** @type {any} */ keys) => {
         if (hardDelete) return null  // hard-deleted children are gone — cannot restore
+        /** @type {any[]} */
         const binds = []
-        const under = `${keyIn(foreignKeys.map(f => `"${f}"`), keys, binds)} AND "deletedAt" = ?`
+        const under = `${keyIn(foreignKeys.map((/** @type {any} */ f) => `"${f}"`), keys, binds)} AND "deletedAt" = ?`
         binds.push(stamp)
         // Read before the write: after it, the stamp that names them is gone.
         const childRows = cascadeChildRows(childModel, childTable, under, binds)
@@ -109,7 +113,7 @@ export function makeRestore(shape, ctx, deps) {
     // — no JSON parse, no boolean coercion, no computed fields — so anything
     // that had reached for them would have got a shape no other read
     // produces. restore mirrors remove, which returns its row.
-    const restoredRows = restored.map(r => read(r, { mode: 'single', hydrateFrom: true }))
+    const restoredRows = restored.map((/** @type {any} */ r) => read(r, { mode: 'single', hydrateFrom: true }))
     // One event per row rather than a collection one: `where` can match many,
     // but RETURNING already built every row and the caller is handed them, so
     // the memory a per-row announcement would cost is spent either way.

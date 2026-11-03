@@ -1,3 +1,4 @@
+// @ts-check
 // capabilities.js — what a capability IS, derived rather than declared.
 //
 // `FJS-D139`: a capability is a REFERENCE to something the seed already states,
@@ -34,7 +35,7 @@ import { parseGateString } from '../plugins/gate.js'
 // question, so the two never overlap. Reading only the gate gave basecamp's
 // `Server` eight move capabilities where three are human, which is the noise
 // this exclusion exists to keep out of a picker (`FJS-506`).
-const machineMove = (t) => t.gate === 8 || t.gate === 9 || t.system === true
+const machineMove = (/** @type {any} */ t) => t.gate === 8 || t.gate === 9 || t.system === true
 
 const WRITE_OPS = ['create', 'update', 'delete']
 
@@ -42,8 +43,8 @@ const WRITE_OPS = ['create', 'update', 'delete']
 // and a stranger holds no list to name `Model.create` in, so a grant for it
 // would be one nobody could hold (`FJS-D1048`). Only a declared level 0 counts:
 // an absent gate says nothing, and a drop box at level 1+ stays on the grid.
-function strangerMayCreate(model) {
-  const gate = model.attributes?.find(a => a.kind === 'gate')
+function strangerMayCreate(/** @type {any} */ model) {
+  const gate = model.attributes?.find((/** @type {any} */ a) => a.kind === 'gate')
   return gate != null && parseGateString(gate.value).create === 0
 }
 
@@ -56,20 +57,24 @@ function strangerMayCreate(model) {
  *
  * A model that does not carry `@@capabilities` contributes nothing: the switch
  * is what says this model is graded that way at all.
+ *
+ * @param {any} model
+ * @returns {any[]}
  */
 export function capabilitiesForModel(model) {
-  const decl = model.attributes?.find(a => a.kind === 'capabilities')
+  const decl = model.attributes?.find((/** @type {any} */ a) => a.kind === 'capabilities')
   if (!decl) return []
 
+  /** @type {any[]} */
   const out = []
-  const add = (kind, target, gate = null) =>
+  const add = (/** @type {any} */ kind, /** @type {any} */ target, gate = null) =>
     out.push({ name: `${model.name}.${target}`, model: model.name, kind, target, gate })
 
   if (decl.read) add('operation', 'read')
   const open = strangerMayCreate(model)
   for (const op of WRITE_OPS) if (!(open && op === 'create')) add('operation', op)
 
-  for (const attr of (model.attributes ?? []).filter(a => a.kind === 'transitions')) {
+  for (const attr of (model.attributes ?? []).filter((/** @type {any} */ a) => a.kind === 'transitions')) {
     for (const [name, t] of Object.entries(attr.transitions ?? {})) {
       if (machineMove(t)) continue
       add('transition', name, t.gate ?? null)
@@ -77,21 +82,21 @@ export function capabilitiesForModel(model) {
   }
 
   for (const field of model.fields ?? []) {
-    if (field.attributes?.some(a => a.kind === 'capability')) add('column', field.name)
+    if (field.attributes?.some((/** @type {any} */ a) => a.kind === 'capability')) add('column', field.name)
   }
 
   return out
 }
 
-export function deriveCapabilities(schema) {
+export function deriveCapabilities(/** @type {any} */ schema) {
   return (schema.models ?? [])
     .flatMap(capabilitiesForModel)
-    .sort((a, b) => a.model.localeCompare(b.model) || a.name.localeCompare(b.name))
+    .sort((/** @type {any} */ a, /** @type {any} */ b) => a.model.localeCompare(b.model) || a.name.localeCompare(b.name))
 }
 
 /** The same set as names alone — what a grant column validates a value against. */
-export function capabilityNames(schema) {
-  return new Set(deriveCapabilities(schema).map(c => c.name))
+export function capabilityNames(/** @type {any} */ schema) {
+  return new Set(deriveCapabilities(schema).map((/** @type {any} */ c) => c.name))
 }
 
 /**
@@ -102,7 +107,8 @@ export function capabilityNames(schema) {
  * model absent from it declares no grid. One reading of the attributes, because two
  * would let the set a picker OFFERS drift from the set the boundary ENFORCES.
  */
-export function capabilityDeclarations(schema) {
+export function capabilityDeclarations(/** @type {any} */ schema) {
+  /** @type {Record<string, any>} */
   const out = {}
   for (const c of deriveCapabilities(schema)) {
     const m = out[c.model] ??= { read: false, create: false, transitions: new Set(), columns: new Set(), transitionFields: new Set() }
@@ -121,7 +127,7 @@ export function capabilityDeclarations(schema) {
   for (const model of schema.models ?? []) {
     const m = out[model.name]
     if (!m) continue
-    for (const attr of model.attributes.filter(a => a.kind === 'transitions'))
+    for (const attr of model.attributes.filter((/** @type {any} */ a) => a.kind === 'transitions'))
       if (attr.field) m.transitionFields.add(attr.field)
   }
   return out
@@ -145,9 +151,9 @@ export const CAPABILITY_TYPE = 'Capability'
  * `Capability[]` over an empty set would refuse every value it was ever given,
  * which is a column that cannot be written and cannot say why.
  */
-export function expandCapabilityType(schema) {
+export function expandCapabilityType(/** @type {any} */ schema) {
   const errors = []
-  const declared = (schema.enums ?? []).find(e => e.name === CAPABILITY_TYPE)
+  const declared = (schema.enums ?? []).find((/** @type {any} */ e) => e.name === CAPABILITY_TYPE)
   const usedBy   = []
 
   for (const model of schema.models ?? [])
@@ -207,18 +213,18 @@ export function expandCapabilityType(schema) {
  * non-array field naming a model with `@relation(fields:)`, and an implicit
  * many-to-many is an array field whose target points back with an array.
  */
-function checkGrantReach(schema) {
-  const models  = new Map((schema.models ?? []).map(m => [m.name, m]))
-  const holds   = (m) => m.fields.some(f => f.type?.name === CAPABILITY_TYPE)
-  const isAuth  = (m) => (m.attributes ?? []).some(a => a.kind === 'auth')
-  const keysOf  = (m) => m.fields.flatMap(f => {
+function checkGrantReach(/** @type {any} */ schema) {
+  const models  = new Map((schema.models ?? []).map((/** @type {any} */ m) => [m.name, m]))
+  const holds   = (/** @type {any} */ m) => m.fields.some((/** @type {any} */ f) => f.type?.name === CAPABILITY_TYPE)
+  const isAuth  = (/** @type {any} */ m) => (m.attributes ?? []).some((/** @type {any} */ a) => a.kind === 'auth')
+  const keysOf  = (/** @type {any} */ m) => m.fields.flatMap((/** @type {any} */ f) => {
     const target = models.get(f.type?.name)
     if (!target) return []
     if (!f.type.array)
-      return f.attributes?.some(a => a.kind === 'relation' && a.fields) ? [{ field: f.name, target }] : []
-    const back = target.fields.filter(b => b.type?.name === m.name && b.type.array)
-    return back.length && !f.attributes?.some(a => a.kind === 'relation' && a.fields)
-      ? [{ field: f.name, target, back: back.map(b => b.name) }] : []
+      return f.attributes?.some((/** @type {any} */ a) => a.kind === 'relation' && a.fields) ? [{ field: f.name, target }] : []
+    const back = target.fields.filter((/** @type {any} */ b) => b.type?.name === m.name && b.type.array)
+    return back.length && !f.attributes?.some((/** @type {any} */ a) => a.kind === 'relation' && a.fields)
+      ? [{ field: f.name, target, back: back.map((/** @type {any} */ b) => b.name) }] : []
   })
 
   const errors = []
@@ -226,9 +232,9 @@ function checkGrantReach(schema) {
     for (const { field, target, back = [] } of keysOf(model)) {
       if (isAuth(target)) continue
       // A many-to-many's far side keys back along the same edge, one row deep.
-      const via = keysOf(target).find(k => holds(k.target) && !(k.target === model && back.includes(k.field)))
+      const via = keysOf(target).find((/** @type {any} */ k) => holds(k.target) && !(k.target === model && back.includes(k.field)))
       if (!via) continue
-      const list = via.target.fields.find(f => f.type?.name === CAPABILITY_TYPE).name
+      const list = via.target.fields.find((/** @type {any} */ f) => f.type?.name === CAPABILITY_TYPE).name
       errors.push(
         `Model '${model.name}', field '${field}': a key to ${target.name} hands out ${via.target.name}.${list} ` +
         `through ${target.name}.${via.field}, and the may-only-grant-what-you-hold guard grades a key one row ` +
@@ -253,7 +259,7 @@ function checkGrantReach(schema) {
  * A deep walk rather than a switch over node kinds: the pattern is one shape and a
  * node type this misses is a hole that fails silent in exactly the way being closed.
  */
-function collectCapabilityLiterals(node, out = []) {
+function collectCapabilityLiterals(/** @type {any} */ node, /** @type {any[]} */ out = []) {
   if (!node || typeof node !== 'object') return out
   if (Array.isArray(node)) { for (const n of node) collectCapabilityLiterals(n, out); return out }
   if (node.type === 'compare' && node.op === 'in' &&
@@ -264,11 +270,12 @@ function collectCapabilityLiterals(node, out = []) {
   return out
 }
 
-function checkCapabilityLiterals(schema, legal) {
+function checkCapabilityLiterals(/** @type {any} */ schema, /** @type {any} */ legal) {
+  /** @type {any[]} */
   const errors = []
   const seen   = new Set()
 
-  const check = (exprHolder, where) => {
+  const check = (/** @type {any} */ exprHolder, /** @type {any} */ where) => {
     for (const name of collectCapabilityLiterals(exprHolder)) {
       const key = `${where}:${name}`
       if (legal.has(name) || seen.has(key)) continue
@@ -293,7 +300,7 @@ function checkCapabilityLiterals(schema, legal) {
 }
 
 /** Nearest legal name by a cheap edit distance, or a pointer to the whole list. */
-function suggestion(name, legal) {
+function suggestion(/** @type {any} */ name, /** @type {any} */ legal) {
   let best = null, bestD = Infinity
   for (const c of legal) {
     if (Math.abs(c.length - name.length) > 4) continue
@@ -305,7 +312,7 @@ function suggestion(name, legal) {
     : `The set is derived from the models declaring @@capabilities.`
 }
 
-function editDistance(a, b) {
+function editDistance(/** @type {any} */ a, /** @type {any} */ b) {
   const prev = Array.from({ length: b.length + 1 }, (_, i) => i)
   for (let i = 1; i <= a.length; i++) {
     let diag = prev[0]

@@ -1,3 +1,4 @@
+// @ts-check
 // core/pragmas.js — the wait every SQLite connection owes a second writer.
 //
 // SQLite serializes writers with a file lock. A connection that finds the lock
@@ -61,9 +62,9 @@ export const DEFAULT_BUSY_TIMEOUT_MS = 5000
  *  that can set an environment and cannot pass an option. */
 export const BUSY_TIMEOUT_ENV = 'LITESTONE_BUSY_TIMEOUT'
 
-const bad = (msg) => { const e = new Error(msg); e.name = 'BusyTimeoutError'; throw e }
+const bad = (/** @type {any} */ msg) => { const e = new Error(msg); e.name = 'BusyTimeoutError'; throw e }
 
-function check(ms, where) {
+function check(/** @type {any} */ ms, /** @type {any} */ where) {
   if (typeof ms !== 'number' || !Number.isFinite(ms) || !Number.isInteger(ms) || ms < 0)
     bad(`busyTimeout ${where} must be a whole number of milliseconds (0 or more), got ${JSON.stringify(ms)}`)
   return ms
@@ -93,7 +94,7 @@ function fromEnv() {
  * it is what a test asserting contention wants, and what a fire-and-forget write
  * that must never block the loop wants.
  */
-export function resolveBusyTimeout(stated) {
+export function resolveBusyTimeout(/** @type {any} */ stated) {
   if (stated != null) return check(stated, 'option')
   return fromEnv() ?? DEFAULT_BUSY_TIMEOUT_MS
 }
@@ -108,7 +109,7 @@ export function resolveBusyTimeout(stated) {
  * nobody is waiting for is the wrong trade — `{ default: 5000, audit: 250 }`
  * says so.
  */
-export function busyTimeoutFor(config, dbName) {
+export function busyTimeoutFor(/** @type {any} */ config, /** @type {any} */ dbName) {
   if (config == null || typeof config === 'number') return config
   return config[dbName] ?? config.default
 }
@@ -121,7 +122,7 @@ export function busyTimeoutFor(config, dbName) {
  * key here is a database that silently keeps the default, which is exactly the
  * class of silence this whole issue is about.
  */
-export function validateBusyTimeout(config, knownDbNames = []) {
+export function validateBusyTimeout(/** @type {any} */ config, /** @type {any[]} */ knownDbNames = []) {
   if (config == null) return config
   if (typeof config === 'number') return check(config, 'option')
   if (typeof config !== 'object' || Array.isArray(config))
@@ -145,7 +146,7 @@ export function validateBusyTimeout(config, knownDbNames = []) {
  * omitted by the callers that hold no option (the CLI), which is what makes the
  * environment variable reach them.
  */
-export function applyBusyTimeout(db, timeout) {
+export function applyBusyTimeout(/** @type {any} */ db, /** @type {any} */ timeout) {
   db.run(`PRAGMA busy_timeout = ${resolveBusyTimeout(timeout)}`)
 }
 
@@ -167,7 +168,7 @@ export function applyBusyTimeout(db, timeout) {
  * switch) and the cli's `core/journal-runner.mjs` (a deploy target has no
  * node_modules).
  */
-export function applyWal(db, timeout) {
+export function applyWal(/** @type {any} */ db, /** @type {any} */ timeout) {
   applyBusyTimeout(db, timeout)
   // The timeout alone is not enough on a FRESH file: two processes opening it
   // at once both hold SHARED and both want the upgrade, and SQLite refuses one
@@ -177,7 +178,7 @@ export function applyWal(db, timeout) {
   const deadline = Date.now() + resolveBusyTimeout(timeout)
   for (let attempt = 0; ; attempt++) {
     try { db.run('PRAGMA journal_mode = WAL'); return }
-    catch (e) {
+    catch (/** @type {any} */ e) {
       if (e?.code !== 'SQLITE_BUSY' || Date.now() >= deadline) throw e
       sleepSync(Math.min(50, 2 ** attempt) + Math.random() * 5)
     }
@@ -193,7 +194,7 @@ export function applyWal(db, timeout) {
  * A file that already exists keeps its mode; changing it is a full VACUUM,
  * which is a blocking rewrite and the operator's call.
  */
-export function applyIncrementalVacuum(db) {
+export function applyIncrementalVacuum(/** @type {any} */ db) {
   db.run('PRAGMA auto_vacuum = INCREMENTAL')
 }
 
@@ -205,7 +206,7 @@ export function applyIncrementalVacuum(db) {
  * SQLite reports success and keeps 4096 (`FJS-2303`). A file that already
  * exists keeps its size; changing it is a full VACUUM, the operator's call.
  */
-export function applyPageSize(db) {
+export function applyPageSize(/** @type {any} */ db) {
   db.run('PRAGMA page_size = 8192')
 }
 
@@ -215,7 +216,7 @@ export function applyPageSize(db) {
  * nothing. Called per sweep batch, so it holds the write lock for one batch's
  * pages and not for a year's.
  */
-export function reclaimFreePages(db) {
+export function reclaimFreePages(/** @type {any} */ db) {
   if (db.query('PRAGMA auto_vacuum').get()?.auto_vacuum !== 2) return
   db.run('PRAGMA incremental_vacuum')
 }

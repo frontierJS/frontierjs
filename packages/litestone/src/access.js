@@ -1,3 +1,4 @@
+// @ts-check
 // src/access.js — the declared access surface of a schema, as data and as prose
 //
 // Invariant 6 says access is declared in the schema, not in hooks. This module
@@ -19,10 +20,11 @@ import { parseGateString, validateGate, LEVELS } from './plugins/gate.js'
 
 // ─── Level labels ─────────────────────────────────────────────────────────────
 
+/** @type {Record<number, string>} */
 const LEVEL_LABEL = {}
 for (const [name, n] of Object.entries(LEVELS)) LEVEL_LABEL[n] = name
 
-export function levelLabel(n) { return LEVEL_LABEL[n] ?? `LEVEL_${n}` }
+export function levelLabel(/** @type {number} */ n) { return LEVEL_LABEL[n] ?? `LEVEL_${n}` }
 
 const OPS        = ['read', 'create', 'update', 'delete']
 const POLICY_OPS = ['read', 'create', 'update', 'postUpdate', 'delete']
@@ -62,7 +64,7 @@ export { policyExprToString }
 // mid-file otherwise shifts every row below it and the diff stops naming what
 // actually changed.
 
-export function deriveAccess(schema) {
+export function deriveAccess(/** @type {any} */ schema) {
   // The names come from `deriveCapabilities` and are not re-expanded here. This
   // file used to rebuild the list — create/update/delete, every move below gate
   // 8, then the opted-in columns — which is the same rule written twice, and the
@@ -80,18 +82,18 @@ export function deriveAccess(schema) {
   // and it carries its own `@@gate` and `@@allow` (`FJS-970`), so leaving it out
   // is an access surface that omits a way in — and `--from <ref>` would grade a
   // branch that gated a view as having moved nothing.
-  const models = [...(schema.models ?? []), ...(schema.views ?? []).map(v => ({ ...v, __isView: true }))]
+  const models = [...(schema.models ?? []), ...(schema.views ?? []).map((/** @type {any} */ v) => ({ ...v, __isView: true }))]
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(model => describeModel(model, byModel.get(model.name) ?? []))
 
   const counts = {
     models:       models.length,
-    views:        models.filter(m => m.isView).length,
-    exportable:   models.filter(m => m.export).length,
-    gated:        models.filter(m => m.gate).length,
-    unrestricted: models.filter(m => m.unrestricted).length,
-    policied:     models.filter(m => Object.keys(m.policies).length > 0).length,
-    protected:    models.filter(m => m.fields.length > 0).length,
+    views:        models.filter((/** @type {any} */ m) => m.isView).length,
+    exportable:   models.filter((/** @type {any} */ m) => m.export).length,
+    gated:        models.filter((/** @type {any} */ m) => m.gate).length,
+    unrestricted: models.filter((/** @type {any} */ m) => m.unrestricted).length,
+    policied:     models.filter((/** @type {any} */ m) => Object.keys(m.policies).length > 0).length,
+    protected:    models.filter((/** @type {any} */ m) => m.fields.length > 0).length,
     transitions:  models.reduce((n, m) => n + m.transitions.length, 0),
     systemMoves:  models.reduce((n, m) => n + m.transitions.filter(t => t.system).length, 0),
     sealingMoves: models.reduce((n, m) => n + m.transitions.filter(t => t.seals).length, 0),
@@ -115,7 +117,7 @@ export function deriveAccess(schema) {
 // same disclosure `--gate` owes a preview. `active: false` is the third state
 // and it is not a milder second: with no `@@auth` model and no `claim` line
 // there is nothing to compare against at all, and litestone grades none of them.
-function describeClaims(schema) {
+function describeClaims(/** @type {any} */ schema) {
   const set   = buildClaimSet(schema, null)
   const sites = authClaimSites(schema)
 
@@ -130,7 +132,7 @@ function describeClaims(schema) {
       name,
       known:  set.active ? set.has(name) : null,
       source: set.has(name) ? set.names.get(name) : null,
-      sites:  at.sort((a, b) => a.model.localeCompare(b.model)),
+      sites:  at.sort((/** @type {any} */ a, /** @type {any} */ b) => a.model.localeCompare(b.model)),
     }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
@@ -141,9 +143,9 @@ function describeClaims(schema) {
   }
 }
 
-function describeModel(model, derivedNames = []) {
+function describeModel(/** @type {any} */ model, /** @type {any[]} */ derivedNames = []) {
   const attrs      = model.attributes ?? []
-  const gateAttr   = attrs.find(a => a.kind === 'gate')
+  const gateAttr   = attrs.find((/** @type {any} */ a) => a.kind === 'gate')
   const gateSource = gateAttr ? String(gateAttr.value) : null
 
   let gate = null
@@ -152,6 +154,7 @@ function describeModel(model, derivedNames = []) {
     validateGate(gate, model.name)
   }
 
+  /** @type {Record<string, { allows: any[], denies: any[] }>} */
   const policies = {}
   for (const attr of attrs) {
     if (attr.kind !== 'allow' && attr.kind !== 'deny') continue
@@ -166,8 +169,8 @@ function describeModel(model, derivedNames = []) {
   for (const field of model.fields ?? []) {
     const fa         = field.attributes ?? []
     const protection = fieldProtection(fa)
-    const allows     = fa.filter(a => a.kind === 'fieldAllow')
-      .map(a => ({ operations: a.operations, expr: policyExprToString(a.expr) }))
+    const allows     = fa.filter((/** @type {any} */ a) => a.kind === 'fieldAllow')
+      .map((/** @type {any} */ a) => ({ operations: a.operations, expr: policyExprToString(a.expr) }))
 
     if (protection || allows.length) fields.push({ name: field.name, protection, allows })
   }
@@ -194,10 +197,10 @@ function describeModel(model, derivedNames = []) {
   // list of relation names rather than a boolean because the set is explicit —
   // a sealing model routinely has children that must go on arriving.
   const sealedRelations = (model.fields ?? [])
-    .filter(f => f.attributes?.some(a => a.kind === 'sealed'))
-    .map(f => ({ field: f.name, model: f.type?.name ?? null }))
+    .filter((/** @type {any} */ f) => f.attributes?.some((/** @type {any} */ a) => a.kind === 'sealed'))
+    .map((/** @type {any} */ f) => ({ field: f.name, model: f.type?.name ?? null }))
 
-  const softAttr = attrs.find(a => a.kind === 'softDelete')
+  const softAttr = attrs.find((/** @type {any} */ a) => a.kind === 'softDelete')
 
   // The grid, beside the ladder. A capability is a REFERENCE, so what is
   // recorded is the model's SWITCH and the columns that opted in — the names
@@ -206,10 +209,10 @@ function describeModel(model, derivedNames = []) {
   // `columns` is what the release comparison grades — a column opting in or out
   // is a change to the surface — and `names` is what a reader is shown. Two
   // views of one derivation, never two derivations.
-  const capAttr    = attrs.find(a => a.kind === 'capabilities')
+  const capAttr    = attrs.find((/** @type {any} */ a) => a.kind === 'capabilities')
   const capColumns = (model.fields ?? [])
-    .filter(f => (f.attributes ?? []).some(a => a.kind === 'capability'))
-    .map(f => f.name)
+    .filter((/** @type {any} */ f) => (f.attributes ?? []).some((/** @type {any} */ a) => a.kind === 'capability'))
+    .map((/** @type {any} */ f) => f.name)
 
   return {
     name:       model.name,
@@ -221,14 +224,14 @@ function describeModel(model, derivedNames = []) {
     // detail beside it: making a model exportable widens access by the whole
     // table, and `--from <ref>` has to be able to see that happen.
     export:     (() => {
-      const ex = attrs.find(a => a.kind === 'export')
+      const ex = attrs.find((/** @type {any} */ a) => a.kind === 'export')
       return ex ? { format: ex.format, since: ex.since ?? null } : null
     })(),
     capabilities: capAttr
       ? { read: Boolean(capAttr.read), columns: capColumns, names: derivedNames }
       : null,
-    db:         attrs.find(a => a.kind === 'db')?.name ?? null,
-    external:   attrs.some(a => a.kind === 'external'),
+    db:         attrs.find((/** @type {any} */ a) => a.kind === 'db')?.name ?? null,
+    external:   attrs.some((/** @type {any} */ a) => a.kind === 'external'),
     gate,
     gateSource,
     softDelete: softAttr ? (softAttr.cascade ? 'cascade' : true) : false,
@@ -244,13 +247,13 @@ function describeModel(model, derivedNames = []) {
 
 // @secret expands at parse time to @encrypted + @guarded and keeps its own
 // attribute, so a @secret field carries all three. Report the one that was written.
-function fieldProtection(attrs) {
-  if (attrs.some(a => a.kind === 'secret'))    return '@secret'
-  if (attrs.some(a => a.kind === 'hashed'))    return '@hashed'
-  const enc = attrs.find(a => a.kind === 'encrypted')
+function fieldProtection(/** @type {any[]} */ attrs) {
+  if (attrs.some((/** @type {any} */ a) => a.kind === 'secret'))    return '@secret'
+  if (attrs.some((/** @type {any} */ a) => a.kind === 'hashed'))    return '@hashed'
+  const enc = attrs.find((/** @type {any} */ a) => a.kind === 'encrypted')
   if (enc)                                     return enc.deterministic ? '@encrypted(deterministic: true)' : '@encrypted'
-  const guarded = attrs.find(a => a.kind === 'guarded')
-  const system  = attrs.some(a => a.kind === 'system')
+  const guarded = attrs.find((/** @type {any} */ a) => a.kind === 'guarded')
+  const system  = attrs.some((/** @type {any} */ a) => a.kind === 'system')
   // The pair is spellable and means both halves: invisible to a client AND
   // unwritable by one. Report it as written rather than letting one hide the
   // other — the snapshot is where a reader learns which locks a column carries.
@@ -275,7 +278,7 @@ function fieldProtection(attrs) {
 // (required 0–9 × level 0–8) pair, which is where a divergence surfaces —
 // loudly, in one place, instead of silently across every suite that trusts it.
 
-export function expectedVerdict(required, level) {
+export function expectedVerdict(/** @type {number} */ required, /** @type {number} */ level) {
   if (required === 9) return 'deny'                       // LOCKED — no exceptions
   if (required === 8) return level === 8 ? 'allow' : 'deny' // SYSTEM — asSystem() only
   return level >= required ? 'allow' : 'deny'
@@ -286,7 +289,7 @@ export function expectedVerdict(required, level) {
 // One model's gate as the full grid a runner asserts: every operation against
 // every reachable level.
 
-export function gateLadder(modelAccess) {
+export function gateLadder(/** @type {any} */ modelAccess) {
   if (!modelAccess.gate) return []
   const rows = []
   for (const op of OPS) {
@@ -303,7 +306,7 @@ export function gateLadder(modelAccess) {
 // schema gets a small file and the diff of adding the first `@@transitions` is
 // the section appearing.
 
-export function renderAccessSnapshot(access, opts = {}) {
+export function renderAccessSnapshot(/** @type {any} */ access, /** @type {{ source?: string, command?: string }} */ opts = {}) {
   const { source = 'schema.lite', command = 'fli test:access' } = opts
   const { models, counts } = access
   const out = []
@@ -334,7 +337,7 @@ export function renderAccessSnapshot(access, opts = {}) {
   out.push('')
 
   // ── Unrestricted ──
-  const open = models.filter(m => m.unrestricted)
+  const open = models.filter((/** @type {any} */ m) => m.unrestricted)
   if (open.length) {
     out.push('## Unrestricted')
     out.push('')
@@ -346,7 +349,7 @@ export function renderAccessSnapshot(access, opts = {}) {
   }
 
   // ── Gate ladder ──
-  const gated = models.filter(m => m.gate)
+  const gated = models.filter((/** @type {any} */ m) => m.gate)
   if (gated.length) {
     out.push('## Gates')
     out.push('')
@@ -367,7 +370,7 @@ export function renderAccessSnapshot(access, opts = {}) {
   }
 
   // ── Exports ──
-  const exportable = models.filter(m => m.export)
+  const exportable = models.filter((/** @type {any} */ m) => m.export)
   if (exportable.length) {
     out.push('## Bulk export')
     out.push('')
@@ -386,7 +389,7 @@ export function renderAccessSnapshot(access, opts = {}) {
   }
 
   // ── Row policies ──
-  const policied = models.filter(m => Object.keys(m.policies).length)
+  const policied = models.filter((/** @type {any} */ m) => Object.keys(m.policies).length)
   if (policied.length) {
     out.push('## Row policies')
     out.push('')
@@ -408,7 +411,7 @@ export function renderAccessSnapshot(access, opts = {}) {
   }
 
   // ── Field protection ──
-  const withFields = models.filter(m => m.fields.length)
+  const withFields = models.filter((/** @type {any} */ m) => m.fields.length)
   if (withFields.length) {
     out.push('## Protected fields')
     out.push('')
@@ -430,7 +433,7 @@ export function renderAccessSnapshot(access, opts = {}) {
   }
 
   // ── Transition gates ──
-  const withTransitions = models.filter(m => m.transitions.length)
+  const withTransitions = models.filter((/** @type {any} */ m) => m.transitions.length)
   if (withTransitions.length) {
     out.push('## State transitions')
     out.push('')
@@ -468,7 +471,7 @@ export function renderAccessSnapshot(access, opts = {}) {
         out.push(`| \`${m.name}\` | \`${t.field}\` | \`${t.name}\` | ${t.from.join(', ')} → ${t.to} | ${by} | ${lvl} | ${t.seals ? '**yes**' : '—'} |`)
       }
     }
-    const sealing = withTransitions.filter(m => m.sealedRelations?.length)
+    const sealing = withTransitions.filter((/** @type {any} */ m) => m.sealedRelations?.length)
     if (sealing.length) {
       out.push('')
       out.push('`@sealed` names the children a document is MADE of — the other half of `@seals`,')
@@ -476,13 +479,13 @@ export function renderAccessSnapshot(access, opts = {}) {
       out.push('that must go on arriving after it is issued.')
       out.push('')
       for (const m of sealing)
-        out.push(`- \`${m.name}\` seals ${m.sealedRelations.map(r => `\`${r.field}\`${r.model ? ` (\`${r.model}\`)` : ''}`).join(', ')}`)
+        out.push(`- \`${m.name}\` seals ${m.sealedRelations.map((/** @type {any} */ r) => `\`${r.field}\`${r.model ? ` (\`${r.model}\`)` : ''}`).join(', ')}`)
     }
     out.push('')
   }
 
   // ── Capabilities ──
-  const withCaps = models.filter(m => m.capabilities)
+  const withCaps = models.filter((/** @type {any} */ m) => m.capabilities)
   if (withCaps.length) {
     out.push('## Capabilities')
     out.push('')
@@ -496,7 +499,7 @@ export function renderAccessSnapshot(access, opts = {}) {
     out.push('| Model | Read | Capabilities |')
     out.push('| --- | --- | --- |')
     for (const m of withCaps) {
-      const names = m.capabilities.names.map(n => `\`${n}\``)
+      const names = m.capabilities.names.map((/** @type {any} */ n) => `\`${n}\``)
       out.push(`| \`${m.name}\` | ${m.capabilities.read ? 'graded' : '—'} | ${names.join(' · ')} |`)
     }
     out.push('')
@@ -509,6 +512,7 @@ export function renderAccessSnapshot(access, opts = {}) {
   out.push('')
   out.push('| # | Name | Who |')
   out.push('| --- | --- | --- |')
+  /** @type {Record<number, string>} */
   const who = {
     0: 'unauthenticated',
     1: 'authenticated, unverified',

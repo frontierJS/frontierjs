@@ -16256,6 +16256,12 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1820"></a>2026-11-03 · `FJS-D1820` — Q11 — How does a person move an enrolled Outpost to `OUTPOST_VERSION` — A *Re-enroll this machine* action on the Servers page for every enrolled box. It is the same block, behind `issueEnrollment`'s administrator gate, and its copy says the command restarts the Outpost and replaces its key. The `fix:` line names it.
+
+Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions. **A** was picked over **B** (`fli outpost:install <box> --again`, which issues an enrollment for an `online` row), **C** (A signed upgrade command: the Outpost rewrites its own unit and restarts, with no shell on the box), **D** (No door. The `fix:` line says to run `outpost-uninstall`, then enroll again).
+
+The paper's recommendation, taken as written: `issueEnrollment` already takes any row, so the page offers what the service permits, with no new owner or channel. B is a second door to the same call, and it loosens the refusal that stops twin rows. C is a new channel by which a compromised Basecamp rewrites root units on every box. D is A with an extra uninstall step.
+
 ### <a id="fjs-d1819"></a>2026-11-03 · `FJS-D1819` — `ws:pub --no-ci` skips the release CI, and only for the release host: beside `--to npm` it is refused
 
 The owner's call, asked in chat: a release to the package host should not wait on the full CI every time. Amends [`FJS-D1720`](#fjs-d1720) for the release host only; npm keeps the gate, because an npm version is spent for good and a GitHub Release can be deleted. `--no-ci` tags the release commit ungraded, and the push still skips the pre-push hook. Preflight refuses it beside npm as `no-ci-npm`. Lives in `packages/cli/commands/workspace/publish/` (`_steps/00-preflight.md`, `_steps/01b-ci.md`).

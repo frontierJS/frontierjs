@@ -1,3 +1,4 @@
+// @ts-check
 // trail-entries.js — the trail's record of a completed verb: which fields
 // and models this table logs, the entry each verb emits, and the redaction
 // that keeps a protected value out of the trail (root `CLAUDE.md` § 7). The
@@ -17,7 +18,7 @@ import { trailModelName, buildLogEntry, trailRowValues, fireLog } from './audit-
 // reading of that rule — `$trailMarks` hands it to an app's own trail, which
 // would otherwise log what this one redacts (FJS-3599). A mark that is a
 // function takes the value.
-export function trailMarksOf(fieldPolicy) {
+export function trailMarksOf(/** @type {any} */ fieldPolicy) {
   const marks = new Map()
   for (const [f, p] of Object.entries(fieldPolicy)) {
     if (isProtected(p))   marks.set(f, REDACTED)
@@ -32,11 +33,11 @@ export function trailMarksOf(fieldPolicy) {
 // it files no entry: the trail would hold reads of charts nobody opened, under
 // whichever principal the engine happened to ask as (FJS-3714).
 export const UNTRAILED = Symbol.for('litestone.untrailed')
-export const untrailed = args => ({ ...args, [UNTRAILED]: true })
+export const untrailed = (/** @type {any} */ args) => ({ ...args, [UNTRAILED]: true })
 
-export const markOf = (mark, value) => (typeof mark === 'function' ? mark(value) : mark)
+export const markOf = (/** @type {any} */ mark, /** @type {any} */ value) => (typeof mark === 'function' ? mark(value) : mark)
 
-export function makeTrailEntries(shape, ctx, deps) {
+export function makeTrailEntries(/** @type {any} */ shape, /** @type {any} */ ctx, /** @type {any} */ deps) {
   const { modelName, fieldPolicy } = shape
   const { tx, idField, parseArgs } = deps
 
@@ -62,8 +63,8 @@ export function makeTrailEntries(shape, ctx, deps) {
   // An @@anonymous table has no log (the parser refuses one) and still takes
   // this path, because its writes are what a logged write in the same
   // transaction is refused against (`FJS-D349`).
-  const tableAnonymous   = shape.model.attributes.some(a => a.kind === 'anonymous')
-  const tableLogsWrites  = !!tableModelLogs?.some(l => l.writes) || [...tableFieldLogs.values()].some(cs => cs.some(c => c.writes))
+  const tableAnonymous   = shape.model.attributes.some((/** @type {any} */ a) => a.kind === 'anonymous')
+  const tableLogsWrites  = !!tableModelLogs?.some((/** @type {any} */ l) => l.writes) || [...tableFieldLogs.values()].some((/** @type {any} */ cs) => cs.some((/** @type {any} */ c) => c.writes))
   const tableHasLogWork  = tableFieldLogs.size > 0 || (tableModelLogs?.length > 0) || tableAnonymous
   const tableNeedsField  = tableFieldLogs.size > 0
   const tableNeedsModel  = tableModelLogs?.length > 0
@@ -71,7 +72,7 @@ export function makeTrailEntries(shape, ctx, deps) {
   // Pre-resolve log tables at startup so getLogTable() is O(1) on hot paths.
   // Map<dbName, logTable>
   const _logTableCache = new Map()
-  function getLogTable(dbName) {
+  function getLogTable(/** @type {any} */ dbName) {
     if (_logTableCache.has(dbName)) return _logTableCache.get(dbName)
     const dbEntry = ctx.trailDbMap?.[dbName]
     // A SQL trail is an ordinary table and is written through a SYSTEM context:
@@ -90,9 +91,9 @@ export function makeTrailEntries(shape, ctx, deps) {
   }
 
   // Extract record ids from an array of rows using this table's @id field.
-  function extractIds(rows) {
+  function extractIds(/** @type {any} */ rows) {
     if (!rows?.length) return []
-    return rows.map(r => r[idField]).filter(id => id != null)
+    return rows.map((/** @type {any} */ r) => r[idField]).filter((/** @type {any} */ id) => id != null)
   }
 
   // A logged read whose `select` leaves out the id still has to name its rows:
@@ -100,13 +101,13 @@ export function makeTrailEntries(shape, ctx, deps) {
   // a hole a reviewer cannot see (FJS-1422). So the STATEMENT selects the id,
   // and `finalize` with the caller's own parse strips it again. `distinct`
   // keeps the caller's select, since an id would make every row distinct.
-  function logReadParse(select, include, ps, distinct, windowNames = null) {
+  function logReadParse(/** @type {any} */ select, /** @type {any} */ include, /** @type {any} */ ps, /** @type {any} */ distinct, windowNames = null) {
     if (!tableHasLogWork || tableAnonymous || !select || select[idField] || distinct === true) return ps
     return parseArgs({ ...select, [idField]: true }, include, windowNames)
   }
 
   // Emit a log entry fire-and-forget to a trail database.
-  function emitLog(dbName, entry) {
+  function emitLog(/** @type {any} */ dbName, /** @type {any} */ entry) {
     const table = getLogTable(dbName)
     if (!table) return
     const built = buildLogEntry(entry, ctx, ctx.onLog)
@@ -151,15 +152,16 @@ export function makeTrailEntries(shape, ctx, deps) {
 
   // Field-level entries: the entry IS about this field, so it stays — only the
   // value is replaced.
-  function redactValue(field, value) {
+  function redactValue(/** @type {any} */ field, /** @type {any} */ value) {
     if (value == null) return null
     return markOf(logMarks.get(field) ?? value, value)
   }
 
   // Model-level entries: before/after are whole rows. Copy on write — these
   // objects are the rows handed back to the caller and must not be mutated.
-  function redactSnapshot(row) {
+  function redactSnapshot(/** @type {any} */ row) {
     if (!row || !hasProtectedLogFields || typeof row !== 'object') return row
+    /** @type {any} */
     let out = null
     for (const [f, mark] of logMarks) {
       if (row[f] == null) continue
@@ -174,8 +176,9 @@ export function makeTrailEntries(shape, ctx, deps) {
   // `system: ['apiKey']` write logged null to null and an image without the
   // column (FJS-2297). Where the stored row holds a value the caller's row
   // lacks, the image carries its mark — never the value.
-  function trailImage(raw, shaped) {
+  function trailImage(/** @type {any} */ raw, /** @type {any} */ shaped) {
     if (!raw || !shaped || !hasProtectedLogFields) return shaped
+    /** @type {any} */
     let out = null
     for (const [f, mark] of logMarks) {
       if (raw[f] == null || f in shaped) continue
@@ -188,7 +191,7 @@ export function makeTrailEntries(shape, ctx, deps) {
   // Emit field-level and model-level log entries for a completed operation.
   // Called once per operation — extracts ids once, shared by both helpers.
   // operation: 'read' | 'write' | 'create' | 'update' | 'delete'
-  function emitLogs(operation, rows, { before: beforeMap, after: afterMap, transition = null, ids: readIds = null, system = null, written = null } = {}) {
+  function emitLogs(/** @type {any} */ operation, /** @type {any} */ rows, /** @type {{ before?: any, after?: any, transition?: any, ids?: any, system?: any, written?: any }} */ { before: beforeMap, after: afterMap, transition = null, ids: readIds = null, system = null, written = null } = {}) {
     const lifted = liftsGate(system) ? [GATE_LIFT] : null
     if (!tableHasLogWork) return          // ← fast exit for unlogged tables
     if (operation !== 'read' && (tableAnonymous || tableLogsWrites) && tx.owns()) {
@@ -224,11 +227,11 @@ export function makeTrailEntries(shape, ctx, deps) {
           let records = ids
           if (written && (operation === 'create' || operation === 'update')) {
             const names = operation === 'create'
-              ? d => d?.[field] != null
-              : d => field in d || Object.keys(d).some(k => k.startsWith(`${field}.`))
-            const given = written.flatMap((d, i) => names(d) ? [i] : [])
+              ? (/** @type {any} */ d) => d?.[field] != null
+              : (/** @type {any} */ d) => field in d || Object.keys(d).some((/** @type {any} */ k) => k.startsWith(`${field}.`))
+            const given = written.flatMap((/** @type {any} */ d, /** @type {number} */ i) => names(d) ? [i] : [])
             if (!given.length) continue
-            if (given.length < written.length && rows.length === written.length) records = extractIds(given.map(i => rows[i]))
+            if (given.length < written.length && rows.length === written.length) records = extractIds(given.map((/** @type {number} */ i) => rows[i]))
           }
 
           emitLog(db, {

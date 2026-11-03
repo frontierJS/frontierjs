@@ -1,3 +1,4 @@
+// @ts-check
 // validate-rows.js — which stored rows would this schema refuse?
 //
 // A constraint is enforced twice here: once by SQLite, once at the client
@@ -25,6 +26,7 @@ import { rawClause } from './core/query.js'
 
 // A driver with no migrations has no declared shape to hold a row to, so a
 // finding against one would be about the schema rather than about the data.
+/** @type {Record<string, string>} */
 const SKIP_DRIVERS = {
   jsonl:  'jsonl driver — no migrations and no schema to hold a row to',
   trail:  'trail driver — its rows are written by the audit trail, not by a caller',
@@ -37,20 +39,20 @@ const SKIP_DRIVERS = {
 // somebody has to be able to act on, and a count with no row to look at is not
 // actionable. No threshold: a model of one bad row is a model of one bad row,
 // and inventing a floor here would be a judgment this file cannot make.
-const ALL = (rows, failing) => rows > 0 && rows === failing
+const ALL = (/** @type {number} */ rows, /** @type {number} */ failing) => rows > 0 && rows === failing
 
 // The Json columns whose stored text is JSON as written. A protected column
 // holds ciphertext or a hash, and a File column holds the storage's own reference.
 const PROTECTED = new Set(['encrypted', 'secret', 'hashed'])
-const jsonColumnsOf = model => model.fields.filter(f =>
-  f.type.name === 'Json' && !f.attributes.some(a => PROTECTED.has(a.kind)))
+const jsonColumnsOf = (/** @type {any} */ model) => model.fields.filter((/** @type {any} */ f) =>
+  f.type.name === 'Json' && !f.attributes.some((/** @type {any} */ a) => PROTECTED.has(a.kind)))
 
 /**
  * Walk the stored rows and report the ones the schema would now refuse.
  *
- * @param {object} db         a litestone client
+ * @param {any} db            a litestone client
  * @param {object} [opts]
- * @param {string[]} [opts.models]  only these models (PascalCase names)
+ * @param {string[] | null} [opts.models]  only these models (PascalCase names)
  * @param {number} [opts.limit]     stop after this many findings per model
  * @param {boolean} [opts.keyless]  the client holds no real key: read around
  *                                  every `@encrypted`/`@secret` column and name them
@@ -71,8 +73,8 @@ export async function validateRows(db, { models = null, limit = 100, keyless = f
   // The schema's own types and enums, rebuilt the way createClient builds them.
   // Read off `$schema` rather than reached for inside the client: this module
   // is an ops surface and must not depend on the shape of a ctx.
-  const typeMap = new Map((schema.types ?? []).map(t => [t.name, t]))
-  const enumMap = new Map((schema.enums ?? []).map(e => [e.name, e.values.map(v => v.name)]))
+  const typeMap = new Map((schema.types ?? []).map((/** @type {any} */ t) => [t.name, t]))
+  const enumMap = new Map((schema.enums ?? []).map((/** @type {any} */ e) => [e.name, e.values.map((/** @type {any} */ v) => v.name)]))
 
   // As SYSTEM, deliberately. A caller-scoped read of a gated model answers [],
   // which is the same shape as a model with nothing wrong — so the walk would
@@ -85,12 +87,12 @@ export async function validateRows(db, { models = null, limit = 100, keyless = f
   const skipped    = []
   const unreadable = []
   const notChecked = []
-  const models_    = new Set(schema.models.map(m => m.name))
+  const models_    = new Set(schema.models.map((/** @type {any} */ m) => m.name))
 
   for (const model of schema.models) {
     if (models && !models.includes(model.name)) continue
 
-    const driver = dbs[model.attributes.find(a => a.kind === 'db')?.name ?? 'main']?.driver
+    const driver = dbs[model.attributes.find((/** @type {any} */ a) => a.kind === 'db')?.name ?? 'main']?.driver
     if (SKIP_DRIVERS[driver]) {
       skipped.push({ model: model.name, reason: SKIP_DRIVERS[driver] })
       continue
@@ -103,13 +105,13 @@ export async function validateRows(db, { models = null, limit = 100, keyless = f
     // at all, so the read names every other column and the rest are reported
     // as not checked — a pass over them would be a claim nothing made.
     const sealed = keyless
-      ? model.fields.filter(f => f.attributes.some(a => a.kind === 'encrypted' || a.kind === 'secret'))
+      ? model.fields.filter((/** @type {any} */ f) => f.attributes.some((/** @type {any} */ a) => a.kind === 'encrypted' || a.kind === 'secret'))
       : []
-    notChecked.push(...sealed.map(f => `${model.name}.${f.name}`))
+    notChecked.push(...sealed.map((/** @type {any} */ f) => `${model.name}.${f.name}`))
     const select = sealed.length
       ? Object.fromEntries(model.fields
-          .filter(f => !sealed.includes(f) && !models_.has(f.type.name))
-          .map(f => [f.name, true]))
+          .filter((/** @type {any} */ f) => !sealed.includes(f) && !models_.has(f.type.name))
+          .map((/** @type {any} */ f) => [f.name, true]))
       : undefined
 
     // Soft-deleted and template rows are in: a restore and a
@@ -119,7 +121,7 @@ export async function validateRows(db, { models = null, limit = 100, keyless = f
     let rows
     try {
       rows = await sys[accessor].findMany({ withDeleted: true, withTemplates: true, ...(select ? { select } : {}) })
-    } catch (e) {
+    } catch (/** @type {any} */ e) {
       unreadable.push({ model: model.name, error: e.message })
       continue
     }
@@ -127,14 +129,14 @@ export async function validateRows(db, { models = null, limit = 100, keyless = f
     // The id as the row reports it, so a finding is addressable. A model with a
     // tuple key has no single one and is named by its whole key.
     const key = db.$primaryKey(accessor)
-    const idOf = row => Array.isArray(key)
+    const idOf = (/** @type {any} */ row) => Array.isArray(key)
       ? (key.length === 1 ? row[key[0]] : Object.fromEntries(key.map(k => [k, row[k]])))
       : row[key]
 
     // A Json column holding text that is not JSON reads back as that text, which
     // is a valid string, so the row passes `validate` below. Only the stored
     // text can say (`FJS-2038`).
-    const keyOf = row => JSON.stringify(idOf(row))
+    const keyOf = (/** @type {any} */ row) => JSON.stringify(idOf(row))
     const notJson = new Map()
     try {
       for (const field of jsonColumnsOf(model)) {
@@ -148,7 +150,7 @@ export async function validateRows(db, { models = null, limit = 100, keyless = f
           notJson.set(k, [...(notJson.get(k) ?? []), { path: [field.name], message: `${field.name} is a Json column holding text that is not JSON` }])
         }
       }
-    } catch (e) {
+    } catch (/** @type {any} */ e) {
       unreadable.push({ model: model.name, error: e.message })
       continue
     }
@@ -158,8 +160,8 @@ export async function validateRows(db, { models = null, limit = 100, keyless = f
       /** @type {{path: string[], message: string}[]} */
       let errors = []
       try {
-        validate(row, model, null, typeMap, enumMap)
-      } catch (e) {
+        validate(row, model, null, typeMap, /** @type {any} */ (enumMap))
+      } catch (/** @type {any} */ e) {
         // A ValidationError carries the per-field list; anything else is this
         // walk failing rather than the row, and is reported as one finding
         // saying so rather than swallowed.

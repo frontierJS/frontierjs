@@ -1,3 +1,4 @@
+// @ts-check
 // browser/worker.js — Litestone's client, running in a dedicated worker.
 //
 // This is the whole of the browser port's runtime half. A page imports
@@ -29,7 +30,7 @@
 import { setEngine }               from '../core/engine.js'
 import { createSqliteWasmEngine }  from '../engines/sqlite-wasm.js'
 
-let client = null
+let client = /** @type {any} */ (null)
 
 // The queue. `tail` is the promise for everything already accepted; a new
 // message chains onto it, so ordering is the microtask queue's job rather than
@@ -47,7 +48,7 @@ self.onmessage = (event) => {
   })
 }
 
-async function handle({ id, op, ...rest }) {
+async function handle(/** @type {any} */ { id, op, ...rest }) {
   try {
     const result = await run(op, rest)
     self.postMessage({ id, ok: result })
@@ -56,7 +57,7 @@ async function handle({ id, op, ...rest }) {
   }
 }
 
-async function run(op, args) {
+async function run(/** @type {string} */ op, /** @type {any} */ args) {
   if (op === 'open')  return open(args)
   if (op === 'call')  return call(args)
   if (op === 'search') return search(args)
@@ -66,7 +67,7 @@ async function run(op, args) {
 
 // ─── open ─────────────────────────────────────────────────────────────────
 
-async function open({ schema, db = '/litestone.db', wasmUrl, vfs, capacity, options = {} }) {
+async function open(/** @type {any} */ { schema, db = '/litestone.db', wasmUrl, vfs, capacity, options = {} }) {
   if (client) throw new Error('[Litestone] this worker already holds a client. Start a second worker for a second database.')
 
   // The URL is the page's to decide — bundled, on a CDN, or out of the service
@@ -89,7 +90,7 @@ async function open({ schema, db = '/litestone.db', wasmUrl, vfs, capacity, opti
   // parsed tree, which needs no emitter and cannot accidentally carry a comment.
   const parsed = typeof schema === 'string' ? (await import('../core/parser.js')).parse(schema) : schema
   await discardIfBuiltForAnother(engine, db, parsed, options)
-  client = await createClient({ ...options, parsed, db })
+  client = await createClient(/** @type {any} */ ({ ...options, parsed, db }))
 
   // Answered so the page's proxy can refuse a misspelled model by name instead
   // of posting a message that fails three layers down.
@@ -110,10 +111,10 @@ async function open({ schema, db = '/litestone.db', wasmUrl, vfs, capacity, opti
 // because that header field is readable before a client exists and adds no
 // table for introspection to find. A file that predates the mark reads 0 and
 // is discarded once.
-async function discardIfBuiltForAnother(engine, path, parsed, options) {
+async function discardIfBuiltForAnother(/** @type {any} */ engine, /** @type {any} */ path, /** @type {any} */ parsed, /** @type {any} */ options) {
   if (path === ':memory:' || !parsed?.schema) return
   const { generateDDL } = await import('../core/ddl.js')
-  const ddl    = generateDDL(parsed.schema, { foreignKeys: true, pluralize: !!options.pluralize })
+  const ddl    = generateDDL(parsed.schema, /** @type {any} */ ({ foreignKeys: true, pluralize: !!options.pluralize }))
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(ddl))
   const mark   = new DataView(digest).getInt32(0) || 1
 
@@ -137,13 +138,13 @@ async function discardIfBuiltForAnother(engine, path, parsed, options) {
 // by excluding `$`-prefixed keys, because the client's own surface also carries
 // `sql` and `query` — two plain names that are not models and that a list
 // written out here would have to be kept in step with.
-const modelsOf = (c) => Object.keys(c).filter(k => typeof c[k]?.findMany === 'function')
+const modelsOf = (/** @type {any} */ c) => Object.keys(c).filter(k => typeof c[k]?.findMany === 'function')
 
 // ─── call ─────────────────────────────────────────────────────────────────
 
 const FLAVORS = new Set(['system', 'auth', 'none'])
 
-function call({ flavor, model, method, args = [] }) {
+function call(/** @type {any} */ { flavor, model, method, args = [] }) {
   if (!client) throw new Error('[Litestone] no client in this worker — call open() first.')
 
   const scoped = scopeFor(flavor)
@@ -159,12 +160,12 @@ function call({ flavor, model, method, args = [] }) {
 
 // `$search` is the client's, not a model's, so it has its own op: the shared
 // index spans the models `call` is keyed on (FJS-D970).
-function search({ flavor, args = [] }) {
+function search(/** @type {any} */ { flavor, args = [] }) {
   if (!client) throw new Error('[Litestone] no client in this worker — call open() first.')
   return scopeFor(flavor).$search(...args)
 }
 
-function scopeFor(flavor) {
+function scopeFor(/** @type {any} */ flavor) {
   if (!flavor || flavor.kind === 'none') return client
   if (!FLAVORS.has(flavor.kind)) throw new Error(`[Litestone] unknown flavor '${flavor.kind}'.`)
   if (flavor.kind === 'system') return client.asSystem()
@@ -179,9 +180,9 @@ function scopeFor(flavor) {
 // copied out by name, and any own enumerable property comes along — a
 // ValidationError carries its field list that way.
 
-function describe(err) {
+function describe(/** @type {any} */ err) {
   if (!err || typeof err !== 'object') return { name: 'Error', message: String(err) }
-  const out = { name: err.name ?? 'Error', message: err.message ?? String(err) }
+  const out = /** @type {any} */ ({ name: err.name ?? 'Error', message: err.message ?? String(err) })
   for (const key of ['code', 'model', 'operation', 'required', 'got', 'capability', 'field', 'errors'])
     if (err[key] !== undefined) out[key] = err[key]
   return out

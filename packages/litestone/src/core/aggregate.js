@@ -1,3 +1,4 @@
+// @ts-check
 // aggregate.js — the aggregate verb: one SELECT of COUNT/SUM/AVG/MIN/MAX,
 // GROUP_CONCAT and the named aggregates over the visible rows, answered as
 // one object. A verb and not a helper, so it goes into the table literal
@@ -8,7 +9,7 @@
 
 import { buildNamedAggExpr, extractNamedAggs } from './query.js'
 
-export function makeAggregate(shape, ctx, deps) {
+export function makeAggregate(/** @type {any} */ shape, /** @type {any} */ ctx, /** @type {any} */ deps) {
   const { tableName, modelName } = shape
   const {
     readDb, plugins, refuseRecursive, refuseAggregateKeys, namedAggFields, refuseCountShape,
@@ -19,7 +20,7 @@ export function makeAggregate(shape, ctx, deps) {
   // ── aggregate ────────────────────────────────────────────────────────────
   // db.order.aggregate({ _sum: { amount: true }, _avg: { amount: true }, _count: true, _min: { amount: true }, _max: { amount: true }, where: {...} })
   // Returns: { _sum: { amount: 1200 }, _avg: { amount: 40 }, _count: 30, _min: { amount: 5 }, _max: { amount: 200 } }
-  async function aggregate(args = {}) {
+  async function aggregate(/** @type {any} */ args = {}) {
     refuseRecursive('aggregate', args)
     // A @@gate is a plugin's beforeRead, and three read methods never called
     // it: a model gated at SYSADMIN answered a level-4 caller's COUNT, its
@@ -39,6 +40,7 @@ export function makeAggregate(shape, ctx, deps) {
     ])
     refuseCountShape('aggregate', _count)
     refuseMixedCurrency('aggregate', args)
+    /** @type {any[]} */
     const params = []
     // A SELECT-list value (a _stringAgg separator, a named aggregate's
     // filter) is bound before the WHERE's, because it comes first in the
@@ -110,6 +112,7 @@ export function makeAggregate(shape, ctx, deps) {
     fireQuery({ operation: 'aggregate', args, sql, params, duration: _nt ? performance.now() - _t0 : 0, rowCount: 1 })
 
     // Shape result
+    /** @type {Record<string, any>} */
     const result = {}
     if (_count)      result._count = raw.__count ?? 0
     for (const agg of ['_sum', '_avg', '_min', '_max']) {

@@ -1,3 +1,4 @@
+// @ts-check
 // jsonschema-snapshot.js — the client contract as a committed file
 //
 // `generateJsonSchema` is the widest bridge in the repo: Junction validates
@@ -40,18 +41,18 @@ const SHOWN_SEPARATELY = new Set([
 // true of a model, a `type` declaration and a view alike, so counting models by
 // shape counted payload shapes among them — this file reported `54 models · 0
 // other` over a schema declaring 43 models and 11 types (`FJS-1015`).
-const kindOf  = (def) => def?.['x-litestone-kind'] ?? null
-const isModel = (def) => kindOf(def) === 'model'
-const isView  = (def) => kindOf(def) === 'view'
-const isType  = (def) => kindOf(def) === 'type'
-const isEnum  = (def) => Array.isArray(def?.enum)
+const kindOf  = (/** @type {any} */ def) => def?.['x-litestone-kind'] ?? null
+const isModel = (/** @type {any} */ def) => kindOf(def) === 'model'
+const isView  = (/** @type {any} */ def) => kindOf(def) === 'view'
+const isType  = (/** @type {any} */ def) => kindOf(def) === 'type'
+const isEnum  = (/** @type {any} */ def) => Array.isArray(def?.enum)
 // Anything shaped like a definition whose kind this reader does not know — a
 // kind added later, or a schema generated before the key existed. It is a
 // counted row rather than a silent drop, which is the whole point of stating
 // the kind instead of inferring it.
-const isObjectDef = (def) => def?.type === 'object' && !!def.properties
+const isObjectDef = (/** @type {any} */ def) => def?.type === 'object' && !!def.properties
 
-const refName = (ref) => typeof ref === 'string' ? ref.replace('#/$defs/', '') : null
+const refName = (/** @type {any} */ ref) => typeof ref === 'string' ? ref.replace('#/$defs/', '') : null
 
 // ─── one property → one row ───────────────────────────────────────────────────
 
@@ -60,18 +61,18 @@ const refName = (ref) => typeof ref === 'string' ? ref.replace('#/$defs/', '') :
 // DateTime looks like, because the format lives on the branch). Flattened here
 // so the row reads the same either way, and a keyword on the branch is still
 // found by constraintsOf.
-function flatten(prop) {
+function flatten(/** @type {any} */ prop) {
   const branches = prop.anyOf ?? prop.oneOf
   if (!Array.isArray(branches)) return { prop, nullable: Array.isArray(prop.type) && prop.type.includes('null') }
 
-  const real = branches.filter(b => b.type !== 'null')
+  const real = branches.filter((/** @type {any} */ b) => b.type !== 'null')
   return {
     prop:     { ...Object.fromEntries(Object.entries(prop).filter(([k]) => k !== 'anyOf' && k !== 'oneOf')), ...(real[0] ?? {}) },
     nullable: branches.length > real.length,
   }
 }
 
-function typeOf(raw) {
+function typeOf(/** @type {any} */ raw) {
   const { prop, nullable } = flatten(raw)
   const mark = nullable ? '?' : ''
 
@@ -92,7 +93,7 @@ function typeOf(raw) {
 
 // The default belongs beside the type: `make()` seeds a form from it, so a
 // default that moved changes what a user sees in an untouched field.
-function defaultOf(raw) {
+function defaultOf(/** @type {any} */ raw) {
   const { prop } = flatten(raw)
   return prop.default === undefined ? '' : ` = \`${JSON.stringify(prop.default)}\``
 }
@@ -100,7 +101,8 @@ function defaultOf(raw) {
 // A predicate AST back as `.lite`, for a line a reader diffs. A `while:` may
 // name no `auth()`, `now()` or relation, so the node types below are all it
 // can hold; anything else prints as JSON rather than as a guess.
-function predicateText(n) {
+/** @returns {string} */
+function predicateText(/** @type {any} */ n) {
   switch (n?.type) {
     case 'literal': return typeof n.value === 'string' ? `'${n.value}'` : String(n.value)
     case 'field':   return n.name
@@ -108,13 +110,14 @@ function predicateText(n) {
     case 'and':     return `(${predicateText(n.left)} && ${predicateText(n.right)})`
     case 'or':      return `(${predicateText(n.left)} || ${predicateText(n.right)})`
     case 'compare': return `${predicateText(n.left)} ${n.op} ${predicateText(n.right)}`
-    case 'list':    return `[${(n.items ?? []).map(v => predicateText({ type: 'literal', value: v })).join(', ')}]`
+    case 'list':    return `[${(n.items ?? []).map((/** @type {any} */ v) => predicateText({ type: 'literal', value: v })).join(', ')}]`
     default:        return JSON.stringify(n)
   }
 }
 
-function constraintsOf(raw) {
+function constraintsOf(/** @type {any} */ raw) {
   const { prop } = flatten(raw)
+  /** @type {string[]} */
   const out = []
   for (const key of KEYWORDS) {
     if (prop[key] === undefined) continue
@@ -132,11 +135,11 @@ function constraintsOf(raw) {
 
 // ─── renderJsonSchemaSnapshot ─────────────────────────────────────────────────
 
-export function renderJsonSchemaSnapshot(schema, opts = {}) {
+export function renderJsonSchemaSnapshot(/** @type {any} */ schema, /** @type {{ source?: string }} */ opts = {}) {
   const { source = 'schema.lite' } = opts
 
-  const full   = generateJsonSchema(schema, { format: 'definitions', mode: 'full' })
-  const create = generateJsonSchema(schema, { format: 'definitions', mode: 'create' })
+  const full   = /** @type {any} */ (generateJsonSchema(schema, { format: 'definitions', mode: 'full' }))
+  const create = /** @type {any} */ (generateJsonSchema(schema, { format: 'definitions', mode: 'create' }))
 
   const defs   = full.$defs ?? {}
   const cDefs  = create.$defs ?? {}
@@ -171,7 +174,7 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
   out.push('and no reader branches on them.')
   out.push('')
   out.push('```')
-  const many = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+  const many = (/** @type {number} */ n, /** @type {string} */ word) => `${n} ${word}${n === 1 ? '' : 's'}`
   out.push(`${many(Object.keys(defs).length, 'definition')} · ${many(models.length, 'model')} · ` +
            (views.length ? `${many(views.length, 'view')} · ` : '') +
            (types.length ? `${many(types.length, 'type')} · ` : '') +
@@ -211,7 +214,7 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
     out.push('validates, and a select that silently drops an option.')
     out.push('')
     for (const name of enums) {
-      out.push(`- \`${name}\` — ${defs[name].enum.map(v => `\`${v}\``).join(', ')}`)
+      out.push(`- \`${name}\` — ${defs[name].enum.map((/** @type {any} */ v) => `\`${v}\``).join(', ')}`)
     }
     out.push('')
   }
@@ -360,7 +363,7 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
       const writeOnly = [...cProps].filter(f => cDef.properties[f]?.writeOnly)
 
       const notes = []
-      notes.push(`required — ${cRequired.length ? cRequired.map(f => `\`${f}\``).join(', ') : 'nothing'}`)
+      notes.push(`required — ${cRequired.length ? cRequired.map((/** @type {string} */ f) => `\`${f}\``).join(', ') : 'nothing'}`)
       if (writeOnly.length) notes.push(`accepted and never stored — ${writeOnly.map(f => `\`${f}\``).join(', ')}`)
       if (absent.length) notes.push(`not accepted — ${absent.map(f => `\`${f}\``).join(', ')}`)
       out.push(`**On create**: ${notes.join(' · ')}`)

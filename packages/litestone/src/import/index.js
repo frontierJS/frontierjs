@@ -1,3 +1,4 @@
+// @ts-check
 // index.js — read a foreign schema into .lite, and say where it stopped being
 // faithful.
 //
@@ -46,7 +47,7 @@ import  { tierOf, summarize }                    from './tiers.js'
 
 // The format is a fact about the file, so it is detected rather than demanded —
 // but `--from` always wins, because a dump named `.txt` is still a dump.
-export function detectFormat(path) {
+export function detectFormat(/** @type {string} */ path) {
   const name = basename(path)
   const ext  = extname(name).toLowerCase()
   if (ext === '.prisma')                        return 'prisma'
@@ -56,20 +57,21 @@ export function detectFormat(path) {
   return null
 }
 
-const isDirectory = (p) => { try { return statSync(p).isDirectory() } catch { return false } }
+const isDirectory = (/** @type {string} */ p) => { try { return statSync(p).isDirectory() } catch { return false } }
 
 // A Frappe app keeps one JSON per doctype, so its source is a DIRECTORY and the
 // reader is handed parsed documents rather than a string. Every other reader
 // takes the file's text.
-export function loadSource(path, format = detectFormat(path)) {
+export function loadSource(/** @type {string} */ path, format = detectFormat(path)) {
   if (!format) throw new Error(
     `cannot tell what kind of schema ${basename(path)} is — name the format with --from=${FORMATS.join('|')}`)
   if (format !== 'frappe') return { format, source: readFileSync(path, 'utf8') }
 
   if (!isDirectory(path)) throw new Error(
     `--from=frappe wants a DIRECTORY of DocType JSON, not a file: ${path}`)
+  /** @type {any[]} */
   const docs = []
-  const walk = (dir) => {
+  const walk = (/** @type {string} */ dir) => {
     for (const entry of readdirSync(dir)) {
       const p = join(dir, entry)
       if (isDirectory(p)) { walk(p); continue }
@@ -87,8 +89,8 @@ export function loadSource(path, format = detectFormat(path)) {
 
 // ─── converting ──────────────────────────────────────────────────────────────
 
-export function convert({ source, format, label = 'schema' }) {
-  const read = READERS[format]
+export function convert(/** @type {{ source: any, format: string, label?: string }} */ { source, format, label = 'schema' }) {
+  const read = /** @type {Record<string, any>} */ (READERS)[format]
   if (!read) throw new Error(`unknown format '${format}' — one of ${FORMATS.join(', ')}`)
   const { lite, gaps, models } = read(source, label)
   noteGeneratedNameCollisions(lite, label, gaps)
@@ -98,10 +100,10 @@ export function convert({ source, format, label = 'schema' }) {
 // `litestone types` refuses a model named for another's generated shape
 // (`FJS-D1282`), and no reader renames. Saying so here, once for all four, is
 // what keeps an author from finding it out one command later.
-function noteGeneratedNameCollisions(lite, label, gaps) {
+function noteGeneratedNameCollisions(/** @type {string} */ lite, /** @type {string} */ label, /** @type {any[]} */ gaps) {
   const { schema } = parse(lite)
   if (!schema) return
-  const gap = (kind, model, field, detail, emitted) =>
+  const gap = (/** @type {any} */ kind, /** @type {any} */ model, /** @type {any} */ field, /** @type {any} */ detail, /** @type {any} */ emitted) =>
     gaps.push({ source: label, kind, model, field, detail, emitted })
   for (const c of declarationCollisions(schema))
     gap('generated-name-collision', c.name, null,
@@ -115,8 +117,8 @@ function noteGeneratedNameCollisions(lite, label, gaps) {
 // live where the person will be reading six months from now. Two halves: a
 // header carrying the counts, and a marker on the LINE a `changed` gap is about
 // — which is the only place a reader is looking when the value turns out wrong.
-export function annotate(lite, gaps) {
-  const changed = gaps.filter(g => tierOf(g.kind) === 'changed')
+export function annotate(/** @type {string} */ lite, /** @type {any[]} */ gaps) {
+  const changed = gaps.filter((/** @type {any} */ g) => tierOf(g.kind) === 'changed')
   if (!changed.length) return lite
 
   const byModel = new Map()
@@ -127,7 +129,7 @@ export function annotate(lite, gaps) {
     byModel.set(g.model, list)
   }
 
-  const camel = (s) => s.replace(/_(\w)/g, (_, c) => c.toUpperCase())
+  const camel = (/** @type {string} */ s) => s.replace(/_(\w)/g, (/** @type {any} */ _, /** @type {string} */ c) => c.toUpperCase())
   const out   = lite.split('\n')
   let model = null, pending = null
 
@@ -137,8 +139,8 @@ export function annotate(lite, gaps) {
       model   = open[1]
       pending = (byModel.get(model) ?? []).slice()
       // A model-level gap (an invented key) belongs on the declaration line.
-      mark(out, i, pending.filter(g => !g.field))
-      pending = pending.filter(g => g.field)
+      mark(out, i, pending.filter((/** @type {any} */ g) => !g.field))
+      pending = pending.filter((/** @type {any} */ g) => g.field)
       continue
     }
     if (!model) continue
@@ -146,20 +148,20 @@ export function annotate(lite, gaps) {
 
     const field = out[i].match(/^  (\w+) /)?.[1]
     if (!field || !pending?.length) continue
-    const hits = pending.filter(g => g.field === field || camel(g.field) === field)
+    const hits = pending.filter((/** @type {any} */ g) => g.field === field || camel(g.field) === field)
     if (!hits.length) continue
     mark(out, i, hits)
-    pending = pending.filter(g => !hits.includes(g))
+    pending = pending.filter((/** @type {any} */ g) => !hits.includes(g))
   }
   return out.join('\n')
 }
 
-const mark = (out, i, hits) => {
+const mark = (/** @type {string[]} */ out, /** @type {number} */ i, /** @type {any[]} */ hits) => {
   if (!hits.length) return
-  out[i] += '  // ⚠ imported: ' + hits.map(h => `${h.detail} → ${h.emitted}`).join(' · ')
+  out[i] += '  // ⚠ imported: ' + hits.map((/** @type {any} */ h) => `${h.detail} → ${h.emitted}`).join(' · ')
 }
 
-export function fileHeader({ format, path, models, summary }) {
+export function fileHeader(/** @type {any} */ { format, path, models, summary }) {
   const lines = [
     `// Imported from ${path ?? `a ${format} schema`}.`,
     `//`,

@@ -1,3 +1,4 @@
+// @ts-check
 /*
  * commitment.js — `@@commitment`: when a declared transition is OWED.
  *
@@ -33,28 +34,29 @@ import { fieldToColumnName }      from './ddl.js'
 // already refused every shape below that does not resolve, nothing here
 // re-checks it.
 
-export function buildCommitmentMap(schema) {
+export function buildCommitmentMap(/** @type {any} */ schema) {
+  /** @type {Record<string, any>} */
   const map = {}
-  const movesOf = (m) => {
+  const movesOf = (/** @type {any} */ m) => {
     const moves = new Map()
-    for (const t of m.attributes.filter(a => a.kind === 'transitions'))
+    for (const t of m.attributes.filter((/** @type {any} */ a) => a.kind === 'transitions'))
       for (const [name, spec] of Object.entries(t.transitions)) moves.set(name, { field: t.field, from: spec.from })
     return moves
   }
   for (const model of schema.models) {
-    const decls = model.attributes.filter(a => a.kind === 'commitment')
+    const decls = model.attributes.filter((/** @type {any} */ a) => a.kind === 'commitment')
     if (!decls.length) { map[model.name] = null; continue }
-    const col = (name) => fieldToColumnName(model.fields.find(f => f.name === name))
-    map[model.name] = decls.map(d => {
+    const col = (/** @type {any} */ name) => fieldToColumnName(model.fields.find((/** @type {any} */ f) => f.name === name))
+    map[model.name] = decls.map((/** @type {any} */ d) => {
       const via    = d.via ?? null
-      const target = via ? schema.models.find(m => m.name === model.fields.find(f => f.name === via).type.name) : model
-      const onField = model.fields.find(f => f.name === d.on.field)
-      const kind    = onField?.attributes?.some(a => a.kind === 'date') ? 'day' : 'instant'
+      const target = via ? schema.models.find((/** @type {any} */ m) => m.name === model.fields.find((/** @type {any} */ f) => f.name === via).type.name) : model
+      const onField = model.fields.find((/** @type {any} */ f) => f.name === d.on.field)
+      const kind    = onField?.attributes?.some((/** @type {any} */ a) => a.kind === 'date') ? 'day' : 'instant'
       const off     = d.on.offset
       const offset  = !off ? null
         : off.field
           ? { sign: off.sign, field: off.field, column: col(off.field),
-              unit: model.fields.find(f => f.name === off.field)?.attributes.find(a => a.kind === 'unit')?.symbol }
+              unit: model.fields.find((/** @type {any} */ f) => f.name === off.field)?.attributes.find((/** @type {any} */ a) => a.kind === 'unit')?.symbol }
           : { sign: off.sign, value: off.value, unit: off.unit }
       const move = movesOf(target).get(d.transition)
       return {
@@ -68,7 +70,7 @@ export function buildCommitmentMap(schema) {
         onColumn:   col(d.on.field),
         kind, offset,
         // The `@zoned` path a day is read in, per row (`FJS-D512`).
-        zone:       kind === 'day' ? onField.attributes.find(a => a.kind === 'zoned')?.path ?? null : null,
+        zone:       kind === 'day' ? onField.attributes.find((/** @type {any} */ a) => a.kind === 'zoned')?.path ?? null : null,
         while:      d.while ?? null,
       }
     })
@@ -86,7 +88,7 @@ export function buildCommitmentMap(schema) {
 
 const INSTANT = `'%Y-%m-%dT%H:%M:%fZ'`
 
-export function dueSql(c) {
+export function dueSql(/** @type {any} */ c) {
   const on  = `"${c.onColumn}"`
   const off = c.offset
   if (c.kind === 'instant') {
@@ -97,7 +99,7 @@ export function dueSql(c) {
       : { sql: `strftime(${INSTANT}, ${on}, ?)`, params: [`${seconds * off.value} seconds`] }
   }
   if (!off) return { sql: `date(${on})`, params: [] }
-  const amount = (per) => off.field
+  const amount = (/** @type {any} */ per) => off.field
     ? { sql: `(? * "${off.column}")`, params: [off.sign * per] }
     : { sql: `?`,                      params: [off.sign * per * off.value] }
   if (off.unit === 'd' || off.unit === 'wk') {
@@ -126,7 +128,7 @@ export function dueSql(c) {
 
 export const LATEST_DAY = 'Pacific/Kiritimati'
 
-export function readBy(kind, by, timeZone) {
+export function readBy(/** @type {any} */ kind, /** @type {any} */ by, /** @type {any} */ timeZone) {
   const at = by instanceof Date ? by : new Date(by)
   if (Number.isNaN(at.getTime())) return null
   if (kind === 'instant') return at.toISOString()

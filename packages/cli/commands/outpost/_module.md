@@ -4,7 +4,7 @@ description: The Outpost — the process a fleet machine runs for its Basecamp
 ---
 
 <script>
-const { basecamp, installOutpost, readOutpost } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
+const { basecamp, basecampAll, installOutpost, readOutpost } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 const { boxAddress, markServer }   = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
 const { createMachine }            = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
 </script>

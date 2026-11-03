@@ -1,3 +1,4 @@
+// @ts-check
 // write-events.js — the write announcement: one funnel every write event
 // in the package goes through, so the audience guard, the COMMIT hold, the
 // cross-process record and the tenant routing are stated once. A write
@@ -14,7 +15,7 @@ import { ident, keyIn, tuplesOf } from './query.js'
 export const WRITE_EVENT_KINDS  = ['create', 'update', 'remove', 'transition']
 export const WRITE_EVENT_SCOPES = ['row', 'collection']
 
-export function makeWriteEvents(shape, ctx, deps) {
+export function makeWriteEvents(/** @type {any} */ shape, /** @type {any} */ ctx, /** @type {any} */ deps) {
   const { modelName } = shape
   const { emitter, tx, readDb, idField, _modelToTable, read } = deps
 
@@ -28,7 +29,7 @@ export function makeWriteEvents(shape, ctx, deps) {
   // argument: a subscriber that must handle every kind (Junction announcing a
   // write it did not make) would otherwise re-derive the name from `operation`,
   // which a transition event does not carry.
-  function fireEvent(event, eventCtx) {
+  function fireEvent(/** @type {any} */ event, /** @type {any} */ eventCtx) {
     // Recorded whether or not anything here listens, and that is the whole of
     // what makes it cross-process: the subscriber this row is for is in another
     // process (`FJS-642`).
@@ -54,7 +55,7 @@ export function makeWriteEvents(shape, ctx, deps) {
   // table beside the ciphertext. A collection-scoped write has no row to name
   // and travels as its count, which is the shape `changed` already has
   // (`FJS-D34`).
-  function recordCrossProcess(event, eventCtx) {
+  function recordCrossProcess(/** @type {any} */ event, /** @type {any} */ eventCtx) {
     const record = ctx._crossProcess?.recorders?.[shape.db]
     if (!record) return
     const row = eventCtx.result ?? eventCtx.record ?? null
@@ -70,7 +71,7 @@ export function makeWriteEvents(shape, ctx, deps) {
     })
   }
 
-  function dispatchEvent(event, eventCtx) {
+  function dispatchEvent(/** @type {any} */ event, /** @type {any} */ eventCtx) {
     if (emitter) emitter.emit(event, eventCtx, ctx)
     if (!ctx._eventListeners.size) return
     const e = { event, ...eventCtx }
@@ -95,7 +96,7 @@ export function makeWriteEvents(shape, ctx, deps) {
   // stores ids and nothing else, so it is no reason to read the row first.
   const hasLocalAudience = () => !!(emitter || ctx._eventListeners.size)
 
-  function emitTransitionEvent(transitionResult, record) {
+  function emitTransitionEvent(/** @type {any} */ transitionResult, /** @type {any} */ record) {
     if (!transitionResult || !hasAudience()) return
     fireEvent('transition', {
       // `modelName`, like every other event this client fires. It used to be
@@ -134,7 +135,7 @@ export function makeWriteEvents(shape, ctx, deps) {
   // for a subscriber that must tell who could read it then from who can now. It
   // is absent where no image was read (a bulk write, a restore, a write that
   // began before anything listened), and absent means unknown, never public.
-  function fireRowEvent(event, operation, result, transition = null, before = null) {
+  function fireRowEvent(/** @type {any} */ event, /** @type {any} */ operation, /** @type {any} */ result, /** @type {any} */ transition = null, /** @type {any} */ before = null) {
     if (!hasAudience()) return
     const tenants = result ? tenantsOf([result]) : null
     fireEvent(event, {
@@ -146,7 +147,7 @@ export function makeWriteEvents(shape, ctx, deps) {
     })
   }
 
-  function fireCollectionEvent(event, operation, where, count, tenants) {
+  function fireCollectionEvent(/** @type {any} */ event, /** @type {any} */ operation, /** @type {any} */ where, /** @type {any} */ count, /** @type {any} */ tenants) {
     // Nothing matched, so nothing changed. A filter that hit no rows must not
     // send every open tab back to the server.
     if (!count) return
@@ -171,12 +172,14 @@ export function makeWriteEvents(shape, ctx, deps) {
   // delete still has, since the parent outlives the child. Resolved on first
   // use: the schema's tenancy is not settled when the table is built. The
   // commitment sweep reads the same path to fire a row in its own tenant.
+  /** @type {any} */
   let _tenantPath
   function tenantPath() {
     if (_tenantPath !== undefined) return _tenantPath
     const t = ctx.schema?.tenancy
     if (t?.strategy !== 'row') return _tenantPath = null
-    const carries = (m) => !!ctx.shapes[m]?.model.fields.some(f => f.name === t.column)
+    const carries = (/** @type {any} */ m) => !!ctx.shapes[m]?.model.fields.some((/** @type {any} */ f) => f.name === t.column)
+    /** @type {(m: any, seen: Set<any>) => any} */
     const walk = (m, seen) => {
       if (carries(m)) return []
       for (const a of ctx.shapes[m]?.model.attributes ?? []) {
@@ -191,12 +194,12 @@ export function makeWriteEvents(shape, ctx, deps) {
     return _tenantPath = walk(modelName, new Set([modelName]))
   }
 
-  function tenantsOf(rows) {
+  function tenantsOf(/** @type {any} */ rows) {
     const path = tenantPath()
     if (!path || !rows?.length) return null
-    const distinct = (vs) => [...new Set(vs.filter(v => v != null))]
+    const distinct = (/** @type {any[]} */ vs) => [...new Set(vs.filter((/** @type {any} */ v) => v != null))]
     const column = ctx.schema.tenancy.column
-    if (!path.length) return distinct(rows.map(r => r?.[column]))
+    if (!path.length) return distinct(rows.map((/** @type {any} */ r) => r?.[column]))
     // Each hop carries a key of one or more columns, as tuples (`FJS-2790`).
     let keys = tuplesOf(rows, path[0].fks)
     try {
@@ -204,11 +207,12 @@ export function makeWriteEvents(shape, ctx, deps) {
         const hop  = path[i]
         const tmap = ctx.shapes[hop.target]?.columnMap ?? {}
         const out  = i + 1 < path.length ? path[i + 1].fks : [column]
-        const as   = out.map((_, k) => `v${k}`)
-        const sel  = out.map((c, k) => `${ident(tmap[c] ?? c).sql} AS v${k}`).join(', ')
-        const refs = hop.refs.map(c => ident(tmap[c] ?? c).sql)
+        const as   = out.map((/** @type {any} */ _, /** @type {number} */ k) => `v${k}`)
+        const sel  = out.map((/** @type {any} */ c, /** @type {number} */ k) => `${ident(tmap[c] ?? c).sql} AS v${k}`).join(', ')
+        const refs = hop.refs.map((/** @type {any} */ c) => ident(tmap[c] ?? c).sql)
         const next = []
         for (let j = 0; j < keys.length; j += 500) {
+          /** @type {any[]} */
           const binds = []
           const sql = `SELECT DISTINCT ${sel} FROM ${ident(_modelToTable(hop.target)).sql} WHERE ${keyIn(refs, keys.slice(j, j + 500), binds)}`
           next.push(...readDb.query(sql).all(...binds))
@@ -227,7 +231,7 @@ export function makeWriteEvents(shape, ctx, deps) {
    * `wantRows` is ANDed with the audience, so an app that opted in and has no
    * subscriber does not pay for the RETURNING it would throw away.
    */
-  function announceFor(option) {
+  function announceFor(/** @type {any} */ option) {
     const mode = checkAnnounce(option, `${modelName}`) ?? ctx.announce ?? 'collection'
     const rowsFor = mode === 'rows' || (mode === 'collection' && !!tenantPath())
     return { mode, wantRows: rowsFor && hasAudience() }
@@ -241,7 +245,7 @@ export function makeWriteEvents(shape, ctx, deps) {
    * Rows go through `read()` first: a subscriber must not receive a `@guarded`
    * or `@encrypted` column that every other event path strips.
    */
-  function announceBulk({ mode, event, operation, where, count, rows }) {
+  function announceBulk(/** @type {{ mode: any, event: any, operation: any, where?: any, count?: any, rows?: any }} */ { mode, event, operation, where, count, rows }) {
     if (mode === 'none') return
     if (mode === 'rows' && rows) {
       for (const r of rows) fireRowEvent(event, operation, read(r, { mode: 'single', hydrateFrom: true }))

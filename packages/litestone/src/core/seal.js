@@ -1,3 +1,4 @@
+// @ts-check
 // ─── seal ─────────────────────────────────────────────────────────────────────
 //
 // Which states of a state machine are SEALED, derived from the machine itself.
@@ -13,7 +14,7 @@
 // up disagreeing about whether `void` is a sealed state.
 
 /**
- * @param {object} attr  a `@@transitions` attribute
+ * @param {any} attr  a `@@transitions` attribute
  * @returns {{ field: string, states: Set<any>, entries: Set<any>, moves: string[] }|null}
  *          null when the machine declares no `@seals` move.
  *          `states` is the sealed closure; `entries` is the from-states of the
@@ -33,14 +34,14 @@ export function sealedStates(attr) {
 }
 
 // Everything reachable from `seeds`, following the machine's own moves.
-function reachable(transitions, seeds) {
+function reachable(/** @type {any} */ transitions, /** @type {any} */ seeds) {
   const out = new Set(seeds)
   let grew = true
   while (grew) {
     grew = false
     for (const t of Object.values(transitions)) {
       if (out.has(t.to)) continue
-      if (t.from.some(f => out.has(f))) { out.add(t.to); grew = true }
+      if (t.from.some((/** @type {any} */ f) => out.has(f))) { out.add(t.to); grew = true }
     }
   }
   return out
@@ -54,11 +55,12 @@ function reachable(transitions, seeds) {
  *
  * @returns {Array<{ kind: 'redundant'|'unseals', move: string, state: any, by?: string }>}
  */
-export function sealFaults(attr) {
+export function sealFaults(/** @type {any} */ attr) {
   const seal = sealedStates(attr)
   if (!seal) return []
 
   const moves = Object.entries(attr.transitions).filter(([, t]) => t.seals)
+  /** @type {any[]} */
   const faults = []
 
   for (const [name, move] of moves) {
@@ -82,7 +84,7 @@ export function sealFaults(attr) {
  * The models that seal, keyed by name. Each entry carries the state column, the
  * sealed set, and which of its hasMany relations are `@sealed`.
  *
- * @param {object} schema  a parsed schema
+ * @param {any} schema  a parsed schema
  * @returns {Map<string, { field: string, states: Set<any>, moves: string[], relations: string[] }>}
  */
 export function sealingModels(schema) {
@@ -95,7 +97,7 @@ export function sealingModels(schema) {
         field:     seal.field,
         states:    seal.states,
         moves:     seal.moves,
-        relations: model.fields.filter(f => f.attributes.some(a => a.kind === 'sealed')).map(f => f.name),
+        relations: model.fields.filter((/** @type {any} */ f) => f.attributes.some((/** @type {any} */ a) => a.kind === 'sealed')).map((/** @type {any} */ f) => f.name),
       })
     }
   }
@@ -110,16 +112,17 @@ export function sealingModels(schema) {
  * Derived once at client build. A child reached through two sealed parents
  * carries two guards and both must hold — an intersection, never a choice.
  *
- * @param {object} schema
- * @param {object} relationMap   buildRelationMap's output
+ * @param {any} schema
+ * @param {any} relationMap   buildRelationMap's output
  * @param {(m: string) => string} tableFor   model name → table name
  */
 export function buildSealMap(schema, relationMap, tableFor) {
   const sealing = sealingModels(schema)
   if (!sealing.size) return {}
 
+  /** @type {Record<string, any>} */
   const map = {}
-  const entry = (m) => (map[m] ??= { self: null, parents: [] })
+  const entry = (/** @type {any} */ m) => (map[m] ??= { self: null, parents: [] })
 
   for (const [name, seal] of sealing) {
     entry(name).self = {
@@ -159,7 +162,7 @@ export function buildSealMap(schema, relationMap, tableFor) {
 // it is the same `reachable`.
 
 /**
- * @param {object} attr  a `@@transitions` attribute
+ * @param {any} attr  a `@@transitions` attribute
  * @param {string} move  the move the column freezes after
  * @returns {{ field: string, states: Set<any> }|null}  null when the machine has no such move
  */
@@ -173,8 +176,8 @@ export function frozenAfterMove(attr, move) {
 /**
  * The machine of `model` that declares `move`, or null.
  *
- * @param {{ attributes: object[] }} model
+ * @param {{ attributes: any[] }} model
  */
-export function machineWithMove(model, move) {
+export function machineWithMove(model, /** @type {any} */ move) {
   return model.attributes.find(a => a.kind === 'transitions' && Object.hasOwn(a.transitions, move)) ?? null
 }

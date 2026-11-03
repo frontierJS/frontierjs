@@ -114,7 +114,8 @@ Done when: `ls -la /frontier-outpost` on yuma shows the three links, `sqlite3` o
 - [x] 4.1 Publish Outpost (owner: npm needs their login) and bump `OUTPOST_VERSION`
   - Done 2026-10-29: `0.1.8` shipped in release ecea9f74 with `src/` identical to the tree's (layout.js, `data_dir`), and `OUTPOST_VERSION` is `0.1.8`; basecamp compute.test.ts 115/115.
   - **Basecamp and Outpost ship together.** Phase 2's install, pinned to the published `0.1.7`, would give a new box a sandbox without `/etc/basecamp` while that Outpost still writes `/etc/basecamp/litestream.yml`, so `/replicate` fails on it. Basecamp is not deployed from this tree until the bump to the published layout version is in the same deploy.
-- [ ] 4.2 Reinstall Outpost on yuma (owner runs it on the production box)
+- [x] 4.2 Reinstall Outpost on yuma (owner runs it on the production box)
+  - Done 2026-11-03 with `deploy:retire` and `basecamp:install`. On yuma, `/frontier-outpost` holds the three links, `outpost.service` runs `@frontierjs/outpost@0.1.9`, `inet basecamp` is back in nft, and https://yuma.kobami.cloud/ answers 200. The retire took the database that placed fjs.maverickmade.tech, so yuma serves no app and that site answers 522. The phase's other two proofs, `sqlite3` through `data` and the site answering, wait until an app is deployed onto yuma again.
 - [ ] 4.3 Docs follow: outpost `README.md` and `CLAUDE.md` (the sandbox paragraph names `/etc/basecamp`), basecamp `docs/`, `cli/docs/deploy.md`
 
 ---
