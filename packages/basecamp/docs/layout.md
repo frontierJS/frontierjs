@@ -17,6 +17,9 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           domain/host/server-metrics.ts decides WHICH of a check-in is kept and what
           each reading is called; the heartbeat pushes through app.metrics.record
           domain/alert/alerting.ts is the alert comparison, pure — no db, no clock, no app
+          domain/alert/deliver.ts pages an alert's channels and closes a rule's open
+          alerts when it is deactivated or deleted; domain/monitor/resolve.ts is the
+          same close for a down monitor that is paused or deleted
           domain/monitor/probe.ts is the monitor's two judgments, pure: `gradeProbe` (did
           this request count — accepted codes, invert) and `nextState` (what a
           failure does: down only past `retries`, page once, `resendEvery`).
