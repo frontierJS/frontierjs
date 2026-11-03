@@ -44,7 +44,7 @@ import { keyUnder }       from '../../providers/storage/index.ts'
 import type { DestinationRow } from '../../providers/storage/index.ts'
 import { errorCode, objectPath, parseListing, presign } from '../../providers/storage/s3.ts'
 import { ARCHIVE_NAME, stampOf } from './backup-archives.ts'
-import { archiveRefusals, MANIFEST_FILE } from './archive-manifest.ts'
+import { archiveRefusals, MANIFEST_FILE, sha256Of } from './archive-manifest.ts'
 import { MAX_UPLOAD_BYTES } from '../../jobs/backup-run.job.ts'
 
 export const STAGED_DIR = 'restore-staged'
@@ -223,6 +223,16 @@ function takenAtOf(dir: string): string | null {
   try { return JSON.parse(readFileSync(join(dir, MANIFEST_FILE), 'utf8')).takenAt ?? null } catch { return null }
 }
 
+/** Is the live main database the archive's own bytes — the manifest's sha256
+ *  of `main.db` against the file on disk. False on any unreadable part. */
+async function swapAlreadyDone(staged: string, livePath: string): Promise<boolean> {
+  try {
+    const manifest = JSON.parse(readFileSync(join(staged, MANIFEST_FILE), 'utf8'))
+    const listed   = manifest.files?.find((f: { path: string }) => f.path === 'main.db')?.sha256
+    return typeof listed === 'string' && listed === await sha256Of(livePath)
+  } catch { return false }
+}
+
 const LITESTONE_CLI = join(dirname(Bun.resolveSync('@frontierjs/litestone/replicate', import.meta.dir)), 'cli.js')
 
 /**
@@ -240,7 +250,16 @@ export async function restoreStaged(
   if (!existsSync(staged)) return null
   const takenAt = takenAtOf(staged)
 
-  if (hubLivesAt(resolve(dbPath))) {
+  // A crash between the swap and the rename below leaves a hub that holds an
+  // account and a staged directory beside it, which reads as "somebody staged
+  // an archive over a live hub" and is refused for good. The staged archive's
+  // own manifest tells the two apart: live main.db byte-identical to the
+  // archive's is the swap already done. The restore is then run again, which
+  // is idempotent and completes any database the crash left behind.
+  const resuming = hubLivesAt(resolve(dbPath)) && await swapAlreadyDone(staged, resolve(dbPath))
+  if (resuming) log.info('resuming a restore whose rename did not happen', { staged })
+
+  if (!resuming && hubLivesAt(resolve(dbPath))) {
     bootResult = { state: 'refused', message:
       `${staged} is staged beside a database that holds an account, or could not be read, and was left in place. ` +
       'Remove it, or restore by hand (docs/backups.md § 7).' }

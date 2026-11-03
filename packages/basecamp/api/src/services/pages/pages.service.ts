@@ -7,7 +7,7 @@
 // own core, read over the workspace this API runs in, and a regenerate is
 // `children.js`'s `startRow` — the inventory and the process table `fli gui`
 // uses, so the two screens cannot list different pages or run a different
-// command for one. Offered where the workbench is (LOCAL_MACHINE=1, never under
+// command for one. Offered on a laptop (LOCAL_MACHINE=1, never under
 // NODE_ENV=production) and at ADMINISTRATOR like it: a regenerate runs a
 // command on this machine.
 //

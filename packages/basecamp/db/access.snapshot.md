@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-76 models · 1 view · 77 gated · 0 unrestricted
-59 with row policies · 29 with protected fields · 35 declared moves · 15 @system · 0 @seals
+73 models · 1 view · 74 gated · 0 unrestricted
+59 with row policies · 28 with protected fields · 35 declared moves · 15 @system · 0 @seals
 ```
 
 ## Gates
@@ -38,9 +38,6 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `BackupDestination` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Blueprint` | 1 VISITOR | 7 SYSADMIN | 7 SYSADMIN | 7 SYSADMIN |
 | `BlueprintParam` | 1 VISITOR | 7 SYSADMIN | 7 SYSADMIN | 7 SYSADMIN |
-| `ClaudeMessage` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
-| `ClaudeTranscript` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
-| `ClaudeWrite` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Credential` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Dashboard` | 2 READER | 4 USER | 4 USER | 4 USER |
 | `DashboardTile` | 2 READER | 4 USER | 4 USER | 4 USER |
@@ -617,6 +614,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 - allow **read** — `id == auth().id`
 - allow **read** — `kind == 'bot' && auth().level >= 5 && memberships.some(workspaceId == auth().workspaceId)`
+- allow **read** — `kind == 'peer' && auth().level >= 5 && memberships.some(workspaceId == auth().workspaceId)`
 - allow **update** — `id == auth().id`
 
 ### `Variable`
@@ -664,6 +662,7 @@ rather than refusing the row.
 | --- | --- | --- |
 | `AlertRule` | `snoozedUntil` | `@system` |
 | `ApiKey` | `credentialId` | `@system` |
+| `ApiKey` | `publicKey` | `@system` |
 | `ApiKey` | `tokenHint` | `@system` |
 | `ApiKey` | `revokedAt` | `@system` |
 | `ApiKey` | `lastUsedAt` | `@system` |
@@ -686,7 +685,6 @@ rather than refusing the row.
 | `AppPlatform` | `observedAt` | `@system` |
 | `BackupDestination` | `secretId` | `@system` |
 | `BackupDestination` | `lastTestAt` | `@system` |
-| `ClaudeWrite` | `before` | `@encrypted` |
 | `Credential` | `value` | `@guarded` |
 | `Credential` | `accessToken` | `@secret` |
 | `Credential` | `refreshToken` | `@secret` |

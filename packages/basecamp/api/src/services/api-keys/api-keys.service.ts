@@ -2,7 +2,7 @@
 // API keys — how a MACHINE acting for a person proves identity to Basecamp.
 //
 // Mounted at /api-keys. Custom methods dispatch on X-Service-Method:
-//   revoke · scopes · owners (both collection-level)
+//   revoke · scopes · owners · enrollPeer (the last three collection-level)
 //
 // The third direction, and the one `secrets` and auth's `Credential` do not
 // cover between them. A Credential is how a person proves identity to
@@ -21,7 +21,8 @@
 import { createService, BadRequest, Conflict, Forbidden, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, roleOf, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, findScoped, getScoped, narrowPatch, changesNothing, ws, actor } from '../../core/resource.ts'
+import { db, findScoped, getScoped, narrowPatch, changesNothing, ws, actor, slugify } from '../../core/resource.ts'
+import { grantsFor } from '../../core/capabilities.ts'
 import { scopeVocabulary, WHOLE_KEY } from '../../domain/api-key/scopes.ts'
 import { WORKSPACE_ROLE_LEVEL } from '../../core/gate.ts'
 import type { IAuth } from '@frontierjs/junction'
@@ -192,6 +193,89 @@ async function mintKey(input: Record<string, unknown>): Promise<Record<string, u
   }
 }
 
+// ─── Peers ───────────────────────────────────────────────────────────────
+// Another app, acting as itself (`FJS-D1196`): a User of kind `peer` that owns
+// a key enrolled under the peer's own Ed25519 pair (`FJS-D1604`). Basecamp
+// keeps only the public half, so nothing here can sign as the peer.
+
+/** Not a deliverable domain, as a bot's is not: nothing is ever sent to a peer. */
+const PEER_EMAIL_DOMAIN = 'peers.invalid'
+/** Above a bot's default: a preview creates an Environment, which is admin's
+ *  to create. The key's scopes, not the role, are what narrow the peer. */
+const PEER_ROLE = 'admin'
+/** What a peer's key reaches when the enrollment names nothing: a preview, alone. */
+export const PEER_SCOPES = ['apps:preview']
+
+/** An Ed25519 public key as `generateSigningKeys` emits it — 32 raw bytes, base64url — or null. */
+export function asPeerKey(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const key = raw.trim()
+  if (!/^[A-Za-z0-9_-]{43}$/.test(key)) return null
+  return Buffer.from(key, 'base64url').length === 32 ? key : null
+}
+
+/** A peer key is always scoped: one issued whole would reach every service added later. */
+function peerScopes(raw: unknown): string[] {
+  if (raw === undefined || raw === null) return PEER_SCOPES
+  if (!Array.isArray(raw) || raw.length === 0 || raw.some(s => typeof s !== 'string'))
+    throw new BadRequest('scopes is a list of scope names — a peer key with none would reach everything')
+  if (raw.includes(WHOLE_KEY)) throw new BadRequest(`a peer's key is never issued '${WHOLE_KEY}'`)
+  const known = new Set(scopeVocabulary($.app).map(s => s.id))
+  const bad   = raw.filter(s => !known.has(s))
+  if (bad.length) throw new BadRequest(`unknown scope: ${bad.join(', ')}`)
+  return raw
+}
+
+/** `ed25519 AbCd…wXyZ` — the row's hint, recognizable beside the peer's own copy. */
+const peerHint = (key: string) => `ed25519 ${key.slice(0, 4)}…${key.slice(-4)}`
+
+async function enrollPeer(input: Record<string, unknown>): Promise<{ id: string, userId: string, name: string }> {
+  const name = typeof input.name === 'string' ? input.name.trim() : ''
+  if (!name || name.length > 200) throw new BadRequest('name is required — what this screen calls the peer, up to 200 characters')
+  const publicKey = asPeerKey(input.publicKey)
+  if (!publicKey) throw new BadRequest('publicKey is not an Ed25519 public key — paste the 43-character key the peer shows')
+  const scopes = peerScopes(input.scopes)
+
+  if (await db().apiKey.exists({ where: { workspaceId: ws(), name } }))
+    throw new Conflict(`An API key named '${name}' already exists in this workspace`)
+  if (await db().apiKey.exists({ where: { workspaceId: ws(), publicKey } }))
+    throw new Conflict('That public key is already enrolled in this workspace — revoke it to enroll it again')
+
+  // asSystem(): `kind` is @system on auth's User and no caller writes it, the
+  // same reason the hub's createBot is written this way. One transaction: a
+  // peer with no membership is an account nothing reaches and nothing cleans up.
+  const sys: any = $.db.asSystem()
+  const workspace = await sys.workspace.findUnique({ where: { id: ws() }, select: { accountId: true } })
+  const now  = new Date().toISOString()
+  const peer = await sys.$transaction(async (tx: any) => {
+    const user = await tx.user.create({ data: {
+      email: `${slugify(name) || 'peer'}-${crypto.randomUUID().slice(0, 8)}@${PEER_EMAIL_DOMAIN}`,
+      name, displayName: name, kind: 'peer', status: 'active', accountId: workspace?.accountId ?? null,
+      // No password Credential, here or anywhere: a peer signs each request
+      // with its own key and has no way to sign in.
+      isEmailVerified: false, isSystemAdmin: false,
+    }})
+    await tx.workspaceMember.create({ data: {
+      workspaceId: ws(), userId: user.id, role: PEER_ROLE, capabilities: grantsFor(PEER_ROLE),
+      invitedBy: actor(), invitedAt: now, acceptedAt: now,
+    }})
+    return user
+  })
+
+  try {
+    // As the caller, so the trail names who enrolled the peer.
+    const row = await db().apiKey.create({
+      data:   { name, userId: peer.id, scopes, publicKey, tokenHint: peerHint(publicKey), createdBy: actor() },
+      system: ['publicKey', 'tokenHint'],
+    })
+    return { id: row.id, userId: peer.id, name: row.name }
+  } catch (err) {
+    // An account no key points at is one nothing on any screen can remove.
+    await sys.user.delete({ where: { id: peer.id } }).catch(() => {})
+    throw err
+  }
+}
+
 /**
  * before/find: `status` is derived, so it is not a column, so autoFilter
  * would 400 on it (FJS-109) before find() ever ran. Same shape as the
@@ -222,6 +306,9 @@ export default createService({
     'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
     'revoke', 'scopes',
     { method: 'owners', gate: LEVELS.ADMINISTRATOR },
+    // Writes an account and its membership as the system, so the level is
+    // stated: the one that may issue a key that is not its own.
+    { method: 'enrollPeer', gate: LEVELS.ADMINISTRATOR },
   ],
   // Announced by the service DEFINITION, not by an after hook: `callService`
   // is junction's one announcement point and it excludes `find`/`get` by name,
@@ -345,6 +432,13 @@ export default createService({
     return { data }
   },
 
+  // ── enrollPeer ────────────────────────────────────────────────────
+  // Collection-level. `{ name, publicKey, scopes? }` → `{ id, userId, name }`;
+  // the `id` is what the peer names in `X-Fjs-Key` on every signed call.
+  async enrollPeer() {
+    return enrollPeer(($.data ?? {}) as Record<string, unknown>)
+  },
+
   hooks: {
     before: {
       all:    [sessionScope(), noKeyManagementByKey],
@@ -365,6 +459,6 @@ export default createService({
  */
 function noKeyManagementByKey(): void {
   const user = $.user as { authMethod?: string } | undefined
-  if (user?.authMethod === 'apiKey')
+  if (user?.authMethod === 'apiKey' || user?.authMethod === 'peer')
     throw new Forbidden('An API key cannot manage API keys — sign in to issue or revoke one')
 }

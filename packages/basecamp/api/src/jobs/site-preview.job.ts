@@ -17,6 +17,8 @@ import { BUILD_TIMEOUT_MS }  from '../providers/executor.ts'
 
 const sitePreview = defineJob<{ appId: string; draft: string }>({
   name: 'site:preview',
+  // Own queue: a build holds its slot for up to 91 minutes, and on `default` it starves the minute-cadence monitoring crons.
+  queue: 'site',
   handler: async (ctx) => {
     const { app } = runsAsApp(ctx, 'site:preview')
     const status = await buildDraftPreview(app, ctx.data.appId, ctx.data.draft)
@@ -33,4 +35,4 @@ export default sitePreview
 
 /** Queue the draft's preview; a no-op while one is building, which builds the newest head anyway. */
 export const dispatchPreview = (app: { jobs: { dispatch: Function } }, appId: string, draft: string) =>
-  app.jobs.dispatch(sitePreview, { appId, draft }, { unique: `site:preview:${appId}:${draft}`, actor: null, tenant: null })
+  app.jobs.dispatch(sitePreview, { appId, draft }, { unique: `site:preview:${appId}:${draft}`, actor: null, tenant: null, queue: 'site' })

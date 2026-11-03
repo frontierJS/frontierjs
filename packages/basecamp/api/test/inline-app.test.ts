@@ -300,6 +300,8 @@ describe('the release pipeline an inline app runs', () => {
 
     // The snapshot's volume, not the app's: the volume is unset on the app and
     // the step is still there, because the release being put back had one.
+    // The queued release is cancelled first: a rollback beside it is refused.
+    await deployments().remove(release.id)
     await apps().patch(target.id, { volumePath: null })
     const git     = { kind: 'git', repo: 'git@host:a/b.git' }
     const shipped = async (data: Record<string, unknown>) => {

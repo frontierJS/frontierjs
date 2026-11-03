@@ -26,16 +26,16 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 4104 source file(s) read
-249 entry point(s), 35 imported by nothing outside their package, 16 emitted
-1698 value export(s), 642 reached by nothing outside, 178 emitted
+27 package(s) · 4152 source file(s) read
+249 entry point(s), 36 imported by nothing outside their package, 16 emitted
+1701 value export(s), 643 reached by nothing outside, 179 emitted
 459 type export(s), 348 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `litestone` | 28 | 5 | 267 | 131 | 39 | 1 | 1 |
-| `junction` | 27 | 4 | 271 | 121 | 13 | 269 | 211 |
+| `junction` | 27 | 4 | 271 | 120 | 13 | 269 | 211 |
 | `mesa` | 19 | 4 | 313 | 110 | 77 | 0 | 0 |
 | `sierra` | 25 | 6 | 200 | 84 | 20 | 0 | 0 |
 | `auth` | 6 | 1 | 52 | 37 | 3 | 15 | 13 |
@@ -43,8 +43,8 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `ui` | 9 | 0 | 55 | 35 | 3 | 0 | 0 |
 | `jetty` | 7 | 4 | 43 | 29 | 3 | 0 | 0 |
 | `conduit` | 4 | 2 | 26 | 15 | 1 | 60 | 41 |
+| `outpost` | 9 | 2 | 28 | 13 | 2 | 0 | 0 |
 | `site-kit` | 9 | 4 | 38 | 11 | 1 | 0 | 0 |
-| `outpost` | 9 | 1 | 25 | 11 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 7 | 0 | 36 | 21 |
 | `email-kit` | 3 | 0 | 10 | 4 | 1 | 0 | 0 |
 | `notifications` | 3 | 0 | 16 | 4 | 0 | 30 | 24 |
@@ -60,6 +60,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `frontierjs-vscode` | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `haven` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `orion` | 3 | 0 | 2 | 0 | 0 | 8 | 3 |
+| `workbench` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 
 ## `@frontierjs/auth`
 
@@ -173,7 +174,7 @@ Every entry is imported and every name reached.
 
 **Entries not source (3, not graded):** `./outbox.lite` `./backfill.lite` `./metrics.lite`
 
-**Unreached values (121):** `accessorIfModel` `AIBuilder` `announcementPayload` `applyClaims` `assertAuditModel` `assertBackfillField` `AuthClient` `autoloadServices` `autoSort` `backfillSchemaFragment` `bearerOf` `bodyLimit` `BULK_FAILURES` `CacheValueError` `checkPrincipalSetting` `checkUnknownKeys` `circuitBreaker` `collectMethodInputs` `collectMethodOutputs` `collectMetrics` `combineOrigins` `COMMITMENT_SWEEP_JOB` `consoleWriter` `createChannelManager` `createEventBus` `createLitestoneBase` `createMemoryCache` `createMessage` `createSchema` `createSmtpMailer` `createSqliteCache` `createStats` `cronMatcher` `currentCall` `customMethodNames` `dataRealmFacts` `declaredCallHeaders` `declaredTransitionMethods` `declaresNoSoftDelete` `decodeValue` `deriveModelName` `describeDataRealm` `describedOf` `describePrincipalRealm` `encodeValue` `errorResponse` `extractIP` `fieldError` `fromStatusCode` `generateEnvExample` `inAfterCommitDrain` `installLogContext` `installMadeAt` `installQueryTelemetry` `isCrudGatedMethod` `isCustomMethod` `isDeclaredTransition` `isDerivedHook` `isMethodAllowed` `isServiceResult` `jsonResponse` `jsonSchemaToJunctionSchema` `JunctionClient` `liftReservedQuery` `loadServiceFile` `logTiming` `markDerived` `mergeHookMaps` `methodEntryName` `methodGateBasis` `mirrorClaimFor` `multiWriter` `nextDelayMs` `noopLogger` `NotImplemented` `outboxSchemaFragment` `parseAggregate` `parseBody` `parseCookies` `parseLitestoneQuery` `parseQuery` `partitionBulk` `PaymentRequired` `printEnvExample` `PublicUrlError` `READ_ONLY_METHODS` `readGateLevel` `readReplyTag` `redirectResponse` `refuseStream` `registerAuditMetrics` `renderPrometheus` `replyAddress` `requiredScope` `resetAnnouncementWarnings` `resetReservedQueryChecks` `resolveAccessor` `resolveDefsKey` `resolveMethodSelection` `resolvePipelines` `ResultShapeError` `runPipeline` `serializeHookMap` `serveStatic` `SERVICE_OPTION_KEYS` `SERVICE_RUNTIME_KEYS` `ServiceProxy` `ServiceRegistry` `splitAddress` `TENANT_CLIENT_OBSERVERS` `TENANT_REGISTRY` `tenantClaimGuard` `toBulkFailure` `toMime` `traceIdOf` `unknownKeys` `unwrapResult` `validateInput` `watchFilterReads` `withTenantDb` `WRITE_VERBS`
+**Unreached values (120):** `accessorIfModel` `AIBuilder` `announcementPayload` `applyClaims` `assertAuditModel` `assertBackfillField` `AuthClient` `autoloadServices` `autoSort` `backfillSchemaFragment` `bearerOf` `bodyLimit` `BULK_FAILURES` `CacheValueError` `checkPrincipalSetting` `checkUnknownKeys` `circuitBreaker` `collectMethodInputs` `collectMethodOutputs` `collectMetrics` `combineOrigins` `COMMITMENT_SWEEP_JOB` `consoleWriter` `createChannelManager` `createEventBus` `createLitestoneBase` `createMemoryCache` `createMessage` `createSchema` `createSmtpMailer` `createSqliteCache` `createStats` `cronMatcher` `currentCall` `customMethodNames` `dataRealmFacts` `declaredCallHeaders` `declaredTransitionMethods` `declaresNoSoftDelete` `decodeValue` `deriveModelName` `describeDataRealm` `describedOf` `describePrincipalRealm` `encodeValue` `errorResponse` `extractIP` `fieldError` `fromStatusCode` `generateEnvExample` `inAfterCommitDrain` `installLogContext` `installMadeAt` `installQueryTelemetry` `isCrudGatedMethod` `isCustomMethod` `isDeclaredTransition` `isDerivedHook` `isMethodAllowed` `isServiceResult` `jsonResponse` `jsonSchemaToJunctionSchema` `JunctionClient` `liftReservedQuery` `loadServiceFile` `logTiming` `markDerived` `mergeHookMaps` `methodEntryName` `methodGateBasis` `mirrorClaimFor` `multiWriter` `nextDelayMs` `noopLogger` `NotImplemented` `outboxSchemaFragment` `parseAggregate` `parseBody` `parseCookies` `parseLitestoneQuery` `parseQuery` `partitionBulk` `PaymentRequired` `printEnvExample` `PublicUrlError` `READ_ONLY_METHODS` `readGateLevel` `readReplyTag` `redirectResponse` `refuseStream` `registerAuditMetrics` `renderPrometheus` `replyAddress` `requiredScope` `resetAnnouncementWarnings` `resetReservedQueryChecks` `resolveAccessor` `resolveDefsKey` `resolveMethodSelection` `resolvePipelines` `ResultShapeError` `runPipeline` `serializeHookMap` `serveStatic` `SERVICE_OPTION_KEYS` `SERVICE_RUNTIME_KEYS` `ServiceProxy` `ServiceRegistry` `splitAddress` `TENANT_CLIENT_OBSERVERS` `TENANT_REGISTRY` `tenantClaimGuard` `toBulkFailure` `toMime` `traceIdOf` `unknownKeys` `validateInput` `watchFilterReads` `withTenantDb` `WRITE_VERBS`
 
 **Emitted (13):** `allowedMethodNames` `appJsonSchema` `assertContentId` `assertMailbox` `AUDIT_ACTOR_KINDS` `createSqliteWebhookStore` `describeShape` `fireDue` `generateOpenAPI` `LOCAL_PART_MAX` `otlp` `serviceMethodNames` `SUBSCRIPTION_PATH`
 
@@ -247,13 +248,13 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/outpost`
 
-`packages/outpost` · 9 entry point(s) · 25 value, 0 type export(s)
+`packages/outpost` · 9 entry point(s) · 28 value, 0 type export(s)
 
-**Entries imported by nothing outside (1):** `.`
+**Entries imported by nothing outside (2):** `.` `./static`
 
-**Unreached values (11):** `BACKUP_SCRIPT` `checkRunConfig` `containerName` `createInspector` `digestOfFiles` `followLines` `isDigest` `spawnRun` `spawnStream` `validName` `validRelativePath`
+**Unreached values (13):** `BACKUP_SCRIPT` `checkRunConfig` `containerName` `createInspector` `createStatic` `digestOfFiles` `DRAIN_MS` `followLines` `isDigest` `spawnRun` `spawnStream` `validName` `validRelativePath`
 
-**Emitted (1):** `ROOTS`
+**Emitted (2):** `MAX_BODY_BYTES` `ROOTS`
 
 ## `@frontierjs/print-kit`
 
@@ -320,3 +321,9 @@ Every entry is imported and every name reached.
 **Unreached values (35):** `bandIndex` `createSelection` `defaultControlProps` `defaultDisplayProps` `defaultFilterProps` `displayComponent` `fileNameOf` `filePreviews` `filterComponent` `formControl` `lockedBy` `menuWalk` `nativeValidationGuard` `optionsNote` `placeAgainst` `plotRuns` `plotValue` `RECENT_GROUP` `registeredDisplayComponents` `registeredFilterComponents` `registeredFormControls` `resolveError` `resolveRule` `REST_GROUP` `ruleLabel` `sectionFor` `SHADOW_ITEM_MARKER` `SHADOW_PLACEHOLDER_ITEM_ID` `sizeClass` `splitRecent` `truncationNote` `unregisterDisplayComponent` `unregisterFilterComponent` `unregisterFormControl` `withheldBy`
 
 **Emitted (3):** `dndzone` `registerFilterComponent` `rowlist`
+
+## `@frontierjs/workbench`
+
+`packages/workbench` · 0 entry point(s) · 0 value, 0 type export(s)
+
+Every entry is imported and every name reached.

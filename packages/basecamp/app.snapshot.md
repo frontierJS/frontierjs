@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-60 services · 46 routes · 24 plugins · prefix (none)
+56 services · 46 routes · 23 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -28,14 +28,13 @@ text, so a body that elevates through a helper is not listed.
 | `appBackups.upload` | standing 5 or above — declared `gate: 5` |
 | `apps.unplace` | standing 4 or above — declared `gate: 4` |
 | `apps.disablePush` | standing 5 or above — declared `gate: 5` |
-| `claude.writes` | standing 5 or above — declared `gate: 5` |
-| `claude.mcp` | standing 5 or above — declared `gate: 5` |
 | `deployments.rollback` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `deployments.rebind` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `edge.syncStep` | anyone, a stranger included — declared `gate: 0` |
 | `hubBackups.take` | **any signed-in caller** — floor, read gate 5; standing not graded |
 | `hubConfig.dismissFound` | **any signed-in caller** — floor, read gate 7; standing not graded |
 | `infra.onboarding` | standing 2 or above — declared `gate: 2` |
+| `monitors.resume` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `notificationChannels.test` | standing 5 or above — declared `gate: 5` |
 | `servers.metrics` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `servers.provision` | **any signed-in caller** — floor, read gate 2; standing not graded |
@@ -273,13 +272,14 @@ name when it declares none.
 
 ### `apiKeys` · model `ApiKey`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `revoke`, `scopes`, `owners`
-- **custom methods** — `revoke`, `scopes`, `owners`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `revoke`, `scopes`, `owners`, `enrollPeer`
+- **custom methods** — `revoke`, `scopes`, `owners`, `enrollPeer`
 - **also answers to** — `api-keys`
 - **who may call** —
   - `revoke` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey`
   - `scopes` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey`
   - `owners` — standing 5 or above — declared `gate: 5`; body writes as the app
+  - `enrollPeer` — standing 5 or above — declared `gate: 5`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -361,8 +361,8 @@ name when it declares none.
 
 ### `apps` · model `App`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `analytics`, `liveCheck`, `retryLive`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`
-- **custom methods** — `logs`, `analytics`, `liveCheck`, `retryLive`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `analytics`, `liveCheck`, `retryLive`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`, `preview`
+- **custom methods** — `logs`, `analytics`, `liveCheck`, `retryLive`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`, `preview`
 - **input** — `fromBlueprint` takes `AppFromBlueprint`
 - **input** — `place` takes `AppPlace`
 - **input** — `publish` takes `AppPublish`
@@ -389,6 +389,7 @@ name when it declares none.
   - `importDockerfile` — standing 4 or above — declared `gate: 4`
   - `readRepoDockerfile` — standing 4 or above — declared `gate: 4`
   - `dockerfileTemplate` — standing 4 or above — declared `gate: 4`
+  - `preview` — standing 4 or above — declared `gate: 4`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -408,34 +409,6 @@ name when it declares none.
 | before | `restoreReplica` | `validateInput` |
 | before | `publish` | `validateInput` |
 | before | `readRepoDockerfile` | `validateInput` |
-
-### `atlas` · model `atlas`
-
-- **methods** — `overview`, `rings`, `autopilot`, `record`, `queue`, `explanation`, `discuss`, `decide`, `explain`, `run`, `turn`
-- **custom methods** — `overview`, `rings`, `autopilot`, `record`, `queue`, `explanation`, `discuss`, `decide`, `explain`, `run`, `turn`
-- **who may call** —
-  - `overview` — standing 5 or above — declared `gate: 5`
-  - `rings` — standing 5 or above — declared `gate: 5`
-  - `autopilot` — standing 5 or above — declared `gate: 5`
-  - `record` — standing 5 or above — declared `gate: 5`
-  - `queue` — standing 5 or above — declared `gate: 5`
-  - `explanation` — standing 5 or above — declared `gate: 5`
-  - `discuss` — standing 5 or above — declared `gate: 5`
-  - `decide` — standing 5 or above — declared `gate: 5`
-  - `explain` — standing 5 or above — declared `gate: 5`
-  - `run` — standing 5 or above — declared `gate: 5`
-  - `turn` — standing 5 or above — declared `gate: 5`
-
-| Phase | Method | Chain |
-| --- | --- | --- |
-| around | `all` | `gateAuth` |
-| before | `all` | `sessionScope` |
-| before | `find` | `autoFilter` → `autoSort` |
-| before | `get` | `autoFilter` |
-| before | `aggregate` | `autoFilter` |
-| before | `create` | `autoValidate` |
-| before | `patch` | `autoValidate` |
-| before | `update` | `autoValidate` |
 
 ### `auditEvents` · model `AuditEvent`
 
@@ -492,46 +465,6 @@ name when it declares none.
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
-| before | `update` | `autoValidate` |
-
-### `claude` · model `claude`
-
-- **methods** — `config`, `file`, `stats`, `index`, `insights`, `sessions`, `transcript`, `context`, `account`, `quota`, `writes`, `rev`, `mcpHealth`, `mcpTools`, `hookTools`, `doctor`, `undo`, `plugin`, `marketplace`, `mcp`, `settings`, `permissions`, `save`, `trash`
-- **custom methods** — `config`, `file`, `stats`, `index`, `insights`, `sessions`, `transcript`, `context`, `account`, `quota`, `writes`, `rev`, `mcpHealth`, `mcpTools`, `hookTools`, `doctor`, `undo`, `plugin`, `marketplace`, `mcp`, `settings`, `permissions`, `save`, `trash`
-- **who may call** —
-  - `config` — standing 5 or above — declared `gate: 5`
-  - `file` — standing 5 or above — declared `gate: 5`
-  - `stats` — standing 5 or above — declared `gate: 5`
-  - `index` — standing 5 or above — declared `gate: 5`
-  - `insights` — standing 5 or above — declared `gate: 5`
-  - `sessions` — standing 5 or above — declared `gate: 5`
-  - `transcript` — standing 5 or above — declared `gate: 5`
-  - `context` — standing 5 or above — declared `gate: 5`
-  - `account` — standing 5 or above — declared `gate: 5`
-  - `quota` — standing 5 or above — declared `gate: 5`
-  - `writes` — standing 5 or above — declared `gate: 5`; body writes as the app
-  - `rev` — standing 5 or above — declared `gate: 5`
-  - `mcpHealth` — standing 5 or above — declared `gate: 5`
-  - `mcpTools` — standing 5 or above — declared `gate: 5`
-  - `hookTools` — standing 5 or above — declared `gate: 5`
-  - `doctor` — standing 5 or above — declared `gate: 5`
-  - `undo` — standing 5 or above — declared `gate: 5`
-  - `plugin` — standing 5 or above — declared `gate: 5`
-  - `marketplace` — standing 5 or above — declared `gate: 5`
-  - `mcp` — standing 5 or above — declared `gate: 5`; body writes as the app
-  - `settings` — standing 5 or above — declared `gate: 5`
-  - `permissions` — standing 5 or above — declared `gate: 5`
-  - `save` — standing 5 or above — declared `gate: 5`
-  - `trash` — standing 5 or above — declared `gate: 5`
-
-| Phase | Method | Chain |
-| --- | --- | --- |
-| around | `all` | `gateAuth` |
-| before | `find` | `autoFilter` → `autoSort` |
-| before | `get` | `autoFilter` |
-| before | `aggregate` | `autoFilter` |
-| before | `create` | `autoValidate` |
-| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `conduitTargets` · model `conduitTargets`
@@ -847,24 +780,6 @@ name when it declares none.
 | after | `patch` | `anonymous` |
 | after | `remove` | `anonymous` |
 
-### `git` · model `git`
-
-- **methods** — `localRepos`
-- **custom methods** — `localRepos`
-- **who may call** —
-  - `localRepos` — standing 5 or above — declared `gate: 5`
-
-| Phase | Method | Chain |
-| --- | --- | --- |
-| around | `all` | `gateAuth` |
-| before | `all` | `sessionScope` |
-| before | `find` | `autoFilter` → `autoSort` |
-| before | `get` | `autoFilter` |
-| before | `aggregate` | `autoFilter` |
-| before | `create` | `autoValidate` |
-| before | `patch` | `autoValidate` |
-| before | `update` | `autoValidate` |
-
 ### `hub` · model `hub`
 
 - **methods** — `overview`, `environment`, `workspaces`, `accounts`, `users`, `flags`, `audit`, `fleet`, `hostPosture`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
@@ -1073,7 +988,7 @@ name when it declares none.
 - **who may call** —
   - `history` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `pause` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `resume` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `resume` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`; body writes as the app
   - `attachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `detachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
 - **broadcasts on** — `(computed)`
@@ -1520,57 +1435,6 @@ name when it declares none.
 | before | `update` | `autoValidate` |
 | before | `report` | `validateInput` |
 
-### `workbench` · model `workbench`
-
-- **methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`
-- **custom methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`
-- **who may call** —
-  - `pins` — standing 5 or above — declared `gate: 5`
-  - `status` — standing 5 or above — declared `gate: 5`
-  - `transcript` — standing 5 or above — declared `gate: 5`
-  - `diff` — standing 5 or above — declared `gate: 5`
-  - `runnables` — standing 5 or above — declared `gate: 5`
-  - `output` — standing 5 or above — declared `gate: 5`
-  - `plan` — standing 5 or above — declared `gate: 5`
-  - `pin` — standing 5 or above — declared `gate: 5`
-  - `unpin` — standing 5 or above — declared `gate: 5`
-  - `configure` — standing 5 or above — declared `gate: 5`
-  - `send` — standing 5 or above — declared `gate: 5`
-  - `stop` — standing 5 or above — declared `gate: 5`
-  - `fresh` — standing 5 or above — declared `gate: 5`
-  - `select` — standing 5 or above — declared `gate: 5`
-  - `close` — standing 5 or above — declared `gate: 5`
-  - `seen` — standing 5 or above — declared `gate: 5`
-  - `check` — standing 5 or above — declared `gate: 5`
-  - `review` — standing 5 or above — declared `gate: 5`
-  - `buildPlan` — standing 5 or above — declared `gate: 5`
-  - `openPlan` — standing 5 or above — declared `gate: 5`
-  - `closePlan` — standing 5 or above — declared `gate: 5`
-  - `go` — standing 5 or above — declared `gate: 5`
-  - `next` — standing 5 or above — declared `gate: 5`
-  - `tick` — standing 5 or above — declared `gate: 5`
-  - `file` — standing 5 or above — declared `gate: 5`
-  - `decide` — standing 5 or above — declared `gate: 5`
-  - `fork` — standing 5 or above — declared `gate: 5`
-  - `freeze` — standing 5 or above — declared `gate: 5`
-  - `thaw` — standing 5 or above — declared `gate: 5`
-  - `land` — standing 5 or above — declared `gate: 5`
-  - `commit` — standing 5 or above — declared `gate: 5`
-  - `archive` — standing 5 or above — declared `gate: 5`
-  - `run` — standing 5 or above — declared `gate: 5`
-  - `halt` — standing 5 or above — declared `gate: 5`
-
-| Phase | Method | Chain |
-| --- | --- | --- |
-| around | `all` | `gateAuth` |
-| before | `all` | `sessionScope` |
-| before | `find` | `autoFilter` → `autoSort` |
-| before | `get` | `autoFilter` |
-| before | `aggregate` | `autoFilter` |
-| before | `create` | `autoValidate` |
-| before | `patch` | `autoValidate` |
-| before | `update` | `autoValidate` |
-
 ### `workspaces` · model `Workspace`
 
 - **methods** — `find`, `get`, `create`, `patch`, `remove`, `restore`, `members`, `addMember`, `setMemberRole`, `removeMember`, `leave`, `push`, `testPing`
@@ -1672,14 +1536,13 @@ In configure order, which is what `requires:` is checked against.
 11. `setupRoutes`
 12. `enrollmentRoutes`
 13. `installRoute`
-14. `terminalRoute`
-15. `machineStreamRoute`
-16. `backupArchiveRoute`
-17. `appArchiveUploadRoute`
-18. `staticRoutes`
-19. `basecamp-cloud-accounts`
-20. `basecamp-backup-destinations`
-21. `basecamp-push`
-22. `basecamp-dns-follows-fleet`
-23. `basecamp-cleanup`
-24. `corsPlugin`
+14. `machineStreamRoute`
+15. `backupArchiveRoute`
+16. `appArchiveUploadRoute`
+17. `staticRoutes`
+18. `basecamp-cloud-accounts`
+19. `basecamp-backup-destinations`
+20. `basecamp-push`
+21. `basecamp-dns-follows-fleet`
+22. `basecamp-cleanup`
+23. `corsPlugin`

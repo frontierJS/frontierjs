@@ -15,6 +15,7 @@
 import { defineJob }      from '@frontierjs/caravan'
 import { gradePublicUrl, pinTo, type PublicUrlOptions } from '@frontierjs/junction/public-url'
 import { runsAsApp }      from '../domain/job/job-context.ts'
+import { otherRunIsLive } from '../domain/job/singleton.ts'
 import { gradeProbe, nextState, type ProbeOutcome } from '../domain/monitor/probe.ts'
 import { fanOutToChannels } from '../domain/notification/delivery.ts'
 import { notifyPeople, workspaceMembers } from '../domain/notification/notify.ts'
@@ -118,11 +119,12 @@ async function checkOne(
   } })
 
   // Into the metric store so an `AlertRule` on latency works with no new code.
+  // Best-effort: a store failure must not skip the state move below.
   const metrics = (app as { metrics?: { record: Function } }).metrics
   if (metrics && latencyMs !== null)
-    await metrics.record('monitor.latencyMs', latencyMs, {
+    await guarded(monitor, 'metric', () => metrics.record('monitor.latencyMs', latencyMs, {
       type: 'gauge', unit: 'ms', labels: { monitorId: monitor.id }, at,
-    })
+    }))
 
   if (state.move) {
     // `transition`, never an update naming the column: it narrows the UPDATE's
@@ -133,13 +135,14 @@ async function checkOne(
     } catch {
       return
     }
-    await db.monitorEvent.create({ data: {
+    // The move has landed: a failed history row must not cost the monitor its page.
+    await guarded(monitor, 'event row', () => db.monitorEvent.create({ data: {
       monitorId:  monitor.id,
       at:         new Date(at).toISOString(),
       fromStatus: monitor.status,
       toStatus:   state.status,
       message:    grade.message,
-    } })
+    } }))
   }
 
   if (!state.page) return
@@ -149,27 +152,37 @@ async function checkOne(
   const down = state.page !== 'up'
   // After the move, so a send that throws cannot leave the row `up` with
   // somebody already told it is down.
-  await notifyPeople(app, down ? 'MonitorDown' : 'MonitorUp',
+  // Each delivery on its own: people being told and channels being paged fail
+  // separately, and neither may cost the other.
+  await guarded(monitor, 'notify', async () => notifyPeople(app, down ? 'MonitorDown' : 'MonitorUp',
     await workspaceMembers(app, monitor.workspaceId), {
       monitorId:   monitor.id,
       monitorName: monitor.name,
       message:     grade.message,
       resend:      state.page === 'resend',
-    }, monitor.workspaceId)
+    }, monitor.workspaceId))
 
-  const links = await db.monitorChannel.findMany({
-    where:   { monitorId: monitor.id },
-    include: { channel: true },
+  await guarded(monitor, 'channels', async () => {
+    const links = await db.monitorChannel.findMany({
+      where:   { monitorId: monitor.id },
+      include: { channel: true },
+    })
+    await fanOutToChannels(app, () => db, links.map((l: any) => l.channel), {
+      title:    `[${down ? 'down' : 'recovered'}] ${monitor.name}`,
+      text:     grade.message,
+      severity: down ? 'critical' : 'info',
+      action:   down ? 'trigger' : 'resolve',
+      // One open incident per monitor, which `nextState` guarantees, so the
+      // monitor's id is the key that lets a recovery close what the outage opened.
+      dedupKey: `basecamp:monitor:${monitor.id}`,
+    }, `monitor-sweep ${monitor.name}`)
   })
-  await fanOutToChannels(app, () => db, links.map((l: any) => l.channel), {
-    title:    `[${down ? 'down' : 'recovered'}] ${monitor.name}`,
-    text:     grade.message,
-    severity: down ? 'critical' : 'info',
-    action:   down ? 'trigger' : 'resolve',
-    // One open incident per monitor, which `nextState` guarantees, so the
-    // monitor's id is the key that lets a recovery close what the outage opened.
-    dedupKey: `basecamp:monitor:${monitor.id}`,
-  }, `monitor-sweep ${monitor.name}`)
+}
+
+/** One step of an item that may fail without skipping the steps after it. */
+async function guarded(monitor: any, step: string, fn: () => Promise<unknown>): Promise<void> {
+  try { await fn() }
+  catch (err) { console.error(`[monitor-sweep] ${monitor.name}: ${step}: ${(err as Error).message}`) }
 }
 
 // ─── The request ─────────────────────────────────────────────────────────
@@ -231,8 +244,12 @@ async function probe(
 export default defineJob({
   handler: async (ctx) => {
     const { app } = runsAsApp(ctx, 'monitor-sweep')
+    // A sweep that outlived its minute is not joined by the next one.
+    if (otherRunIsLive(ctx, 'monitor-sweep')) return
     await sweepMonitors(app)
   },
+  // Probes are bounded by their own `timeoutMs`; this bounds the sweep around them.
+  timeout: 4 * 60_000,
   // One minute is the interval floor: a monitor's `intervalSeconds` is at least 60,
   // so a slower sweep would add its whole period to every detection.
   cron: '* * * * *',

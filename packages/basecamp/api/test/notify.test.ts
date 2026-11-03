@@ -31,7 +31,7 @@ import { notifications } from '@frontierjs/notifications'
 import { basecampGateLevel }   from '../src/core/gate.ts'
 import { NOTIFICATION_KINDS }  from '../src/domain/notification/kinds.ts'
 import { transportsFor, notifyPeople, workspaceMembers } from '../src/domain/notification/notify.ts'
-import { notifyAutopilotReport } from '../src/domain/atlas/autopilot-report.ts'
+import { deliverToChannel, stampDelivery } from '../src/domain/notification/delivery.ts'
 import type { App }            from '@frontierjs/junction'
 
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
@@ -152,30 +152,6 @@ async function member(db: any, tag: string) {
 const PAYLOAD = {
   deploymentId: 'd1', appName: 'api', environment: 'production', release: 'v2',
 }
-
-describe('the morning report', () => {
-  const REPORT = {
-    from: '2026-11-02T08:00:00.000Z', to: '2026-11-03T08:00:00.000Z', on: true,
-    ran: 4, closed: 2, blocked: 1, failed: 1, framed: 0, spend: 5.5,
-    day: { attempts: 4, dollars: 5.5, capAttempts: 20, capDollars: 20 }, patches: 2, tick: '2026-11-03T07:55:00.000Z',
-    review: { modified: '2026-11-02T20:00:00.000Z', repeated: ['Denied tool calls: Bash ×1'] },
-  }
-
-  test('reaches every system admin on both transports and nobody else', async () => {
-    // The installation's own report, as the hub posture is: a workspace member
-    // who is not a system admin has no loops to read about.
-    const { app, db, sent } = await makeApp({ mail: true })
-    const admin  = await member(db, 'sysadmin')
-    const plain  = await member(db, 'plain')
-    await db.user.update({ where: { id: admin.user.id }, data: { isSystemAdmin: true } })
-
-    expect(await notifyAutopilotReport(app, db, REPORT)).toBe(1)
-    const rows = await db.notification.findMany({ where: { type: 'AutopilotReport' } })
-    expect(rows.map((r: any) => r.userId)).toEqual([admin.user.id])
-    expect(await db.notification.count({ where: { userId: plain.user.id } })).toBe(0)
-    expect(sent.map(m => m.subject)).toEqual(['Autopilot overnight — 4 runs · 2 closed · 1 blocked · 1 failed · $5.50'])
-  })
-})
 
 describe('a preference decides, and no row means the default', () => {
 
@@ -338,5 +314,30 @@ describe('who a workspace tells', () => {
     })
 
     expect(await workspaceMembers(app, ws.id)).toEqual([user.id])
+  })
+})
+
+describe('an email channel delivers through the app mailer (FJS-3857)', () => {
+  const msg = { title: 'T', text: 'body', severity: 'info' as const, action: 'trigger' as const }
+  const channel = { kind: 'email', config: { to: ['ops@example.com'] } }
+
+  test('with a mailer the message is sent to the channel recipients', async () => {
+    const sent: any[] = []
+    const res = await deliverToChannel(
+      { conduit: undefined, sys: () => ({}), mail: { send: async (m) => { sent.push(m) } } }, channel, msg)
+    expect(res).toEqual({ ok: true })
+    expect(sent).toEqual([{ to: ['ops@example.com'], subject: 'T', text: 'body' }])
+  })
+
+  test('without one it still refuses by name, and a send that throws is an answer', async () => {
+    const none = await deliverToChannel({ conduit: undefined, sys: () => ({}) }, channel, msg)
+    expect(none.ok).toBe(false)
+    const boom = await deliverToChannel(
+      { conduit: undefined, sys: () => ({}), mail: { send: async () => { throw new Error('smtp down') } } }, channel, msg)
+    expect(boom).toEqual({ ok: false, error: 'Delivery failed (mail): smtp down' })
+  })
+
+  test('a stamp that cannot be written does not throw out of the loop (FJS-3856)', async () => {
+    await expect(stampDelivery(() => { throw new Error('version conflict') }, 'x')).resolves.toBeUndefined()
   })
 })

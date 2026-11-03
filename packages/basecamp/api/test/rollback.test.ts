@@ -286,3 +286,36 @@ describe('what a rollback refuses, before it writes anything', () => {
     expect(await statusOf(theirs.id)).toBe('success')
   })
 })
+
+describe('what a rollback may put back', () => {
+
+  // FJS-3862: `previousDeploymentId` is a column a caller can write.
+  test('a predecessor of another app is refused, and nothing is retired', async () => {
+    const sys = env.system as any
+    const mine = await anAppWithHistory(), theirs = await anAppWithHistory()
+    const forged = await releaseAt('success', {
+      appId: mine.app.id, workspaceId: ws.id, toImage: 'x:forged',
+      finishedAt: new Date(Date.now() + 60_000).toISOString(), previousDeploymentId: theirs.first.id })
+    await expect(roll(admin, forged.id)).rejects.toThrow(/another app/)
+    expect(await statusOf(forged.id)).toBe('success')
+    void sys
+  })
+
+  test('only the release currently serving can be rolled back', async () => {
+    const { first, current } = await anAppWithHistory()
+    // `first` is a success too, and an older one.
+    await (env.system as any).deployment.update({ where: { id: first.id }, data: { finishedAt: new Date(Date.now() - 60_000).toISOString() } })
+    await expect(roll(admin, first.id)).rejects.toThrow(/later release/)
+    expect(await statusOf(first.id)).toBe('success')
+    expect(await statusOf(current.id)).toBe('success')
+  })
+
+  // FJS-3849: two releases of one App race each other on the machine.
+  test('a release already in flight refuses another, 409', async () => {
+    const { app, current } = await anAppWithHistory()
+    const queued: any = await roll(admin, current.id)
+    expect(queued.status).toBe('pending')
+    await expect(env.as(admin).service('deployments').create({ appId: app.id, workspaceId: ws.id, toImage: 'x:1' }))
+      .rejects.toMatchObject({ code: 409 })
+  })
+})

@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-76 model(s) · 57 enum(s) · 2 database(s)
+73 model(s) · 57 enum(s) · 2 database(s)
 audit → sqlite · main → sqlite
 ```
 
@@ -54,7 +54,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `NetworkKind` | `mesh` · `vpc` |
 | `NetworkProvider` | `netbird` · `tailscale` · `wireguard` |
 | `NotificationContext` | `Alert` · `Deployment` · `JobRun` · `Monitor` · `Server` · `Workspace` |
-| `NotificationKind` | `AlertFiring` · `AlertResolved` · `AutopilotReport` · `DependencyVulnerable` · `DeployFailed` · `DeploySuccess` · `HubPostureFailed` · `JobFailed` · `MemberJoined` · `MonitorDown` · `MonitorUp` · `PostureFailed` · `ReplicaFound` · `ServerUnreachable` · `WeeklyDigest` |
+| `NotificationKind` | `AlertFiring` · `AlertResolved` · `DependencyVulnerable` · `DeployFailed` · `DeploySuccess` · `HubPostureFailed` · `JobFailed` · `MemberJoined` · `MonitorDown` · `MonitorUp` · `PostureFailed` · `ReplicaFound` · `ServerUnreachable` · `WeeklyDigest` |
 | `ParamGenerator` | `randomHex16` · `randomHex32` · `randomHex64` |
 | `PlatformBuild` | `outpost` · `platform` |
 | `PlatformProvider` | `cloudflare` |
@@ -202,6 +202,7 @@ table `api_key` · db `main` · gate `5`
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `lastUsedAt` | `DateTime` | yes | — | @system |
 | `name` | `String` | no | — | **required on write** |
+| `publicKey` | `String` | yes | — | @system |
 | `revokedAt` | `DateTime` | yes | — | @system |
 | `scopes` | `String[]` | no | `'[]'` | — |
 | `tokenHint` | `String` | no | — | @system · **required on write** |
@@ -671,84 +672,6 @@ table `blueprint_param` · db `main` · gate `1.7`
 ```
 @@unique(blueprintId, key)
 @@index(blueprintId)
-```
-
-### `ClaudeMessage`
-
-table `claude_message` · db `main` · gate `5.8`
-
-| Field | Type | Null | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `agent` | `String` | yes | — | — |
-| `at` | `DateTime` | no | — | **required on write** |
-| `cacheRead` | `Int` | no | — | **required on write** |
-| `cacheWrite` | `Int` | no | — | **required on write** |
-| `cacheWrite1h` | `Int` | no | `0` | — |
-| `cwd` | `String` | yes | — | — |
-| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
-| `input` | `Int` | no | — | **required on write** |
-| `isSubagent` | `Boolean` | no | `0` | — |
-| `messageId` | `String` | no | — | unique · **required on write** |
-| `model` | `String` | no | — | **required on write** |
-| `output` | `Int` | no | — | **required on write** |
-| `sessionId` | `String` | no | — | **required on write** |
-| `skills` | `String` | no | `''` | — |
-| `tools` | `String` | no | `''` | — |
-
-```
-@@index(at)
-@@index(cwd)
-@@index(sessionId)
-```
-
-### `ClaudeTranscript`
-
-table `claude_transcript` · db `main` · gate `5.8`
-
-| Field | Type | Null | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `agent` | `String` | yes | — | — |
-| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
-| `cwd` | `String` | yes | — | — |
-| `firstPrompt` | `String` | yes | — | — |
-| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
-| `isGone` | `Boolean` | no | `0` | — |
-| `isHeadless` | `Boolean` | no | `0` | — |
-| `isSubagent` | `Boolean` | no | `0` | — |
-| `lastAt` | `DateTime` | yes | — | — |
-| `offset` | `Int` | no | `0` | — |
-| `path` | `String` | no | — | unique · **required on write** |
-| `sessionId` | `String` | no | — | **required on write** |
-| `size` | `Int` | no | `0` | — |
-| `startedAt` | `DateTime` | yes | — | — |
-| `title` | `String` | yes | — | — |
-| `turnSkills` | `String` | no | `''` | — |
-| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
-
-```
-@@index(cwd)
-@@index(sessionId)
-```
-
-### `ClaudeWrite`
-
-table `claude_write` · db `main` · gate `5.8`
-
-| Field | Type | Null | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `action` | `String` | no | — | **required on write** |
-| `before` | `String` | yes | — | @encrypted |
-| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
-| `digest` | `String` | yes | — | — |
-| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
-| `keys` | `String` | no | `''` | — |
-| `project` | `String` | yes | — | — |
-| `scope` | `String` | yes | — | — |
-| `target` | `String` | no | — | **required on write** |
-| `undoneAt` | `DateTime` | yes | — | — |
-
-```
-@@index(createdAt)
 ```
 
 ### `Credential`
@@ -2243,6 +2166,7 @@ table `user` · db `main` · gate `1.8.1.5` · @@softDelete
 @@index(email)
 @@allow(read, id == auth().id)
 @@allow(read, kind == 'bot' && auth().level >= 5 && memberships.some(workspaceId == auth().workspaceId))
+@@allow(read, kind == 'peer' && auth().level >= 5 && memberships.some(workspaceId == auth().workspaceId))
 @@allow(update, id == auth().id)
 ```
 

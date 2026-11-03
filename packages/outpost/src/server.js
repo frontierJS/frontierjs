@@ -18,7 +18,7 @@
 import { verifyRequest, nonceMemory } from '@frontierjs/toolbelt/signature'
 import { createDocker, createInspector, checkRunConfig } from './docker.js'
 import { createStatic, validName } from './static.js'
-import { createIngress, hostsOf, pathsOf, redirectsOf } from './ingress.js'
+import { createIngress, checkRouteAppId, hostsOf, pathsOf, redirectsOf } from './ingress.js'
 import { createReplicator } from './replicate.js'
 import { createAnalytics } from './analytics.js'
 
@@ -28,6 +28,12 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), { status
 // Each open stream holds a process on this machine for as long as somebody
 // watches, so the count is capped here rather than trusted to the caller.
 const MAX_STREAMS = 16
+// The largest request body. The biggest honest one is a static publish: 24 MiB
+// of files travels base64-encoded (x4/3 = 32 MiB) inside JSON, so 40 MiB leaves
+// room for paths and keys. Bun's default is 128 MiB and the body is buffered
+// whole before the signature can fail, so an unbounded one is memory for anyone
+// who can reach the port.
+export const MAX_BODY_BYTES = 40 * 1024 * 1024
 // Bun.serve closes a connection idle for 10s, and a quiet container writes
 // nothing for minutes. A comment line keeps it open and SSE readers drop it.
 const KEEPALIVE_MS = 5_000
@@ -231,6 +237,8 @@ export function createOutpostServer(config, {
     'POST /route': async (body) => {
       const appId = body.app_id
       if (!appId) throw new Error('a route needs the app_id it is for')
+      // Before `docker.published`, whose own check a `.catch` below swallows.
+      checkRouteAppId(appId)
       const hosts     = hostsOf(body.hosts)
       const redirects = redirectsOf(body.redirects)
       const paths     = pathsOf(body.paths)
@@ -409,6 +417,8 @@ export function createOutpostServer(config, {
     // No nonce store here: a nonce is spent only by the check that reads the body.
     const early = await verify('', null)
     const unsigned = !early.ok && early.reason !== 'signature does not match'
+    if (!unsigned && Number(req.headers.get('content-length') ?? 0) > MAX_BODY_BYTES)
+      return json({ error: `body is over the ${MAX_BODY_BYTES} bytes this machine accepts` }, 413)
     const body     = unsigned ? '' : await req.text()
     const checked  = unsigned ? early : await verify(body, seenNonce)
     if (!checked.ok) {

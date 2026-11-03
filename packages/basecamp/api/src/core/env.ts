@@ -197,22 +197,18 @@ export const spec = {
   // The key an owner's ask runs `claude -p` with (`domain/site/site-ask.ts`), one for
   // every site and billed to whoever runs basecamp (`FJS-D1424`). Unset, asking
   // a model is off. Declared, so `childEnv` keeps it from every other child —
-  // a workbench run stays on the host's own `claude` login.
+  // every other `claude` run stays on the host's own login.
   ANTHROPIC_API_KEY: {},
 
   // `1` says this Basecamp runs on its operator's own machine, so it may read
-  // that machine: the Host aliases in ~/.ssh/config (`domain/local/local-ssh.ts`) and
-  // the git repositories under a folder (`domain/local/local-git.ts`). Refused under
+  // that machine: the Host aliases in ~/.ssh/config (`domain/local/local-ssh.ts`). Refused under
   // `NODE_ENV=production` whatever it says: a deployed control plane would be
   // reading ITS server's files, and dialing with its agent. `bun run api`
   // sets it.
   LOCAL_MACHINE: {},
 
-  // The workbench (`domain/workbench/workbench.ts`) — its pins and run logs, and the
-  // Claude Code binary each run starts. Behind LOCAL_MACHINE like the rest of
-  // this block; the directory is outside db/ so `db:reset` keeps every chat.
-  WORKBENCH_DIR: {},
-  CLAUDE_BIN:    { default: 'claude' },
+  // The Claude Code binary `domain/site/site-ask.ts` starts.
+  CLAUDE_BIN: { default: 'claude' },
 } satisfies EnvSpec
 
 export const env = defineEnv(spec)

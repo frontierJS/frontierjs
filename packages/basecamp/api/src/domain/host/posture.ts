@@ -610,6 +610,17 @@ export function gradeHub(
   })
 }
 
+/** Each control's last KNOWN grade across reports, newest first. A report where
+ *  a control was unknown does not forget the grade before it, so true -> unknown
+ *  -> false is still a failure. Controls never graded true/false are absent. */
+export function lastKnownControls(reports: Array<Control[] | null | undefined>): Control[] {
+  const known = new Map<string, Control>()
+  for (const report of reports)
+    for (const c of report ?? [])
+      if (c.ok !== 'unknown' && !known.has(c.id)) known.set(c.id, c)
+  return [...known.values()]
+}
+
 /** How a graded report sorts: failing high first, then any failing, then unknown. */
 export function postureRank(controls: Control[]): number {
   const failing = controls.filter(c => c.ok === false)

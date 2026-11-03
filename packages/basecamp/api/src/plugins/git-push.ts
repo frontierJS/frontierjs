@@ -85,9 +85,16 @@ function parsePush(d: Delivery): PushEvent | null {
 const branchOf = (ev: PushEvent, source: { branch?: string }) =>
   ev.payload.ref?.replace(/^refs\/heads\//, '') ?? source.branch ?? ev.payload.defaultBranch ?? null
 
-// One delivery id per App: the same id could never name two Apps' pushes, but a
-// sha pushed to two Apps' repos should release both.
-const dedupeKey = (d: Delivery, ev: PushEvent) => `${d.route.appId}:${ev.id}`
+// Keyed on the bytes the signature covers, per App: the delivery-id header is
+// outside the HMAC, so a replayed push with a fresh id released again
+// (`FJS-3894`). A sha pushed to two Apps' repos still releases both.
+const signedKey = (d: Delivery, _ev: PushEvent) =>
+  `${d.route.appId}:${createHash('sha256').update(d.rawBody).digest('hex')}`
+
+// The token door signs nothing and a script's hook may send the same empty body
+// every time, so a body hash would refuse its second deploy; the URL token is
+// its credential, and the delivery id stays its dedupe.
+const deliveryKey = (d: Delivery, ev: PushEvent) => `${d.route.appId}:${ev.id}`
 
 /** The forge's HMAC over the exact bytes it sent, keyed by the App's `pushSecret`. */
 export const forgeDialect: Dialect<string, PushEvent> = {
@@ -98,7 +105,7 @@ export const forgeDialect: Dialect<string, PushEvent> = {
     return same(sent.slice('sha256='.length), want) ? { ok: true } : { ok: false, reason: 'signature does not match' }
   },
   parse:  parsePush,
-  dedupeKey,
+  dedupeKey: signedKey,
 }
 
 /** The URL token, compared by hash to the App's `pushTokenHash`. */
@@ -108,7 +115,7 @@ export const tokenDialect: Dialect<string, PushEvent> = {
     return sent && same(hashPushToken(sent), tokenHash) ? { ok: true } : { ok: false, reason: 'token does not match' }
   },
   parse:  parsePush,
-  dedupeKey,
+  dedupeKey: deliveryKey,
 }
 
 // ─── The receivers ─────────────────────────────────────────────────────

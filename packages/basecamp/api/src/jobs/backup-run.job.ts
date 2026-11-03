@@ -40,8 +40,10 @@
 // to `<prefix>/basecamp-<stamp>.tar.gz`, which becomes `location`; the local
 // directory stays until the next backup finishes. A failed or refused upload
 // keeps the local directory, finishes `success` and says why in `error` — the
-// archive exists, it is only on the disk it was meant to leave,
-// and a `failed` row would read as no archive at all. After a success the
+// archive exists, it is only on the disk it was meant to leave, and a `failed`
+// row would read as no archive at all: restore and retention both look for
+// `success` rows to find a local copy. What grades it is the reader's job, so
+// `lastBackupAt` (host-machine.ts) counts only rows with no `error`. After a success the
 // retention in `backup-archives.ts` runs. The connector has no
 // multipart and holds the body in memory, so above `MAX_UPLOAD_BYTES` the job
 // refuses rather than discovering the limit at the vendor or in the heap.
@@ -55,7 +57,7 @@ import { jobsDatabasePath } from '../core/db.ts'
 import { keyUnder, sendFor } from '../providers/storage/index.ts'
 import { backupDir, dropWarmCopies, pruneBackups } from '../domain/backup/backup-archives.ts'
 import { putObject }        from '../providers/storage/s3.ts'
-import { writeManifest }    from '../domain/backup/archive-manifest.ts'
+import { sha256Of, writeManifest } from '../domain/backup/archive-manifest.ts'
 import { hostServer, requireHubAppId } from '../domain/host/host-machine.ts'
 import type { App }         from '@frontierjs/junction'
 import type { AppBackup, RunStatus } from '#db/schema.d.ts'
@@ -63,6 +65,13 @@ import type { AppBackup, RunStatus } from '#db/schema.d.ts'
 /** One PUT, held in memory. B2 and S3 cap a single PUT at 5 GB; this is lower
  *  because the whole body is a buffer in the API process. */
 export const MAX_UPLOAD_BYTES = 1024 ** 3
+
+/** The longest a hub backup row can honestly stay in flight: every attempt at
+ *  the job's own timeout, the retry delay between them, and a minute over. */
+export const BACKUP_JOB_TIMEOUT_MS = 600_000
+const BACKUP_MAX_ATTEMPTS = 2
+const BACKUP_RETRY_DELAY_MS = 30_000
+export const STALE_AFTER_MS = BACKUP_JOB_TIMEOUT_MS * BACKUP_MAX_ATTEMPTS + BACKUP_RETRY_DELAY_MS + 60_000
 
 /** Only for Caravan's queue, which no schema names and `app.db.$backup` cannot
  *  reach. Bound as a parameter and never interpolated (Invariant 8). Its own
@@ -109,7 +118,36 @@ async function archiveAll(app: App, dest: string, takenAt: string): Promise<void
   const jobs = jobsDatabasePath(app.sqlite.filename)
   if (existsSync(jobs)) vacuumInto(jobs, join(dest, 'jobs.db'))
 
+  // Before the manifest lists it: the manifest's hashes prove the bytes did not
+  // change since, not that they were ever a database. A copy of a damaged file
+  // is exactly what `VACUUM INTO` can write, and the first anybody learns of it
+  // would be the restore.
+  const damaged = checkStaged(dest)
+  if (damaged) {
+    rmSync(dest, { recursive: true, force: true })
+    throw new Error(`The staged copy failed PRAGMA integrity_check, so no archive was kept: ${damaged}`)
+  }
+
   await writeManifest(dest, takenAt)
+}
+
+/** `PRAGMA integrity_check` over every `.db` staged in `dir`; the first
+ *  complaint, or null when each answers `ok`. */
+export function checkStaged(dir: string): string | null {
+  for (const f of readdirSync(dir).filter(n => n.endsWith('.db'))) {
+    // A file SQLite will not even open throws instead of answering, and is the
+    // same verdict.
+    let raw: Database | null = null
+    try {
+      raw = new Database(join(dir, f), { readonly: true })
+      const rows = raw.query('PRAGMA integrity_check').all() as { integrity_check: string }[]
+      if (rows.length !== 1 || rows[0].integrity_check !== 'ok')
+        return `${f}: ${rows.slice(0, 3).map(r => r.integrity_check).join('; ')}`
+    } catch (err) {
+      return `${f}: ${(err as Error).message}`
+    } finally { raw?.close() }
+  }
+  return null
 }
 
 /** `<dir>.tar.gz` beside `dir`, with `dir`'s own name as its one top entry. */
@@ -125,7 +163,7 @@ async function tarball(dir: string): Promise<string> {
  * Send the archive at `dir` to the row's destination. Answers the object key,
  * or the warning that goes in `error` with the local copy left in place.
  */
-async function upload(app: App, destinationId: string, dir: string): Promise<{ key: string; bytes: number } | { warning: string }> {
+async function upload(app: App, destinationId: string, dir: string): Promise<{ key: string; bytes: number; sha256: string } | { warning: string }> {
   const kept = `The archive is on this disk at ${dir}.`
   const dest = await app.db!.asSystem().backupDestination.findFirst({ where: { id: destinationId } })
   if (!dest) return { warning: `Destination '${destinationId}' is gone; nothing was uploaded. ${kept}` }
@@ -138,11 +176,14 @@ async function upload(app: App, destinationId: string, dir: string): Promise<{ k
     if (bytes > MAX_UPLOAD_BYTES) return {
       warning: `The archive is ${bytes} bytes, over the ${MAX_UPLOAD_BYTES}-byte single-upload limit; nothing was uploaded. ${kept}`,
     }
-    const key = keyUnder(dest, `${basename(dir)}.tar.gz`)
+    const key    = keyUnder(dest, `${basename(dir)}.tar.gz`)
+    const sha256 = await sha256Of(tar)
+    // `.bytes()` is the one allocation. The connector's `send` takes the body as
+    // bytes, so a streamed PUT is a provider capability, not an edit here.
     const { error } = await putObject(sendFor(app, destinationId), dest.bucket, key,
-      new Uint8Array(await Bun.file(tar).arrayBuffer()), { contentType: 'application/gzip' })
+      await Bun.file(tar).bytes(), { contentType: 'application/gzip' })
     if (error) return { warning: `Upload to '${dest.name}' failed (${error.kind}${error.code ? `, ${error.code}` : ''}): ${error.message}. ${kept}` }
-    return { key, bytes }
+    return { key, bytes, sha256 }
   } catch (err) {
     return { warning: `Upload to '${dest.name}' failed: ${(err as Error).message}. ${kept}` }
   } finally {
@@ -191,7 +232,7 @@ export async function takeBackup(app: App, backupId: string): Promise<void> {
     if (row.destinationId) {
       const sent = await upload(app, row.destinationId, path)
       if ('key' in sent) {
-        await finish({ status: 'success', sizeBytes: sent.bytes, fileCount, location: sent.key, error: null })
+        await finish({ status: 'success', sizeBytes: sent.bytes, fileCount, location: sent.key, sha256: sent.sha256, error: null })
         log.info('backup uploaded', { id: backupId, destinationId: row.destinationId, key: sent.key, bytes: sent.bytes })
       } else {
         await finish({ status: 'success', sizeBytes: treeSize(path), fileCount, location: path, error: sent.warning })
@@ -230,12 +271,12 @@ export async function takeBackup(app: App, backupId: string): Promise<void> {
 const backupRun = defineJob<{ backupId: string }>({
   name:        'backup:run',
   queue:       'fleet',
-  maxAttempts: 2,
-  retryDelay:  [30_000],
+  maxAttempts: BACKUP_MAX_ATTEMPTS,
+  retryDelay:  [BACKUP_RETRY_DELAY_MS],
   // A `VACUUM INTO` of a large database is minutes, not seconds, and an
   // unbounded attempt is how a stalled one becomes invisible. Ten minutes is
   // long enough for a database far bigger than this app will hold.
-  timeout:     600_000,
+  timeout:     BACKUP_JOB_TIMEOUT_MS,
   handler: async (ctx) => {
     // Nobody's work but the app's — a hub action has no workspace, so there is
     // no standing to run as. `backups.take` states `actor: null` to match.
@@ -262,6 +303,36 @@ export const SETTLED: RunStatus[] = ['success', 'failed', 'timeout']
  * archives of the same bytes a second apart, and the second doubles how long
  * the first takes.
  */
+/**
+ * Fail the hub's in-flight rows that belong to a process that is gone. A row is
+ * written `running` before the snapshot, so a crash, or a restore that brought
+ * back a database holding one, leaves a row nothing will settle, and
+ * `queueBackup` would answer it as "in flight" for ever. `olderThanMs: 0`
+ * fails every one -- what a restore does, since nothing was running across it.
+ * Answers how many it failed.
+ */
+export async function failStaleBackups(
+  app: App, olderThanMs = STALE_AFTER_MS, now = Date.now(),
+): Promise<number> {
+  const sys   = app.db!.asSystem()
+  const appId = await requireHubAppId(sys)
+  const rows  = await sys.appBackup.findMany({
+    where: { appId, status: { notIn: SETTLED } },
+    select: { id: true, startedAt: true, createdAt: true },
+  }) as { id: string; startedAt: string | null; createdAt: string }[]
+  let failed = 0
+  for (const r of rows) {
+    const since = Date.parse(r.startedAt ?? r.createdAt)
+    if (Number.isFinite(since) && now - since < olderThanMs) continue
+    await sys.appBackup.update({ where: { id: r.id }, data: {
+      status: 'failed', error: 'interrupted: the process that was taking this backup is gone',
+      finishedAt: new Date(now).toISOString(),
+    } })
+    failed++
+  }
+  return failed
+}
+
 export async function queueBackup(
   app:  App,
   data: { kind: 'manual' | 'scheduled'; destinationId: string | null; requestedBy: string | null },
@@ -269,6 +340,7 @@ export async function queueBackup(
   const sys   = app.db!.asSystem()
   const appId = await requireHubAppId(sys)
 
+  await failStaleBackups(app)
   const inFlight = await sys.appBackup.findFirst({
     where: { appId, status: { notIn: SETTLED } }, orderBy: { createdAt: 'desc' },
   })

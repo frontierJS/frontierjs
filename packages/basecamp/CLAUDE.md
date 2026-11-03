@@ -32,7 +32,7 @@ bun run verify:cli     # that program as a process against a real /mcp, no brows
 bun run build:cli      # …compiled: cli/dist/bcamp (fli cli:build; --target for others)
 bun run build:desktop  # desktop/: web/ bundled into a Tauri shell, at
                        # desktop/shell/target/debug/basecamp-desktop; needs `bun run api`
-bun run verify:desktop # that shell, signed in and scanning, on 7120 — rebuild after
+bun run verify:desktop # that shell, signed in, on 7120 — rebuild after
 fli desktop:run        # build it, start the API if nothing answers on 8120, open the window
 fli desktop:install    # add it to the app launcher; a click opens it through desktop:run
                        # (--release: the release shell, after fli desktop:run --release)
@@ -78,8 +78,8 @@ an uncaught throw all kill the API, the Vite and the Chrome it started, and
 remove its scratch directory.
 
 `verify` runs the API on a database of its own in a temp directory —
-`DATABASE_URL`, the jobs queue beside it, `AUDIT_PATH`, `SITES_DIR` and
-`WORKBENCH_DIR` all point there — so `db/` is never opened. It needs both ports
+`DATABASE_URL`, the jobs queue beside it, `AUDIT_PATH` and
+`SITES_DIR` all point there — so `db/` is never opened. It needs both ports
 free: API **8120**, web **8020**. That web port is the same one
 `example/` uses — they cannot serve at once, and only this side is strict about
 it (`strictPort`, plus `fli dev`'s port preflight, which reads the surfaces
@@ -97,7 +97,7 @@ this list does not name. The owners that matter on most turns:
 
 - `db/schema.lite` (every model declares `@@gate`) · `db/schema.d.ts` is generated and committed — the client's types · `db/migrations/main/` · `db/seed.js`.
 - `api/index.ts` starts; `api/src/app.ts` builds the app and never starts it — `createApp({ principal: membershipClaim(…) })` is where the per-workspace level is resolved · `api/src/core/gate.ts` is the ladder.
-- `api/src/core/` sets up what the framework ships (`FJS-D625`): `db`, `env`, `gate`, `capabilities`, `hooks`, `session-auth`, `mailer`, `credentials` (both conduit ref forms), `channels`, `resource`. Domain logic goes in `api/src/domain/<area>/` (`FJS-3518` emptied `core/` of it): `domain/release/` (`app-source.ts` the one reader of `App.source`, `dockerfile-template.ts` the two seeds an App's Dockerfile starts from, `runtime.ts` how a container starts, `host-port.ts` which host ports a machine's Apps hold, `variables.ts` what a container's environment is, `release-record.ts` a release's run), `domain/site/` (an owner's drafts), `domain/workbench/` (Claude Code chats per pinned checkout), `domain/claude/` (the Claude Code tab: config, usage index, limits), `domain/notification/` (`notify.ts` does this person want it, `delivery.ts` how a NotificationChannel is reached, `kinds.ts` the NotificationKind list), `domain/alert/` (`alerting.ts`, the pure breach evaluator), `domain/host/` (`posture.ts`, `reachability.ts`, `server-metrics.ts`, `host-machine.ts`: a fleet machine's grade, contact, readings and Basecamp's own box; `traffic.ts`, an app route's traffic as the Outpost's `/analytics` counted it, and each empty answer by name; `components.ts`, where each stack component's advisories are published; and the operator scripts `fli` runs by path, `enroll-host.ts`, `provision-host.ts`, `host-record.ts` over `bearer-send.ts`), `domain/monitor/` (`probe.ts`, a Monitor's grade), `domain/local/` (`local-ssh.ts`, `local-git.ts`, `local-claude.ts`: the operator's own machine read as a source, behind `localMachineRefusal`), `domain/atlas/` (`atlas.ts`; `autopilot-run.ts` starts a schedule entry's loop), `domain/api-key/` (`scopes.ts`), `domain/job/` (`job-schedule.ts`, the one clock), `domain/cleanup/` (`disk-report.ts`), `domain/backup/` (`backup-archives.ts`, `archive-manifest.ts`, `hub-restore.ts`, `found-replicas.ts`, `app-archive-import.ts`).
+- `api/src/core/` sets up what the framework ships (`FJS-D625`): `db`, `env`, `gate`, `capabilities`, `hooks`, `session-auth`, `mailer`, `credentials` (both conduit ref forms), `channels`, `resource`. Domain logic goes in `api/src/domain/<area>/` (`FJS-3518` emptied `core/` of it): `domain/release/` (`app-source.ts` the one reader of `App.source`, `dockerfile-template.ts` the two seeds an App's Dockerfile starts from, `runtime.ts` how a container starts, `host-port.ts` which host ports a machine's Apps hold, `variables.ts` what a container's environment is, `release-record.ts` a release's run), `domain/site/` (an owner's drafts), `domain/workbench/` (`workbench-preview.ts`, the Basecamp half of a Workbench preview), `domain/notification/` (`notify.ts` does this person want it, `delivery.ts` how a NotificationChannel is reached, `kinds.ts` the NotificationKind list), `domain/alert/` (`alerting.ts`, the pure breach evaluator), `domain/host/` (`posture.ts`, `reachability.ts`, `server-metrics.ts`, `host-machine.ts`: a fleet machine's grade, contact, readings and Basecamp's own box; `traffic.ts`, an app route's traffic as the Outpost's `/analytics` counted it, and each empty answer by name; `components.ts`, where each stack component's advisories are published; and the operator scripts `fli` runs by path, `enroll-host.ts`, `provision-host.ts`, `host-record.ts` over `bearer-send.ts`), `domain/monitor/` (`probe.ts`, a Monitor's grade), `domain/local/` (`local-ssh.ts`: the operator's `~/.ssh/config` read as a source, behind `localMachineRefusal`), `domain/atlas/` (`atlas.ts`; `autopilot-run.ts` starts a schedule entry's loop), `domain/api-key/` (`scopes.ts`), `domain/job/` (`job-schedule.ts`, the one clock), `domain/cleanup/` (`disk-report.ts`), `domain/backup/` (`backup-archives.ts`, `archive-manifest.ts`, `hub-restore.ts`, `found-replicas.ts`, `app-archive-import.ts`).
 - `api/src/services/` one folder per service · `jobs/*.job.ts` autoloaded by caravan · `notifications/` one file per kind, the FILE NAME is the type · `providers/` is who the app speaks to (`compute/`, `edge/`, `source/`, `outpost.ts`, `executor.ts`) · `plugins/`.
 - `web/src/` — `App.mesa`, `routes/`, `components/` (`NoRecord.mesa` ends every detail screen), `resources/` (one Resource per file) · `web/config/api-paths.js` is DERIVED from `app.snapshot.md` · `web/test/verify.mjs` + `verify-build.mjs` are the drives.
 - `cli/` is `bcamp` — `src/routes/<service>/<method>.js` hand-written, everything else is `/mcp`'s tool list · `deploy/build.mjs` builds the image · `docs/` is the depth (`SCREENS`, `ADAPTERS`, `PROVISIONING`, `VISION`).
@@ -138,16 +138,12 @@ auth or channels should be run here *as well as* in `example/` — the two apps
 fail differently.
 
 <!-- layout-named: the file names fli done grades a new module against, kept here because done.js reads this file by path. The map itself is docs/layout.md.
-access.snapshot.md account-mail.ts accounts.ts adapters.md alert-evaluate.job.ts alerting.ts autopilot-tick.job.ts 
-ApiKey.mesa api-paths.js App.mesa app.snapshot.md app-archive-import.ts app-archive-upload.ts app-source.ts app.ts automations.ts 
-claude-context.ts claude-index.job.ts claude-index.ts claude-pricing.ts claude-quota.ts claude-read.ts claude-scan.ts claude-spend.ts claude-transcript.ts claude-write.ts 
-bearer-send.ts build.mjs capabilities.ts cli.config.js credentials.ts db.ts delivery.ts 
-dependencies.ts dockerfile-template.ts domain-dns.job.ts executor.ts gate.ts generate.js hooks.ts host-record.ts index.ts 
-job-run.job.ts job-schedule.ts kinds.ts litestone.config.js local-claude.ts local-git.ts local-mcp.ts local-ssh.ts machine-stream.ts mailer.ts 
-main.js monitor-sweep.job.ts NoRecord.mesa notices.js notify.ts outpost-dev.ts outpost-run.ts 
-outpost.ts package.json probe.ts provision-host.ts provisioning.md git-push.ts job-context.ts log-lines.js push.ts README.md 
-atlas.ts release-record.ts runtime.ts schema.d.ts schema.lite scopes.ts screens.md seed.js 
-server-metrics.ts session-auth.ts session.js site-ask.ts site-checkout.ts site-photo.ts 
-site-preview.ts site-publish.ts Terminal.mesa variables.ts vision.md workbench-branch.ts 
-workbench-check.ts workbench-context.ts workbench-diff.ts workbench-preview.ts workbench-run.ts workbench-shell.ts workbench-terminal.ts 
-workbench.ts -->
+access.snapshot.md account-mail.ts accounts.ts adapters.md alert-evaluate.job.ts alerting.ts ApiKey.mesa api-paths.js
+App.mesa app.snapshot.md app-archive-import.ts app-archive-upload.ts app-source.ts app.ts automations.ts bearer-send.ts
+build.mjs capabilities.ts cli.config.js credentials.ts db.ts delivery.ts dependencies.ts dockerfile-template.ts
+domain-dns.job.ts executor.ts gate.ts generate.js hooks.ts host-record.ts index.ts job-run.job.ts job-schedule.ts kinds.ts
+litestone.config.js local-ssh.ts machine-stream.ts mailer.ts main.js monitor-sweep.job.ts NoRecord.mesa notices.js notify.ts
+outpost-dev.ts outpost-run.ts outpost.ts package.json probe.ts provision-host.ts provisioning.md git-push.ts job-context.ts
+log-lines.js push.ts README.md release-record.ts runtime.ts schema.d.ts schema.lite scopes.ts screens.md seed.js
+server-metrics.ts session-auth.ts session.js site-ask.ts site-checkout.ts site-photo.ts site-preview.ts site-publish.ts
+variables.ts vision.md workbench-preview.ts -->

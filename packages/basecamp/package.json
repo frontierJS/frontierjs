@@ -42,7 +42,6 @@
     "verify:pages": "bun web/test/verify-pages.mjs",
     "verify:sso": "bun web/test/verify-sso.mjs",
     "verify:caddy": "bun deploy/test/verify-caddy.mjs",
-    "verify:atlas": "bun web/test/verify-atlas.mjs",
     "verify:outpost": "bun api/test/verify-outpost.mjs",
     "verify:dns": "bun api/test/verify-dns.mjs",
     "verify:advisories": "bun api/test/verify-advisories.mjs",

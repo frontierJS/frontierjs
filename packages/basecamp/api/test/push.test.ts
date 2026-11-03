@@ -176,6 +176,9 @@ describe('a push releases the App', () => {
     const rows = await releases(made.app.id)
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ trigger: 'push', commitSha: sha, triggeredBy: userId })
+    // A release in flight refuses the next one (FJS-3849), so the first is
+    // cancelled before the token door is tried.
+    await env.as(admin).service('deployments').remove(rows[0].id)
     expect((await env.http.post(`/hooks/git/${made.app.id}/${made.push.token}`).send({})).status).toBe(200)
   })
 
@@ -272,6 +275,7 @@ describe('a git container App publishes its site/ after the release', () => {
     const bare: any = await aGitApp()
     expect(await stepNames((await deployments().create({ appId: bare.id })).id)).not.toContain('Publish site')
 
+    await deployments().remove((await (env.system as any).deployment.findFirst({ where: { appId: withVolume.id } })).id)
     const laptop: any = await deployments().create({
       appId: withVolume.id, trigger: 'laptop', commitSha: uniq().padEnd(40, '3'), branch: 'main',
       toImage: `fjs-${withVolume.id}:laptop`, builtImage: `sha256:${'b'.repeat(64)}`,

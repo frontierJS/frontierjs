@@ -118,63 +118,16 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           when a release is made and a secret read only when it is sent
           core/session-auth.ts projects this app's OWN User columns onto the
           session and owns both doors suspension is refused at
-          domain/local/ is the operator's own machine read as a source, and
-          nothing in it runs unless the CALLER asked `localMachineRefusal` first —
-          no check grades a new file there for the gate.
           domain/local/local-ssh.ts is the operator's own ~/.ssh/config, read on THEIR
-          laptop for the import form (`servers.localSshHosts`/`localSshProbe`),
-          and domain/local/local-git.ts the git checkouts under a folder there
-          (`git.localRepos`, /git-activity/local/). Both are off unless
-          LOCAL_MACHINE=1 (`bun run api` sets it) and refused under
-          NODE_ENV=production whatever it says (`localMachineRefusal`). ssh is
-          always handed `-F` with the file that was listed, because ssh finds ~
-          through passwd and Bun through $HOME; git is always handed
-          `core.fsmonitor=false`, because a status runs that command
-          domain/local/local-claude.ts is `claude auth status --json`, mapped to
-          named fields only so a token in its output cannot pass through
-          domain/local/local-mcp.ts starts one MCP server and lists its tools;
-          the server's env and headers go in, only tool names come back
-          domain/claude/ is the Workbench's *Claude Code* tab (`claude` service,
-          IDEAS/claude-code.md): what `~/.claude` (or CLAUDE_CONFIG_DIR) loads,
-          behind the same refusal. Readers are pure and return `Read<T>`
-          (claude-read.ts) — a format Claude Code changes shows *unavailable*,
-          never a wrong number; claude-scan.ts is the fs half and the one
-          `claudeConfigDir()`. claude-index.ts keeps the usage index
-          (`ClaudeTranscript`, `ClaudeMessage`, `FJS-D1714`) by byte offset from
-          `jobs/claude-index.job.ts` every five minutes, never in a request; the
-          first fill (about a minute) waits for the tab's button; claude-spend.ts reads it back, priced by
-          claude-pricing.ts (list price, its page and read date beside it).
-          claude-context.ts measures a session's first request from its
-          transcript; claude-transcript.ts folds one into turns and refuses a
-          path outside `projects/`; claude-quota.ts reads the account's limits
-          with the OAuth token Claude Code keeps, never refreshing it
-          (`FJS-D1711`), and backs off on a 429 because every running `claude`
-          shares that limit. claude-write.ts is the one writer: every change
-          the tab makes is a `ClaudeWrite` row, a file written through a rename
-          with its before image `@encrypted`, or a `claude` CLI call
-          (`local-claude.ts` `runClaude`) undone by its inverse; undo is
-          refused once the file's digest moved
-          domain/workbench/workbench.ts is Claude Code chats per PINNED checkout — tabs
-          under the message box, one running at a time since they share the
-          tree (`workbench` service, /workbench/), behind the same refusal: each
-          message is a detached `claude -p` with permissions bypassed, writing
-          its own log under WORKBENCH_DIR (~/.config/basecamp/workbench), so a
-          `bun --watch` restart neither kills a run nor loses its status. Not in
-          the database — a pin is a folder on this machine. A run ending with
-          nothing queued starts the checkout's OWN `fli done` as its own process
-          (domain/workbench/workbench-check.ts, only where the checkout carries done.js) and,
-          where the pin asks, a read-only reviewer; each is stamped with when it
-          started and hidden once a newer message is sent. domain/workbench/workbench-diff.ts
-          is the diff panel — the TREE against HEAD, so another session's edits
-          show there too. domain/workbench/workbench-run.ts is the Run tab: `fli dev` per app
-          and every package.json script, read off fli's `findApps`/`tasks` and
-          started by ROW ID, detached, its pid on the pin and its output in its
-          own log — never `children.js`, whose in-memory table a `bun --watch`
-          restart would lose with the server still up. The checkout's OWN fli,
-          and no FRONTIER_PORT_* or PORT of this API's; Unpin and Archive stop it.
-          Every spawn the API makes takes junction's `childEnv(env)`, never `...process.env`:
-          a git hook, an ssh ProxyCommand and a vite config are not handed
-          ENCRYPTION_KEY or the `_FILE` that holds it (`FJS-3359`).
+          laptop for the import form (`servers.localSshHosts`/`localSshProbe`). It
+          is off unless LOCAL_MACHINE=1 (`bun run api` sets it) and refused under
+          NODE_ENV=production whatever it says (`localMachineRefusal`), and nothing
+          in domain/local/ runs unless the CALLER asked that first — no check grades
+          a new file there for the gate. ssh is always handed `-F` with the file
+          that was listed, because ssh finds ~ through passwd and Bun through $HOME.
+          The rest of the operator's machine — Claude Code chats, the registers,
+          Autopilot, local git checkouts — is `packages/workbench`, which this
+          package imports nothing from (`IDEAS/workbench-package.md`).
           plugins/machine-stream.ts is `/ws/stream/{source}/{id}`: a machine's
           output as it is written, relayed from an Outpost `text/event-stream`
           route through `Executor.stream()`. One SOURCES row per stream (`logs`
@@ -184,74 +137,14 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           archive a person uploads, streamed, behind a link `appBackups.upload`
           signed; domain/backup/app-archive-import.ts checks it and puts it in
           the app's bucket as a `found` row (`FJS-D1732`).
-          plugins/workbench-terminal.ts is the Terminal tab: `/ws/terminal/{pin}`
-          (under /ws/ because both proxies forward that prefix as a socket),
-          Bun's own PTY in the pin's folder, xterm.js in web/src/components/
-          Terminal.mesa. Same refusal and ADMINISTRATOR as the service, a key
-          refused, and an Origin that is not this machine refused at the
-          upgrade. domain/workbench/workbench-shell.ts names the shell: a tmux session on
-          basecamp's OWN tmux server (`-L basecamp`), so a closed socket
-          detaches rather than ends it; Unpin and Archive end it.
-          domain/workbench/workbench-context.ts is what a work run is told about
-          where it is, appended to the system prompt on every run: a browser
-          pane, not a terminal. Not a file in the checkout, which is the
-          person's repository and is resumed in a real terminal too.
-          A pin may carry PLANS (`plans: [{ path, steps }]`, IDEAS/shipped/workbench-plans.md),
-          and `plan` is the path of the SHOWN one, as `chat` is for chats — Go,
-          Next, tick and decide act on it; `openPlan` shows one, adding a file
-          already written, and `closePlan` forgets one here and keeps the file.
-          A step's rows and cost stop at the next step of ANY plan, since the
-          registers and the chats are the checkout's. Every status carries
-          `questions`, the unruled `Q`s of every plan on the pin (`parsePlan`'s
-          `blocking`, kept per file on its mtime) — the card's *needs you*,
-          which seeing the chat does not clear and a ruling does.
-          `plan` parses the shown file through fli's `parsePlan` on every read, and
-          `buildPlan` writes one from a goal in a new chat that may edit THAT
-          FILE and nothing else (`askArgv({ edit })`, `buildPlanPrompt`). `go`
-          sends the first open box's `stepPrompt` into the shown chat and records
-          the step with fli's `registerHigh` — refused while any run is live, or
-          the marks would be read under a run still filing. `next` is the
-          same step in a NEW chat (`fresh`), sent fli's `nextHandoff` — the
-          plan's path and the final text of the checkout's latest run — and
-          recorded the same way; refused while the plan's parse has a
-          `blocking` (unruled) `Q`, before the chat opens. `tick` is the
-          owner's tick on a box a Go'd step's run left open — fli's `tickStep`,
-          the one write the UI makes to the file (`FJS-D969`). A step's cost
-          is summed on read off its chat's fold (`runs`), from its Go to the
-          next Go in that chat — never stored on the pin; so are the register
-          rows it filed (fli's `filedSince`), from its marks to the next step's.
-          `file` is the tab's File issue / Ask question — fli's `fileIssue`
-          into the checkout's ISSUES.md, not refused while a run is live.
-          `decide` is a letter on a plan `Q` — fli's `decide` with the plan
-          as its `file`, so a PLAN.md outside IDEAS/ is reachable; refused
-          while a run is live, since the strike rewrites the plan file.
-          `commit` is the Diff tab's: the files the owner ticked, each sent
-          with the `blob` the diff read, committed through `git commit --only`
-          (domain/workbench/workbench-diff.ts's `commitFiles`) — so another session's
-          staged files stay staged, the checkout's hooks run, and a file
-          written since the diff was read is refused by name. A step never
-          commits (`FJS-D968`); a branch lands, then commits on its checkout.
-          domain/workbench/workbench-branch.ts is a BRANCH: Fork snapshots the parent's tree through a temporary index (its real index and HEAD
-          are only read), cuts wb/<slug> into a worktree under WORKBENCH_DIR/trees
-          and pins it, then sets it up before it answers — the parent's copy
-          list (gitignored globs, default **/.env) copied across and
-          `bun install --no-save`; Land is `git apply --check` then apply, into the
-          parent's working tree only. A branch's ports are `fli dev`'s
-          (FJS-D841, +N×10000), which is why the API and SPA read FRONTIER_PORT_BE/FE;
-          Archive releases them. A checkout pinned with `preview` settings forks
-          a PREVIEW: the worktree marked (fli's `markPreview`), its web port
-          claimed at the cut, and domain/workbench/workbench-preview.ts's Open — an Environment
-          (tier preview, slug wb-<slug>), a static inline App on that port, its
-          FRONTIER_PUBLIC_API_URL, the Domain <slug>.<domain>, the placement, and `/route`
-          with the port — written through each row's own service as the
-          caller; a failed Open removes the rows and archives the branch.
-          `freeze` builds web/ with the App's VITE_ and FRONTIER_PUBLIC_ variables, publishes the
-          build to the machine ITSELF and releases that digest (the files never
-          enter a row — a built SPA is up to 180 files and every row is
-          trailed); `thaw` routes back to the port; `archive` on a preview
-          RETIRES it first, before the port it routed to is released. verify:provision
-          drives it against a stand-in claude (CLAUDE_BIN). Never an agent's
-          or a key's: `NOT_FOR_AGENTS` and `OFF_LIMITS` in
+          domain/workbench/workbench-preview.ts is the Basecamp half of a Workbench
+          preview: an Environment (tier preview, slug wb-<slug>), a static inline App,
+          its Domain and `/route`, written through each row's own service. `freeze`
+          publishes the built SPA to the machine ITSELF and releases that digest (the
+          files never enter a row — a built SPA is up to 180 files and every row is
+          trailed); `thaw` routes back to the port; `retire` removes the rows. Its
+          caller is Workbench, over a signed peer call once plan phase 3.1 lands.
+          `pages` is never an agent's or a key's: `NOT_FOR_AGENTS` and `OFF_LIMITS` in
           domain/api-key/scopes.ts, proved by verify:mcp
           jobs/ is what runs unattended — a file per job, autoloaded by
           caravan from beside the app root, and the default export is the dispatch handle
@@ -321,44 +214,9 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           services/hub/ is the ONLY service that takes no workspace
           services/pages/ is fli's own inventory (`runnables`, `children`
           from packages/cli/core) over the workspace this API runs in — the
-          pages commands declare, and fli's tools — behind the workbench's
-          refusal and off-limits to agents and keys. /pages/ opens a page as a
+          pages commands declare, and fli's tools — behind
+          `localMachineRefusal` and off-limits to agents and keys. /pages/ opens a page as a
           blob, and a link between two pages is posted back to that tab
-          services/atlas/ is the workspace's ISSUES.md, DECISIONS.md and
-          IDEAS/ through fli's `collectRegisterAtlas` (domain/atlas/atlas.ts caches
-          it on the files' mtimes), behind the same refusal. It writes one
-          thing itself — a ruling, through fli's `decide` under the register
-          guard; everything else is `discuss`, a send to `app.workbench`
-          (owned in app.ts, ONE instance, because a queued message lives in
-          the instance that started the run) with the prompt
-          domain/atlas/atlas.ts composes per intent — `fix` and `frame` are the
-          repo's `/fix-next` and `/frame-next`, never a restatement of them.
-          /atlas/decide/ is `fli decide`'s walk on a phone — `queue` is
-          fli's `openDecisions` (the walk's order, with each question's prose),
-          a swipe is the same `decide`, held five seconds in the BROWSER for
-          Undo; `explain` is fli's read-only `runAsk`, not the workbench, kept
-          in this process's memory per question and resumed for a follow-up
-          /atlas/autopilot/ draws the same service's `autopilot` read as a town —
-          routes/atlas/autopilot/, components/AtlasTown.mesa, and lib/town.js for the
-          roads and the replay; a register's building opens that tab on /atlas/
-          as `?tab=`. The Switch is ~/.fli/autopilot.json through fli's
-          `core/autopilot.js`, and Run now is `run`: domain/atlas/autopilot-run.ts
-          spawns the entry's loop script with its caps as flags and
-          `--source autopilot`, detached, the way the workbench's Run tab spawns
-          `fli dev`; the run is read back off the loop's own log lines.
-          jobs/autopilot-tick.job.ts is the Switch's clock: every five minutes
-          while the file says On it starts each entry whose cron fell since the
-          last tick (`tick` in autopilot-run.ts, its record tick.json beside
-          the run logs), refusing the pass at the day cap or on held lanes;
-          `turn` writes the file's `on` through fli's `writeSwitch`, refused
-          until every cap is set; jobs/autopilot-report.job.ts is the morning
-          after — at eight it sends every system admin an `AutopilotReport`
-          counted off the last 24 hours by domain/atlas/autopilot-report.ts
-          (ran, closed, blocked, framed, spend, the day against its cap, the
-          Dock, the Review's repeat lines), silent only when Off and nothing
-          ran; the Dock tab lists each patch under
-          ~/.fli/lanes/patches with its row and the `git apply` that lands it,
-          which the owner runs (FJS-D1779) — the route applies nothing
           services/infra/ takes one and has no MODEL — `graph` and
           `onboarding`, two projections assembled from several tables, where
           storing either would be a second answer that goes stale
@@ -388,14 +246,6 @@ web/src/  App.mesa · main.js · session.js · notices.js (one leaf definition t
           record, and the reason: gone, signed out, or the read failed. Every
           `[id]/` screen ends in it. `error` is the banner over a page that
           still has its row; `loadError` is why this page has none (`FJS-968`)
-          components/ClaudeCode.mesa is the Workbench's Claude Code tab, one section
-          per sibling where it is large: ClaudeLimits · ClaudeContext · ClaudeUsage ·
-          ClaudeDrivers · ClaudeSessions (reads), and the writes (IDEAS/claude-code.md
-          Phase 3): ClaudeActions (a row's buttons, an in-page confirm, the service's
-          refusal beside them) · ClaudeMarketplaceAdd · ClaudeMcpEdit (disabled-here
-          list, add-server form) · ClaudeSettingsEditor (a settings layer's keys and
-          permissions) · ClaudeChanges (the write trail, Undo) · ClaudeFileEdit (the
-          drawer's Edit and Trash). lib/claude-edit.js is the lines-to-JSON helpers
 web/test/ verify.mjs · verify-build.mjs + preview.mjs (the built output)
 cli/      config/cli.config.js (name, tenant header, dev endpoint) · src/main.js ·
           src/routes/<service>/<method>.js — the hand-written commands; every other

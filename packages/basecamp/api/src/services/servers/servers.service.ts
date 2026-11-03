@@ -61,6 +61,47 @@ import type { TargetDescriptor } from '@frontierjs/conduit'
 import type { ProviderKind, ServerEventKind } from '#db/schema.d.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 
+// A Server names its cloud account (`providerId`) and its key (`sshKeyId`) by
+// Secret id, and sync, destroy and the posture read spend that id asSystem —
+// so an id copied from another workspace had Basecamp call that workspace's
+// cloud with its token, or grade against its key (`FJS-3845`). This refuses a
+// REFERENCE the caller supplied that does not resolve in its own workspace;
+// the gate is still the schema's, and the read runs at the caller's standing.
+const SECRET_REFS = ['providerId', 'sshKeyId'] as const
+
+async function refuseForeignSecrets(data: Record<string, unknown>): Promise<void> {
+  for (const field of SECRET_REFS) {
+    if (data[field] == null) continue
+    const found = await db().secret.findFirst({
+      where: { id: String(data[field]), workspaceId: ws() }, select: { id: true },
+    })
+    if (!found) throw new BadRequest(`${field} names no secret in this workspace`)
+  }
+}
+
+// The use-site half: a row written before the check above, or by any path that
+// skips it, still may not spend a Secret outside the Server's own workspace.
+async function refuseForeignAccount(server: Record<string, unknown>, field: 'providerId' | 'sshKeyId' = 'providerId'): Promise<void> {
+  if (server[field] == null) return
+  const found = await ($.db.asSystem() as any).secret.findFirst({
+    where: { id: String(server[field]), workspaceId: server.workspaceId }, select: { id: true },
+  })
+  if (!found) throw new BadRequest(`This machine's ${field} names a secret outside its workspace`)
+}
+
+// A machine destroyed or removed keeps nothing that lets it act: its enrolled
+// key is what `outpostCredential` verifies a signature with and its cert is
+// what the outbound target pins, so either one left behind is a box that is
+// gone on screen and still answered as `outpost:<id>` (`FJS-3891`).
+async function retireOutpost(id: string, { keys = true } = {}): Promise<void> {
+  if (keys)
+    await ($.db.asSystem() as any).server.update({ where: { id }, data: { outpostPublicKey: null, outpostCert: null } })
+  const conduit = $.app.conduit
+  if (!conduit) return
+  const target = `outpost:${id}`
+  if (await conduit.resolve(target).catch(() => null)) await conduit.deregister(target)
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────
 
 export interface HeartbeatData {
@@ -266,6 +307,7 @@ export default createService({
     // Corollary: the wire contract is the SCHEMA's field names. `ipAddress`,
     // not `ip_address` — a snake_case key is silently stripped and the column
     // comes back null.
+    await refuseForeignSecrets(data)
     const server = await db().server.create({ data })
 
     await recordEvent(server.id, 'created', 'Server registered', { created_by: actor() })
@@ -284,6 +326,7 @@ export default createService({
     const patch = narrowPatch($.data as Record<string, unknown>)
 
     if (changesNothing(patch)) return getScoped('server', 'Server')
+    await refuseForeignSecrets(patch)
 
     // updatedAt is a schema trigger — setting it here would fight the DB.
     return db().server.update({ where: { id }, data: patch })
@@ -308,8 +351,10 @@ export default createService({
       await tx.serverEvent.create({
         data: { serverId: id, kind: 'removed', message: 'Server removed', metadata: { removed_by: actor() } },
       })
+      await tx.server.update({ where: { id }, data: { outpostPublicKey: null, outpostCert: null } })
       return tx.server.remove({ where: { id } })
     })
+    await retireOutpost(id, { keys: false })
     return Array.isArray(removed) ? removed[0] : removed
   },
 
@@ -458,6 +503,7 @@ export default createService({
       await recordEvent(id, 'syncNoAccount',
         'This machine names no provider account, so there is no token to ask with', {})
     } else {
+      await refuseForeignAccount(server)
       const targetId = targetFor(connector.kind, server.providerId as string)
       const send     = sendVia($.app, targetId)
 
@@ -759,6 +805,7 @@ export default createService({
     const connector = connectorFor(server.providerKind)
     if (!connector)
       throw new BadRequest('This machine was imported, not provisioned — remove it instead')
+    await refuseForeignAccount(server)
 
     await db().server.transition(id, 'destroy')
     await recordEvent(id, 'destroyRequested',
@@ -782,15 +829,18 @@ export default createService({
     // the create never finished, and it is destroyed by saying so.
     if (!server.providerServerId) {
       await db().server.transition(id, 'reportDestroyed', { system: true })
+      await retireOutpost(id)
       await recordEvent(id, 'destroyFinished',
         'No machine was ever created at the provider', {})
       return getScoped('server', 'Server', id)
     }
 
+    await refuseForeignAccount(server)
     const send = sendVia($.app, targetFor(connector.kind, String(server.providerId)))
     await connector.destroy(send, String(server.providerServerId))
 
     await db().server.transition(id, 'reportDestroyed', { system: true })
+    await retireOutpost(id)
     await recordEvent(id, 'destroyFinished',
       `${connector.label} has destroyed this machine`,
       { provider_server_id: server.providerServerId })

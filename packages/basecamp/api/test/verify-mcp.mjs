@@ -56,11 +56,9 @@ const ENV = {
   DATABASE_URL: DB_PATH,
   AUDIT_PATH:   join(SCRATCH, 'audit.db'),
   PORT:         String(API_PORT),
-  // The workbench is offered here, so withholding it is not the refusal every
-  // non-local API gives. A stand-in that exits at once, so a hole costs no run.
+  // Pages are offered here, so withholding them is not the refusal every
+  // non-local API gives.
   LOCAL_MACHINE: '1',
-  WORKBENCH_DIR: join(SCRATCH, 'workbench'),
-  CLAUDE_BIN:    '/bin/false',
 }
 
 // ─── Harness ─────────────────────────────────────────────────────────────
@@ -205,17 +203,17 @@ try {
   const ungraded = api.out.split('\n').find(l => l.includes('graded by nothing'))
   check('and the boot names no model-less tool as graded by nothing', !ungraded, ungraded)
 
-  // ── the workbench is the operator's, never an agent's ───────────────────
-  // Each send is `claude -p` with permissions bypassed in a checkout on this
-  // machine, so an agent holding it reaches past its own standing.
-  console.log('\n  the workbench')
-  const benched = Object.entries(list).filter(([, l]) => [...l].some(n => n.startsWith('workbench_')))
-  check('no rung, the owner included, is offered a workbench tool', !benched.length,
-    benched.map(([r, l]) => `${r}: ${[...l].filter(n => n.startsWith('workbench_')).join(', ')}`).join(' · '))
-  // `pins` and not `send`: it answers under LOCAL_MACHINE=1 with nothing
-  // pinned, so a refusal here is the agent's and not an unknown pin id's.
-  const pins = await called(owner, 'workbench_pins')
-  check('and workbench_pins called by the owner anyway fails closed', pins.refused, pins.text.slice(0, 200))
+  // ── pages are the operator's, never an agent's ──────────────────────────
+  // A start runs a command on this machine, so an agent holding it reaches
+  // past its own standing.
+  console.log('\n  pages')
+  const paged = Object.entries(list).filter(([, l]) => [...l].some(n => n.startsWith('pages_')))
+  check('no rung, the owner included, is offered a pages tool', !paged.length,
+    paged.map(([r, l]) => `${r}: ${[...l].filter(n => n.startsWith('pages_')).join(', ')}`).join(' · '))
+  // `list` and not `start`: it answers under LOCAL_MACHINE=1 and runs nothing,
+  // so a refusal here is the agent's and not the service's own.
+  const listed = await called(owner, 'pages_list')
+  check('and pages_list called by the owner anyway fails closed', listed.refused, listed.text.slice(0, 200))
 
   for (const c of [owner, admin, developer, viewer, nowhere]) await c.close().catch(() => {})
 } catch (err) {

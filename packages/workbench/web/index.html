@@ -1,0 +1,18 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Workbench</title>
+<!--
+  NOTHING in this file may write the body tag inside a comment. Vite injects the
+  built script and stylesheet at the FIRST textual match for it and does not skip
+  comments, so a mention here captures the injection: the tags land inside the
+  comment and the page loads no JavaScript and no CSS at all.
+
+  `app`, and NO theme class: Sierra puts the theme on the root element from
+  `theme:` in sierra.config.js, and a class written here would be a descendant
+  of that one and win.
+-->
+<body class="app">
+  <div id="app"></div>
+  <script type="module" src="virtual:sierra"></script>
+</body>

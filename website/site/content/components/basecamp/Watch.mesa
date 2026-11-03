@@ -1,0 +1,96 @@
+<script>
+  // Fields as declared in packages/basecamp/db/schema.lite. A `{` in markup
+  // opens an expression, so the sample lives here and is printed as text.
+  const DECLARED = `model Monitor {
+  name                 String  @trim @length(1, 200)
+  url                  String  @trim @url
+  method               HttpMethod @default(GET)
+  intervalSeconds      Int     @default(120)   @gte(60) @lte(86400)
+  retries              Int     @default(2)     @gte(0) @lte(10)
+  retryIntervalSeconds Int     @default(120)   @gte(60)
+  timeoutMs            Int     @default(10000) @gte(1000) @lte(60000)
+  acceptedStatus       String  @default("200-299") @trim @length(3, 200)
+  isInverted           Boolean @default(false)
+  resendEvery          Int     @default(0)     @gte(0)
+  // …
+}
+
+model AlertRule {
+  name         String   @trim @length(1, 200)
+  severity     AlertSeverity @default(warning)
+  metricName   String   @trim @length(1, 200)
+  operator     ComparisonOp  @default(gt)
+  threshold    Float
+  forMinutes   Int      @default(0) @gte(0) @lte(1440)
+  isActive     Boolean  @default(true)
+  snoozedUntil DateTime? @system
+  // …
+}`
+</script>
+
+<section id="watch" class="bc-section">
+  <div class="container stack">
+    <p class="eyebrow">Monitoring and alerting</p>
+    <h2>Hear it from Basecamp, not from a customer.</h2>
+    <p class="lede">
+      Basecamp asks your URLs whether they are up, notices when a box stops
+      checking in, and grades the numbers you set rules on. When something
+      changes, the right person hears about it once, on the channel they chose.
+    </p>
+
+    <div class="bc-split">
+      <ul class="bc-points">
+        <li>
+          <strong>Probes from outside, tolerant of a blip.</strong>
+          A monitor is a URL, a method and the status codes that count
+          (<code>200-299,301</code> by default), checked every two minutes from
+          the Basecamp process. It goes down only after its retries fail in a row,
+          so one 502 behind a load balancer pages nobody, and a monitor can
+          re-page every N checks while it stays down.
+        </li>
+        <li>
+          <strong>Alert rules fire on a breach that holds, and clear on a real reading.</strong>
+          A rule names a metric, an operator, a threshold and how many minutes the
+          breach must last. It is checked every minute against minute-level
+          readings, and a metric that stops arriving never resolves an open alert
+          or fires a new one. Snooze a rule for a maintenance window, up to a
+          week, and it wakes by itself.
+        </li>
+        <li>
+          <strong>A quiet box and a failed job both get noticed.</strong>
+          Outposts check in every 30 seconds by default. Past the grace you set
+          (two minutes unless you change it) the server is marked unreachable
+          and its workspace is told. A scheduled job keeps its cron
+          schedule, records every run with output, retries, and tells your
+          workspace when the last attempt fails.
+        </li>
+        <li>
+          <strong>Pagers and people are separate.</strong>
+          A rule or monitor delivers to the channels you attach: Slack, PagerDuty,
+          email, a webhook, or another FrontierJS app's chat. Each member also gets
+          in-app notices, email where a mailer is configured, and a phone ping
+          for the failures. Each person sets their own in-app and email
+          preferences per kind of notice.
+        </li>
+      </ul>
+
+      <figure class="bc-proof">
+        <pre class="code">{DECLARED}</pre>
+        <figcaption>
+          Fields excerpted from <code>packages/basecamp/db/schema.lite</code>, models
+          <code>Monitor</code> and <code>AlertRule</code> (comments and relations
+          trimmed). Grading is <code>domain/monitor/probe.ts</code> and
+          <code>jobs/alert-evaluate.job.ts</code>.
+        </figcaption>
+      </figure>
+    </div>
+
+    <p class="bc-more">
+      Read more:
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/basecamp/docs/layout.md">Basecamp layout</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/basecamp/jobs.snapshot.md">every job and its schedule</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/basecamp/notifications.snapshot.md">every notification and its transports</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/outpost/README.md">Outpost and its heartbeat</a>
+    </p>
+  </div>
+</section>

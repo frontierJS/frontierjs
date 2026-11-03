@@ -52,13 +52,34 @@ const REFUSED_HEADERS = new Set([
   'content-length', 'content-encoding', 'transfer-encoding', 'connection', 'host', 'set-cookie', 'etag',
 ])
 
+/** One run of a rule between two stars, as a regex with no star in it: `:name`
+ *  is one or more characters up to the next `/`. */
+function partSource(part, lazy) {
+  return part
+    .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/:[A-Za-z]\w*/g, lazy ? '[^/]+?' : '[^/]+')
+}
+
+/** A rule's `*` matches anything and `:name` one segment. The runs between the
+ *  stars are found in order, each at its earliest place: one regex with a `.*`
+ *  per star backtracks exponentially on `/*a*a*a*b` against a path that almost
+ *  fits, and the rule is a stranger's text. */
 function patternMatches(pattern, path) {
-  const source = pattern
-    .split('*').map(part => part
-      .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-      .replace(/:[A-Za-z]\w*/g, '[^/]+'))
-    .join('.*')
-  return new RegExp(`^${source}$`).test(path)
+  const parts = pattern.split('*')
+  if (parts.length === 1) return new RegExp(`^${partSource(pattern)}$`).test(path)
+  const head = new RegExp(`^${partSource(parts[0], true)}`).exec(path)
+  if (!head) return false
+  let at = head[0].length
+  for (const part of parts.slice(1, -1)) {
+    if (part === '') continue
+    const re = new RegExp(partSource(part, true), 'g')
+    re.lastIndex = at
+    const hit = re.exec(path)
+    if (!hit) return false
+    at = hit.index + hit[0].length
+  }
+  const tail = parts[parts.length - 1]
+  return tail === '' || new RegExp(`(?:${partSource(tail)})$`).test(path.slice(at))
 }
 
 /**

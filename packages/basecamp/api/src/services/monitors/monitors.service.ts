@@ -14,6 +14,7 @@ import { createService, NotFound, Conflict, parseWhere, $ } from '@frontierjs/ju
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
+import { resolveDownMonitor } from '../../domain/monitor/resolve.ts'
 import { keyScope }         from '../../domain/api-key/scopes.ts'
 
 /** The heartbeat bar's length: the newest checks `get` carries. */
@@ -79,6 +80,8 @@ export default createService({
 
   async remove() {
     const monitor = await getScoped('monitor', 'Monitor')
+    // Before the delete: the cascade takes the channel links the resolve goes through.
+    await resolveDownMonitor($.app, monitor as never, 'Monitor deleted')
     // A real delete: the schema cascades the checks, events and channel links.
     await db().monitor.remove({ where: { id: monitor.id } })
     return monitor
@@ -104,12 +107,22 @@ export default createService({
   // monitor comes back `pending`, not `up`: nothing has graded it since.
   async pause() {
     const monitor = await getScoped('monitor', 'Monitor')
-    return withDetail(await db().monitor.transition(monitor.id, 'pause'))
+    const paused = await db().monitor.transition(monitor.id, 'pause')
+    await resolveDownMonitor($.app, monitor as never, 'Monitor paused')
+    return withDetail(paused)
   },
 
   async resume() {
     const monitor = await getScoped('monitor', 'Monitor')
-    return withDetail(await db().monitor.transition(monitor.id, 'resume'))
+    const resumed = await db().monitor.transition(monitor.id, 'resume')
+    // `failStreak` is @system and survives the pause: without the reset, the
+    // first failed probe after resume would count on top of the old streak and
+    // page at once. `nextCheckAt` now so the first probe is the next sweep's.
+    await ($.db.asSystem() as any).monitor.update({
+      where: { id: monitor.id },
+      data:  { failStreak: 0, nextCheckAt: new Date().toISOString() },
+    })
+    return withDetail({ ...resumed, failStreak: 0 })
   },
 
   // ── attachChannel / detachChannel ─────────────────────────────────

@@ -12,7 +12,7 @@
  * test would be a fake of R2 and of the object's alarm, which are what break.
  *
  * Traps:
- * - The post answers on 5508 (fli's reserved block, docs/PORTS.md), and a port
+ * - The post answers on 5509 (fli's reserved block, docs/PORTS.md), and a port
  *   that already answers is refused rather than driven: it is another post.
  * - FILE_MAX is read off the post's own 413 rather than copied here, so the
  *   drive follows the constant.
@@ -39,7 +39,7 @@ import { generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { tellFetch } from '../core/tell.js'
 import { openChrome } from '../../mesa/src/drive.js'
 
-const PORT   = 5508
+const PORT   = 5509
 const ORIGIN = `http://127.0.0.1:${PORT}`
 const worker = fileURLToPath(new URL('../core/tell-worker.js', import.meta.url))
 const fliBin = fileURLToPath(new URL('../bin/fli.js', import.meta.url))

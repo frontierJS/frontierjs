@@ -32,6 +32,7 @@ import { trafficOf, unavailableOf } from '../src/domain/host/traffic.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor, grantsWithin } from '../src/core/capabilities.ts'
 import { refuseGrantAboveOwn }    from '../src/core/hooks.ts'
+import { invitationPresented }    from '../src/core/session-auth.ts'
 import { keyAllows, narrowForAgent } from '../src/domain/api-key/scopes.ts'
 import { MEMBERSHIP }             from '@frontierjs/junction'
 import { SERVER_READINGS, readingOf } from '../src/domain/host/server-metrics.ts'
@@ -74,7 +75,9 @@ async function invitedUser(tenv: any, workspaceId: string, email: string, passwo
   const sys = tenv.system as any
   const inv = await sys.invitation.create({ data: { workspaceId, email, role: 'viewer', token: crypto.randomUUID(),
     expiresAt: new Date(Date.now() + 3_600_000).toISOString() } })
-  const made = await tenv.app.auth.createUser({ email, password, name })
+  // The accept door's own frame: an invited address is made only under the
+  // token it verified (`FJS-3870`).
+  const made = await invitationPresented.run(email.toLowerCase(), () => tenv.app.auth.createUser({ email, password, name }))
   await sys.invitation.delete({ where: { id: inv.id } })
   return made
 }
@@ -3239,10 +3242,23 @@ describe('accepting an invitation puts somebody in the workspace', () => {
     expect(await env.system.user.findFirst({ where: { email } })).toBeNull()
   })
 
-  test('an invited address gets one', async () => {
+  // An invitation names an address; knowing the address is not holding the
+  // link, and a register ahead of the click held the invitee's account (`FJS-3870`).
+  test('an invited address gets none without its token, over /auth/register too', async () => {
     const email = `invited-${Math.random().toString(36).slice(2, 8)}@x.co`
     await env.as(owner).service('invitations').create({ email, role: 'viewer' })
-    const made = await env.app.auth.createUser({ email, password: 'correct-horse', name: 'Invited' })
+    await expect(env.app.auth.createUser({ email, password: 'correct-horse', name: 'Invited' }))
+      .rejects.toThrow(/open the link/)
+    // Register answers alike for every address (no oracle), so the proof is the row.
+    await env.http.post('/auth/register').send({ email, password: 'correct-horse', name: 'Squatter' })
+    expect(await env.system.user.findFirst({ where: { email } })).toBeNull()
+  })
+
+  test('an invited address gets one under the token accept verified', async () => {
+    const email = `invited-${Math.random().toString(36).slice(2, 8)}@x.co`
+    await env.as(owner).service('invitations').create({ email, role: 'viewer' })
+    const made = await invitationPresented.run(email, () =>
+      env.app.auth.createUser({ email, password: 'correct-horse', name: 'Invited' }))
     expect(made.id ?? made.userId).toBeTruthy()
   })
 })
@@ -4505,6 +4521,71 @@ describe('removing a server that is not online', () => {
   }
 })
 
+// ─── A Server's Secret references stay in its workspace (`FJS-3845`) ─────────
+describe('a server names only its own workspace\'s secrets', () => {
+  const uniq = () => Math.random().toString(36).slice(2, 8)
+  let theirs: any, mine: any
+
+  beforeAll(async () => {
+    const sys = env.system as any
+    const elsewhere = await sys.workspace.create({ data: { accountId: ws.accountId, name: 'Elsewhere', slug: `else-${uniq()}` } })
+    theirs = await sys.secret.create({ data: { workspaceId: elsewhere.id, name: `their-token-${uniq()}`, kind: 'generic' } })
+    mine   = await sys.secret.create({ data: { workspaceId: ws.id, name: `my-token-${uniq()}`, kind: 'generic' } })
+  })
+
+  test('a create naming another workspace\'s secret is refused, and no row is made', async () => {
+    const slug = `foreign-${uniq()}`
+    await expect(env.as(owner).service('servers').create({ name: slug, slug, providerKind: 'digitalocean', providerId: theirs.id }))
+      .rejects.toThrow(/providerId names no secret in this workspace/)
+    await expect(env.as(owner).service('servers').create({ name: `${slug}-k`, slug: `${slug}-k`, sshKeyId: theirs.id }))
+      .rejects.toThrow(/sshKeyId names no secret in this workspace/)
+    expect(await (env.system as any).server.findFirst({ where: { slug } })).toBeNull()
+  })
+
+  test('a patch pointing a machine at another workspace\'s secret is refused; its own is kept', async () => {
+    const slug = `patched-${uniq()}`
+    const box: any = await env.as(owner).service('servers').create({ name: slug, slug, providerId: mine.id })
+    expect(box.providerId).toBe(mine.id)
+    await expect(env.as(owner).service('servers').patch(box.id, { providerId: theirs.id }))
+      .rejects.toThrow(/names no secret in this workspace/)
+    expect((await (env.system as any).server.findFirst({ where: { id: box.id } })).providerId).toBe(mine.id)
+  })
+
+  test('a row already holding a foreign account is refused at sync and destroy, before any call goes out', async () => {
+    const slug = `held-${uniq()}`
+    const box: any = await (env.system as any).server.create({ data: {
+      workspaceId: ws.id, name: slug, slug, providerKind: 'digitalocean', providerId: theirs.id, providerServerId: '42' } })
+    await expect(env.as(owner).service('servers').call('sync', box.id, {}))
+      .rejects.toThrow(/outside its workspace/)
+    await expect(env.as(owner).service('servers').call('destroy', box.id, { confirm: slug }))
+      .rejects.toThrow(/outside its workspace/)
+    expect((await (env.system as any).server.findFirst({ where: { id: box.id } })).status).not.toBe('destroying')
+  })
+})
+
+// ─── A key is graded in the workspace it is pointed at (`FJS-3869`) ──────────
+describe('an API key reaches only its own workspace, on the workspaces service too', () => {
+  test('a key from one workspace cannot patch another its owner also owns, by naming it in the path', async () => {
+    const sys = env.system as any
+    const uniq = () => Math.random().toString(36).slice(2, 8)
+    const other = await sys.workspace.create({ data: { accountId: ws.accountId, name: 'Owned too', slug: `own2-${uniq()}` } })
+    await sys.workspaceMember.create({ data: {
+      workspaceId: other.id, userId: owner.id, role: 'owner',
+      capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString(),
+    } })
+    const made: any = await env.as(owner).service('apiKeys').create({
+      name: `bound-${uniq()}`, scopes: ['workspaces:read', 'workspaces:write'], expiresIn: '30d',
+    })
+    const patch = (id: string, name: string) =>
+      env.http.patch(`/workspaces/${id}`).set('Authorization', `Bearer ${made.token}`).send({ name })
+
+    const res = await patch(other.id, 'Taken')
+    expect(res.status).toBe(403)
+    expect(JSON.stringify(res.body)).toMatch(/different workspace/)
+    expect((await sys.workspace.findFirst({ where: { id: other.id } })).name).toBe('Owned too')
+  })
+})
+
 // ─── The local ssh listing ───────────────────────────────────────────────────
 // A development affordance on the servers service (`domain/local/local-ssh.ts`). Off
 // unless LOCAL_MACHINE=1, which this process does not set, so the owner hears it
@@ -4525,49 +4606,6 @@ describe('the local ssh listing', () => {
   })
 })
 
-describe('the local repository listing', () => {
-  test('a developer is refused by the declared gate, before anything reads a folder', async () => {
-    await expect(env.as(developer).service('git').call('localRepos', undefined, { root: '~' }))
-      .rejects.toThrow(/Requires admin role in this workspace to localRepos/)
-  })
-
-  test('an owner is told it is not offered here, rather than handed an empty list', async () => {
-    await expect(env.as(owner).service('git').call('localRepos', undefined, { root: '~' }))
-      .rejects.toThrow(/LOCAL_MACHINE=1/)
-  })
-})
-
-describe('the workbench', () => {
-  test('a developer is refused a run by the declared gate', async () => {
-    await expect(env.as(developer).service('workbench').call('send', 'abc', { prompt: 'hi' }))
-      .rejects.toThrow(/Requires admin role in this workspace to send/)
-  })
-
-  test('an owner is told it is not offered here, before anything is pinned or run', async () => {
-    await expect(env.as(owner).service('workbench').call('pins', undefined))
-      .rejects.toThrow(/LOCAL_MACHINE=1/)
-    await expect(env.as(owner).service('workbench').call('pin', undefined, { path: '~' }))
-      .rejects.toThrow(/LOCAL_MACHINE=1/)
-  })
-
-  // A send is `claude -p` with every permission bypassed, on the operator's
-  // machine. Asserted before the LOCAL_MACHINE refusal is reached, so a test
-  // env with no LOCAL_MACHINE cannot pass this by refusing for the other reason.
-  test('an agent is refused it at any standing, over /mcp', async () => {
-    for (const method of ['pins', 'send', 'transcript', 'diff', 'check', 'review', 'fork', 'land', 'archive'])
-      await expect(env.as(owner).service('workbench').call(method, 'abc', { prompt: 'hi' }, { transport: 'mcp' }))
-        .rejects.toThrow(/not offered to an agent/)
-  })
-
-  test('and is never listed to one, nor reachable by any key', () => {
-    const owns = { authMethod: 'session' }
-    const key  = { authMethod: 'apiKey', scopes: [] }
-    expect(narrowForAgent({ service: 'workbench', method: 'send' }, owns)).toBe(false)
-    expect(narrowForAgent({ service: 'servers',   method: 'find' }, owns)).toBe(true)
-    expect(keyAllows(key, 'workbench')).toBe(false)
-  })
-})
-
 describe('pages', () => {
   test('a developer is refused a start by the declared gate', async () => {
     await expect(env.as(developer).service('pages').call('start', 'page:repo-rings.html', undefined))
@@ -4582,7 +4620,7 @@ describe('pages', () => {
   })
 
   // A start runs a command on the operator's machine. Asserted before the
-  // LOCAL_MACHINE refusal is reached, as the workbench's is.
+  // LOCAL_MACHINE refusal is reached.
   test('an agent is refused it at any standing, and no key reaches it', async () => {
     for (const method of ['list', 'view', 'output', 'start', 'stop'])
       await expect(env.as(owner).service('pages').call(method, 'page:repo-rings.html', undefined, { transport: 'mcp' }))
@@ -4590,47 +4628,6 @@ describe('pages', () => {
     const key = { authMethod: 'apiKey', scopes: [] }
     expect(narrowForAgent({ service: 'pages', method: 'start' }, { authMethod: 'session' })).toBe(false)
     expect(keyAllows(key, 'pages')).toBe(false)
-  })
-})
-
-describe('atlas', () => {
-  test('a developer is refused a ruling by the declared gate', async () => {
-    await expect(env.as(developer).service('atlas').call('decide', 'FJS-D1', { pick: 'A' }))
-      .rejects.toThrow(/Requires admin role in this workspace to decide/)
-  })
-
-  test('autopilot is a read at the same standing as the rest of the screen', async () => {
-    const methods = (env.app.services.get('atlas') as any).describe().methods
-    const names = Array.isArray(methods) ? methods.map((m: any) => m.method ?? m.name ?? m) : Object.keys(methods ?? {})
-    expect(names).toContain('autopilot')
-    await expect(env.as(developer).service('atlas').call('autopilot', undefined))
-      .rejects.toThrow(/Requires admin role/)
-  })
-
-  test('an owner is told it is not offered here, before anything is read or sent', async () => {
-    await expect(env.as(owner).service('atlas').call('overview', undefined))
-      .rejects.toThrow(/LOCAL_MACHINE=1/)
-    await expect(env.as(owner).service('atlas').call('rings', undefined))
-      .rejects.toThrow(/LOCAL_MACHINE=1/)
-    await expect(env.as(owner).service('atlas').call('autopilot', undefined))
-      .rejects.toThrow(/LOCAL_MACHINE=1/)
-    await expect(env.as(owner).service('atlas').call('discuss', undefined, { text: 'FJS-1' }))
-      .rejects.toThrow(/LOCAL_MACHINE=1/)
-    await expect(env.as(owner).service('atlas').call('run', '1', {}))
-      .rejects.toThrow(/LOCAL_MACHINE=1/)
-    await expect(env.as(owner).service('atlas').call('turn', 'on', {}))
-      .rejects.toThrow(/LOCAL_MACHINE=1/)
-  })
-
-  // A discuss is a workbench send. Asserted before the LOCAL_MACHINE refusal is
-  // reached, as the workbench's is.
-  test('an agent is refused it at any standing, and no key reaches it', async () => {
-    for (const method of ['overview', 'rings', 'autopilot', 'record', 'discuss', 'decide', 'run', 'turn'])
-      await expect(env.as(owner).service('atlas').call(method, 'FJS-1', { text: 'FJS-1' }, { transport: 'mcp' }))
-        .rejects.toThrow(/not offered to an agent/)
-    const key = { authMethod: 'apiKey', scopes: [] }
-    expect(narrowForAgent({ service: 'atlas', method: 'discuss' }, { authMethod: 'session' })).toBe(false)
-    expect(keyAllows(key, 'atlas')).toBe(false)
   })
 })
 

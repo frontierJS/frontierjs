@@ -73,7 +73,6 @@ title: Git activity
     </dl>
     <div class="cluster">
       <Button treatment="ghost" href="/admin/adapters/">All adapters</Button>
-      <Button treatment="ghost" href="/git-activity/local/">Local repositories</Button>
     </div>
   </Card>
 

@@ -179,7 +179,18 @@ function logArgs(logs) {
 /** How long `deploy` waits for a new container before putting the old one back.
  *  Basecamp's own health step polls the same ten times three seconds, and its
  *  `/deploy` send is given the room for it. */
-const HEALTH = { attempts: 10, intervalMs: 3_000 }
+const HEALTH = { attempts: 10, intervalMs: 3_000, settleMs: 5_000 }
+
+/** How long an app with no health path must stay up, unrestarted, before its
+ *  `_replaced` is removed (`FJS-3853`). One `State.Running` read the instant
+ *  after `docker run` passes a process that crashes a second later, and
+ *  `--restart unless-stopped` then hides the crash loop as "running". */
+export const SETTLE_MS = HEALTH.settleMs
+
+/** How long a SIGTERM waits for in-flight per-app work (`FJS-3865`). The unit
+ *  sets no TimeoutStopSec, so systemd's default 90s is the hard kill; this
+ *  stays well under it. */
+export const DRAIN_MS = 60_000
 
 /** The host port an app declared reachable from outside (`FJS-D930`), on its
  *  container. The install's `inet basecamp` table drops every other one. */
@@ -464,9 +475,12 @@ export function createDocker({
     const result = await run(['docker', 'inspect', '--format', '{{.State.Running}}', name])
     if (!(result.exitCode === 0 && result.stdout.trim() === 'true')) return { healthy: false, reason: 'not running' }
     if (path == null) return { healthy: true }
-    if (!port || !/^\/[^ ]*$/.test(String(path)))
-      return { healthy: false, reason: `a health path needs a published port and a path beginning with '/' — got port ${port}, path '${path}'` }
-    const url = `http://127.0.0.1:${port}${path}`
+    // An integer and nothing else: `80@other` in the URL below is userinfo, and
+    // the probe would dial another host.
+    const portOk = /^[0-9]{1,5}$/.test(String(port)) && Number(port) >= 1 && Number(port) <= 65535
+    if (!portOk || !/^\/[^ ]*$/.test(String(path)))
+      return { healthy: false, reason: `a health path needs a published port (1-65535) and a path beginning with '/' — got port ${port}, path '${path}'` }
+    const url = `http://127.0.0.1:${Number(port)}${path}`
     try {
       const res = await fetchFn(url, { signal: AbortSignal.timeout(3_000) })
       return res.ok ? { healthy: true } : { healthy: false, reason: `${url} answered ${res.status}` }
@@ -482,7 +496,46 @@ export function createDocker({
       last = await healthCheck(target)
       if (last.healthy) break
     }
+    if (last?.healthy && target.path == null) return settled(target)
     return last
+  }
+
+  /** With no path to ask, healthy is still running after the settle window
+   *  with the same `StartedAt` and `RestartCount` — a crash the restart policy
+   *  brought back reads as running on any single look. */
+  async function settled({ appId }) {
+    const settleMs = health.settleMs ?? SETTLE_MS
+    const { live } = await containersOf(appId)
+    const look = async () => {
+      if (!live) return null
+      const r = await run(['docker', 'inspect', '--format', '{{.State.Running}} {{.State.StartedAt}} {{.RestartCount}}', live])
+      if (r.exitCode !== 0) return null
+      const [running, startedAt, restarts] = r.stdout.trim().split(/\s+/)
+      return { running: running === 'true', startedAt, restarts }
+    }
+    const before = await look()
+    if (settleMs > 0) await Bun.sleep(settleMs)
+    const after = await look()
+    if (!before?.running || !after?.running) return { healthy: false, reason: `not running ${settleMs / 1000}s after it started` }
+    if (before.startedAt !== after.startedAt || before.restarts !== after.restarts)
+      return { healthy: false, reason: `restarted within ${settleMs / 1000}s of starting (restart count ${before.restarts} → ${after.restarts})` }
+    return { healthy: true }
+  }
+
+  // ─── one app at a time (FJS-3849) ────────────────────────────────────────────
+  // Two `/deploy`s for one app interleave their renames, and a `/stop` or a
+  // restore landing mid-swap acts on a container or directory the other is
+  // moving. Every operation that touches an app's containers or data joins
+  // that app's chain; apps never wait on each other.
+  const chains = new Map()
+  let closing = false
+  function serially(appId, fn) {
+    if (closing) return Promise.reject(new Error(`outpost is shutting down — app ${appId} was not touched; send it again once the machine is back`))
+    const next = (chains.get(appId) ?? Promise.resolve()).then(fn)
+    const tail = next.catch(() => {})
+    chains.set(appId, tail)
+    tail.then(() => { if (chains.get(appId) === tail) chains.delete(appId) })
+    return next
   }
 
   // ─── the swap ────────────────────────────────────────────────────────────────
@@ -729,7 +782,7 @@ export function createDocker({
     return { data_dir: dir, archive, files, bytes, overwrite: overwrite === true, per_file: perFile === true }
   }
 
-  return {
+  const api = {
     digestOf,
 
     /** The app's deploy key, made on the first ask (`FJS-D1555`). */
@@ -777,10 +830,12 @@ export function createDocker({
       // `clean -fdx` after the reset, or a file the last checkout left behind
       // joins the build context.
       const branch = source.branch ?? 'main'
+      if (typeof branch !== 'string' || branch === '' || branch.startsWith('-'))
+        throw new Error(`branch: ${JSON.stringify(branch)} is not a branch name`)
       const exists = await run(['test', '-d', `${dir}/.git`])
       const origin = exists.exitCode === 0 ? await run(['git', '-C', dir, 'remote', 'get-url', 'origin']) : null
       if (origin?.exitCode === 0 && origin.stdout.trim() === source.repo) {
-        await git(['-C', dir, 'fetch', '--depth', '1', 'origin', branch], { env })
+        await git(['-C', dir, 'fetch', '--depth', '1', '--', 'origin', branch], { env })
         await git(['-C', dir, 'reset', '--hard', 'FETCH_HEAD'], { env })
         await git(['-C', dir, 'clean', '-fdx'], { env })
       } else {
@@ -882,7 +937,16 @@ export function createDocker({
       // about or every caller shares Caddy's address in its rate limiter
       // (`FJS-D617`, `FJS-1841`). Before the caller's env, so a stated value wins.
       if (loopback) argv.push('-e', 'FRONTIER_TRUST_PROXY=1')
-      for (const [key, value] of Object.entries(config.env ?? {})) argv.push('-e', `${key}=${value}`)
+      // Values ride in the docker client's environment and argv names the key
+      // alone: argv is readable by every user off /proc/*/cmdline. A name the
+      // client reads itself (PATH, HOME, DOCKER_HOST) or this process already
+      // holds would redirect the client or be shadowed, so those stay inline.
+      const clientEnv = {}
+      for (const [key, value] of Object.entries(config.env ?? {})) {
+        if (!ENV_NAME.test(key)) throw new Error(`env: ${JSON.stringify(key)} is not a variable name`)
+        if (key in process.env || /^(DOCKER_|BUILDKIT_|COMPOSE_|LD_)/.test(key)) argv.push('-e', `${key}=${value}`)
+        else { argv.push('-e', key); clientEnv[key] = String(value) }
+      }
       // An app Caddy fronts answers only through Caddy (`FJS-D565`): its port
       // on every interface is the same app over plain HTTP, around the
       // certificate. An app with no hostname keeps it, or nothing reaches it.
@@ -917,7 +981,7 @@ export function createDocker({
         if (uid != null && data)
           await docker(['run', '--rm', '--user', '0:0', '--entrypoint', 'chown', '--mount', `type=bind,src=${data},dst=${config.volumePath}`,
                         ref, '-R', `${uid}:${uid}`, config.volumePath])
-        containerId = await docker(argv)
+        containerId = await docker(argv, Object.keys(clientEnv).length ? { env: clientEnv } : undefined)
       } catch (err) {
         // A port another process holds, a bad env value, an image the daemon
         // cannot resolve — docker's own refusals, which come after the old
@@ -999,10 +1063,12 @@ export function createDocker({
       // A `_replaced` left by a swap that never finished goes too: kept, the
       // app's next release would bring it back as the last good container of
       // an app somebody removed, and it holds the data directory in the meantime.
-      const result = all.length ? await run(['docker', 'rm', '-f', ...all]) : null
-      // Not an error: a first deploy has no previous container, and Basecamp
-      // treats this step as non-fatal for exactly that reason.
-      return { stopped: !!live && result.exitCode === 0 }
+      // A refused `rm -f` is a throw (`FJS-3888`): answered as `stopped: false`
+      // the route went on to remove the Caddy route of a container still serving.
+      if (all.length) await docker(['rm', '-f', ...all])
+      // No container is not an error: a first deploy has no previous one, and
+      // Basecamp treats this step as non-fatal for that reason.
+      return { stopped: !!live }
     },
 
     /**
@@ -1250,7 +1316,56 @@ export function createDocker({
       ], { timeoutMs: (timeoutSeconds + 10) * 1_000 })
       return { exit_code: result.exitCode, stdout: result.stdout, stderr: result.stderr }
     },
+
+    /**
+     * At start, every app whose only container is a `_replaced` gets it back
+     * under its own name and started (`FJS-3865`): a process killed mid-swap
+     * leaves the last good release stopped and the app down until its next
+     * deploy. Answers the names put back; a failure is logged per app.
+     */
+    async reconcile({ log = console } = {}) {
+      const listed = await run(['docker', 'ps', '-a', '--filter', `label=${APP_LABEL}`, '--format', `{{.Names}}\t{{.Label "${APP_LABEL}"}}`])
+      if (listed.exitCode !== 0) throw new Error(`docker ps failed (exit ${listed.exitCode}): ${(listed.stderr ?? '').trim()}`)
+      const apps = new Set(String(listed.stdout ?? '').split('\n')
+        .map(line => line.trim().split('\t')).filter(([name, app]) => name?.endsWith('_replaced') && app).map(([, app]) => app))
+      const restored = []
+      for (const appId of apps) {
+        await serially(appId, async () => {
+          const { live, replaced } = await containersOf(appId)
+          if (live || !replaced) return
+          const name = replaced.slice(0, -'_replaced'.length)
+          await docker(['rename', replaced, name])
+          await docker(['start', name])
+          log.warn?.(`outpost: ${name} was left set aside by an unfinished swap — renamed back and started`)
+          restored.push(name)
+        }).catch(err => log.error?.(`outpost: app ${appId}'s set-aside container was not put back — ${err.message}`))
+      }
+      return { restored }
+    },
+
+    /** Refuse new per-app work and wait for what is running, up to `timeoutMs`.
+     *  Answers whether everything finished; a SIGTERM exits either way. */
+    async drain(timeoutMs = DRAIN_MS) {
+      closing = true
+      let timer
+      const done = await Promise.race([
+        Promise.all([...chains.values()]).then(() => true),
+        new Promise(resolve => { timer = setTimeout(() => resolve(false), timeoutMs) }),
+      ])
+      clearTimeout(timer)
+      return { drained: done, pending: [...chains.keys()] }
+    },
   }
+
+  // Each of these renames, removes or writes an app's containers or data, so
+  // two of them for one app run one after the other (`FJS-3849`).
+  // `restoreFiles` asks `refuseHeld` again inside the chain, which is what
+  // closes `/replica/restore`'s gap between its check and its copy.
+  for (const method of ['deploy', 'stop', 'restore', 'restoreFiles', 'backup']) {
+    const unlocked = api[method]
+    api[method] = (args = {}) => serially(args.appId, () => unlocked.call(api, args))
+  }
+  return api
 }
 
 /*
@@ -1580,9 +1695,17 @@ export function createInspector({ run = spawnRun, hostFiles = null, appsDir = la
     return Math.round(Number(m[1]) * (scale[m[2].toUpperCase()] ?? 1))
   }
 
+  // A failed `docker ps` throws (`FJS-3844`): read as "no holders" it let
+  // `removeData` rm -rf a live app's directory.
   const holdersOf = async (source) => {
-    const { stdout } = await run(['docker', 'ps', '-a', '--filter', `volume=${source}`, '--format', '{{.Names}}'])
+    const { exitCode, stdout, stderr } = await run(['docker', 'ps', '-a', '--filter', `volume=${source}`, '--format', '{{.Names}}'])
+    if (exitCode !== 0) throw new Error(`docker ps failed (exit ${exitCode}): ${(stderr ?? '').trim()}`)
     return stdout.trim().split('\n').filter(Boolean)
+  }
+  // For a report: unknown is `in_use: null` and `containers: null`, never free.
+  const usageOf = async (source) => {
+    const containers = await holdersOf(source).catch(() => null)
+    return { in_use: containers ? containers.length > 0 : null, containers }
   }
 
   // An app's data directory is a Volume row named by its path (`FJS-D1615`).
@@ -1617,14 +1740,14 @@ export function createInspector({ run = spawnRun, hostFiles = null, appsDir = la
         // Which containers hold it. A volume in use must never be reported as
         // free: basecamp's refusal to delete one NAMES them, and a wrong answer
         // here is how somebody deletes a database.
-        const containers = await holdersOf(name)
+        const { in_use, containers } = await usageOf(name)
         out.push({
           name,
           kind:        'volume',
           driver:      detail?.Driver ?? row.Driver ?? 'local',
           mountpoint:  detail?.Mountpoint ?? null,
           size_bytes:  sizeOf.get(name) ?? bytes(row.Size),
-          in_use:      containers.length > 0,
+          in_use,
           containers,
           created_at:  detail?.CreatedAt ?? null,
         })
@@ -1637,14 +1760,14 @@ export function createInspector({ run = spawnRun, hostFiles = null, appsDir = la
         const info = await stat(dir).catch(() => null)
         if (!info?.isDirectory()) continue
         const du         = await run(['du', '-sb', dir])
-        const containers = await holdersOf(dir)
+        const { in_use, containers } = await usageOf(dir)
         out.push({
           name:        dir,
           kind:        'bind',
           driver:      'local',
           mountpoint:  dir,
           size_bytes:  du.exitCode === 0 ? Number(du.stdout.split(/\s/)[0]) || 0 : 0,
-          in_use:      containers.length > 0,
+          in_use,
           containers,
           created_at:  info.birthtime?.getTime() ? info.birthtime.toISOString() : null,
         })
@@ -1692,9 +1815,18 @@ export function createInspector({ run = spawnRun, hostFiles = null, appsDir = la
         return stdout
       }
 
+      // Not `container prune`: it takes a swap's kept-back `_replaced`, the one
+      // container a failed release goes back to (`FJS-3854`). They carry the
+      // same labels as the live one, so the name is what tells them apart.
       if (targets.includes('stopped_containers')) {
-        const out = await sweep(['docker', 'container', 'prune', '-f'])
-        removed.containers = (out.match(/^[0-9a-f]{12,}$/gm) ?? []).length
+        const listed = await run(['docker', 'ps', '-a', '--filter', 'status=exited', '--filter', 'status=created', '--filter', 'status=dead', '--format', '{{.ID}}\t{{.Names}}'])
+        const ids = listed.exitCode !== 0 ? [] : listed.stdout.split('\n').map(line => line.trim().split('\t'))
+          .filter(([id, name]) => id && name && !name.endsWith('_replaced')).map(([id]) => id)
+        if (ids.length) {
+          // `docker rm` echoes each id it removed, and one that failed is not among them.
+          const { stdout } = await run(['docker', 'rm', ...ids])
+          removed.containers = String(stdout ?? '').split('\n').filter(line => ids.includes(line.trim())).length
+        }
       }
       if (targets.includes('dangling_images') || targets.includes('unused_images')) {
         const argv = ['docker', 'image', 'prune', '-f']

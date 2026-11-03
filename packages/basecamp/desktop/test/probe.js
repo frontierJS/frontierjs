@@ -8,9 +8,9 @@
 // file is handed to the shell.
 //
 // sessionStorage carries the phase across the one full load this makes on
-// purpose (to /login/), and counts pagehides: the sidebar click to the local
-// repos screen would otherwise look the same whether the router kept the page
-// or the shell reloaded it, since both land on the URL the link named.
+// purpose (to /login/), and counts pagehides: the sidebar click to /apps/
+// would otherwise look the same whether the router kept the page or the shell
+// reloaded it, since both land on the URL the link named.
 (() => {
   if (window.top !== window || window.__fjsProbe) return
   window.__fjsProbe = true
@@ -72,21 +72,10 @@
     say('signIn', { landed: !!landed, path: location.pathname, token: !!localStorage.getItem('basecamp_token') })
 
     const before = pagehides()
-    const link = await waitFor(() => document.querySelector('a[href="/git-activity/local/"]'))
+    const link = await waitFor(() => document.querySelector('a[href="/apps/"]'))
     link?.click()
-    const field = await waitFor(() => document.getElementById('root'))
-    say('nav', { linkFound: !!link, arrived: !!field, path: location.pathname, reloads: pagehides() - before })
-
-    fill({ root: '~/code' })
-    document.querySelector('#local-repos-form button[type=submit]').click()
-    const listed = await waitFor(() => /alpha/.test(document.getElementById('local-repos-list')?.textContent ?? ''))
-    say('scan', {
-      listed: !!listed,
-      text:   document.getElementById('local-repos-list')?.textContent.replace(/\s+/g, ' ').trim() ?? null,
-      totals: document.getElementById('local-repos-totals')?.textContent.replace(/\s+/g, ' ').trim() ?? null,
-      leaked: document.body.textContent.includes('tok_secret'),
-      error:  document.getElementById('screen-error')?.textContent.trim() || null,
-    })
+    const heading = await waitFor(() => location.pathname === '/apps/' && document.querySelector('h1')?.textContent.trim())
+    say('nav', { linkFound: !!link, arrived: location.pathname === '/apps/', path: location.pathname, heading: heading || null, reloads: pagehides() - before })
 
     // Awaited: the shell exits on `done`, and a report still in flight is lost.
     await say('errors', errors)

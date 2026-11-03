@@ -147,6 +147,28 @@ export interface DeliveryDeps {
    *  the row a scoped client produces, so a scoped read here returns a channel
    *  with no credential and reports it as *rotate your credential*. */
   sys: () => any
+  /** `app.mail`, or undefined when the app has no mailer. Read with
+   *  `mailerOf`, never `app.mail`, which throws where no plugin installed it. */
+  mail?: { send: (m: { to: string[]; subject: string; text: string }) => Promise<unknown> } | undefined
+}
+
+/** The app's mailer, or undefined. `app.mail` throws on read when absent. */
+export function mailerOf(app: object): DeliveryDeps['mail'] {
+  return 'mail' in app ? (app as { mail: DeliveryDeps['mail'] }).mail : undefined
+}
+
+/** Stamp the channel as having delivered. `updateMany` by id, not `update` with
+ *  the row's `version`: two deliveries to one channel in the same pass would
+ *  make the second stamp a version conflict, and a stamp is not worth a throw. */
+export async function stampDelivery(sys: () => any, channelId: string): Promise<void> {
+  try {
+    await sys().notificationChannel.updateMany({
+      where: { id: channelId },
+      data:  { lastDeliveryAt: new Date().toISOString() },
+    })
+  } catch (err) {
+    console.error(`[delivery] channel ${channelId}: could not stamp lastDeliveryAt: ${(err as Error).message}`)
+  }
 }
 
 /**
@@ -165,10 +187,22 @@ export async function deliverToChannel(
   const spec = KINDS[kind]
   if (!spec) return { ok: false, error: `Unknown channel kind '${kind}'` }
 
-  if (kind === 'email')
-    return { ok: false, error:
-      'Email delivery needs a mailer, and this app has none configured. ' +
-      'The channel is saved; it cannot deliver yet.' }
+  if (kind === 'email') {
+    if (!deps.mail)
+      return { ok: false, error:
+        'Email delivery needs a mailer, and this app has none configured. ' +
+        'The channel is saved; it cannot deliver yet.' }
+    const to = Array.isArray(channel.config?.to)
+      ? (channel.config.to as unknown[]).filter((a): a is string => typeof a === 'string' && !!a)
+      : []
+    if (!to.length) return { ok: false, error: 'This email channel has no recipients in its config' }
+    try {
+      await deps.mail.send({ to, subject: msg.title, text: msg.text || msg.title })
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: `Delivery failed (mail): ${(err as Error).message}` }
+    }
+  }
 
   if (!deps.conduit)
     return { ok: false, error: 'Outbound delivery is not configured on this server — no conduit plugin' }
@@ -232,7 +266,7 @@ export async function deliverToChannel(
  * trigger and the resolve.
  */
 export async function fanOutToChannels(
-  app:      { conduit?: unknown },
+  app:      object & { conduit?: unknown },
   sys:      () => any,
   channels: Array<Record<string, any> | null | undefined>,
   msg:      Message,
@@ -245,17 +279,22 @@ export async function fanOutToChannels(
     // row survives it.
     if (!channel || channel.isActive === false || channel.deletedAt) continue
 
-    const res = await deliverToChannel({ conduit: app.conduit as never, sys }, channel, msg)
-    if (!res.ok) {
-      console.error(`[${label}] channel '${channel.name}': ${res.error}`)
+    // A throw from one channel is that channel's failure and no one else's:
+    // the loop is what reaches the rest.
+    try {
+      const res = await deliverToChannel(
+        { conduit: app.conduit as never, sys, mail: mailerOf(app) }, channel, msg)
+      if (!res.ok) {
+        console.error(`[${label}] channel '${channel.name}': ${res.error}`)
+        continue
+      }
+    } catch (err) {
+      console.error(`[${label}] channel '${channel.name}': ${(err as Error).message}`)
       continue
     }
     // The stamp means something arrived, which is the only reason it is written
     // after the send rather than beside it.
-    await sys().notificationChannel.update({
-      where: { id: channel.id },
-      data:  { lastDeliveryAt: new Date().toISOString(), version: channel.version },
-    })
+    await stampDelivery(sys, channel.id)
   }
 }
 

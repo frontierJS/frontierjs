@@ -18,6 +18,7 @@ Covered: **19 of 19**.
 | Kind | What | Covers |
 | --- | --- | --- |
 | `bun run ci` | `hygiene` | the substrate package only — that `@frontierjs/toolbelt` declares no dependency. Nothing grades `Litestone ← Junction ← Sierra` itself |
+| `bun run ci` | `hygiene` | the two apps are strangers — `packages/basecamp` imports nothing under `packages/workbench` and the reverse, by path or by name; what crosses is a signed call (`IDEAS/workbench-package.md`) |
 
 ### 2. Model names are PascalCase singular
 

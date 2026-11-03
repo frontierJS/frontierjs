@@ -12,7 +12,7 @@
  */
 
 import { readConfig }            from './config.js'
-import { createOutpostServer }   from './server.js'
+import { createOutpostServer, MAX_BODY_BYTES } from './server.js'
 import { createReporter }        from './report.js'
 import { createDocker, createInspector } from './docker.js'
 import { createStaticServer }         from './serve.js'
@@ -34,6 +34,7 @@ function serveMachine(config) {
     // 30s for health, `/backup` and a restore up to an hour. Each route bounds
     // its own wait.
     idleTimeout: 0,
+    maxRequestBodySize: MAX_BODY_BYTES,
     fetch: req => outpost.handle(req),
   })
 
@@ -53,6 +54,8 @@ function serveMachine(config) {
   // The firewall unit reloads its exposed set empty at boot, so every exposed app
   // is dropped until this refills it.
   docker.syncExposed().catch(err => console.error(`outpost: the firewall's exposed set was not refilled — ${err.message}`))
+  // A process killed mid-swap leaves an app's last good release stopped as `_replaced`.
+  docker.reconcile().catch(err => console.error(`outpost: set-aside containers were not reconciled — ${err.message}`))
 
   console.log(
     `outpost ${config.version} · server ${config.serverId} · :${server.port} → ${config.basecampUrl}` +
@@ -60,12 +63,18 @@ function serveMachine(config) {
 
   // A machine reboots and a deploy replaces this process; both send a signal, and
   // a timer left running holds the event loop open past the point where anything
-  // is listening.
+  // is listening. A swap cut off between its rename and its start leaves the app
+  // down, so in-flight per-app work gets a bounded wait first (`FJS-3865`).
+  let stopping = false
   for (const signal of ['SIGINT', 'SIGTERM']) {
-    process.on(signal, () => {
+    process.on(signal, async () => {
+      if (stopping) return
+      stopping = true
       stopTimers()
       server.stop()
       staticServer?.stop()
+      const { drained, pending } = await docker.drain()
+      if (!drained) console.error(`outpost: exiting with work unfinished for ${pending.join(', ')}`)
       process.exit(0)
     })
   }

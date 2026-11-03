@@ -11,13 +11,13 @@
 // `include: { app: { include: { environment: true } } }` — declared in the
 // schema rather than spelled out as SQL.
 
-import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict, parseWhere, $ } from '@frontierjs/junction'
 import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, getScoped, narrowPatch, changesNothing, ws, actor, callerOrder } from '../../core/resource.ts'
 import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
 import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow, SITE_STEP } from '../../domain/release/release-record.ts'
-import { isInline, isGit, imageOf, inlineFilesFor } from '../../domain/release/app-source.ts'
+import { isInline, isGit, imageOf, inlineFilesFor, refuseBranch } from '../../domain/release/app-source.ts'
 import { snapshotVariables } from '../../domain/release/variables.ts'
 import { runtimeOf, type Runtime, CONTAINER_KINDS } from '../../domain/release/runtime.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
@@ -142,18 +142,44 @@ async function queueRelease(target: { id: string; environmentId: string; kind: s
     })),
   })
 
-  // Durable hand-off — survives a restart mid-release.
-  // The actor and the tenant are carried by the dispatch: caravan reads
-  // both off the request in scope, and the handler declares
-  // `runsAsCaller` — so this work runs as the person who asked for it,
-  // in the workspace they asked in (`FJS-384`).
-  await $.app.jobs.dispatch(deploymentRun, {
-    deployment_id: deployment.id,
-    app_id:        target.id,
-    workspace_id:  ws(),
-  }, { queue: 'deployments', priority: 5 })
+  await dispatchRelease(deployment.id, target.id)
 
   return deployment
+}
+
+/**
+ * Refused while the App has a release queued or building. Two releases of one
+ * App race each other on the machine — the second stops the container the
+ * first is waiting on — and the App's status ends as whichever finished last
+ * (`FJS-3849`).
+ */
+async function refuseInFlight(appId: string): Promise<void> {
+  const inFlight = await db().asSystem().deployment.findFirst({
+    where: { appId, status: { in: ['pending', 'building'] } }, select: { id: true, status: true } })
+  if (inFlight) throw new Conflict(
+    `Release ${inFlight.id} of this app is already ${inFlight.status} — cancel it or wait for it to finish`)
+}
+
+/**
+ * The durable hand-off, one per App at a time. `refuseInFlight` is the
+ * message; `unique` is the lock that settles two clicks racing past it. A
+ * dispatch answering another job's id lost that race, and its row would sit
+ * `pending` with nothing to run it, so it is failed and the caller told.
+ */
+async function dispatchRelease(deploymentId: string, appId: string): Promise<void> {
+  const id = `deployment:${deploymentId}`
+  // The actor and the tenant are carried by the dispatch: caravan reads
+  // both off the request in scope, and the handler declares `runsAsCaller` —
+  // so this work runs as the person who asked for it, in the workspace they
+  // asked in (`FJS-384`).
+  const queued = await $.app.jobs.dispatch(deploymentRun, {
+    deployment_id: deploymentId,
+    app_id:        appId,
+    workspace_id:  ws(),
+  }, { queue: 'deployments', priority: 5, id, unique: `deploy:${appId}` })
+  if (queued === id) return
+  await db().asSystem().deployment.transition(deploymentId, 'fail')
+  throw new Conflict('Another release of this app was queued at the same moment — this one was not started')
 }
 
 
@@ -215,6 +241,7 @@ export default createService({
     // the missing placement tells them what to do (FJS-257).
     const executor = await resolveExecutor($.app, appId)
     if (!isExecutor(executor)) throw new BadRequest(executor.reason)
+    if (data.branch != null) refuseBranch(data.branch, 'branch')
 
     // A source that is neither an image nor something that builds one leaves
     // the start step asking docker to pull the app's NAME from a public
@@ -242,6 +269,7 @@ export default createService({
     if (named && !/^sha256:[0-9a-f]{64}$/.test(String(data.builtImage)))
       throw new BadRequest(`'${data.builtImage}' is not a digest — a release of bytes the machine holds names them as sha256:<64 hex>`)
     const held = named && isInline(target.source)
+    await refuseInFlight(target.id)
     return queueRelease(target, data, { held, built: named && !held })
   },
 
@@ -307,6 +335,10 @@ export default createService({
       where: { id: deployment.id },
       data:  { status: 'cancelled', finishedAt: new Date().toISOString() },
     })
+    // The queued job holds the App's `deploy:` lock until it runs, so the next
+    // release would be refused behind a release nobody wants. A job already
+    // running stops itself at its next step (`FJS-3848`).
+    await $.app.jobs.cancel(`deployment:${deployment.id}`).catch(() => false)
     return updated
   },
 
@@ -371,6 +403,20 @@ export default createService({
       ? await db().deployment.findUnique({ where: { id: being.previousDeploymentId } })
       : null
 
+    // `previousDeploymentId` is a column a caller can write, so the row it
+    // names is not trusted to be this App's: another App's bytes and settings
+    // would be started under this one's name (`FJS-3862`).
+    if (target && target.appId !== being.appId) throw new BadRequest(
+      `The release this one names as its predecessor belongs to another app, so it cannot be put back here.`)
+
+    // Only what is live can be withdrawn. Rolling back an older success puts
+    // ITS predecessor on the machine over the release actually serving.
+    const newer = being.finishedAt ? await db().asSystem().deployment.findFirst({
+      where: { appId: being.appId, status: 'success', finishedAt: { gt: being.finishedAt }, id: { not: being.id } },
+      select: { id: true } }) : null
+    if (newer) throw new BadRequest(
+      `A later release of this app is live — only the one currently serving can be rolled back.`)
+
     // Nothing to go back to. Named rather than answered with an empty
     // release: the first deploy of an app has no predecessor, and that is a
     // different sentence from a predecessor that has gone.
@@ -395,12 +441,18 @@ export default createService({
     // app is broken where this tells them what to do.
     const executor = await resolveExecutor($.app, being.appId)
     if (!isExecutor(executor)) throw new BadRequest(executor.reason)
+    await refuseInFlight(being.appId)
 
     // The move, and the enforcement: `success -> rolledBack @gate(5)` is the
     // model's and so is the level. Everything above this line was a read.
-    await db().deployment.transition(being.id, 'rollback')
+    //
+    // The move and the replacement are one transaction: a create that failed
+    // after the move left the App with its live release withdrawn and nothing
+    // queued to replace it (`FJS-3882`).
+    const replacement = await db().$transaction(async (tx: any) => {
+    await tx.deployment.transition(being.id, 'rollback')
 
-    const replacement = await db().deployment.create({ data: {
+    const created = await tx.deployment.create({ data: {
       appId:         being.appId,
       workspaceId:   ws(),
       trigger:       'rollback',
@@ -420,7 +472,7 @@ export default createService({
       triggeredBy:    actor() === 'system' ? null : actor(),
     } })
 
-    await db().deploymentStep.createMany({
+    await tx.deploymentStep.createMany({
       // The step list the TARGET's source needs, not the app's current one.
       // An app switched from inline to a container since that release would
       // otherwise be rolled back through a pipeline its old bytes cannot run.
@@ -429,15 +481,13 @@ export default createService({
         source:  (target.configSnapshot as any)?.source ?? into.source,
         runtime: (target.configSnapshot as any)?.runtime ?? runtimeOf(into),
       }, true).map((name, position) => ({
-        deploymentId: replacement.id, position, name, status: 'pending',
+        deploymentId: created.id, position, name, status: 'pending',
       })),
     })
+    return created
+    })
 
-    await $.app.jobs.dispatch(deploymentRun, {
-      deployment_id: replacement.id,
-      app_id:        being.appId,
-      workspace_id:  ws(),
-    }, { queue: 'deployments', priority: 5 })
+    await dispatchRelease(replacement.id, being.appId)
 
     await pushRow(being.id)
 

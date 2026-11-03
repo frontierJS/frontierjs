@@ -139,7 +139,7 @@ const DAY_MS = 86_400_000
 /**
  * Prune by `HubConfig`'s keep-count and age, local and remote apart. Runs after
  * a backup succeeds, so a failed run deletes nothing; the newest successful
- * archive is never a candidate. Answers what went and what was kept, and why.
+ * archive of each group (local, and each destination) is never a candidate. Answers what went and what was kept, and why.
  */
 export async function pruneBackups(app: App, now = Date.now()): Promise<{ pruned: string[]; kept: { id: string; why: string }[] }> {
   const sys = app.db!.asSystem()
@@ -153,7 +153,6 @@ export async function pruneBackups(app: App, now = Date.now()): Promise<{ pruned
   }) as ArchiveRow[])
     .map(r => ({ ...r, at: Date.parse(r.startedAt ?? r.createdAt!) }))
     .sort((a, b) => b.at - a.at)
-  const newest = rows[0]?.id
 
   const groups = new Map<string, typeof rows>()
   for (const r of rows) {
@@ -165,7 +164,9 @@ export async function pruneBackups(app: App, now = Date.now()): Promise<{ pruned
     const remote = group !== 'local'
     const count  = remote ? cfg.backupKeepRemoteCount : cfg.backupKeepLocalCount
     const days   = remote ? cfg.backupKeepRemoteDays  : cfg.backupKeepLocalDays
-    const victims = members.filter((r, i) => r.id !== newest && (i >= count || (days != null && now - r.at > days * DAY_MS)))
+    // The newest of THIS group is spared, not the newest overall: sparing one
+    // row hub-wide let every remote copy age out behind a run of local ones.
+    const victims = members.filter((r, i) => i > 0 && (i >= count || (days != null && now - r.at > days * DAY_MS)))
     for (const r of victims) {
       const done = await deleteArchive(app, r)
       if ('deleted' in done) out.pruned.push(r.id)

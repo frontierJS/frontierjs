@@ -237,11 +237,15 @@ export async function useHost(client: any, { workspaceId, actor, ipAddress }: { 
 
 // ─── the hub's own grade ──────────────────────────────────────────────────
 
-/** `finishedAt` of the hub App's newest backup that succeeded (`FJS-D1606`) — what `hub.backup-recent` grades. */
-async function lastBackupAt(sys: any, appId: string | null): Promise<string | null> {
+/** `finishedAt` of the hub App's newest backup that succeeded (`FJS-D1606`) — what `hub.backup-recent` grades.
+ *  `error: null` is the filter: a `success` row with an `error` is an archive that
+ *  was meant to leave the box and stayed on its disk (`backup-run.job.ts`), and a
+ *  backup that never reached its destination is not the one this grades. A
+ *  local-only backup finishes with `error: null`, so it still counts. */
+export async function lastBackupAt(sys: any, appId: string | null): Promise<string | null> {
   if (!appId) return null
   const row = await sys.appBackup.findFirst({
-    where: { appId, status: 'success', finishedAt: { not: null } }, orderBy: { finishedAt: 'desc' },
+    where: { appId, status: 'success', error: null, finishedAt: { not: null } }, orderBy: { finishedAt: 'desc' },
   })
   return row?.finishedAt ?? null
 }

@@ -68,12 +68,26 @@ export const CAT = {
 
 export const GLOBAL = {
   gui:         5500,   // fli web GUI
+  workbench:   5501,   // packages/workbench's API — the developer's own machine (IDEAS/workbench-package.md)
   studio:      5502,   // litestone db studio
   devtools:    5503,   // junction's API console — app.configure(devtools())
   proxy:       5504,   // fli ports:proxy — the FALLBACK when 80 cannot be bound
   haven:       5505,   // packages/haven's API — where `fli haven` in a checkout knocks
   havenWeb:    5506,   // packages/haven's browser Haven, proxying to the API above
   havenScenes: 5507,   // packages/haven's scene editor — `fli haven:scenes`
+  workbenchWeb: 5508,  // packages/workbench's browser dev server, proxying to 5501
+}
+
+/**
+ * The apps that live IN the global block — one per machine, never per checkout.
+ * `appPorts` answers these for the app's surfaces instead of a project slot:
+ * `fli dev` in packages/haven once took slot 3 and refused on 8030 while
+ * haven's own configs hold 5505/5506, so the preflight probed a port nothing
+ * was about to bind. Keyed the way PROJECTS is, by the package's short name.
+ */
+export const TOOLING_APPS = {
+  haven:     { api: GLOBAL.haven,     web: GLOBAL.havenWeb },
+  workbench: { api: GLOBAL.workbench, web: GLOBAL.workbenchWeb },
 }
 
 /** The whole reserved block, assigned slots and free ones alike. */
@@ -242,6 +256,12 @@ const SLOTTED = new Set(SURFACE_PORTS.filter(s => s.env).map(s => s.category))
  * disk. Anything unknown is `scaffold` (0), which is what the templates use and
  * therefore the honest default for an app nobody has assigned a number.
  */
+/** The global-block app this is, by package name then directory; `null` for every other app. */
+export function toolingAppFor(name, dirName) {
+  const short = String(name ?? '').replace(/^@[^/]+\//, '')
+  return TOOLING_APPS[short] ?? TOOLING_APPS[dirName] ?? null
+}
+
 export function projectIdFor(name, dirName) {
   if (PROJECTS[name] !== undefined) return PROJECTS[name]
   const short = String(name ?? '').replace(/^@[^/]+\//, '')
@@ -268,6 +288,7 @@ export function projectIdFor(name, dirName) {
  */
 export function appPorts(appRoot, { name, scripts, env = 'dev', exists, slot, branch } = {}) {
   const here      = exists ?? ((p) => existsSync(p))
+  const tooling   = toolingAppFor(name, basename(appRoot))
   const projectId = projectIdFor(name, basename(appRoot))
   const serviceId = projectId !== PROJECTS.scaffold ? 0 : (slot ?? slotFor(appRoot, { env }) ?? 0)
   const offset    = (branch ?? branchFor(appRoot) ?? 0) * BRANCH_STEP
@@ -282,8 +303,11 @@ export function appPorts(appRoot, { name, scripts, env = 'dev', exists, slot, br
       ? (s.scripts.find(n => typeof scripts[n] === 'string') ?? null)
       : s.scripts[0]
 
+    const fixed = tooling?.[s.dir]
     out.push({
-      port:     stated ? Number(stated) : port(s.category, { env, projectId, serviceId: s.env ? serviceId : 0 }) + (s.env ? offset : 0),
+      port:     stated ? Number(stated)
+              : fixed  ? fixed
+              : port(s.category, { env, projectId, serviceId: s.env ? serviceId : 0 }) + (s.env ? offset : 0),
       surface:  s.dir,
       label:    s.label,
       script,

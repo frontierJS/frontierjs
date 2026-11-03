@@ -10,7 +10,7 @@
 
 import { Forbidden, $ } from '@frontierjs/junction'
 import type { App, Hook, ServiceContext } from '@frontierjs/junction'
-import { resolveWorkspaceId } from '../../core/hooks.ts'
+import { tenantNamed } from '../../core/hooks.ts'
 import { hubPolicy } from '../../core/session-auth.ts'
 
 // ─── The vocabulary ──────────────────────────────────────────────────────
@@ -27,29 +27,19 @@ const OFF_LIMITS = new Set([
   'apiKeys',
   // Conduit's own management service — operational, not a workspace resource.
   'conduitTargets',
-  // A key acts unattended, and a send here runs Claude Code on the operator's
-  // machine with every permission bypassed.
-  'workbench',
-  // The operator's Claude Code config: hook commands, MCP servers and their
-  // environment, read off this machine.
-  'claude',
   // A start runs a command from the workspace's own tree on the operator's
   // machine, and a view reads a file there.
   'pages',
-  // A discuss is a workbench send, and a decide writes two tracked files.
-  'atlas',
 ])
 
 /**
  * Services an agent over `/mcp` is never handed, whoever it acts for.
  *
- * The workbench: a send is `claude -p` with permissions bypassed in a checkout
- * on this machine, so an agent holding the tool reaches the operator's shell,
- * which no level in a workspace describes. Pages: a start runs a command on
- * that machine. Atlas: a discuss is a workbench send. `agentGuard` refuses the call and `narrowForAgent` withholds
- * the tool, off this one set.
+ * Pages: a start runs a command on the operator's machine, so an agent holding
+ * the tool reaches a shell no level in a workspace describes. `agentGuard`
+ * refuses the call and `narrowForAgent` withholds the tool, off this one set.
  */
-const NOT_FOR_AGENTS = new Set(['workbench', 'claude', 'pages', 'atlas'])
+const NOT_FOR_AGENTS = new Set(['pages'])
 
 /** The scope a workspace service declares: read for `find`, `get` and a declared read, write for the rest. */
 export const keyScope = (service: string) => ({ read: `${service}:read`, write: `${service}:write` })
@@ -74,7 +64,9 @@ export function scopeVocabulary(app: App): Scope[] {
   return [
     ...[...declared].sort(([a], [b]) => a.localeCompare(b)).map(([id, group]) => ({
       id, group,
-      label: id.endsWith(':read') ? `Read ${group}` : `Create, change and act on ${group}`,
+      // A scope one method states for itself (`apps:preview`) is named, not
+      // described: "act on apps" would read as every write the service has.
+      label: id.endsWith(':read') ? `Read ${group}` : id.endsWith(':write') ? `Create, change and act on ${group}` : id,
     })),
     { id: WHOLE_KEY, group: 'admin', label: 'Everything, including services added later' },
   ]
@@ -150,7 +142,7 @@ export function apiKeyGuard(): Hook {
     // The user behind it may well be a member of both — that is exactly the
     // case this stops, because a CI token scoped to staging should not become
     // a production token by changing one header.
-    const workspaceId = resolveWorkspaceId(ctx)
+    const workspaceId = tenantNamed(ctx)
     if (workspaceId && workspaceId !== key.workspaceId)
       throw new Forbidden('This API key belongs to a different workspace')
 

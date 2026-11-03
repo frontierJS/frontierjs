@@ -17,7 +17,7 @@ import { mkdtemp, rm, writeFile, readFile, readdir, readlink, stat, symlink } fr
 import { tmpdir }                 from 'node:os'
 import { join }                   from 'node:path'
 import { createStatic, digestOfFiles, validRelativePath, LIMITS } from '../src/static.js'
-import { createStaticServer }     from '../src/serve.js'
+import { createStaticServer, headersFor } from '../src/serve.js'
 import { createOutpostServer }    from '../src/server.js'
 import { signRequest, generateSigningKeys } from '@frontierjs/toolbelt/signature'
 
@@ -56,6 +56,18 @@ describe('publishing bytes', () => {
     // The symlink is relative, so the tree can be moved or bind-mounted whole.
     expect(await readlink(join(dir, 'apps/app-1/current'))).toBe(out.digest)
     expect(await readlink(join(dir, 'hosts/shop'))).toBe('../apps/app-1/current')
+  })
+
+  // FJS-3887: a dead publish's staging directory was listed as a release.
+  test('a staging directory left by a dead publish is never listed as a release', async () => {
+    const out = await statics.publish({ appId: 'app-1', files: page() })
+    const { mkdir } = await import('node:fs/promises')
+    await mkdir(join(dir, 'apps/app-1', `${out.digest}.partial.1.2`), { recursive: true })
+    expect((await statics.releases({ appId: 'app-1' })).digests).toEqual([out.digest])
+    expect((await readdir(join(dir, 'apps/app-1'))).filter(n => n.includes('.partial'))).toHaveLength(1)
+    // And a publish leaves none of its own behind.
+    await statics.publish({ appId: 'app-1', files: page('again') })
+    expect((await readdir(join(dir, 'apps/app-1'))).filter(n => n.includes('.partial'))).toHaveLength(1)
   })
 
   test('the same bytes are the same release — a redeploy that changed nothing mints no new one', async () => {
@@ -429,5 +441,28 @@ describe('a release carrying _headers', () => {
     expect(res.headers.get('set-cookie')).toBeNull()
     expect(res.headers.get('x-ok')).toBe('yes')
     expect((await res.text())).toContain('<h1>x</h1>')
+  })
+
+  // A rule is a stranger's text: one regex with a `.*` per star took 35s here.
+  test('a rule with many stars answers at once, and ordinary rules still match', () => {
+    const rule = `/${'*a'.repeat(11)}*b\n  X-Hit: yes\n`
+    const started = performance.now()
+    expect(headersFor(rule, `/${'a'.repeat(40)}`)).toEqual({})
+    expect(performance.now() - started).toBeLessThan(100)
+
+    const hit = { 'x-hit': 'yes' }
+    const at = (text, p) => headersFor(`${text}\n  X-Hit: yes\n`, p)
+    expect(at('/*', '/anything/at/all')).toEqual(hit)
+    expect(at('/assets/*', '/assets/a.js')).toEqual(hit)
+    expect(at('/assets/*', '/other/a.js')).toEqual({})
+    expect(at('/*.js', '/a/b.js')).toEqual(hit)
+    expect(at('/*.js', '/a/b.css')).toEqual({})
+    expect(at('/a/*/c/*', '/a/b/c/d')).toEqual(hit)
+    expect(at('/a/*/c', '/a/b/c/d')).toEqual({})
+    expect(at('/users/:id', '/users/42')).toEqual(hit)
+    expect(at('/users/:id', '/users/')).toEqual({})
+    expect(at('/users/:id', '/users/4/2')).toEqual({})
+    expect(at('/users/:id/*', '/users/4/edit/now')).toEqual(hit)
+    expect(at('/a.b', '/axb')).toEqual({})
   })
 })

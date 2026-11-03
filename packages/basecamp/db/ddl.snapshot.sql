@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 76 models · 2 databases
+-- 73 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -116,63 +116,6 @@ CREATE TABLE IF NOT EXISTS "outpost_nonce" (
   "seenAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_outpost_nonce_seenAt" ON "outpost_nonce" ("seenAt");
-
-CREATE TABLE IF NOT EXISTS "claude_transcript" (
-  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
-  "path" TEXT NOT NULL UNIQUE,
-  "sessionId" TEXT NOT NULL,
-  "cwd" TEXT,
-  "isSubagent" INTEGER NOT NULL DEFAULT 0,
-  "agent" TEXT,
-  "isHeadless" INTEGER NOT NULL DEFAULT 0,
-  "title" TEXT,
-  "firstPrompt" TEXT,
-  "offset" INTEGER NOT NULL DEFAULT 0,
-  "turnSkills" TEXT NOT NULL DEFAULT '',
-  "size" INTEGER NOT NULL DEFAULT 0,
-  "startedAt" TEXT,
-  "lastAt" TEXT,
-  "isGone" INTEGER NOT NULL DEFAULT 0,
-  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-) STRICT;
-CREATE INDEX IF NOT EXISTS "idx_claude_transcript_sessionId" ON "claude_transcript" ("sessionId");
-CREATE INDEX IF NOT EXISTS "idx_claude_transcript_cwd" ON "claude_transcript" ("cwd");
-
-CREATE TABLE IF NOT EXISTS "claude_message" (
-  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
-  "messageId" TEXT NOT NULL UNIQUE,
-  "sessionId" TEXT NOT NULL,
-  "cwd" TEXT,
-  "model" TEXT NOT NULL,
-  "at" TEXT NOT NULL,
-  "input" INTEGER NOT NULL,
-  "cacheWrite" INTEGER NOT NULL,
-  "cacheWrite1h" INTEGER NOT NULL DEFAULT 0,
-  "cacheRead" INTEGER NOT NULL,
-  "output" INTEGER NOT NULL,
-  "tools" TEXT NOT NULL DEFAULT '',
-  "skills" TEXT NOT NULL DEFAULT '',
-  "isSubagent" INTEGER NOT NULL DEFAULT 0,
-  "agent" TEXT
-) STRICT;
-CREATE INDEX IF NOT EXISTS "idx_claude_message_at" ON "claude_message" ("at");
-CREATE INDEX IF NOT EXISTS "idx_claude_message_cwd" ON "claude_message" ("cwd");
-CREATE INDEX IF NOT EXISTS "idx_claude_message_sessionId" ON "claude_message" ("sessionId");
-
-CREATE TABLE IF NOT EXISTS "claude_write" (
-  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
-  "action" TEXT NOT NULL,
-  "target" TEXT NOT NULL,
-  "project" TEXT,
-  "scope" TEXT,
-  "keys" TEXT NOT NULL DEFAULT '',
-  "before" TEXT,
-  "digest" TEXT,
-  "undoneAt" TEXT,
-  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-) STRICT;
-CREATE INDEX IF NOT EXISTS "idx_claude_write_createdAt" ON "claude_write" ("createdAt");
 
 CREATE TABLE IF NOT EXISTS "network" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -367,7 +310,7 @@ CREATE TABLE IF NOT EXISTS "notification_preference" (
   "email" INTEGER NOT NULL DEFAULT 0,
   "inApp" INTEGER NOT NULL DEFAULT 1,
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("kind" IN ('DeploySuccess', 'DeployFailed', 'AlertFiring', 'AlertResolved', 'ServerUnreachable', 'MonitorDown', 'MonitorUp', 'PostureFailed', 'HubPostureFailed', 'DependencyVulnerable', 'MemberJoined', 'JobFailed', 'WeeklyDigest', 'ReplicaFound', 'AutopilotReport')),
+  CHECK ("kind" IN ('DeploySuccess', 'DeployFailed', 'AlertFiring', 'AlertResolved', 'ServerUnreachable', 'MonitorDown', 'MonitorUp', 'PostureFailed', 'HubPostureFailed', 'DependencyVulnerable', 'MemberJoined', 'JobFailed', 'WeeklyDigest', 'ReplicaFound')),
   UNIQUE ("userId", "kind"),
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;
@@ -486,6 +429,7 @@ CREATE TABLE IF NOT EXISTS "api_key" (
   "workspaceId" TEXT NOT NULL,
   "userId" TEXT NOT NULL,
   "credentialId" TEXT,
+  "publicKey" TEXT,
   "name" TEXT NOT NULL,
   "tokenHint" TEXT NOT NULL,
   "scopes" TEXT NOT NULL DEFAULT '[]' CHECK (json_valid("scopes") AND json_type("scopes") = 'array'),

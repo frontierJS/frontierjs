@@ -7,8 +7,9 @@ dated: 2026-10-09
 # Idea — the Workbench after V1: what comes next, ranked against prior art
 
 **Status: IDEA.** The V1 is built (uncommitted on 2026-10-09). This paper ranks what
-comes after it. The V1 is Basecamp's `/workbench/`: one card per pinned checkout, and
-each message is a `claude -p` run against that checkout (`api/src/domain/workbench/workbench.ts`;
+comes after it. The V1 is Workbench's `/workbench/` (its own private app, `packages/workbench`, since
+`IDEAS/workbench-package.md` 2026-11-03; it was Basecamp's until then): one card per pinned checkout, and
+each message is a `claude -p` run against that checkout (`packages/workbench/api/src/domain/workbench/workbench.ts`;
 the argv lives in `packages/cli/core/ask-claude.js`). The surveys behind the ranking:
 Conductor, Vibe Kanban, claude-squad, agent-manager, Calyx, Antigravity's Manager
 view, Happy, Omnara, Anthropic's Remote Control, Addy Osmani's *Code Agent

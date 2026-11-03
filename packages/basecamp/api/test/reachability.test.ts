@@ -138,6 +138,20 @@ describe('the fleet sweep', () => {
     expect(events[0].message).toContain('6 minutes')
   })
 
+  test('a sweep inside the grace window of this process starting grades nobody (FJS-3872)', async () => {
+    const box = await machine('online', ago(6))
+
+    // The process began a minute before NOW: the 6-minute silence is Basecamp's own.
+    const early = await sweepUnreachable(env.app, { at: NOW, serverId: box.id, startedAt: NOW - 60_000 })
+    expect(early.quiet).toBe(0)
+    expect(await statusOf(box.id)).toBe('online')
+
+    // The pair: the same machine, once the process has been up past the timeout.
+    const later = await sweepUnreachable(env.app, { at: NOW, serverId: box.id, startedAt: NOW - 60 * 60_000 })
+    expect(later.quiet).toBe(1)
+    expect(await statusOf(box.id)).toBe('unreachable')
+  })
+
   test('…and one still answering is left alone, and told nobody', async () => {
     const box = await machine('online', ago(1))
     const before = await (env.system as any).notification.count({ where: { userId: member.id } })

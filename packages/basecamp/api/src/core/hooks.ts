@@ -61,6 +61,17 @@ export function resolveWorkspaceId(ctx: ServiceContext): string | undefined {
          (userOf(ctx)?.workspaceId as string | undefined)
 }
 
+/**
+ * The workspace a request is graded in: the id on the workspaces service, the
+ * header or query everywhere else. `apiKeyGuard` compares a key's own workspace
+ * with THIS, not with the header — on `workspaces/<id>` with no header the
+ * header is empty, and a key bound to one workspace patched another (`FJS-3869`).
+ */
+export function tenantNamed(ctx: ServiceContext): string | undefined {
+  if (ctx.service === WORKSPACES_SERVICE && ctx.id != null) return String(ctx.id)
+  return resolveWorkspaceId(ctx)
+}
+
 /** The service whose id names its workspace. Its `name:` reads this, so a
  *  rename cannot leave `workspaceOrKeys` grading the header in silence. */
 export const WORKSPACES_SERVICE = 'workspaces'
@@ -83,9 +94,11 @@ export const WORKSPACES_SERVICE = 'workspaces'
  * runs before every hook.
  */
 export async function workspaceOrKeys(ctx: ServiceContext): Promise<string | undefined> {
-  if (ctx.service === WORKSPACES_SERVICE && ctx.id != null) return String(ctx.id)
-  const named = resolveWorkspaceId(ctx)
+  const named = tenantNamed(ctx)
   const user  = userOf(ctx)
+  // A peer's key is bound to one workspace and its account belongs to that one
+  // alone, so a header naming another is not obeyed.
+  if (user?.authMethod === 'peer') return user.workspaceId
   if (named || user?.authMethod !== 'apiKey' || !user.credentialId) return named
   const db  = $.db as { asSystem(): any } | undefined
   const key = await db?.asSystem().apiKey.findFirst({ where: { credentialId: user.credentialId }, select: { workspaceId: true } })
@@ -593,6 +606,8 @@ async function outpostKeyFor(
   if (!serverId) return null
   const server = await (app.db.asSystem() as any).server.findFirst({ where: { id: serverId } })
   if (!server?.outpostPublicKey) return null
+  // A destroyed or removed machine is no principal, whatever key its row kept (`FJS-3891`).
+  if (server.status === 'destroyed' || server.deletedAt) return null
   return { publicKey: server.outpostPublicKey as string, workspaceId: server.workspaceId as string }
 }
 
@@ -646,6 +661,76 @@ export function outpostCredential(app: OutpostDeps): CredentialVerifier {
       }
     },
   })
+}
+
+/** The header a peer names its key in; the signature itself carries no key id. */
+export const PEER_KEY_HEADER = 'x-fjs-key'
+
+/**
+ * The key row a peer signs with, and the account behind it. `null` is a
+ * refusal: a key that does not exist, was revoked, has expired, holds no
+ * public key, or belongs to an account that is not a peer.
+ */
+async function peerKeyFor(app: OutpostDeps, keyId: string): Promise<{ key: any, user: any } | { refused: string }> {
+  const sys = app.db.asSystem() as any
+  const key = await sys.apiKey.findFirst({ where: { id: keyId } })
+  if (!key) return { refused: 'no key has that id' }
+  if (key.revokedAt) return { refused: 'that key is revoked' }
+  if (key.expiresAt && new Date(key.expiresAt).getTime() <= Date.now()) return { refused: 'that key has expired' }
+  if (!key.publicKey) return { refused: 'that key was not enrolled under a key pair' }
+  const user = await sys.user.findFirst({ where: { id: key.userId } })
+  if (user?.kind !== 'peer') return { refused: 'that key does not belong to a peer' }
+  if (user.status === 'suspended') return { refused: 'that peer is suspended' }
+  return { key, user }
+}
+
+/**
+ * Another app's signature as a credential (`FJS-D1196`, `FJS-D1604`): a good
+ * one becomes the peer's own account, graded by its membership like anyone's
+ * and held to its key's scopes by junction at the call.
+ *
+ * Asked BEFORE `outpostCredential`, because the outpost door claims every
+ * signed request and refuses one that names no machine. A request with no
+ * `X-Fjs-Key` is not this door's and goes on to it; one that names a key is
+ * this door's whatever it signed, and ONE sentence answers every refusal, for
+ * the reason `outpostCredential` gives: which key ids are real is not the
+ * caller's to learn.
+ */
+export function peerCredential(app: OutpostDeps): CredentialVerifier {
+  const TOLERANCE_S = 300
+
+  const verify = signedRequest({
+    window: TOLERANCE_S,
+    keyFor: async (req) => {
+      const keyId  = String(req.headers[PEER_KEY_HEADER] ?? '').trim()
+      const keyed  = await peerKeyFor(app, keyId)
+      if ('refused' in keyed) {
+        app.logger.warn('peer signature refused', { path: req.path, reason: keyed.refused })
+        return null
+      }
+      return {
+        publicKey: keyed.key.publicKey as string,
+        // `userType: 'peer'` is what the trail files as the actor's kind
+        // (`toDataPrincipal` → `actorTypeOf`). `scopes` is what junction holds
+        // the call to: a peer's key always carries some, so it is never whole.
+        session: {
+          id: keyed.user.id as string, userType: 'peer', authMethod: 'peer',
+          workspaceId: keyed.key.workspaceId as string, apiKeyId: keyed.key.id as string,
+          scopes: (keyed.key.scopes ?? []) as string[],
+        },
+      }
+    },
+    seenNonce: async (nonce) => {
+      try {
+        return await rememberNonce(app, nonce, 2 * TOLERANCE_S * 1_000)
+      } catch (err) {
+        app.logger.error('peer nonce store failed', { error: err instanceof Error ? err.message : String(err) })
+        throw err
+      }
+    },
+  })
+
+  return (req) => req.headers[PEER_KEY_HEADER] ? verify(req) : null
 }
 
 /**

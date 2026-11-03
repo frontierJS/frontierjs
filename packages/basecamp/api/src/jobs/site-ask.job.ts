@@ -13,6 +13,7 @@ import { ASK_TIMEOUT_MS, askDraft } from '../domain/site/site-ask.ts'
 
 const siteAsk = defineJob<{ appId: string; draft: string }>({
   name: 'site:ask',
+  queue: 'site',
   handler: async (ctx) => {
     const { app } = runsAsApp(ctx, 'site:ask')
     const status = await askDraft(app, ctx.data.appId, ctx.data.draft)
@@ -28,4 +29,4 @@ const siteAsk = defineJob<{ appId: string; draft: string }>({
 export default siteAsk
 
 export const dispatchAsk = (app: { jobs: { dispatch: Function } }, appId: string, draft: string) =>
-  app.jobs.dispatch(siteAsk, { appId, draft }, { unique: `site:ask:${appId}:${draft}`, actor: null, tenant: null })
+  app.jobs.dispatch(siteAsk, { appId, draft }, { unique: `site:ask:${appId}:${draft}`, actor: null, tenant: null, queue: 'site' })

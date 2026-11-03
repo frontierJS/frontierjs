@@ -54,11 +54,19 @@ export function machineStream(app: App) {
       const user = ctx.user as (typeof ctx.user & { id?: string }) | null
       if (!user) return ctx.close(4001, 'Sign in first')
       // A key's reach is the `scope:` its service methods declare (scopes.ts),
-      // and a socket has none to declare.
-      if (user.authMethod === 'apiKey') return ctx.close(4003, 'An API key may not open a stream')
+      // and a socket has none to declare. Refusing the key by name let every
+      // other principal through — a peer, an outpost — so a session is the
+      // one principal admitted (`FJS-3892`).
+      if (!(user as { sessionId?: string }).sessionId) return ctx.close(4003, 'Only a signed-in person may open a stream')
 
       const db    = app.db as any
       const claim = await workspaceClaim(db, String(ctx.query.workspace ?? ''), user.id)
+      // The suspension `scopeToWorkspace` enforces on every service call; a
+      // socket runs no service hook, so it is asked here, after membership.
+      if (claim) {
+        const tenant = await db.asSystem().workspace.findFirst({ where: { id: claim.workspaceId }, select: { status: true } })
+        if (tenant?.status === 'suspended') return ctx.close(4003, 'This workspace is suspended')
+      }
       const row   = await db.asSystem()[source.accessor].findFirst({ where: { id: ctx.route.id } })
       const seen  = row && claim ? await db.$readAs(source.accessor, row, toDataPrincipal({ ...user, ...claim })) : null
       // One answer for absent and refused, as a tenancy filter gives a read.

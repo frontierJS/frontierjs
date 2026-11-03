@@ -1,11 +1,13 @@
 // desktop/test/verify.mjs — Basecamp as a desktop app, its screens bundled into
-// a native shell (FJS-D263), driven to the local repos scan.
+// a native shell (FJS-D263), driven through sign-in to a routed screen.
 //
 //   bun run verify:desktop
 //
 // Starts and stops everything itself: a scratch database and HOME in a temp
-// directory, the API on the TEST row (7120) with LOCAL_MACHINE=1, then builds
-// the screens and the shell and runs the shell under Xvfb.
+// directory, the API on the TEST row (7120), then builds the screens and the
+// shell and runs the shell under Xvfb. The local machine's wing is Workbench's
+// (its own desktop/test/verify.mjs drives the scan), so nothing here sets
+// LOCAL_MACHINE.
 //
 // What only this can ask is what changes when the page is not a web page. It
 // is served from tauri://localhost, so:
@@ -72,24 +74,12 @@ if (await fetch(`${API}/`).then(() => true, () => false)) {
   process.exit(1)
 }
 
-// ─── a database and a HOME of its own ─────────────────────────────────────
-// Two checkouts under ~/code: one committed, with a token in its remote and a
-// file left uncommitted, and one empty.
+// ─── a database of its own ────────────────────────────────────────────────
 
 const scratch = mkdtempSync(join(tmpdir(), 'basecamp-desktop-'))
 const DB      = join(scratch, 'basecamp.db')
 const HOME    = join(scratch, 'home')
-const gitIn = (cwd, ...args) => spawnSync('git', args, { cwd, env: { ...process.env, HOME,
-  GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
-for (const name of ['alpha', 'beta']) {
-  mkdirSync(join(HOME, 'code', name), { recursive: true })
-  gitIn(join(HOME, 'code', name), 'init', '-q', '-b', 'main')
-}
-const ALPHA = join(HOME, 'code', 'alpha')
-writeFileSync(join(ALPHA, 'README'), 'x')
-gitIn(ALPHA, 'add', '.'); gitIn(ALPHA, 'commit', '-q', '-m', 'first commit')
-gitIn(ALPHA, 'remote', 'add', 'origin', 'https://me:tok_secret@example.test/alpha.git')
-writeFileSync(join(ALPHA, 'dirty.txt'), 'y')
+mkdirSync(HOME, { recursive: true })
 
 console.log('\nBasecamp — the desktop shell\n')
 
@@ -104,7 +94,7 @@ if (seeded.status !== 0) {
 // server holding the port for the next run to be answered by.
 const api = spawn('bun', ['api/index.ts'], {
   cwd: PKG, stdio: 'ignore', detached: true,
-  env: { ...process.env, ...dbEnv, FRONTIER_PORT_BE: String(API_PORT), LOCAL_MACHINE: '1', HOME },
+  env: { ...process.env, ...dbEnv, FRONTIER_PORT_BE: String(API_PORT), HOME },
 })
 
 let stoppedEarly = null
@@ -182,7 +172,6 @@ if (rows.watchdog) console.error('probe watchdog:', JSON.stringify(rows.watchdog
 if (rows.threw)    console.error('probe threw:', rows.threw)
 
 if (!stoppedEarly) {
-  const scan = rows.scan ?? {}
   check('the shell exited cleanly', exitCode === 0, exitCode)
   // Named rather than "not the API": a shell that loaded a dev server would
   // pass that and prove nothing about a bundled page.
@@ -191,13 +180,10 @@ if (!stoppedEarly) {
   check('the API answers across origins', rows['api.health'] === 200, rows['api.health'])
   check('sign-in lands on the overview with a stored token',
     rows.signIn?.landed && rows.signIn?.token, rows.signIn)
-  check('the sidebar link reaches /git-activity/local/ without a reload',
-    rows.nav?.arrived && rows.nav?.path === '/git-activity/local/' && rows.nav?.reloads === 0, rows.nav)
-  check('the scan lists both checkouts under ~/code',
-    scan.listed && /alpha/.test(scan.text) && /beta/.test(scan.text), scan)
-  check('with branch and dirty state', /main/.test(scan.text) && /1 changed/.test(scan.text), scan.text)
-  check('and the remote with its token cut out',
-    /https:\/\/example\.test\/alpha\.git/.test(scan.text) && scan.leaked === false, scan.text)
+  check('the sidebar link reaches /apps/ without a reload',
+    rows.nav?.arrived && rows.nav?.path === '/apps/' && rows.nav?.reloads === 0, rows.nav)
+  check('and the screen is drawn from the API across origins',
+    rows.nav?.heading === 'Apps', rows.nav)
   check('no page errors', Array.isArray(rows.errors) && rows.errors.length === 0, rows.errors)
 }
 

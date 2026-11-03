@@ -16215,6 +16215,10 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1790"></a>2026-11-03 · `FJS-D1790` — Basecamp's domain placement — Domain 7 is *Observability & Operations* and Basecamp is its tool; the developer's desk is Workbench, outside the World's domains.
+
+Asked in `packages/basecamp/docs/vision.md` § The Domain Question (three candidates: rename the domain *Operations*, split Observability from Operations, or let Basecamp span domains) and closed by `IDEAS/workbench-package.md` 4.3 **by subtraction**: `ARCHITECT.md` § domains already names 7 as *Observability & Operations* with Basecamp and Outpost as its tools, and the one thing in Basecamp that was neither — the developer's own desk (workbench chats, atlas, decide, autopilot, the Claude tab, local git) — left for `packages/workbench` (`FJS-D1785`–`D1788`). What remains in Basecamp is signals and control over a fleet, one concern seen and acted on, so candidate 1 holds as `ARCHITECT.md` already wrote it and no split is needed. The constraint the question asked for: Basecamp absorbs what observes or operates a running system; what serves the developer at their own machine goes to Workbench, and what crosses between them crosses as a signed call (`FJS-D1188`), never an import.
+
 ### <a id="fjs-d1789"></a>2026-11-03 · `FJS-D1789` — The two reds nobody files are one `feed` loop with `feeder` as a cap: `ci` runs the whole of `scripts/ci.mjs` on a worktree at HEAD, `stranger` builds a `fli new --full --source npm` from the published packages, and each red unit is filed mechanically under a fixed title, amended once a day, never when it reads as the environment.
 
 `IDEAS/autopilot.md` § 4.2, beside `FJS-D1784`'s stress loop. Seven choices, each the cheaper of the two it was priced against:
@@ -16960,7 +16964,7 @@ The nine, before any edit: 1 origin — none new; `state` is folded from the run
 
 Adjudication: *familiarity vs. precision* — the shape is stolen, the words rejected because each half-fits a word this tree already uses.
 
-*Lives in:* `packages/basecamp/api/src/domain/workbench/workbench.ts` (`status`), `packages/basecamp/web/src/routes/workbench/index.mesa` (`announce`, the stage sort); `IDEAS/workbench.md` § Ranked rows 5, 7 and 13.
+*Lives in:* `packages/workbench/api/src/domain/workbench/workbench.ts` (`status`), `packages/workbench/web/src/routes/workbench/index.mesa` (`announce`, the stage sort); `IDEAS/workbench.md` § Ranked rows 5, 7 and 13.
 
 ### <a id="fjs-d1156"></a>2026-10-16 · `FJS-D1156` — A renamed slug's redirect: one mechanism or two — One, the build: the `Slug` rows a rename writes become `_redirects` lines in the build the rename already owes, through Sierra's one writer of `_redirects` (`FJS-D961`, `FJS-D920`). No runtime lookup.
 

@@ -1,0 +1,111 @@
+---
+title: Basecamp — run your fleet from one place — FrontierJS
+description: Basecamp is the control plane for FrontierJS apps — ship a release to a box and roll it back, run it under an agent that owns TLS and replication, keep keys and secrets in one trust model, watch it, and restore it.
+render: static
+---
+<!--
+  The Basecamp page: the product, argued in five sections. Prerendered, no
+  script beyond the layout's theme swatches.
+
+  ── Section contract ───────────────────────────────────────────────────
+  Each section is a component in components/basecamp/, and its root is
+  `<section id=… class="bc-section">` holding a `.container.stack`:
+
+    p.eyebrow                       the topic's name, as the nav says it
+    h2                              the claim, in the reader's words
+    p.lede                          one or two sentences, one idea
+    .bc-split
+      ul.bc-points > li             <strong>head.</strong> one sentence each, 3–4
+      figure.bc-proof               ONE proof: a pre.code of a real command or
+                                    output, or a .flow of hops, with a figcaption
+                                    saying where it came from
+    p.bc-more                       "Read more:" links into the repo docs
+
+  The structure rules are :global() below, so five sections cannot drift into
+  five looks. A section adds a scoped rule only for what its proof needs.
+
+  Every claim and every terminal line is lifted from the package docs or code
+  and is something that runs TODAY. Direction is labeled as direction. A
+  section that cannot back a claim drops the claim.
+-->
+<script>
+  import Deploy  from '../components/basecamp/Deploy.mesa'
+  import Outpost from '../components/basecamp/Outpost.mesa'
+  import Trust   from '../components/basecamp/Trust.mesa'
+  import Watch   from '../components/basecamp/Watch.mesa'
+  import Backups from '../components/basecamp/Backups.mesa'
+</script>
+
+<section id="top" class="bc-hero">
+  <div class="container stack">
+    <p class="eyebrow">Basecamp · alpha</p>
+    <h1>Your servers,<br>one command center.</h1>
+    <p class="lede">
+      Basecamp is where you go when you stop building one app and start operating
+      several. Ship a release, roll it back, see what is running where, and get your
+      data back when something breaks — on boxes you own, with no one in the middle.
+    </p>
+    <div class="cluster" style="gap:.75rem">
+      <a class="btn primary raised" href="/start/basecamp/">Put Basecamp on a box</a>
+      <a class="btn outlined" href="#deploy">See how it works</a>
+    </div>
+    <nav class="bc-jump" aria-label="On this page">
+      <a href="#deploy">Deploy</a>
+      <a href="#outpost">Outpost</a>
+      <a href="#trust">Trust</a>
+      <a href="#watch">Watch</a>
+      <a href="#backups">Backups</a>
+    </nav>
+  </div>
+</section>
+
+<Deploy />
+<Outpost />
+<Trust />
+<Watch />
+<Backups />
+
+<section id="start" class="bc-section">
+  <div class="container stack">
+    <p class="eyebrow">Start</p>
+    <h2>One command buys the box.</h2>
+    <p class="lede">
+      Name a hostname. <code>fli basecamp:create</code> buys the server, installs Basecamp,
+      points DNS at it and makes your first admin.
+    </p>
+    <div class="cluster" style="gap:.75rem">
+      <a class="btn primary raised" href="/start/basecamp/">The quickstart</a>
+      <a class="btn outlined" href="https://github.com/frontierjs/frontierjs/tree/main/packages/basecamp">Read the source</a>
+    </div>
+    <p class="text-sm text-muted">
+      Basecamp is alpha and built in FrontierJS itself. It is a face over a documented
+      path: everything it does is also available from <code>fli</code> and, beneath that, ssh.
+    </p>
+  </div>
+</section>
+
+<style>
+  .bc-hero { padding: 5rem 0 3rem; }
+  .bc-hero .lede { max-width: 52ch; }
+  h1 { font-size: clamp(2.25rem, 6vw, 3.5rem); line-height: 1.05; letter-spacing: -.03em; margin: .4em 0 .3em; }
+  .bc-jump { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+  .bc-jump a { padding: .3rem .8rem; border: 1px solid var(--rule-strong); border-radius: 999px; font-size: .85rem; color: var(--ink-soft); text-decoration: none; }
+  .bc-jump a:hover { background: var(--surface-sunken); color: var(--ink); }
+  .btn.outlined { color: var(--ink); border-color: var(--rule-strong); }
+
+  :global(.bc-section) { scroll-margin-top: 5rem; padding: 4.5rem 0; border-top: 1px solid var(--rule); }
+  :global(.bc-section h2) { font-size: clamp(1.6rem, 3.5vw, 2.2rem); letter-spacing: -.02em; margin: 0 0 .3em; }
+  :global(.bc-section .eyebrow), :global(.bc-hero .eyebrow) { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
+  :global(.bc-section .lede), :global(.bc-hero .lede) { font-size: 1.15rem; color: var(--ink-soft); max-width: 56ch; }
+  :global(.bc-split) { display: grid; gap: 2rem; grid-template-columns: minmax(0, 1fr); align-items: start; margin-top: 1rem; }
+  @media (min-width: 60rem) { :global(.bc-split) { grid-template-columns: .9fr 1.1fr; } }
+  :global(.bc-points) { list-style: none; padding: 0; margin: 0; display: grid; gap: 1.1rem; }
+  :global(.bc-points li) { color: var(--ink-soft); line-height: 1.6; padding-left: 1rem; border-left: 2px solid var(--color-primary); }
+  :global(.bc-points strong) { color: var(--ink); }
+  :global(.bc-proof) { margin: 0; min-width: 0; }
+  :global(.bc-proof figcaption) { font-size: .8rem; color: var(--ink-mute); margin-top: .5rem; }
+  :global(.bc-more) { font-size: .9rem; color: var(--ink-mute); }
+  :global(.bc-more a) { color: var(--color-primary); }
+  /* @frontierjs/css sets no font on body, so a section on its own took the browser's serif. */
+  :global(.bc-section), :global(.bc-hero) { font-family: var(--font-primary); }
+</style>

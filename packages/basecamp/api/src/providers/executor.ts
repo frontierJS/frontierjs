@@ -34,6 +34,13 @@ import type { App }         from '@frontierjs/junction'
 export const PULL_TIMEOUT_MS   = 15 * 60_000 + 30_000
 export const BUILD_TIMEOUT_MS  = 30 * 60_000 + 30_000
 export const DEPLOY_TIMEOUT_MS = 32 * 60_000
+/**
+ * `/static/activate` moves the Caddy route, then swaps a symlink. The route is
+ * up to eight admin calls, each of which Outpost bounds at 10 s, so conduit's
+ * own 10 s default read a slow Caddy as a failed activation while the swap was
+ * still to come (`FJS-3883`).
+ */
+export const ACTIVATE_TIMEOUT_MS = 2 * 60_000
 
 /** Set to '1' to allow the stub. Refused under NODE_ENV=production regardless. */
 const STUB_ENV = 'BASECAMP_STUB_OUTPOST'

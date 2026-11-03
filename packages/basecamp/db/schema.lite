@@ -704,7 +704,6 @@ enum NotificationKind {
   JobFailed
   WeeklyDigest
   ReplicaFound
-  AutopilotReport
 }
 
 // ============================================================
@@ -789,7 +788,7 @@ model User {
   // your own row only: this model spans workspaces, so a level earned in one
   // is no standing over a person who is in another, and a roster reads its
   // people through the membership (`workspaces.members`, asSystem()). A BOT
-  // is readable to whoever may issue it a key — level 5 in a workspace it is
+  // or a PEER is readable to whoever may issue it a key — level 5 in a workspace it is
   // in, ApiKey's own gate — because the key's `userId` is a write graded as a
   // read of its parent (`FJS-D576`). A human row never comes along with it,
   // so the test is on `kind`. The field policies above keep the columns a
@@ -799,6 +798,7 @@ model User {
   @@gate(1.8.1.5)
   @@allow(read,   id == auth().id)
   @@allow(read,   kind == 'bot' && auth().level >= 5 && memberships.some(workspaceId == auth().workspaceId))
+  @@allow(read,   kind == 'peer' && auth().level >= 5 && memberships.some(workspaceId == auth().workspaceId))
   @@allow(update, id == auth().id)
   @@softDelete
   @@trail(audit)
@@ -1280,6 +1280,13 @@ model ApiKey {
   // where `asSystem()` would drop all three to set one value.
   credentialId String?   @system
 
+  // A peer's key (`FJS-D1604`): the public half of an Ed25519 pair the peer
+  // generated and holds alone, as `generateSigningKeys` emits it. A row holds
+  // this or `credentialId`, never both — a receiver that kept a secret able to
+  // sign as its dialer is the breach the key pair exists to rule out. Written
+  // once at enrollment; a rotation is a revoke and a second enrollment.
+  publicKey    String?   @system @immutable
+
   name         String    @trim @length(1, 200)
 
   // The whole of what a list can show. Nothing in this app can reproduce the
@@ -1583,119 +1590,6 @@ model OutpostNonce {
   @@gate(8)
   @@tenant(none)
   @@index([seenAt])
-}
-
-
-// ── Claude Code's usage on THIS machine, indexed (`FJS-D1714`) ───────────────
-//
-// History, not state: `domain/claude/claude-index.ts` reads the transcripts under
-// `<config dir>/projects/` and these two tables are what it learned. They are
-// rebuildable from the files still on disk and are the ONLY record of those
-// Claude Code has since deleted (`cleanupPeriodDays`), which is why a message row
-// carries its own `sessionId` and `cwd` and names no transcript: a relation with
-// a cascade would take the history with the file.
-//
-// @@gate(5.8): the Workbench's ADMINISTRATOR reads, and only the job writes
-// (`asSystem()`). @@tenant(none): the machine's `~/.claude` belongs to no
-// workspace. No @@trail(audit): one row per assistant message would bury the
-// human trail, and the rows are derived.
-
-// One row per transcript FILE — where the indexer stopped reading it. A
-// subagent's transcript is its own file under a `subagents/` folder and carries
-// its PARENT's `sessionId`, so a session's subagent count is a count here.
-// `agent` is a subagent's type, from the `.meta.json` beside its file.
-model ClaudeTranscript {
-  id          String    @id @default(uuid())
-  path        String    @unique
-  sessionId   String
-  cwd         String?
-  isSubagent  Boolean   @default(false)
-  agent       String?
-  isHeadless  Boolean   @default(false)
-  title       String?
-  firstPrompt String?
-  // Bytes read to, always at a newline. Equal to `size` → nothing to read;
-  // larger `size` → read [offset, size); smaller → the file was rewritten, from 0.
-  offset      Int       @default(0)
-  // The skills loaded in the turn still open at `offset`, which the next read's
-  // messages carry until a prompt closes it.
-  turnSkills  String    @default("")
-  size        Int       @default(0)
-  startedAt   DateTime?
-  lastAt      DateTime?
-  // The file is no longer on disk; this row and its messages are the record.
-  isGone      Boolean   @default(false)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @default(now()) @updatedAt
-
-  @@gate(5.8)
-  @@tenant(none)
-  @@index([sessionId])
-  @@index([cwd])
-}
-
-// One row per assistant MESSAGE, unique on the id Claude Code writes — a streamed
-// reply's several lines, a resumed session's repeats and a re-read file all
-// collapse onto it. `cacheWrite` is the whole write and `cacheWrite1h` the part
-// of it written to the one-hour cache, which is priced differently.
-// `tools` is the sorted, comma-joined names of the tools the message called;
-// `skills` the same of the skills loaded in its turn, and `agent` its subagent's
-// type, copied from the transcript row so a spend read groups on it.
-model ClaudeMessage {
-  id           String   @id @default(uuid())
-  messageId    String   @unique
-  sessionId    String
-  cwd          String?
-  model        String
-  at           DateTime
-  input        Int
-  cacheWrite   Int
-  cacheWrite1h Int      @default(0)
-  cacheRead    Int
-  output       Int
-  tools        String   @default("")
-  skills       String   @default("")
-  isSubagent   Boolean  @default(false)
-  agent        String?
-
-  @@gate(5.8)
-  @@tenant(none)
-  @@index([at])
-  @@index([cwd])
-  @@index([sessionId])
-}
-
-// One change Basecamp made to Claude Code's configuration, and what taking it
-// back needs (`domain/claude/claude-write.ts`, the one writer). The call trail
-// records `claude.<method>` naming this row; this row names the file and the
-// top-level keys changed, never a value (Invariant 7).
-//
-// `before` is a file's whole text before the write, or a removed MCP server's
-// config — `settings.json` `env` and an MCP server's env and headers carry
-// tokens, so it is `@encrypted`. `digest` is the sha256 of the file as written:
-// a running `claude` edits these files too, and an undo that replayed `before`
-// over its edit would lose it, so undo is refused once the file has moved.
-//
-// @@gate(5.8): the Workbench's ADMINISTRATOR reads; the claude service writes
-// through `asSystem()`. @@tenant(none), as the usage index.
-model ClaudeWrite {
-  id        String    @id @default(uuid())
-  // `file.save`, `file.trash`, `settings`, `permissions`, `plugin.enable`, `mcp.disable`...
-  action    String
-  // A file path, `name@marketplace`, a marketplace name or an MCP server name.
-  target    String
-  // The project a project- or local-scope change belongs to.
-  project   String?
-  scope     String?
-  keys      String    @default("")
-  before    String?   @encrypted
-  digest    String?
-  undoneAt  DateTime?
-  createdAt DateTime  @default(now())
-
-  @@gate(5.8)
-  @@tenant(none)
-  @@index([createdAt])
 }
 
 

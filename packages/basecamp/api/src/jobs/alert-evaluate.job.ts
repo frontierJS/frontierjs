@@ -45,10 +45,9 @@ import { isStale }          from '@frontierjs/junction'
 import { runsAsApp }        from '../domain/job/job-context.ts'
 import { evaluateWindow, describeBreach, isSnoozed } from '../domain/alert/alerting.ts'
 import { watchedSeries }    from '../domain/alert/watched-series.ts'
-import { fanOutToChannels } from '../domain/notification/delivery.ts'
+import { fanOutAlert }      from '../domain/alert/deliver.ts'
+import { otherRunIsLive }   from '../domain/job/singleton.ts'
 import { notifyPeople, workspaceMembers } from '../domain/notification/notify.ts'
-import type { Message }     from '../domain/notification/delivery.ts'
-import type { App }         from '@frontierjs/junction'
 
 /** How far back a rule with no duration still looks. A `forMinutes: 0` rule is
  *  about the newest reading, but "newest" has to be bounded or a series whose
@@ -72,6 +71,8 @@ const WINDOW_GRACE_MS = 2 * 60_000
 export default defineJob({
   handler: async (ctx) => {
     const { app, db } = runsAsApp(ctx, 'alert-evaluate')
+    // A pass that outlived its minute is not joined by the next one.
+    if (otherRunIsLive(ctx, 'alert-evaluate')) return
     const now  = Date.now()
 
     // Every workspace's rules in one pass. `asSystem()` is what crosses them —
@@ -84,80 +85,85 @@ export default defineJob({
     const stale:   string[] = []
 
     for (const rule of rules) {
-      // A series is MINTED by the first scrape that sees it, so a rule
-      // legitimately names one that does not exist yet. What it must not do is
-      // be silent about it: a rule watching a metric nobody writes can never
-      // fire, and looks exactly like a rule whose threshold is never crossed.
-      const series = await watchedSeries(db, rule.metricName, rule.workspaceId)
-      if (!series) { missing.push(`${rule.name} → ${rule.metricName}`); continue }
-      if (isStale(series.lastSeenAt, now)) stale.push(`${rule.name} → ${rule.metricName}`)
+      try {
+        // A series is MINTED by the first scrape that sees it, so a rule
+        // legitimately names one that does not exist yet. What it must not do is
+        // be silent about it: a rule watching a metric nobody writes can never
+        // fire, and looks exactly like a rule whose threshold is never crossed.
+        const series = await watchedSeries(db, rule.metricName, rule.workspaceId)
+        if (!series) { missing.push(`${rule.name} → ${rule.metricName}`); continue }
+        if (isStale(series.lastSeenAt, now)) stale.push(`${rule.name} → ${rule.metricName}`)
 
-      const windowMs = Math.max(rule.forMinutes * 60_000 + WINDOW_GRACE_MS, MIN_WINDOW_MS)
-      const points   = await db.metricPoint.findMany({
-        where:   { seriesId: series.id, at: { gte: now - windowMs } },
-        orderBy: { at: 'asc' },
-      })
-
-      const verdict = evaluateWindow(points, rule)
-      // The newest event that is still open. Ordered, because a rule that fired
-      // twice before anything resolved it would otherwise be closed in the
-      // order sqlite happened to return.
-      const open = await db.alert.findFirst({
-        where:   { ruleId: rule.id, status: 'firing' },
-        orderBy: { firedAt: 'desc' },
-      })
-
-      // A snoozed rule opens nothing, and that is the whole of what snoozing
-      // does: a breach that is still holding when the snooze runs out fires on
-      // the next pass, and an open event still resolves, because closing the
-      // incident a page already opened is not paging anybody.
-      if (verdict.breached && !open && !isSnoozed(rule, now)) {
-        const message = describeBreach(rule.metricName, rule, verdict.value)
-        const event   = await db.alert.create({
-          data: {
-            ruleId:         rule.id,
-            status:         'firing',
-            severity:       rule.severity,
-            // A metric series is neither a server nor a volume. Calling it one
-            // would page whoever owns the machine for a number about this
-            // process — which is why `AlertSubject` gained a third value rather
-            // than the nearest one being borrowed.
-            subjectType:    'series',
-            subjectId:      series.id,
-            valueAtTrigger: verdict.value,
-            message,
-            firedAt:        new Date(now).toISOString(),
-          },
-        })
-        fired++
-        await notifyPeople(app, 'AlertFiring',
-          await workspaceMembers(app, rule.workspaceId), {
-            eventId: event.id, ruleName: rule.name, severity: rule.severity, message,
-          }, rule.workspaceId)
-        await fanOut(app, db, rule, event, {
-          title:    `[${rule.severity}] ${rule.name}`,
-          text:     message,
-          severity: rule.severity,
-          action:   'trigger',
+        const windowMs = Math.max(rule.forMinutes * 60_000 + WINDOW_GRACE_MS, MIN_WINDOW_MS)
+        const points   = await db.metricPoint.findMany({
+          where:   { seriesId: series.id, at: { gte: now - windowMs } },
+          orderBy: { at: 'asc' },
         })
 
-      } else if (open && verdict.reason === 'recovered') {
-        await db.alert.update({
-          where: { id: open.id },
-          data:  { status: 'resolved', resolvedAt: new Date(now).toISOString() },
+        const verdict = evaluateWindow(points, rule)
+        // The newest event that is still open. Ordered, because a rule that fired
+        // twice before anything resolved it would otherwise be closed in the
+        // order sqlite happened to return.
+        const open = await db.alert.findFirst({
+          where:   { ruleId: rule.id, status: 'firing' },
+          orderBy: { firedAt: 'desc' },
         })
-        resolved++
-        const recovered = describeBreach(rule.metricName, rule, verdict.value)
-        await notifyPeople(app, 'AlertResolved',
-          await workspaceMembers(app, rule.workspaceId), {
-            eventId: open.id, ruleName: rule.name, severity: rule.severity, message: recovered,
+
+        // A snoozed rule opens nothing, and that is the whole of what snoozing
+        // does: a breach that is still holding when the snooze runs out fires on
+        // the next pass, and an open event still resolves, because closing the
+        // incident a page already opened is not paging anybody.
+        if (verdict.breached && !open && !isSnoozed(rule, now)) {
+          const message = describeBreach(rule.metricName, rule, verdict.value)
+          const event   = await db.alert.create({
+            data: {
+              ruleId:         rule.id,
+              status:         'firing',
+              severity:       rule.severity,
+              // A metric series is neither a server nor a volume. Calling it one
+              // would page whoever owns the machine for a number about this
+              // process — which is why `AlertSubject` gained a third value rather
+              // than the nearest one being borrowed.
+              subjectType:    'series',
+              subjectId:      series.id,
+              valueAtTrigger: verdict.value,
+              message,
+              firedAt:        new Date(now).toISOString(),
+            },
           })
-        await fanOut(app, db, rule, open, {
-          title:    `[resolved] ${rule.name}`,
-          text:     recovered,
-          severity: rule.severity,
-          action:   'resolve',
-        })
+          fired++
+          await told(rule, async () => notifyPeople(app, 'AlertFiring',
+            await workspaceMembers(app, rule.workspaceId), {
+              eventId: event.id, ruleName: rule.name, severity: rule.severity, message,
+            }, rule.workspaceId))
+          await fanOutAlert(app, db, rule, event, {
+            title:    `[${rule.severity}] ${rule.name}`,
+            text:     message,
+            severity: rule.severity,
+            action:   'trigger',
+          })
+
+        } else if (open && verdict.reason === 'recovered') {
+          await db.alert.update({
+            where: { id: open.id },
+            data:  { status: 'resolved', resolvedAt: new Date(now).toISOString() },
+          })
+          resolved++
+          const recovered = describeBreach(rule.metricName, rule, verdict.value)
+          await told(rule, async () => notifyPeople(app, 'AlertResolved',
+            await workspaceMembers(app, rule.workspaceId), {
+              eventId: open.id, ruleName: rule.name, severity: rule.severity, message: recovered,
+            }))
+          await fanOutAlert(app, db, rule, open, {
+            title:    `[resolved] ${rule.name}`,
+            text:     recovered,
+            severity: rule.severity,
+            action:   'resolve',
+          })
+        }
+      } catch (err) {
+        // One rule failing must not cost the rules after it their evaluation.
+        console.error(`[alert-evaluate] ${rule.name}: ${(err as Error).message}`)
       }
     }
 
@@ -180,38 +186,12 @@ export default defineJob({
   // Every minute — the scrape's own interval. A slower evaluator would add its
   // period to every rule's `forMinutes` without saying so.
   cron: '* * * * *',
+  timeout: 4 * 60_000,
 })
 
-/**
- * Deliver one event to every channel the rule is attached to.
- *
- * A rule with no channels reaches nobody, and that is a legitimate state — the
- * event is still written, and the alerts screen says the rule delivers nowhere.
- * What is not legitimate is silence about a channel that REFUSED, so a failure
- * is logged per channel and the pass continues: one dead Slack webhook must not
- * cost every rule after it in the same run.
- */
-async function fanOut(
-  app:   App,
-  db:    any,
-  rule:  any,
-  event: any,
-  msg:   Omit<Message, 'dedupKey'>,
-): Promise<void> {
-  const links = await db.alertRuleChannel.findMany({
-    where:   { ruleId: rule.id },
-    include: { channel: true },
-  })
-
-  await fanOutToChannels(
-    app,
-    () => db,
-    links.map((l: any) => l.channel),
-    // The EVENT's id, not the rule's: it is stable across the trigger and the
-    // resolve, which is what lets PagerDuty close the incident it opened
-    // instead of opening a second one. A rule id would collapse two separate
-    // firings of the same rule into one incident.
-    { ...msg, dedupKey: `basecamp:alert:${event.id}` },
-    `alert-evaluate ${rule.name}`,
-  )
+/** The members' bell is one delivery and the rule's channels another; a throw
+ *  from the first must not skip the pager. */
+async function told(rule: { name: string }, fn: () => Promise<unknown>): Promise<void> {
+  try { await fn() }
+  catch (err) { console.error(`[alert-evaluate] ${rule.name}: notify: ${(err as Error).message}`) }
 }

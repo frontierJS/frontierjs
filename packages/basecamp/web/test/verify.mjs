@@ -24,7 +24,7 @@
  *   bun run verify
  *
  * The API runs against a scratch directory -- the database, the jobs queue
- * beside it, the audit trail, the site clones and the workbench -- removed at
+ * beside it, the audit trail and the site clones -- removed at
  * the end, so the dev database in db/ is never opened. It starts the API and
  * the web server itself and stops them at the end, so it needs both ports free. Needs Chrome on PATH (or $FJS_CHROME), the same
  * requirement the css package's harness has.
@@ -101,7 +101,6 @@ const SCRATCH_ENV = {
   DATABASE_URL:  join(SCRATCH, 'basecamp.db'),
   AUDIT_PATH:    join(SCRATCH, 'audit.db'),
   SITES_DIR:     join(SCRATCH, 'sites'),
-  WORKBENCH_DIR: join(SCRATCH, 'workbench'),
 }
 // The command port's certificate. The sink below serves it, enrollment hands
 // it over, and Basecamp's conduit target pins it — the TLS a fleet machine

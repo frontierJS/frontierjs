@@ -1,0 +1,20 @@
+{
+  "productName": "Workbench",
+  "version": "0.0.0",
+  "identifier": "my.workbench.desktop",
+  "build": {
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": [
+      "../../../../brand/assets/icons/basecamp.png"
+    ]
+  }
+}

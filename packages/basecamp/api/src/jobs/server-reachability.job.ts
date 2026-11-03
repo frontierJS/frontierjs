@@ -21,7 +21,9 @@
 // nothing can test at a chosen instant.
 
 import { defineJob }      from '@frontierjs/caravan'
+import { sweepStuckReleases } from '../domain/release/release-record.ts'
 import { runsAsApp }      from '../domain/job/job-context.ts'
+import { otherRunIsLive } from '../domain/job/singleton.ts'
 import { gradeReachability, heartbeatGraceMs } from '../domain/host/reachability.ts'
 import { notifyPeople, workspaceMembers }        from '../domain/notification/notify.ts'
 import type { App }         from '@frontierjs/junction'
@@ -36,7 +38,15 @@ export interface SweepOptions {
   /** One machine rather than the fleet, for an operator asking about a row in
    *  front of them: a sweep worth running is worth running against one subject. */
   serverId?: string
+  /** When this process began serving. Within one heartbeat timeout of it no
+   *  machine is graded as gone: after an outage of Basecamp's own, every
+   *  machine's last check-in is old because nobody was there to receive the
+   *  next one. The job passes it; a test standing at an instant does not. */
+  startedAt?: number
 }
+
+/** The instant this module loaded, which is the process's start for the job. */
+const PROCESS_STARTED = Date.now()
 
 export interface SweepResult {
   graded: number
@@ -73,49 +83,74 @@ export async function sweepUnreachable(
 
   const result: SweepResult = { graded: servers.length, quiet: 0, neverSpoke: [] }
 
+  if (opts.startedAt !== undefined && at - opts.startedAt < graceMs) return result
+
   for (const server of servers) {
-    const verdict = gradeReachability(server, at, graceMs)
-    if (verdict === 'never-spoke') { result.neverSpoke.push(server.name as string); continue }
-    if (verdict !== 'quiet') continue
-
-    // `transition`, never an update: the move is what `@@transitions` declares,
-    // and it narrows the UPDATE's own WHERE to the from-state — so a machine
-    // that checked in between the read above and this line stays `online`
-    // instead of being marked unreachable by a sweep that read a stale row.
     try {
-      await db.server.transition(server.id, 'loseContact')
-    } catch {
-      // The race, and it is the expected outcome rather than an error: the
-      // machine came back while this pass was running. Nothing is announced,
-      // because nothing happened.
-      continue
+      await gradeOne(app, db, server, at, graceMs, result)
+    } catch (err) {
+      // One machine's failure to be recorded must not cost the ones after it
+      // their grade.
+      console.error(`[server-reachability] ${server.name}: ${(err as Error).message}`)
     }
-    result.quiet++
+  }
 
+  return result
+}
+
+async function gradeOne(
+  app: App, db: any, server: any, at: number, graceMs: number, result: SweepResult,
+): Promise<void> {
+  const verdict = gradeReachability(server, at, graceMs)
+  if (verdict === 'never-spoke') { result.neverSpoke.push(server.name as string); return }
+  if (verdict !== 'quiet') return
+
+  // `transition`, never an update: the move is what `@@transitions` declares,
+  // and it narrows the UPDATE's own WHERE to the from-state — so a machine
+  // that checked in between the read above and this line stays `online`
+  // instead of being marked unreachable by a sweep that read a stale row.
+  try {
+    await db.server.transition(server.id, 'loseContact')
+  } catch {
+    // The race, and it is the expected outcome rather than an error: the
+    // machine came back while this pass was running. Nothing is announced,
+    // because nothing happened.
+    return
+  }
+  result.quiet++
+
+  // The move has landed, so a failed event row must not cost the workspace its
+  // notice: nothing else will say this machine is gone.
+  try {
     await db.serverEvent.create({ data: {
       serverId: server.id,
       kind:     'unreachable',
       message:  `No check-in for ${Math.round((at - Date.parse(String(server.lastHeartbeatAt))) / 60_000)} minutes`,
       metadata: { last_heartbeat_at: server.lastHeartbeatAt, grace_ms: graceMs },
     } })
-
-    // After the move, so a send that throws cannot leave the row `online` with
-    // somebody already told it is gone.
-    await notifyPeople(app, 'ServerUnreachable',
-      await workspaceMembers(app, server.workspaceId as string), {
-        serverId:   server.id,
-        serverName: server.name,
-        lastSeenAt: server.lastHeartbeatAt ?? null,
-      }, server.workspaceId as string)
+  } catch (err) {
+    console.error(`[server-reachability] ${server.name}: event row not written: ${(err as Error).message}`)
   }
 
-  return result
+  // After the move, so a send that throws cannot leave the row `online` with
+  // somebody already told it is gone.
+  await notifyPeople(app, 'ServerUnreachable',
+    await workspaceMembers(app, server.workspaceId as string), {
+      serverId:   server.id,
+      serverName: server.name,
+      lastSeenAt: server.lastHeartbeatAt ?? null,
+    }, server.workspaceId as string)
 }
 
 export default defineJob({
   handler: async (ctx) => {
     const { app } = runsAsApp(ctx, 'server-reachability')
-    const res = await sweepUnreachable(app)
+    if (otherRunIsLive(ctx, 'server-reachability')) return
+    const res = await sweepUnreachable(app, { startedAt: PROCESS_STARTED })
+    // Folded in rather than a job of its own: a release nothing is left
+    // running is found on the fleet's own minute (`FJS-3861`).
+    const failed = await sweepStuckReleases(app)
+    if (failed.length) console.warn(`[server-reachability] failed ${failed.length} release(s) no job was left running: ${failed.join(', ')}`)
 
     if (res.neverSpoke.length)
       console.warn(
@@ -125,4 +160,5 @@ export default defineJob({
   // The scrape's own interval, and the same one `alert-evaluate` runs on: a
   // slower sweep adds its whole period to every detection without saying so.
   cron: '* * * * *',
+  timeout: 4 * 60_000,
 })

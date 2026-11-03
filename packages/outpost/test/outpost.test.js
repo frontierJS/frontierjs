@@ -1,7 +1,7 @@
 /*
  * outpost.test.js
  *
- * The Outpost with no Docker and no network: `createDocker({ appsDir: APPS, run })` takes the
+ * The Outpost with no Docker and no network: `createDocker({ appsDir: APPS, health: FAST, run })` takes the
  * runner and `createReporter({ fetch })` takes the client, so what is asserted
  * here is the two things that cannot be tested against a real machine without
  * being wrong first — that every route refuses an unsigned request, and that
@@ -13,7 +13,7 @@
 
 import { test, expect, describe } from 'bun:test'
 import { signRequest, generateSigningKeys } from '@frontierjs/toolbelt/signature'
-import { createOutpostServer }    from '../src/server.js'
+import { createOutpostServer, MAX_BODY_BYTES } from '../src/server.js'
 import { createDocker, createInspector, containerName, isDigest, BACKUP_SCRIPT } from '../src/docker.js'
 import { createReporter }         from '../src/report.js'
 import { createIngress }          from '../src/ingress.js'
@@ -52,6 +52,9 @@ const CONFIG = {
 
 const DIGEST = 'sha256:' + 'ab'.repeat(32)
 
+// The default wait with no settle window, or every deploy here sleeps it.
+const FAST = { attempts: 10, intervalMs: 3_000, settleMs: 0 }
+
 /** The slugs a `/deploy` carries, and the container name they spell for an app. */
 const SLUGS = { project: 'acme', environment: 'prod', app_slug: 'web' }
 const nameFor = (appId) => containerName({ appId, project: 'acme', environment: 'prod', appSlug: 'web' })
@@ -81,6 +84,12 @@ function fakeRunner(answers = {}) {
     // The running query has its own key, `running`: a deploy waits on it, and
     // a test canning `docker inspect` for port bindings would otherwise read as
     // a container that never came up.
+    // The settle read (FJS-3853): the same start and restart count on both
+    // looks unless a case states `settled`, which may answer per call.
+    if (argv.some(a => String(a).includes('{{.State.StartedAt}}'))) {
+      const said = typeof answers.settled === 'function' ? answers.settled() : answers.settled
+      return { exitCode: 0, stdout: 'true 2026-11-02T00:00:00Z 0\n', stderr: '', ...said }
+    }
     if (argv.includes('{{.State.Running}}')) return { exitCode: 0, stdout: 'true\n', stderr: '', ...answers.running }
     // An image that declares no USER runs as root and keeps it, so a case
     // about anything else is not handed a uid table to write.
@@ -127,8 +136,18 @@ async function send(server, method, path, body, { key = HUB.privateKey, signPath
 
 describe('every route but /health takes a signature', () => {
   const server = createOutpostServer(CONFIG, {
-    docker: createDocker({ appsDir: APPS, run: fakeRunner().run }), inspector: createInspector({ run: fakeRunner().run }),
+    docker: createDocker({ appsDir: APPS, health: FAST, run: fakeRunner().run }), inspector: createInspector({ run: fakeRunner().run }),
     log: { warn() {}, error() {} },
+  })
+
+  test('a body declared over the limit is refused before it is read (FJS-3866)', async () => {
+    const payload = JSON.stringify({ app_id: 'app-1' })
+    const headers = new Headers({ 'content-type': 'application/json' })
+    for (const [k, v] of Object.entries(await sign({ privateKey: HUB.privateKey, method: 'POST', path: '/stop', body: payload })))
+      headers.set(k, v)
+    headers.set('content-length', String(MAX_BODY_BYTES + 1))
+    const res = await server.handle(new Request('http://outpost.test/stop', { method: 'POST', headers, body: payload }))
+    expect(res.status).toBe(413)
   })
 
   test('/health answers unsigned — and says nothing about the machine', async () => {
@@ -193,7 +212,7 @@ describe('what the machine is asked to do', () => {
       'test -d':              { exitCode: 1 },
     })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ appsDir: APPS, run: fake.run, workDir: CONFIG.workDir, deployKeyDir: CONFIG.deployKeyDir }),
+      docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run, workDir: CONFIG.workDir, deployKeyDir: CONFIG.deployKeyDir }),
       inspector: createInspector({ run: fake.run }),
     })
 
@@ -242,7 +261,7 @@ describe('what the machine is asked to do', () => {
     const machine = (user = '"bun"\n') => {
       const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'docker run': { stdout: 'c-1\n' }, user: { stdout: user } })
       const uidFile = join(mkdtempSync(join(tmpdir(), 'outpost-uids-')), 'uids.json')
-      return { fake, uidFile, docker: createDocker({ appsDir: APPS, run: fake.run, workDir: CONFIG.workDir, uidFile }) }
+      return { fake, uidFile, docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run, workDir: CONFIG.workDir, uidFile }) }
     }
     const runs = (fake) => fake.calls.map(c => c.join(' ')).filter(c => c.startsWith('docker run'))
 
@@ -293,7 +312,7 @@ describe('what the machine is asked to do', () => {
       }
       const workDir = mkdtempSync(join(tmpdir(), 'outpost-preview-'))
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ appsDir: APPS, run, workDir }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
+        docker: createDocker({ appsDir: APPS, health: FAST, run, workDir }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
       })
       return { server, workDir, envs, argv: () => fake.calls.map(c => c.join(' ')) }
     }
@@ -352,7 +371,7 @@ describe('what the machine is asked to do', () => {
         + '  Authentication failed (status: 400) [code: 9106]\n\nIf you think this is a bug, please open an issue\n🪵  Logs were written\n'
       const fake = fakeRunner({ 'git -C': { stdout: 'c0ffee\n' } })
       const run = async (argv) => argv.includes('deploy') ? { exitCode: 1, stdout: '', stderr: said } : fake.run(argv)
-      const docker = createDocker({ appsDir: APPS, run, workDir: mkdtempSync(join(tmpdir(), 'outpost-preview-')) })
+      const docker = createDocker({ appsDir: APPS, health: FAST, run, workDir: mkdtempSync(join(tmpdir(), 'outpost-preview-')) })
       const server = createOutpostServer(CONFIG, { docker, inspector: createInspector({ run }), log: { warn() {}, error() {} } })
 
       const res = await send(server, 'POST', '/site/preview', BODY)
@@ -400,7 +419,7 @@ describe('what the machine is asked to do', () => {
       }
       const workDir = mkdtempSync(join(tmpdir(), 'outpost-publish-'))
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ appsDir: APPS, run, workDir }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
+        docker: createDocker({ appsDir: APPS, health: FAST, run, workDir }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
       })
       return { server, workDir, envs, argv: () => fake.calls.map(c => c.join(' ')) }
     }
@@ -460,7 +479,7 @@ describe('what the machine is asked to do', () => {
         return fake.run(argv)
       }
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ appsDir: APPS, run, workDir }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
+        docker: createDocker({ appsDir: APPS, health: FAST, run, workDir }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
       })
       return { server, workDir, envs, argv: () => fake.calls.map(c => c.join(' ')) }
     }
@@ -545,7 +564,7 @@ describe('what the machine is asked to do', () => {
     const serverFor = (answers, { workDir = CONFIG.workDir } = {}) => {
       const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'test -d': { exitCode: 1 }, ...answers })
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ appsDir: APPS, run: fake.run, workDir, deployKeyDir: CONFIG.deployKeyDir }), inspector: createInspector({ run: fake.run }),
+        docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run, workDir, deployKeyDir: CONFIG.deployKeyDir }), inspector: createInspector({ run: fake.run }),
         log: { warn() {}, error() {} },
       })
       return { fake, server, argv: () => fake.calls.map(c => c.join(' ')) }
@@ -605,7 +624,7 @@ describe('what the machine is asked to do', () => {
           ? Promise.resolve(origin === null ? { exitCode: 2, stdout: '', stderr: 'error: No such remote' } : { exitCode: 0, stdout: `${origin}\n`, stderr: '' })
           : fake.run(argv, opts)
         const server = createOutpostServer(CONFIG, {
-          docker: createDocker({ appsDir: APPS, run, workDir: CONFIG.workDir, deployKeyDir: CONFIG.deployKeyDir }), inspector: createInspector({ run }),
+          docker: createDocker({ appsDir: APPS, health: FAST, run, workDir: CONFIG.workDir, deployKeyDir: CONFIG.deployKeyDir }), inspector: createInspector({ run }),
           log: { warn() {}, error() {} },
         })
         return { server, argv: () => fake.calls.map(c => c.join(' ')) }
@@ -616,11 +635,19 @@ describe('what the machine is asked to do', () => {
         const res = await send(server, 'POST', '/build', { app_id: 'app-1', source: GIT, image: 'x' })
 
         expect(res.status).toBe(200)
-        expect(argv()).toContain(`git -C ${dir} fetch --depth 1 origin main`)
+        expect(argv()).toContain(`git -C ${dir} fetch --depth 1 -- origin main`)
         expect(argv()).toContain(`git -C ${dir} reset --hard FETCH_HEAD`)
         // A file the last checkout left behind would join the build context.
         expect(argv()).toContain(`git -C ${dir} clean -fdx`)
         expect(argv().some(c => c.startsWith('git clone') || c.startsWith('rm -rf'))).toBe(false)
+      })
+
+      test('a branch beginning with a dash is refused before git runs', async () => {
+        const { server, argv } = cloneWith(GIT.repo)
+        const res = await send(server, 'POST', '/build', { app_id: 'app-1', source: { ...GIT, branch: '--upload-pack=x' }, image: 'x' })
+
+        expect(res.status).toBeGreaterThanOrEqual(400)
+        expect(argv().some(c => c.startsWith('git'))).toBe(false)
       })
 
       test('a different origin is removed and cloned from source.repo', async () => {
@@ -660,7 +687,7 @@ describe('what the machine is asked to do', () => {
   describe('a release that fails puts the old container back (FJS-1765)', () => {
     // Short, or every case here waits thirty seconds for a container the fake
     // has already said is down.
-    const HEALTH = { attempts: 2, intervalMs: 0 }
+    const HEALTH = { attempts: 2, intervalMs: 0, settleMs: 0 }
     const deployWith = (answers, { fetch, body = {} } = {}) => {
       const fake   = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, ...answers })
       const server = createOutpostServer(CONFIG, {
@@ -769,10 +796,66 @@ describe('what the machine is asked to do', () => {
       expect(argv()).toContain('docker rename fjs--acme-prod-oldweb-app-1_replaced fjs--acme-prod-oldweb-app-1')
       expect(argv()).toContain('docker start fjs--acme-prod-oldweb-app-1')
     })
+
+    // FJS-3853: one Running read passed a container the restart policy had
+    // already brought back from a crash.
+    test('with no health path, a container that restarts in the settle window is not healthy', async () => {
+      let looks = 0
+      const { sent, argv } = deployWith({ settled: () => ({ stdout: `true 2026-11-02T00:00:0${looks} ${looks++ ? 1 : 0}\n` }) })
+      const res = await sent
+      expect(res.status).toBe(500)
+      const { error } = await res.json()
+      expect(error).toContain('restarted within')
+      const run = argv().findIndex(c => c.startsWith('docker run'))
+      expect(argv().slice(run)).toContain('docker rename fjs--acme-prod-web-app-1_replaced fjs--acme-prod-web-app-1')
+      expect(argv().slice(run)).not.toContain('docker rm -f fjs--acme-prod-web-app-1_replaced')
+    })
+
+    // FJS-3888: answered `stopped: false`, the route went on to remove the
+    // Caddy route of a container still serving.
+    test('a stop docker refuses throws, rather than answering stopped: false', async () => {
+      const fake   = fakeRunner({ 'docker rm -f': { exitCode: 1, stderr: 'Error response from daemon: cannot remove container\n' } })
+      const docker = createDocker({ appsDir: APPS, run: fake.run, health: HEALTH })
+      await expect(docker.stop({ appId: 'app-1' })).rejects.toThrow('cannot remove container')
+    })
+
+    // FJS-3849: two deploys for one app renamed each other's containers.
+    test('two deploys for one app run one after the other, and a draining docker refuses a third', async () => {
+      const fake   = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' } })
+      const docker = createDocker({ appsDir: APPS, run: fake.run, health: HEALTH })
+      const args   = { appId: 'app-1', project: 'acme', environment: 'prod', appSlug: 'web', image: 'acme-web', digest: DIGEST, config: {} }
+      await Promise.all([docker.deploy(args), docker.deploy(args)])
+      const argv  = fake.calls.map(c => c.join(' '))
+      const runs  = argv.map((c, i) => c.startsWith('docker run -d') ? i : -1).filter(i => i >= 0)
+      const asides = argv.map((c, i) => c === 'docker rename fjs--acme-prod-web-app-1 fjs--acme-prod-web-app-1_replaced' ? i : -1).filter(i => i >= 0)
+      expect(runs).toHaveLength(2)
+      expect(asides).toHaveLength(2)
+      expect(asides[1]).toBeGreaterThan(argv.lastIndexOf('docker rm -f fjs--acme-prod-web-app-1_replaced', runs[1]))
+      expect(asides[1]).toBeGreaterThan(runs[0])
+      expect(await docker.drain(1_000)).toEqual({ drained: true, pending: [] })
+      await expect(docker.stop({ appId: 'app-1' })).rejects.toThrow('shutting down')
+    })
+
+    // FJS-3865: a process killed mid-swap left the app's last good release stopped.
+    test('at start, a _replaced with nothing live beside it is renamed back and started', async () => {
+      const fake = fakeRunner({
+        containers:    ['fjs--acme-prod-web-app-1_replaced'],
+        'docker ps -a': { stdout: 'fjs--acme-prod-web-app-1_replaced\tapp-1\nfjs--acme-prod-api-app-2\tapp-2\n' },
+      })
+      const docker = createDocker({ appsDir: APPS, run: fake.run, health: HEALTH })
+      const said = []
+      expect(await docker.reconcile({ log: { warn: m => said.push(m), error: m => said.push(m) } }))
+        .toEqual({ restored: ['fjs--acme-prod-web-app-1'] })
+      const argv = fake.calls.map(c => c.join(' '))
+      expect(argv.indexOf('docker start fjs--acme-prod-web-app-1'))
+        .toBeGreaterThan(argv.indexOf('docker rename fjs--acme-prod-web-app-1_replaced fjs--acme-prod-web-app-1'))
+      expect(argv.some(c => c.includes('app-2'))).toBe(false)
+      expect(said[0]).toContain('renamed back and started')
+    })
   })
 
   describe('a served container is named for what runs in it, and found by its label', () => {
-    const HEALTH = { attempts: 2, intervalMs: 0 }
+    const HEALTH = { attempts: 2, intervalMs: 0, settleMs: 0 }
     const deployWith = (answers, { body = {} } = {}) => {
       const fake   = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, ...answers })
       const server = createOutpostServer(CONFIG, {
@@ -827,7 +910,7 @@ describe('what the machine is asked to do', () => {
       'docker run':           { stdout: 'container-2\n' },
     })
     const server = createOutpostServer(CONFIG, {
-      docker:    createDocker({ appsDir: APPS, run: fake.run, workDir: CONFIG.workDir }),
+      docker:    createDocker({ appsDir: APPS, health: FAST, run: fake.run, workDir: CONFIG.workDir }),
       inspector: createInspector({ run: fake.run }),
     })
 
@@ -846,7 +929,7 @@ describe('what the machine is asked to do', () => {
     // path, which must be refused BEFORE the running container is taken away.
     const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'docker run': { stdout: 'c\n' } })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run }), inspector: createInspector({ run: fake.run }),
       log: { warn() {}, error() {} },
     })
     const ok = await send(server, 'POST', '/deploy', { ...SLUGS,
@@ -871,7 +954,7 @@ describe('what the machine is asked to do', () => {
     // nothing, so a container started with none and no one was told.
     const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'docker run': { stdout: 'c\n' } })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run }), inspector: createInspector({ run: fake.run }),
       log: { warn() {}, error() {} },
     })
     const ok = await send(server, 'POST', '/deploy', { ...SLUGS,
@@ -899,7 +982,7 @@ describe('what the machine is asked to do', () => {
     let status  = 503
     const fetch = async (url) => { asked.push(url); return { ok: status < 300, status } }
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ appsDir: APPS, run: fake.run, fetch }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run, fetch }), inspector: createInspector({ run: fake.run }),
     })
     const down = await (await send(server, 'POST', '/health-check', { app_id: 'app-1', port: 5678, path: '/healthz' })).json()
     expect(down).toMatchObject({ healthy: false })
@@ -910,10 +993,47 @@ describe('what the machine is asked to do', () => {
     expect((await (await send(server, 'POST', '/health-check', { app_id: 'app-1', port: 5678, path: '/healthz' })).json()).healthy).toBe(true)
   })
 
+  test('a health port is an integer in 1-65535, or no request is made', async () => {
+    const fake  = fakeRunner({ 'docker inspect': { stdout: 'true\n' } })
+    const asked = []
+    const fetch = async (url) => { asked.push(url); return { ok: true, status: 200 } }
+    const server = createOutpostServer(CONFIG, {
+      docker: createDocker({ appsDir: APPS, run: fake.run, fetch }), inspector: createInspector({ run: fake.run }),
+    })
+    for (const port of ['80@other.test', '0', 65536, 1.5, '8080/x', -1]) {
+      const body = await (await send(server, 'POST', '/health-check', { app_id: 'app-1', port, path: '/healthz' })).json()
+      expect(body.healthy).toBe(false)
+    }
+    expect(asked).toEqual([])
+    expect((await (await send(server, 'POST', '/health-check', { app_id: 'app-1', port: '8080', path: '/healthz' })).json()).healthy).toBe(true)
+    expect(asked).toEqual(['http://127.0.0.1:8080/healthz'])
+  })
+
+  test('an app\'s variables reach docker run by name, valued in the client\'s environment', async () => {
+    const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' } })
+    const server = createOutpostServer(CONFIG, {
+      docker: createDocker({ appsDir: APPS, run: fake.run, health: FAST }), inspector: createInspector({ run: fake.run }),
+    })
+    const res = await send(server, 'POST', '/deploy', { ...SLUGS, deployment_id: 'dep-e', app_id: 'app-1', image: 'acme-web',
+      config: { env: { FJS_TEST_SECRET: 'hunter2', DOCKER_HOST: 'tcp://x:1' } } })
+    expect(res.status).toBe(200)
+    const at = fake.calls.findIndex(c => c[1] === 'run' && c.includes('--name'))
+    const argv = fake.calls[at]
+    expect(argv.join(' ')).not.toContain('hunter2')
+    expect(argv).toContain('FJS_TEST_SECRET')
+    expect(fake.calls.opts[at].env).toEqual({ FJS_TEST_SECRET: 'hunter2' })
+    // The client reads DOCKER_HOST itself, so an app's value must not reach it.
+    expect(argv).toContain('DOCKER_HOST=tcp://x:1')
+
+    const bad = await send(server, 'POST', '/deploy', { ...SLUGS, deployment_id: 'dep-f', app_id: 'app-1', image: 'acme-web',
+      config: { env: { 'A=b': 'x' } } })
+    expect(bad.status).toBe(500)
+  })
+
   test('a deploy of an image that exists elsewhere pulls it', async () => {
     const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' } })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run }), inspector: createInspector({ run: fake.run }),
     })
     const body = await (await send(server, 'POST', '/pull', { image: 'acme-web:1.2.3' })).json()
     expect(body.digest).toBe(DIGEST)
@@ -926,7 +1046,7 @@ describe('what the machine is asked to do', () => {
     // is what identifies bytes; a tag is a name and always pulls.
     const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' } })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run }), inspector: createInspector({ run: fake.run }),
     })
     const body = await (await send(server, 'POST', '/pull', { image: 'acme-web:local', digest: DIGEST })).json()
     expect(body.digest).toBe(DIGEST)
@@ -936,7 +1056,7 @@ describe('what the machine is asked to do', () => {
   test('a digest the machine does not hold still pulls the image by name', async () => {
     const fake = fakeRunner({ 'docker image inspect': { exitCode: 1, stderr: 'Error: No such image\n' } })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run }), inspector: createInspector({ run: fake.run }),
       log: { warn() {}, error() {} },
     })
     await send(server, 'POST', '/pull', { image: 'acme-web:1.2.3', digest: DIGEST })
@@ -948,7 +1068,7 @@ describe('what the machine is asked to do', () => {
     // shape this whole package exists to replace.
     const fake = fakeRunner({ 'docker pull': { exitCode: 1, stderr: 'manifest unknown\n' } })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run }), inspector: createInspector({ run: fake.run }),
       log: { warn() {}, error() {} },
     })
     const res  = await send(server, 'POST', '/pull', { image: 'nope:1' })
@@ -960,7 +1080,7 @@ describe('what the machine is asked to do', () => {
   test('health-check asks the daemon, rather than assuming a start worked', async () => {
     const fake = fakeRunner({ 'docker inspect': { stdout: 'true\n' } })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run }), inspector: createInspector({ run: fake.run }),
     })
     const body = await (await send(server, 'POST', '/health-check', { app_id: 'app-1' })).json()
     expect(body.healthy).toBe(true)
@@ -972,7 +1092,7 @@ describe('what the machine is asked to do', () => {
     // as generic steps. A machine with no work for one has not failed the
     // release, and answering non-zero would roll a good deploy back.
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ appsDir: APPS, run: fakeRunner().run }), inspector: createInspector({ run: fakeRunner().run }),
+      docker: createDocker({ appsDir: APPS, health: FAST, run: fakeRunner().run }), inspector: createInspector({ run: fakeRunner().run }),
     })
     const body = await (await send(server, 'POST', '/exec', { step: 'Validate', deployment_id: 'dep-1' })).json()
     expect(body.exit_code).toBe(0)
@@ -984,7 +1104,7 @@ describe('what the machine is asked to do', () => {
   test('/exec runs the command in a transient unit outside the sandbox', async () => {
     const fake = fakeRunner()
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run }), inspector: createInspector({ run: fake.run }),
     })
     await send(server, 'POST', '/exec', { command: 'apt-get -y upgrade', timeout_s: 60 })
     const [argv] = fake.calls
@@ -1008,7 +1128,7 @@ describe('what the machine is asked to do', () => {
       return { exitCode: argv.includes('held') ? 1 : 0, stdout: '', stderr: 'volume is in use' }
     }
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ appsDir: APPS, run }), inspector: createInspector({ run }),
+      docker: createDocker({ appsDir: APPS, health: FAST, run }), inspector: createInspector({ run }),
     })
     const body = await (await send(server, 'POST', '/volumes/prune', { names: ['free', 'held'] })).json()
     expect(body.removed).toEqual(['free'])
@@ -1017,7 +1137,7 @@ describe('what the machine is asked to do', () => {
   test('a volume a container holds is a 409 with the reason, not a 500', async () => {
     const run = async () => ({ exitCode: 1, stdout: '', stderr: 'volume is in use by container pg-1' })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ appsDir: APPS, run }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
+      docker: createDocker({ appsDir: APPS, health: FAST, run }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
     })
     const res  = await send(server, 'DELETE', '/volumes/pg-data', undefined)
     const body = await res.json()
@@ -1036,7 +1156,7 @@ describe('what the machine is asked to do', () => {
     const restoring = (answers = {}) => {
       const runner = fakeRunner(answers)
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ appsDir: APPS, run: runner.run, restoreDir }), inspector: createInspector({ run: runner.run }),
+        docker: createDocker({ appsDir: APPS, health: FAST, run: runner.run, restoreDir }), inspector: createInspector({ run: runner.run }),
         log: { warn() {}, error() {} },
       })
       return { server, calls: runner.calls }
@@ -1109,7 +1229,7 @@ describe('what the machine is asked to do', () => {
         return runner.run(argv)
       }
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ appsDir: APPS, run, restoreDir, fetch }), inspector: createInspector({ run: runner.run }),
+        docker: createDocker({ appsDir: APPS, health: FAST, run, restoreDir, fetch }), inspector: createInspector({ run: runner.run }),
         log: { warn() {}, error() {} },
       })
       return { server, calls: runner.calls, seen }
@@ -1187,7 +1307,7 @@ describe('what the machine is asked to do', () => {
         return { exitCode: 0, stdout: '', stderr: '' }
       }
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ appsDir: APPS, run }), inspector: createInspector({ run }),
+        docker: createDocker({ appsDir: APPS, health: FAST, run }), inspector: createInspector({ run }),
         replicator: createReplicator({ run, configPath: join(stageDir, 'litestream.yml'), stageDir }),
         log: { warn() {}, error() {} },
       })
@@ -1310,7 +1430,7 @@ describe('what the machine is asked to do', () => {
         return { exitCode: 0, stdout: '', stderr: '' }
       }
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ appsDir: APPS, run }), inspector: createInspector({ run }),
+        docker: createDocker({ appsDir: APPS, health: FAST, run }), inspector: createInspector({ run }),
         replicator: createReplicator({ run, configPath: join(stageDir, 'litestream.yml'), stageDir }),
         log: { warn() {}, error() {} },
       })
@@ -1376,7 +1496,7 @@ describe('what the machine is asked to do', () => {
     const backing = (answers = {}, fetch) => {
       const runner = fakeRunner(answers)
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ appsDir: APPS, run: runner.run, backupDir, fetch }), inspector: createInspector({ run: runner.run }),
+        docker: createDocker({ appsDir: APPS, health: FAST, run: runner.run, backupDir, fetch }), inspector: createInspector({ run: runner.run }),
         log: { warn() {}, error() {} },
       })
       return { server, calls: runner.calls }
@@ -1566,7 +1686,7 @@ describe('the ingress — Caddy, through its admin API', () => {
   const serverWith = (caddy, fake = fakeRunner({ 'docker run': { stdout: 'container-1\n' } })) => ({
     fake,
     server: createOutpostServer(CONFIG, {
-      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run }), inspector: createInspector({ run: fake.run }),
       ingress: createIngress({ fetch: caddy.fetch }),
       log: { warn() {}, error() {} },
     }),
@@ -1636,11 +1756,11 @@ describe('the ingress — Caddy, through its admin API', () => {
 
   test('a machine with no basecamp firewall is reported unsynced, and a stop refills the set', async () => {
     const fake = fakeRunner({ 'nft': { exitCode: 1, stderr: 'Error: No such file or directory\nflush set inet basecamp exposed\n' } })
-    expect(await createDocker({ appsDir: APPS, run: fake.run }).syncExposed())
+    expect(await createDocker({ appsDir: APPS, health: FAST, run: fake.run }).syncExposed())
       .toEqual({ synced: false, exposed: [], reason: 'no basecamp firewall on this machine' })
 
     const refused = fakeRunner({ 'nft': { exitCode: 1, stderr: 'Operation not permitted (you must be root)\n' } })
-    await expect(createDocker({ appsDir: APPS, run: refused.run }).syncExposed()).rejects.toThrow('you must be root')
+    await expect(createDocker({ appsDir: APPS, health: FAST, run: refused.run }).syncExposed()).rejects.toThrow('you must be root')
 
     const { server, fake: stopped } = serverWith(fakeCaddy())
     await send(server, 'POST', '/stop', { app_id: 'app-1' })
@@ -1712,7 +1832,7 @@ describe('the ingress — Caddy, through its admin API', () => {
       'docker inspect': { stdout: '{"80/tcp":[{"HostIp":"127.0.0.1","HostPort":"7300"}]}\n' },
     })
     const failing = createOutpostServer(CONFIG, {
-      docker: createDocker({ appsDir: APPS, run: fake.run, health: { attempts: 1, intervalMs: 0 } }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, run: fake.run, health: { attempts: 1, intervalMs: 0, settleMs: 0 } }), inspector: createInspector({ run: fake.run }),
       ingress: createIngress({ fetch: caddy.fetch }),
       log: { warn() {}, error() {} },
     })
@@ -1774,7 +1894,7 @@ describe('the ingress — Caddy, through its admin API', () => {
   test('with no Caddy on the machine, an app with hostnames fails and one without deploys as before', async () => {
     const fake   = fakeRunner({ 'docker run': { stdout: 'container-1\n' } })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run }), inspector: createInspector({ run: fake.run }),
       log: { warn() {}, error() {} },
     })
     const refused = await deploy(server, { hosts: ['shop.example.com'] })
@@ -1871,7 +1991,7 @@ describe('the ingress — Caddy, through its admin API', () => {
       const caddy = fakeCaddy()
       const fake   = none()
       const server = createOutpostServer({ ...CONFIG, staticPort: 7181 }, {
-        docker: createDocker({ appsDir: APPS, run: fake.run }), inspector: createInspector({ run: fake.run }),
+        docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run }), inspector: createInspector({ run: fake.run }),
         ingress: createIngress({ fetch: caddy.fetch }), log: { warn() {}, error() {} },
       })
       const res = await routeWith(server, { static: true, hosts: ['shop.example.com'], redirects: [{ host: 'www.example.com', to: 'https://shop.example.com' }] })
@@ -1887,7 +2007,7 @@ describe('the ingress — Caddy, through its admin API', () => {
     const api = (server, extra = {}) => send(server, 'POST', '/route', { app_id: 'api', port: 7302, paths: [{ host: 'Shop.example.com', prefix: '/api/' }], ...extra })
     const none = () => fakeRunner({ 'docker inspect --format': { exitCode: 1, stderr: 'Error: No such object' } })
     const withStatic = (caddy) => createOutpostServer({ ...CONFIG, staticPort: 7181 }, {
-      docker: createDocker({ appsDir: APPS, run: none().run }), inspector: createInspector({ run: none().run }),
+      docker: createDocker({ appsDir: APPS, health: FAST, run: none().run }), inspector: createInspector({ run: none().run }),
       ingress: createIngress({ fetch: caddy.fetch }), log: { warn() {}, error() {} },
     })
 
@@ -1942,6 +2062,24 @@ describe('the ingress — Caddy, through its admin API', () => {
       for (const prefix of ['/', '', 'api', '/api/*', '/{env.SECRET}', '/a/../b', '/a//b'])
         expect((await api(server, { paths: [{ host: 'shop.example.com', prefix }] })).status).toBeGreaterThanOrEqual(400)
       expect(caddy.config).toBeNull()
+    })
+
+    test('an app id is checked by /route and /stop, and one spelling another app\'s route id is refused (FJS-3886)', async () => {
+      const caddy  = fakeCaddy()
+      const server = withStatic(caddy)
+      for (const app_id of ['a-path-0', 'x-redirects', '../x', 'a b'])
+        expect((await send(server, 'POST', '/route', { app_id, port: 7302, hosts: ['shop.example.com'] })).status).toBeGreaterThanOrEqual(400)
+      expect((await send(server, 'POST', '/stop', { app_id: 'a-path-0' })).status).toBeGreaterThanOrEqual(400)
+      expect(caddy.config).toBeNull()
+    })
+
+    test('a stop takes the app\'s own path routes and never another app\'s whose id merely begins the same', async () => {
+      const caddy  = fakeCaddy()
+      const server = withStatic(caddy)
+      await send(server, 'POST', '/route', { app_id: 'a-path-extra', static: true, hosts: ['other.example.com'] })
+      await send(server, 'POST', '/route', { app_id: 'a', port: 7302, paths: [{ host: 'shop.example.com', prefix: '/api' }] })
+      await send(server, 'POST', '/stop', { app_id: 'a' })
+      expect(caddy.config.apps.http.servers.ingress.routes.map(r => r['@id'])).toEqual(['fjs-a-path-extra'])
     })
   })
 
@@ -2038,7 +2176,7 @@ describe('the ingress — Caddy, through its admin API', () => {
         origin: createStaticServer({ staticDir: dir }, { log: { warn() {}, error() {} } }),
         server: createOutpostServer({ ...CONFIG, staticPort }, {
           statics, ingress: createIngress({ fetch: caddy.fetch }), log: { warn() {}, error() {} },
-          docker: createDocker({ appsDir: APPS, run: fakeRunner({ 'docker inspect --format': { exitCode: 1, stderr: 'Error: No such object' } }).run }),
+          docker: createDocker({ appsDir: APPS, health: FAST, run: fakeRunner({ 'docker inspect --format': { exitCode: 1, stderr: 'Error: No such object' } }).run }),
         }),
       }
     }
@@ -2103,7 +2241,7 @@ describe('counting a route\'s traffic off its access log', () => {
   // cases share the directory and nothing else.
   const LOGS = mkdtempSync(join(tmpdir(), 'outpost-caddy-'))
   const serverAt = (dir = LOGS) => createOutpostServer(CONFIG, {
-    docker:    createDocker({ appsDir: APPS, run: fakeRunner().run }),
+    docker:    createDocker({ appsDir: APPS, health: FAST, run: fakeRunner().run }),
     inspector: createInspector({ run: fakeRunner().run }),
     analytics: createAnalytics({ dir }),
     log: { warn() {}, error() {} },
@@ -2292,7 +2430,7 @@ describe('reading a container log', () => {
   // answers this over ssh for one app; this answers it for a fleet.
 
   const serverWith = (fake) => createOutpostServer(CONFIG, {
-    docker:    createDocker({ appsDir: APPS, run: fake.run, workDir: CONFIG.workDir }),
+    docker:    createDocker({ appsDir: APPS, health: FAST, run: fake.run, workDir: CONFIG.workDir }),
     inspector: createInspector({ run: fake.run }),
   })
 
@@ -2368,7 +2506,7 @@ describe('reading a container log', () => {
     }
   }
   const followServer = (fs) => createOutpostServer(CONFIG, {
-    docker: createDocker({ appsDir: APPS, run: fakeRunner({}).run, stream: fs.spawn, workDir: CONFIG.workDir }),
+    docker: createDocker({ appsDir: APPS, health: FAST, run: fakeRunner({}).run, stream: fs.spawn, workDir: CONFIG.workDir }),
   })
   async function readEvents(res, until) {
     const reader = res.body.getReader(), dec = new TextDecoder()
@@ -2401,7 +2539,7 @@ describe('reading a container log', () => {
   test('a container the label does not find is a line and an end, with nothing spawned', async () => {
     const fs  = fakeStream()
     const res = await send(createOutpostServer(CONFIG, {
-      docker: createDocker({ appsDir: APPS, run: fakeRunner({ containers: [] }).run, stream: fs.spawn, workDir: CONFIG.workDir }),
+      docker: createDocker({ appsDir: APPS, health: FAST, run: fakeRunner({ containers: [] }).run, stream: fs.spawn, workDir: CONFIG.workDir }),
     }), 'POST', '/logs/follow', { app_id: 'app-1' })
     const { text } = await readEvents(res, t => t.includes('event: end'))
     expect(text).toContain('no such container for app app-1')
@@ -2499,6 +2637,12 @@ describe('what this machine tells basecamp', () => {
     // every release for it.
     expect(call.body.outpost_url).toBe('https://outpost.test:7180')
     expect(call.init.headers['X-Fjs-Signature']).toMatch(/^v1-ed25519=[A-Za-z0-9_-]{86}$/)
+  })
+
+  test('a post to a control plane that never answers is abandoned (FJS-3867)', async () => {
+    const { reporter, sent } = reporterWith()
+    await reporter.heartbeat()
+    expect(sent[0].init.signal).toBeInstanceOf(AbortSignal)
   })
 
   test('the signature is over the bytes actually sent', async () => {
@@ -2618,6 +2762,38 @@ describe('what this machine tells basecamp', () => {
     await expect(docker.removeVolume(`${apps}/crm/../crm/data`)).rejects.toThrow('no such volume')
     expect(seen).toEqual([['docker', 'volume', 'rm', `${apps}/crm/../crm/data`]])
     expect(existsSync(join(apps, 'crm', 'data'))).toBe(true)
+  })
+
+  // FJS-3844: a failed `docker ps` read as "no holders" rm -rf'd a live app's data.
+  test('a docker ps that fails is unknown: no data directory is removed, and the report says null', async () => {
+    const apps = mkdtempSync(join(tmpdir(), 'outpost-binds-'))
+    mkdirSync(join(apps, 'ela', 'data'), { recursive: true })
+    const run = async (argv) => {
+      if (argv[0] === 'du') return { exitCode: 0, stdout: `8192\t${argv[2]}\n`, stderr: '' }
+      if (argv[1] === 'ps') return { exitCode: 1, stdout: '', stderr: 'Cannot connect to the Docker daemon' }
+      return { exitCode: 0, stdout: '', stderr: '' }
+    }
+    const inspector = createInspector({ run, appsDir: apps })
+    await expect(inspector.removeVolume(`${apps}/ela/data`)).rejects.toThrow('Cannot connect to the Docker daemon')
+    expect(await inspector.pruneVolumes([`${apps}/ela/data`])).toEqual({ removed: [] })
+    expect(existsSync(join(apps, 'ela', 'data'))).toBe(true)
+    const [row] = await inspector.volumes()
+    expect(row).toMatchObject({ name: `${apps}/ela/data`, in_use: null, containers: null })
+  })
+
+  // FJS-3854: `container prune` took a swap's kept-back container with it.
+  test('a stopped-container sweep removes everything stopped but a _replaced', async () => {
+    const seen = []
+    const run = async (argv) => {
+      seen.push(argv.join(' '))
+      if (argv[1] === 'ps') return { exitCode: 0, stdout: 'aaa111\tfjs--acme-prod-web-app-1_replaced\nbbb222\told-thing\nccc333\tfjs--x_replaced-not\n', stderr: '' }
+      if (argv[1] === 'rm') return { exitCode: 0, stdout: argv.slice(2).join('\n') + '\n', stderr: '' }
+      return { exitCode: 0, stdout: '', stderr: '' }
+    }
+    const result = await createInspector({ run }).prune({ targets: ['stopped_containers'] })
+    expect(seen).not.toContain('docker container prune -f')
+    expect(seen).toContain('docker rm bbb222 ccc333')
+    expect(result.removed.containers).toBe(2)
   })
 
   test('a volume sweep names what the daemon deleted', async () => {
@@ -2895,7 +3071,7 @@ describe('a deploy key per app (FJS-D1555)', () => {
     const serverFor = () => {
       const fake   = fakeRunner()
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ appsDir: APPS, run: fake.run, deployKeyDir: freshDir() }), inspector: createInspector({ run: fake.run }),
+        docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run, deployKeyDir: freshDir() }), inspector: createInspector({ run: fake.run }),
         log: { warn() {}, error() {} },
       })
       return { fake, server }
@@ -2937,7 +3113,7 @@ describe('a deploy key per app (FJS-D1555)', () => {
       if (rootDockerfile) writeFileSync(join(workDir, 'app-1', 'Dockerfile'), rootDockerfile)
       const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'test -d': { exitCode: 1 }, 'git -C': { stdout: 'c0ffee\n' } })
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ appsDir: APPS, run: fake.run, workDir, deployKeyDir: keyDir }), inspector: createInspector({ run: fake.run }),
+        docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run, workDir, deployKeyDir: keyDir }), inspector: createInspector({ run: fake.run }),
         log: { warn() {}, error() {} },
       })
       const res = await send(server, 'POST', '/build', { app_id: 'app-1', source, image: 'x' })
@@ -3063,7 +3239,7 @@ describe('a deploy key per app (FJS-D1555)', () => {
     test('an app_id that is not a plain name builds nothing', async () => {
       const fake   = fakeRunner()
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ appsDir: APPS, run: fake.run, deployKeyDir: freshDir() }), inspector: createInspector({ run: fake.run }),
+        docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run, deployKeyDir: freshDir() }), inspector: createInspector({ run: fake.run }),
         log: { warn() {}, error() {} },
       })
       const res = await send(server, 'POST', '/build', { app_id: '../x', source: GIT, image: 'x' })
@@ -3079,7 +3255,7 @@ describe('a deploy key per app (FJS-D1555)', () => {
       writeFileSync(join(workDir, 'app-1', 'deploy', 'Dockerfile'), 'FROM oven/bun\n')
       const fake   = fakeRunner()
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ appsDir: APPS, run: fake.run, workDir, deployKeyDir: freshDir() }), inspector: createInspector({ run: fake.run }),
+        docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run, workDir, deployKeyDir: freshDir() }), inspector: createInspector({ run: fake.run }),
         log: { warn() {}, error() {} },
       })
       return { workDir, server, fake }

@@ -16,12 +16,12 @@ import { createTestEnv }     from '@frontierjs/testing'
 import { GatePlugin }        from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
-import { takeBackup }        from '../src/jobs/backup-run.job.ts'
-import { placeHub }          from '../src/domain/host/host-machine.ts'
+import { takeBackup, queueBackup, failStaleBackups, checkStaged, STALE_AFTER_MS } from '../src/jobs/backup-run.job.ts'
+import { placeHub, lastBackupAt } from '../src/domain/host/host-machine.ts'
 import { registerDestination } from '../src/providers/storage/index.ts'
 import { pruneBackups, rescanDestination } from '../src/domain/backup/backup-archives.ts'
 import { archiveRefusals, MANIFEST_FILE } from '../src/domain/backup/archive-manifest.ts'
-import { encryptionKeyFingerprint } from '../src/core/db.ts'
+import { encryptionKeyFingerprint, jobsDatabasePath } from '../src/core/db.ts'
 import { fetchHubArchive, listHubArchives, readBucket, restoreStaged, stageHubArchive, stagedDir } from '../src/domain/backup/hub-restore.ts'
 
 let env: any
@@ -257,6 +257,19 @@ describe('a hub archive is staged at /setup and swapped in at the next boot', ()
     try { expect(raw.query('SELECT id FROM account').all()).toEqual([{ id: 'live' }]) } finally { raw.close() }
   })
 
+  test('a crash between the swap and the rename is finished at the next boot, not refused (FJS-3901)', async () => {
+    const box = freshBox()
+    await stageHubArchive(tarball, box.dbPath, { migrationsRoot: MIGRATIONS })
+    // The swap happened: the live file is the archive's own bytes, and the
+    // staged directory is still there because the rename did not.
+    cpSync(join(stagedDir(box.dbPath), 'main.db'), box.dbPath)
+
+    const r = await withAudit(box.audit, () => restoreStaged(box.dbPath, log))
+    expect(r?.state).toBe('done')
+    expect(existsSync(stagedDir(box.dbPath))).toBe(false)
+    expect(readdirSync(dirname(box.dbPath)).some(f => f.startsWith('restore-done-'))).toBe(true)
+  })
+
   test('a live file that cannot be read counts as a hub, so --force never runs over it', async () => {
     const box = freshBox()
     await stageHubArchive(tarball, box.dbPath, { migrationsRoot: MIGRATIONS })
@@ -408,6 +421,8 @@ describe('a backup naming a destination is uploaded, and a failed upload keeps t
     refuse = false
 
     expect(done.status).toBe('success')
+    // FJS-3846: a kept-local result is not a backup that reached its destination.
+    expect(await lastBackupAt(env.system, hubId)).not.toBe(done.finishedAt)
     expect(done.error).toContain('forbidden')
     expect(done.error).toContain('AccessDenied')
     expect(existsSync(join(done.location, 'main.db'))).toBe(true)
@@ -526,6 +541,21 @@ describe('retention prunes by count and age, local and remote apart, and a resca
     expect(await sys.appBackup.findFirst({ where: { id: local.id } })).toBeTruthy()
   })
 
+  test('the newest of each group is spared, so no destination ages out behind a run of local archives (FJS-3847)', async () => {
+    const sys = env.system as any
+    await sys.appBackup.deleteMany({ where: {} })
+    await keep({ backupKeepLocalCount: 10, backupKeepLocalDays: null, backupKeepRemoteCount: 10, backupKeepRemoteDays: 30 })
+    const local  = await plantLocal(1)
+    const remote = await plantRemote(90)
+    expect((await pruneBackups(env.app, NOW)).pruned).toEqual([])
+    expect(await sys.appBackup.findFirst({ where: { id: remote.id } })).toBeTruthy()
+    expect(existsSync(local.location)).toBe(true)
+    // A second, older remote row in the same group is still aged out.
+    const older = await plantRemote(120)
+    expect((await pruneBackups(env.app, NOW)).pruned).toEqual([older.id])
+    await keep({ backupKeepRemoteDays: null })
+  })
+
   test('a rescan gives a found row to an archive no row names, and nothing else', async () => {
     const sys = env.system as any
     await sys.appBackup.deleteMany({ where: {} })
@@ -544,5 +574,53 @@ describe('retention prunes by count and age, local and remote apart, and a resca
     expect(Date.parse(found.startedAt)).toBe(NOW - 3 * DAY)
 
     expect(await rescanDestination(env.app, dest.id)).toEqual({ listed: 4, found: 0 })
+  })
+})
+
+// ─── FJS-3859, FJS-3881, FJS-3900, FJS-3901 ─────────────────────────────────
+
+describe('an interrupted hub backup does not block the next one', () => {
+  test('a running row past the stale window is failed, and a fresh one still blocks', async () => {
+    const sys = env.system as any
+    await sys.appBackup.deleteMany({ where: {} })
+    const old = await sys.appBackup.create({ data: { appId: hubId, status: 'running',
+      startedAt: new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString() } })
+    const q = await queueBackup(env.app, { kind: 'manual', destinationId: null, requestedBy: null })
+    expect('backup' in q).toBe(true)
+    const failed = await sys.appBackup.findUnique({ where: { id: old.id } })
+    expect(failed.status).toBe('failed')
+    expect(failed.error).toContain('interrupted')
+
+    // The one just queued is fresh, so it is what the next ask answers.
+    const again = await queueBackup(env.app, { kind: 'manual', destinationId: null, requestedBy: null })
+    expect('inFlight' in again).toBe(true)
+  })
+
+  test('a restore fails every in-flight row, whatever its age', async () => {
+    const sys = env.system as any
+    await sys.appBackup.deleteMany({ where: {} })
+    await sys.appBackup.create({ data: { appId: hubId, status: 'running', startedAt: new Date().toISOString() } })
+    await sys.appBackup.create({ data: { appId: hubId, status: 'pending' } })
+    expect(await failStaleBackups(env.app, 0)).toBe(2)
+    expect(await failStaleBackups(env.app, 0)).toBe(0)
+  })
+})
+
+describe('a staged copy that is not a database is refused', () => {
+  test('integrity_check passes a real database and names a damaged file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bc-integrity-'))
+    const ok  = new Database(join(dir, 'ok.db')); ok.run('CREATE TABLE t (a)'); ok.close()
+    expect(checkStaged(dir)).toBeNull()
+    writeFileSync(join(dir, 'bad.db'), 'SQLite format 3\0' + 'x'.repeat(4096))
+    expect(checkStaged(dir)).toContain('bad.db')
+  })
+})
+
+describe('the queue database path', () => {
+  test('only a trailing .db is replaced, and a path with none is suffixed', () => {
+    expect(jobsDatabasePath('/data/basecamp.db')).toBe('/data/basecamp-jobs.db')
+    expect(jobsDatabasePath('/data.db/app.db')).toBe('/data.db/app-jobs.db')
+    expect(jobsDatabasePath('/data.db/app')).toBe('/data.db/app-jobs.db')
+    expect(jobsDatabasePath('/data/basecamp')).not.toBe('/data/basecamp')
   })
 })

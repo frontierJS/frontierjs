@@ -20,6 +20,7 @@
 //   connectableAccounts · connectRepository — the key and the hook written at the forge (FJS-D1571)
 //   readForgeDockerfile — the repository's Dockerfile now, public or through an account
 //   readRepoDockerfile · dockerfileTemplate — the two seeds the create form offers
+//   preview        — a Workbench branch's preview opened, frozen, thawed or retired, called by a peer (collection-level)
 //
 // The table is `app`, not `service`. The old header here said "table name in
 // DB: service (legacy — kept for migration continuity)"; that name was the
@@ -69,6 +70,9 @@ import { cronProblem, syncAppBackupSchedule, syncAppDrillSchedule } from '../../
 import { syncReplicasOn, syncReplicasOf, replicaHolder, replicaOf, replicaDatabases } from '../../jobs/replicate-sync.job.ts'
 import type { App }            from '@frontierjs/junction'
 import { keyScope } from '../../domain/api-key/scopes.ts'
+import { previewSettings, previewLabelRefusal, openPreview, freezePreview, thawPreview, retirePreview }
+  from '../../domain/workbench/workbench-preview.ts'
+import type { PreviewSettings, Opened } from '../../domain/workbench/workbench-preview.ts'
 import { replicaLag } from '../../domain/host/posture.ts'
 import { outpostRouteId, trafficOf, unavailable, unavailableOf } from '../../domain/host/traffic.ts'
 
@@ -605,6 +609,65 @@ const RETRY_LIVE_GAP_MS = 5000
 const httpsFailing = (check: { hosts: { steps: { key: string; status: string }[] }[] }) =>
   check.hosts.some(h => h.steps.some(s => s.key === 'https' && s.status === 'fail'))
 
+// ─── preview ─────────────────────────────────────────────────────────────
+// The Basecamp half of a Workbench preview, over the wire (`FJS-D1188`). The
+// body is `{ action, settings, branch?, opened? }`; each action is the
+// function of that name in domain/workbench/workbench-preview.ts.
+
+const PREVIEW_ACTIONS = ['open', 'freeze', 'thaw', 'retire'] as const
+type PreviewAction = typeof PREVIEW_ACTIONS[number]
+
+const text = (v: unknown, what: string): string => {
+  if (typeof v !== 'string' || !v.trim()) throw new BadRequest(`${what} is required`)
+  return v.trim()
+}
+
+function openBranch(raw: unknown): { slug: string, branch: string, port: number } {
+  const b = (raw ?? {}) as Record<string, unknown>
+  const slug = text(b.slug, 'branch.slug')
+  const refused = previewLabelRefusal(slug)
+  if (refused) throw new BadRequest(refused)
+  const port = Number(b.port)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new BadRequest('branch.port is the dev server\'s port, 1–65535')
+  return { slug, branch: text(b.branch, 'branch.branch'), port }
+}
+
+function frozenBranch(raw: unknown): { path: string, branch: string, appId: string } {
+  const b = (raw ?? {}) as Record<string, unknown>
+  return { path: text(b.path, 'branch.path'), branch: text(b.branch, 'branch.branch'), appId: text(b.appId, 'branch.appId') }
+}
+
+function openedOf(raw: unknown): Opened {
+  const o = (raw ?? {}) as Record<string, unknown>
+  return { ...o, environmentId: text(o.environmentId, 'opened.environmentId'), appId: text(o.appId, 'opened.appId') } as Opened
+}
+
+/** The parser shapes the settings; whether they name this workspace's rows is
+ *  read here, through the caller's client, so another tenant's project is
+ *  one this caller cannot find. */
+async function assertPreviewTargets(settings: PreviewSettings): Promise<void> {
+  if (!(await db().project.findFirst({ where: { id: settings.projectId }, select: { id: true } })))
+    throw new BadRequest(`settings.projectId '${settings.projectId}' is not a project in this workspace`)
+  if (settings.serverId && !(await db().server.findFirst({ where: { id: settings.serverId }, select: { id: true } })))
+    throw new BadRequest(`settings.serverId '${settings.serverId}' is not a machine in this workspace`)
+}
+
+async function preview(body: Record<string, unknown>): Promise<unknown> {
+  const action = body.action as PreviewAction
+  if (!PREVIEW_ACTIONS.includes(action)) throw new BadRequest(`action must be one of ${PREVIEW_ACTIONS.join(', ')}`)
+  // Freeze builds the worktree, so its checkout is a path on this machine and
+  // its web/ is checked; the other three never read the checkout.
+  const branch   = action === 'freeze' ? frozenBranch(body.branch) : null
+  const settings = previewSettings(body.settings, branch ? branch.path : null)
+  if ('refused' in settings) throw new BadRequest(settings.refused)
+  await assertPreviewTargets(settings)
+
+  if (action === 'open')   return openPreview($.app, settings, openBranch(body.branch))
+  if (action === 'freeze') return freezePreview($.app, settings, branch!)
+  if (action === 'thaw')   return thawPreview($.app, settings, openedOf(body.opened))
+  return retirePreview($.app, openedOf(body.opened))
+}
+
 export default createService({
   name:  'apps',
   scope: keyScope('apps'),
@@ -643,6 +706,10 @@ export default createService({
     // of the collection, at the level that may create one.
     { method: 'readRepoDockerfile', gate: LEVELS.USER, read: true, input: 'AppRepoDockerfile' },
     { method: 'dockerfileTemplate', gate: LEVELS.USER, read: true },
+    // Each action writes Environments, Apps, Variables and Domains through
+    // their own services, which grade each row; the level is the least of
+    // theirs. A scope of its own, so a peer's key reaches this and nothing else.
+    { method: 'preview', gate: LEVELS.USER, scope: 'apps:preview' },
   ],
   // Announced by the service DEFINITION, not by an after hook: `callService`
   // is junction's one announcement point and it excludes `find`/`get` by name,
@@ -1135,6 +1202,12 @@ export default createService({
 
   async dockerfileTemplate() {
     return { content: fjsDockerfileTemplate() }
+  },
+
+  // ── preview ───────────────────────────────────────────────────────
+  // Collection-level: `open` makes the App it would be addressed by.
+  async preview() {
+    return preview(($.data ?? {}) as Record<string, unknown>)
   },
 
   hooks: {

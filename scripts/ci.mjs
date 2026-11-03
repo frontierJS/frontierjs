@@ -44,7 +44,7 @@
 
 import { spawn, spawnSync }                from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync, readdirSync, rmSync, mkdtempSync, mkdirSync } from 'node:fs'
-import { join, dirname, relative }         from 'node:path'
+import { join, dirname, relative, basename, resolve } from 'node:path'
 import { fileURLToPath }                   from 'node:url'
 import { tmpdir, availableParallelism }    from 'node:os'
 
@@ -326,6 +326,7 @@ function hygiene() {
 
   searchableSource()
   substratePurity()
+  strangerApps()
 }
 
 // ─── phase 1a · searchable source ───────────────────────────
@@ -483,6 +484,63 @@ function substratePurity() {
 // rule fails on the paragraph explaining it. The import scan keeps the strings,
 // because the specifier IS one; it only drops comments, where a doc block
 // showing an example import is not an import.
+// ─── phase 1c · stranger apps ───────────────────────────────
+// Basecamp is the fleet's control plane and Workbench is one developer's
+// machine (`IDEAS/workbench-package.md`). The split was adjudicated as a battery
+// severable with one owner and one seam, and the seam is a signed call over the
+// wire — never an import. An import either way would quietly rebuild the wing
+// the shipped image used to carry, and no suite would fail: the path resolves.
+// So the rule is stated where it can break a build, both directions, by path
+// and by package name.
+
+const STRANGERS = [['packages/basecamp', 'packages/workbench']]
+
+function strangerApps() {
+  for (const [a, b] of STRANGERS) {
+    const from = problems.length
+    const missing = [a, b].filter(pkg => !existsSync(join(ROOT, pkg, 'package.json')))
+    if (missing.length) {
+      note(`stranger app ${missing.join(' and ')} named in scripts/ci.mjs does not exist. Fix STRANGERS.`)
+      continue
+    }
+    let scanned = 0
+    for (const [me, other] of [[a, b], [b, a]]) {
+      const otherName = readJson(join(ROOT, other, 'package.json')).name
+      const otherDir  = basename(other)
+      for (const file of appSourceFiles(join(ROOT, me))) {
+        scanned++
+        const rel = relative(ROOT, file)
+        for (const spec of importSpecifiers(stripComments(readFileSync(file, 'utf8')))) {
+          const byName = spec === otherName || spec.startsWith(otherName + '/')
+          // Resolved, not matched by word: basecamp's own domain/workbench/ is not the other app.
+          const byPath = spec.startsWith('.') && !relative(join(ROOT, other), resolve(dirname(file), spec)).startsWith('..')
+          if (!byName && !byPath) continue
+          fail(
+            `${rel} imports '${spec}'\n` +
+            `      ${basename(me)} and ${otherDir} are strangers: what crosses between them crosses as a\n` +
+            `      signed call (FJS-D1188), never an import. Move the code to the side that owns it,\n` +
+            `      or add the endpoint (IDEAS/workbench-package.md § Derived).`
+          )
+        }
+      }
+    }
+    if (clean(from)) ok(`${basename(a)} and ${basename(b)} are strangers — ${scanned} source file(s), no import either way`)
+  }
+}
+
+/** Every source file of an app, surfaces and db alike — never node_modules, never a build. */
+function appSourceFiles(dir) {
+  if (!existsSync(dir)) return []
+  const out = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name.startsWith('.')) continue
+    const full = join(dir, entry.name)
+    if (entry.isDirectory()) out.push(...appSourceFiles(full))
+    else if (/\.(js|mjs|ts|mesa)$/.test(entry.name)) out.push(full)
+  }
+  return out
+}
+
 function stripComments(code) {
   return code
     .replace(/\/\*[\s\S]*?\*\//g, ' ')

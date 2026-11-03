@@ -1,0 +1,17 @@
+{
+  "//": "One number per fli check rule id \u2014 the count that may never rise. Absent = 0 = clean. `fli check --update` locks in an improvement; `fli check --adopt` records what is there. The findings still print either way.",
+  "//test-port-literal": "Four, all api/test/workbench.test.ts: 8020/8120 are fixture values asserting that createWorkbench passes an env PORT through, not a port the test binds. Inherited from basecamp's baseline with the move (IDEAS/workbench-package.md 2.1).",
+  "test-port-literal": 4,
+  "//gate-unreachable": "One: the three Claude models keep @@gate(5.8) and the one Member's session grades ADMINISTRATOR by `isAdmin` in api/src/auth.ts. The rule reads an isAdmin column or a getLevel resolver and cannot see a session field, so the finding is the rule's blind spot, not a wall.",
+  "gate-unreachable": 1,
+  "//css-raw-literal": "Four in routes/workbench/index.mesa, inherited from basecamp with the move; the kit tokens that replace them are the UI realm's work, not the split's.",
+  "css-raw-literal": 4,
+  "//css-class-collision": "Two (.field in atlas/decide, .cluster in workbench/index), inherited from basecamp with the move.",
+  "css-class-collision": 2,
+  "//service-as-system": "One: api/src/domain/job/job-context.ts runs a job as the app through asSystem(). Workbench has one Member and no tenancy, so there is no other user's row to cross; the job runs as the machine's owner.",
+  "service-as-system": 1,
+  "//package-model-drift": "One: db/schema.lite's Notification.userId is Int with a relation to Member, where @frontierjs/notifications' fragment says String for auth's uuid ids. Workbench has no auth package and Member.id is Int; the drift is the one column, on purpose (IDEAS/workbench-package.md 3.2).",
+  "package-model-drift": 1,
+  "//polymorphic-subject": "One: Notification.subjectType is the fragment's bare String; the one kind Workbench sends (AutopilotReport) has no subject row to point at.",
+  "polymorphic-subject": 1
+}

@@ -1,0 +1,113 @@
+---
+title: Notifications
+---
+<script>
+  // Everything this person has been told in-app, newest first. The bell in
+  // the topbar is the last few unread; this is the whole list, with read ones.
+  //
+  import { goto }    from '@frontierjs/sierra/router'
+  import {
+    notifications, isUnread, titleOf, bodyOf, actionOf,
+    markRead, markUnread, markAllRead, INBOX,
+  } from '../../resources/Notification.mesa'
+  import { at } from '../../lib/datetime.js'
+
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Table      from '@frontierjs/ui/components/display/Table.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
+
+  const inbox = notifications.tethered({ state: 'local', directives: INBOX })
+  const notes = () => inbox.rows
+
+  let only = 'unread'
+
+  $: unread  = notes().filter(isUnread)
+  $: visible = only === 'unread' ? unread : notes()
+
+  async function open(n) {
+    if (isUnread(n)) await markRead(n).catch(() => {})
+    const action = actionOf(n)
+    if (action?.url) goto(action.url)
+  }
+
+  async function toggle(n) {
+    try { isUnread(n) ? await markRead(n) : await markUnread(n) }
+    catch (e) { toasts.error(e.message) }
+  }
+
+  async function readAll() {
+    try {
+      const count = await markAllRead(inbox)
+      toasts.success(count === 1 ? 'Marked 1 notification read' : `Marked ${count} notifications read`)
+    } catch (e) { toasts.error(e.message) }
+  }
+
+  const COLUMNS = [
+    { name: 'what',   label: 'Notification' },
+    { name: 'when',   label: 'When' },
+    { name: 'status', label: '' },
+  ]
+</script>
+
+<div class="section-header">
+  <h1>Notifications</h1>
+  <span class="cluster">
+    {#if unread.length}
+      <Button treatment="outlined" id="notifications-read-all" onclick={readAll}>Mark all read</Button>
+    {/if}
+  </span>
+</div>
+
+{#if inbox.error}
+  <article class="alert danger">
+    <div class="alert-content">{inbox.error.message}</div>
+  </article>
+{/if}
+
+<div class="cluster" role="group" aria-label="Show" id="notifications-filter">
+  <Button treatment={only === 'unread' ? 'outlined' : 'ghost'} onclick={() => only = 'unread'}>Unread ({unread.length})</Button>
+  <Button treatment={only === 'all' ? 'outlined' : 'ghost'} onclick={() => only = 'all'}>All</Button>
+</div>
+
+{#if inbox.loading && !notes().length}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !visible.length}
+  <EmptyState title={only === 'unread' ? 'All caught up' : 'Nothing yet'}>
+    {only === 'unread'
+      ? 'Nothing unread. The morning Autopilot report lands here when it is sent.'
+      : 'The morning Autopilot report lands here when it is sent.'}
+  </EmptyState>
+{:else}
+  {#if notes().length >= INBOX.limit}
+    <!-- A capped list that says nothing about the cap reads as a complete one. -->
+    <p class="text-sm text-muted">Showing the most recent {INBOX.limit}.</p>
+  {/if}
+
+  <Table id="notifications-rows" columns={COLUMNS} rows={visible}>
+    {#snippet row(n)}
+      <tr data-unread={isUnread(n) ? 'true' : null}>
+        <td>
+          {#if actionOf(n)?.url}
+            <a href={actionOf(n).url} onclick={(e) => { e.preventDefault(); open(n) }}>
+              {#if isUnread(n)}<strong>{titleOf(n)}</strong>{:else}{titleOf(n)}{/if}
+            </a>
+          {:else if isUnread(n)}
+            <strong>{titleOf(n)}</strong>
+          {:else}
+            {titleOf(n)}
+          {/if}
+          {#if bodyOf(n)}<div class="text-sm text-muted">{bodyOf(n)}</div>{/if}
+        </td>
+        <td class="text-sm text-muted">{at(n.createdAt)}</td>
+        <td>
+          {#if isUnread(n)}<Pill tone="primary">new</Pill>{/if}
+          <Button treatment="ghost" size="sm" onclick={() => toggle(n)}>
+            {isUnread(n) ? 'Mark read' : 'Mark unread'}
+          </Button>
+        </td>
+      </tr>
+    {/snippet}
+  </Table>
+{/if}

@@ -1,0 +1,60 @@
+---
+siteName: Workbench
+---
+<script>
+  import { page, goto } from '@frontierjs/sierra/router'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Toaster from '@frontierjs/ui/components/feedback/Toaster.mesa'
+  import ConfirmProvider from '@frontierjs/ui/components/overlay/ConfirmProvider.mesa'
+  import Bell from '../components/Bell.mesa'
+  import { session, signOut } from '../lib/session.js'
+  import { groups } from '../lib/nav.js'
+
+  $: (page.pathname, page.title)
+  $: (session.user)
+
+  const entries = () => groups.filter(g => g.show({ user: session.user })).flatMap(g => g.entries)
+  const current = (e) => e.exact ? page.pathname === e.href : page.pathname.startsWith(e.href)
+
+  async function leave() {
+    await signOut()
+    goto('/login/')
+  }
+</script>
+
+<div class="shell">
+  <header class="topbar">
+    <span class="cluster">
+      <strong>Workbench</strong>
+      {#if session.user}
+        <nav class="cluster" aria-label="Workbench">
+          {#each entries() as e}
+            <a href={e.href} title={e.sub} aria-current={current(e) ? 'page' : undefined}>{e.label}</a>
+          {/each}
+        </nav>
+      {/if}
+    </span>
+    {#if session.user}
+      <span class="cluster">
+        <Bell />
+        <span class="text-sm text-muted">{session.user.nick}</span>
+        <Button treatment="ghost" size="sm" id="sign-out" onclick={leave}>Sign out</Button>
+      </span>
+    {/if}
+  </header>
+
+  <main class="screen" id="main" tabindex="-1">
+    <div class="container stack screen-body">
+      <slot />
+    </div>
+  </main>
+</div>
+
+<Toaster position="bottom-right" />
+<ConfirmProvider />
+
+<style>
+  /* The workbench is a working surface, not a reading column: let it take the
+     whole width the screen gives it. */
+  .screen-body:has(:global(.workbench)) { max-inline-size: none; }
+</style>

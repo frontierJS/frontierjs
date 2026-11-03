@@ -20,7 +20,7 @@ import { GatePlugin }  from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor }         from '../src/core/capabilities.ts'
-import { declaredFor, gradeHub, gradePosture, gradeReplication, HUB_CONTROL_IDS, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/domain/host/posture.ts'
+import { declaredFor, gradeHub, gradePosture, gradeReplication, HUB_CONTROL_IDS, lastKnownControls, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/domain/host/posture.ts'
 import { HOST_SLUG, placeHub } from '../src/domain/host/host-machine.ts'
 import type { HostDeclared, PostureReadings } from '../src/domain/host/posture.ts'
 import { componentById, matchGithub, rangeOf, versionOf } from '../src/domain/host/components.ts'
@@ -165,6 +165,17 @@ describe('the grader', () => {
     expect(postureChanges(before, after).failed.map(c => c.id)).toEqual(['ssh.password-off'])
     expect(postureChanges(after, before).restored.map(c => c.id)).toEqual(['ssh.password-off'])
     expect(postureChanges(grade({ ...CLEAN, ssh: null }), after).failed.map(c => c.id)).toEqual([])
+  })
+
+  test('passing, then unknown, then failing is still a failure (FJS-3876)', () => {
+    const passing = grade(CLEAN)
+    const unknown = grade({ ...CLEAN, ssh: null })
+    const failing = grade({ ...CLEAN, ssh: { ...CLEAN.ssh!, password_authentication: 'yes' } })
+    // Newest first, the way the service reads them.
+    const prior = lastKnownControls([unknown, passing])
+    expect(postureChanges(prior, failing).failed.map(c => c.id)).toEqual(['ssh.password-off'])
+    // The pair: passing, unknown, passing is no move at all.
+    expect(postureChanges(lastKnownControls([unknown, passing]), passing).failed).toEqual([])
   })
 })
 

@@ -71,7 +71,10 @@ export type BasecampDb = LitestoneClient
  *  backup job reads the same answer, so the queue is archived from the file the
  *  app opened rather than from a second spelling of its path. */
 export function jobsDatabasePath(dbPath: string): string {
-  return dbPath.replace('.db', '-jobs.db')
+  // Only a trailing `.db`: the first `.db` anywhere would rewrite a directory
+  // (`/data.db/app.db`). A path with none gets the suffix, so the queue is never
+  // the main database itself.
+  return /\.db$/.test(dbPath) ? dbPath.replace(/\.db$/, '-jobs.db') : `${dbPath}-jobs.db`
 }
 
 export const SCHEMA_PATH = new URL('../../../db/schema.lite', import.meta.url).pathname

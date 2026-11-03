@@ -2,8 +2,8 @@
   "//": "One number per fli check rule id — the count that may never rise. Absent = 0 = clean. `fli check --update` locks in an improvement and cannot raise; `fli check --adopt` records what is there, which is the verb for taking debt on. The findings still print either way.",
   "//app-layout": "One: GET /backup-archive/{id} is a raw route in api/src/plugins/backup-archive.ts and not a routes/ file, because a route file is handed only the TransportContext and this handler needs the app's system client, logger and sqlite path (FJS-3596). Debt, not a defence: it moves when a route file can reach the app.",
   "app-layout": 1,
-  "//css-class-collision": "Adopted when CI first graded the rule (FJS-D1009), and each is a rename, not a defence: .topbar, .cluster and .sidebar in routes/_module.mesa, .cluster in routes/workbench/index.mesa, .field in routes/atlas/decide/index.mesa. Each takes the kit's rules as well as its own, so a kit change restyles the shell. A ceiling that falls as they are renamed.",
-  "css-class-collision": 5,
+  "//css-class-collision": "Adopted when CI first graded the rule (FJS-D1009), and each is a rename, not a defence: .topbar, .cluster and .sidebar in routes/_module.mesa. Each takes the kit's rules as well as its own, so a kit change restyles the shell. A ceiling that falls as they are renamed.",
+  "css-class-collision": 3,
   "schema-runs": 7,
   "allow": {
     "capability-ladder:db/schema.lite:Environment": "The exemption FJS-D146 names: a deliberately high floor under a grid. Environment carries @@capabilities and @@gate(2.4.4.5), and the failure the rule warns about needs a role that HOLDS a grant and sits BELOW the write level. Basecamp has none: api/src/core/gate.ts maps viewer and billing to 2 and developer to 4, and api/src/core/capabilities.ts grants viewer [] and billing [] here, so every grant is held at 4 or above, where the gate writes. Flattening to @@gate(2) would leave the hand-stamped grant table as the only thing between a viewer and Environment.delete. A role gaining a grant below level 4 makes this entry false.",
@@ -43,9 +43,7 @@
     "test-port-literal:api/test/posture.test.ts": "8180 and 8090 are a fleet machine's listening sockets and a container's published port in a posture report the pure grader reads, and 8020 and 8120 are the localhost URL defaults the hub grader is handed as text; nothing binds or reaches any of them.",
     "test-port-literal:api/test/rollback.test.ts": "8080 is the App.port snapshotted into a Release and compared back; nothing binds it.",
     "test-port-literal:api/test/verify-dns.mjs": "7129 is the App.port of an nginx container the drive records and never starts.",
-    "test-port-literal:api/test/workbench.test.ts": "PORT: 8120 is the value the test hands a run and then asserts never reaches the child (call.port is null).",
     "test-port-literal:web/test/verify-hub-restore.mjs": "8333 is the port INSIDE the SeaweedFS container, mapped from the drive's own S3_PORT; nothing on the host binds it.",
-    "test-port-literal:web/test/verify-provision.mjs": "8000 is the fallback in the fixture checkout's vite.config.js, the scaffold's own `FRONTIER_PORT_FE ?? 8000` written to disk as text; `fli dev` hands that checkout FRONTIER_PORT_FE, and the drive never binds or reaches 8000.",
     "test-port-literal:web/test/verify-screens.mjs": "8443 and 8080 are the `port` column of a Domain and an App the drive types into a form -- data a container publishes, never a port the drive binds or reaches."
   }
 }

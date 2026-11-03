@@ -179,19 +179,39 @@ describe('variables.reveal', () => {
   })
 })
 
+// FJS-3842: the repo and the branch reach `git clone` on a machine as
+// arguments, and one starting with `-` is read there as an option.
+describe('a git source is a repository and a branch git reads as such', () => {
+  test('https, ssh and git@host:path are admitted', () => {
+    for (const repo of ['https://github.com/a/b.git', 'ssh://git@host:22/a/b.git', 'git@github.com:a/b.git'])
+      expect(parseAppSource({ kind: 'git', repo })).toEqual({ kind: 'git', repo })
+  })
+
+  test('an option, a local path, ext:: and file:// are refused, naming the field', () => {
+    for (const repo of ['--upload-pack=touch /tmp/x', '/srv/repo', 'ext::sh -c x', 'file:///etc', 'ssh://-oProxyCommand=x/a', 'git@-oX:a', 'http://h/a.git'])
+      expect(() => parseAppSource({ kind: 'git', repo })).toThrow(/source\.repo/)
+  })
+
+  test('a branch git check-ref-format --branch refuses is refused', () => {
+    expect(parseAppSource({ kind: 'git', repo: 'git@h:a/b', branch: 'feature/x-1' })).toMatchObject({ branch: 'feature/x-1' })
+    for (const branch of ['-b', '--upload-pack=x', 'a..b', 'a b', 'a~1', 'a:b', '.hidden', 'x.lock', 'a/', 'a//b', 'a@{1}', 'HEAD', 'a.'])
+      expect(() => parseAppSource({ kind: 'git', repo: 'git@h:a/b', branch })).toThrow(/source\.branch/)
+  })
+})
+
 describe('source.dockerfile', () => {
   test('accepted when a non-empty string, trimmed, and absent when blank', () => {
-    expect(parseAppSource({ kind: 'git', repo: 'r', dockerfile: '\n FROM x \n' })).toEqual({ kind: 'git', repo: 'r', dockerfile: 'FROM x' })
-    expect(parseAppSource({ kind: 'git', repo: 'r', dockerfile: '   ' })).toEqual({ kind: 'git', repo: 'r' })
-    expect(parseAppSource({ kind: 'git', repo: 'r', dockerfile: 7 })).toEqual({ kind: 'git', repo: 'r' })
+    expect(parseAppSource({ kind: 'git', repo: 'https://git.example/r.git', dockerfile: '\n FROM x \n' })).toEqual({ kind: 'git', repo: 'https://git.example/r.git', dockerfile: 'FROM x' })
+    expect(parseAppSource({ kind: 'git', repo: 'https://git.example/r.git', dockerfile: '   ' })).toEqual({ kind: 'git', repo: 'https://git.example/r.git' })
+    expect(parseAppSource({ kind: 'git', repo: 'https://git.example/r.git', dockerfile: 7 })).toEqual({ kind: 'git', repo: 'https://git.example/r.git' })
   })
 
   test('capped', () => {
-    expect(() => parseAppSource({ kind: 'git', repo: 'r', dockerfile: 'x'.repeat(DOCKERFILE_BYTES + 1) })).toThrow(/bytes/)
+    expect(() => parseAppSource({ kind: 'git', repo: 'https://git.example/r.git', dockerfile: 'x'.repeat(DOCKERFILE_BYTES + 1) })).toThrow(/bytes/)
   })
 
   test('a list carries its size, not its text', () => {
-    expect(summarizeSource({ kind: 'git', repo: 'r', dockerfile: 'FROM x' })).toEqual({ kind: 'git', repo: 'r', dockerfileBytes: 6 })
+    expect(summarizeSource({ kind: 'git', repo: 'https://git.example/r.git', dockerfile: 'FROM x' })).toEqual({ kind: 'git', repo: 'https://git.example/r.git', dockerfileBytes: 6 })
   })
 })
 

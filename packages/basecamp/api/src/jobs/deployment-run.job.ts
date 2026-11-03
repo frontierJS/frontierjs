@@ -44,10 +44,13 @@
 // ran says `null` rather than a plausible-looking tag (IDEAS/deploy-plane.md §a).
 //
 // Reliability: jobs are persisted in Caravan's SQLite store before execution.
-// A Basecamp restart resets in-flight jobs to pending — no stuck deploys.
+// A run a restart cut off is replayed by caravan, and the replay finds its
+// release `building` and fails it rather than running half a release again
+// (`FJS-3850`); a release nothing is left running is failed by
+// `sweepStuckReleases` (`FJS-3861`).
 
 import { defineJob }       from '@frontierjs/caravan'
-import { resolveExecutor, isExecutor, PULL_TIMEOUT_MS, BUILD_TIMEOUT_MS, DEPLOY_TIMEOUT_MS } from '../providers/executor.ts'
+import { resolveExecutor, isExecutor, PULL_TIMEOUT_MS, BUILD_TIMEOUT_MS, DEPLOY_TIMEOUT_MS, ACTIVATE_TIMEOUT_MS } from '../providers/executor.ts'
 import type { Executor }    from '../providers/executor.ts'
 import { notifyPeople, workspaceMembers } from '../domain/notification/notify.ts'
 import { runsAsCaller }         from '../domain/job/job-context.ts'
@@ -57,7 +60,7 @@ import { isInline, isGit, inlineFilesFor } from '../domain/release/app-source.ts
 import { siteBranch } from '../domain/site/site-checkout.ts'
 import { releaseSite } from '../domain/site/site-publish.ts'
 import { cloudflareFor } from '../domain/site/site-preview.ts'
-import { SITE_STEP } from '../domain/release/release-record.ts'
+import { SITE_STEP, releaseStatus } from '../domain/release/release-record.ts'
 import { releaseEnv } from '../domain/release/variables.ts'
 import { runtimeOf, routedHosts, routedPaths, routedRedirects, markRunning, type Runtime } from '../domain/release/runtime.ts'
 import { takeAppBackup, destinationFor } from './app-backup-run.job.ts'
@@ -186,7 +189,7 @@ function runner(app: App) {
     // One call for the row, its steps and its app — and the refusal. A release
     // this actor may not reach, or one that has gone, throws here rather than
     // being advanced.
-    let opened: { runnable: boolean; status?: string
+    let opened: { runnable: boolean; status?: string; interrupted?: boolean
                   deploy?: DeploymentRow; steps?: StepRow[]; app?: ServiceRow }
     try {
       opened = await deployments.call('startRun', deploymentId) as typeof opened
@@ -196,7 +199,7 @@ function runner(app: App) {
     }
 
     if (!opened.runnable) {
-      log.warn('deployment not in runnable state', { id: deploymentId, status: opened.status })
+      log.warn('deployment not in runnable state', { id: deploymentId, status: opened.status, ...(opened.interrupted ? { interrupted: true } : {}) })
       return
     }
 
@@ -239,6 +242,12 @@ function runner(app: App) {
     // The step a throw belongs to, read by the catch below. Cleared once it
     // lands, so a failure after the last step does not rewrite one that succeeded.
     let current: string | undefined
+    let siteFailed: string | undefined
+
+    // A cancel only writes the row; this is where it stops the run. Asked
+    // before every step, because each one acts on the machine and a release
+    // somebody cancelled must not go on to swap what is serving (`FJS-3848`).
+    const cancelled = async () => (await releaseStatus(app, deploymentId)) === 'cancelled'
 
     try {
       // The digest travels down the steps: whatever /pull reported is what
@@ -246,9 +255,12 @@ function runner(app: App) {
       let digest: string | null = asDigest(deploy.builtImage)
       // The commit the image was built from, which is the site's.
       let commit: string | null = null
-      let siteFailed: string | undefined
 
       for (const s of steps) {
+        if (await cancelled()) {
+          log.info('deployment cancelled — stopping before its next step', { id: deploymentId, step: s.name })
+          return
+        }
         current = s.id
         await step(deploymentId, s.id, 'running')
 
@@ -273,26 +285,44 @@ function runner(app: App) {
         current = undefined
       }
 
-      await deployments.call('finishRun', deploymentId, {
+      const finished = await deployments.call('finishRun', deploymentId, {
         status: 'success',
         startedAt: new Date(startedAt).toISOString(),
-      })
-      // The one write saying WHERE the app now runs — the ingress record's
-      // addresses are read off it (`servingAddresses`), and a placement never
-      // marked is a machine DNS must not send anybody to.
-      await markRunning(app.db, deploy.appId, executor.serverId)
-      await toZones(deploy.appId, deploymentId)
-      // A first release is what makes the volume a replica list skips until
-      // it exists, so the machine is sent its list again.
-      if (service?.replicaDestinationId) await syncReplicasOn(app, [executor.serverId])
-      log.info('deployment succeeded', { id: deploymentId, durationMs: Date.now() - startedAt, ...(siteFailed ? { site: siteFailed } : {}) })
-      await tellThem('DeploySuccess', deploy, service, siteFailed ? { siteFailed } : {})
+      }) as { status?: string }
+      // Cancelled during the last step: the row stays cancelled, and nothing
+      // below may announce it as live.
+      if (finished?.status === 'cancelled') {
+        log.info('deployment cancelled — its last step finished after the cancel', { id: deploymentId })
+        return
+      }
 
     } catch (err: unknown) {
       const msg = (err as Error).message ?? 'unknown error'
-      await failDeploy(deploymentId, startedAt, msg, current)
+      const status = await failDeploy(deploymentId, startedAt, msg, current)
       log.error('deployment failed', { id: deploymentId, error: msg })
-      await tellThem('DeployFailed', deploy, service, { reason: msg })
+      if (status !== 'cancelled') await afterward('notify', () => tellThem('DeployFailed', deploy, service, { reason: msg }))
+      return
+    }
+
+    // After the release is recorded a success, and outside the try that fails
+    // it: each of these is its own fact, and one throwing used to rewrite a
+    // release that shipped as `failed` (`FJS-3852`).
+    //
+    // The one write saying WHERE the app now runs — the ingress record's
+    // addresses are read off it (`servingAddresses`), and a placement never
+    // marked is a machine DNS must not send anybody to.
+    await afterward('mark running', () => markRunning(app.db, deploy.appId, executor.serverId))
+    await toZones(deploy.appId, deploymentId)
+    // A first release is what makes the volume a replica list skips until
+    // it exists, so the machine is sent its list again.
+    if (service?.replicaDestinationId) await afterward('sync replicas', () => syncReplicasOn(app, [executor.serverId]))
+    log.info('deployment succeeded', { id: deploymentId, durationMs: Date.now() - startedAt, ...(siteFailed ? { site: siteFailed } : {}) })
+    await afterward('notify', () => tellThem('DeploySuccess', deploy, service, siteFailed ? { siteFailed } : {}))
+
+    async function afterward(what: string, fn: () => Promise<unknown>): Promise<void> {
+      try { await fn() } catch (err) {
+        log.warn(`release recorded, but ${what} failed`, { id: deploymentId, error: (err as Error).message })
+      }
     }
   }
 
@@ -516,7 +546,7 @@ function runner(app: App) {
         hosts:         await routedHosts(app.db, deploy.appId),
         paths:         await routedPaths(app.db, deploy.appId),
         redirects:     await routedRedirects(app.db, deploy.appId),
-      })
+      }, { timeoutMs: ACTIVATE_TIMEOUT_MS })
       if (reply.error) throw new Error(`Activate failed: ${reply.error.message}`)
 
       // The address the MACHINE says it is serving at, written into the step
@@ -602,10 +632,11 @@ function runner(app: App) {
   // The release, the steps it left behind, the app's status and the event —
   // one call, because they are one fact and four writes that used to be able
   // to half-happen.
-  async function failDeploy(id: string, startedAt: number, error: string, stepId?: string): Promise<void> {
-    await deployments.call('finishRun', id, {
+  async function failDeploy(id: string, startedAt: number, error: string, stepId?: string): Promise<string | undefined> {
+    const out = await deployments.call('finishRun', id, {
       status: 'failed', error, stepId, startedAt: new Date(startedAt).toISOString(),
-    })
+    }) as { status?: string }
+    return out?.status
   }
 
   return { runDeployment }
