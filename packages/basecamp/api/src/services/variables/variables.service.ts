@@ -10,7 +10,7 @@
 // absent from every read here. A secret is replaced, and read back only by
 // `reveal` — `POST /variables/:id`, an administrator's, filed in the trail.
 
-import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, parseWhere, requestMeta, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, refuseProtectedForDeveloper, WORKSPACE_QUERY }
   from '../../core/hooks.ts'
@@ -112,6 +112,10 @@ export default createService({
   // of that database needs (FJS-D1555). Scoped read first, so the row is one
   // the caller may see; the value is `@encrypted` and only a system read has it.
   async reveal() {
+    // Under a key, junction keeps the answer to replay it for a day, and this
+    // answer is the plaintext (`FJS-3893`). A failed call keeps nothing.
+    if (requestMeta()?.idempotencyKey)
+      throw new BadRequest('reveal answers once and is not replayed — send it without an Idempotency-Key')
     const row = await getScoped('variable', 'Variable')
     if (!row.isSecret) throw new BadRequest(`${row.key} is not a secret — its value is on every read`)
     const held = await $.db.asSystem().variable.findFirst({ where: { id: row.id }, select: { secretValue: true } })

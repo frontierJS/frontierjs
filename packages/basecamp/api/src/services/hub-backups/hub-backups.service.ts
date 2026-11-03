@@ -106,6 +106,18 @@ export default createService({
     if (!SETTLED.includes(row.status)) throw new Conflict(
       `That backup is still ${row.status} — wait for it to finish.`)
 
+    // The newest good archive is what a restore reaches for, and the only good
+    // one is the last way back: discarding either leaves a hub whose next
+    // failure has nothing to restore (`FJS-3902`). Retention keeps its own
+    // newest and goes through `deleteArchive`, not this door.
+    if (row.status === 'success') {
+      const newest = await db().asSystem().appBackup.findFirst({
+        where: { appId: row.appId, status: 'success' }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], select: { id: true },
+      })
+      if (newest?.id === row.id) throw new Conflict(
+        `That is the newest good backup, and the only way to restore the hub if it fails — take another and discard this one once it succeeds.`)
+    }
+
     const done = await deleteArchive($.app, row)
     if ('kept' in done) throw new Conflict(`The backup was kept: ${done.kept}`)
     return row

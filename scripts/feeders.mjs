@@ -75,6 +75,7 @@ export function strangerFailure({ step, cmd, code, output, version, app }) {
 
 /** One line of a failure's output, ANSI and runs of whitespace squashed, cut at `max` with an ellipsis. */
 export function squash(text, max = 700) {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: ESC is what an SGR sequence starts with
   const s = String(text ?? '').replace(/\u001b\[[0-9;]*m/g, '').replace(/\s+/g, ' ').trim()
   return s.length > max ? `${s.slice(0, max - 1)}…` : s
 }

@@ -1,0 +1,31 @@
+<!--
+  The structure shared by every product page (routes/basecamp.mesa,
+  routes/litestone.mesa): the section, its split of points and proof, the
+  read-more line. The rules are :global() because a section is a component of
+  its own and a scoped rule on the page would not reach it. One copy here is
+  what keeps two pages from drifting into two looks.
+
+  A section's root is section.bc-section holding .container.stack, with
+  p.eyebrow, h2, p.lede, .bc-split (ul.bc-points + figure.bc-proof) and
+  p.bc-more. The hero is .bc-hero. The class prefix is a name, not a claim
+  that the page is about Basecamp.
+-->
+<slot />
+
+<style>
+  :global(.bc-section) { scroll-margin-top: 5rem; padding: 4.5rem 0; border-top: 1px solid var(--rule); }
+  :global(.bc-section h2) { font-size: clamp(1.6rem, 3.5vw, 2.2rem); letter-spacing: -.02em; margin: 0 0 .3em; }
+  :global(.bc-section .eyebrow), :global(.bc-hero .eyebrow) { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
+  :global(.bc-section .lede), :global(.bc-hero .lede) { font-size: 1.15rem; color: var(--ink-soft); max-width: 56ch; }
+  :global(.bc-split) { display: grid; gap: 2rem; grid-template-columns: minmax(0, 1fr); align-items: start; margin-top: 1rem; }
+  @media (min-width: 60rem) { :global(.bc-split) { grid-template-columns: .9fr 1.1fr; } }
+  :global(.bc-points) { list-style: none; padding: 0; margin: 0; display: grid; gap: 1.1rem; }
+  :global(.bc-points li) { color: var(--ink-soft); line-height: 1.6; padding-left: 1rem; border-left: 2px solid var(--color-primary); }
+  :global(.bc-points strong) { color: var(--ink); }
+  :global(.bc-proof) { margin: 0; min-width: 0; }
+  :global(.bc-proof figcaption) { font-size: .8rem; color: var(--ink-mute); margin-top: .5rem; }
+  :global(.bc-more) { font-size: .9rem; color: var(--ink-mute); }
+  :global(.bc-more a) { color: var(--color-primary); }
+  /* @frontierjs/css sets no font on body, so a section on its own took the browser's serif. */
+  :global(.bc-section), :global(.bc-hero) { font-family: var(--font-primary); }
+</style>

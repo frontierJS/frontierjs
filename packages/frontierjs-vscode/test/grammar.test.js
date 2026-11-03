@@ -348,6 +348,23 @@ async function main() {
         scopesOf(tk, word).join(' '))
     }
   }
+  // An enum body was one any-word rule, so `label` in `@label` and every word
+  // of its string rendered as a member. Paired with a bare member, and a brace
+  // in the label that closed the enum while strings were not read there.
+  {
+    const tk = tokenize(lite, 'enum Channel {\n  google_ads @label("Google {Ads}")\n  bing\n}\n')
+    ok('@label in an enum is an attribute',
+      scopesOf(tk, '@label').some(s => s.startsWith('entity.other.attribute-name')),
+      scopesOf(tk, '@label').join(' '))
+    ok('the label is a string',
+      scopesOf(tk, 'Google').includes('string.quoted.double.litestone'),
+      scopesOf(tk, 'Google').join(' '))
+    for (const word of ['google_ads', 'bing']) {
+      ok(`${word} is a member`,
+        scopesOf(tk, word).includes('variable.other.enummember.litestone'),
+        scopesOf(tk, word).join(' '))
+    }
+  }
   {
     const tk = tokenize(lite, 'function discounted(price: Integer) {\n  @@expr("{price} * 2")\n}\n')
     ok('@@expr still opens its string',

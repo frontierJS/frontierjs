@@ -47,7 +47,10 @@ const STUB_ENV = 'BASECAMP_STUB_OUTPOST'
 
 export interface ExecutorReply {
   data?:  Record<string, unknown>
-  error?: { message: string }
+  /** `volumeTouched` is the machine saying a failed volume restore got as far as
+   *  writing the data directory. Absent means it did not say so, not that the
+   *  directory is safe -- only a restore reply carries it. */
+  error?: { message: string; volumeTouched?: boolean }
 }
 
 export interface Executor {
@@ -124,7 +127,10 @@ function outpostExecutor(app: App, serverId: string, target: string): Executor {
         ...(opts?.timeoutMs ? { timeout_ms: opts.timeoutMs } : {}),
       })
       if (!sent.error) return { data: sent.data as Record<string, unknown> }
-      return { error: { message: machineSaid(sent.error.raw) ?? sent.error.message } }
+      return { error: {
+        message: machineSaid(sent.error.raw) ?? sent.error.message,
+        ...(machineFlag(sent.error.raw, 'volume_touched') ? { volumeTouched: true } : {}),
+      } }
     },
     async *stream(path, body, { signal }) {
       try {
@@ -155,6 +161,12 @@ export function machineSaid(raw: unknown): string | null {
   } catch {
     return null
   }
+}
+
+/** A boolean the machine put beside its sentence, `true` only when it said so. */
+export function machineFlag(raw: unknown, key: string): boolean {
+  if (typeof raw !== 'string' || !raw) return false
+  try { return JSON.parse(raw)?.[key] === true } catch { return false }
 }
 
 /** The outpost on this one machine, when it holds a pinned target. */

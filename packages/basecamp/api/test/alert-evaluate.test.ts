@@ -24,7 +24,7 @@ import { createConduit } from '@frontierjs/conduit'
 import { seriesKey }     from '@frontierjs/junction'
 
 import { basecampGateLevel } from '../src/core/gate.ts'
-import { evaluateWindow, breaches, describeBreach } from '../src/domain/alert/alerting.ts'
+import { evaluateWindow, breaches, describeBreach, refireHeld } from '../src/domain/alert/alerting.ts'
 import { KINDS, testMessage }  from '../src/domain/notification/delivery.ts'
 import evaluate              from '../src/jobs/alert-evaluate.job.ts'
 import type { App }          from '@frontierjs/junction'
@@ -95,6 +95,30 @@ describe('evaluateWindow — the three answers that are not "the number is fine"
 
     expect(evaluateWindow(series([99, 99, 99, 10]), cond).breached).toBe(false)
     expect(evaluateWindow(series([10, 10, 10, 99]), cond).breached).toBe(true)
+  })
+
+  it('a clear-for holds the way back the way forMinutes holds the way in (FJS-3875)', () => {
+    // An unedited rule resolves on the first good reading; one with a clear-for
+    // resolves only once the good readings have held that long.
+    const base = { operator: 'gt' as const, threshold: 80, forMinutes: 0 }
+    expect(evaluateWindow(series([90, 90, 50]), base).reason).toBe('recovered')
+
+    const held = { ...base, clearForMinutes: 3 }
+    const dip  = evaluateWindow(series([90, 90, 50]), held)
+    expect(dip.breached).toBe(false)
+    expect(dip.reason).toBe('clearing')
+    expect(evaluateWindow(series([90, 50, 50, 50, 50]), held).reason).toBe('recovered')
+    // A breach inside the clear-for is still a breach.
+    expect(evaluateWindow(series([50, 50, 90]), held).breached).toBe(true)
+  })
+
+  it('the re-fire interval counts from the last firing, and zero holds nothing', () => {
+    const now = Date.parse('2026-11-03T12:00:00Z')
+    const tenAgo = new Date(now - 10 * MINUTE).toISOString()
+    expect(refireHeld({ refireAfterMinutes: 0 }, tenAgo, now)).toBe(false)
+    expect(refireHeld({ refireAfterMinutes: 30 }, tenAgo, now)).toBe(true)
+    expect(refireHeld({ refireAfterMinutes: 5 }, tenAgo, now)).toBe(false)
+    expect(refireHeld({ refireAfterMinutes: 30 }, null, now)).toBe(false)
   })
 
   it('`since` is when the streak started, not when the window did', () => {
@@ -468,6 +492,37 @@ describe('alert-evaluate — the job between a rule and an event', () => {
     expect(stamped.lastDeliveryAt).toBeTruthy()
   })
 
+  it('a clear-for keeps the event open over one good reading — paired with the unedited rule', async () => {
+    const { app, db } = await makeApp()
+    const held = await fixture(db, { values: [600, 610], metricName: 'l.held' })
+    await db.alertRule.updateMany({ where: { id: held.rule.id }, data: { clearForMinutes: 5 } })
+    const plain = await fixture(db, { values: [600, 610], metricName: 'm.plain' })
+
+    await run(app)
+    for (const f of [held, plain])
+      await db.metricPoint.create({ data: { seriesId: f.series.id, at: Date.now() + MINUTE, value: 1 } })
+    await run(app)
+
+    expect((await db.alert.findFirst({ where: { ruleId: held.rule.id } })).status).toBe('firing')
+    expect((await db.alert.findFirst({ where: { ruleId: plain.rule.id } })).status).toBe('resolved')
+  })
+
+  it('a re-fire interval holds back the second event of a flapping rule', async () => {
+    const { app, db } = await makeApp()
+    const f = await fixture(db, { values: [600, 610], metricName: 'n.flap' })
+    await db.alertRule.updateMany({ where: { id: f.rule.id }, data: { refireAfterMinutes: 60 } })
+
+    await run(app)
+    await db.metricPoint.create({ data: { seriesId: f.series.id, at: Date.now() + MINUTE, value: 1 } })
+    await run(app)
+    await db.metricPoint.create({ data: { seriesId: f.series.id, at: Date.now() + 2 * MINUTE, value: 700 } })
+    await run(app)
+
+    const events = await db.alert.findMany({ where: { ruleId: f.rule.id } })
+    expect(events).toHaveLength(1)
+    expect(events[0].status).toBe('resolved')
+  })
+
   it('the resolve carries the SAME dedup key as the trigger', async () => {
     // What lets PagerDuty close the incident it opened instead of opening a
     // second one. The event id, not the rule id: two firings of one rule are
@@ -507,5 +562,11 @@ describe('alert-evaluate — the job between a rule and an event', () => {
     expect(await db.alert.count({ where: { ruleId: rule.id } })).toBe(1)
     expect(await db.alert.count({ where: { ruleId: later.rule.id } })).toBe(1)
     expect(origin).toBeTruthy()
+
+    // The refusal is on the channel, where its screen reads it (FJS-3857).
+    const dead = await db.notificationChannel.findFirst({ where: { id: broken.id } })
+    expect(dead.lastError).toContain('webhook URL')
+    expect(dead.lastErrorAt).toBeTruthy()
+    expect(dead.lastDeliveryAt).toBeNull()
   })
 })

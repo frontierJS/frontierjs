@@ -1,0 +1,127 @@
+<!--
+  Junction page § Effects that run when they should. Claims lifted from
+  packages/junction/README.md (ctx.afterCommit and ctx.enqueue sections, the
+  outbox option table), PROJECT_STATE.md (the two verbs), the hook-pipeline
+  reference of the api-hazards skill, src/core/hooks.ts (HOOK_STAGES: around,
+  before, validated, after, error) and packages/sierra/README.md § Resources
+  (around, before, after, error on the client).
+  The proof is a real run, not a doc fence: a Litestone client, a Junction app
+  from createApp with caravan() and outbox(), and two in-process calls to the
+  service below. Output quoted from that run, abridged.
+  Not claimed: exactly-once delivery (the README says at-least-once), any order
+  between outbox rows, and a crash replay in this run — that is the replay test
+  in packages/caravan/test/outbox-relay.test.ts, cited in the caption. The API
+  has a fifth phase, validated, so the page says the UI runs the same four, not
+  that the two pipelines are identical.
+  The samples sit in consts: a brace in markup opens a Mesa expression.
+-->
+<script>
+  const SAMPLE = `app.configure(caravan())
+app.configure(outbox())
+
+createService({
+  name:          'orders',
+  transactional: ['create'],
+
+  async create(ctx) {
+    const order = await $.db.order.create({ data: ctx.data })
+    await ctx.enqueue('receipt.email', { orderId: order.id })
+    return order
+  },
+
+  hooks: {
+    after: {
+      create: [
+        (ctx) => {
+          say('after hook: email sent from the hook itself')
+          ctx.afterCommit(() => say('afterCommit: receipt for order ' + ctx.result.data.id))
+        },
+        (ctx) => {
+          if (ctx.data.total > 1000) throw new Error('over the credit limit')
+        },
+      ],
+    },
+  },
+})`
+
+  const OUT = `// 1. total 5000: the second after hook throws, the transaction rolls back
+after hook: email sent from the hook itself   (order 1)
+create threw: GeneralError: over the credit limit
+orders 0   outbox rows 0
+
+// 2. total 40: the same call commits
+after hook: email sent from the hook itself   (order 1)
+afterCommit: receipt for order 1
+orders 1   outbox rows 1   deliveredAt null
+job receipt.email ran   payload {"orderId":1}
+
+// 3. the relay marked the row it handed over
+outbox rows 1   deliveredAt set   attempts 1
+queue job outbox:bce1eaf0...   name receipt.email   status done
+app.outbox.deliver()  ->  {"delivered":0,"failed":0}`
+</script>
+
+<section id="effects" class="bc-section">
+  <div class="container stack">
+    <p class="eyebrow">Effects that run when they should</p>
+    <h2>The email goes out only for a write that committed.</h2>
+    <p class="lede">
+      Every call runs through one hook pipeline, and two verbs say when an effect happens:
+      <code>ctx.afterCommit(fn)</code> waits for the commit, and
+      <code>ctx.enqueue(job, payload)</code> survives a crash.
+    </p>
+
+    <div class="bc-split">
+      <ul class="bc-points">
+        <li>
+          <strong>One pipeline, on both sides.</strong>
+          A service call runs <code>around</code>, <code>before</code>, <code>after</code> and
+          <code>error</code> hooks, plus a <code>validated</code> phase for rules that read the
+          database. A UI resource runs the same four around its network call.
+        </li>
+        <li>
+          <strong>After the method is not after the commit.</strong>
+          Under <code>transactional:</code>, a later hook that throws rolls the row back, even
+          after an earlier hook sent the email. A callback given to <code>ctx.afterCommit</code>
+          runs only once the call succeeded and its transaction committed.
+        </li>
+        <li>
+          <strong>If it must not be lost, enqueue it.</strong>
+          <code>afterCommit</code> does not survive a crash. <code>ctx.enqueue</code> writes an
+          <code>OutboxMessage</code> row inside the call's own transaction, so the intent
+          commits with the write or rolls back with it.
+        </li>
+        <li>
+          <strong>Delivered at least once.</strong>
+          The relay hands the row to a Caravan job as soon as the call commits, and a sweep
+          every five seconds by default picks up any row a crash left behind. A replayed handoff queues
+          nothing new, but write your handlers to be idempotent.
+        </li>
+      </ul>
+
+      <figure class="bc-proof">
+        <pre class="code">{SAMPLE}</pre>
+        <pre class="code">{OUT}</pre>
+        <figcaption>
+          A real run: a Litestone client, a Junction app with <code>caravan()</code> and
+          <code>outbox()</code>, and two in-process calls to this service. Abridged: the
+          schema and the job handler are cut, and so are a few output lines. The crash replay
+          is not in this run; it is the replay test in Caravan's
+          <code>test/outbox-relay.test.ts</code>.
+        </figcaption>
+      </figure>
+    </div>
+
+    <p class="bc-more">
+      Read more:
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/junction/README.md">afterCommit and enqueue</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/junction/docs/hazards.md">Junction hazards</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/caravan/test/outbox-relay.test.ts">the relay, end to end</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/sierra/README.md">resource hooks in the UI</a>
+    </p>
+  </div>
+</section>
+
+<style>
+  .bc-proof pre.code { overflow-x: auto; font-size: .82rem; margin: 0 0 .75rem; }
+</style>

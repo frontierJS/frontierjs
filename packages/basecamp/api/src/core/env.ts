@@ -127,6 +127,13 @@ export const spec = {
   // from a request's Host header — that is a value the caller chooses.
   FRONTIER_APP_URL: { default: 'http://localhost:8020' },
 
+  // ── Dead-man ping ─────────────────────────────────────────
+  // A URL hit after every monitor sweep (`FJS-D1795`), for a service outside
+  // this box to alert when the pings stop. Unset means no ping. Env rather than
+  // a HubConfig column: when Basecamp is down is exactly when a row would not
+  // be readable, and the URL is a secret-ish capability a deploy sets.
+  DEADMAN_URL:    {},
+
   // ── Phone pings ───────────────────────────────────────────
   // The top rung of the ladder in `push.ts` (`FJS-D1589`): an operator's own
   // ntfy server, set by hand. Unset, the hub looks for its ntfy App, then falls

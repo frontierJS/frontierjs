@@ -970,10 +970,11 @@ never on the enum's `$def`, because only a model can carry a per-transition gate
 Sierra mirrors it as `resource.transitions(row)`, so a UI renders the buttons the
 row actually has.
 
-**`updateMany` skips transitions by design** — it is a power tool and the caller
-takes responsibility. Junction's bulk path therefore writes one row at a time
-rather than calling it, or `PATCH /orders/1` would be refused by the state machine
-and `PATCH /orders?status=draft` would not, for the identical move.
+**`updateMany` refuses a transitions-typed column** (`BulkTransitionError`, 400):
+a bulk write matches rows without reading them, so there is no from-state to
+grade. Every other column stays bulk-writable in the same call. Junction's bulk
+path writes one row at a time through `update()`, so `PATCH /orders?status=draft`
+is graded move by move like `PATCH /orders/1`.
 
 ---
 

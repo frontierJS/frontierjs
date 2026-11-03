@@ -45,7 +45,7 @@
 // What `fli prove` queues on: this checkout's ports.
 export const holds = ['ports']
 
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { mkdtempSync, appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

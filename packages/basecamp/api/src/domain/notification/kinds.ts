@@ -93,12 +93,20 @@ export const NOTIFICATION_KINDS: NotificationKindDef[] = [
     description: 'A scheduled or triggered job ended in failure.',
     email: true,  inApp: true, push: true },
 
+  { kind: 'MonitorCertExpiring', label: 'Certificate expiring',
+    description: 'A monitored site\'s TLS certificate is 14, 7 and then 3 days from expiring, or has expired. Once per threshold.',
+    email: true,  inApp: true, push: false },
+
+  { kind: 'AppBackupFailed', label: 'App backup failed',
+    description: 'A scheduled backup or restore drill of an app failed, so the app\'s last good copy is getting older.',
+    email: true,  inApp: true, push: false },
+
   { kind: 'ReplicaFound',  label: 'Replica found',
     description: 'After Basecamp was restored, an app\'s replica was found in its bucket and can be restored.',
     email: true,  inApp: true, push: false },
 
   // Spend is NOT in it. `cloudSpend` is a declared adapter with nothing behind
-  // it (docs/adapters.md), and a digest reporting a figure it cannot source is
+  // it (docs/providers.md), and a digest reporting a figure it cannot source is
   // a number somebody would act on. The description says what is counted.
   { kind: 'WeeklyDigest',  label: 'Weekly digest',
     description: 'A summary of the week — deploys, alerts and job failures.',

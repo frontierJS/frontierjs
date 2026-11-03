@@ -68,6 +68,9 @@ const NOT_SEEDED: Record<string, string> = {
   _litestone_migrations: 'the migration ledger',
   _litestone_seeds:      'the seed history — written by the run, empty before it',
   sqlite_stat1:          "SQLite's own query planner statistics",
+  // Written by retention's rollup of checks older than its window, and the
+  // seed's checks are all from today.
+  monitor_uptime_day:    'the rollup of checks past their retention window',
 
   // Credential machinery. A seeded SESSION would be somebody signed in with no
   // browser, and a VERIFICATION is a token in flight — both are states, not data.

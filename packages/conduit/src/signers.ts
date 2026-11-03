@@ -25,15 +25,18 @@ export const basic: Signer = ({ secret }) => {
 // `generateSigningKeys` private key, and the receiver holds only the public
 // half, so nothing it stores can sign as this side (`FJS-D1604`). The canonical
 // string is `hmac`'s, from the same kit, so one `verifyRequest` reads both.
-// `params.header_prefix` is `hmac`'s `header_prefix`.
-export const ed25519: Signer = async ({ secret, method, path, query, body, params }) => ({
+// `params.header_prefix` is `hmac`'s `header_prefix`. The verifier folds
+// `X-Service-Method` into the canonical string, so a custom-method call signed
+// without it is refused as a bad signature.
+export const ed25519: Signer = async ({ secret, method, path, query, body, params, headers }) => ({
   headers: await signRequest({
-    privateKey: secret,
+    privateKey:    secret,
     method, path, query,
-    body:       body ?? '',
-    prefix:     params.header_prefix ?? 'X-Fjs',
-    timestamp:  Math.floor(Date.now() / 1000),
-    nonce:      crypto.randomUUID(),
+    serviceMethod: headers['x-service-method'],
+    body:          body ?? '',
+    prefix:        params.header_prefix ?? 'X-Fjs',
+    timestamp:     Math.floor(Date.now() / 1000),
+    nonce:         crypto.randomUUID(),
   }),
 })
 

@@ -28,6 +28,7 @@ it re-resolved when it runs. Survives a restart.
 | `app-archive:rescan` | `fleet` | on dispatch | — | 3 | 30000, 120000 | 7200000ms |
 | `app-backup:run` | `fleet` | on dispatch | — | 1 | default | 3720000ms |
 | `app-drill:run` | `fleet` | on dispatch | — | 1 | default | 5580000ms |
+| `backup-verify` | `default` | `0 4 * * 0` | — | 3 | default | 1800000ms |
 | `backup:run` | `fleet` | on dispatch | — | 2 | 30000 | 600000ms |
 | `dependency-check` | `sync` | `15 6 * * *` | — | 3 | 60000, 600000 | 300000ms |
 | `deployment:run` | `deployments` | on dispatch | — | 1 | default | **none** |
@@ -36,10 +37,13 @@ it re-resolved when it runs. Survives a restart.
 | `job:run` | `jobs` | on dispatch | — | 3 | 5000, 30000, 120000 | **none** |
 | `maintenance:run` | `fleet` | on dispatch | — | 2 | 10000 | **none** |
 | `monitor-sweep` | `default` | `* * * * *` | — | 3 | default | 240000ms |
+| `notify:deliver` | `default` | on dispatch | — | 6 | 30000, 120000, 600000, 1800000, 7200000 | 60000ms |
 | `orion.run` | `orion` | on dispatch | — | 3 | default | **none** |
 | `orion.sweep` | `orion` | `* * * * *` | — | 3 | default | **none** |
 | `platform-observe` | `default` | `*/5 * * * *` | — | 3 | default | **none** |
 | `recipe:run` | `fleet` | on dispatch | — | 2 | 10000 | **none** |
+| `release-sweep` | `default` | `* * * * *` | — | 3 | default | 240000ms |
+| `release:follow-up` | `deployments` | on dispatch | — | 208 | 30000 | 60000ms |
 | `replicate:sync` | `fleet` | on dispatch | — | 5 | 10000, 60000 | 240000ms |
 | `restore:reconcile` | `fleet` | on dispatch | — | 3 | 30000, 120000 | **none** |
 | `retention` | `default` | `0 4 * * *` | — | 3 | default | **none** |
@@ -51,7 +55,7 @@ it re-resolved when it runs. Survives a restart.
 | `site:publish` | `deployments` | on dispatch | — | 1 | default | 2130000ms |
 | `weekly-digest` | `default` | `0 9 * * 1` | — | 3 | default | **none** |
 
-26 handler(s), 9 of them on a clock.
+30 handler(s), 11 of them on a clock.
 
 **13 with no timeout.** Absent means no bound, honestly — but a
 handler that never settles holds its slot for the life of the process, and on a

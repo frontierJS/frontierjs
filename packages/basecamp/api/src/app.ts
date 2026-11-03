@@ -39,6 +39,7 @@ import { createLitestoneAuth, auth as authPlugin, defineProvider } from '@fronti
 import { ssoFromEnv }                            from './core/sso-env.ts'
 import { createBasecampDb, jobsDatabasePath } from './core/db.ts'
 import { openSqlite }                    from './core/sqlite.ts'
+import { copyBeforeMigrating }           from './domain/backup/pre-migrate.ts'
 import { createSecretResolver, hubSigningKeys } from './core/credentials.ts'
 import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts'
 import { registerPushReceivers } from './plugins/git-push.ts'
@@ -60,6 +61,7 @@ import { slugify }                        from './core/resource.ts'
 import { basecampGateLevel, roleForLevel, SYSTEM, workspaceClaim } from './core/gate.ts'
 import { basecampNodes }                  from './plugins/automations.ts'
 import { restoreSchedules }          from './domain/job/job-schedule.ts'
+import { isSweepFresh }              from './domain/monitor/sweep-heartbeat.ts'
 import { sweepStuckReleases }        from './domain/release/release-record.ts'
 import restoreReconcile              from './jobs/restore-reconcile.job.ts'
 import { pushAppsOn }                from './jobs/domain-dns.job.ts'
@@ -133,6 +135,7 @@ export async function buildBasecampApp(
   // replaces. An injected client already holds them, so it is never swapped under.
   const restored      = opts.db ? null : await restoreStaged(dbPath, logger)
   const rawDb         = openSqlite(dbPath)
+  copyBeforeMigrating(rawDb, dbPath, migrationsDir, logger)
   const migrated      = await apply(rawDb, migrationsDir)
   if (migrated.unmatched || migrated.error)
     throw new Error(`[basecamp] ${migrated.message ?? migrated.error} — db/migrations/main`)
@@ -459,7 +462,9 @@ export async function buildBasecampApp(
   // ── Health + metrics ──────────────────────────────────────────────────
   // GET /health  → liveness + readiness (503 if DB unreachable; createApp({ db }) registers that check)
   // GET /metrics → conduit + caravan stats merged in via registerMetricsSource
-  app.configure(health())
+  // `monitor-sweep` fails the readiness answer once the queue has stopped
+  // running the sweep, so a stalled queue is visible on /health.
+  app.configure(health({ checks: { 'monitor-sweep': () => isSweepFresh() } }))
 
   // What /metrics says, KEPT. Every source above answers on request, and until
   // this the merged value lived for the duration of one response — so no
@@ -977,7 +982,7 @@ export async function buildBasecampApp(
       // A machine enrolling AGAIN, reinstalled or its key lost, replaces the
       // key it had: the burned token is the proof of authority, and whoever
       // held the previous pair does not hold this one.
-      await sys.server.update({ where: { id }, data: { outpostCert: cert, outpostPublicKey: publicKey } })
+      await sys.server.update({ where: { id }, data: { outpostCert: cert, outpostPublicKey: publicKey }, system: ['outpostCert', 'outpostPublicKey'] })
 
       logger.info('outpost enrolled', { serverId: id })
 

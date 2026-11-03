@@ -26,6 +26,7 @@ title: Channels
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Checkbox   from '@frontierjs/ui/components/forms/Checkbox.mesa'
   import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
   import Card       from '@frontierjs/ui/components/layout/Card.mesa'
   import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
@@ -168,7 +169,7 @@ title: Channels
 
   function startEdit(c) {
     editError = null
-    editing = { id: c.id, name: c.name, kind: c.kind, config: { ...(c.config ?? {}) }, version: c.version, secret: '' }
+    editing = { id: c.id, name: c.name, kind: c.kind, config: { ...(c.config ?? {}) }, isPagedForFleet: c.isPagedForFleet !== false, version: c.version, secret: '' }
   }
 
   $: editAsks = editing ? (ASKS[editing.kind] ?? {}) : {}
@@ -184,9 +185,9 @@ title: Channels
   async function saveEdit() {
     editError = null; saving = true
     try {
-      const { id, name, config, version, secret: credential } = editing
+      const { id, name, config, isPagedForFleet, version, secret: credential } = editing
       const updated = await notificationChannels.service.patch(id, {
-        name, config, version, ...(credential ? { secret: credential } : {}),
+        name, config, isPagedForFleet, version, ...(credential ? { secret: credential } : {}),
       })
       toasts.success(credential
         ? `${updated.name} saved and its credential rotated. Send a test to prove the new one works.`
@@ -284,6 +285,10 @@ title: Channels
                value={secret} oninput={(e) => secret = e.target.value} />
       {/if}
 
+      <Checkbox id="isPagedForFleet" label="Page when a machine is lost"
+                checked={draft.isPagedForFleet !== false}
+                onchange={(on) => write('isPagedForFleet', on)} />
+
       <Button type="submit" tone="primary">Create channel</Button>
     </Form>
   </Card>
@@ -315,6 +320,11 @@ title: Channels
             <Badge tone="success">active</Badge>
           {:else}
             <Badge tone="muted">paused</Badge>
+          {/if}
+          <!-- Kept while the refusal is newer than the last success: a page
+               that failed at night and a test that passed since are both true. -->
+          {#if c.lastErrorAt && (!c.lastDeliveryAt || c.lastErrorAt > c.lastDeliveryAt)}
+            <Badge tone="danger" title={c.lastError}>last delivery failed {at(c.lastErrorAt)}</Badge>
           {/if}
         </td>
         <td class="text-sm text-muted">{at(c.lastTestAt, 'never')}</td>
@@ -367,6 +377,9 @@ title: Channels
                hint="Leave empty to keep the one stored — it is never shown"
                value={editing.secret} oninput={(e) => editing = { ...editing, secret: e.target.value }} />
       {/if}
+      <Checkbox id="edit-pages-fleet" label="Page when a machine is lost"
+                checked={editing.isPagedForFleet}
+                onchange={(on) => editing = { ...editing, isPagedForFleet: on }} />
       <div class="cluster">
         <Button type="submit" tone="primary" id="channel-edit-save" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
         <Button treatment="ghost" onclick={() => editing = null}>Cancel</Button>

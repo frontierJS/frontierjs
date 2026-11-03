@@ -1,0 +1,167 @@
+<!--
+  Litestone page § Speed. Facts: a scratch run of the same four calls through
+  Litestone, Drizzle, Prisma and ZenStack on one SQLite shape (user: id, name,
+  age; 10,000 rows; WAL), 7 interleaved rounds, median µs per call, on Bun
+  1.4.4 / Linux x64, 2026-11-02. Versions: drizzle-orm 0.45.4 (bun-sqlite),
+  prisma + client 7.10.1 (libsql adapter, because better-sqlite3 will not load
+  under Bun), zenstack orm 3.10.0 (Kysely over a bun:sqlite shim, policy plugin
+  off). The harness is packages/litestone/bench/orms (bun bench.mjs); the table
+  below is copied from its output by hand. The attribute costs are from
+  packages/litestone/bench/PERFORMANCE_AUDIT.md.
+  Not claimed: Node numbers (where the other three run natively), a prepared
+  Drizzle query, ZenStack with its policy plugin on, a gated Litestone read.
+  A column is ranked among the four ORMs; raw bun:sqlite is the floor and
+  never wins. The winner of a row is computed, not typed, so a rerun that
+  moves the order moves the highlight.
+  The data sits in consts: a brace in markup opens a Mesa expression.
+-->
+<script>
+  const ORMS = [
+    { key: 'litestone', name: 'Litestone' },
+    { key: 'drizzle',   name: 'Drizzle' },
+    { key: 'prisma',    name: 'Prisma' },
+    { key: 'zenstack',  name: 'ZenStack' },
+  ]
+
+  // µs per call, median of 7 interleaved rounds.
+  const RUN = [
+    { call: 'findUnique', note: 'one row by id',      raw: 3.6,  litestone: 9.7, drizzle: 70.2,  prisma: 196.5, zenstack: 228.0 },
+    { call: 'findMany',   note: '100 rows, filtered', raw: 51.9, litestone: 83.6, drizzle: 153.2, prisma: 497.6, zenstack: 279.4 },
+    { call: 'create',     note: 'insert one row',     raw: 32.8, litestone: 85.0, drizzle: 129.2, prisma: 251.4, zenstack: 244.3 },
+    { call: 'update',     note: 'update one by id',   raw: 7.5,  litestone: 23.2, drizzle: 63.1,  prisma: 151.2, zenstack: 131.4 },
+  ]
+
+  const fmt = n => (n < 100 ? n.toFixed(1) : String(Math.round(n)))
+  const times = n => (n < 10 ? n.toFixed(1) : String(Math.round(n)))
+
+  const ROWS = RUN.map(r => {
+    const best = Math.min(...ORMS.map(o => r[o.key]))
+    const worst = Math.max(...ORMS.map(o => r[o.key]))
+    return {
+      call: r.call, note: r.note, raw: fmt(r.raw),
+      cells: ORMS.map(o => ({
+        name: o.name,
+        us: fmt(r[o.key]),
+        x: times(r[o.key] / r.raw),
+        win: r[o.key] === best,
+        bar: Math.max(2, Math.round((r[o.key] / worst) * 100)),
+      })),
+    }
+  })
+</script>
+
+<section id="speed" class="bc-section speed">
+  <div class="container stack">
+    <p class="eyebrow">Speed</p>
+    <h2>Closest to raw SQLite on every call.</h2>
+    <p class="lede">
+      The same four calls through four layers over one SQLite file, next to raw
+      <code>bun:sqlite</code> as the floor. The fastest layer in each row is marked; the bar is
+      that call's time against the slowest in its row.
+    </p>
+
+    <figure class="bc-proof">
+      <div class="scroll" role="region" aria-label="Benchmark table" tabindex="0">
+        <table class="bench">
+          <caption class="sr">Microseconds per call, lower is better</caption>
+          <thead>
+            <tr>
+              <th scope="col">Call</th>
+              <th scope="col" class="floor">Raw <span>floor</span></th>
+              {#each ORMS as o}
+                <th scope="col" class={o.key === 'litestone' ? 'ours' : ''}>{o.name}</th>
+              {/each}
+            </tr>
+          </thead>
+          <tbody>
+            {#each ROWS as r}
+              <tr>
+                <th scope="row"><code>{r.call}</code><span>{r.note}</span></th>
+                <td class="floor"><span class="us">{r.raw}<small>µs</small></span></td>
+                {#each r.cells as c}
+                  <td class={c.win ? 'cell win' : 'cell'} style="--w: {c.bar}%">
+                    <span class="us">{c.us}<small>µs</small></span>
+                    <span class="x">{c.x}× raw</span>
+                    <span class="bar" aria-hidden="true"></span>
+                    {#if c.win}<span class="badge">✓ fastest</span>{/if}
+                  </td>
+                {/each}
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+      <figcaption>
+        Median of 7 interleaved rounds, 10,000 rows, WAL, Bun 1.4.4 on Linux, 2026-11-02.
+        Drizzle 0.45 (bun:sqlite), Prisma 7.10 (libsql adapter), ZenStack 3.10 (Kysely over
+        bun:sqlite). Timings drift about 30% from run to run on this machine; the order and
+        the ratios held.
+      </figcaption>
+    </figure>
+
+    <ul class="bc-points">
+      <li>
+        <strong>Reads cost 1.6 to 2.7 times the floor.</strong>
+        A row by id is under ten microseconds and a hundred rows is about eighty. The rest of
+        the field is 3 to 63 times the floor on the same calls.
+      </li>
+      <li>
+        <strong>Writes cost about 3 times the floor.</strong>
+        Behavior you ask for has a measured price: <code>@version</code> adds 7% to a create and
+        35% to an update, and the audit lists the rest.
+      </li>
+      <li>
+        <strong>Not a like-for-like.</strong>
+        Prisma runs on a different driver, Drizzle builds its SQL on every call and ZenStack ran
+        without its policy plugin. Read the rows as a rough order, not a verdict.
+      </li>
+    </ul>
+
+    <p class="bc-more">
+      Read more:
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/bench/PERFORMANCE_AUDIT.md">the performance audit</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/performance.md">performance and tuning</a>
+    </p>
+  </div>
+</section>
+
+<style>
+  .speed .bc-points { grid-template-columns: minmax(0, 1fr); margin-top: 1.5rem; }
+  @media (min-width: 60rem) { .speed .bc-points { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+  .scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: .75rem; background: var(--surface-raised); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  .bench { width: 100%; min-width: 46rem; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
+  .bench th, .bench td { padding: .75rem .9rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
+  .bench tbody tr:last-child > * { border-bottom: 0; }
+  .bench thead th:first-child { width: 9.5rem; }
+  .bench thead th.floor { width: 7rem; }
+  .bench thead th { font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-mute); border-bottom: 1px solid var(--rule-strong); }
+  .bench thead th.ours { color: var(--ink); }
+  .bench tbody th { font-weight: 400; color: var(--ink-soft); white-space: nowrap; }
+  .bench tbody th code { display: block; color: var(--ink); font-weight: 600; }
+  .bench tbody th span { font-size: .78rem; color: var(--ink-mute); }
+
+  /* Raw is the floor: drawn apart, dashed, never ranked. */
+  .bench .floor { color: var(--ink-mute); background: var(--surface-sunken); border-left: 1px dashed var(--rule-strong); border-right: 1px dashed var(--rule-strong); }
+  .bench thead th.floor span { text-transform: none; letter-spacing: 0; font-weight: 400; }
+
+  .cell { position: relative; display: table-cell; color: var(--ink-mute); }
+  .cell .us { display: block; font-size: 1.05rem; color: var(--ink-soft); }
+  .cell small { font-size: .7rem; margin-left: .15em; color: var(--ink-mute); }
+  .cell .x { display: block; font-size: .75rem; color: var(--ink-mute); }
+  .cell .bar { display: block; height: 4px; margin-top: .5rem; width: var(--w); border-radius: 2px; background: var(--rule-strong); }
+  .bench .floor .us { font-size: 1.05rem; }
+
+  /* The winner: a tinted cell, a heavy edge, a green bar and a word, so colour is never the only signal. */
+  .cell.win {
+    background: color-mix(in srgb, var(--color-success) 14%, transparent);
+    box-shadow: inset 3px 0 0 var(--color-success);
+  }
+  .cell.win .us { color: var(--ink); font-size: 1.3rem; font-weight: 700; }
+  .cell.win .x { color: var(--ink-soft); }
+  .cell.win .bar { background: var(--color-success); height: 6px; }
+  .cell .badge { display: inline-block; margin-top: .5rem; padding: .1rem .5rem; border-radius: 999px; font-size: .68rem; font-weight: 600; white-space: nowrap;
+    color: color-mix(in srgb, var(--color-success) 65%, var(--ink)); background: color-mix(in srgb, var(--color-success) 16%, transparent); }
+</style>

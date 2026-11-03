@@ -323,6 +323,11 @@ resolves to `user:password` (RFC 7617, UTF-8; a key with no colon is sent as
 authentication form-encodes the halves first (RFC 6749 §2.3.1) and is a
 different scheme with its own signer.
 
+**FrontierJS's own scheme under a key pair is built in** as `signer: 'ed25519'`:
+the ref resolves to a `generateSigningKeys` private key and the receiver holds the
+public half. Like `hmac` it signs the `X-Service-Method` header a request carries,
+which junction's door reads into the signature, so a custom-method call verifies.
+
 The signer is handed the resolved `secret`, the `method`, `url`, `path`, `query`,
 the serialized `body` and the `headers` already set. It returns `headers` to add
 and, where the vendor wants the secret in the payload, a replacement `body`;

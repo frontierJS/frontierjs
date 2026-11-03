@@ -25,6 +25,9 @@ export interface Condition {
   threshold:  number
   /** Zero fires on the newest reading. Above zero, the breach must HOLD. */
   forMinutes: number
+  /** Zero resolves on the first good reading. Above zero, the good readings
+   *  must HOLD this long, by the same covering rule as `forMinutes`. */
+  clearForMinutes?: number
 }
 
 /** Why a window is or is not breached. `holding` is the only firing answer. */
@@ -33,6 +36,7 @@ export type Verdict =
   | { breached: false; reason: 'no-data' }
   | { breached: false; reason: 'uncovered';  value: number; coveredMs: number }
   | { breached: false; reason: 'recovered';  value: number }
+  | { breached: false; reason: 'clearing';   value: number; coveredMs: number }
 
 /**
  * Does one value cross the line?
@@ -79,11 +83,25 @@ export function evaluateWindow(points: Reading[], cond: Condition): Verdict {
 
   const newest = points[points.length - 1]!
 
-  if (cond.forMinutes <= 0) {
-    return breaches(newest.value, cond.operator, cond.threshold)
-      ? { breached: true, reason: 'holding', value: newest.value, since: newest.at }
-      : { breached: false, reason: 'recovered', value: newest.value }
+  // A good newest reading resolves only once the good streak covers
+  // `clearForMinutes`. `clearing` neither fires nor resolves, so a gauge
+  // oscillating at its threshold holds the event it opened (`FJS-3875`).
+  if (!breaches(newest.value, cond.operator, cond.threshold)) {
+    const clearMs = Math.max(0, cond.clearForMinutes ?? 0) * 60_000
+    if (clearMs <= 0) return { breached: false, reason: 'recovered', value: newest.value }
+    let since = newest.at
+    for (let i = points.length - 1; i >= 0; i--) {
+      if (breaches(points[i]!.value, cond.operator, cond.threshold)) break
+      since = points[i]!.at
+    }
+    const coveredMs = newest.at - since
+    return coveredMs >= clearMs
+      ? { breached: false, reason: 'recovered', value: newest.value }
+      : { breached: false, reason: 'clearing', value: newest.value, coveredMs }
   }
+
+  if (cond.forMinutes <= 0)
+    return { breached: true, reason: 'holding', value: newest.value, since: newest.at }
 
   // Any point inside the window that is FINE ends the streak, so the earliest
   // breaching point after the last good one is when this started holding.
@@ -92,13 +110,26 @@ export function evaluateWindow(points: Reading[], cond: Condition): Verdict {
     if (!breaches(points[i]!.value, cond.operator, cond.threshold)) break
     since = points[i]!.at
   }
-  if (since < 0) return { breached: false, reason: 'recovered', value: newest.value }
 
   const coveredMs = newest.at - since
   if (coveredMs < cond.forMinutes * 60_000)
     return { breached: false, reason: 'uncovered', value: newest.value, coveredMs }
 
   return { breached: true, reason: 'holding', value: newest.value, since }
+}
+
+/** Is a new event for this rule held back at `now` by its re-fire interval?
+ *  Measured from when the newest event FIRED, so a rule that flaps opens at
+ *  most one event per interval whatever it does in between. */
+export function refireHeld(
+  rule:        { refireAfterMinutes?: number | null },
+  lastFiredAt: string | null | undefined,
+  now:         number,
+): boolean {
+  const minutes = rule.refireAfterMinutes ?? 0
+  if (minutes <= 0 || !lastFiredAt) return false
+  const fired = Date.parse(lastFiredAt)
+  return Number.isFinite(fired) && now - fired < minutes * 60_000
 }
 
 /** How a fired rule reads to a person. The value is the reading that fired, not

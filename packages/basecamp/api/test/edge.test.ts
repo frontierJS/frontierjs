@@ -521,9 +521,11 @@ describe('sync', () => {
       description: `basecamp:domain:${api.id}`, action_parameters: { ssl: 'strict' } }])
   })
 
-  test('a release landing on a second machine is drift until synced, and then it is not', async () => {
-    const { markRunning } = await import('../src/domain/release/runtime.ts')
-    await markRunning(app.db, web.id, online2.id)
+  test('a second machine running the app is drift until synced, and then it is not', async () => {
+    // Stated on the row rather than through `markRunning`, which takes every
+    // other machine out of the record: the case here is two machines that both
+    // hold the current release.
+    await (env.system as any).appServer.updateMany({ where: { appId: web.id, serverId: online2.id }, data: { status: 'running' } })
 
     const name = `${web.id}.shop.test`
     expect((await shopRecords()).stale).toEqual([
@@ -532,6 +534,20 @@ describe('sync', () => {
     const out = await edge(admin).call('sync', api.id, {}) as any
     expect(out.ingress.records.map((r: any) => r.content).sort()).toEqual(['203.0.113.5', '203.0.113.6'])
     expect((await shopRecords()).stale).toEqual([])
+  })
+
+  test('a release landing on one machine takes the app\'s other machines out of its addresses (FJS-3851)', async () => {
+    const { markRunning, servingAddresses } = await import('../src/domain/release/runtime.ts')
+    const sys = env.system as any
+    const two = await sys.app.create({ data: { workspaceId: site.id, environmentId: web.environmentId, name: 'pair', slug: `pair-${tag()}`,
+      source: { kind: 'image', image: 'nginx:alpine' } } })
+    await sys.appServer.create({ data: { appId: two.id, serverId: online1.id, status: 'running' } })
+    await sys.appServer.create({ data: { appId: two.id, serverId: online2.id, replicaIndex: 1 } })
+    await markRunning(app.db, two.id, online2.id)
+    // online1 still serves the release before this one.
+    expect(await servingAddresses(app.db, two.id)).toEqual(['203.0.113.6'])
+    const rows = await sys.appServer.findMany({ where: { appId: two.id }, orderBy: { replicaIndex: 'asc' } })
+    expect(rows.map((r: any) => r.status)).toEqual(['unknown', 'running'])
   })
 
   test('a hostname holding a record basecamp did not write is refused, nothing written, and named in drift', async () => {

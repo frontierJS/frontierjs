@@ -78,7 +78,7 @@ export const elsewhere = [
     { href: '/notifications/',      label: 'Notifications',   sub: 'what you have been told' },
     { href: '/settings/',           label: 'Your settings',   sub: 'password, notifications, sessions' },
     { href: '/admin/audit/',        label: 'Audit trail',     sub: 'Admin' },
-    { href: '/admin/adapters/',     label: 'Adapters',        sub: 'Admin' },
+    { href: '/admin/providers/',    label: 'Providers',       sub: 'Admin' },
   ] },
   { label: null, show: ({ user }) => !!user?.isSystemAdmin, entries: [
     { href: '/hub/workspaces/',     label: 'Hub workspaces',  sub: 'Hub' },

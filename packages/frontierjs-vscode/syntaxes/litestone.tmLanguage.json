@@ -78,7 +78,10 @@
       "patterns": [
         { "include": "#doc-comment" },
         { "include": "#comments" },
+        { "include": "#model-attribute" },
+        { "include": "#string" },
         {
+          "comment": "Last, so a member rule that takes any word does not take the name of an @label or the words of its string.",
           "name": "variable.other.enummember.litestone",
           "match": "\\b\\w+\\b"
         }

@@ -1,0 +1,135 @@
+<!--
+  Litestone page § A row's whole life. Claims lifted from
+  packages/litestone/docs/soft-delete.md (cascade, restore matches the cascade's
+  stamp), trail.md (@@trail entries, before/after, the trash entry),
+  schema.md and README.md § @version (the 409), sequences.md (per-scope counter,
+  written at create) and traits.md (@@trait splices a cluster in).
+  The proof is a real run, not a doc fence: the schema below was loaded with
+  createClient and the calls in OUT were made against it as asSystem(), because a
+  trail database puts every model behind an access rule. Values are quoted from
+  that run; the order and layout are abridged.
+  Not claimed: the cascade writes no trail entry of its own for the children (the
+  run showed one Account delete and none for the invoices), a soft delete does not
+  bump @version (the run showed 1 before and after), and a trait cannot carry a
+  second @@softDelete, so the trait holds the column and the model names the
+  attribute.
+  The samples sit in consts: a brace in markup opens a Mesa expression.
+-->
+<script>
+  const SCHEMA = `database audit { path "./audit/"  driver trail }
+
+trait Life {
+  version   Int       @version
+  deletedAt DateTime?
+  @@trail(audit)
+}
+
+model Account {
+  id       Int @id
+  name     String
+  invoices Invoice[]
+  @@trait(Life)
+  @@softDelete(cascade)
+}
+
+model Invoice {
+  id        Int @id
+  accountId Int
+  account   Account @relation(fields: [accountId], references: [id])
+  number    Int     @sequence(scope: accountId)
+  amount    Int
+  @@trait(Life)
+  @@softDelete
+}`
+
+  const OUT = `// three invoices: two for account 1, one for account 2
+number    1, 2, 1        version 1
+
+// Alice and Bob both read invoice 1 at version 1. Alice saves.
+update { amount: 120, version: 1 }   ->  version: 2
+
+// Bob saves from the copy he read.
+update { amount: 90, version: 1 }
+VersionConflictError  409, retryable
+  Version conflict on Invoice: expected version 1, row is at 2 -
+  it was modified after you read it
+
+// delete the account
+account.remove({ where: { id: 1 } })
+invoice.count()                       ->  1   live
+invoice.count({ withDeleted: true })  ->  3
+invoice.findMany({ onlyDeleted: true })
+  -> ids 1 and 2, deletedAt "2026-11-03T05:24:19.209Z" on both
+
+// the trail, one entry for the account
+operation delete   model Account   records [1]
+before { version: 1, deletedAt: null, id: 1, name: "acme" }
+after  { version: 1, deletedAt: "2026-11-03T05:24:19.209Z", ... }
+
+account.restore({ where: { id: 1 } })
+invoice.count()                       ->  3`
+</script>
+
+<section id="life" class="bc-section">
+  <div class="container stack">
+    <p class="eyebrow">A row's whole life</p>
+    <h2>The delete flag, the audit table and the version check are already written.</h2>
+    <p class="lede">
+      Declare what should happen to a row when it is deleted, edited twice at once or
+      numbered, and the engine does it on every write path. Put the shared columns in a
+      <code>trait</code> once and every model that carries it gets them.
+    </p>
+
+    <div class="bc-split">
+      <ul class="bc-points">
+        <li>
+          <strong>Delete takes the children and gives them back.</strong>
+          <code>@@softDelete(cascade)</code> stamps every child with the parent's own timestamp,
+          and <code>restore()</code> returns the children that stamp marked, leaving one deleted
+          earlier on its own still deleted.
+        </li>
+        <li>
+          <strong>The history writes itself.</strong>
+          <code>@@trail(audit)</code> logs every create, update and delete with the row before
+          and after, and a field marked <code>@secret</code> or <code>@encrypted</code> is
+          logged as <code>[redacted]</code>.
+        </li>
+        <li>
+          <strong>A stale save is a 409, not a lost edit.</strong>
+          A <code>@version</code> column is checked in the update's own <code>WHERE</code>, so
+          the second writer gets a retryable <code>VersionConflictError</code> instead of
+          silently overwriting the first.
+        </li>
+        <li>
+          <strong>Per-account numbers that cannot collide.</strong>
+          <code>@sequence(scope: accountId)</code> draws the next number inside the write
+          transaction, and an update that tries to change it is refused.
+        </li>
+      </ul>
+
+      <figure class="bc-proof">
+        <pre class="code">{SCHEMA}</pre>
+        <pre class="code">{OUT}</pre>
+        <figcaption>
+          A real run against that schema with the package's own client, as
+          <code>asSystem()</code>. Abridged: the calls are shortened and the trail row is
+          cut to the fields that matter. The cascade wrote no trail entry of its own for the
+          invoices, and a soft delete leaves <code>version</code> where it was.
+        </figcaption>
+      </figure>
+    </div>
+
+    <p class="bc-more">
+      Read more:
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/soft-delete.md">soft delete and cascade</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/trail.md">the audit trail</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/schema.md">@version</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/sequences.md">sequences</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/traits.md">traits</a>
+    </p>
+  </div>
+</section>
+
+<style>
+  .bc-proof pre.code { overflow-x: auto; font-size: .82rem; margin: 0 0 .75rem; }
+</style>

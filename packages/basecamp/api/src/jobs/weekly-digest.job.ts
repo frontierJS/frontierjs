@@ -11,7 +11,7 @@
 // and the payload is the whole of it.
 //
 // **Spend is not in it**, though `kinds.ts` promised it until now: `cloudSpend`
-// is a declared adapter with nothing behind it (`docs/adapters.md`), and a
+// is a declared adapter with nothing behind it (`docs/providers.md`), and a
 // figure this app cannot source is one somebody would act on. The description
 // on the kind says what is actually counted; wiring the adapter adds a field
 // here and a word there.

@@ -18,6 +18,7 @@
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { join }                   from 'node:path'
 import { createTestEnv, session } from '@frontierjs/testing'
+import { withTestMeta }           from '@frontierjs/junction/testing'
 import { GatePlugin }             from '@frontierjs/litestone'
 import { basecampGateLevel }      from '../src/core/gate.ts'
 import { buildBasecampApp }       from '../src/app.ts'
@@ -177,6 +178,14 @@ describe('variables.reveal', () => {
     expect(rows.length).toBe(1)
     expect(JSON.stringify(rows[0])).not.toContain(keyVar.secretValue)
   })
+
+  // Under a key junction keeps the answer to replay it, and this answer is the
+  // plaintext (`FJS-D1794`).
+  test('an Idempotency-Key is refused, and nothing is kept to replay', async () => {
+    const call = () => withTestMeta({ idempotencyKey: `reveal-${uniq()}` },
+      () => env.as(admin).service('variables').call('reveal', keyVar.id))
+    await expect(call()).rejects.toMatchObject({ code: 400, message: expect.stringContaining('Idempotency-Key') })
+  })
 })
 
 // FJS-3842: the repo and the branch reach `git clone` on a machine as
@@ -232,6 +241,15 @@ describe('a host port is one App\'s on a machine', () => {
     const held = (await env.system.appServer.findMany({ where: { serverId: box.id }, include: { app: true } }))
       .map((r: any) => r.app.port).filter((p: any) => p != null)
     expect(new Set(held).size).toBe(held.length)
+  })
+
+  test('Apps placed at the same moment each get a port of their own (FJS-3884)', async () => {
+    const apps  = env.as(admin).service('apps')
+    const loose = await Promise.all([1, 2, 3, 4].map(n => fromRepo(admin, { name: `Race ${n} ${uniq()}`, repo: `https://gitlab.com/acme/race-${n}.git` })))
+    const placed = await Promise.all(loose.map(l => apps.call('place', l.app.id, { serverId: box.id }))) as any[]
+    const ports = placed.map(p => p.port)
+    expect(ports.every(p => p >= 10000)).toBe(true)
+    expect(new Set(ports).size).toBe(ports.length)
   })
 
   test('an App no machine holds publishes nothing until it is placed, then takes a port it keeps', async () => {
@@ -382,6 +400,13 @@ describe('fromRepo `isConnecting` writes at GitHub (FJS-D1571)', () => {
   test('importDockerfile reads the forge before any build, the refused token passed over', async () => {
     const r = await connect(admin, { dockerfile: '' }).call
     expect(await importDockerfile(admin, r.app.id)).toEqual({ path: 'Dockerfile', content: 'FROM oven/bun:1\nEXPOSE 3000\n', from: 'forge' })
+  })
+
+  test('a stored repo that is not a git URL is refused naming the App and the fix (FJS-D1804)', async () => {
+    const r = await fromRepo(admin, { name: `Stored ${uniq()}`, repo: 'https://gitlab.com/acme/stored.git', dockerfile: '', serverId: box.id })
+    await (env.system as any).app.update({ where: { id: r.app.id }, data: { source: { kind: 'git', repo: '/srv/repo' } } })
+    await expect(importDockerfile(admin, r.app.id))
+      .rejects.toThrow(new RegExp(`App '${r.app.name}' has a stored repo that is not a git URL.*set the repo to a git URL in the App's source settings`))
   })
 
   test('a repository no account sees falls to the machine, and the note says both', async () => {

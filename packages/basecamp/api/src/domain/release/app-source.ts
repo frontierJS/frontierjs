@@ -150,7 +150,7 @@ export function refuseBranch(branch: unknown, field = 'branch'): void {
     !name ? 'is empty'
     : name.startsWith('-') ? 'starts with -'
     : name === 'HEAD' || name === '@' ? `is '${name}', which git reserves`
-    // Control characters, space and the characters git gives a meaning to.
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: the control characters are what this pattern refuses
     : /[\x00-\x20\x7f~^:?*[\\]/.test(name) ? 'holds a space, a control character or one of ~ ^ : ? * [ \\'
     : name.includes('..') ? "holds '..'"
     : name.includes('@{') ? "holds '@{'"

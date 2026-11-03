@@ -1,5 +1,5 @@
 ---
-title: Adapters
+title: Providers
 ---
 <script>
   import { portal } from '../../../resources/Portal.mesa'
@@ -13,8 +13,8 @@ title: Adapters
   async function load() {
     error = null; loading = true
     try {
-      // find() is the fast path — it reports which adapters are wired without
-      // pinging any of them. The ping is per-adapter, on demand, below.
+      // find() is the fast path — it reports which providers are wired without
+      // pinging any of them. The ping is per-provider, on demand, below.
       rows = (await portal.service.find()).data
     } catch (e) {
       error = e.message
@@ -49,7 +49,7 @@ title: Adapters
 </script>
 
 <p class="text-body">
-  Every party this app speaks to. <strong>Unconfigured</strong> means the adapter is a stub until it is given
+  Every party this app speaks to. <strong>Unconfigured</strong> means the provider is a stub until it is given
   what it needs — it is not an error, and an app can run with none of them.
 </p>
 
@@ -64,7 +64,7 @@ title: Adapters
 {:else}
   <h2 class="h4">Self-hosted appliances</h2>
   <p class="text-sm text-muted">Installed on a machine you operate. Set its URL to wire it.</p>
-  <div class="tiles" style="--tile-min: 17rem" id="adapter-tiles">
+  <div class="tiles" style="--tile-min: 17rem" id="provider-tiles">
     {#each appliances as entry}
       <article class="card stack">
         <div class="cluster">

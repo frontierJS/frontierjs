@@ -490,8 +490,11 @@ export function makeStateGuards(shape, ctx, deps) {
   // update on the model would refuse `settle: issued -> paid`, which is a move
   // the machine declares out of a state the seal put the row in.
   function sealSelfClause(data, whereSql, whereParams) {
-    if (!_selfFreezes.length || !data || typeof data !== 'object' || Array.isArray(data))
-      return { ...sqlFragment(whereSql, whereParams), frozen: [] }
+    if (!_selfFreezes.length || !data || typeof data !== 'object' || Array.isArray(data)) {
+      const f = sqlFragment(whereSql, whereParams)
+      f.frozen = []
+      return f
+    }
     let sql = whereSql, params = whereParams
     const frozen = []
     for (const g of _selfFreezes) {

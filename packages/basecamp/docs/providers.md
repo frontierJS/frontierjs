@@ -1,8 +1,8 @@
-# Adapters — what is declared, what is stubbed, and what wiring one costs
+# Providers — what is declared, what is stubbed, and what wiring one costs
 
 **Status: EVERY BOUNDARY IS DECLARED. ONE IS WIRED — `edge`, reading.** Dated
 2026-08-30. This is the pick-up doc for the work `docs/screens.md` § Phase 14
-left: four screens exist, each says which adapter is not connected, and each is
+left: four screens exist, each says which provider is not connected, and each is
 waiting on the same two things — an adapter and a service.
 
 Read it before writing either. Most of what follows is a decision already made
@@ -33,7 +33,7 @@ read by `services/edge/`; the other nine are a Stub.
 appliance is installed on a machine and pointed at with a URL; a hosted service
 is an account somebody opens and a token this app holds. *Unconfigured* means
 different work for each, which is the whole reason the split is data —
-`/admin/adapters/` renders two groups off it and cannot disagree with the
+`/admin/providers/` renders two groups off it and cannot disagree with the
 service about which is which.
 
 ---
@@ -194,7 +194,7 @@ and `verify:pay` do it — not to loosen the check to *any status*.
 Two more that will move:
 
 - `eight self-hosted appliances` / `and two hosted services` on
-  `/admin/adapters/`, if the provider list grows.
+  `/admin/providers/`, if the provider list grows.
 - `check-baseline.json`'s `detail-read-dead` is **6**, and all six are
   `portal.get()` over no model. A fifth screen reporting an adapter makes it 7;
   a screen that starts watching a real row does not belong in that number at all.
@@ -212,7 +212,7 @@ Two more that will move:
   second copy. Adding a provider widens what a tile may point at — which is
   right, and worth knowing.
 - **A hosted provider has no `url` and no `ui_port`.** Its config key is a token,
-  so `entry.url` reads null even once it is wired; `/admin/adapters/` shows
+  so `entry.url` reads null even once it is wired; `/admin/providers/` shows
   *credential set / not set* for those rather than a URL.
 - **`isStub()` decides `configured` by the class name starting with `Stub`.** A
   real adapter class must therefore not be called `StubCloudflare` in a hurry.

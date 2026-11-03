@@ -171,12 +171,30 @@ export async function stampDelivery(sys: () => any, channelId: string): Promise<
   }
 }
 
+/** Record a refusal on the channel, so *last delivery failed* is something the
+ *  channel screen can say rather than a console line. Never throws, for
+ *  `stampDelivery`'s reason. */
+export async function recordDeliveryFailure(sys: () => any, channelId: string, error: string): Promise<void> {
+  try {
+    await sys().notificationChannel.updateMany({
+      where: { id: channelId },
+      data:  { lastError: error.slice(0, 2_000), lastErrorAt: new Date().toISOString() },
+    })
+  } catch (err) {
+    console.error(`[delivery] channel ${channelId}: could not record the failure: ${(err as Error).message}`)
+  }
+}
+
+/** The payload `notify:deliver` retries one channel with. The message rides in
+ *  the job row because what it describes may have moved on by the retry. */
+export interface ChannelRetry { channelId: string; message: Message; label: string }
+
 /**
  * Deliver one message to one channel.
  *
- * Answers rather than throws. The service turns a failure into a 400 and the
- * job records it against the alert — a rejected page-out that reached the cron
- * as an exception would abandon every rule after it in the same pass.
+ * Answers rather than throws. The service turns a failure into a 400 and a cron
+ * records it on the channel — a rejected page-out that reached the cron as an
+ * exception would abandon every rule after it in the same pass.
  */
 export async function deliverToChannel(
   deps:    DeliveryDeps,
@@ -260,8 +278,10 @@ export async function deliverToChannel(
  * Deliver one message to every channel in a list, from a cron.
  *
  * A subject with no channels reaches nobody, which is legitimate. Silence about
- * a channel that REFUSED is not, so a failure is logged against `label` and the
- * pass continues: one dead Slack webhook must not cost every subject after it.
+ * a channel that REFUSED is not, so a failure is recorded on the channel, handed
+ * to `notify:deliver` to retry with backoff where the app runs a queue, and the
+ * pass continues: one dead Slack webhook must not cost every subject after it,
+ * and one Slack 500 must not lose the page for good (`FJS-3857`).
  * `dedupKey` is built by the caller from the id that is stable across the
  * trigger and the resolve.
  */
@@ -281,20 +301,35 @@ export async function fanOutToChannels(
 
     // A throw from one channel is that channel's failure and no one else's:
     // the loop is what reaches the rest.
+    let error: string | null = null
     try {
       const res = await deliverToChannel(
         { conduit: app.conduit as never, sys, mail: mailerOf(app) }, channel, msg)
-      if (!res.ok) {
-        console.error(`[${label}] channel '${channel.name}': ${res.error}`)
-        continue
-      }
+      if (!res.ok) error = res.error
     } catch (err) {
-      console.error(`[${label}] channel '${channel.name}': ${(err as Error).message}`)
+      error = (err as Error).message
+    }
+    if (error !== null) {
+      console.error(`[${label}] channel '${channel.name}': ${error}`)
+      await recordDeliveryFailure(sys, channel.id, error)
+      await queueRetry(app, { channelId: channel.id, message: msg, label }, channel.workspaceId)
       continue
     }
     // The stamp means something arrived, which is the only reason it is written
     // after the send rather than beside it.
     await stampDelivery(sys, channel.id)
+  }
+}
+
+/** Hand one failed channel delivery to `notify:deliver`. An app built without
+ *  caravan has no queue, and the failure recorded on the channel is then the
+ *  whole of what is kept. */
+async function queueRetry(app: object, retry: ChannelRetry, workspaceId: string | undefined): Promise<void> {
+  if (!('jobs' in app)) return
+  try {
+    await (app as any).jobs.dispatch('notify:deliver', retry, { actor: null, tenant: workspaceId })
+  } catch (err) {
+    console.error(`[delivery] channel ${retry.channelId}: could not queue a retry: ${(err as Error).message}`)
   }
 }
 

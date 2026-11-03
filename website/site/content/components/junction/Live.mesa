@@ -1,0 +1,115 @@
+<!--
+  Junction page § Live by default. Claims lifted from packages/junction/README.md
+  (Channels, Browser client: real-time events and resource()), docs/internals.md
+  § channels.ts (a broadcast is graded per recipient; a channel on the service
+  covers a background write; changed is the announcement for a write that cannot
+  name its row), src/client/index.ts (reconnect backoff, the reload on
+  reconnect, FJS-701: the server queues nothing for an absent socket) and
+  test/realtime-grading.test.ts.
+  The proof is a real run, not a doc fence: the service below was started on a
+  scratch port with an in-memory Litestone client, two Bun WebSocket clients
+  joined the channel (one is the row's customer, one is another signed-in user),
+  and the writes in OUT were made over HTTP and by a route that writes as the
+  system. The frames are quoted from that run; the handshake frames (connection
+  and connected) are left out.
+  Not claimed: replay of what a client missed (there is none, the page says so),
+  the announce() hook as the way to cover a job (the run showed a hook reaches
+  service calls only; the channel declared on the service reached the job's
+  writes too), Sierra's tethered() (a different package's page), and any
+  delivery guarantee beyond the open socket.
+  The samples sit in consts: a brace in markup opens a Mesa expression.
+-->
+<script>
+  const SERVICE = `model Order {
+  id         Int    @id @default(autoincrement())
+  customerId Int
+  status     String @default("pending")
+  @@gate(1.4.4.5)
+  @@allow(read, customerId == auth().id || auth().isAdmin)
+}
+
+app.services.register(createService({
+  name: 'orders',
+  model: 'Order',
+  channel: 'orders',
+}))
+
+app.configure(channels(a => {
+  a.channels.on('connection', (_session, conn) => a.channel('orders').join(conn))
+}))`
+
+  const OUT = `// two sockets on the channel: customer 5, and another signed-in user
+POST /orders  (as admin)  ->  201
+owner  {"type":"event","event":"orders created",
+        "data":{"id":1,"customerId":5,"status":"pending"}}
+other  (no frame)
+
+// a route that writes as the system: one create, one bulk update
+owner  orders created  {"id":2,"customerId":5,"status":"pending"}
+owner  orders changed  {"model":"Order","operation":"updateMany","count":2}
+other  orders changed  {"model":"Order","operation":"updateMany","count":2}
+
+// the owner's socket is closed, one POST /orders, the owner reconnects
+frames for the write made while away: none`
+</script>
+
+<section id="live" class="bc-section">
+  <div class="container stack">
+    <p class="eyebrow">Live by default</p>
+    <h2>A write reaches every open screen, and nobody wrote the broadcast.</h2>
+    <p class="lede">
+      Name a channel on the service and each write is pushed over the WebSocket to the
+      clients allowed to read it. The browser client applies the push to the list on screen.
+    </p>
+
+    <div class="bc-split">
+      <ul class="bc-points">
+        <li>
+          <strong>One line, not a pub/sub layer.</strong>
+          <code>channel: 'orders'</code> on the service pushes every create, patch and
+          remove as an event named for it, such as <code>orders created</code>. The only other
+          code is the line that joins a connection to the channel.
+        </li>
+        <li>
+          <strong>A subscriber hears only what it may read.</strong>
+          Both sockets sit on the same channel, and the row's read rule decides who gets the
+          frame: in the run the customer got the row and the other user got nothing.
+        </li>
+        <li>
+          <strong>A job's write is announced too.</strong>
+          A write made as the system reaches the same sockets, graded the same way. A bulk
+          write names no row, so it sends a <code>changed</code> count, and a list reloads on it.
+        </li>
+        <li>
+          <strong>A dropped socket reconnects, and it does not replay.</strong>
+          The client backs off from one second to thirty and reloads a live list after the
+          reconnect, because the server queues nothing for an absent socket. The write made
+          while the socket was down never arrived as a frame; the reload is what catches it up.
+        </li>
+      </ul>
+
+      <figure class="bc-proof">
+        <pre class="code">{SERVICE}</pre>
+        <pre class="code">{OUT}</pre>
+        <figcaption>
+          A real run of that service with two Bun <code>WebSocket</code> clients, on a scratch
+          port with an in-memory Litestone client. The first write was a <code>POST</code>
+          over HTTP. Abridged: the handshake frames are left out. The other user's
+          <code>changed</code> frame carries a count and no row, and a reconnecting socket is
+          not sent what it missed.
+        </figcaption>
+      </figure>
+    </div>
+
+    <p class="bc-more">
+      Read more:
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/junction/README.md">channels and the browser client</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/junction/docs/internals.md">how a broadcast is graded</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/junction/test/realtime-grading.test.ts">the real-socket tests</a>
+    </p>
+  </div>
+</section>
+
+<style>
+  .bc-proof pre.code { overflow-x: auto; font-size: .82rem; margin: 0 0 .75rem; }
+</style>

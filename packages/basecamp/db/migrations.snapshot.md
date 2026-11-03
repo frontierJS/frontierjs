@@ -6,8 +6,5 @@ Every migration a database may have applied, with the checksum `migrate apply` r
 
 | File | Checksum |
 | --- | --- |
-| `migrations/main/20260801000000_initial_schema.sql` | `f09205a93f69f30f` |
+| `migrations/main/20260801000000_initial_schema.sql` | `6e8d1b70ca98a38c` |
 | `migrations/audit/20260801000000_audit_trail.sql` | `d4c529a254e2ac9b` |
-| `migrations/main/20261103002231_autopilot_report.sql` | `daa93ad1acecb916` |
-| `migrations/main/20261103032426_drop_workbench_wing.sql` | `e4ce89a0c28cdfd8` |
-| `migrations/main/20261103035144_api_key_public_key.sql` | `5116133c688abe78` |

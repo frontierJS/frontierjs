@@ -27,6 +27,8 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           an outside view, and is the only writer of its `@system` columns; a
           monitor is `pending` until graded, and paused ones are never picked
           (`FJS-1557`)
+          jobs/release-sweep.job.ts fails a release left pending or building with no
+          job behind it, every minute and once at boot from app.ts (`FJS-3861`)
           domain/notification/delivery.ts is the ONE owner of how a NotificationChannel is
           reached; `notificationChannels.test`, the alert evaluator and the `basecamp.page`
           flow node are its callers
@@ -173,6 +175,10 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           App (and HubConfig) whose replica lists, and sends one `ReplicaFound` per
           workspace; jobs/restore-reconcile.job.ts runs it once, queued by app.ts
           when `restoreStaged` answered `done`
+          domain/backup/pre-migrate.ts is the copy app.ts takes between
+          `openSqlite` and `apply()` when applied migrations have pending ones
+          after them: `pre-migrate/<stamp>.db` beside the database, newest three
+          kept, and a copy that fails stops the boot (FJS-3907)
           jobs/app-backup-run.job.ts is the one `/backup` caller (Invariant 4) —
           the schedule's `app-backup:run`, `app-backups.take` and a release's
           `Back up volume` step all take through `takeAppBackup`; `destinationFor`
@@ -257,7 +263,7 @@ cli/      config/cli.config.js (name, tenant header, dev endpoint) · src/main.j
 docs/     screens.md — the mock inventory, 41 of 41 built (FJS-153, closed
           2026-08-30). Four of them are a screen with a skeleton where a third
           party's numbers go — what is owed there is adapters, not UI
-          adapters.md — that debt, per adapter: every boundary declared,
+          providers.md — that debt, per provider: every boundary declared,
           nothing behind any of them, what wiring one costs and which drive
           assertions flip when you do
           vision.md · provisioning.md

@@ -28,12 +28,14 @@ text, so a body that elevates through a helper is not listed.
 | `appBackups.upload` | standing 5 or above — declared `gate: 5` |
 | `apps.unplace` | standing 4 or above — declared `gate: 4` |
 | `apps.disablePush` | standing 5 or above — declared `gate: 5` |
-| `deployments.rollback` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `deployments.rebind` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `deployments.rollback` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `edge.syncStep` | anyone, a stranger included — declared `gate: 0` |
 | `hubBackups.take` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `hubBackups.discard` | **any signed-in caller** — floor, read gate 5; standing not graded |
 | `hubConfig.dismissFound` | **any signed-in caller** — floor, read gate 7; standing not graded |
 | `infra.onboarding` | standing 2 or above — declared `gate: 2` |
+| `monitors.pause` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `monitors.resume` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `notificationChannels.test` | standing 5 or above — declared `gate: 5` |
 | `servers.metrics` | **any signed-in caller** — floor, read gate 2; standing not graded |
@@ -63,7 +65,7 @@ and what it does.
 | `notificationPreferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notificationPreferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (89)
+### A service hook runs in front of the body (90)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -92,11 +94,12 @@ name, and is as unread as the body.
 | `dashboards.updateTile` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `dashboards.removeTile` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `dashboards.reorder` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `deployments.rollback` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `deployments.rebind` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `deployments.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `deployments.stepStatus` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `deployments.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
+| `deployments.rollback` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `deployments.rollbackCopy` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `domains.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `domains.makePrimary` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `domains.uploadCert` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
@@ -161,14 +164,12 @@ name, and is as unread as the body.
 | `workspaces.members` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` |
 | `workspaces.leave` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` |
 
-### No body — a derived `@@transitions` move (1)
+### No body — a derived `@@transitions` move (0)
 
 Served on the caller's client, so only the Data boundary stands behind it: the
 gate, the row policy and the move's own level.
 
-| Method | Who may call it |
-| --- | --- |
-| `deployments.cancel` | **any signed-in caller** — floor, read gate 2; standing not graded |
+None.
 
 ## App hooks
 
@@ -551,15 +552,16 @@ name when it declares none.
 
 ### `deployments` · model `Deployment`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `cancel`, `rollback`, `rebind`, `startRun`, `stepStatus`, `finishRun`
-- **custom methods** — `cancel`, `rollback`, `rebind`, `startRun`, `stepStatus`, `finishRun`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `rebind`, `startRun`, `stepStatus`, `finishRun`, `rollback`, `rollbackCopy`
+- **custom methods** — `rebind`, `startRun`, `stepStatus`, `finishRun`, `rollback`, `rollbackCopy`
+- **input** — `rollback` takes `DeploymentRollback`
 - **who may call** —
-  - `cancel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`; no body, a derived move
-  - `rollback` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`; body writes as the app
   - `rebind` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`; body writes as the app
   - `startRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
   - `stepStatus` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
   - `finishRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
+  - `rollback` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`; body writes as the app
+  - `rollbackCopy` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -576,6 +578,7 @@ name when it declares none.
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
+| before | `rollback` | `validateInput` |
 
 ### `domainRoutes` · model `DomainRoute`
 
@@ -828,7 +831,7 @@ name when it declares none.
 - **input** — `rescan` takes `BackupRescan`
 - **who may call** —
   - `take` — **any signed-in caller** — floor, read gate 5; standing not graded; then `requireSystemAdmin`; body writes as the app
-  - `discard` — **any signed-in caller** — floor, read gate 5; standing not graded; then `requireSystemAdmin`
+  - `discard` — **any signed-in caller** — floor, read gate 5; standing not graded; then `requireSystemAdmin`; body writes as the app
   - `rescan` — standing 7 or above — declared `gate: 7`
   - `download` — standing 7 or above — declared `gate: 7`
 
@@ -987,7 +990,7 @@ name when it declares none.
 - **input** — `detachChannel` takes `MonitorChannelRef`
 - **who may call** —
   - `history` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `pause` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `pause` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`; body writes as the app
   - `resume` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`; body writes as the app
   - `attachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `detachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`

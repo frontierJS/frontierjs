@@ -1,0 +1,122 @@
+<!--
+  Litestone page § Access (the Warden). Facts: packages/litestone/docs/warden.md,
+  docs/access-control.md (Gates, Levels, Row-level policies), README.md
+  (Raw SQL needs asSystem(), @system and @guarded, @@transitions), docs/hazards.md;
+  every-path from FJS-D546, checked against caravan/src/worker.ts (a job runs as
+  the principal that queued it, re-resolved; cron runs as the app's system
+  principal), mcp/test/plugin.test.ts (the boundary refuses a tool it offered)
+  and sierra/src/build/static-safety.js (FJS-081, FJS-D496).
+  The proof is a real run: the schema and calls below against
+  packages/litestone/src/index.js. Output is verbatim except the
+  @guarded message, cut after its first clause where marked.
+  Not claimed: that a static build reads through a caller's level (it checks
+  what a route read against the gates and fails it), or that cron jobs are
+  graded (they run as the app's own system principal).
+-->
+<script>
+  const SCHEMA = `model Order {
+  id           Int         @id
+  accountId    Int         @default(auth().accountId)
+  total        Int
+  trackingCode String?     @system
+  stripeToken  String?     @guarded
+  status       OrderStatus @default(pending)
+
+  @@gate(2.4.4.5)
+  @@allow(read, accountId == auth().accountId)
+  @@allow(update, accountId == auth().accountId)
+  @@allow(create, accountId == auth().accountId)
+  @@transitions(status,
+    pay:    pending -> paid,
+    ship:   paid    -> shipped,
+    refund: paid    -> refunded @gate(5))
+}`
+
+  const RUN = `// two orders: id 1 in account 1, id 2 in account 2
+const ana = db.$setAuth({ id: 7, accountId: 1, role: 'member' })  // level 4
+
+db.$setAuth(null).order.findMany()
+  AccessDeniedError: "Order.read" requires level 2, user has level 0
+ana.order.findMany()
+  [{"id":1,"accountId":1,"total":4200,"trackingCode":null,"status":"pending"}]
+ana.order.update({ where: { id: 2 }, data: { total: 1 } })
+  null
+ana.order.update({ where: { id: 1 }, data: { trackingCode: 'TRK-1' } })
+  AccessDeniedError: Order: "trackingCode" is @system — written by the application rather than by its caller.
+ana.order.findMany({ where: { stripeToken: { startsWith: 'tok' } } })
+  AccessDeniedError: Order: "stripeToken" is @guarded — a system-context column on read as well as write, …
+ana.order.transition(1, 'ship')
+  TransitionViolationError: Cannot transition order.status from 'pending' to 'shipped' — valid transitions from 'pending': 'paid'
+ana.order.transition(1, 'pay')
+  "paid"
+ana.order.transition(1, 'refund')
+  TransitionGateError: Transition 'refund' on order.status requires level 5, user has level 4
+ana.sql\`SELECT * FROM "order"\`
+  Error: db.$setAuth(user).sql — this schema declares access rules, and raw SQL applies none of them.`
+</script>
+
+<section id="access" class="bc-section">
+  <div class="container stack">
+    <p class="eyebrow">Access in the schema</p>
+    <h2>Who may is written in the schema, and every path has to ask it.</h2>
+    <p class="lede">
+      Who may read a row, write a column or move a status is declared next to the data and
+      enforced where the row is read and written, not in a handler someone has to remember.
+      The way around it is spelled <code>asSystem()</code>, and raw SQL needs it.
+    </p>
+
+    <div class="bc-split">
+      <ul class="bc-points">
+        <li>
+          <strong>A gate is a number per verb.</strong>
+          <code>@@gate(2.4.4.5)</code> is the level read, create, update and delete each need,
+          from 0 (signed out) to 9 (nobody, <code>asSystem()</code> included), and it is
+          answered before any SQL runs.
+        </li>
+        <li>
+          <strong>A row policy is a WHERE clause nobody can leave off.</strong>
+          <code>@@allow</code> and <code>@@deny</code> compile into the SQL of every read and
+          update from a signed-in client, so another account's row is not refused, it is not there.
+        </li>
+        <li>
+          <strong>Columns and moves are refused by name.</strong>
+          A caller cannot write an <code>@system</code> column or touch a <code>@guarded</code>
+          one, and <code>@@transitions</code> refuses a move from the wrong state or below its
+          own <code>@gate</code>.
+        </li>
+        <li>
+          <strong>Every path meets the same rules.</strong>
+          A job runs as whoever queued it, an agent's MCP tool call is graded again when it
+          runs, and a static page that reads a gated model fails the build unless it lists
+          the columns it may publish.
+        </li>
+      </ul>
+
+      <figure class="bc-proof">
+        <pre class="code">{SCHEMA}</pre>
+        <pre class="code">{RUN}</pre>
+        <figcaption>
+          A run against Litestone's own client: the schema's <code>Order</code> model above
+          (its <code>User</code> and enum left out), the calls and their answers below,
+          from a scratch directory on 2026-11-02. Output is verbatim except the
+          <code>@guarded</code> message, cut where marked. Account 2's order comes back
+          <code>null</code>, not denied, so a refusal never confirms a row exists, and
+          <code>stripeToken</code> is left out of the read.
+        </figcaption>
+      </figure>
+    </div>
+
+    <p class="bc-more">
+      Read more:
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/warden.md">the Warden, layer by layer</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/access-control.md">gates, policies and what refuses</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/README.md#transitions--a-state-machine-at-the-data-boundary">state machines</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/README.md#raw-sql-needs-assystem">raw SQL and asSystem()</a>
+    </p>
+  </div>
+</section>
+
+<style>
+  .bc-proof pre.code { overflow-x: auto; font-size: .82rem; }
+  .bc-proof pre.code + pre.code { margin-top: .75rem; }
+</style>

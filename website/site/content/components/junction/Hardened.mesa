@@ -1,0 +1,117 @@
+<!--
+  Junction page § Built for production. Facts: packages/junction/README.md
+  (§ Idempotency-Key, Circuit breaker, CSRF protection, Health and metrics),
+  src/core/idempotency.ts (the 24-hour ttl, the 409 and 422, the released key,
+  no principal means no claim), src/core/hooks-resilience.ts (any throw counts,
+  a failure in half-open reopens, state held in the hook's closure),
+  src/transport/middleware.ts (the csrf order, allowMissingOrigin defaults true)
+  and src/config/index.ts (idempotency enabled by default). The proof is a real
+  run of a scratch app against packages/junction, kept in consts: a brace in
+  markup opens a Mesa expression.
+  Not claimed: replay across instances (the keys live in the app cache, one
+  process), a replay marker header (the repeat carries none), and a breaker that
+  tells a 4xx from an outage (it counts every throw).
+-->
+<script>
+  const KEY = `$ curl -i -X POST localhost:8461/charges -H 'Authorization: Bearer …' \\
+    -H 'Idempotency-Key: ord-7f3a' -d '{"amount":4200}'
+HTTP/1.1 201 Created
+{"id":"ch_1","amount":4200,"run":1}
+
+# the same request again
+HTTP/1.1 201 Created
+{"id":"ch_1","amount":4200,"run":1}
+
+# the same key, a different amount
+HTTP/1.1 422 Unprocessable Entity
+{"name":"Unprocessable","message":"Idempotency key reused with a different
+payload (charges.create). A key names one request; use a new one.", … "retryable":false}
+
+# a new key
+HTTP/1.1 201 Created
+{"id":"ch_2","amount":4200,"run":2}
+
+# the server's log for all four
+[handler] charges.create ran (run #1)
+[handler] charges.create ran (run #2)`
+
+  const BREAKER = `$ curl localhost:8461/rates     # five times, upstream down, threshold 3
+{"name":"GeneralError","message":"ECONNREFUSED: …","code":500,"data":null}     ×3
+{"name":"Unavailable","message":"Circuit open for rates.find — too many recent failures","code":503,"data":null}
+{"name":"Unavailable","message":"Circuit open for rates.find — …","code":503,"data":null}
+
+# the server's log: three calls reached the upstream, not five
+[handler] rates.find reached the upstream     ×3`
+</script>
+
+<section id="hardened" class="bc-section">
+  <div class="container stack">
+    <p class="eyebrow">Built for production</p>
+    <h2>Safe to retry, quick to give up.</h2>
+    <p class="lede">
+      The parts an API usually gains after its first incident come in the package: a key that
+      makes a retried write run once, a breaker for an upstream that is down, a CSRF check for
+      cookie sessions and probes for the orchestrator.
+    </p>
+
+    <div class="bc-split">
+      <ul class="bc-points">
+        <li>
+          <strong>A retried write runs once.</strong>
+          On by default, a mutating call carrying an <code>Idempotency-Key</code> from a signed-in
+          caller runs once, and its repeat replays the first answer for 24 hours, from that
+          process's cache. A duplicate still in flight is a retryable 409, the same key on a
+          different body is a 422, and a call that failed frees its key.
+        </li>
+        <li>
+          <strong>A failing upstream fails fast.</strong>
+          Add <code>circuitBreaker()</code> as an around hook and, after a run of consecutive
+          failures (five by default), the service answers 503 without calling out for 30 seconds,
+          then tries again, and one more failure reopens it. It counts every error the call throws.
+        </li>
+        <li>
+          <strong>CSRF checks where cookies make CSRF possible.</strong>
+          Turning on cookie sessions installs <code>csrf()</code>, which refuses a write from another
+          site or a sibling subdomain unless its origin is on your list.
+          Bearer-token calls need no check, and a request with no origin information at all passes
+          unless you set <code>allowMissingOrigin: false</code>.
+        </li>
+        <li>
+          <strong>Probes an orchestrator can read.</strong>
+          <code>health()</code> mounts <code>/health</code>, a 503 when a check you name fails or
+          the app is draining, and <code>/health/live</code>, which consults no check. Outside
+          development <code>/metrics</code> stays unmounted until you give it a token or an auth
+          function, since it names the pid and every service.
+        </li>
+      </ul>
+
+      <figure class="bc-proof">
+        <pre class="code">{KEY}</pre>
+        <pre class="code">{BREAKER}</pre>
+        <figcaption>
+          A real run on Bun against <code>packages/junction</code>: a scratch app with a
+          <code>charges</code> service whose <code>create</code> counts its own runs, and a
+          <code>rates</code> service whose <code>find</code> calls an upstream that is not
+          listening, under <code>circuitBreaker</code> with a threshold of 3. The caller signs in
+          through the stub auth in <code>@frontierjs/junction/testing</code>. Abridged: the
+          security headers on each answer and the repeated curl lines are cut, long bodies are
+          shortened with <code>…</code>, and the <code>#</code> lines and <code>×3</code> are ours.
+        </figcaption>
+      </figure>
+    </div>
+
+    <p class="bc-more">
+      Read more:
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/junction/README.md#idempotency-key">Idempotency-Key</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/junction/README.md#circuit-breaker">circuit breaker</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/junction/README.md#csrf-protection">CSRF protection</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/junction/README.md#health-and-metrics">health and metrics</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/junction/docs/hazards.md">what bites</a>
+    </p>
+  </div>
+</section>
+
+<style>
+  .bc-proof pre.code { overflow-x: auto; font-size: .82rem; }
+  .bc-proof pre.code + pre.code { margin-top: .75rem; }
+</style>

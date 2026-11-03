@@ -81,7 +81,7 @@ upload the hub never saw land is left alone.
 ## 5. What `location` means
 
 A `Backup` or `AppBackup` row's `location` is the **object key** when the
-upload landed — `<prefix>/basecamp-<stamp>.tar.gz` for the hub,
+upload landed — `<prefix>/basecamp-<installId>-<stamp>.tar.gz` for the hub,
 `<prefix>/<appId>-<stamp>.tar.gz` for an app — and a **path on the machine** when there was no destination or
 the upload was refused. A refused upload still finishes `success`, with the
 reason in `error`: the archive exists, it is only on the disk it was meant to
@@ -160,7 +160,7 @@ box enrolled) runs to the minute it stopped. When `/hub/backups/`'s *Replica
 found* card says the replica synced after the archive was taken, the minutes
 between are in the replica, and the hub cannot restore itself while it serves.
 
-The replica lands at `<prefix>/basecamp/<file>`, one object path per database
+`<installId>` is `HubConfig.installId`, in every hub archive's manifest and name. The replica lands at `<prefix>/hub-<installId>/<file>`, one object path per database
 file. Restore it with Basecamp stopped, on its box, and **before that box's
 Outpost is enrolled as the hub's own**: Litestream there would stream the
 archive's older file to the same path, and the replica's latest is then the
@@ -179,12 +179,12 @@ export AWS_ACCESS_KEY_ID=<keyID> AWS_SECRET_ACCESS_KEY=<applicationKey>
 export LITESTREAM_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID LITESTREAM_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
 Q="endpoint=$E&region=us-west-004&force-path-style=true"
 # each database is a folder <file>.db/; every one but the queue
-FILES=$(aws --endpoint-url "$E" s3 ls "s3://<bucket>/<prefix>/basecamp/" |
+FILES=$(aws --endpoint-url "$E" s3 ls "s3://<bucket>/<prefix>/hub-<installId>/" |
   awk '$1 == "PRE" && $2 ~ /\.db\/$/ { sub(/\/$/, "", $2); print $2 }' | grep -vx basecamp-jobs.db)
 echo "$FILES"   # basecamp.db at least; stop here if it is missing
 for f in $FILES; do
   litestream restore -integrity-check quick -o "${DB:?}/.$f.restoring" \
-    "s3://<bucket>/<prefix>/basecamp/$f?$Q" || exit 1
+    "s3://<bucket>/<prefix>/hub-<installId>/$f?$Q" || exit 1
 done
 for f in $FILES; do
   rm -rf "${DB:?}/$f-wal" "${DB:?}/$f-shm" "${DB:?}/.$f-litestream"
@@ -219,6 +219,23 @@ names each one. The queue (`jobs.db`) is in the archive and is NOT restored:
 no schema names it, so the hub starts with an empty queue, as above. Leave out
 `--verify=<dir>`: it proves a Litestream replica, and beside `--from-backup`
 the SQLite files would come from the replica, not the archive.
+
+### The hub, from before a migration
+
+A boot that finds migrations pending over applied ones copies the main
+database to `<db dir>/pre-migrate/<stamp>.db` first and keeps the newest three
+(`FJS-3907`); the log line is `copied the database before migrating`. The copy
+is `basecamp.db` alone — not `audit.db`, not the queue. To put it back, stop
+Basecamp, roll the image back to the release before the bad migration (the
+newer image would apply it again on the next boot), then:
+
+```sh
+cd <db dir>
+rm -f basecamp.db-wal basecamp.db-shm
+cp pre-migrate/<stamp>.db basecamp.db
+```
+
+Every row written between the copy and the stop is gone, as with any restore.
 
 ### The hub, under a new key
 
@@ -268,6 +285,11 @@ about $6/TB/month
 archive is megabytes, so seven kept locally and seven in the bucket stays
 inside the free tier until an app's volume does not.
 
+The local copies cost the disk the database lives on. A hub backup refuses to
+stage when that disk has less free than twice the databases it would copy, or
+under 10% of the volume, and `hub.disk-free` on `/hub/security/` goes red at
+the same line (`FJS-3908`, `api/src/domain/host/db-disk.ts`).
+
 ## 9. Live replicas — one key per app
 
 A snapshot leaves the machine by a URL that expires; a replica cannot, so
@@ -277,7 +299,7 @@ placed on holds it (`FJS-D1505`). So a replica destination is **one app's**:
 is refused. Make a destination per app, with a key that reaches no further than
 that app's objects, and set it with `apps.patch { replicaDestinationId }`.
 
-The replica lands at `<destination prefix>/<app id>/`. Litestream needs list on
+`<installId>` is `HubConfig.installId`, in every hub archive's manifest and name. The replica lands at `<destination prefix>/<app id>/`. Litestream needs list on
 the bucket and get, put and delete on its objects
 ([guide](https://litestream.io/guides/s3/)). How narrow the key can be is the
 vendor's:

@@ -1,0 +1,130 @@
+<!--
+  Junction page § Batteries and extension points. Facts: packages/junction/
+  README.md (Scheduler, Health and metrics, Mail, OpenAPI, Interface-first
+  adapters, Tier 1 Plugins), src/core/app.ts (the Plugin interface, APP_SLOTS,
+  createApp building the cache and a held scheduler), src/ai/index.ts (IAIModel).
+  The proof is a real run of a 30-line app in a scratch directory against the
+  package's own source, kept in consts: a brace in markup opens a Mesa
+  expression, and no backtick may appear in either const.
+  Not claimed: a Redis cache or event bus (the README table lists them, no test
+  or run here exercises one), any AI vendor adapter (junction ships none, by
+  design), and Caravan's restart survival (README only, no run here).
+-->
+<script>
+  const APP = `import { createApp, health } from '@frontierjs/junction'
+import { mail }              from '@frontierjs/junction/mail'
+import { openapi }           from '@frontierjs/junction/openapi'
+
+// A provider: mail() takes any { send, batch }. This one prints instead of sending.
+const printMailer = {
+  send:  async (m) => { console.log('mailer.send', m.to); return { id: '1', message: 'printed' } },
+  batch: async (ms) => Promise.all(ms.map(printMailer.send)),
+}
+
+// A plugin: a name and the phases it wants.
+let beats = 0
+const pulse = {
+  name: 'pulse',
+  register(app) { console.log('register'); app.get('/pulse', () => ({ beats })) },
+  boot(app)     { console.log('boot');     app.registerReadiness('pulse', () => true) },
+  work(app)     { console.log('work');     app.scheduler.every('1 second', () => { beats++ }) },
+  shutdown()    { console.log('shutdown') },
+}
+
+const app = createApp({ config: { name: 'batteries', port: 4731 } })
+console.log('before configure: cache', typeof app.cache.get,
+  '· scheduler', typeof app.scheduler.every, '· mail', 'mail' in app)
+
+app.configure(pulse)
+app.configure(mail({ mailer: printMailer }))
+app.configure(openapi({ title: 'Batteries', version: '1.0.0', ui: '/docs' }))
+app.configure(health())
+await app.start()
+
+await app.mail.send({ to: 'alice@example.com', subject: 'Welcome', text: 'hi' })
+// then fetch /pulse, /health, /docs and /openapi.json, wait two seconds, fetch /pulse, app.stop()`
+
+  const RUN = `$ bun run app.ts
+before configure: cache function · scheduler function · mail false
+register
+boot
+work
+…                                   # the startup banner, cut
+mailer.send alice@example.com
+GET /pulse     200 {"beats":0}
+GET /health    200 {"status":"ok","app":"batteries","version":"1.0.0","uptime":0,
+                    "checks":{"pulse":{"status":"ok","latencyMs":0}}, …}
+GET /docs      200 <!DOCTYPE html>
+GET /openapi   3.1.0                # the "openapi" field of /openapi.json
+GET /pulse     200 {"beats":2}      # two seconds later
+shutdown`
+</script>
+
+<section id="batteries" class="bc-section">
+  <div class="container stack">
+    <p class="eyebrow">Batteries and extension points</p>
+    <h2>The usual dependencies are in. Change one without forking.</h2>
+    <p class="lede">
+      A cache, an event bus and a scheduler exist the moment you call <code>createApp</code>.
+      Mail, OpenAPI, health checks and webhooks are one <code>app.configure()</code> each. What
+      you need to change, you change with a plugin or a provider.
+    </p>
+
+    <div class="bc-split">
+      <ul class="bc-points">
+        <li>
+          <strong>Some are on before you ask.</strong>
+          <code>app.cache</code>, <code>app.events</code> and <code>app.scheduler</code> are built by
+          <code>createApp</code>. The scheduler is held until the app serves, so a job fires only in
+          a process that is serving.
+        </li>
+        <li>
+          <strong>The rest are opt-in, and say so.</strong>
+          Mail, OpenAPI, health, webhooks and AI each take one <code>configure</code>. Before that,
+          reading <code>app.mail</code> throws and names the line to add; <code>'mail' in app</code>
+          is the question to ask instead. The job queue, Caravan, is its own package.
+        </li>
+        <li>
+          <strong>A plugin adds a capability.</strong>
+          It is an object with a <code>name</code> and any of <code>register</code>,
+          <code>boot</code>, <code>work</code>, <code>ready</code> and <code>shutdown</code>.
+          <code>register</code> runs inside <code>configure()</code>, so its routes exist when it
+          returns, and <code>requires</code> fails startup if a plugin it needs is missing.
+        </li>
+        <li>
+          <strong>A provider replaces an implementation.</strong>
+          Mail takes any <code>{'{ send, batch }'}</code>, AI any <code>IAIModel</code>, auth any
+          <code>IAuth</code>. The code that calls <code>app.mail.send</code> does not change when
+          the mailer behind it does.
+        </li>
+      </ul>
+
+      <figure class="bc-proof">
+        <pre class="code">{APP}</pre>
+        <pre class="code">{RUN}</pre>
+        <figcaption>
+          A real run of this app in a scratch directory, importing the package's own source. The
+          app is abridged: the closing comment stands for the fetches and the stop.
+          The output has the startup banner and the logger's shutdown lines cut, and the
+          <code>#</code> notes are ours. The plugin's readiness check appears in
+          <code>/health</code> beside the app's own, and the timer ran while the app served.
+        </figcaption>
+      </figure>
+    </div>
+
+    <p class="bc-more">
+      Read more:
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/junction/README.md#interface-first-adapters">interface-first adapters</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/junction/README.md#mail">mail</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/junction/README.md#health-and-metrics">health and metrics</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/junction/README.md#openapi">OpenAPI</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/junction/README.md#webhooks">webhooks</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/caravan/README.md">Caravan, the job queue</a>
+    </p>
+  </div>
+</section>
+
+<style>
+  .bc-proof pre.code { overflow-x: auto; font-size: .82rem; }
+  .bc-proof pre.code + pre.code { margin-top: .75rem; }
+</style>

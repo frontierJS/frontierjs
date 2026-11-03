@@ -876,6 +876,14 @@ const FIELD = [
     'avatar File @accept("image/*")'
   ),
   t(
+    'digest',
+    'field',
+    'validate',
+    '(column)',
+    "On a File field: the String column beside it that holds the SHA-256 of the file's bytes, lowercase hex. A write that leaves the column out has it filled; one that states a different hash is refused naming both columns; the column follows the file, so it cannot be set without the file and clearing the file clears it.",
+    'file File @digest(sha256)\n  sha256 String?'
+  ),
+  t(
     'date',
     'field',
     'validate',
@@ -1696,6 +1704,7 @@ export const DOCS = {
   'field:phone': 'schema.md',
   'field:syntax': 'schema.md',
   'field:accept': 'file-storage.md',
+  'field:digest': 'file-storage.md',
   'field:date': 'schema.md',
   'field:datetime': 'schema.md',
   'field:time': 'schema.md',
@@ -1904,6 +1913,7 @@ export const TIERS = {
     'field:phone',
     'field:syntax',
     'field:accept',
+    'field:digest',
     'field:startsWith',
     'field:check',
     'field:version',
@@ -1975,7 +1985,7 @@ export const AXES = {
     'field:transient', 'field:derived', 'field:generated', 'field:check', 'field:big', 'field:collate',
     'field:scale', 'field:money', 'field:unit', 'field:point', 'field:vector', 'field:trim',
     'field:lower', 'field:upper', 'field:slug', 'field:values', 'field:label', 'field:required',
-    'field:email', 'field:url', 'field:phone', 'field:syntax', 'field:accept', 'field:date',
+    'field:email', 'field:url', 'field:phone', 'field:syntax', 'field:accept', 'field:digest', 'field:date',
     'field:datetime', 'field:time', 'field:zone', 'field:zoned', 'field:regex', 'field:length', 'field:startsWith',
     'field:endsWith', 'field:contains', 'field:lt', 'field:lte', 'field:gt', 'field:gte',
     'field:minItems', 'field:maxItems', 'field:uniqueItems', 'field:type', 'model:index',
@@ -2057,6 +2067,7 @@ export const SYNONYMS = {
   'field:length':      ['maxlength'],
   'field:syntax':      ['markdown', 'code', 'language', 'rich text'],
   'field:accept':      ['mime', 'file type', 'upload'],
+  'field:digest':      ['checksum', 'sha256'],
   'field:transient':   ['input only', 'write only', 'not stored'],
   'field:system':      ['server-assigned'],
   'field:generated':   ['stored column'],

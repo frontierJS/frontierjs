@@ -549,6 +549,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@frontierjs/caravan": "workspace:*",
+        "@frontierjs/conduit": "workspace:*",
         "@frontierjs/css": "workspace:*",
         "@frontierjs/junction": "workspace:*",
         "@frontierjs/litestone": "workspace:*",

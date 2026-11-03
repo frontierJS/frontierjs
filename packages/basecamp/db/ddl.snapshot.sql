@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 73 models · 2 databases
+-- 74 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -310,7 +310,7 @@ CREATE TABLE IF NOT EXISTS "notification_preference" (
   "email" INTEGER NOT NULL DEFAULT 0,
   "inApp" INTEGER NOT NULL DEFAULT 1,
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("kind" IN ('DeploySuccess', 'DeployFailed', 'AlertFiring', 'AlertResolved', 'ServerUnreachable', 'MonitorDown', 'MonitorUp', 'PostureFailed', 'HubPostureFailed', 'DependencyVulnerable', 'MemberJoined', 'JobFailed', 'WeeklyDigest', 'ReplicaFound')),
+  CHECK ("kind" IN ('DeploySuccess', 'DeployFailed', 'AlertFiring', 'AlertResolved', 'ServerUnreachable', 'MonitorDown', 'MonitorUp', 'PostureFailed', 'HubPostureFailed', 'DependencyVulnerable', 'MemberJoined', 'JobFailed', 'WeeklyDigest', 'ReplicaFound', 'MonitorCertExpiring', 'AppBackupFailed')),
   UNIQUE ("userId", "kind"),
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;
@@ -563,8 +563,11 @@ CREATE TABLE IF NOT EXISTS "notification_channel" (
   "config" TEXT NOT NULL DEFAULT '{}',
   "secretId" TEXT,
   "isActive" INTEGER NOT NULL DEFAULT 1,
+  "isPagedForFleet" INTEGER NOT NULL DEFAULT 1,
   "lastTestAt" TEXT,
   "lastDeliveryAt" TEXT,
+  "lastError" TEXT,
+  "lastErrorAt" TEXT,
   "createdBy" TEXT,
   "version" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -608,6 +611,8 @@ CREATE TABLE IF NOT EXISTS "alert_rule" (
   "operator" TEXT NOT NULL DEFAULT 'gt',
   "threshold" REAL NOT NULL,
   "forMinutes" INTEGER NOT NULL DEFAULT 0,
+  "clearForMinutes" INTEGER NOT NULL DEFAULT 0,
+  "refireAfterMinutes" INTEGER NOT NULL DEFAULT 0,
   "isActive" INTEGER NOT NULL DEFAULT 1,
   "snoozedUntil" TEXT,
   "version" INTEGER NOT NULL DEFAULT 1,
@@ -643,6 +648,8 @@ CREATE TABLE IF NOT EXISTS "monitor" (
   "lastCheckedAt" TEXT,
   "nextCheckAt" TEXT,
   "lastLatencyMs" INTEGER,
+  "certExpiresAt" TEXT,
+  "certWarnedDays" INTEGER,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   CHECK ("method" IN ('GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE')),
@@ -747,10 +754,12 @@ CREATE TABLE IF NOT EXISTS "server_event" (
   "message" TEXT NOT NULL,
   "metadata" TEXT NOT NULL DEFAULT '{}',
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "noticeOwedAt" TEXT,
   CHECK ("kind" IN ('created', 'removed', 'rebootRequested', 'drainStarted', 'drainCancelled', 'provisionRequested', 'provisionCreated', 'provisionReady', 'provisionTimeout', 'destroyRequested', 'destroyFinished', 'enrollmentIssued', 'syncRequested', 'statusSynced', 'statusSyncIgnored', 'syncFailed', 'syncNoAccount', 'syncUnsupported', 'syncUnrecognized', 'cameOnline', 'unreachable', 'recipeRan', 'recipeFailed', 'cleanupQueued', 'cleanupRan', 'cleanupFailed', 'volumeRemoved', 'volumesPruned', 'postureFailed', 'postureRestored')),
   FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_server_event_serverId" ON "server_event" ("serverId");
+CREATE INDEX IF NOT EXISTS "idx_server_event_noticeOwedAt" ON "server_event" ("noticeOwedAt");
 
 CREATE TABLE IF NOT EXISTS "volume" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -921,6 +930,18 @@ CREATE TABLE IF NOT EXISTS "monitor_check" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_monitor_check_monitorId_at" ON "monitor_check" ("monitorId", "at");
 
+CREATE TABLE IF NOT EXISTS "monitor_uptime_day" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "monitorId" TEXT NOT NULL,
+  "day" TEXT NOT NULL,
+  "checks" INTEGER NOT NULL,
+  "okChecks" INTEGER NOT NULL,
+  "avgLatencyMs" INTEGER,
+  "maxLatencyMs" INTEGER,
+  UNIQUE ("monitorId", "day"),
+  FOREIGN KEY ("monitorId") REFERENCES "monitor" ("id") ON DELETE CASCADE
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS "monitor_event" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "monitorId" TEXT NOT NULL,
@@ -928,11 +949,13 @@ CREATE TABLE IF NOT EXISTS "monitor_event" (
   "fromStatus" TEXT NOT NULL,
   "toStatus" TEXT NOT NULL,
   "message" TEXT NOT NULL,
+  "noticeOwedAt" TEXT,
   CHECK ("fromStatus" IN ('pending', 'up', 'down', 'paused')),
   CHECK ("toStatus" IN ('pending', 'up', 'down', 'paused')),
   FOREIGN KEY ("monitorId") REFERENCES "monitor" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_monitor_event_monitorId_at" ON "monitor_event" ("monitorId", "at");
+CREATE INDEX IF NOT EXISTS "idx_monitor_event_noticeOwedAt" ON "monitor_event" ("noticeOwedAt");
 
 CREATE TABLE IF NOT EXISTS "monitor_channel" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -1278,6 +1301,7 @@ CREATE INDEX IF NOT EXISTS "idx_dashboard_tile_appId" ON "dashboard_tile" ("appI
 
 CREATE TABLE IF NOT EXISTS "hub_config" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT 'hub',
+  "installId" TEXT NOT NULL UNIQUE DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "heartbeatTimeoutSeconds" INTEGER NOT NULL DEFAULT 120,
   "isTwoFactorRequiredForOwners" INTEGER NOT NULL DEFAULT 0,
   "isApiKeyAuthAllowed" INTEGER NOT NULL DEFAULT 1,
@@ -1286,6 +1310,10 @@ CREATE TABLE IF NOT EXISTS "hub_config" (
   "backupKeepLocalDays" INTEGER,
   "backupKeepRemoteCount" INTEGER NOT NULL DEFAULT 7,
   "backupKeepRemoteDays" INTEGER,
+  "retentionCheckDays" INTEGER NOT NULL DEFAULT 30,
+  "retentionEventDays" INTEGER NOT NULL DEFAULT 90,
+  "retentionAlertDays" INTEGER NOT NULL DEFAULT 90,
+  "retentionNotificationDays" INTEGER NOT NULL DEFAULT 90,
   "encryptionKeyEscrowedAt" TEXT,
   "encryptionKeyFingerprint" TEXT,
   "appId" TEXT UNIQUE,
@@ -1328,8 +1356,8 @@ CREATE TABLE IF NOT EXISTS "app_backup" (
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   CHECK ("kind" IN ('manual', 'scheduled', 'found', 'release')),
   CHECK ("status" IN ('pending', 'running', 'success', 'failed', 'timeout')),
-  FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE,
-  FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE RESTRICT,
+  FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE RESTRICT,
   FOREIGN KEY ("destinationId") REFERENCES "backup_destination" ("id") ON DELETE RESTRICT,
   FOREIGN KEY ("deploymentId") REFERENCES "deployment" ("id") ON DELETE SET NULL
 ) STRICT;

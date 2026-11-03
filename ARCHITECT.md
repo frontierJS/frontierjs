@@ -76,7 +76,7 @@ Use the left column. Never the right.
 | **Effect**                  | watcher, reaction, subscriber (for `$: deps, handler`) |
 | **Guard**                   | hook (for a thing that only answers allow/deny) |
 | **Observer**                | hook, listener (for a thing that cannot act) |
-| **Provider**                | adapter, integration, driver (for a third party) |
+| **Provider**                | integration, driver (for a third party; an *adapter* is the code that reaches one) |
 | **Transport**               | channel (for the delivery medium)           |
 | **Target**                  | endpoint, integration, service (for a Conduit declaration) |
 | **Job**                     | task, worker, cron                          |

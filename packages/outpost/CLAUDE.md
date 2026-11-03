@@ -33,6 +33,19 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   makes. A plain-http `OUTPOST_PUBLIC_URL` is refused at start, because Basecamp
   would register no target for it and the machine would look healthy.
 
+- **A signed request stamped before this process started is refused (409), not remembered** (`FJS-D1799`).
+  The nonce store is in memory, so a restart reopened the 300 s replay window;
+  the refusal says the request predates the restart and to send it again, and
+  only a request that verified hears it. The hub signs afresh on every send, so a
+  call in flight across a restart fails once with that sentence on the step and
+  the next one passes. A hub clock a few seconds behind this one is refused the
+  same way in the first seconds after a start.
+
+- **`/deploy` holds the app's chain for the build, the route and the swap**
+  (`FJS-3849`): `docker.exclusive(appId, fn)` is the chain, `held: true` tells
+  `deploy` it is already taken, and the inspector's data-directory removal joins
+  it. A new per-app operation either joins the chain or says why it need not.
+
 - **The unit is sandboxed and `/exec` is not** (`FJS-1761`, `FJS-D602`).
   `installScript()`'s unit writes only `/var/lib/outpost`, `/etc/outpost` and
   bun's install dir, and `exec` runs its command as `systemd-run --pipe --wait`,

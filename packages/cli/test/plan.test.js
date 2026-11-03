@@ -91,6 +91,12 @@ describe('parsePlan', () => {
     expect(s22.line).toBe(30)
   })
 
+  test('a phase inserted as 1a numbers its steps 1a.N, and its first open box is next', () => {
+    const inserted = parsePlan(PLAN.replace('### Phase 2', '### Phase 1a — Inserted\n\n- [ ] 1a.1 First of the inserted phase\n\n### Phase 2'), { file: 'IDEAS/crop.md' })
+    expect(inserted.phases.find(p => p.n === '1a').steps.map(s => s.id)).toEqual(['1a.1'])
+    expect(inserted.next.id).toBe('1a.1')
+  })
+
   test('a dropped step keeps its number and says why', () => {
     const s = plan.steps.find(s => s.id === '2.3')
     expect(s.title).toBe('Touch drags')

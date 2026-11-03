@@ -43,7 +43,7 @@ import { env }            from '../../core/env.ts'
 import { keyUnder }       from '../../providers/storage/index.ts'
 import type { DestinationRow } from '../../providers/storage/index.ts'
 import { errorCode, objectPath, parseListing, presign } from '../../providers/storage/s3.ts'
-import { ARCHIVE_NAME, stampOf } from './backup-archives.ts'
+import { ARCHIVE_NAME, stampOf, writerOf } from './backup-archives.ts'
 import { archiveRefusals, MANIFEST_FILE, sha256Of } from './archive-manifest.ts'
 import { MAX_UPLOAD_BYTES } from '../../jobs/backup-run.job.ts'
 
@@ -101,9 +101,11 @@ async function signedFetch(b: RestoreBucket, path: string, query: Record<string,
     (code === 'SignatureDoesNotMatch' || code === 'InvalidAccessKeyId' ? ': the key is wrong' : '') }
 }
 
-export type ListedArchive = { key: string; name: string; takenAt: string; size: number }
+export type ListedArchive = { key: string; name: string; takenAt: string; size: number; installId: string | null }
 
-/** Every `<prefix>/basecamp-<stamp>.tar.gz`, newest first. A neighbor's object
+/** Every hub archive under the prefix (`basecamp-<installId>-<stamp>.tar.gz`, or a
+ *  pre-id `basecamp-<stamp>.tar.gz`), newest first, each naming the install
+ *  that took it so a restore can tell two hubs apart. A neighbor's object
  *  under the same prefix is not a hub archive and is left out. */
 export async function listHubArchives(b: RestoreBucket): Promise<{ archives: ListedArchive[] } | { error: string }> {
   const archives: ListedArchive[] = []
@@ -117,7 +119,7 @@ export async function listHubArchives(b: RestoreBucket): Promise<{ archives: Lis
     for (const o of page.objects) {
       const name    = o.key.slice(o.key.lastIndexOf('/') + 1).replace(/\.tar\.gz$/, '')
       const takenAt = stampOf(name)
-      if (takenAt && o.key === keyUnder(b, `${name}.tar.gz`)) archives.push({ key: o.key, name, takenAt, size: o.size })
+      if (takenAt && o.key === keyUnder(b, `${name}.tar.gz`)) archives.push({ key: o.key, name, takenAt, size: o.size, installId: writerOf(o.key) })
     }
     token = page.nextToken
   } while (token)

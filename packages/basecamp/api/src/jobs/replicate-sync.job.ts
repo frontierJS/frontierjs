@@ -47,7 +47,8 @@ import { defineJob }                         from '@frontierjs/caravan'
 import { runsAsApp }                         from '../domain/job/job-context.ts'
 import { executorOn, isExecutor }            from '../providers/executor.ts'
 import { createSecretResolver, secretRef }   from '../core/credentials.ts'
-import { keyUnder, sendFor }                 from '../providers/storage/index.ts'
+import { hubReplicaKey, keyUnder, sendFor }  from '../providers/storage/index.ts'
+import { hubInstallId }                      from '../domain/backup/backup-archives.ts'
 import { splitCredential, listObjects }      from '../providers/storage/s3.ts'
 import { hostServer, hubApp }                from '../domain/host/host-machine.ts'
 import type { App }                          from '@frontierjs/junction'
@@ -165,9 +166,9 @@ export async function hostReplicaFor(app: App, serverId: string): Promise<HostRe
   if (typeof credential !== 'string' || !credential)
     throw new Error(`Basecamp's replica: destination '${dest.name}' has no credential that can be read`)
   const { accessKeyId, secretAccessKey } = splitCredential(credential)
-  // Beside the hub's snapshots, which are `<prefix>/basecamp-<stamp>.tar.gz`.
+  // Under the install id, so a second hub on this prefix writes its own path.
   return {
-    bucket: dest.bucket, path: keyUnder(dest, 'basecamp'), endpoint: dest.endpoint, region: dest.region,
+    bucket: dest.bucket, path: hubReplicaKey(dest, await hubInstallId(sys)), endpoint: dest.endpoint, region: dest.region,
     access_key_id: accessKeyId, secret_access_key: secretAccessKey,
   }
 }

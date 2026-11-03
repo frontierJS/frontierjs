@@ -423,7 +423,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   const _aggCol     = (name) => _derivedSql(name) ?? `"${col(name)}"`
 
   const {
-    asConstraintError, parentRefusal, movesOnto, requireParentGrants, isArchivedParent, hiddenParents,
+    asConstraintError, parentRefusal, movesOnto, requireParentGrants, isArchivedParent, hiddenParents, gradesParents,
     deferrable, holdDenial, heldFor, settleDeferred,
     checkCreate, firstRefusal, refuseLockedCascade, refusedDelete, refusedChildDelete, nameBlockerForCaller,
     asBatchRowError,
@@ -3493,7 +3493,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     await enforceValueSets(modelName, [data], ctx, { where })
     const stamped = new Set()
     data = stampFromAuth(data, shape.updatedBy, ctx.auth, stamped)
-    const [_upHidden] = await hiddenParents([data], [stamped], system)
+    const [_upHidden] = gradesParents() ? await hiddenParents([data], [stamped], system) : []
 
     // ── @version — the expected version is a precondition, not a value to write ──
     const _versionField = shape.version
@@ -3541,7 +3541,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
       const callerWhere = whereFragment(exclWhere)
       if (!callerWhere) throw new Error(`update on "${tableName}" requires a where clause`)
       const { sql: whereSql, params: whereParams } = callerWhere
-      const selAll = sqlJoin([KW.select, T, KW.where, callerWhere], '').sql
+      let _selAll = null
+      const selAll = () => _selAll ??= sqlJoin([KW.select, T, KW.where, callerWhere], '').sql
 
       // ── @@sync(field) — merge, or name the columns two people contend over ─
       // The WHERE is built above this and the SET below it, because the merge
@@ -3553,7 +3554,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // still matches never reaches here, so a model declaring `field` pays
       // nothing for it on an uncontested write.
       if (base !== undefined && _expectVersion != null) {
-        const _cur = readDb.query(selAll).get(...whereParams)
+        const _cur = readDb.query(selAll()).get(...whereParams)
         if (_cur && _cur[col(_versionField)] !== _expectVersion) {
           const _remote = {}
           for (const f of Object.keys(data ?? {})) _remote[f] = _cur[col(f)]
@@ -3577,7 +3578,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
         }
       }
 
-      if (_ranks.length) data = rankOnScopeChange(data, selAll, whereParams, stamped)
+      if (_ranks.length) data = rankOnScopeChange(data, selAll(), whereParams, stamped)
       const { data: _upValues, ops: _upOps } = extractWriteOps(data)
       const row       = writeData(_upValues, { system, fieldWrite: 'sql', stamped, where })
       const setParams = []
@@ -3602,7 +3603,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // reviewer compares against the after.
       const heard = hasLocalAudience()
       const beforeRaw = tableHasLogWork || _postUpdatePolicy || heard
-        ? readDb.query(selAll).get(...whereParams)
+        ? readDb.query(selAll()).get(...whereParams)
         : null
       const beforeRow = beforeRaw ? trailImage(beforeRaw, read(beforeRaw, { mode: 'single' })) : null
       const heardRow  = heard && beforeRaw ? read(beforeRaw, { mode: 'single', hydrateFrom: true }) : null
@@ -3619,7 +3620,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // a second clock for one event, so it is refused by name, as @system is.
       const _moveStamps = _transResult?.stamps ?? []
       const _moveBy     = _transResult?.stampBy ?? null
-      const _namedStamps = [..._moveStamps, ...(_moveBy ? [_moveBy] : [])].filter(c => c in data)
+      const _namedStamps = _transResult ? [..._moveStamps, ...(_moveBy ? [_moveBy] : [])].filter(c => c in data) : []
       if (_namedStamps.length) throw new ValidationError(
         _namedStamps.map(f => ({
           path: [f],
@@ -4676,7 +4677,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         }
         const outcome = writeUnit(plan)
         if (!outcome.row) return outcome
-        if (!childrenDone) await processHasManyNested(u.nested, outcome.row[pkField], outcome.row)
+        if (!childrenDone && u.hasNested) await processHasManyNested(u.nested, outcome.row[pkField], outcome.row)
         applyEdgeWrites(u.edgeWrites, outcome.row[pkField], u.scopedBy)
         return u.hasNested || u.edgeWrites.length ? rehydrateAfterChildren(outcome) : outcome
       }

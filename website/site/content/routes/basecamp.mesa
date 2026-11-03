@@ -21,20 +21,24 @@ render: static
                                     saying where it came from
     p.bc-more                       "Read more:" links into the repo docs
 
-  The structure rules are :global() below, so five sections cannot drift into
-  five looks. A section adds a scoped rule only for what its proof needs.
+  The structure rules are components/ProductFrame.mesa's, so five sections
+  cannot drift into five looks. A section adds a scoped rule only for what its
+  proof needs.
 
   Every claim and every terminal line is lifted from the package docs or code
   and is something that runs TODAY. Direction is labeled as direction. A
   section that cannot back a claim drops the claim.
 -->
 <script>
+  import ProductFrame from '../components/ProductFrame.mesa'
   import Deploy  from '../components/basecamp/Deploy.mesa'
   import Outpost from '../components/basecamp/Outpost.mesa'
   import Trust   from '../components/basecamp/Trust.mesa'
   import Watch   from '../components/basecamp/Watch.mesa'
   import Backups from '../components/basecamp/Backups.mesa'
 </script>
+
+<ProductFrame>
 
 <section id="top" class="bc-hero">
   <div class="container stack">
@@ -84,6 +88,8 @@ render: static
   </div>
 </section>
 
+</ProductFrame>
+
 <style>
   .bc-hero { padding: 5rem 0 3rem; }
   .bc-hero .lede { max-width: 52ch; }
@@ -92,20 +98,4 @@ render: static
   .bc-jump a { padding: .3rem .8rem; border: 1px solid var(--rule-strong); border-radius: 999px; font-size: .85rem; color: var(--ink-soft); text-decoration: none; }
   .bc-jump a:hover { background: var(--surface-sunken); color: var(--ink); }
   .btn.outlined { color: var(--ink); border-color: var(--rule-strong); }
-
-  :global(.bc-section) { scroll-margin-top: 5rem; padding: 4.5rem 0; border-top: 1px solid var(--rule); }
-  :global(.bc-section h2) { font-size: clamp(1.6rem, 3.5vw, 2.2rem); letter-spacing: -.02em; margin: 0 0 .3em; }
-  :global(.bc-section .eyebrow), :global(.bc-hero .eyebrow) { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
-  :global(.bc-section .lede), :global(.bc-hero .lede) { font-size: 1.15rem; color: var(--ink-soft); max-width: 56ch; }
-  :global(.bc-split) { display: grid; gap: 2rem; grid-template-columns: minmax(0, 1fr); align-items: start; margin-top: 1rem; }
-  @media (min-width: 60rem) { :global(.bc-split) { grid-template-columns: .9fr 1.1fr; } }
-  :global(.bc-points) { list-style: none; padding: 0; margin: 0; display: grid; gap: 1.1rem; }
-  :global(.bc-points li) { color: var(--ink-soft); line-height: 1.6; padding-left: 1rem; border-left: 2px solid var(--color-primary); }
-  :global(.bc-points strong) { color: var(--ink); }
-  :global(.bc-proof) { margin: 0; min-width: 0; }
-  :global(.bc-proof figcaption) { font-size: .8rem; color: var(--ink-mute); margin-top: .5rem; }
-  :global(.bc-more) { font-size: .9rem; color: var(--ink-mute); }
-  :global(.bc-more a) { color: var(--color-primary); }
-  /* @frontierjs/css sets no font on body, so a section on its own took the browser's serif. */
-  :global(.bc-section), :global(.bc-hero) { font-family: var(--font-primary); }
 </style>

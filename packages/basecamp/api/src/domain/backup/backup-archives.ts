@@ -19,6 +19,17 @@
 // the vendor refused leaves a row the next prune retries rather than an
 // object nothing lists.
 //
+// ─── Whose object it is ───────────────────────────────────────────────────
+//
+// Two hubs can be pointed at one bucket and prefix, so a hub archive's name
+// carries the install id minted on `HubConfig` (`FJS-D1797`):
+// `basecamp-<installId>-<stamp>`, and the claim marker a hub puts under the
+// prefix is `basecamp-claim-<installId>`. `isForeign(key, installId)` is the
+// ONE answer to "is this another hub's": the rescan that adopts, the delete
+// that prunes and the refusal of a claimed prefix all ask it, so adoption and
+// deletion cannot disagree. A name with no id is a pre-id archive: nobody's,
+// so nothing foreign, and the hub that already holds its row keeps it.
+//
 // ─── Local and remote ─────────────────────────────────────────────────────
 //
 // Remote is a success row with a destination and no `error`: its `location`
@@ -30,7 +41,7 @@
 import { existsSync, rmSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { keyUnder, sendFor }  from '../../providers/storage/index.ts'
-import { deleteObject, listObjects } from '../../providers/storage/s3.ts'
+import { deleteObject, listObjects, putObject } from '../../providers/storage/s3.ts'
 import type { ListedObject }  from '../../providers/storage/s3.ts'
 import { destinationFor, mintDownload } from '../../jobs/app-backup-run.job.ts'
 import { requireHubAppId } from '../host/host-machine.ts'
@@ -41,14 +52,76 @@ import type { BackupDestination } from '#db/schema.d.ts'
 /** The start time with `:` and `.` flattened to `-`, as both archive names carry it. */
 const STAMP = String.raw`(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z`
 
-/** `basecamp-` and the stamp: the hub's own archive. */
-export const ARCHIVE_NAME = new RegExp(`^basecamp-${STAMP}$`)
+const UUID = String.raw`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`
+
+/** `basecamp-`, the install id when there is one, and the stamp: the hub's own archive. */
+export const ARCHIVE_NAME = new RegExp(`^basecamp-(?:(${UUID})-)?${STAMP}$`)
+
+const CLAIM_NAME = new RegExp(`^basecamp-claim-(${UUID})$`)
+
+/** The name of the directory (and, with `.tar.gz`, the object) a hub mints. */
+export const hubArchiveName = (installId: string, stamp: string) => `basecamp-${installId}-${stamp}`
 
 /** The start time an archive's name carries, or null for a name this file did
  *  not mint. `owner` is `basecamp`, or an app's id for one of its archives. */
 export function stampOf(name: string, owner = 'basecamp'): string | null {
-  const m = name.startsWith(`${owner}-`) ? name.slice(owner.length + 1).match(new RegExp(`^${STAMP}$`)) : null
-  return m ? `${m[1]}T${m[2]}:${m[3]}:${m[4]}.${m[5]}Z` : null
+  let parts: string[] | undefined
+  if (owner === 'basecamp') parts = name.match(ARCHIVE_NAME)?.slice(2)
+  else if (name.startsWith(`${owner}-`)) parts = name.slice(owner.length + 1).match(new RegExp(`^${STAMP}$`))?.slice(1)
+  return parts ? `${parts[0]}T${parts[1]}:${parts[2]}:${parts[3]}.${parts[4]}Z` : null
+}
+
+/** The install a hub object was written by: an archive's or a claim marker's.
+ *  Null for a pre-id archive and for any key that is not a hub's. */
+export function writerOf(key: string): string | null {
+  const name = basename(key).replace(/\.tar\.gz$/, '')
+  return name.match(CLAIM_NAME)?.[1] ?? name.match(ARCHIVE_NAME)?.[1] ?? null
+}
+
+/** Is this hub object another install's. The one predicate the rescan, the
+ *  delete and the claim check share (`FJS-D1797`). */
+export function isForeign(key: string, installId: string): boolean {
+  const writer = writerOf(key)
+  return writer !== null && writer !== installId
+}
+
+/** This hub's install id (`HubConfig.installId`). Throws without the row: a
+ *  hub with none has no archive to name. */
+export async function hubInstallId(sys: { hubConfig: { findFirst(a: object): Promise<unknown> } }): Promise<string> {
+  const cfg = await sys.hubConfig.findFirst({ where: { id: 'hub' }, select: { installId: true } }) as { installId: string } | null
+  if (!cfg) throw new Error('This hub has no settings row, so its archives have no install id to carry')
+  return cfg.installId
+}
+
+/**
+ * Claim `dest`'s prefix for this hub, or refuse because another hub holds it.
+ * The marker is a small object named for the install, so the check is a
+ * listing of `basecamp-claim-` and nothing is read. A listing the vendor
+ * refuses does not block the backup -- archives carry the id, so two hubs
+ * cannot collide on a key -- it only leaves the sharing unnoticed, and is
+ * answered as `unchecked` so the caller can say so.
+ */
+export async function claimPrefix(
+  app: App, dest: Pick<BackupDestination, 'id' | 'name' | 'bucket' | 'prefix'>, installId: string,
+): Promise<{ claimed: true } | { refused: string } | { unchecked: string }> {
+  const send = sendFor(app, dest.id)
+  const mine = keyUnder(dest, `basecamp-claim-${installId}`)
+  let token: string | undefined, held = false
+  do {
+    const page = await listObjects(send, dest.bucket, { prefix: keyUnder(dest, 'basecamp-claim-'), continuationToken: token })
+    if (page.error) return { unchecked: `'${dest.name}' refused the listing (${page.error.kind}): ${page.error.message}` }
+    for (const o of page.objects!) {
+      if (isForeign(o.key, installId)) return { refused:
+        `'${dest.name}' prefix '${dest.prefix}' is already claimed by another Basecamp (${writerOf(o.key)}); ` +
+        'give this hub a prefix of its own' }
+      if (o.key === mine) held = true
+    }
+    token = page.nextToken ?? undefined
+  } while (token)
+  if (held) return { claimed: true }
+  const { error } = await putObject(send, dest.bucket, mine, JSON.stringify({ installId, claimedAt: new Date().toISOString() }),
+    { contentType: 'application/json' })
+  return error ? { unchecked: `'${dest.name}' refused the claim marker (${error.kind}): ${error.message}` } : { claimed: true }
 }
 
 /** Where archives land — `backups/` beside the live database, so a bind mount
@@ -101,6 +174,8 @@ export async function deleteArchive(app: App, row: ArchiveRow): Promise<{ delete
   if (row.location && isRemote(row)) {
     const dest = await sys.backupDestination.findFirst({ where: { id: row.destinationId } })
     if (!dest) return { kept: `Destination '${row.destinationId}' is gone, so ${row.location} cannot be reached` }
+    if (writerOf(row.location) && isForeign(row.location, await hubInstallId(sys)))
+      return { kept: `${row.location} belongs to another Basecamp on this prefix; left in place` }
     if (!('conduit' in app)) return { kept: 'This process has no conduit' }
     const { error } = await deleteObject(sendFor(app, dest.id), dest.bucket, row.location)
     if (error) return { kept: `'${dest.name}' refused the delete (${error.kind}${error.code ? `, ${error.code}` : ''}): ${error.message}` }
@@ -181,21 +256,26 @@ export async function pruneBackups(app: App, now = Date.now()): Promise<{ pruned
 /**
  * List a destination's prefix and give a `found` row to each archive no row
  * names. Only a key this installation's naming could have written counts —
- * `<prefix>/basecamp-<stamp>.tar.gz` — so a neighbor's object under the same
- * prefix is left alone and never becomes something retention deletes.
+ * `<prefix>/basecamp-<installId>-<stamp>.tar.gz`, or a pre-id
+ * `basecamp-<stamp>.tar.gz` -- so a neighbor's object under the same prefix,
+ * another hub's included, is left alone and never becomes something retention
+ * deletes. A prefix another hub has claimed is refused.
  */
-export async function rescanDestination(app: App, destinationId: string): Promise<{ listed: number; found: number } | { error: string }> {
+export async function rescanDestination(app: App, destinationId: string): Promise<{ listed: number; found: number; foreign?: number } | { error: string }> {
   const sys  = app.db!.asSystem()
   const dest = await sys.backupDestination.findFirst({ where: { id: destinationId } })
   if (!dest) return { error: `No backup destination '${destinationId}'` }
   if (!dest.secretId) return { error: `Destination '${dest.name}' holds no credential` }
 
-  const appId = await requireHubAppId(sys)
+  const appId     = await requireHubAppId(sys)
+  const installId = await hubInstallId(sys)
+  const claim     = await claimPrefix(app, dest, installId)
+  if ('refused' in claim) return { error: claim.refused }
   const known = new Set((await sys.appBackup.findMany({
     where: { appId, destinationId: dest.id }, select: { location: true },
   }) as { location: string | null }[]).map(r => r.location))
 
-  return eachUnknown(app, dest, 'basecamp', known, (o, stamp) => sys.appBackup.create({ data: {
+  return eachUnknown(app, dest, 'basecamp', known, key => isForeign(key, installId), (o, stamp) => sys.appBackup.create({ data: {
     appId, serverId: null, kind: 'found', status: 'success', destinationId: dest.id, location: o.key,
     sizeBytes: o.size, startedAt: stamp, finishedAt: o.lastModified ? new Date(o.lastModified).toISOString() : null,
     requestedBy: null,
@@ -206,10 +286,10 @@ export async function rescanDestination(app: App, destinationId: string): Promis
  *  `add` once each. Any other key under the prefix is a neighbor's. */
 async function eachUnknown(
   app: App, dest: Pick<BackupDestination, 'id' | 'name' | 'bucket' | 'prefix'>, owner: string,
-  known: Set<string | null>, add: (o: ListedObject, stamp: string) => Promise<unknown>,
-): Promise<{ listed: number; found: number } | { error: string }> {
+  known: Set<string | null>, foreign: (key: string) => boolean, add: (o: ListedObject, stamp: string) => Promise<unknown>,
+): Promise<{ listed: number; found: number; foreign?: number } | { error: string }> {
   const send = sendFor(app, dest.id)
-  let token: string | undefined, listed = 0, found = 0
+  let token: string | undefined, listed = 0, found = 0, others = 0
   do {
     const page = await listObjects(send, dest.bucket, { prefix: keyUnder(dest, `${owner}-`), continuationToken: token })
     if (page.error) return { error: `'${dest.name}' refused the listing (${page.error.kind}${page.error.code ? `, ${page.error.code}` : ''}): ${page.error.message}` }
@@ -219,13 +299,14 @@ async function eachUnknown(
       // An app's wrapped database is `<appId>-<stamp>.db.tar.gz` (`FJS-D1724`).
       const stamp = stampOf(owner === 'basecamp' ? name : name.replace(/\.db$/, ''), owner)
       if (!stamp || o.key !== keyUnder(dest, `${name}.tar.gz`) || known.has(o.key)) continue
+      if (foreign(o.key)) { others++; continue }
       await add(o, stamp)
       known.add(o.key)
       found++
     }
     token = page.nextToken ?? undefined
   } while (token)
-  return { listed, found }
+  return others ? { listed, found, foreign: others } : { listed, found }
 }
 
 // ─── An app's archives ────────────────────────────────────────────────────
@@ -252,7 +333,7 @@ export async function rescanAppArchives(app: App, appId: string): Promise<{ list
     where: { appId, destinationId: dest.id }, select: { location: true },
   }) as { location: string | null }[]).map(r => r.location))
 
-  return eachUnknown(app, dest, appId, known, (o, stamp) => sys.appBackup.create({ data: {
+  return eachUnknown(app, dest, appId, known, () => false, (o, stamp) => sys.appBackup.create({ data: {
     appId, serverId: null, destinationId: dest.id, kind: 'found', status: 'pending',
     location: o.key, sizeBytes: o.size, startedAt: stamp, requestedBy: null,
   } }))

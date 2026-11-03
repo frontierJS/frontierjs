@@ -946,6 +946,7 @@ circle.er-link-fam { fill: hsl(var(--er-family) 62% 52%); stroke: none }
 .ly-go { display: flex; flex-wrap: wrap; gap: var(--space-xs) }
 .ly-keys { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-xs) }
 .ly-keys li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); font-family: var(--font-mono); font-size: var(--text-sm); color: var(--ink-mute) }
+.ly-keys li.ly-also { padding-inline-start: var(--space-md); margin-block: calc(-1 * var(--space-2xs)) var(--space-xs) }
 tr.ac-hit > td { background: color-mix(in oklab, var(--color-primary) 18%, transparent) }
 
 /* ─── Performance ──────────────────────────────────────────────────────── */
@@ -1529,12 +1530,19 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
             <button class="pill primary" id="lyL-clusters" type="button" aria-pressed="true">Clusters</button>
             <button class="pill muted" id="lyL-models" type="button" aria-pressed="false">Models</button>
           </div></div>
+        <div class="ly-seg"><span>Knots</span>
+          <div class="cluster" role="group" aria-label="Which knots a group's score counts">
+            <button class="pill primary" id="lyK-offCore" type="button" aria-pressed="true" title="Two routes between models, neither through the group's core">Off core</button>
+            <button class="pill muted" id="lyK-all" type="button" aria-pressed="false" title="Every key past a tree: diamonds through the core, second keys and self-references too">All</button>
+          </div></div>
         <label class="ly-seg"><span>Depth <output id="lyDepthOut"></output></span>
           <input id="lyDepth" type="range" min="0" step="1" value="0"></label>
         <label class="ly-seg"><span>More per group <output id="lyReachOut"></output></span>
           <input id="lyReach" type="range" min="0" step="1" value="0"></label>
         <label class="ly-check"><input id="lyFade" type="checkbox" checked> Fade links into hubs</label>
         <label class="ly-check"><input id="lyLabels" type="checkbox"> All names</label>
+        <label class="ly-check"><input id="lyKnots" type="checkbox"> Knots</label>
+        <label class="ly-check"><input id="lySize" type="checkbox"> Size on disk</label>
         <span class="ly-facts text-muted" id="lyFacts"></span>
       </div>
       <div class="ly-main">
@@ -8111,18 +8119,33 @@ const Layers = (() => {
   const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches
   const $ = id => document.getElementById(id)
   const cv = $('lyCanvas'), g2 = cv.getContext('2d')
-  const state = { floor: 'hub', links: 'clusters', fade: true, labels: false, sel: null, depth: 0, reach: 0 }
+  const state = { floor: 'hub', links: 'clusters', knots: 'offCore', fade: true, labels: false, showKnots: false, size: false, sel: null, depth: 0, reach: 0 }
   const cam = { yaw: -0.55, pitch: 0.36, zoom: 1.1 }
   const T = {}
   let D = null, M = {}, OUT = {}, IN = {}, GM = new Map(), HUBS = new Set(), CORE = new Set(), HUE = {}
   let MAXD = 0, REACH_MAX = 0, SHOWN = new Set(), P3 = {}, CEN = {}, SCENE_R = 400
-  let HITS = []
+  let HITS = [], SIZES = null
   let W = 0, H = 0, DPR = 1, proj = {}, spinning = !REDUCED, hover = null, active = false, looping = false, loadedAt = null
 
   const groupOf = n => M[n].g
   const label = k => GM.get(k).label
   const members = k => GM.get(k).members
   const byIn = k => members(k).slice().sort((a, b) => M[b].in - M[a].in || a.localeCompare(b))
+  const knots = k => GM.get(k).knots[state.knots]
+  const knotLine = k => state.showKnots && k !== 'unlinked'
+    ? `${knots(k)} knot${knots(k) === 1 ? '' : 's'} ${state.knots === 'offCore' ? 'off core' : 'in all'}` : null
+  const sizeOf = k => state.size && SIZES?.[k] ? `${fmtBytes(SIZES[k].bytes)} · ${SIZES[k].rows.toLocaleString()} rows` : null
+  // A group's outline goes from circle toward triangle as its knots rise. The
+  // scale is absolute, not the schema's own maximum, so the same count draws
+  // the same shape in every schema and the knottiest group is not always a
+  // triangle; one off-core diamond is rare enough to show plainly. The shape
+  // shows only with the score beside it, or a triangle explains nothing.
+  function rimAt(k, a) {
+    if (!state.showKnots) return CEN[k].r
+    const t = knots(k) / (knots(k) + 2), side = 2 * Math.PI / 3
+    const tri = Math.cos(side / 2) / Math.cos(((a + Math.PI / 2) % side + side) % side - side / 2)
+    return CEN[k].r * (1 + t * (1.3 * tri - 1))
+  }
 
   function readTheme() {
     // Studio's palette lives on .theme-studio; :root still holds the light defaults.
@@ -8241,9 +8264,10 @@ const Layers = (() => {
     for (const [k, c] of Object.entries(CEN)) {
       const on = !lit || members(k).some(n => lit.has(n))
       ctx.beginPath()
-      for (let i = 0; i <= 40; i++) {
-        const a = i / 40 * 2 * Math.PI
-        const p = project({ x: c.x + Math.cos(a) * c.r, y: c.y + Math.sin(a) * c.r, z: 0 })
+      // A multiple of three, so each triangle corner lands on a vertex.
+      for (let i = 0; i <= 60; i++) {
+        const a = i / 60 * 2 * Math.PI, r = rimAt(k, a)
+        const p = project({ x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r, z: 0 })
         i ? ctx.lineTo(p.X, p.Y) : ctx.moveTo(p.X, p.Y)
       }
       if (c.minD === 0) { ctx.fillStyle = color(k, on ? 0.13 : 0.04); ctx.fill() }
@@ -8331,12 +8355,13 @@ const Layers = (() => {
     const gnames = Object.entries(CEN).map(([k, c]) => {
       let front = null
       for (let i = 0; i < 24; i++) {
-        const a = i / 24 * 2 * Math.PI
-        const p = project({ x: c.x + Math.cos(a) * c.r, y: c.y + Math.sin(a) * c.r, z: 0 })
+        const a = i / 24 * 2 * Math.PI, r = rimAt(k, a)
+        const p = project({ x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r, z: 0 })
         if (!front || p.Y > front.Y) front = p
       }
-      const w = ctx.measureText(label(k)).width + 4
-      return { k, front, box: { x: front.X - w / 2, y: front.Y + 4, w, h: 12 } }
+      const lines = [knotLine(k), sizeOf(k)].filter(Boolean)
+      const w = Math.max(...[label(k), ...lines].map(t => ctx.measureText(t).width)) + 4
+      return { k, front, lines, box: { x: front.X - w / 2, y: front.Y + 4, w, h: 12 + 12 * lines.length } }
     })
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
     const pinned = n => n === hover || (state.sel?.type === 'model' && state.sel.id === n)
@@ -8359,12 +8384,17 @@ const Layers = (() => {
 
     // Group names at the front of each disc.
     ctx.textAlign = 'center'; ctx.textBaseline = 'top'
-    for (const { k, front } of gnames) {
+    for (const { k, front, lines } of gnames) {
       const on = !lit || members(k).some(n => lit.has(n))
       ctx.font = `600 9px ${T.sans}`
       ctx.lineWidth = 3.5; ctx.strokeStyle = T.bg
       ctx.strokeText(label(k), front.X, front.Y + 5)
       ctx.fillStyle = color(k, (on ? 1 : 0.3) * (CEN[k].minD === Infinity ? 0.25 : 1)); ctx.fillText(label(k), front.X, front.Y + 5)
+      ctx.font = `500 9px ${T.mono}`
+      lines.forEach((line, i) => {
+        ctx.strokeText(line, front.X, front.Y + 17 + 12 * i)
+        ctx.fillStyle = on ? T.mute : color(k, 0.3); ctx.fillText(line, front.X, front.Y + 17 + 12 * i)
+      })
     }
   }
 
@@ -8460,7 +8490,10 @@ const Layers = (() => {
           <dt>Models</dt><dd>${members(s.id).length}</dd>
           <dt>Keys inside</dt><dd>${inside}</dd>
           <dt>Keys crossing out</dt><dd>${cross}</dd>
+          <dt>Knots</dt><dd>${GM.get(s.id).knots.offCore} off core · ${GM.get(s.id).knots.all} in all</dd>
+          ${sizeOf(s.id) ? `<dt>On disk</dt><dd>${sizeOf(s.id)}</dd>` : ''}
         </dl>
+        ${knotList(GM.get(s.id).knots.list)}
         <div class="ly-sect"><p class="ly-eyebrow">Members, most referenced first</p>
           <div class="ly-chips">${byIn(s.id).map(chip).join('')}</div></div>`
     } else {
@@ -8469,9 +8502,35 @@ const Layers = (() => {
         <div class="ly-sect"><p class="ly-eyebrow">${D.groups.length} groups</p></div>
         <ul class="ly-glist">${D.groups.map(gr => `<li><button type="button" data-group="${esc(gr.key)}">
           <span class="ly-sw" style="background:${color(gr.key)}"></span>
-          <span class="ly-gname">${esc(gr.label)}</span><span class="ly-gcount">${gr.members.length}</span></button></li>`).join('')}</ul>
+          <span class="ly-gname">${esc(gr.label)}</span><span class="ly-gcount" title="Models · knots">${gr.members.length}${gr.key === 'unlinked' ? '' : ' · ' + knots(gr.key)}</span></button></li>`).join('')}</ul>
         <div class="ly-sect"><p><b>${inside} of ${D.edges.length}</b> foreign keys stay inside a group; ${D.edges.length - inside} cross between groups.</p></div>`
     }
+  }
+  // A diamond is the point of the list: the key, then the other route to the
+  // same model, each hop's arrow pointing the way its key does.
+  function knotList(list) {
+    const route = r => r.map((n, i) => i ? `<span>${OUT[r[i - 1]].includes(n) ? '→' : '←'}</span>${chip(n)}` : chip(n)).join('')
+    const key = k => `${chip(k.from)}<span>.${esc(k.field)} →</span>${chip(k.to)}`
+    // Where both routes arrive is the row the question is about, and it is
+    // often not the key's target: SurveyScore.inspection and SurveyScore.survey
+    // meet at the Job the Inspection and the Survey each name.
+    const meet = ({ route: r }) => r.filter((n, i) => {
+      const fromLeft = i === 0 ? false : OUT[r[i - 1]].includes(n)
+      const fromRight = i === r.length - 1 ? true : OUT[r[i + 1]].includes(n)
+      return fromLeft && fromRight
+    })
+    const diamond = k => `<li>${key(k)}</li><li class="ly-also"><span>and</span>${route(k.route)}</li>
+      <li class="ly-also"><span>both reach</span>${meet(k).map(chip).join('')}</li>`
+    const kinds = [
+      ['Two routes, off the core', k => k.kind === 'diamond' && !k.viaCore, diamond],
+      ['Two routes, through the core', k => k.kind === 'diamond' && k.viaCore, diamond],
+      ['A second key to one model', k => k.kind === 'pair', k => `<li>${key(k)}</li>`],
+      ['Keyed to itself', k => k.kind === 'loop', k => `<li>${key(k)}</li>`],
+    ]
+    return kinds.map(([title, is, row]) => {
+      const these = list.filter(is)
+      return these.length ? `<div class="ly-sect"><p class="ly-eyebrow">${title} · ${these.length}</p><ul class="ly-keys">${these.map(row).join('')}</ul></div>` : ''
+    }).join('')
   }
   $('lyPanel').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return
@@ -8514,14 +8573,30 @@ const Layers = (() => {
   }
   function setFloor(f) { state.floor = f; for (const k of ['hub', 'ring']) setPressed('lyF-' + k, f === k); layout(); draw() }
   function setLinks(l) { state.links = l; setPressed('lyL-models', l === 'models'); setPressed('lyL-clusters', l === 'clusters'); draw() }
+  function setKnots(k) { state.knots = k; setPressed('lyK-offCore', k === 'offCore'); setPressed('lyK-all', k === 'all'); draw(); renderPanel() }
   function setRange(key, v) { state[key] = v; layout(); showRanges(); draw() }
   for (const f of ['hub', 'ring']) $('lyF-' + f).onclick = () => setFloor(f)
+  for (const k of ['offCore', 'all']) $('lyK-' + k).onclick = () => setKnots(k)
   $('lyL-clusters').onclick = () => setLinks('clusters')
   $('lyL-models').onclick = () => setLinks('models')
   $('lyDepth').oninput = e => setRange('depth', +e.target.value)
   $('lyReach').oninput = e => setRange('reach', +e.target.value)
   $('lyFade').onchange = e => { state.fade = e.target.checked; draw() }
   $('lyLabels').onchange = e => { state.labels = e.target.checked; draw() }
+  // Measured, not derived from the schema: rows and bytes come and go with the
+  // data, so each switch-on reads them again.
+  async function loadSizes() {
+    const data = await api('/schema-layers/sizes')
+    if (data.error || !state.size) { SIZES = null; $('lySize').title = data.error ?? ''; draw(); return }
+    SIZES = {}
+    for (const gr of D.groups) SIZES[gr.key] = gr.members.reduce((t, n) => {
+      const m = data.models[n]
+      return m ? { rows: t.rows + m.rows, bytes: t.bytes + m.bytes } : t
+    }, { rows: 0, bytes: 0 })
+    draw(); renderPanel()
+  }
+  $('lyKnots').onchange = e => { state.showKnots = e.target.checked; draw() }
+  $('lySize').onchange = e => { state.size = e.target.checked; if (state.size && D) loadSizes(); else { draw(); renderPanel() } }
   $('lyReset').onclick = () => { cam.yaw = -0.55; cam.pitch = 0.36; cam.zoom = 1.1; spinning = !REDUCED; draw() }
   new ResizeObserver(() => { if (active) { sizeCanvas(); draw() } }).observe($('lyStage'))
 
@@ -8542,6 +8617,7 @@ const Layers = (() => {
     $('lyReach').max = REACH_MAX; showRanges()
     $('lyFacts').innerHTML = `<b>${D.models.length}</b> models · <b>${D.edges.length}</b> foreign keys · <b>${MAXD}</b> levels deep`
     $('lyFindList').innerHTML = D.models.map(m => `<option value="${esc(m.n)}">`).join('')
+    SIZES = null; if (state.size) loadSizes()
     renderPanel(); draw()
   }
   async function load() {

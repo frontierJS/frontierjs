@@ -43,7 +43,7 @@
 import { defineJob }        from '@frontierjs/caravan'
 import { isStale }          from '@frontierjs/junction'
 import { runsAsApp }        from '../domain/job/job-context.ts'
-import { evaluateWindow, describeBreach, isSnoozed } from '../domain/alert/alerting.ts'
+import { evaluateWindow, describeBreach, isSnoozed, refireHeld } from '../domain/alert/alerting.ts'
 import { watchedSeries }    from '../domain/alert/watched-series.ts'
 import { fanOutAlert }      from '../domain/alert/deliver.ts'
 import { otherRunIsLive }   from '../domain/job/singleton.ts'
@@ -94,7 +94,10 @@ export default defineJob({
         if (!series) { missing.push(`${rule.name} → ${rule.metricName}`); continue }
         if (isStale(series.lastSeenAt, now)) stale.push(`${rule.name} → ${rule.metricName}`)
 
-        const windowMs = Math.max(rule.forMinutes * 60_000 + WINDOW_GRACE_MS, MIN_WINDOW_MS)
+        // The longer of the two durations: a clear-for longer than the
+        // breach's own would otherwise read a window that can never cover it.
+        const holdMs   = Math.max(rule.forMinutes, rule.clearForMinutes ?? 0) * 60_000
+        const windowMs = Math.max(holdMs + WINDOW_GRACE_MS, MIN_WINDOW_MS)
         const points   = await db.metricPoint.findMany({
           where:   { seriesId: series.id, at: { gte: now - windowMs } },
           orderBy: { at: 'asc' },
@@ -113,7 +116,12 @@ export default defineJob({
         // does: a breach that is still holding when the snooze runs out fires on
         // the next pass, and an open event still resolves, because closing the
         // incident a page already opened is not paging anybody.
-        if (verdict.breached && !open && !isSnoozed(rule, now)) {
+        // The re-fire interval holds back a NEW event only; it never touches
+        // the resolve of an open one.
+        const last = verdict.breached && !open && (rule.refireAfterMinutes ?? 0) > 0
+          ? await db.alert.findFirst({ where: { ruleId: rule.id }, orderBy: { firedAt: 'desc' } })
+          : null
+        if (verdict.breached && !open && !isSnoozed(rule, now) && !refireHeld(rule, last?.firedAt, now)) {
           const message = describeBreach(rule.metricName, rule, verdict.value)
           const event   = await db.alert.create({
             data: {

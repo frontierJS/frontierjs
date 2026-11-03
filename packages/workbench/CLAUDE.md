@@ -36,8 +36,8 @@ slot. `api/index.ts` states 5501; `web/config/vite.config.js` states 5508 with
 - `api/src/peer.ts` is this machine's Ed25519 key pair (`~/.config/workbench/peer.json`,
   shown at `GET /door/peer` and in the dock's Peer block); `api/src/domain/peer/` dials
   Basecamp's `apps.preview` as a signed peer -- `BASECAMP_URL` and `BASECAMP_KEY_ID`, the
-  id Basecamp's "Add a peer" form answers. The dialer signs with toolbelt's `signRequest`
-  until `FJS-3841` lets a conduit target carry `X-Service-Method`.
+  id Basecamp's "Add a peer" form answers. `peer-call.ts` is one conduit target signed with
+  conduit's `ed25519`.
 - `web/src/lib/session.js` is who is signed in (Sierra's `account.me` is not
   mounted); `lib/nav.js` is the nav table.
 
@@ -69,5 +69,4 @@ behind points there; `bun run build:desktop` puts 5501 back.
 against a stub door; `services.test.ts` the bell's service). For anything under `web/`, start
 `bun run api` and `bun run web`, sign in, and see `/workbench/`; stop both after. The drives,
 by `DRIVES.md`: `verify:desktop` (the shell, the door and the local scan) and `verify:atlas`
-(`/atlas/` over the real registers -- it still boots Basecamp's harness and is owed a port to
-this door). The live peer call needs a running Basecamp with this key enrolled.
+(`/atlas/` over the real registers, signed in at this door; holds no port). The live peer call needs a running Basecamp with this key enrolled.

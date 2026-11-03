@@ -243,13 +243,15 @@ export abstract class BaseTransport {
         return {
           headers: await signRequest({
             secret,
-            method:    method ?? 'GET',
-            path:      path ?? '/',
+            method:        method ?? 'GET',
+            path:          path ?? '/',
             query,
-            body:      body ?? '',
-            prefix:    auth.header_prefix ?? 'X-Fjs',
-            timestamp: Math.floor(Date.now() / 1000),
-            nonce:     crypto.randomUUID(),
+            // The verifier reads it into the canonical string, as for `ed25519`.
+            serviceMethod: ctx.headers?.['x-service-method'],
+            body:          body ?? '',
+            prefix:        auth.header_prefix ?? 'X-Fjs',
+            timestamp:     Math.floor(Date.now() / 1000),
+            nonce:         crypto.randomUUID(),
           }),
           body: ctx.body,
         }

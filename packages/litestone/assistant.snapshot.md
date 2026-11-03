@@ -1155,6 +1155,17 @@ On a File field: the content types accepted. Reaches the browser as the file inp
 avatar File @accept("image/*")
 ```
 
+#### `@digest` (column)
+
+tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · also called: checksum, sha256
+
+On a File field: the String column beside it that holds the SHA-256 of the file's bytes, lowercase hex. A write that leaves the column out has it filled; one that states a different hash is refused naming both columns; the column follows the file, so it cannot be set without the file and clearing the file clears it.
+
+```lite
+file File @digest(sha256)
+  sha256 String?
+```
+
 #### `@date` [(message)]
 
 tier: **common** · legal in: on a model's field, on a type's field, on a trait's field

@@ -1,0 +1,104 @@
+<!--
+  Litestone page § Run it in production. Facts: packages/litestone/docs/
+  migrations.md (the DESTRUCTIVE box, migrate dev), cli.md, replication.md,
+  studio.md, onquery-logging.md, README.md (the one-file sentence), the
+  --readonly and --host guards in src/tools/studio.js, and the try/catch around
+  each listener in src/core/hooks.js. The proof is a real run of the package's
+  bin in a scratch directory, kept in a const: a brace in markup opens a Mesa
+  expression.
+  Not claimed: point-in-time restore (restore --at) is documented and no test
+  or run exercises it. Litestone's replicate and restore tests drive a stand-in
+  for the Litestream binary, so no live-bucket run is claimed.
+-->
+<script>
+  const RUN = `$ litestone migrate dev add-slug     # added: slug String?, published Boolean @default(false)
+  ✓  db/migrations/20261103052436_add_slug.sql
+    ~ post  [alter]
+        + col  slug TEXT
+        + col  published INTEGER
+  ✓  20261103052436_add_slug.sql  (16ms)
+  1 migration applied
+
+# the file it wrote, abridged
+ALTER TABLE "post" ADD COLUMN "slug" TEXT;
+ALTER TABLE "post" ADD COLUMN "published" INTEGER NOT NULL DEFAULT 0;
+
+$ litestone migrate dev drop-slug    # removed: slug
+  ✓  db/migrations/20261103052442_drop_slug.sql
+    ~ post  [rebuild]
+        - col  slug
+  !  deletes the values in post.slug
+  ✗  20261103052442_drop_slug.sql deletes column values and nobody
+     has accepted the loss, so nothing was applied. …
+# exit 1, and the file it wrote opens with
+-- ║ DESTRUCTIVE — applying this deletes the values in these columns …
+-- ║     post.slug
+-- ║ Accept data loss: no`
+</script>
+
+<section id="operate" class="bc-section">
+  <div class="container stack">
+    <p class="eyebrow">Run it in production</p>
+    <h2>One file you can change, copy and watch.</h2>
+    <p class="lede">
+      The database is one SQLite file, so you can back it up, ship it in a container or open it
+      from a Bun script. Around it: migrations you read before they run, a replica in your own
+      bucket, a browser UI and a log of every statement.
+    </p>
+
+    <div class="bc-split">
+      <ul class="bc-points">
+        <li>
+          <strong>Migrations are diffed, then written down.</strong>
+          <code>litestone migrate dev</code> diffs your schema against the migration history and
+          writes plain SQL you can review. A file that would delete values is refused until it
+          says, in the file, that you accept the loss.
+        </li>
+        <li>
+          <strong>A replica in a bucket you own.</strong>
+          <code>litestone replicate</code> streams every database the schema declares to its own
+          path in an S3-compatible bucket, through the Litestream v0.5 or newer you install.
+          Its tests drive a stand-in for Litestream; a live-bucket run is still owed.
+        </li>
+        <li>
+          <strong>Studio, for the database in front of you.</strong>
+          <code>litestone studio</code> opens a browser UI to browse and edit rows as any principal
+          you pick, run SQL, and see applied and pending migrations. <code>--readonly</code> refuses
+          every write, and listening beyond localhost takes a <code>--token</code>.
+        </li>
+        <li>
+          <strong>Every statement, and who ran it.</strong>
+          An <code>onQuery</code> listener gets each statement's SQL, parameters, verb, model, the
+          acting principal's id and its milliseconds in SQLite. A logger that throws never fails
+          the query it was watching.
+        </li>
+      </ul>
+
+      <figure class="bc-proof">
+        <pre class="code">{RUN}</pre>
+        <figcaption>
+          A real run in a scratch directory, through the package's own bin
+          (<code>packages/litestone/src/tools/cli.js</code>): a <code>Post</code> model holding one
+          row gains two fields, then loses one. Abridged: colors, blank lines and the
+          <code>migrate apply</code> headings are cut, the refusal is wrapped, and the
+          <code>#</code> lines are ours. The row came through the first migration with
+          <code>slug</code> null and <code>published</code> 0, and the refused one left the database
+          unchanged. The box is described in <code>docs/migrations.md</code>.
+        </figcaption>
+      </figure>
+    </div>
+
+    <p class="bc-more">
+      Read more:
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/migrations.md">migrations</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/replication.md">replication and restore</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/studio.md">Studio</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/onquery-logging.md">onQuery logging</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/cli.md">the CLI</a>
+    </p>
+  </div>
+</section>
+
+<style>
+  .bc-proof pre.code { overflow-x: auto; font-size: .82rem; }
+</style>

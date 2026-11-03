@@ -73,6 +73,16 @@ export const cases = [
     floor: ({ raw }) => raw.get('x', 1),
   },
   {
+    name: 'update-by-id', ceiling: 6, ops: 10_000,
+    async open() {
+      const db = await users()
+      const raw = db.$rawDbs.main.query('UPDATE user SET age = ? WHERE id = ? RETURNING id, name, age')
+      return { db, raw, close: () => db.$close() }
+    },
+    run:   ({ db }, i)  => db.user.update({ where: { id: (i % ROWS) + 1 }, data: { age: i % 80 } }),
+    floor: ({ raw }, i) => raw.get(i % 80, (i % ROWS) + 1),
+  },
+  {
     // The lexer every schema parse starts with (FJS-112 P4). Its floor is a
     // sticky-regex scan counting the same tokens: no positions, no objects.
     name: 'tokenize-schema', ceiling: 6, ops: 50,

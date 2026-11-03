@@ -8,7 +8,7 @@
 
 import type { Opened, PreviewSettings } from '../workbench/workbench-preview.ts'
 import type { PeerKeys } from '../../peer.ts'
-import { peerCall, PeerRefusal } from './peer-call.ts'
+import { createPeer, PeerRefusal, type Peer } from './peer-call.ts'
 
 export type PreviewCall =
   | { action: 'open',   settings: PreviewSettings, branch: { slug: string, branch: string, port: number } }
@@ -28,7 +28,7 @@ export interface Basecamp {
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
 
-export function createBasecamp (opts: { url: string, keyId: string | null, keys: () => Promise<PeerKeys>, fetcher?: typeof fetch }): Basecamp {
+export function createBasecamp (opts: { url: string, keyId: string | null, keys: () => Promise<PeerKeys> }): Basecamp {
   const url   = opts.url.replace(/\/+$/, '')
   const keyId = opts.keyId?.trim() || null
   const local = LOOPBACK.has(new URL(url).hostname)
@@ -39,11 +39,13 @@ export function createBasecamp (opts: { url: string, keyId: string | null, keys:
     return null
   }
 
+  let peer: Peer | null = null
+
   async function preview (call: PreviewCall): Promise<any> {
     const refused = refusal(call.action)
     if (refused) throw new PeerRefusal(refused, 409, null)
-    const { privateKey } = await opts.keys()
-    return peerCall({ url, keyId: keyId!, privateKey, path: '/apps', serviceMethod: 'preview', body: call }, opts.fetcher)
+    peer ??= createPeer({ url, keyId: keyId!, privateKey: async () => (await opts.keys()).privateKey })
+    return peer.call('/apps', 'preview', call)
   }
 
   return { url, keyId, local, refusal, preview }

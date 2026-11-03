@@ -35,7 +35,7 @@ async function client() {
   await autoMigrate(db)
   const puts: Array<{ key: string, bytes: string }> = []
   files._provider = {
-    async put(key: string, body: Uint8Array | Blob) { puts.push({ key, bytes: body instanceof Blob ? await body.text() : Buffer.from(body).toString() }) },
+    async put(key: string, body: Uint8Array | Blob | ReadableStream) { puts.push({ key, bytes: body instanceof Uint8Array ? Buffer.from(body).toString() : await new Response(body).text() }) },
     async get() { return null },
     async delete() {},
   }
@@ -135,9 +135,9 @@ describe('a file reaches the provider without being read whole (FJS-3094)', () =
     })
     await autoMigrate(db)
     const bodies: unknown[] = []
-    files._provider = { async put(_key: string, body: unknown) { bodies.push(body) }, async get() { return null }, async delete() {} }
+    files._provider = { async put(_key: string, body: unknown) { bodies.push(body); await new Response(body as any).arrayBuffer() }, async get() { return null }, async delete() {} }
     const row = await db.asSystem().photo.create({ data: { id: 1, original: fromPath(secret) }, select: { original: { resolve: false } } })
-    expect(bodies[0]).toBeInstanceOf(Blob)
+    expect(bodies[0]).toBeInstanceOf(ReadableStream)
     expect(row.original.size).toBe('server-only bytes'.length)
     db.$close()
   })

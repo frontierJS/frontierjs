@@ -1,0 +1,17 @@
+{
+  "name": "litestone-orm-bench",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@prisma/adapter-better-sqlite3": "7.10.1",
+    "@prisma/adapter-libsql": "7.10.1",
+    "@prisma/client": "^7.10.1",
+    "@zenstackhq/cli": "^3.10.0",
+    "@zenstackhq/orm": "^3.10.0",
+    "@zenstackhq/plugin-policy": "3.10.0",
+    "better-sqlite3": "^13.0.3",
+    "drizzle-orm": "^0.45.4",
+    "kysely": "^0.29.8",
+    "prisma": "7.10.1"
+  }
+}

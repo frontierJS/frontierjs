@@ -1,12 +1,12 @@
 ---
 id: workbench-package
-status: built
+status: shipped
 dated: 2026-11-02
 ---
 
 # Workbench — the developer's own machine as its own private app
 
-**Status: BUILT, UNCOMMITTED.** Dated 2026-11-02; every box closed 2026-11-03, one commit owed by the owner (Phase 0 ruling). The tree is the record now; this file says why. **Owed after it:** the live signed `open` against a running Basecamp (3.1b note — enroll the key, fork with preview, read `actorType: 'peer'` in the trail); the owner's one-line ruling on a peer's `admin` role (3.1a note, under `FJS-D1196`); the freeze-over-the-wire question (3.1 Q, ruled A for now); `verify:atlas` ported to Workbench's door (4.2 note); a workbench icon (4.1 note); `FJS-3841` so the dialer becomes a conduit target. `fli done` leaves six lines that stay: two `.gitignore` lines for cargo and Tauri output, as basecamp's shell has, and four port literals in the moved `workbench.test.ts` that are stub env values a fake `claude` is handed, inside `check-baseline.json`.
+**Status: SHIPPED.** Dated 2026-11-02; every box closed 2026-11-03 and landed in b6d7e3a1a. A peer's `admin` role was confirmed 2026-11-03 as an amendment to `FJS-D1196`, `verify:atlas` was ported to Workbench's door the same day, and `FJS-3841` closed with the dialer on a conduit target. The tree is the record now; this file says why. **Owed after it:** the live signed `open` against a running Basecamp (3.1b note — enroll the key, fork with preview, read `actorType: 'peer'` in the trail); the freeze-over-the-wire question (3.1 Q, ruled A for now); a workbench icon (4.1 note). `fli done` leaves six lines that stay: two `.gitignore` lines for cargo and Tauri output, as basecamp's shell has, and four port literals in the moved `workbench.test.ts` that are stub env values a fake `claude` is handed, inside `check-baseline.json`.
 
 Basecamp carries two programs under one schema. One is the fleet's control
 plane: Server, App, Deployment, a workspace membership per request, an image

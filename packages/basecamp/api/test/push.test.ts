@@ -192,6 +192,69 @@ describe('a push releases the App', () => {
   })
 })
 
+// A push during a release is queued behind it, not refused: the newest code
+// ships once the release in flight ends, however it ends.
+describe('a push while a release is in flight', () => {
+
+  const followUps = (appId: string) =>
+    (env.app.jobs.list({ queue: 'deployments', status: 'pending', limit: 10_000 }) as any[])
+      .filter(j => j.name === 'release:follow-up' && JSON.parse(j.data).appId === appId)
+
+  /** What caravan does when it runs the job: the handler, handed the payload and the app. */
+  const runFollowUp = async (appId: string) => {
+    const job = followUps(appId)[0]
+    const { default: followUp } = await import('../src/jobs/release-follow-up.job.ts')
+    return (followUp as any).handler({ app: env.app, data: JSON.parse(job.data), attempts: 1 })
+  }
+
+  async function pushedTwiceBehindARelease() {
+    const app: any = await aGitApp()
+    const on: any  = await apps().call('enablePush', app.id, {})
+    expect((await forge(app.id, on.secret, push())).status).toBe(200)
+    const first = (await releases(app.id))[0]
+    return { app, on, first }
+  }
+
+  test('is answered 200 and queues one follow-up, however many pushes arrive', async () => {
+    const { app, on } = await pushedTwiceBehindARelease()
+    expect((await forge(app.id, on.secret, push())).status).toBe(200)
+    expect((await forge(app.id, on.secret, push())).status).toBe(200)
+    expect(await releases(app.id)).toHaveLength(1)
+    expect(followUps(app.id)).toHaveLength(1)
+  })
+
+  test('once the release ends the follow-up makes exactly one new release as the push\'s actor', async () => {
+    const { app, on, first } = await pushedTwiceBehindARelease()
+    const sha = uniq().padEnd(40, '0')
+    expect((await forge(app.id, on.secret, push('refs/heads/main', sha))).status).toBe(200)
+    await env.as(admin).service('deployments').remove(first.id)
+
+    await runFollowUp(app.id)
+    const made = (await releases(app.id)).filter(r => r.id !== first.id)
+    expect(made).toHaveLength(1)
+    expect(made[0]).toMatchObject({ trigger: 'push', branch: 'main', triggeredBy: userId, status: 'pending' })
+  })
+
+  test('a follow-up whose App is still in flight waits and makes nothing', async () => {
+    const { app, on, first } = await pushedTwiceBehindARelease()
+    expect((await forge(app.id, on.secret, push())).status).toBe(200)
+    await expect(runFollowUp(app.id)).rejects.toThrow(`release ${first.id} is still pending`)
+    expect(await releases(app.id)).toHaveLength(1)
+    // The retry leaves the row pending, so the lock holds and a third push still collapses into it.
+    expect((await forge(app.id, on.secret, push())).status).toBe(200)
+    expect(followUps(app.id)).toHaveLength(1)
+  })
+
+  test('a follow-up for an App that turned push off releases nothing', async () => {
+    const { app, on, first } = await pushedTwiceBehindARelease()
+    expect((await forge(app.id, on.secret, push())).status).toBe(200)
+    await env.as(admin).service('deployments').remove(first.id)
+    await apps().call('disablePush', app.id, {})
+    await runFollowUp(app.id)
+    expect(await releases(app.id)).toHaveLength(1)
+  })
+})
+
 // The other two doors, as the API records them: the button has no payload, so
 // its row takes the branch off the App and its commit from the build step; the
 // laptop names its own commit, `-dirty` included, and the digest it loaded, so

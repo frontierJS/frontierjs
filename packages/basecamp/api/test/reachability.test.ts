@@ -18,7 +18,7 @@
  * WHERE clause on an old timestamp is the whole of it.
  */
 
-import { test, expect, describe, beforeAll } from 'bun:test'
+import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { join }                    from 'node:path'
 import { createTestEnv }           from '@frontierjs/testing'
 import { GatePlugin }              from '@frontierjs/litestone'
@@ -28,6 +28,8 @@ import { grantsFor }               from '../src/core/capabilities.ts'
 import { gradeReachability, HEARTBEAT_GRACE_MS, heartbeatGraceMs,
          DEFAULT_HEARTBEAT_TIMEOUT_S } from '../src/domain/host/reachability.ts'
 import { sweepUnreachable }        from '../src/jobs/server-reachability.job.ts'
+import notifyDeliver               from '../src/jobs/notify-deliver.job.ts'
+import { deliverOwed }             from '../src/domain/notification/owed.ts'
 
 const MINUTE = 60_000
 
@@ -104,7 +106,10 @@ describe('the fleet sweep', () => {
       capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString() } })
   })
 
-  const NOW = Date.parse('2026-09-08T12:00:00.000Z')
+  // Far in the future: the test app boots caravan with its cron, and a real
+  // sweep at the wall clock would grade a fixture's past heartbeat as quiet, and
+  // re-drive a past-stamped owed notice while this file's own pass pays it.
+  const NOW = Date.parse('2099-09-08T12:00:00.000Z')
   const ago = (m: number) => new Date(NOW - m * MINUTE).toISOString()
 
   /** A machine at a stated status and a stated last check-in. A Server is born
@@ -136,6 +141,37 @@ describe('the fleet sweep', () => {
       where: { serverId: box.id, kind: 'unreachable' } })
     expect(events.length).toBe(1)
     expect(events[0].message).toContain('6 minutes')
+  })
+
+  test('the move pays the notice it owes, and the event row stops owing it (FJS-3858)', async () => {
+    const box = await machine('online', ago(6))
+    await sweepUnreachable(env.app, { at: NOW, serverId: box.id })
+    const [event] = await (env.system as any).serverEvent.findMany({
+      where: { serverId: box.id, kind: 'unreachable' } })
+    expect(event.noticeOwedAt).toBeNull()
+  })
+
+  test('a notice a crash left owed is paid by notify:deliver, once — paired with one owing nothing', async () => {
+    // What a crash between the move and the send leaves: the machine already
+    // `unreachable`, so no sweep would move it again, and the event row owing.
+    const sys  = env.system as any
+    const box  = await machine('online', ago(30))
+    await sys.server.transition(box.id, 'loseContact')
+    const owed = await sys.serverEvent.create({ data: {
+      serverId: box.id, kind: 'unreachable', message: 'No check-in for 30 minutes',
+      metadata: { last_heartbeat_at: ago(30) }, noticeOwedAt: ago(10) } })
+    const paid = await sys.serverEvent.create({ data: {
+      serverId: box.id, kind: 'unreachable', message: 'already told', metadata: {} } })
+    const before = await sys.notification.count({ where: { userId: member.id } })
+
+    await (notifyDeliver as any).handler({ app: env.app, data: { owed: 'server', eventId: owed.id } })
+    expect(await sys.notification.count({ where: { userId: member.id } })).toBe(before + 1)
+    expect((await sys.serverEvent.findUnique({ where: { id: owed.id } })).noticeOwedAt).toBeNull()
+
+    // Paid is paid: a second drain, and a drain of a row that never owed, tell nobody.
+    expect(await deliverOwed(env.app, 'server', owed.id)).toBe(false)
+    expect(await deliverOwed(env.app, 'server', paid.id)).toBe(false)
+    expect(await sys.notification.count({ where: { userId: member.id } })).toBe(before + 1)
   })
 
   test('a sweep inside the grace window of this process starting grades nobody (FJS-3872)', async () => {
@@ -206,6 +242,58 @@ describe('the fleet sweep', () => {
 
     await (env.system as any).server.transition(box.id, 'checkIn')
     expect(await statusOf(box.id)).toBe('online')
+  })
+
+  // ─── a lost machine pages the channels that opted in (FJS-3895) ───────────
+  describe('channels', () => {
+    const received: { body: any }[] = []
+    let hook: ReturnType<typeof Bun.serve>
+    beforeAll(() => {
+      hook = Bun.serve({ port: 0, async fetch(req) {
+        received.push({ body: await req.json() })
+        return new Response('ok')
+      } })
+    })
+    // The sweeps after this block would page these channels at a stopped receiver.
+    afterAll(async () => {
+      await (env.system as any).notificationChannel.updateMany({
+        where: { workspaceId: ws.id }, data: { isActive: false } })
+      hook?.stop(true)
+    })
+
+    async function channel(name: string, extra: Record<string, unknown> = {}) {
+      return (env.system as any).notificationChannel.create({ data: {
+        workspaceId: ws.id, name: `${name}-${Math.random().toString(36).slice(2, 6)}`,
+        kind: 'webhook', config: { url: `http://localhost:${hook.port}/${name}` }, ...extra } })
+    }
+    const heard = (title: string) => received.filter(r => r.body.title === title)
+
+    test('a lost machine pages a channel that pages the fleet, and not one that opted out', async () => {
+      received.length = 0
+      const on  = await channel('on')
+      const off = await channel('off', { isPagedForFleet: false })
+      const box = await machine('online', ago(6))
+      await sweepUnreachable(env.app, { at: NOW, serverId: box.id })
+
+      const page = heard(`[unreachable] ${box.name}`)
+      expect(page.length).toBe(1)
+      expect(page[0].body.event).toBe('basecamp.alert')
+      expect(page[0].body.severity).toBe('critical')
+      expect(page[0].body.key).toBe(`basecamp:server:${box.id}`)
+      const stamped = await (env.system as any).notificationChannel.findFirst({ where: { id: on.id } })
+      expect(stamped.lastDeliveryAt).toBeTruthy()
+      const idle = await (env.system as any).notificationChannel.findFirst({ where: { id: off.id } })
+      expect(idle.lastDeliveryAt).toBeNull()
+    })
+
+    test('a paused channel is not paged either', async () => {
+      received.length = 0
+      const paused = await channel('paused', { isActive: false })
+      const box = await machine('online', ago(7))
+      await sweepUnreachable(env.app, { at: NOW, serverId: box.id })
+      const row = await (env.system as any).notificationChannel.findFirst({ where: { id: paused.id } })
+      expect(row.lastDeliveryAt).toBeNull()
+    })
   })
 
   test('the timeout comes from the SETTINGS, not from a constant', async () => {

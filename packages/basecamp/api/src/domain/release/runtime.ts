@@ -123,10 +123,21 @@ export async function adoptContainerPort(db: any, appId: string, containerPort: 
 }
 
 /** Mark the placements a release landed on as `running`. Every replica row on
- *  that machine, since `/deploy` starts the app's one container there. */
+ *  that machine, since `/deploy` starts the app's one container there.
+ *
+ *  Every OTHER machine the app is placed on goes back to `unknown`: it still
+ *  serves the release before this one, and while it read `running` the ingress
+ *  record kept sending traffic to it — the moment a drained machine came back,
+ *  half the requests met the old version (`FJS-3851`). It rejoins the record
+ *  when a release lands on it. */
 export async function markRunning(db: any, appId: string, serverId: string): Promise<void> {
-  await db.asSystem().appServer.updateMany({
+  const sys = db.asSystem()
+  await sys.appServer.updateMany({
     where: { appId, serverId },
     data:  { status: 'running', startedAt: new Date().toISOString(), stoppedAt: null },
+  })
+  await sys.appServer.updateMany({
+    where: { appId, serverId: { not: serverId }, status: 'running' },
+    data:  { status: 'unknown' },
   })
 }

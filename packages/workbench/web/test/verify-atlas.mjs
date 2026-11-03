@@ -4,7 +4,7 @@
 // /atlas/decide/ walks the open questions on a phone-sized screen.
 //
 //   bun web/test/verify-atlas.mjs
-//   API_PORT=7120 UI_PORT=7020 bun web/test/verify-atlas.mjs   # beside a dev server
+//   API_PORT=7120 UI_PORT=7020 bun web/test/verify-atlas.mjs   # pin the ports
 //
 // Starts and stops its own database, API, web server and Chrome. The registers
 // are the REAL workspace's — the screen exists to describe the tree it runs in
@@ -43,12 +43,14 @@
 //   Backgrounding a server from a tool call is unreliable; this spawns, polls
 //   until each answers, asserts, and kills.
 
-// What `fli prove` queues on: this checkout's ports.
-export const holds = ['ports']
+// Workbench lives in the global port block, which has no slot for a drive, so
+// both servers take an OS-chosen port and nothing is held.
+export const holds = []
 
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { createServer } from 'node:net'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -59,17 +61,21 @@ import { collect }             from '../../../cli/core/repo-map.js'
 import { dataOf }              from '../../../cli/core/repo-rings.js'
 import { readLoopLog }         from '../../../cli/core/loop-log.js'
 import { readSchedule }        from '../../../cli/core/autopilot.js'
-import { portFor }              from '@frontierjs/cli/core/ports.js'
 
 const HERE     = dirname(fileURLToPath(import.meta.url))
 const PKG      = join(HERE, '..', '..')
 const ROOT     = join(PKG, '..', '..')
-const API_PORT = Number(process.env.API_PORT ?? await portFor(import.meta.url, 'be', { env: 'dev' }))
-const WEB_PORT = Number(process.env.UI_PORT ?? await portFor(import.meta.url, 'fe', { env: 'dev' }))
+// Ask the OS for a free port, then give it back for the server to bind.
+const freePort = () => new Promise((done, fail) => {
+  const s = createServer()
+  s.on('error', fail)
+  s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => done(port)) })
+})
+const API_PORT = Number(process.env.API_PORT ?? await freePort())
+const WEB_PORT = Number(process.env.UI_PORT ?? await freePort())
 const BASE     = `http://localhost:${WEB_PORT}`
 const API      = `http://localhost:${API_PORT}`
-const EMAIL    = 'dev@knight.works'
-const PASSWORD = 'test1234'
+const KEY      = 'workbench-drive-key'
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const children = []
@@ -117,14 +123,9 @@ setTimeout(() => {
 }, 4000)
 `, { mode: 0o755 })
 
-const seed = spawn('bun', ['db/seed.js'], { cwd: PKG, stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, ...dbEnv } })
-let seedErr = ''
-seed.stderr.on('data', d => { seedErr += d })
-if (await new Promise(r => seed.on('exit', r)) !== 0) fail(`db/seed.js failed\n${seedErr}`)
-
 children.push(spawn('bun', ['api/index.ts'], {
   cwd: PKG, stdio: 'ignore', detached: true,
-  env: { ...process.env, ...dbEnv, FRONTIER_APP_URL: BASE, FRONTIER_PORT_BE: String(API_PORT), LOCAL_MACHINE: '1',
+  env: { ...process.env, ...dbEnv, FRONTIER_APP_URL: BASE, PORT: String(API_PORT), WORKBENCH_KEY: KEY,
          WORKBENCH_DIR: WORKBENCH, CLAUDE_BIN: FAKE_CLAUDE },
 }))
 children.push(spawn('bun', ['run', 'web'], {
@@ -187,11 +188,11 @@ const question = atlas.questions.find(q => q.state === 'decidable' && q.recommen
 
 try {
   await goto('/login/')
-  await until(`!!document.getElementById('email')`, v => v, 'the sign-in form never rendered')
-  await fill({ email: EMAIL, password: PASSWORD })
+  await until(`!!document.getElementById('key')`, v => v, 'the sign-in form never rendered')
+  await fill({ key: KEY })
   await evaluate(`document.querySelector('button[type=submit]').click()`)
-  await until(`location.pathname`, p => p === '/', 'sign-in never landed on the overview')
-  ok('signed in as the seeded owner')
+  await until(`location.pathname`, p => p === '/workbench/', 'sign-in never landed on the workbench')
+  ok('signed in with the pass-phrase')
 
   console.log('\n  /atlas/ — the counts are fli\'s')
   await goto('/atlas/')
@@ -335,8 +336,10 @@ try {
 
   console.log('\n  The chat it names')
   await goto(href)
-  const card = await until(`document.getElementById(decodeURIComponent(location.hash.slice(1)))?.textContent ?? null`, t => !!t, 'the linked card never rendered')
-  check('the workbench draws the card the link names', card.includes('Placed it.'), card.slice(0, 120))
+  // The card renders before its transcript is read, so wait on the reply, not the card.
+  const card = await until(`document.getElementById(decodeURIComponent(location.hash.slice(1)))?.textContent ?? null`, t => t?.includes('Placed it.'), 'the linked card never rendered')
+    .catch(e => e.message)
+  check('the workbench draws the card the link names', card.includes('Placed it.'), card.slice(0, 160))
 
   await decideScreen()
   await autopilotScreen()
@@ -498,7 +501,9 @@ async function autopilotScreen() {
   const reg = async name => Number(await textOf(`#ap-reg-${name}`))
   check(`the Registry's ready table reads ${ready}, the rings' ready + by hand + env`, await reg('ready') === ready, String(await reg('ready')))
   check(`and its blocked table ${blocked}, the rings' ruling + row`, await reg('blocked') === blocked, String(await reg('blocked')))
-  check(`and its ready table is collectRegisterAtlas's ${atlas.ready.length}`, await reg('ready') === atlas.ready.length)
+  // Read again here: other sessions edit ISSUES.md while the drive runs.
+  const readyNow = collectRegisterAtlas(ROOT).ready.length
+  check(`and its ready table is collectRegisterAtlas's ${readyNow}`, await reg('ready') === readyNow, String(await reg('ready')))
 
   let ci = 'none'
   try { ci = /CI passed/.test(readFileSync(join(ROOT, '.cache', 'ci-last.txt'), 'utf8')) ? 'green' : 'red' } catch {}

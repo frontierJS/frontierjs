@@ -34,6 +34,21 @@ export async function portHolders(serverIds: string[], exceptAppId?: string): Pr
  *  which this reader cannot see. */
 export const HOST_PORT_BASE = 10000
 
+/** Runs `work` once no other allocation on `serverId` is in flight. The port
+ *  an App takes lives on `App.port`, so there is no row a unique index could
+ *  hold: two Apps placed together both read the same free port and both wrote
+ *  it (`FJS-3884`). The hub is one process on one SQLite connection, so a
+ *  queue per machine is the whole of the lock. */
+const inFlight = new Map<string, Promise<unknown>>()
+export async function withPortLock<T>(serverId: string, work: () => Promise<T>): Promise<T> {
+  const before = inFlight.get(serverId) ?? Promise.resolve()
+  const mine   = before.catch(() => {}).then(work)
+  const tail   = mine.catch(() => {})
+  inFlight.set(serverId, tail)
+  try { return await mine }
+  finally { if (inFlight.get(serverId) === tail) inFlight.delete(serverId) }
+}
+
 export async function allocatePort(serverId: string, exceptAppId?: string): Promise<number> {
   const held = new Set((await portHolders([serverId], exceptAppId)).map(h => h.port))
   let port = HOST_PORT_BASE

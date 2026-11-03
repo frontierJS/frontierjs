@@ -1,0 +1,100 @@
+---
+title: Junction — the API your models already describe — FrontierJS
+description: Junction is the API layer for FrontierJS on Bun. A short service over a model gives you the endpoints, the live updates and the production defaults, and an effect runs only when the write has committed.
+render: static
+---
+<!--
+  The Junction page: the API realm, argued in five sections. Prerendered,
+  no script beyond the layout's theme swatches. Same shape as
+  routes/basecamp.mesa and routes/litestone.mesa; the shared structure is components/ProductFrame.mesa.
+
+  ── Section contract ───────────────────────────────────────────────────
+  Each section is a component in components/junction/, and its root is
+  `<section id=… class="bc-section">` holding a `.container.stack`:
+
+    p.eyebrow                       the topic's name
+    h2                              the claim, in the reader's words
+    p.lede                          one or two sentences, one idea
+    .bc-split
+      ul.bc-points > li             <strong>head.</strong> ONE or TWO sentences,
+                                    3–4 of them; a point over four lines is cut
+      figure.bc-proof               ONE proof: real schema lines, real output of
+                                    a run, or a .flow of real steps, with a
+                                    figcaption saying where it came from
+    p.bc-more                       "Read more:" links into the repo docs
+
+  Every claim and every code line is lifted from the package docs or code, or
+  from a run, and is something that works TODAY. Junction is published to npm,
+  so the page can say so, but a claim still needs a doc fence, a test or a run behind
+  it. Direction is labeled as direction. No comparison with another ORM unless
+  the cell was re-verified.
+-->
+<script>
+  import ProductFrame from '../components/ProductFrame.mesa'
+  import Service   from '../components/junction/Service.mesa'
+  import Effects   from '../components/junction/Effects.mesa'
+  import Live      from '../components/junction/Live.mesa'
+  import Hardened  from '../components/junction/Hardened.mesa'
+  import Batteries from '../components/junction/Batteries.mesa'
+</script>
+
+<ProductFrame>
+
+<section id="top" class="bc-hero">
+  <div class="container stack">
+    <p class="eyebrow">Junction · on npm</p>
+    <h1>Write the service.<br>The API comes with it.</h1>
+    <p class="lede">
+      Junction is the API layer for FrontierJS, on Bun. A short service over a model gives you
+      the endpoints, the live updates and the production defaults — and an effect runs only
+      once the write it follows has committed.
+    </p>
+    <div class="cluster" style="gap:.75rem">
+      <a class="btn primary raised" href="/start/">Start with a service</a>
+      <a class="btn outlined" href="#effects">See the effects</a>
+    </div>
+    <nav class="bc-jump" aria-label="On this page">
+      <a href="#service">Service</a>
+      <a href="#effects">Effects</a>
+      <a href="#live">Live</a>
+      <a href="#hardened">Hardened</a>
+      <a href="#batteries">Batteries</a>
+    </nav>
+  </div>
+</section>
+
+<Service />
+<Effects />
+<Live />
+<Hardened />
+<Batteries />
+
+<section id="start" class="bc-section">
+  <div class="container stack">
+    <p class="eyebrow">Start</p>
+    <h2>A service is the whole setup.</h2>
+    <p class="lede">
+      Install it on its own or inside a FrontierJS app, where the same models also seed the
+      database and the UI.
+    </p>
+    <div class="cluster" style="gap:.75rem">
+      <a class="btn primary raised" href="/start/">Quickstart</a>
+      <a class="btn outlined" href="https://github.com/frontierjs/frontierjs/tree/main/packages/junction">Read the source</a>
+    </div>
+    <p class="text-sm text-muted">
+      <code>@frontierjs/junction</code> on npm, MIT licensed. Bun only, by construction.
+    </p>
+  </div>
+</section>
+
+</ProductFrame>
+
+<style>
+  .bc-hero { padding: 5rem 0 3rem; }
+  .bc-hero .lede { max-width: 52ch; }
+  h1 { font-size: clamp(2.25rem, 6vw, 3.5rem); line-height: 1.05; letter-spacing: -.03em; margin: .4em 0 .3em; }
+  .bc-jump { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+  .bc-jump a { padding: .3rem .8rem; border: 1px solid var(--rule-strong); border-radius: 999px; font-size: .85rem; color: var(--ink-soft); text-decoration: none; }
+  .bc-jump a:hover { background: var(--surface-sunken); color: var(--ink); }
+  .btn.outlined { color: var(--ink); border-color: var(--rule-strong); }
+</style>

@@ -84,6 +84,12 @@ export async function releaseStatus(app: App, id: string): Promise<string | null
   return row?.status ?? null
 }
 
+/** The App's release that is queued or building, if it has one. */
+export async function inFlightRelease(app: App, appId: string): Promise<{ id: string, status: string } | null> {
+  return await sys(app).deployment.findFirst({
+    where: { appId, status: { in: ['pending', 'building'] } }, select: { id: true, status: true } })
+}
+
 /**
  * The longest a release can legitimately run: each long Outpost command's own
  * bound end to end, and a margin for the short steps between them. A release

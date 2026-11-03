@@ -776,7 +776,12 @@ export function createDocker({
     if (result.exitCode === 3) throw new Error(`${dir} already holds files — send overwrite: true to replace them`)
     if (result.exitCode !== 0) {
       const said = (result.stderr || result.stdout || '').trim().split('\n').slice(-3).join(' ')
-      throw new Error(`restore into ${dir} failed (exit ${result.exitCode}): ${said}`)
+      // 125 is docker itself refusing to start the container, so the script
+      // never ran. Any other exit is the script dying after it emptied the
+      // directory or while tar wrote into it, which leaves the volume neither
+      // as it was nor as the archive has it.
+      throw Object.assign(new Error(`restore into ${dir} failed (exit ${result.exitCode}): ${said}`),
+        result.exitCode === 125 ? {} : { volumeTouched: true })
     }
     const [files, bytes] = result.stdout.trim().split('\n').at(-1).split(/\s+/).map(Number)
     return { data_dir: dir, archive, files, bytes, overwrite: overwrite === true, per_file: perFile === true }
@@ -1343,6 +1348,12 @@ export function createDocker({
       return { restored }
     },
 
+    /** Run `fn` as one of the app's serialized operations. A caller doing
+     *  several steps to one app (`/deploy`: build, route, swap) takes the chain
+     *  once and passes `held: true` to the operations inside, which would
+     *  otherwise queue behind their own caller and never run. */
+    exclusive(appId, fn) { return serially(appId, fn) },
+
     /** Refuse new per-app work and wait for what is running, up to `timeoutMs`.
      *  Answers whether everything finished; a SIGTERM exits either way. */
     async drain(timeoutMs = DRAIN_MS) {
@@ -1363,7 +1374,9 @@ export function createDocker({
   // closes `/replica/restore`'s gap between its check and its copy.
   for (const method of ['deploy', 'stop', 'restore', 'restoreFiles', 'backup']) {
     const unlocked = api[method]
-    api[method] = (args = {}) => serially(args.appId, () => unlocked.call(api, args))
+    api[method] = (args = {}) => args.held === true
+      ? unlocked.call(api, args)
+      : serially(args.appId, () => unlocked.call(api, args))
   }
   return api
 }
@@ -1672,7 +1685,7 @@ function readCert(r) {
  */
 
 /** `hostFiles` is the box a Basecamp runs on only (`config.js` § hostFiles). */
-export function createInspector({ run = spawnRun, hostFiles = null, appsDir = layout().apps } = {}) {
+export function createInspector({ run = spawnRun, hostFiles = null, appsDir = layout().apps, exclusive = (_appId, fn) => fn() } = {}) {
   const json = async (argv) => {
     const { exitCode, stdout } = await run(argv)
     if (exitCode !== 0) return []
@@ -1715,11 +1728,14 @@ export function createInspector({ run = spawnRun, hostFiles = null, appsDir = la
     const rest = typeof name === 'string' && name.startsWith(`${appsDir}/`) ? name.slice(appsDir.length + 1) : null
     return rest !== null && /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/data$/.test(rest)
   }
-  const removeData = async (dir) => {
+  // Inside the app's chain (`FJS-3849`): a release landing between the holder
+  // check and the `rm -rf` would start a container on a directory being
+  // deleted. `exclusive` is `createDocker`'s, handed in by the server.
+  const removeData = (dir) => exclusive(dir.slice(appsDir.length + 1).split('/')[0], async () => {
     const held = await holdersOf(dir)
     if (held.length) throw new Error(`${dir} is held by ${held.join(', ')}`)
     await rm(dir, { recursive: true, force: true })
-  }
+  })
 
   return {
     async volumes() {

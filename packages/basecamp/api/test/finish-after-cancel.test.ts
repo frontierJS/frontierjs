@@ -91,6 +91,18 @@ describe('a release that finishes after it was cancelled', () => {
     expect((await sys.app.findUnique({ where: { id: target.id } })).status).not.toBe('running')
   })
 
+  // A follow-up queued behind this release (`jobs/release-follow-up.job.ts`)
+  // creates the next one only when no release reads in flight.
+  test('is no longer in flight, so a queued follow-up may release', async () => {
+    const { inFlightRelease } = await import('../src/domain/release/release-record.ts')
+    const sys = env.system as any
+    const d = await building()
+    expect((await inFlightRelease(env.app, target.id))?.id).toBe(d.id)
+    await sys.deployment.transition(d.id, 'cancel')
+    await env.as(admin).service('deployments').call('finishRun', d.id, { status: 'success' })
+    expect(await inFlightRelease(env.app, target.id)).toBeNull()
+  })
+
   test('an uncancelled release succeeds', async () => {
     const sys = env.system as any
     const d = await building()

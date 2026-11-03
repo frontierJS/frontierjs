@@ -231,6 +231,11 @@ title: Alerts
   // the schema above, and this only spells each word — a value missing here
   // renders as the enum's own name rather than as blank.
   const SYMBOL = { gt: '>', gte: '≥', lt: '<', lte: '≤' }
+
+  // A rule whose series is missing or stale cannot fire and looks exactly like
+  // one whose threshold is never crossed, so the count sits above the list
+  // rather than only on each row (`FJS-3895`).
+  $: blind = rows.filter(r => metric[r.id] === null || metric[r.id]?.stale).length
 </script>
 
 <div class="section-header">
@@ -245,6 +250,12 @@ title: Alerts
   a rule that fired from the browser's view of the fleet would be theater — and fires when the
   reading has held past its threshold for the whole duration.
 </Callout>
+
+{#if blind}
+  <Callout tone="warning" id="alerts-blind" title={`${blind} rule${blind === 1 ? '' : 's'} cannot fire`}>
+    Nothing is writing the series {blind === 1 ? 'it watches' : 'they watch'}. Each one says which below.
+  </Callout>
+{/if}
 
 {#if error}
   <!-- id'd because the shell's notice bar is also `.alert.danger`: a check
@@ -293,7 +304,7 @@ title: Alerts
         <dl class="facts">
           <dt>Metric</dt><dd><code>{rule.metricName}</code></dd>
           <dt>Condition</dt>
-          <dd><code>{SYMBOL[rule.operator] ?? rule.operator} {rule.threshold}{rule.forMinutes ? ` for ${rule.forMinutes}m` : ''}</code></dd>
+          <dd><code>{SYMBOL[rule.operator] ?? rule.operator} {rule.threshold}{rule.forMinutes ? ` for ${rule.forMinutes}m` : ''}{rule.clearForMinutes ? `, clears after ${rule.clearForMinutes}m` : ''}{rule.refireAfterMinutes ? `, re-fires after ${rule.refireAfterMinutes}m` : ''}</code></dd>
           <dt>Series</dt>
           <dd>
             {#if metric[rule.id] === null}

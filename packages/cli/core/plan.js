@@ -34,7 +34,7 @@ import { extractFrontmatter } from './compiler.js'
 import { paperQuestions }     from './decisions.js'
 
 const PHASE     = /^#{2,4}\s+Phase\s+(\d+[a-z]?)\s*(?:[—–:-]\s*(.*))?$/i
-const STEP      = /^- \[([ x~])\]\s+(\d+\.\d+[a-z]?)\s+(.*)$/
+const STEP      = /^- \[([ x~])\]\s+(\d+[a-z]?\.\d+[a-z]?)\s+(.*)$/
 const OPEN_BOX   = /^- \[ \]\s+(.*)$/
 const GOAL      = /^\*{0,2}Goal:?\*{0,2}:?\s*(.*)$/i
 const DONE_WHEN = /^\*{0,2}Done when:?\*{0,2}:?\s*(.*)$/i

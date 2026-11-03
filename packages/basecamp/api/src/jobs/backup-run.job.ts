@@ -36,34 +36,41 @@
 //
 // ─── Leaving the box ──────────────────────────────────────────────────────
 //
-// A row naming a destination tars the archive and sends it as ONE `putObject`
-// to `<prefix>/basecamp-<stamp>.tar.gz`, which becomes `location`; the local
+// A row naming a destination tars the archive and sends it as ONE streamed PUT
+// to `<prefix>/basecamp-<installId>-<stamp>.tar.gz`, which becomes `location`
+// (`FJS-D1797`: the id keeps a second hub on this prefix off these keys, and a
+// claim marker under the prefix says whose it is); the local
 // directory stays until the next backup finishes. A failed or refused upload
 // keeps the local directory, finishes `success` and says why in `error` — the
 // archive exists, it is only on the disk it was meant to leave, and a `failed`
 // row would read as no archive at all: restore and retention both look for
 // `success` rows to find a local copy. What grades it is the reader's job, so
 // `lastBackupAt` (host-machine.ts) counts only rows with no `error`. After a success the
-// retention in `backup-archives.ts` runs. The connector has no
-// multipart and holds the body in memory, so above `MAX_UPLOAD_BYTES` the job
-// refuses rather than discovering the limit at the vendor or in the heap.
+// retention in `backup-archives.ts` runs. The PUT is pre-signed, as an app's is
+// (`mintPut`), because conduit's `send` holds a body in memory; the file is
+// handed to `fetch` as a file and read as it goes out (`FJS-3899`). There is
+// no multipart, so above `MAX_UPLOAD_BYTES` the job refuses rather than
+// discovering the vendor's single-PUT limit.
 
 import { defineJob }        from '@frontierjs/caravan'
 import { Database }         from 'bun:sqlite'
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { runsAsApp }        from '../domain/job/job-context.ts'
 import { jobsDatabasePath } from '../core/db.ts'
-import { keyUnder, sendFor } from '../providers/storage/index.ts'
-import { backupDir, dropWarmCopies, pruneBackups } from '../domain/backup/backup-archives.ts'
-import { putObject }        from '../providers/storage/s3.ts'
+import { keyUnder }         from '../providers/storage/index.ts'
+import { backupDir, claimPrefix, dropWarmCopies, hubArchiveName, hubInstallId, pruneBackups } from '../domain/backup/backup-archives.ts'
+import { errorCode }        from '../providers/storage/s3.ts'
+import { mintPut }          from './app-backup-run.job.ts'
 import { sha256Of, writeManifest } from '../domain/backup/archive-manifest.ts'
 import { hostServer, requireHubAppId } from '../domain/host/host-machine.ts'
+import { databaseDisk, dbFamilyBytes, headroomShort } from '../domain/host/db-disk.ts'
+import type { DiskDeps } from '../domain/host/db-disk.ts'
 import type { App }         from '@frontierjs/junction'
 import type { AppBackup, RunStatus } from '#db/schema.d.ts'
 
-/** One PUT, held in memory. B2 and S3 cap a single PUT at 5 GB; this is lower
- *  because the whole body is a buffer in the API process. */
+/** One PUT. B2 and S3 cap a single PUT at 5 GB; this is lower because a hub
+ *  restore at /setup holds an uploaded archive to the same cap on disk. */
 export const MAX_UPLOAD_BYTES = 1024 ** 3
 
 /** The longest a hub backup row can honestly stay in flight: every attempt at
@@ -94,11 +101,28 @@ function treeFiles(dir: string): number {
   return readdirSync(dir, { recursive: true, withFileTypes: true }).filter(e => e.isFile()).length
 }
 
+/** Throws, before anything is staged, when the disk under the live database
+ *  cannot hold the copy: the archive is staged beside the database, so a backup
+ *  that fills the disk takes the app's own writes down with it (`FJS-3908`). The
+ *  queue retries a thrown error, and a disk that was short a minute ago may
+ *  not be. Every file `archiveAll` copies counts -- the audit trail outgrows
+ *  the main database, and the queue is copied too. */
+function requireHeadroom(app: App, fs: DiskDeps): void {
+  const disk = databaseDisk(app.sqlite.filename, fs)
+  if (!disk) return
+  const declared = (app.db as unknown as { $databases: Record<string, { driver: string; path: string }> }).$databases
+  const copied   = new Set([app.sqlite.filename, jobsDatabasePath(app.sqlite.filename)].map(p => resolve(p)))
+  for (const { driver, path } of Object.values(declared)) if (driver === 'sqlite' && path) copied.add(resolve(path))
+  const dbBytes  = [...copied].reduce((n, p) => n + dbFamilyBytes(p, fs.stat), 0)
+  const short    = headroomShort({ ...disk, dbBytes })
+  if (short) throw new Error(`Not enough free disk to stage a backup: ${short}. Nothing was staged.`)
+}
+
 /** Writes every database the app keeps into `dest`, a new directory. A declared
  *  directory that does not exist yet is an app that has not written to it, and
  *  is left out; a SQLite file that fails to copy throws, because an archive
  *  missing one of them is not an archive. */
-async function archiveAll(app: App, dest: string, takenAt: string): Promise<void> {
+async function archiveAll(app: App, dest: string, takenAt: string, installId: string): Promise<void> {
   mkdirSync(dest, { recursive: true })
 
   const declared = (app.db as unknown as {
@@ -128,7 +152,7 @@ async function archiveAll(app: App, dest: string, takenAt: string): Promise<void
     throw new Error(`The staged copy failed PRAGMA integrity_check, so no archive was kept: ${damaged}`)
   }
 
-  await writeManifest(dest, takenAt)
+  await writeManifest(dest, takenAt, installId)
 }
 
 /** `PRAGMA integrity_check` over every `.db` staged in `dir`; the first
@@ -163,11 +187,15 @@ async function tarball(dir: string): Promise<string> {
  * Send the archive at `dir` to the row's destination. Answers the object key,
  * or the warning that goes in `error` with the local copy left in place.
  */
-async function upload(app: App, destinationId: string, dir: string): Promise<{ key: string; bytes: number; sha256: string } | { warning: string }> {
+async function upload(app: App, destinationId: string, dir: string, installId: string): Promise<{ key: string; bytes: number; sha256: string } | { warning: string }> {
   const kept = `The archive is on this disk at ${dir}.`
   const dest = await app.db!.asSystem().backupDestination.findFirst({ where: { id: destinationId } })
   if (!dest) return { warning: `Destination '${destinationId}' is gone; nothing was uploaded. ${kept}` }
   if (!('conduit' in app)) return { warning: `This process has no conduit; nothing was uploaded. ${kept}` }
+
+  const claim = await claimPrefix(app, dest, installId)
+  if ('refused' in claim) return { warning: `${claim.refused}; nothing was uploaded. ${kept}` }
+  if ('unchecked' in claim) app.logger.child('backup-run').warn('prefix claim not checked', { destinationId, why: claim.unchecked })
 
   let tar: string | null = null
   try {
@@ -178,11 +206,13 @@ async function upload(app: App, destinationId: string, dir: string): Promise<{ k
     }
     const key    = keyUnder(dest, `${basename(dir)}.tar.gz`)
     const sha256 = await sha256Of(tar)
-    // `.bytes()` is the one allocation. The connector's `send` takes the body as
-    // bytes, so a streamed PUT is a provider capability, not an edit here.
-    const { error } = await putObject(sendFor(app, destinationId), dest.bucket, key,
-      await Bun.file(tar).bytes(), { contentType: 'application/gzip' })
-    if (error) return { warning: `Upload to '${dest.name}' failed (${error.kind}${error.code ? `, ${error.code}` : ''}): ${error.message}. ${kept}` }
+    // A BunFile body is read as it goes out with its length known; the signed
+    // URL carries the credential, so nothing else is held.
+    const res = await fetch(await mintPut(app, dest, key), { method: 'PUT', body: Bun.file(tar) })
+    if (!res.ok) {
+      const code = errorCode(await res.text())
+      return { warning: `Upload to '${dest.name}' failed (${res.status}${code ? `, ${code}` : ''}). ${kept}` }
+    }
     return { key, bytes, sha256 }
   } catch (err) {
     return { warning: `Upload to '${dest.name}' failed: ${(err as Error).message}. ${kept}` }
@@ -192,7 +222,8 @@ async function upload(app: App, destinationId: string, dir: string): Promise<{ k
   }
 }
 
-export async function takeBackup(app: App, backupId: string): Promise<void> {
+/** `fs` is the two filesystem reads the headroom check makes, so a test needs no full disk. */
+export async function takeBackup(app: App, backupId: string, fs: DiskDeps = {}): Promise<void> {
   const log = app.logger.child('backup-run')
   const sys = app.db!.asSystem()
 
@@ -223,14 +254,16 @@ export async function takeBackup(app: App, backupId: string): Promise<void> {
   // `:` is legal in a POSIX filename and unusable on Windows, and an archive is
   // a file somebody downloads. The timestamp is flattened rather than trusted.
   const stamp = startedAt.replace(/[:.]/g, '-')
-  const path  = join(dir, `basecamp-${stamp}`)
 
   try {
-    await archiveAll(app, path, startedAt)
+    requireHeadroom(app, fs)
+    const installId = await hubInstallId(sys)
+    const path      = join(dir, hubArchiveName(installId, stamp))
+    await archiveAll(app, path, startedAt, installId)
     const fileCount = treeFiles(path)
 
     if (row.destinationId) {
-      const sent = await upload(app, row.destinationId, path)
+      const sent = await upload(app, row.destinationId, path, installId)
       if ('key' in sent) {
         await finish({ status: 'success', sizeBytes: sent.bytes, fileCount, location: sent.key, sha256: sent.sha256, error: null })
         log.info('backup uploaded', { id: backupId, destinationId: row.destinationId, key: sent.key, bytes: sent.bytes })

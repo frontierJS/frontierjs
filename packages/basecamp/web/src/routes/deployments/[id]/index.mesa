@@ -66,16 +66,28 @@ title: Deployment
     } catch (e) { error = e.message }
   }
 
-  async function rollback() {
+  async function rollback(isRestoringVolume = false) {
     error = null
     try {
       // The answer is the REPLACEMENT — a new release of the old bytes, not a
       // rerun of the old row — and it is the one with a status worth watching,
       // so this page follows it. The release just retired keeps its own page.
-      const replacement = await deployments.service.invoke('rollback', deployment.id, {})
+      const replacement = await deployments.service.invoke('rollback', deployment.id, isRestoringVolume ? { isRestoringVolume } : {})
       goto(`/deployments/${replacement.id}/`)
     } catch (e) { error = e.message }
   }
+
+  // A rollback keeps the volume unless asked (`FJS-D1796`); restoring is
+  // offered only where the service found the copy taken before this release,
+  // and the confirm names what it throws away.
+  let restore    = null
+  let restoreFor = null
+  async function loadRestore(id) {
+    restoreFor = id
+    try { restore = await deployments.service.invoke('rollbackCopy', id, {}) }
+    catch { restore = null }
+  }
+  $: { if (deployment && rollbackIt && restoreFor !== deployment.id) loadRestore(deployment.id) }
 
   // A new release of the app AS IT IS NOW, not a rerun of this row's snapshot:
   // that is `rollback`, and only from a release that went live. The service
@@ -179,7 +191,14 @@ title: Deployment
                 disabled={!rollbackIt.allowed}
                 data-confirm="A new release of the previous build replaces what is live now."
                 data-confirm-title="Roll back?" data-confirm-label="Roll back" data-confirm-tone="warning"
-                onclick={rollback}>Roll back</Button>
+                onclick={() => rollback()}>Roll back</Button>
+        {#if restore?.available}
+          <Button treatment="outlined" tone="danger" id="deploy-rollback-restore"
+                  disabled={!rollbackIt.allowed}
+                  data-confirm={`The previous build replaces what is live, and the app's volume goes back to the copy taken ${at(restore.copy.takenAt)}. Everything written since then is lost.`}
+                  data-confirm-title="Roll back with data?" data-confirm-label="Roll back and restore" data-confirm-tone="danger"
+                  onclick={() => rollback(true)}>Roll back with data</Button>
+        {/if}
       {/if}
     </div>
   </header>

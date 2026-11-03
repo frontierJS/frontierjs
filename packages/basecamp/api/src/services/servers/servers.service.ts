@@ -51,7 +51,7 @@ import { connectorFor, targetFor, computeProviders, markFor, fleetMark, priceIn,
 import { sendVia }               from '../../providers/compute/accounts.ts'
 import { DEPLOY_TIMEOUT_MS }     from '../../providers/executor.ts'
 import { mintEnrollToken, cloudInit, outpostUnpublished, OUTPOST_PORT } from '../../providers/compute/enrollment.ts'
-import { issueEnrollmentFor, useHost, findHost } from '../../domain/host/host-machine.ts'
+import { issueEnrollmentFor, refusePlaceholderKey, useHost, findHost } from '../../domain/host/host-machine.ts'
 import { env, localMachineRefusal } from '../../core/env.ts'
 import { listSshHosts, probeSshHost } from '../../domain/local/local-ssh.ts'
 import { outbound, outpostFor } from '../../providers/outpost.ts'
@@ -60,14 +60,17 @@ import { asPublicKey }           from '../apps/apps.service.ts'
 import type { TargetDescriptor } from '@frontierjs/conduit'
 import type { ProviderKind, ServerEventKind } from '#db/schema.d.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
+import { resolveServer } from '../../domain/notification/owed.ts'
 
 // A Server names its cloud account (`providerId`) and its key (`sshKeyId`) by
 // Secret id, and sync, destroy and the posture read spend that id asSystem —
 // so an id copied from another workspace had Basecamp call that workspace's
-// cloud with its token, or grade against its key (`FJS-3845`). This refuses a
-// REFERENCE the caller supplied that does not resolve in its own workspace;
-// the gate is still the schema's, and the read runs at the caller's standing.
-const SECRET_REFS = ['providerId', 'sshKeyId'] as const
+// cloud with its token, or grade against its key (`FJS-3845`). `providerId` is
+// `@system` now, written by `provision` from an account it just read in the
+// caller's workspace; `sshKeyId` is still the caller's, so this refuses a
+// REFERENCE the caller supplied that does not resolve in its own workspace.
+// The gate is still the schema's, and the read runs at the caller's standing.
+const SECRET_REFS = ['sshKeyId'] as const
 
 async function refuseForeignSecrets(data: Record<string, unknown>): Promise<void> {
   for (const field of SECRET_REFS) {
@@ -351,7 +354,7 @@ export default createService({
       await tx.serverEvent.create({
         data: { serverId: id, kind: 'removed', message: 'Server removed', metadata: { removed_by: actor() } },
       })
-      await tx.server.update({ where: { id }, data: { outpostPublicKey: null, outpostCert: null } })
+      await tx.server.update({ where: { id }, data: { outpostPublicKey: null, outpostCert: null }, system: ['outpostPublicKey', 'outpostCert'] })
       return tx.server.remove({ where: { id } })
     })
     await retireOutpost(id, { keys: false })
@@ -595,6 +598,10 @@ export default createService({
     const data = ($.data ?? {}) as Record<string, unknown>
     const { name, role, accountId, region, size, image } = data as Record<string, string>
 
+    // First, before the vendor is asked anything: a machine bought now could
+    // only enroll against a key anyone can compute (`FJS-D1798`).
+    refusePlaceholderKey()
+
     const account = await db().secret.findFirst({ where: { id: accountId } })
     if (!account) throw new NotFound(`Provider account '${accountId}' not found`)
 
@@ -651,8 +658,6 @@ export default createService({
       slug:            slugify(String(name)),
       role:            role || 'general',
       status:          'pending',
-      providerKind:    account.providerKind,
-      providerId:      account.id,
       region,
       registerMethod:  'provisioned',
       // What was ASKED for, recorded before anything is spent. A machine that
@@ -675,12 +680,16 @@ export default createService({
       },
     }})
 
-    // The credential artifact, written AS THE APPLICATION. A second statement
-    // rather than a wider first one: what is being written here is not the
-    // caller's data at all, and the refusal above is the schema saying so.
+    // The credential artifact and the account, written AS THE APPLICATION. A
+    // second statement rather than a wider first one: what is being written
+    // here is not the caller's data at all, and the refusal above is the
+    // schema saying so. The account is the Secret read above in the caller's
+    // own workspace, so `providerId` (`@system`) can never name another's
+    // (`FJS-3845`).
     await db().asSystem().server.update({
       where: { id: server.id },
-      data:  { enrollTokenHash: enroll.hash, enrollExpiresAt: enroll.expiresAt },
+      data:  { providerKind: account.providerKind, providerId: account.id,
+               enrollTokenHash: enroll.hash, enrollExpiresAt: enroll.expiresAt },
     })
 
     // The move, not an update naming the column: the from-list, the authority
@@ -742,6 +751,7 @@ export default createService({
       const updated = await db().server.update({
         where: { id },
         data:  { providerServerId: made.providerServerId },
+        system: ['providerServerId'],
       })
       await recordEvent(id, 'provisionCreated',
         `${connector.label} is building the machine`, { provider_server_id: made.providerServerId })
@@ -1187,6 +1197,9 @@ export default createService({
         data: { serverId: id, kind: 'cameOnline', message: 'Outpost connected',
                 metadata: { outpostVersion: data.outpost_version } },
       })
+      // Closes the page `server-reachability` opened. Best effort inside, so a
+      // dead channel cannot fail the machine's own check-in.
+      if (server.status === 'unreachable') await resolveServer($.app, server)
     }
 
     // The outpost as a Conduit target — the address anything outbound reaches

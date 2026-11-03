@@ -6,8 +6,12 @@
 // and `select: { f: { resolve: false } }`, so `.mime` on it was undefined.
 
 import { describe, test, expect } from 'bun:test'
+import { createHash } from 'crypto'
+import { writeFileSync, rmSync } from 'fs'
+import { join } from 'path'
 import { createClient, autoMigrate } from '../src/index.js'
-import { FileStorage } from '../src/storage/file-storage.js'
+import { FileStorage, fromPath, fromStream } from '../src/storage/file-storage.js'
+import { tempDir } from '../src/tmp-dirs.js'
 
 async function client() {
   const files = FileStorage({ provider: 'local', bucket: 'test', publicBase: 'https://cdn.test' }) as any
@@ -23,7 +27,7 @@ async function client() {
     db: ':memory:', plugins: [files],
   })
   await autoMigrate(db)
-  files._provider = { async put() {}, async get() { return null }, async delete() {} }
+  files._provider = { async put(_key: string, body: any) { await new Response(body).arrayBuffer() }, async get() { return null }, async delete() {} }
   return db
 }
 
@@ -76,5 +80,38 @@ describe('a File reference is an object wherever it is not resolved (FJS-2422)',
     await db.p.delete({ where: { id: 1 } })
     expect(deletes.length).toBe(2)
     db.$close()
+  })
+})
+
+describe('every stored ref records the SHA-256 of its bytes, whichever way they arrived (FJS-D1292)', () => {
+  const bytes  = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Uint8Array(9000).fill(3)])
+  const sha256 = createHash('sha256').update(bytes).digest('hex')
+  const dir    = tempDir('file-ref-sha256')
+  const path   = join(dir, 'p.png')
+  writeFileSync(path, bytes)
+
+  test('bytes, a Blob, a File, inline base64, a data URL, fromPath and fromStream agree', async () => {
+    const db = await client()
+    const b64 = Buffer.from(bytes).toString('base64')
+    const values: Record<string, unknown> = {
+      buffer: Buffer.from(bytes),
+      uint8:  bytes,
+      blob:   new Blob([bytes], { type: 'image/png' }),
+      file:   new File([bytes], 'p.png', { type: 'image/png' }),
+      inline: { name: 'p.png', type: 'image/png', data: b64 },
+      url:    `data:image/png;base64,${b64}`,
+      path:   fromPath(path),
+      stream: fromStream(new Blob([bytes]).stream(), { size: bytes.length }),
+    }
+    let id = 0
+    for (const [how, value] of Object.entries(values)) {
+      const made = await db.asSystem().p.create({ data: { id: ++id, avatar: value }, select: { avatar: { resolve: false } } })
+      expect([how, made.avatar.sha256]).toEqual([how, sha256])
+      expect(made.avatar.size).toBe(bytes.length)
+    }
+    const listed = await db.asSystem().p.create({ data: { id: 99, docs: [bytes, new Blob([bytes])] }, select: { docs: { resolve: false } } })
+    expect(listed.docs.map((d: any) => d.sha256)).toEqual([sha256, sha256])
+    db.$close()
+    rmSync(dir, { recursive: true, force: true })
   })
 })

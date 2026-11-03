@@ -600,6 +600,10 @@ app.services.register(createService({
 }))
 ```
 
+The hook runs only for a service call. A write a job makes as the system is
+announced by a `channel:` function on the service instead (`channel: (row, ctx) =>
+app.channel(...)`, with `ctx` null for a background write), never by both.
+
 Client: `{ type: 'event', event: 'deployments created', data: { ... } }`
 
 **A room is a channel bound to one row** (`FJS-D596`). Presence and

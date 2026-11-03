@@ -1153,6 +1153,34 @@ export async function cmdStudio(cfg) {
         if (path === '/api/schema-layers')
           return json(schemaLayers(currentSchemaParse().schema))
 
+        // Each model's measured size for the Layers tab, indexes and overflow
+        // pages included: a 100 KB text column lives almost wholly in overflow,
+        // so leaf pages alone read it as 3 KB. Asked for only while the tab's
+        // size toggle is on, since dbstat reads every page.
+        if (path === '/api/schema-layers/sizes') {
+          const byTable = {}
+          for (const handle of Object.values(activeRawDbs ?? { main: activeRawDb })) {
+            if (!handle) continue
+            try {
+              const owner = Object.fromEntries(handle.query(`SELECT name, tbl_name FROM sqlite_master WHERE type IN ('table', 'index')`).all().map(r => [r.name, r.tbl_name]))
+              const pages = handle.query(`SELECT name, SUM(pgsize) AS bytes, SUM(CASE WHEN pagetype = 'leaf' THEN ncell ELSE 0 END) AS cells FROM dbstat GROUP BY name`).all()
+              for (const r of pages) {
+                const t = owner[r.name]
+                if (!t) continue
+                const e = byTable[t] ??= { rows: 0, bytes: 0 }
+                e.bytes += r.bytes
+                if (r.name === t) e.rows += r.cells
+              }
+            } catch { /* a SQLite built without dbstat leaves this database unmeasured */ }
+          }
+          const models = {}
+          for (const model of activeDb.$schema.models) {
+            const m = byTable[modelToTableName(model, cfg.pluralize ?? false)]
+            if (m) models[model.name] = m
+          }
+          return json(Object.keys(models).length ? { models } : { error: 'No table could be measured: this SQLite has no dbstat.' })
+        }
+
         // ── GET /api/seed · POST /api/seed/run ──────────────────────────
         //
         // A database nothing has seeded is empty for the ordinary reason, and

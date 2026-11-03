@@ -27,6 +27,7 @@ import { GatePlugin }        from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor }         from '../src/core/capabilities.ts'
+import deploymentRun         from '../src/jobs/deployment-run.job.ts'
 
 // `resolveExecutor` refuses an app it cannot reach, and this suite has no
 // machine. The stub is the shape a laptop with no fleet already runs in.
@@ -86,7 +87,7 @@ beforeAll(async () => {
 /** An app with two shipped releases behind it, placed on a machine that can
  *  take another. `runtime` is what the app looks like NOW — deliberately not
  *  what either release shipped with. */
-async function anAppWithHistory(runtime: Record<string, unknown> = { cpuLimit: 3 }) {
+async function anAppWithHistory(runtime: Record<string, unknown> = { cpuLimit: 3 }, shipped1: Record<string, unknown> = { cpuLimit: 1 }) {
   const sys  = env.system as any
   const slug = `app-${uniq()}`
   const target = await sys.app.create({ data: {
@@ -100,7 +101,7 @@ async function anAppWithHistory(runtime: Record<string, unknown> = { cpuLimit: 3
 
   const first = await shipped({
     toImage: `${slug}:v1`, builtImage: 'sha256:' + 'a'.repeat(64),
-    configSnapshot: { source: {}, runtime: { cpuLimit: 1 } },
+    configSnapshot: { source: {}, runtime: shipped1 },
     commitSha: 'aaaaaaa', branch: 'main',
   })
   const current = await shipped({
@@ -317,5 +318,140 @@ describe('what a rollback may put back', () => {
     expect(queued.status).toBe('pending')
     await expect(env.as(admin).service('deployments').create({ appId: app.id, workspaceId: ws.id, toImage: 'x:1' }))
       .rejects.toMatchObject({ code: 409 })
+  })
+})
+
+// FJS-D1796: a rollback keeps the volume unless it is asked to put the copy
+// back, and an ask it cannot meet is refused before anything moves.
+describe('a rollback and the volume', () => {
+
+  const rollRestoring = (who: any, id: string) =>
+    env.as(who).service('deployments').call('rollback', id, { isRestoringVolume: true })
+
+  const stepNames = async (id: string) =>
+    (await (env.system as any).deploymentStep.findMany({ where: { deploymentId: id }, orderBy: { position: 'asc' } }))
+      .map((s: any) => s.name)
+
+  /** The target release is the one that recorded a volume, so the steps know to copy. */
+  async function withVolume() {
+    return anAppWithHistory(undefined, { volumePath: '/db' })
+  }
+
+  test('by default the volume is kept and a fresh copy is taken first', async () => {
+    const { current } = await withVolume()
+    const replacement: any = await roll(admin, current.id)
+    const names = await stepNames(replacement.id)
+    expect(names).toContain('Back up volume')
+    expect(names).not.toContain('Restore volume')
+  })
+
+  test('asking to restore with no copy taken is refused, and the release is left alone', async () => {
+    const { current } = await withVolume()
+    await expect(rollRestoring(admin, current.id)).rejects.toThrow(/No copy was taken/)
+    expect(await statusOf(current.id)).toBe('success')
+  })
+
+  test('a copy that never left its machine cannot be restored from, and is named so', async () => {
+    const { app, current } = await withVolume()
+    await (env.system as any).appBackup.create({ data: {
+      appId: app.id, serverId: box.id, kind: 'release', deploymentId: current.id,
+      status: 'success', location: '/var/lib/outpost/backups/x.tar.gz', sha256: 'c'.repeat(64) } })
+    await expect(rollRestoring(admin, current.id)).rejects.toThrow(/never left its machine/)
+    expect(await statusOf(current.id)).toBe('success')
+  })
+
+  test('with a copy in a bucket, the steps stop the app and restore instead of copying', async () => {
+    const { app, current } = await withVolume()
+    const sys  = env.system as any
+    const dest = await env.as(admin).service('backupDestinations').create({
+      name: `Rollback ${uniq()}`, endpoint: 'http://127.0.0.1:9', region: 'auto',
+      bucket: `rb-${uniq()}`, prefix: 'apps', secret: 'AKID:secret',
+    }) as any
+    const copy = await sys.appBackup.create({ data: {
+      appId: app.id, serverId: box.id, destinationId: dest.id, kind: 'release', deploymentId: current.id,
+      status: 'success', location: `apps/${app.id}-x.tar.gz`, sha256: 'd'.repeat(64), sizeBytes: 10 } })
+
+    const plan: any = await env.as(admin).service('deployments').call('rollbackCopy', current.id, {})
+    expect(plan.available).toBe(true)
+    expect(plan.copy.id).toBe(copy.id)
+    expect(plan.discards).toContain('replaced by the copy')
+
+    const replacement: any = await rollRestoring(admin, current.id)
+    const names = await stepNames(replacement.id)
+    expect(names).toEqual(['Validate', 'Pull image', 'Stop container', 'Restore volume', 'Start container', 'Health check'])
+    expect(await statusOf(current.id)).toBe('rolledBack')
+  })
+
+  // ─── a restore that fails with the app already stopped ─────────────────────
+  // The Outpost is a recording conduit answering per path, so the job's own
+  // executor code runs against the reply a real machine sends.
+  describe('a restore that fails', () => {
+    const STEPS = ['Validate', 'Pull image', 'Stop container', 'Restore volume', 'Start container', 'Health check']
+
+    async function run(restoreReply: { message: string; body: Record<string, unknown> }) {
+      const { app, first, current } = await withVolume()
+      const sys  = env.system as any
+      const dest = await env.as(admin).service('backupDestinations').create({
+        name: `Rollback ${uniq()}`, endpoint: 'http://127.0.0.1:9', region: 'auto',
+        bucket: `rb-${uniq()}`, prefix: 'apps', secret: 'AKID:secret',
+      }) as any
+      await sys.appBackup.create({ data: {
+        appId: app.id, serverId: box.id, destinationId: dest.id, kind: 'release', deploymentId: current.id,
+        status: 'success', location: `apps/${app.id}-x.tar.gz`, sha256: 'd'.repeat(64), sizeBytes: 10 } })
+
+      const replacement = await sys.deployment.create({ data: {
+        appId: app.id, workspaceId: ws.id, toImage: first.toImage, trigger: 'rollback',
+        previousDeploymentId: current.id, configSnapshot: first.configSnapshot } })
+      for (const [position, name] of STEPS.entries())
+        await sys.deploymentStep.create({ data: { deploymentId: replacement.id, position, name } })
+
+      const sent: { path: string; body: any }[] = []
+      const conduit = {
+        resolve: async () => ({ pinned_cert: true }),
+        send: async (call: any) => {
+          sent.push({ path: call.path, body: call.body })
+          if (call.path === '/volume/restore')
+            return { error: { kind: 'server', message: 'Server error: 500',
+              raw: JSON.stringify({ error: restoreReply.message, ...restoreReply.body }) } }
+          return { data: {} }
+        },
+      }
+      const via = new Proxy(env.app, { get: (t, k) =>
+        k === 'conduit' ? conduit : typeof t[k] === 'function' ? t[k].bind(t) : t[k] })
+
+      await env.app.runAs(admin.id, { tenant: ws.id }, () =>
+        (deploymentRun as any).handler({ app: via, data: { deployment_id: replacement.id } }))
+
+      const status = (await sys.deployment.findUnique({ where: { id: replacement.id } })).status
+      const failed = await sys.deploymentStep.findFirst({ where: { deploymentId: replacement.id, status: 'failed' } })
+      return { sent, row: { status, error: failed?.output as string, step: failed?.name as string }, first, current }
+    }
+
+    test('before the volume was touched, the release that was live is started again and the message says so', async () => {
+      const { sent, row, current } = await run({ message: 'the bucket refused the archive' , body: {} })
+      expect(row.status).toBe('failed')
+      expect(row.step).toBe('Restore volume')
+      expect(row.error).toContain('The volume is unchanged')
+      expect(row.error).toContain('the previous release is running again')
+
+      const paths = sent.map(s => s.path)
+      expect(paths.slice(paths.indexOf('/stop'))).toEqual(['/stop', '/volume/restore', '/deploy'])
+      // What went back is the release the rollback was undoing, not the one it targeted.
+      const started = sent.find(s => s.path === '/deploy')!.body
+      expect(started.image).toBe(current.toImage)
+      expect(started.digest).toBe(current.builtImage)
+      expect(started.deployment_id).toBe(current.id)
+      expect(paths).not.toContain('/health-check')
+    })
+
+    test('after the extract began, nothing is started and the message names the copy to restore by hand', async () => {
+      const { sent, row } = await run({ message: 'restore into /data failed (exit 2): tar: unexpected EOF',
+                                        body: { volume_touched: true } })
+      expect(row.status).toBe('failed')
+      expect(row.error).toContain('unknown state')
+      expect(row.error).toMatch(/put back the copy by hand: apps\//)
+      expect(row.error).not.toContain('running again')
+      expect(sent.map(s => s.path)).not.toContain('/deploy')
+    })
   })
 })

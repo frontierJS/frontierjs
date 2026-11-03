@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-169 definitions · 73 models · 1 view · 38 types · 57 enums · 0 other
+171 definitions · 74 models · 1 view · 39 types · 57 enums · 0 other
 ```
 
 ## Definitions
@@ -85,6 +85,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Alert` | model |
 | `Monitor` | model |
 | `MonitorCheck` | model |
+| `MonitorUptimeDay` | model |
 | `MonitorEvent` | model |
 | `MonitorChannel` | model |
 | `Dashboard` | model |
@@ -183,6 +184,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `AppPlace` | type |
 | `AppUnplace` | type |
 | `AppVolumeRestore` | type |
+| `DeploymentRollback` | type |
 | `AppReplicaRestore` | type |
 | `AppDrillRun` | type |
 | `AppPublish` | type |
@@ -253,7 +255,7 @@ validates, and a select that silently drops an option.
 - `DrillKind` — `manual`, `scheduled`
 - `DependencyKind` — `dependency`, `dev`, `peer`, `optional`
 - `NotificationContext` — `Deployment`, `Alert`, `JobRun`, `Server`, `Workspace`, `Monitor`
-- `NotificationKind` — `DeploySuccess`, `DeployFailed`, `AlertFiring`, `AlertResolved`, `ServerUnreachable`, `MonitorDown`, `MonitorUp`, `PostureFailed`, `HubPostureFailed`, `DependencyVulnerable`, `MemberJoined`, `JobFailed`, `WeeklyDigest`, `ReplicaFound`
+- `NotificationKind` — `DeploySuccess`, `DeployFailed`, `AlertFiring`, `AlertResolved`, `ServerUnreachable`, `MonitorDown`, `MonitorUp`, `PostureFailed`, `HubPostureFailed`, `DependencyVulnerable`, `MemberJoined`, `JobFailed`, `WeeklyDigest`, `ReplicaFound`, `MonitorCertExpiring`, `AppBackupFailed`
 - `VolumeKind` — `volume`, `bind`
 - `EditorRole` — `edit`, `publish`
 - `Capability` — `Environment.create`, `Environment.delete`, `Environment.update`, `Server.create`, `Server.delete`, `Server.destroy`, `Server.drain`, `Server.provision`, `Server.reboot`, `Server.undrain`, `Server.update`, `Variable.create`, `Variable.delete`, `Variable.update`
@@ -746,9 +748,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `slug` | `string` | yes | — | `x-transforms` | — |
 | `status` | `ServerStatus` = `"pending"` | — | — | — | — |
 | `role` | `ServerRole` = `"general"` | — | — | — | — |
-| `providerKind` | `ComputeProvider` = `"custom"` | — | — | — | — |
-| `providerId` | `string`? | — | — | — | — |
-| `providerServerId` | `string`? | — | — | — | — |
+| `providerKind` | `ComputeProvider` = `"custom"` | — | — | `x-litestone-kind` | — |
+| `providerId` | `string`? | — | — | `x-litestone-kind` | — |
+| `providerServerId` | `string`? | — | — | `x-litestone-kind` | — |
 | `registerMethod` | `RegisterMethod` = `"imported"` | — | — | — | — |
 | `region` | `string` = `"custom"` | — | — | — | — |
 | `ipAddress` | `string`? | — | — | — | — |
@@ -759,8 +761,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `outpostVersion` | `string`? | — | — | — | — |
 | `lastHeartbeatAt` | `string`? | — | — | `format: "date-time"` | — |
 | `enrollExpiresAt` | `string`? | — | — | `format: "date-time"` | — |
-| `outpostPublicKey` | `string`? | — | — | — | — |
-| `outpostCert` | `string`? | — | — | — | — |
+| `outpostPublicKey` | `string`? | — | — | `x-litestone-kind` | — |
+| `outpostCert` | `string`? | — | — | `x-litestone-kind` | — |
 | `plan` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `actualSpecs` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `health` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
@@ -782,6 +784,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `kind` | `ServerEventKind` | yes | — | — | — |
 | `message` | `string` | yes | — | — | — |
 | `metadata` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `noticeOwedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 
 **On create**: required — `serverId`, `kind`, `message` · not accepted — `id`
 
@@ -1073,8 +1076,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 ### `AppBackup`
 
 - gate `read:5 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
-- relation `app` — belongsTo `App` via `appId` · on delete Cascade
-- relation `server` — belongsTo `Server` via `serverId` · on delete Cascade · optional
+- relation `app` — belongsTo `App` via `appId` · on delete Restrict
+- relation `server` — belongsTo `Server` via `serverId` · on delete Restrict · optional
 - relation `destination` — belongsTo `BackupDestination` via `destinationId` · on delete Restrict · optional
 - relation `deployment` — belongsTo `Deployment` via `deploymentId` · on delete SetNull · optional
 
@@ -1161,19 +1164,19 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `trigger` | `DeployTrigger` = `"button"` | — | — | — | — |
 | `fromImage` | `string`? | — | — | — | — |
 | `toImage` | `string`? | — | — | — | — |
-| `commitSha` | `string`? | — | — | — | — |
+| `commitSha` | `string`? | — | — | `x-litestone-kind` | — |
 | `commitMessage` | `string`? | — | — | — | — |
-| `branch` | `string`? | — | — | — | — |
+| `branch` | `string`? | — | — | `x-litestone-kind` | — |
 | `author` | `string`? | — | — | — | — |
-| `builtImage` | `string`? | — | — | — | — |
+| `builtImage` | `string`? | — | — | `x-litestone-kind` | — |
 | `platformVersion` | `string`? | — | — | `x-litestone-kind` | — |
-| `previousDeploymentId` | `string`? | — | — | — | — |
+| `previousDeploymentId` | `string`? | — | — | `x-litestone-kind` | — |
 | `configSnapshot` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `triggeredBy` | `string`? | — | — | — | — |
 | `queuedAt` | `string` | — | — | `format: "date-time"` | — |
-| `startedAt` | `string`? | — | — | `format: "date-time"` | — |
-| `finishedAt` | `string`? | — | — | `format: "date-time"` | — |
-| `durationMs` | `integer`? | — | — | — | — |
+| `startedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `finishedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `durationMs` | `integer`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `appId` · not accepted — `id`
 
@@ -1408,8 +1411,11 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `config` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `secretId` | `string`? | — | — | `x-litestone-kind` | — |
 | `isActive` | `boolean` = `true` | — | — | — | — |
+| `isPagedForFleet` | `boolean` = `true` | — | — | — | — |
 | `lastTestAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `lastDeliveryAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `lastError` | `string`? | — | — | `x-litestone-kind` | — |
+| `lastErrorAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `createdBy` | `string`? | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
@@ -1457,6 +1463,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `operator` | `ComparisonOp` = `"gt"` | — | — | — | — |
 | `threshold` | `number` | yes | — | — | — |
 | `forMinutes` | `integer` = `0` | — | — | `minimum: 0` `maximum: 1440` | — |
+| `clearForMinutes` | `integer` = `0` | — | — | `minimum: 0` `maximum: 1440` | — |
+| `refireAfterMinutes` | `integer` = `0` | — | — | `minimum: 0` `maximum: 10080` | — |
 | `isActive` | `boolean` = `true` | — | — | — | — |
 | `snoozedUntil` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
@@ -1505,6 +1513,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
 - relation `checks` — hasMany `MonitorCheck`
 - relation `events` — hasMany `MonitorEvent`
+- relation `uptimeDays` — hasMany `MonitorUptimeDay`
 - relation `channels` — hasMany `MonitorChannel`
 - transitions on `status` — `markUp`: pending|down → up @system · `markDown`: pending|up → down @system · `pause`: pending|up|down → paused @5 · `resume`: paused → pending @5
 
@@ -1533,6 +1542,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `lastCheckedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `nextCheckAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `lastLatencyMs` | `integer`? | — | — | `x-litestone-kind` | — |
+| `certExpiresAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `certWarnedDays` | `integer`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `name`, `url` · not accepted — `id`
 
@@ -1553,6 +1564,23 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 **On create**: required — `monitorId`, `isOk`, `message` · not accepted — `id`
 
+### `MonitorUptimeDay`
+
+- gate `read:2 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `monitor` — belongsTo `Monitor` via `monitorId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `monitorId` | `string` | yes | — | — | — |
+| `day` | `string` | yes | — | `format: "date-time"` | — |
+| `checks` | `integer` | yes | — | — | — |
+| `okChecks` | `integer` | yes | — | — | — |
+| `avgLatencyMs` | `integer`? | — | — | — | — |
+| `maxLatencyMs` | `integer`? | — | — | — | — |
+
+**On create**: required — `monitorId`, `day`, `checks`, `okChecks` · not accepted — `id`
+
 ### `MonitorEvent`
 
 - gate `read:2 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
@@ -1566,6 +1594,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `fromStatus` | `MonitorStatus` | yes | — | — | — |
 | `toStatus` | `MonitorStatus` | yes | — | — | — |
 | `message` | `string` | yes | — | — | — |
+| `noticeOwedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 
 **On create**: required — `monitorId`, `fromStatus`, `toStatus`, `message` · not accepted — `id`
 
@@ -1762,6 +1791,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` = `"hub"` | — | — | — | — |
+| `installId` | `string` | — | — | `x-litestone-kind` | — |
 | `heartbeatTimeoutSeconds` | `integer` = `120` | — | — | `minimum: 30` `maximum: 3600` | — |
 | `isTwoFactorRequiredForOwners` | `boolean` = `false` | — | — | — | — |
 | `isApiKeyAuthAllowed` | `boolean` = `true` | — | — | — | — |
@@ -1770,6 +1800,10 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `backupKeepLocalDays` | `integer`? | — | — | `minimum: 1` `maximum: 3650` | — |
 | `backupKeepRemoteCount` | `integer` = `7` | — | — | `minimum: 1` `maximum: 1000` | — |
 | `backupKeepRemoteDays` | `integer`? | — | — | `minimum: 1` `maximum: 3650` | — |
+| `retentionCheckDays` | `integer` = `30` | — | — | `minimum: 1` `maximum: 3650` | — |
+| `retentionEventDays` | `integer` = `90` | — | — | `minimum: 1` `maximum: 3650` | — |
+| `retentionAlertDays` | `integer` = `90` | — | — | `minimum: 1` `maximum: 3650` | — |
+| `retentionNotificationDays` | `integer` = `90` | — | — | `minimum: 1` `maximum: 3650` | — |
 | `encryptionKeyEscrowedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `encryptionKeyFingerprint` | `string`? | — | — | `x-litestone-kind` | — |
 | `appId` | `string`? | — | — | `x-litestone-kind` | — |
@@ -2141,6 +2175,16 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `isOverwriting` | `boolean`? | — | — | — | — |
 
 **On create**: required — `serverId`
+
+### `DeploymentRollback`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `isRestoringVolume` | `boolean`? | — | — | — | — |
+
+**On create**: required — nothing
 
 ### `AppReplicaRestore`
 

@@ -8,7 +8,7 @@ title: Git activity
   // it: `IGit` in api/src/basecamp.types.ts, with Forgejo as the intended
   // adapter and a Stub in front of it today. So the honest thing this screen
   // can do now is REPORT that, off the portal — the same read
-  // /admin/adapters/ makes, so there is one answer to "is git wired" rather
+  // /admin/providers/ makes, so there is one answer to "is git wired" rather
   // than two that can disagree.
   //
   // What the mock drew and what would fill the skeletons: repositories with
@@ -72,7 +72,7 @@ title: Git activity
       <dt>URL</dt><dd><code>{entry.url ?? 'not set'}</code></dd>
     </dl>
     <div class="cluster">
-      <Button treatment="ghost" href="/admin/adapters/">All adapters</Button>
+      <Button treatment="ghost" href="/admin/providers/">All providers</Button>
     </div>
   </Card>
 
@@ -91,7 +91,7 @@ title: Git activity
         Git hosting is a stub until <code>providers.git.url</code> is set. Unconfigured is
         not an error — this app runs without a git host, and the screens that would use one
         say so rather than showing an empty list that reads like a git host with no repos.
-        <a href="/admin/adapters/">All adapters</a>.
+        <a href="/admin/providers/">All providers</a>.
       </p>
     </Callout>
   {/if}

@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-73 model(s) · 57 enum(s) · 2 database(s)
+74 model(s) · 57 enum(s) · 2 database(s)
 audit → sqlite · main → sqlite
 ```
 
@@ -54,7 +54,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `NetworkKind` | `mesh` · `vpc` |
 | `NetworkProvider` | `netbird` · `tailscale` · `wireguard` |
 | `NotificationContext` | `Alert` · `Deployment` · `JobRun` · `Monitor` · `Server` · `Workspace` |
-| `NotificationKind` | `AlertFiring` · `AlertResolved` · `DependencyVulnerable` · `DeployFailed` · `DeploySuccess` · `HubPostureFailed` · `JobFailed` · `MemberJoined` · `MonitorDown` · `MonitorUp` · `PostureFailed` · `ReplicaFound` · `ServerUnreachable` · `WeeklyDigest` |
+| `NotificationKind` | `AlertFiring` · `AlertResolved` · `AppBackupFailed` · `DependencyVulnerable` · `DeployFailed` · `DeploySuccess` · `HubPostureFailed` · `JobFailed` · `MemberJoined` · `MonitorCertExpiring` · `MonitorDown` · `MonitorUp` · `PostureFailed` · `ReplicaFound` · `ServerUnreachable` · `WeeklyDigest` |
 | `ParamGenerator` | `randomHex16` · `randomHex32` · `randomHex64` |
 | `PlatformBuild` | `outpost` · `platform` |
 | `PlatformProvider` | `cloudflare` |
@@ -136,6 +136,7 @@ table `alert_rule` · db `main` · gate `2.5`
 | --- | --- | --- | --- | --- |
 | `alerts` | `Alert[]` | — | — | relation |
 | `channels` | `AlertRuleChannel[]` | — | — | relation |
+| `clearForMinutes` | `Int` | no | `0` | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `description` | `String` | yes | — | — |
 | `forMinutes` | `Int` | no | `0` | — |
@@ -144,6 +145,7 @@ table `alert_rule` · db `main` · gate `2.5`
 | `metricName` | `String` | no | — | **required on write** |
 | `name` | `String` | no | — | **required on write** |
 | `operator` | `ComparisonOp` | no | `'gt'` | — |
+| `refireAfterMinutes` | `Int` | no | `0` | — |
 | `severity` | `AlertSeverity` | no | `'warning'` | — |
 | `snoozedUntil` | `DateTime` | yes | — | @system |
 | `threshold` | `Float` | no | — | **required on write** |
@@ -844,20 +846,20 @@ table `deployment` · db `main` · gate `2.4.4.4`
 | `appDrills` | `AppDrill[]` | — | — | relation |
 | `appId` | `String` | no | — | **required on write** |
 | `author` | `String` | yes | — | — |
-| `branch` | `String` | yes | — | — |
-| `builtImage` | `String` | yes | — | — |
+| `branch` | `String` | yes | — | @system |
+| `builtImage` | `String` | yes | — | @system |
 | `commitMessage` | `String` | yes | — | — |
-| `commitSha` | `String` | yes | — | — |
+| `commitSha` | `String` | yes | — | @system |
 | `configSnapshot` | `Json` | no | `'{}'` | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
-| `durationMs` | `Int` | yes | — | — |
-| `finishedAt` | `DateTime` | yes | — | — |
+| `durationMs` | `Int` | yes | — | @system |
+| `finishedAt` | `DateTime` | yes | — | @system |
 | `fromImage` | `String` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `platformVersion` | `String` | yes | — | @system |
-| `previousDeploymentId` | `String` | yes | — | — |
+| `previousDeploymentId` | `String` | yes | — | @system |
 | `queuedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
-| `startedAt` | `DateTime` | yes | — | — |
+| `startedAt` | `DateTime` | yes | — | @system |
 | `status` | `DeployStatus` | no | `'pending'` | — |
 | `steps` | `DeploymentStep[]` | — | — | relation |
 | `toImage` | `String` | yes | — | — |
@@ -1236,9 +1238,14 @@ table `hub_config` · db `main` · gate `7`
 | `encryptionKeyFingerprint` | `String` | yes | — | @system |
 | `heartbeatTimeoutSeconds` | `Int` | no | `120` | — |
 | `id` | `String` | no | `'hub'` | id |
+| `installId` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | unique · @system |
 | `isApiKeyAuthAllowed` | `Boolean` | no | `1` | — |
 | `isBotUserAllowed` | `Boolean` | no | `1` | — |
 | `isTwoFactorRequiredForOwners` | `Boolean` | no | `0` | — |
+| `retentionAlertDays` | `Int` | no | `90` | — |
+| `retentionCheckDays` | `Int` | no | `30` | — |
+| `retentionEventDays` | `Int` | no | `90` | — |
+| `retentionNotificationDays` | `Int` | no | `90` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `version` | `Int` | no | `1` | — |
 
@@ -1471,6 +1478,8 @@ table `monitor` · db `main` · gate `2.5`
 | `acceptedStatus` | `String` | no | `'200-299'` | — |
 | `appId` | `String` | yes | — | — |
 | `body` | `String` | yes | — | — |
+| `certExpiresAt` | `DateTime` | yes | — | @system |
+| `certWarnedDays` | `Int` | yes | — | @system |
 | `channels` | `MonitorChannel[]` | — | — | relation |
 | `checks` | `MonitorCheck[]` | — | — | relation |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
@@ -1494,6 +1503,7 @@ table `monitor` · db `main` · gate `2.5`
 | `tags` | `Json` | no | `'[]'` | — |
 | `timeoutMs` | `Int` | no | `10000` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `uptimeDays` | `MonitorUptimeDay[]` | — | — | relation |
 | `url` | `String` | no | — | **required on write** |
 | `workspace` | `Workspace` | — | — | relation |
 | `workspaceId` | `String` | no | — | **required on write** |
@@ -1576,10 +1586,36 @@ table `monitor_event` · db `main` · gate `2.8`
 | `message` | `String` | no | — | **required on write** |
 | `monitor` | `Monitor` | — | — | relation |
 | `monitorId` | `String` | no | — | **required on write** |
+| `noticeOwedAt` | `DateTime` | yes | — | @system |
 | `toStatus` | `MonitorStatus` | no | — | **required on write** |
 
 ```
 @@index(monitorId, at)
+@@index(noticeOwedAt)
+@@deny(create, !check(monitor, tenancy))
+@@deny(delete, !check(monitor, tenancy))
+@@deny(postUpdate, !check(monitor, tenancy))
+@@deny(read, !check(monitor, tenancy))
+@@deny(update, !check(monitor, tenancy))
+```
+
+### `MonitorUptimeDay`
+
+table `monitor_uptime_day` · db `main` · gate `2.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `avgLatencyMs` | `Int` | yes | — | — |
+| `checks` | `Int` | no | — | **required on write** |
+| `day` | `DateTime` | no | — | **required on write** |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `maxLatencyMs` | `Int` | yes | — | — |
+| `monitor` | `Monitor` | — | — | relation |
+| `monitorId` | `String` | no | — | **required on write** |
+| `okChecks` | `Int` | no | — | **required on write** |
+
+```
+@@unique(day, monitorId)
 @@deny(create, !check(monitor, tenancy))
 @@deny(delete, !check(monitor, tenancy))
 @@deny(postUpdate, !check(monitor, tenancy))
@@ -1654,8 +1690,11 @@ table `notification_channel` · db `main` · gate `2.5` · @@softDelete
 | `deletedAt` | `DateTime` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `isActive` | `Boolean` | no | `1` | — |
+| `isPagedForFleet` | `Boolean` | no | `1` | — |
 | `kind` | `ChannelKind` | no | — | **required on write** |
 | `lastDeliveryAt` | `DateTime` | yes | — | @system |
+| `lastError` | `String` | yes | — | @system |
+| `lastErrorAt` | `DateTime` | yes | — | @system |
 | `lastTestAt` | `DateTime` | yes | — | @system |
 | `monitors` | `MonitorChannel[]` | — | — | relation |
 | `name` | `String` | no | — | **required on write** |
@@ -1986,13 +2025,13 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 | `labels` | `Json` | no | `'{}'` | — |
 | `lastHeartbeatAt` | `DateTime` | yes | — | — |
 | `name` | `String` | no | — | **required on write** |
-| `outpostCert` | `String` | yes | — | — |
-| `outpostPublicKey` | `String` | yes | — | — |
+| `outpostCert` | `String` | yes | — | @system |
+| `outpostPublicKey` | `String` | yes | — | @system |
 | `outpostVersion` | `String` | yes | — | — |
 | `plan` | `Json` | no | `'{}'` | — |
-| `providerId` | `String` | yes | — | — |
-| `providerKind` | `ComputeProvider` | no | `'custom'` | — |
-| `providerServerId` | `String` | yes | — | — |
+| `providerId` | `String` | yes | — | @system |
+| `providerKind` | `ComputeProvider` | no | `'custom'` | @system |
+| `providerServerId` | `String` | yes | — | @system |
 | `region` | `String` | no | `'custom'` | — |
 | `registerMethod` | `RegisterMethod` | no | `'imported'` | — |
 | `replication` | `Json` | yes | — | — |
@@ -2043,10 +2082,12 @@ table `server_event` · db `main` · gate `2.4.8.8`
 | `kind` | `ServerEventKind` | no | — | **required on write** |
 | `message` | `String` | no | — | **required on write** |
 | `metadata` | `Json` | no | `'{}'` | — |
+| `noticeOwedAt` | `DateTime` | yes | — | @system |
 | `server` | `Server` | — | — | relation |
 | `serverId` | `String` | no | — | **required on write** |
 
 ```
+@@index(noticeOwedAt)
 @@index(serverId)
 @@deny(create, !check(server, tenancy))
 @@deny(delete, !check(server, tenancy))

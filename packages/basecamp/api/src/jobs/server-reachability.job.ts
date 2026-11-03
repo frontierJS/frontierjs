@@ -21,11 +21,10 @@
 // nothing can test at a chosen instant.
 
 import { defineJob }      from '@frontierjs/caravan'
-import { sweepStuckReleases } from '../domain/release/release-record.ts'
 import { runsAsApp }      from '../domain/job/job-context.ts'
 import { otherRunIsLive } from '../domain/job/singleton.ts'
 import { gradeReachability, heartbeatGraceMs } from '../domain/host/reachability.ts'
-import { notifyPeople, workspaceMembers }        from '../domain/notification/notify.ts'
+import { deliverOwed, redriveOwed }            from '../domain/notification/owed.ts'
 import type { App }         from '@frontierjs/junction'
 
 export interface SweepOptions {
@@ -95,6 +94,9 @@ export async function sweepUnreachable(
     }
   }
 
+  // A notice a crashed pass left owed; this pass's own are paid inline.
+  if (!opts.serverId) await redriveOwed(app, 'server', at)
+
   return result
 }
 
@@ -109,37 +111,34 @@ async function gradeOne(
   // and it narrows the UPDATE's own WHERE to the from-state — so a machine
   // that checked in between the read above and this line stays `online`
   // instead of being marked unreachable by a sweep that read a stale row.
-  try {
-    await db.server.transition(server.id, 'loseContact')
-  } catch {
-    // The race, and it is the expected outcome rather than an error: the
-    // machine came back while this pass was running. Nothing is announced,
-    // because nothing happened.
-    return
-  }
+  // The event row owes the notice in the same transaction, so a crash before
+  // the send leaves it for the next sweep instead of a machine gone and
+  // nobody told (`FJS-D1801`).
+  const eventId: string | null = await db.$transaction(async (tx: any) => {
+    try { await tx.server.transition(server.id, 'loseContact') }
+    catch {
+      // The race, and it is the expected outcome rather than an error: the
+      // machine came back while this pass was running. Nothing is announced,
+      // because nothing happened.
+      return null
+    }
+    const event = await tx.serverEvent.create({ data: {
+      serverId:     server.id,
+      kind:         'unreachable',
+      message:      `No check-in for ${Math.round((at - Date.parse(String(server.lastHeartbeatAt))) / 60_000)} minutes`,
+      metadata:     { last_heartbeat_at: server.lastHeartbeatAt, grace_ms: graceMs },
+      noticeOwedAt: new Date(at).toISOString(),
+    } })
+    return event.id as string
+  })
+  if (!eventId) return
   result.quiet++
 
-  // The move has landed, so a failed event row must not cost the workspace its
-  // notice: nothing else will say this machine is gone.
   try {
-    await db.serverEvent.create({ data: {
-      serverId: server.id,
-      kind:     'unreachable',
-      message:  `No check-in for ${Math.round((at - Date.parse(String(server.lastHeartbeatAt))) / 60_000)} minutes`,
-      metadata: { last_heartbeat_at: server.lastHeartbeatAt, grace_ms: graceMs },
-    } })
+    await deliverOwed(app, 'server', eventId)
   } catch (err) {
-    console.error(`[server-reachability] ${server.name}: event row not written: ${(err as Error).message}`)
+    console.error(`[server-reachability] ${server.name}: notice left owed: ${(err as Error).message}`)
   }
-
-  // After the move, so a send that throws cannot leave the row `online` with
-  // somebody already told it is gone.
-  await notifyPeople(app, 'ServerUnreachable',
-    await workspaceMembers(app, server.workspaceId as string), {
-      serverId:   server.id,
-      serverName: server.name,
-      lastSeenAt: server.lastHeartbeatAt ?? null,
-    }, server.workspaceId as string)
 }
 
 export default defineJob({
@@ -147,10 +146,6 @@ export default defineJob({
     const { app } = runsAsApp(ctx, 'server-reachability')
     if (otherRunIsLive(ctx, 'server-reachability')) return
     const res = await sweepUnreachable(app, { startedAt: PROCESS_STARTED })
-    // Folded in rather than a job of its own: a release nothing is left
-    // running is found on the fleet's own minute (`FJS-3861`).
-    const failed = await sweepStuckReleases(app)
-    if (failed.length) console.warn(`[server-reachability] failed ${failed.length} release(s) no job was left running: ${failed.join(', ')}`)
 
     if (res.neverSpoke.length)
       console.warn(

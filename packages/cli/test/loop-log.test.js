@@ -116,7 +116,7 @@ describe('readLoopLog', () => {
   })
 
   test('a patch names its row and the time it was written', () => {
-    const { dock, frame, review } = read()
+    const { dock, frame } = read()
     expect(dock.patches).toEqual([{ file: 'FJS-9.patch', row: 'FJS-9', at: '2026-11-02T08:00:00.000Z', files: 2, added: 2, removed: 2 }])
     expect(dock).toMatchObject({ harvestsToday: 1, filesHarvestedToday: 2 })
     expect(frame).toMatchObject({ linesToday: 2, total: 2, framedAllTime: 0 })

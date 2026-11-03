@@ -18,8 +18,10 @@ import { randomUUID }         from 'node:crypto'
 import { BadRequest, Conflict, NotFound } from '@frontierjs/junction'
 import { mintEnrollToken, installCommand, outpostUnpublished, ENROLL_WINDOW_MS, OUTPOST_PORT } from '../../providers/compute/enrollment.ts'
 import { env } from '../../core/env.ts'
+import { cronMatches, parseCron } from '@frontierjs/toolbelt/cron'
 import { encryptionKeyFingerprint } from '../../core/db.ts'
 import { mailProvider } from '../../core/mailer.ts'
+import { databaseDisk } from './db-disk.ts'
 import { gradeHub } from './posture.ts'
 import type { HostDeclared } from './posture.ts'
 
@@ -35,7 +37,21 @@ export interface Issued { command: string; token: string; expiresAt: string; win
  * Running it again replaces the token, and the old one stops working the
  * moment the hash is overwritten — which is also the revoke.
  */
+/**
+ * The hub signs what it tells a machine with a key derived from
+ * `ENCRYPTION_KEY`, so a machine enrolled while that is the all-zeros
+ * placeholder trusts a key anyone can compute. Refused in every environment,
+ * at the boundary where the key gets pinned; `core/db.ts` refuses only a
+ * production boot (`FJS-D1798`).
+ */
+export function refusePlaceholderKey(): void {
+  if (encryptionKeyFingerprint() === null) throw new Conflict(
+    'ENCRYPTION_KEY is the development placeholder, which is public — a machine enrolled now would trust a key anyone can compute. ' +
+    'Set a real one (openssl rand -hex 32) in the hub\'s environment and restart before enrolling a machine.')
+}
+
 export async function issueEnrollmentFor(client: any, serverId: string, actor: string): Promise<Issued> {
+  refusePlaceholderKey()
   const unpublished = await outpostUnpublished()
   if (unpublished) throw new Conflict(unpublished)
   const enroll = mintEnrollToken()
@@ -258,12 +274,48 @@ async function hubAppDeclared(sys: any, appId: string | null): Promise<HostDecla
   return { placed: await sys.appServer.exists({ where: { appId } }), port: app.port ?? null, containerPort: app.containerPort ?? null }
 }
 
+/** The days between two fires of a cron line, measured on a UTC walk; 1 where it cannot be read. */
+export function cronGapDays(expr: string): number {
+  try {
+    const fields = parseCron(expr)
+    const start  = Date.UTC(2026, 0, 1)
+    let first: number | null = null
+    for (let m = 0; m < 70 * 1440; m++) {
+      const d = new Date(start + m * 60_000)
+      if (!cronMatches(fields, { minutes: d.getUTCMinutes(), hours: d.getUTCHours(), date: d.getUTCDate(), month: d.getUTCMonth() + 1, day: d.getUTCDay() })) continue
+      if (first === null) first = m
+      else return Math.max(1, Math.ceil((m - first) / 1440))
+    }
+  } catch { /* an unreadable line grades on the daily floor */ }
+  return 1
+}
+
+/** Every other app with a backup or drill schedule, and when its newest good run finished (`app.backup-recent`).
+ *  Good is the hub's own test: `success` with no `error`. A run is owed twice per interval before it is called missed, floor two days. */
+async function scheduledApps(sys: any, hubAppId: string | null): Promise<HostDeclared['scheduledApps']> {
+  const apps = await sys.app.findMany({
+    where: { deletedAt: null, ...(hubAppId ? { id: { not: hubAppId } } : {}), OR: [{ backupCron: { not: null } }, { drillCron: { not: null } }] },
+    select: { id: true, name: true, backupCron: true, drillCron: true }, limit: 5_000,
+  })
+  const out: HostDeclared['scheduledApps'] = []
+  for (const a of apps) {
+    if (a.backupCron) out.push({ name: a.name, what: 'backup', maxAgeDays: Math.max(2, 2 * cronGapDays(a.backupCron)), lastOkAt: await lastBackupAt(sys, a.id) })
+    if (a.drillCron) {
+      const drill = await sys.appDrill.findFirst({ where: { appId: a.id, status: 'success', finishedAt: { not: null } }, orderBy: { finishedAt: 'desc' } })
+      out.push({ name: a.name, what: 'drill', maxAgeDays: Math.max(2, 2 * cronGapDays(a.drillCron)), lastOkAt: drill?.finishedAt ?? null })
+    }
+  }
+  return out
+}
+
 /** What the `hub.*` controls grade in process: the newest archive, the key's escrow and the env. */
-async function hostDeclared(sys: any, push: HostDeclared['install']['push']): Promise<HostDeclared> {
+async function hostDeclared(sys: any, push: HostDeclared['install']['push'], dbPath: string): Promise<HostDeclared> {
   const config = await sys.hubConfig.findFirst({ where: { id: 'hub' } })
   return {
     hubApp:         await hubAppDeclared(sys, config?.appId ?? null),
     lastBackupAt:   await lastBackupAt(sys, config?.appId ?? null),
+    scheduledApps:  await scheduledApps(sys, config?.appId ?? null),
+    dbDisk:         databaseDisk(dbPath),
     keyFingerprint: encryptionKeyFingerprint(),
     keyEscrow:      config?.encryptionKeyEscrowedAt && config.encryptionKeyFingerprint
       ? { at: config.encryptionKeyEscrowedAt, fingerprint: config.encryptionKeyFingerprint }
@@ -284,11 +336,11 @@ async function hostDeclared(sys: any, push: HostDeclared['install']['push']): Pr
  * they were graded from. One reading for `/hub/security/` and the daily
  * `hub-posture` job, so the screen and the mail cannot disagree.
  */
-export async function gradeHubNow(sys: any, push: HostDeclared['install']['push'], now = Date.now()) {
+export async function gradeHubNow(sys: any, push: HostDeclared['install']['push'], dbPath: string, now = Date.now()) {
   const server = await hostServer(sys)
   const row    = server
     ? await sys.serverPosture.findFirst({ where: { serverId: server.id }, orderBy: { at: 'desc' } })
     : null
-  const hub = gradeHub(row?.readings ?? null, await hostDeclared(sys, push), { at: row?.at ?? now, now })
+  const hub = gradeHub(row?.readings ?? null, await hostDeclared(sys, push, dbPath), { at: row?.at ?? now, now })
   return { server, row, hub }
 }

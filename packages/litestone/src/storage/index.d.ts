@@ -30,6 +30,11 @@ export declare function FileStorage(options?: FileStorageOptions): LitestonePlug
 export declare const FILES_ENV: Readonly<Record<'provider' | 'bucket' | 'endpoint' | 'accessKeyId' | 'secretAccessKey' | 'publicBase', string>>
 /** A File column value read from the server's disk. A string is never read as a path. */
 export declare function fromPath(path: string): { readonly path: string }
+/** A File column value read from a stream, such as a request's `req.body`. `type` is a claim; the bytes' head decides. A remote provider needs `size` before the first byte, and the byte count is checked against it. */
+export declare function fromStream(
+  readable: ReadableStream<Uint8Array> | import('node:stream').Readable,
+  options?: { name?: string; type?: string; size?: number },
+): { readonly readable: ReadableStream<Uint8Array>; readonly name?: string; readonly type?: string; readonly size: number | null }
 /** A stored ref as the object: a ref passes through, its JSON text is parsed, anything else is null. */
 export declare function parseRef(value: FileRef | string | null | undefined): FileRef | null
 export declare function fileUrl(ref: FileRef | string | null | undefined): string | null

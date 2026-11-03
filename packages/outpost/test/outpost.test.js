@@ -188,6 +188,20 @@ describe('every route but /health takes a signature', () => {
     expect((await hit()).status).toBe(401)
   })
 
+  // FJS-D1799: the nonce store dies with the process, so a signature stamped
+  // before this one started is refused rather than trusted to be unspent.
+  test('a request signed before this process started is refused, and says to send it again', async () => {
+    const payload = JSON.stringify({ command: 'id' })
+    const headers = await sign({ privateKey: HUB.privateKey, method: 'POST', path: '/exec', body: payload, timestamp: Math.floor(Date.now() / 1000) - 60 })
+    const res = await server.handle(new Request('http://outpost.test/exec', {
+      method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: payload,
+    }))
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toContain('predates the restart')
+    // Unsigned callers learn nothing of when this process started.
+    expect((await send(server, 'POST', '/exec', { command: 'id' }, { key: null })).status).toBe(401)
+  })
+
   test('an unknown path is a 404, and only once it is signed', async () => {
     expect((await send(server, 'POST', '/rm-rf', {}, { key: null })).status).toBe(401)
     expect((await send(server, 'POST', '/rm-rf', {})).status).toBe(404)
@@ -836,6 +850,24 @@ describe('what the machine is asked to do', () => {
       await expect(docker.stop({ appId: 'app-1' })).rejects.toThrow('shutting down')
     })
 
+    // FJS-3849: the build and the route of a `/deploy` are inside the chain, so
+    // a stop queued behind the call waits for all three, and `held` is what
+    // lets the swap run inside its own caller.
+    test('exclusive holds the app\'s chain, and a deploy that is held does not queue behind its caller', async () => {
+      const fake   = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' } })
+      const docker = createDocker({ appsDir: APPS, run: fake.run, health: HEALTH })
+      const args   = { appId: 'app-1', project: 'acme', environment: 'prod', appSlug: 'web', image: 'acme-web', digest: DIGEST, config: {} }
+      const order  = []
+      const held = docker.exclusive('app-1', async () => {
+        order.push('start')
+        await docker.deploy({ ...args, held: true })
+        order.push('end')
+      })
+      const stopped = docker.stop({ appId: 'app-1' }).then(() => order.push('stop'))
+      await Promise.all([held, stopped])
+      expect(order).toEqual(['start', 'end', 'stop'])
+    })
+
     // FJS-3865: a process killed mid-swap left the app's last good release stopped.
     test('at start, a _replaced with nothing live beside it is renamed back and started', async () => {
       const fake = fakeRunner({
@@ -1210,6 +1242,26 @@ describe('what the machine is asked to do', () => {
       const again = restoring({ 'docker run --rm': { stdout: '1 6\n' } })
       await restore(again.server, { app_id: 'ela', path: 'ela.tar.gz', overwrite: true })
       expect(again.calls.find(a => a[1] === 'run')).toContain('FJS_OVERWRITE=1')
+    })
+
+    test('a restore that died after the script began says the volume was touched; one refused before it did not', async () => {
+      const died = restoring({ 'docker run --rm': { exitCode: 2, stderr: 'tar: unexpected EOF' } })
+      const touched = await restore(died.server, { app_id: 'ela', path: 'ela.tar.gz', overwrite: true })
+      expect(touched.status).toBe(500)
+      expect(touched.body.volume_touched).toBe(true)
+
+      // The pair: docker refusing to start the container, and the script's own
+      // refusal of a directory that holds files, both leave the data as it was.
+      for (const exitCode of [125, 3]) {
+        const { server } = restoring({ 'docker run --rm': { exitCode, stderr: 'refused' } })
+        const untouched = await restore(server, { app_id: 'ela', path: 'ela.tar.gz' })
+        expect({ exitCode, status: untouched.status }).toEqual({ exitCode, status: 500 })
+        expect('volume_touched' in untouched.body).toBe(false)
+      }
+
+      // A container holding the volume is refused before any container runs.
+      const held = restoring({ 'docker ps -a': { stdout: 'fjs-ela\n' } })
+      expect('volume_touched' in (await restore(held.server, { app_id: 'ela', path: 'ela.tar.gz' })).body).toBe(false)
     })
   })
 
@@ -2756,6 +2808,11 @@ describe('what this machine tells basecamp', () => {
     expect(existsSync(join(apps, 'ela', 'data'))).toBe(false)
     await expect(inspector.removeVolume(`${apps}/crm/data`)).rejects.toThrow('held by fjs-crm')
     expect(existsSync(join(apps, 'crm', 'data'))).toBe(true)
+    // FJS-3849: removing a data directory joins the app's chain.
+    const chained = []
+    const watched = createInspector({ run, appsDir: apps, exclusive: (id, fn) => { chained.push(id); return fn() } })
+    await watched.removeVolume(`${apps}/ela/data`).catch(() => {})
+    expect(chained).toEqual(['ela'])
     // Anything else is a docker volume name, which `docker volume rm` refuses.
     const seen = []
     const docker = createInspector({ run: async (argv) => { seen.push(argv); return { exitCode: 1, stdout: '', stderr: 'no such volume' } }, appsDir: apps })

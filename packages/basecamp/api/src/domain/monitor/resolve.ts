@@ -14,16 +14,17 @@ import type { App } from '@frontierjs/junction'
  * The dedup key is the sweep's own (`basecamp:monitor:<id>`), which is what
  * lets the receiver close the incident the outage opened. Call it BEFORE a
  * delete, while the channel links exist. Never throws: the pause or delete it
- * accompanies has already been decided.
+ * accompanies has already been decided. `db` is the caller's client, elevated,
+ * so the read stays in the caller's workspace.
  */
 export async function resolveDownMonitor(
   app:     App,
+  db:      any,
   monitor: { id: string; name: string; status: string },
   reason:  string,
 ): Promise<void> {
   if (monitor.status !== 'down') return
   try {
-    const db    = (app.db as any).asSystem()
     const links = await db.monitorChannel.findMany({
       where:   { monitorId: monitor.id },
       include: { channel: true },

@@ -93,6 +93,14 @@ function louvain(nodes, edges) {
   return Object.values(member)
 }
 
+// Whole PascalCase words, so Ad is not read inside AdCampaign.
+const words = n => n.match(/[A-Z][a-z0-9]*|[a-z0-9]+/g) ?? [n]
+function builtFrom(name, lead) {
+  const w = words(name), l = words(lead)
+  for (let i = 0; i + l.length <= w.length; i++) if (l.every((x, j) => w[i + j] === x)) return true
+  return false
+}
+
 // The models the layers are arranged around, named by the schema rather than by
 // a count: in-degree alone ranks the models every table points at (an App, a
 // Server) above the tenant and the person. The tenancy root is what the row
@@ -186,6 +194,65 @@ function settledDepth(edges, depth, group) {
   return first.size ? Math.max(...first.values()) : Math.max(0, ...Object.values(depth))
 }
 
+// How knotted a group is: every key it holds past a spanning tree is a knot,
+// sorted by what it costs a reader. A loop (a model keyed to itself) is a
+// hierarchy and a pair (a second key to a model already keyed) is a second role.
+// A diamond is two routes between the same models, and it asks what the schema
+// never says: must both routes arrive at the same row? Often yes (an
+// AppDrill's App and its Deployment's App), sometimes no (an AppBackup's
+// destination and its App's replica destination). Nearly every
+// diamond in a group passes through its core (AppBackup reaches App directly and
+// through Deployment), so those are counted apart; the score is the diamonds
+// that do not, and a raw count only measured how big a group and its hub were.
+function knotsOf(schema, members, core) {
+  const S = new Set(members), loops = [], pairs = [], simple = []
+  const seen = new Set()
+  for (const m of schema.models) {
+    if (!S.has(m.name)) continue
+    for (const f of m.fields) {
+      const rel = f.type.kind === 'relation' && f.attributes.find(a => a.kind === 'relation')
+      if (!rel?.fields || !S.has(f.type.name)) continue
+      const key = { from: m.name, field: f.name, to: f.type.name }
+      const pair = [m.name, f.type.name].sort().join('\n')
+      if (m.name === f.type.name) loops.push({ kind: 'loop', ...key, route: [m.name] })
+      else if (seen.has(pair)) pairs.push({ kind: 'pair', ...key, route: [m.name, f.type.name] })
+      else { seen.add(pair); simple.push(key) }
+    }
+  }
+  // Kruskal with the keys clear of the core first: a key rejected in that pass
+  // closes a cycle the core takes no part in.
+  const parent = Object.fromEntries(members.map(n => [n, n]))
+  const root = x => parent[x] === x ? x : (parent[x] = root(parent[x]))
+  const offCore = k => !core.has(k.from) && !core.has(k.to)
+  const diamonds = []
+  for (const k of [...simple.filter(offCore), ...simple.filter(k => !offCore(k))]) {
+    const a = root(k.from), b = root(k.to)
+    if (a !== b) parent[a] = b
+    else diamonds.push({ kind: 'diamond', ...k, viaCore: !offCore(k) })
+  }
+  // The other route shown is the shortest one without the key itself, not the
+  // spanning tree's path, which wanders (AppDrill through AppBackup and
+  // BackupDestination to App, when Deployment reaches App in one step).
+  const routeOf = d => {
+    const back = { [d.from]: null }, q = [d.from]
+    while (q.length && !(d.to in back)) {
+      const x = q.shift()
+      for (const k of simple) {
+        if (k.from === d.from && k.field === d.field) continue
+        const y = k.from === x ? k.to : k.to === x ? k.from : null
+        if (y == null || y in back || (!d.viaCore && core.has(y))) continue
+        back[y] = x; q.push(y)
+      }
+    }
+    const path = []
+    for (let x = d.to; x != null; x = back[x]) path.unshift(x)
+    return path
+  }
+  for (const d of diamonds) d.route = routeOf(d)
+  const list = [...diamonds.sort((a, b) => a.viaCore - b.viaCore), ...pairs, ...loops]
+  return { offCore: diamonds.filter(d => !d.viaCore).length, all: list.length, list }
+}
+
 const round = n => Math.round(n * 10) / 10
 
 /**
@@ -193,7 +260,7 @@ const round = n => Math.round(n * 10) / 10
  * @returns {{
  *   models: Array<{ n: string, in: number, out: number, d: number, f: number, g: string }>,
  *   edges: Array<[from: string, to: string, field: string]>,
- *   groups: Array<{ key: string, label: string, members: string[], core: number, r: number }>,
+ *   groups: Array<{ key: string, label: string, members: string[], core: number, r: number, knots: { offCore: number, all: number, list: Array<{ kind: 'diamond'|'pair'|'loop', from: string, field: string, to: string, route: string[], viaCore?: boolean }> } }>,
  *   hubs: string[],
  *   depth: number,
  *   floors: Record<'ring'|'hub', { centers: Record<string, { x: number, y: number }>, at: Record<string, [number, number]> }>,
@@ -211,6 +278,20 @@ export function schemaLayers(schema) {
     if (c.length === 1) { group[c[0]] = 'unlinked'; continue }
     const lead = c.slice().sort((a, b) => g.inDeg[b] - g.inDeg[a] || g.outDeg[b] - g.outDeg[a])[0]
     for (const n of c) group[n] = 'around ' + lead
+  }
+
+  // A model keyed into two groups as often lands by a near tie in the weights;
+  // the group its name is built from wins (ClientAdBudget beside Client, not
+  // User). More keys into its own group is no tie (ClientRequest stays with
+  // Project and Deliverable).
+  for (const n of g.names) {
+    const own = group[n]
+    if (own === 'unlinked' || builtFrom(n, own.slice(7))) continue
+    const keysInto = k => g.out[n].filter(t => group[t] === k).length
+    const named = g.out[n].map(t => group[t])
+      .filter(k => k !== 'unlinked' && k !== own && builtFrom(n, k.slice(7)) && keysInto(k) >= keysInto(own))
+      .sort((a, b) => b.length - a.length)[0]
+    if (named) group[n] = named
   }
 
   const byKey = new Map()
@@ -277,6 +358,7 @@ export function schemaLayers(schema) {
       members: ranked.get(k),
       core: ranked.get(k).filter(n => core.has(n)).length,
       r: round(rad(k)),
+      knots: k === 'unlinked' ? { offCore: 0, all: 0, list: [] } : knotsOf(schema, byKey.get(k), core),
     })),
     hubs,
     depth: settledDepth(g.edges, depth, group),

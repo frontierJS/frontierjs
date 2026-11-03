@@ -303,6 +303,7 @@ All of it holds on every read path — `findMany`, `findFirst`, `findUnique`,
 ```
 @keepVersions                    skip S3 object cleanup on File? update
 @accept("mime/type")             validate MIME before upload (wildcards + comma-list OK)
+@digest(column)                  String column beside the File that follows the SHA-256 of its bytes
 ```
 
 ### Validators (run on every create + update)

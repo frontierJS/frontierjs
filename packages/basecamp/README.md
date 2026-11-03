@@ -226,7 +226,7 @@ is the generated, checkable list of which model is which.
 - **Every provider is a stub.** Eight appliances until their env vars are set —
   Infisical, Unleash, Typesense, Zot, Forgejo, Grafana/Loki, NetBird, Nango — plus
   two hosted services reached with a token, `edge` and `cloudSpend`. Four screens
-  are waiting on one each and say so; `docs/adapters.md` is what wiring one costs.
+  are waiting on one each and say so; `docs/providers.md` is what wiring one costs.
 
 ---
 
@@ -235,7 +235,7 @@ is the generated, checkable list of which model is which.
 | | |
 |---|---|
 | `docs/screens.md` | The mock inventory — 41 of 41 built, and what each phase decided |
-| `docs/adapters.md` | **Picking the adapters back up? Start here.** Every boundary is declared and nothing is behind any of them; what each one costs, and what wiring it will break |
+| `docs/providers.md` | **Picking the providers back up? Start here.** Every boundary is declared and nothing is behind any of them; what each one costs, and what wiring it will break |
 | `db/README.md` | The Data realm: conventions, identity, encryption, the audit trail, intended gates |
 | `PROJECT_STATE.md` | Current state in detail, and what each pass found |
 | `docs/vision.md` | What Basecamp is *for*. Aspirational and says so at the top |

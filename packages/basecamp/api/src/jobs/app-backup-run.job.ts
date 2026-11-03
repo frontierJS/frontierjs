@@ -32,6 +32,7 @@
 // dispatch states `actor: null` to match. `kind` and `requestedBy` are what
 // say who asked, on the row.
 
+import { noticeScheduledRunFailed } from '../domain/backup/run-failure.ts'
 import { defineJob }                                 from '@frontierjs/caravan'
 import { BadRequest, Conflict, NotFound }            from '@frontierjs/junction'
 import { runsAsApp }                                 from '../domain/job/job-context.ts'
@@ -98,6 +99,45 @@ export function mintDownload(app: App, dest: BackupDestination, key: string, sav
     ? `?response-content-disposition=${encodeURIComponent(`attachment; filename="${saveAs.replace(/[^A-Za-z0-9._-]/g, '-')}"`)}`
     : ''
   return presignFor(app, dest, 'GET', key, DOWNLOAD_URL_TTL_S, query)
+}
+
+/** Outpost bounds the extract at an hour; a multi-GB archive sent at conduit's
+ *  10s default reads as a failure while the machine is still writing it. */
+export const VOLUME_RESTORE_TIMEOUT_MS = 61 * 60_000
+
+/**
+ * What `/volume/restore` is sent to read one backup of an app back: a
+ * pre-signed GET and the sha256 the machine checks the fetched copy against
+ * (`FJS-D1521`). Refused in words for an archive that never left its machine
+ * or has no digest. The caller has already read the app in its own scope.
+ */
+export async function restoreSourceOf(app: App, appId: string, backupId: string): Promise<{ url: string; sha256: string; per_file?: true }> {
+  const sys = app.db!.asSystem() as any
+  const backup = await sys.appBackup.findFirst({ where: { id: backupId, appId } })
+  if (!backup) throw new NotFound(`No backup '${backupId}' of this app`)
+  if (backup.status !== 'success') throw new BadRequest(`Backup '${backupId}' is ${backup.status}, so there is no archive to restore`)
+  if (!backup.destinationId || !backup.location || backup.location.startsWith('/'))
+    throw new BadRequest(`Backup '${backupId}' never left its machine (${backup.location ?? 'no archive'}) — copy it under the restore directory and restore by path`)
+  if (!backup.sha256) throw new BadRequest(`Backup '${backupId}' records no sha256, so the machine has nothing to check the fetched copy against`)
+  const dest = await sys.backupDestination.findFirst({ where: { id: backup.destinationId } })
+  if (!dest) throw new NotFound(`No backup destination '${backup.destinationId}'`)
+  // A wrapped `.db` replaces that database only (`FJS-D1724`); a whole
+  // archive's restore would empty the volume around it.
+  const perFile = backup.location.endsWith('.db.tar.gz') ? { per_file: true as const } : {}
+  return { url: await mintDownload(app, dest, backup.location), sha256: backup.sha256, ...perFile }
+}
+
+/**
+ * The copy a release took before it swapped (`Back up volume`, `FJS-D1496`),
+ * the newest if the release was retried. Rolling that release back restores
+ * this one, so the lookup is by the release being undone and no id is stored
+ * beside the replacement (`FJS-D1796`).
+ */
+export async function releaseCopyOf(app: App, appId: string, deploymentId: string): Promise<AppBackup | null> {
+  return await (app.db!.asSystem() as any).appBackup.findFirst({
+    where:   { appId, kind: 'release', deploymentId, status: 'success' },
+    orderBy: { createdAt: 'desc' },
+  }) ?? null
 }
 
 /**
@@ -206,10 +246,14 @@ export async function fireAppBackup(app: App, appId: string): Promise<void> {
     const row = await takeAppBackup(app, {
       target, executor, destination: await destinationFor(app, target), kind: 'scheduled', requestedBy: null,
     })
-    if (row.status !== 'success') log.warn('scheduled app backup failed', { appId, error: row.error })
+    if (row.status !== 'success') {
+      log.warn('scheduled app backup failed', { appId, error: row.error })
+      await noticeScheduledRunFailed(app, target, 'backup', row.error)
+    }
     else if (row.error) log.warn('scheduled app backup kept on the machine', { appId, error: row.error })
   } catch (err) {
     log.warn('scheduled app backup skipped', { appId, reason: (err as Error).message })
+    await noticeScheduledRunFailed(app, target, 'backup', (err as Error).message)
   }
 }
 

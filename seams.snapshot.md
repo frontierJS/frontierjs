@@ -30,7 +30,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | Seam | Owner | Other declaring files |
 | --- | --- | --- |
 | `manifest()` | `packages/junction/src/plugins/manifest/index.ts` | 30 |
-| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 17 |
+| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 18 |
 | `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | 11 |
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 11 |
 | `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 10 |
@@ -150,7 +150,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `createJunctionClient()` / `client.resource(name)` | `packages/junction/src/client/index.ts` | yes | — |
 | `connectApp()` / `createResource(name, { app })` | `packages/sierra/src/resource/index.js` | yes | — |
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | yes | 11 |
-| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | yes | 17 |
+| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | yes | 18 |
 | `client.auth.*` | `packages/junction/src/client/index.ts` | mentions `auth` — weak | — |
 | `signIn` | `packages/junction/src/client/index.ts` | mentioned | — |
 | `client.auth.providers()` | `packages/junction/src/client/index.ts` | yes | 1 |

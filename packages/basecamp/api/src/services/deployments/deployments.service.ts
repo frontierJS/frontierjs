@@ -12,11 +12,12 @@
 // schema rather than spelled out as SQL.
 
 import { createService, NotFound, BadRequest, Conflict, parseWhere, $ } from '@frontierjs/junction'
+import { releaseCopyOf, restoreSourceOf } from '../../jobs/app-backup-run.job.ts'
 import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, getScoped, narrowPatch, changesNothing, ws, actor, callerOrder } from '../../core/resource.ts'
 import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
-import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow, SITE_STEP } from '../../domain/release/release-record.ts'
+import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow, SITE_STEP, inFlightRelease } from '../../domain/release/release-record.ts'
 import { isInline, isGit, imageOf, inlineFilesFor, refuseBranch } from '../../domain/release/app-source.ts'
 import { snapshotVariables } from '../../domain/release/variables.ts'
 import { runtimeOf, type Runtime, CONTAINER_KINDS } from '../../domain/release/runtime.ts'
@@ -65,17 +66,25 @@ const WITH_APP = { app: { include: { environment: true } } }
  * off the release's own runtime snapshot, as every other step is — a rollback
  * puts back a release whose snapshot differs from the app.
  *
+ * A rollback that asks to restore the volume (`FJS-D1796`) swaps `Back up
+ * volume` for `Stop container` and `Restore volume`, which puts back the copy
+ * the release it undoes took before its own swap.
+ *
  * A git container build with a volume ends with `SITE_STEP`: the commit's
  * `site/`, if it has one, built against that database and published. A
  * rollback has none, since its clone is the branch as it is now.
  */
-function buildInitialSteps(target: { kind: string; source?: unknown; runtime?: Runtime }, built = false): string[] {
+function buildInitialSteps(target: { kind: string; source?: unknown; runtime?: Runtime }, built = false, restoring = false): string[] {
   if (target.kind === 'static' && isGit(target.source)) return ['Validate', 'Build and deploy']
   if (isInline(target.source))
     return inlineFilesFor(target.source).length
       ? ['Validate', 'Upload files', 'Activate', 'Health check']
       : ['Validate', 'Activate', 'Health check']
-  const copy = target.runtime?.volumePath ? ['Back up volume'] : []
+  // A rollback that restores puts the volume back instead of copying it: the
+  // container is stopped first because Outpost refuses a data directory a
+  // container holds (`FJS-D1796`).
+  const copy = !target.runtime?.volumePath ? []
+    : restoring ? ['Stop container', 'Restore volume'] : ['Back up volume']
   if ((target.kind === 'container' || target.kind === 'function') && isGit(target.source))
     return built
       ? ['Validate', ...copy, 'Start container', 'Health check']
@@ -110,6 +119,11 @@ async function deployInScope(id: string) {
   return row as Record<string, any>
 }
 
+/** The `@system` columns a release row is created with, named so the call says
+ *  so: what shipped is recorded at create and the patch door is closed on it. */
+const RELEASE_RECORD = ['builtImage', 'commitSha', 'branch', 'previousDeploymentId'] as const
+const systemKeys = (data: Record<string, unknown>) => RELEASE_RECORD.filter(k => k in data)
+
 /**
  * A release of `target` with the app's own settings, its steps, and the job
  * that runs it — `create` and `rebind` both. `built` names bytes an earlier
@@ -132,9 +146,13 @@ async function queueRelease(target: { id: string; environmentId: string; kind: s
     where:   { appId: target.id, status: 'success' },
     orderBy: { finishedAt: 'desc' },
   })
+  // The chain is the service's, and the timings are the job's: a payload
+  // naming either is dropped, not trusted (`FJS-3862`, `FJS-3863`).
+  delete data.previousDeploymentId
+  for (const k of ['startedAt', 'finishedAt', 'durationMs']) delete data[k]
   if (prev) data.previousDeploymentId = prev.id
 
-  const deployment = await db().deployment.create({ data })
+  const deployment = await db().deployment.create({ data, system: systemKeys(data) })
 
   await db().deploymentStep.createMany({
     data: buildInitialSteps({ kind: target.kind, ...(data.configSnapshot as { source: unknown; runtime: Runtime }) }, built).map((name, position) => ({
@@ -154,8 +172,7 @@ async function queueRelease(target: { id: string; environmentId: string; kind: s
  * (`FJS-3849`).
  */
 async function refuseInFlight(appId: string): Promise<void> {
-  const inFlight = await db().asSystem().deployment.findFirst({
-    where: { appId, status: { in: ['pending', 'building'] } }, select: { id: true, status: true } })
+  const inFlight = await inFlightRelease($.app, appId)
   if (inFlight) throw new Conflict(
     `Release ${inFlight.id} of this app is already ${inFlight.status} — cancel it or wait for it to finish`)
 }
@@ -185,6 +202,29 @@ async function dispatchRelease(deploymentId: string, appId: string): Promise<voi
 
 const pushRow = (id: string) => pushReleaseRow($.app, id)
 
+/**
+ * The copy a rollback of `being` would restore, or why there is none.
+ *
+ * Named for the person pressing the button: what is put back, from when, and
+ * that everything the app wrote to its volume after the release went live is
+ * discarded. A copy that never left its machine, or was taken on another
+ * machine than the one that serves the app now, cannot be sent to it.
+ */
+async function copyBefore(being: Record<string, any>, serverId: string | null) {
+  const copy = await releaseCopyOf($.app, being.appId, being.id)
+  if (!copy) return { available: false as const, reason: `No copy was taken before this release, so there is nothing to restore — a first release has none, and neither has an app with no volume.` }
+  if (serverId && copy.serverId !== serverId) return { available: false as const, reason: `The copy before this release was taken on another machine than the one serving the app now.` }
+  try { await restoreSourceOf($.app, being.appId, copy.id) } catch (err) {
+    return { available: false as const, reason: (err as Error).message }
+  }
+  const takenAt = copy.finishedAt ?? copy.createdAt
+  return {
+    available: true as const,
+    copy: { id: copy.id, takenAt, sizeBytes: copy.sizeBytes ?? null, location: copy.location ?? null, serverId: copy.serverId ?? null },
+    discards: `Everything the app has written to its volume since ${takenAt} is replaced by the copy taken then.`,
+  }
+}
+
 export default createService({
   name:  'deployments',
   scope: keyScope('deployments'),
@@ -194,6 +234,15 @@ export default createService({
   // where an `after: { all: [...] }` hook broadcast every read to every browser
   // in the workspace (FJS-031). Declaring both is refused at construction.
   channel: workspaceChannel,
+  // The whole surface (`FJS-D1796`): `rollback` states its input, and a
+  // `methods:` list is the surface or a narrowing of it.
+  methods: [
+    'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
+    'rebind', 'startRun', 'stepStatus', 'finishRun',
+    { method: 'rollback', input: 'DeploymentRollback' },
+    // What `rollback` with `isRestoringVolume` would put back. Writes nothing.
+    { method: 'rollbackCopy', read: true },
+  ],
   // `?environmentId=` is the app's column, not this model's, so it is reserved
   // rather than graded as a filter, and read below.
   reservedQuery: [...WORKSPACE_QUERY, 'environmentId'],
@@ -334,6 +383,7 @@ export default createService({
     const updated = await db().deployment.update({
       where: { id: deployment.id },
       data:  { status: 'cancelled', finishedAt: new Date().toISOString() },
+      system: ['finishedAt'],
     })
     // The queued job holds the App's `deploy:` lock until it runs, so the next
     // release would be refused behind a release nobody wants. A job already
@@ -443,6 +493,16 @@ export default createService({
     if (!isExecutor(executor)) throw new BadRequest(executor.reason)
     await refuseInFlight(being.appId)
 
+    // The volume is kept unless the caller asks for the copy back, and a
+    // request that cannot be met is refused before anything moves (`FJS-D1796`).
+    const restoring = (($.data ?? {}) as Record<string, unknown>).isRestoringVolume === true
+    if (restoring) {
+      if (!((target.configSnapshot as any)?.runtime?.volumePath ?? runtimeOf(into).volumePath))
+        throw new BadRequest(`This app has no volume, so there is no copy to restore.`)
+      const plan = await copyBefore(being, executor.serverId ?? null)
+      if (!plan.available) throw new BadRequest(plan.reason)
+    }
+
     // The move, and the enforcement: `success -> rolledBack @gate(5)` is the
     // model's and so is the level. Everything above this line was a read.
     //
@@ -470,7 +530,7 @@ export default createService({
       // the column: the one that was current before it.
       previousDeploymentId: being.id,
       triggeredBy:    actor() === 'system' ? null : actor(),
-    } })
+    }, system: ['builtImage', 'commitSha', 'branch', 'previousDeploymentId'] })
 
     await tx.deploymentStep.createMany({
       // The step list the TARGET's source needs, not the app's current one.
@@ -480,7 +540,7 @@ export default createService({
         kind:    into.kind,
         source:  (target.configSnapshot as any)?.source ?? into.source,
         runtime: (target.configSnapshot as any)?.runtime ?? runtimeOf(into),
-      }, true).map((name, position) => ({
+      }, true, restoring).map((name, position) => ({
         deploymentId: created.id, position, name, status: 'pending',
       })),
     })
@@ -508,6 +568,15 @@ export default createService({
   //
   // All four are `internalOnly`: a person moving a release through its own
   // steps by hand is a fabricated history, and the screen reads these rows.
+
+  // ── rollbackCopy — GET /deployments/:id  X-Service-Method: rollbackCopy ──
+  //
+  // The question the rollback screen asks before offering the restore.
+  async rollbackCopy() {
+    const being = await deployInScope(String($.id))
+    const executor = await resolveExecutor($.app, being.appId)
+    return copyBefore(being, isExecutor(executor) ? executor.serverId ?? null : null)
+  },
 
   async startRun() {
     return startRelease($.app, await deployInScope(String($.id)))

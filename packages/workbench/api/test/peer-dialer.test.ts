@@ -55,9 +55,9 @@ beforeAll(async () => {
 
 afterAll(() => { server?.stop(true); rmSync(scratch, { recursive: true, force: true }) })
 
-const dialer = (over: { keyId?: string | null, url?: string, fetcher?: typeof fetch } = {}) => createBasecamp({
+const dialer = (over: { keyId?: string | null, url?: string } = {}) => createBasecamp({
   url: over.url ?? `http://127.0.0.1:${server.port}`, keyId: over.keyId === undefined ? KEY_ID : over.keyId,
-  keys: async () => keys, fetcher: over.fetcher,
+  keys: async () => keys,
 })
 
 describe('the key pair', () => {
@@ -110,22 +110,19 @@ describe('the dialer', () => {
   })
 
   test('without BASECAMP_KEY_ID it refuses before dialing', async () => {
-    let dialed = 0
-    const fetcher = (async () => { dialed++; return new Response('{}') }) as unknown as typeof fetch
-    const err = await dialer({ keyId: null, fetcher }).preview(open).catch(e => e)
+    seen.length = 0
+    const err = await dialer({ keyId: null }).preview(open).catch(e => e)
     expect(err).toBeInstanceOf(PeerRefusal)
     expect(err.message).toMatch(/GET \/door\/peer.*"Add a peer"/)
-    expect(dialed).toBe(0)
+    expect(seen).toHaveLength(0)
   })
 
   test('freeze to a Basecamp on another machine refuses before dialing', async () => {
-    let dialed = 0
-    const fetcher = (async () => { dialed++; return new Response('{}') }) as unknown as typeof fetch
-    const remote = dialer({ url: 'https://basecamp.example.com', fetcher })
+    const remote = dialer({ url: 'https://basecamp.example.com' })
     expect(remote.local).toBe(false)
     const err = await remote.preview({ action: 'freeze', settings, branch: { path: '/x', branch: 'wb/one', appId: 'a1' } }).catch(e => e)
+    expect(err).toBeInstanceOf(PeerRefusal)
     expect(err.message).toMatch(/not this machine/)
-    expect(dialed).toBe(0)
     expect(remote.refusal('thaw')).toBeNull()
   })
 })

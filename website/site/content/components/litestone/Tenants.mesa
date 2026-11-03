@@ -1,0 +1,107 @@
+<!--
+  Litestone page § Tenants and secrets. Facts: packages/litestone/docs/
+  multi-tenancy.md (both strategies, the row desugar into @@deny, per-tenant
+  keys), docs/encryption.md (@encrypted, @hashed, @guarded, @secret,
+  $rotateKey and its orphan refusal), docs/trail.md § Protected fields are
+  redacted and § Personal data, and the data-hazards entry on FJS-716 (a
+  failed decrypt is raised, naming the key wanted and the key held).
+  The proof is a real run: the schema and script sit in the session scratch
+  directory, and every output line is verbatim except the error, cut at its
+  first sentence. A second run proved strategy database with a key per
+  tenant: one tenant's file opened with another tenant's key raised
+  DecryptionFailedError.
+  Not claimed: a cross-tenant update or delete is not refused by name, it
+  answers null and changes nothing, so the point says "changes nothing".
+  Nothing here says the trail never holds a secret in general: redaction
+  covers the declared attributes, and an undeclared column logs in full.
+-->
+<script>
+  const PROOF = `// schema.lite
+tenancy { strategy row  column workspaceId  claim workspaceId }
+database audit { path "./audit/"  driver trail }
+
+model Customer {
+  id          Int     @id
+  workspaceId Int
+  name        String
+  ssn         String? @encrypted
+  apiKey      String? @secret
+  loginToken  String? @hashed
+  @@trail(audit)
+}
+
+$ bun proof.mjs
+workspace 10 reads [{"id":1,"workspaceId":10,"name":"Ada"}]
+workspace 20 reads []
+workspace 20 writes into 10: AccessDeniedError Outside your workspaceId
+trail {"operation":"create","records":[1],"actorId":"u1","after":{"id":1,"workspaceId":10,"name":"Ada","ssn":"[redacted]","loginToken":"[redacted]"}}
+on disk {"ssn":"v2.59514c9d.4SmPTqFvY5NaOZVlILshUxMA2awKA-AWf_c9VkCix0Qf-2KCb6dP","loginToken":"v2h.59514c9d.4BaG8y-pPHcKZ-hIl0bcIi1Z5BINl2K-4YvL780H43k"}
+another key: DecryptionFailedError Customer.ssn: Cannot decrypt: the value names key '59514c9d' and this client holds 'bdd16940'`
+</script>
+
+<section id="tenants" class="bc-section">
+  <div class="container stack">
+    <p class="eyebrow">Tenants and secrets</p>
+    <h2>Each workspace sees only its own rows. The audit trail keeps no protected value.</h2>
+    <p class="lede">
+      One block in the schema says what a tenant is, and one attribute on a field says what a
+      stolen file or a log line may give away. It all rests on a key you keep yourself.
+    </p>
+
+    <div class="bc-split">
+      <ul class="bc-points">
+        <li>
+          <strong>A workspace is a wall.</strong>
+          With <code>strategy row</code>, another workspace's rows read as empty, an update across
+          the line changes nothing, and a create into it is refused by name.
+          <code>strategy database</code> gives each tenant its own SQLite file instead, and can
+          give each its own key.
+        </li>
+        <li>
+          <strong>Three attributes, three promises.</strong>
+          <code>@encrypted</code> stores AES-256-GCM ciphertext that only the system reads back,
+          and <code>@hashed</code> stores a one-way HMAC-SHA256 you can match in a
+          <code>where</code> but nobody can read. <code>@guarded</code> encrypts nothing: it makes
+          a column system-only for reads and writes, and <code>@secret</code> is
+          <code>@encrypted</code> plus <code>@guarded</code>, its writes logged wherever the schema
+          declares a trail.
+        </li>
+        <li>
+          <strong>The trail records that, not what.</strong>
+          A protected field's entry says who wrote which rows and when, with the value as
+          <code>[redacted]</code>, and a <code>@personal</code> column logs as
+          <code>[personal]</code>. The other fields on the row are kept in full.
+        </li>
+        <li>
+          <strong>Lose the key and the data is gone.</strong>
+          An encrypted value reads back only under the key that wrote it, and nothing in
+          Litestone can recover it without that key. <code>$rotateKey</code> moves every
+          encrypted column to a new key, and refuses while a <code>@hashed</code> column would be
+          stranded under the old one.
+        </li>
+      </ul>
+
+      <figure class="bc-proof">
+        <pre class="code">{PROOF}</pre>
+        <figcaption>
+          A run of Litestone's own client against this schema, under two principals in two
+          workspaces. The output is verbatim, the last line cut at its first sentence:
+          <code>on disk</code> is the column read straight from SQLite, and
+          <code>another key</code> is the same file opened with a different key.
+        </figcaption>
+      </figure>
+    </div>
+
+    <p class="bc-more">
+      Read more:
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/multi-tenancy.md">the two tenancy strategies</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/encryption.md">encrypted, hashed, guarded and secret</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/encryption.md#key-rotation">key rotation</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/trail.md#protected-fields-are-redacted">what the trail redacts</a>
+    </p>
+  </div>
+</section>
+
+<style>
+  .bc-proof pre.code { overflow-x: auto; font-size: .82rem; }
+</style>

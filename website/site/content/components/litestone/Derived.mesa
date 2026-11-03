@@ -1,0 +1,112 @@
+<!--
+  Litestone page § One schema. Facts: packages/litestone/README.md (Why),
+  docs/typescript.md (what gets generated), docs/jsonschema.md, docs/validate.md
+  (the client-boundary validators leave no CHECK behind), docs/cli.md (migrate
+  create, migrate check, types, jsonschema). The proof is a real run of the CLI
+  over a two-model schema, then one line added to it: the migration, the types
+  and the JSON Schema each changed by that line, and the client refused a bad
+  write. Output is abridged by hand to the lines the edit moved.
+  Not claimed: a CHECK for @length or @email (they are enforced by the client and
+  written into the JSON Schema, not into the table), and a type for
+  Create that makes an array optional (tags has a SQL default and is still
+  required on the type).
+  The samples sit in consts: a brace in markup opens a Mesa expression.
+-->
+<script>
+  const SCHEMA = `// db/schema.lite, abridged
+model Author {
+  email    String   @unique @email
+  // ...
+}
+
+model Post {
+  id       Int      @id
+  title    String   @length(3, 120)
+  status   Status   @default(draft)
+  summary  String?  @length(0, 280)   // the one line added
+  authorId Int
+  // ...
+}`
+
+  const OUTPUT = `$ litestone migrate create summary
+ALTER TABLE "post" ADD COLUMN "summary" TEXT;
+
+$ litestone types
+export interface Post {
+  summary?: string | null
+}
+export interface PostCreate {
+  status?: Status          // has a default
+  summary?: string | null
+}
+
+$ litestone jsonschema
+"summary": { "anyOf": [
+  { "type": "string", "minLength": 0, "maxLength": 280 },
+  { "type": "null" } ] }
+
+db.author.create({ data: { email: 'not-an-email', ... } })
+Validation failed — email: must be a valid email address`
+</script>
+
+<section id="one-file" class="bc-section">
+  <div class="container stack">
+    <p class="eyebrow">One schema</p>
+    <h2>Change a line once. Nothing else to keep in step.</h2>
+    <p class="lede">
+      Your data model usually lives in an ORM schema, a validator, TypeScript types, a JSON Schema
+      and migration files, and they drift. In Litestone it lives in one <code>.lite</code> file,
+      and the other four are written from it.
+    </p>
+
+    <div class="bc-split">
+      <ul class="bc-points">
+        <li>
+          <strong>One edit, every output.</strong>
+          Add a column and its migration, its TypeScript types and its JSON Schema all pick it
+          up the next time you run them. The client reads the same file when your app starts.
+        </li>
+        <li>
+          <strong>A rule is written once.</strong>
+          <code>@email</code> and <code>@length(3, 120)</code> refuse a bad write in the client
+          and become the matching JSON Schema keywords, so a form or an API checks the same
+          rule your database layer does.
+        </li>
+        <li>
+          <strong>Types you never maintain.</strong>
+          Each model gets a row type and create, update, where and order-by types, and a field
+          with a default is optional on create.
+        </li>
+        <li>
+          <strong>A stale migration fails in CI.</strong>
+          <code>litestone migrate check</code> exits 1 when the migration files do not build the
+          schema you declared, with no database needed, so the gap is found before you deploy.
+        </li>
+      </ul>
+
+      <figure class="bc-proof">
+        <pre class="code">{SCHEMA}</pre>
+        <pre class="code">{OUTPUT}</pre>
+        <figcaption>
+          A real run of the <code>litestone</code> CLI over a two-model schema, then the one
+          line marked above added to it. Shown abridged: only the lines that edit moved.
+          <code>@length</code> and <code>@email</code> are enforced by the client and written
+          into the JSON Schema, not into the table.
+        </figcaption>
+      </figure>
+    </div>
+
+    <p class="bc-more">
+      Read more:
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/typescript.md">generated types</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/jsonschema.md">JSON Schema output</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/migrations.md">migrations</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/validate.md">validators</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/packages/litestone/docs/cli.md">the CLI</a>
+    </p>
+  </div>
+</section>
+
+<style>
+  .bc-proof pre.code { overflow-x: auto; font-size: .82rem; margin: 0 0 .75rem; }
+</style>

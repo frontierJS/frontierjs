@@ -1238,6 +1238,23 @@ describe('a machine signs with its OWN key, and only its own', () => {
     expect(after.status).toBe('online')
   })
 
+  test('issueEnrollment and provision are refused while the hub runs on the placeholder ENCRYPTION_KEY (FJS-D1798)', async () => {
+    const { env: process_env, DEV_ENCRYPTION_KEY } = await import('../src/core/env.ts')
+    const m    = await enrolled('placeholder-key')
+    const real = process_env.ENCRYPTION_KEY
+    try {
+      ;(process_env as any).ENCRYPTION_KEY = DEV_ENCRYPTION_KEY
+      await expect(env.as(owner).service('servers').call('issueEnrollment', m.id))
+        .rejects.toThrow(/development placeholder.*before enrolling a machine/)
+      await expect(env.as(owner).service('servers').call('provision', null, {
+        name: 'no-key', role: 'general', accountId: account.id, region: 'nyc3', size: 's-2vcpu-4gb', image: 'ubuntu-24-04-x64' }))
+        .rejects.toThrow(/development placeholder/)
+    } finally {
+      ;(process_env as any).ENCRYPTION_KEY = real
+    }
+    expect(await env.as(owner).service('servers').call('issueEnrollment', m.id)).toMatchObject({ token: expect.any(String) })
+  })
+
   test('a machine that enrolls AGAIN replaces its key, and the old one stops working', async () => {
     // A reinstalled box, or one that lost its key. `issueEnrollment` may be run
     // again by design, so the exchange accepts a second enrollment of the row.

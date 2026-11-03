@@ -17,6 +17,7 @@
 // an App with push off read alike to a stranger.
 
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { Conflict } from '@frontierjs/junction'
 import type { App } from '@frontierjs/junction'
 import type { Delivery, Dialect, Receiver, ReceivedEvent } from '@frontierjs/conduit'
 
@@ -118,6 +119,47 @@ export const tokenDialect: Dialect<string, PushEvent> = {
   dedupeKey: deliveryKey,
 }
 
+// ─── What a push does ──────────────────────────────────────────────────
+
+/** What the push says about itself; the build step reports the sha it really built. */
+export interface PushHints { branch: string | null, commitSha?: string, author?: string, commitMessage?: string }
+
+function pushHints(ev: PushEvent, source: { branch?: string }): PushHints {
+  const { after, author, message } = ev.payload
+  return {
+    branch: branchOf(ev, source),
+    ...(after && !/^0+$/.test(after) ? { commitSha: after } : {}),
+    ...(author  ? { author } : {}),
+    ...(message ? { commitMessage: message } : {}),
+  }
+}
+
+/**
+ * The release a push asks for, made at the standing of whoever enabled push,
+ * read again now: a person removed since is refused. The row names its door
+ * and the payload's commit; these are what the history says until the build
+ * step reports the sha it built. The follow-up job calls this too, so a
+ * queued push is released exactly as an immediate one.
+ */
+export function startPushRelease(app: App, row: { id: string, workspaceId: string, pushActorId: string }, hints: PushHints) {
+  return app.runAs(row.pushActorId, { tenant: row.workspaceId }, () =>
+    (app.service('deployments') as any).create({ appId: row.id, trigger: 'push', ...hints }))
+}
+
+/**
+ * A push that arrived while the App's last release was still queued or
+ * building. `create` refuses a second release in flight (`FJS-3849`), and a
+ * 500 left the newest code unshipped until somebody pushed again. `unique` is
+ * a lock on work in flight, so every push during one release collapses into
+ * one follow-up, which builds the branch HEAD whenever it runs; the hints it
+ * carries are the FIRST push's.
+ */
+async function queueFollowUp(app: App, row: { id: string, workspaceId: string }, hints: PushHints) {
+  await (app as any).jobs.dispatch('release:follow-up', { appId: row.id, queuedAt: Date.now(), hints }, {
+    queue: 'deployments', unique: `followup:${row.id}`, actor: null, tenant: row.workspaceId,
+  })
+}
+
 // ─── The receivers ─────────────────────────────────────────────────────
 
 type Column = 'pushSecret' | 'pushTokenHash'
@@ -153,19 +195,16 @@ function receiver(app: App, path: string, dialect: Dialect<string, PushEvent>, c
       const source = (row.source ?? {}) as { branch?: string }
       if (!pushesBranch(ev, source)) return 'ignored'
 
-      // The release is made at the standing of whoever enabled push, read
-      // again now. A throw is a 500, so the forge's delivery shows red and its
-      // retry gets a clean run. The row names its door and the payload's
-      // commit: the build step reports the sha it built, and these are what
-      // the history says until it does.
-      const { after, author, message } = ev.payload
-      await app.runAs(row.pushActorId, { tenant: row.workspaceId }, () =>
-        (app.service('deployments') as any).create({
-          appId: row.id, trigger: 'push', branch: branchOf(ev, source),
-          ...(after && !/^0+$/.test(after) ? { commitSha: after } : {}),
-          ...(author  ? { author } : {}),
-          ...(message ? { commitMessage: message } : {}),
-        }))
+      // A throw is a 500, so the forge's delivery shows red and its retry gets
+      // a clean run. A release already in flight is not a failure: the push
+      // is queued behind it, because the newest code has to ship once it ends.
+      const hints = pushHints(ev, source)
+      try {
+        await startPushRelease(app, row, hints)
+      } catch (err) {
+        if (!(err instanceof Conflict)) throw err
+        await queueFollowUp(app, row, hints)
+      }
       return 'applied'
     },
   }

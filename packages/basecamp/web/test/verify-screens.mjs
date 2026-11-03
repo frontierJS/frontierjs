@@ -1170,7 +1170,7 @@ try {
   // ── /git-activity/ and /observability/ ─────────────────────────────────
   // Both report an adapter the test environment does not configure, and the
   // word they print comes from the portal's own ping — the same read
-  // /admin/adapters/ makes. A screen that hardcoded "not connected" would pass
+  // /admin/providers/ makes. A screen that hardcoded "not connected" would pass
   // an assertion on the text and be wrong the day one is wired.
   for (const [path, id, label] of [
     ['/git-activity/',   'git-status',           'git activity'],
@@ -1185,14 +1185,14 @@ try {
       await evaluate(`document.querySelectorAll('[aria-busy="true"] .skeleton').length`) > 0)
   }
 
-  // ── /admin/adapters/ ───────────────────────────────────────────────────
+  // ── /admin/providers/ ───────────────────────────────────────────────────
   // Ten providers in two groups. The split is the SERVICE's (`hosted`), so an
   // adapter added to one list cannot go missing from the other.
-  console.log('\n  /admin/adapters/ — ten, in two kinds')
-  await goto('/admin/adapters/')
-  await until(`document.querySelectorAll('#adapter-tiles .card').length`, n => n > 0,
+  console.log('\n  /admin/providers/ — ten, in two kinds')
+  await goto('/admin/providers/')
+  await until(`document.querySelectorAll('#provider-tiles .card').length`, n => n > 0,
     'the appliance grid never rendered')
-  const appliances = await evaluate(`document.querySelectorAll('#adapter-tiles .card').length`)
+  const appliances = await evaluate(`document.querySelectorAll('#provider-tiles .card').length`)
   const hostedN    = await evaluate(`document.querySelectorAll('#hosted-tiles .card').length`)
   check('eight self-hosted appliances', appliances === 8, `saw ${appliances}`)
   check('and two hosted services', hostedN === 2, `saw ${hostedN}`)

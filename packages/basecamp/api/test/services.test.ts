@@ -287,7 +287,7 @@ describe('optimistic locking — the lost update, executed', () => {
     const dev  = () => env.as(developer).service('servers')
     const made = await dev().create({
       name: 'edge-1', slug: slug(), role: 'general',
-      providerKind: 'custom', ipAddress: '203.0.113.10',
+      ipAddress: '203.0.113.10',
     })
     expect(made.version).toBeUndefined()
 
@@ -1961,14 +1961,23 @@ describe('a backup is asked for by a person and run by the app', () => {
     const dir = join(dirname(env.app.sqlite.filename), 'backups', 'basecamp-2026-01-02T03-04-05-006Z')
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'main.db'), 'x')
-    const row = await sys.appBackup.create({ data: { appId: hubId, status: 'success', location: dir } })
+    // Older than the archive below: the newest good one is not discardable (FJS-3902).
+    const row = await sys.appBackup.create({ data: { appId: hubId, status: 'success', location: dir, createdAt: '2026-01-01T00:00:00.000Z' } })
+    const odd = await sys.appBackup.create({ data: { appId: hubId, status: 'success', location: env.app.sqlite.filename, createdAt: '2026-01-02T00:00:00.000Z' } })
+    const newest = await sys.appBackup.create({ data: { appId: hubId, status: 'success', location: `${dir}-newest`, createdAt: '2026-01-03T00:00:00.000Z' } })
     await env.as(sysadmin).service('hubBackups').call('discard', row.id)
     expect(existsSync(dir)).toBe(false)
     expect(await sys.appBackup.findFirst({ where: { id: row.id } })).toBeNull()
 
-    const odd = await sys.appBackup.create({ data: { appId: hubId, status: 'success', location: env.app.sqlite.filename } })
     await expect(env.as(sysadmin).service('hubBackups').call('discard', odd.id)).rejects.toThrow(/was kept/)
     expect(existsSync(env.app.sqlite.filename)).toBe(true)
+
+    // The newest good archive, and so the only way back, is refused by name.
+    await expect(env.as(sysadmin).service('hubBackups').call('discard', newest.id)).rejects.toThrow(/newest good backup/)
+    expect(await sys.appBackup.findFirst({ where: { id: newest.id } })).not.toBeNull()
+    // A newer failed row does not take its place: the good one is still the last way back.
+    await sys.appBackup.create({ data: { appId: hubId, status: 'failed', createdAt: '2026-01-04T00:00:00.000Z' } })
+    await expect(env.as(sysadmin).service('hubBackups').call('discard', newest.id)).rejects.toThrow(/newest good backup/)
     await sys.appBackup.deleteMany({ where: { appId: hubId } })
   })
 
@@ -4430,11 +4439,15 @@ describe('a list honors every filter it admits', () => {
     expect(got).toEqual([d2.id])
   })
 
-  test('a hand patch of a release writes its run columns and drops its set-once ones', async () => {
-    const patched = await env.as(owner).service('deployments').patch(d1.id, { trigger: 'rollback', author: 'someone else', durationMs: 42 })
-    expect(patched.durationMs).toBe(42)
+  test('a hand patch of a release drops its set-once columns and refuses what it recorded (FJS-3863)', async () => {
+    const patched = await env.as(owner).service('deployments').patch(d1.id, { trigger: 'rollback', author: 'someone else' })
     expect(patched.trigger).toBe('button')
     expect(patched.author).toBeNull()
+    for (const data of [{ durationMs: 42 }, { builtImage: 'sha256:' + 'f'.repeat(64) }, { commitSha: 'abc' }, { branch: 'main' }, { finishedAt: '2026-01-01T00:00:00.000Z' }])
+      await expect(env.as(owner).service('deployments').patch(d1.id, data)).rejects.toThrow(/@system/)
+    const after = await (env.system as any).deployment.findFirst({ where: { id: d1.id } })
+    expect(after.durationMs).not.toBe(42)
+    expect(after.builtImage).not.toBe('sha256:' + 'f'.repeat(64))
   })
 
   test('jobs by name', async () => {
@@ -4533,22 +4546,55 @@ describe('a server names only its own workspace\'s secrets', () => {
     mine   = await sys.secret.create({ data: { workspaceId: ws.id, name: `my-token-${uniq()}`, kind: 'generic' } })
   })
 
-  test('a create naming another workspace\'s secret is refused, and no row is made', async () => {
+  test('a create or patch naming a provider column is refused by name, and no row is made', async () => {
     const slug = `foreign-${uniq()}`
     await expect(env.as(owner).service('servers').create({ name: slug, slug, providerKind: 'digitalocean', providerId: theirs.id }))
-      .rejects.toThrow(/providerId names no secret in this workspace/)
+      .rejects.toThrow(/@system/)
+    await expect(env.as(owner).service('servers').create({ name: slug, slug, providerServerId: '42' }))
+      .rejects.toThrow(/@system/)
     await expect(env.as(owner).service('servers').create({ name: `${slug}-k`, slug: `${slug}-k`, sshKeyId: theirs.id }))
       .rejects.toThrow(/sshKeyId names no secret in this workspace/)
     expect(await (env.system as any).server.findFirst({ where: { slug } })).toBeNull()
   })
 
-  test('a patch pointing a machine at another workspace\'s secret is refused; its own is kept', async () => {
+  test('a patch cannot move a machine onto another workspace\'s secret, or onto a key of the caller\'s own', async () => {
     const slug = `patched-${uniq()}`
-    const box: any = await env.as(owner).service('servers').create({ name: slug, slug, providerId: mine.id })
-    expect(box.providerId).toBe(mine.id)
+    const box: any = await (env.system as any).server.create({ data: {
+      workspaceId: ws.id, name: slug, slug, providerKind: 'digitalocean', providerId: mine.id } })
     await expect(env.as(owner).service('servers').patch(box.id, { providerId: theirs.id }))
+      .rejects.toThrow(/@system/)
+    await expect(env.as(owner).service('servers').patch(box.id, { outpostPublicKey: 'AAAA', outpostCert: 'x' }))
+      .rejects.toThrow(/@system/)
+    const after = await (env.system as any).server.findFirst({ where: { id: box.id } })
+    expect(after.providerId).toBe(mine.id)
+    expect(after.outpostPublicKey).toBeNull()
+    expect(after.outpostCert).toBeNull()
+    await expect(env.as(owner).service('servers').patch(box.id, { sshKeyId: theirs.id }))
       .rejects.toThrow(/names no secret in this workspace/)
-    expect((await (env.system as any).server.findFirst({ where: { id: box.id } })).providerId).toBe(mine.id)
+  })
+
+  test('a machine\'s archives are not taken with it: removing one succeeds and leaves them listed (FJS-3902)', async () => {
+    const sys  = env.system as any
+    const slug = `kept-${uniq()}`
+    const box: any = await sys.server.create({ data: { workspaceId: ws.id, name: slug, slug } })
+    const proj: any = await sys.project.create({ data: { workspaceId: ws.id, name: 'Kept', slug: `kept-p-${uniq()}` } })
+    const envi: any = await sys.environment.create({ data: { workspaceId: ws.id, projectId: proj.id, name: 'E', slug: `kept-e-${uniq()}` } })
+    const app: any = await sys.app.create({ data: { workspaceId: ws.id, environmentId: envi.id, name: 'kept', slug: `kept-a-${uniq()}` } })
+    const arch: any = await sys.appBackup.create({ data: { appId: app.id, serverId: box.id, status: 'success' } })
+    await env.as(owner).service('servers').remove(box.id)
+    expect(await sys.appBackup.findFirst({ where: { id: arch.id } })).not.toBeNull()
+    await sys.appBackup.delete({ where: { id: arch.id } })
+  })
+
+  test('the enrollment columns are not the caller\'s on create either', async () => {
+    const slug = `enrolled-${uniq()}`
+    await expect(env.as(owner).service('servers').create({ name: slug, slug, outpostPublicKey: 'AAAA' }))
+      .rejects.toThrow(/@system/)
+    await expect(env.as(owner).service('servers').create({ name: slug, slug, outpostCert: 'x' }))
+      .rejects.toThrow(/@system/)
+    await expect(env.as(owner).service('servers').create({ name: slug, slug, enrollTokenHash: 'h' }))
+      .rejects.toThrow(/@guarded|@system/)
+    expect(await (env.system as any).server.findFirst({ where: { slug } })).toBeNull()
   })
 
   test('a row already holding a foreign account is refused at sync and destroy, before any call goes out', async () => {
@@ -5454,7 +5500,8 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       const dest = await own()
       await pointHub(dest.id)
       expect(await hostReplicaFor(env.app, box.id)).toEqual({
-        bucket: dest.bucket, path: 'apps/basecamp', endpoint: dest.endpoint, region: 'auto',
+        bucket: dest.bucket, path: `apps/hub-${(await sys.hubConfig.findFirst({ where: { id: 'hub' } })).installId}`,
+        endpoint: dest.endpoint, region: 'auto',
         access_key_id: 'AKID', secret_access_key: 'se:cr/et',
       })
       // A tenant may name a server `basecamp-host`; it is not sent the key.

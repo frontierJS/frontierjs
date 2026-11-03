@@ -64,8 +64,8 @@ import { runtimeOf, CONTAINER_KINDS, servingAddresses } from '../../domain/relea
 import { runLiveCheck } from '../../domain/release/live-check.ts'
 import type { DnsAnswer, HttpsAnswer } from '../../domain/release/live-check.ts'
 import { ingressRefusal } from '../edge/edge.service.ts'
-import { portHolders, serversOf, assertPortFree, allocatePort } from '../../domain/release/host-port.ts'
-import { mintDownload } from '../../jobs/app-backup-run.job.ts'
+import { portHolders, serversOf, assertPortFree, allocatePort, withPortLock } from '../../domain/release/host-port.ts'
+import { restoreSourceOf, VOLUME_RESTORE_TIMEOUT_MS } from '../../jobs/app-backup-run.job.ts'
 import { cronProblem, syncAppBackupSchedule, syncAppDrillSchedule } from '../../domain/job/job-schedule.ts'
 import { syncReplicasOn, syncReplicasOf, replicaHolder, replicaOf, replicaDatabases } from '../../jobs/replicate-sync.job.ts'
 import type { App }            from '@frontierjs/junction'
@@ -78,9 +78,6 @@ import { outpostRouteId, trafficOf, unavailable, unavailableOf } from '../../dom
 
 const _WITH_ENV = { environment: true }
 
-/** Outpost bounds the extract at an hour; a multi-GB archive sent at conduit's
- *  10s default reads as a failure while the machine is still writing it. */
-const VOLUME_RESTORE_TIMEOUT_MS = 61 * 60_000
 
 /** A build is up to 24 MB written file by file; conduit's 10s default fails it mid-write. */
 const STATIC_PUBLISH_TIMEOUT_MS = 120_000
@@ -142,11 +139,15 @@ export async function placeApp(
   if (existing.some((p: any) => p.replicaIndex === replicaIndex))
     throw new BadRequest(`Replica ${replicaIndex} of this app is already on '${server.name}'`)
 
-  if (target.port == null && CONTAINER_KINDS.has(target.kind))
-    await db().app.update({ where: { id: target.id }, data: { port: await allocatePort(server.id, target.id) } })
+  // Pick, write and place under one lock: the port is only taken once the
+  // App's own row says so, and the next allocation reads that row (`FJS-3884`).
+  await withPortLock(server.id, async () => {
+    if (target.port == null && CONTAINER_KINDS.has(target.kind))
+      await db().app.update({ where: { id: target.id }, data: { port: await allocatePort(server.id, target.id) } })
 
-  await $.db.asSystem().appServer.create({
-    data: { appId: target.id, serverId: server.id, replicaIndex, status: 'unknown' },
+    await $.db.asSystem().appServer.create({
+      data: { appId: target.id, serverId: server.id, replicaIndex, status: 'unknown' },
+    })
   })
   if (target.replicaDestinationId) await syncReplicasOn(app, [server.id])
 }
@@ -371,6 +372,20 @@ function checkSource(data: Record<string, unknown>, current?: Record<string, unk
       `An inline source is served as files, so this app's kind must be 'static' — it is '${appKind}'`)
 }
 
+/** A stored source re-read. A row saved before the repo check (`FJS-3842`)
+ *  refuses here, and nobody is re-saving it, so the refusal names the App and
+ *  where the fix is rather than echoing a bare 'source.repo must be…'
+ *  (`FJS-D1804`). */
+function storedSource(app: { name?: unknown, source?: unknown }): ReturnType<typeof parseAppSource> {
+  try {
+    return parseAppSource(app.source)
+  } catch (err) {
+    if (!(err instanceof BadRequest)) throw err
+    throw new BadRequest(
+      `App '${app.name}' has a stored repo that is not a git URL (${err.message}) — set the repo to a git URL in the App's source settings`)
+  }
+}
+
 /** A health path is asked of the port the release publishes, so one with
  *  no port could only fail — after the old container is already gone. */
 function checkRuntime(data: Record<string, unknown>, current?: Record<string, unknown>) {
@@ -414,18 +429,7 @@ async function checkBackup(data: Record<string, unknown>, selfId?: string): Prom
  * rather than the restore one, so it is refused here naming where it is.
  */
 async function backupSource(appId: string, backupId: string): Promise<{ url: string; sha256: string; per_file?: true }> {
-  const backup = await db().appBackup.findFirst({ where: { id: backupId, appId } })
-  if (!backup) throw new NotFound(`No backup '${backupId}' of this app`)
-  if (backup.status !== 'success') throw new BadRequest(`Backup '${backupId}' is ${backup.status}, so there is no archive to restore`)
-  if (!backup.destinationId || !backup.location || backup.location.startsWith('/'))
-    throw new BadRequest(`Backup '${backupId}' never left its machine (${backup.location ?? 'no archive'}) — copy it under the restore directory and restore by path`)
-  if (!backup.sha256) throw new BadRequest(`Backup '${backupId}' records no sha256, so the machine has nothing to check the fetched copy against`)
-  const dest = await db().backupDestination.findFirst({ where: { id: backup.destinationId } })
-  if (!dest) throw new NotFound(`No backup destination '${backup.destinationId}'`)
-  // A wrapped `.db` replaces that database only (`FJS-D1724`); a whole
-  // archive's restore would empty the volume around it.
-  const perFile = backup.location.endsWith('.db.tar.gz') ? { per_file: true as const } : {}
-  return { url: await mintDownload($.app, dest, backup.location), sha256: backup.sha256, ...perFile }
+  return restoreSourceOf($.app, appId, backupId)
 }
 
 /** The post-restore offer (`domain/backup/found-replicas.ts`) is answered. */
@@ -1176,7 +1180,7 @@ export default createService({
   // `source.dockerfile`.
   async importDockerfile() {
     const target = await getScoped('app', 'App')
-    const source = parseAppSource(target.source)
+    const source = storedSource(target)
     if (source?.kind !== 'git')
       throw new BadRequest(`App '${target.name}' is not built from a git repository`)
     const forge = await readForgeDockerfile($.app, source)

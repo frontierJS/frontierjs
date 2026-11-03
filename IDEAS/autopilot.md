@@ -354,3 +354,47 @@ Done when: each has its own ruling and its own cap.
     review gate; B gives every idea a paper and a lifecycle; C is the one sink
     the owner already reads. Reopen path: A as the list only, if questions
     swamp the council.
+- ~~**Q7 — How a tap on the phone comes back.**~~ **Answered 2026-11-03 (`FJS-D1811`): A — The button POSTs `{id, letter}` to a reply topic, `<topic>-reply`, on the same ntfy server; the five-minute autopilot tick polls it outbound.** Workbench is LAN-only in local
+  dev (`FJS-D1776`), so a phone off the LAN cannot reach it. ntfy's `http`
+  action button POSTs from the phone to a URL; `GET /<topic>/json?poll=1&since=<id>`
+  reads a topic's cache (docs.ntfy.sh, publish § Action buttons, subscribe § API).
+  - **A** — The button POSTs `{id, letter}` to a reply topic, `<topic>-reply`,
+    on the same ntfy server; the five-minute autopilot tick polls it outbound.
+  - **B** — The button POSTs straight to Workbench's `POST /atlas/:id`.
+  - **C** — The owner types the letter as a message into the topic.
+  - **Recommend A** — outbound only, so it works with the laptop off the LAN
+    and needs no second route; B dies off the LAN, and C is ambiguous with two
+    asks open. Reopen path: B, the day a Workbench is reachable from outside.
+- ~~**Q8 — What one tap may rule.**~~ **Answered 2026-11-03 (`FJS-D1812`): A — Only the recommended, unqualified letter is a button, beside **Open** (a `view` link to `/atlas/decide/`); any other question or pick stays at the bench.** `decide.js` refuses a pick against the
+  recommendation, or a qualified one, without a reason, and a phone has no
+  text box; ntfy shows at most three buttons.
+  - **A** — Only the recommended, unqualified letter is a button, beside
+    **Open** (a `view` link to `/atlas/decide/`); any other question or pick
+    stays at the bench.
+  - **B** — Every letter a button; a pick that needs a reason is parked until
+    one is written.
+  - **C** — Every letter rules, with the reason "ruled from the phone".
+  - **Recommend A** — `decide`'s guard stays untouched, nothing half-ruled is
+    stored, and C writes a reason nobody gave. The poll re-reads the
+    recommendation from the paper; the tap carries only `{id, letter}`.
+- ~~**Q9 — Which `DECISIONS.md` section a phone ruling goes under.**~~ **Answered 2026-11-03 (`FJS-D1813`): A — A `section` cap on the `post` schedule entry, checked against `rulingSections` when the file loads.** `decide`
+  needs one and the phone has no picker.
+  - **A** — A `section` cap on the `post` schedule entry, checked against
+    `rulingSections` when the file loads.
+  - **B** — Derived from the paper.
+  - **C** — Whatever `/atlas/decide/` last remembered in the browser.
+  - **Recommend A** — explicit and refused at load rather than at 3am; B
+    guesses and C is a second origin in a browser. Reopen path: a per-question
+    `section:` line in the paper.
+- ~~**Q10 — Who can rule on public ntfy.sh.**~~ **Answered 2026-11-03 (`FJS-D1814`): A — Ruling buttons only on rung 1 (own server, token and ACL on both topics); rung 3 asks carry **Open** only.** On rung 3 the topic suffix is the
+  read secret and the write secret at once (`push.ts`), so anyone who reads an
+  ask can publish a ruling. This machine's Workbench runs on rung 3 (no
+  `NTFY_BASE_URL`).
+  - **A** — Ruling buttons only on rung 1 (own server, token and ACL on both
+    topics); rung 3 asks carry **Open** only.
+  - **B** — Rung 3 too, with a one-shot nonce per ask kept under `~/.fli`.
+  - **C** — Rung 3 too; the suffix is the secret, as it is for the pings.
+  - **Recommend A** — a nonce rides in the ask anyone reading the topic sees,
+    so it stops only replays; a forged ruling is a binding record written by
+    someone else. On this machine Post rings but cannot rule until
+    `NTFY_BASE_URL` points at an own server (`push.awe.dev` on thod is one).

@@ -332,11 +332,35 @@ describe('the hub grader', () => {
   const FILES = { db: { path: '/srv/basecamp/db', mode: '700', owner: 'root', group: 'root' },
                   env: { path: '/srv/basecamp/.env', mode: '600', owner: 'root', group: 'root' } }
   const KEY  = 'a'.repeat(64)
+  const DISK = { path: '/srv/basecamp', freeBytes: 50 * 1024 ** 3, totalBytes: 100 * 1024 ** 3, dbBytes: 1024 ** 3 }
   const INSTALL = { production: true, appUrl: 'https://hub.test', apiUrl: 'https://api.hub.test',
                     mailer: 'https://api.resend.com', mailFrom: 'ops@hub.test',
                     push: { rung: 3 as const, url: 'https://ntfy.sh' } }
   const hub  = (r: PostureReadings | null, lastBackupAt: string | null, at: number = NOW, host: Partial<HostDeclared> = {}) =>
-    Object.fromEntries(gradeHub(r, { lastBackupAt, keyFingerprint: KEY, keyEscrow: null, hubApp: null, install: INSTALL, ...host }, { at, now: NOW }).map(c => [c.id, c]))
+    Object.fromEntries(gradeHub(r, { lastBackupAt, scheduledApps: [], keyFingerprint: KEY, keyEscrow: null, hubApp: null, dbDisk: DISK, install: INSTALL, ...host }, { at, now: NOW }).map(c => [c.id, c]))
+
+  test('hub.disk-free is unknown when the disk cannot be read, fails under twice the database or a tenth of the volume, and passes with room', () => {
+    const GB    = 1024 ** 3
+    const grade = (dbDisk: HostDeclared['dbDisk']) => hub(null, null, NOW, { dbDisk })['hub.disk-free']
+    expect(grade(null).ok).toBe('unknown')
+    expect(grade({ ...DISK, freeBytes: 1.5 * GB })).toMatchObject({ ok: false, fix: expect.any(String), message: expect.stringContaining('/srv/basecamp') })
+    expect(grade({ ...DISK, freeBytes: 8 * GB, dbBytes: 1000 }).ok).toBe(false)
+    expect(grade(DISK)).toMatchObject({ ok: true, message: expect.stringContaining('50.0 GB free') })
+    // In process: a stale or absent report does not hide it.
+    expect(hub(null, null, NOW - 9 * 86_400_000, { dbDisk: { ...DISK, freeBytes: GB } })['hub.disk-free'].ok).toBe(false)
+  })
+
+  test('app.backup-recent fails an app whose scheduled run has not finished inside its schedule', () => {
+    const day = 86_400_000
+    const scheduledApps = (lastOkAt: string | null, maxAgeDays = 2) => [{ name: 'shop', what: 'backup' as const, maxAgeDays, lastOkAt }]
+    const grade = (apps: ReturnType<typeof scheduledApps>) => hub(null, null, NOW, { scheduledApps: apps })['app.backup-recent']
+    expect(grade([]).ok).toBe(true)
+    expect(grade(scheduledApps(new Date(NOW - day).toISOString())).ok).toBe(true)
+    expect(grade(scheduledApps(new Date(NOW - 5 * day).toISOString()))).toMatchObject({ ok: false, message: expect.stringContaining('shop backup') })
+    expect(grade(scheduledApps(null)).ok).toBe(false)
+    // A weekly schedule is not late at five days.
+    expect(grade(scheduledApps(new Date(NOW - 5 * day).toISOString(), 14)).ok).toBe(true)
+  })
 
   test('the URLs and the mailer are graded from the env, report or none', () => {
     const grade = (install: Partial<HostDeclared['install']>) => hub(null, null, NOW, { install: { ...INSTALL, ...install } })

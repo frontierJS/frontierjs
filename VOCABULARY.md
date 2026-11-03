@@ -86,7 +86,8 @@ before you meet it.
 | Hook | blessed | Shared | | | |
 | Service | blessed | API | | | |
 | Plugin | blessed | API | | what extends the thing it is installed into — Junction's app, Litestone's client, Vite's build | `FJS-D06`, `FJS-D631`. Name the host where it is unclear: *a Vite plugin* |
-| Provider | blessed | Integrations | | a third party the app integrates with, declared once, holding the credentials both ends spend — a Target is where we send, a Receiver where it calls us | `FJS-D681`. Not *integration*, *adapter* or *driver* |
+| Provider | blessed | Integrations | | a third party the app integrates with, declared once, holding the credentials both ends spend — a Target is where we send, a Receiver where it calls us | `FJS-D681`. Not *integration* or *driver*. It names the vendor (Resend, Hetzner, Cloudflare), never the code that reaches it: that is an *Adapter* |
+| Adapter | blessed | Integrations | | our code that satisfies an interface so the caller depends on the shape and not on what sits behind it — `IMail` has an SMTP adapter and a Resend adapter, and `providers/compute/hetzner.ts` is the adapter for the Hetzner Provider | `FJS-D215`, `FJS-D1519`. A Provider is who we talk to; an Adapter is the code that talks, and one with no vendor behind it (a SQLite `IWebhookStore`) is still an Adapter. Not a synonym for *Provider* |
 | Event | blessed | API | | what Junction announces — after a write, or by `announce()` — carried on a Channel to whoever may read it | `FJS-D44`, `FJS-D393`. *Announce* is its verb, and it has no second noun: *Announcement* and *Mutation* are not terms, and *a write* is the plain phrase |
 | Channel | blessed | API | | | |
 | Job | blessed | Automation | | | |

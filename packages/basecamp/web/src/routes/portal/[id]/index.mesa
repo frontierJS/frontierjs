@@ -92,7 +92,7 @@ title: Appliance
     <article class="alert info">
       <div class="alert-content">
         This appliance is a stub: calls are logged and dropped. It activates when its
-        environment variables are set — see <a href="/admin/adapters/">Adapters</a>.
+        environment variables are set — see <a href="/admin/providers/">Providers</a>.
       </div>
     </article>
   {/if}

@@ -17,6 +17,7 @@
 // a failure, as `app-backup:run` records it — a drill reading `success` over
 // a copy nobody checked is the answer a drill exists to prevent.
 
+import { noticeScheduledRunFailed } from '../domain/backup/run-failure.ts'
 import { defineJob }                       from '@frontierjs/caravan'
 import { BadRequest }                      from '@frontierjs/junction'
 import { runsAsApp }                       from '../domain/job/job-context.ts'
@@ -110,9 +111,13 @@ export async function fireAppDrill(app: App, appId: string): Promise<void> {
   if (!isExecutor(executor)) { log.warn('scheduled drill skipped', { appId, reason: executor.reason }); return }
   try {
     const row = await drillApp(app, { target, executor, kind: 'scheduled', requestedBy: null })
-    if (row.status !== 'success') log.warn('scheduled drill failed', { appId, error: row.error })
+    if (row.status !== 'success') {
+      log.warn('scheduled drill failed', { appId, error: row.error })
+      await noticeScheduledRunFailed(app, target, 'drill', row.error)
+    }
   } catch (err) {
     log.warn('scheduled drill skipped', { appId, reason: (err as Error).message })
+    await noticeScheduledRunFailed(app, target, 'drill', (err as Error).message)
   }
 }
 

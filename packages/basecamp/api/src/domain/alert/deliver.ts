@@ -53,14 +53,18 @@ export async function fanOutAlert(
  * Called BEFORE the rule is deleted, while its channel links still exist.
  * Each event is closed on its own so one refusing channel cannot leave the
  * rest of the rule's events open.
+ *
+ * `db` is the CALLER's client, elevated: the rule's own alerts sit below the
+ * gate, but the caller's tenant claim is what keeps the close inside the
+ * workspace that owns the rule. The app client carries no claim.
  */
 export async function closeOpenAlerts(
   app:    App,
+  db:     any,
   rule:   any,
   reason: string,
   now:    number = Date.now(),
 ): Promise<number> {
-  const db   = (app.db as any).asSystem()
   const open = await db.alert.findMany({ where: { ruleId: rule.id, status: 'firing' } })
   let closed = 0
 

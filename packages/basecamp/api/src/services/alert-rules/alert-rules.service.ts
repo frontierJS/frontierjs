@@ -124,14 +124,14 @@ export default createService({
     // The evaluator reads active rules only, so an event left open on a rule
     // switched off would never resolve.
     if (before.isActive && patch.isActive === false)
-      await closeOpenAlerts($.app, before, 'Rule deactivated')
+      await closeOpenAlerts($.app, sys(), before, 'Rule deactivated')
     return updated
   },
 
   async remove() {
     const rule = await getScoped('alertRule', 'Alert rule')
     // Before the cascade, which takes the channel links the resolve goes through.
-    await closeOpenAlerts($.app, rule, 'Rule deleted')
+    await closeOpenAlerts($.app, sys(), rule, 'Rule deleted')
     // AlertRule declares no @@softDelete, so this is a real delete — and the
     // schema cascades its alerts with it. That is the right shape: an Alert
     // is a firing OF a rule, not a record that outlives it. The audit trail
