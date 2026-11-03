@@ -26,10 +26,10 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4189 source file(s) read
+27 package(s) · 4191 source file(s) read
 249 entry point(s), 35 imported by nothing outside their package, 16 emitted
 1702 value export(s), 642 reached by nothing outside, 180 emitted
-459 type export(s), 346 reached by nothing outside
+459 type export(s), 345 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
@@ -47,7 +47,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `site-kit` | 9 | 4 | 38 | 11 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 7 | 0 | 36 | 21 |
 | `email-kit` | 3 | 0 | 10 | 4 | 1 | 0 | 0 |
-| `notifications` | 3 | 0 | 16 | 4 | 0 | 30 | 23 |
+| `notifications` | 3 | 0 | 16 | 4 | 0 | 30 | 22 |
 | `oracle` | 1 | 0 | 19 | 3 | 2 | 0 | 0 |
 | `print-kit` | 4 | 1 | 6 | 1 | 1 | 0 | 0 |
 | `testing` | 2 | 1 | 10 | 1 | 0 | 16 | 13 |
@@ -226,7 +226,7 @@ Every entry is imported and every name reached.
 
 **Unreached values (4):** `generateVapidKeys` `NotificationDeliveryError` `NotificationDriverNotFoundError` `NotificationRecipientError`
 
-**Unreached types (23):** `BuiltInTransport` `Formatter` `InAppAction` `InAppMessage` `MailLine` `NotificationDefinition` `NotificationDriver` `NotificationFactory` `NotificationReceipts` `NotificationRecord` `NotificationsPluginOptions` `NtfyOptions` `OutgoingMail` `PushMessage` `PushSubscription` `PushSubscriptions` `PushSubscriptionsService` `SendableNotification` `SubscribeToPushOptions` `TransportError` `UnsubscribeFromPushOptions` `VapidKeys` `WebPushOptions`
+**Unreached types (22):** `BuiltInTransport` `Formatter` `InAppAction` `InAppMessage` `MailLine` `NotificationDefinition` `NotificationDriver` `NotificationFactory` `NotificationReceipts` `NotificationRecord` `NotificationsPluginOptions` `NtfyOptions` `OutgoingMail` `PushMessage` `PushSubscriptions` `PushSubscriptionsService` `SendableNotification` `SubscribeToPushOptions` `TransportError` `UnsubscribeFromPushOptions` `VapidKeys` `WebPushOptions`
 
 ## `@frontierjs/oracle`
 

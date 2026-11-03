@@ -244,7 +244,7 @@ export function schemaRaw(text) {
 // see `rawClause`.
 /** @param {unknown} val */
 export function isRawClause(val) {
-  return val !== null && typeof val === 'object' && val[RAW] === true
+  return val !== null && typeof val === 'object' && /** @type {any} */ (val)[RAW] === true
 }
 
 // ─── now() — the clock, spelled so it can match a stored DateTime ────────────
@@ -576,6 +576,7 @@ function substringGlob(word) {
 //
 // DateTime is deliberately NOT here: it is stored as ISO text, so
 // `{ when: { contains: '2024-01' } }` is a genuinely useful way to ask for a month.
+/** @type {Record<string, ((k: string, op: string) => string) | undefined>} */
 const TEXT_OP_REFUSALS = {
   array:   (/** @type {string} */ k, /** @type {string} */ op) => `"${k}" holds a JSON array, so "${op}" would substring-match the stored document rather than its elements — ` +
                       `use "has" for an element, or "hasSome"/"hasEvery" for several`,
@@ -688,7 +689,7 @@ export function centerOf(spec) {
  * tautology — an index on (lat, lng) prunes on the leading column anyway, and a
  * clause that admits everything only costs the planner.
  */
-/** @param {string} col @param {string} field @param {any} point @param {any} spec @param {any[]} params */
+/** @param {{ prefix: string }} col @param {string} field @param {any} point @param {any} spec @param {any[]} params */
 function nearSql(col, field, point, spec, params) {
   const where = ['where', field]
   if (!spec || typeof spec !== 'object' || Array.isArray(spec))
@@ -741,7 +742,7 @@ const WHERE_OPS = new Set([...JSON_LEAF_OPS, ...ARRAY_OPS, ...TEXT_OPS, 'equals'
 // operators, fall through to the regular WhereOp handling at the column level.
 /** @param {unknown} val */
 function isTypedJsonPath(val) {
-  for (const k of Object.keys(val)) {
+  for (const k of Object.keys(/** @type {object} */ (val))) {
     if (!JSON_LEAF_OPS.has(k)) return true
   }
   return false
@@ -764,7 +765,7 @@ function jsonLeafClauses(at, val, params, label) {
   const clauses = []
 
   // Coerce primitive values for SQLite: booleans → 0/1, Date → ISO 8601 string.
-  const coerce = (v) => {
+  const coerce = (/** @type {any} */ v) => {
     if (typeof v === 'boolean') return v ? 1 : 0
     if (v instanceof Date) return v.toISOString()
     return v
@@ -878,7 +879,7 @@ function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJson
   if (!typeDecl) return clauses
 
   // Build a quick lookup: key name → field decl
-  const fieldByName = new Map((typeDecl.fields ?? []).map(f => [f.name, f]))
+  const fieldByName = new Map((typeDecl.fields ?? []).map((/** @type {any} */ f) => [f.name, f]))
 
   // A where on a typed column is a PATH, so every key is read as a sub-key —
   // including one that is an operator everywhere else. `{ addr: { has: 'NYC' } }`
@@ -890,7 +891,7 @@ function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJson
 
   for (const [key, val] of Object.entries(where)) {
     if (!fieldByName.has(key)) {
-      const known = (typeDecl.fields ?? []).map(f => f.name)
+      const known = (typeDecl.fields ?? []).map((/** @type {any} */ f) => f.name)
       const has   = known.length ? `. ${typeDecl.name} has: ${known.join(', ')}` : ''
       throw new Error(
         WHERE_OPS.has(key)
@@ -906,7 +907,7 @@ function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJson
 
     // Nested type? Recurse if the value is a path traversal again.
     if (field.type.name === 'Json' && val !== null && typeof val === 'object' && !Array.isArray(val)) {
-      const nestedTypeAttr = field.attributes.find(a => a.kind === 'type')
+      const nestedTypeAttr = field.attributes.find((/** @type {any} */ a) => a.kind === 'type')
       if (nestedTypeAttr && isTypedJsonPath(val)) {
         // Nested type — recurse using the nested type's declaration.
         // We need to look it up from typedJsonMap (which carries '$nestedTypes'
@@ -1082,13 +1083,13 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
     const val = where[key]
     if (key === 'AND') {
       refuseCombinator(key, val)
-      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap, pointMap)).filter(Boolean)
+      const parts = val.map((/** @type {any} */ w) => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap, pointMap)).filter(Boolean)
       if (parts.length) clauses.push(`(${parts.join(' AND ')})`)
       continue
     }
     if (key === 'OR') {
       refuseCombinator(key, val)
-      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap, pointMap)).filter(Boolean)
+      const parts = val.map((/** @type {any} */ w) => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap, pointMap)).filter(Boolean)
       if (parts.length) clauses.push(`(${parts.join(' OR ')})`)
       continue
     }
@@ -1266,7 +1267,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
       // A string operator on a column that does not hold text answers the wrong
       // question instead of failing — see TEXT_OP_REFUSALS.
       if (TEXT_OPS.has(op)) {
-        const refusal = TEXT_OP_REFUSALS[fieldKinds?.get(key)]
+        const refusal = TEXT_OP_REFUSALS[fieldKinds?.get(key) ?? '']
         if (refusal) throw new ValidationError([{ path: ['where', key], message: refusal(key, op) }])
       }
 
@@ -1286,7 +1287,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
           if (!operand?.length) { clauses.push('0 = 1'); break }
           if (!isArrayCol) { clauses.push(membership(operand, false)); break }
           const long = longList(operand)
-          const list = long ? null : operand.map(v => operandSql(v, push)).join(', ')
+          const list = long ? null : operand.map((/** @type {any} */ v) => operandSql(v, push)).join(', ')
           clauses.push(`EXISTS (SELECT 1 FROM json_each(${col}) WHERE ${long ?? `value IN (${list})`})`)
           break
         }
@@ -1295,7 +1296,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
           if (!isArrayCol) { clauses.push(membership(operand, true)); break }
           // The array form negates an EXISTS, so its inner list stays an IN.
           const long = longList(operand)
-          const list = long ? null : operand.map(v => operandSql(v, push)).join(', ')
+          const list = long ? null : operand.map((/** @type {any} */ v) => operandSql(v, push)).join(', ')
           clauses.push(`NOT EXISTS (SELECT 1 FROM json_each(${col}) WHERE ${long ?? `value IN (${list})`})`)
           break
         }
@@ -1316,7 +1317,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
           // at least one element present
           if (!operand?.length) { clauses.push('0 = 1'); break }
           {
-            const parts = operand.map(v => { push(v); return `EXISTS (SELECT 1 FROM json_each(${col}) WHERE value = ?)` })
+            const parts = operand.map((/** @type {any} */ v) => { push(v); return `EXISTS (SELECT 1 FROM json_each(${col}) WHERE value = ?)` })
             clauses.push(`(${parts.join(' OR ')})`)
           }
           break
@@ -1324,7 +1325,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
           // none of these elements present
           if (!operand?.length) break
           clauses.push(`NOT EXISTS (SELECT 1 FROM json_each(${col}) WHERE ${
-            inList('value', operand.map(v => checkBindable(coerceOperand(v, key, fieldKinds), key)), params, { affinity: false })})`)
+            inList('value', operand.map((/** @type {any} */ v) => checkBindable(coerceOperand(v, key, fieldKinds), key)), params, { affinity: false })})`)
           break
         case 'isEmpty':
           clauses.push(operand ? `json_array_length(${col}) = 0` : `json_array_length(${col}) > 0`)
@@ -1465,7 +1466,7 @@ export function vectorQueryBytes(value, dim, field) {
       `orderBy "${field}".near needs a vector of ${dim} numbers — got ${value === null ? 'null' : 'undefined'}` }])
   try {
     return toVectorBytes(value, dim, `orderBy "${field}".near`)
-  } catch (err) {
+  } catch (/** @type {any} */ err) {
     throw new ValidationError([{ path: [field], message: err.message }])
   }
 }
@@ -1538,6 +1539,7 @@ export function orderByAfterVector(orderBy, field) {
   let seen = false
   for (const item of Array.isArray(orderBy) ? orderBy : [orderBy]) {
     if (!item || typeof item !== 'object') continue
+    /** @type {Record<string, any>} */
     const kept = {}
     for (const [k, v] of Object.entries(item)) {
       if (k === field && !seen) { seen = true; continue }
@@ -2218,6 +2220,7 @@ export function parseSelectArg(select, modelName, shapes, include, computedFns, 
 /** @param {Record<string, any>} row @param {Set<string>} requestedFields @param {Set<string>} injectedFKs */
 export function trimToSelect(row, requestedFields, injectedFKs) {
   if (!row) return null
+  /** @type {Record<string, any>} */
   const out = {}
   for (const [key, val] of Object.entries(row)) {
     // Keep if user requested it, skip if it was injected just for FK joins
@@ -2348,6 +2351,7 @@ export function decodeCursor(token, fields = null) {
     throw new ValidationError([{ path: ['$after'], message }])
   }
 
+  /** @type {any} */
   let value
   try {
     value = JSON.parse(fromBase64Url(token))
@@ -2383,7 +2387,7 @@ export function decodeCursor(token, fields = null) {
   const nearFields = new Map((fields ?? []).filter(f => f.near).map(f => [f.col, f.near]))
   for (const [col, center] of nearFields) {
     const v = value[col]
-    const pair = (a) => Array.isArray(a) && a.length === 2 && a.every(n => typeof n === 'number')
+    const pair = (/** @type {any} */ a) => Array.isArray(a) && a.length === 2 && a.every(n => typeof n === 'number')
     const bad = v !== null && (typeof v !== 'object' || Array.isArray(v) || !pair(v.at) || !pair(v.p))
     if (bad) refuse(`holds no position for "${col}", which this list orders by distance`)
     if (v !== null && (v.at[0] !== center.lat || v.at[1] !== center.lng)) refuse(
@@ -2527,7 +2531,7 @@ export function buildCursorWhere(fields, cursorValues, params, columnMap = null)
   // own, so it is built in the position its `?`s appear in the text — this
   // function's params are positional and that ordering is the correctness.
   const expr = (/** @type {CursorField} */ f) => f.near
-    ? haversineSql(quote(f.latCol), quote(f.lngCol), f.near, params)
+    ? haversineSql(quote(/** @type {string} */ (f.latCol)), quote(/** @type {string} */ (f.lngCol)), f.near, params)
     : quote(f.col)
 
   // The cursor's own position, as the SAME expression over the point it is
@@ -2540,7 +2544,7 @@ export function buildCursorWhere(fields, cursorValues, params, columnMap = null)
   // *This row has no value on this field.* For a distance that is the POINT
   // being absent, asked of the generated column so the test costs no binds —
   // the expression would be NULL for the same rows and three params dearer.
-  const isNull = (/** @type {CursorField} */ f) => `${quote(f.near ? f.latCol : f.col)} IS NULL`
+  const isNull = (/** @type {CursorField} */ f) => `${quote(f.near ? /** @type {string} */ (f.latCol) : f.col)} IS NULL`
 
   // Where the NULLs sit for this field. Stated by `cursorFields`; defaulted
   // here to SQLite's own so a hand-built field list cannot silently get DESC's
@@ -2583,7 +2587,7 @@ export function buildCursorWhere(fields, cursorValues, params, columnMap = null)
     // Sitting ON a null: everything non-null follows it, but only where the
     // nulls come first. Where they come last, nothing on this field does.
     if (v === null || v === undefined)
-      return nulls === 'LAST' ? null : `${quote(f.near ? f.latCol : col)} IS NOT NULL`
+      return nulls === 'LAST' ? null : `${quote(f.near ? /** @type {string} */ (f.latCol) : col)} IS NOT NULL`
 
     const cmp = compare()
     // The nulls sort after every value, so they are still to come.
@@ -3003,6 +3007,7 @@ export function filterableKeysFor(model) {
 // serialized first, and ciphertext reshuffles on every re-encryption. One
 // bucket, because the question is not what sorting *within* the value would mean
 // but whether the column may be a sort key at all, and the answer is no.
+/** @type {Record<string, string>} */
 export const OPAQUE_SORT = {
   array:     `an array column, stored as a JSON document — sorting it orders rows by that text, so '[10]' sorts before '[9]' and a re-serialized row moves`,
   json:      `a Json column, stored as a document — sorting it orders rows by the serialized text, so the order is by whichever key serialized first`,

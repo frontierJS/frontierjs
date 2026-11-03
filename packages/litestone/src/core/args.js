@@ -69,7 +69,7 @@ const ENUM_LIST_LIMIT = 12
 export function enumOptions(meta, offending) {
   const values = [...meta.values]
   if (values.length <= ENUM_LIST_LIMIT) return `must be one of: ${values.join(', ')}`
-  const near = suggestKey(offending, values)
+  const near = suggestKey(/** @type {string} */ (offending), values)
   return (near ? `did you mean "${near}"? ` : '') +
          `${values.length} values are legal — db.$enums.${meta.enumName} is the list`
 }
@@ -111,14 +111,14 @@ export function enumOptions(meta, offending) {
 export function pointFieldsOf(model) {
   return new Map(
     (model?.fields ?? [])
-      .map(f => [f.name, f.attributes?.find(a => a.kind === 'point')])
+      .map(f => /** @type {[string, any]} */ ([f.name, f.attributes?.find(a => a.kind === 'point')]))
       .filter(([, pt]) => pt))
 }
 
 /** Is this orderBy entry a distance order rather than a sort of the column? */
 /** @param {ReturnType<typeof pointFieldsOf>} points @param {string} key @param {unknown} val */
 function isNearOrderFor(points, key, val) {
-  return points.has(key) && val !== null && typeof val === 'object' && !Array.isArray(val) && val.near != null
+  return points.has(key) && val !== null && typeof val === 'object' && !Array.isArray(val) && /** @type {any} */ (val).near != null
 }
 
 /**
@@ -135,6 +135,7 @@ export function liftNearOrders(points, orderBy) {
   const kept  = []
   for (const item of items) {
     if (!item || typeof item !== 'object') { kept.push(item); continue }
+    /** @type {Record<string, any>} */
     const rest = {}
     for (const [key, val] of Object.entries(item)) {
       if (!isNearOrderFor(points, key, val)) { rest[key] = val; continue }
@@ -584,9 +585,9 @@ export function collectWhereKeyProblems(where, filterable, computed, encrypted, 
       }
       // A relation is filterable AND carries a nested where. Grade that where
       // against the TARGET's columns, or the inner key reaches SQL ungraded.
-      const link = depth < 12 ? rel?.ctx?.shapes[rel.model].relations[k] : null
-      const targetModel = link && rel.ctx.models?.[link.targetModel]
-      if (targetModel && v && typeof v === 'object' && !Array.isArray(v)) {
+      const link = depth < 12 && rel ? rel.ctx?.shapes[rel.model].relations[k] : null
+      const targetModel = link && rel && rel.ctx.models?.[link.targetModel]
+      if (rel && targetModel && v && typeof v === 'object' && !Array.isArray(v)) {
         const tk = whereKeysFor(targetModel, rel.ctx)
         const tScopes = new Set(Object.keys(rel.ctx.shapes[targetModel.name].scopes))
         for (const [mode, inner] of Object.entries(v)) {

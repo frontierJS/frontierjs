@@ -261,15 +261,16 @@ export function installHooks(table, ctx, modelName) {
   return outer
 }
 
-/** @param {Record<string, Function | Function[]> | null | undefined} onEvent */
 // Run `fn` after the caller's await resolves. `setImmediate` skips the
 // timer-heap overhead and ~1ms clamp of `setTimeout(0)`, but a browser worker
 // has none and naming it bare is a ReferenceError on the first write.
+/** @param {() => void} fn */
 export function defer(fn) {
   if (typeof setImmediate === 'function') setImmediate(fn)
   else setTimeout(fn, 0)
 }
 
+/** @param {Record<string, Function | Function[]> | null | undefined} onEvent */
 export function buildEventEmitter(onEvent) {
   if (!onEvent) return null
   // Normalize: onEvent.create, onEvent.update, onEvent.remove, onEvent.change

@@ -57,6 +57,7 @@ import { DERIVED_NOW_ARG } from './query.js'
  * @property {'sqlite' | 'jsonl' | 'trail'}      driver
  * @property {'readwrite' | 'readonly' | false}   access
  * @property {string}                             absPath
+ * @property {boolean}                            [relative]
  * @property {boolean}                            [ownedDir]  a temp directory made for an in-memory client, removed on close
  * @property {string | null}                      retention
  * @property {string | null}                      [maxSize]
@@ -694,6 +695,8 @@ export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMem
    * @param {string} absPath
    * @param {string} name
    * @param {boolean} wantsWrite
+   * @param {boolean} shrinks
+   * @param {boolean} [relative]
    */
   function connectionsFor(absPath, name, wantsWrite, shrinks, relative = false) {
     const shared = absPath === ':memory:' ? null : opened.get(absPath)

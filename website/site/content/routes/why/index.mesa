@@ -28,6 +28,11 @@ render: static
     <p class="from">From: <a href="/why/vs-laravel/">vs Laravel</a></p>
   </section>
   <section>
+    <h2>How it is tested</h2>
+    <p>It is new, so here is what runs before it ships: one CI you can run yourself, the installed app tested rather than the repo, schema mutation testing, and the gaps written down.</p>
+    <p class="from">From: <a href="/why/tested/">Tested</a></p>
+  </section>
+  <section>
     <h2>When not to use it</h2>
     <p>Pre-alpha, Bun only, SQLite only. The cases where another framework is the right call today, stated plainly.</p>
   </section>

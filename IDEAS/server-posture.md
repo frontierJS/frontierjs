@@ -568,6 +568,47 @@ gap reads `unknown` — the same guard `advisoriesUnknown` keeps for OSV.
   `true` on an alias hit, a re-notify only on false → true) and a live shape
   check beside 7.1's `verify:advisories`.
 
+### Phase 9 — Posture from a terminal
+
+Goal: a person reads a box's grade, its pending updates included, from the CLI,
+and a box on an old Outpost fails a control.
+Done when: `fli basecamp:posture` against yuma's Basecamp prints yuma's
+controls with the report's age, a server with no report prints `unknown`, and a
+Server whose `outpostVersion` is below `OUTPOST_VERSION` grades
+`outpost.version-behind` false.
+
+The CLI prints the grade Basecamp stored and grades nothing itself, so
+`posture.ts` stays the one grader. A flag on `deploy:doctor --remote` would
+have been a second grader over ssh, and one on `fli top` would have mixed a
+six-hour-old report with live `/proc` numbers. `decision-rules` 2026-11-03 ran
+this at confidence 2. If a box ever cannot reach its Basecamp, a `--ssh`
+fallback goes on the same command, not a new one.
+
+- [ ] 9.0 Find what moves a running Outpost to a new `OUTPOST_VERSION`: the
+  unit's `ExecStart` pins it, and `fli outpost:install` answers an `online` row
+  with nothing run. That path is the control's `fix:` line.
+- [ ] 9.1 `outpost.version-behind` in `posture.ts`, beside `outpost.cert-expiry`.
+  `declaredFor` takes the expected version (`OUTPOST_VERSION`, `enrollment.ts`)
+  and the Server's stored `outpostVersion`. Behind is false and names both
+  versions, equal or ahead is true, and no stored version is `unknown`. It fires
+  through `posture_failed`, not a new kind.
+- [ ] 9.2 `posture.test.ts` rows for behind, equal and missing.
+- [ ] 9.3 One posture reader in `packages/cli/core/basecamp.js`. It reads
+  `serverPostures.latest` and `fleet` for fleet machines and `hub.hostPosture`
+  for Basecamp's own box, which is not a `serverPostures` method (`FJS-D1751`).
+  Check that a `BASECAMP_API_KEY` caller passes both gates.
+  `IDEAS/deploy-posture.md` 4.2 reuses this reader.
+- [ ] 9.4 `fli basecamp:posture [server-id]`. With no id it prints one line per
+  server with its failing count by severity. With an id it prints every control's
+  state, message and fix. Both print the report's age, and a server with no
+  report reads `unknown`, never ok. It takes `--url`, else `BASECAMP_URL`, as
+  `basecamp:backup` and `basecamp:live` do, plus `--json`. Add the line to
+  `commands/basecamp/_module.md`.
+- [ ] 9.5 What fails when it stops: a cli test that an unreported server prints
+  `unknown`, plus 9.2's rows.
+- [ ] 9.6 Drive it against yuma's Basecamp once 4.2 in `IDEAS/box-layout.md`
+  has reinstalled it.
+
 ## Open questions (owner)
 
 - ~~**Q1 — Host firewall: nftables directly, or ufw?**~~ **Answered 2026-10-12 (`FJS-D928`): A — nftables directly: one ruleset written by `installScript()`, read by the Outpost as `nft -j list ruleset`.** **Recommend nftables**: one ruleset

@@ -207,7 +207,7 @@ export function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
  * @param {DbHandle} readDb
  * @param {Row[]} rows
  * @param {string} name
- * @param {{ model: string, fkCols: string[], refCols: string[], op: string, opValue: string, extra?: string[] }} aggRef  one `@from` entry's aggregate half
+ * @param {{ model: string, fkCols: string[], refCols: string[], op: string, opValue: string, extra?: string[], valueSql: string, reads?: string | null, isBool?: boolean, through?: { joinTable: string, targetCol: string, targetKey: string } }} aggRef  one `@from` entry's aggregate half
  * @param {Ctx} ctx
  */
 function recountFromAggregate(readDb, rows, name, aggRef, ctx) {
@@ -582,7 +582,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       const parsed = parseSelectArg(
         wantId ? { ...nestedSelect, [readSink.idField]: true } : nestedSelect,
         rel.targetModel, shapes, nestedInclude, computedFns)
-      if (wantId) parsed.injectedFKs.add(readSink.idField)
+      if (wantId) /** @type {NonNullable<typeof parsed>} */ (parsed).injectedFKs.add(readSink.idField)
       return parsed
     }
 

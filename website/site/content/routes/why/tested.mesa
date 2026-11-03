@@ -1,0 +1,255 @@
+---
+title: "How FrontierJS is tested — FrontierJS"
+description: "FrontierJS is new. Here is what runs before anything ships: one CI you can run yourself, the installed app tested rather than the monorepo, 26,000 tests, schema mutation testing, and ratchets that only move one way."
+render: static
+---
+<!--
+  Every number here is from the full CI run at 3e4f6c4b2
+  (.cache/ci-runs/2026-11-03T17-50-18-478Z-2971690.jsonl) and every sample is
+  lifted in tested.meta.js. Re-measure both together: a count that moved while
+  its transcript did not is the page disagreeing with itself.
+  § The run this page was written from states a red result, under the README's
+  "state maturity honestly"; it goes only when a green run replaces the one it
+  names.
+-->
+<script>
+  export let data = null
+
+  const sample = data?.samples ?? {}
+</script>
+
+<section class="hero">
+  <div class="container">
+    <p class="eyebrow">Why · Tested</p>
+    <h1>It is new. <span class="quiet">Here is what runs before it ships.</span></h1>
+    <p class="lede">
+      A young framework is fair to doubt. So instead of asking you to trust it,
+      this page shows the checks: what they run, what fails them, and the
+      commands to run them yourself. Every sample below is a transcript, not a
+      paraphrase.
+    </p>
+  </div>
+</section>
+
+<!-- ─── 1 · One CI ──────────────────────────────────────────────────────── -->
+<section class="block">
+  <div class="container split-proof">
+    <div>
+      <p class="num">1</p>
+      <h2>CI is one script, and it runs on your laptop.</h2>
+      <p>
+        <code>bun run ci</code> is the whole of CI. GitHub Actions calls that one
+        file and does nothing else, so a green run on a laptop and a green run on
+        GitHub are the same run. It has sixteen phases, from lint and typecheck to
+        a real deploy.
+      </p>
+      <ul class="points">
+        <li><strong>No quiet skips.</strong> Every exception is a named entry with a reason in <code>scripts/ci-allowances.json</code>.</li>
+        <li><strong>Known failures are named</strong>, so a new one is loud instead of lost in the noise.</li>
+        <li><strong>Every run writes its summary to a file</strong>, so a failure can be read back instead of reproduced.</li>
+      </ul>
+    </div>
+    <figure>
+      <pre class="code">{@html sample.PHASES}</pre>
+      <figcaption>The phase list, printed by the script itself.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ─── 2 · What you install ────────────────────────────────────────────── -->
+<section class="block">
+  <div class="container split-proof">
+    <div>
+      <p class="num">2</p>
+      <h2>We test what you install, not just our repo.</h2>
+      <p>
+        A monorepo can pass every test and still ship a broken package. So CI packs
+        every publishable package into a tarball, creates a new app from those
+        tarballs, installs it and builds it. Then it deploys that app to a real
+        machine, crashes it, resumes it and rolls it back.
+      </p>
+      <ul class="points">
+        <li><strong>The tutorial runs in CI.</strong> All thirteen <code>fli tutor</code> lessons execute end to end on every full run.</li>
+        <li><strong>The docs run too.</strong> Every code block in Litestone's hand-written pages is built or executed, and a broken example is filed as a bug.</li>
+      </ul>
+    </div>
+    <figure>
+      <pre class="code">{@html sample.INSTALL}</pre>
+      <figcaption>The scaffold and deploy checks, from a full CI run's log.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ─── 3 · Depth ───────────────────────────────────────────────────────── -->
+<section class="block">
+  <div class="container">
+    <p class="num">3</p>
+    <h2>26,000 tests, and 97 drives against real browsers and servers.</h2>
+    <p class="wide">
+      Every package has its own suite, and every suite runs on every full CI run.
+      The house rule is that behavior crossing packages is tested against the
+      real dependency, not a fake client. Compiler tests parse their own output,
+      because a clean compile is not proof of valid JavaScript.
+    </p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Package</th><th>Realm</th><th class="n">Tests passed</th></tr></thead>
+        <tbody>
+          <tr><td>litestone</td><td>Data</td><td class="n">8,092</td></tr>
+          <tr><td>cli</td><td>Tooling</td><td class="n">4,326</td></tr>
+          <tr><td>junction</td><td>API</td><td class="n">3,483</td></tr>
+          <tr><td>mesa</td><td>UI</td><td class="n">2,588</td></tr>
+          <tr><td>sierra</td><td>UI</td><td class="n">2,480</td></tr>
+          <tr><td>basecamp</td><td>Deployment</td><td class="n">1,147</td></tr>
+          <tr><td>auth</td><td>API</td><td class="n">685</td></tr>
+          <tr><td>everything else</td><td>—</td><td class="n">3,342</td></tr>
+          <tr class="total"><td>Total</td><td></td><td class="n">26,143</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="split-proof drives">
+      <div>
+        <p>
+          Unit tests are not enough for a framework that spans database to browser.
+          A <strong>drive</strong> starts the real app and proves a flow end to end,
+          in a real browser when the flow is a page: clicking, typing, and reading
+          the console for errors.
+          <code>fli proves</code> reads your diff and names the drives your change
+          needs, and <code>fli done</code> will not call it finished until they pass.
+        </p>
+      </div>
+      <figure>
+        <pre class="code">{@html sample.PROVES}</pre>
+        <figcaption>One change's answer: the file it touched, and what it owes.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ─── 4 · Mutation ────────────────────────────────────────────────────── -->
+<section class="block">
+  <div class="container split-proof">
+    <div>
+      <p class="num">4</p>
+      <h2>We test the tests.</h2>
+      <p>
+        A large test count can still miss the one rule that matters. In FrontierJS,
+        who may read and change what is declared in the schema and enforced at the
+        data layer. So <code>litestone mutate</code> breaks the schema one rule at a
+        time — drops a deny, stores an <code>@encrypted</code> field in plaintext,
+        loosens a relation's access — and checks that something catches each break.
+      </p>
+      <ul class="points">
+        <li><strong>A break nothing catches is a rule nothing tests</strong>, and it is reported by name.</li>
+        <li><strong>The floor is 100%.</strong> CI fails if the share of breaks caught drops below it, and that floor can only go up.</li>
+      </ul>
+    </div>
+    <figure>
+      <pre class="code">{@html sample.MUTATE}</pre>
+      <figcaption>Mutation testing on the example app's schema.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ─── 5 · Ratchets and gaps ───────────────────────────────────────────── -->
+<section class="block">
+  <div class="container">
+    <p class="num">5</p>
+    <h2>Quality only moves one way, and the gaps are written down.</h2>
+    <div class="split-proof">
+      <div>
+        <p>
+          <strong>Ratchets.</strong> Every package typechecks with zero errors
+          except one, whose ceiling is written in a file. That number can only go
+          down; raising it shows up in a diff and needs a reason.
+        </p>
+        <p>
+          <strong>Nineteen rules, each with an enforcer.</strong> The architecture
+          rests on nineteen invariants, and a generated file names what enforces
+          each one. Where coverage is partial it says so in plain words, instead of
+          looking the same as a rule that is fully enforced.
+        </p>
+        <p>
+          <strong>Defects and decisions are public.</strong> Every known defect has
+          an id in <code>ISSUES.md</code> and every ruling one in
+          <code>DECISIONS.md</code>, both in the repo.
+        </p>
+      </div>
+      <div class="stack-proof">
+        <figure>
+          <pre class="code">{@html sample.RATCHET}</pre>
+          <figcaption><code>scripts/typecheck-baselines.json</code>: one package with a ceiling, every other at zero.</figcaption>
+        </figure>
+        <figure>
+          <pre class="code">{@html sample.GAP}</pre>
+          <figcaption>A gap, written down: from <code>invariants.snapshot.md</code>.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── The run this was written from ───────────────────────────────────── -->
+<section class="block">
+  <div class="container">
+    <h2>The run this page was written from was not green.</h2>
+    <p class="wide">
+      The numbers above come from a full CI run on the release commit
+      <code>3e4f6c4b2</code>. Every phase passed except the test suites, where
+      26,143 tests passed and <strong>3 failed</strong>: two of Litestone's CLI
+      smoke tests and one Sierra test of search timing. CI named all three by
+      test name, and this page will say so until a green run replaces it.
+    </p>
+  </div>
+</section>
+
+<!-- ─── Run it yourself ─────────────────────────────────────────────────── -->
+<section class="block">
+  <div class="container">
+    <h2>Run it yourself</h2>
+    <p class="wide">Clone the repo and every claim on this page is one command away.</p>
+    <pre class="code">{@html sample.RUN}</pre>
+    <p class="see">
+      Read more:
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/docs/CI.md">what fails each phase</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/docs/TESTING.md">how each package is tested</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/invariants.snapshot.md">the invariants and their enforcers</a> ·
+      <a href="https://github.com/frontierjs/frontierjs/blob/main/VERIFYING.md">how we know something is true</a>
+    </p>
+  </div>
+</section>
+
+<style>
+  .hero { padding: 4.5rem 0 1rem; }
+  .eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
+  h1 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.03em; margin: .3em 0; }
+  .quiet { color: var(--ink-mute); }
+  .lede { font-size: 1.12rem; color: var(--ink-soft); max-width: 60ch; line-height: 1.6; }
+
+  .block { padding: 2.5rem 0; border-top: 1px solid var(--rule); }
+  .block h2 { font-size: 1.35rem; letter-spacing: -.01em; margin: 0 0 1rem; max-width: 30ch; }
+  .block p, .points li { line-height: 1.65; color: var(--ink-soft); }
+  .block strong { color: var(--ink); }
+  .num { font-size: .78rem; letter-spacing: .12em; color: var(--ink-mute); margin: 0 0 .25rem; }
+  .wide { max-width: 68ch; }
+
+  .split-proof { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 2rem; align-items: start; }
+  .stack-proof { display: grid; gap: 1.25rem; min-width: 0; }
+  .drives { margin-top: 2rem; }
+  @media (max-width: 860px) { .split-proof { grid-template-columns: minmax(0, 1fr); } }
+
+  .points { margin: 1rem 0 0; padding-left: 1.25rem; display: grid; gap: .55rem; }
+  figure { margin: 0; min-width: 0; }
+  figure pre.code, .block > .container > pre.code { overflow-x: auto; font-size: .8rem; }
+  figcaption { font-size: .82rem; color: var(--ink-mute); margin-top: .5rem; line-height: 1.5; }
+
+  .scroll { overflow-x: auto; margin: 1.25rem 0 0; }
+  table { width: 100%; max-width: 36rem; border-collapse: collapse; font-size: .92rem; }
+  th { text-align: left; font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); padding: .5rem .75rem; border-bottom: 1px solid var(--rule-strong); }
+  td { padding: .55rem .75rem; border-bottom: 1px solid var(--rule); color: var(--ink-soft); }
+  td:first-child { font-weight: 600; color: var(--ink); }
+  .n { text-align: right; font-variant-numeric: tabular-nums; }
+  .total td { border-bottom: 0; font-weight: 600; color: var(--ink); }
+
+  .see { margin-top: 1.5rem; font-size: .85rem; color: var(--ink-mute); }
+</style>
