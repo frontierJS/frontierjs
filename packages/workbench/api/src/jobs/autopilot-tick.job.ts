@@ -24,7 +24,7 @@ export default defineJob({
   cron:    '*/5 * * * *',
   timeout: 60_000,
   handler: async (ctx) => {
-    const { app } = runsAsApp(ctx, 'autopilot-tick')
+    const { app, db } = runsAsApp(ctx, 'autopilot-tick')
     const root = await registerRoot()
     if (!root) return
     const f = await loadFli()
@@ -51,7 +51,7 @@ export default defineJob({
     const cap   = f.overDayCap(schedule.day, f.spentToday(logs))
     const free  = f.readLoopLog({ root }).lanes.filter(l => !l.busy).length
     const since = tickSince(readTick(), now)
-    const out   = tick({ root, loops: f.LOOPS, entries: schedule.entries, env: app.workbench.shellEnv(), cap, freeLanes: free, since, now, inProcess: inProcess(app, root) })
+    const out   = tick({ root, loops: f.LOOPS, entries: schedule.entries, env: app.workbench.shellEnv(), cap, freeLanes: free, since, now, inProcess: inProcess(app, root, db) })
 
     for (const s of out.started) console.log(`[autopilot-tick] started entry ${s.entry} (${s.loop}), ${s.pid ? `pid ${s.pid}` : 'in the API'}`)
     report(out.skipped.map(s => `entry ${s.entry} (${s.loop}) not started: ${s.why}`).join('; '))

@@ -29,7 +29,7 @@ slot. `api/index.ts` states 5501; `web/config/vite.config.js` states 5508 with
 - `db/schema.lite` -- Member, Session (Haven's door: no `@frontierjs/auth`,
   no `Workspace`, no level ladder, `FJS-D1786`), and `ClaudeTranscript`,
   `ClaudeMessage`, `ClaudeWrite`, and `Notification` (`@frontierjs/notifications`, in-app plus
-  the ntfy push in `api/src/push.ts`; the topic is minted into `~/.config/workbench/push.json`).
+  the ntfy push in `api/src/push.ts`; the topic and a reply topic are minted into `~/.config/workbench/push.json`, the reply topic being where a Post ruling button's anonymous tap lands (`domain/atlas/autopilot-post.ts`)).
 - `api/src/app.ts` builds the app and claims `app.own('workbench', ...)`;
   `auth.ts` + `login.ts` are the door; `principal.ts` reads the member per call.
 - `api/src/core/env.ts` is the only reader of the environment.

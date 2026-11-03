@@ -293,8 +293,27 @@ Done when: each has its own ruling and its own cap.
 - [x] 4.2 Feeders — CI red files a row; a stranger build from the npm packages
       files what stalls it; each under the filed-rows cap.
   Built 2026-11-03 (`FJS-D1789`): one `feed` loop, `scripts/feed-loop.mjs` with the pure half in `scripts/feeders.mjs` (`packages/cli/test/feeders.test.js`); caps `feeder: ci | stranger` and `filed`, one log `feed-loop.jsonl` and one filed count over both; a feed entry's worst run is $0. `ci` resets a worktree at HEAD (`~/.fli/feed/ci`), `bun install`s and runs `node scripts/ci.mjs` (`--fast` by hand), reads the run back through `core/ci-log.js`; a run already going is `busy`. `stranger` is the README's line, `bunx @frontierjs/cli@<latest> new demo --full --yes --source npm` in a temp dir, then `bun run check` and `bun run build`; the first non-zero exit is the stall, `npm view` unanswered is `offline`. A red unit files S3 under a fixed title — `CI red: <phase> · <key, or label without its counts>`, `A stranger's build from npm stalls at <step>` — an open row with the title is amended once a day (`core/amend.js`), a closed one is cited, an `envSmells` title is logged `env` and never filed (`issuesTitled` in `core/registers.js`). The town draws each filed row as a crate from the Proving ground. Proved: `--help`, refusals by name (feeder, cap, source), `--feeder ci --dry-run` off the last recorded run, stranger dry run green from `@frontierjs/cli@0.1.11` (the first stalled on `--no-install`, whose app has no first migration and fails its own `migration-history` check — by design, so the stranger installs), and a real `--feeder ci --fast --filed 1` under a scratch HOME that filed `FJS-3840` and held the registers red past the cap. Two schedule entries in `~/.fli/autopilot.json` (`0 4` ci, `0 5` stranger, filed 3 each), `on: false`. Owner's call on record: CI runs on a worktree at HEAD, not the dirty main tree.
-- [ ] 4.3 Post — rulings asked over `IDEAS/phone-ping.md`'s topic, a one-letter
+- [x] 4.3 Post — rulings asked over `IDEAS/phone-ping.md`'s topic, a one-letter
       reply ruling; a new write path into `DECISIONS.md`, so its ruling first.
+  *Built 2026-11-03 (`FJS-D1811`–`FJS-D1814`): one `post` loop with no script,
+  `LOOPS.post` in `core/autopilot.js` (caps `asks`, `section`; log
+  `post-loop.jsonl`; `readSchedule({ root })` refuses a `section` that is not a
+  `DECISIONS.md` heading). Workbench runs it in-process:
+  `api/src/domain/atlas/autopilot-post.ts` sends one `AutopilotAsk` per
+  decidable question never asked, with an **Open** button and, on rung 1 with a
+  token and an unqualified recommendation, a **Rule <letter>** ntfy `http`
+  action the phone POSTs `{id, letter}` with to `workbench-reply-<suffix>`
+  (minted beside the ask topic in `push.json`, independent of it). The tick
+  job polls that topic outbound on every tick, Off included, re-reads the
+  recommendation from the paper and rules through fli's `decide`, the Atlas
+  screen's loader; a stray letter, an id never asked or a malformed body is
+  logged `refused`. Run now takes the same in-process path. The town draws an
+  ask as a question from the Council's bench to the Post, a ruling to the wall.
+  Proved against `deliver` stubs (`api/test/autopilot-notify.test.ts`,
+  `packages/cli/test/autopilot.test.js`, `loop-log.test.js`); no ntfy server was
+  touched. The owner's: `NTFY_BASE_URL` and `NTFY_TOKEN` on an own server, the
+  two grants (`everyone` write-only on the reply topic, the sender's user read
+  on it), a `post` entry in `~/.fli/autopilot.json`, and one real tap.*
 - [ ] 4.4 Review applied — `loop-review --ask`'s suggestions as a frame entry.
 
 ## Open questions

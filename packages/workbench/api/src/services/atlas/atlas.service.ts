@@ -124,7 +124,7 @@ export default createService({
     if (!schedule.exists) throw new Conflict(`${schedule.file} does not exist, so there is no entry to run`)
     const over = f.overDayCap(schedule.day, f.spentToday(f.logFiles().flatMap(l => f.readLog(l))))
     if (over) throw new Conflict(`Refused: ${over}`)
-    const out = startEntry(root, f.LOOPS, schedule.entries, n - 1, $.app.workbench.shellEnv(), { inProcess: inProcess($.app, root) })
+    const out = startEntry(root, f.LOOPS, schedule.entries, n - 1, $.app.workbench.shellEnv(), { inProcess: inProcess($.app, root, $.db) })
     if ('refused' in out) throw new Conflict(out.refused)
     return { entry: n, ...out.started }
   },

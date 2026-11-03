@@ -227,7 +227,7 @@ describe('startEntry', () => {
       const end = Date.now() + 5_000
       while (runningOf(0) && Date.now() < end) await new Promise(r => setTimeout(r, 50))
       expect(runningOf(0)).toBeNull()
-      const log = readFileSync(out.started.log, 'utf8')
+      const log = readFileSync(out.started.log!, 'utf8')
       expect(log.split('\n')[0]).toContain('$ bun scripts/echo-loop.mjs --rows 1 --source autopilot')
       expect(log).toContain('\n--rows 1 --source autopilot\n')
     } finally { rmSync(root, { recursive: true, force: true }) }

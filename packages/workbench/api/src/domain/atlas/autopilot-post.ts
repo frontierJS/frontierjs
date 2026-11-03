@@ -148,8 +148,9 @@ export async function pollReplies ({ root, push, deliver = fetch, fli, logDir = 
   return out
 }
 
-/** What the tick job and Run now hand `startEntry` for a script-less loop: the one such loop is `post`. */
-export const inProcess = (app: App, root: string): InProcess => async (entry) => {
+/** What the tick job and Run now hand `startEntry` for a script-less loop: the one such loop is `post`.
+ *  `db` is the caller's -- the job's system handle, Run now's administrator -- so the Member lookup runs at a level someone already holds. */
+export const inProcess = (app: App, root: string, db: any): InProcess => async (entry) => {
   if (entry.loop !== 'post') throw new Error(`${entry.loop} has no script and no in-process runner`)
-  await askNow({ app, sys: (app.db as any).asSystem(), root, entry })
+  await askNow({ app, sys: db, root, entry })
 }

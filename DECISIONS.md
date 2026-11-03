@@ -8628,7 +8628,7 @@ How it holds, settled when the hearing found the first wording never fired:
 - **The grade is derived where the vendor answers `GetObjectLockConfiguration`, attested where it does not**, by the button `hub.key-escrowed` already uses, so an R2 hub is not a permanent unknown.
 - **The hub key never holds a retention-writing permission**: not `writeBucketRetentions`, `writeFileRetentions` or `bypassGovernance` on B2, not `PutObjectRetention`, `PutBucketObjectLockConfiguration` or `BypassGovernanceRetention` on S3. With one it could upload under a one-second retention and step under the default. The mode is compliance, never governance.
 
-What fails when it stops: `verify:hub-restore` asserts that a delete inside N days comes back kept, against an Object Lock bucket in its container. N above the cron interval and at most the remote age retention is the operator's, said in `docs/backups.md` and not checked. Error codes per vendor, and whether R2 answers the lock read, are unprobed. DigitalOcean Spaces is unchecked. Built under `FJS-3913`.
+What fails when it stops: `verify:hub-restore` asserts that a delete inside N days comes back kept, against an Object Lock bucket in its container. N above the cron interval and at most the remote age retention is the operator's, said in `packages/basecamp/docs/backups.md` and not checked. Error codes per vendor, and whether R2 answers the lock read, are unprobed. DigitalOcean Spaces is unchecked. Built under `FJS-3913`.
 
 *Lives in:* `packages/basecamp/docs/backups.md`, `api/src/providers/storage/s3.ts`, `api/src/domain/backup/backup-archives.ts`, `api/src/services/backup-destinations/backup-destinations.service.ts`, `api/src/domain/host/posture.ts`.
 

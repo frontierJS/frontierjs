@@ -38,6 +38,12 @@
         <details class="popover-anchor navmenu">
           <summary>More</summary>
           <div class="popover align-end">
+            <div class="navlist-label">Products</div>
+            <ul class="navlist">
+              <li><a class="navlink" href="/litestone/">Litestone</a></li>
+              <li><a class="navlink" href="/junction/">Junction</a></li>
+              <li><a class="navlink" href="/basecamp/">Basecamp</a></li>
+            </ul>
             <div class="navlist-label">Direction</div>
             <ul class="navlist">
               <li><a class="navlink" href="/direction/">Where this is going</a></li>
