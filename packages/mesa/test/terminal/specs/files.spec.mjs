@@ -29,8 +29,9 @@ export async function run(t) {
   await t.click('path to a file')
   await t.type('test/terminal/nowhere.txt')
   await t.enter()
-  t.expectFrame(await t.frame(), ['no file at test/terminal/nowhere.txt', 'shown []'],
+  await t.eventually(async () => (await t.frame()).includes('no file at test/terminal/nowhere.txt'),
     'a path that reads no file is said in the field and fires nothing')
+  t.expectFrame(await t.frame(), ['shown []'], 'a path that reads no file fires nothing')
 
   await t.type(PATH)
   await t.enter()

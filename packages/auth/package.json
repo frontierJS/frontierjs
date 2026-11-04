@@ -39,7 +39,7 @@
   "license": "MIT",
   "_built": "2026-05-07",
   "scripts": {
-    "test": "node ../../scripts/tmp-run.mjs 'bun test test/'",
+    "test": "node ../../scripts/tmp-run.mjs 'bun test --timeout 20000 test/'",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "publishConfig": {

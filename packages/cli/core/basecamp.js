@@ -7,7 +7,7 @@
 // `basecamp:backup`, and each machine's stored grade for `basecamp:posture`.
 
 import { spawnSync }                from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir }                  from 'node:os'
 import { basename, join, relative, resolve } from 'node:path'
 import { fileValue }                from '@frontierjs/toolbelt/env'

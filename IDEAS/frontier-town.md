@@ -1,7 +1,13 @@
+---
+id: frontier-town
+status: proposed
+dated: 2026-10-31
+---
+
 # Frontier Town — the workspace as a town you run
 
 **Status: PAUSED 2026-11-04 by the owner. Phases 1–7 are built and committed on
-the `world` branch (worktree `/home/j/code/FRONTIER/frontierjs-world`, last
+the `world` branch (worktree `~/code/FRONTIER/frontierjs-world`, last
 commit `1e65dbda`), unmerged.** None of it is on dev; this copy of the paper is.
 Do not cite this file as describing behavior — see `VERIFYING.md`.
 
@@ -27,7 +33,7 @@ Do not cite this file as describing behavior — see `VERIFYING.md`.
      bench is the newest transcript in the workspace, not necessarily yours.
   6. Phone: the region scene's labels are tiny and long names truncate.
   7. Q1 below.
-- To resume: `cd /home/j/code/FRONTIER/frontierjs-world && bun
+- To resume: `cd ~/code/FRONTIER/frontierjs-world && bun
   packages/cli/bin/fli.js ws:world`, open `repo-town.html`.
 
 **The ask (owner, 2026-10-31).** Each person has a town with its own

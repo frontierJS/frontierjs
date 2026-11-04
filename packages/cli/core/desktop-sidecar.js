@@ -205,6 +205,7 @@ export function sidecarBuildScript(base) {
       '//                                     for a shell compiled on the target OS (tauri-build copies them)\n'],
     [/(const release = process\.argv\.includes\('--release'\)\n)/,
       "$1const ti      = process.argv.indexOf('--target')\nconst target  = ti > 0 ? process.argv[ti + 1] : 'bun-linux-x64'\n"],
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the placeholders belong to the template literal in the script this writes, not to this string
     [/(\nrun\('cargo', )/, "\nif (process.argv.includes('--no-shell')) {\n  console.log(`\\n  staged for a shell built elsewhere: ${dist} and ${join(SHELL, 'sidecar')}`)\n  process.exit(0)\n}\n$1"],
     [/if \(config\.api === undefined\) refuse\(/, 'if (config.api === undefined && !config.sidecar) refuse('],
     [/env: \{ \.\.\.process\.env, \.\.\.\(config\.api \? /, 'env: { ...process.env, ...(config.api && !config.sidecar ? '],

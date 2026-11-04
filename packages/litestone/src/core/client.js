@@ -6628,20 +6628,6 @@ export async function createClient({
     return withArgValidation(makeTable(conn.readDb, conn.writeDb, shapes[model.name], ctx), model, ctx)
   }
 
-  // Every accessor of the shared set, wrapped for one flavor. The eager
-  // counterpart of `makeLazyTables`, for the two flavors that are made once and
-  // held for the life of the process rather than per request — the root client
-  // and `asSystem()`, both of which are read through `ownKeys` by tooling that
-  // expects a plain object.
-  function makeAllFlavorTables(flavor) {
-    const out = {}
-    for (const accessor of _tableAccessorNames) {
-      const shared = sharedTableFor(accessor)
-      if (shared !== undefined) out[accessor] = wrapForFlavor(shared, flavor)
-    }
-    return out
-  }
-
   function buildTableForView(view, ctx) {
       const dbName = view.db ?? 'main'
       const conn   = dbRegistry[dbName] ?? dbRegistry.main

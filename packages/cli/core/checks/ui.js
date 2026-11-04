@@ -16,7 +16,7 @@ import {
   schemaFile, models, looksPlural, stripComments, readCode,
   lineOf, isAppRoot, SURFACES, sources, SCRIPT_EXT, CLIENT_SURFACES,
   modelResolver, spanFrom, closingParen, staticSurfaces, scripts,
-  servingServices, withoutComments, bodyOf,
+  servingServices, bodyOf,
 } from './lib.js'
 import { walk, safeRead }                                  from '../fs.js'
 

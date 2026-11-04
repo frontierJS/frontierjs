@@ -113,5 +113,5 @@ siteName: Workbench
   .screen-body:has(:global(.workbench)) { max-inline-size: none; }
   .screen-body:has(:global(.autopilot-screen)) { max-inline-size: none; }
   /* The workbench page's Focus sets this, and clears it when the page goes. */
-  :global(html[data-workbench-focus]) .topbar { display: none; }
+  :global(html[data-workbench-focus] .topbar) { display: none; }
 </style>
