@@ -47,7 +47,7 @@ import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_
 import { db, ws, actor, findScoped, getScoped, deriveSlug, narrowPatch, changesNothing, slugify } from '../../core/resource.ts'
 import { HUB_SIGNING_REF }       from '../../core/credentials.ts'
 import { recordHealth, SERVER_SERIES, SERVER_READINGS } from '../../domain/host/server-metrics.ts'
-import { connectorFor, targetFor, computeProviders, markFor, fleetMark, priceIn, sizeRegions } from '../../providers/compute/index.ts'
+import { connectorFor, targetFor, computeProviders, markFor, fleetMark, priceIn, sizeRegions, backupCost } from '../../providers/compute/index.ts'
 import type { AccountSend, ComputeConnector, MachineBackups } from '../../providers/compute/index.ts'
 import { sendVia }               from '../../providers/compute/accounts.ts'
 import { DEPLOY_TIMEOUT_MS }     from '../../providers/executor.ts'
@@ -199,6 +199,8 @@ async function recordEvent(
  * last reading: writing *off* over it would show a box with seven backups as
  * having none. Null from the vendor is the machine gone, which the status
  * read beside this already answers, so nothing is written for it.
+ * `cost` is priced here, where the connector's share is known, so the Server
+ * screen reads it without a vendor call.
  */
 async function readBackups(
   serverId:   string,
@@ -206,6 +208,7 @@ async function readBackups(
   send:       AccountSend,
   providerId: string,
   targetId:   string,
+  plan:       Record<string, unknown> | null,
 ) {
   let reading: MachineBackups | null
   try {
@@ -219,7 +222,11 @@ async function readBackups(
   if (!reading) return
   await db().asSystem().server.update({
     where: { id: serverId },
-    data:  { backupReading: { ...reading, readAt: new Date().toISOString() } },
+    data:  { backupReading: {
+      ...reading,
+      cost:   reading.enabled && reading.plan ? backupCost(connector, reading.plan, plan) : null,
+      readAt: new Date().toISOString(),
+    } },
   })
 }
 
@@ -624,7 +631,8 @@ export default createService({
             data:  { ipAddress: reportedMachine.ipAddress, version: server.version },
           })
 
-        if (reportedMachine) await readBackups(id, connector, send, String(server.providerServerId), targetId)
+        if (reportedMachine)
+          await readBackups(id, connector, send, String(server.providerServerId), targetId, server.plan)
       }
     }
 

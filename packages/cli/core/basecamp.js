@@ -704,7 +704,7 @@ export async function checkArchive({ archive, keyFile, basecampRoot }) {
 }
 
 /** Run `script` on `host` as root, answering its stdout; a non-zero exit throws with its last stderr line. */
-async function asRootOn(host, script, what) {
+export async function asRootOn(host, script, what) {
   const transport = transportFor(host)
   const proc = Bun.spawn(['sh', '-c', pipeCommand(host, transport, transport === 'local' ? AS_ROOT : shQuote(AS_ROOT))],
     { stdin: new Blob([script]), stdout: 'pipe', stderr: 'pipe' })

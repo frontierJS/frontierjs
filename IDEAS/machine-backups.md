@@ -6,7 +6,7 @@ dated: 2026-11-03
 
 # Idea — a cloud's own whole-machine backups, seen and switched from Basecamp
 
-**Status: PROPOSED. Q1–Q4 ruled (`FJS-D1862`–`FJS-D1865`); Phase 0 done; 1.1 built; 1.2 next.** Probed against the tree 2026-11-03. Do not cite
+**Status: PROPOSED. Q1–Q4 ruled (`FJS-D1862`–`FJS-D1865`); Phase 0 done; 1.1–1.3 built; 2.1 next.** Probed against the tree 2026-11-03. Do not cite
 this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-03): see in Basecamp whether a DigitalOcean droplet's backups are on,
@@ -119,15 +119,33 @@ Done when: `cd packages/basecamp/api && bun run test` is green with the connecto
       `type=backup&bound_to=<id>`, a `creating` one excluded. Both sinks answer *off*, and the
       two-clouds lifecycle case reads it at both. The `custom_daily` case asserts the reading;
       its `setBackups` refusal lands with 2.1 and its null estimate with 1.3, in the same test.
-- [ ] 1.2 Two columns on `Server` per Q1 (`FJS-D1862`): the desired policy a person sets, and the
+- [x] 1.2 Two columns on `Server` per Q1 (`FJS-D1862`): the desired policy a person sets, and the
       vendor's last reading with its `readAt`, which `sync` writes. A null desired policy is
       *not managed*: Basecamp shows the reading and pushes nothing, so linking a box (4.1) never
       changes its backups by itself. A machine kept on a per-GiB plan stays unmanaged: on a
       managed one, 2.2a puts the desired `weekly`/`daily` back over it, and the event names the
       plan it replaced. A read failure records an event and keeps the last reading,
       the way `syncFailed` does today.
-- [ ] 1.3 The Server screen's line, with the monthly cost from the catalog's size price × the
+      Built 2026-11-04: `backupPolicy Json? @type(BackupPolicy) @system` (plan
+      `MachineBackupPlan { daily weekly }`, `hour`, `weekday`) and `backupReading Json? @system`
+      (`MachineBackups` plus `readAt`), migration `20261104165708_machine_backups`. Both `@system`:
+      a policy any developer could patch would be a vendor push past 2.2's gate, so 2.2 writes it
+      through `asSystem()` after its own. `sync` reads backups only after the machine read
+      returns a machine; a refused read records `backupsReadFailed` and keeps the reading. The
+      DO sink's `sinkRefuseBackups()` is the 403 a token without `image:read` answers.
+- [x] 1.3 The Server screen's line, with the monthly cost from the catalog's size price × the
       vendor's percentage, labeled as an estimate. A per-GiB plan prints *cost not estimated: custom plan*, never a blank.
+      Built 2026-11-04. The price is `Server.plan.priceMinor`, the catalog's price copied at
+      purchase, so the screen calls no vendor; `ComputeConnector.backupShare` holds the vendor's
+      percentages (DO weekly 20, daily 30; Hetzner daily 20) and `backupCost()` answers
+      `{ monthlyMinor, currency }` or `{ unestimated: 'custom plan' | 'size price unknown' }`.
+      `sync` stores it on the reading as `cost`. The *Machine backups* card shows on a
+      vendor-linked machine only, and says *not managed* while `backupPolicy` is null.
+      `verify:provision` proves *not read yet* → *Off* across a Sync and no card on an imported
+      machine; the *on* branch waits for 2.1's sink to answer on. Priced at purchase, the
+      estimate runs low after a vendor price change or a resize; if that bites, `sync` re-prices
+      through `priceIn` from the catalog. Nothing checks `backupShare` against the vendors' pages. Yuma's screen (Phase 1's
+      Done when) waits for 4.1, since its row has no vendor link.
 
 ### Phase 2 — Switch it
 

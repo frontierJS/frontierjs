@@ -24,7 +24,9 @@ import { pipeline }                from 'node:stream/promises'
 import { validRelativePath, validName } from './static.js'
 import { ensureDeployKey }         from './deploy-key.js'
 import { chooseDockerfile, needsGenerated, exposedPort } from './dockerfile.js'
-import { createSwap, portOf as portIn, runFlags, checkStopGrace } from './swap.js'
+import { createSwap, portOf as portIn, runFlags, checkStopGrace, livePivot, swapFor } from './swap.js'
+
+export { swapFor }
 import { layout }                  from './layout.js'
 
 // Each app's container runs as a host uid of its own (`FJS-D1484`), handed out
@@ -176,21 +178,6 @@ export function checkSwap({ swap = 'stop-first', loopback = false, exposesPort =
   if (!loopback || !port) throw new Error('a start-first swap moves the port, so it needs a published port and a hostname or path Caddy routes to it')
 }
 
-/**
- * The swap a start-first request runs, from the release's pivot (`FJS-D1838`).
- * Only an expand or an unchanged schema leaves the old release able to serve
- * beside the new one's migration; a contract, an unknown and a verdict that
- * was never reached all swap stop-first, and say why.
- */
-export function swapFor({ verdict = null, reason = null } = {}) {
-  if (verdict === 'expand' || verdict === 'unchanged') return { swap: 'start-first', reason: null }
-  if (verdict === 'contract')
-    return { swap: 'stop-first', reason: 'this release is a contract, so the live release cannot serve beside its migration — this deploy is the pivot' }
-  if (verdict === 'unknown')
-    return { swap: 'stop-first', reason: `the classifier cannot tell whether the live release survives this one, and unknown counts as a contract${reason ? ` — ${reason}` : ''}` }
-  return { swap: 'stop-first', reason: reason ?? 'no verdict was reached' }
-}
-
 /** How long `deploy` waits for a new container before putting the old one back.
  *  Basecamp's own health step polls the same ten times three seconds, and its
  *  `/deploy` send is given the room for it. */
@@ -311,11 +298,6 @@ ${filesScript('/unpacked')}`
 const DRILL_MOUNT = '/fjs-drill'
 // Every row of every model read through the client; a large app is minutes.
 const VERIFY_TIMEOUT_MS = 1_800_000
-// Where the live release's `db/` is mounted for the classifier, beside the
-// new image's own.
-const BEFORE_MOUNT = '/fjs-before'
-// Two schemas parsed and compared; a release waits on it before its swap.
-const PIVOT_TIMEOUT_MS = 120_000
 
 // ─── backup ──────────────────────────────────────────────────────────────────
 // The data is mounted read-only and the container has no network, so the
@@ -934,53 +916,11 @@ export function createDocker({
     sitePublish: ({ appId, source, branch, commit, token, accountId, app }) =>
       siteBuild({ appId, source, branch, commit, alias: null, token, accountId, app }),
 
-    /**
-     * Whether the release in `image` can serve beside the live one: the new
-     * image's own `litestone release --json`, against the `db/` of the image
-     * the live container runs (`FJS-D1838`). That is the schema the database was
-     * migrated to, which a previous commit or a failed release is not. The
-     * classifier is the app's copy of Litestone, so Outpost depends on none,
-     * and the container has no network.
-     *
-     * Never throws: no live container, an image without the CLI or a copy
-     * that failed answers `verdict: null` with the reason, which `swapFor`
-     * turns into stop-first.
-     */
+    /** Whether the release in `image` can serve beside the live one
+     *  (`livePivot`, `FJS-D1838`). Never throws. */
     async pivot({ appId, image, digest }) {
       const { live } = await containersOf(appId)
-      if (!live) return { verdict: null, reason: 'there is no live release to serve beside it' }
-      // A volume, not a host directory: a snap docker cannot write under a
-      // dotdir or /tmp, and Docker fills an EMPTY volume from the image at its
-      // mount point on create, so the old image needs no copy tool. Named once
-      // per call, because a volume left by a killed run is not empty and would
-      // answer that run's schema.
-      const volume = `fjs-before-${appId}-${randomBytes(4).toString('hex')}`
-      try {
-        const [liveImage, wd = ''] = (await docker(['inspect', '--format', '{{.Image}} {{.Config.WorkingDir}}', live])).split(' ')
-        const held = await docker(['create', '--network', 'none', '--mount', `type=volume,src=${volume},dst=${wd.replace(/\/+$/, '')}/db`,
-                                   '--entrypoint', 'true', liveImage])
-        await run(['docker', 'rm', '-f', held])
-        const ref = await reference(image, digest)
-        const result = await run([
-          'docker', 'run', '--rm', '--network', 'none', '--user', '0:0',
-          '--mount', `type=volume,src=${volume},dst=${BEFORE_MOUNT},readonly`,
-          '--entrypoint', 'bun', ref,
-          'x', 'litestone', 'release', `--from=${BEFORE_MOUNT}/schema.lite`, '--json',
-        ], { timeoutMs: PIVOT_TIMEOUT_MS })
-        const json = result.stdout.slice(result.stdout.indexOf('{'))
-        let report = null
-        try { report = json ? JSON.parse(json) : null } catch {}
-        if (typeof report?.verdict !== 'string') {
-          const said = stripVTControlCharacters(result.stderr || result.stdout || '').trim().split('\n').slice(-3).join(' ')
-          return { verdict: null, reason: `the classifier did not run in ${ref} (exit ${result.exitCode}): ${said}` }
-        }
-        // An unresolved baseline answers `unknown` with the cause in its note.
-        return { verdict: report.verdict, reason: report.baseline?.resolved === false ? report.baseline.note ?? null : null }
-      } catch (err) {
-        return { verdict: null, reason: `the live release's schema could not be read — ${err.message}` }
-      } finally {
-        await run(['docker', 'volume', 'rm', '-f', volume])
-      }
+      return livePivot({ run, live, image: live ? await reference(image, digest) : image, tag: appId })
     },
 
     /**

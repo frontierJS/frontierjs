@@ -98,7 +98,7 @@ title: DNS & edge
   }
 
   // One query across every account, so a zone is found without knowing which
-  // token opens it. An empty query answers every zone in the provider's order.
+  // token opens it.
   let zoneQuery = ''
   $: totalZones = accounts.reduce((n, a) => n + (a.zones?.length ?? 0), 0)
   $: zonesShown = new Map(accounts.map(a => [a.id, rank(a.zones ?? [], zoneQuery, { keys: ['name'] })]))

@@ -46,6 +46,6 @@ if (!machine.reach()) {
 }
 
 log.info(`Enrolling ${host} in ${appId}'s fleet`)
-const { outcome } = enrollOutpost(machine, { appId, deployConf, path, host, log })
+const { outcome } = await enrollOutpost(machine, { appId, deployConf, path, host, log })
 if (outcome === 'failed') process.exitCode = 1
 ```

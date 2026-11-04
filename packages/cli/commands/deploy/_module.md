@@ -17,7 +17,7 @@ defaults:
 const { loadFrontierConfig, dockerfileScripts, unexecdEntrypoint } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
 const { vendorApp, linkedDeps, GENERATED_DIR } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
 const { createMachine, shQuote } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
-const { createSwap, runFlags, sshRunner, shWord } = await import(new URL('file://' + global.fliRoot + '/core/swap.js'))
+const { createSwap, runFlags, sshRunner, shWord, portOf, livePivot, swapFor, swapSetting } = await import(new URL('file://' + global.fliRoot + '/core/swap.js'))
 const { apiContainer } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
 const { appUser, appUserIds } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
 const { EDGE_HOPS, edgeNames: edgeNamesOf } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
@@ -101,7 +101,7 @@ const machineFor = ($, host, path = null, transport = null) => createMachine({
 //
 // Every failure warns: a release is live by now. Answers
 // `{ outcome: 'installed' | 'enrolled' | 'skip' | 'failed', reason? }`.
-const enrollOutpost = (machine, { appId, deployConf, path, host, log }) => {
+const enrollOutpost = async (machine, { appId, deployConf, path, host, log }) => {
   // The script's last stdout line is its whole answer. A failed exec carries it
   // in the error's stdout, and an image older than the script answers nothing.
   const lastJson = (out) => {
@@ -110,10 +110,17 @@ const enrollOutpost = (machine, { appId, deployConf, path, host, log }) => {
 
   // The address this ssh session reached the box at is the third field sshd
   // sets, and the only one a self box has: no vendor reports it, and a Server
-  // row with none is a machine no ingress record can name (`FJS-3515`).
+  // row with none is a machine no ingress record can name (`FJS-3515`). Behind
+  // a cloud's NAT sshd sees the private side (a droplet's 10.x), so the address
+  // this laptop dialed goes too, and the alias names the row.
+  const { boxAddress } = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
+  const alias  = host.split('@').pop()
+  const dialed = await boxAddress(host)
+  const [before, after] = JSON.stringify({ ip: 'SSH_IP', dialed: dialed ?? undefined, name: alias === dialed ? undefined : alias }).split('SSH_IP')
+  const quote  = (v) => `'${v.replace(/'/g, `'\\''`)}'`
   const enroll = [
     `IP=$(printf '%s' "$SSH_CONNECTION" | cut -d' ' -f3)`,
-    `docker exec ${apiContainer(appId, deployConf)} bun api/src/domain/host/enroll-host.ts "{\\"ip\\":\\"$IP\\"}"`,
+    `docker exec ${apiContainer(appId, deployConf)} bun api/src/domain/host/enroll-host.ts ${quote(before)}"$IP"${quote(after)}`,
   ].join('\n')
 
   let answer
@@ -608,14 +615,24 @@ const lockRefusal = async (lock, { verb = 'deploy' } = {}) => {
 // Healthy is `healthPath` answering 200 and no database open outside
 // CONTAINER_DB_DIR: one that is works until the next swap, which starts it empty.
 //
-// Answers `{ container, replaced, healthy, restored, none, unbound, reason }`;
-// only a refusal before the running container is touched throws. `restored` is
-// the previous container answering again, `none` a first deploy with nothing to
-// put back. The caller decides what a failure means: for a deploy it is a
-// rollback and for a revert it is a revert that could not land.
+// `deploy.swap: 'startFirst'` asks for the overlap (`FJS-D1847`), and the
+// release's own verdict decides it, the classifier Outpost runs (`FJS-D1838`),
+// so one release swaps alike on both paths. Start-first publishes on a port
+// Docker picks (`FJS-D1837`), so it needs this app's Caddy routes to follow it,
+// and every swap after one re-points them: a stop-first back onto `apiPort`, or
+// a put-back container that came up on a new port, leaves Caddy dialing nothing.
+//
+// Answers `{ container, replaced, healthy, restored, untouched, none, unbound,
+// reason, swap, swapReason, pivot, port }`; only a refusal before the running
+// container is touched throws. `restored` is the previous container answering
+// again, `untouched` a start-first refusal that never stopped it, `none` a first
+// deploy with nothing to put back, and `port` where the live container answers.
+// The caller decides what a failure means: for a deploy it is a rollback and for
+// a revert it is a revert that could not land.
 const pauseCore = () => import(new URL('file://' + global.fliRoot + '/core/pause.js'))
 
-const swapContainer = async ($, { host, appId, container, image, apiPort, dbPath, envFile, secretsDir = null, build, deployConf, configuration = {}, corsOrigins = [], healthPath, log, attempts = 10, intervalS = 2 }) => {
+const swapContainer = async ($, { host, appId, container, image, apiPort, dbPath, envFile, secretsDir = null, serverPath = null, build, deployConf, configuration = {}, corsOrigins = [], healthPath, log, attempts = 10, intervalS = 2 }) => {
+  const asked    = swapSetting(deployConf ?? {})
   const machine  = machineFor($, host)
   const replaced = `${container}_replaced`
 
@@ -632,12 +649,12 @@ const swapContainer = async ($, { host, appId, container, image, apiPort, dbPath
       `the app refuses both at boot. Delete it from one of them -- ${both.map(k => `sed -i '/^${k}=/d' ${envFile}`).join('; ')} -- then deploy again`)
   }
 
-  const argv = [
+  const argvFor = (name, publish) => [
     'run', '-d',
-    '--name', container,
+    '--name', name,
     '--restart', 'unless-stopped',
     ...user,
-    '-p', `127.0.0.1:${apiPort}:3000`,
+    '-p', publish,
     '--volume', `${dbPath}:${CONTAINER_DB_DIR}`,
     '--env-file', envFile,
     ...(secrets.length ? ['--volume', `${secretsDir}:${CONTAINER_SECRETS_DIR}:ro`] : []),
@@ -702,6 +719,8 @@ exit 1`)
   let unbound = []
   let previousAnswers = false
   const health = async ({ name, port, previous = false }) => {
+    // A put-back container a start-first published comes up on a new port.
+    if (previous) port = (await portOf(run, name).catch(() => null))?.port ?? port
     const url = `http://localhost:${port}${healthPath}`
     if (previous) {
       // `docker start` returns while the app is still migrating, so a put-back
@@ -735,21 +754,104 @@ exit 1`)
     return { healthy: false, reason: `it has ${unbound.join(', ')} open outside ${CONTAINER_DB_DIR}` }
   }
 
-  log.info(`Starting ${image} as ${container}, the running one set aside as ${replaced}...`)
+  const before    = await find()
+  const portNow   = async () => before.live || before.replaced ? (await portOf(run, container).catch(() => null))?.port ?? null : null
+  const priorPort = before.live ? await portNow() : null
+  // Read only where a route can move: asked to overlap, or a live port that is not `apiPort`.
+  const routes    = asked === 'startFirst' || (priorPort && priorPort !== apiPort)
+    ? await routeMover($, machine, { appId, serverPath, deployConf })
+    : { move: null, reason: null }
+  const chosen    = await chooseSwap({ asked, routes, run, live: before.live, image, appId })
+  const verdict   = { swap: chosen.swap, swapReason: chosen.reason, pivot: chosen.pivot }
+  if (chosen.reason) log.info(`Swapping stop-first: ${chosen.reason}`)
+
+  // Caddy re-pointed after a swap that moved the live port. Warned rather than
+  // thrown: the container is settled by now, and `07b-edge` writes them again.
+  const follow = async (port) => {
+    if (!routes.move || !port || port === priorPort) return
+    try { await routes.move(port); log.info(`Routes moved to :${port}`) }
+    catch (e) { log.warn(`${container} answers on :${port} and moving its routes there failed — ${e.message}; fli deploy:setup rewrites them`) }
+  }
+
+  const swap = createSwap({ run, find, health })
+  let port   = apiPort
   try {
-    await createSwap({ run, find, health }).stopFirst({ name: container, argv, port: apiPort, path: healthPath })
+    if (chosen.swap === 'start-first') {
+      log.info(`Starting ${image} as ${container}_next beside the running one, the routes moving once it answers...`)
+      port = (await swap.startFirst({ name: container, argv: argvFor(`${container}_next`, '127.0.0.1::3000'), path: healthPath, route: routes.move })).port
+    } else {
+      log.info(`Starting ${image} as ${container}, the running one set aside as ${replaced}...`)
+      await swap.stopFirst({ name: container, argv: argvFor(container, `127.0.0.1:${apiPort}:3000`), port: apiPort, path: healthPath })
+      await follow(apiPort)
+    }
   } catch (err) {
-    // A throw with no `restored` came before the running container stopped.
-    if (!('restored' in err)) throw err
+    // A throw with neither came after the route moved, or before anything was touched.
+    if (!('restored' in err) && !err.untouched) throw err
     log.error(err.message)
+    if (err.untouched) return { container, replaced, healthy: false, restored: !err.none, untouched: true, none: Boolean(err.none), unbound, reason: err.message, ...verdict, port: priorPort }
     const restored = err.restored && previousAnswers
     if (err.none) log.info(`${container} removed — this was its first deploy here, so there was no previous release to put back`)
     else if (restored) log.warn('Restored the previous container, and it answers')
-    return { container, replaced, healthy: false, restored, none: Boolean(err.none), unbound, reason: err.message }
+    const back = restored ? await portNow() : null
+    if (restored) await follow(back)
+    return { container, replaced, healthy: false, restored, untouched: false, none: Boolean(err.none), unbound, reason: err.message, ...verdict, port: back }
   }
   log.success('Health check passed')
-  return { container, replaced, healthy: true, restored: false, none: false, unbound, reason: null }
+  return { container, replaced, healthy: true, restored: false, untouched: false, none: false, unbound, reason: null, ...verdict, port }
 }
+
+// ─── routeMover ───────────────────────────────────────────────────────────────
+// This app's Caddy routes, re-pointed at a port. `move` is null, with the
+// reason, when there are none to move: an app no route fronts is reached at
+// `apiPort` itself, which only one container can hold. The routes are written
+// over the pages already live, since `current/` is what Caddy serves until
+// `08-release-web` moves it; `07b-edge` writes them again over the new ones.
+const routeMover = async ($, machine, { appId, serverPath, deployConf }) => {
+  const { routeId, readConfigScript, parseConfigRead, INGRESS_SERVER, EdgeError } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
+  if (!serverPath) return { move: null, reason: 'this caller names no server path to read its pages from' }
+  let edge
+  try { edge = edgeNamesOf(deployConf) }
+  catch (e) {
+    if (!(e instanceof EdgeError)) throw e
+    return { move: null, reason: `its routes cannot be written — ${e.message}` }
+  }
+  let present = false
+  try {
+    const read = parseConfigRead(machine.capture(readConfigScript()))
+    present = (read.config?.apps?.http?.servers?.[INGRESS_SERVER]?.routes ?? []).some(r => r['@id'] === routeId(appId))
+  } catch (e) {
+    if (!(e instanceof EdgeError)) throw e
+  }
+  if (!present) return { move: null, reason: 'Caddy holds no route for this app, so nothing would follow a port Docker picks — fli deploy:setup writes them' }
+
+  const move = async (port) => {
+    const html = machine.capture(`find ${serverPath}/current/ -name '*.html' -type f -exec cat {} + 2>/dev/null || true`)
+    const { routes, plain, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort: port, edge, html })
+    const written = error ? { error } : await writeEdge(machine, { appId, routes, plain, ifPresent: true })
+    if (written === 'absent') throw new Error(`Caddy no longer holds a route for ${appId}`)
+    if (written?.error) throw new Error(written.error)
+  }
+  return { move, reason: null }
+}
+
+// ─── chooseSwap ───────────────────────────────────────────────────────────────
+// The swap this release runs. Outpost's verdict and its reading (`swapFor`), so
+// a contract, an unknown and a classifier that did not run each swap stop-first
+// with the reason; an app that did not ask is stop-first with none, as on
+// Basecamp, and the classifier is not run.
+const chooseSwap = async ({ asked, routes, run, live, image, appId }) => {
+  if (asked !== 'startFirst') return { swap: 'stop-first', reason: null, pivot: null }
+  if (!routes.move) return { swap: 'stop-first', reason: `a start-first swap moves the port, and ${routes.reason}`, pivot: null }
+  const pivot = await livePivot({ run, live, image, tag: appId })
+  return { ...swapFor(pivot), pivot: pivot.verdict }
+}
+
+// ─── livePort ─────────────────────────────────────────────────────────────────
+// Where the app's container answers on the box. A start-first release is on a
+// port Docker picked, so a command dialing `apiPort` after one reaches nothing;
+// `apiPort` stands only when the daemon names none.
+const livePort = async (machine, container, apiPort) =>
+  (await portOf(sshRunner(machine), container).catch(() => null))?.port ?? apiPort
 
 // ─── showContainerTail ────────────────────────────────────────────────────────
 // Print the last lines a container wrote, when a health check has just failed.
@@ -1359,6 +1461,12 @@ export default {
     // Junction as FRONTIER_STOP_GRACE so its drain fits inside. Whole, at least 2.
     stopGrace: 40,                    // default: 40
 
+    // 'startFirst' runs the new release beside the old one and moves the routes
+    // once it answers, for a release whose schema change the old one survives
+    // (an expand). A contract, an unknown verdict or an app no Caddy route
+    // fronts still swaps stop-first, and the deploy prints why.
+    swap: 'stopFirst',                // default: stopFirst
+
     // Per-target overrides — server/user/path only
     production: { server: 'prod.myapp.com' },
     stage:      { server: 'stg.myapp.com'  },
@@ -1456,7 +1564,7 @@ the failure this is most likely to cause.
 03-build-web   → bun build on server, create versioned release
 04-build-api   → docker build on server (no registry needed)
 05-backup      → hot backup of the database before any changes
-06-swap        → stop old container, start new (migrations run in entrypoint), poll deploy.api.health — puts the previous container back on failure
+06-swap        → stop old container, start new (migrations run in entrypoint), poll deploy.api.health — puts the previous container back on failure; deploy.swap startFirst on an expand starts it beside the old one and moves the routes
 08-release-web → atomic symlink swap; Caddy reads the root per request
 08b-outpost    → enroll the API's box in the app's fleet (if outpost: true; --no-outpost skips)
 08c-site       → production only: build site/ against a copy of the db and publish it, once its Worker has a deployment

@@ -392,6 +392,12 @@ The full hazard catalog for `@frontierjs/cli`, moved out of `CLAUDE.md`. The doz
   and rollback's `02-rollback-api` all call it, so the going-back paths are the
   deploy's. A healthy swap removes `_replaced` itself, so a later step's
   failure leaves no `_replaced` for `deploy:rollback`'s fast path.
+- **After a start-first release the API is not on `deploy.api.port`**
+  (`FJS-D1884`, `FJS-D1837`). `deploy.swap: 'startFirst'` publishes on a port
+  Docker picks and moves Caddy to it, so anything that dials the API on the box
+  asks `livePort` (`deploy/_module.md`), never `apiPort`, and a swap that moves
+  the port again re-points the routes inside `swapContainer`, which is what keeps
+  revert and rollback, which run no `07b-edge`, from leaving Caddy on a dead port.
 - **`project:map` is one reading presented two ways** (`FJS-D223` one scope
   down, `FJS-1016`): the report, and `--json`. `buildProjectMap` in `_module.md`
   is the one reader, and the console's `:map` reaches it by spawning `--json`

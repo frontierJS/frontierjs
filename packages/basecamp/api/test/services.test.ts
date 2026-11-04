@@ -5833,8 +5833,9 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       await hubRow()
       await sys.hubConfig.update({ where: { id: 'hub' }, data: { appId: null } })
 
-      const made = await useHost(sys, { workspaceId: ws.id, actor: 'test', ipAddress: '174.138.116.80' })
+      const made = await useHost(sys, { workspaceId: ws.id, actor: 'test', ipAddress: '174.138.116.80', name: 'yuma' })
       expect(made.server.ipAddress).toBe('174.138.116.80')
+      expect(made.server.name).toBe('yuma')
 
       // A box enrolled before the address was passed is backfilled, heartbeat or not.
       await sys.server.update({ where: { id: made.server.id }, data: { ipAddress: null, lastHeartbeatAt: new Date().toISOString() } })
@@ -5842,8 +5843,10 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       expect(back.enrolled).toBe(true)
       expect(back.server.ipAddress).toBe('174.138.116.80')
 
-      await useHost(sys, { workspaceId: ws.id, actor: 'test', ipAddress: '203.0.113.9' })
-      expect((await sys.server.findFirst({ where: { id: made.server.id } })).ipAddress).toBe('174.138.116.80')
+      await useHost(sys, { workspaceId: ws.id, actor: 'test', ipAddress: '203.0.113.9', name: 'other' })
+      const kept = await sys.server.findFirst({ where: { id: made.server.id } })
+      expect(kept.ipAddress).toBe('174.138.116.80')
+      expect(kept.name).toBe('yuma')
       await sys.hubConfig.update({ where: { id: 'hub' }, data: { appId: null } })
     })
 

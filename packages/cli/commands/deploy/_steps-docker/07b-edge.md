@@ -25,7 +25,9 @@ const machine = machineFor($, host, serverPath)
 const docRoot = $.config.releaseDir ?? `${serverPath}/current`
 const html    = machine.capture(`find ${docRoot}/ -name '*.html' -type f -exec cat {} + 2>/dev/null || true`)
 
-const { routes, plain, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort, edge, html })
+// Where the container answers, which after a start-first is not `apiPort`.
+const port = $.config.livePort ?? await livePort(machine, apiContainer(appId, deployConf), apiPort)
+const { routes, plain, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort: port, edge, html })
 const written = error ? { error } : await writeEdge(machine, { appId, routes, plain, ifPresent: true })
 
 if (written === 'written') log.done('Routes rewritten — the API mounts paths it did not at the last write')

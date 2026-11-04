@@ -10,7 +10,8 @@ description: Basecamp itself — make its box at a cloud, install it, point its 
 const { CLOUDS, cloudLabel, pickCloud, cloudsToRead, listBoxes, cloudOf, runProvision, provisionScript, markHost,
   cloudflareToken, hostRecord, withHosts, boxAddress, waitForSsh, publicKey, boxName, buyBox, machineLine }
   = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
-const { basecamp, basecampAll, pullHubArchive, pullRawBackup, apiCannotBackUp, backupsRoot, backupsOf, localBackups, filedKeys, readBoxKey, keepKey, attestKeyCopy, KEY_COPIES, readPostures, readPosture, postureLine, postureDetail, failingBySeverity, LOCAL_BASECAMP, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
+const { basecamp, basecampAll, pullHubArchive, pullRawBackup, apiCannotBackUp, backupsRoot, backupsOf, localBackups, filedKeys, keyDirOf, readBoxKey, keepKey, attestKeyCopy, KEY_COPIES, pickArchive, checkArchive, asRootOn, readPostures, readPosture, postureLine, postureDetail, failingBySeverity, LOCAL_BASECAMP, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
+const { plural } = await import(new URL('file://' + global.fliRoot + '/core/text.js'))
 
 // Basecamp's own hostname, the one `pointHost` points at the box.
 const webDomain = async () =>
@@ -382,6 +383,206 @@ const adminKey = async ({ dest, admin, yes, log, echo, chalk }) => {
   return true
 }
 
+// ─── An install: the questions, then the run ──────────────────────────────────
+// `install` asks and runs at once; `reinstall` asks before its backup and runs
+// after its retire, so the two cannot ask or install differently. `restore`
+// drops the admin and the enrollment: `/setup` answers 409 once the archive
+// brings its admins back, and the box enrolls into the restored workspace.
+
+const questionLine = (chalk, q, hint) => `${chalk.cyan('?')} ${chalk.bold(q)}${hint ? chalk.dim(`  ${hint}`) : ''}`
+
+/** Answers `{ domain, configured, admin, password, outpost, unneeded }`, or
+ *  `{ refusal, rejected }` before anything is installed. */
+const askInstall = async ({ flag, restore = false, asking = !!process.stdin.isTTY, tty, log, echo, chalk }) => {
+  const configured = (await webDomain()) || ''
+  const asked = flag.domain || configured
+  if (!asked) return { refusal: `Installing needs Basecamp's hostname: Caddy routes by it and fetches its certificate. Pass --domain` }
+  const domain = await hostnameOf(asked)
+  if (!domain) return { refusal: `"${asked}" is not a hostname: letters, digits, dots and dashes` }
+
+  const ask = async (q, hint) => (await tty.line(`${questionLine(chalk, q, hint)}\n  ${chalk.cyan('›')}`)).trim()
+  const yes = async (q) => await tty.keys(questionLine(chalk, q), { y: 'yes', n: 'no' }) === 'y'
+
+  // tty.line, not prompt.js: a readline closed on this stdin leaves the secret
+  // after it echoing, with an Enter that never arrives.
+  let admin = ''
+  let password = ''
+  if (!restore) {
+    admin = flag.admin || ''
+    if (asking && !admin) admin = await askAdmin(ask)
+    admin ||= EMAIL.test(process.env.ME ?? '') ? process.env.ME : ''
+    if (!admin) return { refusal: NO_ADMIN }
+    if (!EMAIL.test(admin)) return { refusal: `"${admin}" is not an email address` }
+    if (asking) password = await tty.secret(`${questionLine(chalk, `Password for ${admin}`, 'Enter generates one')}\n  ${chalk.cyan('›')}`)
+  }
+  const outpost  = flag.outpost !== false && (!asking || await yes(OUTPOST_QUESTION))
+  const unneeded = !asking || await yes(UNNEEDED_QUESTION)
+  unneededKept(unneeded, outpost, log)
+
+  const { refusal, rejected } = await zoneRefusal({ domain, log, echo, chalk })
+  if (refusal) return { refusal, rejected }
+  return { domain, configured, admin, password, outpost, unneeded }
+}
+
+/** The answers as `[label, value]` rows, for the summary before the run. */
+const installRows = ({ domain, admin, password, outpost, unneeded }, chalk, restore = false) => [
+  ['hostname', domain],
+  admin && ['admin', `${admin} ${chalk.dim(password ? '' : '— password generated')}`],
+  ['outpost', !outpost ? chalk.dim('no') : `yes ${chalk.dim(restore ? '— enrolled into the restored workspace' : '— fli deploy:outpost once the admin is made')}`],
+  ['services', unneededRow(unneeded, chalk)],
+].filter(Boolean)
+
+/** Install Basecamp on `dest` as answered. Answers the exit code: 0, or the
+ *  first failure's. A record or proxy that failed fails the run and lets it finish. */
+const runInstall = async (dest, answers, { restore = false, tty, log, echo, chalk }) => {
+  const { domain, configured, admin, password, outpost, unneeded } = answers
+  const asking = !!process.stdin.isTTY
+  const yes = async (q) => await tty.keys(questionLine(chalk, q), { y: 'yes', n: 'no' }) === 'y'
+  let code = 0
+
+  echo(chalk`  {dim Installing Basecamp on} ${dest} {dim as} ${domain}`)
+  const stages = stageBar({ tty, echo, chalk }, installStages(outpost).filter(s => !restore || !['admin', 'deploy:outpost'].includes(s.name)))
+  const failed = await ringZero(dest, domain, { tty, stage: stages.at })
+  if (failed) {
+    log.error(`fli ${failed.argv.join(' ')} exited ${failed.status}. Fix what it said and run this again`)
+    stages.stop()
+    return failed.status || 1
+  }
+  echo(chalk`  {green ✓} {bold Basecamp is on ${dest}}`)
+  if (unneeded) await turnOffUnneeded(dest, '', log)
+  stages.at('dns')
+  const ip = await boxAddress(dest)
+  await markHost({ ip, log })
+
+  const record = await pointHost({ host: domain, ip, configured, log })
+  if (!record || !await offerProxy({ record, configured, log, yes: asking && yes })) code = 1
+
+  const named = domain === configured ? '' : ` --domain ${domain}`
+  echo`
+  A later deploy, from packages/basecamp:
+    fli deploy --server ${dest}${named}
+`
+  if (restore) { stages.stop(); return code }
+
+  // An alias names the workspace after the box; a bare address has no name to give.
+  const host = dest.split('@').pop()
+  const workspace = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) ? 'basecamp' : host
+  if (!await adminThenFleet({ dest, workspace, admin, password, log, echo, chalk, outpost, domain, later: ` --server ${dest}${named}`, tty, stage: stages.at })) code = 1
+  stages.stop()
+  return code
+}
+
+// ─── Basecamp's backup, taken ─────────────────────────────────────────────────
+// `backup` takes it on its own and `reinstall` before anything changes. The key
+// copy is asked per run (`FJS-D1852`); reinstall asks before its confirmation
+// and passes `how`.
+
+/** Where the key's copy goes; a run with no terminal files it. */
+const howToKeep = async (tty, chalk) =>
+  tty.interactive ? await tty.keys(chalk`{cyan ?} {bold Where does a copy of the key go?}`, KEY_COPIES) : 'f'
+
+/** Keep the box's key off the box as asked, and attest it when `attest` says
+ *  the API runs that key; the backup stands whatever happens here. Answers the
+ *  kept key's fingerprint, or null when the box keeps none. */
+const keepKeyCopy = async ({ server, key, host, how, attest, tty, log, echo, chalk }) => {
+  if (!key) { log.warn(`No ENCRYPTION_KEY on ${host}, in its secrets directory or env file — no copy of the key was kept`); return null }
+  const kept = keepKey({ server, key, how: how ?? await howToKeep(tty, chalk), echo })
+  if (kept.keyFile) echo(chalk`    {dim ·} {dim key} ${kept.fingerprint.slice(0, 12)} ${kept.already ? chalk`{dim already filed in}` : chalk`{dim filed in}`} ${kept.keyFile}`)
+  if (!attest) { echo(chalk`    {dim ·} {dim not attested to Basecamp: a raw copy cannot show the API runs this key — the next API backup attests it}\n`); return kept.fingerprint }
+  const done = await attest(kept.fingerprint).catch(err => err)
+  if (done instanceof Error) log.warn(`The key copy was kept, but not attested to Basecamp: ${done.message}\n`)
+  else echo(chalk`    {dim ·} {dim attested to Basecamp, so hub.key-escrowed reads} {green kept off the box}\n`)
+  return kept.fingerprint
+}
+
+/** After an API backup: the box's key, attested only when the archive was
+ *  taken under it. A key changed on the box without a restart is not the one
+ *  the API still runs, which is the one the archive needs. */
+const keepArchiveKey = async ({ server, origin, key, taken, how, tty, log, echo, chalk }) => {
+  const files = await deployFiles(server)
+  const boxKey = await readBoxKey(files).catch(err => { log.warn(`${err.message} — no copy of the key was kept`); return undefined })
+  if (boxKey === undefined) return null
+  const same = !!boxKey && new Bun.CryptoHasher('sha256').update(boxKey).digest('hex') === taken
+  if (boxKey && !same) log.warn(`The key on ${files.host} is not the ${taken.slice(0, 12)} this archive was taken under — the API has not restarted since it changed. This archive needs that key; keeping the one on the box, unattested`)
+  const attest = same ? (fingerprint) => attestKeyCopy({ origin, key, fingerprint }) : null
+  return await keepKeyCopy({ server, key: boxKey, host: files.host, how, attest, tty, log, echo, chalk })
+}
+
+/** The ssh path, printed as raw so nobody mistakes it for an archive. */
+const copyRaw = async ({ server, out, say, how, dry, tty, log, echo, chalk }) => {
+  const files = await deployFiles(server)
+  echo(chalk`\n  {bold Copying Basecamp's files} {dim off} ${files.host} {dim — raw, so /setup cannot take them}`)
+  const got = await pullRawBackup({ server, ...files, out, dry, log, say })
+    .catch(err => { log.error(err.message); process.exitCode = 1; return null })
+  if (!got) return null
+  const ways = [...new Set(Object.values(got.record.copiedWith))].join(', ')
+  echo(chalk`  {green ✓} {bold Copied ${got.record.takenAt}} {dim into} ${got.dir}`)
+  echo(chalk`    {dim ·} ${plural(Object.keys(got.record.copiedWith).length, 'database')} {dim copied with} ${ways}${got.record.files.some(f => f.path === '.env.production') ? chalk` {dim and the env file}` : ''}`)
+  const keyKept = await keepKeyCopy({ server, key: got.key, host: files.host, how, attest: null, tty, log, echo, chalk })
+  return { kind: 'raw', dir: got.dir, takenAt: got.record.takenAt, keyKept }
+}
+
+/**
+ * Take Basecamp's backup through its API, or over ssh when the API cannot or
+ * `raw` asks. Answers `{ kind: 'archive' | 'raw', dir, takenAt, keyKept }` —
+ * `keyKept` the fingerprint of the key copy now off the box, null with none —
+ * or null after printing why there is none.
+ */
+const takeBackup = async ({ server, out, url, raw, how, dry, tty, log, echo, chalk }) => {
+  const say = (line) => echo(chalk`  {dim ${line}}`)
+  if (raw) return await copyRaw({ server, out, say, how, dry, tty, log, echo, chalk })
+
+  const key = process.env.BASECAMP_API_KEY
+  if (!key) { log.error('needs BASECAMP_API_KEY — fli basecamp:key mints one for the first admin, or pass --raw to copy the files over ssh'); process.exitCode = 1; return null }
+  const origin = await apiOrigin(url)
+  if (!origin) { log.error("needs --url or BASECAMP_URL — Basecamp's origin, https://<its hostname>"); process.exitCode = 1; return null }
+
+  echo(chalk`\n  {bold Backing up Basecamp} {dim at} ${origin} {dim on} ${server}`)
+  const got = await pullHubArchive({ origin, key, out, dry, log, say }).catch(err => err)
+  if (got instanceof Error && apiCannotBackUp(got)) {
+    log.warn(`${got.message} — copying its files over ssh instead, which /setup cannot take`)
+    return await copyRaw({ server, out, say, how, dry, tty, log, echo, chalk })
+  }
+  if (got instanceof Error) { log.error(got.message); process.exitCode = 1; return null }
+  if (!got) return null
+
+  echo(chalk`  {green ✓} {bold Archive taken ${got.manifest.takenAt}} {dim unpacked into} ${got.dir}`)
+  echo(chalk`    {dim ·} ${plural(got.manifest.files.length, 'file')} {dim match manifest.json}`)
+  const taken = got.manifest.encryptionKeyFingerprint
+  const done = { kind: 'archive', dir: got.dir, takenAt: got.manifest.takenAt, keyKept: null }
+  if (!taken) { echo(chalk`    {dim ·} {dim key} the development placeholder {dim — nothing to keep a copy of}\n`); return done }
+  return { ...done, keyKept: await keepArchiveKey({ server, origin, key, taken, how, tty, log, echo, chalk }) }
+}
+
+// ─── An archive, checked on this machine ──────────────────────────────────────
+// `restore` and `reinstall`'s restore mode refuse here, before the box is
+// touched: `/setup` grades the archive only on the new box, which in a
+// reinstall is after the old one is gone.
+
+/** The archive's key: `--key`, else the filed one its manifest names. */
+const keyFor = (server, manifest, given) => {
+  if (given) return given
+  const fingerprint = manifest.encryptionKeyFingerprint
+  if (!fingerprint) throw new Error('the archive was taken under the development key, which a production Basecamp refuses to boot on')
+  const filed = filedKeys(server).get(fingerprint)
+  if (!filed) throw new Error(`no key filed under ${keyDirOf(server)} has the fingerprint ${fingerprint.slice(0, 12)} the archive names — pass --key <file>`)
+  return filed
+}
+
+/** Every refusal the laptop can find, before the box is asked anything. */
+const checkHere = async ({ picked, keyFile, log, echo, chalk }) => {
+  const verdict = await checkArchive({ archive: picked.archive, keyFile, basecampRoot: provisionScript().root })
+  if (verdict.refused) {
+    log.error(`${picked.archive} cannot be restored onto this checkout's Basecamp — the box was not touched:`)
+    for (const why of verdict.refused) echo(chalk`    {red ✗} ${why}`)
+    return false
+  }
+  echo(chalk`  {green ✓} {bold Archive taken ${picked.manifest.takenAt}} {dim checked here:} ${plural(picked.manifest.files.length, 'file')}{dim , the key and the migrations}`)
+  echo(chalk`    {dim ·} {dim from} ${picked.dir}`)
+  echo(chalk`    {dim ·} {dim key} ${keyFile}`)
+  return true
+}
+
 </script>
 
 ## Setup
@@ -431,6 +632,11 @@ once the install is done.
 machine, checked against its manifest. An App's archive is `fli db:download`'s
 (`FJS-D1848`). `fli basecamp:restore` puts one back onto a Basecamp nobody has
 set up, checked against this checkout before the box is touched.
+
+`fli basecamp:reinstall` is the three with `fli deploy:retire` between them,
+on Basecamp's own box: it reads what runs there, asks every question first,
+confirms once, then backs up, retires and installs again — fresh, or restored
+from the backup it just took.
 
 `fli basecamp:live` says why a released App is not answering — its release,
 its machine, then each hostname's zone, DNS and HTTPS — and `--retry` reloads

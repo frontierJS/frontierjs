@@ -7,7 +7,19 @@
 
 import { shQuote } from './machine.js'
 
-export { createSwap, runFlags, DEFAULT_STOP_GRACE_S } from '@frontierjs/outpost/swap'
+export { createSwap, runFlags, portOf, livePivot, swapFor, DEFAULT_STOP_GRACE_S } from '@frontierjs/outpost/swap'
+
+// The swaps `deploy.swap` may ask for, spelled as Basecamp's `App.swap` is
+// (`FJS-D1882`). A misspelling refused rather than read as stop-first, or an
+// owner who asked for the overlap never gets it and nothing says so.
+export const SWAP_SETTINGS = ['stopFirst', 'startFirst']
+
+export function swapSetting(deployConf = {}) {
+  const asked = deployConf.swap ?? 'stopFirst'
+  if (!SWAP_SETTINGS.includes(asked))
+    throw new Error(`deploy.swap is ${SWAP_SETTINGS.map(s => `'${s}'`).join(' or ')} — got '${asked}'`)
+  return asked
+}
 
 // A word with nothing the target's shell reads passes bare, so `--dry` and a
 // failure's message show the `docker run` line as an operator would type it.

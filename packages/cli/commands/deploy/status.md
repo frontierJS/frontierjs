@@ -71,7 +71,8 @@ try {
 // ─── Health check ─────────────────────────────────────────────────────────────
 const healthPath = deployConf.api?.health ?? '/health'
 try {
-  const code = ask(`curl -s -o /dev/null -w '%{http_code}' http://localhost:${apiPort}${healthPath} 2>/dev/null || echo 'unreachable'`) || 'unreachable'
+  const port = await livePort(machine, container, apiPort)
+  const code = ask(`curl -s -o /dev/null -w '%{http_code}' http://localhost:${port}${healthPath} 2>/dev/null || echo 'unreachable'`) || 'unreachable'
   const ok   = code === '200'
   row('health', `${healthPath} ${chalk.dim('→')} ${code} ${ok ? chalk.green('✓') : bad('✗')}`)
 } catch {

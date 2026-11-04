@@ -13,6 +13,14 @@ const appId      = appIdOf(deployConf)
 const apiPort    = deployConf.api?.port ?? 3000
 const healthPath = deployConf.api?.health ?? '/health'
 
+// Refused before the build rather than at the swap, minutes later.
+try { swapSetting(deployConf) }
+catch (e) {
+  log.error(e.message)
+  $.config.abort = true
+  return
+}
+
 $.config.host       = host
 $.config.appId      = appId
 $.config.apiPort    = apiPort

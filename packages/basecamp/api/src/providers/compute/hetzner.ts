@@ -297,6 +297,8 @@ export const hetzner: ComputeConnector = {
   // Ashburn keeps the box in the US, as DigitalOcean's nyc3 does.
   defaults: { region: 'ash', image: 'ubuntu-24.04' },
   reservedIps,
+  // hetzner.com/cloud -- Backups, +20% of the server's price
+  backupShare: { daily: 20 },
 
   descriptor({ accountId, ref, address }): TargetDescriptor {
     return {

@@ -432,15 +432,22 @@ describe('unexecdEntrypoint', () => {
 // function could see it.
 
 const { CASES, fakeDaemon, imagesOn } = await import('../../outpost/test/fixtures/swap-cases.js')
+const edgeModule = await import('../core/edge.js')
 
 const words = (script) => (script.match(/'(?:[^']|'\\'')*'|\S+/g) ?? [])
   .map(w => /^'.*'$/.test(w) ? w.slice(1, -1).replace(/'\\''/g, "'") : w)
 
-const onBox = ({ before = {}, ids = '', ls = '', inEnv = '', open = '' } = {}) => {
+// `caddy` is the admin API's config, null for a box Caddy fronts nothing on;
+// `dials` collects the API port every write pointed the routes at. `verdict` is
+// what the new image's `litestone release --json` answers.
+const onBox = ({ before = {}, ids = '', ls = '', inEnv = '', open = '', caddy = null, verdict = null } = {}) => {
   const d = fakeDaemon(before)
   const commands = []
+  const dials = []
+  let config = caddy
   const context = {
     config: {},
+    paths: { root: ROOT },
     exec: ({ command, input }) => {
       const body = String(input ?? command).replace(/^exec 2>&1\n/, '')
       commands.push(body)
@@ -448,8 +455,18 @@ const onBox = ({ before = {}, ids = '', ls = '', inEnv = '', open = '' } = {}) =
       if (body.includes('ls -1A')) return ls
       if (body.includes('grep -qs')) return inEnv
       if (body.includes('/proc/')) return open
+      if (body.startsWith('curl -s -D -')) return config ? `HTTP/1.1 200 OK\netag: "e1"\n\n${JSON.stringify(config)}` : ''
+      if (body.includes('/config/')) {
+        config = JSON.parse(body.split('\n').slice(1, -1).join('\n'))
+        dials.push(Number(/127\.0\.0\.1:(\d+)/.exec(JSON.stringify(config))[1]))
+        return '\n200'
+      }
+      if (body.includes('litestone release')) return verdict ? JSON.stringify({ verdict }) : 'bun: command not found'
+      if (body.startsWith('docker create')) return 'held1'
+      if (/^docker (rm -f held1|volume rm)/.test(body)) return ''
       if (body.includes('curl')) {
-        if (d.healthOf('app').healthy) return 'ok'
+        // A start-first's `_next` is published on the port the fake daemon names for it.
+        if (d.healthOf(body.includes(':49153') && d.box.has('app_next') ? 'app_next' : 'app').healthy) return 'ok'
         throw new Error('fail')
       }
       if (body.startsWith('docker ')) {
@@ -467,7 +484,7 @@ const onBox = ({ before = {}, ids = '', ls = '', inEnv = '', open = '' } = {}) =
     log: { info() {}, success() {}, warn() {}, error() {} },
     ...opts,
   })
-  return { d, commands, go, runCmd: () => commands.find(c => c.startsWith('docker run')) }
+  return { d, commands, dials, go, runCmd: () => commands.find(c => c.startsWith('docker run')) }
 }
 
 const old = { image: 'img:old', running: true }
@@ -489,6 +506,71 @@ describe('swapContainer — the swap Outpost runs', () => {
     await t.go({ deployConf: { logs: { max_size: '10m; rm -rf /' } } })
     expect(t.runCmd()).toContain(`--log-opt 'max-size=10m; rm -rf /'`)
     expect(t.d.box.get('app').image).toBe('img:new')
+  })
+})
+
+// ─── start-first over ssh ────────────────────────────────────────────────────
+// The same verdict and the same sequence Outpost runs (`FJS-D1840`): the
+// table's start-first cases through the cli's swap, its routes in a fake Caddy.
+// The live `app` publishes 7300 in the fake daemon and `_next` 49153.
+describe('swapContainer — start-first', () => {
+  const { edgeRoutes, applyEdge } = edgeModule
+  const routed = (port = 7300) => applyEdge({}, {
+    appId: 'app1',
+    routes: edgeRoutes({ appId: 'app1', serverPath: '/srv', apiPort: port, web: { domain: 'app.test' }, api: { domain: null } }),
+  })
+  const startFirst = { swap: 'startFirst', web: { domain: 'app.test' } }
+  const go = (t, opts = {}) => t.go({ appId: 'app1', serverPath: '/srv', deployConf: startFirst, ...opts })
+
+  for (const c of CASES.filter(c => c.swap === 'start-first')) {
+    test(c.case, async () => {
+      const t = onBox({ before: c.before, caddy: routed(), verdict: 'expand' })
+      const result = await go(t, { image: c.image })
+      expect(t.d.log).toEqual(c.log)
+      expect(imagesOn(t.d.box)).toEqual(c.after)
+      expect(t.dials).toEqual(c.routes)
+      expect(result).toMatchObject({ swap: 'start-first', pivot: 'expand', swapReason: null, healthy: !c.throws })
+      if (c.throws) expect(result).toMatchObject({ untouched: true, restored: true, port: 7300 })
+      else          expect(result.port).toBe(c.port)
+    })
+  }
+
+  test('a contract swaps stop-first, says why, and moves the routes back onto apiPort', async () => {
+    const t = onBox({ before: { app: old }, caddy: routed(), verdict: 'contract' })
+    const result = await go(t)
+    expect(result).toMatchObject({ healthy: true, swap: 'stop-first', pivot: 'contract', port: 7102 })
+    expect(result.swapReason).toMatch(/this deploy is the pivot/)
+    expect(t.d.log).toContain('run app img:new')
+    expect(t.dials).toEqual([7102])
+  })
+
+  test('an image without the classifier swaps stop-first', async () => {
+    const t = onBox({ before: { app: old }, caddy: routed(), verdict: null })
+    const result = await go(t)
+    expect(result).toMatchObject({ swap: 'stop-first', pivot: null })
+    expect(result.swapReason).toMatch(/the classifier did not run/)
+  })
+
+  test('an app Caddy does not front swaps stop-first without asking the classifier', async () => {
+    const t = onBox({ before: { app: old }, verdict: 'expand' })
+    const result = await go(t)
+    expect(result.swap).toBe('stop-first')
+    expect(result.swapReason).toMatch(/Caddy holds no route for this app/)
+    expect(t.commands.some(c => c.includes('litestone release'))).toBe(false)
+  })
+
+  test('an app that did not ask runs no classifier and stays on apiPort', async () => {
+    const t = onBox({ before: { app: old }, caddy: routed(7102), verdict: 'expand' })
+    const result = await go(t, { deployConf: { web: { domain: 'app.test' } }, apiPort: 7300 })
+    expect(result).toMatchObject({ healthy: true, swap: 'stop-first', swapReason: null, pivot: null })
+    expect(t.commands.some(c => c.includes('litestone release'))).toBe(false)
+    expect(t.dials).toEqual([])
+  })
+
+  test('a misspelled deploy.swap is refused before anything is touched', async () => {
+    const t = onBox({ before: { app: old }, caddy: routed(), verdict: 'expand' })
+    await expect(go(t, { deployConf: { swap: 'start-first' } })).rejects.toThrow(/deploy.swap is 'stopFirst' or 'startFirst' — got 'start-first'/)
+    expect(t.d.log).toEqual([])
   })
 })
 

@@ -218,8 +218,11 @@ export async function findHost(client: any) {
  * it. A self box has no vendor to report one, and a row with none is a machine
  * no ingress record can name, so a Domain on an App it serves is never pushed
  * (`FJS-3515`). It fills an empty address and never replaces one.
+ *
+ * `name` is what the operator calls the box — the ssh alias `fli` dialed — and
+ * names a new row only; a row already made keeps whatever it was renamed to.
  */
-export async function useHost(client: any, { workspaceId, actor, ipAddress }: { workspaceId?: string; actor: string; ipAddress?: string }) {
+export async function useHost(client: any, { workspaceId, actor, ipAddress, name }: { workspaceId?: string; actor: string; ipAddress?: string; name?: string }) {
   const sys = client.asSystem()
   if (await hostServer(sys)) {
     let server = await findHost(client)
@@ -241,7 +244,7 @@ export async function useHost(client: any, { workspaceId, actor, ipAddress }: { 
   const taken  = await client.server.exists({ where: { slug: HOST_SLUG, ...(workspaceId ? { workspaceId } : {}) } })
   const server = await client.server.create({ data: {
     ...(workspaceId ? { workspaceId } : {}),
-    name: 'Basecamp host', slug: taken ? `${HOST_SLUG}-${randomUUID().slice(0, 6)}` : HOST_SLUG,
+    name: name || 'Basecamp host', slug: taken ? `${HOST_SLUG}-${randomUUID().slice(0, 6)}` : HOST_SLUG,
     role: 'general', region: 'self', ...(ipAddress ? { ipAddress } : {}),
   } })
   await placeHub(sys, server)

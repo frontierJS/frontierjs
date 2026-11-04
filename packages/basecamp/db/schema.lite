@@ -1486,7 +1486,7 @@ model Server {
   // write past `setBackups`' gate.
   //
   // `backupReading` is the vendor's last answer (`MachineBackups` in
-  // `providers/compute/index.ts`) with its `readAt`, written by `sync`. A read
+  // `providers/compute/index.ts`) with its `readAt` and `cost`, written by `sync`. A read
   // that fails records `backupsReadFailed` and leaves the last reading standing.
   backupPolicy     Json?        @type(BackupPolicy) @system
   backupReading    Json?        @system

@@ -104,6 +104,7 @@ docker start  ${container}`, { dry: flag.dry })
     dbPath,
     envFile,
     secretsDir,
+    serverPath,
     deployConf,
     corsOrigins: derivedOrigins($, deployConf),
     configuration: configurationSet(deployConf, $.config.target).values,

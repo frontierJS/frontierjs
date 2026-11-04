@@ -3,10 +3,12 @@
 // `fli deploy` and `fli deploy:outpost` run it in the API container over the operator's SSH, for an app
 // whose deploy block says `outpost: true` (FJS-D1191):
 //
-//   docker exec <api container> bun api/src/domain/host/enroll-host.ts '{"ip":"203.0.113.7"}'
+//   docker exec <api container> bun api/src/domain/host/enroll-host.ts '{"ip":"10.17.0.5","dialed":"203.0.113.7","name":"ops"}'
 //
-// `ip` is the address the operator's ssh reached the box at, and becomes the
-// row's `ipAddress` when it has none and is public (`FJS-3515`).
+// `ip` is the address sshd says it was reached at, and becomes the row's
+// `ipAddress` when it has none and is public (`FJS-3515`). Behind a cloud's NAT
+// that is the private side, so `dialed` — the address the laptop resolved the
+// alias to — stands in. `name` is the alias, and names a new row.
 //
 // It opens the database as the application and does NOT boot the app: a boot
 // would start a second Caravan worker on the jobs queue beside the running one.
@@ -24,9 +26,10 @@ import { hostServer, useHost, publicIp } from './host-machine.ts'
 
 const answer = (o: Record<string, unknown>) => console.log(JSON.stringify(o))
 
-const reached = (() => {
-  try { return JSON.parse(process.argv[2] ?? '{}')?.ip as unknown } catch { return undefined }
+const facts = (() => {
+  try { return JSON.parse(process.argv[2] ?? '{}') ?? {} } catch { return {} }
 })()
+const name = typeof facts.name === 'string' && facts.name.trim().slice(0, 200) || undefined
 
 try {
   const sys = (await createBasecampDb()).asSystem() as any
@@ -50,7 +53,9 @@ try {
     workspaceId = workspaces[0].id
   }
 
-  const used = await useHost(sys, { workspaceId, actor: 'fli deploy', ipAddress: publicIp(reached) })
+  const used = await useHost(sys, {
+    workspaceId, actor: 'fli deploy', name, ipAddress: publicIp(facts.ip) ?? publicIp(facts.dialed),
+  })
   answer(used.enrolled
     ? { enrolled: true, serverId: used.server.id }
     : { command: used.command, serverId: used.server.id, workspaceId })

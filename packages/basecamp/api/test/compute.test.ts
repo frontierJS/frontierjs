@@ -45,7 +45,7 @@ import { basecampGateLevel }       from '../src/core/gate.ts'
 import { buildBasecampApp }        from '../src/app.ts'
 import { startDoSink }             from '../src/providers/compute/digitalocean-sink.ts'
 import { startHzSink }             from '../src/providers/compute/hetzner-sink.ts'
-import { connectorFor, targetFor, markFor, fleetMark, priceIn } from '../src/providers/compute/index.ts'
+import { connectorFor, targetFor, markFor, fleetMark, priceIn, backupCost } from '../src/providers/compute/index.ts'
 import { registerAccount, sendVia } from '../src/providers/compute/accounts.ts'
 import type { ComputeProvider }    from '../../db/schema.d.ts'
 
@@ -268,6 +268,18 @@ describe('the DigitalOcean dialect', () => {
       plan: 'custom_daily', hour: 8, window_length_hours: 4, retention_period_days: 14 } })
     expect(custom!.plan).toBe('custom_daily')
     expect(custom!.retentionDays).toBe(14)
+    expect(backupCost(digitalOcean, custom!.plan!, { priceMinor: 600, currency: 'USD' }))
+      .toEqual({ unestimated: 'custom plan' })
+  })
+
+  test('the cost estimate is the vendor’s share of the size price, and says why when there is none', () => {
+    const price = { priceMinor: 600, currency: 'USD' }
+    expect(backupCost(digitalOcean, 'weekly', price)).toEqual({ monthlyMinor: 120, currency: 'USD' })
+    expect(backupCost(digitalOcean, 'daily',  price)).toEqual({ monthlyMinor: 180, currency: 'USD' })
+    expect(backupCost(connectorFor('hetzner')!, 'daily', { priceMinor: 449, currency: 'EUR' }))
+      .toEqual({ monthlyMinor: 90, currency: 'EUR' })
+    // A machine Basecamp did not buy has no price on `Server.plan`.
+    expect(backupCost(digitalOcean, 'daily', null)).toEqual({ unestimated: 'size price unknown' })
   })
 
   test('taken backups are newest first, whatever order DO listed them in', async () => {
@@ -1025,7 +1037,7 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
 
     await servers.call('sync', row.id)
     const first = await reading()
-    expect(first).toMatchObject({ enabled: false, plan: null, taken: [] })
+    expect(first).toMatchObject({ enabled: false, plan: null, taken: [], cost: null })
     expect(first.readAt).toBeTruthy()
     // Not managed until a person sets it: a sync only reads.
     expect((await sys.server.findFirst({ where: { id: row.id } })).backupPolicy).toBeNull()

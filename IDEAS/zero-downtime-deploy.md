@@ -19,7 +19,7 @@ The order is deliberate, not an oversight. The new entrypoint migrates the
 database before it serves, and stopping first keeps the old release from
 writing while that runs. **So this paper is about migrations, not the proxy.**
 Litestone already has the test that decides when overlapping two releases is
-safe: `classifyPivot`, the N-1 verdict from `IDEAS/release-transitions.md`
+safe: `livePivot`, the N-1 verdict from `IDEAS/release-transitions.md`
 § *Pivot is N-1 compatibility*. An **expand** release can overlap. A
 **contract** or **unknown** release keeps today's stop-first swap. No new noun.
 
@@ -35,7 +35,7 @@ safe: `classifyPivot`, the N-1 verdict from `IDEAS/release-transitions.md`
 | Migrate on boot | [dockerfile-template.ts:70](../packages/basecamp/api/src/domain/release/dockerfile-template.ts#L70), [scaffold/app.js:106](../packages/cli/core/scaffold/app.js#L106) | `bun run db:migrate && bun api/index.ts`. The migration runs inside the new container, before it listens. |
 | The route | [server.js:175](../packages/outpost/src/server.js#L175) `POST /deploy`, `ingress.js` | Caddy route `fjs-<app>` PATCHed to `127.0.0.1:<App.port>` **before** the swap. Old and new share one host port, so the route never moves. |
 | Host port | [host-port.ts](../packages/basecamp/api/src/domain/release/host-port.ts) | One port per App from 10000 up, held on `App.port`. Two containers of one App cannot both publish it. |
-| The N-1 verdict | [litestone release.js:288](../packages/litestone/src/release.js#L288) `classifyPivot(before, after)` | `unchanged` / `expand` / `unknown` / `contract`. *Unknown counts as a contract, because a wrong "reversible" is the only answer that costs anything.* |
+| The N-1 verdict | [litestone release.js:288](../packages/litestone/src/release.js#L288) `livePivot(before, after)` | `unchanged` / `expand` / `unknown` / `contract`. *Unknown counts as a contract, because a wrong "reversible" is the only answer that costs anything.* |
 | Verdict on a deploy | [cli core/release.js](../packages/cli/core/release.js) journal | `fli deploy` records `pivot=` per release. **Basecamp's deploy computes no verdict.** |
 | Jobs | [caravan worker.ts](../packages/caravan/src/worker.ts) `_claim` | Claims rows with a lease per instance. Two containers running workers is a supported shape. |
 | Live updates | [channels.ts:2191](../packages/junction/src/transport/channels.ts#L2191) | A database that announces `inProcess` reaches no socket in another process. Declaring `announce crossProcess` fixes that. |
@@ -307,10 +307,10 @@ Done when: a Basecamp release of an expand runs start-first and a contract runs 
   - The "before" side is the live image's `db/`, carried into the new image's `litestone release --from=/fjs-before/schema.lite --json` by a Docker volume filled on `docker create`, one per call and removed after. A host directory was tried first: `docker cp` to it failed on a snap docker under `~/.cache`. The classifier runs with `--network none`, so an image without the CLI fails fast rather than downloading it.
   - Stop-first with a reason: a contract, an unknown (with the baseline's note), a classifier that did not run, a live image that would not create, an App with nothing live. An app whose Litestone config names a schema other than `db/schema.lite` reads as unknown, so it is stop-first.
   - `bun run test` passes 373 (4 new). `bun run verify:docker` passes 69, 3 new: whoami's binary on `oven/bun:1.4.4-slim` with this workspace's Litestone, built in the drive at v1 and v2. v1 → v2 overlapped as `expand`, v2 → v1 swapped stop-first as `contract`, and no `fjs-before-*` volume was left. The probe images from 0.2 gave `expand`, `contract` and `unchanged` the same way.
-- [ ] 2.2 `/deploy` carries `swap` for an App whose owner turned start-first on (`FJS-D1847`): an App setting, off by default, on the App's settings screen. An `exposesPort` App is always stop-first
+- [x] 2.2 `/deploy` carries `swap` for an App whose owner turned start-first on (`FJS-D1847`): an App setting, off by default, on the App's settings screen. An `exposesPort` App is always stop-first
   - Waited on 3.1 (`FJS-D1840`), which is done: this is the step that ships start-first.
   - Built (`FJS-D1882`): `App.swap DeploySwap @default(stopFirst) @label("Swap order")`, migration `app_swap`, snapshots regenerated. `startBody` reads it off the live App, rollbacks included, and sends `start-first` only where Outpost's `checkSwap` would accept it (a published port, a host or path route, no `hasExposedPort`); otherwise `stop-first`. The edit drawer offers the column through the App's default form; the Config tab's Runtime card shows a Swap order fact with the expand-only hint. `db/test/schema.test.ts` names `swap` exempt from the runtime columns.
-  - `bun run test` in basecamp: 1203 pass, 1 fail (`server-events` read a `ddl.snapshot.sql` that predated a peer's machine-backups migration; 40 pass in `server-events` + `rollback` after the snapshot was current). Five new cases in `rollback.test.ts`. `bun test db/test` 110 pass in `schema.test.ts`. `bun run verify:build` 9/9. `verify:screens` has an assertion added for the Config fact, the PATCH and the drawer's select, and is not yet run: ports 8020/8123/8125/8127 answer from stale servers, so the box stays open until it passes.
+  - `bun run test` in basecamp: 1205 pass, 1 fail (an MCP gate case past 5 s under load; 146 pass with it, `rollback.test.ts` and `db/test` at a 60 s timeout). Five new cases in `rollback.test.ts`. `bun run verify:build` 9/9. `verify:screens` 332/332 on `API_PORT=7920 UI_PORT=7921` (both default slots held by long-lived servers), with the Config fact and the edit form's swap order checked.
 - [x] 2.3 The Deployment row records the swap that ran and, for stop-first, the reason
   - `Deployment.swap` (`DeploySwap { startFirst stopFirst }`) and `swapReason`, both `@system`, in the initial migration since the 2026-11-04 squash. The deploy step reads `/deploy`'s `swap` and `swap_reason` (`swapOf` in `jobs/deployment-run.job.ts`) and `recordStep` writes them with the digest. A reply that names no swap, such as the stub's, writes neither rather than guessing stop-first. Until 2.2 sends `swap`, a real release records `stopFirst` with no reason.
   - The deployment screen shows a Swap fact under Build, the reason beside a stop-first.
@@ -319,11 +319,13 @@ Done when: a Basecamp release of an expand runs start-first and a contract runs 
 ## Phase 3 — `fli deploy` over SSH
 
 Goal: both deploy paths take the same swap for the same release.
-Done when: `swapContainer` runs start-first from the journal's `pivot=` under the same rules. This phase gates the plan's done (Q4).
+Done when: `swapContainer` runs start-first from the same verdict Outpost computes, under the same rules (`FJS-D1884`). This phase gates the plan's done (Q4).
 
 - [x] 3.1 One owner of the swap for `swapContainer` and `docker.deploy` (`FJS-D1840`)
   - Done 2026-11-04 (`FJS-D1866`): `outpost/src/swap.js` `createSwap` + `runFlags`, driven by `docker.deploy` and by the cli's `swapContainer` over `core/swap.js`'s ssh runner; 06-swap/07-health and revert's 03-swap/04-health merged; one table in `outpost/test/fixtures/swap-cases.js`. outpost `bun run test` 398 pass, `verify:docker` 69, cli `bun run test` 4309 pass.
-- [ ] 3.2 Start-first in `fli deploy`
+- [x] 3.2 Start-first in `fli deploy`
+  - Built (`FJS-D1884`): `deploy.swap: 'startFirst'` asks; `livePivot` and `swapFor` now live in `outpost/src/swap.js`, and `swapContainer` runs the classifier on the target over ssh, then `createSwap.startFirst` with Caddy's routes moved by `routeMover`. Any swap that moves the live port re-points the routes, and `07b-edge`, `deploy:setup`, `deploy:status` and the pause verify read the port off the daemon (`livePort`). `06-swap` prints the swap and records `{ swap, swapReason, pivot }` as its journal output.
+  - Proof: outpost `bun run test` 398 pass, `verify:docker` 69. cli `test/deploy-helpers.test.js` 94 pass, 8 of them new start-first cases (the shared table's three over the ssh runner and a fake Caddy, plus contract, no classifier, no route, not asked, misspelled). The full cli `bun run test` ran 4315 pass and 5 fail. Three pass alone; the other two time out at 5 s alone too, in `register-atlas` and `repo-work`, which read the root registers. No real box has run a cli start-first yet; that is 4.1.
 
 ## Phase 4 — Prove it on a real box
 

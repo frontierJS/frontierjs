@@ -19,5 +19,5 @@ deploy:outpost` runs alone.
 ```js
 const { appId, deployConf } = $.config
 const { host, path }        = $.config.api
-enrollOutpost(machineFor($, host, path), { appId, deployConf, path, host, log })
+await enrollOutpost(machineFor($, host, path), { appId, deployConf, path, host, log })
 ```

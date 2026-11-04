@@ -18,6 +18,9 @@
  * different config; the flags both must agree on are `runFlags` below.
  */
 
+import { randomBytes } from 'node:crypto'
+import { stripVTControlCharacters } from 'node:util'
+
 /** The stop grace a release gets when its run config states none (`FJS-D1839`,
  *  `FJS-D1841`). Handed to the container once, as `--stop-timeout` and as
  *  `FRONTIER_STOP_GRACE` for Junction to fit its budgets inside; every
@@ -83,6 +86,80 @@ export async function portOf(run, container) {
     if (first) return { port: Number(first.HostPort), loopback: first.HostIp === '127.0.0.1' }
   }
   return { port: null, loopback: false }
+}
+
+// Where the live release's `db/` is mounted for the classifier, beside the
+// new image's own.
+const BEFORE_MOUNT = '/fjs-before'
+// Two schemas parsed and compared; a release waits on it before its swap.
+const PIVOT_TIMEOUT_MS = 120_000
+
+/**
+ * Whether the release in `image` can serve beside the `live` container: the
+ * new image's own `litestone release --json`, against the `db/` of the image
+ * the live container runs (`FJS-D1838`). That is the schema the database was
+ * migrated to, which a previous commit or a failed release is not. Both deploy
+ * paths ask it, so one release gets one swap whichever deployed it. The
+ * classifier is the app's copy of Litestone and the container has no network.
+ *
+ * Never throws: no live container, an image without the CLI or a copy that
+ * failed answers `verdict: null` with the reason, which `swapFor` turns into
+ * stop-first. `tag` names the throwaway volume for `docker volume ls`.
+ */
+export async function livePivot({ run, live, image, tag = 'app' }) {
+  if (!live) return { verdict: null, reason: 'there is no live release to serve beside it' }
+  const docker = async (args) => {
+    const result = await run(['docker', ...args])
+    if (result.exitCode !== 0) throw new Error((result.stderr || result.stdout || '').trim() || `docker ${args[0]} exited ${result.exitCode}`)
+    return String(result.stdout ?? '').trim()
+  }
+  // A volume, not a host directory: a snap docker cannot write under a
+  // dotdir or /tmp, and Docker fills an EMPTY volume from the image at its
+  // mount point on create, so the old image needs no copy tool. Named once
+  // per call, because a volume left by a killed run is not empty and would
+  // answer that run's schema.
+  const volume = `fjs-before-${tag}-${randomBytes(4).toString('hex')}`
+  try {
+    const [liveImage, wd = ''] = (await docker(['inspect', '--format', '{{.Image}} {{.Config.WorkingDir}}', live])).split(' ')
+    const held = await docker(['create', '--network', 'none', '--mount', `type=volume,src=${volume},dst=${wd.replace(/\/+$/, '')}/db`,
+                               '--entrypoint', 'true', liveImage])
+    await run(['docker', 'rm', '-f', held])
+    const result = await run([
+      'docker', 'run', '--rm', '--network', 'none', '--user', '0:0',
+      '--mount', `type=volume,src=${volume},dst=${BEFORE_MOUNT},readonly`,
+      '--entrypoint', 'bun', image,
+      'x', 'litestone', 'release', `--from=${BEFORE_MOUNT}/schema.lite`, '--json',
+    ], { timeoutMs: PIVOT_TIMEOUT_MS })
+    const out  = String(result.stdout ?? '')
+    const json = out.slice(out.indexOf('{'))
+    let report = null
+    try { report = json ? JSON.parse(json) : null } catch {}
+    if (typeof report?.verdict !== 'string') {
+      const said = stripVTControlCharacters(result.stderr || out || '').trim().split('\n').slice(-3).join(' ')
+      return { verdict: null, reason: `the classifier did not run in ${image} (exit ${result.exitCode}): ${said}` }
+    }
+    // An unresolved baseline answers `unknown` with the cause in its note.
+    return { verdict: report.verdict, reason: report.baseline?.resolved === false ? report.baseline.note ?? null : null }
+  } catch (err) {
+    return { verdict: null, reason: `the live release's schema could not be read — ${err.message}` }
+  } finally {
+    await run(['docker', 'volume', 'rm', '-f', volume])
+  }
+}
+
+/**
+ * The swap a start-first request runs, from the release's pivot (`FJS-D1838`).
+ * Only an expand or an unchanged schema leaves the old release able to serve
+ * beside the new one's migration; a contract, an unknown and a verdict that
+ * was never reached all swap stop-first, and say why.
+ */
+export function swapFor({ verdict = null, reason = null } = {}) {
+  if (verdict === 'expand' || verdict === 'unchanged') return { swap: 'start-first', reason: null }
+  if (verdict === 'contract')
+    return { swap: 'stop-first', reason: 'this release is a contract, so the live release cannot serve beside its migration — this deploy is the pivot' }
+  if (verdict === 'unknown')
+    return { swap: 'stop-first', reason: `the classifier cannot tell whether the live release survives this one, and unknown counts as a contract${reason ? ` — ${reason}` : ''}` }
+  return { swap: 'stop-first', reason: reason ?? 'no verdict was reached' }
 }
 
 // The live container is renamed `_replaced` and stopped rather than removed,
@@ -195,9 +272,12 @@ export function createSwap({ run, health, find }) {
       const leftovers = [stale, live && replaced].filter(Boolean)
       if (leftovers.length) await run(['docker', 'rm', '-f', ...new Set(leftovers)])
 
+      // `untouched` tells a caller the old container never stopped, apart from
+      // a failure after the route moved, which leaves the new one serving.
       const refuse = async (why) => {
         await run(['docker', 'rm', '-f', next])
-        return new Error(`the new container ${why}; ${live ? 'the previous container was not touched and is still serving' : 'there was no previous container'}`)
+        return Object.assign(new Error(`the new container ${why}; ${live ? 'the previous container was not touched and is still serving' : 'there was no previous container'}`),
+          { untouched: true, none: !live })
       }
       let containerId
       try {

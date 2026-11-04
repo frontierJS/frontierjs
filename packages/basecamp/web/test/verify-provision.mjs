@@ -702,6 +702,17 @@ try {
     t => /\d+\s*%/.test(t), 'the health card never drew a reading', 15_000).catch(e => e.message)
   check('the health card draws the reading the machine just sent', /\d+\s*%/.test(health), String(health).slice(0, 160))
 
+  // The stand-in answers what a droplet created without `backups: true` says.
+  const unread = await text('#server-backups')
+  check('the machine-backups card says nothing has been read before a Sync',
+    /not read yet/i.test(unread ?? ''), unread?.replace(/\s+/g, ' ').trim())
+  await evaluate(`[...document.querySelectorAll('#server-actions button')].find(b => /sync from provider/i.test(b.textContent)).click()`)
+  const backupsCard = await until(`document.getElementById('server-backups')?.textContent ?? ''`,
+    t => /read .* from digitalocean/i.test(t), 'the backup reading never reached the open page', 15_000)
+    .catch(e => e.message)
+  check('and after it, the vendor\'s word: off, and not managed',
+    /\bOff\b/.test(backupsCard) && /not managed/i.test(backupsCard), String(backupsCard).replace(/\s+/g, ' ').trim())
+
   // ─── The machine enrolls itself ────────────────────────────────────────
   // Over real HTTP at the real route, with no session, no signature and no
   // principal — which is what cloud-init has. This route answered 405 to
@@ -963,6 +974,8 @@ try {
   // telling an operator their own box is queued for a job that will never run.
   check('and NO progress strip — nothing is queued for a machine nobody bought',
     await evaluate(`!document.getElementById('server-inflight')`))
+  check('nor a machine-backups card: no vendor holds its disk',
+    await evaluate(`!document.getElementById('server-backups')`))
 
   // ─── …and it is told how to get a credential ───────────────────────────
   // An imported machine holds nothing. There is no fleet-wide key any more, so

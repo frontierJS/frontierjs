@@ -144,7 +144,6 @@ const { releaseFindings, gatherReleaseInputs, releasePlan } = await import(new U
 const { routePrefixes, apiPaths }    = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
 const { readAppSnapshot }            = await import(new URL('file://' + global.fliRoot + '/core/app-entry.js'))
 const { bundleEnvKeys, bundleEnvLine } = await import(new URL('file://' + global.fliRoot + '/core/bundle-env.js'))
-const { plural }                     = await import(new URL('file://' + global.fliRoot + '/core/text.js'))
 const { inspectBuild, inspectIgnored, gatherLocal, gatherIgnored, gatherSqliteCopies } = await import(new URL('file://' + global.fliRoot + '/core/build-check.js'))
 
 // Basecamp's own bound on a release that pulls nothing and starts and health

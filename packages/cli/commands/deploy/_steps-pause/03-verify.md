@@ -4,7 +4,7 @@ description: Ask the edge what it now answers, rather than trusting the write
 ---
 
 ```js
-const { host, serverPath, apiPort, healthPath, pauseKind, edgeHost } = $.config
+const { host, serverPath, apiPort, healthPath, pauseKind, edgeHost, appId, deployConf } = $.config
 const machine = machineFor($, host, serverPath)
 
 // Asked from the target, through its own Caddy, over the name the route is
@@ -40,8 +40,9 @@ log.success(`The edge answers ${edge} → ${name}`)
 // not healthy here was not healthy before the pause either — which is worth
 // being told and is not a reason to leave the guard in place, since that would
 // be an unpause somebody could only finish by hand.
+const port   = await livePort(machine, apiContainer(appId, deployConf), apiPort)
 const health = machine.capture(
-  `curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://localhost:${apiPort}${healthPath} 2>/dev/null || echo 000`).trim()
+  `curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://localhost:${port}${healthPath} 2>/dev/null || echo 000`).trim()
 if (health === '200') log.success(`Health answers 200 → ${healthPath}`)
 else                  log.warn(`Health answers ${health} on ${healthPath} — the app was already unwell; the edge is serving anyway`)
 ```

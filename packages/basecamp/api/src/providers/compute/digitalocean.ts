@@ -277,6 +277,8 @@ export const digitalOcean: ComputeConnector = {
 
   defaults: { region: 'nyc3', image: 'ubuntu-24-04-x64' },
   reservedIps,
+  // digitalocean.com/pricing/backups
+  backupShare: { weekly: 20, daily: 30 },
 
   descriptor({ accountId, ref, address }): TargetDescriptor {
     return {

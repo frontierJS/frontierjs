@@ -164,6 +164,29 @@ export interface TakenBackup {
   sizeGb: number | null
 }
 
+/**
+ * What backups add to the machine's monthly bill, or why there is no number.
+ * An estimate: the share is the vendor's published percentage and the price is
+ * the size's, copied onto `Server.plan` when Basecamp bought the machine.
+ */
+export type BackupCost =
+  | { monthlyMinor: number; currency: string }
+  | { unestimated: 'custom plan' | 'size price unknown' }
+
+/** A plan outside `backupShare` is priced some other way (DigitalOcean's five
+ *  per-GiB plans), and a guess at it would be a cost line that is wrong. */
+export function backupCost(
+  connector: Pick<ComputeConnector, 'backupShare'>,
+  plan:      string,
+  price:     { priceMinor?: unknown; currency?: unknown } | null | undefined,
+): BackupCost {
+  const share = connector.backupShare[plan]
+  if (share === undefined) return { unestimated: 'custom plan' }
+  if (typeof price?.priceMinor !== 'number' || typeof price.currency !== 'string')
+    return { unestimated: 'size price unknown' }
+  return { monthlyMinor: Math.round(price.priceMinor * share / 100), currency: price.currency }
+}
+
 /** A taken backup is ordered by when it was taken, whatever order the vendor
  *  listed it in — neither documents one. */
 export const newestFirst = (taken: TakenBackup[]): TakenBackup[] =>
@@ -281,6 +304,9 @@ export interface ComputeConnector {
    *  Reading them needs `image:read` at DigitalOcean, which a scoped token may
    *  lack, so a refusal throws rather than reading as *off*. */
   backups(send: AccountSend, providerServerId: string): Promise<MachineBackups | null>
+  /** Plan → the percentage of the machine's price its backups add, from the
+   *  vendor's pricing page. */
+  backupShare: Record<string, number>
   /** Does this token work? The call is deliberately the cheapest read the
    *  vendor offers, because it runs when somebody presses Verify. */
   verify(send: AccountSend): Promise<boolean>

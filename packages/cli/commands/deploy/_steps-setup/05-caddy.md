@@ -4,7 +4,7 @@ description: Write this app's routes into the machine's Caddy
 ---
 
 ```js
-const { host, serverPath, appId, edge, apiPort } = $.config
+const { host, serverPath, appId, edge, deployConf } = $.config
 
 // The pause guard and the page it serves come from `core/pause.js`, which is
 // also what `deploy:pause` writes against and what `deploy:status` asks Caddy
@@ -19,6 +19,8 @@ const { routeId } = await import(new URL('file://' + global.fliRoot + '/core/edg
 // a setup run again keeps the hashes of the page already serving.
 const machine = machineFor($, host, serverPath)
 const html    = machine.capture(`find ${serverPath}/current/ -name '*.html' -type f -exec cat {} + 2>/dev/null || true`)
+// A setup run again after a start-first release routes where it answers.
+const apiPort = await livePort(machine, apiContainer(appId, deployConf), $.config.apiPort)
 
 const { routes, plain, paths, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort, edge, html })
 if (error) {

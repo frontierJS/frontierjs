@@ -6,7 +6,7 @@ title: Server
   import { humanize } from '@frontierjs/toolbelt/inflect'
   import Server, { servers } from '../../../resources/Server.mesa'
   import { apps } from '../../../resources/App.mesa'
-  import { at } from '../../../lib/datetime.js'
+  import { at, ago } from '../../../lib/datetime.js'
   import { toasts } from '@frontierjs/ui/stores/toastStore'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
@@ -353,6 +353,28 @@ title: Server
   // tell, so both would record an event and do nothing.
   $: cloudMade = !!server && !!server.providerKind && server.providerKind !== 'custom'
 
+  // ─── Machine backups ─────────────────────────────────────────────────
+  // The vendor's image of the whole disk, as the last Sync read it. Its `hour`
+  // is UTC at both vendors and is printed as UTC: moved into the viewer's zone,
+  // the window would read differently to two operators of the same box.
+  const WEEKDAYS = { SUN: 'Sundays', MON: 'Mondays', TUE: 'Tuesdays', WED: 'Wednesdays',
+                     THU: 'Thursdays', FRI: 'Fridays', SAT: 'Saturdays' }
+
+  $: backups = server?.backupReading ?? null
+
+  function schedule(b) {
+    const hour = b.hour == null ? '' : ` at ${String(b.hour).padStart(2, '0')}:00 UTC`
+    return b.plan === 'weekly' && b.weekday
+      ? `weekly, ${WEEKDAYS[b.weekday] ?? b.weekday}${hour}`
+      : `${b.plan ?? 'on an unnamed plan'}${hour}`
+  }
+
+  function backupCost(c) {
+    return c?.monthlyMinor != null
+      ? `+${c.monthlyMinor.toMoney(c.currency)}/mo, estimated`
+      : `cost not estimated${c?.unestimated ? `: ${c.unestimated}` : ''}`
+  }
+
   // Remove deletes the ROW. On a machine a cloud still bills for, that is the
   // orphan `reconcile` exists to find, so the confirmation says so.
   $: removeWarning = cloudMade && server.status !== 'destroyed'
@@ -524,6 +546,31 @@ title: Server
         <p class="text-sm text-muted">No plan recorded.</p>
       {/if}
     </article>
+
+    {#if cloudMade}
+      <article class="card stack" id="server-backups">
+        <h2 class="h4">Machine backups</h2>
+        {#if !backups}
+          <p class="text-sm text-muted">Not read yet. Sync from provider reads them.</p>
+        {:else if !backups.enabled}
+          <p id="backups-state"><strong>Off</strong></p>
+        {:else}
+          <p id="backups-state"><strong>On</strong>, {schedule(backups)}</p>
+          <dl class="facts">
+            <dt>Last taken</dt><dd>{ago(backups.taken[0]?.at, 'none yet')}</dd>
+            <dt>Kept</dt>
+            <dd>{backups.taken.length}{#if backups.retentionDays} · for {backups.retentionDays} days{/if}</dd>
+            <dt>Cost</dt>      <dd id="backups-cost">{backupCost(backups.cost)}</dd>
+          </dl>
+        {/if}
+        {#if backups}
+          <p class="text-sm text-muted">
+            Read {ago(backups.readAt)} from {server.providerKind}.
+            {#if !server.backupPolicy}Not managed: Basecamp shows what the vendor says and changes nothing.{/if}
+          </p>
+        {/if}
+      </article>
+    {/if}
 
     <!-- The dashboard's card, for the readings it knows and a day of each;
          the rest of what the outpost sent is listed under it, in its own words. -->

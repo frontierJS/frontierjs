@@ -58,37 +58,12 @@ box's file names and no manifest, so it is put back by hand
 (`packages/basecamp/docs/backups.md` § 7, *The hub, by hand*).
 
 <script>
-const { plural }       = await import(new URL('file://' + global.fliRoot + '/core/text.js'))
 const { ageOf }        = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
 const { apiContainer } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
-const { keyDirOf, pickArchive, checkArchive, probeBox, putBoxKey, restartApi, probeUntil, stageOnBox, restoreFindings } =
+const { probeBox, putBoxKey, restartApi, probeUntil, stageOnBox, restoreFindings } =
   await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 
 const sha256 = (text) => new Bun.CryptoHasher('sha256').update(text).digest('hex')
-
-/** The archive's key: `--key`, else the filed one its manifest names. */
-const keyFor = (server, manifest, given) => {
-  if (given) return given
-  const fingerprint = manifest.encryptionKeyFingerprint
-  if (!fingerprint) throw new Error('the archive was taken under the development key, which a production Basecamp refuses to boot on')
-  const filed = filedKeys(server).get(fingerprint)
-  if (!filed) throw new Error(`no key filed under ${keyDirOf(server)} has the fingerprint ${fingerprint.slice(0, 12)} the archive names — pass --key <file>`)
-  return filed
-}
-
-/** Every refusal the laptop can find, before the box is asked anything. */
-const checkHere = async ({ picked, keyFile, log, echo, chalk }) => {
-  const verdict = await checkArchive({ archive: picked.archive, keyFile, basecampRoot: provisionScript().root })
-  if (verdict.refused) {
-    log.error(`${picked.archive} cannot be restored onto this checkout's Basecamp — the box was not touched:`)
-    for (const why of verdict.refused) echo(chalk`    {red ✗} ${why}`)
-    return false
-  }
-  echo(chalk`  {green ✓} {bold Archive taken ${picked.manifest.takenAt}} {dim checked here:} ${plural(picked.manifest.files.length, 'file')}{dim , the key and the migrations}`)
-  echo(chalk`    {dim ·} {dim from} ${picked.dir}`)
-  echo(chalk`    {dim ·} {dim key} ${keyFile}`)
-  return true
-}
 
 /** A box whose Basecamp has an admin already is never overwritten. */
 const emptyOnBox = async ({ host, port, log, echo, chalk }) => {

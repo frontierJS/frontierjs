@@ -178,13 +178,32 @@ Done when: yuma is reinstalled in fresh mode and a throwaway box built at HEAD i
 (`FJS-D1883`), and the first screen after login is the setup checklist (fresh) or the old fleet
 (restore).
 
-- [ ] 3.1 Preflight reads: HEAD against the dirty tree under `packages/basecamp/`, the deployed sha,
+- [x] 3.1 Preflight reads: HEAD against the dirty tree under `packages/basecamp/`, the deployed sha,
       and from the old Basecamp its fleet machines, the apps on this box, its hostname and the
       Outpost version against `OUTPOST_VERSION`.
-- [ ] 3.2 The questions, the printed plan and one confirmation; `--plan` stops there, `--yes` takes
+      `readOld` in `commands/basecamp/reinstall.md`. The sha is the repo tag `02-ship` put on the
+      container's image, and the hostname is the env file's `FRONTIER_APP_URL`. The fleet is one
+      `deploy:repl -e` expression, which needs no API key, and Basecamp's box is picked as
+      `hostServer` picks it. `-e` answers undefined for a block-bodied arrow (`FJS-3999`). Every
+      other container on the box is listed, matched to an App by its `fjs.app` label. Proved on
+      yuma 2026-11-04: running `abef3c26d` against HEAD `274e6e2a4`, Outpost `0.1.9` matching, and
+      the `kapp` container named as App `7f691013`, released by an earlier Basecamp, since this one's
+      `kapp` is `be3a35a4`.
+- [x] 3.2 The questions, the printed plan and one confirmation; `--plan` stops there, `--yes` takes
       the defaults and still refuses what 3.3 refuses.
+      Install's questions and run moved into `askInstall` / `installRows` / `runInstall` in the
+      `basecamp` module, which `install.md` now calls too. Restore mode skips the admin. The mode
+      is a keypress, and under `--yes` the default is **restore**, since it is the mode that
+      refuses before the box is touched. The confirmation is the box's name, typed. Proved on
+      yuma 2026-11-04 with `--plan --yes` in both modes: the steps are numbered per mode, and the
+      install rows sit under step *install*.
 - [ ] 3.3 Phase 1's backup, then in restore mode 2.1's preflight — a refusal ends the run with the
       box untouched. Fresh mode with no key copy off the box refuses unless told the data goes.
+      Built: `takeBackup`, `keyFor` and `checkHere` moved into the module from `backup.md` and
+      `restore.md`, and `backUpFirst` calls them. A raw fallback refuses restore mode. Fresh mode
+      with no key copy refuses unless `--new-key`, which is also Q2's "a new one only when asked". It is
+      refused with restore mode, since an archive opens only under the key it was taken with.
+      The run stops after 3.3 until 3.4 lands. Open: a run on yuma, which takes a real backup.
 - [ ] 3.4 Retire with the bare Outpost uninstall. Purge only on its own flag, with the apps it
       removes named and typed.
 - [ ] 3.5 Install, with the key per Q2, and the Cloudflare token asked once for both jobs —

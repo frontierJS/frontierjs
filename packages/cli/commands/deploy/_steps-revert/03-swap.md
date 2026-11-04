@@ -17,6 +17,7 @@ const { container, replaced, healthy, restored } = await swapContainer($, {
   dbPath:     apiFiles(deployConf, serverPath).dbDir,
   envFile:    apiFiles(deployConf, serverPath).envFile,
   secretsDir: apiFiles(deployConf, serverPath).secretsDir,
+  serverPath,
   deployConf,
   corsOrigins: derivedOrigins($, deployConf),
   configuration: $.config.revertConfiguration,

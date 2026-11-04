@@ -1,6 +1,6 @@
 ---
 title: 06-swap
-description: Stop old container, start new one, health-check it — puts the old one back on failure; migrations run in entrypoint
+description: Put the API onto the new image, stop-first or (deploy.swap startFirst, an expand) beside the old one — puts the old one back on failure; migrations run in entrypoint
 skip: "!$.config.doApi"
 ---
 
@@ -14,7 +14,7 @@ const { configurationSet } = await import(new URL('file://' + global.fliRoot + '
 // name is not unique across servers or across rebuilds — which is the whole of
 // what 2.3f is about. `imageAddress` is the tag when nothing could be read, and
 // step 04 has already said so out loud.
-const { container, replaced, healthy, none, unbound, reason } = await swapContainer($, {
+const { container, replaced, healthy, none, untouched, unbound, reason, swap, swapReason, pivot, port } = await swapContainer($, {
   host,
   appId,
   container: apiContainer(appId, deployConf),
@@ -23,6 +23,7 @@ const { container, replaced, healthy, none, unbound, reason } = await swapContai
   dbPath:     apiFiles(deployConf, serverPath).dbDir,
   envFile:    apiFiles(deployConf, serverPath).envFile,
   secretsDir: apiFiles(deployConf, serverPath).secretsDir,
+  serverPath,
   // The same value `03-build-web` stamped into the bundle, so one deploy is one
   // build on both sides of the wire — the server states it, the browser compares.
   build:   $.config.commit,
@@ -35,10 +36,17 @@ const { container, replaced, healthy, none, unbound, reason } = await swapContai
 
 $.config.container = container
 $.config.replaced  = replaced
+$.config.livePort  = port
+
+// The swap that ran, as Basecamp's Deployment row records it, kept beside the
+// Release's own `pivot=`: that one is the plan's verdict off the committed
+// baseline, this one the live database's.
+noteForJournal($, '06-swap', { swap, swapReason, pivot })
+echo(swapReason ? chalk`  {dim swap}  ${swap} {dim — ${swapReason}}` : chalk`  {dim swap}  ${swap}`)
 
 if (!healthy) {
   $.config.abort = true
-  const after = none ? 'removed, nothing was serving before it' : 'rolled back'
+  const after = none ? 'removed, nothing was serving before it' : untouched ? 'the previous release kept serving' : 'rolled back'
   throw new Error(unbound.length
     ? `${imageTag} opened ${unbound.join(', ')} outside the volume — ${after}`
     : /did not start/.test(reason ?? '')
