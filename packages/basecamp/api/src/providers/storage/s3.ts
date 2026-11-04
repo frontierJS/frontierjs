@@ -158,15 +158,82 @@ export async function headObject(send: Send, bucket: string, key: string): Promi
 }
 
 /** Gone is gone: a 404 on delete is success, because every path into a delete
- *  is a job that may be redelivered. */
-export async function deleteObject(send: Send, bucket: string, key: string): Promise<{ gone: boolean; error?: S3Failure }> {
-  const r = await send<null>({ method: 'DELETE', path: objectPath(bucket, key) })
+ *  is a job that may be redelivered.
+ *
+ *  Without `versionId`, a versioned bucket writes a delete marker and answers
+ *  204 while the object stays, billed and locked; only a delete naming the
+ *  version removes one. A version under Object Lock is refused, and the
+ *  refusal's code does not say why: SeaweedFS and S3 answer `AccessDenied`,
+ *  the code a key without delete gets. So a refused version delete reads the
+ *  version's retention and legal hold, and answers `locked` only when one of
+ *  them holds it now; a refusal it cannot name stays the error. */
+export async function deleteObject(send: Send, bucket: string, key: string, opts: { versionId?: string } = {}): Promise<{ gone: boolean; locked?: { until: string | null }; error?: S3Failure }> {
+  const versioned = opts.versionId !== undefined && opts.versionId !== 'null'
+  const r = await send<null>({ method: 'DELETE', path: objectPath(bucket, key), ...(versioned ? { query: { versionId: opts.versionId } } : {}) })
   if (r.error) {
     const f = translate(r.error)
     if (f.kind === 'missing') return { gone: true }
-    return { gone: false, error: f }
+    const locked = versioned && f.kind !== 'clock_skew' && f.kind !== 'auth_failed' ? await lockOn(send, bucket, key, opts.versionId!) : null
+    return locked ? { gone: false, locked } : { gone: false, error: f }
   }
   return { gone: true }
+}
+
+/** Every version and delete marker of exactly `key`, deleted by id, so a
+ *  versioned bucket keeps nothing billed behind a marker. `locked` when the
+ *  vendor's lock refused any version; that version and every one after it
+ *  stay. A bucket that keeps no versions (`NotImplemented`, R2) takes a plain
+ *  delete, and its lock's refusal is unprobed, so it comes back as the error. */
+export async function deleteEveryVersion(send: Send, bucket: string, key: string): Promise<{ gone: true } | { locked: { until: string | null } } | { error: S3Failure }> {
+  const all: ListedVersion[] = []
+  let next: { keyMarker: string; versionIdMarker: string | null } | undefined
+  do {
+    const page = await listObjectVersions(send, bucket, { prefix: key, next })
+    if (page.error?.code === 'NotImplemented') {
+      const { error } = await deleteObject(send, bucket, key)
+      return error ? { error } : { gone: true }
+    }
+    if (page.error) return { error: page.error }
+    all.push(...page.versions!.filter(v => v.key === key))
+    next = page.next ?? undefined
+  } while (next)
+  // Markers last: a marker left over a locked version is what hides it from a listing.
+  for (const v of [...all.filter(v => !v.deleteMarker), ...all.filter(v => v.deleteMarker)]) {
+    const done = await deleteObject(send, bucket, key, { versionId: v.versionId })
+    if (done.locked) return { locked: done.locked }
+    if (done.error) return { error: done.error }
+  }
+  return { gone: true }
+}
+
+/** What holds a version now: a retention date ahead of now, or a legal hold. Null when neither can be read as holding it. */
+async function lockOn(send: Send, bucket: string, key: string, versionId: string, now = Date.now()): Promise<{ until: string | null } | null> {
+  const read = async (sub: 'retention' | 'legal-hold') => {
+    const r = await send<Uint8Array | string | null>({ method: 'GET', path: objectPath(bucket, key), query: { [sub]: '', versionId } })
+    return r.error ? '' : r.data === null ? '' : typeof r.data === 'string' ? r.data : new TextDecoder().decode(r.data)
+  }
+  const until = tag(await read('retention'), 'RetainUntilDate')
+  if (until && Date.parse(until) > now) return { until }
+  return tag(await read('legal-hold'), 'Status') === 'ON' ? { until: null } : null
+}
+
+/** The bucket's Object Lock default, from `GetObjectLockConfiguration`.
+ *  `enabled: false` when the bucket answers that it has none; an error when it
+ *  cannot say, which is R2's answer for its bucket locks and a key without the
+ *  permission alike, so the caller grades that as unknown, never as unlocked. */
+export async function getObjectLock(send: Send, bucket: string): Promise<{ lock?: { enabled: boolean; mode: string | null; days: number | null }; error?: S3Failure }> {
+  const r = await send<Uint8Array | string | null>({ method: 'GET', path: `/${uriEncode(bucket)}`, query: { 'object-lock': '' } })
+  if (r.error) {
+    const f = translate(r.error)
+    return f.code === 'ObjectLockConfigurationNotFoundError' ? { lock: { enabled: false, mode: null, days: null } } : { error: f }
+  }
+  const xml   = r.data === null ? '' : typeof r.data === 'string' ? r.data : new TextDecoder().decode(r.data)
+  const days  = tag(xml, 'Days'), years = tag(xml, 'Years')
+  return { lock: {
+    enabled: tag(xml, 'ObjectLockEnabled') === 'Enabled',
+    mode:    tag(xml, 'Mode'),
+    days:    days ? Number(days) : years ? Number(years) * 365 : null,
+  } }
 }
 
 // ─── Listing ──────────────────────────────────────────────────────────────
@@ -191,6 +258,35 @@ export async function listObjects(send: Send, bucket: string, opts: { prefix?: s
   if (r.error) return { error: translate(r.error) }
   // `application/xml` is neither JSON nor text/*, so conduit hands it over as bytes.
   return parseListing(r.data === null ? '' : typeof r.data === 'string' ? r.data : new TextDecoder().decode(r.data))
+}
+
+export interface ListedVersion { key: string; versionId: string; deleteMarker: boolean; isLatest: boolean; lastModified: string | null }
+
+/** One page of ListObjectVersions: each version and delete marker under the
+ *  prefix. An unversioned bucket lists one version per key, id `null`. R2
+ *  keeps no versions and refuses the call, which the caller reads as "delete
+ *  plainly". Pass `next` back until it is null. */
+export async function listObjectVersions(send: Send, bucket: string, opts: { prefix?: string; next?: { keyMarker: string; versionIdMarker: string | null } } = {}): Promise<{ versions?: ListedVersion[]; next?: { keyMarker: string; versionIdMarker: string | null } | null; error?: S3Failure }> {
+  const r = await send<Uint8Array | string | null>({ method: 'GET', path: `/${uriEncode(bucket)}`, query: {
+    // Conduit drops a null; the empty string is what sends the bare subresource.
+    versions:            '',
+    prefix:              opts.prefix,
+    'key-marker':        opts.next?.keyMarker,
+    'version-id-marker': opts.next?.versionIdMarker ?? undefined,
+  } })
+  if (r.error) return { error: translate(r.error) }
+  const xml = r.data === null ? '' : typeof r.data === 'string' ? r.data : new TextDecoder().decode(r.data)
+  const versions = [...xml.matchAll(/<(Version|DeleteMarker)>([\s\S]*?)<\/\1>/g)].map(([, kind, c]) => ({
+    key:          tag(c, 'Key') ?? '',
+    versionId:    tag(c, 'VersionId') ?? 'null',
+    deleteMarker: kind === 'DeleteMarker',
+    isLatest:     tag(c, 'IsLatest') === 'true',
+    lastModified: tag(c, 'LastModified'),
+  }))
+  const next = tag(xml, 'IsTruncated') === 'true'
+    ? { keyMarker: tag(xml, 'NextKeyMarker') ?? '', versionIdMarker: tag(xml, 'NextVersionIdMarker') }
+    : null
+  return { versions, next }
 }
 
 /** A ListObjectsV2 answer's XML, read. Apart from `listObjects` because

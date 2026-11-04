@@ -650,7 +650,10 @@ ctx.text(data, status?)
 ctx.html(data, status?)
 ctx.empty(status?)
 ctx.redirect(url, status?)
-ctx.file(path, download?)
+ctx.file(path, { download?, etag?, type?, cacheControl? })
+// A stored object states its own identity -- the row's hash as `etag`, the declared
+// mime as `type`, `private, max-age=…` as `cacheControl` -- and 304, Range (206/416),
+// nosniff and `download` (an attachment name, or `true` for the file's own) still apply.
 ctx.stream(readable, type, status?)
 
 // Pagination envelope with next/prev links built from the request URL
@@ -1011,7 +1014,7 @@ Row by row rather than one `UPDATE` because that is what applies the schema. Lit
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `port` | `number` | `3000` | HTTP port. `FRONTIER_PORT_BE` (the slot `fli dev` and `fli deploy` hand the process), else a bare `PORT` (a PaaS's), beats the file; a `port` passed in `createApp`'s `config` beats both |
-| `hostname` | `string` | `'0.0.0.0'` | Bind address |
+| `hostname` | `string` | `'0.0.0.0'` | Bind address. `FRONTIER_HOSTNAME` beats the file; a desktop sidecar sets it to `127.0.0.1` so the API is not on the network |
 | `apiPrefix` | `string` | `''` | Prefix for every route the app registers — `''` mounts services at `/{service}` |
 | `paginate` | `{ default, max }` | `{ default: 20, max: 100 }` | Page size of every model service that declares no `paginate` — `default` when `$limit` is unstated, `max` the most a wire `$limit` may ask for (above it is a 400). A service's own `paginate` wins. In `junction.config.js` it goes under `app:` |
 | `http.drainTimeout` | `number` | `5000` | ms a socket gets to finish during shutdown |

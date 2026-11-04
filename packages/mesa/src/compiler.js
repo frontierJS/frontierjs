@@ -854,6 +854,10 @@ export function withoutWatchedCalls(accessorMap) {
   return m
 }
 
+const STATEMENT_HEADS = new Set(['if', 'while', 'switch', 'with'])
+const isStatementHeadMethod = (p) =>
+  p.type === 'Property' && p.method && !p.computed && STATEMENT_HEADS.has(p.key.name)
+
 export function rewriteExpr(expr, accessorMap, setterMap, fireFns) {
   if (!accessorMap || !expr) return expr
 
@@ -871,6 +875,10 @@ export function rewriteExpr(expr, accessorMap, setterMap, fireFns) {
     // identifier and stops after it, without throwing, so `load(id)` stayed
     // bare and threw "id is not defined" when the handler ran (FJS-2129).
     ast = acorn.parseExpressionAt(expr, 0, { ecmaVersion: 'latest', allowAwaitOutsideFunction: true })
+    // `{ if (cond) { … } }` is also an object literal holding a method named
+    // `if`, whose parameter `cond` then shadows every read of it (FJS-3917).
+    if (ast.type === 'ObjectExpression' && ast.properties.some(isStatementHeadMethod))
+      throw new Error('a block, not an object')
   } catch (_) {
     try {
       ast = acorn.parse(expr, { ecmaVersion: 'latest', sourceType: 'module' })
@@ -7607,6 +7615,126 @@ function checkComponentTagsBound(ctx, instanceSrc) {
   }
 }
 
+// Browser names the compiler's own runtime (Bun) lacks, so a module block that
+// reads one at import is not refused as unbound.
+const BROWSER_GLOBALS = new Set([
+  'window', 'self', 'document', 'location', 'history', 'navigator', 'screen', 'localStorage',
+  'sessionStorage', 'indexedDB', 'caches', 'customElements', 'matchMedia', 'getComputedStyle',
+  'requestAnimationFrame', 'cancelAnimationFrame', 'requestIdleCallback', 'cancelIdleCallback',
+  'alert', 'confirm', 'prompt', 'open', 'close', 'scrollTo', 'scrollBy', 'devicePixelRatio',
+  'innerWidth', 'innerHeight', 'addEventListener', 'removeEventListener', 'dispatchEvent',
+  'Element', 'HTMLElement', 'Node', 'NodeList', 'Document', 'DocumentFragment', 'ShadowRoot',
+  'Event', 'CustomEvent', 'EventTarget', 'KeyboardEvent', 'MouseEvent', 'PointerEvent', 'Image',
+  'Audio', 'Option', 'FormData', 'File', 'FileReader', 'Blob', 'DOMParser', 'XMLSerializer',
+  'MutationObserver', 'IntersectionObserver', 'ResizeObserver', 'PerformanceObserver',
+  'BroadcastChannel', 'MessageChannel', 'Worker', 'SharedWorker', 'WebSocket', 'EventSource',
+  'XMLHttpRequest', 'Notification', 'Storage', 'CSS', 'CSSStyleSheet', 'DOMException',
+  'DOMRect', 'DOMMatrix', 'Range', 'Selection', 'AbortController', 'AbortSignal', 'Audio',
+  'AudioContext', 'MediaRecorder', 'SpeechSynthesis', 'speechSynthesis', 'visualViewport',
+  'trustedTypes', 'crypto', 'performance', 'structuredClone', 'queueMicrotask', 'fetch',
+  'WebAssembly', 'OffscreenCanvas', 'ImageData', 'Path2D', 'Intl', 'Temporal',
+])
+
+/** Every name a pattern binds, added to `names`. */
+function addPatternNames(p, names) {
+  if (!p) return
+  if (p.type === 'Identifier') names.add(p.name)
+  else if (p.type === 'ObjectPattern') p.properties.forEach((x) => addPatternNames(x.value ?? x.argument, names))
+  else if (p.type === 'ArrayPattern') p.elements.forEach((x) => addPatternNames(x, names))
+  else if (p.type === 'AssignmentPattern') addPatternNames(p.left, names)
+  else if (p.type === 'RestElement') addPatternNames(p.argument, names)
+}
+
+/**
+ * A bare name a `<script module>` reads while the module loads, that nothing in
+ * the file declares: the load throws a ReferenceError, the whole route module
+ * fails to import, and the page is blank with a console line to say why. A
+ * renamed export left `const resource = groups` behind and `vite build`
+ * passed (`FJS-3926`). Only code that runs at import is read -- function and
+ * class bodies run later -- and a name declared ANYWHERE in the block, or
+ * imported by either script, counts as bound, because a false refusal breaks a
+ * working file and a missed one falls back to the runtime error.
+ */
+function checkModuleScriptBound(ctx) {
+  const node = ctx.scriptModuleNodes[0]
+  if (!node?.content) return
+  let ast
+  try {
+    ast = acorn.parse(node.content, { sourceType: 'module', ecmaVersion: 'latest' })
+  } catch {
+    return                    // a module script that will not parse is reported elsewhere
+  }
+
+  const bound = new Set(moduleScopeNames(ctx))
+  const reads = []
+  const declare = (n) => {
+    if (!n || typeof n !== 'object') return
+    if (Array.isArray(n)) return n.forEach(declare)
+    if (typeof n.type !== 'string') return
+    if (n.type === 'VariableDeclarator') addPatternNames(n.id, bound)
+    else if (n.type === 'FunctionDeclaration' || n.type === 'FunctionExpression' || n.type === 'ClassDeclaration' || n.type === 'ClassExpression') {
+      if (n.id) bound.add(n.id.name)
+      n.params?.forEach((p) => addPatternNames(p, bound))
+    } else if (n.type === 'ArrowFunctionExpression') n.params.forEach((p) => addPatternNames(p, bound))
+    else if (n.type === 'CatchClause') addPatternNames(n.param, bound)
+    for (const k of Object.keys(n)) if (k !== 'type') declare(n[k])
+  }
+  declare(ast)
+
+  const visit = (n, parent, key) => {
+    if (!n || typeof n !== 'object') return
+    if (Array.isArray(n)) return n.forEach((x) => visit(x, parent, key))
+    if (typeof n.type !== 'string') return
+    switch (n.type) {
+      case 'Identifier': return void reads.push(n)
+      case 'FunctionDeclaration': case 'FunctionExpression': case 'ArrowFunctionExpression': return
+      case 'ClassDeclaration': case 'ClassExpression':
+        visit(n.superClass)
+        return
+      case 'MemberExpression':
+        visit(n.object)
+        if (n.computed) visit(n.property)
+        return
+      case 'Property':
+        if (n.computed) visit(n.key)
+        visit(n.value)
+        return
+      case 'VariableDeclarator':
+        visit(n.init)
+        return
+      case 'ImportDeclaration': case 'ExportAllDeclaration': case 'MetaProperty':
+      case 'LabeledStatement': case 'BreakStatement': case 'ContinueStatement': {
+        if (n.type === 'LabeledStatement') visit(n.body)
+        return
+      }
+      case 'ExportNamedDeclaration':
+        if (n.declaration) visit(n.declaration)
+        else if (!n.source) n.specifiers.forEach((s) => visit(s.local))
+        return
+      case 'ExportDefaultDeclaration':
+        visit(n.declaration)
+        return
+      case 'UnaryExpression':
+        if (n.operator === 'typeof' && n.argument.type === 'Identifier') return
+        break
+    }
+    for (const k of Object.keys(n)) if (k !== 'type') visit(n[k], n, k)
+  }
+  visit(ast.body)
+
+  const seen = new Set()
+  for (const id of reads) {
+    const name = id.name
+    if (seen.has(name) || bound.has(name) || name in globalThis || BROWSER_GLOBALS.has(name)) continue
+    seen.add(name)
+    ctx.analysis.errors.push(
+      `'${name}' is read when <script module> loads and nothing in this file declares it — ` +
+      `the import throws a ReferenceError and the route renders blank. Declare or import it, ` +
+      `or remove the line.` + placeOf(ctx, node)
+    )
+  }
+}
+
 export function makeComponent(node, option = {}) {
   const ctx = this
   // If the component name is a reactive variable (derived const, let signal, etc.),
@@ -11101,6 +11229,7 @@ function runAnalysis(ctx, script) {
   }
 
   checkComponentTagsBound(ctx, rawScript)
+  checkModuleScriptBound(ctx)
 
   // A <style> block is extracted from the TOP LEVEL of the component only (the
   // filter above does not recurse). One nested inside a block — a {#snippet},

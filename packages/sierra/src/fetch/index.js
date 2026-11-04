@@ -38,12 +38,14 @@ let _config = null
  *        Only for a caller that has no client: with one, storage is a SECOND
  *        owner of the token and the two halves of "signed in" can disagree.
  * @param {string} [options.baseUrl]   — optional base URL prefix for relative paths
+ * @param {string} [options.apiPrefix] — the API's prefix; with no baseUrl, a relative
+ *        path under it goes to `client.origin` when the page is served from another
  */
 export function configureFetch(options = {}) {
   _config = options
 
   _fetch = async (input, init = {}) => {
-    const url = resolveUrl(input, options.baseUrl)
+    const url = resolveUrl(input, options)
 
     const headers = new Headers(init.headers ?? {})
     const mine = isOwnAudience(url, options)
@@ -79,6 +81,25 @@ export function configureFetch(options = {}) {
       ...(credentials ? { credentials } : {}),
     })
   }
+}
+
+/**
+ * The origin a page's own `fetch('/api/…')` must be sent to, when the page is
+ * not served from the API's.
+ *
+ * A wrapped desktop shell serves the page from `tauri://localhost`, whose asset
+ * handler answers 200 text/html for any path it does not know, so a relative
+ * API path never reaches the API and `res.ok` is true (FJS-3925). Only a path
+ * under `apiPrefix` is rebased — a page's own assets stay where they are — so
+ * an app with no prefix has nothing to tell the two apart and is left alone.
+ * An explicit `baseUrl` wins, and rebases everything.
+ */
+function apiBase({ client, apiPrefix }, input) {
+  const here = globalThis.location?.origin
+  if (!apiPrefix || !client?.origin || !here || client.origin === here) return undefined
+  const prefix = '/' + apiPrefix.replace(/^\/+|\/+$/g, '')
+  const path = input.split(/[?#]/)[0]
+  return path === prefix || path.startsWith(prefix + '/') ? client.origin : undefined
 }
 
 /**
@@ -184,8 +205,7 @@ export async function* readEvents(response) {
 /**
  * Resolve a URL, optionally prepending a base URL.
  */
-function resolveUrl(input, baseUrl) {
-  if (!baseUrl) return input
+function resolveUrl(input, options) {
   if (typeof input !== 'string') return input
 
   // Don't prefix absolute URLs
@@ -193,5 +213,7 @@ function resolveUrl(input, baseUrl) {
     return input
   }
 
-  return baseUrl.replace(/\/$/, '') + '/' + input.replace(/^\//, '')
+  const base = options.baseUrl || (input.startsWith('/') ? apiBase(options, input) : undefined)
+  if (!base) return input
+  return base.replace(/\/$/, '') + '/' + input.replace(/^\//, '')
 }

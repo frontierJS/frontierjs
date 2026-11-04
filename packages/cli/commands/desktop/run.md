@@ -45,7 +45,7 @@ that is said; a window showing the wrong data with that line above it is a
 stale server of this app, and `fli ps` names it.
 
 ```js
-const { desktopBinary, desktopApiTarget, offerDesktopSurface, ensureServer, stopServer, surfaceRow } =
+const { desktopBinary, desktopApiTarget, desktopApiEnv, offerDesktopSurface, ensureServer, stopServer, surfaceRow } =
   await import(resolve(global.fliRoot, 'core/desktop-surface.js'))
 const { detectRunner }  = await import(resolve(global.fliRoot, 'core/db-preflight.js'))
 
@@ -82,11 +82,12 @@ if (!api) {
 } else {
   try {
     // Junction binds FRONTIER_PORT_BE above anything else, and the port is the
-    // one the bundle was built to call.
+    // one the bundle was built to call. The shell's origins go with it, or its
+    // socket is refused under the scaffold's cors '*' (FJS-3921).
     started = await ensureServer({
       root, runner, script: surfaceRow(root, 'api')?.script, port: api.port,
       label: 'API', log, dry: flag.dry,
-      env: { FRONTIER_PORT_BE: String(api.port) },
+      env: desktopApiEnv(api.port),
     })
   } catch (err) {
     log.error(err.message)

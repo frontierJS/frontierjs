@@ -547,7 +547,8 @@ check('empty database sends / to the wizard',
 check('the wizard renders',
   await waitFor(`document.querySelector('h1')?.textContent ?? null`, h => h === 'Set up Basecamp'), 'Set up Basecamp')
 await goto('/login/')
-check('and /login/ too — there is nobody to log in as', await path(), '/setup/')
+check('and /login/ too — there is nobody to log in as',
+  await waitFor(`location.pathname`, p => p === '/setup/'), '/setup/')
 
 // 2. First run.
 await goto('/setup/')
@@ -1258,33 +1259,6 @@ check('the deployments list shows the release',
   await evaluate(`document.getElementById('deployment-rows')?.textContent ?? ''`),
   t => t.includes('success'))
 
-// A push carries the row WITHOUT the includes `deployments.find` answers, so a
-// list holding pushed rows loses the app's name at the first announcement.
-// A real patch through the API, announced over the real socket — and asked as a
-// pair: the row MOVES (the push was applied) while the app cell keeps
-// the name (it was applied by re-reading, not by adopting the pushed row). A
-// list that ignored pushes passes the second row alone; one that adopted them
-// passes the first.
-const deployCell = (col) =>
-  `document.querySelector('#deployment-rows td[data-col="${col}"]')?.textContent.trim() ?? ''`
-const appCellBefore      = await evaluate(deployCell('appId'))
-const deployRow          = `document.querySelector('#deployment-rows tbody tr')?.textContent.replace(/\\s+/g, ' ').trim() ?? ''`
-const rowBefore          = await evaluate(deployRow)
-check('…its app cell names the app, read off the include',
-  appCellBefore, t => t.length > 0 && !/^[0-9a-f-]{36}$/.test(t))
-await evaluate(`
-  (async () => {
-    const m = await import('/src/resources/Deployment.mesa')
-    await m.deployments.service.patch(${JSON.stringify(deployPath.split('/')[2])}, {
-      startedAt: '2020-01-02T03:04:05.000Z', finishedAt: '2020-01-02T03:05:15.000Z', durationMs: 70000 })
-  })()
-`)
-check('a pushed patch moves the list without a navigation',
-  await waitFor(deployRow, t => t !== rowBefore, 10_000),
-  t => t !== rowBefore)
-check('…and the app cell still names the app after the push',
-  await evaluate(deployCell('appId')), appCellBefore)
-
 // ── 11b-ii. Following the log, on the machine that ran the release ──────
 // The socket path end to end: the page opens /ws/stream/logs, the API grades
 // the row and asks the Outpost over conduit, the Outpost runs `docker logs
@@ -1490,6 +1464,7 @@ check('…and the health check was addressed by it',
 check('…and the machine was told the app has no hostname, since its only one was deleted',
   JSON.stringify([outpostSaw.deploy.find(d => d.path === '/deploy')?.body.hosts, outpostSaw.routed]),
   JSON.stringify([[], []]))
+
 
 // ── 11c. Shell chrome — the attention system and ⌘K ───────────────────
 // The mock's NoticeBar / ActionQueue / CommandPalette, over real rows. The
@@ -2515,6 +2490,39 @@ check('filtering to one kind drops the others',
   await evaluate(`document.getElementById('activity-rows')?.textContent ?? ''`),
   t => t.includes('servers') && !t.includes('projects'))
 
+// A push carries the row WITHOUT the includes `deployments.find` answers, so a
+// list holding pushed rows loses the app's name at the first announcement.
+// The producer of a `patched` push is the release job: a user's patch cannot
+// move a row (`status` and the timings are the engine's, the rest is not
+// shown), so the drive starts a release with the list already open and reads
+// the row move to `success` with no navigation -- asked as a pair: the row
+// MOVES (the push was applied) while the app cell keeps the name (it was
+// applied by re-reading, not by adopting the pushed row). A list that ignored
+// pushes passes the second row alone; one that adopted them passes the first.
+// It runs after the activity feed is read: a release writes enough audit rows to
+// push the drain out of that feed's 100-row window.
+const releasedAppId = await evaluate(`
+  (async () => {
+    const m = await import('/src/resources/Deployment.mesa')
+    return (await m.deployments.service.get(${JSON.stringify(deployPath.split('/')[2])})).appId
+  })()
+`)
+await goto('/deployments/')
+const startedId = await evaluate(`
+  (async () => {
+    const m = await import('/src/resources/Deployment.mesa')
+    return (await m.deployments.service.create({ appId: ${JSON.stringify(releasedAppId)} })).id
+  })()
+`)
+const startedCell = (col) =>
+  `[...document.querySelectorAll('#deployment-rows tbody tr')].find(tr => tr.querySelector('a[href*="${startedId}"]'))?.querySelector('td[data-col="${col}"]')?.textContent.trim() ?? ''`
+check('…a release started elsewhere reaches the open list',
+  await waitFor(startedCell('status'), t => t.length > 0, 10_000), t => t.length > 0)
+check('a pushed patch moves the list without a navigation',
+  await waitFor(startedCell('status'), t => t === 'success' || t === 'failed', 40_000), 'success')
+check('…and the app cell still names the app after the push',
+  await evaluate(startedCell('appId')), t => t.length > 0 && !/^[0-9a-f-]{36}$/.test(t))
+
 // Delete the project, which cascades in the schema.
 await goto(projectPath)
 await click('Delete')
@@ -2738,14 +2746,16 @@ check('every configured queue is listed, including the one added last',
   await evaluate(`document.getElementById('hub-queues')?.textContent ?? ''`),
   t => t.includes('fleet') && t.includes('deployments'))
 // The subscriber count is real now — IEventBus.stats() (FJS-143). It was the
-// second thing this card could not measure; CPU is the one that remains, and
-// the screen still says so rather than printing a plausible number.
+// second thing this card could not measure. CPU is read now (`FJS-D1824`); the
+// memory table is the one that remains without an enrolled Outpost, and the
+// screen still says so rather than printing a plausible number. Read off the
+// element: `body.textContent` carries the shell's <style> text too.
 check('the event-bus subscriber count is measured',
   await evaluate(`document.getElementById('hub-stats')?.textContent ?? ''`),
   t => /\d+ event subscribers/.test(t))
 check('…and the figure that cannot be measured still says so',
-  await evaluate(`document.body.textContent`),
-  t => t.includes('CPU') && t.includes('not measured'))
+  await evaluate(`document.getElementById('hub-memory-owed')?.textContent ?? ''`),
+  t => /memory table needs (the )?Outpost/.test(t))
 
 // ── Workspaces: a cross-tenant read the workspaces service refuses to do ──
 await goto('/hub/workspaces/')

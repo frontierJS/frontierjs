@@ -405,8 +405,13 @@ function generateVirtualSierra(config, tableOutput, root, sierraContext) {
     // a `location` guard always takes its fallback, so the page called that
     // port cross-origin and every call failed CORS (`FJS-D1042`). The config's
     // `url` is the answer where there is no page — the terminal, a prerender.
+    //
+    // `__sierraApiUrl` is read first: an origin known only at RUN time. A
+    // desktop shell starts its own API on a port it picks at launch, which no
+    // build can inline, and sets the global in an initialization script that
+    // runs before any page script (FJS-D1815). Unset, the build's answer stands.
     const { url, ...junction } = config.junction
-    lines.push(`initJunction({ ...${JSON.stringify(junction)}, url: import.meta.env.FRONTIER_PUBLIC_API_URL || location.origin })`)
+    lines.push(`initJunction({ ...${JSON.stringify(junction)}, url: globalThis.__sierraApiUrl || import.meta.env.FRONTIER_PUBLIC_API_URL || location.origin })`)
     lines.push(``)
   }
 

@@ -400,3 +400,20 @@ describe('on the sqlite-wasm engine', () => {
     })
   })
 })
+
+// FJS-3924: the client answers a @big column as digits, so the generated type
+// has to say string. `size === stat().size` against `number` typechecked clean
+// and was always false.
+describe('the generated types', () => {
+  test('a @big column reads as string, and a write may send digits or a safe number', async () => {
+    const { generateTypeScript } = await import('../src/tools/typegen.js')
+    const ts = generateTypeScript(parse(SCHEMA).schema)
+    const body = (name: string) => {
+      const from = ts.indexOf(`export interface ${name} {`)
+      return ts.slice(from, ts.indexOf('\n}', from))
+    }
+    expect(body('Post')).toMatch(/\n\s+snowflake: string\n/)
+    expect(body('Post')).toMatch(/\n\s+views: number\n/)
+    expect(body('PostCreate')).toMatch(/\n\s+snowflake: string \| number\n/)
+  })
+})

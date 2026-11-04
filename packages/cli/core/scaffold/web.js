@@ -456,12 +456,15 @@ ${useApi ? `<script>
   // about whether the API is up. This page used to print that as
   // "connecting…" forever on a scaffold nobody had signed into yet, which is a
   // working app reporting itself broken on its own front page.
-  // Same origin — web/config/vite.config.js proxies /api to the API in dev, and
-  // a deployed build serves both from one host. '/api' is this app's apiPrefix,
-  // set in api/config/junction.config.js; change it there and here.
+  // The same origin the generated entry hands initJunction: the build's
+  // FRONTIER_PUBLIC_API_URL, else the page's own — Vite proxies /api in dev and
+  // a deployed build serves both from one host. A bare '/api/health' inside a
+  // wrapped shell (tauri://localhost) is answered with index.html. '/api' is
+  // this app's apiPrefix, set in api/config/junction.config.js; change it there
+  // and here.
   // One request read by two blocks: the badge, and the sentence under it that
   // only a failure needs.
-  const health = fetch('/api/health').then(r => {
+  const health = fetch((import.meta.env.FRONTIER_PUBLIC_API_URL || location.origin) + '/api/health').then(r => {
     if (!r.ok) throw new Error('API answered ' + r.status)
     return r.json()
   })

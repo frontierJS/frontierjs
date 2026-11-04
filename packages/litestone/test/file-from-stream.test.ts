@@ -250,3 +250,25 @@ describe('@digest (FJS-D1292)', () => {
     db.$close()
   })
 })
+
+// FJS-3929: the write pass fills the column a File's @digest names, so the
+// generated Create type must not require it -- the documented write that
+// leaves it out has to typecheck.
+describe('@digest target in the generated Create type (FJS-3929)', () => {
+  test('the named sibling is optional, whether or not it is nullable', async () => {
+    const { parse } = await import('../src/index.js')
+    const { generateTypeScript } = await import('../src/tools/typegen.js')
+    const ts = generateTypeScript(parse(`
+model Doc {
+  id     Int    @id
+  file   File   @digest(sha256)
+  sha256 String @immutable
+  other  String
+}
+`).schema)
+    const create = ts.slice(ts.indexOf('export interface DocCreate'))
+    const body = create.slice(0, create.indexOf('\n}'))
+    expect(body).toMatch(/\n\s+sha256\?: string/)
+    expect(body).toMatch(/\n\s+other: string/)
+  })
+})

@@ -209,7 +209,7 @@ async function _buildEnv(schemaText, opts = {}) {
     }
   }
 
-  return { db, factories, parsed: result, dir, path, dbOverrides, clientOpts, clock }
+  return { db, factories, factoryClasses, parsed: result, dir, path, dbOverrides, clientOpts, clock }
 }
 
 // ─── readOnly ─────────────────────────────────────────────────────────────────
@@ -506,7 +506,7 @@ export async function createTestEnv(opts = {}) {
       const sys        = built.db.asSystem()
       const mismatches = []
       const before     = snapshot(built.db)
-      const { chain }  = _chains(schema, sys)
+      const { chain }  = _chains(schema, sys, built.factoryClasses)
 
       // Grouped by model so ONE factory clone serves every row of that model and
       // its sequence advances across them. Re-cloning per row restarts the seq,
@@ -3402,12 +3402,20 @@ function _tenantMove(schema, model, tenant, parents) {
 // UNIQUE error that is indistinguishable from the rule under test working.
 // Memoized per accessor, one chain per model per run, sequence advancing.
 
-function _chains(schema, sys) {
+function _chains(schema, sys, handFactories = {}) {
   const registry = {}
   const cache    = {}
   for (const m of schema.models) {
     if (!_isValidatable(m, schema)) continue
     registry[modelToAccessor(m.name)] = factoryFrom(schema, m.name, sys, registry)
+  }
+  // A hand-written factory replaces the generated one for its model, bound to
+  // the system client like the rest of the registry.
+  for (const [name, FactoryClass] of Object.entries(handFactories)) {
+    const f = new FactoryClass(sys)
+    f._schema   = schema
+    f._registry = registry
+    registry[name] = f
   }
   return {
     registry,
@@ -3595,6 +3603,10 @@ function _shouldSkipField(field, model) {
 
   if (type.kind === 'relation' || type.kind === 'implicitM2M') return true   // virtual
   if (type.name === 'File')     return true   // file upload concern
+  // The column a File's `@digest` names follows the bytes: left out it is
+  // filled, stated it must equal their hash, and stated without the File it is
+  // refused -- so a value invented from its @regex fails every create.
+  if (model.fields.some(f => f.attributes.some(a => a.kind === 'digest' && a.column === name))) return true
   // A per-principal mark kept in its own table — the model has no such column,
   // and a value here is `table page has no column named starred`.
   if (field.edge || attrs.some(a => a.kind === 'edge' || a.kind === 'scoped')) return true

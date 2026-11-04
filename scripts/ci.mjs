@@ -57,7 +57,7 @@ import { runChecks, blindSkips, findApps, formatFindings, readBaseline, gradeBas
 import { checkSnapshots }                      from '../packages/cli/core/snapshots.js'
 import { runRegisterCheck, RULES as REGISTER_RULES } from '../packages/cli/core/register-check.js'
 import { FJS_PACKAGES, APP_DEV_DEPS, FJS_TRANSITIVE } from '../packages/cli/core/app-config.js'
-import { openRunLog, parseCounts }             from '../packages/cli/core/ci-log.js'
+import { openRunLog, parseCounts, failureExcerpt } from '../packages/cli/core/ci-log.js'
 import { runtimeClosure, gradeAdvisories }     from '../packages/cli/core/advisories.js'
 import { findChrome }                          from '../packages/mesa/src/drive.js'
 import { compare as benchCompare, format as benchFormat } from './bench-ab.mjs'
@@ -2409,7 +2409,7 @@ function fail(message, output, meta = {}) {
   const [label, ...rest] = message.split('\n')
   const detail = rest.map(l => l.trim()).filter(Boolean).join(' ') || undefined
   const text   = outputText(output)
-  step('fail', label, { ...meta, detail, output: text ? text.slice(0, 4000) : undefined })
+  step('fail', label, { ...meta, detail, output: text ? clip(text, 4000) : undefined })
 }
 
 function step(status, label, { key, ms, counts, detail, output, fix } = {}) {
@@ -2483,7 +2483,7 @@ function report() {
         lines.push(output)
         if (inline) console.log(output)
       }
-      annotate('error', output ? `${p.message}\n\n${output.slice(0, 4000)}` : p.message)
+      annotate('error', output ? `${p.message}\n\n${clip(output, 4000)}` : p.message)
     }
   }
 
@@ -2590,15 +2590,18 @@ function renderOutput({ stdout, stderr, ci }) {
   const parts = []
   // A phase that reports its own `ci` note carries neither stream, and the
   // reporter runs last — a throw here loses the whole run's summary.
-  if (stdout?.trim()) parts.push(indent(`── stdout ──\n${tail(stdout, 30)}`))
-  if (stderr?.trim()) parts.push(indent(`── stderr ──\n${tail(stderr, 30)}`))
+  if (stdout?.trim()) parts.push(indent(`── stdout ──\n${failureExcerpt(stdout)}`))
+  if (stderr?.trim()) parts.push(indent(`── stderr ──\n${failureExcerpt(stderr)}`))
   if (ci)            parts.push(indent(`── ci ──\n${ci}`))
   return parts.join('\n')
 }
 
-function tail(text, lines) {
-  const all = text.split('\n')
-  return all.length <= lines ? text : all.slice(-lines).join('\n')
+// Cut the middle: a failure excerpt opens with the assertion and closes with the
+// counts, and a cut at the end would drop the counts.
+function clip(text, max) {
+  if (text.length <= max) return text
+  const half = Math.floor(max / 2)
+  return `${text.slice(0, half)}\n…\n${text.slice(-half)}`
 }
 
 function indent(text) {

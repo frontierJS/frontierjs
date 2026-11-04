@@ -2900,6 +2900,13 @@ model BackupDestination {
   secret      String?   @transient @length(3, 4096) @label("Credential")
 
   lastTestAt  DateTime? @system
+  // The bucket's compliance-mode Object Lock default in days as `test` last
+  // read it (`FJS-D1809`): 0 when the bucket answered it has none or only a
+  // governance one, null when it could not say -- R2's bucket locks and a key
+  // without the read look the same. `lockAttestedAt` is a person's word for a
+  // lock nothing here can read, written by `attestLock` alone.
+  lockDays       Int?      @system
+  lockAttestedAt DateTime? @system
   createdBy   String?   @immutable
 
   version     Int       @version

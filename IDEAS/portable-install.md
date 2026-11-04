@@ -283,7 +283,7 @@ Done when: `verify:portable` runs in CI.
 
 ## Open questions
 
-- **Q1 — A folder or one file.** One file needs wall 1's root-from-process plus a
+- ~~**Q1 — A folder or one file.**~~ **Answered 2026-11-04 (`FJS-D1842`): A — a folder: the launcher with `app/` and `web/` on disk beside it, as the prototype ships. Cost: an upgrade replaces `app/` and `web/` whole, and the app's files are editable in the install.** One file needs wall 1's root-from-process plus a
   generated manifest of services, routes and jobs; the folder needs neither.
   The manifest is `single-binary.md` item 3, which that paper calls the real work.
   - **A** — a folder: the launcher with `app/` and `web/` on disk beside it, as
@@ -339,7 +339,7 @@ Done when: `verify:portable` runs in CI.
     Actual Budget ships both, an Electron app and a server reached in a browser
     ([docs](https://actualbudget.org/docs/install/)). B is the reopen path.
     Confidence 2.
-- **Q4 — Where the data lives.** Beside the binary (the prototype) or
+- ~~**Q4 — Where the data lives.**~~ **Answered 2026-11-04 (`FJS-D1843`): B — under XDG: `$XDG_DATA_HOME/<app>` (default `~/.local/share/<app>`) holds the databases and the key, and the program lives elsewhere. Cost: the launcher takes a data root apart from its code root, through the same `core/paths.ts` and `db.ts` wall 1 touches.** Beside the binary (the prototype) or
   `~/.local/share/<app>` with the binary elsewhere.
   - **A** — beside the binary, in `<install>/app/db/`. Cost: every upgrade
     carries `db/` and `encryption.key` across a swap, and deleting the folder
@@ -355,7 +355,7 @@ Done when: `verify:portable` runs in CI.
     2026-11-02), and Flatpak gives each app `~/.var/app/<id>/data`
     ([docs](https://docs.flatpak.org/en/latest/conventions.html)). An upgrade
     then replaces the program and never touches the data. Confidence 2.
-- **Q5 — Bun inside, or bun required.** The compiled kind is 55 MB zipped and
+- ~~**Q5 — Bun inside, or bun required.**~~ **Answered 2026-11-04 (`FJS-D1844`): A, with C as the reopen path.** The compiled kind is 55 MB zipped and
   needs nothing on the target; the plain kind is 2.6 MB and needs bun. Installing
   bun is `curl -fsSL https://bun.sh/install | bash`, which needs the internet,
   or bun's own release zip carried on the drive, which gives back most of the
@@ -378,6 +378,35 @@ Done when: `verify:portable` runs in CI.
     ([comparison](https://flaviocopes.com/javascript-single-executable/), read
     2026-11-02). C keeps a flag and a second drive leg for a target that already
     has bun, which nobody has asked for yet. Confidence 2.
+- ~~**Q6 — A desktop app whose API reads the person's drives (`FJS-D1815`).**~~ **Answered 2026-11-04 (`FJS-D1815`): A — this paper's launcher as a Tauri sidecar: packages compiled in, bun inside (Q5 A), the app's own files shipped as resources beside it (Q1 A), data in the OS app-data directory (Q4 B; `%APPDATA%\<identifier>` on Windows). The shell starts it on a free `127.0.0.1` port, hands the page that origin, restarts it when it dies and stops it on Quit. Closing the window hides it to a tray (Open, Quit) and autostart at login is an opt-in; the shell declares the dialog, tray and autostart plugins, and not fs, because the API reads the drives, not the page. Cost: a bun binary per target triple (`bun build --compile --target bun-windows-x64`, …), a port the bundle cannot know at build time, and walls 1–6 met again on Windows, where nothing has run.**
+  immich (Q7, ruled A: installed as a desktop app) wraps `web/` in the `desktop/`
+  Tauri shell, and its API scans local folders on a schedule, so the API has to
+  run on the person's machine, Windows included, and outlive the window. The
+  generated shell starts no API, has no plugins and exits when the window closes.
+  - **A** — this paper's launcher as a Tauri sidecar: packages compiled in, bun
+    inside (Q5 A), the app's own files shipped as resources beside it (Q1 A), data
+    in the OS app-data directory (Q4 B; `%APPDATA%\<identifier>` on Windows). The
+    shell starts it on a free `127.0.0.1` port, hands the page that origin,
+    restarts it when it dies and stops it on Quit. Closing the window hides it to
+    a tray (Open, Quit) and autostart at login is an opt-in; the shell declares
+    the dialog, tray and autostart plugins, and not fs, because the API reads the
+    drives, not the page. Cost: a bun binary per target triple (`bun build
+    --compile --target bun-windows-x64`, …), a port the bundle cannot know at
+    build time, and walls 1–6 met again on Windows, where nothing has run.
+  - **B** — the plain kind (Q5 B) with `bun.exe` shipped as a resource. Cost: a
+    smaller program and a larger install, the source on the person's disk, and the
+    install tied to one bun minor (2.7).
+  - **C** — the person runs the API, as `fli desktop:run` does for a developer.
+    Cost: not an install at all for someone who is not one.
+  - **Recommend A** — it is Q1, Q4 and Q5's recommendations with a window in
+    front, so it adds only the supervision. Tauri ships the mechanism
+    (`bundle.externalBin`, spawned through the shell plugin's sidecar API), and
+    the local-server apps that keep working while closed sit in the tray
+    (Syncthing's tray wrappers, Actual Budget's desktop app). Confidence 2.
+- **FJS-D1845 — How does a desktop app get a verified first account when it has no mailer and no reachable app URL?** Found fixing `FJS-3958`: the scaffold's `onEmailVerificationRequested` prints `${FRONTIER_APP_URL}/verify-email/#token=…` (default `http://localhost:8000`, which a window on `tauri://localhost` never serves) and sends nothing, so sign-up answers 202 and the account stays unverified. `desktopApiEnv` (`packages/cli/core/desktop-surface.js`) sets only the port and CORS origins.
+  - **A** — the shell makes the owner, as thod's `create-owner` does (§ The installable kind): `fli desktop:run` / the installed launcher creates one verified admin on first run, and sign-up is closed in the window. Cost: one account per install, and a second person cannot join.
+  - **B** — verification completes locally: `desktopApiEnv` sets `FRONTIER_APP_URL` to the window's own origin (`tauri://localhost`) and the shell catches the `/verify-email/` link the API logs, or the desktop env turns email verification off so sign-up lands verified. Cost: a switch in auth that every app inherits, and an unverified-by-design account class.
+  - **Recommend A** — the one-person local app is what Q1 and Q4 already ship, `create-owner` is built and proved in the prototype, and it adds no auth switch; B opens a second path past verification that a deployed app must never take. Confidence 2.
 
 ## Reproduce it
 

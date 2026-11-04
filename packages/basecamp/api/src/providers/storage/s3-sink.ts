@@ -18,7 +18,9 @@
 // policy refusal from a bad key — and is how a drive makes `test` answer
 // `forbidden` without a second credential. `{ scope }` makes the credential a
 // prefix-scoped key: an object key not starting with it is `AccessDenied`, as
-// B2's *File name prefix* answers.
+// B2's *File name prefix* answers. `{ lockDays }` gives every bucket a
+// compliance-mode Object Lock default of that many days, as
+// `GetObjectLockConfiguration` reads it; unarmed, the bucket has none.
 //
 //   bun api/src/providers/storage/s3-sink.ts
 //   endpoint http://127.0.0.1:8125 · region us-east-1 · credential AKIADEV:devsecret
@@ -56,7 +58,7 @@ export function startS3Sink(opts: S3SinkOptions = {}) {
   const AK = opts.accessKeyId ?? 'AKIADEV', SK = opts.secretAccessKey ?? 'devsecret', REGION = opts.region ?? 'us-east-1'
   const objects = new Map<string, { bytes: Uint8Array<ArrayBuffer>; contentType: string; etag: string; lastModified: string }>()
   const seen: { method: string; path: string; status: number }[] = []
-  const armed = { lost: false, slowDown: null as null | { retryAfter: number }, skew: 0, scope: null as null | string }
+  const armed = { lost: false, slowDown: null as null | { retryAfter: number }, skew: 0, scope: null as null | string, lockDays: null as null | number }
   const hanging: Array<() => void> = []
 
   function signingKey(dateStamp: string, region: string, service: string) {
@@ -127,7 +129,7 @@ export function startS3Sink(opts: S3SinkOptions = {}) {
     async fetch(req) {
       const url = new URL(req.url), path = url.pathname
       if (path === '/_sink/seen')  return Response.json({ requests: seen, keys: [...objects.keys()] })
-      if (path === '/_sink/reset') { seen.length = 0; Object.assign(armed, { lost: false, slowDown: null, skew: 0, scope: null }); return Response.json({ ok: true }) }
+      if (path === '/_sink/reset') { seen.length = 0; Object.assign(armed, { lost: false, slowDown: null, skew: 0, scope: null, lockDays: null }); return Response.json({ ok: true }) }
       if (path === '/_sink/arm')   { Object.assign(armed, await req.json()); return Response.json({ ok: true }) }
 
       const body = new Uint8Array(await req.arrayBuffer())
@@ -144,6 +146,10 @@ export function startS3Sink(opts: S3SinkOptions = {}) {
 
       const listing = path.match(/^\/([^/]+)\/?$/)
       if (listing && req.method === 'GET' && url.searchParams.get('list-type') === '2') return record(list(decodeURIComponent(listing[1]), url.searchParams))
+      if (listing && req.method === 'GET' && url.searchParams.has('object-lock')) return record(armed.lockDays == null
+        ? xml('ObjectLockConfigurationNotFoundError', 'Object Lock configuration does not exist for this bucket', 404)
+        : new Response(`<ObjectLockConfiguration><ObjectLockEnabled>Enabled</ObjectLockEnabled><Rule><DefaultRetention><Mode>COMPLIANCE</Mode><Days>${armed.lockDays}</Days></DefaultRetention></Rule></ObjectLockConfiguration>`,
+          { status: 200, headers: { 'content-type': 'application/xml' } }))
 
       const m = path.match(/^\/([^/]+)\/(.+)$/)
       if (!m) return record(xml('InvalidRequest', 'path-style /bucket/key only', 400))

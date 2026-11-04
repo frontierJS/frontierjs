@@ -201,6 +201,27 @@ export function withCheckout({ repo, sha, scratch }, fn) {
   }
 }
 
+// A CI run in a checkout writes its record there, and the checkout is removed:
+// without this the failure's assertion went with it, and the `detail:` line the
+// run printed named .cache/ci-last.txt, which in the working tree is some
+// earlier run (FJS-3934). `ci-runs/` is copied as it is; the summary lands as
+// `ci-last-release.txt`, beside the working tree's `ci-last.txt` rather than
+// over it. Returns the summary's path, or null when the run wrote none.
+export function keepRunRecord(tree, cwd) {
+  const runs = join(tree, '.cache', 'ci-runs')
+  if (existsSync(runs)) {
+    const to = join(cwd, '.cache', 'ci-runs')
+    mkdirSync(to, { recursive: true })
+    for (const f of readdirSync(runs)) copyFileSync(join(runs, f), join(to, f))
+  }
+  const last = join(tree, '.cache', 'ci-last.txt')
+  if (!existsSync(last)) return null
+  const kept = join(cwd, '.cache', 'ci-last-release.txt')
+  mkdirSync(dirname(kept), { recursive: true })
+  copyFileSync(last, kept)
+  return kept
+}
+
 //   { repo, sha, entries: [{ name, dir }], destination, scratch }
 //     → [{ name, dir, file, path }]
 export function packAtCommit({ repo, sha, entries, destination, scratch }) {

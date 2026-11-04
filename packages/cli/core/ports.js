@@ -38,7 +38,7 @@ import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, unlinkS
 import { execSync, execFileSync } from 'child_process'
 import { gitOut }                 from './git.js'
 import { homedir } from 'os'
-import { basename, dirname, join, relative } from 'path'
+import { basename, dirname, join, relative, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { stripComments } from './codegraph.js'
 import { findProjectRoot } from './utils.js'
@@ -702,7 +702,7 @@ const acquireLock = (lockFile) => acquireGuard(lockFile + '.guard')
 
 /** The slot this root was last given, or null. Static apps have none. */
 export function slotFor(appRoot, { env = 'dev', lockFile = LOCK_FILE } = {}) {
-  const s = readLock(lockFile)[appRoot]
+  const s = readLock(lockFile)[resolve(appRoot)]
   return s && s.env === env && Number.isInteger(s.slot) ? s.slot : null
 }
 
@@ -773,7 +773,8 @@ function dependsOnJunction(appRoot, surface) {
  *          movable?: (row: object) => boolean, busy?: (rows: object[]) => Promise<object[]>,
  *          worktreeExists?: (top: string) => boolean}} [opts]
  */
-export async function claimSession(appRoot, opts = {}) {
+export async function claimSession(root, opts = {}) {
+  const appRoot = resolve(root)
   const { name, env = 'dev', dry = false, lockFile = LOCK_FILE } = opts
   const busy      = opts.busy ?? busyPorts
   const movable   = opts.movable ?? ((row) => readsPortVar(appRoot, row))
@@ -958,7 +959,7 @@ export function worktreeOf(appRoot) {
 
 /** The branch number this root's worktree was last given, or null. */
 export function branchFor(appRoot, { lockFile = LOCK_FILE } = {}) {
-  const s = readLock(lockFile)[appRoot]
+  const s = readLock(lockFile)[resolve(appRoot)]
   return Number.isInteger(s?.branch) && s.branch > 0 ? s.branch : null
 }
 

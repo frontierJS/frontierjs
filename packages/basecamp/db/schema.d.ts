@@ -4699,6 +4699,8 @@ export interface BackupDestination {
   prefix: string
   secretId?: string | null
   lastTestAt?: string | null
+  lockDays?: number | null
+  lockAttestedAt?: string | null
   createdBy?: string | null
   /** @version */
   version: number
@@ -4735,6 +4737,8 @@ export interface BackupDestinationUpdate {
 export interface BackupDestinationSystem {
   secretId?: string | null
   lastTestAt?: string | Date | null
+  lockDays?: number | null
+  lockAttestedAt?: string | Date | null
 }
 
 export interface BackupDestinationWhere extends WhereBase {
@@ -4747,6 +4751,8 @@ export interface BackupDestinationWhere extends WhereBase {
   prefix?: string | WhereOp<string> | null
   secretId?: string | WhereOp<string> | null
   lastTestAt?: string | Date | WhereOp<string | Date> | null
+  lockDays?: number | WhereOp<number> | null
+  lockAttestedAt?: string | Date | WhereOp<string | Date> | null
   createdBy?: string | WhereOp<string> | null
   version?: number | WhereOp<number> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
@@ -6478,7 +6484,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly flag: TableClient<Flag, FlagCreate, FlagUpdate, FlagWhere, FlagRelations, never, '@@gate'>
   readonly flagOverride: TableClient<FlagOverride, FlagOverrideCreate, FlagOverrideUpdate, FlagOverrideWhere, FlagOverrideRelations, never, '@@gate'>
   readonly notificationChannel: TableClient<NotificationChannel, NotificationChannelCreate, NotificationChannelUpdate, NotificationChannelWhere, NotificationChannelRelations, never, 'secretId' | 'lastTestAt' | 'lastDeliveryAt' | 'lastError' | 'lastErrorAt' | '@@gate', NotificationChannelSystem>
-  readonly backupDestination: TableClient<BackupDestination, BackupDestinationCreate, BackupDestinationUpdate, BackupDestinationWhere, BackupDestinationRelations, never, 'secretId' | 'lastTestAt' | '@@gate', BackupDestinationSystem>
+  readonly backupDestination: TableClient<BackupDestination, BackupDestinationCreate, BackupDestinationUpdate, BackupDestinationWhere, BackupDestinationRelations, never, 'secretId' | 'lastTestAt' | 'lockDays' | 'lockAttestedAt' | '@@gate', BackupDestinationSystem>
   readonly alertRule: TableClient<AlertRule, AlertRuleCreate, AlertRuleUpdate, AlertRuleWhere, AlertRuleRelations, never, 'snoozedUntil' | '@@gate', AlertRuleSystem>
   readonly alertRuleChannel: TableClient<AlertRuleChannel, AlertRuleChannelCreate, AlertRuleChannelUpdate, AlertRuleChannelWhere, AlertRuleChannelRelations, never, '@@gate'>
   readonly alert: TableClient<Alert, AlertCreate, AlertUpdate, AlertWhere, AlertRelations, never, '@@gate'>

@@ -264,18 +264,27 @@ export function modelResolver(schema, root) {
  * text is content to a regex and is not content to the language.
  *
  * Both of the language's forms, which is what litestone's own lexer drops. A
- * quoted string is NOT lexed here, so a `//` inside one reads as a comment; no
- * schema in this repo has one, and the alternative is a string lexer inside a
- * line scan that exists to need no parser at all.
+ * double-quoted string is skipped whole and kept in the output, because
+ * `@accept("image/*")` is a mime glob and not a block comment: reading it as
+ * one blinded every rule after that line. A string ends with its line.
  */
 export function withoutComments(line, inBlock = false) {
   let out = ''
+  let inString = false
   for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
     const two = line.slice(i, i + 2)
     if (inBlock) { if (two === '*/') { inBlock = false; i++ } continue }
+    if (inString) {
+      if (ch === '\\' && i + 1 < line.length) { out += two; i++; continue }
+      if (ch === '"') inString = false
+      out += ch
+      continue
+    }
+    if (ch === '"') { inString = true; out += ch; continue }
     if (two === '//') return [out, false]
     if (two === '/*') { inBlock = true; i++; continue }
-    out += line[i]
+    out += ch
   }
   return [out, inBlock]
 }

@@ -209,6 +209,17 @@ if (!rootPkg) {
   }
 }
 
+// ─── The app must hear SIGTERM ────────────────────────────────────────────────
+const unexecd = dockerfileForScripts && unexecdEntrypoint(dockerfileForScripts)
+if (unexecd) {
+  renderCheck('the app is PID 1', 'warn',
+    `${unexecd} -- sh stays PID 1 and drops SIGTERM, so every stop SIGKILLs the app ` +
+    `mid-request after Docker's grace. fix: exec before the last command (FJS-3943)`)
+  warn()
+} else if (dockerfileForScripts) {
+  renderCheck('the app is PID 1', 'pass')
+}
+
 // ─── The schema must be in the image ──────────────────────────────────────────
 // Both the entrypoint's migration and the deploy's pre-swap backup resolve
 // databases by reading the schema, so `COPY db ./db` is load-bearing.

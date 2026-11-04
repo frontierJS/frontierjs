@@ -13,11 +13,35 @@ page is only what a person does.
 ## 1. The bucket
 
 1. Make a **private** bucket. Its name is what the form calls *Bucket*.
-2. In the bucket's **Lifecycle Settings** choose *Keep only the last version of
-   the file*. Retention is Basecamp's job (§ 4); a bucket that keeps every
-   version keeps every pruned archive too, and the storage bill grows while the
-   screen says seven.
-3. Read the bucket's **Endpoint** off the console: `s3.us-west-004.backblazeb2.com`
+2. **Lock it** (`FJS-D1809`): a compliance-mode Object Lock of N days, so the
+   hub's own key cannot delete an archive younger than N. Without one, whoever
+   holds the hub, or a prune bug, can empty the bucket; `hub.bucket-locked` on
+   `/hub/security/` grades it. Choose N above the backup cron's interval and at
+   most the remote age in § 4; nothing checks that pair.
+   - **B2**: enable *Object Lock* on the bucket, then *Default Retention* →
+     *Compliance*, N days. Compliance cannot be shortened or turned off, by the
+     key or by the account.
+   - **AWS S3, Hetzner, MinIO, SeaweedFS**: create the bucket with Object Lock
+     enabled (`x-amz-bucket-object-lock-enabled: true`), then
+     `PutObjectLockConfiguration` with `Mode` `COMPLIANCE` and `Days` N.
+     Never `GOVERNANCE`: a key holding `BypassGovernanceRetention` steps past it,
+     and *Test bucket* grades it as no lock.
+   - **R2**: a bucket lock rule of N days, scoped to the archive prefix. R2 does
+     not answer the lock read, so after *Test bucket* press *The bucket is
+     locked* to attest it. Whoever can sign in to the account can remove an R2
+     lock.
+
+   **A locked bucket holds archives only.** B2 and S3 retention is bucket-wide
+   and would keep every replica generation N days, so *Test bucket* refuses a
+   replica destination (§ 9) on a locked bucket with `locked:`; a replica gets
+   a bucket of its own. The cost: after an attack the archives are still
+   there, but a delete without a version id hides each one behind a delete
+   marker, so recovering them is the vendor's console, not this screen.
+3. In the bucket's **Lifecycle Settings** choose *Keep only the last version of
+   the file*. Retention is Basecamp's job (§ 4) and it deletes every version of
+   an archive it prunes; the rule clears what a plain DELETE left behind (the
+   probe's own key, a marker an attacker wrote) once its lock ends.
+4. Read the bucket's **Endpoint** off the console: `s3.us-west-004.backblazeb2.com`
    or similar. The form's *Endpoint URL* is `https://` plus that host, with **no
    bucket in it**. The *Region* is the middle of the host, `us-west-004` here.
    A B2 account lives in one region and the endpoint must match it
@@ -27,7 +51,19 @@ page is only what a person does.
 
 Make an **application key restricted to that bucket**, never the master key
 (the S3 API refuses it). Capabilities: `listBuckets`, `listFiles`, `readFiles`,
-`writeFiles`, `deleteFiles`. Leave *File name prefix* empty, or set it to the
+`writeFiles`, `deleteFiles`, and on a locked bucket `readBucketRetentions` and
+`readFileRetentions`: the hub reads the lock at *Test bucket*, and reads an
+archive's retention when a delete is refused, which is how it tells *locked*
+from *no delete permission* (both answer `AccessDenied`). On AWS the same
+reads are `s3:ListBucketVersions`, `s3:DeleteObjectVersion`,
+`s3:GetBucketObjectLockConfiguration`, `s3:GetObjectRetention` and
+`s3:GetObjectLegalHold`.
+
+**The key never holds a retention-writing permission**: not
+`writeBucketRetentions`, `writeFileRetentions` or `bypassGovernance` on B2, not
+`s3:PutObjectRetention`, `s3:PutBucketObjectLockConfiguration` or
+`s3:BypassGovernanceRetention` on AWS. With one, a stolen key uploads under a
+one-second retention and steps under the bucket's default. Leave *File name prefix* empty, or set it to the
 destination's *Prefix* plus a slash: archives land at `<prefix>/<name>`, so a
 destination prefix `backups` needs a key prefix `backups/`. The console shows the
 `keyID` and the `applicationKey` once.
@@ -58,6 +94,7 @@ vendor's S3 `<Code>` after it:
 | `clock_skew` | the hub's clock is more than fifteen minutes out; fix the clock, not the key |
 | `refused` | the bucket answered with something else; the vendor's `<Code>` in the message is what its docs name |
 | `connection_failed`, `timeout` | the endpoint host is wrong or unreachable from the hub |
+| `locked` | a replica destination on a bucket with an Object Lock; give the replica an unlocked bucket (§ 1) |
 
 *Test bucket*, beside *Add a bucket* once a destination is picked, reruns the
 probe later; *Last tested* is stamped only when both calls answered, and a
@@ -76,7 +113,9 @@ Two counts and two optional ages on the hub settings, local and remote apart:
 keep the last N on the disk and the last M in the bucket, or anything younger
 than a number of days. Pruning runs after each successful backup and reads the
 bucket as it is, so an archive the hub stopped pointing at is still pruned. An
-upload the hub never saw land is left alone.
+upload the hub never saw land is left alone. A prune deletes every version of
+the archive by id; one the bucket's lock still holds is kept, its why starting
+`locked:`, and the next prune after the lock ends takes it.
 
 ## 5. What `location` means
 

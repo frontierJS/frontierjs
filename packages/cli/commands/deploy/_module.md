@@ -14,7 +14,7 @@ defaults:
 ---
 
 <script>
-const { loadFrontierConfig, dockerfileScripts } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
+const { loadFrontierConfig, dockerfileScripts, unexecdEntrypoint } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
 const { vendorApp, linkedDeps, GENERATED_DIR } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
 const { createMachine, shQuote } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
 const { dockerLogArgs } = await import(new URL('file://' + global.fliRoot + '/core/docker-logging.js'))

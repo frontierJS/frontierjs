@@ -10,6 +10,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs'
 import { join, resolve, dirname } from 'path'
 import { tmpdir } from 'os'
 import { fileURLToPath } from 'url'
+import { unexecdEntrypoint } from '../core/utils.js'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -84,6 +85,8 @@ describe('the Dockerfile make:deploy writes', () => {
       // the user line comes after every RUN, which needs root, and before CMD
       expect(runtime.indexOf('USER bun')).toBeGreaterThan(runtime.lastIndexOf('\nRUN '))
       expect(runtime.indexOf('USER bun')).toBeLessThan(runtime.indexOf('CMD '))
+      // FJS-3943: the app, not sh, is PID 1, or it never hears SIGTERM
+      expect(unexecdEntrypoint(runtime)).toBeNull()
     } finally {
       rmSync(app, { recursive: true, force: true })
     }

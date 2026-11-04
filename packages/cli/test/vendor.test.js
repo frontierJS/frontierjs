@@ -15,7 +15,7 @@ import { tmpdir }                                        from 'os'
 import { writeFileSync, readFileSync, existsSync,
          readdirSync, rmSync, mkdirSync, mkdtempSync }    from 'fs'
 
-import { vendorWorkspacePackages, linkedDeps, packPackage, withCheckout,
+import { vendorWorkspacePackages, linkedDeps, packPackage, withCheckout, keepRunRecord,
          resolvePackagesDir, GENERATED_DIR }              from '../core/vendor.js'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
@@ -417,5 +417,26 @@ describe('withCheckout', () => {
     expect(() => withCheckout({ repo, sha, scratch }, () => { throw new Error('red') })).toThrow('red')
     expect(git('worktree', 'list').stdout.trim().split('\n')).toHaveLength(1)
     rmSync(repo, { recursive: true, force: true }); rmSync(scratch, { recursive: true, force: true })
+  })
+})
+
+describe('keepRunRecord', () => {
+  // FJS-3934: a release CI run writes its summary into the throwaway checkout,
+  // and the checkout is removed -- the failure's detail went with it while the
+  // line it printed named .cache/ci-last.txt, the working tree's previous run.
+  test('copies the run log and the checkout\'s ci-last.txt beside, never over, the working tree\'s', () => {
+    const tree = mkdtempSync(join(tmpdir(), 'keep-tree-'))
+    const cwd  = mkdtempSync(join(tmpdir(), 'keep-cwd-'))
+    mkdirSync(join(tree, '.cache', 'ci-runs'), { recursive: true })
+    writeFileSync(join(tree, '.cache', 'ci-runs', 'r1.jsonl'), '{}')
+    writeFileSync(join(tree, '.cache', 'ci-last.txt'), 'expect(received).toBe(expected)')
+    mkdirSync(join(cwd, '.cache'), { recursive: true })
+    writeFileSync(join(cwd, '.cache', 'ci-last.txt'), 'the previous green run')
+    const kept = keepRunRecord(tree, cwd)
+    expect(readFileSync(join(cwd, '.cache', 'ci-last.txt'), 'utf8')).toBe('the previous green run')
+    expect(readFileSync(kept, 'utf8')).toContain('expect(received)')
+    expect(readFileSync(join(cwd, '.cache', 'ci-runs', 'r1.jsonl'), 'utf8')).toBe('{}')
+    expect(keepRunRecord(mkdtempSync(join(tmpdir(), 'keep-empty-')), cwd)).toBeNull()
+    rmSync(tree, { recursive: true, force: true }); rmSync(cwd, { recursive: true, force: true })
   })
 })

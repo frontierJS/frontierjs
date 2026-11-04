@@ -1501,6 +1501,26 @@ function buttonsPage() {
       )}
 
       ${section(
+        "Tinted",
+        `
+        <p>
+          The quieter fill. <code>tinted</code> paints the button the way a
+          toned card is painted — the tone's tint for the ground, the rule and
+          the text, from the same <code>--tint-*</code> ramp — so it reads at
+          AA on every theme. With no tone it is the neutral pair. It works on
+          pills and badges too.
+        </p>
+        ${preview(
+          `<div class="cluster">
+            ${chip("Default", "btn tinted")}
+            ${TONES.map(([cls, label]) => chip(label, `btn ${cls} tinted`)).join("")}
+          </div>`,
+        )}
+        ${code(`<button class="btn danger tinted">Delete</button>
+<button class="btn tinted">Cancel</button>`)}`,
+      )}
+
+      ${section(
         "Sizes",
         `
         <p>
@@ -4225,6 +4245,38 @@ function badgesPage() {
         ${code(`<span class="badge success">active</span>
 <span class="badge warning">pending</span>
 <span class="badge danger">archived</span>`)}`
+      )}
+
+      ${section(
+        'Tinted',
+        `
+        <p>
+          A column of solid status fills shouts. <code>tinted</code> gives a
+          pill or badge the toned card's tint instead — ground, rule and text —
+          so a table of statuses reads as one quiet column. With no tone it is
+          the neutral pair.
+        </p>
+        ${preview(`
+          <div class="stack">
+            <div class="cluster">
+              <span class="badge tinted">muted</span>
+              <span class="badge primary tinted">beta</span>
+              <span class="badge info tinted">info</span>
+              <span class="badge success tinted">active</span>
+              <span class="badge warning tinted">pending</span>
+              <span class="badge danger tinted">archived</span>
+            </div>
+            <div class="cluster">
+              <span class="pill tinted">0</span>
+              <span class="pill primary tinted">12</span>
+              <span class="pill info tinted">i</span>
+              <span class="pill success tinted">3</span>
+              <span class="pill warning tinted">!</span>
+              <span class="pill danger tinted">99+</span>
+            </div>
+          </div>`)}
+        ${code(`<span class="badge success tinted">active</span>
+<span class="pill danger tinted">99+</span>`)}`
       )}
 
       ${section(

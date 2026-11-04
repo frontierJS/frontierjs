@@ -274,6 +274,14 @@ async function hubAppDeclared(sys: any, appId: string | null): Promise<HostDecla
   return { placed: await sys.appServer.exists({ where: { appId } }), port: app.port ?? null, containerPort: app.containerPort ?? null }
 }
 
+/** The lock on the bucket the hub's archives go to, as its last `test` read it. */
+async function bucketLockDeclared(sys: any, appId: string | null): Promise<HostDeclared['bucketLock']> {
+  const app  = appId && await sys.app.findFirst({ where: { id: appId }, select: { backupDestinationId: true } })
+  const dest = app?.backupDestinationId && await sys.backupDestination.findFirst({ where: { id: app.backupDestinationId } })
+  if (!dest) return null
+  return { name: dest.name, tested: !!dest.lastTestAt, lockDays: dest.lockDays ?? null, attestedAt: dest.lockAttestedAt ?? null }
+}
+
 /** The days between two fires of a cron line, measured on a UTC walk; 1 where it cannot be read. */
 export function cronGapDays(expr: string): number {
   try {
@@ -313,6 +321,7 @@ async function hostDeclared(sys: any, push: HostDeclared['install']['push'], dbP
   const config = await sys.hubConfig.findFirst({ where: { id: 'hub' } })
   return {
     hubApp:         await hubAppDeclared(sys, config?.appId ?? null),
+    bucketLock:     await bucketLockDeclared(sys, config?.appId ?? null),
     lastBackupAt:   await lastBackupAt(sys, config?.appId ?? null),
     scheduledApps:  await scheduledApps(sys, config?.appId ?? null),
     dbDisk:         databaseDisk(dbPath),

@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readdirSync, readFileSyn
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
-  parseCounts, openRunLog, readRuns, foldRun, latestByItem, lastFullRun,
+  parseCounts, failureExcerpt, openRunLog, readRuns, foldRun, latestByItem, lastFullRun,
   ciState, ciArgv, startCiRun, stopCiRun, RUNS_DIR,
 } from '../core/ci-log.js'
 
@@ -334,5 +334,30 @@ describe('startCiRun / stopCiRun', () => {
 
   test('nothing running is a 404', () => {
     expect(stopCiRun(root, { alive })).toMatchObject({ ok: false, status: 404 })
+  })
+})
+
+// FJS-3946: a suite's assertion prints BEFORE its summary, so a bare tail of the
+// stream holds the counts and not the failure.
+describe('failureExcerpt', () => {
+  const noise  = n => Array.from({ length: n }, (_, i) => `(pass) filler ${i}`).join('\n')
+  const failed = `a.test.js:\nerror: expect(received).toBe(expected)\nExpected: 2\nReceived: 1\n(fail) grp > breaks [0.16ms]\n`
+  const summary = ' 40 pass\n 1 fail\nRan 41 tests across 1 file. [50.00ms]\n'
+
+  test('keeps the assertion when 30+ lines of output follow it', () => {
+    const out = failureExcerpt(`${failed}${noise(60)}\n${summary}`)
+    expect(out).toContain('Expected: 2')
+    expect(out).toContain('Received: 1')
+    expect(out).toContain('Ran 41 tests')
+  })
+
+  test('is the plain tail when the failure is already inside it', () => {
+    const text = `${noise(50)}\n${failed}${summary}`
+    expect(failureExcerpt(text)).toBe(text.split('\n').slice(-30).join('\n'))
+  })
+
+  test('returns short output whole and passing output as its tail', () => {
+    expect(failureExcerpt(BUN_FAIL)).toBe(BUN_FAIL)
+    expect(failureExcerpt(`${noise(80)}\n${BUN_PASS}`)).not.toContain('filler 0')
   })
 })

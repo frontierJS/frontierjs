@@ -129,7 +129,14 @@ is laid over the filters on every load**, so a bar or an `apply()` can never wid
 it — and a tab that re-states `where` per tab is ANDed with the last, filtering to
 nothing. A filter the user moves (tabs, a status switch) is state, not scope: start
 it with `query: { status: 'open' }` and move it with `list.apply({ ...list.query, status })`.
-Keep `where` for what the list is scoped to (`projectId`). A dock or widget that only
+Keep `where` for what the list is scoped to (`projectId`); a filter that is also
+fixed (a review queue that is only ever `{ status: 'open' }`) is scope too, and
+works there. **Order and window start in `directives`:**
+`tethered({ where: { status: 'open' }, directives: { orderBy: 'tier,-distance', limit: 100 } })`.
+`orderBy` takes more than one key (comma-joined, `-` for descending, or the
+toolbelt's list and object spellings), over the resource file's
+`tetheredQuery.directives`; `<Table onsort>` and `list.sort(orderBy)` replace it
+whole. **`list.total` is `null` until the first answer**, so print `{list.total ?? list.rows.length}`. A dock or widget that only
 shows the rows is `tethered({ state: 'local' })`; every row rather than a page is
 `{ all: true }` — never a `service.find` above the server's page max, which is refused.
 

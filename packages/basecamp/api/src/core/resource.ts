@@ -67,7 +67,8 @@ export function slugify(s: string): string {
  * declaration moves.
  *
  * `opts.orderBy` is the service's default, and the caller's `$orderBy`,
- * `$select` and `$after` win over it: junction refuses a directive the method
+ * `$select` and `$after` win over it, and `$scope` joins the where (a
+ * `@values` picker sends it): junction refuses a directive the method
  * never read, and this is where every list here reads them. `$after` is read
  * here and not passed in, so a caller of this cannot forget it and answer page
  * one to every press of "load more" (`FJS-D145`); `findWindow` owns the
@@ -79,12 +80,24 @@ export async function findScoped(
 ) {
   const { after } = ($.directives ?? {}) as { after?: string }
   return findWindow(db()[accessor], {
-    where:   opts.where ?? {},
+    where:   withCallerScope(opts.where ?? {}),
     limit:   opts.limit,
     offset:  opts.offset,
     orderBy: callerOrder(opts.orderBy ?? { createdAt: 'desc' }),
     ...callerSelect(),
   }, after || undefined, `The ${accessor} list`)
+}
+
+/**
+ * The caller's `$scope` as Litestone's `where.$scope`, which checks each name
+ * against the model's declared scopes and compiles it. A scope already on the
+ * where is kept beside it, the names ANDed; no `$scope` is the where untouched.
+ */
+export function withCallerScope(where: Record<string, unknown>): Record<string, unknown> {
+  const { scope } = ($.directives ?? {}) as { scope?: string[] }
+  if (scope === undefined) return where
+  const held = where.$scope
+  return { ...where, $scope: held === undefined ? scope : [...(Array.isArray(held) ? held : [held]), ...scope] }
 }
 
 /**

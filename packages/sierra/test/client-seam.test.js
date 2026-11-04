@@ -240,7 +240,7 @@ describe('the credential sierraFetch attaches has one audience', () => {
   afterAll(() => { app?.close(); third?.close() })
 
   /** A real junction client pointed at the app, with a real token on it. */
-  async function configured({ token = null, cookieAuth = false, baseUrl } = {}) {
+  async function configured({ token = null, cookieAuth = false, baseUrl, apiPrefix } = {}) {
     const { createJunctionClient, localTokenStore } =
       await import('@frontierjs/junction/client')
     const { configureFetch, sierraFetch } = await import('../src/fetch/index.js')
@@ -254,9 +254,14 @@ describe('the credential sierraFetch attaches has one audience', () => {
 
     inits = []
     const real = globalThis.fetch
-    globalThis.fetch = (url, init) => { inits.push({ url: String(url), init }); return real(url, init) }
+    // A relative URL has no document to resolve against under node, so it is
+    // recorded and answered rather than sent.
+    globalThis.fetch = (url, init) => {
+      inits.push({ url: String(url), init })
+      return /^[a-z][a-z0-9+.-]*:/i.test(String(url)) ? real(url, init) : Promise.resolve(new Response('{}'))
+    }
 
-    configureFetch({ client, baseUrl })
+    configureFetch({ client, baseUrl, apiPrefix })
     return { sierraFetch, client, restore: () => { globalThis.fetch = real } }
   }
 
@@ -324,6 +329,45 @@ describe('the credential sierraFetch attaches has one audience', () => {
     await sierraFetch(`${APP}/orders`)
     restore()
     expect(inits.at(-1).init.credentials).toBeUndefined()
+  })
+
+  // FJS-3925 — a wrapped desktop shell serves the page from tauri://localhost,
+  // whose asset handler answers 200 text/html for any unknown path, so a page's
+  // own fetch('/api/files/1') never reached the API.
+  describe('a page served from another origin than the API', () => {
+    // The wrapper reads globalThis.location, which a browser's window is.
+    beforeEach(() => { globalThis.location = { origin: 'tauri://localhost', href: 'tauri://localhost/' } })
+    afterEach(() => { delete globalThis.location })
+
+    test('a relative path under apiPrefix goes to the API origin, with the session', async () => {
+      const { sierraFetch, restore } = await configured({ token: 'SESSION-abc', apiPrefix: '/api' })
+      seen = {}
+      await sierraFetch('/api/files/1')
+      restore()
+      expect(inits.at(-1).url).toBe(`${APP}/api/files/1`)
+    })
+
+    test('a relative path outside apiPrefix stays on the page origin', async () => {
+      const { sierraFetch, restore } = await configured({ token: 'SESSION-abc', apiPrefix: '/api' })
+      await sierraFetch('/icons/logo.svg')
+      restore()
+      expect(inits.at(-1).url).toBe('/icons/logo.svg')
+    })
+
+    test('with no apiPrefix there is nothing to tell an API path from a page path', async () => {
+      const { sierraFetch, restore } = await configured({ token: 'SESSION-abc' })
+      await sierraFetch('/api/files/1')
+      restore()
+      expect(inits.at(-1).url).toBe('/api/files/1')
+    })
+
+    test('a page on the API origin is left alone', async () => {
+      globalThis.location = { origin: APP, href: `${APP}/` }
+      const { sierraFetch, restore } = await configured({ token: 'SESSION-abc', apiPrefix: '/api' })
+      await sierraFetch('/api/files/1')
+      restore()
+      expect(inits.at(-1).url).toBe('/api/files/1')
+    })
   })
 })
 

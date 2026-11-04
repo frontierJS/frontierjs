@@ -1819,3 +1819,26 @@ export function viewProtectedRead(schema, view, pluralize = false) {
   const read = star && held.find(x => x.named)
   return read ? { table: read.table, column: read.bad[0], star: true } : null
 }
+
+
+// ─── Derived once per parse ────────────────────────────────────────────────
+
+const _derived = new WeakMap()
+
+/**
+ * `build()` once per `(schema object, key, deps)`. A tenant registry reopens an
+ * evicted tenant over the same parse, and every map here is a pure function of
+ * that parse, so rebuilding them is the whole cost of a reopen that is not SQLite.
+ * `deps` are the other inputs a builder takes (compared by `===`): a different
+ * one rebuilds rather than answering the first caller's value. The result is
+ * SHARED between clients, so a caller treats it as read-only.
+ */
+export function derivedOnce(schema, key, deps, build) {
+  let per = _derived.get(schema)
+  if (!per) _derived.set(schema, per = new Map())
+  const hit = per.get(key)
+  if (hit && hit.deps.length === deps.length && hit.deps.every((d, i) => d === deps[i])) return hit.value
+  const value = build()
+  per.set(key, { deps, value })
+  return value
+}

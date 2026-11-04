@@ -69,8 +69,11 @@ let _device
  * regardless cannot tell a hydrated device from an empty one — which is the
  * exact confusion the feature is about. So the fake keeps what it is given.
  */
-function makeDevice({ models = ['sheet'], rows = [], fail = null, fts = false, lockedUpdate = false, lockedDelete = false, softDelete = false } = {}) {
+function makeDevice({ models = ['sheet'], rows = [], fail = null, fts = false, lockedUpdate = false, lockedDelete = false, softDelete = false, hold = false } = {}) {
   const calls = []
+  // A busy worker: with `hold`, a write stays in flight until `release()`.
+  const releases = []
+  const busy = (v) => hold ? new Promise(res => releases.push(() => res(v))) : Promise.resolve(v)
   const held = new Map(rows.map(r => [r.id, r]))
   const table = {
     upsertMany: (args) => {
@@ -91,7 +94,7 @@ function makeDevice({ models = ['sheet'], rows = [], fail = null, fts = false, l
         return Promise.reject(Object.assign(new Error('"Sheet.update" is LOCKED'),
           { code: 'ACCESS_DENIED', operation: 'update', required: 9 }))
       for (const row of args.data) held.set(row.id, row)
-      return Promise.resolve({ count: args.data.length })
+      return busy({ count: args.data.length })
     },
     // A `where` of plain values is applied, an absent column reading as null,
     // because what a whole answer takes off is decided by which held rows the
@@ -125,7 +128,7 @@ function makeDevice({ models = ['sheet'], rows = [], fail = null, fts = false, l
     $close: () => Promise.resolve(true),
     asSystem: () => Object.fromEntries(models.map(m => [m, table])),
   }
-  return { client, calls, held: () => [...held.keys()], systemUsed: () => calls.length > 0 }
+  return { client, calls, release: () => { while (releases.length) releases.shift()() }, held: () => [...held.keys()], systemUsed: () => calls.length > 0 }
 }
 
 /** Configure the module and hand it the fake instead of opening a worker. */
@@ -223,6 +226,28 @@ describe('only a @@sync model has a table here', () => {
 // ─── what crosses, and how ────────────────────────────────────────────────
 
 describe('keeping what the server answered', () => {
+  // FJS-3821: the worker runs one call at a time, in the order they were sent.
+  // A warm writes every service's answer at once; sent together they stand in
+  // front of the first offline read, which then waits for all of them.
+  test('write-throughs are sent one at a time, so a read is never behind more than one', async () => {
+    const d = makeDevice({ models: ['sheet', 'note'], hold: true })
+    useDevice(d)
+    const writes = [
+      writeThrough('Sheet', [{ id: 'A' }]),
+      writeThrough('Sheet', [{ id: 'B' }], { where: { name: 'x' }, idField: 'id' }),
+      writeThrough('Note',  [{ id: 1 }]),
+    ]
+    await new Promise(r => setTimeout(r, 0))
+    const read = readLocal('Sheet', { id: 'probe' }, {})
+    await new Promise(r => setTimeout(r, 0))
+    expect(d.calls.filter(c => c[0] === 'upsertMany').length).toBe(1)
+    expect(d.calls.some(c => c[0] === 'findMany' && c[1].where.id === 'probe')).toBe(true)
+    for (let i = 0; i < 20; i++) { d.release(); await new Promise(r => setTimeout(r, 0)) }
+    await read
+    expect(await Promise.all(writes)).toEqual([true, true, true])
+    expect(d.calls.filter(c => c[0] === 'upsertMany').length).toBe(3)
+  })
+
   test('rows go in as ONE call, not one call per row', async () => {
     const d = makeDevice()
     useDevice(d)

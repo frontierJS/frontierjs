@@ -16,7 +16,7 @@
  */
 
 import { verifyRequest, nonceMemory } from '@frontierjs/toolbelt/signature'
-import { createDocker, createInspector, checkRunConfig } from './docker.js'
+import { createDocker, createInspector, checkRunConfig, checkSwap, swapFor } from './docker.js'
 import { createStatic, validName } from './static.js'
 import { createIngress, checkRouteAppId, hostsOf, pathsOf, redirectsOf } from './ingress.js'
 import { createReplicator } from './replicate.js'
@@ -172,6 +172,13 @@ export function createOutpostServer(config, {
     // refused here leaves the live app serving. A release docker refuses, or
     // one that starts and does not answer, puts the old container back (`FJS-1765`) —
     // so this answers once the release is healthy, not once it has started.
+    //
+    // `swap: 'start-first'` asks for the new container to start beside the old
+    // one, on a port Docker picks, with the route moving once it answers. It
+    // runs only when the release's pivot is an expand or unchanged; otherwise
+    // the swap is stop-first and `swap_reason` says why. A hostname another
+    // app holds refuses a start-first release after the start, with the old
+    // container still serving.
     'POST /deploy': async (body) => {
       const appId = body.app_id ?? body.deployment_id
       // The slugs spell the container's name. Left out, it would be named for
@@ -185,6 +192,9 @@ export function createOutpostServer(config, {
       const port      = body.config?.port
       if (fronted && !port) throw new Error('hosts need a published port to route to — config.port is not set')
       checkRunConfig(body.config)
+      const asked = body.swap ?? 'stop-first'
+      checkSwap({ swap: asked, loopback: fronted, exposesPort: body.exposes_port === true, port })
+      const routeTo = (to) => ingress.route({ appId, hosts, port: to, redirects, paths })
 
       // The build and the route are this app's too, not only the swap: a
       // `/stop` or a second release landing between them acts on a route or a
@@ -196,9 +206,17 @@ export function createOutpostServer(config, {
         if (body.source?.kind === 'git' && body.source.repo && !body.digest)
           built = await docker.build({ appId, source: body.source, image })
 
+        // `swap` is what the caller allows; the release's pivot decides whether
+        // the old one can serve beside it (`FJS-D1838`).
+        const pivot = asked === 'start-first' ? await docker.pivot({ appId, image, digest: built.digest ?? body.digest }) : null
+        const { swap, reason } = pivot ? swapFor(pivot) : { swap: 'stop-first', reason: null }
+
         // A release that dropped its last hostname drops its route too.
-        if (fronted || redirects.length) await ingress.route({ appId, hosts, port, redirects, paths })
-        else await ingress.unroute({ appId })
+        // Start-first moves the route itself, once the new container answers.
+        if (swap === 'stop-first') {
+          if (fronted || redirects.length) await routeTo(port)
+          else await ingress.unroute({ appId })
+        }
 
         let started
         try {
@@ -213,6 +231,8 @@ export function createOutpostServer(config, {
             port,
             loopback:    fronted,
             exposesPort: body.exposes_port === true,
+            swap,
+            route:       swap === 'start-first' ? routeTo : null,
             held:        true,
           })
         } catch (err) {
@@ -223,13 +243,12 @@ export function createOutpostServer(config, {
           if (err.restored && fronted) {
             const live = await docker.published({ appId }).catch(() => null)
             if (live?.port && live.port !== port)
-              await ingress.route({ appId, hosts, port: live.port, redirects, paths })
-                .catch(e => log.error?.(`outpost: re-routing app ${appId} to the restored container failed — ${e.message}`))
+              await routeTo(live.port).catch(e => log.error?.(`outpost: re-routing app ${appId} to the restored container failed — ${e.message}`))
           }
           throw err
         }
         await syncExposed()
-        return { ...started, hosts, paths, commit_sha: built.commitSha ?? null }
+        return { ...started, hosts, paths, commit_sha: built.commitSha ?? null, pivot: pivot?.verdict ?? null, swap_reason: reason }
       })
     },
 

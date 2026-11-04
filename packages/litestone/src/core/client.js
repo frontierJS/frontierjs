@@ -56,7 +56,7 @@ import {
   buildAffinityMap,
   buildFilterKindMap, buildTransitionMap, buildEnumMap, buildSoftDeleteCascadeMap,
   getCascadeTargets, buildRelationMap, buildFieldReadMap, buildGuardedMap,
-  buildSoftDeleteMap, buildHasTemplatesMap, buildEffectiveMap, buildCoFkMap, buildFtsMap, nowISO, aggModelsOf } from './schema-maps.js'
+  buildSoftDeleteMap, buildHasTemplatesMap, buildEffectiveMap, buildCoFkMap, buildFtsMap, nowISO, aggModelsOf, derivedOnce } from './schema-maps.js'
 import {
   wideDb, mappedDb, narrowedDb, clockedDb, rawHandle, resolveAccessConfig, buildDbRegistry, buildModelDbMap,
   jsonlFilePath, rowsChanged } from './databases.js'
@@ -5462,6 +5462,9 @@ export async function createClient({
   //   • auto trail models (<dbName>Trail) for driver:trail databases in auto mode
   //   • view-as-model stubs so ctx.models[viewName] works inside makeTable
   const rawSchema     = parseResult.schema
+  // One working schema per parse: the derived maps are memoized on it, and a
+  // tenant registry hands every tenant the same parse.
+  const { autoLogModels, schema } = derivedOnce(rawSchema, 'workingSchema', [], () => {
   const autoLogModels = rawSchema.databases
     .filter(db => db.driver === 'trail' && !db.trailModel)
     .map(db => makeLoggerAutoModel(db.name))
@@ -5494,6 +5497,8 @@ export async function createClient({
   const schema = extraModels.length > 0
     ? { ...rawSchema, models: [...rawSchema.models, ...extraModels] }
     : rawSchema
+  return { autoLogModels, schema }
+  })
 
   // ── Validate ───────────────────────────────────────────────────────────────
   if (!schema.databases.length && !dbPath && dbOverrides !== ':memory:') {
@@ -5749,23 +5754,25 @@ export async function createClient({
     )
   }
 
-  const jsonMap       = buildJsonMap(schema)
-  const generatedMap  = buildGeneratedMap(schema)
-  const fromMap       = buildFromMap(schema, pluralizeTableNames)
-  const computedSets  = buildComputedSet(schema)
-  const relationMap   = buildRelationMap(schema)
-  const edgeMap       = buildEdgeMap(schema, pluralizeTableNames)
-  const coFkMap       = buildCoFkMap(schema, relationMap)
-  const softDeleteMap        = buildSoftDeleteMap(schema)
-  const softDeleteCascadeMap = buildSoftDeleteCascadeMap(schema)
-  const hasTemplatesMap      = buildHasTemplatesMap(schema)
-  const effectiveMap         = buildEffectiveMap(schema)
-  const commitmentMap        = buildCommitmentMap(schema)
-  const boolMap        = buildBoolMap(schema)
-  const affinityMap    = buildAffinityMap(schema)
-  const bigMap         = buildBigMap(schema)
-  const filterKindMap  = buildFilterKindMap(schema)
-  const autoIdMap      = buildAutoIdMap(schema)
+  const once = (key, deps, build) => derivedOnce(schema, key, deps, build)
+  const _claimsKey = Array.isArray(claims) ? claims.join('\0') : null
+  const jsonMap       = once('buildJsonMap', [], () => buildJsonMap(schema))
+  const generatedMap  = once('buildGeneratedMap', [], () => buildGeneratedMap(schema))
+  const fromMap       = once('buildFromMap', [pluralizeTableNames], () => buildFromMap(schema, pluralizeTableNames))
+  const computedSets  = once('buildComputedSet', [], () => buildComputedSet(schema))
+  const relationMap   = once('buildRelationMap', [], () => buildRelationMap(schema))
+  const edgeMap       = once('buildEdgeMap', [pluralizeTableNames], () => buildEdgeMap(schema, pluralizeTableNames))
+  const coFkMap       = once('buildCoFkMap', [], () => buildCoFkMap(schema, relationMap))
+  const softDeleteMap        = once('buildSoftDeleteMap', [], () => buildSoftDeleteMap(schema))
+  const softDeleteCascadeMap = once('buildSoftDeleteCascadeMap', [], () => buildSoftDeleteCascadeMap(schema))
+  const hasTemplatesMap      = once('buildHasTemplatesMap', [], () => buildHasTemplatesMap(schema))
+  const effectiveMap         = once('buildEffectiveMap', [], () => buildEffectiveMap(schema))
+  const commitmentMap        = once('buildCommitmentMap', [], () => buildCommitmentMap(schema))
+  const boolMap        = once('buildBoolMap', [], () => buildBoolMap(schema))
+  const affinityMap    = once('buildAffinityMap', [], () => buildAffinityMap(schema))
+  const bigMap         = once('buildBigMap', [], () => buildBigMap(schema))
+  const filterKindMap  = once('buildFilterKindMap', [], () => buildFilterKindMap(schema))
+  const autoIdMap      = once('buildAutoIdMap', [], () => buildAutoIdMap(schema))
   // The clock a write is STAMPED with — `@default(now())` and `@updatedAt` —
   // which is `now` unless `$madeAt` answers an instant for the write in
   // progress. A write held on a device and sent hours later was made then, and
@@ -5775,35 +5782,35 @@ export async function createClient({
   const _madeAt    = { fn: null }
   const stampClock = () => _madeAt.fn?.() ?? (typeof now === 'function' ? now() : new Date())
   const generatedDefaultMap = buildGeneratedDefaultMap(schema, stampClock)
-  const authDefaultMap     = buildAuthDefaultMap(schema)
-  const literalDefaultMap  = buildLiteralDefaultMap(schema)
-  const fieldRefDefaultMap = buildFieldRefDefaultMap(schema)
-  const pathDefaultMap     = buildPathDefaultMap(schema)
-  const updatedByMap       = buildUpdatedByMap(schema)
-  const createdByMap       = buildCreatedByMap(schema)
-  const versionMap         = buildVersionMap(schema)
-  const syncMap            = buildSyncMap(schema)
-  const selfRelationMap    = buildSelfRelationMap(schema)
-  const sequenceMap    = buildSequenceMap(schema)
-  const rankMap        = buildRankMap(schema)
-  const enumMap        = buildEnumMap(schema)
-  const transitionMap  = buildTransitionMap(schema)
-  const sealMap        = buildSealMap(schema, relationMap,
-                                      (m) => modelToTableName(schema.models.find(x => x.name === m), pluralizeTableNames))
-  const capabilityMap  = capabilityDeclarations(schema)
-  const ftsMap        = buildFtsMap(schema)
-  const validationMap  = buildValidationMap(schema)
-  const cardinalityMap = buildCardinalityMap(schema, pluralizeTableNames)
-  const exclusionMap   = buildExclusionMap(schema, pluralizeTableNames)
-  const fieldPolicyMap = buildFieldPolicyMap(schema)
-  const secretMap      = buildSecretMap(schema)
-  const claimSet       = buildClaimSet(schema, claims ?? null)
-  const policyMap      = buildPolicyMap(schema, relationMap, claimSet)
-  const scopeMap       = buildScopeMap(schema, relationMap, claimSet)
-  checkFieldPolicies(schema, relationMap, claimSet)
-  const guardedMap     = buildGuardedMap(schema, relationMap)
-  const fieldReadMap   = buildFieldReadMap(schema, relationMap)
-  const valueSetMap    = buildValueSetMap(schema)
+  const authDefaultMap     = once('buildAuthDefaultMap', [], () => buildAuthDefaultMap(schema))
+  const literalDefaultMap  = once('buildLiteralDefaultMap', [], () => buildLiteralDefaultMap(schema))
+  const fieldRefDefaultMap = once('buildFieldRefDefaultMap', [], () => buildFieldRefDefaultMap(schema))
+  const pathDefaultMap     = once('buildPathDefaultMap', [], () => buildPathDefaultMap(schema))
+  const updatedByMap       = once('buildUpdatedByMap', [], () => buildUpdatedByMap(schema))
+  const createdByMap       = once('buildCreatedByMap', [], () => buildCreatedByMap(schema))
+  const versionMap         = once('buildVersionMap', [], () => buildVersionMap(schema))
+  const syncMap            = once('buildSyncMap', [], () => buildSyncMap(schema))
+  const selfRelationMap    = once('buildSelfRelationMap', [], () => buildSelfRelationMap(schema))
+  const sequenceMap    = once('buildSequenceMap', [], () => buildSequenceMap(schema))
+  const rankMap        = once('buildRankMap', [], () => buildRankMap(schema))
+  const enumMap        = once('buildEnumMap', [], () => buildEnumMap(schema))
+  const transitionMap  = once('buildTransitionMap', [], () => buildTransitionMap(schema))
+  const sealMap        = once('buildSealMap', [pluralizeTableNames], () => buildSealMap(schema, relationMap,
+                                      (m) => modelToTableName(schema.models.find(x => x.name === m), pluralizeTableNames)))
+  const capabilityMap  = once('capabilityDeclarations', [], () => capabilityDeclarations(schema))
+  const ftsMap        = once('buildFtsMap', [], () => buildFtsMap(schema))
+  const validationMap  = once('buildValidationMap', [], () => buildValidationMap(schema))
+  const cardinalityMap = once('buildCardinalityMap', [pluralizeTableNames], () => buildCardinalityMap(schema, pluralizeTableNames))
+  const exclusionMap   = once('buildExclusionMap', [pluralizeTableNames], () => buildExclusionMap(schema, pluralizeTableNames))
+  const fieldPolicyMap = once('buildFieldPolicyMap', [], () => buildFieldPolicyMap(schema))
+  const secretMap      = once('buildSecretMap', [], () => buildSecretMap(schema))
+  const claimSet       = once('buildClaimSet', [_claimsKey], () => buildClaimSet(schema, claims ?? null))
+  const policyMap      = once('buildPolicyMap', [claimSet], () => buildPolicyMap(schema, relationMap, claimSet))
+  const scopeMap       = once('buildScopeMap', [claimSet], () => buildScopeMap(schema, relationMap, claimSet))
+  once('checkFieldPolicies', [claimSet], () => { checkFieldPolicies(schema, relationMap, claimSet); return true })
+  const guardedMap     = once('buildGuardedMap', [], () => buildGuardedMap(schema, relationMap))
+  const fieldReadMap   = once('buildFieldReadMap', [], () => buildFieldReadMap(schema, relationMap))
+  const valueSetMap    = once('buildValueSetMap', [], () => buildValueSetMap(schema))
 
   // ── Shape: a model's facts in one record ──────────────────────────────────
   //
@@ -6853,7 +6860,7 @@ export async function createClient({
   // shared ctx refuses, and `db.posts.findMany()` on the bare client is a
   // legitimate call rather than an escaped one.
   const rootFlavor = { auth: null, isSystem: false, scopedBy: undefined, tables: null }
-  const tables = makeAllFlavorTables(rootFlavor)
+  const tables = makeLazyTables(rootFlavor)
   rootFlavor.tables = tables
 
   // Expose tables on ctx so makeTable can do recursive nested writes
@@ -6871,7 +6878,7 @@ export async function createClient({
   // outside any flavor throws, which the sweep reports as removing nothing
   // (FJS-3552). `makeSystemProxy`'s memo is not initialized yet here.
   const _retentionFlavor = { auth: null, isSystem: true, scopedBy: undefined, tables: null }
-  _retentionFlavor.tables = makeAllFlavorTables(_retentionFlavor)
+  _retentionFlavor.tables = makeLazyTables(_retentionFlavor)
   const _booted = await _flavor.run(_retentionFlavor, () => _runRetention({ jsonl: false, batches: 1 }))
   if (_booted.some(r => r.removed >= RETENTION_BATCH))
     _retentionDrain = _flavor.run(_retentionFlavor, () => _runRetention({ jsonl: false }))
@@ -6897,8 +6904,14 @@ export async function createClient({
   // Methods that scopes are not allowed to shadow. Computed from a real table
   // accessor at runtime so this list updates automatically when methods are added.
   // We pick any non-view table to introspect — views have a reduced surface.
-  const reservedMethodNames = (() => {
-    const sample = Object.values(tables).find(t => t && typeof t.findMany === 'function' && typeof t.create === 'function')
+  // Read only when a scope is registered: `Object.values(tables)` builds every
+  // table, which a tenant reopen pays on each of its schema's models.
+  const reservedMethodNames = Object.keys(scopeRegistry).length === 0 ? new Set() : (() => {
+    let sample
+    for (const name of _tableAccessorNames) {
+      const t = tables[name]
+      if (t && typeof t.findMany === 'function' && typeof t.create === 'function') { sample = t; break }
+    }
     if (!sample) return new Set(['findMany','findFirst','findUnique','count','create','update','remove','delete','aggregate','groupBy','query'])
     return new Set(Object.keys(sample).filter(k => typeof sample[k] === 'function'))
   })()
@@ -7874,7 +7887,7 @@ export async function createClient({
     // The flavor carries `baseCtx`'s principal: `db.$setAuth(u).asSystem()` is
     // the bypass WITH an actor, which is what an audit entry is written from.
     const sysFlavor = { auth: baseCtx.auth ?? null, isSystem: true, scopedBy: baseCtx.scopedBy, tables: null }
-    const rawSysTables = makeAllFlavorTables(sysFlavor)
+    const rawSysTables = makeLazyTables(sysFlavor)
     sysFlavor.tables = rawSysTables
     sysCtx.tables = rawSysTables
     // Apply scopes — system ctx is fixed for the lifetime of asSystem(), so the

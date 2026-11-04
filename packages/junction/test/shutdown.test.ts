@@ -417,3 +417,37 @@ describe('crash handlers under a silent logger (FJS-747)', () => {
     await Bun.sleep(100)
   })
 })
+
+// ─── FJS-3944 · a step that missed its deadline is not a clean stop ────────
+//
+// Exit status is decided in the signal handler, so the proof is a real process
+// sent a real SIGTERM.
+
+describe('a shutdown that abandoned work exits 1 (FJS-3944)', () => {
+  const leave = async (mode: string): Promise<number> => {
+    const proc = Bun.spawn(['bun', 'run', `${import.meta.dir}/fixtures/shutdown-exit.ts`, mode], {
+      stdout: 'pipe', stderr: 'ignore',
+    })
+    const reader = proc.stdout.getReader()
+    let seen = ''
+    while (!seen.includes('READY')) {
+      const { value, done } = await reader.read()
+      if (done) break
+      seen += new TextDecoder().decode(value)
+    }
+    proc.kill('SIGTERM')
+    return await proc.exited
+  }
+
+  test('a plugin whose shutdown outlasts pluginTimeout', async () => {
+    expect(await leave('plugin')).toBe(1)
+  })
+
+  test('a request that outlasts http.drainTimeout', async () => {
+    expect(await leave('request')).toBe(1)
+  })
+
+  test('the control: nothing outstanding exits 0', async () => {
+    expect(await leave('clean')).toBe(0)
+  })
+})

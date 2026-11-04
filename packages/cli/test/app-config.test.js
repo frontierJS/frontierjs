@@ -84,6 +84,10 @@ describe('the config is a dependency, not a copy', () => {
     const ts = JSON.parse(readFileSync(file, 'utf8'))
     expect(ts.include).toContain('desktop/**/*')
     expect(ts.compilerOptions.paths['@/*']).not.toContain('./desktop/src/*')
+    // FJS-3903: shell/ is Rust and its target/ holds generated .js tsc cannot parse.
+    expect(ts.exclude).toEqual(['node_modules', 'desktop/shell'])
+    addSurfaceToTsconfig(app, 'desktop', { src: false })
+    expect(JSON.parse(readFileSync(file, 'utf8')).exclude).toEqual(['node_modules', 'desktop/shell'])
     rmSync(app, { recursive: true, force: true })
   })
 

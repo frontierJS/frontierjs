@@ -11,7 +11,7 @@ import { createTestApp } from '../src/testing/index.ts'
 import { callService, buildService } from '../src/core/service.ts'
 import { enterRequest } from '../src/core/context.ts'
 import { bridge } from '../src/transport/bridge.ts'
-import { withLitestoneDb } from '../src/core/litestone.ts'
+import { withLitestoneDb, withTenantDb } from '../src/core/litestone.ts'
 import { createClient } from '../../litestone/src/index.js'
 import { $ } from '../src/core/context.ts'
 
@@ -167,5 +167,61 @@ describe('a declared read is handed a client that refuses writes', () => {
     const { db, out } = await run(['reboot'], d => d.pass.create({ data: { label: 'x' } }), 'reboot')
     expect(out).toBeNull()
     expect(await db.asSystem().pass.count()).toBe(1)
+  })
+})
+
+// ─── the guard covers the claimed client (FJS-3832) ───────────────────────────
+//
+// A principal resolver's claims re-scope the call's client with `$setAuth`.
+// That re-scope ran after the guard and started again from the root client, so
+// every request a resolver answered for wrote through a read unguarded.
+
+// `withTenantDb` is the same seam under `strategy database`, and is run here too.
+for (const hook of ['withLitestoneDb', 'withTenantDb'] as const)
+describe(`${hook}: a declared read refuses writes once a resolver has answered claims`, () => {
+
+  const SCHEMA = `model Pass { id Int @id @default(autoincrement())  label String }`
+
+  async function run(user: { id: string } | null, body: (db: any) => Promise<unknown>) {
+    const db  = await createClient({ db: ':memory:', schema: SCHEMA }) as any
+    const svc = buildService({
+      name: 'passes',
+      methods: [{ method: 'search', read: true }],
+      search: async () => body($.db),
+    } as never)
+    const app = await createTestApp()
+    const ctx = bridge.internal('passes', 'search' as 'create', {}, { user: user as never }, app)
+    ctx.method = 'search'
+    const resolver = async () => ({ cartToken: 'tok-1' })
+    if (hook === 'withTenantDb') ctx.locals.tenantId = 't1'
+    const around = hook === 'withTenantDb'
+      ? withTenantDb({ get: async () => db }, resolver as never)
+      : withLitestoneDb(db, resolver as never)
+    const hooks = { around: { all: [around] } }
+    const out = await enterRequest(
+      { correlationId: 'c1', origin: 'internal' },
+      () => callService(svc, ctx, hooks as never, app.events, app.telemetry).then(() => null, (e: Error) => e),
+    )
+    return { db, out }
+  }
+
+  test('for a session', async () => {
+    const { db, out } = await run({ id: 'u1' }, d => d.pass.create({ data: { label: 'x' } }))
+    expect(String((out as Error)?.message)).toMatch(/passes\.search.*read: true.*pass\.create/s)
+    expect(await db.asSystem().pass.count()).toBe(0)
+  })
+
+  test('for a guest', async () => {
+    const { db, out } = await run(null, d => d.pass.create({ data: { label: 'x' } }))
+    expect(String((out as Error)?.message)).toMatch(/passes\.search.*read: true.*pass\.create/s)
+    expect(await db.asSystem().pass.count()).toBe(0)
+  })
+
+  test('a read through the claimed client still answers, and $setAuth walks past by choice (FJS-D1054)', async () => {
+    const { out } = await run({ id: 'u1' }, d => d.pass.findMany({}))
+    expect(out).toBeNull()
+    const walked = await run({ id: 'u1' }, d => d.$setAuth({ cartToken: 'tok-1' }).pass.create({ data: { label: 'x' } }))
+    expect(walked.out).toBeNull()
+    expect(await walked.db.asSystem().pass.count()).toBe(1)
   })
 })

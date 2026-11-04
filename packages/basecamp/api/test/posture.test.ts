@@ -481,6 +481,17 @@ describe('the hub grader', () => {
     expect(grade({ keyFingerprint: null, keyEscrow: { at, fingerprint: KEY } })).toMatchObject({ ok: false, message: expect.stringContaining('placeholder') })
   })
 
+  test('the bucket is locked when its test read a compliance lock, or a person attested one the bucket could not say (FJS-3913)', () => {
+    const grade = (bucketLock: HostDeclared['bucketLock']) => hub(null, null, NOW, { bucketLock })['hub.bucket-locked']
+    const lock  = { name: 'B2', tested: true, lockDays: null, attestedAt: null }
+    expect(grade(null).ok).toBe('unknown')
+    expect(grade({ ...lock, tested: false }).ok).toBe('unknown')
+    expect(grade({ ...lock, lockDays: 30 })).toMatchObject({ ok: true, message: expect.stringContaining('30 day(s)') })
+    expect(grade({ ...lock, lockDays: 0 })).toMatchObject({ ok: false, fix: expect.stringContaining('Object Lock'), message: expect.stringContaining('delete every archive') })
+    expect(grade(lock)).toMatchObject({ ok: false, message: expect.stringContaining('none is attested') })
+    expect(grade({ ...lock, attestedAt: '2026-11-03T00:00:00.000Z' })).toMatchObject({ ok: true, message: expect.stringContaining('2026-11-03') })
+  })
+
   test('only the hub controls: the fleet ones are the host row\'s own', () => {
     expect(Object.keys(hub(CLEAN, null)).sort()).toEqual([...HUB_CONTROL_IDS].sort())
   })

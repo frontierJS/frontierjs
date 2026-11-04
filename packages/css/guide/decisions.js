@@ -287,7 +287,7 @@ var OUTCOMES = {
     lead: 'An action, taken now, on this page.',
     markup: function (c) { return '<button class="' + c + '" type="button">Save changes</button>' },
     tones: true,
-    treatments: ['outlined', 'ghost', 'raised', 'glass', 'link', 'square'],
+    treatments: ['outlined', 'ghost', 'raised', 'glass', 'tinted', 'link', 'square'],
     states: [
       { label: 'Disabled', apply: 'disabled', why: 'the native attribute — it removes the button from the tab order too' },
       { label: 'Busy', apply: 'aria-busy="true"', why: 'the attribute that announces it is the one that draws the spinner' },
@@ -317,8 +317,8 @@ var OUTCOMES = {
     lead: 'A number. A count, a total, an unread tally.',
     markup: function (c) { return '<span class="' + c + '">12</span>' },
     tones: true,
-    treatments: [],
-    note: 'There is no .pill.outlined — outlined is a Button treatment. A quieter pill is a quieter tone.',
+    treatments: ['tinted'],
+    note: 'There is no .pill.outlined — outlined is a Button treatment. A quieter pill is .tinted.',
     states: [],
     instead: [
       { term: 'Badge', when: 'the content is a word rather than a number. This is the pair the industry disagrees with us about: elsewhere "badge" usually means the count' },
@@ -330,8 +330,8 @@ var OUTCOMES = {
     lead: 'A categorical status. One word, drawn from a fixed set.',
     markup: function (c) { return '<span class="' + c + '">Active</span>' },
     tones: true,
-    treatments: [],
-    note: 'There is no .badge.outlined — outlined is a Button treatment. Reach for a different tone instead.',
+    treatments: ['tinted'],
+    note: 'There is no .badge.outlined — outlined is a Button treatment. A quieter badge is .tinted.',
     states: [],
     instead: [
       { term: 'Pill', when: 'the content is a number' },

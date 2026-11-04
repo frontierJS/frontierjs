@@ -533,7 +533,9 @@ by a browser gets the shell too; a `fetch` or a missing asset stays a 404.
   standing that lives only on `$.db` is dropped the moment a service
   touches a model (`FJS-D113`). A tenant claim and a per-request standing are
   the same thing and resolve together; `applyClaims` is exported because a
-  service whose SUBJECT is the tenant must re-resolve mid-call.
+  service whose SUBJECT is the tenant must re-resolve mid-call. `heldClaims($)`
+  reads what the request proved, for a method that re-scopes one write
+  (`FJS-D1054`); the `ctx.locals` key behind it is not an API (`FJS-3833`).
   Two refusals are built in: a resolver may not set `userId`/`id` — a claim says
   what a caller HOLDS, not who they are — and it does not run for an anonymous
   caller, because minting a principal out of claims turns *nobody* into

@@ -41,21 +41,34 @@ flags:
 <script>
 // Creates the user through the app's own @frontierjs/auth, so the password
 // policy, the hash and which column a tenant is written to are auth's answers
-// rather than a copy of them (FJS-D1117).
+// rather than a copy of them (FJS-D1117). The instance is the app's own export
+// too: a second createLitestoneAuth never reads the app's options, so its
+// onRegistered would not run and the user would miss what registration sets up
+// (an Account row, a membership). Only an app with no auth module gets a bare one.
 const SCRIPT = `
 import { createClient, GatePlugin, LEVELS } from '@frontierjs/litestone'
 import { createLitestoneAuth }               from '@frontierjs/auth'
 
 const input = JSON.parse(process.env.FLI_INPUT)
 
-const db = await createClient({
-  path:          input.schemaPath,
-  resolveFrom:   'schema',
-  encryptionKey: process.env.ENCRYPTION_KEY,
-  plugins:       [new GatePlugin({ getLevel: () => LEVELS.SYSTEM })]
-})
-
-const auth = createLitestoneAuth(db, { encryptionKey: process.env.ENCRYPTION_KEY })
+let db, auth
+if (input.appAuth) {
+  const mod = await import(input.appAuth)
+  auth = mod.auth
+  db   = mod.db ?? (input.appDb ? (await import(input.appDb)).db : null)
+  if (!auth || !db) {
+    console.error('ERROR: ' + input.appAuth + ' must export auth, and db from it or from a db module beside it')
+    process.exit(1)
+  }
+} else {
+  db = await createClient({
+    path:          input.schemaPath,
+    resolveFrom:   'schema',
+    encryptionKey: process.env.ENCRYPTION_KEY,
+    plugins:       [new GatePlugin({ getLevel: () => LEVELS.SYSTEM })]
+  })
+  auth = createLitestoneAuth(db, { encryptionKey: process.env.ENCRYPTION_KEY })
+}
 
 let made
 try {
@@ -77,6 +90,16 @@ await db.asSystem().user.update({ where: { id: made.id }, data: { isEmailVerifie
 console.log(JSON.stringify({ id: made.id, email: made.email, role: made.role }))
 await db.$close()
 `
+
+// The module `fli new` and `auth:install` write the app's auth into, and the
+// db module beside it. null for an app that wires neither.
+const appAuthModules = (apiSrc) => {
+  const found = (...names) => names.map(n => path.resolve(apiSrc, n)).find(f => fs.existsSync(f))
+  const appAuth = found('core/auth.ts', 'core/auth.js', 'auth.ts', 'auth.js')
+  if (!appAuth) return { appAuth: '', appDb: '' }
+  const dir = path.dirname(appAuth)
+  return { appAuth, appDb: ['db.ts', 'db.js'].map(n => path.resolve(dir, n)).find(f => fs.existsSync(f)) ?? '' }
+}
 
 const askPassword = async ($) => {
   const password = await $.tty.secret('Password:')
@@ -100,8 +123,13 @@ const who = [arg.email, `role ${flag.role}`, flag.name && `name ${flag.name}`, f
   .filter(Boolean).join(' · ')
 if (flag.dry) return log.dry(`Would create ${who}`)
 
+const { appAuth, appDb } = appAuthModules(path.resolve($.paths.api, 'src'))
+if (!appAuth) log.warn("No api/src/core/auth.ts — creating the user with a default auth, so the app's onRegistered will not run")
+
 const user = runAppScript($, 'create-user', SCRIPT, {
   schemaPath,
+  appAuth,
+  appDb,
   email:  arg.email,
   password,
   name:   flag.name,

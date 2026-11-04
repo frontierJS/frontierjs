@@ -23,7 +23,9 @@
 // when both answered, so `lastTestAt` means the key wrote and deleted here.
 // A refusal comes back as the connector's failure kind said in words
 // (`forbidden`, `clock_skew`, `refused`…), because a 403 is three different
-// mistakes and only one of them is the credential.
+// mistakes and only one of them is the credential. It reads the bucket's
+// Object Lock too (`FJS-D1809`): a locked bucket holds archives only, so a
+// replica's is refused, and the reading is what `hub.bucket-locked` grades.
 
 import { createService, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { createSystemSecret } from '../../domain/secret/system-secret.ts'
@@ -32,7 +34,7 @@ import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '
 import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, actor }
   from '../../core/resource.ts'
 import { registerDestination, unregisterDestination, keyUnder, sendFor } from '../../providers/storage/index.ts'
-import { splitCredential, putObject, deleteObject } from '../../providers/storage/s3.ts'
+import { splitCredential, putObject, deleteObject, getObjectLock } from '../../providers/storage/s3.ts'
 import type { S3Failure } from '../../providers/storage/s3.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 import { syncReplicasHeldBy, replicaHolder } from '../../jobs/replicate-sync.job.ts'
@@ -84,6 +86,16 @@ async function refusesArchiveWrite(app: App, send: ReturnType<typeof sendFor>, r
   throw new BadRequest(`scope: this key wrote ${key}, so it reaches the app's archives — scope it to '${keyUnder(row, `${appId}/`)}', with the trailing slash${left}`)
 }
 
+/** The bucket's compliance-mode Object Lock default in days: 0 when it has
+ *  none, or only a governance one a key holding `BypassGovernanceRetention`
+ *  steps past; null when it cannot say, which `hub.bucket-locked` grades
+ *  from an attestation instead. */
+async function lockOf(send: ReturnType<typeof sendFor>, row: Row): Promise<number | null> {
+  const { lock } = await getObjectLock(send, row.bucket)
+  if (!lock) return null
+  return lock.enabled && lock.mode === 'COMPLIANCE' && lock.days ? lock.days : 0
+}
+
 /** A destination plus how many archives name it — what `remove` refuses on,
  *  and what makes a row legible on the list. */
 async function withBackupCount(row: Record<string, unknown>) {
@@ -126,7 +138,7 @@ export default createService({
   // so it is not a read, and no model's gate grades it — the same bar as
   // `notificationChannels.test`.
   methods: ['find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
-    { method: 'test', gate: LEVELS.ADMINISTRATOR }],
+    { method: 'test', gate: LEVELS.ADMINISTRATOR }, { method: 'attestLock', gate: LEVELS.ADMINISTRATOR }],
   channel: workspaceChannel,
   reservedQuery: WORKSPACE_QUERY,
 
@@ -245,17 +257,22 @@ export default createService({
 
     const put = await putObject(send, row.bucket, key, `basecamp probe ${new Date().toISOString()}\n`, { contentType: 'text/plain' })
     if (put.error) throw new BadRequest(explainFailure('write', put.error))
+    // Plain on purpose: a locked bucket takes it as a marker and the probe's
+    // version stays until its lock ends, and a key without delete is refused here.
     const del = await deleteObject(send, row.bucket, key)
     if (del.error) throw new BadRequest(explainFailure('delete', del.error))
     if (appId) await refusesArchiveWrite(app, send, row, appId)
+    const lockDays = await lockOf(send, row)
+    if (holder && lockDays) throw new BadRequest(`locked: '${row.bucket}' holds every new object ${lockDays} day(s) under its Object Lock, so it holds archives only — `
+      + `a replica's generations would each be kept and billed that long. Give the replica a bucket without a lock (FJS-D1809)`)
 
     // Not stamped on a failure — the stamp means the key wrote and deleted
     // here, and nothing else. The Secret's flag follows, since a rotation
     // cleared it and this is the one check that can set it again.
     const updated = await db().backupDestination.update({
       where: { id: row.id },
-      data:  { lastTestAt: new Date().toISOString(), version: row.version },
-      system: ['lastTestAt'],
+      data:  { lastTestAt: new Date().toISOString(), lockDays, version: row.version },
+      system: ['lastTestAt', 'lockDays'],
     }) as Row
     const held = await db().secret.findFirst({ where: { id: row.secretId } })
     if (held && !held.verifiedAt)
@@ -265,6 +282,23 @@ export default createService({
         system: ['verifiedAt', 'verifyError'],
       })
     return withBackupCount(updated)
+  },
+
+  // ── attestLock ────────────────────────────────────────────────────
+  // A person's word that the bucket carries a lock `test` could not read: an
+  // R2 bucket lock answers no `GetObjectLockConfiguration`. Refused where the
+  // read answered, since the bucket's own answer outranks the word.
+  async attestLock() {
+    const row = await getScoped('backupDestination', 'Backup destination') as Row & { lockDays?: number | null }
+    if (!row.lastTestAt) throw new BadRequest('Test this destination first — the lock is attested only where the bucket cannot be asked')
+    if (row.lockDays != null) throw new Conflict(row.lockDays
+      ? `The bucket answered a ${row.lockDays}-day Object Lock at the last test; nothing to attest`
+      : 'The bucket answered that it has no compliance-mode Object Lock at the last test — set one, then test again')
+    return withBackupCount(await db().backupDestination.update({
+      where:  { id: row.id },
+      data:   { lockAttestedAt: new Date().toISOString(), version: row.version },
+      system: ['lockAttestedAt'],
+    }))
   },
 
   hooks: {

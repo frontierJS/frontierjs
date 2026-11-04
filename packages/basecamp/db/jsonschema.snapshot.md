@@ -1440,6 +1440,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `prefix` | `string` = `""` | — | — | `minLength: 0` `maxLength: 200` `x-transforms` | — |
 | `secretId` | `string`? | — | — | `x-litestone-kind` | — |
 | `lastTestAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `lockDays` | `integer`? | — | — | `x-litestone-kind` | — |
+| `lockAttestedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `createdBy` | `string`? | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 

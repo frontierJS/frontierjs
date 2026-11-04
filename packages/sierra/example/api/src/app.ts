@@ -85,12 +85,9 @@ const auth = {
 const app = createApp({
   db,
   auth,
-  // Absolute, off this file rather than off the process. Junction's default is
-  // `services/` beside the ENTRY and `api/config/junction.config.js` is resolved
-  // against the CWD — and this fixture is started from packages/sierra, so
-  // neither finds anything here. Nothing fails when they do not: the app boots,
-  // /health answers, and every service route is a 404 (`FJS-458`).
-  autoload: join(HERE, 'services'),
+  // Off this file, not the process: the fixture starts from packages/sierra,
+  // and a root stated nowhere loads no service and every route is a 404.
+  root: import.meta.url,
   config: { name: 'sierra-example', port: PORT, apiPrefix: '/api' },
 })
 

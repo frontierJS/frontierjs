@@ -56,7 +56,7 @@ learning the system.
 | Kind | Composes | What it names |
 |---|---|---|
 | **Element** | onto valid markup | *What a thing is* — `btn` `card` `field` `table` `tabs` |
-| **Treatment** | onto anything | Orthogonal — the 7 tones, `raised` `outlined` `ghost` `glass` `edge`, `stack` `cluster` |
+| **Treatment** | onto anything | Orthogonal — the 7 tones, `raised` `outlined` `ghost` `glass` `edge` `tinted`, `stack` `cluster` |
 | **Anatomy** | no — nests | *A position inside* an Element — `alert-icon`, `feed-dot`, `surface-header` |
 
 Chaining is for Treatments. Anatomy nests:
@@ -317,7 +317,10 @@ and `rail` — the Sidebar collapsed to its icons (+ `peek`, opening over the pa
 
 **Inline** `btn` (+ `square`, `outlined`, `ghost`, `raised`, `glass`, `link`) ·
 `pill` `badge` `link` `chip` `page` `tooltip` `avatar` `kbd` `icon`
-&nbsp;&nbsp;— one lineage, shared layout and auto-contrast
+&nbsp;&nbsp;— one lineage, shared layout and auto-contrast. `tinted` on a
+`btn`, `pill` or `badge` paints it the way a toned Card is painted — the tone's
+tint for ground, rule and text — and untoned it is the neutral pair. A toned
+surface is tinted already, so on one it adds nothing
 
 **Surfaces** `card` `tile` `alert` `toast` `dialog` `popover` (+
 `popover-anchor`, `align-end`) `drawer` `band`

@@ -995,6 +995,30 @@ describe('write-policy-reads-a-parent-without-post-update', () => {
     expect(findings(schema(`@@allow(update, ownerId == auth().id)`), ID)).toEqual([])
     expect(findings(schema(`@@allow(read, collection.ownerId == auth().id)`), ID)).toEqual([])
   })
+
+  // FJS-3836: both forms stay writable while the row is a draft.
+  test('still fires on @immutable(after: …) and on bare @immutable on a sealing model', () => {
+    const run = (fk: string, transitions: string) => findings(`
+      enum DocState { draft  issued  paid }
+      model Collection {
+        id Int @id
+        ownerId Int
+        @@allow(read, true)
+      }
+      model Bookmark {
+        id           Int        @id
+        ownerId      Int
+        state        DocState   @default(draft)
+        collection   Collection? @relation(fields: [collectionId], references: [id])
+        collectionId Int?       ${fk}
+        @@allow(update, collection.ownerId == auth().id)
+        @@transitions(state, ${transitions})
+      }`, ID)
+    const sealing = run('@immutable', 'issue: draft -> issued @seals, settle: issued -> paid')
+    const after   = run('@immutable(after: settle)', 'issue: draft -> issued, settle: issued -> paid')
+    expect(sealing.map(f => f.field)).toEqual(['collectionId'])
+    expect(after.map(f => f.field)).toEqual(['collectionId'])
+  })
 })
 
 // Spawned, because the exit code IS the assertion: the Charter grader read a

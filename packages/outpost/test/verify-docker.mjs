@@ -38,6 +38,16 @@
  *   answers over HTTPS, and the port it dials and the loopback bind are read
  *   back off the daemon.
  *
+ *   `startFirst.*` — a release with `swap: 'start-first'` answers beside the
+ *   old container on a port Docker picks, and the route moves before the old
+ *   one stops: a curl loop through Caddy across the swap sees only 200s
+ *   (`FJS-D1837`). A sick one is refused with the old container serving and
+ *   its route untouched. A contract asks for start-first and is swapped
+ *   stop-first, by the release's own Litestone (`FJS-D1838`), and a stop-first
+ *   release after takes the App's port back. These releases are whoami's
+ *   binary on `oven/bun` with this workspace's Litestone and a `db/` at v1 or
+ *   v2, built here: whoami alone has no schema to classify.
+ *
  *   `volume.*` — `/volume/restore` extracts an archive from the restore
  *   directory into the stopped app's data directory, read back as plain files
  *   on the host (`FJS-D1544`), refuses a second one into a directory with
@@ -66,7 +76,7 @@
  */
 
 import { spawnSync }    from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -91,6 +101,13 @@ const HOST     = 'verify-docker.test'
 const ALSO     = 'also.verify-docker.test'
 const IMAGE    = 'traefik/whoami:v1.10.3'
 const BUSYBOX  = 'busybox:1.36'
+const BUN_IMAGE   = 'oven/bun:1.4.4-slim'
+const PIVOT_IMAGE = 'fjs-verify-docker-pivot'
+// v2 adds an optional column, an expand; v2 back to v1 drops it, a contract.
+const SCHEMAS  = {
+  v1: 'model Note {\n  id   Int    @id\n  body String\n}\n',
+  v2: 'model Note {\n  id   Int     @id\n  body String\n  tag  String?\n}\n',
+}
 const APP      = 'verify-docker'
 // The container is named for the slugs and found by its `fjs.app` label;
 // Caddy's route keeps `fjs-<app>` (`FJS-D1716`).
@@ -105,8 +122,34 @@ const fail  = (msg) => { console.error(`verify-docker: ${msg}`); process.exit(1)
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 const sh    = (...argv) => spawnSync(argv[0], argv.slice(1), { encoding: 'utf8' })
 const appContainers = () => sh('docker', 'ps', '-a', '--filter', `label=fjs.app=${APP}`, '--format', '{{.Names}}').stdout.trim().split('\n').filter(Boolean)
-const live        = () => appContainers().find(n => !n.endsWith('_replaced')) ?? null
+const live        = () => appContainers().find(n => !n.endsWith('_replaced') && !n.endsWith('_next')) ?? null
 const volumeNames = () =>new Set(sh('docker', 'volume', 'ls', '-q').stdout.trim().split('\n').filter(Boolean))
+
+/** The start-first releases' images. The context goes to the daemon as a tar
+ *  on stdin, because a snap-packaged docker cannot read the host's `/tmp`. */
+function buildPivotImages(dir) {
+  for (const pkg of ['litestone', 'toolbelt']) {
+    const to = join(dir, 'node_modules', '@frontierjs', pkg)
+    mkdirSync(to, { recursive: true })
+    cpSync(join(ROOT, '..', pkg, 'src'), join(to, 'src'), { recursive: true })
+    cpSync(join(ROOT, '..', pkg, 'package.json'), join(to, 'package.json'))
+  }
+  mkdirSync(join(dir, 'node_modules', '.bin'))
+  symlinkSync('../@frontierjs/litestone/src/tools/cli.js', join(dir, 'node_modules', '.bin', 'litestone'))
+  writeFileSync(join(dir, 'Dockerfile'), [
+    `FROM ${BUN_IMAGE}`, `COPY --from=${IMAGE} /whoami /whoami`, 'WORKDIR /app',
+    'COPY node_modules node_modules', 'ARG V', 'COPY ${V}/ db/', 'ENTRYPOINT ["/whoami"]', '',
+  ].join('\n'))
+  for (const [v, schema] of Object.entries(SCHEMAS)) {
+    mkdirSync(join(dir, v))
+    writeFileSync(join(dir, v, 'schema.lite'), schema)
+  }
+  const context = spawnSync('tar', ['-C', dir, '-c', '.'], { maxBuffer: 256 * 1024 * 1024 })
+  for (const v of Object.keys(SCHEMAS)) {
+    const built = spawnSync('docker', ['build', '-q', '--build-arg', `V=${v}`, '-t', `${PIVOT_IMAGE}:${v}`, '-'], { input: context.stdout, encoding: 'utf8' })
+    if (built.status !== 0) throw new Error(`building ${PIVOT_IMAGE}:${v} failed: ${built.stderr.trim()}`)
+  }
+}
 
 // ─── Preflight ────────────────────────────────────────────────────────────
 
@@ -189,6 +232,7 @@ const pinned   = { ca: tls.cert, checkServerIdentity: () => undefined }
 const hadImage = sh('docker', 'image', 'inspect', IMAGE).status === 0
 const hadCaddy = sh('docker', 'image', 'inspect', CADDY_IMAGE).status === 0
 const hadBusybox = sh('docker', 'image', 'inspect', BUSYBOX).status === 0
+const hadBun     = sh('docker', 'image', 'inspect', BUN_IMAGE).status === 0
 mkdirSync(join(homedir(), '.cache'), { recursive: true })
 const restoreDir = mkdtempSync(join(homedir(), '.cache', 'fjs-verify-restore-'))
 const backupDir  = mkdtempSync(join(homedir(), '.cache', 'fjs-verify-backup-'))
@@ -401,6 +445,51 @@ try {
   await call('/stop', { app_id: SPLIT })
   t('path.stopTakesEveryPrefix',   (await admin(`/id/fjs-${SPLIT}-path-0`)).status === 404)
 
+  // ─── start-first (FJS-D1837, FJS-D1838) ─────────────────────────────────
+
+  buildPivotImages(join(scratch, 'pivot'))
+  const release = (version, { swap = 'start-first', ...config } = {}) => call('/deploy', {
+    app_id: APP, ...SLUGS, image: `${PIVOT_IMAGE}:${version}`, hosts: [HOST], swap,
+    config: { port: APP_PORT, containerPort: 80, ...config, env: { WHOAMI_NAME: 'fjs-drive', ...config.env } },
+  })
+  const base = await release('v1', { swap: 'stop-first' })
+  if (base.status !== 200) console.log(base.body)
+  const replaced = inspect('{{.Id}}')
+  // Killing the shell leaves the curl in flight to finish, so the pipe closes on a whole line.
+  const loop = Bun.spawn(['sh', '-c', `while :; do curl -s -o /dev/null -w '%{http_code}\\n' --max-time 5 --resolve ${HOST}:${CADDY_HTTPS}:127.0.0.1 --cacert ${rootPath} https://${HOST}:${CADDY_HTTPS}/; done`], { stdout: 'pipe' })
+  await sleep(500)
+  const overlapped = await release('v2')
+  await sleep(500)
+  loop.kill()
+  const codes = (await new Response(loop.stdout).text()).trim().split('\n')
+  if (overlapped.status !== 200) console.log(overlapped.body)
+  if (codes.some(c => c !== '200')) console.log('start-first loop:', Object.groupBy(codes, c => c))
+  const moved = overlapped.body?.port
+  t('startFirst.anExpandOverlaps',              overlapped.body?.pivot === 'expand' && overlapped.body?.swap_reason === null)
+  t('startFirst.answersOnAPortDockerPicked',    overlapped.status === 200 && overlapped.body?.swap === 'start-first' && moved > 0 && moved !== APP_PORT)
+  t('startFirst.routeDialsTheNewPort',          await dial() === `127.0.0.1:${moved}`)
+  t('startFirst.leavesOneContainerUnderItsName', appContainers().join() === `fjs--verify-drive-docker-${APP.slice(0, 8)}`
+    && inspect('{{.Id}}') === overlapped.body?.containerId && overlapped.body?.containerId !== replaced)
+  t('startFirst.bindsLoopbackOnly',             moved > 0 && await answers(moved, offLoopback) === false)
+  t('startFirst.dropsNoRequest',                codes.length > 5 && codes.every(c => c === '200'))
+
+  // whoami listens on 81 inside, so the new one never answers.
+  const serving  = inspect('{{.Id}}')
+  const sickNext = await release('v2', { healthCheck: '/', env: { WHOAMI_PORT_NUMBER: '81' } })
+  if (sickNext.status !== 500) console.log(sickNext.body)
+  t('startFirst.refusesASickRelease',  sickNext.status === 500 && /not touched and is still serving/.test(sickNext.body?.error ?? ''))
+  t('startFirst.leavesTheOldOneAlone', inspect('{{.Id}}') === serving && appContainers().length === 1
+    && await dial() === `127.0.0.1:${moved}` && await untilHttps())
+
+  const contract = await release('v1')
+  if (contract.status !== 200) console.log(contract.body)
+  t('startFirst.aContractSwapsStopFirst', contract.status === 200 && contract.body?.swap === 'stop-first' && contract.body?.pivot === 'contract'
+    && /this deploy is the pivot/.test(contract.body?.swap_reason ?? '') && await dial() === `127.0.0.1:${APP_PORT}` && await untilHttps())
+  t('startFirst.leavesNoVolumeBehind', ![...volumeNames()].some(v => v.startsWith('fjs-before-')))
+
+  const after = await deploy()
+  t('startFirst.stopFirstTakesTheAppPortBack', after.status === 200 && await dial() === `127.0.0.1:${APP_PORT}` && await untilHttps())
+
   // ─── stop ───────────────────────────────────────────────────────────────
 
   const stopped = await call('/stop', { app_id: APP })
@@ -516,6 +605,8 @@ try {
   // The restore wrote as root, so root removes it.
   sh('docker', 'run', '--rm', '--mount', `type=bind,src=${appsDir},dst=/apps`, BUSYBOX, 'rm', '-rf', `/apps/${APP}`)
   if (!hadBusybox) sh('docker', 'rmi', BUSYBOX)
+  for (const v of Object.keys(SCHEMAS)) sh('docker', 'rmi', `${PIVOT_IMAGE}:${v}`)
+  if (!hadBun) sh('docker', 'rmi', BUN_IMAGE)
   rmSync(scratch, { recursive: true, force: true })
   rmSync(restoreDir, { recursive: true, force: true })
   rmSync(backupDir, { recursive: true, force: true })
@@ -539,6 +630,9 @@ const expected = [
   'route.readsThePublishedPort', 'route.restartsNothing', 'route.answersTheNewName', 'route.emptyTakesTheRoute',
   'redirect.answers308WithTheRequestUri', 'redirect.droppedWithTheLastOne',
   'path.sitsAheadOfTheWholeHost', 'path.prefixGoesToItsApp', 'path.restStaysWithTheHost', 'path.stopTakesEveryPrefix',
+  'startFirst.anExpandOverlaps', 'startFirst.answersOnAPortDockerPicked', 'startFirst.routeDialsTheNewPort', 'startFirst.leavesOneContainerUnderItsName',
+  'startFirst.bindsLoopbackOnly', 'startFirst.dropsNoRequest', 'startFirst.refusesASickRelease', 'startFirst.leavesTheOldOneAlone',
+  'startFirst.aContractSwapsStopFirst', 'startFirst.leavesNoVolumeBehind', 'startFirst.stopFirstTakesTheAppPortBack',
   'stop.removesTheContainer', 'stop.takesTheRoute', 'health.saysNotRunning', 'logs.sayNoSuchContainer',
   'route.unknownIs404',
   'volume.restoresIntoTheVolume', 'volume.refusesANonEmptyOne', 'volume.refusesAPathOffTheRoot',

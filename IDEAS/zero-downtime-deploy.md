@@ -172,16 +172,53 @@ failure after the switch and for the stop-first path.
 - **Q4 — `fli deploy` over SSH.** **Ruled: both paths, one owner, `FJS-D1840`.** `swapContainer` is a second owner of the
   swap. Lean: start-first does not ship on one path only, so Phase 3 gates the
   plan's done, and 3.1 makes the two swaps one.
-- **Q5 — Opt out.** Lean: nothing until two apps ask (`PHILOSOPHY.md`, the
-  paved road over the workaround). The verdict is the only switch.
+- **Q5 — Opt out.** **Ruled: the App opts in, off by default, `FJS-D1847`** (against the lean). Lean was: nothing until two apps ask (`PHILOSOPHY.md`, the
+  paved road over the workaround), the verdict the only switch. The verdict
+  reads only the schema, so a change in what a value means passes as an
+  expand; stop-first stays the default and the verdict still has the last word.
+- **FJS-D1841 — How does an App's one stop grace reach the container and Junction: where the number lives, its env var, and the formula for the three budgets?** `FJS-D1839` ruled the relation but not the
+  carrier (`FJS-3954`). Today Outpost's `STOP_GRACE_S = 10`
+  (`docker.js:207`, used at `:641` and `:714`) and `_module.md:654`'s
+  `docker stop -t 10` know nothing of Junction's fixed `http.drainTimeout` 5 s
+  (`app.ts:1853`), `shutdown.pluginTimeout` 5 s (`app.ts:1105`) and
+  `shutdown.timeout` 15 s. The 15 s is already past the 10 s grace, and
+  Caravan's 30 s drain is cut at 5 s. The red test asserts that a container
+  started with grace N gives Junction a whole-shutdown budget below N and a
+  plugin budget that a 30 s grace lets Caravan's drain finish in. Today it
+  gets 15 s and 5 s whatever N is.
+  - **A** — the release's runtime config holds the grace beside `logs`
+    (`runtimeFor`, `deployment-run.job.ts:354`; `deploy.*.logs` on the
+    `fli deploy` path). Outpost passes it once as
+    `docker run --stop-timeout N -e FRONTIER_STOP_GRACE=N`, and every
+    `docker stop -t` and `STOP_GRACE_S` goes. Junction's config resolution
+    (where `FRONTIER_PORT_BE` is read) derives the three budgets, for example
+    whole = N − 1 s and drain ≤ whole / 3 with the plugins taking the rest. An
+    explicit budget that does not fit is refused at boot. With no env var
+    (`fli dev`) Docker's 10 s is assumed.
+  - **B** — the app's own Junction config holds `shutdown.grace`. The
+    Dockerfile template writes it as an image label, and Outpost inspects the
+    image for `docker stop -t`. That gives two origins: a hand-written
+    Dockerfile drops the label silently, and changing the grace means a
+    rebuild.
+  - **C** — one framework default for every App (e.g. 30 s), with Junction
+    deriving from it and a per-App override later. Every stop-first release
+    waits it out, which is the option `FJS-D1839` was picked over.
+  - **Recommend A** — it is the `logs` and `FRONTIER_TRUST_PROXY` shape
+    already on both deploy paths, and the container carries its own grace, so
+    an operator's `docker stop` or a daemon shutdown waits the same number.
+    The margin, the drain share and the default grace (above 15 s) are the
+    build's to choose.
 
 ## What must stay true
 
 - Start-first runs only for `expand` or `unchanged`, and never for an App
   whose port is published past Caddy. **Outpost refuses `swap: 'start-first'`
   with `exposes_port`** itself, so a caller cannot send the combination.
+- `swap: 'start-first'` is a request, never a command (`FJS-D1846`): Outpost
+  runs it only on the release's own verdict, and answers the swap that ran.
 - An absent `swap`, an `unknown` verdict and a classifier that fails to run
-  each mean stop-first. A Basecamp test pins `unknown → stop-first`.
+  each mean stop-first. Outpost's `swapFor` test pins `unknown → stop-first`.
+- An App overlaps only when its owner turned the setting on (`FJS-D1847`).
 
 ---
 
@@ -232,29 +269,46 @@ second, each timed out at 2 s.
 - [ ] 0.5 The yuma number, by hand
   - 0.1's loop against a real App on yuma while Basecamp releases it. The
     release is the owner's to run.
-- [ ] 0.6 `FJS-3943`: `exec` before the last command in both deploy templates
+- [x] 0.6 `FJS-3943`: `exec` before the last command in both deploy templates
   - Start-first's drain and stop-first's rollback both assume the app hears
     SIGTERM.
+  - Both templates now end `&& exec bun …`. `docker stop` of the new CMD shape
+    took 0.29 s with exit 0 and the handler ran; the old shape took 10.3 s,
+    exit 137. An app generated earlier still has the old CMD, and
+    `fli deploy:doctor` warns on it.
 
 ## Phase 1 — Start-first swap in Outpost
 
 Goal: `docker.deploy` can start the new container before it stops the old one.
 Done when: `cd packages/outpost && bun run test` is green with tests for both swaps and each failure point.
 
-- [ ] 1.1 The second address, as Q1 rules
-- [ ] 1.2 `deploy({ swap: 'start-first' })`: run new → `untilHealthy` → route to new → stop old with drain → keep as `_replaced`
+- [x] 1.1 The second address, as Q1 rules
+  - The new container runs as `<name>_next` with `-p 127.0.0.1::<containerPort>`. `published()` now reads `NetworkSettings.Ports` first, because the requested binding has no host port, and falls back to `HostConfig.PortBindings` for a stopped container. `containersOf` reports `next`, and `live` never names a `_next`.
+- [x] 1.2 `deploy({ swap: 'start-first' })`: run new → `untilHealthy` → route to new → stop old with drain → remove it
   - `server.js`'s `/deploy` PATCHes the route before the swap and re-routes in its error handler. Start-first moves the route after health, so this step changes that sequence too, not only `docker.deploy`.
-- [ ] 1.3 Failure before the route moves removes the new container and leaves the old one untouched
-- [ ] 1.4 `stop-first` stays the default when `swap` is absent, so nothing changes until Phase 2 sends it
-- [ ] 1.5 Outpost refuses `swap: 'start-first'` with `exposes_port`
+  - Built as `overlap()` in `docker.js`; `/deploy` hands it `route(port)`. Once the route has moved, the old container is renamed `_replaced`, the new one takes the slug name, and then the old one is stopped with `-t 10` (`STOP_GRACE_S`, D1839) and removed. That last step is the same as stop-first's cleanup after health. Renaming before the stop means an Outpost that dies mid-drain leaves the routed container live.
+  - The step said to keep the old container as `_replaced`. It is removed instead: once the route has moved there is nothing to put back, and stop-first removes it at the same point.
+- [x] 1.3 Failure before the route moves removes the new container and leaves the old one untouched
+  - Covers three failures: docker refusing the run, a release that is not healthy, and Caddy refusing the route. On a route failure the route is also pointed back at the old port, in case a write landed before the error. A leftover `_next` is removed before either swap starts, because it holds the database open.
+- [x] 1.4 `stop-first` stays the default when `swap` is absent, so nothing changes until Phase 2 sends it
+  - The answer carries `swap`, which is what 2.3 records.
+- [x] 1.5 Outpost refuses `swap: 'start-first'` with `exposes_port`
+  - `checkSwap` also refuses start-first for an app with no hostname or path, since a port Docker picks is no address. It refuses an unknown `swap` too. `/deploy` asks it before the build.
+
+**Done 2026-11-03.** `bun run test` passes 369 tests: 7 new start-first cases, the route ordering checked against a fake Caddy. `bun run verify:docker` passes 66, with 8 `startFirst.*` assertions against real Docker and Caddy. A curl loop through Caddy across the swap saw only 200s. A sick release left the old container serving. A stop-first release afterward took the App's own port back. Under `FJS-D1840`, start-first must not ship on one path only, and Outpost's `docker.deploy` is the module 3.1 makes the one owner. So 2.2, the first caller to send `swap`, waits on 3.1.
 
 ## Phase 2 — The verdict picks the swap
 
 Goal: a Basecamp release overlaps when it is an expand, and says why when it is not.
 Done when: a Basecamp release of an expand runs start-first and a contract runs stop-first, each visible on the Deployment row.
 
-- [ ] 2.1 The verdict computed where Q2 rules; `unknown` and a classifier failure mapped to stop-first, pinned by a test
-- [ ] 2.2 `/deploy` carries `swap`. An `exposesPort` App is always stop-first
+- [x] 2.1 The verdict computed where Q2 rules; `unknown` and a classifier failure mapped to stop-first, pinned by a test
+  - Outpost's `/deploy` asks `docker.pivot` after the build when the caller sent `swap: 'start-first'`, and `swapFor` maps the verdict (`FJS-D1846`). The answer carries `swap` (what ran), `pivot` (the verdict, `null` when none was reached) and `swap_reason`.
+  - The "before" side is the live image's `db/`, carried into the new image's `litestone release --from=/fjs-before/schema.lite --json` by a Docker volume filled on `docker create`, one per call and removed after. A host directory was tried first: `docker cp` to it failed on a snap docker under `~/.cache`. The classifier runs with `--network none`, so an image without the CLI fails fast rather than downloading it.
+  - Stop-first with a reason: a contract, an unknown (with the baseline's note), a classifier that did not run, a live image that would not create, an App with nothing live. An app whose Litestone config names a schema other than `db/schema.lite` reads as unknown, so it is stop-first.
+  - `bun run test` passes 373 (4 new). `bun run verify:docker` passes 69, 3 new: whoami's binary on `oven/bun:1.4.4-slim` with this workspace's Litestone, built in the drive at v1 and v2. v1 → v2 overlapped as `expand`, v2 → v1 swapped stop-first as `contract`, and no `fjs-before-*` volume was left. The probe images from 0.2 gave `expand`, `contract` and `unchanged` the same way.
+- [ ] 2.2 `/deploy` carries `swap` for an App whose owner turned start-first on (`FJS-D1847`): an App setting, off by default, on the App's settings screen. An `exposesPort` App is always stop-first
+  - Waits on 3.1 (`FJS-D1840`): this is the step that ships start-first.
 - [ ] 2.3 The Deployment row records the swap that ran and, for stop-first, the reason
 
 ## Phase 3 — `fli deploy` over SSH

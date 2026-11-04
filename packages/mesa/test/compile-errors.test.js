@@ -574,3 +574,35 @@ describe('an attribute name holding a quote is refused', () => {
     expect(errors.join('\n')).not.toMatch(/quote/)
   })
 })
+
+// FJS-3926: a name a <script module> reads at load, declared nowhere, passed
+// every gate and blanked the route at runtime.
+describe('<script module> reads an unbound name at load', () => {
+  const wrap = (body, extra = '') => `<script module>\n${body}\n</script>\n${extra}<p>x</p>`
+
+  it('refuses a bare undeclared read by name', async () => {
+    const { errors } = await cx(wrap('export const matchGroups = {}\nconst resource = groups'))
+    expect(errors.join('\n')).toMatch(/'groups' is read when <script module> loads/)
+  })
+
+  it('leaves declared names, globals, typeof guards, function bodies and instance imports alone', async () => {
+    const { errors } = await cx(wrap(
+      [
+        'export const a = 1',
+        'const b = a + Math.max(1, 2)',
+        'const w = typeof window !== "undefined" ? window.location : null',
+        'const ls = typeof missing',
+        'const { c, d = b } = { c: 1 }',
+        'const o = { key: a, [b]: 2, shorthand: c }',
+        'export function f(x) { return x + notYetKnown }',
+        'const g = () => alsoLater',
+        'for (const i of [1]) { void i }',
+        'try { void a } catch (e) { void e }',
+        'export { b as renamed }',
+        'const fromInstance = Imported',
+      ].join('\n'),
+      '<script>import Imported from "./Imported.mesa"</script>\n'
+    ))
+    expect(errors.join('\n')).not.toMatch(/script module/)
+  })
+})

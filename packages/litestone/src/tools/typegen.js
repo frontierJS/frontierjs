@@ -251,7 +251,7 @@ export function generateTypeScript(schema, opts = {}) {
     lines.push(`export interface ${pascal(model.name)}Create {`)
     for (const field of model.fields) {
       if (field.type.kind === 'relation' || isSystemField(field)) continue
-      const spec = fieldCreateSpec(field, schema, audience, modelNames)
+      const spec = fieldCreateSpec(field, schema, audience, modelNames, model)
       if (!spec) continue
       if (includeComments && field.comments?.length) {
         if (field.comments.length === 1) {
@@ -870,7 +870,7 @@ function fileInputTs(field, mode) {
 
 const isSystemField = field => field.attributes.some(a => a.kind === 'system')
 
-function fieldCreateSpec(field, schema, audience, modelNames) {
+function fieldCreateSpec(field, schema, audience, modelNames, model) {
   const { name, type, attributes } = field
 
   if (type.kind === 'relation') return null
@@ -904,8 +904,14 @@ function fieldCreateSpec(field, schema, audience, modelNames) {
   // column carries no @default and would otherwise type as required
   const isMinted = attributes.some(a => a.kind === 'rank' || a.kind === 'sequence')
 
-  // Optional in create if: has @default, is nullable, is @id (auto-increment), is minted, or auth()-stamped
-  const optional = type.optional || isId || isMinted || (hasDefault && !isAuthDefault)
+  // The column a File's @digest names is filled from the bytes by the write
+  // pass (FJS-D1292); typed required, the documented write that leaves it out
+  // does not compile
+  const isDigestTarget = model.fields.some(f => f.attributes.some(a => a.kind === 'digest' && a.column === name))
+
+  // Optional in create if: has @default, is nullable, is @id (auto-increment), is minted,
+  // is a @digest target, or auth()-stamped
+  const optional = type.optional || isId || isMinted || isDigestTarget || (hasDefault && !isAuthDefault)
 
   return { name, tsType, optional, comment: null }
 }
@@ -954,7 +960,9 @@ function fieldToTs(field, schema, modelNames, nullable = true, input = false) {
     base = pascal(type.name)
   } else {
     switch (type.name) {
-      case 'Int':  base = 'number';  break
+      // `@big` reads back as digits (a double cannot hold it); a write takes
+      // digits or a safe-integer number, so a literal `42` still typechecks.
+      case 'Int':  base = attributes.some(a => a.kind === 'big') ? (input ? 'string | number' : 'string') : 'number';  break
       case 'Float':     base = 'number';  break
       case 'String':     base = 'string';  break
       case 'Boolean':  base = 'boolean'; break

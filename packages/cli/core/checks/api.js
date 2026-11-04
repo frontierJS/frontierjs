@@ -412,6 +412,49 @@ export const CHECKS = {
     return { findings }
   },
 
+  // createApp derives services/, jobs/, notifications/ and ../config from one
+  // root (FJS-D1080). A call that states none boots with every one of them
+  // unloaded and prints one log line saying so; a scaffold older than the
+  // ruling still passes `autoload` and `configPath`, which nothing reads now
+  // (FJS-3909, FJS-3297). Judged only when service or job files sit on disk
+  // and the call's options are a literal this rule can read to the end.
+  'app-root': ({ root }) => {
+    if (!isAppRoot(root)) return { skipped: 'not an app root' }
+    const files = scripts(root, 'api').filter(p => !/[\\/]test[\\/]/.test(relative(join(root, 'api'), p)))
+    if (!files.some(p => /\.(service|job)\.[cm]?[jt]s$/.test(basename(p)))) return { skipped: 'no service or job file on disk' }
+
+    const findings = []
+    let looked = 0
+    for (const path of files) {
+      const code = readCode(path)
+      for (const call of code.matchAll(/\bcreateApp\s*\(/g)) {
+        const open = call.index + call[0].length - 1
+        const span = spanFrom(code, open)
+        if (span && !span.trimStart().startsWith('{')) continue
+        looked++
+
+        // Keep only the top level of the options object: a `root:` inside
+        // http.static is a different key.
+        let depth = 0
+        const top = [...span].map(c => {
+          if ('{[('.includes(c)) { depth++; return depth <= 1 ? c : ' ' }
+          if ('}])'.includes(c)) { depth--; return depth < 1 ? c : ' ' }
+          return depth <= 1 ? c : ' '
+        }).join('')
+        if (/\.\.\./.test(top) || /[{,]\s*root\s*[:,}]/.test(top)) continue
+
+        findings.push({
+          file: path, line: lineOf(code, call.index),
+          message: `createApp states no root, so its services, jobs and config are never loaded and the boot ` +
+                   `log says "autoload none -- no root stated" once. Pass root: import.meta.url; autoload and ` +
+                   `configPath are read by nothing (FJS-D1080).`,
+        })
+      }
+    }
+    if (!looked) return { skipped: 'no createApp call with a literal options object under api/' }
+    return { findings }
+  },
+
   'service-module-db': ({ root }) => {
     const files = scripts(root, 'api').filter(p => /\.(service|job)\.[cm]?[jt]s$/.test(basename(p)))
     if (!files.length) return { skipped: 'no *.service.* or *.job.* under api/' }

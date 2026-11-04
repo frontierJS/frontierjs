@@ -17,7 +17,10 @@
 // column and an unlink of whatever a column says can reach the live database
 // beside it. A remote archive goes object first and row second, so a delete
 // the vendor refused leaves a row the next prune retries rather than an
-// object nothing lists.
+// object nothing lists. The object goes version by version (`FJS-D1809`): a
+// plain DELETE on a versioned bucket writes a marker and says yes while the
+// archive stays, and a version the bucket's Object Lock holds is kept with a
+// why starting `locked`, which is the lock working rather than a failure.
 //
 // ─── Whose object it is ───────────────────────────────────────────────────
 //
@@ -41,7 +44,7 @@
 import { existsSync, rmSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { keyUnder, sendFor }  from '../../providers/storage/index.ts'
-import { deleteObject, listObjects, putObject } from '../../providers/storage/s3.ts'
+import { deleteEveryVersion, listObjects, putObject } from '../../providers/storage/s3.ts'
 import type { ListedObject }  from '../../providers/storage/s3.ts'
 import { destinationFor, mintDownload } from '../../jobs/app-backup-run.job.ts'
 import { requireHubAppId } from '../host/host-machine.ts'
@@ -177,8 +180,13 @@ export async function deleteArchive(app: App, row: ArchiveRow): Promise<{ delete
     if (writerOf(row.location) && isForeign(row.location, await hubInstallId(sys)))
       return { kept: `${row.location} belongs to another Basecamp on this prefix; left in place` }
     if (!('conduit' in app)) return { kept: 'This process has no conduit' }
-    const { error } = await deleteObject(sendFor(app, dest.id), dest.bucket, row.location)
-    if (error) return { kept: `'${dest.name}' refused the delete (${error.kind}${error.code ? `, ${error.code}` : ''}): ${error.message}` }
+    const done = await deleteEveryVersion(sendFor(app, dest.id), dest.bucket, row.location)
+    if ('locked' in done)
+      return { kept: `locked: '${dest.name}' holds ${row.location} under its Object Lock${done.locked.until ? ` until ${done.locked.until}` : ''}` }
+    if ('error' in done) {
+      const { error } = done
+      return { kept: `'${dest.name}' refused the delete (${error.kind}${error.code ? `, ${error.code}` : ''}): ${error.message}` }
+    }
   }
   if (row.location) {
     const dir = localDir(app, row.location)

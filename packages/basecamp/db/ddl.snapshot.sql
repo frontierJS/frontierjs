@@ -590,6 +590,8 @@ CREATE TABLE IF NOT EXISTS "backup_destination" (
   "prefix" TEXT NOT NULL DEFAULT '',
   "secretId" TEXT,
   "lastTestAt" TEXT,
+  "lockDays" INTEGER,
+  "lockAttestedAt" TEXT,
   "createdBy" TEXT,
   "version" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),

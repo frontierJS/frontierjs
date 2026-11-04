@@ -752,7 +752,7 @@ The full hazard catalog for `@frontierjs/cli`, moved out of `CLAUDE.md`. The doz
   navigates to). `exact-numbers.md` linked from nothing was half of `FJS-560`.
 - **Some of the rules read source rather than the tree, and `readCode` is why
   they are usable.** `raw-route-param`, `ctx-params`, `set-auth-discarded`,
-  `call-header-declared`, `service-model`, `service-definition`, `app-entry`, `resource-model-miss`,
+  `call-header-declared`, `service-model`, `service-definition`, `app-entry`, `app-root`, `resource-model-miss`,
   `service-module-db`, `scheduler-dispatch`, `battery-raw-secret`, `gate-unreachable`,
   `transition-methods`, `commitment-swept` and `static-publish-db` match text — so they match the
   paragraphs that DESCRIBE those hazards too, and this repo's own `api/` files

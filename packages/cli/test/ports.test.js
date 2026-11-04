@@ -17,7 +17,7 @@ import { pathToFileURL } from 'url'
 import { appPorts, devPorts, scriptsRunBy, projectIdFor, toolingAppFor, PROJECTS, port, ENV, CAT,
          GLOBAL, GLOBAL_RANGE, isGlobalPort, isReservedToolingPort, guiPort, studioPort,
          apiContainerName, claimSession, getSessionStatus, releaseSession,
-         readLock, readsPortVar, decode, worktreeOf, portFor, composedSurfaces,
+         readLock, slotFor, readsPortVar, decode, worktreeOf, portFor, composedSurfaces,
          portStatus, parseDockerPorts, slotConflicts } from '../core/ports.js'
 
 // A surface is a directory at the app root (Invariant 3), so a fake tree is
@@ -272,6 +272,17 @@ describe('claimSession — each app its own dev slot', () => {
 
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'fli-ports-')); lockFile = join(dir, 'sessions.lock') })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  test('a root with a trailing slash finds the slot the bare path was given (FJS-3839)', async () => {
+    await claim('/x/a', { name: 'a' })
+    await claim('/x/b', { name: 'b' })
+    expect(slotFor('/x/b', { lockFile })).toBe(1)
+    expect(slotFor('/x/b/', { lockFile })).toBe(1)
+    expect(slotFor('/x/b/../b', { lockFile })).toBe(1)
+    const again = await claim('/x/b/', { name: 'b' })
+    expect(again.slot).toBe(1)
+    expect(Object.keys(readLock(lockFile)).sort()).toEqual(['/x/a', '/x/b'])
+  })
 
   test('two scaffolded apps run side by side', async () => {
     const a = await claim('/x/a', { name: 'a' })

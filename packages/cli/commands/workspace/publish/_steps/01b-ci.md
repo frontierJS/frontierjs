@@ -4,20 +4,9 @@ description: Grade the release commit in a checkout of it, before any tag exists
 ---
 
 <script>
-import { existsSync, readdirSync, mkdirSync, copyFileSync, rmSync, rmdirSync } from 'fs'
+import { existsSync, rmSync, rmdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { spawnSync } from 'child_process'
-
-// The run's record lives in the checkout and goes with it, so it is copied to
-// the tree `--status` reads before teardown. Only `ci-runs/`: `ci-last.txt` is
-// the working tree's last run, and a release run over it would misreport that.
-function keepRunRecord(tree, cwd) {
-  const from = join(tree, '.cache', 'ci-runs')
-  if (!existsSync(from)) return
-  const to = join(cwd, '.cache', 'ci-runs')
-  mkdirSync(to, { recursive: true })
-  for (const f of readdirSync(from)) copyFileSync(join(from, f), join(to, f))
-}
 </script>
 
 ```js
@@ -32,7 +21,7 @@ if (resume) { log.info('  CI: skipped -- these tags were written after a green r
 // release host alone (FJS-D1819).
 if (!flag.ci) { log.warn(`  CI: skipped (--no-ci) -- ${graded.map(g => g.sha.slice(0, 12)).join(', ')} is tagged ungraded`); return }
 
-const { withCheckout } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
+const { withCheckout, keepRunRecord } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
 // Beside the repo, as the pre-push hook's worktree is: a checkout under it sits
 // in `.fli-tmp`, a path biome.json ignores, and the lint phase then checks no
 // file and fails the gate (FJS-3830).
@@ -60,11 +49,11 @@ for (const { cwd, sha } of graded) {
   }
   log.info(`  CI: full run on ${sha.slice(0, 12)} -- a checkout of it, not the working tree`)
   const scratch = scratchFor(cwd)
-  let status
+  let status, kept
   try {
     status = withCheckout({ repo: cwd, sha, scratch }, tree => {
       const { status } = spawnSync('node', ['scripts/ci.mjs'], { cwd: tree, stdio: 'inherit' })
-      keepRunRecord(tree, cwd)
+      kept = keepRunRecord(tree, cwd)
       return status
     })
   } finally {
@@ -73,6 +62,8 @@ for (const { cwd, sha } of graded) {
   }
   if (status !== 0) {
     log.error(`  CI failed on ${sha.slice(0, 12)} -- nothing tagged, nothing pushed`)
+    // The run's own "detail:" line names .cache/ci-last.txt of a checkout that is gone.
+    if (kept) log.error(`  The failures in full: ${kept}`)
     log.error('  Commit the fix and run `fli ws:pub` again: the release commit is kept and tagged once a run is green')
     throw new Error(`CI failed on ${sha.slice(0, 12)}`)
   }

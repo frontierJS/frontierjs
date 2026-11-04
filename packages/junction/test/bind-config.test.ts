@@ -22,6 +22,7 @@ const running: Array<{ stop: () => Promise<void> }> = []
 const dirs:    string[] = []
 const envPort = process.env.PORT
 const envBroker = process.env.FRONTIER_PORT_BE
+const envHost = process.env.FRONTIER_HOSTNAME
 afterEach(async () => {
   while (running.length) await running.pop()!.stop().catch(() => {})
   while (dirs.length)    rmSync(dirs.pop()!, { recursive: true, force: true })
@@ -29,6 +30,8 @@ afterEach(async () => {
   else process.env.PORT = envPort
   if (envBroker === undefined) delete process.env.FRONTIER_PORT_BE
   else process.env.FRONTIER_PORT_BE = envBroker
+  if (envHost === undefined) delete process.env.FRONTIER_HOSTNAME
+  else process.env.FRONTIER_HOSTNAME = envHost
 })
 
 function freePort (): number {
@@ -95,6 +98,15 @@ describe('the bind is read after the config file', () => {
 
   test("junction.config.js's app.hostname is the address bound", async () => {
     const app = await boot({ app: { port: 0, hostname: '127.0.0.1' } })
+    expect(app.http._server?.hostname).toBe('127.0.0.1')
+  })
+
+  // A desktop sidecar must listen on this machine only; the default 0.0.0.0
+  // puts its API on every machine on the network (FJS-3957). The file states
+  // 0.0.0.0 here to show the env beats it.
+  test('FRONTIER_HOSTNAME is the address bound, and beats the file', async () => {
+    process.env.FRONTIER_HOSTNAME = '127.0.0.1'
+    const app = await boot({ app: { port: 0, hostname: '0.0.0.0' } })
     expect(app.http._server?.hostname).toBe('127.0.0.1')
   })
 

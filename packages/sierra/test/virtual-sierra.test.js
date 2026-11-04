@@ -36,9 +36,25 @@ describe('virtual:sierra emits the browser keys by value', () => {
     }, 'config/routes.js')
     expect(src).not.toContain('sierra.config')
     expect(src).not.toContain('sierraConfig')
-    expect(src).toContain('initJunction({ ...{"tokenKey":"tok"}, url: import.meta.env.FRONTIER_PUBLIC_API_URL || location.origin })')
+    expect(src).toContain('initJunction({ ...{"tokenKey":"tok"}, url: globalThis.__sierraApiUrl || import.meta.env.FRONTIER_PUBLIC_API_URL || location.origin })')
     expect(src).toContain('initAnalytics({"provider":"plausible","domain":"example.com"})')
     expect(src).toContain('initTheme({"default":"system"})')
+  })
+
+  // FJS-D1815: a desktop shell's API port is picked at launch, after the build.
+  // The emitted line is evaluated in a page stand-in so the ORDER is what is
+  // proved, not only the text: the runtime global, then the inlined env, then
+  // the page's own origin.
+  test('a runtime __sierraApiUrl wins over the inlined env and the origin', () => {
+    const src = _generateVirtualSierra({ target: 'spa', junction: { url: 'x', tokenKey: 'tok' } }, 'config/routes.js')
+    const line = src.split('\n').find(l => l.startsWith('initJunction('))
+    const urlExpr = line.match(/url: (.*) \}\)$/)[1]
+    const resolve = (g, env) => new Function('globalThis', 'import_meta_env', 'location',
+      `return ${urlExpr.replace('import.meta.env', 'import_meta_env')}`)(g, env, { origin: 'tauri://localhost' })
+    expect(resolve({ __sierraApiUrl: 'http://127.0.0.1:41234' }, { FRONTIER_PUBLIC_API_URL: 'http://localhost:8100' }))
+      .toBe('http://127.0.0.1:41234')
+    expect(resolve({}, { FRONTIER_PUBLIC_API_URL: 'http://localhost:8100' })).toBe('http://localhost:8100')
+    expect(resolve({}, {})).toBe('tauri://localhost')
   })
 
   test('a custom analytics provider is the one module it imports', () => {

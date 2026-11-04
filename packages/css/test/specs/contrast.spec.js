@@ -44,6 +44,9 @@ var TEXTUAL = [
   { name: '.btn.outlined', html: '<button class="btn outlined TONE">Save</button>' },
   { name: '.btn.link', html: '<button class="btn link TONE">Save</button>' },
   { name: '.btn.ghost', html: '<button class="btn ghost TONE">Save</button>' },
+  { name: '.btn.tinted', html: '<button class="btn tinted TONE">Save</button>' },
+  { name: '.pill.tinted', html: '<span class="pill tinted TONE">Due</span>' },
+  { name: '.badge.tinted', html: '<span class="badge tinted TONE">Paid</span>' },
 ];
 
 /*

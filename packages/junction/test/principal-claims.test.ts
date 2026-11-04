@@ -12,7 +12,7 @@
 import { describe, test, expect } from 'bun:test'
 
 import { createClient } from '../../litestone/src/index.js'
-import { createApp, createService, membershipClaim, applyClaims, MEMBERSHIP, sessionGateLevel } from '../index.ts'
+import { createApp, createService, membershipClaim, applyClaims, heldClaims, MEMBERSHIP, sessionGateLevel } from '../index.ts'
 import type { PrincipalResolver } from '../index.ts'
 import type { SessionContext } from '../src/auth/types.ts'
 import type { ServiceContext } from '../src/core/context.ts'
@@ -428,6 +428,30 @@ describe('applyClaims()', () => {
 
     const rows = await rowsOf(await app.service('docs').find({}, AS_U1))
     expect(rows.map(r => r.title).sort()).toEqual(['ws two', 'ws two b'])
+  })
+})
+
+// FJS-3833 — an app re-scoping one write reads the claims this request proved
+// through `heldClaims`, not through the key they happen to be stored under.
+describe('heldClaims()', () => {
+
+  test('names the claims the resolver proved for this call, and {} before any', async () => {
+    const db = await seeded()
+    const seen: Record<string, unknown>[] = []
+    const app = createApp({ db, principal: async () => ({ workspaceId: 1 }) })
+    app.services.register(createService({
+      name: 'docs',
+      async find(ctx: ServiceContext) {
+        seen.push(heldClaims(ctx))
+        applyClaims(ctx, db, { extra: 'x' })
+        seen.push(heldClaims(ctx))
+        return []
+      },
+    }))
+    await app.service('docs').find({}, AS_U1)
+    expect(seen[0]).toMatchObject({ workspaceId: 1 })
+    expect(seen[1]).toMatchObject({ workspaceId: 1, extra: 'x' })
+    expect(heldClaims({ locals: {} } as unknown as ServiceContext)).toEqual({})
   })
 })
 

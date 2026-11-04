@@ -93,6 +93,9 @@ const has        = (f, kind) => (f.attributes ?? []).some(a => a.kind === kind)
 // A scalar array column is NOT NULL DEFAULT '[]' (columnDefaultExpr), so a create that never names it succeeds.
 const hasDefault = f => f.type?.array === true || has(f, 'default') || has(f, 'generated') || has(f, 'sequence') || has(f, 'rank')
 const modelAttr  = (m, kind) => (m.attributes ?? []).find(a => a.kind === kind)
+// `@immutable(after: …)` and a bare `@immutable` on a sealing model both stay writable while the row is a draft.
+const frozenAtCreate = (f, model, sealing) =>
+  (f.attributes ?? []).some(a => a.kind === 'immutable' && !a.after) && !sealing.has(model.name)
 
 // A model whose rows may be WRITTEN on a device. `@@sync(read)` holds the table
 // there and writes nothing, so the rules about a held write have nothing to say.
@@ -282,10 +285,7 @@ export const RULES = [
           const fieldPolicy = (f.attributes ?? []).some(a =>
             a.kind === 'fieldAllow' && a.operations?.some(op => op === 'write' || op === 'all'))
           if (fieldPolicy) continue
-          // A caller cannot move it after create. Not `@immutable(after: …)`, and not bare
-          // `@immutable` on a sealing model: both stay writable while the row is a draft.
-          const frozen = (f.attributes ?? []).some(a => a.kind === 'immutable' && !a.after) && !sealing.has(model.name)
-          if (frozen || has(f, 'system')) continue
+          if (frozenAtCreate(f, model, sealing) || has(f, 'system')) continue
 
           const head = why
             ? `${model.name} is ${why === 'auth' ? 'the @@auth model' : 'where the tenancy claim is read from'}, is gated at update=${gate.update}, and carries '${f.name}'.`
@@ -1113,6 +1113,7 @@ export const RULES = [
               'and bypassed by a move.',
     run(schema) {
       const out = []
+      const sealing = sealingModels(schema)
       const readsOf = (node, acc = new Set()) => {
         if (!node || typeof node !== 'object') return acc
         if (Array.isArray(node)) { for (const n of node) readsOf(n, acc); return acc }
@@ -1132,9 +1133,11 @@ export const RULES = [
             const field = model.fields?.find(f => f.name === rel)
             const fks   = field?.attributes?.find(a => a.kind === 'relation')?.fields
             if (field?.type?.kind !== 'relation' || field.type.array || !fks?.length || seen.has(rel)) continue
-            // `@system` and `@immutable` are refused by name in an update payload, so no caller moves them.
-            const movable = fks.filter(name => !model.fields.find(f => f.name === name)?.attributes
-              ?.some(a => a.kind === 'system' || a.kind === 'immutable'))
+            // `@system` and a create-only `@immutable` are refused by name in an update payload.
+            const movable = fks.filter(name => {
+              const fk = model.fields.find(f => f.name === name)
+              return !(fk && (has(fk, 'system') || frozenAtCreate(fk, model, sealing)))
+            })
             if (!movable.length) continue
             seen.add(rel)
             out.push({

@@ -21,6 +21,48 @@ import { walk, safeRead }                                  from '../fs.js'
 
 export const CHECKS = {
 
+  // A Tauri tray is an Ayatana StatusNotifierItem, so the binary links
+  // libayatana-appindicator3 at load. A debug build runs on the machine that
+  // compiled it, where the library is installed for the build; a .deb carries no
+  // such guarantee, and a package that does not depend on the library installs
+  // clean and dies at launch on a machine without it. tauri.conf.json is the
+  // authority for what a bundle declares and Cargo.toml for whether the shell has
+  // a tray. Judged only with bundle.active on and a deb target: the scaffold's
+  // bundle is off, so nothing ships and nothing is graded.
+  'desktop-tray-depends': ({ root }) => {
+    const shell = join(root, 'desktop', 'shell')
+    const cargo = join(shell, 'Cargo.toml')
+    const confFile = join(shell, 'tauri.conf.json')
+    if (!existsSync(cargo) || !existsSync(confFile)) return { skipped: 'no desktop/shell' }
+
+    const toml = readFileSync(cargo, 'utf8')
+    const tray = toml.match(/^[^#\n]*"tray-icon"/m)
+    if (!tray) return { skipped: 'the shell has no tray' }
+
+    let conf
+    try { conf = JSON.parse(readFileSync(confFile, 'utf8')) }
+    catch { return { skipped: 'tauri.conf.json is not JSON' } }
+    const bundle = conf.bundle ?? {}
+    if (bundle.active !== true) return { skipped: 'bundle.active is off, nothing ships' }
+
+    const targets = [bundle.targets ?? 'all'].flat()
+    if (!targets.includes('all') && !targets.includes('deb')) return { skipped: 'no deb target' }
+
+    const depends = bundle.linux?.deb?.depends ?? []
+    if (depends.some(d => /^libayatana-appindicator3/.test(d))) return { findings: [] }
+
+    return {
+      findings: [{
+        file: confFile, line: 1,
+        message: `desktop/shell/Cargo.toml enables tauri's "tray-icon" and tauri.conf.json bundles a .deb ` +
+                 `without bundle.linux.deb.depends naming libayatana-appindicator3-1. The package installs ` +
+                 `clean and the binary fails to load on a machine without the library. The tray and ` +
+                 `tauri-plugin-single-instance also need a session D-Bus at run time, which a headless ` +
+                 `box or a bare env -i launch does not have unless XDG_RUNTIME_DIR is set (FJS-3966).`,
+      }],
+    }
+  },
+
   // Invariant 18. A Resource is a UI-realm noun and is written in the UI-realm
   // language. A `.js` here compiles and runs, which is why nothing else objects.
   'resource-dir-mesa': ({ root }) => {

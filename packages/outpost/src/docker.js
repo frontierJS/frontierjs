@@ -163,6 +163,35 @@ export function checkRunConfig(config = {}) {
     throw new Error(`command must be a list of arguments, each a string — got '${JSON.stringify(config.command)}'`)
 }
 
+/**
+ * The swap `deploy` would refuse, refused before the build. Start-first
+ * publishes the new container on a port Docker picks (`FJS-D1837`), so only
+ * a route can follow it: an app reached by its raw port, or one that declares
+ * that port open (`exposes_port`), would lose its address on every release.
+ */
+export function checkSwap({ swap = 'stop-first', loopback = false, exposesPort = false, port = null } = {}) {
+  if (swap !== 'stop-first' && swap !== 'start-first')
+    throw new Error(`swap is 'stop-first' or 'start-first' — got '${swap}'`)
+  if (swap !== 'start-first') return
+  if (exposesPort) throw new Error('a start-first swap moves the port, and this app declares its port open (exposes_port) — it swaps stop-first')
+  if (!loopback || !port) throw new Error('a start-first swap moves the port, so it needs a published port and a hostname or path Caddy routes to it')
+}
+
+/**
+ * The swap a start-first request runs, from the release's pivot (`FJS-D1838`).
+ * Only an expand or an unchanged schema leaves the old release able to serve
+ * beside the new one's migration; a contract, an unknown and a verdict that
+ * was never reached all swap stop-first, and say why.
+ */
+export function swapFor({ verdict = null, reason = null } = {}) {
+  if (verdict === 'expand' || verdict === 'unchanged') return { swap: 'start-first', reason: null }
+  if (verdict === 'contract')
+    return { swap: 'stop-first', reason: 'this release is a contract, so the live release cannot serve beside its migration — this deploy is the pivot' }
+  if (verdict === 'unknown')
+    return { swap: 'stop-first', reason: `the classifier cannot tell whether the live release survives this one, and unknown counts as a contract${reason ? ` — ${reason}` : ''}` }
+  return { swap: 'stop-first', reason: reason ?? 'no verdict was reached' }
+}
+
 function logArgs(logs) {
   if (logs === false) return []
   if (logs?.driver) {
@@ -187,6 +216,10 @@ const HEALTH = { attempts: 10, intervalMs: 3_000, settleMs: 5_000 }
  *  after `docker run` passes a process that crashes a second later, and
  *  `--restart unless-stopped` then hides the crash loop as "running". */
 export const SETTLE_MS = HEALTH.settleMs
+
+/** The one stop grace (`FJS-D1839`): Junction's drain and plugin budgets are
+ *  sized to finish inside it, and docker kills the old release when it runs out. */
+const STOP_GRACE_S = 10
 
 /** How long a SIGTERM waits for in-flight per-app work (`FJS-3865`). The unit
  *  sets no TimeoutStopSec, so systemd's default 90s is the hard kill; this
@@ -274,6 +307,11 @@ ${filesScript('/unpacked')}`
 const DRILL_MOUNT = '/fjs-drill'
 // Every row of every model read through the client; a large app is minutes.
 const VERIFY_TIMEOUT_MS = 1_800_000
+// Where the live release's `db/` is mounted for the classifier, beside the
+// new image's own.
+const BEFORE_MOUNT = '/fjs-before'
+// Two schemas parsed and compared; a release waits on it before its swap.
+const PIVOT_TIMEOUT_MS = 120_000
 
 // ─── backup ──────────────────────────────────────────────────────────────────
 // The data is mounted read-only and the container has no network, so the
@@ -474,26 +512,37 @@ export function createDocker({
    */
   async function published({ appId }) {
     const { live } = await containersOf(appId)
-    if (!live) return null
-    const result = await run(['docker', 'inspect', '--format', '{{json .HostConfig.PortBindings}}', live])
-    if (result.exitCode !== 0) {
-      if (/No such (object|container)/i.test(result.stderr ?? '')) return null
-      throw new Error(result.stderr?.trim() || `docker inspect exited ${result.exitCode}`)
+    return live ? portOf(live) : null
+  }
+
+  /** The port a container's binding holds. A start-first container asked for
+   *  `127.0.0.1::<port>`, so its requested binding has no host port and the
+   *  one Docker picked is on the running container; a stopped one has only
+   *  the request. */
+  async function portOf(container) {
+    for (const field of ['.NetworkSettings.Ports', '.HostConfig.PortBindings']) {
+      const result = await run(['docker', 'inspect', '--format', `{{json ${field}}}`, container])
+      if (result.exitCode !== 0) {
+        if (/No such (object|container)/i.test(result.stderr ?? '')) return null
+        throw new Error(result.stderr?.trim() || `docker inspect exited ${result.exitCode}`)
+      }
+      let bindings = null
+      try { bindings = JSON.parse(result.stdout) } catch {}
+      // `deploy` publishes one port at most, so the first binding is the app's.
+      const first = Object.values(bindings ?? {}).flat().find(b => b?.HostPort)
+      if (first) return { port: Number(first.HostPort), loopback: first.HostIp === '127.0.0.1' }
     }
-    let bindings = null
-    try { bindings = JSON.parse(result.stdout) } catch {}
-    // `deploy` publishes one port at most, so the first binding is the app's.
-    const first = Object.values(bindings ?? {}).flat()[0]
-    if (!first?.HostPort) return { port: null, loopback: false }
-    return { port: Number(first.HostPort), loopback: first.HostIp === '127.0.0.1' }
+    return { port: null, loopback: false }
   }
 
   /** Running, and — where the app names a path — answering it on the port
    *  this machine published. A process that is up and serving 502s is the
    *  release a running-only check calls healthy. `State.Running` is asked of
-   *  the daemon rather than inferred from the fact that `docker run` returned. */
-  async function healthCheck({ appId, port, path }) {
-    const { live: name } = await containersOf(appId).catch(() => ({ live: null }))
+   *  the daemon rather than inferred from the fact that `docker run` returned.
+   *  `name` asks of one container: a start-first swap's new one runs beside
+   *  the live one. */
+  async function healthCheck({ appId, name: asked, port, path }) {
+    const name = asked ?? (await containersOf(appId).catch(() => ({ live: null }))).live
     if (!name) return { healthy: false, reason: 'not running' }
     const result = await run(['docker', 'inspect', '--format', '{{.State.Running}}', name])
     if (!(result.exitCode === 0 && result.stdout.trim() === 'true')) return { healthy: false, reason: 'not running' }
@@ -526,9 +575,9 @@ export function createDocker({
   /** With no path to ask, healthy is still running after the settle window
    *  with the same `StartedAt` and `RestartCount` — a crash the restart policy
    *  brought back reads as running on any single look. */
-  async function settled({ appId }) {
+  async function settled({ appId, name }) {
     const settleMs = health.settleMs ?? SETTLE_MS
-    const { live } = await containersOf(appId)
+    const live = name ?? (await containersOf(appId)).live
     const look = async () => {
       if (!live) return null
       const r = await run(['docker', 'inspect', '--format', '{{.State.Running}} {{.State.StartedAt}} {{.RestartCount}}', live])
@@ -565,12 +614,15 @@ export function createDocker({
   // The live container is renamed `_replaced` and stopped rather than removed,
   // so a release that fails to start or to answer has something to go back to
   // (`FJS-1765`) — the same handle `fli deploy`'s `swapContainer` keeps.
-  // Stopped BEFORE the new one starts: a SQLite file takes one writer, and
-  // the new entrypoint opens it to migrate.
+  // Stop-first stops it BEFORE the new one starts, for a migration the old
+  // release cannot run beside. Start-first runs the new one as `_next` on a
+  // port Docker picks and stops the old one only once the route has moved,
+  // so a failure before then removes `_next` and the old one never stopped.
 
   /** The containers an App has on this machine, found by the `fjs.app` label
-   *  and told apart by the `_replaced` suffix: `live` is the one served,
-   *  `replaced` the set-aside one a swap keeps. `all` is every name, for the
+   *  and told apart by suffix: `live` is the one served, `replaced` the
+   *  set-aside one a swap keeps, `next` a start-first release not yet
+   *  routed. `all` is every name, for the
    *  step that removes them. Asked of the daemon rather than derived from the
    *  slugs, which a rename changes between releases. */
   async function containersOf(appId) {
@@ -579,8 +631,9 @@ export function createDocker({
     if (listed.exitCode !== 0) throw new Error(`docker ps failed (exit ${listed.exitCode}): ${(listed.stderr ?? '').trim()}`)
     const all = String(listed.stdout ?? '').split('\n').map(line => line.trim()).filter(Boolean)
     return {
-      live:     all.find(name => !name.endsWith('_replaced')) ?? null,
+      live:     all.find(name => !name.endsWith('_replaced') && !name.endsWith('_next')) ?? null,
       replaced: all.find(name => name.endsWith('_replaced')) ?? null,
+      next:     all.find(name => name.endsWith('_next')) ?? null,
       all,
     }
   }
@@ -590,7 +643,10 @@ export function createDocker({
    *  nothing live beside it is the last good container of a swap this process
    *  did not finish, so it is kept rather than cleared. */
   async function setAside(appId) {
-    const { live, replaced } = await containersOf(appId)
+    const { live, replaced, next } = await containersOf(appId)
+    // A `_next` is a start-first release this process did not finish, and it
+    // holds the database open.
+    if (next) await run(['docker', 'rm', '-f', next])
     const held = live ? { name: live, replaced: `${live}_replaced` }
       : replaced ? { name: replaced.slice(0, -'_replaced'.length), replaced }
       : null
@@ -602,7 +658,7 @@ export function createDocker({
       await docker(['rename', live, held.replaced])
     }
     try {
-      await docker(['stop', '-t', '10', held.replaced])
+      await docker(['stop', '-t', String(STOP_GRACE_S), held.replaced])
     } catch (err) {
       await run(['docker', 'rename', held.replaced, held.name])
       throw err
@@ -629,6 +685,58 @@ export function createDocker({
     return back.healthy
       ? fail('the previous container is serving again', true)
       : fail(`the previous container is back and is not healthy either — ${back.reason}`, true)
+  }
+
+  /** A start-first swap: the new release runs as `_next` beside the live one
+   *  and takes the route once it answers. The old container is untouched
+   *  until the route has moved, so every failure before that removes `_next`
+   *  and refuses the release with the old one still serving. */
+  async function overlap({ appId, name, argv, opts, chown, path, route }) {
+    const next = `${name}_next`
+    const { live, replaced, next: stale } = await containersOf(appId)
+    // A `_replaced` beside a live container is a finished swap's leftover; with
+    // nothing live it is the last good one, kept until this release answers.
+    const leftovers = [stale, live && replaced].filter(Boolean)
+    if (leftovers.length) await run(['docker', 'rm', '-f', ...new Set(leftovers)])
+
+    const refuse = async (why) => {
+      await run(['docker', 'rm', '-f', next])
+      return new Error(`the new container ${why}; ${live ? 'the previous container was not touched and is still serving' : 'there was no previous container'}`)
+    }
+    let containerId
+    try {
+      // The old release writes as this same uid, or as root, and can after the chown either way.
+      if (chown) await docker(chown)
+      containerId = await docker(argv, opts)
+    } catch (err) {
+      throw await refuse(`did not start — ${err.message}`)
+    }
+    const port = (await portOf(next).catch(() => null))?.port
+    if (!port) throw await refuse('published no port for the route to follow')
+    const fresh = await untilHealthy({ appId, name: next, port, path })
+    if (!fresh.healthy) throw await refuse(`started and is not healthy — ${fresh.reason}`)
+
+    try {
+      await route(port)
+    } catch (err) {
+      // A write that landed before the failure dials `_next`, which is about to go.
+      const old = live ? (await portOf(live).catch(() => null))?.port : null
+      if (old) await route(old).catch(() => {})
+      throw await refuse(`answered, and moving the route to it failed — ${err.message}`)
+    }
+
+    // Renamed before the stop: an Outpost that dies mid-drain leaves the routed
+    // container live and the old one as `_replaced`, which the next swap clears.
+    if (live) await docker(['rename', live, `${live}_replaced`])
+    await docker(['rename', next, name])
+    if (live) {
+      // Requests in flight finish inside the grace; new ones already reach the new release.
+      await run(['docker', 'stop', '-t', String(STOP_GRACE_S), `${live}_replaced`])
+      await run(['docker', 'rm', '-f', `${live}_replaced`])
+    } else if (replaced) {
+      await run(['docker', 'rm', '-f', replaced])
+    }
+    return { containerId, port }
   }
 
   /**
@@ -936,17 +1044,72 @@ export function createDocker({
       siteBuild({ appId, source, branch, commit, alias: null, token, accountId, app }),
 
     /**
+     * Whether the release in `image` can serve beside the live one: the new
+     * image's own `litestone release --json`, against the `db/` of the image
+     * the live container runs (`FJS-D1838`). That is the schema the database was
+     * migrated to, which a previous commit or a failed release is not. The
+     * classifier is the app's copy of Litestone, so Outpost depends on none,
+     * and the container has no network.
+     *
+     * Never throws: no live container, an image without the CLI or a copy
+     * that failed answers `verdict: null` with the reason, which `swapFor`
+     * turns into stop-first.
+     */
+    async pivot({ appId, image, digest }) {
+      const { live } = await containersOf(appId)
+      if (!live) return { verdict: null, reason: 'there is no live release to serve beside it' }
+      // A volume, not a host directory: a snap docker cannot write under a
+      // dotdir or /tmp, and Docker fills an EMPTY volume from the image at its
+      // mount point on create, so the old image needs no copy tool. Named once
+      // per call, because a volume left by a killed run is not empty and would
+      // answer that run's schema.
+      const volume = `fjs-before-${appId}-${randomBytes(4).toString('hex')}`
+      try {
+        const [liveImage, wd = ''] = (await docker(['inspect', '--format', '{{.Image}} {{.Config.WorkingDir}}', live])).split(' ')
+        const held = await docker(['create', '--network', 'none', '--mount', `type=volume,src=${volume},dst=${wd.replace(/\/+$/, '')}/db`,
+                                   '--entrypoint', 'true', liveImage])
+        await run(['docker', 'rm', '-f', held])
+        const ref = await reference(image, digest)
+        const result = await run([
+          'docker', 'run', '--rm', '--network', 'none', '--user', '0:0',
+          '--mount', `type=volume,src=${volume},dst=${BEFORE_MOUNT},readonly`,
+          '--entrypoint', 'bun', ref,
+          'x', 'litestone', 'release', `--from=${BEFORE_MOUNT}/schema.lite`, '--json',
+        ], { timeoutMs: PIVOT_TIMEOUT_MS })
+        const json = result.stdout.slice(result.stdout.indexOf('{'))
+        let report = null
+        try { report = json ? JSON.parse(json) : null } catch {}
+        if (typeof report?.verdict !== 'string') {
+          const said = stripVTControlCharacters(result.stderr || result.stdout || '').trim().split('\n').slice(-3).join(' ')
+          return { verdict: null, reason: `the classifier did not run in ${ref} (exit ${result.exitCode}): ${said}` }
+        }
+        // An unresolved baseline answers `unknown` with the cause in its note.
+        return { verdict: report.verdict, reason: report.baseline?.resolved === false ? report.baseline.note ?? null : null }
+      } catch (err) {
+        return { verdict: null, reason: `the live release's schema could not be read — ${err.message}` }
+      } finally {
+        await run(['docker', 'volume', 'rm', '-f', volume])
+      }
+    },
+
+    /**
      * Start the new container, and answer only once it is healthy. It takes
      * the name the slugs spell, and the `fjs.app` label is what every later
      * step finds it by, so a machine does not accumulate `app-1`, `app-2`; the
      * old one waits as `<its name>_replaced` until then, and comes back under
      * its own name if the new one does not start or does not answer.
+     *
+     * `swap: 'start-first'` keeps the old one serving instead, and calls
+     * `route(port)` once the new one answers; see `overlap`.
      */
-    async deploy({ appId, project, environment, appSlug, image, digest, config = {}, port, loopback = false, exposesPort = false }) {
+    async deploy({ appId, project, environment, appSlug, image, digest, config = {}, port, loopback = false, exposesPort = false, swap = 'stop-first', route = null }) {
       const name = containerName({ appId, project, environment, appSlug })
       checkRunConfig(config)
+      checkSwap({ swap, loopback, exposesPort, port })
+      const startFirst = swap === 'start-first'
+      if (startFirst && typeof route !== 'function') throw new Error('a start-first swap needs the route it moves once the new container answers')
 
-      const argv = ['run', '-d', '--name', name, '--restart', 'unless-stopped']
+      const argv = ['run', '-d', '--name', startFirst ? `${name}_next` : name, '--restart', 'unless-stopped']
       argv.push('--label', `${APP_LABEL}=${appId}`, '--label', `${APP_LABEL}.slug=${appSlug}`,
                 '--label', `fjs.project=${project}`, '--label', `fjs.env=${environment}`)
       // Docker's default json-file driver caps nothing, so an app that logs per
@@ -978,7 +1141,10 @@ export function createDocker({
       // An app Caddy fronts answers only through Caddy (`FJS-D565`): its port
       // on every interface is the same app over plain HTTP, around the
       // certificate. An app with no hostname keeps it, or nothing reaches it.
-      if (port) argv.push('-p', `${loopback ? '127.0.0.1:' : ''}${port}:${config.containerPort ?? port}`)
+      // Start-first leaves the host port to Docker (`FJS-D1837`): the old
+      // release still holds the App's own.
+      if (port) argv.push('-p', startFirst ? `127.0.0.1::${config.containerPort ?? port}`
+                                          : `${loopback ? '127.0.0.1:' : ''}${port}:${config.containerPort ?? port}`)
       // The host firewall drops a forwarded connection to any published port
       // not in its exposed set, and `syncExposed` builds that set from this
       // label, so the declaration lives and dies with the container.
@@ -1001,15 +1167,23 @@ export function createDocker({
       // does; ntfy's image does nothing without `serve`.
       argv.push(ref, ...config.command ?? [])
 
-      const held = await setAside(appId)
+      const chown = uid != null && data
+        ? ['run', '--rm', '--user', '0:0', '--entrypoint', 'chown', '--mount', `type=bind,src=${data},dst=${config.volumePath}`,
+           ref, '-R', `${uid}:${uid}`, config.volumePath]
+        : null
+      const opts = Object.keys(clientEnv).length ? { env: clientEnv } : undefined
       const path = config.healthCheck ?? null
+      if (startFirst) {
+        const started = await overlap({ appId, name, argv, opts, chown, path, route })
+        return { ...started, digest: digest ?? await digestOf(image), swap }
+      }
+
+      const held = await setAside(appId)
       let containerId
       try {
         // After the old container stops, which still writes as its own uid.
-        if (uid != null && data)
-          await docker(['run', '--rm', '--user', '0:0', '--entrypoint', 'chown', '--mount', `type=bind,src=${data},dst=${config.volumePath}`,
-                        ref, '-R', `${uid}:${uid}`, config.volumePath])
-        containerId = await docker(argv, Object.keys(clientEnv).length ? { env: clientEnv } : undefined)
+        if (chown) await docker(chown)
+        containerId = await docker(argv, opts)
       } catch (err) {
         // A port another process holds, a bad env value, an image the daemon
         // cannot resolve — docker's own refusals, which come after the old
@@ -1021,7 +1195,7 @@ export function createDocker({
         throw await putBack({ appId, name, held, path, why: `started and is not healthy — ${fresh.reason}` })
 
       if (held) await run(['docker', 'rm', '-f', held.replaced])
-      return { containerId, digest: digest ?? await digestOf(image) }
+      return { containerId, digest: digest ?? await digestOf(image), swap }
     },
 
     /**

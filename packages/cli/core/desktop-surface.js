@@ -48,9 +48,21 @@ import { frontmatterValue }                     from './compiler.js'
 import { portAnswering }                        from './probe.js'
 import { appPorts, describeProcess, pidsOnPort, processCwd } from './ports.js'
 import { writeApiOrigin }                      from './app-config.js'
+import { SHELL_ORIGINS }                       from './shell-origins.js'
 import { scaffoldPort, writeAbsent, viteScript, surfaceViteConfig, surfaceIndexHtml } from './scaffold/surface.js'
 
 // ─── names ────────────────────────────────────────────────────────────────────
+
+/**
+ * The app's name: package.json's `name`, else the directory's. A git worktree
+ * is named for its branch, so the directory alone would put the branch into
+ * the crate and the OS identifier.
+ */
+export function desktopAppName(root) {
+  const file = resolve(root, 'package.json')
+  const name = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')).name : null
+  return typeof name === 'string' && name ? name : basename(root)
+}
 
 /**
  * Every name the shell needs, from the app's own.
@@ -593,6 +605,26 @@ export async function offerDesktopSurface({ root, configFile, tty, exec, fli, lo
 // ─── the servers a window needs ───────────────────────────────────────────────
 
 /**
+ * The env an API started for a desktop window boots with: the port the bundle
+ * was built to call, and the origins its page calls from. A Tauri page is
+ * tauri://localhost on Linux and macOS and http://tauri.localhost on Windows,
+ * and the scaffold's cors '*' names neither for the socket upgrade, so without
+ * them the shell signs in over HTTP and its socket is a 403 (`FJS-3921`).
+ * `pages` adds an origin the window loads instead, as dev:desktop's dev server.
+ * An inherited FRONTIER_CORS_ORIGINS is kept, since it is the operator's.
+ *
+ * @param {number} port
+ * @param {{ pages?: string[], inherited?: string }} [opts]
+ */
+export function desktopApiEnv(port, { pages = [], inherited = process.env.FRONTIER_CORS_ORIGINS } = {}) {
+  const have = (inherited ?? '').split(',').map(o => o.trim()).filter(Boolean)
+  return {
+    FRONTIER_PORT_BE:      String(port),
+    FRONTIER_CORS_ORIGINS: [...new Set([...have, ...SHELL_ORIGINS.desktop, ...pages])].join(','),
+  }
+}
+
+/**
  * Use what answers on `port`, or start the app's `script` there and wait for
  * it. Returns the process it started, or `null` when it reused one.
  *
@@ -687,16 +719,21 @@ export function stopServer(child) {
  * `release` makes the entry open the release shell; without it a click opens
  * the debug one, whatever `desktop:run --release` built beside it.
  *
+ * `api` is the origin desktop.config.js names in the installing shell. A launcher
+ * starts with no FRONTIER_PUBLIC_API_URL, so the config would fall back to its
+ * scaffold port and start an API beside the one the binary was built to call: a
+ * second writer on the app's database (`FJS-3928`).
+ *
  * @returns {{ file: string, body: string } | null} null with no crate
  */
-export function desktopLauncher({ root, surface, bun, fli, path, dataHome, release = false }) {
+export function desktopLauncher({ root, surface, bun, fli, path, dataHome, release = false, api = null }) {
   const binary = desktopBinary(surface, { release, platform: 'linux' })
   if (!binary) return null
   const conf  = JSON.parse(readFileSync(resolve(surface, 'shell', 'tauri.conf.json'), 'utf8'))
   const icon  = conf.bundle?.icon?.find(i => i.endsWith('.png')) ?? conf.bundle?.icon?.[0]
   // A relative entry would resolve against whatever directory the launcher is in.
   const dirs  = [...new Set(path.split(':').filter(d => d.startsWith('/')))].join(':')
-  const exec  = ['env', `PATH=${dirs}`, bun, fli, 'desktop:run', '--no-build', ...(release ? ['--release'] : [])]
+  const exec  = ['env', `PATH=${dirs}`, ...(api ? [`FRONTIER_PUBLIC_API_URL=${api}`] : []), bun, fli, 'desktop:run', '--no-build', ...(release ? ['--release'] : [])]
     .map(execArg).join(' ')
   const lines = [
     '[Desktop Entry]',

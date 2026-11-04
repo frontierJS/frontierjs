@@ -66,8 +66,10 @@ ENV FRONTIER_PORT_BE=3000
 EXPOSE 3000
 
 # Migrate, then serve. A failed migration exits non-zero, the health check
-# fails and the release restores the previous container.
-CMD ["sh", "-c", "bun run db:migrate && bun api/index.ts"]
+# fails and the release restores the previous container. Without the exec, sh
+# stays PID 1 and never forwards SIGTERM: every stop waits out Docker's grace
+# and SIGKILLs the app mid-request, its drain never run (FJS-3943).
+CMD ["sh", "-c", "bun run db:migrate && exec bun api/index.ts"]
 `
 }
 

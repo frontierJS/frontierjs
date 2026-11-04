@@ -1003,7 +1003,7 @@ export async function cmdStudio(cfg) {
           // relations, `@computed` and `@transient` and nothing about
           // protection, so the default branch below — `asSystem()`, which is
           // what an operator who has chosen no principal gets — wrote `@secret`
-          // and `@guarded` values in plaintext into a downloadable CSV
+          // and `@guarded` values in plaintext into a downloadable file
           // (`FJS-976`).
           //
           // There is no way to ask for them back here, deliberately. A dump is
@@ -1021,11 +1021,14 @@ export async function cmdStudio(cfg) {
                 controller.enqueue(enc.encode(format === 'csv' ? cols.join(',') + '\n' : '[\n'))
                 while (true) {
                   const page = await tableDb[accessor].findManyCursor({ cursor, limit: 1000, where, withDeleted, orderBy: ob })
+                  // Both formats write `cols` and nothing else: serializing the
+                  // whole row put every withheld value in the JSON file (`FJS-3939`).
                   for (const row of page.items) {
                     if (format === 'csv') {
                       controller.enqueue(enc.encode(cols.map(c => csvCell(row[c])).join(',') + '\n'))
                     } else {
-                      controller.enqueue(enc.encode((first ? '' : ',\n') + '  ' + JSON.stringify(row)))
+                      const out = Object.fromEntries(cols.map(c => [c, row[c]]))
+                      controller.enqueue(enc.encode((first ? '' : ',\n') + '  ' + JSON.stringify(out)))
                       first = false
                     }
                   }

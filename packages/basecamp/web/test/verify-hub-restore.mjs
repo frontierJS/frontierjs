@@ -12,6 +12,8 @@
 // both replicas: the App's card and `/hub/backups/`'s card, each graded against
 // the BUCKET's own listing (`IDEAS/backups.md` 4.8). An App archive put in the
 // bucket after A's backup comes back as a found row the hub hashed (4.9).
+// A second bucket under a one-day compliance Object Lock takes two archives,
+// and discarding the older comes back kept as locked (`FJS-D1809`).
 //
 // **bun + docker + Chrome + litestream v0.5 or newer.** `LITESTREAM_BIN` names
 // the binary when the one on PATH is older; `litestone`'s `litestreamInstall`
@@ -52,6 +54,7 @@ const S3        = `http://127.0.0.1:${S3_PORT}`
 const S3_IMAGE  = 'chrislusf/seaweedfs:4.48'
 const CONTAINER = `fjs-verify-hub-restore-s3-${S3_PORT}`
 const BUCKET    = 'hub-restore'
+const LOCKED    = 'hub-locked'
 const S3_KEY    = 'drive:drive'
 const SCRATCH   = tempDir('basecamp-hub-restore-')
 const KEY       = randomBytes(32).toString('hex')
@@ -256,16 +259,18 @@ try {
   vol.close()
   const live = new Database(join(hubA, 'basecamp.db'), { readonly: true })
   live.run('VACUUM INTO ?', [join(hubVol, 'basecamp.db')])
+  // The reconcile reads `<prefix>/hub-<installId>/` (FJS-D1797), so that is where the replica goes.
+  const hubKey = `hubrep/hub-${live.query('SELECT "installId" FROM hub_config WHERE id = ?').get('hub').installId}`
   live.close()
   const replica = (path) => ({ bucket: BUCKET, path, endpoint: S3, region: 'us-east-1', accessKeyId: 'drive', secretAccessKey: 'drive' })
   const yaml = buildYaml([
     { dir: appVol, pattern: '*.db', metaDir: join(SCRATCH, 'meta', target.id), replica: replica(`apps/${target.id}`) },
-    { dir: hubVol, pattern: '*.db', metaDir: join(SCRATCH, 'meta', '_host'),    replica: replica('hubrep/basecamp') },
+    { dir: hubVol, pattern: '*.db', metaDir: join(SCRATCH, 'meta', '_host'),    replica: replica(hubKey) },
   ], { syncInterval: '1s' })
   writeFileSync(join(SCRATCH, 'litestream.yml'), yaml)
   const streamer = start(['replicate', '-config', join(SCRATCH, 'litestream.yml')], process.env, { bin: litestream, cwd: SCRATCH })
   const streamed = await until(async () =>
-    (await bucketObjects(`apps/${target.id}/main.db/`)).length > 0 && (await bucketObjects('hubrep/basecamp/basecamp.db/')).length > 0, 30_000)
+    (await bucketObjects(`apps/${target.id}/main.db/`)).length > 0 && (await bucketObjects(`${hubKey}/basecamp.db/`)).length > 0, 30_000)
   check('Litestream wrote both replicas to the bucket', streamed, streamer.out.slice(-1500))
   await stop(streamer)
 
@@ -273,7 +278,7 @@ try {
   // as the runbook spells it, read back table by table.
   const q = new URLSearchParams({ endpoint: S3, region: 'us-east-1', 'force-path-style': 'true' })
   const pulled = spawnSync(litestream, ['restore', '-integrity-check', 'quick', '-o', join(SCRATCH, 'from-replica.db'),
-    `s3://${BUCKET}/hubrep/basecamp/basecamp.db?${q}`],
+    `s3://${BUCKET}/${hubKey}/basecamp.db?${q}`],
     { encoding: 'utf8', env: { ...process.env, LITESTREAM_ACCESS_KEY_ID: 'drive', LITESTREAM_SECRET_ACCESS_KEY: 'drive' } })
   const counts = file => {
     const d = new Database(file, { readonly: true })
@@ -294,6 +299,35 @@ try {
   check('backup:run finishes success with no error', row?.status === 'success' && !row?.error, JSON.stringify(row))
   check('…and the bucket holds the archive it names', archived.length === 1 && archived[0].key === row?.location,
     JSON.stringify({ archived, location: row?.location }))
+
+  // FJS-D1809: a bucket under a compliance-mode Object Lock refuses the hub's
+  // own key a delete inside N days, and the hub records the archive kept.
+  const lockMade = await fetch(`${S3}/${LOCKED}`, { method: 'PUT', headers: { 'x-amz-bucket-object-lock-enabled': 'true' } })
+  const lockBody = '<ObjectLockConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><ObjectLockEnabled>Enabled</ObjectLockEnabled>'
+    + '<Rule><DefaultRetention><Mode>COMPLIANCE</Mode><Days>1</Days></DefaultRetention></Rule></ObjectLockConfiguration>'
+  const lockSet  = await fetch(`${S3}/${LOCKED}?object-lock=`, { method: 'PUT', body: lockBody,
+    headers: { 'content-md5': createHash('md5').update(lockBody).digest('base64') } })
+  if (!lockMade.ok || !lockSet.ok) throw new Error(`the locked bucket: create ${lockMade.status}, lock ${lockSet.status}`)
+  const lockedDest = (await call('/backup-destinations', { body: {
+    name: 'Locked archives', endpoint: S3, region: 'us-east-1', bucket: LOCKED, prefix: 'hub', secret: S3_KEY } })).body
+  const lockTest = await call(`/backup-destinations/${lockedDest?.id}`, { serviceMethod: 'test', body: {} })
+  check('a destination test reads the bucket\'s one-day compliance lock', lockTest.body?.lockDays === 1, JSON.stringify(lockTest))
+  const takeTo = async (destinationId) => {
+    const taken = (await call('/hubBackups', { serviceMethod: 'take', body: { destinationId } })).body
+    let r = null
+    await until(async () => ['success', 'failed', 'timeout'].includes((r = (await call(`/hubBackups/${taken?.id}`)).body)?.status), 60_000)
+    return r
+  }
+  const older = await takeTo(lockedDest.id), newer = await takeTo(lockedDest.id)
+  check('two backups land in the locked bucket', older?.status === 'success' && newer?.status === 'success' && !older?.error,
+    JSON.stringify({ older, newer }))
+  const discarded = await call(`/hubBackups/${older?.id}`, { serviceMethod: 'discard', body: {} })
+  const stillThere = (await fetch(`${S3}/${LOCKED}?versions=&prefix=${encodeURIComponent(older?.location ?? '')}`).then(r => r.text()))
+  check('a fresh archive\'s delete comes back kept as locked, its row and its version both still there',
+    discarded.status === 409 && /kept: locked:/.test(discarded.body?.message ?? '')
+      && (await call(`/hubBackups/${older?.id}`)).body?.id === older?.id
+      && stillThere.includes(`<Key>${older?.location}</Key>`) && !stillThere.includes('<DeleteMarker>'),
+    JSON.stringify({ discarded, stillThere: stillThere.slice(0, 600) }))
   await stop(api)
 
   // An App archive taken after A's backup, so no row B restores names it. The
@@ -363,7 +397,7 @@ try {
     !!found?.replicaFoundAt && found?.replicaSyncedAt === appNewest, JSON.stringify({ found: found?.replicaSyncedAt, appNewest }) + '\n' +
       api.out.split('\n').filter(l => /reconcile|replica|restore/i.test(l)).slice(-12).join('\n'))
   const hub = (await call('/hub-config', { serviceMethod: 'current', body: {} })).body
-  const hubNewest = newest(await bucketObjects('hubrep/basecamp/'))
+  const hubNewest = newest(await bucketObjects(`${hubKey}/`))
   check('…and Basecamp\'s own replica on the hub App', !!hub?.app?.replicaFoundAt && hub?.app?.replicaSyncedAt === hubNewest,
     JSON.stringify({ hub: hub?.app?.replicaSyncedAt, hubNewest }))
   let foundArchive = null

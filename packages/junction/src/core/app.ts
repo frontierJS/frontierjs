@@ -1082,6 +1082,10 @@ export function createApp(opts: AppOptions = {}): App {
   // about a router for a caller whose mistake was calling start() again.
   let _everStarted = false
   let _signalHandler: (() => void) | null = null
+  // Set when a step of stop() gave up on work still running -- a plugin past
+  // its budget, a request past the drain. The signal handler exits 1 on it
+  // (`FJS-3944`).
+  let _shutdownCutShort = false
   let _rejectionHandler: ((reason: unknown) => void) | null = null
   let _exceptionHandler: ((err: Error) => void) | null = null
 
@@ -1105,8 +1109,11 @@ export function createApp(opts: AppOptions = {}): App {
         await withDeadline(
           Promise.resolve(plugin.shutdown(app)),
           pluginMs,
-          () => logger.error(
-            `plugin '${plugin.name}' shutdown did not finish within ${pluginMs}ms — skipped`),
+          () => {
+            _shutdownCutShort = true
+            logger.error(
+              `plugin '${plugin.name}' shutdown did not finish within ${pluginMs}ms — skipped`)
+          },
         )
       } catch (err) {
         logger.error(`plugin '${plugin.name}' shutdown failed`, err as Error)
@@ -1829,6 +1836,7 @@ export function createApp(opts: AppOptions = {}): App {
       // of work to finish — the whole window this flag exists for (`FJS-693`).
       app.draining = true
       http.setDraining?.(true)
+      _shutdownCutShort = false
 
       events.emit('app:shutdown')
 
@@ -1842,7 +1850,10 @@ export function createApp(opts: AppOptions = {}): App {
       // because Bun's graceful stop never resolves once a socket has been
       // upgraded. `http.stop(drainMs)` says goodbye to each socket, waits for
       // what is genuinely outstanding, and forces the server down (`FJS-460`).
-      await http.stop(config.http?.drainTimeout ?? 5_000)
+      if (!await http.stop(config.http?.drainTimeout ?? 5_000)) {
+        _shutdownCutShort = true
+        logger.error('[App] requests or sockets still open at the drain deadline were cut off')
+      }
 
       // Shutdown plugins in reverse order, each bounded.
       //
@@ -2270,7 +2281,9 @@ export function createApp(opts: AppOptions = {}): App {
         // node exited **0** in 54ms with the queue, the outbox and the database
         // close all skipped and *Shutdown complete* never printed. Zero is a
         // clean stop to an orchestrator, so nothing anywhere reported it
-        // (`FJS-693`). Past the deadline this exits 1, which is a statement.
+        // (`FJS-693`). Past the deadline this exits 1, which is a statement --
+        // and so does a stop that finished only by abandoning a plugin or a
+        // request at its own budget (`FJS-3944`).
         _signalHandler = () => {
           const ms = config.shutdown?.timeout ?? 15_000
           let timedOut = false
@@ -2278,7 +2291,7 @@ export function createApp(opts: AppOptions = {}): App {
             timedOut = true
             logger.error(`[App] Shutdown did not finish within ${ms}ms — exiting 1 with steps outstanding`)
           })
-            .then(() => process.exit(timedOut ? 1 : 0))
+            .then(() => process.exit(timedOut || _shutdownCutShort ? 1 : 0))
             .catch(() => process.exit(1))
         }
         process.on('SIGTERM', _signalHandler)
@@ -2475,10 +2488,15 @@ function applyConfiguredCors(app: App, config: AppConfig): void {
  * what the deploy would add, and a declared predicate is asked after the derived
  * list, because a predicate admits only what its app knows of and the deploy's
  * web domain is not that. csrf gains them only where it has a list of its own;
- * without one it borrows cors', which already carries them.
+ * without one it borrows cors', which carries them — except beside a '*', which
+ * csrf does not borrow, so `applyConfiguredMiddleware` hands it `derived` itself
+ * (`FJS-3921`).
  */
-function withDerivedOrigins(config: AppConfig, env: string | undefined): AppConfig {
-  const derived = (env ?? '').split(',').map(o => o.trim()).filter(Boolean)
+function derivedOrigins(env: string | undefined): string[] {
+  return (env ?? '').split(',').map(o => o.trim()).filter(Boolean)
+}
+
+function withDerivedOrigins(config: AppConfig, derived: string[]): AppConfig {
   if (!derived.length) return config
 
   const http = (config.http ?? {}) as Record<string, unknown>
@@ -2520,7 +2538,8 @@ function withDerivedOrigins(config: AppConfig, env: string | undefined): AppConf
  * per request, and a CSRF guard nobody asked for refuses live traffic.
  */
 function applyConfiguredMiddleware(app: App, written: AppConfig): void {
-  const config = withDerivedOrigins(written, process.env.FRONTIER_CORS_ORIGINS)
+  const derived = derivedOrigins(process.env.FRONTIER_CORS_ORIGINS)
+  const config  = withDerivedOrigins(written, derived)
   const http = (config.http ?? {}) as Record<string, unknown>
 
   if (http.helmet !== false) helmet(typeof http.helmet === 'object' ? http.helmet as HelmetOptions : {})(app)
@@ -2538,8 +2557,14 @@ function applyConfiguredMiddleware(app: App, written: AppConfig): void {
   // Borrowed without it, or a dev app with an open cors list cannot start.
   // A predicate is borrowed whole: it is how an app admits origins it learns at
   // run time (basecamp's draft previews), and a list cannot hold those.
+  // The derived origins are joined back in because a '*' kept them out of the
+  // cors list: they are origins fli NAMED (a deploy's web domain, a desktop
+  // shell's scheme), and without them a socket from the shell is a 403 under the
+  // scaffold's cors '*' (`FJS-3921`). The Set drops the copies a list already has.
   const corsList = (http.cors as Record<string, unknown> | undefined)?.origins as string[] | ((o: string) => boolean) | undefined
-  const corsOrigins = typeof corsList === 'function' ? corsList : corsList?.filter(o => o !== '*')
+  const corsOrigins = typeof corsList === 'function'
+    ? corsList
+    : corsList || derived.length ? [...new Set([...(corsList ?? []).filter(o => o !== '*'), ...derived])] : undefined
   const origins = (declared.origins as string[] | undefined) ?? corsOrigins
   const named = typeof origins === 'function' || !!origins?.length
 

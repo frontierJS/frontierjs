@@ -405,6 +405,7 @@ export function initJunction(config) {
   configureFetch({
     client,
     baseUrl: config.baseUrl,
+    apiPrefix: config.apiPrefix,
   })
 
   // ── Connection state ─────────────────────────────────────────────────────

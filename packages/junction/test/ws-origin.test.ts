@@ -89,3 +89,27 @@ describe('an upgrade with an origin list', () => {
     expect(await upgrade(app.http.port, 'https://other.example')).toBe('refused')
   })
 })
+
+// FJS-3921 — the scaffold declares cors '*', and a wrapped desktop shell's page
+// is tauri://localhost (http://tauri.localhost on Windows). The '*' admits it
+// over HTTP, and the origins fli hands the API as FRONTIER_CORS_ORIGINS have to
+// reach the socket too, or the shell signs in and its socket is a 403.
+describe('derived origins beside a cors wildcard', () => {
+  async function bootDerived(env: string, http: Record<string, unknown>) {
+    process.env.FRONTIER_CORS_ORIGINS = env
+    try { return await boot(http) } finally { delete process.env.FRONTIER_CORS_ORIGINS }
+  }
+
+  test('each shell spelling opens a socket and an unlisted origin is still refused', async () => {
+    const app = await bootDerived('tauri://localhost,http://tauri.localhost', { cors: { origins: ['*'] } })
+    expect(await upgrade(app.http.port, 'tauri://localhost')).toBe('connected')
+    expect(await upgrade(app.http.port, 'http://tauri.localhost')).toBe('connected')
+    expect(await upgrade(app.http.port, 'https://evil.example')).toBe('refused')
+    expect(await upgrade(app.http.port, `http://localhost:${app.http.port}`)).toBe('connected')
+  })
+
+  test('with none derived, a wildcard still names no socket origin', async () => {
+    const app = await boot({ cors: { origins: ['*'] } })
+    expect(await upgrade(app.http.port, 'tauri://localhost')).toBe('refused')
+  })
+})

@@ -67,7 +67,7 @@ export function reapTempDirs(/** @type {string | string[]} */ prefixes, { olderT
 /** A fresh temp directory, with the previous runs' already swept. The prefix is
  *  what the sweep matches on, so it must identify the harness and nothing
  *  else — a bare `test-` would reap a stranger's directory. */
-export function tempDir(/** @type {string} */ prefix, /** @type {any} */ opts) {
+export function tempDir(/** @type {string} */ prefix, /** @type {{ olderThanMs?: number, root?: string, force?: boolean }} */ opts = {}) {
   if (!prefix || prefix.length < 4)
     throw new Error(`tempDir: refusing the prefix ${JSON.stringify(prefix)} — it must identify one harness`)
   reapTempDirs(prefix, opts)

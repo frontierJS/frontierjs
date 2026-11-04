@@ -26,7 +26,9 @@
 //   • Everything is `:memory:`, so this measures the framework and not the disk.
 //     A WAL commit costs nothing here; speed-and-footprint.md has that number.
 
+import { installEngineCounter } from './engine-count.mjs'
 import { createClient } from '../src/index.js'
+import { drainPendingLogs } from '../src/core/audit-log.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -41,8 +43,14 @@ const READS   = 1000
 const SEEDED  = 5000
 const COUNTED = 20
 
-const tick = () => new Promise(r => setImmediate(r))
+// One macrotask starts the trail's write; the drain waits for it to land, or a
+// write still in flight is charged to the next phase's timing and statement count.
+const tick = async () => { await new Promise(r => setImmediate(r)); await drainPendingLogs() }
 const who  = { id: 1, workspaceId: 1 }
+
+// statements/op is counted at the engine: $tapQuery never sees the @sequence
+// counter, the trail's writes or BEGIN/COMMIT (FJS-3822).
+const engine = installEngineCounter()
 
 // ─── schemas ──────────────────────────────────────────────────────────────────
 
@@ -119,7 +127,11 @@ const CASES = [
     op: (t, i) => t.item.create({ data: { workspaceId: 1, ownerId: 1, title: `t${i}` } }) },
   { name: 'create/version',     floor: 'create/bare',  schema: item({ extra: 'version Int @version' }),
     op: (t, i) => t.item.create({ data: { workspaceId: 1, ownerId: 1, title: `t${i}` } }) },
-  { name: 'create/log-audit',   floor: 'create/bare',  schema: item({ head: AUDIT_DB, rules: '@@trail(audit)' }),
+  // A schema with a trail database declares access, so an undeclared model is SYSTEM-only
+  // and `$setAuth` refuses it (FJS-3962). Its floor opens the model the same way.
+  { name: 'create/gate-open',   floor: 'create/bare',  schema: item({ head: AUDIT_DB, rules: '@@gate(0)' }),
+    op: (t, i) => t.item.create({ data: { workspaceId: 1, ownerId: 1, title: `t${i}` } }) },
+  { name: 'create/log-audit',   floor: 'create/gate-open', schema: item({ head: AUDIT_DB, rules: '@@gate(0)\n  @@trail(audit)' }),
     op: (t, i) => t.item.create({ data: { workspaceId: 1, ownerId: 1, title: `t${i}` } }) },
   { name: 'create/unique',      floor: 'create/bare',  schema: item({ extra: 'email String @unique' }),
     op: (t, i) => t.item.create({ data: { workspaceId: 1, ownerId: 1, title: `t${i}`, email: `e${i}@x.test` } }) },
@@ -206,15 +218,14 @@ async function measure(c) {
   await tick()
   const us = (performance.now() - t0) / n * 1000
 
-  let statements = 0
-  const untap = db.$tapQuery(() => { statements++ })
   let rows = 0
-  for (let i = n; i < n + COUNTED; i++) {
-    const r = await c.op(t, i, state)
-    if (Array.isArray(r)) rows += r.length
-  }
-  await tick()
-  untap()
+  const statements = await engine.during(async () => {
+    for (let i = n; i < n + COUNTED; i++) {
+      const r = await c.op(t, i, state)
+      if (Array.isArray(r)) rows += r.length
+    }
+    await tick()
+  })
   db.$close()
   return { us, statements: statements / COUNTED, rows: c.reads ? rows / COUNTED : null }
 }

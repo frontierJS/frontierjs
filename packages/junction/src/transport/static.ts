@@ -121,10 +121,31 @@ export interface StaticOptions {
   spa?: boolean
 }
 
+/**
+ * What a route knows about the file it names, which the file system does not.
+ *
+ * A stored object has its own identity: the row's content hash is its etag, the
+ * mime the uploader declared is its type, and who may cache it is the route's
+ * policy. Left unstated the handler derives all three from the file (mtime,
+ * extension, public cache), which is right for a bundle and wrong for a private
+ * upload. Range, 304, nosniff and disposition run on whichever identity is in
+ * force, so a route states three facts and writes no byte arithmetic.
+ */
+export interface ServedFile {
+  /** The full validator, quotes included. Not `StaticOptions.etag`, which salts a derived one. */
+  etag?:         string
+  /** The Content-Type, used as given: it still meets nosniff and, on an untrusted root, the inline allow-list. */
+  type?:         string
+  cacheControl?: string
+  /** An attachment under this name; `true` names it after the file. */
+  download?:     string | true
+}
+
 export async function serveStatic(
   req:        Request,
   urlPath:    string,
-  opts:       StaticOptions
+  opts:       StaticOptions,
+  served:     ServedFile = {}
 ): Promise<Response | null> {
 
   const {
@@ -165,19 +186,20 @@ export async function serveStatic(
   if (!await withinRoot(root, filePath, allowOutside)) return null
 
   const ext      = extname(filePath).slice(1).toLowerCase()
-  const mimeType = contentTypeFor(ext, { charset: true })
+  const mimeType = served.type ?? contentTypeFor(ext, { charset: true })
   const size     = file.size
   const mtime    = new Date(file.lastModified)
   const mtimeStr = mtime.toUTCString()
 
   // ── ETag + Last-Modified cache check ────────────────────────────────
-  const fileEtag = `${ETAG_PREFIX}${etag}${file.lastModified}"` 
+  const fileEtag     = served.etag ?? `${ETAG_PREFIX}${etag}${file.lastModified}"`
+  const cacheControl = served.cacheControl ?? buildCacheControl(safe, ext, maxAge)
 
   const ifNoneMatch    = req.headers.get('if-none-match')
   const ifModifiedSince = req.headers.get('if-modified-since')
 
   if (
-    (ifNoneMatch && ifNoneMatch === fileEtag) ||
+    (ifNoneMatch && etagMatches(ifNoneMatch, fileEtag)) ||
     (!ifNoneMatch && ifModifiedSince && new Date(ifModifiedSince) >= mtime)
   ) {
     return new Response(null, {
@@ -185,7 +207,7 @@ export async function serveStatic(
       headers: {
         'etag':          fileEtag,
         'last-modified': mtimeStr,
-        'cache-control': buildCacheControl(safe, ext, maxAge)
+        'cache-control': cacheControl
       }
     })
   }
@@ -193,12 +215,14 @@ export async function serveStatic(
   // Computed once and shared by both responses: a 206 declares the same type as
   // the 200, so an attachment rule that reached one and not the other would hand
   // back an inline copy of exactly the file the full response refused to inline.
-  const disposition = dispositionFor(mimeType, untrusted, filePath)
+  const disposition = served.download
+    ? downloadDisposition(served.download === true ? filePath.split(/[\\/]/).pop() ?? 'download' : served.download)
+    : dispositionFor(mimeType, untrusted, filePath)
 
   // ── Range request (byte serving) ─────────────────────────────────────
   const rangeHeader = req.headers.get('range')
   if (rangeHeader) {
-    return serveRange(file, rangeHeader, mimeType, size, fileEtag, mtimeStr, disposition)
+    return serveRange(file, rangeHeader, mimeType, size, fileEtag, mtimeStr, disposition, cacheControl)
   }
 
   // ── Regular response ──────────────────────────────────────────────────
@@ -208,7 +232,7 @@ export async function serveStatic(
     ...disposition,
     'etag':          fileEtag,
     'last-modified': mtimeStr,
-    'cache-control': buildCacheControl(safe, ext, maxAge),
+    'cache-control': cacheControl,
     'accept-ranges': 'bytes'
   }
 
@@ -273,6 +297,17 @@ async function realRoot(root: string): Promise<string | null> {
  * caller sent — it is already sanitized by `resolveKey`, and quoting a value
  * from a request into a header is how a header gets split.
  */
+function downloadDisposition(name: string): Record<string, string> {
+  return { 'content-disposition': `attachment; filename*=utf-8''${encodeURIComponent(name)}` }
+}
+
+// A validator list, weak tags compared as their strong form (RFC 9110 § 13.1.2).
+function etagMatches(header: string, etag: string): boolean {
+  const strip = (t: string) => t.trim().replace(/^W\//, '')
+  const mine  = strip(etag)
+  return header.split(',').some(t => t.trim() === '*' || strip(t) === mine)
+}
+
 function dispositionFor(mimeType: string, untrusted: boolean, filePath: string): Record<string, string> {
   if (!untrusted || isInlineSafe(mimeType)) return {}
   const name = filePath.split(/[\\/]/).pop() ?? 'download'
@@ -330,23 +365,26 @@ async function serveRange(
   size:     number,
   etag:     string,
   mtime:    string,
-  disposition: Record<string, string>
+  disposition: Record<string, string>,
+  cacheControl: string
 ): Promise<Response> {
 
+  // A range the server cannot satisfy names the size, so the client can ask again.
+  const unsatisfiable = () => new Response(null, {
+    status: 416,
+    headers: { 'content-range': `bytes */${size}`, 'etag': etag, 'cache-control': cacheControl }
+  })
+
   const match = RANGE_RE.exec(range)
-  if (!match) {
-    return new Response('Invalid Range', { status: 416 })
-  }
+  if (!match || (!match[1] && !match[2])) return unsatisfiable()
 
   const startStr = match[1]
   const endStr   = match[2]
 
-  let start = startStr ? parseInt(startStr, 10) : size - parseInt(endStr, 10)
-  let end   = endStr   ? parseInt(endStr, 10)   : size - 1
+  const start = startStr ? parseInt(startStr, 10) : Math.max(0, size - parseInt(endStr, 10))
+  const end   = endStr && startStr ? Math.min(parseInt(endStr, 10), size - 1) : size - 1
 
-  // Clamp
-  start = Math.max(0, Math.min(start, size - 1))
-  end   = Math.max(start, Math.min(end, size - 1))
+  if (size === 0 || start >= size || start > end || (!startStr && parseInt(endStr, 10) === 0)) return unsatisfiable()
 
   const chunkSize = end - start + 1
 
@@ -363,7 +401,8 @@ async function serveRange(
       'content-length': String(chunkSize),
       'accept-ranges': 'bytes',
       'etag':          etag,
-      'last-modified': mtime
+      'last-modified': mtime,
+      'cache-control': cacheControl
     }
   })
 }

@@ -184,6 +184,17 @@ title: Hub settings
     }
   }
 
+  // A person's word for a lock the bucket cannot be asked about; `hub.bucket-locked` grades it.
+  async function attestLock(dest) {
+    try {
+      const updated = await backupDestinations.service.invoke('attestLock', dest.id)
+      destinations  = destinations.map(d => d.id === dest.id ? { ...d, ...updated } : d)
+      toasts.success(`${dest.name}: the lock is attested`)
+    } catch (e) {
+      testSaid = { tone: 'danger', text: `${dest.name}: ${e.message}` }
+    }
+  }
+
   async function createDestination(data) {
     destError = null
     try {
@@ -323,6 +334,14 @@ title: Hub settings
         Last tested {at(picked.lastTestAt, 'never')}.
         {#if !picked.lastTestAt}
           A test writes and deletes a probe key under the prefix with the stored key — the same path the schedule takes.
+        {:else if picked.lockDays}
+          The bucket keeps every archive {picked.lockDays} day(s) under a compliance-mode Object Lock.
+        {:else if picked.lockDays === 0}
+          The bucket has no compliance-mode Object Lock, so this hub's key can delete every archive in it — docs/backups.md § 1.
+        {:else if picked.lockAttestedAt}
+          The bucket did not answer its lock; one was attested {at(picked.lockAttestedAt)}.
+        {:else}
+          The bucket did not answer its lock. An R2 bucket lock never does — attest it once it is set.
         {/if}
       </p>
     {/if}
@@ -339,6 +358,12 @@ title: Hub settings
                   onclick={() => testDestination(picked)}>
             {testing === picked.id ? 'Testing…' : 'Test bucket'}
           </Button>
+          {#if picked.lastTestAt && picked.lockDays == null && !picked.lockAttestedAt}
+            <Button treatment="outlined" id="attest-lock" disabled={testing !== null}
+                    onclick={() => attestLock(picked)}>
+              The bucket is locked
+            </Button>
+          {/if}
         {/if}
       </div>
     {:else}

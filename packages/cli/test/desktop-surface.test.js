@@ -19,9 +19,9 @@ import { join, resolve } from 'path'
 import { tmpdir } from 'os'
 
 import {
-  scaffoldDesktopSurface, desktopScripts, desktopNames, desktopSurfaceDirs,
+  scaffoldDesktopSurface, desktopScripts, desktopNames, desktopAppName, desktopSurfaceDirs,
   desktopBinary, desktopApiTarget, desktopLauncher, desktopMainRs,
-  ensureServer, movedShellBuild, surfaceRow,
+  ensureServer, movedShellBuild, surfaceRow, desktopApiEnv,
 } from '../core/desktop-surface.js'
 import { runChecks } from '../core/checks.js'
 import { port, PROJECTS } from '../core/ports.js'
@@ -127,6 +127,15 @@ describe('names, scripts and ports', () => {
     expect(desktopNames('@acme/My Shop')).toEqual({
       slug: 'my-shop', crate: 'my-shop-desktop', productName: 'My Shop', identifier: 'dev.my-shop.desktop',
     })
+  })
+
+  test('the app\'s name is package.json\'s, not the directory\'s -- a git worktree is named for its branch', () => {
+    const dir = join(ROOT, 'agent-a26dfaadf4ccc65c5')
+    mkdirSync(dir, { recursive: true })
+    expect(desktopAppName(dir)).toBe('agent-a26dfaadf4ccc65c5')
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'immich' }))
+    expect(desktopAppName(dir)).toBe('immich')
+    expect(desktopNames(desktopAppName(dir)).identifier).toBe('dev.immich.desktop')
   })
 
   test('a wrapped surface has no dev server of its own', () => {
@@ -287,6 +296,15 @@ describe('what desktop:install writes', () => {
     expect(body).toContain('StartupWMClass=install-app-desktop\n')
   })
 
+  // FJS-3928 — the launcher has no env, so desktop.config.js would fall back to its scaffold port.
+  test('the entry carries the API origin the config named, and none when the app has no API', () => {
+    const root = appRoot('install-api')
+    scaffoldDesktopSurface({ root, appName: 'install-api' })
+    expect(launcher(root, { api: 'http://localhost:7430' }).body)
+      .toContain('Exec=env PATH=/opt/bun/bin:/usr/bin FRONTIER_PUBLIC_API_URL=http://localhost:7430 /opt/bun/bin/bun ')
+    expect(launcher(root, { api: null }).body).not.toContain('FRONTIER_PUBLIC_API_URL')
+  })
+
   test('release: the entry opens the release shell, and the debug default is unchanged', () => {
     const root = appRoot('install-release')
     scaffoldDesktopSurface({ root, appName: 'install-release' })
@@ -316,5 +334,21 @@ describe('the shell builds on the toolchain the machine has', () => {
     scaffoldDesktopSurface({ root, appName: 'msrv', wraps: 'web' })
     const toml = readFileSync(join(root, 'desktop/shell/Cargo.toml'), 'utf8')
     expect(toml).toMatch(/^resolver\s*=\s*"3"$/m)
+  })
+})
+
+// FJS-3921 — the API a desktop window starts must name the shell's page origins,
+// every OS's spelling, or its socket upgrade is refused under cors '*'.
+describe('the env desktop:run and dev:desktop start the API with', () => {
+  test('the port, and both Tauri spellings', () => {
+    expect(desktopApiEnv(8100, { inherited: undefined })).toEqual({
+      FRONTIER_PORT_BE:      '8100',
+      FRONTIER_CORS_ORIGINS: 'tauri://localhost,http://tauri.localhost',
+    })
+  })
+
+  test('an inherited list is kept first, and a page origin is added once', () => {
+    const env = desktopApiEnv(8100, { inherited: 'https://app.example.com, tauri://localhost', pages: ['http://localhost:7300'] })
+    expect(env.FRONTIER_CORS_ORIGINS).toBe('https://app.example.com,tauri://localhost,http://tauri.localhost,http://localhost:7300')
   })
 })

@@ -1249,13 +1249,20 @@ function httpJson(method, url, body) {
   return { status: Number.isFinite(code) && code ? code : null, body: cut === -1 ? text : text.slice(0, cut) }
 }
 
+// Verbose echoes AFTER the command finishes rather than inheriting stdio: an
+// inherited stream returns output '' and every assertion over a command's
+// output (FJS-3826) read an empty string, and `input` is dropped with it.
 function exec(cmd, argv, { verbose = false, ...opts } = {}) {
   const r = spawnSync(cmd, argv, {
     encoding:  'utf8',
     maxBuffer: MAX_BUFFER,
-    stdio:     verbose ? 'inherit' : 'pipe',
+    stdio:     'pipe',
     ...opts,
   })
+  if (verbose) {
+    if (r.stdout) process.stdout.write(r.stdout)
+    if (r.stderr) process.stderr.write(r.stderr)
+  }
   return { status: r.status, output: `${r.stdout ?? ''}${r.stderr ?? ''}` }
 }
 

@@ -13,12 +13,20 @@ flags:
 
 <script>
 import { existsSync, readFileSync, writeFileSync } from 'fs'
-import { resolve, join, basename } from 'path'
+import { resolve, join } from 'path'
 </script>
 
 Creates `desktop/` — a native window around screens bundled into the binary.
 The shell is a Tauri 2 crate under `desktop/shell/`, and building it needs Rust;
 on Linux also WebKitGTK 4.1.
+
+**A shell that adds a tray or `tauri-plugin-single-instance` needs more at run
+time on Linux** (`FJS-3966`): the tray links libayatana-appindicator3, and both
+take a name on the session D-Bus, so a launch with no `XDG_RUNTIME_DIR` finds
+none. A `.deb` must list `libayatana-appindicator3-1` under
+`bundle.linux.deb.depends`; `fli check` (`desktop-tray-depends`) warns when a
+bundled shell with a tray does not. The tray's title is the binary name unless
+the shell sets one.
 
 **Two shapes, one surface** (`FJS-D263`). With `--wraps web` the desktop app is
 the SPA: `web/src` is built into `desktop/dist` and nothing is written under
@@ -43,7 +51,7 @@ desktop/
 not carry it afterwards. The API's CORS list has to name the shell's origin.
 
 ```js
-const { scaffoldDesktopSurface, desktopScripts, desktopNames } =
+const { scaffoldDesktopSurface, desktopScripts, desktopNames, desktopAppName } =
   await import(resolve(global.fliRoot, 'core/desktop-surface.js'))
 const { port: portFor, projectIdFor } =
   await import(resolve(global.fliRoot, 'core/ports.js'))
@@ -72,7 +80,7 @@ if (flag.dry) {
 
 const appPkgPath = join(root, 'package.json')
 const appPkg     = existsSync(appPkgPath) ? JSON.parse(readFileSync(appPkgPath, 'utf8')) : null
-const appName    = basename(root)
+const appName    = desktopAppName(root)
 const projectId  = projectIdFor(appPkg?.name ?? null, appName)
 const apiPort    = portFor('be',         { env: 'dev', projectId })
 const devPort    = portFor('desktopDev', { env: 'dev', projectId })

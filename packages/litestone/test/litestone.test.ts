@@ -848,6 +848,14 @@ describe('query helpers', () => {
     expect(clause.params).toEqual(['TX', 200])
   })
 
+  // FJS-3916: a sql tag inside a sql tag was bound as a parameter (`WHERE ?`)
+  test('sql tag — a nested sql tag is spliced with its params in order', () => {
+    const settled = sql`status IN ('exact', ${'decided'})`
+    const clause  = sql`a = ${1} AND groupId IN (SELECT id FROM g WHERE ${settled}) AND b = ${2}`
+    expect(clause.sql).toBe(`a = ? AND groupId IN (SELECT id FROM g WHERE (status IN ('exact', ?))) AND b = ?`)
+    expect(clause.params).toEqual([1, 'decided', 2])
+  })
+
   test('sql tag — no interpolations', () => {
     const clause = sql`deletedAt IS NULL`
     expect(clause.sql).toBe('deletedAt IS NULL')

@@ -428,12 +428,13 @@ name when it declares none.
 
 ### `backupDestinations` · model `BackupDestination`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `test`
-- **custom methods** — `test`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `test`, `attestLock`
+- **custom methods** — `test`, `attestLock`
 - **also answers to** — `backup-destinations`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `test` — standing 5 or above — declared `gate: 5`
+  - `attestLock` — standing 5 or above — declared `gate: 5`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |

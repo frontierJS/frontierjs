@@ -64,6 +64,25 @@ function prune(dir) {
     rmSync(join(dir, f), { force: true })
 }
 
+// ─── excerpting ───────────────────────────────────────────────────────────────
+
+// Where a runner prints a failure: bun's `error:` and `(fail)`, vitest's `FAIL`
+// and `×`.
+const FAILURE_LINE = /^\s*(?:error:|\(fail\)|FAIL\s|×)/
+
+// A runner prints an assertion BEFORE its summary, so the last lines of a long
+// stream are the counts and never the failure. Keep the tail, and the lines from
+// the first failure when that is not inside it.
+export function failureExcerpt(text, { tail = 30, window = 40 } = {}) {
+  const all = String(text ?? '').split('\n')
+  if (all.length <= tail) return text
+  const first = all.findIndex(l => FAILURE_LINE.test(l.replace(ANSI, '')))
+  const kept  = all.slice(-tail).join('\n')
+  if (first < 0 || first >= all.length - tail) return kept
+  const head  = all.slice(first, Math.min(first + window, all.length - tail))
+  return `${head.join('\n')}\n…\n${kept}`
+}
+
 // ─── counting ─────────────────────────────────────────────────────────────────
 //
 // A suite's script chains runners — mesa is a spec check, vitest and two CDP

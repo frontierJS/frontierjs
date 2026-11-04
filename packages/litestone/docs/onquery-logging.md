@@ -1,6 +1,8 @@
 # onQuery — Production Query Logging
 
-`onQuery` sees every SQL statement Litestone executes. Use it for slow-query detection, telemetry, per-actor audit trails, and debugging.
+`onQuery` sees every ORM verb Litestone runs, and each include's own query. Use it for slow-query detection, telemetry, per-actor audit trails, and debugging.
+
+It does not see the statements around a verb: the `@sequence` counter upsert, the audit trail's writes and `BEGIN`/`COMMIT` never fire it, so a count of its events is a count of verbs. To count what SQLite executed, wrap the engine (`bench/engine-count.mjs`).
 
 The examples on this page use this schema:
 

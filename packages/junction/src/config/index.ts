@@ -539,6 +539,10 @@ function envOverrides(): Partial<AppConfig> {
   // that beat the slot moved the API off the port web/'s proxy forwards to.
   const port = process.env.FRONTIER_PORT_BE || process.env.PORT
   if (port)                      out.port  = parseInt(port, 10)
+  // Not `HOST`/`FRONTIER_HOST`: the second is `fli dev --host`'s on/off flag,
+  // and a shell's HOST names the machine. A desktop sidecar sets this to
+  // 127.0.0.1 instead of wrapping Bun.serve.
+  if (process.env.FRONTIER_HOSTNAME) out.hostname = process.env.FRONTIER_HOSTNAME
   if (process.env.DEBUG === '1') out.debug = true
   return out
 }

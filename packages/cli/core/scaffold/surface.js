@@ -64,6 +64,12 @@ export function tsconfigWithSurface(config, dir, { src = true } = {}) {
   const glob    = `${dir}/**/*`
   const include = config.include ?? []
   const out     = { ...config, include: include.includes(glob) ? include : [...include, glob] }
+  // desktop/shell/ is Rust; its target/ holds generated .js that tsc cannot
+  // parse. An exclude replaces tsc's default one, so node_modules is restated.
+  if (dir === 'desktop') {
+    const exclude = config.exclude ?? ['node_modules']
+    out.exclude = exclude.includes('desktop/shell') ? exclude : [...exclude, 'desktop/shell']
+  }
   const at      = config.compilerOptions?.paths?.['@/*'] ?? []
   if (!src || at.includes(`./${dir}/src/*`)) return out
   const paths = { ...config.compilerOptions?.paths, '@/*': [...at, `./${dir}/src/*`] }

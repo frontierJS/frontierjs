@@ -621,6 +621,9 @@ export class HttpTransport {
    *   2. Wait — bounded by `drainTimeout` — for anything still outstanding.
    *   3. Stop by force.
    *
+   * Resolves false when step 3 cut something off, so the caller can say the
+   * stop was not clean (`FJS-3944`).
+   *
    * **The close code is 1012 Service Restart and not 1001 Going Away, which is
    * the one that means this.** Measured against a bare `Bun.serve`: a close sent
    * as 1001 reaches the peer as **1000**, while 1012 and a private 4001 arrive
@@ -642,7 +645,7 @@ export class HttpTransport {
    * promptly even then: a graceful stop stops accepting at once and only its
    * PROMISE is the part that hangs.
    */
-  async stop(drainMs = 5_000): Promise<void> {
+  async stop(drainMs = 5_000): Promise<boolean> {
     // Clear the DDoS GC timer and counters regardless of server state.
     if (this._ddosGc) {
       clearInterval(this._ddosGc)
@@ -654,7 +657,7 @@ export class HttpTransport {
       this._reverifyTick = null
     }
 
-    if (!this._server) return
+    if (!this._server) return true
     const server = this._server
     this._server = null
 
@@ -684,9 +687,11 @@ export class HttpTransport {
     while ((this._sockets.size > 0 || this._inFlight > 0) && Date.now() < deadline) {
       await new Promise(r => setTimeout(r, 5))
     }
+    const drained = this._sockets.size === 0 && this._inFlight === 0
     this._sockets.clear()
 
     server.stop(true)
+    return drained
   }
 
   // ─── WebSocket route registration ──────────────────────────────────
@@ -1248,26 +1253,18 @@ export class HttpTransport {
       user,
       signal:   req.signal,
 
-      file: async (filePath, download) => {
+      file: async (filePath, served = {}) => {
         this.stats.response.file++
         const file = Bun.file(filePath)
-        const exists = await file.exists()
-        if (!exists) return new Response('Not Found', { status: 404 })
+        if (!await file.exists()) return new Response('Not Found', { status: 404 })
 
-        const headers: Record<string, string> = {}
-        if (download) {
-          headers['content-disposition'] =
-            `attachment; filename*=utf-8''${encodeURIComponent(
-              typeof download === 'string' ? download : file.name ?? 'download'
-            )}`
-        }
-
-        // Delegate to static handler for range/etag/gzip
+        // `root` is last: a configured static root is for URL paths, and this
+        // path is one the app chose.
         const staticResp = await serveStatic(req, '/' + filePath, {
-          root: '',
-          ...this._opts.static
-        })
-        return staticResp ?? new Response(file, { headers })
+          ...this._opts.static,
+          root: ''
+        }, served)
+        return staticResp ?? new Response(file)
       },
 
       // ── Pagination envelope ────────────────────────────────────

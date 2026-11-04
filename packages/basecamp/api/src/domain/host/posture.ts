@@ -549,6 +549,20 @@ const HUB_CONTROLS: { id: string; group: string; severity: Severity; fix: string
       ? { ok: true,  message: `A copy of ENCRYPTION_KEY ${live} was attested off this box on ${host.keyEscrow.at.slice(0, 10)}` }
       : { ok: false, message: `The attested copy is of key ${kept}, not the key in use ${live} — the key changed since ${host.keyEscrow.at.slice(0, 10)}` }
   } },
+  // The hub's key can delete every archive it wrote, so a stolen hub or a prune
+  // bug empties the bucket unless the vendor refuses it (`FJS-D1809`). Derived
+  // from the lock the destination's `test` read; where the bucket cannot say
+  // (an R2 bucket lock), a person attests it, as for the key's escrow.
+  { id: 'hub.bucket-locked', group: 'hub', severity: 'high', fix: 'Turn on a compliance-mode Object Lock on the bucket (docs/backups.md § 1) and test the destination again; on R2, add a bucket lock and attest it on the destination', grade: (_r, host) => {
+    const lock = host.bucketLock
+    if (!lock) return unknown('The hub sends its archives to no bucket')
+    if (!lock.tested) return unknown(`'${lock.name}' has not been tested, so its lock was never read`, 'Test the destination')
+    if (lock.lockDays) return { ok: true, message: `'${lock.name}' keeps every archive ${lock.lockDays} day(s) under a compliance-mode Object Lock` }
+    if (lock.lockDays === 0) return { ok: false, message: `'${lock.name}' has no compliance-mode Object Lock — the hub's key can delete every archive in it` }
+    return lock.attestedAt
+      ? { ok: true,  message: `'${lock.name}' did not answer its lock; one was attested on ${lock.attestedAt.slice(0, 10)}` }
+      : { ok: false, message: `'${lock.name}' did not answer its lock and none is attested — the hub's key may delete every archive in it` }
+  } },
   // A full disk refuses every write, and the backup stages its copy on this
   // same disk. In process: the report's `df` is the box's, and the database may
   // sit on another volume (`FJS-3908`).
@@ -646,7 +660,7 @@ function envControl(files: PostureReadings['host_files']): Grade {
 export const HUB_CONTROL_IDS = HUB_CONTROLS.map(c => c.id)
 
 /** Graded from Basecamp's own rows, so a missing or stale report does not hide them. */
-const IN_PROCESS = new Set(['hub.backup-recent', 'app.backup-recent', 'hub.key-escrowed', 'hub.disk-free', 'hub.app-url', 'hub.api-url', 'hub.mailer', 'hub.push', 'hub.app-row-drift'])
+const IN_PROCESS = new Set(['hub.backup-recent', 'app.backup-recent', 'hub.key-escrowed', 'hub.bucket-locked', 'hub.disk-free', 'hub.app-url', 'hub.api-url', 'hub.mailer', 'hub.push', 'hub.app-row-drift'])
 
 /** What the box a Basecamp runs on should look like, beyond any fleet machine. */
 export interface HostDeclared {
@@ -658,6 +672,9 @@ export interface HostDeclared {
   keyFingerprint: string | null
   /** The standing attestation — when, and the sha256 of the key it was made for; null when none. */
   keyEscrow:      { at: string; fingerprint: string } | null
+  /** The bucket the hub's archives go to and its Object Lock as `test` read it
+   *  (`lockDays` null when the bucket could not say); null when the hub names none. */
+  bucketLock?:    null | { name: string; tested: boolean; lockDays: number | null; attestedAt: string | null }
   /** The hub App row: null before `useHost` made it, `gone` when the pointer names no live row. */
   hubApp:         null | 'gone' | { placed: boolean; port: number | null; containerPort: number | null }
   /** The disk the hub database lives on; null when it cannot be read (`:memory:`, or statfs failed). */

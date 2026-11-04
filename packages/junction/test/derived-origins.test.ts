@@ -70,6 +70,23 @@ describe('FRONTIER_CORS_ORIGINS — the derived cross-origin list', () => {
     } finally { await app.stop() }
   })
 
+  // FJS-3921: csrf never borrows a '*', so beside one the derived list was lost
+  // for every write from a desktop shell under cookie auth.
+  it('beside a cors wildcard, csrf still admits the derived origins', async () => {
+    process.env.FRONTIER_CORS_ORIGINS = `${TAURI},http://tauri.localhost`
+    const app = createApp({ config: { ...base, http: { csrf: true, cors: { origins: ['*'] } } } as never })
+    app.post('/ping', (ctx) => ctx.json({ ok: true }))
+    await app.start()
+    try {
+      const post = (origin: string) => app.http.fetch(new Request('http://localhost/ping', {
+        method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: '{}',
+      })).then(r => r.status)
+      expect(await post(TAURI)).not.toBe(403)
+      expect(await post('http://tauri.localhost')).not.toBe(403)
+      expect(await post('https://evil.example.com')).toBe(403)
+    } finally { await app.stop() }
+  })
+
   it('csrf borrows a cors predicate whole', async () => {
     const PREVIEW = 'https://hours-site.acct.workers.dev'
     const app = createApp({ config: { ...base, http: { csrf: true, cors: { origins: (o: string) => o === PREVIEW } } } as never })

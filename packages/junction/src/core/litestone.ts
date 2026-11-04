@@ -3659,7 +3659,7 @@ export function gateAuthAround(
       }
       const required = claims[method]
       if (required) {
-        const held = (ctx.locals?.[HELD_CLAIMS] ?? {}) as PrincipalClaims
+        const held = heldClaims(ctx)
         const missing = required.filter(c => held[c] == null)
         if (missing.length) {
           // A guest with no claim is a stranger to this method; a session
@@ -3867,6 +3867,15 @@ const RESOLVED = 'principal.resolved'
 const HELD_CLAIMS = 'principal.claims'
 const NO_CLAIM = 'principal.noClaim'
 
+/**
+ * The claims this request proved, guest or session, as `applyClaims` merged
+ * them. A method that re-scopes one write (`$.db.$setAuth(heldClaims($))`)
+ * reads them here: the key they are stored under is not an API.
+ */
+export function heldClaims(ctx: ServiceContext): PrincipalClaims {
+  return { ...(ctx.locals?.[HELD_CLAIMS] as PrincipalClaims | undefined) }
+}
+
 /** Why a resolver produced no claim, and — where the request named no tenant —
  *  how one is named, which only the resolver knows. Set by the resolver, read
  *  by `tenantClaimGuard`. */
@@ -4038,8 +4047,9 @@ export const WRITE_VERBS = new Set([
  * `read` turns off the idempotency cache and the announcement, so a write made
  * under it would spend twice on a signed-in retry and tell nobody; this throws
  * at the first one, before the statement, and the call's transaction rolls
- * back. Covers the handed-over client only: `asSystem()`, an imported root
- * client and a raw statement walk past it.
+ * back. Covers the handed-over client only: `asSystem()`, `$setAuth()` (the
+ * one write Portal's spend owns, `FJS-D1054`), an imported root client and a
+ * raw statement walk past it.
  */
 function refuseWrites(client: unknown, service: string, method: string): unknown {
   if (!client || typeof client !== 'object') return client
@@ -4092,8 +4102,6 @@ export function withLitestoneDb(
         ? client.$setAuth(toDataPrincipal(ctx.user))
         : client)
 
-    if (ctx.locals.readCall) setCallClient(ctx, refuseWrites(callClient(ctx), ctx.service, ctx.method) as LitestoneClient)
-
     // Before the resolver, because most apps have no resolver: the claim came
     // from `sessionFields` at sign-in and is already on the principal.
     // `applyClaims` lifts it again afterwards, where a resolver moved it.
@@ -4121,8 +4129,16 @@ export function withLitestoneDb(
     // is not known until they are merged.
     await warmTenantConfig(ctx)
 
+    guardReadCall(ctx)
     await next()
   }
+}
+
+// Last, after every re-scope: a claim re-scopes from the ROOT client, so a
+// guard set before it was dropped and every request a resolver answered for
+// wrote through a `read: true` method unguarded (FJS-3832).
+function guardReadCall(ctx: ServiceContext): void {
+  if (ctx.locals.readCall) setCallClient(ctx, refuseWrites(callClient(ctx), ctx.service, ctx.method) as LitestoneClient)
 }
 
 
@@ -5485,6 +5501,7 @@ export function withTenantDb(registry: TenantRegistryLike, principal?: Principal
 
       await warmTenantConfig(ctx)
 
+      guardReadCall(ctx)
       await next()
     } finally {
       release()

@@ -606,6 +606,8 @@ table `backup_destination` · db `main` · gate `2.5` · @@softDelete
 | `endpoint` | `String` | no | — | **required on write** |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `lastTestAt` | `DateTime` | yes | — | @system |
+| `lockAttestedAt` | `DateTime` | yes | — | @system |
+| `lockDays` | `Int` | yes | — | @system |
 | `name` | `String` | no | — | **required on write** |
 | `prefix` | `String` | no | `''` | — |
 | `region` | `String` | no | — | **required on write** |

@@ -650,6 +650,22 @@ describe('hand-written finds apply the caller\'s directives (FJS-2469)', () => {
   })
 })
 
+// A field's `@values(SshKeys)` picker asks its source service for `$scope=SshKeys`.
+// `findScoped` is the one reader of the directives a hand-written find honors,
+// so a source whose find never read `$scope` answered the picker with a 400 (FJS-3968).
+describe('hand-written finds apply the caller\'s $scope (FJS-3968)', () => {
+  const uniq = () => Math.random().toString(36).slice(2, 8)
+
+  test('secrets.find with $scope=SshKeys lists only the ssh keys', async () => {
+    const sys = env.system as any
+    const key  = await sys.secret.create({ data: { workspaceId: ws.id, name: `scope-key-${uniq()}`, kind: 'sshKey' } })
+    const plain = await sys.secret.create({ data: { workspaceId: ws.id, name: `scope-gen-${uniq()}`, kind: 'generic' } })
+    const got = (await env.as(owner).service('secrets').find({}, { directives: { scope: ['SshKeys'] } })).data.map((r: any) => r.id)
+    expect(got).toContain(key.id)
+    expect(got).not.toContain(plain.id)
+  })
+})
+
 // A cursor window and three computed catalogs answered a sort with a 400
 // (FJS-2904). The computed ones sort and project in memory; the audit window
 // sorts in the query and still refuses `$select`, whose projection could drop
@@ -2164,6 +2180,25 @@ describe('a backup destination is an address, and its key is a Secret', () => {
       expect(secret.verifiedAt).toBeNull()
     })
 
+    test('test records the bucket\'s compliance lock, and attestLock is taken only where the bucket could not say (FJS-3913)', async () => {
+      const svc = env.as(owner).service('backupDestinations')
+      await fetch(`${sink.url}/_sink/reset`)
+      const row = await svc.create(atSink())
+      await expect(svc.call('attestLock', row.id)).rejects.toThrow(/Test this destination first/)
+
+      await fetch(`${sink.url}/_sink/arm`, { method: 'POST', body: JSON.stringify({ lockDays: 30 }) })
+      expect((await svc.call('test', row.id)).lockDays).toBe(30)
+      await expect(svc.call('attestLock', row.id)).rejects.toThrow(/30-day Object Lock/)
+      await fetch(`${sink.url}/_sink/reset`)
+      const unlocked = await svc.call('test', row.id)
+      expect(unlocked.lockDays).toBe(0)
+      await expect(svc.call('attestLock', row.id)).rejects.toThrow(/no compliance-mode Object Lock/)
+
+      // An R2 bucket lock answers no lock read: the reading is null, and a person's word is taken.
+      await (env.system as any).backupDestination.update({ where: { id: row.id }, data: { lockDays: null, version: unlocked.version }, system: ['lockDays'] })
+      expect((await svc.call('attestLock', row.id)).lockAttestedAt).toBeTruthy()
+    })
+
     // IDEAS/backups.md 5.1: an app's replica key must not reach the archives a
     // rescan of the same bucket and prefix records (FJS-D1572).
     describe('an app\'s replica key is probed inside its path, and must be refused its archives', () => {
@@ -2198,6 +2233,8 @@ describe('a backup destination is an address, and its key is a Secret', () => {
           'PUT 200 /frontier-basecamp/basecamp-/<app>/probe',
           'DELETE 204 /frontier-basecamp/basecamp-/<app>/probe',
           'PUT 403 /frontier-basecamp/basecamp-/<app>-probe.tar.gz',
+          // The bucket's Object Lock, read: none, so a replica may live here.
+          'GET 404 /frontier-basecamp',
         ])
         expect(keys).toEqual([])
       })
@@ -2207,6 +2244,14 @@ describe('a backup destination is an address, and its key is a Secret', () => {
         await expect(env.as(owner).service('backupDestinations').call('test', replica.id))
           .rejects.toThrow(/^scope: this key wrote .*-probe\.tar\.gz.*with the trailing slash$/)
         expect((await seen()).keys).toEqual([])
+        expect((await env.as(owner).service('backupDestinations').get(replica.id)).lastTestAt).toBeNull()
+      })
+
+      test('a replica on a bucket with an Object Lock is refused: a locked bucket holds archives only (FJS-3913)', async () => {
+        const { replica } = await holding(id => `basecamp-/${id}/`)
+        await fetch(`${sink.url}/_sink/arm`, { method: 'POST', body: JSON.stringify({ lockDays: 30 }) })
+        await expect(env.as(owner).service('backupDestinations').call('test', replica.id))
+          .rejects.toThrow(/^locked: 'frontier-basecamp' holds every new object 30 day\(s\)/)
         expect((await env.as(owner).service('backupDestinations').get(replica.id)).lastTestAt).toBeNull()
       })
     })

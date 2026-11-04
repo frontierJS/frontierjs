@@ -45,7 +45,7 @@ half is built — a no-op after the first time — unless `desktop/dist` is miss
 which the shell's compile needs, and then the whole of `deploy/build.mjs` runs.
 
 ```js
-const { desktopBinary, desktopApiTarget, offerDesktopSurface, ensureServer, movedShellBuild, stopServer, surfaceRow } =
+const { desktopBinary, desktopApiTarget, desktopApiEnv, offerDesktopSurface, ensureServer, movedShellBuild, stopServer, surfaceRow } =
   await import(resolve(global.fliRoot, 'core/desktop-surface.js'))
 const { detectRunner } = await import(resolve(global.fliRoot, 'core/db-preflight.js'))
 
@@ -111,7 +111,8 @@ if (!api) {
 } else {
   await ensure({
     script: surfaceRow(root, 'api')?.script, port: api.port, label: 'API',
-    env: { FRONTIER_PORT_BE: String(api.port) },
+    // The window loads the dev server, so that origin calls the API too (FJS-3921).
+    env: desktopApiEnv(api.port, { pages: [`http://localhost:${dev.port}`] }),
   }, 'Start the API yourself, or run with --no-api to open the window without one.')
 }
 

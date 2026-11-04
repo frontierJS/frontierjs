@@ -11,7 +11,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'fs'
 import { join, resolve, dirname } from 'path'
 import { tmpdir } from 'os'
 import { fileURLToPath } from 'url'
-import { makeNavJs, makeRouteLogin, makeRouteReset, makeRouteVerifyEmail } from '../core/scaffold/web.js'
+import { makeNavJs, makeRouteIndex, makeRouteLogin, makeRouteReset, makeRouteVerifyEmail } from '../core/scaffold/web.js'
 
 const CLI = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -301,6 +301,17 @@ describe('the scaffold sign-in page', () => {
   })
 })
 
+// FJS-3920 — inside a wrapped desktop shell the page is served from
+// tauri://localhost, so a same-origin '/api/health' is answered with index.html
+// and the badge says unreachable while the API is up.
+describe('the scaffold welcome page', () => {
+  test('asks the API where the build says it is, not the page origin', () => {
+    const page = makeRouteIndex('demo', true, false)
+    expect(page).not.toContain("fetch('/api/health')")
+    expect(page).toMatch(/import\.meta\.env\.FRONTIER_PUBLIC_API_URL[^\n]*\/api\/health/)
+  })
+})
+
 // The reference and the example write `@updatedAt` alone; it stamps the create
 // too, so `@default(now())` beside it is a second spelling every new app copies
 // (`FJS-2952`).
@@ -398,6 +409,14 @@ describe('the scaffold verification link lands on a page fli new writes', () => 
   test('auth:install tells an app with no audit block to declare driver trail', async () => {
     const text = await Bun.file(join(CLI, 'commands/auth/install.md')).text()
     expect(text).toContain('database audit { path "./db/audit/" driver trail')
+  })
+
+  // FJS-3834 — a second createLitestoneAuth never reads the app's options, so a
+  // user made by the CLI missed onRegistered (Portal: no Account row).
+  test('auth:create-user makes the user through the app\'s own auth export', async () => {
+    const text = await Bun.file(join(CLI, 'commands/auth/create-user.md')).text()
+    expect(text).toContain('await import(input.appAuth)')
+    expect(text).toContain("'core/auth.ts'")
   })
 
   // FJS-3205 / FJS-D1311 — a token in the query string is read by the analytics

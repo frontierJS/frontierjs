@@ -457,6 +457,8 @@ describe('a backup naming a destination is uploaded, and a failed upload keeps t
 describe('retention prunes by count and age, local and remote apart, and a rescan finds what no row names', () => {
   const deletes: string[] = []
   let listing: { key: string; size: number }[] = []
+  let versions: { key: string; id: string; marker?: true }[] = []
+  const locked = new Set<string>()
   let server: ReturnType<typeof Bun.serve>
   let dest: any
 
@@ -482,8 +484,24 @@ describe('retention prunes by count and age, local and remote apart, and a resca
   beforeAll(async () => {
     server = Bun.serve({ port: 0, fetch(req) {
       const url = new URL(req.url)
-      if (req.method === 'DELETE') { deletes.push(decodeURIComponent(url.pathname)); return new Response(null, { status: 204 }) }
+      const version = url.searchParams.get('versionId')
+      // SeaweedFS's answer to a version its Object Lock holds: 403 AccessDenied,
+      // the code a key without delete gets, and a retention read that tells them apart.
+      if (req.method === 'DELETE' && version && locked.has(version))
+        return new Response('<Error><Code>AccessDenied</Code><Message>Access Denied.</Message></Error>', { status: 403, headers: { 'content-type': 'application/xml' } })
+      if (req.method === 'DELETE') { deletes.push(decodeURIComponent(url.pathname) + (version ? `?versionId=${version}` : '')); return new Response(null, { status: 204 }) }
+      if (url.searchParams.has('retention'))
+        return new Response(locked.has(version!) ? '<Retention><Mode>COMPLIANCE</Mode><RetainUntilDate>2099-01-01T00:00:00Z</RetainUntilDate></Retention>' : '<Error><Code>NoSuchObjectLockConfiguration</Code></Error>',
+          { status: locked.has(version!) ? 200 : 404, headers: { 'content-type': 'application/xml' } })
+      if (url.searchParams.has('legal-hold'))
+        return new Response('<Error><Code>NoSuchObjectLockConfiguration</Code></Error>', { status: 404, headers: { 'content-type': 'application/xml' } })
       const prefix = url.searchParams.get('prefix') ?? ''
+      if (url.searchParams.has('versions')) {
+        const xml = versions.filter(v => v.key.startsWith(prefix)).map(v => v.marker
+          ? `<DeleteMarker><Key>${esc(v.key)}</Key><VersionId>${v.id}</VersionId></DeleteMarker>`
+          : `<Version><Key>${esc(v.key)}</Key><VersionId>${v.id}</VersionId></Version>`).join('')
+        return new Response(`<ListVersionsResult><IsTruncated>false</IsTruncated>${xml}</ListVersionsResult>`, { headers: { 'content-type': 'application/xml' } })
+      }
       const xml = listing.filter(o => o.key.startsWith(prefix)).map(o =>
         `<Contents><Key>${esc(o.key)}</Key><Size>${o.size}</Size><LastModified>2026-06-01T00:00:00.000Z</LastModified></Contents>`).join('')
       return new Response(`<ListBucketResult><IsTruncated>false</IsTruncated>${xml}</ListBucketResult>`,
@@ -547,12 +565,36 @@ describe('retention prunes by count and age, local and remote apart, and a resca
     await keep({ backupKeepLocalCount: 10, backupKeepLocalDays: null, backupKeepRemoteCount: 1, backupKeepRemoteDays: null })
     const local = await plantLocal(9)
     const newest = await plantRemote(1), older = await plantRemote(2)
+    // An unversioned bucket lists each key once, id `null`, and takes a plain DELETE.
+    versions = [{ key: older.location, id: 'null' }]
     deletes.length = 0
 
     expect((await pruneBackups(env.app, NOW)).pruned).toEqual([older.id])
     expect(deletes).toEqual([`/frontier-basecamp/${older.location}`])
     expect(await sys.appBackup.findFirst({ where: { id: newest.id } })).toBeTruthy()
     expect(await sys.appBackup.findFirst({ where: { id: local.id } })).toBeTruthy()
+  })
+
+  test('on a versioned bucket every version goes by id, and one the Object Lock holds is kept as locked (FJS-3913)', async () => {
+    const sys = env.system as any
+    await sys.appBackup.deleteMany({ where: {} })
+    await keep({ backupKeepLocalCount: 10, backupKeepLocalDays: null, backupKeepRemoteCount: 1, backupKeepRemoteDays: null })
+    await plantRemote(1)
+    const free = await plantRemote(2), held = await plantRemote(3)
+    versions = [
+      { key: free.location, id: 'v-free' }, { key: free.location, id: 'm-free', marker: true },
+      { key: held.location, id: 'v-held' }, { key: `${held.location}.part`, id: 'v-other' },
+    ]
+    locked.add('v-held')
+    deletes.length = 0
+
+    const { pruned, kept } = await pruneBackups(env.app, NOW)
+    expect(pruned).toEqual([free.id])
+    expect(deletes).toEqual([`/frontier-basecamp/${free.location}?versionId=v-free`, `/frontier-basecamp/${free.location}?versionId=m-free`])
+    expect(kept).toEqual([{ id: held.id, why: expect.stringMatching(/^locked: 'Retention' holds .* until 2099-01-01/) }])
+    expect(await sys.appBackup.findFirst({ where: { id: held.id } })).toBeTruthy()
+    versions = []
+    locked.clear()
   })
 
   test('the newest of each group is spared, so no destination ages out behind a run of local archives (FJS-3847)', async () => {

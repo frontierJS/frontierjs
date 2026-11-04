@@ -238,9 +238,32 @@ export async function writeThrough(model, rows, whole = null, since = null) {
  * Answers false where there is nothing to write to: no config, no rows and no
  * whole answer, no database, or a model the device does not hold.
  */
-export async function writeRows(model, rows, whole = null, since = null) {
-  if (!_config || !Array.isArray(rows)) return false
-  if (rows.length === 0 && !whole) return false
+export function writeRows(model, rows, whole = null, since = null) {
+  if (!_config || !Array.isArray(rows)) return Promise.resolve(false)
+  if (rows.length === 0 && !whole) return Promise.resolve(false)
+  const entry = { model, where: whole ? JSON.stringify([whole.where ?? {}, whole.idField]) : null, superseded: false, at: _cleared }
+  // Answers to the same question that have not started: only the newest says
+  // what the table holds.
+  if (entry.where) for (const q of _queued) if (q.model === model && q.where === entry.where) q.superseded = true
+  _queued.push(entry)
+  const run = _lane.then(() => {
+    _queued.splice(_queued.indexOf(entry), 1)
+    // Rows a previous identity read are not the next one's to write.
+    if (entry.at !== _cleared) return false
+    return entry.superseded || _writeRows(model, rows, whole, since)
+  })
+  _lane = run.catch(() => {})
+  return run
+}
+
+// The device worker runs one call at a time, in the order sent. A warm hands
+// every service's answer over at once, and sent together they stand in front
+// of the first offline read, which then waits for all of them (`FJS-3821`).
+// One write-through at a time leaves a read behind at most the call in flight.
+let _lane = Promise.resolve()
+const _queued = []
+
+async function _writeRows(model, rows, whole, since) {
   const at = _cleared
   const db = await localDb()
   if (!db) return false
@@ -496,7 +519,7 @@ export async function clearLocalDb() {
 }
 
 /** Test seam: forget the configuration and the open client. */
-export function _resetLocalDb() { _config = null; _client = null; _schema = null; _shapes.clear(); _taken.clear(); _takenAt.clear(); _mark = 0; _opening = null; _closing = null; _leaving = false; _watching = false; _warned.clear() }
+export function _resetLocalDb() { _config = null; _client = null; _schema = null; _shapes.clear(); _taken.clear(); _takenAt.clear(); _mark = 0; _opening = null; _closing = null; _lane = Promise.resolve(); _queued.length = 0; _leaving = false; _watching = false; _warned.clear() }
 
 /**
  * Test seam: stand a client in for the one a worker would have opened.

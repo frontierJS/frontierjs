@@ -25,7 +25,11 @@ title: Apps
     { name: '_open', label: 'Actions', hideLabel: true },
   ]
 
-  const { filters, search } = apps.filters()
+  // Both of App's to-many filters (`deployments`, `editors`) go through a join
+  // to a User, and their picker lists users. The users service offers only get
+  // and patch, so that list is refused on every mount (FJS-3936).
+  const { filters: offered, search } = apps.filters()
+  const filters = offered.filter(f => !f.through)
 
   // Composed for the reason the deployments list gives: a push carries the
   // row without its includes, so a held row would blank its environment cell

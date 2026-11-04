@@ -10,6 +10,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { serveStatic } from '../src/transport/static.ts'
+import { createApp } from '../index.ts'
 import type { AppConfig } from '../src/config/index.ts'
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -245,5 +246,65 @@ describe('spa fallback', () => {
 
   it('does not turn a refused path into the index', async () => {
     expect((await spaAsk('/a/../../etc'))?.status).not.toBe(200)
+  })
+})
+
+// ─── ctx.file with the route's own identity (FJS-3915) ───────────────────────
+//
+// A raw route serving a row's bytes by its content hash and stored mime must not
+// re-derive Range: the etag, type and cache policy are the route's to state, and
+// the 206 / 416 / 304 arithmetic is the static handler's.
+
+describe('ctx.file(path, { etag, type, cacheControl })', () => {
+  let app: any
+  const SHA = '"sha256-abc"'
+
+  beforeAll(async () => {
+    app = createApp({ logLevel: 'silent', config: { port: 0 } })
+    app.get('/blob', (ctx: any) => ctx.file(join(root, 'assets', 'thing.bin'), {
+      etag: SHA, type: 'image/png', cacheControl: 'private, max-age=31536000, immutable',
+    }))
+    app.get('/named', (ctx: any) => ctx.file(join(root, 'assets', 'real.css'), { download: 'report.css' }))
+    await app.start()
+  })
+  afterAll(async () => { await app?.stop?.() })
+
+  const get = (path: string, headers: Record<string, string> = {}) =>
+    app.http.fetch(new Request(`http://localhost${path}`, { headers }))
+
+  it('a full response carries the route\'s etag, type and cache policy', async () => {
+    const res = await get('/blob')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('etag')).toBe(SHA)
+    expect(res.headers.get('content-type')).toBe('image/png')
+    expect(res.headers.get('cache-control')).toBe('private, max-age=31536000, immutable')
+  })
+
+  it('a range is a 206 under the same identity', async () => {
+    const res = await get('/blob', { range: 'bytes=1-2' })
+    expect(res.status).toBe(206)
+    expect(await res.text()).toBe('yt')
+    expect(res.headers.get('content-range')).toBe('bytes 1-2/5')
+    expect(res.headers.get('etag')).toBe(SHA)
+    expect(res.headers.get('content-type')).toBe('image/png')
+    expect(res.headers.get('cache-control')).toBe('private, max-age=31536000, immutable')
+  })
+
+  it('a range past the end is a 416 naming the size', async () => {
+    const res = await get('/blob', { range: 'bytes=9-12' })
+    expect(res.status).toBe(416)
+    expect(res.headers.get('content-range')).toBe('bytes */5')
+  })
+
+  it('a matching If-None-Match is a 304 on the route\'s etag', async () => {
+    const res = await get('/blob', { 'if-none-match': SHA })
+    expect(res.status).toBe(304)
+    expect(res.headers.get('cache-control')).toBe('private, max-age=31536000, immutable')
+  })
+
+  it('a download name reaches the response of a file that exists', async () => {
+    const res = await get('/named')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-disposition')).toBe(`attachment; filename*=utf-8''report.css`)
   })
 })

@@ -129,6 +129,12 @@ const CLEAN = {
     SCHEMA + '\ndatabase audit { path env("AUDIT_PATH", "./db/audit/") driver trail retention 90d }\n',
   'frontier.config.js': "export default { deploy: { server: 'x.test', path: '/apps/x' } }\n",
   '.env.example':       'AUDIT_PATH=/db/audit/\n',
+  // A bundled shell with a tray that names the library, so
+  // `desktop-tray-depends` RUNS on the clean tree and finds nothing.
+  'desktop/shell/Cargo.toml':
+    '[dependencies]\ntauri = { version = "2", features = ["tray-icon"] }\n',
+  'desktop/shell/tauri.conf.json':
+    JSON.stringify({ bundle: { active: true, linux: { deb: { depends: ['libayatana-appindicator3-1'] } } } }),
   // The trail directory is the one path `db-path-committed` grades here.
   '.gitignore':         'node_modules/\ndb/audit/\n',
   // A dependency that ships a schema fragment, and no copy of its model here.
@@ -173,6 +179,7 @@ const CLEAN = {
   'api/src/app.ts':
     "const STORAGE_ROOT = './db/public'\n" +
     "const plugins = [FileStorage({ provider: 'local', localPath: STORAGE_ROOT })]\n" +
+    "const app = createApp({ root: import.meta.url })\n" +
     "export default { http: { static: { root: STORAGE_ROOT, untrusted: true } } }\n",
   'api/config/junction.config.js':      'export default {}\n',
   // The auth plugin with its services on, so `auth-service-collision` RUNS on the
@@ -1069,6 +1076,13 @@ describe('naming rulings (FJS-D1748 to FJS-D1751)', () => {
       const { findings } = only(root, 'boolean-prefix')
       expect(findings.map(f => f.message.match(/^(\S+) /)[1])).toEqual(['Flag.active', 'Flag.island', 'FlagChange.proxied'])
       expect(findings[0].severity).toBe('warn')
+    })
+
+    test('a "/*" inside a quoted string opens no block comment (FJS-3825)', () => {
+      const root = tree('bp-glob', schema(
+        '\nmodel Flag {\n  id Int @id\n  logo File? @accept("image/*")\n  active Boolean\n  note String? @label("a // b")\n  island Boolean?\n}\n'))
+      const { findings } = only(root, 'boolean-prefix')
+      expect(findings.map(f => f.message.match(/^(\S+) /)[1])).toEqual(['Flag.active', 'Flag.island'])
     })
 
     test('is*, has*, a channel name, a non-Boolean and an @@external model pass', () => {
@@ -3093,6 +3107,43 @@ describe('app-entry', () => {
     expect(findings).toHaveLength(1)
     expect(findings[0].line).toBe(3)
     expect(findings[0].message).toMatch(/two/)
+  })
+})
+
+describe('app-root', () => {
+  const svc = { 'api/src/services/notes.service.ts': 'export default {}\n' }
+  const mk  = (name, call, extra = {}) => tree(name, {
+    ...CLEAN, 'api/src/app.ts': `import { createApp } from '@frontierjs/junction'\nexport default ${call}\n`, ...svc, ...extra,
+  })
+
+  test('a createApp stating no root beside a service file is reported (FJS-3909)', () => {
+    const root = mk('ar-bad', "createApp({ autoload: 'src/services', configPath: './config' })")
+    const { findings } = only(root, 'app-root')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/FJS-D1080/)
+    expect(findings[0].line).toBe(2)
+  })
+
+  test('a createApp with no argument is reported', () => {
+    expect(only(mk('ar-bare', 'createApp()'), 'app-root').findings).toHaveLength(1)
+  })
+
+  test('root: import.meta.url is quiet', () => {
+    expect(only(mk('ar-ok', 'createApp({ root: import.meta.url })'), 'app-root').findings).toEqual([])
+  })
+
+  test('a root only inside a nested option does not count', () => {
+    const call = "createApp({ http: { static: { root: './db/public' } } })"
+    expect(only(mk('ar-nested', call), 'app-root').findings).toHaveLength(1)
+  })
+
+  test('a spread options object is left alone', () => {
+    expect(only(mk('ar-spread', 'createApp({ ...opts })'), 'app-root').findings).toEqual([])
+  })
+
+  test('no service or job file on disk is quiet', () => {
+    const root = tree('ar-none', without('api/', { 'api/src/app.ts': 'export default createApp({})\n' }))
+    expect(only(root, 'app-root').findings).toEqual([])
   })
 })
 
@@ -6330,5 +6381,51 @@ describe('output an app developer reads names the rule, not an Invariant number'
   test('a surface-config finding states the rule', () => {
     const root = tree('inv-sc', { 'db/schema.lite': SCHEMA, 'api/app.ts': '// api\n' })
     for (const f of only(root, 'surface-config').findings) expect(f.message).not.toMatch(NUMBERED)
+  })
+})
+
+// ─── desktop-tray-depends ─────────────────────────────────────────────────────
+
+describe('desktop-tray-depends', () => {
+  const CARGO_TRAY = '[dependencies]\ntauri = { version = "2", features = ["tray-icon"] }\n'
+  const conf = (bundle) => JSON.stringify({ productName: 'x', bundle })
+  const shell = (cargo, bundle) => ({
+    'db/schema.lite': SCHEMA,
+    'desktop/shell/Cargo.toml': cargo,
+    'desktop/shell/tauri.conf.json': conf(bundle),
+  })
+
+  test('a tray in a bundled .deb with no depends is a finding', () => {
+    const root = tree('dtd-bad', shell(CARGO_TRAY, { active: true }))
+    const { findings } = only(root, 'desktop-tray-depends')
+    expect(findings.length).toBe(1)
+    expect(findings[0].message).toContain('libayatana-appindicator3-1')
+  })
+
+  test('naming the library in bundle.linux.deb.depends is clean', () => {
+    const root = tree('dtd-ok', shell(CARGO_TRAY, {
+      active: true, linux: { deb: { depends: ['libayatana-appindicator3-1'] } },
+    }))
+    expect(only(root, 'desktop-tray-depends').findings).toEqual([])
+  })
+
+  test('the scaffold\'s inactive bundle is not judged', () => {
+    const root = tree('dtd-inactive', shell(CARGO_TRAY, { active: false }))
+    expect(only(root, 'desktop-tray-depends').skipped[0].why).toMatch(/bundle\.active/)
+  })
+
+  test('a bundle that does not target deb is not judged', () => {
+    const root = tree('dtd-appimage', shell(CARGO_TRAY, { active: true, targets: ['appimage'] }))
+    expect(only(root, 'desktop-tray-depends').skipped[0].why).toMatch(/deb/)
+  })
+
+  test('a shell with no tray is not judged', () => {
+    const root = tree('dtd-notray', shell('[dependencies]\ntauri = { version = "2", features = [] }\n', { active: true }))
+    expect(only(root, 'desktop-tray-depends').skipped[0].why).toMatch(/no tray/)
+  })
+
+  test('a commented-out tray feature is not a tray', () => {
+    const root = tree('dtd-comment', shell('# tauri = { features = ["tray-icon"] }\n', { active: true }))
+    expect(only(root, 'desktop-tray-depends').skipped[0].why).toMatch(/no tray/)
   })
 })

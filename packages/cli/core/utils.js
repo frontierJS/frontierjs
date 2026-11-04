@@ -338,6 +338,36 @@ export function dockerfileScripts(src) {
   return [...out]
 }
 
+// ─── unexecdEntrypoint ────────────────────────────────────────────────────────
+// The CMD or ENTRYPOINT line whose shell chain ends in a command without
+// `exec`, or null. There sh stays PID 1 and does not forward SIGTERM, so every
+// `docker stop` waits out its grace and SIGKILLs the app: Junction's drain and
+// Caravan's shutdown never run and in-flight requests are reset (FJS-3943).
+//
+// Only a chain (`&&`, `||` or `;`) is read. A lone command may be exec'd by sh
+// itself, depending on which sh the image ships, and a warning that is wrong
+// on some images is one that gets ignored on all of them.
+export function unexecdEntrypoint(src) {
+  for (const line of String(src ?? '').split('\n')) {
+    if (!/^\s*(CMD|ENTRYPOINT)\b/.test(line)) continue
+    const exec  = line.match(/^\s*\w+\s*\[(.*)\]\s*$/)
+    let   shell = null
+    if (exec) {
+      let argv
+      try { argv = JSON.parse(`[${exec[1]}]`) } catch { continue }
+      const c = argv.indexOf('-c')
+      if (c < 1 || !/(^|\/)(ba)?sh$/.test(argv[0])) continue
+      shell = argv[c + 1]
+    } else {
+      shell = line.replace(/^\s*\w+\s+/, '')
+    }
+    if (typeof shell !== 'string' || !/&&|\|\||;/.test(shell)) continue
+    const last = shell.split(/&&|\|\||;/).pop().trim()
+    if (last && !/^exec\s/.test(last)) return line.trim()
+  }
+  return null
+}
+
 // ─── findWorkspaceRoot ────────────────────────────────────────────────────────
 // Walk up from `start` to locate the monorepo root — the directory holding
 // `packages/`. Priority order:

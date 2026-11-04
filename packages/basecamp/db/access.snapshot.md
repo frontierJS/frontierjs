@@ -694,6 +694,8 @@ rather than refusing the row.
 | `AppPlatform` | `observedAt` | `@system` |
 | `BackupDestination` | `secretId` | `@system` |
 | `BackupDestination` | `lastTestAt` | `@system` |
+| `BackupDestination` | `lockDays` | `@system` |
+| `BackupDestination` | `lockAttestedAt` | `@system` |
 | `Credential` | `value` | `@guarded` |
 | `Credential` | `accessToken` | `@secret` |
 | `Credential` | `refreshToken` | `@secret` |

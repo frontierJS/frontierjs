@@ -187,9 +187,13 @@ export function sql(strings, ...values) {
     // A fragment is litestone's own SQL, not a caller's — the only thing that
     // may reach the pattern rather than the parameter list (Invariant 8). Its
     // own operands are still bound, and pushed HERE so they keep their place in
-    // the positional order.
-    if (isSqlFragment(value)) { sqlStr += value.sql; params.push(...value.params) }
-    else                      { sqlStr += '?';       params.push(value) }
+    // the positional order. A branded raw clause (another `sql` tag) is the same
+    // trust: bound as a parameter it ran as `WHERE ?` and answered no rows
+    // (FJS-3916); the brand cannot come off a wire, so splicing it is safe. It
+    // is parenthesised so an `a OR b` keeps its grouping beside an AND.
+    if (isSqlFragment(value))   { sqlStr += value.sql;           params.push(...value.params) }
+    else if (isRawClause(value)) { sqlStr += `(${value.sql})`;    params.push(...value.params) }
+    else                        { sqlStr += '?';                 params.push(value) }
   }
   assertNoBareClock(sqlStr)
   return rawClause(expandNowTokens(sqlStr).trim(), params)

@@ -70,7 +70,7 @@ model Account {
   @@gate(0)
 }
 
-/// Both protections at once, beside two ordinary columns. The ordinary ones are
+/// Three protections at once, beside two ordinary columns. The ordinary ones are
 /// the control: a fix that dumped NOTHING would satisfy any test that only
 /// asked whether the protected values were absent.
 model Basket {
@@ -78,6 +78,7 @@ model Basket {
   label      String
   token      String @unique @guarded @default(cuid())
   secretNote String @secret
+  sealed     String @encrypted
   @@gate(0)
 }
 
@@ -143,7 +144,8 @@ const post = async (base, path, body) => {
 // ─── rows this drive wrote, so it knows the secret ────────────────────────
 
 const SECRET = 'sk-live-DRIVE-SENTINEL'
-await post(UI, '/api/row/create', { table: 'Basket', data: { label: 'one', secretNote: SECRET } })
+const SEALED = 'sealed-DRIVE-SENTINEL'
+await post(UI, '/api/row/create', { table: 'Basket', data: { label: 'one', secretNote: SECRET, sealed: SEALED } })
 await post(UI, '/api/row/create', { table: 'Product', data: { name: 'a widget' } })
 
 // The token is @guarded and @default(cuid()), so the database minted it and
@@ -184,6 +186,22 @@ t('dump.tokenValueIsAbsent',     TOKEN.length > 8 ? csv.includes(TOKEN) : 'no se
 const withheld = dump.headers.get('X-Withheld-Columns') ?? ''
 t('dump.withheldNamesTheGuarded', withheld.includes('token @guarded'), true)
 t('dump.withheldNamesTheSecret',  withheld.includes('secretNote @secret'), true)
+t('dump.withheldNamesTheSealed',  withheld.includes('sealed @encrypted'), true)
+t('dump.sealedValueIsAbsent',     csv.includes(SEALED), false)
+
+// FJS-3939 · the JSON branch writes the same columns the header names. It
+// serialized the whole row while the header said three were withheld.
+const jdump = await post(UI, '/api/table-dump', { table: 'Basket', format: 'json' })
+const jtext = await jdump.text()
+let jrows = []
+try { jrows = JSON.parse(jtext) } catch {}
+t('json.parses',                  Array.isArray(jrows) && jrows.length >= 1, true)
+t('json.ordinaryColumnsSurvive',  ['id', 'label'].every(c => jrows[0] && c in jrows[0]), true)
+t('json.protectedKeysAbsent',     ['token', 'secretNote', 'sealed'].filter(c => jrows[0] && c in jrows[0]).join(','), '')
+t('json.secretValueIsAbsent',     jtext.includes(SECRET), false)
+t('json.sealedValueIsAbsent',     jtext.includes(SEALED), false)
+t('json.tokenValueIsAbsent',      TOKEN.length > 8 ? jtext.includes(TOKEN) : 'no sentinel', false)
+t('json.withheldMatchesCsv',      jdump.headers.get('X-Withheld-Columns') ?? '', withheld)
 
 // The negative control for the header itself.
 const clean = await post(UI, '/api/table-dump', { table: 'Product', format: 'csv' })

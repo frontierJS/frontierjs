@@ -21,6 +21,7 @@ flags:
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 import { join, relative, resolve } from 'path'
 import { homedir } from 'os'
+import { pathToFileURL } from 'url'
 import { spawnSync } from 'child_process'
 </script>
 
@@ -34,9 +35,12 @@ there. A change under the screens is seen after the next `fli desktop:run`.
 With `--release` the entry opens the release shell, and the rebuild that
 reaches it is `fli desktop:run --release`.
 
-**The entry carries this shell's PATH and this checkout's path.** A launcher
-starts the process without the shell's rc files, so bun would not be found
-otherwise. After a bun upgrade or moving the checkout the entry opens nothing,
+**The entry carries this shell's PATH, this checkout's path and the API origin
+`desktop.config.js` names here.** A launcher starts the process without the
+shell's rc files, so bun would not be found otherwise, and without
+`FRONTIER_PUBLIC_API_URL`, so the config would fall back to its scaffold port
+and start a second API beside the one the binary was built to call. Run this
+from the shell that built the binary. After a bun upgrade or moving the checkout the entry opens nothing,
 and running this command again rewrites it.
 
 ```js
@@ -51,8 +55,10 @@ if (process.platform !== 'linux') {
 
 const root    = $.paths.root
 const surface = $.paths.desktop
+const configFile = join(surface, 'config', 'desktop.config.js')
+const api = existsSync(configFile) ? (await import(pathToFileURL(configFile).href)).default.api ?? null : null
 const entry   = desktopLauncher({
-  root, surface,
+  root, surface, api,
   bun:      process.execPath,
   fli:      resolve(global.fliRoot, 'bin', 'fli.js'),
   path:     process.env.PATH ?? '',

@@ -14,7 +14,7 @@
 import { test, expect, describe } from 'bun:test'
 import { signRequest, generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { createOutpostServer, MAX_BODY_BYTES } from '../src/server.js'
-import { createDocker, createInspector, containerName, isDigest, BACKUP_SCRIPT } from '../src/docker.js'
+import { createDocker, createInspector, containerName, isDigest, BACKUP_SCRIPT, swapFor } from '../src/docker.js'
 import { createReporter }         from '../src/report.js'
 import { createIngress }          from '../src/ingress.js'
 import { createVitals }           from '../src/vitals.js'
@@ -2056,6 +2056,197 @@ describe('the ingress — Caddy, through its admin API', () => {
     expect(caddy.config.apps.http.servers.ingress.routes).toEqual([])
     // A second stop has nothing to remove, and says so rather than failing.
     expect(await (await send(server, 'POST', '/stop', { app_id: 'app-1' })).json()).toMatchObject({ unrouted: false })
+  })
+
+  describe('a start-first swap (FJS-D1837)', () => {
+    const LIVE = nameFor('app-1')
+    const NEXT = `${LIVE}_next`
+    const HEALTH = { attempts: 2, intervalMs: 0, settleMs: 0 }
+    // One log for the daemon and Caddy, so a case can ask which came first.
+    // The classifier is the one `docker run --rm`; unless a case states its
+    // answer, the release is an expand and may overlap.
+    const verdict = (v, baseline = { resolved: true, note: null }) => ({ stdout: `bun x litestone\n${JSON.stringify({ baseline, verdict: v })}\n` })
+    const overlapWith = (caddy, { answers = {}, ports = { [LIVE]: 7300, [NEXT]: 49153 }, fetch } = {}) => {
+      const fake = fakeRunner({ 'docker run --rm': verdict('expand'), 'docker run': { stdout: 'container-2\n' }, ...answers })
+      const run = async (argv, opts) => {
+        const at = argv.indexOf('{{json .NetworkSettings.Ports}}')
+        if (at < 0) return fake.run(argv, opts)
+        fake.calls.push(argv)
+        const port = ports[argv[at + 1]]
+        return { exitCode: 0, stdout: JSON.stringify(port ? { '80/tcp': [{ HostIp: '127.0.0.1', HostPort: String(port) }] } : {}) + '\n', stderr: '' }
+      }
+      const logged = async (url, opts = {}) => {
+        fake.calls.push(['caddy', opts.method ?? 'GET', new URL(url).pathname])
+        return caddy.fetch(url, opts)
+      }
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ appsDir: APPS, health: HEALTH, run, fetch }), inspector: createInspector({ run }),
+        ingress: createIngress({ fetch: logged }),
+        log: { warn() {}, error() {} },
+      })
+      return { server, argv: () => fake.calls.map(c => c.join(' ')) }
+    }
+    const release = (server, extra = {}) => deploy(server, { hosts: ['shop.example.com'], swap: 'start-first', ...extra })
+    const routeWrites = (argv) => argv().filter(c => /^caddy (PATCH|POST|PUT) /.test(c))
+
+    test('the new container answers on a port Docker picks before the route moves, and the old one stops after', async () => {
+      const caddy = fakeCaddy()
+      const { server, argv } = overlapWith(caddy)
+      const res  = await release(server)
+      const body = await res.json()
+      expect(res.status).toBe(200)
+      expect(body).toMatchObject({ swap: 'start-first', port: 49153 })
+
+      const run = argv().findIndex(c => c.startsWith(`docker run -d --name ${NEXT}`))
+      expect(argv()[run]).toContain('-p 127.0.0.1::80')
+      const firstRoute = argv().findIndex(c => /^caddy (PATCH|POST|PUT) /.test(c))
+      expect(firstRoute).toBeGreaterThan(run)
+      expect(caddy.config.apps.http.servers.ingress.routes[0].handle[0].upstreams).toEqual([{ dial: '127.0.0.1:49153' }])
+
+      // The old one keeps serving until the route has moved, then drains.
+      const order = [`docker rename ${LIVE} ${LIVE}_replaced`, `docker rename ${NEXT} ${LIVE}`,
+                     `docker stop -t 10 ${LIVE}_replaced`, `docker rm -f ${LIVE}_replaced`]
+      const at = order.map(c => argv().indexOf(c))
+      expect(at.every(i => i > firstRoute)).toBe(true)
+      expect(at).toEqual([...at].sort((a, b) => a - b))
+    })
+
+    test('a new container that never answers is removed, and the old one is never stopped or re-routed', async () => {
+      const caddy = fakeCaddy()
+      const fetch = async () => ({ ok: false, status: 503 })
+      const { server, argv } = overlapWith(caddy, { fetch })
+      const res = await release(server, { config: { port: 7300, containerPort: 80, healthCheck: '/healthz' } })
+      expect(res.status).toBe(500)
+      const { error } = await res.json()
+      expect(error).toContain('http://127.0.0.1:49153/healthz answered 503')
+      expect(error).toContain('the previous container was not touched and is still serving')
+      expect(argv()).toContain(`docker rm -f ${NEXT}`)
+      expect(argv().some(c => c.startsWith('docker stop') || c.startsWith('docker rename'))).toBe(false)
+      expect(routeWrites(argv)).toEqual([])
+    })
+
+    test('docker refusing the run removes the half-made _next and leaves the old one alone', async () => {
+      const { server, argv } = overlapWith(fakeCaddy(), { answers: { 'docker run': { exitCode: 125, stderr: 'invalid reference format\n' } } })
+      const res = await release(server)
+      expect((await res.json()).error).toContain('did not start — docker run failed (exit 125): invalid reference format')
+      expect(argv()).toContain(`docker rm -f ${NEXT}`)
+      expect(argv().some(c => c.startsWith('docker stop') || c.startsWith('docker rename'))).toBe(false)
+    })
+
+    test('a route Caddy refuses removes the new container, with the old one still serving', async () => {
+      const caddy = fakeCaddy()
+      const refusing = { fetch: async (url, opts = {}) => (opts.method ?? 'GET') === 'GET' ? caddy.fetch(url, opts) : new Response('{"error":"admin is read-only"}', { status: 500 }) }
+      const { server, argv } = overlapWith(refusing)
+      const res = await release(server)
+      expect(res.status).toBe(500)
+      const { error } = await res.json()
+      expect(error).toContain('moving the route to it failed')
+      expect(error).toContain('the previous container was not touched')
+      expect(argv()).toContain(`docker rm -f ${NEXT}`)
+      expect(argv().some(c => c.startsWith('docker stop') || c.startsWith('docker rename'))).toBe(false)
+    })
+
+    test('a leftover _next from an unfinished swap is removed before either swap starts', async () => {
+      for (const swap of ['start-first', 'stop-first']) {
+        const { server, argv } = overlapWith(fakeCaddy(), { answers: { containers: [LIVE, NEXT] } })
+        await release(server, { swap })
+        const run = argv().findIndex(c => c.startsWith('docker run -d'))
+        expect(argv().slice(0, run)).toContain(`docker rm -f ${NEXT}`)
+      }
+    })
+
+    test('an absent swap is stop-first: the route moves before the run, onto the App\'s own port', async () => {
+      const caddy = fakeCaddy()
+      const { server, argv } = overlapWith(caddy)
+      const res = await deploy(server, { hosts: ['shop.example.com'] })
+      expect((await res.json()).swap).toBe('stop-first')
+      const run = argv().findIndex(c => c.startsWith('docker run -d'))
+      expect(argv()[run]).toContain(`--name ${LIVE} `)
+      expect(argv()[run]).toContain('-p 127.0.0.1:7300:80')
+      expect(argv().findIndex(c => /^caddy (PATCH|POST|PUT) /.test(c))).toBeLessThan(run)
+      expect(argv().indexOf(`docker stop -t 10 ${LIVE}_replaced`)).toBeLessThan(run)
+    })
+
+    test('start-first is refused, before anything runs, where the port it moves is the address', async () => {
+      const cases = [
+        [{ exposes_port: true },                   'declares its port open (exposes_port)'],
+        [{ hosts: [] },                            'needs a published port and a hostname or path'],
+        [{ swap: 'blue-green' },                   "swap is 'stop-first' or 'start-first'"],
+      ]
+      for (const [extra, said] of cases) {
+        const { server, argv } = overlapWith(fakeCaddy())
+        const res = await release(server, extra)
+        expect(res.status).toBeGreaterThanOrEqual(400)
+        expect((await res.json()).error).toContain(said)
+        expect(argv().filter(c => !c.startsWith('docker ps'))).toEqual([])
+      }
+    })
+
+    // ─── the pivot picks the swap (FJS-D1838) ───────────────────────────────
+
+    test('the classifier is the new image\'s litestone, against the live image\'s db/, with no network', async () => {
+      const { server, argv } = overlapWith(fakeCaddy(), { answers: {
+        'docker inspect --format': { stdout: 'sha256:live /app\n' },
+        'docker create --network': { stdout: 'held-1\n' },
+      } })
+      const body = await (await release(server)).json()
+      expect(body).toMatchObject({ swap: 'start-first', pivot: 'expand', swap_reason: null })
+      // The old image fills a fresh volume at its own db/, and is gone at once.
+      const create = argv().find(c => c.startsWith('docker create '))
+      const volume = create.match(/src=(fjs-before-app-1-[0-9a-f]{8}),dst=\/app\/db /)?.[1]
+      expect(volume).toBeTruthy()
+      expect(create).toEndWith('--entrypoint true sha256:live')
+      expect(argv()).toContain('docker rm -f held-1')
+      const classify = argv().find(c => c.startsWith('docker run --rm'))
+      expect(classify).toContain('--network none')
+      expect(classify).toContain(`--mount type=volume,src=${volume},dst=/fjs-before,readonly`)
+      expect(classify).toEndWith('x litestone release --from=/fjs-before/schema.lite --json')
+      // Asked before the new container runs, and the volume does not outlive it.
+      expect(argv().indexOf(classify)).toBeLessThan(argv().findIndex(c => c.startsWith(`docker run -d --name ${NEXT}`)))
+      expect(argv()).toContain(`docker volume rm -f ${volume}`)
+    })
+
+    test('a contract, an unknown, a classifier that fails and a first release each swap stop-first, and say why', async () => {
+      const cases = [
+        [{ 'docker run --rm': verdict('contract') },                                     'contract',  'this deploy is the pivot'],
+        [{ 'docker run --rm': verdict('unknown', { resolved: false, note: 'the schema there does not parse' }) },
+                                                                                          'unknown',   'unknown counts as a contract — the schema there does not parse'],
+        [{ 'docker run --rm': { exitCode: 127, stderr: 'error: could not determine executable to run for package litestone\n' } },
+                                                                                          null,        'the classifier did not run'],
+        [{ 'docker create --network': { exitCode: 125, stderr: 'Error: No such image: sha256:gone\n' } },
+                                                                                          null,        "the live release's schema could not be read"],
+        [{ containers: [] },                                                             null,        'there is no live release to serve beside it'],
+      ]
+      for (const [answers, pivot, said] of cases) {
+        const caddy = fakeCaddy()
+        const { server, argv } = overlapWith(caddy, { answers })
+        const res  = await release(server)
+        const body = await res.json()
+        expect(res.status).toBe(200)
+        expect(body).toMatchObject({ swap: 'stop-first', pivot })
+        expect(body.swap_reason).toContain(said)
+        // Today's swap exactly: the App's own port, the old one stopped before the run.
+        const run = argv().findIndex(c => c.startsWith('docker run -d'))
+        expect(argv()[run]).toContain(`--name ${LIVE} `)
+        expect(argv()[run]).toContain('-p 127.0.0.1:7300:80')
+        expect(argv().some(c => c.includes(NEXT) && !c.startsWith('docker rm'))).toBe(false)
+        expect(caddy.config.apps.http.servers.ingress.routes[0].handle[0].upstreams).toEqual([{ dial: '127.0.0.1:7300' }])
+      }
+    })
+
+    test('a stop-first release asks no classifier, and its answer names no reason', async () => {
+      const { server, argv } = overlapWith(fakeCaddy())
+      const body = await (await deploy(server, { hosts: ['shop.example.com'] })).json()
+      expect(body).toMatchObject({ swap: 'stop-first', pivot: null, swap_reason: null })
+      expect(argv().some(c => c.startsWith('docker run --rm') || c.startsWith('docker cp'))).toBe(false)
+    })
+
+    test('only an expand or an unchanged schema overlaps', () => {
+      expect(swapFor({ verdict: 'expand' })).toEqual({ swap: 'start-first', reason: null })
+      expect(swapFor({ verdict: 'unchanged' })).toEqual({ swap: 'start-first', reason: null })
+      for (const pivot of [{ verdict: 'contract' }, { verdict: 'unknown' }, { verdict: null, reason: 'x' }, {}, { verdict: 'widens' }])
+        expect(swapFor(pivot).swap).toBe('stop-first')
+    })
   })
 
   describe('a redirect answers from Caddy, with no container behind it (FJS-1615)', () => {

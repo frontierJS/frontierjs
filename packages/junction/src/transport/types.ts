@@ -5,6 +5,7 @@
 
 import type { SessionContext } from '../auth/types.ts'
 import type { SseEvent as SseFrame } from '@frontierjs/toolbelt/sse'
+import type { ServedFile } from './static.ts'
 
 // ─── Raw request — lives entirely inside transport ───────────────────────────
 
@@ -143,7 +144,7 @@ export interface TransportContext {
   text:     (data: string,  status?: number)  => Response
   html:     (data: string,  status?: number)  => Response
   redirect: (url: string,   status?: number)  => Response
-  file:     (path: string,  download?: string) => Promise<Response>
+  file:     (path: string,  served?: ServedFile) => Promise<Response>
   stream:   (readable: ReadableStream, type: string, status?: number) => Response
   empty:    (status?: number) => Response
 

@@ -12,9 +12,12 @@
 // here that needs a new client API reads as the base failing, and the runner
 // says so rather than comparing nothing.
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir }       from 'node:os'
+import { join }         from 'node:path'
+import { Database }     from 'bun:sqlite'
 import { tokenize }     from '@frontierjs/toolbelt/predicate'
-import { createClient } from '../src/index.js'
+import { createClient, parseFile } from '../src/index.js'
 import { GatePlugin }   from '../src/plugins/gate.js'
 import { main }         from '../../../scripts/bench-round.mjs'
 
@@ -81,6 +84,23 @@ export const cases = [
     },
     run:   ({ db }, i)  => db.user.update({ where: { id: (i % ROWS) + 1 }, data: { age: i % 80 } }),
     floor: ({ raw }, i) => raw.get(i % 80, (i % ROWS) + 1),
+  },
+  {
+    // A tenant registry reopens an evicted tenant over the SAME parse
+    // (FJS-3820): the schema maps and the table builders are pure functions of
+    // it, so a reopen should cost the file, not the schema. Its floor is the
+    // bare open and close of that file; a client is more than that, so the
+    // ceiling sits between the memoized ratio (~400x) and the rebuilt one (~2300x).
+    name: 'tenant-reopen', ceiling: 1000, ops: 40,
+    async open() {
+      const dir    = mkdtempSync(join(tmpdir(), 'ls-reopen-'))
+      const path   = join(dir, 'tenant.db')
+      const parsed = parseFile(new URL('../test/fixtures/corpus/lago.lite', import.meta.url).pathname)
+      await (await createClient({ parsed, db: path })).$close()
+      return { parsed, path, close: () => rmSync(dir, { recursive: true, force: true }) }
+    },
+    run: async ({ parsed, path }) => { await (await createClient({ parsed, db: path })).$close() },
+    floor: ({ path }) => { new Database(path).close() },
   },
   {
     // The lexer every schema parse starts with (FJS-112 P4). Its floor is a

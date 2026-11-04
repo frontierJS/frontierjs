@@ -106,7 +106,7 @@ export { createLitestoneBase, parseQuery as parseLitestoneQuery, parseWhere,
          findWindow,
          deriveModelName, accessorCandidates, withLitestoneDb,
          sessionGateLevel, callerGateLevel, principalGateLevel, toDataPrincipal, LEVELS,
-         applyClaims, membershipClaim, MEMBERSHIP, tenantOf,
+         applyClaims, heldClaims, membershipClaim, MEMBERSHIP, tenantOf,
          jsonSchemaToJunctionSchema }                              from './src/core/litestone.ts'
 export type { GradableUser } from './src/core/litestone.ts'
 export type { PrincipalResolver, PrincipalSetting, PrincipalClaims, PrincipalDescription, DescribedResolver,

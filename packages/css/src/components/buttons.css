@@ -121,6 +121,30 @@
   border-color:    color-mix(in srgb, var(--rule) var(--glass-alpha), transparent);
 }
 
+/*
+ * ── Tinted — what a toned Card already is, on an inline chip ────
+ *
+ *   <span class="badge success tinted">Paid</span>
+ *
+ * Fill, rule and ink are the tint ramp (tones.css) read as-is, so a tinted
+ * badge inside a danger Card is the Card's own three colors and the
+ * percentages keep one home. On a surface the class adds nothing: a toned
+ * surface is tinted already.
+ *
+ * Written once for btn, pill and badge, here because buttons.css is the
+ * first of the three and each one's own fill is (0,1,0). Untoned it is the
+ * neutral pair, as untoned .ghost is: the ramp is guaranteed-invalid with
+ * no tone, and restating it from --tone-fill would be a second home for
+ * its numbers.
+ */
+:is(.btn, .pill, .badge).tinted {
+  --btn-ink:    var(--tint-ink, var(--ink-soft));
+  background:   var(--tint-surface, var(--surface-sunken));
+  border-color: var(--tint-rule, var(--rule));
+  color:        var(--btn-ink);
+  box-shadow:   none;
+}
+
 .btn.ghost:hover {
   background: color-mix(in srgb, var(--bg-mix, var(--ink)) 8%, transparent);
   /* The brightness filter is for solid fills; on transparent it does nothing
@@ -157,7 +181,7 @@
   box-shadow: inset 0 2px 4px color-mix(in srgb, black 35%, transparent);
   filter:     brightness(0.9);
 }
-.btn:is(.outlined, .ghost, .link, .glass)[aria-pressed="true"] {
+.btn:is(.outlined, .ghost, .link, .glass, .tinted)[aria-pressed="true"] {
   background: color-mix(in srgb, var(--btn-ink) 16%, var(--surface));
   box-shadow: none;
   filter:     none;
@@ -198,7 +222,7 @@
 /* Outlined and link buttons draw their spinner in the tone, not on it —
    the same --btn-ink their label takes, so a spinner cannot be the one
    thing on the button drawn at 1.99:1. */
-.btn[aria-busy="true"]:is(.outlined, .link)::after {
+.btn[aria-busy="true"]:is(.outlined, .link, .tinted)::after {
   border-color: color-mix(in srgb, var(--btn-ink) 30%, transparent);
   border-block-start-color: var(--btn-ink);
 }

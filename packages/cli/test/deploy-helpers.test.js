@@ -391,6 +391,34 @@ describe('dockerfileScripts', () => {
 })
 
 
+// ─── unexecdEntrypoint ────────────────────────────────────────────────────────
+// FJS-3943: a chain under sh -c leaves sh as PID 1, which drops SIGTERM.
+describe('unexecdEntrypoint', () => {
+  const find = async (src) => {
+    const { unexecdEntrypoint } = await import('../core/utils.js')
+    return unexecdEntrypoint(src)
+  }
+
+  test('a chain whose last command is not exec\'d is named', async () => {
+    const line = 'CMD ["sh", "-c", "bun run db:migrate && bun run start"]'
+    expect(await find(`FROM oven/bun\n${line}\n`)).toBe(line)
+    expect(await find('CMD bun run db:migrate && bun run start')).not.toBeNull()
+    expect(await find('ENTRYPOINT ["/bin/sh", "-c", "a; b"]')).not.toBeNull()
+  })
+
+  test('an exec\'d last command passes', async () => {
+    expect(await find('CMD ["sh", "-c", "bun run db:migrate && exec bun run start"]')).toBeNull()
+    expect(await find('CMD bun run db:migrate && exec bun run start')).toBeNull()
+  })
+
+  test('the exec form with no shell and a lone command are not read', async () => {
+    expect(await find('CMD ["bun", "run", "start"]')).toBeNull()
+    expect(await find('CMD ["sh", "-c", "bun run start"]')).toBeNull()
+    expect(await find('RUN a && b')).toBeNull()
+    expect(await find('')).toBeNull()
+  })
+})
+
 // ─── swapContainer ────────────────────────────────────────────────────────────
 //
 // The step that takes the old container down and puts the new one up. It threw
