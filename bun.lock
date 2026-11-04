@@ -41,7 +41,7 @@
     },
     "packages/auth": {
       "name": "@frontierjs/auth",
-      "version": "1.0.11",
+      "version": "1.0.12",
       "devDependencies": {
         "@frontierjs/junction": "workspace:*",
         "@frontierjs/litestone": "workspace:*",
@@ -104,7 +104,7 @@
     },
     "packages/cli": {
       "name": "@frontierjs/cli",
-      "version": "0.1.12",
+      "version": "0.1.13",
       "bin": {
         "fli": "./bin/fli.js",
       },
@@ -155,7 +155,7 @@
     },
     "packages/css": {
       "name": "@frontierjs/css",
-      "version": "0.16.9",
+      "version": "0.16.10",
       "devDependencies": {
         "@frontierjs/toolbelt": "workspace:*",
       },
@@ -217,7 +217,7 @@
     },
     "packages/jetty": {
       "name": "@frontierjs/jetty",
-      "version": "0.0.9",
+      "version": "0.0.10",
       "bin": {
         "jetty": "./bin/jetty.js",
       },
@@ -254,7 +254,7 @@
     },
     "packages/junction": {
       "name": "@frontierjs/junction",
-      "version": "0.1.12",
+      "version": "0.1.13",
       "bin": {
         "junction": "./tools/cli.ts",
       },
@@ -273,7 +273,7 @@
     },
     "packages/litestone": {
       "name": "@frontierjs/litestone",
-      "version": "1.1.14",
+      "version": "1.1.15",
       "bin": {
         "litestone": "./src/tools/cli.js",
       },
@@ -304,7 +304,7 @@
     },
     "packages/mesa": {
       "name": "@frontierjs/mesa",
-      "version": "0.1.10",
+      "version": "0.1.11",
       "dependencies": {
         "@frontierjs/toolbelt": "workspace:*",
         "acorn": "^8.0.0",
@@ -386,7 +386,7 @@
     },
     "packages/orion": {
       "name": "@frontierjs/orion",
-      "version": "0.0.4",
+      "version": "0.0.5",
       "dependencies": {
         "@frontierjs/toolbelt": "workspace:*",
       },
@@ -409,7 +409,7 @@
     },
     "packages/outpost": {
       "name": "@frontierjs/outpost",
-      "version": "0.1.10",
+      "version": "0.1.11",
       "bin": {
         "outpost": "./src/index.js",
       },
@@ -435,7 +435,7 @@
     },
     "packages/sierra": {
       "name": "@frontierjs/sierra",
-      "version": "0.1.11",
+      "version": "0.1.12",
       "bin": {
         "sierra": "./src/tools/cli.js",
       },
@@ -525,7 +525,7 @@
     },
     "packages/toolbelt": {
       "name": "@frontierjs/toolbelt",
-      "version": "0.1.9",
+      "version": "0.1.10",
     },
     "packages/ui": {
       "name": "@frontierjs/ui",
