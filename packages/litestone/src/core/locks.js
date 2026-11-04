@@ -4,7 +4,7 @@
 // not bypass it.
 
 import { processId } from '#host'
-import { suggestKey } from './args.js'
+import { nearest } from '@frontierjs/toolbelt/typo'
 import { LockNotAcquiredError, LockReleasedByOtherError, LockExpiredError } from './errors.js'
 
 // ─── Lock primitive ───────────────────────────────────────────────────────────
@@ -46,7 +46,7 @@ export function assertLockOptions(/** @type {any} */ rest) {
   if (!unknown.length) return
   const lines = unknown.map(k => {
     if (LOCK_OPTION_ANSWERS[k]) return `  ${k} ${LOCK_OPTION_ANSWERS[k]}`
-    const near = suggestKey(k, LOCK_OPTIONS)
+    const near = nearest(k, LOCK_OPTIONS)
     return `  ${k}${near ? ` — did you mean \`${near}\`?` : ''}`
   })
   throw new Error(

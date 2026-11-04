@@ -64,8 +64,9 @@ import {
   applyGeneratedDefaults, restampClock, noteStamp, stampFromAuth, applyAuthDefaults, ensureSequenceTable,
   applySequences, authStamped } from './stamps.js'
 import {
-  suggestKey, globalFilterKeysFor,
+  globalFilterKeysFor,
   globalFilterRefusal, collectWhereKeyProblems, collectAggKeyProblems, VIEW_REFUSED, withArgValidation } from './args.js'
+import { nearest } from '@frontierjs/toolbelt/typo'
 import { loadComputedFields, normalizeComputed, applyComputed } from './computed.js'
 import { makeTxManager, makeReadRouter } from './transaction.js'
 import { makeLockPrimitive } from './locks.js'
@@ -5308,7 +5309,7 @@ function assertClientOptions(rest) {
     // The answered names are candidates too: `autoMigrateee` is a misspelling of
     // a thing that is not an option, and pointing at the nearest real option
     // would be a worse answer than the one there is (FJS-579 measured that spelling).
-    const near = suggestKey(k, [...CLIENT_OPTIONS, ...Object.keys(OPTION_ANSWERS)])
+    const near = nearest(k, [...CLIENT_OPTIONS, ...Object.keys(OPTION_ANSWERS)])
     if (near && OPTION_ANSWERS[near]) return `  ${k} — \`${near}\` ${OPTION_ANSWERS[near]}`
     return `  ${k}${near ? ` — did you mean \`${near}\`?` : ''}`
   })

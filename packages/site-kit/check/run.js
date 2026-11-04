@@ -16,7 +16,7 @@ import meta from './rules/meta.js'
 import links from './rules/links.js'
 import schema from './rules/schema.js'
 
-export { finding, plural, didYouMean, proseLines, levenshtein } from './finding.js'
+export { finding, plural, proseLines } from './finding.js'
 export { frontMatter, norm, routeOf, walk, DIST, PUBLIC, SETTINGS, TRAILING_SLASH, UA } from './context.js'
 export { makePage } from './html.js'
 export { withSchema, healthFindings } from './rules/schema.js'

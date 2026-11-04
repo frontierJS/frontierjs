@@ -226,9 +226,9 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           pages commands declare, and fli's tools — behind
           `localMachineRefusal` and off-limits to agents and keys. /pages/ opens a page as a
           blob, and a link between two pages is posted back to that tab
-          services/infra/ takes one and has no MODEL — `graph` and
-          `onboarding`, two projections assembled from several tables, where
-          storing either would be a second answer that goes stale
+          services/infra/ takes one and has no MODEL — `graph`, `launch`
+          and `summary`, projections assembled from several tables, where
+          storing any would be a second answer that goes stale
           services/trash/ has no model either, and it only LISTS — a
           restore goes to the row's own service, whose `remove` knows what else
           the delete did; a service whose delete has a side effect overrides

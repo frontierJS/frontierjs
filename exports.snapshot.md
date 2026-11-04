@@ -428,6 +428,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./trace (types)` | `src/trace/trace.d.ts` | yes |
 | exports | `./trace (default)` | `src/trace/trace.js` | yes |
 | exports | `./tty` | `src/tty/tty.js` | yes |
+| exports | `./typo (types)` | `src/typo/typo.d.ts` | yes |
+| exports | `./typo (default)` | `src/typo/typo.js` | yes |
 | exports | `./units` | `src/units/units.js` | yes |
 
 ## `@frontierjs/ui`

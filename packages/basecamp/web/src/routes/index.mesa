@@ -103,8 +103,12 @@ title: Home
   </article>
 {/if}
 
-<!-- The mock's Basecamp home opens with the queue, and so does this one:
-     the first question an operator has is "what is broken", not "what exists". -->
+<!-- Setup comes first until it is done — a fresh install has nothing broken
+     and no DNS provider, and the queue below cannot say so. Once every step
+     is done the card is gone and home opens with the queue: the first
+     question an operator has is "what is broken", not "what exists". -->
+<LaunchSteps />
+
 <ActionQueue notices={notices} />
 
 <section class="tiles" id="fleet-summary" aria-label="Fleet summary">
@@ -126,7 +130,6 @@ title: Home
             tone={summary?.alerts.unacknowledged ? 'danger' : ''} />
 </section>
 
-<LaunchSteps />
 
 {#if pinned.length}
   <nav class="cluster" id="pinned-dashboards" aria-label="Pinned dashboards">

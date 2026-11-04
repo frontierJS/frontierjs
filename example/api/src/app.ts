@@ -509,7 +509,31 @@ app.configure(commitments({
 // Orion: flows a person draws, run by Caravan as the flow's owner in the flow's
 // own shop (`FJS-D276`, `FJS-D294`). AFTER the queue, which it declares it
 // requires. Its screens mount at /automations/ in web/ by one file.
-app.configure(orion())
+//
+// A template is compiled against this catalog when the app boots, so a model or
+// a field the shop lacks stops the boot here and not a person at the button.
+const lit = (value: unknown) => ({ type: 'literal', value })
+app.configure(orion({
+  templates: [{
+    id:          'welcome-note',
+    name:        'Welcome note',
+    description: 'Leaves a note on every new customer.',
+    category:    'Customers',
+    tags:        ['customer', 'onboarding'],
+    definition:  {
+      nodes: {
+        t:       { id: 't', type: 'trigger.model', config: { model: lit('Customer'), on: lit(['create']) } },
+        welcome: { id: 'welcome', type: 'model.patch', config: {
+          model: lit('Customer'),
+          id:    { type: 'ref', path: '$.trigger.record.id' },
+          // Customer is `@version`, so the patch carries the revision the trigger read.
+          data:  { type: 'object', properties: { notes: lit('Welcomed by an automation'), version: { type: 'ref', path: '$.trigger.record.version' } } },
+        } },
+      },
+      edges: [{ id: 't-welcome', from: 't', to: 'welcome' }],
+    },
+  }],
+}))
 
 // ─── Outbound ─────────────────────────────────────────────────────────────
 //

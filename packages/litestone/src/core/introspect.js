@@ -22,8 +22,9 @@ import { policyExprToString, policyVerdict, withLiteralDefaults, readReach, read
 import { resolveTenancy } from './tenancy.js'
 import { schemaDeclaresAccessRules, shapesRead, nowISO } from './schema-maps.js'
 import { sortableKeysFor } from './query.js'
-import { suggestKey, pointFieldsOf, liftNearOrders, sortHopFor, _guardedNames, _shownSet,
+import { pointFieldsOf, liftNearOrders, sortHopFor, _guardedNames, _shownSet,
          collectWhereKeyProblems, collectOrderByKeyProblems, whereKeysFor } from './args.js'
+import { nearest } from '@frontierjs/toolbelt/typo'
 import { applyFieldPolicyTo } from './field-policy.js'
 import { trailMarksOf, markOf, untrailed } from './trail-entries.js'
 
@@ -70,7 +71,7 @@ export function makeIntrospection(/** @type {any} */ ctx, { schemaFilePath, asSy
         return {
           ...p,
           allowed,
-          suggestion: p.suggestion && hidden.has(p.suggestion) ? suggestKey(p.key, new Set(allowed)) : p.suggestion,
+          suggestion: p.suggestion && hidden.has(p.suggestion) ? nearest(p.key, new Set(allowed)) : p.suggestion,
           message:    p.message.replace('%MODEL%', p.model ?? model.name),
         }
       })

@@ -118,6 +118,10 @@
       "default": "./src/trace/trace.js"
     },
     "./tty": "./src/tty/tty.js",
+    "./typo": {
+      "types": "./src/typo/typo.d.ts",
+      "default": "./src/typo/typo.js"
+    },
     "./units": "./src/units/units.js"
   },
   "files": [

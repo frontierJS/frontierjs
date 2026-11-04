@@ -144,6 +144,14 @@ package in a bun monorepo, and then ran the wrong runner.
 import { readFileSync, copyFileSync } from 'fs'
 import { resolve } from 'path'
 
+const core = name => import(resolve(global.fliRoot, `core/${name}.js`))
+
+function readManifest(root) {
+  try {
+    return JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
+  } catch { return {} } // an app with no manifest still has surfaces
+}
+
 // The App `BASECAMP_APP_ID` names, whose port is the one Basecamp allocated
 // on its machine; null for an app Basecamp does not hold.
 async function placedApp() {
@@ -151,50 +159,31 @@ async function placedApp() {
   if (!appId) return null
   const key = process.env.BASECAMP_API_KEY
   if (!key) throw new Error('BASECAMP_APP_ID is set and BASECAMP_API_KEY is not — the App\'s port is Basecamp\'s to say; set the key, or pass --api <ssh alias>:<port>')
-  const { basecamp, LOCAL_BASECAMP } = await import(resolve(global.fliRoot, 'core/basecamp.js'))
+  const { basecamp, LOCAL_BASECAMP } = await core('basecamp')
   const origin = (process.env.BASECAMP_URL || LOCAL_BASECAMP).replace(/\/+$/, '')
   return basecamp(origin, key, `/apps/${encodeURIComponent(appId)}`)
 }
-</script>
-
-```js
-const root = $.paths.root
-
-const { warnIfDatabaseEmpty, detectRunner } =
-  await import(resolve(global.fliRoot, 'core/db-preflight.js'))
-const { claimSession, busyPorts, composedSurfaces, whoHolds } =
-  await import(resolve(global.fliRoot, 'core/ports.js'))
-const { runSurfaces } =
-  await import(resolve(global.fliRoot, 'core/dev-run.js'))
-const { missingPackages, unregisteredLinks } =
-  await import(resolve(global.fliRoot, 'core/install-preflight.js'))
-const { plural } =
-  await import(resolve(global.fliRoot, 'core/text.js'))
-const { encryptionKeyState, envValue, KEY } =
-  await import(resolve(global.fliRoot, 'core/env-preflight.js'))
-
-let manifest = {}
-try {
-  manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
-} catch { /* an app with no manifest still has surfaces */ }
 
 // Before the check, because the slot decides which ports are checked.
-let session
-try {
-  session = await claimSession(root, { name: manifest.name, scripts: manifest.scripts, dry: flag.dry })
-} catch (err) {
-  log.error(err.message)
-  process.exit(1)
+async function claimSlot($, root, manifest) {
+  const { claimSession } = await core('ports')
+  try {
+    return await claimSession(root, { name: manifest.name, scripts: manifest.scripts, dry: $.flag.dry })
+  } catch (err) {
+    $.log.error(err.message)
+    process.exit(1)
+  }
 }
 
 // `--api`: where the tunnel goes, and the local port it takes from the API surface.
-let remote = null
-if (flag.api) {
-  const { resolveApiTarget, TARGETS } = await import(resolve(global.fliRoot, 'core/api-tunnel.js'))
-  const { loadFrontierConfig } = await import(resolve(global.fliRoot, 'core/utils.js'))
-  const { PLACEHOLDER_SERVER } = await import(resolve(global.fliRoot, 'core/deploy-target.js'))
-  const app = TARGETS[String(flag.api).trim().toLowerCase()] ? await placedApp() : null
-  const resolved = resolveApiTarget(flag.api, (await loadFrontierConfig(root))?.deploy ?? null, app)
+async function resolveRemote($, root, session) {
+  const { log } = $
+  const { resolveApiTarget, TARGETS } = await core('api-tunnel')
+  const { loadFrontierConfig } = await core('utils')
+  const { PLACEHOLDER_SERVER } = await core('deploy-target')
+  const target = $.flag.api
+  const app = TARGETS[String(target).trim().toLowerCase()] ? await placedApp() : null
+  const resolved = resolveApiTarget(target, (await loadFrontierConfig(root))?.deploy ?? null, app)
   if (!resolved.ok) { log.error(resolved.reason); process.exit(1) }
   if (resolved.host.endsWith(PLACEHOLDER_SERVER)) {
     log.error(`deploy.server is still the placeholder '${PLACEHOLDER_SERVER}' — set it, or pass --api <ssh alias>`)
@@ -202,16 +191,177 @@ if (flag.api) {
   }
   const apiRow = session.rows.find(r => r.surface === 'api')
   if (!apiRow) { log.error('--api replaces the API surface, and this app\'s dev starts none'); process.exit(1) }
-  remote = { ...resolved, localPort: apiRow.port, label: resolved.target ?? `${resolved.host}:${resolved.port}` }
+  return { ...resolved, localPort: apiRow.port, label: resolved.target ?? `${resolved.host}:${resolved.port}` }
 }
+
+// The summary names each URL, so the ports are the long version.
+function sayPorts({ echo, chalk }, session, at) {
+  if (!session.rows.length) return
+  const where = session.rows.map(r => `${r.label} ${r.port}`).join(' · ')
+  echo(chalk.dim(at ? `${at} — ${where}` : where))
+}
+
+// Name the holder rather than guess. The two cases want different hands:
+// this app's own earlier run is killed, another app's slot is left alone.
+async function refuseBusyPorts({ echo, log, chalk }, busy, root, manifest) {
+  const { whoHolds } = await core('ports')
+  log.error(`Port${busy.length === 1 ? '' : 's'} already in use`)
+  const lines = ['']
+  let ownRun = false, otherApp = false
+  for (const b of busy) {
+    lines.push(`${chalk.bold(String(b.port))}  ${b.label}${b.script ? chalk.dim(`  (bun run ${b.script})`) : ''}`)
+    const holders = whoHolds(b.port, root)
+    if (!holders.length) lines.push(chalk.dim('       held by a process this user cannot see'))
+    for (const h of holders) {
+      const who = h.own ? 'this app\'s own run'
+        : h.session ? `${h.session.name}${Number.isInteger(h.session.slot) ? ` on slot ${h.session.slot}` : ''}`
+        : 'a process outside any dev slot'
+      const where = h.own ? '' : h.session ? `  ${h.session.root}` : h.cwd ? `  ${h.cwd}` : ''
+      lines.push(`       ${chalk.dim('held by')} ${who} ${chalk.dim(`-- pid ${h.pid}`)}${chalk.dim(where)}`)
+      if (h.cmd) lines.push(chalk.dim(`         ${h.cmd}`))
+      if (h.own) ownRun = true
+      else if (h.session) otherApp = true
+    }
+  }
+  lines.push('')
+  if (ownRun) lines.push(
+    chalk.dim('A run of this app still holds the old database open, so `db:reset` will'),
+    chalk.dim('appear to do nothing while it lives.') + ' fli kill <port> ' + chalk.dim('stops it.'))
+  if (otherApp) lines.push(
+    chalk.dim('Another app has this slot. Stop it, or forget this app\'s slot with'),
+    chalk.dim(`\`${`fli ps --clean ${manifest.name ?? ''}`.trim()}\` and run again for a free one.`))
+  if (!ownRun && !otherApp) lines.push(chalk.dim('fli ps 8000 ') + chalk.dim('asks about a port by number.'))
+  lines.push('')
+  echo.lines(lines, { indent: 2 })
+  process.exit(1)
+}
+
+async function offerInstall($, root, missing) {
+  const { echo, log, chalk, tty } = $
+  const { detectRunner } = await core('db-preflight')
+  const { missingPackages, unregisteredLinks } = await core('install-preflight')
+  const { plural } = await core('text')
+  const install = `${detectRunner(root)} install`
+  log.warn(`${plural(missing.length, 'declared package')} not installed — ${missing.slice(0, 4).join(', ')}${missing.length > 4 ? ', …' : ''}`)
+  const links = unregisteredLinks(root)
+  if (links.length) {
+    log.error(`${install} will fail: no \`bun link\` on this machine for ${links.join(', ')}`)
+    echo.lines([chalk.dim('Run `bun link` in each of those packages, or point the manifest at published versions.')], { indent: 2 })
+    process.exit(1)
+  }
+  if (!tty.interactive) {
+    log.error(`Install first: ${install}`)
+    process.exit(1)
+  }
+  const answer = (await tty.line(`Run ${install} now? [Y/n]`)).trim().toLowerCase()
+  if (answer && answer !== 'y' && answer !== 'yes') process.exit(1)
+  $.exec({ command: `cd ${root} && ${install}` })
+  const still = missingPackages(root)
+  if (still.length) {
+    log.error(`still not installed after ${install}: ${still.join(', ')}`)
+    process.exit(1)
+  }
+}
+
+// The new key, or '' when the person declined: it travels to the servers on `env:`.
+async function offerKey($, root, keyState) {
+  const { echo, log, chalk, tty } = $
+  const { envValue, KEY } = await core('env-preflight')
+  const keygen = `fli keygen aes --format hex --name ${KEY} --env`
+  log.warn(keyState === 'no-env'
+    ? `no .env — the API refuses to start without ${KEY}`
+    : `${KEY} is blank in .env — the API refuses to start without it`)
+  const ask = keyState === 'no-env' ? `Create .env from .env.example with a new ${KEY}?` : `Generate ${KEY} into .env?`
+  const answer = tty.interactive ? (await tty.line(`${ask} [Y/n]`)).trim().toLowerCase() : 'n'
+  if (answer && answer !== 'y' && answer !== 'yes') {
+    echo.lines([chalk.dim(`${keyState === 'no-env' ? 'cp .env.example .env && ' : ''}${keygen}`)], { indent: 2 })
+    return ''
+  }
+  if (keyState === 'no-env') copyFileSync(resolve(root, '.env.example'), resolve(root, '.env'))
+  $.exec({ command: `cd ${root} && ${$.fli} keygen aes --format hex --name ${KEY} --env` })
+  // fli loaded the blank from .env at startup, and a child's own copy of the
+  // name wins over the file bun reads for it.
+  return envValue(readFileSync(resolve(root, '.env'), 'utf8'), KEY)
+}
+
+// A preflight that throws must not stop a dev server. It is a courtesy.
+async function warnIfEmpty($, verbose) {
+  const { warnIfDatabaseEmpty } = await core('db-preflight')
+  try {
+    warnIfDatabaseEmpty($)
+  } catch (err) {
+    if (verbose) $.echo($.chalk.dim(`database preflight skipped: ${err.message}`))
+  }
+}
+
+async function openTunnelFor({ echo, log, chalk, tty }, remote, verbose) {
+  const { openTunnel, sshArgs } = await core('api-tunnel')
+  echo(chalk`{dim ·} tunnel {bold ${remote.label}} {dim —} localhost:${remote.localPort} → ${remote.host}:${remote.port}`)
+  if (verbose) echo(chalk.dim(`ssh ${sshArgs(remote).join(' ')}`))
+  let tunnel
+  try {
+    tunnel = await openTunnel(remote)
+  } catch (err) {
+    log.error(`tunnel to ${remote.host} did not open: ${err.message}`)
+    process.exit(1)
+  }
+  if (tunnel.status >= 400) log.warn(`${remote.health} answered ${tunnel.status} through the tunnel`)
+  if (remote.target === 'production') log.warn(`every write goes to the ${chalk.bold('production')} database`)
+  // ssh shares the terminal's process group so a passphrase prompt can reach
+  // the person, and so Ctrl-C signals it directly: a signal is a quit, not a drop.
+  let quitting = false
+  tty.onExit(() => { quitting = true; tunnel.child.kill() })
+  tunnel.child.on('close', (code, signal) => {
+    if (!quitting && !signal) log.error(`tunnel to ${remote.host} closed — the surfaces have no API until fli dev restarts`)
+  })
+  return tunnel
+}
+
+// The keys wait for the summary, so the first thing on screen is whether the app came up.
+function keyHints({ chalk }, run) {
+  return run.summarized && [
+    `${chalk.bold('o')} open`, `${chalk.bold('r')} restart`,
+    `${chalk.bold('v')} ${run.compact ? 'verbose' : 'compact'}`, `${chalk.bold('q')} quit`,
+  ].map(chalk.dim)
+}
+
+async function keyLoop({ tty }, run, footer) {
+  const { openUrl } = await core('open-url')
+  const KEYS = { o: 'open', r: 'restart', v: 'verbose', q: 'quit' }
+  let exited = false
+  run.done.then(() => { exited = true })
+  while (!exited) {
+    const key = await Promise.race([tty.keys(null, KEYS), run.done.then(() => null)])
+    if (key === 'q' || key === null) break
+    if (key === 'o') {
+      const url = run.frontUrl()
+      if (url) openUrl(url)
+    }
+    if (key === 'r') await run.restart()
+    if (key === 'v') await run.restart({ compact: !run.compact })
+    footer.update()
+  }
+  footer.stop()
+  if (!exited) process.kill(process.pid, 'SIGINT')
+}
+</script>
+
+```js
+const root = $.paths.root
+
+const { detectRunner } = await core('db-preflight')
+const { busyPorts, composedSurfaces } = await core('ports')
+const { runSurfaces } = await core('dev-run')
+const { missingPackages } = await core('install-preflight')
+const { encryptionKeyState, KEY } = await core('env-preflight')
+
+const manifest = readManifest(root)
+const session = await claimSlot($, root, manifest)
+const remote = flag.api ? await resolveRemote($, root, session) : null
 
 const verbose = flag.verbose === true
 const at = [session.branch && `branch ${session.branch}`, session.slot && `slot ${session.slot}`].filter(Boolean).join(' · ')
-if (session.rows.length) {
-  const where = session.rows.map(r => `${r.label} ${r.port}`).join(' · ')
-  // Compact, the summary names each URL, so the ports are the long version.
-  log[verbose ? 'info' : 'detail'](at ? `${at} — ${where}` : where)
-}
+if (verbose) sayPorts($, session, at)
 
 let generatedKey = ''
 if (flag.check) {
@@ -219,90 +369,15 @@ if (flag.check) {
   // anything that takes time — including reading a database the ghost still
   // has open.
   const busy = await busyPorts(session.rows)
-
-  if (busy.length && !flag.dry) {
-    log.error(`Port${busy.length === 1 ? '' : 's'} already in use`)
-    // Name the holder rather than guess. The two cases want different hands:
-    // this app's own earlier run is killed, another app's slot is left alone.
-    const lines = ['']
-    let ownRun = false, otherApp = false
-    for (const b of busy) {
-      lines.push(`${chalk.bold(String(b.port))}  ${b.label}${b.script ? chalk.dim(`  (bun run ${b.script})`) : ''}`)
-      const holders = whoHolds(b.port, root)
-      if (!holders.length) lines.push(chalk.dim('       held by a process this user cannot see'))
-      for (const h of holders) {
-        const who = h.own ? 'this app\'s own run'
-          : h.session ? `${h.session.name}${Number.isInteger(h.session.slot) ? ` on slot ${h.session.slot}` : ''}`
-          : 'a process outside any dev slot'
-        const where = h.own ? '' : h.session ? `  ${h.session.root}` : h.cwd ? `  ${h.cwd}` : ''
-        lines.push(`       ${chalk.dim('held by')} ${who} ${chalk.dim(`-- pid ${h.pid}`)}${chalk.dim(where)}`)
-        if (h.cmd) lines.push(chalk.dim(`         ${h.cmd}`))
-        if (h.own) ownRun = true
-        else if (h.session) otherApp = true
-      }
-    }
-    lines.push('')
-    if (ownRun) lines.push(
-      chalk.dim('A run of this app still holds the old database open, so `db:reset` will'),
-      chalk.dim('appear to do nothing while it lives.') + ' fli kill <port> ' + chalk.dim('stops it.'))
-    if (otherApp) lines.push(
-      chalk.dim('Another app has this slot. Stop it, or forget this app\'s slot with'),
-      chalk.dim(`\`${`fli ps --clean ${manifest.name ?? ''}`.trim()}\` and run again for a free one.`))
-    if (!ownRun && !otherApp) lines.push(chalk.dim('fli ps 8000 ') + chalk.dim('asks about a port by number.'))
-    lines.push('')
-    echo.lines(lines, { indent: 2 })
-    process.exit(1)
-  }
+  if (busy.length && !flag.dry) await refuseBusyPorts($, busy, root, manifest)
 
   const missing = missingPackages(root)
-  if (missing.length && !flag.dry) {
-    const install = `${detectRunner(root)} install`
-    log.warn(`${plural(missing.length, 'declared package')} not installed — ${missing.slice(0, 4).join(', ')}${missing.length > 4 ? ', …' : ''}`)
-    const links = unregisteredLinks(root)
-    if (links.length) {
-      log.error(`${install} will fail: no \`bun link\` on this machine for ${links.join(', ')}`)
-      echo.lines([chalk.dim('Run `bun link` in each of those packages, or point the manifest at published versions.')], { indent: 2 })
-      process.exit(1)
-    }
-    if (!tty.interactive) {
-      log.error(`Install first: ${install}`)
-      process.exit(1)
-    }
-    const answer = (await tty.line(`Run ${install} now? [Y/n]`)).trim().toLowerCase()
-    if (answer && answer !== 'y' && answer !== 'yes') process.exit(1)
-    $.exec({ command: `cd ${root} && ${install}` })
-    const still = missingPackages(root)
-    if (still.length) {
-      log.error(`still not installed after ${install}: ${still.join(', ')}`)
-      process.exit(1)
-    }
-  }
+  if (missing.length && !flag.dry) await offerInstall($, root, missing)
 
   const keyState = remote ? 'remote' : encryptionKeyState(root)
-  if ((keyState === 'no-env' || keyState === 'blank') && !flag.dry) {
-    const keygen = `fli keygen aes --format hex --name ${KEY} --env`
-    log.warn(keyState === 'no-env'
-      ? `no .env — the API refuses to start without ${KEY}`
-      : `${KEY} is blank in .env — the API refuses to start without it`)
-    const ask = keyState === 'no-env' ? `Create .env from .env.example with a new ${KEY}?` : `Generate ${KEY} into .env?`
-    const answer = tty.interactive ? (await tty.line(`${ask} [Y/n]`)).trim().toLowerCase() : 'n'
-    if (answer && answer !== 'y' && answer !== 'yes') {
-      echo.lines([chalk.dim(`${keyState === 'no-env' ? 'cp .env.example .env && ' : ''}${keygen}`)], { indent: 2 })
-    } else {
-      if (keyState === 'no-env') copyFileSync(resolve(root, '.env.example'), resolve(root, '.env'))
-      $.exec({ command: `cd ${root} && ${$.fli} keygen aes --format hex --name ${KEY} --env` })
-      // fli loaded the blank from .env at startup, and a child's own copy of the
-      // name wins over the file bun reads for it — so the new value travels on `env:`.
-      generatedKey = envValue(readFileSync(resolve(root, '.env'), 'utf8'), KEY)
-    }
-  }
+  if ((keyState === 'no-env' || keyState === 'blank') && !flag.dry) generatedKey = await offerKey($, root, keyState)
 
-  try {
-    if (!remote) warnIfDatabaseEmpty($)
-  } catch (err) {
-    // A preflight that throws must not stop a dev server. It is a courtesy.
-    log.detail(`database preflight skipped: ${err.message}`)
-  }
+  if (!remote) await warnIfEmpty($, verbose)
 }
 
 const runner = detectRunner(root)
@@ -325,38 +400,21 @@ if (remote) {
   }
 }
 if (!composed) {
-  log.info(`${runner} run dev`)
+  echo(chalk`{dim ·} ${runner} run dev`)
   $.exec({ command: `cd ${root} && ${runner} run dev`, dry: flag.dry, env })
   return
 }
 
-let tunnel = null
 if (remote) {
-  const { openTunnel, sshArgs } = await import(resolve(global.fliRoot, 'core/api-tunnel.js'))
-  const via = `ssh ${sshArgs(remote).join(' ')}`
-  if (flag.dry) log.dry(`Would run:   ${via}`)
-  else {
-    log.info(`tunnel ${chalk.bold(remote.label)} — localhost:${remote.localPort} → ${remote.host}:${remote.port}`)
-    log[verbose ? 'info' : 'detail'](via)
-    try {
-      tunnel = await openTunnel(remote)
-    } catch (err) {
-      log.error(`tunnel to ${remote.host} did not open: ${err.message}`)
-      process.exit(1)
-    }
-    if (tunnel.status >= 400) log.warn(`${remote.health} answered ${tunnel.status} through the tunnel`)
-    if (remote.target === 'production') log.warn(`every write goes to the ${chalk.bold('production')} database`)
-    // ssh shares the terminal's process group so a passphrase prompt can reach
-    // the person, and so Ctrl-C signals it directly: a signal is a quit, not a drop.
-    let quitting = false
-    tty.onExit(() => { quitting = true; tunnel.child.kill() })
-    tunnel.child.on('close', (code, signal) => {
-      if (!quitting && !signal) log.error(`tunnel to ${remote.host} closed — the surfaces have no API until fli dev restarts`)
-    })
+  if (flag.dry) {
+    const { sshArgs } = await core('api-tunnel')
+    log.dry(`Would run:   ssh ${sshArgs(remote).join(' ')}`)
+  } else {
+    await openTunnelFor($, remote, verbose)
   }
 }
 
-log[verbose ? 'info' : 'detail'](composed.map(r => `${runner} run ${r.script}`).join(chalk.dim('  ·  ')))
+if (verbose) echo(chalk.dim(composed.map(r => `${runner} run ${r.script}`).join('  ·  ')))
 if (flag.dry) return
 
 const title = [(manifest.name ?? '').replace(/^@[^/]+\//, ''), at, remote && chalk.yellow(`API → ${remote.label}`)].filter(Boolean).join(chalk.dim(' · '))
@@ -367,28 +425,8 @@ const run = runSurfaces({
 })
 
 if (tty.interactive) {
-  const { openUrl } = await import(resolve(global.fliRoot, 'core/open-url.js'))
-  // The keys wait for the summary, so the first thing on screen is whether the app came up.
-  footer = tty.live(() => run.summarized && [
-    `${chalk.bold('o')} open`, `${chalk.bold('r')} restart`,
-    `${chalk.bold('v')} ${run.compact ? 'verbose' : 'compact'}`, `${chalk.bold('q')} quit`,
-  ].map(chalk.dim))
-  const KEYS = { o: 'open', r: 'restart', v: 'verbose', q: 'quit' }
-  let exited = false
-  run.done.then(() => { exited = true })
-  while (!exited) {
-    const key = await Promise.race([tty.keys(null, KEYS), run.done.then(() => null)])
-    if (key === 'q' || key === null) break
-    if (key === 'o') {
-      const url = run.frontUrl()
-      if (url) openUrl(url)
-    }
-    if (key === 'r') await run.restart()
-    if (key === 'v') await run.restart({ compact: !run.compact })
-    footer.update()
-  }
-  footer.stop()
-  if (!exited) process.kill(process.pid, 'SIGINT')
+  footer = tty.live(() => keyHints($, run))
+  await keyLoop($, run, footer)
 }
 process.exitCode = await run.done
 ```

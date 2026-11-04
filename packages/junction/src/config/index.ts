@@ -5,6 +5,7 @@
 
 import { join, resolve } from 'node:path'
 import { existsSync }      from 'node:fs'
+import { nearest }         from '@frontierjs/toolbelt/typo'
 import type { TrustProxy } from '../transport/forwarded.ts'
 import type { PageBounds } from '../core/directives.ts'
 
@@ -411,26 +412,13 @@ const OWN_SECTION_KEYS: Record<string, readonly string[]> = {
   plugins:    PLUGINS_CONFIG_KEYS,
 }
 
-/** The candidate nearest to `key` by edit distance, or null when none is close. */
-function nearestOf(key: string, known: readonly string[]): string | null {
-  let nearest: string | null = null
-  let best = Math.floor(key.length / 2) + 1
-  for (const candidate of known) {
-    const d = editDistance(key, candidate)
-    if (d < best) { best = d; nearest = candidate }
-  }
-  return nearest
-}
-
 /**
  * Sections of a `junction.config.js` nothing will read, each with the nearest
  * name that would have been read. `owned` names the sections plugins configured
  * on this app read, which are sections too.
  *
  * Nearest by edit distance rather than by a table of known typos: a table can
- * only ever name the mistakes somebody already made. A suggestion is offered
- * only when it is closer than half the word, so an unrelated key is reported
- * as unknown rather than corrected towards something the author never meant.
+ * only ever name the mistakes somebody already made.
  */
 export function unknownSections(cfg: unknown, owned: readonly string[] = []): Array<{ key: string; nearest: string | null }> {
   if (!isPlainObject(cfg)) return []
@@ -438,7 +426,7 @@ export function unknownSections(cfg: unknown, owned: readonly string[] = []): Ar
   const out: Array<{ key: string; nearest: string | null }> = []
   for (const key of Object.keys(cfg)) {
     if (known.includes(key)) continue
-    out.push({ key, nearest: nearestOf(key, known) })
+    out.push({ key, nearest: nearest(key, known) })
   }
   return out
 }
@@ -460,27 +448,10 @@ export function unknownKeys(
     const body = (cfg as Record<string, unknown>)[section]
     if (!isPlainObject(body)) continue
     for (const key of Object.keys(body)) {
-      if (!known.includes(key)) out.push({ section, key, nearest: nearestOf(key, known) })
+      if (!known.includes(key)) out.push({ section, key, nearest: nearest(key, known) })
     }
   }
   return out
-}
-
-/** Levenshtein, iterative, one row at a time. */
-function editDistance(a: string, b: string): number {
-  let prev = Array.from({ length: b.length + 1 }, (_, i) => i)
-  for (let i = 1; i <= a.length; i++) {
-    const row = [i]
-    for (let j = 1; j <= b.length; j++) {
-      row[j] = Math.min(
-        prev[j] + 1,
-        row[j - 1] + 1,
-        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
-      )
-    }
-    prev = row
-  }
-  return prev[b.length]
 }
 
 // ─── Config loader ────────────────────────────────────────────────────────

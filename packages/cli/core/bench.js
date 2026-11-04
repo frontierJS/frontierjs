@@ -18,6 +18,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative, extname, resolve } from 'node:path'
 import { chalk } from './color.js'
+import { formatBytes } from '@frontierjs/toolbelt/units'
 
 export const BASELINE_FILE = 'bench.baseline.json'
 
@@ -302,7 +303,7 @@ export function ratchet(current, baseline) {
 
 // ─── the printed half ────────────────────────────────────────────────────────
 
-export const kb = (n) => n == null ? 'n/a' : n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${(n / 1024).toFixed(1)} kB`
+export const kb = (n) => n == null ? 'n/a' : formatBytes(n)
 
 /** Sections, each a small aligned table, color only on a terminal (color.js
  *  honors NO_COLOR and pipes). `db` is { [rows]: bytes } from measureDbGrowth;

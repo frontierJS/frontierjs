@@ -117,12 +117,12 @@ describe('what a package ships', () => {
 
   test('under a megabyte reads in KB, and nothing rounds to zero', () => {
     const html = renderAtlas(model(), live([row({ shippedBytes: 9554, shippedFiles: 6 })]))
-    expect(html).toContain('9 KB')
+    expect(html).toContain('9.3 KB')
 
     // A tiny package must not read as `0 KB`, which says *empty* rather than
     // *small* — and one of these is a package that failed to build.
     const tiny = renderAtlas(model(), live([row({ shippedBytes: 120, shippedFiles: 1 })]))
-    expect(tiny).toContain('1 KB')
+    expect(tiny).toContain('120 B')
     expect(tiny).not.toContain('0 KB')
   })
 

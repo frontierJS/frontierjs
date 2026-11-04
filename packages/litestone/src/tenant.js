@@ -30,7 +30,7 @@ import { applyBusyTimeout, busyTimeoutFor } from './core/pragmas.js'
 import { existsSync, unlinkSync, mkdirSync } from 'fs'
 import { resolve, join, dirname, isAbsolute } from 'path'
 import { createClient, CLIENT_OPTIONS } from './core/client.js'
-import { suggestKey }      from './core/args.js'
+import { nearest }         from '@frontierjs/toolbelt/typo'
 import { generateDDL, generateDDLForDatabase } from './core/ddl.js'
 import { apply }           from './core/migrations.js'
 import { splitStatements } from './core/migrate.js'
@@ -919,7 +919,7 @@ function assertRegistryOptions(rest) {
   const lines = unknown.map(k => {
     if (CLIENT_OPTIONS.includes(k))
       return `  ${k} is a createClient option — it belongs in \`clientOptions: { ${k} }\`, which reaches every tenant client`
-    const near = suggestKey(k, REGISTRY_OPTIONS)
+    const near = nearest(k, REGISTRY_OPTIONS)
     return `  ${k}${near ? ` — did you mean \`${near}\`?` : ''}`
   })
   throw new Error(

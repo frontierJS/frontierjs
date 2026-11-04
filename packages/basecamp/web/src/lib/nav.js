@@ -59,7 +59,7 @@ export const groups = [
     // Not hidden once it is finished: the six checks go back to undone when the
     // thing they recorded is deleted, so a link that disappeared would be the
     // one thing on it that could go stale.
-    { href: '/onboarding/',         label: 'Getting started', icon: 'onboarding',    sub: 'the six setup checks' },
+    { href: '/onboarding/',         label: 'Getting started', icon: 'onboarding',    sub: 'machine, DNS, first app' },
   ] },
   // The hub tier is not a workspace role, so it is offered only to people who
   // hold it. The service answers 404 to anyone else regardless, which is where

@@ -8,15 +8,14 @@
 //
 // GET /infra dispatches on X-Service-Method, collection-level:
 //   graph        servers, apps, networks and domains as nodes and edges
-//   onboarding   the six setup questions, each answered by a count
-//   launch       the home screen's path to one app live on one machine
+//   launch       the setup path to one app live on one machine — home and /onboarding/
 //   summary      the fleet counted — machines, apps, releases, alerts
 //
 // ─── Why one service for two reads ────────────────────────────────────────
 //
 // They share a property nothing else here has: the answer is assembled from
 // models the caller can already read, and storing it would be a second answer
-// that goes stale. `Onboarding` gets no model for that reason (screens.md
+// that goes stale. The setup steps get no model for that reason (screens.md
 // § Phase 11) and a graph projection is the same argument about edges — an
 // AppServer row IS the edge, and a cached graph is a copy of it.
 //
@@ -24,8 +23,7 @@
 //
 // `apps.find` answers the environment and the domains; WHERE an app runs is
 // only on `apps.get`, one request per app. So the graph from a browser is
-// 1 + N requests that each open a transaction, and it still cannot count the
-// memberships the onboarding read needs. One read here is one round trip.
+// 1 + N requests that each open a transaction. One read here is one round trip.
 
 import { createService, $ } from '@frontierjs/junction'
 import { LEVELS }            from '@frontierjs/litestone'
@@ -70,7 +68,7 @@ export default createService({
   // 500 rather than a refusal (hub.service.ts says the same thing). READER is
   // every workspace role; with no model to carry a @@gate, the declared level
   // is the only grade junction and an agent's tool list can read (FJS-D408).
-  methods: ['graph', 'onboarding', 'launch', 'summary'].map(method => ({ method, gate: LEVELS.READER })),
+  methods: ['graph', 'launch', 'summary'].map(method => ({ method, gate: LEVELS.READER })),
 
   // ── graph — the fleet as nodes and edges ──────────────────────────
   //
@@ -188,68 +186,12 @@ export default createService({
     }
   },
 
-  // ── onboarding — six questions the database already answers ───────
-  //
-  // No `done` column anywhere, which is the ruling screens.md § Phase 11
-  // records: a stored flag is a second answer that survives the thing it
-  // recorded being deleted. Every step here is a count taken now.
-  async onboarding() {
-    $.dispatch = false   // read-shaped
-
-    // Three of the six cannot be counted through the caller's own client,
-    // and the answer would not be 0 — it would be a refusal. `Secret` and
-    // `Invitation` are @@gate(5), so a developer asking *does this
-    // workspace have an SSH key* throws; `WorkspaceMember` reads only the
-    // caller's OWN rows (@@allow(read, userId == auth().id)), so the
-    // count is 1 for everybody. What crosses is a COUNT of rows in the
-    // workspace the caller is already in, never a row — the screen this
-    // feeds is the one a new viewer opens first.
-    // `any` for the reason every sibling service says it: Litestone's
-    // accessors exist at runtime and junction's client type declares none.
-    const sys: any = $.db.asSystem()
-
-    const [servers, sshKeys, projects, deploys, members, invites] = await Promise.all([
-      db().server.count({     where: { workspaceId: ws() } }),
-      sys.secret.count({      where: { workspaceId: ws(), kind: 'sshKey' } }),
-      db().project.count({    where: { workspaceId: ws() } }),
-      db().deployment.count({ where: { workspaceId: ws() } }),
-      sys.workspaceMember.count({ where: { workspaceId: ws() } }),
-      sys.invitation.count({     where: { workspaceId: ws() } }),
-    ])
-
-    // The order is the order somebody does them in, and it is what the
-    // screen renders — a step list that sorts itself differently from the
-    // work is worse than no order at all.
-    const steps = [
-      { id: 'workspace', title: 'Create a workspace',   href: null,               done: true,
-        detail: 'You are in one.' },
-      { id: 'server',    title: 'Add your first server', href: '/servers/import/', done: servers > 0,
-        detail: 'Provision or import a machine into the fleet.' },
-      { id: 'ssh-key',   title: 'Add an SSH key',        href: '/secrets/',        done: sshKeys > 0,
-        detail: 'A key to install on the machines you add.' },
-      { id: 'project',   title: 'Create a project',      href: '/projects/create/', done: projects > 0,
-        detail: 'Apps and environments live inside one.' },
-      { id: 'deploy',    title: 'Deploy an app',         href: '/projects/',       done: deploys > 0,
-        detail: 'Point an image at an environment and release it.' },
-      { id: 'team',      title: 'Invite a teammate',     href: '/admin/',          done: members > 1 || invites > 0,
-        detail: 'A developer, an admin or a viewer.' },
-    ]
-
-    return {
-      steps,
-      done:  steps.filter(s => s.done).length,
-      total: steps.length,
-      // The counts the answers came from. A step that reads *done* against a
-      // fleet of zero is a bug worth being able to see from the screen.
-      counts: { servers, sshKeys, projects, deploys, members, invites },
-    }
-  },
-
   // ── launch — the path from nothing to one app live on one machine ─
   //
-  // The home screen's wizard, and the same rule as `onboarding`: no step is
-  // stored and none can be ticked. What this adds is WHERE each step
-  // happens — an app is reached through a project and an environment, so a
+  // The one setup checklist — home renders it until every step is done, and
+  // /onboarding/ always. No step is stored and none can be ticked: a stored
+  // flag is a second answer that survives the thing it recorded being deleted.
+  // Each step also names WHERE it happens — an app is reached through a project and an environment, so a
   // step that said "place an app" without naming the app's own screen sent
   // people hunting three clicks deep for it.
   //

@@ -160,7 +160,7 @@ None of these exists in `db/schema.lite`.
 | `HubBackupView` | 179 | **Model built 2026-08-25** — `Backup`, `@@tenant(none)`, reusing `RunStatus` rather than restating five words. Outcome columns are SYSTEM-write, like every other *Run here. The schedule lives on `HubConfig`, not here: a cron describes the schedule and a `Backup` row is one thing that already happened. Needs a service, a job and the screen |
 | `HubSettingsView` | 115 | **Model built 2026-08-25** — `HubConfig`, ONE row keyed by a constant, typed columns rather than key/value (a key/value table is a schema this seed does not describe). The mock's four CREDENTIALS are deliberately absent: they are read at boot before any database, rotating one is a deploy, and `Secret` already models credential material. Needs a service and the screen |
 | `SysOverviewView` | 77 | **Built** — `/hub/`, read at request time from the thing that owns each number (Caravan, Conduit, the channel manager, SQLite). One of the mock's tiles does not survive contact with the runtime and says so instead: CPU, which nothing here samples. The event-subscriber count was the other until the bus grew `stats()` (`FJS-143`). See § Phase 10 |
-| `OnboardingView` | 427 | **Built** — `/onboarding/`, over `infra.onboarding`. **No model, decided 2026-08-25.** Every one of the mock's six steps is a question the database already answers — does this workspace have a server, an SSH-kind `Secret`, a project, a `Deployment`, a second `WorkspaceMember`. A `done` column would be a second answer that goes stale the moment somebody deletes the thing it recorded. Needs a service method returning the six checks |
+| `OnboardingView` | 427 | **Built** — `/onboarding/`, over `infra.launch`, the same checklist home opens with (`FJS-D1836`). **No model, decided 2026-08-25.** Every step is a question the database already answers; a `done` column would be a second answer that goes stale the moment somebody deletes the thing it recorded |
 | `UserSettingsView` | 318 | **Preferences built 2026-08-25** — `NotificationPreference`, one row per (person, kind) with a column per transport, `@@tenant(none)` and `@@allow(all, userId == auth().id)`. **Profile built 2026-09-30** — `users.get`/`patch` on `me`, and `User.mesa`'s default form over `displayName` and `username`; `avatarUrl` is not offered because nothing renders one. Sessions are auth's `Session`, password is `account.changePassword`, and two-step sign-in is `account`'s TOTP methods. |
 
 ### D. Needs an outbound adapter (6) — **screens built 2026-08-30, § Phase 14**
@@ -1288,7 +1288,7 @@ that is missing and a screen whose subject is missing.
 | Route | View | Reads |
 | --- | --- | --- |
 | `/infra-graph/` | `InfraGraphView` | `infra.graph` — servers, apps, networks, domains and the three join tables |
-| `/onboarding/` | `OnboardingView` | `infra.onboarding` — six counts |
+| `/onboarding/` | `OnboardingView` | `infra.launch` — the setup checklist, Cloudflare included (`FJS-D1836`) |
 | `/dns/` | `CloudflareView` | `domains` + `apps` + `portal.get('edge')` + `edge.zones` / `edge.records` |
 | `/cloud-spend/` | `DigitalOceanView` | `servers` + `volumes.usage` + `portal.get('cloudSpend')` · skeleton for the money |
 | `/git-activity/` | `GitActivityView` | `portal.get('git')` · skeleton for the repositories |

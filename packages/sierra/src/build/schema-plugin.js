@@ -23,6 +23,7 @@ import { diffSchemaModes } from '../resource/schema-registry.js'
 import { wantsLocalDb }    from './local-db-plugin.js'
 import { refusal }         from './refusal.js'
 import { RESOLVED_BOOT_ID } from '../virtual/virtual-sierra.js'
+import { formatBytes }    from '@frontierjs/toolbelt/units'
 
 /** Default locations, tried in order when `config.schema` isn't set. */
 const DEFAULT_PATHS = [
@@ -389,8 +390,7 @@ function emittedSize({ defs, models, updatePatch }) {
   const gz = gzipSync(Buffer.from(
     JSON.stringify(defs) + JSON.stringify(models ?? null) + JSON.stringify(updatePatch ?? null)
   )).length
-  const kb = (n) => (n / 1024).toFixed(1) + ' KB'
-  return `${kb(raw)} (${kb(gz)} gzipped)`
+  return `${formatBytes(raw)} (${formatBytes(gz)} gzipped)`
 }
 
 /**

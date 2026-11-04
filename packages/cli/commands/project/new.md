@@ -572,7 +572,7 @@ if (useWeb) {
     ...(useApi ? [['web/src/lib/controls.js', makeControlsJs()]] : []),
     ['web/src/lib/nav.js',                  makeNavJs(useAuth)],
     ['web/src/routes/_module.mesa',         makeRouteModule(appName, useAuth, useApi)],
-    ['web/src/routes/index.mesa',           makeRouteIndex(appName, useApi)],
+    ['web/src/routes/index.mesa',           makeRouteIndex(appName, useApi, useAuth)],
     ['web/src/routes/[...404].mesa',        makeRouteNotFound()],
   )
   if (useAuth) {

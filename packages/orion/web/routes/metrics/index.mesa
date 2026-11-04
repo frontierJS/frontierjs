@@ -6,18 +6,20 @@ title: Metrics
   //
   // The answer is `runs.metrics`: counts per status, the success rate over the
   // runs that ended completed or failed, and the mean and p95 duration of those
-  // that ended. It has no series, no per-node timings and no error summary, so
-  // this screen draws none; they are not here to be hidden.
+  // that ended; a series of 24 buckets across the window, each node's timings
+  // and the messages runs failed with.
   import { runs } from '../../resources/Run.mesa'
   import { flows } from '../../resources/Flow.mesa'
   import { session } from '@frontierjs/sierra/resource'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Bar           from '@frontierjs/ui/components/display/Bar.mesa'
+  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
   import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
   import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
   import Select        from '@frontierjs/ui/components/forms/Select.mesa'
   import StatCard      from '@frontierjs/ui/components/display/StatCard.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
 
   const HOUR = 3_600_000
   const WINDOWS = [
@@ -28,6 +30,19 @@ title: Metrics
   ]
   const STATUSES = ['pending', 'running', 'waiting', 'completed', 'failed', 'cancelled']
   const TONE = { completed: 'success', failed: 'danger', waiting: 'warning', running: 'info', pending: 'muted', cancelled: 'muted' }
+
+  const NODE_COLUMNS = [
+    { name: 'node',   label: 'Node' },
+    { name: 'runs',   label: 'Runs',   align: 'right' },
+    { name: 'failed', label: 'Failed', align: 'right' },
+    { name: 'mean',   label: 'Mean',   align: 'right' },
+    { name: 'p95',    label: 'p95',    align: 'right' },
+  ]
+  const ERROR_COLUMNS = [
+    { name: 'message', label: 'Message' },
+    { name: 'count',   label: 'Runs',      align: 'right' },
+    { name: 'lastAt',  label: 'Last seen', align: 'right' },
+  ]
 
   const list = flows.tethered({ directives: { orderBy: 'name' } })
   $: (session.level)
@@ -51,6 +66,8 @@ title: Metrics
   $: windowMs, flowId, () => load()
 
   const pct = (n) => n == null ? '—' : Math.round(n * 100) + '%'
+  const when = (iso) => new Date(iso).toLocaleString()
+  const peak = (m) => Math.max(1, ...m.series.map(b => b.total))
   const ms  = (n) => n == null ? '—' : n < 1000 ? n + ' ms' : (n / 1000).toFixed(1) + ' s'
 </script>
 
@@ -88,6 +105,57 @@ title: Metrics
     {/each}
     {#if metrics.totalRuns === 0}
       <Alert tone="muted" id="metrics-empty">No run started in this window.</Alert>
+    {/if}
+  </section>
+
+  <section id="metrics-series" aria-label="Runs over time">
+    <h2>Over time</h2>
+    {#if metrics.totalRuns === 0}
+      <Alert tone="muted" id="metrics-series-empty">No run started in this window.</Alert>
+    {:else}
+      {#each metrics.series as b}
+        <div class="cluster" data-at={b.at} data-total={b.total}>
+          <span class="text-muted text-sm">{when(b.at)}</span>
+          <Bar size="sm" tone="info" value={b.total} max={peak(metrics)} />
+          <span>{b.total}</span>
+        </div>
+      {/each}
+    {/if}
+  </section>
+
+  <section id="metrics-nodes" aria-label="Node timings">
+    <h2>Nodes</h2>
+    {#if metrics.nodes.length === 0}
+      <Alert tone="muted" id="metrics-nodes-empty">No node ran in this window.</Alert>
+    {:else}
+      <Table columns={NODE_COLUMNS} rows={metrics.nodes} compact hover>
+        {#snippet row(n)}
+          <tr data-node={n.nodeId}>
+            <td><Mono>{n.nodeId}</Mono></td>
+            <td class="text-right">{n.runs}</td>
+            <td class="text-right">{n.failed}</td>
+            <td class="text-right">{ms(n.avgDurationMs)}</td>
+            <td class="text-right">{ms(n.p95DurationMs)}</td>
+          </tr>
+        {/snippet}
+      </Table>
+    {/if}
+  </section>
+
+  <section id="metrics-errors" aria-label="Errors">
+    <h2>Errors</h2>
+    {#if metrics.errors.length === 0}
+      <Alert tone="muted" id="metrics-errors-empty">No run failed with a message in this window.</Alert>
+    {:else}
+      <Table columns={ERROR_COLUMNS} rows={metrics.errors} compact hover>
+        {#snippet row(e)}
+          <tr data-error={e.message}>
+            <td>{e.message}</td>
+            <td class="text-right">{e.count}</td>
+            <td class="text-right text-muted text-sm">{when(e.lastAt)}</td>
+          </tr>
+        {/snippet}
+      </Table>
     {/if}
   </section>
 {/if}

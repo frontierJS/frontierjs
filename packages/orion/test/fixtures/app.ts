@@ -19,7 +19,7 @@ import { createRunner, type Runner } from "../../src/runner"
 import { litestoneHost } from "../../src/tenancy"
 import { modelCatalog, litestoneModelActions } from "../../src/models"
 import type { Expression, NodeDefinition } from "../../src/engine/types"
-import { SCHEMA, KEY, registryFor } from "./host"
+import { SCHEMA, KEY, registryFor, chain } from "./host"
 
 // Notifications' own model, as an app appends it, so the notify node writes a
 // real in-app row.
@@ -128,3 +128,14 @@ export const obj = (fields: Record<string, unknown>): Expression =>
 
 export const create = (id: string, model: string | Expression, data: Expression): NodeDefinition =>
   ({ id, type: "model.create", config: { model: typeof model === "string" ? lit(model) : model, data } })
+
+// The template the suites register: two built-in nodes, so it compiles in an app
+// with no contributed node types.
+export const TEMPLATE = {
+  id:          "lead-intake",
+  name:        "Lead intake",
+  description: "Writes a lead when it is run by hand.",
+  category:    "Leads",
+  tags:        ["lead", "manual"],
+  definition:  chain([create("c", "Lead", obj({ name: "from a template" }))]),
+}

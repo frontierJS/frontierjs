@@ -28,6 +28,7 @@ Detail: `references/data-api.md`
 - `accessorCandidates()` — `model Post` ⇄ service `posts` ⇄ `db.post` — `junction/src/core/litestone.ts`
 - `db.$checkWhere(accessor, where)` — is this a valid filter key; throws — `litestone/src/core/client.js`
 - `db.$checkOrderBy(accessor, orderBy)` — is this a sortable key, with the reason when it is not; throws — `litestone/src/core/client.js`
+- `nearest(word, candidates)` / `nearestAll` — the "did you mean" every refusal carries, litestone's `suggestion` and fli's unknown command alike — `toolbelt/src/typo/typo.js`
 - `db.$readAs(accessor, row, principal)` — the row as that principal would read it, for a broadcast; fails closed — `litestone/src/core/client.js`
 - `db.$checkWrite(accessor, op, row, changes?)` — would this client's caller be let make this write, for a write that does not reach the table first (a claimed mirror's forward); a verdict, gate and grid and row policy, never field or transition (`FJS-D1162`) — `litestone/src/core/client.js`
 - `db.$levelOf(accessor?, principal?)` — the level the app's own `getLevel` grades a caller at; `null` is *cannot grade* — `litestone/src/core/client.js`

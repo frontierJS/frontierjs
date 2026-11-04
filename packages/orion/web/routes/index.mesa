@@ -54,6 +54,7 @@ title: Automations
 <SectionHeader title="Automations" level={1}>
   {#snippet action()}
     <div class="cluster">
+      <a class="navlink" id="orion-templates" href="/automations/templates/">Templates</a>
       <label class="navlink" for="orion-import">Import…</label>
       <input id="orion-import" type="file" accept="application/json" hidden onchange={importFile} />
       <Button id="orion-new" disabled={!canCreate} onclick={open}>New flow</Button>

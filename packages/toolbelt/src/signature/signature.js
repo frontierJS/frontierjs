@@ -55,6 +55,7 @@
  */
 
 import { seededPair } from './seeded.js'
+import { timingSafeEqual } from '../bearer/bearer.js'
 
 const ENCODER = new TextEncoder()
 
@@ -507,17 +508,6 @@ export function nonceMemory() {
   }
 }
 
-/** Constant-time compare of two hex strings of equal expected length. */
-function timingSafeEqual(a, b) {
-  const x = String(a), y = String(b)
-  // Length is not a secret — the digest length is fixed and public — but the
-  // loop below needs a fixed bound, so an unequal length fails after a full
-  // pass rather than immediately.
-  let diff = x.length === y.length ? 0 : 1
-  const n = Math.max(x.length, y.length)
-  for (let i = 0; i < n; i++) diff |= (x.charCodeAt(i) ^ y.charCodeAt(i)) || 0
-  return diff === 0
-}
 
 /*
  * A TOKEN — the other thing this file signs.

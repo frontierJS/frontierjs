@@ -1,8 +1,8 @@
 # Orion
 
-> **Status: being ported.** The engine, its data layer, execution on Caravan,
-> the triggers, the actions and the services are built (`FJS-D275`; plan in
-> `IDEAS/orion-port.md`); the screens are next, from `mockup/ui/`. Orion is a package
+> **Status: built, never released (`FJS-1369`).** The engine, its data layer,
+> execution on Caravan, the triggers, the actions, the services and the screens
+> are built (`FJS-D275`; plan in `IDEAS/orion-port.md`). Orion is a package
 > built ON the framework and installed into an app (`FJS-D269`). Its primary
 > trigger is litestone's write tap, which Orion subscribes to directly (`FJS-D247`).
 > This file is the intent, not a description of behavior.
@@ -94,4 +94,4 @@ The full sketch, and the rulings behind it, are `IDEAS/orion-port.md`.
 - `../../example/` — the kitchen sink, all three realms end to end
 - `../../CLAUDE.md` — invariants and live hazards
 - `../caravan/README.md`, `../conduit/README.md` — the two engines Orion is expected to sit on
-- `../../IDEAS/orion-port.md` — the plan for turning `mockup/` into this, module by module, and the rulings it rests on (`FJS-D269`–`FJS-D283`)
+- `../../IDEAS/orion-port.md` — the plan that turned the original standalone mockup into this, module by module, and the rulings it rests on (`FJS-D269`–`FJS-D283`)

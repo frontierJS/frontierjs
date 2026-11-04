@@ -1,0 +1,82 @@
+---
+title: Templates
+---
+<script>
+  // The flows this app's host registered for a person to start from
+  // (`FJS-D1360`). Using one makes an ordinary draft the caller owns; the
+  // service compiled the definition at boot, so nothing here checks it.
+  import { flows } from '../../resources/Flow.mesa'
+  import { session } from '@frontierjs/sierra/resource'
+  import { goto } from '@frontierjs/sierra/router'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+
+  const columns = [
+    { name: 'name',     label: 'Template' },
+    { name: 'category', label: 'Category' },
+    { name: 'tags',     label: 'Tags' },
+    { name: 'nodes',    label: 'Nodes', align: 'right' },
+    { name: 'use',      label: '' },
+  ]
+
+  $: (session.level)
+
+  let templates = []
+  let loaded    = false
+  let error     = null
+  let using     = null
+
+  $: canCreate = flows.can('create', session.level)
+
+  async function load() {
+    error = null
+    try { templates = await flows.service.invoke('templates') } catch (e) { error = e.message }
+    loaded = true
+  }
+  load()
+
+  async function use(id) {
+    using = id
+    error = null
+    try {
+      const created = await flows.service.invoke('fromTemplate', id)
+      goto('/automations/flows/' + created.id + '/')
+    } catch (e) { error = e.message }
+    finally { using = null }
+  }
+</script>
+
+<SectionHeader title="Templates" level={1} />
+
+{#if error}<Alert tone="danger" id="templates-error">{error}</Alert>{/if}
+
+{#if templates.length > 0}
+  <Table {columns} rows={templates} striped hover>
+    {#snippet row(t)}
+      <tr data-template={t.id}>
+        <td>
+          {t.name}
+          {#if t.description}<div class="text-muted text-sm">{t.description}</div>{/if}
+        </td>
+        <td><Pill tone="primary">{t.category}</Pill></td>
+        <td>
+          <div class="cluster">
+            {#each t.tags as tag (tag)}<Pill tone="muted">{tag}</Pill>{/each}
+          </div>
+        </td>
+        <td class="text-right" data-nodes>{t.nodes}</td>
+        <td class="text-right">
+          {#if canCreate}
+            <Button id={'template-use-' + t.id} data-template={t.id} disabled={using !== null} onclick={() => use(t.id)}>Use template</Button>
+          {/if}
+        </td>
+      </tr>
+    {/snippet}
+  </Table>
+{:else if loaded && !error}
+  <Alert tone="muted" id="templates-empty">This app registered no templates.</Alert>
+{/if}

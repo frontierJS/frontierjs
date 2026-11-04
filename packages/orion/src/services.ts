@@ -1,14 +1,15 @@
 /*
  * services.ts
  *
- * Orion's API: three Junction services over orion's own models, which replace
- * the mockup's hand-rolled `api/`. Each is a model service, so a read, a create
- * and a patch are graded by `orion.lite`'s gates and row policies like any
- * other; the methods below are the verbs a row write cannot say.
+ * Orion's API: three Junction services over orion's own models. Each is a
+ * model service, so a read, a create and a patch are graded by `orion.lite`'s
+ * gates and row policies like any other; the methods below are the verbs a row
+ * write cannot say.
  *
  *   flows            save a version · activate · pause · archive · unarchive
  *                    run · dryRun · versions · export · import · layout · saveLayout
- *   runs             find · get · steps · cancel · metrics
+ *                    nodeTypes · templates · fromTemplate
+ *   runs             find · get · steps · definition · cancel · metrics
  *   flowCredentials  the derived verbs alone, at ADMINISTRATOR(5)
  *
  * Who may act on a flow is one test (`FJS-D289`, `FJS-D292`): its owner through
@@ -49,11 +50,24 @@ export interface FlowFile {
   definition:   Flow
 }
 
+// A flow the host ships, which anybody may start a draft from (`FJS-D1360`).
+export interface FlowTemplate {
+  id:          string
+  name:        string
+  description: string
+  category:    string
+  tags:        string[]
+  // Compiled by `orion()` at boot, so it carries whatever a flow file's definition does.
+  definition:  { nodes: Record<string, unknown>; edges: unknown[]; [key: string]: unknown }
+}
+
 export function createOrionServices(deps: {
-  runner: Runner
-  names?: OrionServiceNames
+  runner:     Runner
+  names?:     OrionServiceNames
+  templates?: FlowTemplate[]
 }): ServiceDefinition[] {
   const { runner } = deps
+  const templates  = deps.templates ?? []
   const names = { ...DEFAULT_SERVICE_NAMES, ...deps.names }
   const services: ServiceDefinition[] = []
 
@@ -122,6 +136,17 @@ export function createOrionServices(deps: {
     return definition as Flow
   }
 
+  // The caller's new draft flow at version 1, in one transaction. A flow file
+  // and a template are both made this way.
+  function createDraft(ctx: ServiceContext, flow: { name: string; description?: string | null; definition: unknown }) {
+    const definition = assertSavable(ctx, flow.definition)
+    return clientOf(ctx).$transaction(async (tx: Client) => {
+      const created = await tx.flow.create({ data: { name: flow.name, description: flow.description ?? null } })
+      await tx.flowVersion.create({ data: { flowId: created.id, version: 1, definition } })
+      return tx.flow.update({ where: { id: created.id }, data: { currentVersion: 1 } })
+    })
+  }
+
   // Every custom method needs a session, which is what the model's read gate
   // already asks; stated, so a stranger's refusal is a declaration and not the
   // floor junction applies to a method nobody graded.
@@ -140,7 +165,7 @@ export function createOrionServices(deps: {
     channel: names.flows,
     methods: [
       "find", "get", "create", "patch", "remove",
-      ...signedIn("save", "versions", "activate", "pause", "archive", "unarchive", "run", "dryRun", "export", "import", "layout", "saveLayout", "nodeTypes"),
+      ...signedIn("save", "versions", "activate", "pause", "archive", "unarchive", "run", "dryRun", "export", "import", "layout", "saveLayout", "nodeTypes", "templates", "fromTemplate"),
     ],
 
     // A patch moving the status or the version, and a removal, reach this
@@ -267,12 +292,25 @@ export function createOrionServices(deps: {
       const file = (ctx.data ?? {}) as Partial<FlowFile>
       if (file.orion !== 1) throw new BadRequest("Not an orion flow file: expected { orion: 1, name, definition }")
       if (typeof file.name !== "string" || file.name === "") throw new BadRequest("name is required")
-      const definition = assertSavable(ctx, file.definition)
+      return createDraft(ctx, { name: file.name, description: file.description, definition: file.definition })
+    },
 
-      return clientOf(ctx).$transaction(async (tx: Client) => {
-        const flow = await tx.flow.create({ data: { name: file.name, description: file.description ?? null } })
-        await tx.flowVersion.create({ data: { flowId: flow.id, version: 1, definition } })
-        return tx.flow.update({ where: { id: flow.id }, data: { currentVersion: 1 } })
+    /** The templates the host registered, without their definitions, each with its node count. */
+    async templates(ctx: ServiceContext) {
+      ctx.dispatch = false
+      return templates.map(({ definition, ...rest }) => ({ ...rest, nodes: Object.keys(definition.nodes).length }))
+    },
+
+    /** A new draft flow owned by the caller, from the template `ctx.id`; `name` in the payload renames it. */
+    async fromTemplate(ctx: ServiceContext) {
+      caller(ctx)
+      const template = templates.find(t => t.id === String(ctx.id))
+      if (!template) throw new NotFound(`No template '${ctx.id}'`)
+      const name = (ctx.data as { name?: unknown } | null)?.name
+      return createDraft(ctx, {
+        name:        typeof name === "string" && name !== "" ? name : template.name,
+        description: template.description,
+        definition:  template.definition,
       })
     },
 
@@ -330,7 +368,7 @@ export function createOrionServices(deps: {
     // no service call announces, and junction broadcasts such a write only on a
     // channel the service names. Without it a runs screen never moves.
     channel: names.runs,
-    methods: ["find", "get", ...signedIn("steps", "cancel", "metrics")],
+    methods: ["find", "get", ...signedIn("steps", "definition", "cancel", "metrics")],
 
     /** What each node did. Written when the run ends, so a run still going has none. */
     async steps(ctx: ServiceContext) {
@@ -338,6 +376,19 @@ export function createOrionServices(deps: {
       const run = await clientOf(ctx).run.findFirst({ where: { id: ctx.id }, select: { id: true } })
       if (!run) throw new NotFound(`No run '${ctx.id}'`)
       return clientOf(ctx).runStep.findMany({ where: { runId: run.id }, orderBy: { startedAt: "asc" } })
+    },
+
+    /** The flow as this run saw it: its version's definition, and where the builder drew the nodes. */
+    async definition(ctx: ServiceContext) {
+      ctx.dispatch = false
+      const db  = clientOf(ctx)
+      const run = await db.run.findFirst({ where: { id: ctx.id }, select: { id: true, flowVersionId: true } })
+      if (!run) throw new NotFound(`No run '${ctx.id}'`)
+      const version = await db.flowVersion.findFirst({ where: { id: run.flowVersionId } })
+      if (!version) throw new NotFound(`No version for run '${ctx.id}'`)
+      const row = await db.flowLayout.findFirst({ where: { flowId: version.flowId } })
+      const layout = (row?.layout as { nodes?: unknown } | null)?.nodes ?? {}
+      return { flowId: version.flowId, version: version.version, definition: version.definition, layout }
     },
 
     /**
@@ -363,6 +414,9 @@ export function createOrionServices(deps: {
      * Runs created in the last `windowMs` (an hour by default), optionally of one
      * flow: how many in each status, the success rate over those that ended
      * completed or failed, and the mean and p95 duration of those that ended.
+     * Also `series` (24 equal buckets by `createdAt`), `nodes` (per-node timings,
+     * slowest mean first, 20 at most) and `errors` (`Run.error` by message, most
+     * frequent first, 10 at most).
      */
     async metrics(ctx: ServiceContext) {
       ctx.dispatch = false
@@ -370,12 +424,15 @@ export function createOrionServices(deps: {
       const windowMs = data.windowMs ?? 3_600_000
       if (typeof windowMs !== "number" || !(windowMs > 0)) throw new BadRequest("windowMs must be a positive number")
 
-      const rows: Array<{ status: string; startedAt: string | null; endedAt: string | null }> = await clientOf(ctx).run.findMany({
+      const BUCKETS = 24
+      const db      = clientOf(ctx)
+      const since   = Date.now() - windowMs
+      const rows: Array<{ id: string; status: string; createdAt: string; startedAt: string | null; endedAt: string | null; error: string | null }> = await db.run.findMany({
         where:  {
-          createdAt: { gte: new Date(Date.now() - windowMs).toISOString() },
+          createdAt: { gte: new Date(since).toISOString() },
           ...(data.flowId ? { flowVersion: { is: { flowId: data.flowId } } } : {}),
         },
-        select: { status: true, startedAt: true, endedAt: true },
+        select: { id: true, status: true, createdAt: true, startedAt: true, endedAt: true, error: true },
       })
 
       const byStatus: Record<string, number> = {}
@@ -386,6 +443,56 @@ export function createOrionServices(deps: {
         .map(r => Date.parse(r.endedAt!) - Date.parse(r.startedAt!))
         .sort((a, b) => a - b)
 
+      const series = Array.from({ length: BUCKETS }, (_, i) => (
+        { at: new Date(since + (windowMs / BUCKETS) * i).toISOString(), byStatus: {} as Record<string, number>, total: 0 }
+      ))
+      for (const row of rows) {
+        // A row stamped a hair outside the window is the nearest bucket's.
+        const at     = Math.floor(((new Date(row.createdAt).getTime() - since) / windowMs) * BUCKETS)
+        const bucket = series[Math.max(0, Math.min(BUCKETS - 1, at))]
+        bucket.byStatus[row.status] = (bucket.byStatus[row.status] ?? 0) + 1
+        bucket.total++
+      }
+
+      const steps: Array<{ nodeId: string; status: string; durationMs: number | null }> = []
+      // SQLite refuses a statement with too many bound variables, and a busy
+      // window has thousands of runs.
+      for (let i = 0; i < rows.length; i += 500) {
+        steps.push(...await db.runStep.findMany({
+          where:  { runId: { in: rows.slice(i, i + 500).map(r => r.id) } },
+          select: { nodeId: true, status: true, durationMs: true },
+        }))
+      }
+      const byNode = new Map<string, { runs: number; failed: number; ms: number[] }>()
+      for (const step of steps) {
+        const node = byNode.get(step.nodeId) ?? { runs: 0, failed: 0, ms: [] }
+        node.runs++
+        if (step.status === "failed") node.failed++
+        if (step.durationMs != null) node.ms.push(step.durationMs)
+        byNode.set(step.nodeId, node)
+      }
+      const nodes = [...byNode].map(([nodeId, n]) => {
+        const ms = n.ms.sort((a, b) => a - b)
+        return {
+          nodeId,
+          runs:          n.runs,
+          failed:        n.failed,
+          avgDurationMs: ms.length === 0 ? null : Math.round(ms.reduce((a, b) => a + b, 0) / ms.length),
+          p95DurationMs: ms.length === 0 ? null : ms[Math.min(ms.length - 1, Math.ceil(ms.length * 0.95) - 1)],
+        }
+      }).sort((a, b) => (b.avgDurationMs ?? -1) - (a.avgDurationMs ?? -1)).slice(0, 20)
+
+      const byMessage = new Map<string, { message: string; count: number; lastAt: string }>()
+      for (const row of rows) {
+        if (!row.error) continue
+        const at    = new Date(row.endedAt ?? row.createdAt).toISOString()
+        const group = byMessage.get(row.error) ?? { message: row.error, count: 0, lastAt: at }
+        group.count++
+        if (at > group.lastAt) group.lastAt = at
+        byMessage.set(row.error, group)
+      }
+      const errors = [...byMessage.values()].sort((a, b) => b.count - a.count).slice(0, 10)
+
       return {
         flowId:        data.flowId ?? null,
         windowMs,
@@ -394,6 +501,9 @@ export function createOrionServices(deps: {
         successRate:   decided === 0 ? null : (byStatus.completed ?? 0) / decided,
         avgDurationMs: durations.length === 0 ? null : Math.round(durations.reduce((a, b) => a + b, 0) / durations.length),
         p95DurationMs: durations.length === 0 ? null : durations[Math.min(durations.length - 1, Math.ceil(durations.length * 0.95) - 1)],
+        series,
+        nodes,
+        errors,
       }
     },
   }))

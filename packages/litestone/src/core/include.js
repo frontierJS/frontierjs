@@ -9,7 +9,7 @@ import { buildPolicyFilter } from './policy.js'
 import { truth } from '@frontierjs/toolbelt/predicate'
 import { CapabilityNotDeclaredError } from './errors.js'
 import { nowISO, shapesRead, aggModelsOf } from './schema-maps.js'
-import { suggestKey } from './args.js'
+import { nearest } from '@frontierjs/toolbelt/typo'
 import { applyComputed } from './computed.js'
 import { wideDb, mappedDb, plainDb } from './databases.js'
 import { applyFieldPolicyTo } from './field-policy.js'
@@ -505,7 +505,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       throw new ValidationError([{
         path:    ['include', relName],
         message: `Unknown relation '${relName}' on ${modelName}.` +
-                 (suggestKey(relName, new Set(names)) ? ` Did you mean: ${suggestKey(relName, new Set(names))}?` : '') +
+                 (nearest(relName, new Set(names)) ? ` Did you mean: ${nearest(relName, new Set(names))}?` : '') +
                  (names.length ? ` Relations: ${names.join(', ')}` : ` ${modelName} declares none`),
       }])
     }

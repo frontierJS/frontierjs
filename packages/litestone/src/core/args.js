@@ -10,15 +10,12 @@ import {
   centerOf, filterableKeysFor, sortableKeysFor, OPAQUE_SORT, rawClause, isRawClause, isNamedAgg, quoteIdent,
 } from './query.js'
 import { ValidationError } from './validate.js'
+import { nearest } from '@frontierjs/toolbelt/typo'
 import { AccessDeniedError } from './plugin.js'
 import { compileFieldPredicate, buildPolicyFilter } from './policy.js'
 import { aggModelsOf } from './schema-maps.js'
 import { hoistedFieldRead } from './field-policy.js'
 
-// Suggest the closest match for an unknown key from a set of valid keys.
-// Used in write-data validation to give users actionable typo hints —
-// "Unknown field 'emial' on User. Did you mean: email?". Levenshtein with a
-// small ceiling, since field names are short and typos are usually 1–2 edits.
 /** @import { ModelDef } from '../index.d.ts' */
 /** @import { Ctx } from './field-policy.js' */
 /** @import { Shape } from './client.js' */
@@ -34,29 +31,6 @@ import { hoistedFieldRead } from './field-policy.js'
  */
 /** @typedef {Record<string, any>} KeyProblem  one refusal — `key`, `reason`, `message`, and per reason more */
 
-/** @param {string} unknown @param {Iterable<string>} allowed */
-export function suggestKey(unknown, allowed) {
-  if (!unknown) return null
-  const lower = String(unknown).toLowerCase()
-  let best = null
-  let bestDist = Infinity
-  for (const candidate of allowed) {
-    const cand = String(candidate).toLowerCase()
-    // Cheap pre-filter: skip candidates whose length differs by > 3
-    if (Math.abs(cand.length - lower.length) > 3) continue
-    const d = editDistance(lower, cand)
-    if (d < bestDist) { bestDist = d; best = candidate }
-  }
-  // Threshold: allow up to 2 edits for very short names (so transposition
-  // typos like "naem" → "name" qualify), scaling up to ~1/3 of the input
-  // length for longer names. Also require the suggestion to keep more chars
-  // than it changes — otherwise short typos like "x" match anything.
-  const threshold = Math.max(2, Math.floor(lower.length / 3))
-  if (bestDist > threshold) return null
-  if (bestDist >= lower.length) return null
-  return best
-}
-
 // A refusal has to say what WOULD have been legal, and past a certain size the
 // full list stops being that. `Capability` is derived from the whole schema —
 // 153 values on a real application — and a message carrying all of them is one
@@ -69,7 +43,7 @@ const ENUM_LIST_LIMIT = 12
 export function enumOptions(meta, offending) {
   const values = [...meta.values]
   if (values.length <= ENUM_LIST_LIMIT) return `must be one of: ${values.join(', ')}`
-  const near = suggestKey(/** @type {string} */ (offending), values)
+  const near = nearest(/** @type {string} */ (offending), values)
   return (near ? `did you mean "${near}"? ` : '') +
          `${values.length} values are legal — db.$enums.${meta.enumName} is the list`
 }
@@ -337,7 +311,7 @@ function checkIncludeArgs(include, modelName, method, ctx, isWrite, depth = 0) {
         throw new ValidationError([{
           path:    ['include', k, 'select', sk],
           message: `Unknown field '${sk}' in select for ${name}.${method}` +
-                   (suggestKey(sk, selectable) ? `. Did you mean: ${suggestKey(sk, selectable)}?` : ''),
+                   (nearest(sk, selectable) ? `. Did you mean: ${nearest(sk, selectable)}?` : ''),
         }])
       }
     }
@@ -548,7 +522,7 @@ export function collectWhereKeyProblems(where, filterable, computed, encrypted, 
         out.push({
           key:        '$scope',
           reason:     'scope',
-          suggestion: typeof n === 'string' ? suggestKey(n, scopes ?? new Set()) : null,
+          suggestion: typeof n === 'string' ? nearest(n, scopes ?? new Set()) : null,
           allowed:    [...(scopes ?? [])].sort(),
           message:    `Unknown scope '${n}' — ` + (scopes?.size
             ? `%MODEL% declares: ${[...scopes].sort().join(', ')}`
@@ -600,7 +574,7 @@ export function collectWhereKeyProblems(where, filterable, computed, encrypted, 
               path:       at(k) + `.${mode}`,
               model:      rel.model,
               reason:     'relation-operator',
-              suggestion: suggestKey(mode, REL_FILTER_MODES),
+              suggestion: nearest(mode, REL_FILTER_MODES),
               allowed:    [...REL_FILTER_MODES].sort(),
               message:    `'${mode}' is not a relation filter on %MODEL%.${k} — use ` +
                           `${[...REL_FILTER_MODES].sort().join(', ')}`,
@@ -624,7 +598,7 @@ export function collectWhereKeyProblems(where, filterable, computed, encrypted, 
       path:       at(k),
       model:      rel?.model ?? null,
       reason,
-      suggestion: reason === 'unknown' ? suggestKey(k, filterable) : null,
+      suggestion: reason === 'unknown' ? nearest(k, filterable) : null,
       allowed:    [...filterable].sort(),
       message:    WHERE_REASONS[reason](k),
     })
@@ -733,7 +707,7 @@ export function collectOrderByKeyProblems(orderBy, sortable, relations, computed
         })
         continue
       }
-      const hint = suggestKey(key, list)
+      const hint = nearest(key, list)
       out.push({
         key,
         reason:     'unknown',
@@ -815,7 +789,7 @@ export function collectAggKeyProblems(names, sets, op, valueRead, out = []) {
     if (fromDerived?.has(key)) { out.push({ key, reason: 'from',  message: AGG_REASONS.fromDerived(key, op) }); continue }
     if (relations.has(key)) { out.push({ key, reason: 'relation', message: AGG_REASONS.relation(key, op) }); continue }
     if (!columns.has(key)) {
-      const hint = suggestKey(key, columns)
+      const hint = nearest(key, columns)
       out.push({
         key,
         reason:  'unknown',
@@ -874,7 +848,7 @@ function checkWhereKeys(where, keys, modelName, method, isWrite, scopes = null, 
     const hidden     = ctx ? _guardedNames({ name: p.model ?? modelName }, ctx) : null
     const allowed    = hidden ? p.allowed.filter((/** @type {string} */ n) => !hidden.has(n)) : p.allowed
     const suggestion = hidden && p.suggestion && hidden.has(p.suggestion)
-      ? suggestKey(p.key, new Set(allowed))
+      ? nearest(p.key, new Set(allowed))
       : p.suggestion
     const msg = p.reason === 'unknown'
       ? `Unknown field ${where_} in where for ${modelName}.${method}${on}.` +
@@ -1160,7 +1134,7 @@ export function withArgValidation(table, model, ctx) {
           ? `Cannot distinct '${key}' on ${modelName}.${method} — it is a relation, which has no ` +
             `column on this table`
           : `Unknown field '${key}' in ${position} for ${modelName}.${method}` +
-            (suggestKey(key, allowed) ? `. Did you mean: ${suggestKey(key, allowed)}?` : ''),
+            (nearest(key, allowed) ? `. Did you mean: ${nearest(key, allowed)}?` : ''),
   }])
 
   // The CONTAINER is checked before the keys. A `select` that is not an object
@@ -1269,7 +1243,7 @@ export function withArgValidation(table, model, ctx) {
       if (k === 'recursive' && ARG_READ_METHODS.includes(method)) continue
       const hint = k === 'search' || k === '$search'
         ? `. A full-text search is its own verb: ${modelName}.search(query, { where, limit })`
-        : suggestKey(k, known) ? `. Did you mean: ${suggestKey(k, known)}?` : ''
+        : nearest(k, known) ? `. Did you mean: ${nearest(k, known)}?` : ''
       throw new ValidationError([{
         path:    [k],
         message: `Unknown argument '${k}' to ${modelName}.${method} — it would have been ignored` +
@@ -1379,25 +1353,3 @@ export function withArgValidation(table, model, ctx) {
   return out
 }
 
-/** @param {string} a @param {string} b */
-function editDistance(a, b) {
-  if (a === b) return 0
-  if (!a.length) return b.length
-  if (!b.length) return a.length
-  // Iterative DP with two rows — O(min(a,b)) memory.
-  let prev = Array.from({ length: b.length + 1 }, (_, i) => i)
-  let curr = new Array(b.length + 1)
-  for (let i = 1; i <= a.length; i++) {
-    curr[0] = i
-    for (let j = 1; j <= b.length; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1
-      curr[j] = Math.min(
-        curr[j - 1] + 1,        // insertion
-        prev[j]   + 1,          // deletion
-        prev[j - 1] + cost,     // substitution
-      )
-    }
-    [prev, curr] = [curr, prev]
-  }
-  return prev[b.length]
-}

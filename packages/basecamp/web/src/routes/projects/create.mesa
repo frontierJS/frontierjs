@@ -3,6 +3,7 @@ title: New project
 ---
 <script>
   import { goto } from '@frontierjs/sierra/router'
+  import { slug } from '@frontierjs/toolbelt/inflect'
   import { projects, fromRepo } from '../../resources/Project.mesa'
   import { readRepoDockerfile, dockerfileTemplate } from '../../resources/App.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore'
@@ -33,7 +34,7 @@ title: New project
 
   function onName(e) {
     draft.name = e.target.value
-    if (!slugTouched) draft.slug = slugify(draft.name)
+    if (!slugTouched) draft.slug = slug(draft.name, { max: 64 })
   }
 
   function onSlug(e) {
@@ -146,10 +147,6 @@ title: New project
     } finally {
       saving = false
     }
-  }
-
-  function slugify(s) {
-    return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64)
   }
 </script>
 

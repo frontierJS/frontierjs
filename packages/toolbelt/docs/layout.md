@@ -382,6 +382,11 @@ src/tty/             `@frontierjs/css`'s tones as a terminal says them — each 
                      `toneOf(cls)` reads one off a class attribute. Mesa's
                      terminal runtime is the caller; its `terminal-tags.test.js`
                      holds the names to `tones.css`
+src/typo/            the name a person most likely meant: `nearest` and
+                     `nearestAll`, optimal-string-alignment distance under
+                     rustc's `max(len, 3) / 3` cutoff, a case-only match first.
+                     Callers: fli's unknown command, junction's config keys,
+                     litestone's refusals, site-kit's check. Ships a `.d.ts`
 docs/glow/           the Svelte editor and SCSS theme glow arrived with.
                      Reference only — not shipped, not FrontierJS code
 src/datetime/        an instant read as a place's wall clock, and written back —

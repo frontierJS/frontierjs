@@ -1,9 +1,9 @@
 # @frontierjs/orion — the inside view
 
 Automations for a FrontierJS app: flows of triggers, conditions and actions, run
-by an engine installed into the app (`FJS-D269`). Being ported from `mockup/`;
-the plan, module by module, and the rulings it rests on are
-`IDEAS/orion-port.md`. `README.md` is the intent.
+by an engine installed into the app (`FJS-D269`). The plan it was ported by,
+module by module, and the rulings it rests on are `IDEAS/orion-port.md`.
+`README.md` is the intent.
 
 ## Layout
 
@@ -13,8 +13,8 @@ the plan, module by module, and the rulings it rests on are
 | `src/tenancy.ts` | which database a run's rows are in: the `OrionHost` port, `litestoneHost` for no tenancy, a registry and row tenancy, and the tenant tag on a resume key |
 | `src/store.ts` | `LitestoneExecutionStore`: the per-stage checkpoint, the terminal write, and the two ways a wait ends, over the host's system client |
 | `src/runner.ts` | a flow row into a `Run` and one Caravan job, and back: start, the run job, resume, the dry run, the inline sync run, activation and the trigger indexes, the sweep |
-| `src/plugin.ts` | `orion()`, the Junction plugin: the owner as the actor, the tap subscriber, the two raw routes, orion's conduit, the app's AI models, the services |
-| `src/services.ts` | `flows`, `runs` and `flowCredentials`: the verbs a row write cannot say, and the one test of who may act on a flow |
+| `src/plugin.ts` | `orion()`, the Junction plugin: the owner as the actor, the tap subscriber, the two raw routes, orion's conduit, the app's AI models, the host's templates (compiled at boot), the services |
+| `src/services.ts` | `flows` (with `nodeTypes`, `templates` and `fromTemplate`), `runs` (`steps`, `definition`, `cancel`, `metrics`) and `flowCredentials`: the verbs a row write cannot say, and the one test of who may act on a flow |
 | `src/models.ts` | the app's models for the model nodes: the author-time catalog off the JSON Schema, and the writes through the actor |
 | `src/outbound.ts` | `http.request` over conduit, and conduit's credential resolver over `FlowCredential` |
 | `src/kv.ts` | the `store` node's port over `KvEntry`, whose deadline is `@@expires(expiresAt)` minted from the client's clock |
@@ -39,13 +39,12 @@ the plan, module by module, and the rulings it rests on are
 | `test/services.test.ts` | the services over HTTP with real principals, and `verifyTransportParity` over all three — phase 5's done-when |
 | `test/kv.test.ts` | the `store` node's port on a moved clock: a ttl lapsing with nothing written, `set` and `delete` over a lapsed key, and the sweep |
 | `test/outbound.test.ts` | a flow's outside call on the wire, against a local server |
-| `test/fixtures/` | `host.ts` — the schema, a node registry and test nodes that leave evidence on disk; `app.ts` — an app with two gated models, notifications' model and orion's catalog; `notifications/` — the one notification a flow sends; `worker.ts` — the process the crash test kills |
+| `test/fixtures/` | `host.ts` — the schema, a node registry and test nodes that leave evidence on disk; `app.ts` — an app with two gated models, notifications' model and orion's catalog, and `TEMPLATE`, the one template the suites register; `notifications/` — the one notification a flow sends; `worker.ts` — the process the crash test kills |
 | `bench/checkpoint.ts` | what one checkpoint costs at 10, 100 and 1,000 nodes; `bun run bench` |
 | `web/routes.js` | the directory a host mounts — `export { default } from '@frontierjs/orion/routes'` in a `*.mount.js` (`FJS-D282`) |
-| `web/routes/` | the screens: flows, a flow, runs (with the schema's `FilterBar`), a run, metrics, node types, credentials, and the section layout |
-| `web/components/` | `NodeInspector.mesa` (a node's config, one field per `configSchema` property), `ConfigValue.mesa` (one value — a literal on the schema's control, a computed one on `ExpressionField`) and `ExpressionField.mesa` (an expression as the line that parses back to it) |
+| `web/routes/` | the screens: flows, a flow, runs (with the schema's `FilterBar`), a run (its flow drawn at its version through `runs.definition`), templates (`flows.templates()`, each used through `fromTemplate`), metrics, node types, credentials, and the section layout |
+| `web/components/` | `FlowCanvas.mesa` (the graph: gestures, edge kinds, conditions and a run's node states), `EdgeInspector.mesa` (an edge's kind, label and condition), `NodeInspector.mesa` (a node's config, one field per `configSchema` property), `ConfigValue.mesa` (one value — a literal on the schema's control, a computed one on `ExpressionField`) and `ExpressionField.mesa` (an expression as the line that parses back to it) |
 | `web/resources/` | `Flow.mesa`, `Run.mesa`, `FlowCredential.mesa` — the resources the screens read through |
-| `mockup/ui/components/` | four files, the specification for what is not built and not a source: `flow-editor.jsx` (the canvas), `pages.jsx` (templates, the run preview and review mode), and `nodes.jsx` + `node-types.js`, whose `NODE_CONFIG_FIELDS` is the design the inspector DECLINED. **It does not run** — no `package.json`, no vite — so it is read, never driven |
 
 ## What bites here
 
@@ -227,6 +226,11 @@ the plan, module by module, and the rulings it rests on are
   missing run and a waiting run with no key all return without error, because
   each is a replay or a job that outlived its row, and a throw would spend
   Caravan's retries on it.
+
+- **An edge's kind is not checked where it is chosen.** `EdgeInspector` writes
+  `error` onto any edge; one that does not leave a node for a `flow.error` node
+  is refused at save (`INVALID_ERROR_EDGE`, `UNREACHABLE_ERROR_NODE`), with the
+  compiler's sentence on the page.
 
 ## Proving a change
 

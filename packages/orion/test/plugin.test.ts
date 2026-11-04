@@ -29,7 +29,7 @@ import { caravan } from "../../caravan/src/index"
 import { orion } from "../src/plugin"
 import type { Runner } from "../src/runner"
 import { KEY, chain, activeFlow, wait } from "./fixtures/host"
-import { APP, lit, obj, create } from "./fixtures/app"
+import { APP, TEMPLATE, lit, obj, create } from "./fixtures/app"
 
 let env:    any
 let dir:    string
@@ -119,6 +119,28 @@ async function until<T>(fn: () => Promise<T | undefined | false>, what: string):
     await Bun.sleep(20)
   }
 }
+
+// ─── templates ───────────────────────────────────────────────────────────────
+
+describe("orion({ templates })", () => {
+  async function boot(templates: any[]) {
+    const built = createApp({ root: join(import.meta.dir, "fixtures"), db: env.db, auth: createStubAuth({ users: [] }) })
+    built.configure(caravan({ db: join(dir, "templates-jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 }))
+    built.configure(channels())
+    built.configure(orion({ templates }))
+    await built._startForTest()
+    await built.jobs.stop()
+  }
+
+  test("a template that does not compile refuses boot, naming it", async () => {
+    const broken = { ...TEMPLATE, id: "broken", definition: { nodes: { t: { id: "t", type: "no.such.node", config: {} } }, edges: [] } }
+    await expect(boot([broken])).rejects.toThrow(/\[orion\] template 'broken' does not compile: /)
+  })
+
+  test("a template id registered twice refuses boot", async () => {
+    await expect(boot([TEMPLATE, TEMPLATE])).rejects.toThrow(/\[orion\] template 'lead-intake' is registered twice/)
+  })
+})
 
 // ─── the owner ───────────────────────────────────────────────────────────────
 

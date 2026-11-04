@@ -40,7 +40,7 @@
   and `strategy row`, proved through the plugin with every landing paired against
   the other tenant.
 - Screens under `web/`, mounted into `example/` at `/automations/` by one file:
-  flows, a flow, runs, a run, credentials, driven by `verify:automations` —
+  flows, a flow, templates, runs, a run, credentials, driven by `verify:automations` —
   including an administrator watching a run on a staff member's flow arrive live.
 - The per-node inspector, and nothing in the package says what a node takes:
   `flows.nodeTypes()` carries the registry's descriptors, and sierra's
@@ -56,17 +56,19 @@
   are one model: the inspector parses it and serializes the whole definition
   back. `test/node-forms.test.ts` grades every built-in schema through the same
   pipeline, so a property no control can render fails the suite.
+- Templates are code the host registers (`FJS-D1360`): `orion({ templates })`
+  compiles each at boot, `flows.templates()` lists them, `flows.fromTemplate()`
+  drafts a flow the caller owns through the path `import` takes, and the
+  templates screen is driven by `verify:automations`.
 - Reads by the owner and an administrator both through `orion.lite`'s row
   policies, the administrator's via `auth().level` (`FJS-D296`).
 
 ## What is not
 
-- **The canvas's finer half** — `web/components/FlowCanvas.mesa` draws, moves,
-  pans, zooms, connects and removes, but a conditional or fan-out edge, an
-  error edge and snapping are still the JSON's, and the flow's name is too.
-  The templates screen, the run preview and review mode are
-  [`FJS-1196`](../../ISSUES.md#fjs-1196). `mockup/ui/components/` is the
-  specification for what is left.
+- **An edge's `fanOut`** is declared in the type and run by nothing
+  ([`FJS-3942`](../../ISSUES.md#fjs-3942)), so the inspector does not offer it.
+  The run preview beside the runs list was struck with
+  [`FJS-1196`](../../ISSUES.md#fjs-1196): the run page is where a run is read.
 - **The expression text grammar is a subset of what the engine runs** — a
   template, an object, a pipeline, an array, a let and a match have no line
   form, measured at 44 of 471 nodes across this repo's own flows

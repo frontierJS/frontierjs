@@ -28,7 +28,7 @@ import { caravan } from "../../caravan/src/index"
 import { orion } from "../src/plugin"
 import type { Runner } from "../src/runner"
 import { KEY, chain, count, wait, registryFor } from "./fixtures/host"
-import { APP, lit, obj, create } from "./fixtures/app"
+import { APP, TEMPLATE, lit, obj, create } from "./fixtures/app"
 
 let env:    any
 let app:    any
@@ -60,7 +60,7 @@ beforeAll(async () => {
       })
       built.configure(caravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 }))
       built.configure(channels())
-      built.configure(orion({ plugins: [suiteNodes()] }))
+      built.configure(orion({ plugins: [suiteNodes()], templates: [TEMPLATE] }))
       return built
     },
   })
@@ -218,6 +218,25 @@ describe("flows: a USER drafts, an administrator activates, the owner runs", () 
     expect((await call(TOKEN.user, "/flows", "import", { ...file, orion: 2 })).status).toBe(400)
   })
 
+  test("a host's templates are listed without their definitions, and using one drafts a flow the caller owns", async () => {
+    const listed = await call(TOKEN.user, "/flows", "templates")
+    expect(listed.status).toBe(200)
+    const { definition, ...rest } = TEMPLATE
+    expect(listed.body).toEqual([{ ...rest, nodes: 2 }])
+
+    const used = await call(TOKEN.user, `/flows/${TEMPLATE.id}`, "fromTemplate")
+    expect(used.status).toBe(200)
+    expect(used.body).toMatchObject({ name: "Lead intake", ownerId: "u-user", status: "draft", currentVersion: 1 })
+    const id = (used.body as any).id
+    expect((await call(TOKEN.user, `/flows/${id}`, "export")).body).toMatchObject({ definition: { nodes: { c: { type: "model.create" } } } })
+    expect((await call(TOKEN.other, `/flows/${id}`, "export")).status).toBe(404)
+
+    const named = await call(TOKEN.other, `/flows/${TEMPLATE.id}`, "fromTemplate", { name: "mine" })
+    expect(named.body).toMatchObject({ name: "mine", ownerId: "u-other" })
+    expect((await call(TOKEN.user, "/flows/nope", "fromTemplate")).status).toBe(404)
+    expect((await http().post(`/flows/${TEMPLATE.id}`).set("X-Service-Method", "fromTemplate").send({})).status).toBe(401)
+  })
+
   test("a dry run by the owner sends nothing and writes no run", async () => {
     const id     = await draft(TOKEN.user, manual(create("c", "Lead", obj({ name: "dry" }))))
     const before = await env.system.run.count()
@@ -269,6 +288,46 @@ describe("runs", () => {
     const res = await call(TOKEN.user, "/runs", "metrics", { flowId: id })
     expect(res.body).toMatchObject({ flowId: id, totalRuns: 3, byStatus: { completed: 3 }, successRate: 1 })
     expect(typeof (res.body as any).p95DurationMs).toBe("number")
+
+    const { series, nodes, errors } = res.body as any
+    expect(series).toHaveLength(24)
+    expect(series.reduce((n: number, b: any) => n + b.total, 0)).toBe(3)
+    expect(nodes.find((n: any) => n.nodeId === "a")).toMatchObject({ runs: 3, failed: 0 })
+    expect(errors).toEqual([])
+    await call(TOKEN.admin, `/flows/${id}`, "pause")
+  })
+
+  test("metrics name the node that failed and the message it failed with", async () => {
+    // A USER's flow writing a model the gate reserves for an administrator.
+    const id = await draft(TOKEN.user, manual(create("m", "Memo", obj({ body: "refused" }))), "metrics-failed")
+    await call(TOKEN.admin, `/flows/${id}`, "activate")
+    for (let i = 0; i < 2; i++) await settled(((await call(TOKEN.user, `/flows/${id}`, "run", {})).body as any).runId)
+
+    const res = await call(TOKEN.user, "/runs", "metrics", { flowId: id })
+    const { series, nodes, errors } = res.body as any
+    expect(res.body).toMatchObject({ totalRuns: 2, byStatus: { failed: 2 }, successRate: 0 })
+    expect(series.reduce((n: number, b: any) => n + b.total, 0)).toBe(2)
+    expect(nodes.find((n: any) => n.nodeId === "m")).toMatchObject({ runs: 2, failed: 2 })
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatchObject({ count: 2 })
+    expect(typeof errors[0].message).toBe("string")
+    expect(Number.isNaN(Date.parse(errors[0].lastAt))).toBe(false)
+    await call(TOKEN.admin, `/flows/${id}`, "pause")
+  })
+
+  test("a run's flow is read at the version it ran, by whoever may read the run", async () => {
+    const id    = await draft(TOKEN.user, manual(create("c", "Lead", obj({ name: "drawn" }))), "drawn")
+    const layout = { nodes: { c: { x: 10, y: 20 } } }
+    expect((await call(TOKEN.user, `/flows/${id}`, "saveLayout", { layout })).status).toBe(200)
+    await call(TOKEN.admin, `/flows/${id}`, "activate")
+    const runId = ((await call(TOKEN.user, `/flows/${id}`, "run", {})).body as any).runId
+    await settled(runId, ["completed", "failed"])
+
+    const res = await call(TOKEN.user, `/runs/${runId}`, "definition")
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ flowId: id, version: 1, definition: { nodes: { c: { type: "model.create" } } }, layout: layout.nodes })
+    expect((await call(TOKEN.admin, `/runs/${runId}`, "definition")).status).toBe(200)
+    expect((await call(TOKEN.other, `/runs/${runId}`, "definition")).status).toBe(404)
     await call(TOKEN.admin, `/flows/${id}`, "pause")
   })
 

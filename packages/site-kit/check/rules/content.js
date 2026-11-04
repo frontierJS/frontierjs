@@ -3,7 +3,8 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { extname, join, relative, resolve } from 'node:path'
 import { SETTINGS } from '../context.js'
-import { didYouMean, finding, proseLines } from '../finding.js'
+import { nearest } from '@frontierjs/toolbelt/typo'
+import { finding, proseLines } from '../finding.js'
 
 const GROUP = 'Content'
 const at = (c, n) => ({ file: c.rel, line: n })
@@ -46,7 +47,7 @@ function components(ctx) {
     if (c.rel.startsWith('content/settings/')) continue
     const layout = c.attrs.layout
     if (typeof layout === 'string' && !layouts.has(layout)) {
-      const guess = didYouMean(layout, [...layouts.keys()])
+      const guess = nearest(layout, [...layouts.keys()])
       out.push(
         finding('error', 'unknown-layout', `layout: ${layout} doesn't match a layout (looked in ${shown(ctx.root, layoutDirs)}).${guess ? ` Did you mean ${guess}?` : ''}`, {
           where: [at(c, 1)]
@@ -73,7 +74,7 @@ function components(ctx) {
   }
 
   for (const [name, where] of unknown) {
-    const guess = didYouMean(name, [...blocks.keys()])
+    const guess = nearest(name, [...blocks.keys()])
     out.push(
       finding(
         'error',
@@ -109,7 +110,7 @@ function mergeFields(ctx) {
     }
   }
   return [...hits].map(([key, where]) => {
-    const guess = didYouMean(key, keys)
+    const guess = nearest(key, keys)
     return finding(
       'error',
       'unknown-merge-field',

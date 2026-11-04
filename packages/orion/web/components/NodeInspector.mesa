@@ -12,10 +12,10 @@
   // form with nothing written, which is the only reason `configSchema` can be
   // on a plugin's manifest at all.
   //
-  // The mockup carries the other design, a hand-written field table per node
-  // type consulted BEFORE the schema, and it is not ported: a table beside the
-  // descriptors is a second statement of what a node takes, and the one the
-  // compiler grades against is the descriptor.
+  // The other design — a hand-written field table per node type, consulted
+  // BEFORE the schema — was declined: a table beside the descriptors is a
+  // second statement of what a node takes, and the one the compiler grades
+  // against is the descriptor.
   //
   // ─── $context.form ────────────────────────────────────────────────────────
   //

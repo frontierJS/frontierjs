@@ -19,6 +19,7 @@
 // gate admits a stranger to it (`FJS-D1048`).
 
 import { parseGateString } from '../plugins/gate.js'
+import { nearest } from '@frontierjs/toolbelt/typo'
 
 // A move the ENGINE makes and a person never does is not a grant anybody could
 // hold, so offering one in a role editor is offering nothing. A schema marks it
@@ -299,29 +300,10 @@ function checkCapabilityLiterals(/** @type {any} */ schema, /** @type {any} */ l
   return errors
 }
 
-/** Nearest legal name by a cheap edit distance, or a pointer to the whole list. */
+/** Nearest legal name, or a pointer to the whole list. */
 function suggestion(/** @type {any} */ name, /** @type {any} */ legal) {
-  let best = null, bestD = Infinity
-  for (const c of legal) {
-    if (Math.abs(c.length - name.length) > 4) continue
-    const d = editDistance(name, c)
-    if (d < bestD) { bestD = d; best = c }
-  }
-  return bestD <= Math.max(2, Math.floor(name.length / 3))
-    ? `Did you mean '${best}'?`
+  const near = nearest(name, legal)
+  return near
+    ? `Did you mean '${near}'?`
     : `The set is derived from the models declaring @@capabilities.`
-}
-
-function editDistance(/** @type {any} */ a, /** @type {any} */ b) {
-  const prev = Array.from({ length: b.length + 1 }, (_, i) => i)
-  for (let i = 1; i <= a.length; i++) {
-    let diag = prev[0]
-    prev[0] = i
-    for (let j = 1; j <= b.length; j++) {
-      const tmp = prev[j]
-      prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1))
-      diag = tmp
-    }
-  }
-  return prev[b.length]
 }

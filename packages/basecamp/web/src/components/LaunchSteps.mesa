@@ -1,14 +1,23 @@
 <script>
-  // The home screen's wizard: from nothing to one app live on one machine.
+  // The setup checklist: from nothing to one app live on one machine, with
+  // the DNS provider on the path. Home and /onboarding/ both render this, so
+  // there is one list to keep true.
   //
   // Every step is answered by `infra.launch` on load and none is stored, so
   // the only thing a step can do is take you to the screen where the work is.
   // The server names that screen — the app a step means lives three levels
   // deep, and working out which one is a read of rows this component does not
-  // hold. Hidden once every step is done: the fleet is the home screen from then.
+  // hold. Every undone step carries its button: Cloudflare is step two and
+  // needs no machine, and a button only on the next step hid it until one was
+  // online.
+  //
+  // `always` is /onboarding/'s: home hides the card once every step is done,
+  // because the fleet is the home screen from then.
   import { session } from '../lib/session.js'
   import { infra } from '../resources/Infra.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let always = false
 
   $: session.workspaceId
 
@@ -34,21 +43,24 @@
   <article class="alert danger" id="launch-error">
     <div class="alert-content">{error}</div>
   </article>
-{:else if state && next}
+{:else if state && (next || always)}
   <article class="card stack" id="launch-steps">
     <div class="section-header">
       <h2 class="h4">Ship your first app</h2>
       <span class="text-sm text-muted">{state.done} of {state.total}</span>
     </div>
-    <progress class="progress" value={state.done} max={state.total}></progress>
+    <progress class="progress" id="launch-progress" value={state.done} max={state.total}></progress>
+    {#if !next}
+      <p class="text-body">Everything is set up. <a href="/">The overview</a> is where the fleet lives from here.</p>
+    {/if}
     <ol class="steps">
       {#each state.steps as step (step.id)}
-        <li class={step.done ? 'step complete' : 'step'} aria-current={next.id === step.id ? 'step' : null}>
+        <li class={step.done ? 'step complete' : 'step'} data-step={step.id} aria-current={next?.id === step.id ? 'step' : null}>
           <span class="step-marker"></span>
           <span class="step-label">{step.title}</span>
           <span class="step-hint">{step.detail}</span>
-          {#if step.href && (next.id === step.id || step.done)}
-            <Button treatment={next.id === step.id ? '' : 'ghost'} href={step.href}>
+          {#if step.href}
+            <Button treatment={next?.id === step.id ? '' : 'ghost'} href={step.href}>
               {step.done ? 'Open' : 'Do this'}
             </Button>
           {/if}

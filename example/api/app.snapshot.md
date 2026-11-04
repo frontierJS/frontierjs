@@ -316,8 +316,8 @@ name when it declares none.
 
 ### `flows` · model `Flow`
 
-- **methods** — `find`, `get`, `create`, `patch`, `remove`, `save`, `versions`, `activate`, `pause`, `archive`, `unarchive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`, `nodeTypes`
-- **custom methods** — `save`, `versions`, `activate`, `pause`, `archive`, `unarchive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`, `nodeTypes`
+- **methods** — `find`, `get`, `create`, `patch`, `remove`, `save`, `versions`, `activate`, `pause`, `archive`, `unarchive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`, `nodeTypes`, `templates`, `fromTemplate`
+- **custom methods** — `save`, `versions`, `activate`, `pause`, `archive`, `unarchive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`, `nodeTypes`, `templates`, `fromTemplate`
 - **who may call** —
   - `save` — standing 4 or above — declared `gate: 4`
   - `versions` — standing 4 or above — declared `gate: 4`
@@ -332,6 +332,8 @@ name when it declares none.
   - `layout` — standing 4 or above — declared `gate: 4`
   - `saveLayout` — standing 4 or above — declared `gate: 4`
   - `nodeTypes` — standing 4 or above — declared `gate: 4`
+  - `templates` — standing 4 or above — declared `gate: 4`
+  - `fromTemplate` — standing 4 or above — declared `gate: 4`
 - **broadcasts on** — `flows`
 
 | Phase | Method | Chain |
@@ -790,10 +792,11 @@ name when it declares none.
 
 ### `runs` · model `Run`
 
-- **methods** — `find`, `get`, `steps`, `cancel`, `metrics`
-- **custom methods** — `steps`, `cancel`, `metrics`
+- **methods** — `find`, `get`, `steps`, `definition`, `cancel`, `metrics`
+- **custom methods** — `steps`, `definition`, `cancel`, `metrics`
 - **who may call** —
   - `steps` — standing 4 or above — declared `gate: 4`
+  - `definition` — standing 4 or above — declared `gate: 4`
   - `cancel` — standing 4 or above — declared `gate: 4`
   - `metrics` — standing 4 or above — declared `gate: 4`
 - **broadcasts on** — `runs`

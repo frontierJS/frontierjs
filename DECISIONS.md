@@ -8635,6 +8635,13 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1836"></a>2026-11-03 · `FJS-D1836` — Basecamp has one setup checklist, `infra.launch`: home opens with it until every step is done and `/onboarding/` renders it always; `infra.onboarding`'s six counts are gone.
+
+Asked in chat through the question tool, after a reinstall walked past the DNS provider. **One list, top of home** was picked over adding a DNS step to the six-check page (two lists that drift) and leaving it as it was.
+
+The two lists disagreed: home's card carried *Connect Cloudflare* and sat below the action queue and the fleet tiles, and the nav's *Getting started* counted servers, SSH keys, projects, deploys and teammates with no DNS step. The SSH-key step is dropped because enrolling an Outpost needs no key, and the teammate step because it would keep the card on home for anyone who works alone. Every undone step now carries its button, so the DNS step is reachable before a machine is online.
+*Lives in:* `basecamp/api/src/services/infra/infra.service.ts`, `basecamp/web/src/components/LaunchSteps.mesa`, `basecamp/web/src/routes/index.mesa`, `basecamp/web/src/routes/onboarding/index.mesa`.
+
 ### <a id="fjs-d1833"></a>2026-11-03 · `FJS-D1833` — How a person downloads an app backup kept on its machine — pull it through the hub: *Download* mints a signed PUT to a hub stream route, the machine's Outpost sends the archive there on a new signed `POST /backup/send`, and the browser gets the five-minute signed GET `backup-archive.ts` already uses. Up to 128 MB; larger is refused by name.
 
 Asked in session from the app Backups tab, where a machine-kept row (`FJS-D679`, no destination) showed no *Download*. **A** was picked over **B** (*Send to bucket* on the row: a minted PUT to the app's destination, after which the bucket's own Download answers. Fits `FJS-D1485` exactly, but it is no answer for an app with no bucket, which is the row in question), **C** (Outpost serves a signed GET the browser follows to the machine: the machine's port answers browsers, and `FJS-D679`'s *no bytes cross the command port* is reversed) and **D** (leave it: the archive leaves only by `scp`). As recommended.
@@ -16283,6 +16290,35 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1360"></a>2026-11-04 · `FJS-D1360` — What is an orion flow template: code the host registers, a table row, or a flow marked as one — Code the host registers: `orion({ templates })` takes `{ id, name, description, category, tags, definition }` definitions, `flows.templates()` answers them beside `flows.nodeTypes()`, and "use" creates a draft `Flow` from the definition. Compiled at registration, reviewed in git, no schema change; a client cannot author one.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a `FlowTemplate` model in `orion.lite`: authored and shared by people, needs its own row policy and a copy-on-use path, and coins a noun beside `Flow`), **C** (a flow flagged `isTemplate`: no new noun, "use" is a copy of its current version, but visibility across owners rides on a row policy that today reads only the owner and an administrator (`FJS-D296`)).
+
+The paper's recommendation, taken as written: (confidence 3) — the registry already is how a host adds what orion lists (`FJS-D269`), a template is a flow that must compile before anyone sees it, and it adds neither a table nor a policy; B or C is the later step if people need to author them. GitHub and n8n both treat templates as a curated catalog outside the user-authored workflows. - **Prior art** (read 2026-11-01) — GitHub's organization workflow templates are `.yml` files in a `workflow-templates` directory of the `.github` repo, each with a `.properties.json` carrying name, description and categories ([docs](https://docs.github.com/en/actions/sharing-automations/creating-workflow-templates-for-your-organization)). n8n serves templates from a separate template library API, set by `N8N_TEMPLATES_HOST` ([docs](https://docs.n8n.io/deploy/host-n8n/configure-n8n/basic-configuration/configuration-examples/configure-a-custom-workflow-templates-library)). Neither flags a user's own workflow as a template, so C has no precedent.
+
+### <a id="fjs-d1840"></a>2026-11-03 · `FJS-D1840` — Q4 — How does `fli deploy` over SSH get start-first — Both paths, one owner: `swapContainer` and Outpost's `docker.deploy` become one owner of the swap before start-first is built, and start-first does not ship on one path only.
+
+Asked in [`IDEAS/zero-downtime-deploy.md`](IDEAS/zero-downtime-deploy.md) § Open questions through the question tool. Picked over two copies (they drift: the swap already exists twice, with the same `_replaced` handle restated) and Basecamp-only first (the two deploy paths would take different windows for one release). Precedent for the shared module: the cli already imports Outpost's `dockerfile.js` (`FJS-D1560`). Phase 3 gates the plan's done.
+
+### <a id="fjs-d1839"></a>2026-11-03 · `FJS-D1839` — Q3 — How do the container's stop grace and Junction's shutdown budgets relate — One number, the container's stop grace, set per App; Junction's HTTP drain, plugin and whole-shutdown budgets are derived to fit inside it.
+
+Asked in [`IDEAS/zero-downtime-deploy.md`](IDEAS/zero-downtime-deploy.md) § Open questions. Picked over keeping `-t 10` and raising Junction's budgets (long jobs still cut) and a fixed 30 s for every App (Kamal's drain; every stop-first release waits it). Probe 0.4 found the three budgets set in places that do not know about each other: a job running at SIGTERM is abandoned at 5 s and the process exits 0 (`FJS-3944`). Deriving them closes that row by construction. The default grace is the build's to choose, above Junction's 15 s whole-shutdown limit today.
+
+### <a id="fjs-d1838"></a>2026-11-03 · `FJS-D1838` — Q2 — Where the expand/contract verdict is computed on a Basecamp deploy — In Outpost, after the build: the new image's own `litestone release --from=<old schema> --json`, with the old schema copied out of the live container.
+
+Asked in [`IDEAS/zero-downtime-deploy.md`](IDEAS/zero-downtime-deploy.md) § Open questions. Picked over Basecamp computing it before `/deploy` (Basecamp holds no source and would fetch both schemas from the repository). The "before" side is the schema the live container migrated to, never the previous commit: a failed or skipped release is not what the database holds. Outpost gains no framework dependency, since the classifier is the app's copy of Litestone inside the app's image. Probed in 0.2: the command answered `expand` for an added column, table and index. A classifier that fails to run means stop-first.
+
+### <a id="fjs-d1837"></a>2026-11-03 · `FJS-D1837` — Q1 — Where the new container listens during a start-first swap — On a port Docker assigns: start-first publishes `127.0.0.1::<containerPort>`, and the Caddy route follows `published()`.
+
+Asked in [`IDEAS/zero-downtime-deploy.md`](IDEAS/zero-downtime-deploy.md) § Open questions. Picked over a port pair per App (moves the allocator, `portHolders` and every App row) and a Docker network with Caddy dialing the container IP (Kamal's shape, whose proxy is itself a container on that network; ours is a host service). Dokku's shape. `App.port`, the allocator and the firewall's `exposesPort` set keep their meaning, and `published()` already treats the daemon as the truth for the live port. Reopens as the port pair if a firewall rule ever needs the port known ahead.
+
+### <a id="fjs-d1835"></a>2026-11-03 · `FJS-D1835` — "Did you mean" has one owner, `@frontierjs/toolbelt/typo`: optimal-string-alignment distance under rustc's `max(len, 3) / 3` cutoff, a case-only match first, nothing when nothing is close.
+
+Asked in chat through the question tool, after `fli dov` answered "run fli list". **A new `/typo` kit** was picked over adding `nearest` to `/search` (which loads QuickScore and answers a different question, subsequence match with ranges), and **the rustc cutoff** over litestone's looser `max(2, len/3)`.
+
+Five private Levenshtein copies held five cutoffs — junction's config keys (half the word), litestone's refusals and capabilities (`max(2, len/3)`), site-kit's check (`max(2, len/4)`), litestone's `explain` (a flat two) — so one typo was corrected in one refusal and not the next. Prior art read at source: git and rustc, cargo, commander and yargs count an adjacent swap as one edit (plain Levenshtein charges `emial` two); rustc and clang suggest within a third of the word; every one returns nothing when nothing is close. Each copy is deleted and its callers import `nearest`/`nearestAll`, with no wrapper kept. fli's unknown-command scorer falls back to `nearestAll` only when its substring passes find nothing, so there is one "Did you mean?" list. Reopen path: a real two-edit miss on a short word is answered by a `max` option, not by per-caller cutoffs.
+*Lives in:* `toolbelt/src/typo/`, `cli/core/bootstrap.js`, `litestone/src/core/args.js`, `junction/src/config/index.ts`, `site-kit/check/rules/content.js`.
 
 ### <a id="fjs-d1834"></a>2026-11-03 · `FJS-D1834` — Q12 — How does a person name the keys a machine is expected to hold — `sshKeyId` on the edit form, bound by `@values(SshKeys)` to the workspace's `sshKey` Secrets. The grader also reads the public half an OpenSSH private key keeps in its unencrypted header, and the Secret may hold public key lines for each person who reaches the box.
 

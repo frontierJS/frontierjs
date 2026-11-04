@@ -13,7 +13,7 @@ import { parseGateString, validateGate } from '../plugins/gate.js'
 // One owner for the range a value round-trips through a JS number in — the
 // validator's, so a refusal here and a refusal at the boundary name one number.
 import { EXACT_INT_MAX, validateTypedBinding } from './validate.js'
-import { suggestKey } from './args.js'
+import { nearest } from '@frontierjs/toolbelt/typo'
 import { compileStatic, policyExprToString, compileGenerated, generatedProblems, compileFromWhere } from './policy.js'
 import { tenantAdmission } from './tenancy.js'
 import { pointColumnNames, isStoredField, mapIdentifiers, labelColumn, COLLATIONS, modelToTableName } from './ddl.js'
@@ -2897,7 +2897,7 @@ class Parser {
         // `@@capabilities` plural, `@@commitment` and `@@index` singular), so
         // the wrong number is the likeliest typo and the refusal names the
         // neighbor (`FJS-2977`).
-        const near = suggestKey(name, MODEL_ATTRIBUTE_WORDS)
+        const near = nearest(name, MODEL_ATTRIBUTE_WORDS)
         throw new ParseError(
           `Unknown model attribute '@@${name}'` + (near ? `. Did you mean '@@${near}'?` : ''), this.peek())
       }

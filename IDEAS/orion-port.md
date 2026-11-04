@@ -6,7 +6,7 @@ dated: 2026-09-14
 
 # Idea — Porting orion's mockup onto FrontierJS
 
-**Status: PHASES 1 TO 7 BUILT; NEVER RELEASED (`FJS-1369`).** Dated 2026-09-14, status amended 2026-10-13. Orion is not
+**Status: PHASES 1 TO 7 BUILT; NEVER RELEASED (`FJS-1369`).** Dated 2026-09-14, status amended 2026-10-13 and 2026-11-03, when the last of the UI the mockup specified landed (`FJS-1196`, `FJS-D1360`) and `packages/orion/mockup/` was deleted — § What exists below describes what it was. Orion is not
 deferred (`FJS-D275`), and its shape is ruled (`FJS-D269`–`FJS-D274`).
 
 `packages/orion/README.md` is the intent — what orion is for and the

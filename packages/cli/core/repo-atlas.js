@@ -25,6 +25,7 @@
 
 import { htmlPage, themePicker, themesFor, esc, CLIENT_ESC } from './html-page.js'
 import { realmCss } from '../console/map-model.js'
+import { formatBytes } from '@frontierjs/toolbelt/units'
 
 // ─── realm buckets ────────────────────────────────────────────────────────────
 //
@@ -613,15 +614,6 @@ function countChecked(model) {
 // class — every id in the register is a statement about the TREE, so a package
 // whose published copy is a release behind is invisible from inside it.
 
-// Rounded on purpose. `unpackedSize` to the byte is a number that moves every
-// release and that nobody compares; what somebody wants from this column is the
-// order of magnitude beside the package next to it.
-function kb(bytes) {
-  return bytes >= 1024 * 1024
-    ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
-    : `${Math.max(1, Math.round(bytes / 1024))} KB`
-}
-
 function livePane(live) {
   if (!live) return ''
 
@@ -638,7 +630,7 @@ function livePane(live) {
     // What an app actually installs. A reference, so it is rounded — the exact
     // byte moves on every release and nobody reads it.
     r.shippedBytes != null
-      ? `${kb(r.shippedBytes)} <span class="text-xs text-muted">${r.shippedFiles} file(s)</span>`
+      ? `${formatBytes(r.shippedBytes)} <span class="text-xs text-muted">${r.shippedFiles} file(s)</span>`
       : '<span class="text-xs text-muted">—</span>',
   ])
 

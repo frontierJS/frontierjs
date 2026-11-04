@@ -266,5 +266,7 @@ two. Every Tier 1 item above passes it; every Refuse item fails it.
 5. ~~**The purity lint**~~ — **built**: `scripts/ci.mjs`'s substrate-purity phase.
 6. Case conversion and the validator regexes, once 1–5 have shown the seam holds.
 
+**Re-derived 2026-11-03 as `toolbelt-map.md`**, which keeps this paper's rule and Refuse list and carries the order of work from here.
+
 Tier 2 and the Refuse list should be re-derived, not assumed: this survey read
 the tree on 2026-08-11 and a helper is added every week.

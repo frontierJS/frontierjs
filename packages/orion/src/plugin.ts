@@ -49,7 +49,7 @@ import { litestoneModelActions, modelCatalog } from "./models"
 import { litestoneKeyValue } from "./kv"
 import { conduitOutbound, flowCredentialResolver } from "./outbound"
 import { litestoneHost } from "./tenancy"
-import { DEFAULT_SERVICE_NAMES, createOrionServices, type OrionServiceNames } from "./services"
+import { DEFAULT_SERVICE_NAMES, createOrionServices, type FlowTemplate, type OrionServiceNames } from "./services"
 
 // What a HOST needs to type a contribution, re-exported from the one entry
 // point it imports. Without them an app writes its manifest as an object
@@ -62,6 +62,7 @@ export type { PluginManifest, NodeTypeDescriptor, NodeCategory } from "./engine/
 // `flows` and `runs` broadcast on a channel of their own name, which a host
 // joins its connections to.
 export { DEFAULT_SERVICE_NAMES } from "./services"
+export type { FlowTemplate } from "./services"
 export type { INodeImplementation, NodeContext, NodeResult } from "./engine/executor"
 
 // ─── options ─────────────────────────────────────────────────────────────────
@@ -73,6 +74,13 @@ export interface OrionOptions {
   queue?:      string
   /** Node types the app contributes beside the built-ins. */
   plugins?:    Array<{ manifest: PluginManifest; implementations: INodeImplementation[] }>
+  /**
+   * Flows the app ships for a person to start from. Each is compiled when the
+   * app boots, so one that does not is the host's mistake and not a refusal at
+   * the moment somebody uses it. Using one creates an ordinary draft the caller
+   * owns; nothing records where it came from.
+   */
+  templates?:  FlowTemplate[]
   /**
    * Policy for orion's conduit — timeouts, retries, the breaker. Its targets and
    * its credential resolver are orion's and cannot be passed.
@@ -252,8 +260,16 @@ export function orion(options: OrionOptions = {}): Plugin {
       runner.register()
       app.own("orion", runner)
 
+      const seen = new Set<string>()
+      for (const t of options.templates ?? []) {
+        if (seen.has(t.id)) throw new Error(`[orion] template '${t.id}' is registered twice`)
+        seen.add(t.id)
+        const compiled = runner.check(t.definition)
+        if (!compiled.ok) throw new Error(`[orion] template '${t.id}' does not compile: ${compiled.errors.map(e => e.message).join("; ")}`)
+      }
+
       if (options.services !== false) {
-        for (const svc of createOrionServices({ runner, names: options.services })) {
+        for (const svc of createOrionServices({ runner, names: options.services, templates: options.templates })) {
           if (app.services.has(svc.name!)) {
             throw new Error(`[orion] service '${svc.name}' is already registered by this app. Rename orion's: orion({ services: { ${svc.name}: '…' } }), or false to leave it out.`)
           }

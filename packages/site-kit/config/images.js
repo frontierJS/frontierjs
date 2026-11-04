@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
 import { htmlFiles } from '@frontierjs/sierra/postbuild'
+import { slug } from '@frontierjs/toolbelt/inflect'
 
 export const WIDTHS = [480, 1080, 1920]
 const QUALITY = 75
@@ -101,7 +102,7 @@ export async function optimizeImages({ outDir, transform, cacheDir }) {
     const bytes = new Uint8Array(readFileSync(file))
     const digest = createHash('sha256').update(bytes).digest('hex')
     const { width, height } = await transform.metadata(bytes)
-    const name = slug(basename(file, extname(file)))
+    const name = slug(basename(file, extname(file))) || 'image'
     const candidates = []
     r.sources++
     r.sourceBytes += bytes.length
@@ -258,9 +259,6 @@ function urlOf(outDir, file) {
   return '/' + relative(outDir, file).split(sep).map(encodeURIComponent).join('/')
 }
 
-function slug(name) {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'image'
-}
 
 function decode(v) {
   return v.replace(/&(amp|quot|#39|lt|gt);/g, (_, e) => ({ amp: '&', quot: '"', '#39': "'", lt: '<', gt: '>' })[e])

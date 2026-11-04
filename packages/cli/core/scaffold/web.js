@@ -431,16 +431,25 @@ title: Not found
 `
 }
 
-export function makeRouteIndex(appName, useApi = true) {
+export function makeRouteIndex(appName, useApi = true, useAuth = useApi) {
   return `---
 title: Home
 ---
 ${useApi ? `<script>
-  import { status } from '@frontierjs/sierra/resource'
+  import { status${useAuth ? ', session' : ''} } from '@frontierjs/sierra/resource'
+  import { visible } from '@frontierjs/ui/nav'
+  import { groups }  from '../lib/nav.js'
 
   // The $: line is the subscription — without it this renders once at the
   // initial false and never changes.
-  $: status.connected
+  $: ${useAuth ? '(status.connected, session.user, session.level, session.checked)' : 'status.connected'}
+
+  // The models are the nav table make:scaffold appends to, filtered by the
+  // same show() the Shell runs, so this list cannot offer a screen the nav
+  // hides from this visitor.
+  ${useAuth ? '$: models = visible(groups, { user: session.user, level: session.level })' : 'const models = visible(groups, { user: null, level: 0 })'}
+    .flatMap(group => group.entries)
+    .filter(entry => entry.href !== '/')
 
   // status.connected is the SOCKET, and the client opens one only once it holds
   // a token — so a signed-out visitor is correctly false and it says nothing
@@ -492,7 +501,46 @@ ${useApi ? `  <div class="cluster">
     </div>
   {/await}
 ` : ''}</header>
-
+${useAuth ? `
+<!-- Nothing renders until the boot restore settles: on a cold load session.user
+     is null for a visitor who IS signed in, and the signed-out card would flash. -->
+{#if session.checked}
+  <section class="account card">
+    {#if session.user}
+      <div class="split">
+        <p>Signed in as <strong>{session.user.email}</strong></p>
+        <a class="btn outlined" href="/account/">Your account</a>
+      </div>
+    {:else}
+      <div class="stack gap-sm">
+        <p><a class="link" href="/login/">Sign in</a>, or
+           <a class="link" href="/register/">create an account</a>.</p>
+        {#if import.meta.env.DEV}
+          <p class="text-sm text-muted">Dev only: nobody exists yet?
+             <code>fli auth:create-user you@example.com --role admin</code> makes the first admin.</p>
+        {/if}
+      </div>
+    {/if}
+  </section>
+{/if}
+` : ''}${useApi ? `
+<section class="models stack gap-md">
+  <h2>Your models</h2>
+  {#if models.length}
+    <dl class="facts divided">
+      {#each models as model}
+        <dt><a class="link" href={model.href}>{model.label}</a></dt>
+        <dd><code>web/src/routes{model.href}</code></dd>
+      {/each}
+    </dl>
+${useAuth ? `  {:else if !session.user}
+    <p class="text-muted">Sign in to see them.</p>
+` : ''}  {:else}
+    <p class="text-muted">None yet. <code>fli scaffold Note --fields "title:string body:text"</code>
+       adds one, and it is listed here.</p>
+  {/if}
+</section>
+` : ''}
 <section class="next stack gap-md">
   <h2>Where to go next</h2>
   <ol class="steps vertical">
@@ -539,7 +587,8 @@ ${useApi ? `    <li class="step">
 </section>
 
 <style>
-  .next { margin-top: var(--space-3xl) }
+  .account { margin-top: var(--space-xl) }
+  .models, .next { margin-top: var(--space-3xl) }
   p { margin: 0 }
 </style>
 `

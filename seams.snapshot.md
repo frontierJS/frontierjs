@@ -14,7 +14,7 @@ owned, so the gap is written down rather than left to be rediscovered.
 would let junction and orion share litestone's types, so each declares the shape it
 holds. The count is here because it is the only place that cost is visible.
 
-Seams: **99**. With a stated owner: **99**. Stated and missing: **0**.
+Seams: **100**. With a stated owner: **100**. Stated and missing: **0**.
 
 **Every seam names an owner.** A callable is graded by where it is DECLARED; a key — a `$` on a
 wire, a schema keyword, a header — has no declaration anywhere, so its owner is where it is
@@ -68,6 +68,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `accessorCandidates()` | `packages/junction/src/core/litestone.ts` | yes | — |
 | `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | yes | 5 |
 | `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | yes | 5 |
+| `nearest(word, candidates)` / `nearestAll` | `packages/toolbelt/src/typo/typo.js` | yes | 2 |
 | `db.$readAs(accessor, row, principal)` | `packages/litestone/src/core/client.js` | yes | 2 |
 | `db.$checkWrite(accessor, op, row, changes?)` | `packages/litestone/src/core/client.js` | yes | 2 |
 | `db.$levelOf(accessor?, principal?)` | `packages/litestone/src/core/client.js` | yes | 2 |

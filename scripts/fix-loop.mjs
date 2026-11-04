@@ -2,7 +2,7 @@
 // ============================================================
 // Work down the open register, one row per headless session
 //
-//   bun run fix:loop                       # up to 5 rows
+//   bun run fix:loop                       # up to 4 rows
 //                                          #   (naming no rows, it takes Haven's /menu)
 //   bun run fix:loop -- --rows 10 --pkg sierra
 //   bun run fix:loop -- --sev S3,S4        # only these severities

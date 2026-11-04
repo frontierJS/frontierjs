@@ -33,6 +33,7 @@ import { backupSqliteTo, writeBackupStamp }            from '../core/backup.js'
 import { schemaAnchor, noteMintedDirectory }          from '../core/db-path.js'
 import { resolveTenancy, placedTrails }                from '../core/tenancy.js'
 import { modelToAccessor }           from '../core/ddl.js'
+import { nearestAll }                from '@frontierjs/toolbelt/typo'
 import { findPrincipal }                               from './principal.js'
 import { c, bold, dim, green, yellow, red, cyan, args, positional, flag, getFlag, getFlags,
          KNOWN_FLAGS, unknownFlags,
@@ -2340,25 +2341,16 @@ async function cmdExplain(word) {
   console.log()
 }
 
-/** Closest words to a miss: a substring hit first, then one edit away. */
+/** Closest words to a miss: a substring hit first, then a typo of one. */
 function suggestWords(catalog, bare, typedFn) {
   const all  = catalog.map(r => ({ r, w: r.word }))
   const sub  = all.filter(x => x.w.includes(bare) || bare.includes(x.w))
-  const near = all.filter(x => editDistance(x.w, bare) <= 2)
+  const near = nearestAll(bare, all.map(x => x.w)).flatMap(w => all.filter(x => x.w === w))
   const seen = new Set()
   return [...sub, ...near]
     .filter(x => !seen.has(typedFn(x.r)) && seen.add(typedFn(x.r)))
     .slice(0, 6)
     .map(x => typedFn(x.r))
-}
-
-function editDistance(a, b) {
-  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)])
-  for (let j = 0; j <= b.length; j++) d[0][j] = j
-  for (let i = 1; i <= a.length; i++)
-    for (let j = 1; j <= b.length; j++)
-      d[i][j] = Math.min(d[i-1][j] + 1, d[i][j-1] + 1, d[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1))
-  return d[a.length][b.length]
 }
 
 function wrapText(text, width) {
@@ -5316,7 +5308,7 @@ async function main() {
   const unknown = unknownFlags()
   if (unknown.length) {
     const lines = unknown.map(name => {
-      const near = [...KNOWN_FLAGS].filter(k => k.includes(name) || name.includes(k) || editDistance(k, name) <= 2)
+      const near = [...new Set([...[...KNOWN_FLAGS].filter(k => k.includes(name) || name.includes(k)), ...nearestAll(name, KNOWN_FLAGS)])]
       const hint = name === 'dry' && cmd === 'migrate'
         ? `the preview is ${cyan('litestone migrate dry-run')}`
         : near.length ? `did you mean ${near.slice(0, 4).map(k => cyan(`--${k}`)).join(', ')}?` : ''

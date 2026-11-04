@@ -960,33 +960,30 @@ try {
   check('and a network', madeNetwork.status < 300, JSON.stringify(madeNetwork).slice(0, 200))
 
   // ── /onboarding/ ───────────────────────────────────────────────────────
-  console.log('\n  /onboarding/ — six checks, nothing stored')
+  console.log('\n  /onboarding/ — the setup checklist home opens with, nothing stored')
   await goto('/onboarding/')
-  await until(`document.querySelectorAll('#onboarding-steps .step').length`, n => n > 0,
+  await until(`document.querySelectorAll('#launch-steps .step').length`, n => n > 0,
     'the step list never rendered')
 
-  const stepCount = await evaluate(`document.querySelectorAll('#onboarding-steps .step').length`)
-  check('six steps', stepCount === 6, `saw ${stepCount}`)
+  const steps = await evaluate(`[...document.querySelectorAll('#launch-steps .step')].map(li => li.dataset.step)`)
+  check('the launch steps, Cloudflare second', steps.length === 7 && steps[1] === 'dns', JSON.stringify(steps))
 
   const progress = await evaluate(`(() => {
-    const el = document.getElementById('onboarding-progress')
+    const el = document.getElementById('launch-progress')
     return el ? { value: el.value, max: el.max } : null })()`)
-  check('the progress element carries the real numbers', progress?.max === 6 && progress.value > 0,
-    JSON.stringify(progress))
+  check('the progress element carries the real numbers', progress?.max === 7, JSON.stringify(progress))
 
-  const complete = await evaluate(`document.querySelectorAll('#onboarding-steps .step.complete').length`)
-  check('and it agrees with the steps marked complete', complete === progress.value,
-    `${complete} complete, progress says ${progress.value}`)
+  const complete = await evaluate(`document.querySelectorAll('#launch-steps .step.complete').length`)
+  check('and it agrees with the steps marked complete', complete === progress?.value,
+    `${complete} complete, progress says ${progress?.value}`)
 
-  // The whole argument of this screen: a step is done because a row exists, so
-  // the seeded fleet's steps are done and the ones with no rows are not. If a
-  // `done` flag ever creeps back in, this is what stops agreeing.
-  check('a seeded server marks its step done',
-    await evaluate(`[...document.querySelectorAll('#onboarding-steps .step')]
-      .some(li => li.classList.contains('complete') && li.textContent.includes('server'))`))
+  // The DNS provider is the step a fresh install walked past: it needs no
+  // machine, so its button is there whether or not it is the next step.
+  check('the Cloudflare step links to where it is done',
+    await evaluate(`!!document.querySelector('#launch-steps [data-step="dns"] a[href]')`))
   check('and no button claims to complete a step',
-    !(await evaluate(`[...document.querySelectorAll('#onboarding-steps button')]
-      .some(b => /complete|done|mark/i.test(b.textContent))`)))
+    !(await evaluate(`[...document.querySelectorAll('#launch-steps button, #launch-steps a')]
+      .some(b => /complete|mark/i.test(b.textContent))`)))
 
   // ── /infra-graph/ ──────────────────────────────────────────────────────
   console.log('\n  /infra-graph/ — the fleet, drawn from rows')

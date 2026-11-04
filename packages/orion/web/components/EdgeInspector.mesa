@@ -1,0 +1,84 @@
+<script>
+  // One edge's kind, label, condition and transform, written back as the edge it was.
+  //
+  // ─── What this does not guard ─────────────────────────────────────────────
+  //
+  // An `error` edge must leave a node and arrive at a `flow.error` node, and
+  // changing the kind here does not check it: the compiler refuses it on save
+  // (`INVALID_ERROR_EDGE`, `UNREACHABLE_ERROR_NODE`) with its own sentence,
+  // which the page shows. A second copy of that rule in a form would disagree
+  // with the compiler the first time a node type moved.
+  //
+  // An empty label or an emptied expression removes the key rather than storing
+  // a blank, since the engine reads a present `condition` as one to evaluate
+  // and a present `transform` as a rewrite of the source node's output in the
+  // run context -- for everything downstream, not for this edge alone.
+
+  import Input from '@frontierjs/ui/components/forms/Input.mesa'
+  import Select from '@frontierjs/ui/components/forms/Select.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Pill from '@frontierjs/ui/components/display/Pill.mesa'
+
+  import ExpressionField from './ExpressionField.mesa'
+
+  // `{ id, from, to, kind?, label?, condition?, transform? }` from the definition.
+  export let edge
+
+  export let write    = undefined     // (edge) => void
+  export let disabled = false
+
+  const KINDS = [
+    { value: 'success', label: 'On success' },
+    { value: 'error',   label: 'On error' },
+    { value: 'always',  label: 'Always' },
+  ]
+
+  // A key set to `undefined` or blank leaves the edge.
+  const set = (key, value) => {
+    const next = { ...edge }
+    if (value === undefined || value === '' || (key === 'kind' && value === 'success')) delete next[key]
+    else next[key] = value
+    write?.(next)
+  }
+</script>
+
+<SectionHeader title="Edge" level={3}>
+  {#snippet action()}
+    <Pill tone="muted" id="edge-inspector-id">{edge.from} → {edge.to}</Pill>
+  {/snippet}
+</SectionHeader>
+
+<div class="stack" id="edge-inspector">
+  <Select
+    id="edge-kind"
+    name="kind"
+    label="Kind"
+    placeholder=""
+    {disabled}
+    options={KINDS}
+    value={edge.kind ?? 'success'}
+    onchange={(e) => set('kind', e.target.value)}
+  />
+  <Input
+    id="edge-label"
+    name="label"
+    label="Label"
+    {disabled}
+    value={edge.label ?? ''}
+    oninput={(e) => set('label', e.target.value)}
+  />
+  <ExpressionField
+    name="edge-condition"
+    {disabled}
+    hint="Condition: the edge is followed only when this holds"
+    value={edge.condition}
+    write={(expr) => set('condition', expr)}
+  />
+  <ExpressionField
+    name="edge-transform"
+    {disabled}
+    hint="Transform: rewrites the source node's output for everything downstream"
+    value={edge.transform}
+    write={(expr) => set('transform', expr)}
+  />
+</div>

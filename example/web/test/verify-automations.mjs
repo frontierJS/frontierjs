@@ -194,13 +194,18 @@ const signInAs = (email) => evaluate(`
   return true;
 `)
 
+// A draft made from the example's template is named by the template, not by
+// this drive, so a run that died between using it and archiving it leaves a
+// flow the prefix cannot find.
+const TEMPLATE_NAME = 'Welcome note'
+
 /** Every flow this drive left, archived. Answers how many it moved. */
 const archiveLeftovers = () => evaluate(`
   const { flows } = await import(${JSON.stringify(FLOW_MODULE)});
   const found = await flows.service.find({ status: { in: ['draft', 'active', 'paused'] } }, { limit: 100 });
   const rows  = found.data;
   let moved = 0;
-  for (const f of rows.filter(f => f.name.startsWith(${JSON.stringify(PREFIX)}))) {
+  for (const f of rows.filter(f => f.name.startsWith(${JSON.stringify(PREFIX)}) || f.name === ${JSON.stringify(TEMPLATE_NAME)})) {
     await flows.service.invoke('archive', f.id);
     moved++;
   }
@@ -419,6 +424,50 @@ try {
     return !d.nodes.error1 && !d.edges.some(e => e.to === 'error1')
   `), true)
 
+  // An edge is selected by a click, edited in its own inspector, and every
+  // field lands in the document the compiler reads. The kind goes back to
+  // success because an error edge must point at a flow.error node, and the
+  // save below would be refused.
+  const definitionOf = () => evaluate(`return JSON.stringify(JSON.parse(document.querySelector('#flow-definition').value))`).then(JSON.parse)
+  const tEdge = async () => (await definitionOf()).edges.find(e => e.id === 't-welcome') ?? {}
+  await evaluate(`
+    document.querySelector('[data-edge="t-welcome"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    return true;
+  `)
+  t('edge.clickingItSelectsIt', await attr('[data-edge="t-welcome"]', 'data-selected'), 'yes')
+  t('edge.andShowsItsInspector', await waitFor('#edge-inspector'), true)
+
+  await evaluate(`
+    const el = document.querySelector('#edge-kind');
+    el.value = 'error';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  `)
+  t('edge.theKindIsWrittenIntoTheDefinition', (await tEdge()).kind, 'error')
+  t('edge.andTheEdgeIsDrawnAsAnErrorEdge', await until(`document.querySelector('[data-edge="t-welcome"]')?.getAttribute('data-kind') === 'error'`), true)
+  await evaluate(`
+    const el = document.querySelector('#edge-kind');
+    el.value = 'success';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  `)
+  t('edge.andBackToSuccess', (await tEdge()).kind ?? 'success', 'success')
+
+  await type('#edge-label', 'welcome them')
+  t('edge.aLabelIsWritten', (await tEdge()).label, 'welcome them')
+  t('edge.andDrawnAtTheMiddle', await until(`document.querySelector('.flow-edge-label')?.textContent === 'welcome them'`), true)
+
+  await type('[name="edge-condition"]', '$.trigger.record.email != null')
+  t('edge.aConditionIsWrittenAsANode', typeof (await tEdge()).condition?.type, 'string')
+  t('edge.andMarkedOnTheCanvas', await waitFor('[data-edge-condition="t-welcome"]'), true)
+  t('edge.theMarkerCarriesTheConditionText',
+    (await text('[data-edge-condition="t-welcome"] title')).includes('email'), true)
+
+  await type('#flow-name', `${PREFIX} ${RUN_ID} renamed`)
+  t('canvas.theFlowIsRenamedInTheDefinition', (await definitionOf()).name, `${PREFIX} ${RUN_ID} renamed`)
+
   // Put it back, through the document, since the rest of this drive runs the
   // flow for real.
   await type('#flow-definition', JSON.stringify(definition('Customer'), null, 2))
@@ -474,6 +523,9 @@ try {
   await go('/automations/metrics/')
   t('metrics.theTilesRender', await until(`document.querySelector('#metrics-tiles')`, 6000), true)
   t('metrics.theRunIsCounted', await until(`document.querySelector('#metrics-status [data-status="completed"]')`, 4000), true)
+  t('metrics.theSeriesIsTwentyFourBuckets', await evaluate(`return document.querySelectorAll('#metrics-series [data-at]').length`), 24)
+  t('metrics.theNodeThatRanIsTimed', await exists('#metrics-nodes [data-node="welcome"]'), true)
+  t('metrics.noRunFailedSoNoErrorIsListed', await exists('#metrics-errors-empty'), true)
   await evaluate(`
     const sel = document.querySelector('#metrics-flow');
     const opt = [...sel.options].find(o => o.value === ${JSON.stringify(flowId)});
@@ -486,12 +538,33 @@ try {
   t('nodes.theTriggersAreListed', await until(`document.querySelector('[data-category="trigger"] [data-node-type]')`, 6000), true)
   t('nodes.andTheLogicNodeIsToo', await until(`document.querySelector('[data-node-type="flow.condition"]') || document.querySelector('[data-category="flow-control"] [data-node-type]')`, 4000), true)
 
+  // ─── a template, used ─────────────────────────────────────────────────────
+  //
+  // The example registers one in `orion({ templates })`; using it drafts an
+  // ordinary flow this administrator owns, archived here and swept by name
+  // in archiveLeftovers if this run never gets here.
+
+  await go('/automations/templates/')
+  t('templates.theScreenLists', await until(`document.querySelector('tr[data-template="welcome-note"]')`, 6000), true)
+  await click('#template-use-welcome-note')
+  t('templates.useMakesADraft', await until(`
+    location.pathname.startsWith('/automations/flows/') &&
+    document.querySelector('#flow-version')?.textContent.includes('1') &&
+    document.querySelector('#flow-status')?.getAttribute('data-status') === 'draft'
+  `, 6000), true)
+  await evaluate(`
+    const { flows } = await import(${JSON.stringify(FLOW_MODULE)});
+    await flows.service.invoke('archive', location.pathname.split('/').filter(Boolean).pop());
+    return true;
+  `)
+
   // ─── the run, read back ───────────────────────────────────────────────────
 
   await go(`/automations/runs/${runId}/`)
   t('run.theStatusIsCompleted', await until(`document.querySelector('#run-status')?.getAttribute('data-status') === 'completed'`), true)
   t('run.theStepIsListed', await waitFor('[data-step="welcome"]'), true)
   t('run.andItCompleted', await attr('[data-step="welcome"] [data-status]', 'data-status'), 'completed')
+  t('run.theFlowIsDrawnWithEachNodesStatus', await waitFor('[data-canvas-node="welcome"][data-status="completed"]'), true)
   t('run.theTriggerNamesTheCustomer', await until(`document.body.textContent.includes(${JSON.stringify(email)})`, 4000), true)
   t('run.itRanAsTheOwner', await evaluate(`
     const { session } = await import(${JSON.stringify(SESSION_MODULE)});

@@ -18,6 +18,7 @@ import { setVerbose } from './verbosity.js'
 import { flagSpelling, flagConstraint, withModuleFlags } from './flags.js'
 import { APPROVED } from './effects.js'
 import { tellNotice } from './tell.js'
+import { nearestAll } from '@frontierjs/toolbelt/typo'
 
 // ─── .fli.json + .env — load both from project root ──────────────────────────
 loadConfig()
@@ -93,6 +94,21 @@ function printSearch(q, all) {
 }
 
 // ─── printNamespace() — pretty-print all commands in a namespace ──────────────
+// A misspelling shares no substring with the command it meant (`dov`, `dev`),
+// so the scorer finds nothing and the miss would end at "run fli list".
+function typoMatches(all, q) {
+  const owners = new Map()
+  for (const m of all)
+    for (const name of [m.alias, m.title, m.title.split(':')[1]])
+      if (name) owners.set(name.toLowerCase(), [...(owners.get(name.toLowerCase()) ?? []), m])
+  const seen = new Set()
+  return nearestAll(q, owners.keys())
+    .flatMap((name) => owners.get(name))
+    .filter((m) => !seen.has(m) && seen.add(m))
+    .slice(0, 6)
+    .map((meta) => ({ meta }))
+}
+
 async function printNamespace(ns, commands, verbose = false) {
   const dim    = (s) => chalk.dim(s)
   const green  = (s) => chalk.green(s)
@@ -582,6 +598,7 @@ export async function run(process) {
       // registry load order
       .sort((a, b) => b.score - a.score || a.title.length - b.title.length || a.title.localeCompare(b.title))
       .slice(0, 6)
+    if (!scored.length) scored.push(...typoMatches(all, q))
 
     // ── Exact namespace match → show full namespace help ─────────────────────
     const nsMatches = all.filter((m) => m.title.split(':')[0] === q)

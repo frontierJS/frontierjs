@@ -33,6 +33,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { childEnv } from '@frontierjs/junction'
+import { slug as slugOf } from '@frontierjs/toolbelt/inflect'
 import { env } from '../../core/env.ts'
 
 export interface GitSite {
@@ -99,7 +100,7 @@ function serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
 
 /** The draft's branch for a name a person typed, or why it cannot be one. */
 export function draftBranch(name: unknown): { branch: string, slug: string } | { refused: string } {
-  const slug = String(name ?? '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
+  const slug = slugOf(String(name ?? ''), { max: 40 })
   if (!/^[a-z]/.test(slug)) return { refused: 'a draft is named with a word, starting with a letter' }
   return { branch: DRAFT_PREFIX + slug, slug }
 }

@@ -21,7 +21,7 @@ title: Flow
   // that does not parse disables the inspector rather than diverging from it.
   //
   // The canvas writes STRUCTURE through the same document — a node added, an
-  // edge drawn or removed — and the inspector writes one node's config. Where
+  // edge drawn, retyped or removed — and the inspector writes one node's config. Where
   // a node sits is not the definition: it is `FlowLayout`, saved on release by
   // `saveLayout`, so moving a node never writes a version.
   //
@@ -50,6 +50,8 @@ title: Flow
 
   import FlowCanvas    from '../../components/FlowCanvas.mesa'
   import NodeInspector from '../../components/NodeInspector.mesa'
+  import EdgeInspector from '../../components/EdgeInspector.mesa'
+  import Input         from '@frontierjs/ui/components/forms/Input.mesa'
 
   $: (page.params, session.level, session.user)
 
@@ -72,6 +74,7 @@ title: Flow
   let types      = null
   let typesError = null
   let selected   = ''
+  let selectedEdge = ''
   let positions  = {}
   let adding     = ''
 
@@ -112,6 +115,7 @@ title: Flow
   async function boot() {
     error = null
     selected = ''
+    selectedEdge = ''
     try { await watch(); await loadDefinition(); await loadTypes(); await loadLayout(); await loadRuns() }
     catch (e) { error = e.message }
   }
@@ -144,25 +148,31 @@ title: Flow
   }
 
   $: edgeList    = (parsed?.edges ?? []).filter(e => e && e.from && e.to)
+  $: edgeCurrent = edgeList.find(e => e.id === selectedEdge) ?? null
   $: typeOptions = (types ?? []).map(t => ({ value: t.type, label: t.label ?? t.type }))
 
   // Structure, written back the same way a config is.
   const rewrite = (fn) => { if (parsed) source = JSON.stringify(fn(parsed), null, 2) }
   const freshId = (base, taken) => { let i = 1; while (taken.has(base + i)) i++; return base + i }
 
+  // A node and an edge are never selected together, or the page shows two
+  // inspectors answering to one click.
+  const selectNode = (id) => { selected = id; selectedEdge = '' }
+  const selectEdge = (id) => { selectedEdge = id; selected = '' }
+
   function addNode() {
     if (!adding) return
     const base = adding.split('.').pop().replace(/[^a-z0-9]/gi, '') || 'node'
     const id = freshId(base, new Set(Object.keys(parsed?.nodes ?? {})))
     rewrite(d => ({ ...d, nodes: { ...d.nodes, [id]: { id, type: adding, config: {} } } }))
-    selected = id
+    selectNode(id)
   }
   function removeNode(id) {
     rewrite(d => {
       const { [id]: _, ...nodes } = d.nodes
       return { ...d, nodes, edges: (d.edges ?? []).filter(e => e.from !== id && e.to !== id) }
     })
-    selected = ''
+    selectNode('')
   }
   function link(from, to) {
     rewrite(d => {
@@ -170,7 +180,12 @@ title: Flow
       return { ...d, edges: [...edges, { id: freshId('e', new Set(edges.map(e => e.id))), from, to }] }
     })
   }
-  const unlink = (edgeId) => rewrite(d => ({ ...d, edges: (d.edges ?? []).filter(e => e.id !== edgeId) }))
+  const unlink = (edgeId) => {
+    rewrite(d => ({ ...d, edges: (d.edges ?? []).filter(e => e.id !== edgeId) }))
+    if (selectedEdge === edgeId) selectedEdge = ''
+  }
+  const writeEdge = (next) => rewrite(d => ({ ...d, edges: (d.edges ?? []).map(e => e.id === next.id ? next : e) }))
+  const rename = (name) => rewrite(d => ({ ...d, name }))
 
   // A position the server refused is said once and kept on the screen.
   async function place(next) {
@@ -289,6 +304,7 @@ title: Flow
   {/if}
   {#if parsed && mayChange && types}
     <div class="cluster" id="flow-add">
+      <Input id="flow-name" name="name" label="Name" value={parsed.name ?? ''} oninput={(e) => rename(e.target.value)} />
       <Select id="flow-add-type" options={typeOptions} placeholder="Node type…" bind:value={adding} />
       <Button size="sm" id="flow-add-node" disabled={!adding} onclick={addNode}>Add node</Button>
       {#if current}
@@ -302,14 +318,24 @@ title: Flow
       edges={edgeList}
       {types}
       {positions}
-      selected={current?.id ?? ''}
+      selected={selectedEdge ? '' : current?.id ?? ''}
+      {selectedEdge}
       disabled={!mayChange}
-      select={(id) => selected = id}
+      select={selectNode}
+      {selectEdge}
       move={place}
       connect={link}
       {unlink}
     />
-    <p class="text-muted text-sm">Drag a node to move it, the background to pan, the wheel to zoom; drag from a node's port onto another to connect them, and double-click an edge to remove it.</p>
+    <p class="text-muted text-sm">Drag a node to move it, the background to pan, the wheel to zoom; drag from a node's port onto another to connect them, click an edge to edit it, and double-click one to remove it.</p>
+    {#if edgeCurrent}
+      {#key edgeCurrent.id}
+        <EdgeInspector edge={edgeCurrent} disabled={!mayChange} write={writeEdge} />
+      {/key}
+      {#if mayChange}
+        <Button size="sm" treatment="ghost" id="flow-remove-edge" onclick={() => unlink(edgeCurrent.id)}>Remove edge</Button>
+      {/if}
+    {/if}
   {/if}
   {#if !parsed}
   {:else if !nodeList.length}
@@ -323,7 +349,7 @@ title: Flow
           id={'flow-node-' + n.id}
           data-node={n.id}
           data-selected={n.id === current?.id ? 'yes' : 'no'}
-          onclick={() => selected = n.id}
+          onclick={() => selectNode(n.id)}
         >{n.id} · {types?.find(t => t.type === n.type)?.label ?? n.type}</Button>
       {/each}
     </div>

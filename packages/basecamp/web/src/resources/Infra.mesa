@@ -5,8 +5,8 @@
   // named for its noun singular even though the service is `infra` either way
   // (invariant 19).
   //
-  // Like Portal and Hub, this has NO model: the graph and the onboarding
-  // checks are assembled out of several tables, not rows of one. `model: null`
+  // Like Portal and Hub, this has NO model: the graph and the setup
+  // steps are assembled out of several tables, not rows of one. `model: null`
   // declares that — the warning it turns off is the one that means a model
   // name did not resolve, and this service never had one.
   import { createResource } from '@frontierjs/sierra/resource'

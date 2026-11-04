@@ -544,7 +544,9 @@ export function inspectBuild({
 // ignored directory before the image does. Only the app knows which ignored
 // file the image is meant to have.
 
-/** Bytes, as a person reads a size. */
+/** Bytes, as a person reads a size. Decimal steps, not toolbelt's binary
+ *  `formatBytes`: docker prints a build context in decimal, and a finding that
+ *  says 1.9 GB beside docker's own 2.0GB reads as two different contexts. */
 export const formatBytes = (n) =>
   n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.ceil(n / 1e3)} KB`
 

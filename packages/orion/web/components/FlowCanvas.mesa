@@ -16,19 +16,31 @@
   // Drag a node to move it, drag the background to pan, the wheel to zoom, and
   // drag from a node's port onto another node to connect them. Every gesture is
   // pointer-captured on the SVG, so a pointer released outside it still ends it.
+  // A node snaps to the grid as it moves, so two authors lay a flow out alike.
+  //
+  // An edge is clicked to select it, and only the definition says what it means:
+  // dashed for an error edge, a marker for a condition, its label at the middle.
+  // The edge's own pointerdown stops before the SVG's, because a captured
+  // pointer sends its click to the SVG and the edge would never be selected.
+
+  import { expressionToText } from '../../src/engine/expression/emit'
 
   export let nodes    = []            // [{ id, type }]
-  export let edges    = []            // [{ id, from, to }]
+  export let edges    = []            // [{ id, from, to, kind?, condition?, label? }]
   export let types    = null          // the registry's descriptors, for labels
   export let positions = {}           // { [nodeId]: { x, y } } — FlowLayout's
   export let selected = ''
+  export let selectedEdge = ''
+  export let states   = {}            // { [nodeId]: status } — a run's review
   export let disabled = false
   export let select   = undefined     // (id) => void
   export let move     = undefined     // (positions) => void, on release
   export let connect  = undefined     // (from, to) => void
   export let unlink   = undefined     // (edgeId) => void
+  export let selectEdge = undefined   // (edgeId) => void
 
-  const W = 168, H = 44
+  const W = 168, H = 44, GRID = 10
+  const snap = (n) => Math.round(n / GRID) * GRID
 
   let view = { x: 0, y: 0, k: 1 }
   let drag = null                     // { kind: 'node'|'pan'|'link', ... }
@@ -81,6 +93,9 @@
     return `M${x1},${y1} C${x1 + c},${y1} ${x2 - c},${y2} ${x2},${y2}`
   }
 
+  // The condition's text form, or its document where the grammar has none.
+  const conditionText = (e) => expressionToText(e.condition).text ?? JSON.stringify(e.condition)
+
   // Screen → graph coordinates, through the pan and zoom.
   function toGraph(ev) {
     const r = svg.getBoundingClientRect()
@@ -112,7 +127,7 @@
     if (drag.kind === 'pan') { view = { ...view, x: ev.clientX - drag.sx, y: ev.clientY - drag.sy }; return }
     const at = toGraph(ev)
     if (drag.kind === 'node') {
-      local = { ...local, [drag.id]: { x: Math.round(at.x - drag.dx), y: Math.round(at.y - drag.dy) } }
+      local = { ...local, [drag.id]: { x: snap(at.x - drag.dx), y: snap(at.y - drag.dy) } }
       drag = { ...drag, moved: true }
     } else drag = { ...drag, x: at.x, y: at.y }
   }
@@ -153,14 +168,35 @@
   >
     <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
       {#each edges as e (e.id)}
-        <path
-          class="flow-edge"
-          d={edgePath(e)}
-          data-edge={e.id}
-          data-from={e.from}
-          data-to={e.to}
+        <g
+          class="flow-edge-group"
+          onpointerdown={(ev) => ev.stopPropagation()}
+          onclick={(ev) => { ev.stopPropagation(); selectEdge?.(e.id) }}
           ondblclick={(ev) => { ev.stopPropagation(); if (!disabled) unlink?.(e.id) }}
-        />
+        >
+          <path class="flow-edge-hit" d={edgePath(e)} />
+          <path
+            class="flow-edge"
+            d={edgePath(e)}
+            data-edge={e.id}
+            data-from={e.from}
+            data-to={e.to}
+            data-kind={e.kind ?? 'success'}
+            data-selected={e.id === selectedEdge ? 'yes' : 'no'}
+          />
+          {#if placed[e.from] && placed[e.to]}
+            {#if e.label}
+              <text class="flow-edge-label" x={(placed[e.from].x + W + placed[e.to].x) / 2} y={(placed[e.from].y + placed[e.to].y + H) / 2 - (e.condition ? 20 : 8)} text-anchor="middle">{e.label}</text>
+            {/if}
+            {#if e.condition}
+              <g class="flow-edge-if" data-edge-condition={e.id} transform={`translate(${(placed[e.from].x + W + placed[e.to].x) / 2},${(placed[e.from].y + placed[e.to].y + H) / 2})`}>
+                <rect x="-14" y="-9" width="28" height="17" rx="4" />
+                <text y="4" text-anchor="middle">if</text>
+                <title>{conditionText(e)}</title>
+              </g>
+            {/if}
+          {/if}
+        </g>
       {/each}
       {#if linking}
         <path class="flow-edge flow-edge-pending" d={`M${placed[linking.from].x + W},${placed[linking.from].y + H / 2} L${linking.x},${linking.y}`} />
@@ -170,6 +206,7 @@
           class="flow-node"
           data-canvas-node={n.id}
           data-selected={n.id === selected ? 'yes' : 'no'}
+          data-status={states?.[n.id]}
           data-x={placed[n.id]?.x}
           data-y={placed[n.id]?.y}
           transform={`translate(${placed[n.id]?.x ?? 0},${placed[n.id]?.y ?? 0})`}
@@ -190,12 +227,23 @@
 <style>
   .flow-canvas { border: 1px solid currentColor; border-radius: 6px; overflow: hidden; opacity: 0.95 }
   svg { display: block; width: 100%; height: 22rem; touch-action: none; cursor: grab }
-  .flow-edge { fill: none; stroke: currentColor; stroke-width: 1.5; opacity: 0.6 }
+  .flow-edge { fill: none; stroke: currentColor; stroke-width: 1.5; opacity: 0.6; pointer-events: none }
+  .flow-edge[data-kind='error'] { stroke: var(--color-danger); stroke-dasharray: 6 4; opacity: 0.9 }
+  .flow-edge[data-kind='always'] { stroke-dasharray: 2 4; opacity: 0.9 }
+  .flow-edge[data-selected='yes'] { stroke-width: 3; opacity: 1 }
+  .flow-edge-hit { fill: none; stroke: transparent; stroke-width: 16; cursor: pointer }
+  .flow-edge-label { fill: currentColor; font-size: 10px; opacity: 0.8; pointer-events: none }
+  .flow-edge-if rect { fill: Canvas; stroke: currentColor; stroke-width: 1; opacity: 0.8 }
+  .flow-edge-if text { fill: currentColor; font-size: 10px }
   .flow-edge-pending { stroke-dasharray: 4 4 }
   .flow-node { cursor: move }
   .flow-node rect { fill: Canvas; stroke: currentColor; stroke-width: 1 }
   .flow-node[data-selected='yes'] rect { stroke-width: 3 }
   .flow-node text { fill: currentColor; font-size: 12px; pointer-events: none }
+  .flow-node[data-status='completed'] rect { stroke: var(--color-success); stroke-width: 2 }
+  .flow-node[data-status='failed'] rect { stroke: var(--color-danger); stroke-width: 2 }
+  .flow-node[data-status='running'] rect { stroke: var(--color-info); stroke-width: 2 }
+  .flow-node[data-status='skipped'] { opacity: 0.45 }
   .flow-node-type { opacity: 0.7 }
   .flow-port { fill: currentColor; cursor: crosshair }
 </style>

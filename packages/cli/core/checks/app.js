@@ -18,6 +18,7 @@ import {
   scripts, stem, staticSurfaces,
 } from './lib.js'
 import { safeRead, SKIP, rel }                                     from '../fs.js'
+import { formatBytes }                                         from '@frontierjs/toolbelt/units'
 
 export const CHECKS = {
 
@@ -69,14 +70,13 @@ export const CHECKS = {
     })
     finished.sort((a, b) => b.size - a.size)
 
-    const kb = n => `${Math.round(n / 1024)} KB`
     const held = finished.length
-      ? ` Finished phases still inline: ${finished.slice(0, 5).map(p => `${p.title} (${kb(p.size)})`).join(', ')}` +
+      ? ` Finished phases still inline: ${finished.slice(0, 5).map(p => `${p.title} (${formatBytes(p.size)})`).join(', ')}` +
         `${finished.length > 5 ? `, and ${finished.length - 5} more` : ''}.`
       : ''
     return { findings: [{
       file,
-      message: `${kb(bytes)}, past the ${kb(PLAN_LIMIT)} a session can afford to read on every turn.${held} ` +
+      message: `${formatBytes(bytes)}, past the ${formatBytes(PLAN_LIMIT)} a session can afford to read on every turn.${held} ` +
                `Move finished phases, answered questions and the finding record verbatim to docs/plan-done.md, ` +
                `leave a one-line stub under each heading so Q and step numbers still resolve, and read one ` +
                `section at a time with fli outline PLAN.md '<heading>'.`,

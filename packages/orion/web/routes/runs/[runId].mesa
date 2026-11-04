@@ -9,6 +9,10 @@ title: Run
   // them in the encrypted context until then — so a run in flight shows its
   // status and stage and no steps, and they arrive with the terminal status.
   //
+  // The flow is drawn at the version the run ran, with each node's step status.
+  // A node with no step is drawn unstated — a branch not taken has nothing to
+  // say. A definition that did not arrive is said once and the rest still shows.
+  //
   // A waiting run can be cancelled by its flow's owner or an administrator; a
   // queued or running one is refused by the service (`FJS-1157`).
   import { runs } from '../../resources/Run.mesa'
@@ -17,6 +21,7 @@ title: Run
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Breadcrumbs   from '@frontierjs/ui/components/display/Breadcrumbs.mesa'
+  import FlowCanvas    from '../../components/FlowCanvas.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
   import Json          from '@frontierjs/ui/components/display/Json.mesa'
   import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
@@ -36,6 +41,8 @@ title: Run
   let steps   = []
   let error   = null
   let busy    = false
+  let flowDoc = null   // { definition, layout } at the run's version
+  let flowError = null
   let seen    = null   // the status the steps were last read at
 
   function watch() {
@@ -50,10 +57,17 @@ title: Run
     seen  = run?.status ?? null
   }
 
+  async function loadFlow() {
+    flowError = null
+    try { flowDoc = await runs.service.invoke('definition', page.params.runId) }
+    catch (e) { flowError = e.message }
+  }
+
   async function boot() {
     error = null
     try { await watch(); await loadSteps() }
     catch (e) { error = e.message }
+    await loadFlow()
   }
   boot()
   $: page.params.runId, () => boot()
@@ -71,6 +85,10 @@ title: Run
     } catch (e) { error = e.message }
     finally { busy = false }
   }
+
+  $: flowNodes = Object.values(flowDoc?.definition?.nodes ?? {}).filter(n => n && n.id)
+  $: flowEdges = (flowDoc?.definition?.edges ?? []).filter(e => e && e.from && e.to)
+  $: states    = Object.fromEntries(steps.map(s => [s.nodeId, s.status]))
 
   const ms = (n) => n == null ? '—' : n < 1000 ? n + ' ms' : (n / 1000).toFixed(1) + ' s'
   const columns = [
@@ -114,6 +132,13 @@ title: Run
 
   <SectionHeader title="Trigger" level={2} />
   <Json value={run.trigger} expand={2} />
+
+  <SectionHeader title="Flow" level={2} />
+  {#if flowError}
+    <Alert tone="warning" id="run-flow-error">The flow could not be drawn: {flowError}</Alert>
+  {:else if flowNodes.length}
+    <FlowCanvas disabled nodes={flowNodes} edges={flowEdges} positions={flowDoc.layout} {states} />
+  {/if}
 
   <SectionHeader title="Steps" level={2} />
   {#if !steps.length}
