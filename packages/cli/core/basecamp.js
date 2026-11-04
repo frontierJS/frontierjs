@@ -481,34 +481,86 @@ function withoutKey(text) {
 }
 
 /** File the key under `keyDirOf(server)`, mode 600. A different key already
- *  there is kept, since older backups need it, and this one is named apart. */
+ *  there is kept, since older backups need it, and this one is named apart.
+ *  Answers the path and whether that file already held this key. */
 function fileKey(server, key, fingerprint) {
   const dir = keyDirOf(server)
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   let path = join(dir, 'encryption.key')
   if (existsSync(path) && fileValue(readFileSync(path, 'utf8')) !== key) path = join(dir, `encryption-${fingerprint.slice(0, 12)}.key`)
-  writeFileSync(path, key + '\n', { mode: 0o600 })
+  const already = existsSync(path) && fileValue(readFileSync(path, 'utf8')) === key
+  if (!already) writeFileSync(path, key + '\n', { mode: 0o600 })
   chmodSync(path, 0o600)
-  return path
+  return { path, already }
+}
+
+const sha256Of = (text) => new Bun.CryptoHasher('sha256').update(text).digest('hex')
+
+// The key as the box keeps it: `secrets/ENCRYPTION_KEY` where the deploy wrote
+// one, else the env file's line. Root reads both, as `rawScript` does.
+const keyScript = ({ envFile, secretsDir }) => `set -eu
+key=${shQuote(`${secretsDir}/ENCRYPTION_KEY`)}; env=${shQuote(envFile)}
+if [ -f "$key" ]; then cat "$key"; elif [ -f "$env" ]; then grep -E '^[[:space:]]*(export[[:space:]]+)?ENCRYPTION_KEY[[:space:]]*=' "$env" | tail -n 1 | sed 's/^[^=]*=//'; fi
+`
+
+const AS_ROOT = 'if [ "$(id -u)" = 0 ]; then sh -s; else sudo -n sh -s; fi'
+
+/** Basecamp's ENCRYPTION_KEY read off `host` over ssh, or null where it keeps none. */
+export async function readBoxKey({ host, envFile, secretsDir }) {
+  const transport = transportFor(host)
+  const proc = Bun.spawn(['sh', '-c', pipeCommand(host, transport, transport === 'local' ? AS_ROOT : shQuote(AS_ROOT))], {
+    stdin: new Blob([keyScript({ envFile, secretsDir })]), stdout: 'pipe', stderr: 'pipe',
+  })
+  const [code, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()])
+  if (code !== 0) throw new Error(`could not read the key on ${host} (exit ${code}): ${stderr.trim().split('\n').pop() || 'no reason given'}`)
+  return fileValue(stdout.trim().replace(/^(['"])(.*)\1$/, '$2')) || null
+}
+
+export const KEY_COPIES = { f: 'file it', p: 'print it once', b: 'both' }
+
+/**
+ * Keep a copy of the key off the box the way the owner picked at this backup
+ * (`FJS-D1852`): `how` is a `KEY_COPIES` key — the mode-600 file restore reads,
+ * printed once for a password manager, or both. Answers `{ keyFile, already,
+ * printed }`. The key is never written beside a backup.
+ */
+export function keepKey({ server, key, how, echo }) {
+  const fingerprint = sha256Of(key)
+  const kept = how === 'p' ? { path: null, already: false } : fileKey(server, key, fingerprint)
+  if (how !== 'f') {
+    echo(chalk`\n    {bold ENCRYPTION_KEY} {dim ${fingerprint.slice(0, 12)} — printed this once, for a password manager:}`)
+    echo(`    ${key}\n`)
+  }
+  return { keyFile: kept.path, already: kept.already, printed: how !== 'f', fingerprint }
+}
+
+/** Tell Basecamp a copy of its key is off the box (`hubConfig.attestEscrow`).
+ *  The caller checks first that the API runs the key just kept — an
+ *  attestation of a key nobody holds grades `hub.key-escrowed` green for
+ *  nothing — and an answer naming another key is still refused here. */
+export async function attestKeyCopy({ origin, key, fingerprint }) {
+  const row = await basecamp(origin, key, '/hub-config', { method: 'POST', headers: { 'x-service-method': 'attestEscrow' }, body: {} })
+  if (row?.encryptionKeyFingerprint !== fingerprint)
+    throw new Error(`Basecamp attested ${row?.encryptionKeyFingerprint?.slice(0, 12) ?? 'no key'}, not the ${fingerprint.slice(0, 12)} just kept`)
+  return row
 }
 
 /**
  * Copy Basecamp's databases and env file off `host` over ssh into
- * `<out>/<stamp>-raw/`, each checked against the sha256 the box took, and its
- * key into `keyDirOf(server)`. Answers `{ dir, record, keyFile }` — `record`
- * being what `raw.json` holds — or null on a dry run.
+ * `<out>/<stamp>-raw/`, each checked against the sha256 the box took. Answers
+ * `{ dir, record, key }` — `record` being what `raw.json` holds, `key` the box's
+ * ENCRYPTION_KEY for `keepKey`, never written here — or null on a dry run.
  */
 export async function pullRawBackup({ server, host = server, dbDir, envFile, secretsDir, out, dry = false, log, say = () => {} }) {
   const takenAt = new Date().toISOString()
   const dir = resolve(out, `${takenAt.replace(/[:.]/g, '-')}-raw`)
-  if (dry) { log.dry(`copy ${dbDir} and ${envFile} off ${host} over ssh into ${dir}, the key into ${keyDirOf(server)}`); return null }
+  if (dry) { log.dry(`copy ${dbDir} and ${envFile} off ${host} over ssh into ${dir}`); return null }
 
   say(`Copying ${dbDir} and ${envFile} off ${host} over ssh`)
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   const tar = join(dir, 'raw.tar.gz')
   const transport = transportFor(host)
-  const asRoot = 'if [ "$(id -u)" = 0 ]; then sh -s; else sudo -n sh -s; fi'
-  const proc = Bun.spawn(['sh', '-c', pipeCommand(host, transport, transport === 'local' ? asRoot : shQuote(asRoot))], {
+  const proc = Bun.spawn(['sh', '-c', pipeCommand(host, transport, transport === 'local' ? AS_ROOT : shQuote(AS_ROOT))], {
     stdin: new Blob([rawScript({ dbDir, envFile, secretsDir })]), stdout: Bun.file(tar), stderr: 'pipe',
   })
   const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
@@ -532,8 +584,7 @@ export async function pullRawBackup({ server, host = server, dbDir, envFile, sec
       key ??= env.key
       writeFileSync(join(dir, '.env.production'), env.text, { mode: 0o600 })
     }
-    const fingerprint = key ? new Bun.CryptoHasher('sha256').update(key).digest('hex') : null
-    const keyFile = key ? fileKey(server, key, fingerprint) : null
+    const fingerprint = key ? sha256Of(key) : null
 
     const copiedWith = Object.fromEntries(readFileSync(join(dir, 'copied-with'), 'utf8').split('\n').filter(Boolean)
       .map(line => [line.slice(0, line.indexOf(' ')), line.slice(line.indexOf(' ') + 1)]))
@@ -542,7 +593,7 @@ export async function pullRawBackup({ server, host = server, dbDir, envFile, sec
     for (const path of kept) files.push({ path, bytes: statSync(join(dir, path)).size, sha256: await sha256File(join(dir, path)) })
     const record = { raw: true, server, takenAt, dbDir, envFile, encryptionKeyFingerprint: fingerprint, copiedWith, files }
     writeFileSync(join(dir, 'raw.json'), JSON.stringify(record, null, 2) + '\n')
-    return { dir, record, keyFile }
+    return { dir, record, key }
   } catch (err) {
     // A half copy left in place would list as a backup beside the whole ones.
     rmSync(dir, { recursive: true, force: true })

@@ -1,7 +1,7 @@
 // src/notifications/MonitorDown.notification.ts
 
 import { defineNotification, inApp, mail, push } from '@frontierjs/notifications'
-import { declaredTransports, appUrl }      from './_shared.ts'
+import { declaredTransports, appUrl, marked } from './_shared.ts'
 
 export interface MonitorDownPayload {
   monitorId:   string
@@ -32,7 +32,7 @@ export default defineNotification<MonitorDownPayload>({
     .build(),
 
   email: (p) => mail()
-    .subject(`${p.resend ? 'Still down' : 'Down'} — ${p.monitorName}`)
+    .subject(marked(p.resend ? 'warning' : 'error', `${p.resend ? 'Still down' : 'Down'} — ${p.monitorName}`))
     .line(`${p.monitorName} is not answering.`)
     .line(p.message)
     .action('View monitor', appUrl(`/monitors/${p.monitorId}/`)),

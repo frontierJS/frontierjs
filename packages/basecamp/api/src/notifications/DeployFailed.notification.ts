@@ -1,7 +1,7 @@
 // src/notifications/DeployFailed.notification.ts
 
 import { defineNotification, inApp, mail, push } from '@frontierjs/notifications'
-import { declaredTransports, appUrl }      from './_shared.ts'
+import { declaredTransports, appUrl, marked } from './_shared.ts'
 
 export interface DeployFailedPayload {
   deploymentId: string
@@ -34,7 +34,7 @@ export default defineNotification<DeployFailedPayload>({
     .build(),
 
   email: (p) => mail()
-    .subject(`Deploy FAILED — ${where(p)}`)
+    .subject(marked('error', `Deploy FAILED — ${where(p)}`))
     .line(`${where(p)} did not finish.`)
     .line(p.step   ? `It stopped at ${p.step}.`   : 'The pipeline did not say which step stopped it.')
     .line(p.reason ? p.reason : 'No reason was recorded.')

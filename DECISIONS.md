@@ -8647,6 +8647,36 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1881"></a>2026-11-04 · `FJS-D1881` — Q8 — Units the box lacks — Keep.
+
+Asked in [`IDEAS/box-health.md`](IDEAS/box-health.md) § Open questions. **A** was picked over **B** (grade `not-found` as a failure on a box whose install should have made it).
+
+The paper's recommendation, taken as written: until the install records which units it made.
+
+### <a id="fjs-d1880"></a>2026-11-04 · `FJS-D1880` — Q7 — Recovered after a restart — Keep.
+
+Asked in [`IDEAS/box-health.md`](IDEAS/box-health.md) § Open questions. **A** was picked over **B** (file `containerRecovered` after N quiet beats).
+
+The paper's recommendation, taken as written: Q5 A's hold window is what B would add.
+
+### <a id="fjs-d1879"></a>2026-11-04 · `FJS-D1879` — Q6 — Which App kinds expect a container — Keep: a `static`, `cron` or `function` App with no container is correct.
+
+Asked in [`IDEAS/box-health.md`](IDEAS/box-health.md) § Open questions. **A** was picked over **B** (add `function` and `cron`).
+
+The paper's recommendation, taken as written: a cron container exits between runs by design.
+
+### <a id="fjs-d1878"></a>2026-11-04 · `FJS-D1878` — Q4 — Is a `_replaced` container's state graded — No: it is a swap's set-aside and a stopped one is correct.
+
+Asked in [`IDEAS/box-health.md`](IDEAS/box-health.md) § Open questions. **A** was picked over **B** (yes, as a lower-severity "swap unfinished" control).
+
+The paper's recommendation, taken as written: and the reading carries `replaced: true` so B stays available.
+
+### <a id="fjs-d1877"></a>2026-11-04 · `FJS-D1877` — Q2 — What is a crash loop — `restart_count` rose since the last reading, or the live container is not `running`.
+
+Asked in [`IDEAS/box-health.md`](IDEAS/box-health.md) § Open questions. **A** was picked over **B** (A, plus a minimum of two restarts inside the beat so a single OOM kill files `containerRecovered` rather than `containerCrashLooping`).
+
+The paper's recommendation, taken as written: one restart of a production container is already news, and the message carries the count.
+
 ### <a id="fjs-d1870"></a>2026-11-04 · `FJS-D1870` — Q12 — A soft-deleted App hard-deletes its managed Monitor — Pause the managed row on App remove and resume it on restore, keeping history.
 
 Asked in [`IDEAS/box-health.md`](IDEAS/box-health.md) § Open questions. **B** was picked over **A** (keep).
@@ -8712,6 +8742,11 @@ The paper's recommendation, taken as written: the sweep, checks, uptime days and
 Asked in [`IDEAS/box-health.md`](IDEAS/box-health.md) § Open questions. **A** was picked over **B** (units on the 6 h posture report, containers on the heartbeat), **C** (a fourth report on its own clock).
 
 The paper's recommendation, taken as written: a stopped Caddy or firewall unit is an outage, and 6 h is the wrong clock for one; `systemctl show` over five units is one process, the same cost `replication` already pays each beat. The grader stays one owner either way; A moves one object between two posts if it is wrong.
+
+### <a id="fjs-d1876"></a>2026-11-04 · `FJS-D1876` — How `basecamp:backup` asks where the key copy goes, and when it attests — One keypress per backup, Enter and no terminal file it, and only an API backup under the same key attests.
+
+Ruled while building [`IDEAS/basecamp-reinstall.md`](IDEAS/basecamp-reinstall.md) 1.4, inside `FJS-D1852`'s **C**. Every run reads the key off the box over ssh — the API path too, since an archive carries only its fingerprint — and asks *file it / print it once / both*. **File it** is Enter's answer and a terminal-less run's, because it is the copy restore reads without a paste and the run must not hang. The attestation (`hubConfig.attestEscrow`) follows only an API backup whose manifest fingerprint equals the key read off the box: the API fingerprints the key it runs, so attesting after a raw copy, or after a key changed on disk without a restart, would record a copy of a key nobody holds and grade `hub.key-escrowed` green for nothing. Rejected: attesting after a raw copy and checking the answer after, which writes the false attestation before it notices — `attestKeyCopy`'s own check of the answer is a backstop behind the gate, not the gate. Accepted: *print it once* attests on trust, since nothing can see the owner saved what was printed. Reopen when `attestEscrow` should take the fingerprint and refuse a mismatch itself, which would close the gap between the ssh read and the attest.
+*Lives in:* `packages/cli/core/basecamp.js` (`readBoxKey`, `keepKey`, `attestKeyCopy`), `packages/cli/commands/basecamp/backup.md`.
 
 ### <a id="fjs-d1874"></a>2026-11-04 · `FJS-D1874` — How `basecamp:backup` copies a Basecamp the API cannot back up — Over ssh, on its own when the API cannot take one and with `--raw` when asked, into a `<stamp>-raw/` that `raw.json` marks; the key goes to its own tree, never the copy.
 

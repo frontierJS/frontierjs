@@ -1,7 +1,7 @@
 // src/notifications/ServerUnreachable.notification.ts
 
 import { defineNotification, inApp, mail, push } from '@frontierjs/notifications'
-import { declaredTransports, appUrl }      from './_shared.ts'
+import { declaredTransports, appUrl, marked } from './_shared.ts'
 
 export interface ServerUnreachablePayload {
   serverId:   string
@@ -31,7 +31,7 @@ export default defineNotification<ServerUnreachablePayload>({
     .build(),
 
   email: (p) => mail()
-    .subject(`Server unreachable — ${p.serverName}`)
+    .subject(marked('error', `Server unreachable — ${p.serverName}`))
     .line(`${p.serverName} has stopped checking in.`)
     // What this notice cannot say, said rather than implied. The Outpost is
     // what reports, so its silence means either the machine is gone or only the

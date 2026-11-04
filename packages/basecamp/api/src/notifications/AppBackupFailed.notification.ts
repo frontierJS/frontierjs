@@ -1,7 +1,7 @@
 // src/notifications/AppBackupFailed.notification.ts
 
 import { defineNotification, inApp, mail } from '@frontierjs/notifications'
-import { declaredTransports, appUrl }      from './_shared.ts'
+import { declaredTransports, appUrl, marked } from './_shared.ts'
 
 export interface AppBackupFailedPayload {
   appId:   string
@@ -22,7 +22,7 @@ export default defineNotification<AppBackupFailedPayload>({
     .data({ appName: p.appName, what: p.what, error: p.error }),
 
   email: (p) => mail()
-    .subject(`${p.what === 'drill' ? 'Restore drill' : 'Scheduled backup'} failed — ${p.appName}`)
+    .subject(marked('warning', `${p.what === 'drill' ? 'Restore drill' : 'Scheduled backup'} failed — ${p.appName}`))
     .line(`The scheduled ${p.what} of ${p.appName} failed:`)
     .line(p.error)
     .line('Until one succeeds, this app\'s newest good copy is the last one that did.')

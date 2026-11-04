@@ -6,7 +6,7 @@ dated: 2026-11-03
 
 # Idea — the bottom two layers of a box reach Basecamp
 
-**Status: PROPOSED. Q1/Q3/Q5 and Q9–Q12 ruled `FJS-D1858`–`D1860`, `FJS-D1867`–`D1870`; Q2/Q4/Q6–Q8 open; Phases 1–3 built and proven 2026-11-04 (1–3.2 committed in `4635ac29c`, 3.3 uncommitted); 0.1 is the owner's ssh.**
+**Status: PROPOSED. Every question ruled — Q1/Q3/Q5 `FJS-D1858`–`D1860`, Q9–Q12 `FJS-D1867`–`D1870`, Q2/Q4/Q6–Q8 `FJS-D1877`–`D1881` (each as built); Phases 1–3 built and proven 2026-11-04 (1–3.2 committed in `4635ac29c`, 3.3 uncommitted); 0.1 is the owner's ssh.**
 Probed against the tree 2026-11-03. Do not cite this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-03): of the six layers a box has — container runtime, Caddy, data
@@ -90,7 +90,7 @@ which is the gap `FJS-3853` found. None of them reads systemd.
      for one; `systemctl show` over five units is one process, the same cost `replication`
      already pays each beat. The grader stays one owner either way; A moves one object between
      two posts if it is wrong.
-2. **Q2 — What is a crash loop?**
+2. ~~**Q2 — What is a crash loop?**~~ **Answered 2026-11-04 (`FJS-D1877`): A — `restart_count` rose since the last reading, or the live container is not `running`.**
    - **A** — `restart_count` rose since the last reading, or the live container is not `running`.
    - **B** — A, plus a minimum of two restarts inside the beat so a single OOM kill files
      `containerRecovered` rather than `containerCrashLooping`.
@@ -104,7 +104,7 @@ which is the gap `FJS-3853` found. None of them reads systemd.
    - **Recommend A** — the sweep, checks, uptime days and channels all hang off the Monitor row
      and B would build them twice; `isManaged` keeps the url from being a stale copy, which is
      the `decision-rules` objection to a plain row.
-4. **Q4 — Is a `_replaced` container's state graded?**
+4. ~~**Q4 — Is a `_replaced` container's state graded?**~~ **Answered 2026-11-04 (`FJS-D1878`): A — no: it is a swap's set-aside and a stopped one is correct.**
    - **A** — no: it is a swap's set-aside and a stopped one is correct.
    - **B** — yes, as a lower-severity "swap unfinished" control.
    - **Recommend A** — and the reading carries `replaced: true` so B stays available.
@@ -119,19 +119,19 @@ which is the gap `FJS-3853` found. None of them reads systemd.
    - **C** — stay state-only.
    - **Recommend A** — the control and the event then agree on what a restart is, and the hold
      window is the one place the two differ.
-6. **Q6 — Which App kinds expect a container?** The build grades and files only
+6. ~~**Q6 — Which App kinds expect a container?**~~ **Answered 2026-11-04 (`FJS-D1879`): A — keep: a `static`, `cron` or `function` App with no container is correct.** The build grades and files only
    `container worker database daemon` (`LONG_RUNNING_KINDS` in `domain/host/runtime.ts`).
    - **A** — keep: a `static`, `cron` or `function` App with no container is correct.
    - **B** — add `function` and `cron`.
    - **Recommend A** — a cron container exits between runs by design.
-7. **Q7 — Recovered after a restart?** A container that restarted and is still `running` files
+7. ~~**Q7 — Recovered after a restart?**~~ **Answered 2026-11-04 (`FJS-D1880`): A — keep.** A container that restarted and is still `running` files
    `containerCrashLooping` on each rise and never `containerRecovered`; recovered fires only on a
    not-running → running move. Matching is by container name, and a lower count under the same
    name (a swap) is not a restart.
    - **A** — keep.
    - **B** — file `containerRecovered` after N quiet beats.
    - **Recommend A** — Q5 A's hold window is what B would add.
-8. **Q8 — Units the box lacks?** A unit with `load: not-found` is not graded, since
+8. ~~**Q8 — Units the box lacks?**~~ **Answered 2026-11-04 (`FJS-D1881`): A — keep.** A unit with `load: not-found` is not graded, since
    `basecamp-litestream` and `basecamp-firewall` need not exist on every box; any `active` other
    than `active`, `activating` included, fails and files `unitFailed`.
    - **A** — keep.
@@ -246,8 +246,8 @@ removes the Monitor, under `bun run test`.
 
 - [x] 3.1 Per Q3's ruling: the managed Monitor's columns, the Domain hook that upserts and
       regenerates its `url`, and the refusal to edit a managed row's `url`.
-  - `Monitor.isManaged @system` + `@@index([appId, isManaged])`, migration
-    `20261104073222_managed_monitor.sql`. One owner, `domain/monitor/managed.ts`:
+  - `Monitor.isManaged @system` + `@@index([appId, isManaged])`, in the initial
+    migration since the 2026-11-04 squash. One owner, `domain/monitor/managed.ts`:
     `syncManagedMonitor` keeps one row per App (create, or rewrite `url` and set `nextCheckAt`
     now), and removes it — after resolving a down monitor — when the App or its last primary
     Domain goes. Called from `domains.service.ts` (create, patch, remove, restore, makePrimary)

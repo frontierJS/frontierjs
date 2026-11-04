@@ -1,7 +1,7 @@
 // src/notifications/JobFailed.notification.ts
 
 import { defineNotification, inApp, mail, push } from '@frontierjs/notifications'
-import { declaredTransports, appUrl }      from './_shared.ts'
+import { declaredTransports, appUrl, marked } from './_shared.ts'
 
 export interface JobFailedPayload {
   runId:   string
@@ -29,7 +29,7 @@ export default defineNotification<JobFailedPayload>({
     .build(),
 
   email: (p) => mail()
-    .subject(`Job failed — ${p.jobName}`)
+    .subject(marked('warning', `Job failed — ${p.jobName}`))
     .line(`${p.jobName} ended in failure.`)
     .line(p.reason ? p.reason : 'No reason was recorded.')
     .action('View run', appUrl(`/jobs/${p.jobId}/`)),

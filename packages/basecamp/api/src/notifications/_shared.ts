@@ -28,3 +28,15 @@ export function appUrl(path: string): string {
   const base = process.env.FRONTIER_APP_URL ?? 'http://localhost:8020'
   return `${base.replace(/\/+$/, '')}${path}`
 }
+
+/** How bad a failure is — the same two levels the push tags carry
+ *  (`rotating_light` for down now, `warning` for the rest). */
+export type Severity = 'error' | 'warning'
+
+const MARK: Record<Severity, string> = { error: '🚨', warning: '⚠️' }
+
+/** A failure's email subject, led by its severity. The renderer copies the
+ *  subject into the body's heading, so the mark lands in both, and an inbox
+ *  of these sorts at a glance. A success or recovery carries no mark. */
+export const marked = (severity: Severity, subject: string): string =>
+  `${MARK[severity]} ${subject}`

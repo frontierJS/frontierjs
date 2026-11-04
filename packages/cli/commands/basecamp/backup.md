@@ -1,7 +1,7 @@
 ---
 title: basecamp:backup
 description: Take a backup of Basecamp itself and bring it to this machine, under ~/.local/share/fli/basecamp/<server>/<stamp>/, checked against its manifest — or copy its files over ssh when the API cannot
-effects: asks Basecamp for a hub backup, then downloads and unpacks the archive; with --raw, or when the API cannot back up, copies the db directory and env file over ssh and files the key under ~/.config/fli/basecamp/<server>/
+effects: asks Basecamp for a hub backup, then downloads and unpacks the archive; with --raw, or when the API cannot back up, copies the db directory and env file over ssh; reads the key over ssh and files it under ~/.config/fli/basecamp/<server>/, prints it, or both, as asked; attests the copy to Basecamp after an API backup
 examples:
   - fli basecamp:backup
   - fli basecamp:backup yuma
@@ -32,9 +32,21 @@ unpacked, and every file checked against the `manifest.json` it carries. The
 `basecamp-<stamp>/` directory in it. Nothing here is ever pruned
 (`FJS-D1851`). An App's archive is `fli db:download` (`FJS-D1848`).
 
-The key needs `hubBackups:read` and `hubBackups:write`, and `hubConfig:read`
-for the destination; its holder must be a system admin, or Basecamp answers
-404, which is refused here rather than worked around.
+The key needs `hubBackups:read` and `hubBackups:write`, `hubConfig:read` for
+the destination and `hubConfig:write` to attest the key copy; its holder must
+be a system admin, or Basecamp answers 404, which is refused here rather than
+worked around.
+
+**The encryption key** is never in a backup, and a backup cannot be read
+without it. Each run reads it off the box over ssh and asks where its copy goes
+(`FJS-D1852`): filed at `~/.config/fli/basecamp/<server>/encryption.key`,
+mode 600, where restore reads it; printed once for a password manager; or both.
+Enter files it, and so does a run with no terminal. A different key already
+filed there is kept and this one named by its fingerprint, since older backups
+need the old one. After an API backup whose manifest names the same key, the
+copy is attested to Basecamp (`hubConfig.attestEscrow`), which turns
+`hub.key-escrowed` green; a raw copy proves nothing about the key the API runs,
+so it attests nothing.
 
 **When the API cannot back up** — it does not answer, answers 5xx, or the
 Basecamp has no hub App because it was installed `--no-outpost` — the files
@@ -46,10 +58,7 @@ nothing writes), and the env file comes with them, everything checked against
 the sha256 the box took. The archives in the box's `backups/` directory are
 not copied. The directory is `<stamp>-raw/`: `db/`, `.env.production` and the
 `raw.json` that marks it, with box names, not an archive's, so `/setup` cannot
-take it. The key is never in it (`FJS-D1852`): it goes to
-`~/.config/fli/basecamp/<server>/encryption.key`, mode 600, and an
-`ENCRYPTION_KEY` line in the env file is taken out; a different key already
-filed there is kept and the new one named by its fingerprint.
+take it. An `ENCRYPTION_KEY` line in the env file is taken out of the copy.
 
 <script>
 const { join }    = await import('node:path')
@@ -67,8 +76,37 @@ const apiOrigin = async (url) => {
   return (url || process.env.BASECAMP_URL || (domain ? `https://${domain}` : '')).replace(/\/+$/, '')
 }
 
+/** Where the key's copy goes, asked at every backup; a run with no terminal files it. */
+const howToKeep = async (tty, chalk) =>
+  tty.interactive ? await tty.keys(chalk`{cyan ?} {bold Where does a copy of the key go?}`, KEY_COPIES) : 'f'
+
+/** Keep the box's key off the box as asked, and attest it when `attest` says
+ *  the API runs that key; the backup stands whatever happens here. */
+const keepKeyCopy = async ({ server, key, host, attest, tty, log, echo, chalk }) => {
+  if (!key) { log.warn(`No ENCRYPTION_KEY on ${host}, in its secrets directory or env file — no copy of the key was kept`); return }
+  const kept = keepKey({ server, key, how: await howToKeep(tty, chalk), echo })
+  if (kept.keyFile) echo(chalk`    {dim ·} {dim key} ${kept.fingerprint.slice(0, 12)} ${kept.already ? chalk`{dim already filed in}` : chalk`{dim filed in}`} ${kept.keyFile}`)
+  if (!attest) { echo(chalk`    {dim ·} {dim not attested to Basecamp: a raw copy cannot show the API runs this key — the next API backup attests it}\n`); return }
+  const done = await attest(kept.fingerprint).catch(err => err)
+  if (done instanceof Error) log.warn(`The key copy was kept, but not attested to Basecamp: ${done.message}\n`)
+  else echo(chalk`    {dim ·} {dim attested to Basecamp, so hub.key-escrowed reads} {green kept off the box}\n`)
+}
+
+/** After an API backup: the box's key, attested only when the archive was
+ *  taken under it. A key changed on the box without a restart is not the one
+ *  the API still runs, which is the one the archive needs. */
+const keepArchiveKey = async ({ server, origin, key, taken, tty, log, echo, chalk }) => {
+  const files = await deployFiles(server)
+  const boxKey = await readBoxKey(files).catch(err => { log.warn(`${err.message} — no copy of the key was kept`); return undefined })
+  if (boxKey === undefined) return
+  const same = !!boxKey && new Bun.CryptoHasher('sha256').update(boxKey).digest('hex') === taken
+  if (boxKey && !same) log.warn(`The key on ${files.host} is not the ${taken.slice(0, 12)} this archive was taken under — the API has not restarted since it changed. This archive needs that key; keeping the one on the box, unattested`)
+  const attest = same ? (fingerprint) => attestKeyCopy({ origin, key, fingerprint }) : null
+  await keepKeyCopy({ server, key: boxKey, host: files.host, attest, tty, log, echo, chalk })
+}
+
 /** The ssh path, printed as raw so nobody mistakes it for an archive. */
-const copyRaw = async ({ server, out, say, dry, log, echo, chalk }) => {
+const copyRaw = async ({ server, out, say, dry, tty, log, echo, chalk }) => {
   const files = await deployFiles(server)
   echo(chalk`\n  {bold Copying Basecamp's files} {dim off} ${files.host} {dim — raw, so /setup cannot take them}`)
   const got = await pullRawBackup({ server, ...files, out, dry, log, say })
@@ -77,8 +115,7 @@ const copyRaw = async ({ server, out, say, dry, log, echo, chalk }) => {
   const ways = [...new Set(Object.values(got.record.copiedWith))].join(', ')
   echo(chalk`  {green ✓} {bold Copied ${got.record.takenAt}} {dim into} ${got.dir}`)
   echo(chalk`    {dim ·} ${plural(Object.keys(got.record.copiedWith).length, 'database')} {dim copied with} ${ways}${got.record.files.some(f => f.path === '.env.production') ? chalk` {dim and the env file}` : ''}`)
-  if (got.keyFile) echo(chalk`    {dim ·} {dim key} ${got.record.encryptionKeyFingerprint.slice(0, 12)} {dim filed in} ${got.keyFile}\n`)
-  else log.warn(`No ENCRYPTION_KEY on ${files.host}, in ${files.secretsDir} or the env file, so this copy has no key beside it\n`)
+  await keepKeyCopy({ server, key: got.key, host: files.host, attest: null, tty, log, echo, chalk })
 }
 </script>
 
@@ -88,7 +125,7 @@ if (!server) { log.error('Pass the box: fli basecamp:backup <server>, or set dep
 const out = flag.out || backupsOf(server)
 const say = (line) => echo(chalk`  {dim ${line}}`)
 
-if (flag.raw) { await copyRaw({ server, out, say, dry: flag.dry, log, echo, chalk }); return }
+if (flag.raw) { await copyRaw({ server, out, say, dry: flag.dry, tty, log, echo, chalk }); return }
 
 const key = process.env.BASECAMP_API_KEY
 if (!key) { log.error('needs BASECAMP_API_KEY — fli basecamp:key mints one for the first admin, or pass --raw to copy the files over ssh'); process.exitCode = 1; return }
@@ -99,7 +136,7 @@ echo(chalk`\n  {bold Backing up Basecamp} {dim at} ${origin} {dim on} ${server}`
 const got = await pullHubArchive({ origin, key, out, dry: flag.dry, log, say }).catch(err => err)
 if (got instanceof Error && apiCannotBackUp(got)) {
   log.warn(`${got.message} — copying its files over ssh instead, which /setup cannot take`)
-  await copyRaw({ server, out, say, dry: flag.dry, log, echo, chalk })
+  await copyRaw({ server, out, say, dry: flag.dry, tty, log, echo, chalk })
   return
 }
 if (got instanceof Error) { log.error(got.message); process.exitCode = 1; return }
@@ -107,5 +144,8 @@ if (!got) return
 
 echo(chalk`  {green ✓} {bold Archive taken ${got.manifest.takenAt}} {dim unpacked into} ${got.dir}`)
 echo(chalk`    {dim ·} ${plural(got.manifest.files.length, 'file')} {dim match manifest.json}`)
-echo(chalk`    {dim ·} {dim key} ${got.manifest.encryptionKeyFingerprint?.slice(0, 12) ?? 'the development placeholder'}\n`)
+const taken = got.manifest.encryptionKeyFingerprint
+if (!taken) { echo(chalk`    {dim ·} {dim key} the development placeholder {dim — nothing to keep a copy of}\n`); return }
+
+await keepArchiveKey({ server, origin, key, taken, tty, log, echo, chalk })
 ```

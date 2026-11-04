@@ -1,5 +1,5 @@
 -- Litestone migration
--- Created:   2026-11-03T08:34:29.570Z
+-- Created:   2026-11-04T09:03:25.770Z
 -- Changes:
 --     + Credential  (new table)
 --     + Session  (new table)
@@ -514,6 +514,7 @@ CREATE TABLE IF NOT EXISTS "server" (
   "health" TEXT,
   "dockerState" TEXT,
   "replication" TEXT,
+  "runtime" TEXT,
   "labels" TEXT NOT NULL DEFAULT '{}',
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -538,7 +539,7 @@ CREATE TABLE IF NOT EXISTS "server_event" (
   "metadata" TEXT NOT NULL DEFAULT '{}',
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "noticeOwedAt" TEXT,
-  CHECK ("kind" IN ('created', 'removed', 'rebootRequested', 'drainStarted', 'drainCancelled', 'provisionRequested', 'provisionCreated', 'provisionReady', 'provisionTimeout', 'destroyRequested', 'destroyFinished', 'enrollmentIssued', 'syncRequested', 'statusSynced', 'statusSyncIgnored', 'syncFailed', 'syncNoAccount', 'syncUnsupported', 'syncUnrecognized', 'cameOnline', 'unreachable', 'recipeRan', 'recipeFailed', 'cleanupQueued', 'cleanupRan', 'cleanupFailed', 'volumeRemoved', 'volumesPruned', 'postureFailed', 'postureRestored')),
+  CHECK ("kind" IN ('created', 'removed', 'rebootRequested', 'drainStarted', 'drainCancelled', 'provisionRequested', 'provisionCreated', 'provisionReady', 'provisionTimeout', 'destroyRequested', 'destroyFinished', 'enrollmentIssued', 'syncRequested', 'statusSynced', 'statusSyncIgnored', 'syncFailed', 'syncNoAccount', 'syncUnsupported', 'syncUnrecognized', 'cameOnline', 'unreachable', 'rebooted', 'containerCrashLooping', 'containerRecovered', 'unitFailed', 'unitRestored', 'recipeRan', 'recipeFailed', 'cleanupQueued', 'cleanupRan', 'cleanupFailed', 'volumeRemoved', 'volumesPruned', 'postureFailed', 'postureRestored')),
   FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_server_event_serverId" ON "server_event" ("serverId");
@@ -654,6 +655,7 @@ CREATE TABLE IF NOT EXISTS "app" (
   "healthCheck" TEXT,
   "cpuLimit" REAL,
   "memLimitMb" INTEGER,
+  "stopGrace" INTEGER,
   "command" TEXT NOT NULL DEFAULT '[]' CHECK (json_valid("command") AND json_type("command") = 'array'),
   "hasExposedPort" INTEGER NOT NULL DEFAULT 0,
   "isDeployedOnPush" INTEGER NOT NULL DEFAULT 0,
@@ -887,6 +889,8 @@ CREATE TABLE IF NOT EXISTS "deployment" (
   "branch" TEXT,
   "author" TEXT,
   "builtImage" TEXT,
+  "swap" TEXT,
+  "swapReason" TEXT,
   "platformVersion" TEXT,
   "previousDeploymentId" TEXT,
   "configSnapshot" TEXT NOT NULL DEFAULT '{}',
@@ -899,6 +903,7 @@ CREATE TABLE IF NOT EXISTS "deployment" (
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   CHECK ("status" IN ('pending', 'building', 'success', 'failed', 'cancelled', 'rolledBack')),
   CHECK ("trigger" IN ('button', 'push', 'laptop', 'rollback', 'rebind', 'publish', 'freeze', 'observed')),
+  CHECK ("swap" IN ('startFirst', 'stopFirst')),
   FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE,
   FOREIGN KEY ("triggeredBy") REFERENCES "user" ("id")
 ) STRICT;
@@ -1134,6 +1139,8 @@ CREATE TABLE IF NOT EXISTS "backup_destination" (
   "prefix" TEXT NOT NULL DEFAULT '',
   "secretId" TEXT,
   "lastTestAt" TEXT,
+  "lockDays" INTEGER,
+  "lockAttestedAt" TEXT,
   "createdBy" TEXT,
   "version" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -1205,6 +1212,7 @@ CREATE TABLE IF NOT EXISTS "monitor" (
   "workspaceId" TEXT NOT NULL,
   "name" TEXT NOT NULL,
   "appId" TEXT,
+  "isManaged" INTEGER NOT NULL DEFAULT 0,
   "url" TEXT NOT NULL,
   "method" TEXT NOT NULL DEFAULT 'GET',
   "headers" TEXT NOT NULL DEFAULT '{}',
@@ -1234,6 +1242,7 @@ CREATE TABLE IF NOT EXISTS "monitor" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_monitor_workspaceId" ON "monitor" ("workspaceId");
 CREATE INDEX IF NOT EXISTS "idx_monitor_status_nextCheckAt" ON "monitor" ("status", "nextCheckAt");
+CREATE INDEX IF NOT EXISTS "idx_monitor_appId_isManaged" ON "monitor" ("appId", "isManaged");
 
 CREATE TABLE IF NOT EXISTS "monitor_check" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),

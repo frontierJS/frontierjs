@@ -86,7 +86,9 @@ async function smoke(given) {
 // Tauri's NSIS installer names itself <productName>_<version>_<arch>-setup.exe
 // and installs per user into %LOCALAPPDATA%\<productName>, the shell beside its
 // sidecar (<slug>-api.exe) and its uninstaller.
-function install(setup) {
+function install(given) {
+  // run() sets cwd to the installer's folder, which a relative path would then be resolved against.
+  const setup   = resolve(given)
   const product = basename(setup).split('_')[0]
   const dir = join(process.env.LOCALAPPDATA ?? '', product)
   run(setup, ['/S'], dirname(setup))

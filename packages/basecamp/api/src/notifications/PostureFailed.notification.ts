@@ -1,7 +1,7 @@
 // src/notifications/PostureFailed.notification.ts
 
 import { defineNotification, inApp, mail, push } from '@frontierjs/notifications'
-import { declaredTransports, appUrl }      from './_shared.ts'
+import { declaredTransports, appUrl, marked } from './_shared.ts'
 
 export interface PostureFailedPayload {
   serverId:   string
@@ -31,7 +31,7 @@ export default defineNotification<PostureFailedPayload>({
     .build(),
 
   email: (p) => mail()
-    .subject(`Server posture failing — ${p.serverName}`)
+    .subject(marked('warning', `Server posture failing — ${p.serverName}`))
     .line(`${p.serverName} reported a security control that stopped holding:`)
     .line(p.failed.join('\n'))
     // A finding, not an outage: nothing here refuses a deploy, so the mail is

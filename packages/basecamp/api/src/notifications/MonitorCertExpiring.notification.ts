@@ -1,7 +1,7 @@
 // src/notifications/MonitorCertExpiring.notification.ts
 
 import { defineNotification, inApp, mail } from '@frontierjs/notifications'
-import { declaredTransports, appUrl }      from './_shared.ts'
+import { declaredTransports, appUrl, marked } from './_shared.ts'
 
 export interface MonitorCertExpiringPayload {
   monitorId:   string
@@ -29,7 +29,7 @@ export default defineNotification<MonitorCertExpiringPayload>({
     .data({ monitorName: p.monitorName, daysLeft: p.daysLeft, expiresAt: p.expiresAt }),
 
   email: (p) => mail()
-    .subject(`Certificate ${p.daysLeft <= 0 ? 'expired' : 'expiring'} — ${p.monitorName}`)
+    .subject(marked(p.daysLeft <= 0 ? 'error' : 'warning', `Certificate ${p.daysLeft <= 0 ? 'expired' : 'expiring'} — ${p.monitorName}`))
     .line(`The TLS certificate ${p.monitorName} presents ${when(p)} (${p.expiresAt}).`)
     .line('Renew it before visitors see a browser warning.')
     .action('View monitor', appUrl(`/monitors/${p.monitorId}/`)),

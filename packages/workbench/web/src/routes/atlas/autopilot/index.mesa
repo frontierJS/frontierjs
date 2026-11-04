@@ -540,7 +540,7 @@ title: Autopilot
      which the map and the player fit the window's height; the place cards take
      the width left beside it, or wrap below when there is none. */
   .ap-layout {
-    --ap-map-w: calc(max(28rem, 100dvh - 22rem) * 1100 / 730);
+    --ap-map-w: max(90ch, (100dvh - 26rem) * 1100 / 730);
     display: flex; flex-wrap: wrap; gap: var(--space-lg); align-items: start;
   }
   .ap-main { flex: 1 1 min(100%, var(--ap-map-w)); max-inline-size: var(--ap-map-w); }

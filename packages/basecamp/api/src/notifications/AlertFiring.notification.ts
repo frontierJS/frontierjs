@@ -7,7 +7,7 @@
 // looking at, and it is the thing they can switch off for themselves.
 
 import { defineNotification, inApp, mail, push } from '@frontierjs/notifications'
-import { declaredTransports, appUrl }      from './_shared.ts'
+import { declaredTransports, appUrl, marked } from './_shared.ts'
 
 export interface AlertPayload {
   eventId:  string
@@ -35,7 +35,7 @@ export default defineNotification<AlertPayload>({
     .build(),
 
   email: (p) => mail()
-    .subject(`[${p.severity}] ${p.ruleName}`)
+    .subject(marked(p.severity === 'critical' ? 'error' : 'warning', `[${p.severity}] ${p.ruleName}`))
     .line(p.message)
     .action('View alerts', appUrl('/alerts/')),
 })

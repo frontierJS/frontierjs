@@ -6,7 +6,7 @@ dated: 2026-11-03
 
 # Idea — back up, restore and reinstall Basecamp from one terminal
 
-**Status: PROPOSED. Ruled: `FJS-D1848`–`FJS-D1851`, Q1–Q4 as `FJS-D1852`–`FJS-D1855`; Phase 0 and 1.1–1.3 done, 1.4 next.** Probed against
+**Status: PROPOSED. Ruled: `FJS-D1848`–`FJS-D1851`, Q1–Q4 as `FJS-D1852`–`FJS-D1855`; Phase 0 and 1.1–1.4 done, 1.5 next.** Probed against
 the tree 2026-11-03. Do not cite this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-03): a `basecamp:reinstall` that does retire and install together and
@@ -122,8 +122,13 @@ manifest's sha256 agree.
       `~/.config/fli/basecamp/<server>/encryption.key` (1.4's file). Proved on yuma 2026-11-04:
       three databases `integrity_check` ok, the key's fingerprint the same as 1.2's manifest, `/data`
       still the App user's, and an unreachable `--url` falls back where a 401 refuses.
-- [ ] 1.4 The key, asked at each backup (`FJS-D1852`): a mode-600 file under
+- [x] 1.4 The key, asked at each backup (`FJS-D1852`): a mode-600 file under
       `~/.config/fli/basecamp/<host>/`, printed once, or both; `attestEscrow` once a copy is off the box.
+      `readBoxKey`, `keepKey` and `attestKeyCopy` in `cli/core/basecamp.js`, ruled `FJS-D1876`: the key
+      is read off the box on both paths, one keypress picks, Enter or no terminal files it, and only an
+      API backup whose manifest names that key attests. Proved on yuma 2026-11-04: a terminal-less
+      `--raw` found it already filed and attested nothing; an API backup answered *both* printed it,
+      found it filed, and `hubConfig.current` then read `6b6520fafe6f`, the manifest's.
 - [ ] 1.5 `--list`: every local backup per host with size, age and manifest version; never pruned
       (`FJS-D1851`).
 
